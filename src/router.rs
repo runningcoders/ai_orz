@@ -208,6 +208,14 @@ fn artifact_routes() -> Router {
                 .get(handlers::project::artifact::list_artifacts_handler),
         )
         .route(
+            "/artifacts/text",
+            post(handlers::project::artifact::create_text_artifact_handler),
+        )
+        .route(
+            "/artifacts/register-from-path",
+            post(handlers::project::artifact::register_artifact_from_path_handler),
+        )
+        .route(
             "/artifacts/{id}",
             get(handlers::project::artifact::get_artifact_handler)
                 .delete(handlers::project::artifact::delete_artifact_handler),
