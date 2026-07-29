@@ -77,9 +77,15 @@ POST   /api/v1/project/artifacts       # ✅ 已落地：attachment 引用型创
 GET    /api/v1/project/artifacts       # ✅ 已落地：按 project/task/file/source/limit 查询
 GET    /api/v1/project/artifacts/{id}  # ✅ 已落地：详情查询
 DELETE /api/v1/project/artifacts/{id}  # ✅ 已落地：软删除
-GET    /api/v1/project/artifacts/{id}/content # ⏱ 规划：读取 generated_content 文本内容
-PUT    /api/v1/project/artifacts/{id}/content # ⏱ 规划：全量替换 generated_content 文本内容
+PUT    /api/v1/project/artifacts/{id}  # ✅ 已落地：部分更新（content/name/description/tags）
+GET    /api/v1/project/artifacts/{id}/content # ✅ 已落地：读取 generated_content 文本内容
 ```
+
+**更新接口（统一部分更新）**：`PUT /api/v1/project/artifacts/{id}` 支持一次性更新内容与元信息（`UpdateArtifactRequest`，字段均为 `Option`，仅 `Some` 字段触发更新）：
+- `content: Option<String>` —— 仅 `GeneratedContent` 类型支持，更新后同步 `file_size`
+- `name: Option<String>` / `description: Option<String>` / `tags: Option<Vec<String>>` —— 所有类型均支持
+- `expected_updated_at: Option<i64>` —— 乐观锁，不匹配返回 409
+- 前端元信息编辑调用时传 `content: None`，内容编辑传 `content: Some(...)`
 
 Artifact 虽然属于 Project Domain，但采用独立资源集合 API，而不是主入口绑定到 `/projects/{project_id}/artifacts`。API path 保持通用资源集合方案不变；`generated_content` 只是创建请求能力的后续扩展，不新增专用写入路径。原因是 Artifact 同时支持项目级产物与任务级产物，并且支持多种产物来源：
 - `project_id` 必填，表示产物归属项目，也是权限校验和存储路径组织依据；
@@ -332,7 +338,7 @@ Artifact 内容编辑只面向 `source_type = generated_content` 的自有文本
 ```http
 POST /api/v1/project/artifacts                # 扩展：正式支持 generated_content 创建
 GET  /api/v1/project/artifacts/{id}/content   # 读取 generated_content 文本内容
-PUT  /api/v1/project/artifacts/{id}/content   # 全量替换 generated_content 文本内容
+PUT  /api/v1/project/artifacts/{id}           # 部分更新（content/name/description/tags）
 ```
 
 `generated_content` 创建请求继续复用现有 Artifact 创建入口，按 `source_type` 分支：
@@ -372,14 +378,15 @@ pub struct UpdateTextContentRequest {
 - `source_type = remote_url` 返回 `Unsupported`；
 - 仅支持 UTF-8 简单文本，默认最大内容 `64KB`；
 - 文件名必须是安全文件名，不允许绝对路径、目录穿越、反斜杠、空文件名或目录目标；
-- `PUT` 是全量替换，更新成功后刷新 artifact 的 `file_meta.file_size`、`modified_by`、`updated_at`；
+- `PUT` 是部分更新（`content` 为 `Option<String>`，仅 `GeneratedContent` 类型支持），更新成功后刷新 artifact 的 `file_meta.file_size`、`modified_by`、`updated_at`；
 - `expected_updated_at` 可选，用于乐观锁，防止前端多人编辑覆盖。
 
 分层职责：
 
 ```text
 POST /api/v1/project/artifacts(source_type=generated_content)
-GET/PUT /api/v1/project/artifacts/{id}/content
+GET /api/v1/project/artifacts/{id}/content
+PUT /api/v1/project/artifacts/{id}
     ↓
 Artifact Handler
     ↓

@@ -1034,6 +1034,13 @@ Agent
 - **前端统计数据集成（07-15）**：`StatsCard` 通用卡片 + 三个实体面板（Agent/Project/Task）；详情页按需展示统计面板
 - **管理页面补全 + 对话功能 MVP + 消息/记忆搜索 + 知识图谱（07-13）**：Agent/Project 详情页；左右分栏对话布局 + 双向分页；消息/记忆搜索 API + 知识图谱 SVG 组件
 
+### 2026-07-29 里程碑（精简）
+**✅ Artifact 编辑能力（统一更新接口）**
+- **update_artifact 统一更新接口（07-29）**：`update_artifact_content` 重命名为 `update_artifact`，从「全量替换 content」扩展为「部分更新 content/name/description/tags 单接口」；DTO `UpdateArtifactContentRequest` → `UpdateArtifactRequest`（content 改 `Option<String>`，新增 name/description/tags 字段均为 Option）；Domain trait 方法签名同步扩展；路由 `PUT /artifacts/{id}/content` 迁移到 `PUT /artifacts/{id}`；handler 工具 id 同步重命名，tag 保持 `project_management`；content 更新仅适用于 `GeneratedContent` 类型，metadata 更新适用于所有类型；乐观锁 `expected_updated_at` 保留
+- **ArtifactMetaModal 前端元信息编辑（07-29）**：新增 `frontend/src/components/artifact_meta_modal.rs`（Props/Clone/PartialEq），支持 name/description/tags 编辑，调用 `update_artifact(content=None)` 仅更新元信息；artifact 详情页加「编辑信息」入口
+- **前端合并返回 + 产物入口（07-29）**：`get_project`/`get_task` 前端 API 加 `with_artifacts` 参数；Project 详情页移除单独 `list_artifacts` 调用改用合并返回；Project/Task 详情页产物行加「查看详情」链接；Task 详情页新增「📦 产物」Tab（第 4 个 Tab）
+- **编译修复（07-29）**：`ArtifactDetail` 加 `PartialEq` derive（Dioxus Props 要求）；`ArtifactMetaModalProps` 加 `Clone` derive（匹配代码库约定）；`use_effect` 内 partial move 问题通过提前 clone `props.artifact` 解决
+
 ### 2026-07-28 里程碑（精简）
 **✅ 通用图形组件 + Project/Task 详情增强**
 - **通用图形渲染组件 pkg/utils/graph（07-28）**：`Graph`/`GraphNodeData`/`GraphLine` 数据结构 + `GraphRenderer` trait + `MermaidRenderer` 实现（LR/TD 方向、节点分类着色、外部节点自动补全、标签转义）；零业务依赖，未来可扩展 PlantUml/Dot 等 Renderer

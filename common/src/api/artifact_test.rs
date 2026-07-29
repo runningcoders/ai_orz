@@ -2,7 +2,7 @@
 
 use super::{
     ApiResponse, ArtifactDetail, CreateArtifactRequest, GetArtifactContentResponse,
-    ListArtifactsRequest, UpdateArtifactContentRequest,
+    ListArtifactsRequest, UpdateArtifactRequest,
 };
 use crate::enums::{ArtifactSourceType, FileType};
 
@@ -147,28 +147,41 @@ fn get_artifact_content_response_contract_serializes_correctly() {
 }
 
 #[test]
-fn update_artifact_content_request_supports_optional_optimistic_lock() {
-    // without optimistic lock
-    let req = UpdateArtifactContentRequest {
+fn update_artifact_request_supports_partial_update_contract() {
+    // content-only update (no metadata)
+    let req = UpdateArtifactRequest {
         artifact_id: "artifact-1".to_string(),
-        content: "new content".to_string(),
+        content: Some("new content".to_string()),
+        name: None,
+        description: None,
+        tags: None,
         expected_updated_at: None,
     };
     let json = serde_json::to_string(&req).unwrap();
-    let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    let decoded: UpdateArtifactRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded.artifact_id, "artifact-1");
-    assert_eq!(decoded.content, "new content");
+    assert_eq!(decoded.content, Some("new content".to_string()));
+    assert_eq!(decoded.name, None);
+    assert_eq!(decoded.description, None);
+    assert_eq!(decoded.tags, None);
     assert_eq!(decoded.expected_updated_at, None);
 
-    // with optimistic lock
-    let req = UpdateArtifactContentRequest {
+    // metadata-only update (content=None)
+    let req = UpdateArtifactRequest {
         artifact_id: "artifact-1".to_string(),
-        content: "updated".to_string(),
+        content: None,
+        name: Some("new name".to_string()),
+        description: Some("new desc".to_string()),
+        tags: Some(vec!["tag1".to_string(), "tag2".to_string()]),
         expected_updated_at: Some(1718000000),
     };
     let json = serde_json::to_string(&req).unwrap();
     assert!(json.contains("1718000000"));
-    let decoded: UpdateArtifactContentRequest = serde_json::from_str(&json).unwrap();
+    assert!(json.contains("tag1"));
+    let decoded: UpdateArtifactRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded.artifact_id, "artifact-1");
+    assert_eq!(decoded.content, None);
+    assert_eq!(decoded.name, Some("new name".to_string()));
+    assert_eq!(decoded.tags, Some(vec!["tag1".to_string(), "tag2".to_string()]));
     assert_eq!(decoded.expected_updated_at, Some(1718000000));
 }
