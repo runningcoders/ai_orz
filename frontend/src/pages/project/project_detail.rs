@@ -1,7 +1,7 @@
 //! 项目详情页 - 基本信息、状态管理、任务列表、产物列表
 
 use dioxus::prelude::*;
-use dioxus_router::use_navigator;
+use dioxus_router::{use_navigator, Link};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
@@ -76,10 +76,16 @@ pub fn ProjectDetail(id: String) -> Element {
                 with_stats: Some(true),
                 with_model_call_stats: Some(true),
                 stats_interval: Some("daily".to_string()),
+                with_artifacts: Some(true),
                 ..Default::default()
             };
             match get_project(req).await {
-                Ok(p) => project.set(Some(p)),
+                Ok(p) => {
+                    if let Some(ref arts) = p.artifacts {
+                        artifacts.set(arts.clone());
+                    }
+                    project.set(Some(p));
+                }
                 Err(e) => toast.error(&e),
             }
             match list_project_tasks(&id_clone).await {
@@ -117,10 +123,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 }
                 Err(e) => toast.error(&e),
             }
-            match list_artifacts(&id_clone).await {
-                Ok(list) => artifacts.set(list),
-                Err(e) => toast.error(&e),
-            }
+            // 产物列表已通过 get_project 的 with_artifacts=true 合并返回，无需单独调用
             loading.set(false);
         });
     });
@@ -628,24 +631,31 @@ pub fn ProjectDetail(id: String) -> Element {
                                                         td { "data-label": "文件大小", "{artifact_file_size}" }
                                                         td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
                                                         td { "data-label": "操作",
-                                                            button { class: "btn btn-error btn-sm",
-                                                                onclick: move |_| {
-                                                                    let aid = aid_delete.clone();
-                                                                    let pid = pid_refresh.clone();
-                                                                    spawn(async move {
-                                                                        match delete_artifact(&aid).await {
-                                                                            Ok(_) => {
-                                                                                toast.success("产物已删除");
-                                                                                match list_artifacts(&pid).await {
-                                                                                    Ok(list) => artifacts.set(list),
-                                                                                    Err(e) => toast.error(&e),
+                                                            div { class: "flex gap-1",
+                                                                Link {
+                                                                    class: "btn btn-ghost btn-sm",
+                                                                    to: crate::pages::Route::ProjectArtifactDetail { id: artifact_id.clone() },
+                                                                    "查看"
+                                                                }
+                                                                button { class: "btn btn-error btn-sm",
+                                                                    onclick: move |_| {
+                                                                        let aid = aid_delete.clone();
+                                                                        let pid = pid_refresh.clone();
+                                                                        spawn(async move {
+                                                                            match delete_artifact(&aid).await {
+                                                                                Ok(_) => {
+                                                                                    toast.success("产物已删除");
+                                                                                    match list_artifacts(&pid).await {
+                                                                                        Ok(list) => artifacts.set(list),
+                                                                                        Err(e) => toast.error(&e),
+                                                                                    }
                                                                                 }
+                                                                                Err(e) => toast.error(&format!("删除失败: {}", e)),
                                                                             }
-                                                                            Err(e) => toast.error(&format!("删除失败: {}", e)),
-                                                                        }
-                                                                    });
-                                                                },
-                                                                "删除"
+                                                                        });
+                                                                    },
+                                                                    "删除"
+                                                                }
                                                             }
                                                         }
                                                     }
