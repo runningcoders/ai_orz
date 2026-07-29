@@ -11,7 +11,7 @@ mod query_artifacts;
 mod register_artifact_from_path;
 mod response;
 mod mime_util;
-mod update_artifact_content;
+mod update_artifact;
 
 pub use create_artifact::create_artifact_handler;
 pub use create_text_artifact::create_text_artifact_handler;
@@ -20,4 +20,4 @@ pub use get_artifact::get_artifact_handler;
 pub use get_artifact_content::get_artifact_content_handler;
 pub use list_artifacts::list_artifacts_handler;
 pub use register_artifact_from_path::register_artifact_from_path_handler;
-pub use update_artifact_content::update_artifact_content_handler;
+pub use update_artifact::update_artifact_handler;

@@ -270,12 +270,15 @@ impl super::ArtifactManage for ProjectDomainImpl {
             })
     }
 
-    /// Update artifact content (full replacement) for generated-content artifacts.
-    async fn update_artifact_content(
+    /// Update artifact content and/or metadata (partial update).
+    async fn update_artifact(
         &self,
         ctx: RequestContext,
         id: &str,
-        content: Vec<u8>,
+        content: Option<Vec<u8>>,
+        name: Option<String>,
+        description: Option<String>,
+        tags: Option<Vec<String>>,
         expected_updated_at: Option<i64>,
     ) -> Result<Artifact> {
         let Some(mut artifact) = self.artifact_dal.find_by_id(ctx.clone(), id).await? else {
@@ -286,15 +289,7 @@ impl super::ArtifactManage for ProjectDomainImpl {
         self.validate_project_access(ctx.clone(), &artifact.po.project_id)
             .await?;
 
-        if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
-            bail_err!(
-                InvalidRequest,
-                "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.",
-                artifact.po.source_type
-            );
-        }
-
-        // Optimistic locking check
+        // Optimistic locking check (applies to all updates)
         if let Some(expected) = expected_updated_at
             && artifact.po.updated_at != expected
         {
@@ -306,20 +301,41 @@ impl super::ArtifactManage for ProjectDomainImpl {
             );
         }
 
-        // Write the new content to disk
-        self.artifact_dal
-            .write_content(ctx.clone(), &artifact, &content)
-            .await?;
+        // Update content if provided (only for GeneratedContent artifacts)
+        if let Some(content_bytes) = content {
+            if artifact.po.source_type != common::enums::ArtifactSourceType::GeneratedContent {
+                bail_err!(
+                    InvalidRequest,
+                    "Cannot update content directly for artifact source type {:?}, only GeneratedContent artifacts support direct content update.",
+                    artifact.po.source_type
+                );
+            }
+            self.artifact_dal
+                .write_content(ctx.clone(), &artifact, &content_bytes)
+                .await?;
+            artifact.po.file_meta.0.file_size = content_bytes.len() as u64;
+        }
 
-        // Update the artifact metadata: file size and updated timestamp
+        // Update metadata if provided
+        if let Some(new_name) = name {
+            if new_name.trim().is_empty() {
+                bail_err!(InvalidRequest, "name不能为空");
+            }
+            artifact.po.name = new_name;
+        }
+        if let Some(new_desc) = description {
+            artifact.po.description = new_desc;
+        }
+        if let Some(new_tags) = tags {
+            artifact.po.set_tags(new_tags, ctx.uid());
+        }
+
+        // Update timestamp and modifier
         let now = common::constants::utils::current_timestamp_ms();
-        artifact.po.file_meta.0.file_size = content.len() as u64;
         artifact.po.updated_at = now;
         artifact.po.modified_by = ctx.uid();
 
-        // Update the artifact record in database
-        self.artifact_dal.update(ctx.clone(), &artifact).await?;
-
+        self.artifact_dal.update(ctx, &artifact).await?;
         Ok(artifact)
     }
 

@@ -192,14 +192,24 @@ pub struct ArtifactContentText {
     pub updated_at: i64,
 }
 
-/// Update artifact content request (full replace).
+/// Update artifact request (partial update).
+///
+/// Supports updating content and/or metadata in a single call.
+/// Only fields that are `Some` will be updated. `None` fields are left unchanged.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
-pub struct UpdateArtifactContentRequest {
+pub struct UpdateArtifactRequest {
     /// Artifact ID.
     #[param(source = "path")]
     pub artifact_id: String,
-    /// Full new content for replacement.
-    pub content: String,
+    /// New content for replacement. `None` to keep current content unchanged.
+    /// Only applicable to GeneratedContent artifacts.
+    pub content: Option<String>,
+    /// New name. `None` to keep current.
+    pub name: Option<String>,
+    /// New description. `None` to keep current.
+    pub description: Option<String>,
+    /// New tags. `None` to keep current tags.
+    pub tags: Option<Vec<String>>,
     /// Optional optimistic locking: expect current updated_at matches this value.
     /// If mismatch, returns 409 Conflict.
     pub expected_updated_at: Option<i64>,

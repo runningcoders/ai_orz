@@ -218,12 +218,12 @@ fn artifact_routes() -> Router {
         .route(
             "/artifacts/{id}",
             get(handlers::project::artifact::get_artifact_handler)
-                .delete(handlers::project::artifact::delete_artifact_handler),
+                .delete(handlers::project::artifact::delete_artifact_handler)
+                .put(handlers::project::artifact::update_artifact_handler),
         )
         .route(
             "/artifacts/{id}/content",
-            get(handlers::project::artifact::get_artifact_content_handler)
-                .put(handlers::project::artifact::update_artifact_content_handler),
+            get(handlers::project::artifact::get_artifact_content_handler),
         )
 }
 

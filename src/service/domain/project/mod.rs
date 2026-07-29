@@ -414,13 +414,18 @@ pub trait ArtifactManage: Send + Sync {
     /// Read artifact content bytes from storage (only for generated-content artifacts).
     async fn read_content(&self, ctx: RequestContext, artifact: &Artifact) -> Result<Vec<u8>>;
 
-    /// Update artifact content (full replace, only for generated-content artifacts).
-    /// Returns the updated artifact.
-    async fn update_artifact_content(
+    /// Update artifact content and/or metadata (partial update).
+    ///
+    /// Only fields that are `Some` will be updated. Content update only applies
+    /// to GeneratedContent artifacts. Metadata (name/description/tags) applies to all.
+    async fn update_artifact(
         &self,
         ctx: RequestContext,
         id: &str,
-        content: Vec<u8>,
+        content: Option<Vec<u8>>,
+        name: Option<String>,
+        description: Option<String>,
+        tags: Option<Vec<String>>,
         expected_updated_at: Option<i64>,
     ) -> Result<Artifact>;
 
