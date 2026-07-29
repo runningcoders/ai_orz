@@ -14,8 +14,9 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "create_artifact",
     name = "create_artifact",
-    description = "Create a new artifact in a project, supports creating from existing attachment or reserved for generated content",
-    params = "common::api::CreateArtifactRequest"
+    description = "Create a new artifact in a project, supports creating from existing attachment or generated content",
+    params = "common::api::CreateArtifactRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn create_artifact(
@@ -38,10 +39,7 @@ pub async fn create_artifact(
             create_from_attachment(ctx, params, current_user_id).await?
         }
         ArtifactSourceType::GeneratedContent => {
-            bail_err!(
-                UnsupportedOperation,
-                "generated_content artifact create is not implemented yet"
-            );
+            create_from_generated_content(ctx, params, current_user_id).await?
         }
         ArtifactSourceType::RemoteUrl => {
             bail_err!(
@@ -96,6 +94,43 @@ async fn create_from_attachment(
             params.description.unwrap_or_default(),
             file_type,
             file_meta,
+            params.tags.unwrap_or_default(),
+            current_user_id,
+        )
+        .await
+}
+
+async fn create_from_generated_content(
+    ctx: RequestContext,
+    params: CreateArtifactRequest,
+    current_user_id: String,
+) -> Result<crate::models::artifact::Artifact> {
+    let content = params.content
+        .ok_or_else(|| err!(InvalidRequest, "content 不能为空（generated_content 类型）"))?;
+    let file_name = params.file_name
+        .ok_or_else(|| err!(InvalidRequest, "file_name 不能为空（generated_content 类型）"))?;
+
+    // Validate content size (max 1MB for text)
+    let content_bytes = content.into_bytes();
+    if content_bytes.len() > 1024 * 1024 {
+        bail_err!(InvalidRequest, "Text content exceeds maximum size of 1MB");
+    }
+
+    let mime_type = params.mime_type.unwrap_or_else(|| "text/plain".to_string());
+    let file_type = params.file_type.unwrap_or(common::enums::FileType::Document);
+
+    project::domain()
+        .artifact_manage()
+        .create_generated_artifact(
+            ctx,
+            params.project_id,
+            params.task_id,
+            params.name,
+            params.description.unwrap_or_default(),
+            content_bytes,
+            file_name,
+            mime_type,
+            file_type,
             params.tags.unwrap_or_default(),
             current_user_id,
         )
