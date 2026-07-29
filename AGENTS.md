@@ -1039,6 +1039,7 @@ Agent
 - **通用图形渲染组件 pkg/utils/graph（07-28）**：`Graph`/`GraphNodeData`/`GraphLine` 数据结构 + `GraphRenderer` trait + `MermaidRenderer` 实现（LR/TD 方向、节点分类着色、外部节点自动补全、标签转义）；零业务依赖，未来可扩展 PlantUml/Dot 等 Renderer
 - **Project 详情 Mermaid 任务依赖图（07-28）**：`build_task_graph_mermaid` 基于 Task.dependencies 构建 DAG（箭头表示执行流向：前置→后继）；按任务状态着色（Completed→done、InProgress→doing、Pending→todo 等）；跨项目依赖自动渲染为外部节点；`GET /projects/{id}?with_task_graph=true` 按需返回
 - **Project/Task 详情 Artifact 列表暴露（07-28）**：`GET /projects/{id}?with_artifacts=true` 和 `GET /tasks/{id}?with_artifacts=true` 按需返回 `Vec<ArtifactDetail>`（复用现有 DTO，含 id 等关键字段）；Domain 层聚合注入，DAL 层保持单一职责
+- **Agent Artifact 创建能力（07-28）**：`fs_write` 路径隔离到 `agents/{agent_id}/`（base_path 从全局改为 `agent_data_dir(agent_id)`）；Domain 层新增 `create_generated_artifact`（文本类，传 content 落盘）+ `create_generated_artifact_from_file`（文件类，从 agent 目录**复制**到 artifact 目录，源文件保留）；两个新工具 `create_text_artifact`（`POST /artifacts/text`）+ `register_artifact_from_path`（`POST /artifacts/register-from-path`，含路径穿越安全校验）；打通 `create_artifact` 的 `GeneratedContent` 分支（原 `bail_err!` stub）；artifact 工具统一归口 `project_management` tag（`query_artifacts` 去 `neural`，`update_artifact_content`/`create_artifact` 加 tag）；新增 `mime_util` 模块（扩展名→MIME→FileType 推断）；IO 失败回滚 DB 记录
 
 ### 2026-07-10 ~ 12 里程碑（精简）
 **✅ 前端架构重构 + Runtime Phase 4 + 全实体 FTS5**
