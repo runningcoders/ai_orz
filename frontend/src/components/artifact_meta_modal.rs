@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use common::api::ArtifactDetail;
 
-#[derive(PartialEq, Props)]
+#[derive(Props, Clone, PartialEq)]
 pub struct ArtifactMetaModalProps {
     pub artifact: ArtifactDetail,
     pub show: bool,
@@ -17,15 +17,20 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
     let mut description = use_signal(|| props.artifact.description.clone());
     let mut tags_text = use_signal(|| props.artifact.tags.join(", "));
 
+    // Clone artifact into a local to avoid partial moves of `props.artifact.*`
+    // into use_effect (which would make them unavailable for the onclick closure).
+    let artifact = props.artifact.clone();
     use_effect(move || {
-        name.set(props.artifact.name.clone());
-        description.set(props.artifact.description.clone());
-        tags_text.set(props.artifact.tags.join(", "));
+        name.set(artifact.name.clone());
+        description.set(artifact.description.clone());
+        tags_text.set(artifact.tags.join(", "));
     });
 
     if !props.show {
         return rsx! {};
     }
+
+    let saved = props.artifact.clone();
 
     rsx! {
         div {
@@ -69,14 +74,14 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
                     button {
                         class: "btn btn-primary",
                         onclick: move |_| {
-                            let n = if name() != props.artifact.name { Some(name()) } else { None };
-                            let d = if description() != props.artifact.description { Some(description()) } else { None };
+                            let n = if name() != saved.name { Some(name()) } else { None };
+                            let d = if description() != saved.description { Some(description()) } else { None };
                             let tags: Vec<String> = tags_text()
                                 .split(',')
                                 .map(|s| s.trim().to_string())
                                 .filter(|s| !s.is_empty())
                                 .collect();
-                            let t = if tags != props.artifact.tags { Some(tags) } else { None };
+                            let t = if tags != saved.tags { Some(tags) } else { None };
                             props.on_save.call((n, d, t));
                         },
                         "保存"

@@ -122,7 +122,7 @@ pub struct ArtifactQueryRequest {
 pub type ListArtifactsResponse = Vec<ArtifactDetail>;
 
 /// Artifact detail response.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ArtifactDetail {
     /// Artifact ID.
     pub id: String,
