@@ -423,6 +423,40 @@ pub trait ArtifactManage: Send + Sync {
         content: Vec<u8>,
         expected_updated_at: Option<i64>,
     ) -> Result<Artifact>;
+
+    /// Create a generated-content artifact with text content.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_generated_artifact(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+        content: Vec<u8>,
+        file_name: String,
+        mime_type: String,
+        file_type: FileType,
+        tags: Vec<String>,
+        created_by: String,
+    ) -> Result<Artifact>;
+
+    /// Create a generated-content artifact by copying a file from source path.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_generated_artifact_from_file(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+        source_path: std::path::PathBuf,
+        file_name: String,
+        mime_type: String,
+        file_type: FileType,
+        tags: Vec<String>,
+        created_by: String,
+    ) -> Result<Artifact>;
 }
 
 // ==================== 实现 ====================

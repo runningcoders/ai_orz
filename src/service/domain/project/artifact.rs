@@ -322,6 +322,153 @@ impl super::ArtifactManage for ProjectDomainImpl {
 
         Ok(artifact)
     }
+
+    /// Create a generated-content artifact with text content.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_generated_artifact(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+        content: Vec<u8>,
+        file_name: String,
+        mime_type: String,
+        file_type: FileType,
+        tags: Vec<String>,
+        created_by: String,
+    ) -> Result<Artifact> {
+        self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
+            .await?;
+
+        let file_meta = FileMeta::new(file_name, mime_type, content.len() as u64);
+        let mut artifact = if let Some(task_id) = task_id {
+            Artifact::new_task_with_source_type(
+                project_id,
+                task_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                ArtifactSourceType::GeneratedContent,
+                created_by.clone(),
+            )
+        } else {
+            Artifact::new_project_with_source_type(
+                project_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                ArtifactSourceType::GeneratedContent,
+                created_by.clone(),
+            )
+        };
+        artifact.po.set_tags(tags, created_by);
+        let ctx = enrich_ctx!(&ctx, &artifact);
+
+        self.artifact_dal.create(ctx.clone(), &artifact).await?;
+
+        if let Err(e) = self
+            .artifact_dal
+            .write_content(ctx.clone(), &artifact, &content)
+            .await
+        {
+            let _ = self.artifact_dal.delete(ctx, &artifact.po.id).await;
+            return Err(e);
+        }
+
+        Ok(artifact)
+    }
+
+    /// Create a generated-content artifact by copying a file from a source path.
+    #[allow(clippy::too_many_arguments)]
+    async fn create_generated_artifact_from_file(
+        &self,
+        ctx: RequestContext,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+        source_path: std::path::PathBuf,
+        file_name: String,
+        mime_type: String,
+        file_type: FileType,
+        tags: Vec<String>,
+        created_by: String,
+    ) -> Result<Artifact> {
+        self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
+            .await?;
+
+        let metadata = std::fs::metadata(&source_path).map_err(|e| {
+            err!(InvalidRequest, "Failed to read source file metadata: {}", e)
+        })?;
+        if !metadata.is_file() {
+            bail_err!(
+                InvalidRequest,
+                "Source path is not a file: {:?}",
+                source_path
+            );
+        }
+
+        let file_meta = FileMeta::new(file_name.clone(), mime_type, metadata.len());
+        let mut artifact = if let Some(task_id) = task_id {
+            Artifact::new_task_with_source_type(
+                project_id,
+                task_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                ArtifactSourceType::GeneratedContent,
+                created_by.clone(),
+            )
+        } else {
+            Artifact::new_project_with_source_type(
+                project_id,
+                name,
+                description,
+                file_type,
+                file_meta,
+                ArtifactSourceType::GeneratedContent,
+                created_by.clone(),
+            )
+        };
+        artifact.po.set_tags(tags, created_by);
+        let ctx = enrich_ctx!(&ctx, &artifact);
+
+        self.artifact_dal.create(ctx.clone(), &artifact).await?;
+
+        let config = crate::config::get();
+        let target_dir = config.artifact_path(&artifact.po.project_id, &artifact.po.id);
+        let target_path = target_dir.join(&file_name);
+
+        // Safety: target_path must be under artifacts_dir to prevent path traversal.
+        if !target_path.starts_with(config.artifacts_dir()) {
+            let _ = self.artifact_dal.delete(ctx, &artifact.po.id).await;
+            bail_err!(
+                InvalidRequest,
+                "Invalid target path: path traversal attempt detected"
+            );
+        }
+
+        if let Err(e) = std::fs::create_dir_all(&target_dir) {
+            let _ = self.artifact_dal.delete(ctx, &artifact.po.id).await;
+            return Err(err!(
+                InvalidRequest,
+                "Failed to create target directory: {}",
+                e
+            ));
+        }
+
+        if let Err(e) = std::fs::copy(&source_path, &target_path) {
+            let _ = self.artifact_dal.delete(ctx, &artifact.po.id).await;
+            return Err(err!(InvalidRequest, "Failed to copy file: {}", e));
+        }
+
+        Ok(artifact)
+    }
 }
 
 impl ProjectDomainImpl {
