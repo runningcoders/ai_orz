@@ -120,7 +120,7 @@ impl FsWriteCoreTool {
 
 #[async_trait::async_trait]
 impl CoreTool for FsWriteCoreTool {
-    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse arguments
         let args: WriteFileArgs = serde_json::from_value(args)
             .map_err(|e| anyhow!("Invalid arguments: {}", e))
@@ -129,8 +129,13 @@ impl CoreTool for FsWriteCoreTool {
         // Validate required parameters for mode
         validate_args(&args)?;
 
-        // Get base data path from global config
-        let base_path = crate::config::get().base_data_path();
+        // Get agent_id from ctx for per-agent path isolation
+        let agent_id = ctx
+            .agent_id()
+            .ok_or_else(|| anyhow!("agent_id is required for fs_write"))?;
+
+        // Get base data path from agent-specific directory
+        let base_path = crate::config::get().agent_data_dir(agent_id);
         let additional_allowed = self
             .config
             .additional_allowed_paths
