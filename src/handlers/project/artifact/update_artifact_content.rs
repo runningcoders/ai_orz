@@ -11,7 +11,8 @@ use common::error::{Result, bail_err};
     id = "update_artifact_content",
     name = "update_artifact_content",
     description = "Fully replace the text content of a generated-content artifact, supports optimistic locking with expected_updated_at",
-    params = "common::api::UpdateArtifactContentRequest"
+    params = "common::api::UpdateArtifactContentRequest",
+    tags = "project_management"
 )]
 #[generate_http_handler]
 pub async fn update_artifact_content(
