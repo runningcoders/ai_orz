@@ -3,12 +3,13 @@
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
-use crate::api::project::{get_artifact_content, update_artifact_content};
+use crate::api::project::{get_artifact_content, update_artifact};
+use crate::components::artifact_meta_modal::ArtifactMetaModal;
 use crate::components::code_editor::CodeEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{ArtifactDetail, UpdateArtifactContentRequest};
+use common::api::{ArtifactDetail, UpdateArtifactRequest};
 use common::enums::ArtifactSourceType;
 
 #[component]
@@ -21,6 +22,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
     let mut content_dirty = use_signal(|| false);
     let mut saving = use_signal(|| false);
     let mut is_text_type = use_signal(|| false);
+    let mut show_meta_modal = use_signal(|| false);
 
     let id_for_effect = id.clone();
     use_effect(move || {
@@ -48,9 +50,12 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
             let id = id.clone();
             saving.set(true);
             spawn(async move {
-                match update_artifact_content(UpdateArtifactContentRequest {
+                match update_artifact(UpdateArtifactRequest {
                     artifact_id: id.clone(),
-                    content: content(),
+                    content: Some(content()),
+                    name: None,
+                    description: None,
+                    tags: None,
                     expected_updated_at: None,
                 })
                 .await
@@ -80,6 +85,13 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 div { class: "card bg-base-100 shadow-md mb-6",
                     div { class: "card-body",
                         h2 { class: "card-title", "{a.name}" }
+                        div { class: "card-actions justify-end",
+                            button {
+                                class: "btn btn-ghost btn-sm",
+                                onclick: move |_| show_meta_modal.set(true),
+                                "✏️ 编辑信息"
+                            }
+                        }
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
                             div { div { class: "text-sm text-base-content/60", "描述" }, div { class: "font-medium", "{a.description}" } }
                             div { div { class: "text-sm text-base-content/60", "文件大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.file_size)}" } }
@@ -114,6 +126,31 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     }
                 } else {
                     EmptyState { icon: "📦".to_string(), message: "此产物为二进制文件，不支持在线查看内容".to_string() }
+                }
+                ArtifactMetaModal {
+                    artifact: a.clone(),
+                    show: show_meta_modal(),
+                    on_save: move |(name, description, tags)| {
+                        let id = id.clone();
+                        spawn(async move {
+                            match update_artifact(UpdateArtifactRequest {
+                                artifact_id: id.clone(),
+                                content: None,
+                                name,
+                                description,
+                                tags,
+                                expected_updated_at: None,
+                            }).await {
+                                Ok(updated) => {
+                                    artifact.set(Some(updated));
+                                    toast.success("产物信息已更新");
+                                    show_meta_modal.set(false);
+                                }
+                                Err(e) => toast.error(&format!("更新失败: {}", e)),
+                            }
+                        });
+                    },
+                    on_close: move |_| show_meta_modal.set(false),
                 }
             } else {
                 EmptyState { icon: "❓".to_string(), message: "产物不存在或已被删除".to_string() }
