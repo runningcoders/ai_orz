@@ -8,6 +8,7 @@ mod get_artifact_content;
 mod list_artifacts;
 mod query_artifacts;
 mod response;
+mod mime_util;
 mod update_artifact_content;
 
 pub use create_artifact::create_artifact_handler;
