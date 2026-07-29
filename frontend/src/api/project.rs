@@ -39,6 +39,7 @@ pub async fn get_project(req: GetProjectRequest) -> Result<GetProjectResponse, A
         ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
+        ("with_artifacts", req.with_artifacts.map(|v| v.to_string())),
     ]);
     api_get(&format!("/api/v1/projects/{}{}", req.id, qs)).await
 }
@@ -84,6 +85,7 @@ pub async fn get_task(req: GetTaskRequest) -> Result<GetTaskResponse, ApiError> 
         ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
+        ("with_artifacts", req.with_artifacts.map(|v| v.to_string())),
     ]);
     api_get(&format!("/api/v1/tasks/{}{}", req.id, qs)).await
 }
@@ -133,12 +135,16 @@ pub async fn get_artifact_content(
     api_get(&format!("/api/v1/project/artifacts/{}/content", id)).await
 }
 
-pub async fn update_artifact_content(
-    req: common::api::UpdateArtifactContentRequest,
+pub async fn update_artifact(
+    req: common::api::UpdateArtifactRequest,
 ) -> Result<ArtifactDetail, ApiError> {
     api_put(
-        &format!("/api/v1/project/artifacts/{}/content", req.artifact_id),
+        &format!("/api/v1/project/artifacts/{}", req.artifact_id),
         &req,
     )
     .await
+}
+
+pub async fn get_artifact(id: &str) -> Result<ArtifactDetail, ApiError> {
+    api_get(&format!("/api/v1/project/artifacts/{}", id)).await
 }
