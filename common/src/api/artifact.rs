@@ -204,3 +204,55 @@ pub struct UpdateArtifactContentRequest {
     /// If mismatch, returns 409 Conflict.
     pub expected_updated_at: Option<i64>,
 }
+
+/// Create text artifact params (neural tool: create_text_artifact).
+///
+/// Agent provides text content directly; the tool handles file creation
+/// and artifact metadata registration in one step.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CreateTextArtifactParams {
+    /// Project ID. Required.
+    pub project_id: String,
+    /// Optional task ID. `None` means project-level artifact.
+    pub task_id: Option<String>,
+    /// Artifact display name.
+    pub name: String,
+    /// Optional artifact description.
+    pub description: Option<String>,
+    /// Text content of the artifact.
+    pub content: String,
+    /// File name for storage. Defaults to derived from name (with .md extension).
+    pub file_name: Option<String>,
+    /// MIME type. Defaults to "text/plain".
+    pub mime_type: Option<String>,
+    /// File type category. Defaults to Document.
+    pub file_type: Option<FileType>,
+    /// Optional tags.
+    pub tags: Option<Vec<String>>,
+}
+
+/// Register artifact from file path params (neural tool: register_artifact_from_path).
+///
+/// Agent provides a file path in its own directory; the tool copies the file
+/// to artifact storage and registers metadata. Source file is preserved.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RegisterArtifactFromPathParams {
+    /// Project ID. Required.
+    pub project_id: String,
+    /// Optional task ID. `None` means project-level artifact.
+    pub task_id: Option<String>,
+    /// Artifact display name.
+    pub name: String,
+    /// Optional artifact description.
+    pub description: Option<String>,
+    /// Source file path, relative to agent's directory.
+    pub source_path: String,
+    /// File name for artifact storage. Defaults to basename of source_path.
+    pub file_name: Option<String>,
+    /// MIME type. Defaults to inferred from file extension.
+    pub mime_type: Option<String>,
+    /// File type category. Defaults to inferred from mime_type.
+    pub file_type: Option<FileType>,
+    /// Optional tags.
+    pub tags: Option<Vec<String>>,
+}
