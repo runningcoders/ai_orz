@@ -1,7 +1,7 @@
 //! 任务详情页 - 基本信息、状态流转、进度更新、操作按钮
 
 use dioxus::prelude::*;
-use dioxus_router::use_navigator;
+use dioxus_router::{use_navigator, Link};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
@@ -56,6 +56,7 @@ pub fn TaskDetail(id: String) -> Element {
                 with_stats: Some(true),
                 with_model_call_stats: Some(true),
                 stats_interval: Some("daily".to_string()),
+                with_artifacts: Some(true),
                 ..Default::default()
             };
             match get_task(req).await {
@@ -349,6 +350,11 @@ pub fn TaskDetail(id: String) -> Element {
     } else {
         "tab tab-lg"
     };
+    let tab3_class = if active_tab() == 3 {
+        "tab tab-lg tab-active"
+    } else {
+        "tab tab-lg"
+    };
 
     rsx! {
         AppLayout {
@@ -372,6 +378,7 @@ pub fn TaskDetail(id: String) -> Element {
                 button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
                 button { class: "{tab1_class}", onclick: move |_| active_tab.set(1), "📊 进度与状态" }
                 button { class: "{tab2_class}", onclick: move |_| active_tab.set(2), "🕸️ 关系图" }
+                button { class: "{tab3_class}", onclick: move |_| active_tab.set(3), "📦 产物" }
             }
 
             // Tab 内容
@@ -591,6 +598,49 @@ pub fn TaskDetail(id: String) -> Element {
                         }
                     }
                 },
+                3 => rsx! {
+                    // === 产物 ===
+                    {
+                        let arts: Vec<_> = task.read().as_ref()
+                            .and_then(|t| t.artifacts.clone())
+                            .unwrap_or_default();
+                        if arts.is_empty() {
+                            rsx! { EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() } }
+                        } else {
+                            rsx! {
+                                div { class: "space-y-3",
+                                    for art in arts.iter() {
+                                        div { class: "card bg-base-100 shadow-sm",
+                                            div { class: "card-body p-4",
+                                                div { class: "flex justify-between items-start",
+                                                    div {
+                                                        h3 { class: "font-semibold", "{art.name}" }
+                                                        if !art.description.is_empty() {
+                                                            p { class: "text-sm text-base-content/60 mt-1", "{art.description}" }
+                                                        }
+                                                    }
+                                                    Link {
+                                                        class: "btn btn-ghost btn-sm",
+                                                        to: crate::pages::Route::ProjectArtifactDetail { id: art.id.clone() },
+                                                        "查看详情 →"
+                                                    }
+                                                }
+                                                div { class: "flex gap-2 mt-2 flex-wrap",
+                                                    span { class: "badge badge-sm", "{format_file_type(art.file_type)}" }
+                                                    span { class: "badge badge-sm badge-info", "{art.mime_type}" }
+                                                    span { class: "badge badge-sm", "{crate::utils::format_file_size(art.file_size)}" }
+                                                    for tag in art.tags.iter() {
+                                                        span { class: "badge badge-sm badge-outline", "#{tag}" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 _ => rsx! { div {} },
             }}
 
@@ -654,5 +704,15 @@ pub fn TaskDetail(id: String) -> Element {
             },
         }
         }
+    }
+}
+
+fn format_file_type(t: common::enums::FileType) -> &'static str {
+    match t {
+        common::enums::FileType::Document => "文档",
+        common::enums::FileType::Image => "图片",
+        common::enums::FileType::Audio => "音频",
+        common::enums::FileType::Video => "视频",
+        common::enums::FileType::Binary => "二进制",
     }
 }
