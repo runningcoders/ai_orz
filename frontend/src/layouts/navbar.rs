@@ -398,6 +398,19 @@ pub fn Navbar() -> Element {
                                             "Seed 配置迁移"
                                         }
                                     }
+                                    li {
+                                        Link {
+                                            to: Route::SystemTasks {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "后台任务"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -840,6 +853,20 @@ pub fn Navbar() -> Element {
                                         drawer_open.set(false);
                                     },
                                     "Seed 配置迁移"
+                                }
+                            }
+                            li {
+                                Link {
+                                    to: Route::SystemTasks {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "后台任务"
                                 }
                             }
                         }

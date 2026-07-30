@@ -711,4 +711,13 @@ fn system_routes() -> Router {
             "/tasks/{task_id}/progress",
             get(handlers::system::task_progress::get_task_progress_handler),
         )
+        // 后台任务管理
+        .route(
+            "/tasks",
+            get(handlers::system::task_list::list_tasks_handler),
+        )
+        .route(
+            "/tasks/cleanup",
+            post(handlers::system::task_cleanup::cleanup_tasks_handler),
+        )
 }

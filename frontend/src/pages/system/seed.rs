@@ -20,7 +20,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::components::task_progress::TaskProgress;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::{format_file_size as format_size, format_datetime_full};
+use crate::utils::{format_datetime_full, format_file_size as format_size};
 use common::api::seed::ImportStrategy;
 use common::api::{TaskProgressSnapshot, TaskStatus};
 

@@ -91,7 +91,9 @@ pub trait SystemDomain: Send + Sync {
     fn aop_monitor(&self) -> &dyn AopMonitor;
     fn aop_stats(&self) -> &dyn AopStats;
     /// 通用后台任务注册中心（委托 pkg 全局单例）
-    fn background_task_registry(&self) -> &'static crate::pkg::background_task::BackgroundTaskRegistry {
+    fn background_task_registry(
+        &self,
+    ) -> &'static crate::pkg::background_task::BackgroundTaskRegistry {
         crate::pkg::background_task::registry()
     }
 }

@@ -73,16 +73,22 @@ impl BackgroundTaskRegistry {
     }
 
     /// 列出指定类型的进度快照
-    pub async fn list_progress_by_type(
-        &self,
-        task_type: TaskType,
-    ) -> Vec<TaskProgressSnapshot> {
+    pub async fn list_progress_by_type(&self, task_type: TaskType) -> Vec<TaskProgressSnapshot> {
         let guard = self.tasks.read().await;
         guard
             .values()
             .filter(|t| t.task_type() == task_type)
             .map(|t| t.progress())
             .collect()
+    }
+
+    /// 列出所有任务的进度快照
+    ///
+    /// 遍历注册中心中所有任务，调用 `progress()` 获取快照。
+    /// 任务数量不大时性能可接受。
+    pub async fn list_all_progress(&self) -> Vec<TaskProgressSnapshot> {
+        let guard = self.tasks.read().await;
+        guard.values().map(|t| t.progress()).collect()
     }
 
     /// 清理已完成的旧任务，保留每个类型最近 max_count 个已完成任务

@@ -4,6 +4,7 @@
 //! 后端 error_code（如有）和解析后的 message。
 
 pub mod auth;
+pub mod background_task;
 pub mod finance;
 pub mod hr;
 pub mod log_stats;

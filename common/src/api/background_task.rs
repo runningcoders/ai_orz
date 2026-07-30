@@ -90,3 +90,38 @@ pub struct GetTaskProgressRequest {
     #[param(source = "path")]
     pub task_id: String,
 }
+
+/// 后台任务列表查询请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListBackgroundTasksRequest {
+    /// 按任务类型筛选（可选，字符串匹配 task_type 字段）
+    #[param(source = "query")]
+    pub task_type: Option<String>,
+    /// 按状态筛选（可选）
+    #[param(source = "query")]
+    pub status: Option<TaskStatus>,
+}
+
+/// 后台任务列表响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListBackgroundTasksResponse {
+    /// 任务进度快照列表（按 started_at 降序）
+    pub tasks: Vec<TaskProgressSnapshot>,
+    /// 总数
+    pub total: usize,
+}
+
+/// 清理已完成任务请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CleanupTasksRequest {
+    /// 每个类型保留的最近已完成任务数量（默认 10）
+    #[param(source = "query")]
+    pub max_count: Option<usize>,
+}
+
+/// 清理已完成任务响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CleanupTasksResponse {
+    /// 清理的任务数量
+    pub cleaned: usize,
+}

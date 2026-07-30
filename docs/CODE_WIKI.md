@@ -201,7 +201,7 @@ src/handlers/
 │   └── profile/            # 个人信息查看/修改
 │
 ├── health/                 # 健康检查
-├── system/                 # 系统监控（AOP 队列监控、日志查询等）
+├── system/                 # 系统管理（AOP 监控、日志查询、备份、Cron 触发器、Seed 配置迁移、后台任务管理）
 └── a2a/                    # A2A 公开回调端点（无 JWT 鉴权，外部 HTTP 回调适配）
 ```
 
@@ -260,7 +260,7 @@ src/service/domain/
 │   ├── task.rs             # 任务分配、进度追踪
 │   └── artifact.rs         # 产物创建、内容管理
 │
-└── system/                 # 系统领域（AOP 队列监控、日志查询、备份）
+└── system/                 # 系统领域（AOP 监控、日志查询、备份、后台任务注册中心访问）
     └── ...
 ```
 
@@ -461,7 +461,7 @@ pub struct RequestContext {
 
 ### 8. Pkg 层（公共工具包）
 
-**职责：通用工具、日志系统、向量存储、工具注册、AOP 事件中心、消息入站适配中台**
+**职责：通用工具、日志系统、向量存储、工具注册、AOP 事件中心、消息入站适配中台、通用后台任务**
 
 ```
 src/pkg/
@@ -506,6 +506,10 @@ src/pkg/
 │   ├── traits.rs           # 统计 trait 定义
 │   ├── model_call.rs       # 模型调用统计（agent_awake_events 等）
 │   └── tool_call.rs        # 工具调用统计
+│
+├── background_task/        # 通用后台任务模块（注册中心 + BackgroundTask trait）
+│   ├── mod.rs              # BackgroundTask trait（task_id/task_type/progress/run）+ registry() 全局单例
+│   └── registry.rs         # BackgroundTaskRegistry（register/get/list_all_progress/cleanup_finished）
 │
 └── monitoring/             # 监控模块
     └── rig_hook.rs         # rig-core 调用钩子
@@ -794,6 +798,59 @@ macro_rules! log_info {
         let _guard = span.enter();
         tracing::info!($($fields)*);
     }};
+}
+```
+
+### 8. 通用后台任务模块
+
+**设计：** 任务对象自包含进度状态（Mutex + AtomicUsize 实现内部可变性），`run(&self)` 签名保证 dyn compatible，registry 通过 `Arc<dyn BackgroundTask>` 存储分发。system domain 通过 trait 默认实现暴露 `background_task_registry()`（委托 pkg 全局单例）。现有业务进度查询接口（initialize_progress / rebuild_progress）通过装饰模式调用 registry 获取 `TaskProgressSnapshot` 再装饰为业务响应 DTO。
+
+```rust
+// src/pkg/background_task/mod.rs
+#[async_trait]
+pub trait BackgroundTask: Send + Sync + 'static {
+    fn task_id(&self) -> &str;
+    fn task_type(&self) -> TaskType;
+    fn progress(&self) -> TaskProgressSnapshot;
+    async fn run(&self) -> Result<serde_json::Value>;
+}
+
+// 全局注册中心（任意层可通过 registry() 注册）
+pub fn registry() -> &'static BackgroundTaskRegistry { ... }
+
+// src/pkg/background_task/registry.rs
+impl BackgroundTaskRegistry {
+    pub async fn register(&self, task: Arc<dyn BackgroundTask>) -> String { ... }
+    pub async fn get_progress(&self, task_id: &str) -> Option<TaskProgressSnapshot> { ... }
+    pub async fn list_all_progress(&self) -> Vec<TaskProgressSnapshot> { ... }
+    pub async fn cleanup_finished(&self, max_count: usize) { ... }
+}
+```
+
+**任务类型：** InitializeSystem / RebuildVectors / SeedSave / SeedLoad / SeedApplyDefault
+
+**统一接口：**
+- `GET /api/v1/system/tasks/{task_id}/progress` — 查询单个任务进度
+- `GET /api/v1/system/tasks` — 列出所有任务（支持 task_type/status 筛选）
+- `POST /api/v1/system/tasks/cleanup` — 清理已完成的旧任务
+
+**装饰模式示例：**
+```rust
+// src/handlers/organization/initialize_system.rs
+pub async fn get_initialize_progress(...) -> Result<InitProgressResponse> {
+    // 1. 从 system domain 获取基础任务信息
+    let snapshot = system::domain()
+        .background_task_registry()
+        .get_progress(&params.task_id).await?;
+    // 2. 装饰为业务响应 DTO（状态映射 + result 解析）
+    Ok(InitProgressResponse {
+        status: match snapshot.status {
+            TaskStatus::Pending => InitStatus::Pending,
+            // ...
+        },
+        result: snapshot.result.and_then(|v| serde_json::from_value(v).ok()),
+        ..
+    })
 }
 ```
 

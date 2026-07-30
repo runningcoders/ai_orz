@@ -86,7 +86,6 @@ pub mod a2a;
 #[cfg(test)]
 mod a2a_test;
 pub mod agent;
-pub mod background_task;
 #[cfg(test)]
 mod agent_test;
 pub mod artifact;
@@ -96,6 +95,7 @@ pub mod attachment;
 #[cfg(test)]
 mod attachment_test;
 pub mod auth;
+pub mod background_task;
 pub mod cron_trigger;
 pub mod external_agent;
 pub mod log_stats;
@@ -128,10 +128,13 @@ pub mod user;
 // Re-exports for convenient import
 pub use a2a::*;
 pub use agent::*;
-pub use background_task::*;
 pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
+pub use background_task::{
+    CleanupTasksRequest, CleanupTasksResponse, GetTaskProgressRequest, ListBackgroundTasksRequest,
+    ListBackgroundTasksResponse, TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
+};
 pub use cron_trigger::*;
 pub use external_agent::*;
 pub use log_stats::*;

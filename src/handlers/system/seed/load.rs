@@ -5,9 +5,9 @@
 //! 任务体负责读文件 → 解析快照 → 调用各 domain upsert（含 DryRun）。
 
 use crate::pkg::RequestContext;
-use crate::pkg::background_task::{registry, BackgroundTask};
-use async_trait::async_trait;
+use crate::pkg::background_task::{BackgroundTask, registry};
 use ai_orz_macros::generate_http_handler;
+use async_trait::async_trait;
 use common::api::seed::{LoadSeedRequest, LoadSeedResponse};
 use common::api::{TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType};
 use common::error::{Error, Result};
@@ -132,8 +132,8 @@ impl SeedLoadTask {
         // 读取并解析 seed 文件（不单独计数，apply 阶段从 step 1 开始）
         *self.step_message.lock().unwrap() = "正在读取文件".to_string();
         let dir = crate::service::domain::system::seed::store::seeds_dir();
-        let file_resp = crate::service::domain::system::seed::store::read_file(&dir, &params.name)
-            .await?;
+        let file_resp =
+            crate::service::domain::system::seed::store::read_file(&dir, &params.name).await?;
         let snapshot: crate::service::domain::system::seed::defs::SeedSnapshot =
             serde_json::from_str(&file_resp.content)?;
 

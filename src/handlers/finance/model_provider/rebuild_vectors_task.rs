@@ -146,8 +146,16 @@ impl BackgroundTask for RebuildVectorsTask {
                     "memory" => dal::memory::dal().rebuild_vectors(self.ctx.clone()).await?,
                     "skill" => dal::skill::dal().rebuild_vectors(self.ctx.clone()).await?,
                     "task" => dal::task::dal().rebuild_vectors(self.ctx.clone()).await?,
-                    "project" => dal::project::dal().rebuild_vectors(self.ctx.clone()).await?,
-                    "message" => dal::message::dal().rebuild_vectors(self.ctx.clone()).await?,
+                    "project" => {
+                        dal::project::dal()
+                            .rebuild_vectors(self.ctx.clone())
+                            .await?
+                    }
+                    "message" => {
+                        dal::message::dal()
+                            .rebuild_vectors(self.ctx.clone())
+                            .await?
+                    }
                     "tool" => dal::tool::dal().rebuild_vectors(self.ctx.clone()).await?,
                     _ => {}
                 }

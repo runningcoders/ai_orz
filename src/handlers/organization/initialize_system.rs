@@ -7,11 +7,11 @@
 //! 任务对象自包含进度状态，通过通用后台任务模块（pkg::background_task）注册运行。
 
 use crate::pkg::RequestContext;
-use crate::pkg::background_task::{registry, BackgroundTask};
+use crate::pkg::background_task::{BackgroundTask, registry};
 use crate::service::domain::system;
 use crate::service::domain::{finance, organization};
-use async_trait::async_trait;
 use ai_orz_macros::generate_http_handler;
+use async_trait::async_trait;
 use common::api::{
     CheckInitializedRequest, GetInitProgressRequest, InitProgressResponse, InitStatus,
     InitializeSystemRequest, InitializeSystemResponse, TaskIdResponse, TaskProgressSnapshot,
@@ -278,8 +278,6 @@ pub async fn get_initialize_progress(
         started_at: snapshot.started_at,
         finished_at: snapshot.finished_at,
         error: snapshot.error,
-        result: snapshot
-            .result
-            .and_then(|v| serde_json::from_value(v).ok()),
+        result: snapshot.result.and_then(|v| serde_json::from_value(v).ok()),
     })
 }

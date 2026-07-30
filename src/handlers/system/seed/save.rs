@@ -5,9 +5,9 @@
 //! 任务体负责编排各 domain 拉取实体组装 SeedSnapshot 并写入文件。
 
 use crate::pkg::RequestContext;
-use crate::pkg::background_task::{registry, BackgroundTask};
-use async_trait::async_trait;
+use crate::pkg::background_task::{BackgroundTask, registry};
 use ai_orz_macros::generate_http_handler;
+use async_trait::async_trait;
 use common::api::seed::{SaveSeedRequest, SaveSeedResponse};
 use common::api::{TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType};
 use common::error::{Error, Result};
@@ -147,8 +147,9 @@ impl SeedSaveTask {
         self.set_step(Self::TOTAL_STEPS, "正在写入文件");
         let content = serde_json::to_string_pretty(&snapshot)?;
         let dir = crate::service::domain::system::seed::store::seeds_dir();
-        let size = crate::service::domain::system::seed::store::write_file(&dir, &params.name, &content)
-            .await?;
+        let size =
+            crate::service::domain::system::seed::store::write_file(&dir, &params.name, &content)
+                .await?;
 
         Ok(SaveSeedResponse {
             name: params.name,

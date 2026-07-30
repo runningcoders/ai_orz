@@ -5,9 +5,9 @@
 //! 任务体负责加载内置默认模板 → 调用各 domain upsert。
 
 use crate::pkg::RequestContext;
-use crate::pkg::background_task::{registry, BackgroundTask};
-use async_trait::async_trait;
+use crate::pkg::background_task::{BackgroundTask, registry};
 use ai_orz_macros::generate_http_handler;
+use async_trait::async_trait;
 use common::api::seed::{ApplyDefaultSeedRequest, LoadSeedResponse};
 use common::api::{TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType};
 use common::error::{Error, Result};
