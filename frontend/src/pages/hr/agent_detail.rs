@@ -17,11 +17,12 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, BindToolToAgentRequest, GetAgentRequest, GetAgentResponse,
-    InstallSkillPackRequest, InstallToolPackRequest, ListModelProvidersResponseItem,
-    ListToolsRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest,
-    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
-    UpdateAgentRequest, UpdateAgentStatusRequest,
+    InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
+    ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
+    ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, SkillListItem,
+    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
+    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
@@ -97,6 +98,10 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 工具搜索动态结果与加载状态（SearchableSelect 动态搜索模式）
     let mut tool_search_results = use_signal(Vec::<ToolListItem>::new);
     let mut tool_search_loading = use_signal(|| false);
+    // 单个技能安装：搜索结果、加载状态、已安装技能列表
+    let mut skill_search_results = use_signal(Vec::<SkillListItem>::new);
+    let mut skill_search_loading = use_signal(|| false);
+    let mut installed_skills = use_signal(Vec::<SkillListItem>::new);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(String::new);
@@ -122,6 +127,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let skill_packs_list = skill_packs.read().clone();
     let tool_packs_list = tool_packs.read().clone();
     let all_tools_list = all_tools.read().clone();
+    let installed_skills_list = installed_skills.read().clone();
 
     let id_for_load = id.clone();
     let load_data = move || {
@@ -146,6 +152,10 @@ pub fn HrAgentDetail(id: String) -> Element {
             match list_skill_tags().await {
                 Ok(resp) => skill_tags.set(resp.tags),
                 Err(e) => toast.error(&format!("获取技能包标签失败: {}", e)),
+            }
+            match list_agent_skills(&aid).await {
+                Ok(resp) => installed_skills.set(resp.skills),
+                Err(e) => toast.error(&format!("获取已安装技能失败: {}", e)),
             }
             match list_tools(ListToolsRequest::default()).await {
                 Ok(resp) => all_tools.set(resp.items),
@@ -658,6 +668,124 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+
+                                // === 单个技能安装 ===
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "单个技能安装" }
+
+                                    // 搜索框（动态搜索模式：on_search 回调调用 query_skills）
+                                    div { class: "mb-4",
+                                        SearchableSelect {
+                                            placeholder: "搜索技能名称...".to_string(),
+                                            selected: None,
+                                            options: skill_search_results.read().iter().map(|s| {
+                                                format!("{} ({})", s.name, s.id)
+                                            }).collect(),
+                                            on_select: move |selection: String| {
+                                                // 从 "name (id)" 格式中提取 id
+                                                if let Some(id_start) = selection.rfind('(') {
+                                                    let skill_id = selection[id_start+1..selection.len()-1].to_string();
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        match install_skill_to_agent(InstallSkillToAgentRequest {
+                                                            agent_id: aid.clone(),
+                                                            skill_id: skill_id.clone(),
+                                                        }).await {
+                                                            Ok(_) => {
+                                                                toast.success("技能已安装");
+                                                                match list_agent_skills(&aid).await {
+                                                                    Ok(resp) => installed_skills.set(resp.skills),
+                                                                    Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                }
+                                                            }
+                                                            Err(e) => toast.error(&format!("安装失败: {}", e)),
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                            on_search: Some(EventHandler::new(move |keyword: String| {
+                                                spawn(async move {
+                                                    if keyword.trim().is_empty() {
+                                                        skill_search_results.set(Vec::new());
+                                                        return;
+                                                    }
+                                                    skill_search_loading.set(true);
+                                                    let req = SkillQueryRequest {
+                                                        keyword: Some(keyword),
+                                                        ..Default::default()
+                                                    };
+                                                    match query_skills(&req).await {
+                                                        Ok(resp) => skill_search_results.set(resp.items),
+                                                        Err(_) => skill_search_results.set(Vec::new()),
+                                                    }
+                                                    skill_search_loading.set(false);
+                                                });
+                                            })),
+                                            loading: *skill_search_loading.read(),
+                                        }
+                                    }
+
+                                    // 已安装技能卡片网格（仅展示已安装技能，带「卸载」按钮）
+                                    if !installed_skills_list.is_empty() {
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                            for skill in installed_skills_list.iter() {
+                                                {
+                                                    let skill_clone = skill.clone();
+                                                    let aid = agent_id_signal();
+                                                    let skill_id = skill.id.clone();
+                                                    let skill_name = skill.name.clone();
+                                                    let skill_desc = skill.description.clone();
+                                                    rsx! {
+                                                        div {
+                                                            class: "card bg-base-200",
+                                                            key: "{skill_id}",
+                                                            div { class: "card-body p-4",
+                                                                div { class: "flex justify-between items-start",
+                                                                    span { class: "font-medium", "{skill_name}" }
+                                                                    span { class: "badge badge-success", "已安装" }
+                                                                }
+                                                                if !skill_desc.is_empty() {
+                                                                    p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                                                                }
+                                                                div { class: "card-actions justify-end mt-3",
+                                                                    button {
+                                                                        class: "btn btn-error btn-sm",
+                                                                        onclick: move |_| {
+                                                                            let agent_id = aid.clone();
+                                                                            let sid = skill_clone.id.clone();
+                                                                            let sname = skill_clone.name.clone();
+                                                                            spawn(async move {
+                                                                                match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
+                                                                                    agent_id: agent_id.clone(),
+                                                                                    skill_id: sid.clone(),
+                                                                                }).await {
+                                                                                    Ok(_) => {
+                                                                                        toast.success(&format!("技能 {} 已卸载", sname));
+                                                                                        match list_agent_skills(&agent_id).await {
+                                                                                            Ok(resp) => installed_skills.set(resp.skills),
+                                                                                            Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                                        }
+                                                                                    }
+                                                                                    Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                                                }
+                                                                            });
+                                                                        },
+                                                                        "卸载"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        div { class: "text-center py-12",
+                                            div { class: "text-5xl mb-4 opacity-30", "🧩" }
+                                            div { class: "text-base-content/70", "暂无已安装技能" }
                                         }
                                     }
                                 }
