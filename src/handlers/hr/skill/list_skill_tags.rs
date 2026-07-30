@@ -4,11 +4,19 @@
 
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListSkillTagsRequest, ListSkillTagsResponse};
 use common::error::Result;
 
 /// 列出所有已发布技能（status=Published）的不重复 tag 列表（按字母升序）
+#[register_handler_tool(
+    id = "list_skill_tags",
+    name = "list_skill_tags",
+    description = "List all distinct tags from published skills. Useful for discovering available skill categories/packs.",
+    params = "common::api::ListSkillTagsRequest",
+    tags = "skill_management",
+    neural
+)]
 #[generate_http_handler]
 pub async fn list_skill_tags(
     ctx: RequestContext,

@@ -1036,13 +1036,14 @@ Agent
 
 ### 2026-07-30 里程碑（精简）
 **✅ Agent 工具/技能搜索式安装**
-- **后端 tags 聚合接口（07-30）**：新增 `GET /finance/tools/tags`（distinct tags from enabled tools）和 `GET /hr/skills/tags`（distinct tags from published skills），DAO 层用 `SELECT DISTINCT json_each.value` 实现
-- **单技能卸载接口（07-30）**：新增 `DELETE /agents/{id}/skills/{skill_id}`，删除 Agent 私有副本（DB + 文件），仅限 parent_skill_id 不为空的副本
+- **后端 tags 聚合接口（07-30）**：新增 `GET /finance/tools/tags`（distinct tags from enabled tools）和 `GET /hr/skills/tags`（distinct tags from published skills），DAO 层用 `SELECT DISTINCT json_each.value` 实现；均注册为神经工具（`neural` flag），Agent 可自主查询可用工具/技能分类
+- **单技能卸载接口（07-30）**：新增 `DELETE /agents/{id}/skills/{skill_id}`，删除 Agent 私有副本（DB + 文件），仅限 parent_skill_id 不为空的副本；注册为神经工具，Agent 可自主卸载已安装的技能副本
 - **技能包卸载扩展（07-30）**：`UninstallSkillPackRequest` 新增 `delete_copies: Option<bool>` 参数，`true` 时同时删除该 tag 下 Agent 的技能副本；SkillQuery 新增 `has_parent: Option<bool>` 字段支持过滤副本（DAO 层转译为 `parent_skill_id IS NOT NULL/IS NULL`）
 - **前端 SearchableSelect 组件（07-30）**：新增 `frontend/src/components/searchable_select.rs`，支持静态候选列表（前端 filter）和动态搜索（on_search 回调 + loading 指示器）两种模式；用 `use_memo` + clone 模式解决 `'static` 闭包生命周期问题
 - **4 处安装区改造（07-30）**：工具包/技能包安装改为 SearchableSelect（静态 tags 数据源）+ badge 已装列表；单个工具绑定/技能安装改为 SearchableSelect（动态 query 搜索）+ 卡片网格已装列表
 - **技能包卸载确认对话框（07-30）**：新增两选项确认对话框（仅移除关联 / 移除关联+删除副本），删除副本选项带风险警告
 - **编译修复（07-30）**：`ListAgentSkillsResponse` 加 `Default` derive（支持 `api_get_or_default`）；`RecordingToolDal` 测试 mock 补 `list_tags` 实现；`SkillQuery` 测试初始化补 `has_parent` 字段
+- **神经标签补充（07-30）**：本次新增的 3 个 handler 工具（`list_tool_tags`、`list_skill_tags`、`uninstall_skill_from_agent`）均添加 `neural` flag，使 Agent 在运行时可自主查询工具/技能分类并卸载技能副本
 
 ### 2026-07-29 里程碑（精简）
 **✅ Artifact 编辑能力（统一更新接口）**

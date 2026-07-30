@@ -13,7 +13,8 @@ use common::error::Result;
     name = "uninstall_skill_from_agent",
     description = "Uninstall a skill copy from an agent. Deletes the agent's private copy.",
     params = "common::api::UninstallSkillFromAgentRequest",
-    tags = "skill_management"
+    tags = "skill_management",
+    neural
 )]
 #[generate_http_handler]
 pub async fn uninstall_skill_from_agent(
