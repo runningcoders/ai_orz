@@ -357,6 +357,17 @@ pub struct GetToolCallEntryRequest {
 /// Get one tool call trace entry response.
 pub type GetToolCallEntryResponse = ToolCallEntryDetail;
 
+/// List tool tags 请求（无参数，仅用于满足 handler 宏签名）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListToolTagsRequest {}
+
+/// Tool tags 聚合响应（distinct tags from enabled tools）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListToolTagsResponse {
+    /// 所有启用工具的不重复 tag 列表
+    pub tags: Vec<String>,
+}
+
 /// Tool call trace entry detail.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ToolCallEntryDetail {

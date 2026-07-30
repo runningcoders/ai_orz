@@ -432,6 +432,9 @@ pub trait ToolProviderManage: Send + Sync {
     /// 列出所有 Tool
     async fn list_tools(&self, ctx: RequestContext) -> Result<Vec<crate::models::tool::Tool>>;
 
+    /// 列出所有启用工具的 distinct tags
+    async fn list_tool_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     /// 更新 Tool
     async fn update_tool(
         &self,

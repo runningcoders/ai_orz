@@ -111,6 +111,9 @@ pub trait ToolDal: Send + Sync {
     /// 获取所有启用的工具
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<Tool>>;
 
+    /// 列出所有启用工具的 distinct tags
+    async fn list_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     /// 获取 Agent 的所有完整工具（每个都是 PO + CoreTool）
     async fn list_tools_for_agent_full(
         &self,
@@ -434,6 +437,10 @@ impl ToolDal for ToolDalImpl {
             )
             .await?;
         Ok(page.items)
+    }
+
+    async fn list_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        self.tool_dao.list_distinct_tags(ctx).await
     }
 
     async fn list_tools_for_agent_full(

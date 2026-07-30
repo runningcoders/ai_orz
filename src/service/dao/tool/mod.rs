@@ -260,6 +260,9 @@ pub trait ToolDao: Send + Sync {
     /// List all enabled tools
     async fn list_enabled(&self, ctx: RequestContext) -> Result<Vec<ToolPo>>;
 
+    /// 列出所有启用工具的 distinct tags
+    async fn list_distinct_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     /// Add tool to agent
     async fn add_tool_to_agent(
         &self,

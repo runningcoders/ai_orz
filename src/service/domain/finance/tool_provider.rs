@@ -49,6 +49,11 @@ impl ToolProviderManage for FinanceDomainImpl {
         self.tool_dal.list_enabled(ctx.clone()).await
     }
 
+    /// 列出所有启用工具的 distinct tags
+    async fn list_tool_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        self.tool_dal.list_tags(ctx.clone()).await
+    }
+
     /// 更新 Tool
     async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<()> {
         validate_tool_management_policy(tool)?;

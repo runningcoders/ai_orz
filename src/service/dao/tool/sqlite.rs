@@ -262,6 +262,19 @@ impl ToolDao for ToolDaoSqliteImpl {
         Ok(page.items)
     }
 
+    async fn list_distinct_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        let pool = ctx.db_pool();
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT DISTINCT json_each.value \
+             FROM tools, json_each(tools.tags) \
+             WHERE tools.status = 1 AND json_each.value != '' \
+             ORDER BY json_each.value ASC",
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.into_iter().map(|(v,)| v).collect())
+    }
+
     async fn add_tool_to_agent(
         &self,
         ctx: RequestContext,
