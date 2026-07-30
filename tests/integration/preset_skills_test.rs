@@ -36,11 +36,11 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     let skill_ids: Vec<&str> = skills.iter().map(|s| s.po.id.as_str()).collect();
     assert!(
         skill_ids.contains(&"TEMPLATE_TOOL_BASICS"),
-        "缺少预置技能：工具基础"
+        "缺少预置技能：工具管理"
     );
     assert!(
         skill_ids.contains(&"TEMPLATE_SKILL_BASICS"),
-        "缺少预置技能：技能基础"
+        "缺少预置技能：技能管理"
     );
     assert!(
         skill_ids.contains(&"TEMPLATE_MEMORY_COGNITION"),
@@ -59,7 +59,7 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     let tool_skill = skills
         .iter()
         .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
-        .expect("工具基础技能不存在");
+        .expect("工具管理技能不存在");
     assert_eq!(
         tool_skill.po.author_id, bs.user_id,
         "预置技能 author_id 应替换为实际 owner id"
@@ -134,7 +134,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .expect("查询技能文件失败")
         .unwrap_or_default();
 
-    assert!(!files.is_empty(), "工具基础应有 skill.md 文件");
+    assert!(!files.is_empty(), "工具管理应有 skill.md 文件");
 
     let skill_md = files
         .iter()
@@ -148,7 +148,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .clone();
 
     assert!(
-        content.contains("# 工具基础"),
+        content.contains("# 工具管理"),
         "skill.md 内容应包含标题"
     );
     assert!(
@@ -234,7 +234,7 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
     let tool_skill = skills_after_second
         .iter()
         .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
-        .expect("工具基础技能不存在");
+        .expect("工具管理技能不存在");
     assert_eq!(
         tool_skill.po.author_id, bs2.user_id,
         "第二次初始化后 author_id 应更新为新的 owner id"

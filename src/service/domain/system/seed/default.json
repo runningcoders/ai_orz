@@ -66,7 +66,7 @@
   "skills": [
     {
       "id": "TEMPLATE_TOOL_BASICS",
-      "name": "工具基础",
+      "name": "工具管理",
       "description": "工具体系、查询发现、调用模式（同步/异步）、结果处理与追踪的完整使用指南",
       "tags": ["neural", "tool_management"],
       "category": "system",
@@ -84,7 +84,7 @@
     },
     {
       "id": "TEMPLATE_SKILL_BASICS",
-      "name": "技能基础",
+      "name": "技能管理",
       "description": "技能查询、搜索、安装、卸载的成长性能力管理指南",
       "tags": ["neural", "skill_management"],
       "category": "system",
