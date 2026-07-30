@@ -8,6 +8,7 @@ pub mod get_model_provider;
 pub mod list_model_providers;
 pub mod query_model_providers;
 pub mod rebuild_progress;
+pub mod rebuild_vectors_task;
 pub mod switch_embedding;
 pub mod test_connection;
 pub mod update_model_provider;
