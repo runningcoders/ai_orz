@@ -67,10 +67,7 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
 
     // 验证神经技能 tags 包含 neural
     assert!(
-        tool_skill
-            .po
-            .parse_tags()
-            .contains(&"neural".to_string()),
+        tool_skill.po.parse_tags().contains(&"neural".to_string()),
         "神经技能必须包含 neural tag"
     );
 
@@ -80,10 +77,7 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
         .find(|s| s.po.id == "TEMPLATE_PROJECT_MANAGEMENT")
         .expect("项目管理技能不存在");
     assert!(
-        !pm_skill
-            .po
-            .parse_tags()
-            .contains(&"neural".to_string()),
+        !pm_skill.po.parse_tags().contains(&"neural".to_string()),
         "项目管理技能不应包含 neural tag"
     );
     assert!(
@@ -147,10 +141,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .expect("skill.md 内容为空")
         .clone();
 
-    assert!(
-        content.contains("# 工具管理"),
-        "skill.md 内容应包含标题"
-    );
+    assert!(content.contains("# 工具管理"), "skill.md 内容应包含标题");
     assert!(
         content.contains("request_tool_call"),
         "skill.md 应提及 request_tool_call 工具"
@@ -172,11 +163,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .find(|f| f.filename == "skill.md")
         .expect("记忆认知缺少 skill.md");
     assert!(
-        memory_md
-            .content
-            .as_ref()
-            .unwrap()
-            .contains("# 记忆认知"),
+        memory_md.content.as_ref().unwrap().contains("# 记忆认知"),
         "记忆认知内容不正确"
     );
 
@@ -192,11 +179,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .find(|f| f.filename == "skill.md")
         .expect("协作沟通缺少 skill.md");
     assert!(
-        comm_md
-            .content
-            .as_ref()
-            .unwrap()
-            .contains("# 协作沟通"),
+        comm_md.content.as_ref().unwrap().contains("# 协作沟通"),
         "协作沟通内容不正确"
     );
 }
