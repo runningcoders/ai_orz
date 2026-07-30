@@ -498,13 +498,14 @@ impl AgentManage for HrDomainImpl {
     /// 卸载技能包（按 tag）
     ///
     /// 从 Agent 的 runtime_config.installed_skill_packs 中移除指定 tag。
-    /// 不删除已安装的技能副本。
+    /// 当 delete_copies=true 时，同时删除该 tag 下 Agent 的技能副本。
     /// 幂等：未安装则跳过。
     async fn uninstall_skill_pack(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         tag: &str,
+        delete_copies: bool,
     ) -> Result<()> {
         let mut agent = self
             .agent_dal
@@ -529,12 +530,32 @@ impl AgentManage for HrDomainImpl {
         agent.po.uninstall_skill_pack_tag(tag);
         self.agent_dal.update(ctx.clone(), &agent).await?;
 
+        // 可选：删除该 tag 下 Agent 的技能副本
+        if delete_copies {
+            let copies = self
+                .skill_dal
+                .query(
+                    ctx.clone(),
+                    crate::service::dao::skill::SkillQuery {
+                        author_id: Some(agent_id.to_string()),
+                        has_parent: Some(true), // 只查副本
+                        tags: Some(vec![tag.to_string()]),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            for skill in copies.items {
+                let _ = self.skill_dal.delete(ctx.clone(), &skill.po.id).await;
+            }
+        }
+
         log_info!(
             ctx,
             "uninstall_skill_pack",
-            "agent_id={}, tag={} 卸载成功（技能副本保留）",
+            "agent_id={}, tag={} 卸载成功（delete_copies={}）",
             agent_id,
-            tag
+            tag,
+            delete_copies
         );
         Ok(())
     }

@@ -38,6 +38,7 @@ pub async fn query_skills(
                 category: params.category,
                 author_id: params.author_id,
                 parent_skill_id: params.parent_skill_id,
+                has_parent: None,
                 tags: params.tags,
                 pagination: params.pagination,
             },

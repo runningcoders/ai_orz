@@ -645,7 +645,7 @@ async fn test_uninstall_skill_pack(pool: SqlitePool) {
     // 卸载技能包
     domain
         .agent_manage()
-        .uninstall_skill_pack(ctx.clone(), agent.id(), "analysis")
+        .uninstall_skill_pack(ctx.clone(), agent.id(), "analysis", false)
         .await
         .unwrap();
 

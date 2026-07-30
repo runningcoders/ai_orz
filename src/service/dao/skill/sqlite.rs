@@ -624,6 +624,13 @@ fn push_query_filters<'args>(
             .push(" AND parent_skill_id = ")
             .push_bind(parent_skill_id.clone());
     }
+    if let Some(has_parent) = query.has_parent {
+        if has_parent {
+            builder.push(" AND parent_skill_id IS NOT NULL");
+        } else {
+            builder.push(" AND parent_skill_id IS NULL");
+        }
+    }
     if let Some(tags) = &query.tags
         && !tags.is_empty()
     {

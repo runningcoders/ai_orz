@@ -9,12 +9,13 @@ use common::error::Result;
 /// Uninstall a skill pack (by tag) from an agent.
 ///
 /// Removes the tag from the Agent's runtime_config.installed_skill_packs.
-/// Already-installed skill copies are preserved (not deleted).
+/// When query param `delete_copies=true`, also deletes the Agent's skill copies under that tag.
+/// Otherwise already-installed skill copies are preserved (not deleted).
 /// Idempotent: if the tag is not installed, no change is made.
 #[register_handler_tool(
     id = "uninstall_skill_pack",
     name = "uninstall_skill_pack",
-    description = "Uninstall a skill pack (by tag) from an agent. Removes the tag from runtime_config.installed_skill_packs. Already-installed skill copies are preserved. Idempotent.",
+    description = "Uninstall a skill pack (by tag) from an agent. Removes the tag from runtime_config.installed_skill_packs. Pass delete_copies=true to also delete the Agent's skill copies under that tag. Idempotent.",
     params = "common::api::UninstallSkillPackRequest",
     tags = "skill_management"
 )]
@@ -23,9 +24,10 @@ pub async fn uninstall_skill_pack(
     ctx: RequestContext,
     params: UninstallSkillPackRequest,
 ) -> Result<UninstallSkillPackResponse> {
+    let delete_copies = params.delete_copies.unwrap_or(false);
     domain()
         .agent_manage()
-        .uninstall_skill_pack(ctx, &params.agent_id, &params.tag)
+        .uninstall_skill_pack(ctx, &params.agent_id, &params.tag, delete_copies)
         .await?;
 
     Ok(UninstallSkillPackResponse {})

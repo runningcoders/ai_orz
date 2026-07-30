@@ -259,13 +259,14 @@ pub trait AgentManage: Send + Sync {
     /// 卸载技能包（按 tag）
     ///
     /// 从 Agent 的 runtime_config.installed_skill_packs 中移除指定 tag。
-    /// 不删除已安装的技能副本。
+    /// 当 delete_copies=true 时，同时删除该 tag 下 Agent 的技能副本。
     /// 幂等：未安装则跳过。
     async fn uninstall_skill_pack(
         &self,
         ctx: RequestContext,
         agent_id: &str,
         tag: &str,
+        delete_copies: bool,
     ) -> Result<()>;
 
     /// 重新安装技能包（按 tag）

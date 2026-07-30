@@ -402,6 +402,10 @@ pub struct UninstallSkillPackRequest {
     /// 技能包 tag。
     #[param(source = "path")]
     pub tag: String,
+
+    /// 是否同时删除 Agent 侧的技能副本（默认 false，仅移除 tag 关联）
+    #[param(source = "query")]
+    pub delete_copies: Option<bool>,
 }
 
 /// 卸载技能包响应。

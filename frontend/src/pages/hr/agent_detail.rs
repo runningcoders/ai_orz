@@ -645,7 +645,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     let agent_id = aid.clone();
                                                                     let t = tag_clone.clone();
                                                                     spawn(async move {
-                                                                        match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: agent_id.clone(), tag: t.clone() }).await {
+                                                                        match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: agent_id.clone(), tag: t.clone(), delete_copies: None }).await {
                                                                             Ok(_) => {
                                                                                 toast.success(&format!("技能包 [{}] 已卸载", t));
                                                                                 match list_installed_skill_packs(&agent_id).await {
