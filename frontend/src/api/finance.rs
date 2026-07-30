@@ -317,3 +317,10 @@ pub async fn get_tool_call_entry(
 ) -> Result<common::api::GetToolCallEntryResponse, ApiError> {
     api_get(&format!("/api/v1/finance/tool-call-entries/{}", call_id)).await
 }
+
+// ===== 工具 Tags 聚合 =====
+
+/// 列出所有启用工具的不重复 tag 列表
+pub async fn list_tool_tags() -> Result<common::api::ListToolTagsResponse, ApiError> {
+    api_get("/api/v1/finance/tools/tags").await
+}

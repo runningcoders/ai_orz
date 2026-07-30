@@ -122,9 +122,45 @@ pub async fn install_skill_pack(req: InstallSkillPackRequest) -> Result<(), ApiE
 }
 
 pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), ApiError> {
+    // 支持 delete_copies query 参数：true 表示同时删除 Agent 侧的技能副本
+    let qs = super::build_query_string(&[(
+        "delete_copies",
+        req.delete_copies.map(|v| v.to_string()),
+    )]);
     api_delete(&format!(
-        "/api/v1/hr/agents/{}/skill-packs/{}",
-        req.agent_id, req.tag
+        "/api/v1/hr/agents/{}/skill-packs/{}{}",
+        req.agent_id, req.tag, qs
+    ))
+    .await
+}
+
+// ===== Agent 单技能管理 =====
+
+/// 列出 Agent 已安装的技能列表
+pub async fn list_agent_skills(
+    agent_id: &str,
+) -> Result<common::api::ListAgentSkillsResponse, ApiError> {
+    api_get_or_default(&format!("/api/v1/hr/agents/{}/skills", agent_id)).await
+}
+
+/// 将源技能安装到指定 Agent（创建 Agent 私有副本）
+pub async fn install_skill_to_agent(
+    req: common::api::InstallSkillToAgentRequest,
+) -> Result<common::api::InstallSkillToAgentResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/agents/{}/skills/{}", req.agent_id, req.skill_id),
+        &serde_json::json!({}),
+    )
+    .await
+}
+
+/// 从 Agent 目录卸载单个技能副本
+pub async fn uninstall_skill_from_agent(
+    req: common::api::UninstallSkillFromAgentRequest,
+) -> Result<(), ApiError> {
+    api_delete(&format!(
+        "/api/v1/hr/agents/{}/skills/{}",
+        req.agent_id, req.skill_id
     ))
     .await
 }
@@ -185,6 +221,11 @@ pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, ApiError> {
         error_code: None,
         message: "响应数据为空".to_string(),
     })
+}
+
+/// 列出所有已发布技能的不重复 tag 列表
+pub async fn list_skill_tags() -> Result<common::api::ListSkillTagsResponse, ApiError> {
+    api_get("/api/v1/hr/skills/tags").await
 }
 
 // ===== Skill 文件管理 =====
