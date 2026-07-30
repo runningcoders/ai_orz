@@ -19,7 +19,10 @@ pub mod layered_layout;
 pub mod modal;
 pub mod particles;
 pub mod relation_graph;
+pub mod searchable_select;
 pub mod state;
 pub mod stats;
 pub mod toast;
 pub mod workspace_graph;
+
+pub use searchable_select::SearchableSelect;
