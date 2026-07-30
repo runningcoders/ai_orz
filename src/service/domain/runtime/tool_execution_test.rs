@@ -432,6 +432,10 @@ mod tests {
         async fn rebuild_vectors(&self, _ctx: RequestContext) -> Result<()> {
             unimplemented!("not needed by tool execution routing tests")
         }
+
+        async fn list_tags(&self, _ctx: RequestContext) -> Result<Vec<String>> {
+            unimplemented!("not needed by tool execution routing tests")
+        }
     }
 
     struct RecordingMcpToolDal {

@@ -268,6 +268,7 @@ async fn test_query_skills(pool: SqlitePool) {
         tags: None,
         ids: None,
         exclude_status: None,
+        has_parent: None,
         pagination: Default::default(),
     };
 
