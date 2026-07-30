@@ -1,4 +1,4 @@
-use crate::api::finance::{list_model_providers, list_tool_tags};
+use crate::api::finance::{list_model_providers, list_tool_tags, query_tools};
 use crate::api::hr::*;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
@@ -19,7 +19,7 @@ use common::api::{
     AgentListItem, BindToolToAgentRequest, GetAgentRequest, GetAgentResponse,
     InstallSkillPackRequest, InstallToolPackRequest, ListModelProvidersResponseItem,
     ListToolsRequest, MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest,
-    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem,
+    SendMessageToAgentParams, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
     UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
     UpdateAgentRequest, UpdateAgentStatusRequest,
 };
@@ -94,6 +94,9 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 技能包卸载确认对话框：存当前待卸载的 tag
     let mut show_skill_pack_uninstall_dialog = use_signal(|| None::<String>);
     let mut all_tools = use_signal(Vec::<ToolListItem>::new);
+    // 工具搜索动态结果与加载状态（SearchableSelect 动态搜索模式）
+    let mut tool_search_results = use_signal(Vec::<ToolListItem>::new);
+    let mut tool_search_loading = use_signal(|| false);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(String::new);
@@ -316,6 +319,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Some(a) => {
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
+            // 已绑定工具（用于卡片网格展示）：从全量工具列表中筛出 agent 已绑定的工具
+            let bound_tools: Vec<ToolListItem> = all_tools_list
+                .iter()
+                .filter(|t| agent_tool_ids.contains(&t.id))
+                .cloned()
+                .collect();
             let agent_id_signal = use_signal(|| id.clone());
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
             let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
@@ -655,16 +664,70 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
-                                    if !all_tools_list.is_empty() {
+
+                                    // 搜索框（动态搜索模式：on_search 回调调用 query_tools）
+                                    div { class: "mb-4",
+                                        SearchableSelect {
+                                            placeholder: "搜索工具名称...".to_string(),
+                                            selected: None,
+                                            options: tool_search_results.read().iter().map(|t| {
+                                                format!("{} ({})", t.name, t.id)
+                                            }).collect(),
+                                            on_select: move |selection: String| {
+                                                // 从 "name (id)" 格式中提取 id
+                                                if let Some(id_start) = selection.rfind('(') {
+                                                    let tool_id = selection[id_start+1..selection.len()-1].to_string();
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        match bind_tool_to_agent(BindToolToAgentRequest {
+                                                            agent_id: aid.clone(),
+                                                            tool_id: tool_id.clone(),
+                                                        }).await {
+                                                            Ok(_) => {
+                                                                toast.success("工具已绑定");
+                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                }
+                                                            }
+                                                            Err(e) => toast.error(&format!("绑定失败: {}", e)),
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                            on_search: Some(EventHandler::new(move |keyword: String| {
+                                                spawn(async move {
+                                                    if keyword.trim().is_empty() {
+                                                        tool_search_results.set(Vec::new());
+                                                        return;
+                                                    }
+                                                    tool_search_loading.set(true);
+                                                    let req = ToolQueryRequest {
+                                                        keyword: Some(keyword),
+                                                        enabled_only: Some(true),
+                                                        ..Default::default()
+                                                    };
+                                                    match query_tools(&req).await {
+                                                        Ok(resp) => tool_search_results.set(resp.items),
+                                                        Err(_) => tool_search_results.set(Vec::new()),
+                                                    }
+                                                    tool_search_loading.set(false);
+                                                });
+                                            })),
+                                            loading: *tool_search_loading.read(),
+                                        }
+                                    }
+
+                                    // 已绑定工具卡片网格（仅展示已绑定工具，带「解绑」按钮）
+                                    if !bound_tools.is_empty() {
                                         div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                            for tool in all_tools_list.iter() {
+                                            for tool in bound_tools.iter() {
                                                 {
                                                     let tool_clone = tool.clone();
-                                                    let is_bound = agent_tool_ids.contains(&tool.id);
                                                     let aid = agent_id_signal();
                                                     let tool_id = tool.id.clone();
                                                     let tool_name = tool.name.clone();
-                                                    let desc = tool.description.as_deref().unwrap_or("");
+                                                    let tool_desc = tool.description.as_deref().unwrap_or("");
                                                     let tags = tool.tags.clone();
                                                     rsx! {
                                                         div {
@@ -673,11 +736,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             div { class: "card-body p-4",
                                                                 div { class: "flex justify-between items-start",
                                                                     span { class: "font-medium", "{tool_name}" }
-                                                                    span { class: "{binding_status_badge_class(is_bound)}",
-                                                                        if is_bound { "已绑定" } else { "未绑定" }
-                                                                    }
+                                                                    span { class: "badge badge-success", "已绑定" }
                                                                 }
-                                                                p { class: "text-sm text-base-content/70 mt-2", "{desc}" }
+                                                                p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
                                                                 if !tags.is_empty() {
                                                                     div { class: "flex flex-wrap gap-1 mt-2",
                                                                         for tag in tags.iter() {
@@ -687,31 +748,25 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 }
                                                                 div { class: "card-actions justify-end mt-3",
                                                                     button {
-                                                                        class: if is_bound { "btn btn-error btn-sm" } else { "btn btn-primary btn-sm" },
+                                                                        class: "btn btn-error btn-sm",
                                                                         onclick: move |_| {
                                                                             let agent_id = aid.clone();
                                                                             let tid = tool_clone.id.clone();
                                                                             let tname = tool_clone.name.clone();
-                                                                            let ib = is_bound;
                                                                             spawn(async move {
-                                                                                let result = if ib {
-                                                                                    unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await
-                                                                                } else {
-                                                                                    bind_tool_to_agent(BindToolToAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await
-                                                                                };
-                                                                                match result {
+                                                                                match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await {
                                                                                     Ok(_) => {
-                                                                                        toast.success(&format!("工具 {} {}", tname, if ib { "已解绑" } else { "已绑定" }));
+                                                                                        toast.success(&format!("工具 {} 已解绑", tname));
                                                                                         match get_agent(build_agent_stats_request(agent_id.clone())).await {
                                                                                             Ok(a) => agent_data.set(Some(a)),
                                                                                             Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
                                                                                         }
                                                                                     }
-                                                                                    Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                                    Err(e) => toast.error(&format!("解绑失败: {}", e)),
                                                                                 }
                                                                             });
                                                                         },
-                                                                        if is_bound { "解绑" } else { "绑定" }
+                                                                        "解绑"
                                                                     }
                                                                 }
                                                             }
@@ -723,7 +778,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     } else {
                                         div { class: "text-center py-12",
                                             div { class: "text-5xl mb-4 opacity-30", "🔧" }
-                                            div { class: "text-base-content/70", "暂无工具可用" }
+                                            div { class: "text-base-content/70", "暂无已绑定工具" }
                                         }
                                     }
                                 }
