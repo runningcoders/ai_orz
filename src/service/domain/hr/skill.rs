@@ -127,6 +127,11 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.search(ctx, search).await
     }
 
+    /// 列出所有已发布技能的 distinct tags
+    async fn list_skill_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        self.skill_dal.list_tags(ctx).await
+    }
+
     // C. Agent 技能安装
 
     async fn install_to_agent(

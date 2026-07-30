@@ -334,6 +334,9 @@ pub trait SkillManage: Send + Sync {
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
     async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>>;
 
+    /// 列出所有已发布技能的 distinct tags（用于前端技能包安装下拉框数据源）
+    async fn list_skill_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     // C. Agent 技能安装
     async fn install_to_agent(
         &self,

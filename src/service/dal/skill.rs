@@ -131,6 +131,9 @@ pub trait SkillDal: Send + Sync {
     /// 按 tag 查询已发布技能（用于技能包安装）
     async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>>;
 
+    /// 列出所有已发布技能的 distinct tags
+    async fn list_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     /// 查询指定 Agent 已有的技能副本（通过 author_id 和 parent_skill_id 列表）
     /// 如果 parent_skill_ids 为空，返回空 Vec
     async fn find_agent_skill_copies(
@@ -674,6 +677,10 @@ impl SkillDal for SkillDalImpl {
             )
             .await?;
         Ok(page.items)
+    }
+
+    async fn list_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        self.skill_dao.list_distinct_tags(ctx).await
     }
 
     async fn find_agent_skill_copies(

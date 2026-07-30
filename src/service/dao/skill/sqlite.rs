@@ -258,6 +258,20 @@ ORDER BY updated_at DESC
         Ok(skills)
     }
 
+    async fn list_distinct_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
+        let pool = ctx.db_pool();
+        // status = 1 对应 SkillStatus::Published（已发布技能）
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT DISTINCT json_each.value \
+             FROM skills, json_each(skills.tags) \
+             WHERE skills.status = 1 AND json_each.value != '' \
+             ORDER BY json_each.value ASC",
+        )
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.into_iter().map(|(v,)| v).collect())
+    }
+
     async fn install_to_agent(
         &self,
         ctx: RequestContext,

@@ -432,3 +432,14 @@ pub struct DeleteSkillResponse {
     /// 是否删除成功
     pub success: bool,
 }
+
+/// Skill tags 聚合请求（无参数，仅用于满足 handler 宏签名）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListSkillTagsRequest {}
+
+/// Skill tags 聚合响应（distinct tags from Published skills）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListSkillTagsResponse {
+    /// 所有已发布技能的不重复 tag 列表
+    pub tags: Vec<String>,
+}

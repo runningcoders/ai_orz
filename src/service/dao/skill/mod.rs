@@ -83,6 +83,9 @@ pub trait SkillDao: Send + Sync {
     /// List skills by author
     async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<SkillPo>>;
 
+    /// 列出所有已发布技能（status=Published）的 distinct tags
+    async fn list_distinct_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
+
     // ========== 业务操作 ==========
 
     /// Install a published shared skill to an agent as a private draft copy

@@ -352,6 +352,10 @@ fn hr_routes() -> Router {
             "/skills/search",
             get(handlers::hr::skill::search_skills_handler),
         )
+        .route(
+            "/skills/tags",
+            get(handlers::hr::skill::list_skill_tags_handler),
+        )
         .route("/skills/{id}", get(handlers::hr::skill::get_skill_handler))
         .route(
             "/skills/{id}",
