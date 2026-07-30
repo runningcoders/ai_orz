@@ -1,7 +1,7 @@
 //! Artifact metadata editing modal
 
-use dioxus::prelude::*;
 use common::api::ArtifactDetail;
+use dioxus::prelude::*;
 
 #[derive(Props, Clone, PartialEq)]
 pub struct ArtifactMetaModalProps {

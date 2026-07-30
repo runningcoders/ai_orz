@@ -71,10 +71,7 @@ pub fn infer_file_type(mime_type: &str) -> FileType {
 
 /// Extract the basename (file name without directory) from a path.
 pub fn basename(path: &str) -> String {
-    path.rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .to_string()
+    path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
 #[cfg(test)]
@@ -97,7 +94,10 @@ mod tests {
         assert_eq!(infer_file_type("audio/mpeg"), FileType::Audio);
         assert_eq!(infer_file_type("application/zip"), FileType::Binary);
         assert_eq!(infer_file_type("text/plain"), FileType::Document);
-        assert_eq!(infer_file_type("application/octet-stream"), FileType::Document);
+        assert_eq!(
+            infer_file_type("application/octet-stream"),
+            FileType::Document
+        );
     }
 
     #[test]

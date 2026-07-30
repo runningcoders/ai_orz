@@ -54,6 +54,11 @@ impl ToolProviderManage for FinanceDomainImpl {
         self.tool_dal.list_tags(ctx.clone()).await
     }
 
+    /// 同步内置工具到 DB（将 builtin tools registry 中的工具写入 DB）
+    async fn sync_builtin_tools(&self, ctx: RequestContext) -> Result<usize> {
+        self.tool_dal.sync_builtin_tools_to_db(ctx).await
+    }
+
     /// 更新 Tool
     async fn update_tool(&self, ctx: RequestContext, tool: &Tool) -> Result<()> {
         validate_tool_management_policy(tool)?;

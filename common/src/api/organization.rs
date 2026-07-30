@@ -47,7 +47,7 @@ pub struct ModelProviderInitConfig {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CheckInitializedRequest {}
 
-/// 系统初始化响应
+/// 系统初始化响应（最终结果，进度查询完成时返回）
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InitializeSystemResponse {
     /// 组织 ID
@@ -58,6 +58,58 @@ pub struct InitializeSystemResponse {
     pub chat_provider_id: String,
     /// 向量模型 Provider ID（None 表示未创建向量模型）
     pub embedding_provider_id: Option<String>,
+}
+
+/// 系统初始化异步提交响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InitializeSystemAsyncResponse {
+    /// 异步任务 ID（用于查询进度）
+    pub task_id: String,
+}
+
+/// 初始化任务状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InitStatus {
+    /// 排队中
+    Pending,
+    /// 执行中
+    Running,
+    /// 已完成
+    Completed,
+    /// 失败
+    Failed,
+}
+
+/// 初始化进度查询请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetInitProgressRequest {
+    /// 异步任务 ID
+    #[param(source = "query")]
+    pub task_id: String,
+}
+
+/// 初始化进度响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InitProgressResponse {
+    /// 异步任务 ID
+    pub task_id: String,
+    /// 任务状态
+    pub status: InitStatus,
+    /// 当前步骤序号（从 1 开始）
+    pub current_step: usize,
+    /// 总步骤数
+    pub total_steps: usize,
+    /// 当前步骤描述
+    pub step_message: String,
+    /// 开始时间戳（秒）
+    pub started_at: i64,
+    /// 结束时间戳（秒，None 表示未结束）
+    pub finished_at: Option<i64>,
+    /// 错误信息（Failed 时有值）
+    pub error: Option<String>,
+    /// 初始化结果（Completed 时有值）
+    pub result: Option<InitializeSystemResponse>,
 }
 
 /// 检查初始化状态响应

@@ -435,6 +435,10 @@ pub trait ToolProviderManage: Send + Sync {
     /// 列出所有启用工具的 distinct tags
     async fn list_tool_tags(&self, ctx: RequestContext) -> Result<Vec<String>>;
 
+    /// 同步内置工具到 DB（将 builtin tools registry 中的工具写入 DB）
+    /// 用于系统首次初始化时，让 DB 的 tools 表包含所有内置工具
+    async fn sync_builtin_tools(&self, ctx: RequestContext) -> Result<usize>;
+
     /// 更新 Tool
     async fn update_tool(
         &self,

@@ -24,9 +24,12 @@ pub async fn register_artifact_from_path(
     ctx: RequestContext,
     params: RegisterArtifactFromPathParams,
 ) -> Result<ArtifactDetail> {
-    let agent_id = ctx
-        .agent_id()
-        .ok_or_else(|| err!(InvalidRequest, "agent_id is required for register_artifact_from_path"))?;
+    let agent_id = ctx.agent_id().ok_or_else(|| {
+        err!(
+            InvalidRequest,
+            "agent_id is required for register_artifact_from_path"
+        )
+    })?;
 
     let current_user_id = ctx.uid();
     if current_user_id.is_empty() {
@@ -47,9 +50,13 @@ pub async fn register_artifact_from_path(
     let source_path = agent_dir.join(&params.source_path);
 
     // Security: source path must be under agent's directory (prevent traversal)
-    let source_canonical = source_path
-        .canonicalize()
-        .map_err(|_| err!(InvalidRequest, "源文件不存在或无法访问: {}", params.source_path))?;
+    let source_canonical = source_path.canonicalize().map_err(|_| {
+        err!(
+            InvalidRequest,
+            "源文件不存在或无法访问: {}",
+            params.source_path
+        )
+    })?;
     let agent_dir_canonical = agent_dir
         .canonicalize()
         .map_err(|_| err!(Internal, "Agent directory not accessible"))?;
@@ -61,7 +68,11 @@ pub async fn register_artifact_from_path(
     let file_metadata = std::fs::metadata(&source_canonical)
         .map_err(|_| err!(InvalidRequest, "源文件不存在: {}", params.source_path))?;
     if !file_metadata.is_file() {
-        bail_err!(InvalidRequest, "source_path 不是文件: {}", params.source_path);
+        bail_err!(
+            InvalidRequest,
+            "source_path 不是文件: {}",
+            params.source_path
+        );
     }
 
     // Derive file_name and mime_type

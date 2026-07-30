@@ -105,10 +105,15 @@ async fn create_from_generated_content(
     params: CreateArtifactRequest,
     current_user_id: String,
 ) -> Result<crate::models::artifact::Artifact> {
-    let content = params.content
+    let content = params
+        .content
         .ok_or_else(|| err!(InvalidRequest, "content 不能为空（generated_content 类型）"))?;
-    let file_name = params.file_name
-        .ok_or_else(|| err!(InvalidRequest, "file_name 不能为空（generated_content 类型）"))?;
+    let file_name = params.file_name.ok_or_else(|| {
+        err!(
+            InvalidRequest,
+            "file_name 不能为空（generated_content 类型）"
+        )
+    })?;
 
     // Validate content size (max 1MB for text)
     let content_bytes = content.into_bytes();
@@ -117,7 +122,9 @@ async fn create_from_generated_content(
     }
 
     let mime_type = params.mime_type.unwrap_or_else(|| "text/plain".to_string());
-    let file_type = params.file_type.unwrap_or(common::enums::FileType::Document);
+    let file_type = params
+        .file_type
+        .unwrap_or(common::enums::FileType::Document);
 
     project::domain()
         .artifact_manage()

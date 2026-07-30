@@ -75,6 +75,10 @@ fn public_routes(config: Arc<AppConfig>) -> Router {
             "/organization/initialize",
             post(initialize_system::initialize_system_handler),
         )
+        .route(
+            "/organization/initialize/progress",
+            get(initialize_system::get_initialize_progress_handler),
+        )
         // Login/logout - login issues new JWT token
         .route("/organization/auth/login", post(auth::login::login))
         .route("/organization/auth/logout", post(auth::logout::logout))

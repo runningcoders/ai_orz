@@ -100,7 +100,7 @@ pub struct AgentDef {
     pub kind: i32,
 }
 
-/// Skill 定义（不含文件内容，仅元数据）
+/// Skill 定义（元数据 + 文件内容来源）
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SkillDef {
     pub id: String,
@@ -114,6 +114,36 @@ pub struct SkillDef {
     pub status: i32,
     /// 相对 base_data_path 的技能目录路径（导入时复制目录）
     pub content_path: String,
+
+    /// 技能文件列表（skill.md 主文件 + 附加文件）
+    /// 每个文件可通过 content / ref_path / url 指定内容来源
+    /// 优先级：content > ref_path > url
+    #[serde(default)]
+    pub files: Vec<SkillFileDef>,
+}
+
+/// Skill 文件定义（支持多种内容来源）
+///
+/// 优先级：content > ref_path > url
+/// - content：直接内嵌文本内容
+/// - ref_path：引用 seed 目录下编译期内嵌文件的相对路径（如 "skills/platform_guide/skill.md"）
+/// - url：运行时从 HTTPS URL 抓取内容
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct SkillFileDef {
+    /// 写入到技能目录的相对路径（如 "skill.md"、"references/guide.md"）
+    pub path: String,
+
+    /// 内嵌的文件内容（优先级最高）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    /// 引用 seed 目录下编译期内嵌文件的相对路径
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_path: Option<String>,
+
+    /// 文件内容的 URL 来源（运行时抓取，必须 HTTPS）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 // ==================== Diff 结构 ====================

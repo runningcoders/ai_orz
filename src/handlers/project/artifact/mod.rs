@@ -7,10 +7,10 @@ mod delete_artifact;
 mod get_artifact;
 mod get_artifact_content;
 mod list_artifacts;
+mod mime_util;
 mod query_artifacts;
 mod register_artifact_from_path;
 mod response;
-mod mime_util;
 mod update_artifact;
 
 pub use create_artifact::create_artifact_handler;

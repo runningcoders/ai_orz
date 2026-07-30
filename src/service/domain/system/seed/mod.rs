@@ -7,6 +7,7 @@
 pub mod default;
 pub mod defs;
 pub mod diff;
+pub mod embedded;
 pub mod store;
 
 pub use defs::*;

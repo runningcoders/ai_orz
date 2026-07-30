@@ -107,10 +107,7 @@ impl super::ProjectManage for ProjectDomainImpl {
         if let Some(project) = project.as_mut() {
             // 注入 task_graph
             if options.with_task_graph.unwrap_or(false) {
-                let tasks = self
-                    .task_dal
-                    .list_by_project(ctx.clone(), id, None)
-                    .await?;
+                let tasks = self.task_dal.list_by_project(ctx.clone(), id, None).await?;
                 let mermaid = build_task_graph_mermaid(&tasks, MermaidDirection::LR);
                 project.task_graph = Some(mermaid);
             }

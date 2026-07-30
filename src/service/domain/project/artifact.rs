@@ -417,9 +417,8 @@ impl super::ArtifactManage for ProjectDomainImpl {
         self.validate_project_and_task(ctx.clone(), &project_id, task_id.as_deref())
             .await?;
 
-        let metadata = std::fs::metadata(&source_path).map_err(|e| {
-            err!(InvalidRequest, "Failed to read source file metadata: {}", e)
-        })?;
+        let metadata = std::fs::metadata(&source_path)
+            .map_err(|e| err!(InvalidRequest, "Failed to read source file metadata: {}", e))?;
         if !metadata.is_file() {
             bail_err!(
                 InvalidRequest,

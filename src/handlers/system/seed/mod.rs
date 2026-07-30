@@ -61,6 +61,215 @@ fn count_updated<T>(entries: &[DiffEntry<T>]) -> usize {
         .count()
 }
 
+/// 技能导入结果统计
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SkillApplyResult {
+    pub created: usize,
+    pub updated: usize,
+    pub skipped: usize,
+}
+
+/// 解析 SkillFileDef 的文件内容
+///
+/// 优先级：content > ref_path > url
+/// - content：直接返回内嵌文本
+/// - ref_path：从编译期内嵌文件读取（seed/skills/ 下的文件）
+/// - url：运行时 HTTPS 抓取（30s 超时，1MB 限制）
+async fn resolve_skill_file_content(file_def: &SkillFileDef) -> Result<String> {
+    // 1. content 优先级最高
+    if let Some(content) = &file_def.content {
+        return Ok(content.clone());
+    }
+
+    // 2. ref_path：编译期内嵌文件
+    if let Some(ref_path) = &file_def.ref_path {
+        return crate::service::domain::system::seed::embedded::read_embedded_file(ref_path)
+            .map_err(Error::internal);
+    }
+
+    // 3. url：运行时抓取
+    if let Some(url) = &file_def.url {
+        let response = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| Error::internal(format!("HTTP client 构建失败: {}", e)))?
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| Error::internal(format!("URL 抓取失败 {}: {}", url, e)))?;
+
+        if !response.status().is_success() {
+            return Err(Error::internal(format!(
+                "URL 抓取失败 {}: HTTP {}",
+                url,
+                response.status()
+            )));
+        }
+
+        let content = response
+            .text()
+            .await
+            .map_err(|e| Error::internal(format!("URL 内容读取失败 {}: {}", url, e)))?;
+
+        // 限制 1MB
+        if content.len() > 1024 * 1024 {
+            return Err(Error::bad_request(format!(
+                "URL 内容超过 1MB 限制: {}",
+                url
+            )));
+        }
+        return Ok(content);
+    }
+
+    Err(Error::bad_request(format!(
+        "技能文件 {} 未指定内容来源（content/ref_path/url 均为空）",
+        file_def.path
+    )))
+}
+
+/// 导入预置技能到共享库
+///
+/// 从 SeedSnapshot 的 skills 列表中读取技能定义，
+/// 动态解析文件内容（content > ref_path > url）并写入 DB + 文件系统。
+///
+/// # 参数
+/// - ctx：请求上下文
+/// - skills：技能定义列表
+/// - author_id_override：替换 author_id（initialize_system 传 Some(owner_id) 对齐组织 owner；
+///   apply_snapshot_to_db 传 None 保留模板原始值）
+/// - skip_existing：true 时跳过已存在的技能（对应 ImportStrategy::SkipExisting）
+///
+/// # 返回
+/// 各类操作计数
+pub async fn apply_preset_skills(
+    ctx: RequestContext,
+    skills: &[SkillDef],
+    author_id_override: Option<&str>,
+    skip_existing: bool,
+) -> Result<SkillApplyResult> {
+    use crate::service::domain::hr;
+
+    let mut result = SkillApplyResult::default();
+
+    for skill_def in skills {
+        let existing = hr::domain()
+            .skill_manage()
+            .get_skill(ctx.clone(), &skill_def.id)
+            .await?;
+
+        if existing.is_some() && skip_existing {
+            result.skipped += 1;
+            continue;
+        }
+
+        // author_id 替换：initialize_system 场景用实际 owner id
+        let author_id = author_id_override
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| skill_def.author_id.clone());
+
+        let mut skill_po = crate::models::skill::SkillPo::new(
+            skill_def.id.clone(),
+            skill_def.name.clone(),
+            skill_def.description.clone(),
+            skill_def.tags.clone(),
+            skill_def.category.clone(),
+            skill_def.parent_skill_id.clone(),
+            author_id,
+            common::enums::skill::SkillAuthorType::from(skill_def.author_type),
+            skill_def.content_path.clone(),
+        );
+        skill_po.status = common::enums::SkillStatus::from(skill_def.status);
+        let skill = crate::models::skill::Skill::from_po(skill_po);
+
+        // 动态解析每个文件的内容（content > ref_path > url）
+        let mut file_contents: Vec<(String, String)> = Vec::new();
+        for file_def in &skill_def.files {
+            let content = resolve_skill_file_content(file_def).await?;
+            file_contents.push((file_def.path.clone(), content));
+        }
+
+        if existing.is_some() {
+            // 已存在：update_skill 写入元数据 + 文件
+            let file_writes: Vec<(&str, &str)> = file_contents
+                .iter()
+                .map(|(p, c)| (p.as_str(), c.as_str()))
+                .collect();
+            let params = crate::service::domain::hr::UpdateSkillParams {
+                skill: &skill,
+                file_writes,
+                file_deletes: vec![],
+                file_imports: vec![],
+            };
+            hr::domain()
+                .skill_manage()
+                .update_skill(ctx.clone(), params)
+                .await?;
+            result.updated += 1;
+        } else {
+            // 新建：先 create_skill 写元数据，再 update_skill 写文件
+            hr::domain()
+                .skill_manage()
+                .create_skill(ctx.clone(), &skill)
+                .await?;
+
+            if !file_contents.is_empty() {
+                let file_writes: Vec<(&str, &str)> = file_contents
+                    .iter()
+                    .map(|(p, c)| (p.as_str(), c.as_str()))
+                    .collect();
+                let params = crate::service::domain::hr::UpdateSkillParams {
+                    skill: &skill,
+                    file_writes,
+                    file_deletes: vec![],
+                    file_imports: vec![],
+                };
+                hr::domain()
+                    .skill_manage()
+                    .update_skill(ctx.clone(), params)
+                    .await?;
+            }
+            result.created += 1;
+        }
+    }
+    Ok(result)
+}
+
+/// 导出技能文件列表为 SkillFileDef
+///
+/// 读取技能目录下的所有文件，将内容内嵌到 content 字段。
+/// 导出时统一使用 content 来源（不使用 ref_path/url），保证快照自包含可迁移。
+async fn export_skill_files(ctx: RequestContext, skill_id: &str) -> Result<Vec<SkillFileDef>> {
+    use crate::service::domain::hr;
+
+    let files = hr::domain()
+        .skill_manage()
+        .list_skill_files(ctx.clone(), skill_id)
+        .await?
+        .unwrap_or_default();
+
+    let mut defs = Vec::with_capacity(files.len());
+    for file in files {
+        // 优先使用 list_skill_files 已预读的 content；否则按需读取
+        let content = if file.content.is_some() {
+            file.content
+        } else {
+            hr::domain()
+                .skill_manage()
+                .get_skill_file_content(ctx.clone(), skill_id, &file.filename)
+                .await
+                .ok()
+                .flatten()
+        };
+        defs.push(SkillFileDef {
+            path: file.filename,
+            content,
+            ref_path: None,
+            url: None,
+        });
+    }
+    Ok(defs)
+}
+
 /// 从当前 DB 组装 SeedSnapshot（编排各 domain）
 ///
 /// 调用 organization / user / finance / hr domain 拉取实体，
@@ -146,15 +355,15 @@ pub async fn assemble_snapshot_from_db(
         })
         .collect();
 
-    // 5. Skill
+    // 5. Skill（含文件内容导出）
     let skills = hr::domain()
         .skill_manage()
         .query_skills(ctx.clone(), Default::default())
         .await?;
-    let skill_defs: Vec<SkillDef> = skills
-        .items
-        .into_iter()
-        .map(|s| SkillDef {
+    let mut skill_defs: Vec<SkillDef> = Vec::with_capacity(skills.items.len());
+    for s in skills.items {
+        let files = export_skill_files(ctx.clone(), &s.po.id).await?;
+        skill_defs.push(SkillDef {
             id: s.po.id.clone(),
             name: s.po.name.clone(),
             description: s.po.description.clone(),
@@ -165,8 +374,9 @@ pub async fn assemble_snapshot_from_db(
             author_type: s.po.author_type.to_i32(),
             status: s.po.status.to_i32(),
             content_path: s.po.content_path.clone(),
-        })
-        .collect();
+            files,
+        });
+    }
 
     Ok(SeedSnapshot {
         version: SeedSnapshot::CURRENT_VERSION.to_string(),
@@ -404,55 +614,17 @@ pub async fn apply_snapshot_to_db(
         }
     }
 
-    // 6. 写入 Skill（仅元数据，文件需要单独处理）
-    for skill_def in &snapshot.skills {
-        let existing = hr::domain()
-            .skill_manage()
-            .get_skill(ctx.clone(), &skill_def.id)
-            .await?;
-
-        if existing.is_some() && matches!(strategy, ImportStrategy::SkipExisting) {
-            skipped += 1;
-            continue;
-        }
-
-        // Skill 实体没有直接字段，需要通过 SkillPo 构造再 from_po
-        let mut skill_po = crate::models::skill::SkillPo::new(
-            skill_def.id.clone(),
-            skill_def.name.clone(),
-            skill_def.description.clone(),
-            skill_def.tags.clone(),
-            skill_def.category.clone(),
-            skill_def.parent_skill_id.clone(),
-            skill_def.author_id.clone(),
-            common::enums::skill::SkillAuthorType::from(skill_def.author_type),
-            skill_def.content_path.clone(),
-        );
-        // SkillPo::new 不设置 status，按快照覆盖
-        skill_po.status = common::enums::SkillStatus::from(skill_def.status);
-        let skill = crate::models::skill::Skill::from_po(skill_po);
-
-        if existing.is_some() {
-            // Skill update 接口需要 UpdateSkillParams，这里简化为不更新文件
-            let params = crate::service::domain::hr::UpdateSkillParams {
-                skill: &skill,
-                file_writes: vec![],
-                file_deletes: vec![],
-                file_imports: vec![],
-            };
-            hr::domain()
-                .skill_manage()
-                .update_skill(ctx.clone(), params)
-                .await?;
-            updated += 1;
-        } else {
-            hr::domain()
-                .skill_manage()
-                .create_skill(ctx.clone(), &skill)
-                .await?;
-            created += 1;
-        }
-    }
+    // 6. 写入 Skill（复用 apply_preset_skills，传 None 保留模板原始 author_id）
+    let skill_result = apply_preset_skills(
+        ctx.clone(),
+        &snapshot.skills,
+        None,
+        matches!(strategy, ImportStrategy::SkipExisting),
+    )
+    .await?;
+    created += skill_result.created;
+    updated += skill_result.updated;
+    skipped += skill_result.skipped;
 
     Ok(common::api::seed::LoadSeedResponse {
         created,

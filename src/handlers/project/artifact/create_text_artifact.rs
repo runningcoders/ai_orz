@@ -41,7 +41,9 @@ pub async fn create_text_artifact(
         bail_err!(InvalidRequest, "Text content exceeds maximum size of 1MB");
     }
 
-    let file_name = params.file_name.unwrap_or_else(|| format!("{}.md", params.name));
+    let file_name = params
+        .file_name
+        .unwrap_or_else(|| format!("{}.md", params.name));
     let mime_type = params.mime_type.unwrap_or_else(|| "text/plain".to_string());
     let file_type = params.file_type.unwrap_or(FileType::Document);
 

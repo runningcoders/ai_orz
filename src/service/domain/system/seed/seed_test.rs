@@ -195,7 +195,8 @@ mod tests {
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
         assert_eq!(snapshot.agents.len(), 1);
-        assert_eq!(snapshot.skills.len(), 0);
+        // 预置 3 个 neural 技能（Task 4）
+        assert_eq!(snapshot.skills.len(), 3);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
@@ -204,5 +205,113 @@ mod tests {
             snapshot.users[0].password_ref,
             super::super::defs::PENDING_INPUT
         );
+    }
+
+    #[test]
+    fn test_default_snapshot_preset_skills() {
+        let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+
+        let ids: Vec<&str> = snapshot.skills.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&"TEMPLATE_PLATFORM_GUIDE"));
+        assert!(ids.contains(&"TEMPLATE_MEMORY_GUIDE"));
+        assert!(ids.contains(&"TEMPLATE_COLLABORATION_GUIDE"));
+
+        for skill in &snapshot.skills {
+            assert!(
+                skill.tags.contains(&"neural".to_string()),
+                "预置技能 {} 必须包含 neural tag",
+                skill.id
+            );
+            assert_eq!(skill.category, "system");
+            assert_eq!(skill.status, 1); // Published
+            assert_eq!(skill.author_id, "TEMPLATE_ADMIN");
+            assert_eq!(skill.author_type, 0); // User
+            assert!(!skill.files.is_empty(), "预置技能必须有 files");
+            assert_eq!(skill.files[0].path, "skill.md");
+            assert!(skill.files[0].ref_path.is_some());
+        }
+    }
+
+    // ===== SkillFileDef 三来源测试（Task 1） =====
+
+    #[test]
+    fn test_skill_file_def_content_source() {
+        let file = SkillFileDef {
+            path: "skill.md".to_string(),
+            content: Some("# 内容".to_string()),
+            ref_path: None,
+            url: None,
+        };
+        let json = serde_json::to_string(&file).unwrap();
+        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.content.as_ref().unwrap(), "# 内容");
+        assert!(de.ref_path.is_none());
+        assert!(de.url.is_none());
+    }
+
+    #[test]
+    fn test_skill_file_def_ref_path_source() {
+        let file = SkillFileDef {
+            path: "skill.md".to_string(),
+            content: None,
+            ref_path: Some("skills/platform_guide/skill.md".to_string()),
+            url: None,
+        };
+        let json = serde_json::to_string(&file).unwrap();
+        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            de.ref_path.as_ref().unwrap(),
+            "skills/platform_guide/skill.md"
+        );
+    }
+
+    #[test]
+    fn test_skill_file_def_url_source() {
+        let file = SkillFileDef {
+            path: "skill.md".to_string(),
+            content: None,
+            ref_path: None,
+            url: Some("https://example.com/guide.md".to_string()),
+        };
+        let json = serde_json::to_string(&file).unwrap();
+        let de: SkillFileDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.url.as_ref().unwrap(), "https://example.com/guide.md");
+    }
+
+    #[test]
+    fn test_skill_def_with_files_roundtrip() {
+        let skill = SkillDef {
+            id: "test_skill".to_string(),
+            name: "测试技能".to_string(),
+            description: "用于测试".to_string(),
+            tags: vec!["neural".to_string()],
+            category: "system".to_string(),
+            parent_skill_id: String::new(),
+            author_id: "TEMPLATE_ADMIN".to_string(),
+            author_type: 0,
+            status: 1,
+            content_path: "skills/test_skill".to_string(),
+            files: vec![SkillFileDef {
+                path: "skill.md".to_string(),
+                content: Some("# 测试".to_string()),
+                ref_path: None,
+                url: None,
+            }],
+        };
+        let json = serde_json::to_string(&skill).unwrap();
+        let de: SkillDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.files.len(), 1);
+    }
+
+    #[test]
+    fn test_skill_def_backward_compat_no_files() {
+        let json = r#"{
+            "id": "old_skill", "name": "旧", "description": "",
+            "tags": [], "category": "x", "parent_skill_id": "",
+            "author_id": "u", "author_type": 0, "status": 1,
+            "content_path": "skills/old"
+        }"#;
+        let skill: SkillDef = serde_json::from_str(json).unwrap();
+        assert!(skill.files.is_empty());
     }
 }

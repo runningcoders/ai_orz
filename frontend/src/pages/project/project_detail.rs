@@ -1,7 +1,7 @@
 //! 项目详情页 - 基本信息、状态管理、任务列表、产物列表
 
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;

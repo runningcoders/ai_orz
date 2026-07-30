@@ -1,7 +1,7 @@
 //! 任务详情页 - 基本信息、状态流转、进度更新、操作按钮
 
 use dioxus::prelude::*;
-use dioxus_router::{use_navigator, Link};
+use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;

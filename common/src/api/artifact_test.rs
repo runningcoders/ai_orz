@@ -182,6 +182,9 @@ fn update_artifact_request_supports_partial_update_contract() {
     assert_eq!(decoded.artifact_id, "artifact-1");
     assert_eq!(decoded.content, None);
     assert_eq!(decoded.name, Some("new name".to_string()));
-    assert_eq!(decoded.tags, Some(vec!["tag1".to_string(), "tag2".to_string()]));
+    assert_eq!(
+        decoded.tags,
+        Some(vec!["tag1".to_string(), "tag2".to_string()])
+    );
     assert_eq!(decoded.expected_updated_at, Some(1718000000));
 }

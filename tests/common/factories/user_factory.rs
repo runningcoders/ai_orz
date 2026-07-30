@@ -11,6 +11,11 @@
 use crate::common::app::TestApp;
 use common::api::{InitializeSystemRequest, LoginRequest, ModelProviderInitConfig};
 
+/// 全局互斥锁：所有集成测试共享同一个全局 DB，`bootstrap_system` 必须串行执行，
+/// 避免并行 init 任务导致 `sync_builtin_tools` 竞争（UNIQUE constraint）和
+/// 预置技能固定 ID 被并发覆盖（author_id 错乱）。
+static BOOTSTRAP_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Bootstrap result — contains everything tests need to make authenticated calls.
 #[derive(Debug, Clone)]
 pub struct BootstrappedSystem {
@@ -26,12 +31,52 @@ pub struct BootstrappedSystem {
     pub embedding_provider_id: Option<String>,
 }
 
+/// 轮询初始化进度直到完成或失败
+async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_json::Value {
+    loop {
+        let (status, body) = app
+            .get(&format!(
+                "/api/v1/organization/initialize/progress?task_id={}",
+                task_id
+            ))
+            .await;
+        let data = crate::common::assert_api_ok(status, &body);
+        let status_str = data
+            .get("status")
+            .and_then(|v| v.as_str())
+            .expect("missing status in progress response");
+
+        match status_str {
+            "completed" => {
+                return data
+                    .get("result")
+                    .expect("missing result in completed progress")
+                    .clone();
+            }
+            "failed" => {
+                let error = data
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown error");
+                panic!("系统初始化失败: {}", error);
+            }
+            _ => {
+                // pending 或 running，等待后重试
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+}
+
 /// Bootstrap the system with one org, one admin, and one chat model provider.
 ///
 /// **向量降级关键**：`embedding_model: None` —— 不创建 embedding provider，
 /// `get_default_embedding_provider` 直接返回 `Ok(None)`，所有 DAL 的
 /// `embed_entity` 被跳过，永远不会触发 FastEmbed 模型加载。
 pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
+    // 串行化：所有测试共享同一全局 DB，避免并行 init 竞争
+    let _guard = BOOTSTRAP_MUTEX.lock().await;
+
     let username = format!("admin-{}", uuid::Uuid::now_v7());
     let password_hash = format!("hash-{}", uuid::Uuid::now_v7());
     let org_name = format!("TestOrg-{}", uuid::Uuid::now_v7());
@@ -56,22 +101,31 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
 
     let (status, body) = app.post("/api/v1/organization/initialize", &req).await;
     let data = crate::common::assert_api_ok(status, &body);
-    let org_id = data
+    let task_id = data
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .expect("missing task_id in initialize response")
+        .to_string();
+
+    // 轮询进度直到完成
+    let result = poll_initialize_progress(app, &task_id).await;
+
+    let org_id = result
         .get("organization_id")
         .and_then(|v| v.as_str())
-        .expect("missing organization_id in response")
+        .expect("missing organization_id in progress result")
         .to_string();
-    let user_id = data
+    let user_id = result
         .get("user_id")
         .and_then(|v| v.as_str())
-        .expect("missing user_id in response")
+        .expect("missing user_id in progress result")
         .to_string();
-    let chat_provider_id = data
+    let chat_provider_id = result
         .get("chat_provider_id")
         .and_then(|v| v.as_str())
-        .expect("missing chat_provider_id in response")
+        .expect("missing chat_provider_id in progress result")
         .to_string();
-    let embedding_provider_id = data
+    let embedding_provider_id = result
         .get("embedding_provider_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());

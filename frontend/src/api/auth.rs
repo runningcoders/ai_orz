@@ -1,8 +1,8 @@
 //! 认证相关 API
 
 use common::api::{
-    CheckInitializedResponse, InitializeSystemRequest, InitializeSystemResponse, LoginRequest,
-    LoginResponse,
+    CheckInitializedResponse, InitProgressResponse, InitializeSystemAsyncResponse,
+    InitializeSystemRequest, LoginRequest, LoginResponse,
 };
 
 use super::{ApiError, api_get, api_post, api_post_empty};
@@ -11,10 +11,20 @@ pub async fn check_initialized() -> Result<CheckInitializedResponse, ApiError> {
     api_get("/api/v1/organization/initialize/check").await
 }
 
+/// 提交系统初始化（异步，返回 task_id）
 pub async fn initialize_system(
     req: InitializeSystemRequest,
-) -> Result<InitializeSystemResponse, ApiError> {
+) -> Result<InitializeSystemAsyncResponse, ApiError> {
     api_post("/api/v1/organization/initialize", &req).await
+}
+
+/// 查询初始化进度
+pub async fn get_initialize_progress(task_id: &str) -> Result<InitProgressResponse, ApiError> {
+    api_get(&format!(
+        "/api/v1/organization/initialize/progress?task_id={}",
+        task_id
+    ))
+    .await
 }
 
 pub async fn login(req: LoginRequest) -> Result<LoginResponse, ApiError> {

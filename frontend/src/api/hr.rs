@@ -123,10 +123,8 @@ pub async fn install_skill_pack(req: InstallSkillPackRequest) -> Result<(), ApiE
 
 pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), ApiError> {
     // 支持 delete_copies query 参数：true 表示同时删除 Agent 侧的技能副本
-    let qs = super::build_query_string(&[(
-        "delete_copies",
-        req.delete_copies.map(|v| v.to_string()),
-    )]);
+    let qs =
+        super::build_query_string(&[("delete_copies", req.delete_copies.map(|v| v.to_string()))]);
     api_delete(&format!(
         "/api/v1/hr/agents/{}/skill-packs/{}{}",
         req.agent_id, req.tag, qs

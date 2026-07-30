@@ -1034,6 +1034,18 @@ Agent
 - **前端统计数据集成（07-15）**：`StatsCard` 通用卡片 + 三个实体面板（Agent/Project/Task）；详情页按需展示统计面板
 - **管理页面补全 + 对话功能 MVP + 消息/记忆搜索 + 知识图谱（07-13）**：Agent/Project 详情页；左右分栏对话布局 + 双向分页；消息/记忆搜索 API + 知识图谱 SVG 组件
 
+### 2026-07-30 里程碑（预置技能 + 工具同步）
+**✅ 开箱即用的预置技能与工具同步**
+- **SkillFileDef 三来源（07-30）**：`SkillDef` 新增 `files: Vec<SkillFileDef>` 字段（`#[serde(default)]` 向后兼容）；`SkillFileDef` 支持 content / ref_path / url 三种内容来源，优先级 content > ref_path > url
+- **编译期内嵌文件（07-30）**：新增 `seed/embedded.rs`，用 `include_str!` + 静态注册表模式将 `seed/skills/` 下的技能文件嵌入二进制；`read_embedded_file(ref_path)` 按路径读取，`list_embedded_skill_files()` 列出全部（环境无 cc linker，从 include_dir 改为 include_str!）
+- **3 个 neural 预置技能（07-30）**：`default.json` 的 skills 数组新增 TEMPLATE_PLATFORM_GUIDE（平台使用指南）、TEMPLATE_MEMORY_GUIDE（记忆管理指南）、TEMPLATE_COLLABORATION_GUIDE（Agent 协作指南），均 tags=[neural] status=Published，用 ref_path 引用编译期内嵌的 skill.md
+- **apply_preset_skills 独立函数（07-30）**：从 `apply_snapshot_to_db` 抽出技能导入逻辑为独立函数，支持 `author_id_override: Option<&str>`（initialize_system 传 Some(owner_id) 对齐组织 owner，apply_snapshot_to_db 传 None 保留模板值）和 `skip_existing: bool`（对应 SkipExisting 策略）；返回 `SkillApplyResult { created, updated, skipped }`；`apply_snapshot_to_db` 的 skill 部分替换为调用此函数
+- **resolve_skill_file_content（07-30）**：新增文件内容解析函数，content 直接返回、ref_path 调用 embedded::read_embedded_file、url 用 reqwest 抓取（30s 超时，1MB 限制）
+- **assemble_snapshot_from_db 导出文件（07-30）**：新增 `export_skill_files` 辅助函数，调用 `list_skill_files` + `get_skill_file_content` 读取技能文件内容到 `SkillFileDef.content`；assemble 的 skill 部分从同步 map 改为 async 循环
+- **ToolProviderManage::sync_builtin_tools（07-30）**：domain trait 新增 `sync_builtin_tools(ctx) -> Result<usize>` 方法，FinanceDomainImpl 委托 `tool_dal.sync_builtin_tools_to_db(ctx)`；分层架构合规（handler → domain → DAL → DAO）
+- **initialize_system 集成（07-30）**：handler 新增 Step 4（同步内置工具到 DB）和 Step 5（导入预置技能，author_id 替换为 owner）；首次初始化组织后自动完成工具同步和技能导入
+- **集成测试（07-30）**：新增 `tests/integration/preset_skills_test.rs`（4 个测试：预置技能导入验证、工具同步验证、技能文件内容验证、幂等性验证）
+
 ### 2026-07-30 里程碑（精简）
 **✅ Agent 工具/技能搜索式安装**
 - **后端 tags 聚合接口（07-30）**：新增 `GET /finance/tools/tags`（distinct tags from enabled tools）和 `GET /hr/skills/tags`（distinct tags from published skills），DAO 层用 `SELECT DISTINCT json_each.value` 实现；均注册为神经工具（`neural` flag），Agent 可自主查询可用工具/技能分类

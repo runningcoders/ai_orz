@@ -9,7 +9,9 @@
 //! - 这样图的箭头方向表示"执行流向"：B 完成后才能执行 A
 
 use crate::models::task::Task;
-use crate::pkg::utils::graph::{Graph, GraphLine, GraphNodeData, MermaidDirection, MermaidRenderer};
+use crate::pkg::utils::graph::{
+    Graph, GraphLine, GraphNodeData, MermaidDirection, MermaidRenderer,
+};
 use common::enums::TaskStatus;
 
 /// 基于 Task 列表构建 Mermaid 任务依赖图
@@ -32,8 +34,8 @@ fn build_task_graph(tasks: &[Task]) -> Graph {
     // 添加所有任务为节点
     for task in tasks {
         let category = task_status_to_category(&task.po.status);
-        let node = GraphNodeData::new(task.po.id.clone(), task.po.title.clone())
-            .with_category(category);
+        let node =
+            GraphNodeData::new(task.po.id.clone(), task.po.title.clone()).with_category(category);
         graph.add_node(node);
     }
 

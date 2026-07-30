@@ -5,11 +5,11 @@
 //! - Renderer trait 支持多种输出格式，Mermaid 只是其中一种实现
 //! - 不绑定任何业务实体，纯通用组件
 
-mod types;
 mod renderer;
+mod types;
 
-pub use types::{Graph, GraphNodeData, GraphLine, GraphNode};
-pub use renderer::{GraphRenderer, MermaidRenderer, MermaidDirection};
+pub use renderer::{GraphRenderer, MermaidDirection, MermaidRenderer};
+pub use types::{Graph, GraphLine, GraphNode, GraphNodeData};
 
 #[cfg(test)]
 mod graph_test;
