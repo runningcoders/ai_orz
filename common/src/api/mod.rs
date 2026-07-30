@@ -86,6 +86,7 @@ pub mod a2a;
 #[cfg(test)]
 mod a2a_test;
 pub mod agent;
+pub mod background_task;
 #[cfg(test)]
 mod agent_test;
 pub mod artifact;
@@ -127,6 +128,7 @@ pub mod user;
 // Re-exports for convenient import
 pub use a2a::*;
 pub use agent::*;
+pub use background_task::*;
 pub use artifact::*;
 pub use attachment::*;
 pub use auth::*;
