@@ -9,7 +9,7 @@ use crate::pkg::request_context::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
-use common::enums::{ModelCapability, ModelProviderStatus, SkillStatus};
+use common::enums::SkillStatus;
 use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
@@ -166,34 +166,38 @@ impl SkillDal for SkillDalImpl {
         // 1. 先保存基础技能数据
         self.skill_dao.insert(ctx.clone(), po).await?;
 
-        // 2. 查询可用的 Embedding 能力的 ModelProvider
-        if let Some(provider) = self
-            .model_provider_dao
-            .get_default_embedding_provider(ctx.clone())
-            .await?
-        {
-            // 创建 Cortex
-            let cortex = self
-                .cortex_dao
-                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
-
-            // 使用便捷方法直接生成完整 VectorIndexParams
-            let vector_params = self
-                .cortex_dao
-                .embed_entity(ctx.clone(), cortex.as_ref(), po)
-                .await?;
-
-            // 保存向量索引
-            if let Err(e) = self
-                .skill_vector_dao
-                .upsert_vector(ctx.clone(), &po.id, &vector_params)
-                .await
-            {
+        // 2. 向量索引自动维护（失败仅 warn 降级，不影响主流程）
+        match self.try_build_skill_vector_params(ctx.clone(), po).await {
+            Ok(Some(vec_params)) => {
+                if let Err(e) = self
+                    .skill_vector_dao
+                    .upsert_vector(ctx.clone(), &po.id, &vec_params)
+                    .await
+                {
+                    log_warn!(
+                        &ctx,
+                        "vector_index",
+                        skill_id = %po.id,
+                        error = ?e,
+                        "技能向量索引写入失败，已降级"
+                    );
+                }
+            }
+            Ok(None) => {
+                log_debug!(
+                    &ctx,
+                    "vector_index",
+                    skill_id = %po.id,
+                    "无可用 Embedding Provider，跳过技能向量索引"
+                );
+            }
+            Err(e) => {
                 log_warn!(
                     &ctx,
                     "vector_index",
-                    "保存技能向量索引失败（可能 vss0 扩展未安装）: {}",
-                    e
+                    skill_id = %po.id,
+                    error = ?e,
+                    "技能向量化失败，已降级"
                 );
             }
         }
@@ -503,55 +507,48 @@ impl SkillDal for SkillDalImpl {
         // 1. 先更新基础技能数据
         self.skill_dao.update(ctx.clone(), &skill.po).await?;
 
-        // 2. 查询可用的 Embedding 能力的 ModelProvider
-        let page = self
-            .model_provider_dao
-            .query(
-                ctx.clone(),
-                crate::service::dao::model_provider::ModelProviderQuery {
-                    capability: Some(ModelCapability::Embedding),
-                    status: Some(ModelProviderStatus::Normal),
-                    pagination: common::api::PaginationParams {
-                        limit: Some(1),
-                        offset: None,
-                    },
-                    ..Default::default()
-                },
-            )
+        // 2. 向量索引自动维护：内容变化时重新索引（失败仅 warn 降级）
+        let old_hash = self
+            .get_vector_content_hash(ctx.clone(), &skill.po.id)
             .await?;
+        let content = skill.po.vectorize_text();
+        let new_hash = sha256::digest(&content);
 
-        // 3. 如果有可用的 Embedding Provider，更新向量
-        if let Some(provider) = page.items.first() {
-            // 检查内容是否变化（通过 get_vector_content_hash）
-            let old_hash = self
-                .get_vector_content_hash(ctx.clone(), &skill.po.id)
-                .await?;
-            let content = skill.po.vectorize_text();
-            let new_hash = sha256::digest(&content);
-
-            if old_hash.as_deref() != Some(&new_hash) {
-                // 创建 Cortex
-                let cortex = self
-                    .cortex_dao
-                    .create_cortex_trait(ctx.clone(), provider, vec![])?;
-
-                // 使用便捷方法直接生成完整 VectorIndexParams
-                let vector_params = self
-                    .cortex_dao
-                    .embed_entity(ctx.clone(), cortex.as_ref(), &skill.po)
-                    .await?;
-
-                // 更新向量索引
-                if let Err(e) = self
-                    .skill_vector_dao
-                    .upsert_vector(ctx.clone(), &skill.po.id, &vector_params)
-                    .await
-                {
+        if old_hash.as_deref() != Some(&new_hash) {
+            match self
+                .try_build_skill_vector_params(ctx.clone(), &skill.po)
+                .await
+            {
+                Ok(Some(vec_params)) => {
+                    if let Err(e) = self
+                        .skill_vector_dao
+                        .upsert_vector(ctx.clone(), &skill.po.id, &vec_params)
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "vector_index",
+                            skill_id = %skill.po.id,
+                            error = ?e,
+                            "技能向量索引更新失败，已降级"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    log_debug!(
+                        &ctx,
+                        "vector_index",
+                        skill_id = %skill.po.id,
+                        "无可用 Embedding Provider，跳过技能向量索引"
+                    );
+                }
+                Err(e) => {
                     log_warn!(
                         &ctx,
                         "vector_index",
-                        "更新技能向量索引失败（可能 vss0 扩展未安装）: {}",
-                        e
+                        skill_id = %skill.po.id,
+                        error = ?e,
+                        "技能向量化失败，已降级"
                     );
                 }
             }
@@ -792,5 +789,34 @@ impl SkillDal for SkillDalImpl {
             .await?;
 
         Ok(())
+    }
+}
+
+impl SkillDalImpl {
+    /// 尝试为技能构建向量索引参数（用于 create/update 索引场景）
+    ///
+    /// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
+    /// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+    async fn try_build_skill_vector_params(
+        &self,
+        ctx: RequestContext,
+        po: &SkillPo,
+    ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+        let Some(provider) = self
+            .model_provider_dao
+            .get_default_embedding_provider(ctx.clone())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        let cortex = self
+            .cortex_dao
+            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+        let params = self
+            .cortex_dao
+            .embed_entity(ctx, cortex.as_ref(), po)
+            .await?;
+        Ok(Some(params))
     }
 }
