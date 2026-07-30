@@ -62,8 +62,9 @@ jobs:
       run: sccache --stop-server || true
 
   # ===== 2. Backend（lint 通过后跑）=====
-  # check + build + 单元测试 + 集成测试
+  # build + 单元测试 + 集成测试
   # sccache 命中 lint job 的依赖编译产物，加速编译
+  # 注：去掉 cargo check --lib，build 已包含类型检查
   backend:
     runs-on: ubuntu-latest
     needs: lint
@@ -99,9 +100,6 @@ jobs:
 
     - name: Start sccache server
       run: sccache --start-server || true
-
-    - name: Check backend
-      run: cargo check --lib --verbose
 
     - name: Build
       run: cargo build --verbose
