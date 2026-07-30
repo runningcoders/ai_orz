@@ -47,6 +47,7 @@ use crate::pages::system::aop::SystemAop;
 use crate::pages::system::backup::SystemBackup;
 use crate::pages::system::health::SystemHealth;
 use crate::pages::system::logs::SystemLogs;
+use crate::pages::system::seed::SystemSeed;
 use crate::pages::system::triggers::SystemTriggers;
 use crate::pages::user::profile::UserProfile;
 use crate::pages::workspace::Workspace;
@@ -133,6 +134,8 @@ pub enum Route {
     SystemBackup {},
     #[route("/system/aop")]
     SystemAop {},
+    #[route("/system/seed")]
+    SystemSeed {},
 
     // 用户
     #[route("/user/profile")]

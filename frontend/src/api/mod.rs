@@ -10,6 +10,7 @@ pub mod log_stats;
 pub mod message;
 pub mod organization;
 pub mod project;
+pub mod seed;
 pub mod system;
 
 use common::api::ApiResponse;

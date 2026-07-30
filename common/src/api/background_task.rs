@@ -52,7 +52,7 @@ impl TaskType {
 /// 任务进度快照（从任务对象读取的当前状态）
 ///
 /// 通用接口返回此结构。业务 handler 可在此基础上装饰为各自的响应 DTO。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TaskProgressSnapshot {
     /// 任务 ID
     pub task_id: String,

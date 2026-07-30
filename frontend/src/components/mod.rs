@@ -22,6 +22,7 @@ pub mod relation_graph;
 pub mod searchable_select;
 pub mod state;
 pub mod stats;
+pub mod task_progress;
 pub mod toast;
 pub mod workspace_graph;
 

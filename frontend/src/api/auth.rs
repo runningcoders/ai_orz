@@ -18,7 +18,8 @@ pub async fn initialize_system(
     api_post("/api/v1/organization/initialize", &req).await
 }
 
-/// 查询初始化进度
+/// 查询初始化进度（向后兼容接口，前端已改用统一 `get_task_progress`）
+#[allow(dead_code)]
 pub async fn get_initialize_progress(task_id: &str) -> Result<InitProgressResponse, ApiError> {
     api_get(&format!(
         "/api/v1/organization/initialize/progress?task_id={}",

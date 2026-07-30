@@ -2,13 +2,15 @@
 
 use dioxus::prelude::*;
 
-use crate::api::auth::{check_initialized, get_initialize_progress, initialize_system, login};
+use crate::api::auth::{check_initialized, initialize_system, login};
 use crate::api::organization::{get_current_user_info, list_organizations_public};
+use crate::api::seed::get_task_progress;
 use crate::components::state::Loading;
+use crate::components::task_progress::TaskProgress;
 use crate::store::auth::{AuthState, mark_logged_in, save_role};
 use crate::store::toast::use_toast;
 use common::api::{
-    InitProgressResponse, InitStatus, InitializeSystemRequest, LoginRequest, OrganizationListItem,
+    InitializeSystemRequest, LoginRequest, OrganizationListItem, TaskProgressSnapshot, TaskStatus,
 };
 
 #[component]
@@ -32,7 +34,7 @@ pub fn Reception() -> Element {
     let mut display_name = use_signal(String::new);
     let mut email = use_signal(String::new);
     let mut init_submitting = use_signal(|| false);
-    let mut init_progress = use_signal(|| Option::<InitProgressResponse>::None);
+    let mut init_progress = use_signal(|| Option::<TaskProgressSnapshot>::None);
 
     // 对话模型配置
     let mut chat_provider_name = use_signal(String::new);
@@ -206,25 +208,26 @@ pub fn Reception() -> Element {
                 Ok(resp) => {
                     // 异步初始化：保存 task_id，启动进度轮询
                     let task_id = resp.task_id;
-                    init_progress.set(Some(InitProgressResponse {
+                    init_progress.set(Some(TaskProgressSnapshot {
                         task_id: task_id.clone(),
-                        status: InitStatus::Running,
+                        task_type: "initialize_system".to_string(),
+                        status: TaskStatus::Pending,
                         current_step: 0,
-                        total_steps: 5,
+                        total_steps: 0,
                         step_message: "正在启动...".to_string(),
                         started_at: 0,
                         finished_at: None,
                         error: None,
                         result: None,
                     }));
-                    // 启动轮询
+                    // 启动轮询（统一接口）
                     spawn(async move {
                         loop {
                             gloo_timers::future::TimeoutFuture::new(300).await;
-                            match get_initialize_progress(&task_id).await {
+                            match get_task_progress(&task_id).await {
                                 Ok(progress) => {
-                                    let is_completed = progress.status == InitStatus::Completed;
-                                    let is_failed = progress.status == InitStatus::Failed;
+                                    let is_completed = progress.status == TaskStatus::Completed;
+                                    let is_failed = progress.status == TaskStatus::Failed;
                                     init_progress.set(Some(progress));
                                     if is_completed {
                                         // 初始化完成，刷新页面进入登录
@@ -379,51 +382,14 @@ pub fn Reception() -> Element {
                             }
 
                             if init_submitting() {
-                                // 初始化进度条
+                                // 初始化进度条（使用通用 TaskProgress 组件）
                                 if let Some(p) = &init_progress() {
-                                    div { class: "init-progress-container",
-                                        // 进度图标
-                                        if p.status == InitStatus::Failed {
-                                            div { class: "init-progress-icon failed", "✗" }
-                                        } else {
-                                            div { class: "init-progress-spinner" }
-                                        }
-
-                                        h3 { class: "init-progress-title",
-                                            if p.status == InitStatus::Failed { "初始化失败" } else { "正在初始化系统" }
-                                        }
-
-                                        // 步骤描述
-                                        p { class: "init-progress-step",
-                                            "{p.step_message}"
-                                        }
-
-                                        // 步骤计数
-                                        p { class: "init-progress-count",
-                                            "步骤 {p.current_step} / {p.total_steps}"
-                                        }
-
-                                        // DaisyUI 进度条
-                                        progress {
-                                            class: "progress progress-primary w-full",
-                                            value: "{progress_pct(p)}",
-                                            max: "100",
-                                        }
-
-                                        // 错误信息
-                                        if p.status == InitStatus::Failed {
-                                            if let Some(err) = &p.error {
-                                                p { class: "init-progress-error", "{err}" }
-                                            }
-                                            button {
-                                                class: "btn btn-outline btn-sm mt-4",
-                                                onclick: move |_| {
-                                                    init_submitting.set(false);
-                                                    init_progress.set(None);
-                                                },
-                                                "返回修改"
-                                            }
-                                        }
+                                    TaskProgress {
+                                        progress: p.clone(),
+                                        on_cancel: move |_| {
+                                            init_submitting.set(false);
+                                            init_progress.set(None);
+                                        },
                                     }
                                 } else {
                                     div { class: "init-progress-container",
@@ -654,14 +620,5 @@ pub fn Reception() -> Element {
                 } // form-card 结束
             } // form-side 结束
         } // reception-page 结束
-    }
-}
-
-/// 计算初始化进度百分比
-fn progress_pct(p: &InitProgressResponse) -> usize {
-    if p.total_steps > 0 {
-        (p.current_step as f64 / p.total_steps as f64 * 100.0) as usize
-    } else {
-        0
     }
 }
