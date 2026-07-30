@@ -279,9 +279,22 @@ pub async fn assemble_snapshot_from_db(
     org_id: &str,
     description: Option<String>,
 ) -> Result<SeedSnapshot> {
+    assemble_snapshot_from_db_with_progress(ctx, org_id, description, &|_, _| {}).await
+}
+
+/// 带进度回调的 `assemble_snapshot_from_db`
+///
+/// `progress(step, message)` 在每个导出阶段被调用（1-based step）。
+pub async fn assemble_snapshot_from_db_with_progress(
+    ctx: RequestContext,
+    org_id: &str,
+    description: Option<String>,
+    progress: &(dyn Fn(usize, &str) + Send + Sync),
+) -> Result<SeedSnapshot> {
     use crate::service::domain::{finance, hr, organization};
 
     // 1. 组织
+    progress(1, "正在导出组织");
     let org = organization::domain()
         .organization_manage()
         .get_by_id(ctx.clone(), org_id)
@@ -298,6 +311,7 @@ pub async fn assemble_snapshot_from_db(
     };
 
     // 2. 用户
+    progress(2, "正在导出用户");
     let users = organization::domain()
         .user_manage()
         .find_by_organization_id(ctx.clone(), org_id)
@@ -317,6 +331,7 @@ pub async fn assemble_snapshot_from_db(
         .collect();
 
     // 3. ModelProvider
+    progress(3, "正在导出模型 Provider");
     let providers = finance::domain()
         .model_provider_manage()
         .list_model_providers(ctx.clone())
@@ -338,6 +353,7 @@ pub async fn assemble_snapshot_from_db(
         .collect();
 
     // 4. Agent
+    progress(4, "正在导出 Agent");
     let agents = hr::domain().agent_manage().list_agents(ctx.clone()).await?;
     let agent_defs: Vec<AgentDef> = agents
         .into_iter()
@@ -356,6 +372,7 @@ pub async fn assemble_snapshot_from_db(
         .collect();
 
     // 5. Skill（含文件内容导出）
+    progress(5, "正在导出 Skill");
     let skills = hr::domain()
         .skill_manage()
         .query_skills(ctx.clone(), Default::default())
@@ -406,11 +423,26 @@ pub async fn apply_snapshot_to_db(
     strategy: common::api::seed::ImportStrategy,
     sensitive_values: &HashMap<String, String>,
 ) -> Result<common::api::seed::LoadSeedResponse> {
+    apply_snapshot_to_db_with_progress(ctx, snapshot, strategy, sensitive_values, &|_, _| {}).await
+}
+
+/// 带进度回调的 `apply_snapshot_to_db`
+///
+/// `progress(step, message)` 在各导入阶段被调用（1-based step）。
+/// DryRun 模式只触发 step 1；写入模式下 step 1-4 分别对应用户/Provider/Agent/Skill。
+pub async fn apply_snapshot_to_db_with_progress(
+    ctx: RequestContext,
+    snapshot: &SeedSnapshot,
+    strategy: common::api::seed::ImportStrategy,
+    sensitive_values: &HashMap<String, String>,
+    progress: &(dyn Fn(usize, &str) + Send + Sync),
+) -> Result<common::api::seed::LoadSeedResponse> {
     use crate::service::domain::{finance, hr, organization};
     use common::api::seed::ImportStrategy;
 
     // 1. DryRun 直接返回 diff（不调用本函数的写入路径）
     if matches!(strategy, ImportStrategy::DryRun) {
+        progress(1, "正在计算 diff");
         // 尝试拉取当前 DB 快照；若组织不存在（典型场景：默认模板应用到新组织），使用空快照
         let current =
             match assemble_snapshot_from_db(ctx.clone(), &snapshot.source_organization_id, None)
@@ -459,6 +491,7 @@ pub async fn apply_snapshot_to_db(
     let mut skipped = 0usize;
 
     // 3. 写入用户
+    progress(1, "正在写入用户");
     for user_def in &snapshot.users {
         let existing = organization::domain()
             .user_manage()
@@ -511,6 +544,7 @@ pub async fn apply_snapshot_to_db(
     }
 
     // 4. 写入 ModelProvider
+    progress(2, "正在写入模型 Provider");
     for provider_def in &snapshot.model_providers {
         let existing = finance::domain()
             .model_provider_manage()
@@ -560,6 +594,7 @@ pub async fn apply_snapshot_to_db(
     }
 
     // 5. 写入 Agent
+    progress(3, "正在写入 Agent");
     for agent_def in &snapshot.agents {
         let existing = hr::domain()
             .agent_manage()
@@ -615,6 +650,7 @@ pub async fn apply_snapshot_to_db(
     }
 
     // 6. 写入 Skill（复用 apply_preset_skills，传 None 保留模板原始 author_id）
+    progress(4, "正在写入 Skill");
     let skill_result = apply_preset_skills(
         ctx.clone(),
         &snapshot.skills,
