@@ -345,6 +345,17 @@ pub trait SkillManage: Send + Sync {
         agent_id: &str,
     ) -> Result<Skill>;
 
+    /// 从 Agent 目录卸载技能副本（删除 DB 记录 + 文件目录）
+    ///
+    /// 仅限通过 install_to_agent 安装的副本（parent_skill_id 不为空）。
+    /// 校验技能归属于指定 Agent，且是安装副本而非原始技能。
+    async fn uninstall_from_agent(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        agent_id: &str,
+    ) -> Result<()>;
+
     // D. Skill 文件独立操作
     /// 列出 Skill 所有文件，返回文件列表摘要
     async fn list_skill_files(

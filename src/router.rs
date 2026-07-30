@@ -371,7 +371,8 @@ fn hr_routes() -> Router {
         )
         .route(
             "/agents/{agent_id}/skills/{skill_id}",
-            post(handlers::hr::skill::install_skill_to_agent_handler),
+            post(handlers::hr::skill::install_skill_to_agent_handler)
+                .delete(handlers::hr::skill::uninstall_skill_from_agent_handler),
         )
         .route(
             "/skills/{skill_id}/files",

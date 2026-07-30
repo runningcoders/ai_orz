@@ -146,6 +146,39 @@ impl SkillManage for HrDomainImpl {
             .await
     }
 
+    async fn uninstall_from_agent(
+        &self,
+        ctx: RequestContext,
+        skill_id: &str,
+        agent_id: &str,
+    ) -> Result<()> {
+        // 查找技能副本，验证属于该 Agent 且是安装副本（parent_skill_id 不为空）
+        let Some(po) = self
+            .skill_dal
+            .get_po_by_id(ctx.clone(), skill_id.to_string())
+            .await?
+        else {
+            bail_err!(NotFound, "Skill not found: {}", skill_id);
+        };
+        if po.author_id != agent_id {
+            bail_err!(
+                InvalidRequest,
+                "Skill {} does not belong to agent {}",
+                skill_id,
+                agent_id
+            );
+        }
+        if po.parent_skill_id.is_empty() {
+            bail_err!(
+                InvalidRequest,
+                "Skill {} is not an installed copy, cannot uninstall",
+                skill_id
+            );
+        }
+        // 复用 DAL delete：同时删除 DB 记录 + 文件目录
+        self.skill_dal.delete(ctx, skill_id).await
+    }
+
     async fn list_skill_files(
         &self,
         ctx: RequestContext,

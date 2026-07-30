@@ -443,3 +443,25 @@ pub struct ListSkillTagsResponse {
     /// 所有已发布技能的不重复 tag 列表
     pub tags: Vec<String>,
 }
+
+/// 单技能卸载请求（从 Agent 目录删除技能副本）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UninstallSkillFromAgentRequest {
+    /// Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+    /// Skill ID（Agent 目录中的副本 ID）。
+    #[param(source = "path")]
+    pub skill_id: String,
+}
+
+/// 单技能卸载响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UninstallSkillFromAgentResponse {
+    /// Agent ID。
+    pub agent_id: String,
+    /// Skill ID。
+    pub skill_id: String,
+    /// 是否删除成功。
+    pub deleted: bool,
+}

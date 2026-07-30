@@ -14,6 +14,7 @@ pub mod query_skills;
 pub mod response;
 pub mod search_skill;
 pub mod search_skills;
+pub mod uninstall_skill_from_agent;
 pub mod update_skill;
 pub mod update_skill_file_content;
 
@@ -29,5 +30,6 @@ pub use list_skills::list_skills_handler;
 pub use query_skills::query_skills_handler;
 pub use search_skill::search_skill_handler;
 pub use search_skills::search_skills_handler;
+pub use uninstall_skill_from_agent::uninstall_skill_from_agent_handler;
 pub use update_skill::update_skill_handler;
 pub use update_skill_file_content::update_skill_file_content_handler;
