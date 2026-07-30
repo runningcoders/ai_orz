@@ -195,8 +195,8 @@ mod tests {
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
         assert_eq!(snapshot.agents.len(), 1);
-        // 预置 3 个 neural 技能（Task 4）
-        assert_eq!(snapshot.skills.len(), 3);
+        // 预置 5 个技能（4 个 neural + 1 个 project_management）
+        assert_eq!(snapshot.skills.len(), 5);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
@@ -212,16 +212,27 @@ mod tests {
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
 
         let ids: Vec<&str> = snapshot.skills.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.contains(&"TEMPLATE_PLATFORM_GUIDE"));
-        assert!(ids.contains(&"TEMPLATE_MEMORY_GUIDE"));
-        assert!(ids.contains(&"TEMPLATE_COLLABORATION_GUIDE"));
+        assert!(ids.contains(&"TEMPLATE_TOOL_BASICS"));
+        assert!(ids.contains(&"TEMPLATE_SKILL_BASICS"));
+        assert!(ids.contains(&"TEMPLATE_MEMORY_COGNITION"));
+        assert!(ids.contains(&"TEMPLATE_COMMUNICATION"));
+        assert!(ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"));
 
+        // 前 4 个神经技能必须包含 neural tag
+        let neural_ids = [
+            "TEMPLATE_TOOL_BASICS",
+            "TEMPLATE_SKILL_BASICS",
+            "TEMPLATE_MEMORY_COGNITION",
+            "TEMPLATE_COMMUNICATION",
+        ];
         for skill in &snapshot.skills {
-            assert!(
-                skill.tags.contains(&"neural".to_string()),
-                "预置技能 {} 必须包含 neural tag",
-                skill.id
-            );
+            if neural_ids.contains(&skill.id.as_str()) {
+                assert!(
+                    skill.tags.contains(&"neural".to_string()),
+                    "神经技能 {} 必须包含 neural tag",
+                    skill.id
+                );
+            }
             assert_eq!(skill.category, "system");
             assert_eq!(skill.status, 1); // Published
             assert_eq!(skill.author_id, "TEMPLATE_ADMIN");

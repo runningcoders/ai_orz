@@ -65,56 +65,92 @@
   ],
   "skills": [
     {
-      "id": "TEMPLATE_PLATFORM_GUIDE",
-      "name": "平台使用指南",
-      "description": "介绍平台神经工具、技能发现、工具调用方式和产物管理，帮助 Agent 快速上手",
-      "tags": ["neural"],
+      "id": "TEMPLATE_TOOL_BASICS",
+      "name": "工具基础",
+      "description": "工具体系、查询发现、调用模式（同步/异步）、结果处理与追踪的完整使用指南",
+      "tags": ["neural", "tool_management"],
       "category": "system",
       "parent_skill_id": "",
       "author_id": "TEMPLATE_ADMIN",
       "author_type": 0,
       "status": 1,
-      "content_path": "skills/TEMPLATE_PLATFORM_GUIDE",
+      "content_path": "skills/TEMPLATE_TOOL_BASICS",
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/platform_guide/skill.md"
+          "ref_path": "skills/tool_basics/skill.md"
         }
       ]
     },
     {
-      "id": "TEMPLATE_MEMORY_GUIDE",
-      "name": "记忆管理指南",
-      "description": "讲解四层记忆模型（核心/工作/短期/长期）、记忆保存、搜索和沉淀机制",
-      "tags": ["neural"],
+      "id": "TEMPLATE_SKILL_BASICS",
+      "name": "技能基础",
+      "description": "技能查询、搜索、安装、卸载的成长性能力管理指南",
+      "tags": ["neural", "skill_management"],
       "category": "system",
       "parent_skill_id": "",
       "author_id": "TEMPLATE_ADMIN",
       "author_type": 0,
       "status": 1,
-      "content_path": "skills/TEMPLATE_MEMORY_GUIDE",
+      "content_path": "skills/TEMPLATE_SKILL_BASICS",
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/memory_guide/skill.md"
+          "ref_path": "skills/skill_basics/skill.md"
         }
       ]
     },
     {
-      "id": "TEMPLATE_COLLABORATION_GUIDE",
-      "name": "Agent 协作指南",
-      "description": "指导任务委派、消息通信、产物管理和团队协作的最佳实践",
-      "tags": ["neural"],
+      "id": "TEMPLATE_MEMORY_COGNITION",
+      "name": "记忆认知",
+      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱沉淀与搜索的完整认知体系",
+      "tags": ["neural", "memory"],
       "category": "system",
       "parent_skill_id": "",
       "author_id": "TEMPLATE_ADMIN",
       "author_type": 0,
       "status": 1,
-      "content_path": "skills/TEMPLATE_COLLABORATION_GUIDE",
+      "content_path": "skills/TEMPLATE_MEMORY_COGNITION",
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/collaboration_guide/skill.md"
+          "ref_path": "skills/memory_cognition/skill.md"
+        }
+      ]
+    },
+    {
+      "id": "TEMPLATE_COMMUNICATION",
+      "name": "协作沟通",
+      "description": "与用户和其他 Agent 的消息通信、任务委派、协作伙伴发现与团队协作指南",
+      "tags": ["neural", "messaging", "collaboration"],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_COMMUNICATION",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/communication/skill.md"
+        }
+      ]
+    },
+    {
+      "id": "TEMPLATE_PROJECT_MANAGEMENT",
+      "name": "项目管理",
+      "description": "项目、任务、产物、文件管理的工具使用说明，结构化工作的核心能力",
+      "tags": ["project_management"],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/TEMPLATE_PROJECT_MANAGEMENT",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/project_management/skill.md"
         }
       ]
     }

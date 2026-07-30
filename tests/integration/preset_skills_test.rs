@@ -1,7 +1,7 @@
 //! Integration tests for preset skills & builtin tools import on system initialization.
 //!
 //! Covers:
-//! - `initialize_system` imports 3 preset neural skills to the shared library
+//! - `initialize_system` imports 5 preset skills (4 neural + 1 project_management) to the shared library
 //! - `initialize_system` syncs builtin tools to DB
 //! - Preset skills' author_id is replaced with the actual owner user_id
 //! - Preset skill files (skill.md) are written and contain expected content
@@ -24,7 +24,7 @@ async fn query_all_skills(ctx: &ai_orz::pkg::RequestContext) -> Vec<ai_orz::mode
         .items
 }
 
-/// After system initialization, 3 preset neural skills should exist in the shared library.
+/// After system initialization, 5 preset skills should exist in the shared library.
 #[sqlx::test]
 async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     let ctx = crate::common::init_full_test_env(pool.clone()).await;
@@ -35,35 +35,63 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
 
     let skill_ids: Vec<&str> = skills.iter().map(|s| s.po.id.as_str()).collect();
     assert!(
-        skill_ids.contains(&"TEMPLATE_PLATFORM_GUIDE"),
-        "缺少预置技能：平台使用指南"
+        skill_ids.contains(&"TEMPLATE_TOOL_BASICS"),
+        "缺少预置技能：工具基础"
     );
     assert!(
-        skill_ids.contains(&"TEMPLATE_MEMORY_GUIDE"),
-        "缺少预置技能：记忆管理指南"
+        skill_ids.contains(&"TEMPLATE_SKILL_BASICS"),
+        "缺少预置技能：技能基础"
     );
     assert!(
-        skill_ids.contains(&"TEMPLATE_COLLABORATION_GUIDE"),
-        "缺少预置技能：Agent 协作指南"
+        skill_ids.contains(&"TEMPLATE_MEMORY_COGNITION"),
+        "缺少预置技能：记忆认知"
+    );
+    assert!(
+        skill_ids.contains(&"TEMPLATE_COMMUNICATION"),
+        "缺少预置技能：协作沟通"
+    );
+    assert!(
+        skill_ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"),
+        "缺少预置技能：项目管理"
     );
 
     // 验证 author_id 被替换为实际 owner（B 方案）
-    let platform_skill = skills
+    let tool_skill = skills
         .iter()
-        .find(|s| s.po.id == "TEMPLATE_PLATFORM_GUIDE")
-        .expect("平台使用指南不存在");
+        .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
+        .expect("工具基础技能不存在");
     assert_eq!(
-        platform_skill.po.author_id, bs.user_id,
+        tool_skill.po.author_id, bs.user_id,
         "预置技能 author_id 应替换为实际 owner id"
     );
 
-    // 验证 tags 包含 neural
+    // 验证神经技能 tags 包含 neural
     assert!(
-        platform_skill
+        tool_skill
             .po
             .parse_tags()
             .contains(&"neural".to_string()),
-        "预置技能必须包含 neural tag"
+        "神经技能必须包含 neural tag"
+    );
+
+    // 验证项目管理技能不含 neural（按需加载）
+    let pm_skill = skills
+        .iter()
+        .find(|s| s.po.id == "TEMPLATE_PROJECT_MANAGEMENT")
+        .expect("项目管理技能不存在");
+    assert!(
+        !pm_skill
+            .po
+            .parse_tags()
+            .contains(&"neural".to_string()),
+        "项目管理技能不应包含 neural tag"
+    );
+    assert!(
+        pm_skill
+            .po
+            .parse_tags()
+            .contains(&"project_management".to_string()),
+        "项目管理技能应包含 project_management tag"
     );
 }
 
@@ -98,15 +126,15 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
     let ctx =
         ai_orz::pkg::RequestContext::from_storage(&bs.user_id, ai_orz::pkg::storage::get().clone());
 
-    // 验证平台使用指南的 skill.md 文件
+    // 验证工具基础的 skill.md 文件
     let files = hr::domain()
         .skill_manage()
-        .list_skill_files(ctx.clone(), "TEMPLATE_PLATFORM_GUIDE")
+        .list_skill_files(ctx.clone(), "TEMPLATE_TOOL_BASICS")
         .await
         .expect("查询技能文件失败")
         .unwrap_or_default();
 
-    assert!(!files.is_empty(), "平台使用指南应有 skill.md 文件");
+    assert!(!files.is_empty(), "工具基础应有 skill.md 文件");
 
     let skill_md = files
         .iter()
@@ -120,53 +148,56 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         .clone();
 
     assert!(
-        content.contains("# 平台使用指南"),
+        content.contains("# 工具基础"),
         "skill.md 内容应包含标题"
     );
-    assert!(content.contains("神经工具"), "skill.md 应包含神经工具章节");
     assert!(
-        content.contains("search_skill"),
-        "skill.md 应提及 search_skill 工具"
+        content.contains("request_tool_call"),
+        "skill.md 应提及 request_tool_call 工具"
+    );
+    assert!(
+        content.contains("send_tool_call_message"),
+        "skill.md 应提及 send_tool_call_message 工具"
     );
 
-    // 验证记忆管理指南
+    // 验证记忆认知
     let memory_files = hr::domain()
         .skill_manage()
-        .list_skill_files(ctx.clone(), "TEMPLATE_MEMORY_GUIDE")
+        .list_skill_files(ctx.clone(), "TEMPLATE_MEMORY_COGNITION")
         .await
-        .expect("查询记忆指南文件失败")
+        .expect("查询记忆认知文件失败")
         .unwrap_or_default();
     let memory_md = memory_files
         .iter()
         .find(|f| f.filename == "skill.md")
-        .expect("记忆指南缺少 skill.md");
+        .expect("记忆认知缺少 skill.md");
     assert!(
         memory_md
             .content
             .as_ref()
             .unwrap()
-            .contains("# 记忆管理指南"),
-        "记忆指南内容不正确"
+            .contains("# 记忆认知"),
+        "记忆认知内容不正确"
     );
 
-    // 验证协作指南
-    let collab_files = hr::domain()
+    // 验证协作沟通
+    let comm_files = hr::domain()
         .skill_manage()
-        .list_skill_files(ctx.clone(), "TEMPLATE_COLLABORATION_GUIDE")
+        .list_skill_files(ctx.clone(), "TEMPLATE_COMMUNICATION")
         .await
-        .expect("查询协作指南文件失败")
+        .expect("查询协作沟通文件失败")
         .unwrap_or_default();
-    let collab_md = collab_files
+    let comm_md = comm_files
         .iter()
         .find(|f| f.filename == "skill.md")
-        .expect("协作指南缺少 skill.md");
+        .expect("协作沟通缺少 skill.md");
     assert!(
-        collab_md
+        comm_md
             .content
             .as_ref()
             .unwrap()
-            .contains("# Agent 协作指南"),
-        "协作指南内容不正确"
+            .contains("# 协作沟通"),
+        "协作沟通内容不正确"
     );
 }
 
@@ -184,7 +215,7 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .iter()
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
-    assert_eq!(count_after_first, 3, "第一次初始化后应有 3 个预置技能");
+    assert_eq!(count_after_first, 5, "第一次初始化后应有 5 个预置技能");
 
     // 第二次 bootstrap — 应更新而非重复创建
     let bs2 = crate::common::factories::bootstrap_system(&app).await;
@@ -195,17 +226,17 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
     assert_eq!(
-        count_after_second, 3,
-        "第二次初始化后仍应只有 3 个预置技能（idempotent）"
+        count_after_second, 5,
+        "第二次初始化后仍应只有 5 个预置技能（idempotent）"
     );
 
     // author_id 应更新为第二个 owner
-    let platform_skill = skills_after_second
+    let tool_skill = skills_after_second
         .iter()
-        .find(|s| s.po.id == "TEMPLATE_PLATFORM_GUIDE")
-        .expect("平台使用指南不存在");
+        .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
+        .expect("工具基础技能不存在");
     assert_eq!(
-        platform_skill.po.author_id, bs2.user_id,
+        tool_skill.po.author_id, bs2.user_id,
         "第二次初始化后 author_id 应更新为新的 owner id"
     );
 }

@@ -11,23 +11,31 @@
 /// 相对路径以 "skills/" 开头，与 SkillFileDef.ref_path 约定一致
 static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
     (
-        "skills/platform_guide/skill.md",
-        include_str!("skills/platform_guide/skill.md"),
+        "skills/tool_basics/skill.md",
+        include_str!("skills/tool_basics/skill.md"),
     ),
     (
-        "skills/memory_guide/skill.md",
-        include_str!("skills/memory_guide/skill.md"),
+        "skills/skill_basics/skill.md",
+        include_str!("skills/skill_basics/skill.md"),
     ),
     (
-        "skills/collaboration_guide/skill.md",
-        include_str!("skills/collaboration_guide/skill.md"),
+        "skills/memory_cognition/skill.md",
+        include_str!("skills/memory_cognition/skill.md"),
+    ),
+    (
+        "skills/communication/skill.md",
+        include_str!("skills/communication/skill.md"),
+    ),
+    (
+        "skills/project_management/skill.md",
+        include_str!("skills/project_management/skill.md"),
     ),
 ];
 
 /// 读取编译期内嵌的文件内容
 ///
 /// # 参数
-/// ref_path - 相对 seed 目录的路径（如 "skills/platform_guide/skill.md"）
+/// ref_path - 相对 seed 目录的路径（如 "skills/tool_basics/skill.md"）
 ///
 /// # 返回
 /// - Ok(String) - 文件内容
@@ -60,20 +68,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_read_embedded_file_platform_guide() {
-        let content = read_embedded_file("skills/platform_guide/skill.md").unwrap();
+    fn test_read_embedded_file_tool_basics() {
+        let content = read_embedded_file("skills/tool_basics/skill.md").unwrap();
         assert!(!content.is_empty());
     }
 
     #[test]
-    fn test_read_embedded_file_memory_guide() {
-        let content = read_embedded_file("skills/memory_guide/skill.md").unwrap();
+    fn test_read_embedded_file_skill_basics() {
+        let content = read_embedded_file("skills/skill_basics/skill.md").unwrap();
         assert!(!content.is_empty());
     }
 
     #[test]
-    fn test_read_embedded_file_collaboration_guide() {
-        let content = read_embedded_file("skills/collaboration_guide/skill.md").unwrap();
+    fn test_read_embedded_file_memory_cognition() {
+        let content = read_embedded_file("skills/memory_cognition/skill.md").unwrap();
+        assert!(!content.is_empty());
+    }
+
+    #[test]
+    fn test_read_embedded_file_communication() {
+        let content = read_embedded_file("skills/communication/skill.md").unwrap();
+        assert!(!content.is_empty());
+    }
+
+    #[test]
+    fn test_read_embedded_file_project_management() {
+        let content = read_embedded_file("skills/project_management/skill.md").unwrap();
         assert!(!content.is_empty());
     }
 
@@ -87,9 +107,11 @@ mod tests {
     #[test]
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 3);
-        assert!(files.contains(&"skills/platform_guide/skill.md".to_string()));
-        assert!(files.contains(&"skills/memory_guide/skill.md".to_string()));
-        assert!(files.contains(&"skills/collaboration_guide/skill.md".to_string()));
+        assert_eq!(files.len(), 5);
+        assert!(files.contains(&"skills/tool_basics/skill.md".to_string()));
+        assert!(files.contains(&"skills/skill_basics/skill.md".to_string()));
+        assert!(files.contains(&"skills/memory_cognition/skill.md".to_string()));
+        assert!(files.contains(&"skills/communication/skill.md".to_string()));
+        assert!(files.contains(&"skills/project_management/skill.md".to_string()));
     }
 }
