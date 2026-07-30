@@ -84,13 +84,15 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut agent_data = use_signal(|| Option::<GetAgentResponse>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
-    // 修复 H3：为聊天、技能包输入框分离独立 signal，避免状态污染
+    // 修复 H3：为聊天输入框分离独立 signal，避免状态污染
     let mut input_message = use_signal(String::new);
-    let mut skill_pack_input = use_signal(String::new);
     let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
     let mut tool_tags = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
+    let mut skill_tags = use_signal(Vec::<String>::new);
+    // 技能包卸载确认对话框：存当前待卸载的 tag
+    let mut show_skill_pack_uninstall_dialog = use_signal(|| None::<String>);
     let mut all_tools = use_signal(Vec::<ToolListItem>::new);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
@@ -137,6 +139,10 @@ pub fn HrAgentDetail(id: String) -> Element {
             match list_installed_skill_packs(&aid).await {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
                 Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
+            }
+            match list_skill_tags().await {
+                Ok(resp) => skill_tags.set(resp.tags),
+                Err(e) => toast.error(&format!("获取技能包标签失败: {}", e)),
             }
             match list_tools(ListToolsRequest::default()).await {
                 Ok(resp) => all_tools.set(resp.items),
@@ -598,36 +604,29 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "技能包" }
-                                    div { class: "flex flex-col sm:flex-row gap-2 mb-4",
-                                        input {
-                                            class: "input input-sm input-bordered flex-1",
-                                            r#type: "text",
-                                            placeholder: "输入技能包 tag 名称",
-                                            oninput: move |e| skill_pack_input.set(e.value().clone()),
-                                        }
-                                        button {
-                                            class: "btn btn-primary btn-sm",
-                                            onclick: move |_| {
-                                                let tag = skill_pack_input().trim().to_string();
-                                                if tag.is_empty() {
-                                                    return;
-                                                }
-                                                let aid = agent_id_signal();
-                                                skill_pack_input.set(String::new());
-                                                spawn(async move {
-                                                    match install_skill_pack(InstallSkillPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
-                                                        Ok(_) => {
-                                                            toast.success(&format!("技能包 [{}] 已安装", tag));
-                                                            match list_installed_skill_packs(&aid).await {
-                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
+                                    div { class: "flex gap-2 items-center mb-4",
+                                        div { class: "flex-1",
+                                            SearchableSelect {
+                                                placeholder: "搜索技能包 tag...".to_string(),
+                                                selected: None,
+                                                options: skill_tags.read().clone(),
+                                                on_select: move |tag: String| {
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        match install_skill_pack(InstallSkillPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
+                                                            Ok(_) => {
+                                                                toast.success(&format!("技能包 [{}] 已安装", tag));
+                                                                match list_installed_skill_packs(&aid).await {
+                                                                    Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                    Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
+                                                                }
                                                             }
+                                                            Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
                                                         }
-                                                        Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
-                                                    }
-                                                });
-                                            },
-                                            "安装技能包"
+                                                    });
+                                                },
+                                                on_search: None,
+                                            }
                                         }
                                     }
                                     if !skill_packs_list.is_empty() {
@@ -635,7 +634,6 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             for tag in skill_packs_list.iter() {
                                                 {
                                                     let tag_clone = tag.clone();
-                                                    let aid = agent_id_signal();
                                                     rsx! {
                                                         span {
                                                             class: "badge badge-info gap-1",
@@ -643,20 +641,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             button {
                                                                 class: "badge-remove",
                                                                 onclick: move |_| {
-                                                                    let agent_id = aid.clone();
-                                                                    let t = tag_clone.clone();
-                                                                    spawn(async move {
-                                                                        match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: agent_id.clone(), tag: t.clone(), delete_copies: None }).await {
-                                                                            Ok(_) => {
-                                                                                toast.success(&format!("技能包 [{}] 已卸载", t));
-                                                                                match list_installed_skill_packs(&agent_id).await {
-                                                                                    Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                                    Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
-                                                                                }
-                                                                            }
-                                                                            Err(e) => toast.error(&format!("卸载技能包失败: {}", e)),
-                                                                        }
-                                                                    });
+                                                                    show_skill_pack_uninstall_dialog.set(Some(tag_clone.clone()));
                                                                 },
                                                                 "×"
                                                             }
@@ -945,6 +930,89 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // 技能包卸载确认对话框
+                        if let Some(tag) = show_skill_pack_uninstall_dialog.read().as_ref() {
+                            {
+                            let tag_a = tag.clone();
+                            let tag_b = tag.clone();
+                            rsx! {
+                            div {
+                                class: "modal modal-open",
+                                onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
+                                div {
+                                    class: "modal-box",
+                                    onclick: move |e| e.stop_propagation(),
+                                    h3 { class: "font-bold text-lg mb-2", "卸载技能包" }
+                                    p { class: "text-sm text-base-content/70 mb-4",
+                                        "即将卸载技能包 [{tag_a}]，请选择卸载方式："
+                                    }
+                                    div { class: "flex flex-col gap-3",
+                                        // 选项 A：仅移除关联
+                                        button {
+                                            class: "btn btn-ghost justify-start text-left",
+                                            onclick: move |_| {
+                                                let aid = agent_id_signal();
+                                                let t = tag_a.clone();
+                                                show_skill_pack_uninstall_dialog.set(None);
+                                                spawn(async move {
+                                                    match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(false) }).await {
+                                                        Ok(_) => {
+                                                            toast.success(&format!("技能包 [{}] 已卸载（保留副本）", t));
+                                                            match list_installed_skill_packs(&aid).await {
+                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                            }
+                                                        }
+                                                        Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                    }
+                                                });
+                                            },
+                                            div {
+                                                p { class: "font-medium", "仅移除关联" }
+                                                p { class: "text-xs text-base-content/50", "移除 tag 标记，保留 Agent 侧技能副本" }
+                                            }
+                                        }
+                                        // 选项 B：同时删除副本
+                                        button {
+                                            class: "btn btn-error btn-outline justify-start text-left",
+                                            onclick: move |_| {
+                                                let aid = agent_id_signal();
+                                                let t = tag_b.clone();
+                                                show_skill_pack_uninstall_dialog.set(None);
+                                                spawn(async move {
+                                                    match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(true) }).await {
+                                                        Ok(_) => {
+                                                            toast.success(&format!("技能包 [{}] 已卸载（含副本删除）", t));
+                                                            match list_installed_skill_packs(&aid).await {
+                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                            }
+                                                        }
+                                                        Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                    }
+                                                });
+                                            },
+                                            div {
+                                                p { class: "font-medium", "移除关联 + 删除副本" }
+                                                p { class: "text-xs text-error/70",
+                                                    "⚠ Agent 技能可能已经进化（修改过内容），删除后无法恢复"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    div { class: "modal-action",
+                                        button {
+                                            class: "btn btn-ghost",
+                                            onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
+                                            "取消"
+                                        }
+                                    }
+                                }
+                            }
+                            }
                             }
                         }
                     }
