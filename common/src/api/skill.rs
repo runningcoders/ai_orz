@@ -257,7 +257,7 @@ pub struct ListAgentSkillsRequest {
 }
 
 /// 列出 Agent 安装的 Skills 响应。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ListAgentSkillsResponse {
     /// Skill 列表。
     pub skills: Vec<SkillListItem>,

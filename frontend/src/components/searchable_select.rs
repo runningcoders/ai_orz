@@ -27,21 +27,22 @@ pub struct SearchableSelectProps {
 #[component]
 pub fn SearchableSelect(props: SearchableSelectProps) -> Element {
     let mut input_value = use_signal(String::new);
-    let mut show_dropdown = use_signal(false);
+    let mut show_dropdown = use_signal(|| false);
     let mut focused_index = use_signal(|| 0usize);
 
-    // 根据输入文本过滤候选（静态模式）
-    let filtered_options: Vec<String> = props
-        .options
-        .iter()
-        .filter(|opt| {
-            input_value
-                .read()
-                .is_empty()
-                || opt.to_lowercase().contains(&input_value.read().to_lowercase())
-        })
-        .cloned()
-        .collect();
+    // 根据输入文本过滤候选（静态模式），用 memo 让闭包可读取
+    let filtered_options = use_memo(move || {
+        let input = input_value.read();
+        let keyword = input.to_lowercase();
+        props
+            .options
+            .iter()
+            .filter(|opt| input.is_empty() || opt.to_lowercase().contains(&keyword))
+            .cloned()
+            .collect::<Vec<String>>()
+    });
+    // 克隆当前过滤结果用于 rsx 渲染（读取 memo 建立响应式订阅）
+    let opts = filtered_options.read().clone();
 
     rsx! {
         div { class: "relative w-full",
@@ -60,51 +61,51 @@ pub fn SearchableSelect(props: SearchableSelectProps) -> Element {
                     }
                 },
                 onkeydown: move |e| {
-                    match e.key().as_str() {
-                        "ArrowDown" => {
-                            if focused_index() + 1 < filtered_options.len() {
-                                focused_index.set(focused_index() + 1);
-                            }
+                    let opts = filtered_options.read();
+                    if e.key() == Key::ArrowDown {
+                        if focused_index() + 1 < opts.len() {
+                            focused_index.set(focused_index() + 1);
                         }
-                        "ArrowUp" => {
-                            if focused_index() > 0 {
-                                focused_index.set(focused_index() - 1);
-                            }
+                    } else if e.key() == Key::ArrowUp {
+                        if focused_index() > 0 {
+                            focused_index.set(focused_index() - 1);
                         }
-                        "Enter" => {
-                            if let Some(opt) = filtered_options.get(focused_index()) {
-                                props.on_select.call(opt.clone());
-                                input_value.set(String::new());
-                                show_dropdown.set(false);
-                            }
-                        }
-                        "Escape" => {
+                    } else if e.key() == Key::Enter {
+                        if let Some(opt) = opts.get(focused_index()) {
+                            props.on_select.call(opt.clone());
+                            input_value.set(String::new());
                             show_dropdown.set(false);
                         }
-                        _ => {}
+                    } else if e.key() == Key::Escape {
+                        show_dropdown.set(false);
                     }
                 },
             }
 
             // 下拉列表
-            if show_dropdown() && !filtered_options.is_empty() {
+            if show_dropdown() && !opts.is_empty() {
                 div {
                     class: "absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-base-100 border border-base-300 rounded-lg shadow-lg",
                     onmouseleave: move |_| show_dropdown.set(false),
 
-                    for (i, opt) in filtered_options.iter().enumerate() {
-                        div {
-                            class: if i == focused_index() {
-                                "px-3 py-2 cursor-pointer bg-primary text-primary-content text-sm"
-                            } else {
-                                "px-3 py-2 cursor-pointer hover:bg-base-200 text-sm"
-                            },
-                            onclick: move |_| {
-                                props.on_select.call(opt.clone());
-                                input_value.set(String::new());
-                                show_dropdown.set(false);
-                            },
-                            "{opt}"
+                    for (i, opt) in opts.iter().enumerate() {
+                        {
+                            let opt_owned = opt.clone();
+                            rsx! {
+                                div {
+                                    class: if i == focused_index() {
+                                        "px-3 py-2 cursor-pointer bg-primary text-primary-content text-sm"
+                                    } else {
+                                        "px-3 py-2 cursor-pointer hover:bg-base-200 text-sm"
+                                    },
+                                    onclick: move |_| {
+                                        props.on_select.call(opt_owned.clone());
+                                        input_value.set(String::new());
+                                        show_dropdown.set(false);
+                                    },
+                                    "{opt_owned}"
+                                }
+                            }
                         }
                     }
                 }
