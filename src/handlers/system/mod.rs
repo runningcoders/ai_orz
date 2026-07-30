@@ -7,3 +7,4 @@ pub mod cron_trigger;
 pub mod health_metrics;
 pub mod logs;
 pub mod seed;
+pub mod task_progress;

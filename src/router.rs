@@ -706,4 +706,9 @@ fn system_routes() -> Router {
                     post(handlers::system::seed::apply_default_handler),
                 ),
         )
+        // 通用后台任务进度查询
+        .route(
+            "/tasks/{task_id}/progress",
+            get(handlers::system::task_progress::get_task_progress_handler),
+        )
 }
