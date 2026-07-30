@@ -212,16 +212,16 @@ mod tests {
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
 
         let ids: Vec<&str> = snapshot.skills.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.contains(&"TEMPLATE_TOOL_BASICS"));
-        assert!(ids.contains(&"TEMPLATE_SKILL_BASICS"));
+        assert!(ids.contains(&"TEMPLATE_TOOL_MANAGEMENT"));
+        assert!(ids.contains(&"TEMPLATE_SKILL_MANAGEMENT"));
         assert!(ids.contains(&"TEMPLATE_MEMORY_COGNITION"));
         assert!(ids.contains(&"TEMPLATE_COMMUNICATION"));
         assert!(ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"));
 
         // 前 4 个神经技能必须包含 neural tag
         let neural_ids = [
-            "TEMPLATE_TOOL_BASICS",
-            "TEMPLATE_SKILL_BASICS",
+            "TEMPLATE_TOOL_MANAGEMENT",
+            "TEMPLATE_SKILL_MANAGEMENT",
             "TEMPLATE_MEMORY_COGNITION",
             "TEMPLATE_COMMUNICATION",
         ];

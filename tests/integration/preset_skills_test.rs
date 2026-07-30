@@ -35,11 +35,11 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
 
     let skill_ids: Vec<&str> = skills.iter().map(|s| s.po.id.as_str()).collect();
     assert!(
-        skill_ids.contains(&"TEMPLATE_TOOL_BASICS"),
+        skill_ids.contains(&"TEMPLATE_TOOL_MANAGEMENT"),
         "缺少预置技能：工具管理"
     );
     assert!(
-        skill_ids.contains(&"TEMPLATE_SKILL_BASICS"),
+        skill_ids.contains(&"TEMPLATE_SKILL_MANAGEMENT"),
         "缺少预置技能：技能管理"
     );
     assert!(
@@ -58,7 +58,7 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     // 验证 author_id 被替换为实际 owner（B 方案）
     let tool_skill = skills
         .iter()
-        .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
+        .find(|s| s.po.id == "TEMPLATE_TOOL_MANAGEMENT")
         .expect("工具管理技能不存在");
     assert_eq!(
         tool_skill.po.author_id, bs.user_id,
@@ -129,7 +129,7 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
     // 验证工具基础的 skill.md 文件
     let files = hr::domain()
         .skill_manage()
-        .list_skill_files(ctx.clone(), "TEMPLATE_TOOL_BASICS")
+        .list_skill_files(ctx.clone(), "TEMPLATE_TOOL_MANAGEMENT")
         .await
         .expect("查询技能文件失败")
         .unwrap_or_default();
@@ -233,7 +233,7 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
     // author_id 应更新为第二个 owner
     let tool_skill = skills_after_second
         .iter()
-        .find(|s| s.po.id == "TEMPLATE_TOOL_BASICS")
+        .find(|s| s.po.id == "TEMPLATE_TOOL_MANAGEMENT")
         .expect("工具管理技能不存在");
     assert_eq!(
         tool_skill.po.author_id, bs2.user_id,
