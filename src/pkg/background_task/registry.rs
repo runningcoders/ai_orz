@@ -112,7 +112,7 @@ impl BackgroundTaskRegistry {
         let mut to_remove = Vec::new();
         for (_type, mut list) in by_type {
             // 按完成时间降序排序
-            list.sort_by(|a, b| b.1.cmp(&a.1));
+            list.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (id, _) in list.into_iter().skip(max_count) {
                 to_remove.push(id);
             }

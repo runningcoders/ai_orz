@@ -418,6 +418,7 @@ pub trait ArtifactManage: Send + Sync {
     ///
     /// Only fields that are `Some` will be updated. Content update only applies
     /// to GeneratedContent artifacts. Metadata (name/description/tags) applies to all.
+    #[allow(clippy::too_many_arguments)]
     async fn update_artifact(
         &self,
         ctx: RequestContext,

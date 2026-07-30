@@ -30,7 +30,7 @@ pub async fn list_tasks(
     }
 
     // 按 started_at 降序排序（最新的在前）
-    snapshots.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    snapshots.sort_by_key(|s| std::cmp::Reverse(s.started_at));
 
     let total = snapshots.len();
     Ok(ListBackgroundTasksResponse {

@@ -18,16 +18,15 @@ static BOOTSTRAP_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new((
 
 /// Bootstrap result — contains everything tests need to make authenticated calls.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // 公共测试 API 字段，保留供未来测试使用
 pub struct BootstrappedSystem {
     pub organization_id: String,
-    #[allow(dead_code)] // 公共测试 API 字段，保留供未来测试使用
     pub user_id: String,
     pub username: String,
     pub password_hash: String,
     pub chat_provider_id: String,
     /// None 表示测试环境未配置 embedding provider（默认情况）。
     /// 所有实体创建走 `Ok(None)` 向量降级路径，不触发 cortex/FastEmbed。
-    #[allow(dead_code)] // 公共测试 API 字段，保留供未来测试使用
     pub embedding_provider_id: Option<String>,
 }
 
@@ -142,6 +141,7 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
 /// Login as the given user via the real `/organization/auth/login` endpoint.
 ///
 /// Returns the JWT token. Tests should pass this to `TestApp::get_with_jwt` etc.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn login_and_get_jwt(
     app: &TestApp,
     organization_id: &str,
@@ -169,6 +169,7 @@ pub async fn login_and_get_jwt(
 /// ever created — all entity creates take the vector-degradation path with no
 /// cortex calls and no FastEmbed model downloads, keeping tests fast and
 /// CI-stable.
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn bootstrap_and_login(app: &TestApp) -> (BootstrappedSystem, String) {
     let bs = bootstrap_system(app).await;
     let jwt = login_and_get_jwt(app, &bs.organization_id, &bs.username, &bs.password_hash).await;

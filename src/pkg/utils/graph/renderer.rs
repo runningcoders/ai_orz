@@ -1,6 +1,6 @@
 //! Graph 渲染器实现
 
-use super::types::{Graph, GraphLine, GraphNodeData};
+use super::types::Graph;
 
 /// 图渲染器 trait
 ///
