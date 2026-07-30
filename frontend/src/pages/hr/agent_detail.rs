@@ -1,10 +1,11 @@
-use crate::api::finance::list_model_providers;
+use crate::api::finance::{list_model_providers, list_tool_tags};
 use crate::api::hr::*;
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
+use crate::components::SearchableSelect;
 use crate::components::state::Loading;
 use crate::components::stats::AgentStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
@@ -83,12 +84,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut agent_data = use_signal(|| Option::<GetAgentResponse>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
-    // 修复 H3：为聊天、工具包、技能包输入框分离独立 signal，避免状态污染
+    // 修复 H3：为聊天、技能包输入框分离独立 signal，避免状态污染
     let mut input_message = use_signal(String::new);
-    let mut tool_pack_input = use_signal(String::new);
     let mut skill_pack_input = use_signal(String::new);
     let toast = use_toast();
     let mut tool_packs = use_signal(Vec::<String>::new);
+    let mut tool_tags = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
     let mut all_tools = use_signal(Vec::<ToolListItem>::new);
     let mut show_edit_modal = use_signal(|| false);
@@ -128,6 +129,10 @@ pub fn HrAgentDetail(id: String) -> Element {
             match list_installed_tool_packs(&aid).await {
                 Ok(resp) => tool_packs.set(resp.installed_tags),
                 Err(e) => toast.error(&format!("获取工具包失败: {}", e)),
+            }
+            match list_tool_tags().await {
+                Ok(resp) => tool_tags.set(resp.tags),
+                Err(e) => toast.error(&format!("获取工具包标签失败: {}", e)),
             }
             match list_installed_skill_packs(&aid).await {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
@@ -525,36 +530,32 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 // === 工具与技能：工具包 + 技能包 + 工具绑定 ===
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "工具包" }
-                                    div { class: "flex flex-col sm:flex-row gap-2 mb-4",
-                                        input {
-                                            class: "input input-sm input-bordered flex-1",
-                                            r#type: "text",
-                                            placeholder: "输入工具包 tag 名称",
-                                            oninput: move |e| tool_pack_input.set(e.value().clone()),
-                                        }
-                                        button {
-                                            class: "btn btn-primary btn-sm",
-                                            onclick: move |_| {
-                                                let tag = tool_pack_input().trim().to_string();
-                                                if tag.is_empty() {
-                                                    return;
-                                                }
-                                                let aid = agent_id_signal();
-                                                tool_pack_input.set(String::new());
-                                                spawn(async move {
-                                                    match install_tool_pack(InstallToolPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
-                                                        Ok(_) => {
-                                                            toast.success(&format!("工具包 [{}] 已安装", tag));
-                                                            match list_installed_tool_packs(&aid).await {
-                                                                Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
+                                    div { class: "flex gap-2 items-center mb-4",
+                                        div { class: "flex-1",
+                                            SearchableSelect {
+                                                placeholder: "搜索工具包 tag...".to_string(),
+                                                selected: None,
+                                                options: tool_tags.read().clone(),
+                                                on_select: move |tag: String| {
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        match install_tool_pack(InstallToolPackRequest {
+                                                            agent_id: aid.clone(),
+                                                            tag: tag.clone(),
+                                                        }).await {
+                                                            Ok(_) => {
+                                                                toast.success(&format!("工具包 [{}] 已安装", tag));
+                                                                match list_installed_tool_packs(&aid).await {
+                                                                    Ok(resp) => tool_packs.set(resp.installed_tags),
+                                                                    Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
+                                                                }
                                                             }
+                                                            Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
                                                         }
-                                                        Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
-                                                    }
-                                                });
-                                            },
-                                            "安装工具包"
+                                                    });
+                                                },
+                                                on_search: None,
+                                            }
                                         }
                                     }
                                     if !tool_packs_list.is_empty() {
