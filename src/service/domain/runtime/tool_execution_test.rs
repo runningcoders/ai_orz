@@ -123,7 +123,11 @@ mod tests {
             Ok(self.agent.iter().cloned().collect())
         }
 
-        async fn search(&self, _ctx: RequestContext, _search: AgentSearch) -> Result<Vec<Agent>> {
+        async fn search(
+            &self,
+            _ctx: RequestContext,
+            _search: AgentSearch,
+        ) -> Result<common::api::PagedResult<Agent>> {
             unimplemented!("not needed by tool execution routing tests")
         }
 

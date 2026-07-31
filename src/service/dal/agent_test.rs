@@ -401,8 +401,8 @@ async fn test_search_fts5_by_name(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].name(), "debug-helper");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].name(), "debug-helper");
 
     Ok(())
 }
@@ -431,8 +431,8 @@ async fn test_search_fts5_by_description(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].name(), "python-tool");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].name(), "python-tool");
 
     Ok(())
 }
@@ -462,7 +462,7 @@ async fn test_search_fts5_chinese(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results.len(), 1, "3 字符中文搜索应能匹配");
+    assert_eq!(results.items.len(), 1, "3 字符中文搜索应能匹配");
 
     // 3 字符搜索描述中的内容
     let results2 = dal
@@ -474,7 +474,7 @@ async fn test_search_fts5_chinese(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results2.len(), 1, "3 字符中文搜索描述应能匹配");
+    assert_eq!(results2.items.len(), 1, "3 字符中文搜索描述应能匹配");
 
     Ok(())
 }
@@ -499,7 +499,7 @@ async fn test_search_fts5_no_match(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results.len(), 0);
+    assert_eq!(results.items.len(), 0);
 
     Ok(())
 }
@@ -536,8 +536,9 @@ async fn test_search_hybrid_match(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 1);
-    let match_info = results[0]
+    assert_eq!(results.items.len(), 1);
+
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -580,8 +581,8 @@ async fn test_search_vector_only_match(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 1, "应返回 1 条 Vector 匹配结果");
-    let match_info = results[0]
+    assert_eq!(results.items.len(), 1, "应返回 1 条 Vector 匹配结果");
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -624,8 +625,8 @@ async fn test_search_keyword_only_match(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 1, "应返回 1 条 Keyword 匹配结果");
-    let match_info = results[0]
+    assert_eq!(results.items.len(), 1, "应返回 1 条 Keyword 匹配结果");
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -686,24 +687,24 @@ async fn test_search_comprehensive_sorting(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 3, "应返回 3 条结果");
+    assert_eq!(results.items.len(), 3, "应返回 3 条结果");
 
     // 验证排序：Hybrid → Vector → Keyword
-    assert_eq!(results[0].name(), "debug-hybrid");
+    assert_eq!(results.items[0].name(), "debug-hybrid");
     assert_eq!(
-        results[0].search_match.as_ref().unwrap().match_type,
+        results.items[0].search_match.as_ref().unwrap().match_type,
         MatchType::Hybrid
     );
 
-    assert_eq!(results[1].name(), "vector-only-tool");
+    assert_eq!(results.items[1].name(), "vector-only-tool");
     assert_eq!(
-        results[1].search_match.as_ref().unwrap().match_type,
+        results.items[1].search_match.as_ref().unwrap().match_type,
         MatchType::Vector
     );
 
-    assert_eq!(results[2].name(), "nonexistent-debug-keyword");
+    assert_eq!(results.items[2].name(), "nonexistent-debug-keyword");
     assert_eq!(
-        results[2].search_match.as_ref().unwrap().match_type,
+        results.items[2].search_match.as_ref().unwrap().match_type,
         MatchType::Keyword
     );
 
@@ -736,8 +737,8 @@ async fn test_vector_auto_maintenance_create(pool: SqlitePool) -> Result<()> {
         .await?;
 
     // 应能通过向量搜索找到（Vector 或 Hybrid 匹配）
-    assert_eq!(results.len(), 1);
-    let match_info = results[0]
+    assert_eq!(results.items.len(), 1);
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -784,10 +785,10 @@ async fn test_vector_auto_maintenance_update(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].name(), "updated-debug-name");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].name(), "updated-debug-name");
     // 更新后向量应已重新生成（内容变化触发重索引）
-    let match_info = results[0]
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -826,7 +827,7 @@ async fn test_vector_auto_maintenance_delete(pool: SqlitePool) -> Result<()> {
             },
         )
         .await?;
-    assert_eq!(results.len(), 0, "删除后搜索不应返回结果");
+    assert_eq!(results.items.len(), 0, "删除后搜索不应返回结果");
 
     Ok(())
 }
@@ -930,8 +931,8 @@ async fn test_search_fts_rank_transparency(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(results.len(), 1);
-    let match_info = results[0]
+    assert_eq!(results.items.len(), 1);
+    let match_info = results.items[0]
         .search_match
         .as_ref()
         .expect("search_match 不应为 None");
@@ -940,6 +941,88 @@ async fn test_search_fts_rank_transparency(pool: SqlitePool) -> Result<()> {
         match_info.fts_rank.is_some(),
         "fts_rank 应有值（从 DAO 透传）"
     );
+
+    Ok(())
+}
+
+/// 测试 search 方法的 runtime_state 内存过滤
+///
+/// runtime_state 是内存态（AgentRuntimeStateManager），DAO 层无法 SQL 过滤。
+/// DAL 层 search 方法应在聚合结果后注入 runtime_info，再按 runtime_state 过滤。
+#[sqlx::test]
+async fn test_search_with_runtime_state_filter(pool: SqlitePool) -> Result<()> {
+    let dal = init_search_test_env(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+    let manager = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
+
+    // 创建两个 Agent（name 都含 "debug" 以保证 FTS5 命中）
+    let agent_idle = create_test_agent_full("debug-idle", "Idle debug agent", vec![], "p1");
+    let agent_busy = create_test_agent_full("debug-busy", "Busy debug agent", vec![], "p1");
+    dal.create(ctx.clone(), &agent_idle).await?;
+    dal.create(ctx.clone(), &agent_busy).await?;
+
+    // 设置 runtime_state：idle → Idle, busy → Busy
+    manager.set_idle(agent_idle.id());
+    manager.set_busy(agent_busy.id(), "msg-test-1");
+
+    // 搜索 Idle Agent
+    let result_idle = dal
+        .search(
+            ctx.clone(),
+            AgentSearch {
+                keyword: Some("debug".to_string()),
+                filters: crate::service::dao::agent::AgentQuery {
+                    runtime_state: Some(common::enums::AgentRuntimeState::Idle),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    // 只应返回 Idle Agent
+    assert_eq!(result_idle.items.len(), 1, "runtime_state=Idle 应只返回 Idle Agent");
+    assert_eq!(result_idle.items[0].name(), "debug-idle");
+    assert!(result_idle.items.iter().all(|a| {
+        a.runtime_info
+            .as_ref()
+            .map(|i| i.state)
+            .unwrap_or(common::enums::AgentRuntimeState::Idle)
+            == common::enums::AgentRuntimeState::Idle
+    }));
+
+    // 搜索 Busy Agent
+    let result_busy = dal
+        .search(
+            ctx.clone(),
+            AgentSearch {
+                keyword: Some("debug".to_string()),
+                filters: crate::service::dao::agent::AgentQuery {
+                    runtime_state: Some(common::enums::AgentRuntimeState::Busy),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    assert_eq!(result_busy.items.len(), 1, "runtime_state=Busy 应只返回 Busy Agent");
+    assert_eq!(result_busy.items[0].name(), "debug-busy");
+
+    // 不设 runtime_state 过滤 → 返回全部
+    let result_all = dal
+        .search(
+            ctx,
+            AgentSearch {
+                keyword: Some("debug".to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(result_all.items.len(), 2, "无 runtime_state 过滤应返回全部");
+
+    // 清理 runtime_state
+    manager.set_idle(agent_busy.id());
 
     Ok(())
 }

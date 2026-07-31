@@ -80,9 +80,12 @@ impl AgentDal for MockAgentDal {
         &self,
         _ctx: RequestContext,
         _search: crate::service::dao::agent::AgentSearch,
-    ) -> Result<Vec<Agent>> {
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.record("search");
-        Ok(Vec::new())
+        Ok(common::api::PagedResult {
+            items: Vec::new(),
+            total: 0,
+        })
     }
     async fn update(&self, _ctx: RequestContext, _agent: &Agent) -> Result<()> {
         self.record("update");
