@@ -733,9 +733,9 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             builder.push(" AND status != 0");
         }
 
-        if let Some(memory_type) = &query.memory_type {
+        if let Some(node_type) = &query.node_type {
             builder.push(" AND node_type = ");
-            builder.push_bind(memory_type.to_string());
+            builder.push_bind(node_type);
         }
 
         if let Some(keyword) = &query.keyword

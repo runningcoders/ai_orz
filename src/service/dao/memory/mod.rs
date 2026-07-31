@@ -33,6 +33,9 @@ pub struct MemoryQuery {
     pub tags: Option<Vec<String>>,
     /// 是否包含其他 Agent 共享的 published 节点（默认 false）
     pub include_shared: bool,
+    /// 新增：按知识节点类型过滤（summary/concept/fact/procedure）
+    /// 注意：与 memory_type 不同——memory_type 是记忆大类型，node_type 是知识节点的子类型
+    pub node_type: Option<String>,
 }
 
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）
