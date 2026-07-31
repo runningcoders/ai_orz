@@ -85,7 +85,11 @@ pub trait SkillDal: Send + Sync {
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
 
     /// 搜索技能（名称/描述/标签）
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<common::api::PagedResult<Skill>>;
 
     /// 更新技能元数据（不影响文件）
     /// 更新技能（仅数据库）
@@ -298,7 +302,13 @@ impl SkillDal for SkillDalImpl {
         Ok(page.items)
     }
 
-    async fn search(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<common::api::PagedResult<Skill>> {
+        // 提前捕获 pagination，避免 search 被 move 后无法访问
+        let pagination = search.filters.pagination.clone();
         // 向量距离阈值（可配置，默认 0.8）
         let vector_distance_threshold = search.vector_distance_threshold.unwrap_or(0.8);
 
@@ -328,11 +338,11 @@ impl SkillDal for SkillDalImpl {
                     .await?;
                 let query_vector = query_vector_params.vector;
 
-                // 向量搜索（前 50 条）
+                // 向量搜索（前 20 条，与 search LIMIT 20 上限对齐）
                 // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
                 match self
                     .skill_vector_dao
-                    .search_vector(ctx.clone(), &query_vector, 50)
+                    .search_vector(ctx.clone(), &query_vector, 20)
                     .await
                 {
                     Ok(vector_results) => {
@@ -495,12 +505,16 @@ impl SkillDal for SkillDalImpl {
             })
         });
 
-        // Step 8: 应用 limit
-        if let Some(limit) = search.filters.pagination.limit {
-            skills.truncate(limit);
-        }
+        // Step 8: 应用 search 上限（与 DAO LIMIT 20 对齐，避免内存聚合后结果过多）
+        skills.truncate(20);
 
-        Ok(skills)
+        // Step 9: 内存分页（DAO 已按 LIMIT 20 截断，这里基于聚合后的全量做 offset/limit 分页）
+        let total = skills.len();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(20);
+        let items = skills.into_iter().skip(offset).take(limit).collect();
+
+        Ok(common::api::PagedResult { items, total })
     }
 
     async fn update(&self, ctx: RequestContext, skill: &Skill) -> Result<()> {

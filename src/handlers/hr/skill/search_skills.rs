@@ -1,20 +1,23 @@
-//! Handler: GET /api/v1/skills/search - Search skills by keyword with filtering
+//! Handler: POST /api/v1/skills/search - Search skills with full filtering
+//!
+//! 与 query_skills 的区别：search 重在"语义相关性"（FTS5 + 向量语义混合搜索），
+//! query 重在"条件过滤"。两者现在都支持完整过滤条件和分页返回。
 
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{SearchSkillsRequest, SearchSkillsResponse};
+use common::api::{PagedResult, SearchSkillsRequest, SkillListItem};
 use common::enums::SkillStatus;
 use common::error::Result;
 
 use super::response::to_list_item;
 
-/// Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.
+/// Search skills with full filtering (FTS5 + vector semantic search)
 #[register_handler_tool(
     id = "search_skills",
     name = "search_skills",
-    description = "Search public skills by keyword with optional filtering. Returns matching skills sorted by relevance.",
+    description = "Search skills by keyword with full filtering support (FTS5 + vector semantic search).",
     params = "common::api::SearchSkillsRequest",
     neural,
     tags = "skill_management"
@@ -23,31 +26,24 @@ use super::response::to_list_item;
 pub async fn search_skills(
     ctx: RequestContext,
     params: SearchSkillsRequest,
-) -> Result<SearchSkillsResponse> {
-    let skills = domain()
-        .skill_manage()
-        .search_skills(
-            ctx,
-            SkillSearch {
-                keyword: params.keyword,
-                query_vector: None,
-                top_k: params.limit.map(|limit| limit as i32),
-                vector_distance_threshold: None,
-                filters: SkillQuery {
-                    status: params.status,
-                    exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
-                    category: params.category,
-                    author_id: params.author_id,
-                    pagination: common::api::PaginationParams {
-                        limit: params.limit,
-                        offset: None,
-                    },
-                    ..Default::default()
-                },
-            },
-        )
-        .await?;
+) -> Result<PagedResult<SkillListItem>> {
+    let search = SkillSearch {
+        keyword: params.keyword,
+        filters: SkillQuery {
+            ids: params.ids,
+            status: params.status,
+            exclude_status: params.status.is_none().then_some(SkillStatus::Expired),
+            category: params.category,
+            author_id: params.author_id,
+            parent_skill_id: params.parent_skill_id,
+            tags: params.tags,
+            pagination: params.pagination,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
-    let skills = skills.iter().map(to_list_item).collect();
-    Ok(SearchSkillsResponse { skills })
+    let page = domain().skill_manage().search_skills(ctx, search).await?;
+
+    Ok(page.map(|s| to_list_item(&s)))
 }

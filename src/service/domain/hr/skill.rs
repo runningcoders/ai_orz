@@ -123,7 +123,11 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
-    async fn search_skills(&self, ctx: RequestContext, search: SkillSearch) -> Result<Vec<Skill>> {
+    async fn search_skills(
+        &self,
+        ctx: RequestContext,
+        search: SkillSearch,
+    ) -> Result<common::api::PagedResult<Skill>> {
         self.skill_dal.search(ctx, search).await
     }
 

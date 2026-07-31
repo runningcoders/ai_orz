@@ -362,7 +362,7 @@ fn hr_routes() -> Router {
         )
         .route(
             "/skills/search",
-            get(handlers::hr::skill::search_skills_handler),
+            post(handlers::hr::skill::search_skills_handler),
         )
         .route(
             "/skills/tags",

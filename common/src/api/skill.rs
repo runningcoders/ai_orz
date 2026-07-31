@@ -1,6 +1,6 @@
 //! Skill management API request/response DTOs - shared between backend and frontend
 
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
 use ai_orz_macros::Params;
@@ -304,36 +304,30 @@ pub struct SkillQueryRequest {
 /// Skill 列表项响应别名（前端兼容）
 pub type ListSkillsResponseItem = SkillListItem;
 
-/// Skill 搜索请求。
-#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+/// Skill 搜索请求（POST body，支持完整过滤条件 + 关键词搜索）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct SearchSkillsRequest {
-    /// 搜索关键词。
-    #[param(source = "query")]
+    /// 搜索关键词（支持 FTS5 全文搜索 + 向量语义搜索）
     pub keyword: Option<String>,
-
-    /// 可选状态筛选。
-    #[param(source = "query")]
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 状态筛选
     pub status: Option<SkillStatus>,
-
-    /// 可选分类筛选。
-    #[param(source = "query")]
+    /// 分类
     pub category: Option<String>,
-
-    /// 可选作者筛选。
-    #[param(source = "query")]
+    /// 作者 ID
     pub author_id: Option<String>,
-
-    /// 返回数量限制。
-    #[param(source = "query")]
-    pub limit: Option<usize>,
+    /// 父技能 ID
+    pub parent_skill_id: Option<String>,
+    /// 标签列表
+    pub tags: Option<Vec<String>>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
-/// Skill 搜索响应。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SearchSkillsResponse {
-    /// 搜索结果列表。
-    pub skills: Vec<SkillListItem>,
-}
+/// Skill 搜索响应（分页）
+pub type SearchSkillsResponse = PagedResult<SkillListItem>;
 
 /// 更新 Skill 请求。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
