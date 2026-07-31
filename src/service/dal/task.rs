@@ -146,7 +146,11 @@ pub trait TaskDal: Send + Sync {
     /// - keyword 存在 → FTS5 全文检索
     /// - query_vector 存在 → 向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果
-    async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: TaskSearch,
+    ) -> Result<common::api::PagedResult<Task>>;
 
     /// 更新任务信息
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()>;
@@ -359,7 +363,11 @@ impl TaskDal for TaskDalImpl {
         self.task_dao.count(ctx, query).await
     }
 
-    async fn search(&self, ctx: RequestContext, search: TaskSearch) -> Result<Vec<Task>> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: TaskSearch,
+    ) -> Result<common::api::PagedResult<Task>> {
         // 向量距离阈值（默认 0.8）
         const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
 
@@ -383,7 +391,7 @@ impl TaskDal for TaskDalImpl {
                     // 向量搜索（前 50 条）
                     match self
                         .task_vector_dao
-                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .search_vector(ctx.clone(), &vec_params.vector, 20)
                         .await
                     {
                         Ok(vector_results) => {
@@ -552,12 +560,14 @@ impl TaskDal for TaskDalImpl {
             })
         });
 
-        // Step 8: 应用 limit
-        if let Some(limit) = search.filters.pagination.limit {
-            tasks.truncate(limit);
-        }
-
-        Ok(tasks)
+        // Step 8: 截断到 20 + 分页
+        tasks.truncate(20);
+        let pagination = search.filters.pagination.clone();
+        let total = tasks.len();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(20);
+        let items = tasks.into_iter().skip(offset).take(limit).collect();
+        Ok(common::api::PagedResult { items, total })
     }
 
     async fn update(&self, ctx: RequestContext, task: &Task) -> Result<()> {
