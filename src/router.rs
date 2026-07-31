@@ -557,6 +557,10 @@ fn finance_routes() -> Router {
             post(handlers::finance::tool::query_tools::query_tools_handler),
         )
         .route(
+            "/tools/search",
+            post(handlers::finance::tool::search_tools::search_tools_handler),
+        )
+        .route(
             "/tools/tags",
             get(handlers::finance::tool::list_tool_tags::list_tool_tags_handler),
         )

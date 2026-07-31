@@ -51,10 +51,16 @@ pub struct ToolQuery {
 /// Tool 搜索参数（向量 + 关键词混合搜索）
 #[derive(Debug, Clone, Default)]
 pub struct ToolSearch {
+    /// 关键词搜索查询（用于 FTS5 全文匹配）
     pub keyword: Option<String>,
-    pub limit: usize,
-    pub agent_id: Option<String>,
-    pub enabled_only: bool,
+    /// 查询向量（用于向量语义搜索，DAL 层填充）
+    pub query_vector: Option<Vec<f32>>,
+    /// 返回 Top K 结果（向量搜索专用，0 表示使用默认值 20）
+    pub top_k: usize,
+    /// 向量距离阈值，超过此值的结果被过滤。None 表示使用默认值 0.8
+    pub vector_distance_threshold: Option<f32>,
+    /// 业务过滤条件（直接复用 ToolQuery）
+    pub filters: ToolQuery,
 }
 
 /// 工具统计查询参数

@@ -1,6 +1,6 @@
 //! Built-in tool related API request/response DTOs - shared between backend and frontend
 
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::{ControlMode, ToolProtocol, ToolStatus};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -179,6 +179,33 @@ pub struct ToolQueryRequest {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
+
+/// 搜索 Tool 请求（POST body，支持完整过滤条件 + 关键词搜索）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct SearchToolsRequest {
+    /// 搜索关键词（支持 FTS5 全文搜索 + 向量语义搜索）
+    pub keyword: Option<String>,
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 绑定的 Agent ID
+    pub agent_id: Option<String>,
+    /// 标签列表
+    pub tags: Option<Vec<String>>,
+    /// 协议类型
+    pub protocol: Option<ToolProtocol>,
+    /// 状态
+    pub status: Option<ToolStatus>,
+    /// MCP 服务器 ID
+    pub mcp_server_id: Option<String>,
+    /// 仅启用
+    pub enabled_only: Option<bool>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+/// 搜索 Tool 响应（分页）
+pub type SearchToolsResponse = PagedResult<ToolListItem>;
 
 /// Tool list item alias (frontend compatibility)
 pub type ListToolsResponseItem = ToolListItem;

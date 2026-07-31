@@ -416,7 +416,11 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        async fn search(&self, _ctx: RequestContext, _params: ToolSearch) -> Result<Vec<Tool>> {
+        async fn search(
+            &self,
+            _ctx: RequestContext,
+            _params: ToolSearch,
+        ) -> Result<common::api::PagedResult<Tool>> {
             unimplemented!("not needed by tool execution routing tests")
         }
 

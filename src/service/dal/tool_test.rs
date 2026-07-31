@@ -801,16 +801,16 @@ async fn test_search_three_state_matching(pool: SqlitePool) -> Result<()> {
     tool_dal.create_tool(ctx.clone(), &po_vector_only).await?;
 
     // 3. 搜索 "debug"（trigram 需要 3+ 字符，"debug" 是 5 字符，OK）
-    let results = tool_dal
+    let page = tool_dal
         .search(
             ctx.clone(),
             ToolSearch {
                 keyword: Some("debug".to_string()),
-                limit: 10,
                 ..Default::default()
             },
         )
         .await?;
+    let results = page.items;
 
     // 应返回 2 条结果（Hybrid + Vector）
     assert_eq!(results.len(), 2, "应返回 Hybrid + Vector 共 2 条结果");
@@ -880,16 +880,16 @@ async fn test_search_keyword_only_match(pool: SqlitePool) -> Result<()> {
     tool_dal.create_tool(ctx.clone(), &po).await?;
 
     // 搜索 "debug"（查询向量 [0.0, 1.0, 1.0]，工具向量 [1.0, 0.0, 0.0]，距离 1.0 > 0.8）
-    let results = tool_dal
+    let page = tool_dal
         .search(
             ctx.clone(),
             ToolSearch {
                 keyword: Some("debug".to_string()),
-                limit: 10,
                 ..Default::default()
             },
         )
         .await?;
+    let results = page.items;
 
     // 应返回 1 条结果（Keyword-only）
     assert_eq!(results.len(), 1, "应返回 1 条 Keyword 匹配结果");

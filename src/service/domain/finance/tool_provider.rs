@@ -125,7 +125,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         &self,
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
-    ) -> Result<Vec<Tool>> {
+    ) -> Result<common::api::PagedResult<Tool>> {
         self.tool_dal.search(ctx.clone(), params).await
     }
 }

@@ -453,7 +453,7 @@ pub trait ToolProviderManage: Send + Sync {
         &self,
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
-    ) -> Result<Vec<crate::models::tool::Tool>>;
+    ) -> Result<common::api::PagedResult<crate::models::tool::Tool>>;
 }
 
 // ==================== 实现 ====================

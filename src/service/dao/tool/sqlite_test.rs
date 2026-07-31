@@ -600,8 +600,14 @@ async fn test_tool_search(pool: SqlitePool) {
     // 1. 关键词搜索
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("search-tool".to_string()),
-        enabled_only: true,
-        limit: 10,
+        filters: crate::service::dao::tool::ToolQuery {
+            enabled_only: Some(true),
+            pagination: common::api::PaginationParams {
+                limit: Some(10),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     let results = tool_dao.search(ctx.clone(), search).await.unwrap();
@@ -610,8 +616,14 @@ async fn test_tool_search(pool: SqlitePool) {
     // 2. 测试 limit
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("search-tool".to_string()),
-        enabled_only: true,
-        limit: 1,
+        filters: crate::service::dao::tool::ToolQuery {
+            enabled_only: Some(true),
+            pagination: common::api::PaginationParams {
+                limit: Some(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     let results = tool_dao.search(ctx.clone(), search).await.unwrap();
@@ -773,8 +785,6 @@ async fn test_keyword_search_matches_tags(pool: SqlitePool) {
     // 用 tag 内容作为关键词通过 FTS5 搜索，应能命中（tools_fts 索引包含 tags 字段）
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("unique_tool_tag".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -818,8 +828,6 @@ async fn test_search_tools_fts5_basic(pool: SqlitePool) {
     // 搜索 "rust" — 只应匹配 tool1
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("rust".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -862,8 +870,6 @@ async fn test_search_tools_fts5_chinese(pool: SqlitePool) {
     // 用中文关键词搜索（trigram 分词器要求至少 3 个字符）
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("内存管理".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -919,8 +925,6 @@ async fn test_search_tools_fts5_bm25_ranking(pool: SqlitePool) {
     // 搜索 "rust"
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("rust".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -978,8 +982,6 @@ async fn test_search_tools_excludes_stale(pool: SqlitePool) {
     // 搜索 "searchable" — 应排除 Stale 工具
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("searchable".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -1020,8 +1022,10 @@ async fn test_search_tools_enabled_only_filter(pool: SqlitePool) {
     // 搜索 "filter"，enabled_only=true 只返回启用的
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("filter".to_string()),
-        enabled_only: true,
-        limit: 10,
+        filters: crate::service::dao::tool::ToolQuery {
+            enabled_only: Some(true),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -1049,8 +1053,6 @@ async fn test_search_tools_empty_keyword_returns_empty(pool: SqlitePool) {
     // 空关键词应返回空结果
     let search = crate::service::dao::tool::ToolSearch {
         keyword: Some("".to_string()),
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();
@@ -1059,8 +1061,6 @@ async fn test_search_tools_empty_keyword_returns_empty(pool: SqlitePool) {
     // None 关键词也应返回空结果
     let search = crate::service::dao::tool::ToolSearch {
         keyword: None,
-        enabled_only: false,
-        limit: 10,
         ..Default::default()
     };
     let results = tool_dao.search_tools(ctx.clone(), search).await.unwrap();

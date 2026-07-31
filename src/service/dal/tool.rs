@@ -176,7 +176,7 @@ pub trait ToolDal: Send + Sync {
         &self,
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
-    ) -> Result<Vec<Tool>>;
+    ) -> Result<common::api::PagedResult<Tool>>;
 
     /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
     fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext)
@@ -516,9 +516,20 @@ impl ToolDal for ToolDalImpl {
         &self,
         ctx: RequestContext,
         params: crate::service::dao::tool::ToolSearch,
-    ) -> Result<Vec<Tool>> {
-        // 向量距离阈值（固定常量，与历史实现保持一致）
-        const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+    ) -> Result<common::api::PagedResult<Tool>> {
+        // 向量距离阈值（默认 0.8，可由调用方覆盖）
+        const DEFAULT_VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
+        let vector_distance_threshold = params
+            .vector_distance_threshold
+            .unwrap_or(DEFAULT_VECTOR_DISTANCE_THRESHOLD);
+        // 向量搜索 Top K（默认 20，与 FTS5 限制一致）
+        let top_k = if params.top_k > 0 {
+            params.top_k as i32
+        } else {
+            20
+        };
+        // 提前捕获分页参数（params 后续会被 move 给 search_tools）
+        let pagination = params.filters.pagination.clone();
 
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: std::collections::HashMap<String, f32> =
@@ -545,13 +556,13 @@ impl ToolDal for ToolDalImpl {
 
                 match self
                     .tool_vector_dao
-                    .search_vector(ctx.clone(), &query_vector, 50)
+                    .search_vector(ctx.clone(), &query_vector, top_k)
                     .await
                 {
                     Ok(vector_results) => {
                         let filtered_results: Vec<(String, f32)> = vector_results
                             .into_iter()
-                            .filter(|hit| hit.distance < VECTOR_DISTANCE_THRESHOLD)
+                            .filter(|hit| hit.distance < vector_distance_threshold)
                             .map(|hit| (hit.row.id, hit.distance))
                             .collect();
 
@@ -703,7 +714,15 @@ impl ToolDal for ToolDalImpl {
             })
         });
 
-        Ok(tools)
+        // Step 8: 截断到 MAX_SEARCH_RESULTS + 分页
+        // 搜索场景限制总结果数（MAX_SEARCH_RESULTS=20），搜不到应换关键词而非无限分页
+        tools.truncate(20);
+
+        let total = tools.len();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(20);
+        let items = tools.into_iter().skip(offset).take(limit).collect();
+        Ok(common::api::PagedResult { items, total })
     }
 
     async fn call_tool(

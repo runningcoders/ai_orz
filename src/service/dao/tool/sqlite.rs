@@ -387,7 +387,12 @@ impl ToolDao for ToolDaoSqliteImpl {
     ) -> Result<Vec<(ToolPo, Option<f32>)>> {
         let pool = ctx.db_pool();
         let keyword = params.keyword.unwrap_or_default();
-        let limit_i64 = params.limit as i64;
+        let mut filters = params.filters;
+
+        // 默认排除 Stale 状态（远端已消失的工具不应出现在搜索结果中）
+        if filters.exclude_status.is_none() && filters.status.is_none() {
+            filters.exclude_status = Some(common::enums::ToolStatus::Stale);
+        }
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -398,36 +403,40 @@ impl ToolDao for ToolDaoSqliteImpl {
 
         // FTS5 MATCH + JOIN 主表 + BM25 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let mut builder = sqlx::QueryBuilder::new(
+        // agent_id 过滤依赖 agent_tools 表的 JOIN（与 query 方法一致），其余过滤条件复用 push_query_filters
+        let has_agent_filter = filters.agent_id.is_some();
+        let join_clause = if has_agent_filter {
+            " INNER JOIN agent_tools at ON t.id = at.tool_id"
+        } else {
+            ""
+        };
+
+        let base_sql = format!(
             r#"SELECT t.id, t.name, t.description, t.protocol, t.control_mode, t.config,
                       t.parameters_schema, t.tags, t.status, t.created_at, t.updated_at,
                       t.created_by, t.updated_by, tools_fts.rank as fts_rank
                FROM tools_fts
-               JOIN tools t ON tools_fts.rowid = t.rowid
+               JOIN tools t ON tools_fts.rowid = t.rowid{}
                WHERE tools_fts MATCH "#,
+            join_clause
         );
+        let mut builder = sqlx::QueryBuilder::new(&base_sql);
         builder.push_bind(escaped_keyword);
 
-        // 始终排除 Stale 状态（远端已消失的工具不应出现在搜索结果中）
-        builder.push(" AND t.status != 2");
-
-        // enabled_only 过滤：只返回 Enabled (1) 状态的工具
-        if params.enabled_only {
-            builder.push(" AND t.status = 1");
-        }
-
-        // Agent 过滤：通过 EXISTS 子查询检查 agent_tools 关联表
-        if let Some(agent_id) = &params.agent_id {
-            builder.push(
-                " AND EXISTS (SELECT 1 FROM agent_tools at WHERE at.tool_id = t.id AND at.agent_id = ",
-            );
-            builder.push_bind(agent_id);
-            builder.push(")");
-        }
+        // 复用通用过滤条件（agent_id 用 at. 前缀，其余用 t. 前缀）
+        push_query_filters(&mut builder, &filters);
 
         // BM25 排序（rank 越小越相关）+ 分页
-        builder.push(" ORDER BY tools_fts.rank LIMIT ");
-        builder.push_bind(limit_i64);
+        builder.push(" ORDER BY tools_fts.rank");
+
+        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
+        // 用户传的 limit 若超过 20 则截断，未传则默认 20
+        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
+        builder.push(" LIMIT ").push_bind(search_limit as i64);
+
+        if let Some(offset) = filters.pagination.offset {
+            builder.push(" OFFSET ").push_bind(offset as i64);
+        }
 
         let rows: Vec<ToolSearchRow> = builder
             .build_query_as::<ToolSearchRow>()
