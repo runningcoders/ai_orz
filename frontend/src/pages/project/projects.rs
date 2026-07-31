@@ -3,13 +3,18 @@
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
-use crate::api::project::{create_project, list_project_tasks, list_projects};
+use crate::api::project::{
+    create_project, list_project_tasks, list_projects, query_projects, search_projects,
+};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{project_status_badge as status_badge, project_status_text as status_text};
-use common::api::{CreateProjectRequest, ListProjectsRequest, ListProjectsResponseItem};
+use common::api::{
+    CreateProjectRequest, ListProjectsRequest, ListProjectsResponseItem, ProjectQueryRequest,
+    SearchProjectsRequest,
+};
 
 #[component]
 pub fn ProjectList() -> Element {
@@ -22,13 +27,52 @@ pub fn ProjectList() -> Element {
     let mut creating = use_signal(|| false);
     let toast = use_toast();
 
-    use_effect(move || {
-        loading.set(true);
+    let mut search_keyword = use_signal(String::new);
+    let mut search_request_id = use_signal(|| 0u32);
+    let mut status_filter = use_signal(|| Option::<i32>::None);
+
+    let reload_projects = move || {
         spawn(async move {
-            match list_projects(ListProjectsRequest::default()).await {
-                Ok(page) => {
-                    let items = page.items.clone();
-                    projects.set(page.items);
+            // 信号在 async 内读取，避免 use_effect 订阅导致每次按键重复触发。
+            // 三场景切换：
+            // 无关键词 + 无状态筛选 → list_projects
+            // 无关键词 + 有状态筛选 → query_projects
+            // 有关键词 → search_projects（可同时带状态筛选）
+            let keyword = search_keyword();
+            let status = status_filter();
+            let my_id = search_request_id() + 1;
+            search_request_id.set(my_id);
+            let result = if keyword.trim().is_empty() && status.is_none() {
+                list_projects(ListProjectsRequest::default())
+                    .await
+                    .map(|p| p.items)
+            } else if keyword.trim().is_empty() {
+                // 有状态筛选，无关键词 → query_projects
+                query_projects(&ProjectQueryRequest {
+                    status_in: status.map(|s| vec![common::enums::ProjectStatus::from(s)]),
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
+            } else {
+                // 有关键词 → search_projects（可同时带状态筛选）
+                search_projects(&SearchProjectsRequest {
+                    keyword: Some(keyword),
+                    status_in: status.map(|s| vec![common::enums::ProjectStatus::from(s)]),
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
+            };
+            // 丢弃过期请求的结果
+            if search_request_id() != my_id {
+                return;
+            }
+            match result {
+                Ok(v) => {
+                    let items = v.clone();
+                    projects.set(v);
+                    // 重新加载 task_counts
                     let mut counts = HashMap::new();
                     for p in &items {
                         if let Ok(tasks_resp) = list_project_tasks(&p.id).await {
@@ -41,6 +85,11 @@ pub fn ProjectList() -> Element {
             }
             loading.set(false);
         });
+    };
+
+    use_effect(move || {
+        loading.set(true);
+        reload_projects();
     });
 
     let handle_create = move |_| {
@@ -67,10 +116,7 @@ pub fn ProjectList() -> Element {
                     new_name.set(String::new());
                     new_description.set(String::new());
                     // Reload
-                    match list_projects(ListProjectsRequest::default()).await {
-                        Ok(page) => projects.set(page.items),
-                        Err(e) => toast.error(&e),
-                    }
+                    reload_projects();
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
             }
@@ -87,6 +133,56 @@ pub fn ProjectList() -> Element {
                 div { class: "flex justify-between items-center",
                     h2 { class: "card-title", "项目管理" }
                     button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+                }
+
+                div { class: "flex gap-2 items-center mt-4",
+                    // 搜索框
+                    input {
+                        class: "input input-bordered input-sm flex-1",
+                        placeholder: "搜索项目...",
+                        value: "{search_keyword}",
+                        oninput: move |e| search_keyword.set(e.value()),
+                        onkeypress: move |e| {
+                            if e.key() == Key::Enter {
+                                loading.set(true);
+                                reload_projects();
+                            }
+                        }
+                    }
+                    // 状态筛选下拉框
+                    select {
+                        class: "select select-bordered select-sm",
+                        value: "{status_filter().map(|s| s.to_string()).unwrap_or_default()}",
+                        onchange: move |e| {
+                            let val = e.value();
+                            status_filter.set(if val.is_empty() {
+                                None
+                            } else {
+                                val.parse::<i32>().ok()
+                            });
+                            loading.set(true);
+                            reload_projects();
+                        },
+                        option { value: "", "全部状态" }
+                        option { value: "1", "Active" }
+                        option { value: "2", "PendingReview" }
+                        option { value: "3", "InProgress" }
+                        option { value: "4", "Completed" }
+                        option { value: "5", "Archived" }
+                    }
+                    // 清除搜索按钮
+                    if !search_keyword().is_empty() || status_filter().is_some() {
+                        button {
+                            class: "btn btn-ghost btn-sm",
+                            onclick: move |_| {
+                                search_keyword.set(String::new());
+                                status_filter.set(None);
+                                loading.set(true);
+                                reload_projects();
+                            },
+                            "✕"
+                        }
+                    }
                 }
 
                 if loading() {
