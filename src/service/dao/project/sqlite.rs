@@ -256,14 +256,13 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
     async fn search_projects(
         &self,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         search: ProjectSearch,
     ) -> Result<Vec<(ProjectPo, Option<f32>)>> {
-        let pool = ctx.db_pool();
+        use sqlx::QueryBuilder;
 
-        // 从 ProjectSearch 提取参数
+        let pool = _ctx.db_pool();
         let keyword = search.keyword.unwrap_or_default();
-        let limit_i64 = search.filters.pagination.limit.unwrap_or(50) as i64;
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -271,28 +270,71 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         }
 
         let escaped_keyword = escape_fts5_keyword(&keyword);
+        let filters = search.filters;
 
         // FTS5 MATCH + JOIN + BM25 排序
+        // ✅ 复用业务过滤条件（修复原 SQL 未应用 root_user_id/owner_agent_id/status_in/ids 的缺陷）
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
-        let rows: Vec<ProjectSearchRow> = sqlx::query_as(
-            r#"
-SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
-       p.priority, p.tags, p.root_user_id, p.owner_agent_id,
-       p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
-       p.created_at, p.updated_at,
-       projects_fts.rank as fts_rank
-FROM projects_fts
-JOIN projects p ON projects_fts.rowid = p.rowid
-WHERE projects_fts MATCH ?
-  AND p."status" != 0
-ORDER BY projects_fts.rank
-LIMIT ?
-"#,
-        )
-        .bind(escaped_keyword)
-        .bind(limit_i64)
-        .fetch_all(pool)
-        .await?;
+        let mut builder = QueryBuilder::new(
+            r#"SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
+                  p.priority, p.tags, p.root_user_id, p.owner_agent_id,
+                  p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
+                  p.created_at, p.updated_at,
+                  projects_fts.rank as fts_rank
+           FROM projects_fts
+           JOIN projects p ON projects_fts.rowid = p.rowid
+           WHERE projects_fts MATCH "#,
+        );
+        builder.push_bind(escaped_keyword);
+
+        // 手动拼接业务过滤条件（带 p. 别名前缀，因为 JOIN 查询需要表别名）
+        // 注意：不能直接复用 push_query_filters，因为它的字段引用不带表别名前缀
+        if let Some(ids) = &filters.ids
+            && !ids.is_empty()
+        {
+            builder.push(" AND p.id IN (");
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id);
+            }
+            separated.push_unseparated(")");
+        }
+        if let Some(root_user_id) = &filters.root_user_id {
+            builder
+                .push(" AND p.root_user_id = ")
+                .push_bind(root_user_id);
+        }
+        if let Some(owner_agent_id) = &filters.owner_agent_id {
+            builder
+                .push(" AND p.owner_agent_id = ")
+                .push_bind(owner_agent_id);
+        }
+        if let Some(status_list) = &filters.status_in
+            && !status_list.is_empty()
+        {
+            builder.push(" AND p.\"status\" IN (");
+            let mut separated = builder.separated(", ");
+            for s in status_list {
+                separated.push_bind(*s as i32);
+            }
+            separated.push_unseparated(")");
+        }
+        // 默认排除软删除
+        builder.push(" AND p.\"status\" != 0");
+
+        builder.push(" ORDER BY projects_fts.rank");
+
+        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
+        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
+        builder.push(" LIMIT ").push_bind(search_limit as i64);
+        if let Some(offset) = filters.pagination.offset {
+            builder.push(" OFFSET ").push_bind(offset as i64);
+        }
+
+        let rows: Vec<ProjectSearchRow> = builder
+            .build_query_as::<ProjectSearchRow>()
+            .fetch_all(pool)
+            .await?;
 
         let results = rows
             .into_iter()
