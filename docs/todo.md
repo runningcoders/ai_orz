@@ -32,6 +32,40 @@
 
 ---
 
+### 2. 其他实体搜索/查询接口统一为三场景规范
+
+**背景**：Agent 的 list/query/search 三种接口已统一为三种场景规范（list=默认列表、query=条件过滤、search=关键词搜索），都支持完整过滤条件和分页返回。其他拥有搜索和查询功能的实体应遵循同样规范。
+
+**现状**：
+- Agent: ✅ 已完成三场景统一（list/query/search 都返回 PagedResult，search 支持 runtime_state 过滤）
+- Tool/Skill/Project/Task: ❌ search 返回 Vec 而非 PagedResult，且 search 不复用 query 的完整过滤条件
+
+**待办**：
+- [ ] Tool: search_tools 改为返回 PagedResult，复用 ToolQuery 的完整过滤条件
+- [ ] Skill: search_skills 改为返回 PagedResult，复用 SkillQuery 的完整过滤条件
+- [ ] Project: search_projects 改为返回 PagedResult，复用 ProjectQuery 的完整过滤条件（含 owner_agent_id）
+- [ ] Task: search_tasks 改为返回 PagedResult，复用 TaskQuery 的完整过滤条件
+- [ ] 每个实体的 search 方法都应支持所有 query 的过滤条件（包括内存态过滤如 runtime_state）
+- [ ] 前端各实体列表页面统一为三场景切换：无条件 → list；有过滤条件 → query；有关键词 → search
+
+**设计原则**（从 Agent 改造中总结）：
+1. 三种接口对应三种场景：list（GET，默认列表）、query（POST，条件过滤）、search（POST，关键词搜索）
+2. search 复用 query 的过滤条件（通过 `Search.filters: Query` 结构），在其基础上增加 keyword 搜索
+3. 所有接口统一返回 `PagedResult<T>`，支持分页
+4. 内存态过滤（如 runtime_state）抽取为内部复用方法（如 `apply_runtime_state_filter`），query 和 search 共享
+5. 搜索场景限制最大返回结果数（MAX_SEARCH_RESULTS=20），避免关键词失控导致性能浪费
+
+**优先级**：中（架构一致性改进，非阻塞性）
+
+**相关文件**：
+- Agent 改造参考：`src/service/dal/agent.rs`（`apply_runtime_state_filter` + `query` + `search`）
+- `src/handlers/hr/agent/`（list_agents / query_agents / search_agents handler）
+- 待改造：`src/handlers/hr/tool/`、`src/handlers/hr/skill/`、`src/handlers/project/`（对应实体）
+
+**关联计划**：[2026-07-31-unify-agent-search-query.md](superpowers/plans/2026-07-31-unify-agent-search-query.md)
+
+---
+
 ## 已完成事项
 
 ### 1. MemoryQuery 的 memory_type 字段滥用为 node_type 过滤
