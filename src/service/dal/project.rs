@@ -164,7 +164,11 @@ pub trait ProjectDal: Send + Sync {
     /// - keyword 存在且 Embedding Provider 可用 → 同时走向量语义搜索，合并结果
     /// - 仅 query_vector 存在 → 走纯向量搜索
     /// - filters 透传业务过滤条件（root_user_id / status_in / limit）
-    async fn search(&self, ctx: RequestContext, search: ProjectSearch) -> Result<Vec<Project>>;
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<common::api::PagedResult<Project>>;
 
     // ==================== 统计查询 ====================
 
@@ -460,7 +464,11 @@ impl ProjectDal for ProjectDalImpl {
 
     // ==================== 搜索 ====================
 
-    async fn search(&self, ctx: RequestContext, search: ProjectSearch) -> Result<Vec<Project>> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: ProjectSearch,
+    ) -> Result<common::api::PagedResult<Project>> {
         // 向量距离阈值（默认 0.8，余弦距离 0-2，0 完全相同）
         const VECTOR_DISTANCE_THRESHOLD: f32 = 0.8;
 
@@ -479,10 +487,10 @@ impl ProjectDal for ProjectDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条）
+                    // 向量搜索（前 MAX_SEARCH_RESULTS 条，与 FTS5 限制一致）
                     match self
                         .project_vector_dao
-                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .search_vector(ctx.clone(), &vec_params.vector, 20)
                         .await
                     {
                         Ok(vector_results) => {
@@ -658,12 +666,16 @@ impl ProjectDal for ProjectDalImpl {
             })
         });
 
-        // Step 8: 应用 limit
-        if let Some(limit) = search.filters.pagination.limit {
-            projects.truncate(limit);
-        }
+        // Step 8: 截断到 MAX_SEARCH_RESULTS + 分页
+        // 搜索场景限制总结果数（MAX_SEARCH_RESULTS=20），搜不到应换关键词而非无限分页
+        projects.truncate(20);
 
-        Ok(projects)
+        let pagination = search.filters.pagination.clone();
+        let total = projects.len();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(20);
+        let items = projects.into_iter().skip(offset).take(limit).collect();
+        Ok(common::api::PagedResult { items, total })
     }
 
     // ==================== 统计查询 ====================
