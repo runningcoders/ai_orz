@@ -1,6 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::{AgentRuntimeState, AgentStatus};
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
@@ -292,23 +292,28 @@ pub struct AgentQueryRequest {
 /// Agent 列表项响应别名（前端兼容）
 pub type ListAgentsResponseItem = AgentListItem;
 
-/// 搜索 Agent 请求
-#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+/// 搜索 Agent 请求（POST body，支持完整过滤条件 + 关键词搜索）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct SearchAgentsRequest {
-    /// 搜索关键词（支持 FTS5 全文搜索）
-    #[param(source = "query")]
+    /// 搜索关键词（支持 FTS5 全文搜索 + 向量语义搜索）
     pub keyword: Option<String>,
-    /// 返回结果数量限制
-    #[param(source = "query")]
-    pub limit: Option<usize>,
+    /// 状态筛选
+    pub status: Option<AgentStatus>,
+    /// 创建者 ID
+    pub created_by: Option<String>,
+    /// 模型供应商 ID
+    pub model_provider_id: Option<String>,
+    /// 角色列表
+    pub roles: Option<Vec<String>>,
+    /// 运行时状态筛选（0=Idle, 1=Resting, 2=Busy）
+    pub runtime_state: Option<AgentRuntimeState>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
-/// 搜索 Agent 响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct SearchAgentsResponse {
-    /// Agent 列表
-    pub agents: Vec<AgentListItem>,
-}
+/// 搜索 Agent 响应（分页）
+pub type SearchAgentsResponse = PagedResult<AgentListItem>;
 
 /// 更新 Agent 状态响应
 pub type UpdateAgentStatusResponse = GetAgentResponse;
