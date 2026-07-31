@@ -701,23 +701,21 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         }
 
         // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
-        // 与 Task 4 的 search_knowledge_nodes 一致
+        // 注意：sqlx QueryBuilder 的 push() 不会识别 ? 占位符，必须用 push_bind() 绑定参数
         let agent_id = query.agent_id.clone().unwrap_or_default();
         let include_shared = query.include_shared;
-        let ownership_clause = if include_shared && !agent_id.is_empty() {
-            "(agent_id = ? OR EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published'))".to_string()
-        } else if agent_id.is_empty() && include_shared {
-            "EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published')".to_string()
-        } else if !agent_id.is_empty() {
-            "agent_id = ?".to_string()
-        } else {
-            "1=1".to_string()
-        };
-        let needs_agent_id_bind = !agent_id.is_empty();
         builder.push(" AND ");
-        builder.push(&ownership_clause);
-        if needs_agent_id_bind {
+        if include_shared && !agent_id.is_empty() {
+            builder.push("(agent_id = ");
             builder.push_bind(agent_id);
+            builder.push(" OR EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published'))");
+        } else if agent_id.is_empty() && include_shared {
+            builder.push("EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published')");
+        } else if !agent_id.is_empty() {
+            builder.push("agent_id = ");
+            builder.push_bind(agent_id);
+        } else {
+            builder.push("1=1");
         }
 
         if let Some(status) = &query.status {
