@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-906%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-941%20%E2%9C%94-brightgreen)
 ![Clippy](https://img.shields.io/badge/clippy--D%20warnings-zero-success)
 ![Coverage](https://img.shields.io/badge/coverage-35%25%20threshold%20(llvm--cov)-yellow)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
@@ -33,8 +33,8 @@
 | **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
-| **测试** | 906 个测试，100% 通过（后端 810 = 781 单元 + 29 集成 + 前端 46 + common 50） |
-| **CI 质量** | clippy `-D warnings` 零容忍 + cargo-llvm-cov 覆盖率门槛 35% + 集成测试 3.7s |
+| **测试** | 941 个测试，100% 通过（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50） |
+| **CI 质量** | clippy `-D warnings` 零容忍（后端 + 前端 wasm32） + cargo-llvm-cov 覆盖率门槛 35% + 集成测试 3.7s |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：

@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-27（集成测试与 CI 质量体系建设：29 个集成测试覆盖全链路 + clippy 442 warning 清理 + 集成测试从 238s 降到 3.7s + cargo-llvm-cov 覆盖率门槛 35%；修复 3 个潜伏真 bug：From\<i32\> 无限递归、start_all 持锁 await 死锁、统计 future 静默丢弃）
+> 最后更新：2026-07-31（前端 clippy 零警告：清理 332 个前端 clippy 警告 + CI 新增前端 wasm32 clippy 检查；修复 codex CLI 测试 Broken pipe 错误；测试总数 941 = 后端 845 + 前端 46 + common 50）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、906 个测试 100% 通过率（后端 810 = 781 单元 + 29 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍、cargo-llvm-cov 覆盖率门槛 35%、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、941 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛 35%、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -74,18 +74,18 @@
 | 🎨 通用 HUD 仪表盘 | ✅ | 通用 Gauge 组件（从 AopGauge 抽象），AOP/Health 等场景复用；HUD 视觉统一（呼吸光晕 + 选中发光 + 12 等分刻度 + 颜色编码） |
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
-| 🧪 集成测试体系 | ✅ | 29 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用 |
-| 🛡️ CI 质量门槛 | ✅ | clippy `-D warnings` 零容忍（442 warning 全清理）+ cargo-llvm-cov `--fail-under-lines 35` + 集成测试 3.7s（从 238s 优化） |
+| 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用 |
+| 🛡️ CI 质量门槛 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov `--fail-under-lines 35` + 集成测试 3.7s（从 238s 优化） |
 
-### 1.3 整体完成度与测试统计（2026-07-27 更新）
+### 1.3 整体完成度与测试统计（2026-07-31 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **906** | 后端 810（781 单元 + 29 集成） + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 15 个宏集成测试 + 14 个 HTTP 集成测试） |
+| **总测试数** | **941** | 后端 845（812 单元 + 33 集成） + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| **集成测试覆盖** | 29 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 2 + Vector Degradation 3 + A2A Flow 2 + 宏集成 15 |
+| **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 2 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |
-| **CI clippy 门槛** | `-D warnings` | 零容忍，442 warning 全清理 |
+| **CI clippy 门槛** | `-D warnings` | 零容忍，后端 442 warning + 前端 332 warning 全清理；前端 wasm32 clippy 检查已纳入 CI |
 | **CI 覆盖率门槛** | 35% | cargo-llvm-cov `--fail-under-lines 35` |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
