@@ -5,13 +5,13 @@ use common::api::{
     CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
     CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse, GetAgentRequest,
     GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
-    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest, ListAgentsResponse,
+    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
-    ListSkillsResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchMemoryParams,
-    SearchMemoryResponse, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
-    UpdateAgentStatusRequest, UpdateSkillFileContentRequest, UpdateSkillRequest,
-    UpdateSkillResponse,
+    ListSkillsResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse,
+    SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse, SkillListItem,
+    SkillQueryRequest, UnbindToolFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
+    UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
 
 use super::{
@@ -35,8 +35,10 @@ pub async fn get_reception_agent() -> Result<GetReceptionAgentResponse, ApiError
     api_get("/api/v1/hr/agents/reception").await
 }
 
-pub async fn search_agents(keyword: &str) -> Result<ListAgentsResponse, ApiError> {
-    api_get_or_default(&format!("/api/v1/hr/agents/search?keyword={}", keyword)).await
+pub async fn search_agents(
+    req: &SearchAgentsRequest,
+) -> Result<PagedResult<AgentListItem>, ApiError> {
+    api_post("/api/v1/hr/agents/search", req).await
 }
 
 pub async fn get_agent(req: GetAgentRequest) -> Result<GetAgentResponse, ApiError> {
