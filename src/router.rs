@@ -291,7 +291,7 @@ fn hr_routes() -> Router {
         )
         .route(
             "/agents/search",
-            get(handlers::hr::agent::search_agents_handler),
+            post(handlers::hr::agent::search_agents_handler),
         )
         .route(
             "/agents/reception",
