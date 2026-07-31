@@ -884,12 +884,20 @@ impl MemoryDalImpl {
         if node_ids.is_empty() {
             return Ok(Vec::new());
         }
+        let agent_id = ctx.agent_id().cloned().unwrap_or_default();
         let ids: Vec<String> = node_ids.iter().cloned().collect();
         let query = MemoryQuery {
             ids: Some(ids),
             ..Default::default()
         };
-        self.memory_dao.query_knowledge_nodes(ctx, query).await
+        let nodes = self.memory_dao.query_knowledge_nodes(ctx, query).await?;
+        // 共享可见性过滤：只保留自己的节点或 published 节点
+        // 防止 traverse_graph 通过 id 跨 Agent 遍历私有节点
+        let visible_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|n| n.agent_id == agent_id || n.tags.contains("\"published\""))
+            .collect();
+        Ok(visible_nodes)
     }
 
     fn build_memories(

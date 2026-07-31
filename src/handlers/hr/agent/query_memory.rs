@@ -41,12 +41,29 @@ pub async fn query_memory(
 
     let status = params.status.as_deref().map(parse_memory_status);
 
+    // 权限校验：获取 ctx 的 agent_id 和查询目标 agent_id
+    let ctx_agent_id = ctx.agent_id().cloned().unwrap_or_default();
+    let query_agent_id = params
+        .agent_id
+        .clone()
+        .unwrap_or_else(|| ctx_agent_id.clone());
+    // 查询其他 Agent 的记忆时，只能看到 published 节点
+    let is_querying_other = query_agent_id != ctx_agent_id && !ctx_agent_id.is_empty();
+
+    // 查询他人时，强制只返回 published 节点（通过 tags 过滤实现）
+    let mut tags = params.tags.clone().unwrap_or_default();
+    if is_querying_other && !tags.contains(&"published".to_string()) {
+        tags.push("published".to_string());
+    }
+
     let query = MemoryQuery {
-        agent_id: params.agent_id.clone(),
+        agent_id: Some(query_agent_id),
         memory_type: Some(memory_type),
         limit: params.limit.map(|l| l as usize),
-        tags: params.tags.clone(),
+        tags: if tags.is_empty() { None } else { Some(tags) },
         status,
+        // 查询自己时包含 published 共享节点；查询他人时不包含（仅返回该 agent 的 published 节点）
+        include_shared: !is_querying_other,
         ..Default::default()
     };
 
