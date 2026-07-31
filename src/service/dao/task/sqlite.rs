@@ -176,7 +176,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         let pool = ctx.db_pool();
 
         let keyword = search.keyword.unwrap_or_default();
-        let limit_i64 = search.filters.pagination.limit.unwrap_or(50) as i64;
+        let limit_i64 = std::cmp::min(search.filters.pagination.limit.unwrap_or(20), 20) as i64;
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -226,6 +226,9 @@ WHERE tasks_fts MATCH "#,
 
         builder.push(" ORDER BY tasks_fts.rank LIMIT ");
         builder.push_bind(limit_i64);
+        if let Some(offset) = search.filters.pagination.offset {
+            builder.push(" OFFSET ").push_bind(offset as i64);
+        }
 
         let rows: Vec<TaskSearchRow> = builder.build_query_as().fetch_all(pool).await?;
 
