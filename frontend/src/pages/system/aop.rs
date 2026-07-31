@@ -54,14 +54,14 @@ pub fn SystemAop() -> Element {
     let mut selected_event = use_signal(|| Option::<EventDetailResponse>::None);
     let mut loading_detail = use_signal(|| false);
 
-    let mut filter_status = use_signal(|| String::new());
+    let mut filter_status = use_signal(String::new);
 
     use_effect(move || {
         loading_stats.set(true);
         spawn(async move {
             match get_all_queue_stats().await {
                 Ok(data) => stats.set(data),
-                Err(e) => toast.error(&format!("加载队列统计失败: {}", e)),
+                Err(e) => toast.error(format!("加载队列统计失败: {}", e)),
             }
             loading_stats.set(false);
         });
@@ -113,7 +113,7 @@ pub fn SystemAop() -> Element {
                                     spawn(async move {
                                         match get_all_queue_stats().await {
                                             Ok(data) => stats.set(data),
-                                            Err(e) => toast.error(&format!("加载队列统计失败: {}", e)),
+                                            Err(e) => toast.error(format!("加载队列统计失败: {}", e)),
                                         }
                                         loading_stats.set(false);
                                     });
@@ -165,7 +165,7 @@ pub fn SystemAop() -> Element {
                                                         ..Default::default()
                                                     }).await {
                                                         Ok(data) => events.set(data),
-                                                        Err(e) => toast.error(&format!("加载事件列表失败: {}", e)),
+                                                        Err(e) => toast.error(format!("加载事件列表失败: {}", e)),
                                                     }
                                                     loading_events.set(false);
                                                 });
@@ -200,7 +200,7 @@ pub fn SystemAop() -> Element {
                                                     ..Default::default()
                                                 }).await {
                                                     Ok(data) => events.set(data),
-                                                    Err(e) => toast.error(&format!("加载事件列表失败: {}", e)),
+                                                    Err(e) => toast.error(format!("加载事件列表失败: {}", e)),
                                                 }
                                                 loading_events.set(false);
                                             });
@@ -250,7 +250,7 @@ pub fn SystemAop() -> Element {
                                                                         event_id: eid.clone(),
                                                                     }).await {
                                                                         Ok(data) => selected_event.set(Some(data)),
-                                                                        Err(e) => toast.error(&format!("加载事件详情失败: {}", e)),
+                                                                        Err(e) => toast.error(format!("加载事件详情失败: {}", e)),
                                                                     }
                                                                     loading_detail.set(false);
                                                                 });
@@ -350,9 +350,9 @@ pub fn SystemAop() -> Element {
 #[component]
 fn AopStatsPanel() -> Element {
     let mut overview: Signal<Option<AopStatsOverviewResponse>> = use_signal(|| None);
-    let mut time_series_points: Signal<Vec<AopStatsTimeSeriesPoint>> = use_signal(|| Vec::new());
-    let mut consumer_dist: Signal<Vec<AopStatsDistributionItem>> = use_signal(|| Vec::new());
-    let mut status_dist: Signal<Vec<AopStatsDistributionItem>> = use_signal(|| Vec::new());
+    let mut time_series_points: Signal<Vec<AopStatsTimeSeriesPoint>> = use_signal(Vec::new);
+    let mut consumer_dist: Signal<Vec<AopStatsDistributionItem>> = use_signal(Vec::new);
+    let mut status_dist: Signal<Vec<AopStatsDistributionItem>> = use_signal(Vec::new);
     let mut last_updated: Signal<Option<String>> = use_signal(|| None);
 
     let load_data = move || {

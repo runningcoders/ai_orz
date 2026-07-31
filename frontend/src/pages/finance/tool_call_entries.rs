@@ -53,7 +53,7 @@ pub fn FinanceToolCallEntries() -> Element {
         spawn(async move {
             match query_tool_call_entries(&params).await {
                 Ok(list) => entries.set(list),
-                Err(e) => toast.error(&format!("查询失败: {}", e)),
+                Err(e) => toast.error(format!("查询失败: {}", e)),
             }
             loading.set(false);
         });
@@ -76,7 +76,7 @@ pub fn FinanceToolCallEntries() -> Element {
         spawn(async move {
             match query_tool_call_entries(&params).await {
                 Ok(list) => entries.set(list),
-                Err(e) => toast.error(&format!("加载失败: {}", e)),
+                Err(e) => toast.error(format!("加载失败: {}", e)),
             }
             loading.set(false);
         });
@@ -94,7 +94,7 @@ pub fn FinanceToolCallEntries() -> Element {
             match get_tool_call_entry(&call_id).await {
                 Ok(resp) => selected_entry.set(Some(resp)),
                 Err(e) => {
-                    toast.error(&format!("加载详情失败: {}", e));
+                    toast.error(format!("加载详情失败: {}", e));
                     show_detail_modal.set(false);
                 }
             }

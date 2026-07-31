@@ -45,11 +45,11 @@ pub fn HrSkillDetail(id: String) -> Element {
         spawn(async move {
             match get_skill(&id).await {
                 Ok(s) => skill.set(Some(s)),
-                Err(e) => toast.error(&format!("加载 Skill 失败: {}", e)),
+                Err(e) => toast.error(format!("加载 Skill 失败: {}", e)),
             }
             match list_skill_files(&id).await {
                 Ok(resp) => files.set(resp.files),
-                Err(e) => toast.error(&format!("加载文件列表失败: {}", e)),
+                Err(e) => toast.error(format!("加载文件列表失败: {}", e)),
             }
             loading.set(false);
         });
@@ -78,7 +78,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                         toast.success("文件已保存");
                         file_content_dirty.set(false);
                     }
-                    Err(e) => toast.error(&format!("保存失败: {}", e)),
+                    Err(e) => toast.error(format!("保存失败: {}", e)),
                 }
                 saving_file.set(false);
             });
@@ -135,14 +135,14 @@ pub fn HrSkillDetail(id: String) -> Element {
                         // 重新拉取详情与文件列表
                         match get_skill(&skill_id).await {
                             Ok(s) => skill.set(Some(s)),
-                            Err(e) => toast.error(&format!("加载 Skill 失败: {}", e)),
+                            Err(e) => toast.error(format!("加载 Skill 失败: {}", e)),
                         }
                         match list_skill_files(&skill_id).await {
                             Ok(resp) => files.set(resp.files),
-                            Err(e) => toast.error(&format!("加载文件列表失败: {}", e)),
+                            Err(e) => toast.error(format!("加载文件列表失败: {}", e)),
                         }
                     }
-                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                    Err(e) => toast.error(format!("更新失败: {}", e)),
                 }
                 saving_meta.set(false);
             });
@@ -230,7 +230,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                                     };
                                                                     match get_skill_file_content(req).await {
                                                                         Ok(resp) => file_content.set(resp.content),
-                                                                        Err(e) => toast.error(&format!("加载文件内容失败: {}", e)),
+                                                                        Err(e) => toast.error(format!("加载文件内容失败: {}", e)),
                                                                     }
                                                                     file_content_loading.set(false);
                                                                 });

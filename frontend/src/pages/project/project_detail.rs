@@ -110,7 +110,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         };
                         match query_agents(&req).await {
                             Ok(page) => graph_agents.set(page.items),
-                            Err(e) => toast.error(&format!("批量获取 Agent 失败: {}", e)),
+                            Err(e) => toast.error(format!("批量获取 Agent 失败: {}", e)),
                         }
                     }
 
@@ -152,7 +152,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("启动失败: {}", e)),
+                Err(e) => toast.error(format!("启动失败: {}", e)),
             }
         });
     };
@@ -181,7 +181,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("完成失败: {}", e)),
+                Err(e) => toast.error(format!("完成失败: {}", e)),
             }
         });
     };
@@ -210,7 +210,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("归档失败: {}", e)),
+                Err(e) => toast.error(format!("归档失败: {}", e)),
             }
         });
     };
@@ -262,7 +262,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("创建产物失败: {}", e)),
+                Err(e) => toast.error(format!("创建产物失败: {}", e)),
             }
         });
     };
@@ -538,7 +538,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                                         Err(e) => toast.error(&e),
                                                                                     }
                                                                                 }
-                                                                                Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                                Err(e) => toast.error(format!("操作失败: {}", e)),
                                                                             }
                                                                         });
                                                                     },
@@ -566,7 +566,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                                         Err(e) => toast.error(&e),
                                                                                     }
                                                                                 }
-                                                                                Err(e) => toast.error(&format!("操作失败: {}", e)),
+                                                                                Err(e) => toast.error(format!("操作失败: {}", e)),
                                                                             }
                                                                         });
                                                                     },
@@ -650,7 +650,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                                         Err(e) => toast.error(&e),
                                                                                     }
                                                                                 }
-                                                                                Err(e) => toast.error(&format!("删除失败: {}", e)),
+                                                                                Err(e) => toast.error(format!("删除失败: {}", e)),
                                                                             }
                                                                         });
                                                                     },
@@ -785,10 +785,10 @@ pub fn ProjectDetail(id: String) -> Element {
                                         };
                                         match get_project(req).await {
                                             Ok(p) => project.set(Some(p)),
-                                            Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                            Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                         }
                                     }
-                                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                    Err(e) => toast.error(format!("更新失败: {}", e)),
                                 }
                                 saving_meta.set(false);
                             });

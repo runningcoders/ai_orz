@@ -26,7 +26,6 @@ fn copy_to_clipboard(content: &str, toast: crate::store::toast::ToastState) {
         let navigator = window.navigator();
         let clipboard = navigator.clipboard();
         let promise = clipboard.write_text(content);
-        let toast = toast;
         wasm_bindgen_futures::spawn_local(async move {
             match wasm_bindgen_futures::JsFuture::from(promise).await {
                 Ok(_) => toast.info("已复制到剪贴板"),
@@ -67,7 +66,7 @@ pub fn SystemBackup() -> Element {
         spawn(async move {
             match list_backups().await {
                 Ok(list) => backups.set(list),
-                Err(e) => toast.error(&format!("加载备份列表失败: {}", e)),
+                Err(e) => toast.error(format!("加载备份列表失败: {}", e)),
             }
             loading.set(false);
         });
@@ -84,13 +83,13 @@ pub fn SystemBackup() -> Element {
         spawn(async move {
             match create_backup().await {
                 Ok(info) => {
-                    toast.success(&format!("已创建备份 v{}", info.version));
+                    toast.success(format!("已创建备份 v{}", info.version));
                     match list_backups().await {
                         Ok(list) => backups.set(list),
-                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                     }
                 }
-                Err(e) => toast.error(&format!("创建备份失败: {}", e)),
+                Err(e) => toast.error(format!("创建备份失败: {}", e)),
             }
             creating.set(false);
         });
@@ -106,7 +105,7 @@ pub fn SystemBackup() -> Element {
             match get_restore_script(version).await {
                 Ok(script) => restore_script.set(script),
                 Err(e) => {
-                    toast.error(&format!("获取恢复脚本失败: {}", e));
+                    toast.error(format!("获取恢复脚本失败: {}", e));
                     show_restore_modal.set(false);
                 }
             }
@@ -136,14 +135,14 @@ pub fn SystemBackup() -> Element {
         spawn(async move {
             match delete_backup(v).await {
                 Ok(_) => {
-                    toast.success(&format!("已删除备份 v{}", v));
+                    toast.success(format!("已删除备份 v{}", v));
                     show_delete_modal.set(false);
                     match list_backups().await {
                         Ok(list) => backups.set(list),
-                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                     }
                 }
-                Err(e) => toast.error(&format!("删除失败: {}", e)),
+                Err(e) => toast.error(format!("删除失败: {}", e)),
             }
             delete_loading.set(false);
         });

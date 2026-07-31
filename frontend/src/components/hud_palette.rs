@@ -7,11 +7,12 @@
 //!
 //! 视觉锚点：橙色 #fa520f（rgb 250, 82, 15）贯穿背景、网格、四角，形成统一驾驶舱观感。
 
-use web_sys::{CanvasGradient, CanvasRenderingContext2d};
+use web_sys::CanvasRenderingContext2d;
 
 /// HUD 主色（橙色）
 pub const HUD_PRIMARY: &str = "#fa520f";
 /// HUD 主色 RGB 元组
+#[allow(dead_code)]
 pub const HUD_PRIMARY_RGB: (u8, u8, u8) = (250, 82, 15);
 /// HUD 画布基底色（深色）
 pub const HUD_BASE_BG: &str = "#0a0e1a";

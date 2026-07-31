@@ -116,7 +116,7 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut selected_node_data = use_signal(|| None::<MemoryResult>);
     let mut search_history = use_signal(Vec::<String>::new);
     let mut highlighted_node_ids = use_signal(Vec::<String>::new);
-    let mut detail_map = use_signal(|| std::collections::HashMap::<String, MemoryResult>::new());
+    let mut detail_map = use_signal(std::collections::HashMap::<String, MemoryResult>::new);
     // 修复 M11：节点点击请求 ID，用于取消过期的并发请求结果（用户快速点击多个节点时）
     let mut click_request_id = use_signal(|| 0u32);
     // 渲染风格切换：默认 Canvas（HUD 驾驶舱风格），可切回 SVG 作为兜底
@@ -273,7 +273,7 @@ pub fn HrKnowledgeGraph() -> Element {
                 }
                 // 修复 L5：之前 Err(_) => {} 静默吞错，改为显示 toast
                 Err(e) => {
-                    toast.error(&format!("加载节点关联失败: {}", e));
+                    toast.error(format!("加载节点关联失败: {}", e));
                 }
             }
             loading.set(false);

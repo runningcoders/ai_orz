@@ -37,7 +37,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     content_dirty.set(false);
                 }
                 Err(e) => {
-                    toast.error(&format!("加载产物内容失败: {}", e));
+                    toast.error(format!("加载产物内容失败: {}", e));
                 }
             }
             loading.set(false);
@@ -64,7 +64,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                         toast.success("内容已保存");
                         content_dirty.set(false);
                     }
-                    Err(e) => toast.error(&format!("保存失败: {}", e)),
+                    Err(e) => toast.error(format!("保存失败: {}", e)),
                 }
                 saving.set(false);
             });
@@ -146,7 +146,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                                     toast.success("产物信息已更新");
                                     show_meta_modal.set(false);
                                 }
-                                Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                Err(e) => toast.error(format!("更新失败: {}", e)),
                             }
                         });
                     },

@@ -98,15 +98,20 @@ pub async fn execute_cli(
         )
     })?;
 
+    // Best-effort stdin write: 某些 CLI 命令（如 echo）不读取 stdin 就立即退出，
+    // 此时写入会因管道已关闭而失败（Broken pipe）。这是合法行为——命令结果由 stdout 决定，
+    // stdin 写入失败不应阻塞整体执行。仅当命令确实需要 stdin（如 cat）时才真正写入。
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes()).await.map_err(|e| {
-            err!(
-                Internal,
-                "Agent {}: failed to write to stdin: {}",
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            // Broken pipe 是预期行为（命令已退出），其他错误记录但不阻塞
+            log_warn!(
+                RequestContext::new(None, None),
+                "execute_cli",
+                "Agent {}: stdin write failed (command may have exited without reading stdin): {}",
                 agent_id,
                 e
-            )
-        })?;
+            );
+        }
         drop(stdin);
     }
 

@@ -32,7 +32,7 @@ pub fn FinanceMcpServers() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -92,7 +92,7 @@ pub fn FinanceMcpServers() -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -210,7 +210,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             let id_sync = id_sync.clone();
                                                             spawn(async move {
                                                                 if let Err(e) = sync_mcp_tools(&id_sync).await {
-                                                                    toast.error(&format!("同步失败: {}", e));
+                                                                    toast.error(format!("同步失败: {}", e));
                                                                 } else {
                                                                     toast.success("工具同步成功");
                                                                     match list_mcp_servers().await {
@@ -287,7 +287,7 @@ pub fn FinanceMcpServers() -> Element {
                 show_delete_confirm.set(false);
                 spawn(async move {
                     if let Err(e) = delete_mcp_server(&id).await {
-                        toast.error(&format!("删除失败: {}", e));
+                        toast.error(format!("删除失败: {}", e));
                     } else {
                         match list_mcp_servers().await {
                             Ok(list) => servers.set(list.servers),

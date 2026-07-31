@@ -30,7 +30,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
         spawn(async move {
             match get_mcp_server(&id).await {
                 Ok(s) => server.set(Some(s)),
-                Err(e) => toast.error(&format!("加载失败: {}", e)),
+                Err(e) => toast.error(format!("加载失败: {}", e)),
             }
             loading.set(false);
         });
@@ -45,12 +45,12 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
             spawn(async move {
                 match sync_mcp_tools(&id).await {
                     Ok(_) => toast.success("工具同步已触发"),
-                    Err(e) => toast.error(&format!("同步失败: {}", e)),
+                    Err(e) => toast.error(format!("同步失败: {}", e)),
                 }
                 syncing.set(false);
                 match get_mcp_server(&id_reload).await {
                     Ok(s) => server.set(Some(s)),
-                    Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                    Err(e) => toast.error(format!("刷新失败: {}", e)),
                 }
             });
         }
@@ -76,12 +76,12 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                             "已禁用"
                         });
                     }
-                    Err(e) => toast.error(&format!("状态更新失败: {}", e)),
+                    Err(e) => toast.error(format!("状态更新失败: {}", e)),
                 }
                 toggling.set(false);
                 match get_mcp_server(&id_reload).await {
                     Ok(s) => server.set(Some(s)),
-                    Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                    Err(e) => toast.error(format!("刷新失败: {}", e)),
                 }
             });
         }
@@ -98,7 +98,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                         toast.success("已删除");
                         let _ = navigator.push("/finance/mcp-servers".to_string());
                     }
-                    Err(e) => toast.error(&format!("删除失败: {}", e)),
+                    Err(e) => toast.error(format!("删除失败: {}", e)),
                 }
             });
         }

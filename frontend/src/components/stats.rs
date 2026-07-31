@@ -18,36 +18,35 @@ const TOOL_PALETTE: &[&str] = &[
 
 /// 渲染工具调用分布环形图（如果有数据）
 fn render_tool_call_distribution(stats: &Option<AgentStats>) -> Element {
-    if let Some(s) = stats {
-        if let Some(tool_calls) = &s.tool_call_summary {
-            if !tool_calls.by_tool.is_empty() {
-                let slices: Vec<DonutSlice> = tool_calls
-                    .by_tool
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| DonutSlice {
-                        label: if c.tool_name.is_empty() {
-                            c.tool_id.clone()
-                        } else {
-                            c.tool_name.clone()
-                        },
-                        value: c.count,
-                        color: TOOL_PALETTE[i % TOOL_PALETTE.len()].to_string(),
-                    })
-                    .collect();
-                return rsx! {
-                    div { class: "mt-4",
-                        h3 { class: "text-sm font-semibold mb-2", "🛠️ 工具调用分布" }
-                        DonutChart {
-                            data: slices,
-                            width: Some(300.0),
-                            height: Some(220.0),
-                            center_label: Some("工具调用".to_string()),
-                        }
-                    }
-                };
+    if let Some(s) = stats
+        && let Some(tool_calls) = &s.tool_call_summary
+        && !tool_calls.by_tool.is_empty()
+    {
+        let slices: Vec<DonutSlice> = tool_calls
+            .by_tool
+            .iter()
+            .enumerate()
+            .map(|(i, c)| DonutSlice {
+                label: if c.tool_name.is_empty() {
+                    c.tool_id.clone()
+                } else {
+                    c.tool_name.clone()
+                },
+                value: c.count,
+                color: TOOL_PALETTE[i % TOOL_PALETTE.len()].to_string(),
+            })
+            .collect();
+        return rsx! {
+            div { class: "mt-4",
+                h3 { class: "text-sm font-semibold mb-2", "🛠️ 工具调用分布" }
+                DonutChart {
+                    data: slices,
+                    width: Some(300.0),
+                    height: Some(220.0),
+                    center_label: Some("工具调用".to_string()),
+                }
             }
-        }
+        };
     }
     rsx! {}
 }
@@ -68,22 +67,21 @@ fn format_qps(qps: f64) -> String {
 
 /// 渲染模型调用时序图（如果有数据）
 fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Element {
-    if let Some(mcs) = model_call_stats {
-        if let Some(series) = &mcs.model_call_time_series {
-            if !series.is_empty() {
-                return rsx! {
-                    div { class: "mt-4",
-                        LineChart {
-                            data: series.clone(),
-                            width: 600.0,
-                            height: 200.0,
-                            title: Some("模型调用趋势".to_string()),
-                            value_label: Some("调用次数".to_string()),
-                        }
-                    }
-                };
+    if let Some(mcs) = model_call_stats
+        && let Some(series) = &mcs.model_call_time_series
+        && !series.is_empty()
+    {
+        return rsx! {
+            div { class: "mt-4",
+                LineChart {
+                    data: series.clone(),
+                    width: 600.0,
+                    height: 200.0,
+                    title: Some("模型调用趋势".to_string()),
+                    value_label: Some("调用次数".to_string()),
+                }
             }
-        }
+        };
     }
     rsx! {}
 }

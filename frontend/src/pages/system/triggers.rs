@@ -151,7 +151,7 @@ pub fn SystemTriggers() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     // 初始加载
     use_effect(move || {
@@ -159,7 +159,7 @@ pub fn SystemTriggers() -> Element {
         spawn(async move {
             match list_cron_triggers().await {
                 Ok(list) => triggers.set(list.triggers),
-                Err(e) => toast.error(&format!("加载触发器列表失败: {}", e)),
+                Err(e) => toast.error(format!("加载触发器列表失败: {}", e)),
             }
             loading.set(false);
         });
@@ -280,11 +280,11 @@ pub fn SystemTriggers() -> Element {
                     show_modal.set(false);
                     match list_cron_triggers().await {
                         Ok(list) => triggers.set(list.triggers),
-                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                     }
                 }
                 Err(e) => {
-                    toast.error(&format!("操作失败: {}", e));
+                    toast.error(format!("操作失败: {}", e));
                 }
             }
             submitting.set(false);
@@ -361,7 +361,7 @@ pub fn SystemTriggers() -> Element {
                                         triggers.set(list.triggers);
                                         toast.success("刷新成功");
                                     }
-                                    Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
                                 }
                                 loading.set(false);
                             });
@@ -495,7 +495,7 @@ pub fn SystemTriggers() -> Element {
                                                                 }
                                                             }
                                                             Err(e) => {
-                                                                toast.error(&format!("加载详情失败: {}", e));
+                                                                toast.error(format!("加载详情失败: {}", e));
                                                                 show_modal.set(false);
                                                             }
                                                         }
@@ -515,10 +515,10 @@ pub fn SystemTriggers() -> Element {
                                                                     toast.success("已暂停");
                                                                     match list_cron_triggers().await {
                                                                         Ok(list) => triggers.set(list.triggers),
-                                                                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                                                                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                                                                     }
                                                                 }
-                                                                Err(e) => toast.error(&format!("暂停失败: {}", e)),
+                                                                Err(e) => toast.error(format!("暂停失败: {}", e)),
                                                             }
                                                         });
                                                     },
@@ -535,10 +535,10 @@ pub fn SystemTriggers() -> Element {
                                                                     toast.success("已恢复");
                                                                     match list_cron_triggers().await {
                                                                         Ok(list) => triggers.set(list.triggers),
-                                                                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                                                                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                                                                     }
                                                                 }
-                                                                Err(e) => toast.error(&format!("恢复失败: {}", e)),
+                                                                Err(e) => toast.error(format!("恢复失败: {}", e)),
                                                             }
                                                         });
                                                     },
@@ -719,10 +719,10 @@ pub fn SystemTriggers() -> Element {
                             toast.success("删除成功");
                             match list_cron_triggers().await {
                                 Ok(list) => triggers.set(list.triggers),
-                                Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                                Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                             }
                         }
-                        Err(e) => toast.error(&format!("删除失败: {}", e)),
+                        Err(e) => toast.error(format!("删除失败: {}", e)),
                     }
                 });
             },

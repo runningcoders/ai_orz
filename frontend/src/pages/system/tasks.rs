@@ -43,7 +43,7 @@ pub fn SystemTasks() -> Element {
                 loading.set(false);
             }
             Err(e) => {
-                toast.error(&format!("加载任务列表失败: {}", e));
+                toast.error(format!("加载任务列表失败: {}", e));
                 loading.set(false);
             }
         }
@@ -62,7 +62,7 @@ pub fn SystemTasks() -> Element {
 
     // 客户端分页
     let total = tasks().len();
-    let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let total_pages = total.div_ceil(PAGE_SIZE);
     let page = current_page().min(total_pages.saturating_sub(1));
     let start = page * PAGE_SIZE;
     let end = (start + PAGE_SIZE).min(total);
@@ -87,7 +87,7 @@ pub fn SystemTasks() -> Element {
         spawn(async move {
             match cleanup_tasks(Some(10)).await {
                 Ok(resp) => {
-                    toast.success(&format!("已清理 {} 个任务", resp.cleaned));
+                    toast.success(format!("已清理 {} 个任务", resp.cleaned));
                     show_cleanup_confirm.set(false);
                     // 立即刷新列表
                     let req = ListBackgroundTasksRequest {
@@ -98,7 +98,7 @@ pub fn SystemTasks() -> Element {
                         tasks.set(resp.tasks);
                     }
                 }
-                Err(e) => toast.error(&format!("清理失败: {}", e)),
+                Err(e) => toast.error(format!("清理失败: {}", e)),
             }
         });
     };

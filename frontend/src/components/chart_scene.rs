@@ -7,6 +7,7 @@
 use web_sys::CanvasRenderingContext2d;
 
 /// 图表渲染器 trait：具体图表（折线/柱状/环形）实现此 trait 定义渲染逻辑
+#[allow(dead_code)]
 pub trait ChartRenderer: Send + Sync {
     /// 清空画布并绘制背景
     fn clear(&self, ctx: &CanvasRenderingContext2d, width: f64, height: f64);

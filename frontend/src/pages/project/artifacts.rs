@@ -118,7 +118,7 @@ pub fn ProjectArtifacts() -> Element {
                         }
                     }
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -204,7 +204,7 @@ pub fn ProjectArtifacts() -> Element {
                                                                 let id_delete = id_delete.clone();
                                                                 spawn(async move {
                                                                     if let Err(e) = delete_artifact(&id_delete).await {
-                                                                        toast.error(&format!("删除失败: {}", e));
+                                                                        toast.error(format!("删除失败: {}", e));
                                                                     } else {
                                                                         let pid = selected_project_id();
                                                                         if !pid.is_empty() {

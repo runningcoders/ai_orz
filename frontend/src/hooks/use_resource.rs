@@ -1,12 +1,14 @@
 use dioxus::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ResourceState<T> {
     Loading,
     Ready(T),
     Failed(String),
 }
 
+#[allow(dead_code)]
 pub fn use_resource<T, F, Fut>(fetcher: F) -> (Signal<ResourceState<T>>, impl FnMut())
 where
     T: Clone + 'static,

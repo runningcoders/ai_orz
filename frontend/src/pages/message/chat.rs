@@ -53,7 +53,7 @@ pub fn MessageChat() -> Element {
     let mut creating_project = use_signal(|| false);
 
     // 工具卡片展开状态（message_id -> expanded）
-    let mut tool_expanded = use_signal(|| std::collections::HashSet::<String>::new());
+    let mut tool_expanded = use_signal(std::collections::HashSet::<String>::new);
 
     // 修复 M3：追踪用户是否滚动到底部附近，用于决定新消息是否自动滚动
     let mut at_bottom = use_signal(|| true);
@@ -89,7 +89,7 @@ pub fn MessageChat() -> Element {
                     // 不自动选择第一个项目，让用户从「默认对话」开始
                 }
                 Err(e) => {
-                    toast.error(&format!("加载项目列表失败: {}", e));
+                    toast.error(format!("加载项目列表失败: {}", e));
                 }
             }
             loading_projects.set(false);
@@ -130,7 +130,7 @@ pub fn MessageChat() -> Element {
                     has_more.set(!is_empty);
                 }
                 Err(e) => {
-                    toast.error(&format!("加载消息失败: {}", e));
+                    toast.error(format!("加载消息失败: {}", e));
                 }
             }
             loading_messages.set(false);
@@ -170,7 +170,7 @@ pub fn MessageChat() -> Element {
                     }
                 }
                 Err(e) => {
-                    toast.error(&format!("加载更多消息失败: {}", e));
+                    toast.error(format!("加载更多消息失败: {}", e));
                 }
             }
             loading_messages.set(false);
@@ -217,14 +217,12 @@ pub fn MessageChat() -> Element {
         // 用 msg_count + typing 作为依赖触发滚动；不读 messages 内容避免额外 clone
         let _ = (msg_count, typing);
         spawn(async move {
-            if let Some(window) = web_sys::window() {
-                if let Some(doc) = window.document() {
-                    if let Some(el) = doc.query_selector("#chat-scroll-container").ok().flatten() {
-                        if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
-                            html_el.set_scroll_top(html_el.scroll_height());
-                        }
-                    }
-                }
+            if let Some(window) = web_sys::window()
+                && let Some(doc) = window.document()
+                && let Some(el) = doc.query_selector("#chat-scroll-container").ok().flatten()
+                && let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>()
+            {
+                html_el.set_scroll_top(html_el.scroll_height());
             }
         });
     });
@@ -388,9 +386,8 @@ pub fn MessageChat() -> Element {
                     // 修复 M4：失败时恢复用户输入
                     input_text.set(text_snapshot);
                     pending_attachments.set(attachments_snapshot);
-                    toast.error(&format!("发送消息失败: {}", e));
+                    toast.error(format!("发送消息失败: {}", e));
                     is_typing.set(false);
-                    return;
                 }
             }
         });
@@ -411,7 +408,7 @@ pub fn MessageChat() -> Element {
                 let bytes = match fd.read_bytes().await {
                     Ok(b) => b,
                     Err(e) => {
-                        toast.error(&format!("读取文件 {} 失败: {:?}", file_name, e));
+                        toast.error(format!("读取文件 {} 失败: {:?}", file_name, e));
                         uploading.set(false);
                         return;
                     }
@@ -432,7 +429,7 @@ pub fn MessageChat() -> Element {
                 let form = match web_sys::FormData::new() {
                     Ok(f) => f,
                     Err(_) => {
-                        toast.error(&format!("无法初始化上传表单: {}", file_name));
+                        toast.error(format!("无法初始化上传表单: {}", file_name));
                         uploading.set(false);
                         return;
                     }
@@ -451,7 +448,7 @@ pub fn MessageChat() -> Element {
                         });
                     }
                     Err(e) => {
-                        toast.error(&format!("上传文件 {} 失败: {}", file_name, e));
+                        toast.error(format!("上传文件 {} 失败: {}", file_name, e));
                     }
                 }
             }
@@ -521,10 +518,10 @@ pub fn MessageChat() -> Element {
                     show_create_project.set(false);
                     new_project_name.set(String::new());
                     new_project_desc.set(String::new());
-                    toast.info(&format!("项目「{}」已创建", name));
+                    toast.info(format!("项目「{}」已创建", name));
                 }
                 Err(e) => {
-                    toast.error(&format!("创建项目失败: {}", e));
+                    toast.error(format!("创建项目失败: {}", e));
                 }
             }
             creating_project.set(false);
@@ -604,7 +601,7 @@ pub fn MessageChat() -> Element {
                                         let is_system = msg_role == 2;
                                         rsx! {
                                             div {
-                                                class: if is_user { "chat chat-end" } else if is_system { "chat chat-start" } else { "chat chat-start" },
+                                                class: if is_user { "chat chat-end" } else { "chat chat-start" },
                                                 key: "{msg_id}",
                                                 div { class: "chat-image avatar",
                                                     div {
@@ -622,7 +619,7 @@ pub fn MessageChat() -> Element {
                                                                 tool_expanded.write().insert(mid.clone());
                                                             }
                                                         }
-                                                    }, toast.clone())
+                                                    }, toast)
                                                 }
                                             }
                                         }
@@ -723,7 +720,7 @@ pub fn MessageChat() -> Element {
                                         let is_system = msg_role == 2;
                                         rsx! {
                                             div {
-                                                class: if is_user { "chat chat-end" } else if is_system { "chat chat-start" } else { "chat chat-start" },
+                                                class: if is_user { "chat chat-end" } else { "chat chat-start" },
                                                 key: "{msg_id}",
                                                 div { class: "chat-image avatar",
                                                     div {
@@ -741,7 +738,7 @@ pub fn MessageChat() -> Element {
                                                                 tool_expanded.write().insert(mid.clone());
                                                             }
                                                         }
-                                                    }, toast.clone())
+                                                    }, toast)
                                                 }
                                             }
                                         }
@@ -955,7 +952,6 @@ fn chat_input_area(
                         let input_text = input_text;
                         let messages = messages;
                         let show_slash_menu = show_slash_menu;
-                        let toast = toast;
                         let selected_slash_index = selected_slash_index;
                         rsx! {
                             div { class: "absolute bottom-full left-3 right-3 mb-1 bg-base-100 rounded-lg shadow-lg border border-base-300 overflow-hidden z-10",
@@ -968,7 +964,6 @@ fn chat_input_area(
                                         let mut input_text = input_text;
                                         let mut messages = messages;
                                         let mut show_slash_menu = show_slash_menu;
-                                        let toast = toast;
                                         let mut selected_slash_index = selected_slash_index;
                                         rsx! {
                                             div {
@@ -1042,13 +1037,11 @@ fn chat_input_area(
                     r#type: "button",
                     disabled: uploading(),
                     onclick: move |_| {
-                        if let Some(window) = web_sys::window() {
-                            if let Some(doc) = window.document() {
-                                if let Some(el) = doc.get_element_by_id("chat-file-input") {
+                        if let Some(window) = web_sys::window()
+                            && let Some(doc) = window.document()
+                                && let Some(el) = doc.get_element_by_id("chat-file-input") {
                                     let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.click());
                                 }
-                            }
-                        }
                     },
                     if uploading() {
                         span { class: "loading loading-spinner loading-sm" }
@@ -1426,6 +1419,7 @@ fn render_task_card(content: &str, time: i64, bubble_class: &str, time_class: &s
 }
 
 /// 消息项：可能是普通消息，也可能是日期分隔条
+#[allow(clippy::large_enum_variant)]
 enum MessageListEntry {
     /// 日期分隔条
     DateDivider(String),
@@ -1452,7 +1446,7 @@ fn group_messages_by_date(messages: &[MessageListItem]) -> Vec<MessageListEntry>
 // 修复 M5：日期分组使用本地时区，之前用 UTC 深夜时段日期分组错乱
 fn format_date_group_label(ts_ms: i64) -> String {
     use chrono::{Datelike, Local, TimeZone};
-    let secs = (ts_ms / 1000) as i64;
+    let secs = ts_ms / 1000;
     let dt = match Local.timestamp_opt(secs, 0) {
         chrono::LocalResult::Single(dt) => dt,
         _ => return "未知".to_string(),

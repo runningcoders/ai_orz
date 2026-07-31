@@ -58,7 +58,7 @@ pub fn SystemHealth() -> Element {
         spawn(async move {
             match get_health_metrics().await {
                 Ok(m) => metrics.set(Some(m)),
-                Err(e) => toast.error(&format!("加载系统指标失败: {}", e)),
+                Err(e) => toast.error(format!("加载系统指标失败: {}", e)),
             }
             loading.set(false);
         });
@@ -87,8 +87,8 @@ pub fn SystemHealth() -> Element {
                     onclick: move |_| {
                         spawn(async move {
                             match check_health().await {
-                                Ok(msg) => toast.success(&format!("服务正常: {}", msg)),
-                                Err(e) => toast.error(&format!("健康检查失败: {}", e)),
+                                Ok(msg) => toast.success(format!("服务正常: {}", msg)),
+                                Err(e) => toast.error(format!("健康检查失败: {}", e)),
                             }
                         });
                     },

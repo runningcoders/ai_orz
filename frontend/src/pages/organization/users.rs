@@ -32,7 +32,7 @@ pub fn OrganizationUsers() -> Element {
     let mut loading = use_signal(|| true);
     let mut show_modal = use_signal(|| false);
     let mut new_username = use_signal(String::new);
-    let mut new_display_name = use_signal(|| String::new());
+    let mut new_display_name = use_signal(String::new);
     let mut new_email = use_signal(String::new);
     let mut new_password = use_signal(String::new);
     let mut new_role = use_signal(|| 1i32);
@@ -41,7 +41,7 @@ pub fn OrganizationUsers() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     // ===== 编辑用户 Modal =====
     let mut show_edit_modal = use_signal(|| false);
@@ -99,7 +99,7 @@ pub fn OrganizationUsers() -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -265,10 +265,10 @@ pub fn OrganizationUsers() -> Element {
                                     show_edit_modal.set(false);
                                     match list_users().await {
                                         Ok(list) => users.set(list.data),
-                                        Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                        Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                     }
                                 }
-                                Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                Err(e) => toast.error(format!("更新失败: {}", e)),
                             }
                             saving_user.set(false);
                         });
@@ -335,7 +335,7 @@ pub fn OrganizationUsers() -> Element {
                 show_delete_confirm.set(false);
                 spawn(async move {
                     if let Err(e) = delete_user(&id).await {
-                        toast.error(&format!("删除失败: {}", e));
+                        toast.error(format!("删除失败: {}", e));
                     } else {
                         match list_users().await {
                             Ok(list) => users.set(list.data),

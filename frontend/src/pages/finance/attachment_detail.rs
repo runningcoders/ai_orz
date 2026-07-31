@@ -59,7 +59,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                         toast.success("内容已保存");
                         content_dirty.set(false);
                     }
-                    Err(e) => toast.error(&format!("保存失败: {}", e)),
+                    Err(e) => toast.error(format!("保存失败: {}", e)),
                 }
                 saving.set(false);
             });

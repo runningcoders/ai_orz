@@ -135,31 +135,31 @@ pub fn HrAgentDetail(id: String) -> Element {
         spawn(async move {
             match get_agent(build_agent_stats_request(aid.clone())).await {
                 Ok(a) => agent_data.set(Some(a)),
-                Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
+                Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
             }
             match list_installed_tool_packs(&aid).await {
                 Ok(resp) => tool_packs.set(resp.installed_tags),
-                Err(e) => toast.error(&format!("获取工具包失败: {}", e)),
+                Err(e) => toast.error(format!("获取工具包失败: {}", e)),
             }
             match list_tool_tags().await {
                 Ok(resp) => tool_tags.set(resp.tags),
-                Err(e) => toast.error(&format!("获取工具包标签失败: {}", e)),
+                Err(e) => toast.error(format!("获取工具包标签失败: {}", e)),
             }
             match list_installed_skill_packs(&aid).await {
                 Ok(resp) => skill_packs.set(resp.skill_packs),
-                Err(e) => toast.error(&format!("获取技能包失败: {}", e)),
+                Err(e) => toast.error(format!("获取技能包失败: {}", e)),
             }
             match list_skill_tags().await {
                 Ok(resp) => skill_tags.set(resp.tags),
-                Err(e) => toast.error(&format!("获取技能包标签失败: {}", e)),
+                Err(e) => toast.error(format!("获取技能包标签失败: {}", e)),
             }
             match list_agent_skills(&aid).await {
                 Ok(resp) => installed_skills.set(resp.skills),
-                Err(e) => toast.error(&format!("获取已安装技能失败: {}", e)),
+                Err(e) => toast.error(format!("获取已安装技能失败: {}", e)),
             }
             match list_tools(ListToolsRequest::default()).await {
                 Ok(resp) => all_tools.set(resp.items),
-                Err(e) => toast.error(&format!("获取工具列表失败: {}", e)),
+                Err(e) => toast.error(format!("获取工具列表失败: {}", e)),
             }
             match load_latest_messages(common::api::ListMessagesRequest {
                 limit: Some(50),
@@ -180,11 +180,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                         .collect();
                     messages.set(filtered);
                 }
-                Err(e) => toast.error(&format!("加载消息失败: {}", e)),
+                Err(e) => toast.error(format!("加载消息失败: {}", e)),
             }
             match list_model_providers().await {
                 Ok(resp) => model_providers.set(resp.providers),
-                Err(e) => toast.error(&format!("加载模型提供商列表失败: {}", e)),
+                Err(e) => toast.error(format!("加载模型提供商列表失败: {}", e)),
             }
             // 按需加载关系图数据（避免全量加载）
             // 1. 按 agent_id 过滤 tasks（assignee_type=Agent）
@@ -216,11 +216,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                         };
                         match query_projects(&req).await {
                             Ok(page) => graph_projects.set(page.items),
-                            Err(e) => toast.error(&format!("批量获取项目失败: {}", e)),
+                            Err(e) => toast.error(format!("批量获取项目失败: {}", e)),
                         }
                     }
                 }
-                Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
+                Err(e) => toast.error(format!("获取任务列表失败: {}", e)),
             }
             // 3. graph_agents 从当前 agent_data 构造（无需 API 调用）
             //    agent_data 已在上方加载完成
@@ -246,8 +246,8 @@ pub fn HrAgentDetail(id: String) -> Element {
             }
         };
         let inner_id = sse_id.clone();
-        let mut inner_messages = messages.clone();
-        let mut inner_is_typing = is_typing.clone();
+        let mut inner_messages = messages;
+        let mut inner_is_typing = is_typing;
 
         let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
             let data = event.data().as_string().unwrap_or_default();
@@ -315,7 +315,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Err(e) => {
                     // 修复 M4：失败时恢复用户输入
                     input_message.set(text_snapshot);
-                    toast.error(&format!("发送消息失败: {}", e));
+                    toast.error(format!("发送消息失败: {}", e));
                     is_typing.set(false);
                 }
             }
@@ -526,13 +526,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 };
                                                                 match update_agent_status(status_req).await {
                                                                     Ok(_) => {
-                                                                        toast.success(&format!("状态已更新为：{}", label_clone));
+                                                                        toast.success(format!("状态已更新为：{}", label_clone));
                                                                         match get_agent(build_agent_stats_request(agent_id.clone())).await {
                                                                             Ok(a) => agent_data.set(Some(a)),
-                                                                            Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                            Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                         }
                                                                     }
-                                                                    Err(e) => toast.error(&format!("状态更新失败: {}", e)),
+                                                                    Err(e) => toast.error(format!("状态更新失败: {}", e)),
                                                                 }
                                                             });
                                                         },
@@ -569,13 +569,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             tag: tag.clone(),
                                                         }).await {
                                                             Ok(_) => {
-                                                                toast.success(&format!("工具包 [{}] 已安装", tag));
+                                                                toast.success(format!("工具包 [{}] 已安装", tag));
                                                                 match list_installed_tool_packs(&aid).await {
                                                                     Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                    Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
+                                                                    Err(e) => toast.error(format!("刷新工具包列表失败: {}", e)),
                                                                 }
                                                             }
-                                                            Err(e) => toast.error(&format!("安装工具包失败: {}", e)),
+                                                            Err(e) => toast.error(format!("安装工具包失败: {}", e)),
                                                         }
                                                     });
                                                 },
@@ -601,13 +601,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     spawn(async move {
                                                                         match uninstall_tool_pack(UninstallToolPackRequest { agent_id: agent_id.clone(), tag: t.clone() }).await {
                                                                             Ok(_) => {
-                                                                                toast.success(&format!("工具包 [{}] 已卸载", t));
+                                                                                toast.success(format!("工具包 [{}] 已卸载", t));
                                                                                 match list_installed_tool_packs(&agent_id).await {
                                                                                     Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                                    Err(e) => toast.error(&format!("刷新工具包列表失败: {}", e)),
+                                                                                    Err(e) => toast.error(format!("刷新工具包列表失败: {}", e)),
                                                                                 }
                                                                             }
-                                                                            Err(e) => toast.error(&format!("卸载工具包失败: {}", e)),
+                                                                            Err(e) => toast.error(format!("卸载工具包失败: {}", e)),
                                                                         }
                                                                     });
                                                                 },
@@ -634,13 +634,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     spawn(async move {
                                                         match install_skill_pack(InstallSkillPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
                                                             Ok(_) => {
-                                                                toast.success(&format!("技能包 [{}] 已安装", tag));
+                                                                toast.success(format!("技能包 [{}] 已安装", tag));
                                                                 match list_installed_skill_packs(&aid).await {
                                                                     Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                    Err(e) => toast.error(&format!("刷新技能包列表失败: {}", e)),
+                                                                    Err(e) => toast.error(format!("刷新技能包列表失败: {}", e)),
                                                                 }
                                                             }
-                                                            Err(e) => toast.error(&format!("安装技能包失败: {}", e)),
+                                                            Err(e) => toast.error(format!("安装技能包失败: {}", e)),
                                                         }
                                                     });
                                                 },
@@ -698,10 +698,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 toast.success("技能已安装");
                                                                 match list_agent_skills(&aid).await {
                                                                     Ok(resp) => installed_skills.set(resp.skills),
-                                                                    Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                                 }
                                                             }
-                                                            Err(e) => toast.error(&format!("安装失败: {}", e)),
+                                                            Err(e) => toast.error(format!("安装失败: {}", e)),
                                                         }
                                                     });
                                                 }
@@ -763,13 +763,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                                     skill_id: sid.clone(),
                                                                                 }).await {
                                                                                     Ok(_) => {
-                                                                                        toast.success(&format!("技能 {} 已卸载", sname));
+                                                                                        toast.success(format!("技能 {} 已卸载", sname));
                                                                                         match list_agent_skills(&agent_id).await {
                                                                                             Ok(resp) => installed_skills.set(resp.skills),
-                                                                                            Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                                            Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                                                         }
                                                                                     }
-                                                                                    Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                                                    Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                                                 }
                                                                             });
                                                                         },
@@ -815,10 +815,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 toast.success("工具已绑定");
                                                                 match get_agent(build_agent_stats_request(aid.clone())).await {
                                                                     Ok(a) => agent_data.set(Some(a)),
-                                                                    Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                 }
                                                             }
-                                                            Err(e) => toast.error(&format!("绑定失败: {}", e)),
+                                                            Err(e) => toast.error(format!("绑定失败: {}", e)),
                                                         }
                                                     });
                                                 }
@@ -884,13 +884,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                             spawn(async move {
                                                                                 match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await {
                                                                                     Ok(_) => {
-                                                                                        toast.success(&format!("工具 {} 已解绑", tname));
+                                                                                        toast.success(format!("工具 {} 已解绑", tname));
                                                                                         match get_agent(build_agent_stats_request(agent_id.clone())).await {
                                                                                             Ok(a) => agent_data.set(Some(a)),
-                                                                                            Err(e) => toast.error(&format!("刷新 Agent 失败: {}", e)),
+                                                                                            Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                                         }
                                                                                     }
-                                                                                    Err(e) => toast.error(&format!("解绑失败: {}", e)),
+                                                                                    Err(e) => toast.error(format!("解绑失败: {}", e)),
                                                                                 }
                                                                             });
                                                                         },
@@ -1063,10 +1063,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         show_edit_modal.set(false);
                                                         match get_agent(build_agent_stats_request(id_clone.clone())).await {
                                                             Ok(a) => agent_data.set(Some(a)),
-                                                            Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                                            Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                                         }
                                                     }
-                                                    Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                                    Err(e) => toast.error(format!("更新失败: {}", e)),
                                                 }
                                                 saving_meta.set(false);
                                             });
@@ -1143,13 +1143,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 spawn(async move {
                                                     match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(false) }).await {
                                                         Ok(_) => {
-                                                            toast.success(&format!("技能包 [{}] 已卸载（保留副本）", t));
+                                                            toast.success(format!("技能包 [{}] 已卸载（保留副本）", t));
                                                             match list_installed_skill_packs(&aid).await {
                                                                 Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                         }
-                                                        Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                        Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                     }
                                                 });
                                             },
@@ -1168,13 +1168,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 spawn(async move {
                                                     match uninstall_skill_pack(UninstallSkillPackRequest { agent_id: aid.clone(), tag: t.clone(), delete_copies: Some(true) }).await {
                                                         Ok(_) => {
-                                                            toast.success(&format!("技能包 [{}] 已卸载（含副本删除）", t));
+                                                            toast.success(format!("技能包 [{}] 已卸载（含副本删除）", t));
                                                             match list_installed_skill_packs(&aid).await {
                                                                 Ok(resp) => skill_packs.set(resp.skill_packs),
-                                                                Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                                                                Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                         }
-                                                        Err(e) => toast.error(&format!("卸载失败: {}", e)),
+                                                        Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                     }
                                                 });
                                             },

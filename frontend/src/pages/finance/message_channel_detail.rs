@@ -32,7 +32,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         spawn(async move {
             match get_message_channel(&id).await {
                 Ok(c) => channel.set(Some(c)),
-                Err(e) => toast.error(&format!("加载失败: {}", e)),
+                Err(e) => toast.error(format!("加载失败: {}", e)),
             }
             loading.set(false);
         });
@@ -58,7 +58,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         });
                         match get_message_channel(&id).await {
                             Ok(c) => channel.set(Some(c)),
-                            Err(e) => toast.error(&format!("刷新失败: {}", e)),
+                            Err(e) => toast.error(format!("刷新失败: {}", e)),
                         }
                     }
                     Err(e) => toast.error(&e),
@@ -79,10 +79,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         if resp.success {
                             toast.success("连接测试通过");
                         } else {
-                            toast.error(&format!("连接失败: {}", resp.error.unwrap_or_default()));
+                            toast.error(format!("连接失败: {}", resp.error.unwrap_or_default()));
                         }
                     }
-                    Err(e) => toast.error(&format!("测试失败: {}", e)),
+                    Err(e) => toast.error(format!("测试失败: {}", e)),
                 }
                 testing.set(false);
             });
@@ -100,7 +100,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         toast.success("已删除");
                         let _ = navigator.push("/finance/message-channels".to_string());
                     }
-                    Err(e) => toast.error(&format!("删除失败: {}", e)),
+                    Err(e) => toast.error(format!("删除失败: {}", e)),
                 }
             });
         }

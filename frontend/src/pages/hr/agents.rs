@@ -75,7 +75,7 @@ pub fn HrAgents() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -84,9 +84,8 @@ pub fn HrAgents() -> Element {
                 Ok(page) => agents.set(page.items),
                 Err(e) => toast.error(&e),
             }
-            match list_model_providers().await {
-                Ok(resp) => model_providers.set(resp.providers),
-                Err(_) => {}
+            if let Ok(resp) = list_model_providers().await {
+                model_providers.set(resp.providers)
             }
             loading.set(false);
         });
@@ -149,7 +148,7 @@ pub fn HrAgents() -> Element {
                     new_description.set(String::new());
                     reload_agents();
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -244,7 +243,7 @@ pub fn HrAgents() -> Element {
                     reload_agents();
                     toast.success("外部 Agent 创建成功");
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             ext_creating.set(false);
         });
@@ -580,7 +579,7 @@ pub fn HrAgents() -> Element {
                 show_delete_confirm.set(false);
                 spawn(async move {
                     if let Err(e) = delete_agent(&id).await {
-                        toast.error(&format!("删除失败: {}", e));
+                        toast.error(format!("删除失败: {}", e));
                     } else {
                         reload_agents();
                     }

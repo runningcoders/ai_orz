@@ -13,6 +13,7 @@ pub struct LogLevelDistributionItem {
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogLevelDistributionResponse {
     pub items: Vec<LogLevelDistributionItem>,
+    #[allow(dead_code)]
     pub total: u64,
 }
 

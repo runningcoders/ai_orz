@@ -272,20 +272,20 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut selected_id: Signal<Option<String>> = use_signal(|| None);
 
     // 粒子系统状态（glow 需 mut 因事件闭包中 .write()，其他仅 clone 使用）
-    let data_flow: Signal<DataFlowParticles> = use_signal(|| DataFlowParticles::new());
-    let mut glow: Signal<GlowParticles> = use_signal(|| GlowParticles::new());
+    let data_flow: Signal<DataFlowParticles> = use_signal(DataFlowParticles::new);
+    let mut glow: Signal<GlowParticles> = use_signal(GlowParticles::new);
     let background: Signal<BackgroundParticles> =
         use_signal(|| BackgroundParticles::new(props.width, props.height, 40));
-    let birth_death: Signal<BirthDeathParticles> = use_signal(|| BirthDeathParticles::new());
+    let birth_death: Signal<BirthDeathParticles> = use_signal(BirthDeathParticles::new);
 
     // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---
     let sync_nodes = props.nodes.clone();
     let sync_width = props.width;
     let sync_height = props.height;
-    let mut nodes_state_sync = nodes_state.clone();
-    let mut force_layout_sync = force_layout.clone();
-    let mut is_stable_sync = is_stable.clone();
-    let mut birth_death_sync = birth_death.clone();
+    let mut nodes_state_sync = nodes_state;
+    let mut force_layout_sync = force_layout;
+    let mut is_stable_sync = is_stable;
+    let mut birth_death_sync = birth_death;
     use_effect(move || {
         let props_nodes = sync_nodes.clone();
         let current = nodes_state_sync.read().clone();
@@ -352,13 +352,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let render_height = props.height;
     let enable_force = props.enable_force_layout;
     let render_edges = props.edges.clone();
-    let mut nodes_state_c = nodes_state.clone();
-    let mut force_layout_c = force_layout.clone();
-    let mut is_stable_c = is_stable.clone();
-    let dragging_id_c = dragging_id.clone();
-    let hovered_id_c = hovered_id.clone();
-    let selected_id_c = selected_id.clone();
-    let renderer_c = renderer.clone();
+    let mut nodes_state_c = nodes_state;
+    let mut force_layout_c = force_layout;
+    let mut is_stable_c = is_stable;
+    let dragging_id_c = dragging_id;
+    let hovered_id_c = hovered_id;
+    let selected_id_c = selected_id;
+    let renderer_c = renderer;
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
@@ -390,13 +390,14 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let running_clone = running.clone();
 
         // Rc<RefCell<Option<Closure>>> 模式：Closure 自引用递归 rAF
+        #[allow(clippy::type_complexity)]
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
-        let mut data_flow_c = data_flow.clone();
-        let mut glow_c = glow.clone();
-        let mut background_c = background.clone();
-        let mut birth_death_c = birth_death.clone();
+        let mut data_flow_c = data_flow;
+        let mut glow_c = glow;
+        let mut background_c = background;
+        let mut birth_death_c = birth_death;
         let enable_data_flow = props.enable_data_flow_particles;
         let enable_glow = props.enable_glow_particles;
         let enable_bg = props.enable_background_particles;
@@ -466,12 +467,11 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             }
 
             // 递归注册下一帧
-            if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Some(cb) = cb_ref_inner.borrow().as_ref() {
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
-                    }
-                }
+            if running_clone.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(cb) = cb_ref_inner.borrow().as_ref()
+                && let Some(window) = web_sys::window()
+            {
+                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
             }
         });
 

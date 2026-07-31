@@ -126,8 +126,8 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Install wasm32 target
-      run: rustup target add wasm32-unknown-unknown
+    - name: Install wasm32 target and clippy
+      run: rustup target add wasm32-unknown-unknown && rustup component add clippy
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.7
@@ -150,6 +150,9 @@ jobs:
 
     - name: Check frontend
       run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
+
+    - name: Clippy check (deny warnings)
+      run: cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 
     - name: Run frontend tests
       run: cd frontend && cargo test --verbose

@@ -100,16 +100,15 @@ pub fn color_with_alpha(hex: &str, alpha: f64) -> String {
     if hex.starts_with("rgba") || hex.starts_with("rgb(") {
         return hex.to_string();
     }
-    if let Some(hex_str) = hex.strip_prefix('#') {
-        if hex_str.len() == 6 {
-            if let (Ok(r), Ok(g), Ok(b)) = (
-                u8::from_str_radix(&hex_str[0..2], 16),
-                u8::from_str_radix(&hex_str[2..4], 16),
-                u8::from_str_radix(&hex_str[4..6], 16),
-            ) {
-                return format!("rgba({}, {}, {}, {:.2})", r, g, b, alpha);
-            }
-        }
+    if let Some(hex_str) = hex.strip_prefix('#')
+        && hex_str.len() == 6
+        && let (Ok(r), Ok(g), Ok(b)) = (
+            u8::from_str_radix(&hex_str[0..2], 16),
+            u8::from_str_radix(&hex_str[2..4], 16),
+            u8::from_str_radix(&hex_str[4..6], 16),
+        )
+    {
+        return format!("rgba({}, {}, {}, {:.2})", r, g, b, alpha);
     }
     format!("rgba(255, 255, 255, {:.2})", alpha)
 }
@@ -118,7 +117,7 @@ pub fn color_with_alpha(hex: &str, alpha: f64) -> String {
 pub fn random_range(min: f64, max: f64) -> f64 {
     use std::cell::Cell;
     thread_local! {
-        static SEED: Cell<u64> = Cell::new(12345);
+        static SEED: Cell<u64> = const { Cell::new(12345) };
     }
     SEED.with(|s| {
         let mut x = s.get();
@@ -561,7 +560,11 @@ mod tests {
     fn test_random_range() {
         for _ in 0..100 {
             let v = random_range(5.0, 10.0);
-            assert!(v >= 5.0 && v <= 10.0, "random value out of range: {}", v);
+            assert!(
+                (5.0..=10.0).contains(&v),
+                "random value out of range: {}",
+                v
+            );
         }
     }
 

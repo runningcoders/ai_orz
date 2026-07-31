@@ -121,7 +121,7 @@ pub fn SystemSeed() -> Element {
         spawn(async move {
             match list_seeds().await {
                 Ok(resp) => seeds.set(resp.data),
-                Err(e) => toast.error(&format!("加载 seed 列表失败: {}", e)),
+                Err(e) => toast.error(format!("加载 seed 列表失败: {}", e)),
             }
             loading.set(false);
         });
@@ -152,11 +152,11 @@ pub fn SystemSeed() -> Element {
                         current_task.set(Some(snapshot));
                         if is_done {
                             if is_completed {
-                                toast.success(&format!("{}完成", kind.label()));
+                                toast.success(format!("{}完成", kind.label()));
                                 // 完成后刷新列表（save/apply-default 会新增文件，load 不会但保持一致性）
                                 match list_seeds().await {
                                     Ok(resp) => seeds.set(resp.data),
-                                    Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                                    Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                                 }
                             }
                             // 失败时保留 current_task，让用户看到错误信息和返回按钮
@@ -164,7 +164,7 @@ pub fn SystemSeed() -> Element {
                         }
                     }
                     Err(e) => {
-                        toast.error(&format!("查询进度失败: {}", e));
+                        toast.error(format!("查询进度失败: {}", e));
                         current_task.set(None);
                         current_task_kind.set(None);
                         break;
@@ -219,7 +219,7 @@ pub fn SystemSeed() -> Element {
                     );
                 }
                 Err(e) => {
-                    toast.error(&format!("提交导出任务失败: {}", e));
+                    toast.error(format!("提交导出任务失败: {}", e));
                     save_submitting.set(false);
                 }
             }
@@ -268,7 +268,7 @@ pub fn SystemSeed() -> Element {
                     );
                 }
                 Err(e) => {
-                    toast.error(&format!("提交导入任务失败: {}", e));
+                    toast.error(format!("提交导入任务失败: {}", e));
                     load_submitting.set(false);
                 }
             }
@@ -311,7 +311,7 @@ pub fn SystemSeed() -> Element {
                     );
                 }
                 Err(e) => {
-                    toast.error(&format!("提交应用默认模板任务失败: {}", e));
+                    toast.error(format!("提交应用默认模板任务失败: {}", e));
                     apply_default_submitting.set(false);
                 }
             }
@@ -328,7 +328,7 @@ pub fn SystemSeed() -> Element {
             match crate::api::seed::get_seed_file(&name).await {
                 Ok(resp) => view_content.set(resp.content),
                 Err(e) => {
-                    toast.error(&format!("读取文件失败: {}", e));
+                    toast.error(format!("读取文件失败: {}", e));
                     show_view_modal.set(false);
                 }
             }
@@ -356,10 +356,10 @@ pub fn SystemSeed() -> Element {
                     show_delete_modal.set(false);
                     match list_seeds().await {
                         Ok(resp) => seeds.set(resp.data),
-                        Err(e) => toast.error(&format!("刷新列表失败: {}", e)),
+                        Err(e) => toast.error(format!("刷新列表失败: {}", e)),
                     }
                 }
-                Err(e) => toast.error(&format!("删除失败: {}", e)),
+                Err(e) => toast.error(format!("删除失败: {}", e)),
             }
             delete_loading.set(false);
         });

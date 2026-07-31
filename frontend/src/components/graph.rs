@@ -236,6 +236,7 @@ pub fn Graph(props: GraphProps) -> Element {
     let svg_width = 800;
     let svg_height = 600;
 
+    #[allow(clippy::type_complexity)]
     let valid_edges: Vec<(GraphEdge, (f64, f64), (f64, f64))> = props
         .edges
         .iter()
@@ -257,8 +258,8 @@ pub fn Graph(props: GraphProps) -> Element {
         if is_dragging() {
             let node_id = dragged_node_id.read().clone();
             if let Some(node_id) = node_id {
-                let (start_x, start_y) = drag_start.read().clone();
-                let (node_start_x, node_start_y) = drag_node_start.read().clone();
+                let (start_x, start_y) = *drag_start.read();
+                let (node_start_x, node_start_y) = *drag_node_start.read();
                 let client_pos = e.client_coordinates();
                 let dx = client_pos.x - start_x;
                 let dy = client_pos.y - start_y;
@@ -284,7 +285,7 @@ pub fn Graph(props: GraphProps) -> Element {
         }
     };
 
-    let on_click = props.on_node_click.clone();
+    let on_click = props.on_node_click;
     // 修复 M8：mouseup 时若 drag_moved=false 视为点击，调用 on_click
     let handle_mouse_up = move |_| {
         let was_dragging = is_dragging();
@@ -294,10 +295,11 @@ pub fn Graph(props: GraphProps) -> Element {
         dragged_node_id.set(None);
         drag_moved.set(false);
         is_panning.set(false);
-        if was_dragging && !moved {
-            if let Some(node_id) = node_id {
-                on_click.call(node_id);
-            }
+        if was_dragging
+            && !moved
+            && let Some(node_id) = node_id
+        {
+            on_click.call(node_id);
         }
     };
 
@@ -311,10 +313,10 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let handle_wheel = move |e: WheelEvent| {
         e.prevent_default();
-        let (tx, ty, scale) = view_transform.read().clone();
+        let (tx, ty, scale) = *view_transform.read();
         let delta_y = e.delta().strip_units().y;
-        let delta = if delta_y > 0.0 { 0.9 } else { 1.1 };
-        let new_scale = ((scale * delta) as f64).max(0.5).min(2.0);
+        let delta: f64 = if delta_y > 0.0 { 0.9 } else { 1.1 };
+        let new_scale = (scale * delta).clamp(0.5, 2.0);
         view_transform.set((tx, ty, new_scale));
     };
 
@@ -331,8 +333,8 @@ pub fn Graph(props: GraphProps) -> Element {
 
     let mut handle_pan_move = move |e: MouseEvent| {
         if is_panning() {
-            let (tx, ty, scale) = view_transform.read().clone();
-            let (start_x, start_y) = pan_start.read().clone();
+            let (tx, ty, scale) = *view_transform.read();
+            let (start_x, start_y) = *pan_start.read();
             let dx = (e.client_coordinates().x - start_x) / scale;
             let dy = (e.client_coordinates().y - start_y) / scale;
             view_transform.set((tx + dx, ty + dy, scale));
@@ -341,7 +343,7 @@ pub fn Graph(props: GraphProps) -> Element {
         }
     };
 
-    let (tx, ty, scale) = view_transform.read().clone();
+    let (tx, ty, scale) = *view_transform.read();
     let render_nodes = props.nodes.clone();
     let highlighted_ids = props.highlighted_node_ids.clone();
     // 修复 M8：on_click 已移到 handle_mouse_up，节点 mousedown 不再触发点击

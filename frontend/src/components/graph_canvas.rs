@@ -39,6 +39,7 @@ fn set_dash(ctx: &CanvasRenderingContext2d, values: &[f64]) {
 /// 节点扩展元数据（canvas 渲染需要但 CanvasNode 未携带的信息）
 #[derive(Clone, Default)]
 pub struct NodeMeta {
+    #[allow(dead_code)]
     node_type: String,
     tags: Vec<String>,
     summary: Option<String>,

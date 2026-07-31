@@ -248,6 +248,7 @@ pub async fn upload_attachment(form: FormData) -> Result<AttachmentDetail, ApiEr
     api_post_multipart("/api/v1/finance/attachments/upload", form).await
 }
 
+#[allow(dead_code)]
 pub async fn get_attachment(id: &str) -> Result<AttachmentDetail, ApiError> {
     api_get(&format!("/api/v1/finance/attachments/{}", id)).await
 }

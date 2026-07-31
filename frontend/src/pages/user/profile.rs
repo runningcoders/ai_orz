@@ -14,7 +14,7 @@ pub fn UserProfile() -> Element {
     let mut loading = use_signal(|| true);
     let mut username = use_signal(String::new);
     let mut display_name = use_signal(String::new);
-    let mut email = use_signal(|| String::new());
+    let mut email = use_signal(String::new);
     let mut role_name = use_signal(String::new);
     let mut saving = use_signal(|| false);
     let toast = use_toast();

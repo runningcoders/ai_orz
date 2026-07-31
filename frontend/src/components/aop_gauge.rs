@@ -82,7 +82,7 @@ pub fn AopGauge(props: AopGaugeProps) -> Element {
             badge,
             footer: Some(footer),
             is_selected: props.is_selected,
-            on_click: props.on_click.clone(),
+            on_click: props.on_click,
         }
     }
 }

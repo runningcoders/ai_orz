@@ -74,7 +74,7 @@ pub fn TaskDetail(id: String) -> Element {
                         if let Some(pid) = &pid_for_graph {
                             match list_project_tasks(pid).await {
                                 Ok(resp) => graph_tasks.set(resp.tasks),
-                                Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
+                                Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
                             }
                         }
 
@@ -92,7 +92,7 @@ pub fn TaskDetail(id: String) -> Element {
                                         graph_agents.set(vec![a]);
                                     }
                                 }
-                                Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
+                                Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
                             }
                         }
 
@@ -110,7 +110,7 @@ pub fn TaskDetail(id: String) -> Element {
                                         graph_projects.set(vec![p]);
                                     }
                                 }
-                                Err(e) => toast.error(&format!("获取 Project 失败: {}", e)),
+                                Err(e) => toast.error(format!("获取 Project 失败: {}", e)),
                             }
                         }
                     });

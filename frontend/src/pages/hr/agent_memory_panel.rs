@@ -62,6 +62,7 @@ fn fetch_memories(
                 memory_type: mem_type.map(|s| s.to_string()),
                 limit: Some(20),
                 tags: None,
+                status: None,
             })
             .await
             .map(|r| r.results)
@@ -210,7 +211,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let has_tgt = item.target_node_id.is_some();
                                 let has_rel = item.relation_type.is_some();
                                 let tags = item.tags.clone();
-                                let has_tags = tags.as_ref().map_or(false, |t| !t.is_empty());
+                                let has_tags = tags.as_ref().is_some_and(|t| !t.is_empty());
 
                                 let active = active_tab();
                                 let badge_class = active.badge_class();

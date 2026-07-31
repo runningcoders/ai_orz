@@ -63,6 +63,7 @@ pub async fn list_project_tasks(project_id: &str) -> Result<ListTasksResponse, A
     api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await
 }
 
+#[allow(dead_code)]
 pub async fn list_tasks(req: ListTasksRequest) -> Result<PagedResult<TaskListItem>, ApiError> {
     let url = super::build_pagination_url("/api/v1/tasks", &req.pagination);
     api_get(&url).await
@@ -145,6 +146,7 @@ pub async fn update_artifact(
     .await
 }
 
+#[allow(dead_code)]
 pub async fn get_artifact(id: &str) -> Result<ArtifactDetail, ApiError> {
     api_get(&format!("/api/v1/project/artifacts/{}", id)).await
 }

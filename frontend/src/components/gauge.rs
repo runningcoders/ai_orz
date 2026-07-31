@@ -103,6 +103,7 @@ pub fn Gauge(props: GaugeProps) -> Element {
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let running_clone = running.clone();
 
+        #[allow(clippy::type_complexity)]
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
@@ -112,12 +113,11 @@ pub fn Gauge(props: GaugeProps) -> Element {
             draw_gauge(&ctx, width, height, &data, now);
 
             // 递归注册下一帧
-            if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Some(cb) = cb_ref_inner.borrow().as_ref() {
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
-                    }
-                }
+            if running_clone.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(cb) = cb_ref_inner.borrow().as_ref()
+                && let Some(window) = web_sys::window()
+            {
+                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
             }
         });
 
@@ -135,7 +135,7 @@ pub fn Gauge(props: GaugeProps) -> Element {
     });
 
     // 点击处理
-    let on_click_handler = props.on_click.clone();
+    let on_click_handler = props.on_click;
     rsx! {
         canvas {
             width: "{width as u32}",
@@ -273,7 +273,7 @@ mod tests {
             is_selected: false,
             width: 200.0,
             height: 200.0,
-            on_click: handler.clone(),
+            on_click: handler,
         };
         let p2 = GaugeProps {
             title: "test".to_string(),

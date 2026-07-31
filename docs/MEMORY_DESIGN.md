@@ -775,7 +775,7 @@ Agent 可以这样使用：
 
 ---
 
-## 十七、休息与知识沉淀机制（2026-07-11 设计）
+## 十七、休息与知识沉淀机制（2026-07-31 重构）
 
 ### 17.1 设计理念
 
@@ -787,7 +787,18 @@ Agent 也一样：
 - **短暂休息**：连续工作 N 轮后，进入 Resting 状态，清理上下文
 - **睡眠沉淀**：每日定时触发，将近期短期记忆消化为长期知识图谱
 
-### 17.2 Agent 运行时状态
+### 17.2 沉淀方式的演进
+
+**v1 工程化沉淀（2026-07-11）**：handler 内部构造 prompt，调 LLM 输出结构化 JSON，工程化解析后创建节点。问题：与消息层耦合，沉淀逻辑散落在 handler，难以扩展。
+
+**v2 自主沉淀（2026-07-31）**：沉淀是"信号"，让 Agent 进入特定工作模式自主完成。handler 只负责生成待沉淀记忆摘要 + 调用 `sleep_and_settle`，沉淀约束模板内聚在 `PromptBuilder.build_sleep_prompt`，Agent 用已有记忆类工具自主完成归纳、查询、创建、更新、建关系、加 published 标签等操作。
+
+**v2 的核心认知**：
+- 沉淀是 Agent 的自主认知行为，不是工程化的 JSON 解析
+- 图谱是活的，每次沉淀都是迭代优化，由 Agent 根据语义判断合并/新建/拆分
+- 沉淀是内循环：不发送消息、不依赖外部信息，避免触发消息流程导致异步唤醒自己
+
+### 17.3 Agent 运行时状态
 
 ```
 Idle (空闲)
@@ -800,7 +811,7 @@ Idle (空闲)
   │     │
   │     └─ 休息完成 → Idle
   │
-  └─ 定时睡眠 → Resting (休息中) ← 长时间睡眠
+  └─ 定时睡眠 → Resting (休息中) ← 长时间睡眠（sleep_and_settle）
         │
         └─ 沉淀完成 → Idle
 ```
@@ -810,67 +821,102 @@ Idle (空闲)
 - `Busy`：忙碌，正在处理消息，拒绝新消息
 - `Resting`：休息中，不接受新消息，正在进行上下文清理或知识沉淀
 
-### 17.3 触发策略
+`sleep_and_settle` 复用 `BusyGuard` 的 RAII 机制保证 `set_idle` 一定被执行（Drop 语义与 Resting 恢复一致）。
+
+### 17.4 触发策略
 
 #### 策略一：上下文过载触发短暂休息
 
 - **触发条件**：Agent 连续工作轮次达到 `max_thinking_depth` 阈值
-- **休息内容**：
-  - 设置为 Resting 状态
-  - 简要清理上下文
-  - 快速恢复为 Idle
+- **休息内容**：设置为 Resting 状态，简要清理上下文，快速恢复为 Idle
 - **类比**：人类工作累了，休息 5 分钟
 
-#### 策略二：定时触发长时间睡眠
+#### 策略二：定时触发长时间睡眠（sleep_and_settle）
 
-- **触发条件**：通过定时任务系统配置（如每日凌晨 2 点）
+- **触发条件**：通过定时任务系统配置（如每日凌晨 2 点）或 Agent 主动调用 `settle_memory` 神经工具
 - **休息内容**：
   - 设置为 Resting 状态
-  - 获取近期短期记忆
-  - 调用 LLM 总结归纳
-  - 提取知识节点和关系
-  - 写入知识图谱（冲突检测 + 合并）
+  - 查询未沉淀短期记忆（status=Active），生成编号摘要
+  - 唤醒大脑进入 Settle 场景（过滤工具，只保留 neural/memory 标签）
+  - 调用 `sleep_and_settle`，Agent 用已有记忆类工具自主完成沉淀
   - 恢复为 Idle
 - **类比**：人类晚上睡觉，整理当天的记忆
 
-### 17.4 知识沉淀流程
+### 17.5 沉淀流程（v2 自主沉淀）
 
 ```
-1. 获取近期短期记忆（如最近 24 小时）
-     ↓
-2. 构造 LLM Prompt：
-   "以下是我最近的记忆，请帮我总结归纳，提取知识节点和关系。"
-   - 输入：N 条短期记忆摘要
-   - 输出格式：结构化 JSON（nodes + relations）
-     ↓
-3. 调用 Cortex 思考
-     ↓
-4. 解析输出，提取 nodes 和 relations
-     ↓
-5. 对每个 node：
-   - 向量搜索已有节点，检查相似度
-   - 相似度高于阈值 → 更新已有节点 + 合并关系
-   - 相似度低于阈值 → 创建新节点
-     ↓
-6. 对每个 relation：
-   - 检查是否已存在
-   - 不存在则创建
-     ↓
-7. 完成，Agent 恢复 Idle
+settle_memory handler / CronTrigger
+    │
+    ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
+    │
+    └── load_and_settle
+        │
+        ├── 加载 Agent（含 tools + skills）
+        ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
+        │
+        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle))
+            │
+            ├── set_resting + RAII guard
+            ├── 读取最近短期记忆作为 history
+            ├── 过滤 skill + Manual 工具（只保留 neural/memory 标签）
+            ├── 拼装 Prompt: builder.build_sleep_prompt(summary)
+            │     ├── 复用 system_prompt + tools + skills + common_context + history
+            │     ├── 保留 user_profile（认知是具身的）
+            │     ├── 保留 project/task 上下文（沉淀出的经验自带场景标签）
+            │     └── 附加沉淀约束 + 待沉淀记忆 + 任务步骤
+            ├── think()（5 分钟超时）
+            ├── 写 Trace
+            ├── 记录统计事件（status: settle success/failed）
+            └── set_idle（RAII guard）
 ```
 
-### 17.5 知识冲突检测
+**Agent 在沉淀思考中自主完成**：
+1. 归纳总结待沉淀的短期记忆，提炼核心概念
+2. 用 `search_memory` 查询已有图谱，避免重复节点
+3. 用 `save_long_term_memory` 创建新节点 / `update_memory` 更新旧节点
+4. 用 `save_long_term_memory` 的 relations 参数建立节点间关系
+5. 用 `update_memory` 的 `node_tags` 字段给有共享价值的节点加 `published` 标签
+6. 用 `update_memory` 的 `status` 字段把短期记忆标记为 `settled`
 
-使用向量相似度检测：
-- 新节点描述向量化
-- 搜索现有知识节点，取 top-k
-- 最高相似度 > 阈值（如 0.85）→ 视为同一知识，更新合并
-- 最高相似度 < 阈值 → 新建节点
+### 17.6 沉淀约束（内循环隔离）
 
-**合并策略**：
+**问题**：沉淀过程中若 Agent 调用消息类工具（send_message 等），会触发消息流程，导致异步唤醒自己，破坏沉淀内循环。
+
+**方案**：双层工具过滤 + prompt 约束
+
+| 层级 | 过滤位置 | 过滤对象 | 触发条件 |
+|------|---------|---------|---------|
+| 第一层 | `wake_agent_brain` | Auto 工具（Rig function calling） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+| 第二层 | `sleep_and_settle` | Manual 工具 + skill（Prompt 展示层） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+| 第三层 | `build_sleep_prompt` | Prompt 约束模板 | 明确告知 Agent 不发消息、只用记忆类工具 |
+
+**沉淀约束模板**（内聚在 `PromptBuilder.build_sleep_prompt`）：
+- **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息
+- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己
+- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory
+- 这是一个**内循环**：你与自己的记忆对话，不是与外部世界交互
+
+### 17.7 沉淀场景保留的上下文
+
+**认知是具身的**：沉淀场景保留 user_profile，不知道自己是谁就不能形成有效认知。
+
+**场景化经验总结**：沉淀场景保留 project/task 上下文（如有），沉淀出的经验自带场景标签，便于场景化复用。这与 awaken 场景的业务上下文注入机制对齐（通过 ThinkingOptions 传递）。
+
+**历史短期记忆**：作为思考素材参与沉淀，让 Agent 能看到自己最近的认知轨迹。
+
+### 17.8 知识冲突检测（Agent 自主判断）
+
+v2 不再使用固定的相似度阈值裁判，而是由 Agent 根据语义判断：
+
+- 向量相似度是参考，告诉 Agent "这条新知识与哪个旧节点相关"
+- 合并、更新、新建还是拆分，由 Agent 根据语义判断
+- 没有固定阈值，可复用、可抽象、对图谱有贡献的就沉淀
+
+**合并策略**（Agent 自主执行）：
 - 节点描述：取更完整的版本
 - 关系：合并去重
 - 引用：追加新的引用来源
+- 过大且可拆分的旧节点：拆分为子节点 + 概述父节点 + `contains` 关系
 
 ---
 
@@ -885,4 +931,5 @@ Idle (空闲)
 | 2026-05-13 | **实现完成**：通用 query、搜索优化、完整 update/delete |  |
 | 2026-07-11 | **理念升级**：核心理念对齐人类认知、记忆神经工具拆分、搜索图谱遍历、休息与沉淀机制 |  |
 | 2026-07-24 | **tags 全链路支持**：SearchMemoryParams/QueryMemoryParams/MemoryResult 新增 tags 字段；MemoryQuery.tags 实现 OR 语义过滤（json_each）；ShortTermMemoryIndexPo/LongTermKnowledgeNodePo 实现 Vectorizable trait；前端知识图谱节点支持多色边框与动态信息展示 |  |
+| 2026-07-31 | **沉淀机制重构（v2 自主沉淀）**：settle_memory 不再工程化创建节点，改为调用 sleep_and_settle 触发 Agent 自主沉淀；沉淀约束模板内聚在 PromptBuilder.build_sleep_prompt；双层工具过滤（Auto 在 wake_agent_brain，Manual+skill 在 sleep_and_settle）确保 Settle 场景只接触记忆类工具；沉淀场景保留 user_profile + project/task 上下文（认知具身 + 场景化经验总结）；详见 runtime_design.md 第二十五章 |  |
 

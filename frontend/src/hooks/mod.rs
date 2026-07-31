@@ -92,10 +92,10 @@ fn get_saved_theme() -> String {
 }
 
 fn set_html_theme(theme: &str) {
-    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-        if let Some(html) = doc.document_element() {
-            let _ = html.set_attribute("data-theme", theme);
-        }
+    if let Some(doc) = web_sys::window().and_then(|w| w.document())
+        && let Some(html) = doc.document_element()
+    {
+        let _ = html.set_attribute("data-theme", theme);
     }
 }
 

@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 pub struct ArtifactMetaModalProps {
     pub artifact: ArtifactDetail,
     pub show: bool,
+    #[allow(clippy::type_complexity)]
     pub on_save: EventHandler<(Option<String>, Option<String>, Option<Vec<String>>)>,
     pub on_close: EventHandler<()>,
 }

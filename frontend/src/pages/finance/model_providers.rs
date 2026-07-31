@@ -29,7 +29,7 @@ pub fn FinanceModelProviders() -> Element {
     let mut provider_type = use_signal(|| ProviderType::OpenAI);
     let mut model_name = use_signal(String::new);
     let mut api_key = use_signal(String::new);
-    let mut base_url = use_signal(|| String::new());
+    let mut base_url = use_signal(String::new);
     let mut description = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
@@ -46,7 +46,7 @@ pub fn FinanceModelProviders() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -99,11 +99,11 @@ pub fn FinanceModelProviders() -> Element {
                     spawn(async move {
                         match test_model_provider_connection(&resp.id).await {
                             Ok(_) => toast.success("创建成功，连接测试通过"),
-                            Err(e) => toast.error(&format!("创建成功但测试失败: {}", e)),
+                            Err(e) => toast.error(format!("创建成功但测试失败: {}", e)),
                         }
                     });
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -119,7 +119,7 @@ pub fn FinanceModelProviders() -> Element {
             .await
             {
                 Ok(resp) => test_response.set(resp.result),
-                Err(e) => toast.error(&format!("调用测试失败: {}", e)),
+                Err(e) => toast.error(format!("调用测试失败: {}", e)),
             }
             test_loading.set(false);
         });
@@ -134,7 +134,7 @@ pub fn FinanceModelProviders() -> Element {
             {
                 Ok(resp) => {
                     show_switch_modal.set(false);
-                    toast.success(&format!(
+                    toast.success(format!(
                         "Embedding Provider 已切换为 {}，向量索引重建完成",
                         resp.name
                     ));
@@ -145,7 +145,7 @@ pub fn FinanceModelProviders() -> Element {
                 }
                 Err(e) => {
                     show_switch_modal.set(false);
-                    toast.error(&format!("切换失败: {}", e));
+                    toast.error(format!("切换失败: {}", e));
                 }
             }
             switch_loading.set(false);
@@ -225,10 +225,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                 move |_| {
                                                                     let id = id.clone();
                                                                     spawn(async move {
-                                                                        match toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 0 }).await {
-                                                                            Ok(()) => {}
-                                                                            Err(_) => {}
-                                                                        }
+                                                                        if let Ok(()) = toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 0 }).await {}
                                                                         match list_model_providers().await {
                                                                             Ok(list) => providers.set(list.providers),
                                                                             Err(e) => toast.error(&e),
@@ -264,7 +261,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                                         switch_provider_name.set(name);
                                                                                         show_switch_modal.set(true);
                                                                                     } else {
-                                                                                        toast.error(&format!("启用失败: {}", e));
+                                                                                        toast.error(format!("启用失败: {}", e));
                                                                                     }
                                                                                 }
                                                                             }
@@ -278,7 +275,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                                     }
                                                                                 }
                                                                                 Err(e) => {
-                                                                                    toast.error(&format!("启用失败: {}", e));
+                                                                                    toast.error(format!("启用失败: {}", e));
                                                                                 }
                                                                             }
                                                                         }
@@ -453,7 +450,7 @@ pub fn FinanceModelProviders() -> Element {
                 show_delete_confirm.set(false);
                 spawn(async move {
                     if let Err(e) = delete_model_provider(&id).await {
-                        toast.error(&format!("删除失败: {}", e));
+                        toast.error(format!("删除失败: {}", e));
                     } else {
                         toast.success("已删除");
                         match list_model_providers().await {

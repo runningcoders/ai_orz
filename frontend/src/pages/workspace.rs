@@ -71,7 +71,7 @@ fn agent_runtime_badge_class(runtime_state: i32) -> &'static str {
 
 /// 判断是否为运行中项目（status 1-3：活跃 / 待评审 / 进行中）
 fn is_active_project(status: i32) -> bool {
-    matches!(status, 1 | 2 | 3)
+    matches!(status, 1..=3)
 }
 
 /// 根据视图计算对话上下文（project_id, task_id, to_agent_id）
@@ -112,21 +112,21 @@ pub fn Workspace() -> Element {
     let mut graph_loading = use_signal(|| false);
 
     // 对话框状态
-    let mut chat_messages = use_signal(Vec::<MessageListItem>::new);
+    let chat_messages = use_signal(Vec::<MessageListItem>::new);
     let mut chat_input = use_signal(String::new);
     let mut chat_focused = use_signal(|| false);
-    let mut chat_is_typing = use_signal(|| false);
-    let mut chat_project_id = use_signal(|| Option::<String>::None);
-    let mut chat_task_id = use_signal(|| Option::<String>::None);
-    let mut chat_to_agent_id = use_signal(|| Option::<String>::None);
+    let chat_is_typing = use_signal(|| false);
+    let chat_project_id = use_signal(|| Option::<String>::None);
+    let chat_task_id = use_signal(|| Option::<String>::None);
+    let chat_to_agent_id = use_signal(|| Option::<String>::None);
 
     // 侧边栏红点提示：收到新消息但不在当前视图时，对应 project/agent 亮红点
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
 
     // 消息流量时序数据（前端本地累积，每分钟桶，保留最近 60 分钟）
-    let mut msg_flow: Signal<std::collections::HashMap<i64, u64>> =
-        use_signal(|| std::collections::HashMap::new());
+    let msg_flow: Signal<std::collections::HashMap<i64, u64>> =
+        use_signal(std::collections::HashMap::new);
 
     let sidebar = sidebar_signal.read().clone();
 
@@ -134,7 +134,7 @@ pub fn Workspace() -> Element {
     use_effect(move || {
         let view = current_view.read().clone();
         let sidebar_data = sidebar_signal.read().clone();
-        let toast = toast.clone();
+        let toast = toast;
 
         spawn(async move {
             graph_loading.set(true);
@@ -193,7 +193,7 @@ pub fn Workspace() -> Element {
                                 };
                                 match query_agents(&req).await {
                                     Ok(page) => graph_agents.set(page.items),
-                                    Err(e) => toast.error(&format!("批量获取 Agent 失败: {}", e)),
+                                    Err(e) => toast.error(format!("批量获取 Agent 失败: {}", e)),
                                 }
                             }
                             graph_tasks.set(tasks_vec);
@@ -207,7 +207,7 @@ pub fn Workspace() -> Element {
                                     .unwrap_or_default(),
                             );
                         }
-                        Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
+                        Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
                     }
                 }
 
@@ -245,11 +245,11 @@ pub fn Workspace() -> Element {
                                 };
                                 match query_projects(&req).await {
                                     Ok(page) => graph_projects.set(page.items),
-                                    Err(e) => toast.error(&format!("批量获取项目失败: {}", e)),
+                                    Err(e) => toast.error(format!("批量获取项目失败: {}", e)),
                                 }
                             }
                         }
-                        Err(e) => toast.error(&format!("获取任务列表失败: {}", e)),
+                        Err(e) => toast.error(format!("获取任务列表失败: {}", e)),
                     }
                     // 3. graph_agents 从侧边栏数据构造
                     graph_agents.set(
@@ -285,7 +285,7 @@ pub fn Workspace() -> Element {
                                 if let Some(pid) = &pid {
                                     match list_project_tasks(pid).await {
                                         Ok(resp) => graph_tasks.set(resp.tasks),
-                                        Err(e) => toast.error(&format!("获取项目任务失败: {}", e)),
+                                        Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
                                     }
                                 }
 
@@ -302,7 +302,7 @@ pub fn Workspace() -> Element {
                                                 graph_agents.set(vec![a]);
                                             }
                                         }
-                                        Err(e) => toast.error(&format!("获取 Agent 失败: {}", e)),
+                                        Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
                                     }
                                 }
 
@@ -319,12 +319,12 @@ pub fn Workspace() -> Element {
                                                 graph_projects.set(vec![p]);
                                             }
                                         }
-                                        Err(e) => toast.error(&format!("获取 Project 失败: {}", e)),
+                                        Err(e) => toast.error(format!("获取 Project 失败: {}", e)),
                                     }
                                 }
                             }
                         }
-                        Err(e) => toast.error(&format!("获取 Task 失败: {}", e)),
+                        Err(e) => toast.error(format!("获取 Task 失败: {}", e)),
                     }
                 }
             }
@@ -335,11 +335,10 @@ pub fn Workspace() -> Element {
 
     // 视图变化时重新加载对话消息 + 更新对话上下文
     {
-        let mut chat_messages = chat_messages.clone();
-        let mut chat_project_id = chat_project_id.clone();
-        let mut chat_task_id = chat_task_id.clone();
-        let mut chat_to_agent_id = chat_to_agent_id.clone();
-        let sidebar_signal = sidebar_signal.clone();
+        let mut chat_messages = chat_messages;
+        let mut chat_project_id = chat_project_id;
+        let mut chat_task_id = chat_task_id;
+        let mut chat_to_agent_id = chat_to_agent_id;
 
         use_effect(move || {
             let view = current_view.read().clone();
@@ -387,69 +386,67 @@ pub fn Workspace() -> Element {
 
     // SSE 订阅实时消息
     {
-        let mut chat_messages = chat_messages.clone();
-        let chat_project_id = chat_project_id.clone();
-        let chat_to_agent_id = chat_to_agent_id.clone();
-        let mut project_unread = project_unread.clone();
-        let mut agent_unread = agent_unread.clone();
-        let mut msg_flow = msg_flow.clone();
+        let mut chat_messages = chat_messages;
+        let mut project_unread = project_unread;
+        let mut agent_unread = agent_unread;
+        let mut msg_flow = msg_flow;
 
         use_effect(move || {
             let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-                if let Some(data) = event.data().as_string() {
-                    if let Ok(msg) = serde_json::from_str::<MessageListItem>(&data) {
-                        // 累计消息流量（按分钟桶，淘汰超过 60 分钟的旧桶）
-                        {
-                            let mut flow = msg_flow.write();
-                            let now_ms = js_sys::Date::now() as i64;
-                            let bucket = (now_ms / 60_000) * 60_000;
-                            *flow.entry(bucket).or_insert(0) += 1;
-                            let cutoff = bucket - 60 * 60_000;
-                            flow.retain(|&k, _| k >= cutoff);
-                        }
+                if let Some(data) = event.data().as_string()
+                    && let Ok(msg) = serde_json::from_str::<MessageListItem>(&data)
+                {
+                    // 累计消息流量（按分钟桶，淘汰超过 60 分钟的旧桶）
+                    {
+                        let mut flow = msg_flow.write();
+                        let now_ms = js_sys::Date::now() as i64;
+                        let bucket = (now_ms / 60_000) * 60_000;
+                        *flow.entry(bucket).or_insert(0) += 1;
+                        let cutoff = bucket - 60 * 60_000;
+                        flow.retain(|&k, _| k >= cutoff);
+                    }
 
-                        let mut msgs = chat_messages.write();
-                        // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
-                        replace_tmp_with_real(&mut msgs, &msg);
+                    let mut msgs = chat_messages.write();
+                    // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
+                    replace_tmp_with_real(&mut msgs, &msg);
 
-                        // 过滤：project_id 匹配 或 agent_id 匹配
-                        let cur_pid = chat_project_id.read().clone();
-                        let cur_aid = chat_to_agent_id.read().clone();
+                    // 过滤：project_id 匹配 或 agent_id 匹配
+                    let cur_pid = chat_project_id.read().clone();
+                    let cur_aid = chat_to_agent_id.read().clone();
 
-                        let pid_match = match (&cur_pid, &msg.project_id) {
-                            (Some(a), Some(b)) => a == b,
-                            (None, None) => true,
-                            _ => false,
-                        };
-                        let aid_match = cur_aid
-                            .as_deref()
-                            .map(|aid| msg.to_id == aid || msg.from_id == aid)
-                            .unwrap_or(false);
+                    let pid_match = match (&cur_pid, &msg.project_id) {
+                        (Some(a), Some(b)) => a == b,
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    let aid_match = cur_aid
+                        .as_deref()
+                        .map(|aid| msg.to_id == aid || msg.from_id == aid)
+                        .unwrap_or(false);
 
-                        // Global 视图（pid=None, aid=None）只显示无 project 的消息
-                        if pid_match || aid_match {
-                            // 去重
-                            if !msgs.iter().any(|m| m.message_id == msg.message_id) {
-                                msgs.push(msg);
-                                // 保留最近 50 条
-                                if msgs.len() > 50 {
-                                    let drain = msgs.len() - 50;
-                                    msgs.drain(..drain);
-                                }
+                    // Global 视图（pid=None, aid=None）只显示无 project 的消息
+                    if pid_match || aid_match {
+                        // 去重
+                        if !msgs.iter().any(|m| m.message_id == msg.message_id) {
+                            msgs.push(msg);
+                            // 保留最近 50 条
+                            if msgs.len() > 50 {
+                                let drain = msgs.len() - 50;
+                                msgs.drain(..drain);
                             }
-                        } else {
-                            // 不属于当前视图 → 更新侧边栏红点
-                            // Agent 回复消息（from_role=1）才触发红点
-                            if msg.from_role == 1 {
-                                if let Some(pid) = &msg.project_id {
-                                    if cur_pid.as_deref() != Some(pid) {
-                                        project_unread.write().insert(pid.clone());
-                                    }
-                                }
-                                let sender_aid = &msg.from_id;
-                                if cur_aid.as_deref() != Some(sender_aid) {
-                                    agent_unread.write().insert(sender_aid.clone());
-                                }
+                        }
+                    } else {
+                        // 不属于当前视图 → 更新侧边栏红点
+                        // Agent 回复消息（from_role=1）才触发红点
+                        if msg.from_role == 1 {
+                            if let Some(pid) = &msg.project_id
+                                && cur_pid.as_deref() != Some(pid)
+                            {
+                                project_unread.write().insert(pid.clone());
+                            }
+                            let sender_aid = &msg.from_id;
+                            if cur_aid.as_deref() != Some(sender_aid) {
+                                agent_unread.write().insert(sender_aid.clone());
                             }
                         }
                     }
@@ -473,14 +470,10 @@ pub fn Workspace() -> Element {
 
     // 发送消息
     {
-        let mut chat_input = chat_input.clone();
-        let mut chat_project_id = chat_project_id.clone();
-        let mut chat_task_id = chat_task_id.clone();
-        let mut chat_to_agent_id = chat_to_agent_id.clone();
-        let mut chat_messages = chat_messages.clone();
-        let mut chat_is_typing = chat_is_typing.clone();
-        let mut send_trigger = send_trigger.clone();
-        let toast = toast.clone();
+        let mut chat_input = chat_input;
+        let mut chat_messages = chat_messages;
+        let mut chat_is_typing = chat_is_typing;
+        let mut send_trigger = send_trigger;
 
         use_effect(move || {
             if !*send_trigger.read() {
@@ -502,7 +495,7 @@ pub fn Workspace() -> Element {
             chat_is_typing.set(true);
 
             {
-                let mut chat_is_typing = chat_is_typing.clone();
+                let mut chat_is_typing = chat_is_typing;
                 spawn(async move {
                     gloo_timers::future::TimeoutFuture::new(60_000).await;
                     chat_is_typing.set(false);
@@ -526,7 +519,7 @@ pub fn Workspace() -> Element {
                     }
                     Err(e) => {
                         chat_input.set(text_snapshot);
-                        toast.error(&format!("发送消息失败: {}", e));
+                        toast.error(format!("发送消息失败: {}", e));
                         chat_is_typing.set(false);
                     }
                 }
@@ -831,7 +824,7 @@ pub fn Workspace() -> Element {
                                         onfocus: move |_| chat_focused.set(true),
                                         onblur: move |_| {
                                             // 延迟失焦，允许点击发送按钮
-                                            let mut chat_focused = chat_focused.clone();
+                                            let mut chat_focused = chat_focused;
                                             spawn(async move {
                                                 gloo_timers::future::TimeoutFuture::new(150).await;
                                                 chat_focused.set(false);

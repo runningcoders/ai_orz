@@ -130,14 +130,14 @@ fn build_global_view(
     let mut edge_set: std::collections::HashSet<(String, String)> =
         std::collections::HashSet::new();
     for t in tasks {
-        if let Some(pid) = &t.project_id {
-            if t.assignee_type == 1 {
-                // Agent
-                let from = format!("project:{}", pid);
-                let to = format!("agent:{}", t.assignee_id);
-                if from != to {
-                    edge_set.insert((from, to));
-                }
+        if let Some(pid) = &t.project_id
+            && t.assignee_type == 1
+        {
+            // Agent
+            let from = format!("project:{}", pid);
+            let to = format!("agent:{}", t.assignee_id);
+            if from != to {
+                edge_set.insert((from, to));
             }
         }
     }
@@ -396,43 +396,43 @@ fn build_task_detail_view(
     });
 
     // 关联 Project（layer=-1 顶部）
-    if let Some(pid) = &task.project_id {
-        if let Some(p) = projects.iter().find(|p| &p.id == pid) {
-            nodes.push(CanvasNode {
-                id: format!("project:{}", p.id),
-                x: 0.0,
-                y: 0.0,
-                radius: 28.0,
-                label: p.name.clone(),
-                color: project_status_color(p.status),
-                node_type: Some("project".to_string()),
-                layer: Some(-1),
-            });
-            edges.push(CanvasEdge {
-                from_id: center_node_id.clone(),
-                to_id: format!("project:{}", p.id),
-            });
-        }
+    if let Some(pid) = &task.project_id
+        && let Some(p) = projects.iter().find(|p| &p.id == pid)
+    {
+        nodes.push(CanvasNode {
+            id: format!("project:{}", p.id),
+            x: 0.0,
+            y: 0.0,
+            radius: 28.0,
+            label: p.name.clone(),
+            color: project_status_color(p.status),
+            node_type: Some("project".to_string()),
+            layer: Some(-1),
+        });
+        edges.push(CanvasEdge {
+            from_id: center_node_id.clone(),
+            to_id: format!("project:{}", p.id),
+        });
     }
 
     // 关联 Agent（layer=-1 顶部）
-    if task.assignee_type == 1 {
-        if let Some(a) = agents.iter().find(|a| a.id == task.assignee_id) {
-            nodes.push(CanvasNode {
-                id: format!("agent:{}", a.id),
-                x: 0.0,
-                y: 0.0,
-                radius: 25.0,
-                label: a.name.clone(),
-                color: agent_runtime_color(a.runtime_state),
-                node_type: Some("agent".to_string()),
-                layer: Some(-1),
-            });
-            edges.push(CanvasEdge {
-                from_id: center_node_id.clone(),
-                to_id: format!("agent:{}", a.id),
-            });
-        }
+    if task.assignee_type == 1
+        && let Some(a) = agents.iter().find(|a| a.id == task.assignee_id)
+    {
+        nodes.push(CanvasNode {
+            id: format!("agent:{}", a.id),
+            x: 0.0,
+            y: 0.0,
+            radius: 25.0,
+            label: a.name.clone(),
+            color: agent_runtime_color(a.runtime_state),
+            node_type: Some("agent".to_string()),
+            layer: Some(-1),
+        });
+        edges.push(CanvasEdge {
+            from_id: center_node_id.clone(),
+            to_id: format!("agent:{}", a.id),
+        });
     }
 
     // 前置依赖 Task（layer=1 下方）
@@ -520,7 +520,11 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
         std::collections::HashMap::new();
     for n in &nodes {
         if let Some(nt) = &n.node_type {
-            let real_id = n.id.splitn(2, ':').nth(1).unwrap_or(&n.id).to_string();
+            let real_id =
+                n.id.split_once(':')
+                    .map(|x| x.1)
+                    .unwrap_or(&n.id)
+                    .to_string();
             click_map.insert(n.id.clone(), (nt.clone(), real_id));
         }
     }
@@ -534,7 +538,7 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     };
 
     let navigator = use_navigator();
-    let on_view_change = props.on_view_change.clone();
+    let on_view_change = props.on_view_change;
 
     let node_count = nodes.len();
 

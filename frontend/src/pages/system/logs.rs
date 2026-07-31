@@ -71,7 +71,7 @@ pub fn SystemLogs() -> Element {
     // 表单状态
     let mut form_keyword = use_signal(String::new);
     let mut form_log_id = use_signal(String::new);
-    let mut form_level = use_signal(|| String::new()); // 空字符串表示"全部"
+    let mut form_level = use_signal(String::new); // 空字符串表示"全部"
     let mut form_start = use_signal(String::new);
     let mut form_end = use_signal(String::new);
 
@@ -84,7 +84,7 @@ pub fn SystemLogs() -> Element {
     let loading = use_signal(|| false);
 
     // 展开的日志行索引（按 entries 中的位置）
-    let mut expanded = use_signal(|| std::collections::HashSet::<usize>::new());
+    let mut expanded = use_signal(std::collections::HashSet::<usize>::new);
 
     // 统计图表数据
     let mut stats_loading = use_signal(|| false);
@@ -105,7 +105,7 @@ pub fn SystemLogs() -> Element {
             p.page = Some(page);
             match query_logs(&p).await {
                 Ok(r) => result.set(Some(r)),
-                Err(e) => toast.error(&format!("查询日志失败: {}", e)),
+                Err(e) => toast.error(format!("查询日志失败: {}", e)),
             }
             loading.set(false);
         });

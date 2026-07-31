@@ -26,7 +26,7 @@ use crate::config::current_config;
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
 pub fn client() -> &'static Client {
-    HTTP_CLIENT.get_or_init(|| Client::new())
+    HTTP_CLIENT.get_or_init(Client::new)
 }
 
 fn build_request(method: Method, path: &str) -> RequestBuilder {
@@ -357,12 +357,11 @@ pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     if !resp.ok() {
         handle_unauthorized(status);
         // 尝试读取 body 解析错误信息
-        if let Ok(json_promise) = resp.text() {
-            if let Ok(body_value) = JsFuture::from(json_promise).await {
-                if let Some(body_text) = body_value.as_string() {
-                    return Err(parse_api_error_from_body(&body_text, status));
-                }
-            }
+        if let Ok(json_promise) = resp.text()
+            && let Ok(body_value) = JsFuture::from(json_promise).await
+            && let Some(body_text) = body_value.as_string()
+        {
+            return Err(parse_api_error_from_body(&body_text, status));
         }
         return Err(ApiError {
             http_status: status,

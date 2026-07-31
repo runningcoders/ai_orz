@@ -55,7 +55,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
     let render_height = height;
     let title_c = title.clone();
     let value_label_c = value_label.clone();
-    let data_cache_c = data_cache.clone();
+    let data_cache_c = data_cache;
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
@@ -87,6 +87,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
         let running_clone = running.clone();
 
         // Rc<RefCell<Option<Closure>>> 模式：Closure 自引用递归 rAF
+        #[allow(clippy::type_complexity)]
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
@@ -104,12 +105,11 @@ pub fn LineChart(props: LineChartProps) -> Element {
             );
 
             // 递归注册下一帧
-            if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Some(cb) = cb_ref_inner.borrow().as_ref() {
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
-                    }
-                }
+            if running_clone.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(cb) = cb_ref_inner.borrow().as_ref()
+                && let Some(window) = web_sys::window()
+            {
+                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
             }
         });
 
@@ -224,6 +224,7 @@ fn draw_chart(
 }
 
 /// 绘制坐标轴
+#[allow(clippy::too_many_arguments)]
 fn draw_axes(
     ctx: &CanvasRenderingContext2d,
     pad_left: f64,

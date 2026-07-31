@@ -88,6 +88,7 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let running_clone = running.clone();
 
+        #[allow(clippy::type_complexity)]
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
@@ -95,12 +96,11 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
             let data = data_cache.read().clone();
             draw_kanban(&ctx, width, height, &data);
 
-            if running_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Some(cb) = cb_ref_inner.borrow().as_ref() {
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
-                    }
-                }
+            if running_clone.load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(cb) = cb_ref_inner.borrow().as_ref()
+                && let Some(window) = web_sys::window()
+            {
+                let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
             }
         });
 
@@ -116,7 +116,7 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
     });
 
     // 点击处理：命中检测简化为不实现（仅展示）
-    let _on_click_handler = props.on_task_click.clone();
+    let _on_click_handler = props.on_task_click;
     rsx! {
         canvas {
             width: "{width as u32}",

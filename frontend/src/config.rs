@@ -45,10 +45,7 @@ impl FrontendConfig {
             match storage.get("ai_orz_config") {
                 Ok(json_opt) => {
                     if let Some(json) = json_opt {
-                        match serde_json::from_str(&json) {
-                            Ok(config) => return config,
-                            Err(_) => Self::default(),
-                        }
+                        serde_json::from_str(&json).unwrap_or_default()
                     } else {
                         Self::default()
                     }

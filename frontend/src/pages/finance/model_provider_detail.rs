@@ -37,7 +37,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     let mut show_test_modal = use_signal(|| false);
     let mut test_prompt = use_signal(|| "你好，请介绍一下自己".to_string());
@@ -82,7 +82,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 .await
                 {
                     Ok(resp) => test_response.set(resp.result),
-                    Err(e) => toast.error(&format!("调用测试失败: {}", e)),
+                    Err(e) => toast.error(format!("调用测试失败: {}", e)),
                 }
             }
             test_loading.set(false);
@@ -104,7 +104,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 {
                     Ok(resp) => {
                         show_switch_modal.set(false);
-                        toast.success(&format!(
+                        toast.success(format!(
                             "Embedding Provider 已切换为 {}，向量索引重建完成",
                             resp.name
                         ));
@@ -115,7 +115,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     }
                     Err(e) => {
                         show_switch_modal.set(false);
-                        toast.error(&format!("切换失败: {}", e));
+                        toast.error(format!("切换失败: {}", e));
                     }
                 }
             }
@@ -171,7 +171,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                         Err(e) => toast.error(&e),
                                                                     }
                                                                 }
-                                                                Err(e) => toast.error(&format!("禁用失败: {}", e)),
+                                                                Err(e) => toast.error(format!("禁用失败: {}", e)),
                                                             }
                                                         });
                                                     }
@@ -204,7 +204,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                             switch_provider_name.set(pname);
                                                                             show_switch_modal.set(true);
                                                                         } else {
-                                                                            toast.error(&format!("启用失败: {}", e));
+                                                                            toast.error(format!("启用失败: {}", e));
                                                                         }
                                                                     }
                                                                 }
@@ -218,7 +218,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                         }
                                                                     }
                                                                     Err(e) => {
-                                                                        toast.error(&format!("启用失败: {}", e));
+                                                                        toast.error(format!("启用失败: {}", e));
                                                                     }
                                                                 }
                                                             }
@@ -249,7 +249,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                     spawn(async move {
                                                         match test_model_provider_connection(&pid).await {
                                                             Ok(_) => toast.success("连接测试通过"),
-                                                            Err(e) => toast.error(&format!("连接测试失败: {}", e)),
+                                                            Err(e) => toast.error(format!("连接测试失败: {}", e)),
                                                         }
                                                     });
                                                 }
@@ -413,7 +413,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     show_delete_confirm.set(false);
                     spawn(async move {
                         if let Err(e) = delete_model_provider(&id).await {
-                            toast.error(&format!("删除失败: {}", e));
+                            toast.error(format!("删除失败: {}", e));
                         } else {
                             toast.success("已删除");
                             let _ = navigator.push("/finance/model-providers".to_string());
@@ -474,10 +474,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             show_edit_modal.set(false);
                                             match get_model_provider(build_provider_stats_request(reload_id)).await {
                                                 Ok(p) => provider_data.set(Some(p)),
-                                                Err(e) => toast.error(&format!("重新加载失败: {}", e)),
+                                                Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                             }
                                         }
-                                        Err(e) => toast.error(&format!("更新失败: {}", e)),
+                                        Err(e) => toast.error(format!("更新失败: {}", e)),
                                     }
                                     saving_meta.set(false);
                                 });

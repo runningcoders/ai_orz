@@ -72,7 +72,7 @@ pub fn ProjectList() -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -108,7 +108,7 @@ pub fn ProjectList() -> Element {
                                         let id = p.id.clone();
                                         let pname = p.name.clone();
                                         let pstatus = p.status;
-                                        let pcreated = p.created_at.clone();
+                                        let pcreated = p.created_at;
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { "data-label": "项目名称",

@@ -25,7 +25,7 @@ pub fn FinanceAttachments() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -66,7 +66,7 @@ pub fn FinanceAttachments() -> Element {
                         Err(e) => toast.error(&e),
                     }
                 }
-                Err(e) => toast.error(&format!("创建失败: {}", e)),
+                Err(e) => toast.error(format!("创建失败: {}", e)),
             }
             creating.set(false);
         });
@@ -168,7 +168,7 @@ pub fn FinanceAttachments() -> Element {
                     show_delete_confirm.set(false);
                     spawn(async move {
                         if let Err(e) = delete_attachment(&id).await {
-                            toast.error(&format!("删除失败: {}", e));
+                            toast.error(format!("删除失败: {}", e));
                         } else {
                             match list_attachments().await {
                                 Ok(list) => attachments.set(list),

@@ -11,6 +11,7 @@ use common::api::{
 /// 查询后台任务进度
 ///
 /// `GET /api/v1/system/tasks/{task_id}/progress`
+#[allow(dead_code)]
 pub async fn get_task_progress(task_id: &str) -> Result<TaskProgressSnapshot, ApiError> {
     api_get(&format!("/api/v1/system/tasks/{}/progress", task_id)).await
 }

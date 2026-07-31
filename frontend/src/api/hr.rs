@@ -192,7 +192,7 @@ pub async fn update_skill(req: UpdateSkillRequest) -> Result<UpdateSkillResponse
 
 pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, ApiError> {
     let resp = super::client()
-        .delete(&crate::config::current_config().api_url(&format!("/api/v1/hr/skills/{}", id)))
+        .delete(crate::config::current_config().api_url(&format!("/api/v1/hr/skills/{}", id)))
         .send()
         .await
         .map_err(super::network_err)?;

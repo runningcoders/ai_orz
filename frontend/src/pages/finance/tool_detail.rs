@@ -69,7 +69,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     // 调试面板状态
     let mut debug_args = use_signal(|| "{}".to_string());
@@ -268,7 +268,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             let parsed = match serde_json::from_str::<serde_json::Value>(&args_text) {
                                                 Ok(v) => v,
                                                 Err(e) => {
-                                                    toast.error(&format!("JSON 解析失败: {}", e));
+                                                    toast.error(format!("JSON 解析失败: {}", e));
                                                     debug_calling.set(false);
                                                     return;
                                                 }
@@ -330,7 +330,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                     show_delete_confirm.set(false);
                     spawn(async move {
                         if let Err(e) = delete_tool(&id).await {
-                            toast.error(&format!("删除失败: {}", e));
+                            toast.error(format!("删除失败: {}", e));
                         } else {
                             toast.success("已删除");
                             let _ = navigator.push("/finance/tools".to_string());

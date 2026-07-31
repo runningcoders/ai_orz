@@ -19,7 +19,7 @@ pub fn FinanceTools() -> Element {
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
-    let mut pending_delete_id = use_signal(|| String::new());
+    let mut pending_delete_id = use_signal(String::new);
 
     use_effect(move || {
         loading.set(true);
@@ -144,7 +144,7 @@ pub fn FinanceTools() -> Element {
                 show_delete_confirm.set(false);
                 spawn(async move {
                     if let Err(e) = delete_tool(&id).await {
-                        toast.error(&format!("删除失败: {}", e));
+                        toast.error(format!("删除失败: {}", e));
                     } else {
                         match list_tools(ListToolsRequest::default()).await {
                             Ok(page) => tools.set(page.items),

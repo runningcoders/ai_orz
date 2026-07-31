@@ -15,6 +15,7 @@ pub struct LayeredLayoutConfig {
     /// 画布宽度
     pub width: f64,
     /// 画布高度
+    #[allow(dead_code)]
     pub height: f64,
     /// 顶部留白
     pub top_margin: f64,
