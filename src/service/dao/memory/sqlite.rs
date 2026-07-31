@@ -769,6 +769,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
 
         // 从 MemorySearch 提取参数
         let agent_id = search.filters.agent_id.unwrap_or_default();
+        let include_shared = search.filters.include_shared;
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
         let tags = search.filters.tags.clone().unwrap_or_default();
@@ -792,6 +793,13 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             String::new()
         };
 
+        // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
+        let ownership_clause = if include_shared {
+            "(m.agent_id = ? OR EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = 'published'))".to_string()
+        } else {
+            "m.agent_id = ?".to_string()
+        };
+
         let sql = format!(
             r#"
 SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
@@ -800,7 +808,7 @@ SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary
 FROM knowledge_node_fts
 JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
 WHERE knowledge_node_fts MATCH ?
-  AND m.agent_id = ?
+  AND {ownership_clause}
   AND m.status != 0{tags_clause}
 ORDER BY knowledge_node_fts.rank
 LIMIT ?

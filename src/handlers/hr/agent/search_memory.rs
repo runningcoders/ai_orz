@@ -30,6 +30,8 @@ pub async fn search_memory(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
+    let agent_id = ctx.agent_id().cloned().unwrap_or_default();
+
     let memory_type = params
         .memory_type
         .as_deref()
@@ -41,6 +43,9 @@ pub async fn search_memory(
             _ => MemoryType::All,
         })
         .unwrap_or(MemoryType::All);
+
+    // 短期记忆是私有的，不共享；KnowledgeNode 和 All 类型包含 published 共享节点
+    let include_shared = matches!(memory_type, MemoryType::KnowledgeNode | MemoryType::All);
 
     let traversal_depth = params.traversal_depth.unwrap_or(0);
     let traversal_breadth = params.traversal_breadth.unwrap_or(0);
@@ -75,6 +80,8 @@ pub async fn search_memory(
                 memory_type: Some(MemoryType::KnowledgeNode),
                 limit: params.max_results.map(|l| l as usize),
                 tags: params.tags.clone(),
+                agent_id: Some(agent_id.clone()),
+                include_shared: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -116,6 +123,8 @@ pub async fn search_memory(
                 memory_type: Some(memory_type),
                 limit: params.max_results.map(|l| l as usize),
                 tags: params.tags.clone(),
+                agent_id: Some(agent_id.clone()),
+                include_shared,
                 ..Default::default()
             },
             ..Default::default()

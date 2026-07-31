@@ -31,6 +31,8 @@ pub struct MemoryQuery {
     pub memory_type: Option<MemoryType>,
     /// 按 tags 过滤（OR 语义，命中任一 tag 即可，JSON 数组列）
     pub tags: Option<Vec<String>>,
+    /// 是否包含其他 Agent 共享的 published 节点（默认 false）
+    pub include_shared: bool,
 }
 
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）
