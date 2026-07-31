@@ -516,8 +516,8 @@ async fn test_search_fts5(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].po.title, "nonexistent-debug-helper");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].po.title, "nonexistent-debug-helper");
 
     // 搜索 "python"：应只匹配 task2
     let results = dal
@@ -530,8 +530,8 @@ async fn test_search_fts5(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].po.title, "nonexistent-python-tool");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].po.title, "nonexistent-python-tool");
 
     // 搜索中文 "测试任务"：应只匹配 task3（trigram 分词器需要 ≥3 字符）
     let results = dal
@@ -544,8 +544,8 @@ async fn test_search_fts5(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].po.title, "nonexistent-测试任务");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].po.title, "nonexistent-测试任务");
 
     // 搜索无匹配关键词（不含 "nonexistent" 以避免向量命中）
     let results = dal
@@ -558,7 +558,7 @@ async fn test_search_fts5(pool: SqlitePool) {
         )
         .await
         .unwrap();
-    assert_eq!(results.len(), 0);
+    assert_eq!(results.items.len(), 0);
 }
 
 /// 测试 DAL search 方法的三态匹配（Hybrid / Vector / Keyword）
@@ -601,41 +601,55 @@ async fn test_search_three_state_matching(pool: SqlitePool) {
         .unwrap();
 
     // 应返回 2 条结果（Hybrid + Vector）
-    assert_eq!(results.len(), 2, "应返回 Hybrid + Vector 共 2 条结果");
+    assert_eq!(results.items.len(), 2, "应返回 Hybrid + Vector 共 2 条结果");
 
     // 第一条应是 Hybrid（优先级最高）
-    assert_eq!(results[0].po.id, matching_id);
+    assert_eq!(results.items[0].po.id, matching_id);
     assert_eq!(
-        results[0].search_match.as_ref().unwrap().match_type,
+        results.items[0].search_match.as_ref().unwrap().match_type,
         MatchType::Hybrid,
         "task_matching 应是 Hybrid 匹配"
     );
     assert!(
-        results[0]
+        results.items[0]
             .search_match
             .as_ref()
             .unwrap()
             .vector_distance
             .is_some()
     );
-    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
+    assert!(
+        results.items[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .fts_rank
+            .is_some()
+    );
 
     // 第二条应是 Vector（仅向量命中）
-    assert_eq!(results[1].po.id, vector_only_id);
+    assert_eq!(results.items[1].po.id, vector_only_id);
     assert_eq!(
-        results[1].search_match.as_ref().unwrap().match_type,
+        results.items[1].search_match.as_ref().unwrap().match_type,
         MatchType::Vector,
         "task_vector_only 应是 Vector 匹配"
     );
     assert!(
-        results[1]
+        results.items[1]
             .search_match
             .as_ref()
             .unwrap()
             .vector_distance
             .is_some()
     );
-    assert!(results[1].search_match.as_ref().unwrap().fts_rank.is_none());
+    assert!(
+        results.items[1]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .fts_rank
+            .is_none()
+    );
 }
 
 /// 测试 DAL search 方法的 Keyword-only 匹配
@@ -670,16 +684,23 @@ async fn test_search_keyword_only_match(pool: SqlitePool) {
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 1, "应返回 1 条 Keyword 匹配结果");
-    assert_eq!(results[0].po.id, task_id);
+    assert_eq!(results.items.len(), 1, "应返回 1 条 Keyword 匹配结果");
+    assert_eq!(results.items[0].po.id, task_id);
     assert_eq!(
-        results[0].search_match.as_ref().unwrap().match_type,
+        results.items[0].search_match.as_ref().unwrap().match_type,
         MatchType::Keyword,
         "应是 Keyword 匹配"
     );
-    assert!(results[0].search_match.as_ref().unwrap().fts_rank.is_some());
     assert!(
-        results[0]
+        results.items[0]
+            .search_match
+            .as_ref()
+            .unwrap()
+            .fts_rank
+            .is_some()
+    );
+    assert!(
+        results.items[0]
             .search_match
             .as_ref()
             .unwrap()
@@ -763,23 +784,23 @@ async fn test_search_comprehensive_sorting(pool: SqlitePool) {
         .unwrap();
 
     // 应返回 3 条结果，排序为 Hybrid → Vector → Keyword
-    assert_eq!(results.len(), 3, "应返回 3 条结果");
+    assert_eq!(results.items.len(), 3, "应返回 3 条结果");
 
-    assert_eq!(results[0].po.id, hybrid_id, "第一条应是 Hybrid");
+    assert_eq!(results.items[0].po.id, hybrid_id, "第一条应是 Hybrid");
     assert_eq!(
-        results[0].search_match.as_ref().unwrap().match_type,
+        results.items[0].search_match.as_ref().unwrap().match_type,
         MatchType::Hybrid
     );
 
-    assert_eq!(results[1].po.id, vector_id, "第二条应是 Vector");
+    assert_eq!(results.items[1].po.id, vector_id, "第二条应是 Vector");
     assert_eq!(
-        results[1].search_match.as_ref().unwrap().match_type,
+        results.items[1].search_match.as_ref().unwrap().match_type,
         MatchType::Vector
     );
 
-    assert_eq!(results[2].po.id, keyword_id, "第三条应是 Keyword");
+    assert_eq!(results.items[2].po.id, keyword_id, "第三条应是 Keyword");
     assert_eq!(
-        results[2].search_match.as_ref().unwrap().match_type,
+        results.items[2].search_match.as_ref().unwrap().match_type,
         MatchType::Keyword
     );
 }
