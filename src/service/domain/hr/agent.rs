@@ -187,7 +187,7 @@ impl AgentManage for HrDomainImpl {
         &self,
         ctx: RequestContext,
         search: crate::service::dao::agent::AgentSearch,
-    ) -> Result<Vec<Agent>> {
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.agent_dal.search(ctx, search).await
     }
 

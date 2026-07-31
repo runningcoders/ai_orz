@@ -67,7 +67,11 @@ impl AgentDal for CodexAgentDal {
         self.base.find_all(ctx).await
     }
 
-    async fn search(&self, ctx: RequestContext, search: AgentSearch) -> Result<Vec<Agent>> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AgentSearch,
+    ) -> Result<common::api::PagedResult<Agent>> {
         self.base.search(ctx, search).await
     }
 

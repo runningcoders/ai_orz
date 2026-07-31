@@ -192,11 +192,13 @@ pub trait AgentManage: Send + Sync {
     /// - keyword 存在 → 走 FTS5 全文检索
     /// - query_vector 存在 → 走向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果（三态匹配 + 综合排序）
+    ///
+    /// 返回分页结果，支持 runtime_state 内存过滤。
     async fn search_agents(
         &self,
         ctx: RequestContext,
         search: crate::service::dao::agent::AgentSearch,
-    ) -> Result<Vec<Agent>>;
+    ) -> Result<common::api::PagedResult<Agent>>;
 
     /// 更新 Agent
     async fn update_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
