@@ -27,7 +27,9 @@ use crate::service::domain::message::{
     ToolCallExecutionOutcome,
 };
 use crate::service::domain::project::{self as project_domain, ProjectDomain};
-use crate::service::domain::runtime::{self as runtime_domain, RuntimeDomain};
+use crate::service::domain::runtime::{
+    self as runtime_domain, RuntimeDomain, awakening::ThinkingOptions, awakening::ThinkingScene,
+};
 
 // ==================== 消费者实现 ====================
 
@@ -195,6 +197,8 @@ impl MessageConsumer {
         // 检查任务完成状态（优先于 thinking_depth 检查）
         // 顺序说明：若任务已 Completed/Cancelled，应直接跳过唤醒，避免向已结束的任务
         // 发送误导性的"达到最大思考深度"消息
+        // 同时缓存 task 实体，供后续 ThinkingOptions 注入 prompt 上下文复用
+        let mut cached_task: Option<crate::models::task::Task> = None;
         if let Some(task_id) = &message.po.task_id {
             match self
                 .project_domain
@@ -220,6 +224,7 @@ impl MessageConsumer {
                         AgentRuntimeStateManager::global().set_idle(agent_id);
                         return Ok(());
                     }
+                    cached_task = Some(task);
                 }
                 Ok(None) => {
                     log_warn!(
@@ -300,7 +305,7 @@ impl MessageConsumer {
             let enriched_ctx = self
                 .runtime_domain
                 .awakening()
-                .wake_agent_brain(ctx, &mut agent)
+                .wake_agent_brain(ctx, &mut agent, ThinkingScene::Awaken)
                 .await
                 .inspect_err(|_e| {
                     // wake_agent_brain 失败：释放 Busy 允许重试
@@ -310,11 +315,28 @@ impl MessageConsumer {
             ctx = enriched_ctx;
         }
 
+        // 构造 ThinkingOptions：注入消息关联的 project/task 实体作为业务上下文
+        // task 实体复用上方状态检查的查询结果（不重复查询）；project 按需查询
+        // 遵循 Context 补充原则：仅当下游 awaken 需要 project 上下文时才查询
+        let mut thinking_options = ThinkingOptions::new();
+        if let Some(project_id) = &message.po.project_id
+            && let Ok(Some(project)) = self
+                .project_domain
+                .project_manage()
+                .get(ctx.clone(), project_id)
+                .await
+        {
+            thinking_options = thinking_options.with_project(project);
+        }
+        if let Some(task) = cached_task {
+            thinking_options = thinking_options.with_task(task);
+        }
+
         // 调用 RuntimeDomain 唤醒 Agent
         let awaken_result = self
             .runtime_domain
             .awakening()
-            .awaken(ctx.clone(), &agent, message)
+            .awaken(ctx.clone(), &agent, message, &thinking_options)
             .await?;
 
         log_info!(

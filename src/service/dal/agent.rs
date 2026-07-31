@@ -1167,7 +1167,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("## 你的任务\n\n");
         result.push_str("请用已有工具自主完成沉淀：\n\n");
         result.push_str("1. **归纳总结**：对上述短期记忆进行归纳，提炼核心概念、抽象经验、可复用模式（不要记具体细节）\n");
-        result.push_str("2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）\n");
+        result.push_str(
+            "2. **查询已有图谱**：用 search_memory 检查是否已有相关知识点（避免重复节点）\n",
+        );
         result.push_str("3. **创建/更新节点**：\n");
         result.push_str("   - 新知识 → save_long_term_memory 创建节点\n");
         result.push_str("   - 已有相似节点 → update_memory 更新节点内容\n");
@@ -1179,7 +1181,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
         result.push_str("- 新老知识交替不是覆盖是迭代，推翻时用 opposite 关系保留痕迹\n");
-        result.push_str("- published 标签让节点全局共享，通过共享节点作为桥梁发现跨 Agent 的知识网络\n");
+        result.push_str(
+            "- published 标签让节点全局共享，通过共享节点作为桥梁发现跨 Agent 的知识网络\n",
+        );
         result.push_str("- 详见\"记忆认知\"技能的沉淀机制和新老知识交替章节\n\n");
         result.push_str("开始沉淀吧。");
 

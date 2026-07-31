@@ -113,22 +113,28 @@ pub trait RuntimeAwakening: Send + Sync {
     /// 返回 enriched ctx：wake_brain 内部查询 ModelProvider 后会补充
     /// `model_provider_id` / `model_name`，调用方应使用返回的 ctx 替换原 ctx，
     /// 保证后续 awaken/think 链路的 ctx 字段完整（避免监控日志缺 model_name）。
+    ///
+    /// # 场景过滤
+    /// Settle 场景下，从 agent.tools 分离出的 Auto 工具会再过滤一次，
+    /// 只保留 tags 含 "neural" 或 "memory" 的工具注册到 Rig，
+    /// 避免模型在沉淀模式下通过 function calling 调用消息类工具。
     async fn wake_agent_brain(
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
+        scene: crate::service::domain::runtime::awakening::ThinkingScene,
     ) -> Result<RequestContext>;
 
     /// 唤醒 Agent 并执行一次思考
     ///
     /// 【分层原则】
-    /// - 外部传入：Agent、Message（由上层 Domain 加载好传入）
+    /// - 外部传入：Agent、Message、ThinkingOptions（由上层 Domain 加载好传入）
     /// - 内部获取：Memory、工具、技能（Runtime Domain 内部直接访问）
     ///
     /// 【流程】
     /// 1. 读取最近短期记忆
     /// 2. 收集关联的 Trace ID 列表
-    /// 3. 拼装 Prompt
+    /// 3. 拼装 Prompt（含 options 中的 project/task 上下文）
     /// 4. 记录输入 Trace
     /// 5. 调用模型推理
     /// 6. 记录输出 Trace
@@ -138,6 +144,7 @@ pub trait RuntimeAwakening: Send + Sync {
         ctx: RequestContext,
         agent: &Agent,
         message: &Message,
+        options: &crate::service::domain::runtime::awakening::ThinkingOptions,
     ) -> Result<AwakeningResult>;
 
     /// 让 Agent 进入沉睡模式，执行记忆沉淀（与 awaken 对称）
@@ -148,12 +155,14 @@ pub trait RuntimeAwakening: Send + Sync {
     /// # 参数
     /// - ctx: 请求上下文（需含 agent_id）
     /// - agent: 已加载的 Agent（含 tools + skills，Brain 已装配）
-    /// - settle_prompt: 沉淀场景 prompt（由调用方拼装，含待沉淀记忆摘要 + 任务指引）
+    /// - pending_memories_summary: 待沉淀短期记忆的编号摘要（约束模板由 builder.build_sleep_prompt 内聚）
+    /// - options: 沉睡场景选项（scene=Settle，工具过滤用）
     async fn sleep_and_settle(
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        settle_prompt: &str,
+        pending_memories_summary: &str,
+        options: &crate::service::domain::runtime::awakening::ThinkingOptions,
     ) -> Result<AwakeningResult>;
 }
 
@@ -215,7 +224,7 @@ pub trait RuntimeToolExecution: Send + Sync {
 // ==================== 子模块  ====================
 // 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
 
-mod awakening;
+pub mod awakening;
 mod busy_guard;
 mod memory;
 mod tool_call_query;

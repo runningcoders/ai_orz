@@ -1,7 +1,6 @@
 //! Runtime Awakening 具体实现
 
 use crate::models::agent::Agent;
-use crate::models::file::FileMeta;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -10,7 +9,6 @@ use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
-use common::enums::{MessageRole, MessageType};
 use common::error::{Result, err};
 
 use crate::enrich_ctx;
@@ -112,6 +110,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
+        scene: ThinkingScene,
     ) -> Result<RequestContext> {
         // 幂等：brain 已装配则直接返回原 ctx（无需再 enrich provider 字段）
         if agent.brain.is_some() {
@@ -123,11 +122,25 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 工具已在 hr_domain.get_agent(with_tools=true) 时加载到 agent.tools
         // 从 agent.tools 中分离出 Auto 工具用于 Rig 注册，Manual 工具保留供 Prompt 使用
         // Tool 实体不可 Clone（含 dyn Trait），使用 partition 转移所有权
+        //
+        // Settle 场景过滤 Auto 工具：只保留 tags 含 "neural" 或 "memory" 的工具注册到 Rig，
+        // 避免模型在沉淀模式下通过 function calling 调用消息类工具。
+        // Manual 工具的过滤在 sleep_and_settle 中按场景处理（Prompt 展示层）。
         let rig_tools = if agent.po.kind.is_local() {
             let all_tools = std::mem::take(&mut agent.tools);
             let (auto, manual): (Vec<_>, Vec<_>) = all_tools
                 .into_iter()
                 .partition(|t| matches!(t.po.control_mode, common::enums::ControlMode::Auto));
+            let auto = match scene {
+                ThinkingScene::Awaken => auto,
+                ThinkingScene::Settle => auto
+                    .into_iter()
+                    .filter(|t| {
+                        let tags = t.po.get_tags();
+                        scene.is_tool_allowed(&tags)
+                    })
+                    .collect(),
+            };
             agent.tools = manual;
             auto
         } else {
@@ -167,6 +180,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         ctx: RequestContext,
         agent: &Agent,
         message: &Message,
+        options: &ThinkingOptions,
     ) -> Result<AwakeningResult> {
         let start_time = std::time::SystemTime::now();
 
@@ -220,6 +234,13 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         builder.system_prompt(agent);
         builder.tools(&all_tools);
         builder.skills(&skill_pos);
+        // 注入业务上下文（project/task 实体摘要，有值即拼装，与 user_profile 通用逻辑一致）
+        if let Some(project) = &options.project {
+            builder.project_context(project);
+        }
+        if let Some(task) = &options.task {
+            builder.task_context(task);
+        }
         builder.history(&recent_memories);
         builder.current_message(message);
 
@@ -347,7 +368,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        settle_prompt: &str,
+        pending_memories_summary: &str,
+        options: &ThinkingOptions,
     ) -> Result<AwakeningResult> {
         let start_time = std::time::SystemTime::now();
 
@@ -380,41 +402,39 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let trace_id = trace.id.clone();
 
         // Step 3: 加载工具和技能（已由 hr_domain.get_agent 加载到 agent）
-        let all_tools: Vec<crate::models::tool::ToolPo> =
-            agent.tools().iter().map(|t| t.po.clone()).collect();
-        let skill_pos: Vec<crate::models::skill::SkillPo> =
-            agent.skills().iter().map(|s| s.po.clone()).collect();
+        // Settle 场景过滤：只保留记忆相关 skill 和 Manual 工具（tags 含 neural 或 memory），
+        // 与 wake_agent_brain 的 Auto 工具过滤对称，确保沉淀模式下只能接触记忆类工具。
+        // 睡觉是对自身知识的沉淀积累，不应触发消息流程导致异步唤醒自己。
+        let scene = options.scene;
+        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
+            .skills()
+            .iter()
+            .filter(|s| {
+                let tags = s.po.parse_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(|s| s.po.clone())
+            .collect();
+        let all_tools: Vec<crate::models::tool::ToolPo> = agent
+            .tools()
+            .iter()
+            .filter(|t| {
+                let tags = t.po.get_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(|t| t.po.clone())
+            .collect();
 
-        // Step 4: 拼装 Prompt
-        // 与 awaken 的区别：current_message 用沉淀场景 prompt 替代
-        // 构造一个虚拟的系统 Message（沉淀场景）
-        let settle_message = Message::new_with_context(
-            uuid::Uuid::now_v7().to_string(),
-            ctx.project_id().cloned(),
-            ctx.task_id().cloned(),
-            "system".to_string(),
-            agent.po.id.clone(),
-            MessageRole::System,
-            MessageRole::Agent,
-            MessageType::Text,
-            settle_prompt.to_string(),
-            None,
-            FileMeta::default(),
-            None,
-            None,
-            ctx.organization_id.clone(),
-            ctx.uid(),
-        );
-
+        // Step 4: 拼装 Prompt（复用 builder 挂载链路，调用 build_sleep_prompt 生成沉淀模板）
+        // 与 awaken 的区别：不构造虚拟 System Message，约束模板内聚在 builder.build_sleep_prompt
         let mut builder = self.prompt_builder(agent);
         builder.current_trace_id(&trace_id);
         builder.system_prompt(agent);
         builder.tools(&all_tools);
         builder.skills(&skill_pos);
         builder.history(&recent_memories);
-        builder.current_message(&settle_message);
 
-        let prompt = builder.build();
+        let prompt = builder.build_sleep_prompt(pending_memories_summary);
 
         // Step 5: 调用大脑思考
         let brain = agent
