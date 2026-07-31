@@ -1161,6 +1161,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-07-31 | v3.6 | 新增第二十五章：唤醒/沉睡场景化设计（ThinkingScene/ThinkingOptions + sleep_and_settle + 工具双层过滤 + 业务上下文注入），812 测试通过 |
 | 2026-07-24 | v3.5 | 记忆 tags 全链路支持 + 知识图谱节点可视化增强，746 测试通过（详见第二十四章） |
 | 2026-07-23 | v3.4 | Runtime 执行链路全面修复（16 项），覆盖正确性、用户体验、性能与安全，745 测试通过（详见第二十三章） |
 | 2026-07-12 | v3.2 | Phase 4C 技能系统增强 + Phase 5 多 Agent 协作工具，693 测试通过 |
@@ -1709,6 +1710,259 @@ Consumer 层
 | 总测试数 | 746 | +1 新增 tags 过滤测试 |
 | 通过率 | 100% | ✅ 全部通过 |
 | 提交数 | 3 个 | 后端 DTO/DAO/Handler + 前端 API/UI + 节点可视化增强 |
+
+---
+
+## 二十五、唤醒/沉睡场景化设计（v3.6）
+
+> 📌 **本章定位**：将 `awaken` 与新增的 `sleep_and_settle` 抽象为对称的"唤醒/沉睡"双场景，通过 `ThinkingScene` / `ThinkingOptions` 统一签名扩展，实现工具双层过滤与业务上下文注入。
+>
+> **完成状态**：✅ 已全部实现（2026-07-31），812 个测试 100% 通过
+
+### 25.1 设计动机
+
+**v3.5 之前**：Runtime 只有 `awaken` 一个唤醒入口，沉淀记忆（settle_memory）通过 handler 直接调 LLM 完成，与消息层耦合，沉淀约束模板散落在 handler 中。
+
+**v3.6 升级**：
+1. **对称性**：`sleep_and_settle` 与 `awaken` 对称——awaken 是醒来响应外部消息，sleep_and_settle 是沉睡整理内部记忆
+2. **解耦**：settle_memory handler 不再直接调 LLM，改为调用 `sleep_and_settle`，与消息层解耦
+3. **场景化**：通过 `ThinkingScene` 区分场景，工具按场景过滤，避免沉淀模式下误调消息类工具触发异步唤醒自己
+4. **上下文完整**：沉淀场景保留 user_profile + project/task 上下文，沉淀出的经验自带场景标签
+
+### 25.2 核心数据结构
+
+#### ThinkingScene 枚举
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThinkingScene {
+    #[default]
+    Awaken,  // 唤醒场景：响应外部消息，加载全部工具
+    Settle,  // 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
+}
+
+impl ThinkingScene {
+    /// 判断工具是否在此场景可用
+    pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
+        match self {
+            ThinkingScene::Awaken => true,
+            ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
+        }
+    }
+}
+```
+
+#### ThinkingOptions 结构体
+
+```rust
+#[derive(Debug, Clone, Default)]
+pub struct ThinkingOptions {
+    pub scene: ThinkingScene,
+    pub project: Option<Project>,       // 消息关联的项目实体（awaken 场景使用）
+    pub task: Option<Task>,             // 消息关联的任务实体（awaken 场景使用）
+    pub user_profile: Option<UserPo>,   // 用户画像（预留扩展）
+}
+```
+
+**设计要点**：
+- 统一 options 字段避免频繁修改 awaken/sleep_and_settle 方法签名
+- scene 字段控制工具过滤行为
+- project/task 实体通过 builder 拼装到 prompt，沉淀出的经验自带场景标签
+
+### 25.3 RuntimeAwakening trait 签名升级
+
+```rust
+#[async_trait]
+pub trait RuntimeAwakening: Send + Sync {
+    async fn wake_agent_brain(
+        &self,
+        ctx: RequestContext,
+        agent: &mut Agent,
+        scene: ThinkingScene,           // 新增：场景标识
+    ) -> Result<RequestContext>;
+
+    async fn awaken(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+        options: &ThinkingOptions,      // 新增：场景上下文
+    ) -> Result<AwakeningResult>;
+
+    async fn sleep_and_settle(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        pending_memories_summary: &str,
+        options: &ThinkingOptions,      // 新增：场景上下文
+    ) -> Result<AwakeningResult>;
+}
+```
+
+### 25.4 工具双层过滤机制
+
+**问题**：唤醒 brain 在两种场景用同一个方法，注册同一套 rig 工具。若 Settle 场景不过滤工具，模型可能通过 function calling 调用 `send_message` 等消息类工具，触发消息流程导致异步唤醒自己，破坏沉淀内循环。
+
+**方案**：双层过滤，分别覆盖 Auto 工具和 Manual 工具/技能
+
+| 层级 | 过滤位置 | 过滤对象 | 触发条件 |
+|------|---------|---------|---------|
+| 第一层 | `wake_agent_brain` | Auto 工具（注册到 Rig 的 function calling 工具） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+| 第二层 | `sleep_and_settle` | Manual 工具 + skill（Prompt 展示层） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+
+**过滤逻辑**（在 awakening.rs 中实现）：
+
+```rust
+// wake_agent_brain 中的 Auto 工具过滤
+let auto = match scene {
+    ThinkingScene::Awaken => auto,
+    ThinkingScene::Settle => auto
+        .into_iter()
+        .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
+        .collect(),
+};
+
+// sleep_and_settle 中的 skill + Manual 工具过滤
+let scene = options.scene;
+let skill_pos: Vec<SkillPo> = agent.skills().iter()
+    .filter(|s| scene.is_tool_allowed(&s.po.parse_tags()))
+    .map(|s| s.po.clone())
+    .collect();
+let all_tools: Vec<ToolPo> = agent.tools().iter()
+    .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
+    .map(|t| t.po.clone())
+    .collect();
+```
+
+**设计要点**：
+- Auto 工具过滤在 brain 装配阶段（注册到 Rig 前），过滤后模型无法通过 function calling 调用
+- Manual 工具/skill 过滤在 Prompt 拼装阶段，过滤后模型在 Prompt 中看不到这些工具
+- Awaken 场景不做过滤，全部工具可用
+
+### 25.5 业务上下文注入
+
+**问题**：唤醒流程中若消息携带 project_id / task_id，Agent 不知道当前所属项目和任务，沉淀出的经验缺少场景标签。
+
+**方案**：通过 ThinkingOptions 传递实体，由 PromptBuilder 拼装到 prompt
+
+**数据流**：
+
+```
+消息消费者（consumer/message.rs）
+    │
+    ├── 检查 task 状态时缓存 task 实体（避免重复查询）
+    ├── 按需查询 project 实体（仅当 project_id 存在）
+    │
+    └── 构造 ThinkingOptions
+        ├── with_project(project)  ← 按需查询
+        └── with_task(task)        ← 复用缓存
+            │
+            ▼
+        awaken(ctx, agent, message, &options)
+            │
+            ├── builder.project_context(project)
+            ├── builder.task_context(task)
+            │
+            └── build() 拼装到 Prompt 的【项目上下文】【任务上下文】区块
+```
+
+**Context 补充原则**（遵循项目硬约束）：
+- task 实体复用任务状态检查时的查询结果，不重复查询
+- project 实体仅在下游 awaken 需要 project 上下文时才查询
+- 不为补充上下文执行额外的查询操作，仅使用当前业务逻辑中已有的信息
+
+### 25.6 sleep_and_settle 流程
+
+```
+settle_memory handler
+    │
+    ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
+    │
+    └── load_and_settle: 加载 Agent（含 tools+skills）
+        │
+        ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
+        │
+        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle))
+            │
+            ├── set_resting + RAII guard
+            ├── 读取最近短期记忆作为 history
+            ├── 过滤 skill + Manual 工具（只保留记忆相关）
+            ├── 拼装 Prompt: builder.build_sleep_prompt(summary)
+            │     └── 沉淀约束模板内聚在 PromptBuilder
+            ├── think()（5 分钟超时）
+            ├── 写 Trace
+            ├── 记录统计事件（status: settle success/failed）
+            └── set_idle（RAII guard）
+```
+
+**沉淀约束模板**（内聚在 `PromptBuilder.build_sleep_prompt`）：
+- 不发送消息（睡觉是自身知识沉淀，不依赖外部信息）
+- 不调用消息类工具（避免触发消息流程导致异步唤醒自己）
+- 只使用记忆类工具（search_memory / save_long_term_memory / update_memory / query_memory）
+- 内循环：与自己的记忆对话，不是与外部世界交互
+
+### 25.7 PromptBuilder 扩展
+
+新增方法（trait 定义在 `src/models/prompt_builder.rs`，实现在 `src/service/dal/agent.rs`）：
+
+```rust
+pub trait PromptBuilder: Send + Sync {
+    // ... 现有方法
+    fn project_context(&mut self, project: &Project);
+    fn task_context(&mut self, task: &Task);
+    fn build_sleep_prompt(&self, pending_memories_summary: &str) -> String {
+        let _ = pending_memories_summary;
+        self.build()
+    }
+}
+```
+
+**DefaultPromptBuilder 实现要点**：
+- 提取 `build_tools_and_skills_sections` 复用工具/技能区块拼装逻辑
+- 提取 `build_common_context_sections` 复用 user_profile + project + task 上下文拼装逻辑
+- `build_sleep_prompt` 复用 system_prompt + tools + skills + common_context + history，跳过 tool_failures 和 current_message，附加沉淀约束 + 待沉淀记忆 + 任务步骤
+
+**沉淀场景保留 user_profile 的理由**：认知是具身的，不知道自己是谁就不能形成有效认知。沉淀是对自身经验的整理，必须保留身份认知。
+
+### 25.8 settle_memory handler 重构
+
+**v3.5 之前**：handler 内部构造沉淀 prompt + 直接调 BrainDal.think()，与消息层耦合。
+
+**v3.6 重构**：
+- `build_pending_memories_summary`：只生成待沉淀记忆的编号摘要，约束模板由 builder 注入
+- `load_and_settle`：调用 `wake_agent_brain(scene=Settle)` + `sleep_and_settle(options)`，与消息层解耦
+- 复用性：`load_and_settle` 供 settle_memory handler 和 CronTrigger agent_rest 共用
+
+### 25.9 代码清单
+
+| 文件 | 类型 | 改动内容 |
+|------|------|---------|
+| `src/service/domain/runtime/awakening.rs` | 修改 | 新增 ThinkingScene/ThinkingOptions；wake_agent_brain 加 scene 参数 + Auto 工具过滤；awaken 加 options 参数 + 注入 project/task；新增 sleep_and_settle 实现 |
+| `src/service/domain/runtime/mod.rs` | 修改 | RuntimeAwakening trait 签名升级；awakening 模块改为 pub |
+| `src/models/prompt_builder.rs` | 修改 | PromptBuilder trait 新增 project_context/task_context/build_sleep_prompt |
+| `src/service/dal/agent.rs` | 修改 | DefaultPromptBuilder 实现新方法；提取 build_tools_and_skills_sections/build_common_context_sections 复用方法 |
+| `src/models/project.rs` | 修改 | 新增 to_prompt_summary 方法 |
+| `src/models/task.rs` | 修改 | 新增 to_prompt_summary 方法 |
+| `src/consumer/message.rs` | 修改 | 构造 ThinkingOptions 传入 awaken；task 复用缓存、project 按需查询 |
+| `src/handlers/hr/agent/settle_memory.rs` | 修改 | 重构为 build_pending_memories_summary + load_and_settle，与消息层解耦 |
+
+### 25.10 测试统计
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 812 | +66 新增（含沉淀流程、tags 过滤、is_published 字段等） |
+| 通过率 | 100% | ✅ 全部通过 |
+| 新增核心机制 | 3 项 | ThinkingScene/ThinkingOptions、工具双层过滤、build_sleep_prompt 沉淀约束 |
+| 新增对称方法 | 1 个 | sleep_and_settle（与 awaken 对称） |
+
+### 25.11 与历史设计的关系
+
+| 历史设计 | v3.6 升级 |
+|---------|----------|
+| 第十七章 决策 2：用户画像仅客服 Agent 显示 | 升级：沉淀场景也保留 user_profile（认知是具身的） |
+| 第十七章 决策 3：用户画像区块位置 | 保持：位于 Agent 人设与历史对话之间 |
+| 第十九章 Agent 运行时状态管理 | 扩展：sleep_and_settle 使用 Resting 状态，复用 BusyGuard 的 set_idle 恢复语义 |
+| memory_design.md 第十七章 休息与知识沉淀机制 | 升级：沉淀不再工程化创建节点，改为 Agent 自主沉淀（详见 memory_design.md 更新） |
 
 ---
 
