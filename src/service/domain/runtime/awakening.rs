@@ -538,6 +538,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 mod tests {
     // ==================== awaken 集成测试 ====================
 
+    use super::ThinkingOptions;
     use crate::models::agent::{Agent, AgentPo};
     use crate::models::brain::{Brain, Cortex, CortexTrait};
     use crate::models::file::FileMeta;
@@ -790,7 +791,7 @@ mod tests {
 
         let result = runtime
             .awakening()
-            .awaken(ctx.clone(), &agent, &message)
+            .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
             .await
             .expect("awaken 应该成功");
 
@@ -852,7 +853,7 @@ mod tests {
 
         let result = runtime
             .awakening()
-            .awaken(ctx.clone(), &agent, &message)
+            .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
             .await
             .expect("awaken 应该成功");
 
