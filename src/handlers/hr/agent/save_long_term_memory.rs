@@ -30,8 +30,7 @@ pub async fn save_long_term_memory(
 
     let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
 
-    let id_content = format!("{}{}", params.node_name, now);
-    let node_id = format!("kn_{}", sha256::digest(id_content));
+    let node_id = format!("kn_{}", uuid::Uuid::now_v7().simple());
 
     let agent_id = ctx.agent_id().cloned().unwrap_or_default();
 
@@ -73,11 +72,7 @@ pub async fn save_long_term_memory(
         let relation_pos: Vec<KnowledgeNodeRelationPo> = relations
             .iter()
             .map(|r| {
-                let id_content = format!(
-                    "{}{}{}{}",
-                    r.source_node_id, r.target_node_id, r.relation_type, now
-                );
-                let relation_id = format!("kr_{}", sha256::digest(id_content));
+                let relation_id = format!("kr_{}", uuid::Uuid::now_v7().simple());
                 relation_ids.push(relation_id.clone());
                 KnowledgeNodeRelationPo {
                     id: relation_id,
