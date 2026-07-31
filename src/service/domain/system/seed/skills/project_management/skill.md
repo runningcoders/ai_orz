@@ -376,12 +376,19 @@ Completed     → Archived
 
 分配项目或任务前，**必须先查询目标 Agent 是否空闲**：
 
-1. **查能力匹配**：用 `query_agents`（`keyword` / `roles`）或 `search_agents`（语义搜索）找到候选 Agent
-2. **查运行时状态**：用 `query_agents` 传 `runtime_state=0`（Idle）过滤出当前空闲的 Agent
+1. **查能力匹配**：用 `search_agents`（keyword 语义搜索，如"前端开发"）找到候选 Agent
+2. **查运行时状态**：用 `query_agents` 或 `search_agents` 传 `runtime_state=0`（Idle）过滤出当前空闲的 Agent
 3. **查串行约束**：
    - 分配项目前：用 `query_projects` 传 `owner_agent_id` + `status_in=[1,2,3]`（Active/PendingReview/InProgress）确认候选无未完结项目
    - 分配任务前：用 `list_agent_tasks` 传 `status=in_progress` 确认候选无进行中任务
 4. **二次校验**：`create_project` / `create_task` 时目标 Agent 可能已被其他流程占用，若遇到繁忙错误应重新选择候选
+
+**Agent 查询工具选择**（三种接口对应三种场景）：
+- `list_agents` — 无条件获取默认列表
+- `query_agents` — 按条件（status、roles、runtime_state 等）精确筛选
+- `search_agents` — 按关键词 FTS5 + 向量语义混合搜索，也支持完整过滤条件
+
+三者都返回 `PagedResult<AgentListItem>`（分页结果）。
 
 **重新分配**：若目标 Agent 在最终分配时已繁忙（`runtime_state != 0` 或已有进行中项目/任务），回到步骤 1 重新选择候选。
 

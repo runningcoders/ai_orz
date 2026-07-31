@@ -129,15 +129,28 @@
 - 在委派任务时准确描述目标 Agent 应具备的特征（请用户协助查询）
 - 在收到任务时理解自己是被如何选中的
 
+### Agent 查询工具选择
+
+三种接口对应三种场景，都返回 `PagedResult<AgentListItem>`（分页结果）：
+
+| 工具 | 场景 | 说明 |
+|------|------|------|
+| `list_agents` | 默认列表 | 无条件获取 Agent 列表，最简场景 |
+| `query_agents` | 条件过滤 | 按 status、roles、runtime_state 等条件精确筛选 |
+| `search_agents` | 关键词搜索 | 按关键词 FTS5 + 向量语义混合搜索，也支持完整过滤条件 |
+
+根据场景选择：无条件 → list；有过滤条件 → query；有关键词 → search。
+
 ### `query_agents` — 通用查询 Agent
 
 **能力**：支持完整过滤条件的 Agent 查询。
 
 **关键过滤参数**：
 - `ids` — 按 ID 批量查询
-- `keyword` — 关键词搜索（匹配名称/描述）
+- `keyword` — 关键词搜索（匹配名称/描述，已废弃，建议用 `search_agents`）
 - `status` — 状态筛选（**强制排除 `Deleted`**）
 - `roles` — 角色列表过滤
+- `runtime_state` — 运行时状态过滤（0=Idle, 1=Resting, 2=Busy）
 - `created_by` / `model_provider_id` — 创建者 / 模型供应商过滤
 - `pagination` — 分页参数
 
@@ -145,11 +158,19 @@
 
 ### `search_agents` — 搜索 Agent
 
-**能力**：按关键词搜索，支持 **FTS5 全文 + 向量语义混合搜索**。
+**能力**：按关键词搜索，支持 **FTS5 全文 + 向量语义混合搜索**，同时支持完整过滤条件（status、roles、runtime_state 等）。
 
-**参数**：`keyword` + `limit`。
+**参数**（`SearchAgentsRequest`，POST body）：
+- `keyword` — 搜索关键词（FTS5 + 向量语义）
+- `status` / `created_by` / `model_provider_id` / `roles` — 过滤条件（与 query_agents 一致）
+- `runtime_state` — 运行时状态过滤（0=Idle, 1=Resting, 2=Busy）
+- `pagination` — 分页参数（limit + offset）
 
-**与 `query_agents` 的区别**：`search_agents` 重在"语义相关性"（混合搜索），`query_agents` 重在"条件过滤"。前端通常先用 `search_agents` 找候选，再用 `query_agents` 精确筛选。
+**返回**：`PagedResult<AgentListItem>`（分页结果，含 total）。
+
+**搜索结果限制**：搜索场景最大返回 20 条结果（搜不到应换关键词而非无限分页）。
+
+**与 `query_agents` 的区别**：`search_agents` 重在"语义相关性"（混合搜索），`query_agents` 重在"条件过滤"。两者现在都支持完整过滤条件和分页返回。
 
 ### `get_agent` — 获取 Agent 详情
 
