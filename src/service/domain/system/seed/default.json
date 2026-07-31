@@ -103,7 +103,7 @@
     {
       "id": "TEMPLATE_MEMORY_COGNITION",
       "name": "记忆认知",
-      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱构建（节点/关系/引用）、三种搜索模式与遍历策略的完整认知体系",
+      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱（图谱是活的/节点粒度自主/关系多维共存/tags是桥梁/局部树状全域网状）、三种搜索模式与遍历策略的认知指南",
       "tags": ["neural", "memory"],
       "category": "system",
       "parent_skill_id": "",
