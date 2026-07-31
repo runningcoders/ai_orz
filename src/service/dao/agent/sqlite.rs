@@ -215,8 +215,13 @@ FROM agents WHERE id = ? AND status <> 0
 
         builder.push(" ORDER BY agents_fts.rank");
 
-        if let Some(limit) = filters.pagination.limit {
-            builder.push(" LIMIT ").push_bind(limit as i64);
+        // 搜索场景限制最大返回数量（避免关键词失控返回全量结果）
+        // 用户传的 limit 若超过 MAX_SEARCH_RESULTS 则截断，未传则默认 MAX_SEARCH_RESULTS
+        let search_limit = std::cmp::min(filters.pagination.limit.unwrap_or(20), 20);
+        builder.push(" LIMIT ").push_bind(search_limit as i64);
+
+        if let Some(offset) = filters.pagination.offset {
+            builder.push(" OFFSET ").push_bind(offset as i64);
         }
 
         let rows: Vec<AgentSearchRow> = builder

@@ -134,7 +134,13 @@ pub trait AgentDal: Send + Sync {
     /// - keyword 存在 → 走 FTS5 全文检索
     /// - query_vector 存在 → 走向量语义搜索
     /// - 两者都有 → 混合搜索，合并结果（三态匹配 + 综合排序）
-    async fn search(&self, ctx: RequestContext, search: AgentSearch) -> Result<Vec<Agent>>;
+    ///
+    /// 返回分页结果，支持 runtime_state 内存过滤。
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AgentSearch,
+    ) -> Result<common::api::PagedResult<Agent>>;
 
     /// 更新 Agent
     async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
@@ -206,6 +212,34 @@ impl AgentDalImpl {
             runtime_info,
             ..agent
         }
+    }
+
+    /// 对已加载的 Agent 列表应用 runtime_state 内存过滤 + 分页
+    ///
+    /// runtime_state 是内存态（AgentRuntimeStateManager），DAO 层无法 SQL 过滤。
+    /// 此方法在 DAL 层统一处理：注入 runtime_info → 按目标状态过滤 → 手动分页。
+    /// query 和 search 方法复用此逻辑。
+    fn apply_runtime_state_filter(
+        agents: Vec<Agent>,
+        target_state: common::enums::AgentRuntimeState,
+        pagination: common::api::PaginationParams,
+    ) -> common::api::PagedResult<Agent> {
+        let filtered: Vec<Agent> = agents
+            .into_iter()
+            .filter(|agent| {
+                let state = agent
+                    .runtime_info
+                    .as_ref()
+                    .map(|info| info.state)
+                    .unwrap_or(common::enums::AgentRuntimeState::Idle);
+                state == target_state
+            })
+            .collect();
+        let total = filtered.len();
+        let offset = pagination.offset.unwrap_or(0);
+        let limit = pagination.limit.unwrap_or(20);
+        let items = filtered.into_iter().skip(offset).take(limit).collect();
+        common::api::PagedResult { items, total }
     }
 
     /// 自动向量化 Agent（失败 warn 降级，不影响主流程）
@@ -429,22 +463,13 @@ impl AgentDal for AgentDalImpl {
                 .into_iter()
                 .map(Agent::from_po)
                 .map(Self::inject_runtime_state)
-                .filter(|agent| {
-                    let state = agent
-                        .runtime_info
-                        .as_ref()
-                        .map(|info| info.state)
-                        .unwrap_or(common::enums::AgentRuntimeState::Idle);
-                    state == target_state
-                })
                 .collect();
 
-            let total = all_agents.len();
-            let offset = original_pagination.offset.unwrap_or(0);
-            let limit = original_pagination.limit.unwrap_or(20);
-            let items: Vec<Agent> = all_agents.into_iter().skip(offset).take(limit).collect();
-
-            return Ok(common::api::PagedResult { items, total });
+            return Ok(Self::apply_runtime_state_filter(
+                all_agents,
+                target_state,
+                original_pagination,
+            ));
         }
 
         let page = self.agent_dao.query(ctx, query).await?;
@@ -468,7 +493,11 @@ impl AgentDal for AgentDalImpl {
         Ok(page.items)
     }
 
-    async fn search(&self, ctx: RequestContext, search: AgentSearch) -> Result<Vec<Agent>> {
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: AgentSearch,
+    ) -> Result<common::api::PagedResult<Agent>> {
         // 默认排除软删除的 Agent（遵循项目软删除约定：status=0 视为已删除）
         let mut search = search;
         if search.filters.exclude_status.is_none() {
@@ -493,10 +522,10 @@ impl AgentDal for AgentDalImpl {
                 .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条）
+                    // 向量搜索（前 MAX_SEARCH_RESULTS 条，与 FTS5 限制一致）
                     match self
                         .agent_vector_dao
-                        .search_vector(ctx.clone(), &vec_params.vector, 50)
+                        .search_vector(ctx.clone(), &vec_params.vector, 20)
                         .await
                     {
                         Ok(vector_results) => {
@@ -616,6 +645,8 @@ impl AgentDal for AgentDalImpl {
             };
             let mut agent = Agent::from_po(po);
             agent.search_match = match_info;
+            // 注入 runtime_info（search 结果也需要 runtime_state 供过滤和展示）
+            agent = Self::inject_runtime_state(agent);
             agents.push(agent);
         }
 
@@ -669,12 +700,24 @@ impl AgentDal for AgentDalImpl {
             })
         });
 
-        // Step 8: 应用 limit
-        if let Some(limit) = search.filters.pagination.limit {
-            agents.truncate(limit);
-        }
+        // Step 8: 截断到 MAX_SEARCH_RESULTS + runtime_state 内存过滤 + 分页
+        // 搜索场景限制总结果数（MAX_SEARCH_RESULTS=20），搜不到应换关键词而非无限分页
+        agents.truncate(20);
 
-        Ok(agents)
+        let runtime_state_filter = search.filters.runtime_state;
+        let pagination = search.filters.pagination.clone();
+        let result = if let Some(target_state) = runtime_state_filter {
+            Self::apply_runtime_state_filter(agents, target_state, pagination)
+        } else {
+            // 无 runtime_state 过滤，直接分页（total 最大为 MAX_SEARCH_RESULTS）
+            let total = agents.len();
+            let offset = pagination.offset.unwrap_or(0);
+            let limit = pagination.limit.unwrap_or(20);
+            let items = agents.into_iter().skip(offset).take(limit).collect();
+            common::api::PagedResult { items, total }
+        };
+
+        Ok(result)
     }
 
     async fn update(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
