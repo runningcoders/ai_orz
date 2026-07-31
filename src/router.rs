@@ -157,6 +157,10 @@ fn project_routes() -> Router {
             post(handlers::project::projects::query_projects_handler),
         )
         .route(
+            "/projects/search",
+            post(handlers::project::projects::search_projects_handler),
+        )
+        .route(
             "/projects/{id}",
             get(handlers::project::projects::get_project_handler),
         )

@@ -6,6 +6,7 @@ mod get_project;
 mod list_projects;
 mod query_projects;
 mod response;
+mod search_projects;
 mod update_project;
 mod update_project_status;
 
@@ -13,5 +14,6 @@ pub use create_project::create_project_handler;
 pub use get_project::get_project_handler;
 pub use list_projects::list_projects_handler;
 pub use query_projects::query_projects_handler;
+pub use search_projects::search_projects_handler;
 pub use update_project::update_project_handler;
 pub use update_project_status::update_project_status_handler;
