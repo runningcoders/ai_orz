@@ -305,17 +305,18 @@ let result = if keyword.trim().is_empty() {
 
 ## 四、各实体现状与改造范围
 
-| 实体 | list | query | search handler | search 返回 PagedResult | search 复用 query 过滤 | 改造工作量 |
+| 实体 | list | query | search handler | search 返回 PagedResult | search 复用 query 过滤 | 改造状态 |
 |------|:-:|:-:|:-:|:-:|:-:|:-:|
 | Agent | ✅ | ✅ | ✅ | ✅ | ✅ | 已完成 |
-| Tool | ✅ | ✅ | ❌ 缺失 | ❌ Vec | ❌ 独立结构 | 大（需新增 handler + DTO + 改造 DAO/DAL） |
-| Skill | ✅ | ✅ | ⚠️ 存在但退化 | ❌ Vec | ⚠️ 部分 | 中（需改造返回类型 + 补全过滤字段） |
-| Project | ✅ | ✅ | ❌ 缺失 | ❌ Vec | ❌ SQL 未复用 | 大（需新增 handler + DTO + 修复 SQL 缺陷） |
-| Task | ✅ | ✅ | ❌ 缺失 | ❌ Vec | ✅ SQL 已复用 | 中（需新增 handler + DTO + 改造返回类型） |
+| Tool | ✅ | ✅ | ✅ | ✅ | ✅ | 已完成 |
+| Skill | ✅ | ✅ | ✅ | ✅ | ✅ | 已完成 |
+| Project | ✅ | ✅ | ✅ | ✅ | ✅ | 已完成 |
+| Task | ✅ | ✅ | ✅ | ✅ | ✅ | 已完成 |
 
-**关键缺陷**：
-- Project 的 `search_projects` SQL 未复用 `push_query_filters`，导致关键词搜索时 `root_user_id/status_in/owner_agent_id/ids` 业务过滤条件全部失效（安全隐患）
-- Tool 的 `ToolSearch` 是独立结构体（不复用 `ToolQuery`），且 DTO 的 `keyword` 字段在 DAO 层被忽略（API 表面与实现不一致）
+**已修复的关键缺陷**：
+- ~~Project 的 `search_projects` SQL 未复用 `push_query_filters`~~ → 已修复，复用 push_query_filters + OFFSET + LIMIT 20
+- ~~Tool 的 `ToolSearch` 是独立结构体（不复用 `ToolQuery`）~~ → 已修复，ToolSearch.filters 复用 ToolQuery
+- ~~Skill 的 search_skills 是 GET 且返回 Vec~~ → 已修复，改为 POST + PagedResult + 完整过滤条件
 
 ---
 
