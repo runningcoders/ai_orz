@@ -13,7 +13,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateAgentRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    ListModelProvidersResponseItem,
+    ListModelProvidersResponseItem, SearchAgentsRequest,
 };
 
 /// Agent kind 对应的 badge 样式和标签
@@ -97,12 +97,19 @@ pub fn HrAgents() -> Element {
         let my_id = search_request_id() + 1;
         search_request_id.set(my_id);
         spawn(async move {
+            // 三场景切换：无关键词 → list_agents；有关键词 → search_agents
+            // 未来增加过滤条件 UI 后：有过滤条件无关键词 → query_agents
             let result = if keyword.trim().is_empty() {
                 list_agents(ListAgentsRequest::default())
                     .await
                     .map(|p| p.items)
             } else {
-                search_agents(&keyword).await.map(|r| r.agents)
+                search_agents(&SearchAgentsRequest {
+                    keyword: Some(keyword),
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
             };
             // 丢弃过期请求的结果
             if search_request_id() != my_id {
@@ -274,7 +281,12 @@ pub fn HrAgents() -> Element {
                                             .await
                                             .map(|p| p.items)
                                     } else {
-                                        search_agents(&kw).await.map(|r| r.agents)
+                                        search_agents(&SearchAgentsRequest {
+                                            keyword: Some(kw),
+                                            ..Default::default()
+                                        })
+                                        .await
+                                        .map(|p| p.items)
                                     };
                                     if search_request_id() != my_id { return; }
                                     match result {
