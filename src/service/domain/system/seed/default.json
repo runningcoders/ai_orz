@@ -85,7 +85,7 @@
     {
       "id": "TEMPLATE_SKILL_MANAGEMENT",
       "name": "技能管理",
-      "description": "技能查询、搜索、安装、卸载的成长性能力管理指南",
+      "description": "技能状态、安装优先+标签匹配双层加载机制、match_keys 匹配规则、查询搜索安装卸载更新工具、成长性能力管理循环",
       "tags": ["neural", "skill_management"],
       "category": "system",
       "parent_skill_id": "",
@@ -121,7 +121,7 @@
     {
       "id": "TEMPLATE_COMMUNICATION",
       "name": "协作沟通",
-      "description": "与用户和其他 Agent 的消息通信、任务委派、协作伙伴发现与团队协作指南",
+      "description": "沟通工具调用方向（neural/collaboration 区分）、send_message/send_task_assignment_message/list_messages 三个 Agent 可用工具的完整参数与双向分页机制、send_message_to_agent 路由兜底澄清、Agent 查询工具能力差异与协作场景",
       "tags": ["neural", "messaging", "collaboration"],
       "category": "system",
       "parent_skill_id": "",
@@ -139,7 +139,7 @@
     {
       "id": "TEMPLATE_PROJECT_MANAGEMENT",
       "name": "项目管理",
-      "description": "项目、任务、产物、文件管理的工具使用说明，结构化工作的核心能力",
+      "description": "项目/任务/产物状态机与合法转换、create_task 自动通知副作用、mark_done 绕过状态机、产物来源类型（Attachment引用/GeneratedContent独立存储）、update_artifact 统一部分更新与乐观锁、register_artifact_from_path 路径穿越防御、附件 64KB 限制与软删除、权限模型与任务驱动工作流",
       "tags": ["project_management"],
       "category": "system",
       "parent_skill_id": "",
