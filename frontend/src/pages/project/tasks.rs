@@ -209,8 +209,8 @@ pub fn TaskList() -> Element {
             div { class: "card-header",
                 h2 { class: "card-title", "筛选条件" }
             }
-            div { class: "filter-row",
-                div { class: "filter-item",
+            div { class: "flex flex-wrap gap-4 items-end",
+                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                     label { class: "form-label", "项目" }
                     select {
                         class: "input input-bordered w-full",
@@ -225,7 +225,7 @@ pub fn TaskList() -> Element {
                         }
                     }
                 }
-                div { class: "filter-item",
+                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                     label { class: "form-label", "状态" }
                     select {
                         class: "input input-bordered w-full",
@@ -244,7 +244,7 @@ pub fn TaskList() -> Element {
                         option { value: "5", "已归档" }
                     }
                 }
-                div { class: "filter-item",
+                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                     label { class: "form-label", "负责人类型" }
                     select {
                         class: "input input-bordered w-full",
@@ -260,17 +260,23 @@ pub fn TaskList() -> Element {
                         option { value: "1", "Agent" }
                     }
                 }
-                div { class: "filter-item",
+                div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                     label { class: "form-label", "搜索" }
                     input {
                         class: "input input-bordered w-full",
                         placeholder: "搜索任务...",
                         value: "{search_keyword}",
-                        oninput: move |e| search_keyword.set(e.value()),
-                        onkeypress: move |e| {
-                            if e.key() == Key::Enter {
+                        oninput: move |e| {
+                            search_keyword.set(e.value());
+                            let my_id = search_request_id() + 1;
+                            search_request_id.set(my_id);
+                            spawn(async move {
+                                gloo_timers::future::TimeoutFuture::new(300).await;
+                                if search_request_id() != my_id {
+                                    return;
+                                }
                                 load_data();
-                            }
+                            });
                         }
                     }
                 }

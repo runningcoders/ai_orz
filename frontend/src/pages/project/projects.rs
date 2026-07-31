@@ -33,6 +33,7 @@ pub fn ProjectList() -> Element {
 
     let reload_projects = move || {
         spawn(async move {
+            loading.set(true);
             // 信号在 async 内读取，避免 use_effect 订阅导致每次按键重复触发。
             // 三场景切换：
             // 无关键词 + 无状态筛选 → list_projects
@@ -88,7 +89,6 @@ pub fn ProjectList() -> Element {
     };
 
     use_effect(move || {
-        loading.set(true);
         reload_projects();
     });
 
@@ -128,47 +128,56 @@ pub fn ProjectList() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex justify-between items-center",
-                    h2 { class: "card-title", "项目管理" }
-                    button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
-                }
+        div { class: "flex justify-between items-center mb-4",
+            h2 { class: "card-title", "项目管理" }
+            button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+        }
 
-                div { class: "flex gap-2 items-center mt-4",
-                    // 搜索框
-                    input {
-                        class: "input input-bordered input-sm flex-1",
-                        placeholder: "搜索项目...",
-                        value: "{search_keyword}",
-                        oninput: move |e| search_keyword.set(e.value()),
-                        onkeypress: move |e| {
-                            if e.key() == Key::Enter {
-                                loading.set(true);
+        // 筛选栏（独立卡片）
+        div { class: "card bg-base-100 shadow-md mb-4",
+            div { class: "card-body",
+                div { class: "flex flex-wrap gap-4 items-end",
+                    div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                        label { class: "form-label", "状态" }
+                        select {
+                            class: "select select-bordered w-full",
+                            value: "{status_filter().map(|s| s.to_string()).unwrap_or_default()}",
+                            onchange: move |e| {
+                                let val = e.value();
+                                status_filter.set(if val.is_empty() {
+                                    None
+                                } else {
+                                    val.parse::<i32>().ok()
+                                });
                                 reload_projects();
-                            }
+                            },
+                            option { value: "", "全部状态" }
+                            option { value: "1", "Active" }
+                            option { value: "2", "PendingReview" }
+                            option { value: "3", "InProgress" }
+                            option { value: "4", "Completed" }
+                            option { value: "5", "Archived" }
                         }
                     }
-                    // 状态筛选下拉框
-                    select {
-                        class: "select select-bordered select-sm",
-                        value: "{status_filter().map(|s| s.to_string()).unwrap_or_default()}",
-                        onchange: move |e| {
-                            let val = e.value();
-                            status_filter.set(if val.is_empty() {
-                                None
-                            } else {
-                                val.parse::<i32>().ok()
-                            });
-                            loading.set(true);
-                            reload_projects();
-                        },
-                        option { value: "", "全部状态" }
-                        option { value: "1", "Active" }
-                        option { value: "2", "PendingReview" }
-                        option { value: "3", "InProgress" }
-                        option { value: "4", "Completed" }
-                        option { value: "5", "Archived" }
+                    div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                        label { class: "form-label", "搜索" }
+                        input {
+                            class: "input input-bordered w-full",
+                            placeholder: "搜索项目...",
+                            value: "{search_keyword}",
+                            oninput: move |e| {
+                                search_keyword.set(e.value());
+                                let my_id = search_request_id() + 1;
+                                search_request_id.set(my_id);
+                                spawn(async move {
+                                    gloo_timers::future::TimeoutFuture::new(300).await;
+                                    if search_request_id() != my_id {
+                                        return;
+                                    }
+                                    reload_projects();
+                                });
+                            }
+                        }
                     }
                     // 清除搜索按钮
                     if !search_keyword().is_empty() || status_filter().is_some() {
@@ -177,14 +186,18 @@ pub fn ProjectList() -> Element {
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 status_filter.set(None);
-                                loading.set(true);
                                 reload_projects();
                             },
                             "✕"
                         }
                     }
                 }
+            }
+        }
 
+        // 列表卡片
+        div { class: "card bg-base-100 shadow-md",
+            div { class: "card-body",
                 if loading() {
                     Loading {}
                 } else if projects_list.is_empty() {
