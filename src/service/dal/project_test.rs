@@ -544,10 +544,10 @@ async fn test_search_keyword_only(pool: SqlitePool) {
         .unwrap();
 
     // 只应返回 p1（p2 向量距离 > 0.8，不匹配）
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].po.name, "Alpha Project");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].po.name, "Alpha Project");
     // p1 同时匹配关键词和向量 → Hybrid
-    let match_info = results[0].search_match.as_ref().expect("应有匹配信息");
+    let match_info = results.items[0].search_match.as_ref().expect("应有匹配信息");
     assert_eq!(match_info.match_type, MatchType::Hybrid);
     assert!(match_info.fts_rank.is_some());
     assert!(match_info.vector_distance.is_some());
@@ -586,9 +586,9 @@ async fn test_search_vector_match(pool: SqlitePool) {
         .unwrap();
 
     // 应该通过向量匹配找到 "Beta Similar"
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].po.name, "Beta Similar");
-    let match_info = results[0].search_match.as_ref().expect("应有匹配信息");
+    assert_eq!(results.items.len(), 1);
+    assert_eq!(results.items[0].po.name, "Beta Similar");
+    let match_info = results.items[0].search_match.as_ref().expect("应有匹配信息");
     assert_eq!(match_info.match_type, MatchType::Vector);
     assert!(match_info.vector_distance.is_some());
     assert!(match_info.vector_distance.unwrap() < 0.8);
@@ -640,10 +640,10 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
         .unwrap();
 
     // 应该返回 3 条结果（Hybrid + Vector + Keyword）
-    assert_eq!(results.len(), 3, "应返回 3 条匹配结果");
+    assert_eq!(results.items.len(), 3, "应返回 3 条匹配结果");
 
     // 验证排序：Hybrid → Vector → Keyword
-    let types: Vec<MatchType> = results
+    let types: Vec<MatchType> = results.items
         .iter()
         .map(|p| {
             p.search_match
@@ -657,14 +657,14 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
     assert_eq!(types[2], MatchType::Keyword, "末条应为 Keyword 命中");
 
     // 验证 Hybrid 命中的项目名
-    assert_eq!(results[0].po.name, "Alpha Near");
+    assert_eq!(results.items[0].po.name, "Alpha Near");
     // 验证 Vector 命中的项目名
-    assert_eq!(results[1].po.name, "Beta Similar");
+    assert_eq!(results.items[1].po.name, "Beta Similar");
     // 验证 Keyword 命中的项目名
-    assert_eq!(results[2].po.name, "Alpha Different");
+    assert_eq!(results.items[2].po.name, "Alpha Different");
 
     // 验证 Hybrid 同时有 vector_distance 和 fts_rank
-    let hybrid_info = results[0].search_match.as_ref().unwrap();
+    let hybrid_info = results.items[0].search_match.as_ref().unwrap();
     assert!(
         hybrid_info.vector_distance.is_some(),
         "Hybrid 应有 vector_distance"
@@ -672,7 +672,7 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
     assert!(hybrid_info.fts_rank.is_some(), "Hybrid 应有 fts_rank");
 
     // 验证 Vector 只有 vector_distance，无 fts_rank
-    let vector_info = results[1].search_match.as_ref().unwrap();
+    let vector_info = results.items[1].search_match.as_ref().unwrap();
     assert!(
         vector_info.vector_distance.is_some(),
         "Vector 应有 vector_distance"
@@ -680,7 +680,7 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
     assert!(vector_info.fts_rank.is_none(), "Vector 不应有 fts_rank");
 
     // 验证 Keyword 只有 fts_rank，无 vector_distance
-    let keyword_info = results[2].search_match.as_ref().unwrap();
+    let keyword_info = results.items[2].search_match.as_ref().unwrap();
     assert!(keyword_info.fts_rank.is_some(), "Keyword 应有 fts_rank");
     assert!(
         keyword_info.vector_distance.is_none(),
@@ -723,7 +723,7 @@ async fn test_vector_index_auto_maintain_on_create(pool: SqlitePool) {
         .unwrap();
 
     // 应能通过向量搜索找到该项目
-    let found = results.iter().find(|p| p.po.id == project_id);
+    let found = results.items.iter().find(|p| p.po.id == project_id);
     assert!(found.is_some(), "创建后应能通过向量搜索找到项目");
 }
 
@@ -764,7 +764,7 @@ async fn test_vector_index_auto_maintain_on_update(pool: SqlitePool) {
         .unwrap();
 
     // 更新后应能通过向量匹配找到该项目
-    let found = results.iter().find(|p| p.po.id == project_id);
+    let found = results.items.iter().find(|p| p.po.id == project_id);
     assert!(
         found.is_some(),
         "更新内容后应通过向量搜索找到项目（索引已重建）"
@@ -823,6 +823,6 @@ async fn test_vector_index_skip_when_unchanged(pool: SqlitePool) {
         .await
         .unwrap();
 
-    let found = results.iter().find(|p| p.po.id == project_id);
+    let found = results.items.iter().find(|p| p.po.id == project_id);
     assert!(found.is_some(), "内容未变化时索引应保留，仍可搜索到");
 }
