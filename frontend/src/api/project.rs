@@ -4,7 +4,8 @@ use common::api::{
     ArtifactDetail, CreateArtifactRequest, CreateProjectRequest, CreateProjectResponse,
     CreateTaskRequest, CreateTaskResponse, GetProjectRequest, GetProjectResponse, GetTaskRequest,
     GetTaskResponse, ListProjectsRequest, ListTasksRequest, ListTasksResponse, PagedResult,
-    ProjectListItem, ProjectQueryRequest, SearchProjectsRequest, TaskListItem, TaskQueryRequest,
+    ProjectListItem, ProjectQueryRequest, SearchProjectsRequest, SearchTasksRequest, TaskListItem,
+    TaskQueryRequest,
     UpdateProjectRequest, UpdateProjectResponse, UpdateProjectStatusRequest,
     UpdateTaskProgressRequest, UpdateTaskRequest, UpdateTaskResponse, UpdateTaskStatusRequest,
 };
@@ -77,6 +78,12 @@ pub async fn list_tasks(req: ListTasksRequest) -> Result<PagedResult<TaskListIte
 
 pub async fn query_tasks(req: &TaskQueryRequest) -> Result<PagedResult<TaskListItem>, ApiError> {
     api_post("/api/v1/tasks/query", req).await
+}
+
+pub async fn search_tasks(
+    req: &SearchTasksRequest,
+) -> Result<PagedResult<TaskListItem>, ApiError> {
+    api_post("/api/v1/tasks/search", req).await
 }
 
 pub async fn get_task(req: GetTaskRequest) -> Result<GetTaskResponse, ApiError> {
