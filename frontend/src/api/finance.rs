@@ -6,7 +6,7 @@ use common::api::{
     CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
     DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
     GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
-    PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, SearchToolsRequest,
     SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
     TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
     UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
@@ -111,6 +111,10 @@ pub async fn list_tools(req: ListToolsRequest) -> Result<PagedResult<ToolListIte
 
 pub async fn query_tools(req: &ToolQueryRequest) -> Result<PagedResult<ToolListItem>, ApiError> {
     api_post("/api/v1/finance/tools/query", req).await
+}
+
+pub async fn search_tools(req: &SearchToolsRequest) -> Result<PagedResult<ToolListItem>, ApiError> {
+    api_post("/api/v1/finance/tools/search", req).await
 }
 
 pub async fn get_tool(req: GetToolRequest) -> Result<GetToolResponse, ApiError> {
