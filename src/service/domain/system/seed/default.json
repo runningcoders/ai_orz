@@ -67,7 +67,7 @@
     {
       "id": "TEMPLATE_TOOL_MANAGEMENT",
       "name": "工具管理",
-      "description": "工具体系、查询发现、调用模式（同步/异步）、结果处理与追踪的完整使用指南",
+      "description": "Auto/Manual 工具分类、工具包标签组织、4 个查询工具、同步/异步调用模式、ToolCallTraceRef 追溯与调用历史查询的完整指南",
       "tags": ["neural", "tool_management"],
       "category": "system",
       "parent_skill_id": "",
