@@ -3,14 +3,15 @@
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
-use crate::api::project::{list_projects, query_tasks};
+use crate::api::project::{list_projects, list_tasks, query_tasks, search_tasks};
 use crate::components::kanban_canvas::{KanbanCanvas, KanbanColumn, KanbanTask};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime as format_time, task_status_badge, task_status_text};
 use common::api::{
-    ListProjectsRequest, ListProjectsResponseItem, PaginationParams, TaskListItem, TaskQueryRequest,
+    ListProjectsRequest, ListProjectsResponseItem, ListTasksRequest, SearchTasksRequest,
+    TaskListItem, TaskQueryRequest,
 };
 use common::enums::{AssigneeType, TaskStatus};
 
@@ -31,38 +32,86 @@ pub fn TaskList() -> Element {
     let mut filter_project_id = use_signal(String::new);
     let mut filter_status = use_signal(|| -1i32);
     let mut filter_assignee_type = use_signal(|| -1i32);
+    let mut search_keyword = use_signal(String::new);
+    let mut search_request_id = use_signal(|| 0u32);
 
     let toast = use_toast();
     let navigator = use_navigator();
 
     // 加载数据
-    let mut load_data = move || {
-        loading.set(true);
-        let pid = filter_project_id();
-        let status = if filter_status() >= 0 {
-            Some(filter_status())
-        } else {
-            None
-        };
-        let at = if filter_assignee_type() >= 0 {
-            Some(filter_assignee_type())
-        } else {
-            None
-        };
+    let load_data = move || {
         spawn(async move {
-            let req = TaskQueryRequest {
-                project_id: if pid.is_empty() {
-                    None
-                } else {
-                    Some(pid.clone())
-                },
-                status_in: status.map(|s| vec![TaskStatus::from_i32(s)]),
-                assignee_type: at.map(AssigneeType::from_i32),
-                pagination: PaginationParams::default(),
-                ..Default::default()
+            // 在 spawn 内部读取信号（避免 use_effect 订阅）
+            loading.set(true);
+            let keyword = search_keyword();
+            let project_id = filter_project_id();
+            let status = filter_status();
+            let assignee_type = filter_assignee_type();
+            let my_id = search_request_id() + 1;
+            search_request_id.set(my_id);
+
+            let has_filter = !project_id.is_empty() || status >= 0 || assignee_type >= 0;
+
+            // 三场景切换：
+            // 无关键词 + 无筛选 → list_tasks
+            // 无关键词 + 有筛选 → query_tasks
+            // 有关键词 → search_tasks（可同时带筛选）
+            let result = if keyword.trim().is_empty() && !has_filter {
+                list_tasks(ListTasksRequest::default())
+                    .await
+                    .map(|p| p.items)
+            } else if keyword.trim().is_empty() {
+                query_tasks(&TaskQueryRequest {
+                    project_id: if project_id.is_empty() {
+                        None
+                    } else {
+                        Some(project_id.clone())
+                    },
+                    status_in: if status >= 0 {
+                        Some(vec![TaskStatus::from_i32(status)])
+                    } else {
+                        None
+                    },
+                    assignee_type: if assignee_type >= 0 {
+                        Some(AssigneeType::from_i32(assignee_type))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
+            } else {
+                search_tasks(&SearchTasksRequest {
+                    keyword: Some(keyword.clone()),
+                    project_id: if project_id.is_empty() {
+                        None
+                    } else {
+                        Some(project_id.clone())
+                    },
+                    status_in: if status >= 0 {
+                        Some(vec![TaskStatus::from_i32(status)])
+                    } else {
+                        None
+                    },
+                    assignee_type: if assignee_type >= 0 {
+                        Some(AssigneeType::from_i32(assignee_type))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
             };
-            match query_tasks(&req).await {
-                Ok(page) => tasks.set(page.items),
+
+            // 丢弃过期请求的结果
+            if search_request_id() != my_id {
+                return;
+            }
+
+            match result {
+                Ok(v) => tasks.set(v),
                 Err(e) => toast.error(&e),
             }
             match list_projects(ListProjectsRequest::default()).await {
@@ -209,6 +258,20 @@ pub fn TaskList() -> Element {
                         option { value: "-1", "全部" }
                         option { value: "0", "用户" }
                         option { value: "1", "Agent" }
+                    }
+                }
+                div { class: "filter-item",
+                    label { class: "form-label", "搜索" }
+                    input {
+                        class: "input input-bordered w-full",
+                        placeholder: "搜索任务...",
+                        value: "{search_keyword}",
+                        oninput: move |e| search_keyword.set(e.value()),
+                        onkeypress: move |e| {
+                            if e.key() == Key::Enter {
+                                load_data();
+                            }
+                        }
                     }
                 }
             }
