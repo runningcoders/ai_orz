@@ -37,6 +37,7 @@ pub async fn query_agents(
                 created_by: params.created_by,
                 model_provider_id: params.model_provider_id,
                 roles: params.roles,
+                runtime_state: params.runtime_state,
                 pagination: params.pagination,
             },
         )

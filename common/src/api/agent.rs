@@ -1,7 +1,7 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
 use crate::api::PaginationParams;
-use crate::enums::AgentStatus;
+use crate::enums::{AgentRuntimeState, AgentStatus};
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -282,6 +282,8 @@ pub struct AgentQueryRequest {
     pub model_provider_id: Option<String>,
     /// 角色列表
     pub roles: Option<Vec<String>>,
+    /// 运行时状态筛选（0=Idle, 1=Resting, 2=Busy）
+    pub runtime_state: Option<AgentRuntimeState>,
     /// 分页参数（limit + offset）
     #[serde(flatten)]
     pub pagination: PaginationParams,

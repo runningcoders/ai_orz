@@ -25,6 +25,8 @@ pub struct AgentQuery {
     /// `role` 字段是 JSON 字符串数组（如 `["feishu_reception","worker"]`），
     /// DAO 层使用 `json_each` 在 SQL 层精确匹配。
     pub roles: Option<Vec<String>>,
+    /// 按运行时状态过滤（内存态，DAL 层注入后过滤，DAO 层不处理）
+    pub runtime_state: Option<common::enums::AgentRuntimeState>,
     pub pagination: common::api::PaginationParams,
 }
 

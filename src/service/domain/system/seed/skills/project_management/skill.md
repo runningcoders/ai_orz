@@ -358,6 +358,84 @@ Completed     → Archived
 - 文件会被**复制**到产物存储，源文件保留，不影响你的工作副本
 - 不要尝试访问其他 Agent 的目录（路径穿越会被拒绝）
 
+## 角色分配约束
+
+项目与任务的分配遵循**串行负责制**，确保 Agent 专注且可追溯。
+
+### 分配规则
+
+| 角色 | 可负责 | 串行限制 | 约束 |
+|------|--------|----------|------|
+| **前台 Agent** | ❌ 不能负责项目 | — | 遇到复杂需求应创建项目并转交专业 Agent 作为 Owner |
+| **Project Owner** | 1 个项目（至完结） | 同一时间只能负责 1 个未完结项目 | 可分配任务给其他 Agent；负责进度汇总和成果总结 |
+| **Task Owner** | 1 个任务（至完结） | 同一时间只能负责 1 个未完成任务 | 任务优先，完成或遇阻时回应 Project Owner |
+
+**前台 Agent 转交流程**：用户提出复杂需求 → 前台 Agent 分析后 → `create_project`（设置 `owner_agent_id` 为专业 Agent）→ `send_task_assignment_message` 通知 Owner 开始推进。
+
+### 分配前查询空闲 Agent
+
+分配项目或任务前，**必须先查询目标 Agent 是否空闲**：
+
+1. **查能力匹配**：用 `query_agents`（`keyword` / `roles`）或 `search_agents`（语义搜索）找到候选 Agent
+2. **查运行时状态**：用 `query_agents` 传 `runtime_state=0`（Idle）过滤出当前空闲的 Agent
+3. **查串行约束**：
+   - 分配项目前：用 `query_projects` 传 `owner_agent_id` + `status_in=[1,2,3]`（Active/PendingReview/InProgress）确认候选无未完结项目
+   - 分配任务前：用 `list_agent_tasks` 传 `status=in_progress` 确认候选无进行中任务
+4. **二次校验**：`create_project` / `create_task` 时目标 Agent 可能已被其他流程占用，若遇到繁忙错误应重新选择候选
+
+**重新分配**：若目标 Agent 在最终分配时已繁忙（`runtime_state != 0` 或已有进行中项目/任务），回到步骤 1 重新选择候选。
+
+## 项目推进流程
+
+Project Owner 被通知开始推进项目后，遵循以下流程：
+
+### 标准推进步骤
+
+```
+1. 接收项目分配通知（send_task_assignment_message）
+   ↓
+2. 第一步：优先完成技术方案设计
+   ↓ 用 create_text_artifact 保存为产物（tags 标注 "technical_design"）
+3. 基于方案拆分为多个子任务
+   ↓ 用 create_task 创建子任务，填写 dependencies 构成 DAG
+4. 为每个子任务选择合适的 Task Owner
+   ↓ 遵循"分配前查询空闲 Agent"流程
+5. 推进过程中更新项目状态
+   ↓ update_project_status(InProgress)
+6. 监控各任务进展，协调阻塞
+   ↓ 收到 Task Agent 问题反馈后决策（详见"协作沟通"技能）
+7. 所有任务完成后，总结项目成果
+   ↓ 用 create_text_artifact 保存总结 + update_project_status(Completed)
+```
+
+### 技术方案设计（第一步）
+
+项目 Owner 的首要职责是产出技术方案，**不要跳过直接拆任务**：
+
+- **内容**：目标拆解、技术选型、模块划分、接口约定、风险点
+- **保存**：用 `create_text_artifact`（`tags: ["technical_design"]`），关联 `project_id`
+- **价值**：作为后续任务拆分的依据，供 Task Owner 参考对齐
+
+### 任务拆分与 DAG 依赖
+
+基于技术方案拆分任务时：
+
+- **粒度**：每个任务应有明确边界和可验证的交付物
+- **依赖写入**：`create_task` 时填写 `dependencies`（前置任务 ID 列表），构成 DAG
+- **并行识别**：无依赖关系的任务可并行分配，缩短整体周期
+- **关键路径**：依赖链最长的路径是关键路径，优先推进
+
+```
+示例 DAG：
+  task_design (技术方案) ──► task_api (接口实现) ──► task_test (集成测试)
+                          └─► task_ui (界面实现) ──┘
+```
+
+**依赖关系约束**：
+- `dependencies` 中的任务 ID 应在同一项目内
+- 避免循环依赖（A 依赖 B，B 又依赖 A）
+- 自环依赖（任务依赖自身）是非法的
+
 ## 任务驱动工作流
 
 ### 标准工作流
@@ -388,15 +466,18 @@ Completed     → Archived
 
 ## 最佳实践
 
-1. **任务驱动**：将工作拆解为任务，按任务推进，`create_task` 时填好 `dependencies` 构成 DAG
-2. **状态机合规**：用 `update_task_status` 严格按状态机转换，避免非法转换错误
-3. **快速完成**：`mark_done` 绕过状态机，适合快速闭环；需要严格校验用 `update_task_status`
-4. **及时更新进度**：用 `update_task_progress` 反映真实进度，触发事件供下游消费
-5. **先查后建**：创建产物前先 `query_artifacts` 检查是否已有相似成果，避免重复
-6. **成果保存为产物**：重要工作用 `create_text_artifact` 或 `register_artifact_from_path` 保存
-7. **关联溯源**：产物创建时关联 `project_id` / `task_id`，便于追溯
-8. **产物更新选择**：`GeneratedContent` 用 `update_artifact(content=...)`；`Attachment` 类型改原附件
-9. **乐观锁**：并发更新产物时携带 `expected_updated_at`，避免覆盖他人修改
-10. **附件大小**：文本附件 ≤64KB，产物内容 ≤1MB，超限用文件路径注册
-11. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，`../` 等穿越会被拒绝
-12. **闭环完成**：任务完成后用 `mark_done`（带 `summary`）或 `update_task_status(Completed)` 标记，保持状态准确
+1. **角色边界**：前台 Agent 不负责项目，只做需求路由；Project Owner 同一时间只负责 1 个项目；Task Owner 同一时间只负责 1 个任务
+2. **先查后分**：分配项目/任务前必须查询候选 Agent 是否空闲（`runtime_state=0`）且无未完结项目/任务
+3. **方案优先**：Project Owner 第一步是产出技术方案（`create_text_artifact` + `tags: ["technical_design"]`），不要跳过直接拆任务
+4. **任务驱动**：将工作拆解为任务，按任务推进，`create_task` 时填好 `dependencies` 构成 DAG
+5. **状态机合规**：用 `update_task_status` 严格按状态机转换，避免非法转换错误
+6. **快速完成**：`mark_done` 绕过状态机，适合快速闭环；需要严格校验用 `update_task_status`
+7. **及时更新进度**：用 `update_task_progress` 反映真实进度，触发事件供下游消费
+8. **先查后建**：创建产物前先 `query_artifacts` 检查是否已有相似成果，避免重复
+9. **成果保存为产物**：重要工作用 `create_text_artifact` 或 `register_artifact_from_path` 保存
+10. **关联溯源**：产物创建时关联 `project_id` / `task_id`，便于追溯
+11. **产物更新选择**：`GeneratedContent` 用 `update_artifact(content=...)`；`Attachment` 类型改原附件
+12. **乐观锁**：并发更新产物时携带 `expected_updated_at`，避免覆盖他人修改
+13. **附件大小**：文本附件 ≤64KB，产物内容 ≤1MB，超限用文件路径注册
+14. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，`../` 等穿越会被拒绝
+15. **闭环完成**：任务完成后用 `mark_done`（带 `summary`）或 `update_task_status(Completed)` 标记，保持状态准确

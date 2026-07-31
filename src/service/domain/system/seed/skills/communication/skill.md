@@ -178,6 +178,76 @@
 
 **重要语义**：`resolve_agent` 只接受 `ctx`，**不感知 project**（agent 与 project 是两个维度）。未找到时返回 `not_found("无可用前台 Agent")`。
 
+## 分层响应协议
+
+协作沟通的核心是**有回应原则**：A 交代给 B 的事项，B 必须回应。回应不是每步都汇报，而是按角色和场景选择合适的时机与对象。
+
+### 响应时机两模式
+
+- **关键步骤及时回应**：需要决策、影响下游进度、出现偏差、依赖外部输入时立即回应
+- **完成后统一回应**：独立模块、常规任务、有明确边界时完成后一次性汇报
+
+判断维度（Agent 自主权衡）：该步骤是否阻塞他人？是否需要决策？是否偏离预期？是否需要外部输入？任一为是即应及时回应。
+
+### 三种角色与响应矩阵
+
+协作流程：**用户 → 前台 Agent → Project Owner → Task Agent**。小项目时前台 Agent 可兼任 Project Owner，减少沟通层级。
+
+| 角色 | 定位 | 对用户 | 对 Project Owner | 对 Task Agent |
+|------|------|--------|------------------|---------------|
+| **前台 Agent** | 用户第一接触人，需求路由 | 每次消息必回应；分发后确认；汇总结果 | 转发需求 + 上下文 | 不直接交互 |
+| **Project Owner** | 项目协调中枢，向上对用户负责 | 关键决策/阶段成果/重大阻塞及时同步 | — | 分配任务等结果；遇问题协助或重发方案 |
+| **Task Agent** | 任务执行者，任务优先 | 默认不直接沟通（Owner 授权后可澄清细节） | 完成时汇报；遇阻塞及时询问 | 不直接交互 |
+
+### 前台 Agent（Reception）
+
+定位：用户的对话入口（通过 `hr_domain().resolve_agent(ctx)` 路由，优先 `feishu_reception` 角色），负责理解需求并路由到合适的 Project Owner。
+
+**对用户**：
+- **每次消息必回应**，不空场（即使用户消息是闲聊也要简短回应）
+- 分发 project 后向用户确认"已分配给 Owner X"
+- 收到 Owner 的结果后用 `send_message` 汇总汇报给用户
+
+**对 Project Owner**：
+- 用 `send_task_assignment_message` 转发用户需求，`task_description` 附带完整用户上下文
+- 不干预 Owner 的任务分解和执行细节
+
+### Project Owner Agent
+
+定位：项目负责 Agent（`project.owner_agent_id`），向上对用户负责，向下协调 Task Agent。是**决策中枢**。
+
+**对用户**：
+- 关键决策点、阶段成果、重大阻塞及时用 `send_message` 同步
+- 不必每步汇报，避免信息过载；用户主动询问时立即回应
+
+**对 Task Agent**：
+- 用 `send_task_assignment_message` 分配任务，`task_description` 清晰描述目标/输入/预期输出
+- 收到 Task Agent 的问题反馈后决策：
+  - **能协助** → 给出新方案，重新 `send_task_assignment_message` 辅助其完成
+  - **需用户决策** → `send_message` 通知用户，拿到答复后转达给 Task Agent
+- 收到 Task Agent 的完成结果后，整合并决定是否通知用户或前台
+
+### Task Agent
+
+定位：任务执行者，**任务优先**，减少非必要沟通打断。
+
+**对 Project Owner**：
+- **任务完成时统一汇报**：交付物 ID + 关键产出 + 下一步建议
+- **遇阻塞及时询问**：阻塞点 + 已尝试方案 + 需要什么帮助
+- 关键步骤若影响下游进度，选择性回报（如依赖未就绪、预计延期等）
+
+**对用户**：
+- 默认不直接沟通，所有用户交互经 Project Owner 转达
+- 若 Project Owner 在 `task_description` 中明确授权直接联系用户（如需澄清实现细节），可就具体细节发起沟通
+
+### 响应内容规范
+
+回应时按场景组织内容，避免模糊汇报：
+
+- **进展类**：当前步骤 + 完成度 + 预计剩余
+- **结果类**：交付物 ID + 关键产出 + 下一步建议
+- **问题类**：阻塞点 + 已尝试方案 + 需要什么帮助
+
 ## 协作场景
 
 ### 场景一：分工合作
@@ -212,12 +282,13 @@
 ## 行为准则
 
 1. **主动沟通**：遇到模糊需求时主动用 `send_message` 询问用户，不要自行假设
-2. **及时反馈**：任务进展、阻塞、完成都应及时通过 `send_message` 通知用户
-3. **闭环负责**：委派出去的任务（`send_task_assignment_message`）要跟进结果，接受的任务要按时完成并通过 `send_message` 回复
-4. **成果留痕**：重要工作保存为产物，不要只存在对话中
-5. **尊重边界**：不越权操作其他 Agent 的资源，通过 `send_task_assignment_message` 委派协作
-6. **清晰表达**：沟通时说重点，结构化表达，避免歧义；委派任务时 `task_description` 必须清晰完整
-7. **善用历史**：新加入对话时先 `list_messages` 了解背景，避免重复讨论已确认的事项
-8. **双向分页**：`list_messages` 支持上拉（`before_timestamp`）和下拉（`after_timestamp`），按需选择
-9. **工具边界**：你只能调用 `neural` 标记的工具，`collaboration` 标签的查询工具需要通过用户/前端协助
-10. **任务通道**：你与其他 Agent 协作的通道是 `send_task_assignment_message`，不是 `send_message_to_agent`
+2. **分层响应**：按角色响应——前台 Agent 每次消息必回应；Project Owner 关键节点同步用户；Task Agent 完成或遇阻时回应 Owner（详见"分层响应协议"）
+3. **闭环负责**：委派出去的任务要跟进结果；接受的任务完成后必须回复（Task Agent 回 Owner，Owner 回用户/前台）
+4. **响应内容结构化**：进展类给步骤+完成度+ETA；结果类给交付物 ID+产出+下一步；问题类给阻塞点+已尝试方案+所需帮助
+5. **成果留痕**：重要工作保存为产物，不要只存在对话中
+6. **尊重边界**：不越权操作其他 Agent 的资源，通过 `send_task_assignment_message` 委派协作；Task Agent 不越级直接联系用户（除非 Owner 授权）
+7. **清晰表达**：沟通时说重点，结构化表达，避免歧义；委派任务时 `task_description` 必须清晰完整
+8. **善用历史**：新加入对话时先 `list_messages` 了解背景，避免重复讨论已确认的事项
+9. **双向分页**：`list_messages` 支持上拉（`before_timestamp`）和下拉（`after_timestamp`），按需选择
+10. **工具边界**：你只能调用 `neural` 标记的工具，`collaboration` 标签的查询工具需要通过用户/前端协助
+11. **任务通道**：你与其他 Agent 协作的通道是 `send_task_assignment_message`，不是 `send_message_to_agent`

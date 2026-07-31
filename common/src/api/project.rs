@@ -210,6 +210,8 @@ pub struct ProjectQueryRequest {
     pub root_user_id: Option<String>,
     /// 状态列表（OR 语义）
     pub status_in: Option<Vec<ProjectStatus>>,
+    /// 按 Owner Agent ID 过滤（查询 Agent 当前负责的项目）
+    pub owner_agent_id: Option<String>,
     /// 分页参数（limit + offset）
     #[serde(flatten)]
     pub pagination: PaginationParams,

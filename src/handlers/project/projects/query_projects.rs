@@ -33,6 +33,7 @@ pub async fn query_projects(
                 keyword: params.keyword,
                 root_user_id: params.root_user_id,
                 status_in: params.status_in,
+                owner_agent_id: params.owner_agent_id,
                 pagination: params.pagination,
             },
         )

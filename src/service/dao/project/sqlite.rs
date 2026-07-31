@@ -346,6 +346,11 @@ fn push_query_filters<'args>(
             .push(" AND root_user_id = ")
             .push_bind(root_user_id.clone());
     }
+    if let Some(owner_agent_id) = &query.owner_agent_id {
+        builder
+            .push(" AND owner_agent_id = ")
+            .push_bind(owner_agent_id.clone());
+    }
     if let Some(status_list) = &query.status_in
         && !status_list.is_empty()
     {

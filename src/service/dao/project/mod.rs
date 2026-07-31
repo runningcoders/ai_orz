@@ -19,6 +19,8 @@ pub struct ProjectQuery {
     pub ids: Option<Vec<String>>,
     /// 关键词搜索（用于 FTS5 全文检索，query 方法忽略此字段，由 search_projects 处理）
     pub keyword: Option<String>,
+    /// 按 Owner Agent ID 过滤（查询 Agent 当前负责的项目）
+    pub owner_agent_id: Option<String>,
 }
 
 /// ✅ Project 搜索统一入参（关键词搜索 + 向量语义搜索共用）

@@ -415,6 +415,38 @@ impl AgentDal for AgentDalImpl {
         ctx: RequestContext,
         query: AgentQuery,
     ) -> Result<common::api::PagedResult<Agent>> {
+        // runtime_state 是内存态，DAO 层无法过滤。需内存过滤时查全量再手动分页。
+        let runtime_state_filter = query.runtime_state;
+        if let Some(target_state) = runtime_state_filter {
+            let original_pagination = query.pagination.clone();
+            let mut full_query = query;
+            full_query.runtime_state = None;
+            full_query.pagination = common::api::PaginationParams::default();
+
+            let page = self.agent_dao.query(ctx, full_query).await?;
+            let all_agents: Vec<Agent> = page
+                .items
+                .into_iter()
+                .map(Agent::from_po)
+                .map(Self::inject_runtime_state)
+                .filter(|agent| {
+                    let state = agent
+                        .runtime_info
+                        .as_ref()
+                        .map(|info| info.state)
+                        .unwrap_or(common::enums::AgentRuntimeState::Idle);
+                    state == target_state
+                })
+                .collect();
+
+            let total = all_agents.len();
+            let offset = original_pagination.offset.unwrap_or(0);
+            let limit = original_pagination.limit.unwrap_or(20);
+            let items: Vec<Agent> = all_agents.into_iter().skip(offset).take(limit).collect();
+
+            return Ok(common::api::PagedResult { items, total });
+        }
+
         let page = self.agent_dao.query(ctx, query).await?;
         Ok(page.map(Agent::from_po).map(Self::inject_runtime_state))
     }
