@@ -9,7 +9,9 @@ use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem};
+use common::api::{
+    CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, SearchSkillsRequest,
+};
 
 #[component]
 pub fn HrSkills() -> Element {
@@ -85,7 +87,12 @@ pub fn HrSkills() -> Element {
                             .await
                             .map(|p| p.items)
                     } else {
-                        search_skills(&keyword).await.map(|r| r.skills)
+                        search_skills(&SearchSkillsRequest {
+                            keyword: Some(keyword),
+                            ..Default::default()
+                        })
+                        .await
+                        .map(|p| p.items)
                     };
                     match result {
                         Ok(v) => skills.set(v),
@@ -123,7 +130,12 @@ pub fn HrSkills() -> Element {
                                             .await
                                             .map(|p| p.items)
                                     } else {
-                                        search_skills(&kw).await.map(|r| r.skills)
+                                        search_skills(&SearchSkillsRequest {
+                                            keyword: Some(kw),
+                                            ..Default::default()
+                                        })
+                                        .await
+                                        .map(|p| p.items)
                                     };
                                     if search_request_id() != my_id { return; }
                                     match result {
@@ -284,7 +296,12 @@ pub fn HrSkills() -> Element {
                                 .await
                                 .map(|p| p.items)
                         } else {
-                            search_skills(&keyword).await.map(|r| r.skills)
+                            search_skills(&SearchSkillsRequest {
+                                keyword: Some(keyword),
+                                ..Default::default()
+                            })
+                            .await
+                            .map(|p| p.items)
                         };
                         match result {
                             Ok(v) => skills.set(v),

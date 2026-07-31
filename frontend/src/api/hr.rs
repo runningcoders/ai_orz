@@ -7,8 +7,8 @@ use common::api::{
     GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
     InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
-    ListSkillsResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchAgentsRequest,
-    SearchMemoryParams, SearchMemoryResponse, SkillListItem, SkillQueryRequest,
+    PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchAgentsRequest, SearchMemoryParams,
+    SearchMemoryResponse, SearchSkillsRequest, SkillListItem, SkillQueryRequest,
     UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
     UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
     UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
@@ -176,8 +176,10 @@ pub async fn query_skills(req: &SkillQueryRequest) -> Result<PagedResult<SkillLi
     api_post("/api/v1/hr/skills/query", req).await
 }
 
-pub async fn search_skills(keyword: &str) -> Result<ListSkillsResponse, ApiError> {
-    api_get_or_default(&format!("/api/v1/hr/skills/search?keyword={}", keyword)).await
+pub async fn search_skills(
+    req: &SearchSkillsRequest,
+) -> Result<PagedResult<SkillListItem>, ApiError> {
+    api_post("/api/v1/hr/skills/search", req).await
 }
 
 pub async fn get_skill(id: &str) -> Result<GetSkillResponse, ApiError> {
