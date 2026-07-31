@@ -183,6 +183,10 @@ fn task_routes() -> Router {
             post(handlers::project::task::query_tasks_handler),
         )
         .route(
+            "/tasks/search",
+            post(handlers::project::task::search_tasks_handler),
+        )
+        .route(
             "/tasks/{id}",
             get(handlers::project::task::get_task_handler),
         )
