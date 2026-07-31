@@ -112,6 +112,10 @@ pub struct UpdateMemoryParams {
     pub summary: Option<String>,
     /// 更新标签。
     pub tags: Option<Vec<String>>,
+    /// 新增：更新记忆状态（如把短期记忆标记为 Settled）
+    pub status: Option<String>,
+    /// 新增：更新知识节点的 tags（与 tags 字段区分，tags 用于 ShortTerm，node_tags 用于 KnowledgeNode）
+    pub node_tags: Option<Vec<String>>,
 }
 
 /// 更新记忆响应。
