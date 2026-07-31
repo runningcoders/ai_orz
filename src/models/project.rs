@@ -171,6 +171,34 @@ impl Project {
         self.po.status = ProjectStatus::Completed;
         self.po.end_at = Some(utils::current_timestamp());
     }
+
+    /// 生成 Prompt 用的摘要字符串
+    ///
+    /// 用于在 Prompt 中注入项目上下文，让 Agent 感知当前消息所属的业务场景。
+    /// 仅包含关键字段，避免冗长。
+    pub fn to_prompt_summary(&self) -> String {
+        let mut s = String::from("【项目上下文】\n");
+        s.push_str(&format!("- 项目ID: {}\n", self.po.id));
+        s.push_str(&format!("- 项目名称: {}\n", self.po.name));
+        if !self.po.description.is_empty() {
+            s.push_str(&format!("- 项目描述: {}\n", self.po.description));
+        }
+        s.push_str(&format!("- 项目状态: {:?}\n", self.po.status));
+        if let Some(owner_agent_id) = &self.po.owner_agent_id {
+            s.push_str(&format!("- 负责Agent: {}\n", owner_agent_id));
+        }
+        if let Some(workflow) = &self.po.workflow
+            && !workflow.trim().is_empty()
+        {
+            s.push_str(&format!("- 运作流程: {}\n", workflow));
+        }
+        if let Some(guidance) = &self.po.guidance
+            && !guidance.trim().is_empty()
+        {
+            s.push_str(&format!("- 指导建议: {}\n", guidance));
+        }
+        s
+    }
 }
 
 impl ProjectPo {

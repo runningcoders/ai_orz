@@ -16,6 +16,83 @@ use common::error::{Result, err};
 use crate::enrich_ctx;
 use crate::record_event;
 
+// ==================== 思考场景与选项 ====================
+
+/// 思考场景类型
+///
+/// 用于区分唤醒（awaken）和沉睡（sleep_and_settle）两种场景，
+/// wake_agent_brain 根据场景过滤注册到 Rig 的 Auto 工具，
+/// sleep_and_settle 根据场景过滤 Prompt 展示的 Manual 工具和 skill。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThinkingScene {
+    /// 唤醒场景：响应外部消息，加载全部工具
+    #[default]
+    Awaken,
+    /// 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
+    Settle,
+}
+
+impl ThinkingScene {
+    /// 判断工具是否在此场景可用
+    ///
+    /// Awaken 场景：全部可用
+    /// Settle 场景：只有 tags 含 "neural" 或 "memory" 的工具可用
+    pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
+        match self {
+            ThinkingScene::Awaken => true,
+            ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
+        }
+    }
+}
+
+/// 唤醒/沉睡的统一选项
+///
+/// 用于在不同场景传递业务上下文和场景标识，避免频繁修改方法签名。
+/// awaken 和 sleep_and_settle 都接收此结构体，wake_agent_brain 接收 scene 字段。
+///
+/// # 字段说明
+/// - `scene`：场景标识（Awaken/Settle），决定工具过滤行为
+/// - `project` / `task`：awaken 场景下，消息关联的项目/任务实体，注入 prompt 作为业务上下文
+/// - `user_profile`：用户画像（预留，未来扩展）
+#[derive(Debug, Clone, Default)]
+pub struct ThinkingOptions {
+    /// 场景标识
+    pub scene: ThinkingScene,
+    /// 消息关联的项目实体（awaken 场景使用）
+    pub project: Option<crate::models::project::Project>,
+    /// 消息关联的任务实体（awaken 场景使用）
+    pub task: Option<crate::models::task::Task>,
+    /// 用户画像（预留，未来扩展）
+    pub user_profile: Option<crate::models::user::UserPo>,
+}
+
+impl ThinkingOptions {
+    /// 创建唤醒场景的选项
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 创建指定场景的选项
+    pub fn for_scene(scene: ThinkingScene) -> Self {
+        Self {
+            scene,
+            ..Default::default()
+        }
+    }
+
+    /// 设置项目上下文
+    pub fn with_project(mut self, project: crate::models::project::Project) -> Self {
+        self.project = Some(project);
+        self
+    }
+
+    /// 设置任务上下文
+    pub fn with_task(mut self, task: crate::models::task::Task) -> Self {
+        self.task = Some(task);
+        self
+    }
+}
+
 #[async_trait::async_trait]
 impl RuntimeAwakening for RuntimeDomainImpl {
     /// 装配 Agent 的 Brain

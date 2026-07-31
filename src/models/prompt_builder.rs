@@ -59,8 +59,27 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置用户画像
     fn user_profile(&mut self, user: &UserPo);
 
+    /// 设置项目上下文（消息关联的项目实体摘要）
+    fn project_context(&mut self, project: &crate::models::project::Project);
+
+    /// 设置任务上下文（消息关联的任务实体摘要）
+    fn task_context(&mut self, task: &crate::models::task::Task);
+
     /// 构建最终的 Prompt 字符串
     ///
     /// 使用 `&self` 而非 `self`，支持重复构建和 trait object 使用。
     fn build(&self) -> String;
+
+    /// 构建沉淀场景的 Prompt（与 build() 对称）
+    ///
+    /// 复用已挂载的 system_prompt/tools/skills/user_profile/project_context/task_context/history，
+    /// 加上沉淀约束章节（不发消息、只用记忆工具）和待沉淀短期记忆摘要，生成最终模板。
+    /// 不使用 current_message（沉淀场景无用户消息）。
+    ///
+    /// 默认实现回退到 build()，仅 DefaultPromptBuilder 真正实现沉淀语义
+    /// （Cli/Remote Agent 不参与沉淀，不会走到此分支）。
+    fn build_sleep_prompt(&self, pending_memories_summary: &str) -> String {
+        let _ = pending_memories_summary;
+        self.build()
+    }
 }

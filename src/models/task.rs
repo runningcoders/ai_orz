@@ -208,6 +208,26 @@ impl Task {
         self.po.progress = progress.clamp(0, 100);
         self.po.updated_at = utils::current_timestamp();
     }
+
+    /// 生成 Prompt 用的摘要字符串
+    ///
+    /// 用于在 Prompt 中注入任务上下文，让 Agent 感知当前消息所属的具体任务。
+    /// 仅包含关键字段，避免冗长。
+    pub fn to_prompt_summary(&self) -> String {
+        let mut s = String::from("【任务上下文】\n");
+        s.push_str(&format!("- 任务ID: {}\n", self.po.id));
+        s.push_str(&format!("- 任务标题: {}\n", self.po.title));
+        if !self.po.description.is_empty() {
+            s.push_str(&format!("- 任务描述: {}\n", self.po.description));
+        }
+        s.push_str(&format!("- 任务状态: {:?}\n", self.po.status));
+        s.push_str(&format!(
+            "- 分配给: {:?}({})\n",
+            self.po.assignee_type, self.po.assignee_id
+        ));
+        s.push_str(&format!("- 任务进度: {}%\n", self.po.progress));
+        s
+    }
 }
 
 impl TaskPo {
