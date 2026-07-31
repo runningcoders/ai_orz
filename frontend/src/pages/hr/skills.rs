@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
-use crate::api::hr::{create_skill, delete_skill, list_skills, search_skills};
+use crate::api::hr::{create_skill, delete_skill, list_skills, query_skills, search_skills};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -11,7 +11,9 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, SearchSkillsRequest,
+    SkillQueryRequest,
 };
+use common::enums::SkillStatus;
 
 #[component]
 pub fn HrSkills() -> Element {
@@ -29,19 +31,82 @@ pub fn HrSkills() -> Element {
     // 修复 HIGH #12：搜索防抖 + race condition 机制
     let mut search_request_id = use_signal(|| 0u32);
 
+    // 过滤条件
+    let mut filter_category = use_signal(String::new);
+    let mut filter_status = use_signal(|| -1i32);
+
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
 
-    use_effect(move || {
-        loading.set(true);
+    // 加载数据（三场景切换：list / query / search）
+    let load_data = move || {
         spawn(async move {
-            match list_skills(ListSkillsRequest::default()).await {
-                Ok(page) => skills.set(page.items),
+            loading.set(true);
+            let keyword = search_keyword();
+            let category = filter_category();
+            let status = filter_status();
+            let my_id = search_request_id() + 1;
+            search_request_id.set(my_id);
+
+            let category_opt = if category.trim().is_empty() {
+                None
+            } else {
+                Some(category)
+            };
+            let has_filter = category_opt.is_some() || status >= 0;
+
+            // 三场景切换：
+            // 无关键词 + 无过滤 → list_skills
+            // 无关键词 + 有过滤 → query_skills
+            // 有关键词 → search_skills（可同时带过滤条件）
+            let result = if keyword.trim().is_empty() && !has_filter {
+                list_skills(ListSkillsRequest::default())
+                    .await
+                    .map(|p| p.items)
+            } else if keyword.trim().is_empty() {
+                query_skills(&SkillQueryRequest {
+                    category: category_opt.clone(),
+                    status: if status >= 0 {
+                        Some(SkillStatus::from(status))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
+            } else {
+                search_skills(&SearchSkillsRequest {
+                    keyword: Some(keyword),
+                    category: category_opt,
+                    status: if status >= 0 {
+                        Some(SkillStatus::from(status))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
+            };
+
+            // 丢弃过期请求的结果
+            if search_request_id() != my_id {
+                return;
+            }
+
+            match result {
+                Ok(v) => skills.set(v),
                 Err(e) => toast.error(&e),
             }
             loading.set(false);
         });
+    };
+
+    // 初始加载
+    use_effect(move || {
+        load_data();
     });
 
     let handle_create = move |_| {
@@ -81,23 +146,7 @@ pub fn HrSkills() -> Element {
                     new_tags.set(String::new());
                     new_category.set(String::new());
                     new_content.set(String::new());
-                    let keyword = search_keyword();
-                    let result = if keyword.trim().is_empty() {
-                        list_skills(ListSkillsRequest::default())
-                            .await
-                            .map(|p| p.items)
-                    } else {
-                        search_skills(&SearchSkillsRequest {
-                            keyword: Some(keyword),
-                            ..Default::default()
-                        })
-                        .await
-                        .map(|p| p.items)
-                    };
-                    match result {
-                        Ok(v) => skills.set(v),
-                        Err(e) => toast.error(&e),
-                    }
+                    load_data();
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
             }
@@ -109,66 +158,91 @@ pub fn HrSkills() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-body",
-                    div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                        h2 { class: "card-title", "技能库" }
-                    div { class: "flex gap-2 flex-wrap",
-                        input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
-                            oninput: move |e| {
-                                search_keyword.set(e.value());
-                                // 修复 HIGH #12：防抖 300ms + request_id 丢弃过期结果
-                                let my_id = search_request_id() + 1;
-                                search_request_id.set(my_id);
-                                spawn(async move {
-                                    gloo_timers::future::TimeoutFuture::new(300).await;
-                                    if search_request_id() != my_id { return; }
-                                    loading.set(true);
-                                    let kw = search_keyword();
-                                    let result = if kw.trim().is_empty() {
-                                        list_skills(ListSkillsRequest::default())
-                                            .await
-                                            .map(|p| p.items)
-                                    } else {
-                                        search_skills(&SearchSkillsRequest {
-                                            keyword: Some(kw),
-                                            ..Default::default()
-                                        })
-                                        .await
-                                        .map(|p| p.items)
-                                    };
-                                    if search_request_id() != my_id { return; }
-                                    match result {
-                                        Ok(v) => skills.set(v),
-                                        Err(e) => toast.error(&e),
-                                    }
-                                    loading.set(false);
-                                });
+            div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                h2 { class: "card-title", "技能库" }
+                div { class: "flex gap-2 flex-wrap",
+                    if !search_keyword().is_empty() || !filter_category().is_empty() || filter_status() >= 0 {
+                        button { class: "btn btn-ghost",
+                            onclick: move |_| {
+                                search_keyword.set(String::new());
+                                filter_category.set(String::new());
+                                filter_status.set(-1);
+                                load_data();
                             },
-                            placeholder: "搜索技能..."
+                            "重置"
                         }
-                        if !search_keyword().is_empty() {
-                            button { class: "btn btn-ghost",
-                                onclick: move |_| {
-                                    search_keyword.set(String::new());
+                    }
+                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                }
+            }
+
+            // 筛选栏（独立卡片）
+            div { class: "card bg-base-100 shadow-md mb-4",
+                div { class: "card-body",
+                    div { class: "flex flex-wrap gap-4 items-end",
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "分类" }
+                            input {
+                                class: "input input-bordered w-full",
+                                placeholder: "分类名称",
+                                value: "{filter_category}",
+                                oninput: move |e| {
+                                    filter_category.set(e.value());
                                     let my_id = search_request_id() + 1;
                                     search_request_id.set(my_id);
                                     spawn(async move {
-                                        if search_request_id() != my_id { return; }
-                                        loading.set(true);
-                                        match list_skills(ListSkillsRequest::default()).await {
-                                            Ok(page) => skills.set(page.items),
-                                            Err(e) => toast.error(&e),
+                                        gloo_timers::future::TimeoutFuture::new(300).await;
+                                        if search_request_id() != my_id {
+                                            return;
                                         }
-                                        loading.set(false);
+                                        load_data();
                                     });
-                                },
-                                "重置"
+                                }
                             }
                         }
-                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "状态" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{filter_status}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<i32>() {
+                                        filter_status.set(v);
+                                    }
+                                    load_data();
+                                },
+                                option { value: "-1", "全部" }
+                                option { value: "1", "已发布" }
+                                option { value: "2", "草稿" }
+                            }
+                        }
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "搜索" }
+                            input {
+                                class: "input input-bordered w-full",
+                                placeholder: "搜索技能...",
+                                value: "{search_keyword}",
+                                oninput: move |e| {
+                                    search_keyword.set(e.value());
+                                    let my_id = search_request_id() + 1;
+                                    search_request_id.set(my_id);
+                                    spawn(async move {
+                                        gloo_timers::future::TimeoutFuture::new(300).await;
+                                        if search_request_id() != my_id {
+                                            return;
+                                        }
+                                        load_data();
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
+            }
+
+            // 列表卡片
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
                 if loading() {
                     Loading {}
                 } else if skills_list.is_empty() {
@@ -290,23 +364,7 @@ pub fn HrSkills() -> Element {
                     if let Err(e) = delete_skill(&id).await {
                         toast.error(format!("删除失败: {}", e));
                     } else {
-                        let keyword = search_keyword();
-                        let result = if keyword.trim().is_empty() {
-                            list_skills(ListSkillsRequest::default())
-                                .await
-                                .map(|p| p.items)
-                        } else {
-                            search_skills(&SearchSkillsRequest {
-                                keyword: Some(keyword),
-                                ..Default::default()
-                            })
-                            .await
-                            .map(|p| p.items)
-                        };
-                        match result {
-                            Ok(v) => skills.set(v),
-                            Err(e) => toast.error(&e),
-                        }
+                        load_data();
                     }
                 });
             },

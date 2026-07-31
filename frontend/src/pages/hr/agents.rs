@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
 use crate::api::hr::{
-    create_agent, create_external_agent, delete_agent, list_agents, search_agents,
+    create_agent, create_external_agent, delete_agent, list_agents, query_agents, search_agents,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -12,9 +12,10 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CreateAgentRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    ListModelProvidersResponseItem, SearchAgentsRequest,
+    AgentQueryRequest, CreateAgentRequest, CreateExternalAgentRequest, ListAgentsRequest,
+    ListAgentsResponseItem, ListModelProvidersResponseItem, SearchAgentsRequest,
 };
+use common::enums::AgentStatus;
 
 /// Agent kind 对应的 badge 样式和标签
 fn kind_badge_class(kind: &str) -> &'static str {
@@ -73,54 +74,79 @@ pub fn HrAgents() -> Element {
     // 引入 search_request_id 机制丢弃过期请求结果。
     let mut search_request_id = use_signal(|| 0u32);
 
+    // 过滤条件
+    let mut filter_status = use_signal(|| -1i32);
+
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
 
-    use_effect(move || {
-        loading.set(true);
+    // 加载数据（三场景切换：list / query / search）
+    let load_data = move || {
         spawn(async move {
-            match list_agents(ListAgentsRequest::default()).await {
-                Ok(page) => agents.set(page.items),
-                Err(e) => toast.error(&e),
-            }
-            if let Ok(resp) = list_model_providers().await {
-                model_providers.set(resp.providers)
-            }
-            loading.set(false);
-        });
-    });
+            loading.set(true);
+            let keyword = search_keyword();
+            let status = filter_status();
+            let my_id = search_request_id() + 1;
+            search_request_id.set(my_id);
 
-    let mut reload_agents = move || {
-        let keyword = search_keyword();
-        // 修复 HIGH #12：自增 request_id，结果到达时校验是否为最新请求
-        let my_id = search_request_id() + 1;
-        search_request_id.set(my_id);
-        spawn(async move {
-            // 三场景切换：无关键词 → list_agents；有关键词 → search_agents
-            // 未来增加过滤条件 UI 后：有过滤条件无关键词 → query_agents
-            let result = if keyword.trim().is_empty() {
+            let has_filter = status >= 0;
+
+            // 三场景切换：
+            // 无关键词 + 无过滤 → list_agents
+            // 无关键词 + 有过滤 → query_agents
+            // 有关键词 → search_agents（可同时带过滤条件）
+            let result = if keyword.trim().is_empty() && !has_filter {
                 list_agents(ListAgentsRequest::default())
                     .await
                     .map(|p| p.items)
+            } else if keyword.trim().is_empty() {
+                query_agents(&AgentQueryRequest {
+                    status: if status >= 0 {
+                        Some(AgentStatus::from(status))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
             } else {
                 search_agents(&SearchAgentsRequest {
                     keyword: Some(keyword),
+                    status: if status >= 0 {
+                        Some(AgentStatus::from(status))
+                    } else {
+                        None
+                    },
                     ..Default::default()
                 })
                 .await
                 .map(|p| p.items)
             };
+
             // 丢弃过期请求的结果
             if search_request_id() != my_id {
                 return;
             }
+
             match result {
                 Ok(v) => agents.set(v),
                 Err(e) => toast.error(&e),
             }
+            loading.set(false);
         });
     };
+
+    // 初始加载
+    use_effect(move || {
+        load_data();
+        spawn(async move {
+            if let Ok(resp) = list_model_providers().await {
+                model_providers.set(resp.providers)
+            }
+        });
+    });
 
     // ===== 本地 Agent 创建处理 =====
     let handle_create = move |_| {
@@ -153,7 +179,7 @@ pub fn HrAgents() -> Element {
                     new_roles.set(String::new());
                     new_model_provider_id.set(String::new());
                     new_description.set(String::new());
-                    reload_agents();
+                    load_data();
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
             }
@@ -247,7 +273,7 @@ pub fn HrAgents() -> Element {
                     ext_endpoint.set(String::new());
                     ext_agent_name.set(String::new());
                     ext_auth_token.set(String::new());
-                    reload_agents();
+                    load_data();
                     toast.success("外部 Agent 创建成功");
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
@@ -260,64 +286,80 @@ pub fn HrAgents() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-body",
-                    div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                        h2 { class: "card-title", "Agent 管理" }
-                    div { class: "flex gap-2 flex-wrap",
-                        input { class: "input input-bordered w-full sm:w-auto", value: "{search_keyword}",
-                            oninput: move |e| {
-                                search_keyword.set(e.value());
-                                // 修复 HIGH #12：防抖 300ms 后触发搜索，request_id 机制丢弃过期结果
-                                let my_id = search_request_id() + 1;
-                                search_request_id.set(my_id);
-                                spawn(async move {
-                                    gloo_timers::future::TimeoutFuture::new(300).await;
-                                    if search_request_id() != my_id { return; }
-                                    loading.set(true);
-                                    let kw = search_keyword();
-                                    let result = if kw.trim().is_empty() {
-                                        list_agents(ListAgentsRequest::default())
-                                            .await
-                                            .map(|p| p.items)
-                                    } else {
-                                        search_agents(&SearchAgentsRequest {
-                                            keyword: Some(kw),
-                                            ..Default::default()
-                                        })
-                                        .await
-                                        .map(|p| p.items)
-                                    };
-                                    if search_request_id() != my_id { return; }
-                                    match result {
-                                        Ok(v) => agents.set(v),
-                                        Err(e) => toast.error(&e),
-                                    }
-                                    loading.set(false);
-                                });
+            div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
+                h2 { class: "card-title", "Agent 管理" }
+                div { class: "flex gap-2 flex-wrap",
+                    if !search_keyword().is_empty() || filter_status() >= 0 {
+                        button { class: "btn btn-ghost",
+                            onclick: move |_| {
+                                search_keyword.set(String::new());
+                                filter_status.set(-1);
+                                load_data();
                             },
-                            placeholder: "搜索 Agent..."
+                            "重置"
                         }
-                        if !search_keyword().is_empty() {
-                            button { class: "btn btn-ghost",
-                                onclick: move |_| {
-                                    search_keyword.set(String::new());
-                                    reload_agents();
+                    }
+                    button { class: "btn btn-primary",
+                        onclick: move |_| show_add_modal.set(true),
+                        "+ 本地 Agent"
+                    }
+                    button { class: "btn btn-success",
+                        onclick: move |_| show_external_modal.set(true),
+                        "+ 外部 Agent"
+                    }
+                }
+            }
+
+            // 筛选栏（独立卡片）
+            div { class: "card bg-base-100 shadow-md mb-4",
+                div { class: "card-body",
+                    div { class: "flex flex-wrap gap-4 items-end",
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "状态" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{filter_status}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<i32>() {
+                                        filter_status.set(v);
+                                    }
+                                    load_data();
                                 },
-                                "重置"
+                                option { value: "-1", "全部" }
+                                option { value: "1", "面试中" }
+                                option { value: "2", "待入职" }
+                                option { value: "3", "已入职" }
+                                option { value: "4", "已离职" }
+                                option { value: "5", "待离职" }
                             }
                         }
-                        button { class: "btn btn-primary",
-                            onclick: move |_| show_add_modal.set(true),
-                            "+ 本地 Agent"
-                        }
-                        button { class: "btn btn-success",
-                            onclick: move |_| show_external_modal.set(true),
-                            "+ 外部 Agent"
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "搜索" }
+                            input {
+                                class: "input input-bordered w-full",
+                                placeholder: "搜索 Agent...",
+                                value: "{search_keyword}",
+                                oninput: move |e| {
+                                    search_keyword.set(e.value());
+                                    let my_id = search_request_id() + 1;
+                                    search_request_id.set(my_id);
+                                    spawn(async move {
+                                        gloo_timers::future::TimeoutFuture::new(300).await;
+                                        if search_request_id() != my_id {
+                                            return;
+                                        }
+                                        load_data();
+                                    });
+                                }
+                            }
                         }
                     }
                 }
+            }
 
+            // 列表卡片
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
                 if loading() {
                     Loading {}
                 } else if agents_list.is_empty() {
@@ -593,7 +635,7 @@ pub fn HrAgents() -> Element {
                     if let Err(e) = delete_agent(&id).await {
                         toast.error(format!("删除失败: {}", e));
                     } else {
-                        reload_agents();
+                        load_data();
                     }
                 });
             },

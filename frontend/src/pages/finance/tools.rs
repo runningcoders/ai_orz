@@ -2,15 +2,16 @@
 
 use dioxus::prelude::*;
 
-use crate::api::finance::{delete_tool, list_tools, search_tools, update_tool_status};
+use crate::api::finance::{delete_tool, list_tools, query_tools, search_tools, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    ListToolsRequest, ListToolsResponseItem, SearchToolsRequest, UpdateToolStatusRequest,
+    ListToolsRequest, ListToolsResponseItem, SearchToolsRequest, ToolQueryRequest,
+    UpdateToolStatusRequest,
 };
-use common::enums::ToolStatus;
+use common::enums::{ToolProtocol, ToolStatus};
 use dioxus_router::Link;
 
 #[component]
@@ -23,29 +24,63 @@ pub fn FinanceTools() -> Element {
     let mut search_keyword = use_signal(String::new);
     let mut search_request_id = use_signal(|| 0u32);
 
+    // 过滤条件
+    let mut filter_protocol = use_signal(|| -1i32);
+    let mut filter_status = use_signal(|| -1i32);
+
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
 
-    // 加载数据
+    // 加载数据（三场景切换：list / query / search）
     let load_data = move || {
         spawn(async move {
             loading.set(true);
             let keyword = search_keyword();
+            let protocol = filter_protocol();
+            let status = filter_status();
             let my_id = search_request_id() + 1;
             search_request_id.set(my_id);
 
-            // 两场景切换（与 Agent 前端一致）：
-            // 无关键词 → list_tools
-            // 有关键词 → search_tools
-            // （未来增加过滤条件 UI 后，有过滤条件无关键词 → query_tools）
-            let result = if keyword.trim().is_empty() {
+            let has_filter = protocol >= 0 || status >= 0;
+
+            // 三场景切换：
+            // 无关键词 + 无过滤 → list_tools
+            // 无关键词 + 有过滤 → query_tools
+            // 有关键词 → search_tools（可同时带过滤条件）
+            let result = if keyword.trim().is_empty() && !has_filter {
                 list_tools(ListToolsRequest::default())
                     .await
                     .map(|p| p.items)
+            } else if keyword.trim().is_empty() {
+                query_tools(&ToolQueryRequest {
+                    protocol: if protocol >= 0 {
+                        Some(ToolProtocol::from(protocol))
+                    } else {
+                        None
+                    },
+                    status: if status >= 0 {
+                        Some(ToolStatus::from(status))
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+                .await
+                .map(|p| p.items)
             } else {
                 search_tools(&SearchToolsRequest {
                     keyword: Some(keyword),
+                    protocol: if protocol >= 0 {
+                        Some(ToolProtocol::from(protocol))
+                    } else {
+                        None
+                    },
+                    status: if status >= 0 {
+                        Some(ToolStatus::from(status))
+                    } else {
+                        None
+                    },
                     ..Default::default()
                 })
                 .await
@@ -74,25 +109,74 @@ pub fn FinanceTools() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            div { class: "flex justify-between items-center mb-4",
+                h2 { class: "card-title", "工具管理" }
+            }
+
+            // 筛选栏（独立卡片）
+            div { class: "card bg-base-100 shadow-md mb-4",
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center mb-4",
-                        h2 { class: "card-title", "工具管理" }
-                        input { class: "input input-bordered w-full sm:w-auto",
-                            value: "{search_keyword}",
-                            oninput: move |e| {
-                                search_keyword.set(e.value());
-                                load_data();
-                            },
-                            onkeypress: move |e| {
-                                if e.key() == Key::Enter {
+                    div { class: "flex flex-wrap gap-4 items-end",
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "协议" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{filter_protocol}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<i32>() {
+                                        filter_protocol.set(v);
+                                    }
                                     load_data();
+                                },
+                                option { value: "-1", "全部" }
+                                option { value: "0", "内置" }
+                                option { value: "1", "HTTP" }
+                                option { value: "2", "MCP" }
+                            }
+                        }
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "状态" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{filter_status}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<i32>() {
+                                        filter_status.set(v);
+                                    }
+                                    load_data();
+                                },
+                                option { value: "-1", "全部" }
+                                option { value: "1", "启用" }
+                                option { value: "0", "禁用" }
+                            }
+                        }
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "搜索" }
+                            input {
+                                class: "input input-bordered w-full",
+                                placeholder: "搜索工具...",
+                                value: "{search_keyword}",
+                                oninput: move |e| {
+                                    search_keyword.set(e.value());
+                                    let my_id = search_request_id() + 1;
+                                    search_request_id.set(my_id);
+                                    spawn(async move {
+                                        gloo_timers::future::TimeoutFuture::new(300).await;
+                                        if search_request_id() != my_id {
+                                            return;
+                                        }
+                                        load_data();
+                                    });
                                 }
-                            },
-                            placeholder: "搜索工具..."
+                            }
                         }
                     }
+                }
+            }
 
+            // 列表卡片
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
                 if loading() {
                     Loading {}
                 } else if tools_list.is_empty() {
