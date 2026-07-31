@@ -981,7 +981,11 @@ async fn test_search_with_runtime_state_filter(pool: SqlitePool) -> Result<()> {
         .await?;
 
     // 只应返回 Idle Agent
-    assert_eq!(result_idle.items.len(), 1, "runtime_state=Idle 应只返回 Idle Agent");
+    assert_eq!(
+        result_idle.items.len(),
+        1,
+        "runtime_state=Idle 应只返回 Idle Agent"
+    );
     assert_eq!(result_idle.items[0].name(), "debug-idle");
     assert!(result_idle.items.iter().all(|a| {
         a.runtime_info
@@ -1006,7 +1010,11 @@ async fn test_search_with_runtime_state_filter(pool: SqlitePool) -> Result<()> {
         )
         .await?;
 
-    assert_eq!(result_busy.items.len(), 1, "runtime_state=Busy 应只返回 Busy Agent");
+    assert_eq!(
+        result_busy.items.len(),
+        1,
+        "runtime_state=Busy 应只返回 Busy Agent"
+    );
     assert_eq!(result_busy.items[0].name(), "debug-busy");
 
     // 不设 runtime_state 过滤 → 返回全部
