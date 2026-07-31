@@ -1,7 +1,7 @@
 //! Task related API request/response DTOs - shared between backend and frontend
 
 use crate::api::ArtifactDetail;
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::{AssigneeType, TaskStatus};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -264,6 +264,29 @@ pub struct TaskQueryRequest {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
+
+/// 搜索 Task 请求（POST body，支持完整过滤条件 + 关键词搜索）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct SearchTasksRequest {
+    /// 搜索关键词（FTS5 + 向量语义混合搜索）
+    pub keyword: Option<String>,
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 项目 ID
+    pub project_id: Option<String>,
+    /// 负责人类型
+    pub assignee_type: Option<AssigneeType>,
+    /// 负责人 ID
+    pub assignee_id: Option<String>,
+    /// 状态列表（OR 语义）
+    pub status_in: Option<Vec<TaskStatus>>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+/// 搜索 Task 响应（分页）
+pub type SearchTasksResponse = PagedResult<TaskListItem>;
 
 /// Task 列表项响应别名（前端兼容）
 pub type ListTasksResponseItem = TaskListItem;
