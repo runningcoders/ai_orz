@@ -547,7 +547,10 @@ async fn test_search_keyword_only(pool: SqlitePool) {
     assert_eq!(results.items.len(), 1);
     assert_eq!(results.items[0].po.name, "Alpha Project");
     // p1 同时匹配关键词和向量 → Hybrid
-    let match_info = results.items[0].search_match.as_ref().expect("应有匹配信息");
+    let match_info = results.items[0]
+        .search_match
+        .as_ref()
+        .expect("应有匹配信息");
     assert_eq!(match_info.match_type, MatchType::Hybrid);
     assert!(match_info.fts_rank.is_some());
     assert!(match_info.vector_distance.is_some());
@@ -588,7 +591,10 @@ async fn test_search_vector_match(pool: SqlitePool) {
     // 应该通过向量匹配找到 "Beta Similar"
     assert_eq!(results.items.len(), 1);
     assert_eq!(results.items[0].po.name, "Beta Similar");
-    let match_info = results.items[0].search_match.as_ref().expect("应有匹配信息");
+    let match_info = results.items[0]
+        .search_match
+        .as_ref()
+        .expect("应有匹配信息");
     assert_eq!(match_info.match_type, MatchType::Vector);
     assert!(match_info.vector_distance.is_some());
     assert!(match_info.vector_distance.unwrap() < 0.8);
@@ -643,7 +649,8 @@ async fn test_search_hybrid_three_states(pool: SqlitePool) {
     assert_eq!(results.items.len(), 3, "应返回 3 条匹配结果");
 
     // 验证排序：Hybrid → Vector → Keyword
-    let types: Vec<MatchType> = results.items
+    let types: Vec<MatchType> = results
+        .items
         .iter()
         .map(|p| {
             p.search_match
