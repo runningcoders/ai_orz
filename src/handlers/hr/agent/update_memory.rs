@@ -74,7 +74,9 @@ pub async fn update_memory(
                 updated.summary = summary.clone();
             }
             // 新增：支持 KnowledgeNode tags 更新（用于加 published 标签等）
+            // 同步 is_published 冗余字段，保证 DB 查询走索引而非 json_each 全表扫描
             if let Some(node_tags) = &params.node_tags {
+                updated.is_published = node_tags.iter().any(|t| t == "published");
                 updated.tags = serde_json::to_string(node_tags)?;
             }
             // 新增：支持 status 更新（如遗忘节点）

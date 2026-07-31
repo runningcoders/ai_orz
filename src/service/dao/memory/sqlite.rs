@@ -49,9 +49,18 @@ struct KnowledgeNodeSearchRow {
     summary: String,
     tags: String,
     status: MemoryStatus,
+    is_published: bool,
     created_at: i64,
     updated_at: i64,
     fts_rank: Option<f32>,
+}
+
+/// 判断 tags JSON 数组字符串中是否包含 "published" 标签
+///
+/// tags 形如 `["rust","published"]`，序列化后 "published" 一定带双引号，
+/// 因此用 `contains("\"published\"")` 即可快速判断，避免每次反序列化。
+pub(crate) fn tags_has_published(tags: &str) -> bool {
+    tags.contains("\"published\"")
 }
 
 // ==================== 工厂方法 + 单例 ====================
@@ -462,6 +471,7 @@ LIMIT ?
         // 先试试更新，如果不存在就插入
 
         let status_i32 = node.status as i32;
+        let is_published_i64 = node.is_published as i64;
         let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
             r#"
 UPDATE long_term_knowledge_node
@@ -472,6 +482,7 @@ SET agent_id = ?,
     summary = ?,
     tags = ?,
     status = ?,
+    is_published = ?,
     updated_at = ?
 WHERE id = ?
 "#,
@@ -482,6 +493,7 @@ WHERE id = ?
             node.summary,
             node.tags,
             status_i32,
+            is_published_i64,
             node.updated_at,
             node.id,
         )
@@ -492,14 +504,15 @@ WHERE id = ?
 
         if rows_affected == 0 {
             // 不存在，插入新节点
-            // 10 Rust parameters → 10 question marks (all non-Option)
+            // 11 Rust parameters → 11 question marks (all non-Option)
 
             let status_i32 = node.status as i32;
+            let is_published_i64 = node.is_published as i64;
             sqlx::query!(
                 r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                 node.id,
                 node.agent_id,
@@ -509,6 +522,7 @@ INSERT INTO long_term_knowledge_node (
                 node.summary,
                 node.tags,
                 status_i32,
+                is_published_i64,
                 node.created_at,
                 node.updated_at
             )
@@ -526,6 +540,7 @@ INSERT INTO long_term_knowledge_node (
     ) -> Result<()> {
         let pool = self.pool(ctx);
         let status_i32 = node.status as i32;
+        let is_published_i64 = node.is_published as i64;
         let result = sqlx::query!(
             r#"
 UPDATE long_term_knowledge_node
@@ -536,6 +551,7 @@ SET agent_id = ?,
     summary = ?,
     tags = ?,
     status = ?,
+    is_published = ?,
     updated_at = ?
 WHERE id = ?
 "#,
@@ -546,6 +562,7 @@ WHERE id = ?
             node.summary,
             node.tags,
             status_i32,
+            is_published_i64,
             node.updated_at,
             node.id,
         )
@@ -572,6 +589,7 @@ WHERE id = ?
 
         for node in nodes {
             let status_i32 = node.status as i32;
+            let is_published_i64 = node.is_published as i64;
             let result: sqlx::Result<sqlx::sqlite::SqliteQueryResult> = sqlx::query!(
                 r#"
 UPDATE long_term_knowledge_node
@@ -582,6 +600,7 @@ SET agent_id = ?,
     summary = ?,
     tags = ?,
     status = ?,
+    is_published = ?,
     updated_at = ?
 WHERE id = ?
 "#,
@@ -592,6 +611,7 @@ WHERE id = ?
                 node.summary,
                 node.tags,
                 status_i32,
+                is_published_i64,
                 node.updated_at,
                 node.id,
             )
@@ -602,14 +622,15 @@ WHERE id = ?
 
             if rows_affected == 0 {
                 // 不存在，插入新节点
-                // 10 Rust parameters → 10 question marks (all non-Option)
+                // 11 Rust parameters → 11 question marks (all non-Option)
 
                 let status_i32 = node.status as i32;
+                let is_published_i64 = node.is_published as i64;
                 sqlx::query!(
                     r#"
 INSERT INTO long_term_knowledge_node (
-    id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
                     node.id,
                     node.agent_id,
@@ -619,6 +640,7 @@ INSERT INTO long_term_knowledge_node (
                     node.summary,
                     node.tags,
                     status_i32,
+                    is_published_i64,
                     node.created_at,
                     node.updated_at
                 )
@@ -641,7 +663,7 @@ INSERT INTO long_term_knowledge_node (
         let node = sqlx::query_as!(
             LongTermKnowledgeNodePo,
             r#"
-SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status AS "status: MemoryStatus", created_at, updated_at
+SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status AS "status: MemoryStatus", is_published AS "is_published: bool", created_at, updated_at
 FROM long_term_knowledge_node
 WHERE id = ? AND status != 0
 "#,
@@ -687,7 +709,7 @@ WHERE id = ? AND status != 0
 
         let pool = self.pool(ctx);
         let mut builder = QueryBuilder::new(
-            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status, created_at, updated_at
+            r#"SELECT id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at
 FROM long_term_knowledge_node WHERE 1=1"#,
         );
 
@@ -702,15 +724,16 @@ FROM long_term_knowledge_node WHERE 1=1"#,
 
         // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
         // 注意：sqlx QueryBuilder 的 push() 不会识别 ? 占位符，必须用 push_bind() 绑定参数
+        // 使用冗余字段 is_published 替代 json_each(tags) 加速查询（走部分索引 idx_ltkn_is_published）
         let agent_id = query.agent_id.clone().unwrap_or_default();
         let include_shared = query.include_shared;
         builder.push(" AND ");
         if include_shared && !agent_id.is_empty() {
             builder.push("(agent_id = ");
             builder.push_bind(agent_id);
-            builder.push(" OR EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published'))");
+            builder.push(" OR is_published = 1)");
         } else if agent_id.is_empty() && include_shared {
-            builder.push("EXISTS (SELECT 1 FROM json_each(tags) WHERE json_each.value = 'published')");
+            builder.push("is_published = 1");
         } else if !agent_id.is_empty() {
             builder.push("agent_id = ");
             builder.push_bind(agent_id);
@@ -807,8 +830,9 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         };
 
         // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
+        // 使用冗余字段 is_published 替代 json_each(tags) 加速查询（走部分索引 idx_ltkn_is_published）
         let ownership_clause = if include_shared {
-            "(m.agent_id = ? OR EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = 'published'))".to_string()
+            "(m.agent_id = ? OR m.is_published = 1)".to_string()
         } else {
             "m.agent_id = ?".to_string()
         };
@@ -816,7 +840,7 @@ FROM long_term_knowledge_node WHERE 1=1"#,
         let sql = format!(
             r#"
 SELECT m.id, m.agent_id, m.node_name, m.node_description, m.node_type, m.summary, m.tags,
-       m.status, m.created_at, m.updated_at,
+       m.status, m.is_published, m.created_at, m.updated_at,
        knowledge_node_fts.rank as fts_rank
 FROM knowledge_node_fts
 JOIN long_term_knowledge_node m ON knowledge_node_fts.rowid = m.rowid
@@ -853,6 +877,7 @@ LIMIT ?
                     summary: row.summary,
                     tags: row.tags,
                     status: row.status,
+                    is_published: row.is_published,
                     created_at: row.created_at,
                     updated_at: row.updated_at,
                 };

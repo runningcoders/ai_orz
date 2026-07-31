@@ -28,6 +28,13 @@ pub async fn save_long_term_memory(
         .summary
         .unwrap_or_else(|| params.node_description.chars().take(100).collect());
 
+    // 根据 tags 是否包含 "published" 设置冗余字段 is_published
+    let is_published = params
+        .tags
+        .as_ref()
+        .map(|tags| tags.iter().any(|t| t == "published"))
+        .unwrap_or(false);
+
     let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
 
     let node_id = format!("kn_{}", uuid::Uuid::now_v7().simple());
@@ -43,6 +50,7 @@ pub async fn save_long_term_memory(
         summary,
         tags: tags_json,
         status: common::enums::MemoryStatus::Active,
+        is_published,
         created_at: now,
         updated_at: now,
     };

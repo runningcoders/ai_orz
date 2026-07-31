@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO long_term_knowledge_node (\n    id, agent_id, node_name, node_description, node_type, summary, tags, status, is_published, created_at, updated_at\n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "48b1a50f6c2dc6a2d6a9dbba4d757a22fc22d66108d832a8b60c42d3657bc8cf"
+}

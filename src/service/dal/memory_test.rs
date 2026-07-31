@@ -474,6 +474,7 @@ async fn test_create_knowledge_node(pool: SqlitePool) -> Result<()> {
         summary: "测试知识节点的总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -517,6 +518,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<()> {
         summary: "源节点总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -529,6 +531,7 @@ async fn test_create_relations(pool: SqlitePool) -> Result<()> {
         summary: "目标节点总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -642,6 +645,7 @@ async fn test_delete_knowledge_node(pool: SqlitePool) -> Result<()> {
         summary: "待删除的总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -830,6 +834,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
         summary: "Rust 语言的核心特性之一，确保内存安全".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -843,6 +848,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
         summary: "Python decorator 装饰器是一种强大的元编程工具".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -856,6 +862,7 @@ async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
         summary: "无关总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -1032,6 +1039,7 @@ async fn test_update_knowledge_node(pool: SqlitePool) -> Result<()> {
         summary: "原始总结".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -1671,6 +1679,7 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
         summary: "Rust 内存安全核心特性".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };
@@ -1683,6 +1692,7 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
         summary: "Rust 借用规则与检查".to_string(),
         tags: "[]".to_string(),
         status: MemoryStatus::Active,
+        is_published: false,
         created_at: now,
         updated_at: now,
     };

@@ -538,6 +538,9 @@ impl MemoryDal for MemoryDalImpl {
                 summary: index.summary.clone(),
                 tags: index.tags.clone(),
                 status: MemoryStatus::Active,
+                is_published: crate::service::dao::memory::sqlite::tags_has_published(
+                    &index.tags,
+                ),
                 created_at: common::constants::utils::current_timestamp(),
                 updated_at: common::constants::utils::current_timestamp(),
             };
@@ -893,9 +896,10 @@ impl MemoryDalImpl {
         let nodes = self.memory_dao.query_knowledge_nodes(ctx, query).await?;
         // 共享可见性过滤：只保留自己的节点或 published 节点
         // 防止 traverse_graph 通过 id 跨 Agent 遍历私有节点
+        // 使用冗余字段 is_published 替代 tags.contains("\"published\"")，避免字符串扫描
         let visible_nodes: Vec<_> = nodes
             .into_iter()
-            .filter(|n| n.agent_id == agent_id || n.tags.contains("\"published\""))
+            .filter(|n| n.agent_id == agent_id || n.is_published)
             .collect();
         Ok(visible_nodes)
     }

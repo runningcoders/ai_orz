@@ -230,6 +230,9 @@ pub struct LongTermKnowledgeNodePo {
     pub tags: String,
     /// 记忆状态
     pub status: common::enums::MemoryStatus,
+    /// 是否已发布到蜂巢（tags 含 "published" 时为 true）
+    /// 冗余字段，与 tags 中的 "published" 标签同步，用于加速查询
+    pub is_published: bool,
     /// 创建时间戳
     pub created_at: i64,
     /// 更新时间戳

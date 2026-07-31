@@ -79,6 +79,15 @@ async fn create_short_term(ctx: RequestContext, params: CreateMemoryParams) -> R
 async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) -> Result<String> {
     let now = chrono::Utc::now().timestamp();
     let summary = params.summary.unwrap_or_else(|| params.content.clone());
+
+    // 根据 tags 是否包含 "published" 设置冗余字段 is_published
+    // 注意：需在 tags_json 之前计算，因为 unwrap_or_default() 会 move params.tags
+    let is_published = params
+        .tags
+        .as_ref()
+        .map(|tags| tags.iter().any(|t| t == "published"))
+        .unwrap_or(false);
+
     let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
 
     let id_content = format!("{}{}", params.content, now);
@@ -95,6 +104,7 @@ async fn create_knowledge_node(ctx: RequestContext, params: CreateMemoryParams) 
         summary,
         tags: tags_json,
         status: common::enums::MemoryStatus::Active,
+        is_published,
         created_at: now,
         updated_at: now,
     };
