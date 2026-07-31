@@ -1,20 +1,19 @@
 //! Cron 触发器消费者（业务层）
 //!
 //! 作为 AOP 事件中心的订阅者，消费 CRON_TRIGGER 事件。
-//! 业务逻辑通过调用 domain 层完成（如 RuntimeDomain.rest_and_settle）。
+//! 业务逻辑通过调用 domain 层完成（如 RuntimeAwakening.sleep_and_settle）。
 //!
 //! 与 AOP 框架解耦：AOP 只负责事件流转，本模块负责业务编排。
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
 
+use crate::handlers::hr::agent::settle_memory::load_and_settle;
 use crate::models::events::CronTriggerEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
-use crate::service::domain::runtime::{self as runtime_domain, RuntimeDomain};
 use common::error::{Error, Result};
 
 // ==================== 消费者实现 ====================
@@ -23,9 +22,7 @@ use common::error::{Error, Result};
 ///
 /// 订阅 CRON_TRIGGER 事件，按 payload.action 分发到不同 domain 处理。
 /// 作为 AOP 的 Sync 消费者，事件发布时直接调用 on_event。
-pub struct CronTriggerConsumer {
-    runtime_domain: Arc<dyn RuntimeDomain>,
-}
+pub struct CronTriggerConsumer;
 
 impl Default for CronTriggerConsumer {
     fn default() -> Self {
@@ -35,9 +32,7 @@ impl Default for CronTriggerConsumer {
 
 impl CronTriggerConsumer {
     pub fn new() -> Self {
-        Self {
-            runtime_domain: runtime_domain::domain(),
-        }
+        Self
     }
 }
 
@@ -101,7 +96,10 @@ impl Consumer for CronTriggerConsumer {
 // ==================== 业务编排（调用 domain 层）====================
 
 impl CronTriggerConsumer {
-    /// agent_rest 动作：调用 RuntimeDomain 执行 Agent 休息与记忆沉淀
+    /// agent_rest 动作：加载 Agent 并调用 sleep_and_settle 执行记忆沉淀
+    ///
+    /// 复用 settle_memory handler 的 load_and_settle 公共函数，保证与神经工具触发的
+    /// 沉淀流程完全一致（查询短期记忆 → 拼装 prompt → 加载 Agent → 唤醒 Brain → sleep_and_settle）。
     async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
         let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
             Error::bad_request(format!(
@@ -120,10 +118,7 @@ impl CronTriggerConsumer {
         let ctx = RequestContext::new(None, None);
         let settle_limit = payload.settle_limit.unwrap_or(10);
 
-        let settled_count = self
-            .runtime_domain
-            .rest_and_settle(ctx, &payload.agent_id, settle_limit)
-            .await?;
+        let settled_count = load_and_settle(ctx, &payload.agent_id, settle_limit).await?;
 
         sys_info!(
             "agent {} settled {} short-term memories to knowledge nodes",

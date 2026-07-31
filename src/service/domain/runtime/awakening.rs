@@ -1,6 +1,7 @@
 //! Runtime Awakening 具体实现
 
 use crate::models::agent::Agent;
+use crate::models::file::FileMeta;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -9,6 +10,7 @@ use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
+use common::enums::{MessageRole, MessageType};
 use common::error::{Result, err};
 
 use crate::enrich_ctx;
@@ -241,6 +243,185 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             log_warn!(
                 &ctx,
                 "awaken",
+                "record_event failed on success path, stats may be incomplete: {:?}",
+                stats_err
+            );
+        }
+
+        // Step 8: 返回结果
+        Ok(AwakeningResult {
+            agent_id: agent.po.id.clone(),
+            trace_ids: vec![trace_id],
+            raw_input: prompt,
+            raw_output,
+        })
+    }
+
+    /// 让 Agent 进入沉睡模式，执行记忆沉淀（与 awaken 对称）
+    ///
+    /// awaken 是醒来响应外部消息，sleep_and_settle 是沉睡整理内部记忆。
+    /// 流程：set_resting → 读取历史 → 拼装沉淀 Prompt → think → 写 Trace → set_idle
+    ///
+    /// 与 awaken 的关键差异：
+    /// - 状态用 Resting（而非 Busy），通过 BusyGuard 的 set_idle 恢复（语义一致）
+    /// - current_message 用沉淀场景 prompt 构造的虚拟系统消息替代真实用户消息
+    /// - 统计事件的 message_id 为 None（沉淀无关联消息）
+    async fn sleep_and_settle(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        settle_prompt: &str,
+    ) -> Result<AwakeningResult> {
+        let start_time = std::time::SystemTime::now();
+
+        // 使用 Resting 状态（而非 Busy），RAII guard 恢复 Idle
+        // BusyGuard 的 Drop 行为是 set_idle，与 Resting 恢复语义一致，直接复用
+        AgentRuntimeStateManager::global().set_resting(&agent.po.id);
+        let _rest_guard =
+            crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
+
+        // 补充 Agent 上下文到 ctx，后续调用链可复用
+        let ctx = enrich_ctx!(&ctx, agent);
+
+        // Step 1: 读取最近短期记忆作为 history
+        let recent_memories = self
+            .memory()
+            .get_recent_context(ctx.clone(), &agent.po.id, 20)
+            .await?;
+
+        // Step 2: 预先构造 MemoryTrace 拿到 trace_id
+        use common::enums::MemoryRole;
+        let mut trace = MemoryTrace::new(
+            agent.po.id.clone(),
+            ctx.log_id.clone(),
+            ctx.uid(),
+            ctx.organization_id.clone().unwrap_or_default(),
+            MemoryRole::System,
+            String::new(), // input 后续填充
+            ctx.task_id().cloned(),
+        );
+        let trace_id = trace.id.clone();
+
+        // Step 3: 加载工具和技能（已由 hr_domain.get_agent 加载到 agent）
+        let all_tools: Vec<crate::models::tool::ToolPo> =
+            agent.tools().iter().map(|t| t.po.clone()).collect();
+        let skill_pos: Vec<crate::models::skill::SkillPo> =
+            agent.skills().iter().map(|s| s.po.clone()).collect();
+
+        // Step 4: 拼装 Prompt
+        // 与 awaken 的区别：current_message 用沉淀场景 prompt 替代
+        // 构造一个虚拟的系统 Message（沉淀场景）
+        let settle_message = Message::new_with_context(
+            uuid::Uuid::now_v7().to_string(),
+            ctx.project_id().cloned(),
+            ctx.task_id().cloned(),
+            "system".to_string(),
+            agent.po.id.clone(),
+            MessageRole::System,
+            MessageRole::Agent,
+            MessageType::Text,
+            settle_prompt.to_string(),
+            None,
+            FileMeta::default(),
+            None,
+            None,
+            ctx.organization_id.clone(),
+            ctx.uid(),
+        );
+
+        let mut builder = self.prompt_builder(agent);
+        builder.current_trace_id(&trace_id);
+        builder.system_prompt(agent);
+        builder.tools(&all_tools);
+        builder.skills(&skill_pos);
+        builder.history(&recent_memories);
+        builder.current_message(&settle_message);
+
+        let prompt = builder.build();
+
+        // Step 5: 调用大脑思考
+        let brain = agent
+            .brain
+            .as_ref()
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
+
+        const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
+        let think_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
+            self.brain_dal().think(ctx.clone(), brain, &prompt),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_elapsed) => Err(err!(
+                Internal,
+                "brain think timeout after {}s",
+                THINK_TIMEOUT_SECS
+            )),
+        };
+
+        // 展开 Result，失败时也记录事件
+        let raw_output = match think_result {
+            Ok(output) => output,
+            Err(e) => {
+                let duration_ms = start_time
+                    .elapsed()
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                if let Err(stats_err) = record_event!(
+                    ctx,
+                    AgentAwakeEvent {
+                        agent_id: agent.po.id.clone(),
+                        project_id: None,
+                        task_id: None,
+                        organization_id: ctx.organization_id.clone(),
+                        user_id: Some(ctx.uid()),
+                        message_id: None,
+                        call_count: 1,
+                        duration_ms: duration_ms,
+                        status: format!("settle failed: {}", e),
+                    }
+                ) {
+                    log_warn!(
+                        &ctx,
+                        "sleep_and_settle",
+                        "record_event failed on error path, stats may be incomplete: {:?}",
+                        stats_err
+                    );
+                }
+                return Err(e);
+            }
+        };
+
+        // Step 6: 回填 input 和 output，一次性写入完整 Trace
+        trace.input = prompt.clone();
+        trace.complete(raw_output.clone());
+        self.memory()
+            .write_thinking_trace(ctx.clone(), trace)
+            .await?;
+
+        // Step 7: 记录沉淀统计事件
+        let duration_ms = start_time
+            .elapsed()
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if let Err(stats_err) = record_event!(
+            ctx,
+            AgentAwakeEvent {
+                agent_id: agent.po.id.clone(),
+                project_id: None,
+                task_id: None,
+                organization_id: ctx.organization_id.clone(),
+                user_id: Some(ctx.uid()),
+                message_id: None,
+                call_count: 1,
+                duration_ms: duration_ms,
+                status: "settle success".to_string(),
+            }
+        ) {
+            log_warn!(
+                &ctx,
+                "sleep_and_settle",
                 "record_event failed on success path, stats may be incomplete: {:?}",
                 stats_err
             );

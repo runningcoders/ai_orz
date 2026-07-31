@@ -106,16 +106,4 @@ impl RuntimeMemory for RuntimeDomainImpl {
             .traverse_knowledge_graph(ctx, seed_node_ids, max_depth, max_breadth, strategy)
             .await
     }
-
-    async fn settle(
-        &self,
-        ctx: RequestContext,
-        agent_id: &str,
-        limit: usize,
-    ) -> Result<Vec<Memory>> {
-        use crate::service::dal::memory::dal;
-        dal()
-            .settle_short_term_to_long_term(ctx, agent_id, limit)
-            .await
-    }
 }

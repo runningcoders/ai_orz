@@ -1,41 +1,44 @@
 //! Handler: 沉淀记忆 - Neural Tool
 //!
-//! 触发 Agent 进入沉淀工作模式：拼装场景 prompt，通过消息系统给 Agent 自己发消息，
-//! Agent 在 awaken 中用已有工具自主完成沉淀（归纳总结、创建/更新节点、建关系、加 published 标签）。
+//! 触发 Agent 进入沉淀工作模式：拼装场景 prompt，直接调用 RuntimeAwakening.sleep_and_settle
+//! 让 Agent 在 Resting 状态下用已有工具自主完成沉淀（归纳总结、创建/更新节点、建关系、加 published 标签）。
+//!
+//! 与 awaken 对称：awaken 是醒来响应外部消息，sleep_and_settle 是沉睡整理内部记忆。
 
 use crate::pkg::RequestContext;
+use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dao::memory::{MemoryQuery, dao as memory_dao};
-use crate::service::domain::message::domain as message_domain;
-use crate::service::domain::message::SendToAgentCommand;
+use crate::service::domain::hr::domain as hr_domain;
+use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SettleMemoryParams, SettleMemoryResponse};
-use common::enums::{MemoryStatus, MemoryType, MessageRole};
+use common::enums::{MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
 
-#[register_handler_tool(
-    id = "settle_memory",
-    name = "settle_memory",
-    description = "Trigger the agent's 'rest' process to consolidate recent experiences into structured knowledge. Sends a settlement scenario message to the agent, who will autonomously use available tools to complete the settling process.",
-    params = "common::api::SettleMemoryParams",
-    neural
-)]
-#[generate_http_handler]
-pub async fn settle_memory(
-    ctx: RequestContext,
-    params: SettleMemoryParams,
-) -> Result<SettleMemoryResponse> {
-    let agent_id = ctx.agent_id().cloned().unwrap_or_default();
-    if agent_id.is_empty() {
-        bail_err!(InvalidRequest, "settle_memory 需要 agent 上下文");
-    }
-    let limit = params.limit.unwrap_or(10);
-
+/// 构建沉淀场景 prompt
+///
+/// 查询未沉淀的短期记忆（Active 状态），拼装为沉淀场景 prompt。
+/// 供 settle_memory handler 和 CronTrigger agent_rest 复用，避免重复。
+///
+/// # 参数
+/// - ctx: 请求上下文
+/// - agent_id: Agent ID
+/// - limit: 每次处理的短期记忆数量上限
+///
+/// # 返回
+/// - `Ok(None)` 表示无未沉淀记忆（调用方应跳过）
+/// - `Ok(Some((prompt, pending_count)))` 表示有待沉淀记忆，prompt 为拼装好的沉淀场景
+pub(crate) async fn build_settle_prompt(
+    ctx: &RequestContext,
+    agent_id: &str,
+    limit: usize,
+) -> Result<Option<(String, usize)>> {
     // 1. 查询未沉淀的短期记忆（Active 状态）
     let short_term_memories = memory_dao()
         .query_short_term(
             ctx.clone(),
             MemoryQuery {
-                agent_id: Some(agent_id.clone()),
+                agent_id: Some(agent_id.to_string()),
                 status: Some(MemoryStatus::Active),
                 memory_type: Some(MemoryType::ShortTerm),
                 limit: Some(limit),
@@ -46,8 +49,7 @@ pub async fn settle_memory(
 
     let pending_count = short_term_memories.len();
     if pending_count == 0 {
-        log_info!(ctx, "settle_memory", "agent_id={}, 无未沉淀的短期记忆", agent_id);
-        return Ok(SettleMemoryResponse { settled_count: 0 });
+        return Ok(None);
     }
 
     // 2. 拼装沉淀场景 prompt
@@ -88,33 +90,84 @@ pub async fn settle_memory(
 - 详见"记忆认知"技能的沉淀机制和新老知识交替章节
 
 开始沉淀吧。"#,
-        pending_count,
-        memories_summary
+        pending_count, memories_summary
     );
 
-    // 3. 给 Agent 自己发消息触发 awaken
-    let cmd = SendToAgentCommand {
-        from_id: &agent_id,
-        from_role: MessageRole::System,
-        to_agent_id: &agent_id,
-        content: &settle_prompt,
-        project_id: None,
-        task_id: None,
-        reply_to_id: None,
-        attachment_ids: None,
+    Ok(Some((settle_prompt, pending_count)))
+}
+
+/// 加载 Agent（含 tools + skills）并唤醒 Brain，然后调用 sleep_and_settle 执行沉淀
+///
+/// 供 settle_memory handler 和 CronTrigger agent_rest 复用。
+///
+/// # 返回
+/// 待沉淀的短期记忆数量（0 表示无待沉淀，已跳过）
+pub(crate) async fn load_and_settle(
+    ctx: RequestContext,
+    agent_id: &str,
+    settle_limit: usize,
+) -> Result<usize> {
+    // 1. 查询未沉淀短期记忆 + 拼装沉淀场景 prompt
+    let (settle_prompt, pending_count) =
+        match build_settle_prompt(&ctx, agent_id, settle_limit).await? {
+            Some(pair) => pair,
+            None => return Ok(0),
+        };
+
+    // 2. 加载 Agent（含 tools + skills）
+    let fetch_options = AgentFetchOptions {
+        with_tools: Some(true),
+        with_skills: Some(true),
+        ..Default::default()
     };
-    message_domain()
-        .delivery()
-        .send_to_agent(ctx.clone(), cmd)
+    let mut agent = hr_domain()
+        .agent_manage()
+        .get_agent(ctx.clone(), agent_id, fetch_options)
+        .await?
+        .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", agent_id)))?;
+
+    // 3. 唤醒 Brain（装配 Cortex + 注入 Auto 工具到 Rig）
+    let ctx = runtime_domain()
+        .awakening()
+        .wake_agent_brain(ctx, &mut agent)
         .await?;
+
+    // 4. 沉睡沉淀（Resting 状态 + think + 写 Trace）
+    runtime_domain()
+        .awakening()
+        .sleep_and_settle(ctx, &agent, &settle_prompt)
+        .await?;
+
+    Ok(pending_count)
+}
+
+#[register_handler_tool(
+    id = "settle_memory",
+    name = "settle_memory",
+    description = "Trigger the agent's 'rest' process to consolidate recent experiences into structured knowledge. Directly invokes sleep_and_settle, the symmetric counterpart of awaken, letting the agent autonomously use available tools to complete the settling process.",
+    params = "common::api::SettleMemoryParams",
+    neural
+)]
+#[generate_http_handler]
+pub async fn settle_memory(
+    ctx: RequestContext,
+    params: SettleMemoryParams,
+) -> Result<SettleMemoryResponse> {
+    let agent_id = ctx.agent_id().cloned().unwrap_or_default();
+    if agent_id.is_empty() {
+        bail_err!(InvalidRequest, "settle_memory 需要 agent 上下文");
+    }
+    let limit = params.limit.unwrap_or(10);
+
+    let settled_count = load_and_settle(ctx.clone(), &agent_id, limit).await?;
 
     log_info!(
         ctx,
         "settle_memory",
-        "agent_id={}, 触发沉淀工作模式，待沉淀 {} 条短期记忆",
+        "agent_id={}, 沉淀完成，处理 {} 条短期记忆",
         agent_id,
-        pending_count
+        settled_count
     );
 
-    Ok(SettleMemoryResponse { settled_count: pending_count })
+    Ok(SettleMemoryResponse { settled_count })
 }
