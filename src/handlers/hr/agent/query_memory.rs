@@ -39,11 +39,14 @@ pub async fn query_memory(
         })
         .unwrap_or(MemoryType::All);
 
+    let status = params.status.as_deref().map(parse_memory_status);
+
     let query = MemoryQuery {
         agent_id: params.agent_id.clone(),
         memory_type: Some(memory_type),
         limit: params.limit.map(|l| l as usize),
         tags: params.tags.clone(),
+        status,
         ..Default::default()
     };
 
@@ -109,4 +112,20 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
 /// 解析 tags JSON 数组字符串为 Vec<String>，解析失败返回空 Vec
 fn parse_tags_json(tags_json: &str) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(tags_json).unwrap_or_default()
+}
+
+/// 解析记忆状态字符串为 MemoryStatus 枚举。
+///
+/// 支持的输入（大小写不敏感）：
+/// - "active" / "1" → Active
+/// - "forgotten" / "0" → Forgotten
+/// - "settled" / "2" → Settled
+/// - 其他 → Active（兜底）
+fn parse_memory_status(s: &str) -> common::enums::MemoryStatus {
+    match s.to_lowercase().as_str() {
+        "active" | "1" => common::enums::MemoryStatus::Active,
+        "forgotten" | "0" => common::enums::MemoryStatus::Forgotten,
+        "settled" | "2" => common::enums::MemoryStatus::Settled,
+        _ => common::enums::MemoryStatus::Active,
+    }
 }

@@ -70,6 +70,8 @@ pub struct QueryMemoryParams {
     pub limit: Option<i32>,
     /// 标签过滤（OR 语义，命中任一 tag 即可）。
     pub tags: Option<Vec<String>>,
+    /// 按状态过滤（active/settled/forgotten）
+    pub status: Option<String>,
 }
 
 /// 查询记忆响应。
