@@ -161,6 +161,17 @@ pub trait ProjectManage: Send + Sync {
         query: ProjectQuery,
     ) -> Result<common::api::PagedResult<Project>>;
 
+    /// 搜索 Project（关键词 + 向量语义混合搜索）
+    ///
+    /// 返回分页结果，支持完整过滤条件。
+    /// 与 query 的区别：search 重在"语义相关性"（FTS5 + 向量语义混合搜索），
+    /// query 重在"条件过滤"。两者现在都支持完整过滤条件和分页返回。
+    async fn search(
+        &self,
+        ctx: RequestContext,
+        search: crate::service::dao::project::ProjectSearch,
+    ) -> Result<common::api::PagedResult<Project>>;
+
     /// 统计符合查询条件的项目数量（透传 DAL count）
     async fn count_projects(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64>;
 
