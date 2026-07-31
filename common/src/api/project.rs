@@ -1,7 +1,7 @@
 //! Project related API request/response DTOs - shared between backend and frontend
 
 use crate::api::ArtifactDetail;
-use crate::api::PaginationParams;
+use crate::api::{PagedResult, PaginationParams};
 use crate::enums::ProjectStatus;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -216,6 +216,27 @@ pub struct ProjectQueryRequest {
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
+
+/// 搜索 Project 请求（POST body，支持完整过滤条件 + 关键词搜索）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct SearchProjectsRequest {
+    /// 搜索关键词（FTS5 + 向量语义混合搜索）
+    pub keyword: Option<String>,
+    /// 按 ID 批量查询
+    pub ids: Option<Vec<String>>,
+    /// 根用户 ID
+    pub root_user_id: Option<String>,
+    /// 状态列表（OR 语义）
+    pub status_in: Option<Vec<ProjectStatus>>,
+    /// 按 Owner Agent ID 过滤
+    pub owner_agent_id: Option<String>,
+    /// 分页参数（limit + offset）
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+}
+
+/// 搜索 Project 响应（分页）
+pub type SearchProjectsResponse = PagedResult<ProjectListItem>;
 
 /// Project 列表项响应别名（前端兼容）
 pub type ListProjectsResponseItem = ProjectListItem;
