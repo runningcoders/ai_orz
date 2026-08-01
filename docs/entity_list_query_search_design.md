@@ -259,23 +259,130 @@ pub async fn search_xxx(req: &SearchXxxRequest) -> Result<PagedResult<XxxListIte
 }
 ```
 
-**页面层**（`frontend/src/pages/{domain}/xxx.rs`）：
+**页面层 - 筛选区域 UI 模式**（`frontend/src/pages/{domain}/xxx.rs`）：
+
+所有实体的列表页面统一采用「独立筛选卡片 + filter-row + filter-item」结构，与标题行、列表卡片分离：
+
 ```rust
-// 三场景切换：无关键词 → list；有关键词 → search
-let result = if keyword.trim().is_empty() {
-    list_xxx(ListXxxRequest::default()).await.map(|p| p.items)
-} else {
-    search_xxx(&SearchXxxRequest {
-        keyword: Some(keyword),
-        ..Default::default()
-    }).await.map(|p| p.items)
+// 1. 标题行（独立）：标题 + 创建按钮
+div { class: "flex justify-between items-center mb-4",
+    h2 { class: "text-xl font-bold", "Xxx 管理" }
+    button { class: "btn btn-primary btn-sm", "+ 创建" }
+}
+
+// 2. 筛选卡片（独立）：filter-row 横向排列 filter-item
+div { class: "card bg-base-100 shadow-md mb-4",
+    div { class: "card-body",
+        div { class: "flex flex-wrap gap-4 items-end",  // filter-row
+            // 每个 filter-item：label + 控件垂直排列
+            div { class: "flex flex-col gap-1 min-w-[140px] flex-1",  // filter-item
+                label { class: "form-label", "状态" }
+                select {
+                    class: "select select-bordered w-full",
+                    onchange: move |e| { /* set signal + load_data() */ },
+                    option { value: "-1", "全部" }
+                    // 选项...
+                }
+            }
+            // 搜索框也是 filter-item
+            div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                label { class: "form-label", "搜索" }
+                input {
+                    class: "input input-bordered w-full",
+                    placeholder: "搜索...",
+                    oninput: move |e| { /* 300ms 防抖 */ }
+                }
+            }
+        }
+    }
+}
+
+// 3. 列表卡片（独立）
+div { class: "card bg-base-100 shadow-md", /* 表格 */ }
+```
+
+> **注意**：`filter-row` / `filter-item` CSS 类在样式表中未定义，统一使用 Tailwind 内联类替代：
+> - `filter-row` → `flex flex-wrap gap-4 items-end`
+> - `filter-item` → `flex flex-col gap-1 min-w-[140px] flex-1`
+
+**页面层 - 搜索框 300ms 防抖模式**：
+
+所有搜索框统一使用 300ms 防抖 + `search_request_id` 竞态防护（不再用 Enter 键触发）：
+
+```rust
+oninput: move |e| {
+    search_keyword.set(e.value());
+    let my_id = search_request_id() + 1;
+    search_request_id.set(my_id);
+    spawn(async move {
+        gloo_timers::future::TimeoutFuture::new(300).await;
+        if search_request_id() != my_id { return; }  // 丢弃过期请求
+        load_data();
+    });
+}
+```
+
+> select 下拉的 `onchange` 直接触发 `load_data()`，无需防抖。
+
+**页面层 - 三场景切换 load_data 函数**：
+
+```rust
+let load_data = move || {
+    spawn(async move {
+        let keyword = search_keyword();
+        let has_filter = /* 检查各过滤 signal 是否有值 */;
+
+        let my_id = search_request_id() + 1;
+        search_request_id.set(my_id);
+
+        let result = if keyword.trim().is_empty() && !has_filter {
+            // 场景1：无关键词 + 无过滤 → list
+            list_xxx(ListXxxRequest::default()).await.map(|p| p.items)
+        } else if keyword.trim().is_empty() {
+            // 场景2：有过滤 + 无关键词 → query
+            query_xxx(&XxxQueryRequest {
+                status: /* 过滤字段 */,
+                ..Default::default()
+            }).await.map(|p| p.items)
+        } else {
+            // 场景3：有关键词 → search（带完整过滤条件）
+            search_xxx(&SearchXxxRequest {
+                keyword: Some(keyword),
+                status: /* 过滤字段 */,
+                ..Default::default()
+            }).await.map(|p| p.items)
+        };
+
+        if search_request_id() != my_id { return; }  // 丢弃过期请求
+        match result {
+            Ok(v) => xxx_list.set(v),
+            Err(e) => toast.error(&e),
+        }
+        loading.set(false);
+    });
 };
 ```
 
+**各实体前端过滤字段**：
+
+| 实体 | 过滤字段 | 说明 |
+|------|----------|------|
+| Agent | status | 面试中/待入职/已入职/已离职/待离职（不展示 Deleted） |
+| Tool | protocol, status | 协议（内置/HTTP/MCP）+ 状态（启用/禁用，不展示 Stale） |
+| Skill | category, status | 分类（文本输入）+ 状态（已发布/草稿，不展示 Expired） |
+| Project | status | 活跃/待审核/进行中/已完成/已归档 |
+| Task | project_id, status, assignee_type | 项目下拉 + 状态 + 负责人类型 |
+
 **经验**：
 - 前端 `search_xxx` 函数签名应接受 `&SearchXxxRequest`（完整结构），不是只接受 `keyword: &str`
-- 页面三场景切换：无关键词 → list；有过滤条件 → query；有关键词 → search
-- list 和 search 返回类型统一为 `PagedResult`，前端通过 `.map(|p| p.items)` 对齐
+- 页面三场景切换必须齐全：**无关键词无过滤 → list；有过滤无关键词 → query；有关键词 → search**（query 不能省略）
+- search 场景必须**同时携带完整过滤条件**（keyword + 各过滤字段），不是只传 keyword
+- list/query/search 返回类型统一为 `PagedResult`，前端通过 `.map(|p| p.items)` 对齐
+- 筛选区域采用独立卡片 + filter-row 模式，与标题行和列表卡片分离，UI 统一
+- 搜索框统一 300ms 防抖 + `search_request_id` 竞态防护，select 下拉 onchange 直接触发
+- 过滤字段用 `-1`（i32）或空字符串表示「全部」，转换时判断 `>= 0` 或 `!is_empty()`
+- 过滤选项不展示异常状态（如 Tool 的 Stale、Skill 的 Expired、Agent 的 Deleted）
+- 操作（启用/禁用/删除等）后调用 `load_data()` 刷新，保留当前搜索/过滤状态
 
 ---
 
@@ -297,9 +404,16 @@ let result = if keyword.trim().is_empty() {
 - [ ] 测试：更新 search 相关测试断言为 PagedResult 访问（`.items.len()` / `.items[N]`）
 
 ### 前端
-- [ ] API：新增/修改 `search_xxx(req: &SearchXxxRequest) -> Result<PagedResult<...>>`
-- [ ] 页面：三场景切换逻辑（无关键词 → list；有关键词 → search）
-- [ ] 页面：list 和 search 返回类型统一对齐
+- [ ] API：新增/修改 `search_xxx(req: &SearchXxxRequest) -> Result<PagedResult<...>>`（POST）
+- [ ] API：新增/修改 `query_xxx(req: &XxxQueryRequest) -> Result<PagedResult<...>>`（POST）
+- [ ] 页面：三场景切换逻辑齐全（无关键词无过滤 → list；有过滤无关键词 → query；有关键词 → search）
+- [ ] 页面：search 场景同时携带完整过滤条件（keyword + 各过滤字段）
+- [ ] 页面：list/query/search 返回类型统一为 `PagedResult`，通过 `.map(|p| p.items)` 对齐
+- [ ] 页面：筛选区域采用独立卡片 + filter-row + filter-item UI 模式
+- [ ] 页面：搜索框 300ms 防抖 + `search_request_id` 竞态防护
+- [ ] 页面：select 下拉 onchange 直接触发 load_data
+- [ ] 页面：常用过滤字段已暴露（如 status/protocol/category 等，不展示异常状态）
+- [ ] 页面：操作后调用 `load_data()` 刷新，保留当前搜索/过滤状态
 
 ---
 
@@ -330,3 +444,5 @@ let result = if keyword.trim().is_empty() {
 6. **SQL 过滤复用**：`push_query_filters` 函数被 query 和 search 共同复用，避免遗漏
 7. **软删除默认排除**：search 和 query 默认 `exclude_status = Some(Deleted)`
 8. **路由统一 POST**：search 和 query 都用 POST body 传参（不是 GET query string）
+9. **前端 UI 统一**：筛选区域采用独立卡片 + filter-row + filter-item 模式，搜索框 300ms 防抖 + 竞态防护，三场景切换齐全（query 不可省略）
+10. **前端过滤字段暴露**：常用过滤条件（如 status/protocol/category）应在 UI 暴露，异常状态（Stale/Expired/Deleted）不在选项中展示
