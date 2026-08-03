@@ -4,7 +4,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::message::{self, SendToUserCommand};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SendMessageParams, SendMessageResponse};
-use common::enums::CallerType;
 use common::error::Result;
 
 /// 发送消息给用户
@@ -21,12 +20,8 @@ pub async fn send_message(
     ctx: RequestContext,
     params: SendMessageParams,
 ) -> Result<SendMessageResponse> {
-    // 根据 caller_type 选择 from_agent_id 来源（替换原 agent_id fallback system 的隐式推断）
-    let from_agent_id = match ctx.caller_type() {
-        CallerType::Agent => ctx.agent_id().map(|s| s.to_string()).unwrap_or_default(),
-        CallerType::User => ctx.uid(),
-        CallerType::System => "system".to_string(),
-    };
+    // 调用方身份由 ctx 封装方法统一提供
+    let from_agent_id = ctx.caller_id_or_system();
 
     let cmd = SendToUserCommand {
         from_agent_id: &from_agent_id,

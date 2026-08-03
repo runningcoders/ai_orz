@@ -3,7 +3,7 @@ use crate::pkg::storage::{self, Storage, VectorStore};
 use ai_orz_macros::LogFields;
 use axum::http;
 use common::constants::http_header;
-use common::enums::CallerType;
+use common::enums::{CallerType, MessageRole};
 use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
 
@@ -436,6 +436,33 @@ impl RequestContext {
     /// 获取调用方类型
     pub fn caller_type(&self) -> CallerType {
         self.caller_type
+    }
+
+    /// 获取调用方 ID（用于 stats operator_id 等场景）
+    ///
+    /// - Agent → agent_id
+    /// - User → user_id
+    /// - System → None（系统触发无操作者 ID）
+    pub fn caller_id(&self) -> Option<String> {
+        match self.caller_type {
+            CallerType::Agent => self.agent_id.clone(),
+            CallerType::User => self.user_id.clone(),
+            CallerType::System => None,
+        }
+    }
+
+    /// 获取调用方 ID，System 场景回退为 "system"（用于消息发送 from_id 等场景）
+    pub fn caller_id_or_system(&self) -> String {
+        self.caller_id().unwrap_or_else(|| "system".to_string())
+    }
+
+    /// 调用方类型映射为 MessageRole（用于消息发送 from_role 场景）
+    pub fn caller_role(&self) -> MessageRole {
+        match self.caller_type {
+            CallerType::Agent => MessageRole::Agent,
+            CallerType::User => MessageRole::User,
+            CallerType::System => MessageRole::System,
+        }
     }
 
     /// 获取当前 User ID

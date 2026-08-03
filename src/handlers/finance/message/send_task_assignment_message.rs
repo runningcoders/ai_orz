@@ -4,7 +4,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::message::{self, SendTaskAssignmentCommand};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SendTaskAssignmentMessageParams, SendTaskAssignmentMessageResponse};
-use common::enums::CallerType;
 use common::error::Result;
 
 /// 发送任务分配消息
@@ -24,15 +23,9 @@ pub async fn send_task_assignment_message(
     ctx: RequestContext,
     params: SendTaskAssignmentMessageParams,
 ) -> Result<SendTaskAssignmentMessageResponse> {
-    // 根据 caller_type 选择 from_id 来源和 from_role（补齐 System 分支）
-    let (from_id, from_role) = match ctx.caller_type() {
-        CallerType::Agent => (
-            ctx.agent_id().map(|s| s.to_string()).unwrap_or_default(),
-            common::enums::MessageRole::Agent,
-        ),
-        CallerType::User => (ctx.uid(), common::enums::MessageRole::User),
-        CallerType::System => ("system".to_string(), common::enums::MessageRole::System),
-    };
+    // 调用方身份由 ctx 封装方法统一提供
+    let from_id = ctx.caller_id_or_system();
+    let from_role = ctx.caller_role();
 
     let cmd = SendTaskAssignmentCommand {
         task_id: &params.task_id,

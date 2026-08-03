@@ -15,7 +15,6 @@ use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SendMessageToAgentParams, SendMessageToAgentResponse};
-use common::enums::{CallerType, MessageRole};
 use common::error::Result;
 
 /// Send a message to another AI agent (for collaboration)
@@ -31,15 +30,9 @@ pub async fn send_message_to_agent(
     ctx: RequestContext,
     params: SendMessageToAgentParams,
 ) -> Result<SendMessageToAgentResponse> {
-    // 根据 caller_type 判断发送者身份（替换原 agent_id().is_some() 隐式推断）
-    let (from_id, from_role) = match ctx.caller_type() {
-        CallerType::Agent => (
-            ctx.agent_id().map(|s| s.to_string()).unwrap_or_default(),
-            MessageRole::Agent,
-        ),
-        CallerType::User => (ctx.uid(), MessageRole::User),
-        CallerType::System => ("system".to_string(), MessageRole::System),
-    };
+    // 调用方身份由 ctx 封装方法统一提供
+    let from_id = ctx.caller_id_or_system();
+    let from_role = ctx.caller_role();
 
     // 路由 to_agent_id（协作关系类比）：
     // 1. 显式指定优先（用户在前端选定 Agent）

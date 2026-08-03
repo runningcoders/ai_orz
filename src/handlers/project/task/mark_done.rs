@@ -4,7 +4,6 @@ use crate::pkg::RequestContext;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{MarkDoneParams, MarkDoneResponse};
-use common::enums::CallerType;
 use common::error::Result;
 
 /// 标记任务完成
@@ -25,12 +24,8 @@ pub async fn mark_done(ctx: RequestContext, params: MarkDoneParams) -> Result<Ma
         .await?
         .ok_or_else(|| common::error::err!(NotFound, "Task {} not found", params.task_id))?;
 
-    // 根据 caller_type 选择 modified_by（替换原 agent_id fallback user_id fallback system 的隐式推断）
-    let modified_by = match ctx.caller_type() {
-        CallerType::Agent => ctx.agent_id().cloned().unwrap_or_default(),
-        CallerType::User => ctx.uid(),
-        CallerType::System => "system".to_string(),
-    };
+    // 调用方身份由 ctx 封装方法统一提供
+    let modified_by = ctx.caller_id_or_system();
 
     project_domain
         .task_manage()
