@@ -78,6 +78,9 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         req.headers_mut()
             .insert(http_header::USER_ROLE, header_value);
     }
+    // 注入 caller_type = User（JWT 验证通过的都是用户请求）
+    req.headers_mut()
+        .insert(http_header::CALLER_TYPE, HeaderValue::from_static("user"));
 
     // 4. JWT 验证通过，继续处理请求
     Ok(next.run(req).await)
