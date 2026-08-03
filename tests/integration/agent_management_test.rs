@@ -383,3 +383,80 @@ async fn test_agent_search_by_keyword(pool: SqlitePool) {
         .any(|item| item.get("name").and_then(|v| v.as_str()) == Some(name_a.as_str()));
     assert!(found_a, "search should find agent A by its full name");
 }
+
+/// Query agents by IDs batch and status filter via POST /hr/agents/query.
+///
+/// Verifies:
+/// - Batch query by ids returns exactly those agents
+/// - Query by status filter returns only matching agents
+#[sqlx::test]
+async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // Create two agents
+    let id_a = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("QueryTargetA-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+    let id_b = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("QueryTargetB-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    // Batch query by ids — should return exactly these 2
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/query",
+            &json!({"ids": [id_a, id_b], "limit": 20, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let items = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("items should be an array");
+    let returned_ids: Vec<&str> = items
+        .iter()
+        .filter_map(|item| item.get("id").and_then(|v| v.as_str()))
+        .collect();
+    assert!(
+        returned_ids.contains(&id_a.as_str()),
+        "query by ids should include agent A"
+    );
+    assert!(
+        returned_ids.contains(&id_b.as_str()),
+        "query by ids should include agent B"
+    );
+
+    // Query by status=Interviewing — all newly created agents are Interviewing
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/query",
+            &json!({"status": "Interviewing", "limit": 50, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let items = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("items should be an array");
+    // All returned agents should be Interviewing (1)
+    for item in items {
+        assert_eq!(
+            item.get("status").and_then(|v| v.as_i64()),
+            Some(1),
+            "all queried agents should be Interviewing (1)"
+        );
+    }
+}
