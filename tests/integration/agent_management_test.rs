@@ -17,6 +17,76 @@ use crate::common::TestApp;
 use serde_json::json;
 use sqlx::SqlitePool;
 
+// ===== 真实向量搜索测试辅助（Part B）=====
+
+/// Load .env file and read an env var. Returns None if unset or empty.
+fn env_or_none(key: &str) -> Option<String> {
+    let _ = dotenvy::dotenv();
+    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Parse provider type string to serde variant name.
+fn parse_provider_type(s: &str) -> &'static str {
+    match s.to_lowercase().as_str() {
+        "openai" | "0" => "OpenAI",
+        "deepseek" | "1" => "DeepSeek",
+        "qwen" | "2" => "Qwen",
+        "doubao" | "3" => "Doubao",
+        "ollama" | "4" => "Ollama",
+        "custom" | "5" => "Custom",
+        _ => "OpenAI",
+    }
+}
+
+/// Real model test config parsed from environment variables.
+struct RealModelConfig {
+    embedding_api_key: String,
+    embedding_model_name: String,
+    embedding_provider_type: &'static str,
+    embedding_base_url: Option<String>,
+}
+
+impl RealModelConfig {
+    /// Load embedding config from env. Returns None if API key is missing.
+    fn from_env() -> Option<Self> {
+        let embedding_api_key = env_or_none("TEST_EMBEDDING_API_KEY")?;
+        let embedding_model_name =
+            env_or_none("TEST_EMBEDDING_MODEL_NAME").unwrap_or_else(|| "text-embedding-3-small".into());
+        let embedding_provider_type = env_or_none("TEST_EMBEDDING_PROVIDER_TYPE")
+            .as_deref()
+            .map(parse_provider_type)
+            .unwrap_or("OpenAI");
+        let embedding_base_url = env_or_none("TEST_EMBEDDING_BASE_URL");
+        Some(Self {
+            embedding_api_key,
+            embedding_model_name,
+            embedding_provider_type,
+            embedding_base_url,
+        })
+    }
+}
+
+/// Create a real Embedding ModelProvider via HTTP API. Returns the provider ID.
+async fn create_embedding_provider(app: &TestApp, jwt: &str, cfg: &RealModelConfig) -> String {
+    let req = json!({
+        "name": format!("TestEmbedding-{}", uuid::Uuid::now_v7()),
+        "provider_type": cfg.embedding_provider_type,
+        "capability": "Embedding",
+        "model_name": cfg.embedding_model_name,
+        "api_key": cfg.embedding_api_key,
+        "base_url": cfg.embedding_base_url,
+        "description": "Real embedding provider for vector search tests",
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    data.get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing provider id")
+        .to_string()
+}
+
 /// Smoke test: create agent via factory, get it back, verify name.
 #[sqlx::test]
 async fn test_agent_smoke(pool: SqlitePool) {
@@ -818,4 +888,346 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
         "creating Local agent with empty model_provider_id should fail: body={}",
         body
     );
+}
+
+/// Real vector search: create embedding provider → create agents with
+/// semantically distinct descriptions → search by a keyword that does NOT
+/// appear in the text but is semantically related.
+///
+/// This verifies the vector index is built and semantic recall works.
+/// Uses Doubao embedding model via real API.
+#[sqlx::test]
+#[ignore = "requires real Embedding API key in .env (TEST_EMBEDDING_API_KEY)"]
+async fn test_real_vector_semantic_search(pool: SqlitePool) {
+    let Some(cfg) = RealModelConfig::from_env() else {
+        eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping vector search test");
+        return;
+    };
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. Create real Embedding provider
+    let embedding_provider_id = create_embedding_provider(&app, &jwt, &cfg).await;
+
+    // 2. Create an agent with a description that does NOT contain the search keyword,
+    //    but is semantically related.
+    //    Description mentions "深度学习模型训练与梯度下降" — search keyword "神经网络"
+    //    is semantically related but not a literal substring.
+    let agent_name = format!("VectorSearchAgent-{}", uuid::Uuid::now_v7());
+    let agent_req = json!({
+        "name": agent_name,
+        "description": "这是一个专门负责深度学习模型训练与梯度下降优化的智能助手",
+        "model_provider_id": bs.chat_provider_id,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents", &agent_req, &jwt)
+        .await;
+    let agent_data = crate::common::assert_api_ok(status, &body);
+    let agent_id = agent_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing agent id")
+        .to_string();
+
+    // Wait for async vector indexing to complete
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // 3. Search by a semantically related keyword that is NOT in the text
+    //    "神经网络" (neural network) is semantically close to "深度学习" (deep learning)
+    //    but does not appear literally in the description.
+    let search_req = json!({
+        "keyword": "神经网络",
+        "limit": 20,
+        "offset": 0
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents/search", &search_req, &jwt)
+        .await;
+    let search_data = crate::common::assert_api_ok(status, &body);
+    let items = search_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("missing items in search response");
+
+    // The agent should be found via semantic (vector) similarity
+    let found = items
+        .iter()
+        .any(|item| item.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str()));
+    assert!(
+        found,
+        "agent should be found via semantic vector search for '神经网络' \
+         (description mentions '深度学习'); items: {:?}",
+        items
+            .iter()
+            .map(|i| i.get("name").and_then(|v| v.as_str()).unwrap_or("?"))
+            .collect::<Vec<_>>()
+    );
+
+    eprintln!("Vector semantic search test passed: agent found via semantic similarity");
+
+    // Cleanup
+    let _ = app
+        .delete_with_jwt(
+            &format!("/api/v1/finance/model-providers/{}", embedding_provider_id),
+            &jwt,
+        )
+        .await;
+}
+
+/// Vector index auto-maintenance: update agent description → verify new
+/// vector reflects updated text; delete agent → verify it disappears from
+/// search results.
+///
+/// Uses real Embedding model to verify the full lifecycle of vector index
+/// maintenance (create → update → delete).
+#[sqlx::test]
+#[ignore = "requires real Embedding API key in .env (TEST_EMBEDDING_API_KEY)"]
+async fn test_real_vector_index_maintenance(pool: SqlitePool) {
+    let Some(cfg) = RealModelConfig::from_env() else {
+        eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping vector maintenance test");
+        return;
+    };
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. Create embedding provider
+    let embedding_provider_id = create_embedding_provider(&app, &jwt, &cfg).await;
+
+    // 2. Create an agent with an initial description
+    let agent_name = format!("VectorMaintAgent-{}", uuid::Uuid::now_v7());
+    let agent_req = json!({
+        "name": agent_name,
+        "description": "负责前端页面开发和用户界面设计的助手",
+        "model_provider_id": bs.chat_provider_id,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents", &agent_req, &jwt)
+        .await;
+    let agent_data = crate::common::assert_api_ok(status, &body);
+    let agent_id = agent_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing agent id")
+        .to_string();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // 3. Verify initial search finds agent by "前端" keyword
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({"keyword": "前端", "limit": 20, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let search_data = crate::common::assert_api_ok(status, &body);
+    let items = search_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("missing items");
+    let found_before = items
+        .iter()
+        .any(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str()));
+    assert!(found_before, "agent should be found before update");
+
+    // 4. Update agent description to a completely different domain
+    let update_req = json!({
+        "id": agent_id,
+        "name": agent_name,
+        "description": "负责数据库管理和SQL查询优化的专家",
+        "model_provider_id": bs.chat_provider_id,
+    });
+    let (status, _body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}", agent_id),
+            &update_req,
+            &jwt,
+        )
+        .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "update should succeed");
+
+    // Wait for vector re-indexing
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // 5. Search by "数据库" — should still find the agent (updated vector)
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({"keyword": "数据库", "limit": 20, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let search_data = crate::common::assert_api_ok(status, &body);
+    let items = search_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("missing items");
+    let found_after_update = items
+        .iter()
+        .any(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str()));
+    assert!(
+        found_after_update,
+        "agent should be found via new description after update"
+    );
+
+    // 6. Delete the agent
+    let (status, _body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "delete should succeed");
+
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // 7. Search again — agent should NOT appear
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({"keyword": "数据库", "limit": 50, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let search_data = crate::common::assert_api_ok(status, &body);
+    let items = search_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("missing items");
+    let still_found = items
+        .iter()
+        .any(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_id.as_str()));
+    assert!(
+        !still_found,
+        "deleted agent should not appear in search results"
+    );
+
+    eprintln!("Vector index maintenance test passed: create → update → delete lifecycle verified");
+
+    // Cleanup
+    let _ = app
+        .delete_with_jwt(
+            &format!("/api/v1/finance/model-providers/{}", embedding_provider_id),
+            &jwt,
+        )
+        .await;
+}
+
+/// Hybrid search ranking: create two agents — one matching by keyword (FTS5),
+/// one matching by semantic similarity (vector). Search with a keyword that
+/// matches one literally and the other semantically.
+///
+/// Verifies:
+/// - Both agents appear in search results (hybrid: FTS5 + vector)
+/// - The keyword-match agent ranks higher (FTS5 score > vector score)
+#[sqlx::test]
+#[ignore = "requires real Embedding API key in .env (TEST_EMBEDDING_API_KEY)"]
+async fn test_real_hybrid_search_ranking(pool: SqlitePool) {
+    let Some(cfg) = RealModelConfig::from_env() else {
+        eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping hybrid search test");
+        return;
+    };
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. Create embedding provider
+    let embedding_provider_id = create_embedding_provider(&app, &jwt, &cfg).await;
+
+    // 2. Create two agents:
+    //    Agent A: description contains the search keyword literally (FTS5 match)
+    //    Agent B: description is semantically related but does NOT contain the keyword
+    let unique = uuid::Uuid::now_v7().to_string();
+    let name_a = format!("FtsMatchAgent-{}", unique);
+    let name_b = format!("VectorMatchAgent-{}", unique);
+
+    // Agent A: "自然语言处理" (contains the search keyword)
+    let req_a = json!({
+        "name": name_a,
+        "description": "专注于自然语言处理和文本分析的助手",
+        "model_provider_id": bs.chat_provider_id,
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/hr/agents", &req_a, &jwt).await;
+    let agent_a_id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing id")
+        .to_string();
+
+    // Agent B: "语义理解与文本挖掘" (semantically related to NLP but no "自然语言处理")
+    let req_b = json!({
+        "name": name_b,
+        "description": "负责语义理解和文本挖掘的智能体",
+        "model_provider_id": bs.chat_provider_id,
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/hr/agents", &req_b, &jwt).await;
+    let agent_b_id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing id")
+        .to_string();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // 3. Search by "自然语言处理" — Agent A matches literally (FTS5),
+    //    Agent B matches via semantic similarity (vector)
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({
+                "keyword": "自然语言处理",
+                "limit": 20,
+                "offset": 0
+            }),
+            &jwt,
+        )
+        .await;
+    let search_data = crate::common::assert_api_ok(status, &body);
+    let items = search_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("missing items");
+
+    // Both agents should be found (hybrid: FTS5 for A, vector for B)
+    let found_a = items
+        .iter()
+        .any(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_a_id.as_str()));
+    let found_b = items
+        .iter()
+        .any(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_b_id.as_str()));
+    assert!(found_a, "Agent A should be found via FTS5 keyword match");
+    assert!(
+        found_b,
+        "Agent B should be found via vector semantic similarity"
+    );
+
+    // Verify ranking: Agent A (FTS5) should rank higher than Agent B (vector only)
+    if found_a && found_b {
+        let pos_a = items
+            .iter()
+            .position(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_a_id.as_str()));
+        let pos_b = items
+            .iter()
+            .position(|i| i.get("id").and_then(|v| v.as_str()) == Some(agent_b_id.as_str()));
+        if let (Some(pa), Some(pb)) = (pos_a, pos_b) {
+            assert!(
+                pa < pb,
+                "FTS5 match (Agent A, pos={}) should rank higher than vector match (Agent B, pos={})",
+                pa,
+                pb
+            );
+        }
+    }
+
+    eprintln!("Hybrid search ranking test passed: FTS5 ranks higher than vector-only match");
+
+    // Cleanup
+    let _ = app
+        .delete_with_jwt(
+            &format!("/api/v1/finance/model-providers/{}", embedding_provider_id),
+            &jwt,
+        )
+        .await;
 }
