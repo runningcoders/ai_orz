@@ -14,3 +14,6 @@ pub const ORGANIZATION_ID: &str = "X-Organization-Id";
 
 /// 当前用户角色（UserRole 数值）
 pub const USER_ROLE: &str = "X-User-Role";
+
+/// 调用方类型（CallerType: user/agent/system 或 0/1/2）
+pub const CALLER_TYPE: &str = "X-Caller-Type";

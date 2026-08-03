@@ -3,6 +3,7 @@ use crate::pkg::storage::{self, Storage, VectorStore};
 use ai_orz_macros::LogFields;
 use axum::http;
 use common::constants::http_header;
+use common::enums::CallerType;
 use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
 
@@ -35,6 +36,9 @@ pub struct RequestContext {
     /// 当前用户角色（数值，对应 UserRole 枚举）
     #[log_field]
     pub user_role: Option<i32>,
+    /// 调用方类型（User/Agent/System），默认 User
+    #[log_field]
+    pub caller_type: common::enums::CallerType,
 
     /// 当前 Agent ID（可选，Agent 执行时有值）
     #[log_field]
@@ -81,6 +85,7 @@ pub struct RequestContextBuilder {
     username: Option<String>,
     organization_id: Option<String>,
     user_role: Option<i32>,
+    caller_type: Option<CallerType>,
     agent_id: Option<String>,
     task_id: Option<String>,
     project_id: Option<String>,
@@ -97,6 +102,7 @@ impl RequestContextBuilder {
             username: None,
             organization_id: None,
             user_role: None,
+            caller_type: None,
             agent_id: None,
             task_id: None,
             project_id: None,
@@ -128,6 +134,20 @@ impl RequestContextBuilder {
 
     pub fn user_role(mut self, role: i32) -> Self {
         self.user_role = Some(role);
+        self
+    }
+
+    /// 设置调用方类型
+    pub fn caller_type(mut self, ct: CallerType) -> Self {
+        self.caller_type = Some(ct);
+        self
+    }
+
+    /// 条件设置调用方类型（None 时跳过）
+    pub fn try_caller_type(mut self, ct: Option<impl Into<CallerType>>) -> Self {
+        if let Some(c) = ct {
+            self.caller_type = Some(c.into());
+        }
         self
     }
 
@@ -231,6 +251,7 @@ impl RequestContextBuilder {
             username: self.username,
             organization_id: self.organization_id,
             user_role: self.user_role,
+            caller_type: self.caller_type.unwrap_or_default(),
             agent_id: self.agent_id,
             task_id: self.task_id,
             project_id: self.project_id,
@@ -261,6 +282,7 @@ impl RequestContext {
             username: self.username.clone(),
             organization_id: self.organization_id.clone(),
             user_role: self.user_role,
+            caller_type: Some(self.caller_type),
             agent_id: self.agent_id.clone(),
             task_id: self.task_id.clone(),
             project_id: self.project_id.clone(),
@@ -301,6 +323,18 @@ impl RequestContext {
             .and_then(|v: &http::HeaderValue| v.to_str().ok())
             .and_then(|s| s.parse::<i32>().ok());
 
+        // 5. 解析 caller_type：优先从 X-Caller-Type header 读取
+        let caller_type = headers
+            .get(http_header::CALLER_TYPE)
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
+            .map(|s| match s.to_lowercase().as_str() {
+                "user" | "0" => CallerType::User,
+                "agent" | "1" => CallerType::Agent,
+                "system" | "2" => CallerType::System,
+                _ => CallerType::User,
+            })
+            .unwrap_or(CallerType::User);
+
         let mut builder = Self::builder();
         if let Some(id) = log_id {
             builder = builder.log_id(id);
@@ -317,6 +351,7 @@ impl RequestContext {
         if let Some(role) = user_role {
             builder = builder.user_role(role);
         }
+        builder = builder.caller_type(caller_type);
         builder.build()
     }
 
@@ -330,6 +365,11 @@ impl RequestContext {
             builder = builder.username(name);
         }
         builder.build()
+    }
+
+    /// 创建 System 调用方的 ctx（用于 Cron、A2A 回调、AOP 调度等系统触发场景）
+    pub fn new_system() -> Self {
+        Self::builder().caller_type(CallerType::System).build()
     }
 
     /// 从指定 Storage 创建上下文（测试辅助，由 test_support 调用）
@@ -391,6 +431,11 @@ impl RequestContext {
     /// 获取当前 User Role（数值，对应 UserRole 枚举）
     pub fn user_role(&self) -> Option<i32> {
         self.user_role
+    }
+
+    /// 获取调用方类型
+    pub fn caller_type(&self) -> CallerType {
+        self.caller_type
     }
 
     /// 获取当前 User ID
