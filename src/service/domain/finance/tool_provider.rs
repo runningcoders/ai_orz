@@ -79,7 +79,7 @@ impl ToolProviderManage for FinanceDomainImpl {
         tool_id: &str,
     ) -> Result<()> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
-        let created_by = ctx.uid();
+        let created_by = ctx.caller_id_or_system();
         self.tool_dal
             .add_tool_to_agent(ctx.clone(), agent_id, tool_id, Some(created_by))
             .await

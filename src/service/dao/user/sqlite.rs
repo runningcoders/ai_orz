@@ -154,7 +154,7 @@ FROM users WHERE username = ? AND status != 0
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = ctx.uid().to_string();
+        let uid = ctx.caller_id_or_system();
         let role = user.role as i32;
         let status = user.status as i32;
         sqlx::query!(
@@ -183,7 +183,7 @@ WHERE id = ?
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = ctx.uid().to_string();
+        let uid = ctx.caller_id_or_system();
         sqlx::query!(
             r#"
 UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?

@@ -105,7 +105,7 @@ FROM organizations WHERE id = ? AND status != 0
 
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = ctx.uid().to_string();
+        let uid = ctx.caller_id_or_system();
         let status = org.status as i32;
         let scope = org.scope as i32;
         sqlx::query!(
@@ -131,7 +131,7 @@ WHERE id = ?
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = ctx.uid().to_string();
+        let uid = ctx.caller_id_or_system();
         sqlx::query!(
             r#"
 UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?

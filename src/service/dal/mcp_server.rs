@@ -74,7 +74,7 @@ impl McpServerDal for McpServerDalImpl {
         validate_mcp_server_po(&server.po)?;
         let mut po = server.po.clone();
         let now = common::constants::utils::current_timestamp();
-        let uid = Some(ctx.uid());
+        let uid = ctx.caller_id();
         po.created_at = now;
         po.updated_at = now;
         po.created_by = uid.clone();

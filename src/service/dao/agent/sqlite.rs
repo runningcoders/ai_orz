@@ -273,7 +273,7 @@ FROM agents WHERE id = ? AND status <> 0
         let current_timestamp = Utc::now().timestamp();
         let status = agent.status as i32;
         let kind = agent.kind as i32;
-        let uid = _ctx.uid();
+        let uid = _ctx.caller_id_or_system();
         sqlx::query!(
             r#"
 UPDATE agents
@@ -304,7 +304,7 @@ WHERE id = ?
 
     async fn delete(&self, _ctx: RequestContext, agent: &AgentPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = _ctx.uid().to_string();
+        let uid = _ctx.caller_id_or_system();
         sqlx::query!(
             r#"
 UPDATE agents SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?

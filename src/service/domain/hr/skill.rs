@@ -271,7 +271,7 @@ impl SkillManage for HrDomainImpl {
 
         // 更新 skill 元数据
         po.updated_at = current_timestamp();
-        po.modifier_id = ctx.uid().to_string();
+        po.modifier_id = ctx.caller_id_or_system();
         self.skill_dal
             .update(
                 ctx.clone(),

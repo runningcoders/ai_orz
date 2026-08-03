@@ -169,7 +169,7 @@ WHERE id = ?
 
     async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp();
-        let uid = ctx.uid().to_string();
+        let uid = ctx.caller_id_or_system();
         let pool = ctx.db_pool();
         sqlx::query!(
             r#"

@@ -164,7 +164,7 @@ WHERE id = ? AND "status" != 0
     async fn update_status(&self, ctx: RequestContext, id: &str, status: i32) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp_ms();
-        let modified_by = ctx.uid();
+        let modified_by = ctx.caller_id_or_system();
         sqlx::query(
             r#"
 UPDATE attachments SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = ?
@@ -186,7 +186,7 @@ UPDATE attachments SET "status" = ?, modified_by = ?, updated_at = ? WHERE id = 
     async fn update_file_metadata(&self, ctx: RequestContext, id: &str, size: i64) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp_ms();
-        let modified_by = ctx.uid();
+        let modified_by = ctx.caller_id_or_system();
         sqlx::query(
             r#"
 UPDATE attachments SET size = ?, modified_by = ?, updated_at = ? WHERE id = ? AND "status" != 0
