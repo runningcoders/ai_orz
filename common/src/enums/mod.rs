@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod agent_kind;
 pub mod artifact;
+pub mod caller_type;
 pub mod cron_trigger;
 pub mod file;
 pub mod mcp_server;
@@ -20,6 +21,7 @@ pub mod user;
 pub use agent::{AgentRuntimeState, AgentStatus, ModelProviderStatus};
 pub use agent_kind::AgentKind;
 pub use artifact::ArtifactSourceType;
+pub use caller_type::CallerType;
 pub use cron_trigger::TriggerType;
 pub use file::FileType;
 pub use mcp_server::{McpServerStatus, McpTransport};
