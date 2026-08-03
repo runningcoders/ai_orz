@@ -6,7 +6,7 @@ use crate::models::task::Task;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::TaskEvent;
 use common::constants::utils;
-use common::enums::{AssigneeType, TaskStatus};
+use common::enums::{AssigneeType, CallerType, TaskStatus};
 use common::error::{Result, bail_err, err};
 use uuid::Uuid;
 
@@ -92,12 +92,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "created".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),
@@ -294,12 +294,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "started".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),
@@ -339,12 +339,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "completed".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),
@@ -379,12 +379,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "cancelled".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),
@@ -473,12 +473,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "status_changed".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),
@@ -519,12 +519,12 @@ impl super::TaskManage for ProjectDomainImpl {
                 project_id: task.po.project_id.clone(),
                 event_type: "progress_updated".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(task.po.root_user_id.clone()),
                 assignee_type: Some(format!("{:?}", task.po.assignee_type)),
                 assignee_id: Some(task.po.assignee_id.clone()),

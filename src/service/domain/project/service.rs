@@ -7,7 +7,7 @@ use crate::pkg::RequestContext;
 use crate::pkg::stats::ProjectEvent;
 use crate::pkg::utils::graph::MermaidDirection;
 use common::constants::utils;
-use common::enums::project::ProjectStatus;
+use common::enums::{CallerType, project::ProjectStatus};
 use uuid::Uuid;
 
 use super::ProjectDomainImpl;
@@ -59,12 +59,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project_id: project.po.id.clone(),
                 event_type: "created".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(project.po.root_user_id.clone()),
                 owner_type: project
                     .po
@@ -209,12 +209,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project_id: project.po.id.clone(),
                 event_type: "started".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(project.po.root_user_id.clone()),
                 owner_type: project
                     .po
@@ -256,12 +256,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project_id: project.po.id.clone(),
                 event_type: "completed".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(project.po.root_user_id.clone()),
                 owner_type: project
                     .po
@@ -303,12 +303,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project_id: project.po.id.clone(),
                 event_type: "archived".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(project.po.root_user_id.clone()),
                 owner_type: project
                     .po
@@ -435,12 +435,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project_id: project.po.id.clone(),
                 event_type: "status_changed".to_string(),
                 organization_id: ctx.organization_id.clone(),
-                operator_type: Some(if ctx.agent_id().is_some() {
-                    "agent".to_string()
-                } else {
-                    "user".to_string()
-                }),
-                operator_id: ctx.agent_id().cloned().or_else(|| ctx.user_id().cloned()),
+                operator_type: Some(ctx.caller_type().as_str().to_string()),
+                operator_id: match ctx.caller_type() {
+                    CallerType::Agent => ctx.agent_id().cloned(),
+                    CallerType::User => ctx.user_id().cloned(),
+                    CallerType::System => None,
+                },
                 root_user_id: Some(project.po.root_user_id.clone()),
                 owner_type: project
                     .po
