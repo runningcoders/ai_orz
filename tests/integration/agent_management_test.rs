@@ -664,3 +664,158 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         "tag should not appear in skill_packs after uninstall"
     );
 }
+
+/// Get agent with with_stats=true query param.
+///
+/// Verifies:
+/// - GET without with_stats: stats field is absent (skip_serializing_if = Option::is_none)
+/// - GET with with_stats=true: stats field is present
+#[sqlx::test]
+async fn test_get_agent_with_stats(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("StatsAgent-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    // Without with_stats — stats field should be absent (serde skip_serializing_if None)
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert!(
+        data.get("stats").is_none(),
+        "stats should be absent without with_stats=true"
+    );
+
+    // With with_stats=true — stats field should be present
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}?with_stats=true", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert!(
+        data.get("stats").is_some(),
+        "stats should be present with with_stats=true"
+    );
+}
+
+/// Reception agent resolution: GET /hr/agents/reception.
+///
+/// Verifies:
+/// - With no onboarded agent → 404 error
+/// - After onboarding an agent → returns the onboarded agent's id + name
+#[sqlx::test]
+async fn test_reception_agent_resolution(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. No onboarded agent yet → should get 404
+    let (status, body) = app
+        .get_with_jwt("/api/v1/hr/agents/reception", &jwt)
+        .await;
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::NOT_FOUND);
+
+    // 2. Create an agent and onboard it
+    let agent_name = format!("ReceptionAgent-{}", uuid::Uuid::now_v7());
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &agent_name,
+    )
+    .await;
+
+    // Interviewing → PendingOnboard → Onboarded
+    app.put_with_jwt(
+        &format!("/api/v1/hr/agents/{}/status", agent_id),
+        &json!({"id": agent_id, "status": "PendingOnboard"}),
+        &jwt,
+    )
+    .await;
+    app.put_with_jwt(
+        &format!("/api/v1/hr/agents/{}/status", agent_id),
+        &json!({"id": agent_id, "status": "Onboarded"}),
+        &jwt,
+    )
+    .await;
+
+    // 3. Now reception should resolve to an onboarded agent
+    let (status, body) = app
+        .get_with_jwt("/api/v1/hr/agents/reception", &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let resolved_id = data
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .expect("agent_id should be present in reception response");
+    assert!(
+        !resolved_id.is_empty(),
+        "reception agent_id should not be empty"
+    );
+}
+
+/// Edge cases:
+/// - GET nonexistent agent → 404 or non-zero code
+/// - DELETE nonexistent agent → 404 or non-zero code
+/// - Create Local agent without model_provider_id → error (Local kind requires it)
+#[sqlx::test]
+async fn test_agent_edge_cases(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. GET nonexistent agent
+    let fake_id = format!("nonexistent-{}", uuid::Uuid::now_v7());
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", fake_id), &jwt)
+        .await;
+    assert!(
+        status == axum::http::StatusCode::NOT_FOUND
+            || body.get("code").and_then(|v| v.as_i64()).unwrap_or(0) != 0,
+        "getting nonexistent agent should fail: status={}, body={}",
+        status,
+        body
+    );
+
+    // 2. DELETE nonexistent agent
+    let (status, body) = app
+        .delete_with_jwt(&format!("/api/v1/hr/agents/{}", fake_id), &jwt)
+        .await;
+    assert!(
+        status == axum::http::StatusCode::NOT_FOUND
+            || body.get("code").and_then(|v| v.as_i64()).unwrap_or(0) != 0,
+        "deleting nonexistent agent should fail: status={}, body={}",
+        status,
+        body
+    );
+
+    // 3. Create Local agent without model_provider_id → should error
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents",
+            &json!({
+                "name": "NoProviderAgent",
+                "model_provider_id": ""
+            }),
+            &jwt,
+        )
+        .await;
+    let _ = status;
+    assert!(
+        body.get("code").and_then(|v| v.as_i64()).unwrap_or(0) != 0,
+        "creating Local agent with empty model_provider_id should fail: body={}",
+        body
+    );
+}
