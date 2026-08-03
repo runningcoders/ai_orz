@@ -321,3 +321,65 @@ async fn test_create_external_remote_agent(pool: SqlitePool) {
         Some("test-remote-agent")
     );
 }
+
+/// Search agents by keyword via POST /hr/agents/search.
+///
+/// Verifies:
+/// - Search by keyword returns matching agents (FTS5 path, no embedding model)
+/// - Search results are in PagedResult format {items, total}
+#[sqlx::test]
+async fn test_agent_search_by_keyword(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // Create two agents with distinct names sharing a unique suffix
+    let unique = uuid::Uuid::now_v7().to_string();
+    let name_a = format!("SearchableAlpha-{}", unique);
+    let name_b = format!("SearchableBeta-{}", unique);
+    crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &name_a).await;
+    crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &name_b).await;
+
+    // Search by the unique suffix — should return both (FTS5 tokenizes on hyphens)
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({"keyword": unique, "limit": 20, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let items = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("items should be an array");
+    assert!(
+        items.len() >= 2,
+        "search should return at least 2 agents, got {}",
+        items.len()
+    );
+    let total = data
+        .get("total")
+        .and_then(|v| v.as_i64())
+        .expect("total should be present");
+    assert!(total >= 2, "total should be >= 2");
+
+    // Search by a name fragment unique to agent A
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/hr/agents/search",
+            &json!({"keyword": &name_a, "limit": 20, "offset": 0}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let items = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("items should be an array");
+    let found_a = items
+        .iter()
+        .any(|item| item.get("name").and_then(|v| v.as_str()) == Some(name_a.as_str()));
+    assert!(found_a, "search should find agent A by its full name");
+}
