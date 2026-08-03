@@ -103,6 +103,10 @@ path = "tests/integration/preset_skills_test.rs"
 name = "real_model_test"
 path = "tests/integration/real_model_test.rs"
 
+[[test]]
+name = "agent_management_test"
+path = "tests/integration/agent_management_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]
