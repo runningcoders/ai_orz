@@ -9,7 +9,7 @@
 //! 与 AOP 框架解耦：AOP 只负责事件流转，本模块负责业务编排。
 
 use async_trait::async_trait;
-use common::enums::{MessageRole, MessageStatus, MessageType};
+use common::enums::{CallerType, MessageRole, MessageStatus, MessageType};
 use common::error::{Error, Result};
 use serde_json::Value;
 use std::sync::Arc;
@@ -79,7 +79,8 @@ impl Consumer for MessageConsumer {
         let msg_event: MessageCreatedEvent = serde_json::from_value(event)?;
 
         // 从 DB 加载完整 Message
-        let ctx = RequestContext::new(None, None);
+        // Consumer 由 AOP 调度器触发，属于系统触发场景
+        let ctx = RequestContext::new_system();
         let message = message_dal::dal()
             .find_by_id(ctx.clone(), &msg_event.message_id)
             .await?
@@ -111,7 +112,7 @@ impl Consumer for MessageConsumer {
     }
 
     async fn ack(&self, event_id: &str) -> Result<()> {
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         message_dal::dal()
             .update_status(ctx, event_id, MessageStatus::Processed)
             .await?;
@@ -119,7 +120,7 @@ impl Consumer for MessageConsumer {
     }
 
     async fn nack(&self, event_id: &str) -> Result<()> {
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         message_dal::dal()
             .update_status(ctx, event_id, MessageStatus::Pending)
             .await?;
@@ -400,6 +401,8 @@ impl MessageConsumer {
 
         let mut builder = RequestContext::builder();
         builder = builder.agent_id(tool_call.from_id.clone());
+        // ToolCallRequest 一定由 Agent 发起（to_role=System）
+        builder = builder.caller_type(CallerType::Agent);
         if let Some(project_id) = &tool_call.project_id {
             builder = builder.project_id(project_id.clone());
         }
@@ -469,6 +472,11 @@ impl MessageConsumer {
     }
 
     /// 从 MessagePo 重建 RequestContext
+    ///
+    /// caller_type 根据 message.from_role() 推断：
+    /// - User 消息 → caller_type=User（用户触发）
+    /// - Agent 消息 → caller_type=Agent（Agent 主动发起）
+    /// - System 消息 → caller_type=System（系统调度）
     fn rebuild_context(&self, message: &Message) -> RequestContext {
         let mut builder = RequestContext::builder();
 
@@ -476,7 +484,14 @@ impl MessageConsumer {
             builder = builder.organization_id(org_id.clone());
         }
 
-        if message.from_role() == MessageRole::User {
+        // 根据 from_role 设置 caller_type 和 user_id
+        let from_role = message.from_role();
+        builder = builder.caller_type(match from_role {
+            MessageRole::User => CallerType::User,
+            MessageRole::Agent => CallerType::Agent,
+            MessageRole::System => CallerType::System,
+        });
+        if from_role == MessageRole::User {
             builder = builder.user_id(message.po.from_id.clone());
         }
 
