@@ -15,7 +15,7 @@ use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SendMessageToAgentParams, SendMessageToAgentResponse};
-use common::enums::MessageRole;
+use common::enums::{CallerType, MessageRole};
 use common::error::Result;
 
 /// Send a message to another AI agent (for collaboration)
@@ -31,13 +31,14 @@ pub async fn send_message_to_agent(
     ctx: RequestContext,
     params: SendMessageToAgentParams,
 ) -> Result<SendMessageToAgentResponse> {
-    // 判断发送者身份：优先 Agent，其次 User，最后 System
-    let (from_id, from_role) = if let Some(aid) = ctx.agent_id() {
-        (aid.to_string(), MessageRole::Agent)
-    } else if !ctx.uid().is_empty() {
-        (ctx.uid(), MessageRole::User)
-    } else {
-        ("system".to_string(), MessageRole::System)
+    // 根据 caller_type 判断发送者身份（替换原 agent_id().is_some() 隐式推断）
+    let (from_id, from_role) = match ctx.caller_type() {
+        CallerType::Agent => (
+            ctx.agent_id().map(|s| s.to_string()).unwrap_or_default(),
+            MessageRole::Agent,
+        ),
+        CallerType::User => (ctx.uid(), MessageRole::User),
+        CallerType::System => ("system".to_string(), MessageRole::System),
     };
 
     // 路由 to_agent_id（协作关系类比）：
