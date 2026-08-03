@@ -192,3 +192,132 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
         "agent should still be Interviewing (1) after rejected transition"
     );
 }
+
+/// Create an external CLI agent via POST /hr/agents/external.
+///
+/// Verifies:
+/// - Creation returns 200 + id + kind="cli"
+/// - GET detail returns kind="cli" and external_config.cli fields populated
+/// - model_provider_id is empty for external agents
+#[sqlx::test]
+async fn test_create_external_cli_agent(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let agent_name = format!("CliAgent-{}", uuid::Uuid::now_v7());
+    let req = json!({
+        "name": agent_name,
+        "description": "A CLI agent for testing",
+        "kind": "cli",
+        "command": "echo",
+        "args": ["hello"],
+        "work_dir": "/tmp",
+        "timeout_secs": 60
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents/external", &req, &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let agent_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing id")
+        .to_string();
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("cli"),
+        "kind should be cli"
+    );
+
+    // GET detail and verify external_config
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("cli")
+    );
+    assert_eq!(
+        data.get("model_provider_id").and_then(|v| v.as_str()),
+        Some(""),
+        "external agent should have empty model_provider_id"
+    );
+    let ext_config = data
+        .get("external_config")
+        .expect("external_config should be present for cli agent");
+    let cli_config = ext_config
+        .get("cli")
+        .expect("cli config should be present");
+    assert_eq!(
+        cli_config.get("command").and_then(|v| v.as_str()),
+        Some("echo")
+    );
+    assert_eq!(
+        cli_config.get("work_dir").and_then(|v| v.as_str()),
+        Some("/tmp")
+    );
+}
+
+/// Create an external Remote (A2A) agent via POST /hr/agents/external.
+///
+/// Verifies:
+/// - Creation returns 200 + id + kind="remote"
+/// - GET detail returns kind="remote" and external_config.remote fields populated
+#[sqlx::test]
+async fn test_create_external_remote_agent(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let agent_name = format!("RemoteAgent-{}", uuid::Uuid::now_v7());
+    let req = json!({
+        "name": agent_name,
+        "description": "A remote A2A agent for testing",
+        "kind": "remote",
+        "endpoint": "http://localhost:9999",
+        "agent_name": "test-remote-agent",
+        "auth_token": "secret-token-123",
+        "timeout_secs": 120
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents/external", &req, &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let agent_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing id")
+        .to_string();
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("remote")
+    );
+
+    // GET detail and verify external_config
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("remote")
+    );
+    let ext_config = data
+        .get("external_config")
+        .expect("external_config should be present");
+    let remote_config = ext_config
+        .get("remote")
+        .expect("remote config should be present");
+    assert_eq!(
+        remote_config.get("endpoint").and_then(|v| v.as_str()),
+        Some("http://localhost:9999")
+    );
+    assert_eq!(
+        remote_config.get("agent_name").and_then(|v| v.as_str()),
+        Some("test-remote-agent")
+    );
+}
