@@ -460,3 +460,119 @@ async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
         );
     }
 }
+
+/// Tool pack lifecycle: install → list → install again (idempotent) → uninstall → list.
+///
+/// Verifies:
+/// - POST install adds the tag to installed_tags
+/// - GET list returns the tag
+/// - POST install same tag again is idempotent (no error, tag still present)
+/// - DELETE uninstall removes the tag
+/// - GET list no longer contains the tag
+#[sqlx::test]
+async fn test_tool_pack_lifecycle(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("ToolPackAgent-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let tag = "test_tool_pack";
+
+    // 1. Install tool pack
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs/{}", agent_id, tag),
+            &json!({}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let installed_tags = data
+        .get("installed_tags")
+        .and_then(|v| v.as_array())
+        .expect("installed_tags should be present");
+    assert!(
+        installed_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
+        "tag should be in installed_tags after install"
+    );
+
+    // 2. List installed tool packs
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let listed_tags = data
+        .get("installed_tags")
+        .and_then(|v| v.as_array())
+        .expect("installed_tags should be present in list");
+    assert!(
+        listed_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
+        "tag should appear in list"
+    );
+
+    // 3. Install same tag again — idempotent, should succeed
+    let (status, _body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs/{}", agent_id, tag),
+            &json!({}),
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "idempotent install should succeed"
+    );
+
+    // 4. Uninstall tool pack
+    let (status, body) = app
+        .delete_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs/{}", agent_id, tag),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let remaining_tags = data
+        .get("installed_tags")
+        .and_then(|v| v.as_array())
+        .expect("installed_tags should be present after uninstall");
+    assert!(
+        !remaining_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
+        "tag should be removed after uninstall"
+    );
+
+    // 5. List again — tag should be gone
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let final_tags = data
+        .get("installed_tags")
+        .and_then(|v| v.as_array())
+        .expect("installed_tags should be present");
+    assert!(
+        !final_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
+        "tag should not appear in final list"
+    );
+}
