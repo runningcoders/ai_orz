@@ -1,6 +1,6 @@
 # RequestContext 设计文档
 
-> 最后更新：2026-07-04（PO 迁移 + delivery/artifact 复用 EnrichContext）
+> 最后更新：2026-08-03（新增 caller_type 字段 + 调用方身份封装方法）
 
 ## 一、定位与核心原则
 
@@ -65,6 +65,7 @@
 | 分类 | 字段 | 来源 | 说明 |
 |------|------|------|------|
 | **追踪标识** | `log_id` | 自动生成 / Header | 链路追踪 ID |
+| **调用方身份** | `caller_type` | 入口设置 / Header | `CallerType` 枚举：User/Agent/System，标识谁触发了本次操作 |
 | **用户身份** | `user_id`, `username` | HTTP Header / JWT | 当前操作用户 |
 | **组织维度** | `organization_id` | HTTP Header / JWT | 当前操作所在组织 |
 | **业务维度** | `agent_id` | Runtime 设置 | 当前操作的 Agent |
@@ -108,6 +109,7 @@ impl RequestContextBuilder {
     pub fn model_provider_id(mut self, id: impl Into<String>) -> Self;
     pub fn model_name(mut self, name: impl Into<String>) -> Self;
     pub fn storage(mut self, storage: Storage) -> Self;
+    pub fn caller_type(mut self, ct: CallerType) -> Self;
 
     // try_* 方法：Some 时覆盖，None 时跳过（保留已有值）
     pub fn try_user_id(mut self, user_id: Option<impl Into<String>>) -> Self;
@@ -118,6 +120,7 @@ impl RequestContextBuilder {
     pub fn try_task_id(mut self, task_id: Option<impl Into<String>>) -> Self;
     pub fn try_model_provider_id(mut self, id: Option<impl Into<String>>) -> Self;
     pub fn try_model_name(mut self, name: Option<impl Into<String>>) -> Self;
+    pub fn try_caller_type(mut self, ct: Option<impl Into<CallerType>>) -> Self;
 
     pub fn build(self) -> RequestContext;
 }
@@ -138,6 +141,9 @@ pub fn builder() -> RequestContextBuilder;
 
 // 从现有上下文克隆后构建（最常用）
 pub fn to_builder(&self) -> RequestContextBuilder;
+
+// System 调用方工厂方法（用于 Cron、A2A 回调、AOP 调度等系统触发场景）
+pub fn new_system() -> Self;
 ```
 
 ---
@@ -192,13 +198,35 @@ let ctx = builder.build();
 ### 5.3 Consumer 异步场景重建上下文
 
 ```rust
-// 从 message 元数据重建完整上下文
-let ctx = RequestContext::builder()
+// 从 message 元数据重建完整上下文，caller_type 根据 from_role 推断
+let from_role = message.from_role();
+let mut builder = RequestContext::builder()
     .organization_id(message.po.organization_id.clone())
-    .agent_id(tool_call.from_id.clone())
-    .project_id(tool_call.project_id.clone())
-    .task_id(tool_call.task_id.clone())
+    .caller_type(match from_role {
+        MessageRole::User => CallerType::User,
+        MessageRole::Agent => CallerType::Agent,
+        MessageRole::System => CallerType::System,
+    });
+if from_role == MessageRole::User {
+    builder = builder.user_id(message.po.from_id.clone());
+}
+let ctx = builder
+    .agent_id(message.po.to_id.clone())
+    .try_project_id(message.po.project_id.as_deref())
+    .try_task_id(message.po.task_id.as_deref())
     .build();
+```
+
+### 5.3.1 系统触发场景
+
+Cron、AOP 调度、A2A 回调等系统触发场景，使用 `new_system()` 工厂方法：
+
+```rust
+// Consumer on_event / ack / nack 入口
+let ctx = RequestContext::new_system();
+
+// AOP 调度器、Cron 触发器、A2A polling
+let ctx = RequestContext::new_system();
 ```
 
 ### 5.4 Cortex 创建时注入模型维度
@@ -221,15 +249,112 @@ let ctx = enrich_ctx!(&ctx, provider);
 
 ---
 
-## 六、与旧 API 的兼容与迁移
+## 六、调用方身份（caller_type）
 
-### 6.1 迁移状态
+### 6.1 设计动机
+
+系统允许 Agent 主动调用工具、发送消息，也允许 Cron/AOP 等系统模块触发操作。原先代码通过 `ctx.agent_id().is_some()` 隐式推断调用方身份，存在三个问题：
+
+1. **语义模糊**：Agent 调用与"ctx 里恰好带了 agent_id"无法区分
+2. **System 场景缺失**：系统触发的操作被当作 User，审计字段记录为空
+3. **逻辑散落**：身份判断逻辑重复散落在消息发送、stats 记录、审计字段赋值等处
+
+引入 `caller_type` 字段显式标识调用方身份，收敛判断逻辑。
+
+### 6.2 CallerType 枚举
+
+```rust
+// common/src/enums/caller_type.rs
+pub enum CallerType {
+    User = 0,    // 用户触发（HTTP 请求、用户消息）
+    Agent = 1,   // Agent 触发（Agent 主动调用工具、发送消息）
+    System = 2,  // 系统触发（Cron、A2A 回调、AOP 调度、后台轮询）
+}
+```
+
+**数值与 MessageRole 对齐**，但语义层次不同：
+- `MessageRole` 是消息字段（from_role/to_role），描述消息发送方
+- `CallerType` 是 ctx 字段，描述整条操作链路的触发方
+
+### 6.3 设置时机
+
+| 入口 | caller_type | 说明 |
+|------|-------------|------|
+| HTTP 中间件（JWT 验证通过） | `User` | JWT 中间件注入 `X-Caller-Type: user` header |
+| Consumer `rebuild_context` | 根据 `message.from_role()` 推断 | User 消息→User, Agent 消息→Agent, System 消息→System |
+| Consumer `handle_tool_call_request` | `Agent` | ToolCallRequest 必由 Agent 发起 |
+| Consumer `on_event`/`ack`/`nack` | `System` | AOP 调度器触发 |
+| Producer/Cron/AOP 调度器 | `System` | 系统模块触发 |
+| A2A callback handler | `System` | 远程系统回调 |
+
+**关键约束**：`enrich_ctx` 链路不覆盖 caller_type，只由入口设置，`to_builder()` 透传。
+
+### 6.4 调用方身份封装方法
+
+为避免每个使用点重复写 match 逻辑，RequestContext 封装了三个方法统一访问调用方信息：
+
+```rust
+impl RequestContext {
+    /// 获取调用方 ID（用于 stats operator_id 等场景）
+    /// Agent → agent_id, User → user_id, System → None
+    pub fn caller_id(&self) -> Option<String>;
+
+    /// 获取调用方 ID，System 场景回退为 "system"
+    /// 用于消息发送 from_id、审计字段 created_by/modified_by 等
+    pub fn caller_id_or_system(&self) -> String;
+
+    /// 调用方类型映射为 MessageRole（用于消息发送 from_role 场景）
+    pub fn caller_role(&self) -> MessageRole;
+}
+```
+
+**使用示例**：
+
+```rust
+// 消息发送：from_id + from_role
+let from_id = ctx.caller_id_or_system();
+let from_role = ctx.caller_role();
+
+// stats operator_type + operator_id
+operator_type: Some(ctx.caller_type().as_str().to_string()),
+operator_id: ctx.caller_id(),
+
+// DAO 审计字段（created_by/modified_by/updated_by）
+let uid = ctx.caller_id_or_system();
+```
+
+### 6.5 HTTP Header 传递
+
+`X-Caller-Type` header 用于 HTTP 入口传递调用方类型，`from_headers` 方法解析：
+
+```rust
+// jwt_auth.rs 中间件注入
+req.headers_mut().insert(http_header::CALLER_TYPE, HeaderValue::from_static("user"));
+
+// from_headers 解析（支持字符串名称或数字）
+let caller_type = headers.get(http_header::CALLER_TYPE)
+    .and_then(|v| v.to_str().ok())
+    .map(|s| match s.to_lowercase().as_str() {
+        "user" | "0" => CallerType::User,
+        "agent" | "1" => CallerType::Agent,
+        "system" | "2" => CallerType::System,
+        _ => CallerType::User,
+    })
+    .unwrap_or(CallerType::User);
+```
+
+---
+
+## 七、与旧 API 的兼容与迁移
+
+### 7.1 迁移状态
 
 - ✅ **已完成**：Builder API 上线
 - ✅ **已完成**：全部 `set_*` 方法删除，彻底锁死不可变性
 - ✅ **已完成**：生产代码和测试代码全部迁移
+- ✅ **已完成**：caller_type 字段 + 调用方身份封装方法上线
 
-### 6.2 保留的构造方法（向后兼容）
+### 7.2 保留的构造方法（向后兼容）
 
 - `RequestContext::new(user_id, username)` — 内部委托给 builder
 - `RequestContext::from_headers(headers)` — 内部委托给 builder
