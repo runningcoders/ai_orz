@@ -51,6 +51,9 @@ target
 *.db-shm
 sqlite::memory*
 
+# Environment variables (contains API keys for real model integration tests)
+.env
+
 # Local test output
 test_output.log
 

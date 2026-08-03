@@ -73,6 +73,7 @@ futures = "0.3.32"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+dotenvy = "0.15"
 
 [[test]]
 name = "auth_sysinit_test"
@@ -97,6 +98,10 @@ path = "tests/integration/a2a_flow_test.rs"
 [[test]]
 name = "preset_skills_test"
 path = "tests/integration/preset_skills_test.rs"
+
+[[test]]
+name = "real_model_test"
+path = "tests/integration/real_model_test.rs"
 
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
