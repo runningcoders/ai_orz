@@ -576,3 +576,91 @@ async fn test_tool_pack_lifecycle(pool: SqlitePool) {
         "tag should not appear in final list"
     );
 }
+
+/// Skill pack lifecycle: install → list → uninstall → list.
+///
+/// Note: installing a skill pack tag with no matching Published skills still
+/// records the tag in installed_skill_packs (installed_count=0).
+/// This test uses a unique tag that no Published skill carries.
+#[sqlx::test]
+async fn test_skill_pack_lifecycle(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &format!("SkillPackAgent-{}", uuid::Uuid::now_v7()),
+    )
+    .await;
+
+    let tag = format!("test_skill_pack_{}", uuid::Uuid::now_v7());
+
+    // 1. Install skill pack (no matching skills → installed_count=0, but tag recorded)
+    let (status, body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs/{}", agent_id, tag),
+            &json!({}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("installed_count").and_then(|v| v.as_i64()),
+        Some(0),
+        "installed_count should be 0 when no matching skills exist"
+    );
+
+    // 2. List installed skill packs — tag should be present
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let skill_packs = data
+        .get("skill_packs")
+        .and_then(|v| v.as_array())
+        .expect("skill_packs should be present");
+    assert!(
+        skill_packs
+            .iter()
+            .any(|t| t.as_str() == Some(tag.as_str())),
+        "tag should appear in skill_packs list after install"
+    );
+
+    // 3. Uninstall skill pack
+    let (status, _body) = app
+        .delete_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs/{}", agent_id, tag),
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "uninstall skill pack should succeed"
+    );
+
+    // 4. List again — tag should be gone
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let final_packs = data
+        .get("skill_packs")
+        .and_then(|v| v.as_array())
+        .expect("skill_packs should be present");
+    assert!(
+        !final_packs
+            .iter()
+            .any(|t| t.as_str() == Some(tag.as_str())),
+        "tag should not appear in skill_packs after uninstall"
+    );
+}
