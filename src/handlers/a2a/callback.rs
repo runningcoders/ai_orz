@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::Path;
 use axum::response::IntoResponse;
 use common::api::a2a::A2aTask;
-use common::enums::TaskStatus;
+use common::enums::{CallerType, TaskStatus};
 use common::error::Error;
 use serde_json::json;
 
@@ -54,6 +54,8 @@ pub async fn handle_a2a_callback(
     let agent_id = local_task.po.assignee_id.clone();
 
     let mut task_ctx_builder = RequestContext::builder();
+    // A2A callback 由远程系统触发，caller_type = System
+    task_ctx_builder = task_ctx_builder.caller_type(CallerType::System);
     task_ctx_builder = task_ctx_builder.agent_id(agent_id.clone());
     task_ctx_builder = task_ctx_builder.task_id(task_id.clone());
     if let Some(pid) = &local_task.po.project_id {
