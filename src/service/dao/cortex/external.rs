@@ -106,7 +106,7 @@ impl CortexTrait for ExternalCortex {
     }
 
     async fn prompt(&self, prompt: &str) -> anyhow::Result<String> {
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         self.runtime_dao
             .invoke(ctx, &self.agent, prompt)
             .await

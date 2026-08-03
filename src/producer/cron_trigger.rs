@@ -49,7 +49,7 @@ impl Producer for CronTriggerProducer {
             return Err(common::error::err!(Internal, "registry not registered"));
         };
 
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         let now = common::constants::utils::current_timestamp();
 
         let triggers = system::domain()

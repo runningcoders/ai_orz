@@ -105,7 +105,7 @@ pub async fn execute_cli(
         if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
             // Broken pipe 是预期行为（命令已退出），其他错误记录但不阻塞
             log_warn!(
-                RequestContext::new(None, None),
+                RequestContext::new_system(),
                 "execute_cli",
                 "Agent {}: stdin write failed (command may have exited without reading stdin): {}",
                 agent_id,

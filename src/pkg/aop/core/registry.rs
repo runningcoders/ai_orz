@@ -195,7 +195,7 @@ impl Registry {
                     };
 
                     if let Some(queue) = queue {
-                        let ctx = RequestContext::new(None, None);
+                        let ctx = RequestContext::new_system();
                         if let Err(e) = queue.enqueue(ctx, event_json.clone()).await {
                             sys_error!("consumer {} enqueue error: {}", consumer.name(), e);
                         }
@@ -218,7 +218,7 @@ impl Registry {
                 .clone()
         };
 
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         let value = queue.dequeue_next(ctx).await?;
         Ok(value)
     }
@@ -236,7 +236,7 @@ impl Registry {
                 .clone()
         };
 
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         queue.ack(ctx, event_id).await
     }
 
@@ -253,7 +253,7 @@ impl Registry {
                 .clone()
         };
 
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         queue.nack(ctx, event_id).await
     }
 

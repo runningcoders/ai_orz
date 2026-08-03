@@ -9,7 +9,7 @@ use crate::service::dao::agent_runtime::a2a::{A2aRuntimeConfig, A2aRuntimeDao};
 use crate::service::domain::hr as hr_domain;
 use crate::service::domain::message::{self as message_domain, SendToUserCommand};
 use crate::service::domain::project as project_domain;
-use common::enums::{AssigneeType, TaskStatus};
+use common::enums::{AssigneeType, CallerType, TaskStatus};
 use common::error::Result;
 use std::sync::{Arc, RwLock};
 
@@ -58,7 +58,7 @@ impl Producer for A2aPollingProducer {
     }
 
     async fn poll(&self) -> Result<()> {
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
 
         let all_agents = hr_domain::domain()
             .agent_manage()
@@ -128,6 +128,7 @@ impl Producer for A2aPollingProducer {
                 };
 
                 let mut task_ctx_builder = RequestContext::builder();
+                task_ctx_builder = task_ctx_builder.caller_type(CallerType::System);
                 task_ctx_builder = task_ctx_builder.agent_id(agent.po.id.clone());
                 task_ctx_builder = task_ctx_builder.task_id(task.po.id.clone());
                 if let Some(pid) = &task.po.project_id {

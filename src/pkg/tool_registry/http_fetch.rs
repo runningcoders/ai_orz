@@ -162,7 +162,7 @@ mod tests {
         // Fetch example.com - should succeed
         let result = tool
             .call(
-                crate::pkg::request_context::RequestContext::new(None, None),
+                crate::pkg::request_context::RequestContext::new_system(),
                 json!({
                     "url": "https://example.com"
                 }),
@@ -188,7 +188,7 @@ mod tests {
 
         let result = tool
             .call(
-                crate::pkg::request_context::RequestContext::new(None, None),
+                crate::pkg::request_context::RequestContext::new_system(),
                 json!({
                     "url": "http://example.com"
                 }),
@@ -210,7 +210,7 @@ mod tests {
         // Use https://localhost to test the localhost rejection
         let result = tool
             .call(
-                crate::pkg::request_context::RequestContext::new(None, None),
+                crate::pkg::request_context::RequestContext::new_system(),
                 json!({
                     "url": "https://localhost:8080"
                 }),
@@ -231,7 +231,7 @@ mod tests {
         // 192.168.1.1 is private
         let result = tool
             .call(
-                crate::pkg::request_context::RequestContext::new(None, None),
+                crate::pkg::request_context::RequestContext::new_system(),
                 json!({
                     "url": "https://192.168.1.1"
                 }),

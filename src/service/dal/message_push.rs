@@ -123,7 +123,7 @@ mod tests {
     }
 
     fn new_ctx() -> RequestContext {
-        RequestContext::builder().build()
+        RequestContext::new_system()
     }
 
     #[tokio::test]

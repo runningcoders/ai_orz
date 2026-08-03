@@ -310,7 +310,7 @@ impl LarkAdapterHandler {
 #[async_trait::async_trait]
 impl LarkEventHandler for LarkAdapterHandler {
     async fn handle_message_event(&self, event: LarkMessageEvent) -> Result<()> {
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         let adapted = self.lark_dal.adapt_lark(ctx.clone(), &event).await?;
 
         if let Some(msg) = adapted {

@@ -1,3 +1,4 @@
+use common::enums::{CallerType, MessageRole};
 use common::error::{Result, err};
 use std::sync::Arc;
 
@@ -24,7 +25,17 @@ impl MessageChannelProducer {
 #[async_trait::async_trait]
 impl MessageAdapterCallback for MessageChannelProducer {
     async fn on_message(&self, msg: AdaptedMessage) -> Result<()> {
-        let ctx = RequestContext::new(None, None);
+        // 根据 from_role 设置 caller_type 和 user_id
+        // 外部渠道消息一般为 User，但保留根据 from_role 推断的灵活性
+        let mut builder = RequestContext::builder().caller_type(match msg.from_role {
+            MessageRole::User => CallerType::User,
+            MessageRole::Agent => CallerType::Agent,
+            MessageRole::System => CallerType::System,
+        });
+        if msg.from_role == MessageRole::User {
+            builder = builder.user_id(msg.from_id.clone());
+        }
+        let ctx = builder.build();
 
         let to_agent_id = match msg.to_agent_id {
             Some(id) => id,

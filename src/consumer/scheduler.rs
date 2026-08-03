@@ -115,7 +115,7 @@ impl CronTriggerConsumer {
             payload.agent_id
         );
 
-        let ctx = RequestContext::new(None, None);
+        let ctx = RequestContext::new_system();
         let settle_limit = payload.settle_limit.unwrap_or(10);
 
         let settled_count = load_and_settle(ctx, &payload.agent_id, settle_limit).await?;
