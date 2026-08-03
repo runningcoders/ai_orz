@@ -27,17 +27,17 @@ fn env_or_none(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|s| !s.trim().is_empty())
 }
 
-/// Parse provider type string to i32 (ProviderType enum value).
-/// openai=0, deepseek=1, qwen=2, doubao=3, ollama=4, custom=5
-fn parse_provider_type(s: &str) -> i32 {
+/// Parse provider type string to serde variant name.
+/// Serde serializes ProviderType enum as variant names: "OpenAI", "DeepSeek", etc.
+fn parse_provider_type(s: &str) -> &'static str {
     match s.to_lowercase().as_str() {
-        "openai" | "0" => 0,
-        "deepseek" | "1" => 1,
-        "qwen" | "2" => 2,
-        "doubao" | "3" => 3,
-        "ollama" | "4" => 4,
-        "custom" | "5" => 5,
-        _ => 0,
+        "openai" | "0" => "OpenAI",
+        "deepseek" | "1" => "DeepSeek",
+        "qwen" | "2" => "Qwen",
+        "doubao" | "3" => "Doubao",
+        "ollama" | "4" => "Ollama",
+        "custom" | "5" => "Custom",
+        _ => "OpenAI",
     }
 }
 
@@ -45,11 +45,11 @@ fn parse_provider_type(s: &str) -> i32 {
 struct TestConfig {
     embedding_api_key: String,
     embedding_model_name: String,
-    embedding_provider_type: i32,
+    embedding_provider_type: &'static str,
     embedding_base_url: Option<String>,
     llm_api_key: String,
     llm_model_name: String,
-    llm_provider_type: i32,
+    llm_provider_type: &'static str,
     llm_base_url: Option<String>,
 }
 
@@ -66,11 +66,11 @@ impl TestConfig {
         let embedding_provider_type = env_or_none("TEST_EMBEDDING_PROVIDER_TYPE")
             .as_deref()
             .map(parse_provider_type)
-            .unwrap_or(0);
+            .unwrap_or("OpenAI");
         let llm_provider_type = env_or_none("TEST_LLM_PROVIDER_TYPE")
             .as_deref()
             .map(parse_provider_type)
-            .unwrap_or(0);
+            .unwrap_or("OpenAI");
 
         let embedding_base_url = env_or_none("TEST_EMBEDDING_BASE_URL");
         let llm_base_url = env_or_none("TEST_LLM_BASE_URL");
@@ -89,14 +89,14 @@ impl TestConfig {
 }
 
 /// Create a ModelProvider via HTTP API. Returns the provider ID.
-/// capability: 0=Agent (LLM), 1=Embedding
+/// capability: "Agent" for LLM, "Embedding" for vector models
 #[allow(clippy::too_many_arguments)]
 async fn create_provider(
     app: &TestApp,
     jwt: &str,
     name: &str,
-    provider_type: i32,
-    capability: i32,
+    provider_type: &str,
+    capability: &str,
     model_name: &str,
     api_key: &str,
     base_url: Option<&str>,
@@ -133,13 +133,13 @@ async fn test_llm_connection(pool: SqlitePool) {
     let app = TestApp::new(pool).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // Create a real LLM provider (capability=0 → Agent)
+    // Create a real LLM provider (capability="Agent")
     let provider_id = create_provider(
         &app,
         &jwt,
         &format!("TestLLM-{}", uuid::Uuid::now_v7()),
         cfg.llm_provider_type,
-        0,
+        "Agent",
         &cfg.llm_model_name,
         &cfg.llm_api_key,
         cfg.llm_base_url.as_deref(),
@@ -147,7 +147,7 @@ async fn test_llm_connection(pool: SqlitePool) {
     .await;
 
     // Test connection with a simple prompt
-    let req = json!({ "prompt": "Reply with exactly: hello" });
+    let req = json!({ "id": provider_id, "prompt": "Reply with exactly: hello" });
     let (status, body) = app
         .post_with_jwt(
             &format!("/api/v1/finance/model-providers/{}/test", provider_id),
@@ -185,13 +185,13 @@ async fn test_embedding_chain(pool: SqlitePool) {
     let app = TestApp::new(pool).await;
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // Create a real Embedding provider (capability=1 → Embedding)
+    // Create a real Embedding provider (capability="Embedding")
     let embedding_provider_id = create_provider(
         &app,
         &jwt,
         &format!("TestEmbedding-{}", uuid::Uuid::now_v7()),
         cfg.embedding_provider_type,
-        1,
+        "Embedding",
         &cfg.embedding_model_name,
         &cfg.embedding_api_key,
         cfg.embedding_base_url.as_deref(),
@@ -203,8 +203,7 @@ async fn test_embedding_chain(pool: SqlitePool) {
     let agent_req = json!({
         "name": agent_name,
         "description": "这是一个专门负责机器学习模型训练与调优的智能助手，擅长深度学习、神经网络和梯度下降算法",
-        "chat_model_provider_id": bs.chat_provider_id,
-        "kind": 0,
+        "model_provider_id": bs.chat_provider_id,
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/hr/agents", &agent_req, &jwt)
@@ -268,7 +267,7 @@ async fn test_e2e_with_real_models(pool: SqlitePool) {
         &jwt,
         &format!("E2ELLM-{}", uuid::Uuid::now_v7()),
         cfg.llm_provider_type,
-        0,
+        "Agent",
         &cfg.llm_model_name,
         &cfg.llm_api_key,
         cfg.llm_base_url.as_deref(),
@@ -281,7 +280,7 @@ async fn test_e2e_with_real_models(pool: SqlitePool) {
         &jwt,
         &format!("E2EEmbedding-{}", uuid::Uuid::now_v7()),
         cfg.embedding_provider_type,
-        1,
+        "Embedding",
         &cfg.embedding_model_name,
         &cfg.embedding_api_key,
         cfg.embedding_base_url.as_deref(),
@@ -293,8 +292,7 @@ async fn test_e2e_with_real_models(pool: SqlitePool) {
     let agent_req = json!({
         "name": agent_name,
         "description": "端到端测试助手，负责代码审查和质量保证",
-        "chat_model_provider_id": real_llm_provider_id,
-        "kind": 0,
+        "model_provider_id": real_llm_provider_id,
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/hr/agents", &agent_req, &jwt)
@@ -325,7 +323,7 @@ async fn test_e2e_with_real_models(pool: SqlitePool) {
     assert!(found, "E2E: agent should be found via search");
 
     // 5. Test the real LLM provider connection
-    let test_req = json!({ "prompt": "Reply with: e2e ok" });
+    let test_req = json!({ "id": real_llm_provider_id, "prompt": "Reply with: e2e ok" });
     let (status, body) = app
         .post_with_jwt(
             &format!(
@@ -341,7 +339,20 @@ async fn test_e2e_with_real_models(pool: SqlitePool) {
         .get("success")
         .and_then(|v| v.as_bool())
         .expect("missing success");
-    assert!(success, "E2E: LLM connection should succeed");
+    if !success {
+        let error = test_data
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<no error field>");
+        let response = test_data
+            .get("response")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<no response>");
+        panic!(
+            "E2E: LLM connection failed. error: {}, response: {}",
+            error, response
+        );
+    }
 
     eprintln!("E2E test passed: agent created, searched, LLM responded");
 
