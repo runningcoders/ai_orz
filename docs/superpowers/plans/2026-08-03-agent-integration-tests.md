@@ -1,3 +1,109 @@
+# Agent 管理集成测试 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 为 Agent 管理的所有 HTTP 端点构建集成测试（Part A），并使用真实 Doubao embedding 模型验证向量索引构建和语义搜索逻辑（Part B）。
+
+**Architecture:** 两部分设计：
+- **Part A（HTTP 端点测试，Task 1-12）**：遵循现有 `tests/integration/` 模式，每个 `#[sqlx::test]` 获得独立内存 SQLite，通过 `init_full_test_env` + `bootstrap_and_login` 完成全局初始化（embedding_model=None 走向量降级路径），用 `TestApp` 发送真实 HTTP 请求。覆盖生命周期流转、外部 Agent 创建、搜索/查询、工具包/技能包管理、统计查询、前台 Agent 路由和边界场景。
+- **Part B（真实向量搜索测试，Task 13-16）**：使用已验证的 Doubao embedding 模型（doubao-embedding-vision-251215），通过 HTTP API 创建真实 embedding provider，构建 Agent 向量索引，验证语义搜索、向量索引自动维护（更新+删除）和混合搜索排序（FTS5+向量）。用 `#[ignore]` 标记，CI 安全（无 API key 时自动跳过）。
+
+**Tech Stack:** Rust, axum 0.8, sqlx (SQLite in-memory), serde_json, tokio
+
+---
+
+## 背景信息（子代理必读）
+
+### 路由前缀
+所有 Agent 管理路由嵌套在 `/api/v1/hr` 下（`router.rs` 中 `.nest("/api/v1", protected_routes(...))` → `.nest("/hr", hr_routes())`）。
+
+### 关键路由清单
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| POST | `/api/v1/hr/agents` | 创建 Local Agent |
+| GET | `/api/v1/hr/agents` | 列出 Agent |
+| POST | `/api/v1/hr/agents/query` | 条件查询（分页+过滤） |
+| POST | `/api/v1/hr/agents/search` | 关键词搜索 |
+| GET | `/api/v1/hr/agents/reception` | 获取前台 Agent |
+| POST | `/api/v1/hr/agents/external` | 创建外部 Agent (Cli/Remote) |
+| GET | `/api/v1/hr/agents/{id}` | 获取 Agent 详情（支持 with_stats 等 query 参数） |
+| PUT | `/api/v1/hr/agents/{id}` | 更新 Agent |
+| PUT | `/api/v1/hr/agents/{id}/status` | 状态流转 |
+| DELETE | `/api/v1/hr/agents/{id}` | 删除 Agent |
+| GET | `/api/v1/hr/agents/{agent_id}/tool-packs` | 列出已安装工具包 tags |
+| POST | `/api/v1/hr/agents/{agent_id}/tool-packs/{tag}` | 安装工具包 |
+| DELETE | `/api/v1/hr/agents/{agent_id}/tool-packs/{tag}` | 卸载工具包 |
+| GET | `/api/v1/hr/agents/{agent_id}/skill-packs` | 列出已安装技能包 tags |
+| POST | `/api/v1/hr/agents/{agent_id}/skill-packs/{tag}` | 安装技能包 |
+| DELETE | `/api/v1/hr/agents/{agent_id}/skill-packs/{tag}` | 卸载技能包 |
+
+### Agent 状态枚举（i32 值）
+- Deleted = 0
+- Interviewing = 1（创建时默认）
+- PendingOnboard = 2
+- Onboarded = 3
+- Offboarded = 4
+- PendingOffboard = 5
+
+### 合法状态流转路径
+- Interviewing → PendingOnboard
+- PendingOnboard → Onboarded
+- Onboarded → PendingOffboard
+- PendingOffboard → Offboarded
+- 任意 → Deleted
+- 同状态 → 幂等跳转
+
+### 状态序列化格式
+`AgentStatus` 序列化为变体名字符串：`"Interviewing"`, `"PendingOnboard"`, `"Onboarded"`, `"PendingOffboard"`, `"Offboarded"`, `"Deleted"`
+
+### 响应结构
+- 成功：`{"code": 0, "data": {...}}`，HTTP 200
+- 失败：`{"code": <非零>, "message": "..."}`，HTTP 200 或 4xx
+- 列表响应：`PagedResult` = `{"items": [...], "total": N}`
+
+### 测试基础设施
+- `init_full_test_env(pool)` — 全局初始化（存储、JWT、tool_registry、service 层），用 `OnceCell` 串行化
+- `TestApp::new(pool)` — 创建 axum Router 封装
+- `bootstrap_and_login(&app)` — 返回 `(BootstrappedSystem, jwt)`，chat_provider_id 在 bs 中
+- `create_test_agent(&app, &jwt, &provider_id, &name)` — 通过 HTTP 创建 Agent，返回 agent_id
+- `assert_api_ok(status, &body)` — 断言 200 + code=0，返回 data
+- `assert_api_error(status, &body, expected_status)` — 断言错误状态码 + 非零 code
+
+### Cargo.toml 注册
+每个 `tests/integration/*.rs` 文件必须在 `Cargo.toml` 中注册为独立 test target：
+```toml
+[[test]]
+name = "agent_management_test"
+path = "tests/integration/agent_management_test.rs"
+```
+
+### 文件结构
+- Create: `tests/integration/agent_management_test.rs` — 所有 Agent 集成测试
+- Modify: `Cargo.toml` — 添加 `[[test]]` 注册
+
+---
+
+### Task 1: 测试骨架 + Cargo.toml 注册 + 冒烟测试
+
+**Files:**
+- Create: `tests/integration/agent_management_test.rs`
+- Modify: `Cargo.toml`（在最后一个 `[[test]]` 块后添加新块）
+
+- [ ] **Step 1: 在 Cargo.toml 中注册新 test target**
+
+在 `Cargo.toml` 中找到最后一个 `[[test]]` 块（`real_model_test.rs` 那个），在其后添加：
+
+```toml
+[[test]]
+name = "agent_management_test"
+path = "tests/integration/agent_management_test.rs"
+```
+
+- [ ] **Step 2: 创建测试文件骨架 + 冒烟测试**
+
+创建 `tests/integration/agent_management_test.rs`：
+
+```rust
 //! Integration tests for Agent management HTTP endpoints.
 //!
 //! Covers:
@@ -17,78 +123,6 @@ use crate::common::TestApp;
 use serde_json::json;
 use sqlx::SqlitePool;
 
-// ===== 真实向量搜索测试辅助（Part B）=====
-
-/// Load .env file and read an env var. Returns None if unset or empty.
-fn env_or_none(key: &str) -> Option<String> {
-    let _ = dotenvy::dotenv();
-    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
-}
-
-/// Parse provider type string to serde variant name.
-fn parse_provider_type(s: &str) -> &'static str {
-    match s.to_lowercase().as_str() {
-        "openai" | "0" => "OpenAI",
-        "deepseek" | "1" => "DeepSeek",
-        "qwen" | "2" => "Qwen",
-        "doubao" | "3" => "Doubao",
-        "ollama" | "4" => "Ollama",
-        "custom" | "5" => "Custom",
-        "fastembed" | "6" => "FastEmbed",
-        "doubao_vision" | "doubaoVision" | "7" => "DoubaoVision",
-        _ => "OpenAI",
-    }
-}
-
-/// Real model test config parsed from environment variables.
-struct RealModelConfig {
-    embedding_api_key: String,
-    embedding_model_name: String,
-    embedding_provider_type: &'static str,
-    embedding_base_url: Option<String>,
-}
-
-impl RealModelConfig {
-    /// Load embedding config from env. Returns None if API key is missing.
-    fn from_env() -> Option<Self> {
-        let embedding_api_key = env_or_none("TEST_EMBEDDING_API_KEY")?;
-        let embedding_model_name = env_or_none("TEST_EMBEDDING_MODEL_NAME")
-            .unwrap_or_else(|| "text-embedding-3-small".into());
-        let embedding_provider_type = env_or_none("TEST_EMBEDDING_PROVIDER_TYPE")
-            .as_deref()
-            .map(parse_provider_type)
-            .unwrap_or("OpenAI");
-        let embedding_base_url = env_or_none("TEST_EMBEDDING_BASE_URL");
-        Some(Self {
-            embedding_api_key,
-            embedding_model_name,
-            embedding_provider_type,
-            embedding_base_url,
-        })
-    }
-}
-
-/// Create a real Embedding ModelProvider via HTTP API. Returns the provider ID.
-async fn create_embedding_provider(app: &TestApp, jwt: &str, cfg: &RealModelConfig) -> String {
-    let req = json!({
-        "name": format!("TestEmbedding-{}", uuid::Uuid::now_v7()),
-        "provider_type": cfg.embedding_provider_type,
-        "capability": "Embedding",
-        "model_name": cfg.embedding_model_name,
-        "api_key": cfg.embedding_api_key,
-        "base_url": cfg.embedding_base_url,
-        "description": "Real embedding provider for vector search tests",
-    });
-    let (status, body) = app
-        .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)
-        .await;
-    let data = crate::common::assert_api_ok(status, &body);
-    data.get("id")
-        .and_then(|v| v.as_str())
-        .expect("missing provider id")
-        .to_string()
-}
-
 /// Smoke test: create agent via factory, get it back, verify name.
 #[sqlx::test]
 async fn test_agent_smoke(pool: SqlitePool) {
@@ -98,9 +132,13 @@ async fn test_agent_smoke(pool: SqlitePool) {
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     let agent_name = format!("SmokeAgent-{}", uuid::Uuid::now_v7());
-    let agent_id =
-        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
-            .await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &agent_name,
+    )
+    .await;
 
     // Verify the agent exists and name matches
     let (status, body) = app
@@ -118,7 +156,33 @@ async fn test_agent_smoke(pool: SqlitePool) {
         "new agent should be Interviewing (1)"
     );
 }
+```
 
+- [ ] **Step 3: 运行测试验证编译和通过**
+
+Run: `cargo test --test agent_management_test -- --nocapture`
+
+Expected: PASS（1 test passed）
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs Cargo.toml
+git commit -m "test: add agent management integration test scaffold + smoke test"
+```
+
+---
+
+### Task 2: Agent 生命周期 - 合法状态流转
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写合法状态流转测试**
+
+在文件末尾追加：
+
+```rust
 /// Full agent lifecycle: Interviewing → PendingOnboard → Onboarded →
 /// PendingOffboard → Offboarded.
 ///
@@ -172,7 +236,10 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
 
     // Verify Onboarded auto-installed "project_management" tool pack tag
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id), &jwt)
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs", agent_id),
+            &jwt,
+        )
         .await;
     let tp_data = crate::common::assert_api_ok(status, &body);
     let installed_tags = tp_data
@@ -217,7 +284,33 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
         "should be Offboarded (4)"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_agent_lifecycle_valid_transitions -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent lifecycle valid transitions integration test"
+```
+
+---
+
+### Task 3: Agent 生命周期 - 非法状态流转被拒绝
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写非法状态流转测试**
+
+在文件末尾追加：
+
+```rust
 /// Invalid status transitions should be rejected.
 ///
 /// Interviewing → Onboarded (skipping PendingOnboard) is illegal.
@@ -244,7 +337,7 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
+    crate::common::assert_api_error(status, &body, axum::http::StatusCode::OK);
 
     // Verify agent is still in Interviewing (1) — transition was rejected
     let (status, body) = app
@@ -257,7 +350,33 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
         "agent should still be Interviewing (1) after rejected transition"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_agent_lifecycle_invalid_transition_rejected -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent invalid lifecycle transition rejection test"
+```
+
+---
+
+### Task 4: 外部 Agent 创建（Cli）
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写 Cli 外部 Agent 创建测试**
+
+在文件末尾追加：
+
+```rust
 /// Create an external CLI agent via POST /hr/agents/external.
 ///
 /// Verifies:
@@ -301,7 +420,10 @@ async fn test_create_external_cli_agent(pool: SqlitePool) {
         .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
         .await;
     let data = crate::common::assert_api_ok(status, &body);
-    assert_eq!(data.get("kind").and_then(|v| v.as_str()), Some("cli"));
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("cli")
+    );
     assert_eq!(
         data.get("model_provider_id").and_then(|v| v.as_str()),
         Some(""),
@@ -310,7 +432,9 @@ async fn test_create_external_cli_agent(pool: SqlitePool) {
     let ext_config = data
         .get("external_config")
         .expect("external_config should be present for cli agent");
-    let cli_config = ext_config.get("cli").expect("cli config should be present");
+    let cli_config = ext_config
+        .get("cli")
+        .expect("cli config should be present");
     assert_eq!(
         cli_config.get("command").and_then(|v| v.as_str()),
         Some("echo")
@@ -320,7 +444,33 @@ async fn test_create_external_cli_agent(pool: SqlitePool) {
         Some("/tmp")
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_create_external_cli_agent -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add external CLI agent creation integration test"
+```
+
+---
+
+### Task 5: 外部 Agent 创建（Remote）
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写 Remote 外部 Agent 创建测试**
+
+在文件末尾追加：
+
+```rust
 /// Create an external Remote (A2A) agent via POST /hr/agents/external.
 ///
 /// Verifies:
@@ -352,14 +502,20 @@ async fn test_create_external_remote_agent(pool: SqlitePool) {
         .and_then(|v| v.as_str())
         .expect("missing id")
         .to_string();
-    assert_eq!(data.get("kind").and_then(|v| v.as_str()), Some("remote"));
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("remote")
+    );
 
     // GET detail and verify external_config
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
         .await;
     let data = crate::common::assert_api_ok(status, &body);
-    assert_eq!(data.get("kind").and_then(|v| v.as_str()), Some("remote"));
+    assert_eq!(
+        data.get("kind").and_then(|v| v.as_str()),
+        Some("remote")
+    );
     let ext_config = data
         .get("external_config")
         .expect("external_config should be present");
@@ -375,11 +531,38 @@ async fn test_create_external_remote_agent(pool: SqlitePool) {
         Some("test-remote-agent")
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_create_external_remote_agent -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add external Remote agent creation integration test"
+```
+
+---
+
+### Task 6: Agent 搜索端点
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写 Agent 搜索测试**
+
+在文件末尾追加：
+
+```rust
 /// Search agents by keyword via POST /hr/agents/search.
 ///
 /// Verifies:
-/// - Search by keyword returns matching agents (FTS5 path, no embedding model)
+/// - Search by keyword returns matching agents
+/// - Search with no keyword returns all agents (paginated)
 /// - Search results are in PagedResult format {items, total}
 #[sqlx::test]
 async fn test_agent_search_by_keyword(pool: SqlitePool) {
@@ -388,18 +571,18 @@ async fn test_agent_search_by_keyword(pool: SqlitePool) {
 
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // Create two agents with distinct names sharing a unique suffix
+    // Create two agents with distinct names
     let unique = uuid::Uuid::now_v7().to_string();
     let name_a = format!("SearchableAlpha-{}", unique);
     let name_b = format!("SearchableBeta-{}", unique);
     crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &name_a).await;
     crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &name_b).await;
 
-    // Search by the unique suffix — should return both (FTS5 tokenizes on hyphens)
+    // Search by the unique suffix — should return both
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/search",
-            &json!({"keyword": unique, "limit": 20, "offset": 0}),
+            &json!({"keyword": unique, "pagination": {"limit": 20, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -423,7 +606,7 @@ async fn test_agent_search_by_keyword(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/search",
-            &json!({"keyword": &name_a, "limit": 20, "offset": 0}),
+            &json!({"keyword": &name_a, "pagination": {"limit": 20, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -432,17 +615,44 @@ async fn test_agent_search_by_keyword(pool: SqlitePool) {
         .get("items")
         .and_then(|v| v.as_array())
         .expect("items should be an array");
-    let found_a = items
-        .iter()
-        .any(|item| item.get("name").and_then(|v| v.as_str()) == Some(name_a.as_str()));
+    let found_a = items.iter().any(|item| {
+        item.get("name").and_then(|v| v.as_str()) == Some(name_a.as_str())
+    });
     assert!(found_a, "search should find agent A by its full name");
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_agent_search_by_keyword -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent search by keyword integration test"
+```
+
+---
+
+### Task 7: Agent 查询端点（条件过滤 + 批量 ID）
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写 Agent 查询测试**
+
+在文件末尾追加：
+
+```rust
 /// Query agents by IDs batch and status filter via POST /hr/agents/query.
 ///
 /// Verifies:
 /// - Batch query by ids returns exactly those agents
 /// - Query by status filter returns only matching agents
+/// - Pagination works (limit + offset)
 #[sqlx::test]
 async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -470,7 +680,7 @@ async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/query",
-            &json!({"ids": [id_a, id_b], "limit": 20, "offset": 0}),
+            &json!({"ids": [id_a, id_b], "pagination": {"limit": 20, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -492,11 +702,11 @@ async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
         "query by ids should include agent B"
     );
 
-    // Query by status=Interviewing — all newly created agents are Interviewing
+    // Query by status=Interviewing (1) — all newly created agents are Interviewing
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/query",
-            &json!({"status": "Interviewing", "limit": 50, "offset": 0}),
+            &json!({"status": "Interviewing", "pagination": {"limit": 50, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -514,7 +724,33 @@ async fn test_agent_query_by_ids_and_status(pool: SqlitePool) {
         );
     }
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_agent_query_by_ids_and_status -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent query by ids and status integration test"
+```
+
+---
+
+### Task 8: 工具包安装 / 卸载 / 列出
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写工具包生命周期测试**
+
+在文件末尾追加：
+
+```rust
 /// Tool pack lifecycle: install → list → install again (idempotent) → uninstall → list.
 ///
 /// Verifies:
@@ -553,13 +789,18 @@ async fn test_tool_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("installed_tags should be present");
     assert!(
-        installed_tags.iter().any(|t| t.as_str() == Some(tag)),
+        installed_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
         "tag should be in installed_tags after install"
     );
 
     // 2. List installed tool packs
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id), &jwt)
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs", agent_id),
+            &jwt,
+        )
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let listed_tags = data
@@ -567,7 +808,9 @@ async fn test_tool_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("installed_tags should be present in list");
     assert!(
-        listed_tags.iter().any(|t| t.as_str() == Some(tag)),
+        listed_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
         "tag should appear in list"
     );
 
@@ -598,13 +841,18 @@ async fn test_tool_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("installed_tags should be present after uninstall");
     assert!(
-        !remaining_tags.iter().any(|t| t.as_str() == Some(tag)),
+        !remaining_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
         "tag should be removed after uninstall"
     );
 
     // 5. List again — tag should be gone
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id), &jwt)
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tool-packs", agent_id),
+            &jwt,
+        )
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let final_tags = data
@@ -612,11 +860,39 @@ async fn test_tool_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("installed_tags should be present");
     assert!(
-        !final_tags.iter().any(|t| t.as_str() == Some(tag)),
+        !final_tags
+            .iter()
+            .any(|t| t.as_str() == Some(tag)),
         "tag should not appear in final list"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_tool_pack_lifecycle -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add tool pack lifecycle integration test"
+```
+
+---
+
+### Task 9: 技能包安装 / 卸载 / 列出
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写技能包生命周期测试**
+
+在文件末尾追加：
+
+```rust
 /// Skill pack lifecycle: install → list → uninstall → list.
 ///
 /// Note: installing a skill pack tag with no matching Published skills still
@@ -655,7 +931,10 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
 
     // 2. List installed skill packs — tag should be present
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id), &jwt)
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs", agent_id),
+            &jwt,
+        )
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let skill_packs = data
@@ -663,7 +942,9 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("skill_packs should be present");
     assert!(
-        skill_packs.iter().any(|t| t.as_str() == Some(tag.as_str())),
+        skill_packs
+            .iter()
+            .any(|t| t.as_str() == Some(tag.as_str())),
         "tag should appear in skill_packs list after install"
     );
 
@@ -682,7 +963,10 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
 
     // 4. List again — tag should be gone
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id), &jwt)
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs", agent_id),
+            &jwt,
+        )
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let final_packs = data
@@ -690,16 +974,44 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("skill_packs should be present");
     assert!(
-        !final_packs.iter().any(|t| t.as_str() == Some(tag.as_str())),
+        !final_packs
+            .iter()
+            .any(|t| t.as_str() == Some(tag.as_str())),
         "tag should not appear in skill_packs after uninstall"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_skill_pack_lifecycle -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add skill pack lifecycle integration test"
+```
+
+---
+
+### Task 10: Agent 详情统计查询参数
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写统计查询参数测试**
+
+在文件末尾追加：
+
+```rust
 /// Get agent with with_stats=true query param.
 ///
 /// Verifies:
 /// - GET without with_stats: stats field is absent (skip_serializing_if = Option::is_none)
-/// - GET with with_stats=true: stats field is present
+/// - GET with with_stats=true: stats field is present (may be null if no stats yet)
 #[sqlx::test]
 async fn test_get_agent_with_stats(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -737,7 +1049,33 @@ async fn test_get_agent_with_stats(pool: SqlitePool) {
         "stats should be present with with_stats=true"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_get_agent_with_stats -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent stats query param integration test"
+```
+
+---
+
+### Task 11: 前台 Agent 路由
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写前台 Agent 测试**
+
+在文件末尾追加：
+
+```rust
 /// Reception agent resolution: GET /hr/agents/reception.
 ///
 /// Verifies:
@@ -751,14 +1089,20 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     // 1. No onboarded agent yet → should get 404
-    let (status, body) = app.get_with_jwt("/api/v1/hr/agents/reception", &jwt).await;
+    let (status, body) = app
+        .get_with_jwt("/api/v1/hr/agents/reception", &jwt)
+        .await;
     crate::common::assert_api_error(status, &body, axum::http::StatusCode::NOT_FOUND);
 
     // 2. Create an agent and onboard it
     let agent_name = format!("ReceptionAgent-{}", uuid::Uuid::now_v7());
-    let agent_id =
-        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
-            .await;
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &agent_name,
+    )
+    .await;
 
     // Interviewing → PendingOnboard → Onboarded
     app.put_with_jwt(
@@ -775,7 +1119,9 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
     .await;
 
     // 3. Now reception should resolve to an onboarded agent
-    let (status, body) = app.get_with_jwt("/api/v1/hr/agents/reception", &jwt).await;
+    let (status, body) = app
+        .get_with_jwt("/api/v1/hr/agents/reception", &jwt)
+        .await;
     let data = crate::common::assert_api_ok(status, &body);
     let resolved_id = data
         .get("agent_id")
@@ -786,11 +1132,37 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
         "reception agent_id should not be empty"
     );
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_reception_agent_resolution -- --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add reception agent resolution integration test"
+```
+
+---
+
+### Task 12: 边界场景（不存在 / 缺失字段）
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写边界场景测试**
+
+在文件末尾追加：
+
+```rust
 /// Edge cases:
 /// - GET nonexistent agent → 404 or non-zero code
 /// - DELETE nonexistent agent → 404 or non-zero code
-/// - Create Local agent without model_provider_id → error (Local kind requires it)
+/// - Create agent without model_provider_id → error (Local kind requires it)
 #[sqlx::test]
 async fn test_agent_edge_cases(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -829,19 +1201,155 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
             "/api/v1/hr/agents",
             &json!({
                 "name": "NoProviderAgent",
+                "capabilities": ["chat"],
+                "soul": "test",
                 "model_provider_id": ""
             }),
             &jwt,
         )
         .await;
-    let _ = status;
     assert!(
         body.get("code").and_then(|v| v.as_i64()).unwrap_or(0) != 0,
         "creating Local agent with empty model_provider_id should fail: body={}",
         body
     );
 }
+```
 
+- [ ] **Step 2: 运行全部测试**
+
+Run: `cargo test --test agent_management_test -- --nocapture`
+
+Expected: ALL PASS (12 tests)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add agent edge cases integration tests (not found, missing fields)"
+```
+
+---
+
+## Part B: 真实向量搜索集成测试
+
+以下测试使用真实 Doubao embedding 模型，验证 Agent 的向量索引构建和语义搜索逻辑。
+
+**运行方式：** `cargo test --test agent_management_test -- --ignored`（需要 `.env` 中配置 API keys）
+
+**环境变量（与 real_model_test.rs 共用）：**
+```
+TEST_EMBEDDING_API_KEY=95b8fd31-5f74-448c-8da9-28119a883c45
+TEST_EMBEDDING_MODEL_NAME=doubao-embedding-vision-251215
+TEST_EMBEDDING_PROVIDER_TYPE=doubao
+TEST_EMBEDDING_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+TEST_LLM_API_KEY=95b8fd31-5f74-448c-8da9-28119a883c45
+TEST_LLM_MODEL_NAME=doubao-seed-evolving
+TEST_LLM_PROVIDER_TYPE=doubao
+TEST_LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+```
+
+**设计原则：**
+- 用 `#[ignore]` 标记，CI 安全（无 API key 时自动跳过）
+- 复用 `real_model_test.rs` 的 `TestConfig` + `create_provider` 模式
+- 区分 FTS5 关键词搜索 vs 向量语义搜索：
+  - FTS5 搜索：关键词在文本中直接出现
+  - 向量搜索：关键词与文本语义相关但字面不重合（如搜 "机器学习" 匹配 "深度学习模型训练"）
+- 验证向量索引在 Agent 创建/更新/删除时自动维护
+
+---
+
+### Task 13: 真实向量索引构建 + 语义搜索
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 添加真实模型测试辅助代码**
+
+在文件顶部 `mod common;` 之后、第一个测试之前添加：
+
+```rust
+// ===== 真实向量搜索测试辅助（Part B）=====
+
+/// Load .env file and read an env var. Returns None if unset or empty.
+fn env_or_none(key: &str) -> Option<String> {
+    let _ = dotenvy::dotenv();
+    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Parse provider type string to serde variant name.
+fn parse_provider_type(s: &str) -> &'static str {
+    match s.to_lowercase().as_str() {
+        "openai" | "0" => "OpenAI",
+        "deepseek" | "1" => "DeepSeek",
+        "qwen" | "2" => "Qwen",
+        "doubao" | "3" => "Doubao",
+        "ollama" | "4" => "Ollama",
+        "custom" | "5" => "Custom",
+        _ => "OpenAI",
+    }
+}
+
+/// Real model test config parsed from environment variables.
+struct RealModelConfig {
+    embedding_api_key: String,
+    embedding_model_name: String,
+    embedding_provider_type: &'static str,
+    embedding_base_url: Option<String>,
+}
+
+impl RealModelConfig {
+    /// Load embedding config from env. Returns None if API key is missing.
+    fn from_env() -> Option<Self> {
+        let embedding_api_key = env_or_none("TEST_EMBEDDING_API_KEY")?;
+        let embedding_model_name = env_or_none("TEST_EMBEDDING_MODEL_NAME")
+            .unwrap_or_else(|| "text-embedding-3-small".into());
+        let embedding_provider_type = env_or_none("TEST_EMBEDDING_PROVIDER_TYPE")
+            .as_deref()
+            .map(parse_provider_type)
+            .unwrap_or("OpenAI");
+        let embedding_base_url = env_or_none("TEST_EMBEDDING_BASE_URL");
+        Some(Self {
+            embedding_api_key,
+            embedding_model_name,
+            embedding_provider_type,
+            embedding_base_url,
+        })
+    }
+}
+
+/// Create a real Embedding ModelProvider via HTTP API. Returns the provider ID.
+#[allow(clippy::too_many_arguments)]
+async fn create_embedding_provider(
+    app: &TestApp,
+    jwt: &str,
+    cfg: &RealModelConfig,
+) -> String {
+    let req = json!({
+        "name": format!("TestEmbedding-{}", uuid::Uuid::now_v7()),
+        "provider_type": cfg.embedding_provider_type,
+        "capability": "Embedding",
+        "model_name": cfg.embedding_model_name,
+        "api_key": cfg.embedding_api_key,
+        "base_url": cfg.embedding_base_url,
+        "description": "Real embedding provider for vector search tests",
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    data.get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing provider id")
+        .to_string()
+}
+```
+
+- [ ] **Step 2: 编写向量语义搜索测试**
+
+在文件末尾追加：
+
+```rust
 /// Real vector search: create embedding provider → create agents with
 /// semantically distinct descriptions → search by a keyword that does NOT
 /// appear in the text but is semantically related.
@@ -867,7 +1375,8 @@ async fn test_real_vector_semantic_search(pool: SqlitePool) {
     //    but is semantically related.
     //    Description mentions "深度学习模型训练与梯度下降" — search keyword "神经网络"
     //    is semantically related but not a literal substring.
-    let agent_name = format!("VectorSearchAgent-{}", uuid::Uuid::now_v7());
+    let unique = uuid::Uuid::now_v7().to_string();
+    let agent_name = format!("VectorSearchAgent-{}", unique);
     let agent_req = json!({
         "name": agent_name,
         "description": "这是一个专门负责深度学习模型训练与梯度下降优化的智能助手",
@@ -891,8 +1400,7 @@ async fn test_real_vector_semantic_search(pool: SqlitePool) {
     //    but does not appear literally in the description.
     let search_req = json!({
         "keyword": "神经网络",
-        "limit": 20,
-        "offset": 0
+        "pagination": {"limit": 20, "offset": 0}
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/hr/agents/search", &search_req, &jwt)
@@ -927,7 +1435,33 @@ async fn test_real_vector_semantic_search(pool: SqlitePool) {
         )
         .await;
 }
+```
 
+- [ ] **Step 3: 运行测试（需要 .env 配置）**
+
+Run: `cargo test --test agent_management_test test_real_vector_semantic_search -- --ignored --nocapture`
+
+Expected: PASS（agent 通过语义相似性被找到）
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add real vector semantic search integration test with Doubao embedding"
+```
+
+---
+
+### Task 14: 向量索引自动维护（更新 + 删除）
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写向量索引维护测试**
+
+在文件末尾追加：
+
+```rust
 /// Vector index auto-maintenance: update agent description → verify new
 /// vector reflects updated text; delete agent → verify it disappears from
 /// search results.
@@ -972,7 +1506,7 @@ async fn test_real_vector_index_maintenance(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/search",
-            &json!({"keyword": "前端", "limit": 20, "offset": 0}),
+            &json!({"keyword": "前端", "pagination": {"limit": 20, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -1009,7 +1543,7 @@ async fn test_real_vector_index_maintenance(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/search",
-            &json!({"keyword": "数据库", "limit": 20, "offset": 0}),
+            &json!({"keyword": "数据库", "pagination": {"limit": 20, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -1038,7 +1572,7 @@ async fn test_real_vector_index_maintenance(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents/search",
-            &json!({"keyword": "数据库", "limit": 50, "offset": 0}),
+            &json!({"keyword": "数据库", "pagination": {"limit": 50, "offset": 0}}),
             &jwt,
         )
         .await;
@@ -1065,7 +1599,33 @@ async fn test_real_vector_index_maintenance(pool: SqlitePool) {
         )
         .await;
 }
+```
 
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_real_vector_index_maintenance -- --ignored --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add real vector index maintenance (update+delete) integration test"
+```
+
+---
+
+### Task 15: 混合搜索（FTS5 + 向量）排序验证
+
+**Files:**
+- Modify: `tests/integration/agent_management_test.rs`
+
+- [ ] **Step 1: 编写混合搜索排序测试**
+
+在文件末尾追加：
+
+```rust
 /// Hybrid search ranking: create two agents — one matching by keyword (FTS5),
 /// one matching by semantic similarity (vector). Search with a keyword that
 /// matches one literally and the other semantically.
@@ -1130,8 +1690,7 @@ async fn test_real_hybrid_search_ranking(pool: SqlitePool) {
             "/api/v1/hr/agents/search",
             &json!({
                 "keyword": "自然语言处理",
-                "limit": 20,
-                "offset": 0
+                "pagination": {"limit": 20, "offset": 0}
             }),
             &jwt,
         )
@@ -1183,3 +1742,90 @@ async fn test_real_hybrid_search_ranking(pool: SqlitePool) {
         )
         .await;
 }
+```
+
+- [ ] **Step 2: 运行测试**
+
+Run: `cargo test --test agent_management_test test_real_hybrid_search_ranking -- --ignored --nocapture`
+
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/agent_management_test.rs
+git commit -m "test: add real hybrid search ranking (FTS5+vector) integration test"
+```
+
+---
+
+### Task 16: 全量回归验证
+
+**Files:**
+- 无修改
+
+- [ ] **Step 1: 运行全部非 ignored 测试（HTTP 端点测试）**
+
+Run: `cargo test --test agent_management_test -- --nocapture`
+
+Expected: ALL PASS（12 个端点测试）
+
+- [ ] **Step 2: 运行全部 ignored 测试（真实向量测试，需要 .env）**
+
+Run: `cargo test --test agent_management_test -- --ignored --nocapture`
+
+Expected: ALL PASS（3 个真实向量测试）
+
+- [ ] **Step 3: 运行 fmt + clippy 检查**
+
+Run: `cargo fmt --all -- --check && cargo clippy --test agent_management_test -- -D warnings`
+
+Expected: 无错误
+
+- [ ] **Step 4: Final commit（如有 fmt/clippy 修复）**
+
+```bash
+git add -A
+git commit -m "test: finalize agent management integration test suite with real vector search"
+```
+
+---
+
+## Follow-up: Tool/Skill 向量搜索测试 + DoubaoVision 重构
+
+在 Agent 管理集成测试完成后，追加了 Tool / Skill 实体的向量搜索集成测试，并修复了相关问题。
+
+### 新增测试文件
+
+`tests/integration/tool_skill_vector_test.rs`（9 个测试）：
+
+**默认运行（4 个，CI-safe）：**
+- `test_tool_crud` — Tool CRUD 全流程
+- `test_skill_crud` — Skill CRUD 全流程
+- `test_tool_fts5_search` — Tool FTS5 关键词搜索
+- `test_skill_fts5_search` — Skill FTS5 关键词搜索
+
+**真实向量搜索（5 个，`#[ignore]`，需 API key）：**
+- `test_real_tool_vector_search` — Tool 语义搜索（深度学习↔神经网络）
+- `test_real_tool_vector_maintenance` — Tool 向量索引维护（创建→更新→删除）
+- `test_real_skill_vector_search` — Skill 语义搜索（机器学习↔人工智能）
+- `test_real_skill_vector_maintenance` — Skill 向量索引维护
+- `test_real_tool_skill_hybrid_ranking` — Tool 混合搜索排序（FTS5 > 向量）
+
+### DoubaoVision ProviderType 重构
+
+将 `DoubaoVisionCortex` 的匹配方式从 `model_name.contains("vision")` 改为显式枚举 `ProviderType::DoubaoVision = 7`：
+
+- `common/src/enums/provider.rs` — 新增 `DoubaoVision = 7`，更新 `From<i32>` / `Display`
+- `src/service/dao/cortex/rig.rs` — Embedding 分支改用 `ProviderType::DoubaoVision`；Agent 分支新增报错
+- `src/service/dao/cortex/rig/doubao_vision.rs` — 删除 `is_doubao_vision_model` 函数及测试
+- 前端 3 个文件 — 添加 DoubaoVision 下拉选项
+
+### Bug 修复：Skill 删除时未清理向量索引
+
+测试发现 Skill DAL 的 `delete` 方法缺少向量索引清理（Tool DAL 已有此逻辑）：
+
+- `src/service/dao/skill/mod.rs` — `SkillVectorDao` trait 新增 `delete_vector` 方法
+- `src/service/dao/skill/vector.rs` — 实现 `delete_vector`
+- `src/service/dal/skill.rs` — `delete` 方法新增 `skill_vector_dao.delete_vector()` 调用
+

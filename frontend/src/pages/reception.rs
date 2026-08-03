@@ -570,6 +570,7 @@ pub fn Reception() -> Element {
                                             option { value: "4", "Ollama" }
                                             option { value: "5", "Custom" }
                                             option { value: "6", "FastEmbed（本地，无需 API Key）" }
+                                            option { value: "7", "DoubaoVision（豆包多模态 Embedding）" }
                                         }
                                     }
 

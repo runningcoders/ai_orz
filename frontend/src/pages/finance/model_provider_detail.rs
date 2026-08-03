@@ -450,6 +450,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     "Ollama" => ProviderType::Ollama,
                                     "Custom" => ProviderType::Custom,
                                     "FastEmbed" => ProviderType::FastEmbed,
+                                    "DoubaoVision" => ProviderType::DoubaoVision,
                                     _ => ProviderType::OpenAI,
                                 };
                                 let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
@@ -505,6 +506,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             option { value: "Ollama", "Ollama" }
                             option { value: "Custom", "自定义" }
                             option { value: "FastEmbed", "FastEmbed" }
+                            option { value: "DoubaoVision", "豆包 Vision (多模态)" }
                         }
                     }
                     div { class: "form-control w-full",

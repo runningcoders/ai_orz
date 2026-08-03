@@ -118,10 +118,27 @@ impl super::CortexDao for RigCortexDao {
                         "FastEmbed 仅支持 Embedding 能力，不支持 Agent 能力"
                     ));
                 }
+                ProviderType::DoubaoVision => {
+                    return Err(anyhow::anyhow!(
+                        "DoubaoVision 仅支持 Embedding 能力，不支持 Agent 能力"
+                    ));
+                }
             },
             // 🔷 Embedding 类型 - 只支持向量化，不需要构建完整的 Agent
             // 对于 Embedding 模型，直接复用 OpenAI 兼容实现（大多数 Embedding API 都是 OpenAI 格式）
             ModelCapability::Embedding => match provider.provider_type {
+                // 豆包 Vision 多模态 Embedding：使用 /embeddings/multimodal endpoint，
+                // 与标准 OpenAI /embeddings 不兼容，需要专属实现
+                ProviderType::DoubaoVision => {
+                    Box::new(self::doubao_vision::DoubaoVisionCortex::new(
+                        provider.id.clone(),
+                        api_key,
+                        model,
+                        provider.base_url.clone().unwrap_or_else(|| {
+                            "https://ark.cn-beijing.volces.com/api/v3".to_string()
+                        }),
+                    )?)
+                }
                 ProviderType::OpenAI
                 | ProviderType::DeepSeek
                 | ProviderType::Qwen
@@ -225,6 +242,7 @@ impl super::CortexDao for RigCortexDao {
 }
 
 // 具体不同提供商的 Cortex 实现
+pub mod doubao_vision;
 pub mod fastembed;
 pub mod ollama;
 pub mod openai;

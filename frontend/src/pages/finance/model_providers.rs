@@ -343,6 +343,8 @@ pub fn FinanceModelProviders() -> Element {
                                 "doubao" => ProviderType::Doubao,
                                 "ollama" => ProviderType::Ollama,
                                 "custom" => ProviderType::Custom,
+                                "fastembed" => ProviderType::FastEmbed,
+                                "doubao_vision" => ProviderType::DoubaoVision,
                                 _ => ProviderType::OpenAI,
                             });
                         },
@@ -350,6 +352,7 @@ pub fn FinanceModelProviders() -> Element {
                         option { value: "custom", "OpenAI 兼容" }
                         option { value: "deepseek", "DeepSeek" }
                         option { value: "doubao", "豆包" }
+                        option { value: "doubao_vision", "豆包 Vision (多模态 Embedding)" }
                         option { value: "qwen", "通义千问" }
                         option { value: "ollama", "Ollama" }
                     }

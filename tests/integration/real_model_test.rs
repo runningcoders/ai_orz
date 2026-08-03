@@ -37,6 +37,8 @@ fn parse_provider_type(s: &str) -> &'static str {
         "doubao" | "3" => "Doubao",
         "ollama" | "4" => "Ollama",
         "custom" | "5" => "Custom",
+        "fastembed" | "6" => "FastEmbed",
+        "doubao_vision" | "doubaoVision" | "7" => "DoubaoVision",
         _ => "OpenAI",
     }
 }

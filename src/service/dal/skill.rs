@@ -578,7 +578,11 @@ impl SkillDal for SkillDalImpl {
         };
         // 先删文件，再删数据库记录
         self.skill_dao.delete_skill_dir(&po)?;
-        self.skill_dao.delete_by_id(ctx, id).await?;
+        self.skill_dao.delete_by_id(ctx.clone(), id).await?;
+
+        // 删除时清理向量索引（与 Tool DAL 一致，best-effort 不影响主流程）
+        let _ = self.skill_vector_dao.delete_vector(ctx, id).await;
+
         Ok(())
     }
 

@@ -161,6 +161,9 @@ pub trait SkillVectorDao: Send + Sync {
         skill_id: &str,
     ) -> Result<Option<crate::models::vector::VectorRow>>;
 
+    /// 删除技能的向量索引
+    async fn delete_vector(&self, ctx: RequestContext, skill_id: &str) -> Result<()>;
+
     /// 清空所有向量索引
     async fn clear_collection(&self, ctx: RequestContext) -> Result<()>;
 }

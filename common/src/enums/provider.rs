@@ -27,6 +27,8 @@ pub enum ProviderType {
     Custom = 5,
     /// FastEmbed local embedding (纯本地向量化，无外部依赖)
     FastEmbed = 6,
+    /// 豆包 Vision 多模态 Embedding（使用 /embeddings/multimodal endpoint）
+    DoubaoVision = 7,
 }
 
 /// Model capability type - 区分模型是用于 Agent 思考还是 Embedding 向量化
@@ -52,6 +54,7 @@ impl From<i32> for ProviderType {
             4 => ProviderType::Ollama,
             5 => ProviderType::Custom,
             6 => ProviderType::FastEmbed,
+            7 => ProviderType::DoubaoVision,
             _ => ProviderType::default(),
         }
     }
@@ -79,6 +82,7 @@ impl fmt::Display for ProviderType {
             ProviderType::Ollama => write!(f, "ollama"),
             ProviderType::Custom => write!(f, "custom"),
             ProviderType::FastEmbed => write!(f, "fastembed"),
+            ProviderType::DoubaoVision => write!(f, "doubao_vision"),
         }
     }
 }
