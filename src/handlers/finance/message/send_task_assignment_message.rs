@@ -31,10 +31,7 @@ pub async fn send_task_assignment_message(
             common::enums::MessageRole::Agent,
         ),
         CallerType::User => (ctx.uid(), common::enums::MessageRole::User),
-        CallerType::System => (
-            "system".to_string(),
-            common::enums::MessageRole::System,
-        ),
+        CallerType::System => ("system".to_string(), common::enums::MessageRole::System),
     };
 
     let cmd = SendTaskAssignmentCommand {
