@@ -406,6 +406,10 @@ fn hr_routes() -> Router {
             "/agents/query_memory",
             post(handlers::hr::agent::query_memory_handler),
         )
+        .route(
+            "/agents/recommend_seed_nodes",
+            post(handlers::hr::agent::recommend_seed_nodes_handler),
+        )
 }
 
 fn finance_routes() -> Router {
