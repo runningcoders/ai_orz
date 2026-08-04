@@ -94,11 +94,13 @@ pub trait BrainDal: Send + Sync {
     /// - Remote → execute_a2a（包装为 ThinkResult::Final）
     ///
     /// `tools` 参数仅 Local 分支使用（传递给模型进行 function calling）。
+    /// `messages` 是完整的多轮对话历史（user → assistant(tool_calls) → tool(result)），
+    /// 确保模型能看到之前的 tool_calls 和 tool 结果，从而正确终止循环。
     async fn think(
         &self,
         ctx: RequestContext,
         brain: &Brain,
-        prompt: &str,
+        messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult>;
 
@@ -123,6 +125,21 @@ pub trait BrainDal: Send + Sync {
 }
 
 // ==================== DAL 实现 ====================
+
+/// 从 messages 数组中提取最后一条 User 消息的内容
+///
+/// Cli/Remote agent 不支持多轮工具调用，仅将最后一条 user 消息作为 prompt 传入。
+/// 如果没有 user 消息，返回空字符串。
+fn extract_last_user_prompt(messages: &[crate::models::cortex_types::ChatMessage]) -> &str {
+    messages
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            crate::models::cortex_types::ChatMessage::User { content } => Some(content.as_str()),
+            _ => None,
+        })
+        .unwrap_or("")
+}
 
 /// Brain DAL 实现
 #[allow(dead_code)]
@@ -195,7 +212,14 @@ impl BrainDal for BrainDalImpl {
         );
 
         let dao = cortex::native::registry().get(provider.po.provider_type);
-        let result = dao.think(ctx, &provider.po, prompt, &[]).await?;
+        let result = dao
+            .think(
+                ctx,
+                &provider.po,
+                &[crate::models::cortex_types::ChatMessage::user(prompt)],
+                &[],
+            )
+            .await?;
 
         match result {
             ThinkResult::Final { content, .. } => Ok(content),
@@ -207,7 +231,7 @@ impl BrainDal for BrainDalImpl {
         &self,
         ctx: RequestContext,
         brain: &Brain,
-        prompt: &str,
+        messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
         let start = std::time::Instant::now();
@@ -230,7 +254,7 @@ impl BrainDal for BrainDalImpl {
                 );
 
                 let dao = cortex::native::registry().get(provider.provider_type);
-                let result = dao.think(ctx.clone(), provider, prompt, tools).await;
+                let result = dao.think(ctx.clone(), provider, messages, tools).await;
 
                 log_debug!(
                     ctx.clone(),
@@ -251,6 +275,9 @@ impl BrainDal for BrainDalImpl {
                     brain.agent_id,
                     brain.agent_name,
                 );
+
+                // Cli agent 不支持多轮工具调用，从 messages 提取最后一条 user 消息作为 prompt
+                let prompt = extract_last_user_prompt(messages);
 
                 let external_config = brain
                     .runtime_config
@@ -302,6 +329,9 @@ impl BrainDal for BrainDalImpl {
                     brain.agent_id,
                     brain.agent_name,
                 );
+
+                // Remote agent 不支持多轮工具调用，从 messages 提取最后一条 user 消息作为 prompt
+                let prompt = extract_last_user_prompt(messages);
 
                 let external_config = brain
                     .runtime_config

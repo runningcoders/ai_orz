@@ -124,3 +124,47 @@ pub struct ToolCallRequest {
     /// 参数 JSON（模型生成的参数，已通过 schema 验证）
     pub arguments: Value,
 }
+
+/// 聊天消息（多轮对话历史）
+///
+/// 对应 OpenAI Chat Completions API 的 messages 数组中的元素。
+/// think() 接收 messages 数组而非扁平字符串，确保模型能看到完整的对话历史
+///（包括自己的 tool_calls 和 tool 结果），从而正确终止循环。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
+pub enum ChatMessage {
+    /// 用户消息
+    User { content: String },
+    /// 助手消息（可能包含 tool_calls）
+    Assistant {
+        /// 文本内容（可能为空）
+        content: Option<String>,
+        /// 工具调用请求（模型要求调用工具时）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_calls: Option<Vec<ToolCallRequest>>,
+    },
+    /// 工具结果消息（回传给模型）
+    Tool {
+        /// 对应的 tool_call_id（模型生成，用于匹配）
+        tool_call_id: String,
+        /// 工具执行结果
+        content: String,
+    },
+}
+
+impl ChatMessage {
+    /// 创建 User 消息
+    pub fn user(content: impl Into<String>) -> Self {
+        ChatMessage::User {
+            content: content.into(),
+        }
+    }
+
+    /// 创建 Tool 结果消息
+    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        ChatMessage::Tool {
+            tool_call_id: tool_call_id.into(),
+            content: content.into(),
+        }
+    }
+}

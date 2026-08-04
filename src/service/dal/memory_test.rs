@@ -75,7 +75,7 @@ impl CortexDao for MockCortexDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _prompt: &str,
+        _messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
         Ok(ThinkResult::Final {
@@ -1354,7 +1354,7 @@ impl CortexDao for MockCortexVectorDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _prompt: &str,
+        _messages: &[crate::models::cortex_types::ChatMessage],
         _tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
         Ok(ThinkResult::Final {

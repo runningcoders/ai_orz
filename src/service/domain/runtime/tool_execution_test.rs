@@ -51,7 +51,7 @@ mod tests {
             &self,
             _ctx: RequestContext,
             _brain: &Brain,
-            _prompt: &str,
+            _messages: &[crate::models::cortex_types::ChatMessage],
             _tools: &[crate::models::cortex_types::ToolDescriptor],
         ) -> Result<crate::models::cortex_types::ThinkResult> {
             unimplemented!("not needed by tool execution routing tests")

@@ -37,10 +37,10 @@ impl super::CortexDao for OpenAiCompatibleCortexDao {
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-        prompt: &str,
+        messages: &[crate::models::cortex_types::ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
-        http::call_chat_completions(ctx, &self.client, provider, prompt, tools).await
+        http::call_chat_completions(ctx, &self.client, provider, messages, tools).await
     }
 
     async fn embed(

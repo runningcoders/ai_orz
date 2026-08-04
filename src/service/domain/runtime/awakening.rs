@@ -270,11 +270,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                                             }
                                             common::enums::tool::ControlMode::Manual => {
                                                 self.tool_dal()
-                                                    .execute_manual(
-                                                        ctx.clone(),
-                                                        tool,
-                                                        tc.arguments,
-                                                    )
+                                                    .execute_manual(ctx.clone(), tool, tc.arguments)
                                                     .await
                                             }
                                         };

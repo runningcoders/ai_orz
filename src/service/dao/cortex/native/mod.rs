@@ -4,7 +4,7 @@
 //! 按 provider_type 路由到具体实现。所有实现都是无状态单例（仅持有共享 reqwest::Client），
 //! 所有配置从 `&ModelProviderPo` 读取。
 
-use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
@@ -27,12 +27,13 @@ pub mod openai;
 pub trait CortexDao: Send + Sync {
     /// 调用模型推理
     ///
-    /// 返回 ThinkResult::Final（最终回答）或 ThinkResult::ToolCall（工具调用请求）
+    /// 返回 ThinkResult::Final（最终回答）或 ThinkResult::ToolCall（工具调用请求）。
+    /// 接收完整的 messages 数组（多轮对话历史），确保模型能看到之前的 tool_calls 和 tool 结果。
     async fn think(
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-        prompt: &str,
+        messages: &[ChatMessage],
         tools: &[ToolDescriptor],
     ) -> Result<ThinkResult>;
 

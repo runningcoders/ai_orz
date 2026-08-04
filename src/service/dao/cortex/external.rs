@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use common::error::{Result, err};
 
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
-use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent_runtime::{
@@ -90,9 +90,18 @@ impl CortexDao for ExternalCortexDao {
         &self,
         ctx: RequestContext,
         _provider: &ModelProviderPo,
-        prompt: &str,
+        messages: &[ChatMessage],
         _tools: &[ToolDescriptor],
     ) -> Result<ThinkResult> {
+        // 外部 agent 不支持多轮工具调用，提取最后一条 user 消息作为 prompt
+        let prompt = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                ChatMessage::User { content } => Some(content.as_str()),
+                _ => None,
+            })
+            .unwrap_or("");
         let content = self
             .runtime_dao
             .invoke(ctx, &self.agent, prompt)
@@ -274,7 +283,9 @@ mod tests {
         let cortex = ExternalCortexDao::from_agent(&agent).unwrap();
         let ctx = RequestContext::new_system();
         let provider = mock_provider();
-        let result = cortex.think(ctx, &provider, "hello world", &[]).await;
+        let result = cortex
+            .think(ctx, &provider, &[ChatMessage::user("hello world")], &[])
+            .await;
         assert!(result.is_ok(), "expected ok, got {:?}", result);
         match result.unwrap() {
             ThinkResult::Final { content, .. } => assert_eq!(content, "hello world"),

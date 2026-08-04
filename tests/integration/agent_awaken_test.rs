@@ -350,9 +350,20 @@ impl BrainDal for CapturingBrainDal {
         &self,
         _ctx: RequestContext,
         _brain: &Brain,
-        prompt: &str,
+        messages: &[ai_orz::models::cortex_types::ChatMessage],
         _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
     ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
+        // 从 messages 中提取最后一条 user 消息作为 prompt 捕获
+        let prompt = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                ai_orz::models::cortex_types::ChatMessage::User { content } => {
+                    Some(content.as_str())
+                }
+                _ => None,
+            })
+            .unwrap_or("");
         *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
         Ok(ai_orz::models::cortex_types::ThinkResult::Final {
             content: "mock response".to_string(),
@@ -681,7 +692,7 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
             &self,
             _ctx: RequestContext,
             _brain: &Brain,
-            _prompt: &str,
+            _messages: &[ai_orz::models::cortex_types::ChatMessage],
             _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
         ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
             Err(::common::error::Error::internal("mock think failure"))

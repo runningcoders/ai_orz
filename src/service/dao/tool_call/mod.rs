@@ -45,6 +45,8 @@ pub trait ToolCallDao: Send + Sync {
     /// 内部方法，供 ToolCallDao 实现内部使用（如 call_manual）。
     /// 未来可在此叠加 StatsDecorator 等多层装饰器，像 middleware 一样组合。
     fn decorate(&self, tool: Box<dyn CoreTool + Send + Sync>) -> Box<dyn CoreTool + Send + Sync> {
-        Box::new(crate::pkg::tool_tracing::ToolCallLoggingDecorator::new(tool))
+        Box::new(crate::pkg::tool_tracing::ToolCallLoggingDecorator::new(
+            tool,
+        ))
     }
 }

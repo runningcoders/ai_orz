@@ -3,7 +3,9 @@
 //! 所有 provider 统一走 OpenAI Chat Completions / Embeddings 协议，
 //! 不再依赖 rig 的 client/agent 抽象。
 
-use crate::models::cortex_types::{ThinkResult, TokenUsage, ToolCallRequest, ToolDescriptor};
+use crate::models::cortex_types::{
+    ChatMessage, ThinkResult, TokenUsage, ToolCallRequest, ToolDescriptor,
+};
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use common::error::{Result, err};
@@ -33,6 +35,50 @@ pub fn default_base_url(provider_type: common::enums::ProviderType) -> &'static 
     }
 }
 
+/// 将 ChatMessage 数组转换为 OpenAI API 格式的 JSON 数组
+fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|m| match m {
+            ChatMessage::User { content } => json!({"role": "user", "content": content}),
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let mut msg = json!({"role": "assistant"});
+                if let Some(c) = content {
+                    msg["content"] = json!(c);
+                } else {
+                    msg["content"] = json!(null);
+                }
+                if let Some(tcs) = tool_calls {
+                    msg["tool_calls"] = json!(
+                        tcs.iter()
+                            .map(|tc| {
+                                json!({
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc.name,
+                                        "arguments": tc.arguments.to_string(),
+                                    }
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    );
+                }
+                msg
+            }
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+            } => {
+                json!({"role": "tool", "tool_call_id": tool_call_id, "content": content})
+            }
+        })
+        .collect()
+}
+
 /// 调用 Chat Completions API
 ///
 /// 所有 provider 统一走 /chat/completions endpoint
@@ -40,7 +86,7 @@ pub async fn call_chat_completions(
     ctx: RequestContext,
     client: &reqwest::Client,
     provider: &ModelProviderPo,
-    prompt: &str,
+    messages: &[ChatMessage],
     tools: &[ToolDescriptor],
 ) -> Result<ThinkResult> {
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
@@ -49,7 +95,7 @@ pub async fn call_chat_completions(
     // 构建请求体
     let mut body = json!({
         "model": provider.model_name,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages_to_json(messages),
         "stream": false,
     });
 
@@ -75,9 +121,10 @@ pub async fn call_chat_completions(
     log_debug!(
         ctx,
         "cortex_chat_request",
-        "POST {} model={}",
+        "POST {} model={} messages={}",
         url,
-        provider.model_name
+        provider.model_name,
+        messages.len()
     );
 
     let resp = client
