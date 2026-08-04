@@ -722,3 +722,192 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
         "Agent should be Idle after awaken error (BusyGuard released)"
     );
 }
+
+// ==================== Part C: 真实 LLM 端到端测试 ====================
+
+/// Parse provider type string to serde variant name.
+///
+/// env 变量值（如 "doubao"）需转换为 serde 变体名（如 "Doubao"）才能被
+/// `ProviderType` 的 `Deserialize` 正确解析（无 `rename_all`，默认按变体名匹配）。
+fn parse_provider_type(s: &str) -> &'static str {
+    match s.to_lowercase().as_str() {
+        "openai" | "0" => "OpenAI",
+        "deepseek" | "1" => "DeepSeek",
+        "qwen" | "2" => "Qwen",
+        "doubao" | "3" => "Doubao",
+        "ollama" | "4" => "Ollama",
+        "custom" | "5" => "Custom",
+        "fastembed" | "6" => "FastEmbed",
+        "doubao_vision" | "doubaoVision" | "7" => "DoubaoVision",
+        _ => "OpenAI",
+    }
+}
+
+/// 真实模型配置（从 .env 读取）
+struct RealLlmConfig {
+    llm_provider_type: &'static str,
+    llm_model_name: String,
+    llm_api_key: String,
+    llm_base_url: Option<String>,
+}
+
+impl RealLlmConfig {
+    fn from_env() -> Option<Self> {
+        let _ = dotenvy::dotenv();
+        let llm_api_key = std::env::var("TEST_LLM_API_KEY").ok()?;
+        let llm_model_name = std::env::var("TEST_LLM_MODEL_NAME").ok()?;
+        let llm_provider_type = std::env::var("TEST_LLM_PROVIDER_TYPE")
+            .ok()
+            .as_deref()
+            .map(parse_provider_type)
+            .unwrap_or("Doubao");
+        let llm_base_url = std::env::var("TEST_LLM_BASE_URL").ok();
+        Some(Self {
+            llm_provider_type,
+            llm_model_name,
+            llm_api_key,
+            llm_base_url,
+        })
+    }
+}
+
+/// 创建真实 LLM Provider，返回 provider_id
+async fn create_real_llm_provider(app: &TestApp, jwt: &str, cfg: &RealLlmConfig) -> String {
+    let req = json!({
+        "name": format!("RealLLM-{}", uuid::Uuid::now_v7()),
+        "provider_type": cfg.llm_provider_type,
+        "capability": "Agent",
+        "model_name": cfg.llm_model_name,
+        "api_key": cfg.llm_api_key,
+        "base_url": cfg.llm_base_url,
+        "description": "Real LLM for awaken test"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    data.get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing provider id")
+        .to_string()
+}
+
+/// 真实 LLM 端到端测试：发送消息 → Consumer 触发 awaken → LLM 生成响应。
+///
+/// 验证：
+/// - Agent 收到消息后触发 awaken
+/// - 真实 LLM 生成有意义的响应（awaken 成功即证明 LLM 返回了非空输出）
+/// - 响应 Trace 写入 memory（通过 stats.call_summary.total_calls 验证）
+/// - Agent 回到 Idle 状态
+///
+/// 注：awaken 流程将 LLM 输出写入 memory trace（JSONL 文件）并记录统计事件，
+/// 但不会在 messages 表中创建回复消息（response message 由下游业务流程生成）。
+/// 因此本测试通过 `with_stats=true` 查询 Agent 唤醒次数来验证 LLM 调用成功落地。
+#[sqlx::test]
+#[ignore = "requires real LLM API key in .env (TEST_LLM_API_KEY)"]
+async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
+    let Some(cfg) = RealLlmConfig::from_env() else {
+        eprintln!("SKIP: TEST_LLM_API_KEY not set, skipping real LLM awaken test");
+        return;
+    };
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 创建真实 LLM Provider
+    let real_provider_id = create_real_llm_provider(&app, &jwt, &cfg).await;
+
+    // 2. 创建 Agent（使用真实 LLM Provider）
+    let agent_name = format!("RealLLMAgent-{}", uuid::Uuid::now_v7());
+    let agent_req = json!({
+        "name": agent_name,
+        "description": "一个用于测试真实 LLM 唤醒的 Agent",
+        "model_provider_id": real_provider_id,
+        "soul": "你是一个测试助手，请简洁回答问题。"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/hr/agents", &agent_req, &jwt)
+        .await;
+    let agent_data = crate::common::assert_api_ok(status, &body);
+    let agent_id = agent_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing agent id")
+        .to_string();
+
+    // 3. 发送消息给 Agent
+    let send_req = json!({
+        "to_agent_id": agent_id,
+        "content": "请回复：awaken 测试成功"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/messages/agents", &send_req, &jwt)
+        .await;
+    let msg_data = crate::common::assert_api_ok(status, &body);
+    let message_id = msg_data
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .expect("missing message_id")
+        .to_string();
+
+    // 4. 调用 Consumer 触发 awaken（真实 LLM 调用）
+    let consumer = MessageConsumer::new();
+    let event = make_message_event(&message_id, &bs.user_id, &agent_id, 1);
+
+    let result = consumer.on_event(event).await;
+
+    // awaken 应该成功（真实 LLM 返回了响应）
+    assert!(
+        result.is_ok(),
+        "Consumer should succeed with real LLM, got: {:?}",
+        result.err()
+    );
+
+    // 5. 验证 Agent 回到 Idle
+    let runtime_state = AgentRuntimeStateManager::global();
+    let state = runtime_state.get_state(&agent_id);
+    assert_eq!(
+        state,
+        ::common::enums::AgentRuntimeState::Idle,
+        "Agent should be Idle after awaken completion"
+    );
+
+    // 6. 验证 Agent 唤醒统计已记录（awaken 成功会写入 AgentAwakeEvent）
+    // 等待异步统计写入完成
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/hr/agents/{}?with_stats=true", agent_id),
+            &jwt,
+        )
+        .await;
+    let agent_detail = crate::common::assert_api_ok(status, &body);
+    let stats = agent_detail
+        .get("stats")
+        .expect("stats should be present with with_stats=true");
+    let total_calls = stats
+        .get("call_summary")
+        .and_then(|cs| cs.get("total_calls"))
+        .and_then(|v| v.as_u64())
+        .expect("missing call_summary.total_calls");
+    assert!(
+        total_calls >= 1,
+        "Agent should have at least 1 awaken call recorded, got: {}",
+        total_calls
+    );
+
+    eprintln!(
+        "Real LLM awaken test passed! Agent total_calls: {}",
+        total_calls
+    );
+
+    // Cleanup
+    let _ = app
+        .delete_with_jwt(
+            &format!("/api/v1/finance/model-providers/{}", real_provider_id),
+            &jwt,
+        )
+        .await;
+}
