@@ -97,3 +97,76 @@ async fn test_consumer_nonexistent_agent_returns_error(pool: SqlitePool) {
         "Agent Busy state should be released after error"
     );
 }
+
+/// Consumer 编排测试：Busy 状态的 Agent 拒绝新消息。
+///
+/// 验证：
+/// - try_set_busy 返回 false 时 Consumer 返回 Conflict 错误
+/// - 不触发后续 awaken 流程（不调用 LLM）
+/// - 原始 Busy 状态保持不变
+#[sqlx::test]
+async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 创建 Agent
+    let agent_name = format!("BusyAgent-{}", uuid::Uuid::now_v7());
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &agent_name,
+    )
+    .await;
+
+    // 发送消息（持久化到 DB）
+    let send_req = json!({
+        "to_agent_id": agent_id,
+        "content": "First message"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/messages/agents", &send_req, &jwt)
+        .await;
+    let msg_data = crate::common::assert_api_ok(status, &body);
+    let message_id = msg_data
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .expect("missing message_id")
+        .to_string();
+
+    // 预先将 Agent 设为 Busy（模拟另一个 worker 正在处理）
+    let runtime_state = AgentRuntimeStateManager::global();
+    runtime_state.set_busy(&agent_id, &message_id);
+
+    // 调用 Consumer 处理消息事件
+    let consumer = MessageConsumer::new();
+    let event = make_message_event(&message_id, &bs.user_id, &agent_id, 1);
+
+    let result = consumer.on_event(event).await;
+
+    // 应该返回 Conflict 错误（Agent 已 Busy）
+    assert!(
+        result.is_err(),
+        "Consumer should return error for busy agent"
+    );
+    let err = result.unwrap_err();
+    let err_msg = format!("{}", err);
+    assert!(
+        err_msg.contains("busy") || err_msg.contains("conflict"),
+        "Error should mention busy/conflict, got: {}",
+        err_msg
+    );
+
+    // 验证 Agent 仍然处于 Busy 状态（未被释放，因为不是我们设置的）
+    let state = runtime_state.get_state(&agent_id);
+    assert_eq!(
+        state,
+        ::common::enums::AgentRuntimeState::Busy,
+        "Agent should still be Busy (we set it, consumer should not release it)"
+    );
+
+    // 清理：释放 Busy 状态
+    runtime_state.set_idle(&agent_id);
+}
