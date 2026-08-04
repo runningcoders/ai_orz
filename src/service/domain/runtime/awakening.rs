@@ -1,7 +1,7 @@
 //! Runtime Awakening 具体实现
 
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -234,15 +234,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
         const MAX_TOOL_ITERATIONS: usize = 10;
 
-        // 工具调用循环：think → ToolCall? → execute tools → append to prompt → think again
-        // 最终模型返回 Final 时退出循环，raw_output 即最终回答内容
+        // 工具调用循环：think → ToolCall? → execute tools → append messages → think again
+        // 使用多轮对话历史（ChatMessage 数组）确保模型能看到之前的 tool_calls 和 tool 结果，
+        // 从而正确终止循环。最终模型返回 Final 时退出，raw_output 即最终回答内容。
         let think_result =
             match tokio::time::timeout(std::time::Duration::from_secs(THINK_TIMEOUT_SECS), async {
-                let mut current_prompt = prompt.clone();
+                let mut messages = vec![ChatMessage::user(prompt.clone())];
                 for _ in 0..MAX_TOOL_ITERATIONS {
                     let result = self
                         .brain_dal()
-                        .think(ctx.clone(), brain, &current_prompt, &tool_descriptors)
+                        .think(ctx.clone(), brain, &messages, &tool_descriptors)
                         .await?;
                     match result {
                         ThinkResult::Final { content, .. } => return Ok(content),
@@ -251,34 +252,51 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                             tool_calls,
                             ..
                         } => {
-                            // 追加模型思考内容（可能为空）
-                            if let Some(c) = content {
-                                current_prompt.push_str(&c);
-                                current_prompt.push('\n');
-                            }
-                            // 执行每个工具调用，将结果拼回 prompt
+                            // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
+                            messages.push(ChatMessage::Assistant {
+                                content,
+                                tool_calls: Some(tool_calls.clone()),
+                            });
+                            // 按 control_mode 分发执行
+                            // Auto 工具走 execute_auto（含装饰器），Manual 工具走 execute_manual（通过特殊 tool 转发）
                             for tc in tool_calls {
                                 match agent.tools().iter().find(|t| t.po.name == tc.name) {
                                     Some(tool) => {
-                                        match tool.our_tool.call(ctx.clone(), tc.arguments).await {
-                                            Ok(v) => {
-                                                current_prompt.push_str(&format!(
-                                                    "\n[ToolCall {} result]: {}\n",
-                                                    tc.name, v
+                                        let call_result = match tool.po.control_mode {
+                                            common::enums::tool::ControlMode::Auto => {
+                                                self.tool_dal()
+                                                    .execute_auto(ctx.clone(), tool, tc.arguments)
+                                                    .await
+                                            }
+                                            common::enums::tool::ControlMode::Manual => {
+                                                self.tool_dal()
+                                                    .execute_manual(
+                                                        ctx.clone(),
+                                                        tool,
+                                                        tc.arguments,
+                                                    )
+                                                    .await
+                                            }
+                                        };
+                                        match call_result {
+                                            Ok((value, _entry)) => {
+                                                messages.push(ChatMessage::tool(
+                                                    tc.id,
+                                                    format!("{}", value),
                                                 ));
                                             }
                                             Err(e) => {
-                                                current_prompt.push_str(&format!(
-                                                    "\n[ToolCall {} error]: {}\n",
-                                                    tc.name, e
+                                                messages.push(ChatMessage::tool(
+                                                    tc.id,
+                                                    format!("Error: {}", e),
                                                 ));
                                             }
                                         }
                                     }
                                     None => {
-                                        current_prompt.push_str(&format!(
-                                            "\n[ToolCall {} not found]\n",
-                                            tc.name
+                                        messages.push(ChatMessage::tool(
+                                            tc.id,
+                                            format!("Error: tool {} not found", tc.name),
                                         ));
                                     }
                                 }
@@ -474,7 +492,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
         let think_result = match tokio::time::timeout(
             std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
-            self.brain_dal().think(ctx.clone(), brain, &prompt, &[]),
+            self.brain_dal()
+                .think(ctx.clone(), brain, &[ChatMessage::user(&prompt)], &[]),
         )
         .await
         {
@@ -624,9 +643,20 @@ mod tests {
             &self,
             _ctx: RequestContext,
             _brain: &Brain,
-            prompt: &str,
+            messages: &[crate::models::cortex_types::ChatMessage],
             _tools: &[crate::models::cortex_types::ToolDescriptor],
         ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
+            // 从 messages 中提取最后一条 user 消息作为 prompt 捕获
+            let prompt = messages
+                .iter()
+                .rev()
+                .find_map(|m| match m {
+                    crate::models::cortex_types::ChatMessage::User { content } => {
+                        Some(content.as_str())
+                    }
+                    _ => None,
+                })
+                .unwrap_or("");
             *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
             Ok(crate::models::cortex_types::ThinkResult::Final {
                 content: "mock response".to_string(),

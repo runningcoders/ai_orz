@@ -355,6 +355,11 @@ impl RuntimeDomainImpl {
         &*self.brain_dal
     }
 
+    /// 获取 Tool DAL 引用
+    fn tool_dal(&self) -> &dyn ToolDal {
+        &*self.tool_dal
+    }
+
     /// 根据 agent.kind 返回对应的 PromptBuilder
     ///
     /// 工厂方法：awakening 组装 prompt 时调用此方法获取 builder。
