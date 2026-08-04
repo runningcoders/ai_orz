@@ -1,5 +1,7 @@
 # Agent 智能层集成测试 Implementation Plan
 
+> **Status: ✅ COMPLETED** (2026-08-04) — 8 个测试全部通过（6 默认 + 1 ignored 真实 LLM），commit `be7674e..c131a9a`。附带修复：空 tags json_each 报错、parameters_schema null 导致 Doubao API 拒绝、new_with_all 对集成测试不可访问。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为 Agent 智能层（awaken 主流程、Consumer 编排、sleep_and_settle）构建集成测试，覆盖从消息接收到 LLM 思考到响应生成的完整链路。使用 Mock BrainDal 保证 CI 默认绿，同时用真实 Doubao LLM 验证端到端流程。

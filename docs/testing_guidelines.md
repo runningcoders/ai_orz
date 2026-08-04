@@ -399,6 +399,28 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 | Vector Degradation | `vector_degradation_test.rs` | 3 | 无 embedding provider 时主流程仍可用（降级契约守护） |
 | A2A Flow | `a2a_flow_test.rs` | 2 | agent card 发现 + JSON-RPC tasks/send→get |
 | 宏集成 | `macro_test.rs` | 15 | generate_http_handler 宏各参数组合边界场景 |
+| Agent Management | `agent_management_test.rs` | 12+3 | Agent CRUD + 向量搜索（3 个 ignored 真实向量测试） |
+| Tool/Skill Vector | `tool_skill_vector_test.rs` | 2+5 | FTS5 搜索 + 向量语义搜索/索引维护/混合排序（5 个 ignored） |
+| Message Vector | `message_vector_test.rs` | 2+4 | Message FTS5 + 向量搜索/索引维护/混合排序（4 个 ignored） |
+| Project/Task Vector | `project_task_vector_test.rs` | 4+4 | Project/Task FTS5 + 向量搜索/索引维护/混合排序（4 个 ignored） |
+| Agent Awaken | `agent_awaken_test.rs` | 6+1 | Consumer 编排 + awaken Mock + 真实 LLM（1 个 ignored） |
+
+### 向量搜索测试模式（2026-08-04 新增）
+
+向量搜索集成测试统一采用 **CI 默认 + 真实 API ignore** 双层模式：
+
+```rust
+// 默认测试：无 embedding provider，走 FTS5 路径，CI 安全
+#[sqlx::test]
+async fn test_xxx_fts5_search(pool: SqlitePool) { ... }
+
+// ignored 测试：需 TEST_EMBEDDING_API_KEY，验证 LanceDB + Embedding API
+#[sqlx::test]
+#[ignore = "requires real Embedding API key in .env (TEST_EMBEDDING_API_KEY)"]
+async fn test_real_xxx_vector_search(pool: SqlitePool) { ... }
+```
+
+**ignored 测试覆盖场景**：语义搜索（"神经网络"→"深度学习"）、向量索引维护（创建→更新→删除）、混合排序（FTS5 > Vector > Keyword）。
 
 ### 性能优化历史
 
@@ -410,5 +432,5 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 
 ---
 
-**最后更新**：2026-07-27
+**最后更新**：2026-08-04
 **维护者**：AI Orz 开发团队

@@ -131,15 +131,30 @@ DAL 层负责向量索引的完整生命周期管理（FTS5 由数据库触发�
 
 ### 已覆盖实体
 
-| 实体 | FTS5 搜索 | 向量搜索 | 混合搜索 |
-|------|-----------|----------|----------|
-| Memory（短期记忆/知识节点） | ✅ | ✅ | ✅ |
-| Skill（技能） | ✅ | ✅ | ✅ |
-| Tool（工具） | ✅ | ✅ | ✅ |
-| Message（消息） | ✅ | ✅ | ✅ |
-| Task（任务） | ✅ | ✅ | ✅ |
-| Project（项目） | ✅ | ✅ | ✅ |
-| Agent（智能代理） | ✅ | ✅ | ✅ |
+| 实体 | FTS5 搜索 | 向量搜索 | 混合搜索 | 集成测试 |
+|------|-----------|----------|----------|----------|
+| Memory（短期记忆/知识节点） | ✅ | ✅ | ✅ | 单元测试 |
+| Skill（技能） | ✅ | ✅ | ✅ | ✅ `tool_skill_vector_test` |
+| Tool（工具） | ✅ | ✅ | ✅ | ✅ `tool_skill_vector_test` |
+| Message（消息） | ✅ | ✅ | ✅ | ✅ `message_vector_test` |
+| Task（任务） | ✅ | ✅ | ✅ | ✅ `project_task_vector_test` |
+| Project（项目） | ✅ | ✅ | ✅ | ✅ `project_task_vector_test` |
+| Agent（智能代理） | ✅ | ✅ | ✅ | ✅ `agent_management_test` |
+
+### 集成测试覆盖
+
+向量搜索集成测试统一采用 **CI 默认 + 真实 API ignore** 双层模式：
+
+| 测试文件 | 默认测试 | ignored 真实向量测试 |
+|----------|----------|---------------------|
+| `tool_skill_vector_test.rs` | 2（FTS5 + 过滤） | 5（语义搜索 + 索引维护 + 混合排序） |
+| `message_vector_test.rs` | 2（FTS5 + 过滤） | 4（语义搜索 + 索引维护 + 混合排序 + match_type） |
+| `project_task_vector_test.rs` | 4（Project/Task FTS5 + 过滤） | 4（Project/Task 语义搜索 + 索引维护 + 混合排序） |
+
+**默认测试**：无 embedding provider，走 FTS5 路径，CI 安全。
+**ignored 测试**：需 `TEST_EMBEDDING_API_KEY`，验证 LanceDB + Embedding API 端到端。
+
+**已知修复**：Message 搜索曾因 Handler 层未嵌入 `query_vector` 导致向量搜索不工作，已在 DAL 层统一嵌入 keyword → query_vector（与其他实体一致）。
 
 ---
 
@@ -401,6 +416,9 @@ struct Storage;
 | `858ebbb` | feat: 新增 RebuildProgressResponse DTO 和 RebuildInProgress 错误码 |
 | `2de7792` | feat: 索引重建异步化（后台任务 + 进度查询 + 并发控制） |
 | `e4d9a6f` | feat: 新增 rebuild progress handler 和路由 |
+| `b29a4d8` | fix: Message 向量搜索修复 + 补充向量搜索集成测试 |
+| `c131a9a` | test: Agent awaken 集成测试（Consumer 编排 + Mock + 真实 LLM） |
+| `39a9cbb` | test: Project/Task 向量搜索集成测试 |
 
 ---
 
@@ -490,7 +508,7 @@ pub enum VectorStoreType {
 
 ---
 
-*最后更新：2026-07-25*
+*最后更新：2026-08-04*
 
 ---
 
