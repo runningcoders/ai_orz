@@ -405,6 +405,27 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 | Project/Task Vector | `project_task_vector_test.rs` | 4+4 | Project/Task FTS5 + 向量搜索/索引维护/混合排序（4 个 ignored） |
 | Agent Awaken | `agent_awaken_test.rs` | 6+1 | Consumer 编排 + awaken Mock + 真实 LLM（1 个 ignored） |
 | Tool Call | `tool_call_test.rs` | 5+1 | debug_call_tool（Builtin/HTTP/SSRF）+ Manual 异步消息链 + 真实 LLM Auto 工具（1 个 ignored） |
+| Memory Cognition | `memory_test.rs` | 4+3 | 短期记忆 query/task_id 过滤 + FTS5 搜索 + 知识节点搜索 + 真实向量语义搜索/索引维护/混合排序（3 个 ignored） |
+
+### 记忆认知测试模式（2026-08-04 新增）
+
+记忆认知集成测试覆盖**短期记忆**和**图谱记忆（知识节点）**的查询与搜索能力：
+
+| 场景 | 测试内容 | 是否需 LLM | 测试策略 |
+|------|----------|-----------|----------|
+| **query 基础查询** | 创建短期记忆 → query_memory 验证 | 否 | CI 默认 |
+| **task_id 注意力过滤** | 创建不同 task_id 记忆 → 验证过滤生效 | 否 | CI 默认 |
+| **FTS5 短期记忆搜索** | 创建含特定关键词的记忆 → search_memory FTS5 召回 | 否 | CI 默认 |
+| **FTS5 知识节点搜索** | 创建知识节点 → search_memory FTS5 召回（trigram 分词） | 否 | CI 默认 |
+| **真实向量语义搜索** | 创建语义相关但无关键词重叠的记忆 → 向量召回 | 是 | `#[ignore]` 真实 Embedding |
+| **向量索引维护** | 创建 → 搜索验证 → 删除 → 搜索验证已删除 | 是 | `#[ignore]` 真实 Embedding |
+| **混合排序** | Hybrid（FTS5+向量）vs Vector-only 排序验证 | 是 | `#[ignore]` 真实 Embedding |
+
+**关键设计**：
+- **数据准备**：直接调用 domain layer（`runtime_domain().memory().create()`）创建记忆，绕过 HTTP handler 的 `ctx.agent_id()` 限制
+- **查询验证**：通过 HTTP 端点（`query_memory`/`search_memory`）验证端到端能力
+- **agent_id 参数**：测试中传入 `agent_id` 指定查询目标 Agent（handler 优先使用参数 agent_id，兜底 ctx.agent_id()）
+- **全局搜索修复**：DAL 层 `search_short_term`/`search_knowledge_nodes` 已修复空 agent_id 时的过滤逻辑——短期记忆空 agent_id 不过滤（全局搜索），知识节点空 agent_id 只返回 published 节点
 
 ### 工具调用测试模式（2026-08-04 新增）
 

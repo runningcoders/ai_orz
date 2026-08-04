@@ -167,6 +167,7 @@ pub fn HrKnowledgeGraph() -> Element {
                 seed_node_ids: Some(Vec::new()),
                 tags: tags_field,
                 task_id: None,
+                agent_id: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -225,6 +226,7 @@ pub fn HrKnowledgeGraph() -> Element {
                 seed_node_ids: Some(seed_ids.clone()),
                 tags: None,
                 task_id: None,
+                agent_id: None,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {

@@ -80,6 +80,7 @@ fn fetch_memories(
                 seed_node_ids: None,
                 tags: None,
                 task_id: task_filter.clone(),
+                agent_id: agent_id.clone(),
             })
             .await
             .map(|r| r.results)

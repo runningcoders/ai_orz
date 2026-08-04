@@ -30,7 +30,11 @@ pub async fn search_memory(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
-    let agent_id = ctx.agent_id().cloned().unwrap_or_default();
+    let agent_id = params
+        .agent_id
+        .clone()
+        .or_else(|| ctx.agent_id().cloned())
+        .unwrap_or_default();
 
     let memory_type = params
         .memory_type

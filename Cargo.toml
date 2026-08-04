@@ -127,6 +127,10 @@ path = "tests/integration/project_task_vector_test.rs"
 name = "tool_call_test"
 path = "tests/integration/tool_call_test.rs"
 
+[[test]]
+name = "memory_test"
+path = "tests/integration/memory_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]

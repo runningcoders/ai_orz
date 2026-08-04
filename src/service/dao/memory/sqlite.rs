@@ -317,7 +317,9 @@ FROM short_term_memory_index WHERE 1=1"#,
             separated.push_unseparated(")");
         }
 
-        if let Some(agent_id) = &query.agent_id {
+        if let Some(agent_id) = &query.agent_id
+            && !agent_id.is_empty()
+        {
             builder.push(" AND agent_id = ");
             builder.push_bind(agent_id);
         }
@@ -400,7 +402,7 @@ FROM short_term_memory_index WHERE 1=1"#,
         // 转义关键词为 FTS5 短语匹配
         let escaped_keyword = escape_fts5_keyword(&keyword);
 
-        // 构建带可选 tags / task_id 过滤的 SQL
+        // 构建带可选 tags / task_id / agent_id 过滤的 SQL
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
@@ -416,6 +418,13 @@ FROM short_term_memory_index WHERE 1=1"#,
         } else {
             String::new()
         };
+        // agent_id 为空时不过滤（全局搜索）
+        let has_agent_filter = !agent_id.is_empty();
+        let agent_clause = if has_agent_filter {
+            " AND m.agent_id = ?"
+        } else {
+            ""
+        };
 
         let sql = format!(
             r#"
@@ -425,16 +434,18 @@ SELECT m.id, m.agent_id, m.task_id, m.role, m.summary, m.tags, m.trace_ids,
 FROM short_term_memory_fts
 JOIN short_term_memory_index m ON short_term_memory_fts.rowid = m.rowid
 WHERE short_term_memory_fts MATCH ?
-  AND m.agent_id = ?
-  AND m.status != 0{tags_clause}{task_id_clause}
+  AND m.status != 0{agent_clause}{tags_clause}{task_id_clause}
 ORDER BY short_term_memory_fts.rank
 LIMIT ?
 "#
         );
 
-        let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql)
-            .bind(escaped_keyword)
-            .bind(agent_id);
+        let mut query = sqlx::query_as::<_, ShortTermSearchRow>(&sql).bind(escaped_keyword);
+
+        // 绑定 agent_id 参数（如果有）
+        if has_agent_filter {
+            query = query.bind(agent_id);
+        }
 
         // 绑定 tags 参数（如果有）
         if has_tags {
@@ -849,10 +860,20 @@ FROM long_term_knowledge_node WHERE 1=1"#,
 
         // 构造归属过滤条件：自己的节点 OR（include_shared 时）published 节点
         // 使用冗余字段 is_published 替代 json_each(tags) 加速查询（走部分索引 idx_ltkn_is_published）
-        let ownership_clause = if include_shared {
-            "(m.agent_id = ? OR m.is_published = 1)".to_string()
+        // agent_id 为空时（全局搜索）：include_shared 返回所有 published 节点，否则返回空集
+        let has_agent_filter = !agent_id.is_empty();
+        let (ownership_clause, need_bind_agent) = if has_agent_filter {
+            if include_shared {
+                ("(m.agent_id = ? OR m.is_published = 1)".to_string(), true)
+            } else {
+                ("m.agent_id = ?".to_string(), true)
+            }
+        } else if include_shared {
+            // 全局搜索：只返回 published 节点
+            ("m.is_published = 1".to_string(), false)
         } else {
-            "m.agent_id = ?".to_string()
+            // 无 agent_id 且不包含共享：返回空集
+            ("1=0".to_string(), false)
         };
 
         let sql = format!(
@@ -870,9 +891,12 @@ LIMIT ?
 "#
         );
 
-        let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql)
-            .bind(escaped_keyword)
-            .bind(agent_id);
+        let mut query = sqlx::query_as::<_, KnowledgeNodeSearchRow>(&sql).bind(escaped_keyword);
+
+        // 绑定 agent_id 参数（如果归属条件需要）
+        if need_bind_agent {
+            query = query.bind(agent_id);
+        }
 
         // 绑定 tags 参数（如果有）
         if has_tags {

@@ -42,6 +42,7 @@ pub fn HrMemorySearch() -> Element {
                 seed_node_ids: None,
                 tags: None,
                 task_id: task_filter,
+                agent_id: None,
             })
             .await
             {
