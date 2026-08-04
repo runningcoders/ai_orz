@@ -39,4 +39,12 @@ pub trait ToolCallDao: Send + Sync {
         tool: &Tool,
         args: serde_json::Value,
     ) -> Result<(serde_json::Value, ToolCallEntry)>;
+
+    /// 装饰工具：应用 trace 记录装饰器
+    ///
+    /// 内部方法，供 ToolCallDao 实现内部使用（如 call_manual）。
+    /// 未来可在此叠加 StatsDecorator 等多层装饰器，像 middleware 一样组合。
+    fn decorate(&self, tool: Box<dyn CoreTool + Send + Sync>) -> Box<dyn CoreTool + Send + Sync> {
+        Box::new(crate::pkg::tool_tracing::ToolCallLoggingDecorator::new(tool))
+    }
 }

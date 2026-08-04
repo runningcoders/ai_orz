@@ -67,6 +67,10 @@ impl ToolCallDao for ToolCallDaoImpl {
         Ok(Some(tool_raw))
     }
 
+    fn decorate(&self, tool: Box<dyn CoreTool + Send + Sync>) -> Box<dyn CoreTool + Send + Sync> {
+        Box::new(ToolCallLoggingDecorator::new(tool))
+    }
+
     async fn call_manual(
         &self,
         ctx: RequestContext,
