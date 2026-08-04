@@ -1,11 +1,11 @@
 use dioxus::prelude::{Key, *};
 
-use crate::api::hr::search_memory;
+use crate::api::hr::{query_memory, search_memory};
 use crate::components::button::Button;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{MemoryResult, SearchMemoryParams};
+use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
 
 #[component]
 pub fn HrMemorySearch() -> Element {
@@ -16,6 +16,7 @@ pub fn HrMemorySearch() -> Element {
     let mut loading = use_signal(|| false);
     let toast = use_toast();
 
+    // 场景区分：空关键词 → query_memory（条件过滤查询）；有关键词 → search_memory（关键词 + 向量搜索）
     let mut handle_search = move |_| {
         loading.set(true);
         let kw = keyword().clone();
@@ -32,22 +33,36 @@ pub fn HrMemorySearch() -> Element {
             } else {
                 Some(tid.trim().to_string())
             };
-            match search_memory(SearchMemoryParams {
-                query: kw,
-                max_results: Some(20),
-                memory_type: mem_type.map(|s| s.to_string()),
-                traversal_depth: None,
-                traversal_breadth: None,
-                traversal_strategy: None,
-                seed_node_ids: None,
-                tags: None,
-                task_id: task_filter,
-                agent_id: None,
-            })
-            .await
-            {
-                Ok(data) => {
-                    let mem_results = data.results;
+            // 根据关键词是否为空选择 query / search 场景
+            let fetch_result = if kw.trim().is_empty() {
+                query_memory(QueryMemoryParams {
+                    agent_id: None,
+                    memory_type: mem_type.map(|s| s.to_string()),
+                    limit: Some(20),
+                    tags: None,
+                    task_id: task_filter,
+                    status: None,
+                })
+                .await
+                .map(|r| r.results)
+            } else {
+                search_memory(SearchMemoryParams {
+                    query: kw,
+                    max_results: Some(20),
+                    memory_type: mem_type.map(|s| s.to_string()),
+                    traversal_depth: None,
+                    traversal_breadth: None,
+                    traversal_strategy: None,
+                    seed_node_ids: None,
+                    tags: None,
+                    task_id: task_filter,
+                    agent_id: None,
+                })
+                .await
+                .map(|r| r.results)
+            };
+            match fetch_result {
+                Ok(mem_results) => {
                     results.set(mem_results.clone());
                     if mem_results.is_empty() {
                         toast.error("未找到匹配的记忆");
