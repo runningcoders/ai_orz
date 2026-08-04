@@ -85,6 +85,22 @@ pub trait MemoryDal: Send + Sync {
     /// 支持所有组合过滤条件，可单独指定查询哪种记忆类型
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
 
+    /// 🎯 推荐知识图谱起点节点
+    ///
+    /// 按节点关联度数（入边 + 出边总数）倒序返回 Top N 节点。
+    /// 用于知识图谱页面"推荐起点"功能，帮助用户快速定位核心节点。
+    ///
+    /// # 参数
+    /// - ctx: 请求上下文
+    /// - agent_id: 指定 Agent ID；None 时跨 Agent 全局推荐（仅 published 节点）
+    /// - limit: 返回数量上限，默认 5
+    async fn recommend_seed_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>>;
+
     /// ✍️ 创建记忆（按 MemoryCreateParams 变体分发）
     ///
     /// 聚合流程：
@@ -293,6 +309,78 @@ impl MemoryDal for MemoryDalImpl {
         }
 
         Ok(results)
+    }
+
+    async fn recommend_seed_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>> {
+        use crate::models::memory::SeedNodeRecommendation;
+        use crate::service::dao::memory::MemoryQuery;
+        use common::enums::{MemoryStatus, MemoryType};
+
+        // 1. 拉取知识节点（agent_id 为空时走全局 published 路径）
+        let query = MemoryQuery {
+            memory_type: Some(MemoryType::KnowledgeNode),
+            agent_id: agent_id.clone(),
+            status: Some(MemoryStatus::Active),
+            exclude_status: Some(MemoryStatus::Forgotten),
+            limit: Some(500), // 上限保护，避免节点过多拖慢统计
+            include_shared: true, // 全局推荐时包含 published 节点
+            ..Default::default()
+        };
+        let nodes = self
+            .memory_dao
+            .query_knowledge_nodes(ctx.clone(), query)
+            .await?;
+
+        if nodes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 2. 批量查询这批节点的所有关系
+        let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
+        let relations = self
+            .memory_dao
+            .list_relations_batch(ctx, &node_ids)
+            .await?;
+
+        // 3. 应用层统计每个节点的度数
+        use std::collections::HashMap;
+        let mut degree_map: HashMap<String, (usize, usize)> = HashMap::new();
+        for rel in &relations {
+            // 出边：rel.source_node_id 指向 rel.target_node_id
+            degree_map
+                .entry(rel.source_node_id.clone())
+                .or_default()
+                .1 += 1;
+            // 入边：rel.target_node_id 被 rel.source_node_id 引用
+            degree_map
+                .entry(rel.target_node_id.clone())
+                .or_default()
+                .0 += 1;
+        }
+
+        // 4. 组装推荐列表并按度数倒序
+        let mut recommendations: Vec<SeedNodeRecommendation> = nodes
+            .into_iter()
+            .map(|node| {
+                let (incoming, outgoing) = degree_map.get(&node.id).copied().unwrap_or((0, 0));
+                SeedNodeRecommendation {
+                    degree: incoming + outgoing,
+                    incoming_count: incoming,
+                    outgoing_count: outgoing,
+                    node,
+                }
+            })
+            .collect();
+        recommendations.sort_by(|a, b| b.degree.cmp(&a.degree));
+
+        // 5. 截断到 limit
+        recommendations.truncate(limit);
+        Ok(recommendations)
     }
 
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
