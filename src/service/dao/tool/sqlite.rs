@@ -483,7 +483,10 @@ fn push_query_filters<'args>(
     if let Some(tags) = &query.tags
         && !tags.is_empty()
     {
-        builder.push(" AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
+        // Guard against empty/null tags: builtin tools may store tags as "" (empty string),
+        // which causes json_each to fail with "malformed JSON". Skip such rows before
+        // invoking json_each.
+        builder.push(" AND t.tags != '' AND EXISTS (SELECT 1 FROM json_each(t.tags) WHERE json_each.value IN (");
         let mut separated = builder.separated(", ");
         for tag in tags {
             separated.push_bind(tag.clone());

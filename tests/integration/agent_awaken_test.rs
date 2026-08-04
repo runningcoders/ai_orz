@@ -170,3 +170,111 @@ async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
     // 清理：释放 Busy 状态
     runtime_state.set_idle(&agent_id);
 }
+
+/// Consumer 编排测试：Task 已 Completed 时跳过 awaken。
+///
+/// 验证：
+/// - Consumer 检查 task 状态，Completed 时跳过 awaken
+/// - 不触发 LLM 调用
+/// - 返回 Ok（合法跳过，非错误）
+/// - Busy 状态被释放
+#[sqlx::test]
+async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 创建 Agent
+    let agent_name = format!("TaskAgent-{}", uuid::Uuid::now_v7());
+    let agent_id = crate::common::factories::create_test_agent(
+        &app,
+        &jwt,
+        &bs.chat_provider_id,
+        &agent_name,
+    )
+    .await;
+
+    // 2. 创建 Project + Task
+    let project_name = format!("TaskProject-{}", uuid::Uuid::now_v7());
+    let project_id = crate::common::factories::create_test_project(&app, &jwt, &project_name).await;
+
+    let task_req = json!({
+        "title": "Test task for completed",
+        "description": "Task that will be completed",
+        "project_id": project_id,
+        "assignee_id": agent_id,
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/tasks", &task_req, &jwt).await;
+    let task_data = crate::common::assert_api_ok(status, &body);
+    let task_id = task_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing task id")
+        .to_string();
+
+    // 3. 流转 task 状态：Pending → InProgress → Completed
+    // Pending → InProgress
+    let in_progress_req = json!({ "id": task_id, "status": "InProgress" });
+    let (status, _body) = app
+        .put_with_jwt(&format!("/api/v1/tasks/{}/status", task_id), &in_progress_req, &jwt)
+        .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "Pending → InProgress should succeed");
+
+    // InProgress → Completed
+    let completed_req = json!({ "id": task_id, "status": "Completed" });
+    let (status, _body) = app
+        .put_with_jwt(&format!("/api/v1/tasks/{}/status", task_id), &completed_req, &jwt)
+        .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "InProgress → Completed should succeed");
+
+    // 4. 发送带 task_id 的消息给 Agent
+    let send_req = json!({
+        "to_agent_id": agent_id,
+        "content": "Hello for completed task",
+        "task_id": task_id,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/messages/agents", &send_req, &jwt)
+        .await;
+    let msg_data = crate::common::assert_api_ok(status, &body);
+    let message_id = msg_data
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .expect("missing message_id")
+        .to_string();
+
+    // 5. 调用 Consumer 处理消息事件
+    let consumer = MessageConsumer::new();
+    // Note: this event includes project_id and task_id
+    let event = json!({
+        "message_id": message_id,
+        "project_id": project_id,
+        "task_id": task_id,
+        "from_id": bs.user_id,
+        "from_role": 0,
+        "to_id": agent_id,
+        "to_role": 1,
+        "message_type": 0,
+        "content": "",
+        "created_at": 0
+    });
+
+    let result = consumer.on_event(event).await;
+
+    // 应该返回 Ok（合法跳过，非错误）
+    assert!(
+        result.is_ok(),
+        "Consumer should return Ok for completed task (skip awaken), got: {:?}",
+        result.err()
+    );
+
+    // 6. 验证 Agent 回到 Idle 状态（未触发 awaken，Busy 已释放）
+    let runtime_state = AgentRuntimeStateManager::global();
+    let state = runtime_state.get_state(&agent_id);
+    assert_eq!(
+        state,
+        ::common::enums::AgentRuntimeState::Idle,
+        "Agent should be Idle after skipping awaken for completed task"
+    );
+}
