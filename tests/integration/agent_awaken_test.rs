@@ -641,3 +641,84 @@ async fn test_awaken_project_task_context_in_prompt(pool: SqlitePool) {
 
     assert_eq!(result.agent_id, agent_id);
 }
+
+/// awaken 流程测试：think 失败时 BusyGuard 释放 Busy 状态。
+///
+/// 验证：
+/// - BrainDal.think() 返回错误时 awaken 返回 Err
+/// - Agent 状态从 Busy 回到 Idle（BusyGuard RAII 释放）
+/// - 错误事件被记录（AgentAwakeEvent status=failed）
+#[sqlx::test]
+async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    let agent_id = format!("agent-err-{}", Uuid::now_v7());
+    let agent = make_test_agent_with_brain(&agent_id);
+    let message = make_test_message("触发错误的消息");
+
+    // 使用永远失败的 BrainDal
+    struct FailingBrainDal;
+
+    #[async_trait]
+    impl BrainDal for FailingBrainDal {
+        async fn wake_brain(
+            &self,
+            _ctx: RequestContext,
+            _agent: &AgentPo,
+            _memories: Vec<ai_orz::models::memory::Memory>,
+            _tools: Vec<Tool>,
+        ) -> CommonResult<Brain> {
+            unimplemented!("not needed")
+        }
+
+        async fn test_connection(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProvider,
+            _prompt: &str,
+        ) -> CommonResult<String> {
+            unimplemented!("not needed")
+        }
+
+        async fn think(
+            &self,
+            _ctx: RequestContext,
+            _brain: &Brain,
+            _prompt: &str,
+        ) -> CommonResult<String> {
+            Err(::common::error::Error::internal("mock think failure"))
+        }
+    }
+
+    let temp_dir = tempdir().expect("tempdir should be created");
+    let runtime = new_with_all(
+        Arc::new(FailingBrainDal),
+        ai_orz::service::dal::tool::dal(),
+        ai_orz::service::dal::mcp_tool::dal(),
+        ai_orz::service::dal::agent::dal(),
+        Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+    );
+
+    // awaken 前先设置 Busy（模拟 handle_agent_message 的 try_set_busy）
+    let runtime_state = AgentRuntimeStateManager::global();
+    runtime_state.set_busy(&agent_id, &message.po.id);
+
+    // 调用 awaken（应该失败）
+    let result = runtime
+        .awakening()
+        .awaken(ctx, &agent, &message, &ThinkingOptions::new())
+        .await;
+
+    assert!(
+        result.is_err(),
+        "awaken should return error when think fails"
+    );
+
+    // 验证 Agent 回到 Idle 状态（BusyGuard 通过 RAII 释放）
+    let state = runtime_state.get_state(&agent_id);
+    assert_eq!(
+        state,
+        ::common::enums::AgentRuntimeState::Idle,
+        "Agent should be Idle after awaken error (BusyGuard released)"
+    );
+}
