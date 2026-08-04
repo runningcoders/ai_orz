@@ -965,15 +965,10 @@ fn exclude_stale_by_default(mut query: ToolQuery) -> ToolQuery {
 /// 复用现有 config JSON 字段表达同步/异步属性，不改 schema。
 /// config 示例：{ "dispatch_mode": "async" }
 fn parse_dispatch_mode(tool: &Tool) -> &'static str {
-    if let Some(mode) = tool
-        .po
-        .config
-        .get("dispatch_mode")
-        .and_then(|v| v.as_str())
+    if let Some(mode) = tool.po.config.get("dispatch_mode").and_then(|v| v.as_str())
+        && mode == "async"
     {
-        if mode == "async" {
-            return "async";
-        }
+        return "async";
     }
     "sync"
 }
