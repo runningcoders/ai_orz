@@ -150,6 +150,46 @@ pub struct DeleteMemoryResponse {
     pub memory_id: String,
 }
 
+/// 推荐知识图谱起点节点请求参数。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RecommendSeedNodesParams {
+    /// 指定 Agent ID。
+    /// 不传则跨 Agent 全局推荐（仅考虑 published 节点）。
+    pub agent_id: Option<String>,
+    /// 返回推荐节点数量上限，默认 5。
+    pub limit: Option<usize>,
+}
+
+/// 推荐起点响应。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct RecommendSeedNodesResponse {
+    /// 推荐节点列表（按关联度数倒序）。
+    pub recommendations: Vec<SeedNodeRecommendation>,
+}
+
+/// 单个推荐起点节点。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct SeedNodeRecommendation {
+    /// 节点 ID。
+    pub node_id: String,
+    /// 节点名称。
+    pub node_name: String,
+    /// 节点描述。
+    pub node_description: String,
+    /// 节点类型（concept/fact/skill/pattern...）。
+    pub node_type: String,
+    /// 节点摘要。
+    pub summary: String,
+    /// 标签列表。
+    pub tags: Vec<String>,
+    /// 关联度数（入边 + 出边总数）。
+    pub degree: usize,
+    /// 入边数（被其他节点引用的次数）。
+    pub incoming_count: usize,
+    /// 出边数（引用其他节点的次数）。
+    pub outgoing_count: usize,
+}
+
 /// 发送消息请求参数。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SendMessageParams {
