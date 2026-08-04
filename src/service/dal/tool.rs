@@ -162,6 +162,19 @@ pub trait ToolDal: Send + Sync {
         args: Value,
     ) -> Result<(Value, ToolCallEntry)>;
 
+    /// 执行 Auto 工具调用
+    ///
+    /// 统一入口：awakening 循环调此方法执行 Auto 工具。
+    /// 内部调用 call_tool（直接执行层，含装饰器）。
+    async fn execute_auto(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry)> {
+        self.call_tool(ctx, tool, args).await
+    }
+
     /// 手动执行工具并返回完整调用追踪 entry
     /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
     async fn call_manual(
@@ -722,6 +735,16 @@ impl ToolDal for ToolDalImpl {
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
         self.call_manual(ctx, tool, args).await
+    }
+
+    async fn execute_auto(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry)> {
+        // Auto 工具直接执行（call_tool 内部含装饰器）
+        self.call_tool(ctx, tool, args).await
     }
 
     async fn call_manual(
