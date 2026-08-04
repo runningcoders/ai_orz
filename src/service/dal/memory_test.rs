@@ -266,6 +266,106 @@ async fn test_query_short_term(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 测试 query_short_term 的 task_id 过滤（注意力机制）
+///
+/// 创建 3 条短期记忆：2 条带不同 task_id，1 条不带 task_id
+/// 验证：
+/// - 不传 task_id → 返回全部（默认跨任务全局取）
+/// - 传 task_id → 只返回该 task 的记忆
+/// - 传不存在的 task_id → 返回空
+#[sqlx::test]
+async fn test_query_short_term_by_task_id(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+    let agent_id = "agent-task-filter".to_string();
+
+    // 创建 3 条记忆：task-A / task-B / 无 task
+    let memories = [
+        ("mem-task-a", Some("task-A".to_string()), "task A 的记忆"),
+        ("mem-task-b", Some("task-B".to_string()), "task B 的记忆"),
+        ("mem-no-task", None, "无任务关联的记忆"),
+    ];
+
+    for (i, (id, task_id, summary)) in memories.iter().enumerate() {
+        let po = ShortTermMemoryIndexPo {
+            id: id.to_string(),
+            agent_id: agent_id.clone(),
+            task_id: task_id.clone(),
+            role: "user".to_string(),
+            summary: summary.to_string(),
+            tags: "[]".to_string(),
+            trace_ids: "[]".to_string(),
+            status: MemoryStatus::Active,
+            created_at: now + i as i64,
+            updated_at: now + i as i64,
+        };
+        sqlx::query(
+            r#"INSERT INTO short_term_memory_index (id, agent_id, task_id, role, summary, tags, trace_ids, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        )
+        .bind(&po.id)
+        .bind(&po.agent_id)
+        .bind(&po.task_id)
+        .bind(&po.role)
+        .bind(&po.summary)
+        .bind(&po.tags)
+        .bind(&po.trace_ids)
+        .bind(po.status as i32)
+        .bind(po.created_at)
+        .bind(po.updated_at)
+        .execute(ctx.db_pool())
+        .await?;
+    }
+
+    // 1. 不传 task_id → 返回全部 3 条
+    let query = MemoryQuery {
+        agent_id: Some(agent_id.clone()),
+        limit: Some(10),
+        ..Default::default()
+    };
+    let results = dal.query(ctx.clone(), query).await?;
+    assert_eq!(results.len(), 3, "不带 task_id 过滤应返回全部 3 条");
+
+    // 2. 传 task_id=task-A → 只返回 1 条
+    let query = MemoryQuery {
+        agent_id: Some(agent_id.clone()),
+        task_id: Some("task-A".to_string()),
+        limit: Some(10),
+        ..Default::default()
+    };
+    let results = dal.query(ctx.clone(), query).await?;
+    assert_eq!(results.len(), 1, "task_id=task-A 应只返回 1 条");
+    match &results[0].po {
+        MemoryPo::ShortTerm(st) => assert_eq!(st.summary, "task A 的记忆"),
+        _ => panic!("expected ShortTerm"),
+    }
+
+    // 3. 传 task_id=task-B → 只返回 1 条
+    let query = MemoryQuery {
+        agent_id: Some(agent_id.clone()),
+        task_id: Some("task-B".to_string()),
+        limit: Some(10),
+        ..Default::default()
+    };
+    let results = dal.query(ctx.clone(), query).await?;
+    assert_eq!(results.len(), 1, "task_id=task-B 应只返回 1 条");
+
+    // 4. 传不存在的 task_id → 返回空
+    let query = MemoryQuery {
+        agent_id: Some(agent_id.clone()),
+        task_id: Some("nonexistent-task".to_string()),
+        limit: Some(10),
+        ..Default::default()
+    };
+    let results = dal.query(ctx, query).await?;
+    assert_eq!(results.len(), 0, "不存在的 task_id 应返回空");
+
+    Ok(())
+}
+
 #[sqlx::test]
 async fn test_query_with_status_filter(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
@@ -816,8 +916,76 @@ async fn test_search_short_term(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 测试 search_short_term 的 task_id 过滤（FTS5 搜索 + task 聚焦）
 #[sqlx::test]
-async fn test_search_knowledge_nodes(pool: SqlitePool) -> Result<()> {
+async fn test_search_short_term_by_task_id(pool: SqlitePool) -> Result<()> {
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let ctx = create_test_ctx(pool.clone());
+
+    let now = chrono::Utc::now().timestamp();
+    let agent_id = "agent-search-task".to_string();
+
+    // 创建 2 条都包含 "Rust" 关键词但属于不同 task 的记忆
+    for (id, task_id) in [("st-task-a", Some("task-A")), ("st-task-b", Some("task-B"))] {
+        let po = ShortTermMemoryIndexPo {
+            id: id.to_string(),
+            agent_id: agent_id.clone(),
+            task_id: task_id.map(|s| s.to_string()),
+            role: "user".to_string(),
+            summary: format!("Rust 编程在 {} 中的应用", task_id.unwrap_or("")),
+            tags: "[]".to_string(),
+            trace_ids: "[]".to_string(),
+            status: MemoryStatus::Active,
+            created_at: now,
+            updated_at: now,
+        };
+        dal.create(ctx.clone(), MemoryCreateParams::CreateShortTerm(po))
+            .await?;
+    }
+
+    // 1. 不带 task_id 搜索 "Rust" → 返回 2 条
+    let results = dal
+        .search(
+            ctx.clone(),
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                filters: MemoryQuery {
+                    agent_id: Some(agent_id.clone()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 2, "不带 task_id 应返回 2 条");
+
+    // 2. 带 task_id=task-A 搜索 "Rust" → 只返回 1 条
+    let results = dal
+        .search(
+            ctx.clone(),
+            MemorySearch {
+                keyword: Some("Rust".to_string()),
+                filters: MemoryQuery {
+                    agent_id: Some(agent_id.clone()),
+                    memory_type: Some(common::enums::MemoryType::ShortTerm),
+                    task_id: Some("task-A".to_string()),
+                    limit: Some(10),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(results.len(), 1, "task_id=task-A 应只返回 1 条");
+
+    Ok(())
+}
+
+#[sqlx::test]
+async fn test_search_knowledge_node(pool: SqlitePool) -> Result<()> {
     init_test_tables(&pool).await;
     let dal = init_test(pool.clone()).await;
     let ctx = create_test_ctx(pool.clone());

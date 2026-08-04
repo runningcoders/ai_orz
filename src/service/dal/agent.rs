@@ -1082,6 +1082,9 @@ impl DefaultPromptBuilder {
         if let Some(task) = &self.task_context {
             s.push_str(task);
             s.push('\n');
+            // 记忆聚焦提示：当有任务上下文时，提示 Agent 可用 task_id 过滤记忆
+            s.push_str("【记忆聚焦提示】\n");
+            s.push_str("如需聚焦当前任务的记忆，可用 query_memory / search_memory 的 task_id 参数过滤；默认历史记忆是跨任务全局取最近若干条。\n\n");
         }
         s
     }

@@ -61,6 +61,7 @@ pub async fn query_memory(
         memory_type: Some(memory_type),
         limit: params.limit.map(|l| l as usize),
         tags: if tags.is_empty() { None } else { Some(tags) },
+        task_id: params.task_id.clone(),
         status,
         // 查询自己时包含 published 共享节点；查询他人时不包含（仅返回该 agent 的 published 节点）
         include_shared: !is_querying_other,

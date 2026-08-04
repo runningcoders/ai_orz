@@ -31,6 +31,10 @@ pub struct MemoryQuery {
     pub memory_type: Option<MemoryType>,
     /// 按 tags 过滤（OR 语义，命中任一 tag 即可，JSON 数组列）
     pub tags: Option<Vec<String>>,
+    /// 按 task_id 过滤（聚焦到特定任务的记忆，注意力机制）
+    /// None = 不过滤（默认，取所有任务的最近记忆）
+    /// Some(id) = 只取该 task 的记忆
+    pub task_id: Option<String>,
     /// 是否包含其他 Agent 共享的 published 节点（默认 false）
     pub include_shared: bool,
     /// 新增：按知识节点类型过滤（summary/concept/fact/procedure）

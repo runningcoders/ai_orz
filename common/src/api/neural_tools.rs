@@ -23,6 +23,9 @@ pub struct SearchMemoryParams {
     pub seed_node_ids: Option<Vec<String>>,
     /// 标签过滤（OR 语义，命中任一 tag 即可）。
     pub tags: Option<Vec<String>>,
+    /// 按任务 ID 过滤，聚焦到特定任务的记忆。
+    /// 不传则不过滤（跨任务全局搜索）。
+    pub task_id: Option<String>,
 }
 
 /// 搜索记忆响应。
@@ -70,6 +73,9 @@ pub struct QueryMemoryParams {
     pub limit: Option<i32>,
     /// 标签过滤（OR 语义，命中任一 tag 即可）。
     pub tags: Option<Vec<String>>,
+    /// 按任务 ID 过滤，聚焦到特定任务的记忆。
+    /// 不传则不过滤（跨任务全局查询）。
+    pub task_id: Option<String>,
     /// 按状态过滤（active/settled/forgotten）
     pub status: Option<String>,
 }

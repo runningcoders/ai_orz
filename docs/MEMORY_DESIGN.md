@@ -338,6 +338,8 @@ pub struct MemoryQuery {
     pub keyword: Option<String>,
     pub limit: Option<usize>,
     pub memory_type: Option<MemoryType>,  // 按记忆类型过滤
+    pub tags: Option<Vec<String>>,        // 按 tags 过滤（OR 语义）
+    pub task_id: Option<String>,          // 按 task_id 过滤（注意力机制）
 }
 
 /// 记忆搜索统一入参
@@ -759,7 +761,30 @@ pub struct SearchMemoryParams {
 - Handler 层透传 `params.tags` 到 `MemorySearch.filters.tags` / `MemoryQuery.tags`，并在 `MemoryResult.tags` 回填（仅 short_term / knowledge_node 有值）
 - 前端知识图谱页面新增 tags 过滤输入框（逗号分隔），节点详情面板展示 tags 徽章
 
-### 16.6 分步搜索示例
+### 16.6 task_id 过滤：记忆注意力机制（2026-08-04 新增）
+
+**设计理念**：短期记忆天然关联到 task（`short_term_memory_index.task_id` 字段已存在），补齐查询/搜索链路的 task_id 过滤能力，让 Agent 可以按需聚焦到特定任务的记忆。
+
+**注意力分层**：
+| 层级 | 机制 | 默认行为 |
+|------|------|----------|
+| 时间注意力 | 取最近 N 条 ShortTerm | awaken/sleep 默认取最近 20 条（跨任务全局） |
+| 状态注意力 | 排除 Forgotten (status=0) | 默认排除 |
+| 场景注意力 | awaken 注入 project/task 实体到 prompt | 有值即拼装 |
+| **主题注意力** | **task_id 过滤**（本次新增） | **默认不过滤，由 Agent 按需通过神经工具触发** |
+
+**设计决策：默认不过滤，通过 skill 引导**
+- awaken 默认取最近 20 条短期记忆保持不变（跨任务全局），保留跨 task 的"意外关联"能力
+- 当 prompt 中有 task_context 时，PromptBuilder 追加【记忆聚焦提示】，告知 Agent 可用 `query_memory` / `search_memory` 的 `task_id` 参数主动聚焦
+- project 过滤不新增列，通过 task 关联实现（Agent 先查 project 下的 tasks 再用 task_id 过滤记忆）
+
+**实现要点**：
+- `MemoryQuery.task_id: Option<String>`，在 `query_short_term` / `search_short_term` 中用 `AND task_id = ?` 过滤
+- `SearchMemoryParams.task_id` / `QueryMemoryParams.task_id` 神经工具参数，handler 透传到 `MemorySearch.filters.task_id` / `MemoryQuery.task_id`
+- `None` = 不过滤（默认），`Some(id)` = 精确匹配该 task 的记忆
+- `save_short_term_memory` 神经工具已支持 task_id 写入（既有能力）
+
+### 16.7 分步搜索示例
 
 Agent 可以这样使用：
 
@@ -932,4 +957,5 @@ v2 不再使用固定的相似度阈值裁判，而是由 Agent 根据语义判�
 | 2026-07-11 | **理念升级**：核心理念对齐人类认知、记忆神经工具拆分、搜索图谱遍历、休息与沉淀机制 |  |
 | 2026-07-24 | **tags 全链路支持**：SearchMemoryParams/QueryMemoryParams/MemoryResult 新增 tags 字段；MemoryQuery.tags 实现 OR 语义过滤（json_each）；ShortTermMemoryIndexPo/LongTermKnowledgeNodePo 实现 Vectorizable trait；前端知识图谱节点支持多色边框与动态信息展示 |  |
 | 2026-07-31 | **沉淀机制重构（v2 自主沉淀）**：settle_memory 不再工程化创建节点，改为调用 sleep_and_settle 触发 Agent 自主沉淀；沉淀约束模板内聚在 PromptBuilder.build_sleep_prompt；双层工具过滤（Auto 在 wake_agent_brain，Manual+skill 在 sleep_and_settle）确保 Settle 场景只接触记忆类工具；沉淀场景保留 user_profile + project/task 上下文（认知具身 + 场景化经验总结）；详见 runtime_design.md 第二十五章 |  |
+| 2026-08-04 | **task_id 记忆注意力机制**：MemoryQuery / SearchMemoryParams / QueryMemoryParams 新增 task_id 字段；query_short_term / search_short_term SQL 支持 task_id WHERE 过滤；PromptBuilder 在 task_context 有值时追加【记忆聚焦提示】引导 Agent 按需聚焦；默认 awaken 行为不变（跨任务全局取最近 20 条），project 过滤通过 task 关联实现不新增列 |  |
 

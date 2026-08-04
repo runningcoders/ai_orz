@@ -357,6 +357,12 @@ FROM short_term_memory_index WHERE 1=1"#,
             separated.push_unseparated("))");
         }
 
+        // task_id 过滤（注意力机制：聚焦到特定任务的记忆）
+        if let Some(task_id) = &query.task_id {
+            builder.push(" AND task_id = ");
+            builder.push_bind(task_id);
+        }
+
         builder.push(" ORDER BY created_at DESC");
 
         if let Some(limit) = &query.limit {
@@ -384,6 +390,7 @@ FROM short_term_memory_index WHERE 1=1"#,
         let keyword = search.keyword.unwrap_or_default();
         let limit_i64 = search.filters.limit.unwrap_or(50) as i64;
         let tags = search.filters.tags.clone().unwrap_or_default();
+        let task_id = search.filters.task_id.clone();
 
         // 空关键词直接返回空结果（FTS5 MATCH 空字符串会报错）
         if keyword.trim().is_empty() {
@@ -393,13 +400,19 @@ FROM short_term_memory_index WHERE 1=1"#,
         // 转义关键词为 FTS5 短语匹配
         let escaped_keyword = escape_fts5_keyword(&keyword);
 
-        // 构建带可选 tags 过滤的 SQL
+        // 构建带可选 tags / task_id 过滤的 SQL
         let has_tags = !tags.is_empty();
         let tags_clause = if has_tags {
             let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             format!(
                 " AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value IN ({placeholders}))"
             )
+        } else {
+            String::new()
+        };
+        let has_task_id = task_id.is_some();
+        let task_id_clause = if has_task_id {
+            " AND m.task_id = ?".to_string()
         } else {
             String::new()
         };
@@ -413,7 +426,7 @@ FROM short_term_memory_fts
 JOIN short_term_memory_index m ON short_term_memory_fts.rowid = m.rowid
 WHERE short_term_memory_fts MATCH ?
   AND m.agent_id = ?
-  AND m.status != 0{tags_clause}
+  AND m.status != 0{tags_clause}{task_id_clause}
 ORDER BY short_term_memory_fts.rank
 LIMIT ?
 "#
@@ -428,6 +441,11 @@ LIMIT ?
             for tag in &tags {
                 query = query.bind(tag);
             }
+        }
+
+        // 绑定 task_id 参数（如果有）
+        if let Some(tid) = &task_id {
+            query = query.bind(tid);
         }
 
         let rows: Vec<ShortTermSearchRow> = query.bind(limit_i64).fetch_all(&pool).await?;

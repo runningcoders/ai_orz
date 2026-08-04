@@ -123,6 +123,7 @@ pub async fn search_memory(
                 memory_type: Some(memory_type),
                 limit: params.max_results.map(|l| l as usize),
                 tags: params.tags.clone(),
+                task_id: params.task_id.clone(),
                 agent_id: Some(agent_id.clone()),
                 include_shared,
                 ..Default::default()
