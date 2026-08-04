@@ -327,7 +327,7 @@ impl MemoryDal for MemoryDalImpl {
             agent_id: agent_id.clone(),
             status: Some(MemoryStatus::Active),
             exclude_status: Some(MemoryStatus::Forgotten),
-            limit: Some(500), // 上限保护，避免节点过多拖慢统计
+            limit: Some(500),     // 上限保护，避免节点过多拖慢统计
             include_shared: true, // 全局推荐时包含 published 节点
             ..Default::default()
         };
@@ -342,25 +342,16 @@ impl MemoryDal for MemoryDalImpl {
 
         // 2. 批量查询这批节点的所有关系
         let node_ids: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
-        let relations = self
-            .memory_dao
-            .list_relations_batch(ctx, &node_ids)
-            .await?;
+        let relations = self.memory_dao.list_relations_batch(ctx, &node_ids).await?;
 
         // 3. 应用层统计每个节点的度数
         use std::collections::HashMap;
         let mut degree_map: HashMap<String, (usize, usize)> = HashMap::new();
         for rel in &relations {
             // 出边：rel.source_node_id 指向 rel.target_node_id
-            degree_map
-                .entry(rel.source_node_id.clone())
-                .or_default()
-                .1 += 1;
+            degree_map.entry(rel.source_node_id.clone()).or_default().1 += 1;
             // 入边：rel.target_node_id 被 rel.source_node_id 引用
-            degree_map
-                .entry(rel.target_node_id.clone())
-                .or_default()
-                .0 += 1;
+            degree_map.entry(rel.target_node_id.clone()).or_default().0 += 1;
         }
 
         // 4. 组装推荐列表并按度数倒序
@@ -376,7 +367,7 @@ impl MemoryDal for MemoryDalImpl {
                 }
             })
             .collect();
-        recommendations.sort_by(|a, b| b.degree.cmp(&a.degree));
+        recommendations.sort_by_key(|r| std::cmp::Reverse(r.degree));
 
         // 5. 截断到 limit
         recommendations.truncate(limit);
