@@ -72,6 +72,8 @@ impl ToolProviderManage for FinanceDomainImpl {
 
     /// ===== 工具借用（绑定）管理 =====
     /// Agent 借用工具（绑定）
+    ///
+    /// 校验：internal 标签工具为内部系统自用，不可绑定给 Agent。
     async fn bind_tool_to_agent(
         &self,
         ctx: RequestContext,
@@ -79,6 +81,19 @@ impl ToolProviderManage for FinanceDomainImpl {
         tool_id: &str,
     ) -> Result<()> {
         let ctx = ctx.to_builder().agent_id(agent_id).build();
+        // 校验：内部系统工具不能绑定给 Agent
+        let tool = self
+            .tool_dal
+            .get_by_id(ctx.clone(), tool_id.to_string())
+            .await?
+            .ok_or_else(|| err!(InvalidRequest, "Tool {} not found", tool_id))?;
+        if tool.po.get_tags().iter().any(|t| t == "internal") {
+            bail_err!(
+                InvalidRequest,
+                "Internal system tool {} cannot be bound to Agent",
+                tool_id
+            );
+        }
         let created_by = ctx.caller_id_or_system();
         self.tool_dal
             .add_tool_to_agent(ctx.clone(), agent_id, tool_id, Some(created_by))

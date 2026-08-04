@@ -1,4 +1,6 @@
-//! Handler: 发送工具调用消息（异步，神经工具）
+//! Handler: 发送工具调用消息（异步，内部系统工具）
+//!
+//! 内部系统工具：不可绑定给 Agent，由 ToolDal::execute_manual 内部转发调用。
 
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{self, SendToolCallRequestCommand};
@@ -8,14 +10,14 @@ use common::error::Result;
 
 /// 发送工具调用消息（异步）
 ///
-/// Agent 通过此工具发起 manual 工具的异步调用。
+/// 作为 manual 工具异步分发的内部转发器，由 ToolDal::execute_manual 通过 registry 创建实例并调用。
 /// 消息发送后立即返回，工具执行结果通过 ToolCallResult 消息在下一轮 awaken 中送达。
 #[register_handler_tool(
     id = "send_tool_call_message",
     name = "send_tool_call_message",
     description = "Dispatch a manual tool call asynchronously. Returns immediately with a request_id; the tool result arrives later via a ToolCallResult message in the next awaken round. Use this to invoke manual tools without blocking.",
     params = "common::api::SendToolCallMessageParams",
-    tags = "tool_management"
+    tags = "tool_management,internal"
 )]
 #[generate_http_handler]
 pub async fn send_tool_call_message(

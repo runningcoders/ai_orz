@@ -122,11 +122,14 @@ impl AgentManage for HrDomainImpl {
                     )
                     .await?;
                 // 合并去重（绑定工具和 tag 工具可能有交集）
+                // 过滤 internal 标签工具：内部系统工具不可暴露给 Agent
+                // （如 request_tool_call / send_tool_call_message 仅由 ToolDal 内部转发）
                 let mut seen_ids = std::collections::HashSet::new();
                 let all_tools: Vec<Tool> = bound_tools
                     .into_iter()
                     .chain(tag_tools.items)
                     .filter(|t| seen_ids.insert(t.po.id.clone()))
+                    .filter(|t| !t.po.get_tags().iter().any(|tag| tag == "internal"))
                     .collect();
                 agent.set_tools(all_tools);
             }

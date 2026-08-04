@@ -1,4 +1,6 @@
-//! Handler: 请求工具调用（同步，神经工具）
+//! Handler: 请求工具调用（同步，内部系统工具）
+//!
+//! 内部系统工具：不可绑定给 Agent，由 ToolDal::execute_manual 内部转发调用。
 
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime;
@@ -8,8 +10,8 @@ use common::error::Result;
 
 /// 请求工具调用（同步）
 ///
-/// Agent 通过此神经工具同步调用 manual 工具，在同一轮 awaken 内拿到执行结果。
-/// 与 `send_tool_call_message`（异步）对应，Agent 按需选择：
+/// 作为 manual 工具同步分发的内部转发器，由 ToolDal::execute_manual 通过 registry 创建实例并调用。
+/// 与 `send_tool_call_message`（异步）对应：
 /// - 同步：本工具，结果立即可用，适合轻量、快速的工具
 /// - 异步：send_tool_call_message，结果在下一轮 awaken 送达，适合耗时较长的工具
 #[register_handler_tool(
@@ -17,7 +19,7 @@ use common::error::Result;
     name = "request_tool_call",
     description = "Call a manual tool synchronously and get the result immediately",
     params = "common::api::RequestToolCallParams",
-    tags = "tool_management"
+    tags = "tool_management,internal"
 )]
 #[generate_http_handler]
 pub async fn request_tool_call(
