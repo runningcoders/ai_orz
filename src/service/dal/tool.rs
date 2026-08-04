@@ -175,6 +175,24 @@ pub trait ToolDal: Send + Sync {
         self.call_tool(ctx, tool, args).await
     }
 
+    /// 执行 Manual 工具调用（通过特殊 tool 转发）
+    ///
+    /// 统一入口：awakening 循环调此方法执行 Manual 工具。
+    /// ToolDalImpl 重写此方法，根据 dispatch_mode 分发：
+    /// - sync（默认）：通过 request_tool_call 特殊 tool 转发（同步执行）
+    /// - async：通过 send_tool_call_message 特殊 tool 转发（异步派发）
+    ///
+    /// 默认实现直接调 call_tool（直接执行层），适用于不需要特殊转发的场景（如测试 mock）。
+    /// 特殊 tool 不加装饰器（它只是转发器），真实工具的 trace 在 call_tool 层记录。
+    async fn execute_manual(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry)> {
+        self.call_tool(ctx, tool, args).await
+    }
+
     /// 手动执行工具并返回完整调用追踪 entry
     /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
     async fn call_manual(
@@ -747,6 +765,68 @@ impl ToolDal for ToolDalImpl {
         self.call_tool(ctx, tool, args).await
     }
 
+    async fn execute_manual(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<(Value, ToolCallEntry)> {
+        let mode = parse_dispatch_mode(tool);
+        let special_tool_id = match mode {
+            "async" => "send_tool_call_message",
+            _ => "request_tool_call",
+        };
+
+        // 通过 registry 创建特殊 tool 实例（不加装饰器，特殊 tool 只是转发器）
+        let special_po = ToolPo::new(
+            special_tool_id.to_string(),
+            special_tool_id.to_string(),
+            "manual tool dispatcher".to_string(),
+            common::enums::ToolProtocol::Builtin,
+            serde_json::Value::Null,
+            None,
+            vec![],
+            None,
+        );
+        let special_tool = crate::pkg::tool_registry::get_registry()
+            .create_tool(special_po)
+            .ok_or_else(|| {
+                common::error::err!(
+                    Internal,
+                    "special tool {} not found in registry",
+                    special_tool_id
+                )
+            })?;
+
+        // 组织参数：把真实工具调用包装成特殊 tool 的参数格式
+        // RequestToolCallParams / SendToolCallMessageParams 字段一致：
+        // tool_id, tool_name, params, project_id, task_id（agent_id 由 ctx 携带）
+        let special_args = serde_json::json!({
+            "tool_id": tool.po.id,
+            "tool_name": tool.po.name,
+            "params": args,
+            "project_id": ctx.project_id().cloned(),
+            "task_id": ctx.task_id().cloned(),
+        });
+
+        // 调用特殊 tool（不加装饰器）
+        // 特殊 tool handler 内部会调 call_manual_tool_for_agent → call_tool（含装饰器）
+        let result_value = special_tool.call(ctx, special_args).await?;
+
+        // 构造占位 entry（真实 trace 在 call_tool 层记录）
+        let entry = ToolCallEntry {
+            call_id: format!(
+                "manual_dispatch_{}_{}",
+                special_tool_id,
+                uuid::Uuid::now_v7()
+            ),
+            tool_id: tool.po.id.clone(),
+            ..Default::default()
+        };
+
+        Ok((result_value, entry))
+    }
+
     async fn call_manual(
         &self,
         ctx: RequestContext,
@@ -878,6 +958,24 @@ fn exclude_stale_by_default(mut query: ToolQuery) -> ToolQuery {
         query.exclude_status = Some(ToolStatus::Stale);
     }
     query
+}
+
+/// 从 ToolPo.config 解析 dispatch_mode，默认 "sync"
+///
+/// 复用现有 config JSON 字段表达同步/异步属性，不改 schema。
+/// config 示例：{ "dispatch_mode": "async" }
+fn parse_dispatch_mode(tool: &Tool) -> &'static str {
+    if let Some(mode) = tool
+        .po
+        .config
+        .get("dispatch_mode")
+        .and_then(|v| v.as_str())
+    {
+        if mode == "async" {
+            return "async";
+        }
+    }
+    "sync"
 }
 
 /// 尝试为实体构建向量索引参数（用于索引场景）
