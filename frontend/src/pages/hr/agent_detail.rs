@@ -11,6 +11,7 @@ use crate::components::stats::AgentStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
+use crate::pages::hr::knowledge_graph::KnowledgeGraph;
 use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
@@ -342,6 +343,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab4_class = if active_tab() == 4 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab5_class = if active_tab() == 5 { "tab tab-lg tab-active" } else { "tab tab-lg" };
 
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
@@ -395,6 +397,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 class: "{tab4_class}",
                                 onclick: move |_| active_tab.set(4),
                                 "🕸️ 关系图"
+                            }
+                            button {
+                                class: "{tab5_class}",
+                                onclick: move |_| active_tab.set(5),
+                                "🧠 知识图谱"
                             }
                         }
 
@@ -1007,6 +1014,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
                                 }
+                            },
+                            5 => rsx! {
+                                KnowledgeGraph { agent_id: Some(id.clone()) }
                             },
                             _ => rsx! {},
                         }}
