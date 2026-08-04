@@ -322,7 +322,37 @@ impl MessageDal for MessageDalImpl {
         self.message_dao.delete_by_task_id(ctx, task_id).await
     }
 
-    async fn search(&self, ctx: RequestContext, search: MessageSearch) -> Result<Vec<Message>> {
+    async fn search(&self, ctx: RequestContext, mut search: MessageSearch) -> Result<Vec<Message>> {
+        // 如果有关键词但还没有 query_vector，尝试嵌入关键词生成查询向量
+        if let Some(keyword) = &search.keyword
+            && search.query_vector.is_none()
+            && let Some(provider) = self
+                .model_provider_dao
+                .get_default_embedding_provider(ctx.clone())
+                .await?
+        {
+            let cortex = self
+                .cortex_dao
+                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+            match self
+                .cortex_dao
+                .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                .await
+            {
+                Ok(params) => {
+                    search.query_vector = Some(params.vector);
+                }
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "vector_search",
+                        "Message keyword embedding failed: {}, fallback to keyword only",
+                        e
+                    );
+                }
+            }
+        }
+
         let (keyword_matches, vector_matches) = do_search(
             &*self.message_dao,
             &*self.message_vector_dao,

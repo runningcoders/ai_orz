@@ -111,6 +111,10 @@ path = "tests/integration/agent_management_test.rs"
 name = "tool_skill_vector_test"
 path = "tests/integration/tool_skill_vector_test.rs"
 
+[[test]]
+name = "message_vector_test"
+path = "tests/integration/message_vector_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]
