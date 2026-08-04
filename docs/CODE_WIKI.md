@@ -31,7 +31,7 @@
 |------|----------|------|
 | **后端框架** | Axum 0.8 | 高性能异步 Web 框架 |
 | **数据库** | SQLite + SQLx 0.8 | 嵌入式数据库，类型安全查询 |
-| **LLM 调用** | rig-core 0.34 | 统一的 LLM 调用框架 |
+| **LLM 调用** | 原生 CortexDao | OpenAI 兼容 API 直接 HTTP 调用（OpenAiCompatibleCortexDao） |
 | **前端框架** | Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5 | Rust WebAssembly 前端框架 + 组件库 + 30+ 主题切换 |
 | **向量搜索** | LanceDB 默认 + HNSW/inMemory/SqliteVss | 多后端向量搜索，Vectorizable trait + embed_entity |
 | **异步运行时** | Tokio | 高性能异步运行时 |
@@ -48,7 +48,7 @@
 | 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文，消息链（root_id + reply_to_id） |
 | 消息渠道系统 | ✅ | 多渠道消息接入，支持启用/禁用/测试，飞书 P2P 私信 WebSocket 入站长连接已上线 |
 | A2A 外部 Agent | ✅ | A2A 协议支持：Client（注册外部 CLI/Remote Agent）、Server（对外暴露端点）、异步结果回传（Push 回调 + 30 秒轮询兜底） |
-| 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual |
+| 统一工具调用架构 | ✅ | execute_auto / execute_manual 三层分发，Manual 通过 internal 工具转发 |
 | 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，技能包机制 |
 | 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，任务进度追踪（0-100） |
 | 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
@@ -249,7 +249,7 @@ src/service/domain/
 │   └── delivery.rs         # 多渠道消息投递、状态追踪
 │
 ├── runtime/                # 运行时领域
-│   ├── awakening.rs        # Agent 唤醒、思考循环
+│   ├── awakening.rs        # Agent 唤醒、按 control_mode 分发（execute_auto / execute_manual）
 │   ├── context_assembly.rs # Prompt 上下文组装
 │   ├── memory.rs           # 运行时记忆读写
 │   ├── tool_execution.rs   # 工具执行、结果追踪
@@ -336,11 +336,11 @@ src/service/dao/
 ├── attachment/             # AttachmentDao：Attachment CRUD
 ├── brain/                  # BrainDao：Memory CRUD（JSONL + SQLite）
 ├── cortex/                 # CortexDao：LLM 调用接口 + 向量嵌入
-│   ├── rig/                # rig-core 实现
+│   ├── native/             # 原生 OpenAI 兼容实现（直接 HTTP 调用）
 │   │   ├── openai.rs       # OpenAI 官方
 │   │   ├── openai_compatible.rs  # DeepSeek/豆包/通义千问
 │   │   └── ollama.rs       # Ollama 本地
-│   └── mod.rs              # Cortex trait 定义（向量存储后端见 pkg/storage）
+│   └── mod.rs              # CortexDao trait 定义（向量存储后端见 pkg/storage）
 │
 ├── mcp_server/             # McpServerDao：MCP 服务器 CRUD
 ├── memory/                 # MemoryDao：记忆 CRUD + 向量搜索
@@ -511,8 +511,7 @@ src/pkg/
 │   ├── mod.rs              # BackgroundTask trait（task_id/task_type/progress/run）+ registry() 全局单例
 │   └── registry.rs         # BackgroundTaskRegistry（register/get/list_all_progress/cleanup_finished）
 │
-└── monitoring/             # 监控模块
-    └── rig_hook.rs         # rig-core 调用钩子
+└── monitoring/             # 监控模块（ChatMessage 多轮对话追踪）
 ```
 
 ---
@@ -695,7 +694,7 @@ pub trait MessageDelivery: Send + Sync {
 ```rust
 // src/service/domain/runtime/awakening.rs
 pub trait AgentAwakening: Send + Sync {
-    // Agent 唤醒：启动思考循环
+    // Agent 唤醒：装配 Brain + 启动思考循环（按 control_mode 分发到 execute_auto / execute_manual）
     async fn wake(&self, ctx: RequestContext, agent_id: &str) -> Result<()>;
 }
 
@@ -867,7 +866,6 @@ pub async fn get_initialize_progress(...) -> Result<InitProgressResponse> {
 | `tokio` | 1 | 异步运行时 |
 | `axum` | 0.8 | Web 框架 |
 | `sqlx` | 0.8.6 | 数据库访问（SQLite） |
-| `rig-core` | =0.34.0 | LLM 调用框架 |
 | `serde` | 1 | 序列化 |
 | `serde_json` | 1 | JSON 处理 |
 | `tracing` | 0.1 | 日志系统 |
@@ -947,7 +945,6 @@ common = { path = "./common", features = [
     "sqlx",           # SQLx 类型支持
     "axum-integration", # Axum 集成
     "bincode-integration", # Bincode 支持
-    "rig-integration", # rig-core 集成
     "toml-integration", # TOML 配置支持
     "reqwest-integration" # Reqwest 集成
 ] }

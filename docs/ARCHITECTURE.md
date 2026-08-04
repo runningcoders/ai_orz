@@ -77,9 +77,10 @@ ai_orz/
 - **结构**：
 ```rust
 pub struct Brain {
-    pub cortex: Cortex,           // 思考推理
-    pub memory: Memory,         // 记忆系统 🧠
+    pub model_provider: ModelProviderPo,  // 直接持有模型提供商（不再经 Cortex 实体）
+    pub memory: Memory,                  // 记忆系统 🧠
 }
+// 思考链路：BrainDal.think() → CortexDaoRegistry.get(provider_type) → dao.think(&[ChatMessage])
 ```
 
 ### 3. Memory（记忆系统）
@@ -292,7 +293,7 @@ Project + Task + Artifact 聚合
 
 #### ✅ 3. Tool Domain 完整实现
 - **27 个 DAL 方法** + **management 业务逻辑**
-- 混合模式工具调用：简单工具走 rig auto，关键工具走自建 manual 链路
+- 统一工具调用架构：execute_auto / execute_manual 三层分发，Manual 通过特殊 internal 工具转发同步/异步调用
 - 工具调用记录复用消息表：工具调用本身是特殊 Message
 
 #### ✅ 5. Runtime Memory 运行时记忆模块完成
@@ -315,7 +316,7 @@ Project + Task + Artifact 聚合
 | ✅ 已完成 | ToolCallResult trace_ref 协议字段 | ToolCallResult 已完成不复制 request args、inline size bound、基于 call_id/tool_id 的 ToolCallEntry 查询，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；attachment / artifact 仅用于用户下载或 Project Artifact 产物化 |
 | ✅ 已完成 | 对话功能 MVP | 左右分栏布局（项目列表 + 对话区）、消息气泡展示、双向分页、SSE 实时消息推送 |
 | ✅ 已完成 | 消息实时推送 | SSE（Server-Sent Events）长连接已上线，订阅者模式 + DAO 层连接管理 + broadcast 广播，替代旧版短轮询 |
-| **P1** | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；是否继续、还能继续几轮、是否暂停等待反馈，由统一统计模块基于 task / agent / conversation 运行数据决定；最终用户答复由 Agent 在 Rig 回合内调用 `send_message` 等工具发出，Consumer / Runtime 不代生成 |
+| **P1** | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；是否继续、还能继续几轮、是否暂停等待反馈，由统一统计模块基于 task / agent / conversation 运行数据决定；最终用户答复由 Agent 在 CortexDao think 回合内调用 `send_message` 等工具发出，Consumer / Runtime 不代生成 |
 | **P2** | message 消费推送全链路 E2E | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补更多 E2E |
 | **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
 
@@ -486,7 +487,9 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 
 ---
 
-`rig-core` crate 的内部模块结构在版本升级时可能发生变化，导致编译错误。**解决方案：**
+> ⚠️ **历史记录**：项目已移除 rig-core 依赖，改用原生 CortexDao 实现（`OpenAiCompatibleCortexDao` 直接 HTTP 调用 OpenAI 兼容 API）。以下 rig-core 编译问题作为历史记录保留，不再适用于当前架构。
+
+`rig-core` crate 的内部模块结构在版本升级时可能发生变化，导致编译错误。**解决方案（历史）：**
 
 - 确保 `Cargo.toml` 使用 `edition = "2024"`
 - 从正确路径导入：`use rig::tool::{ToolDyn, ToolError};`
@@ -501,12 +504,12 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 
 | 提供商 | 实现文件 | 支持 |
 |--------|----------|------|
-| OpenAI 官方 | `service/dao/cortex/rig/openai.rs` | ✅ |
-| DeepSeek | `service/dao/cortex/rig/openai_compatible.rs` | ✅ |
-| 阿里云通义千问 | `service/dao/cortex/rig/openai_compatible.rs` | ✅ |
-| 字节跳动豆包 | `service/dao/cortex/rig/openai_compatible.rs` | ✅ |
-| Ollama 本地 | `service/dao/cortex/rig/ollama.rs` | ✅ |
-| 自定义 OpenAI 兼容接口 | `service/dao/cortex/rig/openai_compatible.rs` | ✅ |
+| OpenAI 官方 | `service/dao/cortex/native/openai.rs` | ✅ |
+| DeepSeek | `service/dao/cortex/native/openai_compatible.rs` | ✅ |
+| 阿里云通义千问 | `service/dao/cortex/native/openai_compatible.rs` | ✅ |
+| 字节跳动豆包 | `service/dao/cortex/native/openai_compatible.rs` | ✅ |
+| Ollama 本地 | `service/dao/cortex/native/ollama.rs` | ✅ |
+| 自定义 OpenAI 兼容接口 | `service/dao/cortex/native/openai_compatible.rs` | ✅ |
 
 ---
 

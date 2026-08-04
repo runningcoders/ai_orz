@@ -32,7 +32,7 @@ Runtime 只负责：
 **边界补充（2026-06-24）**：
 - 一次 `awaken()` 是一次**外部唤醒轮次**；轮次之间是否继续，由消息事件与统计模块共同驱动，不在 Runtime 内部写 `while` 循环。
 - `ToolCallResult` 只是下一次唤醒的触发消息之一；Consumer / Runtime 不代替 Agent 生成最终用户回复。
-- 最终用户回复必须由 Agent 在 Rig 思考过程中主动调用 `send_message` / handler-backed 神经工具完成。
+- 最终用户回复必须由 Agent 在 Awakening 思考循环中主动调用 `send_message` / handler-backed 神经工具完成。
 - 思考轮次限制、任务执行进度、Agent 工作状态等运行面判断应来自统一的**统计模块**，而不是零散的消息计数或局部 depth 字段。
 
 **对比传统 Agent 框架**：
@@ -50,7 +50,7 @@ Runtime 只负责：
 
 | 类型 | 生物学类比 | 接入方式 | 调用时延 | 典型例子 |
 |------|-----------|----------|---------|---------|
-| **神经级（Native / Rig Auto）** | 大脑 → 手眼口 | 启动时直接挂到模型 tool list | 同步、回合内 | 查工具列表、查技能列表、读写记忆 |
+| **神经级（Native / Auto）** | 大脑 → 手眼口 | 启动时直接挂到模型 tool list | 同步、回合内 | 查工具列表、查技能列表、读写记忆 |
 | **外骨骼级（Manual / Message）** | 借助外部系统（命令行、网络） | 模型产出"调用消息"，走消息总线异步执行 | 异步、跨回合 | 给其他 Agent 发消息、调外部 API、跑长任务 |
 
 **判定原则**：
@@ -109,7 +109,7 @@ src/service/domain/runtime/
 |--------|------|---------|
 | `awakening` | 唤醒流程编排：取触发上下文 → 调 ContextAssembly → 调 Cortex → 落 trace | 不做工具实现、不做记忆 CRUD |
 | `context_assembly` | 纯函数式拼装 `AssembledContext`（system prompt + neural tools + recent traces） | 不调外部 IO、不修改任何状态 |
-| `neural_tools` | 注册并暴露内置工具（rig Tool trait 适配） | 不实现业务逻辑（业务委托给 DAL） |
+| `neural_tools` | 注册并暴露内置工具（CoreTool trait 适配） | 不实现业务逻辑（业务委托给 DAL） |
 | `memory` | 运行时记忆读写的薄封装 | 不做记忆策略选择 |
 | `tool_execution` | 外骨骼工具的异步执行通道 | 不做神经工具调用 |
 
@@ -135,7 +135,7 @@ Runtime 只**消费**这些 Domain 提供的能力，不**管理**它们的配�
 pub trait Awakening: Send + Sync + Debug {
     /// 唤醒 Agent 处理一次触发。
     ///
-    /// 一次调用 = 一次模型推理 + 该回合内的多次神经工具调用（rig auto）。
+    /// 一次调用 = 一次模型推理 + 该回合内的多次工具调用（ChatMessage 多轮对话循环）。
     /// 不在内部做 while-loop；下一回合由外部（消息消费者）再次唤醒。
     async fn awaken(
         &self,
@@ -173,9 +173,12 @@ pub struct AwakenOutcome {
 - 如果模型这一回合最后发了一条"问别的 Agent"的消息，本回合就结束
 - 等对方回信后，消息消费者再次调 `awaken()` 触发下一回合
 
-**rig 回合内多步工具调用是允许的**：
-- rig 的 auto 模式下，模型可以在一次 `prompt()` 内连续调用多次神经工具然后给出最终回答
-- 这是**模型自主行为**，不是我们写的循环——符合"模型自己决定"的原则
+**ChatMessage 多轮对话循环（一次唤醒内多次工具调用）**：
+- `BrainDal.think()` 接收 `&[ChatMessage]`（User/Assistant/Tool 三类消息），不再是单条扁平 prompt
+- Awakening 在一次 `awaken()` 内显式驱动 think → ToolCall? → execute → 追加 Tool 消息 → think 的循环，最多 `MAX_TOOL_ITERATIONS`（当前 10）次
+- 模型每轮看到完整对话历史（自己的 `tool_calls` 与对应 Tool 结果），从而能正确判定"是否已拿到所需信息、可以输出 Final 终止"
+- 工具调用按 `control_mode` 分发：`Auto` 走 `execute_auto`（直接执行含装饰器），`Manual` 走 `execute_manual`（通过 internal 工具转发）
+- 这是 Awakening 层的显式循环，循环内每次 `think()` 都是独立 HTTP 调用 OpenAI 兼容 API
 
 **外部唤醒轮次由统计模块约束**：
 - ToolCallResult、AgentMessage、Scheduled 等消息都可以触发新的 `awaken()`；
@@ -198,7 +201,7 @@ pub struct AwakenOutcome {
 ```rust
 pub struct AssembledContext {
     pub system_prompt: String,           // 身份 + 元思考提示 + 基础技能说明
-    pub neural_tools: Vec<ToolSpec>,     // 注册给 rig 的工具列表
+    pub neural_tools: Vec<ToolSpec>,     // 传给模型 function calling 的工具列表
     pub recent_traces: Vec<MemoryTrace>, // 最近 N 条会话 trace（短期工作记忆）
 }
 ```
@@ -216,14 +219,12 @@ pub struct AssembledContext {
 
 ### 4.2 神经工具最小集
 
-每项都是 rig 原生 `Tool`，模型推理回合内可直接同步调用。神经工具通过 `register_handler_tool` 宏的 `neural` flag 标记，所有 Agent 默认拥有，不需要权限校验。
+每项都是 `CoreTool`，模型推理回合内可直接同步调用。神经工具通过 `register_handler_tool` 宏的 `neural` flag 标记，所有 Agent 默认拥有，不需要权限校验。
 
 | 工具名 | 作用 | 委托给 | 优先级 |
 |--------|------|--------|--------|
 | `search_memory` | 混合搜索长期/短期记忆 | `RuntimeMemory.search` | P0 |
 | `send_message` | 给 user / agent / channel 发消息 | `MessageDomain.delivery` | P0 |
-| `send_tool_call_message` | 发送工具调用消息（异步，manual 工具入口） | `MessageDomain.delivery.send_tool_call_request` | P0 |
-| `request_tool_call` | 同步调用 manual 工具，结果立即返回 | `RuntimeDomain.tool_execution.call_manual_tool_for_agent` | P0 |
 | `mark_done` | 显式标记本任务完成（project_management 工具包） | Runtime 内部 | P1 |
 | `list_tools` | "想起"有哪些外骨骼工具可用（仅返回名字+一句话） | `ToolDal` | P1 |
 | `search_skill` | "想起"有哪些相关技能 | `SkillDal` | P2 |
@@ -231,25 +232,30 @@ pub struct AssembledContext {
 | `read_tool_spec` | 展开某个工具的完整 schema | `ToolDal` | P2 |
 | `write_memory` | 沉淀新记忆 | `RuntimeMemory.write` | P2 |
 
-> **注意**：`request_tool_call`（同步）和 `send_tool_call_message`（异步）都是神经工具，Agent 按需选择。前者直接调用 `call_manual_tool_for_agent()` 在同轮返回结果；后者通过消息系统异步执行，结果在下一轮 awaken 送达。
+> **注意（v3.7 架构变更）**：`request_tool_call`（同步）和 `send_tool_call_message`（异步）不再是神经工具，改为 **internal 工具**——带有 `internal` tag，由 `ToolDal::execute_manual` 在内部通过 `registry.create_tool` 创建实例并转发调用。Agent 不能直接调用这两个工具，它们仅作为 Manual 工具调用的内部转发器：
+> - 同步路径：`execute_manual` 调用 `request_tool_call` → `call_manual_tool_for_agent` → `call_tool`（含装饰器），同轮返回结果
+> - 异步路径：`execute_manual` 调用 `send_tool_call_message` → `MessageDomain.delivery.send_tool_call_request` 消息入队，结果在下一轮 awaken 送达
 
 **设计要点**：
 - `list_*` 系列只返回**摘要**（名字+一句话），不含完整 schema，避免 prompt 膨胀
 - 真正要用某项能力时，模型主动调 `read_*` 系列展开
 - 这正是"想起来"的过程——模型先看到目录，再决定翻哪一页
 - 神经工具通过 `#[register_handler_tool(... neural)]` 标记，生成的 ToolPo 自动包含 `"neural"` tag
+- internal 工具通过 `tags = "...,internal"` 标记，加载时过滤，不可绑定给 Agent
 - 唤醒时只注入带 `"neural"` tag 的工具给模型
 
 **三种角色定位**：
 
 | 角色 | 职责 | 示例 |
 |------|------|------|
-| **神经工具 Handler** | 封装 Domain 方法，注册为神经工具供 Agent 调用 | `send_tool_call_message`（异步）、`request_tool_call`（同步）、`send_message` |
+| **神经工具 Handler** | 封装 Domain 方法，注册为神经工具供 Agent 调用 | `send_message`、`search_memory` |
+| **internal 工具 Handler** | 带 `internal` tag，不可绑定给 Agent；由 `ToolDal::execute_manual` 通过 registry 创建实例转发调用 | `request_tool_call`（同步）、`send_tool_call_message`（异步） |
 | **普通 HTTP Handler** | 直接调用 Domain 完成业务，不注册为工具 | （供 HTTP API 或前端使用） |
 | **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
 
 **注册示例**：
 ```rust
+// 神经工具：所有 Agent 默认拥有
 #[register_handler_tool(
     id = "send_message",
     name = "send_message",
@@ -260,50 +266,78 @@ pub struct AssembledContext {
 async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<Value> {
     // ...
 }
+
+// internal 工具：不可绑定给 Agent，由 execute_manual 内部转发
+#[register_handler_tool(
+    id = "request_tool_call",
+    name = "request_tool_call",
+    description = "Call a manual tool synchronously and get the result immediately",
+    params = "common::api::RequestToolCallParams",
+    tags = "tool_management,internal"  // ← internal tag 标记
+)]
+async fn request_tool_call(ctx: RequestContext, params: RequestToolCallParams) -> Result<RequestToolCallResponse> {
+    // 内部转发到 call_manual_tool_for_agent → call_tool
+}
 ```
 
 ### 4.3 神经 vs 外骨骼的关系图
 
 ```
-模型推理 (一回合内)
+Awakening 显式循环 (一次 awaken 内最多 MAX_TOOL_ITERATIONS 次)
     │
-    ├── 神经工具 (rig auto，同步)
-    │      │
-    │      ├── search_memory ───► RuntimeMemory ───► MemoryDal
-    │      ├── search_skill  ───► SkillDal
-    │      ├── list_tools    ───► ToolDal
-    │      └── send_message  ───► MessageDomain
+    │  messages: Vec<ChatMessage>  ← 多轮对话历史（User/Assistant/Tool）
     │
-    ├── request_tool_call (神经工具，同步调用 manual 工具)
-    │      │
-    │      ▼
-    │   tool_execution.call_manual_tool_for_agent()  ← 直接通过 Domain
-    │      │   └── 三层免绑定校验：绑定 → 神经 → 已安装 tag
-    │      │
-    │      └── 同轮返回执行结果，awaken 继续
+    ▼
+BrainDal.think(ctx, brain, &messages, &tool_descriptors)
+    │   └── brain.model_provider (ModelProviderPo) → CortexDaoRegistry.get(provider_type)
+    │       → OpenAiCompatibleCortexDao.think() → POST /chat/completions
     │
-    └── send_tool_call_message (神经工具，异步调用 manual 工具)
-           │
-           ▼
-        MessageDomain.delivery.send_tool_call_request() ──► 消息入队
-           │
-           └── 立即返回"已提交"，awaken 结束
-                                                      │
-                                                      ▼
-        Consumer 收到 ToolCallRequest 消息（to_role=System）
-           │
-           ├── tool_execution.call_manual_tool_for_agent()  ← 直接通过 Domain
-           │   └── 三层免绑定校验：绑定 → 神经 → 已安装 tag
-           │
-           └── MessageDomain.delivery.send_tool_call_result() ──► 结果消息
-                                                      │
-                                                      ▼
-        Consumer 收到 ToolCallResult 消息（to_role=Agent）
-           │
-           └── 触发下一次 awaken()
+    ▼
+ThinkResult::Final?  → 退出循环，返回最终回答
+ThinkResult::ToolCall?
+    │
+    │  1. 追加 Assistant 消息（含 tool_calls）到 messages
+    │  2. 对每个 tool_call 按 control_mode 分发执行：
+    │
+    ├── ControlMode::Auto  ──► ToolDal.execute_auto(tool, args)
+    │                            └── call_tool (直接执行层，含装饰器)
+    │                                  └── ToolCallDao.call_manual → decorate() → CoreTool::call
+    │
+    ├── ControlMode::Manual (sync)  ──► ToolDal.execute_manual(tool, args)
+    │                                    └── registry.create_tool("request_tool_call")
+    │                                        → special_tool.call()
+    │                                            └── call_manual_tool_for_agent()
+    │                                                → call_tool (含装饰器，同轮返回)
+    │
+    └── ControlMode::Manual (async) ──► ToolDal.execute_manual(tool, args)
+                                         └── registry.create_tool("send_tool_call_message")
+                                             → special_tool.call()
+                                                 └── MessageDomain.delivery.send_tool_call_request()
+                                                     → 消息入队，立即返回"已提交"
+                                                                                │
+                                                                                ▼
+                                                     Consumer 收到 ToolCallRequest 消息（to_role=System）
+                                                         │
+                                                         ├── tool_execution.call_manual_tool_for_agent()
+                                                         │   └── 三层免绑定校验：绑定 → 神经 → 已安装 tag
+                                                         │
+                                                         └── MessageDomain.delivery.send_tool_call_result() ──► 结果消息
+                                                                                │
+                                                                                ▼
+                                                     Consumer 收到 ToolCallResult 消息（to_role=Agent）
+                                                         │
+                                                         └── 触发下一次 awaken()
+
+    │  3. 把工具结果作为 ChatMessage::Tool 追加到 messages
+    │  4. 回到 BrainDal.think() 继续下一轮
 ```
 
-> **同步 vs 异步**：`request_tool_call`（同步神经工具）直接调用 `call_manual_tool_for_agent()`，结果在当前轮立即返回，适合轻量快速的工具；`send_tool_call_message`（异步神经工具）通过消息系统异步执行，结果在下一轮 awaken 送达，适合耗时较长的工具。Agent 按场景自行选择。
+> **三层工具调用架构**：
+> - **上层**：`execute_auto` / `execute_manual`——Awakening 按 `control_mode` 分发
+> - **中层**：`call_tool`——直接执行层，含装饰器
+> - **底层**：`ToolCallDao.call_manual` + `decorate`——装饰器收敛，记录真实 ToolCallEntry trace
+>
+> **同步 vs 异步 Manual**：`execute_manual` 根据 `tool.po.config.dispatch_mode` 选择 internal 工具——`sync`（默认）走 `request_tool_call` 在当前轮内通过 `call_tool` 同步执行并返回结果；`async` 走 `send_tool_call_message` 派发消息，结果在下一轮 awaken 送达。Agent 不直接调用这两个 internal 工具。
 
 ---
 
@@ -314,14 +348,14 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
 ### Q1：单回合 vs 多回合循环（已确认）
 
 - **决策**：Runtime 内部只跑**单回合**，多回合靠"消息触发再次唤醒"
-- **理由**：贴近"无复杂循环"原则；rig auto 已支持回合内多次工具调用，足够覆盖大多数场景
+- **理由**：贴近"无复杂循环"原则；一次 awaken 内的 ChatMessage 多轮对话循环已支持多次工具调用，足够覆盖大多数场景
 - **落地状态**：✅ 已实现（见第十八、十九章）
 
-### Q2：rig 回合内多步 tool calling 算不算"循环"（已确认）
+### Q2：一次 awaken 内的多步 tool calling 算不算"循环"（已确认）
 
-- **决策**：算"模型自主行为"，不算我们写的循环，**允许**
-- **理由**：符合"模型自己决定"的原则，框架不应剥夺这个能力
-- **落地状态**：✅ 已实现（rig auto 已集成）
+- **决策**：算 Awakening 层的显式循环，**允许**，最多 `MAX_TOOL_ITERATIONS`（当前 10）次
+- **理由**：自建 `OpenAiCompatibleCortexDao` 不再依赖 rig 内置循环，改为在 Awakening 层用 `Vec<ChatMessage>` 显式驱动 think → ToolCall? → execute → 追加 Tool 消息 → think 的循环；模型每轮看到完整对话历史（自己的 tool_calls 与 Tool 结果），自主判定是否输出 Final 终止
+- **落地状态**：✅ 已实现（`BrainDal.think()` 接收 `&[ChatMessage]`，Awakening 显式循环）
 
 ### Q3：基础元能力放神经工具还是种子技能（已确认）
 
@@ -357,16 +391,17 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
 |------|------|------|------|------|
 | **1** | 定义 `Awakening` trait + `AwakenCommand/Outcome` 数据结构 | `awakening.rs` 骨架、mod.rs 单例注册 | `cargo check` 通过 | ✅ 已完成 |
 | **2** | 实现 `ContextAssembly` 纯函数：拼 system_prompt + recent_traces | `context_assembly.rs` + 单测 | 纯函数单测通过 | ✅ 已完成 |
-| **3** | 实现 `NeuralTools` 最小集（预留） | `neural_tools.rs` 骨架 | 编译通过 | ⚠️ 部分实现 |
+| **3** | 实现 NeuralTools 最小集 | 通过 `#[register_handler_tool(neural)]` 宏注册，神经工具自动注入 Prompt | 编译通过 + 唤醒可见 | ✅ 已完成 |
 | **4** | 接入 Cortex（模型推理）到 `Awakening` | 端到端最小可用 | 集成测试通过 | ✅ 已完成 |
 | **5** | 加入消息通道和外骨骼通道 | 完整双通道 | Agent 可对话 + 调外骨骼工具 | ✅ 已完成 |
-| **6** | 补齐展开式工具（预留） | 完整神经工具集 | Agent 行为完整 | ⚠️ 部分实现 |
+| **6** | 补齐展开式工具 + internal 工具机制 | 完整神经工具集 + `execute_auto`/`execute_manual` 三层调用 + internal 工具转发 | Agent 行为完整 | ✅ 已完成 |
 
 **实际落地情况**：
 - ✅ 核心架构全部落地：Runtime Memory + Context Assembly + Awakening
 - ✅ Trace 闭环架构完成（第十八章）
 - ✅ Agent 运行时状态管理完成（第十九章）
-- ⚠️ 神经工具集部分实现（见 tool_design.md）
+- ✅ 神经工具集 + internal 工具机制完成（神经工具通过 `neural` tag 自动注入；internal 工具不可绑定，由 `execute_manual` 转发）
+- ✅ 自建 CortexDao（OpenAiCompatibleCortexDao）替代 rig，ChatMessage 多轮对话循环已落地
 - ⚠️ 多 Agent 协作、记忆压缩、长上下文管理等高级功能仍在规划阶段
 
 **不在本期范围**（留待后续设计）：
@@ -466,7 +501,7 @@ async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<
 
 ### 11.3 第一阶段需要新增/修改的代码清单
 
-代码清单详见 `src/service/domain/runtime/awakening.rs`、`context_assembly.rs`、`memory.rs`、`mod.rs`。原 v0.3 代码骨架（4 个模块的 trait/struct 定义示例）已删除以精简文档。
+代码清单详见 `src/service/domain/runtime/awakening.rs`、`context_assembly.rs`、`memory.rs`、`mod.rs`。`awakening.rs` 现已包含 ChatMessage 多轮对话循环、按 `control_mode` 分发 `execute_auto`/`execute_manual` 的逻辑，以及 5 分钟 think 超时保护。原 v0.3 代码骨架（4 个模块的 trait/struct 定义示例）已删除以精简文档。
 
 ---
 
@@ -783,7 +818,7 @@ mod.rs
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | 统计模块驱动的外部唤醒轮次 | Agent 收到 ToolCallResult 后可被消息机制再次唤醒；是否继续唤醒、还能唤醒几轮、是否暂停等待用户反馈，统一由统计模块的 task / agent / conversation 运行数据决定；最终用户答复仍由 Agent 在 Rig 回合内调用 `send_message` 等工具发出 |
+| **P1** | 统计模块驱动的外部唤醒轮次 | Agent 收到 ToolCallResult 后可被消息机制再次唤醒；是否继续唤醒、还能唤醒几轮、是否暂停等待用户反馈，统一由统计模块的 task / agent / conversation 运行数据决定；最终用户答复仍由 Agent 在 Awakening 显式循环中调用 `send_message` 等工具发出 |
 | **P1** | Trace ID 关联逻辑 | 从 `message.reply_to_id` 追溯历史 Trace 链 |
 | **P2** | 工具调用框架增强 | 在已完成 Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环和 ToolCallEntry 查询基础上，补外部唤醒调度与更多 E2E 场景 |
 | **P3** | 技能注入 | 根据 Agent 角色动态注入技能说明 |
@@ -1466,15 +1501,15 @@ if target_status == AgentStatus::Onboarded {
 - tag 匹配工具：tag_filter = `neural` + `agent.installed_tags`，SQL 层 `json_each` OR 匹配
 - 合并去重后写入 `agent.tools`（`Vec<Tool>` 业务实体），供后续 wake/awaken 使用
 
-**分流阶段**（`RuntimeDomainImpl::wake_agent_brain`）：
-- 从 `agent.tools` 用 `std::mem::take` + `partition` 按控制方式分离所有权
-- `ControlMode::Auto` 工具注入 Rig（function calling 同步调用）
-- `ControlMode::Manual` 工具保留在 `agent.tools`，供 PromptBuilder 拼装"【神经工具】"/"【常用工具】"区块
+**分流阶段**（`RuntimeDomainImpl::awaken`）：
+- 全部工具保留在 `agent.tools`，Awakening 显式循环按 `tool.po.control_mode` 分发
+- `ControlMode::Auto` 工具通过 `ToolDescriptor::from(&Tool)` 派生后传给 `BrainDal.think()` 作为 function calling 工具列表
+- `ControlMode::Manual` 工具由 PromptBuilder 拼装"【常用工具】"区块告知模型存在；模型发起调用时走 `execute_manual`（通过 internal 工具转发）
 
 **设计要点**：
 - 不再有"built-in tools"概念，Auto/Manual 区分由 `control_mode` 决定，与工具定义位置无关
 - 工具加载在 hr domain 完成（同业务域操作），无需跨 domain 组合
-- ToolPo（Clone-able）供 PromptBuilder 使用；Tool（含 `dyn Trait`，不可 Clone）用于 Rig 注入
+- ToolPo（Clone-able）供 PromptBuilder 使用；Tool 实体在 Awakening 循环中按 `control_mode` 分发到 `execute_auto` / `execute_manual`
 
 ### 22.6.1 唤醒时技能加载
 
@@ -1497,7 +1532,8 @@ if target_status == AgentStatus::Onboarded {
 
 | 角色 | 注册为工具 | 调用方式 | 示例 |
 |------|----------|---------|------|
-| 神经工具 Handler | ✅ `#[register_handler_tool(neural)]` | Agent 通过 rig auto 调用 | send_message, send_tool_call_message, request_tool_call |
+| 神经工具 Handler | ✅ `#[register_handler_tool(neural)]` | Agent 通过 function calling 调用 | send_message, search_memory |
+| internal 工具 Handler | ✅ `#[register_handler_tool(tags="...,internal")]` | 由 `execute_manual` 内部转发，Agent 不可直接调用 | request_tool_call, send_tool_call_message |
 | 普通 HTTP Handler | ❌ 不注册 | HTTP API 直接调用 | （供前端或外部 API 使用） |
 | Consumer | — | 直接调 Domain | handle_tool_call_request |
 
@@ -1801,13 +1837,13 @@ pub trait RuntimeAwakening: Send + Sync {
 
 ### 25.4 工具双层过滤机制
 
-**问题**：唤醒 brain 在两种场景用同一个方法，注册同一套 rig 工具。若 Settle 场景不过滤工具，模型可能通过 function calling 调用 `send_message` 等消息类工具，触发消息流程导致异步唤醒自己，破坏沉淀内循环。
+**问题**：唤醒 brain 在两种场景用同一个方法，传同一套 ToolDescriptor 给 `BrainDal.think()`。若 Settle 场景不过滤工具，模型可能通过 function calling 调用 `send_message` 等消息类工具，触发消息流程导致异步唤醒自己，破坏沉淀内循环。
 
 **方案**：双层过滤，分别覆盖 Auto 工具和 Manual 工具/技能
 
 | 层级 | 过滤位置 | 过滤对象 | 触发条件 |
 |------|---------|---------|---------|
-| 第一层 | `wake_agent_brain` | Auto 工具（注册到 Rig 的 function calling 工具） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+| 第一层 | `wake_agent_brain` | Auto 工具（传给 think() 的 ToolDescriptor） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
 | 第二层 | `sleep_and_settle` | Manual 工具 + skill（Prompt 展示层） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
 
 **过滤逻辑**（在 awakening.rs 中实现）：
@@ -1835,7 +1871,7 @@ let all_tools: Vec<ToolPo> = agent.tools().iter()
 ```
 
 **设计要点**：
-- Auto 工具过滤在 brain 装配阶段（注册到 Rig 前），过滤后模型无法通过 function calling 调用
+- Auto 工具过滤在 brain 装配阶段（派生 ToolDescriptor 前），过滤后模型无法通过 function calling 调用
 - Manual 工具/skill 过滤在 Prompt 拼装阶段，过滤后模型在 Prompt 中看不到这些工具
 - Awaken 场景不做过滤，全部工具可用
 

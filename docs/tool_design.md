@@ -3,12 +3,13 @@
 ## 开发时间线（2026-04-17 / 2026-07-12 更新）
 
 ### 目标
-基于 Rig 框架，设计并实现工具模块基础架构，支持多种协议（builtin/http/mcp），符合项目现有代码规范。
+设计并实现工具模块基础架构（自建 CoreTool trait + OpenAiCompatibleCortexDao，已移除 rig 依赖），支持多种协议（builtin/http/mcp），符合项目现有代码规范。
 
 ### 2026-07-12 更新内容
 - **工具包机制**：tag 分组工具、Agent 入职自动安装、免绑定三层校验
 - **协作工具**：search_agents、send_message_to_agent、list_agents、get_agent（tag: collaboration）
 - **神经工具免绑定**：带 "neural" tag 的工具无需绑定即可调用
+- **internal 工具机制**：带 "internal" tag 的工具不可绑定给 Agent（加载时过滤），由 `ToolDal::execute_manual` 内部通过 `registry.create_tool` 创建实例并转发调用（`request_tool_call`=同步 / `send_tool_call_message`=异步）
 
 ---
 
@@ -43,7 +44,7 @@ ai_orz/
 |------|------|
 | `common/enums/tool.rs` | 定义 `ToolProtocol`（builtin/http/mcp）、`ToolStatus`（enabled/disabled）枚举，支持 SQLx 存储 |
 | `models/tool.rs` | `ToolPo` 持久化对象，所有 ID 都是 `String`，对齐项目现有风格 |
-| `pkg/tool_registry` | **全局工具实例注册中心**，独立于 DAO，职责单一：<br>- 按协议分类存储工具实例<br>- 提供注册和查询接口<br>- 内置工具实现 `BuiltinTool` trait，继承 Rig 原生 `ToolDyn` |
+| `pkg/tool_registry` | **全局工具实例注册中心**，独立于 DAO，职责单一：<br>- 按协议分类存储工具实例<br>- 提供注册和查询接口<br>- 内置工具实现 `CoreTool` trait（项目自建，带 `RequestContext`） |
 | `service/dao/tool` | **工具元数据持久化**：<br>- CRUD 操作<br>- Agent 绑定工具的增删查改<br>- 不持有连接池，所有操作从 `RequestContext` 获取连接池，符合 DAO 规范 |
 
 ---
@@ -59,10 +60,12 @@ ai_orz/
 - 最终选择：**独立 pkg/tool_registry**
 - 原因：DAO 只负责持久化元数据，注册中心负责内存实例管理，职责分离解耦，符合项目 pkg 存放基础设施的约定
 
-### 3. Rig dyn 兼容方案
-- Rig 原生 `Tool` trait 因为 async 方法自带 `Sized` 约束，不支持 dyn
-- 解决方案：Rig 已经提供原生 dyn 兼容 trait `ToolDyn`，直接使用即可，无需自行封装
-- 实现：`BuiltinTool` trait 继承 `ToolDyn + DynClone`，添加 `id()` 和 `description()` 两个元数据方法
+### 3. CoreTool trait 设计（自建，替代 Rig ToolDyn）
+- 项目自建 `CoreTool` trait，所有工具统一实现此接口
+- `CoreTool` 自带 `RequestContext` 参数，支持权限、日志、追踪
+- trait 定义：`async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value, ToolError>` + `parameters_schema()` + `name()` + `description()`
+- 继承 `DynClone + Send + Sync + Debug`，支持 `Box<dyn CoreTool + Send + Sync>` 动态分发
+- 已移除 rig 依赖，不再使用 `ToolDyn`
 
 ### 4. 数据库设计
 两张表：
@@ -100,7 +103,7 @@ ai_orz/
 | JSON 类型 SQLite 不支持 | 迁移文件最初写了 `JSON` 类型 | 改为 `TEXT` 类型，应用层处理 JSON 序列化 |
 | UUID 解码错误 "expected 16 bytes, found 36" | SQLite 存储 UUID 为字符串，SQLx 需要特殊处理 | 直接改用 `String` 存储 id，去掉 Uuid 依赖 |
 | 枚举解码错误：找不到 "builtin" | SQLx 默认期望 PascalCase `"Builtin"`，但实际存储小写 | 添加 `#[sqlx(rename_all = "lowercase")]` |
-| Rig `Tool` trait 不支持 `Box<dyn Tool>` | async 方法默认有 `Sized` 约束 | 使用 Rig 原生 `ToolDyn` trait，已经解决 dyn 兼容 |
+| Rig `Tool` trait 不支持 `Box<dyn Tool>` | async 方法默认有 `Sized` 约束 | 已移除 rig 依赖，改用自建 `CoreTool` trait（继承 `DynClone + Send + Sync`），原生支持 `Box<dyn CoreTool + Send + Sync>` |
 | `cargo fix` 自动误改其他 DAO 测试导入 | 原来其他 DAO 没有在 `mod.rs` 重新导出 `dao()`，`cargo fix` 误以为调用错误 | 统一所有 DAO 导出规范：`mod.rs` 导出 `pub use sqlite::{init, dao};` |
 | 值移动错误：`tool_id` 借用后 move | `add_tool_to_agent` 参数按值传 String | 改为 `&str` 借用，符合 Rust 风格，调用方不需要 clone |
 
@@ -131,7 +134,7 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 ## Agent 工具绑定架构（2026-04-18 更新）
 
 ### 目标
-将已存储的工具绑定到 Agent，在创建 Cortex 时将工具实例传入 Rig Agent，支持 Agent 调用工具。严格遵循项目分层规范：`handler → domain → dal → dao`，禁止同层互调。
+将已存储的工具绑定到 Agent，Awakening 显式循环中将工具派生为 `ToolDescriptor` 传给 `BrainDal.think()`，支持 Agent 通过 function calling 调用工具。严格遵循项目分层规范：`handler → domain → dal → dao`，禁止同层互调。
 
 ### 更新后的架构
 
@@ -139,7 +142,7 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 ```diff
  ai_orz/src/
  ├── models/
- │   └── tool.rs              # + Tool 复合实体 (ToolPo + Box<dyn ToolDyn + Send + Sync>)
+ │   └── tool.rs              # + Tool 复合实体 (ToolPo + Box<dyn CoreTool + Send + Sync>)
  │   └── agent.rs             # + Agent 新增 tools: Vec<Tool> 字段
  ├── pkg/
  │   └── tool_registry/       # (已有) 全局工具实例注册中心
@@ -167,8 +170,8 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
    ↓
 4. ToolDao.list_tools_for_agent_full 内部：
    - 查询 DB 得到 Vec<ToolPo>（绑定到该 Agent 的所有启用工具）
-   - 对每个 ToolPo，从 GLOBAL_TOOL_REGISTRY 查找已注册的 Box<dyn ToolDyn>
-   - 拼装成 Tool { po: tool_po, tool: boxed_dyn }
+   - 对每个 ToolPo，调用 registry.create_tool(po) 获取 Box<dyn CoreTool + Send + Sync>
+   - 拼装成 Tool { po: tool_po, our_tool: boxed_dyn }
    - 自动过滤未在注册中心找到的工具（已删除/未实现）
    ↓
 5. AgentDal 用 Agent::from_po_with_tools(agent_po, tools) 返回完整 Agent
@@ -179,18 +182,18 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 | 问题 | 方案 | 原因 |
 |------|------|------|
 | **谁来拼装完整 Tool？** | ToolDao 负责 | DAO 只负责自己领域的对象拼装，符合单一职责 |
-| **Tool 应该包含什么？** | `Tool { po: ToolPo, tool: Box<dyn ToolDyn + Send + Sync> }` | 分离元数据（PO）和运行实例（dyn），满足 Rig 需要直接获取 dyn 的要求 |
+| **Tool 应该包含什么？** | `Tool { po: ToolPo, our_tool: Box<dyn CoreTool + Send + Sync> }` | 分离元数据（PO）和运行实例（CoreTool dyn），Awakening 按 control_mode 调用 execute_auto/execute_manual |
 | **get_agent_with_tools 放哪层？** | AgentDal 层 | Dal 职责就是组合多个 DAO 构建完整业务实体，不违反分层规则 |
-| **CortexDao 接收什么？** | `Vec<Tool>` 而非 `Vec<ToolPo>` | ToolDao 已经拼装好了，CortexDao 只需要提取 dyn 传给 Rig，职责清晰 |
-| **工具存在哪里？** | Agent 实体持有 `Vec<Tool>` |领域概念：工具属于 Agent，Brain/Cortex 只在构建时使用不存储 |
+| **think() 接收什么？** | `&[ToolDescriptor]`（从 Tool 派生） | Awakening 把 agent.tools 派生为 ToolDescriptor 传给 BrainDal.think()，工具执行由 execute_auto/execute_manual 负责 |
+| **工具存在哪里？** | Agent 实体持有 `Vec<Tool>` |领域概念：工具属于 Agent，Brain 只持有 ModelProviderPo，think 时按需传入 ToolDescriptor |
 
-### Rig 0.35 适配说明
+### Rig 依赖移除说明
 
-rig-core 0.35 有重大不兼容变更：
-- **之前**：可以增量 `agent.tool(...)` 添加工具
-- **现在**：必须一次性 `agent.tools(tool_set)` 传入所有工具，ToolSet 需要从 `Vec<Box<dyn ToolDyn>>` 创建
-- **适配方案**：从 `Vec<Tool>` 提取 `Box<dyn ToolDyn + Send + Sync>`，通过 `unsafe std::mem::transmute` 转换为 `Box<dyn ToolDyn>`
-- **安全性**：所有注册工具都保证实现 `Send + Sync`，Cortex 本身需要 `Send + Sync`，因此 transmute 是安全的，代码已添加 `// SAFETY:` 注释说明
+项目已完全移除 rig-core 依赖：
+- **CortexDao 自建**：`OpenAiCompatibleCortexDao` 直接通过 reqwest HTTP 调用 OpenAI 兼容 API（POST /chat/completions）
+- **不再有 ToolDyn / RigToolAdapter / unsafe transmute**：所有工具统一实现自建 `CoreTool` trait，原生支持 `Box<dyn CoreTool + Send + Sync>` 动态分发
+- **Brain 扁平化**：Brain 直接持有 `Option<ModelProviderPo>`，BrainDal.think() 按 `provider_type` 在 `CortexDaoRegistry` 中选择 DAO 实现
+- **工具调用三层架构**：上层 `execute_auto`/`execute_manual` → 中层 `call_tool` → 底层 `ToolCallDao.call_manual` + `decorate`
 
 ### 分层规范符合性检查
 
@@ -221,7 +224,7 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 ## 工具调用自动追踪（2026-04-20 ~ 2026-04-21 更新）
 
 ### 目标
-为 Rig Agent 调用的所有内置工具自动添加完整调用日志追踪，记录完整的输入输出、调用参数、错误信息，方便调试、审计和后续训练数据收集。保持非侵入式设计，不修改 Rig 原生接口，方便后续扩展。
+为 Awakening 循环中调用的所有工具自动添加完整调用日志追踪，记录完整的输入输出、调用参数、错误信息，方便调试、审计和后续训练数据收集。保持非侵入式设计，装饰器逻辑收敛到 `ToolCallDao` 内部，不修改 `CoreTool` 接口，方便后续扩展。
 
 ### 架构设计
 
@@ -235,12 +238,12 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 +│   └── tool_tracing/        # 新增：工具调用日志追踪模块
 +│       ├── entry.rs         # ToolCallEntry 定义 + ToolCallStatus 枚举
 +│       ├── logger.rs        # ToolCallLogger 单例工厂 + JSONL 写入
-+│       ├── decorator.rs     # LoggingToolDecorator - 装饰器包装 ToolDyn
++│       ├── tool_call_logger.rs # ToolCallLoggingDecorator - 装饰器包装 CoreTool
 +│       ├── mod.rs           # 模块导出
 +│       └── logger_test.rs   # 完整单元测试
  └── service/
-     └── dao/tool/
-         └── sqlite.rs       # 更新：拼装 Tool 实体时自动添加装饰器包装
+     └── dao/tool_call/
+         └── impl.rs          # ToolCallDao.call_manual + decorate（装饰器收敛）
 ```
 
 #### 工作流程图
@@ -249,23 +252,19 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
   ↓
 ToolCallLogger::init(base_data_path) → 全局单例初始化完成
   ↓
-ToolDao.get_tool_full / list_tools_for_agent_full
+Awakening 显式循环 → 按 control_mode 分发：
+  - Auto:  ToolDal.execute_auto → call_tool
+  - Manual: ToolDal.execute_manual → registry.create_tool(internal tool) → 转发 → call_tool
   ↓
-找到 ToolPo + 从注册中心获取 Box<dyn ToolDyn>
+call_tool → ToolCallDao.call_manual(tool, args)
   ↓
-自动包装：LoggingToolDecorator::new(original_tool, tool_id, tool_name)
+内部 decorate(): ToolCallLoggingDecorator::new(dyn_clone::clone_box(&tool.our_tool))
   ↓
-返回拼装好的 Tool { po, tool: Box::new(decorator) }
-  ↓
-Cortex 提取 Box<dyn ToolDyn> 传给 Rig Agent
-  ↓
-Rig Agent 需要调用工具
-  ↓
-LoggingToolDecorator.call(...)
-    → 调用原始 tool.call(...) 得到结果
-    → 自动构造 ToolCallEntry 包含完整上下文
+decorated.call_with_entry(ctx, args)
+    → 调用原始 CoreTool::call(ctx, args) 得到结果
+    → 自动构造 ToolCallEntry 包含完整上下文（call_id, tool_id, agent_id, task_id...）
     → ToolCallLogger::get().log_call() → 写入 daily JSONL 文件
-    → 返回结果给 Rig
+    → 返回 (Value, ToolCallEntry) 给上层
 ```
 
 ### 存储结构
@@ -305,12 +304,12 @@ pub struct ToolCallEntry {
 
 | 问题 | 方案 | 原因 |
 |------|------|------|
-| **在哪里添加日志包装？** | ToolDao 拼装时 | ToolDao 已经负责拼装完整 Tool 实体，在此添加装饰器最自然，上层不需要感知 |
+| **在哪里添加日志包装？** | `ToolCallDao.call_manual` 内部 | 装饰器收敛到 ToolCallDao，`call_tool` / `execute_auto` / `execute_manual` 都走此路径，单点记录 trace |
 | **日志配置放在哪里？** | ToolCallLogger 从 config singleton 获取 | 配置已经是全局单例，不需要通过 DAO 传递参数，减少 API 污染 |
 | **全局还是每个工具一个实例？** | 全局单例工厂 | base path 只需要初始化一次，每个调用按需获取 writer，没有重复创建开销 |
 | **是否支持测试？** | 保留 `new()` 构造方法 | 测试可以创建本地实例用临时目录，不影响全局单例 |
 | **什么时候写入日志？** | 调用完成后写入一次 | 只需要最终结果，不需要启动时写一条，简化设计；Started 状态保留给未来自调度工具 |
-| **是否侵入原有代码？** | 装饰器模式 | 完全不修改 Rig 原生 `ToolDyn` 接口，符合开闭原则 |
+| **是否侵入原有代码？** | 装饰器模式 | 完全不修改 `CoreTool` 接口，符合开闭原则；`ToolCallDao.decorate()` 内部方法供未来叠加 StatsDecorator 等 middleware |
 
 ### 设计符合项目分层规范
 
@@ -340,10 +339,10 @@ pub struct ToolCallEntry {
 
 ### 目标
 实现**简单工具自动 + 关键工具收敛**的混合模式工具调用链路：
-- `auto` 模式：简单工具走 Rig 原生同步 function call 流程，开发高效
+- `auto` 模式：简单工具走 Awakening 显式循环中的同步 function call 流程，开发高效
 - `manual` 模式：关键工具走自建异步事件链路，支持权限控制、全链路审计、大结果附件存储
 
-满足多 Agent 协作场景下对关键工具调用的可控性要求，同时兼容 Rig 原生能力。
+满足多 Agent 协作场景下对关键工具调用的可控性要求。已移除 rig 依赖，Auto/Manual 工具都通过自建 `CoreTool` + `OpenAiCompatibleCortexDao` 调用。
 
 ### 核心设计决策
 
@@ -352,8 +351,9 @@ pub struct ToolCallEntry {
 | **混合模式分类** | `control_mode: auto \| manual` | 不是按工具类型分，而是按控制要求分：简单工具 `auto`，需要审计/权限 `manual` |
 | **工具调用存储** | 复用现有 `messages` 表 | 工具调用本身就是特殊消息，利用已有消息状态、附件存储、关联机制，不新建表 |
 | **核心 trait** | 内部统一用 `CoreTool`（带 `RequestContext`） | 所有工具都需要访问上下文（DB、用户、权限、跟踪ID），统一接口方便装饰器 |
-| **Rig 兼容** | `RigToolAdapter` 适配器 | Rig 需要 `ToolDyn`，适配器持有 `RequestContext`，调用 `CoreTool.call()` |
-| **日志装饰** | `LoggingDecorator` 独立 | 日志和工具执行是两个职责，装饰器模式非侵入式添加 |
+| **Auto 调用** | `execute_auto` → `call_tool` 直接执行 | Awakening 循环中模型发起 tool_call 时按 control_mode 分发，结果作为 ChatMessage::Tool 追加到对话历史 |
+| **Manual 调用** | `execute_manual` 通过 internal 工具转发 | `request_tool_call`（同步）/`send_tool_call_message`（异步）由 registry.create_tool 创建实例，转发到 `call_tool` 或消息链路 |
+| **日志装饰** | `ToolCallDao.call_manual` + `decorate` 内部收敛 | 装饰器逻辑收敛到 DAO 层，单点记录 ToolCallEntry trace，未来可叠加 StatsDecorator |
 | **注册中心** | 存储工厂而非实例 | 每个工具实例从 `ToolPo` 创建，配置可动态从 DB 读取 |
 
 ### 消息类型扩展
@@ -385,7 +385,7 @@ pub trait CoreTool: DynClone + Send + Sync + Debug {
     /// 工具参数 JSON Schema
     fn parameters_schema(&self) -> Value;
 
-    /// 工具名称（用于 Rig 注册和 LLM 识别）
+    /// 工具名称（用于 LLM function calling 识别）
     fn name(&self) -> &str;
 
     /// 工具描述（给 LLM 看）
@@ -395,21 +395,14 @@ pub trait CoreTool: DynClone + Send + Sync + Debug {
 /// 完整工具业务实体 - 包含持久化配置和可执行实例
 pub struct Tool {
     pub po: ToolPo,              // 持久化配置（DB 读出）
-    pub control_mode: ControlMode, // auto | manual
-    pub rig_tool: Option<Box<dyn ToolDyn + Send + Sync>>, // Rig 需要的适配
-    pub our_tool: Box<dyn CoreTool + Send + Sync>,         // 我们核心实现
+    pub control_mode: ControlMode, // auto | manual（从 po.control_mode 派生）
+    pub our_tool: Box<dyn CoreTool + Send + Sync>,         // 核心实现（未装饰）
 }
 
-/// Rig 适配器 - 将 CoreTool 转换为 Rig 需要的 ToolDyn
-pub struct RigToolAdapter {
-    ctx: RequestContext,
-    inner: Box<dyn CoreTool>,
-}
-
-impl ToolDyn for RigToolAdapter {
-    // 实现 name/description/parameters_schema 转发给 inner
-    // call 方法从 self.ctx 获取 RequestContext，调用 inner.call()
-}
+// 注：已移除 rig_tool / RigToolAdapter / ToolDyn 适配
+// Awakening 调用 BrainDal.think(ctx, brain, &messages, &tool_descriptors)，
+// ToolDescriptor 通过 From<&Tool> 从业务 Tool 直接派生（name/description/parameters），
+// 工具执行由 execute_auto / execute_manual 负责，不再需要 Rig 适配层。
 
 /// 向后兼容类型别名
 pub type FullTool = Tool;
@@ -423,23 +416,38 @@ ai_orz/
 │   └── message.rs             # + MessageType: ToolCallRequest/ToolCallResult, + ControlMode
 ├── src/
 │   ├── models/
-│   │   └── tool.rs            # CoreTool trait + Tool entity + RigToolAdapter
+│   │   ├── tool.rs            # CoreTool trait + Tool entity（无 RigToolAdapter）
+│   │   └── cortex_types.rs    # ToolDescriptor + ChatMessage + ThinkResult（think 契约）
 │   ├── pkg/
 │   │   ├── tool_registry/
 │   │   │   ├── mod.rs         # ToolRegistry - 存储工厂，create_tool() -> Box<dyn CoreTool>
 │   │   │   ├── builtin.rs     # BuiltinToolFactory - 内建工具工厂 trait
-│   │   │   ├── http.rs        # HTTP 工具（占位）
-│   │   │   └── mcp.rs         # MCP 工具（占位）
+│   │   │   ├── http.rs        # HTTP 工具实现
+│   │   │   └── mcp.rs         # MCP 工具运行时
 │   │   └── tool_tracing/
 │   │       ├── mod.rs         # 导出
 │   │       ├── entry.rs       # ToolCallEntry / ToolCallStatus - JSONL 日志结构
 │   │       ├── logger.rs      # ToolCallLogger - 全局日志单例
-│   │       ├── tool_call_logger.rs # LoggingDecorator - 包装 CoreTool 添加日志
-│   │       └── rig_tool_call_logger.rs # RigToolCallLoggingDecorator - 原始 auto 模式适配
+│   │       └── tool_call_logger.rs # ToolCallLoggingDecorator - 包装 CoreTool 添加日志
 │   └── service/
-│       └── dao/tool/
-│           ├── mod.rs         # ToolDao trait
-│           └── sqlite.rs      # SQLite 实现 - get_tool_full() 按 control_mode 拼装
+│       ├── dao/
+│       │   ├── tool/
+│       │   │   ├── mod.rs     # ToolDao trait
+│       │   │   └── sqlite.rs  # SQLite 实现 - get_tool_full() 拼装
+│       │   ├── tool_call/
+│       │   │   ├── mod.rs     # ToolCallDao trait（含 decorate 方法）
+│       │   │   └── impl.rs    # call_manual + decorate 装饰器收敛
+│       │   └── cortex/
+│       │       ├── mod.rs     # CortexDao trait + CortexDaoRegistry 分发
+│       │       └── native/
+│       │           ├── mod.rs # CortexDaoRegistry 单例
+│       │           ├── openai.rs # OpenAiCompatibleCortexDao
+│       │           └── http.rs   # OpenAI 兼容 API HTTP 调用
+│       ├── dal/
+│       │   ├── tool.rs        # ToolDal: execute_auto / execute_manual / call_tool
+│       │   └── brain.rs       # BrainDal: think(ctx, brain, &messages, &tools)
+│       └── domain/runtime/
+│           └── awakening.rs   # Awakening 显式循环（按 control_mode 分发）
 └── migrations/
     └── 20260417000000_create_tools.sql # 已包含 control_mode 字段
 ```
@@ -449,52 +457,60 @@ ai_orz/
 ```
 Input: ToolPo from DB
   ↓
-1. 从 ToolRegistry 根据 protocol 获取工厂，create_tool(po) → Box<dyn CoreTool>
+1. 从 ToolRegistry 根据 protocol 获取工厂，create_tool(po) → Box<dyn CoreTool + Send + Sync>
   ↓
-2. 用 LoggingDecorator 包装 CoreTool（无论 auto/manual 都打日志）
+2. 不在拼装阶段装饰（装饰收敛到 ToolCallDao.call_manual 内部）
   ↓
-3. match control_mode:
-    - Auto:
-        * 创建 RigToolAdapter 持有 ctx + 已经日志包装的 CoreTool
-        * 包装成 Box<dyn ToolDyn>
-        * 返回 Tool { po, rig_tool: Some(...), our_tool: ... }
-    - Manual:
-        * 不需要 Rig 适配
-        * 返回 Tool { po, rig_tool: None, our_tool: ... }
+3. 返回 Tool { po, control_mode: po.control_mode, our_tool: boxed_dyn }
+  ↓
+（our_tool 保持未装饰，执行时由 ToolCallDao.call_manual 内部 decorate 临时装饰）
 ```
 
 ### 工作流程图
 
-#### Auto 模式（Rig 原生）
+#### Auto 模式（Awakening 显式循环）
 ```
-User message → Agent → LLM → generates tool call → Rig calls ToolDyn
-                                    ↓
-                            RigToolAdapter → CoreTool.call(ctx, args)
-                                    ↓
-                            LoggingDecorator 记录日志 → 返回结果 → Rig → LLM → User
+User message → Awakening 循环 → BrainDal.think(messages, tool_descriptors) → OpenAiCompatibleCortexDao → HTTP /chat/completions
+                                          ↓
+                                    ThinkResult::ToolCall?
+                                          ↓
+                                    execute_auto(tool, args) → call_tool
+                                          ↓
+                                    ToolCallDao.call_manual → decorate → CoreTool.call(ctx, args)
+                                          ↓
+                                    ToolCallLoggingDecorator 记录日志 → 返回 (Value, ToolCallEntry)
+                                          ↓
+                                    追加 ChatMessage::Tool 到 messages → 继续循环
 ```
 
-#### Manual 模式（自建链路）
+#### Manual 模式（通过 internal 工具转发）
 ```
-1. LLM generates tool call request
+Awakening 循环 → BrainDal.think → ThinkResult::ToolCall?
    ↓
-2. System 构造 ToolCallRequest 消息存入 messages 表
-   - 消息类型 = ToolCallRequest
-   - 状态 = Pending
-   - content 存工具调用参数 JSON
-   - 关联 agent_id / task_id / project_id
+execute_manual(tool, args)
    ↓
-3. 发布事件到 EventBus → Worker 消费
-   ↓
-4. Worker 根据 tool_id 拿到完整 Tool + CoreTool
-   执行 CoreTool.call(ctx, args) → 得到结果
-   ↓
-5. 构造 ToolCallResult 消息存入 messages 表
-   - 消息类型 = ToolCallResult
-   - 状态 = Success / Failed
-   - 大结果 → 存附件 file_meta，content 只存摘要
-   ↓
-6. 发布完成事件 → 按统计模块轮次预算唤醒 Agent → Agent 读取 ToolCallResult → 在后续 Rig 回合内自行决定是否继续调用工具或通过 `send_message` 回复用户
+根据 tool.po.config.dispatch_mode 选择 internal 工具：
+   ├── sync（默认）: registry.create_tool("request_tool_call")
+   │       ↓
+   │   special_tool.call() → call_manual_tool_for_agent()
+   │       ↓
+   │   call_tool → ToolCallDao.call_manual → decorate → CoreTool.call
+   │       ↓
+   │   同轮返回 (Value, ToolCallEntry)，追加为 ChatMessage::Tool 继续循环
+   │
+   └── async: registry.create_tool("send_tool_call_message")
+           ↓
+       special_tool.call() → MessageDomain.delivery.send_tool_call_request()
+           ↓
+       消息入队，立即返回"已提交"
+           ↓
+       Consumer 收到 ToolCallRequest 消息（to_role=System）
+           ↓
+       tool_execution.call_manual_tool_for_agent() → call_tool
+           ↓
+       构造 ToolCallResult 消息存入 messages 表
+           ↓
+       触发下一次 awaken()，Agent 读取 ToolCallResult 继续
 ```
 
 ### 分层符合性检查
@@ -502,7 +518,7 @@ User message → Agent → LLM → generates tool call → Rig calls ToolDyn
 ✅ **严格单向逐层调用**：`handler → domain → dal → dao`，无反向调用  
 ✅ **禁止同层互调**：dal 组合 dao，不跨 dal 调用  
 ✅ **复用现有基础设施**：消息表、事件总线、附件存储全部复用  
-✅ **职责分离清晰**：注册中心、日志、Rig 适配分开，单一职责
+✅ **职责分离清晰**：注册中心、日志装饰（ToolCallDao 内部收敛）、internal 工具转发分开，单一职责
 
 ### 测试结果
 
@@ -806,13 +822,14 @@ impl ToolRegistry {
 
 | 模式 | 适用场景 | 实现方式 |
 |------|----------|----------|
-| **Rig Auto** | 简单无状态工具（计算、格式化等） | rig-core 原生工具调用机制，快速开发 |
-| **自建 Manual** | 组织能力工具（创建任务/项目、分配 Agent 等） | ✅ 消息驱动链路，可追溯、可审计、可控 |
+| **ControlMode::Auto** | 简单无状态工具（计算、格式化等） | `execute_auto` → `call_tool`，Awakening 显式循环中同步执行，结果作为 ChatMessage::Tool 追加到对话历史 |
+| **ControlMode::Manual（sync）** | 轻量但有审计需求的工具 | `execute_manual` → `request_tool_call` internal 工具 → `call_tool`，同轮返回结果 |
+| **ControlMode::Manual（async）** | 组织能力工具（创建任务/项目、分配 Agent 等） | `execute_manual` → `send_tool_call_message` internal 工具 → 消息驱动链路，可追溯、可审计、可控 |
 
-**两者共存策略：**
-- Rig Auto 工具直接在思考循环中同步调用，不经过消息队列
-- 自建 Manual 工具走完整消息链路，所有操作留痕
-- LLM 输出格式中通过 `tool_type: "rig" | "manual"` 区分
+**共存策略：**
+- Auto 工具在 Awakening 显式循环中同步调用，不经过消息队列
+- Manual 工具按 `dispatch_mode` 选择同步/异步：sync 直接调 `call_tool`，async 走完整消息链路
+- LLM 通过 `ToolDescriptor` 看到所有可用工具，按 `control_mode` 在 Awakening 层分发执行
 
 ### 关键设计决策记录
 
@@ -1130,22 +1147,23 @@ ToolPo {
 
 | 字段值 | 含义 |
 |---|---|
-| `Auto` | 进入 Rig tools，由 Rig 原生 tool calling 自动调用 |
-| `Manual` | 不进入 Rig，走自建 `ToolCallRequest` / `ToolCallResult` 消息链路 |
+| `Auto` | Awakening 显式循环中由 `execute_auto` 直接执行，结果作为 `ChatMessage::Tool` 追加到对话历史 |
+| `Manual` | 通过 `execute_manual` 转发到 internal 工具（`request_tool_call` 同步 / `send_tool_call_message` 异步） |
 
 因此：
 
 ```text
 Builtin 不等于 Auto；
 Http 不等于 Manual；
-是否进入 Rig 只看 ControlMode。
+调用方式只看 ControlMode。
 ```
 
-`wrap_for_rig` 的唯一过滤条件是：
+Awakening 循环中按 `control_mode` 分发的逻辑是：
 
 ```rust
-if tool.po.control_mode != ControlMode::Auto {
-    continue;
+match tool.po.control_mode {
+    ControlMode::Auto => tool_dal.execute_auto(ctx, tool, args).await,
+    ControlMode::Manual => tool_dal.execute_manual(ctx, tool, args).await,
 }
 ```
 
@@ -1262,7 +1280,7 @@ ToolCallResult 写回消息链路
 - `fs_read` - 读取本地文件（支持范围读取/grep搜索）
 - `fs_write` - 修改本地文件（支持多种编辑模式，原子操作）
 
-所有工具都启用 `ControlMode::Auto`，可以被 Rig 自动调用。
+所有工具都启用 `ControlMode::Auto`，在 Awakening 显式循环中由 `execute_auto` 同步调用。
 
 ### 安全设计
 
@@ -1409,8 +1427,8 @@ test result: ok. 63 passed; 0 failed; 0 ignored
 ### 核心设计决策
 
 #### 执行模型
-- **协议/模式**：`protocol = Builtin`，`control_mode = Manual`
-- 不走 Rig Auto 同步调用，走自建 `ToolCallRequest` / `ToolCallResult` 消息链路异步执行
+- **协议/模式**：`protocol = Builtin`，`control_mode = Manual`，`dispatch_mode = async`
+- 不走 `execute_auto` 同步调用，通过 `execute_manual` → `send_tool_call_message` internal 工具走自建 `ToolCallRequest` / `ToolCallResult` 消息链路异步执行
 - 消费者负责实际执行，完成后唤醒 Agent
 
 #### 存储结构（完全遵循现有约定）

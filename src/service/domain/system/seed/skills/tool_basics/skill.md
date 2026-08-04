@@ -9,11 +9,12 @@
 | 类型 | 加载方式 | 调用方式 | 你需要做什么 |
 |------|---------|---------|------------|
 | **Auto 工具** | 自动注入模型上下文 | 模型直接 function calling | 无需手动请求，模型自主决定调用 |
-| **Manual 工具** | 通过 Prompt 展示给你 | 手动调用 `request_tool_call` 或 `send_tool_call_message` | 需要你明确发起调用请求 |
+| **Manual 工具** | 通过 Prompt 展示给你 | 你直接 function calling，系统自动分发 | 需要你明确发起调用，系统按工具配置自动决定同步/异步分发 |
 
 **关键认知**：
 - Auto 工具对你透明，模型在推理时自动选择并调用，你不需要关注
 - Manual 工具会以工具列表形式展示在你的 Prompt 中，**只有你主动调用才会执行**
+- Manual 工具的同步/异步分发由系统根据工具配置（`dispatch_mode`）自动决定，你无需关心转发细节
 - 本指南后续内容主要针对 Manual 工具
 
 ## 工具包：按标签组织
@@ -22,7 +23,7 @@
 
 | 标签 | 含义 | 包含的工具示例 |
 |------|------|--------------|
-| `tool_management` | 工具管理 | `list_tools`、`query_tools`、`request_tool_call` |
+| `tool_management` | 工具管理 | `list_tools`、`query_tools`、`list_tool_tags` |
 | `skill_management` | 技能管理 | `search_skill`、`list_skill_tags`、`uninstall_skill_from_agent` |
 | `messaging` | 消息通信 | `send_message`、`send_message_to_agent` |
 | `collaboration` | 协作 | `search_agents`、`get_agent`、`get_reception_agent` |
@@ -72,51 +73,27 @@
 
 **适用**：确认某个 Agent 当前可用的工具集。新工具包安装后，`installed_tags` 会立即更新，无需重启。
 
-## 工具调用：两种模式
+## 工具调用：同步与异步自动分发
 
-Manual 工具有两种调用模式，**根据任务特征选择**：
+Manual 工具的同步/异步属性由工具配置（`ToolPo.config.dispatch_mode`）决定，**系统在 awakening 循环中按 `control_mode` 分发执行**：
 
-### 同步调用 — `request_tool_call`
+- **Auto 工具** → 系统直接执行
+- **Manual 工具** → 系统根据 `dispatch_mode` 自动选择同步或异步转发执行
+
+你只需要像调用普通函数一样发起 Manual 工具调用，**无需关心转发的内部细节**，系统会按工具的配置自动处理。
+
+### 同步分发（`dispatch_mode = sync`，默认）
 
 **行为**：阻塞当前轮次，结果在**当前回合**立即返回，可以马上用于后续推理。
-
-**关键参数**：
-- `tool_id` — 工具 ID（必填）
-- `tool_name` — 工具名称（必填）
-- `params` — 工具调用参数（JSON，必填）
-- `project_id` — 关联项目 ID（可选，会注入到调用上下文）
-- `task_id` — 关联任务 ID（可选，会注入到调用上下文）
-
-**返回**：`RequestToolCallResponse`
-- `tool_call_id` — 本次调用的唯一 ID（即 `trace_ref.call_id`，可用于后续追溯）
-- `status` — 调用状态（`completed` 表示成功完成）
-- `result` — 工具返回的具体内容（JSON）
 
 **适用场景**：
 - 需要立即获取结果继续推理（如查询数据库、读取配置）
 - 短时间运行的工具（查询类、计算类）
 - 结果是后续决策的依赖项
 
-**示例**：
-```json
-{
-  "tool_id": "tool_xxx",
-  "tool_name": "get_current_time",
-  "params": {"timezone": "Asia/Shanghai"},
-  "project_id": "proj_xxx"
-}
-```
-
-### 异步调用 — `send_tool_call_message`
+### 异步分发（`dispatch_mode = async`）
 
 **行为**：不阻塞当前轮次，立即返回 `request_id` 和 `message_id`。工具执行结果在**下一轮 awaken** 中以 `ToolCallResult` 消息形式送达。
-
-**关键参数**：与 `request_tool_call` 相同。
-
-**返回**：`SendToolCallMessageResponse`
-- `request_id` — 请求 ID（用于关联异步结果）
-- `message_id` — 消息 ID（系统内部追踪用）
-- `status` — 派发状态
 
 **适用场景**：
 - 长时间运行的工具（外部 API 调用、文件处理、复杂计算）
@@ -124,11 +101,11 @@ Manual 工具有两种调用模式，**根据任务特征选择**：
 - 并行发起多个工具调用（多个异步调用可同时进行）
 - 调用结果可以延后处理
 
-**关键差异**：异步调用的结果不是立即返回的，你需要在下一轮 awaken 时处理新到达的 `ToolCallResult` 消息。系统会自动调度工具执行，并通过消息系统投递结果。
+**关键差异**：异步分发的结果不是立即返回的，你需要在下一轮 awaken 时处理新到达的 `ToolCallResult` 消息。系统会自动调度工具执行，并通过消息系统投递结果。
 
-### 模式选择决策
+### 同步 vs 异步的判断依据
 
-| 场景 | 推荐模式 | 理由 |
+| 场景 | 期望分发模式 | 理由 |
 |------|---------|------|
 | 查询类（读取数据、获取状态） | 同步 | 结果立即可用，用于后续推理 |
 | 计算类（轻量计算、格式转换） | 同步 | 快速完成，无阻塞风险 |
@@ -137,18 +114,20 @@ Manual 工具有两种调用模式，**根据任务特征选择**：
 | 需要并行多个调用 | 异步 | 多个异步可同时进行 |
 | 结果是下一步决策的依赖 | 同步 | 必须等待结果 |
 
+**注意**：分发模式由工具配置决定，**不是你调用时选择的**。若你发现某工具的同步/异步属性与上述场景期望不符，可向系统设计者反馈调整工具的 `dispatch_mode` 配置。
+
 ## 结果处理与追溯
 
-### 同步调用的结果
+### 同步分发的结果
 
-`request_tool_call` 直接返回 `RequestToolCallResponse`，其中：
+同步分发的 Manual 工具直接返回结果，其中：
 - `status` 为 `"completed"` 表示成功
 - `result` 是工具返回的 JSON 数据
 - `tool_call_id` 是本次调用的唯一 ID，**保留它用于后续追溯**
 
-### 异步调用的结果
+### 异步分发的结果
 
-异步调用的结果以 `ToolCallResult` 消息形式在下一轮 awaken 送达，包含：
+异步分发的结果以 `ToolCallResult` 消息形式在下一轮 awaken 送达，包含：
 - `request_id` — 关联你发起的异步请求
 - `tool_id` / `tool_name` — 工具标识
 - 执行结果（成功携带 `result` + `trace_ref`，失败携带 `error_message`）
@@ -168,9 +147,9 @@ Manual 工具有两种调用模式，**根据任务特征选择**：
 - 通过 `get_tool_call_entry` 查询完整调用详情
 
 **何时会有 `trace_ref`**：
-- ✅ 同步调用成功 → 有
-- ✅ 异步调用执行后成功 → 有
-- ✅ 异步调用执行后失败 → 有（如果执行已开始）
+- ✅ 同步分发成功 → 有
+- ✅ 异步分发执行后成功 → 有
+- ✅ 异步分发执行后失败 → 有（如果执行已开始）
 - ❌ 调用前参数校验失败 → 无（未真正执行）
 - ❌ 策略失败（如工具未找到） → 无
 
@@ -217,17 +196,17 @@ Manual 工具有两种调用模式，**根据任务特征选择**：
 2. **分类处理**：
    - 参数错误 → 修正参数后重试
    - 工具内部错误 → 记录问题，考虑换用替代工具或人工介入
-   - 超时类错误 → 考虑改用异步调用
+   - 同步分发超时类错误 → 该工具可能更适合异步分发，向系统设计者反馈调整 `dispatch_mode`
 
 3. **不要无脑重试**：相同参数重试大概率还是失败，先分析原因再决定策略
 
 ## 最佳实践
 
 1. **先查后用**：不熟悉的工具先 `query_tools` 查看参数定义，避免盲目调用
-2. **看场景选模式**：短任务用同步 `request_tool_call`，长任务用异步 `send_tool_call_message`
+2. **理解分发模式**：Manual 工具的同步/异步由工具配置（`dispatch_mode`）决定，你不能选择，只能了解当前工具是同步还是异步以正确处理结果（同步立即用、异步等下一轮 `ToolCallResult`）
 3. **保留 `tool_call_id`**：重要调用保留 ID，便于后续 `get_tool_call_entry` 追溯
 4. **善用标签**：通过 `list_tool_tags` 发现工具包，通过 `list_installed_tool_packs` 确认可用工具集
 5. **失败分析**：失败时先分析错误信息再决定重试策略，避免无意义重复
-6. **并行优化**：多个独立调用用异步模式并行发起，提升效率
+6. **并行优化**：对于异步分发的工具，可并行发起多个独立调用，结果在下一轮 awaken 集中送达
 7. **关联上下文**：调用时传 `project_id` / `task_id`，便于后续按上下文查询调用历史
 8. **追溯链路**：`tool_call_id` → `get_tool_call_entry` → 完整调用详情（入参、出参、耗时、状态）

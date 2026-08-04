@@ -403,8 +403,8 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 | Tool/Skill Vector | `tool_skill_vector_test.rs` | 2+5 | FTS5 搜索 + 向量语义搜索/索引维护/混合排序（5 个 ignored） |
 | Message Vector | `message_vector_test.rs` | 2+4 | Message FTS5 + 向量搜索/索引维护/混合排序（4 个 ignored） |
 | Project/Task Vector | `project_task_vector_test.rs` | 4+4 | Project/Task FTS5 + 向量搜索/索引维护/混合排序（4 个 ignored） |
-| Agent Awaken | `agent_awaken_test.rs` | 6+1 | Consumer 编排 + awaken Mock + 真实 LLM（1 个 ignored） |
-| Tool Call | `tool_call_test.rs` | 5+1 | debug_call_tool（Builtin/HTTP/SSRF）+ Manual 异步消息链 + 真实 LLM Auto 工具（1 个 ignored） |
+| Agent Awaken | `agent_awaken_test.rs` | 6+1 | Consumer 编排 + awakening 循环按 control_mode 分发（execute_auto/execute_manual）+ 真实 LLM（1 个 ignored） |
+| Tool Call | `tool_call_test.rs` | 5+1 | debug_call_tool（Builtin/HTTP/SSRF）+ execute_manual→internal 工具→call_tool 异步链 + 真实 LLM execute_auto 工具（1 个 ignored） |
 | Memory Cognition | `memory_test.rs` | 4+3 | 短期记忆 query/task_id 过滤 + FTS5 搜索 + 知识节点搜索 + 真实向量语义搜索/索引维护/混合排序（3 个 ignored） |
 
 ### 记忆认知测试模式（2026-08-04 新增）
@@ -435,12 +435,12 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 |------|----------|-----------|----------|
 | **debug_call_tool** | HTTP 端点同步调用 | 否 | CI 默认（Builtin/HTTP/SSRF） |
 | **Manual 异步消息链** | Consumer 处理 ToolCallRequest → ToolCallResult | 否 | CI 默认（Mock HTTP Server） |
-| **Auto awaken 工具执行** | awaken 时 Rig 调用 | 是 | `#[ignore]` 真实 LLM |
+| **Auto awaken 工具执行** | awaken 时通过 execute_auto 调用 | 是 | `#[ignore]` 真实 LLM |
 
 **关键设计**：
 - **Mock HTTP Server**：测试内启动绑定随机端口的 TCP listener，返回固定响应，用于验证 HTTP 工具调用与 SSRF 防护
 - **SSRF 防护**：通过创建 `allow_local_network=false` 的 HTTP 工具并断言调用失败，验证多层防护（scheme/域名/本地网络/DNS pinning）
-- **ToolCallLogger 验证**：Manual 路径通过 domain 层 `call_manual_tool_for_agent` 触发并查询 trace 记录，验证 call_id/tool_id/input/output/status 字段
+- **ToolCallLogger 验证**：Manual 路径通过 execute_manual → 特殊 internal 工具转发 → call_manual_tool_for_agent → call_tool 触发并查询 trace 记录，验证 call_id/tool_id/input/output/status 字段
 
 ```rust
 // 默认测试：无 LLM，验证工具调用编排与 trace

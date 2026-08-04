@@ -30,7 +30,7 @@
 
 | 维度 | 现状 |
 |------|------|
-| **后端** | Rust + Axum + SQLite + rig-core，单二进制可部署 |
+| **后端** | Rust + Axum + SQLite + 原生 CortexDao（OpenAI 兼容），单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖 |
 | **测试** | 941 个测试，100% 通过（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50） |
@@ -45,7 +45,7 @@
   - 作为 Server：对外暴露 A2A 协议端点供外部调用
   - 异步结果回传：Push 回调端点 + 30秒轮询兜底双通道，适配层直接处理，外部协议不污染内部事件中心
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），支持 FTS5 + 向量混合搜索
-- 🛠️ **混合工具调用**：简单工具走 LLM auto，关键工具走自建 manual 可控链路
+- 🛠️ **统一工具调用架构**：execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → call_manual + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用
 - 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送），多渠道适配器架构就绪（微信/Slack/Webhook/邮件 待实现）
 - 📋 **任务协作**：项目 + 任务 + Agent 间任务分配，状态机、进度追踪、依赖关系，支持委派给外部 A2A Agent
 - 🔍 **综合搜索**：FTS5 关键词 + 向量语义 + 知识图谱三合一

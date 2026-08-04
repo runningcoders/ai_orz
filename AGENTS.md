@@ -12,7 +12,7 @@
 
 **AI Orz** - 全栈 Rust 多 Agent 协作框架，以组织化形式管理和执行 AI 代理任务
 
-- **后端**：Rust + Axum + SQLite + sqlx 0.8 + rig-core 0.34
+- **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
 - **技术特色**：严格分层架构、类型安全、941 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛 35%、30+ 主题切换
 
@@ -26,7 +26,7 @@
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
 | 📨 消息渠道系统 | ✅ | 多渠道消息出站推送（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 WebSocket 入站长连接已上线，适配层架构；微信/Slack/邮件/Webhook 出站骨架就绪，入站待实现 |
 | 🔌 A2A 外部 Agent | ✅ | 完整 A2A 协议支持：Client（注册外部 CLI/Remote Agent 并委派任务）、Server（对外暴露协议端点）、异步结果回传（Push 回调 + 30秒轮询兜底，适配层直接处理，外部协议不污染内部事件中心） |
-| 🛠️ 混合模式工具调用 | ✅ | 简单工具走 rig auto，关键工具走自建 manual 可控链路 |
+| 🛠️ 统一工具调用架构 | ✅ | execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → call_manual + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
 | 📎 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
@@ -1109,7 +1109,9 @@ Agent
 
 ## 七、Known Issues & 解决方案
 
-### 7.1 Rig 包名问题
+### 7.1 Rig 包名问题（历史，rig 已移除）
+
+> ⚠️ **历史记录**：项目已移除 rig-core 依赖，改用原生 CortexDao 实现（`OpenAiCompatibleCortexDao` 直接 HTTP 调用 OpenAI 兼容 API）。本节作为历史问题记录保留，不再适用于当前架构。
 
 **错误现象**：
 ```
@@ -1117,7 +1119,7 @@ error[E0670]: `async fn` is not permitted in Rust 2015
 error[E0432]: unresolved import `rig::completion::ToolDefinition`
 ```
 
-**解决方案**：
+**解决方案**（历史）：
 1. 确保 `Cargo.toml` 使用 `edition = "2024"`
 2. 从正确路径导入：`use rig::tool::{ToolDyn, ToolError};`
 3. 避免从 `rig::completion::*` 导入工具相关类型

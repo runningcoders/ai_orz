@@ -119,7 +119,7 @@ async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesPar
 | `description` | 是 | 工具描述（给 LLM 看） | `description = "List all files in a skill"` |
 | `params` | 是 | 参数类型完整路径 | `params = "common::api::ListSkillFilesParams"` |
 | `neural` | 否 | 标记为神经工具（无值，出现即为 true）。唤醒 Agent 时自动注入 Prompt | `neural` |
-| `tags` | 否 | 工具标签（单字符串，逗号分隔多个） | `tags = "project_management"` |
+| `tags` | 否 | 工具标签（单字符串，逗号分隔多个，如 "tool_management,internal"） | `tags = "tool_management,internal"` |
 
 ### 宏生成代码
 
@@ -243,8 +243,8 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 |------|------------|------|
 | 资源发现 / 检索类 | ✅ neural | query_tools、list_tools、query_model_providers、query_message_channels、query_users、query_artifacts、query_memory、search_memory、search_skill、search_skills、list_messages |
 | 记忆写入类 | ✅ neural（保留） | save_short_term_memory、save_long_term_memory、settle_memory、update_memory、delete_memory |
-| 消息发送类 | ✅ neural（保留） | send_message、send_task_assignment_message、send_tool_call_message |
-| 工具调用类 | ✅ neural（保留） | request_tool_call |
+| 消息发送类 | ✅ neural（保留） | send_message、send_task_assignment_message |
+| 工具调用类（internal） | ❌ 非 neural（改 internal 标签） | request_tool_call、send_tool_call_message（已移除 neural flag，改用 tags="...,internal" 标签作为内部工具，由 execute_auto/execute_manual 分发调用） |
 | CRUD / 配置管理类 | ❌ 非 neural | create_project、update_task、bind_tool_to_agent 等 |
 
 ### tags 标签体系
@@ -257,6 +257,7 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 | `skill_management` | hr/skill、hr/agent（skill pack 系列） | 技能管理 |
 | `messaging` | finance/message | 消息收发 |
 | `file_management` | finance/attachment | 文件资产管理 |
+| `internal` | request_tool_call、send_tool_call_message | 内部工具，不直接暴露给 Agent，由 execute_auto/execute_manual 分发调用 |
 
 ---
 
@@ -329,7 +330,7 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 | finance/message | 5 | 3（list_messages、send_message、send_task_assignment_message） | messaging×4、collaboration×1 |
 | finance/message_channel | 8 | 1（query_message_channels） | - |
 | finance/model_provider | 8 | 1（query_model_providers） | - |
-| finance/tool | 13 | 4（list_tools、query_tools、request_tool_call、send_tool_call_message） | tool_management×13 |
+| finance/tool | 13 | 2（list_tools、query_tools） | tool_management×13、internal×2（request_tool_call、send_tool_call_message） |
 | hr/agent | 24 | 7（query_memory、search_memory、save_short_term_memory、save_long_term_memory、settle_memory、update_memory、delete_memory） | collaboration×4、skill_management×3、tool_management×3 |
 | hr/skill | 13 | 2（search_skill、search_skills） | skill_management×13 |
 | organization/organization | 3 | 0 | - |
@@ -340,15 +341,15 @@ neural 意味着「Agent 唤醒时自动注入 Prompt」，**仅用于资源发�
 | project/task | 10 | 0 | project_management×10 |
 | user/profile | 2 | 0 | - |
 
-#### neural 工具清单（20 个）
+#### neural 工具清单（18 个）
 
 **资源发现 / 检索类（11 个）**：query_tools、list_tools、query_model_providers、query_message_channels、query_users、query_artifacts、query_memory、search_memory、search_skill、search_skills、list_messages
 
 **记忆写入类（5 个）**：save_short_term_memory、save_long_term_memory、settle_memory、update_memory、delete_memory
 
-**消息发送类（3 个）**：send_message、send_task_assignment_message、send_tool_call_message
+**消息发送类（2 个）**：send_message、send_task_assignment_message
 
-**工具调用类（1 个）**：request_tool_call
+> **2026-08-05 更新**：request_tool_call / send_tool_call_message 已从 neural 工具迁移为 internal 标签的内部工具，不再注入唤醒 Prompt，由 execute_auto/execute_manual 分发调用（详见上方 tags 标签体系的 `internal` 行）。neural flag 仍用于其他资源发现 / 检索 / 记忆写入 / 消息发送类工具。
 
 #### 未注册为工具的 handler（43 个，按类型）
 
