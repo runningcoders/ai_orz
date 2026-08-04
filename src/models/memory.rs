@@ -405,3 +405,19 @@ fn flatten_tags(tags_json: &str) -> String {
         .unwrap_or_default()
         .join(" ")
 }
+
+/// 知识图谱推荐起点（domain 层结构）
+///
+/// 包含知识节点 PO + 关联度数统计信息，
+/// 由 DAL 层 `recommend_seed_nodes` 方法返回。
+#[derive(Debug, Clone)]
+pub struct SeedNodeRecommendation {
+    /// 知识节点 PO
+    pub node: LongTermKnowledgeNodePo,
+    /// 关联度数（入边 + 出边总数）
+    pub degree: usize,
+    /// 入边数（被其他节点引用次数）
+    pub incoming_count: usize,
+    /// 出边数（引用其他节点次数）
+    pub outgoing_count: usize,
+}
