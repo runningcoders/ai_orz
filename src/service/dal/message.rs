@@ -331,12 +331,9 @@ impl MessageDal for MessageDalImpl {
                 .get_default_embedding_provider(ctx.clone())
                 .await?
         {
-            let cortex = self
-                .cortex_dao
-                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
             match self
                 .cortex_dao
-                .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                .embed_text_for_search(ctx.clone(), &provider, keyword)
                 .await
             {
                 Ok(params) => {
@@ -429,10 +426,7 @@ async fn try_build_vector_params_for_entity(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao
-        .embed_entity(ctx, cortex.as_ref(), entity)
-        .await?;
+    let params = cortex_dao.embed_entity(ctx, &provider, entity).await?;
     Ok(Some(params))
 }
 

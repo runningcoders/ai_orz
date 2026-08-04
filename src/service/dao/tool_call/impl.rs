@@ -1,14 +1,12 @@
 //! Default implementation of ToolCallDao
 
-use crate::models::tool::{CoreTool, RigToolAdapter, Tool, ToolCallTraceRef, ToolPo};
+use crate::models::tool::{CoreTool, Tool, ToolCallTraceRef, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
 use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
-use common::enums::tool::ControlMode;
-use rig::tool::DynamicTool;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -67,32 +65,6 @@ impl ToolCallDao for ToolCallDaoImpl {
         let tool_raw: Box<dyn CoreTool + Send + Sync> = tool_raw;
 
         Ok(Some(tool_raw))
-    }
-
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<DynamicTool> {
-        let mut rig_tools = Vec::new();
-
-        for tool in tools {
-            // Only include tools that are Auto mode (automatic invocation by Rig)
-            if tool.po.control_mode != ControlMode::Auto {
-                continue;
-            }
-
-            // Clone the core tool (we need our own copy for wrapping)
-            let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
-
-            // Wrap with logging decorator to capture logs
-            let decorated = ToolCallLoggingDecorator::new(cloned);
-            let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
-
-            // Adapt to Rig's DynamicTool interface (rig 0.41+)
-            let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_box);
-            let dynamic_tool = rig_adapter.into_dynamic_tool();
-
-            rig_tools.push(dynamic_tool);
-        }
-
-        rig_tools
     }
 
     async fn call_manual(

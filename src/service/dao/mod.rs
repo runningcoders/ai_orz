@@ -31,6 +31,7 @@ pub fn init_all() {
     artifact::init();
     attachment::init();
     cortex::init();
+    cortex::native::init();
     cron_trigger::init();
     message::init();
     message_channel::init();

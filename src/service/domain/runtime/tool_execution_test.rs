@@ -20,7 +20,6 @@ mod tests {
     use common::enums::{ControlMode, ToolProtocol, ToolStatus};
     use common::error::Result;
     use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
-    use rig::tool::{DynamicTool, ToolErrorKind, ToolExecutionError};
     use serde_json::{Value, json};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -35,7 +34,6 @@ mod tests {
             _ctx: RequestContext,
             _agent: &AgentPo,
             _memories: Vec<Memory>,
-            _tools: Vec<Tool>,
         ) -> Result<Brain> {
             unimplemented!("not needed by tool execution routing tests")
         }
@@ -54,8 +52,25 @@ mod tests {
             _ctx: RequestContext,
             _brain: &Brain,
             _prompt: &str,
-        ) -> Result<String> {
+            _tools: &[crate::models::cortex_types::ToolDescriptor],
+        ) -> Result<crate::models::cortex_types::ThinkResult> {
             unimplemented!("not needed by tool execution routing tests")
+        }
+
+        async fn embed_entity(
+            &self,
+            _ctx: RequestContext,
+            _entity: &dyn crate::models::vector::Vectorizable,
+        ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
+
+        async fn embed_text_for_search(
+            &self,
+            _ctx: RequestContext,
+            _text: &str,
+        ) -> Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
         }
     }
 
@@ -424,10 +439,6 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<DynamicTool> {
-            unimplemented!("not needed by tool execution routing tests")
-        }
-
         async fn get_stats(
             &self,
             _ctx: RequestContext,
@@ -519,16 +530,14 @@ mod tests {
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                let error = ToolExecutionError::new(ToolErrorKind::Other, error_message.clone());
                 return Err(match &self.error_trace_ref {
                     Some(trace_ref) => {
                         use common::error::{ErrorCode, ErrorType};
                         let mut err = common::error::Error::typed(
                             ErrorCode::ToolExecutionFailed,
                             ErrorType::Tool,
-                            error.to_string(),
-                        )
-                        .with_source(error);
+                            error_message.clone(),
+                        );
                         let mut field = common::error::ErrorField::new();
                         field.insert(
                             "trace_ref".to_string(),
@@ -537,9 +546,7 @@ mod tests {
                         err = err.with_field(field);
                         err
                     }
-                    None => {
-                        common::error::Error::tool_call_failed(error.to_string()).with_source(error)
-                    }
+                    None => common::error::Error::tool_call_failed(error_message.clone()),
                 });
             }
             Ok((
@@ -560,16 +567,14 @@ mod tests {
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                let error = ToolExecutionError::new(ToolErrorKind::Other, error_message.clone());
                 return Err(match &self.error_trace_ref {
                     Some(trace_ref) => {
                         use common::error::{ErrorCode, ErrorType};
                         let mut err = common::error::Error::typed(
                             ErrorCode::ToolExecutionFailed,
                             ErrorType::Tool,
-                            error.to_string(),
-                        )
-                        .with_source(error);
+                            error_message.clone(),
+                        );
                         let mut field = common::error::ErrorField::new();
                         field.insert(
                             "trace_ref".to_string(),
@@ -578,9 +583,7 @@ mod tests {
                         err = err.with_field(field);
                         err
                     }
-                    None => {
-                        common::error::Error::tool_call_failed(error.to_string()).with_source(error)
-                    }
+                    None => common::error::Error::tool_call_failed(error_message.clone()),
                 });
             }
             Ok((

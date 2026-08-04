@@ -1,6 +1,7 @@
 //! Runtime Awakening 具体实现
 
 use crate::models::agent::Agent;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -110,7 +111,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
-        scene: ThinkingScene,
+        _scene: ThinkingScene,
     ) -> Result<RequestContext> {
         // 幂等：brain 已装配则直接返回原 ctx（无需再 enrich provider 字段）
         if agent.brain.is_some() {
@@ -119,53 +120,21 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &*agent);
 
-        // 工具已在 hr_domain.get_agent(with_tools=true) 时加载到 agent.tools
-        // 从 agent.tools 中分离出 Auto 工具用于 Rig 注册，Manual 工具保留供 Prompt 使用
-        // Tool 实体不可 Clone（含 dyn Trait），使用 partition 转移所有权
+        // 工具不再分离：所有工具保留在 agent.tools 中，
+        // awaken/sleep_and_settle 时按场景过滤展示，ToolDescriptor 列表在 think 时构建。
         //
-        // Settle 场景过滤 Auto 工具：只保留 tags 含 "neural" 或 "memory" 的工具注册到 Rig，
-        // 避免模型在沉淀模式下通过 function calling 调用消息类工具。
-        // Manual 工具的过滤在 sleep_and_settle 中按场景处理（Prompt 展示层）。
-        let rig_tools = if agent.po.kind.is_local() {
-            let all_tools = std::mem::take(&mut agent.tools);
-            let (auto, manual): (Vec<_>, Vec<_>) = all_tools
-                .into_iter()
-                .partition(|t| matches!(t.po.control_mode, common::enums::ControlMode::Auto));
-            let auto = match scene {
-                ThinkingScene::Awaken => auto,
-                ThinkingScene::Settle => auto
-                    .into_iter()
-                    .filter(|t| {
-                        let tags = t.po.get_tags();
-                        scene.is_tool_allowed(&tags)
-                    })
-                    .collect(),
-            };
-            agent.tools = manual;
-            auto
-        } else {
-            Vec::new()
-        };
-
-        // 通过 BrainDal 构造 Brain（内部按 kind 分发，并对 Local agent enrich ModelProvider）
-        // memories 传空：awaken 时会独立加载 recent_memories 用于 prompt
-        //
-        // TODO(brain-cache): 目前每条消息都重新加载 agent 并重建 Brain（含 HTTP client、
-        // Rig agent、tool adapter），存在性能浪费。当前选择此模式是因为恢复手段有限
-        // （Rig 工具捕获 ctx 快照需要每轮刷新，否则会变 stale）。若未来引入 brain 缓存，
-        // 需重新评估 Rig 神经工具 ctx 新鲜度问题（参考 request_tool_call 同步路径依赖
-        // params 显式 enrich 的缓解措施）。
+        // TODO(brain-cache): 目前每条消息都重新加载 agent 并重建 Brain，
+        // 存在性能浪费。若未来引入 brain 缓存，需重新评估 ctx 新鲜度问题。
         let brain = self
             .brain_dal()
-            .wake_brain(ctx.clone(), &agent.po, Vec::new(), rig_tools)
+            .wake_brain(ctx.clone(), &agent.po, Vec::new())
             .await?;
 
-        // 修复：wake_brain 内部的 enrich_ctx!(ctx, &provider) 作用在局部变量上，
-        // 返回 Brain 后该 ctx 丢失。此处从 brain.cortex 提取 ModelProvider 重新 enrich，
+        // 从 brain.model_provider 提取配置重新 enrich ctx（仅 Local agent 有值），
         // 保证返回的 ctx 含 model_provider_id / model_name（供 awaken 的统计/trace 使用）。
-        // 外部 agent（Cli/Remote）无 cortex，ctx 保持原样。
-        let ctx = match brain.cortex.as_ref() {
-            Some(cortex) => enrich_ctx!(&ctx, &cortex.model_provider),
+        // 外部 agent（Cli/Remote）无 model_provider，ctx 保持原样。
+        let ctx = match brain.model_provider.as_ref() {
+            Some(provider) => enrich_ctx!(&ctx, provider),
             None => ctx,
         };
 
@@ -246,12 +215,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         let prompt = builder.build();
 
-        // Step 4: 调用大脑思考
+        // Step 4: 调用大脑思考（带工具调用循环）
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
         let brain = agent
             .brain
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
+
+        // 构建 ToolDescriptor 列表（从 agent.tools 直接派生，供模型 function calling）
+        let tool_descriptors: Vec<ToolDescriptor> =
+            agent.tools().iter().map(ToolDescriptor::from).collect();
 
         // 调用 think，先捕获结果（不立即 ?）
         // set_idle 由 _busy_guard 在函数返回时自动执行（RAII）
@@ -259,23 +232,79 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 修复：think 无超时，Local 路径调 HTTP LLM API 若网络 hang 住，
         // set_idle 永不执行，Agent 永远 Busy
         const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
-        let think_result = match tokio::time::timeout(
-            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
-            self.brain_dal().think(ctx.clone(), brain, &prompt),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(_elapsed) => Err(err!(
-                Internal,
-                "brain think timeout after {}s",
-                THINK_TIMEOUT_SECS
-            )),
-        };
+        const MAX_TOOL_ITERATIONS: usize = 10;
+
+        // 工具调用循环：think → ToolCall? → execute tools → append to prompt → think again
+        // 最终模型返回 Final 时退出循环，raw_output 即最终回答内容
+        let think_result =
+            match tokio::time::timeout(std::time::Duration::from_secs(THINK_TIMEOUT_SECS), async {
+                let mut current_prompt = prompt.clone();
+                for _ in 0..MAX_TOOL_ITERATIONS {
+                    let result = self
+                        .brain_dal()
+                        .think(ctx.clone(), brain, &current_prompt, &tool_descriptors)
+                        .await?;
+                    match result {
+                        ThinkResult::Final { content, .. } => return Ok(content),
+                        ThinkResult::ToolCall {
+                            content,
+                            tool_calls,
+                            ..
+                        } => {
+                            // 追加模型思考内容（可能为空）
+                            if let Some(c) = content {
+                                current_prompt.push_str(&c);
+                                current_prompt.push('\n');
+                            }
+                            // 执行每个工具调用，将结果拼回 prompt
+                            for tc in tool_calls {
+                                match agent.tools().iter().find(|t| t.po.name == tc.name) {
+                                    Some(tool) => {
+                                        match tool.our_tool.call(ctx.clone(), tc.arguments).await {
+                                            Ok(v) => {
+                                                current_prompt.push_str(&format!(
+                                                    "\n[ToolCall {} result]: {}\n",
+                                                    tc.name, v
+                                                ));
+                                            }
+                                            Err(e) => {
+                                                current_prompt.push_str(&format!(
+                                                    "\n[ToolCall {} error]: {}\n",
+                                                    tc.name, e
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        current_prompt.push_str(&format!(
+                                            "\n[ToolCall {} not found]\n",
+                                            tc.name
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(err!(
+                    Internal,
+                    "think loop exceeded max {} iterations",
+                    MAX_TOOL_ITERATIONS
+                ))
+            })
+            .await
+            {
+                Ok(result) => result,
+                Err(_elapsed) => Err(err!(
+                    Internal,
+                    "brain think timeout after {}s",
+                    THINK_TIMEOUT_SECS
+                )),
+            };
 
         // 展开 Result，失败时也记录事件
         let raw_output = match think_result {
-            Ok(output) => output,
+            Ok(content) => content,
             Err(e) => {
                 // 记录唤醒失败事件
                 // 统计写入失败不应阻塞业务返回，但需记录警告以便排查统计缺失
@@ -445,7 +474,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
         let think_result = match tokio::time::timeout(
             std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
-            self.brain_dal().think(ctx.clone(), brain, &prompt),
+            self.brain_dal().think(ctx.clone(), brain, &prompt, &[]),
         )
         .await
         {
@@ -458,8 +487,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         };
 
         // 展开 Result，失败时也记录事件
+        // Settle 场景不传工具，模型应直接返回 Final；若意外返回 ToolCall，取 content 降级
         let raw_output = match think_result {
-            Ok(output) => output,
+            Ok(ThinkResult::Final { content, .. }) => content,
+            Ok(ThinkResult::ToolCall { content, .. }) => content.unwrap_or_default(),
             Err(e) => {
                 let duration_ms = start_time
                     .elapsed()
@@ -540,7 +571,7 @@ mod tests {
 
     use super::ThinkingOptions;
     use crate::models::agent::{Agent, AgentPo};
-    use crate::models::brain::{Brain, Cortex, CortexTrait};
+    use crate::models::brain::Brain;
     use crate::models::file::FileMeta;
     use crate::models::message::Message;
     use crate::models::model_provider::ModelProvider;
@@ -576,7 +607,6 @@ mod tests {
             _ctx: RequestContext,
             _agent: &AgentPo,
             _memories: Vec<crate::models::memory::Memory>,
-            _tools: Vec<crate::models::tool::Tool>,
         ) -> common::error::Result<Brain> {
             unimplemented!("not needed by awaken skill tests")
         }
@@ -595,35 +625,29 @@ mod tests {
             _ctx: RequestContext,
             _brain: &Brain,
             prompt: &str,
-        ) -> common::error::Result<String> {
+            _tools: &[crate::models::cortex_types::ToolDescriptor],
+        ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
             *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
-            Ok("mock response".to_string())
+            Ok(crate::models::cortex_types::ThinkResult::Final {
+                content: "mock response".to_string(),
+                usage: crate::models::cortex_types::TokenUsage::default(),
+            })
         }
-    }
 
-    /// Mock Cortex，仅用于构造 Brain（BrainDal 已 stub，Cortex 不会被实际调用）
-    #[derive(Clone)]
-    struct MockCortex;
+        async fn embed_entity(
+            &self,
+            _ctx: RequestContext,
+            _entity: &dyn crate::models::vector::Vectorizable,
+        ) -> common::error::Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
 
-    #[async_trait]
-    impl CortexTrait for MockCortex {
-        fn capability(&self) -> ModelCapability {
-            ModelCapability::Agent
-        }
-        fn model_provider_id(&self) -> &str {
-            "mock-provider"
-        }
-        fn model_name(&self) -> &str {
-            "mock-model"
-        }
-        async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
-            Ok("mock response".to_string())
-        }
-        async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-            Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
-        }
-        fn support_tools(&self) -> bool {
-            false
+        async fn embed_text_for_search(
+            &self,
+            _ctx: RequestContext,
+            _text: &str,
+        ) -> common::error::Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
         }
     }
 
@@ -669,23 +693,28 @@ mod tests {
         po.status = AgentStatus::Onboarded;
 
         let mut agent = Agent::from_po(po);
-        let model_provider = ModelProvider::new(
-            "Mock Provider".to_string(),
-            ProviderType::OpenAI,
-            ModelCapability::Agent,
-            "gpt-4".to_string(),
-            "fake-key".to_string(),
-            None,
-            None,
-            "test-user".to_string(),
-        );
-        let cortex = Cortex::new(model_provider, Box::new(MockCortex));
+        let model_provider_po = crate::models::model_provider::ModelProviderPo {
+            id: "mock-provider".to_string(),
+            name: "Mock Provider".to_string(),
+            provider_type: ProviderType::OpenAI,
+            model_name: "gpt-4".to_string(),
+            capability: ModelCapability::Agent,
+            api_key: "fake-key".to_string(),
+            base_url: None,
+            description: None,
+            config: "{}".to_string(),
+            status: common::enums::ModelProviderStatus::Normal,
+            created_by: "test-user".to_string(),
+            modified_by: "test-user".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        };
         let runtime_config = crate::models::agent::AgentRuntimeConfig::default();
         agent.brain = Some(Brain::new_local(
             agent_id.to_string(),
             "Test Agent".to_string(),
             runtime_config,
-            cortex,
+            model_provider_po,
             vec![],
         ));
         agent

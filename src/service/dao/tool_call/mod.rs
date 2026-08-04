@@ -1,8 +1,7 @@
 //! ToolCall DAO trait
 //! Responsible for:
 //! 1. Get CoreTool instance from registry by ToolPo metadata
-//! 2. Wrap Tool's CoreTool into Rig's DynamicTool for Rig to use
-//! 3. Manual call a Tool with logging decorator, returns (result, entry)
+//! 2. Manual call a Tool with logging decorator, returns (result, entry)
 
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::pkg::request_context::RequestContext;
@@ -27,10 +26,6 @@ pub trait ToolCallDao: Send + Sync {
     /// Assemble CoreTool instance from ToolPo metadata
     /// Uses registry to create CoreTool instance based on PO's name/version
     fn assemble_core_tool(&self, po: &ToolPo) -> Result<Option<Box<dyn CoreTool + Send + Sync>>>;
-
-    /// Wrap a list of Tools into Rig's DynamicTool objects
-    /// Each CoreTool is wrapped with logging decorator then adapted for Rig
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<rig::tool::DynamicTool>;
 
     /// Call a tool manually (our controlled mode)
     /// Creates new logging decorator for this call, captures trace entry.

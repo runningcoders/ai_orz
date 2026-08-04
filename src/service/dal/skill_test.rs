@@ -1,6 +1,6 @@
 //! Skill DAL 单元测试
 
-use crate::models::brain::CortexTrait;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::skill::{Skill, SkillPo};
 use crate::models::vector::MatchType;
@@ -9,50 +9,39 @@ use crate::service::dal::skill::{SkillDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillSearch};
-use anyhow;
 use common::enums::skill::SkillAuthorType;
 use common::enums::skill::SkillStatus;
 use common::error::Result;
-use rig::tool::DynamicTool;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
 // ========== Mock Cortex Implementation ==========
 
-/// Mock Cortex 实现，用于测试（不依赖真实的 LLM）
+/// Mock CortexDao，返回 mock 向量（不依赖真实的 LLM）
 #[derive(Clone, Debug)]
-struct MockCortex {
-    model_name: String,
-}
-
-impl MockCortex {
-    fn new() -> Self {
-        Self {
-            model_name: "mock-embedding-v1".to_string(),
-        }
-    }
-}
+struct MockCortexDao;
 
 #[async_trait::async_trait]
-impl CortexTrait for MockCortex {
-    fn capability(&self) -> common::enums::ModelCapability {
-        common::enums::ModelCapability::Embedding
+impl CortexDao for MockCortexDao {
+    async fn think(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _prompt: &str,
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        Ok(ThinkResult::Final {
+            content: "Mock response".to_string(),
+            usage: crate::models::cortex_types::TokenUsage::default(),
+        })
     }
 
-    fn model_provider_id(&self) -> &str {
-        "mock-provider"
-    }
-
-    fn model_name(&self) -> &str {
-        &self.model_name
-    }
-
-    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
-        Ok("Mock response".to_string())
-    }
-
-    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        // 统一使用 embed_text 的逻辑，保持向量生成一致性
+    async fn embed(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
         let mut result = Vec::with_capacity(texts.len());
         for text in texts {
             let vec = if text.contains("nonexistent") {
@@ -63,93 +52,6 @@ impl CortexTrait for MockCortex {
             result.push(vec);
         }
         Ok(result)
-    }
-
-    fn support_tools(&self) -> bool {
-        false
-    }
-}
-
-/// Mock CortexDao，返回 MockCortex
-#[derive(Clone, Debug)]
-struct MockCortexDao;
-
-#[async_trait::async_trait]
-impl CortexDao for MockCortexDao {
-    fn create_cortex_trait(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-        _rig_tools: Vec<DynamicTool>,
-    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
-        Ok(Box::new(MockCortex::new()))
-    }
-
-    async fn prompt(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _prompt: &str,
-    ) -> anyhow::Result<String> {
-        Ok("Mock response".to_string())
-    }
-
-    async fn embed_text_raw(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> anyhow::Result<Vec<f32>> {
-        // 极端化向量差异：让 nonexistent 关键词的向量与其他向量距离 > 0.8
-        // 余弦距离 > 0.8 意味着相似度 < 0.2
-        let mut vec = vec![0.0; 3];
-
-        if text.contains("nonexistent") {
-            // nonexistent 关键词的向量：[1.0, 0.0, 0.0]
-            vec[0] = 1.0;
-            vec[1] = 0.0;
-            vec[2] = 0.0;
-        } else {
-            // 其他文本的向量：[0.0, 1.0, 1.0] - 与上面的向量距离 = 1.0（完全正交）
-            vec[0] = 0.0;
-            vec[1] = 1.0;
-            vec[2] = 1.0;
-        }
-
-        Ok(vec)
-    }
-
-    async fn embed_entity(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        entity: &dyn crate::models::vector::Vectorizable,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
-        let content = entity.vectorize_text();
-        let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
-        Ok(crate::models::vector::VectorIndexParams::new(
-            &content,
-            embedding,
-            "mock-provider".to_string(),
-            "mock-embedding-v1".to_string(),
-        ))
-    }
-
-    async fn embed_text_for_search(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        // 复用 embed_text_raw 的逻辑，包装成 VectorIndexParams
-        let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
-        Ok(crate::models::vector::VectorIndexParams::new(
-            text,
-            embedding,
-            "mock-provider".to_string(),
-            "mock-embedding-v1".to_string(),
-        ))
     }
 }
 

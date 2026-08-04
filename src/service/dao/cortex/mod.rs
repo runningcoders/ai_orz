@@ -1,69 +1,81 @@
-//! Cortex DAO - 大脑皮层工厂
+//! Cortex DAO - 模型调用接口
 //!
-//! 根据 Model Provider 创建 CortexTrait 实例，提供统一推理接口
-//! 包含 create_cortex_trait 和 prompt（执行 prompt 获取回答）
+//! 包级函数 `embed_entity` / `embed_text_for_search` 按 provider_type 路由到
+//! `native::CortexDao` 实现。调用方负责获取 provider（如从 model_provider_dao 查询）。
 
-use crate::models::brain::*;
+pub mod external;
+pub mod native;
+
+pub use native::{CortexDao, CortexDaoRegistry, init, registry};
+
+// ==================== 包级函数 ====================
+//
+// 便捷入口：按 provider.provider_type 路由到 native::CortexDao 实现。
+// 调用方负责获取 provider（如从 model_provider_dao 查询）。
+
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
-use crate::pkg::request_context::RequestContext;
-use ::rig::tool::DynamicTool;
-use anyhow::Result;
+use crate::models::vector::{VectorIndexParams, Vectorizable};
+use crate::pkg::RequestContext;
+use async_trait::async_trait;
+use common::error::Result;
+use std::sync::Arc;
 
-/// Cortex DAO 工厂 trait
+/// 向量化实体（包级路由函数）
 ///
-/// Cortex Dao 负责创建 CortexTrait 和执行推理/向量化，所有方法都传递 ctx
-///
-/// 【扩展点】`ctx` 参数当前在 RigCortexDao 实现中未使用（cortex 构造时已通过
-/// RuntimeMonitoringHook 捕获 ctx 快照），但保留在 trait 签名中作为扩展点：
-/// 若未来引入 brain 缓存（参见 awakening.rs TODO(brain-cache)），cortex 构造时
-/// 捕获的 ctx 会变 stale，此时实现可改用传入的最新 ctx 刷新监控 hook。
-#[async_trait::async_trait]
-pub trait CortexDao: Send + Sync {
-    /// ✅ 根据 Model Provider 创建 CortexTrait 实例，绑定已包装的 Rig 工具列表
-    fn create_cortex_trait(
+/// 按 provider.provider_type 路由到具体 CortexDao，执行向量化。
+/// 调用方负责获取 provider（如从 model_provider_dao 查询）。
+pub async fn embed_entity(
+    ctx: RequestContext,
+    provider: &ModelProviderPo,
+    entity: &dyn Vectorizable,
+) -> Result<VectorIndexParams> {
+    let dao = native::registry().get(provider.provider_type);
+    dao.embed_entity(ctx, provider, entity).await
+}
+
+/// 向量化搜索关键词（包级路由函数）
+pub async fn embed_text_for_search(
+    ctx: RequestContext,
+    provider: &ModelProviderPo,
+    text: &str,
+) -> Result<VectorIndexParams> {
+    let dao = native::registry().get(provider.provider_type);
+    dao.embed_text_for_search(ctx, provider, text).await
+}
+
+// ==================== Dispatcher ====================
+//
+// Registry-based dispatcher 实现 CortexDao trait，用于 DAL 层持有 `Arc<dyn CortexDao>`。
+// 所有方法按 provider.provider_type 路由到 registry 中的具体实现。
+
+/// 获取全局 Cortex DAO dispatcher（按 provider_type 路由）
+pub fn dao() -> Arc<dyn CortexDao + Send + Sync> {
+    Arc::new(CortexDispatcher)
+}
+
+struct CortexDispatcher;
+
+#[async_trait]
+impl CortexDao for CortexDispatcher {
+    async fn think(
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-        rig_tools: Vec<DynamicTool>,
-    ) -> Result<Box<dyn CortexTrait + Send + Sync>>;
-
-    /// ✅ 执行 prompt：使用已创建的 CortexTrait 推理获取回答
-    async fn prompt(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
         prompt: &str,
-    ) -> Result<String>;
+        tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        let dao = native::registry().get(provider.provider_type);
+        dao.think(ctx, provider, prompt, tools).await
+    }
 
-    /// ✅ 文本转向量（仅返回原始向量数据）
-    async fn embed_text_raw(
+    async fn embed(
         &self,
         ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> Result<Vec<f32>>;
-
-    /// ✅ 实体向量化（返回完整 VectorIndexParams，用于索引场景）
-    async fn embed_entity(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        entity: &dyn crate::models::vector::Vectorizable,
-    ) -> Result<crate::models::vector::VectorIndexParams>;
-
-    /// ✅ 文本转向量（返回完整 VectorIndexParams，用于搜索场景）
-    async fn embed_text_for_search(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> Result<crate::models::vector::VectorIndexParams>;
+        provider: &ModelProviderPo,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        let dao = native::registry().get(provider.provider_type);
+        dao.embed(ctx, provider, texts).await
+    }
 }
-
-pub mod external;
-mod rig;
-
-pub use self::rig::{RigCortexDao, dao, init};
-
-#[cfg(test)]
-mod rig_test;

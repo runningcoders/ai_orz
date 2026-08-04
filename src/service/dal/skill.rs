@@ -325,16 +325,11 @@ impl SkillDal for SkillDalImpl {
                 .get_default_embedding_provider(ctx.clone())
                 .await?
         {
-            // 创建 Cortex
-            let cortex = self
-                .cortex_dao
-                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
-
-            // 生成查询向量（使用便捷方法）
+            // 生成查询向量
             if let Some(keyword) = &search.keyword {
                 let query_vector_params = self
                     .cortex_dao
-                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
+                    .embed_text_for_search(ctx.clone(), &provider, keyword)
                     .await?;
                 let query_vector = query_vector_params.vector;
 
@@ -761,17 +756,12 @@ impl SkillDal for SkillDalImpl {
         // 3. 清空向量集合并重建
         self.skill_vector_dao.clear_collection(ctx.clone()).await?;
 
-        // 4. 创建 Cortex
-        let cortex = self
-            .cortex_dao
-            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
-
-        // 5. 查全量技能并逐条重新索引
+        // 4. 查全量技能并逐条重新索引
         let skills = self.query(ctx.clone(), SkillQuery::default()).await?;
         for skill in &skills.items {
             match self
                 .cortex_dao
-                .embed_entity(ctx.clone(), cortex.as_ref(), &skill.po)
+                .embed_entity(ctx.clone(), &provider, &skill.po)
                 .await
             {
                 Ok(vec_params) => {
@@ -828,13 +818,7 @@ impl SkillDalImpl {
             return Ok(None);
         };
 
-        let cortex = self
-            .cortex_dao
-            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
-        let params = self
-            .cortex_dao
-            .embed_entity(ctx, cortex.as_ref(), po)
-            .await?;
+        let params = self.cortex_dao.embed_entity(ctx, &provider, po).await?;
         Ok(Some(params))
     }
 }

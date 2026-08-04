@@ -1,6 +1,6 @@
 //! Agent 实体
 
-use crate::models::brain::{Brain, Cortex, CortexTrait};
+use crate::models::brain::Brain;
 use crate::models::skill::Skill;
 use crate::models::tool::Tool;
 use crate::models::vector::{SearchMatchInfo, Vectorizable};
@@ -278,14 +278,9 @@ impl Agent {
         self.brain.as_ref()
     }
 
-    /// 获取 Brain 内部的 Cortex 引用
-    pub fn cortex(&self) -> Option<&Cortex> {
-        self.brain.as_ref().and_then(|b| b.cortex())
-    }
-
-    /// 获取 Brain 内部的 CortexTrait 引用
-    pub fn cortex_trait(&self) -> Option<&(dyn CortexTrait + Send + Sync)> {
-        self.brain.as_ref().and_then(|b| b.cortex_trait())
+    /// 获取 Brain 内部的 ModelProvider 配置引用（仅 Local agent 有值）
+    pub fn model_provider(&self) -> Option<&crate::models::model_provider::ModelProviderPo> {
+        self.brain.as_ref().and_then(|b| b.model_provider())
     }
 
     /// 生成 Agent 的 System Prompt 头部

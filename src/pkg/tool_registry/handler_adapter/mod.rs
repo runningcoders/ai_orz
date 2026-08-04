@@ -15,10 +15,9 @@ pub mod macros;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use async_trait::async_trait;
-use common::error::Result;
+use common::error::{Result, err};
 use dyn_clone::DynClone;
 use futures_util::Future;
-use rig::tool::{ToolErrorKind, ToolExecutionError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::marker::PhantomData;
@@ -178,18 +177,11 @@ where
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
             Err(e) => {
-                return Err(
-                    ToolExecutionError::new(ToolErrorKind::InvalidArgs, e.to_string()).into(),
-                );
+                return Err(err!(ToolExecutionFailed, Tool, "invalid args: {}", e));
             }
         };
 
-        match self.inner.call(ctx, params).await {
-            Ok(result) => Ok(result),
-            Err(app_error) => {
-                Err(ToolExecutionError::new(ToolErrorKind::Other, app_error.to_string()).into())
-            }
-        }
+        self.inner.call(ctx, params).await
     }
 
     fn po(&self) -> &ToolPo {
@@ -256,11 +248,6 @@ impl HandlerToolBuilder {
 
         (po, inner)
     }
-}
-
-/// Helper: convert common::error::Error to ToolExecutionError
-pub fn app_error_to_tool_error(e: common::error::Error) -> ToolExecutionError {
-    ToolExecutionError::new(ToolErrorKind::Other, e.to_string())
 }
 
 // Re-export the macro

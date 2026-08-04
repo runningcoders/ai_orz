@@ -1,6 +1,6 @@
 //! Message DAL 单元测试
 
-use crate::models::brain::CortexTrait;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
@@ -69,57 +69,26 @@ struct MockCortexDao;
 
 #[async_trait::async_trait]
 impl CortexDao for MockCortexDao {
-    fn create_cortex_trait(
+    async fn think(
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<rig::tool::DynamicTool>,
-    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
-        panic!("MockCortexDao::create_cortex_trait not implemented for tests");
-    }
-    async fn prompt(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
         _prompt: &str,
-    ) -> anyhow::Result<String> {
-        Ok("".to_string())
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        Ok(ThinkResult::Final {
+            content: "".to_string(),
+            usage: crate::models::cortex_types::TokenUsage::default(),
+        })
     }
-    async fn embed_text_raw(
+
+    async fn embed(
         &self,
         _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<Vec<f32>> {
+        _provider: &ModelProviderPo,
+        _texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
         Ok(Vec::new())
-    }
-    async fn embed_entity(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _entity: &dyn crate::models::vector::Vectorizable,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: Vec::new(),
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
-        })
-    }
-    async fn embed_text_for_search(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: Vec::new(),
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
-        })
     }
 }
 

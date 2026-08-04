@@ -1,6 +1,6 @@
 //! Memory DAL 单元测试
 
-use crate::models::brain::CortexTrait;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::memory::{
     KnowledgeNodeRelationPo, LongTermKnowledgeNodePo, Memory, MemoryCreateParams, MemoryPo,
     MemoryTrace, ShortTermMemoryIndexPo,
@@ -71,57 +71,26 @@ struct MockCortexDao;
 
 #[async_trait::async_trait]
 impl CortexDao for MockCortexDao {
-    fn create_cortex_trait(
+    async fn think(
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<rig::tool::DynamicTool>,
-    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
-        panic!("MockCortexDao::create_cortex_trait not implemented for tests");
-    }
-    async fn prompt(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
         _prompt: &str,
-    ) -> anyhow::Result<String> {
-        Ok("".to_string())
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        Ok(ThinkResult::Final {
+            content: "".to_string(),
+            usage: crate::models::cortex_types::TokenUsage::default(),
+        })
     }
-    async fn embed_text_raw(
+
+    async fn embed(
         &self,
         _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<Vec<f32>> {
+        _provider: &ModelProviderPo,
+        _texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
         Ok(Vec::new())
-    }
-    async fn embed_entity(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _entity: &dyn crate::models::vector::Vectorizable,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: Vec::new(),
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
-        })
-    }
-    async fn embed_text_for_search(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: Vec::new(),
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
-        })
     }
 }
 
@@ -1316,32 +1285,6 @@ async fn test_update_relation_unsupported(pool: SqlitePool) -> Result<()> {
 
 // ========== 向量搜索 Mock 实现 ==========
 
-/// Mock CortexTrait（返回固定 dummy 向量，用于向量搜索链路）
-#[derive(Clone)]
-struct MockCortexTrait;
-
-#[async_trait::async_trait]
-impl CortexTrait for MockCortexTrait {
-    fn capability(&self) -> ModelCapability {
-        ModelCapability::Embedding
-    }
-    fn model_provider_id(&self) -> &str {
-        "mock-embedding-provider"
-    }
-    fn model_name(&self) -> &str {
-        "mock-embedding-model"
-    }
-    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
-        Ok(String::new())
-    }
-    async fn embeddings(&self, _texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Ok(vec![vec![0.1, 0.2, 0.3]])
-    }
-    fn support_tools(&self) -> bool {
-        false
-    }
-}
-
 /// Mock ModelProviderDao（返回 dummy embedding provider，触发向量搜索链路）
 struct MockVectorProviderDao;
 
@@ -1402,62 +1345,31 @@ impl ModelProviderDao for MockVectorProviderDao {
     }
 }
 
-/// Mock CortexDao（返回 MockCortexTrait，不 panic）
+/// Mock CortexDao（返回固定 dummy 向量，用于向量搜索链路）
 struct MockCortexVectorDao;
 
 #[async_trait::async_trait]
 impl CortexDao for MockCortexVectorDao {
-    fn create_cortex_trait(
+    async fn think(
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<rig::tool::DynamicTool>,
-    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
-        Ok(Box::new(MockCortexTrait))
-    }
-    async fn prompt(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
         _prompt: &str,
-    ) -> anyhow::Result<String> {
-        Ok("".to_string())
-    }
-    async fn embed_text_raw(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<Vec<f32>> {
-        Ok(vec![0.1, 0.2, 0.3])
-    }
-    async fn embed_entity(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _entity: &dyn crate::models::vector::Vectorizable,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: vec![0.1, 0.2, 0.3],
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        Ok(ThinkResult::Final {
+            content: "".to_string(),
+            usage: crate::models::cortex_types::TokenUsage::default(),
         })
     }
-    async fn embed_text_for_search(
+
+    async fn embed(
         &self,
         _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _text: &str,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        Ok(crate::models::vector::VectorIndexParams {
-            vector: vec![0.1, 0.2, 0.3],
-            content_hash: "".to_string(),
-            model_provider_id: "".to_string(),
-            embedding_model: "".to_string(),
-            expire_at: None,
-        })
+        _provider: &ModelProviderPo,
+        _texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        Ok(vec![vec![0.1, 0.2, 0.3]])
     }
 }
 

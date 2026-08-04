@@ -1,7 +1,7 @@
 //! Brain DAL 单元测试
 //! 测试 Brain DAL 的 wake_brain 和 test_connection 功能
 
-use crate::models::{agent::AgentPo, memory::*, model_provider::*, tool::Tool};
+use crate::models::{agent::AgentPo, memory::*, model_provider::*};
 use crate::pkg::request_context::RequestContext;
 use crate::service::dal::brain::BrainDal;
 use crate::service::dao::cortex;
@@ -15,12 +15,10 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, Re
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dal::brain::init();
-    let cortex_dao = cortex::dao();
     let tool_call_dao = crate::service::dao::tool_call::dao();
     let model_provider_dao = crate::service::dao::model_provider::dao();
     let http_client = reqwest::Client::new();
-    let brain_dal =
-        crate::service::dal::brain::new(cortex_dao, tool_call_dao, model_provider_dao, http_client);
+    let brain_dal = crate::service::dal::brain::new(tool_call_dao, model_provider_dao, http_client);
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (brain_dal, ctx)
 }
@@ -86,15 +84,12 @@ async fn test_wake_brain_local(pool: SqlitePool) {
     let memory = Memory::new(MemoryPo::ShortTerm(short_term_po));
     let memories = vec![memory];
 
-    let tools: Vec<Tool> = vec![];
-    let result = brain_dal
-        .wake_brain(ctx.clone(), &agent, memories, tools)
-        .await;
+    let result = brain_dal.wake_brain(ctx.clone(), &agent, memories).await;
 
     assert!(result.is_ok());
     let brain = result.unwrap();
     assert!(brain.is_local());
-    assert!(brain.cortex().is_some());
+    assert!(brain.model_provider().is_some());
     assert_eq!(brain.agent_id, "test-agent");
     assert_eq!(brain.agent_name, "Test Agent");
 }

@@ -278,29 +278,11 @@ impl AgentDalImpl {
             }
         };
 
-        // 2. 创建 Cortex（trait 对象）
-        let cortex = match self
-            .cortex_dao
-            .create_cortex_trait(ctx.clone(), &provider, vec![])
-        {
-            Ok(c) => c,
-            Err(e) => {
-                log_warn!(
-                    &ctx,
-                    "vector_index",
-                    agent_id = %po.id,
-                    error = ?e,
-                    "Agent 创建 Cortex 失败，跳过向量化"
-                );
-                return;
-            }
-        };
-
-        // 3. 调 `embed_entity` 生成完整 VectorIndexParams
-        // 4. upsert 到向量索引（失败 warn 降级）
+        // 2. 调 `embed_entity` 生成完整 VectorIndexParams
+        // 3. upsert 到向量索引（失败 warn 降级）
         match self
             .cortex_dao
-            .embed_entity(ctx.clone(), cortex.as_ref(), po)
+            .embed_entity(ctx.clone(), &provider, po)
             .await
         {
             Ok(vec_params) => {
@@ -347,12 +329,9 @@ impl AgentDalImpl {
             return Ok(None);
         };
 
-        let cortex = self
-            .cortex_dao
-            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
         let params = self
             .cortex_dao
-            .embed_text_for_search(ctx, cortex.as_ref(), text)
+            .embed_text_for_search(ctx, &provider, text)
             .await?;
         Ok(Some(params))
     }
@@ -763,9 +742,9 @@ impl AgentDal for AgentDalImpl {
         let mut need_update = false;
 
         if brain.is_local()
-            && let Some(cortex) = brain.cortex()
+            && let Some(provider) = brain.model_provider()
         {
-            let model_provider_id = cortex.model_provider.po.id.clone();
+            let model_provider_id = provider.id.clone();
             if agent.po.model_provider_id != model_provider_id {
                 agent.po.model_provider_id = model_provider_id;
                 need_update = true;

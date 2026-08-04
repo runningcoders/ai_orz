@@ -703,12 +703,7 @@ impl MemoryDal for MemoryDalImpl {
                 .await?;
         }
 
-        // 4. 创建 Cortex
-        let cortex = self
-            .cortex_dao
-            .create_cortex_trait(ctx.clone(), &provider, vec![])?;
-
-        // 5. 重建短期记忆向量索引（如需要）
+        // 4. 重建短期记忆向量索引（如需要）
         if short_term_need_rebuild {
             let short_terms = self
                 .memory_dao
@@ -717,7 +712,7 @@ impl MemoryDal for MemoryDalImpl {
             for index in &short_terms {
                 match self
                     .cortex_dao
-                    .embed_entity(ctx.clone(), cortex.as_ref(), index)
+                    .embed_entity(ctx.clone(), &provider, index)
                     .await
                 {
                     Ok(vec_params) => {
@@ -763,7 +758,7 @@ impl MemoryDal for MemoryDalImpl {
             for node in &nodes {
                 match self
                     .cortex_dao
-                    .embed_entity(ctx.clone(), cortex.as_ref(), node)
+                    .embed_entity(ctx.clone(), &provider, node)
                     .await
                 {
                     Ok(vec_params) => {
@@ -1518,9 +1513,8 @@ async fn try_build_vector_params_for_search(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
     let params = cortex_dao
-        .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
+        .embed_text_for_search(ctx.clone(), &provider, text)
         .await?;
     Ok(Some(params))
 }
@@ -1529,8 +1523,7 @@ async fn try_build_vector_params_for_search(
 ///
 /// 流程：
 /// 1. 取默认 Embedding ModelProvider；无则返回 None（无可用 provider）
-/// 2. 创建 Cortex（trait 对象）
-/// 3. 调 `embed_entity` 生成完整 VectorIndexParams（自动调用 entity.vectorize_text()）
+/// 2. 调 `embed_entity` 生成完整 VectorIndexParams（自动调用 entity.vectorize_text()）
 ///
 /// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
 /// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
@@ -1547,9 +1540,8 @@ async fn try_build_vector_params_for_entity(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
     let params = cortex_dao
-        .embed_entity(ctx.clone(), cortex.as_ref(), entity)
+        .embed_entity(ctx.clone(), &provider, entity)
         .await?;
     Ok(Some(params))
 }

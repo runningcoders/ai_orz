@@ -178,9 +178,6 @@ pub trait ToolDal: Send + Sync {
         params: crate::service::dao::tool::ToolSearch,
     ) -> Result<common::api::PagedResult<Tool>>;
 
-    /// Wrap tools for Rig to use (convert to DynamicTool)
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<rig::tool::DynamicTool>;
-
     // ==================== 统计查询 ====================
 
     /// 获取工具统计数据
@@ -536,46 +533,40 @@ impl ToolDal for ToolDalImpl {
         let mut vector_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Step 2: 如果有关键词，尝试向量搜索（用关键词生成 query vector）
-        if params.keyword.is_some()
+        if let Some(keyword) = &params.keyword
             && let Some(provider) = self
                 .model_provider_dao
                 .get_default_embedding_provider(ctx.clone())
                 .await?
         {
-            let cortex = self
+            let query_vector_params = self
                 .cortex_dao
-                .create_cortex_trait(ctx.clone(), &provider, vec![])?;
+                .embed_text_for_search(ctx.clone(), &provider, keyword)
+                .await?;
+            let query_vector = query_vector_params.vector;
 
-            if let Some(keyword) = &params.keyword {
-                let query_vector_params = self
-                    .cortex_dao
-                    .embed_text_for_search(ctx.clone(), cortex.as_ref(), keyword)
-                    .await?;
-                let query_vector = query_vector_params.vector;
+            match self
+                .tool_vector_dao
+                .search_vector(ctx.clone(), &query_vector, top_k)
+                .await
+            {
+                Ok(vector_results) => {
+                    let filtered_results: Vec<(String, f32)> = vector_results
+                        .into_iter()
+                        .filter(|hit| hit.distance < vector_distance_threshold)
+                        .map(|hit| (hit.row.id, hit.distance))
+                        .collect();
 
-                match self
-                    .tool_vector_dao
-                    .search_vector(ctx.clone(), &query_vector, top_k)
-                    .await
-                {
-                    Ok(vector_results) => {
-                        let filtered_results: Vec<(String, f32)> = vector_results
-                            .into_iter()
-                            .filter(|hit| hit.distance < vector_distance_threshold)
-                            .map(|hit| (hit.row.id, hit.distance))
-                            .collect();
-
-                        vector_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
-                        vector_scores = filtered_results.into_iter().collect();
-                    }
-                    Err(e) => {
-                        log_warn!(
-                            ctx.clone(),
-                            "vector_search",
-                            "Tool vector search failed: {}, fallback to keyword only",
-                            e
-                        );
-                    }
+                    vector_ids = filtered_results.iter().map(|(id, _)| id.clone()).collect();
+                    vector_scores = filtered_results.into_iter().collect();
+                }
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "vector_search",
+                        "Tool vector search failed: {}, fallback to keyword only",
+                        e
+                    );
                 }
             }
         }
@@ -745,10 +736,6 @@ impl ToolDal for ToolDalImpl {
             .map_err(Into::into)
     }
 
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<rig::tool::DynamicTool> {
-        self.tool_call_dao.wrap_for_rig(tools, ctx)
-    }
-
     async fn get_stats(
         &self,
         ctx: RequestContext,
@@ -887,9 +874,6 @@ async fn try_build_vector_params_for_entity(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao
-        .embed_entity(ctx, cortex.as_ref(), entity)
-        .await?;
+    let params = cortex_dao.embed_entity(ctx, &provider, entity).await?;
     Ok(Some(params))
 }

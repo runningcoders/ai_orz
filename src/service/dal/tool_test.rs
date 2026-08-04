@@ -1,7 +1,7 @@
 //! Tool DAL 单元测试
 //! 测试 Tool DAL 的基础功能
 
-use crate::models::brain::CortexTrait;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
 use crate::models::tool::{CoreTool, Tool, ToolPo};
 use crate::models::vector::MatchType;
@@ -17,7 +17,6 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::Result;
-use rig::tool::DynamicTool;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -185,7 +184,7 @@ async fn test_add_tool_to_agent_and_list(pool: SqlitePool) {
 }
 
 /// 测试 MCP Tool 可以作为标准 Tool 绑定到 Agent 并进入运行时工具列表，
-/// 但默认 Manual，不会被 wrap_for_rig 暴露为自动调用工具。
+/// 但默认 Manual，不会被暴露为自动调用工具。
 #[sqlx::test]
 async fn test_mcp_tool_bind_to_agent_visible_but_not_wrapped_for_rig(pool: SqlitePool) {
     let (tool_dal, ctx) = init_test_env(pool, false).await;
@@ -243,9 +242,6 @@ async fn test_mcp_tool_bind_to_agent_visible_but_not_wrapped_for_rig(pool: Sqlit
     assert!(!prompt.contains("internal.example.test"));
     assert!(!prompt.contains("server_id"));
     assert!(!prompt.contains("tool_name"));
-
-    let rig_tools = tool_dal.wrap_for_rig(&list_full, ctx.clone());
-    assert!(rig_tools.is_empty());
 }
 
 /// 测试从 Agent 移除工具
@@ -510,35 +506,31 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
 // - 其他文本 → 向量 [0.0, 1.0, 1.0]
 // 两向量余弦距离 = 1.0（完全正交），大于 0.8 阈值，不会同时命中。
 
-/// Mock Cortex 实现（不依赖真实 LLM）
+/// Mock CortexDao（不依赖真实 LLM）
 #[derive(Clone, Debug)]
-struct MockCortex {
-    model_name: String,
-}
-
-impl MockCortex {
-    fn new() -> Self {
-        Self {
-            model_name: "mock-embedding-v1".to_string(),
-        }
-    }
-}
+struct MockCortexDao;
 
 #[async_trait]
-impl CortexTrait for MockCortex {
-    fn capability(&self) -> common::enums::ModelCapability {
-        common::enums::ModelCapability::Embedding
+impl CortexDao for MockCortexDao {
+    async fn think(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _prompt: &str,
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        Ok(ThinkResult::Final {
+            content: "Mock response".to_string(),
+            usage: crate::models::cortex_types::TokenUsage::default(),
+        })
     }
-    fn model_provider_id(&self) -> &str {
-        "mock-provider"
-    }
-    fn model_name(&self) -> &str {
-        &self.model_name
-    }
-    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
-        Ok("Mock response".to_string())
-    }
-    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+
+    async fn embed(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
         Ok(texts
             .iter()
             .map(|t| {
@@ -549,78 +541,6 @@ impl CortexTrait for MockCortex {
                 }
             })
             .collect())
-    }
-    fn support_tools(&self) -> bool {
-        false
-    }
-}
-
-/// Mock CortexDao
-#[derive(Clone, Debug)]
-struct MockCortexDao;
-
-#[async_trait]
-impl CortexDao for MockCortexDao {
-    fn create_cortex_trait(
-        &self,
-        _ctx: RequestContext,
-        _provider: &ModelProviderPo,
-        _rig_tools: Vec<DynamicTool>,
-    ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
-        Ok(Box::new(MockCortex::new()))
-    }
-
-    async fn prompt(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        _prompt: &str,
-    ) -> anyhow::Result<String> {
-        Ok("Mock response".to_string())
-    }
-
-    async fn embed_text_raw(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> anyhow::Result<Vec<f32>> {
-        Ok(if text.contains("nonexistent") {
-            vec![1.0, 0.0, 0.0]
-        } else {
-            vec![0.0, 1.0, 1.0]
-        })
-    }
-
-    async fn embed_entity(
-        &self,
-        ctx: RequestContext,
-        cortex: &dyn CortexTrait,
-        entity: &dyn crate::models::vector::Vectorizable,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        let content = entity.vectorize_text();
-        let embedding = self.embed_text_raw(ctx, cortex, &content).await?;
-        Ok(crate::models::vector::VectorIndexParams::new(
-            &content,
-            embedding,
-            "mock-provider".to_string(),
-            "mock-embedding-v1".to_string(),
-        ))
-    }
-
-    async fn embed_text_for_search(
-        &self,
-        _ctx: RequestContext,
-        _cortex: &dyn CortexTrait,
-        text: &str,
-    ) -> anyhow::Result<crate::models::vector::VectorIndexParams> {
-        let embedding = self.embed_text_raw(_ctx, _cortex, text).await?;
-        Ok(crate::models::vector::VectorIndexParams::new(
-            text,
-            embedding,
-            "mock-provider".to_string(),
-            "mock-embedding-v1".to_string(),
-        ))
     }
 }
 
@@ -722,10 +642,6 @@ impl ToolCallDao for MockToolCallDao {
         po: &ToolPo,
     ) -> anyhow::Result<Option<Box<dyn CoreTool + Send + Sync>>> {
         Ok(Some(Box::new(TestTool { po: po.clone() })))
-    }
-
-    fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<DynamicTool> {
-        vec![]
     }
 
     async fn call_manual(

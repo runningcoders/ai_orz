@@ -6,7 +6,6 @@ use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use common::error::{Result, err};
 use dyn_clone::DynClone;
-use rig::tool::{DynamicTool, ToolContext, ToolErrorKind, ToolExecutionError, ToolOutput};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -52,55 +51,6 @@ impl ToolExecutionResult {
             result,
             trace_ref: ToolCallTraceRef { tool_id, call_id },
         }
-    }
-}
-
-/// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 DynamicTool
-///
-/// 用于 auto 模式，让 Rig 可以直接调用我们的工具
-/// Rig 调用接口不传递 RequestContext，所以需要创建时持有
-pub struct RigToolAdapter {
-    ctx: RequestContext,
-    inner: Box<dyn CoreTool>,
-}
-
-impl RigToolAdapter {
-    pub fn new(ctx: RequestContext, inner: Box<dyn CoreTool>) -> Self {
-        Self { ctx, inner }
-    }
-
-    /// Consume the adapter and produce a `DynamicTool` for rig 0.41+.
-    ///
-    /// The closure captures `ctx` and `inner` by move, so each `DynamicTool`
-    /// owns its own copy of the RequestContext and CoreTool.
-    pub fn into_dynamic_tool(self) -> DynamicTool {
-        let name = self.inner.po().name.clone();
-        let description = self.inner.po().description.clone();
-        let parameters = self
-            .inner
-            .po()
-            .parameters_schema
-            .clone()
-            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
-        let ctx = self.ctx;
-        let inner = self.inner;
-
-        DynamicTool::new(
-            name,
-            description,
-            parameters,
-            move |_tool_ctx: &mut ToolContext, args: serde_json::Value| {
-                let ctx = ctx.clone();
-                let inner = inner.clone();
-                Box::pin(async move {
-                    let result = inner.call(ctx, args).await;
-                    match result {
-                        Ok(v) => Ok(ToolOutput::json(v)),
-                        Err(e) => Err(ToolExecutionError::new(ToolErrorKind::Other, e.to_string())),
-                    }
-                })
-            },
-        )
     }
 }
 

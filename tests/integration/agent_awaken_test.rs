@@ -21,7 +21,7 @@ use ::common::enums::{
 };
 use ::common::error::Result as CommonResult;
 use ai_orz::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
-use ai_orz::models::brain::{Brain, Cortex, CortexTrait};
+use ai_orz::models::brain::Brain;
 use ai_orz::models::file::FileMeta;
 use ai_orz::models::message::Message;
 use ai_orz::models::model_provider::ModelProvider;
@@ -333,7 +333,6 @@ impl BrainDal for CapturingBrainDal {
         _ctx: RequestContext,
         _agent: &AgentPo,
         _memories: Vec<ai_orz::models::memory::Memory>,
-        _tools: Vec<Tool>,
     ) -> CommonResult<Brain> {
         unimplemented!("not needed by awaken manual tools test")
     }
@@ -352,35 +351,29 @@ impl BrainDal for CapturingBrainDal {
         _ctx: RequestContext,
         _brain: &Brain,
         prompt: &str,
-    ) -> CommonResult<String> {
+        _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+    ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
         *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
-        Ok("mock response".to_string())
+        Ok(ai_orz::models::cortex_types::ThinkResult::Final {
+            content: "mock response".to_string(),
+            usage: ai_orz::models::cortex_types::TokenUsage::default(),
+        })
     }
-}
 
-/// Mock Cortex，仅用于构造 Brain（BrainDal 已 stub，Cortex 不会被实际调用）
-#[derive(Clone)]
-struct MockCortex;
+    async fn embed_entity(
+        &self,
+        _ctx: RequestContext,
+        _entity: &dyn ai_orz::models::vector::Vectorizable,
+    ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+        Ok(None)
+    }
 
-#[async_trait]
-impl CortexTrait for MockCortex {
-    fn capability(&self) -> ModelCapability {
-        ModelCapability::Agent
-    }
-    fn model_provider_id(&self) -> &str {
-        "mock-provider"
-    }
-    fn model_name(&self) -> &str {
-        "mock-model"
-    }
-    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
-        Ok("mock response".to_string())
-    }
-    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
-    }
-    fn support_tools(&self) -> bool {
-        false
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _text: &str,
+    ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+        Ok(None)
     }
 }
 
@@ -399,23 +392,28 @@ fn make_test_agent_with_brain(agent_id: &str) -> Agent {
     po.status = AgentStatus::Onboarded;
 
     let mut agent = Agent::from_po(po);
-    let model_provider = ModelProvider::new(
-        "Mock Provider".to_string(),
-        ProviderType::OpenAI,
-        ModelCapability::Agent,
-        "gpt-4".to_string(),
-        "fake-key".to_string(),
-        None,
-        None,
-        "test-user".to_string(),
-    );
-    let cortex = Cortex::new(model_provider, Box::new(MockCortex));
+    let model_provider_po = ai_orz::models::model_provider::ModelProviderPo {
+        id: "mock-provider".to_string(),
+        name: "Mock Provider".to_string(),
+        provider_type: ProviderType::OpenAI,
+        model_name: "gpt-4".to_string(),
+        capability: ModelCapability::Agent,
+        api_key: "fake-key".to_string(),
+        base_url: None,
+        description: None,
+        config: "{}".to_string(),
+        status: ::common::enums::ModelProviderStatus::Normal,
+        created_by: "test-user".to_string(),
+        modified_by: "test-user".to_string(),
+        created_at: 0,
+        updated_at: 0,
+    };
     let runtime_config = AgentRuntimeConfig::default();
     agent.brain = Some(Brain::new_local(
         agent_id.to_string(),
         "Test Agent".to_string(),
         runtime_config,
-        cortex,
+        model_provider_po,
         vec![],
     ));
     agent
@@ -666,7 +664,6 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
             _ctx: RequestContext,
             _agent: &AgentPo,
             _memories: Vec<ai_orz::models::memory::Memory>,
-            _tools: Vec<Tool>,
         ) -> CommonResult<Brain> {
             unimplemented!("not needed")
         }
@@ -685,8 +682,25 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
             _ctx: RequestContext,
             _brain: &Brain,
             _prompt: &str,
-        ) -> CommonResult<String> {
+            _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+        ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
             Err(::common::error::Error::internal("mock think failure"))
+        }
+
+        async fn embed_entity(
+            &self,
+            _ctx: RequestContext,
+            _entity: &dyn ai_orz::models::vector::Vectorizable,
+        ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
+
+        async fn embed_text_for_search(
+            &self,
+            _ctx: RequestContext,
+            _text: &str,
+        ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+            Ok(None)
         }
     }
 

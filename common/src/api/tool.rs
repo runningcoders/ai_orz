@@ -21,7 +21,7 @@ pub struct CreateToolRequest {
     pub parameters_schema: Option<serde_json::Value>,
     /// Tags list for capability matching and filtering
     pub tags: Option<Vec<String>>,
-    /// Control mode: auto (rig native) / manual (custom pipeline)
+    /// Control mode: auto (native auto tool calling) / manual (custom pipeline)
     pub control_mode: Option<ControlMode>,
     /// Whether this tool is enabled
     pub enabled: Option<bool>,
@@ -76,7 +76,7 @@ pub struct GetToolResponse {
     pub description: String,
     /// Tool protocol type
     pub protocol: ToolProtocol,
-    /// Control mode: auto (rig native) / manual (custom pipeline)
+    /// Control mode: auto (native auto tool calling) / manual (custom pipeline)
     pub control_mode: ControlMode,
     /// Protocol configuration JSON
     pub config: Option<serde_json::Value>,

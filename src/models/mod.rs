@@ -2,6 +2,7 @@ pub mod agent;
 pub mod artifact;
 pub mod attachment;
 pub mod brain;
+pub mod cortex_types;
 pub mod cron_trigger;
 pub mod event;
 pub mod events;

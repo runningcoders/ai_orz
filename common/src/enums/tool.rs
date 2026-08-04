@@ -110,7 +110,7 @@ impl fmt::Display for ToolStatus {
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
 pub enum ControlMode {
-    /// Auto (rig 原生自动处理，适合简单工具)
+    /// Auto (native 自动处理，适合简单工具)
     #[default]
     Auto = 0,
     /// Manual (自建链路处理，需要收敛控制的关键工具)

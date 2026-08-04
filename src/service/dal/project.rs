@@ -826,10 +826,7 @@ async fn try_build_vector_params_for_entity(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
-    let params = cortex_dao
-        .embed_entity(ctx, cortex.as_ref(), entity)
-        .await?;
+    let params = cortex_dao.embed_entity(ctx, &provider, entity).await?;
     Ok(Some(params))
 }
 
@@ -850,9 +847,8 @@ async fn try_build_vector_params_for_search(
         return Ok(None);
     };
 
-    let cortex = cortex_dao.create_cortex_trait(ctx.clone(), &provider, vec![])?;
     let params = cortex_dao
-        .embed_text_for_search(ctx.clone(), cortex.as_ref(), text)
+        .embed_text_for_search(ctx.clone(), &provider, text)
         .await?;
     Ok(Some(params))
 }

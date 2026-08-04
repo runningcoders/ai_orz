@@ -1,33 +1,35 @@
-//! ExternalCortex - 外部 Agent 的虚拟 Cortex
+//! ExternalCortexDao - 外部 Agent 的虚拟 Cortex DAO
 //!
-//! 为外部 Agent（CLI / A2A 远程）实现 `CortexTrait`，
-//! 使其能装配到 Brain 中，复用现有的 think / awaken 链路。
+//! 为外部 Agent（CLI / A2A 远程）实现 `native::CortexDao` trait，
+//! 使其能通过统一接口被调用。
 //!
 //! 设计：
-//! - 实现 CortexTrait 的 6 个方法
-//! - prompt() 桥接到 AgentRuntimeDao 执行
-//! - embeddings() 不支持（外部 agent 自己处理向量）
-//! - support_tools() 返回 false（第一版外部 agent 不支持工具调用）
+//! - `think()` 桥接到 AgentRuntimeDao 执行（包装为 ThinkResult::Final）
+//! - `embed()` 不支持（外部 agent 自己处理向量），返回 Internal 错误
 
 use async_trait::async_trait;
-use common::enums::ModelCapability;
-use dyn_clone::clone_box;
+use common::error::{Result, err};
 
 use crate::models::agent::{AgentPo, ExternalAgentConfig};
-use crate::models::brain::CortexTrait;
+use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
+use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent_runtime::{
     AgentRuntimeDao, a2a::A2aRuntimeDao, codex::CodexRuntimeDao,
 };
+use crate::service::dao::cortex::native::CortexDao;
 
-/// 外部 Agent 的虚拟 Cortex
-pub struct ExternalCortex {
+/// 外部 Agent 的虚拟 Cortex DAO
+///
+/// 注意：当前不通过 registry 路由（external agent 不走 cortex::native::registry()），
+/// 而是由 brain.think() 直接按 brain.kind 分发。此实现保留供未来统一接入。
+pub struct ExternalCortexDao {
     agent: AgentPo,
     runtime_dao: Box<dyn AgentRuntimeDao>,
 }
 
-impl ExternalCortex {
-    /// 从 AgentPo 创建 ExternalCortex
+impl ExternalCortexDao {
+    /// 从 AgentPo 创建 ExternalCortexDao
     ///
     /// 如果 Agent 不是外部类型或配置不完整，返回 None
     pub fn from_agent(agent: &AgentPo) -> Option<Self> {
@@ -82,45 +84,33 @@ impl ExternalCortex {
     }
 }
 
-impl Clone for ExternalCortex {
-    fn clone(&self) -> Self {
-        Self {
-            agent: self.agent.clone(),
-            runtime_dao: clone_box(&*self.runtime_dao),
-        }
-    }
-}
-
 #[async_trait]
-impl CortexTrait for ExternalCortex {
-    fn capability(&self) -> ModelCapability {
-        ModelCapability::Agent
-    }
-
-    fn model_provider_id(&self) -> &str {
-        "external"
-    }
-
-    fn model_name(&self) -> &str {
-        &self.agent.name
-    }
-
-    async fn prompt(&self, prompt: &str) -> anyhow::Result<String> {
-        let ctx = RequestContext::new_system();
-        self.runtime_dao
+impl CortexDao for ExternalCortexDao {
+    async fn think(
+        &self,
+        ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        prompt: &str,
+        _tools: &[ToolDescriptor],
+    ) -> Result<ThinkResult> {
+        let content = self
+            .runtime_dao
             .invoke(ctx, &self.agent, prompt)
             .await
-            .map_err(|e| anyhow::anyhow!("external agent invoke failed: {}", e))
+            .map_err(|e| err!(Internal, "external agent invoke failed: {}", e))?;
+        Ok(ThinkResult::Final {
+            content,
+            usage: crate::models::cortex_types::TokenUsage::default(),
+        })
     }
 
-    async fn embeddings(&self, _texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Err(anyhow::anyhow!(
-            "ExternalCortex does not support embeddings"
-        ))
-    }
-
-    fn support_tools(&self) -> bool {
-        false
+    async fn embed(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProviderPo,
+        _texts: &[String],
+    ) -> Result<Vec<Vec<f32>>> {
+        Err(err!(Internal, "ExternalCortexDao 不支持 embed"))
     }
 }
 
@@ -171,34 +161,45 @@ mod tests {
         agent
     }
 
+    fn mock_provider() -> ModelProviderPo {
+        ModelProviderPo {
+            id: "external".to_string(),
+            name: "External".to_string(),
+            provider_type: common::enums::ProviderType::Custom,
+            model_name: "external".to_string(),
+            capability: common::enums::ModelCapability::Agent,
+            api_key: "".to_string(),
+            base_url: None,
+            description: None,
+            config: "{}".to_string(),
+            status: common::enums::ModelProviderStatus::Normal,
+            created_by: "system".to_string(),
+            modified_by: "system".to_string(),
+            created_at: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().timestamp(),
+        }
+    }
+
     #[tokio::test]
     async fn test_from_agent_cli() {
         crate::pkg::storage::test_support::init_for_test().await;
         let agent = make_cli_agent();
-        let cortex = ExternalCortex::from_agent(&agent);
+        let cortex = ExternalCortexDao::from_agent(&agent);
         assert!(cortex.is_some());
         let cortex = cortex.unwrap();
         assert_eq!(cortex.agent_id(), agent.id);
         assert_eq!(cortex.agent_name(), "test-cli");
-        assert_eq!(cortex.capability(), ModelCapability::Agent);
-        assert_eq!(cortex.model_provider_id(), "external");
-        assert_eq!(cortex.model_name(), "test-cli");
-        assert!(!cortex.support_tools());
     }
 
     #[tokio::test]
     async fn test_from_agent_remote() {
         crate::pkg::storage::test_support::init_for_test().await;
         let agent = make_remote_agent();
-        let cortex = ExternalCortex::from_agent(&agent);
+        let cortex = ExternalCortexDao::from_agent(&agent);
         assert!(cortex.is_some());
         let cortex = cortex.unwrap();
         assert_eq!(cortex.agent_id(), agent.id);
         assert_eq!(cortex.agent_name(), "test-remote");
-        assert_eq!(cortex.capability(), ModelCapability::Agent);
-        assert_eq!(cortex.model_provider_id(), "external");
-        assert_eq!(cortex.model_name(), "test-remote");
-        assert!(!cortex.support_tools());
     }
 
     #[tokio::test]
@@ -214,7 +215,7 @@ mod tests {
             "creator-1".to_string(),
         );
         assert_eq!(agent.kind, AgentKind::Local);
-        let cortex = ExternalCortex::from_agent(&agent);
+        let cortex = ExternalCortexDao::from_agent(&agent);
         assert!(cortex.is_none());
     }
 
@@ -231,23 +232,25 @@ mod tests {
             "creator-1".to_string(),
         );
         agent.kind = AgentKind::Cli;
-        let cortex = ExternalCortex::from_agent(&agent);
+        let cortex = ExternalCortexDao::from_agent(&agent);
         assert!(cortex.is_none());
     }
 
     #[tokio::test]
-    async fn test_embeddings_not_supported() {
+    async fn test_embed_not_supported() {
         crate::pkg::storage::test_support::init_for_test().await;
         let agent = make_cli_agent();
-        let cortex = ExternalCortex::from_agent(&agent).unwrap();
-        let result = cortex.embeddings(&["hello".to_string()]).await;
+        let cortex = ExternalCortexDao::from_agent(&agent).unwrap();
+        let ctx = RequestContext::new_system();
+        let provider = mock_provider();
+        let result = cortex.embed(ctx, &provider, &["hello".to_string()]).await;
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("does not support embeddings"));
+        let e = result.unwrap_err();
+        assert!(e.to_string().contains("不支持 embed"));
     }
 
     #[tokio::test]
-    async fn test_prompt_cli_cat() {
+    async fn test_think_cli_cat() {
         crate::pkg::storage::test_support::init_for_test().await;
         let mut agent = AgentPo::new(
             "cli-test".to_string(),
@@ -268,20 +271,14 @@ mod tests {
             prompt_template: None,
         });
 
-        let cortex = ExternalCortex::from_agent(&agent).unwrap();
-        let result = cortex.prompt("hello world").await;
+        let cortex = ExternalCortexDao::from_agent(&agent).unwrap();
+        let ctx = RequestContext::new_system();
+        let provider = mock_provider();
+        let result = cortex.think(ctx, &provider, "hello world", &[]).await;
         assert!(result.is_ok(), "expected ok, got {:?}", result);
-        assert_eq!(result.unwrap(), "hello world");
-    }
-
-    #[tokio::test]
-    async fn test_clone() {
-        crate::pkg::storage::test_support::init_for_test().await;
-        let agent = make_cli_agent();
-        let cortex = ExternalCortex::from_agent(&agent).unwrap();
-        let cloned = cortex.clone();
-        assert_eq!(cloned.agent_id(), cortex.agent_id());
-        assert_eq!(cloned.agent_name(), cortex.agent_name());
-        assert_eq!(cloned.model_name(), cortex.model_name());
+        match result.unwrap() {
+            ThinkResult::Final { content, .. } => assert_eq!(content, "hello world"),
+            _ => panic!("expected ThinkResult::Final"),
+        }
     }
 }
