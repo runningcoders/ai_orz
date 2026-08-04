@@ -41,10 +41,12 @@ impl MemoryTab {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fetch_memories(
     agent_id: Option<String>,
     tab: MemoryTab,
     kw: String,
+    task_filter: Option<String>,
     mut results: Signal<Vec<MemoryResult>>,
     mut loading: Signal<bool>,
     toast: crate::store::toast::ToastState,
@@ -62,6 +64,7 @@ fn fetch_memories(
                 memory_type: mem_type.map(|s| s.to_string()),
                 limit: Some(20),
                 tags: None,
+                task_id: task_filter.clone(),
                 status: None,
             })
             .await
@@ -76,6 +79,7 @@ fn fetch_memories(
                 traversal_strategy: None,
                 seed_node_ids: None,
                 tags: None,
+                task_id: task_filter.clone(),
             })
             .await
             .map(|r| r.results)
@@ -98,6 +102,7 @@ fn fetch_memories(
 pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let mut active_tab = use_signal(|| MemoryTab::ShortTerm);
     let mut keyword = use_signal(String::new);
+    let mut task_id = use_signal(String::new);
     let results = use_signal(Vec::<MemoryResult>::new);
     let loading = use_signal(|| false);
     let toast = use_toast();
@@ -115,6 +120,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                 agent_id.clone(),
                 tab,
                 String::new(),
+                None,
                 results,
                 loading,
                 toast,
@@ -127,6 +133,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
 
     let agent_id_4 = agent_id.clone();
     let agent_id_5 = agent_id.clone();
+    let agent_id_6 = agent_id.clone();
 
     rsx! {
         div { class: "card bg-base-100 shadow-md",
@@ -161,7 +168,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                     }
                 }
 
-                div { class: "flex gap-2 mb-4",
+                div { class: "flex flex-col sm:flex-row gap-2 mb-4",
                     input {
                         class: "input input-bordered flex-1",
                         value: "{keyword}",
@@ -172,7 +179,25 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let kw = keyword().clone();
                                 let tab = active_tab();
                                 let aid = agent_id_4.clone();
-                                fetch_memories(aid, tab, kw, results, loading, toast, fetch_request_id);
+                                let tid = task_id().clone();
+                                let task_filter = if tid.trim().is_empty() { None } else { Some(tid.trim().to_string()) };
+                                fetch_memories(aid, tab, kw, task_filter, results, loading, toast, fetch_request_id);
+                            }
+                        }
+                    }
+                    input {
+                        class: "input input-bordered sm:w-64",
+                        value: "{task_id}",
+                        oninput: move |e| task_id.set(e.value()),
+                        placeholder: "任务 ID 过滤（可选）",
+                        onkeydown: move |evt| {
+                            if evt.key() == Key::Enter {
+                                let kw = keyword().clone();
+                                let tab = active_tab();
+                                let aid = agent_id_6.clone();
+                                let tid = task_id().clone();
+                                let task_filter = if tid.trim().is_empty() { None } else { Some(tid.trim().to_string()) };
+                                fetch_memories(aid, tab, kw, task_filter, results, loading, toast, fetch_request_id);
                             }
                         }
                     }
@@ -181,7 +206,9 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             let kw = keyword().clone();
                             let tab = active_tab();
                             let aid = agent_id_5.clone();
-                            fetch_memories(aid, tab, kw, results, loading, toast, fetch_request_id);
+                            let tid = task_id().clone();
+                            let task_filter = if tid.trim().is_empty() { None } else { Some(tid.trim().to_string()) };
+                            fetch_memories(aid, tab, kw, task_filter, results, loading, toast, fetch_request_id);
                         },
                         "搜索"
                     }

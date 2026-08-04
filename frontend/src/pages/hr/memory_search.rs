@@ -11,6 +11,7 @@ use common::api::{MemoryResult, SearchMemoryParams};
 pub fn HrMemorySearch() -> Element {
     let mut keyword = use_signal(String::new);
     let mut memory_type = use_signal(String::new);
+    let mut task_id = use_signal(String::new);
     let mut results = use_signal(Vec::<MemoryResult>::new);
     let mut loading = use_signal(|| false);
     let toast = use_toast();
@@ -19,11 +20,17 @@ pub fn HrMemorySearch() -> Element {
         loading.set(true);
         let kw = keyword().clone();
         let mt = memory_type().clone();
+        let tid = task_id().clone();
         spawn(async move {
             let mem_type = if mt.is_empty() {
                 None
             } else {
                 Some(mt.as_str())
+            };
+            let task_filter = if tid.trim().is_empty() {
+                None
+            } else {
+                Some(tid.trim().to_string())
             };
             match search_memory(SearchMemoryParams {
                 query: kw,
@@ -34,6 +41,7 @@ pub fn HrMemorySearch() -> Element {
                 traversal_strategy: None,
                 seed_node_ids: None,
                 tags: None,
+                task_id: task_filter,
             })
             .await
             {
@@ -55,32 +63,54 @@ pub fn HrMemorySearch() -> Element {
             div { class: "card bg-base-100 shadow-md",
                 div { class: "card-body",
                     h2 { class: "card-title mb-4", "记忆搜索" }
-                    div { class: "flex flex-col sm:flex-row gap-2",
-                        input {
-                            class: "input input-bordered flex-1",
-                            value: "{keyword}",
-                            oninput: move |e| keyword.set(e.value()),
-                            placeholder: "输入关键词搜索记忆...",
-                            onkeydown: move |evt| {
-                                if evt.key() == Key::Enter {
-                                    // 修复 L8：handle_search 内部已 spawn，外层 spawn 多余
-                                    handle_search(());
+                    div { class: "filter-row",
+                        div { class: "filter-item flex-[2]",
+                            label { class: "form-label", "关键词" }
+                            input {
+                                class: "input input-bordered w-full",
+                                value: "{keyword}",
+                                oninput: move |e| keyword.set(e.value()),
+                                placeholder: "输入关键词搜索记忆...",
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Enter {
+                                        handle_search(());
+                                    }
                                 }
                             }
                         }
-                        select {
-                            class: "select select-bordered w-full sm:w-auto",
-                            value: "{memory_type}",
-                            onchange: move |e| memory_type.set(e.value()),
-                            option { value: "", "全部类型" }
-                            option { value: "short_term", "短期记忆" }
-                            option { value: "knowledge_node", "知识节点" }
-                            option { value: "trace", "调用记录" }
-                            option { value: "relation", "关系" }
+                        div { class: "filter-item",
+                            label { class: "form-label", "记忆类型" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{memory_type}",
+                                onchange: move |e| memory_type.set(e.value()),
+                                option { value: "", "全部类型" }
+                                option { value: "short_term", "短期记忆" }
+                                option { value: "knowledge_node", "知识节点" }
+                                option { value: "trace", "调用记录" }
+                                option { value: "relation", "关系" }
+                            }
                         }
-                        Button {
-                            onclick: move |_| handle_search(()),
-                            "搜索"
+                        div { class: "filter-item",
+                            label { class: "form-label", "任务 ID 过滤" }
+                            input {
+                                class: "input input-bordered w-full",
+                                value: "{task_id}",
+                                oninput: move |e| task_id.set(e.value()),
+                                placeholder: "可选，聚焦特定任务",
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Enter {
+                                        handle_search(());
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "filter-item justify-end",
+                            label { class: "form-label opacity-0", "操作" }
+                            Button {
+                                onclick: move |_| handle_search(()),
+                                "搜索"
+                            }
                         }
                     }
                 }
