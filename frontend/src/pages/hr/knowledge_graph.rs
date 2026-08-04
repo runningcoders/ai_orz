@@ -1,10 +1,18 @@
 use dioxus::prelude::*;
 use std::collections::HashSet;
 
-use crate::api::hr::search_memory_with_traversal;
+use crate::api::hr::{query_agents, recommend_seed_nodes, search_memory_with_traversal};
 use crate::components::button::Button;
 use crate::components::graph::{Graph, GraphEdge, GraphNode, calculate_layout, expand_layout};
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
+use crate::components::state::{EmptyState, Loading};
+use crate::components::SearchableSelect;
+use crate::layouts::app_layout::AppLayout;
+use crate::store::toast::use_toast;
+use common::api::{
+    AgentListItem, AgentQueryRequest, MemoryResult, RecommendSeedNodesParams, SearchMemoryParams,
+    SeedNodeRecommendation,
+};
 
 /// 渲染风格：svg（兜底）或 canvas（HUD 驾驶舱风格）
 #[derive(Clone, Copy, PartialEq)]
@@ -12,10 +20,6 @@ enum GraphStyle {
     Svg,
     Canvas,
 }
-use crate::components::state::{EmptyState, Loading};
-use crate::layouts::app_layout::AppLayout;
-use crate::store::toast::use_toast;
-use common::api::{MemoryResult, SearchMemoryParams};
 
 /// 从搜索结果构建图谱节点和边
 fn build_graph_from_results(results: &[MemoryResult]) -> (Vec<GraphNode>, Vec<GraphEdge>) {
@@ -103,8 +107,11 @@ fn type_badge_class(t: &str) -> &'static str {
     }
 }
 
+/// 可复用知识图谱子组件。
+/// agent_id = Some(id)：锁定 Agent（Agent 详情页场景）
+/// agent_id = None：全局知识图谱（独立页面场景，由父组件提供 Agent 选择器）
 #[component]
-pub fn HrKnowledgeGraph() -> Element {
+pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let mut keyword = use_signal(String::new);
     let mut tags_input = use_signal(String::new);
     let mut nodes = use_signal(Vec::<GraphNode>::new);
@@ -121,6 +128,37 @@ pub fn HrKnowledgeGraph() -> Element {
     let mut click_request_id = use_signal(|| 0u32);
     // 渲染风格切换：默认 Canvas（HUD 驾驶舱风格），可切回 SVG 作为兜底
     let mut graph_style = use_signal(|| GraphStyle::Canvas);
+
+    // 推荐起点状态
+    let mut recommendations = use_signal(Vec::<SeedNodeRecommendation>::new);
+    let mut rec_loading = use_signal(|| false);
+
+    // 将 agent_id 存入 Signal（Copy 类型），使闭包捕获后仍为 Copy，可在 for 循环中复用
+    let aid_init = agent_id.clone();
+    let mut agent_id_signal = use_signal(move || aid_init);
+    agent_id_signal.set(agent_id);
+
+    // 加载推荐起点
+    let mut load_recommendations = move || {
+        let aid = agent_id_signal();
+        rec_loading.set(true);
+        spawn(async move {
+            let params = RecommendSeedNodesParams {
+                agent_id: aid,
+                limit: Some(5),
+            };
+            match recommend_seed_nodes(&params).await {
+                Ok(resp) => recommendations.set(resp.recommendations),
+                Err(e) => toast.error(format!("加载推荐起点失败: {}", e)),
+            }
+            rec_loading.set(false);
+        });
+    };
+
+    // 首次渲染加载推荐起点（agent_id 变化时也会重新触发）
+    use_effect(move || {
+        load_recommendations();
+    });
 
     let mut handle_search = move |_| {
         let kw = keyword().clone();
@@ -142,6 +180,7 @@ pub fn HrKnowledgeGraph() -> Element {
             search_history.set(history);
         }
 
+        let aid = agent_id_signal();
         spawn(async move {
             let tags_vec: Vec<String> = if tags_raw.trim().is_empty() {
                 Vec::new()
@@ -167,7 +206,7 @@ pub fn HrKnowledgeGraph() -> Element {
                 seed_node_ids: Some(Vec::new()),
                 tags: tags_field,
                 task_id: None,
-                agent_id: None,
+                agent_id: aid,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -199,7 +238,7 @@ pub fn HrKnowledgeGraph() -> Element {
         });
     };
 
-    let handle_node_click = move |node_id: String| {
+    let mut handle_node_click = move |node_id: String| {
         selected_node_id.set(Some(node_id.clone()));
 
         if let Some(detail) = detail_map.read().get(&node_id) {
@@ -215,6 +254,7 @@ pub fn HrKnowledgeGraph() -> Element {
         // 修复 M11：自增 request_id，捕获当前 ID，结果到达时若不匹配则丢弃
         let my_request_id = click_request_id() + 1;
         click_request_id.set(my_request_id);
+        let aid = agent_id_signal();
         spawn(async move {
             let params = SearchMemoryParams {
                 query: "".to_string(),
@@ -226,7 +266,7 @@ pub fn HrKnowledgeGraph() -> Element {
                 seed_node_ids: Some(seed_ids.clone()),
                 tags: None,
                 task_id: None,
-                agent_id: None,
+                agent_id: aid,
             };
             match search_memory_with_traversal(params).await {
                 Ok(data) => {
@@ -290,7 +330,64 @@ pub fn HrKnowledgeGraph() -> Element {
     let selected_detail = selected_node_data.read().clone();
 
     rsx! {
-        AppLayout {
+        div { class: "space-y-4",
+            // 推荐起点区域
+            {if rec_loading() {
+                Some(rsx! {
+                    div { class: "card bg-base-100 shadow-md",
+                        div { class: "card-body py-3",
+                            span { class: "text-sm text-base-content/70", "正在计算推荐起点..." }
+                        }
+                    }
+                })
+            } else if !recommendations().is_empty() {
+                {
+                    let recs = recommendations();
+                    let rec_count = recs.len();
+                    Some(rsx! {
+                        div { class: "card bg-base-100 shadow-md",
+                            div { class: "card-body py-3",
+                                h4 { class: "text-sm font-semibold mb-2", "🎯 推荐起点（按关联度数 Top {rec_count}）" }
+                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2",
+                                    for rec in recs.iter().cloned() {
+                                        {
+                                            let nid = rec.node_id.clone();
+                                            let name = rec.node_name.clone();
+                                            let desc = rec.node_description.clone();
+                                            let degree = rec.degree;
+                                            let incoming = rec.incoming_count;
+                                            let outgoing = rec.outgoing_count;
+                                            let tags = rec.tags.clone();
+                                            rsx! {
+                                                button {
+                                                    class: "card bg-base-200 hover:bg-base-300 transition-colors text-left p-2 rounded-lg cursor-pointer",
+                                                    onclick: move |_| handle_node_click(nid.clone()),
+                                                    div { class: "flex flex-col gap-1",
+                                                        span { class: "font-medium text-sm truncate", "{name}" }
+                                                        span { class: "text-xs text-base-content/70 line-clamp-2", "{desc}" }
+                                                        div { class: "flex flex-wrap gap-1 mt-1",
+                                                            span { class: "badge badge-primary badge-sm", "度数 {degree}" }
+                                                            span { class: "badge badge-ghost badge-sm", "入 {incoming}" }
+                                                            span { class: "badge badge-ghost badge-sm", "出 {outgoing}" }
+                                                            for tag in tags.iter().take(3) {
+                                                                span { class: "badge badge-neutral badge-sm", "{tag}" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+            } else {
+                None
+            }}
+
+            // 搜索框区域
             div { class: "card bg-base-100 shadow-md",
                 div { class: "card-body",
                     h2 { class: "card-title mb-4", "知识图谱" }
@@ -397,12 +494,13 @@ pub fn HrKnowledgeGraph() -> Element {
                 }
             }
 
+            // 图谱视图 + 节点详情
             if loading() {
                 Loading {}
             } else if current_nodes.is_empty() {
-                EmptyState { message: "开始搜索知识节点".to_string() }
+                EmptyState { message: "开始搜索知识节点或点击推荐起点".to_string() }
             } else {
-                div { class: "flex flex-col lg:flex-row gap-4 mt-4",
+                div { class: "flex flex-col lg:flex-row gap-4",
                     div { class: "flex-1 min-h-96",
                     div { class: "card bg-base-100 shadow-md h-full",
                         div { class: "card-body",
@@ -576,6 +674,84 @@ pub fn HrKnowledgeGraph() -> Element {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 知识图谱路由入口：AppLayout + Agent 选择器 + KnowledgeGraph
+#[component]
+pub fn HrKnowledgeGraph() -> Element {
+    let mut selected_agent_id = use_signal(|| None::<String>);
+    let mut agent_search_results = use_signal(Vec::<AgentListItem>::new);
+    let mut agent_search_loading = use_signal(|| false);
+    let toast = use_toast();
+
+    let mut handle_agent_search = move |keyword: String| {
+        if keyword.trim().is_empty() {
+            agent_search_results.set(Vec::new());
+            return;
+        }
+        agent_search_loading.set(true);
+        spawn(async move {
+            let req = AgentQueryRequest {
+                keyword: Some(keyword),
+                ..Default::default()
+            };
+            match query_agents(&req).await {
+                Ok(resp) => agent_search_results.set(resp.items),
+                Err(e) => toast.error(format!("搜索 Agent 失败: {}", e)),
+            }
+            agent_search_loading.set(false);
+        });
+    };
+
+    let mut handle_agent_select = move |selection: String| {
+        let agent_id = if let Some(id_start) = selection.rfind('(') {
+            selection[id_start + 1..selection.len() - 1].to_string()
+        } else {
+            selection
+        };
+        selected_agent_id.set(Some(agent_id));
+    };
+
+    let agent_options = agent_search_results
+        .read()
+        .iter()
+        .map(|a| format!("{} ({})", a.name, a.id))
+        .collect::<Vec<String>>();
+
+    rsx! {
+        AppLayout {
+            div { class: "space-y-4",
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-body py-3",
+                        div { class: "flex gap-2 items-center",
+                            span { class: "text-sm font-medium whitespace-nowrap", "Agent:" }
+                            div { class: "flex-1 max-w-md",
+                                SearchableSelect {
+                                    placeholder: "选择 Agent（留空=全局知识图谱）...".to_string(),
+                                    selected: None,
+                                    options: agent_options,
+                                    on_select: move |selection: String| handle_agent_select(selection),
+                                    on_search: Some(EventHandler::new(move |kw: String| handle_agent_search(kw))),
+                                    loading: *agent_search_loading.read(),
+                                }
+                            }
+                            if selected_agent_id().is_some() {
+                                button {
+                                    class: "btn btn-ghost btn-sm",
+                                    onclick: move |_| {
+                                        selected_agent_id.set(None);
+                                    },
+                                    "✕ 清除"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                KnowledgeGraph { agent_id: selected_agent_id() }
             }
         }
     }
