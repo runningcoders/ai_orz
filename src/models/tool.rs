@@ -93,7 +93,7 @@ impl ToolDyn for RigToolAdapter {
                 .po()
                 .parameters_schema
                 .clone()
-                .unwrap_or_default(),
+                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
         };
         Box::pin(async move { definition })
     }
