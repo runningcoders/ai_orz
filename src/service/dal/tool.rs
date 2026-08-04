@@ -178,9 +178,8 @@ pub trait ToolDal: Send + Sync {
         params: crate::service::dao::tool::ToolSearch,
     ) -> Result<common::api::PagedResult<Tool>>;
 
-    /// Wrap tools for Rig to use (convert to Box<dyn ToolDyn>)
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext)
-    -> Vec<Box<dyn rig::tool::ToolDyn>>;
+    /// Wrap tools for Rig to use (convert to DynamicTool)
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<rig::tool::DynamicTool>;
 
     // ==================== 统计查询 ====================
 
@@ -746,11 +745,7 @@ impl ToolDal for ToolDalImpl {
             .map_err(Into::into)
     }
 
-    fn wrap_for_rig(
-        &self,
-        tools: &[Tool],
-        ctx: RequestContext,
-    ) -> Vec<Box<dyn rig::tool::ToolDyn>> {
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<rig::tool::DynamicTool> {
         self.tool_call_dao.wrap_for_rig(tools, ctx)
     }
 

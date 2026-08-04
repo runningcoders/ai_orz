@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use common::error::Result;
 use dyn_clone::DynClone;
 use futures_util::Future;
-use rig::tool::ToolError;
+use rig::tool::{ToolErrorKind, ToolExecutionError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::marker::PhantomData;
@@ -178,13 +178,17 @@ where
         let params: Params = match serde_json::from_value(args) {
             Ok(p) => p,
             Err(e) => {
-                return Err(ToolError::JsonError(e).into());
+                return Err(
+                    ToolExecutionError::new(ToolErrorKind::InvalidArgs, e.to_string()).into(),
+                );
             }
         };
 
         match self.inner.call(ctx, params).await {
             Ok(result) => Ok(result),
-            Err(app_error) => Err(ToolError::ToolCallError(Box::new(app_error)).into()),
+            Err(app_error) => {
+                Err(ToolExecutionError::new(ToolErrorKind::Other, app_error.to_string()).into())
+            }
         }
     }
 
@@ -254,9 +258,9 @@ impl HandlerToolBuilder {
     }
 }
 
-/// Helper: convert common::error::Error to ToolError
-pub fn app_error_to_tool_error(e: common::error::Error) -> ToolError {
-    ToolError::ToolCallError(e.to_string().into())
+/// Helper: convert common::error::Error to ToolExecutionError
+pub fn app_error_to_tool_error(e: common::error::Error) -> ToolExecutionError {
+    ToolExecutionError::new(ToolErrorKind::Other, e.to_string())
 }
 
 // Re-export the macro

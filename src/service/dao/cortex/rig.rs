@@ -5,7 +5,7 @@ use crate::models::{brain::*, model_provider::ModelProviderPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::Result;
 use common::enums::{ModelCapability, ProviderType};
-use rig::tool::ToolDyn;
+use rig::tool::DynamicTool;
 use std::sync::{Arc, OnceLock};
 
 /// Rig 驱动的 Cortex 实现
@@ -41,7 +41,7 @@ impl super::CortexDao for RigCortexDao {
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-        rig_tools: Vec<Box<dyn ToolDyn>>,
+        rig_tools: Vec<DynamicTool>,
     ) -> Result<Box<dyn CortexTrait + Send + Sync>> {
         let api_key = provider.api_key.clone();
         let model = provider.model_name.clone();

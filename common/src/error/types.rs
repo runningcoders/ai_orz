@@ -359,10 +359,10 @@ impl From<TomlDeError> for Error {
     }
 }
 
-/// Convert rig::tool::ToolError to our Error
+/// Convert rig::tool::ToolExecutionError to our Error
 #[cfg(feature = "rig-integration")]
-impl From<rig::tool::ToolError> for Error {
-    fn from(err: rig::tool::ToolError) -> Self {
+impl From<rig::tool::ToolExecutionError> for Error {
+    fn from(err: rig::tool::ToolExecutionError) -> Self {
         Error::new(
             crate::error::ErrorCode::ToolExecutionFailed,
             err.to_string(),

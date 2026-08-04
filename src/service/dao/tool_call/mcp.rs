@@ -13,7 +13,7 @@ use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
-use rig::tool::ToolDyn;
+use rig::tool::DynamicTool;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -85,7 +85,7 @@ impl ToolCallDao for McpToolCallDaoImpl {
         self.base.assemble_core_tool(po)
     }
 
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<DynamicTool> {
         self.base.wrap_for_rig(tools, ctx)
     }
 

@@ -17,7 +17,7 @@ use crate::service::dao::tool_call::ToolCallDao;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::Result;
-use rig::tool::ToolDyn;
+use rig::tool::DynamicTool;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -565,7 +565,7 @@ impl CortexDao for MockCortexDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<Box<dyn ToolDyn>>,
+        _rig_tools: Vec<DynamicTool>,
     ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
         Ok(Box::new(MockCortex::new()))
     }
@@ -724,7 +724,7 @@ impl ToolCallDao for MockToolCallDao {
         Ok(Some(Box::new(TestTool { po: po.clone() })))
     }
 
-    fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
+    fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<DynamicTool> {
         vec![]
     }
 

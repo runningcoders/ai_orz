@@ -2,11 +2,11 @@ use dioxus::prelude::*;
 use std::collections::HashSet;
 
 use crate::api::hr::{query_agents, recommend_seed_nodes, search_memory_with_traversal};
+use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{Graph, GraphEdge, GraphNode, calculate_layout, expand_layout};
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
 use crate::components::state::{EmptyState, Loading};
-use crate::components::SearchableSelect;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{

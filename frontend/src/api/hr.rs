@@ -10,9 +10,9 @@ use common::api::{
     PagedResult, QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams,
     RecommendSeedNodesResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest,
-    UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
-    UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
+    UpdateAgentStatusRequest, UpdateSkillFileContentRequest, UpdateSkillRequest,
+    UpdateSkillResponse,
 };
 
 use super::{

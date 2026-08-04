@@ -8,13 +8,14 @@
 
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::ModelCallEvent;
-use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
-use rig::completion::{CompletionModel, CompletionResponse, Message};
-use rig::wasm_compat::WasmCompatSend;
+use rig::agent::{
+    AgentHook, CompletionCallAction, CompletionCallEvent, CompletionResponseEvent, HookContext,
+    ObservationAction, ToolCall, ToolCallAction, ToolResultAction, ToolResultEvent,
+};
 use tracing::{debug, info, warn};
 
 /// Runtime Monitoring Hook
-/// 接入 rig 的 hook 机制，实现运行时监控
+/// 接入 rig 0.41 的 AgentHook 机制，实现运行时监控
 ///
 /// 在 `on_completion_response` 中自动将 token 用量写入 Stats，
 /// tags 从 `RequestContext` 提取（agent_id / task_id / project_id /
@@ -31,24 +32,22 @@ impl RuntimeMonitoringHook {
     }
 }
 
-impl<M> PromptHook<M> for RuntimeMonitoringHook
-where
-    M: CompletionModel,
-{
+impl AgentHook for RuntimeMonitoringHook {
     /// Called before the prompt is sent to the model
     fn on_completion_call(
         &self,
-        _prompt: &Message,
-        history: &[Message],
-    ) -> impl futures_util::Future<Output = HookAction> + WasmCompatSend {
+        _ctx: &HookContext,
+        event: CompletionCallEvent<'_>,
+    ) -> impl futures_util::Future<Output = CompletionCallAction> + rig::wasm_compat::WasmCompatSend
+    {
         debug!(
             log_id = self.ctx.log_id,
             user_id = ?self.ctx.user_id,
             organization_id = ?self.ctx.organization_id,
-            history_len = history.len(),
+            history_len = event.history.len(),
             "Starting completion call"
         );
-        Box::pin(async { HookAction::cont() })
+        async { CompletionCallAction::continue_run() }
     }
 
     /// Called after the prompt is sent to the model and a response is received.
@@ -57,10 +56,11 @@ where
     /// model_provider 等维度聚合统计。
     fn on_completion_response(
         &self,
-        _prompt: &Message,
-        response: &CompletionResponse<M::Response>,
-    ) -> impl futures_util::Future<Output = HookAction> + WasmCompatSend {
-        let usage = response.usage;
+        _ctx: &HookContext,
+        event: CompletionResponseEvent<'_>,
+    ) -> impl futures_util::Future<Output = ObservationAction> + rig::wasm_compat::WasmCompatSend
+    {
+        let usage = event.usage;
         info!(
             log_id = self.ctx.log_id,
             user_id = ?self.ctx.user_id,
@@ -80,7 +80,7 @@ where
         let organization_id = self.ctx.organization_id().cloned();
         let user_id = self.ctx.user_id().cloned();
 
-        Box::pin(async move {
+        async move {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as i64)
@@ -104,28 +104,26 @@ where
                     "Failed to record stats event for completion response"
                 );
             }
-            HookAction::cont()
-        })
+            ObservationAction::continue_run()
+        }
     }
 
     /// Called before a tool call is executed.
     fn on_tool_call(
         &self,
-        tool_name: &str,
-        tool_call_id: Option<String>,
-        internal_call_id: &str,
-        args: &str,
-    ) -> impl futures_util::Future<Output = ToolCallHookAction> + WasmCompatSend {
+        _ctx: &HookContext,
+        event: ToolCall<'_>,
+    ) -> impl futures_util::Future<Output = ToolCallAction> + rig::wasm_compat::WasmCompatSend {
         debug!(
             log_id = self.ctx.log_id,
             user_id = ?self.ctx.user_id,
-            tool_name = tool_name,
-            tool_call_id = ?tool_call_id,
-            internal_call_id = %internal_call_id,
-            args_length = args.len(),
+            tool_name = event.tool_name,
+            tool_call_id = ?event.tool_call_id,
+            internal_call_id = %event.internal_call_id,
+            args_length = event.args.len(),
             "Tool call starting"
         );
-        Box::pin(async { ToolCallHookAction::cont() })
+        async { ToolCallAction::run() }
     }
 
     /// Called after a tool call has been executed.
@@ -134,22 +132,19 @@ where
     /// 此处仅保留日志记录用于调试。
     fn on_tool_result(
         &self,
-        tool_name: &str,
-        tool_call_id: Option<String>,
-        internal_call_id: &str,
-        args: &str,
-        result: &str,
-    ) -> impl futures_util::Future<Output = HookAction> + WasmCompatSend {
+        _ctx: &HookContext,
+        event: ToolResultEvent<'_>,
+    ) -> impl futures_util::Future<Output = ToolResultAction> + rig::wasm_compat::WasmCompatSend
+    {
         debug!(
             log_id = self.ctx.log_id,
-            tool_name = tool_name,
-            tool_call_id = ?tool_call_id,
-            internal_call_id = %internal_call_id,
-            args_length = args.len(),
-            result_length = result.len(),
+            tool_name = event.tool_name,
+            tool_call_id = ?event.tool_call_id,
+            internal_call_id = %event.internal_call_id,
+            args_length = event.args.len(),
             "Tool call completed"
         );
 
-        Box::pin(async move { HookAction::cont() })
+        async { ToolResultAction::keep() }
     }
 }

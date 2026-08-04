@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::models::model_provider::ModelProviderPo;
-use ::rig::tool::ToolDyn;
+use ::rig::tool::DynamicTool;
 use common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;
 
@@ -28,7 +28,7 @@ async fn test_create_openai_cortex(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     // 应该能成功创建，API key 不正确只会在运行时失败，创建本身不会失败
@@ -57,7 +57,7 @@ async fn test_create_deepseek_cortex(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     assert!(result.is_ok());
@@ -85,7 +85,7 @@ async fn test_create_qwen_cortex(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     assert!(result.is_ok());
@@ -113,7 +113,7 @@ async fn test_create_doubao_cortex(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     assert!(result.is_ok());
@@ -141,7 +141,7 @@ async fn test_create_ollama_cortex(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     assert!(result.is_ok());
@@ -169,7 +169,7 @@ async fn test_create_openai_compatible_custom_base_url(pool: SqlitePool) {
     };
 
     let dao = rig::RigCortexDao::new();
-    let rig_tools: Vec<Box<dyn ToolDyn>> = vec![];
+    let rig_tools: Vec<DynamicTool> = vec![];
     let result = dao.create_cortex_trait(ctx, &provider_po, rig_tools);
 
     assert!(result.is_ok());

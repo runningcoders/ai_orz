@@ -6,7 +6,7 @@
 use crate::models::brain::*;
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::request_context::RequestContext;
-use ::rig::tool::ToolDyn;
+use ::rig::tool::DynamicTool;
 use anyhow::Result;
 
 /// Cortex DAO 工厂 trait
@@ -24,7 +24,7 @@ pub trait CortexDao: Send + Sync {
         &self,
         ctx: RequestContext,
         provider: &ModelProviderPo,
-        rig_tools: Vec<Box<dyn ToolDyn>>,
+        rig_tools: Vec<DynamicTool>,
     ) -> Result<Box<dyn CortexTrait + Send + Sync>>;
 
     /// ✅ 执行 prompt：使用已创建的 CortexTrait 推理获取回答

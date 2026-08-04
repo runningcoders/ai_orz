@@ -6,7 +6,7 @@ use common::enums::tool::ControlMode;
 use common::enums::{ToolProtocol, ToolStatus};
 use common::error::{Result, err};
 use dyn_clone::DynClone;
-use rig::tool::{ToolDyn, ToolError};
+use rig::tool::{DynamicTool, ToolContext, ToolErrorKind, ToolExecutionError, ToolOutput};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -55,7 +55,7 @@ impl ToolExecutionResult {
     }
 }
 
-/// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 ToolDyn trait
+/// Rig 适配层 - 将我们的 CoreTool trait 转换为 Rig 的 DynamicTool
 ///
 /// 用于 auto 模式，让 Rig 可以直接调用我们的工具
 /// Rig 调用接口不传递 RequestContext，所以需要创建时持有
@@ -68,69 +68,39 @@ impl RigToolAdapter {
     pub fn new(ctx: RequestContext, inner: Box<dyn CoreTool>) -> Self {
         Self { ctx, inner }
     }
-}
 
-impl ToolDyn for RigToolAdapter {
-    fn name(&self) -> String {
-        self.inner.po().name.clone()
-    }
+    /// Consume the adapter and produce a `DynamicTool` for rig 0.41+.
+    ///
+    /// The closure captures `ctx` and `inner` by move, so each `DynamicTool`
+    /// owns its own copy of the RequestContext and CoreTool.
+    pub fn into_dynamic_tool(self) -> DynamicTool {
+        let name = self.inner.po().name.clone();
+        let description = self.inner.po().description.clone();
+        let parameters = self
+            .inner
+            .po()
+            .parameters_schema
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+        let ctx = self.ctx;
+        let inner = self.inner;
 
-    fn definition<'a>(
-        &'a self,
-        _: String,
-    ) -> std::pin::Pin<
-        Box<
-            dyn futures_util::Future<Output = rig::completion::ToolDefinition>
-                + std::marker::Send
-                + 'a,
-        >,
-    > {
-        let definition = rig::completion::ToolDefinition {
-            name: self.inner.po().name.clone(),
-            description: self.inner.po().description.clone(),
-            parameters: self
-                .inner
-                .po()
-                .parameters_schema
-                .clone()
-                .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}})),
-        };
-        Box::pin(async move { definition })
-    }
-
-    fn call<'a>(
-        &'a self,
-        args: String,
-    ) -> std::pin::Pin<
-        Box<
-            dyn futures_util::Future<Output = std::result::Result<String, ToolError>>
-                + std::marker::Send
-                + 'a,
-        >,
-    > {
-        use futures_util::FutureExt;
-        let ctx = &self.ctx;
-        let inner = &self.inner;
-
-        async move {
-            // Parse args from String JSON to Value
-            let args: Value = match serde_json::from_str(&args) {
-                Ok(v) => v,
-                Err(e) => {
-                    return Err(ToolError::JsonError(e));
-                }
-            };
-
-            // Call our core tool
-            let result = inner.call((*ctx).clone(), args).await;
-
-            // Serialize result back to string
-            match result {
-                Ok(v) => Ok(serde_json::to_string(&v)?),
-                Err(e) => Err(ToolError::ToolCallError(e.to_string().into())),
-            }
-        }
-        .boxed()
+        DynamicTool::new(
+            name,
+            description,
+            parameters,
+            move |_tool_ctx: &mut ToolContext, args: serde_json::Value| {
+                let ctx = ctx.clone();
+                let inner = inner.clone();
+                Box::pin(async move {
+                    let result = inner.call(ctx, args).await;
+                    match result {
+                        Ok(v) => Ok(ToolOutput::json(v)),
+                        Err(e) => Err(ToolExecutionError::new(ToolErrorKind::Other, e.to_string())),
+                    }
+                })
+            },
+        )
     }
 }
 

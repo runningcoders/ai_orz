@@ -12,7 +12,7 @@ use rig::embeddings::EmbeddingModel;
 use rig::prelude::*;
 use rig::providers::openai;
 use rig::providers::openai::responses_api::ResponsesCompletionModel;
-use rig::tool::ToolDyn;
+use rig::tool::DynamicTool;
 
 /// Ollama Cortex - 本地模型支持
 #[derive(Clone)]
@@ -21,7 +21,7 @@ pub struct OllamaCortex {
     model_provider_id: String,
     model_name: String,
     embedding_model: String,
-    agent: Agent<ResponsesCompletionModel, RuntimeMonitoringHook>,
+    agent: Agent<ResponsesCompletionModel>,
 }
 
 impl OllamaCortex {
@@ -31,7 +31,7 @@ impl OllamaCortex {
         model: String,
         base_url: Option<String>,
         ctx: RequestContext,
-        rig_tools: Vec<Box<dyn ToolDyn>>,
+        rig_tools: Vec<DynamicTool>,
     ) -> Result<Self> {
         // Ollama 默认地址 http://localhost:11434/v1
         let default_base_url = "http://localhost:11434/v1".to_string();
@@ -48,12 +48,12 @@ impl OllamaCortex {
         // ✅ 提前初始化好 Agent
         let hook = RuntimeMonitoringHook::new(ctx.clone());
         let agent = if rig_tools.is_empty() {
-            client.agent(model.clone()).hook(hook).build()
+            client.agent(model.clone()).add_hook(hook).build()
         } else {
             client
                 .agent(model.clone())
-                .hook(hook)
-                .tools(rig_tools)
+                .add_hook(hook)
+                .dynamic_tools(rig_tools)
                 .build()
         };
 

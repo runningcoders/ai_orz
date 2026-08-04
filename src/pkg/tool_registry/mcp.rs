@@ -13,7 +13,7 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
 use common::error::{Result, err};
-use rig::tool::ToolError;
+use rig::tool::{ToolErrorKind, ToolExecutionError};
 use rmcp::{
     RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService,
     transport::TokioChildProcess,
@@ -325,12 +325,12 @@ impl McpCoreTool {
 impl CoreTool for McpCoreTool {
     async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         let server = self.server.as_ref().ok_or_else(|| {
-            ToolError::ToolCallError(
+            ToolExecutionError::new(
+                ToolErrorKind::Other,
                 format!(
                     "MCP tool {} on server {} is not executable: MCP runtime is not enabled",
                     self.config.tool_name, self.config.server_id
-                )
-                .into(),
+                ),
             )
         })?;
         let client_runtime = self.client_runtime.as_ref().ok_or_else(|| {

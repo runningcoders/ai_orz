@@ -75,7 +75,7 @@ impl CortexDao for MockCortexDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<Box<dyn ::rig::tool::ToolDyn>>,
+        _rig_tools: Vec<rig::tool::DynamicTool>,
     ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
         panic!("MockCortexDao::create_cortex_trait not implemented for tests");
     }
@@ -1411,7 +1411,7 @@ impl CortexDao for MockCortexVectorDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<Box<dyn ::rig::tool::ToolDyn>>,
+        _rig_tools: Vec<rig::tool::DynamicTool>,
     ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
         Ok(Box::new(MockCortexTrait))
     }

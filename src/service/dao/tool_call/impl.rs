@@ -8,7 +8,7 @@ use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use anyhow::Result;
 use async_trait::async_trait;
 use common::enums::tool::ControlMode;
-use rig::tool::ToolDyn;
+use rig::tool::DynamicTool;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -69,7 +69,7 @@ impl ToolCallDao for ToolCallDaoImpl {
         Ok(Some(tool_raw))
     }
 
-    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
+    fn wrap_for_rig(&self, tools: &[Tool], ctx: RequestContext) -> Vec<DynamicTool> {
         let mut rig_tools = Vec::new();
 
         for tool in tools {
@@ -85,11 +85,11 @@ impl ToolCallDao for ToolCallDaoImpl {
             let decorated = ToolCallLoggingDecorator::new(cloned);
             let decorated_box: Box<dyn CoreTool + Send + Sync> = Box::new(decorated);
 
-            // Adapt to Rig's ToolDyn interface
+            // Adapt to Rig's DynamicTool interface (rig 0.41+)
             let rig_adapter = RigToolAdapter::new(ctx.clone(), decorated_box);
-            let rig_adapter_box: Box<dyn ToolDyn> = Box::new(rig_adapter);
+            let dynamic_tool = rig_adapter.into_dynamic_tool();
 
-            rig_tools.push(rig_adapter_box);
+            rig_tools.push(dynamic_tool);
         }
 
         rig_tools

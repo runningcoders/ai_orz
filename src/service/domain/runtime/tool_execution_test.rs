@@ -20,7 +20,7 @@ mod tests {
     use common::enums::{ControlMode, ToolProtocol, ToolStatus};
     use common::error::Result;
     use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
-    use rig::tool::{ToolDyn, ToolError};
+    use rig::tool::{DynamicTool, ToolErrorKind, ToolExecutionError};
     use serde_json::{Value, json};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -424,7 +424,7 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<Box<dyn ToolDyn>> {
+        fn wrap_for_rig(&self, _tools: &[Tool], _ctx: RequestContext) -> Vec<DynamicTool> {
             unimplemented!("not needed by tool execution routing tests")
         }
 
@@ -519,7 +519,7 @@ mod tests {
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                let error = ToolError::ToolCallError(error_message.clone().into());
+                let error = ToolExecutionError::new(ToolErrorKind::Other, error_message.clone());
                 return Err(match &self.error_trace_ref {
                     Some(trace_ref) => {
                         use common::error::{ErrorCode, ErrorType};
@@ -560,7 +560,7 @@ mod tests {
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
-                let error = ToolError::ToolCallError(error_message.clone().into());
+                let error = ToolExecutionError::new(ToolErrorKind::Other, error_message.clone());
                 return Err(match &self.error_trace_ref {
                     Some(trace_ref) => {
                         use common::error::{ErrorCode, ErrorType};

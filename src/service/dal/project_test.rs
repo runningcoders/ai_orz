@@ -9,8 +9,8 @@ use crate::service::dal::project::{ProjectDal, new};
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::project::{self, ProjectQuery, ProjectSearch};
-use ::rig::tool::ToolDyn;
 use common::enums::ProjectStatus;
+use rig::tool::DynamicTool;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -88,7 +88,7 @@ impl CortexDao for MockCortexDao {
         &self,
         _ctx: RequestContext,
         _provider: &ModelProviderPo,
-        _rig_tools: Vec<Box<dyn ToolDyn>>,
+        _rig_tools: Vec<DynamicTool>,
     ) -> anyhow::Result<Box<dyn CortexTrait + Send + Sync>> {
         Ok(Box::new(MockCortex::new()))
     }

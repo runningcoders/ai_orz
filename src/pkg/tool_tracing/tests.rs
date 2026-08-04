@@ -4,7 +4,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::{ToolProtocol, ToolStatus};
-use rig::tool::ToolError;
+use rig::tool::{ToolErrorKind, ToolExecutionError};
 use serde_json::{Value, json};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::{fs, process, sync::Once};
@@ -342,8 +342,10 @@ struct FailingFakeCoreTool {
 #[async_trait]
 impl CoreTool for FailingFakeCoreTool {
     async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
-        Err(ToolError::ToolCallError(
-            "http request failed for https://api.example.invalid/search?access_token=***".into(),
+        Err(ToolExecutionError::new(
+            ToolErrorKind::Other,
+            "http request failed for https://api.example.invalid/search?access_token=***"
+                .to_string(),
         )
         .into())
     }
