@@ -539,3 +539,105 @@ async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
     assert!(!result.raw_input.is_empty());
     assert_eq!(result.raw_output, "mock response");
 }
+
+/// awaken 流程测试：ThinkingOptions 注入 project/task 上下文到 Prompt。
+///
+/// 验证：
+/// - ThinkingOptions.with_project() 的实体摘要出现在 Prompt 中
+/// - ThinkingOptions.with_task() 的实体摘要出现在 Prompt 中
+/// - project_context / task_context 区块正确渲染
+#[sqlx::test]
+async fn test_awaken_project_task_context_in_prompt(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool).await;
+
+    let agent_id = format!("agent-ctx-{}", Uuid::now_v7());
+    let agent = make_test_agent_with_brain(&agent_id);
+
+    let message = make_test_message("请帮我处理这个任务");
+
+    // 构造带 project + task 的 ThinkingOptions
+    use ::common::enums::{AssigneeType, ProjectStatus, TaskStatus};
+    use ai_orz::models::project::{Project, ProjectPo};
+    use ai_orz::models::task::{Task, TaskPo};
+
+    let project_id = format!("project-{}", Uuid::now_v7());
+    let task_id = format!("task-{}", Uuid::now_v7());
+
+    let mut project_po = ProjectPo::new(
+        project_id.clone(),
+        "Test Project".to_string(),
+        "项目描述：集成测试项目".to_string(),
+        None,   // workflow
+        None,   // guidance
+        0,      // priority
+        vec![], // tags
+        "test-user".to_string(),
+        None, // owner_agent_id
+        None, // start_at
+        None, // due_at
+        None, // end_at
+        "test-user".to_string(),
+    );
+    project_po.status = ProjectStatus::Active;
+    let project = Project::from_po(project_po);
+
+    let mut task_po = TaskPo::new(
+        task_id.clone(),
+        "Test Task".to_string(),
+        "任务描述：执行集成测试".to_string(),
+        0,                        // priority
+        vec![],                   // tags
+        None,                     // due_at
+        None,                     // start_at
+        None,                     // end_at
+        vec![],                   // dependencies
+        "test-user".to_string(),  // root_user_id
+        AssigneeType::Agent,      // assignee_type
+        "test-agent".to_string(), // assignee_id
+        Some(project_id.clone()), // project_id
+        "test-user".to_string(),  // created_by
+    );
+    task_po.status = TaskStatus::InProgress;
+    let task = Task::from_po(task_po);
+
+    let options = ThinkingOptions::new().with_project(project).with_task(task);
+
+    let captured_prompt = Arc::new(Mutex::new(None));
+    let temp_dir = tempdir().expect("tempdir should be created");
+    let runtime = new_with_all(
+        Arc::new(CapturingBrainDal::new(captured_prompt.clone())),
+        ai_orz::service::dal::tool::dal(),
+        ai_orz::service::dal::mcp_tool::dal(),
+        ai_orz::service::dal::agent::dal(),
+        Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+    );
+
+    let result = runtime
+        .awakening()
+        .awaken(ctx, &agent, &message, &options)
+        .await
+        .expect("awaken 应该成功");
+
+    let prompt = captured_prompt
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("应该捕获到 prompt");
+
+    // 验证 project 上下文注入
+    assert!(
+        prompt.contains("Test Project"),
+        "Prompt 应该包含 project 名称，实际: {}",
+        prompt
+    );
+    assert!(
+        prompt.contains("集成测试项目"),
+        "Prompt 应该包含 project 描述"
+    );
+
+    // 验证 task 上下文注入
+    assert!(prompt.contains("Test Task"), "Prompt 应该包含 task 名称");
+    assert!(prompt.contains("执行集成测试"), "Prompt 应该包含 task 描述");
+
+    assert_eq!(result.agent_id, agent_id);
+}
