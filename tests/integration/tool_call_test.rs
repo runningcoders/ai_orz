@@ -9,6 +9,13 @@
 mod common;
 
 use crate::common::TestApp;
+use ai_orz::consumer::message::MessageConsumer;
+use ai_orz::pkg::RequestContext;
+use ai_orz::pkg::aop::Consumer;
+use ai_orz::pkg::tool_tracing::entry::ToolCallStatus;
+use ai_orz::pkg::tool_tracing::logger::ToolCallQuery;
+use ai_orz::service::domain::message::{self, SendToolCallRequestCommand};
+use ai_orz::service::domain::runtime;
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::io::{Read, Write};
@@ -73,6 +80,22 @@ async fn debug_call_tool(
         jwt,
     )
     .await
+}
+
+/// 绑定工具到 Agent
+async fn bind_tool_to_agent(app: &TestApp, jwt: &str, agent_id: &str, tool_id: &str) {
+    let (status, _body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/tools/{}/bind", agent_id, tool_id),
+            &serde_json::json!({}),
+            jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "tool bind should succeed"
+    );
 }
 
 // =================================================================
@@ -186,4 +209,212 @@ async fn test_debug_call_tool_not_found(pool: SqlitePool) {
         "debug-call on non-existent tool should return error, got status: {}",
         status
     );
+}
+
+// =================================================================
+// Part B: Manual 异步消息链（Consumer 处理 ToolCallRequest → ToolCallResult）
+// =================================================================
+
+/// Consumer 处理 ToolCallRequest：创建 ToolCallRequest 消息 → Consumer 执行工具 → 验证 ToolCallResult 消息生成
+#[sqlx::test]
+async fn test_consumer_tool_call_request_chain(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 启动 mock server
+    let mock_response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"status\":\"success\"}";
+    let (base_url, _handle) = start_mock_server(mock_response);
+
+    // 2. 创建 HTTP 工具
+    let tool_name = format!("ManualTool-{}", uuid::Uuid::now_v7());
+    let tool_id =
+        create_http_tool(&app, &jwt, &tool_name, &format!("{}/exec", base_url), true).await;
+
+    // 3. 创建 Agent
+    let agent_name = format!("ToolCallAgent-{}", uuid::Uuid::now_v7());
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
+
+    // 4. 绑定工具到 Agent
+    bind_tool_to_agent(&app, &jwt, &agent_id, &tool_id).await;
+
+    // 5. 创建 ToolCallRequest 消息
+    // 关键：ctx 需要设置 organization_id，否则消息写入时 org 为 None，
+    // 后续 JWT 查询（带 org scope）无法匹配到消息
+    let ctx = ctx
+        .to_builder()
+        .organization_id(bs.organization_id.clone())
+        .build();
+
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let cmd = SendToolCallRequestCommand {
+        request_id: &request_id,
+        tool_id: &tool_id,
+        tool_name: &tool_name,
+        from_agent_id: &agent_id,
+        to_executor_id: "system",
+        project_id: None,
+        task_id: None,
+        reply_to_id: None,
+        args: serde_json::json!({}),
+    };
+
+    let message = message::domain()
+        .delivery()
+        .send_tool_call_request(ctx, cmd)
+        .await
+        .expect("send_tool_call_request should succeed");
+    let message_id = message.po.id.clone();
+
+    // 6. 调用 Consumer 处理消息事件
+    let consumer = MessageConsumer::new();
+    let event = serde_json::json!({
+        "message_id": message_id,
+        "project_id": null,
+        "task_id": null,
+        "from_id": agent_id,
+        "from_role": 1,
+        "to_id": "system",
+        "to_role": 2,
+        "message_type": 5,
+        "content": "",
+        "created_at": 0
+    });
+
+    let result = consumer.on_event(event).await;
+
+    // Consumer 应该成功处理
+    assert!(
+        result.is_ok(),
+        "Consumer should succeed processing ToolCallRequest, got: {:?}",
+        result.err()
+    );
+
+    // 7. 验证 ToolCallResult 消息生成
+    // ToolCallResult 消息 from_role=System(2), to_role=Agent(1)
+    // 等待消息写入
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/finance/messages?from_id=system&to_id={}", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let messages = data
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .expect("missing messages array");
+
+    // 应该至少有一条 ToolCallResult 消息（message_type=6）
+    let tool_call_result = messages
+        .iter()
+        .find(|msg| msg.get("message_type").and_then(|v| v.as_i64()) == Some(6));
+    assert!(
+        tool_call_result.is_some(),
+        "Should find a ToolCallResult message (type=6)"
+    );
+
+    // 验证 ToolCallResult 内容
+    if let Some(result_msg) = tool_call_result {
+        let content = result_msg
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        // content 是 ToolCallMessage JSON
+        let tool_call_msg: serde_json::Value =
+            serde_json::from_str(content).expect("ToolCallResult content should be valid JSON");
+        assert_eq!(
+            tool_call_msg.get("is_success").and_then(|v| v.as_bool()),
+            Some(true),
+            "Tool call should be successful"
+        );
+    }
+}
+
+/// 工具调用 trace 记录验证：执行工具后查询 trace
+///
+/// 注意：trace 查询 API（HTTP）要求 request context 有 scope（agent_id/project_id/task_id），
+/// 而 debug_call_tool 不设置 agent_id scope，无法通过 HTTP 查询。
+/// 因此本测试通过 domain 层直接调用 `call_manual_tool_for_agent`（带 agent_id scope），
+/// 再通过 domain 层 `query_tool_call_entries` 查询 trace，验证记录被正确写入。
+#[sqlx::test]
+async fn test_tool_call_trace_recorded(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 启动 mock server
+    let mock_response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"status\":\"success\"}";
+    let (base_url, _handle) = start_mock_server(mock_response);
+
+    // 2. 创建 HTTP 工具
+    let tool_name = format!("TraceTool-{}", uuid::Uuid::now_v7());
+    let tool_id =
+        create_http_tool(&app, &jwt, &tool_name, &format!("{}/trace", base_url), true).await;
+
+    // 3. 创建 Agent 并绑定工具（call_manual_tool_for_agent 需要工具已绑定到 Agent）
+    let agent_name = format!("TraceAgent-{}", uuid::Uuid::now_v7());
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
+    bind_tool_to_agent(&app, &jwt, &agent_id, &tool_id).await;
+
+    // 4. 通过 domain 层调用工具（设置 organization_id + agent_id scope）
+    let call_ctx = RequestContext::builder()
+        .organization_id(bs.organization_id.clone())
+        .build();
+
+    let result = runtime::domain()
+        .tool_execution()
+        .call_manual_tool_for_agent(call_ctx, agent_id.clone(), tool_id.clone(), json!({}))
+        .await
+        .expect("call_manual_tool_for_agent failed");
+    let tool_call_id = result.trace_ref.call_id.clone();
+
+    // 5. 通过 domain 层查询 trace（需要 agent_id scope 通过 with_context_scope 校验）
+    let query_ctx = RequestContext::builder().agent_id(agent_id.clone()).build();
+
+    let entries = runtime::domain()
+        .tool_execution()
+        .query_tool_call_entries(
+            query_ctx,
+            ToolCallQuery {
+                tool_id: Some(tool_id.clone()),
+                agent_id: Some(agent_id.clone()),
+                limit: Some(10),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("trace query failed");
+
+    // 应该至少有一条 trace 记录
+    assert!(
+        !entries.is_empty(),
+        "Should find at least 1 trace entry for tool_id"
+    );
+
+    // 找到我们刚才的调用
+    let our_trace = entries.iter().find(|entry| entry.call_id == tool_call_id);
+    assert!(
+        our_trace.is_some(),
+        "Should find trace entry with call_id: {}",
+        tool_call_id
+    );
+
+    if let Some(entry) = our_trace {
+        assert_eq!(
+            entry.tool_id, tool_id,
+            "Trace entry should have correct tool_id"
+        );
+        assert_eq!(
+            entry.status,
+            ToolCallStatus::Completed,
+            "Trace entry should have status Completed"
+        );
+    }
 }
