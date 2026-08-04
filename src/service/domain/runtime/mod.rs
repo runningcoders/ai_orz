@@ -77,6 +77,14 @@ pub trait RuntimeMemory: Send + Sync {
     /// 通用关系型查询
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
 
+    /// 推荐知识图谱起点节点（按关联度数 Top N）
+    async fn recommend_seed_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>>;
+
     /// 创建记忆
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>>;
 

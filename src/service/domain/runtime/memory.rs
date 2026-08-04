@@ -78,6 +78,16 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal().query(ctx, query).await
     }
 
+    async fn recommend_seed_nodes(
+        &self,
+        ctx: RequestContext,
+        agent_id: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<crate::models::memory::SeedNodeRecommendation>> {
+        use crate::service::dal::memory::dal;
+        dal().recommend_seed_nodes(ctx, agent_id, limit).await
+    }
+
     async fn create(&self, ctx: RequestContext, params: MemoryCreateParams) -> Result<Vec<Memory>> {
         use crate::service::dal::memory::dal;
         dal().create(ctx, params).await
