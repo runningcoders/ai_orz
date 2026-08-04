@@ -131,21 +131,14 @@ impl ToolProviderManage for FinanceDomainImpl {
 }
 
 fn validate_tool_management_policy(tool: &Tool) -> Result<()> {
-    if !matches!(tool.po.protocol, ToolProtocol::Http | ToolProtocol::Mcp) {
-        return Ok(());
-    }
-
-    if !matches!(tool.po.control_mode, ControlMode::Manual) {
-        let tool_type = match tool.po.protocol {
-            ToolProtocol::Http => "HTTP Tool",
-            ToolProtocol::Mcp => "Mcp Tool",
-            _ => "Tool",
-        };
-        bail_err!(
-            InvalidRequest,
-            "{} only supports Manual control mode",
-            tool_type
-        );
+    // ToolProtocol and ControlMode are orthogonal (per design docs):
+    //   Builtin ≠ Auto, Http ≠ Manual; whether a tool enters Rig is decided
+    //   solely by ControlMode.  Only MCP tools are restricted to Manual
+    //   because MCP has its own tool-calling protocol.
+    if matches!(tool.po.protocol, ToolProtocol::Mcp)
+        && !matches!(tool.po.control_mode, ControlMode::Manual)
+    {
+        bail_err!(InvalidRequest, "Mcp Tool only supports Manual control mode");
     }
 
     if matches!(tool.po.protocol, ToolProtocol::Http) {

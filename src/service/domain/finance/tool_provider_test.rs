@@ -153,9 +153,9 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn test_create_http_tool_rejects_auto_control_mode(pool: SqlitePool) {
+    async fn test_create_http_tool_accepts_auto_control_mode(pool: SqlitePool) {
         let (domain, ctx) = init_test_env(pool).await;
-        let mut tool = http_management_tool("domain-http-auto-rejected");
+        let mut tool = http_management_tool("domain-http-auto-accepted");
         tool.po.control_mode = ControlMode::Auto;
 
         let result = domain
@@ -163,16 +163,13 @@ mod tests {
             .create_tool(ctx.clone(), &tool)
             .await;
 
-        assert!(result.is_err(), "HTTP tools should be manual-only");
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("HTTP Tool"));
-        assert!(error.contains("Manual"));
+        assert!(result.is_ok(), "HTTP tools should accept Auto control mode");
     }
 
     #[sqlx::test]
-    async fn test_update_http_tool_rejects_auto_control_mode(pool: SqlitePool) {
+    async fn test_update_http_tool_accepts_auto_control_mode(pool: SqlitePool) {
         let (domain, ctx) = init_test_env(pool).await;
-        let tool = http_management_tool("domain-http-update-auto-rejected");
+        let tool = http_management_tool("domain-http-update-auto-accepted");
         let tool_id = tool.po.id.clone();
         domain
             .tool_provider_manage()
@@ -193,10 +190,10 @@ mod tests {
             .update_tool(ctx.clone(), &stored)
             .await;
 
-        assert!(result.is_err(), "HTTP tools should reject Auto on update");
-        let error = result.unwrap_err().to_string();
-        assert!(error.contains("HTTP Tool"));
-        assert!(error.contains("Manual"));
+        assert!(
+            result.is_ok(),
+            "HTTP tools should accept Auto control mode on update"
+        );
     }
 
     #[sqlx::test]

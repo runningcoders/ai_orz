@@ -11,6 +11,7 @@ mod common;
 use crate::common::TestApp;
 use ai_orz::consumer::message::MessageConsumer;
 use ai_orz::pkg::RequestContext;
+use ai_orz::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use ai_orz::pkg::aop::Consumer;
 use ai_orz::pkg::tool_tracing::entry::ToolCallStatus;
 use ai_orz::pkg::tool_tracing::logger::ToolCallQuery;
@@ -417,4 +418,238 @@ async fn test_tool_call_trace_recorded(pool: SqlitePool) {
             "Trace entry should have status Completed"
         );
     }
+}
+
+// =================================================================
+// Part C: Auto awaken 工具执行（真实 LLM，#[ignore]）
+// =================================================================
+
+/// Parse provider type string to serde variant name.
+///
+/// env 变量值（如 "doubao"）需转换为 serde 变体名（如 "Doubao"）才能被
+/// `ProviderType` 的 `Deserialize` 正确解析（无 `rename_all`，默认按变体名匹配）。
+fn parse_provider_type(s: &str) -> &'static str {
+    match s.to_lowercase().as_str() {
+        "openai" | "0" => "OpenAI",
+        "deepseek" | "1" => "DeepSeek",
+        "qwen" | "2" => "Qwen",
+        "doubao" | "3" => "Doubao",
+        "ollama" | "4" => "Ollama",
+        "custom" | "5" => "Custom",
+        "fastembed" | "6" => "FastEmbed",
+        "doubao_vision" | "doubaoVision" | "7" => "DoubaoVision",
+        _ => "OpenAI",
+    }
+}
+
+/// 真实模型配置（从 .env 读取）
+struct RealLlmConfig {
+    llm_provider_type: &'static str,
+    llm_model_name: String,
+    llm_api_key: String,
+    llm_base_url: Option<String>,
+}
+
+impl RealLlmConfig {
+    fn from_env() -> Option<Self> {
+        let _ = dotenvy::dotenv();
+        let llm_api_key = std::env::var("TEST_LLM_API_KEY").ok()?;
+        let llm_model_name = std::env::var("TEST_LLM_MODEL_NAME").ok()?;
+        let llm_provider_type = std::env::var("TEST_LLM_PROVIDER_TYPE")
+            .ok()
+            .as_deref()
+            .map(parse_provider_type)
+            .unwrap_or("Doubao");
+        let llm_base_url = std::env::var("TEST_LLM_BASE_URL").ok();
+        Some(Self {
+            llm_provider_type,
+            llm_model_name,
+            llm_api_key,
+            llm_base_url,
+        })
+    }
+}
+
+/// 创建真实 LLM Provider，返回 provider_id
+async fn create_real_llm_provider(app: &TestApp, jwt: &str, cfg: &RealLlmConfig) -> String {
+    let req = json!({
+        "name": format!("RealLLM-{}", uuid::Uuid::now_v7()),
+        "provider_type": cfg.llm_provider_type,
+        "capability": "Agent",
+        "model_name": cfg.llm_model_name,
+        "api_key": cfg.llm_api_key,
+        "base_url": cfg.llm_base_url,
+        "description": "Real LLM for auto tool call test"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    data.get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing provider id")
+        .to_string()
+}
+
+/// 启动多请求 mock HTTP 服务器（循环处理，支持 LLM 多次调用工具）
+fn start_mock_server_multi() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind failed");
+    let address = listener.local_addr().expect("local_addr failed");
+    std::thread::spawn(move || {
+        while let Ok((mut stream, _)) = listener.accept() {
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n{\"result\":\"data from api\"}";
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    format!("http://{}", address)
+}
+
+/// 真实 LLM + Auto 工具端到端测试：
+/// 创建 Agent + Auto HTTP 工具 → 发消息 → Consumer 触发 awaken → LLM 调用工具 → 验证 trace
+///
+/// 验证：
+/// - Agent 收到消息后触发 awaken
+/// - 真实 LLM 在 awaken 过程中调用 Auto HTTP 工具
+/// - 工具调用 trace 被记录
+/// - Agent 回到 Idle 状态
+#[sqlx::test]
+#[ignore = "requires real LLM API key in .env (TEST_LLM_API_KEY)"]
+async fn test_real_llm_auto_tool_call(pool: SqlitePool) {
+    let Some(cfg) = RealLlmConfig::from_env() else {
+        eprintln!("SKIP: TEST_LLM_API_KEY not set, skipping auto tool call test");
+        return;
+    };
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 启动 mock server
+    let mock_url = start_mock_server_multi();
+
+    // 2. 创建真实 LLM Provider
+    let real_provider_id = create_real_llm_provider(&app, &jwt, &cfg).await;
+
+    // 3. 创建 Auto HTTP 工具（control_mode = Auto，会被注入 Rig 供 LLM 调用）
+    let tool_req = json!({
+        "name": "fetch_data",
+        "description": "Fetch data from an API endpoint. Returns JSON with result field.",
+        "protocol": "Http",
+        "config": {
+            "method": "GET",
+            "url": format!("{}/data", mock_url),
+            "allow_local_network": true
+        },
+        "parameters_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        },
+        "control_mode": "Auto",
+        "enabled": true,
+        "tags": ["test"]
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/tools", &tool_req, &jwt)
+        .await;
+    let tool_data = crate::common::assert_api_ok(status, &body);
+    let tool_id = tool_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing tool id")
+        .to_string();
+
+    // 4. 创建 Agent（使用真实 LLM Provider）
+    let agent_name = format!("AutoToolAgent-{}", uuid::Uuid::now_v7());
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &real_provider_id, &agent_name)
+            .await;
+
+    // 5. 绑定工具到 Agent
+    bind_tool_to_agent(&app, &jwt, &agent_id, &tool_id).await;
+
+    // 6. 发送消息，引导 LLM 使用工具
+    let send_req = json!({
+        "to_agent_id": agent_id,
+        "content": "请使用 fetch_data 工具获取数据，然后告诉我结果"
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/messages/agents", &send_req, &jwt)
+        .await;
+    let msg_data = crate::common::assert_api_ok(status, &body);
+    let message_id = msg_data
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .expect("missing message_id")
+        .to_string();
+
+    // 7. 调用 Consumer 触发 awaken（真实 LLM 调用）
+    let consumer = MessageConsumer::new();
+    let event = json!({
+        "message_id": message_id,
+        "project_id": null,
+        "task_id": null,
+        "from_id": bs.user_id,
+        "from_role": 0,
+        "to_id": agent_id,
+        "to_role": 1,
+        "message_type": 0,
+        "content": "",
+        "created_at": 0
+    });
+
+    let result = consumer.on_event(event).await;
+
+    // awaken 应该成功
+    assert!(
+        result.is_ok(),
+        "Consumer should succeed with real LLM, got: {:?}",
+        result.err()
+    );
+
+    // 8. 验证 Agent 回到 Idle
+    let runtime_state = AgentRuntimeStateManager::global();
+    let state = runtime_state.get_state(&agent_id);
+    assert_eq!(
+        state,
+        ::common::enums::AgentRuntimeState::Idle,
+        "Agent should be Idle after awaken completion"
+    );
+
+    // 9. 验证工具被调用（查询 trace）
+    // 等待异步 trace 写入完成
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let query_ctx = RequestContext::builder().agent_id(agent_id.clone()).build();
+    let entries = runtime::domain()
+        .tool_execution()
+        .query_tool_call_entries(
+            query_ctx,
+            ToolCallQuery {
+                tool_id: Some(tool_id.clone()),
+                agent_id: Some(agent_id.clone()),
+                limit: Some(10),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("trace query failed");
+
+    assert!(
+        !entries.is_empty(),
+        "Should find at least 1 trace entry for tool_id (LLM should have called the tool)"
+    );
+
+    eprintln!(
+        "Real LLM auto tool call test passed! {} trace entries found.",
+        entries.len()
+    );
+
+    // Cleanup
+    let _ = app
+        .delete_with_jwt(
+            &format!("/api/v1/finance/model-providers/{}", real_provider_id),
+            &jwt,
+        )
+        .await;
 }
