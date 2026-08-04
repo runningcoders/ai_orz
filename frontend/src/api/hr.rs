@@ -7,9 +7,10 @@ use common::api::{
     GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
     InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
-    PagedResult, QueryMemoryParams, QueryMemoryResponse, SearchAgentsRequest, SearchMemoryParams,
-    SearchMemoryResponse, SearchSkillsRequest, SkillListItem, SkillQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
+    PagedResult, QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams,
+    RecommendSeedNodesResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
+    SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest,
     UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest,
     UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
@@ -299,4 +300,11 @@ pub async fn search_memory_with_traversal(
     req: SearchMemoryParams,
 ) -> Result<SearchMemoryResponse, ApiError> {
     api_post("/api/v1/hr/agents/search_memory", &req).await
+}
+
+/// 推荐知识图谱起点节点（按关联度数 Top N）
+pub async fn recommend_seed_nodes(
+    req: &RecommendSeedNodesParams,
+) -> Result<RecommendSeedNodesResponse, ApiError> {
+    api_post("/api/v1/hr/agents/recommend_seed_nodes", req).await
 }
