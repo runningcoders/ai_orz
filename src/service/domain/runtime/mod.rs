@@ -322,7 +322,6 @@ impl RuntimeDomainImpl {
     }
 
     /// 创建带显式所有依赖的 Domain 实例（测试用）。
-    #[cfg(test)]
     fn new_with_all(
         brain_dal: Arc<dyn BrainDal>,
         tool_dal: Arc<dyn ToolDal>,
@@ -419,7 +418,6 @@ pub fn new_with_tool_dals(
 }
 
 /// 创建新的 Runtime Domain 实例并注入所有依赖（用于测试）。
-#[cfg(test)]
 pub fn new_with_all(
     brain_dal: Arc<dyn BrainDal>,
     tool_dal: Arc<dyn ToolDal>,

@@ -10,10 +10,31 @@ mod common;
 
 use crate::common::TestApp;
 use ai_orz::consumer::message::MessageConsumer;
-use ai_orz::pkg::aop::Consumer;
 use ai_orz::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use ai_orz::pkg::aop::Consumer;
 use serde_json::json;
 use sqlx::SqlitePool;
+
+// Part B: awaken Mock 测试依赖
+use ::common::enums::{
+    AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType, ToolProtocol,
+};
+use ::common::error::Result as CommonResult;
+use ai_orz::models::agent::{Agent, AgentPo, AgentRuntimeConfig};
+use ai_orz::models::brain::{Brain, Cortex, CortexTrait};
+use ai_orz::models::file::FileMeta;
+use ai_orz::models::message::Message;
+use ai_orz::models::model_provider::ModelProvider;
+use ai_orz::models::tool::{Tool, ToolPo};
+use ai_orz::pkg::RequestContext;
+use ai_orz::pkg::tool_tracing::logger::ToolCallLogger;
+use ai_orz::service::dal::brain::BrainDal;
+use ai_orz::service::domain::runtime::awakening::ThinkingOptions;
+use ai_orz::service::domain::runtime::new_with_all;
+use async_trait::async_trait;
+use std::sync::{Arc, Mutex};
+use tempfile::tempdir;
+use uuid::Uuid;
 
 /// 构造 MessageCreatedEvent JSON
 ///
@@ -113,13 +134,9 @@ async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
 
     // 创建 Agent
     let agent_name = format!("BusyAgent-{}", uuid::Uuid::now_v7());
-    let agent_id = crate::common::factories::create_test_agent(
-        &app,
-        &jwt,
-        &bs.chat_provider_id,
-        &agent_name,
-    )
-    .await;
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
 
     // 发送消息（持久化到 DB）
     let send_req = json!({
@@ -187,13 +204,9 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
 
     // 1. 创建 Agent
     let agent_name = format!("TaskAgent-{}", uuid::Uuid::now_v7());
-    let agent_id = crate::common::factories::create_test_agent(
-        &app,
-        &jwt,
-        &bs.chat_provider_id,
-        &agent_name,
-    )
-    .await;
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
 
     // 2. 创建 Project + Task
     let project_name = format!("TaskProject-{}", uuid::Uuid::now_v7());
@@ -217,16 +230,32 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
     // Pending → InProgress
     let in_progress_req = json!({ "id": task_id, "status": "InProgress" });
     let (status, _body) = app
-        .put_with_jwt(&format!("/api/v1/tasks/{}/status", task_id), &in_progress_req, &jwt)
+        .put_with_jwt(
+            &format!("/api/v1/tasks/{}/status", task_id),
+            &in_progress_req,
+            &jwt,
+        )
         .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "Pending → InProgress should succeed");
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "Pending → InProgress should succeed"
+    );
 
     // InProgress → Completed
     let completed_req = json!({ "id": task_id, "status": "Completed" });
     let (status, _body) = app
-        .put_with_jwt(&format!("/api/v1/tasks/{}/status", task_id), &completed_req, &jwt)
+        .put_with_jwt(
+            &format!("/api/v1/tasks/{}/status", task_id),
+            &completed_req,
+            &jwt,
+        )
         .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "InProgress → Completed should succeed");
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "InProgress → Completed should succeed"
+    );
 
     // 4. 发送带 task_id 的消息给 Agent
     let send_req = json!({
@@ -277,4 +306,236 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
         ::common::enums::AgentRuntimeState::Idle,
         "Agent should be Idle after skipping awaken for completed task"
     );
+}
+
+// ==================== Part B: awaken Mock 测试 ====================
+//
+// 使用 CapturingBrainDal 捕获 think() 入参 Prompt，验证 awaken 流程将 Manual 工具
+// 正确注入 Prompt。MockCortex 仅用于构造 Brain（BrainDal 已 stub，Cortex 不会被实际调用）。
+
+/// 捕获 Prompt 的 BrainDal Stub
+///
+/// 在 think() 调用时捕获传入的 prompt，返回固定响应
+struct CapturingBrainDal {
+    captured_prompt: Arc<Mutex<Option<String>>>,
+}
+
+impl CapturingBrainDal {
+    fn new(captured_prompt: Arc<Mutex<Option<String>>>) -> Self {
+        Self { captured_prompt }
+    }
+}
+
+#[async_trait]
+impl BrainDal for CapturingBrainDal {
+    async fn wake_brain(
+        &self,
+        _ctx: RequestContext,
+        _agent: &AgentPo,
+        _memories: Vec<ai_orz::models::memory::Memory>,
+        _tools: Vec<Tool>,
+    ) -> CommonResult<Brain> {
+        unimplemented!("not needed by awaken manual tools test")
+    }
+
+    async fn test_connection(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProvider,
+        _prompt: &str,
+    ) -> CommonResult<String> {
+        unimplemented!("not needed by awaken manual tools test")
+    }
+
+    async fn think(
+        &self,
+        _ctx: RequestContext,
+        _brain: &Brain,
+        prompt: &str,
+    ) -> CommonResult<String> {
+        *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
+        Ok("mock response".to_string())
+    }
+}
+
+/// Mock Cortex，仅用于构造 Brain（BrainDal 已 stub，Cortex 不会被实际调用）
+#[derive(Clone)]
+struct MockCortex;
+
+#[async_trait]
+impl CortexTrait for MockCortex {
+    fn capability(&self) -> ModelCapability {
+        ModelCapability::Agent
+    }
+    fn model_provider_id(&self) -> &str {
+        "mock-provider"
+    }
+    fn model_name(&self) -> &str {
+        "mock-model"
+    }
+    async fn prompt(&self, _prompt: &str) -> anyhow::Result<String> {
+        Ok("mock response".to_string())
+    }
+    async fn embeddings(&self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts.iter().map(|_| vec![0.0; 3]).collect())
+    }
+    fn support_tools(&self) -> bool {
+        false
+    }
+}
+
+/// 创建带 Brain 的测试 Agent（status=Onboarded，brain 已装配）
+fn make_test_agent_with_brain(agent_id: &str) -> Agent {
+    let mut po = AgentPo::new(
+        "Test Agent".to_string(),
+        vec!["assistant".to_string()],
+        "Test description".to_string(),
+        vec!["chat".to_string()],
+        "Test soul".to_string(),
+        "provider-001".to_string(),
+        "test-user".to_string(),
+    );
+    po.id = agent_id.to_string();
+    po.status = AgentStatus::Onboarded;
+
+    let mut agent = Agent::from_po(po);
+    let model_provider = ModelProvider::new(
+        "Mock Provider".to_string(),
+        ProviderType::OpenAI,
+        ModelCapability::Agent,
+        "gpt-4".to_string(),
+        "fake-key".to_string(),
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    let cortex = Cortex::new(model_provider, Box::new(MockCortex));
+    let runtime_config = AgentRuntimeConfig::default();
+    agent.brain = Some(Brain::new_local(
+        agent_id.to_string(),
+        "Test Agent".to_string(),
+        runtime_config,
+        cortex,
+        vec![],
+    ));
+    agent
+}
+
+/// 创建 Manual 工具（Http 协议自动派生 ControlMode::Manual）
+///
+/// tags 用于匹配 Agent 的 match_keys（roles ∪ installed_tags），匹配后出现在【常用工具】区块
+fn make_manual_tool(name: &str, description: &str, tags: Vec<String>) -> Tool {
+    let po = ToolPo::new(
+        format!("tool-{}", name.to_lowercase()),
+        name.to_string(),
+        description.to_string(),
+        ToolProtocol::Http,
+        serde_json::json!({}),
+        None,
+        tags,
+        Some("test-user".to_string()),
+    );
+    Tool::from_po_for_management(po)
+}
+
+/// 创建测试文本消息
+fn make_test_message(content: &str) -> Message {
+    Message::new_with_context(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "test-user".to_string(),
+        "test-agent".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        content.to_string(),
+        None,
+        FileMeta::default(),
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    )
+}
+
+/// Part B: awaken 工具注入 Prompt 测试
+///
+/// 验证：
+/// - Manual 工具（ControlMode::Manual）被注入到 awaken Prompt 的【常用工具】区块
+/// - 工具名称和描述出现在 Prompt 中
+/// - awaken 返回结果含正确 agent_id 和 mock 输出
+#[sqlx::test]
+async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool).await;
+
+    let agent_id = format!("agent-manual-tools-{}", Uuid::now_v7());
+    let mut agent = make_test_agent_with_brain(&agent_id);
+
+    // 为 Agent 添加 2 个 Manual 工具（Http 协议自动派生 ControlMode::Manual）
+    // tags 含 "assistant" 以匹配 Agent role，确保出现在【常用工具】区块
+    let tool1 = make_manual_tool(
+        "SearchWeb",
+        "搜索互联网获取最新信息",
+        vec!["assistant".to_string()],
+    );
+    let tool2 = make_manual_tool(
+        "SendEmail",
+        "发送邮件给指定收件人",
+        vec!["assistant".to_string()],
+    );
+    agent.set_tools(vec![tool1, tool2]);
+
+    let message = make_test_message("请帮我搜索 Rust 最新特性");
+
+    let captured_prompt = Arc::new(Mutex::new(None));
+    let temp_dir = tempdir().expect("tempdir should be created");
+    let runtime = new_with_all(
+        Arc::new(CapturingBrainDal::new(captured_prompt.clone())),
+        ai_orz::service::dal::tool::dal(),
+        ai_orz::service::dal::mcp_tool::dal(),
+        ai_orz::service::dal::agent::dal(),
+        Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+    );
+
+    let result = runtime
+        .awakening()
+        .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
+        .await
+        .expect("awaken 应该成功");
+
+    let prompt = captured_prompt
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("应该捕获到 prompt");
+
+    // 验证 Prompt 包含【常用工具】区块
+    assert!(
+        prompt.contains("【常用工具】"),
+        "Prompt 应该包含【常用工具】区块，实际: {}",
+        prompt
+    );
+    // 验证两个工具都出现在 Prompt 中
+    assert!(
+        prompt.contains("SearchWeb"),
+        "Prompt 应该包含工具 SearchWeb"
+    );
+    assert!(
+        prompt.contains("搜索互联网获取最新信息"),
+        "Prompt 应该包含 SearchWeb 的描述"
+    );
+    assert!(
+        prompt.contains("SendEmail"),
+        "Prompt 应该包含工具 SendEmail"
+    );
+    assert!(
+        prompt.contains("发送邮件给指定收件人"),
+        "Prompt 应该包含 SendEmail 的描述"
+    );
+
+    // 验证返回结果
+    assert_eq!(result.agent_id, agent_id);
+    assert!(!result.raw_input.is_empty());
+    assert_eq!(result.raw_output, "mock response");
 }
