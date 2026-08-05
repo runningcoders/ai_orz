@@ -95,20 +95,20 @@ pub(crate) async fn load_and_settle(
         .await?
         .ok_or_else(|| common::error::Error::not_found(format!("Agent {} not found", agent_id)))?;
 
-    // 3. 唤醒 Brain（装配 Cortex + 注入 Auto 工具到 Rig）
-    //    Settle 场景：wake_agent_brain 会过滤 Auto 工具，只保留记忆相关
+    // 3. 唤醒 Brain（装配 Cortex）
     let ctx = runtime_domain()
         .awakening()
-        .wake_agent_brain(ctx, &mut agent, ThinkingScene::Settle)
+        .wake_agent_brain(ctx, &mut agent)
         .await?;
 
     // 4. 沉睡沉淀（Resting 状态 + think + 写 Trace）
     //    sleep_and_settle 会过滤 Manual 工具和 skill（只保留记忆相关），
     //    调用 builder.build_sleep_prompt 生成沉淀 prompt（约束模板内聚在 builder）
+    //    trace_ids 传空：独立沉淀场景无父 trace，沉淀自身会生成 trace_id 记录到 prompt
     let options = ThinkingOptions::for_scene(ThinkingScene::Settle);
     runtime_domain()
         .awakening()
-        .sleep_and_settle(ctx, &agent, &summary, &options)
+        .sleep_and_settle(ctx, &agent, &summary, &options, &[])
         .await?;
 
     Ok(pending_count)

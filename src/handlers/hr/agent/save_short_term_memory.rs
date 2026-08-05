@@ -22,6 +22,7 @@ pub async fn save_short_term_memory(
 ) -> Result<SaveShortTermMemoryResponse> {
     let now = chrono::Utc::now().timestamp();
     let tags_json = serde_json::to_string(&params.tags.unwrap_or_default())?;
+    let trace_ids_json = serde_json::to_string(&params.trace_ids.unwrap_or_default())?;
 
     let id_content = format!("{}{}", params.summary, now);
     let id = format!("st_{}", sha256::digest(id_content));
@@ -35,7 +36,7 @@ pub async fn save_short_term_memory(
         role: "assistant".to_string(),
         summary: params.summary,
         tags: tags_json,
-        trace_ids: "[]".to_string(),
+        trace_ids: trace_ids_json,
         status: common::enums::MemoryStatus::Active,
         created_at: now,
         updated_at: now,

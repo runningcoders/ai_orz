@@ -666,11 +666,14 @@ let st = dal.create(ctx, CreateShortTerm(st_po)).await?;
 - `summary: String` — 记忆摘要内容
 - `tags: Option<Vec<String>>` — 标签列表
 - `task_id: Option<String>` — 关联任务 ID
+- `content: Option<String>` — 详细内容（可选）
+- `trace_ids: Option<Vec<String>>` — 关联的思考 trace ID 列表（v3.7 新增，记录本条记忆从哪些 trace 中提炼）
 
 **特点**：
 - 简单直接，只写短期记忆
 - 不涉及知识图谱和关系
 - Agent 工作时随时可以调用
+- **v3.7 起**：`build_sleep_prompt` 和 `build_summary_prompt` 模板会强制要求 Agent 调用此工具写入沉淀/总结摘要，并填入 prompt 提供的 `trace_ids`，保证记忆可追溯
 
 ### 15.3 save_long_term_memory
 
@@ -818,6 +821,8 @@ Agent 也一样：
 
 **v2 自主沉淀（2026-07-31）**：沉淀是"信号"，让 Agent 进入特定工作模式自主完成。handler 只负责生成待沉淀记忆摘要 + 调用 `sleep_and_settle`，沉淀约束模板内聚在 `PromptBuilder.build_sleep_prompt`，Agent 用已有记忆类工具自主完成归纳、查询、创建、更新、建关系、加 published 标签等操作。
 
+**v2.1 强制写入沉淀摘要（2026-08-05，v3.7）**：v2 依赖 Agent 自发调用 `save_short_term_memory` 写入短期记忆，实际运行中经常遗忘。v3.7 在 `build_sleep_prompt` 模板中增加"强制写入沉淀摘要"步骤，明确要求 Agent **必须**调用 `save_short_term_memory` 并填入 `trace_ids`（由 prompt 提供，记录本次沉淀依赖的 trace 列表）。同时 `sleep_and_settle` 签名新增 `trace_ids` 参数，awaken 上下文压缩时传入 `pending_trace_ids`，独立沉淀场景传空。
+
 **v2 的核心认知**：
 - 沉淀是 Agent 的自主认知行为，不是工程化的 JSON 解析
 - 图谱是活的，每次沉淀都是迭代优化，由 Agent 根据语义判断合并/新建/拆分
@@ -870,7 +875,7 @@ Idle (空闲)
 ### 17.5 沉淀流程（v2 自主沉淀）
 
 ```
-settle_memory handler / CronTrigger
+settle_memory handler / CronTrigger / awaken 上下文压缩
     │
     ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
     │
@@ -879,16 +884,18 @@ settle_memory handler / CronTrigger
         ├── 加载 Agent（含 tools + skills）
         ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
         │
-        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle))
+        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle), trace_ids)
+            │   └── trace_ids：awaken 压缩传 pending_trace_ids，独立沉淀传空
             │
             ├── set_resting + RAII guard
             ├── 读取最近短期记忆作为 history
             ├── 过滤 skill + Manual 工具（只保留 neural/memory 标签）
-            ├── 拼装 Prompt: builder.build_sleep_prompt(summary)
+            ├── 拼装 Prompt: builder.build_sleep_prompt(summary, trace_ids)
             │     ├── 复用 system_prompt + tools + skills + common_context + history
             │     ├── 保留 user_profile（认知是具身的）
             │     ├── 保留 project/task 上下文（沉淀出的经验自带场景标签）
-            │     └── 附加沉淀约束 + 待沉淀记忆 + 任务步骤
+            │     ├── 附加沉淀约束 + 待沉淀记忆 + 任务步骤
+            │     └── 强制写入沉淀摘要指令（trace_ids 渲染为 JSON 数组，v3.7 新增）
             ├── think()（5 分钟超时）
             ├── 写 Trace
             ├── 记录统计事件（status: settle success/failed）
@@ -902,6 +909,7 @@ settle_memory handler / CronTrigger
 4. 用 `save_long_term_memory` 的 relations 参数建立节点间关系
 5. 用 `update_memory` 的 `node_tags` 字段给有共享价值的节点加 `published` 标签
 6. 用 `update_memory` 的 `status` 字段把短期记忆标记为 `settled`
+7. **强制写入沉淀摘要**（v3.7 新增）：沉淀完成后必须调用 `save_short_term_memory` 将本次沉淀提炼的核心经验摘要写入短期记忆，`trace_ids` 字段填入 prompt 提供的本次沉淀依赖的 trace 列表，保证记忆可追溯
 
 ### 17.6 沉淀约束（内循环隔离）
 
@@ -913,13 +921,14 @@ settle_memory handler / CronTrigger
 |------|---------|---------|---------|
 | 第一层 | `wake_agent_brain` | Auto 工具（Rig function calling） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
 | 第二层 | `sleep_and_settle` | Manual 工具 + skill（Prompt 展示层） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
-| 第三层 | `build_sleep_prompt` | Prompt 约束模板 | 明确告知 Agent 不发消息、只用记忆类工具 |
+| 第三层 | `build_sleep_prompt` | Prompt 约束模板 | 明确告知 Agent 不发消息、只用记忆类工具、必须写入沉淀摘要 |
 
 **沉淀约束模板**（内聚在 `PromptBuilder.build_sleep_prompt`）：
 - **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息
 - **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己
-- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory
+- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory
 - 这是一个**内循环**：你与自己的记忆对话，不是与外部世界交互
+- **强制写入沉淀摘要**：沉淀完成后必须调用 `save_short_term_memory` 写入短期记忆，`trace_ids` 字段必须填入 prompt 提供的列表（v3.7 新增）
 
 ### 17.7 沉淀场景保留的上下文
 
@@ -958,4 +967,5 @@ v2 不再使用固定的相似度阈值裁判，而是由 Agent 根据语义判�
 | 2026-07-24 | **tags 全链路支持**：SearchMemoryParams/QueryMemoryParams/MemoryResult 新增 tags 字段；MemoryQuery.tags 实现 OR 语义过滤（json_each）；ShortTermMemoryIndexPo/LongTermKnowledgeNodePo 实现 Vectorizable trait；前端知识图谱节点支持多色边框与动态信息展示 |  |
 | 2026-07-31 | **沉淀机制重构（v2 自主沉淀）**：settle_memory 不再工程化创建节点，改为调用 sleep_and_settle 触发 Agent 自主沉淀；沉淀约束模板内聚在 PromptBuilder.build_sleep_prompt；双层工具过滤（Auto 在 wake_agent_brain，Manual+skill 在 sleep_and_settle）确保 Settle 场景只接触记忆类工具；沉淀场景保留 user_profile + project/task 上下文（认知具身 + 场景化经验总结）；详见 runtime_design.md 第二十五章 |  |
 | 2026-08-04 | **task_id 记忆注意力机制**：MemoryQuery / SearchMemoryParams / QueryMemoryParams 新增 task_id 字段；query_short_term / search_short_term SQL 支持 task_id WHERE 过滤；PromptBuilder 在 task_context 有值时追加【记忆聚焦提示】引导 Agent 按需聚焦；默认 awaken 行为不变（跨任务全局取最近 20 条），project 过滤通过 task 关联实现不新增列 |  |
+| 2026-08-05 | **统一总结流程 + 强制记忆写入（v3.7）**：正常 Final 完成也触发 awaken_for_summary 总结流程；awaken 循环维护 pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt / build_summary_prompt 新增 trace_ids 参数，prompt 模板强制要求 Agent 调用 save_short_term_memory 并填入 trace_ids；SaveShortTermMemoryParams 新增 trace_ids 字段；详见 runtime_design.md 25.12 |  |
 
