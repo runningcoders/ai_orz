@@ -7,6 +7,7 @@ use ai_orz::router::create_router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode};
 use futures_util::StreamExt;
+#[allow(unused_imports)] // trait import: the `into_data_stream()` method comes through body
 use http_body_util::BodyExt;
 use sqlx::SqlitePool;
 use std::time::Duration;

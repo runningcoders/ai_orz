@@ -26,7 +26,7 @@ extern crate common as common_ext;
 use crate::common::TestApp;
 use ai_orz::pkg::RequestContext;
 use ai_orz::service::domain::message::{self, DeliverMessageCommand, SendToUserCommand};
-use common_ext::enums::{ChannelType, MessageRole};
+use common_ext::enums::{CallerType, MessageRole, MessageType};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::io::{Read, Write};
@@ -75,6 +75,7 @@ async fn find_tool_id_by_name(app: &TestApp, jwt: &str, name: &str) -> String {
 }
 
 /// Invoke `debug-call` for a tool. Returns (status, body_json).
+#[allow(dead_code)] // kept for future agent-integrated send_message debug-call tests
 async fn debug_call_tool(
     app: &TestApp,
     jwt: &str,
@@ -267,7 +268,7 @@ async fn test_send_message_to_user_via_tool_persists_and_listable(
     // --- Step 1: create the user-bound message via domain send_to_user
     let domain_ctx = RequestContext::builder()
         .agent_id(agent_id.clone())
-        .caller_type(common_ext::enums::CallerType::Agent)
+        .caller_type(CallerType::Agent)
         .organization_id(bs.organization_id.clone())
         .user_id(user_id.clone())
         .build();
@@ -419,7 +420,7 @@ async fn test_sse_push_delivers_message_payload_to_subscriber(pool: SqlitePool) 
 
     let domain_ctx = RequestContext::builder()
         .agent_id(agent_id.clone())
-        .caller_type(common_ext::enums::CallerType::Agent)
+        .caller_type(CallerType::Agent)
         .organization_id(bs.organization_id.clone())
         .user_id(user_id.clone())
         .build();
@@ -509,7 +510,7 @@ async fn test_sse_push_delivers_message_payload_to_subscriber(pool: SqlitePool) 
     );
     assert_eq!(
         push.get("message_type").and_then(|v| v.as_i64()),
-        Some(common_ext::enums::MessageType::Text as i64),
+        Some(MessageType::Text as i64),
         "push message_type should be Text"
     );
 }
@@ -573,7 +574,7 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
 
     let domain_ctx = RequestContext::builder()
         .agent_id(agent_id.clone())
-        .caller_type(common_ext::enums::CallerType::Agent)
+        .caller_type(CallerType::Agent)
         .organization_id(bs.organization_id.clone())
         .user_id(user_id.clone())
         .build();
@@ -687,7 +688,7 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(
 
     let domain_ctx = RequestContext::builder()
         .agent_id(agent_id.clone())
-        .caller_type(common_ext::enums::CallerType::Agent)
+        .caller_type(CallerType::Agent)
         .organization_id(bs.organization_id.clone())
         .user_id(user_id.clone())
         .build();
@@ -776,7 +777,7 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(
 
     let domain_ctx = RequestContext::builder()
         .agent_id(agent_id.clone())
-        .caller_type(common_ext::enums::CallerType::Agent)
+        .caller_type(CallerType::Agent)
         .organization_id(bs.organization_id.clone())
         .user_id(user_id.clone())
         .build();
