@@ -214,6 +214,9 @@ jobs:
     # - --no-clean 复用编译产物，避免重复 clean
     # - --no-fail-fast 测试失败也继续收集覆盖数据
     # - --fail-under-lines 直接按行覆盖率门槛
+    # - --workspace: 主 crate + common + ai-orz-macros + frontend 单元测试全部计入
+    # - --tests: 所有 [[test]] 集成测试也一起跑 + 计入覆盖（之前只 --lib 漏掉了 15 个集成测试）
+    # - --lcov + --html: 两份报告都产（lcov 给 Codecov/脚本消费，html 给人 review artifact）
     #
     # 关于依赖库重编（LLVM source-based coverage 的固有限制）：
     # -instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument
@@ -222,13 +225,31 @@ jobs:
     # -但 coverage job 自己跨多次 CI run 可以共享（相同 RUSTFLAGS 的依赖库编译结果缓存）
     # -第一次 coverage job 需重编所有依赖的 instrument-coverage 版本
     # -后续 coverage job sccache 命中，只需编译 workspace 成员
+    #
+    # 关于 PR vs main 差异化：
+    # - push 到 main：严格 fail-under-lines 45（红线）
+    # - PR：同一份命令跑但 fail-under-lines 设 38（更低的警告阈值），
+    #   用代码块里的条件判断。这样 PR 不会因为覆盖率小跌就硬失败，
+    #   但 main 分支必须守住底线。
     - name: Generate coverage report
       run: |
-        cargo llvm-cov --lib --no-clean --no-fail-fast \
+        set -euo pipefail
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          FAIL_UNDER=45
+        else
+          FAIL_UNDER=38
+        fi
+        echo "Using fail-under-lines=$FAIL_UNDER for event=${{ github.event_name }} ref=${{ github.ref }}"
+        cargo llvm-cov \
+          --workspace \
+          --tests \
+          --no-clean \
+          --no-fail-fast \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --output-dir ./coverage \
-          --fail-under-lines 35 \
-          --html
+          --fail-under-lines "$FAIL_UNDER" \
+          --html \
+          --lcov
 
     - name: Print sccache stats
       if: always()
