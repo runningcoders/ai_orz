@@ -31,6 +31,8 @@ pub fn FinanceModelProviders() -> Element {
     let mut api_key = use_signal(String::new);
     let mut base_url = use_signal(String::new);
     let mut description = use_signal(String::new);
+    let mut max_context_length = use_signal(String::new);
+    let mut recommended_context_length = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
     let mut show_test_modal = use_signal(|| false);
@@ -82,6 +84,11 @@ pub fn FinanceModelProviders() -> Element {
                 } else {
                     Some(description())
                 },
+                max_context_length: max_context_length().trim().parse::<i32>().ok(),
+                recommended_context_length: recommended_context_length()
+                    .trim()
+                    .parse::<i32>()
+                    .ok(),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {
@@ -91,6 +98,8 @@ pub fn FinanceModelProviders() -> Element {
                     api_key.set(String::new());
                     base_url.set(String::new());
                     description.set(String::new());
+                    max_context_length.set(String::new());
+                    recommended_context_length.set(String::new());
                     toast.success("创建成功");
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
@@ -384,6 +393,29 @@ pub fn FinanceModelProviders() -> Element {
                     }
                     input { class: "input input-bordered w-full", value: "{description}",
                         oninput: move |e| description.set(e.value()), placeholder: "可选" }
+                }
+                div { class: "grid grid-cols-2 gap-4",
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "最大上下文长度" }
+                        }
+                        input { class: "input input-bordered w-full", r#type: "number",
+                            value: "{max_context_length}",
+                            oninput: move |e| max_context_length.set(e.value()),
+                            placeholder: "如：128000" }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text font-medium", "推荐上下文长度" }
+                        }
+                        input { class: "input input-bordered w-full", r#type: "number",
+                            value: "{recommended_context_length}",
+                            oninput: move |e| recommended_context_length.set(e.value()),
+                            placeholder: "留空自动计算" }
+                    }
+                }
+                p { class: "text-xs text-base-content/60",
+                    "最大上下文长度为模型支持的 token 上限；推荐上下文长度作为压缩触发阈值，留空时按最大值 60% 自动计算"
                 }
             }
         }

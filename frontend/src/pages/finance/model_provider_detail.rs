@@ -56,6 +56,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_api_key = use_signal(String::new);
     let mut edit_base_url = use_signal(String::new);
     let mut edit_description = use_signal(String::new);
+    let mut edit_max_context_length = use_signal(String::new);
+    let mut edit_recommended_context_length = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
 
     let id_for_effect = id.clone();
@@ -153,6 +155,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     let edit_model_name_init = p.model_name.clone();
                                     let edit_base_url_init = p.base_url.clone().unwrap_or_default();
                                     let edit_description_init = p.description.clone().unwrap_or_default();
+                                    let edit_max_ctx_init = p
+                                        .max_context_length
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
+                                    let edit_rec_ctx_init = p
+                                        .recommended_context_length
+                                        .map(|v| v.to_string())
+                                        .unwrap_or_default();
                                     rsx! {
                                         if is_enabled {
                                             button { class: "btn btn-outline btn-sm",
@@ -237,6 +247,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 edit_api_key.set(String::new());
                                                 edit_base_url.set(edit_base_url_init.clone());
                                                 edit_description.set(edit_description_init.clone());
+                                                edit_max_context_length.set(edit_max_ctx_init.clone());
+                                                edit_recommended_context_length.set(edit_rec_ctx_init.clone());
                                                 show_edit_modal.set(true);
                                             },
                                             "✏️ 编辑"
@@ -336,6 +348,22 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     span { class: "label-text font-medium", "提供商 ID" }
                                 }
                                 div { class: "font-mono text-sm", "{p.id}" }
+                            }
+                            if let Some(max_ctx) = p.max_context_length {
+                                div {
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "最大上下文长度" }
+                                    }
+                                    div { class: "font-mono", "{max_ctx} tokens" }
+                                }
+                            }
+                            if let Some(rec_ctx) = p.recommended_context_length {
+                                div {
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "推荐上下文长度" }
+                                    }
+                                    div { class: "font-mono", "{rec_ctx} tokens" }
+                                }
                             }
                         }
                     }
@@ -456,6 +484,15 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 let api_key = if edit_api_key().is_empty() { None } else { Some(edit_api_key()) };
                                 let base_url = if edit_base_url().trim().is_empty() { None } else { Some(edit_base_url()) };
                                 let description = if edit_description().trim().is_empty() { None } else { Some(edit_description()) };
+                                // 空字符串 → 0（清除配置）；有值 → 解析为数字
+                                let max_ctx = edit_max_context_length()
+                                    .trim()
+                                    .parse::<i32>()
+                                    .unwrap_or(0);
+                                let rec_ctx = edit_recommended_context_length()
+                                    .trim()
+                                    .parse::<i32>()
+                                    .unwrap_or(0);
                                 let req = UpdateModelProviderRequest {
                                     id: id_for_submit.clone(),
                                     name: Some(name),
@@ -465,6 +502,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     base_url,
                                     description,
                                     status: None,
+                                    max_context_length: Some(max_ctx),
+                                    recommended_context_length: Some(rec_ctx),
                                 };
                                 saving_meta.set(true);
                                 let reload_id = id_for_submit.clone();
@@ -528,6 +567,25 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                         label { class: "label", span { class: "label-text font-medium", "描述" } }
                         textarea { class: "textarea textarea-bordered w-full", value: "{edit_description}",
                             oninput: move |e| edit_description.set(e.value()) }
+                    }
+                    div { class: "grid grid-cols-2 gap-4",
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "最大上下文长度" } }
+                            input { class: "input input-bordered w-full", r#type: "number",
+                                value: "{edit_max_context_length}",
+                                oninput: move |e| edit_max_context_length.set(e.value()),
+                                placeholder: "如：128000" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "推荐上下文长度" } }
+                            input { class: "input input-bordered w-full", r#type: "number",
+                                value: "{edit_recommended_context_length}",
+                                oninput: move |e| edit_recommended_context_length.set(e.value()),
+                                placeholder: "留空自动计算" }
+                        }
+                    }
+                    p { class: "text-xs text-base-content/60",
+                        "清空输入框将清除对应配置（回退为自动计算）；推荐上下文长度留空时按最大值 60% 自动计算"
                     }
                 }
             }

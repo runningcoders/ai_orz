@@ -1,6 +1,6 @@
 //! Handler: POST /api/v1/model-providers - Create a new model provider
 
-use crate::models::model_provider::{ModelProvider, ModelProviderPo};
+use crate::models::model_provider::{ModelProvider, ModelProviderConfig, ModelProviderPo};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -19,7 +19,7 @@ pub async fn create_model_provider(
     ctx: RequestContext,
     params: CreateModelProviderRequest,
 ) -> Result<CreateModelProviderResponse> {
-    let provider_po = ModelProviderPo::new(
+    let mut provider_po = ModelProviderPo::new(
         params.name.clone(),
         params.provider_type,
         params.capability,
@@ -29,6 +29,15 @@ pub async fn create_model_provider(
         params.description.clone(),
         ctx.uid().to_string(),
     );
+
+    // 写入上下文长度配置（0 视为未设置）
+    let config = ModelProviderConfig {
+        max_context_length: params.max_context_length.filter(|&v| v > 0),
+        recommended_context_length: params.recommended_context_length.filter(|&v| v > 0),
+        ..Default::default()
+    };
+    provider_po.set_config(&config);
+
     let provider = ModelProvider::from_po(provider_po);
 
     domain()
@@ -36,6 +45,7 @@ pub async fn create_model_provider(
         .create_model_provider(ctx.clone(), &provider)
         .await?;
 
+    let config = provider.po.config();
     Ok(CreateModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
@@ -52,5 +62,7 @@ pub async fn create_model_provider(
             provider.po.description.clone()
         },
         created_at: provider.po.created_at,
+        max_context_length: config.max_context_length,
+        recommended_context_length: config.recommended_context_length,
     })
 }

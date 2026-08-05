@@ -9,9 +9,14 @@ use std::fmt;
 /// 模型提供商配置（JSON 存储）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelProviderConfig {
-    /// 上下文窗口长度
+    /// 上下文窗口长度（模型支持的最大 token 数）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    ///
+    /// 未设置时按 `max_context_length * 60%` 自动计算。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
     /// 最大输出 token 数
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<i32>,

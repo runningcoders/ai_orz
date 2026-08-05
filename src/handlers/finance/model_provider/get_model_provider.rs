@@ -39,6 +39,7 @@ pub async fn get_model_provider(
             common::error::Error::not_found(format!("ModelProvider {} not found", params.id))
         })?;
 
+    let config = provider.po.config();
     Ok(GetModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
@@ -63,6 +64,8 @@ pub async fn get_model_provider(
         status: provider.po.status as i32,
         created_at: provider.po.created_at,
         updated_at: provider.po.updated_at,
+        max_context_length: config.max_context_length,
+        recommended_context_length: config.recommended_context_length,
         stats: provider.stats,
     })
 }

@@ -61,6 +61,17 @@ pub async fn update_model_provider(
     if let Some(status) = params.status {
         provider.po.status = ModelProviderStatus::from_i32(status);
     }
+    // 上下文长度配置 partial update：None 不修改，Some(0) 清除，Some(n>0) 设置
+    if params.max_context_length.is_some() || params.recommended_context_length.is_some() {
+        provider.po.update_config(|cfg| {
+            if let Some(v) = params.max_context_length {
+                cfg.max_context_length = if v > 0 { Some(v) } else { None };
+            }
+            if let Some(v) = params.recommended_context_length {
+                cfg.recommended_context_length = if v > 0 { Some(v) } else { None };
+            }
+        });
+    }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
     provider.po.updated_at = current_timestamp();
@@ -70,6 +81,7 @@ pub async fn update_model_provider(
         .update_model_provider(ctx, &provider)
         .await?;
 
+    let config = provider.po.config();
     Ok(UpdateModelProviderResponse {
         id: provider.po.id.clone(),
         name: provider.po.name.clone(),
@@ -93,5 +105,7 @@ pub async fn update_model_provider(
         },
         status: provider.po.status as i32,
         updated_at: provider.po.updated_at,
+        max_context_length: config.max_context_length,
+        recommended_context_length: config.recommended_context_length,
     })
 }

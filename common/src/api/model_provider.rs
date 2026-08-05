@@ -23,6 +23,16 @@ pub struct CreateModelProviderRequest {
     pub base_url: Option<String>,
     /// Description
     pub description: Option<String>,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    ///
+    /// 用于运行时上下文压缩检测的基准值。留空则不检测。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    ///
+    /// 未设置时按 `max_context_length * 60%` 自动计算。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
 }
 
 /// Create Model Provider response
@@ -40,6 +50,12 @@ pub struct CreateModelProviderResponse {
     pub description: Option<String>,
     /// Created timestamp
     pub created_at: i64,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
 }
 
 /// Model Provider list item response
@@ -106,6 +122,12 @@ pub struct GetModelProviderResponse {
     pub created_at: i64,
     /// Updated timestamp
     pub updated_at: i64,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
     /// 模型调用统计（可选）
     pub stats: Option<crate::models::ModelCallStats>,
 }
@@ -131,6 +153,16 @@ pub struct UpdateModelProviderRequest {
     pub description: Option<String>,
     /// New status (0=deleted/disabled, 1=normal/enabled)
     pub status: Option<i32>,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    ///
+    /// None 表示不修改；传入 0 表示清除配置。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    ///
+    /// None 表示不修改；传入 0 表示清除配置（回退到 max_context_length * 60%）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
 }
 
 /// Update Model Provider response
@@ -154,6 +186,12 @@ pub struct UpdateModelProviderResponse {
     pub status: i32,
     /// Updated timestamp
     pub updated_at: i64,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
 }
 
 /// Update Model Provider status request (启用/禁用)
