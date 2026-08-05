@@ -153,8 +153,10 @@ pub trait ToolDal: Send + Sync {
         args: Value,
     ) -> Result<(Value, ToolCallEntry)>;
 
-    /// 直接执行已获取的工具
-    /// 用于上层已经获取工具的场景（避免重复查询）
+    /// 执行已获取的工具并返回调用追踪 entry
+    ///
+    /// 统一执行入口：Auto/Manual/普通工具都走此路径。
+    /// 内部转发到 `ToolCallDao::execute`，由 DAO 层通过 AOP ToolExecEvent 捕获 trace。
     async fn call_tool(
         &self,
         ctx: RequestContext,
@@ -192,15 +194,6 @@ pub trait ToolDal: Send + Sync {
     ) -> Result<(Value, ToolCallEntry)> {
         self.call_tool(ctx, tool, args).await
     }
-
-    /// 手动执行工具并返回完整调用追踪 entry
-    /// ToolCallDao 层负责每次调用新建 LoggingDecorator 捕获本次调用信息
-    async fn call_manual(
-        &self,
-        ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)>;
 
     /// 搜索工具（向量 + 关键词混合搜索）
     async fn search(
@@ -752,7 +745,10 @@ impl ToolDal for ToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.call_manual(ctx, tool, args).await
+        self.tool_call_dao
+            .execute(ctx, tool, args)
+            .await
+            .map_err(Into::into)
     }
 
     async fn execute_auto(
@@ -825,18 +821,6 @@ impl ToolDal for ToolDalImpl {
         };
 
         Ok((result_value, entry))
-    }
-
-    async fn call_manual(
-        &self,
-        ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)> {
-        self.tool_call_dao
-            .call_manual(ctx, tool, args)
-            .await
-            .map_err(Into::into)
     }
 
     async fn get_stats(

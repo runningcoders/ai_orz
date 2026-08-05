@@ -84,13 +84,13 @@ impl ToolCallDao for McpToolCallDaoImpl {
         self.base.assemble_core_tool(po)
     }
 
-    async fn call_manual(
+    async fn execute(
         &self,
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.base.call_manual(ctx, tool, args).await
+        self.base.execute(ctx, tool, args).await
     }
 }
 

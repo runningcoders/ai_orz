@@ -281,7 +281,7 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
     );
     assert_eq!(from_management_result["isError"], false);
     let (manual_result, _entry) = dal
-        .call_manual(ctx, &executable, json!({ "text": "manual MCP" }))
+        .call_tool(ctx, &executable, json!({ "text": "manual MCP" }))
         .await
         .expect("manual MCP stdio tool call should return trace entry");
 

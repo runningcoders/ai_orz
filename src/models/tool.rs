@@ -264,26 +264,6 @@ impl ToolPo {
         serde_json::from_str(&self.tags).unwrap_or_default()
     }
 
-    /// 生成提供给模型的工具说明。
-    ///
-    /// 注意：Prompt 只展示模型使用工具所需的安全元信息，不能输出 `config`。
-    /// 对 MCP Tool 而言，`config` 可能间接关联 server command/env/url/headers 等敏感配置，
-    /// 因此这里只暴露标准 Tool ID/name/description/protocol/control_mode/schema。
-    pub fn to_tool_prompt(&self) -> String {
-        let description = sanitize_model_visible_tool_text(&self.description);
-        let parameters = self
-            .parameters_schema
-            .as_ref()
-            .map(sanitize_model_visible_tool_schema)
-            .and_then(|schema| serde_json::to_string(&schema).ok())
-            .unwrap_or_else(|| "{}".to_string());
-
-        format!(
-            "id: {}; name: {}; description: {}; protocol: {:?}; control_mode: {:?}; parameters_schema: {}",
-            self.id, self.name, description, self.protocol, self.control_mode, parameters
-        )
-    }
-
     /// 更新时间戳和修改者
     pub fn touch(&mut self, modifier: Option<String>) {
         self.updated_at = common::constants::utils::current_timestamp();
@@ -300,78 +280,6 @@ impl ToolPo {
             self.control_mode = ControlMode::Auto;
         }
     }
-}
-
-const MODEL_VISIBLE_SENSITIVE_TERMS: [&str; 10] = [
-    "authorization",
-    "credential",
-    "password",
-    "command",
-    "headers",
-    "header",
-    "secret",
-    "token",
-    "env",
-    "url",
-];
-
-fn sanitize_model_visible_tool_schema(value: &Value) -> Value {
-    match value {
-        Value::Object(map) => Value::Object(
-            map.iter()
-                .map(|(key, value)| {
-                    (
-                        sanitize_model_visible_tool_text(key),
-                        sanitize_model_visible_tool_schema(value),
-                    )
-                })
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(sanitize_model_visible_tool_schema)
-                .collect(),
-        ),
-        Value::String(text) => Value::String(sanitize_model_visible_tool_text(text)),
-        _ => value.clone(),
-    }
-}
-
-fn sanitize_model_visible_tool_text(text: &str) -> String {
-    let mut sanitized = text.to_string();
-
-    for term in MODEL_VISIBLE_SENSITIVE_TERMS {
-        sanitized = replace_case_insensitive(&sanitized, term, "[REDACTED]");
-    }
-
-    sanitized
-}
-
-fn replace_case_insensitive(input: &str, needle: &str, replacement: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut cursor = 0;
-
-    while cursor < input.len() {
-        let remaining = &input[cursor..];
-        if remaining.len() >= needle.len() {
-            let end = cursor + needle.len();
-            if input.is_char_boundary(end) && input[cursor..end].eq_ignore_ascii_case(needle) {
-                result.push_str(replacement);
-                cursor = end;
-                continue;
-            }
-        }
-
-        let ch = remaining
-            .chars()
-            .next()
-            .expect("cursor is always within input while loop");
-        result.push(ch);
-        cursor += ch.len_utf8();
-    }
-
-    result
 }
 
 // ==================== 实现 Vectorizable trait ====================

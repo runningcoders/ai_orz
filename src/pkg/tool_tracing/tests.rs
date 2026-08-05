@@ -1,18 +1,12 @@
 //! Unit tests for tool call tracing module
 
-use crate::models::tool::{CoreTool, ToolPo};
-use crate::pkg::RequestContext;
-use async_trait::async_trait;
+use crate::models::tool::ToolPo;
 use common::enums::{ToolProtocol, ToolStatus};
-use common::error::{Result, err};
 use serde_json::{Value, json};
-use sqlx::sqlite::SqlitePoolOptions;
-use std::{fs, process, sync::Once};
 use tempfile::tempdir;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use super::logger::ToolCallLogger;
-use super::tool_call_logger::LoggingDecorator;
 
 #[test]
 fn test_logger_creates_correct_directory_structure() {
@@ -291,33 +285,6 @@ fn test_failed_entry_logged_correctly() {
     assert!(read_entry.output.is_none());
 }
 
-#[derive(Clone)]
-struct FakeCoreTool {
-    po: ToolPo,
-    result: Value,
-}
-
-#[async_trait]
-impl CoreTool for FakeCoreTool {
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
-        Ok(self.result.clone())
-    }
-
-    fn po(&self) -> &ToolPo {
-        &self.po
-    }
-}
-
-fn init_test_tool_call_logger() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let base_path =
-            std::env::temp_dir().join(format!("ai_orz_tool_trace_tests_{}", process::id()));
-        fs::create_dir_all(&base_path).expect("test tool trace base path should be created");
-        ToolCallLogger::init(base_path);
-    });
-}
-
 fn fake_tool_po(protocol: ToolProtocol) -> ToolPo {
     let mut po = ToolPo::new(
         "fake-http-tool".to_string(),
@@ -333,174 +300,85 @@ fn fake_tool_po(protocol: ToolProtocol) -> ToolPo {
     po
 }
 
-#[derive(Clone)]
-struct FailingFakeCoreTool {
-    po: ToolPo,
+// ==================== 脱敏函数测试 ====================
+//
+// 原来通过 LoggingDecorator 测试脱敏行为，装饰器移除后直接测试
+// redact_trace_values_for_tool 函数。
+
+#[test]
+fn http_tool_redacts_error() {
+    let po = fake_tool_po(ToolProtocol::Http);
+    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+        &po,
+        json!({ "access_token": "placeholder-value" }),
+        None,
+        Some("http request failed for https://api.example.invalid/search?access_token=***".to_string()),
+    );
+
+    assert_eq!(input, Value::String("[REDACTED]".to_string()));
+    assert!(output.is_none());
+    assert_eq!(error.as_deref(), Some("[REDACTED]"));
 }
 
-#[async_trait]
-impl CoreTool for FailingFakeCoreTool {
-    async fn call(&self, _ctx: RequestContext, _args: Value) -> Result<Value> {
-        Err(err!(
-            ToolExecutionFailed,
-            Tool,
-            "http request failed for https://api.example.invalid/search?access_token=***"
-        ))
-    }
+#[test]
+fn http_tool_redacts_input_and_output() {
+    let po = fake_tool_po(ToolProtocol::Http);
+    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+        &po,
+        json!({ "query": "rust", "access_token": "placeholder-value" }),
+        Some(json!({ "status": 200, "body": { "access_token": "placeholder-value" } })),
+        None,
+    );
 
-    fn po(&self) -> &ToolPo {
-        &self.po
-    }
+    assert_eq!(input, Value::String("[REDACTED]".to_string()));
+    assert_eq!(output, Some(Value::String("[REDACTED]".to_string())));
+    assert!(error.is_none());
 }
 
-#[tokio::test]
-async fn http_tool_logging_decorator_redacts_error() {
-    init_test_tool_call_logger();
-
-    let tool = FailingFakeCoreTool {
-        po: fake_tool_po(ToolProtocol::Http),
-    };
-    let decorated = LoggingDecorator::new(Box::new(tool));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("test sqlite pool should be created");
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
-
-    let (_result, entry) = decorated
-        .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
-        .await;
-
-    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
-    assert!(trace_text.contains("[REDACTED]"));
-    assert!(
-        !trace_text.contains("placeholder-value"),
-        "HTTP trace leaked sensitive value: {trace_text}"
+#[test]
+fn mcp_tool_redacts_error() {
+    let po = fake_tool_po(ToolProtocol::Mcp);
+    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+        &po,
+        json!({ "access_token": "placeholder-value" }),
+        None,
+        Some("http request failed for https://api.example.invalid/search?access_token=***".to_string()),
     );
-    assert!(
-        !trace_text.contains("api.example.invalid"),
-        "HTTP trace leaked URL host: {trace_text}"
-    );
+
+    assert_eq!(input, Value::String("[REDACTED]".to_string()));
+    assert!(output.is_none());
+    assert_eq!(error.as_deref(), Some("[REDACTED]"));
 }
 
-#[tokio::test]
-async fn http_tool_logging_decorator_redacts_input_and_output() {
-    init_test_tool_call_logger();
-
-    let sensitive_value = "placeholder-value";
-    let tool = FakeCoreTool {
-        po: fake_tool_po(ToolProtocol::Http),
-        result: json!({
-            "status": 200,
-            "body": {
-                "access_token": sensitive_value
-            }
-        }),
-    };
-    let decorated = LoggingDecorator::new(Box::new(tool));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("test sqlite pool should be created");
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
-
-    let (_result, entry) = decorated
-        .call_with_entry(
-            ctx,
-            json!({
-                "query": "rust",
-                "access_token": sensitive_value
-            }),
-        )
-        .await;
-
-    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
-    assert!(trace_text.contains("[REDACTED]"));
-    assert!(
-        !trace_text.contains(sensitive_value),
-        "HTTP trace leaked sensitive value: {trace_text}"
+#[test]
+fn mcp_tool_redacts_input_and_output() {
+    let po = fake_tool_po(ToolProtocol::Mcp);
+    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+        &po,
+        json!({ "query": "rust", "credential": "placeholder-value" }),
+        Some(json!({ "status": "ok", "payload": { "credential": "placeholder-value" } })),
+        None,
     );
-    assert!(
-        !trace_text.contains("access_token"),
-        "HTTP trace leaked sensitive key: {trace_text}"
-    );
+
+    assert_eq!(input, Value::String("[REDACTED]".to_string()));
+    assert_eq!(output, Some(Value::String("[REDACTED]".to_string())));
+    assert!(error.is_none());
 }
 
-#[tokio::test]
-async fn mcp_tool_logging_decorator_redacts_error() {
-    init_test_tool_call_logger();
-
-    let tool = FailingFakeCoreTool {
-        po: fake_tool_po(ToolProtocol::Mcp),
-    };
-    let decorated = LoggingDecorator::new(Box::new(tool));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("test sqlite pool should be created");
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
-
-    let (_result, entry) = decorated
-        .call_with_entry(ctx, json!({ "access_token": "placeholder-value" }))
-        .await;
-
-    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
-    assert!(trace_text.contains("[REDACTED]"));
-    assert!(
-        !trace_text.contains("placeholder-value"),
-        "MCP trace leaked sensitive value: {trace_text}"
+#[test]
+fn builtin_tool_does_not_redact() {
+    let po = fake_tool_po(ToolProtocol::Builtin);
+    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+        &po,
+        json!({ "query": "rust" }),
+        Some(json!({ "result": "found" })),
+        None,
     );
-    assert!(
-        !trace_text.contains("api.example.invalid"),
-        "MCP trace leaked URL host: {trace_text}"
-    );
-}
 
-#[tokio::test]
-async fn mcp_tool_logging_decorator_redacts_input_and_output() {
-    init_test_tool_call_logger();
-
-    let sensitive_value = "placeholder-value";
-    let tool = FakeCoreTool {
-        po: fake_tool_po(ToolProtocol::Mcp),
-        result: json!({
-            "status": "ok",
-            "payload": {
-                "credential": sensitive_value
-            }
-        }),
-    };
-    let decorated = LoggingDecorator::new(Box::new(tool));
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .expect("test sqlite pool should be created");
-    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
-
-    let (_result, entry) = decorated
-        .call_with_entry(
-            ctx,
-            json!({
-                "query": "rust",
-                "credential": sensitive_value
-            }),
-        )
-        .await;
-
-    let trace_text = serde_json::to_string(&entry).expect("trace entry should serialize");
-    assert!(trace_text.contains("[REDACTED]"));
-    assert!(
-        !trace_text.contains(sensitive_value),
-        "MCP trace leaked sensitive value: {trace_text}"
-    );
-    assert!(
-        !trace_text.contains("credential"),
-        "MCP trace leaked sensitive key: {trace_text}"
-    );
+    // Builtin 工具不脱敏，保留原值用于调试
+    assert_eq!(input, json!({ "query": "rust" }));
+    assert_eq!(output, Some(json!({ "result": "found" })));
+    assert!(error.is_none());
 }
 
 #[test]

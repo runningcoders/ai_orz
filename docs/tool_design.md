@@ -13,6 +13,46 @@
 
 ---
 
+## 工具调用架构演进（2026-08-05 更新）
+
+### Rig 移除 + 命名清理
+
+参考 commit `f02addd`（移除 rig 依赖）与本轮命名清理（2026-08-05）：
+
+- **Cortex 扁平化**：`BrainDal.think()` → `CortexDaoRegistry.get(provider_type)` → `dao.think()`（2 层），替代旧的 Brain → Cortex 实体 → CortexTrait → 实现 → CortexDao 工厂（5 层）。
+- **ToolCallDao 原语重命名**：`ToolCallDao::call_manual` → `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。
+- **删除冗余 forwarder**：`ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法删除，`call_tool` 直接调 `ToolCallDao::execute`，减少一层无意义间接。
+
+### 三层职责
+
+| 层级 | 职责 | 入口 |
+|------|------|------|
+| **业务入口（DAL）** | `ToolDal::call_tool` | Auto/Manual/普通工具统一入口，转发到 DAO |
+| **协议路由（domain）** | `RuntimeDomainImpl::call_tool` | 按 `ToolProtocol` 分发：Mcp → `McpToolDal`；Builtin/Http → `ToolDal` |
+| **执行原语（DAO）** | `ToolCallDao::execute` | 套 `LoggingDecorator` → 调 `CoreTool::call`，生成真实 `call_id` |
+
+### 三条执行路径全部汇流到 `ToolCallDao::execute`
+
+```
+[1] awakening 循环 LLM 主动调 Auto 工具
+    execute_auto → call_tool → ToolCallDao::execute
+
+[2] awakening 循环 LLM 主动调 Manual 工具
+    execute_manual → special_tool(request_tool_call / send_tool_call_message)
+                  → call_manual_tool_for_agent → call_tool → ToolCallDao::execute
+
+[3] 消息驱动（Consumer 处理 ToolCallRequest）
+    call_manual_tool_for_agent → call_tool → ToolCallDao::execute
+```
+
+### 装饰器收敛 + Trace 完整性
+
+- 装饰收敛到 `ToolCallDao::execute` 内部：每次调用 `dyn_clone::clone_box(&*tool.our_tool)` 后 `ToolCallLoggingDecorator::new(cloned)`，保证每次调用拿到独立的 `ToolCallEntry`。
+- 成功时返回 `(Value, ToolCallEntry)`，`entry.call_id` 由 `LoggingDecorator` 生成真实 UUID，调用方应使用此 `call_id` 构造 `ToolExecutionResult`，不再伪造。
+- 失败时 `entry` 被 consume 构造 `ToolCallTraceRef`，Error 携带 `trace_ref`，便于事后追溯。
+
+---
+
 ## 最终架构设计
 
 ### 目录结构
@@ -193,7 +233,7 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 - **CortexDao 自建**：`OpenAiCompatibleCortexDao` 直接通过 reqwest HTTP 调用 OpenAI 兼容 API（POST /chat/completions）
 - **不再有 ToolDyn / RigToolAdapter / unsafe transmute**：所有工具统一实现自建 `CoreTool` trait，原生支持 `Box<dyn CoreTool + Send + Sync>` 动态分发
 - **Brain 扁平化**：Brain 直接持有 `Option<ModelProviderPo>`，BrainDal.think() 按 `provider_type` 在 `CortexDaoRegistry` 中选择 DAO 实现
-- **工具调用三层架构**：上层 `execute_auto`/`execute_manual` → 中层 `call_tool` → 底层 `ToolCallDao.call_manual` + `decorate`
+- **工具调用三层架构**：上层 `execute_auto`/`execute_manual` → 中层 `call_tool` → 底层 `ToolCallDao.execute` + `decorate`
 
 ### 分层规范符合性检查
 
@@ -243,7 +283,7 @@ test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 +│       └── logger_test.rs   # 完整单元测试
  └── service/
      └── dao/tool_call/
-         └── impl.rs          # ToolCallDao.call_manual + decorate（装饰器收敛）
+         └── impl.rs          # ToolCallDao.execute + decorate（装饰器收敛）
 ```
 
 #### 工作流程图
@@ -256,7 +296,7 @@ Awakening 显式循环 → 按 control_mode 分发：
   - Auto:  ToolDal.execute_auto → call_tool
   - Manual: ToolDal.execute_manual → registry.create_tool(internal tool) → 转发 → call_tool
   ↓
-call_tool → ToolCallDao.call_manual(tool, args)
+call_tool → ToolCallDao.execute(tool, args)
   ↓
 内部 decorate(): ToolCallLoggingDecorator::new(dyn_clone::clone_box(&tool.our_tool))
   ↓
@@ -304,7 +344,7 @@ pub struct ToolCallEntry {
 
 | 问题 | 方案 | 原因 |
 |------|------|------|
-| **在哪里添加日志包装？** | `ToolCallDao.call_manual` 内部 | 装饰器收敛到 ToolCallDao，`call_tool` / `execute_auto` / `execute_manual` 都走此路径，单点记录 trace |
+| **在哪里添加日志包装？** | `ToolCallDao.execute` 内部 | 装饰器收敛到 ToolCallDao，`call_tool` / `execute_auto` / `execute_manual` 都走此路径，单点记录 trace |
 | **日志配置放在哪里？** | ToolCallLogger 从 config singleton 获取 | 配置已经是全局单例，不需要通过 DAO 传递参数，减少 API 污染 |
 | **全局还是每个工具一个实例？** | 全局单例工厂 | base path 只需要初始化一次，每个调用按需获取 writer，没有重复创建开销 |
 | **是否支持测试？** | 保留 `new()` 构造方法 | 测试可以创建本地实例用临时目录，不影响全局单例 |
@@ -353,7 +393,7 @@ pub struct ToolCallEntry {
 | **核心 trait** | 内部统一用 `CoreTool`（带 `RequestContext`） | 所有工具都需要访问上下文（DB、用户、权限、跟踪ID），统一接口方便装饰器 |
 | **Auto 调用** | `execute_auto` → `call_tool` 直接执行 | Awakening 循环中模型发起 tool_call 时按 control_mode 分发，结果作为 ChatMessage::Tool 追加到对话历史 |
 | **Manual 调用** | `execute_manual` 通过 internal 工具转发 | `request_tool_call`（同步）/`send_tool_call_message`（异步）由 registry.create_tool 创建实例，转发到 `call_tool` 或消息链路 |
-| **日志装饰** | `ToolCallDao.call_manual` + `decorate` 内部收敛 | 装饰器逻辑收敛到 DAO 层，单点记录 ToolCallEntry trace，未来可叠加 StatsDecorator |
+| **日志装饰** | `ToolCallDao.execute` + `decorate` 内部收敛 | 装饰器逻辑收敛到 DAO 层，单点记录 ToolCallEntry trace，未来可叠加 StatsDecorator |
 | **注册中心** | 存储工厂而非实例 | 每个工具实例从 `ToolPo` 创建，配置可动态从 DB 读取 |
 
 ### 消息类型扩展
@@ -436,7 +476,7 @@ ai_orz/
 │       │   │   └── sqlite.rs  # SQLite 实现 - get_tool_full() 拼装
 │       │   ├── tool_call/
 │       │   │   ├── mod.rs     # ToolCallDao trait（含 decorate 方法）
-│       │   │   └── impl.rs    # call_manual + decorate 装饰器收敛
+│       │   │   └── impl.rs    # execute + decorate 装饰器收敛
 │       │   └── cortex/
 │       │       ├── mod.rs     # CortexDao trait + CortexDaoRegistry 分发
 │       │       └── native/
@@ -459,11 +499,11 @@ Input: ToolPo from DB
   ↓
 1. 从 ToolRegistry 根据 protocol 获取工厂，create_tool(po) → Box<dyn CoreTool + Send + Sync>
   ↓
-2. 不在拼装阶段装饰（装饰收敛到 ToolCallDao.call_manual 内部）
+2. 不在拼装阶段装饰（装饰收敛到 ToolCallDao.execute 内部）
   ↓
 3. 返回 Tool { po, control_mode: po.control_mode, our_tool: boxed_dyn }
   ↓
-（our_tool 保持未装饰，执行时由 ToolCallDao.call_manual 内部 decorate 临时装饰）
+（our_tool 保持未装饰，执行时由 ToolCallDao.execute 内部 decorate 临时装饰）
 ```
 
 ### 工作流程图
@@ -476,7 +516,7 @@ User message → Awakening 循环 → BrainDal.think(messages, tool_descriptors)
                                           ↓
                                     execute_auto(tool, args) → call_tool
                                           ↓
-                                    ToolCallDao.call_manual → decorate → CoreTool.call(ctx, args)
+                                    ToolCallDao.execute → decorate → CoreTool.call(ctx, args)
                                           ↓
                                     ToolCallLoggingDecorator 记录日志 → 返回 (Value, ToolCallEntry)
                                           ↓
@@ -494,7 +534,7 @@ execute_manual(tool, args)
    │       ↓
    │   special_tool.call() → call_manual_tool_for_agent()
    │       ↓
-   │   call_tool → ToolCallDao.call_manual → decorate → CoreTool.call
+   │   call_tool → ToolCallDao.execute → decorate → CoreTool.call
    │       ↓
    │   同轮返回 (Value, ToolCallEntry)，追加为 ChatMessage::Tool 继续循环
    │
@@ -1086,7 +1126,7 @@ McpToolCallDao.assemble_mcp_core_tool(po, server)
   ↓
 registry::mcp::create_mcp_tool(po, deps) 或 McpToolBuilder -> McpCoreTool
   ↓
-ToolCallDao.call_manual(ctx, tool, args)
+ToolCallDao.execute(ctx, tool, args)
   ↓
 McpCoreTool.call -> McpClientRuntime -> rmcp tools/call
   ↓
@@ -1227,7 +1267,7 @@ ToolRegistry.create_tool(po)
   ↓
 ToolProtocol::Http → HttpToolFactory.create(po) → HttpCoreTool
   ↓
-ToolCallDao.call_manual()
+ToolCallDao.execute()
   ↓
 HttpCoreTool.call(ctx, args)
   ↓

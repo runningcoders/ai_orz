@@ -1,10 +1,10 @@
 //! Default implementation of ToolCallDao
 
+use crate::models::events::ToolExecEvent;
 use crate::models::tool::{CoreTool, Tool, ToolCallTraceRef, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::get_registry;
-use crate::pkg::tool_tracing::ToolCallLoggingDecorator;
-use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -67,23 +67,70 @@ impl ToolCallDao for ToolCallDaoImpl {
         Ok(Some(tool_raw))
     }
 
-    fn decorate(&self, tool: Box<dyn CoreTool + Send + Sync>) -> Box<dyn CoreTool + Send + Sync> {
-        Box::new(ToolCallLoggingDecorator::new(tool))
-    }
-
-    async fn call_manual(
+    async fn execute(
         &self,
         ctx: RequestContext,
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        // our_tool is always raw (not pre-decorated) - clone and create a new decorator for this call
-        // this guarantees we get a fresh entry for this specific invocation
-        let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
-        let decorated = ToolCallLoggingDecorator::new(cloned);
+        // 直接调用工具并内联构造 trace entry，发布 AOP ToolExecEvent
+        // （取代被移除的 ToolCallLoggingDecorator）
+        let call_id = uuid::Uuid::now_v7().to_string();
+        let started_at = common::constants::utils::current_timestamp_ms() as u64;
 
-        // Call with entry capture
-        let (result, mut entry) = decorated.call_with_entry(ctx, args).await;
+        let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
+        let result = cloned.call(ctx.clone(), args.clone()).await;
+
+        let finished_at = common::constants::utils::current_timestamp_ms() as u64;
+        let duration_ms = finished_at.saturating_sub(started_at);
+
+        let po = tool.our_tool.po();
+
+        // 计算 args 长度（序列化为 JSON 字符串后的字节数）
+        let args_len = serde_json::to_string(&args)
+            .map(|s| s.len() as u64)
+            .unwrap_or(0);
+
+        // 根据成功/失败构造 output / error，并计算 result_len
+        let (output_json, error_str, result_len, status) = match &result {
+            Ok(value) => {
+                let len = serde_json::to_string(value)
+                    .map(|s| s.len() as u64)
+                    .unwrap_or(0);
+                (Some(value.clone()), None, len, ToolCallStatus::Completed)
+            }
+            Err(error) => {
+                let err_msg = error.to_string();
+                let len = err_msg.len() as u64;
+                (None, Some(err_msg), len, ToolCallStatus::Failed)
+            }
+        };
+
+        // 对外部协议工具（HTTP/MCP）的 input/output/error 进行脱敏
+        let (input_redacted, output_redacted, error_redacted) =
+            crate::pkg::tool_tracing::entry::redact_trace_values_for_tool(
+                po,
+                args,
+                output_json,
+                error_str,
+            );
+
+        let mut entry = ToolCallEntry {
+            call_id,
+            tool_id: po.id.clone(),
+            tool_name: po.name.clone(),
+            agent_id: ctx.agent_id().cloned(),
+            task_id: ctx.task_id().cloned(),
+            project_id: ctx.project_id().cloned(),
+            started_at,
+            finished_at,
+            duration_ms,
+            input: input_redacted,
+            output: output_redacted,
+            error: error_redacted,
+            status,
+            metadata: Value::Object(serde_json::Map::new()),
+        };
 
         // Add caller location for debugging
         let location = std::panic::Location::caller();
@@ -96,12 +143,18 @@ impl ToolCallDao for ToolCallDaoImpl {
             entry.metadata = Value::Object(map);
         }
 
+        // 发布 AOP ToolExecEvent（同步消费：日志写入 + 统计记录）
+        let event = ToolExecEvent::new(
+            entry.clone(),
+            ctx.organization_id().cloned(),
+            ctx.user_id().cloned(),
+            args_len,
+            result_len,
+        );
+        crate::pkg::aop::publish(event).await;
+
         match result {
-            Ok(value) => {
-                // 返回真实 entry（含 LoggingDecorator 生成的 call_id）
-                // 调用方应使用 entry.call_id 构造 ToolExecutionResult，不再伪造
-                Ok((value, entry))
-            }
+            Ok(value) => Ok((value, entry)),
             Err(error) => {
                 use common::error::{ErrorCode, ErrorType};
                 let mut err = common::error::Error::typed(
@@ -112,8 +165,8 @@ impl ToolCallDao for ToolCallDaoImpl {
                 .with_source(error);
                 // 失败时 entry 被 consume 构造 trace_ref，Error 已携带 trace_ref
                 let trace_ref = ToolCallTraceRef {
-                    tool_id: entry.tool_id,
-                    call_id: entry.call_id,
+                    tool_id: entry.tool_id.clone(),
+                    call_id: entry.call_id.clone(),
                 };
                 let mut field = common::error::ErrorField::new();
                 field.set_trace_ref(trace_ref);

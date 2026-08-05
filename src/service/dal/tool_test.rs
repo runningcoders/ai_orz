@@ -231,17 +231,9 @@ async fn test_mcp_tool_bind_to_agent_visible_but_not_wrapped_for_rig(pool: Sqlit
     assert_eq!(list_full[0].po.protocol, ToolProtocol::Mcp);
     assert_eq!(list_full[0].po.control_mode, ControlMode::Manual);
 
-    let prompt = list_full[0].po.to_tool_prompt();
-    assert!(prompt.contains("mcp.echo-server.echo"));
-    assert!(prompt.contains("Echo input text"));
-    assert!(prompt.contains("Manual"));
-    assert!(prompt.contains("text"));
-    assert!(!prompt.contains("python3"));
-    assert!(!prompt.contains("PRIVATE_VALUE"));
-    assert!(!prompt.contains("placeholder-value"));
-    assert!(!prompt.contains("internal.example.test"));
-    assert!(!prompt.contains("server_id"));
-    assert!(!prompt.contains("tool_name"));
+    // 工具列表不再注入 Prompt（通过 OpenAI tools API 协议层传递），
+    // 此处仅验证工具元数据可被加载，不再断言 Prompt 内容。
+    // 敏感配置（command/env/url）始终保留在 ToolPo.config 中，不暴露给模型。
 }
 
 /// 测试从 Agent 移除工具
@@ -644,7 +636,7 @@ impl ToolCallDao for MockToolCallDao {
         Ok(Some(Box::new(TestTool { po: po.clone() })))
     }
 
-    async fn call_manual(
+    async fn execute(
         &self,
         _ctx: RequestContext,
         _tool: &Tool,

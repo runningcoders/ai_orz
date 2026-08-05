@@ -1,15 +1,12 @@
-//! Tool call tracing - unified module for tool call logging and decorator wrapping
+//! Tool call tracing - unified module for tool call logging
 //!
 //! This module provides:
 //! - ToolCallEntry/ToolCallStatus: Structured logging entry with call status
 //! - ToolCallLogger: Daily JSONL based logger for persistent tool call history
-//! - tool_call_logger::ToolCallLogger: Logging decorator for our core Tool trait
+//! - redact_trace_values_for_tool: Trace value redaction for HTTP/MCP tools
 
 pub mod entry;
 pub mod logger;
-pub mod tool_call_logger;
-
-pub use tool_call_logger::LoggingDecorator as ToolCallLoggingDecorator;
 
 #[cfg(test)]
 mod tests;

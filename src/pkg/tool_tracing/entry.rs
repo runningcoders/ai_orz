@@ -66,3 +66,25 @@ impl Default for ToolCallEntry {
         }
     }
 }
+
+/// 对外部协议工具（HTTP/MCP）的 trace input/output/error 进行脱敏
+///
+/// Builtin 工具的参数和返回值保留原值（用于调试），外部工具默认 fail-closed 脱敏，
+/// 避免外部工具参数、返回值或错误文本进入 tool call JSONL trace。
+pub(crate) fn redact_trace_values_for_tool(
+    po: &crate::models::tool::ToolPo,
+    input: serde_json::Value,
+    output: Option<serde_json::Value>,
+    error: Option<String>,
+) -> (serde_json::Value, Option<serde_json::Value>, Option<String>) {
+    use common::enums::ToolProtocol;
+    if !matches!(po.protocol, ToolProtocol::Http | ToolProtocol::Mcp) {
+        return (input, output, error);
+    }
+
+    (
+        serde_json::Value::String("[REDACTED]".to_string()),
+        output.map(|_| serde_json::Value::String("[REDACTED]".to_string())),
+        error.map(|_| "[REDACTED]".to_string()),
+    )
+}

@@ -111,7 +111,7 @@ src/pkg/tool_registry/
 
 src/service/dao/tool_call/
 ├── mod.rs              # ToolCallDao trait
-└── impl.rs             # assemble_core_tool / wrap_for_rig / call_manual
+└── impl.rs             # assemble_core_tool / execute
 ```
 
 推荐依赖方向：
@@ -255,7 +255,7 @@ ToolRegistry.create_tool(po)
   ↓
 ToolProtocol::Http → HttpToolFactory.create(po) → HttpCoreTool
   ↓
-ToolCallDao.call_manual()
+ToolCallDao.execute()
   ↓
 HttpCoreTool.call(ctx, args)
   ↓
@@ -314,7 +314,7 @@ pub struct HttpCoreTool {
 }
 ```
 
-失败返回通过 `ToolError` 表达，由 `ToolCallDao.call_manual()` 记录到 `ToolCallEntry`。
+失败返回通过 `ToolError` 表达，由 `ToolCallDao.execute()` 记录到 `ToolCallEntry`。
 
 ---
 

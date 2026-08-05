@@ -359,6 +359,8 @@ pub struct SaveShortTermMemoryParams {
     pub task_id: Option<String>,
     /// 详细内容，可选。
     pub content: Option<String>,
+    /// 关联的思考 trace ID 列表（记录本条记忆从哪些 trace 中提炼）。
+    pub trace_ids: Option<Vec<String>>,
 }
 
 /// 保存短期记忆响应。

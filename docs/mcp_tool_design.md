@@ -550,10 +550,10 @@ impl ToolCallDao for McpToolCallDaoImpl {
         self.base.wrap_for_rig(tools, ctx)
     }
 
-    async fn call_manual(&self, ctx: RequestContext, tool: &Tool, args: Value)
+    async fn execute(&self, ctx: RequestContext, tool: &Tool, args: Value)
         -> Result<(Value, ToolCallEntry), ToolError>
     {
-        self.base.call_manual(ctx, tool, args).await
+        self.base.execute(ctx, tool, args).await
     }
 }
 ```
@@ -597,7 +597,7 @@ McpToolCallDao.assemble_mcp_core_tool(po, server)
   ↓
 registry::mcp::create_mcp_tool(po, deps) -> McpCoreTool
   ↓
-ToolCallDao.call_manual(ctx, &tool, args)
+ToolCallDao.execute(ctx, &tool, args)
   ↓
 McpCoreTool.call
   ↓
@@ -681,13 +681,13 @@ stdio MCP Server tools/call
   - 在 `McpToolDal` trait 新增：
     - `call_tool_by_id(ctx, tool_id, args) -> Result<Value, ToolError>`
     - `call_tool(ctx, &Tool, args) -> Result<Value, ToolError>`
-    - `call_manual(ctx, &Tool, args) -> Result<(Value, ToolCallEntry), ToolError>`
+    - `execute(ctx, &Tool, args) -> Result<(Value, ToolCallEntry), ToolError>`
   - 实现逻辑：
     - `call_tool_by_id` 只作为兼容入口：先调用 `self.get_by_id(...)` 组装完整 `McpCoreTool`，再委托 `call_tool`；
-    - `call_tool` 接收调用方已持有的完整 `Tool` 实体，直接委托 `call_manual`，避免 Runtime 已查出 Tool 后再次按 ID 查询；
+    - `call_tool` 接收调用方已持有的完整 `Tool` 实体，组装 `McpCoreTool` 后委托 `ToolCallDao::execute`（不再有独立 `call_manual` 方法，避免与底层原语同名混淆）；
     - 找不到 tool 返回 `ToolError::ToolCallError("Tool not found: ...")`；
     - 组装失败/非 MCP/缺 server 统一转换为不泄漏 config 的 `ToolError`；
-    - `call_manual` 委托同一个 `mcp_tool_call_dao.call_manual(ctx, tool, args)`，复用现有 tracing decorator。
+    - `call_tool` 委托同一个 `mcp_tool_call_dao.execute(ctx, tool, args)`，复用现有 tracing decorator。
 - `src/service/dal/mcp_tool_test.rs`
   - 新增 stdio MCP test server fixture；
   - 已覆盖流程：create server → sync tools → call synced tool by id → assert result；
@@ -1294,7 +1294,7 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 状态：Batch A、Batch B、Batch C、Batch D、Batch F 已完成，stdio MCP Tool 已打通从同步、绑定展示、Manual ToolCallRequest 消费、Runtime 协议路由、授权/绑定校验，到 ToolCallResult 回调的最小运行闭环。后续继续补更完整安全策略与连接生命周期增强。
 
-- ✅ `McpToolDal.call_tool_by_id/call_manual`：sync 后按标准 Tool ID 执行 MCP Tool；
+- ✅ `McpToolDal.call_tool_by_id/call_tool`：sync 后按标准 Tool ID 执行 MCP Tool；
 - ✅ DAL 级 E2E 测试：create server → sync tools → call synced tool → assert result；
 - ✅ Runtime Domain 协议路由：MCP 走 `McpToolDal`，Builtin/HTTP 走通用 `ToolDal`，禁止 DAL 同层互调；
 - ✅ Runtime MCP 错误边界脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential；

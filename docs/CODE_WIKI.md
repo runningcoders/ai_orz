@@ -552,13 +552,18 @@ pub struct AgentPo {
 ```rust
 // src/models/agent.rs
 pub struct AgentRuntimeConfig {
-    pub max_thinking_depth: i32,        // 最大思考深度（默认 10）
+    pub max_thinking_depth: i32,        // 跨消息累计工具调用数安全检查（默认 10）
+    pub max_thinking_rounds: usize,     // 单次唤醒 think loop 轮次上限（默认 90，跨压缩累计）
     pub thinking_interval_ms: i32,      // 思考间隔（默认 0）
     pub max_tool_calls_per_step: i32,   // 单步最大工具调用（默认 5）
     pub enable_reflection: bool,        // 是否启用反思模式
     pub require_user_confirm: bool,     // 是否需要用户确认
 }
 ```
+
+**两层轮次限制的区别**：
+- `max_thinking_depth`：consumer 层跨唤醒安全检查，统计模块查询当前任务的累计工具调用次数，超限发送提示消息并终止唤醒
+- `max_thinking_rounds`：awakening 层单次唤醒 think loop 轮次上限（跨多次上下文压缩累计），超限触发总结退出流程（`awaken_for_summary`），让 Agent 总结进展并通知消息源
 
 ### 2. Brain + Cortex 核心类
 

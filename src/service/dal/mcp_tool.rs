@@ -80,14 +80,6 @@ pub trait McpToolDal: Send + Sync {
         args: Value,
     ) -> Result<(Value, ToolCallEntry)>;
 
-    /// Execute an already assembled MCP tool manually and return its trace entry.
-    async fn call_manual(
-        &self,
-        ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)>;
-
     /// Invalidate cached MCP runtime/session for a server.
     fn invalidate_server(&self, server_id: &str);
 }
@@ -247,21 +239,12 @@ impl McpToolDal for McpToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.call_manual(ctx, tool, args).await
-    }
-
-    async fn call_manual(
-        &self,
-        ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)> {
         let executable = self
             .assemble_executable_tool(ctx.clone(), &tool.po)
             .await
             .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?;
         self.mcp_tool_call_dao
-            .call_manual(ctx, &executable, args)
+            .execute(ctx, &executable, args)
             .await
             .map_err(Into::into)
     }
