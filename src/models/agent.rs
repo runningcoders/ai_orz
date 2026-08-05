@@ -18,9 +18,20 @@ use std::fmt;
 /// 方便后续扩展各类运行时参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRuntimeConfig {
-    /// 最大思考深度（轮次），默认 10
+    /// 最大思考深度（跨消息累计工具调用数），默认 10
+    ///
+    /// 用于 consumer 层跨唤醒安全检查：当任务累计工具调用数达到此值时，
+    /// 停止唤醒并通知用户。防止 Agent 在无限消息循环中空转。
     #[serde(default = "default_max_thinking_depth")]
     pub max_thinking_depth: i32,
+
+    /// 单次唤醒最大思考轮次（跨压缩累计），默认 90
+    ///
+    /// 用于 awakening 层 think loop 轮次限制：当单次 awaken 内思考轮次
+    /// （跨多次上下文压缩累计）达到此值时，进入总结退出流程。
+    /// 任务可在分配时预估写入，未配置时使用此默认值。
+    #[serde(default = "default_max_thinking_rounds")]
+    pub max_thinking_rounds: usize,
 
     /// 思考间隔（毫秒），避免过快调用，默认 0（无间隔）
     #[serde(default)]
@@ -97,6 +108,7 @@ impl Default for AgentRuntimeConfig {
     fn default() -> Self {
         Self {
             max_thinking_depth: default_max_thinking_depth(),
+            max_thinking_rounds: default_max_thinking_rounds(),
             thinking_interval_ms: 0,
             max_tool_calls_per_step: default_max_tool_calls_per_step(),
             enable_reflection: false,
@@ -157,6 +169,10 @@ impl AgentRuntimeConfig {
 // 辅助函数用于 serde default
 fn default_max_thinking_depth() -> i32 {
     10
+}
+
+fn default_max_thinking_rounds() -> usize {
+    90
 }
 
 fn default_max_tool_calls_per_step() -> i32 {

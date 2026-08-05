@@ -43,7 +43,7 @@ pub struct Storage {
 struct StorageInner {
     sqlite: SqlitePool,
     vector: Arc<dyn VectorStore>,
-    stats: OnceCell<Stats>,
+    stats: OnceCell<Arc<Stats>>,
 }
 
 impl Storage {
@@ -101,13 +101,20 @@ impl Storage {
         .await?;
         stats.initialize_default()?;
 
+        // 包装为 Arc 并初始化全局单例（AOP 消费者等无 ctx 场景使用）
+        let stats_arc = Arc::new(stats);
+        crate::pkg::stats::init_global_stats(stats_arc.clone());
+
         let inner = StorageInner {
             sqlite,
             vector,
             stats: OnceCell::new(),
         };
         // Safety: we just created it, so set is ok
-        inner.stats.set(stats).expect("stats already initialized");
+        inner
+            .stats
+            .set(stats_arc)
+            .expect("stats already initialized");
 
         Ok(Self {
             inner: Arc::new(inner),
@@ -147,20 +154,26 @@ impl Storage {
 
     /// 获取 Stats 统计模块
     pub fn stats(&self) -> &Stats {
-        self.inner.stats.get().expect("Stats not initialized")
+        self.inner
+            .stats
+            .get()
+            .expect("Stats not initialized")
+            .as_ref()
     }
 
     /// 安全获取 Stats 统计模块（返回 Option，避免未初始化时 panic）
     pub fn stats_opt(&self) -> Option<&Stats> {
-        self.inner.stats.get()
+        self.inner.stats.get().map(|arc| arc.as_ref())
     }
 
     /// 初始化 Stats（首次设置，不可重复）
     /// 生产代码由 `Storage::new()` 内部调用，测试代码可通过此方法注入
     pub fn init_stats(&self, stats: Stats) -> common::error::Result<()> {
+        let stats_arc = Arc::new(stats);
+        crate::pkg::stats::init_global_stats(stats_arc.clone());
         self.inner
             .stats
-            .set(stats)
+            .set(stats_arc)
             .map_err(|_| common::error::Error::internal("Stats already initialized"))
     }
 }

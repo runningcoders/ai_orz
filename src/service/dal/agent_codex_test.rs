@@ -199,10 +199,6 @@ async fn codex_agent_dal_delegates_rebuild_vectors_to_base() {
 /// 验证未重写 prompt_builder 时走 trait 默认方法返回 DefaultPromptBuilder
 #[test]
 fn codex_agent_dal_default_prompt_builder_returns_default() {
-    use crate::models::tool::ToolPo;
-    use common::enums::ToolProtocol;
-    use serde_json::json;
-
     let mock = Arc::new(MockAgentDal::new());
     let codex_dal = CodexAgentDal::new(mock);
 
@@ -216,23 +212,15 @@ fn codex_agent_dal_default_prompt_builder_returns_default() {
         "tester".to_string(),
     );
     let agent = Agent::from_po(agent_po);
-    let tool_po = ToolPo::new(
-        "test-tool".to_string(),
-        "test-tool".to_string(),
-        "description".to_string(),
-        ToolProtocol::Mcp,
-        json!({}),
-        Some(json!({"type": "object"})),
-        vec!["test".to_string()],
-        Some("creator".to_string()),
-    );
 
     let mut builder = codex_dal.prompt_builder();
     builder.system_prompt(&agent);
-    builder.tools(&[tool_po]);
     let prompt = builder.build();
-    assert!(prompt.contains("【常用工具】"));
-    assert!(prompt.contains("test-tool"));
+    // 工具列表不再注入 Prompt（通过 OpenAI tools API 协议层传递）
+    // 仅验证 builder 走默认实现，工具不出现
+    assert!(prompt.contains("工具助手"));
+    assert!(!prompt.contains("【常用工具】"));
+    assert!(!prompt.contains("test-tool"));
 }
 
 /// 验证 prompt_builder 返回的 builder 可以多次调用 build()（&self 风格）

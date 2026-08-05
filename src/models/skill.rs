@@ -90,6 +90,14 @@ impl SkillPo {
     pub fn to_prompt_summary(&self) -> String {
         format!("- {}：{}", self.name, self.description)
     }
+
+    /// 获取标签列表
+    pub fn get_tags(&self) -> Vec<String> {
+        if self.tags.is_empty() {
+            return Vec::new();
+        }
+        serde_json::from_str(&self.tags).unwrap_or_default()
+    }
 }
 
 // ==================== Skill 业务聚合实体 ====================

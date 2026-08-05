@@ -9,22 +9,20 @@
 //! let mut builder = agent_dal.prompt_builder();
 //! builder.current_trace_id(&trace_id);
 //! builder.system_prompt(&agent);
-//! builder.tools(&tools);
 //! builder.skills(&skills);
 //! builder.history(&memories);
 //! builder.current_message(&message);
 //! let prompt = builder.build();
 //! ```
 //!
-//! 【分块拼装】tools 和 skills 统一注入，build() 时按 tag 自动分块：
-//! - neural tag 的工具/技能 → 神经工具/神经技能区块（所有 Agent 必加载）
-//! - 其他工具/技能 → 常用工具/必加载技能区块（按 agent roles ∪ installed_tags 匹配）
+//! 【分块拼装】skills 统一注入，build() 时按 tag 自动分块：
+//! - neural tag 的技能 → 神经技能区块（所有 Agent 必加载）
+//! - 其他技能 → 必加载技能区块（按 agent roles ∪ installed_tags 匹配）
 
 use crate::models::agent::Agent;
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
-use crate::models::tool::ToolPo;
 use crate::models::user::UserPo;
 
 /// Prompt 构建器 trait
@@ -36,7 +34,7 @@ pub trait PromptBuilder: Send + Sync {
 
     /// 设置 Agent 人设 / System Prompt
     ///
-    /// 同时缓存 agent 的 roles + installed_tags 作为后续工具/技能分块的匹配键。
+    /// 同时缓存 agent 的 roles + installed_tags 作为后续技能分块的匹配键。
     fn system_prompt(&mut self, agent: &Agent);
 
     /// 设置历史对话记忆
@@ -47,11 +45,6 @@ pub trait PromptBuilder: Send + Sync {
 
     /// 设置 Agent 可用技能（全量注入，build 时按 tag 分块）
     fn skills(&mut self, skills: &[SkillPo]);
-
-    /// 设置 Agent 可用工具（全量注入，build 时按 tag 分块）
-    ///
-    /// 传入 ToolPo 列表（Tool 实体不可 Clone，使用 PO 足够生成 Prompt）。
-    fn tools(&mut self, tools: &[ToolPo]);
 
     /// 设置工具失败统计
     fn tool_failures(&mut self, failures: &[(String, u64)]);
@@ -72,14 +65,39 @@ pub trait PromptBuilder: Send + Sync {
 
     /// 构建沉淀场景的 Prompt（与 build() 对称）
     ///
-    /// 复用已挂载的 system_prompt/tools/skills/user_profile/project_context/task_context/history，
+    /// 复用已挂载的 system_prompt/skills/user_profile/project_context/task_context/history，
     /// 加上沉淀约束章节（不发消息、只用记忆工具）和待沉淀短期记忆摘要，生成最终模板。
     /// 不使用 current_message（沉淀场景无用户消息）。
     ///
+    /// `trace_ids` 为本次沉淀所依赖的 trace 列表，写入 prompt 要求 Agent 调用
+    /// save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯。
+    ///
     /// 默认实现回退到 build()，仅 DefaultPromptBuilder 真正实现沉淀语义
     /// （Cli/Remote Agent 不参与沉淀，不会走到此分支）。
-    fn build_sleep_prompt(&self, pending_memories_summary: &str) -> String {
-        let _ = pending_memories_summary;
+    fn build_sleep_prompt(&self, pending_memories_summary: &str, trace_ids: &[String]) -> String {
+        let _ = (pending_memories_summary, trace_ids);
+        self.build()
+    }
+
+    /// 构建总结退出场景的 Prompt
+    ///
+    /// 当思考轮次耗尽时，或正常完成时，用此 prompt 让 Agent 总结当前工作进展、遇到的问题，
+    /// 并通过消息工具（send_message 等）或任务工具（update_task_progress 等）
+    /// 将总结发送给消息源或记录到 task 中。
+    ///
+    /// `work_summary` 为当前工作对话的摘要文本（由 messages_to_summary 生成）。
+    /// `total_rounds` 为累计消耗的思考轮次。
+    /// `trace_ids` 为本次总结所依赖的 trace 列表，写入 prompt 要求 Agent 调用
+    /// save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯。
+    ///
+    /// 默认实现回退到 build()，仅 DefaultPromptBuilder 真正实现总结语义。
+    fn build_summary_prompt(
+        &self,
+        work_summary: &str,
+        total_rounds: usize,
+        trace_ids: &[String],
+    ) -> String {
+        let _ = (work_summary, total_rounds, trace_ids);
         self.build()
     }
 }

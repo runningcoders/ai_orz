@@ -984,12 +984,13 @@ fn prompt_builder_only_system() {
     assert!(prompt.contains("严谨、专业、乐于助人"));
 }
 
-/// 验证工具注入时不泄露 config 敏感信息
+/// 验证 Prompt 完全不包含任何工具相关描述
+///
+/// 工具列表通过 OpenAI tools API 协议层传递，调用规范对模型透明（由 awakening 层分发）。
+/// 不论 Auto 还是 Manual 工具，Prompt 都不应出现工具名、描述、参数或调用规范。
 #[test]
-fn prompt_builder_includes_tools_without_server_config_details() {
+fn prompt_builder_excludes_all_tool_descriptions() {
     use crate::models::agent::AgentPo;
-    use crate::models::tool::ToolPo;
-    use serde_json::json;
 
     let agent_po = AgentPo::new(
         "工具助手".to_string(),
@@ -1001,146 +1002,30 @@ fn prompt_builder_includes_tools_without_server_config_details() {
         "tester".to_string(),
     );
     let agent = Agent::from_po(agent_po);
-    let mcp_tool_po = ToolPo::new(
-        "mcp.echo-server.echo".to_string(),
-        "mcp.echo-server.echo".to_string(),
-        "Echo input text".to_string(),
-        common::enums::ToolProtocol::Mcp,
-        json!({
-            "server_id": "echo-server",
-            "tool_name": "echo",
-            "command": "python3 /tmp/private_echo_server.py",
-            "env": {"PRIVATE_VALUE": "placeholder-value"},
-            "url": "https://internal.example.test/mcp"
-        }),
-        Some(json!({
-            "type": "object",
-            "properties": {"text": {"type": "string"}},
-            "required": ["text"]
-        })),
-        vec!["mcp".to_string(), "echo-server".to_string()],
-        Some("creator".to_string()),
-    );
 
     let mut builder = DefaultPromptBuilder::new();
     builder.system_prompt(&agent);
-    builder.tools(&[mcp_tool_po]);
     let prompt = builder.build();
 
-    // 工具说明应出现在某个区块中（神经工具或常用工具）
-    assert!(prompt.contains("【常用工具】"));
-    assert!(prompt.contains("mcp.echo-server.echo"));
-    assert!(prompt.contains("Echo input text"));
-    // 不应泄露敏感配置
+    // Prompt 应包含 Agent 人设（验证 build 本身成功）
+    assert!(prompt.contains("工具助手"));
+    // 不应包含任何工具区块标题
+    assert!(!prompt.contains("【常用工具】"));
+    assert!(!prompt.contains("【神经工具】"));
+    assert!(!prompt.contains("【Manual 工具调用规范】"));
+    // 不应包含工具名/描述/参数
+    assert!(!prompt.contains("mcp.echo-server.echo"));
+    assert!(!prompt.contains("Echo input text"));
+    assert!(!prompt.contains("builtin.echo"));
+    assert!(!prompt.contains("Echo input"));
+    // 不应包含内部转发器名称
+    assert!(!prompt.contains("request_tool_call"));
+    assert!(!prompt.contains("send_tool_call_message"));
+    // 敏感配置始终不暴露
     assert!(!prompt.contains("python3"));
     assert!(!prompt.contains("PRIVATE_VALUE"));
     assert!(!prompt.contains("placeholder-value"));
     assert!(!prompt.contains("internal.example.test"));
-    assert!(!prompt.contains("server_id"));
-    assert!(!prompt.contains("tool_name"));
-}
-
-/// 验证通过 trait 注入工具后能出现在 Prompt 中
-#[test]
-fn prompt_builder_trait_tools_injects_into_prompt() {
-    use crate::models::agent::AgentPo;
-    use crate::models::tool::ToolPo;
-    use serde_json::json;
-
-    let agent_po = AgentPo::new(
-        "工具助手".to_string(),
-        vec!["neural".to_string()],
-        "可以使用工具".to_string(),
-        vec!["工具调用".to_string()],
-        "按需使用工具。".to_string(),
-        "provider-001".to_string(),
-        "tester".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
-    let mut neural_tool_po = ToolPo::new(
-        "neural.search_web".to_string(),
-        "neural.search_web".to_string(),
-        "网页搜索工具".to_string(),
-        common::enums::ToolProtocol::Mcp, // Manual control_mode
-        json!({}),
-        Some(json!({"type": "object"})),
-        vec!["neural".to_string()],
-        Some("creator".to_string()),
-    );
-    neural_tool_po.control_mode = common::enums::ControlMode::Manual;
-
-    let mut builder: Box<dyn PromptBuilder> = Box::new(DefaultPromptBuilder::new());
-    builder.system_prompt(&agent);
-    builder.tools(&[neural_tool_po]);
-
-    let prompt = builder.build();
-    assert!(prompt.contains("【神经工具】"));
-    assert!(prompt.contains("neural.search_web"));
-    assert!(prompt.contains("网页搜索工具"));
-}
-
-/// 验证按 tag 分块：neural 工具进入神经工具区块，非 neural 工具进入常用工具区块
-#[test]
-fn prompt_builder_tag_based_block_split() {
-    use crate::models::agent::AgentPo;
-    use crate::models::tool::ToolPo;
-    use serde_json::json;
-
-    let agent_po = AgentPo::new(
-        "HR 助手".to_string(),
-        vec!["hr".to_string()],
-        "HR 工具".to_string(),
-        vec!["HR 能力".to_string()],
-        "HR 灵魂".to_string(),
-        "provider-001".to_string(),
-        "tester".to_string(),
-    );
-    let agent = Agent::from_po(agent_po);
-    let neural_tool_po = ToolPo::new(
-        "neural.memory_search".to_string(),
-        "neural.memory_search".to_string(),
-        "神经记忆搜索".to_string(),
-        common::enums::ToolProtocol::Mcp,
-        json!({}),
-        Some(json!({"type": "object"})),
-        vec!["neural".to_string()],
-        Some("creator".to_string()),
-    );
-    let hr_tool_po = ToolPo::new(
-        "hr.leave_query".to_string(),
-        "hr.leave_query".to_string(),
-        "请假查询".to_string(),
-        common::enums::ToolProtocol::Mcp,
-        json!({}),
-        Some(json!({"type": "object"})),
-        vec!["hr".to_string()],
-        Some("creator".to_string()),
-    );
-    let unmatched_tool_po = ToolPo::new(
-        "finance.budget".to_string(),
-        "finance.budget".to_string(),
-        "预算查询".to_string(),
-        common::enums::ToolProtocol::Mcp,
-        json!({}),
-        Some(json!({"type": "object"})),
-        vec!["finance".to_string()],
-        Some("creator".to_string()),
-    );
-
-    let mut builder = DefaultPromptBuilder::new();
-    builder.system_prompt(&agent);
-    builder.tools(&[neural_tool_po, hr_tool_po, unmatched_tool_po]);
-    let prompt = builder.build();
-
-    // neural 工具进入神经工具区块
-    assert!(prompt.contains("【神经工具】"));
-    assert!(prompt.contains("neural.memory_search"));
-    // hr 工具匹配 agent role，进入常用工具区块
-    assert!(prompt.contains("【常用工具】"));
-    assert!(prompt.contains("hr.leave_query"));
-    // finance 工具不匹配，不应出现
-    assert!(!prompt.contains("finance.budget"));
-    assert!(!prompt.contains("预算查询"));
 }
 
 /// 验证 trait 风格的链式调用：依次调用多个方法后 build() 结果包含所有部分

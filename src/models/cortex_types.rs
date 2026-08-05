@@ -167,4 +167,74 @@ impl ChatMessage {
             content: content.into(),
         }
     }
+
+    /// 将消息序列化为摘要文本（用于上下文压缩时传递给沉淀 prompt）
+    ///
+    /// 格式：
+    /// - User: `[user] {content}`
+    /// - Assistant: `[assistant] {content}` + tool_calls 摘要
+    /// - Tool: `[tool:{name}] {content_truncated}`
+    ///
+    /// `max_content_len` 限制单条消息 content 的最大字符数，超出尾部截断。
+    pub fn to_summary_text(&self, max_content_len: usize) -> String {
+        match self {
+            ChatMessage::User { content } => {
+                format!("[user] {}", truncate_str(content, max_content_len))
+            }
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let mut parts: Vec<String> = Vec::new();
+                if let Some(c) = content {
+                    parts.push(truncate_str(c, max_content_len).to_string());
+                }
+                if let Some(calls) = tool_calls {
+                    for tc in calls {
+                        let args_str = serde_json::to_string(&tc.arguments)
+                            .unwrap_or_else(|_| "{}".to_string());
+                        parts.push(format!(
+                            "[called tool: {} with {}]",
+                            tc.name,
+                            truncate_str(&args_str, max_content_len)
+                        ));
+                    }
+                }
+                format!("[assistant] {}", parts.join(" | "))
+            }
+            ChatMessage::Tool {
+                tool_call_id,
+                content,
+            } => {
+                format!(
+                    "[tool:{}] {}",
+                    tool_call_id,
+                    truncate_str(content, max_content_len)
+                )
+            }
+        }
+    }
+}
+
+/// 将消息列表序列化为摘要文本（用于上下文压缩）
+///
+/// 每条消息占一行，`max_content_len` 限制单条消息 content 长度。
+pub fn messages_to_summary(messages: &[ChatMessage], max_content_len: usize) -> String {
+    messages
+        .iter()
+        .map(|m| m.to_summary_text(max_content_len))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn truncate_str(s: &str, max_len: usize) -> &str {
+    if s.len() <= max_len {
+        s
+    } else {
+        // 按字符边界截断，避免切到 UTF-8 中间
+        match s.char_indices().nth(max_len) {
+            Some((idx, _)) => &s[..idx],
+            None => s,
+        }
+    }
 }

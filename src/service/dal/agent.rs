@@ -19,7 +19,6 @@ use crate::service::dao::model_provider::{
 };
 use crate::service::dao::tool::ToolStatsDao;
 use common::enums::AgentStatus;
-use common::enums::ControlMode;
 use common::error::Result;
 use common::models::{
     AgentStats, ModelCallStats, StatsFetchOptions, StatsInterval, ToolCallSummary,
@@ -887,22 +886,24 @@ const NEURAL_TAG: &str = "neural";
 
 /// 默认 Prompt 构建器（Local Agent 使用）
 ///
-/// 统一注入 tools / skills，build() 时按 tag 自动分块拼装：
+/// 统一注入 skills，build() 时按 tag 自动分块拼装：
 ///
 /// 1. 【Agent 人设】        ← 最稳定
-/// 2. 【神经工具】          ← tags 含 "neural"，所有 Agent 必加载
-/// 3. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
-/// 4. 【常用工具】          ← tags 不含 "neural" 但与 agent match_keys 有交集
-/// 5. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
-/// 6. 【用户画像】          ← 随用户变化，对话中相对稳定
-/// 7. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
-/// 8. 【历史对话】          ← 随对话增长
-/// 9. 【工具失败警告】      ← 实时变化
-/// 10. 【trace_id + 当前消息】← 每次变化
+/// 2. 【神经技能】          ← tags 含 "neural"，所有 Agent 必加载
+/// 3. 【必加载技能】        ← tags 不含 "neural" 但与 agent match_keys 有交集
+/// 4. 【用户画像】          ← 随用户变化，对话中相对稳定
+/// 5. 【项目上下文】+【任务上下文】 ← 业务上下文，随消息变化
+/// 6. 【历史对话】          ← 随对话增长
+/// 7. 【工具失败警告】      ← 实时变化
+/// 8. 【trace_id + 当前消息】← 每次变化
 ///
 /// match_keys = agent.roles ∪ agent.installed_tags
 ///
-/// build_sleep_prompt() 与 build() 对称，复用 1-8 区块（跳过 tool_failures 和 current_message），
+/// 工具信息传递路径：
+/// - 工具列表（name/description/parameters）→ OpenAI tools API 字段（协议层）
+/// - Prompt 文本层不再包含任何工具描述（工具调用对模型透明，由 awakening 层根据 control_mode 分发）
+///
+/// build_sleep_prompt() 与 build() 对称，复用 1-6 区块（跳过 tool_failures 和 current_message），
 /// 加上沉淀约束章节 + 待沉淀记忆摘要，用于 sleep_and_settle 场景。
 #[derive(Debug, Clone, Default)]
 pub struct DefaultPromptBuilder {
@@ -924,8 +925,6 @@ pub struct DefaultPromptBuilder {
     current_message: Option<String>,
     /// 技能（全量，build 时按 tag 分块）
     skills: Vec<SkillPo>,
-    /// 工具 PO（全量，build 时按 tag 分块）
-    tools: Vec<crate::models::tool::ToolPo>,
     /// 工具失败统计：(工具名称, 失败次数)
     tool_failures: Vec<(String, u64)>,
 }
@@ -936,18 +935,6 @@ impl DefaultPromptBuilder {
         Self::default()
     }
 
-    /// 工具是否为神经工具（tags 含 "neural"）
-    fn is_neural_tool(tool: &crate::models::tool::ToolPo) -> bool {
-        tool.get_tags().iter().any(|t| t == NEURAL_TAG)
-    }
-
-    /// 工具是否适合在 Prompt 中展示（仅 Manual 工具）
-    /// Auto 工具通过 Rig 注册由模型直接调用，不需要在 Prompt 中展示
-    /// Enabled 状态已在 DB 查询时过滤
-    fn is_prompt_visible_tool(tool: &crate::models::tool::ToolPo) -> bool {
-        matches!(tool.control_mode, ControlMode::Manual)
-    }
-
     /// 技能是否为神经技能（tags 含 "neural"）
     fn is_neural_skill(skill: &SkillPo) -> bool {
         skill.parse_tags().iter().any(|t| t == NEURAL_TAG)
@@ -956,24 +943,6 @@ impl DefaultPromptBuilder {
     /// 工具/技能的 tags 是否与 match_keys 有交集
     fn tags_match(tags: &[String], match_keys: &[String]) -> bool {
         tags.iter().any(|t| match_keys.contains(t))
-    }
-
-    /// 构建工具区块字符串
-    fn build_tools_section(title: &str, tools: &[&crate::models::tool::ToolPo]) -> String {
-        if tools.is_empty() {
-            return String::new();
-        }
-        let mut s = format!("【{}】\n", title);
-        s.push_str(
-            "以下为 Manual 工具（已注册到 Rig 的 Auto 工具不在此列出，直接通过 function calling 调用）。Manual 工具有两种调用方式，请按场景选择：\n\
-             - 同步调用（request_tool_call）：结果在当前轮立即返回，适合轻量、快速的工具\n\
-             - 异步调用（send_tool_call_message）：结果在下一轮通过 ToolCallResult 消息送达，适合耗时较长的工具\n",
-        );
-        for t in tools {
-            s.push_str(&format!("- {}\n", t.to_tool_prompt()));
-        }
-        s.push('\n');
-        s
     }
 
     /// 构建技能区块字符串
@@ -990,20 +959,15 @@ impl DefaultPromptBuilder {
         s
     }
 
-    /// 构建工具/技能区块（神经工具 + 神经技能 + 常用工具 + 必加载技能）
+    /// 构建技能区块（神经技能 + 必加载技能）
     ///
-    /// 提取自原 build()，供 build() 和 build_sleep_prompt() 复用，避免重复。
-    /// 预过滤：仅展示 Manual 工具（Auto 工具走 Rig 不在 Prompt 展示）。
-    fn build_tools_and_skills_sections(&self) -> String {
+    /// 工具列表和调用规范都不再出现在 Prompt 中：
+    /// - 工具列表（name/description/parameters）通过 OpenAI tools API 协议层传递
+    /// - Manual 工具调用对模型透明（awakening 层根据 control_mode 分发执行）
+    ///
+    /// 技能仍按 tag 分块展示在 Prompt 中（技能是方法论，无 API 对应）。
+    fn build_skills_sections(&self) -> String {
         let mut result = String::new();
-
-        // 神经工具（tags 含 "neural"，所有 Agent 必加载）
-        let neural_tools: Vec<_> = self
-            .tools
-            .iter()
-            .filter(|t| Self::is_prompt_visible_tool(t) && Self::is_neural_tool(t))
-            .collect();
-        result.push_str(&Self::build_tools_section("神经工具", &neural_tools));
 
         // 神经技能（tags 含 "neural"，所有 Agent 必加载）
         let neural_skills: Vec<_> = self
@@ -1012,20 +976,6 @@ impl DefaultPromptBuilder {
             .filter(|s| Self::is_neural_skill(s))
             .collect();
         result.push_str(&Self::build_skills_section("神经技能", &neural_skills));
-
-        // 常用工具（tags 不含 "neural" 但与 match_keys 有交集）
-        let tagged_tools: Vec<_> = self
-            .tools
-            .iter()
-            .filter(|t| {
-                Self::is_prompt_visible_tool(t) && {
-                    let tags = t.get_tags();
-                    !tags.iter().any(|tag| tag == NEURAL_TAG)
-                        && Self::tags_match(&tags, &self.match_keys)
-                }
-            })
-            .collect();
-        result.push_str(&Self::build_tools_section("常用工具", &tagged_tools));
 
         // 必加载技能（tags 不含 "neural" 但与 match_keys 有交集）
         let tagged_skills: Vec<_> = self
@@ -1109,10 +1059,6 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         self.skills.extend_from_slice(skills);
     }
 
-    fn tools(&mut self, tools: &[crate::models::tool::ToolPo]) {
-        self.tools.extend_from_slice(tools);
-    }
-
     fn tool_failures(&mut self, failures: &[(String, u64)]) {
         self.tool_failures.extend_from_slice(failures);
     }
@@ -1138,8 +1084,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 工具/技能区块（神经工具/神经技能/常用工具/必加载技能）
-        result.push_str(&self.build_tools_and_skills_sections());
+        // 2-5. 技能区块（神经技能/必加载技能）
+        // 工具列表和调用规范都不在 Prompt 中（工具通过 API 协议层传递，调用对模型透明）
+        result.push_str(&self.build_skills_sections());
 
         // 6-7. 通用上下文区块（用户画像 + 项目上下文 + 任务上下文，有值即拼装）
         result.push_str(&self.build_common_context_sections());
@@ -1176,7 +1123,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result
     }
 
-    fn build_sleep_prompt(&self, pending_memories_summary: &str) -> String {
+    fn build_sleep_prompt(&self, pending_memories_summary: &str, trace_ids: &[String]) -> String {
         let mut result = String::new();
 
         // 1. System Prompt（Agent 人设）
@@ -1185,8 +1132,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             result.push_str("\n\n");
         }
 
-        // 2-5. 工具/技能区块（sleep_and_settle 调用前已过滤只保留记忆相关）
-        result.push_str(&self.build_tools_and_skills_sections());
+        // 2-5. 技能区块（sleep_and_settle 调用前已过滤只保留记忆相关）
+        result.push_str(&self.build_skills_sections());
 
         // 6-7. 通用上下文区块（用户画像 + 项目上下文 + 任务上下文）
         // 认知是具身的 → 保留 user_profile
@@ -1219,7 +1166,7 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("## 沉淀约束（重要）\n\n");
         result.push_str("- **不要发送消息**：睡觉是对自身知识的沉淀积累，不应依赖外部信息\n");
         result.push_str("- **不要调用消息类工具**（send_message / send_task_assignment_message 等），避免触发消息流程导致异步唤醒自己\n");
-        result.push_str("- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory\n");
+        result.push_str("- **只使用记忆类工具**：search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory\n");
         result.push_str("- 这是一个内循环：你与自己的记忆对话，不是与外部世界交互\n\n");
         result.push_str("## 你的任务\n\n");
         result.push_str("请用已有工具自主完成沉淀：\n\n");
@@ -1233,7 +1180,19 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         result.push_str("   - 过大且可拆分的旧节点 → 拆分为子节点 + 概述父节点 + contains 关系\n");
         result.push_str("4. **建立关系**：用 save_long_term_memory 的 relations 参数建立节点间关系（related/contains/depends 等）\n");
         result.push_str("5. **评估共享**：判断哪些节点对蜂巢有共享价值，用 update_memory 的 node_tags 字段加 'published' 标签\n");
-        result.push_str("6. **标记完成**：每条短期记忆沉淀完成后，用 update_memory 把它的 status 改为 'settled'\n\n");
+        result.push_str("6. **标记完成**：每条短期记忆沉淀完成后，用 update_memory 把它的 status 改为 'settled'\n");
+        result.push_str("7. **强制写入沉淀摘要**（必须执行）：沉淀完成后，**必须**调用 save_short_term_memory 将本次沉淀的摘要写入短期记忆，参数要求：\n");
+        result.push_str("   - `summary`：本次沉淀提炼的核心经验摘要（不是细节流水账）\n");
+        result.push_str("   - `content`：详细内容（可选，记录沉淀出的关键知识点列表）\n");
+        result.push_str("   - `tags`：标签列表（如 `[\"settled\", \"consolidation\"]`）\n");
+        result.push_str(&format!(
+            "   - `trace_ids`：**必须填入** `[{}]`（本次沉淀依赖的 trace 列表，用于记忆追溯）\n\n",
+            trace_ids
+                .iter()
+                .map(|t| format!("\"{}\"", t))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
         result.push_str("## 认知要点\n\n");
         result.push_str("- 图谱是活的，每次沉淀都是迭代优化，不是机械合并\n");
         result.push_str("- 记抽象不记细节，可复用模式才沉淀\n");
@@ -1246,11 +1205,84 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         result
     }
+
+    fn build_summary_prompt(
+        &self,
+        work_summary: &str,
+        total_rounds: usize,
+        trace_ids: &[String],
+    ) -> String {
+        let mut result = String::new();
+
+        // 1. System Prompt（Agent 人设）
+        if let Some(system) = &self.system_prompt {
+            result.push_str(system);
+            result.push_str("\n\n");
+        }
+
+        // 2-5. 技能区块（Summary 场景已过滤，只保留 neural/memory/messaging/project_management）
+        result.push_str(&self.build_skills_sections());
+
+        // 6-7. 通用上下文区块（保留 project/task_context 帮助 Agent 理解任务背景）
+        result.push_str(&self.build_common_context_sections());
+
+        // 8. 历史对话记忆
+        if !self.history.is_empty() {
+            result.push_str("【历史对话】\n");
+            for h in &self.history {
+                result.push_str(h);
+                result.push('\n');
+            }
+            result.push('\n');
+        }
+
+        // 9. Trace ID
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+
+        // 10. 总结退出指令
+        result.push_str("【总结退出模式触发】\n\n");
+        result.push_str(&format!(
+            "你已连续思考 {} 轮仍未完成任务，现在需要总结当前工作进展并退出。\n\n",
+            total_rounds
+        ));
+        result.push_str("## 当前工作对话摘要\n\n");
+        result.push_str(work_summary);
+        result.push_str("\n\n");
+        result.push_str("## 你的任务\n\n");
+        result.push_str("1. **总结进展**：梳理当前已完成的工作、取得的阶段性成果\n");
+        result.push_str("2. **记录问题**：列出未解决的问题、遇到的障碍、下一步建议\n");
+        result.push_str("3. **发送通知**：\n");
+        result.push_str("   - 如果有消息源（用户/Agent），用 send_message 将总结发送给对方\n");
+        result.push_str("   - 如果关联了 task，用 update_task_progress 更新任务进度和状态\n");
+        result.push_str("4. **强制写入短期记忆**（必须执行）：总结完成后，**必须**调用 save_short_term_memory 将本次工作总结写入短期记忆，参数要求：\n");
+        result.push_str("   - `summary`：本次工作总结摘要（核心进展 + 问题 + 下一步）\n");
+        result.push_str("   - `content`：详细内容（可选，记录完整总结）\n");
+        result.push_str("   - `tags`：标签列表（如 `[\"work_summary\", \"max_rounds\"]`）\n");
+        result.push_str(&format!(
+            "   - `trace_ids`：**必须填入** `[{}]`（本次总结依赖的 trace 列表，用于记忆追溯）\n",
+            trace_ids
+                .iter()
+                .map(|t| format!("\"{}\"", t))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        result.push_str("5. **保持简洁**：总结应聚焦关键信息，避免冗长\n\n");
+        result.push_str("## 约束\n\n");
+        result.push_str("- 这是退出流程，完成总结后直接回复最终文本即可\n");
+        result.push_str("- 不要尝试继续执行原任务，聚焦于总结和通知\n");
+        result.push_str("- 如果无法发送消息（无目标），直接输出总结文本\n");
+        result.push_str("- save_short_term_memory 是必须执行的操作，不要遗漏\n\n");
+        result.push_str("开始总结吧。");
+
+        result
+    }
 }
 
 /// 便捷函数：快速构建 Agent 对话 Prompt
 ///
-/// 封装了最常用的组合：Trace ID + Agent 人设 + Agent 绑定工具 + 历史记忆 + 当前消息
+/// 封装了最常用的组合：Trace ID + Agent 人设 + 历史记忆 + 当前消息
 pub fn build_conversation_prompt(
     trace_id: &str,
     agent: &Agent,
@@ -1258,13 +1290,9 @@ pub fn build_conversation_prompt(
     current_message: &Message,
 ) -> String {
     use crate::models::prompt_builder::PromptBuilder;
-    // 提取 ToolPo 列表（Tool 实体不可 Clone，但 PO 可以）
-    let tool_pos: Vec<crate::models::tool::ToolPo> =
-        agent.tools().iter().map(|t| t.po.clone()).collect();
     let mut builder = DefaultPromptBuilder::new();
     builder.current_trace_id(trace_id);
     builder.system_prompt(agent);
-    builder.tools(&tool_pos);
     builder.history(recent_memories);
     builder.current_message(current_message);
     builder.build()
