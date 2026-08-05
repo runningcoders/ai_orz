@@ -371,6 +371,8 @@ impl super::ProjectManage for ProjectDomainImpl {
             (ProjectStatus::PendingReview, ProjectStatus::Active) => true,
             (ProjectStatus::PendingReview, ProjectStatus::InProgress) => true,
             (ProjectStatus::InProgress, ProjectStatus::Completed) => true,
+            // 项目重启：Completed 可回到 InProgress，支持 Project Owner 重新规划新任务
+            (ProjectStatus::Completed, ProjectStatus::InProgress) => true,
             (ProjectStatus::Completed, ProjectStatus::Archived) => true,
             (ProjectStatus::Active, ProjectStatus::Archived) => true,
             (ProjectStatus::PendingReview, ProjectStatus::Archived) => true,

@@ -3,6 +3,7 @@
 //! 纯内存状态，全局单例，不持久化。
 //! 服务重启后状态自动重置（Agent 相当于自动休息）。
 
+use crate::models::events::AgentStateEvent;
 use common::enums::AgentRuntimeState;
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -49,26 +50,36 @@ impl AgentRuntimeStateManager {
 
     /// 设置 Agent 为空闲状态
     pub fn set_idle(&self, agent_id: &str) {
+        let from_state = self.get_state(agent_id);
         let mut entry = self.states.entry(agent_id.to_string()).or_default();
         entry.state = AgentRuntimeState::Idle;
         entry.current_message_id = None;
         entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        drop(entry); // 释放 dashmap 借用
+        self.notify_state_change(agent_id, state_str(from_state), "idle", None);
     }
 
     /// 设置 Agent 为休息状态
     pub fn set_resting(&self, agent_id: &str) {
+        let from_state = self.get_state(agent_id);
         let mut entry = self.states.entry(agent_id.to_string()).or_default();
         entry.state = AgentRuntimeState::Resting;
         entry.current_message_id = None;
         entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        drop(entry);
+        self.notify_state_change(agent_id, state_str(from_state), "resting", None);
     }
 
     /// 设置 Agent 为忙碌状态
     pub fn set_busy(&self, agent_id: &str, message_id: &str) {
+        let from_state = self.get_state(agent_id);
+        let msg_id = message_id.to_string();
         let mut entry = self.states.entry(agent_id.to_string()).or_default();
         entry.state = AgentRuntimeState::Busy;
-        entry.current_message_id = Some(message_id.to_string());
+        entry.current_message_id = Some(msg_id.clone());
         entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        drop(entry);
+        self.notify_state_change(agent_id, state_str(from_state), "busy", Some(msg_id));
     }
 
     /// 原子地尝试设置 Busy 状态
@@ -79,13 +90,19 @@ impl AgentRuntimeStateManager {
     /// 修复 TOCTOU 竞态：consumer 的 is_unavailable 检查与 awaken 的 set_busy 之间
     /// 会被其他 worker 插入，导致同一 Agent 被并发唤醒。
     pub fn try_set_busy(&self, agent_id: &str, message_id: &str) -> bool {
-        let mut entry = self.states.entry(agent_id.to_string()).or_default();
-        if entry.state.is_unavailable() {
-            return false;
+        let from_state;
+        let msg_id = message_id.to_string();
+        {
+            let mut entry = self.states.entry(agent_id.to_string()).or_default();
+            if entry.state.is_unavailable() {
+                return false;
+            }
+            from_state = entry.state;
+            entry.state = AgentRuntimeState::Busy;
+            entry.current_message_id = Some(msg_id.clone());
+            entry.state_started_at = common::constants::utils::current_timestamp_ms();
         }
-        entry.state = AgentRuntimeState::Busy;
-        entry.current_message_id = Some(message_id.to_string());
-        entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        self.notify_state_change(agent_id, state_str(from_state), "busy", Some(msg_id));
         true
     }
 
@@ -113,10 +130,44 @@ impl AgentRuntimeStateManager {
             .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect()
     }
+
+    /// 发布状态变更事件（AOP 同步转发）
+    ///
+    /// 同步方法中无法 await，使用 tokio::spawn 异步发布事件。
+    /// 事件为 fire-and-forget，不影响业务流程。
+    fn notify_state_change(
+        &self,
+        agent_id: &str,
+        from_state: &str,
+        to_state: &str,
+        message_id: Option<String>,
+    ) {
+        let agent_id = agent_id.to_string();
+        let from_state = from_state.to_string();
+        let to_state = to_state.to_string();
+        tokio::spawn(async move {
+            let _ = crate::pkg::aop::publish(AgentStateEvent::new(
+                &agent_id,
+                &from_state,
+                &to_state,
+                message_id,
+            ))
+            .await;
+        });
+    }
 }
 
 impl Default for AgentRuntimeStateManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 将 AgentRuntimeState 转为字符串（事件用）
+fn state_str(state: AgentRuntimeState) -> &'static str {
+    match state {
+        AgentRuntimeState::Idle => "idle",
+        AgentRuntimeState::Busy => "busy",
+        AgentRuntimeState::Resting => "resting",
     }
 }

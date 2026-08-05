@@ -149,5 +149,26 @@ macro_rules! record_event_helper {
 pub use record_event;
 pub use record_event_helper;
 
+// ==================== 全局 Stats 访问器 ====================
+//
+// AOP 消费者（如 ToolExecStatsConsumer）无法通过 RequestContext 访问 Stats，
+// 提供全局单例作为 fallback。由 Storage::new() 或 init_stats() 初始化。
+
+use std::sync::{Arc, OnceLock};
+
+static GLOBAL_STATS: OnceLock<Arc<Stats>> = OnceLock::new();
+
+/// 初始化全局 Stats 单例
+///
+/// 由 `Storage::new()` / `Storage::init_stats()` 内部调用，只设置一次。
+pub fn init_global_stats(stats: Arc<Stats>) {
+    let _ = GLOBAL_STATS.set(stats);
+}
+
+/// 获取全局 Stats 单例（AOP 消费者等无 ctx 场景使用）
+pub fn global_stats() -> Option<&'static Arc<Stats>> {
+    GLOBAL_STATS.get()
+}
+
 #[cfg(test)]
 mod stats_test;

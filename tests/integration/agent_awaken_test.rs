@@ -432,7 +432,9 @@ fn make_test_agent_with_brain(agent_id: &str) -> Agent {
 
 /// 创建 Manual 工具（Http 协议自动派生 ControlMode::Manual）
 ///
-/// tags 用于匹配 Agent 的 match_keys（roles ∪ installed_tags），匹配后出现在【常用工具】区块
+/// tags 用于匹配 Agent 的 match_keys（roles ∪ installed_tags）。
+/// 工具列表本身不进入 Prompt（通过 OpenAI tools API 协议层传递），
+/// 但持有 Manual 工具会触发 Prompt 输出【Manual 工具调用规范】段落。
 fn make_manual_tool(name: &str, description: &str, tags: Vec<String>) -> Tool {
     let po = ToolPo::new(
         format!("tool-{}", name.to_lowercase()),
@@ -468,11 +470,11 @@ fn make_test_message(content: &str) -> Message {
     )
 }
 
-/// Part B: awaken 工具注入 Prompt 测试
+/// Part B: awaken Prompt 不包含工具描述测试
 ///
 /// 验证：
-/// - Manual 工具（ControlMode::Manual）被注入到 awaken Prompt 的【常用工具】区块
-/// - 工具名称和描述出现在 Prompt 中
+/// - 工具列表不出现在 Prompt 中（通过 OpenAI tools API 协议层传递）
+/// - 工具调用规范（Manual 工具调用规范段落）也不出现在 Prompt 中（对模型透明）
 /// - awaken 返回结果含正确 agent_id 和 mock 输出
 #[sqlx::test]
 async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
@@ -482,7 +484,6 @@ async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
     let mut agent = make_test_agent_with_brain(&agent_id);
 
     // 为 Agent 添加 2 个 Manual 工具（Http 协议自动派生 ControlMode::Manual）
-    // tags 含 "assistant" 以匹配 Agent role，确保出现在【常用工具】区块
     let tool1 = make_manual_tool(
         "SearchWeb",
         "搜索互联网获取最新信息",
@@ -519,29 +520,27 @@ async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
         .clone()
         .expect("应该捕获到 prompt");
 
-    // 验证 Prompt 包含【常用工具】区块
+    // Prompt 不应包含任何工具相关区块
     assert!(
-        prompt.contains("【常用工具】"),
-        "Prompt 应该包含【常用工具】区块，实际: {}",
-        prompt
-    );
-    // 验证两个工具都出现在 Prompt 中
-    assert!(
-        prompt.contains("SearchWeb"),
-        "Prompt 应该包含工具 SearchWeb"
+        !prompt.contains("【常用工具】"),
+        "Prompt 不应包含【常用工具】区块（工具列表已通过 API 协议层传递）"
     );
     assert!(
-        prompt.contains("搜索互联网获取最新信息"),
-        "Prompt 应该包含 SearchWeb 的描述"
+        !prompt.contains("【神经工具】"),
+        "Prompt 不应包含【神经工具】区块（工具列表已通过 API 协议层传递）"
     );
     assert!(
-        prompt.contains("SendEmail"),
-        "Prompt 应该包含工具 SendEmail"
+        !prompt.contains("【Manual 工具调用规范】"),
+        "Prompt 不应包含【Manual 工具调用规范】段落（调用对模型透明）"
     );
-    assert!(
-        prompt.contains("发送邮件给指定收件人"),
-        "Prompt 应该包含 SendEmail 的描述"
-    );
+    // 不应包含工具名/描述
+    assert!(!prompt.contains("SearchWeb"));
+    assert!(!prompt.contains("搜索互联网获取最新信息"));
+    assert!(!prompt.contains("SendEmail"));
+    assert!(!prompt.contains("发送邮件给指定收件人"));
+    // 不应包含内部转发器名称
+    assert!(!prompt.contains("request_tool_call"));
+    assert!(!prompt.contains("send_tool_call_message"));
 
     // 验证返回结果
     assert_eq!(result.agent_id, agent_id);

@@ -301,7 +301,7 @@ ThinkResult::ToolCall?
     │
     ├── ControlMode::Auto  ──► ToolDal.execute_auto(tool, args)
     │                            └── call_tool (直接执行层，含装饰器)
-    │                                  └── ToolCallDao.call_manual → decorate() → CoreTool::call
+    │                                  └── ToolCallDao.execute → decorate() → CoreTool::call
     │
     ├── ControlMode::Manual (sync)  ──► ToolDal.execute_manual(tool, args)
     │                                    └── registry.create_tool("request_tool_call")
@@ -334,8 +334,10 @@ ThinkResult::ToolCall?
 
 > **三层工具调用架构**：
 > - **上层**：`execute_auto` / `execute_manual`——Awakening 按 `control_mode` 分发
-> - **中层**：`call_tool`——直接执行层，含装饰器
-> - **底层**：`ToolCallDao.call_manual` + `decorate`——装饰器收敛，记录真实 ToolCallEntry trace
+> - **中层**：`call_tool`——直接执行层，转发到底层 DAO
+> - **底层**：`ToolCallDao.execute` + `decorate`——装饰器收敛，记录真实 ToolCallEntry trace
+>
+> **命名清理（2026-08-05）**：原 `ToolCallDao::call_manual` 重命名为 `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。同时删除 `ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法，`call_tool` 直接调 DAO。详见 `docs/tool_design.md` "工具调用架构演进"。
 >
 > **同步 vs 异步 Manual**：`execute_manual` 根据 `tool.po.config.dispatch_mode` 选择 internal 工具——`sync`（默认）走 `request_tool_call` 在当前轮内通过 `call_tool` 同步执行并返回结果；`async` 走 `send_tool_call_message` 派发消息，结果在下一轮 awaken 送达。Agent 不直接调用这两个 internal 工具。
 
@@ -402,12 +404,15 @@ ThinkResult::ToolCall?
 - ✅ Agent 运行时状态管理完成（第十九章）
 - ✅ 神经工具集 + internal 工具机制完成（神经工具通过 `neural` tag 自动注入；internal 工具不可绑定，由 `execute_manual` 转发）
 - ✅ 自建 CortexDao（OpenAiCompatibleCortexDao）替代 rig，ChatMessage 多轮对话循环已落地
-- ⚠️ 多 Agent 协作、记忆压缩、长上下文管理等高级功能仍在规划阶段
+- ✅ 上下文压缩触发阈值机制落地（基于 `ModelProviderConfig` 的 `recommended_context_length` / `max_context_length`，详见 21.2.1b）
+- ✅ 两层轮次限制落地：consumer 层 `max_thinking_depth` + awakening 层 `max_thinking_rounds`（详见 21.2.1）
+- ✅ 总结退出流程落地：思考轮次耗尽后触发 `awaken_for_summary` 总结进展并通知消息源（详见 21.2.1a）
+- ✅ 统一总结流程 + 强制记忆写入：正常 Final 完成也触发总结；pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt/build_summary_prompt 强制要求 Agent 调用 save_short_term_memory 并填入 trace_ids（详见 25.12）
+- ⚠️ 多 Agent 协作的高级编排仍在规划阶段
 
 **不在本期范围**（留待后续设计）：
 - 多 Agent 协作的高级编排（如团队、角色分工）
 - Cortex 内部的模型选择策略、降级策略
-- 记忆压缩、长上下文窗口管理
 - 神经工具的权限粒度控制（哪些 Agent 能用 `mark_done` 等）
 
 ---
@@ -1196,6 +1201,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-08-05 | v3.7 | 统一总结流程 + 强制记忆写入（详见 25.12）：正常 Final 完成也触发 awaken_for_summary；pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt/build_summary_prompt 新增 trace_ids 参数 + 强制 save_short_term_memory 指令；SaveShortTermMemoryParams 新增 trace_ids 字段 |
 | 2026-07-31 | v3.6 | 新增第二十五章：唤醒/沉睡场景化设计（ThinkingScene/ThinkingOptions + sleep_and_settle + 工具双层过滤 + 业务上下文注入），812 测试通过 |
 | 2026-07-24 | v3.5 | 记忆 tags 全链路支持 + 知识图谱节点可视化增强，746 测试通过（详见第二十四章） |
 | 2026-07-23 | v3.4 | Runtime 执行链路全面修复（16 项），覆盖正确性、用户体验、性能与安全，745 测试通过（详见第二十三章） |
@@ -1233,9 +1239,13 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
 
 ### 21.2 核心机制
 
-#### 21.2.1 轮次限制检查
+#### 21.2.1 轮次限制检查（两层机制）
 
-**设计原则**：轮次限制在消费者层实现，利用统计模块查询当前任务的唤醒次数，与 Agent 配置的 `max_thinking_depth` 对比。
+系统采用**两层轮次限制**，分别在不同层级保护 Agent 不陷入无限循环：
+
+**第一层：consumer 层跨唤醒累计工具调用数（`max_thinking_depth`）**
+
+**设计原则**：在消费者层实现，利用统计模块查询当前任务的累计工具调用次数，与 Agent 配置的 `max_thinking_depth`（默认 10）对比。防止 Agent 在无限消息循环中空转。
 
 **执行流程**：
 ```
@@ -1244,7 +1254,7 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
     ├── 查询 Agent（含统计信息）
     │       └── AgentFetchOptions { with_stats: true, stats_task_id: Some(task_id) }
     │
-    ├── 检查轮次限制
+    ├── 检查跨唤醒累计工具调用数
     │       └── 如果 call_summary.total_calls >= max_thinking_depth
     │               └── 发送提示消息，终止唤醒
     │
@@ -1257,6 +1267,117 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
 - 统计数据通过 `AgentFetchOptions` 参数按需加载，避免每次查询都获取统计信息
 - 使用 `agent.po.get_runtime_config()` 解析运行时配置（JSON 格式）
 - 超限后发送系统提示消息，告知用户"思考深度已达上限"
+
+**第二层：awakening 层单次唤醒 think loop 轮次上限（`max_thinking_rounds`）**
+
+**设计原则**：在 awakening 层 think loop 内部实现，统计单次唤醒内的思考轮次（跨多次上下文压缩累计），与 Agent 配置的 `max_thinking_rounds`（默认 90）对比。防止长任务在单次唤醒中无限思考。
+
+**与第一层的区别**：
+- 第一层统计**跨消息**累计工具调用数，保护消息循环层
+- 第二层统计**单次唤醒内**思考轮次（包含上下文压缩后的跨压缩累计），保护 think loop 层
+- 长任务可能需要多次上下文压缩，压缩次数本身不限制，只限制总思考轮次
+
+**执行流程**：
+```
+awaken() 调用 run_think_loop()
+    │
+    ├── 累计轮次 total_rounds（跨压缩累计）
+    │
+    ├── 每轮 think 后检查
+    │       └── 如果 total_rounds >= max_thinking_rounds
+    │               └── 返回 ThinkLoopResult::MaxRoundsExceeded
+    │
+    └── 调用方（awaken）收到 MaxRoundsExceeded
+            └── 进入总结退出流程（awaken_for_summary）
+```
+
+**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` + `awaken_for_summary()`
+
+**设计要点**：
+- 轮次计数跨上下文压缩累计：每次 `ContextOverflow` 后压缩并重试，`total_rounds += rounds_used`
+- 默认值 90 轮可通过 `AgentRuntimeConfig.max_thinking_rounds` 配置
+- 未来任务可在分配时预估写入，覆盖默认值
+
+#### 21.2.1a 总结退出流程（MaxRoundsExceeded + 正常 Final 完成的统一总结）
+
+**设计原则**：思考轮次耗尽后不是简单报错，而是通过再一次调用 Agent 思考完成总结，让 Agent 总结当前工作进展、记录问题，并通知消息源或记录到 task 信息中作为进度总结。
+
+**统一总结流程（方案 B）**：正常 Final 完成（用户拿到回答）和 MaxRoundsExceeded（轮次耗尽）共用 `awaken_for_summary`。两者都需要把"自上次压缩以来"的工作对话总结为短期记忆，避免 Agent 忘记自发写入。区别仅在 MaxRoundsExceeded 多了"发送通知给消息源"的能力。
+
+**执行流程**：
+```
+awaken() 收到 ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds }
+    │   或 ThinkLoopResult::Final { content, messages }（正常完成时也触发）
+    │
+    ├── 构造 summary_trace_ids = pending_trace_ids（+ awaken trace_id 兜底）
+    │   └── pending_trace_ids 跟踪自上次压缩以来产生的 trace 列表
+    │
+    └── 调用 awaken_for_summary(trace_ids=&summary_trace_ids)
+        │
+        ├── 构造总结 Prompt（build_summary_prompt(work_summary, total_rounds, trace_ids)）
+        │   ├── 包含工作对话摘要 + 总结任务说明
+        │   └── 强制写入短期记忆指令：要求 Agent 调用 save_short_term_memory
+        │       └── trace_ids 字段必须填入本次总结依赖的 trace 列表
+        │
+        ├── 过滤工具：允许 neural / memory / messaging / project_management tag
+        │   └── 让 Agent 能调用 send_message / update_task_progress / save_short_term_memory 等工具
+        └── 调用 run_think_loop() 完成总结（最多 10 轮）
+```
+
+**关键代码位置**：
+- `src/service/domain/runtime/awakening.rs` → `awaken_for_summary()` + awaken 循环中的 `pending_trace_ids` 维护
+- `src/models/prompt_builder.rs` → `build_summary_prompt(work_summary, total_rounds, trace_ids)` trait 方法
+- `src/service/dal/agent.rs` → `DefaultPromptBuilder::build_summary_prompt()` 实现
+
+**设计要点**：
+- 总结场景使用 `ThinkingScene::Summary`，允许的消息和任务管理工具 tag：`neural` / `memory` / `messaging` / `project_management`
+- 总结 Prompt 包含工作对话摘要（`messages_to_summary` 提取关键信息），避免完整历史 token 膨胀
+- Agent 在总结中可调用 `send_message` 通知用户/Project Owner，或调用 `update_task_progress` 更新任务进度
+- **强制写入短期记忆**：Prompt 中明确要求 Agent **必须**调用 `save_short_term_memory` 将本次工作总结写入短期记忆，并填入 `trace_ids` 字段（来自 prompt 模板）保证记忆可追溯
+- 正常 Final 完成时的总结失败不阻塞业务返回（awaken 已成功），仅记录警告
+- 总结完成后正常写入 MemoryTrace，保留思考闭环记录
+
+**pending_trace_ids 维护规则**：
+- 初始化：`[awaken_trace_id]`（awaken 流程预生成的 trace_id）
+- 每次 `sleep_and_settle` 完成后重置：`[settle_trace_id]`（下次总结范围 = 自上次压缩以来）
+- MaxRoundsExceeded 触发总结时：`pending_trace_ids + [awaken_trace_id]`（兜底去重）
+- 正常 Final 完成触发总结时：直接使用 `pending_trace_ids`（已含 awaken_trace_id）
+
+#### 21.2.1b 上下文压缩触发阈值
+
+**设计原则**：基于 ModelProvider 配置的上下文长度，自动检测 think loop 中的上下文溢出并触发压缩（sleep_and_settle 沉淀后重试）。
+
+**阈值优先级**：
+```
+recommended_context_length（推荐上下文长度，用户配置）
+    ↓ 未设置时
+max_context_length * 60%（自动计算）
+    ↓ 未设置时
+不检测（无上下文压缩）
+```
+
+**执行流程**：
+```
+run_think_loop() 每轮 think 后
+    │
+    ├── 检查 input_tokens 是否超过阈值
+    │       └── 超过 → 返回 ThinkLoopResult::ContextOverflow { messages, input_tokens, rounds_used }
+    │
+    └── 调用方（awaken）收到 ContextOverflow
+            ├── total_rounds += rounds_used
+            ├── 调用 sleep_and_settle(pending_trace_ids) 沉淀记忆
+            │   └── sleep_and_settle 内部强制写入沉淀摘要到短期记忆（含 trace_ids）
+            ├── 压缩完成后重置 pending_trace_ids = [settle_trace_id]
+            │   └── 下次总结范围 = 自上次压缩以来
+            └── 重新构造 prompt 调用 run_think_loop（携带累计轮次）
+```
+
+**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` 中的 `overflow_threshold` 计算
+
+**配置来源**：
+- `ModelProviderConfig.max_context_length` — 模型支持的最大 token 数
+- `ModelProviderConfig.recommended_context_length` — 推荐的工作上下文上限（优先作为压缩触发阈值）
+- 两个字段均可通过前端表单配置（创建/编辑模型提供商时填写）
 
 #### 21.2.2 任务完成状态检测
 
@@ -1910,7 +2031,7 @@ let all_tools: Vec<ToolPo> = agent.tools().iter()
 ### 25.6 sleep_and_settle 流程
 
 ```
-settle_memory handler
+settle_memory handler / awaken 上下文压缩 / awaken 正常完成
     │
     ├── build_pending_memories_summary: 查询未沉淀短期记忆，生成编号摘要
     │
@@ -1918,13 +2039,15 @@ settle_memory handler
         │
         ├── wake_agent_brain(scene=Settle): 装配 Brain + 过滤 Auto 工具
         │
-        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle))
+        └── sleep_and_settle(options=ThinkingOptions::for_scene(Settle), trace_ids)
             │
             ├── set_resting + RAII guard
             ├── 读取最近短期记忆作为 history
             ├── 过滤 skill + Manual 工具（只保留记忆相关）
-            ├── 拼装 Prompt: builder.build_sleep_prompt(summary)
-            │     └── 沉淀约束模板内聚在 PromptBuilder
+            ├── 拼装 Prompt: builder.build_sleep_prompt(summary, trace_ids)
+            │     ├── 沉淀约束模板内聚在 PromptBuilder
+            │     └── 强制写入沉淀摘要指令：要求 Agent 调用 save_short_term_memory
+            │         └── trace_ids 字段必须填入本次沉淀依赖的 trace 列表
             ├── think()（5 分钟超时）
             ├── 写 Trace
             ├── 记录统计事件（status: settle success/failed）
@@ -1934,8 +2057,9 @@ settle_memory handler
 **沉淀约束模板**（内聚在 `PromptBuilder.build_sleep_prompt`）：
 - 不发送消息（睡觉是自身知识沉淀，不依赖外部信息）
 - 不调用消息类工具（避免触发消息流程导致异步唤醒自己）
-- 只使用记忆类工具（search_memory / save_long_term_memory / update_memory / query_memory）
+- 只使用记忆类工具（search_memory / save_long_term_memory / update_memory / query_memory / save_short_term_memory）
 - 内循环：与自己的记忆对话，不是与外部世界交互
+- **强制写入沉淀摘要**：沉淀完成后必须调用 `save_short_term_memory` 写入短期记忆，trace_ids 字段必须填入 prompt 提供的列表
 
 ### 25.7 PromptBuilder 扩展
 
@@ -1946,8 +2070,17 @@ pub trait PromptBuilder: Send + Sync {
     // ... 现有方法
     fn project_context(&mut self, project: &Project);
     fn task_context(&mut self, task: &Task);
-    fn build_sleep_prompt(&self, pending_memories_summary: &str) -> String {
-        let _ = pending_memories_summary;
+    fn build_sleep_prompt(&self, pending_memories_summary: &str, trace_ids: &[String]) -> String {
+        let _ = (pending_memories_summary, trace_ids);
+        self.build()
+    }
+    fn build_summary_prompt(
+        &self,
+        work_summary: &str,
+        total_rounds: usize,
+        trace_ids: &[String],
+    ) -> String {
+        let _ = (work_summary, total_rounds, trace_ids);
         self.build()
     }
 }
@@ -1956,7 +2089,9 @@ pub trait PromptBuilder: Send + Sync {
 **DefaultPromptBuilder 实现要点**：
 - 提取 `build_tools_and_skills_sections` 复用工具/技能区块拼装逻辑
 - 提取 `build_common_context_sections` 复用 user_profile + project + task 上下文拼装逻辑
-- `build_sleep_prompt` 复用 system_prompt + tools + skills + common_context + history，跳过 tool_failures 和 current_message，附加沉淀约束 + 待沉淀记忆 + 任务步骤
+- `build_sleep_prompt` 复用 system_prompt + tools + skills + common_context + history，跳过 tool_failures 和 current_message，附加沉淀约束 + 待沉淀记忆 + 任务步骤 + **强制写入沉淀摘要指令**
+- `build_summary_prompt` 同样附加工作摘要 + 总结任务 + **强制写入短期记忆指令**
+- 两个 prompt 模板都会将 `trace_ids` 渲染为 JSON 数组字符串，要求 Agent 调用 `save_short_term_memory` 时填入
 
 **沉淀场景保留 user_profile 的理由**：认知是具身的，不知道自己是谁就不能形成有效认知。沉淀是对自身经验的整理，必须保留身份认知。
 
@@ -1973,14 +2108,16 @@ pub trait PromptBuilder: Send + Sync {
 
 | 文件 | 类型 | 改动内容 |
 |------|------|---------|
-| `src/service/domain/runtime/awakening.rs` | 修改 | 新增 ThinkingScene/ThinkingOptions；wake_agent_brain 加 scene 参数 + Auto 工具过滤；awaken 加 options 参数 + 注入 project/task；新增 sleep_and_settle 实现 |
-| `src/service/domain/runtime/mod.rs` | 修改 | RuntimeAwakening trait 签名升级；awakening 模块改为 pub |
-| `src/models/prompt_builder.rs` | 修改 | PromptBuilder trait 新增 project_context/task_context/build_sleep_prompt |
-| `src/service/dal/agent.rs` | 修改 | DefaultPromptBuilder 实现新方法；提取 build_tools_and_skills_sections/build_common_context_sections 复用方法 |
+| `src/service/domain/runtime/awakening.rs` | 修改 | 新增 ThinkingScene/ThinkingOptions；wake_agent_brain 加 scene 参数 + Auto 工具过滤；awaken 加 options 参数 + 注入 project/task；新增 sleep_and_settle 实现；新增 awaken_for_summary + pending_trace_ids 跟踪 + 正常 Final 完成触发总结流程 |
+| `src/service/domain/runtime/mod.rs` | 修改 | RuntimeAwakening trait 签名升级；awakening 模块改为 pub；sleep_and_settle 加 trace_ids 参数 |
+| `src/models/prompt_builder.rs` | 修改 | PromptBuilder trait 新增 project_context/task_context/build_sleep_prompt/build_summary_prompt；两个 build 方法都接收 trace_ids 参数 |
+| `src/service/dal/agent.rs` | 修改 | DefaultPromptBuilder 实现新方法；提取 build_tools_and_skills_sections/build_common_context_sections 复用方法；build_sleep_prompt/build_summary_prompt 强制写入短期记忆指令 + trace_ids 渲染 |
 | `src/models/project.rs` | 修改 | 新增 to_prompt_summary 方法 |
 | `src/models/task.rs` | 修改 | 新增 to_prompt_summary 方法 |
 | `src/consumer/message.rs` | 修改 | 构造 ThinkingOptions 传入 awaken；task 复用缓存、project 按需查询 |
-| `src/handlers/hr/agent/settle_memory.rs` | 修改 | 重构为 build_pending_memories_summary + load_and_settle，与消息层解耦 |
+| `src/handlers/hr/agent/settle_memory.rs` | 修改 | 重构为 build_pending_memories_summary + load_and_settle，与消息层解耦；sleep_and_settle 调用传 trace_ids=&[]（独立沉淀场景） |
+| `src/handlers/hr/agent/save_short_term_memory.rs` | 修改 | SaveShortTermMemoryParams 接收 trace_ids 字段并序列化到 ShortTermMemoryIndexPo |
+| `common/src/api/neural_tools.rs` | 修改 | SaveShortTermMemoryParams 新增 trace_ids 字段 |
 
 ### 25.10 测试统计
 
@@ -1999,6 +2136,34 @@ pub trait PromptBuilder: Send + Sync {
 | 第十七章 决策 3：用户画像区块位置 | 保持：位于 Agent 人设与历史对话之间 |
 | 第十九章 Agent 运行时状态管理 | 扩展：sleep_and_settle 使用 Resting 状态，复用 BusyGuard 的 set_idle 恢复语义 |
 | memory_design.md 第十七章 休息与知识沉淀机制 | 升级：沉淀不再工程化创建节点，改为 Agent 自主沉淀（详见 memory_design.md 更新） |
+
+### 25.12 统一总结流程与强制记忆写入（v3.7 增量）
+
+**问题背景**：原 v3.6 中，上下文压缩沉淀（ContextOverflow → sleep_and_settle）、轮次耗尽总结退出（MaxRoundsExceeded → awaken_for_summary）是两条独立流程，且依赖 Agent "自发" 调用 `save_short_term_memory` 写入短期记忆。实际运行中 Agent 经常遗忘，导致总结沉淀后的经验没有形成短期记忆记录，也无法追溯到原始 trace。
+
+**v3.7 设计要点**：
+1. **统一总结流程**（方案 B）：正常 Final 完成（用户拿到回答）也触发 `awaken_for_summary`，与 MaxRoundsExceeded 共用同一总结流程，确保不漏掉短期记忆写入
+2. **pending_trace_ids 跟踪**：awaken 循环维护 `pending_trace_ids`，跟踪自上次压缩以来产生的 trace 列表；压缩完成后重置为 `[settle_trace_id]`；总结时作为本次总结依赖的 trace 列表传入 prompt
+3. **trace_ids 透传到 Prompt**：`build_sleep_prompt` 和 `build_summary_prompt` 都新增 `trace_ids: &[String]` 参数，在 prompt 模板中渲染为 JSON 数组字符串
+4. **强制写入短期记忆指令**：两个 prompt 模板都明确要求 Agent **必须**调用 `save_short_term_memory`，并将 prompt 中提供的 `trace_ids` 填入 `trace_ids` 字段，保证记忆可追溯
+5. **API 扩展**：`SaveShortTermMemoryParams` 新增 `trace_ids: Option<Vec<String>>` 字段，handler 序列化后存入 `ShortTermMemoryIndexPo.trace_ids`
+
+**关键流程**（统一后）：
+```
+awaken 循环
+    │
+    ├── ContextOverflow → sleep_and_settle(trace_ids=pending_trace_ids)
+    │   ├── 沉淀 + 强制写入沉淀摘要（含 trace_ids）
+    │   └── 重置 pending_trace_ids = [settle_trace_id]
+    │
+    ├── MaxRoundsExceeded → awaken_for_summary(trace_ids=pending_trace_ids + [awaken_trace_id])
+    │   └── 总结 + 强制写入短期记忆（含 trace_ids）
+    │
+    └── Final（正常完成）→ awaken_for_summary(trace_ids=pending_trace_ids)
+        └── 总结 + 强制写入短期记忆（含 trace_ids，失败不阻塞业务返回）
+```
+
+**与 v3.6 的关系**：v3.7 是 v3.6 的增量升级，不改变 ThinkingScene/ThinkingOptions 框架，只在总结流程和 prompt 模板层面增强，确保短期记忆不遗漏、可追溯。
 
 ---
 

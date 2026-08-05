@@ -110,7 +110,8 @@ pub trait RuntimeMemory: Send + Sync {
 /// 定义 Agent 唤醒相关的核心业务接口
 #[async_trait]
 pub trait RuntimeAwakening: Send + Sync {
-    /// 装配 Agent 的 Brain
+    /// 装配 Agent 的 Brain（构造 Cortex + ModelProvider）。
+    /// 工具不再在此层过滤——awaken/sleep_and_settle 各自按场景过滤 ToolDescriptor。
     ///
     /// 对于 Local agent：加载 tools，通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
     /// 对于 External agent（Cli/Remote）：构造不带 Cortex 的虚拟 Brain
@@ -121,16 +122,10 @@ pub trait RuntimeAwakening: Send + Sync {
     /// 返回 enriched ctx：wake_brain 内部查询 ModelProvider 后会补充
     /// `model_provider_id` / `model_name`，调用方应使用返回的 ctx 替换原 ctx，
     /// 保证后续 awaken/think 链路的 ctx 字段完整（避免监控日志缺 model_name）。
-    ///
-    /// # 场景过滤
-    /// Settle 场景下，从 agent.tools 分离出的 Auto 工具会再过滤一次，
-    /// 只保留 tags 含 "neural" 或 "memory" 的工具注册到 Rig，
-    /// 避免模型在沉淀模式下通过 function calling 调用消息类工具。
     async fn wake_agent_brain(
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
-        scene: crate::service::domain::runtime::awakening::ThinkingScene,
     ) -> Result<RequestContext>;
 
     /// 唤醒 Agent 并执行一次思考
@@ -165,12 +160,15 @@ pub trait RuntimeAwakening: Send + Sync {
     /// - agent: 已加载的 Agent（含 tools + skills，Brain 已装配）
     /// - pending_memories_summary: 待沉淀短期记忆的编号摘要（约束模板由 builder.build_sleep_prompt 内聚）
     /// - options: 沉睡场景选项（scene=Settle，工具过滤用）
+    /// - trace_ids: 本次沉淀所依赖的 trace 列表，传入 prompt 要求 Agent 调用
+    ///   save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯
     async fn sleep_and_settle(
         &self,
         ctx: RequestContext,
         agent: &Agent,
         pending_memories_summary: &str,
         options: &crate::service::domain::runtime::awakening::ThinkingOptions,
+        trace_ids: &[String],
     ) -> Result<AwakeningResult>;
 }
 

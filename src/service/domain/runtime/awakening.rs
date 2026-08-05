@@ -1,7 +1,8 @@
 //! Runtime Awakening 具体实现
 
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor, messages_to_summary};
+use crate::models::events::{AgentLoopEvent, ThinkRoundEvent};
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
@@ -12,6 +13,35 @@ use crate::service::domain::runtime::{
 };
 use common::error::{Result, err};
 
+/// think loop 的返回结果
+///
+/// - `Final`: 模型返回了最终回答，循环正常结束
+///   - `content`: 最终回答内容
+///   - `messages`: 当前完整的对话历史（用于总结流程写入短期记忆）
+/// - `ContextOverflow`: 上下文超限，需要调用方执行压缩后重试
+///   - `messages`: 当前完整的对话历史（用于生成沉淀摘要）
+///   - `input_tokens`: 触发超限时的输入 token 数
+///   - `rounds_used`: 本次 think loop 消耗的轮次
+/// - `MaxRoundsExceeded`: 思考轮次耗尽，需要进入总结退出流程
+///   - `messages`: 当前完整的对话历史（用于总结）
+///   - `total_rounds`: 累计消耗的轮次
+#[derive(Debug)]
+pub enum ThinkLoopResult {
+    Final {
+        content: String,
+        messages: Vec<ChatMessage>,
+    },
+    ContextOverflow {
+        messages: Vec<ChatMessage>,
+        input_tokens: u64,
+        rounds_used: usize,
+    },
+    MaxRoundsExceeded {
+        messages: Vec<ChatMessage>,
+        total_rounds: usize,
+    },
+}
+
 use crate::enrich_ctx;
 use crate::record_event;
 
@@ -19,9 +49,8 @@ use crate::record_event;
 
 /// 思考场景类型
 ///
-/// 用于区分唤醒（awaken）和沉睡（sleep_and_settle）两种场景，
-/// wake_agent_brain 根据场景过滤注册到 Rig 的 Auto 工具，
-/// sleep_and_settle 根据场景过滤 Prompt 展示的 Manual 工具和 skill。
+/// 用于区分唤醒（awaken）、沉睡（sleep_and_settle）和总结退出（summary）三种场景，
+/// 不同场景根据 tag 过滤可用工具和技能。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThinkingScene {
     /// 唤醒场景：响应外部消息，加载全部工具
@@ -29,29 +58,43 @@ pub enum ThinkingScene {
     Awaken,
     /// 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
     Settle,
+    /// 总结退出场景：思考轮次耗尽后总结当前工作，允许消息和任务管理工具
+    /// （neural + memory + messaging + project_management tag）
+    Summary,
 }
 
 impl ThinkingScene {
     /// 判断工具是否在此场景可用
     ///
-    /// Awaken 场景：全部可用
-    /// Settle 场景：只有 tags 含 "neural" 或 "memory" 的工具可用
+    /// - Awaken 场景：全部可用
+    /// - Settle 场景：只有 tags 含 "neural" 或 "memory" 的工具可用
+    /// - Summary 场景：允许 neural / memory / messaging / project_management
     pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
         match self {
             ThinkingScene::Awaken => true,
             ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
+            ThinkingScene::Summary => tags.iter().any(|t| {
+                t == "neural"
+                    || t == "memory"
+                    || t == "messaging"
+                    || t == "project_management"
+            }),
         }
     }
 }
 
+/// 思考轮次默认上限（跨压缩轮次累计）
+const DEFAULT_MAX_THINKING_ROUNDS: usize = 90;
+
 /// 唤醒/沉睡的统一选项
 ///
 /// 用于在不同场景传递业务上下文和场景标识，避免频繁修改方法签名。
-/// awaken 和 sleep_and_settle 都接收此结构体，wake_agent_brain 接收 scene 字段。
+/// awaken 和 sleep_and_settle 都接收此结构体，scene 字段决定工具过滤行为。
 ///
 /// # 字段说明
-/// - `scene`：场景标识（Awaken/Settle），决定工具过滤行为
+/// - `scene`：场景标识（Awaken/Settle/Summary），决定工具过滤行为
 /// - `project` / `task`：awaken 场景下，消息关联的项目/任务实体，注入 prompt 作为业务上下文
+/// - `max_thinking_rounds`：awaken 场景最大思考轮次（跨压缩累计），None 时用默认值 90
 /// - `user_profile`：用户画像（预留，未来扩展）
 #[derive(Debug, Clone, Default)]
 pub struct ThinkingOptions {
@@ -61,6 +104,8 @@ pub struct ThinkingOptions {
     pub project: Option<crate::models::project::Project>,
     /// 消息关联的任务实体（awaken 场景使用）
     pub task: Option<crate::models::task::Task>,
+    /// 最大思考轮次（跨压缩累计），None 时使用默认值 90
+    pub max_thinking_rounds: Option<usize>,
     /// 用户画像（预留，未来扩展）
     pub user_profile: Option<crate::models::user::UserPo>,
 }
@@ -90,6 +135,246 @@ impl ThinkingOptions {
         self.task = Some(task);
         self
     }
+
+    /// 设置最大思考轮次
+    pub fn with_max_thinking_rounds(mut self, max_rounds: usize) -> Self {
+        self.max_thinking_rounds = Some(max_rounds);
+        self
+    }
+
+    /// 获取有效最大思考轮次（None 时返回默认值）
+    pub fn effective_max_rounds(&self) -> usize {
+        self.max_thinking_rounds.unwrap_or(DEFAULT_MAX_THINKING_ROUNDS)
+    }
+}
+
+// ==================== 共享 think loop ====================
+
+impl RuntimeDomainImpl {
+    /// 执行 think 循环（awaken/sleep_and_settle/summary 共用）
+    ///
+    /// 统一封装：超时控制 + 多轮迭代 + 工具调用分发。
+    /// 每轮 think 后发布 ThinkRoundEvent（通过 AOP 同步转发）。
+    ///
+    /// # 退出条件
+    /// - `ThinkResult::Final` → 返回 `ThinkLoopResult::Final(content)`
+    /// - 上下文超限（input_tokens >= 阈值）→ 返回 `ContextOverflow`
+    /// - 累计轮次达到 `max_rounds` → 返回 `MaxRoundsExceeded`
+    /// - 超时 300s → 返回错误
+    ///
+    /// `start_round` 为本次循环的起始轮次编号（跨压缩累计）。
+    /// `max_rounds` 为总轮次上限（跨压缩累计）。
+    #[allow(clippy::too_many_arguments)]
+    async fn run_think_loop(
+        &self,
+        ctx: RequestContext,
+        brain: &crate::models::brain::Brain,
+        prompt: &str,
+        tool_descriptors: &[ToolDescriptor],
+        agent: &Agent,
+        scene_str: &str,
+        trace_id: &str,
+        max_rounds: usize,
+        start_round: usize,
+    ) -> Result<ThinkLoopResult> {
+        const THINK_TIMEOUT_SECS: u64 = 300;
+        /// 上下文压缩触发阈值（占最大上下文窗口的比例）
+        const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
+
+        // 从 ModelProvider 配置中获取上下文压缩阈值
+        // 优先级：recommended_context_length > max_context_length * 60% > 不检测
+        let overflow_threshold: Option<u64> = brain.model_provider().and_then(|po| {
+            let config = po.config();
+            // 优先使用推荐上下文长度
+            if let Some(rec) = config.recommended_context_length
+                && rec > 0
+            {
+                return Some(rec as u64);
+            }
+            // fallback：max_context_length * 60%
+            config
+                .max_context_length
+                .filter(|&v| v > 0)
+                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
+        });
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
+            async {
+                let mut messages = vec![ChatMessage::user(prompt.to_string())];
+                // 提取模型提供商信息（所有轮次共用）
+                let (model_provider_id, model_name) = match brain.model_provider() {
+                    Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
+                    None => (None, None),
+                };
+                // 本次循环可用轮次 = max_rounds - start_round
+                let available_rounds = max_rounds.saturating_sub(start_round);
+                for offset in 0..available_rounds {
+                    let round = start_round + offset;
+                    let round_start = std::time::Instant::now();
+                    let result = self
+                        .brain_dal()
+                        .think(ctx.clone(), brain, &messages, tool_descriptors)
+                        .await?;
+                    let round_duration_ms = round_start.elapsed().as_millis() as u64;
+
+                    match result {
+                        ThinkResult::Final { content, usage } => {
+                            // 发布 ThinkRoundEvent（无工具调用，最终轮）
+                            let _ = crate::pkg::aop::publish(
+                                ThinkRoundEvent::new(
+                                    &agent.po.id,
+                                    trace_id,
+                                    scene_str,
+                                    round,
+                                    round_duration_ms,
+                                    false,
+                                    0,
+                                )
+                                .with_model_usage(
+                                    model_provider_id.clone(),
+                                    model_name.clone(),
+                                    usage.input_tokens,
+                                    usage.output_tokens,
+                                    usage.total(),
+                                )
+                                .with_context(
+                                    ctx.organization_id().cloned(),
+                                    ctx.user_id().cloned(),
+                                    ctx.task_id().cloned(),
+                                    ctx.project_id().cloned(),
+                                ),
+                            )
+                            .await;
+                            return Ok(ThinkLoopResult::Final {
+                                content,
+                                messages,
+                            });
+                        }
+                        ThinkResult::ToolCall {
+                            content,
+                            tool_calls,
+                            usage,
+                        } => {
+                            let tc_count = tool_calls.len();
+                            // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
+                            messages.push(ChatMessage::Assistant {
+                                content,
+                                tool_calls: Some(tool_calls.clone()),
+                            });
+                            // 按 control_mode 分发执行
+                            for tc in tool_calls {
+                                match agent.tools().iter().find(|t| t.po.name == tc.name) {
+                                    Some(tool) => {
+                                        let call_result = match tool.po.control_mode {
+                                            common::enums::tool::ControlMode::Auto => {
+                                                self.tool_dal()
+                                                    .execute_auto(
+                                                        ctx.clone(),
+                                                        tool,
+                                                        tc.arguments,
+                                                    )
+                                                    .await
+                                            }
+                                            common::enums::tool::ControlMode::Manual => {
+                                                self.tool_dal()
+                                                    .execute_manual(
+                                                        ctx.clone(),
+                                                        tool,
+                                                        tc.arguments,
+                                                    )
+                                                    .await
+                                            }
+                                        };
+                                        match call_result {
+                                            Ok((value, _entry)) => {
+                                                messages.push(ChatMessage::tool(
+                                                    tc.id,
+                                                    format!("{}", value),
+                                                ));
+                                            }
+                                            Err(e) => {
+                                                messages.push(ChatMessage::tool(
+                                                    tc.id,
+                                                    format!("Error: {}", e),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    None => {
+                                        messages.push(ChatMessage::tool(
+                                            tc.id,
+                                            format!("Error: tool {} not found", tc.name),
+                                        ));
+                                    }
+                                }
+                            }
+                            // 发布 ThinkRoundEvent（有工具调用）
+                            let _ = crate::pkg::aop::publish(
+                                ThinkRoundEvent::new(
+                                    &agent.po.id,
+                                    trace_id,
+                                    scene_str,
+                                    round,
+                                    round_duration_ms,
+                                    true,
+                                    tc_count,
+                                )
+                                .with_model_usage(
+                                    model_provider_id.clone(),
+                                    model_name.clone(),
+                                    usage.input_tokens,
+                                    usage.output_tokens,
+                                    usage.total(),
+                                )
+                                .with_context(
+                                    ctx.organization_id().cloned(),
+                                    ctx.user_id().cloned(),
+                                    ctx.task_id().cloned(),
+                                    ctx.project_id().cloned(),
+                                ),
+                            )
+                            .await;
+
+                            // 上下文压缩检测：当输入 token 超过阈值时中断循环，
+                            // 由调用方（awaken）执行 sleep_and_settle 沉淀后重试
+                            if let Some(threshold) = overflow_threshold
+                                && usage.input_tokens >= threshold
+                            {
+                                log_info!(
+                                    &ctx,
+                                    "think_loop",
+                                    "context overflow detected: input_tokens={} >= threshold={}",
+                                    usage.input_tokens,
+                                    threshold
+                                );
+                                return Ok(ThinkLoopResult::ContextOverflow {
+                                    messages,
+                                    input_tokens: usage.input_tokens,
+                                    rounds_used: offset + 1,
+                                });
+                            }
+                        }
+                    }
+                }
+                // 循环耗尽所有可用轮次，未得到 Final 回答
+                Ok(ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: max_rounds,
+                })
+            },
+        )
+        .await;
+
+        match result {
+            Ok(inner) => inner,
+            Err(_elapsed) => Err(err!(
+                Internal,
+                "brain think timeout after {}s",
+                THINK_TIMEOUT_SECS
+            )),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -97,12 +382,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
     /// 装配 Agent 的 Brain
     ///
     /// 根据 agent.kind 构造对应的 Brain：
-    /// - Local: 从 agent.tools 分离出 Auto 工具注入 Rig（Manual 工具保留供 Prompt 使用），
-    ///   通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
+    /// - Local: 通过 BrainDal.wake_brain 构造带 Cortex 的 Brain
     /// - External（Cli/Remote）: 构造不带 Cortex 的虚拟 Brain
     ///
-    /// 工具由 hr_domain.get_agent(with_tools=true) 预先加载到 agent.tools。
-    /// 幂等：如果 agent.brain 已存在则直接返回。
+    /// 工具不再在此层处理——agent.tools 保留全量工具，
+    /// awaken/sleep_and_settle 时按场景过滤构建 ToolDescriptor 列表。
     ///
     /// 返回 enriched ctx：wake_brain 内部查询 ModelProvider 后会补充
     /// `model_provider_id` / `model_name`，调用方应使用返回的 ctx 替换原 ctx，
@@ -111,7 +395,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
-        _scene: ThinkingScene,
     ) -> Result<RequestContext> {
         // 幂等：brain 已装配则直接返回原 ctx（无需再 enrich provider 字段）
         if agent.brain.is_some() {
@@ -164,13 +447,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
-        // Step 1: 读取最近短期记忆
-        let recent_memories = self
-            .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, 20)
-            .await?;
-
-        // Step 2: 预先构造 MemoryTrace 拿到 trace_id
+        // Step 1: 预先构造 MemoryTrace 拿到 trace_id
         // 调用方负责组装 trace，RuntimeMemory 负责写入和补全信息
         use common::enums::MemoryRole;
         let mut trace = MemoryTrace::new(
@@ -184,11 +461,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
+        // Step 2: 发布循环启动事件（AOP 同步转发）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
+            &agent.po.id,
+            &trace_id,
+            "awaken",
+            Some(&message.po.id),
+        ))
+        .await;
+
         // Step 2.5: 工具已由 hr_domain.get_agent(with_tools=true) 加载到 agent.tools
-        // wake_agent_brain 已将 Auto 工具移出（用于 Rig 注册），agent.tools 仅剩 Manual 工具
-        // 直接提取 ToolPo 列表供 PromptBuilder 使用（builder 会按 tag 自动分块）
-        let all_tools: Vec<crate::models::tool::ToolPo> =
-            agent.tools().iter().map(|t| t.po.clone()).collect();
+        // 工具列表通过 OpenAI tools API 协议层传递（ToolDescriptor），不注入 Prompt
 
         // Step 2.6: 技能已由 hr_domain.get_agent(with_skills=true) 加载到 agent.skills
         // 技能只在 Agent 已安装的副本范围内（author_id = agent_id，排除 Expired）
@@ -196,26 +479,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let skill_pos: Vec<crate::models::skill::SkillPo> =
             agent.skills().iter().map(|s| s.po.clone()).collect();
 
-        // Step 3: 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
-        // 统一注入，build 时按 tag 自动分块为神经工具/技能 → 常用工具/必加载技能 → 历史 → 当前消息
-        let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(&trace_id);
-        builder.system_prompt(agent);
-        builder.tools(&all_tools);
-        builder.skills(&skill_pos);
-        // 注入业务上下文（project/task 实体摘要，有值即拼装，与 user_profile 通用逻辑一致）
-        if let Some(project) = &options.project {
-            builder.project_context(project);
-        }
-        if let Some(task) = &options.task {
-            builder.task_context(task);
-        }
-        builder.history(&recent_memories);
-        builder.current_message(message);
-
-        let prompt = builder.build();
-
-        // Step 4: 调用大脑思考（带工具调用循环）
+        // Step 3: 调用大脑思考（带工具调用循环 + 上下文压缩）
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
         let brain = agent
             .brain
@@ -226,130 +490,197 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let tool_descriptors: Vec<ToolDescriptor> =
             agent.tools().iter().map(ToolDescriptor::from).collect();
 
-        // 调用 think，先捕获结果（不立即 ?）
-        // set_idle 由 _busy_guard 在函数返回时自动执行（RAII）
-        // 添加超时，避免 LLM API hang 住导致 Agent 永远 Busy
-        // 修复：think 无超时，Local 路径调 HTTP LLM API 若网络 hang 住，
-        // set_idle 永不执行，Agent 永远 Busy
-        const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
-        const MAX_TOOL_ITERATIONS: usize = 10;
+        // 上下文压缩循环：当 think loop 返回 ContextOverflow 时，
+        // 执行 sleep_and_settle 沉淀当前对话，然后重建 prompt 重新开始工作循环。
+        // 轮次限制由 max_rounds 控制（跨压缩累计），超过则进入总结退出流程。
+        let max_rounds = options.effective_max_rounds();
+        let mut total_rounds: usize = 0;
 
-        // 工具调用循环：think → ToolCall? → execute tools → append messages → think again
-        // 使用多轮对话历史（ChatMessage 数组）确保模型能看到之前的 tool_calls 和 tool 结果，
-        // 从而正确终止循环。最终模型返回 Final 时退出，raw_output 即最终回答内容。
-        let think_result =
-            match tokio::time::timeout(std::time::Duration::from_secs(THINK_TIMEOUT_SECS), async {
-                let mut messages = vec![ChatMessage::user(prompt.clone())];
-                for _ in 0..MAX_TOOL_ITERATIONS {
-                    let result = self
-                        .brain_dal()
-                        .think(ctx.clone(), brain, &messages, &tool_descriptors)
-                        .await?;
-                    match result {
-                        ThinkResult::Final { content, .. } => return Ok(content),
-                        ThinkResult::ToolCall {
-                            content,
-                            tool_calls,
-                            ..
-                        } => {
-                            // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
-                            messages.push(ChatMessage::Assistant {
-                                content,
-                                tool_calls: Some(tool_calls.clone()),
-                            });
-                            // 按 control_mode 分发执行
-                            // Auto 工具走 execute_auto（含装饰器），Manual 工具走 execute_manual（通过特殊 tool 转发）
-                            for tc in tool_calls {
-                                match agent.tools().iter().find(|t| t.po.name == tc.name) {
-                                    Some(tool) => {
-                                        let call_result = match tool.po.control_mode {
-                                            common::enums::tool::ControlMode::Auto => {
-                                                self.tool_dal()
-                                                    .execute_auto(ctx.clone(), tool, tc.arguments)
-                                                    .await
-                                            }
-                                            common::enums::tool::ControlMode::Manual => {
-                                                self.tool_dal()
-                                                    .execute_manual(ctx.clone(), tool, tc.arguments)
-                                                    .await
-                                            }
-                                        };
-                                        match call_result {
-                                            Ok((value, _entry)) => {
-                                                messages.push(ChatMessage::tool(
-                                                    tc.id,
-                                                    format!("{}", value),
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                messages.push(ChatMessage::tool(
-                                                    tc.id,
-                                                    format!("Error: {}", e),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        messages.push(ChatMessage::tool(
-                                            tc.id,
-                                            format!("Error: tool {} not found", tc.name),
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
+        // 跟踪自上次压缩以来产生的 trace_id 列表（用于总结流程写入短期记忆）
+        // 初始化为 awaken 自身的 trace_id（预生成，Step 6 才写入完整内容）
+        let mut pending_trace_ids: Vec<String> = vec![trace_id.clone()];
+
+        let mut prompt;
+        let raw_output;
+        // 正常完成时保存对话历史，用于触发总结流程写入短期记忆
+        let mut final_messages: Option<Vec<ChatMessage>> = None;
+
+        loop {
+            // 重新读取最近短期记忆（首次 + 每次压缩后都会获取最新的记忆）
+            let recent_memories = self
+                .memory()
+                .get_recent_context(ctx.clone(), &agent.po.id, 20)
+                .await?;
+
+            // 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
+            let mut builder = self.prompt_builder(agent);
+            builder.current_trace_id(&trace_id);
+            builder.system_prompt(agent);
+            builder.skills(&skill_pos);
+            if let Some(project) = &options.project {
+                builder.project_context(project);
+            }
+            if let Some(task) = &options.task {
+                builder.task_context(task);
+            }
+            builder.history(&recent_memories);
+            builder.current_message(message);
+            prompt = builder.build();
+
+            // 调用共享 think loop（传入累计轮次和上限）
+            let think_result = self
+                .run_think_loop(
+                    ctx.clone(),
+                    brain,
+                    &prompt,
+                    &tool_descriptors,
+                    agent,
+                    "awaken",
+                    &trace_id,
+                    max_rounds,
+                    total_rounds,
+                )
+                .await;
+
+            match think_result {
+                Ok(ThinkLoopResult::Final { content, messages }) => {
+                    raw_output = content;
+                    final_messages = Some(messages);
+                    break;
                 }
-                Err(err!(
-                    Internal,
-                    "think loop exceeded max {} iterations",
-                    MAX_TOOL_ITERATIONS
-                ))
-            })
-            .await
-            {
-                Ok(result) => result,
-                Err(_elapsed) => Err(err!(
-                    Internal,
-                    "brain think timeout after {}s",
-                    THINK_TIMEOUT_SECS
-                )),
-            };
+                Ok(ThinkLoopResult::ContextOverflow {
+                    messages,
+                    input_tokens,
+                    rounds_used,
+                }) => {
+                    total_rounds += rounds_used;
 
-        // 展开 Result，失败时也记录事件
-        let raw_output = match think_result {
-            Ok(content) => content,
-            Err(e) => {
-                // 记录唤醒失败事件
-                // 统计写入失败不应阻塞业务返回，但需记录警告以便排查统计缺失
-                let duration_ms = start_time
-                    .elapsed()
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
-                if let Err(stats_err) = record_event!(
-                    ctx,
-                    AgentAwakeEvent {
-                        agent_id: agent.po.id.clone(),
-                        project_id: ctx.project_id().cloned(),
-                        task_id: ctx.task_id().cloned(),
-                        organization_id: ctx.organization_id.clone(),
-                        user_id: Some(ctx.uid()),
-                        message_id: Some(message.po.id.clone()),
-                        call_count: 1,
-                        duration_ms: duration_ms,
-                        status: format!("failed: {}", e),
-                    }
-                ) {
-                    log_warn!(
+                    log_info!(
                         &ctx,
                         "awaken",
-                        "record_event failed on error path, stats may be incomplete: {:?}",
-                        stats_err
+                        "context overflow (total_rounds={}, tokens={}), triggering compaction via sleep_and_settle",
+                        total_rounds,
+                        input_tokens
                     );
+
+                    // 将当前工作对话序列化为摘要，传给 sleep_and_settle 沉淀
+                    let summary = messages_to_summary(&messages, 500);
+                    let settle_options = ThinkingOptions::for_scene(ThinkingScene::Settle);
+                    // 复用休息流程沉淀记忆（内部会 set_resting → think → set_idle via RAII）
+                    // 注意：sleep_and_settle 内部会设置 Resting 状态，完成后自动恢复
+                    // 传入 pending_trace_ids 让沉淀 prompt 携带本次总结依赖的 trace 列表，
+                    // 要求 Agent 写入短期记忆时填入 trace_ids
+                    let settle_result = self
+                        .sleep_and_settle(
+                            ctx.clone(),
+                            agent,
+                            &summary,
+                            &settle_options,
+                            &pending_trace_ids,
+                        )
+                        .await;
+                    if let Err(e) = settle_result {
+                        log_warn!(
+                            &ctx,
+                            "awaken",
+                            "compaction sleep_and_settle failed: {:?}, continuing with retry",
+                            e
+                        );
+                    } else if let Ok(ref result) = settle_result {
+                        // 压缩后重置 pending_trace_ids 为本次 settle 的 trace_id
+                        // 下次总结的范围 = 自上次压缩以来
+                        pending_trace_ids = result.trace_ids.clone();
+                    }
+                    // 压缩完成后循环继续，重新获取 recent_memories 并重建 prompt
+                    continue;
                 }
-                return Err(e);
+                Ok(ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: rounds,
+                }) => {
+                    total_rounds = rounds;
+
+                    log_info!(
+                        &ctx,
+                        "awaken",
+                        "max rounds exceeded (total={}), entering summary exit flow",
+                        total_rounds
+                    );
+
+                    // 进入总结退出流程：让 agent 总结当前工作并发送/记录
+                    // 传入 pending_trace_ids + awaken trace_id 作为本次总结依赖的 trace 列表
+                    let mut summary_trace_ids = pending_trace_ids.clone();
+                    if summary_trace_ids.last() != Some(&trace_id) {
+                        summary_trace_ids.push(trace_id.clone());
+                    }
+                    let summary_output = self
+                        .awaken_for_summary(
+                            ctx.clone(),
+                            agent,
+                            &messages,
+                            options,
+                            &trace_id,
+                            &summary_trace_ids,
+                        )
+                        .await
+                        .unwrap_or_else(|e| {
+                            log_warn!(
+                                &ctx,
+                                "awaken",
+                                "summary exit failed: {:?}",
+                                e
+                            );
+                            String::new()
+                        });
+
+                    // 总结完成后，用 summary 输出作为 raw_output
+                    raw_output = if summary_output.is_empty() {
+                        "任务因思考轮次耗尽而终止，已执行总结退出流程。".to_string()
+                    } else {
+                        summary_output
+                    };
+                    break;
+                }
+                Err(e) => {
+                    // think loop 执行失败
+                    let duration_ms = start_time
+                        .elapsed()
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if let Err(stats_err) = record_event!(
+                        ctx,
+                        AgentAwakeEvent {
+                            agent_id: agent.po.id.clone(),
+                            project_id: ctx.project_id().cloned(),
+                            task_id: ctx.task_id().cloned(),
+                            organization_id: ctx.organization_id.clone(),
+                            user_id: Some(ctx.uid()),
+                            message_id: Some(message.po.id.clone()),
+                            call_count: 1,
+                            duration_ms: duration_ms,
+                            status: format!("failed: {}", e),
+                        }
+                    ) {
+                        log_warn!(
+                            &ctx,
+                            "awaken",
+                            "record_event failed on error path, stats may be incomplete: {:?}",
+                            stats_err
+                        );
+                    }
+                    let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+                        &agent.po.id,
+                        &trace_id,
+                        "awaken",
+                        &format!("failed: {}", e),
+                        duration_ms,
+                        Some(&message.po.id),
+                    ))
+                    .await;
+                    return Err(e);
+                }
             }
-        };
+        }
 
         // Step 5: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();
@@ -360,6 +691,33 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         self.memory()
             .write_thinking_trace(ctx.clone(), trace)
             .await?;
+
+        // Step 6.5: 正常完成时触发总结流程，写入短期记忆
+        // 仅在 Final 分支（正常完成）时触发，MaxRoundsExceeded 已在循环内执行过总结
+        // 目的：将本次工作对话总结为短期记忆，trace_ids 记录依赖的 trace 列表
+        if let Some(messages) = final_messages {
+            // 构造总结依赖的 trace_ids = pending_trace_ids（已含 awaken trace_id）
+            let summary_trace_ids = pending_trace_ids.clone();
+            let _ = self
+                .awaken_for_summary(
+                    ctx.clone(),
+                    agent,
+                    &messages,
+                    options,
+                    &trace_id,
+                    &summary_trace_ids,
+                )
+                .await
+                .map_err(|e| {
+                    log_warn!(
+                        &ctx,
+                        "awaken",
+                        "post-completion summary failed: {:?}, continuing (non-fatal)",
+                        e
+                    );
+                });
+            // 总结失败不影响业务返回（awaken 已成功），仅记录警告
+        }
 
         // Step 7: 记录 Agent 唤醒统计事件
         // 统计写入失败不应阻塞业务返回（awaken 已成功），仅记录警告
@@ -389,6 +747,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             );
         }
 
+        // 发布循环完成事件（成功）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+            &agent.po.id,
+            &trace_id,
+            "awaken",
+            "success",
+            duration_ms,
+            Some(&message.po.id),
+        ))
+        .await;
+
         // Step 8: 返回结果
         Ok(AwakeningResult {
             agent_id: agent.po.id.clone(),
@@ -413,6 +782,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         agent: &Agent,
         pending_memories_summary: &str,
         options: &ThinkingOptions,
+        trace_ids: &[String],
     ) -> Result<AwakeningResult> {
         let start_time = std::time::SystemTime::now();
 
@@ -444,9 +814,18 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
-        // Step 3: 加载工具和技能（已由 hr_domain.get_agent 加载到 agent）
-        // Settle 场景过滤：只保留记忆相关 skill 和 Manual 工具（tags 含 neural 或 memory），
-        // 与 wake_agent_brain 的 Auto 工具过滤对称，确保沉淀模式下只能接触记忆类工具。
+        // 发布循环启动事件（AOP 同步转发）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
+            &agent.po.id,
+            &trace_id,
+            "settle",
+            None,
+        ))
+        .await;
+
+        // Step 3: 加载技能（已由 hr_domain.get_agent 加载到 agent）
+        // Settle 场景过滤：只保留记忆相关 skill（tags 含 neural 或 memory），
+        // 确保沉淀模式下只能接触记忆类工具。
         // 睡觉是对自身知识的沉淀积累，不应触发消息流程导致异步唤醒自己。
         let scene = options.scene;
         let skill_pos: Vec<crate::models::skill::SkillPo> = agent
@@ -458,54 +837,59 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             })
             .map(|s| s.po.clone())
             .collect();
-        let all_tools: Vec<crate::models::tool::ToolPo> = agent
-            .tools()
-            .iter()
-            .filter(|t| {
-                let tags = t.po.get_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(|t| t.po.clone())
-            .collect();
 
         // Step 4: 拼装 Prompt（复用 builder 挂载链路，调用 build_sleep_prompt 生成沉淀模板）
         // 与 awaken 的区别：不构造虚拟 System Message，约束模板内聚在 builder.build_sleep_prompt
         let mut builder = self.prompt_builder(agent);
         builder.current_trace_id(&trace_id);
         builder.system_prompt(agent);
-        builder.tools(&all_tools);
         builder.skills(&skill_pos);
         builder.history(&recent_memories);
 
-        let prompt = builder.build_sleep_prompt(pending_memories_summary);
+        let prompt = builder.build_sleep_prompt(pending_memories_summary, trace_ids);
 
-        // Step 5: 调用大脑思考
+        // Step 5: 调用大脑思考（带工具调用循环，与 awaken 对称）
+        // sleep 场景传递过滤后的记忆工具，Agent 可通过 function calling 调用记忆工具完成沉淀
         let brain = agent
             .brain
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
 
-        const THINK_TIMEOUT_SECS: u64 = 300; // 5 分钟
-        let think_result = match tokio::time::timeout(
-            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
-            self.brain_dal()
-                .think(ctx.clone(), brain, &[ChatMessage::user(&prompt)], &[]),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(_elapsed) => Err(err!(
-                Internal,
-                "brain think timeout after {}s",
-                THINK_TIMEOUT_SECS
-            )),
-        };
+        // 构建 ToolDescriptor 列表（从 agent.tools 按场景过滤后派生，供模型 function calling）
+        let tool_descriptors: Vec<ToolDescriptor> = agent
+            .tools()
+            .iter()
+            .filter(|t| {
+                let tags = t.po.get_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(ToolDescriptor::from)
+            .collect();
+
+        // 调用共享 think loop（沉淀场景不限制轮次，给一个较大的上限）
+        let think_result = self
+            .run_think_loop(
+                ctx.clone(),
+                brain,
+                &prompt,
+                &tool_descriptors,
+                agent,
+                "settle",
+                &trace_id,
+                DEFAULT_MAX_THINKING_ROUNDS,
+                0,
+            )
+            .await;
 
         // 展开 Result，失败时也记录事件
-        // Settle 场景不传工具，模型应直接返回 Final；若意外返回 ToolCall，取 content 降级
+        // sleep_and_settle 场景不处理 ContextOverflow/MaxRoundsExceeded（沉淀工具量小）
         let raw_output = match think_result {
-            Ok(ThinkResult::Final { content, .. }) => content,
-            Ok(ThinkResult::ToolCall { content, .. }) => content.unwrap_or_default(),
+            Ok(ThinkLoopResult::Final { content, .. }) => content,
+            Ok(ThinkLoopResult::ContextOverflow { .. })
+            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. }) => {
+                // 沉淀场景理论不会触发（记忆工具量小），兜底处理
+                String::new()
+            }
             Err(e) => {
                 let duration_ms = start_time
                     .elapsed()
@@ -532,6 +916,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         stats_err
                     );
                 }
+                // 发布循环完成事件（失败）
+                let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+                    &agent.po.id,
+                    &trace_id,
+                    "settle",
+                    &format!("settle failed: {}", e),
+                    duration_ms,
+                    None,
+                ))
+                .await;
                 return Err(e);
             }
         };
@@ -570,6 +964,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             );
         }
 
+        // 发布循环完成事件（成功）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+            &agent.po.id,
+            &trace_id,
+            "settle",
+            "settle success",
+            duration_ms,
+            None,
+        ))
+        .await;
+
         // Step 8: 返回结果
         Ok(AwakeningResult {
             agent_id: agent.po.id.clone(),
@@ -577,6 +982,162 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             raw_input: prompt,
             raw_output,
         })
+    }
+}
+
+/// 总结退出流程的独立实现块
+///
+/// `awaken_for_summary` 是 `RuntimeDomainImpl` 的私有辅助方法，
+/// 不属于 `RuntimeAwakening` trait（只在 awaken 内部调用）。
+impl RuntimeDomainImpl {
+    /// 总结退出流程
+    ///
+    /// 当思考轮次耗尽时，或正常完成时，让 Agent 总结当前工作进展并写入短期记忆。
+    /// 内部构建 summary prompt，调用 think loop 让 Agent 自主完成总结，
+    /// 可通过 send_message / update_task_progress 等工具发送通知（仅 MaxRoundsExceeded 场景）。
+    ///
+    /// `trace_ids` 为本次总结依赖的 trace 列表，写入 prompt 要求 Agent 调用
+    /// save_short_term_memory 时填入此字段。
+    ///
+    /// 返回 Agent 的总结文本（作为 raw_output 记录到 trace）。
+    async fn awaken_for_summary(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        work_messages: &[ChatMessage],
+        options: &ThinkingOptions,
+        parent_trace_id: &str,
+        trace_ids: &[String],
+    ) -> Result<String> {
+        use common::enums::MemoryRole;
+
+        let scene = ThinkingScene::Summary;
+
+        // 1. 读取最近短期记忆
+        let recent_memories = self
+            .memory()
+            .get_recent_context(ctx.clone(), &agent.po.id, 20)
+            .await?;
+
+        // 2. 构造 summary trace
+        let mut trace = MemoryTrace::new(
+            agent.po.id.clone(),
+            format!("summary-{}", parent_trace_id),
+            ctx.uid(),
+            ctx.organization_id.clone().unwrap_or_default(),
+            MemoryRole::System,
+            String::new(),
+            ctx.task_id().cloned(),
+        );
+        let trace_id = trace.id.clone();
+
+        // 3. 发布循环启动事件
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
+            &agent.po.id,
+            &trace_id,
+            "summary",
+            None,
+        ))
+        .await;
+
+        // 4. 按场景过滤技能
+        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
+            .skills()
+            .iter()
+            .filter(|s| {
+                let tags = s.po.get_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(|s| s.po.clone())
+            .collect();
+
+        // 5. 构建 summary prompt
+        let work_summary = messages_to_summary(work_messages, 500);
+        let total_rounds = options.effective_max_rounds();
+
+        let mut builder = self.prompt_builder(agent);
+        builder.current_trace_id(&trace_id);
+        builder.system_prompt(agent);
+        builder.skills(&skill_pos);
+        if let Some(project) = &options.project {
+            builder.project_context(project);
+        }
+        if let Some(task) = &options.task {
+            builder.task_context(task);
+        }
+        builder.history(&recent_memories);
+        let prompt = builder.build_summary_prompt(&work_summary, total_rounds, trace_ids);
+
+        // 6. 构建 Summary 场景的 ToolDescriptor（只允许消息和任务管理工具）
+        let brain = agent
+            .brain
+            .as_ref()
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
+
+        let tool_descriptors: Vec<ToolDescriptor> = agent
+            .tools()
+            .iter()
+            .filter(|t| {
+                let tags = t.po.get_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(ToolDescriptor::from)
+            .collect();
+
+        // 7. 调用 think loop（Summary 场景给少量轮次，最多 10 轮）
+        const MAX_SUMMARY_ROUNDS: usize = 10;
+        let think_result = self
+            .run_think_loop(
+                ctx.clone(),
+                brain,
+                &prompt,
+                &tool_descriptors,
+                agent,
+                "summary",
+                &trace_id,
+                MAX_SUMMARY_ROUNDS,
+                0,
+            )
+            .await;
+
+        let raw_output = match think_result {
+            Ok(ThinkLoopResult::Final { content, .. }) => content,
+            Ok(ThinkLoopResult::ContextOverflow { .. })
+            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. }) => {
+                // 总结场景兜底：即使超限或轮次耗尽也返回已有内容
+                String::new()
+            }
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "awaken_for_summary",
+                    "summary think loop failed: {:?}",
+                    e
+                );
+                String::new()
+            }
+        };
+
+        // 8. 写入 trace
+        trace.input = prompt.clone();
+        trace.complete(raw_output.clone());
+        let _ = self
+            .memory()
+            .write_thinking_trace(ctx.clone(), trace)
+            .await;
+
+        // 9. 发布循环完成事件
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+            &agent.po.id,
+            &trace_id,
+            "summary",
+            "success",
+            0,
+            None,
+        ))
+        .await;
+
+        Ok(raw_output)
     }
 }
 

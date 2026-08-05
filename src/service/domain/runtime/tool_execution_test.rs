@@ -422,15 +422,6 @@ mod tests {
             ))
         }
 
-        async fn call_manual(
-            &self,
-            _ctx: RequestContext,
-            _tool: &Tool,
-            _args: Value,
-        ) -> Result<(Value, ToolCallEntry)> {
-            unimplemented!("not needed by tool execution routing tests")
-        }
-
         async fn search(
             &self,
             _ctx: RequestContext,
@@ -586,22 +577,6 @@ mod tests {
                     None => common::error::Error::tool_call_failed(error_message.clone()),
                 });
             }
-            Ok((
-                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
-                ToolCallEntry {
-                    tool_id: tool.po.id.clone(),
-                    call_id: "test-call-id".to_string(),
-                    ..Default::default()
-                },
-            ))
-        }
-
-        async fn call_manual(
-            &self,
-            _ctx: RequestContext,
-            tool: &Tool,
-            args: Value,
-        ) -> Result<(Value, ToolCallEntry)> {
             Ok((
                 json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
                 ToolCallEntry {

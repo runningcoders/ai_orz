@@ -28,7 +28,7 @@ use crate::service::domain::message::{
 };
 use crate::service::domain::project::{self as project_domain, ProjectDomain};
 use crate::service::domain::runtime::{
-    self as runtime_domain, RuntimeDomain, awakening::ThinkingOptions, awakening::ThinkingScene,
+    self as runtime_domain, RuntimeDomain, awakening::ThinkingOptions,
 };
 
 // ==================== 消费者实现 ====================
@@ -306,7 +306,7 @@ impl MessageConsumer {
             let enriched_ctx = self
                 .runtime_domain
                 .awakening()
-                .wake_agent_brain(ctx, &mut agent, ThinkingScene::Awaken)
+                .wake_agent_brain(ctx, &mut agent)
                 .await
                 .inspect_err(|_e| {
                     // wake_agent_brain 失败：释放 Busy 允许重试
@@ -319,7 +319,12 @@ impl MessageConsumer {
         // 构造 ThinkingOptions：注入消息关联的 project/task 实体作为业务上下文
         // task 实体复用上方状态检查的查询结果（不重复查询）；project 按需查询
         // 遵循 Context 补充原则：仅当下游 awaken 需要 project 上下文时才查询
-        let mut thinking_options = ThinkingOptions::new();
+        //
+        // max_thinking_rounds 来自 AgentRuntimeConfig（默认 90），
+        // 未来可由任务在分配时预估写入，覆盖此默认值。
+        let runtime_config = agent.po.get_runtime_config();
+        let mut thinking_options = ThinkingOptions::new()
+            .with_max_thinking_rounds(runtime_config.max_thinking_rounds);
         if let Some(project_id) = &message.po.project_id
             && let Ok(Some(project)) = self
                 .project_domain

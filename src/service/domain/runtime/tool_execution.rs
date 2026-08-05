@@ -67,7 +67,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             }
         };
 
-        // 修复：使用 LoggingDecorator 生成的真实 call_id（entry.call_id），不再伪造
+        // 使用 ToolCallDao::execute 生成的真实 call_id（entry.call_id）
         Ok(ToolExecutionResult::new(
             result,
             entry.tool_id.clone(),

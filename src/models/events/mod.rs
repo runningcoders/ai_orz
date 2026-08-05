@@ -1,10 +1,18 @@
 pub mod a2a_task_update;
+pub mod agent_loop;
+pub mod agent_state;
 pub mod cron_trigger;
 pub mod message;
+pub mod think_round;
+pub mod tool_exec;
 
 pub use a2a_task_update::{
     A2A_SYNCED_MSG_COUNT_PREFIX, A2A_TASK_ID_TAG_PREFIX, extract_a2a_task_id,
     extract_text_from_parts, get_synced_msg_count, make_a2a_task_tag, make_synced_msg_tag,
 };
+pub use agent_loop::AgentLoopEvent;
+pub use agent_state::AgentStateEvent;
 pub use cron_trigger::CronTriggerEvent;
 pub use message::MessageCreatedEvent;
+pub use think_round::ThinkRoundEvent;
+pub use tool_exec::ToolExecEvent;
