@@ -58,6 +58,13 @@ pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
             // 6. service layer — one-line replacement for 30+ manual DAO/DAL/Domain init calls.
             //    Internally calls: dao::init_all() + dal::init_all() + domain::init_all().
             ai_orz::service::init();
+
+            // 7. consumer layer — 注册 AOP 业务消费者（ToolExecLogConsumer 等）。
+            //    Sync 消费者在 publish 时同步处理，无需 aop::init_all 调度器。
+            //    缺少这一步会导致 ToolExecEvent 发布后无人处理，trace 无法写入。
+            ai_orz::consumer::init()
+                .await
+                .expect("consumer init should succeed");
         })
         .await;
 
