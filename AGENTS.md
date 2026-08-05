@@ -26,7 +26,7 @@
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
 | 📨 消息渠道系统 | ✅ | 多渠道消息出站推送（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 WebSocket 入站长连接已上线，适配层架构；微信/Slack/邮件/Webhook 出站骨架就绪，入站待实现 |
 | 🔌 A2A 外部 Agent | ✅ | 完整 A2A 协议支持：Client（注册外部 CLI/Remote Agent 并委派任务）、Server（对外暴露协议端点）、异步结果回传（Push 回调 + 30秒轮询兜底，适配层直接处理，外部协议不污染内部事件中心） |
-| 🛠️ 统一工具调用架构 | ✅ | execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → call_manual + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用 |
+| 🛠️ 统一工具调用架构 | ✅ | execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → ToolCallDao::execute + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
 | 📋 任务 + 项目管理 | ✅ | 任务状态机，项目聚合对话上下文，DAL + Domain 层完整实现 |
 | 📎 统一附件存储 | ✅ | 消息附件 + 项目产物，FileMeta + 日期分层路径 |
