@@ -4,6 +4,7 @@
 //! - Part A: debug_call_tool 端点（Builtin/HTTP 工具调用 + SSRF 防护，CI-safe）
 //! - Part B: Manual 异步消息链（Consumer 处理 ToolCallRequest → ToolCallResult，CI-safe）
 //! - Part C: Auto awaken 工具执行（真实 LLM，#[ignore]）
+//! - Part D: Manual 工具统一执行路径（execute_manual 同步/异步，CI-safe）
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -418,6 +419,167 @@ async fn test_tool_call_trace_recorded(pool: SqlitePool) {
             "Trace entry should have status Completed"
         );
     }
+}
+
+// =================================================================
+// Part D: Manual 工具统一执行路径（execute_manual，CI-safe）
+// =================================================================
+
+/// 同步 Manual 工具通过 execute_manual 执行：
+/// 创建 Manual HTTP 工具（dispatch_mode 默认 sync）→ execute_manual 转发到 request_tool_call → 验证结果
+#[sqlx::test]
+async fn test_execute_manual_sync(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 启动 mock server
+    let mock_response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"status\":\"success\"}";
+    let (base_url, _handle) = start_mock_server(mock_response);
+
+    // 2. 创建 Manual HTTP 工具（默认 sync）
+    let tool_name = format!("SyncManualTool-{}", uuid::Uuid::now_v7());
+    let tool_id =
+        create_http_tool(&app, &jwt, &tool_name, &format!("{}/sync", base_url), true).await;
+
+    // 3. 创建 Agent 并绑定工具
+    let agent_name = format!("SyncManualAgent-{}", uuid::Uuid::now_v7());
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
+    bind_tool_to_agent(&app, &jwt, &agent_id, &tool_id).await;
+
+    // 4. 获取 Tool 实体（含 our_tool）
+    let ctx = RequestContext::builder()
+        .organization_id(bs.organization_id.clone())
+        .agent_id(agent_id.clone())
+        .build();
+
+    let tool = ai_orz::service::dal::tool::dal()
+        .get_by_id(ctx.clone(), tool_id.clone())
+        .await
+        .expect("get tool failed")
+        .expect("tool not found");
+
+    // 5. 调用 execute_manual（同步路径：通过 request_tool_call 特殊工具转发）
+    let (value, _entry) = ai_orz::service::dal::tool::dal()
+        .execute_manual(ctx, &tool, json!({}))
+        .await
+        .expect("execute_manual sync failed");
+
+    // 6. 验证返回结果（request_tool_call 返回 RequestToolCallResponse）
+    assert_eq!(
+        value.get("status").and_then(|v| v.as_str()),
+        Some("completed"),
+        "sync manual tool should return completed status"
+    );
+    let result = value.get("result").expect("missing result");
+    // HTTP 工具返回 { status: 200, headers: {...}, body: {...} }
+    assert_eq!(
+        result.get("status").and_then(|v| v.as_u64()),
+        Some(200),
+        "HTTP tool should return status 200"
+    );
+    let body = result.get("body").expect("missing body");
+    assert_eq!(
+        body.get("status").and_then(|v| v.as_str()),
+        Some("success"),
+        "mock server should return status=success"
+    );
+}
+
+/// 异步 Manual 工具通过 execute_manual 派发：
+/// 创建 Manual HTTP 工具（dispatch_mode=async）→ execute_manual 转发到 send_tool_call_message → 验证消息派发
+#[sqlx::test]
+async fn test_execute_manual_async(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 1. 启动 mock server
+    let mock_response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{\"status\":\"success\"}";
+    let (base_url, _handle) = start_mock_server(mock_response);
+
+    // 2. 创建 Manual HTTP 工具（dispatch_mode = async）
+    let tool_name = format!("AsyncManualTool-{}", uuid::Uuid::now_v7());
+    let req = json!({
+        "name": tool_name,
+        "description": "Async manual tool",
+        "protocol": "Http",
+        "config": {
+            "method": "GET",
+            "url": format!("{}/async", base_url),
+            "allow_local_network": true,
+            "dispatch_mode": "async"
+        },
+        "control_mode": "Manual",
+        "enabled": true
+    });
+    let (status, body) = app.post_with_jwt("/api/v1/finance/tools", &req, &jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let tool_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("missing tool id")
+        .to_string();
+
+    // 3. 创建 Agent 并绑定工具
+    let agent_name = format!("AsyncManualAgent-{}", uuid::Uuid::now_v7());
+    let agent_id =
+        crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
+            .await;
+    bind_tool_to_agent(&app, &jwt, &agent_id, &tool_id).await;
+
+    // 4. 获取 Tool 实体
+    let ctx = RequestContext::builder()
+        .organization_id(bs.organization_id.clone())
+        .agent_id(agent_id.clone())
+        .build();
+
+    let tool = ai_orz::service::dal::tool::dal()
+        .get_by_id(ctx.clone(), tool_id.clone())
+        .await
+        .expect("get tool failed")
+        .expect("tool not found");
+
+    // 5. 调用 execute_manual（异步路径：通过 send_tool_call_message 特殊工具转发）
+    let (value, _entry) = ai_orz::service::dal::tool::dal()
+        .execute_manual(ctx, &tool, json!({}))
+        .await
+        .expect("execute_manual async failed");
+
+    // 6. 验证返回占位结果（send_tool_call_message 返回 SendToolCallMessageResponse）
+    assert_eq!(
+        value.get("status").and_then(|v| v.as_str()),
+        Some("dispatched"),
+        "async manual tool should return dispatched status"
+    );
+    assert!(value.get("request_id").is_some(), "should have request_id");
+    assert!(value.get("message_id").is_some(), "should have message_id");
+
+    // 7. 验证 ToolCallRequest 消息被派发
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let (status, body) = app
+        .get_with_jwt(
+            &format!("/api/v1/finance/messages?from_id={}&to_id=system", agent_id),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let messages = data
+        .get("messages")
+        .and_then(|v| v.as_array())
+        .expect("missing messages array");
+
+    // 应该有 ToolCallRequest 消息（message_type=5）
+    let tool_call_request = messages
+        .iter()
+        .find(|msg| msg.get("message_type").and_then(|v| v.as_i64()) == Some(5));
+    assert!(
+        tool_call_request.is_some(),
+        "Should find a ToolCallRequest message (type=5)"
+    );
 }
 
 // =================================================================
