@@ -2,6 +2,8 @@
 
 本指南帮助你使用项目管理工具，高效管理项目、任务、产物。这是你执行结构化工作的核心能力——从需求拆解、任务推进到成果沉淀的完整闭环。
 
+**核心协作模型**：项目采用 **Project Owner 主导 + Task Owner 执行** 的两层结构。Project Owner 负责需求拆解、任务分配、全局调度和项目重启规划；Task Owner 负责完成具体任务并上报结果。详见"协作沟通流程"章节。
+
 ## 工具分类与加载机制
 
 **关键认知**：所有项目管理工具的 tag 是 `project_management`，附件工具的 tag 是 `file_management`，它们**全部非 neural**。这意味着：
@@ -40,10 +42,12 @@ Project（项目）
 Active        → PendingReview / InProgress / Archived
 PendingReview → Active / InProgress / Archived
 InProgress    → Completed / Archived
-Completed     → Archived
+Completed     → InProgress（项目重启）/ Archived
 相同状态      → 允许（no-op）
 其它          → 非法
 ```
+
+> **项目重启**：`Completed → InProgress` 是特殊转换，支持 Project Owner 在项目完成后收到新需求时重新规划。详见"项目重启"章节。
 
 ### `create_project` — 创建项目
 
@@ -367,8 +371,8 @@ Completed     → Archived
 | 角色 | 可负责 | 串行限制 | 约束 |
 |------|--------|----------|------|
 | **前台 Agent** | ❌ 不能负责项目 | — | 遇到复杂需求应创建项目并转交专业 Agent 作为 Owner |
-| **Project Owner** | 1 个项目（至完结） | 同一时间只能负责 1 个未完结项目 | 可分配任务给其他 Agent；负责进度汇总和成果总结 |
-| **Task Owner** | 1 个任务（至完结） | 同一时间只能负责 1 个未完成任务 | 任务优先，完成或遇阻时回应 Project Owner |
+| **Project Owner** | 1 个项目（至完结） | 同一时间只能负责 1 个未完结项目 | 负责需求拆解、任务分配、进度汇总、成果总结、项目重启规划 |
+| **Task Owner** | 1 个任务（至完结） | 同一时间只能负责 1 个未完成任务 | 负责完成具体任务并上报最终结果给 Project Owner |
 
 **前台 Agent 转交流程**：用户提出复杂需求 → 前台 Agent 分析后 → `create_project`（设置 `owner_agent_id` 为专业 Agent）→ `send_task_assignment_message` 通知 Owner 开始推进。
 
@@ -392,74 +396,188 @@ Completed     → Archived
 
 **重新分配**：若目标 Agent 在最终分配时已繁忙（`runtime_state != 0` 或已有进行中项目/任务），回到步骤 1 重新选择候选。
 
-## 项目推进流程
+## 协作沟通流程
 
-Project Owner 被通知开始推进项目后，遵循以下流程：
+项目协作采用 **Project Owner 主导 + Task Owner 执行**的两层结构。Project Owner 是全局调度者，Task Owner 是具体执行者。
 
-### 标准推进步骤
+### 流程总览
 
 ```
-1. 接收项目分配通知（send_task_assignment_message）
+用户需求
+  ↓
+前台 Agent 路由 → 创建项目 → 转交 Project Owner
+  ↓
+【Project Owner 阶段 1：规划】
+  拆分任务 → 写入项目信息 → 与用户确认 → 分配任务 → 通知 Task Owner
+  ↓
+【Task Owner 阶段：执行】
+  校验前置任务 → 执行任务 → 上报最终结果给 Project Owner
+  ↓
+【Project Owner 阶段 2：调度】
+  总揽全局 → 决定下一个任务 → 通知对应 Task Owner
+  ↓ （循环直到所有任务完成）
+【Project Owner 阶段 3：收尾】
+  总结项目成果 → 标记项目完成
+  ↓
+【项目结束后：按需重启】
+  用户继续发消息 → Project Owner 判断是新需求还是查询
+    → 新需求：重新规划，拆分新任务，处理老任务依赖
+    → 查询：直接读取项目/任务信息回复
+```
+
+### 阶段 1：Project Owner 规划与任务分配
+
+Project Owner 收到项目分配通知后，**不要跳过规划直接执行**：
+
+**1. 需求拆解与方案设计**
+- 产出技术方案：目标拆解、技术选型、模块划分、接口约定、风险点
+- 用 `create_text_artifact` 保存方案（`tags: ["technical_design"]`，关联 `project_id`）
+- 将任务拆分计划写入项目描述（`update_project` 的 `description` 字段），供用户和团队成员查看
+
+**2. 与用户确认**
+- 通过 `send_message` 向用户发送拆分方案，说明任务列表、依赖关系、预期产出
+- **等待用户确认后再开始分配任务**，避免方向偏差导致返工
+- 用户确认后，更新项目状态为 `InProgress`（`update_project_status`）
+
+**3. 任务分配**
+- 基于 `create_task` 创建子任务，填写 `dependencies` 构成 DAG
+- 为每个任务选择合适的 Task Owner（遵循"分配前查询空闲 Agent"流程）
+- **可以分配给其他 Agent，也可以分配给自己**（当 Project Owner 同时具备执行能力时）
+- `create_task` 时若 `assignee_type=Agent`，系统**自动发送任务分配通知**给目标 Agent
+
+**4. 通知启动**
+- 任务创建后通过 `send_task_assignment_message` 通知 Task Owner 开始推进
+- 若分配给自己，直接进入"阶段 2：Task Owner 执行"
+
+### 阶段 2：Task Owner 执行与上报
+
+Task Owner 收到任务分配通知后，遵循以下工作流：
+
+**1. 前置任务校验（关键）**
+- **开始执行前，必须校验自己的前置任务是否已完成**
+- 用 `get_task` 或 `list_project_tasks` 查询 `dependencies` 中每个前置任务的状态
+- 若有前置任务未完成（`status != Completed`），**等待**而非强行启动
+- 通过 `send_task_assignment_message` 向 Project Owner 反馈阻塞原因
+
+**2. 启动与执行**
+```
+update_task_status(status=InProgress)  → 启动任务（自动填入 start_at）
+    ↓
+update_task_progress                   → 反映真实进度（0-100）
+    ↓
+执行过程中保存成果：
+  - 文本成果 → create_text_artifact
+  - 工作目录文件 → register_artifact_from_path
+  - 已有附件 → create_artifact(source_type=Attachment)
+```
+
+**3. 上报最终结果**
+- 任务完成后用 `mark_done`（带 `summary` 总结）标记完成
+- **通过 `send_task_assignment_message` 向 Project Owner 上报最终结果**，说明：
+  - 完成了什么工作
+  - 产出了哪些产物（列出 artifact 名称）
+  - 遇到的问题或注意事项
+- 不要自行决定下一个任务，**由 Project Owner 总揽全局后决定**
+
+### 阶段 3：Project Owner 全局调度
+
+Project Owner 收到 Task Owner 的结果上报后：
+
+**1. 总揽全局**
+- 用 `list_project_tasks` 查看所有任务状态
+- 用 `query_artifacts` 查看已产出的成果
+- 评估哪些前置任务已完成、哪些任务可以启动
+
+**2. 决定下一步**
+- 根据 DAG 依赖关系，找出下一个可执行的任务（前置任务均已完成）
+- 若所有任务完成 → 进入"阶段 4：项目收尾"
+- 若有任务可启动 → 通过 `send_task_assignment_message` 通知对应 Task Owner
+- 若遇阻（如某任务失败影响后续）→ 调整计划，可能需要重新拆分任务或修改依赖
+
+**3. 协调阻塞**
+- 收到 Task Owner 的阻塞反馈后，决策解决方案
+- 可能的决策：调整依赖关系、拆分新任务、修改任务描述、分配给其他 Agent
+
+### 阶段 4：项目收尾
+
+所有任务完成后：
+- 用 `create_text_artifact` 保存项目总结（`tags: ["project_summary"]`）
+- 汇总各任务成果，说明整体产出
+- 用 `update_project_status(Completed)` 标记项目完成
+- 通过 `send_message` 通知用户项目已完成
+
+### 项目重启（项目结束后用户继续发消息）
+
+项目标记为 `Completed` 后，用户可能还会继续发消息。Project Owner 需要判断消息类型并作出不同处理：
+
+**情况 A：查询类消息（读项目/任务信息总结回复）**
+- 用户询问项目进展、任务结果、产物内容等
+- 直接用 `get_project` / `list_project_tasks` / `query_artifacts` 读取信息并回复
+- **不修改项目状态，不创建新任务**
+
+**情况 B：新工作需求（项目重启）**
+
+当用户提出新的工作需求，且与原项目相关时，Project Owner 需要**重新规划**：
+
+**1. 综合原项目信息**
+- 用 `get_project` 读取原项目信息
+- 用 `list_project_tasks` 查看所有任务（含已完成和未开工的）
+- 用 `query_artifacts` 查看已产出的成果，理解项目当前状态
+
+**2. 拆分新的子任务**
+- 基于新需求和原项目成果，拆分新的子任务
+- 用 `create_task` 创建新任务，关联原 `project_id`
+
+**3. 修改项目状态**
+- 将项目状态从 `Completed` 改回 `InProgress`（`update_project_status`）
+- 状态机已支持 `Completed → InProgress` 转换（项目重启专用）
+- 重启后 `start_at` 保留原值，`end_at` 保留但下次完成时会更新
+
+**4. 理清依赖关系**
+- **新任务与老任务的依赖关系**：新任务可能依赖已完成的旧任务（作为前置），用 `dependencies` 字段指定
+- **新任务之间的依赖关系**：按 DAG 原则拆分，无依赖的可并行
+- **避免循环依赖**：新任务不能被旧任务依赖（旧任务已完成，不再产生新依赖）
+
+**5. 处理未开工的老任务**
+
+项目重启时，可能存在一些**未开工的老任务**（`status = Pending` 或 `PendingReview`），需要决策：
+
+| 老任务状态 | 处理方式 | 说明 |
+|-----------|---------|------|
+| 仍然需要 | 保留，可被新任务依赖 | 更新描述以对齐新规划 |
+| 不再需要 | **废弃**（`update_task_status(Archived)`） | 被废弃的老任务**不能产生新的依赖关系** |
+| 需要调整 | 更新任务（`update_task`） | 修改描述、依赖关系等 |
+
+**关键约束：被废弃的老任务不能产生新的依赖关系**
+- 已归档（`Archived`）的任务状态终态，不能作为新任务的前置依赖
+- 新任务的 `dependencies` 中不应包含 `Archived` 状态的任务 ID
+- 若新任务逻辑上需要废弃任务的成果，应将相关成果提炼为新任务的描述或参考产物
+
+**6. 通知与启动**
+- 通过 `send_message` 向用户说明重启规划（新任务列表、依赖关系、废弃的老任务）
+- 通过 `send_task_assignment_message` 通知 Task Owner 开始执行新任务
+
+## 任务驱动工作流（Task Owner 视角）
+
+Task Owner 收到任务分配后的标准工作流：
+
+```
+1. 接收任务分配通知（send_task_assignment_message）
    ↓
-2. 第一步：优先完成技术方案设计
-   ↓ 用 create_text_artifact 保存为产物（tags 标注 "technical_design"）
-3. 基于方案拆分为多个子任务
-   ↓ 用 create_task 创建子任务，填写 dependencies 构成 DAG
-4. 为每个子任务选择合适的 Task Owner
-   ↓ 遵循"分配前查询空闲 Agent"流程
-5. 推进过程中更新项目状态
-   ↓ update_project_status(InProgress)
-6. 监控各任务进展，协调阻塞
-   ↓ 收到 Task Agent 问题反馈后决策（详见"协作沟通"技能）
-7. 所有任务完成后，总结项目成果
-   ↓ 用 create_text_artifact 保存总结 + update_project_status(Completed)
-```
-
-### 技术方案设计（第一步）
-
-项目 Owner 的首要职责是产出技术方案，**不要跳过直接拆任务**：
-
-- **内容**：目标拆解、技术选型、模块划分、接口约定、风险点
-- **保存**：用 `create_text_artifact`（`tags: ["technical_design"]`），关联 `project_id`
-- **价值**：作为后续任务拆分的依据，供 Task Owner 参考对齐
-
-### 任务拆分与 DAG 依赖
-
-基于技术方案拆分任务时：
-
-- **粒度**：每个任务应有明确边界和可验证的交付物
-- **依赖写入**：`create_task` 时填写 `dependencies`（前置任务 ID 列表），构成 DAG
-- **并行识别**：无依赖关系的任务可并行分配，缩短整体周期
-- **关键路径**：依赖链最长的路径是关键路径，优先推进
-
-```
-示例 DAG：
-  task_design (技术方案) ──► task_api (接口实现) ──► task_test (集成测试)
-                          └─► task_ui (界面实现) ──┘
-```
-
-**依赖关系约束**：
-- `dependencies` 中的任务 ID 应在同一项目内
-- 避免循环依赖（A 依赖 B，B 又依赖 A）
-- 自环依赖（任务依赖自身）是非法的
-
-## 任务驱动工作流
-
-### 标准工作流
-
-```
-1. create_task 创建任务（assignee_type=Agent, assignee_id=自己）
-   ↓ 自动发送任务分配通知
-2. update_task_status(status=InProgress) 启动任务
+2. 校验前置任务
+   ↓ 查询 dependencies 中每个前置任务状态，未完成则等待
+3. update_task_status(status=InProgress) 启动任务
    ↓ 自动填入 start_at
-3. update_task_progress 反映真实进度（0-100）
+4. update_task_progress 反映真实进度（0-100）
    ↓ 触发 progress_updated 事件
-4. 执行过程中保存成果：
+5. 执行过程中保存成果：
    - 文本成果 → create_text_artifact
    - 工作目录文件 → register_artifact_from_path
    - 已有附件 → create_artifact(source_type=Attachment)
-5. mark_done 标记完成 + summary 总结
+6. mark_done 标记完成 + summary 总结
    ↓ 自动设置 status=Completed, progress=100, end_at
+7. send_task_assignment_message 向 Project Owner 上报最终结果
+   ↓ 说明完成情况、产出产物、注意事项
 ```
 
 ### 产物创建选择
@@ -475,16 +593,21 @@ Project Owner 被通知开始推进项目后，遵循以下流程：
 
 1. **角色边界**：前台 Agent 不负责项目，只做需求路由；Project Owner 同一时间只负责 1 个项目；Task Owner 同一时间只负责 1 个任务
 2. **先查后分**：分配项目/任务前必须查询候选 Agent 是否空闲（`runtime_state=0`）且无未完结项目/任务
-3. **方案优先**：Project Owner 第一步是产出技术方案（`create_text_artifact` + `tags: ["technical_design"]`），不要跳过直接拆任务
-4. **任务驱动**：将工作拆解为任务，按任务推进，`create_task` 时填好 `dependencies` 构成 DAG
-5. **状态机合规**：用 `update_task_status` 严格按状态机转换，避免非法转换错误
-6. **快速完成**：`mark_done` 绕过状态机，适合快速闭环；需要严格校验用 `update_task_status`
-7. **及时更新进度**：用 `update_task_progress` 反映真实进度，触发事件供下游消费
-8. **先查后建**：创建产物前先 `query_artifacts` 检查是否已有相似成果，避免重复
-9. **成果保存为产物**：重要工作用 `create_text_artifact` 或 `register_artifact_from_path` 保存
-10. **关联溯源**：产物创建时关联 `project_id` / `task_id`，便于追溯
-11. **产物更新选择**：`GeneratedContent` 用 `update_artifact(content=...)`；`Attachment` 类型改原附件
-12. **乐观锁**：并发更新产物时携带 `expected_updated_at`，避免覆盖他人修改
-13. **附件大小**：文本附件 ≤64KB，产物内容 ≤1MB，超限用文件路径注册
-14. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，`../` 等穿越会被拒绝
-15. **闭环完成**：任务完成后用 `mark_done`（带 `summary`）或 `update_task_status(Completed)` 标记，保持状态准确
+3. **规划优先**：Project Owner 第一步是产出技术方案并写入项目信息，**与用户确认后再分配任务**，不要跳过直接执行
+4. **前置校验**：Task Owner 启动任务前**必须校验前置任务已完成**，未完成则等待，不要强行启动
+5. **上报结果**：Task Owner 完成后**必须向 Project Owner 上报最终结果**，不要自行决定下一个任务
+6. **全局调度**：Project Owner 总揽全局后决定下一步，通过消息通知对应 Task Owner
+7. **任务驱动**：将工作拆解为任务，按任务推进，`create_task` 时填好 `dependencies` 构成 DAG
+8. **状态机合规**：用 `update_task_status` 严格按状态机转换，避免非法转换错误
+9. **快速完成**：`mark_done` 绕过状态机，适合快速闭环；需要严格校验用 `update_task_status`
+10. **及时更新进度**：用 `update_task_progress` 反映真实进度，触发事件供下游消费
+11. **先查后建**：创建产物前先 `query_artifacts` 检查是否已有相似成果，避免重复
+12. **成果保存为产物**：重要工作用 `create_text_artifact` 或 `register_artifact_from_path` 保存
+13. **关联溯源**：产物创建时关联 `project_id` / `task_id`，便于追溯
+14. **产物更新选择**：`GeneratedContent` 用 `update_artifact(content=...)`；`Attachment` 类型改原附件
+15. **乐观锁**：并发更新产物时携带 `expected_updated_at`，避免覆盖他人修改
+16. **附件大小**：文本附件 ≤64KB，产物内容 ≤1MB，超限用文件路径注册
+17. **路径安全**：`register_artifact_from_path` 的 `source_path` 必须在自己工作目录下，`../` 等穿越会被拒绝
+18. **闭环完成**：任务完成后用 `mark_done`（带 `summary`）或 `update_task_status(Completed)` 标记，保持状态准确
+19. **项目重启**：项目完成后用户提出新需求时，Project Owner 重新规划，拆分新任务，处理老任务依赖；**被废弃的老任务不能产生新的依赖关系**
+20. **区分查询与重启**：项目完成后用户发消息，先判断是查询（直接回复）还是新需求（重新规划），避免不必要的任务创建

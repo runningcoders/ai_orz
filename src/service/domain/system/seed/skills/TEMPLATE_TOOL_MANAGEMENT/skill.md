@@ -8,14 +8,14 @@
 
 | 类型 | 加载方式 | 调用方式 | 你需要做什么 |
 |------|---------|---------|------------|
-| **Auto 工具** | 自动注入模型上下文 | 模型直接 function calling | 无需手动请求，模型自主决定调用 |
-| **Manual 工具** | 通过 Prompt 展示给你 | 你直接 function calling，系统自动分发 | 需要你明确发起调用，系统按工具配置自动决定同步/异步分发 |
+| **Auto 工具** | 通过 API 协议层（`tools` 字段）传递给模型 | 模型直接 function calling | 无需手动请求，模型自主决定调用 |
+| **Manual 工具** | 同样通过 API 协议层传递，附加调用规范说明 | 你直接 function calling，系统自动分发 | 需要你明确发起调用，系统按工具配置自动决定同步/异步分发 |
 
 **关键认知**：
 - Auto 工具对你透明，模型在推理时自动选择并调用，你不需要关注
-- Manual 工具会以工具列表形式展示在你的 Prompt 中，**只有你主动调用才会执行**
+- Manual 工具的 `name` / `description` / `parameters` 已通过 API 协议层完整传递，**你直接 function calling 即可触发执行**
 - Manual 工具的同步/异步分发由系统根据工具配置（`dispatch_mode`）自动决定，你无需关心转发细节
-- 本指南后续内容主要针对 Manual 工具
+- 本指南后续内容主要针对 Manual 工具的调用规范与结果处理
 
 ## 工具包：按标签组织
 
@@ -80,6 +80,19 @@ Manual 工具的同步/异步属性由工具配置（`ToolPo.config.dispatch_mod
 - **Auto 工具** → 系统直接执行
 - **Manual 工具** → 系统根据 `dispatch_mode` 自动选择同步或异步转发执行
 
+### 执行架构（高层认知）
+
+所有工具调用最终汇流到统一执行原语 `ToolCallDao::execute`，确保 trace 完整记录：
+
+```
+[1] Auto 工具：execute_auto → call_tool → ToolCallDao::execute
+[2] Manual 同步：execute_manual → request_tool_call → call_tool → ToolCallDao::execute
+[3] Manual 异步：execute_manual → send_tool_call_message → (下一轮 awaken)
+                                → call_manual_tool_for_agent → call_tool → ToolCallDao::execute
+```
+
+**关键点**：`ToolCallDao::execute` 内部为每次调用新建 `LoggingDecorator`，生成真实 `call_id`，失败时 Error 携带 `trace_ref`。你拿到的 `tool_call_id` 就是这个真实 `call_id`，可用于后续追溯。
+
 你只需要像调用普通函数一样发起 Manual 工具调用，**无需关心转发的内部细节**，系统会按工具的配置自动处理。
 
 ### 同步分发（`dispatch_mode = sync`，默认）
@@ -142,7 +155,7 @@ Manual 工具的同步/异步属性由工具配置（`ToolPo.config.dispatch_mod
 | `tool_id` | 工具 ID |
 | `call_id` | 本次调用的唯一 ID（即 `tool_call_id`） |
 
-`trace_ref` 是调用追溯的钥匙，用于：
+`call_id` 由底层 `LoggingDecorator` 在 `ToolCallDao::execute` 内部生成真实 UUID，**全局唯一、不可伪造**，是调用追溯的钥匙，用于：
 - 在产物、消息中引用调用记录，便于溯源
 - 通过 `get_tool_call_entry` 查询完整调用详情
 

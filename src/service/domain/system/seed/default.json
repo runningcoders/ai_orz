@@ -78,7 +78,7 @@
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/tool_basics/skill.md"
+          "ref_path": "skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"
         }
       ]
     },
@@ -96,7 +96,7 @@
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/skill_basics/skill.md"
+          "ref_path": "skills/TEMPLATE_SKILL_MANAGEMENT/skill.md"
         }
       ]
     },
@@ -114,7 +114,7 @@
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/memory_cognition/skill.md"
+          "ref_path": "skills/TEMPLATE_MEMORY_COGNITION/skill.md"
         }
       ]
     },
@@ -132,7 +132,7 @@
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/communication/skill.md"
+          "ref_path": "skills/TEMPLATE_COMMUNICATION/skill.md"
         }
       ]
     },
@@ -150,7 +150,7 @@
       "files": [
         {
           "path": "skill.md",
-          "ref_path": "skills/project_management/skill.md"
+          "ref_path": "skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md"
         }
       ]
     }
