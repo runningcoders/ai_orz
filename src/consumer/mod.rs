@@ -19,10 +19,15 @@ pub async fn init() -> Result<()> {
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
 
-    aop::registry().register_consumer(Arc::new(tool_exec_log_consumer::ToolExecLogConsumer::new()))?;
-    aop::registry().register_consumer(Arc::new(tool_exec_stats_consumer::ToolExecStatsConsumer::new()))?;
+    aop::registry()
+        .register_consumer(Arc::new(tool_exec_log_consumer::ToolExecLogConsumer::new()))?;
+    aop::registry().register_consumer(Arc::new(
+        tool_exec_stats_consumer::ToolExecStatsConsumer::new(),
+    ))?;
     aop::registry().register_consumer(Arc::new(agent_loop_consumer::AgentLoopConsumer::new()))?;
-    aop::registry().register_consumer(Arc::new(think_round_stats_consumer::ThinkRoundStatsConsumer::new()))?;
+    aop::registry().register_consumer(Arc::new(
+        think_round_stats_consumer::ThinkRoundStatsConsumer::new(),
+    ))?;
 
     sys_info!("all business consumers registered");
     Ok(())

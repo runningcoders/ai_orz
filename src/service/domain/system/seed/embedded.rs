@@ -111,15 +111,10 @@ mod tests {
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
         assert_eq!(files.len(), 5);
-        assert!(files
-            .contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
-        assert!(files
-            .contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
-        assert!(files
-            .contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
-        assert!(files
-            .contains(&"skills/TEMPLATE_COMMUNICATION/skill.md".to_string()));
-        assert!(files
-            .contains(&"skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_COMMUNICATION/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md".to_string()));
     }
 }

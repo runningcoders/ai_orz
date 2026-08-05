@@ -74,10 +74,7 @@ impl ThinkingScene {
             ThinkingScene::Awaken => true,
             ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
             ThinkingScene::Summary => tags.iter().any(|t| {
-                t == "neural"
-                    || t == "memory"
-                    || t == "messaging"
-                    || t == "project_management"
+                t == "neural" || t == "memory" || t == "messaging" || t == "project_management"
             }),
         }
     }
@@ -144,7 +141,8 @@ impl ThinkingOptions {
 
     /// 获取有效最大思考轮次（None 时返回默认值）
     pub fn effective_max_rounds(&self) -> usize {
-        self.max_thinking_rounds.unwrap_or(DEFAULT_MAX_THINKING_ROUNDS)
+        self.max_thinking_rounds
+            .unwrap_or(DEFAULT_MAX_THINKING_ROUNDS)
     }
 }
 
@@ -198,9 +196,8 @@ impl RuntimeDomainImpl {
                 .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
         });
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(THINK_TIMEOUT_SECS),
-            async {
+        let result =
+            tokio::time::timeout(std::time::Duration::from_secs(THINK_TIMEOUT_SECS), async {
                 let mut messages = vec![ChatMessage::user(prompt.to_string())];
                 // 提取模型提供商信息（所有轮次共用）
                 let (model_provider_id, model_name) = match brain.model_provider() {
@@ -246,10 +243,7 @@ impl RuntimeDomainImpl {
                                 ),
                             )
                             .await;
-                            return Ok(ThinkLoopResult::Final {
-                                content,
-                                messages,
-                            });
+                            return Ok(ThinkLoopResult::Final { content, messages });
                         }
                         ThinkResult::ToolCall {
                             content,
@@ -269,20 +263,12 @@ impl RuntimeDomainImpl {
                                         let call_result = match tool.po.control_mode {
                                             common::enums::tool::ControlMode::Auto => {
                                                 self.tool_dal()
-                                                    .execute_auto(
-                                                        ctx.clone(),
-                                                        tool,
-                                                        tc.arguments,
-                                                    )
+                                                    .execute_auto(ctx.clone(), tool, tc.arguments)
                                                     .await
                                             }
                                             common::enums::tool::ControlMode::Manual => {
                                                 self.tool_dal()
-                                                    .execute_manual(
-                                                        ctx.clone(),
-                                                        tool,
-                                                        tc.arguments,
-                                                    )
+                                                    .execute_manual(ctx.clone(), tool, tc.arguments)
                                                     .await
                                             }
                                         };
@@ -362,9 +348,8 @@ impl RuntimeDomainImpl {
                     messages,
                     total_rounds: max_rounds,
                 })
-            },
-        )
-        .await;
+            })
+            .await;
 
         match result {
             Ok(inner) => inner,
@@ -624,12 +609,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         )
                         .await
                         .unwrap_or_else(|e| {
-                            log_warn!(
-                                &ctx,
-                                "awaken",
-                                "summary exit failed: {:?}",
-                                e
-                            );
+                            log_warn!(&ctx, "awaken", "summary exit failed: {:?}", e);
                             String::new()
                         });
 
@@ -1121,10 +1101,7 @@ impl RuntimeDomainImpl {
         // 8. 写入 trace
         trace.input = prompt.clone();
         trace.complete(raw_output.clone());
-        let _ = self
-            .memory()
-            .write_thinking_trace(ctx.clone(), trace)
-            .await;
+        let _ = self.memory().write_thinking_trace(ctx.clone(), trace).await;
 
         // 9. 发布循环完成事件
         let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(

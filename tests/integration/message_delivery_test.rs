@@ -45,11 +45,7 @@ use std::time::Duration;
 async fn find_tool_id_by_name(app: &TestApp, jwt: &str, name: &str) -> String {
     // Primary: use POST query endpoint (tools query expects a JSON body)
     let (status, body) = app
-        .post_with_jwt(
-            "/api/v1/finance/tools/query",
-            &json!({ "limit": 200 }),
-            jwt,
-        )
+        .post_with_jwt("/api/v1/finance/tools/query", &json!({ "limit": 200 }), jwt)
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let tools = data
@@ -69,8 +65,7 @@ async fn find_tool_id_by_name(app: &TestApp, jwt: &str, name: &str) -> String {
     }
     panic!(
         "Could not find builtin tool '{}' in tool list. Available tools: {:?}",
-        name,
-        body
+        name, body
     );
 }
 
@@ -233,9 +228,7 @@ async fn test_sse_endpoint_returns_event_stream(pool: SqlitePool) {
 /// - listing messages filtered by `to_id=<user_id>` returns the new message
 ///   with the correct content/roles
 #[sqlx::test]
-async fn test_send_message_to_user_via_tool_persists_and_listable(
-    pool: SqlitePool,
-) {
+async fn test_send_message_to_user_via_tool_persists_and_listable(pool: SqlitePool) {
     let _ctx: RequestContext = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
@@ -291,10 +284,7 @@ async fn test_send_message_to_user_via_tool_persists_and_listable(
 
     // --- Step 2: list messages filtered by to_id=<user_id>
     let (status, body) = app
-        .get_with_jwt(
-            &format!("/api/v1/finance/messages?to_id={}", user_id),
-            &jwt,
-        )
+        .get_with_jwt(&format!("/api/v1/finance/messages?to_id={}", user_id), &jwt)
         .await;
     let list_data = crate::common::assert_api_ok(status, &body);
     let messages = list_data
@@ -306,7 +296,12 @@ async fn test_send_message_to_user_via_tool_persists_and_listable(
         .iter()
         .find(|m| m.get("message_id").and_then(|v| v.as_str()) == Some(message_id.as_str()))
         .cloned()
-        .unwrap_or_else(|| panic!("message {} not found in to_id list, got {:?}", message_id, list_data));
+        .unwrap_or_else(|| {
+            panic!(
+                "message {} not found in to_id list, got {:?}",
+                message_id, list_data
+            )
+        });
 
     assert_eq!(
         our_msg.get("content").and_then(|v| v.as_str()),
@@ -351,14 +346,20 @@ async fn test_send_message_to_user_via_tool_persists_and_listable(
                 .any(|m| m.get("message_id").and_then(|v| v.as_str()) == Some(message_id.as_str()))
         })
         .unwrap_or(false);
-    assert!(found_agent, "message should also appear in from_id=<agent> listing");
+    assert!(
+        found_agent,
+        "message should also appear in from_id=<agent> listing"
+    );
 
     // --- Step 4: ensure send_message tool exists and is callable (smoke)
     // We don't assert full delivery here because the ctx lacks agent identity
     // in debug-call mode; the domain call above already validated the core
     // contract with correct roles.
     let tool_id = find_tool_id_by_name(&app, &jwt, "send_message").await;
-    assert!(!tool_id.is_empty(), "send_message tool should be registered");
+    assert!(
+        !tool_id.is_empty(),
+        "send_message tool should be registered"
+    );
 }
 
 // ======================================================================
@@ -460,9 +461,7 @@ async fn test_sse_push_delivers_message_payload_to_subscriber(pool: SqlitePool) 
     );
 
     // --- Join SSE subscriber → validate payload ---
-    let (sse_status, events) = sse_handle
-        .await
-        .expect("SSE subscriber task panicked");
+    let (sse_status, events) = sse_handle.await.expect("SSE subscriber task panicked");
     assert_eq!(
         sse_status,
         axum::http::StatusCode::OK,
@@ -473,9 +472,9 @@ async fn test_sse_push_delivers_message_payload_to_subscriber(pool: SqlitePool) 
         "should have received at least one SSE data event (push payload), got 0 events"
     );
 
-    let our_push = events.iter().find(|ev| {
-        ev.get("message_id").and_then(|v| v.as_str()) == Some(msg_id.as_str())
-    });
+    let our_push = events
+        .iter()
+        .find(|ev| ev.get("message_id").and_then(|v| v.as_str()) == Some(msg_id.as_str()));
     let push = our_push.unwrap_or_else(|| {
         panic!(
             "SSE events did not contain our pushed message {}. Events: {:?}",
@@ -628,7 +627,9 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
         delivery.details.iter().any(|d| !d.success
             && d.error
                 .as_ref()
-                .map(|e| e.contains("unsupported_operation") || e.contains("尚未实现") || e.contains("Webhook"))
+                .map(|e| e.contains("unsupported_operation")
+                    || e.contains("尚未实现")
+                    || e.contains("Webhook"))
                 .unwrap_or(false)),
         "ChannelDeliveryDetail should record the unsupported-operation error. Details: {:?}",
         delivery.details
@@ -663,9 +664,7 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
 ///   nackable error. We do NOT call the consumer here; we validate the
 ///   domain-level contract directly.
 #[sqlx::test]
-async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(
-    pool: SqlitePool,
-) {
+async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(pool: SqlitePool) {
     let _ctx: RequestContext = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
@@ -738,9 +737,7 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(
 ///
 /// This is the "partial failure" contract exercised at the integration layer.
 #[sqlx::test]
-async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(
-    pool: SqlitePool,
-) {
+async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool: SqlitePool) {
     let _ctx: RequestContext = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
@@ -753,7 +750,8 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(
     // becomes unbound by the time we deliver. Even simpler: use a URL that
     // cannot be DNS-resolved (invalid TLD) to force a connection error inside
     // reqwest without requiring network.
-    let webhook_url = "http://invalid-tld-surely-nonexistent.example.local.invalid:1/nope".to_string();
+    let webhook_url =
+        "http://invalid-tld-surely-nonexistent.example.local.invalid:1/nope".to_string();
 
     let create_req = json!({
         "user_id": user_id,

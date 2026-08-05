@@ -85,10 +85,7 @@ pub fn FinanceModelProviders() -> Element {
                     Some(description())
                 },
                 max_context_length: max_context_length().trim().parse::<i32>().ok(),
-                recommended_context_length: recommended_context_length()
-                    .trim()
-                    .parse::<i32>()
-                    .ok(),
+                recommended_context_length: recommended_context_length().trim().parse::<i32>().ok(),
             };
             match create_model_provider(req).await {
                 Ok(resp) => {

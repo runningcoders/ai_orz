@@ -312,7 +312,10 @@ fn http_tool_redacts_error() {
         &po,
         json!({ "access_token": "placeholder-value" }),
         None,
-        Some("http request failed for https://api.example.invalid/search?access_token=***".to_string()),
+        Some(
+            "http request failed for https://api.example.invalid/search?access_token=***"
+                .to_string(),
+        ),
     );
 
     assert_eq!(input, Value::String("[REDACTED]".to_string()));
@@ -342,7 +345,10 @@ fn mcp_tool_redacts_error() {
         &po,
         json!({ "access_token": "placeholder-value" }),
         None,
-        Some("http request failed for https://api.example.invalid/search?access_token=***".to_string()),
+        Some(
+            "http request failed for https://api.example.invalid/search?access_token=***"
+                .to_string(),
+        ),
     );
 
     assert_eq!(input, Value::String("[REDACTED]".to_string()));

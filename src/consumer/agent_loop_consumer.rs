@@ -41,10 +41,7 @@ impl Consumer for AgentLoopConsumer {
     }
 
     async fn on_event(&self, event: serde_json::Value) -> Result<()> {
-        let kind = event
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let kind = event.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
         match kind {
             "agent.loop" => {

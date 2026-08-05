@@ -3,11 +3,11 @@
 //! Replaces ToolCallLoggingDecorator's record_tool_call_stat.
 //! Subscribes to "agent.tool.executed" events and records ToolCallEvent stats.
 
-use async_trait::async_trait;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::models::events::ToolExecEvent;
+use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::pkg::stats::{ToolCallEvent, global_stats};
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
+use async_trait::async_trait;
 use common::error::Result;
 
 pub struct ToolExecStatsConsumer;

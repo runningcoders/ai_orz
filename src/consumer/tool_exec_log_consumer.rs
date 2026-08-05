@@ -3,10 +3,10 @@
 //! Replaces ToolCallLoggingDecorator's JSONL logging.
 //! Subscribes to "agent.tool.executed" events and writes to ToolCallLogger.
 
-use async_trait::async_trait;
-use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::models::events::ToolExecEvent;
+use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
+use async_trait::async_trait;
 use common::error::Result;
 
 pub struct ToolExecLogConsumer;

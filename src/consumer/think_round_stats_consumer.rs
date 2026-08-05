@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use crate::models::events::ThinkRoundEvent;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
-use crate::pkg::stats::{global_stats, ModelCallEvent};
+use crate::pkg::stats::{ModelCallEvent, global_stats};
 use common::error::Result;
 
 pub struct ThinkRoundStatsConsumer;
@@ -42,10 +42,7 @@ impl Consumer for ThinkRoundStatsConsumer {
 
     async fn on_event(&self, event: serde_json::Value) -> Result<()> {
         let event: ThinkRoundEvent = serde_json::from_value(event).map_err(|e| {
-            common::error::Error::internal(format!(
-                "failed to deserialize ThinkRoundEvent: {}",
-                e
-            ))
+            common::error::Error::internal(format!("failed to deserialize ThinkRoundEvent: {}", e))
         })?;
 
         // 跳过没有 token 用量的轮次（如外部 agent 无 model_provider）
