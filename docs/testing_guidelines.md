@@ -395,7 +395,7 @@ assert_eq!(data.get("id").and_then(|v| v.as_str()), Some(agent_id.as_str()));
 |------|------|--------|----------|
 | Auth & SysInit | `auth_sysinit_test.rs` | 4 | JWT Cookie 认证、系统初始化、401/200 protected route |
 | Core CRUD | `core_crud_test.rs` | 3 | Agent/Project/Task CRUD 闭环 + 状态流转 |
-| Message Delivery | `message_delivery_test.rs` | 2 | send_message 持久化 + SSE 连接冒烟 |
+| Message Delivery | `message_delivery_test.rs` | 7 | send_message 持久化 + SSE 连接冒烟 + **Agent→User 消息角色/双向列表校验** + **端到端 SSE 推送内容验证** + **Webhook 渠道失败聚合不抛错** + **无渠道无 SSE 边界 OK** + **不可达 URL Webhook 不 panic** |
 | Vector Degradation | `vector_degradation_test.rs` | 3 | 无 embedding provider 时主流程仍可用（降级契约守护） |
 | A2A Flow | `a2a_flow_test.rs` | 2 | agent card 发现 + JSON-RPC tasks/send→get |
 | 宏集成 | `macro_test.rs` | 15 | generate_http_handler 宏各参数组合边界场景 |
@@ -470,15 +470,39 @@ async fn test_real_xxx_vector_search(pool: SqlitePool) { ... }
 
 **ignored 测试覆盖场景**：语义搜索（"神经网络"→"深度学习"）、向量索引维护（创建→更新→删除）、混合排序（FTS5 > Vector > Keyword）。
 
-### 性能优化历史
+### 消息投递与 SSE/Webhook 推送测试模式（2026-08-05 新增）
 
-| 阶段 | 集成测试耗时 | 说明 |
-|------|-------------|------|
-| 优化前（并行） | 238s | 多个 bootstrap 同时创建 embedding provider 互相干扰触发 FastEmbed |
-| 短期方案（串行） | 107s | CI 加 `--test-threads=1` |
-| 长期方案（可选 embedding） | 3.7s | `embedding_model: Option<>` + bootstrap 传 None |
+消息投递集成测试覆盖**两条主路径**（Agent→User 定向发送 + Consumer 触发的 deliver_message）与**三种推送方式**（列表拉取 / SSE 主动推 / 外部渠道 Webhook），采用「域层直接调用」+「HTTP 端到端」混合策略：
+
+| 场景 | 测试函数 | 验证重点 | 触发方式 |
+|------|----------|----------|----------|
+| Agent→Agent 消息持久化 | `test_send_message_persists_record` | `POST /messages/agents` → 记录入库 → `GET /messages?to_id=...` 返回 | HTTP handler |
+| SSE 端点连通性 | `test_sse_endpoint_returns_event_stream` | `/messages/sse` 连接返回 200，流式响应 | HTTP handler |
+| **Agent→User 消息 + 角色校验 + 双向列表** | `test_send_message_to_user_via_tool_persists_and_listable` | `from_role=Agent`、`to_role=User` 正确；`to_id=<user>` 和 `from_id=<agent>` 列表都能命中；`send_message` neural 工具已注册 | `message_domain.send_to_user`（绕开 debug-call 缺失 agent 身份） |
+| **端到端 SSE 推送内容验证** | `test_sse_push_delivers_message_payload_to_subscriber` | 后台任务订阅 SSE → 主线程 `deliver_message` → 校验收到的 event JSON 含正确 `message_id` + `content` | `TestApp::get_with_jwt_collect_sse_events` + domain 层 `deliver_message` |
+| **Webhook 渠道投递 + 失败聚合** | `test_webhook_channel_delivers_message_to_mock_server` | 创建真实 TCP mock 服务器 + Webhook Channel；`total=1`、`failed=1`；错误信息落入 `ChannelDeliveryDetail.error`；**deliver_message 仍返回 Ok**，不向上抛（保证 SSE/其他渠道继续） | HTTP 建 Channel + domain 层 `deliver_message` |
+| **无渠道无 SSE 边界** | `test_deliver_message_no_channels_and_no_sse_still_returns_ok` | total/success/failed 全 0；`deliver_message` 返回 Ok | domain 层 `deliver_message` |
+| **不可达 URL Webhook 不 panic** | `test_webhook_channel_invalid_url_reports_failed_without_panicking` | 不可达 URL → 错误进 `details.error`；函数返回 Ok | domain 层 `deliver_message` |
+
+**关键设计：**
+
+- **`TestApp` 新增 `#[derive(Clone)]` + `get_with_jwt_collect_sse_events()`**：axum 0.8 的 `Body` 不直接实现 `StreamExt::next()`，必须通过 `http_body_util::BodyExt::into_data_stream()` 转 Stream；SSE 按 `\n\n` 拆包，自动过滤 `data: keep-alive` ping 行。
+- **`extern crate common as common_ext`**：`tests/integration/*` 文件顶部 `#[path = "../common/mod.rs"] mod common;` 会遮蔽外部依赖 `common` crate，导入 `common::enums::*` 必须重命名 extern（否则报 `could not find enums in common`）。
+- **`generate_http_handler` 方法推断规则**：Params struct 字段**未**标 `#[param(source = "query")]` 时，宏会把它当成 body 字段，生成的 handler 是 `POST + Json<T>`（不是 GET query）。列表接口优先用 `POST /xxx/query`，不要假设 GET 可用。
+- **`ChannelType` JSON 序列化**：enum 未带 `#[serde(rename = ...)]`，默认序列化为 Rust 变体名大写开头（`"Webhook"` 而不是 `4` 或 `"webhook"`），建渠道请求传 `channel_type: "Webhook"` 字符串。
+- **通用 Webhook 推送当前未实现**：`message_channel_dal.deliver_message` 对 `ChannelType::Webhook` 返回 `unsupported_operation 通用 Webhook 推送功能尚未实现`。测试已显式捕获这个错误，等实现后只需把 `assert_eq!(delivery.failed, 1)` 改回 `assert_eq!(delivery.success, 1)` + mock 服务器收包校验即可。
+
+### `TestApp` HTTP 辅助方法清单（`tests/common/app.rs`）
+
+| 方法 | 说明 |
+|------|------|
+| `new(pool)` | 创建 `axum::Router` 包装器 |
+| `get/post` | 匿名请求，自动加 `Content-Type: application/json` |
+| `get_with_jwt/post_with_jwt/put_with_jwt/delete_with_jwt` | 带 JWT Cookie（`ai_orz_jwt=<token>`） |
+| `get_with_jwt_status_only` | 只返回 StatusCode，用于 SSE 等流式场景不读完 body |
+| **`get_with_jwt_collect_sse_events(path, jwt, max_events, max_wait)`** | ✨ 连接 SSE，收集最多 `max_events` 个 JSON data 事件或超时返回，自动过滤 keep-alive |
 
 ---
 
-**最后更新**：2026-08-04
+**最后更新**：2026-08-05
 **维护者**：AI Orz 开发团队

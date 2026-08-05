@@ -1,8 +1,8 @@
 # 消息渠道设计文档
 
-## 🚀 实现完成状态（2026-06-04 更新）
+## 🚀 实现完成状态（2026-08-05 更新）
 
-### ✅ 全部实现完成
+### 🟡 管理面完成，运行面渠道推送进度分化
 
 | 模块 | 状态 | 测试 | 文件位置 |
 |------|------|------|---------|
@@ -10,14 +10,44 @@
 | MessageChannel PO | ✅ 完成 | - | `src/models/message_channel.rs` |
 | MessageChannelDao | ✅ 完成 | ✅ 测试通过 | `src/service/dao/message_channel.rs` |
 | 各渠道 DAO | ✅ 完成 | ✅ 测试通过 | `src/service/dao/lark/`, `wechat/`, `slack/`, `email/`, `webhook/`, `a2a_callback/` |
-| MessageChannelDal | ✅ 完成 | ✅ 测试通过 | `src/service/dal/message_channel.rs` |
-| Message Domain | ✅ 完成 | ✅ 测试通过 | `src/service/domain/message/` |
-| Finance Domain 管理面 | ✅ CRUD/query/test 已具备 | `cargo check` 通过 | `src/service/domain/finance/message_channel.rs` |
+| MessageChannelDal | ✅ CRUD + Channel 枚举分发完成 | ✅ 单元测试通过；**Lark/Webhook 等实际 HTTP 推送按渠道分化** | `src/service/dal/message_channel.rs` |
+| Message Domain (send_to_agent/send_to_user/deliver_message) | ✅ 完成 | ✅ **7 个集成测试通过**（见下表） | `src/service/domain/message/` |
+| Finance Domain 管理面 | ✅ CRUD/query/test 已具备 | ✅ 管理面 HTTP handler 通过 smoke test | `src/service/domain/finance/message_channel.rs` |
 | API DTO | ✅ 管理面 DTO 已完成 | `cargo check` 通过 | `common/src/api/message_channel.rs` |
-| Handler / Router | ✅ 管理面 action 已完成 | `cargo check` 通过 | `src/handlers/finance/message_channel/`, `src/router.rs` |
+| Handler / Router | ✅ 管理面 action 已完成 | ✅ 管理面路由 smoke 可用 | `src/handlers/finance/message_channel/`, `src/router.rs` |
 | 单元测试 | ✅ 完成 | **67/67 通过** | 各模块对应 `tests.rs` |
+| 集成测试（消息投递 + 推送）| ✅ 完成 | **7/7 通过** | `tests/integration/message_delivery_test.rs` |
 
 > 运行面消息发送接口已统一使用 Command 参数对象：`SendToAgentCommand`、`SendToUserCommand`、`SendToolCallRequestCommand`、`SendToolCallResultCommand`、`DeliverMessageCommand`，避免后续调用点参数继续膨胀。
+
+### ⚠️ 运行面渠道推送实现状态（按渠道）
+
+`MessageChannelDal::deliver_message` 负责把一条消息分发到用户所有已启用的渠道。各渠道实际 HTTP 推送的实现进度分化如下：
+
+| 渠道 | ChannelType | HTTP 实际推送 | 说明 |
+|------|-------------|---------------|------|
+| 飞书 | Lark | ✅ 已实现 | 通过飞书机器人 Webhook 发送卡片消息 |
+| 微信 | Wechat | 🟡 未实测（代码骨架已在） | 企业微信 Webhook 骨架 |
+| Slack | Slack | 🟡 未实测（代码骨架已在） | Slack Webhook 骨架 |
+| 邮件 | Email | 🟡 未实现（或骨架） | SMTP / API 邮件通道待定 |
+| **通用 Webhook** | **Webhook** | ❌ **当前未实现**（显式返回 `unsupported_operation` 错误） | `src/service/dao/webhook/` 的 `deliver_message` 返回错误；DAL 捕获为 `failed += 1`，写入 `ChannelDeliveryDetail.error`，不影响其他渠道 / SSE |
+| A2A 协议回调 | A2aCallback | ✅ 已实现 | A2A 事件回调推送 |
+
+> **影响与后续工作**：用户在管理面创建 `通用 Webhook` 渠道后，消费端 deliver_message 不会真正发起 HTTP 请求，而是返回失败。通用 Webhook 的实现优先级待定（先完成飞书等高频场景）。集成测试 `test_webhook_channel_delivers_message_to_mock_server` 已对「unsupported → failed 聚合」做了明确断言，实现后把断言从 `failed=1` 切到 `success=1` + mock 收包校验即可。
+
+### 📊 消息投递 + 推送集成测试矩阵（2026-08-05 新增）
+
+文件：`tests/integration/message_delivery_test.rs`，共 7 个测试，全部在 CI 默认模式下可运行（无需真实 LLM / 真实 Embedding）。
+
+| # | 测试函数 | 覆盖场景 | 断言 |
+|---|----------|----------|------|
+| 1 | `test_send_message_persists_record` | 已有：Agent→Agent 消息 HTTP handler 入库 + 列表查询 | 写入 → 查询的闭环 + message_id 匹配 |
+| 2 | `test_sse_endpoint_returns_event_stream` | 已有：SSE 订阅端点 200 OK | 连接成功（不读 body，避免阻塞） |
+| 3 | `test_send_message_to_user_via_tool_persists_and_listable` | ✨ 新增：Agent→User 消息定向投递 + 角色校验 + 双向列表 + 工具注册检查 | `from_role=Agent(1)`、`to_role=User(0)`；`to_id=user` 与 `from_id=agent` 列表都能命中；`send_message` neural 工具已在 tool registry 中 |
+| 4 | `test_sse_push_delivers_message_payload_to_subscriber` | ✨ 新增：端到端 SSE 推送内容（含 payload 结构） | 后台 spawn SSE subscriber → deliver_message → event JSON 中 `message_id` + `content` 正确 |
+| 5 | `test_webhook_channel_delivers_message_to_mock_server` | ✨ 新增：Webhook 渠道投递 → 失败聚合不抛错（对应未实现 unsupported_operation 场景） | `total=1`、`failed=1`、`details.error` 含 `unsupported_operation`；**deliver_message 仍返回 Ok**；mock 服务器未收到虚假请求 |
+| 6 | `test_deliver_message_no_channels_and_no_sse_still_returns_ok` | ✨ 新增：零渠道 + 零 SSE 订阅边界 | `total/success/failed/sse_delivered` 全 0；`deliver_message` 返回 Ok |
+| 7 | `test_webhook_channel_invalid_url_reports_failed_without_panicking` | ✨ 新增：渠道配置 URL 不可达时，整体返回 Ok，错误入 details | 不可达 URL → 不向上抛错 → failed 聚合正确（unsupported 短路即 OK，真实实现后仍会通过 reqwest 错误路径） |
 
 ### Handler 管理面范围
 

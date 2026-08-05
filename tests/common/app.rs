@@ -6,10 +6,14 @@
 use ai_orz::router::create_router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode};
+use futures_util::StreamExt;
+use http_body_util::BodyExt;
 use sqlx::SqlitePool;
+use std::time::Duration;
 use tower::ServiceExt;
 
 /// Test application wrapping an axum Router with HTTP request helpers.
+#[derive(Clone)]
 pub struct TestApp {
     router: axum::Router,
 }
@@ -188,5 +192,95 @@ impl TestApp {
             })
         };
         (status, body_json)
+    }
+
+    /// Connect to SSE endpoint and collect events for up to `max_wait` or
+    /// until `max_events` have been received, whichever comes first.
+    ///
+    /// Returns `(status, Vec<parsed_event_json>)`. Each element is the parsed
+    /// JSON payload from a `data: ...` line. ping/keep-alive lines are skipped.
+    ///
+    /// This is designed for SSE integration tests: connect, trigger some
+    /// server-side action that produces a push, then verify the events arrived.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+    pub async fn get_with_jwt_collect_sse_events(
+        &self,
+        path: &str,
+        jwt: &str,
+        max_events: usize,
+        max_wait: Duration,
+    ) -> (StatusCode, Vec<serde_json::Value>) {
+        use tokio::time::timeout;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
+                .expect("invalid JWT value for header"),
+        );
+        let mut builder = Request::builder().method(Method::GET).uri(path);
+        for (name, value) in headers.iter() {
+            builder = builder.header(name, value);
+        }
+        let request = builder
+            .body(Body::empty())
+            .expect("failed to build test request");
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("test request failed");
+        let status = response.status();
+
+        let body = response.into_body();
+        let mut body_stream = body.into_data_stream();
+        let mut collected: Vec<serde_json::Value> = Vec::with_capacity(max_events);
+        let mut buffer = String::new();
+
+        let deadline = tokio::time::Instant::now() + max_wait;
+        while collected.len() < max_events {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let chunk = match timeout(remaining, body_stream.next()).await {
+                Ok(Some(Ok(bytes))) => bytes,
+                Ok(Some(Err(e))) => {
+                    eprintln!("SSE stream error: {:?}", e);
+                    break;
+                }
+                Ok(None) => break, // stream closed
+                Err(_) => break,   // timeout
+            };
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            // Process complete SSE events (separated by blank line)
+            while let Some(sep_idx) = buffer.find("\n\n") {
+                let event_block = buffer[..sep_idx].to_string();
+                buffer = buffer[sep_idx + 2..].to_string();
+
+                let mut data_lines: Vec<String> = Vec::new();
+                for line in event_block.lines() {
+                    if let Some(rest) = line.strip_prefix("data:") {
+                        let d = rest.trim();
+                        // skip keep-alive / ping payloads
+                        if !d.is_empty() && d != "keep-alive" {
+                            data_lines.push(d.to_string());
+                        }
+                    }
+                }
+                if !data_lines.is_empty() {
+                    let joined = data_lines.join("\n");
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&joined) {
+                        collected.push(v);
+                    }
+                }
+                if collected.len() >= max_events {
+                    break;
+                }
+            }
+        }
+        (status, collected)
     }
 }

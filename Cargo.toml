@@ -73,6 +73,9 @@ futures = "0.3.32"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 dotenvy = "0.15"
+common = { path = "./common", features = ["sqlx", "axum-integration", "bincode-integration", "toml-integration", "reqwest-integration", "tokio-integration"] }
+http-body-util = "0.1"
+tokio-stream = "0.1"
 
 [[test]]
 name = "auth_sysinit_test"
