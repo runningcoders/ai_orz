@@ -216,7 +216,11 @@ jobs:
     # - --fail-under-lines 直接按行覆盖率门槛
     # - --workspace: 主 crate + common + ai-orz-macros + frontend 单元测试全部计入
     # - --tests: 所有 [[test]] 集成测试也一起跑 + 计入覆盖（之前只 --lib 漏掉了 15 个集成测试）
-    # - --lcov + --html: 两份报告都产（lcov 给 Codecov/脚本消费，html 给人 review artifact）
+    #
+    # 【重要】--html 与 --lcov 参数互斥：
+    # - 第一步：跑测试 + 产出 lcov（给 Codecov/脚本消费），同时 fail-under-lines 校验
+    # - 第二步：cargo llvm-cov report --no-run，基于已有的 profdata 产出 html（给人 review artifact）
+    #   --no-run 避免重复跑测试，直接复用第一步生成的 coverage 数据
     #
     # 关于依赖库重编（LLVM source-based coverage 的固有限制）：
     # -instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument
@@ -231,7 +235,7 @@ jobs:
     # - PR：同一份命令跑但 fail-under-lines 设 38（更低的警告阈值），
     #   用代码块里的条件判断。这样 PR 不会因为覆盖率小跌就硬失败，
     #   但 main 分支必须守住底线。
-    - name: Generate coverage report
+    - name: Generate coverage report (lcov + fail-under check)
       run: |
         set -euo pipefail
         if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
@@ -240,16 +244,26 @@ jobs:
           FAIL_UNDER=38
         fi
         echo "Using fail-under-lines=$FAIL_UNDER for event=${{ github.event_name }} ref=${{ github.ref }}"
+        mkdir -p ./coverage
         cargo llvm-cov \
           --workspace \
           --tests \
           --no-clean \
           --no-fail-fast \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
-          --output-dir ./coverage \
-          --fail-under-lines "$FAIL_UNDER" \
+          --lcov \
+          --output-path ./coverage/lcov.info \
+          --fail-under-lines "$FAIL_UNDER"
+
+    - name: Generate coverage report (html artifact)
+      run: |
+        set -euo pipefail
+        cargo llvm-cov report \
+          --workspace \
+          --no-run \
+          --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --html \
-          --lcov
+          --output-dir ./coverage
 
     - name: Print sccache stats
       if: always()
