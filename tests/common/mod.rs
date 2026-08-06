@@ -11,6 +11,7 @@ pub mod assertions;
 pub mod env;
 pub mod factories;
 
+#[allow(unused_imports)] // 公共 re-export，由各个 integration test 按需引用
 pub use app::TestApp;
 #[allow(unused_imports)]
 pub use assertions::{assert_api_error, assert_api_ok};

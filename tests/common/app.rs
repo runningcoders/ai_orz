@@ -24,6 +24,7 @@ impl TestApp {
     ///
     /// Caller must invoke `init_full_test_env(pool).await` before this,
     /// so that all DAO/DAL/Domain singletons are initialized.
+    #[allow(dead_code)] // 公共测试 API：某些 integration test 用，其它 test crate 编译时会被 clippy 报死代码
     pub async fn new(_pool: SqlitePool) -> Self {
         // config::init() has already populated the global singleton in
         // init_full_test_env; we just fetch it for create_router.

@@ -163,7 +163,7 @@ async fn test_system_cron_triggers_no_duplicate_when_user_has_agent_rest(pool: S
         uuid::Uuid::now_v7().to_string(),
         user_trigger_name.clone(),
         TriggerType::Interval,
-        ::common::constants::utils::current_timestamp_ms() + 4 * 3600_000,
+        ::common::constants::utils::current_timestamp_ms() + 4 * 3_600_000,
         Some("test-user".into()),
     );
     user_trigger.interval_seconds = Some(4 * 3600);

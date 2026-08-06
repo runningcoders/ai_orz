@@ -385,7 +385,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             uuid::Uuid::now_v7().to_string(),
             "系统默认-Agent 睡眠沉淀".into(),
             TriggerType::Interval,
-            common::constants::utils::current_timestamp_ms() + 4 * 3600_000,
+            common::constants::utils::current_timestamp_ms() + 4 * 3_600_000,
             Some("system".into()),
         );
         trigger.interval_seconds = Some(4 * 3600);
@@ -401,7 +401,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             uuid::Uuid::now_v7().to_string(),
             "系统默认-项目进度巡检".into(),
             TriggerType::Interval,
-            common::constants::utils::current_timestamp_ms() + 3600_000,
+            common::constants::utils::current_timestamp_ms() + 3_600_000,
             Some("system".into()),
         );
         trigger.interval_seconds = Some(3600);
