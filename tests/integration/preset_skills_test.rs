@@ -143,12 +143,12 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
 
     assert!(content.contains("# 工具管理"), "skill.md 内容应包含标题");
     assert!(
-        content.contains("request_tool_call"),
-        "skill.md 应提及 request_tool_call 工具"
+        content.contains("get_tool_call_entry") || content.contains("query_tool_call_entries"),
+        "skill.md 应提及工具调用追溯工具（get_tool_call_entry 或 query_tool_call_entries）"
     );
     assert!(
-        content.contains("send_tool_call_message"),
-        "skill.md 应提及 send_tool_call_message 工具"
+        content.contains("ToolCallResult"),
+        "skill.md 应提及异步工具调用结果消息（ToolCallResult）"
     );
 
     // 验证记忆认知
