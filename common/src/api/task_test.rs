@@ -109,6 +109,8 @@ fn update_task_request_allows_partial_fields() {
         tags: Some(vec!["updated".to_string()]),
         due_at: None,
         dependencies: Some(vec!["task-0".to_string()]),
+        execution_plan: None,
+        execution_result: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();

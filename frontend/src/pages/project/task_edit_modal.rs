@@ -209,6 +209,8 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
                         tags: parse_csv(&tags_input()),
                         due_at: parse_timestamp(&due_at()),
                         dependencies: parse_csv(&dependencies_input()),
+                        execution_plan: None,
+                        execution_result: None,
                     };
                     update_task(req).await
                 }

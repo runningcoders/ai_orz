@@ -4,7 +4,7 @@ use super::{MessageDomain, domain};
 use crate::models::message::Message;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{SendToAgentCommand, SendToUserCommand};
-use common::enums::{MessageRole, MessageStatus};
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -58,6 +58,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
                 task_id: Some(&task_id_1),
                 reply_to_id: None,
                 attachment_ids: None,
+                message_type: MessageType::Text,
             },
         )
         .await
@@ -94,6 +95,7 @@ async fn test_list_by_project_id(pool: SqlitePool) {
                 task_id: Some(&task_id_2),
                 reply_to_id: None,
                 attachment_ids: None,
+                message_type: MessageType::Text,
             },
         )
         .await
@@ -146,6 +148,7 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
                 task_id: Some(&task_id),
                 reply_to_id: None,
                 attachment_ids: None,
+                message_type: MessageType::Text,
             },
         )
         .await
@@ -205,6 +208,7 @@ async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
                     task_id: Some(&task_id),
                     reply_to_id: None,
                     attachment_ids: None,
+                    message_type: MessageType::Text,
                 },
             )
             .await

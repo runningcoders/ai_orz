@@ -33,6 +33,9 @@ struct ProjectSearchRow {
     modified_by: String,
     created_at: i64,
     updated_at: i64,
+    execution_plan: Option<String>,
+    execution_result: Option<String>,
+    last_followup_at: Option<i64>,
     fts_rank: Option<f32>,
 }
 
@@ -75,8 +78,8 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         let pool = ctx.db_pool();
         let status_i32 = project.status as i32;
         sqlx::query!(
-            "INSERT INTO projects (id, name, description, workflow, guidance, \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            project.id, project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.created_by, project.modified_by, project.created_at, project.updated_at
+            "INSERT INTO projects (id, name, description, workflow, guidance, \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at, execution_plan, execution_result, last_followup_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            project.id, project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.created_by, project.modified_by, project.created_at, project.updated_at, project.execution_plan, project.execution_result, project.last_followup_at
         )
         .execute(pool)
         .await?;
@@ -87,7 +90,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         let pool = ctx.db_pool();
         let project = sqlx::query_as!(
             ProjectPo,
-            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE id = ? AND \"status\" != 0",
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at, execution_plan, execution_result, last_followup_at FROM projects WHERE id = ? AND \"status\" != 0",
             id
         )
         .fetch_optional(pool)
@@ -108,7 +111,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
         // 使用 sqlx::QueryBuilder 动态构建查询
         let mut list_builder = sqlx::QueryBuilder::new(
-            "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE 1=1",
+            "SELECT id, name, description, workflow, guidance, \"status\" as \"status\", priority, tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at, execution_plan, execution_result, last_followup_at FROM projects WHERE 1=1",
         );
         push_query_filters(&mut list_builder, &query);
 
@@ -181,13 +184,36 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         Ok(page.items)
     }
 
+    async fn list_all_by_status(
+        &self,
+        ctx: RequestContext,
+        status: ProjectStatus,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>> {
+        // 语法糖：调用通用查询（不限 root_user_id，用于系统级查询）
+        let page = self
+            .query(
+                ctx,
+                ProjectQuery {
+                    status_in: Some(vec![status]),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(limit.unwrap_or(100)),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
+    }
+
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()> {
         let pool = ctx.db_pool();
         let now = common::constants::utils::current_timestamp();
         let status_i32 = project.status as i32;
         sqlx::query!(
-            "UPDATE projects SET name = ?, description = ?, workflow = ?, guidance = ?, \"status\" = ?, priority = ?, tags = ?, root_user_id = ?, owner_agent_id = ?, start_at = ?, due_at = ?, end_at = ?, modified_by = ?, updated_at = ? WHERE id = ?",
-            project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.modified_by, now, project.id
+            "UPDATE projects SET name = ?, description = ?, workflow = ?, guidance = ?, \"status\" = ?, priority = ?, tags = ?, root_user_id = ?, owner_agent_id = ?, start_at = ?, due_at = ?, end_at = ?, modified_by = ?, updated_at = ?, execution_plan = ?, execution_result = ?, last_followup_at = ? WHERE id = ?",
+            project.name, project.description, project.workflow, project.guidance, status_i32, project.priority, project.tags, project.root_user_id, project.owner_agent_id, project.start_at, project.due_at, project.end_at, project.modified_by, now, project.execution_plan, project.execution_result, project.last_followup_at, project.id
         )
         .execute(pool)
         .await?;
@@ -279,7 +305,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
             r#"SELECT p.id, p.name, p.description, p.workflow, p.guidance, p."status" as status,
                   p.priority, p.tags, p.root_user_id, p.owner_agent_id,
                   p.start_at, p.due_at, p.end_at, p.created_by, p.modified_by,
-                  p.created_at, p.updated_at,
+                  p.created_at, p.updated_at, p.execution_plan, p.execution_result, p.last_followup_at,
                   projects_fts.rank as fts_rank
            FROM projects_fts
            JOIN projects p ON projects_fts.rowid = p.rowid
@@ -357,6 +383,9 @@ impl ProjectDao for ProjectDaoSqliteImpl {
                     modified_by: row.modified_by,
                     created_at: row.created_at,
                     updated_at: row.updated_at,
+                    execution_plan: row.execution_plan,
+                    execution_result: row.execution_result,
+                    last_followup_at: row.last_followup_at,
                 };
                 (po, row.fts_rank)
             })

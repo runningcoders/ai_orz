@@ -3,7 +3,7 @@
 use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
-use common::enums::MessageStatus;
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 
 /// 消息通用查询条件
@@ -25,6 +25,10 @@ pub struct MessageQuery {
     pub from_id: Option<String>,
     /// 按接收方 ID 查询
     pub to_id: Option<String>,
+    /// 按接收方角色查询（如 Agent/User/System）
+    pub to_role: Option<MessageRole>,
+    /// 按消息类型查询
+    pub message_type: Option<MessageType>,
     /// 按状态 IN 查询（支持多选）
     pub status_in: Option<Vec<MessageStatus>>,
     /// 限制返回条数（分页）

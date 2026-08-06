@@ -76,6 +76,14 @@ pub(crate) async fn load_and_settle(
     agent_id: &str,
     settle_limit: usize,
 ) -> Result<usize> {
+    // 预检查：Agent 必须空闲才能进入睡眠，避免覆盖 Busy 状态
+    let state =
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().get_state(agent_id);
+    if state.is_unavailable() {
+        tracing::info!("Agent {} 当前 {:?}，跳过睡眠", agent_id, state);
+        return Ok(0);
+    }
+
     // 1. 查询未沉淀短期记忆 + 生成编号摘要
     let (summary, pending_count) =
         match build_pending_memories_summary(&ctx, agent_id, settle_limit).await? {

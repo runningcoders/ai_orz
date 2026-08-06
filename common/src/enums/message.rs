@@ -81,6 +81,10 @@ pub enum MessageType {
     ConfirmResponse = 8,
     /// TaskAssignment (任务分配通知，System/User/Agent→Agent)
     TaskAssignment = 9,
+    /// 任务调度通知（System→Agent，任务状态变更触发）
+    TaskDispatchNotification = 10,
+    /// 项目跟进通知（System→Agent，定时补偿触发）
+    ProjectFollowupNotification = 11,
 }
 
 impl From<i32> for MessageType {
@@ -96,6 +100,8 @@ impl From<i32> for MessageType {
             7 => MessageType::ConfirmRequest,
             8 => MessageType::ConfirmResponse,
             9 => MessageType::TaskAssignment,
+            10 => MessageType::TaskDispatchNotification,
+            11 => MessageType::ProjectFollowupNotification,
             _ => MessageType::default(),
         }
     }

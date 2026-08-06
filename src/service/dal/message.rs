@@ -13,7 +13,7 @@ use crate::service::dao::message::{
     self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao,
 };
 use crate::service::dao::model_provider::ModelProviderDao;
-use common::enums::MessageStatus;
+use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -100,6 +100,17 @@ pub trait MessageDal: Send + Sync {
     async fn count(&self, ctx: RequestContext, query: MessageQuery) -> Result<u64>;
 
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>>;
+
+    /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
+    ///
+    /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
+    /// TaskDispatchNotification 等系统通知。
+    async fn has_pending_message_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        message_type: MessageType,
+    ) -> Result<bool>;
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
@@ -301,6 +312,27 @@ impl MessageDal for MessageDalImpl {
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Message>> {
         let opt = self.message_dao.find_by_id(ctx, id).await?;
         Ok(opt.map(Message::from_po))
+    }
+
+    async fn has_pending_message_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        message_type: MessageType,
+    ) -> Result<bool> {
+        let count = self
+            .count(
+                ctx,
+                MessageQuery {
+                    to_id: Some(agent_id.to_string()),
+                    to_role: Some(MessageRole::Agent),
+                    message_type: Some(message_type),
+                    status_in: Some(vec![MessageStatus::Pending]),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(count > 0)
     }
 
     async fn delete_message(&self, ctx: RequestContext, id: &str) -> Result<()> {

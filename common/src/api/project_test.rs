@@ -80,6 +80,7 @@ fn update_project_status_response_uses_project_detail_contract() {
             model_call_stats: None,
             task_graph: None,
             artifacts: None,
+            progress_summary: None,
         });
 
     assert!(response.is_success());
@@ -98,6 +99,8 @@ fn update_project_request_allows_partial_fields() {
         description: None,
         priority: None,
         tags: Some(vec!["updated".to_string()]),
+        execution_plan: None,
+        execution_result: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();

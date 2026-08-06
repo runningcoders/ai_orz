@@ -151,6 +151,12 @@ pub trait ProjectManage: Send + Sync {
         limit: Option<usize>,
     ) -> Result<Vec<Project>>;
 
+    /// 查询所有进行中且有 Owner Agent 的项目
+    ///
+    /// 用于系统级调度（如 Agent Loop Engine）：忽略 root_user_id 过滤，
+    /// 查询所有 InProgress 状态的项目，并仅保留 owner_agent_id 不为空的记录。
+    async fn list_in_progress_with_owner(&self, ctx: RequestContext) -> Result<Vec<Project>>;
+
     /// 通用查询（核心方法，支持 ids/keyword/status 等组合过滤）
     ///
     /// 注：`list(...)` 是列表场景的语法糖，内部可调用此方法；
@@ -205,6 +211,8 @@ pub trait ProjectManage: Send + Sync {
         description: Option<String>,
         priority: Option<i32>,
         tags: Option<Vec<String>>,
+        execution_plan: Option<String>,
+        execution_result: Option<String>,
         modified_by: String,
     ) -> Result<Project>;
 
@@ -319,6 +327,8 @@ pub trait TaskManage: Send + Sync {
         tags: Option<Vec<String>>,
         due_at: Option<i64>,
         dependencies: Option<Vec<String>>,
+        execution_plan: Option<String>,
+        execution_result: Option<String>,
     ) -> Result<Task>;
 
     /// 开始任务

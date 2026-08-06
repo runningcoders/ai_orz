@@ -64,6 +64,13 @@ pub trait ProjectDao: Send + Sync + std::fmt::Debug {
         status: Vec<ProjectStatus>,
         limit: Option<usize>,
     ) -> Result<Vec<ProjectPo>>;
+    /// 根据状态查询所有项目（不限 root_user_id，用于系统级查询）
+    async fn list_all_by_status(
+        &self,
+        ctx: RequestContext,
+        status: ProjectStatus,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectPo>>;
     /// 更新项目
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()>;
     /// 更新项目状态

@@ -205,6 +205,12 @@ pub struct UpdateTaskRequest {
     pub due_at: Option<i64>,
     /// 前置任务 ID 列表
     pub dependencies: Option<Vec<String>>,
+    /// 执行计划（Agent Loop 规划阶段产出）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<String>,
+    /// 执行结果（Agent Loop 执行阶段产出）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_result: Option<String>,
 }
 
 /// 更新 Task 响应

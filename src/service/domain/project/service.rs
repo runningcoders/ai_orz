@@ -3,6 +3,7 @@
 //! 负责项目的创建、查询、状态流转
 
 use crate::models::project::Project;
+use crate::models::project::progress_summary_from_tasks;
 use crate::pkg::RequestContext;
 use crate::pkg::stats::ProjectEvent;
 use crate::pkg::utils::graph::MermaidDirection;
@@ -88,6 +89,7 @@ impl super::ProjectManage for ProjectDomainImpl {
     /// Domain 层聚合：在 DAL 返回基础 Project 后，按 options 注入：
     /// - task_graph: 调用 task_dal 查询项目任务，用 graph 组件生成 mermaid
     /// - artifacts: 调用 artifact_dal 查询项目级产物列表
+    /// - progress_summary: 调用 task_dal 查询项目任务，实时聚合进度汇总
     async fn get_project(
         &self,
         ctx: RequestContext,
@@ -118,6 +120,12 @@ impl super::ProjectManage for ProjectDomainImpl {
                         .collect::<Vec<_>>(),
                 );
             }
+
+            // 注入 progress_summary（实时按任务状态聚合）
+            if options.with_progress_summary.unwrap_or(false) {
+                let tasks = self.task_dal.list_by_project(ctx.clone(), id, None).await?;
+                project.progress_summary = Some(progress_summary_from_tasks(&tasks));
+            }
         }
 
         Ok(project)
@@ -147,6 +155,24 @@ impl super::ProjectManage for ProjectDomainImpl {
                 .list_by_root_user(ctx, root_user_id, limit)
                 .await
         }
+    }
+
+    /// 查询所有进行中且有 Owner Agent 的项目
+    ///
+    /// 用于系统级调度（如 Agent Loop Engine）：忽略 root_user_id 过滤，
+    /// 查询所有 InProgress 状态的项目，并仅保留 owner_agent_id 不为空的记录。
+    async fn list_in_progress_with_owner(&self, ctx: RequestContext) -> Result<Vec<Project>> {
+        // 系统级查询：查询所有 InProgress 项目（不限 root_user_id）
+        let projects = self
+            .project_dal
+            .list_all_by_status(ctx, ProjectStatus::InProgress, None)
+            .await?;
+
+        // 过滤出有 owner_agent_id 的项目
+        Ok(projects
+            .into_iter()
+            .filter(|p| p.po.owner_agent_id.is_some())
+            .collect())
     }
 
     /// 通用查询（核心方法）
@@ -319,6 +345,8 @@ impl super::ProjectManage for ProjectDomainImpl {
         description: Option<String>,
         priority: Option<i32>,
         tags: Option<Vec<String>>,
+        execution_plan: Option<String>,
+        execution_result: Option<String>,
         modified_by: String,
     ) -> Result<Project> {
         let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
@@ -338,6 +366,12 @@ impl super::ProjectManage for ProjectDomainImpl {
         }
         if let Some(tags) = tags {
             project.po.tags = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+        }
+        if let Some(execution_plan) = execution_plan {
+            project.po.execution_plan = Some(execution_plan);
+        }
+        if let Some(execution_result) = execution_result {
+            project.po.execution_result = Some(execution_result);
         }
         project.po.modified_by = modified_by;
 

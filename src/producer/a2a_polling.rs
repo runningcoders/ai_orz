@@ -200,6 +200,8 @@ impl Producer for A2aPollingProducer {
                             Some(new_tags),
                             None,
                             None,
+                            None,
+                            None,
                         )
                         .await
                     {

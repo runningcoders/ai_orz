@@ -3,6 +3,7 @@ pub mod agent_loop;
 pub mod agent_state;
 pub mod cron_trigger;
 pub mod message;
+pub mod task_status;
 pub mod think_round;
 pub mod tool_exec;
 
@@ -14,5 +15,6 @@ pub use agent_loop::AgentLoopEvent;
 pub use agent_state::AgentStateEvent;
 pub use cron_trigger::CronTriggerEvent;
 pub use message::MessageCreatedEvent;
+pub use task_status::TaskStatusChangedEvent;
 pub use think_round::ThinkRoundEvent;
 pub use tool_exec::ToolExecEvent;

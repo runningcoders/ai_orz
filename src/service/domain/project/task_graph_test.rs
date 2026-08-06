@@ -33,6 +33,8 @@ fn make_task(id: &str, title: &str, status: TaskStatus, deps: Vec<&str>) -> Task
         modified_by: "u1".to_string(),
         created_at: utils::current_timestamp_ms(),
         updated_at: utils::current_timestamp_ms(),
+        execution_plan: None,
+        execution_result: None,
     })
 }
 

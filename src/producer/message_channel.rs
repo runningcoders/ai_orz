@@ -1,4 +1,4 @@
-use common::enums::{CallerType, MessageRole};
+use common::enums::{CallerType, MessageRole, MessageType};
 use common::error::{Result, err};
 use std::sync::Arc;
 
@@ -62,6 +62,7 @@ impl MessageAdapterCallback for MessageChannelProducer {
             task_id: msg.task_id.as_deref(),
             reply_to_id: msg.reply_to_id.as_deref(),
             attachment_ids: None,
+            message_type: MessageType::Text,
         };
 
         self.message_domain

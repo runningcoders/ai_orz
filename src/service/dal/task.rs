@@ -612,9 +612,34 @@ impl TaskDal for TaskDalImpl {
         modified_by: &str,
     ) -> Result<()> {
         let ctx = ctx.to_builder().task_id(id).build();
+
+        // 读取变更前的任务，用于构造 TaskStatusChangedEvent（捕获 old_status 等字段）
+        let before = self.task_dao.find_by_id(ctx.clone(), id).await?;
+
         self.task_dao
-            .update_status(ctx, id, status, modified_by)
-            .await
+            .update_status(ctx.clone(), id, status, modified_by)
+            .await?;
+
+        // SQL UPDATE 成功后发布 TaskStatusChangedEvent（AOP 异步消费，发送方不阻塞）
+        if let Some(task_po) = before {
+            let old_status = task_po.status;
+            // 仅在状态实际变化时才发布，避免重复事件
+            if old_status != status {
+                let _ =
+                    crate::pkg::aop::publish(crate::models::events::TaskStatusChangedEvent::new(
+                        &task_po.id,
+                        &task_po.title,
+                        task_po.project_id.as_deref(),
+                        &task_po.assignee_id,
+                        old_status,
+                        status,
+                        task_po.progress,
+                    ))
+                    .await;
+            }
+        }
+
+        Ok(())
     }
 
     async fn cancel(&self, ctx: RequestContext, id: &str, modified_by: &str) -> Result<()> {

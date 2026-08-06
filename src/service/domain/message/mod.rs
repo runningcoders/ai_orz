@@ -6,6 +6,7 @@
 //!
 //! 注意：渠道配置管理属于 Finance Domain，此处只保留实际投递能力
 
+pub mod builder;
 pub mod delivery;
 pub mod management;
 
@@ -94,12 +95,24 @@ impl MessageDomainImpl {
     }
 }
 
+#[async_trait::async_trait]
 impl MessageDomain for MessageDomainImpl {
     fn delivery(&self) -> &dyn MessageDelivery {
         self
     }
     fn management(&self) -> &dyn MessageManagement {
         self
+    }
+
+    async fn has_pending_message_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        message_type: common::enums::message::MessageType,
+    ) -> Result<bool> {
+        self.message_dal
+            .has_pending_message_for_agent(ctx, agent_id, message_type)
+            .await
     }
 }
 
@@ -125,6 +138,8 @@ pub struct SendToAgentCommand<'a> {
     /// 附件 ID 列表（可选）
     /// 如果提供，会为每个附件创建一条附件消息，按顺序排列在文本消息之前
     pub attachment_ids: Option<&'a [String]>,
+    /// 消息类型（默认 Text，系统通知可指定 TaskDispatchNotification 等）
+    pub message_type: common::enums::message::MessageType,
 }
 
 /// 发送消息给用户的命令参数
@@ -240,11 +255,23 @@ pub struct SubscribeResult {
 /// Message Domain 总 trait
 ///
 /// 聚合消息领域所有子功能 trait
+#[async_trait::async_trait]
 pub trait MessageDomain: Send + Sync {
     /// 消息投递能力
     fn delivery(&self) -> &dyn MessageDelivery;
     /// 消息管理能力
     fn management(&self) -> &dyn MessageManagement;
+
+    /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
+    ///
+    /// 用于 TaskEventConsumer 发送通知前去重，避免对同一 Agent 重复投递
+    /// TaskDispatchNotification 等系统通知。
+    async fn has_pending_message_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        message_type: common::enums::message::MessageType,
+    ) -> Result<bool>;
 }
 
 /// 消息投递 trait

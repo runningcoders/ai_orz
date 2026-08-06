@@ -140,7 +140,7 @@ impl MessageDelivery for MessageDomainImpl {
             cmd.to_agent_id.to_string(),
             cmd.from_role,
             MessageRole::Agent,
-            MessageType::Text,
+            cmd.message_type,
             cmd.content.to_string(),
             None,
             FileMeta::default(),

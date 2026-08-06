@@ -147,3 +147,25 @@ pub struct ModelCallStats {
     /// 模型调用时序趋势
     pub model_call_time_series: Option<Vec<TimeSeriesPoint>>,
 }
+
+/// 项目进度汇总（实时计算，不持久化）
+///
+/// 由 Domain 层根据项目关联的任务列表实时聚合，
+/// 通过 `GetProjectRequest.with_progress_summary=true` 按需返回。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
+pub struct ProjectProgressSummary {
+    /// 任务总数
+    pub total_tasks: usize,
+    /// 已完成数
+    pub completed: usize,
+    /// 进行中数
+    pub in_progress: usize,
+    /// 待启动数（Pending + PendingReview）
+    pub pending: usize,
+    /// 阻塞数（预留，目前固定为 0）
+    pub blocked: usize,
+    /// 已取消数
+    pub cancelled: usize,
+    /// 整体进度百分比（0-100，任务进度均值）
+    pub overall_percent: u32,
+}

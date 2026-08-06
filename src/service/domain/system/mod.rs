@@ -9,6 +9,7 @@ use crate::service::dal::cron_trigger::CronTriggerDal;
 use crate::service::dal::log_query as log_query_dal;
 use crate::service::dal::log_query::{LogPageResult, LogQuery as LogQueryParam, LogQueryDal};
 use crate::service::dao::cron_trigger::CronTriggerQuery;
+use common::enums::TriggerType;
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -338,4 +339,63 @@ pub fn set_aop_stats_collector(collector: AopStatsCollector) {
 /// 获取 AopStatsCollector（内部使用）
 pub(crate) fn aop_stats_collector() -> Option<&'static AopStatsCollector> {
     AOP_STATS_COLLECTOR.get()
+}
+
+// ==================== 系统级默认定时任务 ====================
+
+/// 确保系统级默认定时任务存在（幂等，已有同类型则跳过）
+///
+/// 设计决策：如果用户已有同 action（agent_rest / project_followup）的触发器
+/// 则不重复添加。系统仅提供初始化默认值，用户可自行修改间隔或禁用。
+///
+/// 通过 payload 字符串包含 `"agent_rest"` / `"project_followup"` 进行去重判断，
+/// 与 `CronTriggerConsumer::on_event` 解析 payload.action 的方式保持一致。
+pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
+    let system_domain = domain();
+    let cron_manager = system_domain.cron_manager();
+
+    // 获取所有现有 trigger（无过滤条件）
+    let existing = cron_manager
+        .list_triggers(ctx.clone(), CronTriggerQuery::default())
+        .await?;
+    let has_agent_rest = existing
+        .iter()
+        .any(|t| t.payload.contains("\"agent_rest\""));
+    let has_project_followup = existing
+        .iter()
+        .any(|t| t.payload.contains("\"project_followup\""));
+
+    // 1. agent_rest：默认每 4 小时执行一次睡眠沉淀
+    if !has_agent_rest {
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-Agent 睡眠沉淀".into(),
+            TriggerType::Interval,
+            common::constants::utils::current_timestamp_ms() + 4 * 3600_000,
+            Some("system".into()),
+        );
+        trigger.interval_seconds = Some(4 * 3600);
+        trigger.payload = r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!("已创建系统级定时任务: agent_rest");
+    }
+
+    // 2. project_followup：默认每 1 小时执行一次项目进度巡检
+    if !has_project_followup {
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-项目进度巡检".into(),
+            TriggerType::Interval,
+            common::constants::utils::current_timestamp_ms() + 3600_000,
+            Some("system".into()),
+        );
+        trigger.interval_seconds = Some(3600);
+        trigger.payload = r#"{"action":"project_followup","extra":{}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!("已创建系统级定时任务: project_followup");
+    }
+
+    Ok(())
 }

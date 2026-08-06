@@ -171,6 +171,7 @@ async fn do_create_project_and_message(
         task_id: None,
         reply_to_id: None,
         attachment_ids: None,
+        message_type: common::enums::MessageType::Text,
     };
     let _message = message::domain()
         .delivery()

@@ -30,6 +30,8 @@ pub async fn update_project(
             params.description,
             params.priority,
             params.tags,
+            params.execution_plan,
+            params.execution_result,
             modified_by,
         )
         .await?;

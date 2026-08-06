@@ -127,6 +127,8 @@ pub async fn handle_a2a_callback(
                 Some(new_tags),
                 None,
                 None,
+                None,
+                None,
             )
             .await
         {

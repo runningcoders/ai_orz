@@ -83,6 +83,8 @@ pub struct ProjectFetchOptions {
     pub with_task_graph: Option<bool>,
     /// 是否加载产物列表（ArtifactDetail）
     pub with_artifacts: Option<bool>,
+    /// 是否加载项目进度汇总（ProjectProgressSummary: 按任务状态实时聚合）
+    pub with_progress_summary: Option<bool>,
 }
 
 /// Project DAL 接口
@@ -116,6 +118,14 @@ pub trait ProjectDal: Send + Sync {
         ctx: RequestContext,
         root_user_id: &str,
         status: Vec<ProjectStatus>,
+        limit: Option<usize>,
+    ) -> Result<Vec<Project>>;
+
+    /// 查询所有指定状态的项目（不限 root_user_id，用于系统级查询）
+    async fn list_all_by_status(
+        &self,
+        ctx: RequestContext,
+        status: ProjectStatus,
         limit: Option<usize>,
     ) -> Result<Vec<Project>>;
 
@@ -331,6 +341,19 @@ impl ProjectDal for ProjectDalImpl {
         let list = self
             .project_dao
             .list_by_root_user_and_status(ctx, root_user_id, status, limit)
+            .await?;
+        Ok(list.into_iter().map(Project::from_po).collect())
+    }
+
+    async fn list_all_by_status(
+        &self,
+        ctx: RequestContext,
+        status: ProjectStatus,
+        limit: Option<usize>,
+    ) -> Result<Vec<Project>> {
+        let list = self
+            .project_dao
+            .list_all_by_status(ctx, status, limit)
             .await?;
         Ok(list.into_iter().map(Project::from_po).collect())
     }
@@ -613,6 +636,7 @@ impl ProjectDal for ProjectDalImpl {
                 model_call_stats: None,
                 task_graph: None,
                 artifacts: None,
+                progress_summary: None,
             });
         }
 

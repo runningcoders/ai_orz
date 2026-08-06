@@ -568,6 +568,14 @@ fn push_query_filters<'args>(
     if let Some(to_id) = &query.to_id {
         builder.push(" AND to_id = ").push_bind(to_id.clone());
     }
+    if let Some(to_role) = query.to_role {
+        builder.push(" AND to_role = ").push_bind(to_role as i32);
+    }
+    if let Some(message_type) = query.message_type {
+        builder
+            .push(" AND message_type = ")
+            .push_bind(message_type as i32);
+    }
     if let Some(status_in) = &query.status_in
         && !status_in.is_empty()
     {

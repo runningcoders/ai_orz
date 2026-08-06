@@ -86,6 +86,7 @@ pub async fn send_message_to_agent(
         task_id: params.task_id.as_deref(),
         reply_to_id: params.reply_to_id.as_deref(),
         attachment_ids: params.attachment_ids.as_deref(),
+        message_type: common::enums::MessageType::Text,
     };
 
     let message = message::domain().delivery().send_to_agent(ctx, cmd).await?;

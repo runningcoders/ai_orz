@@ -8,7 +8,7 @@ use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::api::ArtifactDetail;
 use common::constants::utils;
 use common::enums::project::ProjectStatus;
-use common::models::{ModelCallStats, ProjectStats};
+use common::models::{ModelCallStats, ProjectProgressSummary, ProjectStats};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -49,6 +49,12 @@ pub struct ProjectPo {
     pub created_at: i64,
     /// 更新时间戳（毫秒）
     pub updated_at: i64,
+    /// 执行计划（Agent Loop 规划阶段产出）
+    pub execution_plan: Option<String>,
+    /// 执行结果（Agent Loop 执行阶段产出）
+    pub execution_result: Option<String>,
+    /// 上次项目跟进时间（定时巡检触发时更新）
+    pub last_followup_at: Option<i64>,
 }
 
 /// Project 业务实体
@@ -69,6 +75,8 @@ pub struct Project {
     pub task_graph: Option<String>,
     /// 产物列表（由 Domain 层按需注入）
     pub artifacts: Option<Vec<ArtifactDetail>>,
+    /// 项目进度汇总（实时计算，不持久化）
+    pub progress_summary: Option<ProjectProgressSummary>,
 }
 
 impl Project {
@@ -81,6 +89,7 @@ impl Project {
             model_call_stats: None,
             task_graph: None,
             artifacts: None,
+            progress_summary: None,
         }
     }
 
@@ -122,6 +131,7 @@ impl Project {
             model_call_stats: None,
             task_graph: None,
             artifacts: None,
+            progress_summary: None,
         }
     }
 
@@ -240,6 +250,9 @@ impl ProjectPo {
             modified_by: created_by,
             created_at: now,
             updated_at: now,
+            execution_plan: None,
+            execution_result: None,
+            last_followup_at: None,
         }
     }
 
@@ -298,5 +311,48 @@ impl crate::models::vector::Vectorizable for Project {
 
     fn vector_collection() -> &'static str {
         "projects"
+    }
+}
+
+// ==================== ProjectProgressSummary ====================
+
+// 注：ProjectProgressSummary 结构体定义在 common::models::stats 中，
+// 以便 common::api::project::GetProjectResponse 可直接引用。
+// 由于 orphan 规则限制，无法在 backend crate 中为 common 类型定义 inherent impl，
+// 这里使用自由函数提供构造方法。
+
+/// 根据任务列表实时计算项目进度汇总
+pub fn progress_summary_from_tasks(tasks: &[crate::models::task::Task]) -> ProjectProgressSummary {
+    let total = tasks.len();
+    let mut completed = 0;
+    let mut in_progress = 0;
+    let mut pending = 0;
+    let mut cancelled = 0;
+    let mut total_progress: u32 = 0;
+
+    for task in tasks {
+        total_progress += task.po.progress as u32;
+        match task.po.status {
+            common::enums::task::TaskStatus::Completed => completed += 1,
+            common::enums::task::TaskStatus::InProgress => in_progress += 1,
+            common::enums::task::TaskStatus::Pending
+            | common::enums::task::TaskStatus::PendingReview => pending += 1,
+            common::enums::task::TaskStatus::Cancelled => cancelled += 1,
+            common::enums::task::TaskStatus::Archived => {}
+        }
+    }
+
+    ProjectProgressSummary {
+        total_tasks: total,
+        completed,
+        in_progress,
+        pending,
+        blocked: 0,
+        cancelled,
+        overall_percent: if total > 0 {
+            total_progress / total as u32
+        } else {
+            0
+        },
     }
 }

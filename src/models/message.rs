@@ -322,6 +322,8 @@ impl MessagePo {
             MessageType::ConfirmRequest => "确认请求",
             MessageType::ConfirmResponse => "确认回复",
             MessageType::TaskAssignment => "任务分配通知",
+            MessageType::TaskDispatchNotification => "任务调度通知",
+            MessageType::ProjectFollowupNotification => "项目跟进通知",
         };
 
         let content_label = match self.message_type {

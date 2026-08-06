@@ -57,6 +57,9 @@ pub struct GetProjectRequest {
     /// 是否加载产物列表
     #[param(source = "query")]
     pub with_artifacts: Option<bool>,
+    /// 是否加载项目进度汇总（按任务状态实时聚合）
+    #[param(source = "query")]
+    pub with_progress_summary: Option<bool>,
 }
 
 /// 获取 Project 列表请求（语法糖：只接受分页参数，内部固定 root_user_id=ctx.uid() + 排除 status=0 + priority DESC, created_at DESC）
@@ -138,6 +141,9 @@ pub struct GetProjectResponse {
     /// 产物列表，按需返回（with_artifacts=true 时填充）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactDetail>>,
+    /// 项目进度汇总，按需返回（with_progress_summary=true 时填充）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress_summary: Option<crate::models::ProjectProgressSummary>,
 }
 
 /// 从详情响应构造列表项（用于按需加载场景，避免全量 list_projects）
@@ -172,6 +178,12 @@ pub struct UpdateProjectRequest {
     pub priority: Option<i32>,
     /// 标签列表
     pub tags: Option<Vec<String>>,
+    /// 执行计划（Agent Loop 规划阶段产出）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<String>,
+    /// 执行结果（Agent Loop 执行阶段产出）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_result: Option<String>,
 }
 
 /// 更新 Project 响应

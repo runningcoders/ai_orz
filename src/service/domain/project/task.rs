@@ -235,6 +235,8 @@ impl super::TaskManage for ProjectDomainImpl {
         tags: Option<Vec<String>>,
         due_at: Option<i64>,
         dependencies: Option<Vec<String>>,
+        execution_plan: Option<String>,
+        execution_result: Option<String>,
     ) -> Result<Task> {
         let Some(mut task) = self.task_dal.find_by_id(ctx.clone(), task_id).await? else {
             bail_err!(NotFound, "Task not found: {}", task_id);
@@ -263,6 +265,12 @@ impl super::TaskManage for ProjectDomainImpl {
             } else {
                 Some(serde_json::to_string(&dependencies).unwrap_or_else(|_| "[]".to_string()))
             };
+        }
+        if let Some(execution_plan) = execution_plan {
+            task.po.execution_plan = Some(execution_plan);
+        }
+        if let Some(execution_result) = execution_result {
+            task.po.execution_result = Some(execution_result);
         }
         task.po.modified_by = ctx.uid();
 

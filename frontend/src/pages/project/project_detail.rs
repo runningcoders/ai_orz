@@ -768,6 +768,8 @@ pub fn ProjectDetail(id: String) -> Element {
                                 description,
                                 priority: Some(priority),
                                 tags: Some(tags),
+                                execution_plan: None,
+                                execution_result: None,
                             };
                             saving_meta.set(true);
                             let id_clone = id_for_edit.clone();

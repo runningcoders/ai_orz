@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at FROM projects WHERE id = ? AND \"status\" != 0",
+  "query": "SELECT id, name, description, workflow, guidance, \"status\" as \"status: ProjectStatus\", priority as \"priority: i32\", tags, root_user_id, owner_agent_id, start_at, due_at, end_at, created_by, modified_by, created_at, updated_at, execution_plan, execution_result, last_followup_at FROM projects WHERE id = ? AND \"status\" != 0",
   "describe": {
     "columns": [
       {
@@ -87,6 +87,21 @@
         "name": "updated_at",
         "ordinal": 16,
         "type_info": "Integer"
+      },
+      {
+        "name": "execution_plan",
+        "ordinal": 17,
+        "type_info": "Text"
+      },
+      {
+        "name": "execution_result",
+        "ordinal": 18,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_followup_at",
+        "ordinal": 19,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -109,8 +124,11 @@
       false,
       false,
       false,
-      false
+      false,
+      true,
+      true,
+      true
     ]
   },
-  "hash": "b296dad790783ad0816b1e128af82ed585d819a024f16030b1e9252b6440a983"
+  "hash": "414b25d194fa97e61236b73fec05ef08f64896717d9c8f154ab21c08e14a1778"
 }

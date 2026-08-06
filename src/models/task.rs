@@ -56,6 +56,10 @@ pub struct TaskPo {
     pub created_at: i64,
     /// 更新时间戳（毫秒）
     pub updated_at: i64,
+    /// 执行计划（Agent Loop 规划阶段产出）
+    pub execution_plan: Option<String>,
+    /// 执行结果（Agent Loop 执行阶段产出）
+    pub execution_result: Option<String>,
 }
 
 /// Task 业务实体
@@ -279,6 +283,8 @@ impl TaskPo {
             modified_by: created_by,
             created_at: now,
             updated_at: now,
+            execution_plan: None,
+            execution_result: None,
         }
     }
 

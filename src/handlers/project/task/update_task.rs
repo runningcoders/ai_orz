@@ -31,6 +31,8 @@ pub async fn update_task(
             params.tags,
             params.due_at,
             params.dependencies,
+            params.execution_plan,
+            params.execution_result,
         )
         .await?;
 

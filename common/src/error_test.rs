@@ -1,6 +1,6 @@
 //! Contract tests for the shared error model.
 
-use crate::error::{Error, ErrorCode, ErrorField, ErrorType, Result, bail_err, ensure_err, err};
+use crate::error::{ErrorCode, ErrorField, ErrorType, Result, bail_err, ensure_err, err};
 use std::assert_matches;
 
 fn returns_common_result() -> Result<()> {

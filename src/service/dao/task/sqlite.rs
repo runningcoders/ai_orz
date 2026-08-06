@@ -36,6 +36,8 @@ struct TaskSearchRow {
     modified_by: String,
     created_at: i64,
     updated_at: i64,
+    execution_plan: Option<String>,
+    execution_result: Option<String>,
     fts_rank: Option<f32>,
 }
 
@@ -86,9 +88,10 @@ impl TaskDao for TaskDaoSqliteImpl {
         sqlx::query!(
             r#"INSERT INTO tasks(
                 id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id,
-                "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at
+                "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at,
+                execution_plan, execution_result
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )"#,
             task.id,
             task.title,
@@ -109,7 +112,9 @@ impl TaskDao for TaskDaoSqliteImpl {
             task.created_by,
             task.modified_by,
             task.created_at,
-            task.updated_at
+            task.updated_at,
+            task.execution_plan,
+            task.execution_result
         ).execute(pool).await?;
         Ok(())
     }
@@ -121,7 +126,8 @@ impl TaskDao for TaskDaoSqliteImpl {
             r#"
 SELECT id, title, description, "status" as "status: TaskStatus", priority as "priority: i32", tags, due_at, start_at, end_at, dependencies, root_user_id,
        "assignee_type" as "assignee_type: AssigneeType", assignee_id, project_id, thinking_depth, progress as "progress: i32",
-       created_by, modified_by, created_at, updated_at
+       created_by, modified_by, created_at, updated_at,
+       execution_plan, execution_result
 FROM tasks WHERE id = ? AND "status" != 0
 "#,
             id
@@ -143,7 +149,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at FROM tasks WHERE 1=1"#,
+            r#"SELECT id, title, description, "status", priority, tags, due_at, start_at, end_at, dependencies, root_user_id, "assignee_type", assignee_id, project_id, thinking_depth, progress, created_by, modified_by, created_at, updated_at, execution_plan, execution_result FROM tasks WHERE 1=1"#,
         );
         push_query_filters(&mut list_builder, &query);
 
@@ -189,7 +195,7 @@ FROM tasks WHERE id = ? AND "status" != 0
         // FTS5 MATCH + JOIN + BM25 排序
         // 注意：MATCH 左侧必须使用完整表名（非别名），否则 SQLite 会将别名解释为列名
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, tasks_fts.rank as fts_rank
+            r#"SELECT t.id, t.title, t.description, t."status", t.priority, t.tags, t.due_at, t.start_at, t.end_at, t.dependencies, t.root_user_id, t."assignee_type", t.assignee_id, t.project_id, t.thinking_depth, t.progress, t.created_by, t.modified_by, t.created_at, t.updated_at, t.execution_plan, t.execution_result, tasks_fts.rank as fts_rank
 FROM tasks_fts
 JOIN tasks t ON tasks_fts.rowid = t.rowid
 WHERE tasks_fts MATCH "#,
@@ -256,6 +262,8 @@ WHERE tasks_fts MATCH "#,
                     modified_by: row.modified_by,
                     created_at: row.created_at,
                     updated_at: row.updated_at,
+                    execution_plan: row.execution_plan,
+                    execution_result: row.execution_result,
                 };
                 (po, row.fts_rank)
             })
@@ -341,7 +349,9 @@ UPDATE tasks SET
     thinking_depth = ?,
     progress = ?,
     modified_by = ?,
-    updated_at = ?
+    updated_at = ?,
+    execution_plan = ?,
+    execution_result = ?
 WHERE id = ?
 "#,
             task.title,
@@ -360,6 +370,8 @@ WHERE id = ?
             task.progress,
             ctx_user_id,
             now,
+            task.execution_plan,
+            task.execution_result,
             task.id
         )
         .execute(pool)

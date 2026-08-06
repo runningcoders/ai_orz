@@ -164,6 +164,7 @@ async fn test_send_to_agent_and_send_to_user(pool: SqlitePool) {
                 task_id: Some(&task_id),
                 reply_to_id: None,
                 attachment_ids: None,
+                message_type: MessageType::Text,
             },
         )
         .await
@@ -222,6 +223,7 @@ async fn test_send_without_project_and_task(pool: SqlitePool) {
                 task_id: None,
                 reply_to_id: None,
                 attachment_ids: None,
+                message_type: MessageType::Text,
             },
         )
         .await
@@ -286,6 +288,7 @@ async fn test_send_to_agent_with_attachments_creates_attachment_messages(pool: S
                 task_id: None,
                 reply_to_id: None,
                 attachment_ids: Some(&att_ids),
+                message_type: MessageType::Text,
             },
         )
         .await

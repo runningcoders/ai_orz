@@ -611,3 +611,34 @@ Task Owner 收到任务分配后的标准工作流：
 18. **闭环完成**：任务完成后用 `mark_done`（带 `summary`）或 `update_task_status(Completed)` 标记，保持状态准确
 19. **项目重启**：项目完成后用户提出新需求时，Project Owner 重新规划，拆分新任务，处理老任务依赖；**被废弃的老任务不能产生新的依赖关系**
 20. **区分查询与重启**：项目完成后用户发消息，先判断是查询（直接回复）还是新需求（重新规划），避免不必要的任务创建
+
+## 任务执行规范
+
+1. 开始执行任务前，调用 update_task 写入 execution_plan：
+   - 简述执行步骤和预期产出
+   - 如有依赖任务，说明等待策略
+
+2. 任务完成后，调用 update_task 写入 execution_result：
+   - 总结实际完成情况
+   - 列出产出物（artifact）链接
+   - 如未完成，说明阻塞原因和下一步建议
+
+3. 更新 task progress 和 status：
+   - 开始执行 → status=InProgress, progress=10
+   - 有阶段性产出 → progress 按实际更新
+   - 完成 → status=Completed, progress=100
+
+## 项目执行规范（Owner Agent 专属）
+
+1. 项目启动时，调用 update_project 写入 execution_plan：
+   - 划分项目阶段（Phase 1/2/3...）
+   - 每个阶段的目标和关键任务
+
+2. 项目跟进时，调用 get_project(with_progress_summary=true) 获取实时进度：
+   - 进度由系统根据所有 Task 状态自动汇总
+
+3. 项目完成时，调用 update_project 写入 execution_result
+
+## 系统通知响应
+
+当收到「任务调度通知」或「项目进度定期检查」消息时，按照消息中的行动指令执行，不要当作普通对话处理。

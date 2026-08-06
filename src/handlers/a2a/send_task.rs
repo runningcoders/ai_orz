@@ -17,7 +17,7 @@
 //! handler 层不调用 wake_agent_brain / awaken，唤醒由 consumer 异步闭环。
 
 use common::api::a2a::{A2aTask, SendTaskParams};
-use common::enums::ProjectStatus;
+use common::enums::{MessageType, ProjectStatus};
 use common::error::{Result, bail_err};
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
@@ -83,6 +83,7 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
         task_id: None,
         reply_to_id: None,
         attachment_ids: None,
+        message_type: MessageType::Text,
     };
     let _message = message::domain()
         .delivery()
