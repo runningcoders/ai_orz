@@ -6,11 +6,7 @@
 
 ## 工具分类与加载机制
 
-**关键认知**：所有项目管理工具的 tag 是 `project_management`，附件工具的 tag 是 `file_management`，它们**全部非 neural**。这意味着：
-
-- 这些工具**不会自动注入你的工具面板**，需要通过 `install_skill_pack`（tag=`project_management`）让该 tag 进入你的 `match_keys`，本指南才会加载到 Prompt
-- 工具本身仍需通过显式绑定（`bind_tool_to_agent`）或工具包安装才能调用
-- 本指南（`project_management` skill）的核心价值是教你**如何使用这些工具**
+**关键认知**：项目管理 / 产物工具 tags 是 `project_management` / `file_management`，非 neural。加载 / 匹配规则（「安装范围 + match_keys 匹配」双层机制）、如何安装技能包（`install_skill_pack(tag=project_management)`）等通用规则请参见「技能管理」技能，本指南不赘述。
 
 ## 项目/任务/产物层次
 
@@ -438,23 +434,16 @@ Completed     → Archived
 
 ### 分配前查询空闲 Agent
 
-分配项目或任务前，**必须先查询目标 Agent 是否空闲**：
+分配项目或任务前，**必须先查询目标 Agent 是否空闲**。协作查询类工具（`query_agents`/`search_agents`/`list_agents`/`get_agent`/`get_reception_agent`）默认是用户/前端入口，**不在你的 neural 面板中**；如果你是前台 Agent 或有对应绑定权限才可见这些工具，否则请通过用户、前台 Agent 或项目上下文拿到候选 Agent ID 后，再按以下要点校验：
 
-1. **查能力匹配**：用 `search_agents`（keyword 语义搜索，如"前端开发"）找到候选 Agent
-2. **查运行时状态**：用 `query_agents` 或 `search_agents` 传 `runtime_state=0`（Idle）过滤出当前空闲的 Agent
-3. **查串行约束**：
-   - 分配项目前：用 `query_projects` 传 `owner_agent_id` + `status_in=[1,2,3]`（Active/PendingReview/InProgress）确认候选无未完结项目
-   - 分配任务前：用 `list_agent_tasks` 传 `status=in_progress` 确认候选无进行中任务
-4. **二次校验**：`create_project` / `create_task` 时目标 Agent 可能已被其他流程占用，若遇到繁忙错误应重新选择候选
+1. **能力匹配**：根据角色 roles / 已安装技能 tags 判断候选是否符合本项目/任务需求
+2. **运行时状态**：关注 `runtime_state`（0=Idle, 1=Resting, 2=Busy）；仅 Idle 可分配
+3. **串行约束**（通过项目/任务查询工具）：
+   - 分配项目前：用 `query_projects(owner_agent_id=候选, status_in=[Active, PendingReview, InProgress])` 确认无未完结项目
+   - 分配任务前：用 `list_agent_tasks(agent_id=候选, status=in_progress)` 确认无进行中任务
+4. **二次校验**：create_project / create_task 时若报"Agent 繁忙"类错误，说明被其他流程抢了，回到步骤重新选
 
-**Agent 查询工具选择**（三种接口对应三种场景）：
-- `list_agents` — 无条件获取默认列表
-- `query_agents` — 按条件（status、roles、runtime_state 等）精确筛选
-- `search_agents` — 按关键词 FTS5 + 向量语义混合搜索，也支持完整过滤条件
-
-三者都返回 `PagedResult<AgentListItem>`（分页结果）。
-
-**重新分配**：若目标 Agent 在最终分配时已繁忙（`runtime_state != 0` 或已有进行中项目/任务），回到步骤 1 重新选择候选。
+**重新分配**：目标 Agent 最终校验不通过 → 回到步骤 1 重选候选。
 
 ## 协作沟通流程
 
