@@ -260,7 +260,6 @@ jobs:
         set -euo pipefail
         cargo llvm-cov report \
           --workspace \
-          --no-run \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --html \
           --output-dir ./coverage
