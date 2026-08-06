@@ -126,13 +126,16 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     service::init();
     sys_info!("Service layer initialized");
 
-    // 初始化业务生产者（注册到 AOP）
+    // 先初始化业务生产者/消费者（注册到 AOP）——把事件总线基础设施就位，
+    // 避免后续基础数据初始化阶段误 publish 的事件找不到订阅者。
     producer::init().await?;
     sys_info!("Business producers registered");
-
-    // 初始化业务消费者（注册到 AOP）
     consumer::init().await?;
     sys_info!("Business consumers registered");
+
+    // 第二阶段：service 层各 Domain 的基础数据（幂等，需要 DB IO，失败仅记 warn）
+    service::init_base_data().await;
+    sys_info!("Service base data initialized (idempotent defaults)");
 
     // 创建 AOP 统计收集器并注入 Hook（在 worker 启动前）
     let aop_stats_collector = consumer::AopStatsCollector::new();

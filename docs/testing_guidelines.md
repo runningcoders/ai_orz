@@ -319,6 +319,11 @@ pub async fn init_full_test_env(pool: SqlitePool) -> RequestContext {
 
 **设计原则**：调用 `service::init()` 而不是手动一个个 init DAO/DAL/Domain，与 main.rs 启动流程对齐。新增 DAO/DAL 时无需改测试代码。
 
+> **关于第二阶段 `init_base_data`**：集成测试脚手架默认**不需要**调 `service::init_base_data().await`。原因：
+> - 它是纯 DB 的幂等默认数据补齐（当前只有 2 条 system cron triggers），测试通常不会断言这些触发器存在；
+> - `init_full_test_env` 的同步 OnceCell 初始化（`TEST_ENV.get_or_try_init(|| async { ... })` 虽然是 async，但所有测试共享同一份临时 DB，base data 对大多数集成测试没价值——反而会因为 trigger 的 `next_fire_at` 时间戳导致用例之间出现干扰。
+> - 如果某个测试**确实需要** system cron triggers（比如专门测 CronTriggerProducer 的轮询触发），在该测试函数内部显式 `.await crate::service::init_base_data()` 即可，它是幂等的，多次调用安全。
+
 ### bootstrap_system 设计要点
 
 `bootstrap_system` 通过 HTTP 调用 `POST /api/v1/organization/initialize` 创建组织 + 管理员 + chat provider。

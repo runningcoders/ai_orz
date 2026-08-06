@@ -11,9 +11,7 @@ pub mod tool_exec_stats_consumer;
 use common::error::Result;
 use std::sync::Arc;
 
-use crate::pkg::RequestContext;
 use crate::pkg::aop;
-use crate::service::domain::system;
 
 pub async fn init() -> Result<()> {
     sys_info!("registering business consumers to AOP event center...");
@@ -34,13 +32,6 @@ pub async fn init() -> Result<()> {
     aop::registry().register_consumer(Arc::new(task_event_consumer::TaskEventConsumer::new()))?;
 
     sys_info!("all business consumers registered");
-
-    // 创建系统级默认定时任务（agent_rest + project_followup），幂等：
-    // 已有同 action 的触发器则跳过。失败仅记录日志，不影响启动。
-    let ctx = RequestContext::new_system();
-    if let Err(e) = system::ensure_system_cron_triggers(&ctx).await {
-        sys_warn!("创建系统级定时任务失败: {}", e);
-    }
 
     Ok(())
 }

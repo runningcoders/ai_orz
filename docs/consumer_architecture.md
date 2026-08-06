@@ -116,21 +116,37 @@ pub trait Producer: Send + Sync {
 
 ## 📐 启动流程
 
+> **两阶段初始化原则**：`service::init()` 只做内存里的同步单例注册（OnceLock），**不做任何 DB IO**；需要 DB 写入的幂等默认数据（如系统级 cron triggers）统一走第二阶段 `service::init_base_data().await`。分离原因是测试里大量使用 `Once::call_once(|| domain::init_all())` 同步闭包调初始化，无法在里面 `.await`。
+>
+> **事件总线前置原则**：producer 和 consumer 都注册完成后，再执行任何业务动作（包括 base data 注入）——防止未来某个 domain 的 `init_base_data` 顺手 publish 事件时订阅者还没到位。
+
 ```text
 1. config::init()
-2. pkg::init_all(&config)    — 初始化日志、存储、JWT、工具注册
-3. service::init()           — 初始化 service 层（domain/dal/dao）
-4. producer::init()          — 注册业务生产者到 AOP
+2. pkg::init_all(&config)            — 初始化日志、存储、JWT、工具注册
+3. service::init()                   — 初始化 service 层（domain/dal/dao 的同步单例注册，纯内存）
+4. producer::init()                  — 注册业务生产者到 AOP
    ├─ CronTriggerProducer 注册（poll_interval_secs = 60）
-   └─ message_channel::init() — 启动外部渠道监听（基于 pkg/adapter/message）
-5. consumer::init()          — 注册业务消费者到 AOP
+   └─ message_channel::init()        — 启动外部渠道监听（基于 pkg/adapter/message）
+5. consumer::init()                  — 注册业务消费者到 AOP（只注册订阅，不做任何 DB 基础数据注入）
    ├─ MessageConsumer 注册（Async 模式，并发 4）
    └─ CronTriggerConsumer 注册（Sync 模式）
-6. aop::init_all()           — 启动 AOP 调度器
+6. service::init_base_data().await   — 第二阶段：各 Domain 幂等补齐 DB 基础数据（失败仅 warn，不阻塞）
+   └─ system::init_base_data()
+       └─ ensure_system_cron_triggers — 补齐 2 条系统级默认定时任务（agent_rest 4h / project_followup 1h，按 payload action 去重）
+7. aop::init_all()                   — 启动 AOP 调度器（此时 producer/consumer 和 base data 均已就位）
    ├─ 为轮询 Producer 启动轮询协程
    └─ 为 Async Consumer 启动 N 个 Worker 协程
-7. axum::serve(...)          — 启动 HTTP 服务
+8. axum::serve(...)                  — 启动 HTTP 服务
 ```
+
+---
+
+### 💡 Consumer 的职责边界
+
+- **`consumer::init()` 只负责「注册订阅者到 AOP Registry」**，不应该：
+  - ❌ 帮任何 Domain 注入 DB 基础数据（那是 `init_base_data` 的职责）
+  - ❌ 直接依赖 SystemDomain / FinanceDomain 之外的单例做写入
+- **需要幂等补齐默认 DB 条目的能力，应该写在对应 Domain 的 `pub async fn init_base_data()` 里**，然后在 `domain::init_all_base_data()` 中追加一行 `.await`——这是唯一的标准接入点。
 
 ---
 

@@ -13,3 +13,11 @@ pub fn init() {
     // 初始化 Domain 层（依赖 DAL）
     domain::init_all();
 }
+
+/// 第二阶段：异步初始化各 Domain 的基础数据（幂等写入默认条目等）。
+///
+/// 与同步的 `init()` 分开：`init()` 只做内存里的单例/静态注册，
+/// 本函数用于需要 DB IO 的幂等默认数据注入，失败仅记录日志不阻塞启动。
+pub async fn init_base_data() {
+    domain::init_all_base_data().await;
+}

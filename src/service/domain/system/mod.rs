@@ -31,6 +31,20 @@ pub fn init() {
     ));
 }
 
+/// 第二阶段：异步注入本 Domain 的基础数据（幂等）。
+///
+/// 与同步的 `init()`（只设 OnceLock 单例）分离，原因：
+/// - 基础数据依赖 DB IO，必须 async；
+/// - 测试里大量用 `Once::call_once(|| ...)` 同步闭包调 `init()`，不能在里面 .await；
+/// - 基础数据失败不影响模块本身已注册可用，记录 warn 即可。
+pub async fn init_base_data() {
+    let ctx = RequestContext::new_system();
+    match ensure_system_cron_triggers(&ctx).await {
+        Ok(()) => sys_info!("system domain 基础数据初始化完成（cron triggers）"),
+        Err(e) => sys_warn!("system domain 基础数据初始化失败（cron triggers）: {}", e),
+    }
+}
+
 pub fn new(
     cron_trigger_dal: Arc<dyn CronTriggerDal>,
     backup_dal: Arc<dyn BackupDal + Send + Sync>,
