@@ -59,12 +59,21 @@ pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
             //    Internally calls: dao::init_all() + dal::init_all() + domain::init_all().
             ai_orz::service::init();
 
-            // 7. consumer layer — 注册 AOP 业务消费者（ToolExecLogConsumer 等）。
-            //    Sync 消费者在 publish 时同步处理，无需 aop::init_all 调度器。
-            //    缺少这一步会导致 ToolExecEvent 发布后无人处理，trace 无法写入。
+            // 7. AOP 基础设施 — 先注册生产者和消费者（注册到 registry，还没真正开始
+            //    轮询/消费 worker），对齐真实 ai_orz::run() 的启动顺序。
+            ai_orz::producer::init()
+                .await
+                .expect("producer init should succeed");
             ai_orz::consumer::init()
                 .await
                 .expect("consumer init should succeed");
+
+            // 8. 第二阶段：service 基础数据（幂等注入 DB 默认值）
+            //    对齐真实启动流程：producer/consumer 注册完毕 → init_base_data。
+            //    目前内容：system domain 的 2 条系统级 cron triggers
+            //    （agent_rest 4h + project_followup 1h）。
+            //    缺少这一步会导致 system_cron_triggers_test 的 baseline 断言拿到 0。
+            ai_orz::service::init_base_data().await;
         })
         .await;
 

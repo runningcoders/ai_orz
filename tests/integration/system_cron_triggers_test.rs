@@ -8,9 +8,10 @@
 //! - If a user already has an `agent_rest` trigger, the system doesn't create
 //!   another one
 //!
-//! Note: `init_full_test_env` (called once per process via `OnceCell`) invokes
-//! `consumer::init()`, which in turn calls `ensure_system_cron_triggers`. So
-//! by the time each test runs, the two default system triggers already exist
+//! Note: `init_full_test_env` (called once per process via `OnceCell`) now
+//! follows the real startup order: `service::init()` → producer/consumer register
+//! to AOP → `service::init_base_data().await` → `ensure_system_cron_triggers`.
+//! So by the time each test runs, the two default system triggers already exist
 //! in the shared global DB.
 //!
 //! Parallel-test safety: integration tests share a single global DB and run in
