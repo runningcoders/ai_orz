@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-07-31（前端 clippy 零警告：清理 332 个前端 clippy 警告 + CI 新增前端 wasm32 clippy 检查；修复 codex CLI 测试 Broken pipe 错误；测试总数 941 = 后端 845 + 前端 46 + common 50）
+> 最后更新：2026-08-07（两阶段初始化拆分：同步单例注册 + 异步基础数据注入；2 条系统级默认定时任务：agent_rest 4h + project_followup 1h；预置 5 份技能全面更新：项目管理补充执行计划/进度上报指南，工具/记忆/协作技能精简为类比+指南两层；集成测试总数 33 个，新增 system_cron_triggers_test 3 个；CI 覆盖率门槛差异化：PR 38% / main 45%；cargo-llvm-cov 拆收集/报告两阶段匹配新版接口）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、941 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛 35%、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、941 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -39,11 +39,11 @@
 | 🔄 多回合循环控制 | ✅ | 轮次限制检查、任务完成检测、Prompt 上下文差异化、工具失败计数注入 |
 | 🎒 工具包机制 | ✅ | tag 分组工具、Agent 入职自动安装、免绑定校验三层逻辑 |
 | 📨 任务分配消息 | ✅ | TaskAssignment 消息类型、自动通知 Agent、神经工具封装 |
-| ⏰ 定时触发器系统 | ✅ | Cron Trigger 管理、后台扫描、事件投递、系统领域基础设施 |
-| 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀 |
-| 🎒 技能包机制 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本 |
+| ⏰ 定时触发器系统 + 2 条系统默认任务 | ✅ | Cron Trigger 分层模块（model/dao/dal/producer/domain/handler）+ Consumer 按 action 业务分发；**启动时自动幂等注入**：`agent_rest`（每 4h，Onboarded Agent 睡眠沉淀短期记忆→长期图谱）、`project_followup`（每 1h，所有 InProgress+有 Owner 的项目发送 ProjectFollowupNotification 唤醒 Owner 做进度巡检与上报） |
+| 🏛️ 记忆沉淀机制 | ✅ | Agent 休息与沉淀、短期记忆→长期知识图谱、定时触发沉淀（agent_rest 4h） |
+| 🎒 技能库系统 + 5 份预置技能 | ✅ | tag 分组技能、批量安装、安装即复制、卸载保留副本；预置 5 份：`TEMPLATE_PROJECT_MANAGEMENT`（补充 execution_plan/execution_result 与进度上报）、`TEMPLATE_MEMORY_COGNITION`（精简为类比+指南）、`TEMPLATE_TOOL_MANAGEMENT`（精简为类比+指南）、`TEMPLATE_COMMUNICATION`、`TEMPLATE_SKILL_MANAGEMENT` |
 | 🔎 综合搜索 | ✅ | FTS5 关键词 + 向量语义 + 图谱关系 三位一体混合搜索，Hybrid/Vector/Keyword 三态匹配 |
-| 📊 任务进度追踪 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件 |
+| 📊 任务进度追踪 + 执行计划/执行结果 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件；Project/Task 新增 **execution_plan**（步骤策略、依赖关系、产物计划）+ **execution_result**（实际产出、错误原因、artifact 链接）；Project 支持 `with_progress_summary` 实时聚合所有子任务进度 |
 | 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
 | 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Tailwind CSS v4 + DaisyUI v5 组件库 + 30+ 主题切换 + 统一 API 客户端 + 13 CRUD 页面 |
 | 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
@@ -74,24 +74,24 @@
 | 🎨 通用 HUD 仪表盘 | ✅ | 通用 Gauge 组件（从 AopGauge 抽象），AOP/Health 等场景复用；HUD 视觉统一（呼吸光晕 + 选中发光 + 12 等分刻度 + 颜色编码） |
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
-| 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用 |
-| 🛡️ CI 质量门槛 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov `--fail-under-lines 35` + 集成测试 3.7s（从 238s 优化） |
+| 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
+| 🛡️ CI 质量门槛 + 启动两阶段初始化 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov 差异化覆盖率门槛（**PR 38% / main 45%**），**收集（--workspace/--tests）与报告（--lcov/--html）分 3 阶段**匹配新版参数归属；集成测试 3.7s；启动流程拆两阶段：同步 `service::init()` 注册单例 → AOP producer/consumer 注册 → 异步 `service::init_base_data()` 幂等注入 DB 默认基础数据（2 条系统级 cron triggers） |
 
-### 1.3 整体完成度与测试统计（2026-07-31 更新）
+### 1.3 整体完成度与测试统计（2026-08-07 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
 | **总测试数** | **941** | 后端 845（812 单元 + 33 集成） + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 2 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + 宏集成 15 |
+| **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 7 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + System Cron Triggers 3 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |
 | **CI clippy 门槛** | `-D warnings` | 零容忍，后端 442 warning + 前端 332 warning 全清理；前端 wasm32 clippy 检查已纳入 CI |
-| **CI 覆盖率门槛** | 35% | cargo-llvm-cov `--fail-under-lines 35` |
+| **CI 覆盖率门槛（差异化）** | PR 38% / main 45% | cargo-llvm-cov 拆收集/报告两阶段（匹配新版参数归属）；PR 容忍度更高，main 守住红线 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
 | DAL 模块数 | 23 个 | 全部完整业务承载，零闲置（含 lark 飞书、agent_a2a、agent_codex 专属 DAL） |
-| Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain） |
+| Domain 领域数 | 7 个 | 全部完整实现（新增 SystemDomain，每个 domain 都实现自己的 `init_base_data` 扩展点） |
 | Handler API 领域数 | 8 个上线 | organization, hr, finance, project, user, health, system, a2a（公开回调） |
-| **整体架构完成度** | **~99%** | 从下往上扎实推进，适配层架构原则已明确 |
+| **整体架构完成度** | **~99%** | 从下往上扎实推进，适配层架构原则 + 两阶段初始化（单例注册/基础数据注入）已明确 |
 
 ---
 
@@ -861,6 +861,80 @@ async fn count_by_xxx(&self, ctx: RequestContext, ...) -> Result<u64> {
 
 ---
 
+### 4.11 两阶段初始化 + 基础数据注入规范（强制执行，2026-08-07 新增）
+
+**核心原则：启动拆成两阶段 —— 「基础设施就绪」与「基础数据注入」严格分离，绝不混在消费者注册代码里。**
+
+#### 4.11.1 三阶段总顺序（`lib.rs::run()` 强制执行）
+
+```
+pkg::init_all()         # 最底层：日志/存储/JWT/工具注册（一次性全局 OnceLock）
+  │
+  ▼
+service::init()         # 阶段 ①（同步、纯内存）：DAO → DAL → Domain 单例注册，绝不碰 DB
+  │
+  ▼
+producer::init()        # AOP 基础设施（生产者注册）
+consumer::init()        # AOP 基础设施（消费者注册，只做订阅者注册，绝不注入 DB 默认值！）
+  │
+  ▼
+service::init_base_data().await
+   │
+   └─► domain::init_all_base_data().await
+         │
+         └─► system::init_base_data()  # 阶段 ②（异步、DB IO、幂等）：
+             │                           目前内容：ensure_system_cron_triggers 注入
+             │                           2 条系统级默认 triggers
+             │
+             └─► (未来) organization::init_base_data()
+                 (未来) finance::init_base_data()
+                 任何 domain 自己补 DB 默认值，都在这里加一行 .await
+  │
+  ▼
+AOP stats hook + aop::init_all()  # 事件总线调度器启动（真正开始轮询/消费）
+  │
+  ▼
+HTTP 服务启动
+```
+
+#### 4.11.2 各层扩展点（必须遵守）
+
+| 想补什么默认数据 → 放在哪里 | 正确做法 | 错误做法（禁止） |
+|---------------------------|---------|----------------|
+| system domain 的系统默认 DB 行（cron triggers、默认角色、全局配置等） | `src/service/domain/system/mod.rs` 加 `pub async fn init_base_data()`，写 `try`/`warn` 包裹的幂等检查（先查后插） | 写到 consumer::init、写到 HTTP handler、写到启动命令外部脚本 |
+| 其它 domain 的默认 DB 数据（organization 默认组、finance 费率表、project 模板等） | 在该 domain 的 `mod.rs` 加 `pub async fn init_base_data()`，然后在 `src/service/domain/mod.rs` 的 `init_all_base_data()` 里加一行 `.await` | 通过 `initialize_system` HTTP 接口重复插入、外部 migration 脚本 |
+| 生产者/消费者 AOP 订阅者注册 | producer::init() / consumer::init() 内部调用 registry 注册 | 把业务代码塞到 init 函数里直接发事件（发事件阶段应晚于 init_base_data） |
+
+#### 4.11.3 Consumer 边界红线（强制禁止）
+
+**`consumer::init()` 只能做一件事：把 Consumer 注册到 AOP Registry。**
+以下行为都属于「越权」，必须禁止：
+
+- ❌ Consumer::init() 里直接 `dao.create` / `dal.update` 写 DB 默认数据
+- ❌ Consumer::init() 里调 domain 产生的内部事件（此时 consumer 注册顺序可能未完成，事件分发会乱序）
+- ❌ Consumer::init() 里调用任何会改变全局状态的业务方法（除了 register）
+
+正确做法：业务默认数据 → 写到对应 domain 的 `init_base_data()`；启动时由统一入口 `service::init_base_data()` 串行派发到各 domain。
+
+#### 4.11.4 测试环境同步对齐
+
+`tests/common/env.rs` 的 `init_full_test_env` **也必须严格遵循真实启动顺序**：
+
+```
+OnceCell 首次 get_or_init:
+  1. storage/jwt/tool_registry 基础设施
+  2. service::init()          — 同步单例注册
+  3. producer::init().await   — 生产者注册
+  4. consumer::init().await   — 消费者注册
+  5. service::init_base_data().await  — 基线默认数据（system cron triggers 等）
+```
+
+保证测试环境和生产环境拿到一致的 baseline，不要在测试里手动造「应该启动就有」的默认数据。
+
+> 💡 **设计动机**：之前 `ensure_system_cron_triggers` 写在 `consumer::init()` 里，Consumer 职责从「订阅者注册」越权到「注入 DB 数据」，且如果未来有人想在 consumer 注册完立刻 publish 事件还会乱序。拆成 service::init（同步纯内存）/ service::init_base_data（异步 DB 动作）两个独立方法后，Domain 各自的基础数据注入责任明确，扩展时不会把启动逻辑堆到 consumer 里，消费者也不会再出现越权的副作用。
+
+---
+
 ## 五、核心概念与实体关系
 
 ### 5.1 实体关系
@@ -1034,7 +1108,44 @@ Agent
 - **前端统计数据集成（07-15）**：`StatsCard` 通用卡片 + 三个实体面板（Agent/Project/Task）；详情页按需展示统计面板
 - **管理页面补全 + 对话功能 MVP + 消息/记忆搜索 + 知识图谱（07-13）**：Agent/Project 详情页；左右分栏对话布局 + 双向分页；消息/记忆搜索 API + 知识图谱 SVG 组件
 
-### 2026-07-30 里程碑（预置技能 + 工具同步）
+### 2026-08-07 里程碑（两阶段初始化 + 预置技能内容全面更新 + CI 适配新版 cargo-llvm-cov）
+
+**✅ 两阶段启动拆分：同步单例注册 + 异步基础数据注入（Consumer 越权清理）**
+- **问题**：之前 consumer::init() 里直接调 `ensure_system_cron_triggers` 往 DB 塞默认触发器，consumer 从「AOP 订阅者注册」越权到「业务数据注入」，语义混乱，且未来若 publish 早于 consumer 注册还会乱序
+- **方案**：`service::init()` 拆成两个独立入口：
+  - ① `service::init()`（同步）：DAO → DAL → Domain 三层 OnceLock 单例注册，**纯内存、不碰 DB**
+  - ② `service::init_base_data()`（异步）：domain::init_all_base_data() 派发到每个 domain 自己的 `init_base_data()`，幂等注入 DB 默认值，目前只做 system domain 的 `ensure_system_cron_triggers`
+- **启动顺序（强制执行）**：pkg::init_all → service::init → producer::init → consumer::init → **service::init_base_data** → AOP stats hook → aop::init_all → HTTP
+- **Consumer 红线**：`consumer::init()` 只做一件事 —— 注册订阅者；写 DB 默认值、发业务事件一律禁止
+- **扩展模式**：未来 organization/finance/project 等 domain 想补自己的默认数据，只需在该 domain 加 `pub async fn init_base_data()`，在 `domain::init_all_base_data()` 追加一行 `.await` 即可，顶层 service/lib.rs 不用动
+
+**✅ 2 条系统级默认定时任务（启动自动注入，幂等）**
+- `agent_rest`（4h 一次）：Onboarded Agent 全员睡眠沉淀（`sleep_and_settle` 模式），短期记忆→长期知识图谱
+- `project_followup`（1h 一次）：所有 InProgress 且有 Owner 的项目构造 ProjectFollowupNotification（type=11）唤醒 Owner 做进度巡检/上报/补充 execution_plan&result
+- 去重：不按 trigger_id（怕用户自己改），按 `payload` 里是否含 `"agent_rest"`/`"project_followup"` 判断已有，避免重复创建；用户可以手动 pause/resume/delete 这些 trigger，重启不会因为幂等检查再加回来
+
+**✅ 预置 5 份技能内容全面更新**
+- **TEMPLATE_PROJECT_MANAGEMENT**：补充 execution_plan / execution_result 字段用途说明；Project Owner（规划）/ Task Owner（执行）两阶段工作流里内嵌「必须显式写执行计划 + 定期上报进度」要求；工具参数表补 `update_task(execution_plan)`、`update_project(execution_result)`、`get_project(with_progress_summary=true)` 实时进度等新接口
+- **TEMPLATE_MEMORY_COGNITION**：大幅精简（删除「硅基生命」「蜂巢模型」等冗余描述），**保留并完善类比开头**：「四层记忆对应人类认知结构：Core=人格/价值观、Working=工作桌面暂存、Short-Term=最近抽屉、Long-Term=知识库；published 发布机制=硅基蜂巢知识网络」
+- **TEMPLATE_TOOL_MANAGEMENT**：大幅精简，**保留类比开头**：「工具=对外的手和眼，同步=当面问同事马上回，异步=材料发给同事明天收，tool_call_id=办事回执单」；`request_tool_call`/`send_tool_call_message` 等过时工具名统一替换成当前实际存在的 `get_tool_call_entry`/`query_tool_call_entries` + ToolCallResult 消息 + `request_id`/`message_id`；去除 `ToolCallDao::execute` / `LoggingDecorator` 等开发者视角架构描述
+- **预置技能结构稳定**：都保留了「类比/本质描述 → 工具查询表 → 处理模式 → 追溯与失败 → 最佳实践」的结构，兼顾模型自由度和实用性
+
+**✅ 测试 & CI 修复与适配**
+- **system_cron_triggers_test 全套 3 个用例修复**：拆两阶段后测试脚手架 `init_full_test_env` 之前只调了 `service::init()`，导致基线触发器永远拿 0，直接全部断言失败；修复：env.rs 里按真实启动顺序追加 `producer::init` → `consumer::init` → `service::init_base_data().await` 三步，确保测试 baseline 和生产一致
+- **preset_skills_test 断言同步更新**：`TEMPLATE_TOOL_MANAGEMENT/skill.md` 精简后已经没有过时的 `request_tool_call` / `send_tool_call_message` 两个工具名，断言改成 `get_tool_call_entry || query_tool_call_entries`（追溯工具）+ `ToolCallResult`（异步结果消息）
+- **集成测试全套通过**：16 个 .rs 文件，33 个用例（AuthSysInit / Core CRUD / MessageDelivery / VectorDegradation / A2A Flow / PresetSkills / SystemCronTriggers / ToolCall / Memory / MessageVector / ProjectTaskVector / ToolSkillVector 等），**全部 ok，0 failed**；需要真实 API key 的用例被正确 ignore（本地未配置 .env）
+- **新版 cargo-llvm-cov 接口适配**：之前 coverage job 一条命令同时带 `--workspace --tests ... --lcov --fail-under`，新版把参数归属卡得很死：
+  - `--workspace / --tests / --no-clean / --no-fail-fast` 属于「收集阶段」（裸 `cargo llvm-cov`，无 report 子命令）
+  - `--lcov / --html / --output-path / --fail-under-lines / --no-run` 属于「报告阶段」（`cargo llvm-cov report` 子命令）
+  - 混在一起会报错：`--workspace is specific to [test,nextest,...] and not supported for subcommand 'report'` / `--no-run is specific to [nextest,...] and not supported for subcommand 'report'`
+  - 修复：coverage job 从 2 step 拆成 3 step：① 收集（--workspace/--tests）② lcov + fail-under（report 子命令，按 PR/main 差异化门槛）③ html（report 子命令）
+- **覆盖率门槛差异化**：之前统一 35%，现在 `workflow_dispatch` & `push refs/heads/main` → fail-under-lines 45（红线）；其它 branch / PR → fail-under-lines 38（容忍度更高），避免 PR 小改就硬挂
+
+**✅ Clippy `-D warnings` 清理（3 处）**
+- `inconsistent_digit_grouping`：`3600_000` → `3_600_000`（system/mod.rs 2 处 + tests/integration/system_cron_triggers_test.rs 1 处）
+- tests 公共 API（`TestApp::new` + `pub use TestApp`）：按 integration test crate 独立编译的单元加 `#[allow(dead_code)]` + `#[allow(unused_imports)]`，没用这些类型的 crate 不会再报死代码/未使用导入
+
+### 2026-07-31 里程碑（集成测试与 CI 质量体系建设）
 **✅ 开箱即用的预置技能与工具同步**
 - **SkillFileDef 三来源（07-30）**：`SkillDef` 新增 `files: Vec<SkillFileDef>` 字段（`#[serde(default)]` 向后兼容）；`SkillFileDef` 支持 content / ref_path / url 三种内容来源，优先级 content > ref_path > url
 - **编译期内嵌文件（07-30）**：新增 `seed/embedded.rs`，用 `include_str!` + 静态注册表模式将 `seed/skills/` 下的技能文件嵌入二进制；`read_embedded_file(ref_path)` 按路径读取，`list_embedded_skill_files()` 列出全部（环境无 cc linker，从 include_dir 改为 include_str!）
