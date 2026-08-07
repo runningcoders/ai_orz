@@ -208,33 +208,28 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    # 用 cargo-llvm-cov 替代 tarpaulin：
-    # - 纯 LLVM source-based coverage，不依赖 ptrace，更稳定
-    # - --ignore-filename-regex 在报告阶段过滤掉依赖库、测试脚手架、build script
-    # - --no-clean 复用编译产物，避免重复 clean
-    # - --no-fail-fast 测试失败也继续收集覆盖数据
-    # - --fail-under-lines 直接按行覆盖率门槛
-    # - --workspace: 主 crate + common + ai-orz-macros + frontend 单元测试全部计入
-    # - --tests: 所有 [[test]] 集成测试也一起跑 + 计入覆盖（之前只 --lib 漏掉了 15 个集成测试）
-    #
-    # 【重要】--html 与 --lcov 参数互斥：
-    # - 第一步：跑测试 + 产出 lcov（给 Codecov/脚本消费），同时 fail-under-lines 校验
-    # - 第二步：cargo llvm-cov report --no-run，基于已有的 profdata 产出 html（给人 review artifact）
-    #   --no-run 避免重复跑测试，直接复用第一步生成的 coverage 数据
-    #
-    # 关于依赖库重编（LLVM source-based coverage 的固有限制）：
-    # -instrument-coverage 是全局 RUSTFLAGS，依赖库也会被 instrument
-    # -Cargo 的 per-package profile override 不支持 rustflags 字段（连 nightly 都不支持）
-    # -sccache 跨不同 RUSTFLAGS 的 job（backend 普通 vs coverage instrument-coverage）无法共享
-    # -但 coverage job 自己跨多次 CI run 可以共享（相同 RUSTFLAGS 的依赖库编译结果缓存）
-    # -第一次 coverage job 需重编所有依赖的 instrument-coverage 版本
-    # -后续 coverage job sccache 命中，只需编译 workspace 成员
+    # 新版 cargo-llvm-cov 接口要求分 3 步（收集/报告分开，参数归属严格区分）：
+    # - 收集阶段：裸 cargo llvm-cov（不带 report 子命令）才接受 --workspace /
+    #   --tests / --no-clean / --no-fail-fast 这类 test 相关参数
+    # - 报告阶段：cargo llvm-cov report 负责输出格式（lcov / html）+ fail-under 校验，
+    #   不接受 --workspace / --no-run 等属于 test 或 nextest 的参数。
+    # - --ignore-filename-regex 两个阶段都可以加：test 阶段控制「哪些文件不
+    #   instrument」，report 阶段控制「哪些文件不出现在最终报告」，保持一致更清晰。
     #
     # 关于 PR vs main 差异化：
     # - push 到 main：严格 fail-under-lines 45（红线）
-    # - PR：同一份命令跑但 fail-under-lines 设 38（更低的警告阈值），
-    #   用代码块里的条件判断。这样 PR 不会因为覆盖率小跌就硬失败，
-    #   但 main 分支必须守住底线。
+    # - PR：同一份报告但 fail-under-lines 设 38（更低的警告阈值）
+    - name: Run tests with coverage instrumentation
+      run: |
+        set -euo pipefail
+        mkdir -p ./coverage
+        cargo llvm-cov \
+          --workspace \
+          --tests \
+          --no-clean \
+          --no-fail-fast \
+          --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)"
+
     - name: Generate coverage report (lcov + fail-under check)
       run: |
         set -euo pipefail
@@ -244,12 +239,7 @@ jobs:
           FAIL_UNDER=38
         fi
         echo "Using fail-under-lines=$FAIL_UNDER for event=${{ github.event_name }} ref=${{ github.ref }}"
-        mkdir -p ./coverage
-        cargo llvm-cov \
-          --workspace \
-          --tests \
-          --no-clean \
-          --no-fail-fast \
+        cargo llvm-cov report \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --lcov \
           --output-path ./coverage/lcov.info \
@@ -259,7 +249,6 @@ jobs:
       run: |
         set -euo pipefail
         cargo llvm-cov report \
-          --workspace \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
           --html \
           --output-dir ./coverage
