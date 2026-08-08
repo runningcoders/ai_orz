@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-08T00:46:09Z"
+exported_at: "2026-08-08T02:03:50Z"
 modules:
     "":
-        dir_name: ai_orz AI 代理协作框架（Rust 全栈工作区）
-        title: ai_orz AI 代理协作框架（Rust 全栈工作区）
+        dir_name: AI Orz 全栈 Rust 工作区
+        title: AI Orz 全栈 Rust 工作区
         scope:
             - AGENTS.md
             - Cargo.toml
@@ -423,17 +423,48 @@ modules:
         depends_on: []
         related_to: []
     docs:
-        dir_name: 项目架构与设计文档集
-        title: 项目架构与设计文档集
+        dir_name: AI Orz 项目文档中心
+        title: AI Orz 项目文档中心
         scope:
             - docs/
         source_files: []
-        children: []
+        children:
+            - docs/archive_and_planning
+            - docs/design_docs
+            - docs/superpowers_plans_specs
         depends_on: []
         related_to:
             - path: backend_service/pkg_shared/aop
             - path: backend_service/service_layer/domain_runtime
             - path: frontend/app_shell
+    docs/archive_and_planning:
+        dir_name: 项目归档与规划文档集
+        title: 项目归档与规划文档集
+        scope:
+            - docs/archive/
+            - docs/plan/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs/design_docs:
+        dir_name: 系统设计文档集（Design Docs）
+        title: 系统设计文档集（Design Docs）
+        scope:
+            - docs/design/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs/superpowers_plans_specs:
+        dir_name: Superpowers 功能规划与规格文档集
+        title: Superpowers 功能规划与规格文档集
+        scope:
+            - docs/superpowers/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
     frontend:
         dir_name: AI Orz Dioxus Web 前端应用
         title: AI Orz Dioxus Web 前端应用

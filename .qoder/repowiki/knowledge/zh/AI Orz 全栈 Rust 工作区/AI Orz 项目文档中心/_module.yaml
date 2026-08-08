@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: docs
-title: 项目架构与设计文档集
+title: AI Orz 项目文档中心
 scope:
     - docs/
 source_files: []

@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: ai_orz AI 代理协作框架（Rust 全栈工作区）
+title: AI Orz 全栈 Rust 工作区
 scope:
     - AGENTS.md
     - Cargo.toml
