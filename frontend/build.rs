@@ -16,6 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=package-lock.json");
 
     compile_tailwind()?;
+    copy_docs()?;
 
     let config_path = Path::new("../.ai_orz/ai_orz.toml");
 
@@ -45,6 +46,187 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
     let out_path = Path::new(&out_dir).join("compiled_config.rs");
     fs::write(out_path, generated_code)?;
+
+    Ok(())
+}
+
+/// 文档中心静态资源：将仓库 docs/ 中的核心文档复制到 public/docs/，
+/// 并生成目录清单 index.json 供前端文档中心页面运行时 fetch。
+///
+/// 收录范围：
+/// - docs/ 根目录的纲要文档（README/ARCHITECTURE/LAYERED/CODE_WIKI/memory_design）
+/// - docs/design/、docs/plan/、docs/archive/ 下的所有 *.md（递归）
+/// - docs/wiki/zh/content/（IDE 生成的代码百科，保留目录层级，前端嵌套折叠树展示）
+fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
+    let docs_src = Path::new(&manifest_dir).join("../docs");
+    if !docs_src.exists() {
+        println!("cargo:warning=docs/ not found, skipping docs center copy");
+        return Ok(());
+    }
+
+    let dest_root = Path::new(&manifest_dir).join("public/docs");
+    if dest_root.exists() {
+        fs::remove_dir_all(&dest_root)?;
+    }
+    fs::create_dir_all(&dest_root)?;
+
+    let mut sections: Vec<serde_json::Value> = Vec::new();
+
+    // 递归收集某个源目录下的所有 *.md，返回相对 docs/ 的路径列表（已排序）
+    let collect_md = |dir: &Path, base: &Path| -> std::io::Result<Vec<String>> {
+        let mut result = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(current) = stack.pop() {
+            for entry in fs::read_dir(&current)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "md") {
+                    if let Ok(rel) = path.strip_prefix(base) {
+                        result.push(rel.to_string_lossy().replace('\\', "/"));
+                    }
+                    // 逐个文件声明监听，内容变化时触发重建
+                    println!("cargo:rerun-if-changed={}", path.display());
+                }
+            }
+        }
+        result.sort();
+        Ok(result)
+    };
+
+    // 从文件名生成展示标题：去扩展名，下划线/连字符转空格
+    let title_from_path = |rel: &str| -> String {
+        let stem = Path::new(rel)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| rel.to_string());
+        stem.replace(['_', '-'], " ")
+    };
+
+    // 分区 1：纲要文档（docs/ 根目录，手工排序）
+    let root_docs: &[(&str, &str)] = &[
+        ("README.md", "项目概览"),
+        ("ARCHITECTURE.md", "架构总纲"),
+        ("LAYERED_ARCHITECTURE_PRACTICE.md", "分层架构实践"),
+        ("CODE_WIKI.md", "代码认知入口"),
+        ("memory_design.md", "记忆系统设计"),
+    ];
+    let mut overview_docs: Vec<serde_json::Value> = Vec::new();
+    for (file, title) in root_docs {
+        let src = docs_src.join(file);
+        if src.exists() {
+            fs::copy(&src, dest_root.join(file))?;
+            println!("cargo:rerun-if-changed={}", src.display());
+            overview_docs.push(serde_json::json!({ "title": title, "path": file }));
+        }
+    }
+    if !overview_docs.is_empty() {
+        sections.push(serde_json::json!({ "label": "总览", "docs": overview_docs }));
+    }
+
+    // 分区 2-4：design / plan / archive 递归收集
+    for (dir_name, label) in [
+        ("design", "设计文档"),
+        ("plan", "规划"),
+        ("archive", "归档"),
+    ] {
+        let src_dir = docs_src.join(dir_name);
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let entries = collect_md(&src_dir, &docs_src)?
+            .into_iter()
+            .map(|rel| {
+                let title = title_from_path(&rel);
+                let dest = dest_root.join(&rel);
+                if let Some(parent) = dest.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::copy(docs_src.join(&rel), &dest);
+                serde_json::json!({ "title": title, "path": rel })
+            })
+            .collect::<Vec<_>>();
+        if !entries.is_empty() {
+            sections.push(serde_json::json!({ "label": label, "docs": entries }));
+        }
+    }
+
+    // 分区 5：Wiki（docs/wiki/zh/content，保留目录层级为嵌套 groups）
+    let wiki_src = docs_src.join("wiki/zh/content");
+    if wiki_src.is_dir() {
+        /// wiki 目录树节点：文件（File）或子目录（Dir，含子节点）
+        enum WikiNode {
+            File { rel: String },
+            Dir { name: String, children: Vec<WikiNode> },
+        }
+
+        // 递归构建目录树，同时复制 *.md 到 public/docs/ 并声明监听
+        fn walk_wiki(
+            dir: &Path,
+            base: &Path,
+            dest_root: &Path,
+        ) -> std::io::Result<Vec<WikiNode>> {
+            let mut nodes = Vec::new();
+            let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .collect();
+            paths.sort();
+            for path in paths {
+                if path.is_dir() {
+                    let name = path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let children = walk_wiki(&path, base, dest_root)?;
+                    if !children.is_empty() {
+                        nodes.push(WikiNode::Dir { name, children });
+                    }
+                } else if path.extension().is_some_and(|ext| ext == "md")
+                    && let Ok(rel) = path.strip_prefix(base)
+                {
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    let dest = dest_root.join(&rel_str);
+                    if let Some(parent) = dest.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::copy(&path, &dest);
+                    println!("cargo:rerun-if-changed={}", path.display());
+                    nodes.push(WikiNode::File { rel: rel_str });
+                }
+            }
+            Ok(nodes)
+        }
+
+        // 树节点 → index.json 的 group 条目（目录节点带 children 嵌套）
+        fn node_to_json(node: &WikiNode) -> serde_json::Value {
+            match node {
+                WikiNode::File { rel } => {
+                    let stem = Path::new(rel)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| rel.clone());
+                    serde_json::json!({ "title": stem, "path": rel })
+                }
+                WikiNode::Dir { name, children } => {
+                    let children_json: Vec<serde_json::Value> =
+                        children.iter().map(node_to_json).collect();
+                    serde_json::json!({ "label": name, "children": children_json })
+                }
+            }
+        }
+
+        let tree = walk_wiki(&wiki_src, &docs_src, &dest_root)?;
+        if !tree.is_empty() {
+            let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
+            sections.push(serde_json::json!({ "label": "代码 Wiki", "groups": groups }));
+        }
+    }
+
+    let index = serde_json::json!({ "sections": sections });
+    let index_json = serde_json::to_string_pretty(&index)?;
+    fs::write(dest_root.join("index.json"), index_json)?;
 
     Ok(())
 }

@@ -342,6 +342,19 @@ pub fn Navbar() -> Element {
                                         "健康检查"
                                     }
                                 }
+                                li {
+                                    Link {
+                                        to: Route::SystemDocs {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "文档中心"
+                                    }
+                                }
                                 if is_admin {
                                     li {
                                         hr { class: "divider my-0" }
@@ -796,6 +809,20 @@ pub fn Navbar() -> Element {
                                     drawer_open.set(false);
                                 },
                                 "健康检查"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::SystemDocs {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "文档中心"
                             }
                         }
                         if is_admin {

@@ -317,6 +317,27 @@ pub async fn api_get_text(path: &str) -> Result<String, ApiError> {
     })
 }
 
+/// 拉取前端静态资源文本（相对页面 origin，如 /docs/index.json）。
+///
+/// 与 api_get_text 不同：不拼 API base URL，直接走当前页面 origin，
+/// 因为静态资源由 dx serve（dev）/ 后端 dist 静态服务（prod）同源提供。
+pub async fn fetch_static_text(path: &str) -> Result<String, ApiError> {
+    let resp = client().get(path).send().await.map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(ApiError {
+            http_status: status.as_u16(),
+            error_code: None,
+            message: format!("静态资源请求失败: {} {}", status.as_u16(), path),
+        });
+    }
+    resp.text().await.map_err(|e| ApiError {
+        http_status: status.as_u16(),
+        error_code: None,
+        message: e.to_string(),
+    })
+}
+
 pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
     path: &str,
     form: FormData,

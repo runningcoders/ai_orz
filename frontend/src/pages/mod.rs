@@ -45,6 +45,7 @@ use crate::pages::reception::Reception;
 use crate::pages::settings::Settings;
 use crate::pages::system::aop::SystemAop;
 use crate::pages::system::backup::SystemBackup;
+use crate::pages::system::docs::SystemDocs;
 use crate::pages::system::health::SystemHealth;
 use crate::pages::system::logs::SystemLogs;
 use crate::pages::system::seed::SystemSeed;
@@ -129,6 +130,8 @@ pub enum Route {
     SystemTriggers {},
     #[route("/system/health")]
     SystemHealth {},
+    #[route("/system/docs")]
+    SystemDocs {},
     #[route("/system/logs")]
     SystemLogs {},
     #[route("/system/backup")]
