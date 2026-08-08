@@ -1,0 +1,142 @@
+name: Release
+
+# 打 tag（v*）自动触发构建发布产物；也支持手动触发用于提前验证
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: true
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # ===== 按平台原生构建（不做交叉编译：lancedb/ort-sys 交叉编译链太重）=====
+  # 产物 = 后端二进制 + dist/ 前端静态资源（migrations 与默认配置均已内嵌二进制）
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v5
+
+    # libprotobuf-dev 提供 well-known types（google/protobuf/*.proto），
+    # --no-install-recommends 下必须显式安装，否则 lance-encoding build script 报 empty.proto not found
+    - name: Install protoc (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
+
+    - name: Install protoc (macOS)
+      if: runner.os == 'macOS'
+      run: brew install protobuf
+
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@v0.0.7
+
+    - name: Configure sccache (local disk mode)
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
+
+    # release profile 与 CI lint/test 的 dev profile RUSTFLAGS 不同，
+    # sccache 按内容寻址仍可命中依赖库的 release 编译产物
+    - name: Cache sccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/sccache
+        key: sccache-release-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-release-${{ runner.os }}-
+          sccache-${{ runner.os }}-
+
+    - name: Cache ort-sys prebuilt binaries
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/ort
+          ~/Library/Caches/ort
+        key: ort-sys-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ort-sys-${{ runner.os }}-
+
+    - name: Start sccache server
+      run: sccache --start-server || true
+
+    # dioxus-cli 版本与 frontend Cargo.toml 的 dioxus 0.7.x 对齐
+    - name: Install dioxus-cli (dx)
+      run: |
+        curl -fsSL https://dioxuslabs.com/install.sh | bash
+        echo "$HOME/.dioxus/bin" >> $GITHUB_PATH
+        dx --version
+
+    # 复用本地构建链路：dx build --release → 产物复制到 dist/ → cargo build --release
+    - name: Build release (frontend + backend)
+      run: ./start.sh build
+
+    # 打包：目录内自带 dist/，解压后 ./ai_orz 即可运行
+    # （.ai_orz/ai_orz.toml 首次启动自动生成，migrations 已内嵌）
+    - name: Package release archive
+      shell: bash
+      env:
+        # 事件字段经 env 传入 shell，不直接在 run 中插值（防注入）
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        TAG="${REF_NAME:-manual}"
+        # 校验 tag 格式，拒绝含 shell/路径特殊字符的非法值
+        if ! printf '%s' "$TAG" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+          echo "invalid ref name: $TAG" >&2
+          exit 1
+        fi
+        PKG_DIR="ai_orz-${TAG}-${{ matrix.target }}"
+        mkdir -p "$PKG_DIR"
+        cp target/release/ai_orz "$PKG_DIR/"
+        cp -r dist "$PKG_DIR/"
+        echo "# AI Orz ${TAG}" > "$PKG_DIR/README.txt"
+        echo "" >> "$PKG_DIR/README.txt"
+        echo "运行方式: ./ai_orz（监听 0.0.0.0:3000，前端从同目录 dist/ 提供）" >> "$PKG_DIR/README.txt"
+        echo "首次启动自动生成 .ai_orz/ai_orz.toml 配置文件" >> "$PKG_DIR/README.txt"
+        tar czf "${PKG_DIR}.tar.gz" "$PKG_DIR"
+        ls -lh "${PKG_DIR}.tar.gz"
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v5
+      with:
+        name: ai_orz-${{ github.ref_name || 'manual' }}-${{ matrix.target }}
+        path: ai_orz-*.tar.gz
+        retention-days: 30
+
+    - name: Print sccache stats
+      if: always()
+      run: sccache --show-stats || true
+
+    - name: Stop sccache server
+      if: always()
+      run: sccache --stop-server || true
+
+  # ===== 发布到 GitHub Release（仅 tag 触发时执行）=====
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v6
+      with:
+        pattern: ai_orz-*
+        path: release-assets/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        generate_release_notes: true
+        files: release-assets/**/*.tar.gz
