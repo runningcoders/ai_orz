@@ -5,8 +5,8 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
-use crate::components::modal::Modal;
 use crate::components::markdown::MarkdownRenderer;
+use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};

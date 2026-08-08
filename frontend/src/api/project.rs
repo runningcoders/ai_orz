@@ -50,6 +50,10 @@ pub async fn get_project(req: GetProjectRequest) -> Result<GetProjectResponse, A
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
         ("with_artifacts", req.with_artifacts.map(|v| v.to_string())),
+        (
+            "with_progress_summary",
+            req.with_progress_summary.map(|v| v.to_string()),
+        ),
     ]);
     api_get(&format!("/api/v1/projects/{}{}", req.id, qs)).await
 }

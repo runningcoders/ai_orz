@@ -59,10 +59,7 @@ pub fn render_markdown(md: &str) -> String {
 /// - `content`: Markdown 源文本
 /// - `compact`: 紧凑模式（更小字号 / 收紧上下边距），用于卡片、聊天气泡、列表展开等场景
 #[component]
-pub fn MarkdownRenderer(
-    content: String,
-    #[props(default = false)] compact: bool,
-) -> Element {
+pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool) -> Element {
     // 按 content 缓存 HTML，避免聊天等长列表场景每帧重复解析
     let html = use_memo(move || render_markdown(&content));
     let container_id = use_hook(|| next_container_id("md"));
@@ -154,8 +151,7 @@ fn call_window_fn(name: &str, f: impl FnOnce(&web_sys::Window, js_sys::Function)
     let Some(window) = web_sys::window() else {
         return;
     };
-    let Ok(func_val) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str(name))
-    else {
+    let Ok(func_val) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str(name)) else {
         return;
     };
     if !func_val.is_function() {

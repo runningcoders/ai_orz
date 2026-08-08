@@ -33,7 +33,7 @@
 | **后端** | Rust + Axum + SQLite + 原生 CortexDao（OpenAI 兼容），单二进制可部署 |
 | **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖；启动分两阶段（单例注册 + 基础数据注入） |
-| **测试** | 941 个测试，100% 通过（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50） |
+| **测试** | 949 个测试，100% 通过（后端 845 = 812 单元 + 33 集成 + 前端 54 + common 50） |
 | **CI 质量** | clippy `-D warnings` 零容忍（后端 + 前端 wasm32） + cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%） + 集成测试 3.7s |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
@@ -48,6 +48,8 @@
 - 🛠️ **统一工具调用架构**：execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → ToolCallDao::execute + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用
 - 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送），多渠道适配器架构就绪（微信/Slack/Webhook/邮件 待实现）
 - 📋 **任务协作 + 执行计划/进度追踪**：项目 + 任务 + Agent 间任务分配，状态机、**execution_plan/execution_result** 显式记录、DAG 依赖、实时 progress summary，支持委派给外部 A2A Agent
+- 📝 **前端 Markdown 渲染全覆盖 + Mermaid**：pulldown-cmark 统一渲染组件（原始 HTML 转义守护，XSS 安全），详情页/聊天气泡/记忆面板全链路 Markdown 展示；支持 Markdown 内嵌 ```mermaid 图与独立 task_graph 任务依赖图（vendor mermaid.js 懒加载，主题跟随 DaisyUI）
+- 💬 **聊天页信息侧栏**：沟通页面右侧可收起信息面板（localStorage 记忆展开态），项目对话 总览/任务/产物/Agent 四 Tab + 默认对话 Agent/我 两 Tab；任务列表内展开懒加载详情，产物按项目级/任务级分组；手动刷新 + SSE 消息防抖自动刷新，移动端右侧抽屉
 - ⏰ **两阶段系统初始化 + 2 条默认定时任务**：
   - 首次 `initialize_system`（HTTP）注入：组织 / 超级管理员 / Chat & Embedding Provider / 内置工具 / 5 份预置技能
   - 进程启动时 `service::init_base_data()`（幂等）自动注入 2 条系统级 cron triggers：**agent_rest（每 4 小时，全员沉淀记忆）** + **project_followup（每 1 小时，巡检所有进行中项目并唤醒 Owner 上报/巡检进度）**

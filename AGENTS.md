@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-08-08（前端 Markdown 渲染全覆盖：pulldown-cmark 统一渲染组件 + 原始 HTML 转义守护；详情页/聊天气泡/记忆面板全链路 Markdown 展示；预置项目管理技能引导 Agent 用 Markdown+Mermaid 书写执行计划/结果；Project/Task DTO 补全 execution_plan/execution_result 读取通道；vendor mermaid.js 注入式渲染（Markdown 内嵌 ```mermaid 块 + 独立 task_graph 图，主题跟随 DaisyUI）；前端测试 46 → 51）
+> 最后更新：2026-08-08（聊天页信息侧栏 ChatSidePanel：沟通页面右侧可收起信息面板，项目对话模式 总览/任务/产物/Agent 四 Tab + 默认对话模式 Agent/我 两 Tab，Agent Tab 两模式共用；复用详情页数据通道（with_progress_summary/with_task_graph/with_artifacts），任务列表内展开懒加载详情，产物按项目级/任务级分组；手动刷新 + SSE 消息防抖 2s 自动刷新，展开状态 localStorage 持久化；前端测试 51 → 54）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、946 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 51 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、949 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 54 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -64,6 +64,7 @@
 | 🧠 Agent 记忆面板 | ✅ | Agent 详情页记忆浏览、Tab 切换（短期记忆/知识节点/关系）、搜索、卡片展示 |
 | 🛠️ Tool/ModelProvider 详情页 | ✅ | 工具和模型提供商详情页、统计面板、调用测试、连接测试 |
 | 💬 对话体验打磨 | ✅ | 消息复制（hover 显示按钮）、快捷指令（/clear、/help）、键盘导航 |
+| 💬 聊天页信息侧栏 | ✅ | ChatSidePanel 右侧可收起面板（localStorage 记忆展开态）：项目对话 总览（目标/进度汇总/执行计划与结果/任务依赖图）/任务（列表内展开懒加载详情）/产物（项目级+任务级分组）/Agent 四 Tab；默认对话 Agent/我 两 Tab；手动刷新 + SSE 防抖 2s 自动刷新（代际计数丢弃过期请求）；移动端右侧抽屉 |
 | 💾 数据备份与恢复 | ✅ | _index.json 索引 + tar.gz 压缩 + 恢复脚本 |
 | 📜 日志在线查询 | ✅ | 关键词 + log_id 调用链 + 级别 + 时间范围过滤 |
 | 🛡️ 角色权限中间件 | ✅ | 基于并查集的权限中间件，Member → Admin → SuperAdmin 继承体系 |
@@ -82,7 +83,7 @@
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **946** | 后端 845（812 单元 + 33 集成） + 前端 51 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
+| **总测试数** | **949** | 后端 845（812 单元 + 33 集成） + 前端 54 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 7 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + System Cron Triggers 3 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |

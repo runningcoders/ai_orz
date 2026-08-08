@@ -5,6 +5,7 @@ use crate::api::finance::upload_attachment;
 use crate::api::hr::get_reception_agent;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
+use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
@@ -71,6 +72,16 @@ pub fn MessageChat() -> Element {
     // 移动端 sidebar 抽屉状态
     let mut sidebar_open = use_signal(|| false);
     let is_mobile = crate::hooks::use_breakpoint();
+
+    // 信息侧栏状态（展开状态持久化到 localStorage，刷新页面后恢复）
+    let mut panel_open = use_signal(|| {
+        crate::utils::local_storage()
+            .and_then(|s| s.get_item("chat_project_panel_open").ok().flatten())
+            .map(|v| v == "1")
+            .unwrap_or(false)
+    });
+    // SSE 消息计数器：当前会话收到新消息时递增，驱动侧栏防抖刷新
+    let mut refresh_tick = use_signal(|| 0u64);
 
     // 权限检查：未登录时重定向到登录页（在所有 use_signal 之后调用）
     if !crate::hooks::use_require_auth() {
@@ -199,6 +210,8 @@ pub fn MessageChat() -> Element {
             }
             current.push(msg);
             is_typing.set(false);
+            // 通知信息侧栏防抖刷新（任务进度/执行计划/产物可能已变化）
+            refresh_tick.set(refresh_tick() + 1);
         }
     };
 
@@ -467,6 +480,15 @@ pub fn MessageChat() -> Element {
         }
     };
 
+    // 切换信息侧栏并持久化展开状态
+    let toggle_panel = move |_| {
+        let next = !panel_open();
+        panel_open.set(next);
+        if let Some(storage) = crate::utils::local_storage() {
+            let _ = storage.set_item("chat_project_panel_open", if next { "1" } else { "0" });
+        }
+    };
+
     // 点击「默认对话」条目：清空选中项目
     let handle_default_chat_click = move |_| {
         selected_project.set(None);
@@ -554,6 +576,12 @@ pub fn MessageChat() -> Element {
                         span { class: "text-success text-sm", "● 实时" }
                     } else {
                         span { class: "text-base-content/50 text-sm", "○ 连接中..." }
+                    }
+                    button {
+                        class: "btn btn-ghost btn-sm",
+                        title: "信息面板",
+                        onclick: toggle_panel,
+                        "ⓘ"
                     }
                 }
             }
@@ -682,6 +710,12 @@ pub fn MessageChat() -> Element {
                         span { class: "text-success text-sm", "● 实时" }
                     } else {
                         span { class: "text-base-content/50 text-sm", "○ 连接中..." }
+                    }
+                    button {
+                        class: "btn btn-ghost btn-sm",
+                        title: "信息面板",
+                        onclick: toggle_panel,
+                        "ⓘ"
                     }
                 }
             }
@@ -864,6 +898,34 @@ pub fn MessageChat() -> Element {
 
             div { class: "flex-1 flex flex-col min-w-0",
                 {chat_content}
+            }
+
+            // 信息侧栏遮罩（移动端展开时）
+            if is_mobile() && panel_open() {
+                div {
+                    class: "fixed inset-0 bg-black/50 z-40",
+                    onclick: move |_| panel_open.set(false),
+                }
+            }
+            // 信息侧栏：桌面静态列 / 移动端右侧抽屉
+            div {
+                class: if is_mobile() {
+                    if panel_open() {
+                        "fixed inset-y-0 right-0 z-50 w-80 bg-base-200 flex flex-col border-l border-base-300"
+                    } else {
+                        "hidden"
+                    }
+                } else if panel_open() {
+                    "w-96 shrink-0 bg-base-200 flex flex-col border-l border-base-300"
+                } else {
+                    "hidden"
+                },
+                ChatSidePanel {
+                    project_id: selected_project(),
+                    reception_agent_id: reception_agent().map(|a| a.agent_id),
+                    refresh_tick: refresh_tick(),
+                    on_close: move |_| panel_open.set(false),
+                }
             }
 
             // 新建项目弹窗
