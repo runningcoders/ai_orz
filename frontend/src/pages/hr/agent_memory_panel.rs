@@ -3,6 +3,7 @@ use dioxus::prelude::{Key, *};
 use crate::api::ApiError;
 use crate::api::hr::{query_memory, search_memory};
 use crate::components::button::Button;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::store::toast::use_toast;
 use common::api::{MemoryResult, QueryMemoryParams, SearchMemoryParams};
@@ -110,6 +111,8 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     // 修复 HIGH #13：快速切换 tab 时旧请求慢返回会覆盖新 tab 的数据，
     // 引入 fetch_request_id 机制丢弃过期请求结果
     let fetch_request_id = use_signal(|| 0u32);
+    // 展开态记忆 ID（展开后用 Markdown 渲染完整内容）
+    let mut expanded_id = use_signal(|| None::<String>);
 
     // 修复 M10：use_effect 监听 active_tab 自动 fetch，tab 按钮的 onclick 不再显式调用
     // fetch_memories（之前会触发双请求：onclick 一次 + use_effect 一次）
@@ -223,6 +226,11 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                     div { class: "space-y-3",
                         for item in results_list.iter() {
                             {
+                                let item_id = item.id.clone();
+                                let is_expanded = expanded_id() == Some(item.id.clone());
+                                let toggle_id = item.id.clone();
+                                let full_content = item.content.clone();
+                                let full_summary = item.summary.clone();
                                 let content_preview = item.content.chars().take(120).collect::<String>();
                                 let summary_text = item.summary.clone().unwrap_or_default();
                                 let score_text = item.score
@@ -245,7 +253,17 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let badge_class = active.badge_class();
 
                                 rsx! {
-                                    div { class: "p-4 border border-base-300 rounded-lg hover:bg-base-200 transition-colors",
+                                    div {
+                                        key: "{item_id}",
+                                        class: "p-4 border border-base-300 rounded-lg hover:bg-base-200 transition-colors cursor-pointer",
+                                        onclick: move |_| {
+                                            let next = if expanded_id() == Some(toggle_id.clone()) {
+                                                None
+                                            } else {
+                                                Some(toggle_id.clone())
+                                            };
+                                            expanded_id.set(next);
+                                        },
                                         div { class: "flex justify-between items-start mb-2",
                                             div { class: "flex items-center gap-2",
                                                 span { class: "{badge_class} text-xs", "{mt}" }
@@ -254,10 +272,24 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                                 }
                                             }
                                         }
-                                        div { class: "text-sm mb-2", "{content_preview}..." }
-                                        if has_summary {
-                                            div { class: "text-xs text-base-content/70 mb-2",
-                                                "摘要: {summary_text}"
+                                        if is_expanded {
+                                            // 展开态：Markdown 渲染完整内容与摘要
+                                            div { class: "text-sm mb-2",
+                                                MarkdownRenderer { content: full_content.clone(), compact: true }
+                                            }
+                                            if has_summary {
+                                                if let Some(summary) = full_summary.clone() {
+                                                    div { class: "text-xs text-base-content/70 mb-2",
+                                                        MarkdownRenderer { content: summary, compact: true }
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            div { class: "text-sm mb-2", "{content_preview}..." }
+                                            if has_summary {
+                                                div { class: "text-xs text-base-content/70 mb-2",
+                                                    "摘要: {summary_text}"
+                                                }
                                             }
                                         }
                                         if has_tags {

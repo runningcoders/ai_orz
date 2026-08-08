@@ -6,6 +6,7 @@ use dioxus_router::Link;
 use crate::api::project::{get_artifact_content, update_artifact};
 use crate::components::artifact_meta_modal::ArtifactMetaModal;
 use crate::components::code_editor::CodeEditor;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -93,7 +94,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                             }
                         }
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
-                            div { div { class: "text-sm text-base-content/60", "描述" }, div { class: "font-medium", "{a.description}" } }
+                            div { div { class: "text-sm text-base-content/60", "描述" }, MarkdownRenderer { content: a.description.clone(), compact: true } }
                             div { div { class: "text-sm text-base-content/60", "文件大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.file_size)}" } }
                             div { div { class: "text-sm text-base-content/60", "来源类型" }, span { class: "badge badge-info", "{source_type_text(a.source_type)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }

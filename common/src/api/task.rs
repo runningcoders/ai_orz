@@ -182,6 +182,12 @@ pub struct GetTaskResponse {
     /// 模型调用统计数据（按需返回）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_call_stats: Option<crate::models::ModelCallStats>,
+    /// 执行计划（Agent 规划阶段产出，Markdown 格式）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_plan: Option<String>,
+    /// 执行结果（Agent 执行阶段产出，Markdown 格式）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_result: Option<String>,
     /// 产物列表，按需返回（with_artifacts=true 时填充）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactDetail>>,

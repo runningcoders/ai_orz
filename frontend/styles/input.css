@@ -333,3 +333,39 @@
   max-width: 100%;
   border-radius: 0.5rem;
 }
+
+/* ========== Markdown 紧凑变体（聊天气泡 / 卡片 / 列表展开） ========== */
+/* 收紧字号与上下边距，避免块级留白在小容器内显得空旷 */
+.markdown-compact {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.markdown-compact > :first-child {
+  margin-top: 0;
+}
+.markdown-compact > :last-child {
+  margin-bottom: 0;
+}
+.markdown-compact h1,
+.markdown-compact h2,
+.markdown-compact h3,
+.markdown-compact h4,
+.markdown-compact h5,
+.markdown-compact h6 {
+  margin-top: 0.9em;
+  margin-bottom: 0.4em;
+}
+.markdown-compact h1 { font-size: 1.25em; }
+.markdown-compact h2 { font-size: 1.12em; }
+.markdown-compact h3 { font-size: 1.02em; }
+.markdown-compact p,
+.markdown-compact ul,
+.markdown-compact ol,
+.markdown-compact pre,
+.markdown-compact table,
+.markdown-compact blockquote {
+  margin: 0.5em 0;
+}
+.markdown-compact li {
+  margin: 0.15em 0;
+}

@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-08-07（两阶段初始化拆分：同步单例注册 + 异步基础数据注入；2 条系统级默认定时任务：agent_rest 4h + project_followup 1h；预置 5 份技能全面更新：项目管理补充执行计划/进度上报指南，工具/记忆/协作技能精简为类比+指南两层；集成测试总数 33 个，新增 system_cron_triggers_test 3 个；CI 覆盖率门槛差异化：PR 38% / main 45%；cargo-llvm-cov 拆收集/报告两阶段匹配新版接口）
+> 最后更新：2026-08-08（前端 Markdown 渲染全覆盖：pulldown-cmark 统一渲染组件 + 原始 HTML 转义守护；详情页/聊天气泡/记忆面板全链路 Markdown 展示；预置项目管理技能引导 Agent 用 Markdown+Mermaid 书写执行计划/结果；Project/Task DTO 补全 execution_plan/execution_result 读取通道；vendor mermaid.js 注入式渲染（Markdown 内嵌 ```mermaid 块 + 独立 task_graph 图，主题跟随 DaisyUI）；前端测试 46 → 51）
 
 ---
 
@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、941 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 46 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、946 个测试 100% 通过率（后端 845 = 812 单元 + 33 集成 + 前端 51 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -74,6 +74,7 @@
 | 🎨 通用 HUD 仪表盘 | ✅ | 通用 Gauge 组件（从 AopGauge 抽象），AOP/Health 等场景复用；HUD 视觉统一（呼吸光晕 + 选中发光 + 12 等分刻度 + 颜色编码） |
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
+| 📝 前端 Markdown 渲染全覆盖 + Mermaid | ✅ | 统一 MarkdownRenderer（pulldown-cmark + 原始 HTML 转义守护，XSS 安全）；详情页（project/task/agent/skill/tool/model_provider/artifact/知识图谱）+ 聊天气泡 Text 消息 + 记忆面板展开态全链路 Markdown 展示；Project/Task 新增「规划与执行」区块（execution_plan/execution_result/workflow/guidance）+ 任务依赖图；skill.md 预览/源码切换；vendor mermaid.js 注入式渲染：Markdown 内嵌 ```mermaid 块扫描替换为 SVG + 独立 MermaidDiagram（task_graph），懒加载不影响首屏，主题跟随 DaisyUI data-theme |
 | 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
 | 🛡️ CI 质量门槛 + 启动两阶段初始化 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov 差异化覆盖率门槛（**PR 38% / main 45%**），**收集（--workspace/--tests）与报告（--lcov/--html）分 3 阶段**匹配新版参数归属；集成测试 3.7s；启动流程拆两阶段：同步 `service::init()` 注册单例 → AOP producer/consumer 注册 → 异步 `service::init_base_data()` 幂等注入 DB 默认基础数据（2 条系统级 cron triggers） |
 
@@ -81,7 +82,7 @@
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **941** | 后端 845（812 单元 + 33 集成） + 前端 46 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
+| **总测试数** | **946** | 后端 845（812 单元 + 33 集成） + 前端 51 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 15 个宏集成测试 + 18 个 HTTP 集成测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 7 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + System Cron Triggers 3 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |

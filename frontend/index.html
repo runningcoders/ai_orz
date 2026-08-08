@@ -418,5 +418,62 @@
   </head>
   <body>
     <div id="main"></div>
+    <script type="module">
+      // ===== Mermaid 渲染桥接（vendor 版，懒加载不影响首屏）=====
+      let __mermaidPromise = null;
+      let __mermaidCounter = 0;
+      // 主题跟随 DaisyUI data-theme（暗色系用 dark，其余用 default）
+      const __mermaidTheme = () => {
+        const t = document.documentElement.getAttribute('data-theme') || '';
+        return t.includes('dark') ? 'dark' : 'default';
+      };
+      const __getMermaid = () => {
+        if (!__mermaidPromise) {
+          __mermaidPromise = import('/vendor/mermaid.esm.min.mjs').then((m) => {
+            const mermaid = m.default;
+            mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
+            return mermaid;
+          });
+        }
+        return __mermaidPromise;
+      };
+      // 扫描容器内 ```mermaid 代码块并替换为 SVG（MarkdownRenderer 注入式渲染）
+      window.__renderMermaid = async (container) => {
+        try {
+          const mermaid = await __getMermaid();
+          mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
+          const blocks = container.querySelectorAll('pre code.language-mermaid');
+          for (const code of blocks) {
+            const pre = code.parentElement;
+            const id = 'mermaid-svg-' + (++__mermaidCounter);
+            try {
+              const { svg } = await mermaid.render(id, code.textContent || '');
+              const wrapper = document.createElement('div');
+              wrapper.className = 'mermaid-diagram overflow-x-auto';
+              wrapper.innerHTML = svg;
+              pre.replaceWith(wrapper);
+            } catch (err) {
+              // 语法错误时保留代码块原文展示
+              console.warn('mermaid render failed:', err);
+            }
+          }
+        } catch (err) {
+          console.error('mermaid load failed:', err);
+        }
+      };
+      // 将裸 Mermaid 字符串渲染进指定容器（MermaidDiagram 组件，如 task_graph）
+      window.__renderMermaidCode = async (container, code) => {
+        try {
+          const mermaid = await __getMermaid();
+          mermaid.initialize({ startOnLoad: false, theme: __mermaidTheme() });
+          const id = 'mermaid-svg-' + (++__mermaidCounter);
+          const { svg } = await mermaid.render(id, code || '');
+          container.innerHTML = svg;
+        } catch (err) {
+          console.warn('mermaid render failed:', err);
+          container.textContent = code || '';
+        }
+      };
+    </script>
   </body>
 </html>

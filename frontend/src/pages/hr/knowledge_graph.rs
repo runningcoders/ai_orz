@@ -6,6 +6,7 @@ use crate::components::SearchableSelect;
 use crate::components::button::Button;
 use crate::components::graph::{Graph, GraphEdge, GraphNode, calculate_layout, expand_layout};
 use crate::components::graph_canvas::KnowledgeGraphCanvas;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -592,7 +593,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                 span { class: "label-text font-medium", "内容" }
                                             }
                                             div { class: "p-3 bg-base-200 rounded-lg",
-                                                p { class: "text-sm", "{detail.content}" }
+                                                MarkdownRenderer { content: detail.content.clone(), compact: true }
                                             }
                                         }
 
@@ -602,7 +603,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                     span { class: "label-text font-medium", "摘要" }
                                                 }
                                                 div { class: "p-3 bg-base-200 rounded-lg text-base-content/70",
-                                                    p { class: "text-sm", "{summary}" }
+                                                    MarkdownRenderer { content: summary.clone(), compact: true }
                                                 }
                                             }
                                         }

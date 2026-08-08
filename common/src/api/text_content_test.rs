@@ -6,7 +6,7 @@ use super::{ApiResponse, TextContentResponse, UpdateTextContentRequest};
 fn text_content_response_serializes_utf8_contract() {
     let content = "# 标题\nhello".to_string();
     let response = TextContentResponse {
-        size: content.as_bytes().len() as u64,
+        size: content.len() as u64,
         content,
         encoding: "utf-8".to_string(),
         updated_at: 1_718_000_000,
@@ -23,7 +23,7 @@ fn text_content_response_serializes_utf8_contract() {
     let data = decoded.data.unwrap();
     assert_eq!(data.content, "# 标题\nhello");
     assert_eq!(data.encoding, "utf-8");
-    assert_eq!(data.size, "# 标题\nhello".as_bytes().len() as u64);
+    assert_eq!(data.size, "# 标题\nhello".len() as u64);
     assert_eq!(data.updated_at, 1_718_000_000);
 }
 

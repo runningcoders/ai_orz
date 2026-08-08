@@ -37,6 +37,8 @@ pub(super) fn to_detail(project: &Project) -> GetProjectResponse {
         stats: project.stats.clone(),
         model_call_stats: project.model_call_stats.clone(),
         task_graph: project.task_graph.clone(),
+        execution_plan: project.po.execution_plan.clone(),
+        execution_result: project.po.execution_result.clone(),
         artifacts: project.artifacts.clone(),
         progress_summary: project.progress_summary.clone(),
     }

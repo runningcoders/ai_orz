@@ -6,6 +6,7 @@ use dioxus_router::{Link, use_navigator};
 use crate::api::hr::query_agents;
 use crate::api::project::*;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
+use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ProjectStatsPanel;
@@ -77,6 +78,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 with_model_call_stats: Some(true),
                 stats_interval: Some("daily".to_string()),
                 with_artifacts: Some(true),
+                with_task_graph: Some(true),
                 ..Default::default()
             };
             match get_project(req).await {
@@ -366,7 +368,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                     if desc.is_empty() {
                                         span { class: "text-base-content/70", "暂无描述" }
                                     } else {
-                                        "{desc}"
+                                        MarkdownRenderer { content: desc.clone(), compact: true }
                                     }
                                 } else {
                                     span { class: "text-base-content/70", "暂无描述" }
@@ -396,6 +398,55 @@ pub fn ProjectDetail(id: String) -> Element {
                                 label { class: "form-label", "创建时间" }
                                 span { class: "font-mono text-base-content/70", "{p.created_at}" }
                             }
+                        }
+                    }
+
+                    // 区域 1.5：执行计划与结果（Markdown 渲染，Agent 产出）
+                    if p.workflow.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+                        || p.guidance.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+                        || p.execution_plan.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+                        || p.execution_result.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+                    {
+                        div { class: "card bg-base-100 shadow-md",
+                            div { class: "card-header",
+                                h2 { class: "card-title", "规划与执行" }
+                            }
+                            div { class: "space-y-5",
+                                if let Some(wf) = p.workflow.as_deref().filter(|s| !s.is_empty()) {
+                                    div {
+                                        label { class: "form-label", "运作流程" }
+                                        MarkdownRenderer { content: wf.to_string() }
+                                    }
+                                }
+                                if let Some(gd) = p.guidance.as_deref().filter(|s| !s.is_empty()) {
+                                    div {
+                                        label { class: "form-label", "指导建议" }
+                                        MarkdownRenderer { content: gd.to_string() }
+                                    }
+                                }
+                                if let Some(plan) = p.execution_plan.as_deref().filter(|s| !s.is_empty()) {
+                                    div {
+                                        label { class: "form-label", "执行计划" }
+                                        MarkdownRenderer { content: plan.to_string() }
+                                    }
+                                }
+                                if let Some(result) = p.execution_result.as_deref().filter(|s| !s.is_empty()) {
+                                    div {
+                                        label { class: "form-label", "执行结果" }
+                                        MarkdownRenderer { content: result.to_string() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 区域 1.6：任务依赖图（Mermaid，with_task_graph 按需返回）
+                    if let Some(graph) = p.task_graph.as_deref().filter(|s| !s.is_empty()) {
+                        div { class: "card bg-base-100 shadow-md",
+                            div { class: "card-header",
+                                h2 { class: "card-title", "任务依赖图" }
+                            }
+                            MermaidDiagram { code: graph.to_string() }
                         }
                     }
 

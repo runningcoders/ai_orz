@@ -7,8 +7,9 @@
 use common::api::MessageListItem;
 use dioxus::prelude::*;
 
+use crate::components::markdown::MarkdownRenderer;
 use crate::utils::file::format_file_size;
-use crate::utils::message::{is_attachment_message, role_avatar, role_class};
+use crate::utils::message::{MSG_TEXT, is_attachment_message, role_avatar, role_class};
 use crate::utils::time::format_time_hm;
 
 /// 单条消息气泡
@@ -64,6 +65,13 @@ fn render_content(msg: &MessageListItem) -> Element {
             }
         } else {
             rsx! { span { class: "message-text", "[附件]" } }
+        }
+    } else if msg.message_type == MSG_TEXT {
+        // Text 消息按 Markdown 渲染（紧凑样式）
+        rsx! {
+            span { class: "message-text",
+                MarkdownRenderer { content: msg.content.clone(), compact: true }
+            }
         }
     } else {
         rsx! { span { class: "message-text", "{msg.content}" } }

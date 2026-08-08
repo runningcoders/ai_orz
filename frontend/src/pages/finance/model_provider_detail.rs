@@ -5,6 +5,7 @@ use crate::api::finance::{
     test_model_provider_connection, toggle_model_provider, update_model_provider,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
@@ -340,7 +341,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text font-medium", "描述" }
                                     }
-                                    div { "{description}" }
+                                    MarkdownRenderer { content: description.clone(), compact: true }
                                 }
                             }
                             div {

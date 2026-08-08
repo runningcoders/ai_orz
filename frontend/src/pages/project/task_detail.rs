@@ -6,6 +6,7 @@ use dioxus_router::{Link, use_navigator};
 use crate::api::hr::query_agents;
 use crate::api::project::*;
 use crate::components::modal::Modal;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
@@ -398,7 +399,7 @@ pub fn TaskDetail(id: String) -> Element {
                             if desc.is_empty() {
                                 span { class: "text-base-content/70", "暂无描述" }
                             } else {
-                                "{desc}"
+                                MarkdownRenderer { content: desc.clone(), compact: true }
                             }
                         } else {
                             span { class: "text-base-content/70", "暂无描述" }
@@ -455,6 +456,31 @@ pub fn TaskDetail(id: String) -> Element {
                         div {
                             label { class: "form-label", "结束时间" }
                             span { class: "font-mono", "{format_timestamp(Some(end))}" }
+                        }
+                    }
+                }
+            }
+
+            // 区域 1.5：执行计划与结果（Markdown 渲染，Agent 产出）
+            if t.execution_plan.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+                || t.execution_result.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+            {
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-header",
+                        h2 { class: "card-title", "规划与执行" }
+                    }
+                    div { class: "space-y-5",
+                        if let Some(plan) = t.execution_plan.as_deref().filter(|s| !s.is_empty()) {
+                            div {
+                                label { class: "form-label", "执行计划" }
+                                MarkdownRenderer { content: plan.to_string() }
+                            }
+                        }
+                        if let Some(result) = t.execution_result.as_deref().filter(|s| !s.is_empty()) {
+                            div {
+                                label { class: "form-label", "执行结果" }
+                                MarkdownRenderer { content: result.to_string() }
+                            }
                         }
                     }
                 }

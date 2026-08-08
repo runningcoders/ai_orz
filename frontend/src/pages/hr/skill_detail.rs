@@ -7,6 +7,7 @@ use crate::api::hr::{
     get_skill, get_skill_file_content, list_skill_files, update_skill, update_skill_file_content,
 };
 use crate::components::code_editor::CodeEditor;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -28,6 +29,8 @@ pub fn HrSkillDetail(id: String) -> Element {
     let mut file_content_loading = use_signal(|| false);
     let mut file_content_dirty = use_signal(|| false);
     let mut saving_file = use_signal(|| false);
+    // Markdown 文件预览/源码切换（true=渲染预览，false=源码编辑）
+    let mut preview_mode = use_signal(|| false);
 
     // 元信息编辑 Modal
     let mut show_edit_modal = use_signal(|| false);
@@ -175,7 +178,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                             div {
                                 div { class: "text-sm text-base-content/60", "描述" }
-                                div { class: "font-medium", "{s.description}" }
+                                MarkdownRenderer { content: s.description.clone(), compact: true }
                             }
                             div {
                                 div { class: "text-sm text-base-content/60", "分类" }
@@ -261,6 +264,16 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                     "当前文件: {selected_file()}"
                                                 }
                                                 div { class: "flex gap-2",
+                                                    if selected_file().ends_with(".md") {
+                                                        button {
+                                                            class: "btn btn-ghost btn-sm",
+                                                            onclick: move |_| {
+                                                                let cur = preview_mode();
+                                                                preview_mode.set(!cur);
+                                                            },
+                                                            if preview_mode() { "✏️ 源码" } else { "👁️ 预览" }
+                                                        }
+                                                    }
                                                     if file_content_dirty() {
                                                         span { class: "text-xs text-warning", "● 未保存" }
                                                     }
@@ -272,14 +285,20 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                     }
                                                 }
                                             }
-                                            CodeEditor {
-                                                value: file_content(),
-                                                on_input: move |v| {
-                                                    file_content.set(v);
-                                                    file_content_dirty.set(true);
-                                                },
-                                                language: "markdown".to_string(),
-                                                min_lines: 20,
+                                            if selected_file().ends_with(".md") && preview_mode() {
+                                                div { class: "border border-base-300 rounded-lg p-4 bg-base-100 overflow-x-auto",
+                                                    MarkdownRenderer { content: file_content() }
+                                                }
+                                            } else {
+                                                CodeEditor {
+                                                    value: file_content(),
+                                                    on_input: move |v| {
+                                                        file_content.set(v);
+                                                        file_content_dirty.set(true);
+                                                    },
+                                                    language: "markdown".to_string(),
+                                                    min_lines: 20,
+                                                }
                                             }
                                         }
                                     }

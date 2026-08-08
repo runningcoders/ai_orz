@@ -40,6 +40,10 @@ pub async fn get_project(req: GetProjectRequest) -> Result<GetProjectResponse, A
             req.with_model_call_stats.map(|v| v.to_string()),
         ),
         (
+            "with_task_graph",
+            req.with_task_graph.map(|v| v.to_string()),
+        ),
+        (
             "stats_time_start",
             req.stats_time_start.map(|v| v.to_string()),
         ),

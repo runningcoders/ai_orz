@@ -13,6 +13,7 @@ use dioxus::prelude::*;
 use serde::Deserialize;
 
 use crate::api::fetch_static_text;
+use crate::components::markdown::render_markdown;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::{ToastState, use_toast};
 
@@ -187,18 +188,6 @@ fn group_matches(group: &DocGroup, filter: &str) -> bool {
         DocGroupChild::Group(g) => group_matches(g, filter),
         DocGroupChild::Doc(d) => title_matches(&d.title, filter),
     })
-}
-
-/// Markdown → HTML（启用表格 / 删除线 / 任务列表扩展语法）
-fn render_markdown(md: &str) -> String {
-    let mut options = pulldown_cmark::Options::empty();
-    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
-    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
-    options.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
-    let parser = pulldown_cmark::Parser::new_ext(md, options);
-    let mut html_out = String::new();
-    pulldown_cmark::html::push_html(&mut html_out, parser);
-    html_out
 }
 
 /// 文档路径 URL 编码：wiki 文件名含中文/空格，逐段 encodeURIComponent 后拼回

@@ -5,6 +5,7 @@ use crate::api::finance::upload_attachment;
 use crate::api::hr::get_reception_agent;
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use crate::utils::{
@@ -1176,7 +1177,9 @@ fn render_message_content(
             let toast_copy = toast;
             rsx! {
                 div { class: "group relative",
-                    div { class: "{bubble_class} break-words whitespace-pre-wrap", "{msg.content}" }
+                    div { class: "{bubble_class} break-words",
+                        MarkdownRenderer { content: msg.content.clone(), compact: true }
+                    }
                     button {
                         class: "absolute -top-2 -right-2 btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 transition-opacity bg-base-100 shadow",
                         onclick: move |_| copy_to_clipboard(&content, &toast_copy),

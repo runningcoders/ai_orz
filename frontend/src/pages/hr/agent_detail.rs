@@ -4,6 +4,7 @@ use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::state::Loading;
@@ -352,7 +353,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                         div { class: "mb-6 flex justify-between items-start",
                             div {
                                 h2 { class: "card-title", "{a.name}" }
-                                p { class: "text-base-content/70 mt-1", "{desc}" }
+                                if !desc.is_empty() {
+                                    MarkdownRenderer { content: desc.to_string(), compact: true }
+                                }
                             }
                             button {
                                 class: "btn btn-ghost btn-sm",
@@ -451,6 +454,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     } else {
                                         div { class: "text-sm text-base-content/70", "暂无核心能力" }
+                                    }
+                                }
+
+                                // 灵魂设定（角色/性格 prompt，Markdown 渲染）
+                                if let Some(soul) = a.soul.as_deref().filter(|s| !s.is_empty()) {
+                                    div { class: "mb-6",
+                                        h3 { class: "text-lg font-semibold mb-3", "灵魂设定" }
+                                        MarkdownRenderer { content: soul.to_string() }
                                     }
                                 }
 

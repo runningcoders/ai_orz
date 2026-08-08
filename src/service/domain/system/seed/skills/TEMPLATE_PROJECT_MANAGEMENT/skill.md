@@ -94,23 +94,31 @@ Completed     → InProgress（项目重启）/ Archived
 
 **参数**（全部可选）：`name` / `description` / `priority` / `tags` / **`execution_plan`** / **`execution_result`**。
 
+> 📝 **格式约定**：`execution_plan` 与 `execution_result` 在前端会**按 Markdown 渲染**，支持表格、任务清单，以及 **Mermaid 图表**（用 ```mermaid 代码块包裹，可画流程图 / 甘特图 / 依赖图）。请用 Markdown 书写，让计划与结果可视化、易读。
+>
 > **`execution_plan`（Owner Agent 填）**：项目执行计划，描述阶段划分和推进策略。**项目启动时由 Project Owner 写入**，阶段有重大调整时更新。内容示例：
-> ```
-> # Phase 1: 项目脚手架（3 天）
+> ```markdown
+> ## Phase 1: 项目脚手架（3 天）
 > - [ ] 搭建 Dioxus 前端项目骨架，配置路由、状态管理
 > - [ ] 建立 Axum 后端模块分层，接入 SQLite + sqlx
 > - [ ] 集成用户鉴权（JWT + HttpOnly Cookie）
 >
-> # Phase 2: 核心功能（5 天）
+> ## Phase 2: 核心功能（5 天）
 > - [ ] 项目/任务/产物管理 CRUD
 > - [ ] Agent 绑定工具 + 基础执行循环
 >
-> # Phase 3: 测试与部署（2 天）
+> ## Phase 3: 测试与部署（2 天）
 > - [ ] 集成测试 + CI 流水线
 > - [ ] 部署文档
+>
+> ### 阶段依赖
+> ```mermaid
+> graph LR
+>   P1[Phase 1 脚手架] --> P2[Phase 2 核心功能] --> P3[Phase 3 测试部署]
+> ```
 > ```
 >
-> **`execution_result`（Owner Agent 填）**：项目完成后的总结。**项目收尾阶段填写**，包括成果概述、产出清单、经验教训。
+> **`execution_result`（Owner Agent 填）**：项目完成后的总结。**项目收尾阶段填写**，用 Markdown 分节：成果概述、产出清单（可带 artifact 链接）、经验教训。
 
 ### `update_project_status` — 更新项目状态
 
@@ -195,37 +203,45 @@ Completed     → Archived
 
 **参数**（全部可选）：`title` / `description` / `priority` / `tags` / `due_at` / `dependencies` / **`execution_plan`** / **`execution_result`**。
 
+> 📝 **格式约定**：同项目一致，`execution_plan` 与 `execution_result` 在前端**按 Markdown 渲染**，支持表格 / 任务清单 / **Mermaid 图**（```mermaid 代码块）。请用 Markdown 书写。
+>
 > **`execution_plan`（Task Owner 填）**：任务执行计划，**开始执行任务前写入**。描述你打算如何完成这个任务。内容示例：
-> ```
-> 步骤 1：确认需求与前置依赖
->   - 读取 task.description 中约定的接口协议
->   - 检查 dependencies 中的前置任务（Task-xxx）状态应为 Completed
->   - 如阻塞，立即通过 send_task_assignment_message 上报给 Project Owner
+> ```markdown
+> ## 步骤 1：确认需求与前置依赖
+> - 读取 task.description 中约定的接口协议
+> - 检查 dependencies 中的前置任务（Task-xxx）状态应为 Completed
+> - 如阻塞，立即通过 send_task_assignment_message 上报给 Project Owner
 >
-> 步骤 2：实现核心功能（预计占 70%）
->   - 新建 handlers/xxx 路由层：GET /xxx、POST /xxx
->   - 在 dal/xxx.rs 实现 SQL 查询与写入（含 sqlx::query! 宏）
->   - 用 create_task 新增"编写单测"子任务
+> ## 步骤 2：实现核心功能（预计占 70%）
+> - 新建 handlers/xxx 路由层：GET /xxx、POST /xxx
+> - 在 dal/xxx.rs 实现 SQL 查询与写入（含 sqlx::query! 宏）
+> - 用 create_task 新增“编写单测”子任务
 >
-> 步骤 3：测试与验证（占 30%）
->   - 写集成测试覆盖正常 / 异常 / 边界场景
->   - 本地跑 cargo test --test xxx_test 验证通过
->   - 产出物：create_text_artifact 保存测试报告
+> ## 步骤 3：测试与验证（占 30%）
+> - 写集成测试覆盖正常 / 异常 / 边界场景
+> - 本地跑 cargo test --test xxx_test 验证通过
+> - 产出物：create_text_artifact 保存测试报告
+>
+> ### 执行流程
+> ```mermaid
+> graph TD
+>   A[确认需求] --> B[实现核心功能] --> C[测试验证] --> D[交付]
+> ```
 > ```
 >
-> **`execution_result`（Task Owner 填）**：任务执行结果总结，**完成或阻塞时写入**。描述实际完成情况、产出物、风险点。内容示例：
-> ```
-> 完成情况：
+> **`execution_result`（Task Owner 填）**：任务执行结果总结，**完成或阻塞时写入**。用 Markdown 分节描述实际完成情况、产出物、风险点。内容示例：
+> ```markdown
+> ## 完成情况
 > - handlers/xxx 路由 3 个端点全部实现并自测通过
 > - dal/xxx 新增 5 条 SQL（含事务 + 软删除校验）
 > - 编写集成测试 8 条，全部通过
 >
-> 产出物：
+> ## 产出物
 > - Artifact: 测试报告.md（id=art-xxx）
 > - Artifact: 接口说明.md（id=art-yyy）
-> - Task 子任务"编写单测"已完成（task_id=tsk-zzz）
+> - Task 子任务“编写单测”已完成（task_id=tsk-zzz）
 >
-> 遗留与风险：
+> ## 遗留与风险
 > - upload_file 端点超过 10MB 文件时可能报错（超出 64KB 文本附件限制），建议后续接入文件分片或走 register_artifact_from_path 方案
 > ```
 >

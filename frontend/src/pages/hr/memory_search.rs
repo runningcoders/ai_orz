@@ -2,6 +2,7 @@ use dioxus::prelude::{Key, *};
 
 use crate::api::hr::{query_memory, search_memory};
 use crate::components::button::Button;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -14,6 +15,8 @@ pub fn HrMemorySearch() -> Element {
     let mut task_id = use_signal(String::new);
     let mut results = use_signal(Vec::<MemoryResult>::new);
     let mut loading = use_signal(|| false);
+    // 展开态记忆 ID（展开后用 Markdown 渲染完整内容）
+    let mut expanded_id = use_signal(|| None::<String>);
     let toast = use_toast();
 
     // 场景区分：空关键词 → query_memory（条件过滤查询）；有关键词 → search_memory（关键词 + 向量搜索）
@@ -142,30 +145,59 @@ pub fn HrMemorySearch() -> Element {
                         h3 { class: "card-title mb-4", "搜索结果 ({results().len()})" }
                         div { class: "space-y-2",
                             for item in &results() {
-                                div { class: "p-3 border border-base-300 rounded hover:bg-base-200",
-                                    div { class: "flex flex-col sm:flex-row justify-between items-start gap-2",
-                                        div { class: "flex-1",
-                                            span { class: "font-medium", "{item.content.chars().take(100).collect::<String>()}" }
-                                            // 修复 L_NEW：使用 if let 模式替代 unwrap，避免空值 panic
-                                            if let Some(summary) = &item.summary {
-                                                div { class: "text-sm text-base-content/70 mt-1",
-                                                    "{summary}"
-                                                }
-                                            }
-                                            if let Some(tags) = &item.tags {
-                                                if !tags.is_empty() {
-                                                    div { class: "flex flex-wrap gap-1 mt-2",
-                                                        for tag in tags.iter() {
-                                                            span { class: "badge badge-neutral badge-xs", "{tag}" }
+                                {
+                                    let item_id = item.id.clone();
+                                    let is_expanded = expanded_id() == Some(item.id.clone());
+                                    let toggle_id = item.id.clone();
+                                    let full_content = item.content.clone();
+                                    let full_summary = item.summary.clone();
+                                    rsx! {
+                                        div {
+                                            key: "{item_id}",
+                                            class: "p-3 border border-base-300 rounded hover:bg-base-200 cursor-pointer",
+                                            onclick: move |_| {
+                                                let next = if expanded_id() == Some(toggle_id.clone()) {
+                                                    None
+                                                } else {
+                                                    Some(toggle_id.clone())
+                                                };
+                                                expanded_id.set(next);
+                                            },
+                                            div { class: "flex flex-col sm:flex-row justify-between items-start gap-2",
+                                                div { class: "flex-1",
+                                                    if is_expanded {
+                                                        // 展开态：Markdown 渲染完整内容与摘要
+                                                        MarkdownRenderer { content: full_content.clone(), compact: true }
+                                                        if let Some(summary) = full_summary.clone() {
+                                                            div { class: "text-sm text-base-content/70 mt-2",
+                                                                MarkdownRenderer { content: summary, compact: true }
+                                                            }
+                                                        }
+                                                    } else {
+                                                        span { class: "font-medium", "{item.content.chars().take(100).collect::<String>()}" }
+                                                        // 修复 L_NEW：使用 if let 模式替代 unwrap，避免空值 panic
+                                                        if let Some(summary) = &item.summary {
+                                                            div { class: "text-sm text-base-content/70 mt-1",
+                                                                "{summary}"
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(tags) = &item.tags {
+                                                        if !tags.is_empty() {
+                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                for tag in tags.iter() {
+                                                                    span { class: "badge badge-neutral badge-xs", "{tag}" }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        }
-                                        div { class: "flex items-center gap-2 shrink-0",
-                                            span { class: "badge badge-accent text-xs", "{item.memory_type}" }
-                                            if let Some(score) = item.score {
-                                                span { class: "text-xs text-base-content/70", "score={score:.4}" }
+                                                div { class: "flex items-center gap-2 shrink-0",
+                                                    span { class: "badge badge-accent text-xs", "{item.memory_type}" }
+                                                    if let Some(score) = item.score {
+                                                        span { class: "text-xs text-base-content/70", "score={score:.4}" }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

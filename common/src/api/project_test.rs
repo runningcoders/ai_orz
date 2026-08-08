@@ -79,6 +79,8 @@ fn update_project_status_response_uses_project_detail_contract() {
             stats: None,
             model_call_stats: None,
             task_graph: None,
+            execution_plan: None,
+            execution_result: None,
             artifacts: None,
             progress_summary: None,
         });

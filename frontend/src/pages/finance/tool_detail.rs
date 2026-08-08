@@ -2,6 +2,7 @@
 
 use crate::api::finance::{debug_call_tool, delete_tool, get_tool, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
 use crate::layouts::app_layout::AppLayout;
@@ -171,7 +172,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "描述" }
                                 }
-                                div { "{t.description}" }
+                                MarkdownRenderer { content: t.description.clone(), compact: true }
                             }
                             div {
                                 label { class: "label",

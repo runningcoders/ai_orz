@@ -46,6 +46,8 @@ pub(super) fn to_detail(task: &Task) -> GetTaskResponse {
         updated_at: task.po.updated_at,
         stats: task.stats.clone(),
         model_call_stats: task.model_call_stats.clone(),
+        execution_plan: task.po.execution_plan.clone(),
+        execution_result: task.po.execution_result.clone(),
         artifacts: task.artifacts.clone(),
     }
 }

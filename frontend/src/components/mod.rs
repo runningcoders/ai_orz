@@ -16,6 +16,7 @@ pub mod graph_canvas;
 pub mod hud_palette;
 pub mod kanban_canvas;
 pub mod layered_layout;
+pub mod markdown;
 pub mod modal;
 pub mod particles;
 pub mod relation_graph;
