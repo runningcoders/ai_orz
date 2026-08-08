@@ -42,7 +42,7 @@ ai_orz/
     │   ├── pages/              # 页面模块（按 organization/hr/finance/project/message/system/user 分组）
     │   └── store/              # 全局状态管理（AuthState + token 持久化）
     └── ...
-    > 前端详细架构请查看 [docs/frontend_architecture.md](./frontend_architecture.md)
+    > 前端详细架构请查看 [docs/design/frontend_architecture.md](./design/frontend_architecture.md)
 ```
 
 **common crate 设计原则：**
@@ -114,7 +114,7 @@ pub struct CoreMemory {
 
 ### 8. AOP Event Center（AOP 事件中心）
 - **定义**：纯框架级事件生产-订阅-调度中心，支持同步/异步消费、轮询生产者、顺序保证
-- **设计文档**：详见 [docs/consumer_architecture.md](./consumer_architecture.md)
+- **设计文档**：详见 [docs/design/consumer_architecture.md](./design/consumer_architecture.md)
 - **关键约束**：AOP 框架零业务依赖，业务事件的生产者（`producer/`）和消费者（`consumer/`）分别注册到 AOP
 
 ---
@@ -228,7 +228,7 @@ pub trait RuntimeMemory: Send + Sync {
 
 ## 事件总线架构
 
-详见独立设计文档：[docs/consumer_architecture.md](./consumer_architecture.md)（事件队列泛型 topic 设计详见 [docs/event_design.md](./event_design.md)）
+详见独立设计文档：[docs/design/consumer_architecture.md](./design/consumer_architecture.md)（事件队列泛型 topic 设计详见 [docs/design/event_design.md](./design/event_design.md)）
 
 ### 核心设计要点
 

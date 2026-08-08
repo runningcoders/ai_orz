@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: frontend/pages_system
+title: 系统管理页面（健康监控 / AOP 队列 / 日志 / 任务 / 备份 / Seed / Triggers）
+scope:
+    - frontend/src/pages/system/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend/api_client

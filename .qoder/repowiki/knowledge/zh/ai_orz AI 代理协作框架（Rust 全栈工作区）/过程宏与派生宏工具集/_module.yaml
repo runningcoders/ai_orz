@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: macros
+title: 过程宏与派生宏工具集
+scope:
+    - ai-orz-macros/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/handlers
+    - path: backend_service/pkg_shared/stats

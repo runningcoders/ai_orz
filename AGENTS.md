@@ -99,49 +99,68 @@
 
 > 📌 **按需要读取详细设计文档**
 
+### docs 内容脉络（四象限，2026-08-08 确立）
+
+| 目录 / 文档 | 回答的问题 | 性质与维护方式 |
+|-------------|-----------|----------------|
+| `docs/wiki/`（→ `.qoder/repowiki` 软链接） | **是什么**：代码现状百科 | IDE 生成，随代码演进再生成；**阅读第一站** |
+| `docs/ARCHITECTURE.md` | **权威纲要**：核心概念与实体关系 | 手工维护，唯一权威架构总纲 |
+| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | **怎么做**：分层实践与避坑 | 手工维护，开发必读 |
+| `docs/design/` | **为什么**：当时的设计决策 | 决策快照，写定后不追赶现状 |
+| `docs/plan/` | **要去哪**：规划与状态快照 | 按阶段追加 |
+| `docs/archive/` | **被什么取代**：历史方案归档 | 只进不出 |
+
+**维护规则：**
+- 代码现状变化 → 再生成 wiki；**不**回头改 design/ 旧文（与实现不一致时以 wiki 为准）
+- 开发规范变化 → 更新本文件（AGENTS.md）与 LAYERED 实践文档
+- 架构核心概念变化 → 更新 ARCHITECTURE.md
+- 新功能设计 → 先写 design/ 新文档，落地后由 wiki 承接现状描述
+
 ### 架构总览
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
 | [README.md](./README.md) | 项目概览、快速开始、功能列表、文档索引 | ⭐⭐⭐ |
+| [docs/wiki/](./docs/wiki/) | **知识库入口**：代码现状百科（模块/架构/技术栈/编码约定），IDE 生成 | ⭐⭐⭐ |
+| [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | 代码认知入口页：模块速查表 + 文档导航 | ⭐⭐ |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | **最新**完整架构说明、核心概念解释、实体关系、完成状态 | ⭐⭐⭐ |
-| [docs/architecture_status_20260725.md](./docs/architecture_status_20260725.md) | 分层架构现状快照、金字塔结构、各层状态统计 | ⭐⭐⭐ |
+| [docs/plan/architecture_status_20260725.md](./docs/plan/architecture_status_20260725.md) | 分层架构现状快照、金字塔结构、各层状态统计 | ⭐⭐⭐ |
 
 ### 分层架构与最佳实践
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读** 7 个完整架构实践（含适配层架构原则）、反模式坑、最佳实践总结 | ⭐⭐⭐ |
-| [docs/NAMING_CONVENTION.md](./docs/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
-| [docs/external_agent_design.md](./docs/external_agent_design.md) | 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）、适配层处理模式 | ⭐⭐ |
+| [docs/design/NAMING_CONVENTION.md](./docs/design/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
+| [docs/design/external_agent_design.md](./docs/design/external_agent_design.md) | 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）、适配层处理模式 | ⭐⭐ |
 ### 各模块详细设计
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、测试隔离 | ⭐⭐⭐ |
-| [docs/runtime_design.md](./docs/runtime_design.md) | **Runtime Domain 总纲**：Agent 唤醒、神经 vs 外骨骼工具二分、上下文极薄设计 | ⭐⭐⭐ |
-| [docs/memory_design.md](./docs/memory_design.md) | 四层记忆系统设计、检索策略 | ⭐⭐ |
-| [docs/tool_design.md](./docs/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
-| [docs/message_interaction_design.md](./docs/message_interaction_design.md) | 消息交互架构、用户↔Agent双向对话、工具调用复用消息表 | ⭐⭐ |
-| [docs/message_channel_design.md](./docs/message_channel_design.md) | 消息渠道系统设计、多渠道支持、状态管理 | ⭐⭐ |
-| [docs/consumer_architecture.md](./docs/consumer_architecture.md) | 异步消费者框架、按 to_role 分层分发 | ⭐⭐ |
-| [docs/task_scheduler_design.md](./docs/task_scheduler_design.md) | 任务调度器设计、Cron 表达式、定时任务执行 | ⭐⭐ |
-| [docs/event_design.md](./docs/event_design.md) | 泛型 topic 事件队列、类型安全隔离 | ⭐⭐ |
-| [docs/skill_design.md](./docs/skill_design.md) | 技能库系统、Agent 自进化沉淀技能 | ⭐⭐ |
-| [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) | 混合搜索架构：FTS5 关键词 + 向量语义 + 三态匹配 | ⭐⭐ |
+| [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、测试隔离 | ⭐⭐⭐ |
+| [docs/design/runtime_design.md](./docs/design/runtime_design.md) | **Runtime Domain 总纲**：Agent 唤醒、神经 vs 外骨骼工具二分、上下文极薄设计 | ⭐⭐⭐ |
+| [docs/design/memory_design.md](./docs/design/memory_design.md) | 四层记忆系统设计、检索策略 | ⭐⭐ |
+| [docs/design/tool_design.md](./docs/design/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
+| [docs/design/message_interaction_design.md](./docs/design/message_interaction_design.md) | 消息交互架构、用户↔Agent双向对话、工具调用复用消息表 | ⭐⭐ |
+| [docs/design/message_channel_design.md](./docs/design/message_channel_design.md) | 消息渠道系统设计、多渠道支持、状态管理 | ⭐⭐ |
+| [docs/design/consumer_architecture.md](./docs/design/consumer_architecture.md) | 异步消费者框架、按 to_role 分层分发 | ⭐⭐ |
+| [docs/design/task_scheduler_design.md](./docs/design/task_scheduler_design.md) | 任务调度器设计、Cron 表达式、定时任务执行 | ⭐⭐ |
+| [docs/design/event_design.md](./docs/design/event_design.md) | 泛型 topic 事件队列、类型安全隔离 | ⭐⭐ |
+| [docs/design/skill_design.md](./docs/design/skill_design.md) | 技能库系统、Agent 自进化沉淀技能 | ⭐⭐ |
+| [docs/design/vector_search_architecture.md](./docs/design/vector_search_architecture.md) | 混合搜索架构：FTS5 关键词 + 向量语义 + 三态匹配 | ⭐⭐ |
 
 ### 基础设施与规范
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/logging_design.md](./docs/logging_design.md) | **日志系统设计**：统一宏使用规范、上下文检测机制、tracing 语法速查 | ⭐⭐⭐ |
-| [docs/sqlx_guide.md](./docs/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、STRICT 模式、FTS5 全文搜索、测试隔离 | ⭐⭐⭐ |
-| [docs/task_design.md](./docs/task_design.md) | 任务系统设计、状态机、分配与进度追踪 | ⭐ |
-| [docs/project_design.md](./docs/project_design.md) | 项目系统设计、聚合对话上下文 | ⭐ |
-| [docs/organization_design.md](./docs/organization_design.md) | 组织用户权限体系设计 | ⭐ |
-| [docs/attachment_storage.md](./docs/attachment_storage.md) | 产物与消息附件统一存储设计 | ⭐ |
+| [docs/design/logging_design.md](./docs/design/logging_design.md) | **日志系统设计**：统一宏使用规范、上下文检测机制、tracing 语法速查 | ⭐⭐⭐ |
+| [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md) | SQLx 0.8 + SQLite 开发规范、枚举映射、STRICT 模式、FTS5 全文搜索、测试隔离 | ⭐⭐⭐ |
+| [docs/design/task_design.md](./docs/design/task_design.md) | 任务系统设计、状态机、分配与进度追踪 | ⭐ |
+| [docs/design/project_design.md](./docs/design/project_design.md) | 项目系统设计、聚合对话上下文 | ⭐ |
+| [docs/design/organization_design.md](./docs/design/organization_design.md) | 组织用户权限体系设计 | ⭐ |
+| [docs/design/attachment_storage.md](./docs/design/attachment_storage.md) | 产物与消息附件统一存储设计 | ⭐ |
 
 ### 前端与 UI
 | 文档 | 内容 | 优先级 |
 |------|------|--------|
-| [docs/frontend_architecture.md](./docs/frontend_architecture.md) | **前端架构设计**：Router/CSS 设计系统/API 客户端/状态管理/页面模块 | ⭐⭐⭐ |
-| [docs/ui_design_system.md](./docs/ui_design_system.md) | UI 设计系统、配色、排版、组件规范、实现状态 | ⭐⭐ |
+| [docs/design/frontend_architecture.md](./docs/design/frontend_architecture.md) | **前端架构设计**：Router/CSS 设计系统/API 客户端/状态管理/页面模块 | ⭐⭐⭐ |
+| [docs/design/ui_design_system.md](./docs/design/ui_design_system.md) | UI 设计系统、配色、排版、组件规范、实现状态 | ⭐⭐ |
 
 ---
 
@@ -494,7 +513,7 @@ log_info!(ctx, "operation", "message");  // 必须是 &ctx
 1. **优先匹配**：第一个参数是**字符串字面量** → 无上下文模式
 2. **兜底匹配**：第一个参数是表达式，第二个是字符串字面量 → 带上下文模式
 
-> 💡 **重要**：Operation 必须是字符串字面量，不能是变量。完整规范请参考 [docs/logging_design.md](./docs/logging_design.md)
+> 💡 **重要**：Operation 必须是字符串字面量，不能是变量。完整规范请参考 [docs/design/logging_design.md](./docs/design/logging_design.md)
 
 ### 4.8 向量化实体规范（强制执行，2026-07-24 新增）
 
@@ -1054,7 +1073,7 @@ Agent
 - **设计原则落地**：query 是核心查询能力（POST body，完整查询条件 + pagination），list 是语法糖（GET query param，只接受分页，内部固定默认过滤和排序）；两者统一返回 `PagedResult<T> { items, total }`
 - **全链路改造**：5 个实体（Agent/Project/Task/Tool/Skill）的 Query 结构体加 `pagination: PaginationParams`；DAO 层抽取 `push_query_filters` 函数复用 WHERE 条件；Domain 层 `query` 改返回 `PagedResult<业务实体>`；Handler 层 `ListXxxRequest` 简化为只含 pagination，list handler 内部固定默认过滤（如 Agent 排除 Deleted，Skill 排除 Expired）
 - **前端适配**：API 层新增 5 个 query_* 函数，list_* 简化为只接受 (limit, offset)；6 个查询场景改用 query_* 接口
-- **规范文档**：[AGENTS.md](./AGENTS.md) 新增 4.9 查询接口分页规范；[runtime_design.md](./docs/runtime_design.md) 第十三章从草稿更新为已实现状态
+- **规范文档**：[AGENTS.md](./AGENTS.md) 新增 4.9 查询接口分页规范；[runtime_design.md](./docs/design/runtime_design.md) 第十三章从草稿更新为已实现状态
 - **参考实现**：`src/service/dao/mcp_server/sqlite.rs` 为首个完成分页改造的 DAO
 
 **✅ 记忆 tags 全链路支持 + 知识图谱节点可视化增强（v3.5）**
@@ -1084,7 +1103,7 @@ Agent
 - **中等问题**：trace_id 加随机后缀避免并发碰撞；stats 查询失败不阻塞 agent 加载；think 添加 5 分钟超时；移除死代码与无效参数
 - **优化项**：Builtin/Http 工具错误信息脱敏；`call_manual_tool_for_agent` 校验 agent 存在
 - **补充修复**：`wake_agent_brain` 返回的 ctx 补充 model_provider 字段（MEDIUM）；RigCortexDao `_ctx` 扩展点文档化（LOW）；thinking_depth 通知失败告警（LOW）；root_id fallback 改用父消息 ID（LOW）
-- **文档更新**：[runtime_design.md](./docs/runtime_design.md) 新增第二十三章：Runtime 执行链路全面修复（v3.4）
+- **文档更新**：[runtime_design.md](./docs/design/runtime_design.md) 新增第二十三章：Runtime 执行链路全面修复（v3.4）
 - **测试统计**：745 个测试 100% 通过
 
 ### 2026-07-21 ~ 22 里程碑（精简）
@@ -1184,7 +1203,7 @@ Agent
 
 ### 2026-07-10 ~ 12 里程碑（精简）
 **✅ 前端架构重构 + Runtime Phase 4 + 全实体 FTS5**
-- **前端架构重构（07-12）**：Dioxus Router 15 条路由 + 统一 API 客户端（OnceLock 单例 + JWT bearer 自动注入）+ 全局认证状态 + 基础 UI 组件库 + 13 个 CRUD 页面；新增 [docs/frontend_architecture.md](./docs/frontend_architecture.md)
+- **前端架构重构（07-12）**：Dioxus Router 15 条路由 + 统一 API 客户端（OnceLock 单例 + JWT bearer 自动注入）+ 全局认证状态 + 基础 UI 组件库 + 13 个 CRUD 页面；新增 [docs/design/frontend_architecture.md](./docs/design/frontend_architecture.md)
 - **Task 进度追踪 + FTS5 公共工具重构（07-12）**：Task `progress: i32`（0-100）+ `update_progress` Domain 方法 + `progress_updated` 事件 + `update_task_progress` 神经工具；`escape_fts5_keyword` 提升到 `pkg/storage/fts5.rs` 消除 DAO→DAO 依赖
 - **Runtime Phase 4C - 技能系统增强（07-12）**：SkillQuery/ToolQuery 加 tags 字段（`json_each` OR 语义）；技能包完整生命周期（install/uninstall/reinstall/list）；`hr_domain.get_agent(with_skills=true)` 加载已安装技能副本；`search_skill` 神经工具
 - **记忆搜索 FTS5 增强 + 综合搜索（07-12）**：`short_term_memory_fts` + `knowledge_node_fts` 虚拟表（trigram 分词器）+ 6 个触发器自动同步；MatchType 三态（Hybrid/Vector/Keyword）+ 三级排序；向量距离阈值可配置
@@ -1210,7 +1229,7 @@ Agent
 
 ### 2026-05 月度汇总
 **✅ 日志系统宏化 + PO/业务实体分层架构落地**
-- **日志系统完全宏化重构（05-15）**：删除所有旧函数实现，8 个宏合并为 4 个（`log_info!` / `log_warn!` / `log_error!` / `log_debug!`）；语法模式匹配自动检测上下文模式；项目内禁止直接调用 `tracing::*!`；新增 [docs/logging_design.md](./docs/logging_design.md)
+- **日志系统完全宏化重构（05-15）**：删除所有旧函数实现，8 个宏合并为 4 个（`log_info!` / `log_warn!` / `log_error!` / `log_debug!`）；语法模式匹配自动检测上下文模式；项目内禁止直接调用 `tracing::*!`；新增 [docs/design/logging_design.md](./docs/design/logging_design.md)
 - **PO 与业务实体分层架构完整落地（05-11）**：Project/Task/Artifact 三大业务对象完成分层重构；DAO 仅操作 PO，DAL 内部 PO↔业务实体转换对外统一业务实体，Domain 100% 无 PO 依赖；业务实体内部持有 `po: XxxPo` 字段；ctx 跨层传递统一 `ctx.clone()`；`TaskStatus::Cancelled = 0` 软删除约定
 - **Project Domain 骨架搭建 + 全项目测试代码重构优化（05-10）**：`ProjectDomain` trait 含 `management` + `execution` 两个子能力；重构 25 个测试文件，抽取 `init_test_env()` 公共初始化函数 + `create_test_agent()`/`create_test_project()` 工厂方法
 

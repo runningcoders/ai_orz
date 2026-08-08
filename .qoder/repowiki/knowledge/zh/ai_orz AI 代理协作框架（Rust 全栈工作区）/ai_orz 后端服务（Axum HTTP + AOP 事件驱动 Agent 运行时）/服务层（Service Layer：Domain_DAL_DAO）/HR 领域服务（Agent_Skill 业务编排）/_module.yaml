@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: backend_service/service_layer/domain_hr
+title: HR 领域服务（Agent/Skill 业务编排）
+scope:
+    - src/service/domain/hr/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/handlers/a2a
+    - path: backend_service/handlers/hr
+    - path: backend_service/messaging
+    - path: backend_service/pkg_shared/storage

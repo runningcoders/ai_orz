@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend_service/service_layer/domain_system
+title: 系统 Domain（定时任务/备份/日志/AOP 监控与 Seed 配置迁移）
+scope:
+    - src/service/domain/system/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/handlers/system
+    - path: backend_service/pkg_shared/stats

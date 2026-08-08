@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: frontend/pages_message
+title: 消息聊天与搜索页面
+scope:
+    - frontend/src/pages/message/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/handlers/a2a

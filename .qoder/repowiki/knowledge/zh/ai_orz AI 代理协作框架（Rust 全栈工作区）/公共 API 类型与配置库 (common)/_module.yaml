@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: common_api
+title: 公共 API 类型与配置库 (common)
+scope:
+    - common/
+source_files: []
+depends_on: []
+related_to: []

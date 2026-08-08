@@ -1,0 +1,72 @@
+version: 1
+
+scope:
+  include: []
+  exclude:
+    # sqlx 离线查询缓存（机器生成的 JSON，无文档价值）
+    - ".sqlx/**"
+    # 构建产物与运行时数据
+    - "target/**"
+    - "dist/**"
+    - "frontend/dist/**"
+    - "frontend/pkg/**"
+    - "frontend/target/**"
+    - "frontend/node_modules/**"
+    - "frontend/public/output.css"
+    - ".ai_orz/**"
+    # 第三方依赖补丁源码（非本项目代码）
+    - "patches/**"
+    - "build_rs_cov.profraw"
+
+repowiki:
+  template: architecture
+  notes:
+    - text: >-
+        本项目是全栈 Rust 多 Agent 协作框架，严格四层单向调用：
+        Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO，
+        禁止跨层调用与同层互调；描述任何模块时必须明确其所属层级与调用方向。
+    - text: >-
+        PO 持久化对象仅在 DAO/DAL 层内部使用，绝不暴露到 Domain 层及以上；
+        Domain 层输入为 Command/Query，输出为业务实体（内部持有 po 字段）与内部事件；
+        DAL 对外接口统一使用业务实体，不用 PO。
+    - text: >-
+        service 层（DAO/DAL/Domain）所有公共方法的第一个参数必须是 ctx: RequestContext，
+        跨层传递统一使用 ctx.clone()；命名遵循 snake_case，Trait 不加 Trait 后缀，
+        实现类加 Impl 后缀（如 AgentDaoSqliteImpl）。
+    - text: >-
+        通用基础设施工具统一放在 src/pkg/ 对应子模块（aop/adapter/stats/logging/storage 等），
+        pkg 层必须无业务感知；禁止在业务 DAO 中定义通用工具函数造成 DAO → DAO 依赖。
+    - text: >-
+        启动流程为两阶段初始化：同步 service::init() 注册单例与 AOP producer/consumer，
+        异步 service::init_base_data() 幂等注入 DB 默认基础数据（agent_rest 每 4h、
+        project_followup 每 1h 两条系统级 cron triggers）；每个 Domain 实现自己的
+        init_base_data 扩展点。
+    - text: >-
+        技术栈版本钉死：后端 Axum 0.8 + sqlx 0.8（SQLite，.sqlx 离线查询缓存）+ DuckDB 统计；
+        前端 Dioxus 0.7（WASM）+ Tailwind CSS v4 + DaisyUI v5；向量搜索 LanceDB 0.26 默认，
+        支持 HNSW/InMemory/SqliteVss 多后端降级；全文搜索使用 FTS5 + trigram 分词器。
+    - text: >-
+        docs/ 目录是规范事实来源：AGENTS.md 为开发规范总览，
+        docs/LAYERED_ARCHITECTURE_PRACTICE.md 含 7 个架构实践与反模式清单，
+        docs/ARCHITECTURE.md 为最新架构说明；wiki 描述与这些文档冲突时以 docs/ 为准。
+    - text: >-
+        质量门槛：clippy -D warnings 零容忍（后端 + 前端 wasm32），
+        cargo-llvm-cov 覆盖率门槛 PR 38% / main 45%，
+        集成测试位于 tests/integration/（33 个，覆盖 Auth/CRUD/消息投递/向量降级/A2A/预置技能/Cron）。
+
+knowledgecard:
+  notes:
+    - text: >-
+        模块划分严格对齐四层架构：src/handlers（适配层用户 API + 外部回调）、
+        src/producer（适配层轮询 + 外部 WS 事件接入）、src/consumer（内部事件消费）、
+        src/service/domain（业务编排）、src/service/dal（PO↔Entity 转换）、
+        src/service/dao（本地 DB CRUD + 外部 API 出站）、src/pkg（业务无感知基础设施）、
+        src/models（PO + 业务实体 + 内部事件）；DAO 不调 DAO、DAL 不调 DAL、Domain 不调 Domain。
+    - text: >-
+        前端为 Dioxus 0.7 WASM 应用（frontend/src 下 api/components/hooks/layouts/pages/store/utils），
+        通过 common crate 与后端共享 API DTO/枚举/错误类型，Tailwind CSS v4 + DaisyUI v5；
+        common 与 ai-orz-macros 是独立 workspace 成员，不依赖后端 service 代码。
+    - text: >-
+        ai-orz-macros 提供统一 IDL 宏：#[generate_http_handler] + #[derive(Params)] +
+        #[param(source = "path/query")]，一份结构体定义同时生成 HTTP handler 与 LLM 工具调用参数，
+        属于横切后端适配层的核心基础设施，应作为独立模块卡片描述。

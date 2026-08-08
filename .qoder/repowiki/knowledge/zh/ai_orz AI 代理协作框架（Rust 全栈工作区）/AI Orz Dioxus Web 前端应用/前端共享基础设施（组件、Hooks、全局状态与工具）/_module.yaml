@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: frontend/shared_infrastructure
+title: 前端共享基础设施（组件、Hooks、全局状态与工具）
+scope:
+    - frontend/src/components/
+    - frontend/src/hooks/
+    - frontend/src/store/
+    - frontend/src/utils/
+    - frontend/src/layouts/
+source_files: []
+depends_on: []
+related_to: []

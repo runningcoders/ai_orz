@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: ""
+title: ai_orz AI 代理协作框架（Rust 全栈工作区）
+scope:
+    - AGENTS.md
+    - Cargo.toml
+    - Cargo.lock
+    - rust-toolchain.toml
+    - build.sh
+    - start.sh
+    - .gitignore
+    - .github/
+    - .sqlx/
+    - .env.example
+    - LICENSE
+    - README.md
+source_files: []
+depends_on: []
+related_to: []

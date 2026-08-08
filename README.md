@@ -126,14 +126,20 @@ ai_orz/
 
 ## 文档
 
+> 📌 **内容脉络（四象限）**：wiki/ 回答「是什么」（现状百科，阅读第一站）；design/ 回答「为什么」（历史决策快照）；plan/ 回答「要去哪」；archive/ 存放已归档方案。
+
 - [AGENTS.md](./AGENTS.md) — AI 开发规范总览 + 完整文档索引
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 完整架构说明
+- [docs/wiki/](./docs/wiki/) — **知识库入口**（代码现状百科，IDE 生成随代码演进）
+- [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) — 代码认知入口页（模块速查 + 文档导航）
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 权威架构总纲
 - [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) — **开发必读**分层架构 7 个实践（含适配层架构原则）、反模式避坑
-- [docs/external_agent_design.md](./docs/external_agent_design.md) — 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）
-- [docs/a2a_server_design.md](./docs/a2a_server_design.md) — A2A Server 对外协议端点
-- [docs/runtime_design.md](./docs/runtime_design.md) — Agent 唤醒与神经工具
-- [docs/message_channel_design.md](./docs/message_channel_design.md) — 多渠道消息接入（出站推送）
-- [docs/vector_search_architecture.md](./docs/vector_search_architecture.md) — 混合搜索架构
+
+设计决策精选（design/ 目录全量见上方导航）：
+
+- [docs/design/external_agent_design.md](./docs/design/external_agent_design.md) — 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）
+- [docs/design/runtime_design.md](./docs/design/runtime_design.md) — Agent 唤醒与神经工具
+- [docs/design/message_channel_design.md](./docs/design/message_channel_design.md) — 多渠道消息接入（出站推送）
+- [docs/design/vector_search_architecture.md](./docs/design/vector_search_architecture.md) — 混合搜索架构
 
 ---
 

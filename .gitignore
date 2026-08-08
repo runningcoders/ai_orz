@@ -38,6 +38,14 @@ target
 # Full-stack build output
 /dist
 /.idea
+.vscode
+
+# Qoder CN IDE 本地配置（插件开关、MCP 配置等，机器相关）
+/.qoder-cn
+# Qoder 生成目录：仅放行 repowiki（通过 docs/wiki 软链接作为知识库入口，需随仓库分发），
+# 其余内容（会话缓存、本地状态等）不入库
+/.qoder/*
+!/.qoder/repowiki
 
 /dev.db
 /.ai_orz/test.db

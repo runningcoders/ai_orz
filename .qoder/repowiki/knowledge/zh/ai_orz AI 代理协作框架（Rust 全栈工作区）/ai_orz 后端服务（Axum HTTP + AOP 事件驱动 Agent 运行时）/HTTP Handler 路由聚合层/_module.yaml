@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: backend_service/handlers
+title: HTTP Handler 路由聚合层
+scope:
+    - src/handlers/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/app_bootstrap
+    - path: backend_service/middleware
+    - path: macros

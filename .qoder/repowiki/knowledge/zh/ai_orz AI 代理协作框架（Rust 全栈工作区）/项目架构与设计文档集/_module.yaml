@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: docs
+title: 项目架构与设计文档集
+scope:
+    - docs/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/pkg_shared/aop
+    - path: backend_service/service_layer/domain_runtime
+    - path: frontend/app_shell

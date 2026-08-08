@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: backend_service/middleware
+title: Axum HTTP 中间件（JWT认证、请求上下文、角色权限）
+scope:
+    - src/middleware/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/app_bootstrap
+    - path: backend_service/handlers
+    - path: backend_service/pkg_shared/pkg_root

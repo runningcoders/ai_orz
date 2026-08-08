@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend_service/pkg_shared/tool_tracing
+title: 工具调用追踪与日志记录
+scope:
+    - src/pkg/tool_tracing/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend_service/pkg_shared/stats
+    - path: backend_service/pkg_shared/tool_registry
