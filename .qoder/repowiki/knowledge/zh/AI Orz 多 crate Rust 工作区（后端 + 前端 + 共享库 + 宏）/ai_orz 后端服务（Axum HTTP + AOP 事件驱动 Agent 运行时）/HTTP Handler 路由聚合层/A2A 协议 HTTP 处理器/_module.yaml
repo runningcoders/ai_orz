@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/a2a
+title: A2A 协议 HTTP 处理器
+scope:
+    - src/handlers/a2a/
+source_files: []
+depends_on: []
+related_to: []

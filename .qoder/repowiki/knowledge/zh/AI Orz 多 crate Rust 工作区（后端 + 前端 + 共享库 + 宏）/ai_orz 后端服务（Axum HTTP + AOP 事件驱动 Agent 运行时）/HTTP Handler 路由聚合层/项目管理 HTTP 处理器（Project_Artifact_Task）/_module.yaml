@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/project
+title: 项目管理 HTTP 处理器（Project/Artifact/Task）
+scope:
+    - src/handlers/project/
+source_files: []
+depends_on: []
+related_to: []

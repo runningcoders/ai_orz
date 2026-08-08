@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/service_layer/domain_project
+title: 项目领域服务层（Project/Task/Artifact Domain）
+scope:
+    - src/service/domain/project/
+source_files: []
+depends_on: []
+related_to: []

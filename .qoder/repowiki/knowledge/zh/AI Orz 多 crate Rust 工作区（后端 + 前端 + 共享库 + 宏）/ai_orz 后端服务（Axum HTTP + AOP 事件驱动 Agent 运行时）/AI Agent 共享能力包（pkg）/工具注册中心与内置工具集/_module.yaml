@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/pkg_shared/tool_registry
+title: 工具注册中心与内置工具集
+scope:
+    - src/pkg/tool_registry/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend/pages_finance
+title: 财务资源管理页面（工具/模型提供商/MCP服务器/消息渠道等）
+scope:
+    - frontend/src/pages/finance/
+source_files: []
+depends_on: []
+related_to: []

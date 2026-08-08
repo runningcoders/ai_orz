@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: frontend/app_shell
+title: 应用外壳与页面路由
+scope:
+    - frontend/src/main.rs
+    - frontend/src/config.rs
+    - frontend/src/pages/mod.rs
+    - frontend/src/pages/reception.rs
+    - frontend/src/pages/settings.rs
+    - frontend/src/pages/workspace.rs
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: backend_service/pkg_shared/utils_and_adapters
+title: 通用工具、消息适配与外部能力封装
+scope:
+    - src/pkg/utils/
+    - src/pkg/adapter/
+    - src/pkg/external/
+    - src/pkg/monitoring/
+source_files: []
+depends_on: []
+related_to: []
