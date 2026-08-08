@@ -88,7 +88,9 @@ impl FlatEntry {
     /// 行展示文本（分组带 ▸/▾ 折叠指示符）
     fn text(&self) -> String {
         match self {
-            FlatEntry::Group { label, expanded, .. } => {
+            FlatEntry::Group {
+                label, expanded, ..
+            } => {
                 format!("{} {}", if *expanded { "▾" } else { "▸" }, label)
             }
             FlatEntry::Doc { entry, .. } => entry.title.clone(),
@@ -99,8 +101,7 @@ impl FlatEntry {
     fn row_class(&self, selected_path: Option<&str>) -> String {
         match self {
             FlatEntry::Group { .. } => {
-                "rounded px-2 py-1 text-sm cursor-pointer font-medium hover:bg-base-200"
-                    .to_string()
+                "rounded px-2 py-1 text-sm cursor-pointer font-medium hover:bg-base-200".to_string()
             }
             FlatEntry::Doc { entry, .. } => {
                 if selected_path == Some(entry.path.as_str()) {
@@ -257,10 +258,7 @@ pub fn SystemDocs() -> Element {
                     }
                     Err(e) => toast.error(format!("解析文档目录失败: {}", e)),
                 },
-                Err(e) => toast.error(format!(
-                    "加载文档目录失败（请确认前端已重新构建）: {}",
-                    e
-                )),
+                Err(e) => toast.error(format!("加载文档目录失败（请确认前端已重新构建）: {}", e)),
             }
         });
     });

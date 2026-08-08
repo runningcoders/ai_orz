@@ -158,16 +158,17 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     if wiki_src.is_dir() {
         /// wiki 目录树节点：文件（File）或子目录（Dir，含子节点）
         enum WikiNode {
-            File { rel: String },
-            Dir { name: String, children: Vec<WikiNode> },
+            File {
+                rel: String,
+            },
+            Dir {
+                name: String,
+                children: Vec<WikiNode>,
+            },
         }
 
         // 递归构建目录树，同时复制 *.md 到 public/docs/ 并声明监听
-        fn walk_wiki(
-            dir: &Path,
-            base: &Path,
-            dest_root: &Path,
-        ) -> std::io::Result<Vec<WikiNode>> {
+        fn walk_wiki(dir: &Path, base: &Path, dest_root: &Path) -> std::io::Result<Vec<WikiNode>> {
             let mut nodes = Vec::new();
             let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
                 .filter_map(|e| e.ok().map(|e| e.path()))
