@@ -14,21 +14,34 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  # ===== 1. Lint 门禁（快，先跑）=====
-  # fmt + clippy，clippy --all-targets 会编译 lance build-script，需要 protoc
+  # ===== 1. 格式检查（最快，独立 job，秒级返回）=====
+  # 纯文本检查，不装 protoc/sccache，失败不阻塞后续更重的步骤
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install rustfmt
+      run: rustup component add rustfmt
+
+    - name: Format check
+      run: cargo fmt --all -- --check
+
+  # ===== 2. Clippy 门禁 =====
+  # clippy --all-targets 会编译 lance build-script，需要 protoc
   lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
 
     - name: Install protoc (for lancedb dependency)
-      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.7
 
-    - name: Install rustfmt and clippy
-      run: rustup component add rustfmt clippy
+    - name: Install clippy
+      run: rustup component add clippy
 
     - name: Configure sccache (local disk mode)
       run: |
@@ -47,9 +60,6 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    - name: Format check
-      run: cargo fmt --all -- --check
-
     - name: Clippy check (deny warnings)
       run: cargo clippy --all-targets -- -D warnings
 
@@ -61,10 +71,9 @@ jobs:
       if: always()
       run: sccache --stop-server || true
 
-  # ===== 2. Backend（lint 通过后跑）=====
-  # build + 单元测试 + 集成测试
-  # sccache 命中 lint job 的依赖编译产物，加速编译
-  # 注：去掉 cargo check --lib，build 已包含类型检查
+  # ===== 3. Backend（lint 通过后跑，与 frontend 并行）=====
+  # 单元测试 + 集成测试，sccache 命中 lint job 的依赖编译产物
+  # 注：无独立 cargo build —— cargo test 会连同 bin target 一起编译（集成测试可调用 bin）
   backend:
     runs-on: ubuntu-latest
     needs: lint
@@ -72,7 +81,7 @@ jobs:
     - uses: actions/checkout@v5
 
     - name: Install protoc (for lancedb dependency)
-      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.7
@@ -101,9 +110,6 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    - name: Build
-      run: cargo build --verbose
-
     - name: Run unit tests (parallel)
       run: cargo test --lib --verbose
 
@@ -118,8 +124,8 @@ jobs:
       if: always()
       run: sccache --stop-server || true
 
-  # ===== 3. Frontend（lint 通过后跑，与 backend 并行）=====
-  # wasm32 check + 前端测试，独立于 backend
+  # ===== 4. Frontend（lint 通过后跑，与 backend 并行）=====
+  # wasm32 clippy + 前端测试，独立于 backend
   frontend:
     runs-on: ubuntu-latest
     needs: lint
@@ -148,9 +154,7 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    - name: Check frontend
-      run: cd frontend && cargo check --target wasm32-unknown-unknown --verbose
-
+    # clippy 已包含完整类型检查，无需先跑一遍 cargo check
     - name: Clippy check (deny warnings)
       run: cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 
@@ -165,18 +169,22 @@ jobs:
       if: always()
       run: sccache --stop-server || true
 
-  # ===== 4. Coverage（backend 通过后跑）=====
-  # tarpaulin 覆盖率报告，最慢最易失败，放最后
-  # sccache 命中 backend job 的依赖编译产物（非 instrument-coverage 部分），
+  # ===== 5. Coverage（lint 通过后与 backend/frontend 并行跑）=====
+  # 时长优化：覆盖率不依赖 backend 测试结果，并行后移出关键路径
+  # （原 lint→backend→coverage 串行链变为 lint→max(backend, coverage)）
+  # sccache 命中其他 job 的依赖编译产物（非 instrument-coverage 部分），
   # 减少依赖库编译时间；instrument-coverage 部分仍需重编
   coverage:
     runs-on: ubuntu-latest
-    needs: backend
+    needs: lint
+    env:
+      # 覆盖率红线差异化：push main = 45，PR = 38
+      FAIL_UNDER: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 45 || 38 }}
     steps:
     - uses: actions/checkout@v5
 
     - name: Install protoc (for lancedb dependency)
-      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends protobuf-compiler
 
     - name: Install sccache
       uses: mozilla-actions/sccache-action@v0.0.7
@@ -233,11 +241,6 @@ jobs:
     - name: Generate coverage report (lcov + fail-under check)
       run: |
         set -euo pipefail
-        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          FAIL_UNDER=45
-        else
-          FAIL_UNDER=38
-        fi
         echo "Using fail-under-lines=$FAIL_UNDER for event=${{ github.event_name }} ref=${{ github.ref }}"
         cargo llvm-cov report \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
@@ -253,6 +256,22 @@ jobs:
           --html \
           --output-dir ./coverage
 
+    # 最终报告优化：覆盖率摘要写入 run 的 Summary 页（无需下载 artifact 即可看结果）
+    - name: Write coverage summary to run summary
+      if: always()
+      run: |
+        {
+          echo "## 📊 Coverage Report"
+          echo ""
+          echo "Threshold: fail-under-lines = **$FAIL_UNDER%** (event=${{ github.event_name }}, ref=${{ github.ref }})"
+          echo ""
+          echo '```'
+          cargo llvm-cov report --summary-only \
+            --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" 2>/dev/null \
+            || echo "(coverage data unavailable)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
     - name: Print sccache stats
       if: always()
       run: sccache --show-stats || true
@@ -266,3 +285,4 @@ jobs:
       with:
         name: coverage-report
         path: ./coverage/
+        retention-days: 14
