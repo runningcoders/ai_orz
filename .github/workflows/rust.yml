@@ -222,21 +222,23 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
-    # 新版 cargo-llvm-cov 接口要求分 3 步（收集/报告分开，参数归属严格区分）：
+    # 新版 cargo-llvm-cov 接口要求收集/报告分开（参数归属严格区分）：
     # - 收集阶段：裸 cargo llvm-cov（不带 report 子命令）才接受 --workspace /
     #   --tests / --no-clean / --no-fail-fast 这类 test 相关参数
-    # - 报告阶段：cargo llvm-cov report 负责输出格式（lcov / html）+ fail-under 校验，
+    # - 报告阶段：cargo llvm-cov report 负责输出与 fail-under 校验，
     #   不接受 --workspace / --no-run 等属于 test 或 nextest 的参数。
     # - --ignore-filename-regex 两个阶段都可以加：test 阶段控制「哪些文件不
     #   instrument」，report 阶段控制「哪些文件不出现在最终报告」，保持一致更清晰。
     #
-    # 关于 PR vs main 差异化：
+    # 报告策略：仅展示不产 artifact（文本表格进日志 + 摘要进 run Summary 页），
+    # artifact 留给后续打 tag 的 release 二进制构建使用。
+    #
+    # 关于 PR vs main 差异化（FAIL_UNDER 见 job env）：
     # - push 到 main：严格 fail-under-lines 45（红线）
     # - PR：同一份报告但 fail-under-lines 设 38（更低的警告阈值）
     - name: Run tests with coverage instrumentation
       run: |
         set -euo pipefail
-        mkdir -p ./coverage
         cargo llvm-cov \
           --workspace \
           --tests \
@@ -244,25 +246,16 @@ jobs:
           --no-fail-fast \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)"
 
-    - name: Generate coverage report (lcov + fail-under check)
+    # 门禁：文本报告（逐文件明细）直接输出到日志 + fail-under 校验
+    - name: Coverage report (fail-under gate)
       run: |
         set -euo pipefail
         echo "Using fail-under-lines=$FAIL_UNDER for event=${{ github.event_name }} ref=${{ github.ref }}"
         cargo llvm-cov report \
           --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
-          --lcov \
-          --output-path ./coverage/lcov.info \
           --fail-under-lines "$FAIL_UNDER"
 
-    - name: Generate coverage report (html artifact)
-      run: |
-        set -euo pipefail
-        cargo llvm-cov report \
-          --ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
-          --html \
-          --output-dir ./coverage
-
-    # 最终报告优化：覆盖率摘要写入 run 的 Summary 页（无需下载 artifact 即可看结果）
+    # 展示：覆盖率摘要写入 run 的 Summary 页
     - name: Write coverage summary to run summary
       if: always()
       run: |
@@ -285,10 +278,3 @@ jobs:
     - name: Stop sccache server
       if: always()
       run: sccache --stop-server || true
-
-    - name: Upload coverage artifacts
-      uses: actions/upload-artifact@v5
-      with:
-        name: coverage-report
-        path: ./coverage/
-        retention-days: 14
