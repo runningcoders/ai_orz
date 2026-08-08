@@ -3,33 +3,14 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-08T05:19:40Z"
+exported_at: "2026-08-08T15:21:01Z"
 modules:
     "":
-        dir_name: AI Orz 多 crate Rust 工作区（后端 + 前端 + 共享库 + 宏）
-        title: AI Orz 多 crate Rust 工作区（后端 + 前端 + 共享库 + 宏）
-        scope:
-            - AGENTS.md
-            - Cargo.toml
-            - Cargo.lock
-            - rust-toolchain.toml
-            - build.sh
-            - start.sh
-            - .gitignore
-            - .github/
-            - .sqlx/
-            - .env.example
-            - LICENSE
-            - README.md
+        dir_name: AI Orz 后端服务根模块（Axum HTTP 服务与 AOP 事件总线）
+        title: AI Orz 后端服务根模块（Axum HTTP 服务与 AOP 事件总线）
+        scope: []
         source_files: []
-        children:
-            - backend_service
-            - common_api
-            - docs
-            - frontend
-            - macros
-            - migrations
-            - tests
+        children: []
         depends_on: []
         related_to: []
     backend_service:
@@ -47,7 +28,9 @@ modules:
             - backend_service/pkg_shared
             - backend_service/service_layer
         depends_on: []
-        related_to: []
+        related_to:
+            - path: common_api
+            - path: tests
     backend_service/app_bootstrap:
         dir_name: 应用启动与路由装配
         title: 应用启动与路由装配
@@ -59,7 +42,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/pkg_shared
     backend_service/handlers:
         dir_name: HTTP Handler 路由聚合层
         title: HTTP Handler 路由聚合层
@@ -75,7 +59,11 @@ modules:
             - backend_service/handlers/system
             - backend_service/handlers/user
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/middleware
+            - path: backend_service/pkg_shared/tool_registry
+            - path: backend_service/service_layer
+            - path: macros
     backend_service/handlers/a2a:
         dir_name: A2A 协议 HTTP 处理器
         title: A2A 协议 HTTP 处理器
@@ -84,7 +72,11 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/service_layer/domain_hr
+            - path: backend_service/service_layer/domain_message
+            - path: backend_service/service_layer/domain_project
+            - path: docs/superpowers_plans_specs
     backend_service/handlers/finance:
         dir_name: 财务领域 HTTP Handlers（模型、工具、消息、附件）
         title: 财务领域 HTTP Handlers（模型、工具、消息、附件）
@@ -93,7 +85,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/api_client
+            - path: frontend/pages_message
     backend_service/handlers/hr:
         dir_name: HR（人力资源）HTTP 处理器模块
         title: HR（人力资源）HTTP 处理器模块
@@ -102,7 +96,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/api_client
     backend_service/handlers/organization:
         dir_name: 组织管理 HTTP Handler 层
         title: 组织管理 HTTP Handler 层
@@ -111,7 +106,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/api_client
     backend_service/handlers/project:
         dir_name: 项目管理 HTTP 处理器（Project_Artifact_Task）
         title: 项目管理 HTTP 处理器（Project/Artifact/Task）
@@ -120,7 +116,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/api_client
     backend_service/handlers/system:
         dir_name: 系统管理 HTTP 处理器（AOP_备份_Cron_日志_Seed_任务）
         title: 系统管理 HTTP 处理器（AOP/备份/Cron/日志/Seed/任务）
@@ -129,7 +126,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/messaging
+            - path: frontend/api_client
     backend_service/handlers/user:
         dir_name: 用户个人信息管理处理器
         title: 用户个人信息管理处理器
@@ -138,7 +137,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/api_client
     backend_service/messaging:
         dir_name: 消息生产者与消费者（AOP 事件驱动）
         title: 消息生产者与消费者（AOP 事件驱动）
@@ -148,7 +148,11 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/system
+            - path: backend_service/pkg_shared/aop
+            - path: backend_service/pkg_shared/stats
+            - path: backend_service/service_layer
     backend_service/middleware:
         dir_name: Axum HTTP 中间件（JWT认证、请求上下文、角色权限）
         title: Axum HTTP 中间件（JWT认证、请求上下文、角色权限）
@@ -157,7 +161,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers
     backend_service/models:
         dir_name: 领域模型与事件定义
         title: 领域模型与事件定义
@@ -166,7 +171,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/service_layer
     backend_service/pkg_shared:
         dir_name: AI Agent 共享能力包（pkg）
         title: AI Agent 共享能力包（pkg）
@@ -182,7 +188,8 @@ modules:
             - backend_service/pkg_shared/tool_tracing
             - backend_service/pkg_shared/utils_and_adapters
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/app_bootstrap
     backend_service/pkg_shared/aop:
         dir_name: AOP 事件生产-消费框架
         title: AOP 事件生产-消费框架
@@ -191,7 +198,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/messaging
+            - path: docs/design_docs
     backend_service/pkg_shared/pkg_root:
         dir_name: 全局共享基础能力包（pkg）
         title: 全局共享基础能力包（pkg）
@@ -214,7 +223,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/messaging
+            - path: backend_service/pkg_shared/tool_tracing
     backend_service/pkg_shared/storage:
         dir_name: 向量存储与 SQLite 持久化门面
         title: 向量存储与 SQLite 持久化门面
@@ -223,7 +234,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/service_layer
+            - path: migrations
     backend_service/pkg_shared/tool_registry:
         dir_name: 工具注册中心与内置工具集
         title: 工具注册中心与内置工具集
@@ -232,7 +245,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers
+            - path: backend_service/pkg_shared/tool_tracing
     backend_service/pkg_shared/tool_tracing:
         dir_name: 工具调用追踪与日志记录
         title: 工具调用追踪与日志记录
@@ -241,7 +256,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/pkg_shared/stats
+            - path: backend_service/pkg_shared/tool_registry
     backend_service/pkg_shared/utils_and_adapters:
         dir_name: 通用工具、消息适配与外部能力封装
         title: 通用工具、消息适配与外部能力封装
@@ -270,7 +287,11 @@ modules:
             - backend_service/service_layer/domain_runtime
             - backend_service/service_layer/domain_system
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers
+            - path: backend_service/messaging
+            - path: backend_service/models
+            - path: backend_service/pkg_shared/storage
     backend_service/service_layer/dal_dao_layer:
         dir_name: 数据访问层（DAL_DAO）
         title: 数据访问层（DAL/DAO）
@@ -298,7 +319,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/a2a
     backend_service/service_layer/domain_message:
         dir_name: 消息领域服务（投递与管理）
         title: 消息领域服务（投递与管理）
@@ -307,7 +329,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/a2a
     backend_service/service_layer/domain_organization:
         dir_name: 组织与用户领域服务层
         title: 组织与用户领域服务层
@@ -325,7 +348,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/a2a
     backend_service/service_layer/domain_runtime:
         dir_name: Agent 运行时领域层（唤醒_记忆_工具执行）
         title: Agent 运行时领域层（唤醒/记忆/工具执行）
@@ -352,7 +376,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service
+            - path: frontend/api_client
     docs:
         dir_name: AI Orz 项目文档中心
         title: AI Orz 项目文档中心
@@ -374,7 +400,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: docs/superpowers_plans_specs
     docs/design_docs:
         dir_name: 系统设计文档集（Design Docs）
         title: 系统设计文档集（Design Docs）
@@ -383,7 +410,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/pkg_shared/aop
     docs/superpowers_plans_specs:
         dir_name: Superpowers 功能规划与规格文档集
         title: Superpowers 功能规划与规格文档集
@@ -392,10 +420,12 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/a2a
+            - path: docs/archive_and_planning
     frontend:
-        dir_name: Dioxus WASM 前端应用（多业务域管理后台）
-        title: Dioxus WASM 前端应用（多业务域管理后台）
+        dir_name: 前端 Dioxus 应用（WASM UI 与业务页面）
+        title: 前端 Dioxus 应用（WASM UI 与业务页面）
         scope:
             - frontend/
         source_files: []
@@ -419,7 +449,14 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/finance
+            - path: backend_service/handlers/hr
+            - path: backend_service/handlers/organization
+            - path: backend_service/handlers/project
+            - path: backend_service/handlers/system
+            - path: backend_service/handlers/user
+            - path: common_api
     frontend/app_shell:
         dir_name: 应用外壳与页面路由
         title: 应用外壳与页面路由
@@ -433,7 +470,12 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/pages_finance
+            - path: frontend/pages_hr
+            - path: frontend/pages_organization
+            - path: frontend/pages_project
+            - path: frontend/pages_system
     frontend/pages_finance:
         dir_name: 财务资源管理页面（工具_模型提供商_MCP服务器_消息渠道等）
         title: 财务资源管理页面（工具/模型提供商/MCP服务器/消息渠道等）
@@ -442,7 +484,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/app_shell
+            - path: frontend/shared_infrastructure
     frontend/pages_hr:
         dir_name: HR（Agent_技能_记忆）管理页面
         title: HR（Agent/技能/记忆）管理页面
@@ -451,7 +495,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/app_shell
+            - path: frontend/shared_infrastructure
     frontend/pages_message:
         dir_name: 消息聊天与搜索页面
         title: 消息聊天与搜索页面
@@ -460,7 +506,10 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers/finance
+            - path: frontend/shared_infrastructure
+            - path: frontend/shared_infrastructure/markdown_renderer
     frontend/pages_organization:
         dir_name: 组织管理页面（信息 & 用户）
         title: 组织管理页面（信息 & 用户）
@@ -469,7 +518,9 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/app_shell
+            - path: frontend/shared_infrastructure
     frontend/pages_project:
         dir_name: 项目管理页面（项目_任务_产物 CRUD 与看板）
         title: 项目管理页面（项目/任务/产物 CRUD 与看板）
@@ -478,7 +529,10 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/app_shell
+            - path: frontend/shared_infrastructure
+            - path: frontend/shared_infrastructure/markdown_renderer
     frontend/pages_system:
         dir_name: 系统管理前端页面集（System Pages）
         title: 系统管理前端页面集（System Pages）
@@ -487,10 +541,12 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/app_shell
+            - path: frontend/shared_infrastructure
     frontend/shared_infrastructure:
-        dir_name: 前端共享基础设施（组件、Hooks、全局状态与工具）
-        title: 前端共享基础设施（组件、Hooks、全局状态与工具）
+        dir_name: Dioxus 前端共享基础设施层
+        title: Dioxus 前端共享基础设施层
         scope:
             - frontend/src/components/
             - frontend/src/hooks/
@@ -498,9 +554,27 @@ modules:
             - frontend/src/utils/
             - frontend/src/layouts/
         source_files: []
+        children:
+            - frontend/shared_infrastructure/markdown_renderer
+        depends_on: []
+        related_to:
+            - path: frontend/pages_finance
+            - path: frontend/pages_hr
+            - path: frontend/pages_message
+            - path: frontend/pages_organization
+            - path: frontend/pages_project
+            - path: frontend/pages_system
+    frontend/shared_infrastructure/markdown_renderer:
+        dir_name: Markdown 渲染组件（含 Mermaid 图支持）
+        title: Markdown 渲染组件（含 Mermaid 图支持）
+        scope:
+            - frontend/src/components/markdown.rs
+        source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: frontend/pages_message
+            - path: frontend/pages_project
     macros:
         dir_name: 过程宏与派生宏工具集
         title: 过程宏与派生宏工具集
@@ -509,7 +583,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/handlers
     migrations:
         dir_name: SQLite 数据库迁移脚本集
         title: SQLite 数据库迁移脚本集
@@ -518,7 +593,8 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service/pkg_shared/storage
     tests:
         dir_name: HTTP API 集成测试套件
         title: HTTP API 集成测试套件
@@ -527,4 +603,5 @@ modules:
         source_files: []
         children: []
         depends_on: []
-        related_to: []
+        related_to:
+            - path: backend_service

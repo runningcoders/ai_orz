@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg_shared/aop
-title: AOP 事件生产-消费框架
-scope:
-    - src/pkg/aop/
-source_files: []
-depends_on: []
-related_to: []

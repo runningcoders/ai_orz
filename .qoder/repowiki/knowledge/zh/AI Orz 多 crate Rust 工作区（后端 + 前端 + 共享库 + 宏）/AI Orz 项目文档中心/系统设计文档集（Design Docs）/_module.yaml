@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: docs/design_docs
-title: 系统设计文档集（Design Docs）
-scope:
-    - docs/design/
-source_files: []
-depends_on: []
-related_to: []

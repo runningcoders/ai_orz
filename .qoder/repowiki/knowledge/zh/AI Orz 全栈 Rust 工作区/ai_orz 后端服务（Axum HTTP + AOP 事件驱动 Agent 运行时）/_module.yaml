@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend_service
+title: ai_orz 后端服务（Axum HTTP + AOP 事件驱动 Agent 运行时）
+scope:
+    - src/
+source_files: []
+depends_on: []
+related_to:
+    - path: common_api
+    - path: tests

@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg_shared
-title: AI Agent 共享能力包（pkg）
-scope:
-    - src/pkg/
-source_files: []
-depends_on: []
-related_to: []

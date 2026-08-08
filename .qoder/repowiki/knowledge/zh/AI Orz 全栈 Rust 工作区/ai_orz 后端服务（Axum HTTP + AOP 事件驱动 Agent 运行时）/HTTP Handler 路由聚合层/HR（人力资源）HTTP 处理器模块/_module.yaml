@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: backend_service/handlers/hr
+title: HR（人力资源）HTTP 处理器模块
+scope:
+    - src/handlers/hr/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend/api_client

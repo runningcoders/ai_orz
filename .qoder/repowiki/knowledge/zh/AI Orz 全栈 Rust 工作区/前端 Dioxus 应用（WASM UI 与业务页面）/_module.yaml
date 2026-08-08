@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend
+title: 前端 Dioxus 应用（WASM UI 与业务页面）
+scope:
+    - frontend/
+source_files: []
+depends_on: []
+related_to: []

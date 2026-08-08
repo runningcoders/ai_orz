@@ -11,7 +11,16 @@
 - [frontend/src/config.rs](file://frontend/src/config.rs)
 - [frontend/Cargo.toml](file://frontend/Cargo.toml)
 - [common/src/api/mod.rs](file://common/src/api/mod.rs)
+- [common/src/api/project.rs](file://common/src/api/project.rs)
+- [common/src/models/stats.rs](file://common/src/models/stats.rs)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 更新了项目模块的 `get_project` 函数，新增 `with_progress_summary` 查询参数支持
+- 增强了项目详情接口以支持按需加载项目进度汇总数据
+- 更新了相关DTO定义和响应结构说明
+- 补充了进度汇总数据的字段说明和使用示例
 
 ## 目录
 1. [简介](#简介)
@@ -200,6 +209,56 @@ UI->>UI : 跳转 /login
 章节来源
 - [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
 
+### 项目详情接口增强 - with_progress_summary 支持
+
+**已更新** 项目详情接口现已支持按需加载项目进度汇总数据，通过 `with_progress_summary` 查询参数控制。
+
+#### 新增功能说明
+- **查询参数**：`with_progress_summary: Option<bool>` - 控制是否返回项目进度汇总
+- **响应字段**：`progress_summary: Option<ProjectProgressSummary>` - 当参数为 true 时填充
+- **数据结构**：`ProjectProgressSummary` 包含任务统计和整体进度信息
+
+#### 使用示例
+```rust
+// 获取项目详情并包含进度汇总
+let req = GetProjectRequest {
+    id: project_id.clone(),
+    with_progress_summary: Some(true),
+    with_task_graph: Some(true),
+    with_artifacts: Some(true),
+    ..Default::default()
+};
+let project = get_project(req).await?;
+
+// 访问进度汇总数据
+if let Some(summary) = &project.progress_summary {
+    println!("总任务数: {}", summary.total_tasks);
+    println!("完成数: {}", summary.completed);
+    println!("进行中: {}", summary.in_progress);
+    println!("待启动: {}", summary.pending);
+    println!("已取消: {}", summary.cancelled);
+    println!("整体进度: {}%", summary.overall_percent);
+}
+```
+
+#### 进度汇总数据结构
+```rust
+pub struct ProjectProgressSummary {
+    pub total_tasks: usize,        // 任务总数
+    pub completed: usize,          // 已完成数
+    pub in_progress: usize,        // 进行中数
+    pub pending: usize,           // 待启动数（Pending + PendingReview）
+    pub blocked: usize,           // 阻塞数（预留，目前固定为 0）
+    pub cancelled: usize,         // 已取消数
+    pub overall_percent: u32,     // 整体进度百分比（0-100，任务进度均值）
+}
+```
+
+章节来源
+- [frontend/src/api/project.rs:35-59](file://frontend/src/api/project.rs#L35-L59)
+- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
+- [common/src/models/stats.rs:150-172](file://common/src/models/stats.rs#L150-L172)
+
 ## 依赖关系分析
 - 运行时依赖：Dioxus（UI框架）、reqwest（HTTP 客户端）、web-sys/wasm-bindgen（浏览器 API 桥接）。
 - 共享类型：common::api 提供统一响应格式、分页结构与业务 DTO，前后端共用保证一致性。
@@ -225,9 +284,10 @@ FE --> CFG["config.rs"]
 ## 性能考虑
 - 连接复用：reqwest Client 使用 OnceLock 全局单例，减少握手开销。
 - 默认响应：对可选列表接口优先使用 api_get_or_default，降低空响应分支复杂度。
-- 查询裁剪：通过 build_query_string 精确传递 with_stats、with_artifacts 等开关，减少不必要的数据传输。
+- 查询裁剪：通过 build_query_string 精确传递 with_stats、with_artifacts、with_progress_summary 等开关，减少不必要的数据传输。
 - 上传优化：multipart 上传使用原生 fetch，避免额外序列化开销。
 - 缓存策略：建议在页面层结合 Signal/缓存层对高频只读数据进行短期缓存（例如组织信息、当前用户信息），以减少重复请求。
+- **进度汇总按需加载**：`with_progress_summary` 参数允许按需获取项目进度汇总，避免不必要的计算开销。
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -236,6 +296,7 @@ FE --> CFG["config.rs"]
 - JSON 解析失败：检查后端返回结构是否为 ApiResponse<T>；确认字段映射与类型一致。
 - 网络错误：检查跨域与代理配置；确认 base URL 正确且可访问。
 - 上传失败：确认 FormData 构造正确；检查浏览器环境 window/fetch 可用性。
+- **进度汇总为空**：确认请求中设置了 `with_progress_summary=true`；检查后端是否正确实现了进度汇总计算逻辑。
 
 章节来源
 - [frontend/src/api/mod.rs:38-85](file://frontend/src/api/mod.rs#L38-L85)
@@ -243,6 +304,8 @@ FE --> CFG["config.rs"]
 
 ## 结论
 该 API 客户端以统一封装为核心，结合共享 DTO 与配置管理，实现了稳定、一致的 HTTP 交互体验。通过集中式错误处理与 401 拦截，提升了用户体验与安全性。各业务模块清晰分层，便于扩展与维护。建议在生产环境中结合缓存与重试策略进一步优化性能与鲁棒性。
+
+**最新改进**：项目详情接口现已支持按需加载项目进度汇总数据，通过 `with_progress_summary` 参数实现更精细化的数据加载控制，有助于提升性能和用户体验。
 
 [本节为总结，不直接分析具体文件]
 
@@ -275,7 +338,7 @@ FE --> CFG["config.rs"]
 - 项目列表：GET /api/v1/projects?limit=&offset=
 - 项目查询：POST /api/v1/projects/query
 - 项目搜索：POST /api/v1/projects/search
-- 项目详情：GET /api/v1/projects/{id}?with_stats=&with_model_call_stats=&stats_time_start=&stats_time_end=&stats_interval=&with_artifacts=
+- 项目详情：GET /api/v1/projects/{id}?with_stats=&with_model_call_stats=&stats_time_start=&stats_time_end=&stats_interval=&with_artifacts=&with_progress_summary=
 - 创建项目：POST /api/v1/projects
 - 更新项目：PUT /api/v1/projects/{id}
 - 更新项目状态：PUT /api/v1/projects/{id}/status
@@ -292,6 +355,8 @@ FE --> CFG["config.rs"]
 - 删除产物：DELETE /api/v1/project/artifacts/{id}
 - 获取产物内容：GET /api/v1/project/artifacts/{id}/content
 - 更新产物：PUT /api/v1/project/artifacts/{artifact_id}
+
+**已更新** 项目详情接口现已支持 `with_progress_summary` 查询参数，用于获取项目进度汇总数据。
 
 章节来源
 - [frontend/src/api/project.rs:16-162](file://frontend/src/api/project.rs#L16-L162)
@@ -327,3 +392,16 @@ FE --> CFG["config.rs"]
 
 章节来源
 - [common/src/api/mod.rs:6-73](file://common/src/api/mod.rs#L6-L73)
+
+### 项目进度汇总数据结构
+- **ProjectProgressSummary**：项目进度汇总数据结构，包含任务统计和整体进度信息
+  - `total_tasks`: 任务总数
+  - `completed`: 已完成数
+  - `in_progress`: 进行中数
+  - `pending`: 待启动数（Pending + PendingReview）
+  - `blocked`: 阻塞数（预留，目前固定为 0）
+  - `cancelled`: 已取消数
+  - `overall_percent`: 整体进度百分比（0-100，任务进度均值）
+
+章节来源
+- [common/src/models/stats.rs:150-172](file://common/src/models/stats.rs#L150-L172)

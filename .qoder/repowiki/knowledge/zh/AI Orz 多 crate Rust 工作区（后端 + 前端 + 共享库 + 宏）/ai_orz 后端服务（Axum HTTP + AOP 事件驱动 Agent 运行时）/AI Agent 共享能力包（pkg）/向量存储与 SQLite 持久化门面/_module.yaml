@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg_shared/storage
-title: 向量存储与 SQLite 持久化门面
-scope:
-    - src/pkg/storage/
-source_files: []
-depends_on: []
-related_to: []

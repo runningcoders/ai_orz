@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: frontend/pages_system
+title: 系统管理前端页面集（System Pages）
+scope:
+    - frontend/src/pages/system/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend/app_shell
+    - path: frontend/shared_infrastructure

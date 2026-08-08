@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: docs/archive_and_planning
+title: 项目归档与规划文档集
+scope:
+    - docs/archive/
+    - docs/plan/
+source_files: []
+depends_on: []
+related_to:
+    - path: docs/superpowers_plans_specs

@@ -1,0 +1,7 @@
+schema_version: 1
+module_path: ""
+title: AI Orz 后端服务根模块（Axum HTTP 服务与 AOP 事件总线）
+scope: []
+source_files: []
+depends_on: []
+related_to: []
