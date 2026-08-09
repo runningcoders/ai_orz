@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/service_layer/domain_organization
-title: 组织与用户领域服务层
-scope:
-    - src/service/domain/organization/
-source_files: []
-depends_on: []
-related_to: []

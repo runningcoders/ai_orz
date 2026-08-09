@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/service_layer/domain_finance
-title: 财务领域服务层（Model/Channel/Tool/MCP/Attachment 管理）
-scope:
-    - src/service/domain/finance/
-source_files: []
-depends_on: []
-related_to: []

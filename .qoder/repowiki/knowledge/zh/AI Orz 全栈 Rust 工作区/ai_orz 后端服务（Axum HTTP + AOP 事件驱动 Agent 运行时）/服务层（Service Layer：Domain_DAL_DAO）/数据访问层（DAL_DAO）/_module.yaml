@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: backend_service/service_layer/dal_dao_layer
-title: 数据访问层（DAL/DAO）
-scope:
-    - src/service/dal/
-    - src/service/dao/
-source_files: []
-depends_on: []
-related_to: []

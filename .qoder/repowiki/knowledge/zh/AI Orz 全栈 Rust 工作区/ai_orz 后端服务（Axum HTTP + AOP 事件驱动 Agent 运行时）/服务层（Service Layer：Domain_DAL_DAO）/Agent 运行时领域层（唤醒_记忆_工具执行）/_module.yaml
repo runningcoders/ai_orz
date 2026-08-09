@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/service_layer/domain_runtime
-title: Agent 运行时领域层（唤醒/记忆/工具执行）
-scope:
-    - src/service/domain/runtime/
-source_files: []
-depends_on: []
-related_to: []

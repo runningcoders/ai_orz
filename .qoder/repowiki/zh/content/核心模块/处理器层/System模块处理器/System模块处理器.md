@@ -10,12 +10,24 @@
 - [src/handlers/system/cron_trigger/mod.rs](file://src/handlers/system/cron_trigger/mod.rs)
 - [src/handlers/system/cron_trigger/create_cron_trigger.rs](file://src/handlers/system/cron_trigger/create_cron_trigger.rs)
 - [src/handlers/system/logs/query_logs.rs](file://src/handlers/system/logs/query_logs.rs)
+- [src/handlers/system/process/mod.rs](file://src/handlers/system/process/mod.rs)
+- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
+- [src/handlers/system/process/shell_status.rs](file://src/handlers/system/process/shell_status.rs)
+- [src/handlers/system/process/shell_kill.rs](file://src/handlers/system/process/shell_kill.rs)
 - [src/handlers/system/seed/mod.rs](file://src/handlers/system/seed/mod.rs)
 - [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
 - [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
 - [src/handlers/system/health_metrics.rs](file://src/handlers/system/health_metrics.rs)
 - [common/src/api/system.rs](file://common/src/api/system.rs)
+- [src/router.rs](file://src/router.rs)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 新增进程管理处理器章节，涵盖 shell_list、shell_status、shell_kill 三个双暴露处理器
+- 更新系统API结构，增加进程管理相关的请求和响应类型
+- 补充路由配置中进程管理端点的注册信息
+- 增强权限控制和Agent范围过滤说明
 
 ## 目录
 1. [简介](#简介)
@@ -30,7 +42,9 @@
 10. [附录：API示例与最佳实践](#附录api示例与最佳实践)
 
 ## 简介
-本文件面向 System（系统管理）模块的 HTTP 处理器，覆盖备份恢复、日志查询、定时任务、种子数据管理、AOP 队列监控与实时统计、系统健康指标聚合等系统级能力。文档从四层单向调用视角说明 Handler → Domain → DAL → DAO 的职责边界，解释管理员权限控制、系统资源管理、异步任务调度与监控指标收集的实现方式，并给出运维最佳实践与安全建议。
+本文件面向 System（系统管理）模块的 HTTP 处理器，覆盖备份恢复、日志查询、定时任务、种子数据管理、AOP 队列监控与实时统计、系统健康指标聚合以及后台进程管理等系统级能力。文档从四层单向调用视角说明 Handler → Domain → DAL → DAO 的职责边界，解释管理员权限控制、系统资源管理、异步任务调度与监控指标收集的实现方式，并给出运维最佳实践与安全建议。
+
+**更新** 新增后台进程管理功能，提供统一的进程列表查询、状态监控和终止操作，支持HTTP端点和LLM工具双暴露模式。
 
 ## 项目结构
 System 模块按功能域拆分到 handlers/system 下，每个子域进一步按方法粒度拆分为独立文件，便于权限校验、路由绑定与维护。
@@ -42,15 +56,16 @@ A["system/mod.rs"]
 B["backup/*"]
 C["cron_trigger/*"]
 D["logs/*"]
-E["seed/*"]
-F["aop.rs / aop_stats.rs"]
-G["health_metrics.rs"]
+E["process/*"]
+F["seed/*"]
+G["aop.rs / aop_stats.rs"]
+H["health_metrics.rs"]
 end
 subgraph "领域服务层"
-H["service::domain::system::domain()"]
+I["service::domain::system::domain()"]
 end
 subgraph "共享 API DTO"
-I["common::api::system::*"]
+J["common::api::system::*"]
 end
 A --> B
 A --> C
@@ -58,26 +73,29 @@ A --> D
 A --> E
 A --> F
 A --> G
-B --> H
-C --> H
-D --> H
-E --> H
-F --> H
-G --> H
+A --> H
 B --> I
 C --> I
 D --> I
 E --> I
 F --> I
 G --> I
+H --> I
+B --> J
+C --> J
+D --> J
+E --> J
+F --> J
+G --> J
+H --> J
 ```
 
 图表来源
-- [src/handlers/system/mod.rs:1-13](file://src/handlers/system/mod.rs#L1-L13)
-- [common/src/api/system.rs:1-239](file://common/src/api/system.rs#L1-L239)
+- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
+- [common/src/api/system.rs:1-328](file://common/src/api/system.rs#L1-L328)
 
 章节来源
-- [src/handlers/system/mod.rs:1-13](file://src/handlers/system/mod.rs#L1-L13)
+- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
 
 ## 核心组件
 - 备份恢复：创建备份、列出备份、生成恢复脚本；高危操作二次校验 SuperAdmin。
@@ -87,6 +105,7 @@ G --> I
 - AOP 队列监控：查看各消费者队列状态、事件列表与详情。
 - AOP 实时统计：概览、时序、分布三类内存统计接口。
 - 健康指标：聚合后端在线、AOP 队列积压、活跃 Agent/项目/任务数、运行时长等。
+- **新增** 进程管理：后台进程列表查询、状态监控、进程终止，支持Agent范围过滤和探活刷新。
 
 章节来源
 - [src/handlers/system/backup/mod.rs:1-33](file://src/handlers/system/backup/mod.rs#L1-L33)
@@ -96,7 +115,10 @@ G --> I
 - [src/handlers/system/aop.rs:1-145](file://src/handlers/system/aop.rs#L1-L145)
 - [src/handlers/system/aop_stats.rs:1-73](file://src/handlers/system/aop_stats.rs#L1-L73)
 - [src/handlers/system/health_metrics.rs:1-135](file://src/handlers/system/health_metrics.rs#L1-L135)
-- [common/src/api/system.rs:1-239](file://common/src/api/system.rs#L1-L239)
+- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
+- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
 
 ## 架构总览
 System 模块严格遵循 Adapter→Domain→DAL→DAO 单向调用。Handler 仅负责参数解析、权限校验与编排；Domain 封装业务规则；DAL/DAO 负责持久化。
@@ -315,20 +337,59 @@ Handler-->>UI : "HealthMetricsResponse"
 - [src/handlers/system/health_metrics.rs:1-135](file://src/handlers/system/health_metrics.rs#L1-L135)
 - [common/src/api/system.rs:1-33](file://common/src/api/system.rs#L1-L33)
 
+### 后台进程管理（新增）
+- 职责：提供后台进程的列表查询、状态监控和终止操作，支持Agent范围过滤和探活刷新。
+- 权限：路由层要求 Admin/SuperAdmin；Agent调用方仅可见自己启动的进程。
+- 特性：
+  - 双暴露：同时作为HTTP端点和LLM工具（shell_list、shell_status、shell_kill）
+  - 探活刷新：列表查询时对Running状态的进程进行存活检查
+  - 范围过滤：Agent上下文自动过滤仅显示该Agent启动的进程
+  - 日志关联：每个进程关联call_id，便于追踪完整的工具调用链
+
+```mermaid
+sequenceDiagram
+participant Admin as "管理员/Agent"
+participant Handler as "shell_list/status/kill"
+participant Domain as "process_manager"
+participant Registry as "进程注册中心"
+Admin->>Handler : "GET /api/v1/system/processes"
+Handler->>Domain : "list_processes(ctx)"
+Domain->>Registry : "获取进程列表"
+Registry-->>Domain : "ProcessEntry[]"
+Domain->>Registry : "refresh(pid) 探活"
+Registry-->>Domain : "更新后的状态"
+Domain-->>Handler : "ProcessInfo[]"
+Handler-->>Admin : "ListProcessesResponse"
+```
+
+图表来源
+- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+
+章节来源
+- [src/handlers/system/process/mod.rs:1-6](file://src/handlers/system/process/mod.rs#L1-L6)
+- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
+- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+
 ## 依赖关系分析
 - Handler 仅依赖 common::api DTO 与 crate::pkg::RequestContext，并通过 service::domain::system::domain() 访问领域服务。
 - 备份、日志、定时任务、种子数据、AOP 监控与健康指标均通过同一入口 domain() 解耦具体实现。
-- 权限控制采用“路由层角色检查 + handler 内部高危操作二次校验”的组合策略。
+- 权限控制采用"路由层角色检查 + handler 内部高危操作二次校验"的组合策略。
+- **新增** 进程管理处理器依赖进程注册中心和Agent范围过滤机制。
 
 ```mermaid
 graph LR
 H1["backup/*"] --> D["system::domain"]
 H2["cron_trigger/*"] --> D
 H3["logs/*"] --> D
-H4["seed/*"] --> D
-H5["aop.rs"] --> D
-H6["aop_stats.rs"] --> D
-H7["health_metrics.rs"] --> D
+H4["process/*"] --> D
+H5["seed/*"] --> D
+H6["aop.rs"] --> D
+H7["aop_stats.rs"] --> D
+H8["health_metrics.rs"] --> D
 D --> DAL["DAL/DAO"]
 ```
 
@@ -336,19 +397,21 @@ D --> DAL["DAL/DAO"]
 - [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
 - [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
 - [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/process/shell_list.rs:23-48](file://src/handlers/system/process/shell_list.rs#L23-L48)
 - [src/handlers/system/seed/mod.rs:273-409](file://src/handlers/system/seed/mod.rs#L273-L409)
 - [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
 - [src/handlers/system/aop_stats.rs:17-30](file://src/handlers/system/aop_stats.rs#L17-L30)
 - [src/handlers/system/health_metrics.rs:33-49](file://src/handlers/system/health_metrics.rs#L33-L49)
 
 章节来源
-- [src/handlers/system/mod.rs:1-13](file://src/handlers/system/mod.rs#L1-L13)
+- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
 
 ## 性能考量
 - AOP 实时统计：直接读取内存统计，无 DB 查询，适合高频刷新。
 - 健康指标：对跨域统计做失败降级为 0，避免单点慢查询拖垮整体响应。
 - 种子数据导入：支持进度回调与 DryRun，便于大对象导入时的可观测性与回滚前验证。
 - 日志查询：分页默认 page_size 较小，避免大数据量传输。
+- **新增** 进程管理：列表查询时逐条探活可能带来额外开销，但确保状态准确性；Agent范围过滤减少不必要的数据传输。
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -358,6 +421,10 @@ D --> DAL["DAL/DAO"]
 - 定时任务未触发：确认 trigger_type 与 next_run_at 计算是否正确；Cron 表达式类型当前不支持。
 - 种子导入异常：优先使用 DryRun 查看 diff；检查敏感字段是否补齐；注意 SkipExisting 策略会跳过已有记录。
 - AOP 队列堆积：通过 all_queue_stats 与 list_events 定位消费者与事件状态，结合下游消费能力扩容或优化。
+- **新增** 进程管理问题：
+  - 进程列表为空：检查Agent上下文是否正确设置，确认进程是否已注册到注册中心
+  - 进程状态不准确：确认探活刷新逻辑是否正常执行
+  - 权限问题：Agent只能看到自己启动的进程，确认agent_id是否正确设置
 
 章节来源
 - [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
@@ -365,9 +432,10 @@ D --> DAL["DAL/DAO"]
 - [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-37](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L37)
 - [src/handlers/system/seed/mod.rs:420-480](file://src/handlers/system/seed/mod.rs#L420-L480)
 - [src/handlers/system/aop.rs:73-117](file://src/handlers/system/aop.rs#L73-L117)
+- [src/handlers/system/process/shell_list.rs:110-143](file://src/handlers/system/process/shell_list.rs#L110-L143)
 
 ## 结论
-System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢复、日志查询、定时任务、种子数据管理、AOP 监控与实时统计、健康指标聚合等系统级能力。通过路由层角色校验与 handler 内部二次校验保障安全，通过内存统计与降级策略保障性能，通过 DryRun 与进度回调提升可维护性。建议在生产环境结合监控告警与审计日志，形成闭环的系统运维体系。
+System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢复、日志查询、定时任务、种子数据管理、AOP 监控与实时统计、健康指标聚合以及后台进程管理等系统级能力。通过路由层角色校验与 handler 内部二次校验保障安全，通过内存统计与降级策略保障性能，通过 DryRun 与进度回调提升可维护性。新增的进程管理功能为系统运维提供了更强大的工具支持。建议在生产环境结合监控告警与审计日志，形成闭环的系统运维体系。
 
 [本节为总结性内容，不直接分析具体文件]
 
@@ -395,6 +463,10 @@ System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢�
   - 分布：GET /api/v1/system/aop/stats/distribution?group_by=&status=
 - 健康指标
   - 聚合指标：GET /api/v1/system/health/metrics
+- **新增** 进程管理
+  - 进程列表：GET /api/v1/system/processes（Admin/SuperAdmin，Agent仅见自己的进程）
+  - 进程状态：GET /api/v1/system/processes/{pid}?tail_lines=（支持日志尾部查询）
+  - 终止进程：POST /api/v1/system/processes/{pid}/kill（SIGKILL信号）
 
 安全与运维建议
 - 所有系统管理端点均需通过路由层角色中间件保护；高危操作在 handler 内二次校验 SuperAdmin。
@@ -402,6 +474,11 @@ System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢�
 - 种子导入优先使用 DryRun 验证差异，再执行实际写入；必要时分阶段导入（用户/Provider/Agent/Skill）。
 - 监控告警：基于 AOP 实时统计与健康指标建立阈值告警（如队列积压、任务堆积、Agent/项目数量异常）。
 - 性能优化：合理设置日志分页大小；对跨域统计做降级；避免在大事务中执行耗时 IO。
+- **新增** 进程管理最佳实践：
+  - 定期清理已退出的进程记录，避免注册中心膨胀
+  - 监控长时间运行的进程，及时干预异常进程
+  - 利用call_id关联完整的工具调用链，便于问题追踪
+  - Agent调用时注意进程生命周期管理，避免僵尸进程
 
 章节来源
 - [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
@@ -415,4 +492,8 @@ System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢�
 - [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
 - [src/handlers/system/aop_stats.rs:17-71](file://src/handlers/system/aop_stats.rs#L17-L71)
 - [src/handlers/system/health_metrics.rs:33-133](file://src/handlers/system/health_metrics.rs#L33-L133)
-- [common/src/api/system.rs:1-239](file://common/src/api/system.rs#L1-L239)
+- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)

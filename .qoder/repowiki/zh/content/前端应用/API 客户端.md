@@ -7,20 +7,24 @@
 - [frontend/src/api/organization.rs](file://frontend/src/api/organization.rs)
 - [frontend/src/api/project.rs](file://frontend/src/api/project.rs)
 - [frontend/src/api/hr.rs](file://frontend/src/api/hr.rs)
-- [frontend/src/store/auth.rs](file://frontend/src/store/auth.rs)
-- [frontend/src/config.rs](file://frontend/src/config.rs)
-- [frontend/Cargo.toml](file://frontend/Cargo.toml)
-- [common/src/api/mod.rs](file://common/src/api/mod.rs)
-- [common/src/api/project.rs](file://common/src/api/project.rs)
-- [common/src/models/stats.rs](file://common/src/models/stats.rs)
+- [frontend/src/api/system.rs](file://frontend/src/api/system.rs)
+- [common/src/api/system.rs](file://common/src/api/system.rs)
+- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
+- [src/handlers/system/process/shell_status.rs](file://src/handlers/system/process/shell_status.rs)
+- [src/handlers/system/process/shell_kill.rs](file://src/handlers/system/process/shell_kill.rs)
+- [frontend/src/pages/system/processes.rs](file://frontend/src/pages/system/processes.rs)
+- [frontend/src/components/process_detail.rs](file://frontend/src/components/process_detail.rs)
+- [frontend/src/components/chat/tool_calls_tab.rs](file://frontend/src/components/chat/tool_calls_tab.rs)
+- [src/router.rs](file://src/router.rs)
 </cite>
 
 ## 更新摘要
 **变更内容**
-- 更新了项目模块的 `get_project` 函数，新增 `with_progress_summary` 查询参数支持
-- 增强了项目详情接口以支持按需加载项目进度汇总数据
-- 更新了相关DTO定义和响应结构说明
-- 补充了进度汇总数据的字段说明和使用示例
+- 新增统一后台进程管理功能，包括进程列表查询、状态监控和进程终止
+- 扩展系统模块 API，添加 `list_processes`、`get_process_status`、`kill_process` 等接口
+- 实现前端进程管理页面和工具调用 Tab 的进程关联功能
+- 新增进程详情共享组件，支持弹窗展示和实时刷新
+- 完善后端进程管理处理器，提供 shell_list、shell_status、shell_kill 双露接口
 
 ## 目录
 1. [简介](#简介)
@@ -35,26 +39,29 @@
 10. [附录：接口清单与示例](#附录接口清单与示例)
 
 ## 简介
-本文件面向 AI Orz 前端应用，系统化说明基于 Rust 的前端 HTTP 客户端实现与业务 API 调用方式。内容涵盖统一请求封装、认证令牌管理（基于 HttpOnly Cookie）、错误处理机制、响应拦截器、各业务模块的 API 接口定义（认证、用户、组织、项目、Agent、工具等）、状态管理模式（全局状态存储、异步数据加载、缓存策略），以及调试与测试指南和性能优化建议。
+本文件面向 AI Orz 前端应用，系统化说明基于 Rust 的前端 HTTP 客户端实现与业务 API 调用方式。内容涵盖统一请求封装、认证令牌管理（基于 HttpOnly Cookie）、错误处理机制、响应拦截器、各业务模块的 API 接口定义（认证、用户、组织、项目、Agent、工具、进程管理等）、状态管理模式（全局状态存储、异步数据加载、缓存策略），以及调试与测试指南和性能优化建议。
 
 ## 项目结构
 前端采用 Dioxus + reqwest 构建，API 客户端集中在 frontend/src/api 下，按业务域拆分模块；通用类型与统一响应格式在 common/src/api 中共享；配置与运行时 URL 拼接在 frontend/src/config.rs；全局状态（登录态、角色）在 frontend/src/store 中管理。
 
 ```mermaid
 graph TB
-A["前端页面/组件"] --> B["api 模块<br/>auth / organization / project / hr / finance ..."]
+A["前端页面/组件"] --> B["api 模块<br/>auth / organization / project / hr / system ..."]
 B --> C["统一请求封装<br/>api_get / api_post / api_put / api_delete"]
 C --> D["HTTP 客户端<br/>reqwest Client"]
 C --> E["配置中心<br/>current_config().api_url()"]
 C --> F["错误处理<br/>ApiError / handle_unauthorized"]
 B --> G["业务 DTO<br/>common::api::*"]
 H["全局状态<br/>store/auth.rs"] --> A
+I["进程管理<br/>system.rs + ProcessInfo"] --> J["进程详情组件<br/>process_detail.rs"]
+J --> K["工具调用Tab<br/>tool_calls_tab.rs"]
 ```
 
 图表来源
 - [frontend/src/api/mod.rs:28-35](file://frontend/src/api/mod.rs#L28-L35)
 - [frontend/src/config.rs:76-79](file://frontend/src/config.rs#L76-L79)
 - [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
 
 章节来源
 - [frontend/src/api/mod.rs:1-433](file://frontend/src/api/mod.rs#L1-L433)
@@ -67,6 +74,7 @@ H["全局状态<br/>store/auth.rs"] --> A
 - 配置与 URL 构造：通过 FrontendConfig 动态拼接后端 API Base URL，支持编译时默认值与 localStorage 覆盖。
 - 认证状态：基于 HttpOnly Cookie 的 JWT，前端仅持久化登录标志与角色到 localStorage，并在 401 时自动清理并重定向。
 - 分页与查询参数：提供 build_pagination_url 与 build_query_string 辅助函数，统一构造查询串。
+- **进程管理**：新增统一后台进程管理功能，支持进程列表查询、状态监控、日志查看和进程终止操作。
 
 章节来源
 - [frontend/src/api/mod.rs:87-287](file://frontend/src/api/mod.rs#L87-L287)
@@ -76,6 +84,7 @@ H["全局状态<br/>store/auth.rs"] --> A
 - [frontend/src/config.rs:12-85](file://frontend/src/config.rs#L12-L85)
 - [frontend/src/store/auth.rs:13-57](file://frontend/src/store/auth.rs#L13-L57)
 - [common/src/api/mod.rs:6-73](file://common/src/api/mod.rs#L6-L73)
+- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
 
 ## 架构总览
 前端通过业务 API 模块调用统一请求封装，统一封装负责：
@@ -93,7 +102,7 @@ participant Core as "统一请求封装"
 participant HTTP as "reqwest Client"
 participant CFG as "配置中心"
 participant ERR as "错误处理"
-UI->>API : 调用具体接口(如 list_projects)
+UI->>API : 调用具体接口(如 list_processes)
 API->>Core : api_get / api_post / api_put / api_delete
 Core->>CFG : current_config().api_url(path)
 Core->>HTTP : 发送请求
@@ -187,12 +196,14 @@ UI->>UI : 跳转 /login
 - 组织与用户：获取当前组织、更新组织、列出用户、创建/更新/删除用户、当前用户信息与更新。
 - 项目与任务：项目列表/查询/搜索/详情/创建/更新/状态变更；任务列表/查询/搜索/详情/创建/更新/状态/进度；产物 CRUD 与内容获取。
 - HR（Agent/技能/工具）：Agent 列表/查询/搜索/详情/创建/更新/状态/删除；外部 Agent；工具包/技能包安装卸载；单技能安装卸载；技能库 CRUD；Skill 文件管理；Agent 工具绑定/解绑；记忆搜索与推荐节点。
+- **系统管理**：健康检查、定时触发器、备份管理、日志查询、AOP 监控、**统一后台进程管理**。
 
 章节来源
 - [frontend/src/api/auth.rs:10-40](file://frontend/src/api/auth.rs#L10-L40)
 - [frontend/src/api/organization.rs:13-61](file://frontend/src/api/organization.rs#L13-L61)
 - [frontend/src/api/project.rs:16-162](file://frontend/src/api/project.rs#L16-L162)
 - [frontend/src/api/hr.rs:25-310](file://frontend/src/api/hr.rs#L25-L310)
+- [frontend/src/api/system.rs:1-356](file://frontend/src/api/system.rs#L1-L356)
 
 ### 分页与查询参数构造
 - 分页：build_pagination_url 将 PaginationParams(limit/offset) 转为 query string。
@@ -208,6 +219,58 @@ UI->>UI : 跳转 /login
 
 章节来源
 - [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
+
+### 统一后台进程管理功能
+
+**已更新** 新增统一后台进程管理功能，提供完整的进程生命周期管理能力。
+
+#### 核心功能特性
+- **进程列表查询**：`GET /api/v1/system/processes` - 列出所有后台进程，支持按调用方身份过滤可见范围
+- **进程状态查询**：`GET /api/v1/system/processes/{pid}` - 查询单个进程状态，包含探活检查和日志尾部
+- **进程终止控制**：`POST /api/v1/system/processes/{pid}/kill` - 终止指定进程（SIGKILL）
+- **权限控制**：Agent 调用方仅可见自己启动的进程，普通用户可见全部进程
+
+#### 数据结构定义
+```rust
+// 进程信息
+pub struct ProcessInfo {
+    pub pid: u32,                    // 进程ID
+    pub call_id: String,             // 关联的工具调用ID
+    pub tool_id: String,             // 启动该进程的工具ID
+    pub agent_id: Option<String>,    // 启动方Agent ID
+    pub command: String,             // 执行的命令
+    pub working_dir: String,         // 工作目录
+    pub background: bool,            // 是否后台启动
+    pub started_at: u64,             // 启动时间戳
+    pub alive: bool,                 // 是否存活
+    pub exit_code: Option<i32>,      // 退出码
+    pub log_path: String,            // 日志路径
+}
+
+// 进程状态响应
+pub struct ShellStatusResponse {
+    pub pid: u32,                    // 进程ID
+    pub alive: bool,                 // 是否存活
+    pub exit_code: Option<i32>,      // 退出码
+    pub started_at: u64,             // 启动时间
+    pub command: String,             // 执行命令
+    pub log_path: String,            // 日志路径
+    pub call_id: String,             // 关联调用ID
+    pub log_tail: String,            // 日志尾部
+}
+```
+
+#### 前端集成
+- **进程管理页面**：独立的系统管理页面，支持自动刷新、手动刷新、进程详情弹窗
+- **工具调用 Tab**：在聊天侧栏中显示工具调用记录，并与运行中的进程关联
+- **进程详情组件**：共享组件，支持弹窗展示进程详细信息和操作按钮
+
+章节来源
+- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
+- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
 
 ### 项目详情接口增强 - with_progress_summary 支持
 
@@ -263,6 +326,7 @@ pub struct ProjectProgressSummary {
 - 运行时依赖：Dioxus（UI框架）、reqwest（HTTP 客户端）、web-sys/wasm-bindgen（浏览器 API 桥接）。
 - 共享类型：common::api 提供统一响应格式、分页结构与业务 DTO，前后端共用保证一致性。
 - 配置注入：编译期生成配置，运行期通过 current_config() 获取。
+- **进程管理依赖**：SystemDomain 提供进程管理能力，pkg/process 注册中心管理进程状态。
 
 ```mermaid
 graph LR
@@ -271,11 +335,15 @@ FE --> WS["web-sys / wasm-bindgen"]
 FE --> DX["dioxus"]
 FE --> COM["common::api (DTOs)"]
 FE --> CFG["config.rs"]
+FE --> SYS["system.rs (进程管理)"]
+SYS --> PROC["ProcessInfo / ShellStatusResponse"]
+PROC --> HANDLER["shell_list/status/kill handlers"]
 ```
 
 图表来源
 - [frontend/Cargo.toml:11-25](file://frontend/Cargo.toml#L11-L25)
 - [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
 
 章节来源
 - [frontend/Cargo.toml:1-26](file://frontend/Cargo.toml#L1-L26)
@@ -288,6 +356,7 @@ FE --> CFG["config.rs"]
 - 上传优化：multipart 上传使用原生 fetch，避免额外序列化开销。
 - 缓存策略：建议在页面层结合 Signal/缓存层对高频只读数据进行短期缓存（例如组织信息、当前用户信息），以减少重复请求。
 - **进度汇总按需加载**：`with_progress_summary` 参数允许按需获取项目进度汇总，避免不必要的计算开销。
+- **进程管理优化**：进程列表查询支持自动刷新间隔控制，详情组件支持懒加载和防抖刷新。
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -297,15 +366,21 @@ FE --> CFG["config.rs"]
 - 网络错误：检查跨域与代理配置；确认 base URL 正确且可访问。
 - 上传失败：确认 FormData 构造正确；检查浏览器环境 window/fetch 可用性。
 - **进度汇总为空**：确认请求中设置了 `with_progress_summary=true`；检查后端是否正确实现了进度汇总计算逻辑。
+- **进程管理问题**：
+  - 进程列表为空：检查是否有 shell_exec 启动的后台进程
+  - 进程状态异常：确认进程是否已退出或终止
+  - 权限问题：Agent 只能看到自己启动的进程
+  - 日志无法查看：检查日志文件路径和权限
 
 章节来源
 - [frontend/src/api/mod.rs:38-85](file://frontend/src/api/mod.rs#L38-L85)
 - [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
 
 ## 结论
 该 API 客户端以统一封装为核心，结合共享 DTO 与配置管理，实现了稳定、一致的 HTTP 交互体验。通过集中式错误处理与 401 拦截，提升了用户体验与安全性。各业务模块清晰分层，便于扩展与维护。建议在生产环境中结合缓存与重试策略进一步优化性能与鲁棒性。
 
-**最新改进**：项目详情接口现已支持按需加载项目进度汇总数据，通过 `with_progress_summary` 参数实现更精细化的数据加载控制，有助于提升性能和用户体验。
+**最新改进**：项目详情接口现已支持按需加载项目进度汇总数据，通过 `with_progress_summary` 参数实现更精细化的数据加载控制，有助于提升性能和用户体验。**新增的统一后台进程管理功能**提供了完整的进程生命周期管理能力，包括进程列表查询、状态监控、日志查看和进程终止操作，并通过前端进程管理页面和工具调用 Tab 实现了良好的用户体验。
 
 [本节为总结，不直接分析具体文件]
 
@@ -385,6 +460,35 @@ FE --> CFG["config.rs"]
 章节来源
 - [frontend/src/api/hr.rs:25-310](file://frontend/src/api/hr.rs#L25-L310)
 
+### 系统管理
+- 健康检查：GET /health
+- 定时触发器列表：GET /api/v1/system/cron-triggers
+- 创建定时触发器：POST /api/v1/system/cron-triggers
+- 更新定时触发器：PUT /api/v1/system/cron-triggers/{id}
+- 删除定时触发器：DELETE /api/v1/system/cron-triggers/{id}
+- 暂停定时触发器：POST /api/v1/system/cron-triggers/{id}/pause
+- 恢复定时触发器：POST /api/v1/system/cron-triggers/{id}/resume
+- 备份列表：GET /api/v1/system/backups
+- 创建备份：POST /api/v1/system/backups
+- 删除备份：DELETE /api/v1/system/backups/{version}
+- 获取恢复脚本：POST /api/v1/system/backups/{version}/restore
+- 日志查询：GET /api/v1/system/logs
+- AOP 队列统计：GET /api/v1/system/aop/stats
+- 事件列表：GET /api/v1/system/aop/{consumer}/events
+- 事件详情：GET /api/v1/system/aop/{consumer}/events/{event_id}
+- AOP 统计概览：GET /api/v1/system/aop/stats/overview
+- AOP 时序统计：GET /api/v1/system/aop/stats/time-series
+- AOP 分布统计：GET /api/v1/system/aop/stats/distribution
+- 健康指标：GET /api/v1/system/health/metrics
+- **统一后台进程管理**：
+  - 进程列表：GET /api/v1/system/processes
+  - 进程状态：GET /api/v1/system/processes/{pid}
+  - 终止进程：POST /api/v1/system/processes/{pid}/kill
+
+章节来源
+- [frontend/src/api/system.rs:1-356](file://frontend/src/api/system.rs#L1-L356)
+- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+
 ### 统一响应与分页
 - 统一响应：ApiResponse<T> { code, message, data }
 - 分页参数：PaginationParams { limit, offset }
@@ -405,3 +509,30 @@ FE --> CFG["config.rs"]
 
 章节来源
 - [common/src/models/stats.rs:150-172](file://common/src/models/stats.rs#L150-L172)
+
+### 进程管理数据结构
+- **ProcessInfo**：进程信息数据结构
+  - `pid`: 进程ID
+  - `call_id`: 关联的工具调用ID
+  - `tool_id`: 启动该进程的工具ID
+  - `agent_id`: 启动方Agent ID
+  - `command`: 执行的命令
+  - `working_dir`: 工作目录
+  - `background`: 是否后台启动
+  - `started_at`: 启动时间戳
+  - `alive`: 是否存活
+  - `exit_code`: 退出码
+  - `log_path`: 日志路径
+
+- **ShellStatusResponse**：进程状态响应数据结构
+  - `pid`: 进程ID
+  - `alive`: 是否存活
+  - `exit_code`: 退出码
+  - `started_at`: 启动时间
+  - `command`: 执行命令
+  - `log_path`: 日志路径
+  - `call_id`: 关联调用ID
+  - `log_tail`: 日志尾部
+
+章节来源
+- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
