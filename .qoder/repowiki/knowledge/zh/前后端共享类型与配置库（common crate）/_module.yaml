@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: common
+title: 前后端共享类型与配置库（common crate）
+scope:
+    - common/
+source_files: []
+depends_on: []
+related_to: []

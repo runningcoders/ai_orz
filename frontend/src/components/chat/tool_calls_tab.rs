@@ -151,8 +151,14 @@ pub fn ToolCallsTab(
         let tick = refresh_tick;
         let scope_changed = prev_scope() != scope;
         let tick_changed = prev_tick() != tick;
-        prev_scope.set(scope);
-        prev_tick.set(tick);
+        // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
+        // 无条件写回本 effect 自己订阅的信号会触发 effect 重跑 → 无限循环卡死主线程
+        if scope_changed {
+            prev_scope.set(scope);
+        }
+        if tick_changed {
+            prev_tick.set(tick);
+        }
         if scope_changed {
             expanded_call_id.set(None);
             detail_pid.set(None);

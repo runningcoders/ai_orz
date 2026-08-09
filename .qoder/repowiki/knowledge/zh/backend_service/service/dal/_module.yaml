@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/service/dal
+title: dal
+scope:
+    - src/service/dal/
+source_files: []
+depends_on: []
+related_to: []

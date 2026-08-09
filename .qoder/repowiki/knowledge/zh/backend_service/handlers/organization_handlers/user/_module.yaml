@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/organization_handlers/user
+title: user
+scope:
+    - src/handlers/organization/user/
+source_files: []
+depends_on: []
+related_to: []

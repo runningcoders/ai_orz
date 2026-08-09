@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/hr_handlers/agent_handlers
+title: agent_handlers
+scope:
+    - src/handlers/hr/agent/
+source_files: []
+depends_on: []
+related_to: []

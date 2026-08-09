@@ -18,7 +18,14 @@ pub struct FrontendConfig {
 
 impl Default for FrontendConfig {
     fn default() -> Self {
-        // 使用编译时嵌入的配置生成默认值
+        // 前端由后端静态托管，页面与 API 同源：优先使用浏览器当前 origin，
+        // 避免编译期嵌入的 listen_addr 与运行时实际端口不一致时请求打偏
+        // （如部署改端口、E2E 隔离端口等场景）
+        if let Some(origin) = web_sys::window().and_then(|w| w.location().origin().ok()) {
+            return Self { api_base_url: origin };
+        }
+
+        // 无 window 环境（单元测试等）回退编译时嵌入的配置
         let compiled_config = crate::get_config();
 
         let mut listen_addr = compiled_config.server.listen_addr.clone();

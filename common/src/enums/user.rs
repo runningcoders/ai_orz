@@ -26,7 +26,9 @@ impl From<i32> for UserRole {
             0 => UserRole::SuperAdmin,
             1 => UserRole::Admin,
             2 => UserRole::Member,
-            _ => UserRole::default(),
+            // 修复 E2E-4：非法值之前落 default()=SuperAdmin，是提权漏洞；
+            // 改为最小权限 Member（未知角色宁低不高）
+            _ => UserRole::Member,
         }
     }
 }
@@ -207,5 +209,13 @@ mod tests {
         assert_eq!(UserRole::SuperAdmin.find_root(), UserRole::SuperAdmin);
         assert_eq!(UserRole::Admin.find_root(), UserRole::SuperAdmin);
         assert_eq!(UserRole::Member.find_root(), UserRole::SuperAdmin);
+    }
+
+    #[test]
+    fn test_user_role_from_i32_invalid_falls_to_member() {
+        // 非法值落最小权限，绝不提权
+        assert_eq!(UserRole::from_i32(3), UserRole::Member);
+        assert_eq!(UserRole::from_i32(-1), UserRole::Member);
+        assert_eq!(UserRole::from_i32(0), UserRole::SuperAdmin);
     }
 }

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/system_handlers/logs_handlers
+title: logs_handlers
+scope:
+    - src/handlers/system/logs/
+source_files: []
+depends_on: []
+related_to: []

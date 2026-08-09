@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: frontend/finance_pages
+title: 财务/工具管理前端页面集
+scope:
+    - frontend/src/pages/finance/
+source_files: []
+depends_on: []
+related_to: []

@@ -7,7 +7,7 @@ use chrono::{Local, NaiveDateTime, TimeZone};
 use crate::api::log_stats::{
     LogLevelDistributionItem, LogTimeSeriesPoint, get_log_level_distribution, get_log_time_series,
 };
-use crate::api::system::{LogEntry, LogPageResult, query_logs};
+use crate::api::system::{LogEntry, QueryLogsResponse, query_logs};
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::state::{EmptyState, Loading};
@@ -80,7 +80,7 @@ pub fn SystemLogs() -> Element {
     let mut current_page = use_signal(|| 1usize);
 
     // 结果
-    let result = use_signal(|| Option::<LogPageResult>::None);
+    let result = use_signal(|| Option::<QueryLogsResponse>::None);
     let loading = use_signal(|| false);
 
     // 展开的日志行索引（按 entries 中的位置）
@@ -96,7 +96,7 @@ pub fn SystemLogs() -> Element {
         params: LogQueryRequest,
         page: usize,
         mut loading: Signal<bool>,
-        mut result: Signal<Option<LogPageResult>>,
+        mut result: Signal<Option<QueryLogsResponse>>,
         toast: crate::store::toast::ToastState,
     ) {
         loading.set(true);
@@ -514,7 +514,7 @@ pub fn SystemLogs() -> Element {
 }
 
 /// 根据总数与 page_size 计算总页数（至少为 1）
-fn total_pages(res: Option<LogPageResult>) -> usize {
+fn total_pages(res: Option<QueryLogsResponse>) -> usize {
     match res {
         Some(r) => {
             let ps = if r.page_size == 0 {

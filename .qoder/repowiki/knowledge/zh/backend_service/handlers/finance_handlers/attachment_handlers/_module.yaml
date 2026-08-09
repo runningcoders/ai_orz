@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/finance_handlers/attachment_handlers
+title: attachment_handlers
+scope:
+    - src/handlers/finance/attachment/
+source_files: []
+depends_on: []
+related_to: []

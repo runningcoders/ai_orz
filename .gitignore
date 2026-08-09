@@ -65,6 +65,10 @@ sqlite::memory*
 # Local test output
 test_output.log
 
+# E2E（Playwright）运行时隔离数据目录（含 diagnose-page.mjs 诊断脚本的独立目录）
+/.e2e-runtime
+/.ai_orz_e2e_dbg
+
 # Coverage artifacts (cargo-llvm-cov)
 *.profraw
 *.profdata

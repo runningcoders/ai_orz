@@ -2,15 +2,86 @@ use crate::handlers;
 use crate::middleware::{jwt_auth_middleware, request_context_middleware, require_role_middleware};
 use axum::{
     Router,
+    body::{Body, Bytes},
+    http::{Request, Response, StatusCode, header},
     routing::{delete, get, post, put},
 };
 use common::config::AppConfig;
 use common::enums::UserRole;
-use std::sync::Arc;
+use std::{
+    convert::Infallible,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tower_http::services::ServeDir;
+use tower_service::Service;
+
+/// SPA 回退服务：静态文件命中时正常返回；未命中且路径无文件扩展名（前端深链，
+/// 如 /login、/projects/:id）时返回 200 + index.html 由前端路由接管。
+///
+/// 注：不用 ServeDir::not_found_service(ServeFile) —— 该组合会以 404 状态码返回
+/// index.html 内容，对 SEO/健康探测/部分客户端不友好。
+#[derive(Clone)]
+struct SpaFallback {
+    serve_dir: ServeDir,
+    index_html: Bytes,
+}
+
+impl Service<Request<Body>> for SpaFallback {
+    type Response = Response<Body>;
+    type Error = Infallible;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Response<Body>, Infallible>> + Send>,
+    >;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // ServeDir 的 io 错误在 call 阶段转为 500 响应，此处直接透传就绪状态
+        match <ServeDir as Service<Request<Body>>>::poll_ready(&mut self.serve_dir, cx) {
+            Poll::Ready(_) => Poll::Ready(Ok(())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        // 带扩展名的路径视为静态资源，缺失时由 ServeDir 返回真实 404
+        let is_file_path = req
+            .uri()
+            .path()
+            .rsplit('/')
+            .next()
+            .is_some_and(|seg| seg.contains('.'));
+        if !is_file_path {
+            let resp = Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                .body(Body::from(self.index_html.clone()))
+                .expect("static response always builds");
+            return Box::pin(std::future::ready(Ok(resp)));
+        }
+        let fut = <ServeDir as Service<Request<Body>>>::call(&mut self.serve_dir, req);
+        Box::pin(async move {
+            // ServeDir 的 io 错误极罕见，转换为 500 响应以保持 Error = Infallible
+            match fut.await {
+                Ok(resp) => Ok::<_, Infallible>(resp.map(Body::new)),
+                Err(_) => Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .expect("static response always builds")),
+            }
+        })
+    }
+}
 
 pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router {
     let config_for_card = config.clone();
+    // SPA 回退：前端是 Dioxus 客户端路由，深链（如 /login、/projects/:id）直达或刷新时
+    // 静态目录中不存在对应文件，需回退到 index.html 由前端路由接管（200 状态码）
+    let index_path = std::path::Path::new(frontend_dist_dir).join("index.html");
+    let index_html = std::fs::read_to_string(&index_path).unwrap_or_default();
+    let spa_service = SpaFallback {
+        serve_dir: ServeDir::new(frontend_dist_dir),
+        index_html: Bytes::from(index_html),
+    };
     Router::new()
         // Public routes - no JWT authentication required
         .nest("/api/v1", public_routes(config.clone()))
@@ -55,7 +126,7 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             })),
         )
         .route("/health", get(handlers::health::health))
-        .fallback_service(ServeDir::new(frontend_dist_dir))
+        .fallback_service(spa_service)
 }
 
 /// Public routes - do NOT require JWT authentication

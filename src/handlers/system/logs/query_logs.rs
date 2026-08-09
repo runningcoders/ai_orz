@@ -3,15 +3,18 @@
 //! 路由层 `require_role_middleware(UserRole::Admin)` 已确保 Admin/SuperAdmin 可访问。
 
 use ai_orz_macros::generate_http_handler;
-use common::api::LogQueryRequest;
+use common::api::{LogQueryRequest, QueryLogsResponse};
 use common::error::Result;
 
 use crate::pkg::RequestContext;
-use crate::service::dal::log_query::{LogPageResult, LogQuery};
+use crate::service::dal::log_query::LogQuery;
 use crate::service::domain::system::domain;
 
 #[generate_http_handler]
-pub async fn query_logs(ctx: RequestContext, params: LogQueryRequest) -> Result<LogPageResult> {
+pub async fn query_logs(
+    ctx: RequestContext,
+    params: LogQueryRequest,
+) -> Result<QueryLogsResponse> {
     let query = LogQuery {
         keyword: params.keyword,
         log_id: params.log_id,

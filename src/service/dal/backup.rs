@@ -19,19 +19,10 @@ use tar::Builder;
 // ==================== 数据结构 ====================
 
 /// 单个备份的元信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct BackupInfo {
-    /// 备份版本号（单调递增）
-    pub version: u64,
-    /// ISO8601 格式时间戳
-    pub timestamp: String,
-    /// 归档文件名，例如 `v1_20260717_153000.tar.gz`
-    pub file_name: String,
-    /// 归档文件字节数
-    pub size_bytes: u64,
-    /// 归档文件 MD5（十六进制小写）
-    pub md5: String,
-}
+///
+/// 协议化改造：定义收敛到 `common::api::BackupInfo`（前后端共享），
+/// 此处保留 re-export 以兼容 domain 层既有导入路径。
+pub use common::api::BackupInfo;
 
 /// 备份索引文件（`_index.json`）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

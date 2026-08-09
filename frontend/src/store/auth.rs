@@ -5,6 +5,8 @@
 
 use dioxus::prelude::*;
 
+use common::enums::UserRole;
+
 use crate::utils::local_storage;
 
 const LOGGED_IN_KEY: &str = "ai_orz_logged_in";
@@ -49,6 +51,16 @@ pub fn is_logged_in() -> bool {
         .unwrap_or(false)
 }
 
+/// localStorage 中是否已持久化过角色（登录后 /user/me 回填或历史 session）
+///
+/// 修复 E2E-2：之前用 role == 0 作为「未恢复」哨兵，与 SuperAdmin=0 语义正面相撞，
+/// 导致超管反复请求 /user/me。改用「键是否存在」作为恢复判据。
+pub fn has_saved_role() -> bool {
+    local_storage()
+        .and_then(|s| s.get(ROLE_KEY).ok().flatten())
+        .is_some()
+}
+
 fn restore_role() -> i32 {
     local_storage()
         .and_then(|s| s.get(ROLE_KEY).ok().flatten())
@@ -84,7 +96,10 @@ impl AuthState {
     }
 
     pub fn is_admin(&self) -> bool {
-        self.role >= 2
+        // 修复 E2E-3：之前用 role >= 2 数字比较（且方向与枚举相反），导致超管/管理员
+        // 菜单判断失效。统一走 UserRole::has_permission（并查集继承体系）：
+        // 满足 Admin 最低权限即可（SuperAdmin 或 Admin）
+        UserRole::has_permission(UserRole::from_i32(self.role), UserRole::Admin)
     }
 }
 

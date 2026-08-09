@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend_service/pkg/runtime_core
+title: runtime_core
+scope:
+    - src/pkg/
+    - src/pkg/background_task/
+    - src/pkg/external/
+source_files: []
+depends_on: []
+related_to: []

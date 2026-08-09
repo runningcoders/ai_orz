@@ -7,7 +7,7 @@ use crate::service::dal::backup::{BackupDal, BackupInfo};
 use crate::service::dal::cron_trigger as cron_trigger_dal;
 use crate::service::dal::cron_trigger::CronTriggerDal;
 use crate::service::dal::log_query as log_query_dal;
-use crate::service::dal::log_query::{LogPageResult, LogQuery as LogQueryParam, LogQueryDal};
+use crate::service::dal::log_query::{LogQuery as LogQueryParam, LogQueryDal, QueryLogsResponse};
 use crate::service::dao::cron_trigger::CronTriggerQuery;
 use common::enums::TriggerType;
 use common::error::Result;
@@ -168,7 +168,11 @@ pub trait BackupManager: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait LogQuery: Send + Sync {
-    async fn query_logs(&self, ctx: RequestContext, query: LogQueryParam) -> Result<LogPageResult>;
+    async fn query_logs(
+        &self,
+        ctx: RequestContext,
+        query: LogQueryParam,
+    ) -> Result<QueryLogsResponse>;
 
     /// 查询日志级别分布（返回 (level, count) 列表）
     async fn level_distribution(
@@ -324,7 +328,11 @@ impl BackupManager for SystemDomainImpl {
 
 #[async_trait::async_trait]
 impl LogQuery for SystemDomainImpl {
-    async fn query_logs(&self, ctx: RequestContext, query: LogQueryParam) -> Result<LogPageResult> {
+    async fn query_logs(
+        &self,
+        ctx: RequestContext,
+        query: LogQueryParam,
+    ) -> Result<QueryLogsResponse> {
         self.log_query_dal.query_logs(ctx, query).await
     }
 

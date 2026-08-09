@@ -221,12 +221,3 @@ pub struct DeleteUserResponse {
     /// 是否删除成功
     pub success: bool,
 }
-
-/// 空成功响应（用于不需要返回数据的操作）
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct EmptyResponse {
-    /// 响应码（0 表示成功，非零表示错误）
-    pub code: i32,
-    /// 响应消息，给人看的
-    pub message: String,
-}

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/finance_handlers/mcp_tool_handlers
+title: mcp_tool_handlers
+scope:
+    - src/handlers/finance/mcp_tool/
+source_files: []
+depends_on: []
+related_to: []

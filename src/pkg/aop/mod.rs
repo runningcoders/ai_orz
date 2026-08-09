@@ -58,3 +58,11 @@ pub async fn init_all() -> common::error::Result<()> {
     REGISTRY.start_all().await?;
     Ok(())
 }
+
+/// 停机 AOP 调度器（优雅退出）
+///
+/// 置位停机标志：异步消费者 worker 处理完当前事件后退出，
+/// 轮询 producer 最多 500ms 内退出；并逐个调用 producer.stop()。
+pub async fn shutdown_all() -> common::error::Result<()> {
+    REGISTRY.shutdown_all().await
+}

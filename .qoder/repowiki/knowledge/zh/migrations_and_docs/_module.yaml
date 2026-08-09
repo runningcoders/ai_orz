@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: migrations_and_docs
+title: migrations_and_docs
+scope:
+    - migrations/
+    - docs/
+source_files: []
+depends_on: []
+related_to: []

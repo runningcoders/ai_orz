@@ -32,23 +32,10 @@ use chrono::{DateTime, NaiveDate, Utc};
 // ==================== 数据结构 ====================
 
 /// 单条日志条目
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LogEntry {
-    /// ISO8601 格式时间戳
-    pub timestamp: String,
-    /// 日志级别（INFO / WARN / ERROR / DEBUG / TRACE）
-    pub level: String,
-    /// 日志消息
-    pub message: String,
-    /// 请求追踪 ID（来自 fields.log_id）
-    pub log_id: Option<String>,
-    /// 用户 ID（来自 fields.user_id）
-    pub user_id: Option<String>,
-    /// 操作名称（来自 fields.operation）
-    pub operation: Option<String>,
-    /// 原始 JSON 对象
-    pub raw: serde_json::Value,
-}
+///
+/// 协议化改造：定义收敛到 `common::api::LogEntry`（前后端共享），
+/// 此处保留 re-export 以兼容 domain 层既有导入路径。
+pub use common::api::{LogEntry, QueryLogsResponse};
 
 /// 日志查询参数
 pub struct LogQuery {
@@ -63,19 +50,6 @@ pub struct LogQuery {
     /// 结束时间（unix timestamp ms，含）
     pub end_time: Option<i64>,
     /// 页码（从 1 开始）
-    pub page: usize,
-    /// 每页条数
-    pub page_size: usize,
-}
-
-/// 分页结果
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct LogPageResult {
-    /// 匹配总数（最多 MAX_SCAN_ENTRIES）
-    pub total: usize,
-    /// 当前页日志条目
-    pub entries: Vec<LogEntry>,
-    /// 当前页码
     pub page: usize,
     /// 每页条数
     pub page_size: usize,
@@ -106,7 +80,11 @@ pub fn new() -> Arc<dyn LogQueryDal + Send + Sync> {
 #[async_trait::async_trait]
 pub trait LogQueryDal: Send + Sync {
     /// 查询日志，返回分页结果（按时间倒序，最新的在前）
-    async fn query_logs(&self, ctx: RequestContext, query: LogQuery) -> Result<LogPageResult>;
+    async fn query_logs(
+        &self,
+        ctx: RequestContext,
+        query: LogQuery,
+    ) -> Result<QueryLogsResponse>;
 }
 
 // ==================== DAL 实现 ====================
@@ -123,7 +101,11 @@ const MAX_SCAN_DAYS: i64 = 30;
 
 #[async_trait::async_trait]
 impl LogQueryDal for LogQueryDalFsImpl {
-    async fn query_logs(&self, ctx: RequestContext, query: LogQuery) -> Result<LogPageResult> {
+    async fn query_logs(
+        &self,
+        ctx: RequestContext,
+        query: LogQuery,
+    ) -> Result<QueryLogsResponse> {
         let _ = ctx;
 
         // 规范化分页参数
@@ -137,7 +119,7 @@ impl LogQueryDal for LogQueryDalFsImpl {
         let logs_dir = config::get().log_dir();
 
         if !logs_dir.exists() {
-            return Ok(LogPageResult {
+            return Ok(QueryLogsResponse {
                 total: 0,
                 entries: Vec::new(),
                 page,
@@ -206,7 +188,7 @@ impl LogQueryDal for LogQueryDalFsImpl {
         let skip = (page - 1) * page_size;
         let page_entries: Vec<LogEntry> = entries.into_iter().skip(skip).take(page_size).collect();
 
-        Ok(LogPageResult {
+        Ok(QueryLogsResponse {
             total,
             entries: page_entries,
             page,
@@ -354,7 +336,7 @@ fn parse_and_filter(
         log_id,
         user_id,
         operation,
-        raw: raw.clone(),
+        raw: Some(raw.clone()),
     })
 }
 
@@ -717,7 +699,7 @@ mod tests {
         assert!(files.is_empty());
     }
 
-    /// 测试 `LogQuery` 与 `LogPageResult` 结构基本字段
+    /// 测试 `LogQuery` 与 `QueryLogsResponse` 结构基本字段
     /// （验证默认构造与字段可访问性，作为字段级单元测试）
     #[test]
     fn test_log_query_struct_fields() {
@@ -738,7 +720,7 @@ mod tests {
         assert_eq!(q.page, 1);
         assert_eq!(q.page_size, 20);
 
-        let r = LogPageResult {
+        let r = QueryLogsResponse {
             total: 0,
             entries: Vec::new(),
             page: 1,

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: ai_orz_macros
+title: ai-orz-macros 过程宏基础设施（HTTP Handler / 工具注册 / 统计事件 / 日志字段）
+scope:
+    - ai-orz-macros/
+source_files: []
+depends_on: []
+related_to: []

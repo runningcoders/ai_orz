@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/organization_handlers/auth
+title: auth
+scope:
+    - src/handlers/organization/auth/
+source_files: []
+depends_on: []
+related_to: []

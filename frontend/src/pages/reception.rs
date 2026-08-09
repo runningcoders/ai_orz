@@ -352,6 +352,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "text",
+                                        "data-testid": "login-username",
                                         value: "{login_username}",
                                         oninput: move |e| login_username.set(e.value()),
                                         placeholder: "请输入用户名",
@@ -362,6 +363,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "password",
+                                        "data-testid": "login-password",
                                         value: "{login_password}",
                                         oninput: move |e| login_password.set(e.value()),
                                         placeholder: "请输入密码",
@@ -370,6 +372,7 @@ pub fn Reception() -> Element {
                                 button {
                                     class: "btn btn-primary btn-lg w-full",
                                     r#type: "submit",
+                                    "data-testid": "login-submit",
                                     disabled: login_submitting(),
                                     if login_submitting() { "登录中..." } else { "登录" }
                                 }
@@ -405,6 +408,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "text",
+                                        "data-testid": "init-org-name",
                                         value: "{org_name}",
                                         oninput: move |e| org_name.set(e.value()),
                                         placeholder: "例如：我的组织",
@@ -424,6 +428,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "text",
+                                        "data-testid": "init-username",
                                         value: "{init_username}",
                                         oninput: move |e| init_username.set(e.value()),
                                         placeholder: "例如：admin",
@@ -434,6 +439,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "password",
+                                        "data-testid": "init-password",
                                         value: "{init_password}",
                                         oninput: move |e| init_password.set(e.value()),
                                         placeholder: "请输入密码",
@@ -468,6 +474,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "text",
+                                        "data-testid": "init-chat-provider-name",
                                         value: "{chat_provider_name}",
                                         oninput: move |e| chat_provider_name.set(e.value()),
                                         placeholder: "例如：OpenAI",
@@ -478,6 +485,7 @@ pub fn Reception() -> Element {
                                     label { class: "form-label", "服务商类型 *" }
                                     select {
                                         class: "select select-bordered w-full",
+                                        "data-testid": "init-chat-provider-type",
                                         value: "{chat_provider_type}",
                                         onchange: move |e| {
                                             if let Ok(v) = e.value().parse::<i32>() {
@@ -498,6 +506,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "text",
+                                        "data-testid": "init-chat-model-name",
                                         value: "{chat_model_name}",
                                         oninput: move |e| chat_model_name.set(e.value()),
                                         placeholder: "例如：gpt-4o-mini",
@@ -509,6 +518,7 @@ pub fn Reception() -> Element {
                                     input {
                                         class: "input input-bordered w-full",
                                         r#type: "password",
+                                        "data-testid": "init-chat-api-key",
                                         value: "{chat_api_key}",
                                         oninput: move |e| chat_api_key.set(e.value()),
                                         placeholder: "sk-...",
@@ -532,7 +542,8 @@ pub fn Reception() -> Element {
                                         input {
                                             r#type: "checkbox",
                                             class: "checkbox checkbox-primary",
-                                            checked: "{enable_embedding}",
+                                            "data-testid": "init-enable-embedding",
+                                            checked: enable_embedding(),
                                             onchange: move |e| enable_embedding.set(e.checked()),
                                         }
                                         span { class: "label-text", "启用向量模型（用于语义搜索）" }
@@ -547,6 +558,7 @@ pub fn Reception() -> Element {
                                         input {
                                             class: "input input-bordered w-full",
                                             r#type: "text",
+                                            "data-testid": "init-embedding-provider-name",
                                             value: "{embedding_provider_name}",
                                             oninput: move |e| embedding_provider_name.set(e.value()),
                                             placeholder: "例如：FastEmbed",
@@ -557,6 +569,7 @@ pub fn Reception() -> Element {
                                         label { class: "form-label", "服务商类型 *" }
                                         select {
                                             class: "select select-bordered w-full",
+                                            "data-testid": "init-embedding-provider-type",
                                             value: "{embedding_provider_type}",
                                             onchange: move |e| {
                                                 if let Ok(v) = e.value().parse::<i32>() {
@@ -579,6 +592,7 @@ pub fn Reception() -> Element {
                                         input {
                                             class: "input input-bordered w-full",
                                             r#type: "text",
+                                            "data-testid": "init-embedding-model-name",
                                             value: "{embedding_model_name}",
                                             oninput: move |e| embedding_model_name.set(e.value()),
                                             placeholder: "例如：BAAI/bge-small-en-v1.5",
@@ -611,6 +625,7 @@ pub fn Reception() -> Element {
                                 button {
                                     class: "btn btn-primary btn-lg w-full",
                                     r#type: "submit",
+                                    "data-testid": "init-submit",
                                     disabled: init_submitting(),
                                     if init_submitting() { "初始化中..." } else { "完成初始化" }
                                 }

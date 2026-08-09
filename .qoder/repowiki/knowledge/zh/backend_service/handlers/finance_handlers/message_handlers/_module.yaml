@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/finance_handlers/message_handlers
+title: message_handlers
+scope:
+    - src/handlers/finance/message/
+source_files: []
+depends_on: []
+related_to: []

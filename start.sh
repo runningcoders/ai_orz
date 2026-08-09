@@ -134,46 +134,9 @@ cmd_build() {
     echo "🔨 开始编译..."
     echo ""
 
-    # 编译前端
+    # 编译前端（逻辑抽取到 scripts/build_frontend.sh，与 CI e2e job 共用）
     echo "🎨 编译前端 (release)..."
-    cd frontend
-    export BACKEND_API_URL=${BACKEND_API_URL:-http://localhost:3000}
-    
-    # dx build 在 wasm-opt 失败时仍会生成产物，忽略此错误
-    dx build --release 2>&1 || true
-
-    mkdir -p ../dist
-    mkdir -p ../dist/pkg
-    cp index.html ../dist/
-
-    # 查找编译产物（dx 可能输出到不同位置）
-    DX_OUTPUT_DIR=""
-    if [ -d target/dx/frontend/release/web/public ]; then
-        DX_OUTPUT_DIR="target/dx/frontend/release/web/public"
-    elif [ -d target/dx/frontend/web/public ]; then
-        DX_OUTPUT_DIR="target/dx/frontend/web/public"
-    elif [ -d pkg ]; then
-        DX_OUTPUT_DIR="pkg"
-    fi
-
-    if [ -n "$DX_OUTPUT_DIR" ]; then
-        # 复制 .wasm 和 .js 文件到 dist/pkg/
-        if [ -f "$DX_OUTPUT_DIR/frontend_bg.wasm" ]; then
-            cp "$DX_OUTPUT_DIR/frontend_bg.wasm" ../dist/pkg/
-        fi
-        if [ -f "$DX_OUTPUT_DIR/frontend.js" ]; then
-            cp "$DX_OUTPUT_DIR/frontend.js" ../dist/pkg/
-        fi
-        # 复制整个 snippets 子目录（如果存在）
-        if [ -d "$DX_OUTPUT_DIR/snippets" ]; then
-            cp -r "$DX_OUTPUT_DIR/snippets" ../dist/pkg/
-        fi
-        echo "${GREEN}✅ 前端编译产物已复制${NC}"
-        echo "   来源: ${BLUE}$DX_OUTPUT_DIR${NC}"
-    else
-        echo "${RED}⚠️  未找到前端编译产物${NC}"
-        exit 1
-    fi
+    "$SCRIPT_DIR/scripts/build_frontend.sh"
 
     # 编译后端
     echo ""

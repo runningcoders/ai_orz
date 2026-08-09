@@ -6,7 +6,7 @@ pub mod use_workspace_data;
 
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
-use crate::store::auth::{save_role, use_auth_state};
+use crate::store::auth::{has_saved_role, save_role, use_auth_state};
 use crate::utils::local_storage;
 
 #[allow(unused_imports)]
@@ -19,17 +19,19 @@ pub fn use_breakpoint() -> Signal<bool> {
 pub fn use_require_auth() -> bool {
     let mut auth = use_auth_state();
     let navigator = use_navigator();
+    // 修复 E2E-2：门闩 + 持久化判据双保险，回填最多一次
+    let mut role_restore_started = use_signal(|| false);
 
     use_effect(move || {
         if !auth.read().logged_in {
             navigator.replace(Route::Reception {});
         } else {
             // 修复 HIGH #1 + R-M1：刷新页面后 AuthState.restore() 仅恢复 logged_in 和
-            // 持久化的 role；若 role=0（旧版本未持久化 role 的缓存）或登录时硬编码
-            // role=1 的旧 session，调用 /user/me 回填真实 role，避免管理员菜单消失。
-            // 仅在 role=0 时触发，避免每次渲染都请求。
-            let needs_role_restore = auth.read().role == 0;
-            if needs_role_restore {
+            // 持久化的 role；若 localStorage 从未存过 role（新浏览器/被清理），调用
+            // /user/me 回填一次。修复 E2E-2：不再用 role == 0 判断（与 SuperAdmin=0 冲突）。
+            let needs_role_restore = !has_saved_role();
+            if needs_role_restore && !role_restore_started() {
+                role_restore_started.set(true);
                 spawn(async move {
                     match get_current_user_info().await {
                         Ok(resp) => {

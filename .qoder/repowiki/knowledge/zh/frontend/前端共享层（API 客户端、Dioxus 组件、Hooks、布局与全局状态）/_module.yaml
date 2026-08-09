@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: frontend/shared_layers
+title: 前端共享层（API 客户端、Dioxus 组件、Hooks、布局与全局状态）
+scope:
+    - frontend/src/api/
+    - frontend/src/components/
+    - frontend/src/hooks/
+    - frontend/src/layouts/
+    - frontend/src/store/
+    - frontend/src/utils/
+    - frontend/styles/
+source_files: []
+depends_on: []
+related_to: []

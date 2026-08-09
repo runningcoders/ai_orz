@@ -325,3 +325,70 @@ pub struct ShellKillResponse {
     /// 是否实际执行了终止（进程已退出时为 false）
     pub killed: bool,
 }
+
+// ===== 备份管理 =====
+
+/// 单个备份的元信息
+///
+/// 协议化改造：原定义在 `src/service/dal/backup.rs`（DAL 内部结构泄漏到 API），
+/// 现收敛为前后端共享的唯一定义。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BackupInfo {
+    /// 备份版本号（单调递增）
+    pub version: u64,
+    /// ISO8601 格式时间戳
+    pub timestamp: String,
+    /// 归档文件名，例如 `v1_20260717_153000.tar.gz`
+    pub file_name: String,
+    /// 归档文件字节数
+    pub size_bytes: u64,
+    /// 归档文件 MD5（十六进制小写）
+    pub md5: String,
+}
+
+/// 删除备份响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DeleteBackupResponse {
+    /// 是否删除成功
+    pub success: bool,
+}
+
+// ===== 日志查询 =====
+
+/// 单条日志条目
+///
+/// 协议化改造：原定义在 `src/service/dal/log_query.rs`，现收敛为共享定义。
+/// `raw` 为 Option 以兼容前端展开查看（后端总是填充 Some）。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LogEntry {
+    /// ISO8601 格式时间戳
+    pub timestamp: String,
+    /// 日志级别（INFO / WARN / ERROR / DEBUG / TRACE）
+    pub level: String,
+    /// 日志消息
+    pub message: String,
+    /// 请求追踪 ID（来自 fields.log_id）
+    pub log_id: Option<String>,
+    /// 用户 ID（来自 fields.user_id）
+    pub user_id: Option<String>,
+    /// 操作名称（来自 fields.operation）
+    pub operation: Option<String>,
+    /// 原始 JSON 对象（用于展开查看完整信息）
+    #[serde(default)]
+    pub raw: Option<serde_json::Value>,
+}
+
+/// 日志分页查询响应
+///
+/// 协议化改造：替代原 DAL 的 `LogPageResult`，作为 `GET /api/v1/system/logs` 的标准响应体。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QueryLogsResponse {
+    /// 匹配总数（最多 MAX_SCAN_ENTRIES）
+    pub total: usize,
+    /// 当前页日志条目
+    pub entries: Vec<LogEntry>,
+    /// 当前页码
+    pub page: usize,
+    /// 每页条数
+    pub page_size: usize,
+}

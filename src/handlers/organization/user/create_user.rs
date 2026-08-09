@@ -27,12 +27,10 @@ pub async fn create_user(
     // 生成随机用户 ID
     let user_id = generate_id();
 
-    // 转换角色
-    let role = match params.role {
-        2 => UserRole::Admin,
-        1 => UserRole::SuperAdmin,
-        _ => UserRole::Member,
-    };
+    // 修复 E2E-4：之前手写映射（1=SuperAdmin/2=Admin）与 UserRole 枚举值（0/1/2）不一致，
+    // 导致前端提交的角色被错误转译。统一用 UserRole::from_i32（非法值落 Member），
+    // 响应回传规范化后的枚举值而非原始入参
+    let role = UserRole::from_i32(params.role);
 
     // 创建 UserPo
     let user = UserPo::new(
@@ -53,7 +51,7 @@ pub async fn create_user(
         username: params.username,
         display_name: params.display_name,
         email: params.email,
-        role: params.role,
+        role: role.to_i32(),
     })
 }
 

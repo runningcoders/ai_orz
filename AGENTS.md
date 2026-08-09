@@ -2,9 +2,15 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-08-09（内置工具 tag 分组补全：http_fetch→http、fs_read/fs_write→fs；内置工具同步升级为「所有权分界刷新」：代码所有权字段 name/description/control_mode/parameters_schema/tags 以代码为准无条件刷新，运维所有权字段 config/status 保留现场设置，字段无变化不写库；sync 挂入启动两阶段初始化的异步第二阶段，版本升级后每次启动内置工具定义自动对齐代码；后端单元 826 → 828）
+> 最后更新：2026-08-10（后端优雅退出 + Chat 统一 Navbar：信号监听 SIGTERM/SIGINT/SIGQUIT → axum graceful shutdown（10s 排空窗口从信号触发时刻起算，oneshot + select 避开超时包在 serve 外层导致启动 N 秒后被误杀的坑）→ 关停编排（消息渠道停服 → AOP worker/producer 退出 → DuckDB stats flush → SQLite 连接池关闭）；AOP Registry 新增 AtomicBool 停机标志（worker 循环顶部检查、轮询 producer 500ms 分片休眠检查、shutdown_all 置标志并逐个 producer.stop）+ pkg/aop::shutdown_all() 便捷函数，SIGTERM 后约 1s 干净退出；Chat 页 MessageChat 接入统一 Navbar（h-screen flex 布局，原 h-[calc(100vh-4rem)] 本就为导航栏预留，移动端抽屉 top-16 避开导航栏），E2E 移除 noNavbar 特例全路由统一导航栏断言，Playwright 全量 16/16 绿 12s；后端单元 828 → 829，总测试 982）
 >
-> 上次更新：2026-08-09（前端体验闭环：shell_list 双露工具（进程列表 HTTP + LLM 三件套）；HTTP 工具创建表单（Modal + 纯函数校验）；进程管理页面 /system/processes（列表 + 自动刷新 + ProcessDetailContent 共享详情组件 Modal 复用）；ChatSidePanel 工具调用 Tab（两种对话模式，call_id join 运行中进程，PID 徽标弹进程详情）；后端单元 824 → 826，前端 54 → 69）
+> 上次更新：2026-08-09（E2E 本地全绿收尾：Playwright 全量 16/16 通过 12.2s（setup 初始化/登录冒烟 + 15 路由导航巡检）；E2E 发现并修复第二个生产缺陷：KnowledgeGraph 组件渲染体无条件 Signal::set(agent_id)，信号无条件标脏触发「重渲染→再 set」死循环，主线程自旋直到 Chromium 杀掉渲染器（页面白屏、零 console 报错、无后续 API 请求）；修复为 peek 等值守卫（保留 agent_id 变化时 effect 重触发语义），全库扫描无同型隐患；导航巡检用例修正：/ 为独立布局无导航栏（noNavbar 标志）、/tasks 文案对齐「任务管理」、失败时 pageerror/console 归档报告；diagnose-page.mjs 白屏诊断脚本（隔离服务器 + API 直调初始化登录 + 请求生命周期 + 崩溃事件监听）；新增 e2e/README.md 运行与排查指南）
+>
+> 上次更新：2026-08-09（前后端 API 协议规范落地：common DTO 单一事实源——后端裸返回收敛为标准 Response 结构体（initialize/check 裸 bool→CheckInitializedResponse、delete_backup/delete_skill 裸 ()→带 success 字段的 Response）；DAL 泄漏结构 BackupInfo/LogEntry/LogPageResult 定义移入 common（LogPageResult→QueryLogsResponse，raw 统一 Option 消除双端漂移）；前端本地镜像 17 个结构体全部删除改 re-export common；user.rs 死定义 EmptyResponse 清理；E2E 移出 CI 仅本地运行（待协议化稳定后重新评估）；新增 docs/design/api_protocol_convention.md + 4.12 强制规范；另含 UserRole 收敛：前端改 common 枚举方法判权、create/update_user 统一 UserRole::from_i32、非法值落 Member 堵住提权漏洞）
+>
+> 上次更新：2026-08-09（浏览器端到端测试体系落地：e2e/ Playwright 工程（webServer 隔离数据目录编排 + storageState 登录态复用）；首批 16 用例：系统初始化→错误密码→登录全流程冒烟 + 15 路由导航巡检；接待页关键控件加 data-testid 稳定锚点；前端构建链路修复三连：dist 缺 public/ 静态资源、SPA 深链 404 白屏（router not_found_service 回退 index.html）、dx 产物目录探测错位（workspace 根 target + 带 hash 资源整体复制）；build_frontend.sh 抽取为 start.sh 与 CI 共用；rust.yml 新增 e2e job）
+>
+> 上次更新：2026-08-09（内置工具 tag 分组补全：http_fetch→http、fs_read/fs_write→fs；内置工具同步升级为「所有权分界刷新」：代码所有权字段 name/description/control_mode/parameters_schema/tags 以代码为准无条件刷新，运维所有权字段 config/status 保留现场设置，字段无变化不写库；sync 挂入启动两阶段初始化的异步第二阶段，版本升级后每次启动内置工具定义自动对齐代码；后端单元 826 → 828）
 
 ---
 
@@ -16,7 +22,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、980 个测试 100% 通过率（后端 861 = 828 单元 + 33 集成 + 前端 69 + common 50）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、982 个测试 100% 通过率（后端 862 = 829 单元 + 33 集成 + 前端 69 + common 51）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -80,13 +86,14 @@
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 | 📝 前端 Markdown 渲染全覆盖 + Mermaid | ✅ | 统一 MarkdownRenderer（pulldown-cmark + 原始 HTML 转义守护，XSS 安全）；详情页（project/task/agent/skill/tool/model_provider/artifact/知识图谱）+ 聊天气泡 Text 消息 + 记忆面板展开态全链路 Markdown 展示；Project/Task 新增「规划与执行」区块（execution_plan/execution_result/workflow/guidance）+ 任务依赖图；skill.md 预览/源码切换；vendor mermaid.js 注入式渲染：Markdown 内嵌 ```mermaid 块扫描替换为 SVG + 独立 MermaidDiagram（task_graph），懒加载不影响首屏，主题跟随 DaisyUI data-theme |
 | 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
+| 🎭 E2E 浏览器测试（仅本地） | ✅ | e2e/ Playwright 工程 16 用例全绿 12.2s：setup（初始化→错误密码→登录冒烟 + storageState）+ 15 路由导航巡检（布局/文案/无错误三重断言）；webServer 隔离数据目录编排 + debug 二进制优先；已发现并修复 2 个生产缺陷（SPA 深链 404、KnowledgeGraph 渲染期 Signal::set 死循环崩溃）；diagnose-page.mjs 白屏诊断脚本；不进 CI |
 | 🛡️ CI 质量门槛 + 启动两阶段初始化 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov 差异化覆盖率门槛（**PR 38% / main 45%**），**收集（--workspace/--tests）与报告（--lcov/--html）分 3 阶段**匹配新版参数归属；集成测试 3.7s；启动流程拆两阶段：同步 `service::init()` 注册单例 → AOP producer/consumer 注册 → 异步 `service::init_base_data()` 幂等注入 DB 默认基础数据（2 条系统级 cron triggers + 内置工具所有权分界同步） |
 
 ### 1.3 整体完成度与测试统计（2026-08-09 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **980** | 后端 861（828 单元 + 33 集成） + 前端 69 + common 50，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
+| **总测试数** | **982** | 后端 862（829 单元 + 33 集成） + 前端 69 + common 51，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 1 个 AOP Registry 优雅停机 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 7 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + System Cron Triggers 3 + 宏集成 15 |
 | **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |
@@ -135,6 +142,7 @@
 |------|------|--------|
 | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | **开发必读** 7 个完整架构实践（含适配层架构原则）、反模式坑、最佳实践总结 | ⭐⭐⭐ |
 | [docs/design/NAMING_CONVENTION.md](./docs/design/NAMING_CONVENTION.md) | 全项目统一命名约定、DAO/DAL/Domain 命名规则 | ⭐⭐ |
+| [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md) | **前后端 API 协议规范**：common DTO 单一事实源、禁止裸返回、禁止双份定义 | ⭐⭐⭐ |
 | [docs/design/external_agent_design.md](./docs/design/external_agent_design.md) | 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）、适配层处理模式 | ⭐⭐ |
 ### 各模块详细设计
 | 文档 | 内容 | 优先级 |
@@ -958,6 +966,15 @@ OnceCell 首次 get_or_init:
 > 💡 **设计动机**：之前 `ensure_system_cron_triggers` 写在 `consumer::init()` 里，Consumer 职责从「订阅者注册」越权到「注入 DB 数据」，且如果未来有人想在 consumer 注册完立刻 publish 事件还会乱序。拆成 service::init（同步纯内存）/ service::init_base_data（异步 DB 动作）两个独立方法后，Domain 各自的基础数据注入责任明确，扩展时不会把启动逻辑堆到 consumer 里，消费者也不会再出现越权的副作用。
 
 ---
+
+### 4.12 前后端 API 协议规范（强制执行，2026-08-09 新增）
+
+**核心原则：`common` crate 是前后端 API 协议的单一事实源。** 详见 [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)。
+
+1. **禁止裸原始类型响应**：handler 即便只返回一个字段也必须用标准 Response 结构体（`ApiResponse<T>` 信封的 data 内禁止裸 bool/()/String）；无业务字段的操作用 `<Action>Response { success: bool }`。
+2. **DTO 只定义在 common**：Request/Response 一律先定义在 `common/src/api/<域>.rs`；禁止 `frontend/src/api/` 本地镜像；禁止 handler 直接返回 DAL/Domain 内部结构体（DAL 需要时 re-export common 定义）。
+3. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
+4. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
 
 ## 五、核心概念与实体关系
 

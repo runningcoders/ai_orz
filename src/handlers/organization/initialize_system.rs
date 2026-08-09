@@ -13,9 +13,9 @@ use crate::service::domain::{finance, organization};
 use ai_orz_macros::generate_http_handler;
 use async_trait::async_trait;
 use common::api::{
-    CheckInitializedRequest, GetInitProgressRequest, InitProgressResponse, InitStatus,
-    InitializeSystemRequest, InitializeSystemResponse, TaskIdResponse, TaskProgressSnapshot,
-    TaskStatus, TaskType,
+    CheckInitializedRequest, CheckInitializedResponse, GetInitProgressRequest,
+    InitProgressResponse, InitStatus, InitializeSystemRequest, InitializeSystemResponse,
+    TaskIdResponse, TaskProgressSnapshot, TaskStatus, TaskType,
 };
 use common::error::{Error, Result};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -229,10 +229,11 @@ impl InitializeSystemTask {
 pub async fn check_initialized(
     ctx: RequestContext,
     _params: CheckInitializedRequest,
-) -> Result<bool> {
+) -> Result<CheckInitializedResponse> {
     let domain = organization::domain();
     let initialized = domain.organization_manage().check_initialized(ctx).await?;
-    Ok(initialized)
+    // 协议规范：即使只返回一个字段也使用标准 Response 结构体，禁止裸 bool
+    Ok(CheckInitializedResponse { initialized })
 }
 
 /// 初始化系统（异步提交，返回 task_id）

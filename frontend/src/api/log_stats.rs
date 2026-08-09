@@ -1,32 +1,14 @@
 //! 日志统计 API 客户端
+//!
+//! 协议化改造：DTO 全部复用 `common::api` 共享定义（此前本地镜像了一份，存在漂移风险），
+//! 此处 re-export 保持既有 `crate::api::log_stats::*` 导入路径可用。
 
-use serde::Deserialize;
+pub use common::api::{
+    LogLevelDistributionItem, LogLevelDistributionResponse, LogTimeSeriesPoint,
+    LogTimeSeriesResponse,
+};
 
 use super::{ApiError, api_get};
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LogLevelDistributionItem {
-    pub level: String,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LogLevelDistributionResponse {
-    pub items: Vec<LogLevelDistributionItem>,
-    #[allow(dead_code)]
-    pub total: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LogTimeSeriesPoint {
-    pub interval_start: i64,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LogTimeSeriesResponse {
-    pub points: Vec<LogTimeSeriesPoint>,
-}
 
 /// 获取日志级别分布（默认最近 24 小时）
 pub async fn get_log_level_distribution(

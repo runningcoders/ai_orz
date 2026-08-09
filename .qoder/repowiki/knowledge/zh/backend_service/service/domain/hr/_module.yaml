@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/service/domain/hr
+title: hr
+scope:
+    - src/service/domain/hr/
+source_files: []
+depends_on: []
+related_to: []

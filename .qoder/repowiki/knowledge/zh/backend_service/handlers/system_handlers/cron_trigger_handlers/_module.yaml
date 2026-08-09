@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/system_handlers/cron_trigger_handlers
+title: cron_trigger_handlers
+scope:
+    - src/handlers/system/cron_trigger/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service
+title: backend_service
+scope:
+    - src/
+source_files: []
+depends_on: []
+related_to: []

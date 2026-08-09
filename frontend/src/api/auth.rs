@@ -7,6 +7,9 @@ use common::api::{
 
 use super::{ApiError, api_get, api_post, api_post_empty};
 
+/// 检查系统是否已初始化
+///
+/// 协议化改造：后端不再返回裸 bool，改用标准 `CheckInitializedResponse` 结构体。
 pub async fn check_initialized() -> Result<CheckInitializedResponse, ApiError> {
     api_get("/api/v1/organization/initialize/check").await
 }

@@ -3,7 +3,7 @@
 //! 仅 SuperAdmin 可调用（handler 内部二次校验）。
 
 use ai_orz_macros::generate_http_handler;
-use common::api::DeleteBackupRequest;
+use common::api::{DeleteBackupRequest, DeleteBackupResponse};
 use common::error::Result;
 
 use crate::pkg::RequestContext;
@@ -12,7 +12,10 @@ use crate::service::domain::system::domain;
 use super::check_super_admin;
 
 #[generate_http_handler]
-pub async fn delete_backup(ctx: RequestContext, params: DeleteBackupRequest) -> Result<()> {
+pub async fn delete_backup(
+    ctx: RequestContext,
+    params: DeleteBackupRequest,
+) -> Result<DeleteBackupResponse> {
     check_super_admin(&ctx)?;
 
     domain()
@@ -20,5 +23,6 @@ pub async fn delete_backup(ctx: RequestContext, params: DeleteBackupRequest) -> 
         .delete_backup(ctx, params.version)
         .await?;
 
-    Ok(())
+    // 协议规范：即使无业务字段也返回标准 Response 结构体，禁止裸 ()
+    Ok(DeleteBackupResponse { success: true })
 }

@@ -160,7 +160,7 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 服务器监听地址从配置读取
     let server_addr = &config.server.listen_addr;
 
-    // 启动服务器
+    // 启动服务器（带优雅退出：信号触发后停止接受新连接并排空在途请求）
     let app = router::create_router(&dist_dir, config.clone());
     let listener = tokio::net::TcpListener::bind(&server_addr).await?;
     sys_info!(
@@ -169,7 +169,112 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
         dist_dir
     );
 
-    axum::serve(listener, app).await?;
+    // 优雅退出：信号触发 → axum 停止接受新连接并排空在途请求；
+    // SSE/WS 长连接不会主动关闭，排空设 10s 上限（从信号触发时刻起算），
+    // 超时后丢弃 serve future 强制退出（进程即将退出，长连接自然断开）。
+    // 注意：超时必须从信号触发后才开始计时，不能包在 serve 外层——否则启动 N 秒后被误杀
+    let (sig_tx, mut sig_rx) = tokio::sync::oneshot::channel::<()>();
+    let serve_future = axum::serve(listener, app).with_graceful_shutdown(async move {
+        wait_shutdown_trigger().await;
+        sys_info!("Shutdown signal received, stopping server...");
+        let _ = sig_tx.send(());
+    });
+    const SHUTDOWN_GRACE_SECS: u64 = 10;
+    let drain_deadline = async {
+        // 信号未触发时 sig_rx 永不就绪，计时不会开始
+        let _ = sig_rx.await;
+        tokio::time::sleep(std::time::Duration::from_secs(SHUTDOWN_GRACE_SECS)).await;
+    };
+    tokio::select! {
+        serve_result = serve_future => serve_result?,
+        _ = drain_deadline => sys_warn!(
+            "Graceful shutdown drain window ({}s) elapsed, forcing shutdown",
+            SHUTDOWN_GRACE_SECS
+        ),
+    }
+    sys_info!("HTTP server stopped");
+
+    // 业务关停编排：渠道停服 → AOP worker/producer 退出 → stats 落盘 → DB 连接池关闭
+    shutdown_services().await;
+    sys_info!("Shutdown complete, goodbye");
 
     Ok(())
+}
+
+/// 阻塞直到收到任一退出信号：Ctrl+C（SIGINT）/ SIGTERM / SIGQUIT
+async fn wait_shutdown_trigger() {
+    let ctrl_c = async {
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {}
+            Err(e) => sys_error!("Failed to install Ctrl+C handler: {}", e),
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::SignalKind;
+        tokio::select! {
+            _ = ctrl_c => {}
+            // SIGINT 已由 ctrl_c 覆盖，这里只补 SIGTERM / SIGQUIT
+            _ = wait_unix_signal(SignalKind::terminate()) => {}
+            _ = wait_unix_signal(SignalKind::quit()) => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await;
+    }
+}
+
+/// 等待单个 unix 信号触发；安装失败时永久挂起（不误触发停机）
+#[cfg(unix)]
+async fn wait_unix_signal(kind: tokio::signal::unix::SignalKind) {
+    match tokio::signal::unix::signal(kind) {
+        Ok(mut sig) => {
+            let _ = sig.recv().await;
+        }
+        Err(e) => {
+            sys_error!("Failed to install signal handler: {}", e);
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+/// 业务关停编排（HTTP server 停止接受新连接后调用）
+///
+/// 顺序：
+/// 1. 消息渠道入站监听停服（飞书 WS 等外部长连接）
+/// 2. AOP worker/producer 退出（当前事件处理完即退）
+/// 3. 等待后台协程排空
+/// 4. DuckDB 统计缓冲 flush 落盘
+/// 5. SQLite 连接池关闭
+async fn shutdown_services() {
+    use crate::pkg::storage;
+
+    if let Err(e) = crate::producer::message_channel::shutdown().await {
+        sys_error!("Message channel shutdown error: {}", e);
+    } else {
+        sys_info!("Message channels stopped");
+    }
+
+    if let Err(e) = aop::shutdown_all().await {
+        sys_error!("AOP shutdown error: {}", e);
+    } else {
+        sys_info!("AOP workers & producers stopped");
+    }
+
+    // 给 worker/producer 排空窗口（worker 最多一个 empty_queue_sleep + 当前事件处理时长）
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let storage = storage::get();
+    if let Some(stats) = storage.stats_opt() {
+        match stats.flush_all(crate::pkg::RequestContext::new_system()).await {
+            Ok(()) => sys_info!("Stats flushed to DuckDB"),
+            Err(e) => sys_error!("Stats flush error: {}", e),
+        }
+    }
+
+    storage.sqlite_pool().close().await;
+    sys_info!("SQLite pool closed");
 }

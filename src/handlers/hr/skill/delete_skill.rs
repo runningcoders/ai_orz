@@ -3,7 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::DeleteSkillRequest;
+use common::api::{DeleteSkillRequest, DeleteSkillResponse};
 use common::error::Result;
 
 /// Delete an existing skill by ID. This operation cannot be undone.
@@ -15,7 +15,10 @@ use common::error::Result;
     tags = "skill_management"
 )]
 #[generate_http_handler]
-pub async fn delete_skill(ctx: RequestContext, params: DeleteSkillRequest) -> Result<()> {
+pub async fn delete_skill(
+    ctx: RequestContext,
+    params: DeleteSkillRequest,
+) -> Result<DeleteSkillResponse> {
     domain()
         .skill_manage()
         .get_skill(ctx.clone(), &params.skill_id)
@@ -29,5 +32,6 @@ pub async fn delete_skill(ctx: RequestContext, params: DeleteSkillRequest) -> Re
         .delete_skill(ctx, &params.skill_id)
         .await?;
 
-    Ok(())
+    // 协议规范：即使无业务字段也返回标准 Response 结构体，禁止裸 ()
+    Ok(DeleteSkillResponse { success: true })
 }

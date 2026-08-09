@@ -170,8 +170,14 @@ pub fn ChatSidePanel(
         let tick = refresh_tick;
         let project_changed = prev_project_id() != pid;
         let tick_changed = prev_tick() != tick;
-        prev_project_id.set(pid.clone());
-        prev_tick.set(tick);
+        // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
+        // 无条件写回本 effect 自己订阅的信号会触发 effect 重跑 → 无限循环卡死主线程
+        if project_changed {
+            prev_project_id.set(pid.clone());
+        }
+        if tick_changed {
+            prev_tick.set(tick);
+        }
         if project_changed {
             active_tab.set(0);
             expanded_task_id.set(None);

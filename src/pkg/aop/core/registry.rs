@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
 use crate::pkg::RequestContext;
@@ -14,6 +15,8 @@ pub struct Registry {
     producers: RwLock<Vec<Arc<dyn Producer>>>,
     queues: RwLock<HashMap<String, Arc<dyn EventQueue>>>,
     started: RwLock<bool>,
+    /// 停机标志：worker / producer 循环每轮检查，true 时退出循环（优雅退出）
+    shutting_down: AtomicBool,
     /// 指标采集 Hook（业务层注入，None 时零开销）
     metrics_hook: RwLock<Option<Arc<dyn AopMetricsHook>>>,
 }
@@ -26,6 +29,7 @@ impl Registry {
             producers: RwLock::new(Vec::new()),
             queues: RwLock::new(HashMap::new()),
             started: RwLock::new(false),
+            shutting_down: AtomicBool::new(false),
             metrics_hook: RwLock::new(None),
         }
     }
@@ -333,6 +337,11 @@ impl Registry {
                 tokio::spawn(async move {
                     sys_info!("[{}] worker {} started", consumer_name, worker_id);
                     loop {
+                        // 优雅退出：停机标志置位后，当前事件处理完即退出
+                        if registry_arc.is_shutting_down() {
+                            sys_info!("[{}] worker {} shutting down", consumer_name, worker_id);
+                            break;
+                        }
                         match registry_arc.dequeue_for(&consumer_name).await {
                             Ok(Some(event_json)) => {
                                 let event_id = event_json
@@ -462,6 +471,16 @@ impl Registry {
 
             if interval > 0 {
                 let producer = producer.clone();
+                let registry_arc = {
+                    let self_ref = self
+                        .self_ref
+                        .read()
+                        .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+                    self_ref
+                        .as_ref()
+                        .and_then(|w| w.upgrade())
+                        .ok_or_else(|| err!(Internal, "registry self-ref not set"))?
+                };
                 tokio::spawn(async move {
                     sys_info!(
                         "[{}] polling producer started, interval: {}s",
@@ -469,10 +488,19 @@ impl Registry {
                         interval
                     );
                     loop {
+                        if registry_arc.is_shutting_down() {
+                            sys_info!("[{}] polling producer shutting down", name);
+                            break;
+                        }
                         if let Err(e) = producer.poll().await {
                             sys_error!("[{}] poll error: {}", name, e);
                         }
-                        tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                        // 优雅退出：把整个轮询间隔切成 500ms 片段休眠，停机标志置位后最多 500ms 内退出
+                        let mut waited_ms = 0u64;
+                        while waited_ms < interval * 1000 && !registry_arc.is_shutting_down() {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                            waited_ms += 500;
+                        }
                     }
                 });
             } else {
@@ -491,6 +519,34 @@ impl Registry {
             .read()
             .map(|c| c.values().map(|v| v.len()).sum())
             .unwrap_or(0)
+    }
+
+    /// 停机标志是否已置位（worker / producer 循环每轮检查）
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::SeqCst)
+    }
+
+    /// 停机所有 worker 与 producer（优雅退出）
+    ///
+    /// 置位停机标志后，异步消费者 worker 在当前事件处理完毕后退出循环，
+    /// 轮询 producer 最多在 500ms 内退出；随后逐个调用 `Producer::stop()`
+    /// 停掉自管生命周期的 producer（如外部渠道 WS 监听）。
+    pub async fn shutdown_all(&self) -> Result<()> {
+        self.shutting_down.store(true, Ordering::SeqCst);
+
+        let producers = {
+            let producers = self
+                .producers
+                .read()
+                .map_err(|e| err!(Internal, "registry lock error: {}", e))?;
+            producers.clone()
+        };
+        for producer in producers {
+            if let Err(e) = producer.stop().await {
+                sys_error!("[{}] producer stop error: {}", producer.name(), e);
+            }
+        }
+        Ok(())
     }
 
     pub fn producer_count(&self) -> usize {
@@ -556,5 +612,133 @@ impl Registry {
 impl Default for Registry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use serde::{Deserialize, Serialize};
+    use std::sync::atomic::AtomicUsize;
+
+    #[derive(Clone, Serialize, Deserialize)]
+    struct ShutdownTestEvent {
+        id: String,
+    }
+
+    impl Event for ShutdownTestEvent {
+        fn kind(&self) -> EventKind {
+            EventKind("test.shutdown")
+        }
+        fn id(&self) -> &str {
+            &self.id
+        }
+    }
+
+    struct CountingConsumer {
+        consumed: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl Consumer for CountingConsumer {
+        fn name(&self) -> &str {
+            "shutdown_test_consumer"
+        }
+        fn interested_events(&self) -> Vec<EventKind> {
+            vec![EventKind("test.shutdown")]
+        }
+        fn consume_mode(&self) -> ConsumeMode {
+            ConsumeMode::Async
+        }
+        fn empty_queue_sleep_ms(&self) -> u64 {
+            20
+        }
+        async fn on_event(&self, _event: serde_json::Value) -> Result<()> {
+            self.consumed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    struct StoppableProducer {
+        stopped: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl Producer for StoppableProducer {
+        fn name(&self) -> &str {
+            "shutdown_test_producer"
+        }
+        async fn register(&self, _registry: Arc<Registry>) -> Result<()> {
+            Ok(())
+        }
+        fn poll_interval_secs(&self) -> u64 {
+            60
+        }
+        async fn poll(&self) -> Result<()> {
+            Ok(())
+        }
+        async fn stop(&self) -> Result<()> {
+            self.stopped.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn new_test_registry() -> Arc<Registry> {
+        let registry = Arc::new(Registry::new());
+        registry.set_self_ref(registry.clone());
+        registry
+    }
+
+    /// 优雅退出：shutdown_all 后 worker 退出循环，不再消费新事件；producer.stop 被调用
+    #[tokio::test]
+    async fn shutdown_all_stops_workers_and_producers() {
+        // publish 链路会构造 RequestContext::new_system，依赖全局 Storage
+        crate::pkg::storage::test_support::init_for_test().await;
+        let registry = new_test_registry();
+        let consumed = Arc::new(AtomicUsize::new(0));
+        registry
+            .register_consumer(Arc::new(CountingConsumer {
+                consumed: consumed.clone(),
+            }))
+            .unwrap();
+        let stopped = Arc::new(AtomicBool::new(false));
+        registry
+            .register_producer(Arc::new(StoppableProducer {
+                stopped: stopped.clone(),
+            }))
+            .await
+            .unwrap();
+
+        registry.start_all().await.unwrap();
+
+        // 第一条事件被正常消费
+        registry
+            .publish(ShutdownTestEvent {
+                id: "evt-1".to_string(),
+            })
+            .await;
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        while consumed.load(Ordering::SeqCst) == 0 {
+            assert!(tokio::time::Instant::now() < deadline, "event not consumed");
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+
+        registry.shutdown_all().await.unwrap();
+        assert!(registry.is_shutting_down());
+        assert!(stopped.load(Ordering::SeqCst), "producer.stop() not called");
+
+        // 等 worker 退出（空队列休眠 20ms，给足 1s）
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        // 停机后新事件留在队列中，不再被消费
+        registry
+            .publish(ShutdownTestEvent {
+                id: "evt-2".to_string(),
+            })
+            .await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        assert_eq!(consumed.load(Ordering::SeqCst), 1, "worker should have exited");
+        assert_eq!(registry.queue_len("shutdown_test_consumer"), 1);
     }
 }

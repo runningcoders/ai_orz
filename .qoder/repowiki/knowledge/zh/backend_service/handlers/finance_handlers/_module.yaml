@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: backend_service/handlers/finance_handlers
+title: finance_handlers
+scope:
+    - src/handlers/finance/
+source_files: []
+depends_on: []
+related_to: []

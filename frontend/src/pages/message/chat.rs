@@ -8,6 +8,7 @@ use crate::api::project::{create_project, list_projects};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
+use crate::layouts::navbar::Navbar;
 use crate::store::toast::use_toast;
 use crate::utils::{
     MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
@@ -822,7 +823,10 @@ pub fn MessageChat() -> Element {
     let sidebar_visible_on_mobile = sidebar_open();
 
     rsx! {
-        div { class: "h-[calc(100vh-4rem)] flex flex-col lg:flex-row relative",
+        // 统一导航栏布局：Navbar(4rem) + 剩余高度的聊天主体（flex-1 min-h-0 避免内容撑出视口）
+        div { class: "h-screen flex flex-col bg-base-100",
+            Navbar {}
+            div { class: "flex-1 min-h-0 flex flex-col lg:flex-row relative",
             if is_mobile() && sidebar_visible_on_mobile {
                 div {
                     class: "fixed inset-0 bg-black/50 z-40 lg:hidden",
@@ -832,9 +836,10 @@ pub fn MessageChat() -> Element {
             div {
                 class: if is_mobile() {
                     if sidebar_visible_on_mobile {
-                        "fixed inset-y-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform"
+                        // top-16：避开顶部 Navbar（4rem），抽屉不再覆盖导航栏
+                        "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform"
                     } else {
-                        "fixed inset-y-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform -translate-x-full"
+                        "fixed top-16 bottom-0 left-0 z-50 w-72 bg-base-200 flex flex-col border-r border-base-300 transition-transform -translate-x-full"
                     }
                 } else {
                     "w-full lg:w-72 bg-base-200 flex flex-col border-r border-base-300"
@@ -907,11 +912,11 @@ pub fn MessageChat() -> Element {
                     onclick: move |_| panel_open.set(false),
                 }
             }
-            // 信息侧栏：桌面静态列 / 移动端右侧抽屉
+            // 信息侧栏：桌面静态列 / 移动端右侧抽屉（top-16 避开 Navbar）
             div {
                 class: if is_mobile() {
                     if panel_open() {
-                        "fixed inset-y-0 right-0 z-50 w-80 bg-base-200 flex flex-col border-l border-base-300"
+                        "fixed top-16 bottom-0 right-0 z-50 w-80 bg-base-200 flex flex-col border-l border-base-300"
                     } else {
                         "hidden"
                     }
@@ -977,6 +982,7 @@ pub fn MessageChat() -> Element {
                         "项目将自动绑定当前前台 Agent 作为负责人"
                     }
                 }
+            }
             }
         }
     }

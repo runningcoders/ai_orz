@@ -41,14 +41,8 @@ pub async fn update_user(
         user.email = email;
     }
     if let Some(role) = params.role {
-        // 从 i32 转换为 UserRole 枚举
-        let role_enum = match role {
-            0 => UserRole::SuperAdmin,
-            1 => UserRole::Admin,
-            2 => UserRole::Member,
-            _ => UserRole::Member,
-        };
-        user.role = role_enum;
+        // 修复 E2E-4：手写映射改为统一入口 UserRole::from_i32（与 create_user 一致）
+        user.role = UserRole::from_i32(role);
     }
     if let Some(status) = params.status {
         // 从 i32 转换为 UserStatus 枚举

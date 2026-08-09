@@ -3,12 +3,691 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-09T03:55:01Z"
+exported_at: "2026-08-09T04:51:21Z"
 modules:
     "":
         dir_name: AI Orz 后端服务根模块（Axum HTTP 服务与 AOP 事件总线）
         title: AI Orz 后端服务根模块（Axum HTTP 服务与 AOP 事件总线）
         scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    ai_orz_macros:
+        dir_name: ai-orz-macros 过程宏基础设施（HTTP Handler _ 工具注册 _ 统计事件 _ 日志字段）
+        title: ai-orz-macros 过程宏基础设施（HTTP Handler / 工具注册 / 统计事件 / 日志字段）
+        scope:
+            - ai-orz-macros/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service:
+        dir_name: backend_service
+        title: backend_service
+        scope:
+            - src/
+        source_files: []
+        children:
+            - backend_service/consumer
+            - backend_service/handlers
+            - backend_service/middleware
+            - backend_service/models
+            - backend_service/pkg
+            - backend_service/producer
+            - backend_service/service
+        depends_on: []
+        related_to: []
+    backend_service/consumer:
+        dir_name: consumer
+        title: consumer
+        scope:
+            - src/consumer/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers:
+        dir_name: handlers
+        title: handlers
+        scope:
+            - src/handlers/
+        source_files: []
+        children:
+            - backend_service/handlers/a2a_handlers
+            - backend_service/handlers/finance_handlers
+            - backend_service/handlers/hr_handlers
+            - backend_service/handlers/organization_handlers
+            - backend_service/handlers/project_handlers
+            - backend_service/handlers/system_handlers
+            - backend_service/handlers/user_handlers
+        depends_on: []
+        related_to: []
+    backend_service/handlers/a2a_handlers:
+        dir_name: a2a_handlers
+        title: a2a_handlers
+        scope:
+            - src/handlers/a2a/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers:
+        dir_name: finance_handlers
+        title: finance_handlers
+        scope:
+            - src/handlers/finance/
+        source_files: []
+        children:
+            - backend_service/handlers/finance_handlers/attachment_handlers
+            - backend_service/handlers/finance_handlers/mcp_server_handlers
+            - backend_service/handlers/finance_handlers/mcp_tool_handlers
+            - backend_service/handlers/finance_handlers/message_channel_handlers
+            - backend_service/handlers/finance_handlers/message_handlers
+            - backend_service/handlers/finance_handlers/model_provider_handlers
+            - backend_service/handlers/finance_handlers/tool_handlers
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/attachment_handlers:
+        dir_name: attachment_handlers
+        title: attachment_handlers
+        scope:
+            - src/handlers/finance/attachment/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/mcp_server_handlers:
+        dir_name: mcp_server_handlers
+        title: mcp_server_handlers
+        scope:
+            - src/handlers/finance/mcp_server/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/mcp_tool_handlers:
+        dir_name: mcp_tool_handlers
+        title: mcp_tool_handlers
+        scope:
+            - src/handlers/finance/mcp_tool/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/message_channel_handlers:
+        dir_name: message_channel_handlers
+        title: message_channel_handlers
+        scope:
+            - src/handlers/finance/message_channel/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/message_handlers:
+        dir_name: message_handlers
+        title: message_handlers
+        scope:
+            - src/handlers/finance/message/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/model_provider_handlers:
+        dir_name: model_provider_handlers
+        title: model_provider_handlers
+        scope:
+            - src/handlers/finance/model_provider/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/finance_handlers/tool_handlers:
+        dir_name: tool_handlers
+        title: tool_handlers
+        scope:
+            - src/handlers/finance/tool/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/hr_handlers:
+        dir_name: hr_handlers
+        title: hr_handlers
+        scope:
+            - src/handlers/hr/
+        source_files: []
+        children:
+            - backend_service/handlers/hr_handlers/agent_handlers
+            - backend_service/handlers/hr_handlers/skill_handlers
+        depends_on: []
+        related_to: []
+    backend_service/handlers/hr_handlers/agent_handlers:
+        dir_name: agent_handlers
+        title: agent_handlers
+        scope:
+            - src/handlers/hr/agent/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/hr_handlers/skill_handlers:
+        dir_name: skill_handlers
+        title: skill_handlers
+        scope:
+            - src/handlers/hr/skill/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/organization_handlers:
+        dir_name: organization_handlers
+        title: organization_handlers
+        scope:
+            - src/handlers/organization/
+        source_files: []
+        children:
+            - backend_service/handlers/organization_handlers/auth
+            - backend_service/handlers/organization_handlers/organization_me
+            - backend_service/handlers/organization_handlers/organizations
+            - backend_service/handlers/organization_handlers/user
+        depends_on: []
+        related_to: []
+    backend_service/handlers/organization_handlers/auth:
+        dir_name: auth
+        title: auth
+        scope:
+            - src/handlers/organization/auth/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/organization_handlers/organization_me:
+        dir_name: organization_me
+        title: organization_me
+        scope:
+            - src/handlers/organization/organization_me/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/organization_handlers/organizations:
+        dir_name: organizations
+        title: organizations
+        scope:
+            - src/handlers/organization/organizations/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/organization_handlers/user:
+        dir_name: user
+        title: user
+        scope:
+            - src/handlers/organization/user/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/project_handlers:
+        dir_name: project_handlers
+        title: project_handlers
+        scope:
+            - src/handlers/project/
+        source_files: []
+        children:
+            - backend_service/handlers/project_handlers/artifact_handlers
+            - backend_service/handlers/project_handlers/project_handlers
+            - backend_service/handlers/project_handlers/task_handlers
+        depends_on: []
+        related_to: []
+    backend_service/handlers/project_handlers/artifact_handlers:
+        dir_name: artifact_handlers
+        title: artifact_handlers
+        scope:
+            - src/handlers/project/artifact/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/project_handlers/project_handlers:
+        dir_name: project_handlers
+        title: project_handlers
+        scope:
+            - src/handlers/project/projects/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/project_handlers/task_handlers:
+        dir_name: task_handlers
+        title: task_handlers
+        scope:
+            - src/handlers/project/task/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers:
+        dir_name: system_handlers
+        title: system_handlers
+        scope:
+            - src/handlers/system/
+        source_files: []
+        children:
+            - backend_service/handlers/system_handlers/backup_handlers
+            - backend_service/handlers/system_handlers/cron_trigger_handlers
+            - backend_service/handlers/system_handlers/logs_handlers
+            - backend_service/handlers/system_handlers/process_handlers
+            - backend_service/handlers/system_handlers/seed_handlers
+            - backend_service/handlers/system_handlers/system_health_task
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/backup_handlers:
+        dir_name: backup_handlers
+        title: backup_handlers
+        scope:
+            - src/handlers/system/backup/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/cron_trigger_handlers:
+        dir_name: cron_trigger_handlers
+        title: cron_trigger_handlers
+        scope:
+            - src/handlers/system/cron_trigger/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/logs_handlers:
+        dir_name: logs_handlers
+        title: logs_handlers
+        scope:
+            - src/handlers/system/logs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/process_handlers:
+        dir_name: process_handlers
+        title: process_handlers
+        scope:
+            - src/handlers/system/process/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/seed_handlers:
+        dir_name: seed_handlers
+        title: seed_handlers
+        scope:
+            - src/handlers/system/seed/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/system_handlers/system_health_task:
+        dir_name: system_health_task
+        title: system_health_task
+        scope:
+            - src/handlers/system/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/handlers/user_handlers:
+        dir_name: user_handlers
+        title: user_handlers
+        scope:
+            - src/handlers/user/
+            - src/handlers/health.rs
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/middleware:
+        dir_name: middleware
+        title: middleware
+        scope:
+            - src/middleware/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/models:
+        dir_name: models
+        title: models
+        scope:
+            - src/models/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg:
+        dir_name: pkg
+        title: pkg
+        scope:
+            - src/pkg/
+        source_files: []
+        children:
+            - backend_service/pkg/aop
+            - backend_service/pkg/runtime_core
+            - backend_service/pkg/stats
+            - backend_service/pkg/storage
+            - backend_service/pkg/tool_registry
+            - backend_service/pkg/tool_tracing
+            - backend_service/pkg/utils
+        depends_on: []
+        related_to: []
+    backend_service/pkg/aop:
+        dir_name: aop
+        title: aop
+        scope:
+            - src/pkg/aop/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/runtime_core:
+        dir_name: runtime_core
+        title: runtime_core
+        scope:
+            - src/pkg/
+            - src/pkg/background_task/
+            - src/pkg/external/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/stats:
+        dir_name: stats
+        title: stats
+        scope:
+            - src/pkg/stats/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/storage:
+        dir_name: storage
+        title: storage
+        scope:
+            - src/pkg/storage/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/tool_registry:
+        dir_name: tool_registry
+        title: tool_registry
+        scope:
+            - src/pkg/tool_registry/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/tool_tracing:
+        dir_name: tool_tracing
+        title: tool_tracing
+        scope:
+            - src/pkg/tool_tracing/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/pkg/utils:
+        dir_name: utils
+        title: utils
+        scope:
+            - src/pkg/utils/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/producer:
+        dir_name: producer
+        title: producer
+        scope:
+            - src/producer/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service:
+        dir_name: service
+        title: service
+        scope:
+            - src/service/
+        source_files: []
+        children:
+            - backend_service/service/dal
+            - backend_service/service/dao
+            - backend_service/service/domain
+        depends_on: []
+        related_to: []
+    backend_service/service/dal:
+        dir_name: dal
+        title: dal
+        scope:
+            - src/service/dal/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/dao:
+        dir_name: dao
+        title: dao
+        scope:
+            - src/service/dao/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain:
+        dir_name: domain
+        title: domain
+        scope:
+            - src/service/domain/
+        source_files: []
+        children:
+            - backend_service/service/domain/finance
+            - backend_service/service/domain/hr
+            - backend_service/service/domain/message
+            - backend_service/service/domain/organization
+            - backend_service/service/domain/project
+            - backend_service/service/domain/runtime
+            - backend_service/service/domain/system
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/finance:
+        dir_name: finance
+        title: finance
+        scope:
+            - src/service/domain/finance/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/hr:
+        dir_name: hr
+        title: hr
+        scope:
+            - src/service/domain/hr/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/message:
+        dir_name: message
+        title: message
+        scope:
+            - src/service/domain/message/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/organization:
+        dir_name: organization
+        title: organization
+        scope:
+            - src/service/domain/organization/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/project:
+        dir_name: project
+        title: project
+        scope:
+            - src/service/domain/project/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/runtime:
+        dir_name: runtime
+        title: runtime
+        scope:
+            - src/service/domain/runtime/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend_service/service/domain/system:
+        dir_name: system
+        title: system
+        scope:
+            - src/service/domain/system/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    common:
+        dir_name: 前后端共享类型与配置库（common crate）
+        title: 前后端共享类型与配置库（common crate）
+        scope:
+            - common/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend:
+        dir_name: frontend
+        title: frontend
+        scope:
+            - frontend/
+        source_files: []
+        children:
+            - frontend/app_shell
+            - frontend/finance_pages
+            - frontend/hr_pages
+            - frontend/message_pages
+            - frontend/organization_pages
+            - frontend/project_pages
+            - frontend/shared_layers
+            - frontend/system_pages
+        depends_on: []
+        related_to: []
+    frontend/app_shell:
+        dir_name: app_shell
+        title: app_shell
+        scope:
+            - frontend/src/main.rs
+            - frontend/src/config.rs
+            - frontend/src/pages/mod.rs
+            - frontend/src/pages/reception.rs
+            - frontend/src/pages/settings.rs
+            - frontend/src/pages/workspace.rs
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/finance_pages:
+        dir_name: 财务_工具管理前端页面集
+        title: 财务/工具管理前端页面集
+        scope:
+            - frontend/src/pages/finance/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/hr_pages:
+        dir_name: hr_pages
+        title: hr_pages
+        scope:
+            - frontend/src/pages/hr/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/message_pages:
+        dir_name: message_pages
+        title: message_pages
+        scope:
+            - frontend/src/pages/message/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/organization_pages:
+        dir_name: organization_pages
+        title: organization_pages
+        scope:
+            - frontend/src/pages/organization/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/project_pages:
+        dir_name: project_pages
+        title: project_pages
+        scope:
+            - frontend/src/pages/project/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/shared_layers:
+        dir_name: 前端共享层（API 客户端、Dioxus 组件、Hooks、布局与全局状态）
+        title: 前端共享层（API 客户端、Dioxus 组件、Hooks、布局与全局状态）
+        scope:
+            - frontend/src/api/
+            - frontend/src/components/
+            - frontend/src/hooks/
+            - frontend/src/layouts/
+            - frontend/src/store/
+            - frontend/src/utils/
+            - frontend/styles/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/system_pages:
+        dir_name: system_pages
+        title: system_pages
+        scope:
+            - frontend/src/pages/system/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    migrations_and_docs:
+        dir_name: migrations_and_docs
+        title: migrations_and_docs
+        scope:
+            - migrations/
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    tests:
+        dir_name: tests
+        title: tests
+        scope:
+            - tests/
         source_files: []
         children: []
         depends_on: []

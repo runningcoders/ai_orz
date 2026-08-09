@@ -9,21 +9,21 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{CreateOrganizationUserRequest, ListUsersResponseItem, UpdateUserRequest};
+use common::enums::UserRole;
 
+// 修复 E2E-3：之前表单用 1/2/3 自造编号（数字越大权限越高），与 common::enums::UserRole
+// （SuperAdmin=0/Admin=1/Member=2，数字越小权限越高）完全相反，导致创建的管理员被后端
+// 解析成 Member。统一改用 UserRole 枚举值，文案复用 display_name()。
 fn role_badge(role: i32) -> &'static str {
-    match role {
-        3 => "badge badge-info",
-        2 => "badge badge-success",
-        _ => "badge badge-neutral",
+    match UserRole::from_i32(role) {
+        UserRole::SuperAdmin => "badge badge-info",
+        UserRole::Admin => "badge badge-success",
+        UserRole::Member => "badge badge-neutral",
     }
 }
 
 fn role_text(role: i32) -> &'static str {
-    match role {
-        3 => "超级管理员",
-        2 => "管理员",
-        _ => "成员",
-    }
+    UserRole::from_i32(role).display_name()
 }
 
 #[component]
@@ -35,7 +35,7 @@ pub fn OrganizationUsers() -> Element {
     let mut new_display_name = use_signal(String::new);
     let mut new_email = use_signal(String::new);
     let mut new_password = use_signal(String::new);
-    let mut new_role = use_signal(|| 1i32);
+    let mut new_role = use_signal(|| UserRole::Member as i32);
     let mut creating = use_signal(|| false);
     let toast = use_toast();
 
@@ -48,7 +48,7 @@ pub fn OrganizationUsers() -> Element {
     let mut edit_user_id = use_signal(String::new);
     let mut edit_display_name = use_signal(String::new);
     let mut edit_email = use_signal(String::new);
-    let mut edit_role = use_signal(|| "1".to_string());
+    let mut edit_role = use_signal(|| (UserRole::Member as i32).to_string());
     let mut edit_status = use_signal(|| "1".to_string());
     let mut edit_password = use_signal(String::new);
     let mut saving_user = use_signal(|| false);
@@ -93,7 +93,7 @@ pub fn OrganizationUsers() -> Element {
                     new_display_name.set(String::new());
                     new_email.set(String::new());
                     new_password.set(String::new());
-                    new_role.set(1);
+                    new_role.set(UserRole::Member as i32);
                     match list_users().await {
                         Ok(list) => users.set(list.data),
                         Err(e) => toast.error(&e),
@@ -225,10 +225,10 @@ pub fn OrganizationUsers() -> Element {
                         span { class: "label-text font-medium", "角色" }
                     }
                     select { class: "select select-bordered w-full", value: "{new_role}",
-                        onchange: move |e| new_role.set(e.value().parse().unwrap_or(1)),
-                        option { value: "1", "成员" }
-                        option { value: "2", "管理员" }
-                        option { value: "3", "超级管理员" }
+                        onchange: move |e| new_role.set(e.value().parse().unwrap_or(UserRole::Member as i32)),
+                        option { value: "{UserRole::Member as i32}", "普通成员" }
+                        option { value: "{UserRole::Admin as i32}", "管理员" }
+                        option { value: "{UserRole::SuperAdmin as i32}", "超级管理员" }
                     }
                 }
             }
@@ -246,7 +246,7 @@ pub fn OrganizationUsers() -> Element {
                     onclick: move |_| {
                         let display_name = if edit_display_name().trim().is_empty() { None } else { Some(edit_display_name()) };
                         let email = if edit_email().trim().is_empty() { None } else { Some(edit_email()) };
-                        let role: i32 = edit_role().trim().parse().unwrap_or(1);
+                        let role: i32 = edit_role().trim().parse().unwrap_or(UserRole::Member as i32);
                         let status: i32 = edit_status().trim().parse().unwrap_or(1);
                         let password_hash = if edit_password().is_empty() { None } else { Some(edit_password()) };
                         let req = UpdateUserRequest {
@@ -299,9 +299,9 @@ pub fn OrganizationUsers() -> Element {
                         class: "select select-bordered w-full",
                         value: "{edit_role}",
                         onchange: move |e| edit_role.set(e.value()),
-                        option { value: "1", "成员" }
-                        option { value: "2", "管理员" }
-                        option { value: "3", "超级管理员" }
+                        option { value: "{UserRole::Member as i32}", "普通成员" }
+                        option { value: "{UserRole::Admin as i32}", "管理员" }
+                        option { value: "{UserRole::SuperAdmin as i32}", "超级管理员" }
                     }
                 }
                 div { class: "form-control w-full",

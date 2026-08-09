@@ -39,9 +39,13 @@ async fn test_initialize_system_creates_org_and_providers(pool: SqlitePool) {
     );
 
     // After initialization, check_initialized should return true
+    // 协议化改造后契约：data 为 CheckInitializedResponse 结构体（而非裸 bool）
     let (status, body) = app.get("/api/v1/organization/initialize/check").await;
     let data = crate::common::assert_api_ok(status, &body);
-    let initialized = data.as_bool().expect("expected boolean in data field");
+    let initialized = data
+        .get("initialized")
+        .and_then(|v| v.as_bool())
+        .expect("expected initialized field in CheckInitializedResponse");
     assert!(initialized, "system should be initialized after bootstrap");
 }
 

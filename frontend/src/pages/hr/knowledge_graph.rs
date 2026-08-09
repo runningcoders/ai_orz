@@ -134,10 +134,15 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
     let mut recommendations = use_signal(Vec::<SeedNodeRecommendation>::new);
     let mut rec_loading = use_signal(|| false);
 
-    // 将 agent_id 存入 Signal（Copy 类型），使闭包捕获后仍为 Copy，可在 for 循环中复用
+    // 将 agent_id 存入 Signal（Copy 类型），使闭包捕获后仍为 Copy，可在 for 循环中复用。
+    // 修复 E2E 发现的渲染器崩溃：Signal::set 无条件标脏，渲染期 set 会触发
+    // 「重渲染 → 再 set」死循环，主线程无限自旋直到 Chromium 杀掉渲染器（页面白屏）。
+    // 等值守卫打断循环；用 peek 避免渲染体订阅自身。
     let aid_init = agent_id.clone();
     let mut agent_id_signal = use_signal(move || aid_init);
-    agent_id_signal.set(agent_id);
+    if *agent_id_signal.peek() != agent_id {
+        agent_id_signal.set(agent_id);
+    }
 
     // 加载推荐起点
     let mut load_recommendations = move || {
