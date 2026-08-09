@@ -367,7 +367,38 @@ impl ToolDao for ToolDaoSqliteImpl {
             .fetch_optional(ctx.db_pool())
             .await?;
 
-            if exists.is_some() {
+            if let Some(existing) = exists {
+                // 内置工具以代码定义为准：刷新代码所有权字段
+                // （name/description/control_mode/parameters_schema/tags），
+                // 运维所有权字段（config/status）保留现场设置；
+                // 字段无变化时不写库
+                if matches!(existing.protocol, common::enums::ToolProtocol::Builtin)
+                    && (existing.name != po.name
+                        || existing.description != po.description
+                        || existing.control_mode != po.control_mode
+                        || existing.parameters_schema != po.parameters_schema
+                        || existing.get_tags() != po.get_tags())
+                {
+                    sqlx::query(
+                        r#"
+                        UPDATE tools SET
+                            name = ?, description = ?, control_mode = ?,
+                            parameters_schema = ?, tags = ?,
+                            updated_at = ?, updated_by = ?
+                        WHERE id = ?
+                        "#,
+                    )
+                    .bind(&po.name)
+                    .bind(&po.description)
+                    .bind(po.control_mode as i32)
+                    .bind(&po.parameters_schema)
+                    .bind(&po.tags)
+                    .bind(common::constants::utils::current_timestamp())
+                    .bind(&po.updated_by)
+                    .bind(&tool_id)
+                    .execute(ctx.db_pool())
+                    .await?;
+                }
                 continue;
             }
 

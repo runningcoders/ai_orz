@@ -1729,9 +1729,26 @@ ai_orz/src/pkg/tool_registry/
 | `fs_read` / `fs_write` | `fs` | 本地文件读写（base_data_path 沙箱 + `additional_allowed_paths` 扩展） |
 | `shell_exec` | `shell` | 原有 tag 不变，与双露的 shell_status/shell_kill/shell_list 同组 |
 
-### DB 存量记录的迁移策略：手动
+### 存量记录的升级策略：所有权分界刷新（无需版本字段）
 
-`sync_builtin_tools_to_db` 保持「只插入不更新」的原有语义：新环境首次同步会带上完整 tags；**存量 DB 中已有记录的 tags 不会被自动刷新**，需要时手动 UPDATE（或重建库）。这是有意为之：避免启动链路隐式改写 DB 数据。
+内置工具的 DB 记录按字段划分所有权，`sync_builtin_tools_to_db` 对存量记录执行分字段刷新：
+
+| 所有权 | 字段 | sync 行为 |
+|--------|------|-----------|
+| **代码所有权** | name / description / control_mode / parameters_schema / tags | 以代码定义为准无条件刷新（代码即最新版，无需版本比较） |
+| **运维所有权** | config（如 fs 的 `additional_allowed_paths`）/ status | 永不覆盖，保留现场设置 |
+
+配套约束：
+- 字段无变化时不写库，避免启动时空刷 UPDATE
+- 仅对 `protocol = Builtin` 的记录刷新，不碰用户自建工具
+- API 层面内置工具的 update/delete 本就受保护拦截，代码所有权字段不存在用户修改源，因此无条件覆盖安全
+- 这样版本升级后，老环境启动一次即自动获得最新的描述/schema/tags；新环境首次同步同路
+
+### 触发点：启动链路 + initialize_system 兜底
+
+- **启动链路（每次启动）**：`service::init_base_data()` → `domain::init_all_base_data()` → `finance::init_base_data()` 调 `sync_builtin_tools`，保证版本升级后内置工具定义自动对齐代码；失败仅 warn 不阻塞启动
+- **initialize_system（首次初始化）**：同一 sync 再跑一次，幂等无冲突，作为兜底
+- 与 system domain 的 cron triggers 注入并列，同属两阶段初始化的异步第二阶段
 
 ### 绑定语义（不变）
 
@@ -1739,6 +1756,6 @@ ai_orz/src/pkg/tool_registry/
 
 ### 测试更新
 
-新增 1 个测试：`generic_builtin_tools_carry_expected_tags`（registry 层断言四个通用工具 tag 定义）。
+新增 2 个测试：`generic_builtin_tools_carry_expected_tags`（registry 层断言四个通用工具 tag 定义）、`test_sync_builtin_tools_refreshes_code_owned_fields`（DAL 层断言代码字段被刷新且 config/status 保留）。
 
 ---

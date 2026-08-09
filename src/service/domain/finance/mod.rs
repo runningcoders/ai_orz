@@ -53,6 +53,28 @@ pub fn domain() -> Arc<dyn FinanceDomain> {
     FINANCE_DOMAIN.get().cloned().unwrap()
 }
 
+/// 第二阶段：异步注入本 Domain 的基础数据（幂等）。
+///
+/// 将 registry 中的内置工具（含双露 handler 工具）同步到 tools 表：
+/// 新工具插入，存量记录按所有权分界刷新——代码所有权字段
+/// （name/description/control_mode/parameters_schema/tags）以代码定义为准，
+/// 运维所有权字段（config/status）保留现场设置，字段无变化时不写库。
+/// 失败仅记录 warn 不阻塞启动（initialize_system 流程也会再次同步）。
+pub async fn init_base_data() {
+    let ctx = RequestContext::new_system();
+    match domain()
+        .tool_provider_manage()
+        .sync_builtin_tools(ctx)
+        .await
+    {
+        Ok(inserted) => sys_info!(
+            "finance domain 基础数据初始化完成（内置工具同步，新增 {} 个）",
+            inserted
+        ),
+        Err(e) => sys_warn!("finance domain 基础数据初始化失败（内置工具同步）: {}", e),
+    }
+}
+
 /// 创建新的 Finance Domain 实例（用于测试，每次测试创建独立实例保证隔离）
 pub fn new(
     model_provider_dal: Arc<dyn ModelProviderDal>,

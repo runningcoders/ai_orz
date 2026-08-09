@@ -35,8 +35,11 @@ pub fn init_all() {
 ///
 /// 与 `init_all()` 分离开的原因：基础数据通常需要 DB IO（必须 async），
 /// 而 `init_all()` 里有大量静态/单例注册逻辑，测试里常用同步 `Once::call_once` 调用它。
-/// 目前只有 system domain 需要补基础数据（2 条系统级 cron triggers），
-/// 其它 domain 如后续有默认条目的幂等注入需求，可在这里追加 await。
+/// 当前注入两项（均幂等）：
+/// - system：2 条系统级 cron triggers（agent_rest / project_followup）
+/// - finance：内置工具同步（新工具插入 + 存量记录所有权分界刷新），
+///   保证版本升级后每次启动内置工具定义自动对齐代码
 pub async fn init_all_base_data() {
     system::init_base_data().await;
+    finance::init_base_data().await;
 }

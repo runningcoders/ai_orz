@@ -491,6 +491,74 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
     assert!(found.is_some(), "test_tool should exist after sync");
 }
 
+// 测试用工厂：验证 sync 刷新代码所有权字段、保留运维所有权字段
+#[derive(Clone)]
+struct OwnershipSyncToolFactory;
+
+impl BuiltinToolFactory for OwnershipSyncToolFactory {
+    fn create_po(&self) -> ToolPo {
+        ToolPo::new(
+            "ownership_sync_tool".to_string(),
+            "ownership_sync_tool_v2".to_string(),
+            "Fresh description from code".to_string(),
+            ToolProtocol::Builtin,
+            serde_json::Value::Null,
+            None,
+            vec!["fresh_tag".to_string()],
+            Some("test-user".to_string()),
+        )
+    }
+    fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
+        Box::new(TestTool { po })
+    }
+}
+
+/// 测试 sync 对存量内置工具的所有权分界刷新：
+/// 代码所有权字段（name/description/tags）以代码为准刷新，
+/// 运维所有权字段（config/status）保留现场设置
+#[sqlx::test]
+async fn test_sync_builtin_tools_refreshes_code_owned_fields(pool: SqlitePool) {
+    let (tool_dal, ctx) = init_test_env(pool, false).await;
+    get_registry().register_builtin_factory(Box::new(OwnershipSyncToolFactory));
+
+    // 预插存量记录：旧的代码所有权字段 + 现场自定义的运维字段
+    let mut stale = OwnershipSyncToolFactory.create_po();
+    stale.name = "ownership_sync_tool_old".to_string();
+    stale.description = "Old description".to_string();
+    stale.tags = serde_json::to_string(&vec!["old_tag".to_string()]).unwrap();
+    stale.config = serde_json::json!({"additional_allowed_paths": ["/custom/path"]});
+    stale.status = common::enums::ToolStatus::Disabled;
+    tool_dal.create_tool(ctx.clone(), &stale).await.unwrap();
+
+    tool_dal
+        .sync_builtin_tools_to_db(ctx.clone())
+        .await
+        .unwrap();
+
+    let found = tool::dao()
+        .get_by_id(ctx.clone(), "ownership_sync_tool".to_string())
+        .await
+        .unwrap()
+        .expect("ownership_sync_tool should exist");
+
+    // 代码所有权字段被刷新
+    assert_eq!(found.name, "ownership_sync_tool_v2");
+    assert_eq!(found.description, "Fresh description from code");
+    assert_eq!(found.get_tags(), vec!["fresh_tag".to_string()]);
+
+    // 运维所有权字段保留现场设置
+    assert_eq!(
+        found.config,
+        serde_json::json!({"additional_allowed_paths": ["/custom/path"]}),
+        "config should be preserved"
+    );
+    assert_eq!(
+        found.status,
+        common::enums::ToolStatus::Disabled,
+        "status should be preserved"
+    );
+}
+
 // ========== Mock for Search Tests（三态匹配测试） ==========
 //
 // MockCortexDao 的向量生成策略：
