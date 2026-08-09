@@ -5,6 +5,7 @@
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
@@ -14,7 +15,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::fs::{OpenOptions, create_dir_all};
-use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 /// ShellExec tool configuration stored in `ToolPo.config`.
@@ -82,6 +82,9 @@ pub struct ShellExecParams {
     /// Run in background (don't wait for completion).
     /// For long-running processes. PID will be stored in tool call metadata.
     pub background: Option<bool>,
+    /// Action on sync timeout: "detach" (default, hand process back to caller,
+    /// inspect via shell_status / stop via shell_kill) or "kill" (terminate immediately).
+    pub timeout_action: Option<String>,
     /// Additional environment variables to set for the command.
     pub env: Option<HashMap<String, String>>,
 }
@@ -127,6 +130,11 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                         "type": "boolean",
                         "description": "Optional: run in background without waiting for completion. Default: false."
                     },
+                    "timeout_action": {
+                        "type": "string",
+                        "enum": ["detach", "kill"],
+                        "description": "Optional: what to do on sync timeout. 'detach' (default) keeps the process running and returns its pid for later shell_status/shell_kill management; 'kill' terminates it immediately."
+                    },
                     "env": {
                         "type": "object",
                         "additionalProperties": { "type": "string" },
@@ -137,6 +145,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                 "additionalProperties": false
             })),
             config: serde_json::json!(ShellExecConfig::default()),
+            tags: serde_json::to_string(&vec!["shell".to_string()]).unwrap_or_default(),
             ..Default::default()
         };
         po.fill_defaults_for_builtin();
@@ -285,6 +294,16 @@ impl CoreTool for ShellExecCoreTool {
         let max_output_bytes = params
             .max_output_size_bytes
             .unwrap_or_else(|| self.config.default_max_output_size_bytes());
+        let timeout_action = params.timeout_action.as_deref().unwrap_or("detach");
+        if timeout_action != "detach" && timeout_action != "kill" {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": format!(
+                    "Invalid timeout_action '{}' (expected 'detach' or 'kill')",
+                    timeout_action
+                )
+            }));
+        }
 
         // Prepare environment
         let mut env = filter_inherited_environment(self.config.allowed_env());
@@ -292,175 +311,188 @@ impl CoreTool for ShellExecCoreTool {
             env = merge_extra_environment(env, &serde_json::to_value(extra_env)?);
         }
 
-        // Create log file path - store all shell logs in base_data_path/tools/shell_exec/logs/{log_id}.log
+        // 统一日志流式模型：日志文件名 {call_id}.log，与 ToolCallEntry 全链路关联
+        // call_id 优先取 ToolCallDao::execute 注入值；直接调用（测试）回退 log_id
+        let call_id = ctx
+            .tool_call_id()
+            .cloned()
+            .unwrap_or_else(|| ctx.log_id.clone());
         let base_data_path = get().base_data_path();
-        let tool_logs_dir = base_data_path.join("tools").join("shell_exec").join("logs");
-        let trace_id = ctx.log_id.clone();
-        let log_dir = tool_logs_dir.as_path();
+        let log_dir = base_data_path.join("tools").join("shell_exec").join("logs");
         if !log_dir.exists() {
-            create_dir_all(log_dir).await?;
+            create_dir_all(&log_dir).await?;
         }
-        let log_path = log_dir.join(format!("{}.log", trace_id));
+        let log_path = log_dir.join(format!("{}.log", call_id));
+
+        // 统一执行模型：sync 与 background 都从 spawn 起把 stdout/stderr 重定向到日志文件
+        let mut command = shell_command();
+        command.arg(&params.command);
+        command.current_dir(&working_dir);
+        for (key, value) in &env {
+            command.env(key, value);
+        }
+        let stdio_stdout = Stdio::from(
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&log_path)
+                .await?
+                .into_std()
+                .await,
+        );
+        let stdio_stderr = Stdio::from(
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&log_path)
+                .await?
+                .into_std()
+                .await,
+        );
+        command.stdout(stdio_stdout);
+        command.stderr(stdio_stderr);
 
         let background = params.background.unwrap_or(false);
 
-        if background {
-            // Spawn background process
-            let mut command = shell_command();
-            command.arg(params.command);
-            command.current_dir(&working_dir);
-
-            // Set environment
-            for (key, value) in env {
-                command.env(key, value);
+        // Spawn 进程
+        let mut child = match command.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "call_id": call_id,
+                    "error": format!("Failed to spawn command: {}", e),
+                    "log_path": log_path.to_string_lossy(),
+                }));
             }
+        };
+        let pid = child.id();
 
-            // Redirect stdout/stderr to log file - need two separate file handles
-            let stdio_stdout = Stdio::from(
-                OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&log_path)
-                    .await?
-                    .into_std()
-                    .await,
-            );
-            let stdio_stderr = Stdio::from(
-                OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&log_path)
-                    .await?
-                    .into_std()
-                    .await,
-            );
-            command.stdout(stdio_stdout);
-            command.stderr(stdio_stderr);
+        // 注册到统一进程注册中心（sync/background 均注册），供 shell_status/shell_kill 管理
+        if let Some(pid) = pid {
+            process::registry().register(ProcessEntry {
+                pid,
+                tool_id: "shell_exec".to_string(),
+                call_id: call_id.clone(),
+                agent_id: ctx.agent_id().cloned(),
+                project_id: ctx.project_id().cloned(),
+                task_id: ctx.task_id().cloned(),
+                command: params.command.clone(),
+                working_dir: working_dir.to_string_lossy().to_string(),
+                log_path: log_path.to_string_lossy().to_string(),
+                background,
+                started_at: common::constants::utils::current_timestamp_ms() as u64,
+                status: ProcessStatus::Running,
+                exit_code: None,
+                finished_at: None,
+            });
+        }
 
-            // Detach process
-            let child = command.spawn()?;
-            let pid = child.id();
-            let pid_str = match pid {
-                Some(p) => format!("{}", p),
-                None => "<unknown>".to_string(),
-            };
-            // Don't wait - return immediately
-            Ok(serde_json::json!({
+        if background {
+            // 后台模式：立即返回，Agent 可用 shell_status 轮询 / shell_kill 终止
+            let pid_str = pid
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            return Ok(serde_json::json!({
                 "success": true,
                 "background": true,
+                "call_id": call_id,
                 "pid": pid,
                 "log_path": log_path.to_string_lossy(),
-                "message": format!("Command started in background with PID {}. Output is logged to: {}", pid_str, log_path.to_string_lossy())
-            }))
-        } else {
-            // Run synchronously with timeout
-            let mut command = shell_command();
-            command.arg(params.command);
-            command.current_dir(&working_dir);
+                "message": format!(
+                    "Command started in background with PID {}. Use shell_status/shell_kill to inspect or stop it. Output is logged to: {}",
+                    pid_str,
+                    log_path.to_string_lossy()
+                )
+            }));
+        }
 
-            // Set environment
-            for (key, value) in env {
-                command.env(key, value);
+        // 同步模式：带超时等待
+        let timeout = std::time::Duration::from_millis(timeout_ms);
+        match tokio::time::timeout(timeout, child.wait()).await {
+            Ok(Ok(status)) => {
+                if let Some(pid) = pid {
+                    process::registry().mark_exited(pid, status.code());
+                }
+
+                // 从日志文件读取输出做摘要（受 max_output_size_bytes 截断），全量留盘
+                let output = tokio::fs::read(&log_path).await.unwrap_or_default();
+                let truncated = output.len() as u64 > max_output_bytes;
+                let output_for_message = if truncated {
+                    &output[..max_output_bytes as usize]
+                } else {
+                    &output
+                };
+                let output_str = String::from_utf8_lossy(output_for_message);
+                let summary = if truncated {
+                    format!(
+                        "{}\n\n... [truncated] full output saved to: {}",
+                        output_str,
+                        log_path.to_string_lossy()
+                    )
+                } else {
+                    output_str.to_string()
+                };
+
+                Ok(serde_json::json!({
+                    "success": status.success(),
+                    "call_id": call_id,
+                    "pid": pid,
+                    "exit_code": status.code(),
+                    "truncated": truncated,
+                    "full_output_bytes": output.len(),
+                    "log_path": log_path.to_string_lossy(),
+                    "output": summary
+                }))
             }
-
-            // Use piped stdout/stderr to capture output
-            command.stdout(Stdio::piped());
-            command.stderr(Stdio::piped());
-
-            // Spawn child
-            let mut child = match command.spawn() {
-                Ok(c) => c,
-                Err(e) => {
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                if let Some(pid) = pid {
+                    process::registry().mark_exited(pid, None);
+                }
+                Ok(serde_json::json!({
+                    "success": false,
+                    "call_id": call_id,
+                    "error": format!("Command execution failed: {}", e),
+                    "pid": pid,
+                    "log_path": log_path.to_string_lossy(),
+                }))
+            }
+            Err(_) => {
+                if timeout_action == "kill" {
+                    // 显式 kill：超时立即终止
+                    let _ = child.kill().await;
+                    if let Some(pid) = pid {
+                        process::registry().mark_exited(pid, None);
+                    }
                     return Ok(serde_json::json!({
                         "success": false,
-                        "error": format!("Failed to spawn command: {}", e),
+                        "status": "timeout",
+                        "timeout": true,
+                        "killed": true,
+                        "timeout_ms": timeout_ms,
+                        "call_id": call_id,
+                        "pid": pid,
                         "log_path": log_path.to_string_lossy(),
+                        "error": format!(
+                            "Command timed out after {} ms and was killed",
+                            timeout_ms
+                        )
                     }));
                 }
-            };
-            let pid = child.id();
-
-            // Wait with timeout
-            let timeout = std::time::Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(timeout, child.wait()).await {
-                Ok(Ok(status)) => {
-                    // Read output from stdout/stderr pipes
-                    let mut output = Vec::new();
-                    if let Some(stdout) = child.stdout.take() {
-                        read_stream_to_end(stdout, &mut output).await;
-                    }
-                    if !output.is_empty() {
-                        output.push(b'\n');
-                    }
-                    if let Some(stderr) = child.stderr.take() {
-                        read_stream_to_end(stderr, &mut output).await;
-                    }
-
-                    // Write full output to log file
-                    let mut log_file = OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(&log_path)
-                        .await?;
-
-                    let truncated = output.len() as u64 > max_output_bytes;
-                    let output_for_message = if truncated {
-                        &output[..max_output_bytes as usize]
-                    } else {
-                        &output
-                    };
-
-                    log_file.write_all(&output).await?;
-                    log_file.flush().await?;
-
-                    // Create summary for response
-                    let output_str = String::from_utf8_lossy(output_for_message);
-                    let summary = if truncated {
-                        format!(
-                            "{}\n\n... [truncated] full output saved to: {}",
-                            output_str,
-                            log_path.to_string_lossy()
-                        )
-                    } else {
-                        output_str.to_string()
-                    };
-
-                    let exit_code = status.code();
-
-                    Ok(serde_json::json!({
-                        "success": status.success(),
-                        "exit_code": exit_code,
-                        "truncated": truncated,
-                        "full_output_bytes": output.len(),
-                        "log_path": log_path.to_string_lossy(),
-                        "output": summary
-                    }))
-                }
-                Ok(Err(e)) => {
-                    // Wait error
-                    let _ = child.kill().await;
-                    Ok(serde_json::json!({
-                        "success": false,
-                        "error": format!("Command execution failed: {}", e),
-                        "pid": pid,
-                        "log_path": log_path.to_string_lossy(),
-                    }))
-                }
-                Err(_) => {
-                    // Timeout - kill the child
-                    let _ = child.kill().await;
-                    Ok(serde_json::json!({
-                        "success": false,
-                        "timeout": true,
-                        "timeout_ms": timeout_ms,
-                        "pid": pid,
-                        "log_path": log_path.to_string_lossy(),
-                        "error": format!("Command timed out after {} ms", timeout_ms)
-                    }))
-                }
+                // 默认 detach：超时不 kill，把进程交还调用方（shell_status 查询 / shell_kill 终止）
+                Ok(serde_json::json!({
+                    "success": false,
+                    "status": "timeout",
+                    "timeout": true,
+                    "timeout_ms": timeout_ms,
+                    "call_id": call_id,
+                    "pid": pid,
+                    "log_path": log_path.to_string_lossy(),
+                    "message": "进程仍在运行，可用 shell_status 查询或 shell_kill 终止"
+                }))
             }
         }
     }
@@ -481,9 +513,4 @@ fn shell_command() -> Command {
         cmd.arg("-c");
         cmd
     }
-}
-
-/// Read all bytes from a stream into the given buffer.
-async fn read_stream_to_end<R: tokio::io::AsyncRead + Unpin>(mut stream: R, buf: &mut Vec<u8>) {
-    let _ = tokio::io::copy(&mut stream, buf).await;
 }

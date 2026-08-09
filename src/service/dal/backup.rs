@@ -65,6 +65,11 @@ pub fn init() {
     let _ = BACKUP_DAL.set(Arc::new(BackupDalFsImpl));
 }
 
+/// 创建 Backup DAL（返回 trait 对象，用于测试或组合构造）
+pub fn new() -> Arc<dyn BackupDal + Send + Sync> {
+    Arc::new(BackupDalFsImpl)
+}
+
 // ==================== DAL 接口 ====================
 
 /// Backup DAL 接口

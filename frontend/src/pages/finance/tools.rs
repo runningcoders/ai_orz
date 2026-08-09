@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 use crate::api::finance::{delete_tool, list_tools, query_tools, search_tools, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::create_http_tool::CreateHttpToolModal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -31,6 +32,9 @@ pub fn FinanceTools() -> Element {
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
     let mut pending_delete_id = use_signal(String::new);
+
+    // ===== 创建 HTTP 工具弹窗 =====
+    let mut show_create = use_signal(|| false);
 
     // 加载数据（三场景切换：list / query / search）
     let load_data = move || {
@@ -111,6 +115,11 @@ pub fn FinanceTools() -> Element {
         AppLayout {
             div { class: "flex justify-between items-center mb-4",
                 h2 { class: "card-title", "工具管理" }
+                button {
+                    class: "btn btn-primary btn-sm",
+                    onclick: move |_| show_create.set(true),
+                    "+ 创建 HTTP 工具"
+                }
             }
 
             // 筛选栏（独立卡片）
@@ -282,6 +291,12 @@ pub fn FinanceTools() -> Element {
             on_cancel: move |_| {
                 show_delete_confirm.set(false);
             }
+        }
+
+        CreateHttpToolModal {
+            show: show_create(),
+            on_close: move |_| show_create.set(false),
+            on_created: move |_| load_data(),
         }
         }
     }

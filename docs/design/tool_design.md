@@ -1616,3 +1616,129 @@ ai_orz/src/pkg/tool_registry/
 - `attachment` → 附件关联
 
 ---
+
+## 统一后台进程管理与 shell_exec 超时移交（2026-08-09 更新）
+
+### 同步/异步定调
+
+- **同步是默认**：工具调用默认同步等待结果返回给 Agent，这是最自然的交互模型
+- `dispatch_mode=async` 消息链路仅留给显式配置的重型工具，不是常规路径
+- **Agent 保留调用级决策空间**：通过 `shell_exec` 的 `background` 参数自主决定是否后台执行（轮询式异步：先拿 pid，再用 `shell_status` 轮询）；配置级 `dispatch_mode` 与调用级 `background` 不冲突，前者是工具元数据，后者是单次调用意图
+
+### call_id 单一事实源与全链路关联
+
+现状问题：`call_id` 在 `ToolCallDao::execute` 内部生成，`CoreTool::call(ctx, args)` 拿不到它；shell_exec 日志只能用请求级 `log_id` 命名（同一请求多次调用混在一个日志文件）。
+
+方案：call_id 升级为业务可指定的幂等键，单点收口在执行层：
+
+1. `RequestContext` 新增可选字段 `tool_call_id`（builder + getter，默认 None 不影响现有构造）
+2. `ToolCallDao::execute` 取 id 顺序：`ctx.tool_call_id()` 有值（业务指定）→ 直接复用；无值 → 生成新 UUID v7 并通过 `ctx.to_builder().tool_call_id(call_id).build()` 注入后再调 `CoreTool::call`
+3. 消费端规则：所有需要关联 id 的工具一律优先取 `ctx.tool_call_id()`；仅当 ctx 未注入（测试直接调 CoreTool）才回退 `ctx.log_id`
+
+关联链路：`ToolCallEntry.call_id`（JSONL）↔ 日志文件名 `{call_id}.log` ↔ `ProcessEntry.call_id + pid` ↔ 工具返回 JSON 的 call_id/pid，任一端均可反查其余。
+
+### 幂等防重
+
+`ToolCallDao::execute` 入口处仅当 call_id 为**业务指定**时（自动生成不查，新 UUID 永不命中，避免每次调用多一次 JSONL 扫描）：
+
+- 调 `ToolCallLogger::read_call_by_id` 查历史（限定 tool 目录扫描）
+- 命中且 `status=Completed` → 直接返回历史 output 与历史 entry（entry.metadata 标 `deduplicated=true`），不重复执行
+- 命中且 `status=Failed` → 允许重试，正常执行（失败不该永久钉死）
+- 未命中 → 正常执行
+
+### pkg/process 进程注册中心（纯基础设施）
+
+`src/pkg/process/mod.rs`：
+
+- `ProcessEntry { pid, tool_id, call_id, agent_id, project_id, task_id, command, working_dir, log_path, background, started_at, status(Running/Exited), exit_code, finished_at }`
+- `ProcessRegistry` 全局单例（once_cell + `Mutex<HashMap<u32, ProcessEntry>>`，pid 为键）：`register / get / list / mark_exited / refresh / remove` + `tail_log(path, n)`
+- 进程原语（`#[cfg(unix)]` libc；非 unix 桩）：`is_alive(pid)` = kill(pid, 0)；`terminate(pid)` = SIGKILL
+- 内存版，服务重启条目丢失可接受（审计线索保留在 ToolCallEntry JSONL）；pid 复用风险由 entry.started_at 供人工甄别
+
+### SystemDomain ProcessManager（领域层）
+
+`src/service/domain/system/process.rs`：
+
+- trait `ProcessManager`：`get_process / list_processes / kill_process / process_status`（同步方法，注册中心为内存结构）
+- **Agent scope 规则**：`ctx.agent_id()` 为 Some 时必须与 entry.agent_id 匹配（Agent 只能管理自己启动的进程，不匹配返回 `PermissionDenied`）；ctx 无 agent_id（人类用户/管理面）放行；list 同样按 agent 过滤
+- kill 走 `terminate` 原语后 `mark_exited`；status 先 `refresh` 探活再返回 entry + 日志尾部（默认 20 行，上限 500）
+
+### shell_exec 统一日志流式模型 + 超时 detach
+
+- **统一执行模型**：sync 与 background 都从 spawn 起把 stdout/stderr 重定向到日志文件 `{call_id}.log`（取代原 sync 管道捕获的双套逻辑）；sync 等待结束后从日志文件读取输出做摘要（受 `max_output_size_bytes` 截断），全量留盘
+- **超时语义改为 detach**：超时不再 kill，返回 `{ status: "timeout", call_id, pid, log_path, message }`，进程继续运行，Agent 可用 shell_status 查询或 shell_kill 终止；新增可选参数 `timeout_action: "detach" | "kill"`（默认 detach，保留显式 kill 能力）
+- **进程注册**：spawn 成功后（sync/background 均注册）写入 ProcessRegistry，携带 ctx 的 agent/project/task/call_id；退出时 `mark_exited(exit_code)`
+- 返回 JSON 统一携带 `call_id` 与 `pid`；tags 增加 `"shell"` 供分组绑定
+
+### shell_status / shell_kill 双露工具
+
+- `#[register_handler_tool]` + `#[generate_http_handler]` 宏双露（HTTP + LLM 工具，复用 `request_tool_call` 既有模式）：
+  - `shell_status(pid, tail_lines?)` → `{ pid, alive, exit_code, started_at, command, log_path, call_id, log_tail }`
+  - `shell_kill(pid)` → `{ pid, killed }`
+- HTTP 路由：`GET /api/v1/system/processes/{pid}`、`POST /api/v1/system/processes/{pid}/kill`
+- 三个 shell 工具（shell_exec/shell_status/shell_kill）以 tag `"shell"` 分组绑定
+
+### 测试更新
+
+新增 18 个测试：pkg/process 注册中心 6 个（含真实 spawn 探活/终止）、ProcessManager scope 校验 5 个（agent 不匹配拒绝/匹配放行/用户 ctx 放行/list 过滤/真实 kill）、shell_exec 真实子进程 4 个（超时 detach 存活/超时 kill 终止/background 注册/sync 完成读日志）、call_id 全链路关联与幂等防重 3 个（Completed 返回历史/Failed 允许重试）。
+
+---
+
+## 前端体验闭环：HTTP 工具表单 + 进程管理页面 + 工具调用 Tab（2026-08-09 更新）
+
+### shell_list 双露工具（后端）
+
+- 进程列表双露为 `shell_list` LLM 工具 + HTTP 接口，与 shell_status/shell_kill 凑齐三件套（tag `"shell"`）：`#[register_handler_tool]` + `#[generate_http_handler]`，内部调 `ProcessManager::list_processes(ctx)`（复用 Agent scope 过滤）并逐条 `registry().refresh(pid)` 探活后转 `ProcessInfo`
+- DTO：`ListProcessesRequest`（空参，scope 由 RequestContext 决定）/ `ProcessInfo { pid, call_id, tool_id, agent_id, command, working_dir, background, started_at, alive, exit_code, log_path }` / `ListProcessesResponse`
+- HTTP 路由：`GET /api/v1/system/processes`（排在 `/processes/{pid}` 前避免路由遮蔽）
+
+### HTTP 工具创建表单（前端）
+
+- 金融工具页（tools.rs）页头「+ 创建 HTTP 工具」按钮 → Modal 表单，字段对齐 `CreateToolRequest` + `HttpToolConfig`：name/description/tags + method（仅 GET/POST 下拉）/url 模板/headers/query/body JSON 文本域/timeout_ms/response_max_bytes/allowed_status_codes/response_json_pointer/allowed_domains/blocked_domains/allow_local_network + parameters_schema
+- 提交调现有 `create_tool` API，protocol 固定 `Http`；校验逻辑抽为纯函数（`build_create_request` 等，必填/方法白名单/JSON 解析），行内错误提示；只建创建入口，不含编辑已有工具
+
+### 后台进程管理页面（前端）
+
+- `api/system.rs`：`list_processes` / `get_process_status(pid, tail_lines)` / `kill_process(pid)`
+- 共享组件 `ProcessDetailContent { pid }`：懒加载 shell_status，展示全字段 + log_tail + 手动刷新 + 带确认的终止按钮；**详情不建独立路由页**，以 Modal 形态在列表页与聊天侧栏两处复用
+- 列表页 `/system/processes`：状态徽标（Running 绿/Exited 灰）+ 后台标记 + 退出码 + call_id 截断展示；自动刷新复选框（默认关，开启后 5s 轮询）+ 手动刷新；行内终止与详情弹窗
+
+### ChatSidePanel 工具调用 Tab（前端）
+
+- 两种对话模式均新增「工具」Tab（项目模式：总览/任务/产物/Agent/工具；默认模式：Agent/我/工具）：项目对话按 project_id 查，默认对话按前台 agent_id 查，limit 30
+- 数据：并行 `query_tool_call_entries` + `list_processes`，前端按 `entry.call_id == process.call_id` join 出关联进程（**仅 Running 显示** PID 徽标）；点击 PID 徽标弹 Modal 复用 `ProcessDetailContent`
+- 行内容：工具名 + 状态徽标（执行中/已完成/失败）+ 耗时 + 启动时间；行展开看 input/output 摘要（JSON 截断 300 字符）与错误信息
+- 刷新链路：挂入侧栏既有 `refresh_tick` SSE 防抖（2s）+ 手动刷新计数叠加下发；进程终止等变更后局部重拉 join 数据
+- 数据依赖 JSONL 扫描查询，limit 30 控制开销；进程列表为内存态，服务重启后为空属预期
+
+### 测试更新
+
+新增 17 个测试：shell_list handler 2 个（用户 ctx 全量/agent ctx 仅见自己）、HTTP 工具表单校验 6 个（必填/方法白名单/JSON 解析/数字解析/逗号列表）、进程页面纯函数 4 个（命令截断 3 + 状态徽标 1）、工具调用 Tab 纯函数 5 个（状态徽标/耗时格式/JSON 截断/call_id join，含边界）。
+
+---
+
+## 通用内置工具补全 tag 分组（2026-08-09 更新）
+
+为通用内置工具在**代码层**补齐 tag，使其能通过工具包机制（`install_tag` / `installed_tags`）按组安装；tag 定义视为稳定约定，后续一般不再修改。
+
+### tag 分组
+
+| 工具 | tag | 说明 |
+|------|-----|------|
+| `http_fetch` | `http` | 通用 HTTPS 抓取（SSRF 防护、拒本地网络） |
+| `fs_read` / `fs_write` | `fs` | 本地文件读写（base_data_path 沙箱 + `additional_allowed_paths` 扩展） |
+| `shell_exec` | `shell` | 原有 tag 不变，与双露的 shell_status/shell_kill/shell_list 同组 |
+
+### DB 存量记录的迁移策略：手动
+
+`sync_builtin_tools_to_db` 保持「只插入不更新」的原有语义：新环境首次同步会带上完整 tags；**存量 DB 中已有记录的 tags 不会被自动刷新**，需要时手动 UPDATE（或重建库）。这是有意为之：避免启动链路隐式改写 DB 数据。
+
+### 绑定语义（不变）
+
+补 tag 只解决「可按组安装」的能力，**不改变默认可见性**：Agent 仍需绑定工具或在入职/配置时 `install_tag("http"/"fs"/"shell")` 才能调用；`neural` 免绑定通道不受影响。
+
+### 测试更新
+
+新增 1 个测试：`generic_builtin_tools_carry_expected_tags`（registry 层断言四个通用工具 tag 定义）。
+
+---

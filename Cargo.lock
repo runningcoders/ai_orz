@@ -84,6 +84,7 @@ dependencies = [
  "jsonwebtoken",
  "lancedb",
  "lazy_static",
+ "libc",
  "md-5",
  "once_cell",
  "proc-macro2",

@@ -1,8 +1,8 @@
 //! 聊天信息侧栏（ChatSidePanel）
 //!
 //! 沟通页面右侧可收起的信息面板，按对话模式动态组装 Tab：
-//! - 项目对话：总览 / 任务 / 产物 / Agent（负责人）
-//! - 默认对话：Agent（前台）/ 我（当前用户）
+//! - 项目对话：总览 / 任务 / 产物 / Agent（负责人）/ 工具
+//! - 默认对话：Agent（前台）/ 我（当前用户）/ 工具
 //!
 //! 面板纯只读：数据加载复用现有项目/任务/产物/Agent/用户 API，
 //! 创建与编辑操作仍在跳转各自详情页完成。
@@ -16,6 +16,7 @@ use dioxus_router::Link;
 use crate::api::hr::get_agent;
 use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
+use crate::components::chat::ToolCallsTab;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
@@ -114,6 +115,8 @@ pub fn ChatSidePanel(
     let mut load_gen = use_signal(|| 0u64);
     let mut prev_project_id = use_signal(|| Option::<String>::None);
     let mut prev_tick = use_signal(|| 0u64);
+    // 手动刷新计数：叠加到 refresh_tick 一并下发给工具调用 Tab
+    let mut manual_tick = use_signal(|| 0u64);
 
     // 任务 Tab 展开状态与详情缓存（展开时懒加载，命中缓存不再请求）
     let mut expanded_task_id = use_signal(|| None::<String>);
@@ -159,6 +162,7 @@ pub fn ChatSidePanel(
     // 手动刷新专用副本与模式判断（project_id 会被 use_effect 闭包移走）
     let is_project_mode = project_id.is_some();
     let pid_for_refresh = project_id.clone();
+    let pid_for_tab = project_id.clone();
 
     // 项目切换 → 立即加载并重置面板状态；refresh_tick 变化 → 防抖刷新
     use_effect(move || {
@@ -184,18 +188,22 @@ pub fn ChatSidePanel(
         }
     });
 
-    // 手动刷新（仅项目模式有意义）
+    // 手动刷新：项目模式重拉项目数据，两种模式均同步刷新工具调用 Tab
     let manual_refresh = move |_| {
+        manual_tick.set(manual_tick() + 1);
         if let Some(id) = pid_for_refresh.clone() {
             do_load(id, false);
         }
     };
 
     let tab_labels: Vec<&'static str> = if is_project_mode {
-        vec!["总览", "任务", "产物", "Agent"]
+        vec!["总览", "任务", "产物", "Agent", "工具"]
     } else {
-        vec!["Agent", "我"]
+        vec!["Agent", "我", "工具"]
     };
+
+    // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
+    let tool_tab_tick = refresh_tick + manual_tick();
 
     let project_data = project().clone();
     let tasks_list = tasks.read().clone();
@@ -220,6 +228,13 @@ pub fn ChatSidePanel(
                 Some(agent_id) => rsx! { AgentInfoTab { agent_id } },
                 None => empty_hint("项目未指定负责人"),
             },
+            4 => rsx! {
+                ToolCallsTab {
+                    project_id: pid_for_tab.clone(),
+                    agent_id: None,
+                    refresh_tick: tool_tab_tick,
+                }
+            },
             _ => rsx! {},
         }
     } else {
@@ -229,6 +244,13 @@ pub fn ChatSidePanel(
                 None => empty_hint("暂无前台 Agent"),
             },
             1 => rsx! { UserInfoTab {} },
+            2 => rsx! {
+                ToolCallsTab {
+                    project_id: None,
+                    agent_id: reception_agent_id.clone(),
+                    refresh_tick: tool_tab_tick,
+                }
+            },
             _ => rsx! {},
         }
     };
@@ -239,13 +261,11 @@ pub fn ChatSidePanel(
             if loading() {
                 span { class: "loading loading-spinner loading-xs" }
             }
-            if is_project_mode {
-                button {
-                    class: "btn btn-ghost btn-xs",
-                    title: "刷新",
-                    onclick: manual_refresh,
-                    "⟳"
-                }
+            button {
+                class: "btn btn-ghost btn-xs",
+                title: "刷新",
+                onclick: manual_refresh,
+                "⟳"
             }
             button {
                 class: "btn btn-ghost btn-xs",

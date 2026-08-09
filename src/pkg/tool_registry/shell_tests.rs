@@ -142,3 +142,184 @@ fn test_parse_params_full() {
     let env = parsed.env.as_ref().expect("env should be present");
     assert_eq!(env.get("RUSTFLAGS"), Some(&"-C opt-level=3".to_string()));
 }
+
+// ==================== 真实子进程集成测试（仅 Unix） ====================
+
+#[cfg(unix)]
+mod subprocess_tests {
+    use crate::models::tool::CoreTool;
+    use crate::pkg::process;
+    use crate::pkg::request_context::RequestContext;
+    use crate::pkg::request_context_test_support::{ensure_test_base_data_path, new_test_ctx};
+    use crate::pkg::tool_registry::BuiltinToolFactory;
+    use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
+
+    fn setup() {
+        ensure_test_base_data_path();
+        // shell_exec 内部依赖 config::get().base_data_path()
+        let _ = crate::config::init();
+    }
+
+    fn shell_tool() -> Box<dyn CoreTool> {
+        let factory = ShellExecToolFactory;
+        let po = factory.create_po();
+        factory.create(po)
+    }
+
+    fn test_ctx(call_id: &str) -> RequestContext {
+        let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        new_test_ctx("test-user", pool)
+            .to_builder()
+            .tool_call_id(call_id.to_string())
+            .build()
+    }
+
+    /// 超时默认 detach：返回 timeout + pid 存活 + registry 有条目
+    #[tokio::test]
+    async fn test_sync_timeout_detach_keeps_process_alive() {
+        setup();
+        let tool = shell_tool();
+        let call_id = format!("detach-{}", uuid::Uuid::now_v7());
+        let args = serde_json::json!({
+            "command": "sleep 5",
+            "timeout_ms": 100
+        });
+
+        let output = tool.call(test_ctx(&call_id), args).await.unwrap();
+
+        assert_eq!(
+            output.get("status").and_then(|v| v.as_str()),
+            Some("timeout")
+        );
+        assert_eq!(
+            output.get("call_id").and_then(|v| v.as_str()),
+            Some(call_id.as_str())
+        );
+        let pid = output
+            .get("pid")
+            .and_then(|v| v.as_u64())
+            .expect("pid should be present") as u32;
+
+        // detach 后进程仍在运行
+        assert!(process::is_alive(pid), "detached process should stay alive");
+
+        // registry 有条目且处于 Running
+        let entry = process::registry()
+            .get(pid)
+            .expect("process should be registered");
+        assert_eq!(entry.call_id, call_id);
+        assert!(!entry.background);
+        assert_eq!(entry.status, process::ProcessStatus::Running);
+
+        // 日志文件以 call_id 命名
+        let log_path =
+            std::path::PathBuf::from(output.get("log_path").and_then(|v| v.as_str()).unwrap());
+        assert_eq!(log_path.file_stem().unwrap().to_str().unwrap(), call_id);
+
+        // 清理：终止并移除条目
+        let _ = process::terminate(pid);
+        process::registry().remove(pid);
+    }
+
+    /// timeout_action=kill：超时立即终止
+    #[tokio::test]
+    async fn test_sync_timeout_kill_terminates_process() {
+        setup();
+        let tool = shell_tool();
+        let call_id = format!("kill-{}", uuid::Uuid::now_v7());
+        let args = serde_json::json!({
+            "command": "sleep 30",
+            "timeout_ms": 100,
+            "timeout_action": "kill"
+        });
+
+        let output = tool.call(test_ctx(&call_id), args).await.unwrap();
+
+        assert_eq!(
+            output.get("status").and_then(|v| v.as_str()),
+            Some("timeout")
+        );
+        assert_eq!(output.get("killed"), Some(&serde_json::Value::Bool(true)));
+        let pid = output.get("pid").and_then(|v| v.as_u64()).unwrap() as u32;
+
+        // 进程已终止（SIGKILL 生效有极短窗口，轮询最多 1s）
+        let mut alive = true;
+        for _ in 0..20 {
+            alive = process::is_alive(pid);
+            if !alive {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(!alive, "killed process should not be alive");
+
+        // registry 条目标记为已退出
+        let entry = process::registry()
+            .get(pid)
+            .expect("process should be registered");
+        assert_eq!(entry.status, process::ProcessStatus::Exited);
+
+        process::registry().remove(pid);
+    }
+
+    /// background 模式：立即返回 + 注册 background=true + 进程存活
+    #[tokio::test]
+    async fn test_background_registers_process() {
+        setup();
+        let tool = shell_tool();
+        let call_id = format!("bg-{}", uuid::Uuid::now_v7());
+        let args = serde_json::json!({
+            "command": "sleep 5",
+            "background": true
+        });
+
+        let output = tool.call(test_ctx(&call_id), args).await.unwrap();
+
+        assert_eq!(output.get("success"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            output.get("background"),
+            Some(&serde_json::Value::Bool(true))
+        );
+        let pid = output.get("pid").and_then(|v| v.as_u64()).unwrap() as u32;
+        assert!(process::is_alive(pid));
+
+        let entry = process::registry()
+            .get(pid)
+            .expect("process should be registered");
+        assert!(entry.background);
+        assert_eq!(entry.call_id, call_id);
+
+        // 清理
+        let _ = process::terminate(pid);
+        process::registry().remove(pid);
+    }
+
+    /// sync 正常完成：输出从日志文件读取，registry 标记退出码
+    #[tokio::test]
+    async fn test_sync_completion_reads_log_output() {
+        setup();
+        let tool = shell_tool();
+        let call_id = format!("sync-{}", uuid::Uuid::now_v7());
+        let args = serde_json::json!({ "command": "echo sync-done" });
+
+        let output = tool.call(test_ctx(&call_id), args).await.unwrap();
+
+        assert_eq!(output.get("success"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(output.get("exit_code"), Some(&serde_json::json!(0)));
+        assert!(
+            output
+                .get("output")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| s.contains("sync-done"))
+        );
+
+        let pid = output.get("pid").and_then(|v| v.as_u64()).unwrap() as u32;
+        let entry = process::registry()
+            .get(pid)
+            .expect("process should be registered");
+        assert_eq!(entry.status, process::ProcessStatus::Exited);
+        assert_eq!(entry.exit_code, Some(0));
+
+        process::registry().remove(pid);
+    }
+}

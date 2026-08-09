@@ -236,3 +236,92 @@ pub struct AopStatsDistributionResponse {
     /// 分布项列表
     pub items: Vec<AopStatsDistributionItem>,
 }
+
+// ============ Process Management (shell_list / shell_status / shell_kill) ============
+
+/// 列出后台进程请求（无参数，可见范围由调用方 ctx 决定）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListProcessesRequest {}
+
+/// 后台进程概要信息（列表项）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProcessInfo {
+    /// 进程 pid
+    pub pid: u32,
+    /// 关联的工具调用 call_id
+    pub call_id: String,
+    /// 启动该进程的工具 ID
+    pub tool_id: String,
+    /// 启动方 Agent ID（人类/管理面启动为 None）
+    pub agent_id: Option<String>,
+    /// 执行的命令
+    pub command: String,
+    /// 工作目录
+    pub working_dir: String,
+    /// 是否后台启动
+    pub background: bool,
+    /// 启动时间戳（ms）
+    pub started_at: u64,
+    /// 是否存活（返回前探活刷新）
+    pub alive: bool,
+    /// 退出码（已退出且可得时）
+    pub exit_code: Option<i32>,
+    /// 输出日志路径
+    pub log_path: String,
+}
+
+/// 列出后台进程响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListProcessesResponse {
+    /// 进程列表（按启动时间升序）
+    pub processes: Vec<ProcessInfo>,
+}
+
+/// 查询后台进程状态请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ShellStatusRequest {
+    /// 进程 pid
+    #[param(source = "path")]
+    pub pid: u32,
+    /// 返回日志尾部行数（默认 20，上限 500）
+    #[param(source = "query")]
+    pub tail_lines: Option<usize>,
+}
+
+/// 后台进程状态响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ShellStatusResponse {
+    /// 进程 pid
+    pub pid: u32,
+    /// 是否存活
+    pub alive: bool,
+    /// 退出码（已退出且可得时）
+    pub exit_code: Option<i32>,
+    /// 启动时间戳（ms）
+    pub started_at: u64,
+    /// 执行的命令
+    pub command: String,
+    /// 输出日志路径
+    pub log_path: String,
+    /// 关联的工具调用 call_id
+    pub call_id: String,
+    /// 日志尾部
+    pub log_tail: String,
+}
+
+/// 终止后台进程请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ShellKillRequest {
+    /// 进程 pid
+    #[param(source = "path")]
+    pub pid: u32,
+}
+
+/// 终止后台进程响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ShellKillResponse {
+    /// 进程 pid
+    pub pid: u32,
+    /// 是否实际执行了终止（进程已退出时为 false）
+    pub killed: bool,
+}

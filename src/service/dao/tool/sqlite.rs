@@ -347,6 +347,16 @@ impl ToolDao for ToolDaoSqliteImpl {
         let mut inserted = 0;
 
         for tool_id in tool_ids {
+            // Get the builtin factory from registry
+            let Some(factory) = registry.get_builtin_factory(&tool_id) else {
+                continue;
+            };
+
+            // Create ToolPo for DB from factory
+            let mut po = factory.create_po();
+            // Fill default values for builtin tools
+            po.fill_defaults_for_builtin();
+
             // Check if tool already exists in DB
             let exists: Option<ToolPo> = sqlx::query_as::<_, ToolPo>(
                 r#"
@@ -358,19 +368,8 @@ impl ToolDao for ToolDaoSqliteImpl {
             .await?;
 
             if exists.is_some() {
-                // Skip if already exists - idempotent, prevents duplicate
                 continue;
             }
-
-            // Get the builtin factory from registry
-            let Some(factory) = registry.get_builtin_factory(&tool_id) else {
-                continue;
-            };
-
-            // Create ToolPo for DB from factory
-            let mut po = factory.create_po();
-            // Fill default values for builtin tools
-            po.fill_defaults_for_builtin();
 
             // Insert into DB
             self.create_tool(ctx.clone(), &po).await?;

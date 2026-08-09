@@ -387,6 +387,19 @@ pub fn Navbar() -> Element {
                                     }
                                     li {
                                         Link {
+                                            to: Route::SystemProcesses {},
+                                            onclick: move |_| {
+                                                hr_menu_open.set(false);
+                                                finance_menu_open.set(false);
+                                                project_menu_open.set(false);
+                                                system_menu_open.set(false);
+                                                user_menu_open.set(false);
+                                            },
+                                            "进程管理"
+                                        }
+                                    }
+                                    li {
+                                        Link {
                                             to: Route::SystemAop {},
                                             onclick: move |_| {
                                                 hr_menu_open.set(false);
@@ -852,6 +865,20 @@ pub fn Navbar() -> Element {
                                         drawer_open.set(false);
                                     },
                                     "备份管理"
+                                }
+                            }
+                            li {
+                                Link {
+                                    to: Route::SystemProcesses {},
+                                    onclick: move |_| {
+                                        hr_menu_open.set(false);
+                                        finance_menu_open.set(false);
+                                        project_menu_open.set(false);
+                                        system_menu_open.set(false);
+                                        user_menu_open.set(false);
+                                        drawer_open.set(false);
+                                    },
+                                    "进程管理"
                                 }
                             }
                             li {

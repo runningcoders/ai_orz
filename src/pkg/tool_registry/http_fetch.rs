@@ -40,6 +40,7 @@ impl BuiltinToolFactory for HttpFetchToolFactory {
                 "additionalProperties": false
             })),
             config: Value::Null,
+            tags: serde_json::to_string(&vec!["http".to_string()]).unwrap_or_default(),
             ..Default::default()
         };
         po.fill_defaults_for_builtin();

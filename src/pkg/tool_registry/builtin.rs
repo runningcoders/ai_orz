@@ -41,3 +41,27 @@ pub fn register_all(registry: &ToolRegistry) {
         registry.register_builtin_factory(factory.clone());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 通用内置工具的 tag 分组定义（供工具包按 tag 安装）
+    #[test]
+    fn generic_builtin_tools_carry_expected_tags() {
+        let expected: Vec<(&str, Vec<&str>)> = vec![
+            ("http_fetch", vec!["http"]),
+            ("fs_read", vec!["fs"]),
+            ("fs_write", vec!["fs"]),
+            ("shell_exec", vec!["shell"]),
+        ];
+        for (id, tags) in expected {
+            let factory = GENERIC_BUILTIN_TOOLS
+                .iter()
+                .find(|(fid, _)| fid == id)
+                .map(|(_, f)| f)
+                .unwrap_or_else(|| panic!("builtin tool {} not registered", id));
+            assert_eq!(factory.create_po().get_tags(), tags, "tags of {}", id);
+        }
+    }
+}

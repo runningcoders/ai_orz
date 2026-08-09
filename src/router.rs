@@ -736,4 +736,17 @@ fn system_routes() -> Router {
             "/tasks/cleanup",
             post(handlers::system::task_cleanup::cleanup_tasks_handler),
         )
+        // 统一后台进程管理（shell_list / shell_status / shell_kill 双露工具的 HTTP 面）
+        .route(
+            "/processes",
+            get(handlers::system::process::shell_list::shell_list_handler),
+        )
+        .route(
+            "/processes/{pid}",
+            get(handlers::system::process::shell_status::shell_status_handler),
+        )
+        .route(
+            "/processes/{pid}/kill",
+            post(handlers::system::process::shell_kill::shell_kill_handler),
+        )
 }

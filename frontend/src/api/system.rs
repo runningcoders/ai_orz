@@ -328,3 +328,28 @@ pub struct HealthMetricsResponse {
 pub async fn get_health_metrics() -> Result<HealthMetricsResponse, ApiError> {
     api_get("/api/v1/system/health/metrics").await
 }
+
+// ===== 统一后台进程管理（shell_list / shell_status / shell_kill 的 HTTP 面） =====
+
+/// 列出后台进程（可见范围由后端按调用方身份过滤）
+pub async fn list_processes() -> Result<common::api::ListProcessesResponse, ApiError> {
+    api_get("/api/v1/system/processes").await
+}
+
+/// 查询单个进程状态（探活 + 日志尾部）
+pub async fn get_process_status(
+    pid: u32,
+    tail_lines: Option<usize>,
+) -> Result<common::api::ShellStatusResponse, ApiError> {
+    let qs = super::build_query_string(&[("tail_lines", tail_lines.map(|v| v.to_string()))]);
+    api_get(&format!("/api/v1/system/processes/{}{}", pid, qs)).await
+}
+
+/// 终止进程（killed=false 表示进程已退出）
+pub async fn kill_process(pid: u32) -> Result<common::api::ShellKillResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/system/processes/{}/kill", pid),
+        &serde_json::json!({}),
+    )
+    .await
+}

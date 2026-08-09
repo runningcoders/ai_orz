@@ -15,7 +15,10 @@ use std::sync::{Arc, OnceLock};
 
 mod aop_monitor;
 mod aop_stats;
+mod process;
 pub mod seed;
+
+pub use process::ProcessStatusDetail;
 
 static SYSTEM_DOMAIN: OnceLock<Arc<dyn SystemDomain>> = OnceLock::new();
 
@@ -55,6 +58,16 @@ pub fn new(
         backup_dal,
         log_query_dal,
     ))
+}
+
+/// 测试专用：用无状态 DAL 实例构造 SystemDomain（不依赖全局单例初始化）
+#[cfg(test)]
+pub(crate) fn new_for_test() -> Arc<dyn SystemDomain> {
+    new(
+        cron_trigger_dal::new(crate::service::dao::cron_trigger::new()),
+        backup_dal::new(),
+        log_query_dal::new(),
+    )
 }
 
 struct SystemDomainImpl {
@@ -97,6 +110,10 @@ impl SystemDomain for SystemDomainImpl {
     fn aop_stats(&self) -> &dyn AopStats {
         self
     }
+
+    fn process_manager(&self) -> &dyn ProcessManager {
+        self
+    }
 }
 
 pub trait SystemDomain: Send + Sync {
@@ -105,6 +122,7 @@ pub trait SystemDomain: Send + Sync {
     fn log_query(&self) -> &dyn LogQuery;
     fn aop_monitor(&self) -> &dyn AopMonitor;
     fn aop_stats(&self) -> &dyn AopStats;
+    fn process_manager(&self) -> &dyn ProcessManager;
     /// 通用后台任务注册中心（委托 pkg 全局单例）
     fn background_task_registry(
         &self,
@@ -201,6 +219,33 @@ pub trait AopStats: Send + Sync {
         group_by: String,
         status_filter: Option<String>,
     ) -> Result<Vec<AopDistributionItem>>;
+}
+
+/// 统一后台进程管理（委托 pkg/process 注册中心，带 Agent scope 校验）
+///
+/// 同步方法：注册中心为内存结构，探活/终止为轻量系统调用，无需 async。
+pub trait ProcessManager: Send + Sync {
+    /// 查询单个进程（先探活刷新状态）
+    fn get_process(
+        &self,
+        ctx: RequestContext,
+        pid: u32,
+    ) -> Result<crate::pkg::process::ProcessEntry>;
+
+    /// 列出进程（Agent 调用方仅可见自己启动的）
+    fn list_processes(&self, ctx: RequestContext)
+    -> Result<Vec<crate::pkg::process::ProcessEntry>>;
+
+    /// 终止进程（SIGKILL），返回是否实际执行了终止（已退出返回 false）
+    fn kill_process(&self, ctx: RequestContext, pid: u32) -> Result<bool>;
+
+    /// 进程状态详情（探活刷新后的 entry + 日志尾部 tail_lines 行，默认 20 上限 500）
+    fn process_status(
+        &self,
+        ctx: RequestContext,
+        pid: u32,
+        tail_lines: Option<usize>,
+    ) -> Result<ProcessStatusDetail>;
 }
 
 #[async_trait::async_trait]

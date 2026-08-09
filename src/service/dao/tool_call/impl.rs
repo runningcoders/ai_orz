@@ -75,7 +75,34 @@ impl ToolCallDao for ToolCallDaoImpl {
     ) -> Result<(Value, ToolCallEntry)> {
         // 直接调用工具并内联构造 trace entry，发布 AOP ToolExecEvent
         // （取代被移除的 ToolCallLoggingDecorator）
-        let call_id = uuid::Uuid::now_v7().to_string();
+        //
+        // call_id 单一事实源：业务指定（ctx 已携带 tool_call_id）优先复用，
+        // 未指定时此处单点生成新 UUID v7，并注入 ctx 供工具内部关联使用。
+        let business_specified = ctx.tool_call_id().is_some();
+        let call_id = ctx
+            .tool_call_id()
+            .cloned()
+            .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
+
+        let po = tool.our_tool.po();
+
+        // 幂等防重：仅业务指定 call_id 时查询历史（自动生成新 UUID 永不命中，避免多余扫描）
+        // 历史 Completed → 直接返回历史结果；Failed → 允许重试正常执行
+        if business_specified
+            && let Ok(Some(history)) = crate::pkg::tool_tracing::logger::ToolCallLogger::get()
+                .read_call_by_id(Some(po.id.as_str()), &call_id)
+            && history.status == ToolCallStatus::Completed
+        {
+            let mut entry = history;
+            if let Value::Object(map) = &mut entry.metadata {
+                map.insert("deduplicated".to_string(), Value::Bool(true));
+            }
+            let output = entry.output.clone().unwrap_or(Value::Null);
+            return Ok((output, entry));
+        }
+
+        // 注入 call_id 后再调用工具，工具内部可通过 ctx.tool_call_id() 关联日志文件/进程条目
+        let ctx = ctx.to_builder().tool_call_id(call_id.clone()).build();
         let started_at = common::constants::utils::current_timestamp_ms() as u64;
 
         let cloned: Box<dyn CoreTool + Send + Sync> = dyn_clone::clone_box(&*tool.our_tool);
@@ -83,8 +110,6 @@ impl ToolCallDao for ToolCallDaoImpl {
 
         let finished_at = common::constants::utils::current_timestamp_ms() as u64;
         let duration_ms = finished_at.saturating_sub(started_at);
-
-        let po = tool.our_tool.po();
 
         // 计算 args 长度（序列化为 JSON 字符串后的字节数）
         let args_len = serde_json::to_string(&args)

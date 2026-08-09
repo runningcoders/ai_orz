@@ -56,6 +56,10 @@ pub struct RequestContext {
     #[log_field]
     pub model_name: Option<String>,
 
+    /// 当前工具调用 ID（可选，ToolCallDao::execute 单点注入/业务指定幂等键）
+    #[log_field]
+    pub tool_call_id: Option<String>,
+
     /// 统一存储门面（SQLite + Vector）
     storage: Storage,
 }
@@ -91,6 +95,7 @@ pub struct RequestContextBuilder {
     project_id: Option<String>,
     model_provider_id: Option<String>,
     model_name: Option<String>,
+    tool_call_id: Option<String>,
     storage: Option<Storage>,
 }
 
@@ -108,6 +113,7 @@ impl RequestContextBuilder {
             project_id: None,
             model_provider_id: None,
             model_name: None,
+            tool_call_id: None,
             storage: None,
         }
     }
@@ -176,6 +182,11 @@ impl RequestContextBuilder {
         self
     }
 
+    pub fn tool_call_id(mut self, tool_call_id: impl Into<String>) -> Self {
+        self.tool_call_id = Some(tool_call_id.into());
+        self
+    }
+
     pub fn try_user_id(mut self, user_id: Option<impl Into<String>>) -> Self {
         if let Some(v) = user_id {
             self.user_id = Some(v.into());
@@ -239,6 +250,13 @@ impl RequestContextBuilder {
         self
     }
 
+    pub fn try_tool_call_id(mut self, tool_call_id: Option<impl Into<String>>) -> Self {
+        if let Some(v) = tool_call_id {
+            self.tool_call_id = Some(v.into());
+        }
+        self
+    }
+
     pub fn storage(mut self, storage: Storage) -> Self {
         self.storage = Some(storage);
         self
@@ -257,6 +275,7 @@ impl RequestContextBuilder {
             project_id: self.project_id,
             model_provider_id: self.model_provider_id,
             model_name: self.model_name,
+            tool_call_id: self.tool_call_id,
             storage: self.storage.unwrap_or_else(|| storage::get().clone()),
         }
     }
@@ -288,6 +307,7 @@ impl RequestContext {
             project_id: self.project_id.clone(),
             model_provider_id: self.model_provider_id.clone(),
             model_name: self.model_name.clone(),
+            tool_call_id: self.tool_call_id.clone(),
             storage: Some(self.storage.clone()),
         }
     }
@@ -478,6 +498,11 @@ impl RequestContext {
     /// 获取当前 Model 名称
     pub fn model_name(&self) -> Option<&String> {
         self.model_name.as_ref()
+    }
+
+    /// 获取当前工具调用 ID（由 ToolCallDao::execute 注入，或业务指定作为幂等键）
+    pub fn tool_call_id(&self) -> Option<&String> {
+        self.tool_call_id.as_ref()
     }
 
     /// 获取 DB pool

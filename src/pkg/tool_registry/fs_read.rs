@@ -93,6 +93,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
                 "additionalProperties": false
             })),
             config: serde_json::json!(FsToolConfig::default()),
+            tags: serde_json::to_string(&vec!["fs".to_string()]).unwrap_or_default(),
             ..Default::default()
         };
         po.fill_defaults_for_builtin();

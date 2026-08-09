@@ -95,6 +95,11 @@ pub fn init() {
     let _ = LOG_QUERY_DAL.set(Arc::new(LogQueryDalFsImpl));
 }
 
+/// 创建 LogQuery DAL（返回 trait 对象，用于测试或组合构造）
+pub fn new() -> Arc<dyn LogQueryDal + Send + Sync> {
+    Arc::new(LogQueryDalFsImpl)
+}
+
 // ==================== DAL 接口 ====================
 
 /// LogQuery DAL 接口

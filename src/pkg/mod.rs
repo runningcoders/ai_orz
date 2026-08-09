@@ -7,6 +7,7 @@ pub mod external;
 pub mod jwt;
 pub mod logging;
 pub mod monitoring;
+pub mod process;
 pub mod request_context;
 pub mod stats;
 pub mod storage;

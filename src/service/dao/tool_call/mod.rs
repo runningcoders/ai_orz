@@ -20,6 +20,9 @@ pub use mcp::{McpToolCallDao, new as new_mcp_tool_call_dao};
 #[cfg(test)]
 mod mcp_test;
 
+#[cfg(test)]
+mod impl_test;
+
 /// ToolCall DAO trait
 #[async_trait]
 pub trait ToolCallDao: Send + Sync {

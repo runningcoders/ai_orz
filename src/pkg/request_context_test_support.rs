@@ -25,3 +25,23 @@ pub fn new_test_ctx_with_stats(user_id: &str, pool: SqlitePool, stats: Stats) ->
 pub fn new_test_ctx_from_global(user_id: &str) -> RequestContext {
     RequestContext::new(Some(user_id.to_string()), None)
 }
+
+/// 确保全局 base data 目录指向进程级共享临时目录（幂等，仅首次生效）
+///
+/// 通过 BASE_DATA_PATH_ENV 环境变量生效（AppConfig::base_data_path 每次读环境变量），
+/// 供 shell_exec 等依赖 config::get().base_data_path() 的单测使用。
+pub fn ensure_test_base_data_path() -> std::path::PathBuf {
+    static DIR: once_cell::sync::Lazy<std::path::PathBuf> = once_cell::sync::Lazy::new(|| {
+        let path = std::env::temp_dir().join(format!("ai_orz_test_base_{}", std::process::id()));
+        std::fs::create_dir_all(&path).expect("创建测试 base data 目录失败");
+        // SAFETY: Lazy 保证全进程仅设置一次，无并发写环境变量竞争
+        unsafe { std::env::set_var(common::config::BASE_DATA_PATH_ENV, &path) };
+        path
+    });
+    DIR.clone()
+}
+
+/// 确保 ToolCallLogger 单例已初始化（指向测试 base data 目录，幂等）
+pub fn ensure_test_tool_call_logger() {
+    crate::pkg::tool_tracing::logger::ToolCallLogger::init(ensure_test_base_data_path());
+}

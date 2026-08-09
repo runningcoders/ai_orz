@@ -70,6 +70,10 @@ arrow-array = "57.3.0"
 arrow-schema = "57.3.0"
 futures = "0.3.32"
 
+# 进程管理原语（Unix 下探活/终止子进程）
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 dotenvy = "0.15"
