@@ -1868,3 +1868,299 @@ async fn test_search_relations(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+// ========== 知识图谱遍历测试（BFS/DFS + IN 分块） ==========
+
+/// 遍历测试节点工厂（归属 agent-001，与测试 ctx 的 agent_id 匹配）
+fn traverse_node(id: &str, now: i64) -> LongTermKnowledgeNodePo {
+    LongTermKnowledgeNodePo {
+        id: id.to_string(),
+        agent_id: "agent-001".to_string(),
+        node_name: format!("节点 {}", id),
+        node_description: format!("节点 {} 描述", id),
+        node_type: "concept".to_string(),
+        summary: format!("节点 {} 总结", id),
+        tags: "[]".to_string(),
+        status: MemoryStatus::Active,
+        is_published: false,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+/// 遍历测试关系工厂
+fn traverse_rel(id: &str, src: &str, tgt: &str, created_at: i64) -> KnowledgeNodeRelationPo {
+    KnowledgeNodeRelationPo {
+        id: id.to_string(),
+        source_node_id: src.to_string(),
+        target_node_id: tgt.to_string(),
+        relation_type: common::enums::KnowledgeRelationType::Related,
+        created_at,
+        updated_at: created_at,
+    }
+}
+
+/// 建节点 + 建关系的测试前置（ctx 需带 agent_id=agent-001）
+async fn seed_graph(
+    dal: &Arc<dyn MemoryDal>,
+    ctx: &RequestContext,
+    nodes: Vec<LongTermKnowledgeNodePo>,
+    relations: Vec<KnowledgeNodeRelationPo>,
+) -> Result<()> {
+    for node in nodes {
+        dal.create(
+            ctx.clone(),
+            MemoryCreateParams::CreateKnowledgeNode {
+                node,
+                references: vec![],
+            },
+        )
+        .await?;
+    }
+    if !relations.is_empty() {
+        dal.create(ctx.clone(), MemoryCreateParams::CreateRelations(relations))
+            .await?;
+    }
+    Ok(())
+}
+
+fn node_ids_of(results: &[Memory]) -> std::collections::HashSet<String> {
+    results
+        .iter()
+        .filter_map(|m| match &m.po {
+            MemoryPo::KnowledgeNode(kn) => Some(kn.id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn rel_ids_of(results: &[Memory]) -> std::collections::HashSet<String> {
+    results
+        .iter()
+        .filter_map(|m| match &m.po {
+            MemoryPo::Relation(r) => Some(r.id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// BFS 菱形图分层语义：A→B/C→D
+#[sqlx::test]
+async fn test_traverse_bfs_layered(pool: SqlitePool) -> Result<()> {
+    use crate::service::dal::memory::TraversalStrategy;
+    use std::collections::HashSet;
+
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let mut ctx = create_test_ctx(pool.clone());
+    ctx.agent_id = Some("agent-001".to_string());
+    let now = chrono::Utc::now().timestamp();
+
+    seed_graph(
+        &dal,
+        &ctx,
+        ["tA", "tB", "tC", "tD"]
+            .iter()
+            .map(|id| traverse_node(id, now))
+            .collect(),
+        vec![
+            traverse_rel("r-ab", "tA", "tB", now),
+            traverse_rel("r-ac", "tA", "tC", now + 1),
+            traverse_rel("r-bd", "tB", "tD", now + 2),
+            traverse_rel("r-cd", "tC", "tD", now + 3),
+        ],
+    )
+    .await?;
+
+    // depth=1：只展开第一层，D 不可达
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["tA".to_string()],
+            1,
+            0,
+            TraversalStrategy::BreadthFirst,
+        )
+        .await?;
+    assert_eq!(
+        node_ids_of(&results),
+        HashSet::from(["tA".to_string(), "tB".to_string(), "tC".to_string()]),
+        "depth=1 应只含第一层节点"
+    );
+    assert_eq!(
+        rel_ids_of(&results),
+        HashSet::from(["r-ab".to_string(), "r-ac".to_string()])
+    );
+
+    // depth=2：全图可达，菱形汇合点 D 只出现一次（visited 去重）
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["tA".to_string()],
+            2,
+            0,
+            TraversalStrategy::BreadthFirst,
+        )
+        .await?;
+    assert_eq!(
+        results
+            .iter()
+            .filter(|m| matches!(m.po, MemoryPo::KnowledgeNode(_)))
+            .count(),
+        4
+    );
+    assert_eq!(rel_ids_of(&results).len(), 4, "四条边应全部收集");
+
+    Ok(())
+}
+
+/// DFS 分支图 + max_breadth 限宽：守护预取缓存后的选边语义不变
+///（按 created_at ASC take，重复边不占限宽名额）
+#[sqlx::test]
+async fn test_traverse_dfs_branching_with_breadth_limit(pool: SqlitePool) -> Result<()> {
+    use crate::service::dal::memory::TraversalStrategy;
+    use std::collections::HashSet;
+
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let mut ctx = create_test_ctx(pool.clone());
+    ctx.agent_id = Some("agent-001".to_string());
+    let now = chrono::Utc::now().timestamp();
+
+    seed_graph(
+        &dal,
+        &ctx,
+        ["dA", "dB", "dC", "dD"]
+            .iter()
+            .map(|id| traverse_node(id, now))
+            .collect(),
+        vec![
+            traverse_rel("dr-ab", "dA", "dB", now), // 早创建，限宽 1 时应被选中
+            traverse_rel("dr-ac", "dA", "dC", now + 10), // 晚创建，应被限宽丢弃
+            traverse_rel("dr-bd", "dB", "dD", now - 10), // dB 最早的边：限宽 1 时应被选中
+                                                    //（dr-ab 作为双端点边会同时挂在 dA/dB 缓存名下，若去重失效会抢占此名额）
+        ],
+    )
+    .await?;
+
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["dA".to_string()],
+            3,
+            1,
+            TraversalStrategy::DepthFirst,
+        )
+        .await?;
+
+    assert_eq!(
+        node_ids_of(&results),
+        HashSet::from(["dA".to_string(), "dB".to_string(), "dD".to_string()]),
+        "限宽 1 时 DFS 应沿最早创建的边深入，C 不可达"
+    );
+    assert_eq!(
+        rel_ids_of(&results),
+        HashSet::from(["dr-ab".to_string(), "dr-bd".to_string()])
+    );
+
+    Ok(())
+}
+
+/// DFS 链图：守护预取缓存不漏边（链上每次批量只有单节点，等价旧逐节点查询路径）
+#[sqlx::test]
+async fn test_traverse_dfs_chain(pool: SqlitePool) -> Result<()> {
+    use crate::service::dal::memory::TraversalStrategy;
+    use std::collections::HashSet;
+
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let mut ctx = create_test_ctx(pool.clone());
+    ctx.agent_id = Some("agent-001".to_string());
+    let now = chrono::Utc::now().timestamp();
+
+    seed_graph(
+        &dal,
+        &ctx,
+        ["cA", "cB", "cC", "cD"]
+            .iter()
+            .map(|id| traverse_node(id, now))
+            .collect(),
+        vec![
+            traverse_rel("cr-1", "cA", "cB", now),
+            traverse_rel("cr-2", "cB", "cC", now + 1),
+            traverse_rel("cr-3", "cC", "cD", now + 2),
+        ],
+    )
+    .await?;
+
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["cA".to_string()],
+            3,
+            0,
+            TraversalStrategy::DepthFirst,
+        )
+        .await?;
+
+    assert_eq!(
+        node_ids_of(&results),
+        HashSet::from([
+            "cA".to_string(),
+            "cB".to_string(),
+            "cC".to_string(),
+            "cD".to_string()
+        ]),
+        "链图 depth=3 应全链可达"
+    );
+    assert_eq!(rel_ids_of(&results).len(), 3);
+
+    Ok(())
+}
+
+/// 宽星型图 BFS：visited 451 个节点 > IN_CLAUSE_CHUNK(400)，
+/// 覆盖 fetch_nodes_by_ids 的分块路径
+#[sqlx::test]
+async fn test_traverse_wide_star_fetch_chunking(pool: SqlitePool) -> Result<()> {
+    use crate::service::dal::memory::TraversalStrategy;
+
+    init_test_tables(&pool).await;
+    let dal = init_test(pool.clone()).await;
+    let mut ctx = create_test_ctx(pool.clone());
+    ctx.agent_id = Some("agent-001".to_string());
+    let now = chrono::Utc::now().timestamp();
+
+    let leaf_count = 450usize;
+    let mut nodes = vec![traverse_node("star-center", now)];
+    let mut relations = Vec::with_capacity(leaf_count);
+    for i in 0..leaf_count {
+        let leaf_id = format!("star-leaf-{:03}", i);
+        nodes.push(traverse_node(&leaf_id, now));
+        relations.push(traverse_rel(
+            &format!("star-rel-{:03}", i),
+            "star-center",
+            &leaf_id,
+            now + i as i64 + 1,
+        ));
+    }
+    seed_graph(&dal, &ctx, nodes, relations).await?;
+
+    let results = dal
+        .traverse_knowledge_graph(
+            ctx.clone(),
+            &["star-center".to_string()],
+            1,
+            0,
+            TraversalStrategy::BreadthFirst,
+        )
+        .await?;
+
+    assert_eq!(
+        node_ids_of(&results).len(),
+        leaf_count + 1,
+        "451 个节点应全部返回（跨分块拼接完整）"
+    );
+    assert_eq!(rel_ids_of(&results).len(), leaf_count, "450 条边应全部收集");
+
+    Ok(())
+}

@@ -906,23 +906,66 @@ impl MemoryDalImpl {
             stack.push((id.clone(), 0));
         }
 
+        // 边预取缓存，避免逐节点查询的 N+1：
+        // - fetched：已完整拉取过边的节点；batch 预取后所有 batch_ids 均有缓存条目（含空条目），
+        //   故 fetched 命中即代表边已拉全，可跳过查询
+        // - edge_cache：节点 → 其边（按双端点分组缓存）；注意仅作为边端点出现的节点也会获得
+        //   部分边条目，这类节点不在 fetched 中，pop 时仍需预取其自身全部边
+        let mut edge_cache: HashMap<String, Vec<KnowledgeNodeRelationPo>> = HashMap::new();
+        let mut fetched: HashSet<String> = HashSet::new();
+
         while let Some((node_id, depth)) = stack.pop() {
             if depth >= max_depth {
                 continue;
             }
 
-            let all_relations = self
-                .memory_dao
-                .list_all_relations_for_node(ctx.clone(), &node_id)
-                .await?;
+            if !fetched.contains(&node_id) {
+                // 未完整拉取过：当前节点 + 栈上未拉取的待展开节点一次批量预取
+                let mut batch_ids: Vec<String> = vec![node_id.clone()];
+                let mut seen: HashSet<&str> = HashSet::new();
+                seen.insert(node_id.as_str());
+                for (id, d) in &stack {
+                    if *d < max_depth && !fetched.contains(id) && seen.insert(id.as_str()) {
+                        batch_ids.push(id.clone());
+                    }
+                }
+                let batch_relations = self
+                    .memory_dao
+                    .list_relations_batch(ctx.clone(), &batch_ids)
+                    .await?;
+                for id in &batch_ids {
+                    fetched.insert(id.clone());
+                }
+                // 每条边挂到双端点名下的缓存；batch 内未被任何边引用的节点补空条目，
+                // 保证 fetched 节点必有缓存条目，pop 时不会误判为「未拉取」重复查询
+                for rel in batch_relations {
+                    edge_cache
+                        .entry(rel.source_node_id.clone())
+                        .or_default()
+                        .push(rel.clone());
+                    edge_cache
+                        .entry(rel.target_node_id.clone())
+                        .or_default()
+                        .push(rel);
+                }
+                for id in &batch_ids {
+                    edge_cache.entry(id.clone()).or_default();
+                }
+            }
+
+            // batch 内两节点之间的边会挂到双方名下，pop 时可能取到重复边：
+            // 按 id 去重，避免重复边占用 take(max_breadth) 名额（旧实现单查无重复）
+            let mut node_relations = edge_cache.remove(&node_id).unwrap_or_default();
+            node_relations.sort_by_key(|rel| rel.created_at);
+            node_relations.dedup_by(|a, b| a.id == b.id);
 
             let limited_relations: Vec<KnowledgeNodeRelationPo> = if max_breadth > 0 {
-                all_relations
+                node_relations
                     .into_iter()
                     .take(max_breadth as usize)
                     .collect()
             } else {
-                all_relations
+                node_relations
             };
 
             let mut neighbors: Vec<(String, KnowledgeNodeRelationPo)> = Vec::new();
@@ -961,11 +1004,19 @@ impl MemoryDalImpl {
         }
         let agent_id = ctx.agent_id().cloned().unwrap_or_default();
         let ids: Vec<String> = node_ids.iter().cloned().collect();
-        let query = MemoryQuery {
-            ids: Some(ids),
-            ..Default::default()
-        };
-        let nodes = self.memory_dao.query_knowledge_nodes(ctx, query).await?;
+        // 分块：SQLite 绑定参数上限 999，遍历的 visited 集合可能很大
+        let mut nodes: Vec<LongTermKnowledgeNodePo> = Vec::with_capacity(ids.len());
+        for chunk in ids.chunks(crate::service::dao::memory::sqlite::IN_CLAUSE_CHUNK) {
+            let query = MemoryQuery {
+                ids: Some(chunk.to_vec()),
+                ..Default::default()
+            };
+            nodes.extend(
+                self.memory_dao
+                    .query_knowledge_nodes(ctx.clone(), query)
+                    .await?,
+            );
+        }
         // 共享可见性过滤：只保留自己的节点或 published 节点
         // 防止 traverse_graph 通过 id 跨 Agent 遍历私有节点
         // 使用冗余字段 is_published 替代 tags.contains("\"published\"")，避免字符串扫描

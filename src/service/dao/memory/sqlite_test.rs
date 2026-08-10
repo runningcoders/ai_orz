@@ -1339,3 +1339,51 @@ async fn test_query_knowledge_nodes_tags_filter(pool: SqlitePool) {
     let results = dao.query_knowledge_nodes(ctx, query_none).await.unwrap();
     assert_eq!(results.len(), 3, "无 tags 过滤应返回全部 3 个节点");
 }
+
+/// list_relations_batch 分块：600 个 ID（每 ID 2 绑定 = 1200 > SQLite 999 上限），
+/// 分块后不应报错，跨块关系应命中，且跨块拼接后保持 created_at ASC
+#[sqlx::test]
+async fn test_list_relations_batch_chunking(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    // 600 个 ID：分块大小 400 → 2 块；两条关系的端点分别落在不同块
+    let ids: Vec<String> = (0..600).map(|i| format!("chunk-node-{:03}", i)).collect();
+
+    let now = chrono::Utc::now().timestamp();
+    // 早创建：两端都在第一块（id[100] → id[200]）
+    dao.add_knowledge_relation(
+        ctx.clone(),
+        &KnowledgeNodeRelationPo {
+            id: "chunk-rel-early".to_string(),
+            source_node_id: ids[100].clone(),
+            target_node_id: ids[200].clone(),
+            relation_type: KnowledgeRelationType::Related,
+            created_at: now,
+            updated_at: now,
+        },
+    )
+    .await
+    .unwrap();
+    // 晚创建：跨块（id[0] 第一块 → id[500] 第二块）
+    dao.add_knowledge_relation(
+        ctx.clone(),
+        &KnowledgeNodeRelationPo {
+            id: "chunk-rel-cross".to_string(),
+            source_node_id: ids[0].clone(),
+            target_node_id: ids[500].clone(),
+            relation_type: KnowledgeRelationType::Related,
+            created_at: now + 10,
+            updated_at: now + 10,
+        },
+    )
+    .await
+    .unwrap();
+
+    let results = dao.list_relations_batch(ctx, &ids).await.unwrap();
+    assert_eq!(results.len(), 2, "两条关系都应命中（含跨块）");
+    // 跨块拼接后仍按 created_at ASC 有序
+    assert_eq!(results[0].id, "chunk-rel-early");
+    assert_eq!(results[1].id, "chunk-rel-cross");
+}

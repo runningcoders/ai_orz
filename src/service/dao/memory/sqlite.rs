@@ -22,6 +22,11 @@ use sqlx::{FromRow, SqlitePool};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+/// SQLite 默认绑定参数上限为 999（SQLITE_MAX_VARIABLE_NUMBER）。
+/// `list_relations_batch` 每个节点 ID 占 2 个绑定（source + target 两个 IN 列表），
+/// 按 400 个节点分块（800 绑定）留出安全余量；ids IN 单绑定场景同样复用此常量。
+pub const IN_CLAUSE_CHUNK: usize = 400;
+
 /// 短期记忆搜索行（PO + fts_rank）
 #[derive(FromRow)]
 struct ShortTermSearchRow {
@@ -120,6 +125,57 @@ impl MemoryDaoSqliteImpl {
         // Parse as MemoryTrace and return formatted content for display
         let trace: MemoryTrace = serde_json::from_str(&line)?;
         Ok(trace.input)
+    }
+
+    /// `list_relations_batch` 的单块查询（调用方保证 chunk 长度 ≤ IN_CLAUSE_CHUNK）
+    async fn list_relations_batch_chunk(
+        &self,
+        ctx: RequestContext,
+        node_ids: &[String],
+    ) -> Result<Vec<KnowledgeNodeRelationPo>> {
+        use sqlx::{QueryBuilder, Row};
+
+        let pool = self.pool(ctx);
+        let mut builder = QueryBuilder::new(
+            r#"SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
+FROM knowledge_node_relation
+WHERE source_node_id IN ("#,
+        );
+
+        let mut separated = builder.separated(", ");
+        for id in node_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") OR target_node_id IN (");
+
+        let mut separated = builder.separated(", ");
+        for id in node_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(") ORDER BY created_at ASC");
+
+        let rows = builder.build().fetch_all(&pool).await?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            let id: String = row.get("id");
+            let source_node_id: String = row.get("source_node_id");
+            let target_node_id: String = row.get("target_node_id");
+            let relation_type_str: String = row.get("relation_type");
+            let created_at: i64 = row.get("created_at");
+            let updated_at: i64 = row.get("updated_at");
+            let relation_type = KnowledgeRelationType::from(relation_type_str);
+            result.push(KnowledgeNodeRelationPo {
+                id,
+                source_node_id,
+                target_node_id,
+                relation_type,
+                created_at,
+                updated_at,
+            });
+        }
+
+        Ok(result)
     }
 }
 
@@ -1233,52 +1289,19 @@ ORDER BY created_at ASC
         ctx: RequestContext,
         node_ids: &[String],
     ) -> Result<Vec<KnowledgeNodeRelationPo>> {
-        use sqlx::{QueryBuilder, Row};
-
         if node_ids.is_empty() {
             return Ok(Vec::new());
         }
 
-        let pool = self.pool(ctx);
-        let mut builder = QueryBuilder::new(
-            r#"SELECT id, source_node_id, target_node_id, relation_type, created_at, updated_at
-FROM knowledge_node_relation
-WHERE source_node_id IN ("#,
-        );
-
-        let mut separated = builder.separated(", ");
-        for id in node_ids {
-            separated.push_bind(id);
-        }
-        separated.push_unseparated(") OR target_node_id IN (");
-
-        let mut separated = builder.separated(", ");
-        for id in node_ids {
-            separated.push_bind(id);
-        }
-        separated.push_unseparated(") ORDER BY created_at ASC");
-
-        let rows = builder.build().fetch_all(&pool).await?;
-
+        // SQLite 绑定参数上限 999：每 ID 占 2 绑定，按 IN_CLAUSE_CHUNK 分块避免超限
         let mut result = Vec::new();
-        for row in rows {
-            let id: String = row.get("id");
-            let source_node_id: String = row.get("source_node_id");
-            let target_node_id: String = row.get("target_node_id");
-            let relation_type_str: String = row.get("relation_type");
-            let created_at: i64 = row.get("created_at");
-            let updated_at: i64 = row.get("updated_at");
-            let relation_type = KnowledgeRelationType::from(relation_type_str);
-            result.push(KnowledgeNodeRelationPo {
-                id,
-                source_node_id,
-                target_node_id,
-                relation_type,
-                created_at,
-                updated_at,
-            });
+        for chunk in node_ids.chunks(IN_CLAUSE_CHUNK) {
+            result.extend(self.list_relations_batch_chunk(ctx.clone(), chunk).await?);
         }
-
+        // 跨块拼接后重排，保持 created_at ASC 的有序契约；
+        // 两端点分属不同块的边会在两块中各命中一次，按 id 去重（稳定排序后重复项相邻）
+        result.sort_by_key(|rel| rel.created_at);
+        result.dedup_by(|a, b| a.id == b.id);
         Ok(result)
     }
 
