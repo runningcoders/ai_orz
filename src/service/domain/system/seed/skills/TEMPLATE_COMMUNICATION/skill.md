@@ -73,3 +73,4 @@
 8. **善用历史**：新加入上下文先 `list_messages` 读背景，避免重复确认
 9. **只调用 neural 工具**：Agent 查询类工具由用户 / 前端操作，需要时请用户协助
 10. **Agent 对 Agent 通道是 send_task_assignment_message**，不是 send_message_to_agent
+11. **留意用户偏好**：沟通中注意用户表达的习惯与偏好，按记忆认知技能的「用户偏好沉淀」规范记录；回复风格优先遵循【用户画像】中已有的偏好

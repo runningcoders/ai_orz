@@ -166,6 +166,16 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
         memory_md.content.as_ref().unwrap().contains("# 记忆认知"),
         "记忆认知内容不正确"
     );
+    // 记忆认知应含「用户偏好沉淀」专节（组织级共享画像约定）
+    let memory_content = memory_md.content.as_ref().unwrap();
+    assert!(
+        memory_content.contains("用户偏好沉淀"),
+        "记忆认知应含用户偏好沉淀专节"
+    );
+    assert!(
+        memory_content.contains("user_preference"),
+        "用户偏好沉淀应约定 user_preference tag（tag 只表种类）"
+    );
 
     // 验证协作沟通
     let comm_files = hr::domain()
@@ -181,6 +191,11 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
     assert!(
         comm_md.content.as_ref().unwrap().contains("# 协作沟通"),
         "协作沟通内容不正确"
+    );
+    // 协作沟通行为准则应含「留意用户偏好」条目
+    assert!(
+        comm_md.content.as_ref().unwrap().contains("留意用户偏好"),
+        "协作沟通行为准则应含留意用户偏好条目"
     );
 }
 

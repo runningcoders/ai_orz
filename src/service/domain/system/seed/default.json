@@ -103,7 +103,7 @@
     {
       "id": "TEMPLATE_MEMORY_COGNITION",
       "name": "记忆认知",
-      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱（图谱是活的/节点粒度自主/关系多维共存/tags是桥梁/局部树状全域网状/新老知识交替六种模式/记抽象不记细节/references双向价值/图谱遗忘机制/蜂巢知识共享published标签/沉淀工作模式）、三种搜索模式与遍历策略的认知指南",
+      "description": "从 Soul 出发的四层记忆模型、实时归纳、知识图谱（图谱是活的/节点粒度自主/关系多维共存/tags是桥梁/局部树状全域网状/新老知识交替六种模式/记抽象不记细节/references双向价值/图谱遗忘机制/蜂巢知识共享published标签/沉淀工作模式/用户偏好沉淀组织级共享）、三种搜索模式与遍历策略的认知指南",
       "tags": ["neural", "memory"],
       "category": "system",
       "parent_skill_id": "",
