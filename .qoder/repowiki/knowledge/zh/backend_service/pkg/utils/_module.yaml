@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg/utils
-title: utils
-scope:
-    - src/pkg/utils/
-source_files: []
-depends_on: []
-related_to: []

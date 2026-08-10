@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg/tool_tracing
-title: tool_tracing
-scope:
-    - src/pkg/tool_tracing/
-source_files: []
-depends_on: []
-related_to: []

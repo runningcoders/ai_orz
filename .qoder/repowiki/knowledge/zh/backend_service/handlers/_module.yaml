@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/handlers
-title: handlers
-scope:
-    - src/handlers/
-source_files: []
-depends_on: []
-related_to: []

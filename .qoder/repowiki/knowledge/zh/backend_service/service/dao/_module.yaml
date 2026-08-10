@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/service/dao
-title: dao
-scope:
-    - src/service/dao/
-source_files: []
-depends_on: []
-related_to: []

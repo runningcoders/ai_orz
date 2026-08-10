@@ -9,17 +9,18 @@
 - [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
 - [src/router.rs](file://src/router.rs)
 - [src/pkg/tool_registry/http.rs](file://src/pkg/tool_registry/http.rs)
-- [frontend/src/components/chat/chat_side_panel.rs](file://frontend/src/components/chat/chat_side_panel.rs)
 - [frontend/src/components/chat/tool_calls_tab.rs](file://frontend/src/components/chat/tool_calls_tab.rs)
+- [frontend/src/api/system.rs](file://frontend/src/api/system.rs)
+- [frontend/src/api/finance.rs](file://frontend/src/api/finance.rs)
 </cite>
 
 ## 更新摘要
 **变更内容**
-- 更新了HTTP工具创建表单的完整实现，包括所有字段的验证逻辑
-- 新增了进程管理双露接口（shell_list）的详细说明
-- 增强了聊天侧栏工具调用Tab的功能描述
-- 完善了前后端协作的数据流图
-- 补充了安全策略和参数验证的详细说明
+- 新增了完整的HTTP工具创建表单功能，支持GET/POST方法、URL模板、请求头/查询/体配置等
+- 实现了进程管理双露接口（shell_list），提供HTTP和LLM工具两种访问方式
+- 增强了聊天侧栏工具调用Tab，支持按call_id关联进行中的进程并复用详情弹窗
+- 完善了前后端协作的数据流和安全控制机制
+- 补充了完整的表单验证和提交流程
 
 ## 目录
 1. [简介](#简介)
@@ -58,11 +59,13 @@ R["路由注册<br/>router.rs"]
 H["系统处理器 shell_list<br/>handlers/system/process/shell_list.rs"]
 API["系统 API DTO<br/>common/src/api/system.rs"]
 RT["HTTP 工具运行时<br/>pkg/tool_registry/http.rs"]
+FAPI["前端API封装<br/>frontend/src/api/*.rs"]
 end
 A --> B
 B --> C
 D --> E
-E --> R
+E --> FAPI
+FAPI --> R
 R --> H
 H --> API
 B --> RT
@@ -72,16 +75,17 @@ B --> RT
 - [frontend/src/pages/finance/tools.rs:114-123](file://frontend/src/pages/finance/tools.rs#L114-L123)
 - [frontend/src/components/create_http_tool.rs:144-188](file://frontend/src/components/create_http_tool.rs#L144-L188)
 - [frontend/src/components/modal.rs:15-43](file://frontend/src/components/modal.rs#L15-L43)
-- [frontend/src/components/chat/chat_side_panel.rs:96-288](file://frontend/src/components/chat/chat_side_panel.rs#L96-L288)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 - [src/handlers/system/process/shell_list.rs:10-49](file://src/handlers/system/process/shell_list.rs#L10-L49)
 - [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
 - [src/pkg/tool_registry/http.rs:41-73](file://src/pkg/tool_registry/http.rs#L41-L73)
+- [frontend/src/api/system.rs:196-220](file://frontend/src/api/system.rs#L196-L220)
+- [frontend/src/api/finance.rs:134-136](file://frontend/src/api/finance.rs#L134-L136)
 
 **章节来源**
 - [frontend/src/pages/finance/tools.rs:114-123](file://frontend/src/pages/finance/tools.rs#L114-L123)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 
 ## 核心组件
 - **HTTP 工具创建弹窗**：提供名称、描述、标签、方法（GET/POST）、URL 模板、Headers/Query/Body JSON、超时、响应大小限制、允许状态码、JSON Pointer、域名白/黑名单、本地网络访问开关、参数 Schema 等字段，提交前做前端解析校验，再构造 CreateToolRequest 调用后端创建接口。
@@ -91,7 +95,6 @@ B --> RT
 
 **章节来源**
 - [frontend/src/components/create_http_tool.rs:15-142](file://frontend/src/components/create_http_tool.rs#L15-L142)
-- [frontend/src/components/chat/chat_side_panel.rs:96-288](file://frontend/src/components/chat/chat_side_panel.rs#L96-L288)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 - [src/handlers/system/process/shell_list.rs:10-49](file://src/handlers/system/process/shell_list.rs#L10-L49)
 - [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
@@ -123,7 +126,7 @@ FE->>FE : 按 call_id join 运行中进程PID
 - [frontend/src/pages/finance/tools.rs:114-123](file://frontend/src/pages/finance/tools.rs#L114-L123)
 - [frontend/src/components/create_http_tool.rs:164-188](file://frontend/src/components/create_http_tool.rs#L164-L188)
 - [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 - [frontend/src/components/chat/tool_calls_tab.rs:101-139](file://frontend/src/components/chat/tool_calls_tab.rs#L101-L139)
 
 ## 详细组件分析
@@ -176,12 +179,10 @@ TCT->>TCT : 重新加载join数据
 ```
 
 **图表来源**
-- [frontend/src/components/chat/chat_side_panel.rs:96-288](file://frontend/src/components/chat/chat_side_panel.rs#L96-L288)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 - [frontend/src/components/chat/tool_calls_tab.rs:278-291](file://frontend/src/components/chat/tool_calls_tab.rs#L278-L291)
 
 **章节来源**
-- [frontend/src/components/chat/chat_side_panel.rs:96-288](file://frontend/src/components/chat/chat_side_panel.rs#L96-L288)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
 
 ### 后端进程列表接口（shell_list）
@@ -208,13 +209,13 @@ H-->>FE : ListProcessesResponse{processes}
 ```
 
 **图表来源**
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 - [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
 - [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
 
 **章节来源**
 - [src/handlers/system/process/shell_list.rs:10-49](file://src/handlers/system/process/shell_list.rs#L10-L49)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 - [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
 
 ## 依赖关系分析
@@ -242,15 +243,14 @@ Create --> RT["http.rs 运行时"]
 - [frontend/src/pages/finance/tools.rs:114-123](file://frontend/src/pages/finance/tools.rs#L114-L123)
 - [frontend/src/components/create_http_tool.rs:144-188](file://frontend/src/components/create_http_tool.rs#L144-L188)
 - [frontend/src/components/modal.rs:15-43](file://frontend/src/components/modal.rs#L15-L43)
-- [frontend/src/components/chat/chat_side_panel.rs:96-288](file://frontend/src/components/chat/chat_side_panel.rs#L96-L288)
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 - [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
 - [src/pkg/tool_registry/http.rs:41-73](file://src/pkg/tool_registry/http.rs#L41-L73)
 
 **章节来源**
 - [frontend/src/components/chat/tool_calls_tab.rs:78-163](file://frontend/src/components/chat/tool_calls_tab.rs#L78-L163)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)
 
 ## 性能考虑
 - **前端防抖**：聊天侧栏与工具调用 Tab 均使用 2s 防抖窗口，避免 SSE 高频触发导致重复请求；通过代际计数丢弃过期结果。
@@ -284,4 +284,4 @@ Create --> RT["http.rs 运行时"]
 **章节来源**
 - [src/pkg/tool_registry/http.rs:41-73](file://src/pkg/tool_registry/http.rs#L41-L73)
 - [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [src/router.rs:810-822](file://src/router.rs#L810-L822)

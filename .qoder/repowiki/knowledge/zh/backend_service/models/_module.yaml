@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/models
-title: models
-scope:
-    - src/models/
-source_files: []
-depends_on: []
-related_to: []

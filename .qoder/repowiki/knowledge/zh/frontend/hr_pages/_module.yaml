@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: frontend/hr_pages
-title: hr_pages
-scope:
-    - frontend/src/pages/hr/
-source_files: []
-depends_on: []
-related_to: []

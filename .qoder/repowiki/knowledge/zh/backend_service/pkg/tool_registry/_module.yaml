@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/pkg/tool_registry
-title: tool_registry
-scope:
-    - src/pkg/tool_registry/
-source_files: []
-depends_on: []
-related_to: []

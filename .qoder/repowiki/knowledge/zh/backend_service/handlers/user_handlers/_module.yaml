@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: backend_service/handlers/user_handlers
-title: user_handlers
-scope:
-    - src/handlers/user/
-    - src/handlers/health.rs
-source_files: []
-depends_on: []
-related_to: []

@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/handlers/finance_handlers/model_provider_handlers
-title: model_provider_handlers
-scope:
-    - src/handlers/finance/model_provider/
-source_files: []
-depends_on: []
-related_to: []

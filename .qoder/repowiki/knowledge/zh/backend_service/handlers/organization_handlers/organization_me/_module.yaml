@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: backend_service/handlers/organization_handlers/organization_me
-title: organization_me
-scope:
-    - src/handlers/organization/organization_me/
-source_files: []
-depends_on: []
-related_to: []
