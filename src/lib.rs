@@ -173,7 +173,7 @@ pub async fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // SSE/WS 长连接不会主动关闭，排空设 10s 上限（从信号触发时刻起算），
     // 超时后丢弃 serve future 强制退出（进程即将退出，长连接自然断开）。
     // 注意：超时必须从信号触发后才开始计时，不能包在 serve 外层——否则启动 N 秒后被误杀
-    let (sig_tx, mut sig_rx) = tokio::sync::oneshot::channel::<()>();
+    let (sig_tx, sig_rx) = tokio::sync::oneshot::channel::<()>();
     let serve_future = axum::serve(listener, app).with_graceful_shutdown(async move {
         wait_shutdown_trigger().await;
         sys_info!("Shutdown signal received, stopping server...");
