@@ -738,7 +738,11 @@ mod tests {
             })
             .await;
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        assert_eq!(consumed.load(Ordering::SeqCst), 1, "worker should have exited");
+        assert_eq!(
+            consumed.load(Ordering::SeqCst),
+            1,
+            "worker should have exited"
+        );
         assert_eq!(registry.queue_len("shutdown_test_consumer"), 1);
     }
 }

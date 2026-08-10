@@ -22,7 +22,9 @@ impl Default for FrontendConfig {
         // 避免编译期嵌入的 listen_addr 与运行时实际端口不一致时请求打偏
         // （如部署改端口、E2E 隔离端口等场景）
         if let Some(origin) = web_sys::window().and_then(|w| w.location().origin().ok()) {
-            return Self { api_base_url: origin };
+            return Self {
+                api_base_url: origin,
+            };
         }
 
         // 无 window 环境（单元测试等）回退编译时嵌入的配置

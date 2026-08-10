@@ -269,7 +269,10 @@ async fn shutdown_services() {
 
     let storage = storage::get();
     if let Some(stats) = storage.stats_opt() {
-        match stats.flush_all(crate::pkg::RequestContext::new_system()).await {
+        match stats
+            .flush_all(crate::pkg::RequestContext::new_system())
+            .await
+        {
             Ok(()) => sys_info!("Stats flushed to DuckDB"),
             Err(e) => sys_error!("Stats flush error: {}", e),
         }

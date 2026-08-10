@@ -80,11 +80,7 @@ pub fn new() -> Arc<dyn LogQueryDal + Send + Sync> {
 #[async_trait::async_trait]
 pub trait LogQueryDal: Send + Sync {
     /// 查询日志，返回分页结果（按时间倒序，最新的在前）
-    async fn query_logs(
-        &self,
-        ctx: RequestContext,
-        query: LogQuery,
-    ) -> Result<QueryLogsResponse>;
+    async fn query_logs(&self, ctx: RequestContext, query: LogQuery) -> Result<QueryLogsResponse>;
 }
 
 // ==================== DAL 实现 ====================
@@ -101,11 +97,7 @@ const MAX_SCAN_DAYS: i64 = 30;
 
 #[async_trait::async_trait]
 impl LogQueryDal for LogQueryDalFsImpl {
-    async fn query_logs(
-        &self,
-        ctx: RequestContext,
-        query: LogQuery,
-    ) -> Result<QueryLogsResponse> {
+    async fn query_logs(&self, ctx: RequestContext, query: LogQuery) -> Result<QueryLogsResponse> {
         let _ = ctx;
 
         // 规范化分页参数

@@ -11,10 +11,7 @@ use crate::service::dal::log_query::LogQuery;
 use crate::service::domain::system::domain;
 
 #[generate_http_handler]
-pub async fn query_logs(
-    ctx: RequestContext,
-    params: LogQueryRequest,
-) -> Result<QueryLogsResponse> {
+pub async fn query_logs(ctx: RequestContext, params: LogQueryRequest) -> Result<QueryLogsResponse> {
     let query = LogQuery {
         keyword: params.keyword,
         log_id: params.log_id,
