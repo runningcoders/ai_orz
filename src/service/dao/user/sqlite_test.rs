@@ -208,3 +208,54 @@ async fn test_all_user_dao_functions(pool: SqlitePool) {
         .unwrap();
     assert!(found.is_none());
 }
+
+/// 测试用户自述偏好字段：新建默认空 → update 写入 → 回读一致
+#[sqlx::test]
+async fn test_user_preferences_roundtrip(pool: SqlitePool) {
+    crate::service::dao::user::init();
+    let user_dao = crate::service::dao::user::dao();
+
+    let org_id = Uuid::now_v7().to_string();
+    let user_id = Uuid::now_v7().to_string();
+    let username = format!("prefuser_{}", Uuid::now_v7());
+
+    let mut user = UserPo::new(
+        user_id.clone(),
+        org_id,
+        username,
+        "偏好用户".to_string(),
+        "pref@example.com".to_string(),
+        "hash".to_string(),
+        UserRole::Member,
+        "test-user-1".to_string(),
+    );
+    // 新建时偏好默认空
+    assert!(user.preferences.is_empty());
+
+    user_dao
+        .insert(new_ctx("test-user", pool.clone()), &user)
+        .await
+        .unwrap();
+
+    // 插入后回读偏好仍为空（DB 默认值）
+    let found = user_dao
+        .find_by_id(new_ctx("test-user", pool.clone()), &user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(found.preferences.is_empty());
+
+    // 更新偏好后回读一致
+    user.preferences = "- 回复请用中文\n- 汇报要简洁，先给结论".to_string();
+    user_dao
+        .update(new_ctx("test-user", pool.clone()), &user)
+        .await
+        .unwrap();
+
+    let found = user_dao
+        .find_by_id(new_ctx("test-user", pool), &user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.preferences, user.preferences);
+}

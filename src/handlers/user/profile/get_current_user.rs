@@ -59,6 +59,11 @@ pub async fn get_current_user(
         role: role as i32,
         role_name,
         status: user.status.to_i32(),
+        preferences: if user.preferences.is_empty() {
+            None
+        } else {
+            Some(user.preferences.clone())
+        },
     };
 
     Ok(GetCurrentUserResponse { data: info })

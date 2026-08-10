@@ -526,6 +526,11 @@ pub async fn apply_snapshot_to_db_with_progress(
             modified_by: "seed_import".to_string(),
             created_at: common::constants::utils::current_timestamp(),
             updated_at: common::constants::utils::current_timestamp(),
+            // 用户自述偏好不在 seed 定义中：已有用户保留现场设置，新用户默认空
+            preferences: existing
+                .as_ref()
+                .map(|u| u.preferences.clone())
+                .unwrap_or_default(),
         };
 
         if existing.is_some() {

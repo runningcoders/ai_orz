@@ -92,7 +92,7 @@ const DEFAULT_MAX_THINKING_ROUNDS: usize = 90;
 /// - `scene`：场景标识（Awaken/Settle/Summary），决定工具过滤行为
 /// - `project` / `task`：awaken 场景下，消息关联的项目/任务实体，注入 prompt 作为业务上下文
 /// - `max_thinking_rounds`：awaken 场景最大思考轮次（跨压缩累计），None 时用默认值 90
-/// - `user_profile`：用户画像（预留，未来扩展）
+/// - `user_profile`：用户画像（消息发送者的 UserPo，含自述偏好，注入 Prompt 的【用户画像】区块）
 #[derive(Debug, Clone, Default)]
 pub struct ThinkingOptions {
     /// 场景标识
@@ -103,7 +103,7 @@ pub struct ThinkingOptions {
     pub task: Option<crate::models::task::Task>,
     /// 最大思考轮次（跨压缩累计），None 时使用默认值 90
     pub max_thinking_rounds: Option<usize>,
-    /// 用户画像（预留，未来扩展）
+    /// 用户画像（消息发送者的 UserPo，awaken 场景注入【用户画像】区块）
     pub user_profile: Option<crate::models::user::UserPo>,
 }
 
@@ -136,6 +136,12 @@ impl ThinkingOptions {
     /// 设置最大思考轮次
     pub fn with_max_thinking_rounds(mut self, max_rounds: usize) -> Self {
         self.max_thinking_rounds = Some(max_rounds);
+        self
+    }
+
+    /// 设置用户画像（消息发送者的 UserPo）
+    pub fn with_user_profile(mut self, user: crate::models::user::UserPo) -> Self {
+        self.user_profile = Some(user);
         self
     }
 
@@ -507,6 +513,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
             if let Some(task) = &options.task {
                 builder.task_context(task);
+            }
+            if let Some(user) = &options.user_profile {
+                builder.user_profile(user);
             }
             builder.history(&recent_memories);
             builder.current_message(message);
@@ -1467,5 +1476,66 @@ mod tests {
         assert_eq!(result.agent_id, agent_id);
         assert!(!result.raw_input.is_empty());
         assert_eq!(result.raw_output, "mock response");
+    }
+
+    #[sqlx::test]
+    async fn test_awaken_with_user_profile(pool: SqlitePool) {
+        let ctx = init_awaken_test_env(pool);
+
+        let agent_id = format!("agent-user-profile-{}", Uuid::now_v7());
+        let agent = make_test_agent(&agent_id);
+        let message = make_test_message("你好");
+
+        // 构造带自述偏好的用户画像
+        let mut user_po = crate::models::user::UserPo::new(
+            "test-user".to_string(),
+            "org-1".to_string(),
+            "tester".to_string(),
+            "测试用户".to_string(),
+            "tester@example.com".to_string(),
+            "hash".to_string(),
+            common::enums::UserRole::Member,
+            "system".to_string(),
+        );
+        user_po.preferences = "- 回复请用中文".to_string();
+
+        let captured_prompt = Arc::new(Mutex::new(None));
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(CapturingBrainDal::new(captured_prompt.clone())),
+            crate::service::dal::tool::dal(),
+            crate::service::dal::mcp_tool::dal(),
+            crate::service::dal::agent::dal(),
+            Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        );
+
+        runtime
+            .awakening()
+            .awaken(
+                ctx.clone(),
+                &agent,
+                &message,
+                &ThinkingOptions::new().with_user_profile(user_po),
+            )
+            .await
+            .expect("awaken 应该成功");
+
+        let prompt = captured_prompt
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("应该捕获到 prompt");
+
+        // 【用户画像】区块含基础信息 + 自述偏好
+        assert!(
+            prompt.contains("【用户画像】"),
+            "Prompt 应该包含【用户画像】区块，实际: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("【用户偏好】- 回复请用中文"),
+            "【用户画像】应包含用户自述偏好，实际: {}",
+            prompt
+        );
     }
 }

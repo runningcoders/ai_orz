@@ -45,6 +45,8 @@ pub async fn get_user_by_username(
             role: role as i32,
             role_name,
             status: u.status.to_i32(),
+            // 认证场景不携带偏好自述，保持响应最小化
+            preferences: None,
         }
     });
 

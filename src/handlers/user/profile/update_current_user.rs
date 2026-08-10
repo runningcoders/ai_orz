@@ -37,7 +37,7 @@ pub async fn update_current_user(
     // 权限检查：只能修改自己，JWT 已经认证过，这里用户ID匹配就是合法的
     // 不需要额外权限校验，JWT 中间件已经保证 user_id 是合法的当前用户
 
-    // 更新可修改字段：只允许修改显示名称、邮箱、密码哈希
+    // 更新可修改字段：只允许修改显示名称、邮箱、密码哈希、偏好自述
     // 用户不能修改自己的角色、状态、组织ID等敏感信息
     if let Some(new_display_name) = params.display_name {
         user.display_name = new_display_name;
@@ -47,6 +47,13 @@ pub async fn update_current_user(
     }
     if let Some(new_password_hash) = params.password_hash {
         user.password_hash = new_password_hash;
+    }
+    // 偏好自述：仅限真人 HTTP 会话修改。本 handler 同时注册为 Agent 工具，
+    // Agent 上下文（ctx.agent_id 有值）调用时忽略该字段，维持「Agent 不写用户表」边界
+    if ctx.agent_id().is_none()
+        && let Some(new_preferences) = params.preferences
+    {
+        user.preferences = new_preferences;
     }
 
     // 更新修改时间和修改人
@@ -84,7 +91,104 @@ pub async fn update_current_user(
         role: role as i32,
         role_name,
         status: user.status.to_i32(),
+        preferences: if user.preferences.is_empty() {
+            None
+        } else {
+            Some(user.preferences.clone())
+        },
     };
 
     Ok(UpdateCurrentUserResponse { data: info })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::user::UserPo;
+    use common::enums::UserRole;
+    use sqlx::SqlitePool;
+
+    /// 初始化全层单例 + 插入测试用户，返回（真人会话 ctx，user_id）
+    async fn setup(pool: SqlitePool) -> (RequestContext, String) {
+        crate::service::init();
+        let user_id = uuid::Uuid::now_v7().to_string();
+        let user = UserPo::new(
+            user_id.clone(),
+            "org-test".to_string(),
+            format!("prefuser_{}", uuid::Uuid::now_v7()),
+            "偏好测试用户".to_string(),
+            "pref-test@example.com".to_string(),
+            "hash".to_string(),
+            UserRole::Member,
+            "system".to_string(),
+        );
+        let ctx = crate::pkg::request_context_test_support::new_test_ctx(&user_id, pool.clone());
+        crate::service::dao::user::dao()
+            .insert(ctx.clone(), &user)
+            .await
+            .unwrap();
+        (ctx, user_id)
+    }
+
+    /// 真人会话：偏好自述可正常更新并回读
+    #[sqlx::test]
+    async fn test_update_preferences_success(pool: SqlitePool) {
+        let (ctx, user_id) = setup(pool).await;
+
+        let resp = update_current_user(
+            ctx.clone(),
+            UpdateCurrentUserRequest {
+                display_name: None,
+                email: None,
+                password_hash: None,
+                preferences: Some("- 回复请用中文\n- 汇报要简洁".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            resp.data.preferences.as_deref(),
+            Some("- 回复请用中文\n- 汇报要简洁")
+        );
+
+        // DB 回读一致
+        let user = crate::service::dao::user::dao()
+            .find_by_id(ctx, &user_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(user.preferences, "- 回复请用中文\n- 汇报要简洁");
+    }
+
+    /// Agent 上下文（ctx.agent_id 有值）：preferences 字段被忽略，维持「Agent 不写用户表」边界
+    #[sqlx::test]
+    async fn test_update_preferences_ignored_in_agent_context(pool: SqlitePool) {
+        let (ctx, user_id) = setup(pool).await;
+        let mut agent_ctx = ctx.clone();
+        agent_ctx.agent_id = Some("agent-test-1".to_string());
+
+        let resp = update_current_user(
+            agent_ctx,
+            UpdateCurrentUserRequest {
+                display_name: None,
+                email: None,
+                password_hash: None,
+                preferences: Some("Agent 试图写入的偏好".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            resp.data.preferences, None,
+            "Agent 上下文不应能写入偏好字段"
+        );
+
+        // DB 中偏好仍为空
+        let user = crate::service::dao::user::dao()
+            .find_by_id(ctx, &user_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(user.preferences.is_empty());
+    }
 }

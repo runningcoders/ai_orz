@@ -337,6 +337,16 @@ impl MessageConsumer {
         if let Some(task) = cached_task {
             thinking_options = thinking_options.with_task(task);
         }
+        // 注入消息发送者的用户画像（基础信息 + 自述偏好），构建 awaken 【用户画像】区块
+        // 仅 User 发送的消息才查询；查询失败仅记日志不阻塞唤醒
+        if message.from_role() == MessageRole::User
+            && let Ok(Some(sender)) = crate::service::domain::organization::domain()
+                .user_manage()
+                .get_user_by_id(ctx.clone(), &message.po.from_id)
+                .await
+        {
+            thinking_options = thinking_options.with_user_profile(sender);
+        }
 
         // 调用 RuntimeDomain 唤醒 Agent
         let awaken_result = self

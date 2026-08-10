@@ -45,7 +45,7 @@ impl UserDao for UserDaoSqliteImpl {
         let role = user.role as i32;
         let status = user.status as i32;
         sqlx::query!(
-            "INSERT INTO users (id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             user.id,
             user.organization_id,
             user.username,
@@ -57,7 +57,8 @@ impl UserDao for UserDaoSqliteImpl {
             user.created_by,
             user.modified_by,
             user.created_at,
-            user.updated_at
+            user.updated_at,
+            user.preferences
         )
             .execute(ctx.db_pool())
             .await?;
@@ -70,7 +71,7 @@ impl UserDao for UserDaoSqliteImpl {
             UserPo,
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
-       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at
+       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences
 FROM users WHERE id = ? AND status != 0
             "#,
             id
@@ -90,7 +91,7 @@ FROM users WHERE id = ? AND status != 0
             UserPo,
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
-       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at
+       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences
 FROM users WHERE username = ? AND status != 0
             "#,
             username
@@ -109,7 +110,7 @@ FROM users WHERE username = ? AND status != 0
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at FROM users WHERE status != 0"#,
+            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences FROM users WHERE status != 0"#,
         );
         push_query_filters(&mut list_builder, &query);
 
@@ -161,7 +162,7 @@ FROM users WHERE username = ? AND status != 0
             r#"
 UPDATE users
 SET organization_id = ?, username = ?, display_name = ?, email = ?, password_hash = ?,
-    role = ?, status = ?, modified_by = ?, updated_at = ?
+    role = ?, status = ?, modified_by = ?, updated_at = ?, preferences = ?
 WHERE id = ?
             "#,
             user.organization_id,
@@ -173,6 +174,7 @@ WHERE id = ?
             status,
             uid,
             current_timestamp,
+            user.preferences,
             user.id
         )
         .execute(ctx.db_pool())

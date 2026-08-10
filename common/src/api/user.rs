@@ -28,6 +28,8 @@ pub struct UserInfoResponse {
     pub role_name: String,
     /// 用户状态（1: 启用, 0: 禁用）
     pub status: i32,
+    /// 用户自述偏好（声明式画像，Markdown 自由文本，None 表示未设置）
+    pub preferences: Option<String>,
 }
 
 /// 获取当前用户信息响应
@@ -46,6 +48,8 @@ pub struct UpdateCurrentUserRequest {
     pub email: Option<String>,
     /// 新密码哈希（None 表示不修改）
     pub password_hash: Option<String>,
+    /// 新偏好自述（None 表示不修改；Agent 上下文调用时该字段被忽略，仅限用户本人修改）
+    pub preferences: Option<String>,
 }
 
 /// 更新当前用户信息响应
