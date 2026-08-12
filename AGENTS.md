@@ -2,7 +2,9 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-08-10（后端优雅退出 + Chat 统一 Navbar：信号监听 SIGTERM/SIGINT/SIGQUIT → axum graceful shutdown（10s 排空窗口从信号触发时刻起算，oneshot + select 避开超时包在 serve 外层导致启动 N 秒后被误杀的坑）→ 关停编排（消息渠道停服 → AOP worker/producer 退出 → DuckDB stats flush → SQLite 连接池关闭）；AOP Registry 新增 AtomicBool 停机标志（worker 循环顶部检查、轮询 producer 500ms 分片休眠检查、shutdown_all 置标志并逐个 producer.stop）+ pkg/aop::shutdown_all() 便捷函数，SIGTERM 后约 1s 干净退出；Chat 页 MessageChat 接入统一 Navbar（h-screen flex 布局，原 h-[calc(100vh-4rem)] 本就为导航栏预留，移动端抽屉 top-16 避开导航栏），E2E 移除 noNavbar 特例全路由统一导航栏断言，Playwright 全量 16/16 绿 12s；后端单元 828 → 829，总测试 982）
+> 最后更新：2026-08-13（飞书集成二期全量落地 + 分层收敛：凭证模型重构——users 表 identity_credentials JSON 列（类型化结构体 + secret 加密），渠道仅存 lark_credential_id 引用 + 身份模式，ChannelConfig 内联凭证字段删除；凭证归属收敛 finance domain（IdentityCredentialManage 13 方法：CRUD/默认/auth/bind/status 聚合），后端路由分级 /api/v1/finance/identity/lark/*（12 端点），前端新增 /finance/identity 身份凭证主页（按凭证类型分子区块，飞书为首个区块）+ settings 瘦身回归偏好 + 导航/渠道页链接改道；WS 退避重连（supervisor + 指数退避 + 抖动）与 OAuth device flow；分层修复：飞书出站凭证解析从 LarkDao 上移至 MessageChannelDal（注入 user dao，options.user 附带优先 + 查库兜底双路径），LarkDao 只接收已解析凭证，DAO 零跨 DAO 依赖；CI flake 修复：3 个 a2a 集成测试 panic（测试环境按注入链显式补齐缺失 dao/dal init，共 8 个测试环境，禁止批量懒初始化访问器）；后端单元 829 → 875，集成 33 → 86（新增 lark_integration/message_channel_lifecycle 等 19 targets），总测试 982 → 1098）
+>
+> 上次更新：2026-08-10（后端优雅退出 + Chat 统一 Navbar：信号监听 SIGTERM/SIGINT/SIGQUIT → axum graceful shutdown（10s 排空窗口从信号触发时刻起算，oneshot + select 避开超时包在 serve 外层导致启动 N 秒后被误杀的坑）→ 关停编排（消息渠道停服 → AOP worker/producer 退出 → DuckDB stats flush → SQLite 连接池关闭）；AOP Registry 新增 AtomicBool 停机标志（worker 循环顶部检查、轮询 producer 500ms 分片休眠检查、shutdown_all 置标志并逐个 producer.stop）+ pkg/aop::shutdown_all() 便捷函数，SIGTERM 后约 1s 干净退出；Chat 页 MessageChat 接入统一 Navbar（h-screen flex 布局，原 h-[calc(100vh-4rem)] 本就为导航栏预留，移动端抽屉 top-16 避开导航栏），E2E 移除 noNavbar 特例全路由统一导航栏断言，Playwright 全量 16/16 绿 12s；后端单元 828 → 829，总测试 982）
 >
 > 上次更新：2026-08-09（E2E 本地全绿收尾：Playwright 全量 16/16 通过 12.2s（setup 初始化/登录冒烟 + 15 路由导航巡检）；E2E 发现并修复第二个生产缺陷：KnowledgeGraph 组件渲染体无条件 Signal::set(agent_id)，信号无条件标脏触发「重渲染→再 set」死循环，主线程自旋直到 Chromium 杀掉渲染器（页面白屏、零 console 报错、无后续 API 请求）；修复为 peek 等值守卫（保留 agent_id 变化时 effect 重触发语义），全库扫描无同型隐患；导航巡检用例修正：/ 为独立布局无导航栏（noNavbar 标志）、/tasks 文案对齐「任务管理」、失败时 pageerror/console 归档报告；diagnose-page.mjs 白屏诊断脚本（隔离服务器 + API 直调初始化登录 + 请求生命周期 + 崩溃事件监听）；新增 e2e/README.md 运行与排查指南）
 >
@@ -22,7 +24,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、982 个测试 100% 通过率（后端 862 = 829 单元 + 33 集成 + 前端 69 + common 51）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、1098 个测试 100% 通过率（后端 961 = 875 单元 + 86 集成 + 前端 79 + common 58）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -32,7 +34,8 @@
 | 🤖 Agent 全生命周期 | ✅ | 创建、配置、工具绑定、唤醒执行 |
 | 🧠 四层记忆系统 | ✅ | Core/Working/Short-term/Long-term |
 | 💬 消息对话系统 | ✅ | 用户 ↔ Agent 双向对话，支持项目上下文 |
-| 📨 消息渠道系统 | ✅ | 多渠道消息出站推送（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 WebSocket 入站长连接已上线，适配层架构；微信/Slack/邮件/Webhook 出站骨架就绪，入站待实现 |
+| 📨 消息渠道系统 | ✅ | 多渠道消息出站推送（飞书/微信/Slack/邮件/Webhook），飞书 P2P 私信 WebSocket 入站长连接已上线（退避重连 Supervisor），用户级凭证引用模型（渠道仅存 credential_id，出站凭证解析归 DAL 层），适配层架构；微信/Slack/邮件/Webhook 出站骨架就绪，入站待实现 |
+| 🔑 用户身份凭证（finance/identity） | ✅ | users 表 identity_credentials JSON 列（secret 加密）+ 渠道引用模型；finance domain IdentityCredentialManage 13 方法；后端路由分级 /api/v1/finance/identity/lark/*（凭证 CRUD/默认/auth/bind/status 聚合 12 端点）；前端 /finance/identity 身份凭证主页（按凭证类型分子区块，飞书为首个区块：应用绑定/默认凭证/OAuth 设备流/自动绑定） |
 | 🔌 A2A 外部 Agent | ✅ | 完整 A2A 协议支持：Client（注册外部 CLI/Remote Agent 并委派任务）、Server（对外暴露协议端点）、异步结果回传（Push 回调 + 30秒轮询兜底，适配层直接处理，外部协议不污染内部事件中心） |
 | 🛠️ 统一工具调用架构 | ✅ | execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → ToolCallDao::execute + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用 |
 | 📚 技能库系统 | ✅ | 可复用技能和工作流，支持搜索和分类，tag 技能包安装，唤醒时注入 Prompt |
@@ -54,7 +57,7 @@
 | 📊 任务进度追踪 + 执行计划/执行结果 | ✅ | Task progress 字段（0-100）、Agent 神经工具更新进度、complete 自动设 100、progress_updated 事件；Project/Task 新增 **execution_plan**（步骤策略、依赖关系、产物计划）+ **execution_result**（实际产出、错误原因、artifact 链接）；Project 支持 `with_progress_summary` 实时聚合所有子任务进度 |
 | 🤝 Agent 协作工具 | ✅ | search_agents 搜索、send_message_to_agent Agent 间消息、collaboration tag 分组工具 |
 | 🖥️ 统一后台进程管理 | ✅ | pkg/process 内存注册中心（pid 为键 + call_id 全链路关联）、SystemDomain ProcessManager（Agent scope 校验）、shell_exec 超时默认 detach 移交（timeout_action=detach\|kill）、shell_exec/shell_status/shell_kill/shell_list 双露工具（HTTP + LLM 工具）、业务指定 call_id 幂等防重；前端进程管理页面 /system/processes（状态徽标/自动刷新 5s/行内终止）+ ProcessDetailContent 共享详情组件（Modal 形态两处复用） |
-| 🎨 前端架构重构 | ✅ | Dioxus Router 15 路由 + Tailwind CSS v4 + DaisyUI v5 组件库 + 30+ 主题切换 + 统一 API 客户端 + 13 CRUD 页面 |
+| 🎨 前端架构重构 | ✅ | Dioxus Router 41 路由 + Tailwind CSS v4 + DaisyUI v5 组件库 + 30+ 主题切换 + 统一 API 客户端 + 13 CRUD 页面 |
 | 💬 对话功能 MVP | ✅ | 左右分栏布局（项目列表 + 对话区）、双向分页、3秒短轮询、消息气泡展示 |
 | 📎 对话附件上传 | ✅ | 多文件上传、图片内联展示、文件下载、消息时间分组 |
 | 🔍 消息搜索 | ✅ | FTS5 + 向量混合搜索、搜索结果展示匹配类型和向量距离 |
@@ -85,18 +88,18 @@
 | 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 | 📝 前端 Markdown 渲染全覆盖 + Mermaid | ✅ | 统一 MarkdownRenderer（pulldown-cmark + 原始 HTML 转义守护，XSS 安全）；详情页（project/task/agent/skill/tool/model_provider/artifact/知识图谱）+ 聊天气泡 Text 消息 + 记忆面板展开态全链路 Markdown 展示；Project/Task 新增「规划与执行」区块（execution_plan/execution_result/workflow/guidance）+ 任务依赖图；skill.md 预览/源码切换；vendor mermaid.js 注入式渲染：Markdown 内嵌 ```mermaid 块扫描替换为 SVG + 独立 MermaidDiagram（task_graph），懒加载不影响首屏，主题跟随 DaisyUI data-theme |
-| 🧪 集成测试体系 | ✅ | 33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
-| 🎭 E2E 浏览器测试（仅本地） | ✅ | e2e/ Playwright 工程 16 用例全绿 12.2s：setup（初始化→错误密码→登录冒烟 + storageState）+ 15 路由导航巡检（布局/文案/无错误三重断言）；webServer 隔离数据目录编排 + debug 二进制优先；已发现并修复 2 个生产缺陷（SPA 深链 404、KnowledgeGraph 渲染期 Signal::set 死循环崩溃）；diagnose-page.mjs 白屏诊断脚本；不进 CI |
-| 🛡️ CI 质量门槛 + 启动两阶段初始化 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov 差异化覆盖率门槛（**PR 38% / main 45%**），**收集（--workspace/--tests）与报告（--lcov/--html）分 3 阶段**匹配新版参数归属；集成测试 3.7s；启动流程拆两阶段：同步 `service::init()` 注册单例 → AOP producer/consumer 注册 → 异步 `service::init_base_data()` 幂等注入 DB 默认基础数据（2 条系统级 cron triggers + 内置工具所有权分界同步） |
+| 🧪 集成测试体系 | ✅ | 86 个集成测试（19 targets）覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle 全链路；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
+| 🎭 E2E 浏览器测试（仅本地） | ✅ | e2e/ Playwright 工程全绿：setup（初始化→错误密码→登录冒烟 + storageState）+ 16 路由导航巡检（含 /finance/identity，布局/文案/无错误三重断言）；webServer 隔离数据目录编排 + debug 二进制优先；已发现并修复 2 个生产缺陷（SPA 深链 404、KnowledgeGraph 渲染期 Signal::set 死循环崩溃）；diagnose-page.mjs 白屏诊断脚本；不进 CI |
+| 🛡️ CI 质量门槛 + 启动两阶段初始化 | ✅ | clippy `-D warnings` 零容忍（后端 442 + 前端 332 warning 全清理，前端 wasm32 clippy 已纳入 CI）+ cargo-llvm-cov 差异化覆盖率门槛（**PR 38% / main 45%**），**收集（--workspace/--tests）与报告（--lcov/--html）分 3 阶段**匹配新版参数归属；启动流程拆两阶段：同步 `service::init()` 注册单例 → AOP producer/consumer 注册 → 异步 `service::init_base_data()` 幂等注入 DB 默认基础数据（2 条系统级 cron triggers + 内置工具所有权分界同步） |
 
-### 1.3 整体完成度与测试统计（2026-08-09 更新）
+### 1.3 整体完成度与测试统计（2026-08-13 更新）
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **982** | 后端 862（829 单元 + 33 集成） + 前端 69 + common 51，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 1 个 AOP Registry 优雅停机 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
+| **总测试数** | **1098** | 后端 961（875 单元 + 86 集成） + 前端 79 + common 58，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 1 个 AOP Registry 优雅停机 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + lark_integration 3 + message_channel_lifecycle 2 + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
-| **集成测试覆盖** | 33 个 | Auth/SysInit 4 + Core CRUD 3 + Message Delivery 7 + Vector Degradation 3 + A2A Flow 2 + Preset Skills 4 + System Cron Triggers 3 + 宏集成 15 |
-| **集成测试耗时** | 3.7s | 并行运行（从 238s 优化，63 倍提升） |
+| **集成测试覆盖** | 86 个 | 19 targets：Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle + 宏集成 |
+| **集成测试耗时** | ~27s | 19 targets 串行总计 |
 | **CI clippy 门槛** | `-D warnings` | 零容忍，后端 442 warning + 前端 332 warning 全清理；前端 wasm32 clippy 检查已纳入 CI |
 | **CI 覆盖率门槛（差异化）** | PR 38% / main 45% | cargo-llvm-cov 拆收集/报告两阶段（匹配新版参数归属）；PR 容忍度更高，main 守住红线 |
 | DAO 模块数 | 25 个 | 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |

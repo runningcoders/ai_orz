@@ -2,7 +2,7 @@
 
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
-![Tests](https://img.shields.io/badge/tests-941%20%E2%9C%94-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1098%20%E2%9C%94-brightgreen)
 ![Clippy](https://img.shields.io/badge/clippy--D%20warnings-zero-success)
 ![Coverage](https://img.shields.io/badge/coverage-PR%2038%25%2C%20main%2045%25%20threshold%20(llvm--cov)-yellow)
 ![Rust](https://img.shields.io/badge/Rust-1.85+-000000?logo=rust)
@@ -31,10 +31,10 @@
 | 维度 | 现状 |
 |------|------|
 | **后端** | Rust + Axum + SQLite + 原生 CortexDao（OpenAI 兼容），单二进制可部署 |
-| **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，15 条路由，30+ 主题切换 |
+| **前端** | Dioxus 0.7 (WASM) + Tailwind CSS v4 + DaisyUI v5，41 条路由，30+ 主题切换 |
 | **架构** | Adapter（Handler/Producer）→ Domain → DAL → DAO 四层严格单向依赖；启动分两阶段（单例注册 + 基础数据注入） |
-| **测试** | 949 个测试，100% 通过（后端 845 = 812 单元 + 33 集成 + 前端 54 + common 50） |
-| **CI 质量** | clippy `-D warnings` 零容忍（后端 + 前端 wasm32） + cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%） + 集成测试 3.7s |
+| **测试** | 1098 个测试，100% 通过（后端 961 = 875 单元 + 86 集成 + 前端 79 + common 58） |
+| **CI 质量** | clippy `-D warnings` 零容忍（后端 + 前端 wasm32） + cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%） + E2E Playwright 仅本地 |
 | **实体覆盖** | Agent / Project / Task / Message / Memory / Skill / Tool / ModelProvider 全栈 |
 
 核心能力已落地：
@@ -46,7 +46,8 @@
   - 异步结果回传：Push 回调端点 + 30秒轮询兜底双通道，适配层直接处理，外部协议不污染内部事件中心
 - 🧠 **四层记忆**：Core / Working / Short-term / Long-term（含知识图谱），支持 FTS5 + 向量混合搜索；**定时沉淀**（agent_rest 4h）自动将短期记忆整理入长期知识图谱
 - 🛠️ **统一工具调用架构**：execute_auto / execute_manual 三层分发（awakening 循环 → call_tool 直接执行 → ToolCallDao::execute + decorate 装饰器），Manual 通过特殊 internal 工具转发同步/异步调用
-- 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送），多渠道适配器架构就绪（微信/Slack/Webhook/邮件 待实现）
+- 📨 **消息渠道系统**：飞书 P2P 私信已上线（WebSocket 长连接 + 出站推送 + 退避重连 Supervisor），多渠道适配器架构就绪（微信/Slack/Webhook/邮件 待实现）
+- 🔑 **用户身份凭证（finance/identity）**：users 表 identity_credentials JSON 列（secret 加密），渠道仅存凭证引用；`/finance/identity` 身份凭证主页（飞书为首个子区块：应用绑定/默认凭证/OAuth 设备流/自动绑定），后端路由分级 `/api/v1/finance/identity/lark/*`；出站凭证解析归 DAL 层（DAO 零跨 DAO 依赖）
 - 📋 **任务协作 + 执行计划/进度追踪**：项目 + 任务 + Agent 间任务分配，状态机、**execution_plan/execution_result** 显式记录、DAG 依赖、实时 progress summary，支持委派给外部 A2A Agent
 - 📝 **前端 Markdown 渲染全覆盖 + Mermaid**：pulldown-cmark 统一渲染组件（原始 HTML 转义守护，XSS 安全），详情页/聊天气泡/记忆面板全链路 Markdown 展示；支持 Markdown 内嵌 ```mermaid 图与独立 task_graph 任务依赖图（vendor mermaid.js 懒加载，主题跟随 DaisyUI）
 - 💬 **聊天页信息侧栏**：沟通页面右侧可收起信息面板（localStorage 记忆展开态），项目对话 总览/任务/产物/Agent 四 Tab + 默认对话 Agent/我 两 Tab；任务列表内展开懒加载详情，产物按项目级/任务级分组；手动刷新 + SSE 消息防抖自动刷新，移动端右侧抽屉
@@ -60,7 +61,7 @@
 - 📡 **AOP 事件中心**：统一生产-消费事件框架，支持同步/异步消费模式，内置内存队列；Producer 与 Consumer 分别注册，完全解耦
 - 🏗️ **适配层架构**：HTTP Handler / 回调端点 / AOP Producer 同属适配层（Adapter），统一负责外部协议转换和校验，直接调用 Domain；外部协议数据不进入事件中心
 - 🧩 **统一 IDL 宏**：`#[generate_http_handler]` + `#[derive(Params)]` + `#[param(source = "path/query")]` 一份结构体定义同时支持 HTTP API 和 LLM 工具调用，自动从 path/query/body 提取参数，自动生成 axum handler，支持 path-only / query-only / path+query / path+body / 空 struct 等多种参数组合
-- 🧪 **集成测试体系**：33 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + Cron Triggers 全链路，3.7s 跑完；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；CI 启用 clippy `-D warnings` 零容忍 + cargo-llvm-cov 差异化覆盖率门槛（PR 38% / main 45%）
+- 🧪 **集成测试体系**：86 个集成测试覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + Cron Triggers + Lark Integration 全链路；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；CI 启用 clippy `-D warnings` 零容忍 + cargo-llvm-cov 差异化覆盖率门槛（PR 38% / main 45%）
 
 > 完整功能列表和开发规范请看 [AGENTS.md](./AGENTS.md)
 
