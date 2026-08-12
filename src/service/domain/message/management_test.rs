@@ -23,11 +23,23 @@ fn init_all_channel_daos() {
 
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
+    // config：dao::attachment 构造时读取 base_data_path
+    crate::config::init().unwrap();
     crate::service::dao::message::init();
     crate::service::dao::message_channel::init();
+    crate::service::dao::attachment::init();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
+    // a2a_callback dao：dal::message_channel 注入依赖
+    crate::service::dao::a2a_callback::init();
+    // user dao：dal::message_channel 注入飞书凭证引用解析依赖
+    crate::service::dao::user::init();
+    // model_provider dao：dal::message 注入依赖
+    crate::service::dao::model_provider::init();
     crate::service::dal::message::init();
     crate::service::dal::message_channel::init();
+    // attachment/user dal：domain::message init 注入依赖
+    crate::service::dal::attachment::init();
+    crate::service::dal::user::init();
     super::init();
     let domain = domain();
     let ctx = new_ctx("admin", pool);
@@ -124,12 +136,8 @@ async fn test_list_by_project_id(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_get_by_id_and_update_status(pool: SqlitePool) {
-    // 初始化依赖
-    crate::service::dao::message::init();
-    crate::service::dal::message::init();
-    super::init();
-    let domain = domain();
-    let ctx = new_ctx("admin", pool);
+    // 初始化依赖（复用共享 setup，保证单例注入链完整）
+    let (domain, ctx) = init_test_env(pool);
 
     let project_id = Uuid::now_v7().to_string();
     let task_id = Uuid::now_v7().to_string();
@@ -183,12 +191,8 @@ async fn test_get_by_id_and_update_status(pool: SqlitePool) {
 
 #[sqlx::test]
 async fn test_delete_by_id_and_cleanup_conversation(pool: SqlitePool) {
-    // 初始化依赖
-    crate::service::dao::message::init();
-    crate::service::dal::message::init();
-    super::init();
-    let domain = domain();
-    let ctx = new_ctx("admin", pool);
+    // 初始化依赖（复用共享 setup，保证单例注入链完整）
+    let (domain, ctx) = init_test_env(pool);
 
     let project_id = Uuid::now_v7().to_string();
     let task_id = Uuid::now_v7().to_string();

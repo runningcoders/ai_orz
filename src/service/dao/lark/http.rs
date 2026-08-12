@@ -5,22 +5,19 @@
 //! - 消息发送（`/open-apis/im/v1/messages`）
 //! - WebSocket 长连接生命周期管理（per-app 连接池，委托 `ws` 模块）
 //!
-//! 凭证不来自全局配置：出站（push/test_connection）从渠道配置取，
-//! 入站（start_event_listener）由调用方传入 `LarkAppCredentials`。
+//! 凭证不来自全局配置：出站（push/test_connection）与入站（start_event_listener）
+//! 均由调用方（DAL 层）传入已解析的 `LarkAppCredentials`，DAO 不做凭证解析。
 
 use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::event::LarkMessageEvent;
 use super::token::{SharedTokenCache, shared as shared_token_cache};
 use super::ws::{WsState, WsTokenSource};
-use super::{LarkAppCredentials, LarkDao, LarkEventHandler, resolve_lark_credentials};
+use super::{LarkAppCredentials, LarkDao, LarkEventHandler};
 use crate::models::message::Message;
-use crate::models::message_channel::{ChannelPushOptions, MessageChannel};
-use crate::models::user::UserPo;
+use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
-use crate::service::dao::user::UserDao;
 use common::api::{LarkWsAppMetrics, LarkWsMetrics};
 use common::error::{Result, err};
-use common::models::UserIdentityCredentials;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -36,16 +33,9 @@ const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
 
 static LARK_DAO: OnceLock<Arc<dyn LarkDao>> = OnceLock::new();
 
-/// 创建一个全新的飞书 DAO 实例（无全局凭证，凭证按调用传入；无 user dao 兜底，测试用）
+/// 创建一个全新的飞书 DAO 实例（无全局凭证，凭证按调用传入）
 pub fn new() -> Arc<dyn LarkDao> {
     Arc::new(LarkDaoHttpImpl::new())
-}
-
-/// 创建带 user dao 兜底解析能力的飞书 DAO 实例
-pub fn new_with_user_dao(user_dao: Arc<dyn UserDao>) -> Arc<dyn LarkDao> {
-    let mut instance = LarkDaoHttpImpl::new();
-    instance.user_dao = Some(user_dao);
-    Arc::new(instance)
 }
 
 /// 获取 LarkDao 单例
@@ -56,9 +46,9 @@ pub fn dao() -> Arc<dyn LarkDao> {
         .expect("LarkDao not initialized, call init() first")
 }
 
-/// 初始化单例（无全局凭证，凭证由渠道配置驱动；注入 user dao 供推送链路兜底解析）
+/// 初始化单例（无全局凭证，凭证由 DAL 层解析后按调用传入）
 pub fn init() {
-    let _ = LARK_DAO.set(new_with_user_dao(crate::service::dao::user::dao()));
+    let _ = LARK_DAO.set(new());
 }
 
 // ==================== 实现 ====================
@@ -69,8 +59,6 @@ pub struct LarkDaoHttpImpl {
     token_caches: Arc<RwLock<HashMap<String, SharedTokenCache>>>,
     /// per-app WebSocket 连接状态（app_id 键控）
     ws_conns: RwLock<HashMap<String, WsState>>,
-    /// 用户 DAO（推送链路凭证兜底解析；测试实例可为 None）
-    user_dao: Option<Arc<dyn UserDao>>,
 }
 
 impl LarkDaoHttpImpl {
@@ -79,7 +67,6 @@ impl LarkDaoHttpImpl {
             http: reqwest::Client::new(),
             token_caches: Arc::new(RwLock::new(HashMap::new())),
             ws_conns: RwLock::new(HashMap::new()),
-            user_dao: None,
         }
     }
 
@@ -157,34 +144,6 @@ impl LarkDaoHttpImpl {
     /// HTTP client 引用（供 ws 模块使用）
     pub fn http_client(&self) -> &reqwest::Client {
         &self.http
-    }
-
-    /// 解析渠道引用的飞书应用凭证（options 附带 + user dao 兜底双路径）
-    ///
-    /// ① options.user 已携带 → 直接用其 identity_credentials（免重复查库）；
-    /// ② options 无 → 兜底经 user dao 按渠道归属用户查凭证库。
-    async fn resolve_channel_credentials(
-        &self,
-        channel: &MessageChannel,
-        options_user: Option<&UserPo>,
-    ) -> Result<LarkAppCredentials> {
-        if let Some(user) = options_user {
-            let library = UserIdentityCredentials::parse(&user.identity_credentials);
-            return resolve_lark_credentials(&library, channel);
-        }
-        let Some(user_dao) = self.user_dao.as_ref() else {
-            return Err(err!(
-                InvalidRequest,
-                "飞书凭证解析不可用（user dao 未注入）channel_id={}",
-                channel.po.id
-            ));
-        };
-        let ctx = RequestContext::new_system();
-        let library = user_dao
-            .find_identity_credentials_by_user_id(ctx, channel.user_id())
-            .await?
-            .unwrap_or_default();
-        resolve_lark_credentials(&library, channel)
     }
 }
 
@@ -296,8 +255,8 @@ impl WsTokenSource for LarkWsTokenSource {
     }
 }
 
-// 出站凭证解析：内联字段已在二期重构中删除，改由
-// `LarkDaoHttpImpl::resolve_channel_credentials` 引用解析（options 附带 + user dao 兜底）。
+// 出站凭证解析归 DAL 层（dal::message_channel）：内联字段已在二期重构中删除，
+// 渠道仅存引用，DAL 解析后以 LarkAppCredentials 传入本 DAO。
 
 #[async_trait::async_trait]
 impl LarkDao for LarkDaoHttpImpl {
@@ -306,7 +265,7 @@ impl LarkDao for LarkDaoHttpImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-        options: &ChannelPushOptions,
+        credentials: &LarkAppCredentials,
     ) -> Result<()> {
         let config = channel.config();
         let open_id = config.lark_open_id.as_ref().ok_or_else(|| {
@@ -322,9 +281,6 @@ impl LarkDao for LarkDaoHttpImpl {
             return Ok(());
         }
 
-        let credentials = self
-            .resolve_channel_credentials(channel, options.user.as_ref())
-            .await?;
         let token = self
             .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
             .await?;
@@ -341,8 +297,11 @@ impl LarkDao for LarkDaoHttpImpl {
         Ok(())
     }
 
-    async fn test_connection(&self, ctx: RequestContext, channel: &MessageChannel) -> Result<()> {
-        let credentials = self.resolve_channel_credentials(channel, None).await?;
+    async fn test_connection(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+    ) -> Result<()> {
         self.get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
             .await?;
         log_info!(

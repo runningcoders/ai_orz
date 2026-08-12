@@ -9,6 +9,7 @@ use crate::service::dao::email::init as email_dao_init;
 use crate::service::dao::lark::init as lark_dao_init;
 use crate::service::dao::message_channel::init as message_channel_dao_init;
 use crate::service::dao::slack::init as slack_dao_init;
+use crate::service::dao::user::init as user_dao_init;
 use crate::service::dao::webhook::init as webhook_dao_init;
 use crate::service::dao::wechat::init as wechat_dao_init;
 use common::enums::{ChannelStatus, ChannelType};
@@ -18,6 +19,8 @@ use std::sync::Arc;
 fn init_all_test_daos() {
     message_channel_dao_init();
     a2a_callback_dao_init();
+    // user dao 必须先于 message_channel dal 初始化（dal 注入 user::dao() 做凭证引用解析）
+    user_dao_init();
     lark_dao_init();
     wechat_dao_init();
     slack_dao_init();

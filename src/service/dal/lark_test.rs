@@ -27,7 +27,7 @@ use sqlx::SqlitePool;
 fn init_all_test_daos() {
     message_channel_dao_init();
     a2a_callback_dao_init();
-    // user dao 必须先于 lark dao 初始化（lark::init 内部注入 user::dao()）
+    // user dao 必须先于 lark dal 与 message_channel dal 初始化（两者均注入 user::dao() 做凭证引用解析）
     user_dao_init();
     lark_dao_init();
     wechat_dao_init();

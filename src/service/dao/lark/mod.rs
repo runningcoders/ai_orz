@@ -14,7 +14,7 @@
 //! - WS 长连接按 app_id 键控，一个自建应用一条连接
 
 use crate::models::message::Message;
-use crate::models::message_channel::{ChannelPushOptions, MessageChannel};
+use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use common::api::LarkWsMetrics;
 use common::error::{Result, err};
@@ -127,10 +127,13 @@ pub trait LarkEventHandler: Send + Sync {
 /// 飞书渠道 DAO 接口
 ///
 /// 职责：
-/// - `push`：推送消息到飞书用户（出站，凭证取自渠道配置）
+/// - `push`：推送消息到飞书用户（出站，凭证由 DAL 解析后传入）
 /// - `test_connection`：测试渠道凭证是否可用
 /// - `start_event_listener`：按应用启动 WebSocket 长连接接收事件（入站）
 /// - `stop_event_listener` / `stop_all_event_listeners`：停止事件监听
+///
+/// 分层约束：DAO 不依赖其他 DAO，凭证解析归 DAL 层（见 `dal::message_channel`），
+/// 本 DAO 只接收已解析的 `LarkAppCredentials` 执行出站调用。
 #[async_trait::async_trait]
 pub trait LarkDao: Send + Sync {
     /// 推送消息到飞书用户
@@ -138,18 +141,24 @@ pub trait LarkDao: Send + Sync {
     /// # 参数
     /// - `ctx`: 请求上下文
     /// - `message`: 消息实体
-    /// - `channel`: 消息渠道配置（含 `lark_credential_id`/`lark_open_id`）
-    /// - `options`: 推送选项（携带归属用户时从其凭证库解析，否则兜底查库）
+    /// - `channel`: 消息渠道配置（取 `lark_open_id`）
+    /// - `credentials`: 已解析的飞书应用凭证（DAL 层从渠道引用解析）
     async fn push(
         &self,
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-        options: &ChannelPushOptions,
+        credentials: &LarkAppCredentials,
     ) -> Result<()>;
 
     /// 测试飞书渠道凭证是否可用（获取 tenant_access_token）
-    async fn test_connection(&self, ctx: RequestContext, channel: &MessageChannel) -> Result<()>;
+    ///
+    /// `credentials` 由 DAL 层解析传入，DAO 不做凭证解析。
+    async fn test_connection(
+        &self,
+        ctx: RequestContext,
+        credentials: &LarkAppCredentials,
+    ) -> Result<()>;
 
     /// 启动指定应用的飞书事件监听（WebSocket 长连接）
     ///

@@ -38,6 +38,10 @@ fn init_test_env(
     crate::service::dao::slack::init();
     crate::service::dao::email::init();
     crate::service::dao::webhook::init();
+    // a2a_callback dao：dal::message_channel 注入依赖
+    crate::service::dao::a2a_callback::init();
+    // user dao：dal::message_channel 注入飞书凭证引用解析依赖
+    crate::service::dao::user::init();
     crate::service::dal::model_provider::init();
     crate::service::dal::message_channel::init();
     crate::service::dal::mcp_server::init();

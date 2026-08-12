@@ -127,6 +127,8 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
+    // user dao：dal::message_channel 注入飞书凭证引用解析依赖
+    crate::service::dao::user::init();
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
     // 初始化 MessageChannel DAL 单例（用于测试中创建渠道）
     crate::service::dal::message_channel::init();

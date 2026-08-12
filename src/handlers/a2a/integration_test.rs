@@ -30,6 +30,8 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dao::artifact::init();
     crate::service::dao::attachment::init();
     crate::service::dao::message_channel::init();
+    // user dao 必须先于 DAL 层初始化（dal::message_channel 注入 user::dao() 做飞书凭证引用解析）
+    crate::service::dao::user::init();
     // 消息渠道 DAO 初始化
     crate::service::dao::lark::init();
     crate::service::dao::wechat::init();
@@ -52,6 +54,8 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dal::message_channel::init();
     crate::service::dal::attachment::init();
     crate::service::dal::artifact::init();
+    // user dal：message domain init 注入 user_dal 依赖
+    crate::service::dal::user::init();
 
     // 初始化所有 Domain
     crate::service::domain::hr::init();

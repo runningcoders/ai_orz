@@ -15,6 +15,7 @@ mod tests {
         pool: SqlitePool,
     ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
         // 初始化依赖的 DAO（不需要传 pool，DAO 通过 ctx 获取 pool）
+        crate::config::init().unwrap();
         crate::service::dao::message_channel::init();
         crate::service::dao::mcp_server::init();
         crate::service::dao::model_provider::init();
@@ -22,6 +23,15 @@ mod tests {
         crate::service::dao::tool_call::init();
         crate::service::dao::cortex::init();
         crate::service::dao::attachment::init();
+        // 渠道 DAO + a2a_callback：dal::message_channel 注入依赖
+        crate::service::dao::lark::init();
+        crate::service::dao::wechat::init();
+        crate::service::dao::slack::init();
+        crate::service::dao::email::init();
+        crate::service::dao::webhook::init();
+        crate::service::dao::a2a_callback::init();
+        // user dao：dal::message_channel 注入飞书凭证引用解析依赖
+        crate::service::dao::user::init();
 
         // 初始化 DAL
         crate::service::dal::message_channel::init();
