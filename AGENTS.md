@@ -155,7 +155,8 @@
 | [docs/design/memory_design.md](./docs/design/memory_design.md) | 四层记忆系统设计、检索策略 | ⭐⭐ |
 | [docs/design/tool_design.md](./docs/design/tool_design.md) | 混合模式工具调用、工具注册表、调用追踪 | ⭐⭐ |
 | [docs/design/message_interaction_design.md](./docs/design/message_interaction_design.md) | 消息交互架构、用户↔Agent双向对话、工具调用复用消息表 | ⭐⭐ |
-| [docs/design/message_channel_design.md](./docs/design/message_channel_design.md) | 消息渠道系统设计、多渠道支持、状态管理 | ⭐⭐ |
+| [docs/design/message_channel_design.md](./docs/design/message_channel_design.md) | 消息渠道系统设计、多渠道支持、状态管理（飞书内联凭证字段已废弃，见文末快照说明） | ⭐⭐ |
+| [docs/design/lark_cli_integration.md](./docs/design/lark_cli_integration.md) | lark-cli 集成与飞书多应用化：用户级凭证中枢（identity_credentials）、WS 退避重连、凭证解析上移 DAL | ⭐⭐ |
 | [docs/design/consumer_architecture.md](./docs/design/consumer_architecture.md) | 异步消费者框架、按 to_role 分层分发 | ⭐⭐ |
 | [docs/design/task_scheduler_design.md](./docs/design/task_scheduler_design.md) | 任务调度器设计、Cron 表达式、定时任务执行 | ⭐⭐ |
 | [docs/design/event_design.md](./docs/design/event_design.md) | 泛型 topic 事件队列、类型安全隔离 | ⭐⭐ |

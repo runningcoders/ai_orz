@@ -1,6 +1,6 @@
 # lark-cli 集成与飞书渠道多应用化设计
 
-> 状态：设计定稿（2026-08-12）；一期 + 二期均已落地（2026-08-12，分期记录见 §4）
+> 状态：设计定稿（2026-08-12）；一期 + 二期均已落地（2026-08-12，分期记录见 §4）；2026-08-13 分层收敛补丁见 §4 末
 > 关联：[message_channel_design.md](./message_channel_design.md)、[tool_design.md](./tool_design.md)、[LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)
 
 ## 1. 背景与目标
@@ -184,6 +184,8 @@ LarkCliToolFactory implements BuiltinToolFactory
 - 推送链路凭证解析双路径：`ChannelPushOptions.user` 附带优先，无则 user DAO 按 `channel.user_id` 兜底直查
 - `config init --new` 实测结论（分支 B）：完成后 App Secret 存 keychain 不可读 → 前端引导手动补填 secret 建凭证；输出在 stderr
 - 渠道删除为软删，凭证引用计数需过滤 Deleted 状态
+
+**分层收敛补丁（2026-08-13）**：二期落地时 LarkDao 曾注入 UserDao 做凭证引用解析，违反「DAO 禁止调 DAO」分层规范；已重构为**凭证解析上移 DAL**——`MessageChannelDal` 注入 user dao，出站推送前完成 `lark_credential_id` → `LarkAppCredentials` 解析（双路径语义不变：`ChannelPushOptions.user` 附带优先，无则按渠道归属用户查库兜底）；`LarkDao` 的 push/test_connection 只接收已解析凭证，DAO 层零跨 DAO 依赖。
 
 ## 5. 风险与开放问题
 

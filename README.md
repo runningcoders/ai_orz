@@ -142,6 +142,7 @@ ai_orz/
 - [docs/design/external_agent_design.md](./docs/design/external_agent_design.md) — 外部 Agent 接入（CLI/Remote/A2A 异步回调轮询）
 - [docs/design/runtime_design.md](./docs/design/runtime_design.md) — Agent 唤醒与神经工具
 - [docs/design/message_channel_design.md](./docs/design/message_channel_design.md) — 多渠道消息接入（出站推送）
+- [docs/design/lark_cli_integration.md](./docs/design/lark_cli_integration.md) — 飞书集成：用户级凭证中枢 + lark-cli 工具 + WS 重连
 - [docs/design/vector_search_architecture.md](./docs/design/vector_search_architecture.md) — 混合搜索架构
 
 ---

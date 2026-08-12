@@ -643,3 +643,7 @@ impl MessageChannelDal {
 ---
 
 *此设计方案经过 5 轮讨论迭代，于 2026-05-08 最终确认，符合严格分层架构理念，无过度设计。*
+
+---
+
+> ⚠️ **快照过期说明（2026-08-13）**：本文「ChannelConfig 结构体」一节中的 `lark_app_id` / `lark_app_secret` 内联凭证字段已于飞书集成二期删除——应用凭证改存 users 表 `identity_credentials` JSON 列（finance domain 凭证中枢），渠道仅存 `lark_credential_id` 引用 + `lark_identity_mode`；出站凭证解析由 `MessageChannelDal` 完成（DAO 只接收已解析凭证）。现状以 wiki「财务领域/飞书集成系统」卡片为准，决策脉络见 [lark_cli_integration.md](./lark_cli_integration.md)。
