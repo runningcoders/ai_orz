@@ -2,7 +2,7 @@
 
 > 🎯 **本文档供 AI 助手快速理解项目**：5分钟了解项目是什么、代码怎么组织、开发遵循什么规范
 >
-> 最后更新：2026-08-13（飞书集成二期全量落地 + 分层收敛：凭证模型重构——users 表 identity_credentials JSON 列（类型化结构体 + secret 加密），渠道仅存 lark_credential_id 引用 + 身份模式，ChannelConfig 内联凭证字段删除；凭证归属收敛 finance domain（IdentityCredentialManage 13 方法：CRUD/默认/auth/bind/status 聚合），后端路由分级 /api/v1/finance/identity/lark/*（12 端点），前端新增 /finance/identity 身份凭证主页（按凭证类型分子区块，飞书为首个区块）+ settings 瘦身回归偏好 + 导航/渠道页链接改道；WS 退避重连（supervisor + 指数退避 + 抖动）与 OAuth device flow；分层修复：飞书出站凭证解析从 LarkDao 上移至 MessageChannelDal（注入 user dao，options.user 附带优先 + 查库兜底双路径），LarkDao 只接收已解析凭证，DAO 零跨 DAO 依赖；CI flake 修复：3 个 a2a 集成测试 panic（测试环境按注入链显式补齐缺失 dao/dal init，共 8 个测试环境，禁止批量懒初始化访问器）；后端单元 829 → 875，集成 33 → 86（新增 lark_integration/message_channel_lifecycle 等 19 targets），总测试 982 → 1098）
+> 最后更新：2026-08-13（飞书集成二期全量落地 + 分层收敛：凭证模型重构——users 表 identity_credentials JSON 列（类型化结构体 + secret 加密），渠道仅存 lark_credential_id 引用 + 身份模式，ChannelConfig 内联凭证字段删除；凭证归属收敛 finance domain（IdentityCredentialManage 13 方法：CRUD/默认/auth/bind/status 聚合），后端路由分级 /api/v1/finance/identity/lark/*（12 端点），前端新增 /finance/identity 身份凭证主页（按凭证类型分子区块，飞书为首个区块）+ settings 瘦身回归偏好 + 导航/渠道页链接改道；WS 退避重连（supervisor + 指数退避 + 抖动）与 OAuth device flow；分层修复：飞书出站凭证解析从 LarkDao 上移至 MessageChannelDal（注入 user dao，options.user 附带优先 + 查库兜底双路径），LarkDao 只接收已解析凭证，DAO 零跨 DAO 依赖；CI flake 修复：3 个 a2a 集成测试 panic（测试环境按注入链显式补齐缺失 dao/dal init，共 8 个测试环境，禁止批量懒初始化访问器）；后端单元 829 → 875，集成 33 → 86（新增 lark_integration/message_channel_lifecycle 等 19 targets），总测试 982 → 1098；同日补：Health 页新增飞书 WS 连接监控看板（仪表盘第 7 维 + per-app 明细表，消费 health_metrics.lark_ws），前端 79 → 82，总测试 1101）
 >
 > 上次更新：2026-08-10（后端优雅退出 + Chat 统一 Navbar：信号监听 SIGTERM/SIGINT/SIGQUIT → axum graceful shutdown（10s 排空窗口从信号触发时刻起算，oneshot + select 避开超时包在 serve 外层导致启动 N 秒后被误杀的坑）→ 关停编排（消息渠道停服 → AOP worker/producer 退出 → DuckDB stats flush → SQLite 连接池关闭）；AOP Registry 新增 AtomicBool 停机标志（worker 循环顶部检查、轮询 producer 500ms 分片休眠检查、shutdown_all 置标志并逐个 producer.stop）+ pkg/aop::shutdown_all() 便捷函数，SIGTERM 后约 1s 干净退出；Chat 页 MessageChat 接入统一 Navbar（h-screen flex 布局，原 h-[calc(100vh-4rem)] 本就为导航栏预留，移动端抽屉 top-16 避开导航栏），E2E 移除 noNavbar 特例全路由统一导航栏断言，Playwright 全量 16/16 绿 12s；后端单元 828 → 829，总测试 982）
 >
@@ -24,7 +24,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、1098 个测试 100% 通过率（后端 961 = 875 单元 + 86 集成 + 前端 79 + common 58）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、1101 个测试 100% 通过率（后端 961 = 875 单元 + 86 集成 + 前端 82 + common 58）、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 已实现核心功能
 
@@ -85,7 +85,7 @@
 | 📊 统计图表可视化 | ✅ | HUD 风格 Canvas 图表：折线图（4 个实体详情页展示模型调用趋势，消费 model_call_time_series；AOP 页面展示最近 60 分钟事件时序；logs 页面展示 24h 日志量时序；workspace 底部展示 60 分钟消息流量）+ 环形图（Project 详情页展示任务状态分布，AOP 页面展示状态/消费者分布，logs 页面展示级别分布，triggers 页面展示状态分布，Agent 详情页展示工具调用分布，消费 DonutSlice 通用数据结构）；共享 hud_palette 背景工具，2.4s 呼吸光晕动画 |
 | 📊 运行时统计基础设施 | ✅ | pkg/stats/runtime/ 泛型内存收集器（RuntimeStatsCollector\<K\>），与 pkg/stats/ 顶层 DuckDB 持久化互补；AOP 已接入（AopStatsCollector wrap），未来 SSE/WS 连接数、Channel 推送指标等运行时场景可直接复用 |
 | 🎨 通用 HUD 仪表盘 | ✅ | 通用 Gauge 组件（从 AopGauge 抽象），AOP/Health 等场景复用；HUD 视觉统一（呼吸光晕 + 选中发光 + 12 等分刻度 + 颜色编码） |
-| 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，6 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长），复用通用 Gauge 组件 |
+| 📊 系统健康监控 HUD | ✅ | Health 页面重写为仪表盘墙（10s 轮询，7 个维度：后端/AOP队列/活跃Agent/活跃项目/待处理任务/运行时长/飞书 WS 连接），复用通用 Gauge 组件；飞书 WS 维度消费 health_metrics.lark_ws（活跃连接数 + per-app state/重连次数明细表） |
 | 📋 看板视图 Canvas | ✅ | tasks 看板视图改为 HUD 风格 KanbanCanvas（多列泳道 + 优先级颜色编码 + 进度条 + HUD 深色径向渐变背景） |
 | 📝 前端 Markdown 渲染全覆盖 + Mermaid | ✅ | 统一 MarkdownRenderer（pulldown-cmark + 原始 HTML 转义守护，XSS 安全）；详情页（project/task/agent/skill/tool/model_provider/artifact/知识图谱）+ 聊天气泡 Text 消息 + 记忆面板展开态全链路 Markdown 展示；Project/Task 新增「规划与执行」区块（execution_plan/execution_result/workflow/guidance）+ 任务依赖图；skill.md 预览/源码切换；vendor mermaid.js 注入式渲染：Markdown 内嵌 ```mermaid 块扫描替换为 SVG + 独立 MermaidDiagram（task_graph），懒加载不影响首屏，主题跟随 DaisyUI data-theme |
 | 🧪 集成测试体系 | ✅ | 86 个集成测试（19 targets）覆盖 Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle 全链路；向量降级契约守护测试确保无 embedding provider 时主流程仍可用；预置技能文档内容断言同步更新为新版 skill.md 结构 |
@@ -96,7 +96,7 @@
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **1098** | 后端 961（875 单元 + 86 集成） + 前端 79 + common 58，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 1 个 AOP Registry 优雅停机 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + lark_integration 3 + message_channel_lifecycle 2 + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
+| **总测试数** | **1101** | 后端 961（875 单元 + 86 集成） + 前端 82 + common 58，DAO + DAL + Domain + Handler + Pkg 完整覆盖（含 8 个 runtime_stats + 7 个 AOP 内存统计 + 1 个 AOP Registry 优雅停机 + 3 个 log_stats + 6 个 gauge/aop_gauge + 2 个 kanban_canvas + 5 个 markdown 渲染 + 3 个聊天侧栏分组 + 15 个宏集成测试 + 18 个 HTTP 集成测试 + 18 个进程管理/call_id 测试 + 2 个 shell_list + lark_integration 3 + message_channel_lifecycle 2 + 15 个前端工具表单/进程页/工具调用 Tab 纯函数测试 + 2 个内置工具 tag/所有权分界测试） |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | **集成测试覆盖** | 86 个 | 19 targets：Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle + 宏集成 |
 | **集成测试耗时** | ~27s | 19 targets 串行总计 |

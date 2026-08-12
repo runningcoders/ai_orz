@@ -7,6 +7,7 @@
 //! - 活跃项目比例
 //! - 待处理任务数
 //! - 运行时长
+//! - 飞书 WS 监听连接（活跃连接数 + per-app state/重连次数明细）
 //!
 //! 10 秒轮询刷新（use_effect + spawn + loop + sleep_ms）。
 
@@ -44,6 +45,37 @@ fn task_color(pending: u64) -> String {
         "#f59e0b".to_string()
     } else {
         "#ef4444".to_string()
+    }
+}
+
+/// 飞书 WS 连接阶段 → 状态徽标样式
+fn ws_state_badge(state: &str) -> &'static str {
+    match state {
+        "connected" => "badge badge-success badge-sm",
+        "connecting" => "badge badge-warning badge-sm",
+        "reconnecting" => "badge badge-error badge-sm",
+        _ => "badge badge-ghost badge-sm",
+    }
+}
+
+/// 飞书 WS 连接阶段 → 中文文案
+fn ws_state_text(state: &str) -> &'static str {
+    match state {
+        "connected" => "已连接",
+        "connecting" => "连接中",
+        "reconnecting" => "重连中",
+        _ => "未知",
+    }
+}
+
+/// WS Gauge 颜色：存在重连中的应用 → 橙；有活跃连接 → 绿；无连接 → 灰
+fn ws_gauge_color(active_connections: u64, any_reconnecting: bool) -> String {
+    if any_reconnecting {
+        "#fa520f".to_string()
+    } else if active_connections > 0 {
+        "#10b981".to_string()
+    } else {
+        "#64748b".to_string()
     }
 }
 
@@ -210,6 +242,49 @@ pub fn SystemHealth() -> Element {
                         height: 180.0,
                         on_click: None,
                     }
+                    // 飞书 WS 监听连接
+                    Gauge {
+                        title: "飞书 WS 连接".to_string(),
+                        center_value: m.lark_ws.active_connections.to_string(),
+                        center_label: "active".to_string(),
+                        color: ws_gauge_color(
+                            m.lark_ws.active_connections,
+                            m.lark_ws.apps.iter().any(|a| a.state == "reconnecting"),
+                        ),
+                        badge: None,
+                        footer: Some(format!("{} 个应用监听中", m.lark_ws.apps.len())),
+                        is_selected: false,
+                        width: 180.0,
+                        height: 180.0,
+                        on_click: None,
+                    }
+                }
+
+                // 飞书 WS 连接明细（per-app state + 累计重连次数）
+                div { class: "card bg-base-100 shadow-md",
+                    div { class: "card-body",
+                        h3 { class: "card-title text-base", "飞书渠道 WS 监听明细" }
+                        if m.lark_ws.apps.is_empty() {
+                            div { class: "text-base-content/50 text-sm py-2",
+                                "暂无活跃监听连接（启用飞书渠道并开启入站监听后自动建连）"
+                            }
+                        } else {
+                            div { class: "overflow-x-auto",
+                                table { class: "table table-zebra table-sm",
+                                    thead { tr { th { "App ID" }, th { "连接状态" }, th { "累计重连" } } }
+                                    tbody {
+                                        for app in m.lark_ws.apps.iter() {
+                                            tr {
+                                                td { class: "font-mono text-sm", "{app.app_id}" }
+                                                td { span { class: "{ws_state_badge(&app.state)}", "{ws_state_text(&app.state)}" } }
+                                                td { "{app.reconnect_count}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 div { class: "text-center py-12 text-base-content/50", "暂无数据" }
@@ -228,4 +303,35 @@ async fn sleep_ms(ms: u32) {
             .unwrap();
     });
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ws_state_badge_and_text_known_phases() {
+        assert_eq!(ws_state_badge("connected"), "badge badge-success badge-sm");
+        assert_eq!(ws_state_badge("connecting"), "badge badge-warning badge-sm");
+        assert_eq!(ws_state_badge("reconnecting"), "badge badge-error badge-sm");
+        assert_eq!(ws_state_text("connected"), "已连接");
+        assert_eq!(ws_state_text("connecting"), "连接中");
+        assert_eq!(ws_state_text("reconnecting"), "重连中");
+    }
+
+    #[test]
+    fn test_ws_state_unknown_falls_back() {
+        assert_eq!(ws_state_badge("other"), "badge badge-ghost badge-sm");
+        assert_eq!(ws_state_text("other"), "未知");
+    }
+
+    #[test]
+    fn test_ws_gauge_color_priority() {
+        // 重连中优先告警，无论是否有活跃连接
+        assert_eq!(ws_gauge_color(2, true), "#fa520f");
+        // 无重连且有活跃连接 → 绿
+        assert_eq!(ws_gauge_color(1, false), "#10b981");
+        // 无连接 → 灰
+        assert_eq!(ws_gauge_color(0, false), "#64748b");
+    }
 }
