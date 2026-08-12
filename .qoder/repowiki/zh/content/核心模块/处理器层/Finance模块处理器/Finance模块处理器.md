@@ -5,17 +5,30 @@
 - [src/handlers/finance/mod.rs](file://src/handlers/finance/mod.rs)
 - [src/router.rs](file://src/router.rs)
 - [common/src/api/mod.rs](file://common/src/api/mod.rs)
+- [common/src/api/lark_integration.rs](file://common/src/api/lark_integration.rs)
 - [src/handlers/finance/tool/mod.rs](file://src/handlers/finance/tool/mod.rs)
 - [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
 - [src/handlers/finance/message/mod.rs](file://src/handlers/finance/message/mod.rs)
 - [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
 - [src/handlers/finance/message_channel/mod.rs](file://src/handlers/finance/message_channel/mod.rs)
+- [src/handlers/finance/lark_integration/mod.rs](file://src/handlers/finance/lark_integration/mod.rs)
+- [src/handlers/finance/lark_integration/create_credential.rs](file://src/handlers/finance/lark_integration/create_credential.rs)
+- [src/handlers/finance/lark_integration/auth_start.rs](file://src/handlers/finance/lark_integration/auth_start.rs)
+- [src/handlers/finance/lark_integration/bind_start.rs](file://src/handlers/finance/lark_integration/bind_start.rs)
+- [src/handlers/finance/lark_integration/get_status.rs](file://src/handlers/finance/lark_integration/get_status.rs)
 - [src/handlers/finance/tool/create_tool.rs](file://src/handlers/finance/tool/create_tool.rs)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
 - [src/handlers/finance/message/send_message.rs](file://src/handlers/finance/message/send_message.rs)
 - [src/handlers/finance/model_provider/create_model_provider.rs](file://src/handlers/finance/model_provider/create_model_provider.rs)
 - [src/handlers/finance/message_channel/create_message_channel.rs](file://src/handlers/finance/message_channel/create_message_channel.rs)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 新增飞书集成（lark_integration）子模块，包含12个新API端点
+- 扩展Finance模块功能，支持凭证管理、用户认证、绑定工作流
+- 增强路由配置，添加 `/api/v1/finance/identity/lark/*` 路由组
+- 完善DTO定义，支持完整的飞书集成业务流程
 
 ## 目录
 1. [简介](#简介)
@@ -30,7 +43,7 @@
 10. [附录：API调用示例与集成指南](#附录api调用示例与集成指南)
 
 ## 简介
-本文件面向 Finance（财务管理）模块的 HTTP 处理器，覆盖工具管理、MCP服务器管理、消息系统、模型提供商管理等核心能力。文档聚焦于各子模块处理器的职责分工、接口设计、参数绑定与响应格式；并梳理工具注册、执行与调试流程，MCP服务器连接管理，消息发送接收机制，以及模型提供商配置与测试能力。同时提供复杂业务场景的处理思路、错误处理策略、性能优化建议与集成指南。
+本文件面向 Finance（财务管理）模块的 HTTP 处理器，覆盖工具管理、MCP服务器管理、消息系统、模型提供商管理以及新增的飞书集成功能。文档聚焦于各子模块处理器的职责分工、接口设计、参数绑定与响应格式；并梳理工具注册、执行与调试流程，MCP服务器连接管理，消息发送接收机制，模型提供商配置与测试能力，以及飞书集成的完整工作流程。同时提供复杂业务场景的处理思路、错误处理策略、性能优化建议与集成指南。
 
 ## 项目结构
 Finance 模块位于 handlers/finance，按功能域划分为多个子模块：
@@ -40,6 +53,7 @@ Finance 模块位于 handlers/finance，按功能域划分为多个子模块：
 - message：消息发送、列表、搜索与SSE订阅
 - message_channel：消息通道（如飞书、微信、邮件、Slack等）配置与管理
 - model_provider：模型提供商配置、切换、测试与向量重建任务
+- **lark_integration**：**新增** 飞书集成管理，包括凭证CRUD、用户认证、绑定工作流
 
 路由统一在 router.rs 中注册到 /api/v1/finance 下，受 JWT 认证保护，部分端点额外要求管理员角色。
 
@@ -48,18 +62,18 @@ graph TB
 A["HTTP客户端"] --> B["Axum Router<br/>/api/v1/finance/*"]
 B --> C["JWT中间件"]
 C --> D["RequestContext中间件"]
-D --> E["Finance Handlers<br/>tool/mcp_server/message/message_channel/model_provider"]
+D --> E["Finance Handlers<br/>tool/mcp_server/message/message_channel/model_provider/lark_integration"]
 E --> F["Domain层<br/>service::domain::finance"]
 F --> G["DAL/DAO层<br/>持久化与外部服务"]
 ```
 
-图表来源
+**图表来源**
 - [src/router.rs:104-136](file://src/router.rs#L104-L136)
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/router.rs:217-247](file://src/router.rs#L217-L247)
 
-章节来源
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
+**章节来源**
+- [src/handlers/finance/mod.rs:1-16](file://src/handlers/finance/mod.rs#L1-L16)
+- [src/router.rs:217-247](file://src/router.rs#L217-L247)
 
 ## 核心组件
 - 工具管理（tool）
@@ -80,13 +94,17 @@ F --> G["DAL/DAO层<br/>持久化与外部服务"]
 - 模型提供商（model_provider）
   - 职责：创建、查询、更新、删除模型提供商；测试连接；切换嵌入模型；向量重建任务与进度查询；直接调用模型。
   - 关键处理器：create_model_provider、list_model_providers、get_model_provider、update_model_provider、delete_model_provider、test_connection、switch_embedding、rebuild_vectors_task、rebuild_progress、call_model。
+- **飞书集成（lark_integration）**：**新增**
+  - 职责：管理飞书应用凭证、用户OAuth认证、绑定工作流、状态聚合查询。
+  - 关键处理器：create_credential、update_credential、delete_credential、set_default_credential、auth_start、auth_complete、auth_status、auth_logout、bind_start、bind_status、bind_cancel、get_status。
 
-章节来源
+**章节来源**
 - [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
 - [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
 - [src/handlers/finance/message/mod.rs:1-17](file://src/handlers/finance/message/mod.rs#L1-L17)
 - [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/handlers/finance/lark_integration/mod.rs:1-18](file://src/handlers/finance/lark_integration/mod.rs#L1-L18)
 
 ## 架构总览
 Finance 模块遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 仅负责参数校验、上下文提取与响应组装；业务逻辑下沉至 Domain，数据访问通过 DAL/DAO。所有公共方法首参为 ctx: RequestContext，跨层传递使用 ctx.clone()。
@@ -112,11 +130,11 @@ D-->>H : "业务实体"
 H-->>Client : "CreateToolResponse"
 ```
 
-图表来源
+**图表来源**
 - [src/router.rs:104-136](file://src/router.rs#L104-L136)
 - [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
 
-章节来源
+**章节来源**
 - [src/router.rs:104-136](file://src/router.rs#L104-L136)
 
 ## 详细组件分析
@@ -146,10 +164,10 @@ BuildPO --> CallDomain["调用 domain().tool_provider_manage().create_tool(ctx, 
 CallDomain --> Resp["返回CreateToolResponse"]
 ```
 
-图表来源
+**图表来源**
 - [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
 
-章节来源
+**章节来源**
 - [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
 - [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
 - [src/router.rs:557-601](file://src/router.rs#L557-L601)
@@ -175,10 +193,10 @@ D-->>H : "McpServer详情"
 H-->>Client : "CreateMcpServerResponse"
 ```
 
-图表来源
+**图表来源**
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 
-章节来源
+**章节来源**
 - [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 - [src/router.rs:525-548](file://src/router.rs#L525-L548)
@@ -203,10 +221,10 @@ Msg-->>H : "Message"
 H-->>Client : "SendMessageResponse{message_id}"
 ```
 
-图表来源
+**图表来源**
 - [src/handlers/finance/message/send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
 
-章节来源
+**章节来源**
 - [src/handlers/finance/message/mod.rs:1-17](file://src/handlers/finance/message/mod.rs#L1-L17)
 - [src/handlers/finance/message/send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
 - [src/router.rs:482-496](file://src/router.rs#L482-L496)
@@ -230,10 +248,10 @@ BuildPO --> CallDomain["调用 domain().message_channel_manage().create_message_
 CallDomain --> Resp["返回to_detail(channel)"]
 ```
 
-图表来源
+**图表来源**
 - [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
 
-章节来源
+**章节来源**
 - [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
 - [src/router.rs:498-524](file://src/router.rs#L498-L524)
@@ -257,17 +275,73 @@ D-->>H : "成功"
 H-->>Client : "CreateModelProviderResponse"
 ```
 
-图表来源
+**图表来源**
 - [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
 
-章节来源
+**章节来源**
 - [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
 - [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
 - [src/router.rs:446-480](file://src/router.rs#L446-L480)
 
+### 飞书集成（lark_integration）
+**新增功能**
+
+- 职责与边界
+  - 管理飞书应用凭证（CRUD）、用户OAuth device flow认证、绑定工作流、状态聚合查询。
+  - 支持手动录入凭证和自动化绑定两种模式。
+- 参数绑定与响应
+  - 使用统一的 LarkIntegration DTOs，支持完整的认证和绑定流程。
+- 核心流程
+  - 凭证管理：创建、更新、删除、设置默认凭证
+  - 用户认证：发起device flow、完成认证、查询状态、登出
+  - 绑定工作流：启动自动绑定、查询绑定状态、取消绑定
+  - 状态聚合：获取当前用户的完整绑定快照
+
+```mermaid
+sequenceDiagram
+participant Client as "客户端"
+participant H as "lark_integration handler"
+participant D as "domain.identity_credential_manage"
+participant Lark as "飞书API"
+Note over Client,Lark : 凭证管理流程
+Client->>H : "POST /credentials"
+H->>D : "create_lark_credential(ctx, user_id, params)"
+D->>Lark : "验证凭证有效性"
+Lark-->>D : "验证结果"
+D-->>H : "credential_id"
+H-->>Client : "CreateLarkCredentialResponse"
+Note over Client,Lark : 用户认证流程
+Client->>H : "POST /auth/start"
+H->>D : "lark_auth_start(ctx, user_id, domains)"
+D->>Lark : "发起device flow"
+Lark-->>D : "device_code, verification_url"
+D-->>H : "认证开始信息"
+H-->>Client : "LarkAuthStartResponse"
+Note over Client,Lark : 绑定工作流
+Client->>H : "POST /bind/start"
+H->>D : "lark_bind_start(ctx, user_id)"
+D->>Lark : "自动化建应用授权"
+Lark-->>D : "session_id, verification_url"
+D-->>H : "绑定会话信息"
+H-->>Client : "LarkBindStartResponse"
+```
+
+**图表来源**
+- [src/handlers/finance/lark_integration/create_credential.rs:1-34](file://src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](file://src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](file://src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+
+**章节来源**
+- [src/handlers/finance/lark_integration/mod.rs:1-18](file://src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/lark_integration/create_credential.rs:1-34](file://src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](file://src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](file://src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/get_status.rs:1-102](file://src/handlers/finance/lark_integration/get_status.rs#L1-L102)
+
 ## 依赖分析
 - 路由依赖
   - finance_routes 将各处理器挂载到 /api/v1/finance/*，统一受 JWT 保护，部分端点附加 require_role_middleware（如 debug_call_tool）。
+  - **新增** lark_integration_routes 专门处理飞书集成相关路由，挂载到 /api/v1/finance/identity/lark/*。
 - 处理器依赖
   - 各处理器依赖 common::api 中的请求/响应DTO；依赖 service::domain::finance 提供的领域服务；依赖 crate::models 中的实体对象进行转换。
 - 上下文与认证
@@ -280,18 +354,22 @@ R --> M["handlers/finance/mcp_server/*"]
 R --> MS["handlers/finance/message/*"]
 R --> MC["handlers/finance/message_channel/*"]
 R --> MP["handlers/finance/model_provider/*"]
+R --> LI["handlers/finance/lark_integration/*"]
 T --> D["service::domain::finance"]
 M --> D
 MS --> D
 MC --> D
 MP --> D
+LI --> D
 ```
 
-图表来源
+**图表来源**
 - [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/router.rs:217-247](file://src/router.rs#L217-L247)
 
-章节来源
+**章节来源**
 - [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/router.rs:217-247](file://src/router.rs#L217-L247)
 - [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
 
 ## 性能考虑
@@ -303,8 +381,13 @@ MP --> D
   - 消息订阅使用 SSE，减少轮询开销，提升实时性。
 - 缓存与降级
   - 工具与MCP工具清单可考虑缓存；向量检索支持多后端降级（LanceDB/HNSW/InMemory/SqliteVss）。
+  - **新增** 飞书集成状态查询采用三源聚合（凭证库、渠道引用、用户授权），失败时优雅降级。
 - 鉴权与限流
   - 敏感操作（如 debug_call_tool）限制管理员角色；必要时结合网关层限流。
+- **新增** 飞书集成优化
+  - 凭证存储采用JSON列，减少表关联开销
+  - 绑定会话内存态管理，完成后清理
+  - OAuth token文件系统缓存，避免重复认证
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -314,18 +397,21 @@ MP --> D
   - 内置工具创建失败：确认协议类型与权限控制。
   - 模型提供商测试失败：检查密钥、基础URL与网络可达性。
   - 消息通道测试失败：核对通道配置（如飞书/微信/邮件/Slack/Webhook）与凭据。
+  - **新增** 飞书集成错误：检查凭证有效性、OAuth配置、网络连接。
 - 定位步骤
   - 查看日志ID（来自 RequestContext）追踪请求链路。
   - 检查 Domain/DAL 层抛出的错误码与消息。
   - 对敏感调试接口（如 debug_call_tool）确认管理员权限。
+  - **新增** 飞书集成问题：检查设备码有效期、浏览器授权流程、配置文件路径。
 
-章节来源
+**章节来源**
 - [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
 - [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
 - [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/handlers/finance/lark_integration/get_status.rs:1-102](file://src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ## 结论
-Finance 模块以清晰的处理器分层与统一的中间件链，提供了工具、MCP服务器、消息系统与模型提供商的全生命周期管理能力。通过 Domain 层抽象与 DAL/DAO 的数据访问分离，保证了可扩展性与可维护性。建议在集成时严格遵循参数校验、权限控制与错误处理规范，并结合分页、SSE与后台任务优化性能与用户体验。
+Finance 模块以清晰的处理器分层与统一的中间件链，提供了工具、MCP服务器、消息系统与模型提供商的全生命周期管理能力。**新增的飞书集成功能**进一步完善了身份认证和第三方集成能力，支持完整的凭证管理、用户认证和绑定工作流。通过 Domain 层抽象与 DAL/DAO 的数据访问分离，保证了可扩展性与可维护性。建议在集成时严格遵循参数校验、权限控制与错误处理规范，并结合分页、SSE与后台任务优化性能与用户体验。
 
 [本节为总结，不直接分析具体文件]
 
@@ -359,7 +445,45 @@ Finance 模块以清晰的处理器分层与统一的中间件链，提供了工
   - 向量重建任务：POST /api/v1/finance/model-providers/{id}/rebuild-task
   - 重建进度：GET /api/v1/finance/model-providers/rebuild-progress
   - 直接调用模型：POST /api/v1/finance/model-providers/{id}/call
+- **飞书集成（新增）**
+  - 凭证管理：
+    - 创建凭证：POST /api/v1/finance/identity/lark/credentials
+      - 请求体：参考 common::api::CreateLarkCredentialRequest
+      - 响应：ApiResponse<CreateLarkCredentialResponse>
+    - 更新凭证：PUT /api/v1/finance/identity/lark/credentials/{id}
+      - 请求体：参考 common::api::UpdateLarkCredentialRequest
+      - 响应：ApiResponse<UpdateLarkCredentialResponse>
+    - 删除凭证：DELETE /api/v1/finance/identity/lark/credentials/{id}
+      - 请求体：参考 common::api::DeleteLarkCredentialRequest
+      - 响应：ApiResponse<DeleteLarkCredentialResponse>
+    - 设置默认凭证：POST /api/v1/finance/identity/lark/credentials/default
+      - 请求体：参考 common::api::SetDefaultLarkCredentialRequest
+      - 响应：ApiResponse<SetDefaultLarkCredentialResponse>
+  - 用户认证：
+    - 发起认证：POST /api/v1/finance/identity/lark/auth/start
+      - 请求体：参考 common::api::LarkAuthStartRequest
+      - 响应：ApiResponse<LarkAuthStartResponse>
+    - 完成认证：POST /api/v1/finance/identity/lark/auth/complete
+      - 请求体：参考 common::api::LarkAuthCompleteRequest
+      - 响应：ApiResponse<LarkAuthCompleteResponse>
+    - 查询状态：GET /api/v1/finance/identity/lark/auth/status
+      - 响应：ApiResponse<LarkAuthStatusResponse>
+    - 登出：POST /api/v1/finance/identity/lark/auth/logout
+      - 响应：ApiResponse<LarkAuthLogoutResponse>
+  - 绑定工作流：
+    - 启动绑定：POST /api/v1/finance/identity/lark/bind/start
+      - 响应：ApiResponse<LarkBindStartResponse>
+    - 查询状态：GET /api/v1/finance/identity/lark/bind/status?session_id={id}
+      - 响应：ApiResponse<LarkBindStatusResponse>
+    - 取消绑定：POST /api/v1/finance/identity/lark/bind/cancel
+      - 请求体：参考 common::api::LarkBindCancelRequest
+      - 响应：ApiResponse<LarkBindCancelResponse>
+  - 状态聚合：
+    - 获取状态：GET /api/v1/finance/identity/lark/status
+      - 响应：ApiResponse<LarkIntegrationStatusResponse>
 
-章节来源
+**章节来源**
 - [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/router.rs:217-247](file://src/router.rs#L217-L247)
 - [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [common/src/api/lark_integration.rs:1-294](file://common/src/api/lark_integration.rs#L1-L294)
