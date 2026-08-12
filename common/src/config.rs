@@ -49,9 +49,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub consumer: ConsumerConfig,
 
-    /// 飞书配置
+    /// 安全配置（敏感数据加密密钥）
     #[serde(default)]
-    pub lark: LarkConfig,
+    pub security: SecurityConfig,
 
     /// A2A Server 配置
     #[serde(default)]
@@ -487,24 +487,14 @@ fn default_consumer_error_sleep() -> u64 {
     1000
 }
 
-// ==================== 飞书配置 ====================
+// ==================== 安全配置 ====================
 
-/// 飞书应用配置（全局共享，应用级凭证）
+/// 安全配置（数据库敏感字段加密密钥）
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct LarkConfig {
-    /// 是否启用飞书渠道
+pub struct SecurityConfig {
+    /// 主加密密钥（用于渠道凭证等敏感字段落库加密，启动时校验非空）
     #[serde(default)]
-    pub enabled: bool,
-    /// 飞书 App ID
-    #[serde(default)]
-    pub app_id: String,
-    /// 飞书 App Secret
-    #[serde(default)]
-    pub app_secret: String,
-    /// 飞书加密密钥（可选，事件订阅加密用）
-    pub encrypt_key: Option<String>,
-    /// 飞书验证令牌（可选，事件订阅校验用）
-    pub verification_token: Option<String>,
+    pub secret_key: String,
 }
 
 /// A2A Server 配置

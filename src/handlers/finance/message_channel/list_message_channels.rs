@@ -35,7 +35,7 @@ pub async fn list_message_channels(
             ctx.clone(),
             crate::service::dao::message_channel::MessageChannelQuery {
                 org_id: Some(org_id),
-                user_id: Some(user_id),
+                user_id: Some(user_id.clone()),
                 agent_id: params.agent_id.clone(),
                 channel_type: params.channel_type,
                 only_enabled: params.only_enabled.unwrap_or(false),
@@ -48,5 +48,12 @@ pub async fn list_message_channels(
         )
         .await?;
 
-    Ok(page.map(|ch| to_list_item(&ch)))
+    // 凭证名称反查：列表默认按当前用户过滤，加载该用户凭证库即可
+    let credentials = crate::service::domain::finance::domain()
+        .identity_credential_manage()
+        .get_identity_credentials(ctx, &user_id)
+        .await?
+        .unwrap_or_default();
+
+    Ok(page.map(|ch| to_list_item(&ch, Some(&credentials))))
 }

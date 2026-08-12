@@ -7,7 +7,8 @@ use crate::pkg::RequestContext;
 use crate::service::dao::user;
 use crate::service::dao::user::{UserDao, UserQuery};
 use common::api::PagedResult;
-use common::error::Result;
+use common::error::{Result, err};
+use common::models::UserIdentityCredentials;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -68,6 +69,21 @@ pub trait UserDal: Send + Sync {
 
     /// 统计符合查询条件的用户数量（透传 DAO count）
     async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;
+
+    /// 读取用户身份凭证库（用户不存在返回 None，无凭证返回空库）
+    async fn get_identity_credentials(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<UserIdentityCredentials>>;
+
+    /// 整体写回用户身份凭证库（read-modify-write，仅替换 identity_credentials 列）
+    async fn save_identity_credentials(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        credentials: &UserIdentityCredentials,
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -142,5 +158,30 @@ impl UserDal for UserDalImpl {
 
     async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64> {
         self.user_dao.count(ctx, query).await
+    }
+
+    async fn get_identity_credentials(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<UserIdentityCredentials>> {
+        self.user_dao
+            .find_identity_credentials_by_user_id(ctx, user_id)
+            .await
+    }
+
+    async fn save_identity_credentials(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        credentials: &UserIdentityCredentials,
+    ) -> Result<()> {
+        let mut user = self
+            .user_dao
+            .find_by_id(ctx.clone(), user_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "用户不存在 user_id={}", user_id))?;
+        user.identity_credentials = credentials.to_column_value();
+        self.user_dao.update(ctx, &user).await
     }
 }

@@ -213,6 +213,39 @@ fn user_routes() -> Router {
         .route("/me", put(profile::update_current_user_handler))
 }
 
+/// 飞书身份凭证路由（finance domain identity 分级：身份凭证资产 + OAuth device flow + 绑定快照聚合 + 自动绑定）
+fn lark_integration_routes() -> Router {
+    use crate::handlers::finance::lark_integration as li;
+    Router::new()
+        .route("/status", get(li::get_status::get_status_handler))
+        .route(
+            "/credentials",
+            post(li::create_credential::create_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            put(li::update_credential::update_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            delete(li::delete_credential::delete_credential_handler),
+        )
+        .route(
+            "/credentials/default",
+            post(li::set_default_credential::set_default_credential_handler),
+        )
+        .route("/auth/start", post(li::auth_start::auth_start_handler))
+        .route(
+            "/auth/complete",
+            post(li::auth_complete::auth_complete_handler),
+        )
+        .route("/auth/status", get(li::auth_status::auth_status_handler))
+        .route("/auth/logout", post(li::auth_logout::auth_logout_handler))
+        .route("/bind/start", post(li::bind_start::bind_start_handler))
+        .route("/bind/status", get(li::bind_status::bind_status_handler))
+        .route("/bind/cancel", post(li::bind_cancel::bind_cancel_handler))
+}
+
 fn project_routes() -> Router {
     Router::new()
         .route(
@@ -485,6 +518,7 @@ fn hr_routes() -> Router {
 
 fn finance_routes() -> Router {
     Router::new()
+        .nest("/identity/lark", lark_integration_routes())
         .route(
             "/attachments/upload",
             post(handlers::finance::attachment::upload_attachment),

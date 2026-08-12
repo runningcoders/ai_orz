@@ -23,18 +23,16 @@ pub struct CreateMessageChannelRequest {
     pub access_token: Option<String>,
     /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
-    /// Lark App ID
-    pub lark_app_id: Option<String>,
-    /// Lark App Secret (only in request, not returned in response)
-    pub lark_app_secret: Option<String>,
-    /// Lark encryption key (only in request, not returned in response)
-    pub lark_encrypt_key: Option<String>,
-    /// Lark verification token (only in request, not returned in response)
-    pub lark_verification_token: Option<String>,
+    /// Lark 凭证引用 ID（指向 users.identity_credentials 中的凭证，Lark 渠道必填）
+    pub lark_credential_id: Option<String>,
+    /// Lark 身份模式（auto/bot/user，缺省 auto）
+    pub lark_identity_mode: Option<String>,
     /// Lark user Open ID (for P2P message binding)
     pub lark_open_id: Option<String>,
     /// Lark user display name (for display, optional)
     pub lark_user_name: Option<String>,
+    /// Whether to listen inbound Lark P2P messages (default true when unset)
+    pub lark_listen_inbound: Option<bool>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
     /// WeChat App Secret (only in request, not returned in response)
@@ -160,18 +158,16 @@ pub struct UpdateMessageChannelRequest {
     pub access_token: Option<String>,
     /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
-    /// Lark App ID
-    pub lark_app_id: Option<String>,
-    /// Lark App Secret (only in request, not returned in response)
-    pub lark_app_secret: Option<String>,
-    /// Lark encryption key (only in request, not returned in response)
-    pub lark_encrypt_key: Option<String>,
-    /// Lark verification token (only in request, not returned in response)
-    pub lark_verification_token: Option<String>,
+    /// Lark 凭证引用 ID（指向 users.identity_credentials 中的凭证，Lark 渠道必填）
+    pub lark_credential_id: Option<String>,
+    /// Lark 身份模式（auto/bot/user，缺省 auto）
+    pub lark_identity_mode: Option<String>,
     /// Lark user Open ID (for P2P message binding)
     pub lark_open_id: Option<String>,
     /// Lark user display name (for display, optional)
     pub lark_user_name: Option<String>,
+    /// Whether to listen inbound Lark P2P messages (default true when unset)
+    pub lark_listen_inbound: Option<bool>,
     /// WeChat App ID
     pub wechat_app_id: Option<String>,
     /// WeChat App Secret (only in request, not returned in response)
@@ -264,6 +260,18 @@ pub struct MessageChannelListItem {
     pub has_secret: bool,
     /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
+    /// Lark 凭证引用 ID（非敏感展示字段）
+    pub lark_credential_id: Option<String>,
+    /// Lark 凭证名称（反查 users.identity_credentials，未找到为 None）
+    pub lark_credential_name: Option<String>,
+    /// Lark 身份模式（auto/bot/user）
+    pub lark_identity_mode: Option<String>,
+    /// Lark user Open ID (non-sensitive display field)
+    pub lark_open_id: Option<String>,
+    /// Lark user display name
+    pub lark_user_name: Option<String>,
+    /// Whether inbound Lark P2P messages are listened (default true)
+    pub lark_listen_inbound: bool,
     /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
     /// Last push error message
@@ -299,6 +307,18 @@ pub struct MessageChannelDetail {
     pub has_secret: bool,
     /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
+    /// Lark 凭证引用 ID（非敏感展示字段）
+    pub lark_credential_id: Option<String>,
+    /// Lark 凭证名称（反查 users.identity_credentials，未找到为 None）
+    pub lark_credential_name: Option<String>,
+    /// Lark 身份模式（auto/bot/user）
+    pub lark_identity_mode: Option<String>,
+    /// Lark user Open ID (non-sensitive display field)
+    pub lark_open_id: Option<String>,
+    /// Lark user display name
+    pub lark_user_name: Option<String>,
+    /// Whether inbound Lark P2P messages are listened (default true)
+    pub lark_listen_inbound: bool,
     /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
     /// Last push error message

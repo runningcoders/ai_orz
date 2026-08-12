@@ -5,6 +5,7 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMessageChannelRequest, UpdateMessageChannelResponse};
 
+use super::create_message_channel::validate_lark_credential_ref;
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 
@@ -62,23 +63,20 @@ pub async fn update_message_channel(
     }
 
     let config = &mut channel.po.config_json.0;
-    if let Some(value) = params.lark_app_id {
-        config.lark_app_id = Some(value);
+    if let Some(value) = params.lark_credential_id {
+        config.lark_credential_id = Some(value);
     }
-    if let Some(value) = params.lark_app_secret {
-        config.lark_app_secret = Some(value);
-    }
-    if let Some(value) = params.lark_encrypt_key {
-        config.lark_encrypt_key = Some(value);
-    }
-    if let Some(value) = params.lark_verification_token {
-        config.lark_verification_token = Some(value);
+    if let Some(value) = params.lark_identity_mode {
+        config.lark_identity_mode = Some(value);
     }
     if let Some(value) = params.lark_open_id {
         config.lark_open_id = Some(value);
     }
     if let Some(value) = params.lark_user_name {
         config.lark_user_name = Some(value);
+    }
+    if let Some(value) = params.lark_listen_inbound {
+        config.lark_listen_inbound = Some(value);
     }
     if let Some(value) = params.wechat_app_id {
         config.wechat_app_id = Some(value);
@@ -122,10 +120,22 @@ pub async fn update_message_channel(
 
     channel.po.modified_by = current_user_id;
 
+    // 飞书渠道更新后凭证引用必须有效（按渠道归属用户加载凭证库，含归属校验）
+    let credentials = crate::service::domain::finance::domain()
+        .identity_credential_manage()
+        .get_identity_credentials(ctx.clone(), &channel.po.user_id)
+        .await?
+        .unwrap_or_default();
+    validate_lark_credential_ref(
+        channel.po.channel_type,
+        channel.po.config_json.0.lark_credential_id.as_deref(),
+        &credentials,
+    )?;
+
     domain()
         .message_channel_manage()
         .update_message_channel(ctx, &channel)
         .await?;
 
-    Ok(to_detail(&channel))
+    Ok(to_detail(&channel, Some(&credentials)))
 }

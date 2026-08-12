@@ -16,6 +16,17 @@ use sqlx::FromRow;
 use sqlx::types::Json;
 use std::collections::HashMap;
 
+/// 渠道推送选项（沿 deliver → push_to_channel → 各渠道 DAO 传透）
+///
+/// 上层已加载的实体附带下传，避免下游重复查库；
+/// 当前仅飞书渠道消费（按 `lark_credential_id` 从用户凭证库解析应用凭证），
+/// 其余渠道接收但不消费。
+#[derive(Debug, Clone, Default)]
+pub struct ChannelPushOptions {
+    /// 归属用户实体（含 identity_credentials 列，飞书凭证解析首选路径）
+    pub user: Option<crate::models::user::UserPo>,
+}
+
 /// MessageChannel 业务实体
 #[derive(Debug, Clone)]
 pub struct MessageChannel {
@@ -198,14 +209,12 @@ impl MessageChannelPo {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChannelConfig {
     // 飞书配置
-    /// 飞书 App ID
-    pub lark_app_id: Option<String>,
-    /// 飞书 App Secret
-    pub lark_app_secret: Option<String>,
-    /// 飞书加密密钥
-    pub lark_encrypt_key: Option<String>,
-    /// 飞书验证令牌
-    pub lark_verification_token: Option<String>,
+    /// 飞书凭证引用 ID（指向 users.identity_credentials 中的凭证关键 ID）
+    ///
+    /// 飞书应用凭证为用户级资产，渠道仅存引用；解析时按 ID 查用户凭证库（kind=LarkApp）
+    pub lark_credential_id: Option<String>,
+    /// 飞书身份模式（auto/bot/user，缺省 auto，落 lark-cli config default-as）
+    pub lark_identity_mode: Option<String>,
     /// 飞书用户 Open ID（渠道归属用户的飞书标识）
     ///
     /// 用于私信接入场景：管理员预先创建 User + MessageChannel，
@@ -213,6 +222,10 @@ pub struct ChannelConfig {
     pub lark_open_id: Option<String>,
     /// 飞书用户名称（便于日志和展示，可选）
     pub lark_user_name: Option<String>,
+    /// 是否监听该应用的飞书入站私信（缺省视为 true）
+    ///
+    /// 关闭后渠道仅用于出站推送与 lark_cli 工具身份，不建立 WS 长连接。
+    pub lark_listen_inbound: Option<bool>,
 
     // 微信配置
     /// 微信 App ID

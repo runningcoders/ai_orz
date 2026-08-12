@@ -24,6 +24,7 @@ pub trait WechatDao: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error>;
 
     /// 测试微信渠道连接

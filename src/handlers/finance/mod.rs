@@ -4,6 +4,7 @@
 //! - Model Provider - 大语言模型提供商管理
 
 pub mod attachment;
+pub mod lark_integration;
 pub mod mcp_server;
 pub mod mcp_tool;
 pub mod message;

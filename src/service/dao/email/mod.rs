@@ -24,6 +24,7 @@ pub trait EmailDao: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error>;
 
     /// 测试邮件渠道连接

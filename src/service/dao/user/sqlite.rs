@@ -5,8 +5,10 @@ use crate::pkg::RequestContext;
 use crate::service::dao::user::{UserDao, UserQuery};
 use chrono::Utc;
 use common::api::PagedResult;
+// query_as! 宏展开构造 UserPo 时需要这两个枚举在作用域内
 use common::enums::{UserRole, UserStatus};
 use common::error::Result;
+use common::models::UserIdentityCredentials;
 use sqlx::QueryBuilder;
 use std::sync::{Arc, OnceLock};
 
@@ -45,7 +47,7 @@ impl UserDao for UserDaoSqliteImpl {
         let role = user.role as i32;
         let status = user.status as i32;
         sqlx::query!(
-            "INSERT INTO users (id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences, identity_credentials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             user.id,
             user.organization_id,
             user.username,
@@ -58,7 +60,8 @@ impl UserDao for UserDaoSqliteImpl {
             user.modified_by,
             user.created_at,
             user.updated_at,
-            user.preferences
+            user.preferences,
+            user.identity_credentials
         )
             .execute(ctx.db_pool())
             .await?;
@@ -71,7 +74,7 @@ impl UserDao for UserDaoSqliteImpl {
             UserPo,
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
-       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences
+       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences, identity_credentials
 FROM users WHERE id = ? AND status != 0
             "#,
             id
@@ -91,7 +94,7 @@ FROM users WHERE id = ? AND status != 0
             UserPo,
             r#"
 SELECT id, organization_id, username, display_name, email, password_hash,
-       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences
+       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences, identity_credentials
 FROM users WHERE username = ? AND status != 0
             "#,
             username
@@ -110,7 +113,7 @@ FROM users WHERE username = ? AND status != 0
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
         let mut list_builder = QueryBuilder::new(
-            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences FROM users WHERE status != 0"#,
+            r#"SELECT id, organization_id, username, display_name, email, password_hash, role, status, created_by, modified_by, created_at, updated_at, preferences, identity_credentials FROM users WHERE status != 0"#,
         );
         push_query_filters(&mut list_builder, &query);
 
@@ -162,7 +165,7 @@ FROM users WHERE username = ? AND status != 0
             r#"
 UPDATE users
 SET organization_id = ?, username = ?, display_name = ?, email = ?, password_hash = ?,
-    role = ?, status = ?, modified_by = ?, updated_at = ?, preferences = ?
+    role = ?, status = ?, modified_by = ?, updated_at = ?, preferences = ?, identity_credentials = ?
 WHERE id = ?
             "#,
             user.organization_id,
@@ -175,6 +178,7 @@ WHERE id = ?
             uid,
             current_timestamp,
             user.preferences,
+            user.identity_credentials,
             user.id
         )
         .execute(ctx.db_pool())
@@ -229,6 +233,35 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         push_query_filters(&mut count_builder, &query);
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
         Ok(total as u64)
+    }
+
+    async fn find_identity_credentials_by_user_id(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<UserIdentityCredentials>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT identity_credentials FROM users WHERE id = ? AND status != 0")
+                .bind(user_id)
+                .fetch_optional(ctx.db_pool())
+                .await?;
+
+        Ok(row.map(|(column,)| UserIdentityCredentials::parse(&column)))
+    }
+
+    async fn find_identity_credentials_by_username(
+        &self,
+        ctx: RequestContext,
+        username: &str,
+    ) -> Result<Option<UserIdentityCredentials>> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT identity_credentials FROM users WHERE username = ? AND status != 0",
+        )
+        .bind(username)
+        .fetch_optional(ctx.db_pool())
+        .await?;
+
+        Ok(row.map(|(column,)| UserIdentityCredentials::parse(&column)))
     }
 }
 

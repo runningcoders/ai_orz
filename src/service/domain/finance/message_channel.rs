@@ -1,12 +1,42 @@
 //! Message Channel 子模块实现
 //!
-//! 消息渠道配置管理：CRUD + 查询
+//! 消息渠道配置管理：CRUD + 查询 + 飞书渠道生命周期联动
 
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
+use common::enums::ChannelType;
 use common::error::Result;
+
+impl FinanceDomainImpl {
+    /// 渠道落库成功后联动飞书 WS 监听（仅 Lark 类型渠道）
+    ///
+    /// 建停规则与告警收敛在 lark DAL 的 `sync_listener_for_channel`，
+    /// Domain 只负责类型判断与触发时机。
+    async fn sync_lark_listener(&self, ctx: &RequestContext, channel: &MessageChannel) {
+        if channel.channel_type() != ChannelType::Lark {
+            return;
+        }
+        if let Some(dal) = &self.lark_channel_dal {
+            dal.sync_listener_for_channel(ctx.clone(), channel).await;
+        }
+    }
+
+    /// 渠道删除后释放飞书 WS 监听（该 app 无其他引用时才真正停连）
+    async fn release_lark_listener_after_delete(
+        &self,
+        ctx: &RequestContext,
+        channel: &MessageChannel,
+    ) {
+        if channel.channel_type() != ChannelType::Lark {
+            return;
+        }
+        if let Some(dal) = &self.lark_channel_dal {
+            dal.release_listener_for_channel(ctx.clone(), channel).await;
+        }
+    }
+}
 
 /// 为 FinanceDomainImpl 实现 MessageChannelManage
 #[async_trait]
@@ -16,7 +46,11 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         ctx: RequestContext,
         channel: &MessageChannel,
     ) -> Result<()> {
-        self.message_channel_dal.create_channel(ctx, channel).await
+        self.message_channel_dal
+            .create_channel(ctx.clone(), channel)
+            .await?;
+        self.sync_lark_listener(&ctx, channel).await;
+        Ok(())
     }
 
     async fn get_message_channel(
@@ -47,7 +81,11 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         ctx: RequestContext,
         channel: &MessageChannel,
     ) -> Result<()> {
-        self.message_channel_dal.update_channel(ctx, channel).await
+        self.message_channel_dal
+            .update_channel(ctx.clone(), channel)
+            .await?;
+        self.sync_lark_listener(&ctx, channel).await;
+        Ok(())
     }
 
     async fn delete_message_channel(
@@ -56,8 +94,10 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         channel: &MessageChannel,
     ) -> Result<()> {
         self.message_channel_dal
-            .delete_channel(ctx, &channel.po.id)
-            .await
+            .delete_channel(ctx.clone(), &channel.po.id)
+            .await?;
+        self.release_lark_listener_after_delete(&ctx, channel).await;
+        Ok(())
     }
 
     async fn test_message_channel(
@@ -68,5 +108,13 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal
             .test_channel(ctx, &channel.po.id)
             .await
+    }
+
+    /// 飞书信道 WS 连接监控快照（信道监控统一经 Domain 聚合；未接入时返回空快照）
+    async fn lark_ws_metrics(&self) -> common::api::LarkWsMetrics {
+        match &self.lark_channel_dal {
+            Some(dal) => dal.listener_stats().await,
+            None => common::api::LarkWsMetrics::default(),
+        }
     }
 }

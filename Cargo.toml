@@ -62,6 +62,10 @@ tar = "0.4"
 flate2 = "1.0"
 md-5 = "0.10"
 
+# 敏感数据加密（渠道凭证落库）
+aes-gcm = "0.10"
+base64 = "0.22"
+
 # 向量搜索相关
 # 禁用 default-features 中的 image-models（避免拉入 image → exr → pulp 0.22.3 的 x86 const eval bug）
 fastembed = { version = "5.13", default-features = false, features = ["ort-download-binaries-native-tls", "hf-hub-native-tls"] }  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）
@@ -93,6 +97,14 @@ path = "tests/integration/core_crud_test.rs"
 [[test]]
 name = "message_delivery_test"
 path = "tests/integration/message_delivery_test.rs"
+
+[[test]]
+name = "message_channel_lifecycle_test"
+path = "tests/integration/message_channel_lifecycle_test.rs"
+
+[[test]]
+name = "lark_integration_test"
+path = "tests/integration/lark_integration_test.rs"
 
 [[test]]
 name = "vector_degradation_test"

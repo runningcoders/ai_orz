@@ -5,6 +5,7 @@ use crate::pkg::tool_registry::ToolRegistry;
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
 use crate::pkg::tool_registry::http_fetch::HttpFetchToolFactory;
+use crate::pkg::tool_registry::lark_cli::LarkCliToolFactory;
 use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
@@ -31,6 +32,7 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
             ("fs_read".to_string(), Box::new(FsReadToolFactory)),
             ("fs_write".to_string(), Box::new(FsWriteToolFactory)),
             ("shell_exec".to_string(), Box::new(ShellExecToolFactory)),
+            ("lark_cli".to_string(), Box::new(LarkCliToolFactory)),
         ]
     });
 
@@ -54,6 +56,7 @@ mod tests {
             ("fs_read", vec!["fs"]),
             ("fs_write", vec!["fs"]),
             ("shell_exec", vec!["shell"]),
+            ("lark_cli", vec!["lark"]),
         ];
         for (id, tags) in expected {
             let factory = GENERIC_BUILTIN_TOOLS

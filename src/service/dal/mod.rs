@@ -88,6 +88,8 @@ pub(crate) mod attachment_test;
 #[cfg(test)]
 pub(crate) mod brain_test;
 #[cfg(test)]
+pub(crate) mod lark_test;
+#[cfg(test)]
 pub(crate) mod mcp_server_test;
 #[cfg(test)]
 pub(crate) mod mcp_tool_test;

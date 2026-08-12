@@ -24,6 +24,7 @@ pub trait SlackDao: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error>;
 
     /// 测试 Slack 渠道连接

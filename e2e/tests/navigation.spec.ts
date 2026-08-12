@@ -18,6 +18,7 @@ const ROUTES: RouteCase[] = [
   { path: '/hr/knowledge-graph', marker: '知识图谱' },
   { path: '/finance/model-providers', marker: '模型提供商管理' },
   { path: '/finance/tools', marker: '工具管理' },
+  { path: '/finance/identity', marker: '身份凭证' },
   { path: '/finance/attachments', marker: '附件管理' },
   { path: '/projects', marker: '项目管理' },
   { path: '/tasks', marker: '任务管理' },

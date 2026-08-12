@@ -40,3 +40,8 @@ enabled = true
 # JWT默认过期时间（小时），默认 7 天（168小时），也可以通过环境变量 JWT_EXPIRY_HOURS 设置
 # default_expiry_hours = 168
 
+# 安全配置
+[security]
+# 数据库敏感字段（渠道凭证等）的主加密密钥，不可为空，生产环境务必修改！
+secret_key = "ai-orz-default-secret-key-change-me"
+

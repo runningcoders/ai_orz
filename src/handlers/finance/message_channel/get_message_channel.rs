@@ -39,5 +39,11 @@ pub async fn get_message_channel(
         bail_err!(NotFound, "MessageChannel {} not found", params.id);
     }
 
-    Ok(to_detail(&channel))
+    let credentials = crate::service::domain::finance::domain()
+        .identity_credential_manage()
+        .get_identity_credentials(ctx, &channel.po.user_id)
+        .await?
+        .unwrap_or_default();
+
+    Ok(to_detail(&channel, Some(&credentials)))
 }

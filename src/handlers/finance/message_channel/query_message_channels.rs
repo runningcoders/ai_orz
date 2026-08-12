@@ -37,11 +37,11 @@ pub async fn query_message_channels(
     let page = domain()
         .message_channel_manage()
         .query_channels(
-            ctx,
+            ctx.clone(),
             MessageChannelQuery {
                 id: params.id,
                 org_id: Some(org_id),
-                user_id: Some(user_id),
+                user_id: Some(user_id.clone()),
                 agent_id: params.agent_id,
                 channel_type: params.channel_type,
                 only_enabled: params.only_enabled.unwrap_or(false),
@@ -52,5 +52,12 @@ pub async fn query_message_channels(
         )
         .await?;
 
-    Ok(page.map(|ch| to_list_item(&ch)))
+    // 凭证名称反查：查询默认按当前用户过滤，加载该用户凭证库即可
+    let credentials = crate::service::domain::finance::domain()
+        .identity_credential_manage()
+        .get_identity_credentials(ctx, &user_id)
+        .await?
+        .unwrap_or_default();
+
+    Ok(page.map(|ch| to_list_item(&ch, Some(&credentials))))
 }

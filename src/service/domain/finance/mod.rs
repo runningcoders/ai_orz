@@ -6,6 +6,7 @@
 //! - ToolProvider - 外部工具提供商配置 + Agent 工具借用（绑定）关系
 
 pub mod attachment;
+pub mod identity_credential;
 pub mod mcp_server;
 pub mod mcp_tool;
 pub mod message_channel;
@@ -107,7 +108,9 @@ pub fn init() {
         crate::service::dal::tool::dal(),
         crate::service::dal::brain::dal(),
         crate::service::dal::attachment::dal(),
-    );
+    )
+    .with_lark_channel_dal(crate::service::dal::lark::dal())
+    .with_user_dal(crate::service::dal::user::dal());
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
 
@@ -134,6 +137,9 @@ pub trait FinanceDomain: Send + Sync {
 
     /// Attachment 管理能力（通用上传文件资产）
     fn attachment_manage(&self) -> &dyn AttachmentManage;
+
+    /// 身份凭证管理能力（用户级凭证资产 + 飞书集成授权/绑定）
+    fn identity_credential_manage(&self) -> &dyn IdentityCredentialManage;
 }
 
 /// Model Provider 管理 trait
@@ -257,6 +263,124 @@ pub trait MessageChannelManage: Send + Sync {
         ctx: RequestContext,
         channel: &crate::models::message_channel::MessageChannel,
     ) -> Result<()>;
+
+    /// 飞书信道 WS 连接监控快照（health metrics 聚合用；未接入时返回空快照）
+    async fn lark_ws_metrics(&self) -> common::api::LarkWsMetrics;
+}
+
+/// 身份凭证管理 trait
+///
+/// 用户身份凭证是驱动下游关键环节（渠道建联、lark_cli 工具身份）的资产，
+/// 归属 finance domain 统一管理，便于统一审计；
+/// 含凭证 CRUD + 默认凭证 + 飞书集成授权/绑定（经 Domain 包装 pkg）。
+#[async_trait]
+pub trait IdentityCredentialManage: Send + Sync {
+    /// 读取用户身份凭证库（用户不存在返回 None，无凭证返回空库）
+    async fn get_identity_credentials(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<Option<common::models::UserIdentityCredentials>>;
+
+    /// 创建飞书应用凭证（secret 加密落库），返回凭证唯一 ID
+    #[allow(clippy::too_many_arguments)]
+    async fn create_lark_credential(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        name: &str,
+        app_id: &str,
+        app_secret: &str,
+        encrypt_key: Option<&str>,
+        verification_token: Option<&str>,
+    ) -> Result<String>;
+
+    /// 更新飞书凭证（secret 非空时重新加密覆盖）
+    ///
+    /// 变更联动：清该用户 HOME 的 lark-cli config + WS 监听移交
+    /// （app_id 变化重建；secret 轮换强制断连重建）；联动失败仅告警。
+    #[allow(clippy::too_many_arguments)]
+    async fn update_lark_credential(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        credential_id: &str,
+        name: Option<&str>,
+        app_id: Option<&str>,
+        app_secret: Option<&str>,
+        encrypt_key: Option<&str>,
+        verification_token: Option<&str>,
+    ) -> Result<()>;
+
+    /// 删除凭证（有渠道引用时报 Conflict；不联动删 HOME config，保留用户授权 token）
+    async fn delete_lark_credential(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        credential_id: &str,
+    ) -> Result<()>;
+
+    /// 设置默认飞书凭证（lark_cli 工具身份优先取引用该凭证的渠道）
+    ///
+    /// 空凭证 ID 表示取消默认；非空校验凭证存在且为 LarkApp 类型。
+    async fn set_default_lark_credential(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        credential_id: &str,
+    ) -> Result<()>;
+
+    // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================
+
+    /// 发起飞书用户授权 device flow（返回设备码 + 验证 URL）
+    async fn lark_auth_start(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        domains: &[String],
+    ) -> Result<crate::pkg::lark_integration::DeviceLoginStart>;
+
+    /// 完成飞书用户授权 device flow
+    async fn lark_auth_complete(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        device_code: &str,
+    ) -> Result<crate::pkg::lark_integration::LarkAuthOutcome>;
+
+    /// 查询飞书用户授权现状
+    async fn lark_auth_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<crate::pkg::lark_integration::LarkAuthStatus>;
+
+    /// 取消飞书用户授权（清本机登录态）
+    async fn lark_auth_logout(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<crate::pkg::lark_integration::LarkAuthOutcome>;
+
+    /// 发起飞书应用自动绑定会话（返回 session_id + 验证 URL）
+    async fn lark_bind_start(&self, ctx: RequestContext, user_id: &str)
+    -> Result<(String, String)>;
+
+    /// 查询飞书应用绑定会话状态（会话不存在/非本人返回 None）
+    async fn lark_bind_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        session_id: &str,
+    ) -> Result<Option<crate::pkg::lark_integration::BindSessionSnapshot>>;
+
+    /// 取消飞书应用绑定会话
+    async fn lark_bind_cancel(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        session_id: &str,
+    ) -> Result<bool>;
 }
 
 /// Attachment 管理 trait
@@ -491,6 +615,10 @@ pub struct FinanceDomainImpl {
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
     pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
+    /// 飞书消息渠道 DAL（渠道生命周期联动 WS 监听用；测试实例可为 None）
+    pub lark_channel_dal: Option<Arc<crate::service::dal::lark::LarkMessageChannelDal>>,
+    /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
+    pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
 }
 
 impl FinanceDomainImpl {
@@ -512,7 +640,27 @@ impl FinanceDomainImpl {
             tool_dal,
             brain_dal,
             attachment_dal,
+            lark_channel_dal: None,
+            user_dal: None,
         }
+    }
+
+    /// 注入飞书消息渠道 DAL（渠道生命周期联动）
+    pub fn with_lark_channel_dal(
+        mut self,
+        lark_channel_dal: Arc<crate::service::dal::lark::LarkMessageChannelDal>,
+    ) -> Self {
+        self.lark_channel_dal = Some(lark_channel_dal);
+        self
+    }
+
+    /// 注入用户 DAL（身份凭证资产读写）
+    pub fn with_user_dal(
+        mut self,
+        user_dal: Arc<dyn crate::service::dal::user::UserDal + Send + Sync>,
+    ) -> Self {
+        self.user_dal = Some(user_dal);
+        self
     }
 }
 
@@ -538,6 +686,10 @@ impl FinanceDomain for FinanceDomainImpl {
     }
 
     fn attachment_manage(&self) -> &dyn AttachmentManage {
+        self
+    }
+
+    fn identity_credential_manage(&self) -> &dyn IdentityCredentialManage {
         self
     }
 }

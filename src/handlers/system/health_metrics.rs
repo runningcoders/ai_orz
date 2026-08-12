@@ -119,6 +119,12 @@ pub async fn get_health_metrics(
         .await
         .unwrap_or(0);
 
+    // 飞书信道 WS 长连接监控（信道监控统一经 message channel domain 聚合）
+    let lark_ws = crate::service::domain::finance::domain()
+        .message_channel_manage()
+        .lark_ws_metrics()
+        .await;
+
     Ok(HealthMetricsResponse {
         backend_online: true,
         aop_pending,
@@ -130,5 +136,6 @@ pub async fn get_health_metrics(
         pending_tasks,
         total_tasks,
         uptime_secs,
+        lark_ws,
     })
 }

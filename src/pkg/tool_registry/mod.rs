@@ -11,6 +11,7 @@ pub mod fs_write;
 pub mod handler_adapter;
 pub mod http;
 pub mod http_fetch;
+pub mod lark_cli;
 pub mod mcp;
 pub mod shell_exec;
 pub mod tool_security;

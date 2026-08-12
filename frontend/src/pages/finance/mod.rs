@@ -1,5 +1,6 @@
 pub mod attachment_detail;
 pub mod attachments;
+pub mod identity;
 pub mod mcp_server_detail;
 pub mod mcp_servers;
 pub mod message_channel_detail;

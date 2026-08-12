@@ -30,6 +30,29 @@ pub struct HealthMetricsResponse {
     pub total_tasks: u64,
     /// 进程运行时长（秒）
     pub uptime_secs: u64,
+    /// 飞书 WebSocket 长连接监控（无监听时 active_connections=0）
+    #[serde(default)]
+    pub lark_ws: LarkWsMetrics,
+}
+
+/// 飞书 WebSocket 长连接监控快照
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LarkWsMetrics {
+    /// 活跃监听连接数（per-app 一条）
+    pub active_connections: u64,
+    /// 每个应用的连接状态明细
+    pub apps: Vec<LarkWsAppMetrics>,
+}
+
+/// 单个飞书应用的 WS 连接状态
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LarkWsAppMetrics {
+    /// 飞书 App ID
+    pub app_id: String,
+    /// 连接阶段：connecting / connected / reconnecting
+    pub state: String,
+    /// 累计重连成功次数（首次建连不计）
+    pub reconnect_count: u64,
 }
 
 /// 创建备份请求（无参数，由 Admin 触发）

@@ -1,21 +1,28 @@
-//! 飞书 DAO HTTP 实现
+//! 飞书 DAO HTTP 实现（多应用模型）
 //!
 //! 包含：
-//! - tenant_access_token 获取与缓存（带提前 5 分钟刷新）
+//! - tenant_access_token 获取与缓存（per-app，带提前 5 分钟刷新）
 //! - 消息发送（`/open-apis/im/v1/messages`）
-//! - WebSocket 长连接生命周期管理（委托 `ws` 模块）
+//! - WebSocket 长连接生命周期管理（per-app 连接池，委托 `ws` 模块）
+//!
+//! 凭证不来自全局配置：出站（push/test_connection）从渠道配置取，
+//! 入站（start_event_listener）由调用方传入 `LarkAppCredentials`。
 
 use super::error::{LarkResponse, from_reqwest, validate_config};
 use super::event::LarkMessageEvent;
-use super::token::{SharedTokenCache, TokenCache};
-use super::ws::WsState;
-use super::{LarkDao, LarkEventHandler};
+use super::token::{SharedTokenCache, shared as shared_token_cache};
+use super::ws::{WsState, WsTokenSource};
+use super::{LarkAppCredentials, LarkDao, LarkEventHandler, resolve_lark_credentials};
 use crate::models::message::Message;
-use crate::models::message_channel::MessageChannel;
+use crate::models::message_channel::{ChannelPushOptions, MessageChannel};
+use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use common::config::LarkConfig;
+use crate::service::dao::user::UserDao;
+use common::api::{LarkWsAppMetrics, LarkWsMetrics};
 use common::error::{Result, err};
+use common::models::UserIdentityCredentials;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
 
@@ -29,14 +36,16 @@ const PATH_SEND_MESSAGE: &str = "/open-apis/im/v1/messages";
 
 static LARK_DAO: OnceLock<Arc<dyn LarkDao>> = OnceLock::new();
 
-/// 创建一个全新的飞书 DAO 实例（默认空配置，用于测试或未启用场景）
+/// 创建一个全新的飞书 DAO 实例（无全局凭证，凭证按调用传入；无 user dao 兜底，测试用）
 pub fn new() -> Arc<dyn LarkDao> {
-    Arc::new(LarkDaoHttpImpl::new(LarkConfig::default()))
+    Arc::new(LarkDaoHttpImpl::new())
 }
 
-/// 创建一个全新的飞书 DAO 实例（带配置，用于测试）
-pub fn new_with_config(config: LarkConfig) -> Arc<dyn LarkDao> {
-    Arc::new(LarkDaoHttpImpl::new(config))
+/// 创建带 user dao 兜底解析能力的飞书 DAO 实例
+pub fn new_with_user_dao(user_dao: Arc<dyn UserDao>) -> Arc<dyn LarkDao> {
+    let mut instance = LarkDaoHttpImpl::new();
+    instance.user_dao = Some(user_dao);
+    Arc::new(instance)
 }
 
 /// 获取 LarkDao 单例
@@ -47,109 +56,56 @@ pub fn dao() -> Arc<dyn LarkDao> {
         .expect("LarkDao not initialized, call init() first")
 }
 
-/// 初始化单例（使用全局 AppConfig 中的 [lark] 配置）
-///
-/// 在测试环境或未调用 `config::init()` 的场景下，
-/// 自动 fallback 到默认配置（app_id/app_secret 为空，飞书功能不可用但不会 panic）。
+/// 初始化单例（无全局凭证，凭证由渠道配置驱动；注入 user dao 供推送链路兜底解析）
 pub fn init() {
-    let config = crate::config::try_get()
-        .map(|c| c.lark.clone())
-        .unwrap_or_default();
-    let _ = LARK_DAO.set(Arc::new(LarkDaoHttpImpl::new(config)) as Arc<dyn LarkDao>);
+    let _ = LARK_DAO.set(new_with_user_dao(crate::service::dao::user::dao()));
 }
 
 // ==================== 实现 ====================
 
 pub struct LarkDaoHttpImpl {
-    config: LarkConfig,
     http: reqwest::Client,
-    token_cache: SharedTokenCache,
-    ws_state: Arc<RwLock<Option<WsState>>>,
+    /// per-app token 缓存（app_id 键控；Arc 包装供 WS token source 共享，避免循环引用）
+    token_caches: Arc<RwLock<HashMap<String, SharedTokenCache>>>,
+    /// per-app WebSocket 连接状态（app_id 键控）
+    ws_conns: RwLock<HashMap<String, WsState>>,
+    /// 用户 DAO（推送链路凭证兜底解析；测试实例可为 None）
+    user_dao: Option<Arc<dyn UserDao>>,
 }
 
 impl LarkDaoHttpImpl {
-    pub fn new(config: LarkConfig) -> Self {
+    pub fn new() -> Self {
         Self {
-            config,
             http: reqwest::Client::new(),
-            token_cache: Arc::new(RwLock::new(TokenCache::new())),
-            ws_state: Arc::new(RwLock::new(None)),
+            token_caches: Arc::new(RwLock::new(HashMap::new())),
+            ws_conns: RwLock::new(HashMap::new()),
+            user_dao: None,
         }
     }
 
-    /// 获取 tenant_access_token（带缓存，提前 5 分钟刷新）
-    ///
-    /// 使用双重检查锁防止并发刷新。
-    pub async fn get_tenant_access_token(&self) -> Result<String> {
-        // 第一次读检查
+    /// 获取（或创建）指定应用的 token 缓存句柄
+    async fn token_cache_for(
+        caches: &RwLock<HashMap<String, SharedTokenCache>>,
+        app_id: &str,
+    ) -> SharedTokenCache {
         {
-            let cache = self.token_cache.read().await;
-            if let Some(token) = cache.get_valid_token() {
-                return Ok(token);
+            let caches = caches.read().await;
+            if let Some(cache) = caches.get(app_id) {
+                return cache.clone();
             }
         }
-        // 升级写锁
-        let mut cache = self.token_cache.write().await;
-        // 第二次检查（防止等待期间其他线程已刷新）
-        if let Some(token) = cache.get_valid_token() {
-            return Ok(token);
-        }
-        let (token, expire) = self.fetch_tenant_access_token().await?;
-        cache.update(token.clone(), expire);
-        Ok(token)
+        let mut caches = caches.write().await;
+        caches
+            .entry(app_id.to_string())
+            .or_insert_with(shared_token_cache)
+            .clone()
     }
 
-    /// 调用飞书 API 获取 tenant_access_token
-    async fn fetch_tenant_access_token(&self) -> Result<(String, u64)> {
-        validate_config(&self.config.app_id, &self.config.app_secret)?;
-
-        #[derive(Serialize)]
-        struct TokenReq<'a> {
-            app_id: &'a str,
-            app_secret: &'a str,
-        }
-
-        #[derive(Deserialize)]
-        struct TokenResp {
-            code: i32,
-            #[serde(default)]
-            msg: String,
-            #[serde(default)]
-            tenant_access_token: String,
-            #[serde(default)]
-            expire: u64,
-        }
-
-        let url = format!("{}{}", API_BASE, PATH_TOKEN);
-        let resp = self
-            .http
-            .post(&url)
-            .json(&TokenReq {
-                app_id: &self.config.app_id,
-                app_secret: &self.config.app_secret,
-            })
-            .send()
-            .await
-            .map_err(|e| from_reqwest("fetch_token", e))?
-            .json::<TokenResp>()
-            .await
-            .map_err(|e| from_reqwest("fetch_token", e))?;
-
-        if resp.code != 0 {
-            return Err(err!(
-                ThirdPartyError,
-                "lark fetch_token failed: code={} msg={}",
-                resp.code,
-                resp.msg
-            ));
-        }
-        if resp.tenant_access_token.is_empty() {
-            return Err(err!(
-                ThirdPartyError,
-                "lark fetch_token returned empty token"
-            ));
-        }
-        Ok((resp.tenant_access_token, resp.expire))
+    /// 获取指定应用的 tenant_access_token（带缓存，提前 5 分钟刷新）
+    ///
+    /// 使用双重检查锁防止并发刷新。
+    pub async fn get_tenant_access_token(&self, app_id: &str, app_secret: &str) -> Result<String> {
+        fetch_token_with_caches(&self.http, &self.token_caches, app_id, app_secret).await
     }
 
     /// 发送文本消息到指定 open_id 用户
@@ -161,8 +117,6 @@ impl LarkDaoHttpImpl {
         open_id: &str,
         text: &str,
     ) -> Result<String> {
-        validate_config(&self.config.app_id, &self.config.app_secret)?;
-
         // 飞书文本消息 content：{"text":"消息内容"}
         let content = serde_json::json!({ "text": text }).to_string();
 
@@ -200,21 +154,150 @@ impl LarkDaoHttpImpl {
         Ok(data.message_id)
     }
 
-    /// 配置引用（供 ws 模块使用）
-    pub fn config(&self) -> &LarkConfig {
-        &self.config
-    }
-
     /// HTTP client 引用（供 ws 模块使用）
     pub fn http_client(&self) -> &reqwest::Client {
         &self.http
     }
 
-    /// token cache 引用（供 ws 模块使用）
-    pub fn token_cache(&self) -> SharedTokenCache {
-        self.token_cache.clone()
+    /// 解析渠道引用的飞书应用凭证（options 附带 + user dao 兜底双路径）
+    ///
+    /// ① options.user 已携带 → 直接用其 identity_credentials（免重复查库）；
+    /// ② options 无 → 兜底经 user dao 按渠道归属用户查凭证库。
+    async fn resolve_channel_credentials(
+        &self,
+        channel: &MessageChannel,
+        options_user: Option<&UserPo>,
+    ) -> Result<LarkAppCredentials> {
+        if let Some(user) = options_user {
+            let library = UserIdentityCredentials::parse(&user.identity_credentials);
+            return resolve_lark_credentials(&library, channel);
+        }
+        let Some(user_dao) = self.user_dao.as_ref() else {
+            return Err(err!(
+                InvalidRequest,
+                "飞书凭证解析不可用（user dao 未注入）channel_id={}",
+                channel.po.id
+            ));
+        };
+        let ctx = RequestContext::new_system();
+        let library = user_dao
+            .find_identity_credentials_by_user_id(ctx, channel.user_id())
+            .await?
+            .unwrap_or_default();
+        resolve_lark_credentials(&library, channel)
     }
 }
+
+impl Default for LarkDaoHttpImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ==================== token 获取（自由函数，供 DAO 与 WS token source 共享） ====================
+
+/// 获取指定应用的 tenant_access_token（带缓存，提前 5 分钟刷新，双重检查锁防并发刷新）
+async fn fetch_token_with_caches(
+    http: &reqwest::Client,
+    caches: &RwLock<HashMap<String, SharedTokenCache>>,
+    app_id: &str,
+    app_secret: &str,
+) -> Result<String> {
+    let cache = LarkDaoHttpImpl::token_cache_for(caches, app_id).await;
+    // 第一次读检查
+    {
+        let c = cache.read().await;
+        if let Some(token) = c.get_valid_token() {
+            return Ok(token);
+        }
+    }
+    // 升级写锁
+    let mut c = cache.write().await;
+    // 第二次检查（防止等待期间其他任务已刷新）
+    if let Some(token) = c.get_valid_token() {
+        return Ok(token);
+    }
+    let (token, expire) = fetch_tenant_access_token(http, app_id, app_secret).await?;
+    c.update(token.clone(), expire);
+    Ok(token)
+}
+
+/// 调用飞书 API 获取 tenant_access_token
+async fn fetch_tenant_access_token(
+    http: &reqwest::Client,
+    app_id: &str,
+    app_secret: &str,
+) -> Result<(String, u64)> {
+    validate_config(app_id, app_secret)?;
+
+    #[derive(Serialize)]
+    struct TokenReq<'a> {
+        app_id: &'a str,
+        app_secret: &'a str,
+    }
+
+    #[derive(Deserialize)]
+    struct TokenResp {
+        code: i32,
+        #[serde(default)]
+        msg: String,
+        #[serde(default)]
+        tenant_access_token: String,
+        #[serde(default)]
+        expire: u64,
+    }
+
+    let url = format!("{}{}", API_BASE, PATH_TOKEN);
+    let resp = http
+        .post(&url)
+        .json(&TokenReq { app_id, app_secret })
+        .send()
+        .await
+        .map_err(|e| from_reqwest("fetch_token", e))?
+        .json::<TokenResp>()
+        .await
+        .map_err(|e| from_reqwest("fetch_token", e))?;
+
+    if resp.code != 0 {
+        return Err(err!(
+            ThirdPartyError,
+            "lark fetch_token failed: code={} msg={}",
+            resp.code,
+            resp.msg
+        ));
+    }
+    if resp.tenant_access_token.is_empty() {
+        return Err(err!(
+            ThirdPartyError,
+            "lark fetch_token returned empty token"
+        ));
+    }
+    Ok((resp.tenant_access_token, resp.expire))
+}
+
+/// WS 连接的 token 来源：重连时实时取 token（共享 per-app 缓存，避免持有 DAO 自引用循环）
+struct LarkWsTokenSource {
+    http: reqwest::Client,
+    token_caches: Arc<RwLock<HashMap<String, SharedTokenCache>>>,
+    app_id: String,
+    app_secret: String,
+}
+
+#[async_trait::async_trait]
+impl WsTokenSource for LarkWsTokenSource {
+    async fn token(&self) -> Result<String> {
+        fetch_token_with_caches(
+            &self.http,
+            &self.token_caches,
+            &self.app_id,
+            &self.app_secret,
+        )
+        .await
+    }
+}
+
+// 出站凭证解析：内联字段已在二期重构中删除，改由
+// `LarkDaoHttpImpl::resolve_channel_credentials` 引用解析（options 附带 + user dao 兜底）。
 
 #[async_trait::async_trait]
 impl LarkDao for LarkDaoHttpImpl {
@@ -223,6 +306,7 @@ impl LarkDao for LarkDaoHttpImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        options: &ChannelPushOptions,
     ) -> Result<()> {
         let config = channel.config();
         let open_id = config.lark_open_id.as_ref().ok_or_else(|| {
@@ -238,56 +322,156 @@ impl LarkDao for LarkDaoHttpImpl {
             return Ok(());
         }
 
-        let token = self.get_tenant_access_token().await?;
+        let credentials = self
+            .resolve_channel_credentials(channel, options.user.as_ref())
+            .await?;
+        let token = self
+            .get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
         let message_id = self.send_text_message(&token, open_id, content).await?;
         log_info!(
             &ctx,
             "lark_push",
-            "推送消息到飞书 channel_id={} open_id={} lark_message_id={}",
+            "推送消息到飞书 channel_id={} app_id={} open_id={} lark_message_id={}",
             channel.po.id,
+            credentials.app_id,
             open_id,
             message_id
         );
         Ok(())
     }
 
-    async fn test_connection(&self, ctx: RequestContext, _channel: &MessageChannel) -> Result<()> {
-        self.get_tenant_access_token().await?;
-        log_info!(&ctx, "lark_test_connection", "飞书连接测试成功");
+    async fn test_connection(&self, ctx: RequestContext, channel: &MessageChannel) -> Result<()> {
+        let credentials = self.resolve_channel_credentials(channel, None).await?;
+        self.get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
+        log_info!(
+            &ctx,
+            "lark_test_connection",
+            "飞书连接测试成功 app_id={}",
+            credentials.app_id
+        );
         Ok(())
     }
 
-    async fn start_event_listener(&self, handler: Arc<dyn LarkEventHandler>) -> Result<()> {
-        validate_config(&self.config.app_id, &self.config.app_secret)?;
+    async fn start_event_listener(
+        &self,
+        credentials: LarkAppCredentials,
+        handler: Arc<dyn LarkEventHandler>,
+    ) -> Result<()> {
+        validate_config(&credentials.app_id, &credentials.app_secret)?;
 
-        let mut ws_state = self.ws_state.write().await;
-        if ws_state.is_some() {
-            return Err(err!(Conflict, "飞书事件监听已启动"));
+        // 幂等：已连接直接返回
+        {
+            let conns = self.ws_conns.read().await;
+            if conns.contains_key(&credentials.app_id) {
+                log_debug!(
+                    "lark event listener already running for app_id={}",
+                    credentials.app_id
+                );
+                return Ok(());
+            }
         }
 
-        let state = super::ws::start_event_loop(
-            self.http.clone(),
-            self.config.clone(),
-            self.token_cache.clone(),
-            handler,
-        )
-        .await?;
+        // 预热 token 缓存 + 构造 WS token source（重连时实时刷新 token）
+        self.get_tenant_access_token(&credentials.app_id, &credentials.app_secret)
+            .await?;
+        let token_source = Arc::new(LarkWsTokenSource {
+            http: self.http.clone(),
+            token_caches: self.token_caches.clone(),
+            app_id: credentials.app_id.clone(),
+            app_secret: credentials.app_secret.clone(),
+        });
 
-        *ws_state = Some(state);
-        log_info!("lark event listener started");
+        let mut conns = self.ws_conns.write().await;
+        // 双重检查（防止等待期间其他任务已建连）
+        if conns.contains_key(&credentials.app_id) {
+            return Ok(());
+        }
+
+        let app_id = credentials.app_id.clone();
+        let state =
+            super::ws::start_event_loop(self.http.clone(), app_id.clone(), token_source, handler)
+                .await?;
+
+        conns.insert(app_id.clone(), state);
+        log_info!("lark event listener started for app_id={}", app_id);
         Ok(())
     }
 
-    async fn stop_event_listener(&self) -> Result<()> {
-        let mut ws_state = self.ws_state.write().await;
-        if let Some(state) = ws_state.take() {
+    async fn stop_event_listener(&self, app_id: &str) -> Result<()> {
+        let state = self.ws_conns.write().await.remove(app_id);
+        if let Some(state) = state {
             super::ws::stop_event_loop(state).await;
-            log_info!("lark event listener stopped");
+            log_info!("lark event listener stopped for app_id={}", app_id);
         }
         Ok(())
+    }
+
+    async fn stop_all_event_listeners(&self) -> Result<()> {
+        let states: Vec<(String, WsState)> = self.ws_conns.write().await.drain().collect();
+        for (app_id, state) in states {
+            super::ws::stop_event_loop(state).await;
+            log_info!("lark event listener stopped for app_id={}", app_id);
+        }
+        Ok(())
+    }
+
+    async fn is_listening(&self, app_id: &str) -> bool {
+        self.ws_conns.read().await.contains_key(app_id)
+    }
+
+    async fn listener_stats(&self) -> LarkWsMetrics {
+        let conns = self.ws_conns.read().await;
+        let mut apps = Vec::with_capacity(conns.len());
+        for (app_id, state) in conns.iter() {
+            let snap = state.conn_state_snapshot().await;
+            apps.push(LarkWsAppMetrics {
+                app_id: app_id.clone(),
+                state: snap.phase.as_str().to_string(),
+                reconnect_count: snap.reconnect_count,
+            });
+        }
+        LarkWsMetrics {
+            active_connections: apps.len() as u64,
+            apps,
+        }
     }
 }
 
 // 防止未使用警告（event 模块在 push 链路中被 trait 间接使用）
 #[allow(dead_code)]
 fn _ensure_event_linked(_: &LarkMessageEvent) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service::dao::lark::LarkDao;
+
+    /// per-app token 缓存隔离：不同 app_id 各自独立条目
+    #[tokio::test]
+    async fn token_cache_is_isolated_per_app() {
+        let dao = LarkDaoHttpImpl::new();
+        let _ = LarkDaoHttpImpl::token_cache_for(&dao.token_caches, "cli_app_a").await;
+        let _ = LarkDaoHttpImpl::token_cache_for(&dao.token_caches, "cli_app_b").await;
+        // 重复访问同一 app 不新增条目
+        let _ = LarkDaoHttpImpl::token_cache_for(&dao.token_caches, "cli_app_a").await;
+        let caches = dao.token_caches.read().await;
+        assert_eq!(caches.len(), 2);
+        assert!(caches.contains_key("cli_app_a"));
+        assert!(caches.contains_key("cli_app_b"));
+    }
+
+    /// WS 连接池初始为空，stop 对不存在的 app 幂等不报错；无监听时 stats 为空快照
+    #[tokio::test]
+    async fn listener_state_starts_empty_and_stop_is_idempotent() {
+        let dao = LarkDaoHttpImpl::new();
+        assert!(!dao.is_listening("cli_app_x").await);
+        dao.stop_event_listener("cli_app_x").await.unwrap();
+        dao.stop_all_event_listeners().await.unwrap();
+        assert!(!dao.is_listening("cli_app_x").await);
+        let stats = dao.listener_stats().await;
+        assert_eq!(stats.active_connections, 0);
+        assert!(stats.apps.is_empty());
+    }
+}

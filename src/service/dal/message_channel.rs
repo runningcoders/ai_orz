@@ -114,6 +114,7 @@ pub trait MessageChannelDal: Send + Sync {
     /// - `ctx`: 请求上下文
     /// - `message`: 消息实体
     /// - `user_id`: 用户 ID
+    /// - `options`: 推送选项（上层已加载的用户实体可附带下传，飞书凭证解析免重复查库）
     ///
     /// # 返回
     /// 分发结果详情，包含各渠道的推送状态
@@ -122,6 +123,7 @@ pub trait MessageChannelDal: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> Result<DeliveryResult>;
 }
 
@@ -228,6 +230,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> Result<DeliveryResult> {
         let ctx = enrich_ctx!(&ctx, message);
         // 1. 查询用户的所有活跃渠道
@@ -264,7 +267,9 @@ impl MessageChannelDal for MessageChannelDalImpl {
 
         for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
-            let result = self.push_to_channel(ctx.clone(), message, &channel).await;
+            let result = self
+                .push_to_channel(ctx.clone(), message, &channel, options)
+                .await;
 
             // 4. 更新渠道推送状态
             let _ = self
@@ -301,14 +306,19 @@ impl MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
+        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error> {
         match channel.channel_type() {
-            ChannelType::Lark => self.lark_dao.push(ctx, message, channel).await,
-            ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel).await,
-            ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
-            ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
-            ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
-            ChannelType::A2aCallback => self.a2a_callback_dao.push(ctx, message, channel).await,
+            ChannelType::Lark => self.lark_dao.push(ctx, message, channel, options).await,
+            ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel, options).await,
+            ChannelType::Slack => self.slack_dao.push(ctx, message, channel, options).await,
+            ChannelType::Email => self.email_dao.push(ctx, message, channel, options).await,
+            ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel, options).await,
+            ChannelType::A2aCallback => {
+                self.a2a_callback_dao
+                    .push(ctx, message, channel, options)
+                    .await
+            }
         }
     }
 

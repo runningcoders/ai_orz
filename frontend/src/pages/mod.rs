@@ -16,6 +16,7 @@ use dioxus::prelude::*;
 // 导入路由组件函数到当前作用域，供 Routable 宏使用
 use crate::pages::finance::attachment_detail::FinanceAttachmentDetail;
 use crate::pages::finance::attachments::FinanceAttachments;
+use crate::pages::finance::identity::FinanceIdentity;
 use crate::pages::finance::mcp_server_detail::FinanceMcpServerDetail;
 use crate::pages::finance::mcp_servers::FinanceMcpServers;
 use crate::pages::finance::message_channel_detail::FinanceMessageChannelDetail;
@@ -99,6 +100,8 @@ pub enum Route {
     FinanceToolDetail { id: String },
     #[route("/finance/tool-call-entries")]
     FinanceToolCallEntries {},
+    #[route("/finance/identity")]
+    FinanceIdentity {},
     #[route("/finance/message-channels")]
     FinanceMessageChannels {},
     #[route("/finance/message-channels/:id")]

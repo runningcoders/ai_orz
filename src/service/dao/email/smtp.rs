@@ -43,6 +43,7 @@ impl EmailDao for EmailDaoSmtpImpl {
         _ctx: RequestContext,
         _message: &Message,
         _channel: &MessageChannel,
+        _options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error> {
         // TODO: 实现邮件推送逻辑
         Err(err!(UnsupportedOperation, "邮件推送功能尚未实现"))

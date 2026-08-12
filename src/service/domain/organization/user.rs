@@ -1,6 +1,7 @@
 //! 用户管理 trait 实现
 //!
-//! 定义用户相关业务接口实现
+//! 定义用户相关业务接口实现（组织管理域只管用户本身；
+//! 身份凭证资产归 finance domain 的 IdentityCredentialManage）
 
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;

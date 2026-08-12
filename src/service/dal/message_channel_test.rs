@@ -4,6 +4,7 @@ use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChann
 use crate::pkg::RequestContext;
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dal::message_channel::{dal, init};
+use crate::service::dao::a2a_callback::init as a2a_callback_dao_init;
 use crate::service::dao::email::init as email_dao_init;
 use crate::service::dao::lark::init as lark_dao_init;
 use crate::service::dao::message_channel::init as message_channel_dao_init;
@@ -16,6 +17,7 @@ use std::sync::Arc;
 
 fn init_all_test_daos() {
     message_channel_dao_init();
+    a2a_callback_dao_init();
     lark_dao_init();
     wechat_dao_init();
     slack_dao_init();
@@ -319,7 +321,15 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     );
     let message = Message::from_po(message_po);
 
-    let result = dal.deliver_message(ctx, &message, "user-1").await.unwrap();
+    let result = dal
+        .deliver_message(
+            ctx,
+            &message,
+            "user-1",
+            &crate::models::message_channel::ChannelPushOptions::default(),
+        )
+        .await
+        .unwrap();
     // 骨架实现返回 success_count = 0（因为还没实现实际推送）
     // 这里只验证调用不报错即可
     assert_eq!(result.total, 1);

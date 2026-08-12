@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences\nFROM users WHERE username = ? AND status != 0\n            ",
+  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences, identity_credentials\nFROM users WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -67,6 +67,11 @@
         "name": "preferences",
         "ordinal": 12,
         "type_info": "Text"
+      },
+      {
+        "name": "identity_credentials",
+        "ordinal": 13,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -85,8 +90,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "7bdda1a6c00565f4e5fb1d61361b76fe370999305fe257caba50fa53b54b6f96"
+  "hash": "099bb165bec99d8126be599ffa2a8cc8d1dc2543bff9b2bc37f1ea0bae4d2c71"
 }

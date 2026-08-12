@@ -190,6 +190,19 @@ pub fn Navbar() -> Element {
                                 }
                                 li {
                                     Link {
+                                        to: Route::FinanceIdentity {},
+                                        onclick: move |_| {
+                                            hr_menu_open.set(false);
+                                            finance_menu_open.set(false);
+                                            project_menu_open.set(false);
+                                            system_menu_open.set(false);
+                                            user_menu_open.set(false);
+                                        },
+                                        "身份凭证"
+                                    }
+                                }
+                                li {
+                                    Link {
                                         to: Route::FinanceMessageChannels {},
                                         onclick: move |_| {
                                             hr_menu_open.set(false);
@@ -706,6 +719,20 @@ pub fn Navbar() -> Element {
                                     drawer_open.set(false);
                                 },
                                 "工具管理"
+                            }
+                        }
+                        li {
+                            Link {
+                                to: Route::FinanceIdentity {},
+                                onclick: move |_| {
+                                    hr_menu_open.set(false);
+                                    finance_menu_open.set(false);
+                                    project_menu_open.set(false);
+                                    system_menu_open.set(false);
+                                    user_menu_open.set(false);
+                                    drawer_open.set(false);
+                                },
+                                "身份凭证"
                             }
                         }
                         li {

@@ -39,6 +39,11 @@ pub struct UserPo {
     /// 只允许用户本人通过 update_current_user 修改，Agent 无写入路径；
     /// Agent 观察总结的偏好走知识图谱（user_preference tag），两者独立演进
     pub preferences: String,
+    /// 用户身份凭证库（JSON，类型化结构体 common::models::UserIdentityCredentials）
+    ///
+    /// 飞书等外部平台应用凭证的用户级事实源，渠道经 ChannelConfig.lark_credential_id 引用；
+    /// 空字符串表示无凭证，secret 类字段落库前加密
+    pub identity_credentials: String,
 }
 
 impl UserPo {
@@ -97,6 +102,7 @@ impl UserPo {
             created_at: now,
             updated_at: now,
             preferences: String::new(),
+            identity_credentials: String::new(),
         }
     }
 

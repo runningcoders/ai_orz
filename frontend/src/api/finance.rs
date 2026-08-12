@@ -174,6 +174,16 @@ pub async fn create_message_channel(
     api_post("/api/v1/finance/message-channels", &req).await
 }
 
+pub async fn update_message_channel(
+    req: common::api::UpdateMessageChannelRequest,
+) -> Result<common::api::UpdateMessageChannelResponse, ApiError> {
+    api_put(
+        &format!("/api/v1/finance/message-channels/{}", req.id),
+        &req,
+    )
+    .await
+}
+
 pub async fn update_message_channel_status(
     req: UpdateMessageChannelStatusRequest,
 ) -> Result<(), ApiError> {

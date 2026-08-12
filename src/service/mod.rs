@@ -10,6 +10,11 @@ pub fn init() {
     // 初始化 DAL 层（依赖 DAO）
     dal::init_all();
 
+    // lark_cli 工具凭证解析器：按用户查启用 Lark 渠道取解密后凭证
+    crate::pkg::tool_registry::lark_cli::set_credential_resolver(Box::new(
+        dal::lark::LarkDalCredentialResolver,
+    ));
+
     // 初始化 Domain 层（依赖 DAL）
     domain::init_all();
 }

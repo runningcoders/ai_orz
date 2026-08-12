@@ -1,4 +1,7 @@
 //! 系统设置
+//!
+//! 仅保留界面偏好（主题外观）与前端配置（后端 API 地址）。
+//! 身份凭证管理已迁至 Finance → Identity 子页面（/finance/identity）。
 
 use dioxus::prelude::*;
 

@@ -59,9 +59,29 @@ pub fn load_config() -> Result<AppConfig> {
 
     // 读取配置文件
     let content = std::fs::read_to_string(&config_path)?;
-    let config: AppConfig = toml::from_str(&content).map_err(|e: toml::de::Error| {
+    let mut config: AppConfig = toml::from_str(&content).map_err(|e: toml::de::Error| {
         common::error::Error::new(common::error::ErrorCode::ConfigInvalid, e.to_string())
     })?;
+
+    // 安全配置：主加密密钥不可为空（渠道凭证等敏感字段落库加密依赖它）
+    // 存量配置文件可能无 [security] 段，首次启动自动补写默认密钥并持久化
+    if config.security.secret_key.trim().is_empty() {
+        config.security.secret_key = "ai-orz-default-secret-key-change-me".to_string();
+        match toml::to_string_pretty(&config) {
+            Ok(serialized) => {
+                let _ = std::fs::write(&config_path, serialized);
+            }
+            Err(e) => {
+                println!(
+                    "⚠️ Failed to persist auto-generated security.secret_key: {}",
+                    e
+                );
+            }
+        }
+        println!(
+            "⚠️ security.secret_key 缺失，已自动生成默认密钥并写入配置文件，生产环境请修改 [security] secret_key"
+        );
+    }
 
     // 确保日志目录存在
     let log_dir = config.log_dir();
