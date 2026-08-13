@@ -24,20 +24,23 @@ ai_orz 的 Agent 记忆系统采用四层认知架构，对齐人类记忆机制
 - **长期记忆是沉淀的**：人在睡眠时会整理当天的经历，形成知识和认知。Agent 在休息/睡眠时，由系统自动将近期短期记忆沉淀为知识图谱
 - **读取先短后长**：思考时先检索短期记忆（"你刚刚说过什么"），需要时再通过知识图谱联想到长期记忆（"以前学过的某个知识"）
 
-### 核心设计原则
+### 核心设计原则（2026-08-13 补充）
 
-- **短期记忆由 Agent 主动写入**：不是系统自动聚合，而是 Agent 在思考过程中根据需要主动总结并写入
+- **短期记忆由 Agent 主动写入**：不是系统自动聚合，而是 Agent 在思考过程中根据需要主动总结并写入；**v3.7 起支持 `trace_ids` 强制写入**：传入 trace_ids 可将指定原始对话 trace 直接关联摘要，绕过「按内容相似度自动关联」，保证重要信息不被遗忘
 - **关系独立存储**：知识图谱节点和关系分离存储，关系独立表，符合第三范式，便于查询和维护
 - **完整可追溯**：每条原始记忆细节都保留完整的文件位置信息，可从知识引用追溯到原始原文
 - **休息时自然沉淀**：Agent 休息/睡眠时自动将短期记忆消化沉淀到长期知识图谱，不需要手动操作
-- **搜索支持图谱遍历**：记忆搜索支持语义搜索 + 知识图谱关联搜索，可沿关系链式联想
+- **搜索支持图谱遍历 + 种子推荐**：记忆搜索支持语义搜索 + FTS5 关键词 + 知识图谱关联搜索（tags OR 语义过滤），新增 `recommend_seed_nodes`（冷启动种子节点）与 `traverse_knowledge_graph`（沿关系深度遍历）
+- **task_id 注意力聚焦**：短期记忆/长期记忆查询支持按 task_id 过滤，让 Agent 在特定任务上下文中只看到「与当前任务相关」的记忆，避免跨任务干扰
+- **用户偏好双源沉淀**：偏好从两来源合并（声明式 users.preferences + 推断式图谱 `user_preference` 标签），注入 prompt 前经过安全守卫净化，禁止越过权限边界
 
 设计优势：
 
 1. **当前会话上下文简洁**：短期记忆只保留聚合后的关键信息，不会膨胀导致上下文溢出
-2. **长期知识结构化**：知识图谱结构方便检索和扩展，持久化保留历史知识
-3. **完整可追溯**：任何知识都能追溯到原始对话来源
+2. **长期知识结构化**：知识图谱结构方便检索和扩展，持久化保留历史知识；支持 `user_preference` 标签沉淀 Agent 观察到的用户偏好
+3. **完整可追溯**：任何知识都能追溯到原始对话来源；原始细节按天 JSONL 存储，人类可读且便于统计分析/重放
 4. **渐进式演进**：支持增量沉淀，知识不断丰富
+5. **个性化对齐**：用户画像双源合并，允许用户自报 + Agent 渐进式观察同时生效
 
 ---
 
@@ -191,22 +194,52 @@ ALTER TABLE agents ADD COLUMN capabilities TEXT;
 
 ---
 
-## 文件存储结构
+## 文件存储结构（2026-08-13 更新：按天 JSONL）
 
-原始记忆细节以 Markdown 格式按日期存储在文件系统中：
+原始记忆细节以 **JSONL**（每行一条 JSON 对象）格式按日期存储在文件系统中，兼顾人类可读 + 程序易解析/统计：
 
 **完整路径（相对于 base_data_path）：**
 ```
-agents/{agent_id}/memory/{YYYY-MM-DD}.md
+memory_traces/{YYYYMMDD}.jsonl
+```
+
+**一条 JSONL 记录示例（MemoryTraceRow）：**
+```json
+{
+  "trace_id": "stm_abc123...",
+  "agent_id": "ag_...",
+  "user_id": "usr_...",
+  "task_id": "tsk_...(可选)",
+  "role": "user",
+  "content": "原始对话/思考内容...",
+  "caller_type": "User",  // User | Agent | System
+  "timestamp_ms": 1718841600000
+}
 ```
 
 **`knowledge_reference` 表中 `date_path` 存储格式：**
 ```
-agents/{agent_id}/memory/{YYYY-MM-DD}.md
+memory_traces/{YYYYMMDD}.jsonl
 ```
 存储相对路径，读取时与配置的 `base_data_path` 拼接得到完整路径，避免重复拼接。
 
-按日期分层存储，每日一个文件，`knowledge_reference` 中存储的 `byte_start`/`byte_length` 可以快速定位到具体内容片段。
+**byte_start / byte_length 定位方式：** JSONL 按行存储，`byte_start` 指向某一行首字节偏移，`byte_length` 是该行字节长度，可直接 `pread` 精确定位一条完整的 MemoryTraceRow，无需解析整个文件。
+
+按日期分层存储，每日一个文件（每年最多 365 个），append-only 写入，天然版本化。
+
+---
+
+### users 表扩展 - 用户偏好与身份凭证（2026-08 新增）
+
+```sql
+-- 已在 migrations/20260812000000_users_identity_credentials.sql 及之后的迁移中落地
+ALTER TABLE users ADD COLUMN preferences TEXT;          -- JSON: 声明式自报偏好
+ALTER TABLE users ADD COLUMN identity_credentials TEXT; -- JSON: AES-256-GCM 加密包
+```
+
+**字段语义：**
+- `preferences`：用户显式声明的偏好（如语言风格、时区、工作时间、常用别名、禁用词等），JSON 对象。由用户直接修改，Agent 读取只读
+- `identity_credentials`：用户外部身份凭证（飞书 open_id、第三方 token 等），AES-256-GCM 加密存储的 JSON 包，详见 `common/src/models/identity_credentials.rs` 与 `src/pkg/crypto.rs`
 
 ---
 
@@ -954,6 +987,117 @@ v2 不再使用固定的相似度阈值裁判，而是由 Agent 根据语义判�
 
 ---
 
+## 十八、用户偏好双源沉淀机制（2026-08 新增）
+
+### 18.1 动机：单靠 Agent 观察太慢，单靠声明不够细
+
+Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风格、喜欢简洁还是详细、对某个话题的好恶等），但：
+- 只靠 Agent **观察推断** → 沉淀慢、冷启动无画像、容易随长期记忆漂移被遗忘
+- 只靠用户 **自报声明** → 用户不知道要填什么、也很难面面俱到、每次变化都要手动改
+
+因此采用「双源画像 + 统一入口 + 安全守卫」的三层设计，让两种来源互为补充：
+
+| 来源 | 存放位置 | 写权限 | 说明 |
+|------|---------|--------|------|
+| **声明式自报** | `users.preferences`（JSON） | 用户直接改 | 用户显式表达的偏好（语言/时区/工作时间/别名/禁用词…） |
+| **推断式观察** | 长期图谱节点 `tags` 含 `user_preference` | 只允许沉淀/记忆工具写入 | Agent 在对话中观察总结出的偏好，沉淀为「用户相关」知识节点并打标签 |
+
+两个来源**统一合并**为 `UserProfile`，注入到每一轮 Agent 的 prompt 前；经过安全守卫，绝不越权。
+
+### 18.2 双源合并流程（build_user_profile）
+
+```
+  ┌──────────────────────┐         ┌──────────────────────┐
+  │ users.preferences    │         │ long_term_knowledge  │
+  │   声明式自报          │         │   标签含 user_preference │
+  └──────────┬───────────┘         └──────────┬───────────┘
+             │                                │
+             ▼                                ▼
+  deserialize 为 JsonObject      按 agent 聚合：
+  （空 = {}，坏 JSON = {}）      tags 有 "user_preference"
+             │                        且与 user 相关
+             │                                │
+             └──────────────┬─────────────────┘
+                            ▼
+                  merge：声明式优先
+          （同 key 声明式覆盖推断式，避免漂移）
+                            ▼
+                  安全守卫 sanitize
+         （去除非白名单字段、截断超长值、
+           过滤 PII/指令注入可疑内容）
+                            ▼
+               UserProfile {
+                 preferences: BTreeMap<String, JsonValue>,
+                 observations: Vec<PreferenceObservation>,
+                 merged_prompt_block: String,   // 注入 prompt
+               }
+```
+
+**合并规则**：
+1. **声明式优先**：声明式和推断式出现相同 key（如 `language`），以用户自报为准，避免推断"越权替用户决定"
+2. **去重归一化**：观察类 key 做 prefix（`obs_` / `pref_*`），与自报分离，避免碰撞
+3. **空值 / 坏 JSON 不报错**：用户可能还没填 preferences，或存储被破坏，一律按空对象处理，不会导致 Agent 无法唤醒
+
+### 18.3 推断式沉淀：Agent 如何"观察到用户偏好"
+
+沉淀流程复用十七章的 **sleep_and_settle 自主沉淀**机制：
+- Agent 标记待沉淀短期记忆时，如果内容属于「用户偏好/习惯/风格」，**在创建节点时给 tags 加上 `user_preference`**
+- 节点 `node_type` 使用 `Preference` 或 `Observation` 之一，便于 Domain 层过滤
+- `save_long_term_memory` 的 `node_tags` / `relation_tags` 参数天然支持；沉淀约束模板中明确建议 Agent 给偏好节点打 `user_preference` 标签
+- 查询时 `MemoryDal.list_user_preferences(ctx, user_id, agent_id)` 会：
+  1. 取 users 与该 agent 同组织的匹配 agent
+  2. `long_term_knowledge_node` 中 `tags` 包含 `user_preference`，且通过引用关联到该用户相关的短期记忆
+  3. 合并出 Vec<PreferenceObservation> 参与总画像构建
+
+### 18.4 Prompt 注入块如何渲染
+
+合并后的画像会渲染为一段 `【用户画像】` block，注入在每个 Agent prompt 的 common_context 末尾：
+
+```
+【用户画像】
+- 声明偏好：
+  - 语言: 中文（简体）
+  - 回复风格: 简洁直接，不写客套话
+  - 时区: Asia/Shanghai
+  - 禁用词: ["亲","家人们","宝子"]
+- Agent 观察（仅供参考，若与声明冲突以声明为准）：
+  - 你倾向于在晚上 22:00 之后只做总结，不讨论新话题（2026-08-09 沉淀）
+  - 你对 Rust 代码中的命名规范非常在意，尤其 dislike 驼峰式的 snake_case 混合（2026-08-11 沉淀）
+```
+
+**渲染策略**：
+- 永远把「声明偏好」放前面，且字号视觉上更突出
+- 观察部分加上"仅供参考，若与声明冲突以声明为准"的弱声明，降低观察偏好的误引导权重
+- 超长时观察做 LRU 截断：最近 30 天内更新/创建的观察最多 N 条，超出的自动省略
+
+### 18.5 安全守卫：防止 Prompt 注入与越权
+
+画像内容从数据库读出 → 注入 prompt 的过程必须经过三级守卫：
+
+| 守卫 | 作用 | 规则 |
+|------|------|------|
+| **字段白名单** | 禁止未知字段出现在最终 prompt block 中 | 只允许 UserProfileSchema.ALLOWED_KEYS；其他一律丢弃 |
+| **长度/大小限制** | 防止超大 JSON 把 prompt 撑爆 | 单个 value ≤ 200 字；偏好总量 ≤ 128 条；观察总量 ≤ 32 条 |
+| **可疑内容过滤** | 指令注入/越权伪装检测 | 包含 "Ignore above"、"你现在是"、"SYSTEM:" 等模式直接丢弃；丢弃后记录 WARN 日志 |
+
+守卫实现在 `UserProfile::merge_and_sanitize()`，每次 build 都执行，避免存储层被污染时直接泄露到 prompt。
+
+### 18.6 调用位置与 DAL 接口
+
+```rust
+// UserDal（主入口）
+async fn get_user_profile(&self, ctx: RequestContext, user_id: &str, maybe_agent_id: Option<&str>) -> Result<UserProfile>;
+
+// MemoryDal（观察偏好子查询）
+async fn list_user_preferences(&self, ctx: RequestContext, user_id: &str, agent_id: &str) -> Result<Vec<PreferenceObservation>>;
+```
+
+调用链路：
+- `awaken_agent_brain` → `build_common_context` → `user_dal.get_user_profile(ctx, uid, Some(agent_id))` → 将 `merged_prompt_block` 拼入 prompt
+- 用户自己的接口 `/users/me/preferences` 直接读 `users.preferences` 并允许 PUT 更新
+
+---
+
 ## 更新历史
 
 | 日期 | 变更 | 作者 |
@@ -968,4 +1112,5 @@ v2 不再使用固定的相似度阈值裁判，而是由 Agent 根据语义判�
 | 2026-07-31 | **沉淀机制重构（v2 自主沉淀）**：settle_memory 不再工程化创建节点，改为调用 sleep_and_settle 触发 Agent 自主沉淀；沉淀约束模板内聚在 PromptBuilder.build_sleep_prompt；双层工具过滤（Auto 在 wake_agent_brain，Manual+skill 在 sleep_and_settle）确保 Settle 场景只接触记忆类工具；沉淀场景保留 user_profile + project/task 上下文（认知具身 + 场景化经验总结）；详见 runtime_design.md 第二十五章 |  |
 | 2026-08-04 | **task_id 记忆注意力机制**：MemoryQuery / SearchMemoryParams / QueryMemoryParams 新增 task_id 字段；query_short_term / search_short_term SQL 支持 task_id WHERE 过滤；PromptBuilder 在 task_context 有值时追加【记忆聚焦提示】引导 Agent 按需聚焦；默认 awaken 行为不变（跨任务全局取最近 20 条），project 过滤通过 task 关联实现不新增列 |  |
 | 2026-08-05 | **统一总结流程 + 强制记忆写入（v3.7）**：正常 Final 完成也触发 awaken_for_summary 总结流程；awaken 循环维护 pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt / build_summary_prompt 新增 trace_ids 参数，prompt 模板强制要求 Agent 调用 save_short_term_memory 并填入 trace_ids；SaveShortTermMemoryParams 新增 trace_ids 字段；详见 runtime_design.md 25.12 |  |
+| 2026-08-13 | **用户偏好双源沉淀 + 种子节点推荐 + JSONL 存储**：新增 users.preferences（声明式自报）与图谱 user_preference tag（推断式观察）双源合并，统一 build_user_profile + 三级安全守卫注入 prompt；MemoryDal 新增 recommend_seed_nodes（冷启动种子推荐）与完善 traverse_knowledge_graph；原始记忆存储从按 agent markdown 改为按天 JSONL（memory_traces/{YYYYMMDD}.jsonl），更易解析与回溯；核心理念、数据库说明、文件存储说明同步更新 |  |
 

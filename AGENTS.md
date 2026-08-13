@@ -22,18 +22,18 @@
 
 | 能力域 | 覆盖范围 |
 |--------|---------|
-| 👥 组织与权限 | 多级组织、用户角色（Member → Admin → SuperAdmin 并查集继承）、JWT Cookie + Bearer 双模式认证 |
+| 👥 组织与权限 | 多级组织、用户角色（Member → Admin → SuperAdmin 并查集继承）、JWT Cookie + Bearer 双模式认证、**用户偏好双源沉淀**（users.preferences 自报 + 知识图谱 `user_preference` tag 推断） |
 | 🤖 Agent | 全生命周期（创建/配置/工具绑定/入职）、唤醒执行、多回合循环控制、Auto/Manual 工具调用三层分发、Agent 间协作 |
-| 🧠 记忆 | 四层记忆（Core/Working/Short-term/Long-term）、休息沉淀机制（agent_rest 定时）、知识图谱可视化 |
-| 💬 对话与消息 | 用户 ↔ Agent 双向对话、SSE 实时推送、消息渠道（飞书 WS 入站已上线，微信/Slack/邮件/Webhook 出站骨架）、用户身份凭证中枢（finance/identity） |
+| 🧠 记忆 | 四层记忆（Core/Working/Short-term/Long-term）、休息沉淀机制（agent_rest 定时）、知识图谱可视化、**task_id 注意力聚焦 + trace_ids 强制写入**、**种子节点推荐 recommend_seed_nodes + 图谱遍历 traverse_knowledge_graph** |
+| 💬 对话与消息 | 用户 ↔ Agent 双向对话、SSE 实时推送、消息渠道（飞书 WS 入站已上线，微信/Slack/邮件/Webhook 出站骨架）、**用户身份凭证中枢（AES-256-GCM 加密存储 identity_credentials）** |
 | 📋 任务与项目 | 任务状态机 + 进度追踪（0-100）、execution_plan/execution_result、项目聚合对话上下文、统一附件与产物存储 |
 | 🛠️ 工具与技能 | 统一工具调用架构、工具包/技能包（tag 分组）、5 份预置技能、MCP 服务器集成 |
 | 🔌 外部 Agent | A2A 协议 Client/Server、异步结果回传（Push 回调 + 30 秒轮询兜底） |
-| 🔎 搜索 | FTS5 关键词 + 向量语义 + 图谱关系三位一体混合搜索，LanceDB 默认 + 多后端 |
+| 🔎 搜索 | FTS5 关键词 + 向量语义 + 图谱关系三位一体混合搜索，LanceDB 默认 + 多后端（HNSW/InMemory/SQLite VSS）、**tags 语义过滤** |
 | 📊 统计与监控 | DuckDB 多维统计（五维度）、运行时内存统计收集器、AOP 队列监控、系统健康仪表盘（7 维度含飞书 WS） |
-| 🚀 异步基础设施 | AOP 事件中心（纯框架零业务依赖）、消费者框架、定时触发器（cron，启动幂等注入 2 条系统默认任务） |
+| 🚀 异步基础设施 | AOP 事件中心（纯框架零业务依赖）、消费者框架（8 类消费者：调度/Agent 循环/任务/消息/工具执行/日志/统计/思考轮次）、定时触发器（cron，启动幂等注入 2 条系统默认任务） |
 | 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
-| 🎨 前端 | Dioxus Router 40+ 路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染 |
+| 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
 | 🧪 质量工程 | 1101 测试（后端 961 + 前端 82 + common 58）、clippy 零容忍、覆盖率门槛、E2E Playwright（仅本地） |
 
 ### 1.3 测试与质量统计

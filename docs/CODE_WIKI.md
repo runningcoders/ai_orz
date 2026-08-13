@@ -42,3 +42,19 @@
 - 分层规范与避坑 → [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md)
 - 强制开发规范 → [../AGENTS.md](../AGENTS.md)
 - 某子系统的设计动机 → [design/](./design/) 对应文档
+
+### Wiki 主分类导航（IDE 生成，随代码演进）
+
+wiki 位于 `docs/wiki/ → ../.qoder/repowiki`（软链接），按主题分中文内容在 `zh/content/`：
+
+| 分类 | 路径（相对 docs/wiki） | 包含内容 |
+|------|----------------------|---------|
+| 项目总览 | [zh/content/项目概述](./wiki/zh/content/项目概述) | 项目介绍与目标、核心功能特性、快速开始指南、技术栈概览、项目结构说明 |
+| 架构设计 | [zh/content/架构设计](./wiki/zh/content/架构设计) | 整体架构概览、记忆系统架构、数据存储架构、安全架构、分层架构设计（Domain/DAL/DAO/Handler 编排）、AOP 事件系统架构、API 协议规范 |
+| 核心模块 | [zh/content/核心模块](./wiki/zh/content/核心模块) | 服务层（DAO/DAL/Domain）、处理器层、路由中间件、存储系统（向量+全文）、工具注册表、AOP 事件系统 |
+| 基础设施 | [zh/content/基础设施](./wiki/zh/content/基础设施) | AOP 事件中心（生产者/消费者/队列/监控）、存储系统（LanceDB/HNSW/InMemory/SQLite VSS 四后端）、工具注册表、日志、请求上下文、优雅关闭、CI/Release |
+| 功能模块 | [zh/content/功能模块](./wiki/zh/content/功能模块) | 用户组织、Agent/工具/技能、消息系统、项目管理、系统管理（AOP/定时/备份/日志/健康）、模型提供商、MCP 集成 |
+| 数据模型 | [zh/content/数据模型](./wiki/zh/content/数据模型) | Agent+技能、消息+记忆、项目+任务、系统模型、文件+存储 |
+| 前端应用 | [zh/content/前端应用](./wiki/zh/content/前端应用) | 页面模块、组件系统、钩子、API 客户端、UI 样式与主题、前端架构 |
+| API 参考 | [zh/content/API 参考](./wiki/zh/content/API%20参考) | RESTful 各业务域、A2A 协议、WebSocket/SSE、认证授权、错误码 |
+| 测试与运维 | [zh/content/测试指南](./wiki/zh/content/测试指南) / [开发指南](./wiki/zh/content/开发指南.md) / [故障排除与监控](./wiki/zh/content/故障排除与监控.md) / [配置与部署](./wiki/zh/content/配置与部署.md) | E2E 基础设施、开发规范、排障手册、部署方法 |

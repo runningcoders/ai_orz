@@ -3,15 +3,14 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-08-12T18:04:48Z"
+exported_at: "2026-08-13T01:36:19Z"
 modules:
     "":
-        dir_name: AI Orz 多模块工作区（后端服务 + Dioxus 前端 + 共享 crate）
-        title: AI Orz 多模块工作区（后端服务 + Dioxus 前端 + 共享 crate）
+        dir_name: AI Orz 多 Agent 执行框架（Rust 后端 + Dioxus 前端）
+        title: AI Orz 多 Agent 执行框架（Rust 后端 + Dioxus 前端）
         scope: []
         source_files: []
-        children:
-            - e2e
+        children: []
         depends_on: []
         related_to: []
     e2e:

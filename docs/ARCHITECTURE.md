@@ -1,6 +1,6 @@
 //! # 架构说明
 //!
-//! > 最后更新：2026-07-25
+//! > 最后更新：2026-08-13
 
 ## 项目愿景
 
@@ -154,30 +154,29 @@ Organization (组织)
 - ✅ 当前会话工作记忆在 Brain 内存，每次调用全部拼入 prompt
 - ✅ 短期记忆索引存在 SQLite，需要时检索相关片段拼入
 - ✅ 长期记忆知识图谱存在 SQLite，需要时检索相关片段拼入
-- ✅ 原始细节按天存储为 markdown 文件，人类可读
+- ✅ 原始细节按天存储为 JSONL 文件，人类可读 + 程序易解析
+- ✅ 用户偏好双源沉淀：users.preferences（自报声明式）+ 知识图谱 `user_preference` tag（Agent 观测推断），统一注入 prompt
 
 | 层级 | 位置 | 存储 | 访问方式 | 内容 |
 |------|------|------|----------|------|
 | **Core Memory** 🎨 | Brain 内存 | 内存 + AgentPo 数据库 | 每次调用 **全部拼入 prompt** | 我是谁，我会做什么，我的性格 → 基础认知底色 |
 | **Working Memory** ⚡ | Brain 内存 | 只在内存 | 每次调用 **全部拼入 prompt** | 当前会话正在进行的对话 |
-| **Short-Term Memory** 📝 | SQLite 索引 + 按天文件存储原始细节 | 需要时检索相关摘要拼入 | 最近一段时间对话的归纳摘要 |
-| **Long-Term Knowledge** 📚 | SQLite 知识图谱 + 按天文件存储原始细节 | 需要时检索相关知识拼入 | 归纳总结后的知识图谱节点，包含关系 |
+| **Short-Term Memory** 📝 | SQLite 索引 + 按天 JSONL 存原始细节 | 需要时检索相关摘要拼入 | 最近一段时间对话的归纳摘要；支持 task_id 注意力聚焦；trace_ids 强制写入 |
+| **Long-Term Knowledge** 📚 | SQLite 知识图谱 + 按天 JSONL 存原始细节 | 语义 + FTS + 图谱关系混合检索，支持种子节点推荐与遍历 | 归纳总结后的知识图谱节点，包含关系；支持用户偏好标签（`user_preference`）沉淀 |
 
 ### 文件存储结构（原始细节）
 
 ```
 data/
   ├── ai_orz.db              # 主数据库（存索引和知识图谱）
-  └── long_term_memory/       # 长期记忆原始细节
-        └── {agent_id}/      # 按 Agent 分目录
-              ├── 2026-04-07.md  # 一天一个 markdown 文件，追加写入，人类可读
-              ├── 2026-04-06.md
-              └── ...
+  └── memory_traces/         # 记忆原始细节（MemoryTrace、图谱变更等）
+        └── {YYYYMMDD}.jsonl # 一天一个 JSONL 文件，追加写入，人类可读 + 程序易解析
 ```
 
 **优点**：
 - ✅ 文件数量极少 → 一年才 365 个文件，完全不会多
-- ✅ 原始细节人类可读 → 直接打开就能看今天所有对话
+- ✅ 原始细节人类可读 → 直接打开就能看今天所有记忆事件
+- ✅ JSONL 结构化 → 统计分析/回溯重放都方便，比 markdown 更易解析
 - ✅ append-only 写入 → 不覆盖历史，天然版本控制
 - ✅ 迁移简单 → 整个 data 目录打包就带走
 
@@ -261,18 +260,18 @@ Project + Task + Artifact 聚合
 
 ---
 
-## 最新架构完成状态（2026-07-25 更新）
+## 最新架构完成状态（2026-08-13 更新）
 
-### 总体完成度：**~99%** 🎯
+### 总体完成度：**~99.5%** 🎯
 
 | 层级 | 完成度 | 状态 | 关键进展 |
 |------|--------|------|---------|
-| **DAO 层** | 100% ✅ | 完成 | 25 个 DAO 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送） |
-| **DAL 层** | 100% ✅ | 完成 | 23 个 DAL 全部接入业务，零闲置（含 lark、agent_a2a、agent_codex、backup、log_query、message_push、mcp_tool、cron_trigger 等专属 DAL） |
-| **Domain 层** | 100% ✅ | 完成 | 7 个领域全部完整实现（organization/hr/finance/message/runtime/project/system） |
+| **DAO 层** | 100% ✅ | 完成 | 25 个 DAO 全部实现并被使用，零闲置（18 核心 DAO + 5 渠道 DAO + a2a 回调 + 1 触发器 + 消息推送）；向量存储后端 4 选 1（LanceDB 生产默认 / HNSW / InMemory 测试默认 / SqliteVss） |
+| **DAL 层** | 100% ✅ | 完成 | 23 个 DAL 全部接入业务，零闲置（含 lark、agent_a2a、agent_codex、backup、log_query、message_push、mcp_tool、cron_trigger 等专属 DAL）；MemoryDal 支持种子节点推荐与图谱遍历、tags 语义过滤 |
+| **Domain 层** | 100% ✅ | 完成 | 7 个领域全部完整实现（organization/hr/finance/message/runtime/project/system）；用户偏好双源沉淀（users.preferences + 图谱 user_preference tag） + 安全守卫 |
 | **适配层（Adapter）** | ~99% ✅ | 接近完成 | 8 大业务域 API 全部上线（organization/hr/finance/project/user/health/system/a2a 公开回调），含 AOP Producer（外部 WS 事件接入 + 轮询）；HTTP Handler / 公开回调 Handler / AOP Producer 同属适配层 |
-| **Consumer 层** | 100% ✅ | 完成 | 通用消费者框架 + Message Topic 三层分发 |
-| **Frontend 层** | ~95% ✅ | 接近完成 | Dioxus Router + 15 路由 + Tailwind CSS v4 + DaisyUI v5（30+ 主题），知识图谱 Canvas HUD 驾驶舱风格 + SVG 兜底，Workspace 对话机制 + HUD 流光提示 |
+| **Consumer 层** | 100% ✅ | 完成 | 通用消费者框架 + Message Topic 三层分发；含调度器、Agent 循环、任务、消息、工具执行/日志/统计、思考轮次等 8 类消费者 |
+| **Frontend 层** | ~97% ✅ | 接近完成 | Dioxus Router + 41 条路由 + Tailwind CSS v4 + DaisyUI v5（30+ 主题），知识图谱 Canvas HUD 驾驶舱风格 + SVG 兜底，Workspace 对话机制 + HUD 流光提示，文档中心动态加载 design/plan/archive/wiki
 
 ---
 
@@ -316,9 +315,9 @@ Project + Task + Artifact 聚合
 | ✅ 已完成 | ToolCallResult trace_ref 协议字段 | ToolCallResult 已完成不复制 request args、inline size bound、基于 call_id/tool_id 的 ToolCallEntry 查询，并已强类型携带 `trace_ref = ToolCallTraceRef { tool_id, call_id }`；成功和已开始执行后失败可携带真实引用，执行前/策略失败不伪造；attachment / artifact 仅用于用户下载或 Project Artifact 产物化 |
 | ✅ 已完成 | 对话功能 MVP | 左右分栏布局（项目列表 + 对话区）、消息气泡展示、双向分页、SSE 实时消息推送 |
 | ✅ 已完成 | 消息实时推送 | SSE（Server-Sent Events）长连接已上线，订阅者模式 + DAO 层连接管理 + broadcast 广播，替代旧版短轮询 |
-| **P1** | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；是否继续、还能继续几轮、是否暂停等待反馈，由统一统计模块基于 task / agent / conversation 运行数据决定；最终用户答复由 Agent 在 CortexDao think 回合内调用 `send_message` 等工具发出，Consumer / Runtime 不代生成 |
+| ✅ 已完成 | 统计模块驱动的外部唤醒轮次 | ToolCallResult 可触发 Agent 下一次唤醒；基于 task/agent/conversation 运行统计的决策；最终用户答复由 Agent 在 CortexDao think 回合内调用 `send_message` 等工具发出 |
+| ✅ 已完成 | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写；Short-Term memory 支持 task_id 注意力聚焦与 trace_ids 强制写入；Long-Term 图谱支持 recommend_seed_nodes 与 traverse_knowledge_graph 遍历检索 |
 | **P2** | message 消费推送全链路 E2E | consumer → domain_message → dal_message_channel；Manual ToolCallRequest → Runtime → ToolCallResult 最小闭环已完成，后续补更多 E2E |
-| **P2** | Agent 思考记忆链路 | Agent 触发 → Runtime Memory 读写 |
 
 ---
 
@@ -359,7 +358,7 @@ domain: [ToolDomain ←---- (ToolDal + AgentDal + MessageDal)] (组合：多个 
 2. **所有 service 层方法必须传递 RequestContext** → 方便日志追踪和扩展
 3. **原始细节不占内存** → 短期长期都在数据库，只在需要时检索
 4. **渐进式演进** → 短期积累到一定数量触发归纳，不断更新核心记忆和知识图谱
-5. **人类可读** → 原始细节按天 markdown 存储，不需要工具直接查看
+5. **人类可读 + 程序易解析** → 原始细节按天 JSONL 存储，不需要工具直接查看，统计分析也方便
 
 ---
 
@@ -537,25 +536,40 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 
 ## 数据库设计
 
-所有建表语句都统一放在 `src/pkg/storage/sql.rs` 作为常量，每个常量注释对应到实体：
+所有建表语句都以 `migration/` 目录下的 SQL 脚本为准（sqlx 0.8 migration 管理 + `.sqlx` 查询缓存）。核心业务表清单：
 
-| 表名 | 对应实体 |
-|------|----------|
-| `agents` | `AgentPo` |
-| `model_providers` | `ModelProviderPo` |
-| `organizations` | `OrganizationPo` |
-| `users` | `UserPo` |
-| `messages` | `MessagePo` (事件总线消息) |
-| `tasks` | `TaskPo` |
-| `projects` | `ProjectPo` |
-| `artifacts` | `ArtifactPo` |
-| `attachments` | `AttachmentPo` |
-| `mcp_servers` | `McpServerPo` |
-| `message_channels` | `MessageChannelPo` |
-| `short_term_memory_index` | `ShortTermMemoryIndexPo` |
-| `long_term_knowledge_node` | `LongTermKnowledgeNodePo` |
-| `knowledge_reference` | `KnowledgeReferencePo` |
-| `knowledge_node_relation` | `KnowledgeNodeRelationPo` |
+| 表名 | 对应实体 | 说明 |
+|------|----------|------|
+| `agents` | `AgentPo` | |
+| `model_providers` | `ModelProviderPo` | 支持多模态，新增 EmbeddingProvider 配置 |
+| `organizations` | `OrganizationPo` | |
+| `users` | `UserPo` | 新增 `preferences` JSON（用户自报偏好）与 `identity_credentials` JSON（AES-256-GCM 加密的外部身份凭证） |
+| `messages` | `MessagePo` (事件总线消息) | |
+| `tasks` | `TaskPo` | |
+| `projects` | `ProjectPo` | |
+| `artifacts` | `ArtifactPo` | |
+| `attachments` | `AttachmentPo` | |
+| `mcp_servers` | `McpServerPo` | |
+| `message_channels` | `MessageChannelPo` | |
+| `short_term_memory_index` | `ShortTermMemoryIndexPo` | FTS5 索引 + 向量索引 |
+| `long_term_knowledge_node` | `LongTermKnowledgeNodePo` | 支持 tags（含 `user_preference` 标签） + 向量索引 |
+| `knowledge_reference` | `KnowledgeReferencePo` | |
+| `knowledge_node_relation` | `KnowledgeNodeRelationPo` | |
+| `cron_triggers` | `CronTriggerPo` | 系统/用户级定时任务，启动幂等注入 2 条系统默认任务 |
+| `aop_events` / `aop_queues` 等 | AOP 事件队列持久化表 | 崩溃恢复与顺序保证 |
+
+---
+
+## 向量存储后端（可插拔）
+
+记忆、Agent、工具、任务、技能等所有支持向量检索的实体，均通过 `VectorStore` trait 抽象屏蔽存储差异：
+
+| 后端 | 适用场景 | 说明 |
+|------|----------|------|
+| **LanceDB**（生产默认） | 生产环境持久化 | 高性能列式存储，基于 fastembed 本地推理，适合 GB 级规模 |
+| **HNSW** | 纯内存高性能 | 常驻内存，延迟最低，适合中等规模热数据 |
+| **InMemory**（测试默认） | 单元测试、临时环境 | 每次初始化新建实例，完全隔离，零外部依赖 |
+| **SQLite VSS** | 嵌入式 SQLite 扩展 | 与主库共存，单文件部署，性能随规模下降较快 |
 
 ---
 
@@ -565,7 +579,7 @@ async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
 - 每个单元测试独立，使用随机临时 SQLite 文件，互不干扰
 - 每个测试在执行前重新初始化 storage，保证干净环境
 - 所有建表使用定义好的常量，不重复写 SQL
-- 当前项目总测试数：**830 个**（后端 746 + 前端 34 + common 50）→ **全部通过** ✅
+- 当前项目总测试数：**1101 个**（后端 961 = 875 单元 + 86 集成；前端 82；common 58）→ **全部通过** ✅；CI 覆盖率门槛 PR 38% / main 45%，clippy `-D warnings` 零容忍（后端 + 前端 wasm32）
 
 ### 测试设计要点
 
