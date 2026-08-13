@@ -696,7 +696,7 @@ async fn write_thinking_trace(
 
 ## 十三、统一分页设计（2026-07-24 已落地实现）
 
-> 📌 **当前状态**：已全面实现。query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`。详见 [AGENTS.md 4.9 查询接口分页规范](../AGENTS.md#49-查询接口分页规范强制执行2026-07-24-新增)。
+> 📌 **当前状态**：已全面实现。query 是核心查询能力，list 是语法糖；两者统一返回 `PagedResult<T>`。详见 [分页与通用 count 规范](./pagination_and_count_convention.md)（2026-08-13 从 AGENTS.md 4.9/4.10 迁出）。
 
 ### 13.1 最终方案
 
