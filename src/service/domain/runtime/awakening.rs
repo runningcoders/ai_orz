@@ -61,6 +61,12 @@ pub enum ThinkingScene {
     /// 总结退出场景：思考轮次耗尽后总结当前工作，允许消息和任务管理工具
     /// （neural + memory + messaging + project_management tag）
     Summary,
+    /// 意图识别 + 上下文补充阶段
+    ///
+    /// 思考目标：只理解，不执行任何业务动作
+    /// 工具约束：严格禁止执行类工具
+    /// 最终输出：IntentAnalysis 结构化 JSON
+    IntentAnalyze,
 }
 
 impl ThinkingScene {
@@ -69,12 +75,20 @@ impl ThinkingScene {
     /// - Awaken 场景：全部可用
     /// - Settle 场景：只有 tags 含 "neural" 或 "memory" 的工具可用
     /// - Summary 场景：允许 neural / memory / messaging / project_management
+    /// - IntentAnalyze 场景：允许 tags 包含 neural/memory/query/search/analyze（理解类工具）
     pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
         match self {
             ThinkingScene::Awaken => true,
             ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
             ThinkingScene::Summary => tags.iter().any(|t| {
                 t == "neural" || t == "memory" || t == "messaging" || t == "project_management"
+            }),
+            ThinkingScene::IntentAnalyze => tags.iter().any(|t| {
+                t.contains("neural")
+                    || t.contains("memory")
+                    || t.contains("query")
+                    || t.contains("search")
+                    || t.contains("analyze")
             }),
         }
     }
@@ -150,6 +164,43 @@ impl ThinkingOptions {
         self.max_thinking_rounds
             .unwrap_or(DEFAULT_MAX_THINKING_ROUNDS)
     }
+}
+
+/// 结构化意图分析结果
+///
+/// 由 `RuntimeAwakening::analyze_input_intent()` 输出，供：
+/// - awaken 正式阶段 PromptBuilder 渲染【输入理解结果】区块
+/// - 外部入站适配器（飞书/WS/HTTP 回调）路由消息前的预分析
+/// - 澄清短路判断（need_clarification=true 时，可选择不进入执行阶段直接追问）
+///
+/// 说明：除了 confidence 用 f32，其余均为自由文本/数组，不做强枚举约束，
+/// 避免未来新意图类型导致编译期改动；解析失败时降级为 Default::default()
+/// 空结构，保证不阻塞主流程。
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct IntentAnalysis {
+    /// 主意图类型（推荐取值：Question / TaskRequest / Confirm /
+    /// FollowUp / ClarificationResponse / Chat / Mixed）
+    /// Agent 自主判断，不做强枚举
+    pub intent_type: String,
+    /// 意图置信度 0.0~1.0（Agent 自己打分）
+    #[serde(default)]
+    pub confidence: f32,
+    /// 关键词/关键实体抽取（直接可复用于 search_memory 的 query）
+    #[serde(default)]
+    pub key_terms: Vec<String>,
+    /// 指代消歧结果（自由文本数组，每条 Agent 写清楚"X → Y"）
+    /// 例如：["\"上次那个方案\" → project=proj_123, task=task_456"]
+    #[serde(default)]
+    pub resolutions: Vec<String>,
+    /// 检索补充上下文摘要（search_memory/recommend_seed_nodes 结果）
+    #[serde(default)]
+    pub retrieved_context: Vec<String>,
+    /// 是否需要进一步追问澄清（true 表示需要，false 表示理解充分）
+    #[serde(default)]
+    pub need_clarification: bool,
+    /// 一句话总结：Agent 最终确认自己理解用户想要什么
+    #[serde(default)]
+    pub summary: String,
 }
 
 // ==================== 共享 think loop ====================
@@ -1537,5 +1588,68 @@ mod tests {
             "【用户画像】应包含用户自述偏好，实际: {}",
             prompt
         );
+    }
+
+    #[test]
+    fn thinking_scene_tool_whitelist() {
+        use super::ThinkingScene;
+
+        let scene = ThinkingScene::IntentAnalyze;
+
+        // 允许：工具名 tag 包含 vector_search / query_memory / search / analyze
+        let allowed_tags: Vec<String> = vec![
+            "vector_search".into(),
+            "query_memory".into(),
+            "search_memory".into(),
+            "analyze_text".into(),
+        ];
+        for tag in &allowed_tags {
+            assert!(
+                scene.is_tool_allowed(&[tag.clone()]),
+                "tag '{}' should be allowed in IntentAnalyze scene",
+                tag
+            );
+        }
+
+        // 禁止：工具名 tag 包含 shell_exec / lark_push
+        let forbidden_tags: Vec<String> =
+            vec!["shell_exec".into(), "lark_push".into(), "send_message".into()];
+        for tag in &forbidden_tags {
+            assert!(
+                !scene.is_tool_allowed(&[tag.clone()]),
+                "tag '{}' should be forbidden in IntentAnalyze scene",
+                tag
+            );
+        }
+    }
+
+    #[test]
+    fn intent_analysis_json_roundtrip() {
+        use super::IntentAnalysis;
+        use serde_json;
+
+        let ia = IntentAnalysis {
+            intent_type: "TaskRequest".into(),
+            confidence: 0.85,
+            key_terms: vec!["项目X".into(), "方案A".into(), "进度".into()],
+            resolutions: vec!["\"上次那个方案\" → project=123, task=456".into()],
+            retrieved_context: vec![
+                "2026-08-10 方案 A/B 比较结论，推荐方案 A（相似度 0.88）".into(),
+            ],
+            need_clarification: false,
+            summary: "用户想知道项目 X 方案 A 的当前推进进度".into(),
+        };
+
+        let json_str = serde_json::to_string(&ia).expect("serialize IntentAnalysis");
+        let ia2: IntentAnalysis =
+            serde_json::from_str(&json_str).expect("deserialize IntentAnalysis");
+
+        assert_eq!(ia.intent_type, ia2.intent_type);
+        assert!((ia.confidence - ia2.confidence).abs() < 0.0001);
+        assert_eq!(ia.key_terms, ia2.key_terms);
+        assert_eq!(ia.resolutions, ia2.resolutions);
+        assert_eq!(ia.retrieved_context, ia2.retrieved_context);
+        assert_eq!(ia.need_clarification, ia2.need_clarification);
+        assert_eq!(ia.summary, ia2.summary);
     }
 }

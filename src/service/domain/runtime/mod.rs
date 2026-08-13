@@ -170,6 +170,20 @@ pub trait RuntimeAwakening: Send + Sync {
         options: &crate::service::domain::runtime::awakening::ThinkingOptions,
         trace_ids: &[String],
     ) -> Result<AwakeningResult>;
+
+    /// 专用输入分析函数：跑一轮 IntentAnalyze 小循环，
+    /// 产出结构化意图理解结果，**不执行任何业务动作**
+    ///
+    /// 典型调用方：awaken 的前置阶段（两阶段唤醒流程）
+    /// 也可复用在：外部消息入站、澄清追问、Agent 间协作消息路由前的理解等
+    fn analyze_input_intent(
+        &self,
+        _ctx: RequestContext,
+        _agent: &Agent,
+        _user_message: &str,
+    ) -> Result<crate::service::domain::runtime::awakening::IntentAnalysis> {
+        Err(common::error::err!(Internal, "not implemented"))
+    }
 }
 
 /// 工具执行 trait

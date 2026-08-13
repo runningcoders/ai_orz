@@ -927,6 +927,8 @@ pub struct DefaultPromptBuilder {
     skills: Vec<SkillPo>,
     /// 工具失败统计：(工具名称, 失败次数)
     tool_failures: Vec<(String, u64)>,
+    /// 意图分析结果（IntentAnalyze 阶段产出），供 build() 时渲染参考区块使用
+    pub intent_analysis: Option<crate::service::domain::runtime::awakening::IntentAnalysis>,
 }
 
 impl DefaultPromptBuilder {
@@ -1016,6 +1018,23 @@ impl DefaultPromptBuilder {
             s.push_str("如需聚焦当前任务的记忆，可用 query_memory / search_memory 的 task_id 参数过滤；默认历史记忆是跨任务全局取最近若干条。\n\n");
         }
         s
+    }
+
+    /// 构建意图分析场景的 Prompt（Stub：Task 3 实现）
+    ///
+    /// 当前返回空字符串占位，不影响现有流程。Task 3 会按 IntentAnalyze
+    /// 设计文档拼装：意图识别 SOP 五步走 + 执行禁令 + JSON schema 输出约束。
+    pub fn build_intent_analyze_prompt(&self) -> String {
+        String::new()
+    }
+
+    /// 渲染【输入理解结果】参考区块（Stub：Task 4 实现）
+    ///
+    /// 当前返回空字符串占位，不插入到 build() 输出中。Task 4 会接入
+    /// build() 链路并做截断逻辑（防止 Prompt 过长超 token）。
+    #[allow(dead_code)]
+    fn render_intent_analysis_section(&self) -> String {
+        String::new()
     }
 }
 
