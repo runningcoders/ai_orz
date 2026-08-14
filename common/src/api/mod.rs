@@ -125,6 +125,7 @@ pub mod text_content;
 mod text_content_test;
 pub mod tool;
 pub mod user;
+pub mod runtime;
 
 // Re-exports for convenient import
 pub use a2a::*;
@@ -155,3 +156,4 @@ pub use task::*;
 pub use text_content::*;
 pub use tool::*;
 pub use user::*;
+pub use runtime::*;

@@ -427,6 +427,18 @@ fn hr_routes() -> Router {
             delete(handlers::hr::agent::delete_agent_handler),
         )
         .route(
+            "/agents/runtime-list",
+            get(handlers::hr::agent::runtime_list_handler),
+        )
+        .route(
+            "/agents/{id}/runtime-status",
+            get(handlers::hr::agent::runtime_status_handler),
+        )
+        .route(
+            "/agents/{id}/cancel-thinking",
+            post(handlers::hr::agent::cancel_thinking_handler),
+        )
+        .route(
             "/agents/{agent_id}/tool-packs",
             get(handlers::hr::agent::list_installed_tool_packs_handler),
         )

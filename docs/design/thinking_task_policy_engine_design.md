@@ -1203,46 +1203,19 @@ pub struct CancelThinkingResponse {
 - `runtime-list`：遍历 `state_manager.list_busy_agents()`，每个 Agent 都获取运行时快照
 - 一次查询拿全部运行时信息，前端无需关联两个数据源
 
-### 8.2 SSE 推送增强
+### 8.2 思考运行时事件（纯前端轮询，不扩展 SSE）
 
-现有 SSE 只推送消息事件，新增思考运行时事件推送。**推送策略选 C：关键节点推送**——只在场景切换、每 10 轮里程碑、工具调用完成、思考完成时推送，前端轮询（3-5 秒）补充细节。
+**决策：不扩展 SSE 推送思考运行时事件，由前端轮询 `GET /agents/{id}/runtime-status` 获取。**
 
-```rust
-// SSE 推送的事件类型扩展
-pub enum SseEventType {
-    Message(SsePushPayload),                // 现有：消息投递
-    ThinkingProgress(ThinkingProgressSse),  // 新增：关键节点思考运行时
-    ThinkingFinished(ThinkingFinishedSse),  // 新增：思考完成
-}
+理由：
+1. **语义不同**：现有 SSE 通道面向 message（用户需要看到的内容），思考运行时是 Agent 内部状态（轮次/token/工具调用），属于查看时才需要的运维视角信息
+2. **完成通知已有天然通道**：思考完成 → 产出消息 → message SSE 自然推送，用户收到 message 事件即知思考结束，无需额外的 `ThinkingFinished` 事件
+3. **简化复杂度**：不扩展 `SseEventType` 枚举，不在 think_loop 埋推送点，不设计推送频率控制策略，SSE 通道保持纯净
 
-#[derive(Serialize)]
-pub struct ThinkingProgressSse {
-    pub agent_id: String,
-    pub trace_id: String,
-    pub scene: String,               // 场景切换时推送
-    pub round_number: usize,         // 每 10 轮里程碑推送
-    pub max_rounds: usize,
-    pub total_tokens: u64,
-    pub tool_call_count: usize,
-    pub elapsed_secs: u64,
-    pub event_type: String,          // "scene_change" / "milestone" / "tool_call"
-}
-
-#[derive(Serialize)]
-pub struct ThinkingFinishedSse {
-    pub agent_id: String,
-    pub trace_id: String,
-    pub status: String,              // "success" / "failed" / "cancelled"
-    pub exit_reason: String,         // "final" / "max_rounds" / "timeout" / "context_overflow" / "cancelled"
-    pub duration_ms: u64,
-}
-```
-
-**推送触发条件**：
-- `scene_change`：IntentAnalyze→Awaken、Awaken→Settle、Awaken→Summary 等场景切换
-- `milestone`：每 10 轮（round_number % 10 == 0）
-- `tool_call`：工具调用完成（可选，视实际频率决定是否开启）
-- `finished`：awaken 流程结束（success/failed/cancelled）
+**前端轮询策略**：
+- 进入 Agent 详情页/对话页时启动 3-5 秒轮询 `runtime-status`
+- Agent 状态为 Idle 时停止轮询（或降频到 30 秒一次）
+- 离开页面时停止轮询
 
 ---
 
@@ -1275,9 +1248,9 @@ pub struct ThinkingFinishedSse {
 ```
 
 **实现方式**：
-- SSE 订阅 `ThinkingProgress` 事件，实时更新面板
+- 前端轮询 `GET /agents/{id}/runtime-status`（3-5 秒一次），实时更新面板
 - 「取消思考」按钮调用 `POST /agents/{id}/cancel-thinking`
-- Agent 空闲时面板收起，仅显示「状态：空闲」
+- Agent 空闲时面板收起，仅显示「状态：空闲」，并停止轮询
 - 上下文行（msg/task/project）来自 `AgentRuntimeInfo`，支持点击跳转到对应详情页
 
 ### 9.2 全局运行中 Agent 列表
@@ -1312,7 +1285,7 @@ pub struct ThinkingFinishedSse {
 | `AgentLoopEvent` | 扩展 | `status` 字段新增 `"cancelled"` 值 |
 | `AgentAwakeEvent` | 扩展 | 新增 `exit_reason` 字段（`"final"` / `"max_rounds"` / `"timeout"` / `"context_overflow"` / `"cancelled"`），用于 DuckDB 统计分析"哪些策略最常触发" |
 | `ThinkLoopResult` | 扩展 | 新增 `Cancelled` 变体 |
-| SSE | 扩展 | 新增 `ThinkingProgress`（关键节点）/ `ThinkingFinished` 事件类型 |
+| SSE | **不扩展** | 思考运行时事件由前端轮询 `runtime-status` 获取，SSE 通道保持只推 message |
 | 前端 Agent 详情页 | 扩展 | 「状态图」Tab 改造为「运行时」Tab，或对话页新增运行时面板 |
 
 **不影响的系统**：
@@ -1328,7 +1301,7 @@ pub struct ThinkingFinishedSse {
 |------|------|------|------|
 | **P1** | 策略引擎框架（`pkg/policy/`：Policy trait + PolicyGroup + PolicyBuilder + 5 个内置策略）+ `run_think_loop` 改造接入策略引擎 | 控制逻辑解耦，可扩展 | 改造核心循环，需充分测试 |
 | **P2** | `AgentThinkRuntime` + `AgentRuntimeStateManager` 扩展 + `BusyGuard` 扩展 + consumer 接入 | 思考运行时可监控、可取消 | 改动状态管理核心结构 |
-| **P3** | 后端 API（runtime-status / cancel-thinking / runtime-list）+ SSE 推送 | 前端可查询、可取消 | SSE 推送频率控制 |
+| **P3** | 后端 API（runtime-status / cancel-thinking / runtime-list）+ AgentAwakeEvent 扩展 exit_reason | 前端可查询、可取消 | 接口权限与 DTO 设计 |
 | **P4** | 前端运行时面板 + 取消按钮 + 全局运行中 Agent 列表 | 用户体验闭环 | 前端工作量较大 |
 
 **建议**：P1 + P2 可合并实施（策略引擎 + 思考运行时一体化），P3 + P4 可合并实施（后端接口 + 前端面板）。
@@ -1345,7 +1318,7 @@ pub struct ThinkingFinishedSse {
 | 2 | 运行时信息存储与查询 | **AgentThinkRuntime 持有 `Arc<RwLock<ThinkRuntimeSnapshot>>`，StateManager 直接读取** | 跟着 Agent 状态走，Busy 时有值，Idle 时清理；一次查询拿全部运行时信息，前端无需关联两个数据源 |
 | 3 | cancel 机制 | **AgentThinkRuntime 持有 CancellationToken，StateManager.cancel_thinking 直接操作** | cancel 链路最短（agent_id → state_manager → think_runtime.cancel_token）；状态清理由 BusyGuard RAII 自动完成 |
 | 4 | 策略引擎位置 | **`pkg/policy/`（纯框架层，独立组件）** | 提供 trait 定义 + 实现 + builder + 策略组结构体 + 计算方法；AgentThinkRuntime 通过 builder 构造策略组存放，不感知策略实现细节 |
-| 5 | SSE 推送频率 | **方案 C：关键节点推送 + 前端轮询补充** | 只在场景切换、每 10 轮里程碑、工具调用完成、思考完成时推送；前端 3-5 秒轮询补充细节；避免高频 think_loop 产生大量事件 |
+| 5 | 思考运行时事件推送方式 | **纯前端轮询，不扩展 SSE** | 现有 SSE 通道面向 message（用户需要看到的内容）；思考运行时是 Agent 内部状态，属于查看时才需要的运维视角信息；思考完成有 message 事件天然通知；不扩展 SSE 保持通道纯净，简化复杂度 |
 | 6 | IntentAnalyze 阶段取消 | **立即生效** | run_think_loop 改造后天然检查 cancel_token，所有阶段逻辑统一；Phase 1 理论上可能卡住，不能假设一定快；用户取消是明确意图，立即响应体验最好 |
 | 7 | 策略触发原因持久化 | **AgentAwakeEvent 新增 exit_reason 字段** | 已有统计事件，加一个字段成本最低；可 DuckDB 聚合分析"哪个 Agent 最常超时""哪种策略最常触发"，指导配置调优；不持久化完整策略集（日志记录即可） |
 | 8 | trace_id 在 ThinkRuntimeSnapshot 中的处理 | **动态更新** | 一次 awaken 流程包含 4 个子场景（IntentAnalyze/Awaken/Settle/Summary），各自有独立的 trace_id；ThinkRuntimeSnapshot.trace_id 每轮上报时写入当前 think_loop 的 trace_id，前端查日志时拿到的是当前阶段的正确 trace_id |

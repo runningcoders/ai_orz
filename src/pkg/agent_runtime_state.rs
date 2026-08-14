@@ -360,10 +360,54 @@ impl AgentRuntimeStateManager {
             .collect()
     }
 
+    /// 查询运行中 Agent 列表（带过滤参数）
+    ///
+    /// 过滤参数均为 Option，None 表示不过滤。
+    /// state_filter: "busy" / "resting" / "idle"（None 返回全部）
+    pub fn list_runtime_agents(
+        &self,
+        state_filter: Option<&str>,
+        task_id_filter: Option<&str>,
+        project_id_filter: Option<&str>,
+    ) -> Vec<(String, AgentRuntimeInfo)> {
+        self.states
+            .iter()
+            .filter(|entry| {
+                let info = entry.value();
+                // 状态过滤
+                if let Some(state) = state_filter {
+                    let info_state = match info.state {
+                        AgentRuntimeState::Idle => "idle",
+                        AgentRuntimeState::Busy => "busy",
+                        AgentRuntimeState::Resting => "resting",
+                    };
+                    if info_state != state {
+                        return false;
+                    }
+                }
+                // 任务 ID 过滤
+                if let Some(tid) = task_id_filter
+                    && info.task_id.as_deref() != Some(tid)
+                {
+                    return false;
+                }
+                // 项目 ID 过滤
+                if let Some(pid) = project_id_filter
+                    && info.project_id.as_deref() != Some(pid)
+                {
+                    return false;
+                }
+                true
+            })
+            .map(|entry| (entry.key().clone(), entry.value().clone()))
+            .collect()
+    }
+
     /// 发布状态变更事件（AOP 同步转发）
     ///
     /// 同步方法中无法 await，使用 tokio::spawn 异步发布事件。
     /// 事件为 fire-and-forget，不影响业务流程。
+    /// 无 Tokio runtime 上下文时（如单元测试）跳过事件发布。
     fn notify_state_change(
         &self,
         agent_id: &str,
@@ -371,6 +415,9 @@ impl AgentRuntimeStateManager {
         to_state: &str,
         message_id: Option<String>,
     ) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
         let agent_id = agent_id.to_string();
         let from_state = from_state.to_string();
         let to_state = to_state.to_string();
@@ -555,5 +602,89 @@ mod tests {
 
         mgr.clear_think_runtime("agent-1");
         assert!(mgr.get_think_runtime_snapshot("agent-1").is_none());
+    }
+
+    /// 构造测试数据：4 个 Agent 覆盖 busy / resting / idle 与不同 task/project 组合
+    fn setup_list_runtime_agents(mgr: &AgentRuntimeStateManager) {
+        // agent-1: busy, task-1, proj-1
+        mgr.set_busy("agent-1", "msg-1", Some("task-1"), Some("proj-1"));
+        // agent-2: busy, task-2, proj-1
+        mgr.set_busy("agent-2", "msg-2", Some("task-2"), Some("proj-1"));
+        // agent-3: resting, task-1, proj-2（沉淀保留 task/project）
+        mgr.set_busy("agent-3", "msg-3", Some("task-1"), Some("proj-2"));
+        mgr.set_resting("agent-3");
+        // agent-4: idle（无上下文）
+        mgr.set_busy("agent-4", "msg-4", None, None);
+        mgr.set_idle("agent-4");
+    }
+
+    #[test]
+    fn test_list_runtime_agents_returns_all_when_no_filter() {
+        let mgr = AgentRuntimeStateManager::new();
+        setup_list_runtime_agents(&mgr);
+
+        let agents = mgr.list_runtime_agents(None, None, None);
+        assert_eq!(agents.len(), 4);
+        let ids: Vec<&str> = agents.iter().map(|(id, _)| id.as_str()).collect();
+        assert!(ids.contains(&"agent-1"));
+        assert!(ids.contains(&"agent-2"));
+        assert!(ids.contains(&"agent-3"));
+        assert!(ids.contains(&"agent-4"));
+    }
+
+    #[test]
+    fn test_list_runtime_agents_filters_by_state() {
+        let mgr = AgentRuntimeStateManager::new();
+        setup_list_runtime_agents(&mgr);
+
+        // busy：agent-1, agent-2
+        let busy = mgr.list_runtime_agents(Some("busy"), None, None);
+        assert_eq!(busy.len(), 2);
+
+        // resting：agent-3
+        let resting = mgr.list_runtime_agents(Some("resting"), None, None);
+        assert_eq!(resting.len(), 1);
+        assert_eq!(resting[0].0, "agent-3");
+
+        // idle：agent-4
+        let idle = mgr.list_runtime_agents(Some("idle"), None, None);
+        assert_eq!(idle.len(), 1);
+        assert_eq!(idle[0].0, "agent-4");
+
+        // 不存在的 state：空结果
+        let none = mgr.list_runtime_agents(Some("unknown"), None, None);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn test_list_runtime_agents_filters_by_task_and_project_and_combination() {
+        let mgr = AgentRuntimeStateManager::new();
+        setup_list_runtime_agents(&mgr);
+
+        // task-1：agent-1, agent-3
+        let task1 = mgr.list_runtime_agents(None, Some("task-1"), None);
+        assert_eq!(task1.len(), 2);
+
+        // proj-1：agent-1, agent-2
+        let proj1 = mgr.list_runtime_agents(None, None, Some("proj-1"));
+        assert_eq!(proj1.len(), 2);
+
+        // task-1 + proj-1：仅 agent-1
+        let both = mgr.list_runtime_agents(None, Some("task-1"), Some("proj-1"));
+        assert_eq!(both.len(), 1);
+        assert_eq!(both[0].0, "agent-1");
+
+        // busy + task-1：仅 agent-1（agent-3 是 resting 被排除）
+        let combined = mgr.list_runtime_agents(Some("busy"), Some("task-1"), None);
+        assert_eq!(combined.len(), 1);
+        assert_eq!(combined[0].0, "agent-1");
+
+        // busy + proj-1：agent-1, agent-2
+        let busy_proj1 = mgr.list_runtime_agents(Some("busy"), None, Some("proj-1"));
+        assert_eq!(busy_proj1.len(), 2);
+
+        // 不存在的 task：空结果
+        let empty = mgr.list_runtime_agents(None, Some("not-exist"), None);
+        assert!(empty.is_empty());
     }
 }

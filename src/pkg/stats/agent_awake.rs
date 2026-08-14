@@ -32,6 +32,8 @@ pub struct AgentAwakeEvent {
     pub duration_ms: u64,
     #[metric]
     pub status: String,
+    #[metric]
+    pub exit_reason: String,
 }
 
 impl AgentAwakeEvent {
@@ -47,6 +49,7 @@ impl AgentAwakeEvent {
             call_count: 1,
             duration_ms: 0,
             status: "success".to_string(),
+            exit_reason: String::new(),
         }
     }
 
@@ -116,7 +119,8 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 message_id VARCHAR,
                 call_count BIGINT,
                 duration_ms BIGINT,
-                status VARCHAR
+                status VARCHAR,
+                exit_reason VARCHAR
             );
         "#;
         conn.execute(sql, []).map_err(|e| {
@@ -134,8 +138,8 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
             INSERT INTO agent_awake_events (
                 id, timestamp, agent_id, project_id, task_id,
                 organization_id, user_id, message_id,
-                call_count, duration_ms, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                call_count, duration_ms, status, exit_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -151,6 +155,7 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 &event.call_count as &dyn ToSql,
                 &event.duration_ms as &dyn ToSql,
                 &event.status as &dyn ToSql,
+                &event.exit_reason as &dyn ToSql,
             ],
         )
         .map_err(|e| {
@@ -166,8 +171,8 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 INSERT INTO agent_awake_events (
                     id, timestamp, agent_id, project_id, task_id,
                     organization_id, user_id, message_id,
-                    call_count, duration_ms, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    call_count, duration_ms, status, exit_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             "#;
             conn.execute(
                 sql,
@@ -183,6 +188,7 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                     &event.call_count as &dyn ToSql,
                     &event.duration_ms as &dyn ToSql,
                     &event.status as &dyn ToSql,
+                    &event.exit_reason as &dyn ToSql,
                 ],
             )
             .map_err(|e| {

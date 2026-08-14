@@ -1,6 +1,7 @@
 //! Agent 管理 HTTP 接口
 //! 按方法粒度拆分，每个方法单独一个文件
 
+pub mod cancel_thinking;
 pub mod create_agent;
 pub mod create_external_agent;
 pub mod create_memory;
@@ -16,6 +17,8 @@ pub mod list_installed_tool_packs;
 pub mod query_agents;
 pub mod query_memory;
 pub mod recommend_seed_nodes;
+pub mod runtime_list;
+pub mod runtime_status;
 pub mod save_long_term_memory;
 pub mod save_short_term_memory;
 pub mod search_agents;
@@ -27,6 +30,7 @@ pub mod update_agent;
 pub mod update_agent_status;
 pub mod update_memory;
 
+pub use cancel_thinking::cancel_thinking_handler;
 pub use create_agent::create_agent_handler;
 pub use create_external_agent::create_external_agent_handler;
 pub use create_memory::create_memory_handler;
@@ -42,6 +46,8 @@ pub use list_installed_tool_packs::list_installed_tool_packs_handler;
 pub use query_agents::query_agents_handler;
 pub use query_memory::query_memory_handler;
 pub use recommend_seed_nodes::recommend_seed_nodes_handler;
+pub use runtime_list::runtime_list_handler;
+pub use runtime_status::runtime_status_handler;
 pub use save_long_term_memory::save_long_term_memory_handler;
 pub use save_short_term_memory::save_short_term_memory_handler;
 pub use search_agents::search_agents_handler;
