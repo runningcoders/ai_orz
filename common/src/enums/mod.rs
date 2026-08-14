@@ -15,6 +15,8 @@ pub mod project;
 pub mod provider;
 pub mod skill;
 pub mod task;
+/// 思考场景枚举（awaken/settle/summary/intent-analyze）
+pub mod thinking_scene;
 pub mod tool;
 pub mod user;
 
@@ -33,5 +35,6 @@ pub use project::ProjectStatus;
 pub use provider::{ModelCapability, ProviderType};
 pub use skill::SkillStatus;
 pub use task::{AssigneeType, TaskStatus};
+pub use thinking_scene::ThinkingScene;
 pub use tool::{ControlMode, ToolProtocol, ToolStatus};
 pub use user::{UserRole, UserStatus};

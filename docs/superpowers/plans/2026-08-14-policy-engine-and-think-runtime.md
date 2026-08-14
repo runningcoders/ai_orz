@@ -1,0 +1,1196 @@
+# 策略引擎 + AgentThinkRuntime Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 实现通用策略引擎 `pkg/policy/` 和 AgentThinkRuntime，使 think_loop 每轮可评估策略（轮次上限/超时/上下文溢出/用户取消）并上报运行时快照。
+
+**Architecture:** 策略引擎是纯 pkg 层框架（Policy trait + Metrics + PolicyGroup + PolicyBuilder + 5 个内置策略），不感知业务。AgentThinkRuntime 持有 cancel 信号 + 运行时快照，挂载在 AgentRuntimeInfo 上，Busy 时存在、Idle 时清理。think_loop 每轮构造 Metrics → 评估策略 → 上报快照 → 检查取消。
+
+**Tech Stack:** Rust, DashMap, Arc<AtomicBool>（替代 tokio_util::CancellationToken，避免新增依赖）
+
+**设计文档：** [docs/design/thinking_task_policy_engine_design.md](../../../docs/design/thinking_task_policy_engine_design.md) 第四章（策略引擎）+ 第五章（AgentThinkRuntime）
+
+**偏差说明：**
+- 设计文档用 `CancellationToken`（tokio_util），本计划用 `Arc<AtomicBool>`（功能等价，零新依赖）
+- 设计文档路径 `src/pkg/agent_runtime_state/manager.rs`，实际是单文件 `src/pkg/agent_runtime_state.rs`，本计划保持单文件
+
+---
+
+## File Structure
+
+| 文件 | 职责 | 操作 |
+|------|------|------|
+| `src/pkg/policy/mod.rs` | Policy trait + Metrics + PolicyGroup + PolicyBuilder | 新建 |
+| `src/pkg/policy/builtin.rs` | 5 个内置策略实现 | 新建 |
+| `src/pkg/policy/tests.rs` | 策略引擎单元测试 | 新建 |
+| `src/pkg/mod.rs` | 注册 policy 模块 | 修改 |
+| `src/pkg/agent_runtime_state.rs` | AgentThinkRuntime + ThinkRuntimeSnapshot + StateManager 扩展 | 修改 |
+| `src/service/domain/runtime/awakening.rs` | ThinkLoopResult + map_triggered_to_result + build_policy_for_scene + run_think_loop 改造 | 修改 |
+| `src/service/domain/runtime/busy_guard.rs` | Drop 时清理 think_runtime | 修改 |
+
+---
+
+## Task 1: 创建策略引擎模块
+
+**Files:**
+- Create: `src/pkg/policy/mod.rs`
+- Create: `src/pkg/policy/builtin.rs`
+- Create: `src/pkg/policy/tests.rs`
+- Modify: `src/pkg/mod.rs`
+
+### Step 1: 创建 policy/mod.rs
+
+创建 `src/pkg/policy/mod.rs`，包含 Policy trait、Metrics、PolicyRelation、PolicyGroup、PolicyBuilder：
+
+```rust
+//! 策略引擎（通用判断框架，不感知业务 action）
+//!
+//! 设计要点：
+//! - Policy trait：evaluate 返回命中的策略 id 列表（空 = 未命中）
+//! - Metrics：HashMap 封装，think_loop 每轮构造
+//! - PolicyGroup：本身实现 Policy，支持 And/Or 嵌套组合
+//! - PolicyBuilder：with + build(And) / or(Or)
+
+pub mod builtin;
+
+use serde::Serialize;
+use std::collections::HashMap;
+
+/// 策略 trait（通用判断引擎，不感知业务 action）
+pub trait Policy: Send + Sync + 'static {
+    /// 策略唯一 ID（如 "max_rounds" / "timeout"）
+    fn id(&self) -> &str;
+
+    /// 策略名称（人类可读，用于前端展示）
+    fn name(&self) -> &str;
+
+    /// 策略条件描述（如 "轮次 >= 365"）
+    fn condition_desc(&self) -> &str;
+
+    /// 声明关注的算子名称
+    fn required_metrics(&self) -> Vec<String>;
+
+    /// 评估：返回命中的策略 id 列表（空 = 未命中）
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String>;
+
+    /// 默认方法：是否命中
+    fn is_triggered(&self, metrics: &Metrics) -> bool {
+        !self.evaluate(metrics).is_empty()
+    }
+}
+
+/// 运行时算子集合（HashMap 封装，灵活传递）
+#[derive(Debug, Clone, Default)]
+pub struct Metrics {
+    data: HashMap<String, serde_json::Value>,
+}
+
+impl Metrics {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 链式添加算子
+    pub fn with(mut self, key: &str, value: impl Serialize) -> Self {
+        if let Ok(v) = serde_json::to_value(value) {
+            self.data.insert(key.to_string(), v);
+        }
+        self
+    }
+
+    pub fn get_u64(&self, key: &str) -> Option<u64> {
+        self.data.get(key).and_then(|v| v.as_u64())
+    }
+
+    pub fn get_bool(&self, key: &str) -> Option<bool> {
+        self.data.get(key).and_then(|v| v.as_bool())
+    }
+
+    pub fn get_f64(&self, key: &str) -> Option<f64> {
+        self.data.get(key).and_then(|v| v.as_f64())
+    }
+}
+
+/// 策略组关系
+pub enum PolicyRelation {
+    /// 所有子策略都命中才命中（默认）
+    And,
+    /// 任一子策略命中就命中
+    Or,
+}
+
+/// 策略组：本身实现 Policy，可嵌套组合
+pub struct PolicyGroup {
+    id: String,
+    name: String,
+    condition_desc: String,
+    required_metrics: Vec<String>,
+    policies: Vec<Box<dyn Policy>>,
+    relation: PolicyRelation,
+}
+
+impl PolicyGroup {
+    pub fn new(policies: Vec<Box<dyn Policy>>, relation: PolicyRelation) -> Self {
+        let connector = match relation {
+            PolicyRelation::And => "And",
+            PolicyRelation::Or => "Or",
+        };
+        let id_connector = match relation {
+            PolicyRelation::And => "and",
+            PolicyRelation::Or => "or",
+        };
+
+        let id = format!(
+            "{}({})",
+            id_connector,
+            policies.iter().map(|p| p.id()).collect::<Vec<_>>().join(",")
+        );
+        let name = format!(
+            "{}[{}]",
+            connector,
+            policies.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ")
+        );
+        let condition_desc = policies
+            .iter()
+            .map(|p| format!("({})", p.condition_desc()))
+            .collect::<Vec<_>>()
+            .join(format!(" {} ", connector).as_str());
+
+        let mut required_metrics = Vec::new();
+        for p in &policies {
+            for m in p.required_metrics() {
+                if !required_metrics.contains(&m) {
+                    required_metrics.push(m);
+                }
+            }
+        }
+
+        Self {
+            id,
+            name,
+            condition_desc,
+            required_metrics,
+            policies,
+            relation,
+        }
+    }
+}
+
+impl Policy for PolicyGroup {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn condition_desc(&self) -> &str {
+        &self.condition_desc
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        self.required_metrics.clone()
+    }
+
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        match self.relation {
+            PolicyRelation::And => {
+                let mut all_hits = Vec::new();
+                for p in &self.policies {
+                    let hits = p.evaluate(metrics);
+                    if hits.is_empty() {
+                        return Vec::new();
+                    }
+                    all_hits.extend(hits);
+                }
+                all_hits
+            }
+            PolicyRelation::Or => {
+                self.policies
+                    .iter()
+                    .flat_map(|p| p.evaluate(metrics))
+                    .collect()
+            }
+        }
+    }
+}
+
+/// 策略构造器（通用，with + build/or）
+pub struct PolicyBuilder {
+    policies: Vec<Box<dyn Policy>>,
+}
+
+impl PolicyBuilder {
+    pub fn new() -> Self {
+        Self {
+            policies: Vec::new(),
+        }
+    }
+
+    /// 注入具体 policy
+    pub fn with(mut self, policy: Box<dyn Policy>) -> Self {
+        self.policies.push(policy);
+        self
+    }
+
+    /// 构造策略组（默认 And 关系）
+    pub fn build(self) -> Box<dyn Policy> {
+        match self.policies.len() {
+            0 => panic!("PolicyBuilder requires at least one policy"),
+            1 => self.policies.into_iter().next().unwrap(),
+            _ => Box::new(PolicyGroup::new(self.policies, PolicyRelation::And)),
+        }
+    }
+
+    /// 构造 Or 关系策略组
+    pub fn or(self) -> Box<dyn Policy> {
+        match self.policies.len() {
+            0 => panic!("PolicyBuilder requires at least one policy"),
+            1 => self.policies.into_iter().next().unwrap(),
+            _ => Box::new(PolicyGroup::new(self.policies, PolicyRelation::Or)),
+        }
+    }
+}
+
+impl Default for PolicyBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests;
+```
+
+- [ ] **Step 2: 创建 policy/builtin.rs**
+
+创建 `src/pkg/policy/builtin.rs`，包含 5 个内置策略：
+
+```rust
+//! 内置策略实现
+
+use super::{Metrics, Policy};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 轮次上限策略
+pub struct MaxRoundsPolicy {
+    max_rounds: usize,
+}
+
+impl MaxRoundsPolicy {
+    pub fn new(max_rounds: usize) -> Self {
+        Self { max_rounds }
+    }
+}
+
+impl Policy for MaxRoundsPolicy {
+    fn id(&self) -> &str {
+        "max_rounds"
+    }
+    fn name(&self) -> &str {
+        "MaxRounds"
+    }
+    fn condition_desc(&self) -> &str {
+        // 运行时动态生成，无法返回 &'static str，用 leak 简化
+        // 实际场景中 max_rounds 在构造时确定，leak 一次可接受
+        Box::leak(format!("轮次 >= {}", self.max_rounds).into_boxed_str())
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["round_number".into(), "max_rounds".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let round = metrics.get_u64("round_number").unwrap_or(0);
+        let max = metrics.get_u64("max_rounds").unwrap_or(u64::MAX);
+        if round >= max {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// 超时策略
+pub struct TimeoutPolicy {
+    timeout_secs: u64,
+}
+
+impl TimeoutPolicy {
+    pub fn new(timeout_secs: u64) -> Self {
+        Self { timeout_secs }
+    }
+}
+
+impl Policy for TimeoutPolicy {
+    fn id(&self) -> &str {
+        "timeout"
+    }
+    fn name(&self) -> &str {
+        "Timeout"
+    }
+    fn condition_desc(&self) -> &str {
+        if self.timeout_secs > 0 {
+            Box::leak(format!("超时 >= {}s", self.timeout_secs).into_boxed_str())
+        } else {
+            "超时（未启用）"
+        }
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["elapsed_secs".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let elapsed = metrics.get_u64("elapsed_secs").unwrap_or(0);
+        if self.timeout_secs > 0 && elapsed >= self.timeout_secs {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// 上下文溢出策略
+pub struct ContextOverflowPolicy {
+    threshold: u64,
+}
+
+impl ContextOverflowPolicy {
+    pub fn new(threshold: u64) -> Self {
+        Self { threshold }
+    }
+}
+
+impl Policy for ContextOverflowPolicy {
+    fn id(&self) -> &str {
+        "context_overflow"
+    }
+    fn name(&self) -> &str {
+        "ContextOverflow"
+    }
+    fn condition_desc(&self) -> &str {
+        Box::leak(format!("上下文溢出 >= {}", self.threshold).into_boxed_str())
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["context_tokens".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let tokens = metrics.get_u64("context_tokens").unwrap_or(0);
+        if tokens >= self.threshold {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// 用户取消策略（检查 Arc<AtomicBool>）
+pub struct UserCancelPolicy {
+    cancel_flag: Arc<AtomicBool>,
+}
+
+impl UserCancelPolicy {
+    pub fn new(cancel_flag: Arc<AtomicBool>) -> Self {
+        Self { cancel_flag }
+    }
+}
+
+impl Policy for UserCancelPolicy {
+    fn id(&self) -> &str {
+        "user_cancel"
+    }
+    fn name(&self) -> &str {
+        "UserCancel"
+    }
+    fn condition_desc(&self) -> &str {
+        "用户取消"
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec![]
+    }
+    fn evaluate(&self, _metrics: &Metrics) -> Vec<String> {
+        if self.cancel_flag.load(Ordering::Relaxed) {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// Token 预算策略
+pub struct TokenBudgetPolicy {
+    budget: u64,
+}
+
+impl TokenBudgetPolicy {
+    pub fn new(budget: u64) -> Self {
+        Self { budget }
+    }
+}
+
+impl Policy for TokenBudgetPolicy {
+    fn id(&self) -> &str {
+        "token_budget"
+    }
+    fn name(&self) -> &str {
+        "TokenBudget"
+    }
+    fn condition_desc(&self) -> &str {
+        Box::leak(format!("Token >= {}", self.budget).into_boxed_str())
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["total_tokens".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let total = metrics.get_u64("total_tokens").unwrap_or(0);
+        if total >= self.budget {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+```
+
+- [ ] **Step 3: 创建 policy/tests.rs**
+
+创建 `src/pkg/policy/tests.rs`，包含单元测试：
+
+```rust
+use super::*;
+use builtin::*;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+#[test]
+fn test_max_rounds_policy_triggered() {
+    let policy = MaxRoundsPolicy::new(5);
+    let metrics = Metrics::new().with("round_number", 5u64).with("max_rounds", 5u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_max_rounds_policy_not_triggered() {
+    let policy = MaxRoundsPolicy::new(365);
+    let metrics = Metrics::new().with("round_number", 10u64).with("max_rounds", 365u64);
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_timeout_policy_zero_disables() {
+    let policy = TimeoutPolicy::new(0);
+    let metrics = Metrics::new().with("elapsed_secs", 99999u64);
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_timeout_policy_triggered() {
+    let policy = TimeoutPolicy::new(3600);
+    let metrics = Metrics::new().with("elapsed_secs", 3600u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_context_overflow_policy() {
+    let policy = ContextOverflowPolicy::new(8000);
+    let metrics = Metrics::new().with("context_tokens", 8000u64);
+    assert!(policy.is_triggered(&metrics));
+
+    let metrics_low = Metrics::new().with("context_tokens", 7999u64);
+    assert!(!policy.is_triggered(&metrics_low));
+}
+
+#[test]
+fn test_user_cancel_policy() {
+    let flag = Arc::new(AtomicBool::new(false));
+    let policy = UserCancelPolicy::new(flag.clone());
+    let metrics = Metrics::new();
+    assert!(!policy.is_triggered(&metrics));
+
+    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_group_or() {
+    let group = PolicyGroup::new(
+        vec![
+            Box::new(MaxRoundsPolicy::new(5)),
+            Box::new(TimeoutPolicy::new(3600)),
+        ],
+        PolicyRelation::Or,
+    );
+    // 只命中一个
+    let metrics = Metrics::new()
+        .with("round_number", 5u64)
+        .with("max_rounds", 5u64)
+        .with("elapsed_secs", 100u64);
+    assert!(group.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_group_and() {
+    let group = PolicyGroup::new(
+        vec![
+            Box::new(MaxRoundsPolicy::new(5)),
+            Box::new(TimeoutPolicy::new(3600)),
+        ],
+        PolicyRelation::And,
+    );
+    // 只命中一个 → And 不触发
+    let metrics = Metrics::new()
+        .with("round_number", 5u64)
+        .with("max_rounds", 5u64)
+        .with("elapsed_secs", 100u64);
+    assert!(!group.is_triggered(&metrics));
+
+    // 两个都命中
+    let metrics_both = Metrics::new()
+        .with("round_number", 5u64)
+        .with("max_rounds", 5u64)
+        .with("elapsed_secs", 3600u64);
+    assert!(group.is_triggered(&metrics_both));
+}
+
+#[test]
+fn test_policy_builder_single() {
+    let policy = PolicyBuilder::new()
+        .with(Box::new(MaxRoundsPolicy::new(365)))
+        .build();
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_builder_or() {
+    let flag = Arc::new(AtomicBool::new(false));
+    let policy = PolicyBuilder::new()
+        .with(Box::new(UserCancelPolicy::new(flag.clone())))
+        .with(Box::new(MaxRoundsPolicy::new(365)))
+        .or();
+    // max_rounds 命中
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64);
+    assert!(policy.is_triggered(&metrics));
+
+    // user_cancel 命中
+    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    let metrics_empty = Metrics::new();
+    assert!(policy.is_triggered(&metrics_empty));
+}
+
+#[test]
+fn test_policy_group_auto_generated_fields() {
+    let group = PolicyGroup::new(
+        vec![
+            Box::new(MaxRoundsPolicy::new(365)),
+            Box::new(TimeoutPolicy::new(3600)),
+        ],
+        PolicyRelation::Or,
+    );
+    assert_eq!(group.id(), "or(max_rounds,timeout)");
+    assert!(group.name().contains("Or["));
+    assert!(group.condition_desc().contains("轮次"));
+    assert!(group.condition_desc().contains("超时"));
+    assert!(group.required_metrics().contains(&"round_number".to_string()));
+    assert!(group.required_metrics().contains(&"elapsed_secs".to_string()));
+}
+```
+
+- [ ] **Step 4: 注册 policy 模块**
+
+在 `src/pkg/mod.rs` 中第 2 行（`pub mod agent_runtime_state;` 之后）添加：
+
+```rust
+pub mod policy;
+```
+
+- [ ] **Step 5: Run cargo check + test**
+
+Run: `cargo check --message-format short 2>&1`
+Expected: 编译通过
+
+Run: `cargo test -p ai_orz --lib pkg::policy 2>&1`
+Expected: 10 个测试全部 PASS（如环境缺少 linker，至少 cargo check 通过）
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/pkg/policy/ src/pkg/mod.rs
+git commit -m "feat: add policy engine module (Policy trait + Metrics + PolicyGroup + 5 builtin policies)"
+```
+
+---
+
+## Task 2: 创建 AgentThinkRuntime + 扩展 StateManager
+
+**Files:**
+- Modify: `src/pkg/agent_runtime_state.rs`
+
+### Step 1: 添加 ThinkRuntimeSnapshot + AgentThinkRuntime
+
+在 `src/pkg/agent_runtime_state.rs` 文件顶部（use 语句之后，AgentRuntimeInfo 之前）添加：
+
+```rust
+use std::sync::atomic::{AtomicBool, Ordering};
+// use std::sync::Arc;  // 已存在
+```
+
+注意：只需在现有 use 语句中添加 `use std::sync::atomic::{AtomicBool, Ordering};`。
+
+**ThinkingScene 已移到 common/src/enums/thinking_scene.rs**，pkg 层可直接引用 `common::enums::ThinkingScene`，ThinkRuntimeSnapshot.scene 直接使用枚举类型。
+
+在文件底部（tests 模块之前）添加 ThinkRuntimeSnapshot 和 AgentThinkRuntime：
+
+```rust
+/// 思考状态
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ThinkStatus {
+    #[default]
+    Thinking,
+    Cancelled,
+    Finished,
+}
+
+/// 思考运行时快照（前端查询用，原子读写）
+#[derive(Debug, Clone, Default)]
+pub struct ThinkRuntimeSnapshot {
+    pub agent_id: String,
+    pub trace_id: String,
+    /// 场景（ThinkingScene 枚举，已移到 common 层，无循环依赖）
+    pub scene: ThinkingScene,
+    pub round: usize,
+    pub max_rounds: usize,
+    pub tokens_input: u64,
+    pub tokens_output: u64,
+    pub total_tokens: u64,
+    pub tool_call_count: usize,
+    pub status: ThinkStatus,
+    pub started_at: i64,
+    pub last_updated_at: i64,
+}
+
+impl ThinkRuntimeSnapshot {
+    pub fn new(agent_id: String, trace_id: String) -> Self {
+        let now = common::constants::utils::current_timestamp_ms();
+        Self {
+            agent_id,
+            trace_id,
+            started_at: now,
+            last_updated_at: now,
+            ..Default::default()
+        }
+    }
+
+    /// think_loop 每轮上报时更新快照
+    pub fn report_round(
+        &mut self,
+        trace_id: &str,
+        scene: ThinkingScene,
+        round: usize,
+        max_rounds: usize,
+        tokens_input: u64,
+        tokens_output: u64,
+        total_tokens: u64,
+        tool_call_count: usize,
+    ) {
+        self.trace_id = trace_id.to_string();
+        self.scene = scene;
+        self.round = round;
+        self.max_rounds = max_rounds;
+        self.tokens_input = tokens_input;
+        self.tokens_output = tokens_output;
+        self.total_tokens = total_tokens;
+        self.tool_call_count = tool_call_count;
+        self.last_updated_at = common::constants::utils::current_timestamp_ms();
+    }
+}
+
+/// Agent 思考运行时：跟着 Agent 状态走，Busy 时存在，Idle 时清理
+/// 持有 cancel 信号 + 运行时快照，由 think_loop 每轮上报
+pub struct AgentThinkRuntime {
+    agent_id: String,
+    cancel_flag: Arc<AtomicBool>,
+    snapshot: std::sync::RwLock<ThinkRuntimeSnapshot>,
+}
+
+impl AgentThinkRuntime {
+    pub fn new(agent_id: String, trace_id: String) -> Self {
+        Self {
+            agent_id: agent_id.clone(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            snapshot: std::sync::RwLock::new(ThinkRuntimeSnapshot::new(agent_id, trace_id)),
+        }
+    }
+
+    /// 获取 cancel_flag 的 Arc 引用（用于构造 UserCancelPolicy）
+    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel_flag.clone()
+    }
+
+    /// think_loop 每轮上报时调用
+    pub fn report_round(
+        &self,
+        trace_id: &str,
+        scene: ThinkingScene,
+        round: usize,
+        max_rounds: usize,
+        tokens_input: u64,
+        tokens_output: u64,
+        total_tokens: u64,
+        tool_call_count: usize,
+    ) {
+        if let Ok(mut snap) = self.snapshot.write() {
+            snap.report_round(
+                trace_id,
+                scene,
+                round,
+                max_rounds,
+                tokens_input,
+                tokens_output,
+                total_tokens,
+                tool_call_count,
+            );
+        }
+    }
+
+    /// 用户取消（由 StateManager.cancel_thinking 调用）
+    pub fn cancel(&self) -> bool {
+        self.cancel_flag.store(true, Ordering::Relaxed);
+        if let Ok(mut snap) = self.snapshot.write() {
+            snap.status = ThinkStatus::Cancelled;
+        }
+        true
+    }
+
+    /// 是否已取消（think_loop 每轮检查）
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::Relaxed)
+    }
+
+    /// 获取运行时快照（前端查询用）
+    pub fn snapshot(&self) -> ThinkRuntimeSnapshot {
+        self.snapshot
+            .read()
+            .map(|s| s.clone())
+            .unwrap_or_default()
+    }
+}
+```
+
+- [ ] **Step 2: 扩展 AgentRuntimeInfo 新增 think_runtime 字段**
+
+在 `AgentRuntimeInfo` 结构体中添加 `think_runtime` 字段：
+
+```rust
+pub struct AgentRuntimeInfo {
+    pub state: AgentRuntimeState,
+    pub current_message_id: Option<String>,
+    pub state_started_at: i64,
+    pub task_id: Option<String>,
+    pub project_id: Option<String>,
+    /// 思考运行时（仅 Busy 时有值）
+    pub think_runtime: Option<Arc<AgentThinkRuntime>>,
+}
+```
+
+在 `Default` 实现中添加 `think_runtime: None,`。
+
+- [ ] **Step 3: 扩展 AgentRuntimeStateManager 新增 think_runtime 方法**
+
+在 `AgentRuntimeStateManager` 的 `impl` 块中（`try_set_busy` 之后）添加：
+
+```rust
+    /// 挂载思考运行时（consumer 创建后调用）
+    pub fn set_think_runtime(&self, agent_id: &str, think_runtime: Arc<AgentThinkRuntime>) {
+        if let Some(mut entry) = self.states.get_mut(agent_id) {
+            entry.think_runtime = Some(think_runtime);
+        }
+    }
+
+    /// 清理思考运行时（BusyGuard Drop 时调用）
+    pub fn clear_think_runtime(&self, agent_id: &str) {
+        if let Some(mut entry) = self.states.get_mut(agent_id) {
+            entry.think_runtime = None;
+        }
+    }
+
+    /// 取消思考（cancel-thinking 接口调用）
+    pub fn cancel_thinking(&self, agent_id: &str) -> bool {
+        if let Some(entry) = self.states.get(agent_id) {
+            if let Some(ref think_runtime) = entry.think_runtime {
+                return think_runtime.cancel();
+            }
+        }
+        false
+    }
+
+    /// 查询思考运行时快照（runtime-status 接口调用）
+    pub fn get_think_runtime_snapshot(&self, agent_id: &str) -> Option<ThinkRuntimeSnapshot> {
+        self.states.get(agent_id).and_then(|entry| {
+            entry.think_runtime.as_ref().map(|tr| tr.snapshot())
+        })
+    }
+```
+
+- [ ] **Step 4: 修改 set_idle 清理 think_runtime**
+
+在 `set_idle` 方法中添加 `entry.think_runtime = None;`：
+
+```rust
+    pub fn set_idle(&self, agent_id: &str) {
+        let from_state = self.get_state(agent_id);
+        let mut entry = self.states.entry(agent_id.to_string()).or_default();
+        entry.state = AgentRuntimeState::Idle;
+        entry.current_message_id = None;
+        entry.task_id = None;
+        entry.project_id = None;
+        entry.think_runtime = None;
+        entry.state_started_at = common::constants::utils::current_timestamp_ms();
+        drop(entry);
+        self.notify_state_change(agent_id, state_str(from_state), "idle", None);
+    }
+```
+
+注意：`set_resting` 不清理 think_runtime（沉淀期间仍需保留运行时快照）。
+
+- [ ] **Step 5: Run cargo check**
+
+Run: `cargo check --message-format short 2>&1`
+Expected: 编译通过（或仅有 ThinkingScene import 路径相关的编译错误，需确认 ThinkingScene 的可见性）
+
+注意：`ThinkingScene` 定义在 `src/service/domain/runtime/awakening.rs` 中。如果它是 `pub` 的，则可以直接 import。如果不是，需要在 awakening.rs 中将其改为 `pub`。
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/pkg/agent_runtime_state.rs
+git commit -m "feat: add AgentThinkRuntime + ThinkRuntimeSnapshot, extend StateManager with think_runtime methods"
+```
+
+---
+
+## Task 3: 扩展 ThinkLoopResult + 策略映射 + ThinkingOptions
+
+**Files:**
+- Modify: `src/service/domain/runtime/awakening.rs`
+
+### Step 1: 扩展 ThinkLoopResult 新增 Cancelled 变体**
+
+在 `ThinkLoopResult` 枚举中（第 16-43 行）添加 `Cancelled` 变体：
+
+```rust
+#[derive(Debug)]
+pub enum ThinkLoopResult {
+    Final {
+        content: String,
+        messages: Vec<ChatMessage>,
+    },
+    ContextOverflow {
+        messages: Vec<ChatMessage>,
+        input_tokens: u64,
+        rounds_used: usize,
+    },
+    MaxRoundsExceeded {
+        messages: Vec<ChatMessage>,
+        total_rounds: usize,
+    },
+    /// 用户取消（think_loop 每轮检查 cancel_flag）
+    Cancelled {
+        messages: Vec<ChatMessage>,
+        total_rounds: usize,
+    },
+}
+```
+
+- [ ] **Step 2: 添加 map_triggered_to_result 函数**
+
+在 `config_resolve` 模块之前添加：
+
+```rust
+/// 将命中的策略 id 列表映射为 ThinkLoopResult
+/// 多个策略命中时按优先级取第一个
+fn map_triggered_to_result(
+    triggered: &[String],
+    messages: Vec<ChatMessage>,
+    round_number: usize,
+    input_tokens: u64,
+) -> ThinkLoopResult {
+    // 优先级：用户取消 > 上下文溢出 > token 预算 > 轮次 > 超时
+    for id in triggered {
+        match id.as_str() {
+            "user_cancel" => return ThinkLoopResult::Cancelled {
+                messages,
+                total_rounds: round_number,
+            },
+            "context_overflow" => {
+                return ThinkLoopResult::ContextOverflow {
+                    messages,
+                    input_tokens,
+                    rounds_used: round_number,
+                }
+            }
+            "token_budget" | "max_rounds" | "timeout" => {
+                return ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: round_number,
+                }
+            }
+            _ => {}
+        }
+    }
+    ThinkLoopResult::MaxRoundsExceeded {
+        messages,
+        total_rounds: round_number,
+    }
+}
+```
+
+- [ ] **Step 3: 添加 build_policy_for_scene 函数**
+
+在 `map_triggered_to_result` 之后添加：
+
+```rust
+/// 按场景构造策略组
+fn build_policy_for_scene(
+    agent: &Agent,
+    scene: ThinkingScene,
+    cancel_flag: Arc<AtomicBool>,
+) -> Box<dyn crate::pkg::policy::Policy> {
+    use crate::pkg::policy::builtin::*;
+
+    let max_rounds = config_resolve::max_thinking_rounds(agent);
+    let timeout_secs = config_resolve::think_timeout_secs(agent);
+
+    let mut builder = crate::pkg::policy::PolicyBuilder::new()
+        .with(Box::new(UserCancelPolicy::new(cancel_flag)));
+
+    match scene {
+        ThinkingScene::Awaken => builder
+            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
+            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
+            .or(),
+        ThinkingScene::Settle => builder
+            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
+            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
+            .or(),
+        ThinkingScene::Summary => builder
+            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
+            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
+            .or(),
+        ThinkingScene::IntentAnalyze => builder
+            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
+            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
+            .or(),
+    }
+}
+```
+
+注意：需要在文件顶部添加 `use std::sync::atomic::AtomicBool;` 和 `use std::sync::Arc;`（如果尚未导入）。
+
+注意：ContextOverflowPolicy 暂时不在 build_policy_for_scene 中使用，因为当前 run_think_loop 已有独立的上下文溢出检测逻辑。后续可以整合。
+
+- [ ] **Step 4: Run cargo check**
+
+Run: `cargo check --message-format short 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/service/domain/runtime/awakening.rs
+git commit -m "feat: add Cancelled variant to ThinkLoopResult, add policy mapping functions"
+```
+
+---
+
+## Task 4: 改造 run_think_loop 接入策略引擎
+
+**Files:**
+- Modify: `src/service/domain/runtime/awakening.rs` (run_think_loop 函数 + 4 个调用点)
+- Modify: `src/service/domain/runtime/busy_guard.rs`
+
+### Step 1: 扩展 BusyGuard 清理 think_runtime
+
+在 `src/service/domain/runtime/busy_guard.rs` 的 `Drop` 实现中添加 `clear_think_runtime`：
+
+```rust
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        AgentRuntimeStateManager::global().clear_think_runtime(&self.agent_id);
+        AgentRuntimeStateManager::global().set_idle(&self.agent_id);
+    }
+}
+```
+
+- [ ] **Step 2: 修改 run_think_loop 签名**
+
+在 `run_think_loop` 函数签名中（第 265-278 行）新增两个参数：
+
+```rust
+async fn run_think_loop(
+    &self,
+    ctx: RequestContext,
+    brain: &crate::models::brain::Brain,
+    prompt: &str,
+    tool_descriptors: &[ToolDescriptor],
+    agent: &Agent,
+    scene_str: &str,
+    trace_id: &str,
+    max_rounds: usize,
+    start_round: usize,
+    timeout_secs: u64,
+    think_runtime: Option<&Arc<AgentThinkRuntime>>,  // 新增
+    policy: Option<&Box<dyn crate::pkg::policy::Policy>>,  // 新增
+) -> Result<ThinkLoopResult> {
+```
+
+注意：需要在文件顶部添加 `use crate::pkg::agent_runtime_state::{AgentThinkRuntime, ThinkRuntimeSnapshot};`。
+
+- [ ] **Step 3: 在 think_loop 循环体中接入策略评估**
+
+在 `run_think_loop` 的 `for offset in 0..available_rounds` 循环内（ThinkResult::Final 和 ThinkResult::ToolCall 分支处理之后），添加策略评估逻辑。
+
+在每轮 think 完成后（获取 result 之后），添加：
+
+```rust
+                // 构造本轮 Metrics
+                let metrics = crate::pkg::policy::Metrics::new()
+                    .with("round_number", round as u64)
+                    .with("max_rounds", max_rounds as u64)
+                    .with("elapsed_secs", start_time.elapsed().as_secs());
+
+                // 评估策略
+                if let Some(policy) = policy {
+                    let triggered = policy.evaluate(&metrics);
+                    if !triggered.is_empty() {
+                        // 上报最后一轮
+                        if let Some(tr) = think_runtime {
+                            tr.report_round(
+                                trace_id,
+                                scene,  // ThinkingScene 枚举（新增参数）
+                                round,
+                                max_rounds,
+                                0, 0, 0, 0,  // token/tool 统计（从 result 提取）
+                            );
+                        }
+                        return Ok(map_triggered_to_result(
+                            &triggered,
+                            messages,
+                            round,
+                            0, // input_tokens（从 result 提取）
+                        ));
+                    }
+                }
+
+                // 上报运行时快照
+                if let Some(tr) = think_runtime {
+                    tr.report_round(
+                        trace_id,
+                        scene,
+                        round,
+                        max_rounds,
+                        0, 0, 0, 0,  // token/tool 统计（从 result 提取）
+                    );
+                }
+```
+
+注意：run_think_loop 签名中的 `scene_str: &str` 建议改为 `scene: ThinkingScene`，内部需要字符串时用 `scene.as_str()`。这样 report_round 直接传枚举值，无需转换。
+
+具体的 token 统计值需要从 ThinkResult 中提取。上述代码中用 0 占位，实际实现时需要从 result 中获取 usage 信息（ThinkResult::Final { usage } / ThinkResult::ToolCall { usage }）。
+
+- [ ] **Step 4: 更新 4 个调用点**
+
+在每个调用 `run_think_loop` 的位置，传入 `think_runtime` 和 `policy` 参数。
+
+**调用点 1：awaken 场景（第 683-696 行）**
+
+在调用 `run_think_loop` 之前创建 think_runtime 和 policy：
+
+```rust
+            // 创建思考运行时 + 策略
+            let think_runtime = Arc::new(AgentThinkRuntime::new(
+                agent.po.id.clone(),
+                trace_id.clone(),
+            ));
+            AgentRuntimeStateManager::global().set_think_runtime(
+                &agent.po.id,
+                think_runtime.clone(),
+            );
+            let policy = build_policy_for_scene(
+                agent,
+                ThinkingScene::Awaken,
+                think_runtime.cancel_flag(),
+            );
+
+            // 调用共享 think loop
+            let think_result = self
+                .run_think_loop(
+                    ctx.clone(),
+                    brain,
+                    &prompt,
+                    &tool_descriptors,
+                    agent,
+                    "awaken",
+                    &trace_id,
+                    max_rounds,
+                    total_rounds,
+                    config_resolve::think_timeout_secs(agent),
+                    Some(&think_runtime),
+                    Some(&policy),
+                )
+                .await;
+```
+
+**调用点 2-4（sleep_and_settle / intent-analyze / summary）**
+
+同样创建 think_runtime + policy，传入 `Some(&think_runtime)` 和 `Some(&policy)`。
+
+注意：这些场景的 scene 参数分别是 `ThinkingScene::Settle` / `ThinkingScene::IntentAnalyze` / `ThinkingScene::Summary`。
+
+- [ ] **Step 5: 处理 ThinkLoopResult::Cancelled**
+
+在 awaken 方法中处理 `ThinkLoopResult::Cancelled`：
+
+在 `match think_result` 中添加：
+
+```rust
+            Ok(ThinkLoopResult::Cancelled { messages: _, total_rounds }) => {
+                // 用户取消：直接返回，不触发总结流程
+                log_info!(&ctx, "awaken", "agent thinking cancelled by user, rounds={}", total_rounds);
+                return Ok(AwakeningResult {
+                    content: String::new(),
+                    message_id: message.po.id.clone(),
+                    trace_id: trace_id.clone(),
+                    tool_calls: vec![],
+                    think_rounds: total_rounds,
+                });
+            }
+```
+
+在 sleep_and_settle 和 awaken_for_summary 中也需要处理 Cancelled 分支（简化为返回空结果）。
+
+- [ ] **Step 6: Run cargo check**
+
+Run: `cargo check --message-format short 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/service/domain/runtime/awakening.rs src/service/domain/runtime/busy_guard.rs
+git commit -m "feat: integrate policy engine + AgentThinkRuntime into run_think_loop"
+```
+
+---
+
+## Verification
+
+- [ ] **Final check: cargo clippy**
+
+Run: `cargo clippy --message-format short 2>&1`
+Expected: 无 warnings
+
+- [ ] **Final check: cargo check (all targets)**
+
+Run: `cargo check --all-targets --message-format short 2>&1`
+Expected: 编译通过
