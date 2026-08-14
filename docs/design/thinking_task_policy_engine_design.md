@@ -373,76 +373,87 @@ Or 组合：
   metrics = ["context_tokens", "total_tokens", "round_number", "max_rounds"]
 ```
 
-### 4.4 PolicyBuilder
+### 4.4 PolicyBuilder + policy_set! 宏
+
+#### PolicyBuilder（底层 API）
 
 ```rust
-/// 策略构造器（通用，只有 with + build/or）
-///
-/// build 默认 And 关系，or 方法构造 Or 关系
-/// 单个 policy 直接返回，多个构造 PolicyGroup
+/// 策略构造器（通用，with + with_policy + build/or）
 pub struct PolicyBuilder {
     policies: Vec<Box<dyn Policy>>,
 }
 
 impl PolicyBuilder {
-    pub fn new() -> Self {
-        Self { policies: Vec::new() }
-    }
+    pub fn new() -> Self { ... }
 
-    /// 注入具体 policy
-    pub fn with(mut self, policy: Box<dyn Policy>) -> Self {
-        self.policies.push(policy);
-        self
-    }
+    /// 注入已装箱的策略（用于嵌套子组）
+    pub fn with(mut self, policy: Box<dyn Policy>) -> Self { ... }
+
+    /// 注入策略（泛型便捷方法，自动装箱，消除 Box::new 样板）
+    pub fn with_policy<P: Policy + 'static>(mut self, policy: P) -> Self { ... }
 
     /// 构造策略组（默认 And 关系）
-    pub fn build(self) -> Box<dyn Policy> {
-        match self.policies.len() {
-            0 => panic!("PolicyBuilder requires at least one policy"),
-            1 => self.policies.into_iter().next().unwrap(),
-            _ => Box::new(PolicyGroup::new(self.policies, PolicyRelation::And)),
-        }
-    }
+    pub fn build(self) -> Box<dyn Policy> { ... }
 
     /// 构造 Or 关系策略组
-    pub fn or(self) -> Box<dyn Policy> {
-        match self.policies.len() {
-            0 => panic!("PolicyBuilder requires at least one policy"),
-            1 => self.policies.into_iter().next().unwrap(),
-            _ => Box::new(PolicyGroup::new(self.policies, PolicyRelation::Or)),
-        }
-    }
+    pub fn or(self) -> Box<dyn Policy> { ... }
 }
 ```
 
-**使用示例**：
+#### policy_set! 宏（推荐用法）
+
+声明宏，一步完成"策略初始化 + 组装 + 关系指定"，消除 `Box::new(XxxPolicy::new(...))` 样板。
+约定内置策略通过 `::new` 构造，宏自动调用 `$Policy::new(args...)`。
+
+**三种模式**：
 
 ```rust
-// 默认 And：两个都触发才命中
-let policy = PolicyBuilder::new()
-    .with(Box::new(TokenBudgetPolicy::new(10000)))
-    .with(Box::new(MaxRoundsPolicy::new(50)))
-    .build();  // And
+// 1. 纯 OR：任一命中即触发
+let policy = policy_set! {
+    OR {
+        UserCancelPolicy(cancel_flag),
+        MaxRoundsPolicy(max_rounds),
+        TimeoutPolicy(timeout_secs),
+    }
+};
 
-// Or：任一触发就命中（最常见场景）
-let policy = PolicyBuilder::new()
-    .with(Box::new(UserCancelPolicy::new(cancel_token)))
-    .with(Box::new(ContextOverflowPolicy::new(threshold)))
-    .with(Box::new(MaxRoundsPolicy::new(365)))
-    .with(Box::new(TimeoutPolicy::new(3600)))
-    .or();  // Or
+// 2. 纯 AND：全部命中才触发
+let policy = policy_set! {
+    AND {
+        TokenBudgetPolicy(10000),
+        MaxRoundsPolicy(50),
+    }
+};
 
+// 3. 混合模式：平铺策略 + OR/AND 子组，外层默认 AND
+// 等价于：MaxRounds AND Timeout AND (UserCancel OR TokenBudget)
+let policy = policy_set! {
+    MaxRoundsPolicy(max_rounds),
+    TimeoutPolicy(timeout_secs),
+    OR {
+        UserCancelPolicy(cancel_flag),
+        TokenBudgetPolicy(10000),
+    }
+};
+```
+
+**底层 API 使用场景**（PolicyBuilder 直接使用）：
+
+```rust
 // 嵌套组合：上下文溢出 OR (token 超预算 AND 轮次超 50)
+// 子组需要作为 Box<dyn Policy> 传入，用 with() 而非 with_policy()
 let policy = PolicyBuilder::new()
-    .with(Box::new(ContextOverflowPolicy::new(threshold)))
-    .with(Box::new(
+    .with_policy(ContextOverflowPolicy::new(threshold))
+    .with(
         PolicyBuilder::new()
-            .with(Box::new(TokenBudgetPolicy::new(10000)))
-            .with(Box::new(MaxRoundsPolicy::new(50)))
+            .with_policy(TokenBudgetPolicy::new(10000))
+            .with_policy(MaxRoundsPolicy::new(50))
             .build()  // And 子组
-    ))
+    )
     .or();  // Or 顶层
 ```
+
+> 💡 宏内部使用 TT munching 递归处理混合模式的条目，通过 `policy_set_mixed!` 辅助宏逐条匹配（平铺策略 / OR 子组 / AND 子组）。
 
 ### 4.5 内置策略
 
@@ -552,46 +563,36 @@ if !triggered.is_empty() {
 
 ### 4.7 按场景构造策略组
 
-通过 ThinkingOptions 获取配置，PolicyBuilder 构造策略组：
+通过 `config_resolve` 从 Agent 配置 + 系统配置解析参数，`policy_set!` 宏构造策略组：
 
 ```rust
-// src/service/domain/runtime/awakening.rs
+// src/service/domain/runtime/think_loop.rs
 
-fn build_policy_for_scene(
-    options: &ThinkingOptions,
-    cancel_token: CancellationToken,
+pub(crate) fn build_policy_for_scene(
+    agent: &Agent,
+    _scene: ThinkingScene,
+    cancel_flag: Arc<AtomicBool>,
 ) -> Box<dyn Policy> {
-    let max_rounds = options.effective_max_rounds();
-    let timeout_secs = options.effective_timeout_secs();
+    let max_rounds = config_resolve::max_thinking_rounds(agent);
+    let timeout_secs = config_resolve::think_timeout_secs(agent);
 
-    let mut builder = PolicyBuilder::new()
-        .with(Box::new(UserCancelPolicy::new(cancel_token)));
-
-    match options.scene {
-        ThinkingScene::Awaken => builder
-            .with(Box::new(ContextOverflowPolicy::new(8000)))  // threshold 从 config
-            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-            .or(),
-        ThinkingScene::Settle => builder
-            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-            .or(),
-        ThinkingScene::Summary => builder
-            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-            .or(),
-        ThinkingScene::IntentAnalyze => builder
-            .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-            .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-            .or(),
+    policy_set! {
+        OR {
+            UserCancelPolicy(cancel_flag),
+            MaxRoundsPolicy(max_rounds),
+            TimeoutPolicy(timeout_secs),
+        }
     }
 }
 ```
 
+> 💡 当前实现中所有场景共用同一套策略组（UserCancel OR MaxRounds OR Timeout），ContextOverflowPolicy 暂未启用（run_think_loop 已有独立的上下文溢出检测逻辑，后续可整合）。
+
+**场景策略矩阵（设计目标）**：
+
 | 场景 | UserCancel | ContextOverflow | MaxRounds | Timeout | 触发后处理 |
 |------|:---:|:---:|:---:|:---:|------|
-| `Awaken` | ✅ | ✅ | ✅ | ✅ | ContextOverflow → sleep_and_settle；MaxRounds/Timeout/TokenBudget → awaken_for_summary；Cancelled → 清理退出 |
+| `Awaken` | ✅ | ✅（待整合） | ✅ | ✅ | ContextOverflow → sleep_and_settle；MaxRounds/Timeout/TokenBudget → awaken_for_summary；Cancelled → 清理退出 |
 | `Settle` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 兜底返回空字符串（现有行为） |
 | `Summary` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 兜底返回空字符串（现有行为） |
 | `IntentAnalyze` | ✅ | ❌ | ✅ | ✅ | 所有触发 → 返回 Err（现有行为，外层降级为 None） |
@@ -674,7 +675,7 @@ impl AgentThinkRuntime {
 **设计要点**：
 - 不实现 BackgroundTask trait，不注册到 Registry
 - 持有 `Arc<RwLock<ThinkRuntimeSnapshot>>`，think_loop 每轮写入，StateManager 直接读取
-- cancel_token 由 think_loop 通过 `PolicyBuilder::new().with(Box::new(UserCancelPolicy::new(cancel_token)))` 注入策略组
+- cancel_flag 由 think_loop 通过 `policy_set! { OR { UserCancelPolicy(cancel_flag), ... } }` 注入策略组
 - 主体循环逻辑保持现状，只在每个 think_loop 调用点增加 `think_runtime.report_round()` 和 `think_runtime.is_cancelled()` 检查
 
 ### 5.2 AgentRuntimeStateManager 扩展
@@ -1280,7 +1281,7 @@ pub struct CancelThinkingResponse {
 | `BackgroundTask` trait | **不改** | 思考运行时不并入后台任务体系 |
 | `BackgroundTaskRegistry` | **不改** | 思考运行时不注册到 Registry |
 | `run_think_loop` | 改造 | `max_rounds/timeout_secs` 参数 → `policy: &dyn Policy`（控制逻辑）+ `max_rounds`（仅展示）；新增 `think_runtime: Option<&AgentThinkRuntime>` 参数 |
-| `config_resolve` | 保留 | 策略参数仍从 config_resolve 获取，策略引擎在 think_loop 入口处用 `ThinkingOptions` 解析的配置通过 `PolicyBuilder` 构建策略组 |
+| `config_resolve` | 保留 | 策略参数仍从 config_resolve 获取，策略引擎在 think_loop 入口处用解析的配置通过 `policy_set!` 宏构建策略组 |
 | `ThinkRoundEvent` | 保留 | 每轮发布逻辑不变，策略引擎是额外的控制层 |
 | `AgentLoopEvent` | 扩展 | `status` 字段新增 `"cancelled"` 值 |
 | `AgentAwakeEvent` | 扩展 | 新增 `exit_reason` 字段（`"final"` / `"max_rounds"` / `"timeout"` / `"context_overflow"` / `"cancelled"`），用于 DuckDB 统计分析"哪些策略最常触发" |
@@ -1325,3 +1326,4 @@ pub struct CancelThinkingResponse {
 | 9 | 运行时信息清理 | **完整思考流程结束后清理 think_runtime** | 避免运行时信息泄漏；BusyGuard Drop 时同步清理 think_runtime，与 set_idle 一起完成，保证状态一致性 |
 | 10 | cancel API 的 domain 归属 | **归属于 runtime domain（`domain.runtime().cancel_thinking`）** | AgentRuntimeStateManager 属于 runtime domain 管辖，cancel 操作本质是操作运行时状态（触发 cancel_token），不涉及 Agent/Message 实体业务变更；信号触发在 domain，信号响应在 think_loop，分工清晰 |
 | 11 | MemoryTrace 记录维度 | **一次完整的 think_loop 流程（含多轮 LLM 调用），非单次 LLM 调用** | 一个 think_loop 内所有轮次共享同一 trace_id，合并为一条 MemoryTrace（input=完整 Prompt，output=最终返回）；跨子流程生成新 MemoryTrace；与 ThinkRoundEvent（单轮粒度）形成两级追踪 |
+| 12 | 策略集合构建方式 | **policy_set! 声明宏（推荐）+ PolicyBuilder 底层 API（兼容）** | 宏一步完成"策略初始化 + 组装 + 关系指定"，消除 `Box::new(XxxPolicy::new(...))` 样板；支持纯 OR/AND 和混合模式（平铺策略 + OR/AND 子组，外层 AND）；PolicyBuilder + with_policy 泛型方法保留用于嵌套子组等特殊场景 |
