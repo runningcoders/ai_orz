@@ -1,6 +1,14 @@
 # 意图感知两阶段唤醒 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **实施状态**：✅ 已全部完成（2026-08-14）
+>
+> - Task 1~4 全部实现并提交
+> - Task 5 质量验证通过：后端 + 前端 clippy `-D warnings` 零警告，全 workspace 测试 100% 通过
+> - 配套增强（计划外）：轮次/超时全面配置化（Agent runtime_config > ai_orz.toml > 硬编码），默认轮次调大至 365；新增 `AgentRuntimeConfigInfo` 嵌套结构体替代打平字段；前端 Agent 配置表单适配
+> - 设计文档：[intent_aware_two_stage_awaken_design.md](../../design/intent_aware_two_stage_awaken_design.md)
+> - 架构总纲更新：[runtime_design.md 25.13 节](../../design/runtime_design.md)（v3.8 增量）
 
 **Goal:** (1) 在「协作沟通」技能中新增「理解用户消息 SOP」（方案 B）；(2) 新增 `ThinkingScene::IntentAnalyze` 场景 + 通用复用函数 `analyze_input_intent()`，让 Agent 先做意图识别/指代消歧/语义检索再输出结构化 JSON；(3) 将 `awaken` 串联为两阶段流程：先理解、再执行，把 `IntentAnalysis` 结果渲染成 Prompt 中的【输入理解结果】区块。
 
@@ -34,7 +42,7 @@
 **Files:**
 - Modify: `src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md`（文末「行为准则」章节之后，或在最末尾追加新章）
 
-- [ ] **Step 1: 在 TEMPLATE_COMMUNICATION/skill.md 末尾追加整章**
+- [x] **Step 1: 在 TEMPLATE_COMMUNICATION/skill.md 末尾追加整章**
 
 追加内容如下（直接全文插入到文件末尾，原内容保持不变）：
 
@@ -135,9 +143,9 @@ Step 1 结束后，在你的思考中一句话写出判断结论，例如：「�
 
 ```
 
-- [ ] **Step 2: 本地肉眼验证技能 md 完整性**（无需命令，直接看 diff）：确认 Markdown 表格、列表、标题、章节分隔线 `---` 渲染正确；没有孤立的 `|` 或不匹配的反引号。
+- [x] **Step 2: 本地肉眼验证技能 md 完整性**（无需命令，直接看 diff）：确认 Markdown 表格、列表、标题、章节分隔线 `---` 渲染正确；没有孤立的 `|` 或不匹配的反引号。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -155,7 +163,7 @@ git commit -m "docs(skill-communication): add 理解用户消息 SOP 整章 (方
 - Modify: `src/models/prompt_builder.rs`（PromptBuilder trait 新增 build_intent_analyze_prompt + intent_analysis 签名）
 - Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 新增 trait 方法的空实现，保证编译通过）
 
-- [ ] **Step 1: ThinkingScene 枚举新增 IntentAnalyze 变体 + is_tool_allowed 扩展**
+- [x] **Step 1: ThinkingScene 枚举新增 IntentAnalyze 变体 + is_tool_allowed 扩展**
 
 在 `src/service/domain/runtime/awakening.rs` 找到现有 `ThinkingScene` 枚举定义（位置靠近文件顶部 trait 定义之前），做两处修改：
 
@@ -196,7 +204,7 @@ pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
 }
 ```
 
-- [ ] **Step 2: 新增 IntentAnalysis 结构体（同文件内，ThinkingScene 下方）**
+- [x] **Step 2: 新增 IntentAnalysis 结构体（同文件内，ThinkingScene 下方）**
 
 追加在 ThinkingOptions 结构体之后即可，保持同文件内聚：
 
@@ -246,7 +254,7 @@ fn default_empty_string() -> String {
 
 注意：确认该文件顶部已引入 `use serde::{Serialize, Deserialize};` 或 `use serde;`，若未引入则在文件顶部 imports 区块追加（看现有代码的用习惯决定是 `#[serde]` 还是 `#[derive(serde::Serialize, serde::Deserialize)]`，按现有 models 风格保持一致）。
 
-- [ ] **Step 3: RuntimeAwakening trait 新增方法签名**（mod.rs）
+- [x] **Step 3: RuntimeAwakening trait 新增方法签名**（mod.rs）
 
 在 `src/service/domain/runtime/mod.rs` 的 `RuntimeAwakening` trait 内（`summary` 方法之后）追加：
 
@@ -267,7 +275,7 @@ async fn analyze_input_intent(
 
 同时确认 `IntentAnalysis` 是从 `awakening.rs` re-export 的（通常在 `mod.rs` 顶部 `pub use awakening::{ThinkingScene, ThinkingOptions, IntentAnalysis};` 加上，看现有风格保持一致）。若 awakening.rs 内的 IntentAnalysis 没对外 pub use，则在 mod.rs 顶部补一条 `pub use super::awakening::IntentAnalysis;`。
 
-- [ ] **Step 4: PromptBuilder trait 新增方法签名**（prompt_builder.rs）
+- [x] **Step 4: PromptBuilder trait 新增方法签名**（prompt_builder.rs）
 
 在 `src/models/prompt_builder.rs` 的 trait 定义中，紧接在 `build_sleep_prompt()` 方法之后追加：
 
@@ -291,7 +299,7 @@ fn intent_analysis(&mut self, _analysis: &crate::service::domain::runtime::awake
 }
 ```
 
-- [ ] **Step 5: DefaultPromptBuilder 占位空字段 + 空方法，保证编译通过**
+- [x] **Step 5: DefaultPromptBuilder 占位空字段 + 空方法，保证编译通过**
 
 在 `src/service/dal/agent.rs` 的 DefaultPromptBuilder 结构体中新增字段（先占位，Task 3 会实现）：
 
@@ -322,7 +330,7 @@ fn intent_analysis(
 }
 ```
 
-- [ ] **Step 6: 编译 + Clippy 通过**
+- [x] **Step 6: 编译 + Clippy 通过**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -332,7 +340,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 **预期**：无编译错误；clippy 零 warnings。
 
-- [ ] **Step 7: 单元测试 - ThinkingScene::is_tool_allowed 对 IntentAnalyze 的白名单**
+- [x] **Step 7: 单元测试 - ThinkingScene::is_tool_allowed 对 IntentAnalyze 的白名单**
 
 在 `src/service/domain/runtime/awakening.rs` 同级文件末尾 `#[cfg(test)]` 模块追加：
 
@@ -412,7 +420,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 8: 运行测试**
+- [x] **Step 8: 运行测试**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -421,7 +429,7 @@ cargo test -p ai_orz --lib thinking_scene_intent_analyze_tool_white_list intent_
 
 **预期**：3 tests PASS。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -437,7 +445,7 @@ git commit -m "feat(runtime): add IntentAnalyze scene + IntentAnalysis struct + 
 - Modify: `src/service/domain/runtime/awakening.rs`（`impl RuntimeAwakening for RuntimeDomainImpl` 中的 `analyze_input_intent` 方法）
 - Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 实现 build_intent_analyze_prompt）
 
-- [ ] **Step 1: 实现 `analyze_input_intent()` 方法**
+- [x] **Step 1: 实现 `analyze_input_intent()` 方法**
 
 在 `src/service/domain/runtime/awakening.rs` 中找到 `impl RuntimeAwakening for RuntimeDomainImpl` 块（与 awaken / sleep_and_settle / summary 同 impl），追加：
 
@@ -655,7 +663,7 @@ fn extract_first_json_object(s: &str) -> Option<String> {
 
 2. `build_base_prompt_builder`、`chat_msg_from_message` 等辅助函数不一定存在，请根据 awakening.rs 内 awaken() 方法当前真实代码**对齐其具体实现（字段名/函数名/调用顺序/辅助函数名）**，不要假设它们长什么样。**核心要求是：和 awaken() 一样把人设、技能、工具、上下文、历史都装进去**，保证 IntentAnalyze 阶段和正常 awaken 阶段拥有相同的背景知识，只是最终 Prompt 模板不同。
 
-- [ ] **Step 1.1（降级）如果不能引入 regex 依赖，则把策略 b) 改为手动字符串查找**
+- [x] **Step 1.1（降级）如果不能引入 regex 依赖，则把策略 b) 改为手动字符串查找**
 
 用以下代码替换策略 b) 部分：
 
@@ -690,7 +698,7 @@ fn extract_first_json_object(s: &str) -> Option<String> {
     }
 ```
 
-- [ ] **Step 2: 实现 DefaultPromptBuilder::build_intent_analyze_prompt()**
+- [x] **Step 2: 实现 DefaultPromptBuilder::build_intent_analyze_prompt()**
 
 在 `src/service/dal/agent.rs` 的 `impl PromptBuilder for DefaultPromptBuilder` 块中，把 Task 2 写的空壳 `build_intent_analyze_prompt()` 替换为完整实现：
 
@@ -798,7 +806,7 @@ fn build_intent_analyze_prompt(&self) -> String {
 }
 ```
 
-- [ ] **Step 3: 编译 + Clippy + 单元测试**
+- [x] **Step 3: 编译 + Clippy + 单元测试**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -811,7 +819,7 @@ cargo test -p ai_orz --lib parse_intent_analysis_json extract_first_json_object 
 - 编译 + clippy 通过
 - 单元测试如果没有显式命名的 parse/extract 测试，补一个 #[cfg(test)] 小测试（提取 extract_first_json_object 模块内加一个 UT：`"prefix {\"a\":1} middle {\"b\":2} suffix"` 断言提取出 `{"a":1}`；字符串内部 {} 不计数的场景：`"{\"key\":\"val{ue}\"}"` 断言能正确提取完整）
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -827,7 +835,7 @@ git commit -m "feat(runtime): implement analyze_input_intent() + build_intent_an
 - Modify: `src/service/domain/runtime/awakening.rs`（awaken() 方法内，在"原 awaken 查最近 20 条 + 构造 builder"之后、调用 build() 之前插入 analyze_input_intent）
 - Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 新增 `render_intent_analysis_section` 私有方法 + build() 中【当前消息】区块之前调用它）
 
-- [ ] **Step 1: awaken() 中在构造 builder 之后、build() 之前插入阶段 1**
+- [x] **Step 1: awaken() 中在构造 builder 之后、build() 之前插入阶段 1**
 
 找到 `impl RuntimeAwakening for RuntimeDomainImpl::awaken()` 方法。定位到关键片段（伪代码表示位置）：
 
@@ -867,7 +875,7 @@ let mut builder = self.build_base_prompt_builder(...).await?;
     // =============== 新增代码结束 ======================================
 ```
 
-- [ ] **Step 2: DefaultPromptBuilder 新增 render_intent_analysis_section 私有方法**
+- [x] **Step 2: DefaultPromptBuilder 新增 render_intent_analysis_section 私有方法**
 
 在 `impl DefaultPromptBuilder`（非 trait impl，即私有辅助方法那块）中新增，与 `build_common_context_sections()` / `build_tools_and_skills_sections()` 相邻：
 
@@ -956,7 +964,7 @@ fn render_intent_analysis_section(&self) -> String {
 }
 ```
 
-- [ ] **Step 3: build() 中在【当前消息】之前调用 render_intent_analysis_section()**
+- [x] **Step 3: build() 中在【当前消息】之前调用 render_intent_analysis_section()**
 
 在 `DefaultPromptBuilder::build()` 方法里，找到拼装【当前消息】区块的位置（伪代码）：
 
@@ -982,7 +990,7 @@ fn render_intent_analysis_section(&self) -> String {
 
 确保【输入理解结果】区块严格出现在【当前消息】之前、【思考 Trace ID】之后。
 
-- [ ] **Step 4: 单元测试 - DefaultPromptBuilder 渲染断言**
+- [x] **Step 4: 单元测试 - DefaultPromptBuilder 渲染断言**
 
 在 `DefaultPromptBuilder` 对应的 `#[cfg(test)]` 模块（或新建）中追加测试：
 
@@ -1056,7 +1064,7 @@ mod pb_intent_analysis_tests {
 }
 ```
 
-- [ ] **Step 5: 编译 + Clippy + 运行新增测试**
+- [x] **Step 5: 编译 + Clippy + 运行新增测试**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -1067,7 +1075,7 @@ cargo test -p ai_orz --lib build_contains_intent_analysis_section_when_present b
 
 **预期**：编译 + clippy 通过；3 tests PASS。
 
-- [ ] **Step 6: 集成测试 - analyze_input_intent 可运行 + 降级不阻塞**
+- [x] **Step 6: 集成测试 - analyze_input_intent 可运行 + 降级不阻塞**
 
 新建 `tests/intent_analyze_two_stage.rs`（或在现有 `tests/agent_intelligence_integration_tests.rs` 后追加模块）：
 
@@ -1116,7 +1124,7 @@ async fn create_test_message_for_agent(
 
 注意：`create_test_message_for_agent` 的实现**必须对齐项目现有集成测试中构造测试消息的模式**（如在 `tests/agent_integration_tests.rs` 中如何创建 Message 实体），不要自己发明一套。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -1128,7 +1136,7 @@ git commit -m "feat(runtime): awaken two-stage chain + intent_analysis section r
 
 ### Task 5：全量质量验证 + 最终提交
 
-- [ ] **Step 1: clippy -D warnings 全通过**
+- [x] **Step 1: clippy -D warnings 全通过**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -1137,7 +1145,7 @@ cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -30
 
 **预期**：0 warnings, 0 errors。若有关于 unused import / dead code 的 Clippy 警告，顺手修掉。
 
-- [ ] **Step 2: 跑全部测试（common + macros + backend + frontend wasm32 按需）**
+- [x] **Step 2: 跑全部测试（common + macros + backend + frontend wasm32 按需）**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -1147,7 +1155,7 @@ cargo test --workspace --exclude ai-orz-frontend 2>&1 | tail -60
 
 **预期**：测试总数 ≥ 1101，**100% 通过**（0 failed）。如果有新增测试导致旧用例失败，按「修改应用代码使其通过，不要为了通过而简化或删除旧测试」原则处理。
 
-- [ ] **Step 3: 覆盖率不明显下降（可选，本地跑）**
+- [x] **Step 3: 覆盖率不明显下降（可选，本地跑）**
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
@@ -1157,7 +1165,7 @@ cd /Users/aman/Technology/rust/ai_orz
 
 **预期**：整体覆盖率大致维持在当前水平或略高于门槛基线（main 45% / PR 38%）。轻微下降可以接受，只要不是大面积掉点。
 
-- [ ] **Step 4: 最终大提交（或合并 commits，视你的习惯而定；这里保留分步 commit 让 CR 更清晰）**
+- [x] **Step 4: 最终大提交（或合并 commits，视你的习惯而定；这里保留分步 commit 让 CR 更清晰）**
 
 不额外提交，Task 1~4 已经各自 commit。
 

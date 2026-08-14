@@ -1201,6 +1201,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-08-14 | v3.8 | 意图感知两阶段唤醒（详见 25.13）：新增 ThinkingScene::IntentAnalyze + Summary 变体；RuntimeAwakening 新增 analyze_input_intent 复用函数；awaken 拆为两阶段（先理解再执行）；IntentAnalysis 结构化结果渲染为【输入理解结果】区块；轮次/超时全面配置化（Agent runtime_config > ai_orz.toml > 硬编码），默认轮次调大至 365；新增 AgentRuntimeConfigInfo 嵌套结构体替代打平字段传递；设计文档见 [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) |
 | 2026-08-05 | v3.7 | 统一总结流程 + 强制记忆写入（详见 25.12）：正常 Final 完成也触发 awaken_for_summary；pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt/build_summary_prompt 新增 trace_ids 参数 + 强制 save_short_term_memory 指令；SaveShortTermMemoryParams 新增 trace_ids 字段 |
 | 2026-07-31 | v3.6 | 新增第二十五章：唤醒/沉睡场景化设计（ThinkingScene/ThinkingOptions + sleep_and_settle + 工具双层过滤 + 业务上下文注入），812 测试通过 |
 | 2026-07-24 | v3.5 | 记忆 tags 全链路支持 + 知识图谱节点可视化增强，746 测试通过（详见第二十四章） |
@@ -1270,7 +1271,17 @@ Phase 3 的核心目标是让 Agent 在多回合对话中能够：
 
 **第二层：awakening 层单次唤醒 think loop 轮次上限（`max_thinking_rounds`）**
 
-**设计原则**：在 awakening 层 think loop 内部实现，统计单次唤醒内的思考轮次（跨多次上下文压缩累计），与 Agent 配置的 `max_thinking_rounds`（默认 90）对比。防止长任务在单次唤醒中无限思考。
+**设计原则**：在 awakening 层 think loop 内部实现，统计单次唤醒内的思考轮次（跨多次上下文压缩累计），与 Agent 配置的 `max_thinking_rounds`（默认 365）对比。防止长任务在单次唤醒中无限思考。
+
+**配置优先级**（v3.8 全面配置化）：
+
+```
+Agent.runtime_config.max_thinking_rounds（非 0 时优先）
+    ↓ 为 0 或未设置时
+系统配置 ai_orz.toml [agent] max_thinking_rounds（默认 365）
+    ↓ 配置加载失败时
+硬编码兜底常量
+```
 
 **与第一层的区别**：
 - 第一层统计**跨消息**累计工具调用数，保护消息循环层
@@ -1291,11 +1302,12 @@ awaken() 调用 run_think_loop()
             └── 进入总结退出流程（awaken_for_summary）
 ```
 
-**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` + `awaken_for_summary()`
+**关键代码位置**：`src/service/domain/runtime/awakening.rs` → `run_think_loop()` + `awaken_for_summary()`；`src/service/domain/runtime/config_resolve.rs` → 配置解析
 
 **设计要点**：
 - 轮次计数跨上下文压缩累计：每次 `ContextOverflow` 后压缩并重试，`total_rounds += rounds_used`
-- 默认值 90 轮可通过 `AgentRuntimeConfig.max_thinking_rounds` 配置
+- 默认值 365 轮（v3.8 调大，先收集运行数据再优化），可通过 `AgentRuntimeConfig.max_thinking_rounds` 或 `ai_orz.toml` 配置
+- v3.8 同步配置化的还有：`intent_analyze_max_rounds`（意图识别阶段轮次）、`summary_max_rounds`（总结退出轮次）、`think_timeout_secs`（思考超时，0=不限）
 - 未来任务可在分配时预估写入，覆盖默认值
 
 #### 21.2.1a 总结退出流程（MaxRoundsExceeded + 正常 Final 完成的统一总结）
@@ -1894,8 +1906,10 @@ Consumer 层
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThinkingScene {
     #[default]
-    Awaken,  // 唤醒场景：响应外部消息，加载全部工具
-    Settle,  // 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
+    Awaken,         // 唤醒场景：响应外部消息，加载全部工具
+    Settle,         // 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
+    IntentAnalyze,  // 意图识别场景：先理解再执行，只加载理解类工具（neural/memory/query/search tag）
+    Summary,        // 总结退出场景：正常 Final / MaxRoundsExceeded 触发，允许 neural/memory/messaging/project_management
 }
 
 impl ThinkingScene {
@@ -1904,6 +1918,12 @@ impl ThinkingScene {
         match self {
             ThinkingScene::Awaken => true,
             ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
+            ThinkingScene::IntentAnalyze => tags.iter().any(|t| {
+                t == "neural" || t == "memory" || t == "query" || t == "search"
+            }),
+            ThinkingScene::Summary => tags.iter().any(|t| {
+                t == "neural" || t == "memory" || t == "messaging" || t == "project_management"
+            }),
         }
     }
 }
@@ -1925,6 +1945,7 @@ pub struct ThinkingOptions {
 - 统一 options 字段避免频繁修改 awaken/sleep_and_settle 方法签名
 - scene 字段控制工具过滤行为
 - project/task 实体通过 builder 拼装到 prompt，沉淀出的经验自带场景标签
+- IntentAnalyze 场景由 `analyze_input_intent` 内部强制设置（覆盖 options.scene），调用方无需感知
 
 ### 25.3 RuntimeAwakening trait 签名升级
 
@@ -1953,19 +1974,41 @@ pub trait RuntimeAwakening: Send + Sync {
         pending_memories_summary: &str,
         options: &ThinkingOptions,      // 新增：场景上下文
     ) -> Result<AwakeningResult>;
+
+    /// 输入意图识别（v3.8 新增）：两阶段唤醒的 Phase 1
+    ///
+    /// 内部强制构造 IntentAnalyze 场景，跑一轮 think loop 让 Agent 自主完成
+    /// 意图识别/指代消歧/语义检索补充，产出结构化 IntentAnalysis JSON。
+    /// 失败降级返回 Err，由调用方（awaken）降级为 None 不阻塞主流程。
+    async fn analyze_input_intent(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+        options: &ThinkingOptions,
+    ) -> Result<IntentAnalysis>;
 }
 ```
 
 ### 25.4 工具双层过滤机制
 
-**问题**：唤醒 brain 在两种场景用同一个方法，传同一套 ToolDescriptor 给 `BrainDal.think()`。若 Settle 场景不过滤工具，模型可能通过 function calling 调用 `send_message` 等消息类工具，触发消息流程导致异步唤醒自己，破坏沉淀内循环。
+**问题**：唤醒 brain 在多种场景用同一个方法，传同一套 ToolDescriptor 给 `BrainDal.think()`。若 Settle 场景不过滤工具，模型可能通过 function calling 调用 `send_message` 等消息类工具，触发消息流程导致异步唤醒自己，破坏沉淀内循环。
 
 **方案**：双层过滤，分别覆盖 Auto 工具和 Manual 工具/技能
 
 | 层级 | 过滤位置 | 过滤对象 | 触发条件 |
 |------|---------|---------|---------|
-| 第一层 | `wake_agent_brain` | Auto 工具（传给 think() 的 ToolDescriptor） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
-| 第二层 | `sleep_and_settle` | Manual 工具 + skill（Prompt 展示层） | Settle 场景：只保留 tags 含 `neural` 或 `memory` |
+| 第一层 | `wake_agent_brain` | Auto 工具（传给 think() 的 ToolDescriptor） | 非 Awaken 场景均过滤：Settle/IntentAnalyze/Summary 按 `scene.is_tool_allowed` 白名单保留 |
+| 第二层 | `sleep_and_settle` / `analyze_input_intent` / `awaken_for_summary` | Manual 工具 + skill（Prompt 展示层） | 同第一层白名单 |
+
+**场景工具白名单对照**：
+
+| 场景 | 允许的工具 tag | 设计意图 |
+|------|---------------|---------|
+| `Awaken` | 全部 | 正式执行阶段，所有工具可用 |
+| `Settle` | `neural` / `memory` | 沉淀场景禁止消息/任务/状态类工具，避免异步唤醒自己 |
+| `IntentAnalyze` | `neural` / `memory` / `query` / `search` | 理解阶段允许检索类工具补充上下文，禁止任何状态写入/消息发送 |
+| `Summary` | `neural` / `memory` / `messaging` / `project_management` | 总结场景允许通知用户/更新任务进度，但禁止其他业务工具 |
 
 **过滤逻辑**（在 awakening.rs 中实现）：
 
@@ -1973,14 +2016,14 @@ pub trait RuntimeAwakening: Send + Sync {
 // wake_agent_brain 中的 Auto 工具过滤
 let auto = match scene {
     ThinkingScene::Awaken => auto,
-    ThinkingScene::Settle => auto
+    _ => auto
         .into_iter()
         .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
         .collect(),
 };
 
-// sleep_and_settle 中的 skill + Manual 工具过滤
-let scene = options.scene;
+// sleep_and_settle / analyze_input_intent / awaken_for_summary 中的 skill + Manual 工具过滤
+let scene = options.scene;  // 或 IntentAnalyze/Summary 强制设置
 let skill_pos: Vec<SkillPo> = agent.skills().iter()
     .filter(|s| scene.is_tool_allowed(&s.po.parse_tags()))
     .map(|s| s.po.clone())
@@ -1995,6 +2038,8 @@ let all_tools: Vec<ToolPo> = agent.tools().iter()
 - Auto 工具过滤在 brain 装配阶段（派生 ToolDescriptor 前），过滤后模型无法通过 function calling 调用
 - Manual 工具/skill 过滤在 Prompt 拼装阶段，过滤后模型在 Prompt 中看不到这些工具
 - Awaken 场景不做过滤，全部工具可用
+- IntentAnalyze 场景严格禁止 messaging/project_management，避免理解阶段误触发副作用
+- Summary 场景放开 messaging/project_management，让 Agent 能通知用户/更新任务进度
 
 ### 25.5 业务上下文注入
 
@@ -2164,6 +2209,78 @@ awaken 循环
 ```
 
 **与 v3.6 的关系**：v3.7 是 v3.6 的增量升级，不改变 ThinkingScene/ThinkingOptions 框架，只在总结流程和 prompt 模板层面增强，确保短期记忆不遗漏、可追溯。
+
+### 25.13 意图感知两阶段唤醒（v3.8 增量）
+
+> 📌 **本节定位**：在 v3.6/v3.7 基础上引入"先理解、再执行"的两阶段唤醒流程。新增 `ThinkingScene::IntentAnalyze` + `Summary` 两个场景变体，新增 `RuntimeAwakening::analyze_input_intent` 复用函数，让 Agent 在收到用户消息后先做意图识别/指代消歧/语义检索补充，再正式进入执行阶段。
+>
+> **完成状态**：✅ 已全部实现（2026-08-14）
+>
+> **设计文档**：[intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md)
+
+**问题背景**：原 v3.7 单阶段唤醒流程在面对短消息/对答式/讨论式/指代密集型用户输入时，Agent 没有显式意图识别步骤，是否做语义检索完全靠自觉，无法稳定处理"上次那个""他说的 X"等指代消歧场景。
+
+**v3.8 设计要点**：
+
+1. **第四种 ThinkingScene：IntentAnalyze**
+   - 工具白名单：`neural` / `memory` / `query` / `search`（允许检索类工具，禁止任何状态写入/消息发送）
+   - 内部由 `analyze_input_intent` 强制设置 scene，调用方无需感知
+
+2. **RuntimeAwakening 新增 analyze_input_intent 复用函数**
+   - 类比 `sleep_and_settle`：内部调用 `run_think_loop`，但 Prompt 是专用的 `build_intent_analyze_prompt`（约束只做理解不做执行）
+   - 产出结构化结果 `IntentAnalysis`（intent_type / confidence / key_terms / resolutions / retrieved_context / need_clarification / summary 七字段）
+   - 失败降级返回 Err，由调用方降级为 None 不阻塞主流程
+
+3. **awaken 拆为两阶段串联**：
+   ```
+   awaken(ctx, agent, message, options)
+       │
+       ├── Phase 1：analyze_input_intent(ctx, agent, message, options)
+       │   ├── 强制构造 IntentAnalyze 场景 options
+       │   ├── 读最近 20 条短期记忆做上下文
+       │   ├── 按 IntentAnalyze 场景过滤技能/工具
+       │   ├── build_intent_analyze_prompt 拼装专用 Prompt（SOP 五步 + 禁令 + JSON schema）
+       │   ├── run_think_loop（轮次由 config_resolve.intent_analyze_max_rounds 决定）
+       │   └── parse_intent_analysis_json（6 级降级解析）
+       │       → 成功：Option<IntentAnalysis> = Some(ia)
+       │       → 失败：Option<IntentAnalysis> = None（不阻塞主流程）
+       │
+       └── Phase 2：正式 awaken loop
+           ├── Phase 1 成功时首次迭代跳过记忆注入（IntentAnalysis 已含 retrieved_context）
+           ├── builder.intent_analysis(ia) 注入理解结果
+           ├── build() 在【当前消息】之前渲染【输入理解结果 · 仅供参考】区块
+           └── run_think_loop 进入正式干活（所有工具可用）
+   ```
+
+4. **【输入理解结果】区块渲染原则**：
+   - 姿态："仅供参考"——明确告诉 Agent 若重新判断后发现不一致，以当下理解为准，不被预分析束缚
+   - 位置：在【当前消息】之前，让 Agent 先看到理解结论再看用户原文
+   - 内容截断：retrieved_context 每条限制长度，避免 Prompt 膨胀
+
+5. **轮次/超时全面配置化**（v3.8 同步落地）：
+   - 配置优先级：`Agent.runtime_config`（非 0） > `ai_orz.toml [agent]` > 硬编码兜底
+   - 配置项：`max_thinking_rounds`（正式执行，默认 365）、`intent_analyze_max_rounds`（意图识别）、`summary_max_rounds`（总结退出）、`think_timeout_secs`（思考超时，0=不限）
+   - 默认轮次统一调大至 365，先收集运行数据再优化
+   - 前后端配置传递：新增 `AgentRuntimeConfigInfo` 嵌套结构体替代打平字段，提升可扩展性和边界清晰度
+
+6. **TEMPLATE_COMMUNICATION 技能新增「理解用户消息 SOP」整章**（方案 B 配套）：
+   - 在沟通类预置技能中明确 5 步 SOP：意图识别 → 指代消歧 → 关键词抽取+语义检索 → 判断是否澄清 → 形成理解结论
+   - 与 IntentAnalyze 场景的 Prompt 模板对齐，让 Agent 在正式干活阶段也保持理解优先的思维习惯
+
+**关键代码位置**：
+- `src/service/domain/runtime/awakening.rs` → `analyze_input_intent_inner()` + `awaken()` Phase 1/2 串联逻辑
+- `src/service/domain/runtime/config_resolve.rs` → 配置解析（新增模块）
+- `src/models/prompt_builder.rs` → `build_intent_analyze_prompt()` trait 方法 + `intent_analysis()` builder 方法
+- `src/service/dal/agent.rs` → `DefaultPromptBuilder::build_intent_analyze_prompt()` 实现 + 【输入理解结果】区块渲染
+- `common/src/api/agent.rs` → `AgentRuntimeConfigInfo` 嵌套结构体
+- `common/config/ai_orz.toml` → `[agent]` 配置段（轮次/超时默认值）
+- `src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md` → 理解用户消息 SOP 章节
+
+**与 v3.7 的关系**：v3.8 是 v3.7 的增量升级，不改变 v3.7 的统一总结流程和 trace_ids 机制，只在 awaken 入口前增加一个理解阶段。Phase 1 失败降级不阻塞 Phase 2，Phase 2 仍走 v3.7 的完整流程（ContextOverflow/MaxRoundsExceeded/Final 三分支）。
+
+**测试验证**：
+- `tests/integration/agent_awaken_test.rs::awaken_two_stage_happy_path`：Mock 两阶段 think，验证 Phase 2 Prompt 包含【输入理解结果】区块且位置在【当前消息】之前
+- `tests/integration/agent_awaken_test.rs::test_awaken_*`：原有单阶段测试保持兼容（Phase 1 失败降级时等同单阶段）
 
 ---
 
