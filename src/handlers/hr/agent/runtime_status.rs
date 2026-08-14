@@ -2,11 +2,18 @@
 
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{RuntimeStatusRequest, RuntimeStatusResponse, ThinkRuntimeInfo};
 use common::error::Result;
 
 /// 查询 Agent 运行时状态 + 思考运行时快照
+#[register_handler_tool(
+    id = "get_runtime_status",
+    name = "get_runtime_status",
+    description = "Get an agent's runtime status and thinking snapshot (current round, tokens, tool calls, trace_id). Useful for checking if an agent is busy before sending it a message.",
+    params = "common::api::RuntimeStatusRequest",
+    tags = "collaboration,query"
+)]
 #[generate_http_handler]
 pub async fn runtime_status(
     ctx: RequestContext,

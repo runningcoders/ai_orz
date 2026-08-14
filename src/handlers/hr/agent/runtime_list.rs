@@ -2,13 +2,20 @@
 
 use crate::pkg::RequestContext;
 use crate::service::domain::runtime::domain;
-use ai_orz_macros::generate_http_handler;
+use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
     RuntimeListRequest, RuntimeListResponse, RuntimeStatusResponse, ThinkRuntimeInfo,
 };
 use common::error::Result;
 
 /// 查询运行中 Agent 列表（支持按 state/task_id/project_id 过滤）
+#[register_handler_tool(
+    id = "list_runtime_agents",
+    name = "list_runtime_agents",
+    description = "List all agents' runtime status with optional filters (state/task_id/project_id). Useful for finding which agents are currently busy or working on a specific task.",
+    params = "common::api::RuntimeListRequest",
+    tags = "collaboration,query"
+)]
 #[generate_http_handler]
 pub async fn runtime_list(
     ctx: RequestContext,
