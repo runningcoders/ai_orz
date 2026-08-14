@@ -18,13 +18,14 @@ use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
 };
 use common::api::{
-    AgentListItem, BindToolToAgentRequest, GetAgentRequest, GetAgentResponse,
-    InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
-    ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
-    ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, SkillListItem,
-    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
+    AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
+    GetAgentResponse, InstallSkillPackRequest, InstallSkillToAgentRequest,
+    InstallToolPackRequest, ListModelProvidersResponseItem, ListToolsRequest, MessageListItem,
+    PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams,
+    SkillListItem, SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem,
+    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
@@ -1159,10 +1160,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 capabilities: Some(capabilities),
                                                 soul,
                                                 model_provider_id: mp_id,
-                                                max_thinking_rounds: Some(max_thinking_rounds),
-                                                intent_analyze_max_rounds: Some(intent_analyze_max_rounds),
-                                                summary_max_rounds: Some(summary_max_rounds),
-                                                think_timeout_secs: Some(think_timeout_secs),
+                                                runtime_config: Some(AgentRuntimeConfigInfo {
+                                                    max_thinking_rounds,
+                                                    intent_analyze_max_rounds,
+                                                    summary_max_rounds,
+                                                    think_timeout_secs,
+                                                }),
                                             };
                                             saving_meta.set(true);
                                             let id_clone = id_for_submit.clone();

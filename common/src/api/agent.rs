@@ -219,14 +219,8 @@ pub struct UpdateAgentRequest {
     pub soul: Option<String>,
     /// 关联的模型提供商 ID
     pub model_provider_id: Option<String>,
-    /// 单次唤醒最大思考轮次（0 = 使用系统配置）
-    pub max_thinking_rounds: Option<usize>,
-    /// 意图识别阶段最大思考轮次（0 = 使用系统配置）
-    pub intent_analyze_max_rounds: Option<usize>,
-    /// 总结退出阶段最大思考轮次（0 = 使用系统配置）
-    pub summary_max_rounds: Option<usize>,
-    /// 思考超时秒数（0 = 不限制）
-    pub think_timeout_secs: Option<u64>,
+    /// 运行时配置（思考轮次 / 超时等可调参数），整体替换
+    pub runtime_config: Option<AgentRuntimeConfigInfo>,
 }
 
 /// 更新 Agent 状态请求

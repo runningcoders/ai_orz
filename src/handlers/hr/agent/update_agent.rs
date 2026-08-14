@@ -53,25 +53,13 @@ pub async fn update_agent(
     if let Some(model_provider_id) = params.model_provider_id {
         agent.po.model_provider_id = model_provider_id;
     }
-    // 更新运行时配置（任一字段提供即读取当前配置覆盖对应字段后写回）
-    if params.max_thinking_rounds.is_some()
-        || params.intent_analyze_max_rounds.is_some()
-        || params.summary_max_rounds.is_some()
-        || params.think_timeout_secs.is_some()
-    {
+    // 更新运行时配置（整体替换：前端传入完整的 runtime_config 对象）
+    if let Some(rc_info) = params.runtime_config {
         let mut rc = agent.po.get_runtime_config();
-        if let Some(v) = params.max_thinking_rounds {
-            rc.max_thinking_rounds = v;
-        }
-        if let Some(v) = params.intent_analyze_max_rounds {
-            rc.intent_analyze_max_rounds = v;
-        }
-        if let Some(v) = params.summary_max_rounds {
-            rc.summary_max_rounds = v;
-        }
-        if let Some(v) = params.think_timeout_secs {
-            rc.think_timeout_secs = v;
-        }
+        rc.max_thinking_rounds = rc_info.max_thinking_rounds;
+        rc.intent_analyze_max_rounds = rc_info.intent_analyze_max_rounds;
+        rc.summary_max_rounds = rc_info.summary_max_rounds;
+        rc.think_timeout_secs = rc_info.think_timeout_secs;
         agent.po.set_runtime_config(&rc);
     }
     // Update modified_by and updated_at
