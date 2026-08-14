@@ -25,12 +25,11 @@ pub struct AgentRuntimeConfig {
     #[serde(default = "default_max_thinking_depth")]
     pub max_thinking_depth: i32,
 
-    /// 单次唤醒最大思考轮次（跨压缩累计），默认 90
+    /// 单次唤醒最大思考轮次（跨压缩累计）
     ///
-    /// 用于 awakening 层 think loop 轮次限制：当单次 awaken 内思考轮次
-    /// （跨多次上下文压缩累计）达到此值时，进入总结退出流程。
-    /// 任务可在分配时预估写入，未配置时使用此默认值。
-    #[serde(default = "default_max_thinking_rounds")]
+    /// 0 = 使用系统配置（[agent].max_thinking_rounds）。
+    /// 非 0 = Agent 级覆盖值。
+    #[serde(default)]
     pub max_thinking_rounds: usize,
 
     /// 思考间隔（毫秒），避免过快调用，默认 0（无间隔）
@@ -62,6 +61,21 @@ pub struct AgentRuntimeConfig {
     /// 安装时会将技能复制到 Agent 目录，卸载时仅移除 tag 关联（保留副本）。
     #[serde(default)]
     pub installed_skill_packs: Vec<String>,
+
+    /// 意图识别阶段最大思考轮次
+    /// 0 = 使用系统配置（[agent].intent_analyze_max_rounds）。
+    #[serde(default)]
+    pub intent_analyze_max_rounds: usize,
+
+    /// 总结退出阶段最大思考轮次
+    /// 0 = 使用系统配置（[agent].summary_max_rounds）。
+    #[serde(default)]
+    pub summary_max_rounds: usize,
+
+    /// 思考超时（秒）
+    /// 0 = 使用系统配置（[agent].think_timeout_secs），系统配置也 0 = 不限制。
+    #[serde(default)]
+    pub think_timeout_secs: u64,
 
     /// 外部 Agent 执行配置（仅 Cli/Remote kind 时使用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,13 +122,16 @@ impl Default for AgentRuntimeConfig {
     fn default() -> Self {
         Self {
             max_thinking_depth: default_max_thinking_depth(),
-            max_thinking_rounds: default_max_thinking_rounds(),
+            max_thinking_rounds: 0,
             thinking_interval_ms: 0,
             max_tool_calls_per_step: default_max_tool_calls_per_step(),
             enable_reflection: false,
             require_user_confirm: true,
             installed_tags: Vec::new(),
             installed_skill_packs: Vec::new(),
+            intent_analyze_max_rounds: 0,
+            summary_max_rounds: 0,
+            think_timeout_secs: 0,
             external_config: None,
         }
     }
@@ -169,10 +186,6 @@ impl AgentRuntimeConfig {
 // 辅助函数用于 serde default
 fn default_max_thinking_depth() -> i32 {
     10
-}
-
-fn default_max_thinking_rounds() -> usize {
-    90
 }
 
 fn default_max_tool_calls_per_step() -> i32 {

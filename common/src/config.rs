@@ -56,6 +56,56 @@ pub struct AppConfig {
     /// A2A Server 配置
     #[serde(default)]
     pub a2a_server: A2aServerConfig,
+
+    /// Agent 运行时默认配置（系统级，可被 Agent 实体的 runtime_config 覆盖）
+    #[serde(default)]
+    pub agent: AgentConfig,
+}
+
+/// Agent 运行时配置（系统级默认值）
+///
+/// 单个 Agent 可通过 `agents.runtime_config` JSON 覆盖任意字段。
+/// 约定：Agent 级配置值为 0 时，回退到此处系统默认值。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentConfig {
+    /// 单次唤醒最大思考轮次（跨压缩累计），默认 120
+    #[serde(default = "default_agent_max_thinking_rounds")]
+    pub max_thinking_rounds: usize,
+
+    /// 意图识别阶段最大思考轮次，默认 10
+    #[serde(default = "default_agent_intent_analyze_max_rounds")]
+    pub intent_analyze_max_rounds: usize,
+
+    /// 总结退出阶段最大思考轮次，默认 20
+    #[serde(default = "default_agent_summary_max_rounds")]
+    pub summary_max_rounds: usize,
+
+    /// 思考超时（秒），0 = 不限制，默认 0
+    #[serde(default)]
+    pub think_timeout_secs: u64,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            max_thinking_rounds: default_agent_max_thinking_rounds(),
+            intent_analyze_max_rounds: default_agent_intent_analyze_max_rounds(),
+            summary_max_rounds: default_agent_summary_max_rounds(),
+            think_timeout_secs: 0,
+        }
+    }
+}
+
+fn default_agent_max_thinking_rounds() -> usize {
+    120
+}
+
+fn default_agent_intent_analyze_max_rounds() -> usize {
+    10
+}
+
+fn default_agent_summary_max_rounds() -> usize {
+    20
 }
 
 /// JWT 配置

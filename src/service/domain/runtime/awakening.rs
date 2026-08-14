@@ -94,19 +94,51 @@ impl ThinkingScene {
     }
 }
 
-/// 思考轮次默认上限（跨压缩轮次累计）
+/// 从系统配置 + Agent runtime_config 解析思考轮次和超时
 ///
-/// awaken 和 sleep_and_settle 共用。给足空间让 Agent 自主决定何时完成，
-/// 避免轮次不足导致任务中断。超时由 THINK_TIMEOUT_SECS 兜底。
-const DEFAULT_MAX_THINKING_ROUNDS: usize = 120;
+/// 优先级：Agent runtime_config（非 0）> 系统配置 [agent] > 硬编码兜底
+mod config_resolve {
+    use crate::config;
+    use crate::models::agent::Agent;
 
-/// IntentAnalyze 场景思考轮次上限
-///
-/// 10 轮 = 充足的多步检索空间（search_memory + recommend_seed_nodes +
-/// traverse_knowledge_graph + list_messages 等，每步工具调用各占 1 轮）+
-/// 3~4 轮纯思考（意图识别 → 消歧 → 关键词联想 → 知识图谱关联分析 →
-/// 最终 JSON 输出）。超时由 THINK_TIMEOUT_SECS 兜底。
-const INTENT_ANALYZE_MAX_ROUNDS: usize = 10;
+    /// 单次唤醒最大思考轮次（awaken + sleep_and_settle 共用）
+    pub fn max_thinking_rounds(agent: &Agent) -> usize {
+        let rc = agent.po.get_runtime_config();
+        if rc.max_thinking_rounds > 0 {
+            return rc.max_thinking_rounds;
+        }
+        config::get().agent.max_thinking_rounds
+    }
+
+    /// 意图识别阶段最大思考轮次
+    pub fn intent_analyze_max_rounds(agent: &Agent) -> usize {
+        let rc = agent.po.get_runtime_config();
+        if rc.intent_analyze_max_rounds > 0 {
+            return rc.intent_analyze_max_rounds;
+        }
+        config::get().agent.intent_analyze_max_rounds
+    }
+
+    /// 总结退出阶段最大思考轮次
+    pub fn summary_max_rounds(agent: &Agent) -> usize {
+        let rc = agent.po.get_runtime_config();
+        if rc.summary_max_rounds > 0 {
+            return rc.summary_max_rounds;
+        }
+        config::get().agent.summary_max_rounds
+    }
+
+    /// 思考超时（秒），0 = 不限制
+    ///
+    /// Agent 级配置 > 系统配置，两者都 0 = 不限制
+    pub fn think_timeout_secs(agent: &Agent) -> u64 {
+        let rc = agent.po.get_runtime_config();
+        if rc.think_timeout_secs > 0 {
+            return rc.think_timeout_secs;
+        }
+        config::get().agent.think_timeout_secs
+    }
+}
 
 /// 唤醒/沉睡的统一选项
 ///
@@ -170,10 +202,10 @@ impl ThinkingOptions {
         self
     }
 
-    /// 获取有效最大思考轮次（None 时返回默认值）
+    /// 获取有效最大思考轮次（None 时取系统配置 [agent].max_thinking_rounds）
     pub fn effective_max_rounds(&self) -> usize {
         self.max_thinking_rounds
-            .unwrap_or(DEFAULT_MAX_THINKING_ROUNDS)
+            .unwrap_or_else(|| crate::config::get().agent.max_thinking_rounds)
     }
 }
 
@@ -242,8 +274,8 @@ impl RuntimeDomainImpl {
         trace_id: &str,
         max_rounds: usize,
         start_round: usize,
+        timeout_secs: u64,
     ) -> Result<ThinkLoopResult> {
-        const THINK_TIMEOUT_SECS: u64 = 600;
         /// 上下文压缩触发阈值（占最大上下文窗口的比例）
         const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
 
@@ -264,17 +296,16 @@ impl RuntimeDomainImpl {
                 .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
         });
 
-        let result =
-            tokio::time::timeout(std::time::Duration::from_secs(THINK_TIMEOUT_SECS), async {
-                let mut messages = vec![ChatMessage::user(prompt.to_string())];
-                // 提取模型提供商信息（所有轮次共用）
-                let (model_provider_id, model_name) = match brain.model_provider() {
-                    Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
-                    None => (None, None),
-                };
-                // 本次循环可用轮次 = max_rounds - start_round
-                let available_rounds = max_rounds.saturating_sub(start_round);
-                for offset in 0..available_rounds {
+        let think_future = async {
+            let mut messages = vec![ChatMessage::user(prompt.to_string())];
+            // 提取模型提供商信息（所有轮次共用）
+            let (model_provider_id, model_name) = match brain.model_provider() {
+                Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
+                None => (None, None),
+            };
+            // 本次循环可用轮次 = max_rounds - start_round
+            let available_rounds = max_rounds.saturating_sub(start_round);
+            for offset in 0..available_rounds {
                     let round = start_round + offset;
                     let round_start = std::time::Instant::now();
                     let result = self
@@ -416,16 +447,25 @@ impl RuntimeDomainImpl {
                     messages,
                     total_rounds: max_rounds,
                 })
-            })
-            .await;
+        };
 
-        match result {
-            Ok(inner) => inner,
-            Err(_elapsed) => Err(err!(
-                Internal,
-                "brain think timeout after {}s",
-                THINK_TIMEOUT_SECS
-            )),
+        // timeout_secs = 0 → 不限制；非 0 → 超时保护
+        if timeout_secs == 0 {
+            think_future.await
+        } else {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                think_future,
+            )
+            .await
+            {
+                Ok(inner) => inner,
+                Err(_elapsed) => Err(err!(
+                    Internal,
+                    "brain think timeout after {}s",
+                    timeout_secs
+                )),
+            }
         }
     }
 }
@@ -651,6 +691,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     &trace_id,
                     max_rounds,
                     total_rounds,
+                    config_resolve::think_timeout_secs(agent),
                 )
                 .await;
 
@@ -983,8 +1024,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 agent,
                 "settle",
                 &trace_id,
-                DEFAULT_MAX_THINKING_ROUNDS,
+                config_resolve::max_thinking_rounds(agent),
                 0,
+                config_resolve::think_timeout_secs(agent),
             )
             .await;
 
@@ -1156,13 +1198,11 @@ impl RuntimeDomainImpl {
         options: &ThinkingOptions,
         trace_id: &str,
     ) -> Result<IntentAnalysis> {
-        // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene），
-        //    思考轮次限制 5 轮：足够完成 search_memory + recommend_seed_nodes +
-        //    traverse_knowledge_graph 多步检索 + 2 轮纯思考后输出 Final JSON。
-        //    超时由 THINK_TIMEOUT_SECS(300s) 兜底，不必担心无限等待。
+        // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene）
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;
-        analyze_opts.max_thinking_rounds = Some(INTENT_ANALYZE_MAX_ROUNDS);
+        // 轮次和超时由 config_resolve 从 Agent 配置 + 系统配置解析，
+        // 直接传入 run_think_loop，不经过 ThinkingOptions
         let scene = analyze_opts.scene;
 
         // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
@@ -1219,7 +1259,7 @@ impl RuntimeDomainImpl {
             .map(ToolDescriptor::from)
             .collect();
 
-        // 8. 运行 think loop（最多 5 轮，保证多步检索后有足够轮次输出 Final JSON）
+        // 8. 运行 think loop（轮次由配置决定，保证多步检索后有足够轮次输出 Final JSON）
         let think_result = self
             .run_think_loop(
                 ctx.clone(),
@@ -1229,8 +1269,9 @@ impl RuntimeDomainImpl {
                 agent,
                 "intent-analyze",
                 trace_id,
-                INTENT_ANALYZE_MAX_ROUNDS,
+                config_resolve::intent_analyze_max_rounds(agent),
                 0,
+                config_resolve::think_timeout_secs(agent),
             )
             .await?;
 
@@ -1349,8 +1390,7 @@ impl RuntimeDomainImpl {
             .map(ToolDescriptor::from)
             .collect();
 
-        // 7. 调用 think loop（Summary 场景需要写短期记忆 + 可能发通知，给 20 轮）
-        const MAX_SUMMARY_ROUNDS: usize = 20;
+        // 7. 调用 think loop（Summary 场景需要写短期记忆 + 可能发通知）
         let think_result = self
             .run_think_loop(
                 ctx.clone(),
@@ -1360,8 +1400,9 @@ impl RuntimeDomainImpl {
                 agent,
                 "summary",
                 &trace_id,
-                MAX_SUMMARY_ROUNDS,
+                config_resolve::summary_max_rounds(agent),
                 0,
+                config_resolve::think_timeout_secs(agent),
             )
             .await;
 

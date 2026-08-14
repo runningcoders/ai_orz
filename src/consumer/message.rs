@@ -320,11 +320,14 @@ impl MessageConsumer {
         // task 实体复用上方状态检查的查询结果（不重复查询）；project 按需查询
         // 遵循 Context 补充原则：仅当下游 awaken 需要 project 上下文时才查询
         //
-        // max_thinking_rounds 来自 AgentRuntimeConfig（默认 90），
-        // 未来可由任务在分配时预估写入，覆盖此默认值。
+        // max_thinking_rounds: 0 = 使用系统配置 [agent].max_thinking_rounds
+        // 非 0 = Agent 级覆盖值
         let runtime_config = agent.po.get_runtime_config();
-        let mut thinking_options =
-            ThinkingOptions::new().with_max_thinking_rounds(runtime_config.max_thinking_rounds);
+        let mut thinking_options = ThinkingOptions::new();
+        if runtime_config.max_thinking_rounds > 0 {
+            thinking_options =
+                thinking_options.with_max_thinking_rounds(runtime_config.max_thinking_rounds);
+        }
         if let Some(project_id) = &message.po.project_id
             && let Ok(Some(project)) = self
                 .project_domain
