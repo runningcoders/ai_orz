@@ -92,6 +92,11 @@ impl AgentAwakeEvent {
         self.status = v;
         self
     }
+
+    pub fn with_exit_reason(mut self, v: String) -> Self {
+        self.exit_reason = v;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]

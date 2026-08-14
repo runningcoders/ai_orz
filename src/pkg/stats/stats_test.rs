@@ -319,3 +319,88 @@ async fn test_custom_event() -> Result<()> {
 
     Ok(())
 }
+
+// ==================== AgentAwakeEvent 测试 ====================
+
+#[tokio::test]
+async fn test_agent_awake_event_exit_reason_write_and_read() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let db_path_str = db_path.to_str().unwrap();
+
+    let stats = Stats::open(db_path_str, 100).await?;
+    stats.initialize_default()?;
+
+    let ctx = RequestContext::new(None, None);
+    let now = Utc::now().timestamp();
+
+    // 记录 3 个不同 exit_reason 的事件
+    let reasons = ["final", "maxroundsexceeded", "cancelled"];
+    for reason in &reasons {
+        let event = AgentAwakeEvent::new(now)
+            .with_agent_id("agent_test_001".to_string())
+            .with_status("success".to_string())
+            .with_exit_reason(reason.to_string());
+        stats.record(ctx.clone(), event).await?;
+    }
+
+    assert_eq!(stats.pending_buffer_len::<AgentAwakeEvent>(), 3);
+    stats.flush_all(ctx.clone()).await?;
+    assert_eq!(stats.pending_buffer_len::<AgentAwakeEvent>(), 0);
+
+    // 查询验证 exit_reason 字段正确写入
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT exit_reason FROM agent_awake_events WHERE agent_id = 'agent_test_001' ORDER BY exit_reason",
+            &[],
+        )
+        .await?;
+
+    assert_eq!(result.len(), 3);
+    let got: Vec<String> = result
+        .iter()
+        .map(|row| row.get("exit_reason").unwrap().as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(got, vec!["cancelled", "final", "maxroundsexceeded"]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_agent_awake_event_default_exit_reason_is_empty() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let db_path_str = db_path.to_str().unwrap();
+
+    let stats = Stats::open(db_path_str, 100).await?;
+    stats.initialize_default()?;
+
+    let ctx = RequestContext::new(None, None);
+    let now = Utc::now().timestamp();
+
+    // 不设置 exit_reason，验证默认为空字符串
+    let event = AgentAwakeEvent::new(now)
+        .with_agent_id("agent_test_002".to_string())
+        .with_status("success".to_string());
+    stats.record(ctx.clone(), event).await?;
+    stats.flush_all(ctx.clone()).await?;
+
+    let result = stats
+        .query(
+            ctx.clone(),
+            "SELECT exit_reason FROM agent_awake_events WHERE agent_id = 'agent_test_002'",
+            &[],
+        )
+        .await?;
+
+    assert_eq!(result.len(), 1);
+    let exit_reason = result[0].get("exit_reason").unwrap().as_str().unwrap();
+    assert_eq!(exit_reason, "");
+
+    Ok(())
+}
