@@ -95,14 +95,18 @@ impl ThinkingScene {
 }
 
 /// 思考轮次默认上限（跨压缩轮次累计）
-const DEFAULT_MAX_THINKING_ROUNDS: usize = 90;
+///
+/// awaken 和 sleep_and_settle 共用。给足空间让 Agent 自主决定何时完成，
+/// 避免轮次不足导致任务中断。超时由 THINK_TIMEOUT_SECS 兜底。
+const DEFAULT_MAX_THINKING_ROUNDS: usize = 120;
 
 /// IntentAnalyze 场景思考轮次上限
 ///
-/// 5 轮 = 3 步工具调用（search_memory + recommend_seed_nodes +
-/// traverse_knowledge_graph）+ 2 轮纯思考（意图识别 + 最终 JSON 输出）。
-/// 超时由 THINK_TIMEOUT_SECS(300s) 兜底。
-const INTENT_ANALYZE_MAX_ROUNDS: usize = 5;
+/// 10 轮 = 充足的多步检索空间（search_memory + recommend_seed_nodes +
+/// traverse_knowledge_graph + list_messages 等，每步工具调用各占 1 轮）+
+/// 3~4 轮纯思考（意图识别 → 消歧 → 关键词联想 → 知识图谱关联分析 →
+/// 最终 JSON 输出）。超时由 THINK_TIMEOUT_SECS 兜底。
+const INTENT_ANALYZE_MAX_ROUNDS: usize = 10;
 
 /// 唤醒/沉睡的统一选项
 ///
@@ -239,7 +243,7 @@ impl RuntimeDomainImpl {
         max_rounds: usize,
         start_round: usize,
     ) -> Result<ThinkLoopResult> {
-        const THINK_TIMEOUT_SECS: u64 = 300;
+        const THINK_TIMEOUT_SECS: u64 = 600;
         /// 上下文压缩触发阈值（占最大上下文窗口的比例）
         const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
 
@@ -1345,8 +1349,8 @@ impl RuntimeDomainImpl {
             .map(ToolDescriptor::from)
             .collect();
 
-        // 7. 调用 think loop（Summary 场景给少量轮次，最多 10 轮）
-        const MAX_SUMMARY_ROUNDS: usize = 10;
+        // 7. 调用 think loop（Summary 场景需要写短期记忆 + 可能发通知，给 20 轮）
+        const MAX_SUMMARY_ROUNDS: usize = 20;
         let think_result = self
             .run_think_loop(
                 ctx.clone(),

@@ -1063,9 +1063,10 @@ impl DefaultPromptBuilder {
         result.push_str("## 你的任务：只做理解，不做执行\n\n");
         result.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果，然后就结束本轮思考。\n\n");
         result.push_str("✅ 必须做：\n");
-        result.push_str("   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍\n");
-        result.push_str("   2. 必须调用一次 search_memory（或 recommend_seed_nodes + traverse_knowledge_graph，空白场景）做上下文补充（100% 全新无历史的闲聊可豁免，请在思考中说明理由）\n");
-        result.push_str("   3. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
+        result.push_str("   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n");
+        result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory + 一次 recommend_seed_nodes 或 traverse_knowledge_graph（100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
+        result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
+        result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
         result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
         result.push_str("   1. 严禁执行任何行动/工具调用——禁止调用 send_message / send_task_assignment_message / send_message_to_agent：不准给任何用户/Agent 发消息\n");
         result.push_str("   2. 严禁编造无来源信息——禁止调用 create_task / update_task / create_project / update_project / update_memory 状态写入类工具；不准改动任何系统状态（只有 save_short_term_memory 内部记忆写入是允许的，若你需要临时记录东西）\n");
@@ -1089,19 +1090,54 @@ impl DefaultPromptBuilder {
         result.push_str("3. 在思考中把每个指代对应到具体对象（project_id/task_id/message_id/某个人物…），写进 resolutions 数组，每条格式：\"\\\"XXX\\\" → YYY\"\n");
         result.push_str("4. 读完所有上下文仍无法确定 → 写进 need_clarification，不要硬猜\n\n");
 
-        result.push_str("### Step 3：关键词抽取\n");
-        result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取 3~8 个关键词/关键实体（项目名/任务名/产品名/人名/专有名词/核心动词短语），写进 key_terms 数组。\n\n");
+        result.push_str("### Step 3：关键词抽取与联想扩展\n");
+        result.push_str("这一步不只是提取，更重要的是联想扩展，为后续检索提供丰富的 query 基础。\n\n");
+        result.push_str("3.1 基础关键词抽取：\n");
+        result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取关键实体和核心短语：\n");
+        result.push_str("- 显式实体：项目名/任务名/产品名/人名/专有名词/技术术语\n");
+        result.push_str("- 隐式语义：核心动词短语（推进进度→进度查询、对比方案→方案比较）\n");
+        result.push_str("- 情感倾向词：急迫/犹豫/不满/期待（影响执行优先级判断）\n\n");
+        result.push_str("3.2 关键词联想扩展（在思考中展开，不要跳过）：\n");
+        result.push_str("对每个基础关键词，思考它的关联概念并扩展：\n");
+        result.push_str("- 同义/近义词：用户说方案A → 也搜索 proposal A / 备选方案A\n");
+        result.push_str("- 上下游概念：用户说部署 → 关联测试/回滚/监控/配置变更\n");
+        result.push_str("- 时间关联：用户说上次 → 思考上次是什么时候 → 搜索对应时间段的记忆\n");
+        result.push_str("- 因果关联：用户说为什么失败 → 关联错误日志/最近变更/依赖状态\n\n");
+        result.push_str("3.3 把基础关键词 + 联想扩展词都写进 key_terms 数组（5~12 个），\n");
+        result.push_str("这些词将直接用于 Step 4 的多角度检索，越丰富检索越全面。\n\n");
 
-        result.push_str("### Step 4：语义检索补充（强制执行）\n");
-        result.push_str("- 必须调用一次 search_memory（用 Step 3 的关键词组合成 query），除非你在思考中明确说明这是 100% 全新无历史的话题。\n");
-        result.push_str("- 首次进入这个 project/task 空场景：先调用 recommend_seed_nodes 拿图谱起点，再按需 traverse_knowledge_graph 走 1~2 跳。\n");
-        result.push_str("- list_messages 上拉历史也是可选：如果 Working Memory 不够。\n");
-        result.push_str("- 把检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON），写进 retrieved_context。\n\n");
+        result.push_str("### Step 4：多步语义检索与知识图谱关联分析（强制执行，本阶段核心价值所在）\n");
+        result.push_str("本步直接决定后续执行阶段的信息完备性。宁可多检索一步，不要遗漏关键上下文。\n");
+        result.push_str("你的检索策略应该是有层次的，不是随机调工具：\n\n");
+        result.push_str("4.1 短期记忆检索（search_memory）——第一轮：\n");
+        result.push_str("- 用 Step 3 的核心关键词组合成 query，调用 search_memory\n");
+        result.push_str("- 如果第一批结果不够相关，换一组关键词组合再搜一轮（不要一次不中就放弃）\n");
+        result.push_str("- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n");
+        result.push_str("4.2 知识图谱探索（recommend_seed_nodes + traverse_knowledge_graph）——第二轮：\n");
+        result.push_str("- 调用 recommend_seed_nodes 获取与当前 project/task/agent 相关的图谱种子节点\n");
+        result.push_str("- 从种子节点出发，调用 traverse_knowledge_graph 走 1~2 跳，探索关联知识\n");
+        result.push_str("- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n");
+        result.push_str("- 知识图谱中的关系链路本身就是信息：A 依赖 B、A 衍生自 C、A 取代了 D\n\n");
+        result.push_str("4.3 历史对话补充（list_messages，可选第三轮）：\n");
+        result.push_str("- 如果短期记忆和知识图谱都不够，调用 list_messages 上拉最近对话记录\n");
+        result.push_str("- 特别关注：用户最近提过的类似需求、Agent 之前给过的承诺或结论\n\n");
+        result.push_str("4.4 检索结果整理：\n");
+        result.push_str("- 把所有检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON）\n");
+        result.push_str("- 每条摘要注明来源类型：[记忆]/[图谱]/[对话]\n");
+        result.push_str("- 按相关度排序，最相关的放前面\n");
+        result.push_str("- 写进 retrieved_context 数组\n\n");
+        result.push_str("如果跳过了 4.1 或 4.2，必须在思考中明确说明理由（如：100%全新话题，无历史可检索）。\n\n");
 
-        result.push_str("### Step 5：判断是否需要澄清 + 总结\n");
-        result.push_str("- 如果 Step 2 消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策 → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n");
-        result.push_str("- 如果理解充分 → need_clarification = []\n");
-        result.push_str("- 最后在思考中用一句话总结「我理解用户想要：XXX」，写进 summary。\n\n");
+        result.push_str("### Step 5：综合研判与总结\n");
+        result.push_str("5.1 信息完备性检查：\n");
+        result.push_str("- 回顾 Step 1~4 的全部产出，检查是否有信息缺口\n");
+        result.push_str("- 如果消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策\n");
+        result.push_str("  → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n");
+        result.push_str("- 如果理解充分 → need_clarification = []\n\n");
+        result.push_str("5.2 形成理解结论：\n");
+        result.push_str("- 在思考中用 1~2 句话总结：我理解用户想要 XXX，相关的背景信息有 YYY\n");
+        result.push_str("- 这个总结将直接作为下一阶段执行的输入，务必准确、完整、可执行\n");
+        result.push_str("- 写进 summary 字段\n\n");
 
         result.push_str("## 最终输出规范（必须严格遵守）\n\n");
         result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
@@ -1110,7 +1146,7 @@ impl DefaultPromptBuilder {
         result.push_str("JSON Schema 字段说明：\n");
         result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
         result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
-        result.push_str("- key_terms：字符串数组，3~8 个从消息 + 消歧中抽取的关键词/关键实体\n");
+        result.push_str("- key_terms：字符串数组，5~12 个关键词（基础抽取 + 联想扩展）\n");
         result.push_str("- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n");
         result.push_str("- retrieved_context：字符串数组，search_memory / recommend_seed_nodes 等命中结果的你自己概括的短摘要（不要原始 JSON）\n");
         result.push_str("- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n");
@@ -1646,9 +1682,9 @@ mod tests {
         // 4. 包含 SOP 五步走的 Step 1~5 标识
         assert!(prompt.contains("Step 1：意图识别"));
         assert!(prompt.contains("Step 2：指代与上下文消歧"));
-        assert!(prompt.contains("Step 3：关键词抽取"));
-        assert!(prompt.contains("Step 4：语义检索补充"));
-        assert!(prompt.contains("Step 5：判断是否需要澄清 + 总结"));
+        assert!(prompt.contains("Step 3：关键词抽取与联想扩展"));
+        assert!(prompt.contains("Step 4：多步语义检索与知识图谱关联分析"));
+        assert!(prompt.contains("Step 5：综合研判与总结"));
 
         // 5. 包含三条禁令标识（严禁执行/严禁编造/信息不足必须澄清）
         assert!(
