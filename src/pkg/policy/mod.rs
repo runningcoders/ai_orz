@@ -205,9 +205,15 @@ impl PolicyBuilder {
         }
     }
 
-    /// 注入具体 policy
+    /// 注入具体 policy（接受已装箱的策略）
     pub fn with(mut self, policy: Box<dyn Policy>) -> Self {
         self.policies.push(policy);
+        self
+    }
+
+    /// 注入具体 policy（泛型便捷方法，自动装箱，消除 Box::new 样板）
+    pub fn with_policy<P: Policy + 'static>(mut self, policy: P) -> Self {
+        self.policies.push(Box::new(policy));
         self
     }
 
@@ -235,6 +241,51 @@ impl Default for PolicyBuilder {
         Self::new()
     }
 }
+
+/// 策略集合构建宏
+///
+/// 一步完成"策略初始化 + 组装 + 关系指定"，消除 `Box::new(XxxPolicy::new(...))` 样板。
+///
+/// 约定：内置策略通过 `::new` 构造，宏自动调用 `$Policy::new(args...)`。
+/// 特殊构造场景请直接使用 `PolicyBuilder::with_policy`。
+///
+/// # 示例
+///
+/// ```rust,ignore
+/// // Or 关系：任一策略命中即触发
+/// let policy = policy_set! {
+///     OR {
+///         UserCancelPolicy(cancel_flag),
+///         MaxRoundsPolicy(max_rounds),
+///         TimeoutPolicy(timeout_secs),
+///     }
+/// };
+///
+/// // And 关系：所有策略都命中才触发
+/// let policy = policy_set! {
+///     AND {
+///         TokenBudgetPolicy(10000),
+///         MaxRoundsPolicy(50),
+///     }
+/// };
+/// ```
+macro_rules! policy_set {
+    (OR { $($policy:ident ( $($arg:expr),* $(,)? ) ),* $(,)? }) => {{
+        let mut builder = $crate::pkg::policy::PolicyBuilder::new();
+        $(
+            builder = builder.with_policy($policy::new($($arg),*));
+        )*
+        builder.or()
+    }};
+    (AND { $($policy:ident ( $($arg:expr),* $(,)? ) ),* $(,)? }) => {{
+        let mut builder = $crate::pkg::policy::PolicyBuilder::new();
+        $(
+            builder = builder.with_policy($policy::new($($arg),*));
+        )*
+        builder.build()
+    }};
+}
+pub(crate) use policy_set;
 
 #[cfg(test)]
 mod tests;

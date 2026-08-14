@@ -75,17 +75,19 @@ pub(crate) fn build_policy_for_scene(
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
 ) -> Box<dyn crate::pkg::policy::Policy> {
     use super::types::config_resolve;
-    use crate::pkg::policy::PolicyBuilder;
     use crate::pkg::policy::builtin::{MaxRoundsPolicy, TimeoutPolicy, UserCancelPolicy};
+    use crate::pkg::policy::policy_set;
 
     let max_rounds = config_resolve::max_thinking_rounds(agent);
     let timeout_secs = config_resolve::think_timeout_secs(agent);
 
-    PolicyBuilder::new()
-        .with(Box::new(UserCancelPolicy::new(cancel_flag)))
-        .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-        .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-        .or()
+    policy_set! {
+        OR {
+            UserCancelPolicy(cancel_flag),
+            MaxRoundsPolicy(max_rounds),
+            TimeoutPolicy(timeout_secs),
+        }
+    }
 }
 
 // ==================== 共享 think loop ====================

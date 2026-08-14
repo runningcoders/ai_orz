@@ -3,6 +3,80 @@ use builtin::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+// ==================== policy_set! 宏测试 ====================
+
+#[test]
+fn test_policy_set_macro_or() {
+    let flag = Arc::new(AtomicBool::new(false));
+    let policy = policy_set! {
+        OR {
+            UserCancelPolicy(flag.clone()),
+            MaxRoundsPolicy(365),
+        }
+    };
+    // max_rounds 命中 → Or 触发
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64);
+    assert!(policy.is_triggered(&metrics));
+
+    // user_cancel 命中 → Or 触发
+    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    let metrics_empty = Metrics::new();
+    assert!(policy.is_triggered(&metrics_empty));
+}
+
+#[test]
+fn test_policy_set_macro_and() {
+    let policy = policy_set! {
+        AND {
+            MaxRoundsPolicy(365),
+            TimeoutPolicy(3600),
+        }
+    };
+    // 只命中一个 → And 不触发
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 100u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // 两个都命中 → And 触发
+    let metrics_both = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 3600u64);
+    assert!(policy.is_triggered(&metrics_both));
+}
+
+#[test]
+fn test_policy_set_macro_single_policy() {
+    // 宏也支持单个策略（等价于直接构造）
+    let policy = policy_set! {
+        OR {
+            MaxRoundsPolicy(5),
+        }
+    };
+    let metrics = Metrics::new()
+        .with("round_number", 5u64)
+        .with("max_rounds", 5u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_set_macro_auto_generated_fields() {
+    let policy = policy_set! {
+        OR {
+            MaxRoundsPolicy(365),
+            TimeoutPolicy(3600),
+        }
+    };
+    assert_eq!(policy.id(), "or(max_rounds,timeout)");
+    assert!(policy.name().contains("Or["));
+    assert!(policy.condition_desc().contains("轮次"));
+    assert!(policy.condition_desc().contains("超时"));
+}
+
 #[test]
 fn test_max_rounds_policy_triggered() {
     let policy = MaxRoundsPolicy::new(5);
