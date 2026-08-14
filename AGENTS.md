@@ -14,7 +14,7 @@
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、1110 个测试 100% 通过率、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **技术特色**：严格分层架构、类型安全、1124 个测试 100% 通过率、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
 
 ### 1.2 核心能力域概览
 
@@ -23,24 +23,24 @@
 | 能力域 | 覆盖范围 |
 |--------|---------|
 | 👥 组织与权限 | 多级组织、用户角色（Member → Admin → SuperAdmin 并查集继承）、JWT Cookie + Bearer 双模式认证、**用户偏好双源沉淀**（users.preferences 自报 + 知识图谱 `user_preference` tag 推断） |
-| 🤖 Agent | 全生命周期（创建/配置/工具绑定/入职）、唤醒执行、**两阶段唤醒（IntentAnalyze 先理解再执行 + Awaken 正式执行）**、多回合循环控制、Auto/Manual 工具调用三层分发、Agent 间协作 |
+| 🤖 Agent | 全生命周期（创建/配置/工具绑定/入职）、唤醒执行、**两阶段唤醒（IntentAnalyze 先理解再执行 + Awaken 正式执行）**、多回合循环控制、Auto/Manual 工具调用三层分发、Agent 间协作、**思考运行时可观测（runtime-status/cancel-thinking/runtime-list 接口 + 前端轮询面板）**、**策略引擎（Policy trait + PolicyGroup + policy_set! 宏，5 个内置策略 + 混合模式组合）** |
 | 🧠 记忆 | 四层记忆（Core/Working/Short-term/Long-term）、休息沉淀机制（agent_rest 定时）、知识图谱可视化、**task_id 注意力聚焦 + trace_ids 强制写入**、**种子节点推荐 recommend_seed_nodes + 图谱遍历 traverse_knowledge_graph** |
 | 💬 对话与消息 | 用户 ↔ Agent 双向对话、SSE 实时推送、消息渠道（飞书 WS 入站已上线，微信/Slack/邮件/Webhook 出站骨架）、**用户身份凭证中枢（AES-256-GCM 加密存储 identity_credentials）** |
 | 📋 任务与项目 | 任务状态机 + 进度追踪（0-100）、execution_plan/execution_result、项目聚合对话上下文、统一附件与产物存储 |
 | 🛠️ 工具与技能 | 统一工具调用架构、工具包/技能包（tag 分组）、5 份预置技能、MCP 服务器集成 |
 | 🔌 外部 Agent | A2A 协议 Client/Server、异步结果回传（Push 回调 + 30 秒轮询兜底） |
 | 🔎 搜索 | FTS5 关键词 + 向量语义 + 图谱关系三位一体混合搜索，LanceDB 默认 + 多后端（HNSW/InMemory/SQLite VSS）、**tags 语义过滤** |
-| 📊 统计与监控 | DuckDB 多维统计（五维度）、运行时内存统计收集器、AOP 队列监控、系统健康仪表盘（7 维度含飞书 WS） |
+| 📊 统计与监控 | DuckDB 多维统计（五维度）、运行时内存统计收集器、AOP 队列监控、系统健康仪表盘（7 维度含飞书 WS）、**AgentAwakeEvent exit_reason 字段（思考退出原因统计分析）** |
 | 🚀 异步基础设施 | AOP 事件中心（纯框架零业务依赖）、消费者框架（8 类消费者：调度/Agent 循环/任务/消息/工具执行/日志/统计/思考轮次）、定时触发器（cron，启动幂等注入 2 条系统默认任务） |
 | 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
 | 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
-| 🧪 质量工程 | 1110 测试（后端 970 + 前端 82 + common 58）、clippy 零容忍、覆盖率门槛、E2E Playwright（仅本地） |
+| 🧪 质量工程 | 1124 测试（后端 984 + 前端 82 + common 58）、clippy 零容忍、覆盖率门槛、E2E Playwright（仅本地） |
 
 ### 1.3 测试与质量统计
 
 | 指标 | 数值 | 说明 |
 |------|------|------|
-| **总测试数** | **1110** | 后端 970（883 单元 + 87 集成）+ 前端 82 + common 58，DAO/DAL/Domain/Handler/Pkg 完整覆盖 |
+| **总测试数** | **1124** | 后端 984（897 单元 + 87 集成）+ 前端 82 + common 58，DAO/DAL/Domain/Handler/Pkg 完整覆盖 |
 | **通过率** | **100%** | ✅ 全部测试通过 |
 | **集成测试** | 87 个 / 19 targets | Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle + Agent Awaken（两阶段唤醒）+ 宏集成 |
 | **CI clippy 门槛** | `-D warnings` | 后端 + 前端 wasm32 均已纳入 CI |
@@ -80,6 +80,7 @@
 | **SQL 规范** | [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md)（SQLx 0.8 + SQLite、STRICT、FTS5、测试隔离） | ⭐⭐⭐ |
 | **日志规范** | [docs/design/logging_design.md](./docs/design/logging_design.md)（统一宏、上下文检测） | ⭐⭐⭐ |
 | **Runtime** | [docs/design/runtime_design.md](./docs/design/runtime_design.md)（Agent 唤醒、神经 vs 外骨骼工具二分） | ⭐⭐⭐ |
+| **策略引擎** | [docs/design/thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md)（Policy trait + policy_set! 宏 + 思考运行时可观测） | ⭐⭐⭐ |
 | **前端** | [docs/design/frontend_architecture.md](./docs/design/frontend_architecture.md) / [docs/design/ui_design_system.md](./docs/design/ui_design_system.md) | ⭐⭐⭐ / ⭐⭐ |
 | **查询规范** | [docs/design/pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md)（分页 + 通用 count） | ⭐⭐ |
 | **记忆设计** | [docs/memory_design.md](./docs/memory_design.md)（四层记忆系统、检索策略） | ⭐⭐ |
