@@ -1,605 +1,102 @@
 //! Runtime Awakening 具体实现
+//!
+//! 本文件只保留 `RuntimeAwakening` trait 的四大入口方法：
+//! - `wake_agent_brain`：装配 Brain
+//! - `awaken`：唤醒并执行思考（Phase 1 意图分析 + Phase 2 正式执行）
+//! - `sleep_and_settle`：沉睡沉淀记忆
+//! - `analyze_input_intent`：意图分析（Phase 1，stats 包裹 + 委托 inner）
+//!
+//! 共享类型在 `types.rs`，think loop 引擎在 `think_loop.rs`，
+//! 意图分析核心 + JSON 解析在 `intent_analyze.rs`，总结退出在 `summary.rs`。
 
+use crate::enrich_ctx;
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor, messages_to_summary};
-use crate::models::events::{AgentLoopEvent, ThinkRoundEvent};
+use crate::models::cortex_types::{ChatMessage, ToolDescriptor, messages_to_summary};
+use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntime};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
-use crate::service::domain::runtime::{
-    AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
-};
+use crate::record_event;
+use crate::service::domain::runtime::{AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
-/// think loop 的返回结果
-///
-/// - `Final`: 模型返回了最终回答，循环正常结束
-///   - `content`: 最终回答内容
-///   - `messages`: 当前完整的对话历史（用于总结流程写入短期记忆）
-/// - `ContextOverflow`: 上下文超限，需要调用方执行压缩后重试
-///   - `messages`: 当前完整的对话历史（用于生成沉淀摘要）
-///   - `input_tokens`: 触发超限时的输入 token 数
-///   - `rounds_used`: 本次 think loop 消耗的轮次
-/// - `MaxRoundsExceeded`: 思考轮次耗尽，需要进入总结退出流程
-///   - `messages`: 当前完整的对话历史（用于总结）
-///   - `total_rounds`: 累计消耗的轮次
-/// - `Cancelled`: 用户主动取消（通过 cancel-thinking 接口设置 cancel_flag）
-///   - `messages`: 当前对话历史（可能为空，用于审计）
-///   - `total_rounds`: 取消时已消耗的轮次
-#[derive(Debug)]
-pub enum ThinkLoopResult {
-    Final {
-        content: String,
-        messages: Vec<ChatMessage>,
-    },
-    ContextOverflow {
-        messages: Vec<ChatMessage>,
-        input_tokens: u64,
-        rounds_used: usize,
-    },
-    MaxRoundsExceeded {
-        messages: Vec<ChatMessage>,
-        total_rounds: usize,
-    },
-    Cancelled {
-        messages: Vec<ChatMessage>,
-        total_rounds: usize,
-    },
-}
+use super::think_loop::build_policy_for_scene;
+use super::types::config_resolve;
 
-use crate::enrich_ctx;
-use crate::record_event;
+// ==================== re-export（保持外部引用路径不变）====================
+// pub use 同时完成导入（供本文件内部使用）和 re-export（供外部 awakening::xxx 访问）
 
-// ==================== 策略映射 ====================
+pub use super::intent_analyze::{extract_first_json_object, parse_intent_analysis_json};
+pub use super::types::{IntentAnalysis, ThinkLoopResult, ThinkingOptions};
 
-/// 将命中的策略 id 列表映射为 ThinkLoopResult
-///
-/// 多个策略命中时按优先级取第一个匹配的：
-/// 用户取消 > 上下文溢出 > token 预算 > 轮次上限 > 超时
-///
-/// 兜底返回 MaxRoundsExceeded（不应发生，防御性）。
-fn map_triggered_to_result(
-    triggered: &[String],
-    messages: Vec<ChatMessage>,
-    round_number: usize,
-    input_tokens: u64,
-) -> ThinkLoopResult {
-    for id in triggered {
-        match id.as_str() {
-            "user_cancel" => {
-                return ThinkLoopResult::Cancelled {
-                    messages,
-                    total_rounds: round_number,
-                }
-            }
-            "context_overflow" => {
-                return ThinkLoopResult::ContextOverflow {
-                    messages,
-                    input_tokens,
-                    rounds_used: round_number,
-                }
-            }
-            "token_budget" | "max_rounds" | "timeout" => {
-                return ThinkLoopResult::MaxRoundsExceeded {
-                    messages,
-                    total_rounds: round_number,
-                }
-            }
-            _ => {}
-        }
-    }
-    // 未知策略 id 兜底（不应发生）
-    ThinkLoopResult::MaxRoundsExceeded {
-        messages,
-        total_rounds: round_number,
-    }
-}
+// ==================== 场景辅助函数（消除重复逻辑）====================
 
-/// 按场景构造策略组（Or 关系：任一策略命中即退出循环）
+/// 创建思考运行时并注册到 StateManager，同时构造场景策略组
 ///
-/// 内置策略：
-/// - UserCancelPolicy：始终注入，由 AgentThinkRuntime.cancel_flag() 驱动
-/// - MaxRoundsPolicy：轮次上限，所有场景均启用
-/// - TimeoutPolicy：超时保护，所有场景均启用（0 = 不限制）
-///
-/// 注意：ContextOverflowPolicy 暂不在此处使用，因为 run_think_loop 已有
-/// 独立的上下文溢出检测逻辑（基于 ModelProvider 配置），后续可整合。
-fn build_policy_for_scene(
+/// 在 awaken / sleep_and_settle / intent_analyze / summary 中重复出现的初始化逻辑：
+/// 1. 创建 AgentThinkRuntime（绑定 trace_id）
+/// 2. 注册到 AgentRuntimeStateManager（供 cancel-thinking / runtime-status 查询）
+/// 3. 按场景构造策略组（用户取消 + 轮次上限 + 超时）
+pub(super) fn init_think_runtime_and_policy(
     agent: &Agent,
-    _scene: ThinkingScene,
-    cancel_flag: Arc<AtomicBool>,
-) -> Box<dyn crate::pkg::policy::Policy> {
-    use crate::pkg::policy::builtin::{MaxRoundsPolicy, TimeoutPolicy, UserCancelPolicy};
-    use crate::pkg::policy::PolicyBuilder;
-
-    let max_rounds = config_resolve::max_thinking_rounds(agent);
-    let timeout_secs = config_resolve::think_timeout_secs(agent);
-
-    PolicyBuilder::new()
-        .with(Box::new(UserCancelPolicy::new(cancel_flag)))
-        .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
-        .with(Box::new(TimeoutPolicy::new(timeout_secs)))
-        .or()
+    scene: ThinkingScene,
+    trace_id: &str,
+) -> (
+    Arc<AgentThinkRuntime>,
+    Box<dyn crate::pkg::policy::Policy>,
+) {
+    let think_runtime = Arc::new(AgentThinkRuntime::new(
+        agent.po.id.clone(),
+        trace_id.to_string(),
+    ));
+    AgentRuntimeStateManager::global().set_think_runtime(&agent.po.id, think_runtime.clone());
+    let policy = build_policy_for_scene(agent, scene, think_runtime.cancel_flag());
+    (think_runtime, policy)
 }
 
-// ==================== 思考场景与选项 ====================
-
-/// 从系统配置 + Agent runtime_config 解析思考轮次和超时
+/// 按场景过滤工具，构建 ToolDescriptor 列表
 ///
-/// 优先级：Agent runtime_config（非 0）> 系统配置 [agent] > 硬编码兜底
-mod config_resolve {
-    use crate::config;
-    use crate::models::agent::Agent;
-
-    /// 单次唤醒最大思考轮次（awaken + sleep_and_settle 共用）
-    pub fn max_thinking_rounds(agent: &Agent) -> usize {
-        let rc = agent.po.get_runtime_config();
-        if rc.max_thinking_rounds > 0 {
-            return rc.max_thinking_rounds;
-        }
-        config::get().agent.max_thinking_rounds
-    }
-
-    /// 意图识别阶段最大思考轮次
-    pub fn intent_analyze_max_rounds(agent: &Agent) -> usize {
-        let rc = agent.po.get_runtime_config();
-        if rc.intent_analyze_max_rounds > 0 {
-            return rc.intent_analyze_max_rounds;
-        }
-        config::get().agent.intent_analyze_max_rounds
-    }
-
-    /// 总结退出阶段最大思考轮次
-    pub fn summary_max_rounds(agent: &Agent) -> usize {
-        let rc = agent.po.get_runtime_config();
-        if rc.summary_max_rounds > 0 {
-            return rc.summary_max_rounds;
-        }
-        config::get().agent.summary_max_rounds
-    }
-
-    /// 思考超时（秒），0 = 不限制
-    ///
-    /// Agent 级配置 > 系统配置，两者都 0 = 不限制
-    pub fn think_timeout_secs(agent: &Agent) -> u64 {
-        let rc = agent.po.get_runtime_config();
-        if rc.think_timeout_secs > 0 {
-            return rc.think_timeout_secs;
-        }
-        config::get().agent.think_timeout_secs
-    }
+/// sleep_and_settle / intent_analyze / summary 中重复出现的工具过滤逻辑。
+/// awaken 场景不过滤（用全量工具），不调用此函数。
+pub(super) fn build_scene_tool_descriptors(
+    agent: &Agent,
+    scene: ThinkingScene,
+) -> Vec<ToolDescriptor> {
+    agent
+        .tools()
+        .iter()
+        .filter(|t| {
+            let tags = t.po.get_tags();
+            scene.is_tool_allowed(&tags)
+        })
+        .map(ToolDescriptor::from)
+        .collect()
 }
 
-/// 唤醒/沉睡的统一选项
+/// 按场景过滤技能，返回 SkillPo 列表
 ///
-/// 用于在不同场景传递业务上下文和场景标识，避免频繁修改方法签名。
-/// awaken 和 sleep_and_settle 都接收此结构体，scene 字段决定工具过滤行为。
-///
-/// # 字段说明
-/// - `scene`：场景标识（Awaken/Settle/Summary），决定工具过滤行为
-/// - `project` / `task`：awaken 场景下，消息关联的项目/任务实体，注入 prompt 作为业务上下文
-/// - `max_thinking_rounds`：awaken 场景最大思考轮次（跨压缩累计），None 时用默认值 90
-/// - `user_profile`：用户画像（消息发送者的 UserPo，含自述偏好，注入 Prompt 的【用户画像】区块）
-#[derive(Debug, Clone, Default)]
-pub struct ThinkingOptions {
-    /// 场景标识
-    pub scene: ThinkingScene,
-    /// 消息关联的项目实体（awaken 场景使用）
-    pub project: Option<crate::models::project::Project>,
-    /// 消息关联的任务实体（awaken 场景使用）
-    pub task: Option<crate::models::task::Task>,
-    /// 最大思考轮次（跨压缩累计），None 时使用默认值 90
-    pub max_thinking_rounds: Option<usize>,
-    /// 用户画像（消息发送者的 UserPo，awaken 场景注入【用户画像】区块）
-    pub user_profile: Option<crate::models::user::UserPo>,
+/// sleep_and_settle / intent_analyze / summary 中重复出现的技能过滤逻辑。
+/// awaken 场景不过滤技能（全量加载），不调用此函数。
+pub(super) fn build_scene_skills(
+    agent: &Agent,
+    scene: ThinkingScene,
+) -> Vec<crate::models::skill::SkillPo> {
+    agent
+        .skills()
+        .iter()
+        .filter(|s| {
+            let tags = s.po.parse_tags();
+            scene.is_tool_allowed(&tags)
+        })
+        .map(|s| s.po.clone())
+        .collect()
 }
 
-impl ThinkingOptions {
-    /// 创建唤醒场景的选项
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// 创建指定场景的选项
-    pub fn for_scene(scene: ThinkingScene) -> Self {
-        Self {
-            scene,
-            ..Default::default()
-        }
-    }
-
-    /// 设置项目上下文
-    pub fn with_project(mut self, project: crate::models::project::Project) -> Self {
-        self.project = Some(project);
-        self
-    }
-
-    /// 设置任务上下文
-    pub fn with_task(mut self, task: crate::models::task::Task) -> Self {
-        self.task = Some(task);
-        self
-    }
-
-    /// 设置最大思考轮次
-    pub fn with_max_thinking_rounds(mut self, max_rounds: usize) -> Self {
-        self.max_thinking_rounds = Some(max_rounds);
-        self
-    }
-
-    /// 设置用户画像（消息发送者的 UserPo）
-    pub fn with_user_profile(mut self, user: crate::models::user::UserPo) -> Self {
-        self.user_profile = Some(user);
-        self
-    }
-
-    /// 获取有效最大思考轮次（None 时取系统配置 [agent].max_thinking_rounds）
-    pub fn effective_max_rounds(&self) -> usize {
-        self.max_thinking_rounds
-            .unwrap_or_else(|| crate::config::get().agent.max_thinking_rounds)
-    }
-}
-
-/// 结构化意图分析结果
-///
-/// 由 `RuntimeAwakening::analyze_input_intent()` 输出，供：
-/// - awaken 正式阶段 PromptBuilder 渲染【输入理解结果】区块
-/// - 外部入站适配器（飞书/WS/HTTP 回调）路由消息前的预分析
-/// - 澄清短路判断（need_clarification=true 时，可选择不进入执行阶段直接追问）
-///
-/// 说明：除了 confidence 用 f32，其余均为自由文本/数组，不做强枚举约束，
-/// 避免未来新意图类型导致编译期改动；解析失败时降级为 Default::default()
-/// 空结构，保证不阻塞主流程。
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct IntentAnalysis {
-    /// 主意图类型（推荐取值：Question / TaskRequest / Confirm /
-    /// FollowUp / ClarificationResponse / Chat / Mixed）
-    /// Agent 自主判断，不做强枚举
-    pub intent_type: String,
-    /// 意图置信度 0.0~1.0（Agent 自己打分）
-    #[serde(default)]
-    pub confidence: f32,
-    /// 关键词/关键实体抽取（直接可复用于 search_memory 的 query）
-    #[serde(default)]
-    pub key_terms: Vec<String>,
-    /// 指代消歧结果（自由文本数组，每条 Agent 写清楚"X → Y"）
-    /// 例如：["\"上次那个方案\" → project=proj_123, task=task_456"]
-    #[serde(default)]
-    pub resolutions: Vec<String>,
-    /// 检索补充上下文摘要（search_memory/recommend_seed_nodes 结果）
-    #[serde(default)]
-    pub retrieved_context: Vec<String>,
-    /// 需要进一步追问澄清的问题（空列表表示理解充分）
-    #[serde(default)]
-    pub need_clarification: Vec<String>,
-    /// 一句话总结：Agent 最终确认自己理解用户想要什么
-    #[serde(default)]
-    pub summary: String,
-}
-
-// ==================== 共享 think loop ====================
-
-impl RuntimeDomainImpl {
-    /// 执行 think 循环（awaken/sleep_and_settle/summary 共用）
-    ///
-    /// 统一封装：超时控制 + 多轮迭代 + 工具调用分发。
-    /// 每轮 think 后发布 ThinkRoundEvent（通过 AOP 同步转发）。
-    ///
-    /// # 退出条件
-    /// - `ThinkResult::Final` → 返回 `ThinkLoopResult::Final(content)`
-    /// - 策略命中（用户取消/轮次上限/超时等）→ 通过 `map_triggered_to_result` 映射
-    /// - 上下文超限（input_tokens >= 阈值）→ 返回 `ContextOverflow`
-    /// - 累计轮次达到 `max_rounds` → 返回 `MaxRoundsExceeded`
-    /// - 超时 → 返回错误
-    ///
-    /// `start_round` 为本次循环的起始轮次编号（跨压缩累计）。
-    /// `max_rounds` 为总轮次上限（跨压缩累计）。
-    ///
-    /// `think_runtime` / `policy` 为可选的策略引擎接入点：
-    /// - `think_runtime`：每轮上报运行时快照（供前端 cancel-thinking/runtime-status 查询）
-    /// - `policy`：每轮评估策略（用户取消/轮次上限/超时），命中即退出循环
-    ///
-    /// 两者都为 None 时退化为旧行为（仅靠 max_rounds + timeout_secs 控制）。
-    #[allow(clippy::too_many_arguments)]
-    async fn run_think_loop(
-        &self,
-        ctx: RequestContext,
-        brain: &crate::models::brain::Brain,
-        prompt: &str,
-        tool_descriptors: &[ToolDescriptor],
-        agent: &Agent,
-        scene: ThinkingScene,
-        trace_id: &str,
-        max_rounds: usize,
-        start_round: usize,
-        timeout_secs: u64,
-        think_runtime: Option<&Arc<AgentThinkRuntime>>,
-        policy: Option<&dyn crate::pkg::policy::Policy>,
-    ) -> Result<ThinkLoopResult> {
-        /// 上下文压缩触发阈值（占最大上下文窗口的比例）
-        const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
-
-        // 从 ModelProvider 配置中获取上下文压缩阈值
-        // 优先级：recommended_context_length > max_context_length * 60% > 不检测
-        let overflow_threshold: Option<u64> = brain.model_provider().and_then(|po| {
-            let config = po.config();
-            // 优先使用推荐上下文长度
-            if let Some(rec) = config.recommended_context_length
-                && rec > 0
-            {
-                return Some(rec as u64);
-            }
-            // fallback：max_context_length * 60%
-            config
-                .max_context_length
-                .filter(|&v| v > 0)
-                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
-        });
-
-        let think_future = async {
-            let mut messages = vec![ChatMessage::user(prompt.to_string())];
-            // 提取模型提供商信息（所有轮次共用）
-            let (model_provider_id, model_name) = match brain.model_provider() {
-                Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),
-                None => (None, None),
-            };
-            // 本次循环可用轮次 = max_rounds - start_round
-            let available_rounds = max_rounds.saturating_sub(start_round);
-            // 策略评估用的起始时间（用于 elapsed_secs）
-            let loop_start = std::time::Instant::now();
-            // 累计 token 用量（用于策略评估 + 运行时快照上报）
-            let mut total_input_tokens: u64 = 0;
-            let mut total_output_tokens: u64 = 0;
-            let mut total_tool_calls: usize = 0;
-            let scene_str = scene.as_str();
-            for offset in 0..available_rounds {
-                    // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
-                    if let Some(tr) = think_runtime
-                        && tr.is_cancelled()
-                    {
-                        log_info!(
-                            &ctx,
-                            "think_loop",
-                            "cancel flag detected before round={}, exiting loop",
-                            start_round + offset
-                        );
-                        return Ok(ThinkLoopResult::Cancelled {
-                            messages,
-                            total_rounds: start_round + offset,
-                        });
-                    }
-
-                    let round = start_round + offset;
-                    let round_start = std::time::Instant::now();
-                    let result = self
-                        .brain_dal()
-                        .think(ctx.clone(), brain, &messages, tool_descriptors)
-                        .await?;
-                    let round_duration_ms = round_start.elapsed().as_millis() as u64;
-
-                    match result {
-                        ThinkResult::Final { content, usage } => {
-                            // 累计 token 用量
-                            total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
-                            total_output_tokens = total_output_tokens.saturating_add(usage.output_tokens);
-                            // 上报最终轮运行时快照
-                            if let Some(tr) = think_runtime {
-                                tr.report_round(
-                                    trace_id,
-                                    scene,
-                                    round + 1,
-                                    max_rounds,
-                                    total_input_tokens,
-                                    total_output_tokens,
-                                    total_input_tokens.saturating_add(total_output_tokens),
-                                    total_tool_calls,
-                                );
-                                tr.finish();
-                            }
-                            // 发布 ThinkRoundEvent（无工具调用，最终轮）
-                            let _ = crate::pkg::aop::publish(
-                                ThinkRoundEvent::new(
-                                    &agent.po.id,
-                                    trace_id,
-                                    scene_str,
-                                    round,
-                                    round_duration_ms,
-                                    false,
-                                    0,
-                                )
-                                .with_model_usage(
-                                    model_provider_id.clone(),
-                                    model_name.clone(),
-                                    usage.input_tokens,
-                                    usage.output_tokens,
-                                    usage.total(),
-                                )
-                                .with_context(
-                                    ctx.organization_id().cloned(),
-                                    ctx.user_id().cloned(),
-                                    ctx.task_id().cloned(),
-                                    ctx.project_id().cloned(),
-                                ),
-                            )
-                            .await;
-                            return Ok(ThinkLoopResult::Final { content, messages });
-                        }
-                        ThinkResult::ToolCall {
-                            content,
-                            tool_calls,
-                            usage,
-                        } => {
-                            let tc_count = tool_calls.len();
-                            total_tool_calls = total_tool_calls.saturating_add(tc_count);
-                            total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
-                            total_output_tokens = total_output_tokens.saturating_add(usage.output_tokens);
-                            // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
-                            messages.push(ChatMessage::Assistant {
-                                content,
-                                tool_calls: Some(tool_calls.clone()),
-                            });
-                            // 按 control_mode 分发执行
-                            for tc in tool_calls {
-                                match agent.tools().iter().find(|t| t.po.name == tc.name) {
-                                    Some(tool) => {
-                                        let call_result = match tool.po.control_mode {
-                                            common::enums::tool::ControlMode::Auto => {
-                                                self.tool_dal()
-                                                    .execute_auto(ctx.clone(), tool, tc.arguments)
-                                                    .await
-                                            }
-                                            common::enums::tool::ControlMode::Manual => {
-                                                self.tool_dal()
-                                                    .execute_manual(ctx.clone(), tool, tc.arguments)
-                                                    .await
-                                            }
-                                        };
-                                        match call_result {
-                                            Ok((value, _entry)) => {
-                                                messages.push(ChatMessage::tool(
-                                                    tc.id,
-                                                    format!("{}", value),
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                messages.push(ChatMessage::tool(
-                                                    tc.id,
-                                                    format!("Error: {}", e),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        messages.push(ChatMessage::tool(
-                                            tc.id,
-                                            format!("Error: tool {} not found", tc.name),
-                                        ));
-                                    }
-                                }
-                            }
-                            // 发布 ThinkRoundEvent（有工具调用）
-                            let _ = crate::pkg::aop::publish(
-                                ThinkRoundEvent::new(
-                                    &agent.po.id,
-                                    trace_id,
-                                    scene_str,
-                                    round,
-                                    round_duration_ms,
-                                    true,
-                                    tc_count,
-                                )
-                                .with_model_usage(
-                                    model_provider_id.clone(),
-                                    model_name.clone(),
-                                    usage.input_tokens,
-                                    usage.output_tokens,
-                                    usage.total(),
-                                )
-                                .with_context(
-                                    ctx.organization_id().cloned(),
-                                    ctx.user_id().cloned(),
-                                    ctx.task_id().cloned(),
-                                    ctx.project_id().cloned(),
-                                ),
-                            )
-                            .await;
-
-                            // 上下文压缩检测：当输入 token 超过阈值时中断循环，
-                            // 由调用方（awaken）执行 sleep_and_settle 沉淀后重试
-                            if let Some(threshold) = overflow_threshold
-                                && usage.input_tokens >= threshold
-                            {
-                                log_info!(
-                                    &ctx,
-                                    "think_loop",
-                                    "context overflow detected: input_tokens={} >= threshold={}",
-                                    usage.input_tokens,
-                                    threshold
-                                );
-                                return Ok(ThinkLoopResult::ContextOverflow {
-                                    messages,
-                                    input_tokens: usage.input_tokens,
-                                    rounds_used: offset + 1,
-                                });
-                            }
-
-                            // 策略评估 + 运行时快照上报
-                            let total_tokens = total_input_tokens.saturating_add(total_output_tokens);
-                            let elapsed_secs = loop_start.elapsed().as_secs();
-
-                            // 上报运行时快照（每轮都更新，供前端实时查询）
-                            if let Some(tr) = think_runtime {
-                                tr.report_round(
-                                    trace_id,
-                                    scene,
-                                    round + 1,
-                                    max_rounds,
-                                    total_input_tokens,
-                                    total_output_tokens,
-                                    total_tokens,
-                                    total_tool_calls,
-                                );
-                            }
-
-                            // 评估策略：任一命中即退出循环
-                            if let Some(policy) = policy {
-                                let metrics = crate::pkg::policy::Metrics::new()
-                                    .with("round_number", (round + 1) as u64)
-                                    .with("max_rounds", max_rounds as u64)
-                                    .with("elapsed_secs", elapsed_secs)
-                                    .with("total_tokens", total_tokens)
-                                    .with("context_tokens", usage.input_tokens);
-                                let triggered = policy.evaluate(&metrics);
-                                if !triggered.is_empty() {
-                                    log_info!(
-                                        &ctx,
-                                        "think_loop",
-                                        "policy triggered: {:?} at round={}",
-                                        triggered,
-                                        round + 1
-                                    );
-                                    return Ok(map_triggered_to_result(
-                                        &triggered,
-                                        messages,
-                                        round + 1,
-                                        usage.input_tokens,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-                // 循环耗尽所有可用轮次，未得到 Final 回答
-                Ok(ThinkLoopResult::MaxRoundsExceeded {
-                    messages,
-                    total_rounds: max_rounds,
-                })
-        };
-
-        // timeout_secs = 0 → 不限制；非 0 → 超时保护
-        if timeout_secs == 0 {
-            think_future.await
-        } else {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(timeout_secs),
-                think_future,
-            )
-            .await
-            {
-                Ok(inner) => inner,
-                Err(_elapsed) => Err(err!(
-                    Internal,
-                    "brain think timeout after {}s",
-                    timeout_secs
-                )),
-            }
-        }
-    }
-}
+// ==================== RuntimeAwakening trait 实现 ====================
 
 #[async_trait::async_trait]
 impl RuntimeAwakening for RuntimeDomainImpl {
@@ -692,16 +189,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // 创建思考运行时（与 Busy 状态绑定，BusyGuard Drop 时自动清理）
         // 整个 awaken 流程（含 ContextOverflow 重试）共享同一个 think_runtime
-        let think_runtime = Arc::new(AgentThinkRuntime::new(
-            agent.po.id.clone(),
-            trace_id.clone(),
-        ));
-        AgentRuntimeStateManager::global().set_think_runtime(
-            &agent.po.id,
-            think_runtime.clone(),
-        );
-        // 按场景构造策略组（Or 关系：用户取消/轮次上限/超时任一命中即退出）
-        let policy = build_policy_for_scene(agent, ThinkingScene::Awaken, think_runtime.cancel_flag());
+        let (think_runtime, policy) =
+            init_think_runtime_and_policy(agent, ThinkingScene::Awaken, &trace_id);
 
         // Step 2: 发布循环启动事件（AOP 同步转发）
         let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
@@ -957,6 +446,41 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         "agent thinking cancelled by user, rounds={}",
                         rounds
                     );
+                    let duration_ms = start_time
+                        .elapsed()
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if let Err(stats_err) = record_event!(
+                        ctx,
+                        AgentAwakeEvent {
+                            agent_id: agent.po.id.clone(),
+                            project_id: ctx.project_id().cloned(),
+                            task_id: ctx.task_id().cloned(),
+                            organization_id: ctx.organization_id.clone(),
+                            user_id: Some(ctx.uid()),
+                            message_id: Some(message.po.id.clone()),
+                            call_count: 1,
+                            duration_ms: duration_ms,
+                            status: "cancelled".to_string(),
+                            exit_reason: "cancelled".to_string(),
+                        }
+                    ) {
+                        log_warn!(
+                            &ctx,
+                            "awaken",
+                            "record_event failed on cancel path: {:?}",
+                            stats_err
+                        );
+                    }
+                    let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+                        &agent.po.id,
+                        &trace_id,
+                        "awaken",
+                        "cancelled",
+                        duration_ms,
+                        Some(&message.po.id),
+                    ))
+                    .await;
                     return Ok(AwakeningResult {
                         agent_id: agent.po.id.clone(),
                         trace_ids: vec![trace_id.clone()],
@@ -982,6 +506,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                             call_count: 1,
                             duration_ms: duration_ms,
                             status: format!("failed: {}", e),
+                            exit_reason: "error".to_string(),
                         }
                     ) {
                         log_warn!(
@@ -1077,6 +602,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 call_count: 1,
                 duration_ms: duration_ms,
                 status: "success".to_string(),
+                exit_reason: exit_reason.to_lowercase(),
             }
         ) {
             log_warn!(
@@ -1155,15 +681,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let trace_id = trace.id.clone();
 
         // 创建沉淀场景的思考运行时（覆盖 awaken 的，因为这是一个独立思考阶段）
-        let think_runtime = Arc::new(AgentThinkRuntime::new(
-            agent.po.id.clone(),
-            trace_id.clone(),
-        ));
-        AgentRuntimeStateManager::global().set_think_runtime(
-            &agent.po.id,
-            think_runtime.clone(),
-        );
-        let policy = build_policy_for_scene(agent, ThinkingScene::Settle, think_runtime.cancel_flag());
+        let (think_runtime, policy) =
+            init_think_runtime_and_policy(agent, ThinkingScene::Settle, &trace_id);
 
         // 发布循环启动事件（AOP 同步转发）
         let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
@@ -1179,15 +698,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 确保沉淀模式下只能接触记忆类工具。
         // 睡觉是对自身知识的沉淀积累，不应触发消息流程导致异步唤醒自己。
         let scene = options.scene;
-        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
-            .skills()
-            .iter()
-            .filter(|s| {
-                let tags = s.po.parse_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(|s| s.po.clone())
-            .collect();
+        let skill_pos = build_scene_skills(agent, scene);
 
         // Step 4: 拼装 Prompt（复用 builder 挂载链路，调用 build_sleep_prompt 生成沉淀模板）
         // 与 awaken 的区别：不构造虚拟 System Message，约束模板内聚在 builder.build_sleep_prompt
@@ -1207,15 +718,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
 
         // 构建 ToolDescriptor 列表（从 agent.tools 按场景过滤后派生，供模型 function calling）
-        let tool_descriptors: Vec<ToolDescriptor> = agent
-            .tools()
-            .iter()
-            .filter(|t| {
-                let tags = t.po.get_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(ToolDescriptor::from)
-            .collect();
+        let tool_descriptors = build_scene_tool_descriptors(agent, scene);
 
         // 调用共享 think loop（沉淀场景不限制轮次，给一个较大的上限）
         let think_result = self
@@ -1262,6 +765,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         call_count: 1,
                         duration_ms: duration_ms,
                         status: format!("settle failed: {}", e),
+                        exit_reason: "error".to_string(),
                     }
                 ) {
                     log_warn!(
@@ -1323,6 +827,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 call_count: 1,
                 duration_ms: duration_ms,
                 status: "settle success".to_string(),
+                exit_reason: "settle".to_string(),
             }
         ) {
             log_warn!(
@@ -1399,533 +904,6 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         result
     }
-}
-
-/// 总结退出流程的独立实现块
-///
-/// `awaken_for_summary` 是 `RuntimeDomainImpl` 的私有辅助方法，
-/// 不属于 `RuntimeAwakening` trait（只在 awaken 内部调用）。
-impl RuntimeDomainImpl {
-    /// analyze_input_intent 的核心实现（由 trait 方法委托，外层负责 stats 包裹）
-    ///
-    /// 流程：构造 IntentAnalyze 场景 → 读短期记忆 → 过滤技能 → 拼 Prompt →
-    /// think loop（最多 2 轮）→ 解析 IntentAnalysis JSON
-    async fn analyze_input_intent_inner(
-        &self,
-        ctx: RequestContext,
-        agent: &Agent,
-        message: &Message,
-        options: &ThinkingOptions,
-        trace_id: &str,
-    ) -> Result<IntentAnalysis> {
-        // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene）
-        let mut analyze_opts = options.clone();
-        analyze_opts.scene = ThinkingScene::IntentAnalyze;
-        // 轮次和超时由 config_resolve 从 Agent 配置 + 系统配置解析，
-        // 直接传入 run_think_loop，不经过 ThinkingOptions
-        let scene = analyze_opts.scene;
-
-        // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
-        let recent_memories = self
-            .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, 20)
-            .await?;
-
-        // 3. 按 IntentAnalyze 场景过滤技能（严格只保留理解类标签）
-        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
-            .skills()
-            .iter()
-            .filter(|s| {
-                let tags = s.po.parse_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(|s| s.po.clone())
-            .collect();
-
-        // 4. 构造 PromptBuilder（与 awaken 相同挂载链路，保证背景知识一致）
-        let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(trace_id);
-        builder.system_prompt(agent);
-        builder.skills(&skill_pos);
-        if let Some(project) = &analyze_opts.project {
-            builder.project_context(project);
-        }
-        if let Some(task) = &analyze_opts.task {
-            builder.task_context(task);
-        }
-        if let Some(user) = &analyze_opts.user_profile {
-            builder.user_profile(user);
-        }
-        builder.history(&recent_memories);
-        builder.current_message(message);
-
-        // 5. 组装专用 Prompt（不是普通 build()）
-        let prompt = builder.build_intent_analyze_prompt();
-
-        // 6. 取 Agent Brain（调用方需已通过 wake_agent_brain 装配）
-        let brain = agent
-            .brain
-            .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
-
-        // 7. 按场景构建工具描述符列表（严格白名单，只允许理解类工具）
-        let tool_descriptors: Vec<ToolDescriptor> = agent
-            .tools()
-            .iter()
-            .filter(|t| {
-                let tags = t.po.get_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(ToolDescriptor::from)
-            .collect();
-
-        // 8. 运行 think loop（轮次由配置决定，保证多步检索后有足够轮次输出 Final JSON）
-        // IntentAnalyze 是 awaken 的 Phase 1 子流程，但同样是一个完整的 think_loop，
-        // 需要独立的 think_runtime 和 policy（覆盖 awaken 的，awaken 循环中会重新设置）
-        let think_runtime = Arc::new(AgentThinkRuntime::new(
-            agent.po.id.clone(),
-            trace_id.to_string(),
-        ));
-        AgentRuntimeStateManager::global().set_think_runtime(
-            &agent.po.id,
-            think_runtime.clone(),
-        );
-        let policy = build_policy_for_scene(
-            agent,
-            ThinkingScene::IntentAnalyze,
-            think_runtime.cancel_flag(),
-        );
-        let think_result = self
-            .run_think_loop(
-                ctx.clone(),
-                brain,
-                &prompt,
-                &tool_descriptors,
-                agent,
-                ThinkingScene::IntentAnalyze,
-                trace_id,
-                config_resolve::intent_analyze_max_rounds(agent),
-                0,
-                config_resolve::think_timeout_secs(agent),
-                Some(&think_runtime),
-                Some(policy.as_ref()),
-            )
-            .await?;
-
-        // 9. 取最终回答文本
-        let final_text = match think_result {
-            ThinkLoopResult::Final { content, .. } => content,
-            ThinkLoopResult::ContextOverflow { .. } => {
-                return Err(err!(
-                    Internal,
-                    "analyze_input_intent context overflow (unexpected for 2-round limit)"
-                ));
-            }
-            ThinkLoopResult::MaxRoundsExceeded { .. } => {
-                return Err(err!(
-                    Internal,
-                    "analyze_input_intent max rounds exceeded without Final (Agent failed to output JSON)"
-                ));
-            }
-            ThinkLoopResult::Cancelled { .. } => {
-                return Err(err!(
-                    Internal,
-                    "analyze_input_intent cancelled by user before Final"
-                ));
-            }
-        };
-
-        // 10. 解析 IntentAnalysis JSON（6 级降级，全部失败则返回 Err，由调用方降级）
-        parse_intent_analysis_json(&final_text)
-    }
-
-    /// 总结退出流程
-    ///
-    /// 当思考轮次耗尽时，或正常完成时，让 Agent 总结当前工作进展并写入短期记忆。
-    /// 内部构建 summary prompt，调用 think loop 让 Agent 自主完成总结，
-    /// 可通过 send_message / update_task_progress 等工具发送通知（仅 MaxRoundsExceeded 场景）。
-    ///
-    /// `trace_ids` 为本次总结依赖的 trace 列表，写入 prompt 要求 Agent 调用
-    /// save_short_term_memory 时填入此字段。
-    ///
-    /// 返回 Agent 的总结文本（作为 raw_output 记录到 trace）。
-    async fn awaken_for_summary(
-        &self,
-        ctx: RequestContext,
-        agent: &Agent,
-        work_messages: &[ChatMessage],
-        options: &ThinkingOptions,
-        parent_trace_id: &str,
-        trace_ids: &[String],
-    ) -> Result<String> {
-        use common::enums::MemoryRole;
-
-        let scene = ThinkingScene::Summary;
-
-        // 1. 读取最近短期记忆
-        let recent_memories = self
-            .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, 20)
-            .await?;
-
-        // 2. 构造 summary trace
-        let mut trace = MemoryTrace::new(
-            agent.po.id.clone(),
-            format!("summary-{}", parent_trace_id),
-            ctx.uid(),
-            ctx.organization_id.clone().unwrap_or_default(),
-            MemoryRole::System,
-            String::new(),
-            ctx.task_id().cloned(),
-        );
-        let trace_id = trace.id.clone();
-
-        // 创建总结场景的思考运行时（覆盖 awaken 的，因为这是一个独立思考阶段）
-        let think_runtime = Arc::new(AgentThinkRuntime::new(
-            agent.po.id.clone(),
-            trace_id.clone(),
-        ));
-        AgentRuntimeStateManager::global().set_think_runtime(
-            &agent.po.id,
-            think_runtime.clone(),
-        );
-        let policy = build_policy_for_scene(agent, ThinkingScene::Summary, think_runtime.cancel_flag());
-
-        // 3. 发布循环启动事件
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
-            &agent.po.id,
-            &trace_id,
-            "summary",
-            None,
-        ))
-        .await;
-
-        // 4. 按场景过滤技能
-        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
-            .skills()
-            .iter()
-            .filter(|s| {
-                let tags = s.po.get_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(|s| s.po.clone())
-            .collect();
-
-        // 5. 构建 summary prompt
-        let work_summary = messages_to_summary(work_messages, 500);
-        let total_rounds = options.effective_max_rounds();
-
-        let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(&trace_id);
-        builder.system_prompt(agent);
-        builder.skills(&skill_pos);
-        if let Some(project) = &options.project {
-            builder.project_context(project);
-        }
-        if let Some(task) = &options.task {
-            builder.task_context(task);
-        }
-        builder.history(&recent_memories);
-        let prompt = builder.build_summary_prompt(&work_summary, total_rounds, trace_ids);
-
-        // 6. 构建 Summary 场景的 ToolDescriptor（只允许消息和任务管理工具）
-        let brain = agent
-            .brain
-            .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
-
-        let tool_descriptors: Vec<ToolDescriptor> = agent
-            .tools()
-            .iter()
-            .filter(|t| {
-                let tags = t.po.get_tags();
-                scene.is_tool_allowed(&tags)
-            })
-            .map(ToolDescriptor::from)
-            .collect();
-
-        // 7. 调用 think loop（Summary 场景需要写短期记忆 + 可能发通知）
-        let think_result = self
-            .run_think_loop(
-                ctx.clone(),
-                brain,
-                &prompt,
-                &tool_descriptors,
-                agent,
-                ThinkingScene::Summary,
-                &trace_id,
-                config_resolve::summary_max_rounds(agent),
-                0,
-                config_resolve::think_timeout_secs(agent),
-                Some(&think_runtime),
-                Some(policy.as_ref()),
-            )
-            .await;
-
-        let raw_output = match think_result {
-            Ok(ThinkLoopResult::Final { content, .. }) => content,
-            Ok(ThinkLoopResult::ContextOverflow { .. })
-            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. })
-            | Ok(ThinkLoopResult::Cancelled { .. }) => {
-                // 总结场景兜底：即使超限/轮次耗尽/被取消也返回已有内容
-                String::new()
-            }
-            Err(e) => {
-                log_warn!(
-                    &ctx,
-                    "awaken_for_summary",
-                    "summary think loop failed: {:?}",
-                    e
-                );
-                String::new()
-            }
-        };
-
-        // 8. 写入 trace
-        trace.input = prompt.clone();
-        trace.complete(raw_output.clone());
-
-        // 补充运行时元数据
-        trace.metadata.insert("scene".into(), "summary".into());
-        trace.metadata.insert("parent_trace_id".into(), parent_trace_id.to_string());
-        trace.metadata.insert(
-            "depended_trace_ids".into(),
-            serde_json::to_string(trace_ids).unwrap_or_default(),
-        );
-        if let Some(task_id) = ctx.task_id() {
-            trace.metadata.insert("task_id".into(), task_id.clone());
-        }
-        if let Some(project_id) = ctx.project_id() {
-            trace.metadata.insert("project_id".into(), project_id.clone());
-        }
-
-        let _ = self.memory().write_thinking_trace(ctx.clone(), trace).await;
-
-        // 9. 发布循环完成事件
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-            &agent.po.id,
-            &trace_id,
-            "summary",
-            "success",
-            0,
-            None,
-        ))
-        .await;
-
-        Ok(raw_output)
-    }
-}
-
-/// 从 Agent Final 文本中按 5 级降级策略尽量提取并解析 IntentAnalysis JSON
-///
-/// # 降级策略
-/// 1. 整段文本直接 JSON 反序列化
-/// 2. 手动查找 ```json ... ``` 或 ``` ... ``` 代码块，提取内容再解析
-/// 3. 查找 INTENT_ANALYSIS_START/END 锚点标记之间的内容
-/// 4. 平衡括号法：从第一个 { 开始找到匹配的顶层 }，提取中间内容再解析
-///    (含字段类型宽容修复：confidence 字符串→数字、缺省字段 Default)
-/// 5. 取第一个 { 与最后一个 } 之间的子串尝试解析
-/// 6. 全部失败 → 返回 Err（错误信息含文本前缀，便于调试日志）
-pub fn parse_intent_analysis_json(text: &str) -> Result<IntentAnalysis> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Err(err!(
-            Internal,
-            "parse_intent_analysis_json: empty text"
-        ));
-    }
-
-    // ===== Level 1: 整段文本直接解析 =====
-    if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(text) {
-        return Ok(ia);
-    }
-
-    // ===== Level 2: 手动查找 ```json ... ``` 或 ``` ... ``` 代码块 =====
-    let mut cursor = text;
-    while let Some(start) = cursor.find("```") {
-        let after_first = &cursor[start + 3..];
-        // 跳过可选的 "json" 标识符 + 空白
-        let after_lang = if let Some(rest) = after_first.strip_prefix("json") {
-            rest.trim_start_matches([' ', '\n', '\r', '\t'])
-        } else {
-            after_first.trim_start_matches([' ', '\n', '\r', '\t'])
-        };
-        if let Some(end) = after_lang.find("```") {
-            let inner = after_lang[..end].trim();
-            if !inner.is_empty() {
-                if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
-                    return Ok(ia);
-                }
-                // 如果直接 IntentAnalysis 失败，可能是锚点包裹或字段类型问题，
-                // 进入宽容解析流程
-                if let Some(ia) = try_lenient_parse(inner) {
-                    return Ok(ia);
-                }
-            }
-            // 继续在剩余文本中寻找下一组 ```
-            cursor = &after_lang[end.saturating_add(3)..];
-            continue;
-        }
-        break;
-    }
-
-    // ===== Level 3: 查找 INTENT_ANALYSIS_START/END 锚点之间的内容 =====
-    if let Some(start_marker) = text.find("--- INTENT_ANALYSIS_START ---") {
-        let after_start = &text[start_marker + "--- INTENT_ANALYSIS_START ---".len()..];
-        if let Some(end_marker) = after_start.find("--- INTENT_ANALYSIS_END ---") {
-            let inner = after_start[..end_marker].trim();
-            if !inner.is_empty() {
-                if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
-                    return Ok(ia);
-                }
-                if let Some(ia) = try_lenient_parse(inner) {
-                    return Ok(ia);
-                }
-            }
-        }
-    }
-
-    // ===== Level 4: 平衡括号法提取第一个完整 JSON 对象 =====
-    if let Some(json_obj) = extract_first_json_object(text) {
-        if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(json_obj) {
-            return Ok(ia);
-        }
-        if let Some(ia) = try_lenient_parse(json_obj) {
-            return Ok(ia);
-        }
-    }
-
-    // ===== Level 5: 取第一个 { 到最后一个 } 之间的子串 =====
-    let first_brace = text.find('{');
-    let last_brace = text.rfind('}');
-    if let (Some(first), Some(last)) = (first_brace, last_brace)
-        && first < last
-    {
-        let inner = &text[first..=last];
-        if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
-            return Ok(ia);
-        }
-        if let Some(ia) = try_lenient_parse(inner) {
-            return Ok(ia);
-        }
-    }
-
-    // ===== Level 6 (全部失败): 返回 Err 含文本前缀便于调试 =====
-    let preview: String = text.chars().take(120).collect();
-    Err(err!(
-        Internal,
-        "parse_intent_analysis_json: all strategies failed. Text prefix: {}",
-        preview
-    ))
-}
-
-/// 宽容解析：先 parse 成 serde_json::Value，再手动按字段提取并做类型宽容转换
-/// （解决 Agent 偶发把 confidence 写成字符串、数组里混非字符串等问题）
-fn try_lenient_parse(s: &str) -> Option<IntentAnalysis> {
-    use serde_json::Value;
-
-    let val: Value = serde_json::from_str(s).ok()?;
-    let intent_type = val
-        .get("intent_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let confidence = val
-        .get("confidence")
-        .and_then(|v| {
-            v.as_f64()
-                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
-        })
-        .unwrap_or(0.0) as f32;
-    let extract_str_arr = |key: &str| -> Vec<String> {
-        val.get(key)
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|x| match x {
-                        Value::String(s) => Some(s.clone()),
-                        Value::Number(n) => Some(n.to_string()),
-                        Value::Bool(b) => Some(b.to_string()),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let key_terms = extract_str_arr("key_terms");
-    let resolutions = extract_str_arr("resolutions");
-    let retrieved_context = extract_str_arr("retrieved_context");
-    let need_clarification = extract_str_arr("need_clarification");
-    let summary = val
-        .get("summary")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    // 至少要有 intent_type 或 summary 任一非空，才算解析出有效结果
-    if intent_type.is_empty() && summary.is_empty() {
-        return None;
-    }
-
-    Some(IntentAnalysis {
-        intent_type,
-        confidence,
-        key_terms,
-        resolutions,
-        retrieved_context,
-        need_clarification,
-        summary,
-    })
-}
-
-/// 简易括号匹配：从字符串中找到第一个顶层的 { ... } 完整 JSON 对象
-///
-/// 支持字符串内部出现大括号的情况：遇到未转义的双引号进入字符串模式，
-/// 字符串内部的 {} 不计入括号计数。
-pub fn extract_first_json_object(s: &str) -> Option<&str> {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            let mut depth = 0;
-            let start = i;
-            let mut in_string = false;
-            let mut escape = false;
-            while i < bytes.len() {
-                let b = bytes[i];
-                if escape {
-                    escape = false;
-                    i += 1;
-                    continue;
-                }
-                if b == b'\\' {
-                    escape = true;
-                    i += 1;
-                    continue;
-                }
-                if b == b'"' {
-                    in_string = !in_string;
-                    i += 1;
-                    continue;
-                }
-                if !in_string {
-                    if b == b'{' {
-                        depth += 1;
-                    } else if b == b'}' {
-                        depth -= 1;
-                        if depth == 0 {
-                            let end = i + 1;
-                            return Some(&s[start..end]);
-                        }
-                    }
-                }
-                i += 1;
-            }
-            return None;
-        }
-        i += 1;
-    }
-    None
 }
 
 #[cfg(test)]

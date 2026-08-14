@@ -419,8 +419,10 @@ pkg::init_all()                  # 最底层：日志/存储/JWT/工具注册（
 
 1. **禁止裸原始类型响应**：handler 即便只返回一个字段也必须用标准 Response 结构体（`ApiResponse<T>` 信封的 data 内禁止裸 bool/()/String）；无业务字段的操作用 `<Action>Response { success: bool }`。
 2. **DTO 只定义在 common**：Request/Response 一律先定义在 `common/src/api/<域>.rs`；禁止 `frontend/src/api/` 本地镜像；禁止 handler 直接返回 DAL/Domain 内部结构体（DAL 需要时 re-export common 定义）。
-3. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
-4. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
+3. **请求参数必须结构体化**：新增接口的请求参数（path / query / body）一律用结构体定义在 `common/src/api/<域>.rs`，通过 `#[derive(Params)]` + `#[param(source = "path"|"query")]` 注解声明参数来源；禁止在 handler 签名中散落 `Path<String>` / `Query<HashMap>` 等裸提取器。结构体即接口契约，便于扩展字段、前后端复用、文档生成。
+4. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
+5. **前端复用后端结构体**：前端 API client 优先复用 `common::api::*` 中的 Request/Response 结构体作为参数和返回类型，减少前后端字段定义漂移；前端自定义结构体仅用于纯展示层（如聚合多个接口数据的 ViewModel）。
+6. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
 
 ---
 

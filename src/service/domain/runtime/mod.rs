@@ -46,6 +46,35 @@ pub trait RuntimeDomain: Send + Sync + Debug {
 
     /// Agent 是否处于不可用状态（忙碌或休息）
     fn is_agent_unavailable(&self, agent_id: &str) -> bool;
+
+    /// 取消 Agent 思考（触发 cancel_flag）
+    ///
+    /// 返回 true 表示成功取消（Agent 正在思考），
+    /// 返回 false 表示 Agent 当前未在思考。
+    fn cancel_thinking(&self, agent_id: &str) -> bool;
+
+    /// 查询 Agent 运行时状态 + 思考运行时快照
+    ///
+    /// 返回 (state, current_message_id, task_id, project_id, state_started_at, think_runtime_snapshot)
+    fn get_runtime_status(
+        &self,
+        agent_id: &str,
+    ) -> (
+        AgentRuntimeState,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+        Option<crate::pkg::agent_runtime_state::ThinkRuntimeSnapshot>,
+    );
+
+    /// 查询运行中 Agent 列表（带过滤参数）
+    fn list_runtime_agents(
+        &self,
+        state_filter: Option<&str>,
+        task_id_filter: Option<&str>,
+        project_id_filter: Option<&str>,
+    ) -> Vec<(String, crate::pkg::agent_runtime_state::AgentRuntimeInfo)>;
 }
 
 /// 记忆管理 trait
@@ -245,9 +274,13 @@ pub trait RuntimeToolExecution: Send + Sync {
 
 pub mod awakening;
 mod busy_guard;
+mod intent_analyze;
 mod memory;
+mod summary;
+mod think_loop;
 mod tool_call_query;
 mod tool_execution;
+mod types;
 
 #[cfg(test)]
 mod tool_execution_test;
@@ -408,6 +441,54 @@ impl RuntimeDomain for RuntimeDomainImpl {
 
     fn is_agent_unavailable(&self, agent_id: &str) -> bool {
         crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().is_unavailable(agent_id)
+    }
+
+    fn cancel_thinking(&self, agent_id: &str) -> bool {
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .cancel_thinking(agent_id)
+    }
+
+    fn get_runtime_status(
+        &self,
+        agent_id: &str,
+    ) -> (
+        AgentRuntimeState,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+        Option<crate::pkg::agent_runtime_state::ThinkRuntimeSnapshot>,
+    ) {
+        let mgr = crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global();
+        let info = mgr.get(agent_id);
+        match info {
+            Some(info) => (
+                info.state,
+                info.current_message_id,
+                info.task_id,
+                info.project_id,
+                info.state_started_at,
+                info.think_runtime.as_ref().map(|tr| tr.snapshot()),
+            ),
+            None => (
+                AgentRuntimeState::Idle,
+                None,
+                None,
+                None,
+                0,
+                None,
+            ),
+        }
+    }
+
+    fn list_runtime_agents(
+        &self,
+        state_filter: Option<&str>,
+        task_id_filter: Option<&str>,
+        project_id_filter: Option<&str>,
+    ) -> Vec<(String, crate::pkg::agent_runtime_state::AgentRuntimeInfo)> {
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
+            .list_runtime_agents(state_filter, task_id_filter, project_id_filter)
     }
 }
 

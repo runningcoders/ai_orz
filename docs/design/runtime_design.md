@@ -1201,6 +1201,7 @@ pub enum AgentRuntimeState {
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-08-14 | v3.9 | 运行时可视化接口 + exit_reason 统计 + awakening 拆分（详见 25.14）：新增 3 个 HTTP 接口（runtime-status / cancel-thinking / runtime-list）暴露运行时状态；AgentAwakeEvent 新增 exit_reason 字段支撑策略效果分析；SSE 不扩展改用前端轮询（3 秒 Busy / 30 秒 Idle）；awakening.rs 按场景拆分为 types/think_loop/intent_analyze/summary 4 个子模块 + 提取 3 个场景辅助函数消除重复；前端新增 RuntimePanel 组件 + 详情页「⚡ 运行时」Tab + Workspace 运行中 Agent 卡片 |
 | 2026-08-14 | v3.8 | 意图感知两阶段唤醒（详见 25.13）：新增 ThinkingScene::IntentAnalyze + Summary 变体；RuntimeAwakening 新增 analyze_input_intent 复用函数；awaken 拆为两阶段（先理解再执行）；IntentAnalysis 结构化结果渲染为【输入理解结果】区块；轮次/超时全面配置化（Agent runtime_config > ai_orz.toml > 硬编码），默认轮次调大至 365；新增 AgentRuntimeConfigInfo 嵌套结构体替代打平字段传递；设计文档见 [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) |
 | 2026-08-05 | v3.7 | 统一总结流程 + 强制记忆写入（详见 25.12）：正常 Final 完成也触发 awaken_for_summary；pending_trace_ids 跟踪自上次压缩以来的 trace 列表；build_sleep_prompt/build_summary_prompt 新增 trace_ids 参数 + 强制 save_short_term_memory 指令；SaveShortTermMemoryParams 新增 trace_ids 字段 |
 | 2026-07-31 | v3.6 | 新增第二十五章：唤醒/沉睡场景化设计（ThinkingScene/ThinkingOptions + sleep_and_settle + 工具双层过滤 + 业务上下文注入），812 测试通过 |
@@ -2281,6 +2282,69 @@ awaken 循环
 **测试验证**：
 - `tests/integration/agent_awaken_test.rs::awaken_two_stage_happy_path`：Mock 两阶段 think，验证 Phase 2 Prompt 包含【输入理解结果】区块且位置在【当前消息】之前
 - `tests/integration/agent_awaken_test.rs::test_awaken_*`：原有单阶段测试保持兼容（Phase 1 失败降级时等同单阶段）
+
+### 25.14 运行时可视化接口 + exit_reason 统计 + awakening 拆分（v3.9 增量）
+
+> 📌 **本节定位**：在 v3.8 基础上补齐"思考运行时可视化闭环"——新增 3 个 HTTP 接口暴露运行时状态、AgentAwakeEvent 增加 exit_reason 字段支撑策略效果分析、awakening.rs 按场景拆分为聚焦子模块。
+>
+> **完成状态**：✅ 已全部实现（2026-08-14）
+>
+> **设计文档**：[thinking_task_policy_engine_design.md §8-§9](./thinking_task_policy_engine_design.md)
+
+**问题背景**：v3.8 前 Agent 思考过程对用户是黑盒——前端无法查看当前轮次/token/工具调用，无法主动取消长思考，统计层也缺少退出原因维度。同时 awakening.rs 已膨胀至 2514 行，多个场景（awaken/sleep_and_settle/intent_analyze/summary）的初始化逻辑重复。
+
+**v3.9 设计要点**：
+
+1. **3 个运行时 HTTP 接口**（DTO 定义在 `common/src/api/runtime.rs`，前后端单一事实源）：
+   - `GET /api/v1/hr/agents/{id}/runtime-status`：查询单 Agent 运行时状态 + 思考运行时快照（轮次/token/工具调用/trace_id）
+   - `POST /api/v1/hr/agents/{id}/cancel-thinking`：取消正在进行的思考（设置 cancel_flag，Agent 在当前轮次完成后退出）
+   - `GET /api/v1/hr/agents/runtime-list`：查询全局运行中 Agent 列表，支持按 state/task_id/project_id 过滤
+
+2. **AgentAwakeEvent 新增 exit_reason 字段**：
+   - DuckDB 表结构 + 事件结构体新增 `exit_reason: String`
+   - 取值：`final`（正常完成）/ `maxroundsexceeded`（轮次耗尽）/ `cancelled`（用户取消）/ `error`（异常）/ `settle`（沉淀场景）
+   - 发布点（成功/失败/取消三分支）均设置该字段，支撑"哪些策略最常触发"统计分析
+
+3. **RuntimeDomain trait 扩展**（委托 StateManager）：
+   - `cancel_thinking(agent_id) -> bool`：取消思考，返回是否成功取消
+   - `get_runtime_status(agent_id) -> (state, message_id, task_id, project_id, started_at, think_snapshot)`
+   - `list_runtime_agents(state_filter, task_id_filter, project_id_filter) -> Vec<(agent_id, runtime_info)>`
+
+4. **SSE 不扩展，纯前端轮询**（关键决策）：
+   - 现有 SSE 通道面向 message（用户需要看到的内容），思考运行时是 Agent 内部状态（运维视角）
+   - 思考完成 → 产出消息 → message SSE 天然推送，用户收到 message 事件即知思考结束
+   - 前端 3 秒轮询 `runtime-status`（Busy 时高频），Idle 时降频到 30 秒
+   - SSE 通道保持纯净，不引入 `ThinkingProgress` / `ThinkingFinished` 事件类型
+
+5. **awakening.rs 拆分为 5 个聚焦子模块**（原 2514 行 → 主文件 ~910 行 + 4 子模块）：
+   - `types.rs`：共享类型（ThinkLoopResult / ThinkingOptions / IntentAnalysis）+ `config_resolve` 模块（配置优先级解析）
+   - `think_loop.rs`：共享 think loop 引擎（`run_think_loop` + `map_triggered_to_result` + `build_policy_for_scene`）
+   - `intent_analyze.rs`：Phase 1 意图分析核心（`analyze_input_intent_inner`）+ JSON 6 级降级解析
+   - `summary.rs`：总结退出流程（`awaken_for_summary`）
+   - `awakening.rs`（主文件）：`RuntimeAwakening` trait 四大入口 + 3 个场景辅助函数 + re-export
+
+6. **提取场景辅助函数消除重复**（`pub(super)` 可见性，定义在 awakening.rs 供子模块复用）：
+   - `init_think_runtime_and_policy(agent, scene, trace_id)`：创建 AgentThinkRuntime + 注册 StateManager + 构造策略组（3 步合一）
+   - `build_scene_tool_descriptors(agent, scene)`：按场景过滤工具构建 ToolDescriptor 列表
+   - `build_scene_skills(agent, scene)`：按场景过滤技能返回 SkillPo 列表
+
+**关键代码位置**：
+- `common/src/api/runtime.rs` → 3 个接口的 Request/Response DTO（结构体化参数，符合 AGENTS.md §4.11.3）
+- `src/handlers/hr/agent/{runtime_status,cancel_thinking,runtime_list}.rs` → 3 个 HTTP handler（每个方法一个文件）
+- `src/pkg/agent_runtime_state.rs` → `list_runtime_agents` + `cancel_thinking` + `ThinkRuntimeSnapshot`
+- `src/pkg/stats/agent_awake.rs` → `AgentAwakeEvent.exit_reason` 字段
+- `src/service/domain/runtime/{types,think_loop,intent_analyze,summary,awakening}.rs` → 拆分后的子模块
+- `frontend/src/api/hr.rs` → 3 个 runtime API client 函数（复用 common DTO，符合 AGENTS.md §4.11.5）
+- `frontend/src/components/runtime_panel.rs` → RuntimePanel 组件（轮询 + 展示 + 取消按钮 + ConfirmDialog 二次确认）
+- `frontend/src/pages/hr/agent_detail.rs` → 详情页第 7 个 Tab「⚡ 运行时」
+- `frontend/src/pages/workspace.rs` → Workspace 运行中 Agent 卡片（支持状态过滤）
+
+**与 v3.8 的关系**：v3.9 是 v3.8 的增量升级，不改变两阶段唤醒流程，只在运行时可视化层（HTTP 接口 + 前端面板）和代码组织层（awakening 拆分）增强。拆分后子模块通过 `use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl}` 导入 trait，使 `self.memory()` 等 trait 方法在子文件中可用。
+
+**测试验证**：
+- 后端 84 个 runtime 相关测试全部通过（含 awakening 集成测试 6 个）
+- 后端 clippy `-D warnings` 零警告
+- 前端 build + clippy `-D warnings` 零警告
 
 ---
 
