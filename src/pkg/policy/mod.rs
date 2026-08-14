@@ -317,6 +317,7 @@ macro_rules! policy_set {
 ///
 /// 逐条处理条目，每条匹配后递归处理剩余条目。
 /// 通过 `@accum $builder:ident` 传递累积的 builder 状态。
+#[allow(unused_macros)]
 macro_rules! policy_set_mixed {
     // 终止：无剩余条目
     (@accum $builder:ident;) => {
@@ -345,6 +346,7 @@ macro_rules! policy_set_mixed {
 }
 
 pub(crate) use policy_set;
+#[allow(unused_imports)]
 pub(crate) use policy_set_mixed;
 
 #[cfg(test)]
