@@ -176,14 +176,13 @@ pub trait RuntimeAwakening: Send + Sync {
     ///
     /// 典型调用方：awaken 的前置阶段（两阶段唤醒流程）
     /// 也可复用在：外部消息入站、澄清追问、Agent 间协作消息路由前的理解等
-    fn analyze_input_intent(
+    async fn analyze_input_intent(
         &self,
-        _ctx: RequestContext,
-        _agent: &Agent,
-        _user_message: &str,
-    ) -> Result<crate::service::domain::runtime::awakening::IntentAnalysis> {
-        Err(common::error::err!(Internal, "not implemented"))
-    }
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+        options: &crate::service::domain::runtime::awakening::ThinkingOptions,
+    ) -> Result<crate::service::domain::runtime::awakening::IntentAnalysis>;
 }
 
 /// 工具执行 trait

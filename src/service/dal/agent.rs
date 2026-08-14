@@ -1020,12 +1020,126 @@ impl DefaultPromptBuilder {
         s
     }
 
-    /// 构建意图分析场景的 Prompt（Stub：Task 3 实现）
+    /// 构建意图分析场景的 Prompt（Task 3：完整实现）
     ///
-    /// 当前返回空字符串占位，不影响现有流程。Task 3 会按 IntentAnalyze
-    /// 设计文档拼装：意图识别 SOP 五步走 + 执行禁令 + JSON schema 输出约束。
+    /// 与 build()/build_sleep_prompt() 对称：复用 1-8 区块（人设 + 技能 + 上下文 + 历史），
+    /// 再追加「意图识别 SOP 五步走 + 严格执行禁令 + JSON Schema 输出约束」的专属指令块，
+    /// 最后附上当前消息作为明确靶子。
     pub fn build_intent_analyze_prompt(&self) -> String {
-        String::new()
+        let mut result = String::new();
+
+        // 1. System Prompt（Agent 人设）
+        if let Some(system) = &self.system_prompt {
+            result.push_str(system);
+            result.push_str("\n\n");
+        }
+
+        // 2-5. 技能区块（神经技能 + 必加载技能；调用方 analyze_input_intent 会通过
+        //    scene=IntentAnalyze 的工具白名单过滤，保证 Prompt 中无执行类技能描述）
+        result.push_str(&self.build_skills_sections());
+
+        // 6-7. 通用上下文区块（用户画像 + 项目 + 任务，有值即拼装）
+        result.push_str(&self.build_common_context_sections());
+
+        // 8. 历史对话记忆（最近 N 条）
+        if !self.history.is_empty() {
+            result.push_str("【历史对话】\n");
+            for h in &self.history {
+                result.push_str(h);
+                result.push('\n');
+            }
+            result.push('\n');
+        }
+
+        // 9. Trace ID
+        if let Some(trace_id) = &self.current_trace_id {
+            result.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+
+        // ==================== 阶段一：输入理解专用指令（核心）====================
+        result.push_str("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）\n\n");
+
+        result.push_str("===== 【输入理解阶段】IntentAnalyze 场景约束（非常重要！）=====\n\n");
+        result.push_str("## 你的任务：只做理解，不做执行\n\n");
+        result.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果，然后就结束本轮思考。\n\n");
+        result.push_str("✅ 必须做：\n");
+        result.push_str("   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍\n");
+        result.push_str("   2. 必须调用一次 search_memory（或 recommend_seed_nodes + traverse_knowledge_graph，空白场景）做上下文补充（100% 全新无历史的闲聊可豁免，请在思考中说明理由）\n");
+        result.push_str("   3. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
+        result.push_str("❌ 严格禁止做（任何违反都将导致此阶段结果作废）：\n");
+        result.push_str("   1. 严禁执行任何行动/工具调用——禁止调用 send_message / send_task_assignment_message / send_message_to_agent：不准给任何用户/Agent 发消息\n");
+        result.push_str("   2. 严禁编造无来源信息——禁止调用 create_task / update_task / create_project / update_project / update_memory 状态写入类工具；不准改动任何系统状态（只有 save_short_term_memory 内部记忆写入是允许的，若你需要临时记录东西）\n");
+        result.push_str("   3. 如果信息不足必须 need_clarification=true 并把澄清话术写进 resolutions——禁止做任何外部 API 调用、shell 执行、文件读写类工具；禁止直接回答用户问题（哪怕你 100% 知道答案），不准在 Final 里写对用户的回复\n\n");
+
+        result.push_str("## 理解 SOP 五步走（在思考中严格按此顺序执行）\n\n");
+        result.push_str("### Step 1：意图识别\n");
+        result.push_str("在思考中先把【当前消息】归类，写出你判断的依据：\n");
+        result.push_str("- Question：提问型（要信息/问进度/问规则/请教）\n");
+        result.push_str("- TaskRequest：任务型（提需求/安排工作/要产出）\n");
+        result.push_str("- Confirm：确认型（同意/否定/选择/拍板）\n");
+        result.push_str("- FollowUp：追问型（承接之前某条回答/产出的继续追问）\n");
+        result.push_str("- ClarificationResponse：澄清响应型（针对你前面追问的答复）\n");
+        result.push_str("- Chat：闲聊型（打招呼/客套/社交礼貌）\n");
+        result.push_str("- Mixed：混合型（多类意图，拆分说明）\n");
+        result.push_str("意图类型写入 intent_type 字段；置信度 0.0~1.0 自己打分写入 confidence。\n\n");
+
+        result.push_str("### Step 2：指代与上下文消歧\n");
+        result.push_str("1. 仔细读【历史对话】+【项目/任务上下文】+【用户画像】\n");
+        result.push_str("2. 找【当前消息】中的指代短语：这/那/上次/那个/他/按之前定的来 等\n");
+        result.push_str("3. 在思考中把每个指代对应到具体对象（project_id/task_id/message_id/某个人物…），写进 resolutions 数组，每条格式：\"\\\"XXX\\\" → YYY\"\n");
+        result.push_str("4. 读完所有上下文仍无法确定 → 写进 need_clarification，不要硬猜\n\n");
+
+        result.push_str("### Step 3：关键词抽取\n");
+        result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取 3~8 个关键词/关键实体（项目名/任务名/产品名/人名/专有名词/核心动词短语），写进 key_terms 数组。\n\n");
+
+        result.push_str("### Step 4：语义检索补充（强制执行）\n");
+        result.push_str("- 必须调用一次 search_memory（用 Step 3 的关键词组合成 query），除非你在思考中明确说明这是 100% 全新无历史的话题。\n");
+        result.push_str("- 首次进入这个 project/task 空场景：先调用 recommend_seed_nodes 拿图谱起点，再按需 traverse_knowledge_graph 走 1~2 跳。\n");
+        result.push_str("- list_messages 上拉历史也是可选：如果 Working Memory 不够。\n");
+        result.push_str("- 把检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON），写进 retrieved_context。\n\n");
+
+        result.push_str("### Step 5：判断是否需要澄清 + 总结\n");
+        result.push_str("- 如果 Step 2 消歧失败 / 混合型意图优先级不清 / 需求边界不明 / 需要用户决策 → 把要问用户的具体问题逐条写进 need_clarification（问题尽量用选择题形式，不要开放式）\n");
+        result.push_str("- 如果理解充分 → need_clarification = []\n");
+        result.push_str("- 最后在思考中用一句话总结「我理解用户想要：XXX」，写进 summary。\n\n");
+
+        result.push_str("## 最终输出规范（必须严格遵守）\n\n");
+        result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
+        result.push_str("- Final block MUST start with `--- INTENT_ANALYSIS_START ---` followed by pure JSON and end with `--- INTENT_ANALYSIS_END ---`\n");
+        result.push_str("- 中间 JSON 对象必须严格符合以下 schema（7 个字段全包含，不要省略）：\n\n");
+        result.push_str("JSON Schema 字段说明：\n");
+        result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
+        result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
+        result.push_str("- key_terms：字符串数组，3~8 个从消息 + 消歧中抽取的关键词/关键实体\n");
+        result.push_str("- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n");
+        result.push_str("- retrieved_context：字符串数组，search_memory / recommend_seed_nodes 等命中结果的你自己概括的短摘要（不要原始 JSON）\n");
+        result.push_str("- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n");
+        result.push_str("- summary：字符串，一句话总结你最终理解的用户需求\n\n");
+        result.push_str("示例 JSON（请严格模仿此结构，字段名和类型必须一致）：\n");
+        result.push_str("--- INTENT_ANALYSIS_START ---\n");
+        result.push_str("{\n");
+        result.push_str("  \"intent_type\": \"FollowUp\",\n");
+        result.push_str("  \"confidence\": 0.85,\n");
+        result.push_str("  \"key_terms\": [\"项目X\", \"方案A\", \"进度\", \"上次那个方案\"],\n");
+        result.push_str("  \"resolutions\": [\"\\\"上次那个方案\\\" → project=proj_123, task=task_456\"],\n");
+        result.push_str("  \"retrieved_context\": [\"2026-08-10 短期记忆：项目X 方案 A/B 比较，推荐方案 A（相似度 0.88）\"],\n");
+        result.push_str("  \"need_clarification\": [],\n");
+        result.push_str("  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n");
+        result.push_str("}\n");
+        result.push_str("--- INTENT_ANALYSIS_END ---\n\n");
+
+        result.push_str("===== 【输入理解阶段】指令结束 =====\n\n");
+
+        // 10. 当前消息（放在最后，给 Agent 明确的靶子）
+        if let Some(msg) = &self.current_message {
+            result.push_str("【当前消息】\n");
+            result.push_str(msg);
+            result.push_str("\n\n现在开始：在思考中走完 Step 1~5，然后按上面的 INTENT_ANALYSIS_START/END 锚点格式输出最终 JSON。\n");
+        } else {
+            result.push_str("【注意】当前消息为空。请直接输出空 JSON 或说明情况。\n");
+        }
+
+        result
     }
 
     /// 渲染【输入理解结果】参考区块（Stub：Task 4 实现）
@@ -1297,6 +1411,17 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
         result
     }
+
+    fn build_intent_analyze_prompt(&self) -> String {
+        DefaultPromptBuilder::build_intent_analyze_prompt(self)
+    }
+
+    fn intent_analysis(
+        &mut self,
+        analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
+    ) {
+        self.intent_analysis = Some(analysis.clone());
+    }
 }
 
 /// 便捷函数：快速构建 Agent 对话 Prompt
@@ -1315,4 +1440,125 @@ pub fn build_conversation_prompt(
     builder.history(recent_memories);
     builder.current_message(current_message);
     builder.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::agent::{Agent, AgentPo};
+    use crate::models::message::Message;
+    use crate::models::prompt_builder::PromptBuilder;
+    use common::enums::{AgentStatus, MessageRole, MessageType};
+    use uuid::Uuid;
+
+    fn make_simple_agent() -> Agent {
+        let mut po = AgentPo::new(
+            "测试助手".to_string(),
+            vec!["assistant".to_string()],
+            "一个测试用的 Agent".to_string(),
+            vec!["chat".to_string()],
+            "".to_string(),
+            "provider-001".to_string(),
+            "test-user".to_string(),
+        );
+        po.id = "agent-test-001".to_string();
+        po.status = AgentStatus::Onboarded;
+        Agent::from_po(po)
+    }
+
+    fn make_simple_message(content: &str) -> Message {
+        Message::new_with_context(
+            Uuid::now_v7().to_string(),
+            None,
+            None,
+            "test-user".to_string(),
+            "agent-test-001".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            content.to_string(),
+            None,
+            crate::models::file::FileMeta::default(),
+            None,
+            None,
+            None,
+            "test-user".to_string(),
+        )
+    }
+
+    #[test]
+    fn build_intent_analyze_prompt_contains_sop_and_schema() {
+        let agent = make_simple_agent();
+        let message = make_simple_message("上次那个方案结果呢？");
+
+        let mut builder = DefaultPromptBuilder::new();
+        builder.current_trace_id("trace-test-001");
+        builder.system_prompt(&agent);
+        builder.current_message(&message);
+
+        let prompt = builder.build_intent_analyze_prompt();
+
+        // 1. 包含阶段一标题
+        assert!(
+            prompt.contains("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）"),
+            "Prompt 应包含阶段一标题。Output 片段:\n{}",
+            prompt.chars().take(500).collect::<String>()
+        );
+
+        // 2. 包含全部 7 个字段名（JSON Schema 说明）
+        let seven_fields = [
+            "intent_type",
+            "confidence",
+            "key_terms",
+            "resolutions",
+            "retrieved_context",
+            "need_clarification",
+            "summary",
+        ];
+        for field in &seven_fields {
+            assert!(
+                prompt.contains(field),
+                "Prompt 应包含字段名 '{}' 但未找到。Output 片段:\n{}",
+                field,
+                prompt.chars().take(800).collect::<String>()
+            );
+        }
+
+        // 3. 包含 INTENT_ANALYSIS_START 锚点
+        assert!(
+            prompt.contains("--- INTENT_ANALYSIS_START ---"),
+            "Prompt 应包含 INTENT_ANALYSIS_START 锚点标记"
+        );
+        assert!(
+            prompt.contains("--- INTENT_ANALYSIS_END ---"),
+            "Prompt 应包含 INTENT_ANALYSIS_END 锚点标记"
+        );
+
+        // 4. 包含 SOP 五步走的 Step 1~5 标识
+        assert!(prompt.contains("Step 1：意图识别"));
+        assert!(prompt.contains("Step 2：指代与上下文消歧"));
+        assert!(prompt.contains("Step 3：关键词抽取"));
+        assert!(prompt.contains("Step 4：语义检索补充"));
+        assert!(prompt.contains("Step 5：判断是否需要澄清 + 总结"));
+
+        // 5. 包含三条禁令标识（严禁执行/严禁编造/信息不足必须澄清）
+        assert!(
+            prompt.contains("严禁执行任何行动"),
+            "Prompt 应包含禁令 1：严禁执行"
+        );
+        assert!(
+            prompt.contains("严禁编造无来源信息"),
+            "Prompt 应包含禁令 2：严禁编造"
+        );
+        assert!(
+            prompt.contains("如果信息不足必须"),
+            "Prompt 应包含禁令 3：信息不足必须澄清"
+        );
+
+        // 6. 包含用户消息原文（作为明确靶子）
+        assert!(
+            prompt.contains("上次那个方案结果呢？"),
+            "Prompt 末尾应包含当前用户消息原文"
+        );
+    }
 }

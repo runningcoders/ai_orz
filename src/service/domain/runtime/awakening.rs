@@ -195,9 +195,9 @@ pub struct IntentAnalysis {
     /// 检索补充上下文摘要（search_memory/recommend_seed_nodes 结果）
     #[serde(default)]
     pub retrieved_context: Vec<String>,
-    /// 是否需要进一步追问澄清（true 表示需要，false 表示理解充分）
+    /// 需要进一步追问澄清的问题（空列表表示理解充分）
     #[serde(default)]
-    pub need_clarification: bool,
+    pub need_clarification: Vec<String>,
     /// 一句话总结：Agent 最终确认自己理解用户想要什么
     #[serde(default)]
     pub summary: String,
@@ -1023,6 +1023,116 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             raw_output,
         })
     }
+
+    async fn analyze_input_intent(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+        options: &ThinkingOptions,
+    ) -> Result<IntentAnalysis> {
+        // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene），
+        //    思考轮次严格限制 1-2 轮（只做理解，不需要多轮执行）
+        let mut analyze_opts = options.clone();
+        analyze_opts.scene = ThinkingScene::IntentAnalyze;
+        analyze_opts.max_thinking_rounds = Some(2);
+        let scene = analyze_opts.scene;
+
+        // 补充 Agent 上下文到 ctx（与 awaken 对齐）
+        let ctx = enrich_ctx!(&ctx, agent);
+
+        // 构造分析阶段的 trace_id：复用父 ctx 的 log_id 加前缀，避免与主 awaken trace 冲突
+        let trace_id = format!("intent-analyze-{}", ctx.log_id);
+
+        // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
+        let recent_memories = self
+            .memory()
+            .get_recent_context(ctx.clone(), &agent.po.id, 20)
+            .await?;
+
+        // 3. 按 IntentAnalyze 场景过滤技能（严格只保留理解类标签）
+        let skill_pos: Vec<crate::models::skill::SkillPo> = agent
+            .skills()
+            .iter()
+            .filter(|s| {
+                let tags = s.po.parse_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(|s| s.po.clone())
+            .collect();
+
+        // 4. 构造 PromptBuilder（与 awaken 相同挂载链路，保证背景知识一致）
+        let mut builder = self.prompt_builder(agent);
+        builder.current_trace_id(&trace_id);
+        builder.system_prompt(agent);
+        builder.skills(&skill_pos);
+        if let Some(project) = &analyze_opts.project {
+            builder.project_context(project);
+        }
+        if let Some(task) = &analyze_opts.task {
+            builder.task_context(task);
+        }
+        if let Some(user) = &analyze_opts.user_profile {
+            builder.user_profile(user);
+        }
+        builder.history(&recent_memories);
+        builder.current_message(message);
+
+        // 5. 组装专用 Prompt（不是普通 build()）
+        let prompt = builder.build_intent_analyze_prompt();
+
+        // 6. 取 Agent Brain（调用方需已通过 wake_agent_brain 装配）
+        let brain = agent
+            .brain
+            .as_ref()
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
+
+        // 7. 按场景构建工具描述符列表（严格白名单，只允许理解类工具）
+        let tool_descriptors: Vec<ToolDescriptor> = agent
+            .tools()
+            .iter()
+            .filter(|t| {
+                let tags = t.po.get_tags();
+                scene.is_tool_allowed(&tags)
+            })
+            .map(ToolDescriptor::from)
+            .collect();
+
+        // 8. 运行 think loop（严格最多 2 轮，快速理解后退出）
+        let think_result = self
+            .run_think_loop(
+                ctx.clone(),
+                brain,
+                &prompt,
+                &tool_descriptors,
+                agent,
+                "intent-analyze",
+                &trace_id,
+                2,
+                0,
+            )
+            .await?;
+
+        // 9. 取最终回答文本
+        let final_text = match think_result {
+            ThinkLoopResult::Final { content, .. } => content,
+            ThinkLoopResult::ContextOverflow { .. } => {
+                return Err(err!(
+                    Internal,
+                    "analyze_input_intent context overflow (unexpected for 2-round limit)"
+                ));
+            }
+            ThinkLoopResult::MaxRoundsExceeded { .. } => {
+                return Err(err!(
+                    Internal,
+                    "analyze_input_intent max rounds exceeded without Final (Agent failed to output JSON)"
+                ));
+            }
+        };
+
+        // 10. 解析 IntentAnalysis JSON（5 级降级，全部失败则返回 Err，由调用方降级）
+        parse_intent_analysis_json(&final_text)
+    }
 }
 
 /// 总结退出流程的独立实现块
@@ -1176,6 +1286,218 @@ impl RuntimeDomainImpl {
 
         Ok(raw_output)
     }
+}
+
+/// 从 Agent Final 文本中按 5 级降级策略尽量提取并解析 IntentAnalysis JSON
+///
+/// # 降级策略
+/// 1. 整段文本直接 JSON 反序列化
+/// 2. 手动查找 ```json ... ``` 或 ``` ... ``` 代码块，提取内容再解析
+/// 3. 查找 INTENT_ANALYSIS_START/END 锚点标记之间的内容
+/// 4. 平衡括号法：从第一个 { 开始找到匹配的顶层 }，提取中间内容再解析
+///    (含字段类型宽容修复：confidence 字符串→数字、缺省字段 Default)
+/// 5. 取第一个 { 与最后一个 } 之间的子串尝试解析
+/// 6. 全部失败 → 返回 Err（错误信息含文本前缀，便于调试日志）
+pub fn parse_intent_analysis_json(text: &str) -> Result<IntentAnalysis> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(err!(
+            Internal,
+            "parse_intent_analysis_json: empty text"
+        ));
+    }
+
+    // ===== Level 1: 整段文本直接解析 =====
+    if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(text) {
+        return Ok(ia);
+    }
+
+    // ===== Level 2: 手动查找 ```json ... ``` 或 ``` ... ``` 代码块 =====
+    let mut cursor = text;
+    while let Some(start) = cursor.find("```") {
+        let after_first = &cursor[start + 3..];
+        // 跳过可选的 "json" 标识符 + 空白
+        let after_lang = if let Some(rest) = after_first.strip_prefix("json") {
+            rest.trim_start_matches([' ', '\n', '\r', '\t'])
+        } else {
+            after_first.trim_start_matches([' ', '\n', '\r', '\t'])
+        };
+        if let Some(end) = after_lang.find("```") {
+            let inner = after_lang[..end].trim();
+            if !inner.is_empty() {
+                if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
+                    return Ok(ia);
+                }
+                // 如果直接 IntentAnalysis 失败，可能是锚点包裹或字段类型问题，
+                // 进入宽容解析流程
+                if let Some(ia) = try_lenient_parse(inner) {
+                    return Ok(ia);
+                }
+            }
+            // 继续在剩余文本中寻找下一组 ```
+            cursor = &after_lang[end.saturating_add(3)..];
+            continue;
+        }
+        break;
+    }
+
+    // ===== Level 3: 查找 INTENT_ANALYSIS_START/END 锚点之间的内容 =====
+    if let Some(start_marker) = text.find("--- INTENT_ANALYSIS_START ---") {
+        let after_start = &text[start_marker + "--- INTENT_ANALYSIS_START ---".len()..];
+        if let Some(end_marker) = after_start.find("--- INTENT_ANALYSIS_END ---") {
+            let inner = after_start[..end_marker].trim();
+            if !inner.is_empty() {
+                if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
+                    return Ok(ia);
+                }
+                if let Some(ia) = try_lenient_parse(inner) {
+                    return Ok(ia);
+                }
+            }
+        }
+    }
+
+    // ===== Level 4: 平衡括号法提取第一个完整 JSON 对象 =====
+    if let Some(json_obj) = extract_first_json_object(text) {
+        if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(json_obj) {
+            return Ok(ia);
+        }
+        if let Some(ia) = try_lenient_parse(json_obj) {
+            return Ok(ia);
+        }
+    }
+
+    // ===== Level 5: 取第一个 { 到最后一个 } 之间的子串 =====
+    let first_brace = text.find('{');
+    let last_brace = text.rfind('}');
+    if let (Some(first), Some(last)) = (first_brace, last_brace)
+        && first < last
+    {
+        let inner = &text[first..=last];
+        if let Ok(ia) = serde_json::from_str::<IntentAnalysis>(inner) {
+            return Ok(ia);
+        }
+        if let Some(ia) = try_lenient_parse(inner) {
+            return Ok(ia);
+        }
+    }
+
+    // ===== Level 6 (全部失败): 返回 Err 含文本前缀便于调试 =====
+    let preview: String = text.chars().take(120).collect();
+    Err(err!(
+        Internal,
+        "parse_intent_analysis_json: all strategies failed. Text prefix: {}",
+        preview
+    ))
+}
+
+/// 宽容解析：先 parse 成 serde_json::Value，再手动按字段提取并做类型宽容转换
+/// （解决 Agent 偶发把 confidence 写成字符串、数组里混非字符串等问题）
+fn try_lenient_parse(s: &str) -> Option<IntentAnalysis> {
+    use serde_json::Value;
+
+    let val: Value = serde_json::from_str(s).ok()?;
+    let intent_type = val
+        .get("intent_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let confidence = val
+        .get("confidence")
+        .and_then(|v| {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        })
+        .unwrap_or(0.0) as f32;
+    let extract_str_arr = |key: &str| -> Vec<String> {
+        val.get(key)
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| match x {
+                        Value::String(s) => Some(s.clone()),
+                        Value::Number(n) => Some(n.to_string()),
+                        Value::Bool(b) => Some(b.to_string()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let key_terms = extract_str_arr("key_terms");
+    let resolutions = extract_str_arr("resolutions");
+    let retrieved_context = extract_str_arr("retrieved_context");
+    let need_clarification = extract_str_arr("need_clarification");
+    let summary = val
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // 至少要有 intent_type 或 summary 任一非空，才算解析出有效结果
+    if intent_type.is_empty() && summary.is_empty() {
+        return None;
+    }
+
+    Some(IntentAnalysis {
+        intent_type,
+        confidence,
+        key_terms,
+        resolutions,
+        retrieved_context,
+        need_clarification,
+        summary,
+    })
+}
+
+/// 简易括号匹配：从字符串中找到第一个顶层的 { ... } 完整 JSON 对象
+///
+/// 支持字符串内部出现大括号的情况：遇到未转义的双引号进入字符串模式，
+/// 字符串内部的 {} 不计入括号计数。
+pub fn extract_first_json_object(s: &str) -> Option<&str> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let mut depth = 0;
+            let start = i;
+            let mut in_string = false;
+            let mut escape = false;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if escape {
+                    escape = false;
+                    i += 1;
+                    continue;
+                }
+                if b == b'\\' {
+                    escape = true;
+                    i += 1;
+                    continue;
+                }
+                if b == b'"' {
+                    in_string = !in_string;
+                    i += 1;
+                    continue;
+                }
+                if !in_string {
+                    if b == b'{' {
+                        depth += 1;
+                    } else if b == b'}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            let end = i + 1;
+                            return Some(&s[start..end]);
+                        }
+                    }
+                }
+                i += 1;
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1636,7 +1958,7 @@ mod tests {
             retrieved_context: vec![
                 "2026-08-10 方案 A/B 比较结论，推荐方案 A（相似度 0.88）".into(),
             ],
-            need_clarification: false,
+            need_clarification: vec![],
             summary: "用户想知道项目 X 方案 A 的当前推进进度".into(),
         };
 
@@ -1651,5 +1973,77 @@ mod tests {
         assert_eq!(ia.retrieved_context, ia2.retrieved_context);
         assert_eq!(ia.need_clarification, ia2.need_clarification);
         assert_eq!(ia.summary, ia2.summary);
+    }
+
+    #[test]
+    fn parse_intent_analysis_json_level4_fallback() {
+        use super::{IntentAnalysis, parse_intent_analysis_json};
+
+        // 模拟 LLM 输出：大量中文思考 + JSON 代码块包裹（Level 2 代码块降级）
+        let input = r#"我先分析一下用户的意图...好的，现在整理成结构化结果：
+用户明显是在追问之前的内容，我归类为 FollowUp 型。
+以下是 JSON 输出：
+```json
+{
+  "intent_type": "FollowUp",
+  "confidence": 0.82,
+  "key_terms": ["项目X", "方案A", "进度", "上次那个方案"],
+  "resolutions": ["\"上次那个方案\" → project=proj_123, task=task_456"],
+  "retrieved_context": ["通过 search_memory 查到 2026-08-10 记忆：推荐方案 A"],
+  "need_clarification": [],
+  "summary": "用户想知道项目 X 中方案 A 的推进情况"
+}
+```
+好的，以上就是我的分析结论。"#;
+
+        let ia: IntentAnalysis = parse_intent_analysis_json(input)
+            .expect("level4 fallback should parse successfully via code block extraction");
+
+        assert_eq!(ia.intent_type, "FollowUp");
+        assert!((ia.confidence - 0.82).abs() < 0.0001);
+        assert_eq!(ia.key_terms.len(), 4);
+        assert_eq!(ia.key_terms[0], "项目X");
+        assert_eq!(ia.resolutions.len(), 1);
+        assert!(ia.need_clarification.is_empty());
+        assert_eq!(
+            ia.summary,
+            "用户想知道项目 X 中方案 A 的推进情况"
+        );
+    }
+
+    #[test]
+    fn parse_intent_analysis_json_balanced_braces() {
+        use super::{IntentAnalysis, extract_first_json_object, parse_intent_analysis_json};
+
+        // 0. 测试 extract_first_json_object 基础能力：多个 JSON 时提取第一个
+        let multi = r#"prefix {"a":1} middle {"b":2} suffix"#;
+        assert_eq!(extract_first_json_object(multi), Some(r#"{"a":1}"#));
+
+        // 1. 测试字符串内部的大括号不会干扰括号计数
+        let with_inner_braces = r#"文本开头 {"key":"val{ue}"} 文本结尾"#;
+        assert_eq!(
+            extract_first_json_object(with_inner_braces),
+            Some(r#"{"key":"val{ue}"}"#)
+        );
+
+        // 2. 平衡括号降级测试：有效 JSON 埋在中文散文里，无代码块
+        let input = r#"经过 Step1 到 Step5 的仔细思考，我得出以下理解结论。
+首先对用户意图进行归类，认为属于 Question 类型（问答型），置信度较高。
+指代消解部分：没有明显的歧义短语，上下文清晰。
+关键词抽取完毕。语义检索已完成，有如下结果摘要。
+最终 JSON 结果如下：{"intent_type":"Question","confidence":0.9,"key_terms":["排期","项目X"],"resolutions":[],"retrieved_context":["查到项目X的排期计划：周五截止"],"need_clarification":["排期是指哪个版本的？（A：V1.2；B：V1.3）"],"summary":"用户询问项目X的排期，需要澄清版本信息"}如果还需要补充信息请及时告诉我。"#;
+
+        let ia: IntentAnalysis = parse_intent_analysis_json(input)
+            .expect("balanced braces fallback should parse successfully");
+
+        assert_eq!(ia.intent_type, "Question");
+        assert!((ia.confidence - 0.9).abs() < 0.0001);
+        assert_eq!(ia.key_terms, vec!["排期", "项目X"]);
+        assert_eq!(ia.need_clarification.len(), 1);
+        assert!(ia.need_clarification[0].contains("排期是指哪个版本"));
+        assert_eq!(
+            ia.summary,
+            "用户询问项目X的排期，需要澄清版本信息"
+        );
     }
 }

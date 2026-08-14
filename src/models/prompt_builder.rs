@@ -100,4 +100,24 @@ pub trait PromptBuilder: Send + Sync {
         let _ = (work_summary, total_rounds, trace_ids);
         self.build()
     }
+
+    /// 构建意图分析场景的 Prompt（与 build_sleep_prompt / build 对称）
+    ///
+    /// 复用已挂载的 system_prompt/tools/skills/history/上下文，
+    /// 再拼「意图识别 SOP 五步走 + 执行禁令 + JSON schema 输出约束」专属指令块。
+    /// 默认实现回退到 build()，仅 DefaultPromptBuilder 真正实现意图分析语义
+    /// （Cli/Remote Agent 不跑此场景，不会走到此分支）。
+    fn build_intent_analyze_prompt(&self) -> String {
+        self.build()
+    }
+
+    /// 注入【输入理解结果】（IntentAnalyze 阶段的产出）
+    ///
+    /// build() 时会渲染成结构化的"供你参考"区块，放在【当前消息】之前。
+    /// 仅 DefaultPromptBuilder 有完整渲染；其他 builder 默认忽略此注入（空函数体）。
+    fn intent_analysis(
+        &mut self,
+        _analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
+    ) {
+    }
 }
