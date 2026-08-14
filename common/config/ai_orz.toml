@@ -48,11 +48,11 @@ secret_key = "ai-orz-default-secret-key-change-me"
 # Agent 运行时配置（系统级默认值，可被单个 Agent 的 runtime_config 覆盖）
 [agent]
 # 单次唤醒最大思考轮次（跨压缩累计）
-max_thinking_rounds = 120
+max_thinking_rounds = 365
 # 意图识别阶段最大思考轮次
-intent_analyze_max_rounds = 10
+intent_analyze_max_rounds = 365
 # 总结退出阶段最大思考轮次
-summary_max_rounds = 20
+summary_max_rounds = 365
 # 思考超时（秒），0 = 不限制
 think_timeout_secs = 0
 

@@ -88,24 +88,24 @@ pub struct AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            max_thinking_rounds: default_agent_max_thinking_rounds(),
-            intent_analyze_max_rounds: default_agent_intent_analyze_max_rounds(),
-            summary_max_rounds: default_agent_summary_max_rounds(),
+            max_thinking_rounds: 365,
+            intent_analyze_max_rounds: 365,
+            summary_max_rounds: 365,
             think_timeout_secs: 0,
         }
     }
 }
 
 fn default_agent_max_thinking_rounds() -> usize {
-    120
+    365
 }
 
 fn default_agent_intent_analyze_max_rounds() -> usize {
-    10
+    365
 }
 
 fn default_agent_summary_max_rounds() -> usize {
-    20
+    365
 }
 
 /// JWT 配置
