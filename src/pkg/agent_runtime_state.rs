@@ -8,8 +8,8 @@ use common::enums::AgentRuntimeState;
 use common::enums::ThinkingScene;
 use dashmap::DashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Agent 运行时信息（内存中）
 #[derive(Debug, Clone)]
@@ -192,10 +192,7 @@ impl AgentThinkRuntime {
 
     /// 获取运行时快照（前端查询用）
     pub fn snapshot(&self) -> ThinkRuntimeSnapshot {
-        self.snapshot
-            .read()
-            .map(|s| s.clone())
-            .unwrap_or_default()
+        self.snapshot.read().map(|s| s.clone()).unwrap_or_default()
     }
 }
 
@@ -262,9 +259,9 @@ impl AgentRuntimeStateManager {
 
     /// 查询思考运行时快照（runtime-status 接口调用）
     pub fn get_think_runtime_snapshot(&self, agent_id: &str) -> Option<ThinkRuntimeSnapshot> {
-        self.states.get(agent_id).and_then(|entry| {
-            entry.think_runtime.as_ref().map(|tr| tr.snapshot())
-        })
+        self.states
+            .get(agent_id)
+            .and_then(|entry| entry.think_runtime.as_ref().map(|tr| tr.snapshot()))
     }
 
     /// 设置 Agent 为休息状态
@@ -564,16 +561,7 @@ mod tests {
         let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
         mgr.set_think_runtime("agent-1", tr.clone());
 
-        tr.report_round(
-            "trace-1",
-            ThinkingScene::Awaken,
-            3,
-            365,
-            1000,
-            500,
-            1500,
-            2,
-        );
+        tr.report_round("trace-1", ThinkingScene::Awaken, 3, 365, 1000, 500, 1500, 2);
         let snap = mgr.get_think_runtime_snapshot("agent-1").unwrap();
         assert_eq!(snap.round, 3);
         assert_eq!(snap.max_rounds, 365);

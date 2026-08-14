@@ -13,10 +13,10 @@ use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dao::memory::{MemoryQuery, dao as memory_dao};
 use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::runtime::awakening::ThinkingOptions;
-use common::enums::ThinkingScene;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{SettleMemoryParams, SettleMemoryResponse};
+use common::enums::ThinkingScene;
 use common::enums::{MemoryStatus, MemoryType};
 use common::error::{Result, bail_err};
 

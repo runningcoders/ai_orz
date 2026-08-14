@@ -1063,7 +1063,9 @@ impl DefaultPromptBuilder {
         result.push_str("## 你的任务：只做理解，不做执行\n\n");
         result.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果，然后就结束本轮思考。\n\n");
         result.push_str("✅ 必须做：\n");
-        result.push_str("   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n");
+        result.push_str(
+            "   1. 在思考中严格按下方「理解 SOP 五步走」执行一遍，每一步都要有实质思考，不要跳过\n",
+        );
         result.push_str("   2. 必须执行多步检索：至少调用一次 search_memory + 一次 recommend_seed_nodes 或 traverse_knowledge_graph（100% 全新无历史的闲聊可豁免，但必须在思考中明确说明理由）\n");
         result.push_str("   3. 关键词联想要充分展开，联想扩展词与基础关键词一起写入 key_terms\n");
         result.push_str("   4. 最终输出严格的 JSON 对象，字段完整可被解析\n\n");
@@ -1082,7 +1084,9 @@ impl DefaultPromptBuilder {
         result.push_str("- ClarificationResponse：澄清响应型（针对你前面追问的答复）\n");
         result.push_str("- Chat：闲聊型（打招呼/客套/社交礼貌）\n");
         result.push_str("- Mixed：混合型（多类意图，拆分说明）\n");
-        result.push_str("意图类型写入 intent_type 字段；置信度 0.0~1.0 自己打分写入 confidence。\n\n");
+        result.push_str(
+            "意图类型写入 intent_type 字段；置信度 0.0~1.0 自己打分写入 confidence。\n\n",
+        );
 
         result.push_str("### Step 2：指代与上下文消歧\n");
         result.push_str("1. 仔细读【历史对话】+【项目/任务上下文】+【用户画像】\n");
@@ -1091,7 +1095,9 @@ impl DefaultPromptBuilder {
         result.push_str("4. 读完所有上下文仍无法确定 → 写进 need_clarification，不要硬猜\n\n");
 
         result.push_str("### Step 3：关键词抽取与联想扩展\n");
-        result.push_str("这一步不只是提取，更重要的是联想扩展，为后续检索提供丰富的 query 基础。\n\n");
+        result.push_str(
+            "这一步不只是提取，更重要的是联想扩展，为后续检索提供丰富的 query 基础。\n\n",
+        );
         result.push_str("3.1 基础关键词抽取：\n");
         result.push_str("从【当前消息】+ 消歧后的具体对象中，抽取关键实体和核心短语：\n");
         result.push_str("- 显式实体：项目名/任务名/产品名/人名/专有名词/技术术语\n");
@@ -1106,23 +1112,39 @@ impl DefaultPromptBuilder {
         result.push_str("3.3 把基础关键词 + 联想扩展词都写进 key_terms 数组（5~12 个），\n");
         result.push_str("这些词将直接用于 Step 4 的多角度检索，越丰富检索越全面。\n\n");
 
-        result.push_str("### Step 4：多步语义检索与知识图谱关联分析（强制执行，本阶段核心价值所在）\n");
-        result.push_str("本步直接决定后续执行阶段的信息完备性。宁可多检索一步，不要遗漏关键上下文。\n");
+        result.push_str(
+            "### Step 4：多步语义检索与知识图谱关联分析（强制执行，本阶段核心价值所在）\n",
+        );
+        result.push_str(
+            "本步直接决定后续执行阶段的信息完备性。宁可多检索一步，不要遗漏关键上下文。\n",
+        );
         result.push_str("你的检索策略应该是有层次的，不是随机调工具：\n\n");
         result.push_str("4.1 短期记忆检索（search_memory）——第一轮：\n");
         result.push_str("- 用 Step 3 的核心关键词组合成 query，调用 search_memory\n");
-        result.push_str("- 如果第一批结果不够相关，换一组关键词组合再搜一轮（不要一次不中就放弃）\n");
-        result.push_str("- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n");
-        result.push_str("4.2 知识图谱探索（recommend_seed_nodes + traverse_knowledge_graph）——第二轮：\n");
-        result.push_str("- 调用 recommend_seed_nodes 获取与当前 project/task/agent 相关的图谱种子节点\n");
-        result.push_str("- 从种子节点出发，调用 traverse_knowledge_graph 走 1~2 跳，探索关联知识\n");
-        result.push_str("- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n");
+        result
+            .push_str("- 如果第一批结果不够相关，换一组关键词组合再搜一轮（不要一次不中就放弃）\n");
+        result.push_str(
+            "- 示例：用户问上次那个方案进度 → 先搜「方案 进度」，再搜「方案A 项目X」\n\n",
+        );
+        result.push_str(
+            "4.2 知识图谱探索（recommend_seed_nodes + traverse_knowledge_graph）——第二轮：\n",
+        );
+        result.push_str(
+            "- 调用 recommend_seed_nodes 获取与当前 project/task/agent 相关的图谱种子节点\n",
+        );
+        result
+            .push_str("- 从种子节点出发，调用 traverse_knowledge_graph 走 1~2 跳，探索关联知识\n");
+        result.push_str(
+            "- 重点关注：用户偏好节点（user_preference tag）、历史决策节点、相关项目/任务节点\n",
+        );
         result.push_str("- 知识图谱中的关系链路本身就是信息：A 依赖 B、A 衍生自 C、A 取代了 D\n\n");
         result.push_str("4.3 历史对话补充（list_messages，可选第三轮）：\n");
         result.push_str("- 如果短期记忆和知识图谱都不够，调用 list_messages 上拉最近对话记录\n");
         result.push_str("- 特别关注：用户最近提过的类似需求、Agent 之前给过的承诺或结论\n\n");
         result.push_str("4.4 检索结果整理：\n");
-        result.push_str("- 把所有检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON）\n");
+        result.push_str(
+            "- 把所有检索命中的高相关内容**你自己概括为短摘要**（1~2 句每条，不要贴原始 JSON）\n",
+        );
         result.push_str("- 每条摘要注明来源类型：[记忆]/[图谱]/[对话]\n");
         result.push_str("- 按相关度排序，最相关的放前面\n");
         result.push_str("- 写进 retrieved_context 数组\n\n");
@@ -1142,14 +1164,19 @@ impl DefaultPromptBuilder {
         result.push_str("## 最终输出规范（必须严格遵守）\n\n");
         result.push_str("你输出的【最终 Final 内容】必须严格符合以下格式：\n");
         result.push_str("- Final block MUST start with `--- INTENT_ANALYSIS_START ---` followed by pure JSON and end with `--- INTENT_ANALYSIS_END ---`\n");
-        result.push_str("- 中间 JSON 对象必须严格符合以下 schema（7 个字段全包含，不要省略）：\n\n");
+        result
+            .push_str("- 中间 JSON 对象必须严格符合以下 schema（7 个字段全包含，不要省略）：\n\n");
         result.push_str("JSON Schema 字段说明：\n");
         result.push_str("- intent_type：字符串，取值为 Question | TaskRequest | Confirm | FollowUp | ClarificationResponse | Chat | Mixed\n");
         result.push_str("- confidence：数字，0.0 到 1.0，你对自己意图判断的置信度\n");
         result.push_str("- key_terms：字符串数组，5~12 个关键词（基础抽取 + 联想扩展）\n");
-        result.push_str("- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n");
+        result.push_str(
+            "- resolutions：字符串数组，指代消歧映射结果，每条格式 \"\\\"XXX\\\" → 具体对象\"\n",
+        );
         result.push_str("- retrieved_context：字符串数组，search_memory / recommend_seed_nodes 等命中结果的你自己概括的短摘要（不要原始 JSON）\n");
-        result.push_str("- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n");
+        result.push_str(
+            "- need_clarification：字符串数组，需要向用户澄清的具体问题（空列表 = 理解充分）\n",
+        );
         result.push_str("- summary：字符串，一句话总结你最终理解的用户需求\n\n");
         result.push_str("示例 JSON（请严格模仿此结构，字段名和类型必须一致）：\n");
         result.push_str("--- INTENT_ANALYSIS_START ---\n");
@@ -1157,10 +1184,14 @@ impl DefaultPromptBuilder {
         result.push_str("  \"intent_type\": \"FollowUp\",\n");
         result.push_str("  \"confidence\": 0.85,\n");
         result.push_str("  \"key_terms\": [\"项目X\", \"方案A\", \"进度\", \"上次那个方案\"],\n");
-        result.push_str("  \"resolutions\": [\"\\\"上次那个方案\\\" → project=proj_123, task=task_456\"],\n");
+        result.push_str(
+            "  \"resolutions\": [\"\\\"上次那个方案\\\" → project=proj_123, task=task_456\"],\n",
+        );
         result.push_str("  \"retrieved_context\": [\"2026-08-10 短期记忆：项目X 方案 A/B 比较，推荐方案 A（相似度 0.88）\"],\n");
         result.push_str("  \"need_clarification\": [],\n");
-        result.push_str("  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n");
+        result.push_str(
+            "  \"summary\": \"用户想知道项目 X 中之前讨论过的方案 A 的当前推进进度与结果\"\n",
+        );
         result.push_str("}\n");
         result.push_str("--- INTENT_ANALYSIS_END ---\n\n");
 
@@ -1210,24 +1241,25 @@ impl DefaultPromptBuilder {
         const MAX_ITEM_CHARS: usize = 150;
         const MAX_SUMMARY_CHARS: usize = 800;
 
-        let format_array = |items: &[String], prefix_icon: &str, _omit_msg: &str| -> (String, bool) {
-            let mut s = String::new();
-            let display = items.iter().take(MAX_ITEMS);
-            let count = items.len();
-            for item in display {
-                s.push_str(&format!(
-                    "{} {}\n",
-                    prefix_icon,
-                    trunc_str(item, MAX_ITEM_CHARS)
-                ));
-            }
-            let omitted = count > MAX_ITEMS;
-            if omitted {
-                let n = count - MAX_ITEMS;
-                s.push_str(&format!("... 及 {} 项已省略\n", n));
-            }
-            (s, omitted)
-        };
+        let format_array =
+            |items: &[String], prefix_icon: &str, _omit_msg: &str| -> (String, bool) {
+                let mut s = String::new();
+                let display = items.iter().take(MAX_ITEMS);
+                let count = items.len();
+                for item in display {
+                    s.push_str(&format!(
+                        "{} {}\n",
+                        prefix_icon,
+                        trunc_str(item, MAX_ITEM_CHARS)
+                    ));
+                }
+                let omitted = count > MAX_ITEMS;
+                if omitted {
+                    let n = count - MAX_ITEMS;
+                    s.push_str(&format!("... 及 {} 项已省略\n", n));
+                }
+                (s, omitted)
+            };
 
         let need_clarify = !ia.need_clarification.is_empty();
 
@@ -1238,7 +1270,9 @@ impl DefaultPromptBuilder {
             s.push_str("## 【输入理解结果 · 仅供参考】\n\n");
         }
         s.push_str("> 说明：以下内容是上一阶段「审题阶段」自动预分析得出的理解摘要，仅供你正式执行时参考。\n");
-        s.push_str("> 若你当下重新判断后发现不一致，请**以你当下的理解为准**，不要被以下内容束缚。\n\n");
+        s.push_str(
+            "> 若你当下重新判断后发现不一致，请**以你当下的理解为准**，不要被以下内容束缚。\n\n",
+        );
 
         if !ia.intent_type.is_empty() {
             s.push_str(&format!(
@@ -1718,7 +1752,9 @@ mod tests {
     fn render_intent_analysis_section_truncation_rules() {
         // 构造 20 个 300 字符的字符串填充到每个数组
         let long_str: String = (0..300).map(|_| '一').collect();
-        let huge_terms: Vec<String> = (0..20).map(|i| format!("term-{} {}", i, long_str)).collect();
+        let huge_terms: Vec<String> = (0..20)
+            .map(|i| format!("term-{} {}", i, long_str))
+            .collect();
         let huge_res: Vec<String> = (0..20).map(|i| format!("res-{} {}", i, long_str)).collect();
         let huge_ctx: Vec<String> = (0..20).map(|i| format!("ctx-{} {}", i, long_str)).collect();
         let huge_clarify: Vec<String> = (0..20).map(|i| format!("q-{} {}", i, long_str)).collect();
@@ -1770,10 +1806,7 @@ mod tests {
             "置信度应以百分比显示（含 % 符号）。Output 片段:\n{}",
             output.chars().take(300).collect::<String>()
         );
-        assert!(
-            output.contains("78.56%"),
-            "置信度 0.7856 应渲染为 78.56%"
-        );
+        assert!(output.contains("78.56%"), "置信度 0.7856 应渲染为 78.56%");
     }
 
     /// UT-b: 验证【输入理解结果】区块严格出现在【当前消息】之前
@@ -1889,10 +1922,7 @@ mod tests {
 
         // 断言 3：build() 不 crash，输出非空且包含必要区块
         let prompt = builder.build();
-        assert!(
-            !prompt.is_empty(),
-            "降级分支下 build() 输出不应为空"
-        );
+        assert!(!prompt.is_empty(), "降级分支下 build() 输出不应为空");
         assert!(
             prompt.contains("【思考 Trace ID】"),
             "降级分支下 Prompt 仍应含 Trace ID 区块"

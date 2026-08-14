@@ -996,7 +996,9 @@ impl BrainDal for TwoPhaseMockBrainDal {
         _agent: &AgentPo,
         _memories: Vec<ai_orz::models::memory::Memory>,
     ) -> CommonResult<Brain> {
-        unimplemented!("TwoPhaseMockBrainDal: awaken 流程直接使用预装配的 Agent brain，不走 wake_brain")
+        unimplemented!(
+            "TwoPhaseMockBrainDal: awaken 流程直接使用预装配的 Agent brain，不走 wake_brain"
+        )
     }
 
     async fn test_connection(
@@ -1128,10 +1130,7 @@ async fn awaken_two_stage_happy_path(pool: SqlitePool) {
                 "raw_input（即 Phase 2 Prompt）不应为空"
             );
         }
-        Err(e) => panic!(
-            "awaken_two_stage_happy_path 应成功，但返回 Err: {:?}",
-            e
-        ),
+        Err(e) => panic!("awaken_two_stage_happy_path 应成功，但返回 Err: {:?}", e),
     }
 
     // 断言 (i)(ii)：Phase 2 的 Prompt 中包含【输入理解结果】区块

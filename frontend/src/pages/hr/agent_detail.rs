@@ -19,13 +19,12 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
-    GetAgentResponse, InstallSkillPackRequest, InstallSkillToAgentRequest,
-    InstallToolPackRequest, ListModelProvidersResponseItem, ListToolsRequest, MessageListItem,
-    PaginationParams, ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams,
-    SkillListItem, SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem,
-    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
-    UpdateAgentStatusRequest,
+    GetAgentResponse, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
+    ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
+    ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, SkillListItem,
+    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
+    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;

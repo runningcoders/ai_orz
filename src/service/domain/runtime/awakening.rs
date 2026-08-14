@@ -19,7 +19,9 @@ use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntim
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::record_event;
-use crate::service::domain::runtime::{AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl};
+use crate::service::domain::runtime::{
+    AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
+};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
@@ -45,10 +47,7 @@ pub(super) fn init_think_runtime_and_policy(
     agent: &Agent,
     scene: ThinkingScene,
     trace_id: &str,
-) -> (
-    Arc<AgentThinkRuntime>,
-    Box<dyn crate::pkg::policy::Policy>,
-) {
+) -> (Arc<AgentThinkRuntime>, Box<dyn crate::pkg::policy::Policy>) {
     let think_runtime = Arc::new(AgentThinkRuntime::new(
         agent.po.id.clone(),
         trace_id.to_string(),
@@ -254,12 +253,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 Some(ia)
             }
             Err(e) => {
-                log_warn!(
-                    &ctx,
-                    "intent_analyze_skipped",
-                    "err={:?}",
-                    e
-                );
+                log_warn!(&ctx, "intent_analyze_skipped", "err={:?}", e);
                 None
             }
         };
@@ -320,10 +314,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             // 调用共享 think loop（传入累计轮次和上限）
             // 注意：每次循环都重新设置 think_runtime，因为 sleep_and_settle 的 BusyGuard
             // Drop 会清理 think_runtime（set_resting → set_idle 链路）
-            AgentRuntimeStateManager::global().set_think_runtime(
-                &agent.po.id,
-                think_runtime.clone(),
-            );
+            AgentRuntimeStateManager::global()
+                .set_think_runtime(&agent.po.id, think_runtime.clone());
             let think_result = self
                 .run_think_loop(
                     ctx.clone(),
@@ -541,14 +533,22 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             "MaxRoundsExceeded"
         };
         trace.metadata.insert("scene".into(), "awaken".into());
-        trace.metadata.insert("message_id".into(), message.po.id.clone());
-        trace.metadata.insert("exit_reason".into(), exit_reason.into());
-        trace.metadata.insert("rounds_used".into(), total_rounds.to_string());
+        trace
+            .metadata
+            .insert("message_id".into(), message.po.id.clone());
+        trace
+            .metadata
+            .insert("exit_reason".into(), exit_reason.into());
+        trace
+            .metadata
+            .insert("rounds_used".into(), total_rounds.to_string());
         if let Some(task_id) = ctx.task_id() {
             trace.metadata.insert("task_id".into(), task_id.clone());
         }
         if let Some(project_id) = ctx.project_id() {
-            trace.metadata.insert("project_id".into(), project_id.clone());
+            trace
+                .metadata
+                .insert("project_id".into(), project_id.clone());
         }
 
         // Step 6: 通过 RuntimeMemory 子模块写入
@@ -803,7 +803,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             trace.metadata.insert("task_id".into(), task_id.clone());
         }
         if let Some(project_id) = ctx.project_id() {
-            trace.metadata.insert("project_id".into(), project_id.clone());
+            trace
+                .metadata
+                .insert("project_id".into(), project_id.clone());
         }
 
         self.memory()
@@ -1339,8 +1341,11 @@ mod tests {
         }
 
         // 禁止：工具名 tag 包含 shell_exec / lark_push
-        let forbidden_tags: Vec<String> =
-            vec!["shell_exec".into(), "lark_push".into(), "send_message".into()];
+        let forbidden_tags: Vec<String> = vec![
+            "shell_exec".into(),
+            "lark_push".into(),
+            "send_message".into(),
+        ];
         for tag in forbidden_tags {
             assert!(
                 !scene.is_tool_allowed(&[tag]),
@@ -1409,10 +1414,7 @@ mod tests {
         assert_eq!(ia.key_terms[0], "项目X");
         assert_eq!(ia.resolutions.len(), 1);
         assert!(ia.need_clarification.is_empty());
-        assert_eq!(
-            ia.summary,
-            "用户想知道项目 X 中方案 A 的推进情况"
-        );
+        assert_eq!(ia.summary, "用户想知道项目 X 中方案 A 的推进情况");
     }
 
     #[test]
@@ -1445,9 +1447,6 @@ mod tests {
         assert_eq!(ia.key_terms, vec!["排期", "项目X"]);
         assert_eq!(ia.need_clarification.len(), 1);
         assert!(ia.need_clarification[0].contains("排期是指哪个版本"));
-        assert_eq!(
-            ia.summary,
-            "用户询问项目X的排期，需要澄清版本信息"
-        );
+        assert_eq!(ia.summary, "用户询问项目X的排期，需要澄清版本信息");
     }
 }

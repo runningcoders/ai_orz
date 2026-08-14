@@ -114,11 +114,7 @@ fn filter_active_class(current: &Option<String>, target: Option<&str>) -> &'stat
         (None, None) => true,
         _ => false,
     };
-    if matches {
-        "btn-active"
-    } else {
-        ""
-    }
+    if matches { "btn-active" } else { "" }
 }
 
 /// 根据视图计算对话上下文（project_id, task_id, to_agent_id）

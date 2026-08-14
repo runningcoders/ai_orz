@@ -13,7 +13,9 @@ use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 
-use super::awakening::{build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy};
+use super::awakening::{
+    build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy,
+};
 use super::types::config_resolve;
 use super::types::{IntentAnalysis, ThinkingOptions};
 
@@ -78,11 +80,8 @@ impl RuntimeDomainImpl {
         // 8. 运行 think loop（轮次由配置决定，保证多步检索后有足够轮次输出 Final JSON）
         // IntentAnalyze 是 awaken 的 Phase 1 子流程，但同样是一个完整的 think_loop，
         // 需要独立的 think_runtime 和 policy（覆盖 awaken 的，awaken 循环中会重新设置）
-        let (think_runtime, policy) = init_think_runtime_and_policy(
-            agent,
-            ThinkingScene::IntentAnalyze,
-            trace_id,
-        );
+        let (think_runtime, policy) =
+            init_think_runtime_and_policy(agent, ThinkingScene::IntentAnalyze, trace_id);
         let think_result = self
             .run_think_loop(
                 ctx.clone(),
@@ -143,10 +142,7 @@ impl RuntimeDomainImpl {
 pub fn parse_intent_analysis_json(text: &str) -> Result<IntentAnalysis> {
     let text = text.trim();
     if text.is_empty() {
-        return Err(err!(
-            Internal,
-            "parse_intent_analysis_json: empty text"
-        ));
+        return Err(err!(Internal, "parse_intent_analysis_json: empty text"));
     }
 
     // ===== Level 1: 整段文本直接解析 =====

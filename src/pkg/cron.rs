@@ -22,16 +22,13 @@ pub fn next_run_at(expression: &str, timezone: &str, from: DateTime<Utc>) -> Res
     let tz = parse_timezone(timezone)?;
     let schedule = parse_schedule(expression)?;
     let from_tz = from.with_timezone(&tz);
-    let next = schedule
-        .after(&from_tz)
-        .next()
-        .ok_or_else(|| {
-            err!(
-                InvalidRequest,
-                "No future trigger time for cron expression '{}'",
-                expression
-            )
-        })?;
+    let next = schedule.after(&from_tz).next().ok_or_else(|| {
+        err!(
+            InvalidRequest,
+            "No future trigger time for cron expression '{}'",
+            expression
+        )
+    })?;
     Ok(next.with_timezone(&Utc).timestamp())
 }
 
@@ -57,14 +54,9 @@ pub fn system_timezone() -> String {
 
 /// 解析时区字符串
 fn parse_timezone(timezone: &str) -> Result<Tz> {
-    timezone.parse::<Tz>().map_err(|e| {
-        err!(
-            InvalidRequest,
-            "Invalid timezone '{}': {}",
-            timezone,
-            e
-        )
-    })
+    timezone
+        .parse::<Tz>()
+        .map_err(|e| err!(InvalidRequest, "Invalid timezone '{}': {}", timezone, e))
 }
 
 /// 解析 cron 表达式为 Schedule
@@ -140,7 +132,10 @@ mod tests {
         // 下一个凌晨 4 点 = 2026-08-15 04:00 北京时间 = 2026-08-14 20:00 UTC
         let next = next_run_at("0 4 * * *", "Asia/Shanghai", from).unwrap();
         let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
-        assert_eq!(next_dt.format("%Y-%m-%d %H:%M").to_string(), "2026-08-14 20:00");
+        assert_eq!(
+            next_dt.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-08-14 20:00"
+        );
     }
 
     #[test]
@@ -152,7 +147,10 @@ mod tests {
             .with_timezone(&Utc);
         let next = next_run_at("0 4 * * *", "Asia/Shanghai", from).unwrap();
         let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
-        assert_eq!(next_dt.format("%Y-%m-%d %H:%M").to_string(), "2026-08-14 20:00");
+        assert_eq!(
+            next_dt.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-08-14 20:00"
+        );
     }
 
     #[test]
@@ -163,6 +161,9 @@ mod tests {
             .with_timezone(&Utc);
         let next = next_run_at("0 4 * * *", "UTC", from).unwrap();
         let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
-        assert_eq!(next_dt.format("%Y-%m-%d %H:%M").to_string(), "2026-08-15 04:00");
+        assert_eq!(
+            next_dt.format("%Y-%m-%d %H:%M").to_string(),
+            "2026-08-15 04:00"
+        );
     }
 }

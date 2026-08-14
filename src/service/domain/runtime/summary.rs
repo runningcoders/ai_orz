@@ -16,7 +16,9 @@ use crate::service::domain::runtime::{RuntimeDomain, RuntimeDomainImpl};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 
-use super::awakening::{build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy};
+use super::awakening::{
+    build_scene_skills, build_scene_tool_descriptors, init_think_runtime_and_policy,
+};
 use super::types::config_resolve;
 use super::types::{ThinkLoopResult, ThinkingOptions};
 
@@ -146,7 +148,9 @@ impl RuntimeDomainImpl {
 
         // 补充运行时元数据
         trace.metadata.insert("scene".into(), "summary".into());
-        trace.metadata.insert("parent_trace_id".into(), parent_trace_id.to_string());
+        trace
+            .metadata
+            .insert("parent_trace_id".into(), parent_trace_id.to_string());
         trace.metadata.insert(
             "depended_trace_ids".into(),
             serde_json::to_string(trace_ids).unwrap_or_default(),
@@ -155,7 +159,9 @@ impl RuntimeDomainImpl {
             trace.metadata.insert("task_id".into(), task_id.clone());
         }
         if let Some(project_id) = ctx.project_id() {
-            trace.metadata.insert("project_id".into(), project_id.clone());
+            trace
+                .metadata
+                .insert("project_id".into(), project_id.clone());
         }
 
         let _ = self.memory().write_thinking_trace(ctx.clone(), trace).await;

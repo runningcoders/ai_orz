@@ -109,12 +109,20 @@ impl PolicyGroup {
         let id = format!(
             "{}({})",
             id_connector,
-            policies.iter().map(|p| p.id()).collect::<Vec<_>>().join(",")
+            policies
+                .iter()
+                .map(|p| p.id())
+                .collect::<Vec<_>>()
+                .join(",")
         );
         let name = format!(
             "{}[{}]",
             connector,
-            policies.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ")
+            policies
+                .iter()
+                .map(|p| p.name())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         let condition_desc = policies
             .iter()

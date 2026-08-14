@@ -436,8 +436,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     if !has_agent_rest {
         let expression = "0 4 * * *"; // 每天 04:00（分 时 日 月 周）
         let timezone = crate::pkg::cron::system_timezone();
-        let next_run_at =
-            crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
+        let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
             uuid::Uuid::now_v7().to_string(),
             "系统默认-Agent 睡眠沉淀".into(),
@@ -449,7 +448,11 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         trigger.payload = r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#.into();
         trigger.is_enabled = 1;
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
-        sys_info!("已创建系统级定时任务: agent_rest (cron: {} {})", expression, timezone);
+        sys_info!(
+            "已创建系统级定时任务: agent_rest (cron: {} {})",
+            expression,
+            timezone
+        );
     }
 
     // 2. project_followup：默认每 1 小时执行一次项目进度巡检

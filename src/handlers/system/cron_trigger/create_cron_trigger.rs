@@ -31,7 +31,10 @@ pub async fn create_cron_trigger(
         }
         TriggerType::Cron => {
             let expression = params.cron_expression.as_deref().ok_or_else(|| {
-                common::error::err!(InvalidRequest, "cron_expression is required for Cron trigger")
+                common::error::err!(
+                    InvalidRequest,
+                    "cron_expression is required for Cron trigger"
+                )
             })?;
             let timezone = crate::pkg::cron::system_timezone();
             crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?

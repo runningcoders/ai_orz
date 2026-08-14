@@ -164,12 +164,16 @@ fn test_policy_group_auto_generated_fields() {
     assert!(group.name().contains("Or["));
     assert!(group.condition_desc().contains("轮次"));
     assert!(group.condition_desc().contains("超时"));
-    assert!(group
-        .required_metrics()
-        .contains(&"round_number".to_string()));
-    assert!(group
-        .required_metrics()
-        .contains(&"elapsed_secs".to_string()));
+    assert!(
+        group
+            .required_metrics()
+            .contains(&"round_number".to_string())
+    );
+    assert!(
+        group
+            .required_metrics()
+            .contains(&"elapsed_secs".to_string())
+    );
 }
 
 #[test]

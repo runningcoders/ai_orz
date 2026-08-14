@@ -470,14 +470,7 @@ impl RuntimeDomain for RuntimeDomainImpl {
                 info.state_started_at,
                 info.think_runtime.as_ref().map(|tr| tr.snapshot()),
             ),
-            None => (
-                AgentRuntimeState::Idle,
-                None,
-                None,
-                None,
-                0,
-                None,
-            ),
+            None => (AgentRuntimeState::Idle, None, None, None, 0, None),
         }
     }
 
@@ -487,8 +480,11 @@ impl RuntimeDomain for RuntimeDomainImpl {
         task_id_filter: Option<&str>,
         project_id_filter: Option<&str>,
     ) -> Vec<(String, crate::pkg::agent_runtime_state::AgentRuntimeInfo)> {
-        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global()
-            .list_runtime_agents(state_filter, task_id_filter, project_id_filter)
+        crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().list_runtime_agents(
+            state_filter,
+            task_id_filter,
+            project_id_filter,
+        )
     }
 }
 

@@ -362,7 +362,13 @@ async fn test_agent_awake_event_exit_reason_write_and_read() -> Result<()> {
     assert_eq!(result.len(), 3);
     let got: Vec<String> = result
         .iter()
-        .map(|row| row.get("exit_reason").unwrap().as_str().unwrap().to_string())
+        .map(|row| {
+            row.get("exit_reason")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
         .collect();
     assert_eq!(got, vec!["cancelled", "final", "maxroundsexceeded"]);
 

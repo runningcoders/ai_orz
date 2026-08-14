@@ -112,6 +112,7 @@ pub mod organization;
 pub mod project;
 #[cfg(test)]
 mod project_test;
+pub mod runtime;
 pub mod seed;
 pub mod skill;
 #[cfg(test)]
@@ -125,7 +126,6 @@ pub mod text_content;
 mod text_content_test;
 pub mod tool;
 pub mod user;
-pub mod runtime;
 
 // Re-exports for convenient import
 pub use a2a::*;
@@ -149,6 +149,7 @@ pub use model_provider::*;
 pub use neural_tools::*;
 pub use organization::*;
 pub use project::*;
+pub use runtime::*;
 pub use seed::*;
 pub use skill::*;
 pub use system::*;
@@ -156,4 +157,3 @@ pub use task::*;
 pub use text_content::*;
 pub use tool::*;
 pub use user::*;
-pub use runtime::*;
