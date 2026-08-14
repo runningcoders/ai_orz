@@ -352,14 +352,6 @@ impl AgentRuntimeStateManager {
         self.get_state(agent_id).is_unavailable()
     }
 
-    /// 获取所有 Agent 的运行时状态（用于列表查询）
-    pub fn get_all_states(&self) -> Vec<(String, AgentRuntimeInfo)> {
-        self.states
-            .iter()
-            .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .collect()
-    }
-
     /// 查询运行中 Agent 列表（带过滤参数）
     ///
     /// 过滤参数均为 Option，None 表示不过滤。
