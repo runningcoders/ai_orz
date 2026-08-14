@@ -10,6 +10,7 @@ pub mod jwt;
 pub mod lark_integration;
 pub mod logging;
 pub mod monitoring;
+pub mod policy;
 pub mod process;
 pub mod request_context;
 pub mod stats;

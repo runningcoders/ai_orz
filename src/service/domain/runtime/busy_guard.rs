@@ -27,6 +27,8 @@ impl BusyGuard {
 
 impl Drop for BusyGuard {
     fn drop(&mut self) {
+        // 先清理 think_runtime（让观察者立即看到思考结束），再 set_idle
+        AgentRuntimeStateManager::global().clear_think_runtime(&self.agent_id);
         AgentRuntimeStateManager::global().set_idle(&self.agent_id);
     }
 }

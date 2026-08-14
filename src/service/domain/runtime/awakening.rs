@@ -5,7 +5,7 @@ use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor, mess
 use crate::models::events::{AgentLoopEvent, ThinkRoundEvent};
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
-use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntime};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::service::domain::runtime::{
@@ -13,6 +13,8 @@ use crate::service::domain::runtime::{
 };
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// think loop 的返回结果
 ///
@@ -26,6 +28,9 @@ use common::error::{Result, err};
 /// - `MaxRoundsExceeded`: 思考轮次耗尽，需要进入总结退出流程
 ///   - `messages`: 当前完整的对话历史（用于总结）
 ///   - `total_rounds`: 累计消耗的轮次
+/// - `Cancelled`: 用户主动取消（通过 cancel-thinking 接口设置 cancel_flag）
+///   - `messages`: 当前对话历史（可能为空，用于审计）
+///   - `total_rounds`: 取消时已消耗的轮次
 #[derive(Debug)]
 pub enum ThinkLoopResult {
     Final {
@@ -41,10 +46,86 @@ pub enum ThinkLoopResult {
         messages: Vec<ChatMessage>,
         total_rounds: usize,
     },
+    Cancelled {
+        messages: Vec<ChatMessage>,
+        total_rounds: usize,
+    },
 }
 
 use crate::enrich_ctx;
 use crate::record_event;
+
+// ==================== 策略映射 ====================
+
+/// 将命中的策略 id 列表映射为 ThinkLoopResult
+///
+/// 多个策略命中时按优先级取第一个匹配的：
+/// 用户取消 > 上下文溢出 > token 预算 > 轮次上限 > 超时
+///
+/// 兜底返回 MaxRoundsExceeded（不应发生，防御性）。
+fn map_triggered_to_result(
+    triggered: &[String],
+    messages: Vec<ChatMessage>,
+    round_number: usize,
+    input_tokens: u64,
+) -> ThinkLoopResult {
+    for id in triggered {
+        match id.as_str() {
+            "user_cancel" => {
+                return ThinkLoopResult::Cancelled {
+                    messages,
+                    total_rounds: round_number,
+                }
+            }
+            "context_overflow" => {
+                return ThinkLoopResult::ContextOverflow {
+                    messages,
+                    input_tokens,
+                    rounds_used: round_number,
+                }
+            }
+            "token_budget" | "max_rounds" | "timeout" => {
+                return ThinkLoopResult::MaxRoundsExceeded {
+                    messages,
+                    total_rounds: round_number,
+                }
+            }
+            _ => {}
+        }
+    }
+    // 未知策略 id 兜底（不应发生）
+    ThinkLoopResult::MaxRoundsExceeded {
+        messages,
+        total_rounds: round_number,
+    }
+}
+
+/// 按场景构造策略组（Or 关系：任一策略命中即退出循环）
+///
+/// 内置策略：
+/// - UserCancelPolicy：始终注入，由 AgentThinkRuntime.cancel_flag() 驱动
+/// - MaxRoundsPolicy：轮次上限，所有场景均启用
+/// - TimeoutPolicy：超时保护，所有场景均启用（0 = 不限制）
+///
+/// 注意：ContextOverflowPolicy 暂不在此处使用，因为 run_think_loop 已有
+/// 独立的上下文溢出检测逻辑（基于 ModelProvider 配置），后续可整合。
+fn build_policy_for_scene(
+    agent: &Agent,
+    _scene: ThinkingScene,
+    cancel_flag: Arc<AtomicBool>,
+) -> Box<dyn crate::pkg::policy::Policy> {
+    use crate::pkg::policy::builtin::{MaxRoundsPolicy, TimeoutPolicy, UserCancelPolicy};
+    use crate::pkg::policy::PolicyBuilder;
+
+    let max_rounds = config_resolve::max_thinking_rounds(agent);
+    let timeout_secs = config_resolve::think_timeout_secs(agent);
+
+    PolicyBuilder::new()
+        .with(Box::new(UserCancelPolicy::new(cancel_flag)))
+        .with(Box::new(MaxRoundsPolicy::new(max_rounds)))
+        .with(Box::new(TimeoutPolicy::new(timeout_secs)))
+        .or()
+}
 
 // ==================== 思考场景与选项 ====================
 
@@ -210,12 +291,19 @@ impl RuntimeDomainImpl {
     ///
     /// # 退出条件
     /// - `ThinkResult::Final` → 返回 `ThinkLoopResult::Final(content)`
+    /// - 策略命中（用户取消/轮次上限/超时等）→ 通过 `map_triggered_to_result` 映射
     /// - 上下文超限（input_tokens >= 阈值）→ 返回 `ContextOverflow`
     /// - 累计轮次达到 `max_rounds` → 返回 `MaxRoundsExceeded`
-    /// - 超时 300s → 返回错误
+    /// - 超时 → 返回错误
     ///
     /// `start_round` 为本次循环的起始轮次编号（跨压缩累计）。
     /// `max_rounds` 为总轮次上限（跨压缩累计）。
+    ///
+    /// `think_runtime` / `policy` 为可选的策略引擎接入点：
+    /// - `think_runtime`：每轮上报运行时快照（供前端 cancel-thinking/runtime-status 查询）
+    /// - `policy`：每轮评估策略（用户取消/轮次上限/超时），命中即退出循环
+    ///
+    /// 两者都为 None 时退化为旧行为（仅靠 max_rounds + timeout_secs 控制）。
     #[allow(clippy::too_many_arguments)]
     async fn run_think_loop(
         &self,
@@ -224,11 +312,13 @@ impl RuntimeDomainImpl {
         prompt: &str,
         tool_descriptors: &[ToolDescriptor],
         agent: &Agent,
-        scene_str: &str,
+        scene: ThinkingScene,
         trace_id: &str,
         max_rounds: usize,
         start_round: usize,
         timeout_secs: u64,
+        think_runtime: Option<&Arc<AgentThinkRuntime>>,
+        policy: Option<&dyn crate::pkg::policy::Policy>,
     ) -> Result<ThinkLoopResult> {
         /// 上下文压缩触发阈值（占最大上下文窗口的比例）
         const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
@@ -259,7 +349,30 @@ impl RuntimeDomainImpl {
             };
             // 本次循环可用轮次 = max_rounds - start_round
             let available_rounds = max_rounds.saturating_sub(start_round);
+            // 策略评估用的起始时间（用于 elapsed_secs）
+            let loop_start = std::time::Instant::now();
+            // 累计 token 用量（用于策略评估 + 运行时快照上报）
+            let mut total_input_tokens: u64 = 0;
+            let mut total_output_tokens: u64 = 0;
+            let mut total_tool_calls: usize = 0;
+            let scene_str = scene.as_str();
             for offset in 0..available_rounds {
+                    // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
+                    if let Some(tr) = think_runtime
+                        && tr.is_cancelled()
+                    {
+                        log_info!(
+                            &ctx,
+                            "think_loop",
+                            "cancel flag detected before round={}, exiting loop",
+                            start_round + offset
+                        );
+                        return Ok(ThinkLoopResult::Cancelled {
+                            messages,
+                            total_rounds: start_round + offset,
+                        });
+                    }
+
                     let round = start_round + offset;
                     let round_start = std::time::Instant::now();
                     let result = self
@@ -270,6 +383,23 @@ impl RuntimeDomainImpl {
 
                     match result {
                         ThinkResult::Final { content, usage } => {
+                            // 累计 token 用量
+                            total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
+                            total_output_tokens = total_output_tokens.saturating_add(usage.output_tokens);
+                            // 上报最终轮运行时快照
+                            if let Some(tr) = think_runtime {
+                                tr.report_round(
+                                    trace_id,
+                                    scene,
+                                    round + 1,
+                                    max_rounds,
+                                    total_input_tokens,
+                                    total_output_tokens,
+                                    total_input_tokens.saturating_add(total_output_tokens),
+                                    total_tool_calls,
+                                );
+                                tr.finish();
+                            }
                             // 发布 ThinkRoundEvent（无工具调用，最终轮）
                             let _ = crate::pkg::aop::publish(
                                 ThinkRoundEvent::new(
@@ -304,6 +434,9 @@ impl RuntimeDomainImpl {
                             usage,
                         } => {
                             let tc_count = tool_calls.len();
+                            total_tool_calls = total_tool_calls.saturating_add(tc_count);
+                            total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
+                            total_output_tokens = total_output_tokens.saturating_add(usage.output_tokens);
                             // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
                             messages.push(ChatMessage::Assistant {
                                 content,
@@ -392,6 +525,50 @@ impl RuntimeDomainImpl {
                                     input_tokens: usage.input_tokens,
                                     rounds_used: offset + 1,
                                 });
+                            }
+
+                            // 策略评估 + 运行时快照上报
+                            let total_tokens = total_input_tokens.saturating_add(total_output_tokens);
+                            let elapsed_secs = loop_start.elapsed().as_secs();
+
+                            // 上报运行时快照（每轮都更新，供前端实时查询）
+                            if let Some(tr) = think_runtime {
+                                tr.report_round(
+                                    trace_id,
+                                    scene,
+                                    round + 1,
+                                    max_rounds,
+                                    total_input_tokens,
+                                    total_output_tokens,
+                                    total_tokens,
+                                    total_tool_calls,
+                                );
+                            }
+
+                            // 评估策略：任一命中即退出循环
+                            if let Some(policy) = policy {
+                                let metrics = crate::pkg::policy::Metrics::new()
+                                    .with("round_number", (round + 1) as u64)
+                                    .with("max_rounds", max_rounds as u64)
+                                    .with("elapsed_secs", elapsed_secs)
+                                    .with("total_tokens", total_tokens)
+                                    .with("context_tokens", usage.input_tokens);
+                                let triggered = policy.evaluate(&metrics);
+                                if !triggered.is_empty() {
+                                    log_info!(
+                                        &ctx,
+                                        "think_loop",
+                                        "policy triggered: {:?} at round={}",
+                                        triggered,
+                                        round + 1
+                                    );
+                                    return Ok(map_triggered_to_result(
+                                        &triggered,
+                                        messages,
+                                        round + 1,
+                                        usage.input_tokens,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -512,6 +689,19 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             ctx.task_id().cloned(),
         );
         let trace_id = trace.id.clone();
+
+        // 创建思考运行时（与 Busy 状态绑定，BusyGuard Drop 时自动清理）
+        // 整个 awaken 流程（含 ContextOverflow 重试）共享同一个 think_runtime
+        let think_runtime = Arc::new(AgentThinkRuntime::new(
+            agent.po.id.clone(),
+            trace_id.clone(),
+        ));
+        AgentRuntimeStateManager::global().set_think_runtime(
+            &agent.po.id,
+            think_runtime.clone(),
+        );
+        // 按场景构造策略组（Or 关系：用户取消/轮次上限/超时任一命中即退出）
+        let policy = build_policy_for_scene(agent, ThinkingScene::Awaken, think_runtime.cancel_flag());
 
         // Step 2: 发布循环启动事件（AOP 同步转发）
         let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
@@ -639,6 +829,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             prompt = builder.build();
 
             // 调用共享 think loop（传入累计轮次和上限）
+            // 注意：每次循环都重新设置 think_runtime，因为 sleep_and_settle 的 BusyGuard
+            // Drop 会清理 think_runtime（set_resting → set_idle 链路）
+            AgentRuntimeStateManager::global().set_think_runtime(
+                &agent.po.id,
+                think_runtime.clone(),
+            );
             let think_result = self
                 .run_think_loop(
                     ctx.clone(),
@@ -646,11 +842,13 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     &prompt,
                     &tool_descriptors,
                     agent,
-                    "awaken",
+                    ThinkingScene::Awaken,
                     &trace_id,
                     max_rounds,
                     total_rounds,
                     config_resolve::think_timeout_secs(agent),
+                    Some(&think_runtime),
+                    Some(policy.as_ref()),
                 )
                 .await;
 
@@ -747,6 +945,24 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         summary_output
                     };
                     break;
+                }
+                Ok(ThinkLoopResult::Cancelled {
+                    total_rounds: rounds,
+                    ..
+                }) => {
+                    // 用户取消：直接返回，不触发总结流程
+                    log_info!(
+                        &ctx,
+                        "awaken",
+                        "agent thinking cancelled by user, rounds={}",
+                        rounds
+                    );
+                    return Ok(AwakeningResult {
+                        agent_id: agent.po.id.clone(),
+                        trace_ids: vec![trace_id.clone()],
+                        raw_input: prompt.clone(),
+                        raw_output: String::new(),
+                    });
                 }
                 Err(e) => {
                     // think loop 执行失败
@@ -938,6 +1154,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         );
         let trace_id = trace.id.clone();
 
+        // 创建沉淀场景的思考运行时（覆盖 awaken 的，因为这是一个独立思考阶段）
+        let think_runtime = Arc::new(AgentThinkRuntime::new(
+            agent.po.id.clone(),
+            trace_id.clone(),
+        ));
+        AgentRuntimeStateManager::global().set_think_runtime(
+            &agent.po.id,
+            think_runtime.clone(),
+        );
+        let policy = build_policy_for_scene(agent, ThinkingScene::Settle, think_runtime.cancel_flag());
+
         // 发布循环启动事件（AOP 同步转发）
         let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
             &agent.po.id,
@@ -998,20 +1225,23 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 &prompt,
                 &tool_descriptors,
                 agent,
-                "settle",
+                ThinkingScene::Settle,
                 &trace_id,
                 config_resolve::max_thinking_rounds(agent),
                 0,
                 config_resolve::think_timeout_secs(agent),
+                Some(&think_runtime),
+                Some(policy.as_ref()),
             )
             .await;
 
         // 展开 Result，失败时也记录事件
-        // sleep_and_settle 场景不处理 ContextOverflow/MaxRoundsExceeded（沉淀工具量小）
+        // sleep_and_settle 场景不处理 ContextOverflow/MaxRoundsExceeded/Cancelled（沉淀工具量小）
         let raw_output = match think_result {
             Ok(ThinkLoopResult::Final { content, .. }) => content,
             Ok(ThinkLoopResult::ContextOverflow { .. })
-            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. }) => {
+            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. })
+            | Ok(ThinkLoopResult::Cancelled { .. }) => {
                 // 沉淀场景理论不会触发（记忆工具量小），兜底处理
                 String::new()
             }
@@ -1250,6 +1480,21 @@ impl RuntimeDomainImpl {
             .collect();
 
         // 8. 运行 think loop（轮次由配置决定，保证多步检索后有足够轮次输出 Final JSON）
+        // IntentAnalyze 是 awaken 的 Phase 1 子流程，但同样是一个完整的 think_loop，
+        // 需要独立的 think_runtime 和 policy（覆盖 awaken 的，awaken 循环中会重新设置）
+        let think_runtime = Arc::new(AgentThinkRuntime::new(
+            agent.po.id.clone(),
+            trace_id.to_string(),
+        ));
+        AgentRuntimeStateManager::global().set_think_runtime(
+            &agent.po.id,
+            think_runtime.clone(),
+        );
+        let policy = build_policy_for_scene(
+            agent,
+            ThinkingScene::IntentAnalyze,
+            think_runtime.cancel_flag(),
+        );
         let think_result = self
             .run_think_loop(
                 ctx.clone(),
@@ -1257,11 +1502,13 @@ impl RuntimeDomainImpl {
                 &prompt,
                 &tool_descriptors,
                 agent,
-                "intent-analyze",
+                ThinkingScene::IntentAnalyze,
                 trace_id,
                 config_resolve::intent_analyze_max_rounds(agent),
                 0,
                 config_resolve::think_timeout_secs(agent),
+                Some(&think_runtime),
+                Some(policy.as_ref()),
             )
             .await?;
 
@@ -1278,6 +1525,12 @@ impl RuntimeDomainImpl {
                 return Err(err!(
                     Internal,
                     "analyze_input_intent max rounds exceeded without Final (Agent failed to output JSON)"
+                ));
+            }
+            ThinkLoopResult::Cancelled { .. } => {
+                return Err(err!(
+                    Internal,
+                    "analyze_input_intent cancelled by user before Final"
                 ));
             }
         };
@@ -1326,6 +1579,17 @@ impl RuntimeDomainImpl {
             ctx.task_id().cloned(),
         );
         let trace_id = trace.id.clone();
+
+        // 创建总结场景的思考运行时（覆盖 awaken 的，因为这是一个独立思考阶段）
+        let think_runtime = Arc::new(AgentThinkRuntime::new(
+            agent.po.id.clone(),
+            trace_id.clone(),
+        ));
+        AgentRuntimeStateManager::global().set_think_runtime(
+            &agent.po.id,
+            think_runtime.clone(),
+        );
+        let policy = build_policy_for_scene(agent, ThinkingScene::Summary, think_runtime.cancel_flag());
 
         // 3. 发布循环启动事件
         let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
@@ -1388,19 +1652,22 @@ impl RuntimeDomainImpl {
                 &prompt,
                 &tool_descriptors,
                 agent,
-                "summary",
+                ThinkingScene::Summary,
                 &trace_id,
                 config_resolve::summary_max_rounds(agent),
                 0,
                 config_resolve::think_timeout_secs(agent),
+                Some(&think_runtime),
+                Some(policy.as_ref()),
             )
             .await;
 
         let raw_output = match think_result {
             Ok(ThinkLoopResult::Final { content, .. }) => content,
             Ok(ThinkLoopResult::ContextOverflow { .. })
-            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. }) => {
-                // 总结场景兜底：即使超限或轮次耗尽也返回已有内容
+            | Ok(ThinkLoopResult::MaxRoundsExceeded { .. })
+            | Ok(ThinkLoopResult::Cancelled { .. }) => {
+                // 总结场景兜底：即使超限/轮次耗尽/被取消也返回已有内容
                 String::new()
             }
             Err(e) => {

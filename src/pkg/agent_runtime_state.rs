@@ -5,8 +5,11 @@
 
 use crate::models::events::AgentStateEvent;
 use common::enums::AgentRuntimeState;
+use common::enums::ThinkingScene;
 use dashmap::DashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 
 /// Agent 运行时信息（内存中）
 #[derive(Debug, Clone)]
@@ -20,6 +23,8 @@ pub struct AgentRuntimeInfo {
     pub task_id: Option<String>,
     /// 当前关联的项目 ID（同上）
     pub project_id: Option<String>,
+    /// 思考运行时（仅 Busy 时有值）
+    pub think_runtime: Option<Arc<AgentThinkRuntime>>,
 }
 
 impl Default for AgentRuntimeInfo {
@@ -30,7 +35,167 @@ impl Default for AgentRuntimeInfo {
             state_started_at: 0,
             task_id: None,
             project_id: None,
+            think_runtime: None,
         }
+    }
+}
+
+/// 思考状态
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ThinkStatus {
+    #[default]
+    Thinking,
+    Cancelled,
+    Finished,
+}
+
+/// 思考运行时快照（前端查询用，原子读写）
+#[derive(Debug, Clone, Default)]
+pub struct ThinkRuntimeSnapshot {
+    pub agent_id: String,
+    pub trace_id: String,
+    /// 场景（ThinkingScene 枚举，定义在 common 层，无循环依赖）
+    pub scene: ThinkingScene,
+    pub round: usize,
+    pub max_rounds: usize,
+    pub tokens_input: u64,
+    pub tokens_output: u64,
+    pub total_tokens: u64,
+    pub tool_call_count: usize,
+    pub status: ThinkStatus,
+    pub started_at: i64,
+    pub last_updated_at: i64,
+}
+
+impl ThinkRuntimeSnapshot {
+    pub fn new(agent_id: String, trace_id: String) -> Self {
+        let now = common::constants::utils::current_timestamp_ms();
+        Self {
+            agent_id,
+            trace_id,
+            started_at: now,
+            last_updated_at: now,
+            ..Default::default()
+        }
+    }
+
+    /// think_loop 每轮上报时更新快照
+    #[allow(clippy::too_many_arguments)]
+    pub fn report_round(
+        &mut self,
+        trace_id: &str,
+        scene: ThinkingScene,
+        round: usize,
+        max_rounds: usize,
+        tokens_input: u64,
+        tokens_output: u64,
+        total_tokens: u64,
+        tool_call_count: usize,
+    ) {
+        self.trace_id = trace_id.to_string();
+        self.scene = scene;
+        self.round = round;
+        self.max_rounds = max_rounds;
+        self.tokens_input = tokens_input;
+        self.tokens_output = tokens_output;
+        self.total_tokens = total_tokens;
+        self.tool_call_count = tool_call_count;
+        self.last_updated_at = common::constants::utils::current_timestamp_ms();
+    }
+}
+
+/// Agent 思考运行时：跟着 Agent 状态走，Busy 时存在，Idle 时清理
+/// 持有 cancel 信号 + 运行时快照，由 think_loop 每轮上报
+pub struct AgentThinkRuntime {
+    agent_id: String,
+    cancel_flag: Arc<AtomicBool>,
+    snapshot: RwLock<ThinkRuntimeSnapshot>,
+}
+
+impl std::fmt::Debug for AgentThinkRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let snap = self.snapshot.read().map(|s| s.clone()).unwrap_or_default();
+        f.debug_struct("AgentThinkRuntime")
+            .field("agent_id", &self.agent_id)
+            .field("cancelled", &self.cancel_flag.load(Ordering::Relaxed))
+            .field("snapshot", &snap)
+            .finish()
+    }
+}
+
+impl AgentThinkRuntime {
+    pub fn new(agent_id: String, trace_id: String) -> Self {
+        Self {
+            agent_id: agent_id.clone(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            snapshot: RwLock::new(ThinkRuntimeSnapshot::new(agent_id, trace_id)),
+        }
+    }
+
+    /// 获取 agent_id
+    pub fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
+    /// 获取 cancel_flag 的 Arc 引用（用于构造 UserCancelPolicy）
+    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel_flag.clone()
+    }
+
+    /// think_loop 每轮上报时调用
+    #[allow(clippy::too_many_arguments)]
+    pub fn report_round(
+        &self,
+        trace_id: &str,
+        scene: ThinkingScene,
+        round: usize,
+        max_rounds: usize,
+        tokens_input: u64,
+        tokens_output: u64,
+        total_tokens: u64,
+        tool_call_count: usize,
+    ) {
+        if let Ok(mut snap) = self.snapshot.write() {
+            snap.report_round(
+                trace_id,
+                scene,
+                round,
+                max_rounds,
+                tokens_input,
+                tokens_output,
+                total_tokens,
+                tool_call_count,
+            );
+        }
+    }
+
+    /// 标记为完成（think_loop 正常结束时调用）
+    pub fn finish(&self) {
+        if let Ok(mut snap) = self.snapshot.write() {
+            snap.status = ThinkStatus::Finished;
+        }
+    }
+
+    /// 用户取消（由 StateManager.cancel_thinking 调用）
+    pub fn cancel(&self) -> bool {
+        self.cancel_flag.store(true, Ordering::Relaxed);
+        if let Ok(mut snap) = self.snapshot.write() {
+            snap.status = ThinkStatus::Cancelled;
+        }
+        true
+    }
+
+    /// 是否已取消（think_loop 每轮检查）
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::Relaxed)
+    }
+
+    /// 获取运行时快照（前端查询用）
+    pub fn snapshot(&self) -> ThinkRuntimeSnapshot {
+        self.snapshot
+            .read()
+            .map(|s| s.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -62,9 +227,44 @@ impl AgentRuntimeStateManager {
         entry.current_message_id = None;
         entry.task_id = None;
         entry.project_id = None;
+        entry.think_runtime = None;
         entry.state_started_at = common::constants::utils::current_timestamp_ms();
         drop(entry); // 释放 dashmap 借用
         self.notify_state_change(agent_id, state_str(from_state), "idle", None);
+    }
+
+    /// 挂载思考运行时（consumer 创建后调用）
+    pub fn set_think_runtime(&self, agent_id: &str, think_runtime: Arc<AgentThinkRuntime>) {
+        if let Some(mut entry) = self.states.get_mut(agent_id) {
+            entry.think_runtime = Some(think_runtime);
+        }
+    }
+
+    /// 清理思考运行时（BusyGuard Drop 时调用）
+    pub fn clear_think_runtime(&self, agent_id: &str) {
+        if let Some(mut entry) = self.states.get_mut(agent_id) {
+            entry.think_runtime = None;
+        }
+    }
+
+    /// 取消思考（cancel-thinking 接口调用）
+    ///
+    /// 返回 true 表示成功取消（Agent 正在思考），
+    /// 返回 false 表示 Agent 当前未在思考或运行时已清理。
+    pub fn cancel_thinking(&self, agent_id: &str) -> bool {
+        if let Some(entry) = self.states.get(agent_id)
+            && let Some(ref think_runtime) = entry.think_runtime
+        {
+            return think_runtime.cancel();
+        }
+        false
+    }
+
+    /// 查询思考运行时快照（runtime-status 接口调用）
+    pub fn get_think_runtime_snapshot(&self, agent_id: &str) -> Option<ThinkRuntimeSnapshot> {
+        self.states.get(agent_id).and_then(|entry| {
+            entry.think_runtime.as_ref().map(|tr| tr.snapshot())
+        })
     }
 
     /// 设置 Agent 为休息状态
@@ -258,5 +458,102 @@ mod tests {
         assert_eq!(info.current_message_id, None);
         assert_eq!(info.task_id, Some("task-1".to_string()));
         assert_eq!(info.project_id, Some("proj-1".to_string()));
+    }
+
+    #[test]
+    fn test_set_think_runtime_attaches_to_busy_agent() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+        mgr.set_think_runtime("agent-1", tr.clone());
+
+        let info = mgr.get("agent-1").unwrap();
+        assert!(info.think_runtime.is_some());
+        assert_eq!(info.think_runtime.as_ref().unwrap().agent_id(), "agent-1");
+
+        let snap = mgr.get_think_runtime_snapshot("agent-1").unwrap();
+        assert_eq!(snap.trace_id, "trace-1");
+    }
+
+    #[test]
+    fn test_set_idle_clears_think_runtime() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+        mgr.set_think_runtime("agent-1", tr);
+        mgr.set_idle("agent-1");
+
+        let info = mgr.get("agent-1").unwrap();
+        assert!(info.think_runtime.is_none());
+        assert!(mgr.get_think_runtime_snapshot("agent-1").is_none());
+    }
+
+    #[test]
+    fn test_cancel_thinking_signals_cancel() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+        let flag = tr.cancel_flag();
+        mgr.set_think_runtime("agent-1", tr);
+
+        assert_ne!(
+            mgr.get_think_runtime_snapshot("agent-1").unwrap().status,
+            ThinkStatus::Cancelled
+        );
+        assert!(mgr.cancel_thinking("agent-1"));
+        assert!(flag.load(std::sync::atomic::Ordering::Relaxed));
+
+        let snap = mgr.get_think_runtime_snapshot("agent-1").unwrap();
+        assert_eq!(snap.status, ThinkStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_cancel_thinking_returns_false_when_not_thinking() {
+        let mgr = AgentRuntimeStateManager::new();
+        // Idle agent
+        assert!(!mgr.cancel_thinking("agent-1"));
+
+        // Busy but no think_runtime attached
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        assert!(!mgr.cancel_thinking("agent-1"));
+    }
+
+    #[test]
+    fn test_report_round_updates_snapshot() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+        mgr.set_think_runtime("agent-1", tr.clone());
+
+        tr.report_round(
+            "trace-1",
+            ThinkingScene::Awaken,
+            3,
+            365,
+            1000,
+            500,
+            1500,
+            2,
+        );
+        let snap = mgr.get_think_runtime_snapshot("agent-1").unwrap();
+        assert_eq!(snap.round, 3);
+        assert_eq!(snap.max_rounds, 365);
+        assert_eq!(snap.tokens_input, 1000);
+        assert_eq!(snap.tokens_output, 500);
+        assert_eq!(snap.total_tokens, 1500);
+        assert_eq!(snap.tool_call_count, 2);
+        assert_eq!(snap.scene, ThinkingScene::Awaken);
+    }
+
+    #[test]
+    fn test_clear_think_runtime_explicit() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        let tr = Arc::new(AgentThinkRuntime::new("agent-1".into(), "trace-1".into()));
+        mgr.set_think_runtime("agent-1", tr);
+        assert!(mgr.get_think_runtime_snapshot("agent-1").is_some());
+
+        mgr.clear_think_runtime("agent-1");
+        assert!(mgr.get_think_runtime_snapshot("agent-1").is_none());
     }
 }
