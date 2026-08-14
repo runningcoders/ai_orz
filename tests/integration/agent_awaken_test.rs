@@ -936,3 +936,240 @@ async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
         )
         .await;
 }
+
+// ==================== Part D: A+ P3 两阶段唤醒集成测试 ====================
+// （Task 4 集成测试 bonus）
+//
+// 思路：复用 CapturingBrainDal 模式，实现「两阶段 Mock」：
+//   - 第 1 次 think() 调用（Phase 1：analyze_input_intent）→ 返回合法 IntentAnalysis JSON
+//   - 第 2 次 think() 调用（Phase 2：正式 awaken 思考）→ 返回 Final 响应，并捕获 Prompt
+// 断言：(i) Phase 2 的 Prompt 中出现【输入理解结果】区块；
+//       (ii) awaken 返回成功且 raw_output 为 Phase 2 的 mock 响应。
+
+/// 两阶段 Mock Cortex：按调用次序返回不同的 ThinkResult
+struct TwoPhaseMockBrainDal {
+    /// 原子计数器：记录 think() 被调用的次数
+    call_count: Arc<Mutex<usize>>,
+    /// 捕获 Phase 2（第二次调用）的 Prompt（供断言使用）
+    captured_phase2_prompt: Arc<Mutex<Option<String>>>,
+}
+
+impl TwoPhaseMockBrainDal {
+    fn new(
+        call_count: Arc<Mutex<usize>>,
+        captured_phase2_prompt: Arc<Mutex<Option<String>>>,
+    ) -> Self {
+        Self {
+            call_count,
+            captured_phase2_prompt,
+        }
+    }
+
+    /// Phase 1（首次调用）返回的 IntentAnalysis JSON：合法且带锚点
+    fn phase1_response() -> String {
+        let ia = serde_json::json!({
+            "intent_type": "TaskRequest",
+            "confidence": 0.92,
+            "key_terms": ["集成测试", "两阶段唤醒", "文档"],
+            "resolutions": ["\"上次那个文档\" → doc_id=doc_it_777"],
+            "retrieved_context": ["2026-08-14 短期记忆：doc_it_777 上一版本为 v1.3"],
+            "need_clarification": [],
+            "summary": "用户想让 Agent 处理 doc_it_777 文档的某项任务"
+        });
+        format!(
+            "--- INTENT_ANALYSIS_START ---\n{}\n--- INTENT_ANALYSIS_END ---",
+            serde_json::to_string_pretty(&ia).unwrap()
+        )
+    }
+
+    /// Phase 2（第二次调用）返回的最终响应
+    fn phase2_response() -> String {
+        "两阶段唤醒集成测试成功：已收到 Phase 1 理解结果并进入正式执行阶段。".to_string()
+    }
+}
+
+#[async_trait]
+impl BrainDal for TwoPhaseMockBrainDal {
+    async fn wake_brain(
+        &self,
+        _ctx: RequestContext,
+        _agent: &AgentPo,
+        _memories: Vec<ai_orz::models::memory::Memory>,
+    ) -> CommonResult<Brain> {
+        unimplemented!("TwoPhaseMockBrainDal: awaken 流程直接使用预装配的 Agent brain，不走 wake_brain")
+    }
+
+    async fn test_connection(
+        &self,
+        _ctx: RequestContext,
+        _provider: &ModelProvider,
+        _prompt: &str,
+    ) -> CommonResult<String> {
+        unimplemented!("not needed by two-stage awaken test")
+    }
+
+    async fn think(
+        &self,
+        _ctx: RequestContext,
+        _brain: &Brain,
+        messages: &[ai_orz::models::cortex_types::ChatMessage],
+        _tools: &[ai_orz::models::cortex_types::ToolDescriptor],
+    ) -> CommonResult<ai_orz::models::cortex_types::ThinkResult> {
+        // 提取最后一条 user message 作为 prompt（与 CapturingBrainDal 一致）
+        let prompt = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                ai_orz::models::cortex_types::ChatMessage::User { content } => {
+                    Some(content.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        let mut count = self.call_count.lock().unwrap();
+        *count += 1;
+        let this_call = *count;
+        drop(count);
+
+        if this_call == 1 {
+            // ===== Phase 1：IntentAnalyze 场景（analyze_input_intent 内部调用）=====
+            // 返回合法的 IntentAnalysis JSON（带锚点），让解析逻辑成功解析
+            Ok(ai_orz::models::cortex_types::ThinkResult::Final {
+                content: Self::phase1_response(),
+                usage: ai_orz::models::cortex_types::TokenUsage::default(),
+            })
+        } else {
+            // ===== Phase 2：正式 awaken 场景（awaken loop 调用）=====
+            // 捕获此时的 Prompt（断言是否包含【输入理解结果】区块）
+            *self.captured_phase2_prompt.lock().unwrap() = Some(prompt);
+            Ok(ai_orz::models::cortex_types::ThinkResult::Final {
+                content: Self::phase2_response(),
+                usage: ai_orz::models::cortex_types::TokenUsage::default(),
+            })
+        }
+    }
+
+    async fn embed_entity(
+        &self,
+        _ctx: RequestContext,
+        _entity: &dyn ai_orz::models::vector::Vectorizable,
+    ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+        Ok(None)
+    }
+
+    async fn embed_text_for_search(
+        &self,
+        _ctx: RequestContext,
+        _text: &str,
+    ) -> CommonResult<Option<ai_orz::models::vector::VectorIndexParams>> {
+        Ok(None)
+    }
+}
+
+/// 集成测试：awaken 两阶段 Happy Path（A+ P3 串联）
+///
+/// 断言三点：
+///   (i)  Phase 2 的 Prompt 中出现【输入理解结果】区块（即 render_intent_analysis_section 成功渲染）
+///   (ii) Phase 1 成功返回合法 IntentAnalysis（解析成功意味着 ia 是 Some）
+///        → 间接通过 Prompt 中出现理解区块来验证
+///   (iii)awaken 最终返回成功且 raw_output = TwoPhaseMockBrainDal::phase2_response()
+#[sqlx::test]
+async fn awaken_two_stage_happy_path(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool).await;
+
+    let agent_id = format!("agent-two-stage-{}", Uuid::now_v7());
+    let agent = make_test_agent_with_brain(&agent_id);
+    let message = make_test_message("帮我把上次那个文档更新一下");
+
+    let call_count = Arc::new(Mutex::new(0));
+    let captured_p2_prompt = Arc::new(Mutex::new(None));
+    let temp_dir = tempdir().expect("tempdir should be created");
+
+    let runtime = new_with_all(
+        Arc::new(TwoPhaseMockBrainDal::new(
+            call_count.clone(),
+            captured_p2_prompt.clone(),
+        )),
+        ai_orz::service::dal::tool::dal(),
+        ai_orz::service::dal::mcp_tool::dal(),
+        ai_orz::service::dal::agent::dal(),
+        Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+    );
+
+    // ===== 调用 awaken（两阶段串联执行）=====
+    let result = runtime
+        .awakening()
+        .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
+        .await;
+
+    // 断言 (iii)：最终返回成功且 raw_output 为 Phase 2 的响应
+    match result {
+        Ok(awakening_result) => {
+            assert_eq!(
+                awakening_result.agent_id, agent_id,
+                "返回结果的 agent_id 不匹配"
+            );
+            assert_eq!(
+                awakening_result.raw_output,
+                TwoPhaseMockBrainDal::phase2_response(),
+                "awaken 的最终输出应为 Phase 2 Mock 响应"
+            );
+            assert!(
+                !awakening_result.raw_input.is_empty(),
+                "raw_input（即 Phase 2 Prompt）不应为空"
+            );
+        }
+        Err(e) => panic!(
+            "awaken_two_stage_happy_path 应成功，但返回 Err: {:?}",
+            e
+        ),
+    }
+
+    // 断言 (i)(ii)：Phase 2 的 Prompt 中包含【输入理解结果】区块
+    // → 间接证明了：Phase 1 的 analyze_input_intent 返回了 Some(IntentAnalysis)，
+    //   且 builder.intent_analysis 被成功设置，build() 时在正确位置渲染了区块。
+    let p2_prompt = captured_p2_prompt
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("Phase 2 应该调用 think() 并捕获到 Prompt");
+
+    assert!(
+        p2_prompt.contains("【输入理解结果"),
+        "Phase 2 的 Prompt 应该包含【输入理解结果】区块（两阶段串联失败）。\n\
+         ===== Phase 2 Prompt 前 800 字 =====\n{}\n===== End =====\n\
+         \n提示：如果此处失败，先检查 awaken() 中 ia 注入是否在 builder.build() 之前。",
+        p2_prompt.chars().take(800).collect::<String>()
+    );
+
+    // 验证位置顺序：【输入理解结果】在【当前消息】之前
+    let idx_ia = p2_prompt.find("【输入理解结果").unwrap();
+    let idx_cm = p2_prompt
+        .find("【当前消息】")
+        .expect("Phase 2 Prompt 应包含【当前消息】区块");
+    assert!(
+        idx_ia < idx_cm,
+        "【输入理解结果】(idx={}) 应出现在【当前消息】(idx={}) 之前",
+        idx_ia,
+        idx_cm
+    );
+
+    // 验证内容：理解区块包含 Phase 1 返回的 intent_type 字段渲染结果
+    assert!(
+        p2_prompt.contains("TaskRequest"),
+        "Phase 2 Prompt 的理解区块应渲染 Phase 1 返回的 TaskRequest 类型"
+    );
+    assert!(
+        p2_prompt.contains("92.00%"),
+        "Phase 2 Prompt 的置信度应渲染为百分比：0.92 → 92.00%"
+    );
+
+    // 验证 think() 至少被调用 2 次（Phase 1 + Phase 2 各一次）
+    let calls = *call_count.lock().unwrap();
+    assert!(
+        calls >= 2,
+        "think() 至少应被调用 2 次（Phase 1 + Phase 2），实际仅 {} 次",
+        calls
+    );
+}

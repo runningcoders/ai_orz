@@ -547,12 +547,63 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 正常完成时保存对话历史，用于触发总结流程写入短期记忆
         let mut final_messages: Option<Vec<ChatMessage>> = None;
 
+        // =============== Phase 1：输入理解阶段（A+ P3 串联两阶段唤醒）===============
+        // 先强制跑一轮 IntentAnalyze，得到结构化理解结果（任何错误都降级为 None，不阻塞主流程）
+        let ia: Option<IntentAnalysis> = match self
+            .analyze_input_intent(ctx.clone(), agent, message, options)
+            .await
+        {
+            Ok(ia) => {
+                log_info!(
+                    &ctx,
+                    "intent_analyzed",
+                    "type={} conf={:.2} clarify={}",
+                    ia.intent_type,
+                    ia.confidence,
+                    !ia.need_clarification.is_empty()
+                );
+                Some(ia)
+            }
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "intent_analyze_skipped",
+                    "err={:?}",
+                    e
+                );
+                None
+            }
+        };
+
+        // TODO(P4澄清短路): 直接把 resolutions 作为 Final 话术返回，不进入阶段二思考；
+        // 当前先进入阶段二正常执行，由 Agent 自行决定是否提问澄清。
+        // if ia.is_some() && !ia.as_ref().unwrap().need_clarification.is_empty() {
+        //     let clarify_text = ia.as_ref().unwrap().need_clarification.join("\n");
+        //     return Ok(AwakeningResult {
+        //         agent_id: agent.po.id.clone(),
+        //         trace_ids: vec![trace_id.clone()],
+        //         raw_input: String::new(),
+        //         raw_output: clarify_text,
+        //     });
+        // }
+        // =============== Phase 1 结束（失败降级不阻塞 Phase 2）===============
+
+        // Phase 1 成功时首次迭代跳过记忆注入：
+        // IntentAnalysis 已含 retrieved_context + resolutions，Phase 2 按需 search_memory 补充。
+        // Phase 1 失败降级（ia=None）或上下文压缩后：正常获取 20 条短期记忆。
+        let mut skip_memory_fetch = ia.is_some();
+
         loop {
-            // 重新读取最近短期记忆（首次 + 每次压缩后都会获取最新的记忆）
-            let recent_memories = self
-                .memory()
-                .get_recent_context(ctx.clone(), &agent.po.id, 20)
-                .await?;
+            // 首次迭代且 Phase 1 成功：跳过记忆获取（IntentAnalysis 已提供上下文）
+            // 后续迭代（压缩后）：重新获取最新记忆
+            let recent_memories: Vec<_> = if skip_memory_fetch {
+                skip_memory_fetch = false;
+                Vec::new()
+            } else {
+                self.memory()
+                    .get_recent_context(ctx.clone(), &agent.po.id, 20)
+                    .await?
+            };
 
             // 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
             let mut builder = self.prompt_builder(agent);
@@ -570,6 +621,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
             builder.history(&recent_memories);
             builder.current_message(message);
+            // 注入 Phase 1 的理解结果到 builder（供 build() 渲染【输入理解结果】区块）
+            // Phase 1 失败时 ia = None，此处跳过不注入，build() 输出不变
+            if let Some(ref ia) = ia {
+                builder.intent_analysis(ia);
+            }
             prompt = builder.build();
 
             // 调用共享 think loop（传入累计轮次和上限）
@@ -1031,18 +1087,70 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         message: &Message,
         options: &ThinkingOptions,
     ) -> Result<IntentAnalysis> {
+        let start_time = std::time::SystemTime::now();
+        let ctx = enrich_ctx!(&ctx, agent);
+        let trace_id = format!("intent-analyze-{}", ctx.log_id);
+
+        // 发布循环启动事件（与 awaken/sleep_and_settle 对齐，监控可区分 Phase 1）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
+            &agent.po.id,
+            &trace_id,
+            "intent-analyze",
+            None,
+        ))
+        .await;
+
+        let result = self
+            .analyze_input_intent_inner(ctx.clone(), agent, message, options, &trace_id)
+            .await;
+
+        let duration_ms = start_time
+            .elapsed()
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let status = match &result {
+            Ok(_) => "success".to_string(),
+            Err(e) => format!("failed: {}", e),
+        };
+
+        // 发布循环完成事件（成功/失败均发布，监控可追踪 Phase 1 耗时与状态）
+        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
+            &agent.po.id,
+            &trace_id,
+            "intent-analyze",
+            &status,
+            duration_ms,
+            None,
+        ))
+        .await;
+
+        result
+    }
+}
+
+/// 总结退出流程的独立实现块
+///
+/// `awaken_for_summary` 是 `RuntimeDomainImpl` 的私有辅助方法，
+/// 不属于 `RuntimeAwakening` trait（只在 awaken 内部调用）。
+impl RuntimeDomainImpl {
+    /// analyze_input_intent 的核心实现（由 trait 方法委托，外层负责 stats 包裹）
+    ///
+    /// 流程：构造 IntentAnalyze 场景 → 读短期记忆 → 过滤技能 → 拼 Prompt →
+    /// think loop（最多 2 轮）→ 解析 IntentAnalysis JSON
+    async fn analyze_input_intent_inner(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        message: &Message,
+        options: &ThinkingOptions,
+        trace_id: &str,
+    ) -> Result<IntentAnalysis> {
         // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene），
         //    思考轮次严格限制 1-2 轮（只做理解，不需要多轮执行）
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;
         analyze_opts.max_thinking_rounds = Some(2);
         let scene = analyze_opts.scene;
-
-        // 补充 Agent 上下文到 ctx（与 awaken 对齐）
-        let ctx = enrich_ctx!(&ctx, agent);
-
-        // 构造分析阶段的 trace_id：复用父 ctx 的 log_id 加前缀，避免与主 awaken trace 冲突
-        let trace_id = format!("intent-analyze-{}", ctx.log_id);
 
         // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
         let recent_memories = self
@@ -1063,7 +1171,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // 4. 构造 PromptBuilder（与 awaken 相同挂载链路，保证背景知识一致）
         let mut builder = self.prompt_builder(agent);
-        builder.current_trace_id(&trace_id);
+        builder.current_trace_id(trace_id);
         builder.system_prompt(agent);
         builder.skills(&skill_pos);
         if let Some(project) = &analyze_opts.project {
@@ -1107,7 +1215,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 &tool_descriptors,
                 agent,
                 "intent-analyze",
-                &trace_id,
+                trace_id,
                 2,
                 0,
             )
@@ -1130,16 +1238,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
         };
 
-        // 10. 解析 IntentAnalysis JSON（5 级降级，全部失败则返回 Err，由调用方降级）
+        // 10. 解析 IntentAnalysis JSON（6 级降级，全部失败则返回 Err，由调用方降级）
         parse_intent_analysis_json(&final_text)
     }
-}
 
-/// 总结退出流程的独立实现块
-///
-/// `awaken_for_summary` 是 `RuntimeDomainImpl` 的私有辅助方法，
-/// 不属于 `RuntimeAwakening` trait（只在 awaken 内部调用）。
-impl RuntimeDomainImpl {
     /// 总结退出流程
     ///
     /// 当思考轮次耗尽时，或正常完成时，让 Agent 总结当前工作进展并写入短期记忆。
@@ -1925,22 +2027,20 @@ mod tests {
             "search_memory".into(),
             "analyze_text".into(),
         ];
-        for tag in &allowed_tags {
+        for tag in allowed_tags {
             assert!(
-                scene.is_tool_allowed(&[tag.clone()]),
-                "tag '{}' should be allowed in IntentAnalyze scene",
-                tag
+                scene.is_tool_allowed(&[tag]),
+                "tag should be allowed in IntentAnalyze scene"
             );
         }
 
         // 禁止：工具名 tag 包含 shell_exec / lark_push
         let forbidden_tags: Vec<String> =
             vec!["shell_exec".into(), "lark_push".into(), "send_message".into()];
-        for tag in &forbidden_tags {
+        for tag in forbidden_tags {
             assert!(
-                !scene.is_tool_allowed(&[tag.clone()]),
-                "tag '{}' should be forbidden in IntentAnalyze scene",
-                tag
+                !scene.is_tool_allowed(&[tag]),
+                "tag should be forbidden in IntentAnalyze scene"
             );
         }
     }
