@@ -1039,12 +1039,19 @@ impl BrainDal for TwoPhaseMockBrainDal {
                 content: Self::phase1_response(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
             })
-        } else {
-            // ===== Phase 2：正式 awaken 场景（awaken loop 调用）=====
-            // 捕获此时的 Prompt（断言是否包含【输入理解结果】区块）
+        } else if this_call == 2 {
+            // ===== Phase 2：正式 awaken 场景（awaken loop 第 1 轮调用）=====
+            // 仅在第 2 次调用时捕获 Prompt（避免后续 awaken_for_summary 调用覆盖）
             *self.captured_phase2_prompt.lock().unwrap() = Some(prompt);
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: Self::phase2_response(),
+                usage: ai_orz::models::cortex_types::TokenUsage::default(),
+            })
+        } else {
+            // ===== 后续调用（awaken_for_summary 总结流程等）=====
+            // 返回简单 Final，不再覆盖 Phase 2 捕获的 Prompt
+            Ok(ai_orz::models::cortex_types::ThinkResult::Final {
+                content: "summary done".to_string(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
             })
         }
@@ -1098,9 +1105,10 @@ async fn awaken_two_stage_happy_path(pool: SqlitePool) {
     );
 
     // ===== 调用 awaken（两阶段串联执行）=====
+    let opts = ThinkingOptions::new();
     let result = runtime
         .awakening()
-        .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
+        .awaken(ctx.clone(), &agent, &message, &opts)
         .await;
 
     // 断言 (iii)：最终返回成功且 raw_output 为 Phase 2 的响应
@@ -1145,9 +1153,7 @@ async fn awaken_two_stage_happy_path(pool: SqlitePool) {
 
     // 验证位置顺序：【输入理解结果】在【当前消息】之前
     let idx_ia = p2_prompt.find("【输入理解结果").unwrap();
-    let idx_cm = p2_prompt
-        .find("【当前消息】")
-        .expect("Phase 2 Prompt 应包含【当前消息】区块");
+    let idx_cm = p2_prompt.find("【当前消息】").unwrap();
     assert!(
         idx_ia < idx_cm,
         "【输入理解结果】(idx={}) 应出现在【当前消息】(idx={}) 之前",
