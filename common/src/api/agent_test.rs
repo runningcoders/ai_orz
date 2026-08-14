@@ -30,6 +30,7 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         kind: "local".to_string(),
         model_provider_id: "provider-1".to_string(),
         external_config: None,
+        runtime_config: None,
         status: AgentStatus::PendingOnboard as i32,
         created_at: 1,
         updated_at: 2,

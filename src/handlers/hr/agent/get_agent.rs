@@ -6,7 +6,8 @@ use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, GetAgentRequest, GetAgentResponse,
+    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
+    GetAgentRequest, GetAgentResponse,
 };
 use common::enums::{AgentKind, AgentRuntimeState};
 use common::error::Result;
@@ -90,6 +91,17 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         }
     };
 
+    // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
+    let runtime_config = {
+        let rc = agent.po.get_runtime_config();
+        Some(AgentRuntimeConfigInfo {
+            max_thinking_rounds: rc.max_thinking_rounds,
+            intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
+            summary_max_rounds: rc.summary_max_rounds,
+            think_timeout_secs: rc.think_timeout_secs,
+        })
+    };
+
     // 从 runtime_info 读取运行时状态
     let (runtime_state, current_message_id) = match &agent.runtime_info {
         Some(info) => (info.state as i32, info.current_message_id.clone()),
@@ -125,6 +137,7 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         kind: kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
         external_config,
+        runtime_config,
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,

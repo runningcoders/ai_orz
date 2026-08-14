@@ -5,8 +5,8 @@ use crate::pkg::RequestContext;
 use crate::service::domain::{finance::domain as finance_domain, hr::domain};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
-    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, UpdateAgentStatusRequest,
-    UpdateAgentStatusResponse,
+    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
+    UpdateAgentStatusRequest, UpdateAgentStatusResponse,
 };
 use common::enums::{AgentKind, AgentRuntimeState};
 use common::error::Result;
@@ -94,6 +94,17 @@ pub async fn update_agent_status(
         .await
         .unwrap_or_default();
 
+    // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
+    let runtime_config = {
+        let rc = agent.po.get_runtime_config();
+        Some(AgentRuntimeConfigInfo {
+            max_thinking_rounds: rc.max_thinking_rounds,
+            intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
+            summary_max_rounds: rc.summary_max_rounds,
+            think_timeout_secs: rc.think_timeout_secs,
+        })
+    };
+
     Ok(UpdateAgentStatusResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
@@ -116,6 +127,7 @@ pub async fn update_agent_status(
         kind: kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
         external_config,
+        runtime_config,
         status: agent.po.status as i32,
         created_at: agent.po.created_at,
         updated_at: agent.po.updated_at,

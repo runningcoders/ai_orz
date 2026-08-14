@@ -139,6 +139,22 @@ pub struct AgentRemoteConfig {
     pub timeout_secs: u64,
 }
 
+/// Agent 运行时配置信息（详情页展示 / 编辑表单使用）
+///
+/// 对应 `AgentRuntimeConfig` 中可由用户在 UI 配置的字段子集。
+/// 其余字段（如 installed_tags / external_config 等）由其他流程管理，不在本结构体暴露。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentRuntimeConfigInfo {
+    /// 单次唤醒最大思考轮次（0 = 使用系统配置）
+    pub max_thinking_rounds: usize,
+    /// 意图识别阶段最大思考轮次（0 = 使用系统配置）
+    pub intent_analyze_max_rounds: usize,
+    /// 总结退出阶段最大思考轮次（0 = 使用系统配置）
+    pub summary_max_rounds: usize,
+    /// 思考超时秒数（0 = 不限制）
+    pub think_timeout_secs: u64,
+}
+
 /// 获取 Agent 响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GetAgentResponse {
@@ -161,6 +177,9 @@ pub struct GetAgentResponse {
     /// 外部 Agent 配置（仅 cli/remote 类型有值）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_config: Option<AgentExternalConfigInfo>,
+    /// 运行时配置（思考轮次 / 超时等可调参数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_config: Option<AgentRuntimeConfigInfo>,
     /// 生命周期状态
     pub status: i32,
     /// 创建时间戳
@@ -200,6 +219,14 @@ pub struct UpdateAgentRequest {
     pub soul: Option<String>,
     /// 关联的模型提供商 ID
     pub model_provider_id: Option<String>,
+    /// 单次唤醒最大思考轮次（0 = 使用系统配置）
+    pub max_thinking_rounds: Option<usize>,
+    /// 意图识别阶段最大思考轮次（0 = 使用系统配置）
+    pub intent_analyze_max_rounds: Option<usize>,
+    /// 总结退出阶段最大思考轮次（0 = 使用系统配置）
+    pub summary_max_rounds: Option<usize>,
+    /// 思考超时秒数（0 = 不限制）
+    pub think_timeout_secs: Option<u64>,
 }
 
 /// 更新 Agent 状态请求
@@ -240,6 +267,9 @@ pub struct UpdateAgentResponse {
     pub kind: String,
     /// 关联的模型提供商 ID（仅 local 类型有值）
     pub model_provider_id: String,
+    /// 运行时配置（思考轮次 / 超时等可调参数）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_config: Option<AgentRuntimeConfigInfo>,
     /// 更新时间戳
     pub updated_at: i64,
 }

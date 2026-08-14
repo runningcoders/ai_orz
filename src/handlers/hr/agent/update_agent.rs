@@ -3,7 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{UpdateAgentRequest, UpdateAgentResponse};
+use common::api::{AgentRuntimeConfigInfo, UpdateAgentRequest, UpdateAgentResponse};
 use common::error::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -53,6 +53,27 @@ pub async fn update_agent(
     if let Some(model_provider_id) = params.model_provider_id {
         agent.po.model_provider_id = model_provider_id;
     }
+    // 更新运行时配置（任一字段提供即读取当前配置覆盖对应字段后写回）
+    if params.max_thinking_rounds.is_some()
+        || params.intent_analyze_max_rounds.is_some()
+        || params.summary_max_rounds.is_some()
+        || params.think_timeout_secs.is_some()
+    {
+        let mut rc = agent.po.get_runtime_config();
+        if let Some(v) = params.max_thinking_rounds {
+            rc.max_thinking_rounds = v;
+        }
+        if let Some(v) = params.intent_analyze_max_rounds {
+            rc.intent_analyze_max_rounds = v;
+        }
+        if let Some(v) = params.summary_max_rounds {
+            rc.summary_max_rounds = v;
+        }
+        if let Some(v) = params.think_timeout_secs {
+            rc.think_timeout_secs = v;
+        }
+        agent.po.set_runtime_config(&rc);
+    }
     // Update modified_by and updated_at
     agent.po.modified_by = ctx.uid();
     agent.po.updated_at = current_timestamp();
@@ -60,6 +81,17 @@ pub async fn update_agent(
     domain().agent_manage().update_agent(ctx, &agent).await?;
 
     let capabilities: Vec<String> = agent.po.get_capabilities();
+
+    // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
+    let runtime_config = {
+        let rc = agent.po.get_runtime_config();
+        Some(AgentRuntimeConfigInfo {
+            max_thinking_rounds: rc.max_thinking_rounds,
+            intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
+            summary_max_rounds: rc.summary_max_rounds,
+            think_timeout_secs: rc.think_timeout_secs,
+        })
+    };
 
     Ok(UpdateAgentResponse {
         id: agent.id().to_string(),
@@ -81,6 +113,7 @@ pub async fn update_agent(
         },
         kind: agent.po.kind.to_string(),
         model_provider_id: agent.po.model_provider_id.clone(),
+        runtime_config,
         updated_at: agent.po.updated_at,
     })
 }

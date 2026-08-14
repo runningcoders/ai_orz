@@ -111,6 +111,11 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_capabilities = use_signal(String::new);
     let mut edit_soul = use_signal(String::new);
     let mut edit_model_provider_id = use_signal(String::new);
+    // 运行时配置编辑字段（number input 用 String 承载，提交时 parse）
+    let mut edit_max_thinking_rounds = use_signal(String::new);
+    let mut edit_intent_analyze_max_rounds = use_signal(String::new);
+    let mut edit_summary_max_rounds = use_signal(String::new);
+    let mut edit_think_timeout_secs = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆 4=关系图
@@ -367,6 +372,20 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         edit_capabilities.set(a.capabilities.clone().unwrap_or_default().join(", "));
                                         edit_soul.set(a.soul.clone().unwrap_or_default());
                                         edit_model_provider_id.set(a.model_provider_id.clone());
+                                        // 加载运行时配置现有值（缺失时回退 0）
+                                        let rc = a.runtime_config.as_ref();
+                                        edit_max_thinking_rounds.set(
+                                            rc.map(|r| r.max_thinking_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                        );
+                                        edit_intent_analyze_max_rounds.set(
+                                            rc.map(|r| r.intent_analyze_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                        );
+                                        edit_summary_max_rounds.set(
+                                            rc.map(|r| r.summary_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                        );
+                                        edit_think_timeout_secs.set(
+                                            rc.map(|r| r.think_timeout_secs.to_string()).unwrap_or_else(|| "0".to_string()),
+                                        );
                                         show_edit_modal.set(true);
                                     }
                                 },
@@ -512,6 +531,55 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     div {
                                                         span { class: "block text-sm text-base-content/70 mb-1", "超时时间" }
                                                         span { class: "text-sm", "{remote_cfg.timeout_secs} 秒" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 运行时参数（思考轮次 / 超时，只读展示）
+                                if let Some(rc) = &a.runtime_config {
+                                    div { class: "mb-6",
+                                        h3 { class: "text-lg font-semibold mb-3", "运行时参数" }
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "最大思考轮次" }
+                                                span { class: "text-sm",
+                                                    if rc.max_thinking_rounds == 0 {
+                                                        span { class: "text-base-content/60", "0（系统默认）" }
+                                                    } else {
+                                                        "{rc.max_thinking_rounds}"
+                                                    }
+                                                }
+                                            }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "意图识别轮次" }
+                                                span { class: "text-sm",
+                                                    if rc.intent_analyze_max_rounds == 0 {
+                                                        span { class: "text-base-content/60", "0（系统默认）" }
+                                                    } else {
+                                                        "{rc.intent_analyze_max_rounds}"
+                                                    }
+                                                }
+                                            }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "总结轮次" }
+                                                span { class: "text-sm",
+                                                    if rc.summary_max_rounds == 0 {
+                                                        span { class: "text-base-content/60", "0（系统默认）" }
+                                                    } else {
+                                                        "{rc.summary_max_rounds}"
+                                                    }
+                                                }
+                                            }
+                                            div {
+                                                span { class: "block text-sm text-base-content/70 mb-1", "思考超时" }
+                                                span { class: "text-sm",
+                                                    if rc.think_timeout_secs == 0 {
+                                                        span { class: "text-base-content/60", "0（不限制）" }
+                                                    } else {
+                                                        "{rc.think_timeout_secs} 秒"
                                                     }
                                                 }
                                             }
@@ -1066,6 +1134,23 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 .collect();
                                             let soul = if edit_soul().trim().is_empty() { None } else { Some(edit_soul()) };
                                             let mp_id = if edit_model_provider_id().is_empty() { None } else { Some(edit_model_provider_id()) };
+                                            // 运行时配置：解析输入框，空字符串/非法值视为 0
+                                            let max_thinking_rounds = edit_max_thinking_rounds()
+                                                .trim()
+                                                .parse::<usize>()
+                                                .unwrap_or(0);
+                                            let intent_analyze_max_rounds = edit_intent_analyze_max_rounds()
+                                                .trim()
+                                                .parse::<usize>()
+                                                .unwrap_or(0);
+                                            let summary_max_rounds = edit_summary_max_rounds()
+                                                .trim()
+                                                .parse::<usize>()
+                                                .unwrap_or(0);
+                                            let think_timeout_secs = edit_think_timeout_secs()
+                                                .trim()
+                                                .parse::<u64>()
+                                                .unwrap_or(0);
                                             let req = UpdateAgentRequest {
                                                 id: id_for_submit.clone(),
                                                 name: Some(name),
@@ -1074,6 +1159,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 capabilities: Some(capabilities),
                                                 soul,
                                                 model_provider_id: mp_id,
+                                                max_thinking_rounds: Some(max_thinking_rounds),
+                                                intent_analyze_max_rounds: Some(intent_analyze_max_rounds),
+                                                summary_max_rounds: Some(summary_max_rounds),
+                                                think_timeout_secs: Some(think_timeout_secs),
                                             };
                                             saving_meta.set(true);
                                             let id_clone = id_for_submit.clone();
@@ -1133,6 +1222,48 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             option { value: "{p.id}", "{p.name}" }
                                         }
                                     }
+                                }
+                                // 运行时配置分区
+                                div { class: "pt-2 border-t border-base-300" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "最大思考轮次" }
+                                        span { class: "label-text-alt text-base-content/60", "0 = 系统默认" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_max_thinking_rounds}",
+                                        oninput: move |e| edit_max_thinking_rounds.set(e.value()),
+                                        placeholder: "0 = 使用系统配置" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "意图识别轮次" }
+                                        span { class: "label-text-alt text-base-content/60", "0 = 系统默认" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_intent_analyze_max_rounds}",
+                                        oninput: move |e| edit_intent_analyze_max_rounds.set(e.value()),
+                                        placeholder: "0 = 使用系统配置" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "总结轮次" }
+                                        span { class: "label-text-alt text-base-content/60", "0 = 系统默认" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_summary_max_rounds}",
+                                        oninput: move |e| edit_summary_max_rounds.set(e.value()),
+                                        placeholder: "0 = 使用系统配置" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "思考超时秒数" }
+                                        span { class: "label-text-alt text-base-content/60", "0 = 不限制" }
+                                    }
+                                    input { class: "input input-bordered w-full", r#type: "number",
+                                        value: "{edit_think_timeout_secs}",
+                                        oninput: move |e| edit_think_timeout_secs.set(e.value()),
+                                        placeholder: "0 = 不限制" }
                                 }
                             }
                         }
