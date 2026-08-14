@@ -249,19 +249,20 @@ impl Default for PolicyBuilder {
 /// 约定：内置策略通过 `::new` 构造，宏自动调用 `$Policy::new(args...)`。
 /// 特殊构造场景请直接使用 `PolicyBuilder::with_policy`。
 ///
-/// # 示例
+/// # 三种模式
+///
+/// ## 1. 纯 OR/AND（所有策略同一关系）
 ///
 /// ```rust,ignore
-/// // Or 关系：任一策略命中即触发
+/// // 任一命中即触发
 /// let policy = policy_set! {
 ///     OR {
 ///         UserCancelPolicy(cancel_flag),
 ///         MaxRoundsPolicy(max_rounds),
-///         TimeoutPolicy(timeout_secs),
 ///     }
 /// };
 ///
-/// // And 关系：所有策略都命中才触发
+/// // 全部命中才触发
 /// let policy = policy_set! {
 ///     AND {
 ///         TokenBudgetPolicy(10000),
@@ -269,7 +270,25 @@ impl Default for PolicyBuilder {
 ///     }
 /// };
 /// ```
+///
+/// ## 2. 混合模式（平铺策略 + OR/AND 子组，外层默认 AND）
+///
+/// 平铺的策略参与外层 AND 组合，`OR {}` / `AND {}` 子组在内部按指定关系组合。
+/// 适用于"大部分策略是 AND，但其中几个是 OR"的场景。
+///
+/// ```rust,ignore
+/// // 等价于：MaxRounds AND Timeout AND (UserCancel OR TokenBudget)
+/// let policy = policy_set! {
+///     MaxRoundsPolicy(max_rounds),
+///     TimeoutPolicy(timeout_secs),
+///     OR {
+///         UserCancelPolicy(cancel_flag),
+///         TokenBudgetPolicy(10000),
+///     }
+/// };
+/// ```
 macro_rules! policy_set {
+    // 纯 OR {} 模式
     (OR { $($policy:ident ( $($arg:expr),* $(,)? ) ),* $(,)? }) => {{
         let mut builder = $crate::pkg::policy::PolicyBuilder::new();
         $(
@@ -277,6 +296,8 @@ macro_rules! policy_set {
         )*
         builder.or()
     }};
+
+    // 纯 AND {} 模式
     (AND { $($policy:ident ( $($arg:expr),* $(,)? ) ),* $(,)? }) => {{
         let mut builder = $crate::pkg::policy::PolicyBuilder::new();
         $(
@@ -284,8 +305,47 @@ macro_rules! policy_set {
         )*
         builder.build()
     }};
+
+    // 混合模式入口：平铺策略 + OR/AND 子组，外层 AND 组合
+    ( $($rest:tt)+ ) => {{
+        let mut builder = $crate::pkg::policy::PolicyBuilder::new();
+        $crate::pkg::policy::policy_set_mixed!(@accum builder; $($rest)+)
+    }};
 }
+
+/// 混合模式递归辅助宏（TT munching）
+///
+/// 逐条处理条目，每条匹配后递归处理剩余条目。
+/// 通过 `@accum $builder:ident` 传递累积的 builder 状态。
+macro_rules! policy_set_mixed {
+    // 终止：无剩余条目
+    (@accum $builder:ident;) => {
+        $builder.build()
+    };
+
+    // OR {} 子组 + 可选后续
+    (@accum $builder:ident; OR { $($p:ident ( $($a:expr),* $(,)? ) ),* $(,)? } $(, $($rest:tt)*)?) => {{
+        let sub = $crate::pkg::policy::policy_set!(OR { $($p ( $($a),* ) ),* });
+        $builder = $builder.with(sub);
+        $crate::pkg::policy::policy_set_mixed!(@accum $builder; $($($rest)*)?)
+    }};
+
+    // AND {} 子组 + 可选后续
+    (@accum $builder:ident; AND { $($p:ident ( $($a:expr),* $(,)? ) ),* $(,)? } $(, $($rest:tt)*)?) => {{
+        let sub = $crate::pkg::policy::policy_set!(AND { $($p ( $($a),* ) ),* });
+        $builder = $builder.with(sub);
+        $crate::pkg::policy::policy_set_mixed!(@accum $builder; $($($rest)*)?)
+    }};
+
+    // 平铺策略 + 可选后续
+    (@accum $builder:ident; $p:ident ( $($a:expr),* $(,)? ) $(, $($rest:tt)*)?) => {{
+        $builder = $builder.with_policy($p::new($($a),*));
+        $crate::pkg::policy::policy_set_mixed!(@accum $builder; $($($rest)*)?)
+    }};
+}
+
 pub(crate) use policy_set;
+pub(crate) use policy_set_mixed;
 
 #[cfg(test)]
 mod tests;

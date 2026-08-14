@@ -77,6 +77,112 @@ fn test_policy_set_macro_auto_generated_fields() {
     assert!(policy.condition_desc().contains("超时"));
 }
 
+// ==================== 混合模式测试 ====================
+
+#[test]
+fn test_policy_set_macro_mixed_flat_plus_or() {
+    // MaxRounds AND Timeout AND (UserCancel OR TokenBudget)
+    let flag = Arc::new(AtomicBool::new(false));
+    let policy = policy_set! {
+        MaxRoundsPolicy(365),
+        TimeoutPolicy(3600),
+        OR {
+            UserCancelPolicy(flag.clone()),
+            TokenBudgetPolicy(10000),
+        }
+    };
+
+    // 只命中 max_rounds → AND 不触发（timeout 未命中，OR 子组未命中）
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 100u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // max_rounds + timeout 都命中，但 OR 子组未命中 → AND 不触发
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 3600u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // max_rounds + timeout + token_budget（OR 子组命中）→ 全部命中，AND 触发
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 3600u64)
+        .with("total_tokens", 10000u64);
+    assert!(policy.is_triggered(&metrics));
+
+    // max_rounds + timeout + user_cancel（OR 子组另一分支命中）→ AND 触发
+    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    let metrics = Metrics::new()
+        .with("round_number", 365u64)
+        .with("max_rounds", 365u64)
+        .with("elapsed_secs", 3600u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_set_macro_mixed_multiple_subgroups() {
+    // MaxRounds AND (Timeout OR ContextOverflow) AND TokenBudget
+    // 两个子组 + 两个平铺策略
+    let policy = policy_set! {
+        MaxRoundsPolicy(50),
+        TokenBudgetPolicy(10000),
+        OR {
+            TimeoutPolicy(3600),
+            ContextOverflowPolicy(8000),
+        }
+    };
+
+    // 只命中 max_rounds → 不触发
+    let metrics = Metrics::new()
+        .with("round_number", 50u64)
+        .with("max_rounds", 50u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // max_rounds + token_budget + context_overflow（OR 子组命中）→ 全部命中
+    let metrics = Metrics::new()
+        .with("round_number", 50u64)
+        .with("max_rounds", 50u64)
+        .with("total_tokens", 10000u64)
+        .with("context_tokens", 8000u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_policy_set_macro_mixed_and_subgroup() {
+    // 平铺策略 + AND 子组（显式 AND {} 虽然语义等同平铺，但用于嵌套场景）
+    // Timeout OR (MaxRounds AND TokenBudget)
+    let policy = policy_set! {
+        TimeoutPolicy(3600),
+        AND {
+            MaxRoundsPolicy(50),
+            TokenBudgetPolicy(10000),
+        }
+    };
+
+    // 只命中 timeout → AND 子组未命中，整体 AND 不触发
+    let metrics = Metrics::new().with("elapsed_secs", 3600u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // timeout + max_rounds（AND 子组缺 token_budget）→ 不触发
+    let metrics = Metrics::new()
+        .with("elapsed_secs", 3600u64)
+        .with("round_number", 50u64)
+        .with("max_rounds", 50u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // 全部命中 → 触发
+    let metrics = Metrics::new()
+        .with("elapsed_secs", 3600u64)
+        .with("round_number", 50u64)
+        .with("max_rounds", 50u64)
+        .with("total_tokens", 10000u64);
+    assert!(policy.is_triggered(&metrics));
+}
+
 #[test]
 fn test_max_rounds_policy_triggered() {
     let policy = MaxRoundsPolicy::new(5);
