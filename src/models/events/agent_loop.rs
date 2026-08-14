@@ -9,7 +9,7 @@ pub struct AgentLoopEvent {
     pub event_id: String,
     pub agent_id: String,
     pub trace_id: String,
-    /// "awaken" 或 "settle"
+    /// "awaken" / "settle" / "summary" / "intent-analyze"
     pub scene: String,
     /// "started" 或 "finished"
     pub phase: String,

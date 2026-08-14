@@ -97,6 +97,13 @@ impl ThinkingScene {
 /// 思考轮次默认上限（跨压缩轮次累计）
 const DEFAULT_MAX_THINKING_ROUNDS: usize = 90;
 
+/// IntentAnalyze 场景思考轮次上限
+///
+/// 5 轮 = 3 步工具调用（search_memory + recommend_seed_nodes +
+/// traverse_knowledge_graph）+ 2 轮纯思考（意图识别 + 最终 JSON 输出）。
+/// 超时由 THINK_TIMEOUT_SECS(300s) 兜底。
+const INTENT_ANALYZE_MAX_ROUNDS: usize = 5;
+
 /// 唤醒/沉睡的统一选项
 ///
 /// 用于在不同场景传递业务上下文和场景标识，避免频繁修改方法签名。
@@ -1146,10 +1153,12 @@ impl RuntimeDomainImpl {
         trace_id: &str,
     ) -> Result<IntentAnalysis> {
         // 1. 强制构造出 IntentAnalyze 场景专用 options（覆盖 scene），
-        //    思考轮次严格限制 1-2 轮（只做理解，不需要多轮执行）
+        //    思考轮次限制 5 轮：足够完成 search_memory + recommend_seed_nodes +
+        //    traverse_knowledge_graph 多步检索 + 2 轮纯思考后输出 Final JSON。
+        //    超时由 THINK_TIMEOUT_SECS(300s) 兜底，不必担心无限等待。
         let mut analyze_opts = options.clone();
         analyze_opts.scene = ThinkingScene::IntentAnalyze;
-        analyze_opts.max_thinking_rounds = Some(2);
+        analyze_opts.max_thinking_rounds = Some(INTENT_ANALYZE_MAX_ROUNDS);
         let scene = analyze_opts.scene;
 
         // 2. 查最近 20 条短期记忆做上下文（与 awaken 相同窗口，保证 Agent 有历史可读做消歧）
@@ -1206,7 +1215,7 @@ impl RuntimeDomainImpl {
             .map(ToolDescriptor::from)
             .collect();
 
-        // 8. 运行 think loop（严格最多 2 轮，快速理解后退出）
+        // 8. 运行 think loop（最多 5 轮，保证多步检索后有足够轮次输出 Final JSON）
         let think_result = self
             .run_think_loop(
                 ctx.clone(),
@@ -1216,7 +1225,7 @@ impl RuntimeDomainImpl {
                 agent,
                 "intent-analyze",
                 trace_id,
-                2,
+                INTENT_ANALYZE_MAX_ROUNDS,
                 0,
             )
             .await?;
