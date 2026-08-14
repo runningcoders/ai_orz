@@ -1,0 +1,707 @@
+# 前端 Agent 运行时面板 + 取消按钮 + 全局运行中列表 实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 前端对接阶段3已交付的 3 个后端接口（runtime-status / cancel-thinking / runtime-list），实现 Agent 运行时实时面板、取消思考按钮、Workspace 运行中 Agent 卡片，完成思考运行时可视化闭环。
+
+**Architecture:** 纯前端 Dioxus 0.7 实现。API Client 复用 `common::api::runtime::*` 结构体（前后端单一事实源）。RuntimePanel 组件用 `use_future` + `gloo_timers::future::TimeoutFuture` 实现 3 秒轮询（参考 `system/tasks.rs` 模式），Idle 时降频 30 秒。取消按钮参考 `task_progress.rs` 的 `on_cancel` 范式 + `ConfirmDialog` 二次确认。详情页新增第 7 个 Tab「⚡ 运行时」。Workspace 新增运行中 Agent 卡片，复用现有 `agent_runtime_badge_class` 样式。
+
+**Tech Stack:** Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5 + gloo-timers + common::api::runtime DTO
+
+**前置依赖:** 阶段3后端已完成（3 个接口 + DTO 已在 `common/src/api/runtime.rs`，路由已注册在 `src/router.rs`）
+
+---
+
+## 文件结构
+
+| 文件 | 职责 | 操作 |
+|------|------|------|
+| `frontend/src/api/hr.rs` | 新增 3 个 runtime API client 函数 | Modify |
+| `frontend/src/components/runtime_panel.rs` | RuntimePanel 组件（轮询 + 展示 + 取消按钮） | Create |
+| `frontend/src/components/mod.rs` | 注册 runtime_panel 模块 | Modify |
+| `frontend/src/pages/hr/agent_detail.rs` | 新增第 7 个 Tab「⚡ 运行时」 | Modify |
+| `frontend/src/pages/workspace.rs` | 顶部统计条下方新增运行中 Agent 卡片 | Modify |
+
+**复用的现有资产：**
+- `common::api::{RuntimeStatusRequest, RuntimeStatusResponse, ThinkRuntimeInfo, CancelThinkingRequest, CancelThinkingResponse, RuntimeListRequest, RuntimeListResponse}` — 前后端共享 DTO
+- `frontend/src/api/mod.rs::build_query_string` — 构建 runtime-list 的 query 参数
+- `frontend/src/components/confirm_dialog.rs::ConfirmDialog` — 取消二次确认
+- `frontend/src/components/state.rs::{EmptyState, Loading}` — 空状态/加载态
+- `frontend/src/pages/system/tasks.rs` 的 `use_future` + `TimeoutFuture` 轮询模式
+- `frontend/src/pages/workspace.rs` 的 `agent_runtime_label` / `agent_runtime_badge_class` 样式
+
+---
+
+## Task 1: API Client — 3 个 runtime 函数
+
+**Files:**
+- Modify: `frontend/src/api/hr.rs`
+
+**目标：** 在 `frontend/src/api/hr.rs` 末尾新增 3 个函数，复用 `common::api::runtime::*` 结构体作为参数和返回类型。
+
+- [ ] **Step 1: 在 `frontend/src/api/hr.rs` 末尾添加 runtime API 函数**
+
+在文件末尾（最后一个函数之后）添加：
+
+```rust
+// ===== Agent 运行时 =====
+
+/// 查询 Agent 运行时状态 + 思考运行时快照
+/// GET /api/v1/hr/agents/{id}/runtime-status
+pub async fn get_runtime_status(
+    req: RuntimeStatusRequest,
+) -> Result<RuntimeStatusResponse, ApiError> {
+    api_get(&format!("/api/v1/hr/agents/{}/runtime-status", req.id)).await
+}
+
+/// 取消 Agent 正在进行的思考
+/// POST /api/v1/hr/agents/{id}/cancel-thinking
+pub async fn cancel_thinking(
+    req: CancelThinkingRequest,
+) -> Result<CancelThinkingResponse, ApiError> {
+    api_post_empty(&format!(
+        "/api/v1/hr/agents/{}/cancel-thinking",
+        req.id
+    ))
+    .await
+}
+
+/// 查询运行中 Agent 列表（支持按 state/task_id/project_id 过滤）
+/// GET /api/v1/hr/agents/runtime-list
+pub async fn list_runtime_agents(
+    req: &RuntimeListRequest,
+) -> Result<RuntimeListResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("state", req.state.clone()),
+        ("task_id", req.task_id.clone()),
+        ("project_id", req.project_id.clone()),
+    ]);
+    api_get(&format!("/api/v1/hr/agents/runtime-list{}", qs)).await
+}
+```
+
+- [ ] **Step 2: 更新 import**
+
+在 `frontend/src/api/hr.rs` 顶部的 `use common::api::{...}` 块中追加 runtime 类型。找到现有的 `use common::api::{` 行，在闭合 `}` 前添加：
+
+```rust
+    CancelThinkingRequest, CancelThinkingResponse, RuntimeListRequest,
+    RuntimeListResponse, RuntimeStatusRequest, RuntimeStatusResponse,
+```
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cd frontend && cargo check 2>&1`
+Expected: 编译通过，无错误（可能有 unused warning，后续 Task 使用后消除）
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/src/api/hr.rs
+git commit -m "feat(frontend): add runtime API client functions"
+```
+
+---
+
+## Task 2: RuntimePanel 组件
+
+**Files:**
+- Create: `frontend/src/components/runtime_panel.rs`
+- Modify: `frontend/src/components/mod.rs`
+
+**目标：** 创建 `RuntimePanel` 组件，接收 `agent_id`，自动轮询 `get_runtime_status`，展示运行时状态 + 思考快照 + 取消按钮。Busy 时 3 秒轮询，Idle 时 30 秒降频。
+
+- [ ] **Step 1: 在 `frontend/src/components/mod.rs` 注册模块**
+
+在 `pub mod relation_graph;` 之后添加：
+
+```rust
+pub mod runtime_panel;
+```
+
+- [ ] **Step 2: 创建 `frontend/src/components/runtime_panel.rs`**
+
+```rust
+//! Agent 运行时面板组件
+//!
+//! 接收 agent_id，自动轮询 runtime-status 接口，展示：
+//! - 运行时状态（idle/busy/resting）+ 上下文（message/task/project）
+//! - 思考运行时快照（轮次进度、token 统计、工具调用、trace_id）
+//! - 取消思考按钮（Busy 时显示，ConfirmDialog 二次确认）
+//!
+//! 轮询策略：Busy 时 3 秒，Idle/Resting 时 30 秒降频。
+
+use crate::api::hr::{cancel_thinking, get_runtime_status};
+use crate::components::confirm_dialog::ConfirmDialog;
+use crate::store::toast::use_toast;
+use common::api::{CancelThinkingRequest, RuntimeStatusResponse, RuntimeStatusRequest};
+use dioxus::prelude::*;
+
+const POLL_INTERVAL_BUSY_MS: u32 = 3000;
+const POLL_INTERVAL_IDLE_MS: u32 = 30000;
+
+/// RuntimePanel Props
+#[derive(Props, Clone, PartialEq)]
+pub struct RuntimePanelProps {
+    /// Agent ID
+    pub agent_id: String,
+}
+
+/// Agent 运行时面板组件
+#[component]
+pub fn RuntimePanel(props: RuntimePanelProps) -> Element {
+    let toast = use_toast();
+    let mut status = use_signal(|| Option::<RuntimeStatusResponse>::None);
+    let mut loading = use_signal(|| true);
+    let mut show_cancel_confirm = use_signal(|| false);
+    let mut cancelling = use_signal(|| false);
+    let agent_id = props.agent_id.clone();
+
+    // 轮询：use_future 自动管理生命周期，组件卸载自动取消
+    use_future(move || async move {
+        let aid = agent_id.clone();
+        loop {
+            match get_runtime_status(RuntimeStatusRequest { id: aid.clone() }).await {
+                Ok(resp) => {
+                    status.set(Some(resp));
+                    loading.set(false);
+                }
+                Err(e) => {
+                    toast.error(format!("加载运行时状态失败: {}", e));
+                    loading.set(false);
+                }
+            }
+            // 根据状态选择轮询间隔：Busy 时高频，其他降频
+            let is_busy = status()
+                .as_ref()
+                .map(|s| s.state == "busy")
+                .unwrap_or(false);
+            let interval = if is_busy {
+                POLL_INTERVAL_BUSY_MS
+            } else {
+                POLL_INTERVAL_IDLE_MS
+            };
+            gloo_timers::future::TimeoutFuture::new(interval).await;
+        }
+    });
+
+    let current = status();
+    let agent_id_for_cancel = props.agent_id.clone();
+
+    // 取消思考
+    let on_cancel_confirm = move |_| {
+        show_cancel_confirm.set(false);
+        let aid = agent_id_for_cancel.clone();
+        cancelling.set(true);
+        spawn(async move {
+            match cancel_thinking(CancelThinkingRequest { id: aid.clone() }).await {
+                Ok(resp) => {
+                    if resp.success {
+                        toast.success(&resp.message);
+                    } else {
+                        toast.info(&resp.message);
+                    }
+                }
+                Err(e) => {
+                    toast.error(format!("取消失败: {}", e));
+                }
+            }
+            cancelling.set(false);
+        });
+    };
+
+    rsx! {
+        div { class: "space-y-4",
+            // 加载态
+            if *loading.read() && current.is_none() {
+                div { class: "text-center py-8 text-base-content/50",
+                    "加载运行时状态..."
+                }
+            }
+
+            // 运行时面板
+            if let Some(s) = &current {
+                // 状态行 + 取消按钮
+                div { class: "flex items-center justify-between",
+                    div { class: "flex items-center gap-2",
+                        span { class: "text-lg font-semibold",
+                            "🧠 Agent 运行时"
+                        }
+                        span { class: "badge {runtime_state_badge(&s.state)}",
+                            "{runtime_state_label(&s.state)}"
+                        }
+                    }
+                    if s.state == "busy" {
+                        button {
+                            class: "btn btn-sm btn-warning",
+                            disabled: *cancelling.read(),
+                            onclick: move |_| show_cancel_confirm.set(true),
+                            if *cancelling.read() {
+                                "取消中..."
+                            } else {
+                                "⚡ 取消思考"
+                            }
+                        }
+                    }
+                }
+
+                // 上下文信息
+                div { class: "grid grid-cols-1 md:grid-cols-3 gap-2 text-sm",
+                    ContextItem { label: "消息", value: s.current_message_id.clone() }
+                    ContextItem { label: "任务", value: s.task_id.clone() }
+                    ContextItem { label: "项目", value: s.project_id.clone() }
+                }
+
+                // 思考运行时快照（仅 Busy 时有值）
+                if let Some(tr) = &s.think_runtime {
+                    ThinkRuntimeCard { think: tr.clone() }
+                } else if s.state == "busy" {
+                    div { class: "text-sm text-base-content/50",
+                        "思考运行时信息暂无"
+                    }
+                } else {
+                    div { class: "text-sm text-base-content/50",
+                        "Agent 当前空闲，无思考运行时"
+                    }
+                }
+            }
+
+            // 取消确认弹窗
+            ConfirmDialog {
+                show: *show_cancel_confirm.read(),
+                title: "确认取消思考".to_string(),
+                message: "取消后 Agent 将在当前轮次完成后退出思考，已消耗的 token 不会回退。确定取消？".to_string(),
+                confirm_text: Some("确认取消".to_string()),
+                confirm_class: Some("btn-warning".to_string()),
+                on_confirm: on_cancel_confirm,
+                on_cancel: move |_| show_cancel_confirm.set(false),
+            }
+        }
+    }
+}
+
+/// 思考运行时快照卡片
+#[component]
+fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
+    let pct = if think.max_rounds > 0 {
+        (think.round as f64 / think.max_rounds as f64 * 100.0) as usize
+    } else {
+        0
+    };
+    let scene_label = match think.scene.as_str() {
+        "awaken" => "唤醒",
+        "settle" => "沉淀",
+        "summary" => "总结",
+        "intent-analyze" => "意图分析",
+        _ => &think.scene,
+    };
+    let status_badge = match think.status.as_str() {
+        "thinking" => "badge badge-warning",
+        "cancelled" => "badge badge-error",
+        "finished" => "badge badge-success",
+        _ => "badge badge-ghost",
+    };
+
+    rsx! {
+        div { class: "card bg-base-200 shadow-sm",
+            div { class: "card-body p-4 space-y-3",
+                // 场景 + 状态
+                div { class: "flex items-center justify-between",
+                    span { class: "text-sm font-medium",
+                        "场景：{scene_label}"
+                    }
+                    span { class: "badge badge-sm {status_badge}",
+                        "{think.status}"
+                    }
+                }
+
+                // 轮次进度条
+                div { class: "space-y-1",
+                    div { class: "flex justify-between text-xs",
+                        span { "轮次 {think.round} / {think.max_rounds}" }
+                        span { "{pct}%" }
+                    }
+                    progress {
+                        class: "progress progress-warning w-full",
+                        value: "{think.round}",
+                        max: "{think.max_rounds}",
+                    }
+                }
+
+                // 指标网格
+                div { class: "grid grid-cols-2 md:grid-cols-4 gap-2 text-xs",
+                    MetricItem { label: "输入 Token", value: format_token(think.tokens_input) }
+                    MetricItem { label: "输出 Token", value: format_token(think.tokens_output) }
+                    MetricItem { label: "总 Token", value: format_token(think.total_tokens) }
+                    MetricItem { label: "工具调用", value: think.tool_call_count.to_string() }
+                }
+
+                // trace_id（日志检索用）
+                div { class: "text-xs text-base-content/50 font-mono truncate",
+                    "trace: {think.trace_id}"
+                }
+            }
+        }
+    }
+}
+
+/// 上下文信息项
+#[component]
+fn ContextItem(label: &'static str, value: Option<String>) -> Element {
+    rsx! {
+        div { class: "bg-base-200 rounded px-2 py-1",
+            span { class: "text-xs text-base-content/50 block", "{label}" }
+            span { class: "text-sm font-mono truncate block",
+                {value.unwrap_or_else(|| "—".to_string())}
+            }
+        }
+    }
+}
+
+/// 指标项
+#[component]
+fn MetricItem(label: &'static str, value: String) -> Element {
+    rsx! {
+        div { class: "bg-base-200 rounded px-2 py-1 text-center",
+            div { class: "text-base-content/50", "{label}" }
+            div { class: "font-mono font-semibold", "{value}" }
+        }
+    }
+}
+
+/// 运行时状态标签
+fn runtime_state_label(state: &str) -> &'static str {
+    match state {
+        "idle" => "空闲",
+        "busy" => "思考中",
+        "resting" => "休息中",
+        _ => "未知",
+    }
+}
+
+/// 运行时状态 badge class
+fn runtime_state_badge(state: &str) -> &'static str {
+    match state {
+        "idle" => "badge badge-success",
+        "busy" => "badge badge-error",
+        "resting" => "badge badge-warning",
+        _ => "badge badge-ghost",
+    }
+}
+
+/// 格式化 token 数值（千分位）
+fn format_token(n: u64) -> String {
+    if n >= 1000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
+}
+```
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cd frontend && cargo check 2>&1`
+Expected: 编译通过。如果 `api_post_empty` 签名不匹配，检查 `frontend/src/api/mod.rs` 中 `api_post_empty` 的定义，调整调用方式（可能需要传 body `&()`）。
+
+- [ ] **Step 4: clippy 验证**
+
+Run: `cd frontend && cargo clippy --target wasm32-unknown-unknown -- -D warnings 2>&1`
+Expected: 零警告
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/components/runtime_panel.rs frontend/src/components/mod.rs
+git commit -m "feat(frontend): add RuntimePanel component with polling and cancel"
+```
+
+---
+
+## Task 3: 详情页新增「⚡ 运行时」Tab
+
+**Files:**
+- Modify: `frontend/src/pages/hr/agent_detail.rs`
+
+**目标：** 在 Agent 详情页新增第 7 个 Tab（index=6），渲染 `RuntimePanel` 组件。
+
+- [ ] **Step 1: 添加 tab6_class**
+
+在 `frontend/src/pages/hr/agent_detail.rs` 第 353 行 `let tab5_class = ...` 之后添加：
+
+```rust
+            let tab6_class = if active_tab() == 6 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+```
+
+- [ ] **Step 2: 添加 Tab 按钮**
+
+在第 424-428 行的「🧠 知识图谱」Tab 按钮之后、`}` 闭合之前添加：
+
+```rust
+                            button {
+                                class: "{tab6_class}",
+                                onclick: move |_| active_tab.set(6),
+                                "⚡ 运行时"
+                            }
+```
+
+- [ ] **Step 3: 添加 Tab 内容渲染**
+
+在第 1098-1100 行的 `5 => rsx! { ... }` 分支之后、`_ => rsx! {}` 之前添加 `6 => rsx!` 分支。需要从 `agent_data` 信号中获取 agent_id。查看现有代码，agent_id 可从 `id` 信号获取（详情页路由参数）。
+
+找到 `_ => rsx! {},` 行（约 1101 行），在其之前插入：
+
+```rust
+                            6 => rsx! {
+                                // === 运行时：实时状态 + 思考快照 + 取消按钮 ===
+                                {agent_data.read().as_ref().map(|_a| {
+                                    rsx! {
+                                        crate::components::runtime_panel::RuntimePanel {
+                                            agent_id: id.clone(),
+                                        }
+                                    }
+                                })}
+                            },
+```
+
+注意：`id` 是路由参数 `Signal<String>`，`id.clone()` 返回 String。如果 `id` 不是直接可用的 String 信号，需要从 `agent_data` 中取 `a.id.clone()`。查看现有代码中 `id` 的使用方式（如 `get_agent(build_agent_stats_request(aid.clone()))` 中 `aid` 来自 `id_for_load`），确认正确的 agent_id 来源。
+
+- [ ] **Step 4: 导入 RuntimePanel 组件**
+
+在 `agent_detail.rs` 顶部的 import 区域，确认 `crate::components::runtime_panel::RuntimePanel` 可通过完整路径访问（Dioxus 支持内联完整路径，无需额外 use）。如果编译报 unresolved，则在文件顶部添加：
+
+```rust
+use crate::components::runtime_panel::RuntimePanel;
+```
+
+并将 Step 3 中的 `crate::components::runtime_panel::RuntimePanel` 改为 `RuntimePanel`。
+
+- [ ] **Step 5: 编译验证**
+
+Run: `cd frontend && cargo check 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 6: clippy 验证**
+
+Run: `cd frontend && cargo clippy --target wasm32-unknown-unknown -- -D warnings 2>&1`
+Expected: 零警告
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/src/pages/hr/agent_detail.rs
+git commit -m "feat(frontend): add runtime tab to agent detail page"
+```
+
+---
+
+## Task 4: Workspace 运行中 Agent 卡片
+
+**Files:**
+- Modify: `frontend/src/pages/workspace.rs`
+
+**目标：** 在 Workspace 工作台顶部统计条下方新增「运行中 Agent」卡片，调用 `list_runtime_agents` 接口，展示运行中 Agent 列表（含场景/轮次/token/上下文），支持按状态过滤。
+
+- [ ] **Step 1: 添加 import 和轮询信号**
+
+在 `frontend/src/pages/workspace.rs` 顶部 import 区域添加：
+
+```rust
+use crate::api::hr::list_runtime_agents;
+use common::api::{RuntimeListRequest, RuntimeListResponse};
+```
+
+在 `Workspace` 组件的信号定义区域（与其他 `use_signal` 一起）添加：
+
+```rust
+    let mut runtime_agents = use_signal(|| RuntimeListResponse::default());
+    let mut runtime_filter = use_signal(|| None::<String>);
+```
+
+- [ ] **Step 2: 添加运行中 Agent 轮询**
+
+在现有 `use_future` 或 `use_effect` 附近添加新的 `use_future`（参考 tasks.rs 模式）。找到合适位置（如现有数据加载 `use_future` 之后）：
+
+```rust
+    // 运行中 Agent 轮询：5 秒间隔，支持状态过滤
+    use_future(move || async move {
+        loop {
+            let req = RuntimeListRequest {
+                state: runtime_filter(),
+                task_id: None,
+                project_id: None,
+            };
+            if let Ok(resp) = list_runtime_agents(&req).await {
+                runtime_agents.set(resp);
+            }
+            gloo_timers::future::TimeoutFuture::new(5000).await;
+        }
+    });
+```
+
+- [ ] **Step 3: 添加运行中 Agent 卡片 UI**
+
+在顶部统计条（`div { class: "grid grid-cols-2 md:grid-cols-4 gap-3", ... }`）之后、消息流量时序图之前插入卡片。找到 `// === 消息流量时序图` 注释行，在其之前插入：
+
+```rust
+                // === 运行中 Agent 卡片 ===
+                {if runtime_agents.read().total > 0 {
+                    let ra = runtime_agents.read().clone();
+                    rsx! {
+                        div { class: "bg-base-100 rounded-lg shadow-md p-4",
+                            div { class: "flex items-center justify-between mb-3",
+                                h3 { class: "text-sm font-semibold",
+                                    "🤖 运行中 Agent ({ra.total})"
+                                }
+                                // 状态过滤
+                                div { class: "join",
+                                    button {
+                                        class: "btn btn-xs join-item {if runtime_filter().is_none() { "btn-active" } else { "" }}",
+                                        onclick: move |_| runtime_filter.set(None),
+                                        "全部"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {if runtime_filter().as_deref() == Some(\"busy\") { "btn-active" } else { "" }}",
+                                        onclick: move |_| runtime_filter.set(Some("busy".to_string())),
+                                        "思考中"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {if runtime_filter().as_deref() == Some(\"resting\") { "btn-active" } else { "" }}",
+                                        onclick: move |_| runtime_filter.set(Some("resting".to_string())),
+                                        "休息中"
+                                    }
+                                }
+                            }
+                            div { class: "space-y-2",
+                                for item in ra.items.iter() {
+                                    div {
+                                        class: "flex items-center justify-between p-2 bg-base-200 rounded",
+                                        onclick: move |_| {
+                                            current_view.set(WorkspaceView::AgentDetail(item.agent_id.clone()));
+                                        },
+                                        div { class: "flex items-center gap-2 min-w-0",
+                                            span { class: "badge badge-xs {runtime_item_badge(&item.state)}",
+                                                "{runtime_item_label(&item.state)}"
+                                            }
+                                            span { class: "text-sm font-mono truncate",
+                                                "{item.agent_id}"
+                                            }
+                                        }
+                                        div { class: "flex items-center gap-3 text-xs text-base-content/60",
+                                            if let Some(tr) = &item.think_runtime {
+                                                span { "{tr.scene} {tr.round}/{tr.max_rounds}" }
+                                                span { "{format_token_ws(tr.total_tokens)}t" }
+                                            }
+                                            if let Some(tid) = &item.task_id {
+                                                span { "task: {tid}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    rsx! { div {} }
+                }}
+```
+
+- [ ] **Step 4: 添加辅助函数**
+
+在 `workspace.rs` 底部辅助函数区域（`agent_runtime_badge_class` 附近）添加：
+
+```rust
+/// 运行中 Agent 列表项的状态标签
+fn runtime_item_label(state: &str) -> &'static str {
+    match state {
+        "idle" => "空闲",
+        "busy" => "思考",
+        "resting" => "休息",
+        _ => "未知",
+    }
+}
+
+/// 运行中 Agent 列表项的状态 badge class
+fn runtime_item_badge(state: &str) -> &'static str {
+    match state {
+        "idle" => "badge-success",
+        "busy" => "badge-error",
+        "resting" => "badge-warning",
+        _ => "badge-ghost",
+    }
+}
+
+/// 格式化 token（Workspace 列表用，简短）
+fn format_token_ws(n: u64) -> String {
+    if n >= 1000 {
+        format!("{:.0}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
+}
+```
+
+- [ ] **Step 5: 编译验证**
+
+Run: `cd frontend && cargo check 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 6: clippy 验证**
+
+Run: `cd frontend && cargo clippy --target wasm32-unknown-unknown -- -D warnings 2>&1`
+Expected: 零警告
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/src/pages/workspace.rs
+git commit -m "feat(frontend): add running agents card to workspace"
+```
+
+---
+
+## Task 5: 全量编译 + clippy + 最终验证
+
+**Files:** 无（验证任务）
+
+- [ ] **Step 1: 后端编译验证（确认无回归）**
+
+Run: `cargo build 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 2: 前端编译验证**
+
+Run: `cd frontend && cargo build --target wasm32-unknown-unknown 2>&1`
+Expected: 编译通过
+
+- [ ] **Step 3: 前端 clippy 零警告**
+
+Run: `cd frontend && cargo clippy --target wasm32-unknown-unknown -- -D warnings 2>&1`
+Expected: 零警告
+
+- [ ] **Step 4: 后端测试无回归**
+
+Run: `cargo test --lib pkg::agent_runtime_state 2>&1`
+Expected: 14 passed; 0 failed
+
+- [ ] **Step 5: Commit（如有残余改动）**
+
+```bash
+git add -A
+git commit -m "chore: final verification for runtime frontend"
+```
+
+---
+
+## 设计要点回顾
+
+| 决策 | 方案 | 理由 |
+|------|------|------|
+| 实时性 | 纯轮询，无 SSE | 与阶段3决策一致；思考完成有 message SSE 天然通知 |
+| 轮询模式 | `use_future` + `TimeoutFuture` | 参考 system/tasks.rs，自动管理生命周期，组件卸载自动取消 |
+| 轮询频率 | Busy 3秒 / Idle 30秒 | Busy 时需要实时性，Idle 时降频减少无效请求 |
+| 状态共享 | 无全局 store，局部 `use_signal` | 单用户调试场景，多 Agent 并行不多，无需跨页面共享 |
+| 取消确认 | ConfirmDialog 二次确认 | 误操作成本高（丢失思考上下文 + 已消耗 token 不回退） |
+| DTO 复用 | 前后端共用 `common::api::runtime::*` | 单一事实源，符合 AGENTS.md §4.11 规范 |
+| Tab 位置 | 详情页第 7 个 Tab | 与现有「状态图」（RelationGraph）语义分离，符合 Tab 分区偏好 |
+| 全局列表位置 | Workspace 顶部统计条下方 | 复用工作台 runtime badge 样式，全局视图入口 |

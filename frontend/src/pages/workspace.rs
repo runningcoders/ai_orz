@@ -19,7 +19,7 @@
 
 use dioxus::prelude::*;
 
-use crate::api::hr::query_agents;
+use crate::api::hr::{list_runtime_agents, query_agents};
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
 use crate::components::charts::line_chart::LineChart;
@@ -31,7 +31,8 @@ use crate::store::toast::use_toast;
 use crate::utils::{build_optimistic_user_msg, replace_tmp_with_real};
 use common::api::{
     AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
-    ProjectQueryRequest, SendMessageToAgentParams, TaskListItem, TaskQueryRequest,
+    ProjectQueryRequest, RuntimeListRequest, RuntimeListResponse, SendMessageToAgentParams,
+    TaskListItem, TaskQueryRequest,
 };
 use common::enums::AssigneeType;
 use common::models::TimeSeriesPoint;
@@ -72,6 +73,52 @@ fn agent_runtime_badge_class(runtime_state: i32) -> &'static str {
 /// 判断是否为运行中项目（status 1-3：活跃 / 待评审 / 进行中）
 fn is_active_project(status: i32) -> bool {
     matches!(status, 1..=3)
+}
+
+/// 运行中 Agent 列表项的状态标签
+fn runtime_item_label(state: &str) -> &'static str {
+    match state {
+        "idle" => "空闲",
+        "busy" => "思考",
+        "resting" => "休息",
+        _ => "未知",
+    }
+}
+
+/// 运行中 Agent 列表项的状态 badge class
+fn runtime_item_badge(state: &str) -> &'static str {
+    match state {
+        "idle" => "badge-success",
+        "busy" => "badge-error",
+        "resting" => "badge-warning",
+        _ => "badge-ghost",
+    }
+}
+
+/// 格式化 token（Workspace 列表用，简短）
+fn format_token_ws(n: u64) -> String {
+    if n >= 1000 {
+        format!("{:.0}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+/// 运行中 Agent 过滤按钮的 active class
+///
+/// 当前过滤值与按钮值匹配时返回 "btn-active"，否则返回空字符串。
+/// `None` 表示"全部"按钮。
+fn filter_active_class(current: &Option<String>, target: Option<&str>) -> &'static str {
+    let matches = match (current.as_deref(), target) {
+        (Some(c), Some(t)) => c == t,
+        (None, None) => true,
+        _ => false,
+    };
+    if matches {
+        "btn-active"
+    } else {
+        ""
+    }
 }
 
 /// 根据视图计算对话上下文（project_id, task_id, to_agent_id）
@@ -128,7 +175,30 @@ pub fn Workspace() -> Element {
     let msg_flow: Signal<std::collections::HashMap<i64, u64>> =
         use_signal(std::collections::HashMap::new);
 
+    // 运行中 Agent 列表（轮询 runtime-list 接口）
+    let runtime_agents = use_signal(RuntimeListResponse::default);
+    let mut runtime_filter = use_signal(|| None::<String>);
+
     let sidebar = sidebar_signal.read().clone();
+
+    // 运行中 Agent 轮询：5 秒间隔，支持状态过滤
+    use_future(move || {
+        let mut runtime_agents = runtime_agents;
+        let runtime_filter = runtime_filter;
+        async move {
+            loop {
+                let req = RuntimeListRequest {
+                    state: runtime_filter(),
+                    task_id: None,
+                    project_id: None,
+                };
+                if let Ok(resp) = list_runtime_agents(&req).await {
+                    runtime_agents.set(resp);
+                }
+                gloo_timers::future::TimeoutFuture::new(5000).await;
+            }
+        }
+    });
 
     // 视图变化时按需加载图数据
     use_effect(move || {
@@ -717,6 +787,67 @@ pub fn Workspace() -> Element {
                         }
                     })}
                 }
+
+                // === 运行中 Agent 卡片 ===
+                {if runtime_agents.read().total > 0 {
+                    let ra = runtime_agents.read().clone();
+                    rsx! {
+                        div { class: "bg-base-100 rounded-lg shadow-md p-4",
+                            div { class: "flex items-center justify-between mb-3",
+                                h3 { class: "text-sm font-semibold",
+                                    "🤖 运行中 Agent ({ra.total})"
+                                }
+                                // 状态过滤
+                                div { class: "join",
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), None)}",
+                                        onclick: move |_| runtime_filter.set(None),
+                                        "全部"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), Some(\"busy\"))}",
+                                        onclick: move |_| runtime_filter.set(Some("busy".to_string())),
+                                        "思考中"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), Some(\"resting\"))}",
+                                        onclick: move |_| runtime_filter.set(Some("resting".to_string())),
+                                        "休息中"
+                                    }
+                                }
+                            }
+                            div { class: "space-y-2",
+                                for item in ra.items.into_iter() {
+                                    div {
+                                        class: "flex items-center justify-between p-2 bg-base-200 rounded cursor-pointer hover:bg-base-300",
+                                        onclick: move |_| {
+                                            current_view.set(WorkspaceView::AgentDetail(item.agent_id.clone()));
+                                        },
+                                        div { class: "flex items-center gap-2 min-w-0",
+                                            span { class: "badge badge-xs {runtime_item_badge(&item.state)}",
+                                                "{runtime_item_label(&item.state)}"
+                                            }
+                                            span { class: "text-sm font-mono truncate",
+                                                "{item.agent_id}"
+                                            }
+                                        }
+                                        div { class: "flex items-center gap-3 text-xs text-base-content/60",
+                                            if let Some(tr) = &item.think_runtime {
+                                                span { "{tr.scene} {tr.round}/{tr.max_rounds}" }
+                                                span { "{format_token_ws(tr.total_tokens)}t" }
+                                            }
+                                            if let Some(tid) = &item.task_id {
+                                                span { "task:{tid}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    rsx! { div {} }
+                }}
 
                 // === 消息流量时序图（最近 60 分钟本地累积） ===
                 div { class: "bg-base-100 rounded-lg shadow-md p-4",

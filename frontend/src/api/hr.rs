@@ -1,14 +1,15 @@
 //! HR 域 API - Agent 管理、技能管理、工具包/技能包管理
 
 use common::api::{
-    AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CreateAgentRequest,
-    CreateAgentResponse, CreateExternalAgentRequest, CreateExternalAgentResponse,
-    CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse, GetAgentRequest,
-    GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest, GetSkillResponse,
-    InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
+    AgentListItem, AgentQueryRequest, BindToolToAgentRequest, CancelThinkingRequest,
+    CancelThinkingResponse, CreateAgentRequest, CreateAgentResponse, CreateExternalAgentRequest,
+    CreateExternalAgentResponse, CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse,
+    GetAgentRequest, GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
+    GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
     PagedResult, QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams,
-    RecommendSeedNodesResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
+    RecommendSeedNodesResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
+    RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
     UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
     UpdateAgentStatusRequest, UpdateSkillFileContentRequest, UpdateSkillRequest,
@@ -307,4 +308,39 @@ pub async fn recommend_seed_nodes(
     req: &RecommendSeedNodesParams,
 ) -> Result<RecommendSeedNodesResponse, ApiError> {
     api_post("/api/v1/hr/agents/recommend_seed_nodes", req).await
+}
+
+// ===== Agent 运行时 =====
+
+/// 查询 Agent 运行时状态 + 思考运行时快照
+/// GET /api/v1/hr/agents/{id}/runtime-status
+pub async fn get_runtime_status(
+    req: RuntimeStatusRequest,
+) -> Result<RuntimeStatusResponse, ApiError> {
+    api_get(&format!("/api/v1/hr/agents/{}/runtime-status", req.id)).await
+}
+
+/// 取消 Agent 正在进行的思考
+/// POST /api/v1/hr/agents/{id}/cancel-thinking
+pub async fn cancel_thinking(
+    req: CancelThinkingRequest,
+) -> Result<CancelThinkingResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/agents/{}/cancel-thinking", req.id),
+        &(),
+    )
+    .await
+}
+
+/// 查询运行中 Agent 列表（支持按 state/task_id/project_id 过滤）
+/// GET /api/v1/hr/agents/runtime-list
+pub async fn list_runtime_agents(
+    req: &RuntimeListRequest,
+) -> Result<RuntimeListResponse, ApiError> {
+    let qs = super::build_query_string(&[
+        ("state", req.state.clone()),
+        ("task_id", req.task_id.clone()),
+        ("project_id", req.project_id.clone()),
+    ]);
+    api_get(&format!("/api/v1/hr/agents/runtime-list{}", qs)).await
 }

@@ -351,6 +351,7 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab4_class = if active_tab() == 4 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab5_class = if active_tab() == 5 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab6_class = if active_tab() == 6 { "tab tab-lg tab-active" } else { "tab tab-lg" };
 
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
@@ -425,6 +426,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 class: "{tab5_class}",
                                 onclick: move |_| active_tab.set(5),
                                 "🧠 知识图谱"
+                            }
+                            button {
+                                class: "{tab6_class}",
+                                onclick: move |_| active_tab.set(6),
+                                "⚡ 运行时"
                             }
                         }
 
@@ -1097,6 +1103,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                             },
                             5 => rsx! {
                                 KnowledgeGraph { agent_id: Some(id.clone()) }
+                            },
+                            6 => rsx! {
+                                // === 运行时：实时状态 + 思考快照 + 取消按钮 ===
+                                crate::components::runtime_panel::RuntimePanel {
+                                    agent_id: id.clone(),
+                                }
                             },
                             _ => rsx! {},
                         }}

@@ -22,6 +22,7 @@ pub mod modal;
 pub mod particles;
 pub mod process_detail;
 pub mod relation_graph;
+pub mod runtime_panel;
 pub mod searchable_select;
 pub mod state;
 pub mod stats;
