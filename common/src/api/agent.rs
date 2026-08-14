@@ -190,6 +190,10 @@ pub struct GetAgentResponse {
     pub runtime_state: i32,
     /// 当前处理的消息 ID（仅忙碌时有效）
     pub current_message_id: Option<String>,
+    /// 当前关联的任务 ID（仅忙碌时有效）
+    pub current_task_id: Option<String>,
+    /// 当前关联的项目 ID（仅忙碌时有效）
+    pub current_project_id: Option<String>,
     /// 已绑定的工具 ID 列表
     pub tools: Vec<String>,
     /// Agent 自身统计数据（按需返回）

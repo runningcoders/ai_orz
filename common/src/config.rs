@@ -123,6 +123,10 @@ pub struct ServerConfig {
     /// 监听地址
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
+
+    /// 系统时区（IANA 时区名，用于 cron 表达式解析等时间相关功能）
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
 }
 
 /// 数据库配置
@@ -256,6 +260,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             listen_addr: default_listen_addr(),
+            timezone: default_timezone(),
         }
     }
 }
@@ -281,6 +286,10 @@ impl Default for LoggingConfig {
 
 fn default_listen_addr() -> String {
     "0.0.0.0:3000".to_string()
+}
+
+fn default_timezone() -> String {
+    "Asia/Shanghai".to_string()
 }
 
 fn default_enable_file_log() -> bool {

@@ -75,6 +75,10 @@ arrow-array = "57.3.0"
 arrow-schema = "57.3.0"
 futures = "0.3.32"
 
+# 定时任务 cron 表达式解析
+cron = "0.15"
+chrono-tz = "0.10"
+
 # 进程管理原语（Unix 下探活/终止子进程）
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -432,20 +432,24 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         .iter()
         .any(|t| t.payload.contains("\"project_followup\""));
 
-    // 1. agent_rest：默认每 4 小时执行一次睡眠沉淀
+    // 1. agent_rest：每天凌晨 4 点执行一次睡眠沉淀（Cron 表达式，系统时区）
     if !has_agent_rest {
+        let expression = "0 4 * * *"; // 每天 04:00（分 时 日 月 周）
+        let timezone = crate::pkg::cron::system_timezone();
+        let next_run_at =
+            crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
         let mut trigger = CronTriggerPo::new(
             uuid::Uuid::now_v7().to_string(),
             "系统默认-Agent 睡眠沉淀".into(),
-            TriggerType::Interval,
-            common::constants::utils::current_timestamp_ms() + 4 * 3_600_000,
+            TriggerType::Cron,
+            next_run_at,
             Some("system".into()),
         );
-        trigger.interval_seconds = Some(4 * 3600);
+        trigger.cron_expression = Some(expression.into());
         trigger.payload = r#"{"action":"agent_rest","extra":{"settle_limit":10}}"#.into();
         trigger.is_enabled = 1;
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
-        sys_info!("已创建系统级定时任务: agent_rest");
+        sys_info!("已创建系统级定时任务: agent_rest (cron: {} {})", expression, timezone);
     }
 
     // 2. project_followup：默认每 1 小时执行一次项目进度巡检
@@ -454,7 +458,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             uuid::Uuid::now_v7().to_string(),
             "系统默认-项目进度巡检".into(),
             TriggerType::Interval,
-            common::constants::utils::current_timestamp_ms() + 3_600_000,
+            common::constants::utils::current_timestamp() + 3600,
             Some("system".into()),
         );
         trigger.interval_seconds = Some(3600);

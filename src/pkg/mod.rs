@@ -3,6 +3,7 @@ pub mod agent_runtime_state;
 pub mod aop;
 pub mod background_task;
 pub mod crypto;
+pub mod cron;
 pub mod daily_jsonl;
 pub mod external;
 pub mod jwt;

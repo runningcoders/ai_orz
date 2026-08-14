@@ -2,7 +2,7 @@
 
 use ai_orz_macros::generate_http_handler;
 use common::enums::TriggerType;
-use common::error::{Result, bail_err};
+use common::error::Result;
 use uuid::Uuid;
 
 use crate::models::cron_trigger::CronTriggerPo;
@@ -30,10 +30,11 @@ pub async fn create_cron_trigger(
             common::constants::utils::current_timestamp() + interval
         }
         TriggerType::Cron => {
-            bail_err!(
-                UnsupportedOperation,
-                "Cron trigger type is not yet supported"
-            );
+            let expression = params.cron_expression.as_deref().ok_or_else(|| {
+                common::error::err!(InvalidRequest, "cron_expression is required for Cron trigger")
+            })?;
+            let timezone = crate::pkg::cron::system_timezone();
+            crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?
         }
     };
 

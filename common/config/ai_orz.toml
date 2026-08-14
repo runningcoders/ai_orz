@@ -10,6 +10,8 @@
 [server]
 # 监听地址
 listen_addr = "0.0.0.0:3000"
+# 系统时区（IANA 时区名，用于 cron 表达式解析等时间相关功能）
+timezone = "Asia/Shanghai"
 
 # 数据库配置
 [database]

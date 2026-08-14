@@ -533,7 +533,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 使用 RAII guard 确保 set_idle 一定被执行
         // 修复：之前 set_busy 与 set_idle 之间多处 ? 提早返回（get_recent_context、
         // brain 缺失等）会导致 Agent 永远 Busy，后续消息被 is_unavailable 挡住
-        AgentRuntimeStateManager::global().set_busy(&agent.po.id, &message.po.id);
+        AgentRuntimeStateManager::global().set_busy(
+            &agent.po.id,
+            &message.po.id,
+            message.po.task_id.as_deref(),
+            message.po.project_id.as_deref(),
+        );
         let _busy_guard =
             crate::service::domain::runtime::busy_guard::BusyGuard::new(agent.po.id.clone());
 
@@ -834,6 +839,23 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         trace.input = prompt.clone();
         trace.complete(raw_output.clone());
 
+        // 补充运行时元数据，便于 trace 检索与场景区分
+        let exit_reason = if final_messages.is_some() {
+            "Final"
+        } else {
+            "MaxRoundsExceeded"
+        };
+        trace.metadata.insert("scene".into(), "awaken".into());
+        trace.metadata.insert("message_id".into(), message.po.id.clone());
+        trace.metadata.insert("exit_reason".into(), exit_reason.into());
+        trace.metadata.insert("rounds_used".into(), total_rounds.to_string());
+        if let Some(task_id) = ctx.task_id() {
+            trace.metadata.insert("task_id".into(), task_id.clone());
+        }
+        if let Some(project_id) = ctx.project_id() {
+            trace.metadata.insert("project_id".into(), project_id.clone());
+        }
+
         // Step 6: 通过 RuntimeMemory 子模块写入
         // 架构：awakening → RuntimeMemory → MemoryDal → MemoryDao
         self.memory()
@@ -1082,6 +1104,20 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // Step 6: 回填 input 和 output，一次性写入完整 Trace
         trace.input = prompt.clone();
         trace.complete(raw_output.clone());
+
+        // 补充运行时元数据
+        trace.metadata.insert("scene".into(), "settle".into());
+        trace.metadata.insert(
+            "depended_trace_ids".into(),
+            serde_json::to_string(trace_ids).unwrap_or_default(),
+        );
+        if let Some(task_id) = ctx.task_id() {
+            trace.metadata.insert("task_id".into(), task_id.clone());
+        }
+        if let Some(project_id) = ctx.project_id() {
+            trace.metadata.insert("project_id".into(), project_id.clone());
+        }
+
         self.memory()
             .write_thinking_trace(ctx.clone(), trace)
             .await?;
@@ -1427,6 +1463,21 @@ impl RuntimeDomainImpl {
         // 8. 写入 trace
         trace.input = prompt.clone();
         trace.complete(raw_output.clone());
+
+        // 补充运行时元数据
+        trace.metadata.insert("scene".into(), "summary".into());
+        trace.metadata.insert("parent_trace_id".into(), parent_trace_id.to_string());
+        trace.metadata.insert(
+            "depended_trace_ids".into(),
+            serde_json::to_string(trace_ids).unwrap_or_default(),
+        );
+        if let Some(task_id) = ctx.task_id() {
+            trace.metadata.insert("task_id".into(), task_id.clone());
+        }
+        if let Some(project_id) = ctx.project_id() {
+            trace.metadata.insert("project_id".into(), project_id.clone());
+        }
+
         let _ = self.memory().write_thinking_trace(ctx.clone(), trace).await;
 
         // 9. 发布循环完成事件

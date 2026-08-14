@@ -874,7 +874,7 @@ async fn test_search_with_runtime_state_filter(pool: SqlitePool) -> Result<()> {
 
     // 设置 runtime_state：idle → Idle, busy → Busy
     manager.set_idle(agent_idle.id());
-    manager.set_busy(agent_busy.id(), "msg-test-1");
+    manager.set_busy(agent_busy.id(), "msg-test-1", None, None);
 
     // 搜索 Idle Agent
     let result_idle = dal

@@ -150,7 +150,12 @@ impl MessageConsumer {
         // 原子地占用 Agent（修复 TOCTOU 竞态）
         // 之前 is_unavailable + 后续 awaken 的 set_busy 之间存在窗口，4 个 worker 并发时
         // 同一 agent 收不同 project 消息会被两个 worker 同时通过检查
-        let acquired = AgentRuntimeStateManager::global().try_set_busy(agent_id, &message.po.id);
+        let acquired = AgentRuntimeStateManager::global().try_set_busy(
+            agent_id,
+            &message.po.id,
+            message.po.task_id.as_deref(),
+            message.po.project_id.as_deref(),
+        );
         if !acquired {
             return Err(Error::conflict(format!(
                 "Agent {} is busy or resting, message will be retried",

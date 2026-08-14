@@ -7,7 +7,7 @@ use crate::pkg::RequestContext;
 use crate::service::dao::cron_trigger;
 use crate::service::dao::cron_trigger::{CronTriggerDao, CronTriggerQuery};
 use common::enums::TriggerType;
-use common::error::{Result, bail_err, err};
+use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -166,10 +166,21 @@ impl CronTriggerDal for CronTriggerDalImpl {
                     .await
             }
             TriggerType::Cron => {
-                bail_err!(
-                    UnsupportedOperation,
-                    "Cron expression parsing not yet implemented"
-                );
+                let expression = trigger.cron_expression.ok_or_else(|| {
+                    err!(
+                        InvalidRequest,
+                        "Cron trigger missing cron_expression: {}",
+                        id
+                    )
+                })?;
+                let timezone = crate::pkg::cron::system_timezone();
+                let from = chrono::DateTime::<chrono::Utc>::from_timestamp(executed_at, 0)
+                    .unwrap_or_else(chrono::Utc::now);
+                let next_run_at =
+                    crate::pkg::cron::next_run_at(&expression, &timezone, from)?;
+                self.cron_trigger_dao
+                    .update_next_run_at(ctx, id, next_run_at, executed_at)
+                    .await
             }
         }
     }

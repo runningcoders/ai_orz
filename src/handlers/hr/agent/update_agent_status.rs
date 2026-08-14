@@ -83,10 +83,16 @@ pub async fn update_agent_status(
         }
     };
 
-    let (runtime_state, current_message_id) = match &agent.runtime_info {
-        Some(info) => (info.state as i32, info.current_message_id.clone()),
-        None => (AgentRuntimeState::Idle as i32, None),
-    };
+    let (runtime_state, current_message_id, current_task_id, current_project_id) =
+        match &agent.runtime_info {
+            Some(info) => (
+                info.state as i32,
+                info.current_message_id.clone(),
+                info.task_id.clone(),
+                info.project_id.clone(),
+            ),
+            None => (AgentRuntimeState::Idle as i32, None, None, None),
+        };
 
     let tools = finance_domain()
         .tool_provider_manage()
@@ -133,6 +139,8 @@ pub async fn update_agent_status(
         updated_at: agent.po.updated_at,
         runtime_state,
         current_message_id,
+        current_task_id,
+        current_project_id,
         tools,
         stats: None,
         model_call_stats: None,

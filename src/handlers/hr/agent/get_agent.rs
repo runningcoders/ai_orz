@@ -103,10 +103,16 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
     };
 
     // 从 runtime_info 读取运行时状态
-    let (runtime_state, current_message_id) = match &agent.runtime_info {
-        Some(info) => (info.state as i32, info.current_message_id.clone()),
-        None => (AgentRuntimeState::Idle as i32, None),
-    };
+    let (runtime_state, current_message_id, current_task_id, current_project_id) =
+        match &agent.runtime_info {
+            Some(info) => (
+                info.state as i32,
+                info.current_message_id.clone(),
+                info.task_id.clone(),
+                info.project_id.clone(),
+            ),
+            None => (AgentRuntimeState::Idle as i32, None, None, None),
+        };
 
     // 获取已绑定的工具 ID 列表
     let tools = finance_domain()
@@ -143,6 +149,8 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         updated_at: agent.po.updated_at,
         runtime_state,
         current_message_id,
+        current_task_id,
+        current_project_id,
         tools,
         stats: agent.stats,
         model_call_stats: agent.model_call_stats,

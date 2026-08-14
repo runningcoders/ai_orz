@@ -71,8 +71,8 @@ async fn test_system_cron_triggers_created(pool: SqlitePool) {
     let agent_rest = find_trigger_named(&ctx, SYSTEM_AGENT_REST_NAME)
         .await
         .expect("system-default agent_rest trigger should exist after init");
-    assert_eq!(agent_rest.trigger_type, TriggerType::Interval);
-    assert_eq!(agent_rest.interval_seconds, Some(4 * 3600));
+    assert_eq!(agent_rest.trigger_type, TriggerType::Cron);
+    assert_eq!(agent_rest.cron_expression.as_deref(), Some("0 4 * * *"));
     assert_eq!(agent_rest.is_enabled, 1);
     assert!(
         agent_rest.payload.contains("\"agent_rest\""),

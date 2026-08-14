@@ -155,7 +155,7 @@ async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
 
     // 预先将 Agent 设为 Busy（模拟另一个 worker 正在处理）
     let runtime_state = AgentRuntimeStateManager::global();
-    runtime_state.set_busy(&agent_id, &message_id);
+    runtime_state.set_busy(&agent_id, &message_id, None, None);
 
     // 调用 Consumer 处理消息事件
     let consumer = MessageConsumer::new();
@@ -725,7 +725,7 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
 
     // awaken 前先设置 Busy（模拟 handle_agent_message 的 try_set_busy）
     let runtime_state = AgentRuntimeStateManager::global();
-    runtime_state.set_busy(&agent_id, &message.po.id);
+    runtime_state.set_busy(&agent_id, &message.po.id, None, None);
 
     // 调用 awaken（应该失败）
     let result = runtime
