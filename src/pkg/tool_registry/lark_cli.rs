@@ -6,7 +6,8 @@
 //!
 //! - 凭证不在工具入参中传递：按 `ctx.user_id` 经 `LarkCredentialResolver` 查该用户
 //!   启用的 Lark 渠道取应用凭证（未绑定返回引导性错误）
-//! - HOME 隔离：每次执行注入 `HOME={base_data_path}/integrations/lark/{user_id}`，
+//! - HOME 隔离：每次执行注入 `HOME={base_data_path}/users/{user_id}`（用户维度统一 HOME，
+//!   见 `pkg::paths::user_home`），lark-cli 配置落在 `{home}/.lark-cli/`
 //!   首次幂等写入该目录下的 lark-cli config（secret 走 stdin，避免进程参数泄露）
 //! - 输出脱敏：返回摘要中 token/secret 类关键字按行二次过滤
 //!
@@ -159,12 +160,12 @@ impl LarkCliCoreTool {
     }
 }
 
-/// 计算用户隔离的 lark-cli HOME 目录（`{base}/integrations/lark/{user_id}`）
+/// 计算用户隔离的 lark-cli HOME 目录（`{base}/users/{user_id}`）
+///
+/// 委托 `crate::pkg::paths::user_home`（用户维度统一 HOME 约定），
+/// lark-cli 自身配置落在 `{home}/.lark-cli/` 下。
 pub fn lark_home(base_data_path: &Path, user_id: &str) -> PathBuf {
-    base_data_path
-        .join("integrations")
-        .join("lark")
-        .join(user_id)
+    crate::pkg::paths::user_home(base_data_path, user_id)
 }
 
 /// 探测二进制是否在 PATH 中可用
@@ -427,7 +428,7 @@ mod tests {
         let home = lark_home(Path::new("/data/.ai_orz"), "user-001");
         assert_eq!(
             home,
-            PathBuf::from("/data/.ai_orz/integrations/lark/user-001")
+            PathBuf::from("/data/.ai_orz/users/user-001")
         );
     }
 

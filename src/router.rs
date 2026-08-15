@@ -246,6 +246,28 @@ fn lark_integration_routes() -> Router {
         .route("/bind/cancel", post(li::bind_cancel::bind_cancel_handler))
 }
 
+fn github_integration_routes() -> Router {
+    use crate::handlers::finance::github_integration as gi;
+    Router::new()
+        .route("/status", get(gi::get_status::get_status_handler))
+        .route(
+            "/credentials",
+            post(gi::create_credential::create_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            put(gi::update_credential::update_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            delete(gi::delete_credential::delete_credential_handler),
+        )
+        .route(
+            "/credentials/default",
+            post(gi::set_default_credential::set_default_credential_handler),
+        )
+}
+
 fn project_routes() -> Router {
     Router::new()
         .route(
@@ -531,6 +553,7 @@ fn hr_routes() -> Router {
 fn finance_routes() -> Router {
     Router::new()
         .nest("/identity/lark", lark_integration_routes())
+        .nest("/identity/github", github_integration_routes())
         .route(
             "/attachments/upload",
             post(handlers::finance::attachment::upload_attachment),

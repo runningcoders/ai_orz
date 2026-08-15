@@ -15,6 +15,11 @@ pub fn init() {
         dal::lark::LarkDalCredentialResolver,
     ));
 
+    // gh_cli 工具凭证解析器：按用户凭证库取解密后 GitHub token
+    crate::pkg::tool_registry::gh_cli::set_credential_resolver(Box::new(
+        dal::user::GhDalCredentialResolver,
+    ));
+
     // 初始化 Domain 层（依赖 DAL）
     domain::init_all();
 }

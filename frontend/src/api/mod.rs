@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod background_task;
 pub mod finance;
+pub mod github_integration;
 pub mod hr;
 pub mod lark_integration;
 pub mod log_stats;

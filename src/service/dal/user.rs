@@ -185,3 +185,30 @@ impl UserDal for UserDalImpl {
         self.user_dao.update(ctx, &user).await
     }
 }
+
+// ==================== gh_cli 凭证解析器 ====================
+
+/// gh_cli 工具身份来源：按用户凭证库解析 GitHub token（解密后明文）
+///
+/// 优先取 default_credential_id 指向的 GithubToken 凭证，未命中回退第一条。
+pub struct GhDalCredentialResolver;
+
+#[async_trait::async_trait]
+impl crate::pkg::tool_registry::gh_cli::GhCredentialResolver for GhDalCredentialResolver {
+    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<String>> {
+        let Some(user_id) = ctx.user_id.clone() else {
+            return Ok(None);
+        };
+        let Some(library) = dal().get_identity_credentials(ctx.clone(), &user_id).await?
+        else {
+            return Ok(None);
+        };
+        let Some(credential) = library.resolve_github_credential() else {
+            return Ok(None);
+        };
+        let common::models::CredentialDetail::GithubToken { token } = &credential.detail else {
+            return Ok(None);
+        };
+        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(token)?))
+    }
+}

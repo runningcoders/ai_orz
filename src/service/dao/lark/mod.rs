@@ -88,7 +88,15 @@ pub fn resolve_lark_credentials(
     }
     let CredentialDetail::LarkApp {
         app_id, app_secret, ..
-    } = &credential.detail;
+    } = &credential.detail
+    else {
+        return Err(err!(
+            InvalidRequest,
+            "飞书渠道引用的凭证类型不匹配 channel_id={} credential_id={}",
+            channel.po.id,
+            credential_id
+        ));
+    };
     let app_secret = crate::pkg::crypto::decrypt_channel_secret(app_secret).map_err(|e| {
         err!(
             Internal,

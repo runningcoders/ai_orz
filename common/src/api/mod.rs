@@ -98,6 +98,7 @@ pub mod auth;
 pub mod background_task;
 pub mod cron_trigger;
 pub mod external_agent;
+pub mod github_integration;
 pub mod lark_integration;
 pub mod log_stats;
 pub mod mcp_server;
@@ -139,6 +140,7 @@ pub use background_task::{
 };
 pub use cron_trigger::*;
 pub use external_agent::*;
+pub use github_integration::*;
 pub use lark_integration::*;
 pub use log_stats::*;
 pub use mcp_server::*;

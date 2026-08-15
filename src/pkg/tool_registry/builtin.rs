@@ -4,6 +4,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::tool_registry::ToolRegistry;
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
+use crate::pkg::tool_registry::gh_cli::GhCliToolFactory;
 use crate::pkg::tool_registry::http_fetch::HttpFetchToolFactory;
 use crate::pkg::tool_registry::lark_cli::LarkCliToolFactory;
 use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
@@ -33,6 +34,7 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
             ("fs_write".to_string(), Box::new(FsWriteToolFactory)),
             ("shell_exec".to_string(), Box::new(ShellExecToolFactory)),
             ("lark_cli".to_string(), Box::new(LarkCliToolFactory)),
+            ("gh_cli".to_string(), Box::new(GhCliToolFactory)),
         ]
     });
 
@@ -57,6 +59,7 @@ mod tests {
             ("fs_write", vec!["fs"]),
             ("shell_exec", vec!["shell"]),
             ("lark_cli", vec!["lark"]),
+            ("gh_cli", vec!["github"]),
         ];
         for (id, tags) in expected {
             let factory = GENERIC_BUILTIN_TOOLS
