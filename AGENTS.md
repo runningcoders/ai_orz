@@ -35,6 +35,7 @@
 | 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
 | 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
 | 🧪 质量工程 | 1124 测试（后端 984 + 前端 82 + common 58）、clippy 零容忍、覆盖率门槛、E2E Playwright（仅本地） |
+| 📚 **知识体系 + RAG 自索引** | **4 类文档完整链路、显式双向互引闭环**（① Design=为什么 / ② Plan=怎么做+结果 / ③ Wiki 长文=系统化百科 / ④ RAG 知识卡=总结+索引）；Agent 可通过 RAG 语义召回 54+ 张原子知识卡（含 scope  glob 过滤 + source_files 四类齐全锚点）快速定位主题，按「知识卡④ → Wiki 长文③ → 源码 → Design① → Plan②」5 跳链路阅读；人类开发从 docs/wiki/ 8 大板块 353 篇长文入门。维护由 ai-orz-wiki-maintainer（wiki 侧）+ ai-orz-doc-maintainer（doc 侧）双 Skill 联合执行 |
 
 ### 1.3 测试与质量统计
 
@@ -53,28 +54,68 @@
 
 > 📌 **按需要读取详细设计文档**
 
-### docs 内容脉络（四象限，2026-08-08 确立）
+### docs 内容脉络（四类文档完整链路，2026-08-15 v2.0 升级：新增 RAG 知识卡索引 + 四类互引闭环 SSOT）
 
-| 目录 / 文档 | 回答的问题 | 性质与维护方式 |
-|-------------|-----------|----------------|
-| `docs/wiki/`（→ `.qoder/repowiki` 软链接） | **是什么**：代码现状百科 | IDE 生成，随代码演进再生成；**阅读第一站** |
-| `docs/ARCHITECTURE.md` | **权威纲要**：核心概念与实体关系 | 手工维护，唯一权威架构总纲 |
-| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | **怎么做**：分层实践与避坑 | 手工维护，开发必读 |
-| `docs/design/` | **为什么**：当时的设计决策 | 决策快照，写定后不追赶现状 |
-| `docs/plan/` | **要去哪**：规划与状态快照 | 按阶段追加 |
-| `docs/archive/` | **被什么取代**：历史方案归档 | 只进不出 |
+> 🎯 阅读顺序建议（5 跳）：**④ RAG 知识卡 → ③ Wiki 百科长文 → 源码 → ① Design → ② Plan**；Agent 通过 RAG 自动走 5 跳，人类从 ③ 或 ④ 任意入口都能跳到另外三类。
+
+| 目录 / 文档 | 回答的问题 | 性质与维护方式 | 维护 Skill |
+|-------------|-----------|----------------|-----------|
+| ④ **`docs/wiki/knowledge/zh/`**（RAG 知识卡） | **总结 + 索引**：给 Agent / IDE 的 RAG 第一召回层，单主题原子卡 | 54+ 张并持续增量；严格 YAML（5 字段）+ 4 节固定形状；`source_files[]` 必须 4 类齐全（含对应 Wiki 长文绝对路径）；同主题允许多张平行冗余卡 | ai-orz-wiki-maintainer |
+| ③ **`docs/wiki/zh/content/`**（Wiki 百科长文，含总入口 `docs/wiki/`）| **是什么**：代码现状系统化百科（8 大板块 353 篇 10 节目录） | 随代码演进增量同步；`<cite>` 引用块强制关联 Design/Plan/RAG 卡绝对路径；**人类开发阅读第一站**（点击 §二文档索引跳转） | ai-orz-wiki-maintainer |
+| ① **`docs/design/`**（Design 决策快照）| **为什么**：当时的设计决策 + 关键决策表 | 手工写定，写定后**不追赶**代码现状（接口不一致时以代码为准，文头补一句说明）；「关联文档」段强制列对应 Wiki 长文 + RAG 卡占位/真实路径 | ai-orz-doc-maintainer |
+| ② **`docs/plan/`**（Plan 落地结果快照）| **怎么做 + 落地结果**：7 章骨架概览（无 checkbox/命令/代码快照） | 手工维护；「关联文档」段强制列对应 Wiki 长文 + RAG 卡路径（plan 是落地结果，必须有对应卡索引，0 条 = 失败） | ai-orz-doc-maintainer |
+| `docs/archive/` | **被什么取代**：历史方案归档 | 只进不出；文头加一句话归档说明（说明被哪个新文档/提交取代），正文永不修改 | ai-orz-doc-maintainer |
+| `docs/superpowers/*/`（执行蓝图临时件）| 开发期 Task/Step 细粒度操作指引 | 仅功能开发期间有效；**功能完成 7 天内必须处置** → 精简为 `docs/plan/` 的 7 章模板 或 移 `docs/archive/superpowers-archive/` 封存 | ai-orz-doc-maintainer |
+| `docs/ARCHITECTURE.md` | 权威纲要：核心概念与实体关系 | 手工维护，唯一权威架构总纲 | — |
+| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 怎么做：分层实践与避坑 | 手工维护，开发必读 | — |
+
+**四类文档显式互引规则（强制，v2.0）：**
+- **代码引用**：写 `file://相对项目根路径`（用于长文 cite 区 / 章节来源段）
+- **另外三类文档引用**：统一写 `file:///绝对完整路径`（Design/Plan/Wiki/RAG 之间跳转，点击可直接 IDE 打开，一眼区分"跳代码"还是"跳文档"）
+- 每类文档必须**显式链接到另外至少 1 条对应主题的其他三类文档**；绝不允许孤立存在
 
 **维护规则：**
-- 代码现状变化 → 再生成 wiki；**不**回头改 design/ 旧文（与实现不一致时以 wiki 为准）
+- 代码现状变化 → 同步 ③ Wiki 百科长文 + ④ RAG 知识卡（缺一不可，避免 Agent 召回过期知识）
 - 开发规范变化 → 更新本文件（AGENTS.md）与 LAYERED 实践文档
 - 架构核心概念变化 → 更新 ARCHITECTURE.md
-- 新功能设计 → 先写 design/ 新文档，落地后由 wiki 承接现状描述
+- 新功能设计 → 先写 ① design/ 新文档（文头先写 ③ Wiki + ④ RAG 精确占位目标路径）→ 落地后由 ai-orz-doc-maintainer 精简出 ② plan（同步补齐互引占位）→ 最后由 ai-orz-wiki-maintainer 同步 ③+④ 并回头回填占位为真实路径
+
+---
+
+### §2.0.5 如何使用知识库：Agent RAG 查询指引 + 人类阅读路线（快速入门必读）
+
+> 🎯 读完 AGENTS.md 了解规范后，想解决实际业务问题时：**AI Agent 先走 RAG 召回知识卡（快，结构化），人类从 docs/wiki/ 入口找对应长文（系统化，细节全）**；知识卡与长文显式互链，任何一端都能跳另一端。
+
+**（一）AI Agent 如何做 RAG 查询**
+
+本仓库已接入 IDE / Trae Agent 的 RAG 召回能力，针对 54+ 张 `docs/wiki/knowledge/zh/` 下的原子知识卡做向量语义 chunk。Agent 要查询知识时，遵循如下步骤：
+
+1. **召回入口（自动触发）**：当用户或你的上下文问出「策略引擎怎么用？」「runtime 怎么观测？」「identity_credential 怎么接入？」这类具体业务问题时，RAG 引擎会把 54+ 张卡 chunk 后做向量召回，命中 N 张相关卡。
+2. **scope 过滤**：如果用户明确传入一组「当前关注的文件集」或 IDE 打开文件列表已知，每张卡 YAML 的 `scope[]` glob 数组会先过滤这些文件——匹配不通过的卡直接丢弃，不参与向量打分（避免卡 A 被无关代码片段中一次 `log_info!` 误召回）。
+3. **阅读 5 跳链路（严格顺序，禁止跳过 Wiki 长文）**：
+   - 第 1 跳：读**命中的 RAG 知识卡** ④ → §1 了解整体方案 / §2 表格快速定位关键文件与路径 / §3 理解架构约定 / **§4 直接拿可执行的硬约束（最高权重）**
+   - 第 2 跳：**立即从卡 `source_files[]` 中以 `file:///绝对路径` 格式找到对应 Wiki 长文** ③ → 去长文 §5「详细分析」与 §8「故障排查」获取该主题系统化上下文（短卡只是索引，跳过这一步很容易读偏模块边界！）
+   - 第 3 跳：从长文 cite / 章节来源段 OR 卡 `source_files[]` 中跳真实源码锚点（可选 `:Ln-Lm` 行号范围）
+   - 第 4 跳：若还需要「为什么这样设计/决策权衡历史」→ 跳对应 Design 文档 ①（在卡 source_files 或长文 cite 区绝对路径链接中）
+   - 第 5 跳：若还需要「落地的改动清单 / 扩展入口速查」→ 跳对应 Plan 文档 ②
+4. **同主题多张平行卡**：54 张卡中同一主题（如结构化日志、策略引擎）通常会有 2-5 张语义相近但描述角度不同的卡——Agent **应全部召回、并行阅读、不做去重、不删旧卡**，因为它们往往是同一流程的不同切面，合起来信息更完整。
+5. **元卡入口（查 RAG 自身问题时的第一站）**：遇到「如何使用知识卡 / 为什么召回不到 / scope 怎么匹配 / 为什么两张卡一样 / source_files 怎么写」这类**RAG 元问题**时，应当第一跳命中：
+   - [RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
+
+**（二）人类开发者阅读路线（按场景挑入口）**
+
+| 场景 | 最快入口 | 阅读方向 |
+|------|---------|---------|
+| 「这个功能怎么用？」（具体业务问题）| 先看对应 Wiki 长文 ③ 的 §5 详细分析 → 再看 章节来源段路径跳源码 | 长文 → 源码 → Design/Plan 按需跳转 |
+| 「我想快速扫一眼架构概览」（模块/子系统级） | 从 `docs/wiki/knowledge/zh/` 顶层模块卡 或 Wiki 长文 §1 概述 → 再跳到对应长文 §3 核心组件 / §4 架构总览 | 卡 → 长文 → 源码 |
+| 「为什么这个接口要这样设计？」（决策背景） | 直接查对应 Design 文档 ① 的 §1.X 关键决策表 → 然后跳到 Plan 文档 ② §三 涉及文件清单找实际落地文件 | Design → Plan → 源码 → 长文（现状）|
+| 「新增同类功能 / 二次开发」（扩展入口） | 先查对应 Plan 文档 ② §4 分发点速查表 + §七 后续扩展路径 4 步模板 → 再跳对应 Wiki 长文 §7 扩展模式 | Plan → 长文 → 源码 |
 
 ### 文档索引
 
 | 分类 | 文档 | 优先级 |
 |------|------|--------|
-| **架构总览** | [README.md](./README.md) / [docs/wiki/](./docs/wiki/) / [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) / [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | ⭐⭐⭐ |
+| **架构总览** | [README.md](./README.md) / [docs/wiki/](./docs/wiki/)（人类百科 8 大板块） / [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/)（Agent RAG 知识卡入口，第一召回层）/ [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) / [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | ⭐⭐⭐ |
 | **分层实践** | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)（开发必读，含适配层架构原则） | ⭐⭐⭐ |
 | **API 协议** | [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)（common DTO 单一事实源） | ⭐⭐⭐ |
 | **SQL 规范** | [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md)（SQLx 0.8 + SQLite、STRICT、FTS5、测试隔离） | ⭐⭐⭐ |
