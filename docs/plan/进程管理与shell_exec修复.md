@@ -1,90 +1,189 @@
 # 统一后台进程管理 + shell_exec 超时移交修复
 
-## 背景与决策
+> 🎯 **本文档定位**：规划与落地结果快照（后端进程管理统一模块 + shell_exec 超时语义由 kill → detach + call_id 全链路追踪）
+>
+> **文档状态**：草稿（5 个子模块设计冻结：call_id 单一事实源 / pkg/process 注册中心 / SystemDomain ProcessManager / shell_exec 重构 / shell_status shell_kill 双露工具）
+>
+> 查阅场景：
+> - 排查「shell_exec 执行日志找不到 PID 反查链路断」按 §二 第 1 条 call_id 四关联检查
+> - 排查 Agent 越权管理别人启动的进程，直接定位 §二 第 3 条权限边界红线
+> - 新增任何 spawn 进程/产日志的工具，参考 §四 4.1 速查表接入 ctx.tool_call_id() 消费模式
+>
+> 关联文档：
+> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
+> - [tool_design.md](../design/tool_design.md) — 工具系统设计（2026-08-09 更新章节追加：统一进程管理架构 + shell_exec 超时 detach 语义）
+> - [前端工具与进程管理.md](前端工具与进程管理.md) — 前端进程管理页面 + shell_list API 配套前端消费端
 
-- 同步/异步定调：**同步是默认**（现状代码即如此），`dispatch_mode=async` 消息链路仅留给显式配置的重型工具；Agent 通过 `shell_exec` 的 `background` 参数做调用级决策（轮询式异步）。代码无需改，修订设计文档即可。
-- 进程管理采用统一模块：pkg 层纯注册中心（无业务感知），SystemDomain 层提供带权限边界的管理能力，工具经 `#[register_handler_tool]` 宏双露（HTTP + LLM 工具，复用 `request_tool_call` 既有模式）。
-- 进程注册中心第一版为内存版（服务重启条目丢失可接受，审计线索保留在 ToolCallEntry JSONL metadata）。
+---
 
-## call_id 单一事实源与全链路关联（新增）
+## 一、目标（为什么做）
 
-现状断裂：`call_id` 在 `ToolCallDao::execute`（src/service/dao/tool_call/impl.rs:78）内部生成，`CoreTool::call(ctx, args)` 签名拿不到它；shell_exec 日志只能用请求级 `ctx.log_id` 命名（同一请求多次调用会混在一个日志文件），ProcessEntry 也无 call_id。
+三大已确认问题：shell_exec 超时直接 kill 进程丢失长任务产出；进程无统一管理面（PID/日志/状态散落在 shell_exec 内部，跨工具反查断链）；call_id 在 ToolCallDao::execute 内部生成导致 CoreTool::call 签名拿不到它（日志命名与进程追踪回退 log_id，同请求多次调用互相覆盖）。
 
-方案：call_id 升级为业务可指定的幂等键，单点收口在执行层：
+| 问题维度 | 解决方式 |
+|---------|---------|
+| call_id 生成时机过晚（ToolCallDao 内部），下游工具拿不到做追踪 | call_id 升级为业务可指定的幂等键，单点收口：RequestContext 新增 `tool_call_id` 字段 + builder；ToolCallDao::execute 优先复用 ctx 已有，否则单点生成并注入后再调 CoreTool |
+| 同请求多次 shell_exec 日志混在同一 log_id 命名文件 | shell_exec 日志文件名改 `{call_id}.log`；优先 ctx.tool_call_id()，缺失回退 ctx.log_id |
+| shell_exec 超时 kill 进程，长异步任务被误杀 | 超时语义默认 detach：不 kill，写 registry 后返回 timeout 让调用者用 shell_status 查或 shell_kill 终止；新增可选 timeout_action="detach"\|"kill"（默认 detach） |
+| 进程状态/探活/终止/kill 散落在工具内部，无统一入口 | 新增 pkg/process 纯基础设施（ProcessRegistry 全局单例 + Unix 原语 is_alive/terminate）；SystemDomain 提供带权限边界的 ProcessManager trait |
+| shell_exec 与未来任何 spawn 进程工具无统一幂等防重机制 | ToolCallDao::execute 入口：call_id 为业务指定（非自动生成）时，先查 ToolCallLogger 历史；命中 Completed 直接返回（metadata 标 deduplicated=true），Failed 允许重试 |
 
-1. `RequestContext`（src/pkg/request_context.rs）新增可选字段 `tool_call_id: Option<String>` + builder 方法 + getter，默认 None 不影响现有构造
-2. `ToolCallDao::execute` 取 id 顺序：`ctx.tool_call_id()` 有值（业务指定）→ 直接复用；无值 → 生成新 UUID v7 并 `ctx.to_builder().tool_call_id(call_id).build()` 注入后再调 `CoreTool::call`；后续构造 ToolCallEntry 使用同一个 call_id
-3. shell_exec 使用 `ctx.tool_call_id()`（缺失时回退 `ctx.log_id`）作为日志文件名 `{call_id}.log`，并写入 ProcessEntry.call_id
-4. shell_exec 返回 JSON 已含 `pid` / `log_path`，补充 `call_id` 字段 —— JSONL call_trace 的 output 自然携带 pid，满足"执行日志带 PID"的反查需求
+**收敛后效果**：call_id 四端关联（ToolCallEntry.call_id ↔ 日志 {call_id}.log ↔ ProcessEntry.call_id+pid ↔ 工具返回 JSON call_id）任一可反查其余；shell_exec 同步与后台模式统一 spawn + 日志文件模型；进程经 SystemDomain 管理时有 Agent scope 校验（只能管自己启动的）；业务指定 call_id 时天然幂等。
 
-### 幂等防重（一并实现，成本低：反查能力已现成）
+---
 
-`ToolCallDao::execute` 入口处仅当 call_id 为**业务指定**时（自动生成不查，新 UUID 永不命中，避免每次调用多一次 JSONL 扫描）：
+## 二、架构思路（怎么做的）
 
-- 调 `ToolCallLogger::get().read_call_by_id(Some(tool_id), call_id)`（src/pkg/tool_tracing/logger.rs 已实现，限定 tool 目录扫描）
-- 命中且 `status=Completed` → 直接返回历史 output 与历史 entry（entry.metadata 标 `deduplicated=true`），不重复执行
-- 命中且 `status=Failed` → 允许重试，正常执行（失败不该永久钉死）
-- 未命中 → 正常执行；本轮 awakening 链路 call_id 均为自动生成，不会命中防重，行为无变化
+五层从上到下：请求上下文携带 call_id → 执行层注入/复用 → 进程注册中心记录 → 工具消费写日志 → Handler/工具双露查询管理：
 
-关联链路：`ToolCallEntry.call_id`（JSONL）↔ 日志文件名 `{call_id}.log` ↔ `ProcessEntry.call_id + pid` ↔ 工具返回 JSON 的 pid，任一端均可反查其余。
+```
+RequestContext（pkg 层）
+  └─ 新增可选字段 tool_call_id: Option<String> + builder + getter
 
-生成/使用语义（明确）：
-- **生成端**：业务指定优先（ctx 已携带 `tool_call_id` 则复用，这是防重的前提）；未指定时由 `ToolCallDao::execute` 单点生成（每次一个新 UUID v7），工具自身不生成追踪 call_id
-- **消费端**：后续所有需要关联 id 的工具（shell_exec 及未来任何 spawn 进程/产文件的工具）一律优先取 `ctx.tool_call_id()`；仅当 ctx 未注入（测试直接调 CoreTool、绕过 execute 链路的场景）才回退 `ctx.log_id`
+    ↓ 构造链路（业务指定优先）
 
-## pkg/process 注册中心（新增，纯基础设施）
+ToolCallDao::execute（dao/tool_call 层）
+  ├─ 取 id：ctx.tool_call_id() 有值 → 复用（触发防重检查）
+  │                  无值 → 生成新 UUID v7 注入 ctx 后调 CoreTool::call
+  ├─ 幂等防重（仅业务指定 call_id）：
+  │    查 ToolCallLogger.read_call_by_id(tool_id, call_id)
+  │      → Completed 命中 → 直接返回历史 output（entry.metadata.deduplicated=true）
+  │      → Failed 命中    → 允许重试，正常执行
+  └─ 构造 ToolCallEntry 用同一个 call_id
 
-新增 `src/pkg/process/mod.rs`（并在 `src/pkg/mod.rs` 注册）：
+    ↓ 消费端（任何 spawn 进程/产日志的工具）
 
-- `ProcessEntry { pid: u32, tool_id, call_id, agent_id: Option<String>, project_id: Option<String>, task_id: Option<String>, command, working_dir, log_path, background: bool, started_at: u64, status: ProcessStatus(Running/Exited), exit_code: Option<i32>, finished_at: Option<u64> }`（call_id 取自 ctx.tool_call_id，见上节）
-- `ProcessRegistry` 全局单例（once_cell + Mutex<HashMap<u32, ProcessEntry>>，pid 为键）：`register / get / list / mark_exited / refresh(pid)`（探活并更新状态）/ `tail_log(path, n)`
-- 进程原语（`#[cfg(unix)]` 用 libc；Windows 桩返回 unsupported）：`is_alive(pid)` = kill(pid, 0)；`terminate(pid)` = SIGKILL
-- Cargo.toml 根 workspace 新增 `libc` 依赖
-- pid 复用风险在文档注释中声明（v1 接受）；entry 携带 started_at 供人工甄别
+shell_exec 重构（pkg/tool_registry/shell_exec.rs）
+  ├─ sync/background 统一：spawn 起就把 stdout/stderr 重定向到 {call_id}.log
+  ├─ sync：等待结束后从日志文件读摘要（max_output_size_bytes 截断），全量留盘
+  ├─ 超时语义：默认 detach → 返回 { timeout, call_id, pid, log_path }
+  │            timeout_action=kill 时保留旧 kill 行为
+  └─ spawn 成功即写 ProcessRegistry（同步/后台都注册）；退出 mark_exited
 
-## SystemDomain ProcessManager（领域层）
+    ↓ 注册中心（pkg 纯基础设施，无业务感知）
 
-`src/service/domain/system/mod.rs`（可拆 `process.rs` 子文件）：
+pkg/process/mod.rs（新增，src/pkg/mod.rs 注册）
+  ├─ ProcessEntry { pid, tool_id, call_id, agent_id/project_id/task_id,
+  │                  command, working_dir, log_path, background, started_at,
+  │                  status: ProcessStatus, exit_code, finished_at }
+  ├─ ProcessRegistry（once_cell + Mutex<HashMap<pid, ProcessEntry>>）
+  │     register / get / list / mark_exited / refresh(pid) / tail_log(path, n)
+  └─ Unix 原语（libc）：is_alive(pid)=kill(pid,0)；terminate(pid)=SIGKILL
+       Windows 桩：返回 unsupported
 
-- 新增 trait `ProcessManager`，由 `SystemDomainImpl` 实现：
-  - `get_process(ctx, pid)` / `list_processes(ctx)` / `kill_process(ctx, pid)` / `process_status(ctx, pid, tail_lines)`
-- scope 规则：`ctx.agent_id()` 为 Some 时必须与 entry.agent_id 匹配（Agent 只能管理自己启动的进程，不匹配返回 `PermissionDenied`）；ctx 无 agent_id（人类用户/管理面调用）放行
-- kill 走 registry `terminate` 原语后 `mark_exited`；status 先 `refresh` 探活再返回 entry + 日志尾部
+    ↓ 领域层权限边界（scope 校验）
 
-## shell_exec 重构（超时 detach + 统一日志流式模型）
+SystemDomain：ProcessManager trait（system/mod.rs 或拆 process.rs 子文件）
+  ├─ get_process / list_processes / kill_process / process_status(ctx, pid, tail_lines)
+  └─ scope 规则：ctx.agent_id=Some → 必须与 entry.agent_id 匹配 → 不匹配 PermissionDenied
+                  ctx 无 agent_id（人类/管理面）→ 放行
 
-`src/pkg/tool_registry/shell_exec.rs`：
+    ↓ 适配层：Handler + LLM 工具双露
 
-- **统一执行模型**：sync 与 background 都从 spawn 起就把 stdout/stderr 重定向到日志文件（现 sync 用管道捕获是两套逻辑），日志文件名改用 `{call_id}.log`。sync 等待结束后从日志文件读取输出做摘要（受 `max_output_size_bytes` 截断），全量留盘
-- **超时语义改为 detach**：超时不再 kill，更新 registry 状态后返回 `{ status: "timeout", call_id, pid, log_path, message: "进程仍在运行，可用 shell_status 查询或 shell_kill 终止" }`；新增可选参数 `timeout_action: "detach" | "kill"`（默认 `detach`，保留显式 kill 能力），parameters_schema 同步更新
-- **进程注册**：spawn 成功后（sync/background 均注册）写入 ProcessRegistry，携带 `ctx.agent_id() / ctx.project_id() / ctx.task_id()` 与 `ctx.tool_call_id()`；进程退出时 `mark_exited(exit_code)`；正常返回 JSON 同样补充 `call_id` 字段
-- 沙箱（working_dir 白名单）与环境变量过滤逻辑保持不变
+handlers/system/process/
+  ├─ shell_status.rs  ──#[register_handler_tool]── 双露：HTTP GET /processes/{pid}/status + LLM 工具 shell_status
+  ├─ shell_kill.rs    ──#[register_handler_tool]── 双露：HTTP POST /processes/{pid}/kill  + LLM 工具 shell_kill
+  └─ shell_list.rs    ──#[register_handler_tool]── 双露：HTTP GET /processes              + LLM 工具 shell_list
+       shell_exec create_po() tags 追加 "shell" → 三件套 + shell_exec 可按 tag 分组绑定
+```
 
-## shell_status / shell_kill 工具（双露）
+**关键边界（行为红线，回归必保）**：
+1. **call_id 四关联不破裂**：经 `ToolCallDao::execute` 调用的任何进程工具，必须同时满足 `entry.call_id == 日志文件名主干 == ProcessEntry.call_id == 返回 JSON.call_id`；pid 也须通过 entry.metadata/ProcessEntry/返回 JSON 三处互通
+2. **幂等防重只对「业务指定 call_id」生效**：自动生成 UUID v7 的路径（=当前 awakening 全链路）绝不触发防重查询（避免每次调用多一次 JSONL 扫描）
+3. **ProcessManager scope 校验**：ctx.agent_id 有值时必须与 entry.agent_id 严格匹配（Agent 只能管理自己启动的进程）；不匹配返回 PermissionDenied，绝不泄露别的 Agent 的进程状态或日志
+4. **shell_exec 超时默认 detach**：未显式传 timeout_action=kill 时，超时绝不 SIGKILL 子进程（避免长任务被误杀）；返回体明确 message 提示用 shell_status/shell_kill 接管
+5. **Windows 下仅提供桩实现**：is_alive/terminate 返回 unsupported 错误，不阻塞 CI（CI + 开发环境为 macOS/Linux）；ProcessEntry 元信息仍可读
 
-- common 层：`common/src/api/` 新增（或复用现有分组）参数/响应 DTO：
-  - `ShellStatusParams { pid: u32, tail_lines: Option<usize> }` → `ShellStatusResponse { pid, alive, exit_code, started_at, command, log_path, log_tail }`
-  - `ShellKillParams { pid: u32 }` → `ShellKillResponse { pid, killed }`
-- Handler：`src/handlers/system/process/` 新增 `shell_status.rs` / `shell_kill.rs`，使用 `#[register_handler_tool(id = "shell_status"/"shell_kill", tags = "shell", ...)]` + `#[generate_http_handler]`，内部调 `system::domain().process_manage()`（或等价 manager 方法）；`src/handlers/system/mod.rs` 与 `router.rs` system nest 注册路由
-- `shell_exec` 的 `create_po()` tags 增加 `"shell"`，三个工具可按 tag 分组绑定
+---
 
-## 文档修订
+## 三、涉及文件（改动清单 → 查代码直接跳）
 
-- `docs/design/tool_design.md` 追加「2026-08-09 更新」章节（遵循 design/ 只追加不改旧文）：同步默认 + Agent background 调用级决策 + dispatch_mode=async 仅显式配置；shell_exec 超时 detach 语义；统一进程管理模块架构（pkg/process + SystemDomain + 双露工具）
-- `AGENTS.md`：最后更新行、功能表（新增「统一后台进程管理」行）、测试统计数字同步
+按分层索引：
 
-## 测试计划
+| 文件 | 角色 | 变更内容 |
+|------|------|---------|
+| **pkg 基础设施（新增/改造）** | | |
+| [src/pkg/request_context.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/request_context.rs) | RequestContext | 新增 `tool_call_id: Option<String>` 字段 + builder 方法 + getter；默认 None 不影响现有构造点 |
+| [src/pkg/process/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/process/mod.rs) | 进程注册中心（新增） | ProcessEntry / ProcessStatus 结构体；ProcessRegistry 全局单例（register/get/list/mark_exited/refresh/tail_log）；Unix 原语（libc）is_alive/terminate；Windows 桩 unsupported |
+| [src/pkg/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mod.rs) | pkg 模块注册 | 新增 `pub mod process;` |
+| Cargo.toml（workspace 根） | 依赖声明 | 新增 `libc` 依赖 |
+| **DAO 层（call_id 注入 + 幂等）** | | |
+| [src/service/dao/tool_call/impl.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/tool_call/impl.rs#L78) | ToolCallDao::execute | 取 id 顺序：ctx.tool_call_id() → 复用；否则 UUID v7 生成并 ctx.to_builder().tool_call_id(id).build()；幂等防重逻辑（仅业务指定路径） |
+| **工具层（shell_exec 重构）** | | |
+| [src/pkg/tool_registry/shell_exec.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/shell_exec.rs) | shell_exec 核心 | sync/background 统一 spawn + stdout/stderr 重定向 `{call_id}.log`；超时语义默认 detach + timeout_action 参数；ProcessRegistry 注册/注销；返回 JSON 补 call_id 字段；parameters_schema 同步；tags 追加 "shell" |
+| [src/pkg/tool_tracing/logger.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_tracing/logger.rs) | ToolCallLogger | 复用既有 `read_call_by_id` 做幂等防重反查（限定 tool 目录扫描） |
+| **Domain 层（权限边界）** | | |
+| [src/service/domain/system/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/system/mod.rs) | SystemDomain | 新增 `ProcessManager` trait 定义；由 SystemDomainImpl 实现（可拆 process.rs 子文件）；scope 校验 + 调 pkg/process 原语；get/list/kill/status(tail_lines) 4 方法 |
+| **Adapter 层（Handler + LLM 工具双露）** | | |
+| common/src/api/system.rs（或对应分组） | 参数/响应 DTO | 新增 ShellStatusParams/Response、ShellKillParams/Response、ShellListResponse（对齐 shell_exec 返回结构） |
+| [src/handlers/system/process/shell_status.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_status.rs) | shell_status（新增） | `#[register_handler_tool(id="shell_status", tags="shell")]` + `#[generate_http_handler]`；调 system domain process_status |
+| [src/handlers/system/process/shell_kill.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_kill.rs) | shell_kill（新增） | 同上：id="shell_kill" tags="shell"；调 kill_process |
+| src/handlers/system/process/shell_list.rs | shell_list（新增，前端配套） | 同上：id="shell_list" tags="shell"；list_processes（见 [前端工具与进程管理.md](前端工具与进程管理.md) 配套） |
+| src/handlers/system/mod.rs + router.rs | Handler 路由注册 | system nest 下注册 /processes GET、/processes/{pid}/status GET、/processes/{pid}/kill POST |
+| **文档修订** | | |
+| [docs/design/tool_design.md](file:///Users/aman/Technology/rust/ai_orz/docs/design/tool_design.md) | 工具设计（只追加不改旧文） | 追加「2026-08-09 更新」章节：同步默认 + Agent background 调用级决策 + dispatch_mode=async 仅显式配置；shell_exec 超时 detach；统一进程管理架构 |
+| [AGENTS.md](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md) | 功能总览表 | 新增「统一后台进程管理」功能行；测试统计口径同步 |
 
-- pkg/process 单测：register/get/list/tail_log；真实 spawn `sleep` 进程验证 is_alive/terminate/mark_exited（native 环境执行）
-- shell_exec：新增真实子进程用例——`sleep 2` + timeout_ms=100 → 返回 timeout + pid 存活 + registry 有条目；`timeout_action=kill` 用例；现有 7 个解析类测试保持通过
-- call_id 关联断言：经 `ToolCallDao::execute` 调用 shell_exec，断言 `entry.call_id == 日志文件名主干 == ProcessEntry.call_id`，且返回 JSON 含同一 call_id 与 pid；`ctx.tool_call_id` 缺失时回退 log_id 的兼容用例
-- 幂等防重用例：业务指定 call_id 首次执行落盘后，同 call_id 再次调用 → 直接返回历史结果（不重复执行，metadata 标 deduplicated）；历史 Failed 同 call_id → 允许重试重新执行；自动生成 call_id 路径不触发防重查询
-- SystemDomain ProcessManager：scope 校验（agent 不匹配拒绝 / 匹配放行 / 无 agent ctx 放行）+ kill 生效
-- 全量门槛：`cargo test`（后端全绿）、`cargo clippy --all-targets -- -D warnings`、`cargo fmt --all --check`
+---
 
-## 假设与边界
+## 四、分发点速查表（新增同类功能第一站）
 
-- 本轮不含 HTTP 工具前端创建表单、PUT/DELETE 方法放开（此前评估的其它 Gap，另行安排）
-- Windows 下进程探活/终止为 unsupported 桩（CI 与开发环境为 macOS/Linux）
-- 进程注册中心不做 DB 持久化；前端进程管理页面不在本轮范围
-- 集成测试数量如新增需同步更新 AGENTS.md 统计口径
+### 4.1 新增任何 spawn 进程/产日志的工具（接入 call_id 追踪 + 进程注册）
+
+| 步骤 | 动作 | 参考入口 |
+|------|------|---------|
+| 1 | 优先取 `ctx.tool_call_id()`，缺失回退 `ctx.log_id` 用于日志文件命名 | [shell_exec.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/shell_exec.rs) 日志命名段 |
+| 2 | spawn 成功后 `ProcessRegistry::global().register(ProcessEntry{ ... call_id: ctx.tool_call_id(), agent_id: ctx.agent_id(), project_id: ctx.project_id(), task_id: ctx.task_id() })` | shell_exec.rs 注册段 |
+| 3 | 返回 JSON 中携带 `{ call_id, pid, log_path }` 字段（确保 JSONL call_trace.output 反查链路） | shell_exec.rs 返回体构建段 |
+| 4 | 进程退出后 `ProcessRegistry::global().mark_exited(pid, exit_code)` | shell_exec.rs sync/background 退出收尾段 |
+
+> 核心调用：`ctx.tool_call_id()`（`RequestContext` getter）——**任何工具都不自己生成追踪 call_id**，一律消费 ctx 中已注入的。
+
+### 4.2 新增双露管理类工具（HTTP + LLM 工具共用 Handler）
+
+| 分发点 | 处理逻辑 | 新增时参考 |
+|-------|---------|-----------|
+| Handler 骨架模式 | `#[register_handler_tool(id="xxx", tags="shell")]` + `#[generate_http_handler]` 宏双露；内部调对应 system domain manager 方法 | [src/handlers/system/process/shell_kill.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_kill.rs) + shell_status.rs 三件套 |
+| DTO 契约放置 | `common/src/api/system.rs`（或对应域分组） | 现有 system API DTO 同目录 |
+
+---
+
+## 五、验收清单
+
+- [ ] pkg/process 单测：register/get/list/tail_log 基础操作；真实 spawn `sleep` 进程验证 is_alive → terminate → mark_exited 三状态流转（native 环境）
+- [ ] shell_exec 新增用例：`sleep 2` + timeout_ms=100 → 返回 timeout 体 + pid 仍存活 + registry 有条目；timeout_action=kill 分支；现有 7 个解析类测试保持通过
+- [ ] call_id 四关联断言：经 ToolCallDao::execute 调 shell_exec → entry.call_id == 日志文件名主干 == ProcessEntry.call_id == 返回 JSON.call_id；ctx.tool_call_id 缺失时回退 log_id 的兼容用例
+- [ ] 幂等防重：业务指定 call_id 首次执行落盘 → 同 call_id 再次调用直接返回历史结果（不重复执行，entry.metadata.deduplicated=true）；历史 Failed 同 call_id 允许重试；自动生成 call_id 路径不触发防重查询
+- [ ] SystemDomain ProcessManager scope：agent 不匹配返回 PermissionDenied；匹配放行；无 agent ctx 放行；kill 生效后状态同步
+- [ ] shell_status/shell_kill/shell_list 三件套：双露路由注册成功；Handler 单元/集成测试复用 request_tool_call 既有模式
+- [ ] 门槛：cargo test 后端全绿 + cargo clippy --all-targets -- -D warnings + cargo fmt --all --check
+- [ ] 门槛：前端进程管理页面（见配套计划）联调通过；shell_list 返回的条目与 shell_status 返回的详情一致
+
+---
+
+## 六、执行结果摘要
+
+| 模块 | 验证结果 |
+|------|---------|
+| pkg/process 单测（register/get/list/tail_log + sleep 进程探活终止） | 待执行 |
+| shell_exec 新增进程用例（timeout detach + kill 分支；现有 7 个解析类回归） | 待执行 |
+| call_id 四关联 + ctx.tool_call_id 缺失回退兼容 | 待执行 |
+| 幂等防重 3 分支（Completed 直接返回 / Failed 重试 / 自动生成 ID 不触发） | 待执行 |
+| ProcessManager scope 三分支（不匹配拒 / 匹配放行 / 无 agent 放行）+ kill 生效 | 待执行 |
+| shell三件套 Handler 双露路由注册 | 待执行 |
+| Clippy + fmt | 待确认干净 |
+| AGENTS.md 功能条目/测试数更新 | 待同步 |
+
+### 与计划的偏离
+暂无。本轮不含 HTTP 工具前端创建表单 + PUT/DELETE 方法放开（按原假设与边界，另行安排独立计划）。
+
+---
+
+## 七、后续扩展路径（4 步模板）
+
+> **核心不变量**：call_id 四关联（红线 #1）；幂等防重仅业务指定路径触发（红线 #2）；ProcessManager scope 校验（红线 #3）。
+
+1. **进程注册中心 DB 持久化**：v1 内存版（重启丢失）→ 落 DB 新表 processes；pkg/process 抽象 ProcessStore trait，现有内存版改 InMemoryProcessStore，新增 SQLiteProcessStore 实现
+2. **前端进程管理页内嵌日志 tail WebSocket**：当前 shell_status 返回一次性 tail_lines；后续升级 SSE/WS 推送日志增量（复用现有 AOP 事件中心），入口 [前端工具与进程管理.md](前端工具与进程管理.md) ProcessDetailContent 组件
+3. **Windows 进程原语补齐**：`#[cfg(windows)]` 下用 winapi 或者 windows crate 实现 is_alive/terminate；CI 加 windows runner 跑对应测试
+4. **除 shell_exec 外的进程类工具接入**：如新增 `python_exec` / `docker_run` 等进程类工具，按 §四 4.1 四步接入（call_id 消费 → registry 注册 → 返回体携带 → 退出标记）；进程元数据字段（agent_id/project_id/task_id）已在 ProcessEntry 预留
