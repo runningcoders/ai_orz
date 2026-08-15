@@ -1,16 +1,13 @@
 # Runtime Domain 设计
 
-> 🎯 **本文档定位**：Runtime Domain（运行时领域）的整体设计大纲与逻辑思路
->
-> 范围：只覆盖**总纲与核心理念**，不下沉到具体工具实现与代码细节
-> 状态：v3.5（2026-07-24）
+> 🎯 **本文档定位**：Runtime 运行时领域的整体设计大纲与关键决策思路；设计思路快照，接口细节以实际代码为准
+> 状态：v3.9（2026-08-14，变更记录见第二十章；2026-08-15 规范化整理）
+> 查阅场景：需要理解唤醒机制设计动机、工具二分哲学、上下文拼装边界、场景化 ThinkingScene 设计时打开；字段级 trait 定义和命令结构直接看代码
 >
 > 关联文档：
-> - [ARCHITECTURE.md](./ARCHITECTURE.md) - 项目整体架构
-> - [memory_design.md](./memory_design.md) - 记忆系统
-> - [skill_design.md](./skill_design.md) - 技能系统
-> - [tool_design.md](./tool_design.md) - 工具系统
-> - [message_interaction_design.md](./message_interaction_design.md) - 消息交互
+> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
+> - [tool_design.md](./tool_design.md) — 工具调用架构与三层执行链路
+> - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎与运行时可视化配套设计
 
 ---
 
@@ -165,6 +162,7 @@ pub struct AwakenOutcome {
     pub finished: bool,                    // 模型是否给出"完成"信号
 }
 ```
+> 当前实现：[mod.rs::RuntimeAwakening](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L141-L220)
 
 ### 3.2 关键设计点
 
@@ -205,6 +203,7 @@ pub struct AssembledContext {
     pub recent_traces: Vec<MemoryTrace>, // 最近 N 条会话 trace（短期工作记忆）
 }
 ```
+> 当前实现参考：[runtime/ 模块 context 拼装](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 **只放最薄的内容**：
 - ✅ 身份信息（你是谁、归属哪个组织）
@@ -254,31 +253,7 @@ pub struct AssembledContext {
 | **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
 
 **注册示例**：
-```rust
-// 神经工具：所有 Agent 默认拥有
-#[register_handler_tool(
-    id = "send_message",
-    name = "send_message",
-    description = "Send a message to user",
-    params = "common::api::SendMessageParams",
-    neural,  // ← 标记为神经工具
-)]
-async fn send_message(ctx: RequestContext, params: SendMessageParams) -> Result<Value> {
-    // ...
-}
-
-// internal 工具：不可绑定给 Agent，由 execute_manual 内部转发
-#[register_handler_tool(
-    id = "request_tool_call",
-    name = "request_tool_call",
-    description = "Call a manual tool synchronously and get the result immediately",
-    params = "common::api::RequestToolCallParams",
-    tags = "tool_management,internal"  // ← internal tag 标记
-)]
-async fn request_tool_call(ctx: RequestContext, params: RequestToolCallParams) -> Result<RequestToolCallResponse> {
-    // 内部转发到 call_manual_tool_for_agent → call_tool
-}
-```
+> 相关实现细节见：[handlers 下的工具注册](file:///Users/aman/Technology/rust/ai_orz/src/handlers/)
 
 ### 4.3 神经 vs 外骨骼的关系图
 
@@ -391,7 +366,7 @@ ThinkResult::ToolCall?
 
 | 步骤 | 内容 | 产出 | 验收 | 状态 |
 |------|------|------|------|------|
-| **1** | 定义 `Awakening` trait + `AwakenCommand/Outcome` 数据结构 | `awakening.rs` 骨架、mod.rs 单例注册 | `cargo check` 通过 | ✅ 已完成 |
+| **1** | 定义 `Awakening` trait + `AwakenCommand/Outcome` 数据结构 | `awakening.rs` 骨架、mod.rs 单例注册 | 编译通过 | ✅ 已完成 |
 | **2** | 实现 `ContextAssembly` 纯函数：拼 system_prompt + recent_traces | `context_assembly.rs` + 单测 | 纯函数单测通过 | ✅ 已完成 |
 | **3** | 实现 NeuralTools 最小集 | 通过 `#[register_handler_tool(neural)]` 宏注册，神经工具自动注入 Prompt | 编译通过 + 唤醒可见 | ✅ 已完成 |
 | **4** | 接入 Cortex（模型推理）到 `Awakening` | 端到端最小可用 | 集成测试通过 | ✅ 已完成 |
@@ -520,9 +495,9 @@ ThinkResult::ToolCall?
 
 | 步骤 | 内容 | 预估工作量 | 验收标准 |
 |------|------|-----------|---------|
-| **1** | 给 `RuntimeMemory` 补充 `get_recent_traces` 和 `write_thinking_trace` 方法 | 30 min | 单测通过 + `cargo check` |
-| **2** | 新增 `context_assembly.rs` 纯函数模块 | 20 min | 单测通过 + `cargo check` |
-| **3** | 新增 `awakening.rs` 骨架 + 空实现 | 20 min | `cargo check` 通过 |
+| **1** | 给 `RuntimeMemory` 补充 `get_recent_traces` 和 `write_thinking_trace` 方法 | 30 min | 单测通过 + 编译检查通过 |
+| **2** | 新增 `context_assembly.rs` 纯函数模块 | 20 min | 单测通过 + 编译检查通过 |
+| **3** | 新增 `awakening.rs` 骨架 + 空实现 | 20 min | 编译检查通过 |
 | **4** | 实现 `awaken_for_user_message` 完整逻辑 | 60 min | 集成测试跑通 |
 
 **合计：约 2 小时**
@@ -574,22 +549,7 @@ ThinkResult::ToolCall?
 
 #### 12.2.1 `get_recent_traces` - 获取 Agent 最近的短期记忆
 
-```rust
-async fn get_recent_traces(
-    &self,
-    ctx: RequestContext,
-    agent_id: &str,
-    limit: i64,
-) -> Result<Vec<Memory>, AppError> {
-    // 内部直接调用 query，预填充参数
-    self.query(ctx, MemoryQuery {
-        agent_id: Some(agent_id.to_string()),
-        memory_type: Some(MemoryType::ShortTerm),
-        limit: Some(limit as usize),
-        ..Default::default()
-    }).await
-}
-```
+> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
 
 **为什么是语法糖？**
 - 不改变底层行为，只是把"查最近 N 条"这个常用模式封装起来
@@ -598,38 +558,7 @@ async fn get_recent_traces(
 
 #### 12.2.2 `write_thinking_trace` - 写入思考 Trace
 
-```rust
-async fn write_thinking_trace(
-    &self,
-    ctx: RequestContext,
-    agent_id: &str,
-    trace_type: ThinkingTraceType,
-    content: &str,
-) -> Result<Memory, AppError> {
-    // 内部直接调用 write，预填充参数
-    let trace = MemoryTrace {
-        id: generate_trace_id(),
-        agent_id: agent_id.to_string(),
-        task_id: ctx.task_id(),
-        log_id: ctx.log_id(),
-        user_id: ctx.uid().unwrap_or_default(),
-        organization_id: ctx.organization_id().unwrap_or_default(),
-        role: match trace_type {
-            ThinkingTraceType::Input => MemoryRole::System,
-            ThinkingTraceType::Output => MemoryRole::Assistant,
-            ThinkingTraceType::ToolCall => MemoryRole::Tool,
-            ThinkingTraceType::ToolResult => MemoryRole::Tool,
-        },
-        content: content.to_string(),
-        created_at: chrono::Utc::now().timestamp(),
-        metadata: HashMap::new(),
-        position: None,
-    };
-
-    let mut results = self.write(ctx, MemoryCreateParams::AppendTraces(vec![trace])).await?;
-    results.pop().ok_or_else(|| AppError::Internal("Write trace failed".to_string()))
-}
-```
+> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
 
 **为什么是语法糖？**
 - 把"构造 MemoryTrace + 选择正确的 MemoryCreateParams 变体"这个细节封装起来
@@ -712,22 +641,7 @@ async fn write_thinking_trace(
 
 ### 13.2 基础设施
 
-```rust
-// common/src/api/mod.rs
-pub struct PaginationParams {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-}
-
-pub struct PagedResult<T> {
-    pub items: Vec<T>,
-    pub total: usize,
-}
-
-impl<T> PagedResult<T> {
-    pub fn map<U>(self, f: impl FnMut(T) -> U) -> PagedResult<U> { ... }
-}
-```
+> 相关实现细节见：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 ### 13.3 全链路实现
 
@@ -774,22 +688,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 **解决方案：** 对齐 Message Domain / Finance Domain 的标准模式：
 
-```
-mod.rs
-├── RuntimeDomain: 总 trait（聚合所有子能力）
-│   ├── fn memory(&self) -> &dyn RuntimeMemory
-│   ├── fn awakening(&self) -> &dyn RuntimeAwakening
-│   └── fn tool_execution(&self) -> &dyn RuntimeToolExecution
-│
-├── RuntimeMemory: 记忆管理子 trait
-├── RuntimeAwakening: 唤醒能力子 trait
-├── RuntimeToolExecution: 工具执行子 trait（Manual 工具授权、协议路由、强类型 trace_ref 结果引用）
-│
-├── RuntimeDomainImpl: 统一实现结构体
-│   （所有子模块都为 RuntimeDomainImpl 实现对应的 trait）
-│
-└── domain() / init(): 单例访问函数
-```
+> 相关实现细节见：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 **各文件职责：**
 | 文件 | 职责 |
@@ -856,34 +755,7 @@ mod.rs
 
 **✅ 新方案：PO 实体自己负责自己的 Prompt 格式化**
 
-```rust
-// 每个 PO 都实现 to_xxx_prompt() 方法
-impl AgentPo {
-    pub fn to_identity_prompt(&self) -> String {
-        format!("你是 {}，ID：{}\n{}",
-            self.name,
-            self.id,
-            self.description.as_deref().unwrap_or_default()
-        )
-    }
-}
-
-impl MessagePo {
-    pub fn to_conversation_line(&self) -> String {
-        let role = match self.from_agent_id {
-            Some(_) => "Agent",
-            None => "用户",
-        };
-        format!("{}：{}", role, self.content)
-    }
-}
-
-impl MemoryPo {
-    pub fn to_history_line(&self) -> String {
-        format!("[{}] {}", self.memory_type, self.content)
-    }
-}
-```
+> 相关实现细节见：[models/ 下各 PO 实体](file:///Users/aman/Technology/rust/ai_orz/src/models/)
 
 **设计优势：**
 1. **单一职责**：PO 最了解自己的字段含义，格式化逻辑内聚
@@ -899,14 +771,7 @@ impl MemoryPo {
 
 **✅ 新方案：所有 LLM 调用必经 BrainDal**
 
-```rust
-// 语义化调用链：唤醒大脑 → 思考 → 返回结果
-let result = brain_dal()
-    .wake_brain(ctx, &agent.po.brain_id)  // 第一步：唤醒大脑
-    .await?
-    .think(ctx, prompt)                   // 第二步：思考（调用 LLM）
-    .await?;
-```
+> 相关实现细节见：[dal/brain.rs + dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/brain.rs)
 
 **设计优势：**
 1. **统一入口**：所有 LLM 调用都经过 BrainDal，便于审计、限流、Token 统计
@@ -965,28 +830,7 @@ let result = brain_dal()
 ```
 
 **代码实现：**
-```rust
-// Step 1: 先生成 trace_id（内存操作，不写库）
-let trace_id = format!("trace-{}-{}", agent_id, Utc::now().timestamp_nanos());
-
-// Step 2: 注入到 Prompt
-let prompt = builder
-    .trace_id(&trace_id)  // Agent 能看到这个 ID
-    .build();
-
-// Step 3: 模型思考
-let output = brain.think(ctx, &prompt).await?;
-
-// Step 4: 一次性写入完整记录
-runtime_memory()
-    .write_thinking_trace(ctx, MemoryTrace {
-        id: trace_id,      // 复用第一步生成的 ID
-        input: prompt,
-        output: Some(output),
-        // ... 其他字段
-    })
-    .await?;
-```
+> 相关实现细节见：[runtime/awakening.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs)
 
 **性能收益：** 减少 50% 的记忆写入 IO。
 
@@ -998,14 +842,7 @@ runtime_memory()
 
 **✅ 新方案：所有 Trace 写入收敛到 RuntimeMemory.write_thinking_trace()**
 
-```rust
-// 统一入口，所有场景都走这个方法
-async fn write_thinking_trace(
-    &self,
-    ctx: RequestContext,
-    trace: MemoryTrace,  // 直接接收完整结构体
-) -> Result<(), AppError>;
-```
+> 相关实现细节见：[runtime/mod.rs::RuntimeMemory](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L84-L135)
 
 **设计优势：**
 1. **单点扩展**：未来加 Trace 上报、Trace 采样、Trace 清洗，只改这一处
@@ -1016,33 +853,7 @@ async fn write_thinking_trace(
 
 ### 18.7 重构后的完整唤醒流程（最终版 7 步）
 
-```
-输入: ctx + agent_id + user_message_id
-
-  1. 加载基础数据
-     ├─ AgentDal.find_by_id() → Agent 实体
-     ├─ MessageDal.find_by_id() → 消息实体
-     └─ if user_id 存在 → UserDal.find_by_id() → 用户信息
-     ↓
-  2. 读取最近记忆
-     └─ RuntimeMemory.get_recent_traces(agent_id, 20) → Vec<Memory>
-     ↓
-  3. 生成 Trace ID（内存操作）
-     └─ trace_id = generate()
-     ↓
-  4. 拼装 Prompt（PO 自格式化）
-     ├─ AgentPo.to_identity_prompt()
-     ├─ 每条 MemoryPo.to_history_line()
-     └─ MessagePo.to_conversation_line()
-     ↓
-  5. 统一入口调用 LLM
-     └─ BrainDal.wake_brain() → think() → 输出
-     ↓
-  6. 一次性写入完整 Trace（输入 + 输出同 ID）
-     └─ RuntimeMemory.write_thinking_trace(MemoryTrace { id, input, output, ... })
-     ↓
-  7. 返回 AwakeningResult
-```
+> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
 
 ---
 
@@ -1102,6 +913,7 @@ pub enum AgentRuntimeState {
     Busy = 2,
 }
 ```
+> 当前实现：[enums/agent.rs::AgentRuntimeState](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/agent.rs#L67-L80)
 
 ### 19.2 状态生命周期
 
@@ -1495,20 +1307,10 @@ pub struct AgentFetchOptions {
     pub stats_task_id: Option<String>,       // 统计过滤条件（with_stats=true 时生效）
 }
 ```
+> 当前实现：[dal/agent.rs::AgentFetchOptions](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/agent.rs#L77-L85)
 
 **使用示例**：
-```rust
-// 获取 Agent，同时加载统计信息
-let agent = hr_domain.agent_manage().get_agent(
-    ctx,
-    agent_id,
-    AgentFetchOptions {
-        with_stats: Some(true),
-        stats_task_id: Some(task_id),
-        ..Default::default()
-    },
-).await?;
-```
+> 相关实现细节见：[dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/agent.rs)
 
 **设计要点**：
 - 参数全部可选，使用 `Option<bool>` 而非 `bool`，便于区分"未指定"和"明确指定"
@@ -1528,6 +1330,7 @@ pub trait ToolStatsDao: Send + Sync {
     async fn get_stats(&self, ctx, query, options) -> Result<ToolStats>;
 }
 ```
+> 当前实现：[dao/tool/mod.rs::ToolStatsDao](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/tool/mod.rs#L84-L95)
 
 **ToolStats 结构**：
 ```rust
@@ -1536,6 +1339,7 @@ pub struct ToolStats {
     pub failed_count: Option<u64>,           // 失败次数
 }
 ```
+> 当前实现参考：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 **关键代码位置**：`src/service/dao/tool/stats_duckdb.rs`
 
@@ -1620,11 +1424,7 @@ Manual 工具调用校验：
 ### 22.5 Agent 入职自动安装
 
 当 Agent 状态流转到 `Onboarded` 时，自动安装 "project_management" 工具包：
-```rust
-if target_status == AgentStatus::Onboarded {
-    agent.po.install_tag("project_management");
-}
-```
+> 相关实现细节见：[Agent 入职 Domain](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/hr/)
 
 ### 22.6 唤醒时工具加载与分流
 
@@ -1686,6 +1486,7 @@ pub struct TaskAssignmentMessage {
     pub to_agent_id: String,
 }
 ```
+> 当前实现：[api/message.rs::TaskAssignmentMessagePayload](file:///Users/aman/Technology/rust/ai_orz/common/src/api/message.rs#L217-L230)
 
 **投递方法**：`MessageDelivery::send_task_assignment()`
 
@@ -1903,32 +1704,7 @@ Consumer 层
 
 #### ThinkingScene 枚举
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThinkingScene {
-    #[default]
-    Awaken,         // 唤醒场景：响应外部消息，加载全部工具
-    Settle,         // 沉睡场景：沉淀记忆，只加载记忆相关工具（neural/memory tag）
-    IntentAnalyze,  // 意图识别场景：先理解再执行，只加载理解类工具（neural/memory/query/search tag）
-    Summary,        // 总结退出场景：正常 Final / MaxRoundsExceeded 触发，允许 neural/memory/messaging/project_management
-}
-
-impl ThinkingScene {
-    /// 判断工具是否在此场景可用
-    pub fn is_tool_allowed(&self, tags: &[String]) -> bool {
-        match self {
-            ThinkingScene::Awaken => true,
-            ThinkingScene::Settle => tags.iter().any(|t| t == "neural" || t == "memory"),
-            ThinkingScene::IntentAnalyze => tags.iter().any(|t| {
-                t == "neural" || t == "memory" || t == "query" || t == "search"
-            }),
-            ThinkingScene::Summary => tags.iter().any(|t| {
-                t == "neural" || t == "memory" || t == "messaging" || t == "project_management"
-            }),
-        }
-    }
-}
-```
+> 相关实现细节见：[runtime/types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106)
 
 #### ThinkingOptions 结构体
 
@@ -1941,6 +1717,7 @@ pub struct ThinkingOptions {
     pub user_profile: Option<UserPo>,   // 用户画像（预留扩展）
 }
 ```
+> 当前实现：[types.rs::ThinkingOptions](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L107-L177)
 
 **设计要点**：
 - 统一 options 字段避免频繁修改 awaken/sleep_and_settle 方法签名
@@ -1990,6 +1767,7 @@ pub trait RuntimeAwakening: Send + Sync {
     ) -> Result<IntentAnalysis>;
 }
 ```
+> 当前实现：[mod.rs::RuntimeAwakening](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L141-L220)
 
 ### 25.4 工具双层过滤机制
 
@@ -2013,27 +1791,7 @@ pub trait RuntimeAwakening: Send + Sync {
 
 **过滤逻辑**（在 awakening.rs 中实现）：
 
-```rust
-// wake_agent_brain 中的 Auto 工具过滤
-let auto = match scene {
-    ThinkingScene::Awaken => auto,
-    _ => auto
-        .into_iter()
-        .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
-        .collect(),
-};
-
-// sleep_and_settle / analyze_input_intent / awaken_for_summary 中的 skill + Manual 工具过滤
-let scene = options.scene;  // 或 IntentAnalyze/Summary 强制设置
-let skill_pos: Vec<SkillPo> = agent.skills().iter()
-    .filter(|s| scene.is_tool_allowed(&s.po.parse_tags()))
-    .map(|s| s.po.clone())
-    .collect();
-let all_tools: Vec<ToolPo> = agent.tools().iter()
-    .filter(|t| scene.is_tool_allowed(&t.po.get_tags()))
-    .map(|t| t.po.clone())
-    .collect();
-```
+> 相关实现细节见：[runtime/types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106)
 
 **设计要点**：
 - Auto 工具过滤在 brain 装配阶段（派生 ToolDescriptor 前），过滤后模型无法通过 function calling 调用
@@ -2111,26 +1869,7 @@ settle_memory handler / awaken 上下文压缩 / awaken 正常完成
 
 新增方法（trait 定义在 `src/models/prompt_builder.rs`，实现在 `src/service/dal/agent.rs`）：
 
-```rust
-pub trait PromptBuilder: Send + Sync {
-    // ... 现有方法
-    fn project_context(&mut self, project: &Project);
-    fn task_context(&mut self, task: &Task);
-    fn build_sleep_prompt(&self, pending_memories_summary: &str, trace_ids: &[String]) -> String {
-        let _ = (pending_memories_summary, trace_ids);
-        self.build()
-    }
-    fn build_summary_prompt(
-        &self,
-        work_summary: &str,
-        total_rounds: usize,
-        trace_ids: &[String],
-    ) -> String {
-        let _ = (work_summary, total_rounds, trace_ids);
-        self.build()
-    }
-}
-```
+> 相关实现细节见：[models/prompt_builder.rs + dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/prompt_builder.rs)
 
 **DefaultPromptBuilder 实现要点**：
 - 提取 `build_tools_and_skills_sections` 复用工具/技能区块拼装逻辑
@@ -2348,12 +2087,22 @@ awaken 循环
 
 ---
 
-## 下一步讨论方向
+## 五、扩展模式
 
-1. **统计模块驱动的外部唤醒轮次**（推荐 P1：让 ToolCallResult 触发下一次 Agent 唤醒，但轮次预算、暂停/继续和页面状态统一来自统计模块；必要时通过强类型 trace_ref 查询完整 ToolCallEntry）
-2. **ToolCallResult attachment / artifact 产物化引用策略**（P1，仅当结果需要用户下载或成为 Project Artifact 时接入）
-3. **Trace ID 关联链实现**（P1，完善 `message.reply_to_id` 追溯能力）
-4. **streamable HTTP MCP runtime**（P2，继承 HTTP Tool SSRF/header/redirect 安全策略后再做）
-5. **技能动态注入策略**（P2，Agent 能力扩展）
+### 场景 1：新增 ThinkingScene 变体（如 Review / Debate）
+
+如果未来需要增加「复习沉淀」「多 Agent 辩论」等新的思考场景，可参考现有的 ThinkingScene 分支实现：
+
+1. 在 [types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106) 枚举中新增变体，配套 `is_tool_allowed` 的 tag 白名单分支
+2. 在 [awakening.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs) 中新增对应入口函数（类比 `sleep_and_settle` / `awaken_for_summary`），复用 `init_think_runtime_and_policy` + `build_scene_tool_descriptors` + `build_scene_skills` 三个场景辅助函数
+3. 在 [prompt_builder.rs::PromptBuilder](file:///Users/aman/Technology/rust/ai_orz/src/models/prompt_builder.rs#L31-L150) 新增专用 build_xxx_prompt trait 方法，并在 `dal/agent.rs` 的 `DefaultPromptBuilder` 中补充实现
+
+### 场景 2：统计模块驱动的外部唤醒轮次落地
+
+若需要让 ToolCallResult 消息自动触发下一次 awaken（并受统计模块的轮次预算约束）：
+
+1. 参考现有的 consumer 消息循环入口 [consumer/message.rs](file:///Users/aman/Technology/rust/ai_orz/src/consumer/message.rs) 中 Agent 消息处理分支
+2. 复用 [pkg/stats/agent_awake.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/stats/agent_awake.rs) 中的 `AgentAwakeEvent.exit_reason` 字段补充轮次预算统计维度
+3. 工具调用追溯可通过 [tool_execution.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/tool_execution.rs) 的 `trace_ref` 查询完整 `ToolCallEntry`
 
 
