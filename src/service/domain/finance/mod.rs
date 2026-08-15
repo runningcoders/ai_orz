@@ -268,11 +268,31 @@ pub trait MessageChannelManage: Send + Sync {
     async fn lark_ws_metrics(&self) -> common::api::LarkWsMetrics;
 }
 
+/// 创建凭证命令（detail 为明文，Domain 内规范化 + 校验 + 加密落库）
+#[derive(Debug, Clone)]
+pub struct CreateCredentialCmd {
+    /// 用户自命名
+    pub name: String,
+    /// 明文凭证详情（类型由变体决定）
+    pub detail: common::models::CredentialDetail,
+}
+
+/// 更新凭证命令（patch 为明文；None 字段保持不变）
+#[derive(Debug, Clone)]
+pub struct UpdateCredentialCmd {
+    /// 目标凭证 ID
+    pub credential_id: String,
+    /// 新名称（None/空白不变）
+    pub name: Option<String>,
+    /// 详情补丁（`Unchanged` 表示不动 detail）
+    pub patch: common::models::CredentialDetailPatch,
+}
+
 /// 身份凭证管理 trait
 ///
 /// 用户身份凭证是驱动下游关键环节（渠道建联、lark_cli 工具身份）的资产，
 /// 归属 finance domain 统一管理，便于统一审计；
-/// 含凭证 CRUD + 默认凭证 + 飞书集成授权/绑定（经 Domain 包装 pkg）。
+/// 含统一凭证 CRUD + 默认凭证 + 飞书集成授权/绑定（经 Domain 包装 pkg）。
 #[async_trait]
 pub trait IdentityCredentialManage: Send + Sync {
     /// 读取用户身份凭证库（用户不存在返回 None，无凭证返回空库）
@@ -282,53 +302,56 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
     ) -> Result<Option<common::models::UserIdentityCredentials>>;
 
-    /// 创建飞书应用凭证（secret 加密落库），返回凭证唯一 ID
-    #[allow(clippy::too_many_arguments)]
-    async fn create_lark_credential(
+    // ==================== 统一凭证 CRUD（封顶 5 个，不随类型增长） ====================
+
+    /// 创建凭证（类型由 cmd.detail 变体决定；敏感字段加密落库），返回凭证唯一 ID
+    async fn create_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
-        name: &str,
-        app_id: &str,
-        app_secret: &str,
-        encrypt_key: Option<&str>,
-        verification_token: Option<&str>,
+        cmd: CreateCredentialCmd,
     ) -> Result<String>;
 
-    /// 更新飞书凭证（secret 非空时重新加密覆盖）
+    /// 更新凭证（name/detail 按补丁语义；类型不匹配报错）
     ///
-    /// 变更联动：清该用户 HOME 的 lark-cli config + WS 监听移交
-    /// （app_id 变化重建；secret 轮换强制断连重建）；联动失败仅告警。
-    #[allow(clippy::too_many_arguments)]
-    async fn update_lark_credential(
+    /// 类型分发联动（失败仅告警）：
+    /// - LarkApp：清该用户 HOME 的 lark-cli config + WS 监听移交
+    ///   （secret 轮换强制断连重建）
+    async fn update_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
-        credential_id: &str,
-        name: Option<&str>,
-        app_id: Option<&str>,
-        app_secret: Option<&str>,
-        encrypt_key: Option<&str>,
-        verification_token: Option<&str>,
+        cmd: UpdateCredentialCmd,
     ) -> Result<()>;
 
-    /// 删除凭证（有渠道引用时报 Conflict；不联动删 HOME config，保留用户授权 token）
-    async fn delete_lark_credential(
+    /// 删除凭证
+    ///
+    /// 类型分发前置检查：LarkApp 被渠道引用报 Conflict；
+    /// 类型分发后置联动：GithubToken 删除的是生效凭证时清 HOME 登录态。
+    async fn delete_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
         credential_id: &str,
     ) -> Result<()>;
 
-    /// 设置默认飞书凭证（lark_cli 工具身份优先取引用该凭证的渠道）
+    /// 设置默认凭证（各类型默认槽位独立）
     ///
-    /// 空凭证 ID 表示取消默认；非空校验凭证存在且为 LarkApp 类型。
-    async fn set_default_lark_credential(
+    /// None/空白表示取消该类型默认；Some 校验凭证存在且类型匹配。
+    async fn set_default_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
-        credential_id: &str,
+        kind: common::models::CredentialKind,
+        credential_id: Option<&str>,
     ) -> Result<()>;
+
+    /// GitHub 集成状态聚合（凭证快照 + gh 登录态实测）
+    async fn github_integration_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<common::api::GithubIntegrationStatusResponse>;
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================
 

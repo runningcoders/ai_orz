@@ -7,6 +7,7 @@ use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
 use common::api::{SetDefaultLarkCredentialRequest, SetDefaultLarkCredentialResponse};
 use common::error::{Result, bail_err};
+use common::models::CredentialKind;
 
 #[generate_http_handler]
 pub async fn set_default_credential(
@@ -18,9 +19,15 @@ pub async fn set_default_credential(
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
     }
 
+    let trimmed = params.credential_id.trim().to_string();
+    let target = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
     domain()
         .identity_credential_manage()
-        .set_default_lark_credential(ctx, &user_id, &params.credential_id)
+        .set_default_credential(ctx, &user_id, CredentialKind::LarkApp, target.as_deref())
         .await?;
 
     Ok(SetDefaultLarkCredentialResponse { success: true })

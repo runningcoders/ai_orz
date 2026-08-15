@@ -55,7 +55,9 @@ pub async fn get_status(
         if credential.kind != CredentialKind::LarkApp {
             continue;
         }
-        let CredentialDetail::LarkApp { app_id, .. } = &credential.detail;
+        let CredentialDetail::LarkApp { app_id, .. } = &credential.detail else {
+            continue;
+        };
         let refs = channels
             .iter()
             // 已删除渠道不计入引用（软删除：status=Deleted）

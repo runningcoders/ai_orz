@@ -20,7 +20,7 @@ pub async fn delete_credential(
 
     domain()
         .identity_credential_manage()
-        .delete_lark_credential(ctx, &user_id, &params.id)
+        .delete_credential(ctx, &user_id, &params.id)
         .await?;
 
     Ok(DeleteLarkCredentialResponse { success: true })

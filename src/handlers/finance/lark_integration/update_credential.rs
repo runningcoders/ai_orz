@@ -3,10 +3,11 @@
 //! 变更联动由 Domain 编排：清 HOME lark-cli config + WS 重建联。
 
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain;
+use crate::service::domain::finance::{UpdateCredentialCmd, domain};
 use ai_orz_macros::generate_http_handler;
 use common::api::{UpdateLarkCredentialRequest, UpdateLarkCredentialResponse};
 use common::error::{Result, bail_err};
+use common::models::CredentialDetailPatch;
 
 #[generate_http_handler]
 pub async fn update_credential(
@@ -20,15 +21,19 @@ pub async fn update_credential(
 
     domain()
         .identity_credential_manage()
-        .update_lark_credential(
+        .update_credential(
             ctx,
             &user_id,
-            &params.id,
-            params.name.as_deref(),
-            params.app_id.as_deref(),
-            params.app_secret.as_deref(),
-            params.encrypt_key.as_deref(),
-            params.verification_token.as_deref(),
+            UpdateCredentialCmd {
+                credential_id: params.id,
+                name: params.name,
+                patch: CredentialDetailPatch::LarkApp {
+                    app_id: params.app_id,
+                    app_secret: params.app_secret,
+                    encrypt_key: params.encrypt_key,
+                    verification_token: params.verification_token,
+                },
+            },
         )
         .await?;
 

@@ -1,10 +1,11 @@
 //! Handler: POST /api/v1/finance/identity/lark/credentials - 手动录入创建飞书应用凭证
 
 use crate::pkg::RequestContext;
-use crate::service::domain::finance::domain;
+use crate::service::domain::finance::{CreateCredentialCmd, domain};
 use ai_orz_macros::generate_http_handler;
 use common::api::{CreateLarkCredentialRequest, CreateLarkCredentialResponse};
 use common::error::{Result, bail_err};
+use common::models::CredentialDetail;
 
 #[generate_http_handler]
 pub async fn create_credential(
@@ -18,14 +19,18 @@ pub async fn create_credential(
 
     let credential_id = domain()
         .identity_credential_manage()
-        .create_lark_credential(
+        .create_credential(
             ctx,
             &user_id,
-            &params.name,
-            &params.app_id,
-            &params.app_secret,
-            params.encrypt_key.as_deref(),
-            params.verification_token.as_deref(),
+            CreateCredentialCmd {
+                name: params.name,
+                detail: CredentialDetail::LarkApp {
+                    app_id: params.app_id,
+                    app_secret: params.app_secret,
+                    encrypt_key: params.encrypt_key,
+                    verification_token: params.verification_token,
+                },
+            },
         )
         .await?;
 
