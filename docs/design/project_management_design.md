@@ -1,5 +1,14 @@
 # 项目管理系统设计文档
 
+> 🎯 **本文档定位**：统一 Project Domain 架构：项目+任务+产物三模块整合、任务 DAG 依赖、产物元数据、进度实时计算设计
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增任务依赖/产物元数据字段、排查项目进度实时聚合、理解 Project Domain 跨模块边界时打开；具体聚合查询实现直接看 domain 代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [project_design.md](./project_design.md) — 项目基础实体设计（PM 系统的底层依赖）
+> - [agent_loop_engine_design.md](./agent_loop_engine_design.md) — Agent 自主跟进项目进度驱动机制
+
 ## 简介
 
 ai_orz 项目管理系统采用统一的 Project Domain 架构，整合项目（Project）、任务（Task）、产物（Artifact）三个核心子模块，支持任务 DAG 依赖管理、产物元数据管理、项目进度实时计算等功能。

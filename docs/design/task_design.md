@@ -1,5 +1,14 @@
 # 任务系统设计文档
 
+> 🎯 **本文档定位**：任务实体模型、多级分配优先级、状态机与软删除、依赖 DAG 的基础分层设计
+> 状态：定稿（功能已落地）
+> 查阅场景：新增任务 CRUD 接口、排查任务依赖/软删除语义、理解任务分配类型（用户/Agent）与归属过滤时打开；字段级 PO/DAO 定义直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [project_design.md](./project_design.md) — 项目实体与任务关联（一对多）
+> - [task_scheduler_design.md](./task_scheduler_design.md) — 定时任务 CronTrigger 触发机制
+
 ## 简介
 
 ai_orz 任务系统用于管理用户待办、项目任务、系统自动化任务等。支持多级分配、优先级排序、状态跟踪和软删除。
