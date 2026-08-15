@@ -1,5 +1,13 @@
 # 外部 Agent 接入设计
 
+> 🎯 **本文档定位**：外部 CLI/A2A Agent 注册、调度链路复用与 DAL 层差异封装设计
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增外部 Agent 类型（Codex CLI/A2A 远程）、排查外部 Agent 调度失败、理解 AgentKind 枚举差异时打开；具体执行后端看 agent_runtime 代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [a2a_server_architecture_design.md](./a2a_server_architecture_design.md) — 反向：ai_orz 作为 A2A Server 被外部 Agent 调用的架构
+
 ## 定位
 
 支持将外部 Agent（Codex CLI、A2A 远程 Agent）注册到组织，与本地 Agent 共享同一调度链路。差异封装在 DAL 层，Domain 层保持通用。

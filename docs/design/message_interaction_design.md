@@ -1,5 +1,14 @@
 # 用户-Agent 消息交互设计
 
+> 🎯 **本文档定位**：用户-Agent 多角色协作交互模型、前台 Agent 意图调度与项目上下文路由设计
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增消息类型/前台路由策略、排查用户直达 Agent 与前台分流逻辑、理解项目维度消息隔离时打开；具体 handler 路由直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [message_channel_design.md](./message_channel_design.md) — 外部渠道入站适配与多渠道推送
+> - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒：先意图识别再执行
+
 ## 核心理念
 
 系统以**组织**形式管理多个 Agent，Agent 承担不同角色，以**项目**方式组织协作：

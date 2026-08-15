@@ -1,5 +1,13 @@
 # 事件总线设计（已归档）
 
+> 🎯 **本文档定位**：旧版 EventQueueDao 内存事件总线的历史设计归档参考（已废弃，不作为当前实现依据）
+> 状态：归档（2026-07-20 被 AOP 事件中心替代；仅保留历史对比参考）
+> 查阅场景：排查旧版本升级兼容性问题、对比新旧事件架构差异时打开；当前事件处理架构一律以 consumer_architecture.md 为准
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [consumer_architecture.md](./consumer_architecture.md) — 当前在用的 AOP 事件中心生产-消费架构（本文档的替代方案）
+
 > ⚠️ **本文档描述的是旧版 `EventQueueDao` 实现，已于 2026-07-20 被 AOP 事件中心取代**。当前架构请阅读 [consumer_architecture.md](./consumer_architecture.md)。
 > 保留本文档仅作为历史设计参考。
 

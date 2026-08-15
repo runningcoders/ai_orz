@@ -1,5 +1,14 @@
 # 消息渠道设计文档
 
+> 🎯 **本文档定位**：消息渠道入站适配中台架构、渠道生命周期管理与多渠道推送分发设计
+> 状态：定稿（2026-08-05 管理面已落地，运行面按渠道分化实现）
+> 查阅场景：新增外部入站消息渠道类型、排查渠道生命周期 CRUD、理解渠道引用检查语义时打开；字段级 PO/DAO 定义直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [message_interaction_design.md](./message_interaction_design.md) — 用户-Agent 消息交互链路与前台调度
+> - [lark_cli_integration.md](./lark_cli_integration.md) — 飞书渠道多应用化与 lark-cli 工具集成
+
 ## 🚀 实现完成状态（2026-08-05 更新）
 
 ### 🟡 管理面完成，运行面渠道推送进度分化

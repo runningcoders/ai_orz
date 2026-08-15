@@ -1,5 +1,14 @@
 # 消费者与生产者架构设计文档
 
+> 🎯 **本文档定位**：基于 AOP 事件中心的生产-消费异步处理框架设计（分层解耦/可扩展 Trait/ack-nack 重试）
+> 状态：定稿（2026-07-21 接口收敛完成，功能已落地）
+> 查阅场景：新增事件类型/业务 Consumer、排查消息重试/并发控制、理解 AOP 框架与业务分层边界时打开；具体 Consumer 注册点直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [event_design.md](./event_design.md) — 归档：旧版 EventQueueDao 事件总线（已废弃对比参考）
+> - [agent_loop_engine_design.md](./agent_loop_engine_design.md) — Agent 循环驱动：事件+定时双链路
+
 > **2026-07-20 更新**：本文档已全面更新，反映基于 AOP 事件中心的生产-消费架构。
 > **2026-07-21 更新**：清理 Message DAL 中冗余的队列操作接口（`dequeue_next_message`/`ack_message`/`nack_message`）。队列的出队/确认/回退完全由 AOP 框架负责，业务 Consumer 的 `ack`/`nack` 仅更新 DB 消息状态。
 
