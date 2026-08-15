@@ -1,5 +1,9 @@
 # A2A Server 设计文档
 
+> 📦 **归档标记（2026-08-15）**：本文档描述的早期 **A2A Server JSON-RPC 2.0 协议端点 + 前台 Agent 对外暴露方案** 已被 2026-07-20 落地代码（P0/P1/P2 三阶段全部 ✅）取代，实现细节以实际源文件为准。
+> 保留原因：历史审计——对照 P0~P2 功能表的 22 个 ✅ 项追溯设计 → 落地的映射过程；外部 A2A 协议演进时可作为「原始设计意图」快照回溯。
+> 当前生效方案请参考：[common/src/api/a2a.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/a2a.rs)（协议实体定义）+ [src/handlers/a2a/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/a2a/)（5 个端点 Handler + mapper + JSON-RPC 分发）+ [docs/ARCHITECTURE.md](../ARCHITECTURE.md) §5.1 实体关系（A2A 反向能力即 external_agent）
+
 ## 🚀 实现完成状态（2026-07-20）
 
 ### P0 已完成（后端）

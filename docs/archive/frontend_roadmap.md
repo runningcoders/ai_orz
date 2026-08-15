@@ -1,5 +1,9 @@
 # 前端优化路线图
 
+> 📦 **归档标记（2026-08-15）**：本文档描述的早期 **五方向 + 六方向的前端整体规划** 已被 docs/plan/ 下按功能拆分的独立落地计划文档取代（知识图谱交互/对话补全/任务可视化/Agent 详情页增强/移动端适配均已有独立 plan 或已全部 ✅ 完成）；方向六「前沿渲染技术调研」属长期储备，后续如启动将另开 plan。
+> 保留原因：历史审计——对比 2026-07-24 时点的 6 方向优先级与实际落地进度；方向六（前沿渲染技术调研：wasm-bindgen 流式绘制/离屏 canvas/WebGPU）的初始素材仍有参考价值。
+> 当前生效方案请参考：[docs/design/frontend_architecture.md](../design/frontend_architecture.md)（前端架构权威文档）+ [docs/design/ui_design_system.md](../design/ui_design_system.md)（设计系统）+ docs/plan/ 目录下按功能拆分的各前端专项计划文档
+
 > 最后更新：2026-07-24（新增方向六：前沿渲染技术调研）
 
 ---
