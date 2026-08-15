@@ -1,5 +1,19 @@
 # ai_orz
 
+> 🎯 **本文档定位**：项目对外门面，1 分钟速览（定位是什么、技术栈、快速启动、测试命令、社区入口）
+>
+> 状态：持续同步，随版本升级
+>
+> 查阅场景：
+> - 第一次打开本仓库 → 快速了解项目是什么、能做什么、技术选型
+> - 要跑测试、启动本地开发、docker 启动 → 查询命令
+> - 要找社区/文档入口、License、徽章信息 → 顶部快速获取
+>
+> 关联文档：
+> - [AGENTS.md](./AGENTS.md) — AI 助手快速入门手册（架构规范 + 开发约定强制执行）
+> - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — 唯一权威架构总纲
+> - [docs/wiki/](./docs/wiki/) — 代码现状百科（IDE 自动生成，阅读第一站）
+
 **AI 代理协作框架** — 让多个 AI 代理像团队一样协作完成任务
 
 ![Tests](https://img.shields.io/badge/tests-1101%20%E2%9C%94-brightgreen)

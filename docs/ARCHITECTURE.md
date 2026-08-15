@@ -1,5 +1,19 @@
 //! # 架构说明
-//!
+
+> 🎯 **本文档定位**：唯一权威架构总纲（核心概念、实体关系、分层边界、设计哲学）；禁止任何代码细节、禁止 Rust/SQL/bash 代码块——所有 trait/struct/enum 形状定义请直接读对应源文件或 docs/design/ 文档。
+>
+> 状态：v1.3（2026-08-13 最后更新）
+>
+> 查阅场景：
+> - 讨论架构变更、跨领域影响分析时的共同参照语言
+> - 不确定某功能应该放 Domain/DAL/DAO 哪一层时，先查本文 §分层章节再对照 LAYERED 实践文档
+> - 理解核心概念（Agent/Brain/Memory/Organization 等实体关系）
+>
+> 关联文档：
+> - [AGENTS.md](../AGENTS.md) §3 代码分层架构规范 + §3.2 目录结构 — 实操层强制执行规范
+> - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — AGENTS §3.1 的配套示例化展开（反模式/避坑）
+> - [docs/wiki/](./wiki/) — 代码现状百科，字段级实现细节以 wiki/源文件为准
+>
 //! > 最后更新：2026-08-13
 
 ## 项目愿景
@@ -73,30 +87,12 @@ ai_orz/
 - **关系**：直接持有装配好的 Brain，每个 Agent 属于一个组织，有角色字段
 
 ### 2. Brain（大脑）
-- **定义**：聚合根，包含思考 + 记忆
-- **结构**：
-```rust
-pub struct Brain {
-    pub model_provider: ModelProviderPo,  // 直接持有模型提供商（不再经 Cortex 实体）
-    pub memory: Memory,                  // 记忆系统 🧠
-}
-// 思考链路：BrainDal.think() → CortexDaoRegistry.get(provider_type) → dao.think(&[ChatMessage])
-```
+- **定义**：聚合根，包含思考执行环境（思考推理 + 记忆）
+- **结构与链路**：Brain 结构定义见 [src/models/brain.rs::Brain](file:///Users/aman/Technology/rust/ai_orz/src/models/brain.rs#L16-L31)（当前实现含 Agent 分发依据 kind/agent_id/agent_name/runtime_config；外部 Cli/Remote 类型的 model_provider 为 Option）；思考链路见 [src/service/domain/runtime/awakening.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs)
 
 ### 3. Memory（记忆系统）
-- **定义**：分层记忆系统，按照人类认知设计
-- **结构**：
-```rust
-pub struct Memory {
-    pub core: CoreMemory,       // 核心认知 → soul + capabilities
-    pub working: Vec<MemoryTrace>, // 当前会话工作记忆
-}
-
-pub struct CoreMemory {
-    pub soul: String,           // 灵魂/性格/角色设定
-    pub capabilities: String,   // 能力列表 JSON
-}
-```
+- **定义**：分层记忆系统，按照人类认知设计（Core / Working / Short-term / Long-term 四层）
+- **结构**：Memory 业务实体定义见 [src/models/memory.rs::Memory](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs#L371-L379)（内部持有 MemoryPo，分层存储在 PO 中落实）；Agent 核心认知（灵魂 soul + 能力 capabilities 字段）见 [src/models/agent.rs::AgentPo](file:///Users/aman/Technology/rust/ai_orz/src/models/agent.rs#L354-L356)
 
 ### 4. Cortex（大脑皮层）
 - **定义**：具体的思考推理执行，包含模型配置 + 推理实例
@@ -193,19 +189,7 @@ data/
 
 ### 核心接口设计
 
-```rust
-#[async_trait]
-pub trait RuntimeMemory: Send + Sync {
-    /// 写入记忆（复用 DAL 层 MemoryCreateParams）
-    async fn write(&self, ctx: RequestContext, params: &MemoryCreateParams) -> Result<Memory, AppError>;
-    
-    /// 搜索记忆（复用 DAL 层 MemorySearch）
-    async fn search(&self, ctx: RequestContext, search: &MemorySearch) -> Result<Vec<Memory>, AppError>;
-    
-    /// 查询记忆（复用 DAL 层 MemoryQuery）
-    async fn query(&self, ctx: RequestContext, query: &MemoryQuery) -> Result<Vec<Memory>, AppError>;
-}
-```
+> RuntimeMemory trait 完整定义见：[src/service/domain/runtime/mod.rs::RuntimeMemory](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L84-L140)（当前实现已演进为 8+ 个能力方法：get_recent_context、write_thinking_trace、query_memory、create_short_term、settle_short_term_to_long_term 等；全部复用 PO/DAL 层定义实现「最薄封装 + 零重复」）
 
 ### 实现模式
 
@@ -411,18 +395,7 @@ DAO (数据访问) ← 单一数据源 CRUD
 #### 业务实体标准设计
 
 **模式：业务实体内部持有 PO 字段**
-```rust
-pub struct Project {
-    pub po: ProjectPo,  // 内部持有 PO
-    // 可选：额外业务方法和计算字段
-}
-
-impl Project {
-    pub fn id(&self) -> &str { &self.po.id }
-    pub fn status(&self) -> ProjectStatus { self.po.status }
-    // 业务方法...
-}
-```
+> 该模式的 Project 实体实现见：[src/models/project.rs::Project struct](file:///Users/aman/Technology/rust/ai_orz/src/models/project.rs#L65-L73) + [impl Project getter 行为方法](file:///Users/aman/Technology/rust/ai_orz/src/models/project.rs#L144-L156)（统一惯例：业务实体 `pub po: XxxPo` 字段 + 通过 getter 方法暴露常用语义如 id()/status()）
 
 **设计优势：**
 1. ✅ **零转换成本**：DAL 层直接通过 `&xxx.po` 传递给 DAO，无需字段逐一映射
@@ -432,30 +405,11 @@ impl Project {
 
 #### DAL 层接口设计范式
 
-```rust
-#[async_trait]
-pub trait ProjectDal: Send + Sync {
-    // 写操作：接收 &业务实体 引用
-    async fn create(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
-    async fn update(&self, ctx: RequestContext, project: &Project) -> Result<(), AppError>;
-    
-    // 读操作：返回 业务实体
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<Project>, AppError>;
-    async fn list_by_user(&self, ctx: RequestContext, user_id: &str) -> Result<Vec<Project>, AppError>;
-}
-```
+> ProjectDal trait 的完整真实定义见：[src/service/dal/project.rs::ProjectDal](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/project.rs#L92-L160)（当前实现含 14+ 个方法：create/update/delete、find_by_id、get_project(with_progress_summary/task_graph/artifacts) 三附带信息、query + count 通用分页、task 关联、artifact 关联 CRUD、进度汇总、任务图、update_task_progress 等）
 
 #### RequestContext 跨层传递规范
 
-**统一使用 `ctx.clone()`：**
-```rust
-// ✅ 正确
-self.project_dal.create(ctx.clone(), project).await?;
-self.task_dal.create(ctx.clone(), task).await?;
-
-// ❌ 错误：所有权移动后无法继续使用
-// self.project_dal.create(ctx, project).await?;
-```
+**统一使用 `ctx.clone()`：** RequestContext 结构体已 derive Clone（内部 Arc 引用，clone 成本极低，仅指针复制），见 [src/pkg/request_context.rs::RequestContext derive(Clone)](file:///Users/aman/Technology/rust/ai_orz/src/pkg/request_context.rs#L22-L29)。规范：跨多个 service 层调用时一律 `ctx.clone()`，禁止所有权移动（避免「第一个调用消费 ctx，后续调用不可用」的编译错误）。
 
 **理由：**
 - RequestContext 内部是 Arc 引用，clone 成本极低（仅指针复制）
@@ -464,18 +418,7 @@ self.task_dal.create(ctx.clone(), task).await?;
 
 #### 软删除设计范式
 
-**`status = 0` 视为软删除，常规查询默认过滤：**
-
-```rust
-// DAO 层示例
-async fn find_by_id(&self, id: &str) -> Result<Option<TaskPo>> {
-    sqlx::query_as!(
-        TaskPo,
-        r#"SELECT ... FROM tasks WHERE id = ? AND "status" != 0"#,
-        id
-    ).fetch_optional(&self.pool).await.map_err(Into::into)
-}
-```
+**`status = 0` 视为软删除，常规查询默认过滤：** TaskDao find_by_id 的实际 WHERE 子句示例见 [src/service/dao/task/sqlite.rs find_by_id](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/task/sqlite.rs#L126-L134)。典型状态约定：`TaskStatus::Cancelled = 0`、`OrganizationStatus::Disabled = 0` 等；需查询历史/恢复时使用 `query` 方法绕过该过滤。
 
 **典型场景：**
 - `TaskStatus::Cancelled = 0` - 取消的任务视为已删除
