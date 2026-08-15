@@ -1,5 +1,14 @@
 # 向量搜索与混合搜索架构设计文档
 
+> 🎯 **本文档定位**：三位一体混合搜索架构（FTS5 关键词 + 向量语义 + 知识图谱关系）、Vectorizable trait 信息专家原则、多后端向量存储抽象（LanceDB 默认 / HNSW / InMemory / SQLite VSS）的整体设计大纲与关键决策思路；设计思路快照，DAO 层查询语句与向量存储实现以实际代码为准。
+> 状态：v2.0（2026-07-24 tags 全链路支持落地，2026-08-15 整理）
+> 查阅场景：需要理解混合搜索哲学、Vectorizable 向量化边界、多后端切换策略、FTS5/向量/图谱三者融合过滤策略、tags 语义过滤 OR 语义实现边界时打开；Embedding 调用、LanceDB Schema、向量索引 CRUD 直接读代码。
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §向量化实体规范
+> - [memory_design.md](../memory_design.md) — 记忆系统（短期/长期记忆实体 Vectorizable 实现的使用方）
+> - [tool_design.md](./tool_design.md) — 工具/技能实体 Vectorizable 实现的使用方
+
 ## 概述
 
 本设计文档描述 ai_orz 项目中搜索能力的架构实现，包括**向量语义搜索**、**FTS5 关键词搜索**以及二者组合的**混合搜索**，为多 Agent 协作系统提供三位一体的检索能力。
@@ -98,24 +107,7 @@ SkillDal.create()
 
 每个实体的 DAL 层统一实现 `search()` 方法，内部执行：
 
-```rust
-async fn search(&self, ctx, params) -> Result<Vec<Entity>> {
-    // 1. FTS5 关键词搜索（Base Dao）
-    let keyword_results = self.base_dao.search_tools(ctx.clone(), params).await?;
-
-    // 2. 向量语义搜索（Vector Dao）
-    let query_vector = self.embed_query(&keyword).await?;
-    let vector_hits = self.vector_dao.search_vector(ctx.clone(), &query_vector, top_k).await?;
-
-    // 3. 结果合并，标记 MatchType
-    let mut results = self.merge_and_tag(keyword_results, vector_hits);
-
-    // 4. 三级排序
-    results.sort_by(|a, b| /* Hybrid > Vector > Keyword, 组内细排 */);
-
-    Ok(results)
-}
-```
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
 
 ### 向量索引生命周期
 
@@ -174,6 +166,7 @@ pub trait VectorStore: Send + Sync {
     async fn list_by_source_ids(&self, collection: &str, source_ids: &[String]) -> Result<Vec<VectorRow>>;
 }
 ```
+> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
 
 ### 后端对比
 
@@ -201,6 +194,7 @@ pub struct VectorSearchHit {
     pub distance: f32,
 }
 ```
+> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
 
 ---
 
@@ -208,134 +202,21 @@ pub struct VectorSearchHit {
 
 ### mod.rs 统一入口
 
-```rust
-// dao/skill/mod.rs
-
-// 1. Trait 定义（接口契约）
-#[async_trait]
-pub trait SkillDao: Send + Sync {
-    // 纯基础数据 CRUD
-    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
-    async fn update(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()>;
-    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<SkillPo>>;
-    // ... 其他基础方法
-}
-
-#[async_trait]
-pub trait SkillVectorDao: Send + Sync {
-    // 纯向量索引 CRUD
-    async fn upsert_vector(&self, ctx: RequestContext, row: VectorRow) -> Result<()>;
-    async fn search_vector(&self, ctx: RequestContext, collection: &str, vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>>;
-    async fn get_vector_row(&self, ctx: RequestContext, collection: &str, source_id: &str) -> Result<Option<VectorRow>>;
-}
-
-// 2. 子模块构造函数别名（用于 DAL 层组合）
-pub use sqlite::{dao as base_dao, new as new_skill_dao};
-pub use vector::{dao as vector_dao, new as new_skill_vector_dao};
-
-// 3. 统一初始化所有 Skill DAO 单例
-pub fn init() {
-    sqlite::init();
-    vector::init();
-}
-```
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
 
 ### sqlite.rs - 基础数据 DAO
 
-```rust
-// dao/skill/sqlite.rs
-// 只负责基础数据 CRUD，完全不感知向量存在
-
-#[derive(Debug, Clone)]
-pub struct SkillDaoSqliteImpl;
-
-#[async_trait]
-impl SkillDao for SkillDaoSqliteImpl {
-    async fn insert(&self, ctx: RequestContext, skill: &SkillPo) -> Result<()> {
-        // 纯 SQLite 插入逻辑
-    }
-    // ... 其他基础方法
-}
-```
+> 相关实现细节见：[向量搜索架构](file:///Users/aman/Technology/rust/ai_orz/src/pkg/vector_search/)
 
 ### vector.rs - 向量索引 DAO
 
-```rust
-// dao/skill/vector.rs
-// 只负责向量索引，不碰业务数据
-
-#[derive(Debug, Clone)]
-pub struct SkillVectorDaoImpl;
-
-#[async_trait]
-impl SkillVectorDao for SkillVectorDaoImpl {
-    async fn upsert_vector(&self, ctx: RequestContext, row: VectorRow) -> Result<()> {
-        ctx.storage().vector_store().insert_or_update(&row).await
-    }
-    
-    async fn search_vector(&self, ctx: RequestContext, collection: &str, vector: &[f32], top_k: i32) -> Result<Vec<VectorSearchHit>> {
-        ctx.storage().vector_store().search(collection, vector, top_k).await
-    }
-    
-    async fn get_vector_row(&self, ctx: RequestContext, collection: &str, source_id: &str) -> Result<Option<VectorRow>> {
-        ctx.storage().vector_store().get(collection, source_id).await
-    }
-}
-```
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
 
 ---
 
 ## Domain 层组合示例
 
-```rust
-// domain/skill/mod.rs
-
-pub struct SkillDalImpl {
-    base_dao: Arc<dyn SkillDao>,
-    vector_dao: Arc<dyn SkillVectorDao>,
-}
-
-impl SkillDal for SkillDalImpl {
-    async fn create(&self, ctx: RequestContext, skill: SkillPo) -> Result<SkillPo> {
-        // 1. 写入基础数据
-        self.base_dao.insert(ctx.clone(), &skill).await?;
-        
-        // 2. 构建索引文本
-        let text = format!("{} {}", skill.name, skill.description);
-        
-        // 3. 生成 Embedding
-        let vector = self.generate_embedding(&text).await?;
-        let content_hash = sha256(&text);
-        
-        // 4. 写入向量索引
-        let row = VectorRow {
-            collection: "skills".to_string(),
-            source_id: skill.id.clone(),
-            vector,
-            content_hash,
-            model: "text-embedding-3-small".to_string(),
-            indexed_at: now(),
-        };
-        self.vector_dao.upsert_vector(ctx, row).await?;
-        
-        Ok(skill)
-    }
-    
-    async fn hybrid_search(&self, ctx: RequestContext, query: &str, top_k: i32) -> Result<Vec<SkillPo>> {
-        // 1. 关键词搜索（基础 DAO）
-        let keyword_results = self.base_dao.search(ctx.clone(), query).await?;
-        
-        // 2. 向量搜索（向量 DAO）
-        let query_vector = self.generate_embedding(query).await?;
-        let vector_hits = self.vector_dao.search_vector(ctx, "skills", &query_vector, top_k).await?;
-        let vector_ids: Vec<&str> = vector_hits.iter().map(|h| h.source_id.as_str()).collect();
-        let vector_results = self.base_dao.batch_get(ctx, &vector_ids).await?;
-        
-        // 3. 结果合并去重
-        Ok(self.merge_results(keyword_results, vector_results))
-    }
-}
-```
+> 相关实现细节见：[向量索引模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/vector_search/)
 
 ---
 
@@ -354,6 +235,7 @@ pub enum VectorStoreType {
     LanceDB,   // LanceDB 嵌入式向量数据库
 }
 ```
+> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
 
 默认值：
 - 核心数据库：`ai_orz.db`
@@ -376,6 +258,7 @@ struct StorageInner {
 #[derive(Clone)]
 struct Storage;
 ```
+> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
 
 ### 构造方法
 
@@ -505,6 +388,7 @@ pub enum VectorStoreType {
     SqliteVss,   // SQLite VSS 扩展
 }
 ```
+> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
 
 ---
 
@@ -526,3 +410,19 @@ pub enum VectorStoreType {
 - **搜索查询结构复用**：`XxxSearch { query_vector, filters: XxxQuery }` 模式直接复用现有 Query 做业务过滤，零代码重复；执行流程：向量检索拿候选 ID → 业务条件过滤 → 组合结果按相似度排序
 - **搜索结果元信息嵌入**：`VectorMatchInfo` 不含泛型可嵌入任何业务实体；普通查询返回 `None`，向量搜索返回 `Some`（含 distance / embedding_model / indexed_at / content_hash），调用方无需二次查询
 - **未来扩展方向**（参考）：向量量化压缩（f32 → f16 → int8 渐进式压缩）、多向量字段（同实体多维度索引）、向量版本管理（Embedding 模型升级平滑迁移）、向量缓存层（相同内容结果缓存降低 API 调用）、向量质量监控（命中率 / 相似度分布 / 过期清理统计）
+
+---
+
+## 五、扩展模式
+
+### 5.1 新增向量存储后端（如 Qdrant / Milvus / PgLance）
+当前 `VectorStore` trait 有 4 个实现：LanceDB 默认 / HNSW / InMemory / SQLite VSS。新增后端：
+1. 在 `src/pkg/storage/vector.rs` 实现 `VectorStore` trait，保持构造器分离原则（默认 new() + 专用 with_xxx()），参考现有 trait：[storage/vector.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage/vector.rs)
+2. 集合路径与命名规范沿用 `{base_data_path}/vectors/` + `vss_{collection}` 约定，切换后端时上层 DAO/DAL 零改动，参考：[Storage 初始化入口](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage)
+3. 写入/删除失败时保持优雅降级（ok() + warn），绝不阻断业务写入主流程；搜索不可用时回退到 FTS5 关键词通道，参考：[dal 层调用点](file:///Users/aman/Technology/rust/ai_orz/src/service/dal)
+
+### 5.2 新增 Vectorizable 实体或扩展现有向量化字段组合
+当前已有 AgentPo / ToolPo / TaskPo / SkillPo / ShortTermMemoryIndexPo / LongTermKnowledgeNodePo 实现 Vectorizable。新增实体：
+1. 在 PO 上直接 `impl Vectorizable for XxxPo`，向量化字段组合由 PO 自身决定（信息专家原则），禁止在 DAL 层手工 format! 拼接文本，参考：[models/vector.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/vector.rs)
+2. DAL create/update 后统一调用 `embed_entity(ctx, cortex, po)` 完成索引（含 content_hash 去重与 expire_at），禁止绕过通用 embed_entity 单独向量化，参考：[embed_entity 定义](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage/vector.rs)
+3. 对应混合搜索 DAO 查询中，过滤条件复用现有 Query 的 push_query_filters，保持「向量候选 → 业务过滤 → 融合排序」三段流程一致，参考：[dao 层 query 实现](file:///Users/aman/Technology/rust/ai_orz/src/service/dao)
