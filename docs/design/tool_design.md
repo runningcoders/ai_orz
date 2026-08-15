@@ -1,5 +1,16 @@
 # ai_orz 工具模块设计与开发总结
 
+> 🎯 **本文档定位**：工具模块（CoreTool/Registry/三层执行链路）的架构设计、演进历史与通用内置工具落地细节；设计思路快照，接口签名与 DTO 定义以实际代码为准
+> 状态：v2.4（2026-08-09 前端体验闭环更新；2026-08-15 规范化整理）
+> 查阅场景：需要理解三层调用架构汇流点、工具包 tag 免绑定校验、register_handler_tool 宏注册机制、HTTP/MCP/Builtin 协议路由时打开；宏定义与具体 handler 实现直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
+> - [runtime_design.md](./runtime_design.md) — Runtime 域内 Awakening 层 execute_auto/execute_manual 分发逻辑
+> - [mcp_tool_design.md](./mcp_tool_design.md) — MCP 工具子系统的独立设计
+
+---
+
 ## 开发时间线（2026-04-17 / 2026-07-12 更新）
 
 ### 目标
@@ -163,9 +174,7 @@ tool DAO 测试覆盖了所有核心功能：
 
 ## 全项目测试结果
 
-```
-test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ---
 
@@ -255,9 +264,7 @@ test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
 8. `test_find_not_exists` - 查询不存在工具返回 None（边界测试）
 
 ### 测试结果
-```
-test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ---
 
@@ -310,9 +317,7 @@ decorated.call_with_entry(ctx, args)
 ### 存储结构
 
 日志文件按工具+日期分文件存储，路径格式：
-```
-{base_data_path}/tools/{tool_id}/call_trace/{YYYYMMDD}.jsonl
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 每个 JSONL 行是一个完整的 `ToolCallEntry`：
 ```rust
@@ -333,6 +338,7 @@ pub struct ToolCallEntry {
     pub metadata: serde_json::Value, // 扩展元数据
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 查询能力（Batch I 已完成）：
 - `ToolCallLogger` 支持按 `call_id`、`tool_id`、`agent_id`、`project_id`、`task_id`、`status`、时间范围和 `limit` 扫描 tool-specific daily JSONL；
@@ -411,6 +417,7 @@ pub enum MessageType {
     ToolCallResult,   // manual 模式：工具执行完成返回结果
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 ### 核心结构
 
@@ -452,6 +459,7 @@ pub struct Tool {
 /// 向后兼容类型别名
 pub type FullTool = Tool;
 ```
+> 当前实现：[tool_registry/mod.rs::ToolDescriptor 相关](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/mod.rs)
 
 ### 目录结构最终
 
@@ -568,9 +576,7 @@ execute_manual(tool, args)
 ### 测试结果
 
 本次重构完成后：
-```
-test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 **全项目测试全部通过**，无破坏性变更。
 
 ---
@@ -644,6 +650,7 @@ pub struct ToolExecutionResult {
     pub call_entry: ToolCallEntry, // 完整追踪条目
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 ### 错误类型设计
 
@@ -657,6 +664,7 @@ pub enum ToolDomainError {
     Database(sqlx::Error),       // 数据库错误
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 ### 分层调用关系
 
@@ -689,64 +697,7 @@ ToolDomain
 
 ### 完整链路设计
 
-```
-┌─────────────┐
-│  用户发消息  │ UserMessage
-└──────┬──────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│  Agent 思考循环 (Project Domain) │
-│  - 组装上下文 + 历史消息          │
-│  - LLM 推理判断需求              │
-│  - 解析输出格式 → type=tool      │
-└──────┬───────────────────────────┘
-       │
-       ▼  构造 ToolCallRequest 消息
-┌──────────────────────────────────┐
-│     Message Channel DAL          │
-│     - 消息写入数据库              │
-│     - to_role = System           │
-│     - 触发消费者唤醒              │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│  消费者框架 (message.rs)         │
-│  match msg.to_role {             │
-│    System => handle_system_message │
-│  }                               │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│  handle_system_message           │
-│  match msg.msg_type {            │
-│    ToolCallRequest => {          │
-│      - 从 Tool Domain 查工具      │
-│      - 校验 tool_name + args     │
-│      - 调用 tool.call(ctx, args) │
-│      - 捕获结果/错误              │
-│    }                             │
-│  }                               │
-└──────┬───────────────────────────┘
-       │
-       ▼  构造 ToolCallResult 消息
-┌──────────────────────────────────┐
-│     Message Channel DAL          │
-│     - 消息写入数据库              │
-│     - to_role = Agent            │
-│     - 触发消费者唤醒              │
-└──────┬───────────────────────────┘
-       │
-       ▼
-┌──────────────────────────────────┐
-│  Agent 唤醒回合 (外部再次触发)    │
-│  - 读取 ToolCallResult           │
-│  - 统计模块校验轮次预算           │
-│  - 决定：send_message / 再 tool / confirm │
-└──────────────────────────────────┘
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### MessageType 枚举扩展（对齐 Project 设计）
 
@@ -766,50 +717,14 @@ pub enum MessageType {
 
 **消息体 JSON 结构（存储在 message.content 字段）：**
 
-```json
-{
-  "tool_name": "create_task",
-  "tool_args": {
-    "project_id": "proj_xxx",
-    "title": "完成文档编写",
-    "description": "编写架构设计文档",
-    "priority": "high"
-  },
-  "thinking_depth": 3,
-  "trace_id": "trace_abc123"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### ToolCallResult 消息格式
 
-```json
-{
-  "tool_name": "create_task",
-  "success": true,
-  "result": {
-    "task_id": "task_xyz",
-    "status": "pending"
-  },
-  "error": null,
-  "execution_ms": 234,
-  "trace_id": "trace_abc123"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 **失败场景：**
-```json
-{
-  "tool_name": "create_task",
-  "success": false,
-  "result": null,
-  "error": {
-    "code": "PERMISSION_DENIED",
-    "message": "Agent 没有在该 Project 下创建任务的权限"
-  },
-  "execution_ms": 15,
-  "trace_id": "trace_abc123"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### 工具注册表设计
 
@@ -829,28 +744,11 @@ pub trait ContextTool: Send + Sync {
     ) -> Result<serde_json::Value, ToolError>;
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 **工具注册表单例：**
 
-```rust
-pub struct ToolRegistry {
-    tools: HashMap<String, Box<dyn ContextTool>>,
-}
-
-impl ToolRegistry {
-    // 全局单例
-    pub fn instance() -> &'static Self { ... }
-    
-    // 注册工具（Agent 入职时绑定）
-    pub fn register(&self, tool: Box<dyn ContextTool>);
-    
-    // 查找工具
-    pub fn get(&self, name: &str) -> Option<&dyn ContextTool>;
-    
-    // 列出 Agent 可用工具（用于 Prompt 组装）
-    pub fn list_for_agent(&self, agent_id: &str) -> Vec<ToolInfo>;
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### 分层职责对齐（严格遵守）
 
@@ -905,6 +803,7 @@ pub trait BuiltinToolFactory: Send + Sync + Debug {
     async fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>, AppError>;
 }
 ```
+> 当前实现：[tool_registry/builtin.rs::BuiltinToolFactory](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/builtin.rs#L19-L30)
 
 **现在：**
 ```rust
@@ -914,19 +813,11 @@ pub trait BuiltinToolFactory: Send + Sync + Debug {
     async fn create(&self, po: ToolPo) -> Result<Box<dyn CoreTool>, AppError>;
 }
 ```
+> 当前实现：[tool_registry/builtin.rs::BuiltinToolFactory](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/builtin.rs#L19-L30)
 
 #### 2. 新增 ToolPo::fill_defaults_for_builtin()
 为 Builtin 工具自动填充默认值：
-```rust
-impl ToolPo {
-    pub fn fill_defaults_for_builtin(mut self) -> Self {
-        self.protocol = ToolProtocol::Builtin;
-        self.control_mode = ControlMode::Auto;
-        self.version = 1;
-        self
-    }
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 #### 3. 新增 Builtin 工具保护
 在 ToolDao 层添加保护：
@@ -941,6 +832,7 @@ pub trait ToolDao: Send + Sync {
     async fn delete_tool(&self, ctx: RequestContext, tool_id: &str) -> Result<(), AppError>;
 }
 ```
+> 当前实现参考：[tool 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs)
 
 #### 4. 简化 sync_builtin_tools_to_db()
 **之前：**
@@ -948,10 +840,7 @@ pub trait ToolDao: Send + Sync {
 - 手动构造 ToolPo
 
 **现在：**
-```rust
-let po = factory.create_po().fill_defaults_for_builtin();
-// 直接 upsert 即可
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### 设计决策
 
@@ -968,9 +857,7 @@ let po = factory.create_po().fill_defaults_for_builtin();
 - `test_update_builtin_tool_protected`：新增，验证 Builtin 工具无法更新
 
 ### 测试结果
-```
-test result: ok. 283 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 **全项目测试全部通过**。
 
 ---
@@ -985,16 +872,7 @@ test result: ok. 283 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 所有 Tool 管理面路由统一挂在 Finance 管理域下：
 
-```http
-POST   /api/v1/finance/tools
-GET    /api/v1/finance/tools
-GET    /api/v1/finance/tools/{id}
-PUT    /api/v1/finance/tools/{id}
-PUT    /api/v1/finance/tools/{id}/status
-DELETE /api/v1/finance/tools/{id}
-POST   /api/v1/finance/tools/{id}/agent-bind
-DELETE /api/v1/finance/tools/{id}/agent-bind
-```
+> 相关实现细节见：[handlers/hr/tool + http_tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/handlers/hr/tool/)
 
 列表查询通过 query 参数表达筛选：
 
@@ -1029,17 +907,7 @@ Tool 协议配置 `config` 可能包含 header、token、connection string 等�
 
 `src/handlers/finance/tool/` 按 action 拆文件：
 
-```text
-create_tool.rs
-list_tools.rs
-get_tool.rs
-update_tool.rs
-update_tool_status.rs
-delete_tool.rs
-bind_tool_to_agent.rs
-unbind_tool_from_agent.rs
-response.rs
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 Handler 只做请求级编排：
 
@@ -1060,17 +928,11 @@ Handler 只做请求级编排：
 
 状态变更统一使用：
 
-```http
-PUT /api/v1/finance/tools/{id}/status
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 请求体：
 
-```json
-{
-  "status": "Enabled"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 实现规则：
 
@@ -1089,8 +951,8 @@ PUT /api/v1/finance/tools/{id}/status
 
 ### 验证
 
-- `cargo check` 通过；
-- `cargo test` 通过；
+- 编译检查通过；
+- 测试通过；
 - Tool DAO / DAL / Domain 覆盖了删除、内置工具保护、状态迁移和列表查询相关测试。
 
 ---
@@ -1099,11 +961,7 @@ PUT /api/v1/finance/tools/{id}/status
 
 详细设计见 `docs/design/mcp_tool_design.md`。核心结论：
 
-```text
-MCP Server 是外部能力 Provider；
-MCP Tool 是 Provider 暴露出的具体工具实体；
-ToolPo.config 只保存 server_id + tool_name，不复制 server credential。
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 ### 代码结构决策
 
@@ -1159,22 +1017,11 @@ handler → domain → dal → dao
 
 HTTP 工具不设计为一个固定暴露给 Agent 的裸 `http_get` / `http_post` 内置工具，而设计为一套**通用 HTTP Tool Runtime**：
 
-```text
-HTTP Runtime 是代码内置能力；
-HTTP Tool 是数据库驱动的用户/系统注册工具。
-```
+> 相关实现细节见：[handlers/hr/tool + http_tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/handlers/hr/tool/)
 
 用户通过管理页面创建具体 HTTP 工具，写入标准 `tools` 表记录：
 
-```rust
-ToolPo {
-    protocol: ToolProtocol::Http,
-    control_mode: ControlMode::Manual,
-    parameters_schema,
-    config: HttpToolConfig JSON,
-    ...
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 运行时根据 `ToolProtocol::Http` 动态构建 `HttpCoreTool` 并执行。
 
@@ -1197,20 +1044,11 @@ ToolPo {
 
 因此：
 
-```text
-Builtin 不等于 Auto；
-Http 不等于 Manual；
-调用方式只看 ControlMode。
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 Awakening 循环中按 `control_mode` 分发的逻辑是：
 
-```rust
-match tool.po.control_mode {
-    ControlMode::Auto => tool_dal.execute_auto(ctx, tool, args).await,
-    ControlMode::Manual => tool_dal.execute_manual(ctx, tool, args).await,
-}
-```
+> 相关实现细节见：[runtime/awakening.rs + tool_execution.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs)
 
 ### 代码组织
 
@@ -1230,20 +1068,11 @@ src/pkg/tool_registry/http.rs
 
 `ToolCallDao` 不直接知道 HTTP 请求细节，只通过现有统一入口获取工具实例：
 
-```rust
-let registry = get_registry();
-let tool = registry.create_tool(po.clone());
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 `ToolRegistry.create_tool()` 根据 `ToolProtocol` 分发：
 
-```rust
-match po.protocol {
-    ToolProtocol::Builtin => builtin_factory.create(po),
-    ToolProtocol::Http => http_factory.create(po),
-    ToolProtocol::Mcp => mcp::create_mcp_tool(po, deps), // 或 McpToolBuilder；deps 由 McpToolDal 准备
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 HTTP Tool 是数据库注册、配置驱动的协议工具，因此不使用 `HashMap<tool_id, factory>`。`ToolRegistry` 持有一个协议级 `HttpToolFactory`，默认实现为 `DefaultHttpToolFactory`，内部再构造 `HttpCoreTool`。这样 registry 不直接依赖包级别 `http::create_tool(po)` 函数，后续可以通过依赖注入替换 HTTP runtime、client、resolver 或测试替身。
 
@@ -1348,21 +1177,10 @@ ToolCallResult 写回消息链路
 #### 1. `http_fetch` (ID: `http_fetch`, name: `fetch_url`)
 
 **参数**：
-```json
-{
-  "url": "string (required) - HTTPS URL to fetch"
-}
-```
+> 相关实现细节见：[handlers/hr/tool + http_tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/handlers/hr/tool/)
 
 **返回**：
-```json
-{
-  "status": "u16",
-  "headers": "object",
-  "content_length": "usize",
-  "body": "JSON | string"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 **测试覆盖**：4 个单元测试全部通过。
 
@@ -1371,22 +1189,10 @@ ToolCallResult 写回消息链路
 #### 2. `fs_read` (ID: `fs_read`, name: `read_file`)
 
 **参数**：
-```json
-{
-  "path": "string (required) - Path relative to base_data_path",
-  "start_line": "integer (optional) - Start reading from this line (1-indexed)",
-  "end_line": "integer (optional) - Stop reading at this line (inclusive)",
-  "grep": "string (optional) - Only return lines matching this pattern with context",
-  "context_lines": "integer (optional, default 2) - Context lines before/after each match"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 **配置** (`ToolPo.config`)：
-```json
-{
-  "additional_allowed_paths": ["optional", "list", "of", "extra", "paths"]
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 **返回**：
 - 正常读取：返回带行号的内容 + 元信息
@@ -1398,16 +1204,7 @@ ToolCallResult 写回消息链路
 #### 3. `fs_write` (ID: `fs_write`, name: `write_file`)
 
 **参数**：
-```json
-{
-  "path": "string (required) - Path relative to base_data_path",
-  "mode": "string (required) - one of: overwrite | append | insert_after | delete_range | replace_range",
-  "content": "string (required for: overwrite, append, insert_after, replace_range)",
-  "after_line": "usize (required for: insert_after)",
-  "start_line": "usize (required for: delete_range, replace_range)",
-  "end_line": "usize (required for: delete_range, replace_range)"
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 **支持的模式**：
 | 模式 | 说明 |
@@ -1438,9 +1235,7 @@ ai_orz/src/pkg/tool_registry/
 ### 测试结果
 
 所有相关测试全部通过：
-```
-test result: ok. 63 passed; 0 failed; 0 ignored
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 包括：
 - http_fetch 安全测试（拒绝 HTTP/localhost/私有IP）
@@ -1451,14 +1246,7 @@ test result: ok. 63 passed; 0 failed; 0 ignored
 
 管理员可以在数据库中修改 `fs_read` / `fs_write` 工具的 `config` JSON，添加 `additional_allowed_paths` 来允许访问项目外的指定路径：
 
-```json
-{
-  "additional_allowed_paths": [
-    "/absolute/path/to/project",
-    "relative/path/from/base_data_path"
-  ]
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 所有安全检查（敏感文件过滤、符号链接检查）仍然生效。
 
@@ -1487,14 +1275,7 @@ test result: ok. 63 passed; 0 failed; 0 ignored
 
 #### 配置结构（`ToolPo.config`）
 
-```json
-{
-  "additional_allowed_paths": ["list", "of", "extra", "allowed", "working", "directories"],
-  "allowed_env": ["PATH", "RUSTFLAGS", ...],
-  "default_timeout_ms": 300000,
-  "default_max_output_size_bytes": 10485760
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 - `additional_allowed_paths`：额外允许的工作目录，默认只允许 `base_data_path` 内
 - `allowed_env`：允许从进程环境继承的环境变量白名单
@@ -1503,16 +1284,7 @@ test result: ok. 63 passed; 0 failed; 0 ignored
 
 #### 调用参数（Agent 发起请求）
 
-```json
-{
-  "command": "string (required) - shell command to execute",
-  "working_dir": "string (optional) - working directory, must be allowed",
-  "timeout_ms": "integer (optional) - override default timeout",
-  "max_output_size_bytes": "integer (optional) - truncate output after this size",
-  "background": "boolean (optional, default false) - run in background",
-  "env": {"KEY": "value", ...}  // extra environment variables
-}
-```
+> 相关实现细节见：[tool 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/)
 
 #### 安全设计
 
@@ -1757,5 +1529,25 @@ ai_orz/src/pkg/tool_registry/
 ### 测试更新
 
 新增 2 个测试：`generic_builtin_tools_carry_expected_tags`（registry 层断言四个通用工具 tag 定义）、`test_sync_builtin_tools_refreshes_code_owned_fields`（DAL 层断言代码字段被刷新且 config/status 保留）。
+
+---
+
+## 五、扩展模式
+
+### 场景 1：新增一种 ToolProtocol（如 WebSocket SSE 工具）
+
+如果未来需要新增流式长连接类工具协议（SSE/WebSocket），可参考现有的 Builtin/Http/Mcp 分支：
+
+1. 在 [enums/tool.rs::ToolProtocol](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/tool.rs#L14-L30) 新增变体，同步补充 `ToolPo.protocol` 存储层的枚举映射
+2. 在 [pkg/tool_registry/mod.rs::ToolRegistry](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/mod.rs#L49-L80) 新增 typed storage 字段，并在 `create_tool` / `call_tool` 分发处加分支
+3. 在 [dal/tool.rs::ToolDal](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/tool.rs#L78-L150) 的协议路由逻辑中，仿照 McpToolDal 委托路径，新增对应 DAL 或复用现有 ToolDal + 新增 handler 工具
+
+### 场景 2：为通用工具新增一个 tag 分组（如 "db" 数据库操作工具组）
+
+若未来需要新增 `db_query` / `db_migrate` 等通用内置工具并按组绑定：
+
+1. 参考四个通用工具的 tag 注册模式，在 [pkg/tool_registry/builtin.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/builtin.rs) 的对应 `#[register_handler_tool]` 宏上加 `tags = "db"`
+2. 复用现有的 `sync_builtin_tools_refreshes_code_owned_fields` 逻辑（代码所有权字段无条件刷新），启动时 DB 记录的 tags 自动同步
+3. Agent 入职或配置页调用 `install_tag("db")` 即可整组安装，无需逐个绑定，免绑定校验三层逻辑在 [runtime/tool_execution.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/tool_execution.rs) 的绑定检查处已支持 tag 交集判定
 
 ---
