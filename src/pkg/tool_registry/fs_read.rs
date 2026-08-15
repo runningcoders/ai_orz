@@ -3,7 +3,7 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
-    ValidationResult, resolve_and_validate_path, sanitize_error,
+    ValidationResult, crosses_user_boundary, resolve_and_validate_path, sanitize_error,
 };
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -60,7 +60,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
                 "Read content from a file in the current project/workspace. ",
                 "Supports full file read, range read by line numbers, and grep-style pattern matching. ",
                 "Returns content with line numbers for easy editing. ",
-                "**Permission rule**: Only allowed to read files within the project/task/attachment working directories. ",
+                "**Permission rule**: Only allowed to read files within the base data directory. ",
+                "Paths inside another user's tree (users/{other}/) require explicit user confirmation. ",
                 "If the requested path is outside this scope, you MUST STOP and ask the user for confirmation before proceeding."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
@@ -125,7 +126,7 @@ impl FsReadCoreTool {
 
 #[async_trait::async_trait]
 impl CoreTool for FsReadCoreTool {
-    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
+    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
         // Parse arguments
         let args: ReadFileArgs = serde_json::from_value(args)
             .map_err(|e| anyhow::anyhow!("Invalid arguments: {}", e))
@@ -148,6 +149,20 @@ impl CoreTool for FsReadCoreTool {
                 }));
             }
             ValidationResult::Valid(target_path) => {
+                // 用户树身份边界：读取其他用户目录需用户确认
+                let base_root = crate::config::get().base_data_path();
+                if crosses_user_boundary(&base_root, &target_path, ctx.user_id.as_deref()) {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "require_confirmation": true,
+                        "message": format!(
+                            "Path '{}' is inside another user's directory. \
+                            You MUST STOP and ask the user for explicit confirmation before accessing it.",
+                            args.path
+                        )
+                    }));
+                }
+
                 // Check file size before opening
                 let metadata = std::fs::metadata(&target_path)
                     .map_err(|e| {

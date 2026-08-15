@@ -174,6 +174,92 @@ mod subprocess_tests {
             .build()
     }
 
+    /// 用户 + Agent 双上下文 ctx（Agent 为用户执行任务的场景）
+    fn agent_test_ctx(call_id: &str) -> RequestContext {
+        let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        new_test_ctx("test-user", pool)
+            .to_builder()
+            .agent_id("agent-x")
+            .tool_call_id(call_id.to_string())
+            .build()
+    }
+
+    /// 默认工作目录 = 用户树内 Agent 工作区（users/{uid}/agents/{aid}/work），
+    /// HOME 注入为用户隔离 HOME（users/{uid}）
+    #[tokio::test]
+    async fn test_default_working_dir_and_home_follow_user_context() {
+        setup();
+        let base = ensure_test_base_data_path();
+        let tool = shell_tool();
+
+        // pwd 应落在用户树内 Agent 工作区（pwd 打印内核解析后的路径，先 canonicalize 期望值）
+        let call_id = format!("ws-{}", uuid::Uuid::now_v7());
+        let output = tool
+            .call(
+                agent_test_ctx(&call_id),
+                serde_json::json!({ "command": "pwd" }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.get("success"), Some(&serde_json::Value::Bool(true)));
+        let out = output.get("output").and_then(|v| v.as_str()).unwrap();
+        let expected_ws =
+            crate::pkg::paths::user_agent_workspace(&base, "test-user", "agent-x");
+        let expected_ws = expected_ws.canonicalize().unwrap_or(expected_ws);
+        assert!(
+            out.contains(expected_ws.to_str().unwrap()),
+            "pwd='{}' should run under {}",
+            out,
+            expected_ws.display()
+        );
+        let pid = output.get("pid").and_then(|v| v.as_u64()).unwrap() as u32;
+        process::registry().remove(pid);
+
+        // $HOME 应为用户隔离 HOME（env 值原样传递，不做符号链接解析）
+        let call_id = format!("ws-{}", uuid::Uuid::now_v7());
+        let output = tool
+            .call(
+                agent_test_ctx(&call_id),
+                serde_json::json!({ "command": "echo $HOME" }),
+            )
+            .await
+            .unwrap();
+        let out = output.get("output").and_then(|v| v.as_str()).unwrap();
+        let expected_home = crate::pkg::paths::user_home(&base, "test-user");
+        assert_eq!(out.trim(), expected_home.to_str().unwrap());
+        let pid = output.get("pid").and_then(|v| v.as_u64()).unwrap() as u32;
+        process::registry().remove(pid);
+    }
+
+    /// 其他用户树的工作目录：返回 require_confirmation，不执行命令
+    #[tokio::test]
+    async fn test_other_user_working_dir_requires_confirmation() {
+        setup();
+        let base = ensure_test_base_data_path();
+        let tool = shell_tool();
+        let other_dir =
+            crate::pkg::paths::user_agent_workspace(&base, "other-user", "agent-y");
+
+        let output = tool
+            .call(
+                agent_test_ctx("wd-other"),
+                serde_json::json!({
+                    "command": "echo hi",
+                    "working_dir": other_dir.to_str().unwrap()
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            output.get("success"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            output.get("require_confirmation"),
+            Some(&serde_json::Value::Bool(true))
+        );
+    }
+
     /// 超时默认 detach：返回 timeout + pid 存活 + registry 有条目
     #[tokio::test]
     async fn test_sync_timeout_detach_keeps_process_alive() {

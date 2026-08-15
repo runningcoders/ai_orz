@@ -5,8 +5,12 @@
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::tool_security::fs::{
+    crosses_agent_workspace, crosses_user_boundary,
+};
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -102,8 +106,12 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                 "Execute shell commands in a sandboxed environment. ",
                 "Supports both short synchronous execution and long asynchronous background processes. ",
                 "Output larger than the configured limit is stored as a log attachment, only summary returned. ",
-                "**Security**: Working directory is restricted to configured allowed paths, sensitive environment ",
-                "variables are filtered out, and command execution is sandboxed to the configured base directory."
+                "**Default working directory**: when omitted, commands run in the calling agent's workspace ",
+                "(users/{user_id}/agents/{agent_id}/work), with HOME set to the user's isolated home directory ",
+                "(so git/gh and other CLIs reuse the user's configuration). ",
+                "**Security**: Working directory is restricted to configured allowed paths; another user's tree ",
+                "or another agent's workspace requires explicit user confirmation; sensitive environment ",
+                "variables are filtered out."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Manual,
@@ -116,7 +124,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                     },
                     "working_dir": {
                         "type": "string",
-                        "description": "Optional: working directory for execution, relative to project root."
+                        "description": "Optional: working directory for execution, relative to the base data root. Default: the calling agent's workspace (users/{user_id}/agents/{agent_id}/work)."
                     },
                     "timeout_ms": {
                         "type": "integer",
@@ -174,44 +182,40 @@ impl ShellExecCoreTool {
         Self { po, config }
     }
 
-    /// Validate working directory is allowed.
-    fn validate_working_dir(&self, working_dir: &str) -> Result<bool> {
+    /// Validate resolved working directory is within allowed scope
+    /// (base data path or configured additional allowed paths).
+    fn validate_working_dir(&self, resolved: &std::path::Path) -> bool {
         let base_path = get().base_data_path();
         let base_path = std::path::Path::new(&base_path);
-
-        // Check if path is within base data path
-        let path = std::path::Path::new(working_dir);
-        if path.is_absolute() {
-            // Check if it's in any of the additional allowed paths
-            for allowed in self.config.additional_allowed_paths() {
-                let allowed_path = std::path::Path::new(allowed);
-                if path.starts_with(allowed_path) {
-                    return Ok(true);
-                }
-            }
-            // Check if it's within base path
-            if path.starts_with(base_path) {
-                return Ok(true);
-            }
-            Ok(false)
-        } else {
-            // Relative path is always within base path
-            Ok(true)
+        if resolved.starts_with(base_path) {
+            return true;
         }
+        self.config
+            .additional_allowed_paths()
+            .iter()
+            .any(|allowed| resolved.starts_with(std::path::Path::new(allowed)))
     }
 
     /// Resolve absolute working directory path.
-    fn resolve_working_dir(&self, working_dir: Option<&str>) -> std::path::PathBuf {
+    ///
+    /// 未指定时按调用身份选择默认工作区（见 `paths::default_workspace`）：
+    /// Agent 为用户执行任务时落在 `users/{uid}/agents/{aid}/work`。
+    fn resolve_working_dir(
+        &self,
+        ctx: &RequestContext,
+        working_dir: Option<&str>,
+    ) -> std::path::PathBuf {
         let base_path = get().base_data_path();
         match working_dir {
             Some(path) if std::path::Path::new(path).is_absolute() => {
                 std::path::PathBuf::from(path)
             }
-            Some(path) => {
-                let base = std::path::Path::new(&base_path);
-                base.join(path)
-            }
-            None => base_path,
+            Some(path) => std::path::Path::new(&base_path).join(path),
+            None => paths::default_workspace(
+                &base_path,
+                ctx.user_id.as_deref(),
+                ctx.agent_id.as_deref(),
+            ),
         }
     }
 }
@@ -270,19 +274,35 @@ impl CoreTool for ShellExecCoreTool {
             .map_err(|e| anyhow!("Invalid arguments: {}", e))
             .map_err(common::error::Error::from)?;
 
-        // Validate working directory
-        if let Some(wd) = &params.working_dir
-            && !self.validate_working_dir(wd)?
-        {
+        // Resolve working directory (default: caller-identity workspace)
+        let working_dir = self.resolve_working_dir(&ctx, params.working_dir.as_deref());
+
+        // Validate scope (base data path / additional allowed paths)
+        if !self.validate_working_dir(&working_dir) {
             return Ok(serde_json::json!({
                 "success": false,
-                "error": format!("Working directory '{}' is not in allowed paths", wd),
+                "error": format!("Working directory '{}' is not in allowed paths", working_dir.display()),
                 "require_confirmation": true
             }));
         }
 
-        // Resolve working directory
-        let working_dir = self.resolve_working_dir(params.working_dir.as_deref());
+        // Workspace identity boundary: another user's tree / another agent's
+        // workspace requires explicit user confirmation.
+        let base_root = get().base_data_path();
+        if crosses_user_boundary(&base_root, &working_dir, ctx.user_id.as_deref())
+            || crosses_agent_workspace(&base_root, &working_dir, ctx.agent_id.as_deref())
+        {
+            return Ok(serde_json::json!({
+                "success": false,
+                "require_confirmation": true,
+                "message": format!(
+                    "Working directory '{}' belongs to another user/agent workspace. \
+                    You MUST STOP and ask the user for explicit confirmation before using it.",
+                    working_dir.display()
+                )
+            }));
+        }
+
         if !working_dir.exists() {
             create_dir_all(&working_dir).await?;
         }
@@ -317,8 +337,7 @@ impl CoreTool for ShellExecCoreTool {
             .tool_call_id()
             .cloned()
             .unwrap_or_else(|| ctx.log_id.clone());
-        let base_data_path = get().base_data_path();
-        let log_dir = base_data_path.join("tools").join("shell_exec").join("logs");
+        let log_dir = base_root.join("tools").join("shell_exec").join("logs");
         if !log_dir.exists() {
             create_dir_all(&log_dir).await?;
         }
@@ -330,6 +349,11 @@ impl CoreTool for ShellExecCoreTool {
         command.current_dir(&working_dir);
         for (key, value) in &env {
             command.env(key, value);
+        }
+        // 用户身份存在时，HOME 指向用户隔离 HOME（见 paths::user_home），
+        // 让 git/gh 等子命令复用该用户的 CLI 配置与凭证
+        if let Some(uid) = ctx.user_id.as_deref() {
+            command.env("HOME", paths::user_home(&base_root, uid));
         }
         let stdio_stdout = Stdio::from(
             OpenOptions::new()

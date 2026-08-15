@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 pub mod builtin;
 pub mod fs_read;
 pub mod fs_write;
+pub mod gh_cli;
 pub mod handler_adapter;
 pub mod http;
 pub mod http_fetch;

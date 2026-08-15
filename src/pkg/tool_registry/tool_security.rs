@@ -483,4 +483,163 @@ pub mod fs {
             .map(|last| last.to_string())
             .unwrap_or(s)
     }
+
+    /// 判定目标路径是否越过「用户树」身份边界（`{base}/users/{other}`）
+    ///
+    /// # 规则
+    ///
+    /// 目标位于 `{base}/users/{X}` 下且 `X` 与当前 `user_id` 不一致时视为越界；
+    /// 无用户身份（None）时任何 `users/{X}` 均视为越界。
+    /// 仅覆盖用户树；顶层系统目录（agents/、skills/ 等）不在本检查范围。
+    ///
+    /// 返回 true 表示需要用户确认（NeedConfirmation 语义），不是硬拒绝。
+    pub fn crosses_user_boundary(base_root: &Path, target: &Path, user_id: Option<&str>) -> bool {
+        let Some(rel) = relative_to_root(base_root, target) else {
+            return false;
+        };
+        let mut comps = rel.components();
+        if comps.next().and_then(|c| c.as_os_str().to_str()) != Some("users") {
+            return false;
+        }
+        let Some(owner) = comps.next().and_then(|c| c.as_os_str().to_str()) else {
+            return false;
+        };
+        user_id != Some(owner)
+    }
+
+    /// 判定目标路径是否越过「Agent 工作区」边界（写保护场景）
+    ///
+    /// # 规则
+    ///
+    /// 仅当 `agent_id` 存在（Agent 调用）时检查，覆盖两类路径：
+    /// - `{base}/agents/{other}`：其他 Agent 的顶层树（记忆/技能/自身工作区）
+    /// - `{base}/users/{any}/agents/{other}`：用户树内其他 Agent 的工作区
+    ///
+    /// 用户/系统直接调用（agent_id 为 None）不受限。
+    pub fn crosses_agent_workspace(base_root: &Path, target: &Path, agent_id: Option<&str>) -> bool {
+        let Some(current) = agent_id else {
+            return false;
+        };
+        let Some(rel) = relative_to_root(base_root, target) else {
+            return false;
+        };
+        let comps: Vec<&str> = rel
+            .components()
+            .filter_map(|c| c.as_os_str().to_str())
+            .collect();
+        match comps.first() {
+            // 顶层 Agent 树：agents/{other}/...
+            Some(&"agents") => comps.get(1).is_some_and(|a| *a != current),
+            // 用户树内 Agent 工作区：users/{any}/agents/{other}/...
+            Some(&"users") => {
+                comps.get(1).is_some()
+                    && comps.get(2) == Some(&"agents")
+                    && comps.get(3).is_some_and(|a| *a != current)
+            }
+            _ => false,
+        }
+    }
+
+    /// 将 target 规约为相对 base_root 的路径
+    ///
+    /// macOS 上临时目录含符号链接（/var → /private/var），且 target 可能尚不存在
+    /// 无法 canonicalize，因此对 root/target 各取「原样 + canonicalize」两种形态
+    /// 交叉匹配，任一命中即认为在根内。
+    fn relative_to_root(base_root: &Path, target: &Path) -> Option<PathBuf> {
+        let root_variants = [
+            base_root.to_path_buf(),
+            base_root.canonicalize().unwrap_or_else(|_| base_root.to_path_buf()),
+        ];
+        let target_variants = [
+            target.to_path_buf(),
+            target.canonicalize().unwrap_or_else(|_| target.to_path_buf()),
+        ];
+        for root in &root_variants {
+            for tgt in &target_variants {
+                if let Ok(rel) = tgt.strip_prefix(root) {
+                    return Some(rel.to_path_buf());
+                }
+            }
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod fs_boundary_tests {
+    use super::fs::{crosses_agent_workspace, crosses_user_boundary};
+    use std::path::Path;
+
+    const BASE: &str = "/data/.ai_orz";
+
+    #[test]
+    fn user_boundary_allows_own_and_non_user_tree() {
+        let base = Path::new(BASE);
+        // 自己的用户树：不越界
+        assert!(!crosses_user_boundary(
+            base,
+            Path::new("/data/.ai_orz/users/u1/shared/p/readme.md"),
+            Some("u1")
+        ));
+        // 用户树之外：不越界
+        assert!(!crosses_user_boundary(
+            base,
+            Path::new("/data/.ai_orz/skills/s1/skill.md"),
+            Some("u1")
+        ));
+    }
+
+    #[test]
+    fn user_boundary_blocks_other_user_tree() {
+        assert!(crosses_user_boundary(
+            Path::new(BASE),
+            Path::new("/data/.ai_orz/users/u2/agents/a1/work/x.md"),
+            Some("u1")
+        ));
+        // 无用户身份：任何用户树都视为越界
+        assert!(crosses_user_boundary(
+            Path::new(BASE),
+            Path::new("/data/.ai_orz/users/u1/shared/x"),
+            None
+        ));
+    }
+
+    #[test]
+    fn agent_workspace_boundary_rules() {
+        let base = Path::new(BASE);
+        // 顶层：自己的树不越界，其他 Agent 越界
+        assert!(!crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/agents/a1/work/x"),
+            Some("a1")
+        ));
+        assert!(crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/agents/a2/work/x"),
+            Some("a1")
+        ));
+        // 用户树内：其他 Agent 工作区越界（无论属主用户是谁）
+        assert!(crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/users/u1/agents/a2/work/x"),
+            Some("a1")
+        ));
+        // 用户树内：自己的工作区不越界；shared 区不越界
+        assert!(!crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/users/u1/agents/a1/work/x"),
+            Some("a1")
+        ));
+        assert!(!crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/users/u1/shared/projects/p"),
+            Some("a1")
+        ));
+        // 无 Agent 身份：不受限
+        assert!(!crosses_agent_workspace(
+            base,
+            Path::new("/data/.ai_orz/agents/a2/work/x"),
+            None
+        ));
+    }
 }

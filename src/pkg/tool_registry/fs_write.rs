@@ -3,7 +3,8 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
-    ValidationResult, resolve_and_validate_path, sanitize_error,
+    ValidationResult, crosses_agent_workspace, crosses_user_boundary, resolve_and_validate_path,
+    sanitize_error,
 };
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
@@ -55,8 +56,9 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsWriteToolFactory {
                 "Supports multiple atomic modes: overwrite entire file, append to end, insert after a line, ",
                 "delete a range of lines, or replace a range of lines. ",
                 "All changes are atomic — either complete or not written. ",
-                "**Permission rule**: Only allowed to write to files within the project/task/attachment working directories. ",
-                "If the requested path is outside this scope, you MUST STOP and ask the user for confirmation before proceeding."
+                "**Permission rule**: writes are allowed within the agent's own data directory ",
+                "and the current user's home tree (users/{user_id}/...); paths inside another ",
+                "user's tree or another agent's workspace require explicit user confirmation."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,
@@ -137,12 +139,18 @@ impl CoreTool for FsWriteCoreTool {
 
         // Get base data path from agent-specific directory
         let base_path = crate::config::get().agent_data_dir(agent_id);
-        let additional_allowed = self
+        // 用户身份存在时，当前用户的 HOME 树（shared 区 / Agent 工作区）也可写
+        let mut allowed: Vec<String> = self
             .config
             .additional_allowed_paths
-            .as_deref()
-            .unwrap_or(&[]);
-        match resolve_and_validate_path(&base_path, &args.path, additional_allowed)? {
+            .clone()
+            .unwrap_or_default();
+        if let Some(uid) = ctx.user_id() {
+            let user_home =
+                crate::pkg::paths::user_home(&crate::config::get().base_data_path(), uid);
+            allowed.push(user_home.to_string_lossy().to_string());
+        }
+        match resolve_and_validate_path(&base_path, &args.path, &allowed)? {
             ValidationResult::NeedConfirmation(message) => {
                 // Return explicit prompt for agent to ask user confirmation
                 return Ok(serde_json::json!({
@@ -152,6 +160,26 @@ impl CoreTool for FsWriteCoreTool {
                 }));
             }
             ValidationResult::Valid(target_path) => {
+                // 工作区身份边界：其他用户目录 / 其他 Agent 工作区写入需用户确认
+                let base_root = crate::config::get().base_data_path();
+                if crosses_user_boundary(&base_root, &target_path, ctx.user_id.as_deref())
+                    || crosses_agent_workspace(
+                        &base_root,
+                        &target_path,
+                        ctx.agent_id().map(String::as_str),
+                    )
+                {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "require_confirmation": true,
+                        "message": format!(
+                            "Path '{}' is inside another user's/agent's workspace. \
+                            You MUST STOP and ask the user for explicit confirmation before writing to it.",
+                            args.path
+                        )
+                    }));
+                }
+
                 // Read existing file lines if it exists
                 let mut existing_lines: Vec<String> = if target_path.exists() {
                     let file = File::open(&target_path)
@@ -423,5 +451,81 @@ mod tests {
         let content = "";
         let lines = split_lines(content);
         assert_eq!(lines.len(), 0);
+    }
+
+    /// 工作区身份边界：自己用户树可写；其他用户树 / 同用户其他 Agent 工作区需确认
+    #[tokio::test]
+    async fn test_write_workspace_boundary() {
+        use crate::pkg::paths;
+        use crate::pkg::request_context_test_support::{ensure_test_base_data_path, new_test_ctx};
+        use crate::pkg::tool_registry::BuiltinToolFactory;
+
+        let base = ensure_test_base_data_path();
+        let _ = crate::config::init();
+
+        // 预置目录（canonicalize 要求路径存在）
+        std::fs::create_dir_all(base.join("agents").join("a1")).unwrap();
+        let own_ws = paths::user_agent_workspace(&base, "u1", "a1");
+        let sibling_ws = paths::user_agent_workspace(&base, "u1", "a2");
+        let other_user_ws = paths::user_agent_workspace(&base, "u2", "a9");
+        for dir in [&own_ws, &sibling_ws, &other_user_ws] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        let factory = FsWriteToolFactory;
+        let tool = factory.create(factory.create_po());
+        let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let ctx = new_test_ctx("u1", pool)
+            .to_builder()
+            .agent_id("a1")
+            .build();
+
+        // 自己的用户工作区：写入成功
+        let out = tool
+            .call(
+                ctx.clone(),
+                serde_json::json!({
+                    "path": own_ws.join("note.md").to_str().unwrap(),
+                    "mode": "overwrite",
+                    "content": "hi"
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out.get("success"), Some(&serde_json::json!(true)));
+
+        // 同用户其他 Agent 工作区：需确认
+        let out = tool
+            .call(
+                ctx.clone(),
+                serde_json::json!({
+                    "path": sibling_ws.join("note.md").to_str().unwrap(),
+                    "mode": "overwrite",
+                    "content": "hi"
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            out.get("require_confirmation"),
+            Some(&serde_json::json!(true))
+        );
+
+        // 其他用户树：需确认
+        let out = tool
+            .call(
+                ctx,
+                serde_json::json!({
+                    "path": other_user_ws.join("note.md").to_str().unwrap(),
+                    "mode": "overwrite",
+                    "content": "hi"
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            out.get("require_confirmation"),
+            Some(&serde_json::json!(true))
+        );
     }
 }
