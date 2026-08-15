@@ -1,17 +1,15 @@
 # 意图感知两阶段唤醒设计
 
-> 🎯 **本文档定位**：在现有 `awaken` 唤醒机制上新增"先理解、再执行"的两阶段流程，通过新增 `IntentAnalyze` 思考场景 + 通用复用函数 `analyze_input_intent`，让 Agent 在收到用户消息后先做意图识别/指代消歧/语义检索补充，再正式进入执行阶段。
->
-> 范围：只覆盖**总纲与核心理念、接口定义、数据流边界、Prompt 设计原则**；具体落地代码细节由 `docs/superpowers/plans/2026-08-14-intent-analyze-two-stage-awaken.md` 承接。
-> 状态：v1.0（2026-08-14）
+> 🎯 **本文档定位**：现有 awaken 上新增「先理解再执行」两阶段流程（IntentAnalyze 场景 + analyze_input_intent 复用函数）的总纲设计
+> 状态：v1.0（2026-08-14；总纲定稿，落地细节由 superpowers plans 承接）
+> 查阅场景：新增唤醒前置处理阶段、排查意图识别/指代消歧链路、理解 Prompt 设计原则与数据流边界时打开；具体落地实现看 superpowers 子计划与 runtime 代码
 >
 > 关联文档：
-> - [ARCHITECTURE.md](./ARCHITECTURE.md) - 项目整体架构
-> - [runtime_design.md](./runtime_design.md) - Runtime 领域总纲（少即是多/神经 vs 外骨骼/上下文极薄）
-> - [memory_design.md](./memory_design.md) - 四层记忆 + search_memory/recommend_seed_nodes
-> - [skill_design.md](./skill_design.md) - 技能标签机制 + neural 常驻
-> - [docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md](../superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md) - 此前引入 ThinkingScene / ThinkingOptions / build_sleep_prompt 的相关设计，本文档在此基础上扩展
-> - [TEMPLATE_COMMUNICATION/skill.md](../src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) - 协作沟通技能，方案 B 的落地位置
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [runtime_design.md](./runtime_design.md) — Runtime 领域总纲与唤醒机制基础
+> - [message_interaction_design.md](./message_interaction_design.md) — 用户-Agent 消息交互与前台调度
+
+> 范围：只覆盖**总纲与核心理念、接口定义、数据流边界、Prompt 设计原则**；具体落地代码细节由 `docs/superpowers/plans/2026-08-14-intent-analyze-two-stage-awaken.md` 承接。
 
 ---
 

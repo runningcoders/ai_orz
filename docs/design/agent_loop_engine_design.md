@@ -1,13 +1,13 @@
 # Agent 循环驱动引擎设计
 
-> 🎯 **本文档定位**：设计一套让 Agent 能够自主跟进项目进度、上报任务状态、在必要时通知用户的驱动机制。
+> 🎯 **本文档定位**：Agent 自主跟进项目进度、上报任务状态、补偿巡检与通知用户的驱动机制设计
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增 Agent 自主巡检动作、排查 Project/Task 进度补偿失败、理解任务-事件-定时驱动三链路时打开；CronTrigger 具体实现直接看 task_scheduler 代码
 >
 > 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [runtime_design.md](./runtime_design.md) — Agent 唤醒机制
 > - [task_scheduler_design.md](./task_scheduler_design.md) — CronTrigger 定时任务
-> - [consumer_architecture.md](./consumer_architecture.md) — AOP 事件中心
-> - [project_management_design.md](./project_management_design.md) — 项目/任务管理
-> - [agent_loop_engine_plan.md](./agent_loop_engine_plan.md) — 详细实施计划（逐 Task 步骤）
 
 ---
 

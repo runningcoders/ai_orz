@@ -1,5 +1,14 @@
 # Agent 入职流程设计文档
 
+> 🎯 **本文档定位**：Agent 生命周期管理（创建/入职校验/状态流转/离职）与编排流程分层设计
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：接入新 Agent 类型、排查 Agent 入职校验失败、理解 Agent 状态流转触发条件时打开；具体 PO 字段定义直接看代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [external_agent_design.md](./external_agent_design.md) — 外部 CLI/A2A Agent 接入与本地 Agent 差异封装
+> - [consumer_architecture.md](./consumer_architecture.md) — 事件驱动架构（入职/离职事件广播）
+
 ## 模块概述
 
 本模块实现了 Agent 完整的生命周期管理，包括创建、状态流转、入职校验、离职等核心业务流程，严格遵循项目分层架构原则，领域边界清晰。
