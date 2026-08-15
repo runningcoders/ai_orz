@@ -91,6 +91,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-orz-tools"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "walkdir",
+]
+
+[[package]]
 name = "ai_orz"
 version = "0.1.0"
 dependencies = [

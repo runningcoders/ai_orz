@@ -4,6 +4,7 @@ members = [
     "frontend",
     "common",
     "ai-orz-macros",
+    "tools",
 ]
 resolver = "2"
 

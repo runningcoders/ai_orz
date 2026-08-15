@@ -65,6 +65,10 @@ jobs:
     - name: Clippy check (deny warnings)
       run: cargo clippy --all-targets -- -D warnings
 
+    # 文档链接规范门禁（AGENTS §2.1.2）：file:// 伪协议 / 绝对路径 / 冒号行号
+    - name: Docs link lint
+      run: cargo run -p ai-orz-tools --bin docs_lint
+
     - name: Print sccache stats
       if: always()
       run: sccache --show-stats || true
