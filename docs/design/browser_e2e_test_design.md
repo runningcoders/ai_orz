@@ -1,5 +1,13 @@
 # 浏览器操作验证用例设计
 
+> 🎯 **本文档定位**：面向浏览器的可读/可执行/可复现的验证用例体系设计——脚本驱动 + Agent 驱动双模式共享同一份 Playbook
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增浏览器操作 Playbook、排查脚本/Agent 双模式解析差异、理解 Playbook Markdown 契约格式时打开；具体解析器代码直接看 tests/playbook/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [testing_guidelines.md](./testing_guidelines.md) — 项目单元/集成测试通用编写规范（Playbook 是 E2E 层补充）
+
 ## 📌 设计目标
 
 为面向浏览器的用户操作流程提供一套可读、可执行、可复现的验证用例体系，支持**脚本驱动**和**Agent 驱动**两种执行模式，共享同一份 Playbook 定义。

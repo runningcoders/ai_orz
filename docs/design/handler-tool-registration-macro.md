@@ -1,5 +1,14 @@
 # 工具注册宏设计文档
 
+> 🎯 **本文档定位**：将现有 HTTP Handler 直接注册为内置工具的宏设计——复用权限校验/参数解析/错误处理/业务逻辑，保证 API 与工具调用行为一致
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增 Handler 转工具宏规则、排查注册后参数解析不一致、理解宏展开生成的 Tool 结构体时打开；具体宏实现直接看 ai-orz-macros/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [unified-idl-http-handler.md](./unified-idl-http-handler.md) — 统一参数 IDL + 自动生成 HTTP handler（同属「一份定义多端复用」思路）
+> - [tool_design.md](./tool_design.md) — 工具系统总纲
+
 ## 设计目标
 
 将现有的 HTTP Handler 直接注册为内置工具，复用 Handler 已有的：

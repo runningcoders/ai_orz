@@ -1,5 +1,13 @@
 # Design System Inspired by Mistral AI
 
+> 🎯 **本文档定位**：前端视觉设计系统规范（Tailwind v4 + DaisyUI v5 主题配置/组件库/自定义工具类）与落地实现说明
+> 状态：定稿（2026-07-25；从规范迁移到 Tailwind+DaisyUI 代码实现完成）
+> 查阅场景：新增前端自定义组件、调整主题配色/间距、对齐设计系统视觉规范红线时打开；具体 CSS 入口看 frontend/styles/input.css
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [canvas_rendering_playbook.md](./canvas_rendering_playbook.md) — Canvas 渲染栈视觉对齐该设计系统
+
 ---
 
 ## 📌 实现状态（2026-07-25 更新）

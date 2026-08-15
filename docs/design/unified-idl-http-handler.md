@@ -1,5 +1,14 @@
 # 统一参数 IDL + 自动生成 HTTP handler 设计文档
 
+> 🎯 **本文档定位**：一份结构体定义两端通用设计——derive(Params) 宏统一提取 HTTP path/query/body 参数与 LLM 工具调用 JSON Schema
+> 状态：v1.0（2026-08-15 整理；稳定版，不依赖 nightly）
+> 查阅场景：新增统一参数结构体、排查 handler 自动参数提取不匹配、理解 tool JSON Schema 生成逻辑时打开；具体宏实现看 ai-orz-macros/src/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [handler-tool-registration-macro.md](./handler-tool-registration-macro.md) — HTTP Handler 直接注册为内置工具（互补的另一份定义多端复用）
+> - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（common DTO 单一事实源，IDL 定义必须符合）
+
 ## 设计目标
 
 统一接口参数定义，一份结构体定义同时支持：

@@ -1,5 +1,13 @@
 # Canvas 渲染基础设施复用指南
 
+> 🎯 **本文档定位**：Dioxus + web-sys Canvas 2D 渲染栈复用实践指南（CanvasScene 组件/力导向/粒子系统/事件桥接）
+> 状态：v1.0（2026-07-24；workspace 试点验证完成）
+> 查阅场景：新建 Canvas 场景化页面、从 SVG/DOM 迁移到 Canvas、复用粒子系统/力导向布局时打开；具体封装实现直接看 frontend/src/components/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [ui_design_system.md](./ui_design_system.md) — 前端视觉设计系统与样式规范（Canvas 渲染对齐该规范）
+
 > 最后更新：2026-07-24
 > 适用范围：Dioxus + web-sys Canvas 2D 渲染栈，用于指导后续页面从 SVG/DOM 迁移到 Canvas，或新建 Canvas 场景化页面。
 

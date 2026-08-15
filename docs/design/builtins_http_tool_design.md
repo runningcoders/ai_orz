@@ -1,5 +1,14 @@
 # HTTP Tool Runtime 设计文档
 
+> 🎯 **本文档定位**：通用 HTTP 工具运行时设计——用户注册式 ToolPo+HttpToolConfig、动态组装、ControlMode 独立控制调用链路
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增 HTTP 类型内置工具、排查动态工具组装失败、理解 Manual 消息链路与 Auto tool calling 差异时打开；具体 HttpCoreTool 实现直接看 runtime 代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [tool_design.md](./tool_design.md) — 工具系统总纲（HTTP Tool Runtime 是工具系统的一个子运行时）
+> - [generic_builtin_tools_design.md](./generic_builtin_tools_design.md) — 通用 Builtin 工具（文件读写/HTTP Fetch，与 HTTP Tool Runtime 定位互补）
+
 ## 概述
 
 HTTP 工具不设计为一个固定暴露给 Agent 的裸 `http_get` / `http_post` 内置工具，而设计为一套**通用 HTTP Tool Runtime**：

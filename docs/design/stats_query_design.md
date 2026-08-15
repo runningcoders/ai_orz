@@ -1,5 +1,13 @@
 # 统计查询模块设计方案
 
+> 🎯 **本文档定位**：前端统计数据查询 Domain 层设计——领域先行职责分离、5 个 Stats DAO 全实体覆盖、详情页按需动态注入
+> 状态：定稿（2026-07-25；全实体覆盖与按需注入落地完成）
+> 查阅场景：新增实体统计查询接口、排查时序/QPS/token 消耗聚合、理解 Stats Query 与 Stats Module 分层边界时打开；具体查询看 src/service/domain/stats/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [stats_module_design.md](./stats_module_design.md) — 统计收集存储底层框架（DuckDB+内存双层）
+
 > 最后更新：2026-07-25（5 个 Stats DAO 全实体覆盖 + 实体详情页按需动态注入）
 
 ## 需求背景

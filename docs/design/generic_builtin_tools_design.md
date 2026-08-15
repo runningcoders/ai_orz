@@ -1,5 +1,14 @@
 # 通用 Builtin 工具设计 - 文件读写 & HTTP Fetch
 
+> 🎯 **本文档定位**：Agent 基础通用 Builtin+Auto 工具设计——文件读写/HTTP Fetch、安全沙箱最小权限、默认保守策略
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增通用 Builtin 工具类型、排查沙箱权限越界、理解 Auto 与 Manual 调用链路差异时打开；具体工具实现看 src/service/domain/tool/builtins/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [tool_design.md](./tool_design.md) — 工具系统总纲（通用 Builtin 是其核心子集）
+> - [builtins_http_tool_design.md](./builtins_http_tool_design.md) — HTTP Tool Runtime（用户注册式，定位互补而非替代）
+
 ## 概述
 
 ai_orz 需要为 Agent 提供**基础通用能力**，方便 Agent 在运行时自动处理常见任务：

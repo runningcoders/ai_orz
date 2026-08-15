@@ -1,5 +1,13 @@
 # 产物与消息附件统一存储设计
 
+> 🎯 **本文档定位**：Artifact 产物与消息附件的统一存储设计——Attachment 归 Finance Domain 作为用户通用资产、元数据与文件存储路径解耦
+> 状态：v1.0（2026-08-15 整理）
+> 查阅场景：新增文件上传下载接口、排查附件元数据与业务域引用、理解产物与附件合并存储的边界时打开；具体 Finance 实现看 src/service/domain/finance/attachment.rs
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Attachment 归 Finance 域）
+> - [seed-config-migration.md](./seed-config-migration.md) — Seed 配置迁移（导出包中会携带 Attachment 引用）
+
 本文档描述 ai_orz 项目中产物（Artifact）与消息附件（Attachment）的统一存储设计规范。
 
 ## 设计背景

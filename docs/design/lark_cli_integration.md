@@ -1,7 +1,13 @@
 # lark-cli 集成与飞书渠道多应用化设计
 
-> 状态：设计定稿（2026-08-12）；一期 + 二期均已落地（2026-08-12，分期记录见 §4）；2026-08-13 分层收敛补丁见 §4 末
-> 关联：[message_channel_design.md](./message_channel_design.md)、[tool_design.md](./tool_design.md)、[LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)
+> 🎯 **本文档定位**：飞书 CLI 集成架构、HOME 隔离设计、凭证流转路径与飞书渠道多应用化改造设计
+> 状态：定稿（2026-08-13；一期 + 二期 + 分层收敛补丁均已落地）
+> 查阅场景：新增 lark-cli 子工具、排查多应用凭证隔离、理解飞书渠道从单应用到多用户的改造路径时打开；具体 lark-cli 命令封装直接看 tool 代码
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [message_channel_design.md](./message_channel_design.md) — 消息渠道架构（飞书渠道是其核心子类型）
+> - [tool_design.md](./tool_design.md) — 工具系统总纲（lark_cli 是内置工具之一）
 
 ## 1. 背景与目标
 

@@ -1,5 +1,13 @@
 # 实体列表/查询/搜索接口设计规范
 
+> 🎯 **本文档定位**：统一沉淀的三场景接口设计规范——list 默认分页/query 条件过滤/search 全文搜索，作为全量实体改造基准
+> 状态：v1.0（2026-08-15 整理；Agent 实体试点完成，其他实体按此规范对齐中）
+> 查阅场景：新增 Tool/Skill/Project/Task 等实体的列表接口、对齐 list/query/search 三接口职责边界、统一分页参数风格时打开；具体 Agent 实现参考 src/handlers/agent/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层接口约定）
+> - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页参数与通用 count 查询规范（本规范的分页部分的底层）
+
 > 本文档总结 Agent 实体统一改造中沉淀的三场景设计经验，作为其他实体（Tool/Skill/Project/Task 等）改造的规范基准。
 > 关联计划：[2026-07-31-unify-agent-search-query.md](superpowers/plans/2026-07-31-unify-agent-search-query.md)
 

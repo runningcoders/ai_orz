@@ -1,5 +1,13 @@
 # 前后端 API 协议规范（common DTO 单一事实源）
 
+> 🎯 **本文档定位**：前后端共享 API 契约规范——common 作为单一事实源、枚举/DTO 对齐、禁止裸类型返回、DAL 结构体不泄漏
+> 状态：定稿（2026-08-09 决策定稿，协议漂移修复已落地）
+> 查阅场景：新增 HTTP 接口 DTO、排查前后端枚举不一致、检查接口响应是否符合裸类型禁用红线时打开；具体 DTO 定义直接看 common/src/api/
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层约束）
+> - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页与通用 count 查询接口规范（协议的子集）
+
 > 决策时间：2026-08-09
 > 背景：E2E 调试与代码盘点发现前后端协议漂移风险——部分接口 DTO 在 `frontend/src/api/` 与 `common/src/api/` 双份定义、部分接口返回裸原始类型（bool/()）、部分 DAL 内部结构体直接泄漏到 HTTP API。任一侧单独演进都会造成线上协议不一致（UserRole 枚举歧义已造成真实缺陷）。
 
