@@ -34,19 +34,8 @@
 | 🚀 异步基础设施 | AOP 事件中心（纯框架零业务依赖）、消费者框架（8 类消费者：调度/Agent 循环/任务/消息/工具执行/日志/统计/思考轮次）、定时触发器（cron，启动幂等注入 2 条系统默认任务） |
 | 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
 | 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
-| 🧪 质量工程 | 1124 测试（后端 984 + 前端 82 + common 58）、clippy 零容忍、覆盖率门槛、E2E Playwright（仅本地） |
+| 🧪 质量工程 | 1124 测试 100% 通过率（后端 984：897单元+87集成 / 前端 82 / common 58，DAO/DAL/Domain/Handler/Pkg全覆盖；集成 87个/19 targets：Auth/SysInit CoreCRUD MsgDelivery VectorDegradation A2AFow PresetSkills CronTriggers LarkIntegration MsgChannel AgentAwaken 宏集成）、clippy `-D warnings` 双端零容忍、cargo-llvm-cov 覆盖率门槛（PR 38%/main 45%）、分层模块 DAO25/DAL23/Domain7/Handler8 零闲置（每 domain 含 init_base_data 扩展点）、E2E Playwright（仅本地） |
 | 📚 **知识体系 + RAG 自索引** | **4 类文档闭环：**① `docs/design/` 为什么 / ② `docs/plan/` 怎么做+结果 / ③ `docs/wiki/zh/content/` 百科（8 大板块 353 篇）/ ④ `docs/wiki/knowledge/zh/` 54+ 张 RAG 原子知识卡（总结+索引，RAG 第一召回层）；**四类显式双向互引**（代码引用 `file://相对路径`，文档引用 `file:///绝对路径`）。**阅读链路（严格顺序，禁跳过 Wiki）**：④卡 → ③长文 → 源码 → ①Design → ②Plan。知识卡 YAML `scope[]` 按 glob 过滤关注文件集，`source_files[]` 必须四类齐全。同主题多张平行卡：全部召回、并行阅读、不去重、不删旧卡。维护 Skill：ai-orz-wiki-maintainer（③+④）+ ai-orz-doc-maintainer（①+②） |
-
-### 1.3 测试与质量统计
-
-| 指标 | 数值 | 说明 |
-|------|------|------|
-| **总测试数** | **1124** | 后端 984（897 单元 + 87 集成）+ 前端 82 + common 58，DAO/DAL/Domain/Handler/Pkg 完整覆盖 |
-| **通过率** | **100%** | ✅ 全部测试通过 |
-| **集成测试** | 87 个 / 19 targets | Auth/SysInit + Core CRUD + Message Delivery + Vector Degradation + A2A Flow + Preset Skills + System Cron Triggers + Lark Integration + Message Channel Lifecycle + Agent Awaken（两阶段唤醒）+ 宏集成 |
-| **CI clippy 门槛** | `-D warnings` | 后端 + 前端 wasm32 均已纳入 CI |
-| **CI 覆盖率门槛** | PR 38% / main 45% | cargo-llvm-cov 收集/报告分阶段执行 |
-| **分层模块数** | DAO 25 / DAL 23 / Domain 7 / Handler 8 域 | 全部实现并被使用，零闲置；每个 domain 实现 `init_base_data` 扩展点 |
 
 ---
 
@@ -67,7 +56,7 @@
 | `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明 | ai-orz-doc-maintainer |
 | `docs/superpowers/*/` | 开发期执行蓝图（临时） | 功能完成 7 天内处置：→ plan 7 章模板 / → archive 封存 | ai-orz-doc-maintainer |
 | `docs/ARCHITECTURE.md` | 核心概念与实体关系 | 唯一权威纲要，手工维护 | — |
-| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 分层实践与避坑 | 开发必读，手工维护 | — |
+| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 分层实践与避坑 | Agent 必遵循，手工维护 | — |
 
 **路径格式铁律（互引时统一）**：
 - 跳代码 → `file://相对项目根路径`（可选 `:Ln-Lm`）
@@ -80,7 +69,7 @@
 
 ---
 
-### §2.0.5 RAG 查询操作指令
+### RAG 查询操作指令
 
 **查询前准备**：本仓库已接入 Trae/IDE RAG，对 54+ 张 `docs/wiki/knowledge/zh/` 原子卡做向量语义 chunk 召回。按以下 5 步执行：
 
@@ -100,7 +89,7 @@
 | 分类 | 文档 | 优先级 |
 |------|------|--------|
 | **架构总览** | [README.md](./README.md) / [docs/wiki/](./docs/wiki/)（③ Wiki 百科入口，8 大板块） / [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/)（④ RAG 第一召回层）/ [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) / [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | ⭐⭐⭐ |
-| **分层实践** | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)（开发必读，含适配层架构原则） | ⭐⭐⭐ |
+| **分层实践** | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)（Agent 必遵循，含适配层架构原则） | ⭐⭐⭐ |
 | **API 协议** | [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)（common DTO 单一事实源） | ⭐⭐⭐ |
 | **SQL 规范** | [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md)（SQLx 0.8 + SQLite、STRICT、FTS5、测试隔离） | ⭐⭐⭐ |
 | **日志规范** | [docs/design/logging_design.md](./docs/design/logging_design.md)（统一宏、上下文检测） | ⭐⭐⭐ |
@@ -114,273 +103,86 @@
 
 ---
 
-### §2.1 文档编写与维护规范（强制执行，2026-08-15 确立）
+### §2.1 文档编写与维护规范（强制执行）
 
-> 🎯 **核心原则**：**代码是事实的最终单一来源（SSOT），文档是「索引 + 路标 + 决策快照」**。
->
-> 读者需要字段级实现细节时，点链接直接跳源文件读真代码；文档只承载代码里**无法直接表达**的信息：为什么这样设计、边界是什么、改动会影响哪些模块、未来扩展走哪条路径。
+> 🎯 **铁律**：代码是 SSOT（字段级细节跳源码），文档只承载代码无法表达的信息：设计动机、模块边界、影响面、扩展路径。
 
 ---
 
-#### 2.1.1 强制文件头元信息（所有手动维护的文档，第一行标题之后紧跟）
+#### 2.1.1 强制文件头（标题后紧跟）
 
 ```markdown
 # [文档标题]
 
-> 🎯 **本文档定位**：[一句话说明角色，属于哪个象限，精度是概览级还是细节级]
->
-> 状态：[草稿 / 定稿 / vX.Y（版本号，含更新日期）]
-> 查阅场景：[一句话告诉读者什么时候应该打开本文档，否则直接读代码]
->
-> 关联文档：
-> - [上层权威文档](../../AGENTS.md) — 简要说明关联点
-> - [横向相关文档](../design/xxx.md) — 简要说明关联点
-```
-
-**状态枚举**：
-- `草稿`：设计中，未落地
-- `定稿`：设计落地，不再主动追赶代码现状
-- `vX.Y（YYYY-MM-DD）`：多版本演进的文档（如 runtime_design.md）
-- `归档 YYYY-MM-DD`：只进不出的 archive 文档
-
-**❌ 禁止保留在归档文档中的元信息**：
-- `For agentic workers: REQUIRED SUB-SKILL...` — 这是 writing-plans skill 的执行期标记，任务完成后必须删除
-- `- [ ] Step 1 / Step 2...` checkbox 式执行清单 — 执行蓝图专属，归档前必须移除
-
----
-
-#### 2.1.2 代码引用铁律（区分两类代码块，强制执行）
-
-| 代码块类型 | 性质说明 | 允许保留？ | 处理方式 |
-|-----------|---------|-----------|---------|
-| **契约表达型** ✅ | trait 方法签名列表（不含 `{...}` 实现体）、struct 字段列表、enum 变体列表、SQL `CREATE TABLE` Schema、目录树 ASCII 图、数据流 ASCII 图 | **可保留**（但不强制）——用于精确表达「设计意图是什么」 | 代码块**必须紧邻下方**附源码路径引导：<br>`> 当前实现：[file.rs#L12-L50](file:///absolute/path/to/file.rs#L12-L50)` |
-| **实现快照型** ❌ | 函数 `{ }` 内部逻辑、完整测试代码、`match` 分支体、`for/while/if` 控制流、`cargo test/build` 具体命令参数、`git commit` 命令、bash 执行脚本 | **一律禁止** | 删除，改为一句话路径引导：<br>`> 字段级加密/校验逻辑见：[identity_credentials.rs::apply_patch](file:///.../identity_credentials.rs#L288-L352)` |
-
-**判断口诀**：如果把代码块粘到编辑器里能直接编译/运行 → 它就是实现快照型，应该删掉；如果它只是声明接口形状（不含内部逻辑）→ 它是契约表达型，可以保留作设计意图说明。
-
-**代码引用首选格式（优先级远高于贴代码块）**：
-```
-[简短描述](file:///绝对路径/到文件.rs#L起始行-L结束行)
-```
-- 点击可直接跳转 IDE 打开对应位置
-- 永远与代码同步，零维护成本
-- 读者能看到完整上下文，不被文档片段误导
-
----
-
-#### 2.1.3 四象限细化维护规则
-
-> 在 §2 的四象限基础上补充「完成后处理流程」与「允许内容边界」。
-
-| 目录 | 角色 | 允许内容边界 | **任务/功能完成后的处理动作** |
-|------|------|-------------|----------------------------|
-| **`docs/wiki/`** | 是什么 | IDE 自动生成，人工只读 | 代码演进后重新生成 |
-| **`docs/ARCHITECTURE.md`** | 权威纲要 | 纯概念、关系图、设计哲学。**禁止任何代码块**（包括契约型） | 核心概念变化时更新 |
-| **`docs/LAYERED_ARCHITECTURE_PRACTICE.md`** | 怎么做（分层实践） | 原则、边界、反模式、示例（契约型代码块可附路径） | 分层规范变化时更新 |
-| **`docs/design/*.md`** | 为什么（决策快照） | §设计目标 + §架构思路 + §涉及文件清单（带路径链接） + §关键决策表（问题/方案/原因） + §行为红线/边界条件 + §扩展模式 | 写定后**不追赶代码现状**；若发现文档中的契约型代码与实际代码不一致，以代码为准并在文档头加一句 `注：本文件为决策快照，接口细节以代码为准` |
-| **`docs/plan/*.md`** | 要去哪 + 状态快照 | §目标（为什么做） + §架构思路（分层图） + §涉及文件清单（表格：文件/角色/变更摘要 + **每行路径链接**） + §关键决策/行为红线 + §验收清单（checkbox + 状态） + §执行结果摘要（测试通过数据） + §后续扩展路径（步骤模板） | **功能完成后必须执行精简动作**：删除所有 writing-plans skill 产生的 Task/Step checkbox、所有失败测试代码块、所有实现代码块、所有 `cargo test` 命令；只保留上述 7 节概述内容。参考模板：[身份凭证Domain统一CRUD重构.md](./docs/plan/身份凭证Domain统一CRUD重构.md)（150 行级） |
-| **`docs/archive/*.md`** | 被什么取代（历史淘汰方案） | 保留原文，在文件头加「归档说明」一句话：说明被哪个文档/哪次提交取代、保留原因 | 只进不出，永不修改正文 |
-| **`docs/superpowers/plans/*.md`** | 执行蓝图（writing-plans skill 输出） | **仅在功能开发期间存在**：Task/Step 细粒度 checkbox + 代码/命令细节 | **功能完成 7 天内必须处理**（二选一）：<br>(a) 有长期参考价值 → 按 `docs/plan/` 规范精简后移到 `docs/plan/`，原文件删除；<br>(b) 纯执行期无参考价值 → 直接删除（或移动到 `docs/archive/superpowers-archive/` 永久封存） |
-| **`docs/superpowers/specs/*/`** | Spec 三件套（spec+checklist+tasks） | 同上：仅开发期间存在 | 完成后：`spec.md` 若有设计决策内容 → 精简后移到 `docs/design/` 或 `docs/plan/`；`tasks.md` + `checklist.md` → 删除或归档 |
-
----
-
-#### 2.1.4 各象限推荐章节模板
-
-##### 模板 A：`docs/design/*.md`（设计决策文档）
-
-```markdown
-# [模块名] 设计
-
-> 🎯 **本文档定位**：[领域] 的整体设计大纲与关键决策思路（为什么这样设计）
-> 状态：[定稿 / vX.Y（YYYY-MM-DD）]
-> 查阅场景：需要理解某能力的设计动机、边界条件、扩展模式时打开；字段级实现请直接跳转对应代码。
+> 🎯 **定位**：[一句话说明角色/象限/精度]
+> 状态：[草稿|定稿|vX.Y|归档 YYYY-MM-DD]
+> 触发场景：[一句话告诉 Agent 何时打开，否则直接读代码]
 >
 > 关联文档：
-> - [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) — 项目整体架构
-> - [相关横向设计](../design/xxx_design.md) — 简要说明
-
----
-
-## 一、设计目标 / 设计哲学
-（回答「为什么做」和「核心原则是什么」。优先用表格/对比/类比表达。）
-
-### 1.X 关键设计决策表
-
-| 问题 | 方案 | 原因 |
-|------|------|------|
-| Q1 | A1 | 为什么不选 B |
-| Q2 | A2 | ... |
-
----
-
-## 二、架构思路（高层逻辑）
-（ASCII 架构图 / 分层图 / 数据流图；贴契约型代码块时必须附源码路径链接）
-
-```
-[ASCII 图]
-```
-> 关键结构定义见：[mod.rs::Awakening](file:///.../mod.rs#L80-L120)
-
----
-
-## 三、涉及文件清单（读代码从这里开始）
-
-按 [AGENTS.md §3.2](../../AGENTS.md#32-目录结构) 分层索引：
-
-| 文件 | 角色 | 内容摘要 |
-|------|------|---------|
-| [path/to/dao_file.rs](../../src/service/dao/...) | DAO 层 | 负责什么数据访问 |
-| [path/to/dal_file.rs](../../src/service/dal/...) | DAL 层 | 负责什么业务级数据操作 |
-| ... | ... | ... |
-| **零改动面** | [对外契约不变说明] | — |
-
----
-
-## 四、关键边界 / 行为红线（回归必保）
-（列出所有必须保持不变的语义，编号列表 + 一句话说明）
-
-1. xxx update 后必须触发 yyy；失败仅告警，不阻断主流程
-2. xxx delete 前必须做 zzz 引用检查；被引用时报 Conflict 拒删
-3. ...
-
----
-
-## 五、扩展模式（新增同类功能时走哪条路）
-
-### 5.1 [场景一：如新增凭证类型]
-步骤 1：做什么 → 改哪个文件 → 参考 [某现有变体定义](../../path/to/file.rs#L20-L45)
-步骤 2：做什么 → 改哪个 match 分支 → 参考 [某现有分支](../../path/to/file.rs#L190-L230)
-步骤 3：...
-
-### 5.2 [场景二：如新增外骨骼工具类型]
-同上。
+> - [上层权威文档](../../AGENTS.md) — 关联点
+> - [横向文档](../design/xxx.md) — 关联点
 ```
 
----
-
-##### 模板 B：`docs/plan/*.md`（规划 + 状态快照）
-
-```markdown
-# [功能名] [重构/落地/优化]
-
-> 🎯 **本文档定位**：[功能] 的规划与落地结果快照（概览级，不含代码细节；字段级实现以代码路径为准）
-> 状态：[进行中（YYYY-MM-DD 启动） / 完成（YYYY-MM-DD 验收通过）]
-> 查阅场景：新增同类功能时回看「改动清单 + 扩展模式」两处即可，无需通读全文。
->
-> 关联文档：
-> - [相关设计文档](../design/xxx.md) — 设计动机
-> - [AGENTS.md §X.X](../../AGENTS.md) — 适用的架构规范
+**状态枚举**：草稿（设计中）/ 定稿（不追代码）/ vX.Y（YYYY-MM-DD，多版本）/ 归档 YYYY-MM-DD（只进不出）
+**归档清单项**：删除 writing-plans 标记（`REQUIRED SUB-SKILL` 行）与所有 `- [ ] Step N` checkbox
 
 ---
 
-## 一、目标（为什么做）
-（一段话说明要解决的问题、收敛后效果）
+#### 2.1.2 代码引用铁律
 
-| 问题维度 | 解决方式 |
-|---------|---------|
-| 问题 1 | 方案 1 |
-| 问题 2 | 方案 2 |
-
-**收敛后效果**：一句话说明最终达到的架构收益（如「trait 封顶 N 个方法，新增类型时 trait 零改动」）。
-
----
-
-## 二、架构思路（怎么做的）
-（分层 ASCII 图 / 信息流向 / 知识下沉路径）
-
-```
-上层（保持不变）
-  │  只改调用方式
-  ▼
-中层（收敛点）
-  │  差异分发
-  ▼
-下层（知识下沉）
-```
-
-**关键边界 / 行为红线（回归必保）**：
-1. ...
-2. ...
+1. **契约型代码块可保留**（仅限：trait 签名/struct 字段/enum 变体/SQL schema/ASCII 图，不含 `{}` 实现体）→ 代码块紧邻下方附源码路径：
+   `> 当前实现：[file.rs#L12-L50](file:///absolute/path/to/file.rs#L12-L50)`
+2. **实现快照型代码块一律禁止**（函数体/测试/控制流/命令/脚本）→ 删除，改为路径引导：
+   `> 逻辑见：[file::func](file:///.../file.rs#L288-L352)`
+3. **首选引用格式（优先级 > 贴代码块）**：
+   `[简短描述](file:///绝对路径/到文件.rs#L起始行-L结束行)`
+4. **判断口诀**：粘到编辑器能直接编译/运行 → 属实现快照型，删掉；仅声明接口形状 → 属契约型，可留。
 
 ---
 
-## 三、涉及文件清单（读代码直接跳）
-按分层索引，**每行带可点击路径链接 + 变更摘要**：
+#### 2.1.4 各象限章节模板
 
-| 文件 | 角色 | 变更内容 |
-|------|------|---------|
-| [common/src/models/xxx.rs](../../common/src/models/xxx.rs) | 模型层 | 新增 N 个行为方法 + 2 个枚举 |
-| [src/service/domain/xxx/mod.rs](../../src/service/domain/xxx/mod.rs) | trait 定义 | 删 X 个方法、加 Y 个统一方法 + 2 个 Command |
-| ... | ... | ... |
-| **零改动面** | 前端 / DTO / 路由 / 集成测试 | 对外契约不变 |
+文件头统一按 2.1.1；章节内容用下列清单，字段级细节填 `file:///` 链接，**不贴实现快照代码块**。
 
----
+##### 模板 A：`docs/design/*.md`（决策快照，为什么）
 
-## 四、[分发点 / 改动入口] 速查表（新增同类功能第一站）
-新增 [同类功能] 时，改动点仅 N 处 [match / 变体]：
-
-### 4.1 [改动点 1 名称]
-| 现有分支 | 处理逻辑 | 新增类型时参考 |
-|---------|---------|--------------|
-| 类型 A | ... | 如需 xxx 走此分支体 |
-| 类型 B | ... | 默认空分支即可 |
-
-> 代码入口：[file.rs::函数名 尾段](../../path/to/file.rs#L180-L240)
-
-### 4.2 [改动点 2 名称]
-同上。
-
----
-
-## 五、验收清单（YYYY-MM-DD 达成情况）
-- [x] 架构验收项 1
-- [x] 架构验收项 2
-- [ ] 未完成项说明
-
----
-
-## 六、执行结果摘要（YYYY-MM-DD）
-
-| 模块 | 验证结果 |
+| 章节 | 内容要点 |
 |------|---------|
-| common 单元测试 | X passed |
-| domain 层测试 | X passed |
-| 后端 lib 全量 | X passed / 0 failed |
-| 集成测试 | X 套全部 PASS |
-| Clippy 双端 | 零错误 |
-| 前端测试 | X passed |
+| 一、设计目标 | 设计哲学 + **关键决策表**（问题/方案/原因 3 列）|
+| 二、架构思路 | ASCII 分层/数据流图 + 关键结构定义源码链接 |
+| 三、涉及文件清单 | 分层索引表（文件/角色/内容摘要）+ **零改动面**说明 |
+| 四、关键边界 / 行为红线 | 编号列表，每条一句话（回归必保语义）|
+| 五、扩展模式 | 按场景列步骤 + 每步参考文件链接 |
 
-### 与计划的偏离（如有）
-1. 偏离点 1（说明 + 影响评估）
-2. 偏离点 2
+**红线**：写定后不追代码；发现契约与代码不一致 → 文头加一句 `注：本文件为决策快照，接口细节以代码为准`。
+**参考实例**：[docs/design/thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md)
 
 ---
 
-## 七、后续扩展路径（4 步模板）
+##### 模板 B：`docs/plan/*.md`（落地快照，怎么做+结果）
 
-> **核心不变量**：trait / DTO / 路由机制不动。
+| 章节 | 内容要点 |
+|------|---------|
+| 一、目标 | 问题/解决方式表 + **收敛后效果**一句话（架构收益）|
+| 二、架构思路 | ASCII 知识下沉路径 + **关键边界/行为红线** |
+| 三、涉及文件清单 | 分层表（每行路径链接 + 变更摘要）+ **零改动面** |
+| 四、分发点速查表 | 改动点 × N，每点：分支表 + 代码入口链接 |
+| 五、验收清单 | checkbox（完成时更新状态）|
+| 六、执行结果摘要 | 各模块验证结果表 + 与计划偏离项 |
+| 七、后续扩展路径 | **4 步模板**：common 模型 / domain 分发 / handler 目录 / 前端 |
 
-1. **common 模型**：[path.rs](../../path/to/file.rs) — 做什么（加变体/实现方法）
-2. **domain 分发**：[path.rs](../../path/to/file.rs) — 做什么（加 match 分支，参考 §四 速查表）
-3. **handler 目录**：复制 [已有目录模板](../../src/handlers/finance/xxx/) 改字段名
-4. **前端**：api + 区块组件，复制参考 [组件模板](../../frontend/src/pages/...)
-```
+**红线（功能完成时强制执行）**：删除 writing-plans 产生的 Task/Step checkbox、失败测试代码块、所有实现代码块、`cargo test/build` 命令；只保留以上 7 节概述（目标 ≈ 150 行级）。
+**参考实例**：[docs/plan/身份凭证Domain统一CRUD重构.md](./docs/plan/身份凭证Domain统一CRUD重构.md)
 
 ---
 
-##### 模板 C：`docs/archive/*.md`（归档说明）
-归档文档不要求统一章节结构，只需在文件头加一句归档说明，正文保留原文（方便追溯历史决策）：
+##### 模板 C：`docs/archive/*.md`（归档）
 
-```markdown
-# [历史文档标题]
-
-> 📦 **归档标记（YYYY-MM-DD）**：本文档描述的方案已被 [新文档名或提交 SHA] 取代。
-> 保留原因：[方便对比新旧设计思路 / 历史审计 / 未来回退参考]。
-> 当前生效方案请参考：[../design/新文档.md](../design/xxx.md) 或提交 [abc1234](https://github.com/xxx/commit/abc1234)。
-
-[原正文保留不动]
+只在文件头加一句：
 ```
+> 📦 归档标记（YYYY-MM-DD）：被 [新文档/SHA] 取代。保留原因：[xxx]。生效方案：[../design/new.md | commit abc123]
+```
+正文永不修改。
 
 ---
 
