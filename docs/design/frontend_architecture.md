@@ -1,6 +1,12 @@
 # 前端架构设计
 
-> 最后更新：2026-07-25
+> 🎯 **本文档定位**：Dioxus 前端架构与技术栈选型、业务域页面组织、DaisyUI 组件体系、HUD 可视化方案的整体设计大纲与演进记录；设计思路快照，组件层级与状态管理逻辑以实际代码为准。
+> 状态：v2.0（2026-07-25 DaisyUI 迁移落地，2026-08-15 整理）
+> 查阅场景：需要理解前端技术选型、业务域与后端 Handler 对齐策略、DaisyUI 迁移路径、HUD Canvas 可视化边界时打开；组件 props 签名、API 客户端方法直接读代码。
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
+> - [ui_design_system.md](./ui_design_system.md) — UI 设计系统（主题/色彩/组件规范）
 
 ## 概述
 
@@ -119,19 +125,7 @@ frontend/
 - 编译产物输出到 `public/output.css`，由 Dioxus 自动打包
 
 **自定义主题 orz-light**：
-```css
-@plugin "daisyui" {
-  themes: orz-light --default, light, dark, cupcake, ...;
-}
-
-[data-theme="orz-light"] {
-  --color-primary: oklch(0.63 0.24 50);   /* #fa520f 品牌橙色 */
-  --color-neutral: oklch(0.25 0 0);       /* #1f1f1f 深色 */
-  --color-base-100: oklch(0.98 0.02 95);  /* #fffaeb 暖白 */
-  --color-base-200: oklch(0.96 0.04 90);  /* #fff0c2 奶油色 */
-  /* ... */
-}
-```
+> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
 
 **主题切换**：
 - `use_theme()` Hook 返回 `ThemeController`（Clone+Copy）
@@ -256,19 +250,11 @@ frontend/
 
 ### 环境准备
 
-```bash
-cd frontend
-npm install          # 安装 Tailwind CSS 和 DaisyUI
-```
+> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
 
 ### 开发命令
 
-```bash
-dx serve             # 开发服务器（自动热重载，含 CSS 编译）
-dx build             # 构建（build.rs 自动编译 CSS）
-npm run watch:css    # 独立监听 CSS 变更
-npm run build:css    # 独立构建 CSS
-```
+> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
 
 ### 样式使用规范
 
@@ -333,3 +319,18 @@ npm run build:css    # 独立构建 CSS
 
 ### 2026-07-16 定时触发器前端体验优化
 - 列表信息增强、Action 模板化、Cron 预设按钮、编辑功能
+
+---
+
+## 五、扩展模式
+
+### 5.1 新增业务域页面模块
+前端页面按业务域与后端 Handler 域对齐。新增一个业务域时：
+1. 在 `frontend/src/pages/` 下新建目录，复制现有业务域模板，参考：[pages 目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages)
+2. 在 `frontend/src/api/` 下新增对应域的 API client 模块，复用 `common::api::*` DTO 类型，参考：[api 目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/api)
+3. 在 Dioxus Router 配置中注册路由，入口参考：[main.rs 路由注册](file:///Users/aman/Technology/rust/ai_orz/frontend/src/main.rs)
+
+### 5.2 新增 HUD Canvas 可视化图表类型
+现有 GraphCanvas 支持知识图谱等可视化。如果未来新增图表类型：
+1. 优先复用 HUD Canvas 渲染基础设施，不单独开独立 canvas 实例，参考：[components/graph_canvas.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/graph_canvas.rs)
+2. 数据模型复用通用 `GraphNode` / `GraphEdge` 结构；若新增字段保持向后兼容（Option 字段），参考：[components/graph.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/graph.rs)
