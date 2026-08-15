@@ -40,12 +40,9 @@ target
 /.idea
 .vscode
 
-# Qoder CN IDE 本地配置（插件开关、MCP 配置等，机器相关）
+# Qoder CN IDE / Qoder 原所有内容（本地配置、repowiki旧内容）全部忽略；wiki已迁移到 docs/wiki 实目录托管
 /.qoder-cn
-# Qoder 生成目录：仅放行 repowiki（通过 docs/wiki 软链接作为知识库入口，需随仓库分发），
-# 其余内容（会话缓存、本地状态等）不入库
-/.qoder/*
-!/.qoder/repowiki
+/.qoder
 
 /dev.db
 /.ai_orz/test.db
