@@ -1,54 +1,92 @@
 # AI Orz Wiki 维护 Skill（规范全文版）
 
-> 🎯 本文档是 AI Orz 项目「wiki 知识库 + 知识卡片」同步维护的完整 Skill spec（长文草稿版，存项目内供 agent 随时参考）。
+> 🎯 本文档是 AI Orz 项目「4 类文档完整链路管理（design / plan / wiki 长文 / RAG 知识卡）」中 wiki 一侧的 Skill spec：负责把代码变更同步到人类百科长文 + RAG 知识卡，并强制四类文档互引闭环，保证读者从任何一类都能跳到另外三类。
 >
 > 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-wiki-maintainer/SKILL.md](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
 >
-> 状态：v1.0（2026-08-15，随 wiki 从 IDE 自动生成 → 人工/Agent 协同维护同步发布）
-> 查阅场景：任何需要把代码变更同步到 docs/wiki/ 两套知识库的时候打开；字段级实现直接跳对应源码。
+> 平行 Skill（负责另外三类 + 四类互引的另一半职责）：[ai-orz-doc-maintainer.md](file:///Users/aman/Technology/rust/ai_orz/docs/skills/ai-orz-doc-maintainer.md) + [对应注册版](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-doc-maintainer/SKILL.md)
+>
+> 状态：v2.0（2026-08-15，v1.1 架构升级：从「wiki 两主区独立」→「4 类文档（design/plan/wiki长文/RAG卡）完整互引闭环」；用户明确给出四类文档定义：design=为什么、plan=怎么做+结果、wiki=是什么、RAG卡=总结+索引）
+> 查阅场景：任何需要把代码变更同步进 docs/wiki/ 的两套知识库时打开；如果是 design/plan 的生命周期管理（包括与 wiki 互引回填）请走 ai-orz-doc-maintainer；两类文档互引部分两 Skill 有交叉，边界见本档 §1.2。
 >
 > 关联文档：
-> - [AGENTS.md §2.1 文档编写与维护规范](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md#L92-L358) — 四象限分类与代码引用铁律（wiki 必须遵守）
-> - [docs/plan/2026-08-15-文档规范与仓库精简.md](file:///Users/aman/Technology/rust/ai_orz/docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — docs 精简归档 SOP
+> - [AGENTS.md §2.1 文档编写与维护规范](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md#L92-L358) — 文件头四件套 + 代码块性质判定铁律（四类文档全部遵守）
+> - [docs/plan/2026-08-15-文档规范与仓库精简.md](file:///Users/aman/Technology/rust/ai_orz/docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — 四类文档互引链路第一次真实跑通的参考计划
+> - 对应人类百科长文：（待 wiki 同步到 Skill 文档时再回填绝对路径）
+> - 对应 RAG 知识卡：（待 wiki 同步时生成知识卡后回填绝对路径）
 
 ---
 
 ## 一、适用范围与核心不变量
 
-AI Orz 的 `docs/wiki/` 是**两套平行、互相独立、共同锚定于源码与设计文档**的知识库，必须**同时维护**，不可只更新其中一套：
+AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何一类不得孤立存在），必须**同时维护、显式互相引用**：
 
-| 知识库 | 位置 | 文件数 | 总行数 | 受众 / 用途 |
-|-------|------|-------:|-------:|------------|
-| **人类百科长文区** | `docs/wiki/zh/content/`（8 大板块） | 353 篇 | ≈134k | 人类用户 + 前端文档中心 `system/docs.rs` 动态展示；系统化学习 / 查阅 |
-| **Agent RAG 知识卡区** | `docs/wiki/knowledge/zh/`（知识卡 + 2 个顶层模块 + 子模块 E2E） | 53 张（增量增长，允许重叠） | ≈2.2k | 给 Agent / IDE 内部 RAG 引擎召回；单张卡原子化知识点 |
+| 类型 | 位置 | 回答问题 | 维护者（两个 Skill 分工）| 典型体量 |
+|------|------|---------|------------------------|---------|
+| ① **Design** | `docs/design/*.md` | **为什么做**（设计决策 + 关键决策表）| 👉 `ai-orz-doc-maintainer` | 单篇 200-400 行，定稿后不追代码 |
+| ② **Plan** | `docs/plan/*.md` | **怎么做 + 落地结果快照**（7 章骨架，无 checkbox/命令） | 👉 `ai-orz-doc-maintainer` | 单篇 150-250 行 |
+| ③ **Wiki 长文（百科）** | `docs/wiki/zh/content/` 8 大板块 | **是什么**（系统化人类百科，10 节目录 + cite + 来源） | 👉 `ai-orz-wiki-maintainer`（本 Skill）| 353 篇 ≈134k 行，跟随代码增量同步 |
+| ④ **RAG 知识卡（总结+索引）** | `docs/wiki/knowledge/zh/`（+ 两个顶层模块 + E2E 子模块） | **总结 + 索引**（给 Agent RAG 召回的原子知识单元） | 👉 `ai-orz-wiki-maintainer`（本 Skill）| 54 张（含本次 v2.0 新增 RAG 用法元卡）≈2.3k 行，增量增长允许重叠 |
 
-**必须同时维护的原因**：
-- 只更新长文、不更新知识卡 → Agent 内部问答仍会召回过时知识（与文档中心呈现给人类的内容不一致）
-- 只更新知识卡、不更新长文 → 人类用户看不到新能力的文档，前端文档中心缺页
+**必须四类一起维护的原因**：
+- 只更新 ③④（wiki 侧）不更新 ①② → 设计动机与实施决策链路断了，读者不知道"为什么这样做"，只能靠源代码考古
+- 只更新 ①②（doc 侧）不更新 ③④ → 人类找不到系统化百科，Agent RAG 仍召回过期知识（与代码不一致）
+- 四类之间不互引 → 与 v1.0 的"隐性共享源码锚点"无异，用户要求的是**四类文档显式链接的完整闭环**
 
-### 1.1 两套知识库之间的关系（关键）
+### 1.2 两个 Skill 的职责分界与交叉处的协作
 
-它们**不互相索引**（grep 136k 行：长文→卡=0 命中，卡→长文≈0 命中），但**共享两组锚**：
+两类文档互引是两个 Skill 的交叉点（必须做两次方向的回填）：
+- 写 ①②（doc-maintainer 负责）时必须在其**文头「关联文档」段**中写清楚：对应 ③ Wiki 长文路径 + 对应 ④ RAG 卡路径（如果当时还未创建 wiki，先占位目标最终路径 → 等 wiki-maintainer 执行完再回填）
+- 写 ③④（wiki-maintainer 负责，即本 Skill）时必须在 ③ `<cite>` 引用区 + ④ `source_files[]` 字段中写清楚：对应 ① design 文档路径 + 对应 ② plan 文档路径
+- 禁止「互相等对方先写」的死锁 → 任何一方先开工时，先占位写目标路径，另一方完成后，由**最后一方**负责回头补全前面占位的路径（一般是 wiki-maintainer 作为最后一步，因为 wiki 是代码落定后才同步的最后一步）
+
+### 1.3 四类文档互引铁律（强制执行；每类如何引用另外三类）
+
+**路径格式约定**：
+- 引用**源码文件**（.rs/.ts/.toml/.sql 等）→ 统一写 `file://相对项目根的路径`（wiki cite 区和章节来源段 / RAG 卡 source_files[] 都沿用此格式，与 IDE 旧约定兼容）
+- 引用**另外三类文档**（design/plan/wiki 长文/RAG 卡的 .md 路径）→ 统一写 **`file:///绝对完整路径`**（AGENTS §2.1 定义的代码引用首选格式，点击 IDE 直接跳转；这是本次 v2.0 升级的关键——**显式文档互引用绝对路径，一眼就能区分"跳代码"还是"跳文档"**）
+
+互引规则矩阵（一类为主体，必须在指定位置引用另外三类）：
+
+| 主体类型 | 在哪个位置引用另外三类 | 需要引用的三类 & 写法 |
+|---------|----------------------|---------------------|
+| **③ Wiki 长文（本 Skill 职责）**| `<cite>` 引用区（与源码列表并列，放在源码条目之后）| ① design：`[文档标题](file:///abs/path/docs/design/x_design.md)`<br>② plan：`[文档标题](file:///abs/path/docs/plan/x.md)`<br>④ RAG 知识卡：`[卡名](file:///abs/path/docs/wiki/knowledge/zh/<卡目录>/同名.md)` — 同主题有平行卡时至少写 1 张 |
+| **④ RAG 卡（本 Skill 职责）**| `YAML source_files[]` 字段（源码之后、行号锚点同级）| ① design：`docs/design/x_design.md`（绝对路径也可以写 docs/ 开头相对项，但推荐绝对路径）<br>② plan：`docs/plan/x.md`<br>③ wiki 长文：⭐ **强制至少 1 条**对应长文路径（如果该主题还没有长文，先占位写 Step 6 新建长文的最终目标绝对路径；Step 6 完成后必须回填真实存在的路径）——绝不能创建一张完全不引用 wiki 长文的卡。同主题多组长文至少列主组长文 1 篇。<br>④（兄弟平行卡）同主题近似卡 0~N 张（可选，帮助 RAG 召回关联链）|
+| **① Design（doc-maintainer 职责）**| 文头「关联文档」段 | ② plan / ③ wiki 长文 / ④ RAG 卡（已落地则写路径，未落地则占位+注明待 wiki 同步） |
+| **② Plan（doc-maintainer 职责）**| 文头「关联文档」段 + §三 涉及文件清单末尾行 | ① design / ③ wiki 长文 / ④ RAG 卡（必须有，作为落地成果索引）|
 
 ```
-           ┌──────────────────────────────┐
-           │ docs/design/*.md / plan/*.md │ ◄── 锚 1：设计文档
-           │ AGENTS.md / LAYERED_*.md     │
-           └──────────────────────────────┘
-                ▲               ▲
-   source_files │               │ cite / 章节来源
-                │               │
-  ┌─────────────┤               ├────────────────┐
-  │ 知识卡(53张)│               │ 长文(353篇)    │
-  │ RAG检索用   │               │ 人类查阅用     │
-  └─────────────┘               └────────────────┘
-                │               │
-                └────┬──────────┘
-                     ▼
-            锚 2：源码路径 (src/** / common/** / frontend/** / migrations/**)
+                        ┌──────────────┐
+                        │   代码源码   │
+                        └──────────────┘
+                          ▲          ▲
+                    cite/来源      source_files
+                          │          │
+             ┌────────────┤          ├────────────┐
+             │            │          │            │
+             ▼            ▼          ▼            ▼
+    ┌──────────────┐ 显式互引  ┌──────────────┐
+    │ Wiki 长文 ③ │◄────────►│ RAG 知识卡 ④ │  ← 本 Skill 负责
+    │ 是什么·百科 │          │ 总结·索引·RAG│
+    └──────────────┘          └──────────────┘
+          ▲   \  文头关联 / cite / source_files ▲
+          │    \            /                   │
+          │     \          / 文头关联 / §三清单 /│
+          │      ▼        ▼                     │
+    ┌──────────────┐  显式互引   ┌──────────────┐
+    │   Design ①   │◄─────────►│    Plan ②    │  ← doc-maintainer 负责
+    │  为什么·决策  │           │怎么做+结果快照│
+    └──────────────┘           └──────────────┘
+
+     ↑ 四类文档之间显式互引，用户要求的完整闭环 ↑
 ```
 
-**维护时的铁律**：长文的「<cite>引用区 + 章节来源段」、知识卡的「source_files 字段」**必须指向同一份真实的源码或设计文档**——这是两套知识库能"互相印证"的唯一保证，不要各自写不同的路径。
+**互引覆盖率底线（每次 wiki 同步自审时检查）**：
+- 本次新增的所有 RAG 卡 → 100% 至少有 1 条 wiki 长文绝对路径出现在 source_files[] 中（0 条 = 失败）
+- 本次新增的所有 Wiki 长文 → 100% cite 区至少有 1 条 plan / design 文档绝对路径 + 至少 1 条对应 RAG 卡路径（如果创建了对应卡的话）
+- 本次更新的 design/plan（由 doc-maintainer 负责）→ 其文头关联文档段必须至少列出对应 wiki 长文 1 条 + 对应 RAG 卡 1 条
+
+**本 Skill 1.1 旧结论已作废（v2.0 升级）**：v1.0 中「两套知识库不互相索引、只有隐性共享源码锚点」的结论——**完全废弃，改为强制显式互引 + 四类文档完整闭环**。
 
 ---
 
@@ -65,7 +103,13 @@ AI Orz 的 `docs/wiki/` 是**两套平行、互相独立、共同锚定于源码
 <cite>
 **本文引用的文件**
 - [显示名(可选中文注释)](file://相对项目根路径/file.rs)
-- …（8-30 条；按"核心→次要→工具→测试"粗排）
+- …（源码路径 8-20 条；按"核心→次要→工具→测试"粗排）
+
+**本文关联的三类文档（四类互引闭环，v2.0 起强制显式列出）**
+- [Design 文档标题（为什么做）](file:///绝对项目根路径/docs/design/x_design.md)
+- [Plan 文档标题（怎么做+落地结果）](file:///绝对项目根路径/docs/plan/x.md)
+- [RAG 知识卡：主题名（总结+索引）](file:///绝对项目根路径/docs/wiki/knowledge/zh/<卡目录名>/同名.md)
+- （Design/Plan 没有就注明"暂无对应 plan 文档"；RAG 卡同主题有多张平行卡时至少列 1 张主卡）
 </cite>
 「可选，仅增量更新场景」## 更新摘要
   **变更内容**
@@ -155,10 +199,13 @@ scope:
     - 'src/pkg/paths.rs'
     - '<glob 模式数组：覆盖本卡锚定的源码文件范围，RAG用scope过滤相关文件>'
 source_files:
-    - src/service/domain/finance/identity_credential.rs:Ln-Lm
+    # ⭐ 四类文档互引 v2.0：source_files 必须「4 类齐全」，顺序推荐：源码锚点 → design → plan → wiki长文 → 兄弟平行卡
+    - src/service/domain/finance/identity_credential.rs:Ln-Lm          ← 源码锚点（3-8 个，可附 :Ln-Lm）
     - common/src/models/identity_credentials.rs:Ln-Lm
-    - docs/design/xxx_design.md          ← 必须时也引用设计文档
-    - '<核心源文件 3-10 个；可附 :Ln-Lm 行号锚点>'
+    - docs/design/identity_credential_design.md                       ← ① design 文档路径（如果有），推荐绝对路径也支持相对
+    - docs/plan/身份凭证Domain统一CRUD重构.md                          ← ② plan 文档路径（如果有）
+    - /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/Finance 处理器/身份凭证统一CRUD分发/身份凭证统一CRUD分发.md   ← ③⭐【强制至少1条】对应该主题的人类百科长文绝对路径。如果本主题还没有长文，先占位写 Step 6 新增长文的最终目标绝对路径；Step 6 完成后必须回填为真实存在的路径（不允许创建一张无 wiki 引用的卡）。同主题多组长文至少列主组长文。
+    - /Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/<同主题兄弟卡目录>/同名.md  ← ④（可选）同主题平行近似卡，0~N张。帮助RAG召回关联链。
 ---
 
 ## 1. 整体方案 / 使用的框架与工具
@@ -167,8 +214,9 @@ source_files:
 ## 2. 关键文件与位置
 | 文件 | 职责 |
 |---|---|
-| `相对路径A` | 一句话职责描述 |
+| `相对路径A` | 一句话职责描述（源码文件） |
 | `相对路径B` | 一句话职责描述 |
+| `[对应 Wiki 长文名](file:///绝对长文路径)` | ⭐ 本卡对应的人类百科长文（推荐加一行；与 source_files[] 中强制 1 条 wiki 路径呼应，让人类读者一眼能跳）|
 | …（4-12 行，与 source_files 对齐，但不必全相同；要给人类一眼扫到入口）|
 
 ## 3. 架构与设计约定
