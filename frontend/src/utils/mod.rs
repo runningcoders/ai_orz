@@ -4,7 +4,9 @@
 //! - `file`: 文件大小格式化
 //! - `message`: 消息类型常量、角色映射、乐观消息辅助
 //! - `status`: 任务/项目状态映射
+//! - `doc_link`: Markdown 渲染期站内链接后处理（data-repo-href 预拼）
 
+pub mod doc_link;
 pub mod file;
 pub mod message;
 pub mod status;

@@ -475,5 +475,12 @@
         }
       };
     </script>
+    <script>
+      // 文档中心站内链接拦截：预拼的 data-repo-href 新窗口打开（AGENTS §2.1.2）
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest && e.target.closest('a.doc-link-intercept');
+        if (a) { e.preventDefault(); window.open(a.dataset.repoHref, '_blank', 'noopener'); }
+      });
+    </script>
   </body>
 </html>

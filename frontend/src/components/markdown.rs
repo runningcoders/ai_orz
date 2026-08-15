@@ -35,7 +35,7 @@ fn next_container_id(prefix: &str) -> String {
 /// Markdown → HTML（启用表格 / 删除线 / 任务列表扩展语法）
 ///
 /// 源文原始 HTML（块级/内联）会被转义为纯文本，禁止透传，保证注入安全。
-/// 与文档中心 docs.rs 的渲染逻辑一致，供非组件场景（如预渲染）复用。
+/// 本函数是全站唯一渲染事实源，文档中心（docs.rs）等非组件场景直接复用。
 pub fn render_markdown(md: &str) -> String {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
@@ -51,7 +51,8 @@ pub fn render_markdown(md: &str) -> String {
     });
     let mut html_out = String::new();
     pulldown_cmark::html::push_html(&mut html_out, escaped);
-    html_out
+    // 站内链接预拼 data-repo-href（index.html 全局点击拦截 JS 桥用，AGENTS §2.1.2）
+    crate::utils::doc_link::post_process_doc_links(&html_out, crate::utils::doc_link::BLOB_BASE)
 }
 
 /// Markdown 渲染组件
