@@ -1,9 +1,13 @@
 # Agent 思考运行时 + 策略引擎设计
 
-> 📌 **本文档定位**：设计决策文档（design/）。把 Agent 思考循环的运行时信息收敛到 `AgentThinkRuntime`，作为 `AgentRuntimeStateManager` 的运行时扩展；同时设计独立的策略引擎组件（`pkg/policy/`），统一管理控制逻辑（轮次/超时/上下文溢出/未来 token 预算/用户取消），实现可监控、可取消、可扩展的运行时控制。
+> 🎯 **本文档定位**：Agent 思考运行时（AgentThinkRuntime）收敛 + 策略引擎组件（pkg/policy/）的整体设计大纲与关键决策思路；设计评审定稿快照，接口细节与宏展开以实际代码为准。
+> 状态：v2.0（2026-08-14 已评审，2026-08-15 整理）
+> 查阅场景：需要理解思考循环可观察性设计动机、策略引擎解耦哲学、policy_set! 声明宏组合模式、前端轮询+取消链路边界时打开；字段级 trait 定义与策略实现体直接读代码。
 >
-> **状态**：已评审（2026-08-14），待实现
-> **前置依赖**：[runtime_design.md](./runtime_design.md) v3.8（两阶段唤醒）
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
+> - [runtime_design.md](./runtime_design.md) — 两阶段唤醒 Runtime 设计（策略引擎的上游调用方）
+> - [tool_design.md](./tool_design.md) — 工具调用架构（策略判断结果影响工具执行链路）
 
 ---
 
@@ -201,204 +205,31 @@ pub trait Policy: Send + Sync + 'static {
     }
 }
 ```
+> 当前实现参考：[policy_engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 ### 4.2 Metrics
 
-```rust
-/// 运行时算子集合（HashMap 封装，灵活传递）
-///
-/// think_loop 每轮构造，传给策略引擎
-/// 策略通过 required_metrics 声明依赖，运行时从 Metrics 中取值
-#[derive(Debug, Clone, Default)]
-pub struct Metrics {
-    data: HashMap<String, serde_json::Value>,
-}
-
-impl Metrics {
-    pub fn new() -> Self { Self::default() }
-
-    /// 链式添加算子
-    pub fn with(mut self, key: &str, value: impl Serialize) -> Self {
-        if let Ok(v) = serde_json::to_value(value) {
-            self.data.insert(key.to_string(), v);
-        }
-        self
-    }
-
-    pub fn get_u64(&self, key: &str) -> Option<u64> {
-        self.data.get(key).and_then(|v| v.as_u64())
-    }
-
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.data.get(key).and_then(|v| v.as_bool())
-    }
-
-    pub fn get_f64(&self, key: &str) -> Option<f64> {
-        self.data.get(key).and_then(|v| v.as_f64())
-    }
-}
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 **think_loop 构造 Metrics 示例**：
 
-```rust
-let metrics = Metrics::new()
-    .with("round_number", current_round)
-    .with("max_rounds", max_rounds)
-    .with("elapsed_secs", elapsed)
-    .with("tokens_input", tokens_in)
-    .with("tokens_output", tokens_out)
-    .with("total_tokens", total)
-    .with("context_tokens", ctx_tokens)
-    .with("tool_call_count", tool_calls);
-```
+> 相关实现细节见：[runtime think_loop + policy](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 ### 4.3 PolicyGroup
 
 策略组本身实现 Policy trait，支持 And/Or 组合关系，可嵌套。所有派生字段（id/name/condition_desc/required_metrics）从子策略自动拼接生成。
 
-```rust
-/// 策略组关系
-pub enum PolicyRelation {
-    /// 所有子策略都命中才命中（默认）
-    And,
-    /// 任一子策略命中就命中
-    Or,
-}
-
-/// 策略组：本身实现 Policy，可嵌套组合
-pub struct PolicyGroup {
-    id: String,               // 自动生成：and(max_rounds,token_budget)
-    name: String,             // 自动生成：And[MaxRounds, TokenBudget]
-    condition_desc: String,   // 自动生成：(轮次>=365) And (Token>=10000)
-    required_metrics: Vec<String>,  // 自动生成：子策略去重合并
-    policies: Vec<Box<dyn Policy>>,
-    relation: PolicyRelation,
-}
-
-impl PolicyGroup {
-    pub fn new(policies: Vec<Box<dyn Policy>>, relation: PolicyRelation) -> Self {
-        let connector = match relation {
-            PolicyRelation::And => "And",
-            PolicyRelation::Or => "Or",
-        };
-        let id_connector = match relation {
-            PolicyRelation::And => "and",
-            PolicyRelation::Or => "or",
-        };
-
-        let id = format!(
-            "{}({})",
-            id_connector,
-            policies.iter().map(|p| p.id()).collect::<Vec<_>>().join(",")
-        );
-
-        let name = format!(
-            "{}[{}]",
-            connector,
-            policies.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ")
-        );
-
-        let condition_desc = policies.iter()
-            .map(|p| format!("({})", p.condition_desc()))
-            .collect::<Vec<_>>()
-            .join(format!(" {} ", connector).as_str());
-
-        let required_metrics = {
-            let mut set: Vec<String> = Vec::new();
-            for p in &policies {
-                for m in p.required_metrics() {
-                    if !set.contains(&m) {
-                        set.push(m);
-                    }
-                }
-            }
-            set
-        };
-
-        Self { id, name, condition_desc, required_metrics, policies, relation }
-    }
-}
-
-impl Policy for PolicyGroup {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
-    fn condition_desc(&self) -> &str { &self.condition_desc }
-    fn required_metrics(&self) -> Vec<String> { self.required_metrics.clone() }
-
-    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
-        match self.relation {
-            PolicyRelation::And => {
-                // 所有子策略都命中才返回合并列表
-                let mut all_hits = Vec::new();
-                for p in &self.policies {
-                    let hits = p.evaluate(metrics);
-                    if hits.is_empty() {
-                        return Vec::new();  // 任一未命中 → 整体未命中
-                    }
-                    all_hits.extend(hits);
-                }
-                all_hits
-            }
-            PolicyRelation::Or => {
-                // 合并所有命中的子策略 id
-                self.policies.iter()
-                    .flat_map(|p| p.evaluate(metrics))
-                    .collect()
-            }
-        }
-    }
-}
-```
+> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 **自动生成效果**：
 
-```
-单个策略：
-  id = "max_rounds"
-  name = "MaxRounds"
-  desc = "轮次 >= 365"
-  metrics = ["round_number", "max_rounds"]
-
-Or 组合：
-  id = "or(user_cancel,context_overflow,max_rounds,timeout)"
-  name = "Or[UserCancel, ContextOverflow, MaxRounds, Timeout]"
-  desc = "(用户取消) Or (上下文溢出 >= 8000) Or (轮次 >= 365) Or (超时 >= 3600s)"
-  metrics = ["cancel_token", "context_tokens", "round_number", "max_rounds", "elapsed_secs"]
-
-嵌套组合：
-  id = "or(context_overflow,and(token_budget,max_rounds))"
-  name = "Or[ContextOverflow, And[TokenBudget, MaxRounds]]"
-  desc = "(上下文溢出 >= 8000) Or ((Token >= 10000) And (轮次 >= 50))"
-  metrics = ["context_tokens", "total_tokens", "round_number", "max_rounds"]
-```
+> 相关实现细节见：[pkg/agent_runtime_state.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/agent_runtime_state.rs)
 
 ### 4.4 PolicyBuilder + policy_set! 宏
 
 #### PolicyBuilder（底层 API）
 
-```rust
-/// 策略构造器（通用，with + with_policy + build/or）
-pub struct PolicyBuilder {
-    policies: Vec<Box<dyn Policy>>,
-}
-
-impl PolicyBuilder {
-    pub fn new() -> Self { ... }
-
-    /// 注入已装箱的策略（用于嵌套子组）
-    pub fn with(mut self, policy: Box<dyn Policy>) -> Self { ... }
-
-    /// 注入策略（泛型便捷方法，自动装箱，消除 Box::new 样板）
-    pub fn with_policy<P: Policy + 'static>(mut self, policy: P) -> Self { ... }
-
-    /// 构造策略组（默认 And 关系）
-    pub fn build(self) -> Box<dyn Policy> { ... }
-
-    /// 构造 Or 关系策略组
-    pub fn or(self) -> Box<dyn Policy> { ... }
-}
-```
+> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 #### policy_set! 宏（推荐用法）
 
@@ -407,184 +238,29 @@ impl PolicyBuilder {
 
 **三种模式**：
 
-```rust
-// 1. 纯 OR：任一命中即触发
-let policy = policy_set! {
-    OR {
-        UserCancelPolicy(cancel_flag),
-        MaxRoundsPolicy(max_rounds),
-        TimeoutPolicy(timeout_secs),
-    }
-};
-
-// 2. 纯 AND：全部命中才触发
-let policy = policy_set! {
-    AND {
-        TokenBudgetPolicy(10000),
-        MaxRoundsPolicy(50),
-    }
-};
-
-// 3. 混合模式：平铺策略 + OR/AND 子组，外层默认 AND
-// 等价于：MaxRounds AND Timeout AND (UserCancel OR TokenBudget)
-let policy = policy_set! {
-    MaxRoundsPolicy(max_rounds),
-    TimeoutPolicy(timeout_secs),
-    OR {
-        UserCancelPolicy(cancel_flag),
-        TokenBudgetPolicy(10000),
-    }
-};
-```
+> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 **底层 API 使用场景**（PolicyBuilder 直接使用）：
 
-```rust
-// 嵌套组合：上下文溢出 OR (token 超预算 AND 轮次超 50)
-// 子组需要作为 Box<dyn Policy> 传入，用 with() 而非 with_policy()
-let policy = PolicyBuilder::new()
-    .with_policy(ContextOverflowPolicy::new(threshold))
-    .with(
-        PolicyBuilder::new()
-            .with_policy(TokenBudgetPolicy::new(10000))
-            .with_policy(MaxRoundsPolicy::new(50))
-            .build()  // And 子组
-    )
-    .or();  // Or 顶层
-```
+> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 > 💡 宏内部使用 TT munching 递归处理混合模式的条目，通过 `policy_set_mixed!` 辅助宏逐条匹配（平铺策略 / OR 子组 / AND 子组）。
 
 ### 4.5 内置策略
 
-```rust
-// src/pkg/policy/builtin.rs
-
-/// 轮次上限策略
-pub struct MaxRoundsPolicy {
-    max_rounds: usize,
-}
-impl Policy for MaxRoundsPolicy {
-    fn id(&self) -> &str { "max_rounds" }
-    fn name(&self) -> &str { "MaxRounds" }
-    fn condition_desc(&self) -> &str { /* "轮次 >= 365" */ }
-    fn required_metrics(&self) -> Vec<String> { vec!["round_number".into(), "max_rounds".into()] }
-    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
-        let round = metrics.get_u64("round_number").unwrap_or(0);
-        let max = metrics.get_u64("max_rounds").unwrap_or(u64::MAX);
-        if round >= max { vec![self.id().to_string()] } else { vec![] }
-    }
-}
-
-/// 超时策略
-pub struct TimeoutPolicy { timeout_secs: u64 }
-impl Policy for TimeoutPolicy {
-    fn id(&self) -> &str { "timeout" }
-    fn required_metrics(&self) -> Vec<String> { vec!["elapsed_secs".into()] }
-    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
-        let elapsed = metrics.get_u64("elapsed_secs").unwrap_or(0);
-        if self.timeout_secs > 0 && elapsed >= self.timeout_secs {
-            vec![self.id().to_string()]
-        } else { vec![] }
-    }
-}
-
-/// 上下文溢出策略
-pub struct ContextOverflowPolicy { threshold: u64 }
-impl Policy for ContextOverflowPolicy {
-    fn id(&self) -> &str { "context_overflow" }
-    fn required_metrics(&self) -> Vec<String> { vec!["context_tokens".into()] }
-    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
-        let tokens = metrics.get_u64("context_tokens").unwrap_or(0);
-        if tokens >= self.threshold { vec![self.id().to_string()] } else { vec![] }
-    }
-}
-
-/// 用户取消策略（检查 CancellationToken）
-pub struct UserCancelPolicy { cancel_token: CancellationToken }
-impl Policy for UserCancelPolicy {
-    fn id(&self) -> &str { "user_cancel" }
-    fn required_metrics(&self) -> Vec<String> { vec![] }  // 不依赖 Metrics，直接检查 token
-    fn evaluate(&self, _metrics: &Metrics) -> Vec<String> {
-        if self.cancel_token.is_cancelled() {
-            vec![self.id().to_string()]
-        } else { vec![] }
-    }
-}
-
-/// Token 预算策略（预留）
-pub struct TokenBudgetPolicy { budget: u64 }
-impl Policy for TokenBudgetPolicy {
-    fn id(&self) -> &str { "token_budget" }
-    fn required_metrics(&self) -> Vec<String> { vec!["total_tokens".into()] }
-    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
-        let total = metrics.get_u64("total_tokens").unwrap_or(0);
-        if total >= self.budget { vec![self.id().to_string()] } else { vec![] }
-    }
-}
-```
+> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
 
 ### 4.6 业务侧 action 映射
 
 策略引擎不感知业务 action，业务侧维护策略 id → ThinkLoopResult 映射：
 
-```rust
-// src/service/domain/runtime/awakening.rs
-
-/// 将命中的策略 id 列表映射为 ThinkLoopResult
-/// 多个策略命中时按优先级取第一个
-fn map_triggered_to_result(
-    triggered: &[String],
-    messages: Vec<ChatMessage>,
-    round_number: usize,
-    input_tokens: u64,
-) -> ThinkLoopResult {
-    // 优先级：用户取消 > 上下文溢出 > token 预算 > 轮次 > 超时
-    for id in triggered {
-        match id.as_str() {
-            "user_cancel"       => return ThinkLoopResult::Cancelled { messages, total_rounds: round_number },
-            "context_overflow"  => return ThinkLoopResult::ContextOverflow { messages, input_tokens, rounds_used: round_number },
-            "token_budget"      => return ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds: round_number },
-            "max_rounds"        => return ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds: round_number },
-            "timeout"           => return ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds: round_number },
-            _ => {}
-        }
-    }
-    ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds: round_number }  // 兜底
-}
-
-// think_loop 中使用
-let triggered = policy.evaluate(&metrics);
-if !triggered.is_empty() {
-    return Ok(map_triggered_to_result(&triggered, messages, round_number, last_input_tokens));
-}
-// 继续下一轮
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 ### 4.7 按场景构造策略组
 
 通过 `config_resolve` 从 Agent 配置 + 系统配置解析参数，`policy_set!` 宏构造策略组：
 
-```rust
-// src/service/domain/runtime/think_loop.rs
-
-pub(crate) fn build_policy_for_scene(
-    agent: &Agent,
-    _scene: ThinkingScene,
-    cancel_flag: Arc<AtomicBool>,
-) -> Box<dyn Policy> {
-    let max_rounds = config_resolve::max_thinking_rounds(agent);
-    let timeout_secs = config_resolve::think_timeout_secs(agent);
-
-    policy_set! {
-        OR {
-            UserCancelPolicy(cancel_flag),
-            MaxRoundsPolicy(max_rounds),
-            TimeoutPolicy(timeout_secs),
-        }
-    }
-}
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 > 💡 当前实现中所有场景共用同一套策略组（UserCancel OR MaxRounds OR Timeout），ContextOverflowPolicy 暂未启用（run_think_loop 已有独立的上下文溢出检测逻辑，后续可整合）。
 
@@ -603,74 +279,7 @@ pub(crate) fn build_policy_for_scene(
 
 ### 5.1 AgentThinkRuntime
 
-```rust
-// src/pkg/agent_runtime_state/think_runtime.rs
-
-/// Agent 思考运行时：跟着 Agent 状态走，Busy 时存在，Idle 时清理
-/// 持有 cancel 信号 + 运行时快照，由 think_loop 每轮上报
-pub struct AgentThinkRuntime {
-    agent_id: String,
-    cancel_token: CancellationToken,
-    // 运行时快照（原子读写，StateManager 直接读取）
-    snapshot: Arc<RwLock<ThinkRuntimeSnapshot>>,
-}
-
-impl AgentThinkRuntime {
-    pub fn new(agent_id: String, trace_id: String) -> Self {
-        Self {
-            agent_id: agent_id.clone(),
-            cancel_token: CancellationToken::new(),
-            snapshot: Arc::new(RwLock::new(ThinkRuntimeSnapshot::new(
-                agent_id,
-                trace_id,
-            ))),
-        }
-    }
-
-    /// 获取 cancel_token 引用（think_loop 用于构造 UserCancelPolicy）
-    pub fn cancel_token(&self) -> &CancellationToken {
-        &self.cancel_token
-    }
-
-    /// think_loop 每轮上报时调用
-    pub fn report_round(
-        &self,
-        trace_id: &str,
-        scene: ThinkingScene,
-        round: usize,
-        max_rounds: usize,
-        metrics: &Metrics,
-    ) {
-        if let Ok(mut snap) = self.snapshot.write() {
-            snap.report_round(trace_id, scene, round, max_rounds, metrics);
-        }
-    }
-
-    /// 用户取消（由 StateManager.cancel_thinking 调用）
-    pub fn cancel(&self) -> bool {
-        self.cancel_token.cancel();
-        if let Ok(mut snap) = self.snapshot.write() {
-            snap.status = ThinkStatus::Cancelled;
-        }
-        true
-    }
-
-    /// 是否已取消（think_loop 每轮检查）
-    pub fn is_cancelled(&self) -> bool {
-        self.cancel_token.is_cancelled()
-    }
-
-    /// 获取运行时快照（前端查询用）
-    pub fn snapshot(&self) -> ThinkRuntimeSnapshot {
-        self.snapshot.read().map(|s| s.clone()).unwrap_or_default()
-    }
-
-    /// 获取快照的 Arc 句柄（用于直接传给 awaken 流程）
-    pub fn snapshot_handle(&self) -> Arc<RwLock<ThinkRuntimeSnapshot>> {
-        self.snapshot.clone()
-    }
-}
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 **设计要点**：
 - 不实现 BackgroundTask trait，不注册到 Registry
@@ -680,88 +289,11 @@ impl AgentThinkRuntime {
 
 ### 5.2 AgentRuntimeStateManager 扩展
 
-```rust
-// src/pkg/agent_runtime_state/manager.rs 扩展
-
-pub struct AgentRuntimeStateManager {
-    // 现有字段...
-    agents: Arc<RwLock<HashMap<String, AgentRuntimeInfo>>>,
-}
-
-/// AgentRuntimeInfo 扩展 think_runtime 字段 + 业务上下文
-#[derive(Clone, Default)]
-pub struct AgentRuntimeInfo {
-    pub state: AgentRuntimeState,          // 现有
-    pub current_message_id: Option<String>, // 现有
-    pub state_started_at: i64,             // 现有
-    // 新增：业务上下文（set_busy 时一次性设置，整个 Busy 期间不变）
-    // 用于前端按任务/项目视角过滤运行中 Agent
-    pub task_id: Option<String>,
-    pub project_id: Option<String>,
-    // 新增：思考运行时（仅 Busy 时有值）
-    pub think_runtime: Option<Arc<AgentThinkRuntime>>,
-}
-
-impl AgentRuntimeStateManager {
-    /// 挂载思考运行时（consumer 创建后调用）
-    pub async fn set_think_runtime(
-        &self,
-        agent_id: &str,
-        think_runtime: Arc<AgentThinkRuntime>,
-    ) {
-        let mut agents = self.agents.write().await;
-        if let Some(info) = agents.get_mut(agent_id) {
-            info.think_runtime = Some(think_runtime);
-        }
-    }
-
-    /// 清理思考运行时（BusyGuard Drop 时调用）
-    pub async fn clear_think_runtime(&self, agent_id: &str) {
-        let mut agents = self.agents.write().await;
-        if let Some(info) = agents.get_mut(agent_id) {
-            info.think_runtime = None;
-        }
-    }
-
-    /// 取消思考（cancel-thinking 接口调用）
-    pub async fn cancel_thinking(&self, agent_id: &str) -> bool {
-        let agents = self.agents.read().await;
-        if let Some(info) = agents.get(agent_id) {
-            if let Some(ref think_runtime) = info.think_runtime {
-                return think_runtime.cancel();
-            }
-        }
-        false
-    }
-
-    /// 查询思考运行时快照（runtime-status 接口调用）
-    pub async fn get_think_runtime_snapshot(
-        &self,
-        agent_id: &str,
-    ) -> Option<ThinkRuntimeSnapshot> {
-        let agents = self.agents.read().await;
-        if let Some(info) = agents.get(agent_id) {
-            if let Some(ref think_runtime) = info.think_runtime {
-                return Some(think_runtime.snapshot());
-            }
-        }
-        None
-    }
-}
-```
+> 相关实现细节见：[pkg/agent_runtime_state.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/agent_runtime_state.rs)
 
 **BusyGuard 扩展**：Drop 时同步清理 think_runtime。
 
-```rust
-// src/pkg/agent_runtime_state/busy_guard.rs
-impl Drop for BusyGuard {
-    fn drop(&mut self) {
-        // 现有逻辑：set_idle
-        // 新增：清理 think_runtime
-        // 两个操作一起完成，保证状态一致性
-    }
-}
-```
+> 相关实现细节见：[runtime think_loop + policy](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
 
 ### 5.3 trace_id 生成机制（决策基础）
 
@@ -805,76 +337,7 @@ Summary:         trace-{agent}-{ts3}-{rand3}   ← 新 trace_id，log_id = summa
 
 ### 5.4 ThinkRuntimeSnapshot 完整定义
 
-```rust
-/// 思考运行时快照（前端查询用，不实现 TaskProgressSnapshot）
-#[derive(Debug, Clone, Default)]
-pub struct ThinkRuntimeSnapshot {
-    // 标识字段
-    pub agent_id: String,          // 固定 = StateManager key
-    pub trace_id: String,          // 动态 = 当前 think_loop 的 trace_id（随场景切换更新）
-
-    // 状态字段
-    pub status: ThinkStatus,       // Running / Completed / Failed / Cancelled
-    pub scene: ThinkingScene,      // IntentAnalyze / Awaken / Settle / Summary
-    pub started_at: i64,
-    pub finished_at: Option<i64>,
-    pub step_message: String,      // "IntentAnalyze phase" / "Awaken round 5/365" 等
-
-    // 运行时指标
-    pub round_number: usize,       // 当前 think loop 的轮次
-    pub max_rounds: usize,         // 当前 think loop 的轮次上限
-    pub tokens_input: u64,         // 累计输入 token
-    pub tokens_output: u64,        // 累计输出 token
-    pub total_tokens: u64,         // 累计总 token
-    pub tool_call_count: usize,    // 累计工具调用次数
-    pub elapsed_secs: u64,         // 累计耗时
-
-    // 策略信息
-    pub active_policies: Vec<PolicyInfo>,  // 当前生效的策略集
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum ThinkStatus {
-    #[default]
-    Running,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
-impl ThinkRuntimeSnapshot {
-    pub fn new(agent_id: String, trace_id: String) -> Self {
-        Self {
-            agent_id,
-            trace_id,
-            status: ThinkStatus::Running,
-            started_at: chrono::Utc::now().timestamp(),
-            ..Default::default()
-        }
-    }
-
-    /// think_loop 每轮上报时调用
-    pub fn report_round(
-        &mut self,
-        trace_id: &str,
-        scene: ThinkingScene,
-        round: usize,
-        max_rounds: usize,
-        metrics: &Metrics,
-    ) {
-        self.trace_id = trace_id.to_string();  // 切换到当前子流程的 trace_id
-        self.scene = scene;
-        self.round_number = round;
-        self.max_rounds = max_rounds;
-        self.tokens_input = metrics.get_u64("tokens_input").unwrap_or(0);
-        self.tokens_output = metrics.get_u64("tokens_output").unwrap_or(0);
-        self.total_tokens = metrics.get_u64("total_tokens").unwrap_or(0);
-        self.tool_call_count = metrics.get_u64("tool_call_count").unwrap_or(0) as usize;
-        self.elapsed_secs = metrics.get_u64("elapsed_secs").unwrap_or(0);
-        self.step_message = format!("{:?} round {}/{}", scene, round, max_rounds);
-    }
-}
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 **注意**：`ThinkRuntimeSnapshot` **不实现** `TaskProgressSnapshot`，因为思考流程没有进度概念。它是独立的运行时快照结构，通过 `AgentRuntimeStatusResponse` 返回给前端。
 
@@ -985,6 +448,7 @@ pub trait RuntimeDomain: Send + Sync {
     fn list_busy_agents(&self, ctx: RequestContext) -> Vec<AgentRuntimeInfo>;
 }
 ```
+> 当前实现参考：[runtime policy + think_loop](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 **职责分工**：cancel 的"信号触发"在 runtime domain（操作 cancel_token），"信号响应"在 think_loop（下一轮检测到取消后返回 Cancelled）。Handler 只做参数校验和调用 domain，不感知 cancel 实现细节。
 
@@ -1025,38 +489,7 @@ AgentRuntimeInfo.think_runtime = None         ← 后续查询返回 None
 
 ### 7.1 run_think_loop 签名变化
 
-```rust
-// 改造前
-async fn run_think_loop(
-    &self,
-    ctx: RequestContext,
-    brain: &Brain,
-    prompt: &str,
-    tool_descriptors: &[ToolDescriptor],
-    agent: &Agent,
-    scene_str: &str,
-    trace_id: &str,
-    max_rounds: usize,
-    start_round: usize,
-    timeout_secs: u64,
-) -> Result<ThinkLoopResult>
-
-// 改造后
-async fn run_think_loop(
-    &self,
-    ctx: RequestContext,
-    brain: &Brain,
-    prompt: &str,
-    tool_descriptors: &[ToolDescriptor],
-    agent: &Agent,
-    scene_str: &str,
-    trace_id: &str,
-    policy: &dyn Policy,             // 替代 max_rounds + timeout_secs（控制逻辑）
-    max_rounds: usize,               // 仅用于运行时展示（report_round），不参与控制判断
-    start_round: usize,
-    think_runtime: Option<&AgentThinkRuntime>,  // 运行时上报（None = 不上报，如内部测试）
-) -> Result<ThinkLoopResult>
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 ### 7.2 ThinkLoopResult 新增 Cancelled 变体
 
@@ -1068,66 +501,11 @@ pub enum ThinkLoopResult {
     Cancelled { messages: Vec<ChatMessage>, total_rounds: usize },  // 新增
 }
 ```
+> 当前实现：[runtime/types.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs)
 
 ### 7.3 循环体改造（伪代码）
 
-```rust
-// 改造后的循环体核心逻辑
-let mut round_number = start_round;
-let mut total_tokens: u64 = 0;
-let mut tool_call_count: usize = 0;
-let mut last_input_tokens: u64 = 0;
-let mut messages = vec![ChatMessage::user(prompt)];
-let started_at = Instant::now();
-
-loop {
-    // 1. 构造本轮 Metrics（基于累计值）
-    let metrics = Metrics::new()
-        .with("round_number", round_number)
-        .with("max_rounds", max_rounds)
-        .with("elapsed_secs", started_at.elapsed().as_secs())
-        .with("total_tokens", total_tokens)
-        .with("context_tokens", last_input_tokens)
-        .with("tool_call_count", tool_call_count);
-
-    // 2. 策略判断（命中列表为空 = 继续，非空 = 停止）
-    let triggered = policy.evaluate(&metrics);
-    if !triggered.is_empty() {
-        log_info!(&ctx, "think_loop", "policy triggered: {:?}", triggered);
-        return Ok(map_triggered_to_result(&triggered, messages, round_number, last_input_tokens));
-    }
-
-    // 3. 执行 think
-    let think_result = brain_dal.think(&messages, tool_descriptors).await?;
-
-    // 4. 处理 ThinkResult
-    match think_result {
-        ThinkResult::Final { content, usage } => {
-            // 发布 ThinkRoundEvent（现有逻辑）
-            // 上报运行时
-            if let Some(rt) = think_runtime {
-                rt.report_round(trace_id, scene, round_number + 1, max_rounds, &metrics);
-            }
-            return Ok(ThinkLoopResult::Final { content, messages });
-        }
-        ThinkResult::ToolCall { .. } => {
-            // 执行工具调用（现有逻辑）
-            // 发布 ThinkRoundEvent（现有逻辑）
-            tool_call_count += tc_count;
-        }
-    }
-
-    // 5. 累计指标
-    round_number += 1;
-    total_tokens += usage.total();
-    last_input_tokens = usage.input_tokens;
-
-    // 6. 上报运行时
-    if let Some(rt) = think_runtime {
-        rt.report_round(trace_id, scene, round_number, max_rounds, &metrics);
-    }
-}
-```
+> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
 
 **改造要点**：
 - `max_rounds` 和 `timeout_secs` 控制逻辑被 `policy: &dyn Policy` 替代，控制逻辑从硬编码变为策略驱动
@@ -1327,3 +705,19 @@ pub struct CancelThinkingResponse {
 | 10 | cancel API 的 domain 归属 | **归属于 runtime domain（`domain.runtime().cancel_thinking`）** | AgentRuntimeStateManager 属于 runtime domain 管辖，cancel 操作本质是操作运行时状态（触发 cancel_token），不涉及 Agent/Message 实体业务变更；信号触发在 domain，信号响应在 think_loop，分工清晰 |
 | 11 | MemoryTrace 记录维度 | **一次完整的 think_loop 流程（含多轮 LLM 调用），非单次 LLM 调用** | 一个 think_loop 内所有轮次共享同一 trace_id，合并为一条 MemoryTrace（input=完整 Prompt，output=最终返回）；跨子流程生成新 MemoryTrace；与 ThinkRoundEvent（单轮粒度）形成两级追踪 |
 | 12 | 策略集合构建方式 | **policy_set! 声明宏（推荐）+ PolicyBuilder 底层 API（兼容）** | 宏一步完成"策略初始化 + 组装 + 关系指定"，消除 `Box::new(XxxPolicy::new(...))` 样板；支持纯 OR/AND 和混合模式（平铺策略 + OR/AND 子组，外层 AND）；PolicyBuilder + with_policy 泛型方法保留用于嵌套子组等特殊场景 |
+
+---
+
+## 五、扩展模式
+
+### 5.1 新增内置策略类型（如成本上限 / 工具调用次数限制 / 日配额）
+现有 5 个内置策略：MaxRoundsPolicy / TimeoutPolicy / ContextOverflowPolicy / UserCancelPolicy / EmptyResponsePolicy。
+1. 在 `src/pkg/policy/` 下新增策略实现文件，实现 `Policy` trait，参考现有：[policy 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/policy)
+2. 在 `policy_set!` 宏体中加入新策略的声明分支（如果扩展宏语法），或直接通过 PolicyBuilder::with_policy 手动注册，参考：[pkg/policy/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/policy/mod.rs)
+3. 对应 ThinkRuntimeSnapshot 新增字段时，保持 BusyGuard Drop 时的清理逻辑一致，参考：[domain/runtime state_manager](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime)
+
+### 5.2 新增运行时观察维度（如成本估算 / 当前执行的工具栈深度）
+如果未来需要在前端运行时面板中展示更丰富的维度：
+1. 扩展 ThinkRuntimeSnapshot 结构体字段，保持写入时机为每轮 think 上报节点，参考：[AgentThinkRuntime](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime)
+2. runtime-status / runtime-list 两个 handler 无需变更 DTO 结构即可透出，DTO 定义见：[common/src/api/runtime.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/runtime.rs)
+3. 前端运行时面板扩展展示，入口参考现有页面：[frontend/src/pages/agent](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/agent)
