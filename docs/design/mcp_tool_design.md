@@ -8,6 +8,10 @@
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
 > - [tool_design.md](./tool_design.md) — 通用工具调用架构（ToolProtocol/ControlMode 上游设计）
 > - [runtime_design.md](./runtime_design.md) — Agent 唤醒执行 Runtime（Tool 执行链路的调用方）
+> - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — 前端 MCP Server 配置面板
+> - 【③ Wiki 长文】[工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md) — 工具系统全景
+> - 【③ Wiki 长文】[工具注册表.md](docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md) — MCP 工具子板块入口
+> - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §3 §MCP 协议选择铁律
 
 ## 概述
 
@@ -56,7 +60,7 @@ mcp_servers (
 
 UNIQUE INDEX idx_mcp_servers_active_name_unique ON mcp_servers(name) WHERE status != 0
 ```
-> 当前实现参考：[mcp 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[mcp 相关模块](src/service/dal/mcp_tool.rs)
 
 ### `McpServerConfig`
 
@@ -82,7 +86,7 @@ pub enum McpTransport {
     StreamableHttp,
 }
 ```
-> 当前实现参考：[dal/mcp_tool + mcp_server modules](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[dal/mcp_tool + mcp_server modules](src/service/dal/mcp_tool.rs)
 
 安全默认值：
 
@@ -96,7 +100,7 @@ pub enum McpTransport {
 
 具体 MCP Tool 仍是标准 `tools` 表记录：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 `ToolPo.config` 只保存工具绑定关系，不复制 server credential：
 
@@ -106,11 +110,11 @@ pub struct McpToolConfig {
     pub tool_name: String,
 }
 ```
-> 当前实现：[models/mcp_tool.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/mcp_tool.rs)
+> 当前实现：[models/mcp_tool.rs](src/models/mcp_tool.rs)
 
 示例：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 ---
 
@@ -150,11 +154,11 @@ src/pkg/tool_registry/
 
 MCP client/session 生命周期是**工具调用底层能力**，不作为上层可见的独立 DAO 暴露；当前内聚在 `pkg::tool_registry::mcp::McpClientRuntime`，由 `McpToolCallDaoImpl` 持有并负责失效/后续 session 管理。`McpToolDal` 只组合 DAO 单例，不自行创建 base `ToolCallDao` 或新的 `McpClientRuntime`。
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 因此：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 这样可以实现：
 
@@ -234,7 +238,7 @@ mcp_servers 表
 
 当前已接入 MCP Server 管理 API，路由遵循 Finance Domain 统一前缀：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain。`common/src/api/mcp_server.rs` 提供前后端共享 DTO，`common/src/enums/mcp_server.rs` 提供 API 枚举；Handler 返回 Domain/DAL 提供的管理面脱敏视图，不直接暴露原始 `McpServerPo.config`。`streamable_http` 创建/更新仍由 Domain/DAL 校验拒绝，直到 SSRF/header/redirect 等安全策略落地。
 
@@ -244,7 +248,7 @@ Handler 仅做 DTO ↔ 业务实体/命令转换，然后调用 Finance Domain�
 
 MCP Tool 同步/查询管理面已在后续增量接入，复用同一 Finance Domain 前缀：
 
-> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](src/service/dal/mcp_tool.rs)
 
 其中 `sync-tools` 仅负责触发 `tools/list` 同步并返回本次同步数量；按 server 查询 tools 使用统一分页契约 `ListMcpToolsByServerRequest.pagination: PaginationParams { limit, offset }`，并返回 `ListMcpToolsByServerResponse { tools, total }`。
 
@@ -283,7 +287,7 @@ ToolDao create/update tools 表
 
 生成的 `ToolPo` 规则：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 同步 upsert 约定：
 
@@ -306,7 +310,7 @@ pub struct Tool {
     pub our_tool: Box<dyn CoreTool + Send + Sync>,
 }
 ```
-> 当前实现参考：[mcp 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[mcp 相关模块](src/service/dal/mcp_tool.rs)
 
 MCP Tool 组装建议沿用现有链路：
 
@@ -376,7 +380,7 @@ pub struct McpToolDalImpl {
     mcp_tool_call_dao: Arc<dyn McpToolCallDao + Send + Sync>,
 }
 ```
-> 当前实现参考：[dal/mcp_tool + mcp_server modules](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[dal/mcp_tool + mcp_server modules](src/service/dal/mcp_tool.rs)
 
 ### 与 `ToolDal` 的关系
 
@@ -392,7 +396,7 @@ pub struct McpToolDalImpl {
 
 MCP Tool 与 Builtin/HTTP 的差异是：仅靠 `ToolPo` 不足以构造可调用实例，还需要 MCP server 配置与 client runtime/session 能力。因此 MCP 不强行复用单一：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 推荐两种可选实现，第一版优先选择更直接的专用方法。
 
@@ -409,7 +413,7 @@ pub struct McpToolDeps {
     pub client_runtime: Arc<McpClientRuntime>,
 }
 ```
-> 当前实现参考：[dal/mcp_tool + mcp_server modules](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[dal/mcp_tool + mcp_server modules](src/service/dal/mcp_tool.rs)
 
 优点：
 
@@ -422,7 +426,7 @@ pub struct McpToolDeps {
 
 当 MCP 构造参数继续增加时，可以改为 builder：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 优点：
 
@@ -434,7 +438,7 @@ pub struct McpToolDeps {
 
 第一版采用：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 如果后续 MCP 构造参数超过 3 个或出现多组可选参数，再迁移为 `McpToolBuilder`。通用 `create_tool(po)` 仍保留给只依赖 `ToolPo` 的协议；MCP 由 `McpToolDal` 调用专用构造路径。
 
@@ -463,15 +467,15 @@ pub struct McpToolCallDaoImpl {
     mcp_client_runtime: Arc<McpClientRuntime>,
 }
 ```
-> 当前实现参考：[dal/mcp_tool + mcp_server modules](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[dal/mcp_tool + mcp_server modules](src/service/dal/mcp_tool.rs)
 
 转发规则：
 
-> 相关实现细节见：[pkg/mcp/ transport 层](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mcp/)
+> 相关实现细节见：[pkg/mcp/ transport 层](src/pkg/mcp/)
 
 MCP 专属构造：
 
-> 相关实现细节见：[pkg/mcp/ transport 层](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mcp/)
+> 相关实现细节见：[pkg/mcp/ transport 层](src/pkg/mcp/)
 
 这样 MCP client/session 生命周期完全是 tool call 底层细节，上层只通过 `McpToolDal` 获得完整 `Tool` 或执行调用。
 
@@ -517,11 +521,11 @@ pub struct McpCoreTool {
     client_runtime: Arc<McpClientRuntime>,
 }
 ```
-> 当前实现参考：[dal/mcp_tool + mcp_server modules](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[dal/mcp_tool + mcp_server modules](src/service/dal/mcp_tool.rs)
 
 调用时只做协议执行：
 
-> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](src/service/dal/mcp_tool.rs)
 
 ## 下一步实施方案：MCP Tool 运行面最小闭环
 
@@ -586,7 +590,7 @@ stdio MCP Server tools/call
 
 建议首个 RED 测试：
 
-> 相关实现细节见：[pkg/mcp/ transport 层](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mcp/)
+> 相关实现细节见：[pkg/mcp/ transport 层](src/pkg/mcp/)
 
 断言重点：
 
@@ -779,7 +783,7 @@ pub trait MessageDelivery: Send + Sync {
     ) -> Result<Message, AppError>;
 }
 ```
-> 当前实现参考：[mcp 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[mcp 相关模块](src/service/dal/mcp_tool.rs)
 
 `send_tool_call_request` 的职责：
 
@@ -890,11 +894,11 @@ pub trait RuntimeToolExecution: Send + Sync {
     ) -> Result<serde_json::Value, rig::tool::ToolError>;
 }
 ```
-> 当前实现参考：[mcp 相关模块](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 当前实现参考：[mcp 相关模块](src/service/dal/mcp_tool.rs)
 
 #### 实现逻辑
 
-> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[dal/mcp_tool.rs 同步与状态](src/service/dal/mcp_tool.rs)
 
 > 实现时可按现有错误脱敏风格再抽小 helper，但不要引入新的权限抽象层；先保持最小增量。
 
@@ -902,11 +906,11 @@ pub trait RuntimeToolExecution: Send + Sync {
 
 `src/consumer/message.rs` 中 `handle_tool_call_request` 从：
 
-> 相关实现细节见：[runtime tool_execution + mcp dal](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/tool_execution.rs)
+> 相关实现细节见：[runtime tool_execution + mcp dal](src/service/domain/runtime/tool_execution.rs)
 
 调整为：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 这样 Consumer 仍只做编排，不新增 Tool 查询/绑定判断；授权语义由 Runtime Domain 统一负责。
 
@@ -963,7 +967,7 @@ pub trait RuntimeToolExecution: Send + Sync {
 
 每个 Batch 都遵循 TDD：RED → GREEN → VERIFY → REVIEW。最小验证集：
 
-> 相关实现细节见：[MCP 子系统](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+> 相关实现细节见：[MCP 子系统](src/service/dal/mcp_tool.rs)
 
 注意：过滤测试必须确认输出中 `running N tests` 且 `N > 0`，不能接受 0-test 通过。
 
@@ -1022,7 +1026,7 @@ McpToolDal.disable/delete tools by server_id
 
 优先使用官方 Rust SDK：
 
-> 相关实现细节见：[pkg/mcp/ transport 层](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mcp/)
+> 相关实现细节见：[pkg/mcp/ transport 层](src/pkg/mcp/)
 
 选择原因：
 
@@ -1230,12 +1234,12 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ### 5.1 新增 MCP 传输协议（如 streamable HTTP/WebSocket）
 当前仅 stdio 一种协议。若需增加 streamable HTTP 或其他传输：
-1. 在 `common/src/enums/` 下扩展 `McpTransport` 枚举变体，参考：[tool_protocol.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/tool_protocol.rs)
-2. 在 `src/service/dao/mcp_tool/` 下新增对应 transport DAO 实现，参考现有：[mcp_tool/sqlite.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/mcp_tool/sqlite.rs)
-3. 在 `McpToolDal::call_mcp_tool` 中扩展 match 分支，复用现有的 `ToolCallResult` / `ToolCallEntry` 审计与脱敏链路，参考：[dal/mcp_tool.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/mcp_tool.rs)
+1. 在 `common/src/enums/` 下扩展 `McpTransport` 枚举变体，参考：[tool_protocol.rs](common/src/enums/tool_protocol.rs)
+2. 在 `src/service/dao/mcp_tool/` 下新增对应 transport DAO 实现，参考现有：[mcp_tool/sqlite.rs](src/service/dao/mcp_tool/sqlite.rs)
+3. 在 `McpToolDal::call_mcp_tool` 中扩展 match 分支，复用现有的 `ToolCallResult` / `ToolCallEntry` 审计与脱敏链路，参考：[dal/mcp_tool.rs](src/service/dal/mcp_tool.rs)
 
 ### 5.2 增加 MCP Server 连接生命周期增强（session cache / reconnect）
 仅在真实性能瓶颈出现后落地，按保守顺序推进：
-1. 先引入 session cache 层，入口与 invalidation 标记沿用现有的 `invalidate_mcp_server` 分支，参考：[domain/runtime](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime)
+1. 先引入 session cache 层，入口与 invalidation 标记沿用现有的 `invalidate_mcp_server` 分支，参考：[domain/runtime](src/service/domain/runtime)
 2. reconnect / health check 复用现有 per-operation 下的错误处理与降级策略，确保调用失败与 stale 标记语义一致
-3. cached session 下的并发调用策略先与 consumer 架构内 8 类消费者的并发保护对齐，参考：[consumer/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/consumer/mod.rs)
+3. cached session 下的并发调用策略先与 consumer 架构内 8 类消费者的并发保护对齐，参考：[consumer/mod.rs](src/consumer/mod.rs)

@@ -166,18 +166,7 @@ DTO（common::api）
 
 ## 五、验收清单（2026-07-24 全部达成 ✅）
 
-- [x] 5 个 QueryRequest DTO 去裸 limit/offset，统一 flatten pagination 字段
-- [x] 5 个 DAO Query 结构体加 pagination 字段
-- [x] 5 个 DAO SQLite 抽取独立 push_query_filters（COUNT/LIST 复用）；query 返回 PagedResult<Po>
-- [x] 5 个 Domain trait 的 query 方法签名改 PagedResult<Entity>；实现用 PagedResult::map 转换 Po→Entity
-- [x] 5 个 query handler 返回 PagedResult<ListItem>
-- [x] 5 个 ListXxxRequest 简化为只包含 pagination（无任何查询字段）
-- [x] 5 个 list handler 改造为纯语法糖：固定默认过滤+排序 → 内部调 domain.query
-- [x] 前端 3 个 api 文件（hr/project/finance）：list_* 简化签名；新增 query_* 5 函数
-- [x] 前端 4 个关系图/筛选场景改用 query_*：agent_detail（tasks+projects）、project_detail（agents）、task_detail（agent+project）、tasks.rs（任务筛选）= 共 6 处切换
-- [x] 前端 8 个 list 调用点适配新签名（agents/skills/tools/projects/artifacts/task_edit_modal/chat/use_workspace_data）；响应字段统一 resp.items
-- [x] 后端 lib 全量测试通过（含 DAO 层更新 query 测试用例）
-- [x] 前端测试通过 + release build 成功；Clippy 双端零警告
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -216,3 +205,4 @@ DTO（common::api）
 4. **测试验证**：
    - 后端：cargo test --lib 验证 dao 测试 + handler 测试
    - 前端：cargo build --release 确保 items 字段访问无编译错误
+

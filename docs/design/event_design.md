@@ -7,6 +7,10 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [consumer_architecture.md](./consumer_architecture.md) — 当前在用的 AOP 事件中心生产-消费架构（本文档的替代方案）
+> - 【③ Wiki 长文（Batch9 新增 — 当前架构参考）】
+>   - [AOP 事件系统架构.md](docs/wiki/zh/content/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md) — Event/Publisher/Consumer/Registry 四角色 + Sync/Async 双模式
+> - 【④ RAG 原子知识卡（Batch9 新增 — 当前架构参考）】
+>   - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — DomainEvent 8 大类别枚举 + 事件 3 阶段生命周期 + 8 Consumer 全能力
 
 > ⚠️ **本文档描述的是旧版 `EventQueueDao` 实现，已于 2026-07-20 被 AOP 事件中心取代**。当前架构请阅读 [consumer_architecture.md](./consumer_architecture.md)。
 > 保留本文档仅作为历史设计参考。

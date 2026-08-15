@@ -7,6 +7,9 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层约束）
 > - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页与通用 count 查询接口规范（协议的子集）
+> - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — 前端 DTO 镜像 → common::api 直接 re-export
+> - 【③ Wiki 长文】[API协议规范.md](docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md) — common DTO 单一事实源 + ApiResponse 信封标准
+> - 【④ RAG 卡】[附件存储与DTO协议统一](docs/wiki/knowledge/zh/附件存储与DTO协议统一：AttachmentFinance域资产%20+%20PagedResult%20T%20map全链路%20+%20common%3A%3Aapi单一事实源%20+%20count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产%20+%20PagedResult%20T%20map全链路%20+%20common%3A%3Aapi单一事实源%20+%20count与query复用WHERE.md) — §1 common crate DTO 单一事实源 §红线 5/6 本地 DTO 禁用 + 裸类型禁用
 
 > 决策时间：2026-08-09
 > 背景：E2E 调试与代码盘点发现前后端协议漂移风险——部分接口 DTO 在 `frontend/src/api/` 与 `common/src/api/` 双份定义、部分接口返回裸原始类型（bool/()）、部分 DAL 内部结构体直接泄漏到 HTTP API。任一侧单独演进都会造成线上协议不一致（UserRole 枚举歧义已造成真实缺陷）。

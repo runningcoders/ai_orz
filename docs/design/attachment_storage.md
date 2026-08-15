@@ -7,6 +7,12 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Attachment 归 Finance 域）
 > - [seed-config-migration.md](./seed-config-migration.md) — Seed 配置迁移（导出包中会携带 Attachment 引用）
+> - 【② Plan 落地】[项目任务增强.md](../plan/项目任务增强.md) — Project Artifact 按需注入 with_artifacts option
+> - 【③ Wiki 长文】[制品和附件.md](docs/wiki/zh/content/数据模型/项目和任务模型/制品和附件.md) — Attachment 通用资产 vs Artifact 项目产物
+> - 【③ Wiki 长文】[文件存储模型.md](docs/wiki/zh/content/数据模型/系统模型/文件存储模型.md) — data_dir/attachments 分层目录 + 路径安全
+> - 【③ Wiki 长文】[财务领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/财务领域.md) — Finance 域三能力 attachment + credential + mcp_server
+> - 【④ RAG 卡 1】[附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE](docs/wiki/knowledge/zh/附件存储与DTO协议统一：AttachmentFinance域资产%20+%20PagedResult%20T%20map全链路%20+%20common%3A%3Aapi单一事实源%20+%20count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产%20+%20PagedResult%20T%20map全链路%20+%20common%3A%3Aapi单一事实源%20+%20count与query复用WHERE.md) — §1 Attachment 归 Finance 域 §红线 1 禁止直接写文件 §红线 2 路径穿越双校验
+> - 【④ RAG 卡 2】[任务状态机与项目聚合](docs/wiki/knowledge/zh/任务状态机与项目聚合：TaskStatus%204%20态%20+%20progress%200-100%20自动联动%20+%20execution_plan_result%20JSON%20Patch%20+%20TaskGraph%20依赖%20DAG/任务状态机与项目聚合：TaskStatus%204%20态%20+%20progress%200-100%20自动联动%20+%20execution_plan_result%20JSON%20Patch%20+%20TaskGraph%20依赖%20DAG.md) — Project Artifact 产物消费方
 
 本文档描述 ai_orz 项目中产物（Artifact）与消息附件（Attachment）的统一存储设计规范。
 

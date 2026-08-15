@@ -7,6 +7,14 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §SQLite + SQLx 规范
 > - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 查询分页与通用 count 规范（query 过滤条件复用的上游约束）
+> - 【② Plan 落地（Batch9 关联）】
+>   - [Query接口分页与List接口简化重构.md](../plan/Query接口分页与List接口简化重构.md) — COUNT 与 LIST 复用 push_query_filters 约定
+> - 【③ Wiki 长文（Batch9 新增）】
+>   - [存储架构设计.md](docs/wiki/zh/content/%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97/%E5%AD%98%E5%82%A8%E7%B3%BB%E7%BB%9F/%E5%AD%98%E5%82%A8%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1.md) — SQLite STRICT + DuckDB 双层存储架构总览
+>   - [存储系统.md](docs/wiki/zh/content/%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD/%E5%AD%98%E5%82%A8%E7%B3%BB%E7%BB%9F/%E5%AD%98%E5%82%A8%E7%B3%BB%E7%BB%9F.md) — 初始化顺序 DAO→DAL→Domain 红线
+>   - [开发指南.md](docs/wiki/zh/content/%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97.md) — 开发者快速上手 SQL 编写规范
+> - 【④ RAG 原子知识卡（Batch9 新增）】
+>   - [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](docs/wiki/knowledge/zh/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB.md) — 10 条硬约束红线 + 枚举五件套 + 查询三要素一致
 
 本文档记录 ai_orz 项目从 rusqlite 迁移到 sqlx 0.8 过程中总结出的开发规范和避坑指南。
 
@@ -38,7 +46,7 @@ CREATE TABLE tasks (
 -- ❌ 错误：缺少 STRICT
 CREATE TABLE tasks (...);
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **原因：**
 - SQLite 默认允许任意类型插入任意列，即使定义为 NOT NULL 也能插入 NULL
@@ -55,7 +63,7 @@ CREATE TABLE tasks (...);
 
 ### i32 整数枚举映射（推荐）
 
-> 相关实现细节见：[dao/*/sqlite.rs 实现](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[dao/*/sqlite.rs 实现](src/service/dao/)
 
 **常见错误：**
 - ❌ 不要添加 `#[sqlx(rename_all = "lowercase")]`：这是给字符串枚举用的，会导致 sqlx 期望解析字符串而不是整数
@@ -65,10 +73,10 @@ CREATE TABLE tasks (...);
 
 如果枚举在 common 包被前后端共享，需要给 sqlx 相关代码添加条件编译：
 
-> 相关实现细节见：[dao/*/sqlite.rs 实现](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[dao/*/sqlite.rs 实现](src/service/dao/)
 
 Cargo.toml 中配置：
-> 相关实现细节见：[DAO 层 sqlx 用法](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[DAO 层 sqlx 用法](src/service/dao/)
 
 这样前端 WASM 编译时可以禁用 sqlx 特性，避免编译 libsqlite3-sys 失败。
 
@@ -81,7 +89,7 @@ Cargo.toml 中配置：
    - 尝试改为非 Option 容易遇到编译错误，不推荐强行修改
 
 示例：
-> 相关实现细节见：[DAO 层 sqlx 用法](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[DAO 层 sqlx 用法](src/service/dao/)
 
 ## 查询宏使用规范
 
@@ -135,7 +143,7 @@ SELECT * FROM tasks WHERE "status" != 0
 -- ❌ 错误：会报 "no such column: status" 错误
 SELECT * FROM tasks WHERE status != 0
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **注意：** sqlx 查询缓存会缓存原始 SQL，修改转义后必须重新生成缓存。
 
@@ -143,7 +151,7 @@ SELECT * FROM tasks WHERE status != 0
 
 使用 `#[sqlx::test]` 宏，每个测试自动创建独立的内存数据库 `sqlite::memory:`，自动运行迁移，测试结束自动销毁。
 
-> 相关实现细节见：[dao/*/sqlite.rs 实现](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[dao/*/sqlite.rs 实现](src/service/dao/)
 
 优势：
 - 完全隔离，并行测试完全不会相互污染
@@ -178,7 +186,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
     tokenize='trigram'
 );
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **设计要点：**
 - 使用 `tokenize='trigram'` 支持中文搜索（需 SQLite 3.34+）
@@ -213,7 +221,7 @@ BEGIN
     VALUES ('delete', old.rowid, old.name, old.description, old.tags);
 END;
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 ### 4. 存量数据回填
 
@@ -224,7 +232,7 @@ END;
 INSERT INTO skills_fts(rowid, name, description, tags)
 SELECT rowid, name, description, tags FROM skills;
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 ### 5. 关键词转义（重要！）
 
@@ -232,7 +240,7 @@ SELECT rowid, name, description, tags FROM skills;
 
 该函数定义在 `src/pkg/storage/fts5.rs`，属于存储层公共工具，所有 DAO 统一从这里导入复用。
 
-> 相关实现细节见：[DAO 层 sqlx 用法](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[DAO 层 sqlx 用法](src/service/dao/)
 
 **转义策略：** 将用户输入用双引号包裹作为短语匹配（phrase query），内部双引号双写转义。这样 FTS5 不会把空格解释为 AND 操作符，搜索精度更高。
 
@@ -247,7 +255,7 @@ hello AND world  →  同时包含两个词，顺序无关（不使用）
 
 ### 6. MATCH 查询写法
 
-> 相关实现细节见：[DAO 层 sqlx 用法](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 相关实现细节见：[DAO 层 sqlx 用法](src/service/dao/)
 
 **注意事项：**
 - MATCH 左侧必须使用**完整表名**（非别名），否则 SQLite 会将别名解释为列名
@@ -268,7 +276,7 @@ FTS5 关键词搜索和向量语义搜索是互补关系，在 DAL 层组合为*
 
 修改查询后需要重新生成缓存，步骤：
 
-> 相关实现参考：[migrations/ 目录 + AGENTS.md 测试规范](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md)
+> 相关实现参考：[migrations/ 目录 + AGENTS.md 测试规范](AGENTS.md)
 
 生成后，`.sqlx` 目录纳入 git 版本控制，CI 使用离线模式编译不需要在线连接数据库。
 
@@ -317,12 +325,12 @@ domain::init_all() ← 最后初始化 Domain
 
 ### 5.1 新增数据库表或迁移文件
 所有新表须遵循 STRICT 模式 + .sqlx 缓存同步。新增迁移时：
-1. 在 `migrations/` 目录下新增 `*_up.sql` / `*_down.sql` 对，表级约束保持 STRICT + 关键字段索引，参考现有：[migrations 目录](file:///Users/aman/Technology/rust/ai_orz/migrations)
-2. DAO 层同步新增对应 `dao/xxx/mod.rs` trait 定义与 `sqlite.rs` 实现，遵循「COUNT 与 LIST 复用 push_query_filters」约定，参考：[dao 目录](file:///Users/aman/Technology/rust/ai_orz/src/service/dao)
+1. 在 `migrations/` 目录下新增 `*_up.sql` / `*_down.sql` 对，表级约束保持 STRICT + 关键字段索引，参考现有：[migrations 目录](migrations)
+2. DAO 层同步新增对应 `dao/xxx/mod.rs` trait 定义与 `sqlite.rs` 实现，遵循「COUNT 与 LIST 复用 push_query_filters」约定，参考：[dao 目录](src/service/dao)
 3. 更新 `.sqlx/` 离线查询缓存保持 CI 编译通过，保持查询宏参数三要素（列数/占位符/参数顺序）一致
 
 ### 5.2 新增枚举类型持久化
 新增枚举需要落库时遵循「枚举类型安全」约定：
-1. 枚举统一定义在 `common/src/enums/`，配置 `#[repr(i32)]` + `#[derive(sqlx::Type)]` + `impl From<i64>`，参考：[task_status.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/task_status.rs)
-2. SQL 查询中枚举字段统一 `as "field: EnumType"` 标注；软删除 `status = 0` 语义保持一致，参考现有 DAO 查询：[dao/agent/sqlite.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/agent/sqlite.rs)
-3. 前端 wasm32 侧通过条件编译 `#[cfg(feature = "sqlx")]` 隔离 sqlx 派生宏，参考：[common/src/enums/mod.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/mod.rs)
+1. 枚举统一定义在 `common/src/enums/`，配置 `#[repr(i32)]` + `#[derive(sqlx::Type)]` + `impl From<i64>`，参考：[task_status.rs](common/src/enums/task_status.rs)
+2. SQL 查询中枚举字段统一 `as "field: EnumType"` 标注；软删除 `status = 0` 语义保持一致，参考现有 DAO 查询：[dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
+3. 前端 wasm32 侧通过条件编译 `#[cfg(feature = "sqlx")]` 隔离 sqlx 派生宏，参考：[common/src/enums/mod.rs](common/src/enums/mod.rs)

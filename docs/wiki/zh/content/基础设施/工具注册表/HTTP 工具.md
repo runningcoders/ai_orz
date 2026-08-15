@@ -1,13 +1,13 @@
-# HTTP 工具
+# HTTP 工具（框架层）
 
 <cite>
 **本文引用的文件**
-- [http.rs](file://src/pkg/tool_registry/http.rs)
-- [http_fetch.rs](file://src/pkg/tool_registry/http_fetch.rs)
-- [tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [http_tests.rs](file://src/pkg/tool_registry/http_tests.rs)
-- [response_test.rs](file://src/handlers/finance/tool/response_test.rs)
+- [http.rs](src/pkg/tool_registry/http.rs)
+- [http_fetch.rs](src/pkg/tool_registry/http_fetch.rs)
+- [tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [mod.rs](src/pkg/tool_registry/mod.rs)
+- [http_tests.rs](src/pkg/tool_registry/http_tests.rs)
+- [response_test.rs](src/handlers/finance/tool/response_test.rs)
 </cite>
 
 ## 目录
@@ -23,7 +23,11 @@
 10. [附录：配置与使用示例](#附录配置与使用示例)
 
 ## 简介
-本技术文档围绕 HTTP 工具系统展开，重点说明 HttpToolFactory 接口设计、HTTP 请求构建器、响应处理机制；并深入解释 URL 模板解析、参数绑定、请求头设置、认证处理、超时控制、错误处理与安全限制。该子系统位于 pkg/tool_registry 层，属于通用基础设施工具，无业务感知，遵循“Adapter → Domain → DAL → DAO”的单向调用原则。
+本技术文档围绕 HTTP 工具系统展开，重点说明 HttpToolFactory 接口设计、HTTP 请求构建器、响应处理机制；并深入解释 URL 模板解析、参数绑定、请求头设置、认证处理、超时控制、错误处理与安全限制。该子系统位于 pkg/tool_registry 层，属于通用基础设施工具，无业务感知，遵循"Adapter → Domain → DAL → DAO"的单向调用原则。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「HTTP 工具」主题的 **框架层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [HTTP 工具（代码落地层）](docs/wiki/zh/content/核心模块/工具注册表/HTTP 工具.md)
 
 ## 项目结构
 HTTP 工具相关代码集中在以下模块：
@@ -54,16 +58,16 @@ HFT --> SEC
 ```
 
 图表来源
-- [mod.rs:29-101](file://src/pkg/tool_registry/mod.rs#L29-L101)
-- [http.rs:23-39](file://src/pkg/tool_registry/http.rs#L23-L39)
-- [http_fetch.rs:19-52](file://src/pkg/tool_registry/http_fetch.rs#L19-L52)
-- [tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [mod.rs:29-101](src/pkg/tool_registry/mod.rs#L29-L101)
+- [http.rs:23-39](src/pkg/tool_registry/http.rs#L23-L39)
+- [http_fetch.rs:19-52](src/pkg/tool_registry/http_fetch.rs#L19-L52)
+- [tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
 
 章节来源
-- [mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
-- [http.rs:1-114](file://src/pkg/tool_registry/http.rs#L1-L114)
-- [http_fetch.rs:1-52](file://src/pkg/tool_registry/http_fetch.rs#L1-L52)
-- [tool_security.rs:1-16](file://src/pkg/tool_registry/tool_security.rs#L1-L16)
+- [mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
+- [http.rs:1-114](src/pkg/tool_registry/http.rs#L1-L114)
+- [http_fetch.rs:1-52](src/pkg/tool_registry/http_fetch.rs#L1-L52)
+- [tool_security.rs:1-16](src/pkg/tool_registry/tool_security.rs#L1-L16)
 
 ## 核心组件
 - HttpToolFactory 接口：定义协议级工厂方法 create(po)，将数据库中的 ToolPo 转换为可执行的 CoreTool 实例。
@@ -73,9 +77,9 @@ HFT --> SEC
 - tool_security：提供默认/硬上限常量、域名白黑名单匹配、本地网络判定、DNS 解析与 IP 校验、响应体大小限制、敏感头脱敏等。
 
 章节来源
-- [http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
-- [http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
+- [http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
 
 ## 架构总览
 HTTP 工具在运行时由 ToolRegistry 根据 ToolPo.protocol 分发到对应工厂：
@@ -112,9 +116,9 @@ Tool-->>Caller : {status, headers, content_length, body}
 ```
 
 图表来源
-- [mod.rs:81-101](file://src/pkg/tool_registry/mod.rs#L81-L101)
-- [http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [mod.rs:81-101](src/pkg/tool_registry/mod.rs#L81-L101)
+- [http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
 
 ## 详细组件分析
 
@@ -152,11 +156,11 @@ DefaultHttpToolFactory --> HttpCoreTool : "create_tool"
 ```
 
 图表来源
-- [http.rs:23-39](file://src/pkg/tool_registry/http.rs#L23-L39)
-- [http.rs:75-114](file://src/pkg/tool_registry/http.rs#L75-L114)
+- [http.rs:23-39](src/pkg/tool_registry/http.rs#L23-L39)
+- [http.rs:75-114](src/pkg/tool_registry/http.rs#L75-L114)
 
 章节来源
-- [http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
+- [http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
 
 ### HTTP 请求构建器与响应处理器
 - 请求构建
@@ -188,10 +192,10 @@ Return --> End
 ```
 
 图表来源
-- [http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
+- [http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 
 章节来源
-- [http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
+- [http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
 
 ### URL 模板解析与参数绑定
 - 模板语法：仅支持 {{args.key}}，不支持任意表达式
@@ -204,8 +208,8 @@ Return --> End
   - 模板渲染时将 args 中的标量值替换到 URL/Query/Header/Body
 
 章节来源
-- [http.rs:230-367](file://src/pkg/tool_registry/http.rs#L230-L367)
-- [tool_security.rs:233-312](file://src/pkg/tool_registry/tool_security.rs#L233-L312)
+- [http.rs:230-367](src/pkg/tool_registry/http.rs#L230-L367)
+- [tool_security.rs:233-312](src/pkg/tool_registry/tool_security.rs#L233-L312)
 
 ### 认证处理与安全限制
 - 认证方式
@@ -221,9 +225,9 @@ Return --> End
   - 错误消息不暴露渲染后的 URL 或敏感参数
 
 章节来源
-- [http.rs:136-157](file://src/pkg/tool_registry/http.rs#L136-L157)
-- [tool_security.rs:17-169](file://src/pkg/tool_registry/tool_security.rs#L17-L169)
-- [http_tests.rs:910-958](file://src/pkg/tool_registry/http_tests.rs#L910-L958)
+- [http.rs:136-157](src/pkg/tool_registry/http.rs#L136-L157)
+- [tool_security.rs:17-169](src/pkg/tool_registry/tool_security.rs#L17-L169)
+- [http_tests.rs:910-958](src/pkg/tool_registry/http_tests.rs#L910-L958)
 
 ### 超时控制与重试机制
 - 超时控制
@@ -234,8 +238,8 @@ Return --> End
   - 当前实现未内置重试逻辑；如需重试应在上层调用方实现（例如在 Domain/Service 层包装）
 
 章节来源
-- [tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
-- [http.rs:561-573](file://src/pkg/tool_registry/http.rs#L561-L573)
+- [tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [http.rs:561-573](src/pkg/tool_registry/http.rs#L561-L573)
 
 ### 错误处理
 - 参数错误：未知参数、类型不符、枚举非法、必填缺失
@@ -245,9 +249,9 @@ Return --> End
 - 脱敏：错误消息不包含渲染后的 URL 或敏感参数
 
 章节来源
-- [http.rs:230-367](file://src/pkg/tool_registry/http.rs#L230-L367)
-- [http.rs:180-220](file://src/pkg/tool_registry/http.rs#L180-L220)
-- [http_tests.rs:657-708](file://src/pkg/tool_registry/http_tests.rs#L657-L708)
+- [http.rs:230-367](src/pkg/tool_registry/http.rs#L230-L367)
+- [http.rs:180-220](src/pkg/tool_registry/http.rs#L180-L220)
+- [http_tests.rs:657-708](src/pkg/tool_registry/http_tests.rs#L657-L708)
 
 ## 依赖关系分析
 - ToolRegistry 作为入口，依据 ToolPo.protocol 分发到不同工厂
@@ -265,12 +269,12 @@ HFT --> SEC
 ```
 
 图表来源
-- [mod.rs:81-101](file://src/pkg/tool_registry/mod.rs#L81-L101)
-- [http.rs:23-39](file://src/pkg/tool_registry/http.rs#L23-L39)
-- [http_fetch.rs:19-52](file://src/pkg/tool_registry/http_fetch.rs#L19-L52)
+- [mod.rs:81-101](src/pkg/tool_registry/mod.rs#L81-L101)
+- [http.rs:23-39](src/pkg/tool_registry/http.rs#L23-L39)
+- [http_fetch.rs:19-52](src/pkg/tool_registry/http_fetch.rs#L19-L52)
 
 章节来源
-- [mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 ## 性能与可靠性
 - 性能
@@ -298,10 +302,10 @@ HFT --> SEC
   - 管理接口返回的工具详情会对敏感配置进行脱敏展示
 
 章节来源
-- [http_tests.rs:657-708](file://src/pkg/tool_registry/http_tests.rs#L657-L708)
-- [http_tests.rs:868-908](file://src/pkg/tool_registry/http_tests.rs#L868-L908)
-- [http_tests.rs:910-958](file://src/pkg/tool_registry/http_tests.rs#L910-L958)
-- [response_test.rs:22-49](file://src/handlers/finance/tool/response_test.rs#L22-L49)
+- [http_tests.rs:657-708](src/pkg/tool_registry/http_tests.rs#L657-L708)
+- [http_tests.rs:868-908](src/pkg/tool_registry/http_tests.rs#L868-L908)
+- [http_tests.rs:910-958](src/pkg/tool_registry/http_tests.rs#L910-L958)
+- [response_test.rs:22-49](src/handlers/finance/tool/response_test.rs#L22-L49)
 
 ## 结论
 HTTP 工具系统通过 HttpToolFactory 与 HttpCoreTool 实现了配置驱动的 HTTP 调用能力，具备严格的 URL 模板解析、参数绑定、请求头设置、认证注入、超时控制、响应限制与安全策略。其设计强调安全优先（SSRF 防护、本地网络默认拒绝、重定向与代理禁用），并通过 tool_security 提供统一的常量与校验能力。建议在业务层按需实现重试与监控，结合 allowed_status_codes 与 response_json_pointer 提高鲁棒性与可用性。
@@ -319,45 +323,45 @@ HTTP 工具系统通过 HttpToolFactory 与 HttpCoreTool 实现了配置驱动�
   - allowed_status_codes: 默认包含 200/201/202/204，可按需调整
   - response_json_pointer: 可选，用于提取 JSON 子节点
   - 参考路径
-    - [http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-    - [http_tests.rs:759-806](file://src/pkg/tool_registry/http_tests.rs#L759-L806)
+    - [http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+    - [http_tests.rs:759-806](src/pkg/tool_registry/http_tests.rs#L759-L806)
 
 - POST 请求
   - method: "POST"
   - body: 对象或数组模板，键名不得包含占位符，值可为 "{{args.xxx}}"
   - headers: 通常设置 Content-Type: application/json
   - 参考路径
-    - [http.rs:174-178](file://src/pkg/tool_registry/http.rs#L174-L178)
+    - [http.rs:174-178](src/pkg/tool_registry/http.rs#L174-L178)
 
 - 文件上传
   - 当前 HTTP 工具以 JSON 序列化 body，不适合 multipart/form-data 上传
   - 如需上传二进制或多部分表单，建议使用专用工具或服务端 SDK
   - 参考路径
-    - [http.rs:174-178](file://src/pkg/tool_registry/http.rs#L174-L178)
+    - [http.rs:174-178](src/pkg/tool_registry/http.rs#L174-L178)
 
 - API 调用（带认证）
   - headers 中注入 Authorization 或自定义密钥头
   - 注意敏感头会在响应中被脱敏，但请求侧需确保安全传输
   - 参考路径
-    - [http.rs:165-172](file://src/pkg/tool_registry/http.rs#L165-L172)
-    - [tool_security.rs:172-198](file://src/pkg/tool_registry/tool_security.rs#L172-L198)
+    - [http.rs:165-172](src/pkg/tool_registry/http.rs#L165-L172)
+    - [tool_security.rs:172-198](src/pkg/tool_registry/tool_security.rs#L172-L198)
 
 - 超时与响应限制
   - timeout_ms: 单工具覆盖默认超时
   - response_max_bytes: 限制响应体大小，防止内存溢出
   - 参考路径
-    - [http.rs:561-589](file://src/pkg/tool_registry/http.rs#L561-L589)
-    - [tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
+    - [http.rs:561-589](src/pkg/tool_registry/http.rs#L561-L589)
+    - [tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
 
 - 安全策略
   - allowed_domains/blocked_domains: 域名白/黑名单
   - allow_local_network: 默认拒绝本地网络，需显式开启
   - 参考路径
-    - [http.rs:136-157](file://src/pkg/tool_registry/http.rs#L136-L157)
-    - [tool_security.rs:92-169](file://src/pkg/tool_registry/tool_security.rs#L92-L169)
+    - [http.rs:136-157](src/pkg/tool_registry/http.rs#L136-L157)
+    - [tool_security.rs:92-169](src/pkg/tool_registry/tool_security.rs#L92-L169)
 
 - 内置 HTTP Fetch 工具
   - 固定 GET + HTTPS，默认拒绝本地网络与 HTTP
   - 适合拉取公开 HTTPS 资源
   - 参考路径
-    - [http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
+    - [http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)

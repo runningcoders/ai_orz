@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [mcp.rs](file://src/pkg/tool_registry/mcp.rs)
-- [mcp_tool.rs](file://src/service/dal/mcp_tool.rs)
-- [mcp.rs](file://src/service/dao/tool_call/mcp.rs)
-- [mcp_server.rs](file://src/models/mcp_server.rs)
-- [mcp_tool.rs](file://common/src/api/mcp_tool.rs)
-- [sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [list_mcp_tools_by_server.rs](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
-- [mcp_tool_design.md](file://docs/mcp_tool_design.md)
+- [mcp.rs](src/pkg/tool_registry/mcp.rs)
+- [mcp_tool.rs](src/service/dal/mcp_tool.rs)
+- [mcp.rs](src/service/dao/tool_call/mcp.rs)
+- [mcp_server.rs](src/models/mcp_server.rs)
+- [mcp_tool.rs](common/src/api/mcp_tool.rs)
+- [sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
+- [mcp_tool_design.md](docs/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -65,13 +65,13 @@ H2 --> D1 --> L1 --> O1
 ```
 
 图表来源
-- [mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
 章节来源
-- [mcp_tool_design.md:120-150](file://docs/mcp_tool_design.md#L120-L150)
-- [mcp_tool.rs:1-85](file://src/service/dal/mcp_tool.rs#L1-L85)
+- [mcp_tool_design.md:120-150](docs/mcp_tool_design.md#L120-L150)
+- [mcp_tool.rs:1-85](src/service/dal/mcp_tool.rs#L1-L85)
 
 ## 核心组件
 - McpCoreTool：标准 CoreTool 实现，封装 ToolPo、McpToolConfig、McpServerPo 与 McpClientRuntime，对外暴露 call(args) 调用远端 MCP 工具。
@@ -85,11 +85,11 @@ H2 --> D1 --> L1 --> O1
 - McpServerPo/McpServerConfig：持久化 MCP Server 连接配置，包含传输类型、命令/URL、环境变量、请求头、超时与响应大小限制，并提供管理面脱敏方法。
 
 章节来源
-- [mcp.rs:27-48](file://src/pkg/tool_registry/mcp.rs#L27-L48)
-- [mcp.rs:50-198](file://src/pkg/tool_registry/mcp.rs#L50-L198)
-- [mcp_tool.rs:48-91](file://src/service/dal/mcp_tool.rs#L48-L91)
-- [mcp.rs:19-38](file://src/service/dao/tool_call/mcp.rs#L19-L38)
-- [mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
+- [mcp.rs:27-48](src/pkg/tool_registry/mcp.rs#L27-L48)
+- [mcp.rs:50-198](src/pkg/tool_registry/mcp.rs#L50-L198)
+- [mcp_tool.rs:48-91](src/service/dal/mcp_tool.rs#L48-L91)
+- [mcp.rs:19-38](src/service/dao/tool_call/mcp.rs#L19-L38)
+- [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
 
 ## 架构总览
 MCP 工具通过“管理面 + 运行面”分离的方式组织：
@@ -120,10 +120,10 @@ Handler-->>Client : 返回
 ```
 
 图表来源
-- [mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 ## 详细组件分析
 
@@ -154,11 +154,11 @@ McpCoreTool --> McpClientRuntime : "委托调用"
 ```
 
 图表来源
-- [mcp.rs:277-355](file://src/pkg/tool_registry/mcp.rs#L277-L355)
-- [mcp.rs:50-198](file://src/pkg/tool_registry/mcp.rs#L50-L198)
+- [mcp.rs:277-355](src/pkg/tool_registry/mcp.rs#L277-L355)
+- [mcp.rs:50-198](src/pkg/tool_registry/mcp.rs#L50-L198)
 
 章节来源
-- [mcp.rs:277-355](file://src/pkg/tool_registry/mcp.rs#L277-L355)
+- [mcp.rs:277-355](src/pkg/tool_registry/mcp.rs#L277-L355)
 
 ### MCP 服务器连接管理
 - 传输类型：支持 stdio 与 streamable_http；当前仅 stdio 可用，HTTP 显式 not implemented。
@@ -181,14 +181,14 @@ Close --> End(["结束"])
 ```
 
 图表来源
-- [mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
-- [mcp.rs:103-140](file://src/pkg/tool_registry/mcp.rs#L103-L140)
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp.rs:103-140](src/pkg/tool_registry/mcp.rs#L103-L140)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
 章节来源
-- [mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 ### 工具发现机制（tools/list）
 - 入口：McpToolDal.sync_from_server 调用 McpToolCallDao.list_mcp_tools，最终由 McpClientRuntime.list_tools 发起 tools/list。
@@ -218,12 +218,12 @@ Dal->>TDao : 标记缺失工具为 Stale
 ```
 
 图表来源
-- [mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
+- [mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 章节来源
-- [mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [mcp_tool_design.md:299-349](file://docs/mcp_tool_design.md#L299-L349)
+- [mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [mcp_tool_design.md:299-349](docs/mcp_tool_design.md#L299-L349)
 
 ### MCP 协议 JSON-RPC 通信与参数序列化
 - 通信方式：通过 rmcp 库以 stdio 通道与 MCP Server 交互，先 initialize，再调用 tools/list 或 tools/call。
@@ -254,12 +254,12 @@ RT-->>C : Value(JSON)
 ```
 
 图表来源
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 章节来源
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 ### 工具调用流程与结果处理
 - 入口：McpToolDal.call_tool_by_id 或 call_tool。
@@ -286,13 +286,13 @@ Dal-->>Caller : (result, entry)
 ```
 
 图表来源
-- [mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
-- [mcp.rs:323-355](file://src/pkg/tool_registry/mcp.rs#L323-L355)
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
+- [mcp.rs:323-355](src/pkg/tool_registry/mcp.rs#L323-L355)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
 章节来源
-- [mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
-- [mcp_tool_design.md:581-635](file://docs/mcp_tool_design.md#L581-L635)
+- [mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
+- [mcp_tool_design.md:581-635](docs/mcp_tool_design.md#L581-L635)
 
 ### 配置管理与状态控制
 - McpServerConfig：
@@ -305,8 +305,8 @@ Dal-->>Caller : (result, entry)
   - ToolStatus：新增 Stale 表示远端缺失，正常业务过滤 stale，管理面可显式查询。
 
 章节来源
-- [mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [mcp_tool_design.md:1312-1327](file://docs/mcp_tool_design.md#L1312-L1327)
+- [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
 
 ## 依赖关系分析
 - DAL 与 DAO：
@@ -330,13 +330,13 @@ E --> F["rmcp/TokioChildProcess"]
 ```
 
 图表来源
-- [mcp_tool.rs:22-46](file://src/service/dal/mcp_tool.rs#L22-L46)
-- [mcp.rs:40-72](file://src/service/dao/tool_call/mcp.rs#L40-L72)
-- [mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [mcp_tool.rs:22-46](src/service/dal/mcp_tool.rs#L22-L46)
+- [mcp.rs:40-72](src/service/dao/tool_call/mcp.rs#L40-L72)
+- [mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 章节来源
-- [mcp_tool_design.md:152-186](file://docs/mcp_tool_design.md#L152-L186)
-- [mcp_tool.rs:22-46](file://src/service/dal/mcp_tool.rs#L22-L46)
+- [mcp_tool_design.md:152-186](docs/mcp_tool_design.md#L152-L186)
+- [mcp_tool.rs:22-46](src/service/dal/mcp_tool.rs#L22-L46)
 
 ## 性能与可靠性
 - 会话策略：当前 per-operation 独立 session，无共享缓存；并发调用各自独立进程与会话，避免跨 await 共享锁。
@@ -351,9 +351,9 @@ E --> F["rmcp/TokioChildProcess"]
 - 资源释放：每次调用后尝试关闭会话；关闭失败返回安全文案，避免泄露底层错误。
 
 章节来源
-- [mcp_tool_design.md:1346-1352](file://docs/mcp_tool_design.md#L1346-L1352)
-- [mcp.rs:103-140](file://src/pkg/tool_registry/mcp.rs#L103-L140)
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp_tool_design.md:1346-1352](docs/mcp_tool_design.md#L1346-L1352)
+- [mcp.rs:103-140](src/pkg/tool_registry/mcp.rs#L103-L140)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
 
 ## 故障排查指南
 - 常见错误：
@@ -370,9 +370,9 @@ E --> F["rmcp/TokioChildProcess"]
   - 检查管理面脱敏后的配置是否正确。
 
 章节来源
-- [mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [mcp_tool.rs:257-287](file://src/service/dal/mcp_tool.rs#L257-L287)
-- [mcp_server.rs:152-167](file://src/models/mcp_server.rs#L152-L167)
+- [mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [mcp_tool.rs:257-287](src/service/dal/mcp_tool.rs#L257-L287)
+- [mcp_server.rs:152-167](src/models/mcp_server.rs#L152-L167)
 
 ## 结论
 MCP 工具在本项目中以“管理面 + 运行面”分离的方式实现，遵循严格分层与单向依赖原则。McpCoreTool 与 McpClientRuntime 封装了 JSON-RPC 通信与进程管理，McpToolDal 负责工具同步与执行编排，McpToolCallDaoImpl 统一管理运行时生命周期。当前版本聚焦 stdio transport，具备完善的超时控制、错误脱敏与状态管理，为后续 HTTP transport 与连接池优化奠定基础。
@@ -381,28 +381,28 @@ MCP 工具在本项目中以“管理面 + 运行面”分离的方式实现，�
 以下为 MCP 工具集成的关键步骤与对应文件路径，便于快速上手：
 
 - 配置 MCP 服务器
-  - 参考：[mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
+  - 参考：[mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
   - 说明：设置 transport、command/args/env/url/headers、超时与响应大小限制；管理面展示使用脱敏配置。
 
 - 同步远端工具
-  - 参考：[sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+  - 参考：[sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
   - 说明：调用 McpToolDal.sync_from_server，将远端工具元数据同步为本地 ToolPo。
 
 - 列出已同步工具
-  - 参考：[list_mcp_tools_by_server.rs](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
+  - 参考：[list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
   - 说明：按 server 分页查询已同步工具，支持关键字与状态过滤。
 
 - 调用 MCP 工具
-  - 参考：[mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
+  - 参考：[mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
   - 说明：通过 McpToolDal.call_tool_by_id 或 call_tool，返回结果与调用记录。
 
 - 结果处理
-  - 参考：[mcp_tool_design.md:1312-1327](file://docs/mcp_tool_design.md#L1312-L1327)
+  - 参考：[mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)
   - 说明：结果消息不复制 request args，超限结果使用安全 marker，携带 trace_ref 关联完整调用记录。
 
 章节来源
-- [mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [list_mcp_tools_by_server.rs](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
-- [mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
-- [mcp_tool_design.md:1312-1327](file://docs/mcp_tool_design.md#L1312-L1327)
+- [mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
+- [mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
+- [mcp_tool_design.md:1312-1327](docs/mcp_tool_design.md#L1312-L1327)

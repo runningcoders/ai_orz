@@ -2,40 +2,40 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/hr/mod.rs](file://src/handlers/hr/mod.rs)
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [src/handlers/hr/skill/mod.rs](file://src/handlers/hr/skill/mod.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/handlers/hr/agent/query_agents.rs](file://src/handlers/hr/agent/query_agents.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-- [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-- [src/handlers/hr/agent/install_skill_pack.rs](file://src/handlers/hr/agent/install_skill_pack.rs)
-- [src/handlers/hr/agent/uninstall_skill_pack.rs](file://src/handlers/hr/agent/uninstall_skill_pack.rs)
-- [src/handlers/hr/agent/install_tool_pack.rs](file://src/handlers/hr/agent/install_tool_pack.rs)
-- [src/handlers/hr/agent/uninstall_tool_pack.rs](file://src/handlers/hr/agent/uninstall_tool_pack.rs)
-- [src/handlers/hr/agent/create_memory.rs](file://src/handlers/hr/agent/create_memory.rs)
-- [src/handlers/hr/agent/save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
-- [src/handlers/hr/agent/save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
-- [src/handlers/hr/agent/update_memory.rs](file://src/handlers/hr/agent/update_memory.rs)
-- [src/handlers/hr/agent/delete_memory.rs](file://src/handlers/hr/agent/delete_memory.rs)
-- [src/handlers/hr/agent/search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-- [src/handlers/hr/agent/query_memory.rs](file://src/handlers/hr/agent/query_memory.rs)
-- [src/handlers/hr/agent/settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [src/handlers/hr/agent/recommend_seed_nodes.rs](file://src/handlers/hr/agent/recommend_seed_nodes.rs)
-- [src/handlers/hr/skill/create_skill.rs](file://src/handlers/hr/skill/create_skill.rs)
-- [src/handlers/hr/skill/list_skills.rs](file://src/handlers/hr/skill/list_skills.rs)
-- [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-- [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-- [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
-- [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
-- [src/handlers/hr/skill/search_skills.rs](file://src/handlers/hr/skill/search_skills.rs)
-- [src/handlers/hr/skill/query_skills.rs](file://src/handlers/hr/skill/query_skills.rs)
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [src/models/skill.rs](file://src/models/skill.rs)
-- [src/models/memory.rs](file://src/models/memory.rs)
+- [src/handlers/hr/mod.rs](src/handlers/hr/mod.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [src/handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/handlers/hr/agent/query_agents.rs](src/handlers/hr/agent/query_agents.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+- [src/handlers/hr/agent/install_skill_pack.rs](src/handlers/hr/agent/install_skill_pack.rs)
+- [src/handlers/hr/agent/uninstall_skill_pack.rs](src/handlers/hr/agent/uninstall_skill_pack.rs)
+- [src/handlers/hr/agent/install_tool_pack.rs](src/handlers/hr/agent/install_tool_pack.rs)
+- [src/handlers/hr/agent/uninstall_tool_pack.rs](src/handlers/hr/agent/uninstall_tool_pack.rs)
+- [src/handlers/hr/agent/create_memory.rs](src/handlers/hr/agent/create_memory.rs)
+- [src/handlers/hr/agent/save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
+- [src/handlers/hr/agent/save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
+- [src/handlers/hr/agent/update_memory.rs](src/handlers/hr/agent/update_memory.rs)
+- [src/handlers/hr/agent/delete_memory.rs](src/handlers/hr/agent/delete_memory.rs)
+- [src/handlers/hr/agent/search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [src/handlers/hr/agent/query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [src/handlers/hr/agent/recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
+- [src/handlers/hr/skill/create_skill.rs](src/handlers/hr/skill/create_skill.rs)
+- [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
+- [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+- [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+- [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
+- [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+- [src/handlers/hr/skill/search_skills.rs](src/handlers/hr/skill/search_skills.rs)
+- [src/handlers/hr/skill/query_skills.rs](src/handlers/hr/skill/query_skills.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [src/models/skill.rs](src/models/skill.rs)
+- [src/models/memory.rs](src/models/memory.rs)
 </cite>
 
 ## 目录
@@ -90,14 +90,14 @@ HAG -.-> MMemory
 ```
 
 图表来源
-- [src/handlers/hr/mod.rs:1-11](file://src/handlers/hr/mod.rs#L1-L11)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/mod.rs:1-11](src/handlers/hr/mod.rs#L1-L11)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 章节来源
-- [src/handlers/hr/mod.rs:1-11](file://src/handlers/hr/mod.rs#L1-L11)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/mod.rs:1-11](src/handlers/hr/mod.rs#L1-L11)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 核心组件
 - Agent 管理：提供创建、列表、通用查询、详情获取、更新、删除、状态更新、外部 Agent 创建等接口；支持运行时状态、角色、模型提供商、标签等过滤与分页。
@@ -105,8 +105,8 @@ HAG -.-> MMemory
 - 记忆管理：提供短期/长期记忆写入、更新、删除、检索、查询、归纳沉淀、知识图谱种子节点推荐等。
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 架构总览
 遵循四层单向调用：Adapter（HTTP Handler / 公开回调 / AOP Producer）→ Domain → DAL → DAO。Handler 仅做参数校验与上下文提取，业务逻辑在 Domain/DAL，数据访问在 DAO。所有公共方法首参为 RequestContext，跨层传递统一使用 ctx.clone()。
@@ -129,7 +129,7 @@ H-->>C : "200 OK"
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
 
 ## 详细组件分析
 
@@ -155,17 +155,17 @@ ReturnList --> End(["返回 PagedResult<AgentListItem>"])
 ```
 
 图表来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-- [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-- [src/handlers/hr/agent/update_agent_status.rs](file://src/handlers/hr/agent/update_agent_status.rs)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+- [src/handlers/hr/agent/update_agent_status.rs](src/handlers/hr/agent/update_agent_status.rs)
 
 ### 技能包管理接口
 - 创建技能：支持初始 skill.md 内容与多文件上传，自动分配目录与作者信息。
@@ -209,18 +209,18 @@ Skill --> SkillFile : "包含"
 ```
 
 图表来源
-- [src/models/skill.rs:1-193](file://src/models/skill.rs#L1-L193)
+- [src/models/skill.rs:1-193](src/models/skill.rs#L1-L193)
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
-- [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-- [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-- [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
-- [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
-- [src/handlers/hr/skill/search_skills.rs](file://src/handlers/hr/skill/search_skills.rs)
-- [src/handlers/hr/skill/query_skills.rs](file://src/handlers/hr/skill/query_skills.rs)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+- [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+- [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
+- [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+- [src/handlers/hr/skill/search_skills.rs](src/handlers/hr/skill/search_skills.rs)
+- [src/handlers/hr/skill/query_skills.rs](src/handlers/hr/skill/query_skills.rs)
 
 ### 记忆管理接口
 - 创建记忆：写入原始 trace（阶段 1），不向量化。
@@ -249,21 +249,21 @@ H-->>U : "200 OK"
 ```
 
 图表来源
-- [src/handlers/hr/agent/save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
-- [src/handlers/hr/agent/save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
+- [src/handlers/hr/agent/save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
+- [src/handlers/hr/agent/save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
 
 章节来源
-- [src/handlers/hr/agent/create_memory.rs](file://src/handlers/hr/agent/create_memory.rs)
-- [src/handlers/hr/agent/save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
-- [src/handlers/hr/agent/save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
-- [src/handlers/hr/agent/update_memory.rs](file://src/handlers/hr/agent/update_memory.rs)
-- [src/handlers/hr/agent/delete_memory.rs](file://src/handlers/hr/agent/delete_memory.rs)
-- [src/handlers/hr/agent/search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-- [src/handlers/hr/agent/query_memory.rs](file://src/handlers/hr/agent/query_memory.rs)
-- [src/handlers/hr/agent/settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [src/handlers/hr/agent/recommend_seed_nodes.rs](file://src/handlers/hr/agent/recommend_seed_nodes.rs)
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
+- [src/handlers/hr/agent/create_memory.rs](src/handlers/hr/agent/create_memory.rs)
+- [src/handlers/hr/agent/save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
+- [src/handlers/hr/agent/save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
+- [src/handlers/hr/agent/update_memory.rs](src/handlers/hr/agent/update_memory.rs)
+- [src/handlers/hr/agent/delete_memory.rs](src/handlers/hr/agent/delete_memory.rs)
+- [src/handlers/hr/agent/search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [src/handlers/hr/agent/query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [src/handlers/hr/agent/recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
 
 ### Agent 生命周期与配置
 - 生命周期状态：面试中、运行中、休眠、已禁用、已删除等（由枚举定义）。
@@ -309,10 +309,10 @@ AgentPo --> AgentRuntimeConfig : "序列化/反序列化"
 ```
 
 图表来源
-- [src/models/agent.rs:1-709](file://src/models/agent.rs#L1-L709)
+- [src/models/agent.rs:1-709](src/models/agent.rs#L1-L709)
 
 章节来源
-- [src/models/agent.rs:1-709](file://src/models/agent.rs#L1-L709)
+- [src/models/agent.rs:1-709](src/models/agent.rs#L1-L709)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的 hr::domain() 入口，再委托至 agent_manage/skill_manage/memory_manage 等子域服务。
@@ -328,15 +328,15 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
-- [src/models/agent.rs:1-709](file://src/models/agent.rs#L1-L709)
-- [src/models/skill.rs:1-193](file://src/models/skill.rs#L1-L193)
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/models/agent.rs:1-709](src/models/agent.rs#L1-L709)
+- [src/models/skill.rs:1-193](src/models/skill.rs#L1-L193)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 性能考虑
 - 列表与查询：优先使用分页与必要字段过滤，避免全表扫描；向量检索结合 FTS5 提升召回率与速度。
@@ -351,8 +351,8 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
 - 向量检索失败：检查向量后端可用性与索引重建任务；必要时回退到 FTS5。
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 
 ## 结论
 人力资源模块以清晰的四层架构组织，Handler 专注入参与上下文，Domain/DAL 承载业务编排，DAO 负责数据持久化。Agent 管理、技能包管理与记忆管理形成闭环：Agent 通过技能扩展能力，通过工具增强执行，通过记忆沉淀经验并支持检索与推理。配合分页、复杂查询、向量与全文检索，满足生产级需求。
@@ -366,36 +366,36 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
   - 响应：创建后的 id、name、description、created_at
   - 示例要点：确保 uid 存在；默认启用 require_user_confirm；可后续设置外部执行器配置
   - 参考实现
-    - [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-    - [src/models/agent.rs:1-709](file://src/models/agent.rs#L1-L709)
+    - [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+    - [src/models/agent.rs:1-709](src/models/agent.rs#L1-L709)
 
 - 列表 Agent
   - 方法：GET /api/v1/hr/agents
   - 查询参数：pagination（page/page_size）
   - 行为：固定排除 Deleted 状态
   - 参考实现
-    - [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
+    - [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
 
 - 通用查询 Agent
   - 方法：POST /api/v1/hr/agents/query
   - 请求体：ids、keyword、status、roles、created_by、model_provider_id、runtime_state、pagination
   - 行为：组合过滤 + 分页
   - 参考实现
-    - [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
+    - [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
 
 - 获取/更新/删除/状态更新
   - 方法：GET/PUT/DELETE /api/v1/hr/agents/{id}；PATCH /api/v1/hr/agents/{id}/status
   - 参考实现
-    - [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-    - [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-    - [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-    - [src/handlers/hr/agent/update_agent_status.rs](file://src/handlers/hr/agent/update_agent_status.rs)
+    - [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+    - [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+    - [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+    - [src/handlers/hr/agent/update_agent_status.rs](src/handlers/hr/agent/update_agent_status.rs)
 
 - 外部 Agent 创建
   - 方法：POST /api/v1/hr/agents/external
   - 请求体：executor=cli 或 remote，附带命令/端点/超时等
   - 参考实现
-    - [src/handlers/hr/agent/create_external_agent.rs](file://src/handlers/hr/agent/create_external_agent.rs)
+    - [src/handlers/hr/agent/create_external_agent.rs](src/handlers/hr/agent/create_external_agent.rs)
 
 ### 技能包管理
 - 创建技能
@@ -403,79 +403,79 @@ DM -.-> M["Models(Agent/Skill/Memory)"]
   - 请求体：name、description、tags、category、status、content（skill.md）、initial_files
   - 行为：校验 name 非空；校验文件名合法性；分配目录 skills/{id}
   - 参考实现
-    - [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
+    - [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 
 - 列出技能
   - 方法：GET /api/v1/skills
   - 查询参数：pagination、status、category、author、keyword
   - 行为：固定排除 Expired 状态
   - 参考实现
-    - [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
+    - [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
 
 - 获取/更新/删除技能
   - 方法：GET/PUT/DELETE /api/v1/skills/{id}
   - 参考实现
-    - [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-    - [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-    - [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
+    - [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+    - [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+    - [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
 
 - 安装/卸载技能到 Agent
   - 方法：POST /api/v1/hr/agents/{id}/skills/install；POST /api/v1/hr/agents/{id}/skills/uninstall
   - 行为：安装复制文件并记录 tag；卸载仅移除 tag 关联
   - 参考实现
-    - [src/handlers/hr/agent/install_skill_pack.rs](file://src/handlers/hr/agent/install_skill_pack.rs)
-    - [src/handlers/hr/agent/uninstall_skill_pack.rs](file://src/handlers/hr/agent/uninstall_skill_pack.rs)
-    - [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-    - [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+    - [src/handlers/hr/agent/install_skill_pack.rs](src/handlers/hr/agent/install_skill_pack.rs)
+    - [src/handlers/hr/agent/uninstall_skill_pack.rs](src/handlers/hr/agent/uninstall_skill_pack.rs)
+    - [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+    - [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
 
 - 搜索/通用查询技能
   - 方法：GET/POST /api/v1/skills/search；POST /api/v1/skills/query
   - 行为：向量+全文检索，支持标签、分类、作者过滤
   - 参考实现
-    - [src/handlers/hr/skill/search_skills.rs](file://src/handlers/hr/skill/search_skills.rs)
-    - [src/handlers/hr/skill/query_skills.rs](file://src/handlers/hr/skill/query_skills.rs)
+    - [src/handlers/hr/skill/search_skills.rs](src/handlers/hr/skill/search_skills.rs)
+    - [src/handlers/hr/skill/query_skills.rs](src/handlers/hr/skill/query_skills.rs)
 
 ### 记忆管理
 - 创建/保存短期记忆
   - 方法：POST /api/v1/hr/agents/{id}/memory/traces；POST /api/v1/hr/agents/{id}/memory/short-term
   - 行为：阶段 1 写入 trace；阶段 2 聚合索引并自动向量化
   - 参考实现
-    - [src/handlers/hr/agent/create_memory.rs](file://src/handlers/hr/agent/create_memory.rs)
-    - [src/handlers/hr/agent/save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
+    - [src/handlers/hr/agent/create_memory.rs](src/handlers/hr/agent/create_memory.rs)
+    - [src/handlers/hr/agent/save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
 
 - 保存长期记忆
   - 方法：POST /api/v1/hr/agents/{id}/memory/knowledge-node
   - 行为：生成知识节点（可附带引用关系），自动向量化
   - 参考实现
-    - [src/handlers/hr/agent/save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
+    - [src/handlers/hr/agent/save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
 
 - 更新/删除记忆
   - 方法：PUT/DELETE /api/v1/hr/agents/{id}/memory/{mem_id}
   - 参考实现
-    - [src/handlers/hr/agent/update_memory.rs](file://src/handlers/hr/agent/update_memory.rs)
-    - [src/handlers/hr/agent/delete_memory.rs](file://src/handlers/hr/agent/delete_memory.rs)
+    - [src/handlers/hr/agent/update_memory.rs](src/handlers/hr/agent/update_memory.rs)
+    - [src/handlers/hr/agent/delete_memory.rs](src/handlers/hr/agent/delete_memory.rs)
 
 - 搜索/查询记忆
   - 方法：GET/POST /api/v1/hr/agents/{id}/memory/search；POST /api/v1/hr/agents/{id}/memory/query
   - 行为：向量检索、FTS5 全文检索、标签过滤、分页
   - 参考实现
-    - [src/handlers/hr/agent/search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-    - [src/handlers/hr/agent/query_memory.rs](file://src/handlers/hr/agent/query_memory.rs)
+    - [src/handlers/hr/agent/search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+    - [src/handlers/hr/agent/query_memory.rs](src/handlers/hr/agent/query_memory.rs)
 
 - 沉淀/总结与推荐种子节点
   - 方法：POST /api/v1/hr/agents/{id}/memory/settle；GET /api/v1/hr/agents/{id}/memory/seed-nodes
   - 行为：触发归纳流程；返回知识图谱度数统计的候选起点
   - 参考实现
-    - [src/handlers/hr/agent/settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-    - [src/handlers/hr/agent/recommend_seed_nodes.rs](file://src/handlers/hr/agent/recommend_seed_nodes.rs)
+    - [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+    - [src/handlers/hr/agent/recommend_seed_nodes.rs](src/handlers/hr/agent/recommend_seed_nodes.rs)
 
 ### 工具绑定与技能包
 - 安装/卸载工具包
   - 方法：POST /api/v1/hr/agents/{id}/tools/install；POST /api/v1/hr/agents/{id}/tools/uninstall
   - 行为：通过 tag 自动注入工具或移除绑定
   - 参考实现
-    - [src/handlers/hr/agent/install_tool_pack.rs](file://src/handlers/hr/agent/install_tool_pack.rs)
-    - [src/handlers/hr/agent/uninstall_tool_pack.rs](file://src/handlers/hr/agent/uninstall_tool_pack.rs)
+    - [src/handlers/hr/agent/install_tool_pack.rs](src/handlers/hr/agent/install_tool_pack.rs)
+    - [src/handlers/hr/agent/uninstall_tool_pack.rs](src/handlers/hr/agent/uninstall_tool_pack.rs)
 
 ### 复杂查询与分页
 - Agent 通用查询支持多维过滤与分页，适合后台管理页与自动化脚本。

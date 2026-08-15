@@ -91,30 +91,30 @@
 | **DB 层** | | |
 | migrations/20260812xxxx_users_identity_credentials.sql | 迁移 | ALTER TABLE users ADD COLUMN identity_credentials TEXT（空串默认） |
 | **common 层** | | |
-| [common/src/models/identity_credentials.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/models/identity_credentials.rs) | 凭证模型 | UserIdentityCredentials / CredentialKind / CredentialDetail（LarkApp，加密后落库） |
+| [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs) | 凭证模型 | UserIdentityCredentials / CredentialKind / CredentialDetail（LarkApp，加密后落库） |
 | **models 层** | | |
-| [src/models/user.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/user.rs) | UserPo | 增 identity_credentials: String 字段；to_basic_info_prompt 拼偏好行（含凭证） |
+| [src/models/user.rs](src/models/user.rs) | UserPo | 增 identity_credentials: String 字段；to_basic_info_prompt 拼偏好行（含凭证） |
 | **DAO 层** | | |
-| [src/service/dao/user/](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/user/) | user DAO | 全部 SQL 补 identity_credentials 列；增 find_identity_credentials_by_user_id/username 便捷查询 |
-| [src/service/dao/lark/ws.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/lark/ws.rs) | WS 连接 | 拆 run_connection_once + supervisor；指数退避 1s→60s 抖动；WsState 持有 JoinHandle + shutdown_tx；WsConnState 监控字段 |
-| [src/service/dao/lark/http.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/lark/http.rs) | token 源 | 实现 WsTokenSource trait（get_tenant_access_token），重连时过期自愈 |
+| [src/service/dao/user/](src/service/dao/user/) | user DAO | 全部 SQL 补 identity_credentials 列；增 find_identity_credentials_by_user_id/username 便捷查询 |
+| [src/service/dao/lark/ws.rs](src/service/dao/lark/ws.rs) | WS 连接 | 拆 run_connection_once + supervisor；指数退避 1s→60s 抖动；WsState 持有 JoinHandle + shutdown_tx；WsConnState 监控字段 |
+| [src/service/dao/lark/http.rs](src/service/dao/lark/http.rs) | token 源 | 实现 WsTokenSource trait（get_tenant_access_token），重连时过期自愈 |
 | **DAL 层** | | |
-| [src/service/dal/lark.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/lark.rs) | lark DAL | 凭证读写辅助（read-modify-write JSON + 加密）；查引用指定凭证的渠道；resolve_credentials_for_user 改为引用 ID → JSON 查找 |
+| [src/service/dal/lark.rs](src/service/dal/lark.rs) | lark DAL | 凭证读写辅助（read-modify-write JSON + 加密）；查引用指定凭证的渠道；resolve_credentials_for_user 改为引用 ID → JSON 查找 |
 | src/service/dal/message.rs（options） | 推送选项 | 增 ChannelPushOptions.user: Option<User>，优先级① options 携带直用 ② 兜底 user dao 查询 |
 | **Domain 层** | | |
-| [src/service/domain/organization/user.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/organization/user.rs) | user Domain | 凭证 CRUD 方法（组合 user DAL + lark DAL，按 §二 联动链路编排）；lark_integration handler 只调此处 |
+| [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs) | user Domain | 凭证 CRUD 方法（组合 user DAL + lark DAL，按 §二 联动链路编排）；lark_integration handler 只调此处 |
 | finance/message_channel.rs（生命周期） | 渠道域 | 渠道创建/禁用触发的 ensure/release 维持现状（不改动） |
 | **pkg 基础设施** | | |
-| [src/pkg/lark_integration.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/lark_integration.rs) | 会话编排 | start_device_login / complete_device_login / auth_status / auth_logout；bind 会话注册表（RwLock\<HashMap\>，单用户 TTL 10min） |
-| [src/pkg/tool_registry/lark_cli.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/lark_cli.rs) | CLI 原语 | lark_home / binary_available / ensure_cli_config 提升为 pub 复用 |
+| [src/pkg/lark_integration.rs](src/pkg/lark_integration.rs) | 会话编排 | start_device_login / complete_device_login / auth_status / auth_logout；bind 会话注册表（RwLock\<HashMap\>，单用户 TTL 10min） |
+| [src/pkg/tool_registry/lark_cli.rs](src/pkg/tool_registry/lark_cli.rs) | CLI 原语 | lark_home / binary_available / ensure_cli_config 提升为 pub 复用 |
 | **Handler 层** | | |
-| [src/handlers/user/lark_integration/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/user/lark_integration/) | 11 端点 | status/credentials×3/auth×4/bind×3（§一 路由路径表）；挂 user_routes 的 lark-integration 子 nest |
+| [src/handlers/user/lark_integration/](src/handlers/user/lark_integration/) | 11 端点 | status/credentials×3/auth×4/bind×3（§一 路由路径表）；挂 user_routes 的 lark-integration 子 nest |
 | **Handler 健康指标** | | |
-| [src/handlers/system/health_metrics.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/health_metrics.rs) | 健康注入 | 注入 LarkWsMetrics（active_connections / apps[{app_id, state, reconnect_count}]） |
+| [src/handlers/system/health_metrics.rs](src/handlers/system/health_metrics.rs) | 健康注入 | 注入 LarkWsMetrics（active_connections / apps[{app_id, state, reconnect_count}]） |
 | **Frontend 层** | | |
-| [frontend/src/pages/settings.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/settings.rs) | Settings | 新增「飞书集成」区块：应用绑定卡（凭证列表/编辑/删除/自动绑定）+ 用户身份卡（OAuth/device flow） |
-| [frontend/src/pages/finance/message_channels.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/finance/message_channels.rs) | 渠道 Modal | 选 Lark 时查聚合端点：无凭证 → 引导条跳 Settings；有凭证 → 凭证下拉（必填）；身份模式下拉 |
-| [frontend/src/api/lark_integration.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/api/lark_integration.rs) | API 客户端 | 11 个方法（对应 11 端点） |
+| [frontend/src/pages/settings.rs](frontend/src/pages/settings.rs) | Settings | 新增「飞书集成」区块：应用绑定卡（凭证列表/编辑/删除/自动绑定）+ 用户身份卡（OAuth/device flow） |
+| [frontend/src/pages/finance/message_channels.rs](frontend/src/pages/finance/message_channels.rs) | 渠道 Modal | 选 Lark 时查聚合端点：无凭证 → 引导条跳 Settings；有凭证 → 凭证下拉（必填）；身份模式下拉 |
+| [frontend/src/api/lark_integration.rs](frontend/src/api/lark_integration.rs) | API 客户端 | 11 个方法（对应 11 端点） |
 
 ---
 
@@ -124,11 +124,11 @@
 
 | 改动点 | 位置 | 新增时参考 |
 |--------|------|-----------|
-| CredentialKind 枚举加变体 | [common/src/models/identity_credentials.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/models/identity_credentials.rs) | CredentialKind::LarkApp 之后按序追加 |
+| CredentialKind 枚举加变体 | [common/src/models/identity_credentials.rs](common/src/models/identity_credentials.rs) | CredentialKind::LarkApp 之后按序追加 |
 | CredentialDetail 枚举加变体 | 同上 | CredentialDetail::LarkApp { app_id, app_secret(加密), encrypt_key, verification_token } 同款模式 |
-| Domain 联动分发 | [src/service/domain/organization/user.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/organization/user.rs) | match kind 分发凭证变更后的联动动作（目前仅 lark 有 WS/渠道联动，其余类型默认空分支） |
+| Domain 联动分发 | [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs) | match kind 分发凭证变更后的联动动作（目前仅 lark 有 WS/渠道联动，其余类型默认空分支） |
 
-> 代码入口：[identity_credentials.rs 枚举区](file:///Users/aman/Technology/rust/ai_orz/common/src/models/identity_credentials.rs)
+> 代码入口：[identity_credentials.rs 枚举区](common/src/models/identity_credentials.rs)
 
 ### 4.2 新增用户级集成页面（类似 Settings「飞书集成」）
 
@@ -138,21 +138,13 @@
 | 前端 Settings 区块 | `frontend/src/pages/settings.rs` 加卡片区块 | 复用飞书区块：聚合端点加载 → 绑定卡 + 授权卡双布局 |
 | 路由挂载 | user_routes() 加子 nest | 统一挂 `/user/<集成名>/` 中间路径（不挂 settings，域归属清晰） |
 
-> 代码入口：[handlers/user/ 根目录](file:///Users/aman/Technology/rust/ai_orz/src/handlers/user/)
+> 代码入口：[handlers/user/ 根目录](src/handlers/user/)
 
 ---
 
 ## 五、验收清单
 
-- [x] 决策冻结：三项范围（绑定体验 + 用户身份 + WS 稳定）+ 工具身份渠道可配 + keychain 失败降级
-- [ ] 0 步实测：`config init --new` app_secret 可读性分支 A/B（首个实施动作）
-- [ ] 迁移：users identity_credentials 列 + ChannelConfig 删除内联凭证字段加 lark_credential_id
-- [ ] 凭证解析：options 附带 + DAO 兜底双路径；DAL 零互调（联动全在 Domain）
-- [ ] WS 改造：run_connection_once + supervisor；指数退避；token 刷新；监控字段；health metrics 注入
-- [ ] OAuth device flow：start/complete/status/logout 四端点 + keychain 降级捕获
-- [ ] 自动绑定 bind：start（后台 spawn + 抓验证 URL）/ status 轮询 / cancel
-- [ ] 前端 Settings 区块 + 渠道 Modal 改造 + 11 端点 API 客户端
-- [ ] 门槛：fmt + clippy 双端 -D warnings + 全量测试（lark_integration_test 集成）
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -177,7 +169,8 @@
 
 > **核心不变量**：凭证单一事实源（users JSON 列）、DAL 零互调、渠道只存引用。
 
-1. **common 模型扩展**：[identity_credentials.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/models/identity_credentials.rs) — 新增凭证类型：CredentialKind 加变体 + CredentialDetail 加带标签的详情结构；加密字段用 encrypt_channel_secret 原语
-2. **Domain 联动分发**：[organization/user.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/organization/user.rs) — 凭证 PUT/DELETE 后 match kind 追加对应类型的 WS/渠道/HomeConfig 联动（目前仅 lark 分支体完整）
-3. **前端 Handler 目录**：复制 [src/handlers/user/lark_integration/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/user/lark_integration/) 目录模式，按集成名改 11 端点 × 路由分组
-4. **前端 Settings 区块**：复制 [frontend/src/pages/settings.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/settings.rs) 飞书区块模式，聚合端点加载后渲染绑定卡 + 授权卡；渠道 Modal 加新类型凭证下拉
+1. **common 模型扩展**：[identity_credentials.rs](common/src/models/identity_credentials.rs) — 新增凭证类型：CredentialKind 加变体 + CredentialDetail 加带标签的详情结构；加密字段用 encrypt_channel_secret 原语
+2. **Domain 联动分发**：[organization/user.rs](src/service/domain/organization/user.rs) — 凭证 PUT/DELETE 后 match kind 追加对应类型的 WS/渠道/HomeConfig 联动（目前仅 lark 分支体完整）
+3. **前端 Handler 目录**：复制 [src/handlers/user/lark_integration/](src/handlers/user/lark_integration/) 目录模式，按集成名改 11 端点 × 路由分组
+4. **前端 Settings 区块**：复制 [frontend/src/pages/settings.rs](frontend/src/pages/settings.rs) 飞书区块模式，聚合端点加载后渲染绑定卡 + 授权卡；渠道 Modal 加新类型凭证下拉
+

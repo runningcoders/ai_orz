@@ -8,6 +8,22 @@
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构
 > - [tool_design.md](./tool_design.md) — 工具调用架构与三层执行链路
 > - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎与运行时可视化配套设计
+> - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒设计总纲（Phase1 IA + Phase2 执行）
+> - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+> - 【③ Wiki 长文 7 篇】
+>   - [运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) — Runtime 领域四方法入口（wake/awaken/sleep/analyze）
+>   - [Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — Domain 层编排
+>   - [思考运行时面板观测接口.md](docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md) — 前端观测 runtime_status/runtime_list 接口
+>   - [消息消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/消息消费者.md) — consumer 中 try_set_busy 防并发唤醒
+>   - [Agent 循环消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/Agent%20循环消费者.md)
+>   - [Agent 管理 API.md](docs/wiki/zh/content/API%20参考/RESTful%20API/人力资源模块%20API/Agent%20管理%20API.md)
+>   - [Agent 状态管理.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/Agent%20状态管理.md)
+> - 【④ RAG 卡 5 张】
+>   - [两阶段唤醒：IntentAnalyze Phase1 意图分析 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/两阶段唤醒：IntentAnalyze%20Phase1%20意图分析%20+%20Awaken%20Phase2%20正式执行串联（IntentAnalysis%207%20字段%20+%206%20级%20JSON%20降级）/两阶段唤醒：IntentAnalyze%20Phase1%20意图分析%20+%20Awaken%20Phase2%20正式执行串联（IntentAnalysis%207%20字段%20+%206%20级%20JSON%20降级）.md) — 两阶段唤醒总卡
+>   - [AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视](docs/wiki/knowledge/zh/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视.md) — 三态 FSM + BusyGuard RAII + try_set_busy 防 TOCTOU
+>   - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) — 各 ThinkingScene 策略组
+>   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md)
+>   - [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件.md) — runtime_list 三过滤器（state/task_id/project_id）
 
 ---
 
@@ -162,7 +178,7 @@ pub struct AwakenOutcome {
     pub finished: bool,                    // 模型是否给出"完成"信号
 }
 ```
-> 当前实现：[mod.rs::RuntimeAwakening](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L141-L220)
+> 当前实现：[mod.rs::RuntimeAwakening](src/service/domain/runtime/mod.rs#L141-L220)
 
 ### 3.2 关键设计点
 
@@ -203,7 +219,7 @@ pub struct AssembledContext {
     pub recent_traces: Vec<MemoryTrace>, // 最近 N 条会话 trace（短期工作记忆）
 }
 ```
-> 当前实现参考：[runtime/ 模块 context 拼装](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 当前实现参考：[runtime/ 模块 context 拼装](src/service/domain/runtime/)
 
 **只放最薄的内容**：
 - ✅ 身份信息（你是谁、归属哪个组织）
@@ -253,7 +269,7 @@ pub struct AssembledContext {
 | **Consumer** | 同服务内直接通过 Domain 执行真实业务逻辑 | `handle_tool_call_request` → `call_manual_tool_for_agent()` + `send_tool_call_result()` |
 
 **注册示例**：
-> 相关实现细节见：[handlers 下的工具注册](file:///Users/aman/Technology/rust/ai_orz/src/handlers/)
+> 相关实现细节见：[handlers 下的工具注册](src/handlers/)
 
 ### 4.3 神经 vs 外骨骼的关系图
 
@@ -549,7 +565,7 @@ ThinkResult::ToolCall?
 
 #### 12.2.1 `get_recent_traces` - 获取 Agent 最近的短期记忆
 
-> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[runtime/memory.rs](src/service/domain/runtime/memory.rs)
 
 **为什么是语法糖？**
 - 不改变底层行为，只是把"查最近 N 条"这个常用模式封装起来
@@ -558,7 +574,7 @@ ThinkResult::ToolCall?
 
 #### 12.2.2 `write_thinking_trace` - 写入思考 Trace
 
-> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[runtime/memory.rs](src/service/domain/runtime/memory.rs)
 
 **为什么是语法糖？**
 - 把"构造 MemoryTrace + 选择正确的 MemoryCreateParams 变体"这个细节封装起来
@@ -641,7 +657,7 @@ ThinkResult::ToolCall?
 
 ### 13.2 基础设施
 
-> 相关实现细节见：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 相关实现细节见：[runtime/ 模块](src/service/domain/runtime/)
 
 ### 13.3 全链路实现
 
@@ -688,7 +704,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 **解决方案：** 对齐 Message Domain / Finance Domain 的标准模式：
 
-> 相关实现细节见：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 相关实现细节见：[runtime/ 模块](src/service/domain/runtime/)
 
 **各文件职责：**
 | 文件 | 职责 |
@@ -755,7 +771,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 **✅ 新方案：PO 实体自己负责自己的 Prompt 格式化**
 
-> 相关实现细节见：[models/ 下各 PO 实体](file:///Users/aman/Technology/rust/ai_orz/src/models/)
+> 相关实现细节见：[models/ 下各 PO 实体](src/models/)
 
 **设计优势：**
 1. **单一职责**：PO 最了解自己的字段含义，格式化逻辑内聚
@@ -771,7 +787,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 **✅ 新方案：所有 LLM 调用必经 BrainDal**
 
-> 相关实现细节见：[dal/brain.rs + dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/brain.rs)
+> 相关实现细节见：[dal/brain.rs + dal/agent.rs](src/service/dal/brain.rs)
 
 **设计优势：**
 1. **统一入口**：所有 LLM 调用都经过 BrainDal，便于审计、限流、Token 统计
@@ -830,7 +846,7 @@ Handler ──► Domain ──► DAL ──► DAO
 ```
 
 **代码实现：**
-> 相关实现细节见：[runtime/awakening.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs)
+> 相关实现细节见：[runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
 
 **性能收益：** 减少 50% 的记忆写入 IO。
 
@@ -842,7 +858,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 **✅ 新方案：所有 Trace 写入收敛到 RuntimeMemory.write_thinking_trace()**
 
-> 相关实现细节见：[runtime/mod.rs::RuntimeMemory](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L84-L135)
+> 相关实现细节见：[runtime/mod.rs::RuntimeMemory](src/service/domain/runtime/mod.rs#L84-L135)
 
 **设计优势：**
 1. **单点扩展**：未来加 Trace 上报、Trace 采样、Trace 清洗，只改这一处
@@ -853,7 +869,7 @@ Handler ──► Domain ──► DAL ──► DAO
 
 ### 18.7 重构后的完整唤醒流程（最终版 7 步）
 
-> 相关实现细节见：[runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[runtime/memory.rs](src/service/domain/runtime/memory.rs)
 
 ---
 
@@ -913,7 +929,7 @@ pub enum AgentRuntimeState {
     Busy = 2,
 }
 ```
-> 当前实现：[enums/agent.rs::AgentRuntimeState](file:///Users/aman/Technology/rust/ai_orz/common/src/enums/agent.rs#L67-L80)
+> 当前实现：[enums/agent.rs::AgentRuntimeState](common/src/enums/agent.rs#L67-L80)
 
 ### 19.2 状态生命周期
 
@@ -1307,10 +1323,10 @@ pub struct AgentFetchOptions {
     pub stats_task_id: Option<String>,       // 统计过滤条件（with_stats=true 时生效）
 }
 ```
-> 当前实现：[dal/agent.rs::AgentFetchOptions](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/agent.rs#L77-L85)
+> 当前实现：[dal/agent.rs::AgentFetchOptions](src/service/dal/agent.rs#L77-L85)
 
 **使用示例**：
-> 相关实现细节见：[dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/agent.rs)
+> 相关实现细节见：[dal/agent.rs](src/service/dal/agent.rs)
 
 **设计要点**：
 - 参数全部可选，使用 `Option<bool>` 而非 `bool`，便于区分"未指定"和"明确指定"
@@ -1330,7 +1346,7 @@ pub trait ToolStatsDao: Send + Sync {
     async fn get_stats(&self, ctx, query, options) -> Result<ToolStats>;
 }
 ```
-> 当前实现：[dao/tool/mod.rs::ToolStatsDao](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/tool/mod.rs#L84-L95)
+> 当前实现：[dao/tool/mod.rs::ToolStatsDao](src/service/dao/tool/mod.rs#L84-L95)
 
 **ToolStats 结构**：
 ```rust
@@ -1339,7 +1355,7 @@ pub struct ToolStats {
     pub failed_count: Option<u64>,           // 失败次数
 }
 ```
-> 当前实现参考：[runtime/ 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 当前实现参考：[runtime/ 模块](src/service/domain/runtime/)
 
 **关键代码位置**：`src/service/dao/tool/stats_duckdb.rs`
 
@@ -1424,7 +1440,7 @@ Manual 工具调用校验：
 ### 22.5 Agent 入职自动安装
 
 当 Agent 状态流转到 `Onboarded` 时，自动安装 "project_management" 工具包：
-> 相关实现细节见：[Agent 入职 Domain](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/hr/)
+> 相关实现细节见：[Agent 入职 Domain](src/service/domain/hr/)
 
 ### 22.6 唤醒时工具加载与分流
 
@@ -1486,7 +1502,7 @@ pub struct TaskAssignmentMessage {
     pub to_agent_id: String,
 }
 ```
-> 当前实现：[api/message.rs::TaskAssignmentMessagePayload](file:///Users/aman/Technology/rust/ai_orz/common/src/api/message.rs#L217-L230)
+> 当前实现：[api/message.rs::TaskAssignmentMessagePayload](common/src/api/message.rs#L217-L230)
 
 **投递方法**：`MessageDelivery::send_task_assignment()`
 
@@ -1704,7 +1720,7 @@ Consumer 层
 
 #### ThinkingScene 枚举
 
-> 相关实现细节见：[runtime/types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106)
+> 相关实现细节见：[runtime/types.rs::ThinkingScene](src/service/domain/runtime/types.rs#L26-L106)
 
 #### ThinkingOptions 结构体
 
@@ -1717,7 +1733,7 @@ pub struct ThinkingOptions {
     pub user_profile: Option<UserPo>,   // 用户画像（预留扩展）
 }
 ```
-> 当前实现：[types.rs::ThinkingOptions](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L107-L177)
+> 当前实现：[types.rs::ThinkingOptions](src/service/domain/runtime/types.rs#L107-L177)
 
 **设计要点**：
 - 统一 options 字段避免频繁修改 awaken/sleep_and_settle 方法签名
@@ -1767,7 +1783,7 @@ pub trait RuntimeAwakening: Send + Sync {
     ) -> Result<IntentAnalysis>;
 }
 ```
-> 当前实现：[mod.rs::RuntimeAwakening](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/mod.rs#L141-L220)
+> 当前实现：[mod.rs::RuntimeAwakening](src/service/domain/runtime/mod.rs#L141-L220)
 
 ### 25.4 工具双层过滤机制
 
@@ -1791,7 +1807,7 @@ pub trait RuntimeAwakening: Send + Sync {
 
 **过滤逻辑**（在 awakening.rs 中实现）：
 
-> 相关实现细节见：[runtime/types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106)
+> 相关实现细节见：[runtime/types.rs::ThinkingScene](src/service/domain/runtime/types.rs#L26-L106)
 
 **设计要点**：
 - Auto 工具过滤在 brain 装配阶段（派生 ToolDescriptor 前），过滤后模型无法通过 function calling 调用
@@ -1869,7 +1885,7 @@ settle_memory handler / awaken 上下文压缩 / awaken 正常完成
 
 新增方法（trait 定义在 `src/models/prompt_builder.rs`，实现在 `src/service/dal/agent.rs`）：
 
-> 相关实现细节见：[models/prompt_builder.rs + dal/agent.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/prompt_builder.rs)
+> 相关实现细节见：[models/prompt_builder.rs + dal/agent.rs](src/models/prompt_builder.rs)
 
 **DefaultPromptBuilder 实现要点**：
 - 提取 `build_tools_and_skills_sections` 复用工具/技能区块拼装逻辑
@@ -2093,16 +2109,16 @@ awaken 循环
 
 如果未来需要增加「复习沉淀」「多 Agent 辩论」等新的思考场景，可参考现有的 ThinkingScene 分支实现：
 
-1. 在 [types.rs::ThinkingScene](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs#L26-L106) 枚举中新增变体，配套 `is_tool_allowed` 的 tag 白名单分支
-2. 在 [awakening.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/awakening.rs) 中新增对应入口函数（类比 `sleep_and_settle` / `awaken_for_summary`），复用 `init_think_runtime_and_policy` + `build_scene_tool_descriptors` + `build_scene_skills` 三个场景辅助函数
-3. 在 [prompt_builder.rs::PromptBuilder](file:///Users/aman/Technology/rust/ai_orz/src/models/prompt_builder.rs#L31-L150) 新增专用 build_xxx_prompt trait 方法，并在 `dal/agent.rs` 的 `DefaultPromptBuilder` 中补充实现
+1. 在 [types.rs::ThinkingScene](src/service/domain/runtime/types.rs#L26-L106) 枚举中新增变体，配套 `is_tool_allowed` 的 tag 白名单分支
+2. 在 [awakening.rs](src/service/domain/runtime/awakening.rs) 中新增对应入口函数（类比 `sleep_and_settle` / `awaken_for_summary`），复用 `init_think_runtime_and_policy` + `build_scene_tool_descriptors` + `build_scene_skills` 三个场景辅助函数
+3. 在 [prompt_builder.rs::PromptBuilder](src/models/prompt_builder.rs#L31-L150) 新增专用 build_xxx_prompt trait 方法，并在 `dal/agent.rs` 的 `DefaultPromptBuilder` 中补充实现
 
 ### 场景 2：统计模块驱动的外部唤醒轮次落地
 
 若需要让 ToolCallResult 消息自动触发下一次 awaken（并受统计模块的轮次预算约束）：
 
-1. 参考现有的 consumer 消息循环入口 [consumer/message.rs](file:///Users/aman/Technology/rust/ai_orz/src/consumer/message.rs) 中 Agent 消息处理分支
-2. 复用 [pkg/stats/agent_awake.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/stats/agent_awake.rs) 中的 `AgentAwakeEvent.exit_reason` 字段补充轮次预算统计维度
-3. 工具调用追溯可通过 [tool_execution.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/tool_execution.rs) 的 `trace_ref` 查询完整 `ToolCallEntry`
+1. 参考现有的 consumer 消息循环入口 [consumer/message.rs](src/consumer/message.rs) 中 Agent 消息处理分支
+2. 复用 [pkg/stats/agent_awake.rs](src/pkg/stats/agent_awake.rs) 中的 `AgentAwakeEvent.exit_reason` 字段补充轮次预算统计维度
+3. 工具调用追溯可通过 [tool_execution.rs](src/service/domain/runtime/tool_execution.rs) 的 `trace_ref` 查询完整 `ToolCallEntry`
 
 

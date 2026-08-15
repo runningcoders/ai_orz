@@ -2,26 +2,26 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/cron_trigger.rs](file://common/src/api/cron_trigger.rs)
-- [common/src/enums/cron_trigger.rs](file://common/src/enums/cron_trigger.rs)
-- [migrations/20260711000000_cron_triggers.sql](file://migrations/20260711000000_cron_triggers.sql)
-- [src/models/cron_trigger.rs](file://src/models/cron_trigger.rs)
-- [src/service/dao/cron_trigger/mod.rs](file://src/service/dao/cron_trigger/mod.rs)
-- [src/service/dao/cron_trigger/sqlite.rs](file://src/service/dao/cron_trigger/sqlite.rs)
-- [src/service/dal/cron_trigger.rs](file://src/service/dal/cron_trigger.rs)
-- [src/service/domain/system/mod.rs](file://src/service/domain/system/mod.rs)
-- [src/handlers/system/cron_trigger/mod.rs](file://src/handlers/system/cron_trigger/mod.rs)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs](file://src/handlers/system/cron_trigger/create_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/get_cron_trigger.rs](file://src/handlers/system/cron_trigger/get_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/list_cron_triggers.rs](file://src/handlers/system/cron_trigger/list_cron_triggers.rs)
-- [src/handlers/system/cron_trigger/update_cron_trigger.rs](file://src/handlers/system/cron_trigger/update_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/delete_cron_trigger.rs](file://src/handlers/system/cron_trigger/delete_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/pause_cron_trigger.rs](file://src/handlers/system/cron_trigger/pause_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/resume_cron_trigger.rs](file://src/handlers/system/cron_trigger/resume_cron_trigger.rs)
-- [src/handlers/system/cron_trigger/response.rs](file://src/handlers/system/cron_trigger/response.rs)
-- [src/producer/cron_trigger.rs](file://src/producer/cron_trigger.rs)
-- [src/consumer/scheduler.rs](file://src/consumer/scheduler.rs)
-- [tests/integration/system_cron_triggers_test.rs](file://tests/integration/system_cron_triggers_test.rs)
+- [common/src/api/cron_trigger.rs](common/src/api/cron_trigger.rs)
+- [common/src/enums/cron_trigger.rs](common/src/enums/cron_trigger.rs)
+- [migrations/20260711000000_cron_triggers.sql](migrations/20260711000000_cron_triggers.sql)
+- [src/models/cron_trigger.rs](src/models/cron_trigger.rs)
+- [src/service/dao/cron_trigger/mod.rs](src/service/dao/cron_trigger/mod.rs)
+- [src/service/dao/cron_trigger/sqlite.rs](src/service/dao/cron_trigger/sqlite.rs)
+- [src/service/dal/cron_trigger.rs](src/service/dal/cron_trigger.rs)
+- [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
+- [src/handlers/system/cron_trigger/mod.rs](src/handlers/system/cron_trigger/mod.rs)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs](src/handlers/system/cron_trigger/create_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/get_cron_trigger.rs](src/handlers/system/cron_trigger/get_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/list_cron_triggers.rs](src/handlers/system/cron_trigger/list_cron_triggers.rs)
+- [src/handlers/system/cron_trigger/update_cron_trigger.rs](src/handlers/system/cron_trigger/update_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/delete_cron_trigger.rs](src/handlers/system/cron_trigger/delete_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/pause_cron_trigger.rs](src/handlers/system/cron_trigger/pause_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/resume_cron_trigger.rs](src/handlers/system/cron_trigger/resume_cron_trigger.rs)
+- [src/handlers/system/cron_trigger/response.rs](src/handlers/system/cron_trigger/response.rs)
+- [src/producer/cron_trigger.rs](src/producer/cron_trigger.rs)
+- [src/consumer/scheduler.rs](src/consumer/scheduler.rs)
+- [tests/integration/system_cron_triggers_test.rs](tests/integration/system_cron_triggers_test.rs)
 </cite>
 
 ## 目录
@@ -70,22 +70,22 @@ S --> DB
 ```
 
 图表来源
-- [src/handlers/system/cron_trigger/mod.rs:1-20](file://src/handlers/system/cron_trigger/mod.rs#L1-L20)
-- [src/producer/cron_trigger.rs:26-87](file://src/producer/cron_trigger.rs#L26-L87)
-- [src/consumer/scheduler.rs:49-95](file://src/consumer/scheduler.rs#L49-L95)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:34-74](file://src/service/dal/cron_trigger.rs#L34-L74)
-- [src/service/dao/cron_trigger/mod.rs:18-56](file://src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:1-25](file://migrations/20260711000000_cron_triggers.sql#L1-L25)
+- [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
+- [src/producer/cron_trigger.rs:26-87](src/producer/cron_trigger.rs#L26-L87)
+- [src/consumer/scheduler.rs:49-95](src/consumer/scheduler.rs#L49-L95)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
+- [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
+- [migrations/20260711000000_cron_triggers.sql:1-25](migrations/20260711000000_cron_triggers.sql#L1-L25)
 
 章节来源
-- [src/handlers/system/cron_trigger/mod.rs:1-20](file://src/handlers/system/cron_trigger/mod.rs#L1-L20)
-- [src/producer/cron_trigger.rs:26-87](file://src/producer/cron_trigger.rs#L26-L87)
-- [src/consumer/scheduler.rs:49-95](file://src/consumer/scheduler.rs#L49-L95)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:34-74](file://src/service/dal/cron_trigger.rs#L34-L74)
-- [src/service/dao/cron_trigger/mod.rs:18-56](file://src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:1-25](file://migrations/20260711000000_cron_triggers.sql#L1-L25)
+- [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
+- [src/producer/cron_trigger.rs:26-87](src/producer/cron_trigger.rs#L26-L87)
+- [src/consumer/scheduler.rs:49-95](src/consumer/scheduler.rs#L49-L95)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
+- [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
+- [migrations/20260711000000_cron_triggers.sql:1-25](migrations/20260711000000_cron_triggers.sql#L1-L25)
 
 ## 核心组件
 - HTTP Handlers：提供 REST 接口，负责请求校验、上下文传递与结果序列化。
@@ -96,17 +96,17 @@ S --> DB
 - Consumer：消费触发事件，根据 payload.action 路由到具体业务处理。
 
 章节来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
-- [src/handlers/system/cron_trigger/list_cron_triggers.rs:12-29](file://src/handlers/system/cron_trigger/list_cron_triggers.rs#L12-L29)
-- [src/handlers/system/cron_trigger/update_cron_trigger.rs:11-57](file://src/handlers/system/cron_trigger/update_cron_trigger.rs#L11-L57)
-- [src/handlers/system/cron_trigger/delete_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/delete_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/pause_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/pause_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/resume_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/resume_cron_trigger.rs#L11-L22)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:34-177](file://src/service/dal/cron_trigger.rs#L34-L177)
-- [src/service/dao/cron_trigger/sqlite.rs:166-213](file://src/service/dao/cron_trigger/sqlite.rs#L166-L213)
-- [src/producer/cron_trigger.rs:26-87](file://src/producer/cron_trigger.rs#L26-L87)
-- [src/consumer/scheduler.rs:49-95](file://src/consumer/scheduler.rs#L49-L95)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
+- [src/handlers/system/cron_trigger/list_cron_triggers.rs:12-29](src/handlers/system/cron_trigger/list_cron_triggers.rs#L12-L29)
+- [src/handlers/system/cron_trigger/update_cron_trigger.rs:11-57](src/handlers/system/cron_trigger/update_cron_trigger.rs#L11-L57)
+- [src/handlers/system/cron_trigger/delete_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/delete_cron_trigger.rs#L11-L22)
+- [src/handlers/system/cron_trigger/pause_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/pause_cron_trigger.rs#L11-L22)
+- [src/handlers/system/cron_trigger/resume_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/resume_cron_trigger.rs#L11-L22)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:34-177](src/service/dal/cron_trigger.rs#L34-L177)
+- [src/service/dao/cron_trigger/sqlite.rs:166-213](src/service/dao/cron_trigger/sqlite.rs#L166-L213)
+- [src/producer/cron_trigger.rs:26-87](src/producer/cron_trigger.rs#L26-L87)
+- [src/consumer/scheduler.rs:49-95](src/consumer/scheduler.rs#L49-L95)
 
 ## 架构总览
 下图展示一次“创建触发器”的端到端流程：Handler 校验参数并构造 PO，调用 Domain，再经 DAL 落库；随后通过列表或详情接口可验证结果。
@@ -133,10 +133,10 @@ H-->>U : 返回触发器详情
 ```
 
 图表来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:83-87](file://src/service/dal/cron_trigger.rs#L83-L87)
-- [src/service/dao/cron_trigger/sqlite.rs:166-213](file://src/service/dao/cron_trigger/sqlite.rs#L166-L213)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:83-87](src/service/dal/cron_trigger.rs#L83-L87)
+- [src/service/dao/cron_trigger/sqlite.rs:166-213](src/service/dao/cron_trigger/sqlite.rs#L166-L213)
 
 ## 详细组件分析
 
@@ -150,9 +150,9 @@ H-->>U : 返回触发器详情
   - payload 为 JSON 字符串，包含 action 与 extra 等业务负载。
 
 章节来源
-- [common/src/enums/cron_trigger.rs:9-22](file://common/src/enums/cron_trigger.rs#L9-L22)
-- [src/models/cron_trigger.rs:10-27](file://src/models/cron_trigger.rs#L10-L27)
-- [migrations/20260711000000_cron_triggers.sql:4-19](file://migrations/20260711000000_cron_triggers.sql#L4-L19)
+- [common/src/enums/cron_trigger.rs:9-22](common/src/enums/cron_trigger.rs#L9-L22)
+- [src/models/cron_trigger.rs:10-27](src/models/cron_trigger.rs#L10-L27)
+- [migrations/20260711000000_cron_triggers.sql:4-19](migrations/20260711000000_cron_triggers.sql#L4-L19)
 
 ### 调度与执行流程
 - Producer 每 60 秒轮询，查询 next_run_at <= now 且 is_enabled=1 的触发器，发布 CronTriggerEvent，并立即更新 last_run_at 与下一次执行时间。
@@ -173,10 +173,10 @@ Next --> |否| End
 ```
 
 图表来源
-- [src/producer/cron_trigger.rs:38-87](file://src/producer/cron_trigger.rs#L38-L87)
-- [src/consumer/scheduler.rs:53-95](file://src/consumer/scheduler.rs#L53-L95)
-- [src/service/dal/cron_trigger.rs:140-175](file://src/service/dal/cron_trigger.rs#L140-L175)
-- [src/service/dao/cron_trigger/sqlite.rs:166-213](file://src/service/dao/cron_trigger/sqlite.rs#L166-L213)
+- [src/producer/cron_trigger.rs:38-87](src/producer/cron_trigger.rs#L38-L87)
+- [src/consumer/scheduler.rs:53-95](src/consumer/scheduler.rs#L53-L95)
+- [src/service/dal/cron_trigger.rs:140-175](src/service/dal/cron_trigger.rs#L140-L175)
+- [src/service/dao/cron_trigger/sqlite.rs:166-213](src/service/dao/cron_trigger/sqlite.rs#L166-L213)
 
 ### 状态管理与错误处理
 - 暂停/恢复：DAL 层读取记录，修改 is_enabled 并记录更新时间与操作人。
@@ -188,12 +188,12 @@ Next --> |否| End
   - 系统异常：Internal（如 registry 未注册）。
 
 章节来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-38](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L38)
-- [src/handlers/system/cron_trigger/get_cron_trigger.rs:16-24](file://src/handlers/system/cron_trigger/get_cron_trigger.rs#L16-L24)
-- [src/handlers/system/cron_trigger/update_cron_trigger.rs:16-22](file://src/handlers/system/cron_trigger/update_cron_trigger.rs#L16-L22)
-- [src/service/dal/cron_trigger.rs:109-129](file://src/service/dal/cron_trigger.rs#L109-L129)
-- [src/service/dal/cron_trigger.rs:140-175](file://src/service/dal/cron_trigger.rs#L140-L175)
-- [src/producer/cron_trigger.rs:48-50](file://src/producer/cron_trigger.rs#L48-L50)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-38](src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L38)
+- [src/handlers/system/cron_trigger/get_cron_trigger.rs:16-24](src/handlers/system/cron_trigger/get_cron_trigger.rs#L16-L24)
+- [src/handlers/system/cron_trigger/update_cron_trigger.rs:16-22](src/handlers/system/cron_trigger/update_cron_trigger.rs#L16-L22)
+- [src/service/dal/cron_trigger.rs:109-129](src/service/dal/cron_trigger.rs#L109-L129)
+- [src/service/dal/cron_trigger.rs:140-175](src/service/dal/cron_trigger.rs#L140-L175)
+- [src/producer/cron_trigger.rs:48-50](src/producer/cron_trigger.rs#L48-L50)
 
 ### 类与模块关系图
 ```mermaid
@@ -251,10 +251,10 @@ CronTriggerPo <.. CronTriggerDalImpl : "使用"
 ```
 
 图表来源
-- [src/models/cron_trigger.rs:10-27](file://src/models/cron_trigger.rs#L10-L27)
-- [src/service/dao/cron_trigger/mod.rs:18-56](file://src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [src/service/dal/cron_trigger.rs:34-74](file://src/service/dal/cron_trigger.rs#L34-L74)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
+- [src/models/cron_trigger.rs:10-27](src/models/cron_trigger.rs#L10-L27)
+- [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
+- [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
 
 ## 依赖关系分析
 - Handler 依赖 Domain::CronManager，不直接访问 DAL/DAO。
@@ -273,18 +273,18 @@ CO["Consumer"] --> DM
 ```
 
 图表来源
-- [src/handlers/system/cron_trigger/mod.rs:1-20](file://src/handlers/system/cron_trigger/mod.rs#L1-L20)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:34-74](file://src/service/dal/cron_trigger.rs#L34-L74)
-- [src/service/dao/cron_trigger/mod.rs:18-56](file://src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:21-24](file://migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
+- [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
+- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
 
 章节来源
-- [src/handlers/system/cron_trigger/mod.rs:1-20](file://src/handlers/system/cron_trigger/mod.rs#L1-L20)
-- [src/service/domain/system/mod.rs:116-141](file://src/service/domain/system/mod.rs#L116-L141)
-- [src/service/dal/cron_trigger.rs:34-74](file://src/service/dal/cron_trigger.rs#L34-L74)
-- [src/service/dao/cron_trigger/mod.rs:18-56](file://src/service/dao/cron_trigger/mod.rs#L18-L56)
-- [migrations/20260711000000_cron_triggers.sql:21-24](file://migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [src/handlers/system/cron_trigger/mod.rs:1-20](src/handlers/system/cron_trigger/mod.rs#L1-L20)
+- [src/service/domain/system/mod.rs:116-141](src/service/domain/system/mod.rs#L116-L141)
+- [src/service/dal/cron_trigger.rs:34-74](src/service/dal/cron_trigger.rs#L34-L74)
+- [src/service/dao/cron_trigger/mod.rs:18-56](src/service/dao/cron_trigger/mod.rs#L18-L56)
+- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
 
 ## 性能与调度特性
 - 轮询周期：Producer 默认每 60 秒轮询一次到期触发器。
@@ -294,9 +294,9 @@ CO["Consumer"] --> DM
 - 失败重试：当前未内置指数退避重试；可通过上层消息队列或消费者重试策略扩展。
 
 章节来源
-- [src/producer/cron_trigger.rs:38-87](file://src/producer/cron_trigger.rs#L38-L87)
-- [src/service/dao/cron_trigger/sqlite.rs:166-213](file://src/service/dao/cron_trigger/sqlite.rs#L166-L213)
-- [migrations/20260711000000_cron_triggers.sql:21-24](file://migrations/20260711000000_cron_triggers.sql#L21-L24)
+- [src/producer/cron_trigger.rs:38-87](src/producer/cron_trigger.rs#L38-L87)
+- [src/service/dao/cron_trigger/sqlite.rs:166-213](src/service/dao/cron_trigger/sqlite.rs#L166-L213)
+- [migrations/20260711000000_cron_triggers.sql:21-24](migrations/20260711000000_cron_triggers.sql#L21-L24)
 
 ## 故障排查指南
 - 创建失败（参数缺失）：检查 Once 是否提供 run_at，Interval 是否提供 interval_seconds。
@@ -306,10 +306,10 @@ CO["Consumer"] --> DM
 - 系统异常：若出现 Internal 错误，检查 AOP Registry 是否已注册。
 
 章节来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-38](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L38)
-- [src/service/dal/cron_trigger.rs:109-129](file://src/service/dal/cron_trigger.rs#L109-L129)
-- [src/producer/cron_trigger.rs:48-87](file://src/producer/cron_trigger.rs#L48-L87)
-- [src/consumer/scheduler.rs:53-95](file://src/consumer/scheduler.rs#L53-L95)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-38](src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L38)
+- [src/service/dal/cron_trigger.rs:109-129](src/service/dal/cron_trigger.rs#L109-L129)
+- [src/producer/cron_trigger.rs:48-87](src/producer/cron_trigger.rs#L48-L87)
+- [src/consumer/scheduler.rs:53-95](src/consumer/scheduler.rs#L53-L95)
 
 ## 结论
 AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并通过 Producer/Consumer 模式实现解耦的事件驱动调度。当前版本稳定支持 Once 与 Interval 两种触发方式，Cron 表达式类型已预留。建议在生产环境中结合监控指标与日志进行运行态观测，并根据业务需求扩展并发与重试机制。
@@ -321,9 +321,9 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
 - 触发器详情字段：id、name、trigger_type、cron_expression、interval_seconds、run_at、next_run_at、is_enabled、payload、last_run_at、created_at、updated_at、created_by、updated_by。
 
 章节来源
-- [common/src/enums/cron_trigger.rs:9-22](file://common/src/enums/cron_trigger.rs#L9-L22)
-- [common/src/api/cron_trigger.rs:45-76](file://common/src/api/cron_trigger.rs#L45-L76)
-- [src/handlers/system/cron_trigger/response.rs:64-80](file://src/handlers/system/cron_trigger/response.rs#L64-L80)
+- [common/src/enums/cron_trigger.rs:9-22](common/src/enums/cron_trigger.rs#L9-L22)
+- [common/src/api/cron_trigger.rs:45-76](common/src/api/cron_trigger.rs#L45-L76)
+- [src/handlers/system/cron_trigger/response.rs:64-80](src/handlers/system/cron_trigger/response.rs#L64-L80)
 
 ### 接口清单
 - 创建触发器
@@ -360,14 +360,14 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
   - 响应：ResumeCronTriggerResponse（success）
 
 章节来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
-- [src/handlers/system/cron_trigger/get_cron_trigger.rs:11-24](file://src/handlers/system/cron_trigger/get_cron_trigger.rs#L11-L24)
-- [src/handlers/system/cron_trigger/list_cron_triggers.rs:12-29](file://src/handlers/system/cron_trigger/list_cron_triggers.rs#L12-L29)
-- [src/handlers/system/cron_trigger/update_cron_trigger.rs:11-57](file://src/handlers/system/cron_trigger/update_cron_trigger.rs#L11-L57)
-- [src/handlers/system/cron_trigger/delete_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/delete_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/pause_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/pause_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/resume_cron_trigger.rs:11-22](file://src/handlers/system/cron_trigger/resume_cron_trigger.rs#L11-L22)
-- [src/handlers/system/cron_trigger/response.rs:8-62](file://src/handlers/system/cron_trigger/response.rs#L8-L62)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-67](src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L67)
+- [src/handlers/system/cron_trigger/get_cron_trigger.rs:11-24](src/handlers/system/cron_trigger/get_cron_trigger.rs#L11-L24)
+- [src/handlers/system/cron_trigger/list_cron_triggers.rs:12-29](src/handlers/system/cron_trigger/list_cron_triggers.rs#L12-L29)
+- [src/handlers/system/cron_trigger/update_cron_trigger.rs:11-57](src/handlers/system/cron_trigger/update_cron_trigger.rs#L11-L57)
+- [src/handlers/system/cron_trigger/delete_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/delete_cron_trigger.rs#L11-L22)
+- [src/handlers/system/cron_trigger/pause_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/pause_cron_trigger.rs#L11-L22)
+- [src/handlers/system/cron_trigger/resume_cron_trigger.rs:11-22](src/handlers/system/cron_trigger/resume_cron_trigger.rs#L11-L22)
+- [src/handlers/system/cron_trigger/response.rs:8-62](src/handlers/system/cron_trigger/response.rs#L8-L62)
 
 ### 请求与响应示例
 - 创建一次性触发器
@@ -392,16 +392,16 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
   - 响应：{ success: true }
 
 章节来源
-- [tests/integration/system_cron_triggers_test.rs:70-100](file://tests/integration/system_cron_triggers_test.rs#L70-L100)
-- [src/handlers/system/cron_trigger/response.rs:82-105](file://src/handlers/system/cron_trigger/response.rs#L82-L105)
+- [tests/integration/system_cron_triggers_test.rs:70-100](tests/integration/system_cron_triggers_test.rs#L70-L100)
+- [src/handlers/system/cron_trigger/response.rs:82-105](src/handlers/system/cron_trigger/response.rs#L82-L105)
 
 ### Cron 表达式语法说明
 - 当前版本未启用 Cron 表达式触发类型；创建或更新时使用 TriggerType::Cron 将返回 UnsupportedOperation。
 - 未来启用后，建议采用标准 5 位或 6 位 Cron 表达式（分钟、小时、日、月、周几，可选年），并与 next_run_at 计算逻辑配合。
 
 章节来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:32-37](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L32-L37)
-- [src/service/dal/cron_trigger.rs:168-173](file://src/service/dal/cron_trigger.rs#L168-L173)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:32-37](src/handlers/system/cron_trigger/create_cron_trigger.rs#L32-L37)
+- [src/service/dal/cron_trigger.rs:168-173](src/service/dal/cron_trigger.rs#L168-L173)
 
 ### 执行环境与日志监控
 - 执行环境：Producer 以系统上下文 RequestContext 发起查询与更新；Consumer 解析 payload 并调用相应业务域。
@@ -412,8 +412,8 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
   - 到期触发器数量、发布事件数、消费成功率、平均消费耗时、失败重试次数。
 
 章节来源
-- [src/producer/cron_trigger.rs:64-83](file://src/producer/cron_trigger.rs#L64-L83)
-- [src/consumer/scheduler.rs:58-91](file://src/consumer/scheduler.rs#L58-L91)
+- [src/producer/cron_trigger.rs:64-83](src/producer/cron_trigger.rs#L64-L83)
+- [src/consumer/scheduler.rs:58-91](src/consumer/scheduler.rs#L58-L91)
 
 ### 常见使用场景
 - 数据同步：创建 Interval 触发器，payload 中携带同步目标与批次大小，消费者执行增量同步。
@@ -421,5 +421,5 @@ AI Orz 的定时任务管理提供了完整的 CRUD 与启停控制能力，并�
 - 报告生成：创建 Once 触发器，payload 中指定报告模板与输出路径，消费者生成并归档报告。
 
 章节来源
-- [src/consumer/scheduler.rs:78-91](file://src/consumer/scheduler.rs#L78-L91)
-- [tests/integration/system_cron_triggers_test.rs:70-100](file://tests/integration/system_cron_triggers_test.rs#L70-L100)
+- [src/consumer/scheduler.rs:78-91](src/consumer/scheduler.rs#L78-L91)
+- [tests/integration/system_cron_triggers_test.rs:70-100](tests/integration/system_cron_triggers_test.rs#L70-L100)

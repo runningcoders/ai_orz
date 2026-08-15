@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/stats/agent_awake.rs](file://src/pkg/stats/agent_awake.rs)
-- [src/consumer/think_round_stats_consumer.rs](file://src/consumer/think_round_stats_consumer.rs)
-- [src/models/events/think_round.rs](file://src/models/events/think_round.rs)
-- [src/service/domain/runtime/awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [docs/stats_query_design.md](file://docs/stats_query_design.md)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/consumer/aop_stats_hook.rs](file://src/consumer/aop_stats_hook.rs)
-- [frontend/src/components/stats.rs](file://frontend/src/components/stats.rs)
+- [src/pkg/stats/agent_awake.rs](src/pkg/stats/agent_awake.rs)
+- [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs)
+- [src/models/events/think_round.rs](src/models/events/think_round.rs)
+- [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
+- [docs/stats_query_design.md](docs/stats_query_design.md)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
+- [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
 </cite>
 
 ## 目录
@@ -74,13 +74,13 @@ F --> H
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/consumer/think_round_stats_consumer.rs:29-72](file://src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:195-361](file://docs/stats_query_design.md#L195-L361)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
+- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [docs/stats_query_design.md:195-361](file://docs/stats_query_design.md#L195-L361)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
 
 ## 核心组件
 - AgentAwakeEvent：用于记录 Agent 每次唤醒（消息消费触发）的调用次数、耗时、状态等指标，绑定专用表 agent_awake_events。
@@ -91,12 +91,12 @@ F --> H
 - 前端统计面板：在 Agent 详情页按需注入并渲染唤醒次数、QPS、Token 用量等指标。
 
 章节来源
-- [src/pkg/stats/agent_awake.rs:12-198](file://src/pkg/stats/agent_awake.rs#L12-L198)
-- [src/models/events/think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
-- [src/consumer/think_round_stats_consumer.rs:1-73](file://src/consumer/think_round_stats_consumer.rs#L1-L73)
-- [docs/stats_query_design.md:195-361](file://docs/stats_query_design.md#L195-L361)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [frontend/src/components/stats.rs:303-425](file://frontend/src/components/stats.rs#L303-L425)
+- [src/pkg/stats/agent_awake.rs:12-198](src/pkg/stats/agent_awake.rs#L12-L198)
+- [src/models/events/think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
+- [src/consumer/think_round_stats_consumer.rs:1-73](src/consumer/think_round_stats_consumer.rs#L1-L73)
+- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [frontend/src/components/stats.rs:303-425](frontend/src/components/stats.rs#L303-L425)
 
 ## 架构总览
 Agent 统计采用“事件驱动 + 领域化 DAO/DAL”的分层架构：
@@ -130,9 +130,9 @@ H-->>F : JSON
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/consumer/think_round_stats_consumer.rs:29-72](file://src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:300-361](file://docs/stats_query_design.md#L300-L361)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
+- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
 
 ## 详细组件分析
 
@@ -166,11 +166,11 @@ AgentAwakeStatTable --> AgentAwakeEvent : "持久化"
 ```
 
 图表来源
-- [src/pkg/stats/agent_awake.rs:12-198](file://src/pkg/stats/agent_awake.rs#L12-L198)
+- [src/pkg/stats/agent_awake.rs:12-198](src/pkg/stats/agent_awake.rs#L12-L198)
 
 章节来源
-- [src/pkg/stats/agent_awake.rs:12-198](file://src/pkg/stats/agent_awake.rs#L12-L198)
-- [src/service/domain/runtime/awakening.rs:624-728](file://src/service/domain/runtime/awakening.rs#L624-L728)
+- [src/pkg/stats/agent_awake.rs:12-198](src/pkg/stats/agent_awake.rs#L12-L198)
+- [src/service/domain/runtime/awakening.rs:624-728](src/service/domain/runtime/awakening.rs#L624-L728)
 
 ### 思考轮次统计 ThinkRoundStatsConsumer
 - 作用：订阅 agent.think.round 事件，将每轮 think 的 token 用量写入模型调用统计表。
@@ -187,12 +187,12 @@ Record --> End(["完成"])
 ```
 
 图表来源
-- [src/consumer/think_round_stats_consumer.rs:29-72](file://src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [src/models/events/think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
+- [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
+- [src/models/events/think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
 
 章节来源
-- [src/consumer/think_round_stats_consumer.rs:1-73](file://src/consumer/think_round_stats_consumer.rs#L1-L73)
-- [src/models/events/think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
+- [src/consumer/think_round_stats_consumer.rs:1-73](src/consumer/think_round_stats_consumer.rs#L1-L73)
+- [src/models/events/think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
 
 ### RuntimeDomain 中的采集点
 - awaken：设置 Busy 状态、发布循环启动事件、执行 think 循环、记录 Trace、总结退出流程、记录 AgentAwakeEvent（成功/失败）、发布循环完成事件。
@@ -217,10 +217,10 @@ RD->>A : 发布 AgentLoopEvent.finished
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
 
 ### 统计查询接口与使用示例
 - 领域划分：AgentStatsDao 仅负责 Agent 自身维度的 call_summary（来自 agent_awake_events）；ModelProviderStatsDao 负责模型调用领域的所有统计（call_summary、token_summary、time_series）。
@@ -239,12 +239,12 @@ DAL --> RESP["返回 AgentStats / ModelCallStats"]
 ```
 
 图表来源
-- [docs/stats_query_design.md:195-361](file://docs/stats_query_design.md#L195-L361)
-- [src/service/dal/agent.rs:763-781](file://src/service/dal/agent.rs#L763-L781)
+- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [src/service/dal/agent.rs:763-781](src/service/dal/agent.rs#L763-L781)
 
 章节来源
-- [docs/stats_query_design.md:195-361](file://docs/stats_query_design.md#L195-L361)
-- [src/service/dal/agent.rs:763-781](file://src/service/dal/agent.rs#L763-L781)
+- [docs/stats_query_design.md:195-361](docs/stats_query_design.md#L195-L361)
+- [src/service/dal/agent.rs:763-781](src/service/dal/agent.rs#L763-L781)
 
 ### 可视化展示与报表
 - 前端组件：AgentStatsPanel 展示唤醒次数、平均/瞬时 QPS；同时展示模型调用的调用次数与 Token 用量。
@@ -252,10 +252,10 @@ DAL --> RESP["返回 AgentStats / ModelCallStats"]
 - 实时 AOP 统计：System AOP Handler 暴露内存统计查询（publish/consume/success/failure 概览、时序、分布），供监控页轮询渲染。
 
 章节来源
-- [frontend/src/components/stats.rs:303-425](file://frontend/src/components/stats.rs#L303-L425)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/consumer/aop_stats_hook.rs](file://src/consumer/aop_stats_hook.rs)
+- [frontend/src/components/stats.rs:303-425](frontend/src/components/stats.rs#L303-L425)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
 
 ## 依赖关系分析
 - 采集依赖：RuntimeDomain 依赖 RequestContext 提取组织/用户/项目/任务上下文；依赖 AOP 发布 ThinkRoundEvent；依赖 Stats 记录 AgentAwakeEvent。
@@ -277,14 +277,14 @@ F["前端"] --> H
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/consumer/think_round_stats_consumer.rs:29-72](file://src/consumer/think_round_stats_consumer.rs#L29-L72)
-- [docs/stats_query_design.md:300-361](file://docs/stats_query_design.md#L300-L361)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/consumer/think_round_stats_consumer.rs:29-72](src/consumer/think_round_stats_consumer.rs#L29-L72)
+- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/consumer/think_round_stats_consumer.rs:1-73](file://src/consumer/think_round_stats_consumer.rs#L1-L73)
-- [docs/stats_query_design.md:300-361](file://docs/stats_query_design.md#L300-L361)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/consumer/think_round_stats_consumer.rs:1-73](src/consumer/think_round_stats_consumer.rs#L1-L73)
+- [docs/stats_query_design.md:300-361](docs/stats_query_design.md#L300-L361)
 
 ## 性能考量
 - 事件落库非阻塞：统计写入失败仅记录警告，不阻塞业务主流程（awaken 成功/失败路径均容错）。
@@ -302,10 +302,10 @@ F["前端"] --> H
 - 前端未显示：确认详情页是否传入 with_stats / with_model_call_stats；检查 Handler 返回结构与前端组件映射。
 
 章节来源
-- [src/pkg/stats/agent_awake.rs:106-198](file://src/pkg/stats/agent_awake.rs#L106-L198)
-- [src/consumer/think_round_stats_consumer.rs:43-70](file://src/consumer/think_round_stats_consumer.rs#L43-L70)
-- [docs/stats_query_design.md:222-250](file://docs/stats_query_design.md#L222-L250)
-- [frontend/src/components/stats.rs:342-368](file://frontend/src/components/stats.rs#L342-L368)
+- [src/pkg/stats/agent_awake.rs:106-198](src/pkg/stats/agent_awake.rs#L106-L198)
+- [src/consumer/think_round_stats_consumer.rs:43-70](src/consumer/think_round_stats_consumer.rs#L43-L70)
+- [docs/stats_query_design.md:222-250](docs/stats_query_design.md#L222-L250)
+- [frontend/src/components/stats.rs:342-368](frontend/src/components/stats.rs#L342-L368)
 
 ## 结论
 Agent 维度统计通过“事件驱动 + 领域化 DAO/DAL”实现了高内聚、低耦合的采集与查询体系。AgentAwakeEvent 保障唤醒指标可观测，ThinkRoundStatsConsumer 将每轮 think 的 token 用量纳入模型调用统计，DAL 提供统一的查询接口，前端按需渲染。结合内存级 AOP 统计，系统具备实时监控与报表能力。未来可扩展更多实体专属统计表与更细粒度的聚合维度。

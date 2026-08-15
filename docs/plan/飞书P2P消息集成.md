@@ -148,21 +148,7 @@ MessageChannelDal match ChannelType::Lark → lark_dao.push()
 
 ## 五、验收清单（2026-07-17 全部达成 ✅）
 
-- [x] LarkDao HTTP：tenant_access_token 缓存 + 提前 5 分钟自动刷新
-- [x] LarkDao HTTP：push / test_connection / send_message 实现
-- [x] LarkDao WebSocket：连接建立 + 30s 心跳 + 指数退避重连
-- [x] LarkDao 事件解析：P2P 文本保留，群聊消息 + 非文本消息过滤丢弃
-- [x] 分层合规 v4：consumer 不直接依赖具体 DAL，通过 AOP 中台 + Domain 调用
-- [x] DAL 合规：LarkMessageChannelDal 仅依赖 MessageChannelDao，不依赖 AgentDal
-- [x] Agent 路由：MessageChannel.agent_id → feishu_reception role → 兜底 Onboarded，3 级生效
-- [x] Agent roles 过滤：json_each 精确匹配，feishu_reception tag 查询正确
-- [x] ChannelConfig：lark_open_id 字段存在，find_by_lark_open_id 查询通过
-- [x] 管理员绑定流程：MessageChannel 创建 API + lark_open_id + agent_id 组合生效
-- [x] 未绑定用户：飞书私信被警告记录且不入队（不自动创建 User）
-- [x] AdaptedMessage.to_agent_id 为 Option 语义：渠道绑定 Some，未绑定 None
-- [x] 配置向后兼容：lark.enabled=false 时，WebSockerListener 不启动，零影响
-- [x] 端到端：飞书私信 → Agent → 飞书回复 全链路手动测试通过
-- [x] 后端全量测试 + Clippy：全部 PASS + 零警告
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -203,3 +189,4 @@ MessageChannelDal match ChannelType::Lark → lark_dao.push()
 4. **Slack / Discord P2P 渠道接入**：
    - 同上 5 步模板，SDK 替换为 Slack/Discord Web API + Socket Mode
    - entry：[message_adapter/mod.rs](../../src/pkg/aop/message_adapter/mod.rs)（trait 实现入口）
+

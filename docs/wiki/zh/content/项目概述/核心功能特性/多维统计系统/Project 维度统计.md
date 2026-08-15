@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/stats/project_event.rs](file://src/pkg/stats/project_event.rs)
-- [src/service/dao/project/mod.rs](file://src/service/dao/project/mod.rs)
-- [common/src/models/stats.rs](file://common/src/models/stats.rs)
-- [common/src/api/project.rs](file://common/src/api/project.rs)
-- [src/service/dal/project.rs](file://src/service/dal/project.rs)
-- [docs/stats_query_design.md](file://docs/stats_query_design.md)
-- [frontend/src/components/stats.rs](file://frontend/src/components/stats.rs)
-- [src/pkg/stats/tool_call.rs](file://src/pkg/stats/tool_call.rs)
-- [src/pkg/stats/task_event.rs](file://src/pkg/stats/task_event.rs)
+- [src/pkg/stats/project_event.rs](src/pkg/stats/project_event.rs)
+- [src/service/dao/project/mod.rs](src/service/dao/project/mod.rs)
+- [common/src/models/stats.rs](common/src/models/stats.rs)
+- [common/src/api/project.rs](common/src/api/project.rs)
+- [src/service/dal/project.rs](src/service/dal/project.rs)
+- [docs/stats_query_design.md](docs/stats_query_design.md)
+- [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
+- [src/pkg/stats/tool_call.rs](src/pkg/stats/tool_call.rs)
+- [src/pkg/stats/task_event.rs](src/pkg/stats/task_event.rs)
 </cite>
 
 ## 目录
@@ -47,16 +47,16 @@ A --> G["前端展示<br/>ProjectStatsPanel"]
 ```
 
 图表来源
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/models/stats.rs:41-149](file://common/src/models/stats.rs#L41-L149)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/models/stats.rs:41-149](common/src/models/stats.rs#L41-L149)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 章节来源
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/models/stats.rs:41-149](file://common/src/models/stats.rs#L41-L149)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/models/stats.rs:41-149](common/src/models/stats.rs#L41-L149)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 ## 核心组件
 - ProjectEvent：项目业务统计事件，绑定 project_events 表，记录项目生命周期关键动作（创建、启动、完成、归档、状态流转等），包含标签字段（project_id、event_type、组织/操作者/所有者信息、状态变更前后、耗时、优先级）与度量字段（duration_ms、priority）。
@@ -67,12 +67,12 @@ A --> G["前端展示<br/>ProjectStatsPanel"]
 - 前端面板：ProjectStatsPanel 展示事件次数、平均 QPS、模型调用次数、输入/输出 Token 等，并可渲染时序图。
 
 章节来源
-- [src/pkg/stats/project_event.rs:12-41](file://src/pkg/stats/project_event.rs#L12-L41)
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/models/stats.rs:41-149](file://common/src/models/stats.rs#L41-L149)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [src/service/dal/project.rs:281-301](file://src/service/dal/project.rs#L281-L301)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/models/stats.rs:41-149](common/src/models/stats.rs#L41-L149)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [src/service/dal/project.rs:281-301](src/service/dal/project.rs#L281-L301)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 ## 架构总览
 下图展示了从事件产生到统计查询的前后端链路，涵盖事件埋点、DuckDB 存储、DAO 聚合、DAL 组装与前端展示。
@@ -100,10 +100,10 @@ H-->>V : 渲染 ProjectStatsPanel
 ```
 
 图表来源
-- [src/pkg/stats/project_event.rs:12-41](file://src/pkg/stats/project_event.rs#L12-L41)
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 ## 详细组件分析
 
@@ -141,14 +141,14 @@ Assemble --> End
 ```
 
 图表来源
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/models/stats.rs:41-72](file://common/src/models/stats.rs#L41-L72)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/models/stats.rs:41-72](common/src/models/stats.rs#L41-L72)
 
 章节来源
-- [src/pkg/stats/project_event.rs:12-41](file://src/pkg/stats/project_event.rs#L12-L41)
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [docs/stats_query_design.md:453-465](file://docs/stats_query_design.md#L453-L465)
-- [common/src/models/stats.rs:41-72](file://common/src/models/stats.rs#L41-L72)
+- [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [docs/stats_query_design.md:453-465](docs/stats_query_design.md#L453-L465)
+- [common/src/models/stats.rs:41-72](common/src/models/stats.rs#L41-L72)
 
 ### 项目活跃度、任务完成率、资源使用率计算方法
 - 项目活跃度
@@ -162,9 +162,9 @@ Assemble --> End
   - 结合 TimeSeriesPoint 可观察时段内资源使用趋势
 
 章节来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [common/src/models/stats.rs:114-149](file://common/src/models/stats.rs#L114-L149)
-- [docs/stats_query_design.md:416-465](file://docs/stats_query_design.md#L416-L465)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [common/src/models/stats.rs:114-149](common/src/models/stats.rs#L114-L149)
+- [docs/stats_query_design.md:416-465](docs/stats_query_design.md#L416-L465)
 
 ### 项目统计数据查询与分析接口
 - 请求参数（GET /projects/:id）
@@ -209,12 +209,12 @@ ModelCallStats --> TimeSeriesPoint
 ```
 
 图表来源
-- [common/src/models/stats.rs:41-149](file://common/src/models/stats.rs#L41-L149)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
+- [common/src/models/stats.rs:41-149](common/src/models/stats.rs#L41-L149)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
 
 章节来源
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [common/src/models/stats.rs:41-149](file://common/src/models/stats.rs#L41-L149)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [common/src/models/stats.rs:41-149](common/src/models/stats.rs#L41-L149)
 
 ### 趋势分析、异常检测与预警机制
 - 趋势分析
@@ -228,8 +228,8 @@ ModelCallStats --> TimeSeriesPoint
   - 通过系统日志与告警通道（如 webhook）推送预警
 
 章节来源
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:56-148](file://docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L56-L148)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](file://docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
+- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:56-148](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L56-L148)
+- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
 
 ### 存储优化与历史数据管理策略
 - 存储优化
@@ -242,8 +242,8 @@ ModelCallStats --> TimeSeriesPoint
   - 结合 FTS5 与向量索引（项目搜索）提高检索效率，但统计查询仍聚焦 DuckDB 统计表
 
 章节来源
-- [src/pkg/stats/project_event.rs:126-235](file://src/pkg/stats/project_event.rs#L126-L235)
-- [common/src/models/stats.rs:57-72](file://common/src/models/stats.rs#L57-L72)
+- [src/pkg/stats/project_event.rs:126-235](src/pkg/stats/project_event.rs#L126-L235)
+- [common/src/models/stats.rs:57-72](common/src/models/stats.rs#L57-L72)
 
 ## 依赖关系分析
 - 事件定义依赖 ai_orz_macros::StatsEvent 生成表映射与插入逻辑
@@ -262,16 +262,16 @@ Front["前端(ProjectStatsPanel)"] --> Api
 ```
 
 图表来源
-- [src/pkg/stats/project_event.rs:12-41](file://src/pkg/stats/project_event.rs#L12-L41)
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 章节来源
-- [src/pkg/stats/project_event.rs:12-41](file://src/pkg/stats/project_event.rs#L12-L41)
-- [src/service/dao/project/mod.rs:162-237](file://src/service/dao/project/mod.rs#L162-L237)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/pkg/stats/project_event.rs:12-41](src/pkg/stats/project_event.rs#L12-L41)
+- [src/service/dao/project/mod.rs:162-237](src/service/dao/project/mod.rs#L162-L237)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 ## 性能考量
 - 事件写入：使用批量插入 bulk_insert_events 降低 IO 开销
@@ -296,9 +296,9 @@ Front["前端(ProjectStatsPanel)"] --> Api
   - 检查前端组件对 Option 的处理逻辑
 
 章节来源
-- [src/pkg/stats/project_event.rs:160-235](file://src/pkg/stats/project_event.rs#L160-L235)
-- [src/service/dao/project/mod.rs:184-237](file://src/service/dao/project/mod.rs#L184-L237)
-- [frontend/src/components/stats.rs:153-183](file://frontend/src/components/stats.rs#L153-L183)
+- [src/pkg/stats/project_event.rs:160-235](src/pkg/stats/project_event.rs#L160-L235)
+- [src/service/dao/project/mod.rs:184-237](src/service/dao/project/mod.rs#L184-L237)
+- [frontend/src/components/stats.rs:153-183](frontend/src/components/stats.rs#L153-L183)
 
 ## 结论
 Project 维度统计以 ProjectEvent 为核心，通过 DuckDB 统计表与 ProjectStatsDao 实现高效聚合，结合 DAL 组装与 API 按需加载，为前端提供项目活跃度、任务完成率、资源使用率等关键指标。借助 AOP 指标采集 Hook 可实现趋势分析与异常检测，配合合理的存储优化与历史数据管理策略，保障系统在大规模场景下的稳定性与可观测性。

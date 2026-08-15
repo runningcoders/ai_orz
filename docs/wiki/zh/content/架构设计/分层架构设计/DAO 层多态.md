@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/dao/mod.rs](file://src/service/dao/mod.rs)
-- [src/service/dao/agent/mod.rs](file://src/service/dao/agent/mod.rs)
-- [src/service/dao/agent/sqlite.rs](file://src/service/dao/agent/sqlite.rs)
-- [src/service/dao/message/mod.rs](file://src/service/dao/message/mod.rs)
-- [src/service/dao/message/sqlite.rs](file://src/service/dao/message/sqlite.rs)
-- [src/service/dao/project/mod.rs](file://src/service/dao/project/mod.rs)
-- [src/service/dao/project/sqlite.rs](file://src/service/dao/project/sqlite.rs)
-- [src/service/dao/tool/mod.rs](file://src/service/dao/tool/mod.rs)
-- [src/service/dao/tool/sqlite.rs](file://src/service/dao/tool/sqlite.rs)
-- [src/service/dao/memory/mod.rs](file://src/service/dao/memory/mod.rs)
-- [src/service/dao/memory/sqlite.rs](file://src/service/dao/memory/sqlite.rs)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [src/service/dao/mod.rs](src/service/dao/mod.rs)
+- [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
+- [src/service/dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
+- [src/service/dao/message/mod.rs](src/service/dao/message/mod.rs)
+- [src/service/dao/message/sqlite.rs](src/service/dao/message/sqlite.rs)
+- [src/service/dao/project/mod.rs](src/service/dao/project/mod.rs)
+- [src/service/dao/project/sqlite.rs](src/service/dao/project/sqlite.rs)
+- [src/service/dao/tool/mod.rs](src/service/dao/tool/mod.rs)
+- [src/service/dao/tool/sqlite.rs](src/service/dao/tool/sqlite.rs)
+- [src/service/dao/memory/mod.rs](src/service/dao/memory/mod.rs)
+- [src/service/dao/memory/sqlite.rs](src/service/dao/memory/sqlite.rs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 </cite>
 
 ## 目录
@@ -54,10 +54,10 @@ F --> F1["MemoryDao / MemoryVectorDao"]
 ```
 
 图示来源
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
 
 章节来源
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
 
 ## 核心组件
 - 多态接口（Trait）：每个领域一个主 DAO Trait，负责该实体的基础 CRUD、分页查询、计数与搜索入口。
@@ -67,11 +67,11 @@ F --> F1["MemoryDao / MemoryVectorDao"]
 - 初始化与单例：每个 DAO 模块暴露 new/init/dao 函数，使用 OnceLock 管理全局单例，便于测试隔离与运行时切换。
 
 章节来源
-- [src/service/dao/agent/mod.rs:63-213](file://src/service/dao/agent/mod.rs#L63-L213)
-- [src/service/dao/message/mod.rs:59-217](file://src/service/dao/message/mod.rs#L59-L217)
-- [src/service/dao/project/mod.rs:39-247](file://src/service/dao/project/mod.rs#L39-L247)
-- [src/service/dao/tool/mod.rs:24-358](file://src/service/dao/tool/mod.rs#L24-L358)
-- [src/service/dao/memory/mod.rs:60-562](file://src/service/dao/memory/mod.rs#L60-L562)
+- [src/service/dao/agent/mod.rs:63-213](src/service/dao/agent/mod.rs#L63-L213)
+- [src/service/dao/message/mod.rs:59-217](src/service/dao/message/mod.rs#L59-L217)
+- [src/service/dao/project/mod.rs:39-247](src/service/dao/project/mod.rs#L39-L247)
+- [src/service/dao/tool/mod.rs:24-358](src/service/dao/tool/mod.rs#L24-L358)
+- [src/service/dao/memory/mod.rs:60-562](src/service/dao/memory/mod.rs#L60-L562)
 
 ## 架构总览
 DAO 层遵循“严格分层、面向接口编程”的原则：
@@ -101,12 +101,12 @@ D-->>H : 返回响应 DTO
 ```
 
 图示来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
 
 章节来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
 
 ## 详细组件分析
 
@@ -151,12 +151,12 @@ AgentStatsDao <|.. AgentDaoSqliteImpl
 ```
 
 图示来源
-- [src/service/dao/agent/mod.rs:63-213](file://src/service/dao/agent/mod.rs#L63-L213)
-- [src/service/dao/agent/sqlite.rs:57-329](file://src/service/dao/agent/sqlite.rs#L57-L329)
+- [src/service/dao/agent/mod.rs:63-213](src/service/dao/agent/mod.rs#L63-L213)
+- [src/service/dao/agent/sqlite.rs:57-329](src/service/dao/agent/sqlite.rs#L57-L329)
 
 章节来源
-- [src/service/dao/agent/mod.rs:63-213](file://src/service/dao/agent/mod.rs#L63-L213)
-- [src/service/dao/agent/sqlite.rs:57-329](file://src/service/dao/agent/sqlite.rs#L57-L329)
+- [src/service/dao/agent/mod.rs:63-213](src/service/dao/agent/mod.rs#L63-L213)
+- [src/service/dao/agent/sqlite.rs:57-329](src/service/dao/agent/sqlite.rs#L57-L329)
 
 ### Message DAO 多态设计
 - 接口职责
@@ -180,11 +180,11 @@ Exec --> End(["返回结果"])
 ```
 
 图示来源
-- [src/service/dao/message/sqlite.rs:429-527](file://src/service/dao/message/sqlite.rs#L429-L527)
+- [src/service/dao/message/sqlite.rs:429-527](src/service/dao/message/sqlite.rs#L429-L527)
 
 章节来源
-- [src/service/dao/message/mod.rs:59-217](file://src/service/dao/message/mod.rs#L59-L217)
-- [src/service/dao/message/sqlite.rs:429-527](file://src/service/dao/message/sqlite.rs#L429-L527)
+- [src/service/dao/message/mod.rs:59-217](src/service/dao/message/mod.rs#L59-L217)
+- [src/service/dao/message/sqlite.rs:429-527](src/service/dao/message/sqlite.rs#L429-L527)
 
 ### Project DAO 多态设计
 - 接口职责
@@ -200,8 +200,8 @@ Exec --> End(["返回结果"])
   - 软删除：status != 0。
 
 章节来源
-- [src/service/dao/project/mod.rs:39-247](file://src/service/dao/project/mod.rs#L39-L247)
-- [src/service/dao/project/sqlite.rs:75-395](file://src/service/dao/project/sqlite.rs#L75-L395)
+- [src/service/dao/project/mod.rs:39-247](src/service/dao/project/mod.rs#L39-L247)
+- [src/service/dao/project/sqlite.rs:75-395](src/service/dao/project/sqlite.rs#L75-L395)
 
 ### Tool DAO 多态设计
 - 接口职责
@@ -217,8 +217,8 @@ Exec --> End(["返回结果"])
   - FTS5 MATCH + 可选 JOIN agent_tools，限制最大返回数量。
 
 章节来源
-- [src/service/dao/tool/mod.rs:24-358](file://src/service/dao/tool/mod.rs#L24-L358)
-- [src/service/dao/tool/sqlite.rs:89-452](file://src/service/dao/tool/sqlite.rs#L89-L452)
+- [src/service/dao/tool/mod.rs:24-358](src/service/dao/tool/mod.rs#L24-L358)
+- [src/service/dao/tool/sqlite.rs:89-452](src/service/dao/tool/sqlite.rs#L89-L452)
 
 ### Memory DAO 多态设计
 - 接口职责
@@ -234,8 +234,8 @@ Exec --> End(["返回结果"])
   - FTS5 全文检索用于短期索引与知识节点。
 
 章节来源
-- [src/service/dao/memory/mod.rs:60-562](file://src/service/dao/memory/mod.rs#L60-L562)
-- [src/service/dao/memory/sqlite.rs:126-800](file://src/service/dao/memory/sqlite.rs#L126-L800)
+- [src/service/dao/memory/mod.rs:60-562](src/service/dao/memory/mod.rs#L60-L562)
+- [src/service/dao/memory/sqlite.rs:126-800](src/service/dao/memory/sqlite.rs#L126-L800)
 
 ## 依赖关系分析
 - 模块内依赖
@@ -268,18 +268,18 @@ end
 ```
 
 图示来源
-- [src/service/dao/agent/mod.rs:206-213](file://src/service/dao/agent/mod.rs#L206-L213)
-- [src/service/dao/message/mod.rs:213-217](file://src/service/dao/message/mod.rs#L213-L217)
-- [src/service/dao/project/mod.rs:240-247](file://src/service/dao/project/mod.rs#L240-L247)
-- [src/service/dao/tool/mod.rs:14-34](file://src/service/dao/tool/mod.rs#L14-L34)
-- [src/service/dao/memory/mod.rs:555-562](file://src/service/dao/memory/mod.rs#L555-L562)
+- [src/service/dao/agent/mod.rs:206-213](src/service/dao/agent/mod.rs#L206-L213)
+- [src/service/dao/message/mod.rs:213-217](src/service/dao/message/mod.rs#L213-L217)
+- [src/service/dao/project/mod.rs:240-247](src/service/dao/project/mod.rs#L240-L247)
+- [src/service/dao/tool/mod.rs:14-34](src/service/dao/tool/mod.rs#L14-L34)
+- [src/service/dao/memory/mod.rs:555-562](src/service/dao/memory/mod.rs#L555-L562)
 
 章节来源
-- [src/service/dao/agent/mod.rs:206-213](file://src/service/dao/agent/mod.rs#L206-L213)
-- [src/service/dao/message/mod.rs:213-217](file://src/service/dao/message/mod.rs#L213-L217)
-- [src/service/dao/project/mod.rs:240-247](file://src/service/dao/project/mod.rs#L240-L247)
-- [src/service/dao/tool/mod.rs:14-34](file://src/service/dao/tool/mod.rs#L14-L34)
-- [src/service/dao/memory/mod.rs:555-562](file://src/service/dao/memory/mod.rs#L555-L562)
+- [src/service/dao/agent/mod.rs:206-213](src/service/dao/agent/mod.rs#L206-L213)
+- [src/service/dao/message/mod.rs:213-217](src/service/dao/message/mod.rs#L213-L217)
+- [src/service/dao/project/mod.rs:240-247](src/service/dao/project/mod.rs#L240-L247)
+- [src/service/dao/tool/mod.rs:14-34](src/service/dao/tool/mod.rs#L14-L34)
+- [src/service/dao/memory/mod.rs:555-562](src/service/dao/memory/mod.rs#L555-L562)
 
 ## 性能与基准
 - 查询优化
@@ -310,9 +310,9 @@ end
   - 查看日志中的警告（如 keyword 已废弃提示），迁移至 FTS5 搜索。
 
 章节来源
-- [src/service/dao/message/sqlite.rs:530-595](file://src/service/dao/message/sqlite.rs#L530-L595)
-- [src/service/dao/tool/sqlite.rs:455-520](file://src/service/dao/tool/sqlite.rs#L455-L520)
-- [src/service/dao/agent/sqlite.rs:331-383](file://src/service/dao/agent/sqlite.rs#L331-L383)
+- [src/service/dao/message/sqlite.rs:530-595](src/service/dao/message/sqlite.rs#L530-L595)
+- [src/service/dao/tool/sqlite.rs:455-520](src/service/dao/tool/sqlite.rs#L455-L520)
+- [src/service/dao/agent/sqlite.rs:331-383](src/service/dao/agent/sqlite.rs#L331-L383)
 
 ## 结论
 AI Orz 的 DAO 层通过“接口 + 多实现”的多态设计，实现了存储后端的可替换性与能力的可扩展性。每个领域 DAO 均提供清晰的 CRUD、查询、搜索与统计接口，并通过独立的向量与统计子模块解耦复杂能力。SQLite 作为默认后端，配合 FTS5 与事务机制，满足当前业务需求；未来可通过实现相同 Trait 接入其他后端，保持上层代码零改动。
@@ -333,9 +333,9 @@ AI Orz 的 DAO 层通过“接口 + 多实现”的多态设计，实现了存�
   - 禁止在 DAO 中定义通用工具函数，避免 DAO → DAO 依赖。
 
 章节来源
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
-- [src/service/dao/agent/sqlite.rs:36-53](file://src/service/dao/agent/sqlite.rs#L36-L53)
-- [src/service/dao/message/sqlite.rs:42-59](file://src/service/dao/message/sqlite.rs#L42-L59)
-- [src/service/dao/project/sqlite.rs:42-60](file://src/service/dao/project/sqlite.rs#L42-L60)
-- [src/service/dao/tool/sqlite.rs:58-87](file://src/service/dao/tool/sqlite.rs#L58-L87)
-- [src/service/dao/memory/sqlite.rs:66-83](file://src/service/dao/memory/sqlite.rs#L66-L83)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
+- [src/service/dao/agent/sqlite.rs:36-53](src/service/dao/agent/sqlite.rs#L36-L53)
+- [src/service/dao/message/sqlite.rs:42-59](src/service/dao/message/sqlite.rs#L42-L59)
+- [src/service/dao/project/sqlite.rs:42-60](src/service/dao/project/sqlite.rs#L42-L60)
+- [src/service/dao/tool/sqlite.rs:58-87](src/service/dao/tool/sqlite.rs#L58-L87)
+- [src/service/dao/memory/sqlite.rs:66-83](src/service/dao/memory/sqlite.rs#L66-L83)

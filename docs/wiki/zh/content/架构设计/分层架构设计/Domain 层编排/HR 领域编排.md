@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [src/models/skill.rs](file://src/models/skill.rs)
-- [src/service/domain/hr/agent.rs](file://src/service/domain/hr/agent.rs)
-- [src/service/domain/hr/skill.rs](file://src/service/domain/hr/skill.rs)
-- [src/consumer/agent_loop_consumer.rs](file://src/consumer/agent_loop_consumer.rs)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [src/handlers/hr/agent/settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [src/models/skill.rs](src/models/skill.rs)
+- [src/service/domain/hr/agent.rs](src/service/domain/hr/agent.rs)
+- [src/service/domain/hr/skill.rs](src/service/domain/hr/skill.rs)
+- [src/consumer/agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
 </cite>
 
 ## 目录
@@ -66,18 +66,18 @@ RT --> AOP
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/consumer/agent_loop_consumer.rs:1-97](file://src/consumer/agent_loop_consumer.rs#L1-L97)
-- [src/service/domain/hr/agent.rs:1-655](file://src/service/domain/hr/agent.rs#L1-L655)
-- [src/service/domain/hr/skill.rs:1-339](file://src/service/domain/hr/skill.rs#L1-L339)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/consumer/agent_loop_consumer.rs:1-97](src/consumer/agent_loop_consumer.rs#L1-L97)
+- [src/service/domain/hr/agent.rs:1-655](src/service/domain/hr/agent.rs#L1-L655)
+- [src/service/domain/hr/skill.rs:1-339](src/service/domain/hr/skill.rs#L1-L339)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 章节来源
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/consumer/agent_loop_consumer.rs:1-97](file://src/consumer/agent_loop_consumer.rs#L1-L97)
-- [src/service/domain/hr/agent.rs:1-655](file://src/service/domain/hr/agent.rs#L1-L655)
-- [src/service/domain/hr/skill.rs:1-339](file://src/service/domain/hr/skill.rs#L1-L339)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/consumer/agent_loop_consumer.rs:1-97](src/consumer/agent_loop_consumer.rs#L1-L97)
+- [src/service/domain/hr/agent.rs:1-655](src/service/domain/hr/agent.rs#L1-L655)
+- [src/service/domain/hr/skill.rs:1-339](src/service/domain/hr/skill.rs#L1-L339)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 ## 核心组件
 - Agent 业务对象与运行时配置：包含 Brain、Tools、Skills、运行时状态与统计信息；运行时配置记录工具包与技能包 tag、思考深度/轮次限制、是否反思、是否需要用户确认等。
@@ -87,13 +87,13 @@ RT --> AOP
 - AOP 消费者：订阅 agent.loop 与 agent.think.round 事件，用于日志与指标采集。
 
 章节来源
-- [src/models/agent.rs:15-184](file://src/models/agent.rs#L15-L184)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/skill.rs:1-193](file://src/models/skill.rs#L1-L193)
-- [src/service/domain/hr/agent.rs:14-655](file://src/service/domain/hr/agent.rs#L14-L655)
-- [src/service/domain/hr/skill.rs:1-339](file://src/service/domain/hr/skill.rs#L1-L339)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
-- [src/consumer/agent_loop_consumer.rs:1-97](file://src/consumer/agent_loop_consumer.rs#L1-L97)
+- [src/models/agent.rs:15-184](src/models/agent.rs#L15-L184)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/skill.rs:1-193](src/models/skill.rs#L1-L193)
+- [src/service/domain/hr/agent.rs:14-655](src/service/domain/hr/agent.rs#L14-L655)
+- [src/service/domain/hr/skill.rs:1-339](src/service/domain/hr/skill.rs#L1-L339)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/consumer/agent_loop_consumer.rs:1-97](src/consumer/agent_loop_consumer.rs#L1-L97)
 
 ## 架构总览
 HR 编排遵循 Adapter → Domain → DAL → DAO 单向调用，Domain 层集中处理业务规则与编排，DAL 暴露业务实体接口，DAO 负责 SQL 与文件系统操作。运行时状态与 AOP 事件贯穿唤醒、沉淀与工具执行过程。
@@ -124,9 +124,9 @@ end
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/consumer/agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/consumer/agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
 
 ## 详细组件分析
 
@@ -151,12 +151,12 @@ stateDiagram-v2
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
 
 章节来源
-- [src/service/domain/hr/agent.rs:61-84](file://src/service/domain/hr/agent.rs#L61-L84)
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [src/service/domain/hr/agent.rs:272-311](file://src/service/domain/hr/agent.rs#L272-L311)
+- [src/service/domain/hr/agent.rs:61-84](src/service/domain/hr/agent.rs#L61-L84)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/hr/agent.rs:272-311](src/service/domain/hr/agent.rs#L272-L311)
 
 ### 工具绑定与解绑（按 tag）
 - 安装工具包：将 tag 写入 Agent 的 runtime_config.installed_tags；幂等，已安装则跳过。
@@ -174,13 +174,13 @@ Skip --> End
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:313-354](file://src/service/domain/hr/agent.rs#L313-L354)
-- [src/service/domain/hr/agent.rs:356-397](file://src/service/domain/hr/agent.rs#L356-L397)
-- [src/service/domain/hr/agent.rs:92-155](file://src/service/domain/hr/agent.rs#L92-L155)
+- [src/service/domain/hr/agent.rs:313-354](src/service/domain/hr/agent.rs#L313-L354)
+- [src/service/domain/hr/agent.rs:356-397](src/service/domain/hr/agent.rs#L356-L397)
+- [src/service/domain/hr/agent.rs:92-155](src/service/domain/hr/agent.rs#L92-L155)
 
 章节来源
-- [src/service/domain/hr/agent.rs:92-155](file://src/service/domain/hr/agent.rs#L92-L155)
-- [src/service/domain/hr/agent.rs:313-397](file://src/service/domain/hr/agent.rs#L313-L397)
+- [src/service/domain/hr/agent.rs:92-155](src/service/domain/hr/agent.rs#L92-L155)
+- [src/service/domain/hr/agent.rs:313-397](src/service/domain/hr/agent.rs#L313-L397)
 
 ### 技能包安装/卸载/重装
 - 安装技能包：按 tag 查询已发布技能，逐个 install_to_agent 复制到 Agent 目录；记录 tag 到 installed_skill_packs；幂等。
@@ -204,14 +204,14 @@ Done -- 是 --> Record["记录 tag 到 installed_skill_packs"] --> End
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:414-499](file://src/service/domain/hr/agent.rs#L414-L499)
-- [src/service/domain/hr/agent.rs:501-564](file://src/service/domain/hr/agent.rs#L501-L564)
-- [src/service/domain/hr/agent.rs:566-638](file://src/service/domain/hr/agent.rs#L566-L638)
-- [src/service/domain/hr/agent.rs:14-58](file://src/service/domain/hr/agent.rs#L14-L58)
+- [src/service/domain/hr/agent.rs:414-499](src/service/domain/hr/agent.rs#L414-L499)
+- [src/service/domain/hr/agent.rs:501-564](src/service/domain/hr/agent.rs#L501-L564)
+- [src/service/domain/hr/agent.rs:566-638](src/service/domain/hr/agent.rs#L566-L638)
+- [src/service/domain/hr/agent.rs:14-58](src/service/domain/hr/agent.rs#L14-L58)
 
 章节来源
-- [src/service/domain/hr/agent.rs:414-638](file://src/service/domain/hr/agent.rs#L414-L638)
-- [src/service/domain/hr/skill.rs:141-184](file://src/service/domain/hr/skill.rs#L141-L184)
+- [src/service/domain/hr/agent.rs:414-638](src/service/domain/hr/agent.rs#L414-L638)
+- [src/service/domain/hr/skill.rs:141-184](src/service/domain/hr/skill.rs#L141-L184)
 
 ### Agent 与 Skill 的关联关系
 - 安装即复制：Skill 以副本形式存在于 Agent 目录，author_id = agent_id，parent_skill_id 指向源技能。
@@ -240,14 +240,14 @@ AGENT ||--o{ SKILL : "安装副本(author_id=agent_id)"
 ```
 
 图表来源
-- [src/models/skill.rs:20-49](file://src/models/skill.rs#L20-L49)
-- [src/service/domain/hr/agent.rs:136-151](file://src/service/domain/hr/agent.rs#L136-L151)
-- [src/service/domain/hr/agent.rs:566-638](file://src/service/domain/hr/agent.rs#L566-L638)
+- [src/models/skill.rs:20-49](src/models/skill.rs#L20-L49)
+- [src/service/domain/hr/agent.rs:136-151](src/service/domain/hr/agent.rs#L136-L151)
+- [src/service/domain/hr/agent.rs:566-638](src/service/domain/hr/agent.rs#L566-L638)
 
 章节来源
-- [src/models/skill.rs:20-49](file://src/models/skill.rs#L20-L49)
-- [src/service/domain/hr/agent.rs:136-151](file://src/service/domain/hr/agent.rs#L136-L151)
-- [src/service/domain/hr/agent.rs:566-638](file://src/service/domain/hr/agent.rs#L566-L638)
+- [src/models/skill.rs:20-49](src/models/skill.rs#L20-L49)
+- [src/service/domain/hr/agent.rs:136-151](src/service/domain/hr/agent.rs#L136-L151)
+- [src/service/domain/hr/agent.rs:566-638](src/service/domain/hr/agent.rs#L566-L638)
 
 ### 唤醒机制、记忆管理与工具执行
 - 唤醒：wake_agent_brain 装配 Cortex/Brain，准备工具与技能上下文。
@@ -274,12 +274,12 @@ R-->>A : agent.loop.finished
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:22-123](file://src/handlers/hr/agent/settle_memory.rs#L22-L123)
-- [src/consumer/agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
+- [src/handlers/hr/agent/settle_memory.rs:22-123](src/handlers/hr/agent/settle_memory.rs#L22-L123)
+- [src/consumer/agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
 
 章节来源
-- [src/handlers/hr/agent/settle_memory.rs:22-123](file://src/handlers/hr/agent/settle_memory.rs#L22-L123)
-- [src/consumer/agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
+- [src/handlers/hr/agent/settle_memory.rs:22-123](src/handlers/hr/agent/settle_memory.rs#L22-L123)
+- [src/consumer/agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
 
 ### 运行时状态管理（Idle/Busy/Resting）
 - 原子设置 Busy：try_set_busy 防止并发唤醒导致同一 Agent 被重复处理。
@@ -309,11 +309,11 @@ AgentRuntimeStateManager --> AgentRuntimeInfo : "维护"
 ```
 
 图表来源
-- [src/pkg/agent_runtime_state.rs:11-174](file://src/pkg/agent_runtime_state.rs#L11-L174)
+- [src/pkg/agent_runtime_state.rs:11-174](src/pkg/agent_runtime_state.rs#L11-L174)
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ### 复杂编排示例
 - Agent 初始化：创建 Local Agent（必须指定 model_provider_id），状态为 Interviewing；后续 transition_status 至 PendingOnboard。
@@ -322,10 +322,10 @@ AgentRuntimeStateManager --> AgentRuntimeInfo : "维护"
 - 沉淀工作流：settle_memory 构建短期记忆摘要，唤醒 Brain 后进入 Resting 自主沉淀，输出 AOP 事件。
 
 章节来源
-- [src/service/domain/hr/agent.rs:61-84](file://src/service/domain/hr/agent.rs#L61-L84)
-- [src/service/domain/hr/agent.rs:414-638](file://src/service/domain/hr/agent.rs#L414-L638)
-- [src/service/domain/hr/agent.rs:313-397](file://src/service/domain/hr/agent.rs#L313-L397)
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/service/domain/hr/agent.rs:61-84](src/service/domain/hr/agent.rs#L61-L84)
+- [src/service/domain/hr/agent.rs:414-638](src/service/domain/hr/agent.rs#L414-L638)
+- [src/service/domain/hr/agent.rs:313-397](src/service/domain/hr/agent.rs#L313-L397)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
 
 ## 依赖关系分析
 - 单向依赖：Handler → HrDomainImpl → DAL → DAO；pkg/ 提供通用能力（AOP、RequestContext、运行时状态）。
@@ -347,14 +347,14 @@ W --> E
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/service/domain/hr/agent.rs:92-155](file://src/service/domain/hr/agent.rs#L92-L155)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/service/domain/hr/agent.rs:92-155](src/service/domain/hr/agent.rs#L92-L155)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 章节来源
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/service/domain/hr/agent.rs:92-155](file://src/service/domain/hr/agent.rs#L92-L155)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/service/domain/hr/agent.rs:92-155](src/service/domain/hr/agent.rs#L92-L155)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ## 性能考量
 - 工具与技能加载：get_agent 合并去重，避免重复加载；internal 工具过滤减少不必要暴露。
@@ -372,10 +372,10 @@ W --> E
 - 沉淀失败：检查 build_pending_memories_summary 是否有数据；确认 Awakening 装配成功与 AOP 事件是否正常输出。
 
 章节来源
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [src/service/domain/hr/agent.rs:272-311](file://src/service/domain/hr/agent.rs#L272-L311)
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [src/handlers/hr/agent/settle_memory.rs:22-123](file://src/handlers/hr/agent/settle_memory.rs#L22-L123)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/hr/agent.rs:272-311](src/service/domain/hr/agent.rs#L272-L311)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/handlers/hr/agent/settle_memory.rs:22-123](src/handlers/hr/agent/settle_memory.rs#L22-L123)
 
 ## 结论
 HR 领域编排通过清晰的层次划分与严格的业务规则，实现了 Agent 生命周期管理、技能包安装卸载、工具绑定解绑以及唤醒/沉淀机制的可控与可观测。幂等设计、AOP 事件与运行时状态管理共同保障了在高并发场景下的稳定性与可维护性。建议在生产环境中结合集成测试与覆盖率门槛持续验证编排逻辑的正确性。
@@ -397,3 +397,12 @@ HR 领域编排通过清晰的层次划分与严格的业务规则，实现了 A
   - 集成测试位于 tests/integration/，覆盖 Auth/CRUD/消息投递/向量降级/A2A/预置技能/Cron。
 
 [本节为规范说明，无需特定文件引用]
+
+
+### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
+#### ① Design 决策快照
+- [skill_system_enhancement_design.md](docs/design/skill_system_enhancement_design.md) — HR 域 Skill + Agent 两子域协作：HrDomain::onboard_agent → install_default_skill_packs（5 套 TEMPLATE）→ SkillDomain.install_skill_pack(tag) 幂等
+#### ② Plan 落地快照
+- [Agent管理集成测试.md](docs/plan/Agent管理集成测试.md) — Task 8-9 工具包 + 技能包生命周期集成测试（入职安装 + 幂等重装 + 安装失败降级）
+#### ④ RAG 原子知识卡
+- [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — §2 锚点速查 HrDomain.skill 操作 + AgentDomain.install_skill_pack 主入口 + §4.2 入职绑定扩展模式

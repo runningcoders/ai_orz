@@ -2,20 +2,20 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/domain/runtime/awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [src/consumer/message.rs](file://src/consumer/message.rs)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/create_external_agent.rs](file://src/handlers/hr/agent/create_external_agent.rs)
-- [common/src/enums/agent_kind.rs](file://common/src/enums/agent_kind.rs)
-- [common/src/api/tool.rs](file://common/src/api/tool.rs)
-- [src/handlers/finance/tool/bind_tool_to_agent.rs](file://src/handlers/finance/tool/bind_tool_to_agent.rs)
-- [docs/project_management_design.md](file://docs/project_management_design.md)
-- [docs/message_interaction_design.md](file://docs/message_interaction_design.md)
-- [docs/stats_query_design.md](file://docs/stats_query_design.md)
-- [src/service/dao/agent/mod.rs](file://src/service/dao/agent/mod.rs)
+- [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
+- [src/consumer/message.rs](src/consumer/message.rs)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/create_external_agent.rs](src/handlers/hr/agent/create_external_agent.rs)
+- [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
+- [common/src/api/tool.rs](common/src/api/tool.rs)
+- [src/handlers/finance/tool/bind_tool_to_agent.rs](src/handlers/finance/tool/bind_tool_to_agent.rs)
+- [docs/project_management_design.md](docs/project_management_design.md)
+- [docs/message_interaction_design.md](docs/message_interaction_design.md)
+- [docs/stats_query_design.md](docs/stats_query_design.md)
+- [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
 </cite>
 
 ## 目录
@@ -50,14 +50,14 @@ E --> G["统计/日志/监控"]
 ```
 
 图表来源
-- [src/consumer/message.rs:164-317](file://src/consumer/message.rs#L164-L317)
-- [src/service/domain/runtime/awakening.rs:131-173](file://src/service/domain/runtime/awakening.rs#L131-L173)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/consumer/message.rs:164-317](src/consumer/message.rs#L164-L317)
+- [src/service/domain/runtime/awakening.rs:131-173](src/service/domain/runtime/awakening.rs#L131-L173)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 章节来源
-- [src/consumer/message.rs:164-317](file://src/consumer/message.rs#L164-L317)
-- [src/service/domain/runtime/awakening.rs:131-173](file://src/service/domain/runtime/awakening.rs#L131-L173)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/consumer/message.rs:164-317](src/consumer/message.rs#L164-L317)
+- [src/service/domain/runtime/awakening.rs:131-173](src/service/domain/runtime/awakening.rs#L131-L173)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 ## 核心组件
 - Agent 实体与持久化对象：包含运行时配置、类型（Local/Cli/Remote）、工具与技能集合、Brain 装配状态、统计数据注入点。
@@ -67,13 +67,13 @@ E --> G["统计/日志/监控"]
 - 工具绑定：通过 Handler 将工具绑定到 Agent，供 think loop 在 function calling 时按名称匹配执行。
 
 章节来源
-- [src/models/agent.rs:15-184](file://src/models/agent.rs#L15-L184)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
-- [src/service/domain/runtime/awakening.rs:16-147](file://src/service/domain/runtime/awakening.rs#L16-L147)
-- [common/src/enums/agent_kind.rs:1-80](file://common/src/enums/agent_kind.rs#L1-L80)
-- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](file://src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
+- [src/models/agent.rs:15-184](src/models/agent.rs#L15-L184)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/service/domain/runtime/awakening.rs:16-147](src/service/domain/runtime/awakening.rs#L16-L147)
+- [common/src/enums/agent_kind.rs:1-80](common/src/enums/agent_kind.rs#L1-L80)
+- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
 
 ## 架构总览
 下图展示从消息到达、Agent 装载、Brain 装配、awaken 思考循环、工具执行到记忆沉淀与统计记录的端到端流程。
@@ -114,9 +114,9 @@ Consumer-->>Client : 返回结果
 ```
 
 图表来源
-- [src/consumer/message.rs:164-317](file://src/consumer/message.rs#L164-L317)
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/service/domain/runtime/awakening.rs:166-363](file://src/service/domain/runtime/awakening.rs#L166-L363)
+- [src/consumer/message.rs:164-317](src/consumer/message.rs#L164-L317)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
 
 ## 详细组件分析
 
@@ -140,14 +140,14 @@ stateDiagram-v2
 ```
 
 图表来源
-- [common/src/enums/agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/consumer/message.rs:198-294](file://src/consumer/message.rs#L198-L294)
+- [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/consumer/message.rs:198-294](src/consumer/message.rs#L198-L294)
 
 章节来源
-- [common/src/enums/agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/consumer/message.rs:198-294](file://src/consumer/message.rs#L198-L294)
+- [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/consumer/message.rs:198-294](src/consumer/message.rs#L198-L294)
 
 ### 唤醒机制与思考循环
 - 唤醒入口：awaken(ctx, agent, message, options)
@@ -183,14 +183,14 @@ Stats --> End(["结束"])
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:166-363](file://src/service/domain/runtime/awakening.rs#L166-L363)
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/service/domain/runtime/awakening.rs:750-800](file://src/service/domain/runtime/awakening.rs#L750-L800)
+- [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/service/domain/runtime/awakening.rs:750-800](src/service/domain/runtime/awakening.rs#L750-L800)
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:166-363](file://src/service/domain/runtime/awakening.rs#L166-L363)
-- [src/service/domain/runtime/awakening.rs:415-748](file://src/service/domain/runtime/awakening.rs#L415-L748)
-- [src/service/domain/runtime/awakening.rs:750-800](file://src/service/domain/runtime/awakening.rs#L750-L800)
+- [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
+- [src/service/domain/runtime/awakening.rs:415-748](src/service/domain/runtime/awakening.rs#L415-L748)
+- [src/service/domain/runtime/awakening.rs:750-800](src/service/domain/runtime/awakening.rs#L750-L800)
 
 ### 配置参数详解
 - 运行时配置（AgentRuntimeConfig）：
@@ -210,33 +210,33 @@ Stats --> End(["结束"])
 - 工具绑定：通过绑定接口将工具加入 Agent，think loop 根据工具名匹配执行。
 
 章节来源
-- [src/models/agent.rs:15-184](file://src/models/agent.rs#L15-L184)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [src/service/domain/runtime/awakening.rs:467-513](file://src/service/domain/runtime/awakening.rs#L467-L513)
-- [common/src/enums/agent_kind.rs:1-80](file://common/src/enums/agent_kind.rs#L1-L80)
-- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](file://src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
+- [src/models/agent.rs:15-184](src/models/agent.rs#L15-L184)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [src/service/domain/runtime/awakening.rs:467-513](src/service/domain/runtime/awakening.rs#L467-L513)
+- [common/src/enums/agent_kind.rs:1-80](common/src/enums/agent_kind.rs#L1-L80)
+- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
 
 ### Agent CRUD API 示例
 - 创建内部 Agent（Local）
   - 请求：POST /api/v1/agents
   - 行为：构造 AgentPo（含 model_provider_id），调用 Domain 创建，返回 ID、名称、描述、创建时间
-  - 参考实现路径：[创建内部 Agent:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
+  - 参考实现路径：[创建内部 Agent:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
 - 创建外部 Agent（Cli/Remote）
   - 请求：POST /api/v1/hr/agents/external
   - 行为：解析 kind，构造 ExternalAgentConfig，设置到 runtime_config，调用通用 create_agent
-  - 参考实现路径：[创建外部 Agent:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+  - 参考实现路径：[创建外部 Agent:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
 - 工具绑定
   - 请求：POST /api/v1/agents/{agent_id}/tools/{tool_id}/bind
   - 行为：校验工具存在，更新 Agent 绑定关系
-  - 参考实现路径：[绑定工具:1-38](file://src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
+  - 参考实现路径：[绑定工具:1-38](src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
 - 工具解绑与状态 DTO
-  - 参考定义路径：[工具相关 DTO:296-330](file://common/src/api/tool.rs#L296-L330)
+  - 参考定义路径：[工具相关 DTO:296-330](common/src/api/tool.rs#L296-L330)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/create_external_agent.rs:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
-- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](file://src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
-- [common/src/api/tool.rs:296-330](file://common/src/api/tool.rs#L296-L330)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+- [src/handlers/finance/tool/bind_tool_to_agent.rs:1-38](src/handlers/finance/tool/bind_tool_to_agent.rs#L1-L38)
+- [common/src/api/tool.rs:296-330](common/src/api/tool.rs#L296-L330)
 
 ### 监控指标、日志与调试
 - 事件与指标
@@ -246,7 +246,7 @@ Stats --> End(["结束"])
   - AgentStateEvent：运行时状态变更（idle/busy/resting）
 - 统计查询
   - AgentStatsDao 提供唤醒次数、QPS、瞬时 QPS 等聚合查询
-  - 参考路径：[统计查询设计:195-252](file://docs/stats_query_design.md#L195-L252)、[AgentStatsDao 实现:160-200](file://src/service/dao/agent/mod.rs#L160-L200)
+  - 参考路径：[统计查询设计:195-252](docs/stats_query_design.md#L195-L252)、[AgentStatsDao 实现:160-200](src/service/dao/agent/mod.rs#L160-L200)
 - 日志与追踪
   - 使用 RequestContext.log_id 串联链路
   - 通过 AOP 同步转发事件，便于集中采集与可视化
@@ -256,10 +256,10 @@ Stats --> End(["结束"])
   - 观察 BusyGuard 与 try_set_busy 的使用，避免并发唤醒导致状态异常
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:218-323](file://src/service/domain/runtime/awakening.rs#L218-L323)
-- [src/service/domain/runtime/awakening.rs:624-739](file://src/service/domain/runtime/awakening.rs#L624-L739)
-- [docs/stats_query_design.md:195-252](file://docs/stats_query_design.md#L195-L252)
-- [src/service/dao/agent/mod.rs:160-200](file://src/service/dao/agent/mod.rs#L160-L200)
+- [src/service/domain/runtime/awakening.rs:218-323](src/service/domain/runtime/awakening.rs#L218-L323)
+- [src/service/domain/runtime/awakening.rs:624-739](src/service/domain/runtime/awakening.rs#L624-L739)
+- [docs/stats_query_design.md:195-252](docs/stats_query_design.md#L195-L252)
+- [src/service/dao/agent/mod.rs:160-200](src/service/dao/agent/mod.rs#L160-L200)
 
 ## 依赖关系分析
 - 分层依赖方向：Handler → Domain → DAL → DAO，禁止跨层与同层互调
@@ -281,12 +281,12 @@ DL --> AOP
 ```
 
 图表来源
-- [src/consumer/message.rs:164-317](file://src/consumer/message.rs#L164-L317)
-- [src/service/domain/runtime/awakening.rs:166-363](file://src/service/domain/runtime/awakening.rs#L166-L363)
+- [src/consumer/message.rs:164-317](src/consumer/message.rs#L164-L317)
+- [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
 
 章节来源
-- [src/consumer/message.rs:164-317](file://src/consumer/message.rs#L164-L317)
-- [src/service/domain/runtime/awakening.rs:166-363](file://src/service/domain/runtime/awakening.rs#L166-L363)
+- [src/consumer/message.rs:164-317](src/consumer/message.rs#L164-L317)
+- [src/service/domain/runtime/awakening.rs:166-363](src/service/domain/runtime/awakening.rs#L166-L363)
 
 ## 性能考虑
 - 上下文压缩：当 input_tokens 超过阈值（recommended_context_length 或 max_context_length*60%）时中断循环，沉淀后重试，避免 OOM 与延迟飙升
@@ -296,10 +296,10 @@ DL --> AOP
 - 内存状态：AgentRuntimeStateManager 为 DashMap 并发容器，try_set_busy 原子操作减少锁竞争
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:182-197](file://src/service/domain/runtime/awakening.rs#L182-L197)
-- [src/service/domain/runtime/awakening.rs:325-342](file://src/service/domain/runtime/awakening.rs#L325-L342)
-- [src/models/agent.rs:21-68](file://src/models/agent.rs#L21-L68)
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/service/domain/runtime/awakening.rs:182-197](src/service/domain/runtime/awakening.rs#L182-L197)
+- [src/service/domain/runtime/awakening.rs:325-342](src/service/domain/runtime/awakening.rs#L325-L342)
+- [src/models/agent.rs:21-68](src/models/agent.rs#L21-L68)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 故障排查指南
 - Agent 无法唤醒
@@ -317,9 +317,9 @@ DL --> AOP
   - 观察沉淀是否成功，必要时增加沉淀批次限制
 
 章节来源
-- [src/consumer/message.rs:198-294](file://src/consumer/message.rs#L198-L294)
-- [src/service/domain/runtime/awakening.rs:325-342](file://src/service/domain/runtime/awakening.rs#L325-L342)
-- [src/service/domain/runtime/awakening.rs:624-739](file://src/service/domain/runtime/awakening.rs#L624-L739)
+- [src/consumer/message.rs:198-294](src/consumer/message.rs#L198-L294)
+- [src/service/domain/runtime/awakening.rs:325-342](src/service/domain/runtime/awakening.rs#L325-L342)
+- [src/service/domain/runtime/awakening.rs:624-739](src/service/domain/runtime/awakening.rs#L624-L739)
 
 ## 结论
 本方案通过清晰的状态机、统一的唤醒与思考循环、严格的上下文与轮次控制、完善的统计与日志体系，实现了 Agent 全生命周期的可靠管理与高效执行。结合内部 Agent 与外部 Agent 的统一抽象，既保证了灵活性，又确保了可观测性与可维护性。

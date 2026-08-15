@@ -7,6 +7,12 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Seed 是纯工具箱 Domain）
 > - [attachment_storage.md](./attachment_storage.md) — 产物与附件统一存储设计（导出包的文件承载）
+> - 【② Plan 落地】[Agent管理集成测试.md](docs/plan/Agent管理集成测试.md) — init_full_test_env 启动顺序与生产 run() 严格对齐（两阶段 init/aop 分离原则）
+> - 【③ Wiki 长文（Batch10 追加）】[系统初始化.md](docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md) — 用户视角两阶段启动解释
+> - 【③ Wiki 长文（Batch10 追加）】[种子数据管理.md](docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md) — Seed 导入导出 GUI + 4 策略选择
+> - 【③ Wiki 长文（Batch10 追加）】[技能包管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md) — 预置技能 TEMPLATE_* 与 Seed 关系
+> - 【③ Wiki 长文（Batch10 追加）】[种子数据处理器.md](docs/wiki/zh/content/核心模块/处理器层/System模块处理器/种子数据处理器.md) — 10 个 HTTP Handler 跨 domain 编排
+> - 【④ RAG 卡（Batch10 新增）】[种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发](docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5%20套%20TEMPLATE_SKILL%20编译期嵌入%20+%20seed%20diff%20增量导入%20+%20两阶段%20init%20aop%20严格分离%20+%20init_all_base_data%20域派发/种子配置与系统两阶段初始化：5%20套%20TEMPLATE_SKILL%20编译期嵌入%20+%20seed%20diff%20增量导入%20+%20两阶段%20init%20aop%20严格分离%20+%20init_all_base_data%20域派发.md) — 纯工具箱架构 + 8 条硬约束红线
 
 ## 概述
 

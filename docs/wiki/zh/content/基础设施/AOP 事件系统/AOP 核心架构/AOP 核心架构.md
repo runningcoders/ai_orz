@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [src/pkg/aop/core/mod.rs](file://src/pkg/aop/core/mod.rs)
-- [src/pkg/aop/core/event.rs](file://src/pkg/aop/core/event.rs)
-- [src/pkg/aop/core/producer.rs](file://src/pkg/aop/core/producer.rs)
-- [src/pkg/aop/core/consumer.rs](file://src/pkg/aop/core/consumer.rs)
-- [src/pkg/aop/core/registry.rs](file://src/pkg/aop/core/registry.rs)
-- [src/pkg/aop/queue/mod.rs](file://src/pkg/aop/queue/mod.rs)
-- [src/pkg/aop/queue/in_memory.rs](file://src/pkg/aop/queue/in_memory.rs)
-- [src/models/events/mod.rs](file://src/models/events/mod.rs)
-- [src/models/events/message.rs](file://src/models/events/message.rs)
-- [src/models/events/task_status.rs](file://src/models/events/task_status.rs)
-- [src/consumer/mod.rs](file://src/consumer/mod.rs)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [src/pkg/aop/core/mod.rs](src/pkg/aop/core/mod.rs)
+- [src/pkg/aop/core/event.rs](src/pkg/aop/core/event.rs)
+- [src/pkg/aop/core/producer.rs](src/pkg/aop/core/producer.rs)
+- [src/pkg/aop/core/consumer.rs](src/pkg/aop/core/consumer.rs)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
+- [src/pkg/aop/queue/mod.rs](src/pkg/aop/queue/mod.rs)
+- [src/pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs)
+- [src/models/events/mod.rs](src/models/events/mod.rs)
+- [src/models/events/message.rs](src/models/events/message.rs)
+- [src/models/events/task_status.rs](src/models/events/task_status.rs)
+- [src/consumer/mod.rs](src/consumer/mod.rs)
 </cite>
 
 ## 目录
@@ -74,22 +74,22 @@ TASK_EVT --> REGISTRY
 ```
 
 **图示来源**
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
-- [src/pkg/aop/core/producer.rs:1-36](file://src/pkg/aop/core/producer.rs#L1-L36)
-- [src/pkg/aop/core/event.rs:1-25](file://src/pkg/aop/core/event.rs#L1-L25)
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
-- [src/pkg/aop/queue/in_memory.rs:1-449](file://src/pkg/aop/queue/in_memory.rs#L1-L449)
-- [src/models/events/mod.rs:1-21](file://src/models/events/mod.rs#L1-L21)
-- [src/models/events/message.rs:1-53](file://src/models/events/message.rs#L1-L53)
-- [src/models/events/task_status.rs:1-66](file://src/models/events/task_status.rs#L1-L66)
-- [src/consumer/mod.rs:1-43](file://src/consumer/mod.rs#L1-L43)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/queue/in_memory.rs:1-449](src/pkg/aop/queue/in_memory.rs#L1-L449)
+- [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
+- [src/models/events/message.rs:1-53](src/models/events/message.rs#L1-L53)
+- [src/models/events/task_status.rs:1-66](src/models/events/task_status.rs#L1-L66)
+- [src/consumer/mod.rs:1-43](src/consumer/mod.rs#L1-L43)
 
 **章节来源**
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
 
 ## 核心组件
 - Event 抽象：统一事件数据结构与元信息（kind/id/order_key/priority/created_at），所有领域事件需实现该 trait。
@@ -99,12 +99,12 @@ TASK_EVT --> REGISTRY
 - Queue 队列：抽象出 enqueue/dequeue/ack/nack/stats/query 等能力，当前提供 InMemoryEventQueue 实现，支持优先级、order_key 顺序、in_progress 跟踪与统计查询。
 
 **章节来源**
-- [src/pkg/aop/core/event.rs:1-25](file://src/pkg/aop/core/event.rs#L1-L25)
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
-- [src/pkg/aop/core/producer.rs:1-36](file://src/pkg/aop/core/producer.rs#L1-L36)
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
-- [src/pkg/aop/queue/in_memory.rs:1-449](file://src/pkg/aop/queue/in_memory.rs#L1-L449)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/queue/in_memory.rs:1-449](src/pkg/aop/queue/in_memory.rs#L1-L449)
 
 ## 架构总览
 AOP 事件系统以 Registry 为核心，将事件从 Producer 或业务调用方发布后，按 EventKind 路由到对应 Consumer。同步模式直接在发布线程执行 on_event；异步模式入队并由独立 worker 拉取处理，支持 ack/nack 与重试退避。队列层通过 order_key 保证同 key 的顺序性，并通过优先级与创建时间决定出队顺序。
@@ -143,9 +143,9 @@ end
 ```
 
 **图示来源**
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/queue/in_memory.rs:104-267](file://src/pkg/aop/queue/in_memory.rs#L104-L267)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/queue/in_memory.rs:104-267](src/pkg/aop/queue/in_memory.rs#L104-L267)
 
 ## 详细组件分析
 
@@ -161,9 +161,9 @@ end
 - TaskStatusChangedEvent：以 task_id 作为 order_key，确保同一任务的状态变更有序
 
 **章节来源**
-- [src/pkg/aop/core/event.rs:1-25](file://src/pkg/aop/core/event.rs#L1-L25)
-- [src/models/events/message.rs:1-53](file://src/models/events/message.rs#L1-L53)
-- [src/models/events/task_status.rs:1-66](file://src/models/events/task_status.rs#L1-L66)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/models/events/message.rs:1-53](src/models/events/message.rs#L1-L53)
+- [src/models/events/task_status.rs:1-66](src/models/events/task_status.rs#L1-L66)
 
 ### Producer 生产者模式
 - name：生产者名称
@@ -173,9 +173,9 @@ end
 - poll：一次生产逻辑，通常读取外部数据并发布事件
 
 **章节来源**
-- [src/pkg/aop/core/producer.rs:1-36](file://src/pkg/aop/core/producer.rs#L1-L36)
-- [src/pkg/aop/core/registry.rs:75-95](file://src/pkg/aop/core/registry.rs#L75-L95)
-- [src/pkg/aop/core/registry.rs:451-487](file://src/pkg/aop/core/registry.rs#L451-L487)
+- [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
+- [src/pkg/aop/core/registry.rs:75-95](src/pkg/aop/core/registry.rs#L75-L95)
+- [src/pkg/aop/core/registry.rs:451-487](src/pkg/aop/core/registry.rs#L451-L487)
 
 ### Consumer 消费者 trait
 - name：消费者名称（全局唯一）
@@ -188,7 +188,7 @@ end
 - empty_queue_sleep_ms/error_retry_sleep_ms：轮询节奏控制
 
 **章节来源**
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
 
 ### Registry 注册中心
 职责：
@@ -203,7 +203,7 @@ end
 - start_all：原子标记 started → 收集异步消费者 → 启动 worker 循环 → 启动生产者（轮询或非轮询）
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
 
 ### 队列实现（InMemoryEventQueue）
 数据结构：
@@ -224,8 +224,8 @@ end
 - query_events/get_event：支持分页、过滤、脱敏预览
 
 **章节来源**
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
-- [src/pkg/aop/queue/in_memory.rs:1-449](file://src/pkg/aop/queue/in_memory.rs#L1-L449)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/queue/in_memory.rs:1-449](src/pkg/aop/queue/in_memory.rs#L1-L449)
 
 ### 事件生命周期管理
 - 发布阶段：Registry.publish 序列化并注入元字段，记录 on_publish 指标
@@ -236,9 +236,9 @@ end
 - 顺序保证：order_key 相同的消息串行处理，通过 has_active_message 与队列头管理
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/queue/in_memory.rs:104-267](file://src/pkg/aop/queue/in_memory.rs#L104-L267)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/queue/in_memory.rs:104-267](src/pkg/aop/queue/in_memory.rs#L104-L267)
 
 ### 异步处理机制
 - 每个异步消费者拥有独立队列与多个 worker 协程
@@ -247,8 +247,8 @@ end
 - 轮询生产者：poll_interval_secs > 0 时由 Registry 定时触发 poll
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
 
 ### 错误处理
 - 序列化失败：记录错误并跳过该事件
@@ -258,8 +258,8 @@ end
 - ack/nack 失败：记录错误，但继续推进（避免阻塞）
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
 
 ### 性能优化策略
 - 优先级 + 创建时间排序：BinaryHeap 保证高优先级先出，同优先级先进先出
@@ -270,8 +270,8 @@ end
 - 指标零开销：未注入 Hook 时不产生额外开销
 
 **章节来源**
-- [src/pkg/aop/queue/in_memory.rs:104-267](file://src/pkg/aop/queue/in_memory.rs#L104-L267)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/queue/in_memory.rs:104-267](src/pkg/aop/queue/in_memory.rs#L104-L267)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
 
 ## 依赖关系分析
 - Registry 依赖 Consumer、Producer、EventQueue、RequestContext、AopMetricsHook
@@ -347,16 +347,16 @@ InMemoryEventQueue ..|> EventQueue
 ```
 
 **图示来源**
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
-- [src/pkg/aop/core/producer.rs:1-36](file://src/pkg/aop/core/producer.rs#L1-L36)
-- [src/pkg/aop/core/event.rs:1-25](file://src/pkg/aop/core/event.rs#L1-L25)
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
-- [src/pkg/aop/queue/in_memory.rs:1-449](file://src/pkg/aop/queue/in_memory.rs#L1-L449)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
+- [src/pkg/aop/core/event.rs:1-25](src/pkg/aop/core/event.rs#L1-L25)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/queue/in_memory.rs:1-449](src/pkg/aop/queue/in_memory.rs#L1-L449)
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)
 
 ## 性能考量
 - 队列复杂度：入队 O(log n)（BinaryHeap），出队 O(log n)，查询 O(n)（受分页限制）
@@ -376,8 +376,8 @@ InMemoryEventQueue ..|> EventQueue
 - 死锁风险：Registry.start_all 已避免长持锁，确保消费者 on_event 不长时间持有外部锁
 
 **章节来源**
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/queue/in_memory.rs:300-449](file://src/pkg/aop/queue/in_memory.rs#L300-L449)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/queue/in_memory.rs:300-449](src/pkg/aop/queue/in_memory.rs#L300-L449)
 
 ## 结论
 AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue 抽象，提供了轻量、可扩展、可观测的事件分发与调度能力。通过 order_key 与优先级保障顺序与时效，通过 ack/nack 与退避策略提升可靠性，通过指标 Hook 实现可观测性。业务层只需实现事件与消费者，即可无缝接入。
@@ -396,9 +396,9 @@ AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue �
 - TaskStatusChangedEvent：以 task_id 作为 order_key
 
 **章节来源**
-- [src/models/events/message.rs:1-53](file://src/models/events/message.rs#L1-L53)
-- [src/models/events/task_status.rs:1-66](file://src/models/events/task_status.rs#L1-L66)
-- [src/models/events/mod.rs:1-21](file://src/models/events/mod.rs#L1-L21)
+- [src/models/events/message.rs:1-53](src/models/events/message.rs#L1-L53)
+- [src/models/events/task_status.rs:1-66](src/models/events/task_status.rs#L1-L66)
+- [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
 
 ### 注册流程
 - 在 consumer::init 中注册所有业务消费者
@@ -406,8 +406,8 @@ AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue �
 - 启动时调用 aop::init_all 启动调度器与生产者
 
 **章节来源**
-- [src/consumer/mod.rs:1-43](file://src/consumer/mod.rs#L1-L43)
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
+- [src/consumer/mod.rs:1-43](src/consumer/mod.rs#L1-L43)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
 
 ### 发布消费模式示例
 - 发布事件：调用 aop::publish(event)
@@ -415,8 +415,8 @@ AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue �
 - 异步消费：实现 Consumer 并返回 ConsumeMode::Async，实现 ack/nack 与并发配置
 
 **章节来源**
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [src/pkg/aop/core/consumer.rs:1-72](file://src/pkg/aop/core/consumer.rs#L1-L72)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [src/pkg/aop/core/consumer.rs:1-72](src/pkg/aop/core/consumer.rs#L1-L72)
 
 ### 与其他模块的集成方式
 - 业务 DAL/Domain：通过发布事件解耦副作用（如任务状态变更后通知 Owner Agent）
@@ -424,8 +424,8 @@ AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue �
 - 监控：注入 AopMetricsHook 采集发布与消费指标
 
 **章节来源**
-- [src/models/events/task_status.rs:1-66](file://src/models/events/task_status.rs#L1-L66)
-- [src/pkg/aop/core/registry.rs:1-561](file://src/pkg/aop/core/registry.rs#L1-L561)
+- [src/models/events/task_status.rs:1-66](src/models/events/task_status.rs#L1-L66)
+- [src/pkg/aop/core/registry.rs:1-561](src/pkg/aop/core/registry.rs#L1-L561)
 
 ### 扩展点设计
 - 新增事件：定义事件 struct 并实现 Event trait
@@ -434,5 +434,5 @@ AOP 事件系统以 Registry 为中心，结合 Event/Consumer/Producer/Queue �
 - 自定义队列：实现 EventQueue trait 替换 InMemoryEventQueue（如持久化队列）
 
 **章节来源**
-- [src/pkg/aop/core/producer.rs:1-36](file://src/pkg/aop/core/producer.rs#L1-L36)
-- [src/pkg/aop/queue/mod.rs:1-107](file://src/pkg/aop/queue/mod.rs#L1-L107)
+- [src/pkg/aop/core/producer.rs:1-36](src/pkg/aop/core/producer.rs#L1-L36)
+- [src/pkg/aop/queue/mod.rs:1-107](src/pkg/aop/queue/mod.rs#L1-L107)

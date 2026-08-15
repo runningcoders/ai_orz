@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
-- [src/handlers/finance/mcp_server/update_mcp_server.rs](file://src/handlers/finance/mcp_server/update_mcp_server.rs)
-- [src/handlers/finance/mcp_server/list_mcp_servers.rs](file://src/handlers/finance/mcp_server/list_mcp_servers.rs)
-- [src/handlers/finance/mcp_server/get_mcp_server.rs](file://src/handlers/finance/mcp_server/get_mcp_server.rs)
-- [src/handlers/finance/mcp_server/delete_mcp_server.rs](file://src/handlers/finance/mcp_server/delete_mcp_server.rs)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs)
-- [src/handlers/finance/mcp_server/response.rs](file://src/handlers/finance/mcp_server/response.rs)
-- [common/src/api/mcp_server.rs](file://common/src/api/mcp_server.rs)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [src/service/domain/finance/mod.rs](file://src/service/domain/finance/mod.rs)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
+- [src/handlers/finance/mcp_server/update_mcp_server.rs](src/handlers/finance/mcp_server/update_mcp_server.rs)
+- [src/handlers/finance/mcp_server/list_mcp_servers.rs](src/handlers/finance/mcp_server/list_mcp_servers.rs)
+- [src/handlers/finance/mcp_server/get_mcp_server.rs](src/handlers/finance/mcp_server/get_mcp_server.rs)
+- [src/handlers/finance/mcp_server/delete_mcp_server.rs](src/handlers/finance/mcp_server/delete_mcp_server.rs)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs](src/handlers/finance/mcp_server/update_mcp_server_status.rs)
+- [src/handlers/finance/mcp_server/response.rs](src/handlers/finance/mcp_server/response.rs)
+- [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [src/service/domain/finance/mod.rs](src/service/domain/finance/mod.rs)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
 </cite>
 
 ## 目录
@@ -62,12 +62,12 @@ DAL --> DAO
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mod.rs:92-115](file://src/service/domain/finance/mod.rs#L92-L115)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mod.rs:92-115](file://src/service/domain/finance/mod.rs#L92-L115)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
 
 ## 核心组件
 - HTTP 处理器（Adapter）：每个方法一个文件，负责参数校验、上下文提取、调用领域层、转换响应。
@@ -78,9 +78,9 @@ DAL --> DAO
   - models::mcp_server 中的传输类型、状态枚举、配置结构与持久化对象。
 
 章节来源
-- [common/src/api/mcp_server.rs:10-179](file://common/src/api/mcp_server.rs#L10-L179)
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 ## 架构总览
 MCP 服务器管理采用标准 REST 风格接口，通过 Axum 路由注册处理器，处理器调用 FinanceDomain 的 mcp_server_manage 子域，再经由 DAL 完成持久化。所有敏感配置在管理面展示时进行脱敏处理。
@@ -103,8 +103,8 @@ H-->>C : "200 CreateMcpServerResponse"
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 ## 详细组件分析
 
@@ -135,20 +135,20 @@ Redact --> Resp["返回响应"]
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](file://src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
-- [src/handlers/finance/mcp_server/list_mcp_servers.rs:13-44](file://src/handlers/finance/mcp_server/list_mcp_servers.rs#L13-L44)
-- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](file://src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
-- [src/handlers/finance/mcp_server/delete_mcp_server.rs:10-28](file://src/handlers/finance/mcp_server/delete_mcp_server.rs#L10-L28)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:12-36](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs#L12-L36)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
+- [src/handlers/finance/mcp_server/list_mcp_servers.rs:13-44](src/handlers/finance/mcp_server/list_mcp_servers.rs#L13-L44)
+- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
+- [src/handlers/finance/mcp_server/delete_mcp_server.rs:10-28](src/handlers/finance/mcp_server/delete_mcp_server.rs#L10-L28)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:12-36](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L12-L36)
 
 章节来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](file://src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
-- [src/handlers/finance/mcp_server/list_mcp_servers.rs:13-44](file://src/handlers/finance/mcp_server/list_mcp_servers.rs#L13-L44)
-- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](file://src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
-- [src/handlers/finance/mcp_server/delete_mcp_server.rs:10-28](file://src/handlers/finance/mcp_server/delete_mcp_server.rs#L10-L28)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:12-36](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs#L12-L36)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
+- [src/handlers/finance/mcp_server/list_mcp_servers.rs:13-44](src/handlers/finance/mcp_server/list_mcp_servers.rs#L13-L44)
+- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
+- [src/handlers/finance/mcp_server/delete_mcp_server.rs:10-28](src/handlers/finance/mcp_server/delete_mcp_server.rs#L10-L28)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:12-36](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L12-L36)
 
 ### 领域层：MCP 服务器管理能力
 - 接口定义：McpServerManage 提供 create/get/query/list/update/status/delete 等方法。
@@ -173,12 +173,12 @@ FinanceDomain --> McpServerManage : "提供"
 ```
 
 图表来源
-- [src/service/domain/finance/mod.rs:92-115](file://src/service/domain/finance/mod.rs#L92-L115)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 章节来源
-- [src/service/domain/finance/mod.rs:92-115](file://src/service/domain/finance/mod.rs#L92-L115)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [src/service/domain/finance/mod.rs:92-115](src/service/domain/finance/mod.rs#L92-L115)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 ### 数据模型与配置
 - 传输类型：stdio、streamable_http。
@@ -205,12 +205,12 @@ string updated_by
 ```
 
 图表来源
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
 
 章节来源
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
-- [common/src/api/mcp_server.rs:10-179](file://common/src/api/mcp_server.rs#L10-L179)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
+- [common/src/api/mcp_server.rs:10-179](common/src/api/mcp_server.rs#L10-L179)
 
 ## 依赖关系分析
 - 处理器依赖领域层：通过 domain().mcp_server_manage() 获取接口实现。
@@ -228,12 +228,12 @@ Model --> DTO
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/response.rs:1-89](file://src/handlers/finance/mcp_server/response.rs#L1-L89)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L89)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 章节来源
-- [src/handlers/finance/mcp_server/response.rs:1-89](file://src/handlers/finance/mcp_server/response.rs#L1-L89)
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
+- [src/handlers/finance/mcp_server/response.rs:1-89](src/handlers/finance/mcp_server/response.rs#L1-L89)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
 
 ## 性能与可用性
 - 超时与大小限制：
@@ -269,9 +269,9 @@ Model --> DTO
   - 定期备份数据库，防止误删。
 
 章节来源
-- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](file://src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
-- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](file://src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
-- [src/models/mcp_server.rs:125-167](file://src/models/mcp_server.rs#L125-L167)
+- [src/handlers/finance/mcp_server/get_mcp_server.rs:12-33](src/handlers/finance/mcp_server/get_mcp_server.rs#L12-L33)
+- [src/handlers/finance/mcp_server/update_mcp_server.rs:12-55](src/handlers/finance/mcp_server/update_mcp_server.rs#L12-L55)
+- [src/models/mcp_server.rs:125-167](src/models/mcp_server.rs#L125-L167)
 
 ## 结论
 MCP 服务器管理 API 提供了完整的 CRUD 与状态管理能力，支持 stdio 与 streamable_http 两种传输方式，并在管理面进行敏感配置脱敏。系统遵循清晰的分层架构与单向依赖，便于扩展与维护。未来可在 DAL 层引入连接池、在网关层实现负载均衡与健康检查，以提升高可用性与可扩展性。
@@ -311,8 +311,8 @@ MCP 服务器管理 API 提供了完整的 CRUD 与状态管理能力，支持 s
   - 响应：UpdateMcpServerStatusResponse
 
 章节来源
-- [common/src/api/mcp_server.rs:34-179](file://common/src/api/mcp_server.rs#L34-L179)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [common/src/api/mcp_server.rs:34-179](common/src/api/mcp_server.rs#L34-L179)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
 
 ### 配置项说明
 - 传输类型
@@ -326,8 +326,8 @@ MCP 服务器管理 API 提供了完整的 CRUD 与状态管理能力，支持 s
   - env、headers、url 在管理面展示时会被脱敏，避免泄露敏感信息。
 
 章节来源
-- [src/models/mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [src/handlers/finance/mcp_server/response.rs:34-58](file://src/handlers/finance/mcp_server/response.rs#L34-L58)
+- [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [src/handlers/finance/mcp_server/response.rs:34-58](src/handlers/finance/mcp_server/response.rs#L34-L58)
 
 ### 配置示例（文本描述）
 - stdio 示例

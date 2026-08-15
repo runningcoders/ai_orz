@@ -84,28 +84,28 @@ Phase A→G 分阶段推进，前 6 阶段为必选，G 独立可砍：
 | 文件 | 角色 | 摘要 |
 |------|------|------|
 | **common DTO 层（Phase B）** | | |
-| [common/src/api/project.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/project.rs) | Project DTO | GetProjectResponse 增 execution_plan: Option<String> / execution_result（serde default + skip_none） |
-| [common/src/api/task.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/task.rs) | Task DTO | GetTaskResponse 同上两字段 |
+| [common/src/api/project.rs](common/src/api/project.rs) | Project DTO | GetProjectResponse 增 execution_plan: Option<String> / execution_result（serde default + skip_none） |
+| [common/src/api/task.rs](common/src/api/task.rs) | Task DTO | GetTaskResponse 同上两字段 |
 | **Handler 响应映射（Phase B）** | | |
-| [src/handlers/project/projects/response.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/project/projects/response.rs) | Project 响应 | to_detail() 映射 project.po.execution_plan/execution_result |
-| [src/handlers/project/task/response.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/project/task/response.rs) | Task 响应 | to_detail() 映射 task.po.execution_plan/execution_result |
+| [src/handlers/project/projects/response.rs](src/handlers/project/projects/response.rs) | Project 响应 | to_detail() 映射 project.po.execution_plan/execution_result |
+| [src/handlers/project/task/response.rs](src/handlers/project/task/response.rs) | Task 响应 | to_detail() 映射 task.po.execution_plan/execution_result |
 | **前端组件（Phase A 基础设施）** | | |
-| [frontend/src/components/markdown.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/markdown.rs) | 公共组件 | MarkdownRenderer { content, compact }；抽取 render_markdown()；use_memo 按 content 缓存；Phase G 同文件增 MermaidDiagram |
-| [frontend/src/components/mod.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/mod.rs) | 组件注册 | pub mod markdown; |
-| [frontend/styles/input.css](file:///Users/aman/Technology/rust/ai_orz/frontend/styles/input.css) | 样式 | .markdown-body 现有主题；新增 .markdown-compact 限高/去首尾 margin 变体 |
-| [frontend/src/pages/system/docs.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/system/docs.rs) | docs 页 | 改调用共享 MarkdownRenderer 组件（消除重复） |
+| [frontend/src/components/markdown.rs](frontend/src/components/markdown.rs) | 公共组件 | MarkdownRenderer { content, compact }；抽取 render_markdown()；use_memo 按 content 缓存；Phase G 同文件增 MermaidDiagram |
+| [frontend/src/components/mod.rs](frontend/src/components/mod.rs) | 组件注册 | pub mod markdown; |
+| [frontend/styles/input.css](frontend/styles/input.css) | 样式 | .markdown-body 现有主题；新增 .markdown-compact 限高/去首尾 margin 变体 |
+| [frontend/src/pages/system/docs.rs](frontend/src/pages/system/docs.rs) | docs 页 | 改调用共享 MarkdownRenderer 组件（消除重复） |
 | **前端详情页（Phase D）** | | |
-| [frontend/src/pages/project/project_detail.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/project/project_detail.rs) | 项目详情 | description / workflow（新增）/ guidance（新增）/ execution_plan（新增）/ execution_result（新增）→ MarkdownRenderer |
-| [frontend/src/pages/project/task_detail.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/project/task_detail.rs) | 任务详情 | description / execution_plan / execution_result → MarkdownRenderer |
-| [frontend/src/pages/hr/agent_detail.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/hr/agent_detail.rs) | Agent 详情 | description；新增 soul 只读展示区块（当前未展示） |
-| [frontend/src/pages/hr/skill_detail.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/hr/skill_detail.rs) | Skill 详情 | description；skill.md 增加「渲染预览 / 源码」切换（源码沿用 CodeEditor） |
-| [frontend/src/pages/finance/tool_detail.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/finance/tool_detail.rs) | Tool 详情 | description |
-| [frontend/src/pages/hr/knowledge_graph.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/hr/knowledge_graph.rs) | 知识图谱 | 节点详情面板 node_description / summary → MarkdownRenderer |
+| [frontend/src/pages/project/project_detail.rs](frontend/src/pages/project/project_detail.rs) | 项目详情 | description / workflow（新增）/ guidance（新增）/ execution_plan（新增）/ execution_result（新增）→ MarkdownRenderer |
+| [frontend/src/pages/project/task_detail.rs](frontend/src/pages/project/task_detail.rs) | 任务详情 | description / execution_plan / execution_result → MarkdownRenderer |
+| [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs) | Agent 详情 | description；新增 soul 只读展示区块（当前未展示） |
+| [frontend/src/pages/hr/skill_detail.rs](frontend/src/pages/hr/skill_detail.rs) | Skill 详情 | description；skill.md 增加「渲染预览 / 源码」切换（源码沿用 CodeEditor） |
+| [frontend/src/pages/finance/tool_detail.rs](frontend/src/pages/finance/tool_detail.rs) | Tool 详情 | description |
+| [frontend/src/pages/hr/knowledge_graph.rs](frontend/src/pages/hr/knowledge_graph.rs) | 知识图谱 | 节点详情面板 node_description / summary → MarkdownRenderer |
 | **前端聊天（Phase E）** | | |
-| [frontend/src/pages/message/chat.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/message/chat.rs) | 聊天页 | 仅 Text 类型消息气泡改 `<MarkdownRenderer compact>`；ToolCall / 附件类型保持现状 |
+| [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs) | 聊天页 | 仅 Text 类型消息气泡改 `<MarkdownRenderer compact>`；ToolCall / 附件类型保持现状 |
 | **前端记忆（Phase F）** | | |
-| [frontend/src/pages/hr/memory_search.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/hr/memory_search.rs) | 记忆搜索 | content / summary 展开态 MarkdownRenderer；折叠态保留截断预览 |
-| [frontend/src/pages/hr/agent_memory_panel.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/hr/agent_memory_panel.rs) | 记忆面板 | 短期记忆 content / 知识节点 summary 展开态 MarkdownRenderer |
+| [frontend/src/pages/hr/memory_search.rs](frontend/src/pages/hr/memory_search.rs) | 记忆搜索 | content / summary 展开态 MarkdownRenderer；折叠态保留截断预览 |
+| [frontend/src/pages/hr/agent_memory_panel.rs](frontend/src/pages/hr/agent_memory_panel.rs) | 记忆面板 | 短期记忆 content / 知识节点 summary 展开态 MarkdownRenderer |
 | **Seed 技能（Phase C）** | | |
 | TEMPLATE_PROJECT_MANAGEMENT/skill.md（seed 目录） | 项目管理技能 | update_task/update_project 参数说明强制 Markdown + Mermaid 书写；标准模板示例 |
 | **Phase G（Mermaid，可砍）** | | |
@@ -124,7 +124,7 @@ Phase A→G 分阶段推进，前 6 阶段为必选，G 独立可砍：
 | Handler 响应映射未透传 | src/handlers/**/response.rs → to_detail() 加对应映射 | 同 project/projects/response.rs |
 | 详情页接入 | `<MarkdownRenderer content={field} compact={false} />` 替换 `{field}` 纯文本插值 | 参考 project_detail.rs / agent_detail.rs 现有字段块 |
 
-> 代码入口：[components/markdown.rs MarkdownRenderer](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/markdown.rs)
+> 代码入口：[components/markdown.rs MarkdownRenderer](frontend/src/components/markdown.rs)
 
 ### 4.2 新增 Phase G Mermaid 消费方（项目任务图之外场景）
 
@@ -137,17 +137,7 @@ Phase A→G 分阶段推进，前 6 阶段为必选，G 独立可砍：
 
 ## 五、验收清单
 
-- [x] 技术选型确认：pulldown-cmark 0.13（WASM 友好）+ .markdown-body 现有样式
-- [x] XSS 防护确认：ENABLE_HTML 不开启 → dangerous_inner_html 安全
-- [x] Phase G 可砍确认：删除不影响 A–F（代价约 2-3MB vendor JS）
-- [ ] Phase A：MarkdownRenderer 组件 + use_memo；compact 变体；docs.rs 消重
-- [ ] Phase B：Project/Task DTO + Handler 响应补 execution_plan/result
-- [ ] Phase C：项目管理技能 prompt 书写规范更新（+ preset_skills 测试断言）
-- [ ] Phase D：6+ 详情页字段统一 MarkdownRenderer（列表态保持纯文本）
-- [ ] Phase E：聊天页 Text 消息气泡 compact MarkdownRenderer
-- [ ] Phase F：记忆搜索 + 记忆面板展开态 MarkdownRenderer
-- [ ] （可选）Phase G：mermaid vendor + 全局 render + MermaidDiagram + 任务依赖图
-- [ ] 门槛：后端 test + clippy；前端 wasm32 build + clippy -D warnings；MarkdownRenderer 轻量单元测试
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -172,7 +162,8 @@ Phase A→G 分阶段推进，前 6 阶段为必选，G 独立可砍：
 
 > **核心不变量**：渲染统一走 MarkdownRenderer；列表态纯文本 / 详情态 Markdown 的二分原则；ENABLE_HTML 永不开启。
 
-1. **common DTO 补字段**：[common/src/api/](file:///Users/aman/Technology/rust/ai_orz/common/src/api/) 对应实体 GetXxxResponse → 需要前端 Markdown 展示的字段补 Option<String>（缺省 None 向后兼容）
-2. **Handler 响应映射**：[src/handlers/**/response.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/) → to_detail() 中加对应字段映射（PO → Response）
-3. **详情页接入 MarkdownRenderer**：[frontend/src/pages/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/) 详情页 → 详情区块用 `<MarkdownRenderer content={} compact={false} />` 替换纯文本插值；列表页不改
-4. **Phase G Mermaid 扩展（后续）**：[frontend/src/components/markdown.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/markdown.rs) 同目录增 MermaidDiagram 调用；确认 vendor 成本可接受后在项目详情 / 知识图谱详情等更多页面接入依赖图 / 甘特图渲染
+1. **common DTO 补字段**：[common/src/api/](common/src/api/) 对应实体 GetXxxResponse → 需要前端 Markdown 展示的字段补 Option<String>（缺省 None 向后兼容）
+2. **Handler 响应映射**：[src/handlers/**/response.rs](src/handlers/) → to_detail() 中加对应字段映射（PO → Response）
+3. **详情页接入 MarkdownRenderer**：[frontend/src/pages/](frontend/src/pages/) 详情页 → 详情区块用 `<MarkdownRenderer content={} compact={false} />` 替换纯文本插值；列表页不改
+4. **Phase G Mermaid 扩展（后续）**：[frontend/src/components/markdown.rs](frontend/src/components/markdown.rs) 同目录增 MermaidDiagram 调用；确认 vendor 成本可接受后在项目详情 / 知识图谱详情等更多页面接入依赖图 / 甘特图渲染
+

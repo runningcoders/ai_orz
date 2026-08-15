@@ -1,13 +1,13 @@
-# MCP 工具集成
+# MCP 工具集成（代码落地层）
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/mcp.rs](file://src/pkg/tool_registry/mcp.rs)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [common/src/api/mcp_server.rs](file://common/src/api/mcp_server.rs)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [src/pkg/tool_registry/mcp_tests.rs](file://src/pkg/tool_registry/mcp_tests.rs)
-- [docs/mcp_tool_design.md](file://docs/mcp_tool_design.md)
+- [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [src/pkg/tool_registry/mcp_tests.rs](src/pkg/tool_registry/mcp_tests.rs)
+- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -26,6 +26,10 @@
 
 ## 简介
 本文件面向需要在系统中集成 Model Context Protocol（MCP）工具的工程师，系统性说明 McpCoreTool 的实现原理、MCP 服务器连接管理、握手流程、消息格式、会话管理、工具发现与动态注册、配置项、连接池与故障恢复策略，以及 MCP 服务器的搭建、调试与监控方法。文档同时提供端到端集成示例，展示如何从管理面同步远端 MCP 工具，并在运行时通过标准 Tool 机制执行。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「MCP 工具集成」主题的 **代码落地层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [MCP 工具集成（入门概览层）](docs/wiki/zh/content/项目概述/核心功能特性/统一工具调用架构/MCP 工具集成.md)
 
 ## 项目结构
 本项目采用严格四层单向调用：Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO，禁止跨层调用与同层互调。MCP 相关代码主要分布在以下位置：
@@ -60,13 +64,13 @@ MDP --> R --> C
 ```
 
 图表来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:196-321](file://docs/mcp_tool_design.md#L196-L321)
-- [src/pkg/tool_registry/mcp.rs:72-192](file://src/pkg/tool_registry/mcp.rs#L72-L192)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [docs/mcp_tool_design.md:196-321](docs/mcp_tool_design.md#L196-L321)
+- [src/pkg/tool_registry/mcp.rs:72-192](src/pkg/tool_registry/mcp.rs#L72-L192)
 
 章节来源
-- [docs/mcp_tool_design.md:120-195](file://docs/mcp_tool_design.md#L120-L195)
-- [src/pkg/tool_registry/mcp.rs:1-26](file://src/pkg/tool_registry/mcp.rs#L1-L26)
+- [docs/mcp_tool_design.md:120-195](docs/mcp_tool_design.md#L120-L195)
+- [src/pkg/tool_registry/mcp.rs:1-26](src/pkg/tool_registry/mcp.rs#L1-L26)
 
 ## 核心组件
 - McpCoreTool：实现 CoreTool 接口的可执行工具对象，封装 ToolPo、McpToolConfig、McpServerPo 与 McpClientRuntime，负责将参数转发到 MCP 服务端执行。
@@ -76,10 +80,10 @@ MDP --> R --> C
 - HTTP Handler sync_mcp_tools：暴露 POST /api/v1/finance/mcp-servers/{server_id}/tools/sync，触发远端工具同步。
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:28-48](file://src/pkg/tool_registry/mcp.rs#L28-L48)
-- [src/pkg/tool_registry/mcp.rs:50-192](file://src/pkg/tool_registry/mcp.rs#L50-L192)
-- [src/models/mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/pkg/tool_registry/mcp.rs:28-48](src/pkg/tool_registry/mcp.rs#L28-L48)
+- [src/pkg/tool_registry/mcp.rs:50-192](src/pkg/tool_registry/mcp.rs#L50-L192)
+- [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
 
 ## 架构总览
 MCP 工具集成遵循“管理面”和“运行面”分离：
@@ -111,12 +115,12 @@ Handler-->>Client : { synced }
 ```
 
 图表来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:303-349](file://docs/mcp_tool_design.md#L303-L349)
-- [src/pkg/tool_registry/mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [docs/mcp_tool_design.md:303-349](docs/mcp_tool_design.md#L303-L349)
+- [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 章节来源
-- [docs/mcp_tool_design.md:303-389](file://docs/mcp_tool_design.md#L303-L389)
+- [docs/mcp_tool_design.md:303-389](docs/mcp_tool_design.md#L303-L389)
 
 ## 详细组件分析
 
@@ -151,11 +155,11 @@ McpCoreTool --> McpToolDeps : "依赖注入"
 ```
 
 图表来源
-- [src/pkg/tool_registry/mcp.rs:270-365](file://src/pkg/tool_registry/mcp.rs#L270-L365)
-- [src/pkg/tool_registry/mcp.rs:50-192](file://src/pkg/tool_registry/mcp.rs#L50-L192)
+- [src/pkg/tool_registry/mcp.rs:270-365](src/pkg/tool_registry/mcp.rs#L270-L365)
+- [src/pkg/tool_registry/mcp.rs:50-192](src/pkg/tool_registry/mcp.rs#L50-L192)
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:270-365](file://src/pkg/tool_registry/mcp.rs#L270-L365)
+- [src/pkg/tool_registry/mcp.rs:270-365](src/pkg/tool_registry/mcp.rs#L270-L365)
 
 ### McpClientRuntime：握手、消息与生命周期
 - 握手：通过 rmcp 的 TokioChildProcess 启动 MCP stdio 子进程，serve(transport) 完成 initialize 握手。
@@ -177,12 +181,12 @@ Close --> End(["结束"])
 ```
 
 图表来源
-- [src/pkg/tool_registry/mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
-- [src/pkg/tool_registry/mcp.rs:103-192](file://src/pkg/tool_registry/mcp.rs#L103-L192)
+- [src/pkg/tool_registry/mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
+- [src/pkg/tool_registry/mcp.rs:103-192](src/pkg/tool_registry/mcp.rs#L103-L192)
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:72-192](file://src/pkg/tool_registry/mcp.rs#L72-L192)
-- [src/pkg/tool_registry/mcp.rs:200-268](file://src/pkg/tool_registry/mcp.rs#L200-L268)
+- [src/pkg/tool_registry/mcp.rs:72-192](src/pkg/tool_registry/mcp.rs#L72-L192)
+- [src/pkg/tool_registry/mcp.rs:200-268](src/pkg/tool_registry/mcp.rs#L200-L268)
 
 ### MCP 服务器连接管理与配置
 - McpTransport：支持 stdio 与 streamable_http（第一版仅 stdio 可用）。
@@ -191,8 +195,8 @@ Close --> End(["结束"])
 - 管理面返回脱敏配置：redacted_for_management 对 env、headers、url 进行脱敏。
 
 章节来源
-- [src/models/mcp_server.rs:17-167](file://src/models/mcp_server.rs#L17-L167)
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
+- [src/models/mcp_server.rs:17-167](src/models/mcp_server.rs#L17-L167)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
 
 ### 工具发现与动态注册
 - 通过 McpClientRuntime.list_tools(server) 获取远端工具元数据。
@@ -200,8 +204,8 @@ Close --> End(["结束"])
 - upsert 规则：不存在则创建；已存在需校验协议与绑定一致；保留 created_at/created_by/status，更新 updated_by。
 
 章节来源
-- [docs/mcp_tool_design.md:303-349](file://docs/mcp_tool_design.md#L303-L349)
-- [src/pkg/tool_registry/mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
+- [docs/mcp_tool_design.md:303-349](docs/mcp_tool_design.md#L303-L349)
+- [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
 
 ### 运行时调用与协议路由
 - Domain 层按 ToolProtocol 路由：Builtin/Http 走通用 ToolDal，MCP 走 McpToolDal。
@@ -209,8 +213,8 @@ Close --> End(["结束"])
 - 执行路径：McpCoreTool.call -> McpClientRuntime.call_tool -> rmcp tools/call。
 
 章节来源
-- [docs/mcp_tool_design.md:581-611](file://docs/mcp_tool_design.md#L581-L611)
-- [docs/mcp_tool_design.md:713-766](file://docs/mcp_tool_design.md#L713-L766)
+- [docs/mcp_tool_design.md:581-611](docs/mcp_tool_design.md#L581-L611)
+- [docs/mcp_tool_design.md:713-766](docs/mcp_tool_design.md#L713-L766)
 
 ## 依赖关系分析
 - Handler 仅做 DTO 转换，调用 Finance Domain。
@@ -229,11 +233,11 @@ MD --> RT["McpClientRuntime"]
 ```
 
 图表来源
-- [docs/mcp_tool_design.md:152-195](file://docs/mcp_tool_design.md#L152-L195)
-- [docs/mcp_tool_design.md:391-438](file://docs/mcp_tool_design.md#L391-L438)
+- [docs/mcp_tool_design.md:152-195](docs/mcp_tool_design.md#L152-L195)
+- [docs/mcp_tool_design.md:391-438](docs/mcp_tool_design.md#L391-L438)
 
 章节来源
-- [docs/mcp_tool_design.md:152-195](file://docs/mcp_tool_design.md#L152-L195)
+- [docs/mcp_tool_design.md:152-195](docs/mcp_tool_design.md#L152-L195)
 
 ## 性能与连接管理
 - 当前实现为每调用新建 stdio 会话，适合低频调用；高并发场景建议后续引入 session cache 与连接复用。
@@ -242,9 +246,9 @@ MD --> RT["McpClientRuntime"]
 - 响应大小限制：response_max_bytes 可用于后续扩展以限制结果体积。
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:107-192](file://src/pkg/tool_registry/mcp.rs#L107-L192)
-- [src/models/mcp_server.rs:117-123](file://src/models/mcp_server.rs#L117-L123)
-- [docs/mcp_tool_design.md:1346-1352](file://docs/mcp_tool_design.md#L1346-L1352)
+- [src/pkg/tool_registry/mcp.rs:107-192](src/pkg/tool_registry/mcp.rs#L107-L192)
+- [src/models/mcp_server.rs:117-123](src/models/mcp_server.rs#L117-L123)
+- [docs/mcp_tool_design.md:1346-1352](docs/mcp_tool_design.md#L1346-L1352)
 
 ## 故障恢复与错误处理
 - 错误脱敏：MCP 下层错误统一映射为安全错误，不输出 command/env/headers/url/credential。
@@ -256,9 +260,9 @@ MD --> RT["McpClientRuntime"]
 - 测试覆盖：包括 echo 成功、失败脚本、参数校验、命令解析、会话关闭失败、并发调用等。
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [src/pkg/tool_registry/mcp.rs:242-268](file://src/pkg/tool_registry/mcp.rs#L242-L268)
-- [src/pkg/tool_registry/mcp_tests.rs:333-413](file://src/pkg/tool_registry/mcp_tests.rs#L333-L413)
+- [src/pkg/tool_registry/mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [src/pkg/tool_registry/mcp.rs:242-268](src/pkg/tool_registry/mcp.rs#L242-L268)
+- [src/pkg/tool_registry/mcp_tests.rs:333-413](src/pkg/tool_registry/mcp_tests.rs#L333-L413)
 
 ## 配置选项与能力协商
 - McpServerConfig 关键选项：
@@ -269,9 +273,9 @@ MD --> RT["McpClientRuntime"]
 - 工具元数据：name、description、inputSchema 被映射为 ToolPo.parameters_schema 与 tags。
 
 章节来源
-- [src/models/mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [src/pkg/tool_registry/mcp_tests.rs:157-217](file://src/pkg/tool_registry/mcp_tests.rs#L157-L217)
-- [docs/mcp_tool_design.md:323-349](file://docs/mcp_tool_design.md#L323-L349)
+- [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [src/pkg/tool_registry/mcp_tests.rs:157-217](src/pkg/tool_registry/mcp_tests.rs#L157-L217)
+- [docs/mcp_tool_design.md:323-349](docs/mcp_tool_design.md#L323-L349)
 
 ## MCP 服务器搭建与调试
 - 搭建步骤：
@@ -284,8 +288,8 @@ MD --> RT["McpClientRuntime"]
   - 使用并发测试验证多调用稳定性。
 
 章节来源
-- [src/pkg/tool_registry/mcp_tests.rs:157-217](file://src/pkg/tool_registry/mcp_tests.rs#L157-L217)
-- [src/pkg/tool_registry/mcp_tests.rs:415-438](file://src/pkg/tool_registry/mcp_tests.rs#L415-L438)
+- [src/pkg/tool_registry/mcp_tests.rs:157-217](src/pkg/tool_registry/mcp_tests.rs#L157-L217)
+- [src/pkg/tool_registry/mcp_tests.rs:415-438](src/pkg/tool_registry/mcp_tests.rs#L415-L438)
 
 ## 集成示例：连接并调用外部 MCP 服务
 - 管理面同步：
@@ -300,9 +304,9 @@ MD --> RT["McpClientRuntime"]
   - 调用该 ToolId，传入 JSON object 参数，获得结构化结果。
 
 章节来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [docs/mcp_tool_design.md:637-663](file://docs/mcp_tool_design.md#L637-L663)
-- [src/pkg/tool_registry/mcp_tests.rs:283-318](file://src/pkg/tool_registry/mcp_tests.rs#L283-L318)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [docs/mcp_tool_design.md:637-663](docs/mcp_tool_design.md#L637-L663)
+- [src/pkg/tool_registry/mcp_tests.rs:283-318](src/pkg/tool_registry/mcp_tests.rs#L283-L318)
 
 ## 结论
 本实现以 McpCoreTool 为核心，结合 McpClientRuntime 提供最小可用的 MCP stdio 运行时，支持工具发现、动态注册与运行时调用。管理面与运行面清晰分离，错误处理与安全脱敏贯穿全流程。后续可扩展 streamable HTTP 传输、连接池与会话缓存、健康检查与重连策略，以满足更高并发与稳定性需求。

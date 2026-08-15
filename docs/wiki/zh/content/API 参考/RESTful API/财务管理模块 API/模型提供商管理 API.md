@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/model_provider.rs](file://common/src/api/model_provider.rs)
-- [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
-- [src/handlers/finance/model_provider/test_connection.rs](file://src/handlers/finance/model_provider/test_connection.rs)
-- [src/handlers/finance/model_provider/call_model.rs](file://src/handlers/finance/model_provider/call_model.rs)
-- [src/handlers/finance/model_provider/switch_embedding.rs](file://src/handlers/finance/model_provider/switch_embedding.rs)
-- [src/handlers/finance/model_provider/rebuild_progress.rs](file://src/handlers/finance/model_provider/rebuild_progress.rs)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs)
-- [src/service/domain/finance/model_provider.rs](file://src/service/domain/finance/model_provider.rs)
-- [src/service/dal/model_provider.rs](file://src/service/dal/model_provider.rs)
-- [src/models/model_provider.rs](file://src/models/model_provider.rs)
-- [common/src/enums/provider.rs](file://common/src/enums/provider.rs)
-- [common/src/enums/mod.rs](file://common/src/enums/mod.rs)
+- [common/src/api/model_provider.rs](common/src/api/model_provider.rs)
+- [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
+- [src/handlers/finance/model_provider/test_connection.rs](src/handlers/finance/model_provider/test_connection.rs)
+- [src/handlers/finance/model_provider/call_model.rs](src/handlers/finance/model_provider/call_model.rs)
+- [src/handlers/finance/model_provider/switch_embedding.rs](src/handlers/finance/model_provider/switch_embedding.rs)
+- [src/handlers/finance/model_provider/rebuild_progress.rs](src/handlers/finance/model_provider/rebuild_progress.rs)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs](src/handlers/finance/model_provider/rebuild_vectors_task.rs)
+- [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs)
+- [src/service/dal/model_provider.rs](src/service/dal/model_provider.rs)
+- [src/models/model_provider.rs](src/models/model_provider.rs)
+- [common/src/enums/provider.rs](common/src/enums/provider.rs)
+- [common/src/enums/mod.rs](common/src/enums/mod.rs)
 </cite>
 
 ## 目录
@@ -69,18 +69,18 @@ D1 --> E1
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/test_connection.rs:1-68](file://src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](file://src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](file://src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](file://src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
-- [src/service/domain/finance/model_provider.rs:1-149](file://src/service/domain/finance/model_provider.rs#L1-L149)
-- [src/service/dal/model_provider.rs:1-223](file://src/service/dal/model_provider.rs#L1-L223)
-- [src/models/model_provider.rs:1-248](file://src/models/model_provider.rs#L1-L248)
-- [common/src/enums/provider.rs:1-154](file://common/src/enums/provider.rs#L1-L154)
+- [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
+- [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
+- [src/models/model_provider.rs:1-248](src/models/model_provider.rs#L1-L248)
+- [common/src/enums/provider.rs:1-154](common/src/enums/provider.rs#L1-L154)
 
 章节来源
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [common/src/api/model_provider.rs:1-391](file://common/src/api/model_provider.rs#L1-L391)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [common/src/api/model_provider.rs:1-391](common/src/api/model_provider.rs#L1-L391)
 
 ## 核心组件
 - 请求/响应 DTO：创建、更新、查询、列表、删除、连接测试、模型调用、切换嵌入提供商、重建进度等
@@ -90,11 +90,11 @@ D1 --> E1
 - 后台任务：RebuildVectorsTask，串行执行 7 类实体的向量重建并暴露进度
 
 章节来源
-- [common/src/api/model_provider.rs:1-391](file://common/src/api/model_provider.rs#L1-L391)
-- [common/src/enums/provider.rs:1-154](file://common/src/enums/provider.rs#L1-L154)
-- [src/service/domain/finance/model_provider.rs:1-149](file://src/service/domain/finance/model_provider.rs#L1-L149)
-- [src/service/dal/model_provider.rs:1-223](file://src/service/dal/model_provider.rs#L1-L223)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
+- [common/src/api/model_provider.rs:1-391](common/src/api/model_provider.rs#L1-L391)
+- [common/src/enums/provider.rs:1-154](common/src/enums/provider.rs#L1-L154)
+- [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
+- [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
 ## 架构总览
 下图展示从 HTTP 请求到领域逻辑、数据访问与模型的调用链，以及后台任务对向量重建的编排。
@@ -128,11 +128,11 @@ H-->>C : SwitchEmbeddingProviderResponse
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/test_connection.rs:1-68](file://src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](file://src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/service/domain/finance/model_provider.rs:1-149](file://src/service/domain/finance/model_provider.rs#L1-L149)
-- [src/service/dal/model_provider.rs:1-223](file://src/service/dal/model_provider.rs#L1-L223)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
+- [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
+- [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
 ## 详细组件分析
 
@@ -157,14 +157,14 @@ Handler-->>Client : TestConnectionResponse/CallModelResponse
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/test_connection.rs:1-68](file://src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](file://src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/service/domain/finance/model_provider.rs:93-101](file://src/service/domain/finance/model_provider.rs#L93-L101)
+- [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
 章节来源
-- [src/handlers/finance/model_provider/test_connection.rs:1-68](file://src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](file://src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/service/domain/finance/model_provider.rs:93-101](file://src/service/domain/finance/model_provider.rs#L93-L101)
+- [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
 ### 切换嵌入提供商与向量重建
 - 切换前校验：目标必须为 Embedding 能力；同一 provider 无需重建
@@ -191,14 +191,14 @@ Progress --> End(["结束"])
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](file://src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/service/domain/finance/model_provider.rs:103-147](file://src/service/domain/finance/model_provider.rs#L103-L147)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-193](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L193)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L193)
 
 章节来源
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](file://src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/service/domain/finance/model_provider.rs:103-147](file://src/service/domain/finance/model_provider.rs#L103-L147)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/service/domain/finance/model_provider.rs:103-147](src/service/domain/finance/model_provider.rs#L103-L147)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
 ### 重建进度查询
 - 通过系统后台任务注册中心查询最近一次 RebuildVectors 任务的进度快照，映射为向后兼容的 RebuildProgressResponse
@@ -215,10 +215,10 @@ Handler-->>Client : RebuildProgressResponse
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](file://src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
 
 章节来源
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](file://src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
 
 ### 领域与数据访问层要点
 - 领域层：
@@ -231,10 +231,10 @@ Handler-->>Client : RebuildProgressResponse
   - 提供启用中 Embedding 提供商查询用于唯一性校验
 
 章节来源
-- [src/service/domain/finance/model_provider.rs:1-149](file://src/service/domain/finance/model_provider.rs#L1-L149)
-- [src/service/dal/model_provider.rs:45-104](file://src/service/dal/model_provider.rs#L45-L104)
-- [src/service/dal/model_provider.rs:124-156](file://src/service/dal/model_provider.rs#L124-L156)
-- [src/service/dal/model_provider.rs:190-221](file://src/service/dal/model_provider.rs#L190-L221)
+- [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
+- [src/service/dal/model_provider.rs:45-104](src/service/dal/model_provider.rs#L45-L104)
+- [src/service/dal/model_provider.rs:124-156](src/service/dal/model_provider.rs#L124-L156)
+- [src/service/dal/model_provider.rs:190-221](src/service/dal/model_provider.rs#L190-L221)
 
 ### 数据模型与枚举
 - ModelProviderPo：持久化对象，包含名称、类型、能力、模型名、API Key、Base URL、描述、JSON 配置、状态、审计字段
@@ -243,10 +243,10 @@ Handler-->>Client : RebuildProgressResponse
 - ModelCapability：Agent、Embedding
 
 章节来源
-- [src/models/model_provider.rs:9-68](file://src/models/model_provider.rs#L9-L68)
-- [src/models/model_provider.rs:144-197](file://src/models/model_provider.rs#L144-L197)
-- [common/src/enums/provider.rs:9-45](file://common/src/enums/provider.rs#L9-L45)
-- [common/src/enums/mod.rs:21-33](file://common/src/enums/mod.rs#L21-L33)
+- [src/models/model_provider.rs:9-68](src/models/model_provider.rs#L9-L68)
+- [src/models/model_provider.rs:144-197](src/models/model_provider.rs#L144-L197)
+- [common/src/enums/provider.rs:9-45](common/src/enums/provider.rs#L9-L45)
+- [common/src/enums/mod.rs:21-33](common/src/enums/mod.rs#L21-L33)
 
 ## 依赖关系分析
 - Handler 仅依赖 Domain 暴露的接口，不直接访问 DAL/DAO
@@ -265,14 +265,14 @@ R --> T["RebuildVectorsTask"]
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/service/domain/finance/model_provider.rs:1-149](file://src/service/domain/finance/model_provider.rs#L1-L149)
-- [src/service/dal/model_provider.rs:1-223](file://src/service/dal/model_provider.rs#L1-L223)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/service/domain/finance/model_provider.rs:1-149](src/service/domain/finance/model_provider.rs#L1-L149)
+- [src/service/dal/model_provider.rs:1-223](src/service/dal/model_provider.rs#L1-L223)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:1-194](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194)
 
 章节来源
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/service/dal/model_provider.rs:17-41](file://src/service/dal/model_provider.rs#L17-L41)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/service/dal/model_provider.rs:17-41](src/service/dal/model_provider.rs#L17-L41)
 
 ## 性能与可靠性
 - 负载均衡与多模型支持
@@ -305,10 +305,10 @@ R --> T["RebuildVectorsTask"]
   - 若 with_model_call_stats=true 但统计为空，检查统计写入与查询链路，日志中会有降级告警
 
 章节来源
-- [src/handlers/finance/model_provider/test_connection.rs:23-67](file://src/handlers/finance/model_provider/test_connection.rs#L23-L67)
-- [src/handlers/finance/model_provider/switch_embedding.rs:14-54](file://src/handlers/finance/model_provider/switch_embedding.rs#L14-L54)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-120](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L120)
-- [src/service/dal/model_provider.rs:134-151](file://src/service/dal/model_provider.rs#L134-L151)
+- [src/handlers/finance/model_provider/test_connection.rs:23-67](src/handlers/finance/model_provider/test_connection.rs#L23-L67)
+- [src/handlers/finance/model_provider/switch_embedding.rs:14-54](src/handlers/finance/model_provider/switch_embedding.rs#L14-L54)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-120](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L120)
+- [src/service/dal/model_provider.rs:134-151](src/service/dal/model_provider.rs#L134-L151)
 
 ## 结论
 模型提供商管理 API 提供了完整的生命周期管理能力：配置、调用、连通性测试、切换嵌入提供商与向量重建。系统遵循严格的分层架构与单向依赖，结合后台任务与统计注入，实现了高可用与可观测性。通过 ProviderType 与 ModelCapability 的多模型支持与能力区分，便于在多种提供商之间灵活切换与扩展。
@@ -384,8 +384,8 @@ R --> T["RebuildVectorsTask"]
   - 响应：RebuildProgressResponse
 
 章节来源
-- [common/src/api/model_provider.rs:9-391](file://common/src/api/model_provider.rs#L9-L391)
-- [src/handlers/finance/model_provider/test_connection.rs:1-68](file://src/handlers/finance/model_provider/test_connection.rs#L1-L68)
-- [src/handlers/finance/model_provider/call_model.rs:1-42](file://src/handlers/finance/model_provider/call_model.rs#L1-L42)
-- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](file://src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
-- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](file://src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [common/src/api/model_provider.rs:9-391](common/src/api/model_provider.rs#L9-L391)
+- [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
+- [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
+- [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
+- [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)

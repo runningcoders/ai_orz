@@ -8,6 +8,19 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [message_channel_design.md](./message_channel_design.md) — 消息渠道架构（飞书渠道是其核心子类型）
 > - [tool_design.md](./tool_design.md) — 工具系统总纲（lark_cli 是内置工具之一）
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — WS 移交 + 清 HOME lark-cli config 落地实现
+> - 【② Plan 落地】[飞书集成二期.md](../plan/lark-cli_集成二期.md) — WS 私信入站 + 指标落地（已完成）
+> - 【③ Wiki 长文】[身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) — §5 生命周期联动 WS 移交 + §5 AES 加密
+> - 【③ Wiki 长文】[飞书集成系统.md](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md)
+> - 【③ Wiki 长文】[消息渠道管理.md](docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md)
+> - 【③ Wiki 长文】[系统健康检查.md](docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/系统健康检查.md) — LarkWsMetrics 面板告警
+> - 【③ Wiki 长文】[消息通道生产者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/消息通道生产者.md)
+> - 【④ RAG 卡】[身份凭证 Domain 统一 CRUD](docs/wiki/knowledge/zh/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用.md) — §3/§4 update 后置联动 match kind 移交 WS
+> - 【④ RAG 卡】[身份凭证模型层信息下沉](docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立/身份凭证模型层信息下沉：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立.md) — CredentialUpdateImpact.secret_changed 单一事实源
+> - 【④ RAG 卡】[AES-256-GCM 敏感字段加密](docs/wiki/knowledge/zh/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容.md) — §3 MASTER_KEY 加载校验
+> - 【④ RAG 卡 2 张（Batch4 新增）】
+>   - [消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期](docs/wiki/knowledge/zh/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期.md) — Lark WS 启动时通过该中台统一管理
+>   - [Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标](docs/wiki/knowledge/zh/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标.md) — 飞书私信 WS 全链路 + 凭证引用三级解析 + 健康指标
 
 ## 1. 背景与目标
 

@@ -2,18 +2,18 @@
 
 > 🎯 本文档是 AI Orz 项目「4 类文档完整链路管理（design / plan / wiki 长文 / RAG 知识卡）」中 wiki 一侧的 Skill spec：负责把代码变更同步到人类百科长文 + RAG 知识卡，并强制四类文档互引闭环，保证读者从任何一类都能跳到另外三类。
 >
-> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-wiki-maintainer/SKILL.md](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
+> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-wiki-maintainer/SKILL.md](.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
 >
-> 平行 Skill（负责另外三类 + 四类互引的另一半职责）：[ai-orz-doc-maintainer.md](file:///Users/aman/Technology/rust/ai_orz/docs/skills/ai-orz-doc-maintainer.md) + [对应注册版](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-doc-maintainer/SKILL.md)
+> 平行 Skill（负责另外三类 + 四类互引的另一半职责）：[ai-orz-doc-maintainer.md](docs/skills/ai-orz-doc-maintainer.md) + [对应注册版](.trae/skills/ai-orz-doc-maintainer/SKILL.md)
 >
 > 状态：v2.0（2026-08-15，v1.1 架构升级：从「wiki 两主区独立」→「4 类文档（design/plan/wiki长文/RAG卡）完整互引闭环」；用户明确给出四类文档定义：design=为什么、plan=怎么做+结果、wiki=是什么、RAG卡=总结+索引）
 > 查阅场景：任何需要把代码变更同步进 docs/wiki/ 的两套知识库时打开；如果是 design/plan 的生命周期管理（包括与 wiki 互引回填）请走 ai-orz-doc-maintainer；两类文档互引部分两 Skill 有交叉，边界见本档 §1.2。
 >
 > 关联文档：
-> - [AGENTS.md §2.1 文档编写与维护规范](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md#L92-L358) — 文件头四件套 + 代码块性质判定铁律（四类文档全部遵守）
-> - [docs/plan/2026-08-15-文档规范与仓库精简.md](file:///Users/aman/Technology/rust/ai_orz/docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — 四类文档互引链路第一次真实跑通的参考计划
-> - 对应人类百科长文：（待 wiki 同步到 Skill 文档时再回填绝对路径）
-> - 对应 RAG 知识卡：（待 wiki 同步时生成知识卡后回填绝对路径）
+> - [AGENTS.md §2.1 文档编写与维护规范](AGENTS.md#L92-L358) — 文件头四件套 + 代码块性质判定铁律（四类文档全部遵守）
+> - [docs/plan/2026-08-15-文档规范与仓库精简.md](docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — 四类文档互引链路第一次真实跑通的参考计划
+> - 对应人类百科长文：（待 wiki 同步到 Skill 文档时再回填相对仓库根路径）
+> - 对应 RAG 知识卡：（待 wiki 同步时生成知识卡后回填相对仓库根路径）
 
 ---
 
@@ -26,7 +26,7 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 | ① **Design** | `docs/design/*.md` | **为什么做**（设计决策 + 关键决策表）| 👉 `ai-orz-doc-maintainer` | 单篇 200-400 行，定稿后不追代码 |
 | ② **Plan** | `docs/plan/*.md` | **怎么做 + 落地结果快照**（7 章骨架，无 checkbox/命令） | 👉 `ai-orz-doc-maintainer` | 单篇 150-250 行 |
 | ③ **Wiki 长文（百科）** | `docs/wiki/zh/content/` 8 大板块 | **是什么**（系统化人类百科，10 节目录 + cite + 来源） | 👉 `ai-orz-wiki-maintainer`（本 Skill）| 353 篇 ≈134k 行，跟随代码增量同步 |
-| ④ **RAG 知识卡（总结+索引）** | `docs/wiki/knowledge/zh/`（+ 两个顶层模块 + E2E 子模块） | **总结 + 索引**（给 Agent RAG 召回的原子知识单元） | 👉 `ai-orz-wiki-maintainer`（本 Skill）| 54 张（含本次 v2.0 新增 RAG 用法元卡）≈2.3k 行，增量增长允许重叠 |
+| ④ **RAG 知识卡（总结+索引）** | `docs/wiki/knowledge/zh/`（+ 两个顶层模块 + E2E 子模块） | **总结 + 索引**（给 Agent RAG 召回的原子知识单元） | 👉 `ai-orz-wiki-maintainer`（本 Skill）| ~70 张（含模块子卡 + v2.1 图谱规范对齐后保留主卡）≈3k 行，增量增长按 AGENTS §2.1.3 图谱法则 5 级决策合并/拆分；仅 Level 3 互补视角平行卡允许独立存在且必须显式关联声明，禁止裸重叠 |
 
 **必须四类一起维护的原因**：
 - 只更新 ③④（wiki 侧）不更新 ①② → 设计动机与实施决策链路断了，读者不知道"为什么这样做"，只能靠源代码考古
@@ -42,16 +42,18 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 
 ### 1.3 四类文档互引铁律（强制执行；每类如何引用另外三类）
 
-**路径格式约定**：
-- 引用**源码文件**（.rs/.ts/.toml/.sql 等）→ 统一写 `file://相对项目根的路径`（wiki cite 区和章节来源段 / RAG 卡 source_files[] 都沿用此格式，与 IDE 旧约定兼容）
-- 引用**另外三类文档**（design/plan/wiki 长文/RAG 卡的 .md 路径）→ 统一写 **`file:///绝对完整路径`**（AGENTS §2.1 定义的代码引用首选格式，点击 IDE 直接跳转；这是本次 v2.0 升级的关键——**显式文档互引用绝对路径，一眼就能区分"跳代码"还是"跳文档"**）
+**路径格式约定**（AGENTS §2.1.2 相对路径统一格式，三环境通跳）：
+- 引用**源码文件**（.rs/.ts/.toml/.sql 等）→ 统一写 `相对路径#Ln-Lm`（如 `src/pkg/logging.rs#L15-L42`；wiki cite 区和章节来源段 / RAG 卡 source_files[] 都沿用此格式，GitHub 原生高亮 + IDE 文件级跳转）
+- 引用**另外三类文档**（design/plan/wiki 长文/RAG 卡的 .md 路径）→ 统一写**相对仓库根路径**（如 `docs/design/x_design.md`；GitHub 原生解析 + IDE 可点 + 文档中心通跳——**一律相对路径，永不写本机绝对路径与 `file://` 伪协议**）
+
+**⭐【路径格式硬约束】文档与 RAG 卡中所有路径引用（cite 节 / 章节来源 / source_files[] / 关联文档头部）必须使用 AGENTS §2.1.2 相对路径格式（行号 `#Lx-Ly`）**：出现 `file:///` 绝对路径 / `file://` 伪协议 / legacy 冒号行号 → 执行结果 FAIL，改完再过。
 
 互引规则矩阵（一类为主体，必须在指定位置引用另外三类）：
 
 | 主体类型 | 在哪个位置引用另外三类 | 需要引用的三类 & 写法 |
 |---------|----------------------|---------------------|
-| **③ Wiki 长文（本 Skill 职责）**| `<cite>` 引用区（与源码列表并列，放在源码条目之后）| ① design：`[文档标题](file:///abs/path/docs/design/x_design.md)`<br>② plan：`[文档标题](file:///abs/path/docs/plan/x.md)`<br>④ RAG 知识卡：`[卡名](file:///abs/path/docs/wiki/knowledge/zh/<卡目录>/同名.md)` — 同主题有平行卡时至少写 1 张 |
-| **④ RAG 卡（本 Skill 职责）**| `YAML source_files[]` 字段（源码之后、行号锚点同级）| ① design：`docs/design/x_design.md`（绝对路径也可以写 docs/ 开头相对项，但推荐绝对路径）<br>② plan：`docs/plan/x.md`<br>③ wiki 长文：⭐ **强制至少 1 条**对应长文路径（如果该主题还没有长文，先占位写 Step 6 新建长文的最终目标绝对路径；Step 6 完成后必须回填真实存在的路径）——绝不能创建一张完全不引用 wiki 长文的卡。同主题多组长文至少列主组长文 1 篇。<br>④（兄弟平行卡）同主题近似卡 0~N 张（可选，帮助 RAG 召回关联链）|
+| **③ Wiki 长文（本 Skill 职责）**| `<cite>` 引用区（与源码列表并列，放在源码条目之后）| ① design：`[文档标题](docs/design/x_design.md)`<br>② plan：`[文档标题](docs/plan/x.md)`<br>④ RAG 知识卡：`[卡名](docs/wiki/knowledge/zh/<卡目录>/同名.md)` — 同主题有平行卡时至少写 1 张 |
+| **④ RAG 卡（本 Skill 职责）**| `YAML source_files[]` 字段（源码之后、行号锚点同级）| ① design：`docs/design/x_design.md`（统一写 docs/ 开头的相对仓库根路径）<br>② plan：`docs/plan/x.md`<br>③ wiki 长文：⭐ **强制至少 1 条**对应长文路径（如果该主题还没有长文，先占位写 Step 6 新建长文的最终目标相对仓库根路径；Step 6 完成后必须回填真实存在的路径）——绝不能创建一张完全不引用 wiki 长文的卡。同主题多组长文至少列主组长文 1 篇。<br>④（兄弟平行卡）同主题近似卡 0~N 张（可选，帮助 RAG 召回关联链）|
 | **① Design（doc-maintainer 职责）**| 文头「关联文档」段 | ② plan / ③ wiki 长文 / ④ RAG 卡（已落地则写路径，未落地则占位+注明待 wiki 同步） |
 | **② Plan（doc-maintainer 职责）**| 文头「关联文档」段 + §三 涉及文件清单末尾行 | ① design / ③ wiki 长文 / ④ RAG 卡（必须有，作为落地成果索引）|
 
@@ -82,8 +84,8 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 ```
 
 **互引覆盖率底线（每次 wiki 同步自审时检查）**：
-- 本次新增的所有 RAG 卡 → 100% 至少有 1 条 wiki 长文绝对路径出现在 source_files[] 中（0 条 = 失败）
-- 本次新增的所有 Wiki 长文 → 100% cite 区至少有 1 条 plan / design 文档绝对路径 + 至少 1 条对应 RAG 卡路径（如果创建了对应卡的话）
+- 本次新增的所有 RAG 卡 → 100% 至少有 1 条 wiki 长文相对仓库根路径出现在 source_files[] 中（0 条 = 失败）
+- 本次新增的所有 Wiki 长文 → 100% cite 区至少有 1 条 plan / design 文档相对仓库根路径 + 至少 1 条对应 RAG 卡路径（如果创建了对应卡的话）
 - 本次更新的 design/plan（由 doc-maintainer 负责）→ 其文头关联文档段必须至少列出对应 wiki 长文 1 条 + 对应 RAG 卡 1 条
 
 **本 Skill 1.1 旧结论已作废（v2.0 升级）**：v1.0 中「两套知识库不互相索引、只有隐性共享源码锚点」的结论——**完全废弃，改为强制显式互引 + 四类文档完整闭环**。
@@ -95,20 +97,20 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 ### 2.1 单篇 5 段式固定骨架（顺序不可变）
 
 样本参考：
-- [AOP 核心架构.md](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F/AOP%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84/AOP%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84.md)
-- [PO 与业务实体分层.md](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/PO%20%E4%B8%8E%E4%B8%9A%E5%8A%A1%E5%AE%9E%E4%BD%93%E5%88%86%E5%B1%82.md)
+- [AOP 核心架构.md](docs/wiki/zh/content/%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F/AOP%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84/AOP%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84.md)
+- [PO 与业务实体分层.md](docs/wiki/zh/content/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/PO%20%E4%B8%8E%E4%B8%9A%E5%8A%A1%E5%AE%9E%E4%BD%93%E5%88%86%E5%B1%82.md)
 
 ```
 # H1 页面标题（与最末层目录名语义对齐，用中文）
 <cite>
 **本文引用的文件**
-- [显示名(可选中文注释)](file://相对项目根路径/file.rs)
+- [显示名(可选中文注释)](src/相对路径/file.rs#Ln-Lm)
 - …（源码路径 8-20 条；按"核心→次要→工具→测试"粗排）
 
 **本文关联的三类文档（四类互引闭环，v2.0 起强制显式列出）**
-- [Design 文档标题（为什么做）](file:///绝对项目根路径/docs/design/x_design.md)
-- [Plan 文档标题（怎么做+落地结果）](file:///绝对项目根路径/docs/plan/x.md)
-- [RAG 知识卡：主题名（总结+索引）](file:///绝对项目根路径/docs/wiki/knowledge/zh/<卡目录名>/同名.md)
+- [Design 文档标题（为什么做）](docs/design/x_design.md)
+- [Plan 文档标题（怎么做+落地结果）](docs/plan/x.md)
+- [RAG 知识卡：主题名（总结+索引）](docs/wiki/knowledge/zh/<卡目录名>/同名.md)
 - （Design/Plan 没有就注明"暂无对应 plan 文档"；RAG 卡同主题有多张平行卡时至少列 1 张主卡）
 </cite>
 「可选，仅增量更新场景」## 更新摘要
@@ -131,18 +133,18 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 
 ## 2-7 正文节（写完内容后，空一行写）
 章节来源
-- [fileA:Ln-Lm](file://fileA#Ln-Lm)
+- [fileA](fileA#Ln-Lm)
 
 （若该节中插了 mermaid 图，在图闭合后立刻加）
 图表来源
-- [fileB:Ln-Lm](file://fileB#Ln-Lm)
+- [fileB](fileB#Ln-Lm)
 ```
 
 ### 2.2 8 条硬性约束
 
 | 编号 | 约束 | 细则 |
 |-----|------|------|
-| H-1 | **引用区路径统一写 `file://相对项目根`** | 不要写绝对路径 `/Users/...`，也不要写 `file:///` 三斜杠；IDE 与文档中心都按项目根解析相对路径 |
+| H-1 | **引用区路径统一写相对仓库根路径 + `#Ln-Lm` 行号** | 不要写绝对路径 `/Users/...`，也不要写 `file://` / `file:///` 伪协议；GitHub 原生解析 + IDE 可点 + 文档中心通跳（AGENTS §2.1.2） |
 | H-2 | **10 节编号锚点必须齐全** | 第 8「故障排查指南」是底线，哪怕只有 2-3 条最短路径也要写；新增页绝不能缺节 |
 | H-3 | **节标题允许语义定制**（§5/§7） | 但编号必须严格 1..10；目录锚点必须与正文节标题完全一致（大小写/全半角）|
 | H-4 | **每节末尾附「章节来源」纯中文标题段**（不加粗） | 只有第 1/8/9/10 节通常省略；mermaid 图后紧贴「图表来源」段（独立于章节来源） |
@@ -186,8 +188,8 @@ AI Orz 项目维护**四类文档完整链路**（用户定义的 SSOT，任何�
 **绝对不能改结构**（RAG 解析引擎依赖这些字段和章节标题来做结构化召回）。
 
 样本参考（最标准的两张）：
-- [日志系统卡.md](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/%E5%9F%BA%E4%BA%8E%20tracing%20%E7%9A%84%E7%BB%93%E6%9E%84%E5%8C%96%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%AE%8F%20+%20%E8%87%AA%E5%8A%A8%E4%B8%8A%E4%B8%8B%E6%96%87%E5%AD%97%E6%AE%B5%E6%B3%A8%E5%85%A5%EF%BC%89/%E5%9F%BA%E4%BA%8E%20tracing%20%E7%9A%84%E7%BB%93%E6%9E%84%E5%8C%96%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%AE%8F%20+%20%E8%87%AA%E5%8A%A8%E4%B8%8A%E4%B8%8B%E6%96%87%E5%AD%97%E6%AE%B5%E6%B3%A8%E5%85%A5%EF%BC%89.md)
-- [统一错误模型卡.md](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/%E7%BB%9F%E4%B8%80%E9%94%99%E8%AF%AF%E6%A8%A1%E5%9E%8B%EF%BC%9AErrorCode%20+%20ErrorType%20+%20ErrorField%20%E7%9A%84%E8%B7%A8%E5%B1%82%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86%E4%BD%93%E7%B3%BB/%E7%BB%9F%E4%B8%80%E9%94%99%E8%AF%AF%E6%A8%A1%E5%9E%8B%EF%BC%9AErrorCode%20+%20ErrorType%20+%20ErrorField%20%E7%9A%84%E8%B7%A8%E5%B1%82%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86%E4%BD%93%E7%B3%BB.md)
+- [日志系统卡.md](docs/wiki/knowledge/zh/%E5%9F%BA%E4%BA%8E%20tracing%20%E7%9A%84%E7%BB%93%E6%9E%84%E5%8C%96%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%AE%8F%20+%20%E8%87%AA%E5%8A%A8%E4%B8%8A%E4%B8%8B%E6%96%87%E5%AD%97%E6%AE%B5%E6%B3%A8%E5%85%A5%EF%BC%89/%E5%9F%BA%E4%BA%8E%20tracing%20%E7%9A%84%E7%BB%93%E6%9E%84%E5%8C%96%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%EF%BC%88%E5%AE%8F%20+%20%E8%87%AA%E5%8A%A8%E4%B8%8A%E4%B8%8B%E6%96%87%E5%AD%97%E6%AE%B5%E6%B3%A8%E5%85%A5%EF%BC%89.md)
+- [统一错误模型卡.md](docs/wiki/knowledge/zh/%E7%BB%9F%E4%B8%80%E9%94%99%E8%AF%AF%E6%A8%A1%E5%9E%8B%EF%BC%9AErrorCode%20+%20ErrorType%20+%20ErrorField%20%E7%9A%84%E8%B7%A8%E5%B1%82%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86%E4%BD%93%E7%B3%BB/%E7%BB%9F%E4%B8%80%E9%94%99%E8%AF%AF%E6%A8%A1%E5%9E%8B%EF%BC%9AErrorCode%20+%20ErrorType%20+%20ErrorField%20%E7%9A%84%E8%B7%A8%E5%B1%82%E9%94%99%E8%AF%AF%E5%A4%84%E7%90%86%E4%BD%93%E7%B3%BB.md)
 
 ```markdown
 ---
@@ -200,12 +202,12 @@ scope:
     - '<glob 模式数组：覆盖本卡锚定的源码文件范围，RAG用scope过滤相关文件>'
 source_files:
     # ⭐ 四类文档互引 v2.0：source_files 必须「4 类齐全」，顺序推荐：源码锚点 → design → plan → wiki长文 → 兄弟平行卡
-    - src/service/domain/finance/identity_credential.rs:Ln-Lm          ← 源码锚点（3-8 个，可附 :Ln-Lm）
-    - common/src/models/identity_credentials.rs:Ln-Lm
-    - docs/design/identity_credential_design.md                       ← ① design 文档路径（如果有），推荐绝对路径也支持相对
+    - src/service/domain/finance/identity_credential.rs#Ln-Lm          ← 源码锚点（3-8 个，可附 #Ln-Lm）
+    - common/src/models/identity_credentials.rs#Ln-Lm
+    - docs/design/identity_credential_design.md                       ← ① design 文档路径（如果有），写相对仓库根路径
     - docs/plan/身份凭证Domain统一CRUD重构.md                          ← ② plan 文档路径（如果有）
-    - /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/Finance 处理器/身份凭证统一CRUD分发/身份凭证统一CRUD分发.md   ← ③⭐【强制至少1条】对应该主题的人类百科长文绝对路径。如果本主题还没有长文，先占位写 Step 6 新增长文的最终目标绝对路径；Step 6 完成后必须回填为真实存在的路径（不允许创建一张无 wiki 引用的卡）。同主题多组长文至少列主组长文。
-    - /Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/<同主题兄弟卡目录>/同名.md  ← ④（可选）同主题平行近似卡，0~N张。帮助RAG召回关联链。
+    - docs/wiki/zh/content/核心模块/Finance 处理器/身份凭证统一CRUD分发/身份凭证统一CRUD分发.md   ← ③⭐【强制至少1条】对应该主题的人类百科长文相对仓库根路径。如果本主题还没有长文，先占位写 Step 6 新增长文的最终目标相对仓库根路径；Step 6 完成后必须回填为真实存在的路径（不允许创建一张无 wiki 引用的卡）。同主题多组长文至少列主组长文。
+    - docs/wiki/knowledge/zh/<同主题兄弟卡目录>/同名.md  ← ④（可选）同主题平行近似卡，0~N张。帮助RAG召回关联链。
 ---
 
 ## 1. 整体方案 / 使用的框架与工具
@@ -216,7 +218,7 @@ source_files:
 |---|---|
 | `相对路径A` | 一句话职责描述（源码文件） |
 | `相对路径B` | 一句话职责描述 |
-| `[对应 Wiki 长文名](file:///绝对长文路径)` | ⭐ 本卡对应的人类百科长文（推荐加一行；与 source_files[] 中强制 1 条 wiki 路径呼应，让人类读者一眼能跳）|
+| `[对应 Wiki 长文名](docs/wiki/zh/content/<板块>/<路径>/同名.md)` | ⭐ 本卡对应的人类百科长文（推荐加一行；与 source_files[] 中强制 1 条 wiki 路径呼应，让人类读者一眼能跳）|
 | …（4-12 行，与 source_files 对齐，但不必全相同；要给人类一眼扫到入口）|
 
 ## 3. 架构与设计约定
@@ -237,7 +239,7 @@ source_files:
 | K-1 | **YAML Front Matter 5 字段必须齐全（不允许增删字段）** | `kind / name / category / scope[] / source_files[]`——RAG 解析器强依赖 |
 | K-2 | **`name` = 目录名 = 文件名**（三者完全一致，中文） | 例：目录「用户工作区 vs Agent 工作区」→ md 同名 → name 字段内容相同 |
 | K-3 | **`scope[]` 写 glob 数组，不要写具体文件路径（写路径是 source_files 的职责）** | scope 用于 RAG 引擎在「用户传入一组文件」时快速匹配套路；`**` 表示所有后代 |
-| K-4 | **`source_files[]` 写核心锚点 3-10 个** | 不要全列（长文 cite 才列全），要让 RAG 召回后通过这 3-10 个入口点继续反查源码；允许附 `:Ln-Lm` 行号后缀 |
+| K-4 | **`source_files[]` 写核心锚点 3-10 个** | 不要全列（长文 cite 才列全），要让 RAG 召回后通过这 3-10 个入口点继续反查源码；允许附 `#Ln-Lm` 行号后缀 |
 | K-5 | **4 章节标题必须一字不差：1.整体方案 2.关键文件表格 3.架构与约定(3.X 子小节) 4.约定与约束bullet** | RAG 引擎可能按"第 4 节"语义匹配强制检索；改标题会破坏召回 |
 | K-6 | **同一主题允许多张平行卡（不要求唯一性，不要求删旧卡）** | Agent 历次增量再生成会出现近似卡重叠；RAG 能分别召回反而是冗余保障，不删旧的 |
 | K-7 | **禁止写长文式的 10 节目录 / mermaid 图 / <cite> 区** | 知识卡是原子短卡，平均 40-80 行，§1 不超 3 段，§4 不超 15 条 bullet |
@@ -262,7 +264,7 @@ source_files:
 | 1. 收集变更范围 | 确定 BASE_SHA→HEAD；用 `git log BASE..HEAD` 排除纯文档类提交（前缀 `docs`/`docs(cleanup)`/`docs(plan)`/`docs(readme)`/`docs(skill-communication)`），保留 feat / refactor / fix / test / style 类 | 提交清单（按前缀分组+作者+日期）|
 | 2. 变更文件清单 | `git diff --name-only BASE..HEAD \| grep -v "^docs/"` 得变更文件 F，按模块聚合（`src/service/domain/*` 等） | TOP 模块分布表（给用户看最受影响板块）|
 | 3. 候选长文页命中 | 反向 grep 353 长文的 `<cite>` 区 + 「章节来源」段：引用的路径 ∈ F → 标记待更新；再按模块语义补 TOP 板块根页（避免新模块根页漏更） | 候选长文清单（目标：353→≈40-60 页命中）|
-| 4. 长文增量更新 | 按 §2 规范逐页更新：+cite/→新引用、+"更新摘要"段、+§5 详细内容、+每节来源路径指向最新行号、+更新 mermaid 图+来源 | 格式合规：H1+cite+[更新摘要]+10节目录+来源段 齐全；所有 file://相对路径 真实存在；0 代码快照（除 mermaid）|
+| 4. 长文增量更新 | 按 §2 规范逐页更新：+cite/→新引用、+"更新摘要"段、+§5 详细内容、+每节来源路径指向最新行号、+更新 mermaid 图+来源 | 格式合规：H1+cite+[更新摘要]+10节目录+来源段 齐全；所有相对路径引用真实存在；0 代码快照（除 mermaid）|
 | 5. **生成新知识卡**（本 SOP 核心）| **按本次代码变更的 TOP 语义主题生成**（不是按长文页 1:1 映射）。经验值：每 500-1500 行净代码变更 → 1 张新卡；每次同步典型产出 5-15 张。严格按 §3 模板：YAML 5 字段齐全 + scope 填正确 glob + 4 章节完整。允许与旧卡重叠 | 新增 N 张卡；name/目录/文件名 三者一致；`git diff --name-only` 变更文件应被新卡的 scope 覆盖 ≥90% |
 | 6. 创建全新长文页 | 若 5 步中出现了全新能力（知识卡已建，但 8 大板块中尚无对应长文）→ 按 §2.3 归属映射建目录+md+10节骨架+逐节写作 | 至少第 8「故障排查指南」2-3 条最短路径不缺 |
 | 7. 提交推送 | commit 前缀：`docs(wiki): <范围> — 长文更新X页 + 知识卡新增Y张（BASE..HEAD 摘要）`；量大可按 4 板块拆 commits（长文基础设施/长文业务域/长文前端/知识卡）| 最终可推送（用户没说不推就默认 push）|
@@ -273,7 +275,7 @@ source_files:
 
 | 异常 | 判定 | 回退动作 |
 |-----|------|---------|
-| 候选长文命中后，某页「章节来源的行号全错」（指向的代码已经不在该行了）| 是 → 因为 BASE→HEAD 的变更移动了源码行 | 全部重新指向最新的行号；不要保留陈旧范围 — **宁可不写 :Ln-Lm 后缀，也不要写错误的范围** |
+| 候选长文命中后，某页「章节来源的行号全错」（指向的代码已经不在该行了）| 是 → 因为 BASE→HEAD 的变更移动了源码行 | 全部重新指向最新的行号；不要保留陈旧范围 — **宁可不写 #Ln-Lm 后缀，也不要写错误的范围** |
 | 新知识卡的 scope 写太宽（`['**']`）导致召回噪音大 | 是 → scope 字段不允许 `['**']`（只有两张顶层模块 overview 卡允许这么写）| 收敛到本次变更真覆盖的 2-5 个 glob 模式 |
 | 某篇长文 10 节目录和正文标题对不上（锚点失效）| 是 → 文档中心点击跳转会失败 | 快速修复：目录锚点的 `#xxx` 必须和标题的 `## xxx` 完全相同（中文、全半角、空格一致）|
 | 用户说"这次只同步某一个 commit，不要跑全量 SOP" | 是 → 用户是权威 | 直接 Step 2（只拿该 commit 的变更文件）→ Step 3-7；跳过 Step 1 |
@@ -284,7 +286,7 @@ source_files:
 
 | 场景 | 应该调用的 Skill | 不应该调用本 Skill |
 |-----|-----------------|------------------|
-| 新功能开发完成后 → 写 design/plan 文档归档 | [ai-orz-doc-maintainer](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-doc-maintainer/SKILL.md) | ❌ 本 Skill 是维护现状百科，不是写设计决策快照 |
+| 新功能开发完成后 → 写 design/plan 文档归档 | [ai-orz-doc-maintainer](.trae/skills/ai-orz-doc-maintainer/SKILL.md) | ❌ 本 Skill 是维护现状百科，不是写设计决策快照 |
 | superpowers-archive 里的执行蓝图 → 精简为 docs/plan/ 7 章归档版 | ai-orz-doc-maintainer | ❌ 本 Skill 不处理 plan/archive |
 | 用户说"更新最近代码到 wiki" | ✅ 就是本 Skill | ❌ 不要用 ai-orz-doc-maintainer |
 | 用户说"给 agent 增加一张知识卡" | ✅ 本 Skill §3（只做知识卡那部分） | 不要求一起更新长文（用户明确说"只加知识卡"时）|
@@ -296,6 +298,6 @@ source_files:
 - [ ] **双知识库都更新了吗？** 至少 1 篇长文 + 至少 1 张卡（同步 0 长文或 0 卡 = 不完整）
 - [ ] **长文 8 硬约束**：H1+cite+目录 10 锚+每节来源+0 代码快照（除 mermaid），都满足？
 - [ ] **知识卡 7 硬约束**：YAML 5 字段齐全 + name=目录=文件名 + scope glob 正确 + source_files 3-10 锚点 + 4 章节标题一字不差？
-- [ ] **所有 file://相对路径都存在吗？**（写个小脚本：`grep -ohE "file://[^\s)]+" *.md | uniq` → 检查每个去掉 file:// 后的路径是否真实存在；必要时删掉损坏的路径或指向正确文件）
+- [ ] **所有相对路径引用都存在吗？**（提取 cite 区 / 章节来源 / source_files[] 中的 `](路径)` 链接目标 → 逐个检查路径是否真实存在；必要时删掉损坏的路径或指向正确文件）
 - [ ] **新增长文页挂对了 8 大板块目录吗？**（3 层目录同名结构）
 - [ ] **提交 message 前缀是 docs(wiki): 吗？**（保持与 IDE 历史一致，便于后续 grep 范围）

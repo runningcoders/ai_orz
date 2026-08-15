@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/fs_read.rs](file://src/pkg/tool_registry/fs_read.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [src/pkg/tool_registry/builtin.rs](file://src/pkg/tool_registry/builtin.rs)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/config.rs](file://src/config.rs)
-- [common/config/ai_orz.toml](file://common/config/ai_orz.toml)
-- [src/pkg/tool_registry/fs_tests.rs](file://src/pkg/tool_registry/fs_tests.rs)
+- [src/pkg/tool_registry/fs_read.rs](src/pkg/tool_registry/fs_read.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [src/pkg/tool_registry/builtin.rs](src/pkg/tool_registry/builtin.rs)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/config.rs](src/config.rs)
+- [common/config/ai_orz.toml](common/config/ai_orz.toml)
+- [src/pkg/tool_registry/fs_tests.rs](src/pkg/tool_registry/fs_tests.rs)
 </cite>
 
 ## 目录
@@ -45,14 +45,14 @@ D --> G["标准库 I/O<br/>std::fs / BufReader"]
 ```
 
 图表来源
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/fs_read.rs:50-123](file://src/pkg/tool_registry/fs_read.rs#L50-L123)
-- [src/pkg/tool_registry/tool_security.rs:314-419](file://src/pkg/tool_registry/tool_security.rs#L314-L419)
-- [src/config.rs:38-74](file://src/config.rs#L38-L74)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/fs_read.rs:50-123](src/pkg/tool_registry/fs_read.rs#L50-L123)
+- [src/pkg/tool_registry/tool_security.rs:314-419](src/pkg/tool_registry/tool_security.rs#L314-L419)
+- [src/config.rs:38-74](src/config.rs#L38-L74)
 
 章节来源
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/mod.rs:34-73](file://src/pkg/tool_registry/mod.rs#L34-L73)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/mod.rs:34-73](src/pkg/tool_registry/mod.rs#L34-L73)
 
 ## 核心组件
 - FsReadToolFactory：创建 fs_read 工具的 ToolPo（元数据、参数 Schema、默认配置）并生成实例
@@ -61,8 +61,8 @@ D --> G["标准库 I/O<br/>std::fs / BufReader"]
 - tool_security::fs：路径解析与校验、敏感文件名检测、错误信息脱敏
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:15-123](file://src/pkg/tool_registry/fs_read.rs#L15-L123)
-- [src/pkg/tool_registry/tool_security.rs:314-487](file://src/pkg/tool_registry/tool_security.rs#L314-L487)
+- [src/pkg/tool_registry/fs_read.rs:15-123](src/pkg/tool_registry/fs_read.rs#L15-L123)
+- [src/pkg/tool_registry/tool_security.rs:314-487](src/pkg/tool_registry/tool_security.rs#L314-L487)
 
 ## 架构总览
 fs_read 的调用链路如下：
@@ -102,8 +102,8 @@ end
 ```
 
 图表来源
-- [src/pkg/tool_registry/fs_read.rs:125-216](file://src/pkg/tool_registry/fs_read.rs#L125-L216)
-- [src/pkg/tool_registry/tool_security.rs:335-419](file://src/pkg/tool_registry/tool_security.rs#L335-L419)
+- [src/pkg/tool_registry/fs_read.rs:125-216](src/pkg/tool_registry/fs_read.rs#L125-L216)
+- [src/pkg/tool_registry/tool_security.rs:335-419](src/pkg/tool_registry/tool_security.rs#L335-L419)
 
 ## 详细组件分析
 
@@ -120,8 +120,8 @@ end
 - 若路径不在默认工作目录且未在额外允许路径列表中，将返回 require_confirmation 提示，要求用户显式确认
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:23-99](file://src/pkg/tool_registry/fs_read.rs#L23-L99)
-- [src/pkg/tool_registry/fs_read.rs:127-216](file://src/pkg/tool_registry/fs_read.rs#L127-L216)
+- [src/pkg/tool_registry/fs_read.rs:23-99](src/pkg/tool_registry/fs_read.rs#L23-L99)
+- [src/pkg/tool_registry/fs_read.rs:127-216](src/pkg/tool_registry/fs_read.rs#L127-L216)
 
 ### 返回值格式
 - 成功读取全文或范围：
@@ -145,7 +145,7 @@ end
   - error: 错误描述（已脱敏，不包含绝对路径）
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:140-216](file://src/pkg/tool_registry/fs_read.rs#L140-L216)
+- [src/pkg/tool_registry/fs_read.rs:140-216](src/pkg/tool_registry/fs_read.rs#L140-L216)
 
 ### 安全控制机制
 - 敏感文件拦截：对 .env、.pem、.key、.p12、.pfx、id_rsa、id_dsa、id_ecdsa、password、secret、token、credential、auth 以及所有隐藏文件（以 . 开头）进行拦截
@@ -155,15 +155,15 @@ end
 - 错误脱敏：IO 错误信息去除绝对路径前缀，避免泄露敏感路径
 
 章节来源
-- [src/pkg/tool_registry/tool_security.rs:314-487](file://src/pkg/tool_registry/tool_security.rs#L314-L487)
-- [src/pkg/tool_registry/fs_tests.rs:12-80](file://src/pkg/tool_registry/fs_tests.rs#L12-L80)
+- [src/pkg/tool_registry/tool_security.rs:314-487](src/pkg/tool_registry/tool_security.rs#L314-L487)
+- [src/pkg/tool_registry/fs_tests.rs:12-80](src/pkg/tool_registry/fs_tests.rs#L12-L80)
 
 ### 文件大小限制
 - 硬限制：10MB（HARD_READ_MAX_BYTES），超过即返回错误，避免内存占用过大
 - 读取方式：使用 BufReader 逐行读取，降低一次性加载大文件的内存压力
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:150-176](file://src/pkg/tool_registry/fs_read.rs#L150-L176)
+- [src/pkg/tool_registry/fs_read.rs:150-176](src/pkg/tool_registry/fs_read.rs#L150-L176)
 
 ### 行号范围解析
 - 将 1 起始的行号转换为 0 起始索引
@@ -171,7 +171,7 @@ end
 - 保证 start <= end，避免无效区间
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:242-254](file://src/pkg/tool_registry/fs_read.rs#L242-L254)
+- [src/pkg/tool_registry/fs_read.rs:242-254](src/pkg/tool_registry/fs_read.rs#L242-L254)
 
 ### 工具注册与生命周期
 - 内置工具通过 GENERIC_BUILTIN_TOOLS 静态列表注册，fs_read 在其中声明
@@ -179,8 +179,8 @@ end
 - 每个请求可独立创建工具实例，注入数据库中的配置（名称、描述、控制模式等）
 
 章节来源
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/mod.rs:34-73](file://src/pkg/tool_registry/mod.rs#L34-L73)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/mod.rs:34-73](src/pkg/tool_registry/mod.rs#L34-L73)
 
 ## 依赖关系分析
 - 配置依赖：fs_read 通过 config::get().base_data_path() 获取基础数据目录，该目录由应用配置加载器初始化并持久化
@@ -197,14 +197,14 @@ Serde["serde_json"] --> Read
 ```
 
 图表来源
-- [src/config.rs:38-74](file://src/config.rs#L38-L74)
-- [src/pkg/tool_registry/fs_read.rs:125-216](file://src/pkg/tool_registry/fs_read.rs#L125-L216)
-- [src/pkg/tool_registry/tool_security.rs:314-487](file://src/pkg/tool_registry/tool_security.rs#L314-L487)
+- [src/config.rs:38-74](src/config.rs#L38-L74)
+- [src/pkg/tool_registry/fs_read.rs:125-216](src/pkg/tool_registry/fs_read.rs#L125-L216)
+- [src/pkg/tool_registry/tool_security.rs:314-487](src/pkg/tool_registry/tool_security.rs#L314-L487)
 
 章节来源
-- [src/config.rs:38-74](file://src/config.rs#L38-L74)
-- [src/pkg/tool_registry/fs_read.rs:125-216](file://src/pkg/tool_registry/fs_read.rs#L125-L216)
-- [src/pkg/tool_registry/tool_security.rs:314-487](file://src/pkg/tool_registry/tool_security.rs#L314-L487)
+- [src/config.rs:38-74](src/config.rs#L38-L74)
+- [src/pkg/tool_registry/fs_read.rs:125-216](src/pkg/tool_registry/fs_read.rs#L125-L216)
+- [src/pkg/tool_registry/tool_security.rs:314-487](src/pkg/tool_registry/tool_security.rs#L314-L487)
 
 ## 性能与最佳实践
 - 大文件处理
@@ -241,8 +241,8 @@ Serde["serde_json"] --> Read
   - 解决：检查文件系统权限与路径有效性；确保基础数据目录存在且可写
 
 章节来源
-- [src/pkg/tool_registry/fs_read.rs:140-176](file://src/pkg/tool_registry/fs_read.rs#L140-L176)
-- [src/pkg/tool_registry/tool_security.rs:335-419](file://src/pkg/tool_registry/tool_security.rs#L335-L419)
+- [src/pkg/tool_registry/fs_read.rs:140-176](src/pkg/tool_registry/fs_read.rs#L140-L176)
+- [src/pkg/tool_registry/tool_security.rs:335-419](src/pkg/tool_registry/tool_security.rs#L335-L419)
 
 ## 结论
 fs_read 提供了安全、可控、易用的文件读取能力，适用于配置文件、日志文件与文本内容的读取与检索。其内置的安全校验、大小限制与错误脱敏机制，使其在 Agent 协作框架中具备高可靠性。建议在生产环境中结合业务需求合理配置额外允许路径，并在上层实现必要的缓存与分页策略以提升性能与用户体验。

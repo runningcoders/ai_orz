@@ -8,6 +8,14 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [message_channel_design.md](./message_channel_design.md) — 外部渠道入站适配与多渠道推送
 > - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒：先意图识别再执行
+> - 【② Plan 落地】[聊天MVP.md](../plan/聊天MVP.md) — 前端聊天页 SSE 实时推送 MVP
+> - 【② Plan 落地】[agent_loop_engine_plan.md](../plan/agent_loop_engine_plan.md) — AgentLoopConsumer 消息驱动唤醒设计
+> - 【③ Wiki 长文】[消息系统.md](docs/wiki/zh/content/功能模块/消息系统/消息系统.md) — 消息系统全景：入站→路由→存储→SSE→出站 5 段
+> - 【③ Wiki 长文】[消息管理.md](docs/wiki/zh/content/功能模块/消息系统/消息管理.md) — 分页查询 + thread 聚合 + 已读
+> - 【③ Wiki 长文】[实时推送.md](docs/wiki/zh/content/功能模块/消息系统/实时推送.md) — SSE EventSource / last-event-id 重连补发
+> - 【③ Wiki 长文】[消息领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/消息领域.md) — MessageDomain 双能力 trait
+> - 【③ Wiki 长文】[多渠道消息系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md)
+> - 【④ RAG 卡】[消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类](docs/wiki/knowledge/zh/消息交互与SSE推送：MessageDomain双能力%20+%20AgentLoopConsumer循环%20+%20多渠道出站5类/消息交互与SSE推送：MessageDomain双能力%20+%20AgentLoopConsumer循环%20+%20多渠道出站5类.md) — §发送 4 段原子链路 §完整用户→Agent 调用链 §7 条红线
 
 ## 核心理念
 

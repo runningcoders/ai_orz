@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/hr/mod.rs](file://src/handlers/hr/mod.rs)
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [src/handlers/hr/skill/mod.rs](file://src/handlers/hr/skill/mod.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-- [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/skill/create_skill.rs](file://src/handlers/hr/skill/create_skill.rs)
-- [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-- [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
-- [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-- [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+- [src/handlers/hr/mod.rs](src/handlers/hr/mod.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [src/handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/skill/create_skill.rs](src/handlers/hr/skill/create_skill.rs)
+- [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+- [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
+- [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+- [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
 </cite>
 
 ## 目录
@@ -63,13 +63,13 @@ C --> C7["list_skills.rs / query_skills.rs / search_skills.rs"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/mod.rs:1-28](file://src/handlers/hr/agent/mod.rs#L1-L28)
-- [src/handlers/hr/skill/mod.rs:1-19](file://src/handlers/hr/skill/mod.rs#L1-L19)
+- [src/handlers/hr/agent/mod.rs:1-28](src/handlers/hr/agent/mod.rs#L1-L28)
+- [src/handlers/hr/skill/mod.rs:1-19](src/handlers/hr/skill/mod.rs#L1-L19)
 
 章节来源
-- [src/handlers/hr/mod.rs:1-11](file://src/handlers/hr/mod.rs#L1-L11)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/mod.rs:1-11](src/handlers/hr/mod.rs#L1-L11)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 核心组件
 - Agent 处理器：提供 Agent 生命周期与运行时信息读取、技能包安装/卸载、记忆体管理等接口。
@@ -77,8 +77,8 @@ C --> C7["list_skills.rs / query_skills.rs / search_skills.rs"]
 - 统一宏驱动：通过 generate_http_handler 与 register_handler_tool 自动生成路由绑定与工具注册，简化处理器实现。
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:30-54](file://src/handlers/hr/agent/mod.rs#L30-L54)
-- [src/handlers/hr/skill/mod.rs:21-35](file://src/handlers/hr/skill/mod.rs#L21-L35)
+- [src/handlers/hr/agent/mod.rs:30-54](src/handlers/hr/agent/mod.rs#L30-L54)
+- [src/handlers/hr/skill/mod.rs:21-35](src/handlers/hr/skill/mod.rs#L21-L35)
 
 ## 架构总览
 Handler 作为 Adapter 层，仅负责参数解析、权限上下文提取、调用 Domain 服务并返回标准化响应。Domain 层封装业务规则，DAL/DAO 负责持久化。
@@ -102,12 +102,12 @@ Handler-->>Client : "JSON 响应/错误码"
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:18-41](file://src/handlers/hr/agent/create_agent.rs#L18-L41)
-- [src/handlers/hr/skill/create_skill.rs:22-82](file://src/handlers/hr/skill/create_skill.rs#L22-L82)
+- [src/handlers/hr/agent/create_agent.rs:18-41](src/handlers/hr/agent/create_agent.rs#L18-L41)
+- [src/handlers/hr/skill/create_skill.rs:22-82](src/handlers/hr/skill/create_skill.rs#L22-L82)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 
 ## 详细组件分析
 
@@ -149,13 +149,13 @@ H-->>C : "CreateAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:18-47](file://src/handlers/hr/agent/create_agent.rs#L18-L47)
+- [src/handlers/hr/agent/create_agent.rs:18-47](src/handlers/hr/agent/create_agent.rs#L18-L47)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/update_agent.rs:1-87](file://src/handlers/hr/agent/update_agent.rs#L1-L87)
-- [src/handlers/hr/agent/delete_agent.rs:1-35](file://src/handlers/hr/agent/delete_agent.rs#L1-L35)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/update_agent.rs:1-87](src/handlers/hr/agent/update_agent.rs#L1-L87)
+- [src/handlers/hr/agent/delete_agent.rs:1-35](src/handlers/hr/agent/delete_agent.rs#L1-L35)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 
 ### Skill 管理处理器
 - 创建 Skill：POST /api/v1/skills
@@ -196,15 +196,15 @@ H-->>C : "InstallSkillToAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/skill/install_skill_to_agent.rs:20-35](file://src/handlers/hr/skill/install_skill_to_agent.rs#L20-L35)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:20-35](src/handlers/hr/skill/install_skill_to_agent.rs#L20-L35)
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [src/handlers/hr/skill/delete_skill.rs:1-34](file://src/handlers/hr/skill/delete_skill.rs#L1-L34)
-- [src/handlers/hr/skill/get_skill.rs:1-31](file://src/handlers/hr/skill/get_skill.rs#L1-L31)
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](file://src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/handlers/hr/skill/delete_skill.rs:1-34](src/handlers/hr/skill/delete_skill.rs#L1-L34)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
 
 ### 参数验证与错误处理
 - 通用校验：
@@ -217,11 +217,11 @@ H-->>C : "InstallSkillToAgentResponse"
   - 透传领域服务错误，由上层统一转换为 HTTP 响应
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:18-25](file://src/handlers/hr/agent/create_agent.rs#L18-L25)
-- [src/handlers/hr/skill/create_skill.rs:22-32](file://src/handlers/hr/skill/create_skill.rs#L22-L32)
-- [src/handlers/hr/skill/update_skill.rs:22-74](file://src/handlers/hr/skill/update_skill.rs#L22-L74)
-- [src/handlers/hr/agent/get_agent.rs:24-46](file://src/handlers/hr/agent/get_agent.rs#L24-L46)
-- [src/handlers/hr/skill/get_skill.rs:20-27](file://src/handlers/hr/skill/get_skill.rs#L20-L27)
+- [src/handlers/hr/agent/create_agent.rs:18-25](src/handlers/hr/agent/create_agent.rs#L18-L25)
+- [src/handlers/hr/skill/create_skill.rs:22-32](src/handlers/hr/skill/create_skill.rs#L22-L32)
+- [src/handlers/hr/skill/update_skill.rs:22-74](src/handlers/hr/skill/update_skill.rs#L22-L74)
+- [src/handlers/hr/agent/get_agent.rs:24-46](src/handlers/hr/agent/get_agent.rs#L24-L46)
+- [src/handlers/hr/skill/get_skill.rs:20-27](src/handlers/hr/skill/get_skill.rs#L20-L27)
 
 ### 与领域服务层的交互模式
 - 调用入口：domain().agent_manage()/domain().skill_manage()
@@ -232,9 +232,9 @@ H-->>C : "InstallSkillToAgentResponse"
 - 并发：领域服务内部对写操作进行串行化或锁保护，Handler 侧无额外并发控制
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:38-41](file://src/handlers/hr/agent/create_agent.rs#L38-L41)
-- [src/handlers/hr/skill/create_skill.rs:79-82](file://src/handlers/hr/skill/create_skill.rs#L79-L82)
-- [src/handlers/hr/skill/update_skill.rs:106-117](file://src/handlers/hr/skill/update_skill.rs#L106-L117)
+- [src/handlers/hr/agent/create_agent.rs:38-41](src/handlers/hr/agent/create_agent.rs#L38-L41)
+- [src/handlers/hr/skill/create_skill.rs:79-82](src/handlers/hr/skill/create_skill.rs#L79-L82)
+- [src/handlers/hr/skill/update_skill.rs:106-117](src/handlers/hr/skill/update_skill.rs#L106-L117)
 
 ## 依赖关系分析
 - Handler 依赖：
@@ -258,12 +258,12 @@ H -.-> F["finance_domain (工具/附件)"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/get_agent.rs:100-104](file://src/handlers/hr/agent/get_agent.rs#L100-L104)
-- [src/handlers/hr/skill/update_skill.rs:76-92](file://src/handlers/hr/skill/update_skill.rs#L76-L92)
+- [src/handlers/hr/agent/get_agent.rs:100-104](src/handlers/hr/agent/get_agent.rs#L100-L104)
+- [src/handlers/hr/skill/update_skill.rs:76-92](src/handlers/hr/skill/update_skill.rs#L76-L92)
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
 
 ## 性能与并发
 - 查询优化：
@@ -293,11 +293,11 @@ H -.-> F["finance_domain (工具/附件)"]
   - 若为领域服务异常，检查数据库连接、存储路径与外部依赖可用性
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:22-25](file://src/handlers/hr/agent/create_agent.rs#L22-L25)
-- [src/handlers/hr/skill/create_skill.rs:26-32](file://src/handlers/hr/skill/create_skill.rs#L26-L32)
-- [src/handlers/hr/skill/update_skill.rs:68-92](file://src/handlers/hr/skill/update_skill.rs#L68-L92)
-- [src/handlers/hr/agent/get_agent.rs:42-46](file://src/handlers/hr/agent/get_agent.rs#L42-L46)
-- [src/handlers/hr/skill/get_skill.rs:21-27](file://src/handlers/hr/skill/get_skill.rs#L21-L27)
+- [src/handlers/hr/agent/create_agent.rs:22-25](src/handlers/hr/agent/create_agent.rs#L22-L25)
+- [src/handlers/hr/skill/create_skill.rs:26-32](src/handlers/hr/skill/create_skill.rs#L26-L32)
+- [src/handlers/hr/skill/update_skill.rs:68-92](src/handlers/hr/skill/update_skill.rs#L68-L92)
+- [src/handlers/hr/agent/get_agent.rs:42-46](src/handlers/hr/agent/get_agent.rs#L42-L46)
+- [src/handlers/hr/skill/get_skill.rs:21-27](src/handlers/hr/skill/get_skill.rs#L21-L27)
 
 ## 结论
 HR 模块处理器以清晰的职责划分与严格的分层架构实现了 Agent 与 Skill 的全生命周期管理。通过宏驱动的处理器定义，代码简洁且易于扩展；参数校验与错误处理一致性强；与领域服务的交互遵循统一的上下文与实体契约。建议在新增接口时遵循现有模式，保持 Handler 薄、领域厚、DAL/DAO 专注持久化的设计原则。
@@ -323,8 +323,8 @@ HR 模块处理器以清晰的职责划分与严格的分层架构实现了 Agen
   - 其他：列表/查询/搜索、标签与文件管理
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:30-54](file://src/handlers/hr/agent/mod.rs#L30-L54)
-- [src/handlers/hr/skill/mod.rs:21-35](file://src/handlers/hr/skill/mod.rs#L21-L35)
+- [src/handlers/hr/agent/mod.rs:30-54](src/handlers/hr/agent/mod.rs#L30-L54)
+- [src/handlers/hr/skill/mod.rs:21-35](src/handlers/hr/skill/mod.rs#L21-L35)
 
 ### 请求/响应结构要点
 - Agent 创建/更新：
@@ -338,12 +338,12 @@ HR 模块处理器以清晰的职责划分与严格的分层架构实现了 Agen
   - 响应返回操作结果与 Skill 详情（安装时）
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:18-59](file://src/handlers/hr/agent/create_agent.rs#L18-L59)
-- [src/handlers/hr/agent/update_agent.rs:20-86](file://src/handlers/hr/agent/update_agent.rs#L20-L86)
-- [src/handlers/hr/skill/create_skill.rs:22-90](file://src/handlers/hr/skill/create_skill.rs#L22-L90)
-- [src/handlers/hr/skill/update_skill.rs:22-125](file://src/handlers/hr/skill/update_skill.rs#L22-L125)
-- [src/handlers/hr/skill/install_skill_to_agent.rs:20-35](file://src/handlers/hr/skill/install_skill_to_agent.rs#L20-L35)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:20-33](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs#L20-L33)
+- [src/handlers/hr/agent/create_agent.rs:18-59](src/handlers/hr/agent/create_agent.rs#L18-L59)
+- [src/handlers/hr/agent/update_agent.rs:20-86](src/handlers/hr/agent/update_agent.rs#L20-L86)
+- [src/handlers/hr/skill/create_skill.rs:22-90](src/handlers/hr/skill/create_skill.rs#L22-L90)
+- [src/handlers/hr/skill/update_skill.rs:22-125](src/handlers/hr/skill/update_skill.rs#L22-L125)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:20-35](src/handlers/hr/skill/install_skill_to_agent.rs#L20-L35)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:20-33](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L20-L33)
 
 ### 错误码说明
 - InvalidRequest：参数校验失败（缺用户上下文、必填字段为空、附件无效、文件名非法）
@@ -351,11 +351,11 @@ HR 模块处理器以清晰的职责划分与严格的分层架构实现了 Agen
 - 领域服务异常：由领域服务抛出，Handler 透传
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:22-25](file://src/handlers/hr/agent/create_agent.rs#L22-L25)
-- [src/handlers/hr/skill/create_skill.rs:26-32](file://src/handlers/hr/skill/create_skill.rs#L26-L32)
-- [src/handlers/hr/skill/update_skill.rs:68-92](file://src/handlers/hr/skill/update_skill.rs#L68-L92)
-- [src/handlers/hr/agent/get_agent.rs:42-46](file://src/handlers/hr/agent/get_agent.rs#L42-L46)
-- [src/handlers/hr/skill/get_skill.rs:21-27](file://src/handlers/hr/skill/get_skill.rs#L21-L27)
+- [src/handlers/hr/agent/create_agent.rs:22-25](src/handlers/hr/agent/create_agent.rs#L22-L25)
+- [src/handlers/hr/skill/create_skill.rs:26-32](src/handlers/hr/skill/create_skill.rs#L26-L32)
+- [src/handlers/hr/skill/update_skill.rs:68-92](src/handlers/hr/skill/update_skill.rs#L68-L92)
+- [src/handlers/hr/agent/get_agent.rs:42-46](src/handlers/hr/agent/get_agent.rs#L42-L46)
+- [src/handlers/hr/skill/get_skill.rs:21-27](src/handlers/hr/skill/get_skill.rs#L21-L27)
 
 ### 处理器开发规范与最佳实践
 - 分层与调用方向：
@@ -375,6 +375,6 @@ HR 模块处理器以清晰的职责划分与严格的分层架构实现了 Agen
   - 复用 common::api 的请求/响应结构，保持接口一致性
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:18-41](file://src/handlers/hr/agent/create_agent.rs#L18-L41)
-- [src/handlers/hr/skill/create_skill.rs:22-82](file://src/handlers/hr/skill/create_skill.rs#L22-L82)
-- [src/handlers/hr/skill/update_skill.rs:22-117](file://src/handlers/hr/skill/update_skill.rs#L22-L117)
+- [src/handlers/hr/agent/create_agent.rs:18-41](src/handlers/hr/agent/create_agent.rs#L18-L41)
+- [src/handlers/hr/skill/create_skill.rs:22-82](src/handlers/hr/skill/create_skill.rs#L22-L82)
+- [src/handlers/hr/skill/update_skill.rs:22-117](src/handlers/hr/skill/update_skill.rs#L22-L117)

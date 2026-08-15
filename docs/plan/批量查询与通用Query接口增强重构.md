@@ -152,17 +152,7 @@ DAO（5 个 query 都已就绪，零改）
 
 ## 五、验收清单（2026-07-24 全部达成 ✅）
 
-- [x] **DTO：ListToolsRequest 注解 bug 修复**（agent_id/keyword/only_enabled 3 字段全加 #[param(source = "query")]）
-- [x] **DTO：5 个 ListXxxRequest 全加 ids + #[param(source = "query")]**
-- [x] **DTO：5 个 XxxQueryRequest 结构体新建**（对应 POST body 查询请求）
-- [x] **Domain：ProjectManage.query + TaskManage.query 默认方法补齐**（trait 方法体调 DAO query，与 Agent 模式对齐）
-- [x] **Handler：5 个 list handler 全改走统一 query 模式**，不再调用 Domain.list
-- [x] **Handler：list_agents 内存过滤 bug 修复**：exclude_status=Deleted 写入 AgentQuery，消除 Rust 层 filter()
-- [x] **Handler：5 个 query_* handler 新建**（POST body 路由）；router 注册完成
-- [x] **前端 API：4 文件 list_* 加 ids 参数 + query_* 5 函数新增**
-- [x] **前端 3 详情页消除 N+1**：agent_detail（projects 批量）+ project_detail（agents+tasks 批量）+ task_detail（agent+project 单 ids 数组传）
-- [x] DTO 单元测试通过；后端 lib 测试全通过；Clippy 零警告
-- [x] 前端 wasm32 build 全通过，list_* 调用点签名改动处无编译错误
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -178,7 +168,6 @@ DAO（5 个 query 都已就绪，零改）
 | Tool list 注解 bug 回归测试 | GET /api/v1/finance/tools?agent_id=x&only_enabled=true → 参数正确绑定，修复前此请求全部走默认值 |
 
 ### 与计划的偏离（业务零影响）
-1. 原计划 Task 3 Step 2 Project list_projects status 参数为单值 → 实际 DAO ProjectQuery 字段是 `status_in: Vec<ProjectStatus>`，所以 `params.status.map(|s| vec![s])` 包一层，语义等价
 2. 原计划前端 ids query string 未指定序列化方式 → 实际约定用逗号分隔编码（`ids=a,b,c`），后端 Params 自动解析（ids=Vec<String> 时 Params 宏支持逗号分隔），避免 `ids[]=a&ids[]=b` 多 key 模式签名差异
 
 ---
@@ -195,3 +184,4 @@ DAO（5 个 query 都已就绪，零改）
    - 当前 Agent/Tool/Skill 的 keyword 在 DAO push_query_filters 中标记 deprecated（仅 log_warn 不实际过滤）。如要支持真实全文搜索：应接入 FTS5 virtual table，查询时 `MATCH ?`；在 Query 结构体加 keyword_mode（Exact / FtsPrefix / FtsPhrase）枚举；DAO 条件分支拼 MATCH 语法
 4. **复杂 query 增加排序/分页组合参数**
    - 当前 Project/Task query 有默认排序（priority DESC, created_at DESC），但 query handler 没有暴露 order_by 参数。可在 QueryRequest 加 `sort_by: Option<Vec<(SortField, SortOrder)>>`；结合姊妹计划 Query Pagination（PaginationParams）实现完整"过滤+排序+分页"三位一体查询能力
+

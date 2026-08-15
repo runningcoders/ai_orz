@@ -2,16 +2,26 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/mod.rs](file://common/src/api/mod.rs)
-- [common/src/api/system.rs](file://common/src/api/system.rs)
-- [docs/design/api_protocol_convention.md](file://docs/design/api_protocol_convention.md)
-- [docs/design/pagination_and_count_convention.md](file://docs/design/pagination_and_count_convention.md)
-- [common/src/error/code.rs](file://common/src/error/code.rs)
-- [common/src/error/mod.rs](file://common/src/error/mod.rs)
-- [common/src/constants/http_header.rs](file://common/src/constants/http_header.rs)
-- [src/router.rs](file://src/router.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
+- [common/src/api/mod.rs](common/src/api/mod.rs)
+- [common/src/api/system.rs](common/src/api/system.rs)
+- [docs/design/api_protocol_convention.md](docs/design/api_protocol_convention.md)
+- [docs/design/pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md)
+- [common/src/error/code.rs](common/src/error/code.rs)
+- [common/src/error/mod.rs](common/src/error/mod.rs)
+- [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
+- [src/router.rs](src/router.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/handlers/system/process/shell_list.rs](src/handlers/system/process/shell_list.rs)
+### 本文关联的三类文档（四类互引闭环）
+#### ① Design 决策快照
+- [entity_list_query_search_design.md](docs/design/entity_list_query_search_design.md) — list / query / search 三接口职责二分 + 七层架构 + push_query_filters 复用 WHERE + PagedResult<T> T map 全链路
+- [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — query 核心 list 语法糖 + COUNT 与 LIST 共用 push_query_filters + PagedResult::map 保持 total 不变
+- [api_protocol_convention.md](docs/design/api_protocol_convention.md) — 禁止裸原始类型响应 + DTO 只定义在 common + 请求参数结构体化 + PaginationParams 统一 4 字段
+#### ② Plan 落地快照
+- [批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — query 核心接口 / PagedResult<T> 全链路 / COUNT 与 LIST WHERE 100% 共享
+- [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — 分页 PaginationParams 统一 + list 简化为 query 语法糖 + MAX_PAGE_SIZE=100
+#### ④ RAG 原子知识卡
+- [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — 三接口职责表 + 10 条硬约束红线（list 禁止接受字段过滤 / search 上限 20 等）
 </cite>
 
 ## 更新摘要
@@ -56,12 +66,12 @@ Handlers --> Domain["Domain/DAL/DAO"]
 ```
 
 **图表来源**
-- [src/router.rs:75-207](file://src/router.rs#L75-L207)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
+- [src/router.rs:75-207](src/router.rs#L75-L207)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
 
 **章节来源**
-- [src/router.rs:75-207](file://src/router.rs#L75-L207)
-- [docs/design/api_protocol_convention.md:1-71](file://docs/design/api_protocol_convention.md#L1-L71)
+- [src/router.rs:75-207](src/router.rs#L75-L207)
+- [docs/design/api_protocol_convention.md:1-71](docs/design/api_protocol_convention.md#L1-L71)
 
 ## 核心组件
 - 统一响应信封：ApiResponse<T> 包含 code/message/data，禁止裸原始类型响应。
@@ -71,12 +81,12 @@ Handlers --> Domain["Domain/DAL/DAO"]
 - 认证与上下文：JWT中间件从Cookie或Authorization提取token，验证后将用户信息写入请求头；RequestContext中间件据此构建请求上下文。
 
 **章节来源**
-- [common/src/api/mod.rs:6-83](file://common/src/api/mod.rs#L6-L83)
-- [docs/design/pagination_and_count_convention.md:25-44](file://docs/design/pagination_and_count_convention.md#L25-L44)
-- [common/src/error/code.rs:5-146](file://common/src/error/code.rs#L5-L146)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
-- [common/src/constants/http_header.rs:1-20](file://common/src/constants/http_header.rs#L1-L20)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
+- [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
+- [docs/design/pagination_and_count_convention.md:25-44](docs/design/pagination_and_count_convention.md#L25-L44)
+- [common/src/error/code.rs:5-146](common/src/error/code.rs#L5-L146)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
 
 ## 架构总览
 - 分层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO，禁止跨层与同层互调。
@@ -104,13 +114,13 @@ H-->>C : "ApiResponse<PagedResult<T>>"
 ```
 
 **图表来源**
-- [src/router.rs:132-207](file://src/router.rs#L132-L207)
-- [src/middleware/jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [docs/design/pagination_and_count_convention.md:46-61](file://docs/design/pagination_and_count_convention.md#L46-L61)
+- [src/router.rs:132-207](src/router.rs#L132-L207)
+- [src/middleware/jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [docs/design/pagination_and_count_convention.md:46-61](docs/design/pagination_and_count_convention.md#L46-L61)
 
 **章节来源**
-- [src/router.rs:132-207](file://src/router.rs#L132-L207)
-- [docs/design/api_protocol_convention.md:6-44](file://docs/design/api_protocol_convention.md#L6-L44)
+- [src/router.rs:132-207](src/router.rs#L132-L207)
+- [docs/design/api_protocol_convention.md:6-44](docs/design/api_protocol_convention.md#L6-L44)
 
 ## 详细组件分析
 
@@ -123,9 +133,9 @@ H-->>C : "ApiResponse<PagedResult<T>>"
 - **命名约定**：请求/响应以 ActionEntityRequest/Response 命名；列表项使用 EntityListItem/Item。
 
 **章节来源**
-- [common/src/api/mod.rs:6-83](file://common/src/api/mod.rs#L6-L83)
-- [docs/design/pagination_and_count_convention.md:11-44](file://docs/design/pagination_and_count_convention.md#L11-L44)
-- [docs/design/api_protocol_convention.md:46-55](file://docs/design/api_protocol_convention.md#L46-L55)
+- [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
+- [docs/design/pagination_and_count_convention.md:11-44](docs/design/pagination_and_count_convention.md#L11-L44)
+- [docs/design/api_protocol_convention.md:46-55](docs/design/api_protocol_convention.md#L46-L55)
 
 ### 错误模型与HTTP状态
 - ErrorCode：覆盖通用、认证、权限、资源、数据库、第三方、网络、运行时、配置、工具、系统等领域错误，并映射HTTP状态码。
@@ -133,9 +143,9 @@ H-->>C : "ApiResponse<PagedResult<T>>"
 - 禁止裸返回：即便只返回一个字段，也必须封装为 Response 结构体。
 
 **章节来源**
-- [common/src/error/code.rs:5-146](file://common/src/error/code.rs#L5-L146)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
-- [docs/design/api_protocol_convention.md:14-30](file://docs/design/api_protocol_convention.md#L14-L30)
+- [common/src/error/code.rs:5-146](common/src/error/code.rs#L5-L146)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
+- [docs/design/api_protocol_convention.md:14-30](docs/design/api_protocol_convention.md#L14-L30)
 
 ### 认证与权限
 - JWT中间件支持双模式：优先Cookie，其次Authorization: Bearer；失败时浏览器重定向，API返回401 JSON。
@@ -143,9 +153,9 @@ H-->>C : "ApiResponse<PagedResult<T>>"
 - 系统管理域整体要求Admin角色，高危操作在Handler内二次校验SuperAdmin。
 
 **章节来源**
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/router.rs:181-188](file://src/router.rs#L181-L188)
-- [common/src/constants/http_header.rs:1-20](file://common/src/constants/http_header.rs#L1-L20)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/router.rs:181-188](src/router.rs#L181-L188)
+- [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)
 
 ### 进程管理接口（shell_list 双露）
 - 列表接口：GET /api/v1/system/processes，返回 ListProcessesResponse { processes: Vec<ProcessInfo> }。
@@ -174,14 +184,14 @@ H-->>FE : "ListProcessesResponse"
 ```
 
 **图表来源**
-- [src/handlers/system/process/shell_list.rs:10-49](file://src/handlers/system/process/shell_list.rs#L10-L49)
-- [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
-- [src/router.rs:674-800](file://src/router.rs#L674-L800)
+- [src/handlers/system/process/shell_list.rs:10-49](src/handlers/system/process/shell_list.rs#L10-L49)
+- [common/src/api/system.rs:240-278](common/src/api/system.rs#L240-L278)
+- [src/router.rs:674-800](src/router.rs#L674-L800)
 
 **章节来源**
-- [src/handlers/system/process/shell_list.rs:10-49](file://src/handlers/system/process/shell_list.rs#L10-L49)
-- [common/src/api/system.rs:240-278](file://common/src/api/system.rs#L240-L278)
-- [src/router.rs:674-800](file://src/router.rs#L674-L800)
+- [src/handlers/system/process/shell_list.rs:10-49](src/handlers/system/process/shell_list.rs#L10-L49)
+- [common/src/api/system.rs:240-278](common/src/api/system.rs#L240-L278)
+- [src/router.rs:674-800](src/router.rs#L674-L800)
 
 ### 日志与备份相关DTO
 - LogEntry：时间戳、级别、消息、追踪ID、用户ID、操作名、原始JSON（Option<Value>）。
@@ -189,7 +199,7 @@ H-->>FE : "ListProcessesResponse"
 - BackupInfo：版本、时间戳、文件名、大小、MD5；DeleteBackupResponse：success。
 
 **章节来源**
-- [common/src/api/system.rs:331-395](file://common/src/api/system.rs#L331-L395)
+- [common/src/api/system.rs:331-395](common/src/api/system.rs#L331-L395)
 
 ### 分页与计数规范详解
 **新增章节**：分页与计数规范现已成为独立的专门文档，提供更详细的实现指导。
@@ -204,9 +214,9 @@ H-->>FE : "ListProcessesResponse"
 - 每层用 PagedResult::map() 转换内部类型，保留 total
 
 **章节来源**
-- [docs/design/pagination_and_count_convention.md:6-10](file://docs/design/pagination_and_count_convention.md#L6-L10)
-- [docs/design/pagination_and_count_convention.md:63-103](file://docs/design/pagination_and_count_convention.md#L63-L103)
-- [docs/design/pagination_and_count_convention.md:153-209](file://docs/design/pagination_and_count_convention.md#L153-L209)
+- [docs/design/pagination_and_count_convention.md:6-10](docs/design/pagination_and_count_convention.md#L6-L10)
+- [docs/design/pagination_and_count_convention.md:63-103](docs/design/pagination_and_count_convention.md#L63-L103)
+- [docs/design/pagination_and_count_convention.md:153-209](docs/design/pagination_and_count_convention.md#L153-L209)
 
 ## 依赖关系分析
 - common 作为协议单一事实源被后端与前端共同引用，避免重复定义。
@@ -223,12 +233,12 @@ Handler --> Domain["service/domain"]
 ```
 
 **图表来源**
-- [src/router.rs:75-207](file://src/router.rs#L75-L207)
-- [common/src/api/mod.rs:85-156](file://common/src/api/mod.rs#L85-L156)
+- [src/router.rs:75-207](src/router.rs#L75-L207)
+- [common/src/api/mod.rs:85-156](common/src/api/mod.rs#L85-L156)
 
 **章节来源**
-- [src/router.rs:75-207](file://src/router.rs#L75-L207)
-- [common/src/api/mod.rs:85-156](file://common/src/api/mod.rs#L85-L156)
+- [src/router.rs:75-207](src/router.rs#L75-L207)
+- [common/src/api/mod.rs:85-156](common/src/api/mod.rs#L85-L156)
 
 ## 性能与一致性考量
 - 列表接口按需刷新：进程列表在返回前逐条 refresh 探活，保证 alive 准确性但增加开销；应结合前端轮询策略控制频率。
@@ -245,9 +255,9 @@ Handler --> Domain["service/domain"]
 - **分页问题**：检查是否正确使用了 PagedResult<T> 而非 Vec<T>；确认 pagination 参数是否正确传递。
 
 **章节来源**
-- [src/middleware/jwt_auth.rs:139-156](file://src/middleware/jwt_auth.rs#L139-L156)
-- [src/router.rs:181-188](file://src/router.rs#L181-L188)
-- [docs/design/api_protocol_convention.md:32-44](file://docs/design/api_protocol_convention.md#L32-L44)
+- [src/middleware/jwt_auth.rs:139-156](src/middleware/jwt_auth.rs#L139-L156)
+- [src/router.rs:181-188](src/router.rs#L181-L188)
+- [docs/design/api_protocol_convention.md:32-44](docs/design/api_protocol_convention.md#L32-L44)
 
 ## 结论
 本规范通过统一响应信封、集中化DTO、结构化错误模型与严格的认证/权限流程，确保前后端协议一致性与可维护性。**分页与计数规范的专门化文档提供了更详细的实现指导**。新增接口应遵循"common单一事实源"的原则，并在路由中明确公开/受保护范围与角色要求。
@@ -261,7 +271,7 @@ Handler --> Domain["service/domain"]
 - 健康探测：/health
 
 **章节来源**
-- [src/router.rs:75-207](file://src/router.rs#L75-L207)
+- [src/router.rs:75-207](src/router.rs#L75-L207)
 
 ### 关键接口示例
 - 列出后台进程：GET /api/v1/system/processes → ListProcessesResponse
@@ -269,8 +279,8 @@ Handler --> Domain["service/domain"]
 - 备份删除：DELETE /api/v1/system/backups/{version} → DeleteBackupResponse
 
 **章节来源**
-- [common/src/api/system.rs:240-395](file://common/src/api/system.rs#L240-L395)
-- [src/router.rs:674-800](file://src/router.rs#L674-L800)
+- [common/src/api/system.rs:240-395](common/src/api/system.rs#L240-L395)
+- [src/router.rs:674-800](src/router.rs#L674-L800)
 
 ### 请求/响应约定
 - 统一响应：ApiResponse<T>
@@ -279,7 +289,7 @@ Handler --> Domain["service/domain"]
 - 头部：LOG_ID/USER_ID/USERNAME/ORGANIZATION_ID/USER_ROLE/CALLER_TYPE
 
 **章节来源**
-- [common/src/api/mod.rs:6-83](file://common/src/api/mod.rs#L6-L83)
-- [docs/design/pagination_and_count_convention.md:25-44](file://docs/design/pagination_and_count_convention.md#L25-L44)
-- [common/src/error/code.rs:5-146](file://common/src/error/code.rs#L5-L146)
-- [common/src/constants/http_header.rs:1-20](file://common/src/constants/http_header.rs#L1-L20)
+- [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
+- [docs/design/pagination_and_count_convention.md:25-44](docs/design/pagination_and_count_convention.md#L25-L44)
+- [common/src/error/code.rs:5-146](common/src/error/code.rs#L5-L146)
+- [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)

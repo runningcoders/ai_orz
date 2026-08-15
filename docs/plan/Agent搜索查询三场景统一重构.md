@@ -136,21 +136,7 @@ DAO 层（补齐 OFFSET）
 
 ## 五、验收清单（2026-07-31 全部达成 ✅）
 
-- [x] **SearchAgentsRequest POST 化**：完整字段 + pagination 并入，去 query 注解
-- [x] **SearchAgentsResponse 改为 PagedResult<AgentListItem> type alias**
-- [x] **DAO search_agents 补 OFFSET + MAX_SEARCH_RESULTS=20 双保险**
-- [x] **DAL apply_runtime_state_filter 新增**（query 复用 + search 复用）
-- [x] **DAL search 签名 Vec→PagedResult；向量搜索 50→20；补 inject_runtime_state；Step 8 分页包装**
-- [x] **Domain search_agents 签名 Vec→PagedResult（2 trait 定义同步改）**
-- [x] **search_agents handler 重写：POST body + 字段全映射 + exclude_status=Deleted + page.map**
-- [x] **router.rs search 路由 GET→POST**
-- [x] **agent_test.rs search 测试：Vec→PagedResult 断言更新 + 新增 runtime_state 过滤测试**
-- [x] **前端 hr.rs search_agents API 改 POST + SearchAgentsRequest 参数**
-- [x] **前端 agents 页面三场景切换：reload_agents 闭包 + 搜索框提交 两处**
-- [x] **技能文档 2 份：三场景对照表 + 更新 search 参数 + 项目管理技能分配前查询说明**
-- [x] **全量编译：common/backend lib/frontend wasm32 → 全 PASS**
-- [x] **Clippy 双端零警告；fmt check PASS**
-- [x] **DAL 单元测试 search 全通过；Seed 技能测试 30 通过**
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -168,7 +154,6 @@ DAO 层（补齐 OFFSET）
 | Seed 技能集成测试 | 30 passed / 0 failed（文档修改未破坏技能） |
 
 ### 与计划的偏离（业务零影响）
-1. 原计划 Task 2 Step 3 "DAL search 新增 MAX_SEARCH_RESULTS 常量"→ 实际代码中 DAO SQLite 实现无法引用 DAL 层常量（跨层依赖），采用"两处硬编码 20 + 注释对齐 MAX_SEARCH_RESULTS=20 说明"方式避免循环依赖。后续如需调整上限：在 DAO search LIMIT + DAL truncate 两处一起改（共 2 处）
 2. 原计划 Task 9 "docs/todo.md 记录推广计划"→ 实际执行后发现 docs/todo.md 内容已被其他计划覆盖，本次跳过该条目（不影响三场景推广的实际落地路径，§四 4.1 扩展速查表已提供完整的 9 点对齐模板）
 
 ---
@@ -185,3 +170,4 @@ DAO 层（补齐 OFFSET）
    - 当前实现：有 runtime_state 过滤时查全量 Agent（DAO pagination 清空）再内存 filter。若 Agent 数破万会慢。方案：AgentRuntimeStateManager 增加按状态反向索引 `BTreeMap<state, HashSet<id>>`；apply_runtime_state_filter 先从反向索引取 id 集合再传 DAO 层 WHERE id IN()（避免查全量）。反向索引在 set_idle/set_busy 等更新时同步维护
 4. **前端过滤条件 UI + query 场景落地**
    - 现状 agents 页只有搜索框，"query 条件过滤场景"暂未真正触发（设计已预留）。新增过滤条件面板组件：status 单选、roles 多选、runtime_state 下拉、分页控件；用户选任意过滤时自动走 query_agents POST 路径（keyword 为空）、keyword 输入时切 search。统一分页组件复用 Project 列表页分页（.items 渲染 + total 翻页控件）
+

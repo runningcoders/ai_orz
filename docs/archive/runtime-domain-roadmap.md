@@ -2,7 +2,7 @@
 
 > 📦 **归档标记（2026-08-15）**：本文档描述的 **Runtime Domain 多阶段推进路线（Phase 1~4C，目标：能唤醒 → 能做事 → 能协作）** 已被实际代码落地取代，本文档列出的 14 个模块完成度均已达 ✅ 100%（v3.2 2026-07-12），后续迭代以 design/runtime_design.md 的版本化更新为准。
 > 保留原因：历史审计——Phase 1→4C 分阶段推进节奏、各模块功能完成度与边界描述是功能演进的关键快照；新增 Runtime 功能时可回看「能力边界」段落确认 v3.2 基线能力。
-> 当前生效方案请参考：[docs/design/runtime_design.md](../design/runtime_design.md)（Runtime 权威设计文档，按版本号滚动更新）+ [src/service/domain/runtime/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)（awakening + 各子能力 trait 实现）
+> 当前生效方案请参考：[docs/design/runtime_design.md](../design/runtime_design.md)（Runtime 权威设计文档，按版本号滚动更新）+ [src/service/domain/runtime/](src/service/domain/runtime/)（awakening + 各子能力 trait 实现）
 
 > 🎯 **目标**：按阶段推进 Runtime Domain 的完整实现，从"能唤醒"到"能做事"到"能协作"
 >

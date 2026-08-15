@@ -2,20 +2,20 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/mcp_server.rs](file://common/src/api/mcp_server.rs)
-- [common/src/enums/mcp_server.rs](file://common/src/enums/mcp_server.rs)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [src/service/dal/mcp_server.rs](file://src/service/dal/mcp_server.rs)
-- [src/service/domain/finance/mcp_server.rs](file://src/service/domain/finance/mcp_server.rs)
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [src/pkg/tool_registry/mcp.rs](file://src/pkg/tool_registry/mcp.rs)
-- [frontend/src/pages/finance/mcp_servers.rs](file://frontend/src/pages/finance/mcp_servers.rs)
-- [frontend/src/pages/finance/mcp_server_detail.rs](file://frontend/src/pages/finance/mcp_server_detail.rs)
-- [docs/mcp_tool_design.md](file://docs/mcp_tool_design.md)
+- [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
+- [common/src/enums/mcp_server.rs](common/src/enums/mcp_server.rs)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [src/service/dal/mcp_server.rs](src/service/dal/mcp_server.rs)
+- [src/service/domain/finance/mcp_server.rs](src/service/domain/finance/mcp_server.rs)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs](src/handlers/finance/mcp_server/update_mcp_server_status.rs)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
+- [frontend/src/pages/finance/mcp_servers.rs](frontend/src/pages/finance/mcp_servers.rs)
+- [frontend/src/pages/finance/mcp_server_detail.rs](frontend/src/pages/finance/mcp_server_detail.rs)
+- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -62,20 +62,20 @@ D --> R["运行时: mcp.rs<br/>stdio 客户端/会话/脱敏"]
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_server.rs:1-113](file://src/service/domain/finance/mcp_server.rs#L1-L113)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [migrations/20260623000000_mcp_servers.sql:1-20](file://migrations/20260623000000_mcp_servers.sql#L1-L20)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [migrations/20260623000000_mcp_servers.sql:1-20](migrations/20260623000000_mcp_servers.sql#L1-L20)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [common/src/api/mcp_server.rs:1-179](file://common/src/api/mcp_server.rs#L1-L179)
-- [common/src/enums/mcp_server.rs:1-49](file://common/src/enums/mcp_server.rs#L1-L49)
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
-- [migrations/20260623000000_mcp_servers.sql:1-20](file://migrations/20260623000000_mcp_servers.sql#L1-L20)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L179)
+- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L49)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
+- [migrations/20260623000000_mcp_servers.sql:1-20](migrations/20260623000000_mcp_servers.sql#L1-L20)
 
 ## 核心组件
 - 公共 DTO 与枚举
@@ -97,17 +97,17 @@ D --> R["运行时: mcp.rs<br/>stdio 客户端/会话/脱敏"]
   - 详情页：查看脱敏配置、触发同步、切换状态、删除
 
 章节来源
-- [common/src/api/mcp_server.rs:1-179](file://common/src/api/mcp_server.rs#L1-L179)
-- [common/src/enums/mcp_server.rs:1-49](file://common/src/enums/mcp_server.rs#L1-L49)
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/domain/finance/mcp_server.rs:1-113](file://src/service/domain/finance/mcp_server.rs#L1-L113)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [frontend/src/pages/finance/mcp_servers.rs:1-306](file://frontend/src/pages/finance/mcp_servers.rs#L1-L306)
-- [frontend/src/pages/finance/mcp_server_detail.rs:1-217](file://frontend/src/pages/finance/mcp_server_detail.rs#L1-L217)
+- [common/src/api/mcp_server.rs:1-179](common/src/api/mcp_server.rs#L1-L179)
+- [common/src/enums/mcp_server.rs:1-49](common/src/enums/mcp_server.rs#L1-L49)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [frontend/src/pages/finance/mcp_servers.rs:1-306](frontend/src/pages/finance/mcp_servers.rs#L1-L306)
+- [frontend/src/pages/finance/mcp_server_detail.rs:1-217](frontend/src/pages/finance/mcp_server_detail.rs#L1-L217)
 
 ## 架构总览
 MCP 服务器管理采用 Adapter → Domain → DAL → DAO 的单向调用链。Domain 对上层暴露业务接口，DAL 封装持久化细节与最小校验，DAO 仅负责 PO 持久化。运行时通过 pkg/tool_registry/mcp.rs 提供 stdio 客户端能力，并在错误路径进行安全脱敏。
@@ -131,12 +131,12 @@ AD-->>FE : "JSON 响应"
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_server.rs:1-113](file://src/service/domain/finance/mcp_server.rs#L1-L113)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [migrations/20260623000000_mcp_servers.sql:1-20](file://migrations/20260623000000_mcp_servers.sql#L1-L20)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [migrations/20260623000000_mcp_servers.sql:1-20](migrations/20260623000000_mcp_servers.sql#L1-L20)
 
 ## 详细组件分析
 
@@ -163,14 +163,14 @@ Save --> End(["完成"])
 ```
 
 图表来源
-- [src/service/dal/mcp_server.rs:132-159](file://src/service/dal/mcp_server.rs#L132-L159)
-- [src/models/mcp_server.rs:152-167](file://src/models/mcp_server.rs#L152-L167)
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
+- [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
+- [src/models/mcp_server.rs:152-167](src/models/mcp_server.rs#L152-L167)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
 
 章节来源
-- [src/service/dal/mcp_server.rs:132-159](file://src/service/dal/mcp_server.rs#L132-L159)
-- [src/models/mcp_server.rs:152-167](file://src/models/mcp_server.rs#L152-L167)
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
+- [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
+- [src/models/mcp_server.rs:152-167](src/models/mcp_server.rs#L152-L167)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
 
 ### 工具同步机制
 - 触发点：前端“同步工具”按钮或 API 调用
@@ -200,15 +200,15 @@ AD-->>FE : "成功/失败提示"
 ```
 
 图表来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_tool.rs:1-26](file://src/service/domain/finance/mcp_tool.rs#L1-L26)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md:1320-1327](file://docs/mcp_tool_design.md#L1320-L1327)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L26)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [docs/mcp_tool_design.md:1320-1327](docs/mcp_tool_design.md#L1320-L1327)
 
 章节来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [src/service/domain/finance/mcp_tool.rs:1-26](file://src/service/domain/finance/mcp_tool.rs#L1-L26)
-- [docs/mcp_tool_design.md:1320-1327](file://docs/mcp_tool_design.md#L1320-L1327)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [src/service/domain/finance/mcp_tool.rs:1-26](src/service/domain/finance/mcp_tool.rs#L1-L26)
+- [docs/mcp_tool_design.md:1320-1327](docs/mcp_tool_design.md#L1320-L1327)
 
 ### 连接状态监控与失效策略
 - 状态字段：Enabled/Disabled/Deleted
@@ -249,12 +249,12 @@ McpServerDalImpl --> McpServerPo : "持久化"
 ```
 
 图表来源
-- [src/models/mcp_server.rs:224-322](file://src/models/mcp_server.rs#L224-L322)
-- [src/service/dal/mcp_server.rs:71-129](file://src/service/dal/mcp_server.rs#L71-L129)
+- [src/models/mcp_server.rs:224-322](src/models/mcp_server.rs#L224-L322)
+- [src/service/dal/mcp_server.rs:71-129](src/service/dal/mcp_server.rs#L71-L129)
 
 章节来源
-- [src/models/mcp_server.rs:224-322](file://src/models/mcp_server.rs#L224-L322)
-- [src/service/dal/mcp_server.rs:71-129](file://src/service/dal/mcp_server.rs#L71-L129)
+- [src/models/mcp_server.rs:224-322](src/models/mcp_server.rs#L224-L322)
+- [src/service/dal/mcp_server.rs:71-129](src/service/dal/mcp_server.rs#L71-L129)
 
 ### 错误恢复与安全脱敏
 - 运行时错误脱敏：
@@ -272,12 +272,12 @@ SafeMsg --> Return["返回给上层/前端"]
 ```
 
 图表来源
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md:926-937](file://docs/mcp_tool_design.md#L926-L937)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [docs/mcp_tool_design.md:926-937](docs/mcp_tool_design.md#L926-L937)
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md:926-937](file://docs/mcp_tool_design.md#L926-L937)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [docs/mcp_tool_design.md:926-937](docs/mcp_tool_design.md#L926-L937)
 
 ### 前端管理界面
 - 列表页：
@@ -288,8 +288,8 @@ SafeMsg --> Return["返回给上层/前端"]
   - 使用 toast 提示成功/失败，操作后刷新列表或详情
 
 章节来源
-- [frontend/src/pages/finance/mcp_servers.rs:1-306](file://frontend/src/pages/finance/mcp_servers.rs#L1-L306)
-- [frontend/src/pages/finance/mcp_server_detail.rs:1-217](file://frontend/src/pages/finance/mcp_server_detail.rs#L1-L217)
+- [frontend/src/pages/finance/mcp_servers.rs:1-306](frontend/src/pages/finance/mcp_servers.rs#L1-L306)
+- [frontend/src/pages/finance/mcp_server_detail.rs:1-217](frontend/src/pages/finance/mcp_server_detail.rs#L1-L217)
 
 ## 依赖关系分析
 - 处理器依赖 Domain 暴露的业务接口
@@ -308,16 +308,16 @@ F["Frontend"] --> H
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-113](file://src/service/domain/finance/mcp_server.rs#L1-L113)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-113](file://src/service/domain/finance/mcp_server.rs#L1-L113)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mcp_server.rs:1-113](src/service/domain/finance/mcp_server.rs#L1-L113)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
 
 ## 性能与可靠性
 - 连接策略
@@ -332,9 +332,9 @@ F["Frontend"] --> H
   - 未来可引入 session cache、reconnect、health check 与并发策略优化
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
-- [docs/mcp_tool_design.md:1346-1352](file://docs/mcp_tool_design.md#L1346-L1352)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
+- [docs/mcp_tool_design.md:1346-1352](docs/mcp_tool_design.md#L1346-L1352)
 
 ## 故障排查指南
 - 无法创建 MCP 服务器
@@ -354,10 +354,10 @@ F["Frontend"] --> H
   - 若发现明文，检查 redacted_for_management 逻辑与上游数据处理
 
 章节来源
-- [src/service/dal/mcp_server.rs:132-159](file://src/service/dal/mcp_server.rs#L132-L159)
-- [src/pkg/tool_registry/mcp.rs:180-216](file://src/pkg/tool_registry/mcp.rs#L180-L216)
-- [docs/mcp_tool_design.md:926-937](file://docs/mcp_tool_design.md#L926-L937)
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
+- [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
+- [src/pkg/tool_registry/mcp.rs:180-216](src/pkg/tool_registry/mcp.rs#L180-L216)
+- [docs/mcp_tool_design.md:926-937](docs/mcp_tool_design.md#L926-L937)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
 
 ## 结论
 MCP 服务器管理功能通过清晰的层次划分与严格的错误脱敏策略，提供了安全的配置管理、工具同步与状态管理能力。当前版本聚焦 stdio 传输与 per-operation 连接策略，后续可按需引入 HTTP 传输、session 缓存与健康检查以增强性能与可靠性。前端界面提供了直观的操作入口与反馈，便于管理员快速集成与维护 MCP 服务器。
@@ -382,8 +382,8 @@ MCP 服务器管理功能通过清晰的层次划分与严格的错误脱敏策�
   - 删除：DELETE /api/v1/finance/mcp-servers/{id}
 
 章节来源
-- [common/src/api/mcp_server.rs:34-104](file://common/src/api/mcp_server.rs#L34-L104)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
-- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](file://src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
-- [docs/mcp_tool_design.md:1320-1327](file://docs/mcp_tool_design.md#L1320-L1327)
+- [common/src/api/mcp_server.rs:34-104](common/src/api/mcp_server.rs#L34-L104)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/handlers/finance/mcp_server/update_mcp_server_status.rs:1-37](src/handlers/finance/mcp_server/update_mcp_server_status.rs#L1-L37)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-27](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L27)
+- [docs/mcp_tool_design.md:1320-1327](docs/mcp_tool_design.md#L1320-L1327)

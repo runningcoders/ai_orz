@@ -10,6 +10,18 @@
 > - [memory_design.md](../memory_design.md) — 记忆系统四层认知结构
 > - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — 全实体统一搜索标准（本设计是其超集）
 > - [vector_search_architecture.md](./vector_search_architecture.md) — HNSW 向量搜索底层
+> - [memory_system_enhancement_design.md](./memory_system_enhancement_design.md) — 工具拆分 + 定时沉淀设计（搜索增强的上层能力设计）
+> - 【② Plan 落地（真实定稿 2 张）】
+>   - [图谱遍历查询优化.md](../plan/图谱遍历查询优化.md) — traverse BFS/DFS IN 分块 400 + 栈批量预取（含 5 个新增测试场景）
+>   - [知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — recommend_seed_nodes + 前端 KnowledgeGraph 组件两端复用
+> - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐）】
+>   - [知识关系管理.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆%20(Long-term%20Memory)/知识关系管理.md) — 知识关系 + traverse BFS/DFS 遍历链路 + 图谱冷启动种子推荐
+>   - [知识图谱搜索.md](docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md) — FTS5 关键词 + 向量 + 图谱关系三位一体综合搜索排序
+>   - [记忆系统管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/记忆系统管理.md) — 记忆搜索接口管理 + 推荐面板 reasons 展示
+> - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 2 张）】
+>   - [记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐](docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐/记忆搜索增强三合一：FTS5%20tags%20语义过滤%20+%20图谱%20traverse%20BFS%2FDFS%20遍历%20+%20recommend_seed_nodes%20三因子推荐.md) — 三合一总卡（FTS5 搜索 + tags 过滤 + traverse 分块 + 三因子打分 + MAX_SEARCH_RESULTS 20 红线）
+>   - [知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出](docs/wiki/knowledge/zh/知识图谱%20traverse：BFS%20levels%20深度返回%20+%20DFS%20栈批量预取%20edge_cache%20+%20IN%20列表%20400%20分块防%20999%20溢出/知识图谱%20traverse：BFS%20levels%20深度返回%20+%20DFS%20栈批量预取%20edge_cache%20+%20IN%20列表%20400%20分块防%20999%20溢出.md) — §1 决策 2 遍历位置 + BFS/DFS 具体实现细节
+>   - [recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用](docs/wiki/knowledge/zh/recommend_seed_nodes%20种子节点推荐：三因子打分%200.45%20连通度%200.35%20内容丰富度%200.2%20分享权重%20+%20KnowledgeGraph%20组件两端复用/recommend_seed_nodes%20种子节点推荐：三因子打分%200.45%20连通度%200.35%20内容丰富度%200.2%20分享权重%20+%20KnowledgeGraph%20组件两端复用.md) — 三因子算法 + 前端 KnowledgeGraph 组件复用拆分
 
 ---
 

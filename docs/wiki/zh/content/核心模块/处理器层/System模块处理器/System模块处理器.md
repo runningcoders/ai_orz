@@ -2,24 +2,24 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/system/mod.rs](file://src/handlers/system/mod.rs)
-- [src/handlers/system/backup/mod.rs](file://src/handlers/system/backup/mod.rs)
-- [src/handlers/system/backup/create_backup.rs](file://src/handlers/system/backup/create_backup.rs)
-- [src/handlers/system/backup/list_backups.rs](file://src/handlers/system/backup/list_backups.rs)
-- [src/handlers/system/backup/restore_backup.rs](file://src/handlers/system/backup/restore_backup.rs)
-- [src/handlers/system/cron_trigger/mod.rs](file://src/handlers/system/cron_trigger/mod.rs)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs](file://src/handlers/system/cron_trigger/create_cron_trigger.rs)
-- [src/handlers/system/logs/query_logs.rs](file://src/handlers/system/logs/query_logs.rs)
-- [src/handlers/system/process/mod.rs](file://src/handlers/system/process/mod.rs)
-- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
-- [src/handlers/system/process/shell_status.rs](file://src/handlers/system/process/shell_status.rs)
-- [src/handlers/system/process/shell_kill.rs](file://src/handlers/system/process/shell_kill.rs)
-- [src/handlers/system/seed/mod.rs](file://src/handlers/system/seed/mod.rs)
-- [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/handlers/system/health_metrics.rs](file://src/handlers/system/health_metrics.rs)
-- [common/src/api/system.rs](file://common/src/api/system.rs)
-- [src/router.rs](file://src/router.rs)
+- [src/handlers/system/mod.rs](src/handlers/system/mod.rs)
+- [src/handlers/system/backup/mod.rs](src/handlers/system/backup/mod.rs)
+- [src/handlers/system/backup/create_backup.rs](src/handlers/system/backup/create_backup.rs)
+- [src/handlers/system/backup/list_backups.rs](src/handlers/system/backup/list_backups.rs)
+- [src/handlers/system/backup/restore_backup.rs](src/handlers/system/backup/restore_backup.rs)
+- [src/handlers/system/cron_trigger/mod.rs](src/handlers/system/cron_trigger/mod.rs)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs](src/handlers/system/cron_trigger/create_cron_trigger.rs)
+- [src/handlers/system/logs/query_logs.rs](src/handlers/system/logs/query_logs.rs)
+- [src/handlers/system/process/mod.rs](src/handlers/system/process/mod.rs)
+- [src/handlers/system/process/shell_list.rs](src/handlers/system/process/shell_list.rs)
+- [src/handlers/system/process/shell_status.rs](src/handlers/system/process/shell_status.rs)
+- [src/handlers/system/process/shell_kill.rs](src/handlers/system/process/shell_kill.rs)
+- [src/handlers/system/seed/mod.rs](src/handlers/system/seed/mod.rs)
+- [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/handlers/system/health_metrics.rs](src/handlers/system/health_metrics.rs)
+- [common/src/api/system.rs](common/src/api/system.rs)
+- [src/router.rs](src/router.rs)
 </cite>
 
 ## 更新摘要
@@ -91,11 +91,11 @@ H --> J
 ```
 
 图表来源
-- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
-- [common/src/api/system.rs:1-328](file://common/src/api/system.rs#L1-L328)
+- [src/handlers/system/mod.rs:1-14](src/handlers/system/mod.rs#L1-L14)
+- [common/src/api/system.rs:1-328](common/src/api/system.rs#L1-L328)
 
 章节来源
-- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
+- [src/handlers/system/mod.rs:1-14](src/handlers/system/mod.rs#L1-L14)
 
 ## 核心组件
 - 备份恢复：创建备份、列出备份、生成恢复脚本；高危操作二次校验 SuperAdmin。
@@ -108,17 +108,17 @@ H --> J
 - **新增** 进程管理：后台进程列表查询、状态监控、进程终止，支持Agent范围过滤和探活刷新。
 
 章节来源
-- [src/handlers/system/backup/mod.rs:1-33](file://src/handlers/system/backup/mod.rs#L1-L33)
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
-- [src/handlers/system/seed/mod.rs:1-675](file://src/handlers/system/seed/mod.rs#L1-L675)
-- [src/handlers/system/aop.rs:1-145](file://src/handlers/system/aop.rs#L1-L145)
-- [src/handlers/system/aop_stats.rs:1-73](file://src/handlers/system/aop_stats.rs#L1-L73)
-- [src/handlers/system/health_metrics.rs:1-135](file://src/handlers/system/health_metrics.rs#L1-L135)
-- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
-- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
-- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
-- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+- [src/handlers/system/backup/mod.rs:1-33](src/handlers/system/backup/mod.rs#L1-L33)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
+- [src/handlers/system/seed/mod.rs:1-675](src/handlers/system/seed/mod.rs#L1-L675)
+- [src/handlers/system/aop.rs:1-145](src/handlers/system/aop.rs#L1-L145)
+- [src/handlers/system/aop_stats.rs:1-73](src/handlers/system/aop_stats.rs#L1-L73)
+- [src/handlers/system/health_metrics.rs:1-135](src/handlers/system/health_metrics.rs#L1-L135)
+- [src/handlers/system/process/shell_list.rs:1-144](src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](src/handlers/system/process/shell_kill.rs#L1-L31)
+- [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)
 
 ## 架构总览
 System 模块严格遵循 Adapter→Domain→DAL→DAO 单向调用。Handler 仅负责参数解析、权限校验与编排；Domain 封装业务规则；DAL/DAO 负责持久化。
@@ -139,9 +139,9 @@ Handler-->>Client : "JSON/文本响应"
 ```
 
 图表来源
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/seed/mod.rs:273-409](file://src/handlers/system/seed/mod.rs#L273-L409)
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/seed/mod.rs:273-409](src/handlers/system/seed/mod.rs#L273-L409)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
 
 ## 详细组件分析
 
@@ -166,14 +166,14 @@ Handler-->>Admin : "200 OK + BackupInfo"
 ```
 
 图表来源
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
 
 章节来源
-- [src/handlers/system/backup/mod.rs:1-33](file://src/handlers/system/backup/mod.rs#L1-L33)
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/backup/list_backups.rs:1-22](file://src/handlers/system/backup/list_backups.rs#L1-L22)
-- [src/handlers/system/backup/restore_backup.rs:1-36](file://src/handlers/system/backup/restore_backup.rs#L1-L36)
+- [src/handlers/system/backup/mod.rs:1-33](src/handlers/system/backup/mod.rs#L1-L33)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L22)
+- [src/handlers/system/backup/restore_backup.rs:1-36](src/handlers/system/backup/restore_backup.rs#L1-L36)
 
 ### 日志查询
 - 职责：分页查询应用日志，支持关键词、日志 ID、级别、起止时间过滤。
@@ -192,10 +192,10 @@ Return --> End
 ```
 
 图表来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
 
 ### 定时任务（Cron Trigger）
 - 职责：创建一次性或间隔型触发器；Cron 表达式类型当前不支持。
@@ -217,11 +217,11 @@ Handler-->>Admin : "200 OK + Detail"
 ```
 
 图表来源
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
 
 章节来源
-- [src/handlers/system/cron_trigger/mod.rs:1-21](file://src/handlers/system/cron_trigger/mod.rs#L1-L21)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
+- [src/handlers/system/cron_trigger/mod.rs:1-21](src/handlers/system/cron_trigger/mod.rs#L1-L21)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
 
 ### 种子数据管理
 - 职责：导出/导入组织、用户、模型 Provider、Agent、Skill 的快照；支持差异对比、DryRun、敏感字段注入与跳过策略。
@@ -249,11 +249,11 @@ RespWrite --> End
 ```
 
 图表来源
-- [src/handlers/system/seed/mod.rs:273-409](file://src/handlers/system/seed/mod.rs#L273-L409)
-- [src/handlers/system/seed/mod.rs:420-671](file://src/handlers/system/seed/mod.rs#L420-L671)
+- [src/handlers/system/seed/mod.rs:273-409](src/handlers/system/seed/mod.rs#L273-L409)
+- [src/handlers/system/seed/mod.rs:420-671](src/handlers/system/seed/mod.rs#L420-L671)
 
 章节来源
-- [src/handlers/system/seed/mod.rs:1-675](file://src/handlers/system/seed/mod.rs#L1-L675)
+- [src/handlers/system/seed/mod.rs:1-675](src/handlers/system/seed/mod.rs#L1-L675)
 
 ### AOP 队列监控
 - 职责：查看所有消费者队列统计、按消费者查询队列、列出事件与获取事件详情。
@@ -276,11 +276,11 @@ Handler-->>Admin : "200 OK"
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
 
 章节来源
-- [src/handlers/system/aop.rs:1-145](file://src/handlers/system/aop.rs#L1-L145)
-- [common/src/api/system.rs:55-191](file://common/src/api/system.rs#L55-L191)
+- [src/handlers/system/aop.rs:1-145](src/handlers/system/aop.rs#L1-L145)
+- [common/src/api/system.rs:55-191](common/src/api/system.rs#L55-L191)
 
 ### AOP 实时统计
 - 职责：提供概览、时序、分布三类统计，直接读取内存中的 AopStatsCollector 快照，零 DB 查询。
@@ -303,11 +303,11 @@ Handler-->>Frontend : "200 OK"
 ```
 
 图表来源
-- [src/handlers/system/aop_stats.rs:1-73](file://src/handlers/system/aop_stats.rs#L1-L73)
+- [src/handlers/system/aop_stats.rs:1-73](src/handlers/system/aop_stats.rs#L1-L73)
 
 章节来源
-- [src/handlers/system/aop_stats.rs:1-73](file://src/handlers/system/aop_stats.rs#L1-L73)
-- [common/src/api/system.rs:100-239](file://common/src/api/system.rs#L100-L239)
+- [src/handlers/system/aop_stats.rs:1-73](src/handlers/system/aop_stats.rs#L1-L73)
+- [common/src/api/system.rs:100-239](common/src/api/system.rs#L100-L239)
 
 ### 系统健康指标
 - 职责：聚合后端在线、AOP 队列积压、活跃 Agent/项目/任务数、进程运行时长等，供 HUD 展示。
@@ -331,11 +331,11 @@ Handler-->>UI : "HealthMetricsResponse"
 ```
 
 图表来源
-- [src/handlers/system/health_metrics.rs:1-135](file://src/handlers/system/health_metrics.rs#L1-L135)
+- [src/handlers/system/health_metrics.rs:1-135](src/handlers/system/health_metrics.rs#L1-L135)
 
 章节来源
-- [src/handlers/system/health_metrics.rs:1-135](file://src/handlers/system/health_metrics.rs#L1-L135)
-- [common/src/api/system.rs:1-33](file://common/src/api/system.rs#L1-L33)
+- [src/handlers/system/health_metrics.rs:1-135](src/handlers/system/health_metrics.rs#L1-L135)
+- [common/src/api/system.rs:1-33](common/src/api/system.rs#L1-L33)
 
 ### 后台进程管理（新增）
 - 职责：提供后台进程的列表查询、状态监控和终止操作，支持Agent范围过滤和探活刷新。
@@ -363,16 +363,16 @@ Handler-->>Admin : "ListProcessesResponse"
 ```
 
 图表来源
-- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
-- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](src/handlers/system/process/shell_kill.rs#L18-L30)
 
 章节来源
-- [src/handlers/system/process/mod.rs:1-6](file://src/handlers/system/process/mod.rs#L1-L6)
-- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
-- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
-- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
-- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+- [src/handlers/system/process/mod.rs:1-6](src/handlers/system/process/mod.rs#L1-L6)
+- [src/handlers/system/process/shell_list.rs:1-144](src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](src/handlers/system/process/shell_kill.rs#L1-L31)
+- [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)
 
 ## 依赖关系分析
 - Handler 仅依赖 common::api DTO 与 crate::pkg::RequestContext，并通过 service::domain::system::domain() 访问领域服务。
@@ -394,17 +394,17 @@ D --> DAL["DAL/DAO"]
 ```
 
 图表来源
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/process/shell_list.rs:23-48](file://src/handlers/system/process/shell_list.rs#L23-L48)
-- [src/handlers/system/seed/mod.rs:273-409](file://src/handlers/system/seed/mod.rs#L273-L409)
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
-- [src/handlers/system/aop_stats.rs:17-30](file://src/handlers/system/aop_stats.rs#L17-L30)
-- [src/handlers/system/health_metrics.rs:33-49](file://src/handlers/system/health_metrics.rs#L33-L49)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:1-68](src/handlers/system/cron_trigger/create_cron_trigger.rs#L1-L68)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/process/shell_list.rs:23-48](src/handlers/system/process/shell_list.rs#L23-L48)
+- [src/handlers/system/seed/mod.rs:273-409](src/handlers/system/seed/mod.rs#L273-L409)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
+- [src/handlers/system/aop_stats.rs:17-30](src/handlers/system/aop_stats.rs#L17-L30)
+- [src/handlers/system/health_metrics.rs:33-49](src/handlers/system/health_metrics.rs#L33-L49)
 
 章节来源
-- [src/handlers/system/mod.rs:1-14](file://src/handlers/system/mod.rs#L1-L14)
+- [src/handlers/system/mod.rs:1-14](src/handlers/system/mod.rs#L1-L14)
 
 ## 性能考量
 - AOP 实时统计：直接读取内存统计，无 DB 查询，适合高频刷新。
@@ -427,12 +427,12 @@ D --> DAL["DAL/DAO"]
   - 权限问题：Agent只能看到自己启动的进程，确认agent_id是否正确设置
 
 章节来源
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
-- [src/handlers/system/backup/restore_backup.rs:18-35](file://src/handlers/system/backup/restore_backup.rs#L18-L35)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-37](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L37)
-- [src/handlers/system/seed/mod.rs:420-480](file://src/handlers/system/seed/mod.rs#L420-L480)
-- [src/handlers/system/aop.rs:73-117](file://src/handlers/system/aop.rs#L73-L117)
-- [src/handlers/system/process/shell_list.rs:110-143](file://src/handlers/system/process/shell_list.rs#L110-L143)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
+- [src/handlers/system/backup/restore_backup.rs:18-35](src/handlers/system/backup/restore_backup.rs#L18-L35)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:19-37](src/handlers/system/cron_trigger/create_cron_trigger.rs#L19-L37)
+- [src/handlers/system/seed/mod.rs:420-480](src/handlers/system/seed/mod.rs#L420-L480)
+- [src/handlers/system/aop.rs:73-117](src/handlers/system/aop.rs#L73-L117)
+- [src/handlers/system/process/shell_list.rs:110-143](src/handlers/system/process/shell_list.rs#L110-L143)
 
 ## 结论
 System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢复、日志查询、定时任务、种子数据管理、AOP 监控与实时统计、健康指标聚合以及后台进程管理等系统级能力。通过路由层角色校验与 handler 内部二次校验保障安全，通过内存统计与降级策略保障性能，通过 DryRun 与进度回调提升可维护性。新增的进程管理功能为系统运维提供了更强大的工具支持。建议在生产环境结合监控告警与审计日志，形成闭环的系统运维体系。
@@ -481,19 +481,19 @@ System 模块以清晰的 Handler→Domain→DAL→DAO 分层实现了备份恢�
   - Agent调用时注意进程生命周期管理，避免僵尸进程
 
 章节来源
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
-- [src/handlers/system/backup/create_backup.rs:16-25](file://src/handlers/system/backup/create_backup.rs#L16-L25)
-- [src/handlers/system/backup/list_backups.rs:13-20](file://src/handlers/system/backup/list_backups.rs#L13-L20)
-- [src/handlers/system/backup/restore_backup.rs:18-35](file://src/handlers/system/backup/restore_backup.rs#L18-L35)
-- [src/handlers/system/logs/query_logs.rs:13-27](file://src/handlers/system/logs/query_logs.rs#L13-L27)
-- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-66](file://src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L66)
-- [src/handlers/system/seed/mod.rs:273-409](file://src/handlers/system/seed/mod.rs#L273-L409)
-- [src/handlers/system/seed/mod.rs:420-671](file://src/handlers/system/seed/mod.rs#L420-L671)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:17-71](file://src/handlers/system/aop_stats.rs#L17-L71)
-- [src/handlers/system/health_metrics.rs:33-133](file://src/handlers/system/health_metrics.rs#L33-L133)
-- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
-- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
-- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
+- [src/handlers/system/backup/create_backup.rs:16-25](src/handlers/system/backup/create_backup.rs#L16-L25)
+- [src/handlers/system/backup/list_backups.rs:13-20](src/handlers/system/backup/list_backups.rs#L13-L20)
+- [src/handlers/system/backup/restore_backup.rs:18-35](src/handlers/system/backup/restore_backup.rs#L18-L35)
+- [src/handlers/system/logs/query_logs.rs:13-27](src/handlers/system/logs/query_logs.rs#L13-L27)
+- [src/handlers/system/cron_trigger/create_cron_trigger.rs:14-66](src/handlers/system/cron_trigger/create_cron_trigger.rs#L14-L66)
+- [src/handlers/system/seed/mod.rs:273-409](src/handlers/system/seed/mod.rs#L273-L409)
+- [src/handlers/system/seed/mod.rs:420-671](src/handlers/system/seed/mod.rs#L420-L671)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:17-71](src/handlers/system/aop_stats.rs#L17-L71)
+- [src/handlers/system/health_metrics.rs:33-133](src/handlers/system/health_metrics.rs#L33-L133)
+- [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/router.rs:739-751](src/router.rs#L739-L751)
+- [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)

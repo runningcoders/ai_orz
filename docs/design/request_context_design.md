@@ -7,6 +7,9 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层上下文传递约定）
 > - [common-error-type.md](./common-error-type.md) — 统一错误类型（上下文错误码归属）
+> - 【② Plan 落地】[调用者类型上下文.md](../plan/调用者类型上下文.md) — caller_type 字段 + User/Agent/System 三枚举
+> - 【③ Wiki 长文】[用户认证与授权.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户认证与授权.md) — ctx 中 uid/role/org_id 来源
+> - 【④ RAG 卡】[组织权限与用户偏好](docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步.md) — §2 ctx 注入 §JWT decode 双模式
 
 > 最后更新：2026-08-03（新增 caller_type 字段 + 调用方身份封装方法）
 

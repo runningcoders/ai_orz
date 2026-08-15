@@ -2,17 +2,17 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/consumer/aop_stats_hook.rs](file://src/consumer/aop_stats_hook.rs)
-- [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/service/domain/system/aop_monitor.rs](file://src/service/domain/system/aop_monitor.rs)
-- [src/service/domain/system/aop_stats.rs](file://src/service/domain/system/aop_stats.rs)
-- [common/src/api/system.rs](file://common/src/api/system.rs)
-- [frontend/src/pages/system/aop.rs](file://frontend/src/pages/system/aop.rs)
-- [frontend/src/components/stats.rs](file://frontend/src/components/stats.rs)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md](file://docs/superpowers/plans/2026-07-25-stats-charts-phase3.md)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
+- [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/service/domain/system/aop_monitor.rs](src/service/domain/system/aop_monitor.rs)
+- [src/service/domain/system/aop_stats.rs](src/service/domain/system/aop_stats.rs)
+- [common/src/api/system.rs](common/src/api/system.rs)
+- [frontend/src/pages/system/aop.rs](frontend/src/pages/system/aop.rs)
+- [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
+- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md)
 </cite>
 
 ## 目录
@@ -71,19 +71,19 @@ PKG_AOP --> HOOK
 ```
 
 图示来源
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [src/consumer/aop_stats_collector.rs:1-52](file://src/consumer/aop_stats_collector.rs#L1-L52)
-- [src/consumer/aop_stats_hook.rs:1-33](file://src/consumer/aop_stats_hook.rs#L1-L33)
-- [src/handlers/system/aop.rs:1-41](file://src/handlers/system/aop.rs#L1-L41)
-- [src/handlers/system/aop_stats.rs:1-41](file://src/handlers/system/aop_stats.rs#L1-L41)
-- [src/service/domain/system/aop_monitor.rs:1-28](file://src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](file://src/service/domain/system/aop_stats.rs#L1-L53)
-- [frontend/src/pages/system/aop.rs:1-100](file://frontend/src/pages/system/aop.rs#L1-L100)
-- [frontend/src/components/stats.rs:64-116](file://frontend/src/components/stats.rs#L64-L116)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [src/consumer/aop_stats_collector.rs:1-52](src/consumer/aop_stats_collector.rs#L1-L52)
+- [src/consumer/aop_stats_hook.rs:1-33](src/consumer/aop_stats_hook.rs#L1-L33)
+- [src/handlers/system/aop.rs:1-41](src/handlers/system/aop.rs#L1-L41)
+- [src/handlers/system/aop_stats.rs:1-41](src/handlers/system/aop_stats.rs#L1-L41)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [frontend/src/pages/system/aop.rs:1-100](frontend/src/pages/system/aop.rs#L1-L100)
+- [frontend/src/components/stats.rs:64-116](frontend/src/components/stats.rs#L64-L116)
 
 章节来源
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [frontend/src/pages/system/aop.rs:1-100](file://frontend/src/pages/system/aop.rs#L1-L100)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [frontend/src/pages/system/aop.rs:1-100](frontend/src/pages/system/aop.rs#L1-L100)
 
 ## 核心组件
 - AOP 框架 Registry：提供事件发布、消费者注册、调度启动与队列查询能力，是监控数据的源头。
@@ -94,13 +94,13 @@ PKG_AOP --> HOOK
 - 前端页面：实时监控（队列卡片、事件列表、详情弹窗）与统计图表（概览卡片、折线图、环形图），支持 5 秒轮询刷新。
 
 章节来源
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_monitor.rs:1-28](file://src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](file://src/service/domain/system/aop_stats.rs#L1-L53)
-- [src/handlers/system/aop.rs:1-41](file://src/handlers/system/aop.rs#L1-L41)
-- [src/handlers/system/aop_stats.rs:1-41](file://src/handlers/system/aop_stats.rs#L1-L41)
-- [frontend/src/pages/system/aop.rs:349-531](file://frontend/src/pages/system/aop.rs#L349-L531)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [src/handlers/system/aop.rs:1-41](src/handlers/system/aop.rs#L1-L41)
+- [src/handlers/system/aop_stats.rs:1-41](src/handlers/system/aop_stats.rs#L1-L41)
+- [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
 ## 架构总览
 AOP 监控的数据流从事件发布开始，经消费者处理，Hook 捕获关键阶段并写入内存收集器；领域服务读取收集器快照，HTTP 接口将结果返回给前端进行可视化。
@@ -138,12 +138,12 @@ Handler-->>Frontend : "JSON"
 ```
 
 图示来源
-- [src/pkg/aop/mod.rs:24-61](file://src/pkg/aop/mod.rs#L24-L61)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:61-196](file://src/consumer/aop_stats_collector.rs#L61-L196)
-- [src/handlers/system/aop_stats.rs:16-41](file://src/handlers/system/aop_stats.rs#L16-L41)
-- [src/service/domain/system/aop_stats.rs:14-53](file://src/service/domain/system/aop_stats.rs#L14-L53)
-- [frontend/src/pages/system/aop.rs:349-531](file://frontend/src/pages/system/aop.rs#L349-L531)
+- [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:61-196](src/consumer/aop_stats_collector.rs#L61-L196)
+- [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
 ## 详细组件分析
 
@@ -153,8 +153,8 @@ Handler-->>Frontend : "JSON"
 - 监控接入点：在 start_all 的 worker 循环中，于 on_event 前后插入 Hook 回调，记录消费开始与结果。
 
 章节来源
-- [src/pkg/aop/mod.rs:24-61](file://src/pkg/aop/mod.rs#L24-L61)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](file://docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
+- [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
+- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
 
 ### 统计采集 Hook
 - 四个回调：on_publish、on_consume_start、on_consume_success、on_consume_failure。
@@ -162,7 +162,7 @@ Handler-->>Frontend : "JSON"
 - 维度键：(event_kind, consumer_name, status)，用于后续聚合与过滤。
 
 章节来源
-- [src/consumer/aop_stats_hook.rs:14-82](file://src/consumer/aop_stats_hook.rs#L14-L82)
+- [src/consumer/aop_stats_hook.rs:14-82](src/consumer/aop_stats_hook.rs#L14-L82)
 
 ### 内存统计收集器
 - 数据结构：基于 RuntimeStatsCollector<AopDimKey>，维护总计数与最近 60 分钟分钟级桶。
@@ -173,7 +173,7 @@ Handler-->>Frontend : "JSON"
 - 内存占用估算：约 38KB（60 桶 × 组合数 × 字节）。
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:1-196](file://src/consumer/aop_stats_collector.rs#L1-L196)
+- [src/consumer/aop_stats_collector.rs:1-196](src/consumer/aop_stats_collector.rs#L1-L196)
 
 ### 领域服务与 HTTP 接口
 - AopMonitor：封装队列统计、事件列表与详情查询。
@@ -188,11 +188,11 @@ Handler-->>Frontend : "JSON"
   - GET /api/v1/system/aop/stats/distribution（分布）
 
 章节来源
-- [src/service/domain/system/aop_monitor.rs:1-28](file://src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:1-53](file://src/service/domain/system/aop_stats.rs#L1-L53)
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
-- [src/handlers/system/aop_stats.rs:16-41](file://src/handlers/system/aop_stats.rs#L16-L41)
-- [common/src/api/system.rs:69-104](file://common/src/api/system.rs#L69-L104)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
+- [src/service/domain/system/aop_stats.rs:1-53](src/service/domain/system/aop_stats.rs#L1-L53)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
+- [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
+- [common/src/api/system.rs:69-104](common/src/api/system.rs#L69-L104)
 
 ### 前端可视化
 - 实时监控 Tab：队列卡片（pending/in_progress/oldest_age/order_keys）、事件列表（支持状态过滤）、事件详情弹窗。
@@ -200,9 +200,9 @@ Handler-->>Frontend : "JSON"
 - 通用统计组件：StatsCard/StatsPanel 复用，统一视觉风格。
 
 章节来源
-- [frontend/src/pages/system/aop.rs:41-347](file://frontend/src/pages/system/aop.rs#L41-L347)
-- [frontend/src/pages/system/aop.rs:349-531](file://frontend/src/pages/system/aop.rs#L349-L531)
-- [frontend/src/components/stats.rs:64-116](file://frontend/src/components/stats.rs#L64-L116)
+- [frontend/src/pages/system/aop.rs:41-347](frontend/src/pages/system/aop.rs#L41-L347)
+- [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
+- [frontend/src/components/stats.rs:64-116](frontend/src/components/stats.rs#L64-L116)
 
 ### 类图（代码级）
 ```mermaid
@@ -239,11 +239,11 @@ SystemDomainImpl --> Registry : "队列监控"
 ```
 
 图示来源
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/consumer/aop_stats_hook.rs:14-82](file://src/consumer/aop_stats_hook.rs#L14-L82)
-- [src/service/domain/system/aop_monitor.rs:1-28](file://src/service/domain/system/aop_monitor.rs#L1-L28)
-- [src/service/domain/system/aop_stats.rs:14-53](file://src/service/domain/system/aop_stats.rs#L14-L53)
-- [src/pkg/aop/mod.rs:24-61](file://src/pkg/aop/mod.rs#L24-L61)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/consumer/aop_stats_hook.rs:14-82](src/consumer/aop_stats_hook.rs#L14-L82)
+- [src/service/domain/system/aop_monitor.rs:1-28](src/service/domain/system/aop_monitor.rs#L1-L28)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
 
 ### 序列图（API 工作流）
 ```mermaid
@@ -273,9 +273,9 @@ H-->>FE : "JSON"
 ```
 
 图示来源
-- [src/handlers/system/aop_stats.rs:16-41](file://src/handlers/system/aop_stats.rs#L16-L41)
-- [src/service/domain/system/aop_stats.rs:14-53](file://src/service/domain/system/aop_stats.rs#L14-L53)
-- [src/consumer/aop_stats_collector.rs:74-196](file://src/consumer/aop_stats_collector.rs#L74-L196)
+- [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
 
 ### 流程图（统计聚合算法）
 ```mermaid
@@ -288,7 +288,7 @@ Sort --> End(["返回 Vec<AopDistributionItem>"])
 ```
 
 图示来源
-- [src/consumer/aop_stats_collector.rs:155-190](file://src/consumer/aop_stats_collector.rs#L155-L190)
+- [src/consumer/aop_stats_collector.rs:155-190](src/consumer/aop_stats_collector.rs#L155-L190)
 
 ## 依赖关系分析
 - 耦合与内聚：
@@ -311,20 +311,20 @@ HK --> C
 ```
 
 图示来源
-- [src/pkg/aop/mod.rs:24-61](file://src/pkg/aop/mod.rs#L24-L61)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_stats.rs:14-53](file://src/service/domain/system/aop_stats.rs#L14-L53)
-- [src/handlers/system/aop_stats.rs:16-41](file://src/handlers/system/aop_stats.rs#L16-L41)
-- [frontend/src/pages/system/aop.rs:349-531](file://frontend/src/pages/system/aop.rs#L349-L531)
+- [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
+- [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
 章节来源
-- [src/pkg/aop/mod.rs:24-61](file://src/pkg/aop/mod.rs#L24-L61)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/service/domain/system/aop_stats.rs:14-53](file://src/service/domain/system/aop_stats.rs#L14-L53)
-- [src/handlers/system/aop_stats.rs:16-41](file://src/handlers/system/aop_stats.rs#L16-L41)
-- [frontend/src/pages/system/aop.rs:349-531](file://frontend/src/pages/system/aop.rs#L349-L531)
+- [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/service/domain/system/aop_stats.rs:14-53](src/service/domain/system/aop_stats.rs#L14-L53)
+- [src/handlers/system/aop_stats.rs:16-41](src/handlers/system/aop_stats.rs#L16-L41)
+- [frontend/src/pages/system/aop.rs:349-531](frontend/src/pages/system/aop.rs#L349-L531)
 
 ## 性能考量
 - 采集路径零阻塞：Hook 使用 tokio::spawn 后台写入，避免影响 AOP 主流程延迟。
@@ -350,9 +350,9 @@ HK --> C
   - 前端渲染大数据量时注意分页与节流。
 
 章节来源
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
-- [src/consumer/aop_stats_collector.rs:74-196](file://src/consumer/aop_stats_collector.rs#L74-L196)
-- [docs/superpowers/plans/2026-07-23-runtime-issues-fix.md:398-430](file://docs/superpowers/plans/2026-07-23-runtime-issues-fix.md#L398-L430)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
+- [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
+- [docs/superpowers/plans/2026-07-23-runtime-issues-fix.md:398-430](docs/superpowers/plans/2026-07-23-runtime-issues-fix.md#L398-L430)
 
 ## 结论
 AOP 监控面板以内存统计收集器为核心，结合 Hook 埋点与领域服务抽象，提供了低延迟、可扩展的实时监控能力。前端通过轮询与图表组件实现了直观的可视化体验。未来可扩展告警机制（阈值、规则、通知渠道）与持久化存储（时序数据库、保留策略、索引优化），以满足更复杂的运维需求。

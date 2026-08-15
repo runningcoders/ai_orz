@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/src/pages/hr/agents.rs](file://frontend/src/pages/hr/agents.rs)
-- [frontend/src/pages/hr/agent_detail.rs](file://frontend/src/pages/hr/agent_detail.rs)
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/update_agent_status.rs](file://src/handlers/hr/agent/update_agent_status.rs)
-- [src/service/domain/hr/agent.rs](file://src/service/domain/hr/agent.rs)
+- [frontend/src/pages/hr/agents.rs](frontend/src/pages/hr/agents.rs)
+- [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/update_agent_status.rs](src/handlers/hr/agent/update_agent_status.rs)
+- [src/service/domain/hr/agent.rs](src/service/domain/hr/agent.rs)
 </cite>
 
 ## 目录
@@ -50,16 +50,16 @@ D --> DAL["DAL/DAO<br/>Agent/Skill/Tool 数据访问"]
 ```
 
 图表来源
-- [frontend/src/pages/hr/agents.rs:1-150](file://frontend/src/pages/hr/agents.rs#L1-L150)
-- [frontend/src/pages/hr/agent_detail.rs:1-120](file://frontend/src/pages/hr/agent_detail.rs#L1-L120)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](file://src/handlers/hr/agent/update_agent_status.rs#L1-L129)
-- [src/service/domain/hr/agent.rs:1-120](file://src/service/domain/hr/agent.rs#L1-L120)
+- [frontend/src/pages/hr/agents.rs:1-150](frontend/src/pages/hr/agents.rs#L1-L150)
+- [frontend/src/pages/hr/agent_detail.rs:1-120](frontend/src/pages/hr/agent_detail.rs#L1-L120)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/service/domain/hr/agent.rs:1-120](src/service/domain/hr/agent.rs#L1-L120)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 
 ## 核心组件
 - 前端列表页：支持本地/外部 Agent 创建、关键词搜索、状态筛选、删除确认、模型提供商选择等
@@ -68,10 +68,10 @@ D --> DAL["DAL/DAO<br/>Agent/Skill/Tool 数据访问"]
 - 领域层：Agent 创建/查询/搜索/更新/删除、状态流转、工具包/技能包安装卸载、入职就绪校验
 
 章节来源
-- [frontend/src/pages/hr/agents.rs:40-150](file://frontend/src/pages/hr/agents.rs#L40-L150)
-- [frontend/src/pages/hr/agent_detail.rs:84-236](file://frontend/src/pages/hr/agent_detail.rs#L84-L236)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/service/domain/hr/agent.rs:60-120](file://src/service/domain/hr/agent.rs#L60-L120)
+- [frontend/src/pages/hr/agents.rs:40-150](frontend/src/pages/hr/agents.rs#L40-L150)
+- [frontend/src/pages/hr/agent_detail.rs:84-236](frontend/src/pages/hr/agent_detail.rs#L84-L236)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/service/domain/hr/agent.rs:60-120](src/service/domain/hr/agent.rs#L60-L120)
 
 ## 架构总览
 下图展示了从前端到后端的完整调用链，包括列表、详情、创建、状态变更等关键路径。
@@ -114,13 +114,13 @@ H-->>FE : 返回新状态
 ```
 
 图表来源
-- [frontend/src/pages/hr/agents.rs:85-139](file://frontend/src/pages/hr/agents.rs#L85-L139)
-- [frontend/src/pages/hr/agent_detail.rs:134-236](file://frontend/src/pages/hr/agent_detail.rs#L134-L236)
-- [src/handlers/hr/agent/list_agents.rs:21-62](file://src/handlers/hr/agent/list_agents.rs#L21-L62)
-- [src/handlers/hr/agent/get_agent.rs:24-138](file://src/handlers/hr/agent/get_agent.rs#L24-L138)
-- [src/handlers/hr/agent/create_agent.rs:18-60](file://src/handlers/hr/agent/create_agent.rs#L18-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](file://src/handlers/hr/agent/update_agent_status.rs#L24-L129)
-- [src/service/domain/hr/agent.rs:60-270](file://src/service/domain/hr/agent.rs#L60-L270)
+- [frontend/src/pages/hr/agents.rs:85-139](frontend/src/pages/hr/agents.rs#L85-L139)
+- [frontend/src/pages/hr/agent_detail.rs:134-236](frontend/src/pages/hr/agent_detail.rs#L134-L236)
+- [src/handlers/hr/agent/list_agents.rs:21-62](src/handlers/hr/agent/list_agents.rs#L21-L62)
+- [src/handlers/hr/agent/get_agent.rs:24-138](src/handlers/hr/agent/get_agent.rs#L24-L138)
+- [src/handlers/hr/agent/create_agent.rs:18-60](src/handlers/hr/agent/create_agent.rs#L18-L60)
+- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [src/service/domain/hr/agent.rs:60-270](src/service/domain/hr/agent.rs#L60-L270)
 
 ## 详细组件分析
 
@@ -152,12 +152,12 @@ HandleResult --> End(["渲染表格"])
 ```
 
 图表来源
-- [frontend/src/pages/hr/agents.rs:85-139](file://frontend/src/pages/hr/agents.rs#L85-L139)
+- [frontend/src/pages/hr/agents.rs:85-139](frontend/src/pages/hr/agents.rs#L85-L139)
 
 章节来源
-- [frontend/src/pages/hr/agents.rs:40-150](file://frontend/src/pages/hr/agents.rs#L40-L150)
-- [frontend/src/pages/hr/agents.rs:285-423](file://frontend/src/pages/hr/agents.rs#L285-L423)
-- [frontend/src/pages/hr/agents.rs:425-649](file://frontend/src/pages/hr/agents.rs#L425-L649)
+- [frontend/src/pages/hr/agents.rs:40-150](frontend/src/pages/hr/agents.rs#L40-L150)
+- [frontend/src/pages/hr/agents.rs:285-423](frontend/src/pages/hr/agents.rs#L285-L423)
+- [frontend/src/pages/hr/agents.rs:425-649](frontend/src/pages/hr/agents.rs#L425-L649)
 
 ### 详情页：信息展示、状态切换、配置编辑与调试
 - 基本信息与运行时配置
@@ -200,15 +200,15 @@ SSE-->>FE : 推送消息去重/替换乐观消息
 ```
 
 图表来源
-- [frontend/src/pages/hr/agent_detail.rs:134-236](file://frontend/src/pages/hr/agent_detail.rs#L134-L236)
-- [frontend/src/pages/hr/agent_detail.rs:238-324](file://frontend/src/pages/hr/agent_detail.rs#L238-L324)
-- [src/handlers/hr/agent/get_agent.rs:24-138](file://src/handlers/hr/agent/get_agent.rs#L24-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](file://src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [frontend/src/pages/hr/agent_detail.rs:134-236](frontend/src/pages/hr/agent_detail.rs#L134-L236)
+- [frontend/src/pages/hr/agent_detail.rs:238-324](frontend/src/pages/hr/agent_detail.rs#L238-L324)
+- [src/handlers/hr/agent/get_agent.rs:24-138](src/handlers/hr/agent/get_agent.rs#L24-L138)
+- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
 
 章节来源
-- [frontend/src/pages/hr/agent_detail.rs:84-236](file://frontend/src/pages/hr/agent_detail.rs#L84-L236)
-- [frontend/src/pages/hr/agent_detail.rs:326-560](file://frontend/src/pages/hr/agent_detail.rs#L326-L560)
-- [frontend/src/pages/hr/agent_detail.rs:561-800](file://frontend/src/pages/hr/agent_detail.rs#L561-L800)
+- [frontend/src/pages/hr/agent_detail.rs:84-236](frontend/src/pages/hr/agent_detail.rs#L84-L236)
+- [frontend/src/pages/hr/agent_detail.rs:326-560](frontend/src/pages/hr/agent_detail.rs#L326-L560)
+- [frontend/src/pages/hr/agent_detail.rs:561-800](frontend/src/pages/hr/agent_detail.rs#L561-L800)
 
 ### 生命周期管理：创建、更新、删除、启用禁用
 - 创建 Agent
@@ -238,15 +238,15 @@ AutoInstall --> Done
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:60-84](file://src/service/domain/hr/agent.rs#L60-L84)
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [src/handlers/hr/agent/create_agent.rs:18-60](file://src/handlers/hr/agent/create_agent.rs#L18-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:24-129](file://src/handlers/hr/agent/update_agent_status.rs#L24-L129)
+- [src/service/domain/hr/agent.rs:60-84](src/service/domain/hr/agent.rs#L60-L84)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [src/handlers/hr/agent/create_agent.rs:18-60](src/handlers/hr/agent/create_agent.rs#L18-L60)
+- [src/handlers/hr/agent/update_agent_status.rs:24-129](src/handlers/hr/agent/update_agent_status.rs#L24-L129)
 
 章节来源
-- [src/service/domain/hr/agent.rs:60-270](file://src/service/domain/hr/agent.rs#L60-L270)
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](file://src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/service/domain/hr/agent.rs:60-270](src/service/domain/hr/agent.rs#L60-L270)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
 
 ### 与技能包、工具绑定的关系管理界面
 - 工具包
@@ -285,13 +285,13 @@ Agent --> SkillPack : "按 tag 管理"
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:313-397](file://src/service/domain/hr/agent.rs#L313-L397)
-- [src/service/domain/hr/agent.rs:414-564](file://src/service/domain/hr/agent.rs#L414-L564)
-- [frontend/src/pages/hr/agent_detail.rs:561-800](file://frontend/src/pages/hr/agent_detail.rs#L561-L800)
+- [src/service/domain/hr/agent.rs:313-397](src/service/domain/hr/agent.rs#L313-L397)
+- [src/service/domain/hr/agent.rs:414-564](src/service/domain/hr/agent.rs#L414-L564)
+- [frontend/src/pages/hr/agent_detail.rs:561-800](frontend/src/pages/hr/agent_detail.rs#L561-L800)
 
 章节来源
-- [src/service/domain/hr/agent.rs:313-655](file://src/service/domain/hr/agent.rs#L313-L655)
-- [frontend/src/pages/hr/agent_detail.rs:561-800](file://frontend/src/pages/hr/agent_detail.rs#L561-L800)
+- [src/service/domain/hr/agent.rs:313-655](src/service/domain/hr/agent.rs#L313-L655)
+- [frontend/src/pages/hr/agent_detail.rs:561-800](frontend/src/pages/hr/agent_detail.rs#L561-L800)
 
 ### 权限控制、数据验证、表单处理与用户体验优化
 - 权限控制
@@ -310,11 +310,11 @@ Agent --> SkillPack : "按 tag 管理"
   - 关系图按需加载，避免全量 N+1 查询
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:18-60](file://src/handlers/hr/agent/create_agent.rs#L18-L60)
-- [src/service/domain/hr/agent.rs:60-84](file://src/service/domain/hr/agent.rs#L60-L84)
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [frontend/src/pages/hr/agents.rs:73-139](file://frontend/src/pages/hr/agents.rs#L73-L139)
-- [frontend/src/pages/hr/agent_detail.rs:238-324](file://frontend/src/pages/hr/agent_detail.rs#L238-L324)
+- [src/handlers/hr/agent/create_agent.rs:18-60](src/handlers/hr/agent/create_agent.rs#L18-L60)
+- [src/service/domain/hr/agent.rs:60-84](src/service/domain/hr/agent.rs#L60-L84)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [frontend/src/pages/hr/agents.rs:73-139](frontend/src/pages/hr/agents.rs#L73-L139)
+- [frontend/src/pages/hr/agent_detail.rs:238-324](frontend/src/pages/hr/agent_detail.rs#L238-L324)
 
 ## 依赖关系分析
 - Handler 与 Domain 解耦：每个 Handler 仅负责参数解析与响应构造，业务逻辑集中在 Domain
@@ -329,13 +329,13 @@ D["frontend pages/hr/*"] --> A
 ```
 
 图表来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/service/domain/hr/agent.rs:1-120](file://src/service/domain/hr/agent.rs#L1-L120)
-- [frontend/src/pages/hr/agents.rs:1-150](file://frontend/src/pages/hr/agents.rs#L1-L150)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/service/domain/hr/agent.rs:1-120](src/service/domain/hr/agent.rs#L1-L120)
+- [frontend/src/pages/hr/agents.rs:1-150](frontend/src/pages/hr/agents.rs#L1-L150)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/service/domain/hr/agent.rs:1-120](file://src/service/domain/hr/agent.rs#L1-L120)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/service/domain/hr/agent.rs:1-120](src/service/domain/hr/agent.rs#L1-L120)
 
 ## 性能考虑
 - 列表页搜索防抖：300ms 延迟减少频繁请求
@@ -358,10 +358,10 @@ D["frontend pages/hr/*"] --> A
   - 确认 tag 是否存在，已安装则幂等跳过；技能包安装失败会记录警告日志
 
 章节来源
-- [frontend/src/pages/hr/agents.rs:73-139](file://frontend/src/pages/hr/agents.rs#L73-L139)
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [frontend/src/pages/hr/agent_detail.rs:238-324](file://frontend/src/pages/hr/agent_detail.rs#L238-L324)
-- [src/service/domain/hr/agent.rs:414-564](file://src/service/domain/hr/agent.rs#L414-L564)
+- [frontend/src/pages/hr/agents.rs:73-139](frontend/src/pages/hr/agents.rs#L73-L139)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [frontend/src/pages/hr/agent_detail.rs:238-324](frontend/src/pages/hr/agent_detail.rs#L238-L324)
+- [src/service/domain/hr/agent.rs:414-564](src/service/domain/hr/agent.rs#L414-L564)
 
 ## 结论
 Agent 管理功能在前端与后端之间形成了清晰的职责划分与稳定的调用链路。列表页与详情页提供了完整的 CRUD、状态管理与扩展能力（工具/技能）。领域层的状态机与幂等操作保证了数据一致性与可维护性。建议在后续迭代中继续强化：

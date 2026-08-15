@@ -1,19 +1,31 @@
-# AOP 事件系统
+# AOP 事件系统（代码落地层）
 
 <cite>
 **本文引用的文件**
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [src/pkg/aop/core/mod.rs](file://src/pkg/aop/core/mod.rs)
-- [src/pkg/aop/core/registry.rs](file://src/pkg/aop/core/registry.rs)
-- [src/pkg/aop/core/scheduler.rs](file://src/pkg/aop/core/scheduler.rs)
-- [src/pkg/aop/queue/mod.rs](file://src/pkg/aop/queue/mod.rs)
-- [src/pkg/aop/queue/in_memory.rs](file://src/pkg/aop/queue/in_memory.rs)
-- [src/models/event.rs](file://src/models/event.rs)
-- [src/consumer/mod.rs](file://src/consumer/mod.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/consumer/aop_stats_hook.rs](file://src/consumer/aop_stats_hook.rs)
-- [src/producer/mod.rs](file://src/producer/mod.rs)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [src/pkg/aop/core/mod.rs](src/pkg/aop/core/mod.rs)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
+- [src/pkg/aop/core/scheduler.rs](src/pkg/aop/core/scheduler.rs)
+- [src/pkg/aop/queue/mod.rs](src/pkg/aop/queue/mod.rs)
+- [src/pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs)
+- [src/models/event.rs](src/models/event.rs)
+- [src/consumer/mod.rs](src/consumer/mod.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
+- [src/producer/mod.rs](src/producer/mod.rs)
 </cite>
+
+### 本文关联的三类文档（四类互引闭环）
+
+**① 设计文档（Design）**：
+- [消费者与生产者架构设计](docs/design/consumer_architecture.md) — AOP 生产消费异步框架：8 Consumer 注册顺序 + Sync/Async 双模式 + ack/nack 语义
+- [事件总线设计（归档参考）](docs/design/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅对比参考
+
+**② 落地计划（Plan）**：
+- [Agent 循环驱动引擎 Plan](docs/plan/agent_loop_engine_plan.md) — DomainEvent 8 类 → AgentLoopConsumer 唤醒 + 三层兜底架构（字段+事件+定时）
+
+**④ RAG 原子知识卡**：
+- [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — DomainEvent 8 大类别枚举（Message/Task/AgentAwake/Schedule/ToolExecLog/ToolExecStats/ThinkRound/AgentRuntimeState）+ Event Trait 五字段约束
 
 ## 目录
 1. [简介](#简介)
@@ -28,7 +40,12 @@
 10. [附录：开发、调试与监控方案](#附录开发调试与监控方案)
 
 ## 简介
-本文件为 AI Orz 的面向切面编程（AOP）事件系统提供全面文档。该系统以“事件中心 + 生产者/消费者 + 异步队列”为核心，实现事件的定义、注册、发布与订阅；通过优先级与顺序键保障关键消息的顺序消费；内置统计收集器与监控钩子，支持运行时指标采集与可视化；并提供可插拔的队列抽象，当前默认内存队列，便于后续替换为持久化队列。
+本文件为 AI Orz 的面向切面编程（AOP）事件系统提供全面文档。该系统以"事件中心 + 生产者/消费者 + 异步队列"为核心，实现事件的定义、注册、发布与订阅；通过优先级与顺序键保障关键消息的顺序消费；内置统计收集器与监控钩子，支持运行时指标采集与可视化；并提供可插拔的队列抽象，当前默认内存队列，便于后续替换为持久化队列。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「AOP 事件系统」主题的 **代码落地层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [AOP 事件系统（框架层）](docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md)
+> - [AOP 事件系统（系统管理层）](docs/wiki/zh/content/功能模块/系统管理/AOP 事件系统.md)
 
 ## 项目结构
 AOP 事件系统位于 src/pkg/aop 下，采用分层设计：
@@ -63,14 +80,14 @@ REG -.-> STATS
 ```
 
 图表来源
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
-- [src/pkg/aop/core/registry.rs:11-19](file://src/pkg/aop/core/registry.rs#L11-L19)
-- [src/pkg/aop/queue/mod.rs:77-106](file://src/pkg/aop/queue/mod.rs#L77-L106)
-- [src/pkg/aop/queue/in_memory.rs:41-49](file://src/pkg/aop/queue/in_memory.rs#L41-L49)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
+- [src/pkg/aop/core/registry.rs:11-19](src/pkg/aop/core/registry.rs#L11-L19)
+- [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
+- [src/pkg/aop/queue/in_memory.rs:41-49](src/pkg/aop/queue/in_memory.rs#L41-L49)
 
 章节来源
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
 
 ## 核心组件
 - 事件模型与主题：统一的事件 trait、事件引用与主题枚举，支撑序列化、排序与分组消费
@@ -80,11 +97,11 @@ REG -.-> STATS
 - 统计与监控：AopMetricsHook 注入 Registry，AopStatsCollector 聚合指标，暴露概览、时序、分布等
 
 章节来源
-- [src/models/event.rs:7-96](file://src/models/event.rs#L7-L96)
-- [src/pkg/aop/core/registry.rs:11-19](file://src/pkg/aop/core/registry.rs#L11-L19)
-- [src/pkg/aop/queue/mod.rs:77-106](file://src/pkg/aop/queue/mod.rs#L77-L106)
-- [src/consumer/aop_stats_collector.rs:43-52](file://src/consumer/aop_stats_collector.rs#L43-L52)
-- [src/consumer/aop_stats_hook.rs:14-17](file://src/consumer/aop_stats_hook.rs#L14-L17)
+- [src/models/event.rs:7-96](src/models/event.rs#L7-L96)
+- [src/pkg/aop/core/registry.rs:11-19](src/pkg/aop/core/registry.rs#L11-L19)
+- [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
+- [src/consumer/aop_stats_collector.rs:43-52](src/consumer/aop_stats_collector.rs#L43-L52)
+- [src/consumer/aop_stats_hook.rs:14-17](src/consumer/aop_stats_hook.rs#L14-L17)
 
 ## 架构总览
 AOP 事件系统遵循“解耦、可扩展、可观测”的设计原则：
@@ -129,11 +146,11 @@ end
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:208-258](file://src/pkg/aop/core/registry.rs#L208-L258)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/queue/in_memory.rs:104-267](file://src/pkg/aop/queue/in_memory.rs#L104-L267)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:208-258](src/pkg/aop/core/registry.rs#L208-L258)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/queue/in_memory.rs:104-267](src/pkg/aop/queue/in_memory.rs#L104-L267)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 
 ## 详细组件分析
 
@@ -146,7 +163,7 @@ end
 - 堆排序基于 priority 与 created_at，时间复杂度 O(log N)，空间 O(N)
 
 章节来源
-- [src/models/event.rs:7-96](file://src/models/event.rs#L7-L96)
+- [src/models/event.rs:7-96](src/models/event.rs#L7-L96)
 
 ### 注册中心 Registry
 职责
@@ -178,11 +195,11 @@ DoNack --> HookFail["记录 failed"]
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
 
 章节来源
-- [src/pkg/aop/core/registry.rs:11-561](file://src/pkg/aop/core/registry.rs#L11-L561)
+- [src/pkg/aop/core/registry.rs:11-561](src/pkg/aop/core/registry.rs#L11-L561)
 
 ### 队列抽象与内存实现
 - EventQueue：定义 enqueue/enqueue_batch/dequeue_next/ack/nack/stats/query_events/get_event 等能力
@@ -226,20 +243,20 @@ EventQueue <|.. InMemoryEventQueue : "实现"
 ```
 
 图表来源
-- [src/pkg/aop/queue/mod.rs:77-106](file://src/pkg/aop/queue/mod.rs#L77-L106)
-- [src/pkg/aop/queue/in_memory.rs:41-49](file://src/pkg/aop/queue/in_memory.rs#L41-L49)
+- [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
+- [src/pkg/aop/queue/in_memory.rs:41-49](src/pkg/aop/queue/in_memory.rs#L41-L49)
 
 章节来源
-- [src/pkg/aop/queue/mod.rs:10-106](file://src/pkg/aop/queue/mod.rs#L10-L106)
-- [src/pkg/aop/queue/in_memory.rs:104-449](file://src/pkg/aop/queue/in_memory.rs#L104-L449)
+- [src/pkg/aop/queue/mod.rs:10-106](src/pkg/aop/queue/mod.rs#L10-L106)
+- [src/pkg/aop/queue/in_memory.rs:104-449](src/pkg/aop/queue/in_memory.rs#L104-L449)
 
 ### 消费者与生产者注册
 - 消费者注册：consumer::init 中集中注册各业务消费者（消息、定时任务、工具执行日志/统计、Agent 循环、思考轮次统计、任务事件）
 - 生产者注册：producer::init 中注册 CronTrigger 与 A2A 轮询生产者，并启动消息通道生产者
 
 章节来源
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
-- [src/producer/mod.rs:9-26](file://src/producer/mod.rs#L9-L26)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
+- [src/producer/mod.rs:9-26](src/producer/mod.rs#L9-L26)
 
 ### 统计收集器与监控钩子
 - AopStatsCollector：内存统计，提供 overview/time_series/distribution/uptime_secs
@@ -262,12 +279,12 @@ H->>C : record(kind, consumer, failed, duration)
 ```
 
 图表来源
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:61-72](file://src/consumer/aop_stats_collector.rs#L61-L72)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:61-72](src/consumer/aop_stats_collector.rs#L61-L72)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/consumer/aop_stats_hook.rs:14-82](file://src/consumer/aop_stats_hook.rs#L14-L82)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/consumer/aop_stats_hook.rs:14-82](src/consumer/aop_stats_hook.rs#L14-L82)
 
 ## 依赖关系分析
 - Registry 依赖：
@@ -292,13 +309,13 @@ BUS["业务模块"] --> REG
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:11-19](file://src/pkg/aop/core/registry.rs#L11-L19)
-- [src/pkg/aop/queue/mod.rs:77-106](file://src/pkg/aop/queue/mod.rs#L77-L106)
-- [src/pkg/aop/queue/in_memory.rs:41-49](file://src/pkg/aop/queue/in_memory.rs#L41-L49)
+- [src/pkg/aop/core/registry.rs:11-19](src/pkg/aop/core/registry.rs#L11-L19)
+- [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
+- [src/pkg/aop/queue/in_memory.rs:41-49](src/pkg/aop/queue/in_memory.rs#L41-L49)
 
 章节来源
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
-- [src/pkg/aop/queue/mod.rs:77-106](file://src/pkg/aop/queue/mod.rs#L77-L106)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
+- [src/pkg/aop/queue/mod.rs:77-106](src/pkg/aop/queue/mod.rs#L77-L106)
 
 ## 性能考量
 - 顺序与并行平衡
@@ -335,9 +352,9 @@ BUS["业务模块"] --> REG
   - 检查 collector 的 overview/time_series 是否返回数据
 
 章节来源
-- [src/pkg/aop/queue/in_memory.rs:300-312](file://src/pkg/aop/queue/in_memory.rs#L300-L312)
-- [src/pkg/aop/core/registry.rs:333-445](file://src/pkg/aop/core/registry.rs#L333-L445)
-- [src/consumer/aop_stats_collector.rs:74-196](file://src/consumer/aop_stats_collector.rs#L74-L196)
+- [src/pkg/aop/queue/in_memory.rs:300-312](src/pkg/aop/queue/in_memory.rs#L300-L312)
+- [src/pkg/aop/core/registry.rs:333-445](src/pkg/aop/core/registry.rs#L333-L445)
+- [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
 
 ## 结论
 AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内聚、低耦合的事件驱动架构。其优先级与顺序键机制保障了关键消息的处理语义；统计与监控钩子提供了运行时可观测性；内存队列满足大多数场景需求，同时为持久化队列预留了扩展点。结合最佳实践与调优策略，可在复杂业务中稳定运行并持续演进。
@@ -359,10 +376,10 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
   - 使用 aop::publish(event) 或直接调用 registry().publish(event)
 
 章节来源
-- [src/models/event.rs:54-96](file://src/models/event.rs#L54-L96)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
-- [src/producer/mod.rs:9-26](file://src/producer/mod.rs#L9-L26)
-- [src/pkg/aop/mod.rs:48-59](file://src/pkg/aop/mod.rs#L48-L59)
+- [src/models/event.rs:54-96](src/models/event.rs#L54-L96)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
+- [src/producer/mod.rs:9-26](src/producer/mod.rs#L9-L26)
+- [src/pkg/aop/mod.rs:48-59](src/pkg/aop/mod.rs#L48-L59)
 
 ### 调试工具
 - 队列查询
@@ -375,9 +392,9 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
   - 利用 Hook 记录的 published/consuming/success/failed 状态辅助排障
 
 章节来源
-- [src/pkg/aop/core/registry.rs:500-553](file://src/pkg/aop/core/registry.rs#L500-L553)
-- [src/pkg/aop/queue/in_memory.rs:314-447](file://src/pkg/aop/queue/in_memory.rs#L314-L447)
-- [src/consumer/aop_stats_collector.rs:74-196](file://src/consumer/aop_stats_collector.rs#L74-L196)
+- [src/pkg/aop/core/registry.rs:500-553](src/pkg/aop/core/registry.rs#L500-L553)
+- [src/pkg/aop/queue/in_memory.rs:314-447](src/pkg/aop/queue/in_memory.rs#L314-L447)
+- [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
 
 ### 监控方案
 - 指标维度
@@ -390,5 +407,5 @@ AOP 事件系统通过清晰的层次划分与可插拔抽象，实现了高内�
   - 失败率突增、平均耗时飙升、队列积压超过阈值、最老事件年龄过大
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:26-196](file://src/consumer/aop_stats_collector.rs#L26-L196)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:26-196](src/consumer/aop_stats_collector.rs#L26-L196)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)

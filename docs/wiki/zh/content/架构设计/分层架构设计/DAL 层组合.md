@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/dal/mod.rs](file://src/service/dal/mod.rs)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
-- [src/service/dal/message.rs](file://src/service/dal/message.rs)
-- [src/service/dal/project.rs](file://src/service/dal/project.rs)
-- [src/service/dal/tool.rs](file://src/service/dal/tool.rs)
-- [src/service/dal/memory.rs](file://src/service/dal/memory.rs)
-- [src/service/dal/organization.rs](file://src/service/dal/organization.rs)
-- [src/service/dao/mod.rs](file://src/service/dao/mod.rs)
-- [src/service/dao/agent/mod.rs](file://src/service/dao/agent/mod.rs)
-- [src/pkg/storage/mod.rs](file://src/pkg/storage/mod.rs)
+- [src/service/dal/mod.rs](src/service/dal/mod.rs)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/message.rs](src/service/dal/message.rs)
+- [src/service/dal/project.rs](src/service/dal/project.rs)
+- [src/service/dal/tool.rs](src/service/dal/tool.rs)
+- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/service/dao/mod.rs](src/service/dao/mod.rs)
+- [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
+- [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
 </cite>
 
 ## 目录
@@ -68,14 +68,14 @@ DF --> S
 ```
 
 图表来源
-- [src/service/dal/mod.rs:30-76](file://src/service/dal/mod.rs#L30-L76)
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
+- [src/service/dal/mod.rs:30-76](src/service/dal/mod.rs#L30-L76)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
 
 章节来源
-- [src/service/dal/mod.rs:1-76](file://src/service/dal/mod.rs#L1-L76)
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
+- [src/service/dal/mod.rs:1-76](src/service/dal/mod.rs#L1-L76)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
 
 ## 核心组件
 - AgentDal：组合 AgentDao、AgentVectorDao、AgentStatsDao、CortexDao、ModelProviderDao，提供创建/更新/删除、综合查询、混合搜索、统计获取、向量重建等能力。
@@ -86,12 +86,12 @@ DF --> S
 - OrganizationDal：组合 OrganizationDao，提供组织初始化检查、CRUD、计数等能力。
 
 章节来源
-- [src/service/dal/agent.rs:28-73](file://src/service/dal/agent.rs#L28-L73)
-- [src/service/dal/message.rs:20-47](file://src/service/dal/message.rs#L20-L47)
-- [src/service/dal/project.rs:27-67](file://src/service/dal/project.rs#L27-L67)
-- [src/service/dal/tool.rs:20-59](file://src/service/dal/tool.rs#L20-L59)
-- [src/service/dal/memory.rs:39-68](file://src/service/dal/memory.rs#L39-L68)
-- [src/service/dal/organization.rs:13-32](file://src/service/dal/organization.rs#L13-L32)
+- [src/service/dal/agent.rs:28-73](src/service/dal/agent.rs#L28-L73)
+- [src/service/dal/message.rs:20-47](src/service/dal/message.rs#L20-L47)
+- [src/service/dal/project.rs:27-67](src/service/dal/project.rs#L27-L67)
+- [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
+- [src/service/dal/memory.rs:39-68](src/service/dal/memory.rs#L39-L68)
+- [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
 
 ## 架构总览
 DAL 层采用“组合模式”：每个 DAL 持有多个 DAO 的 trait 对象，通过方法编排完成复杂业务逻辑。统一的 SearchParams/Query/Search 参数在 DAL 层组装，DAO 层专注 SQL/向量/统计的具体实现。存储层通过 Storage 统一管理 SqlitePool、VectorStore 与 Stats，支持多后端向量存储与连接池配置。
@@ -121,14 +121,14 @@ Dal-->>Caller : PagedResult<Agent>
 ```
 
 图表来源
-- [src/service/dal/agent.rs:474-699](file://src/service/dal/agent.rs#L474-L699)
-- [src/service/dao/agent/mod.rs:63-90](file://src/service/dao/agent/mod.rs#L63-L90)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
+- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 章节来源
-- [src/service/dal/agent.rs:474-699](file://src/service/dal/agent.rs#L474-L699)
-- [src/service/dao/agent/mod.rs:63-90](file://src/service/dao/agent/mod.rs#L63-L90)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
+- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 ## 详细组件分析
 
@@ -161,14 +161,14 @@ Merge --> End(["返回 PagedResult"])
 ```
 
 图表来源
-- [src/service/dal/agent.rs:474-699](file://src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
 
 章节来源
-- [src/service/dal/agent.rs:28-73](file://src/service/dal/agent.rs#L28-L73)
-- [src/service/dal/agent.rs:341-355](file://src/service/dal/agent.rs#L341-L355)
-- [src/service/dal/agent.rs:425-455](file://src/service/dal/agent.rs#L425-L455)
-- [src/service/dal/agent.rs:701-738](file://src/service/dal/agent.rs#L701-L738)
-- [src/service/dal/agent.rs:765-800](file://src/service/dal/agent.rs#L765-L800)
+- [src/service/dal/agent.rs:28-73](src/service/dal/agent.rs#L28-L73)
+- [src/service/dal/agent.rs:341-355](src/service/dal/agent.rs#L341-L355)
+- [src/service/dal/agent.rs:425-455](src/service/dal/agent.rs#L425-L455)
+- [src/service/dal/agent.rs:701-738](src/service/dal/agent.rs#L701-L738)
+- [src/service/dal/agent.rs:765-800](src/service/dal/agent.rs#L765-L800)
 
 ### MessageDal 保存与搜索
 - 组合点：MessageDao、MessageVectorDao、CortexDao、ModelProviderDao。
@@ -202,15 +202,15 @@ H-->>M : 完成
 ```
 
 图表来源
-- [src/service/dal/message.rs:133-193](file://src/service/dal/message.rs#L133-L193)
-- [src/service/dal/message.rs:357-396](file://src/service/dal/message.rs#L357-L396)
-- [src/service/dal/message.rs:448-463](file://src/service/dal/message.rs#L448-L463)
+- [src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
+- [src/service/dal/message.rs:357-396](src/service/dal/message.rs#L357-L396)
+- [src/service/dal/message.rs:448-463](src/service/dal/message.rs#L448-L463)
 
 章节来源
-- [src/service/dal/message.rs:20-47](file://src/service/dal/message.rs#L20-L47)
-- [src/service/dal/message.rs:133-193](file://src/service/dal/message.rs#L133-L193)
-- [src/service/dal/message.rs:357-396](file://src/service/dal/message.rs#L357-L396)
-- [src/service/dal/message.rs:448-463](file://src/service/dal/message.rs#L448-L463)
+- [src/service/dal/message.rs:20-47](src/service/dal/message.rs#L20-L47)
+- [src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
+- [src/service/dal/message.rs:357-396](src/service/dal/message.rs#L357-L396)
+- [src/service/dal/message.rs:448-463](src/service/dal/message.rs#L448-L463)
 
 ### ProjectDal 搜索与归档
 - 组合点：ProjectDao、ProjectVectorDao、ProjectStatsDao、CortexDao、ModelProviderDao。
@@ -224,11 +224,11 @@ H-->>M : 完成
   - 批量按 ID 获取向量命中项，减少 N+1。
 
 章节来源
-- [src/service/dal/project.rs:27-67](file://src/service/dal/project.rs#L27-L67)
-- [src/service/dal/project.rs:225-274](file://src/service/dal/project.rs#L225-L274)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
-- [src/service/dal/project.rs:488-703](file://src/service/dal/project.rs#L488-L703)
-- [src/service/dal/project.rs:738-800](file://src/service/dal/project.rs#L738-L800)
+- [src/service/dal/project.rs:27-67](src/service/dal/project.rs#L27-L67)
+- [src/service/dal/project.rs:225-274](src/service/dal/project.rs#L225-L274)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
+- [src/service/dal/project.rs:488-703](src/service/dal/project.rs#L488-L703)
+- [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
 
 ### ToolDal 执行与搜索
 - 组合点：ToolDao、ToolCallDao、ToolVectorDao、CortexDao、ModelProviderDao、ToolStatsDao。
@@ -241,10 +241,10 @@ H-->>M : 完成
   - 向量重建与内容哈希检测减少冗余计算。
 
 章节来源
-- [src/service/dal/tool.rs:20-59](file://src/service/dal/tool.rs#L20-L59)
-- [src/service/dal/tool.rs:235-350](file://src/service/dal/tool.rs#L235-L350)
-- [src/service/dal/tool.rs:515-533](file://src/service/dal/tool.rs#L515-L533)
-- [src/service/dal/tool.rs:535-740](file://src/service/dal/tool.rs#L535-L740)
+- [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
+- [src/service/dal/tool.rs:235-350](src/service/dal/tool.rs#L235-L350)
+- [src/service/dal/tool.rs:515-533](src/service/dal/tool.rs#L515-L533)
+- [src/service/dal/tool.rs:535-740](src/service/dal/tool.rs#L535-L740)
 
 ### MemoryDal 记忆与知识图谱
 - 组合点：MemoryDao、MemoryVectorDao、CortexDao、ModelProviderDao。
@@ -258,12 +258,12 @@ H-->>M : 完成
   - 向量重建时按集合维度判断是否需要清空与重建。
 
 章节来源
-- [src/service/dal/memory.rs:39-68](file://src/service/dal/memory.rs#L39-L68)
-- [src/service/dal/memory.rs:189-276](file://src/service/dal/memory.rs#L189-L276)
-- [src/service/dal/memory.rs:314-375](file://src/service/dal/memory.rs#L314-L375)
-- [src/service/dal/memory.rs:518-576](file://src/service/dal/memory.rs#L518-L576)
-- [src/service/dal/memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory.rs:39-68](src/service/dal/memory.rs#L39-L68)
+- [src/service/dal/memory.rs:189-276](src/service/dal/memory.rs#L189-L276)
+- [src/service/dal/memory.rs:314-375](src/service/dal/memory.rs#L314-L375)
+- [src/service/dal/memory.rs:518-576](src/service/dal/memory.rs#L518-L576)
+- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 
 ### OrganizationDal 组织管理
 - 组合点：OrganizationDao。
@@ -272,8 +272,8 @@ H-->>M : 完成
   - CRUD 与计数方法直接委托 DAO。
 
 章节来源
-- [src/service/dal/organization.rs:13-32](file://src/service/dal/organization.rs#L13-L32)
-- [src/service/dal/organization.rs:82-125](file://src/service/dal/organization.rs#L82-L125)
+- [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
+- [src/service/dal/organization.rs:82-125](src/service/dal/organization.rs#L82-L125)
 
 ## 依赖关系分析
 - DAL 对 DAO 的依赖为单向：DAL 组合多个 DAO，不反向依赖。
@@ -298,14 +298,14 @@ DAO_Org --> Store
 ```
 
 图表来源
-- [src/service/dal/mod.rs:30-76](file://src/service/dal/mod.rs#L30-L76)
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
+- [src/service/dal/mod.rs:30-76](src/service/dal/mod.rs#L30-L76)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
 
 章节来源
-- [src/service/dal/mod.rs:30-76](file://src/service/dal/mod.rs#L30-L76)
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
+- [src/service/dal/mod.rs:30-76](src/service/dal/mod.rs#L30-L76)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
 
 ## 性能与优化
 - 连接池管理：Storage 使用 SqlitePoolOptions 配置最大连接数，SQLite 写并发有限，默认 5 连接足够。
@@ -318,10 +318,10 @@ DAO_Org --> Store
 - 批量操作：rebuild_vectors 清空集合后逐条重建，单条失败不影响整体，日志降级。
 
 章节来源
-- [src/pkg/storage/mod.rs:64-102](file://src/pkg/storage/mod.rs#L64-L102)
-- [src/service/dal/agent.rs:244-312](file://src/service/dal/agent.rs#L244-L312)
-- [src/service/dal/project.rs:738-800](file://src/service/dal/project.rs#L738-L800)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
+- [src/pkg/storage/mod.rs:64-102](src/pkg/storage/mod.rs#L64-L102)
+- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 
 ## 故障排查指南
 - 向量索引写入失败：log_warn 降级，主流程不受影响；检查 Embedding Provider 配置与向量后端可用性。
@@ -331,10 +331,10 @@ DAO_Org --> Store
 - 归档/删除清理：archive/delete 会清理向量索引；若清理失败仅 warn，检查向量存储权限。
 
 章节来源
-- [src/service/dal/agent.rs:341-355](file://src/service/dal/agent.rs#L341-L355)
-- [src/service/dal/agent.rs:701-738](file://src/service/dal/agent.rs#L701-L738)
-- [src/service/dal/message.rs:133-193](file://src/service/dal/message.rs#L133-L193)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
+- [src/service/dal/agent.rs:341-355](src/service/dal/agent.rs#L341-L355)
+- [src/service/dal/agent.rs:701-738](src/service/dal/agent.rs#L701-L738)
+- [src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
 ## 结论
 DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一处理混合搜索、统计聚合、向量化索引维护与批量操作。其设计清晰、可扩展性强，便于新增领域与后端替换。结合 Storage 的连接池与向量后端抽象，系统在性能与可靠性上具备良好保障。
@@ -347,30 +347,30 @@ DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一�
     - 调用 AgentDal::get_agent，options.with_stats=true 加载 AgentStats。
     - options.with_model_call_stats=true 加载 ModelCallStats。
     - 内部组合 AgentStatsDao 与 ModelProviderStatsDao。
-  - 参考路径：[src/service/dal/agent.rs:357-423](file://src/service/dal/agent.rs#L357-L423)
+  - 参考路径：[src/service/dal/agent.rs:357-423](src/service/dal/agent.rs#L357-L423)
 
 - 示例二：混合搜索 Agent（关键词 + 向量）
   - 步骤：
     - 若有 keyword，尝试构建查询向量并执行向量搜索。
     - 同时执行 FTS5 关键词搜索。
     - 合并结果，三态匹配（Hybrid/Vector/Keyword），综合排序与分页。
-  - 参考路径：[src/service/dal/agent.rs:474-699](file://src/service/dal/agent.rs#L474-L699)
+  - 参考路径：[src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
 
 - 示例三：消息保存并自动向量化
   - 步骤：
     - 调用 MessageDal::save_message 写入数据库并发布 AOP 事件。
     - 尝试获取 Embedding Provider 并生成向量，upsert 向量索引。
-  - 参考路径：[src/service/dal/message.rs:133-193](file://src/service/dal/message.rs#L133-L193)
+  - 参考路径：[src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
 
 - 示例四：项目归档并清理向量索引
   - 步骤：
     - 调用 ProjectDal::archive 软删除项目。
     - 清理对应向量索引（忽略失败）。
-  - 参考路径：[src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
+  - 参考路径：[src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
 - 示例五：记忆沉淀（短期→长期）
   - 步骤：
     - 查询 Agent 的活跃短期记忆。
     - 按主题分组聚合，创建知识节点与引用关系。
     - 标记短期记忆为已沉淀。
-  - 参考路径：[src/service/dal/memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
+  - 参考路径：[src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)

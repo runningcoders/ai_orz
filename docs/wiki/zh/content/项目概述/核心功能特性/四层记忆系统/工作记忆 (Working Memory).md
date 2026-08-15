@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/memory.rs](file://src/models/memory.rs)
-- [common/src/enums/memory.rs](file://common/src/enums/memory.rs)
-- [src/service/dal/memory.rs](file://src/service/dal/memory.rs)
-- [src/service/domain/runtime/memory.rs](file://src/service/domain/runtime/memory.rs)
-- [src/handlers/hr/agent/settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [src/consumer/scheduler.rs](file://src/consumer/scheduler.rs)
-- [tests/integration/memory_test.rs](file://tests/integration/memory_test.rs)
+- [src/models/memory.rs](src/models/memory.rs)
+- [common/src/enums/memory.rs](common/src/enums/memory.rs)
+- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/domain/runtime/memory.rs](src/service/domain/runtime/memory.rs)
+- [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [src/consumer/scheduler.rs](src/consumer/scheduler.rs)
+- [tests/integration/memory_test.rs](tests/integration/memory_test.rs)
 </cite>
 
 ## 目录
@@ -46,20 +46,20 @@ F["Scheduler<br/>agent_rest 定时任务"] --> A
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [src/service/dal/memory.rs:113-177](file://src/service/dal/memory.rs#L113-L177)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
-- [src/consumer/scheduler.rs:93-131](file://src/consumer/scheduler.rs#L93-L131)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [src/service/dal/memory.rs:113-177](src/service/dal/memory.rs#L113-L177)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/consumer/scheduler.rs:93-131](src/consumer/scheduler.rs#L93-L131)
 
 章节来源
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
-- [common/src/enums/memory.rs:1-212](file://common/src/enums/memory.rs#L1-L212)
-- [src/service/dal/memory.rs:113-177](file://src/service/dal/memory.rs#L113-L177)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
-- [src/consumer/scheduler.rs:93-131](file://src/consumer/scheduler.rs#L93-L131)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
+- [common/src/enums/memory.rs:1-212](common/src/enums/memory.rs#L1-L212)
+- [src/service/dal/memory.rs:113-177](src/service/dal/memory.rs#L113-L177)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/consumer/scheduler.rs:93-131](src/consumer/scheduler.rs#L93-L131)
 
 ## 核心组件
 - 记忆模型与类型
@@ -79,13 +79,13 @@ F["Scheduler<br/>agent_rest 定时任务"] --> A
   - scheduler.agent_rest：定时触发 agent_rest，周期性沉淀短期记忆
 
 章节来源
-- [src/models/memory.rs:158-424](file://src/models/memory.rs#L158-L424)
-- [common/src/enums/memory.rs:12-212](file://common/src/enums/memory.rs#L12-L212)
-- [src/pkg/agent_runtime_state.rs:31-174](file://src/pkg/agent_runtime_state.rs#L31-L174)
-- [src/service/dal/memory.rs:113-177](file://src/service/dal/memory.rs#L113-L177)
-- [src/service/domain/runtime/memory.rs:11-120](file://src/service/domain/runtime/memory.rs#L11-L120)
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/consumer/scheduler.rs:93-131](file://src/consumer/scheduler.rs#L93-L131)
+- [src/models/memory.rs:158-424](src/models/memory.rs#L158-L424)
+- [common/src/enums/memory.rs:12-212](common/src/enums/memory.rs#L12-L212)
+- [src/pkg/agent_runtime_state.rs:31-174](src/pkg/agent_runtime_state.rs#L31-L174)
+- [src/service/dal/memory.rs:113-177](src/service/dal/memory.rs#L113-L177)
+- [src/service/domain/runtime/memory.rs:11-120](src/service/domain/runtime/memory.rs#L11-L120)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/consumer/scheduler.rs:93-131](src/consumer/scheduler.rs#L93-L131)
 
 ## 架构总览
 工作记忆在 Agent 思考循环中承担“上下文构建、状态维护与恢复”的职责：
@@ -114,10 +114,10 @@ Handler->>DAL : 同上流程
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/pkg/agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [src/service/dal/memory.rs:608-641](file://src/service/dal/memory.rs#L608-L641)
-- [src/consumer/scheduler.rs:99-131](file://src/consumer/scheduler.rs#L99-L131)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/pkg/agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [src/service/dal/memory.rs:608-641](src/service/dal/memory.rs#L608-L641)
+- [src/consumer/scheduler.rs:99-131](src/consumer/scheduler.rs#L99-L131)
 
 ## 详细组件分析
 
@@ -179,12 +179,12 @@ Memory --> KnowledgeNodeRelationPo : "包含"
 ```
 
 图表来源
-- [src/models/memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [common/src/enums/memory.rs:96-212](file://common/src/enums/memory.rs#L96-L212)
+- [src/models/memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [common/src/enums/memory.rs:96-212](common/src/enums/memory.rs#L96-L212)
 
 章节来源
-- [src/models/memory.rs:158-424](file://src/models/memory.rs#L158-L424)
-- [common/src/enums/memory.rs:12-212](file://common/src/enums/memory.rs#L12-L212)
+- [src/models/memory.rs:158-424](src/models/memory.rs#L158-L424)
+- [common/src/enums/memory.rs:12-212](common/src/enums/memory.rs#L12-L212)
 
 ### 工作记忆的内存管理与生命周期控制
 - 内存管理
@@ -213,13 +213,13 @@ EmbedAndUpsert --> End
 ```
 
 图表来源
-- [src/service/dal/memory.rs:608-641](file://src/service/dal/memory.rs#L608-L641)
-- [src/service/dal/memory.rs:684-750](file://src/service/dal/memory.rs#L684-L750)
+- [src/service/dal/memory.rs:608-641](src/service/dal/memory.rs#L608-L641)
+- [src/service/dal/memory.rs:684-750](src/service/dal/memory.rs#L684-L750)
 
 章节来源
-- [src/service/dal/memory.rs:477-504](file://src/service/dal/memory.rs#L477-L504)
-- [src/service/dal/memory.rs:608-641](file://src/service/dal/memory.rs#L608-L641)
-- [src/service/dal/memory.rs:684-750](file://src/service/dal/memory.rs#L684-L750)
+- [src/service/dal/memory.rs:477-504](src/service/dal/memory.rs#L477-L504)
+- [src/service/dal/memory.rs:608-641](src/service/dal/memory.rs#L608-L641)
+- [src/service/dal/memory.rs:684-750](src/service/dal/memory.rs#L684-L750)
 
 ### 工作记忆在 Agent 思考循环中的作用
 - 上下文构建
@@ -248,14 +248,14 @@ Loop->>State : set_idle()
 ```
 
 图表来源
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/pkg/agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [src/handlers/hr/agent/settle_memory.rs:74-85](file://src/handlers/hr/agent/settle_memory.rs#L74-L85)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/pkg/agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [src/handlers/hr/agent/settle_memory.rs:74-85](src/handlers/hr/agent/settle_memory.rs#L74-L85)
 
 章节来源
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/pkg/agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [src/handlers/hr/agent/settle_memory.rs:74-85](file://src/handlers/hr/agent/settle_memory.rs#L74-L85)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/pkg/agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [src/handlers/hr/agent/settle_memory.rs:74-85](src/handlers/hr/agent/settle_memory.rs#L74-L85)
 
 ### 工作记忆的 API 使用示例
 - 状态设置
@@ -272,10 +272,10 @@ Loop->>State : set_idle()
   - 重建向量：DAL::rebuild_vectors(ctx)
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/service/domain/runtime/memory.rs:14-120](file://src/service/domain/runtime/memory.rs#L14-L120)
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/service/dal/memory.rs:684-750](file://src/service/dal/memory.rs#L684-L750)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/service/domain/runtime/memory.rs:14-120](src/service/domain/runtime/memory.rs#L14-L120)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/service/dal/memory.rs:684-750](src/service/dal/memory.rs#L684-L750)
 
 ### 工作记忆与短期记忆的边界划分与数据迁移策略
 - 边界划分
@@ -287,9 +287,9 @@ Loop->>State : set_idle()
   - 发布机制：知识节点 tags 含 published 时 is_published=true，支持跨 Agent 共享
 
 章节来源
-- [src/models/memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [src/service/dal/memory.rs:608-641](file://src/service/dal/memory.rs#L608-L641)
-- [common/src/enums/memory.rs:12-212](file://common/src/enums/memory.rs#L12-L212)
+- [src/models/memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [src/service/dal/memory.rs:608-641](src/service/dal/memory.rs#L608-L641)
+- [common/src/enums/memory.rs:12-212](common/src/enums/memory.rs#L12-L212)
 
 ## 依赖关系分析
 工作记忆模块依赖关系清晰，遵循四层单向调用：
@@ -308,18 +308,18 @@ R["AgentRuntimeStateManager"] --> H
 ```
 
 图表来源
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [src/service/dal/memory.rs:113-177](file://src/service/dal/memory.rs#L113-L177)
-- [src/consumer/scheduler.rs:93-131](file://src/consumer/scheduler.rs#L93-L131)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [src/service/dal/memory.rs:113-177](src/service/dal/memory.rs#L113-L177)
+- [src/consumer/scheduler.rs:93-131](src/consumer/scheduler.rs#L93-L131)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 章节来源
-- [src/handlers/hr/agent/settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [src/service/dal/memory.rs:113-177](file://src/service/dal/memory.rs#L113-L177)
-- [src/consumer/scheduler.rs:93-131](file://src/consumer/scheduler.rs#L93-L131)
-- [src/pkg/agent_runtime_state.rs:1-174](file://src/pkg/agent_runtime_state.rs#L1-L174)
+- [src/handlers/hr/agent/settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [src/service/dal/memory.rs:113-177](src/service/dal/memory.rs#L113-L177)
+- [src/consumer/scheduler.rs:93-131](src/consumer/scheduler.rs#L93-L131)
+- [src/pkg/agent_runtime_state.rs:1-174](src/pkg/agent_runtime_state.rs#L1-L174)
 
 ## 性能考量
 - 向量索引重建：rebuild_vectors 支持增量重建，单条失败不影响整体，适合切换 embedding provider 场景
@@ -341,9 +341,9 @@ R["AgentRuntimeStateManager"] --> H
   - 检查 embedding provider 配置与连接
 
 章节来源
-- [src/handlers/hr/agent/settle_memory.rs:74-85](file://src/handlers/hr/agent/settle_memory.rs#L74-L85)
-- [src/service/dal/memory.rs:477-504](file://src/service/dal/memory.rs#L477-L504)
-- [src/service/dal/memory.rs:684-750](file://src/service/dal/memory.rs#L684-L750)
+- [src/handlers/hr/agent/settle_memory.rs:74-85](src/handlers/hr/agent/settle_memory.rs#L74-L85)
+- [src/service/dal/memory.rs:477-504](src/service/dal/memory.rs#L477-L504)
+- [src/service/dal/memory.rs:684-750](src/service/dal/memory.rs#L684-L750)
 
 ## 结论
 工作记忆层通过短期记忆与长期知识的协同，实现了 Agent 会话上下文的有效管理与知识沉淀。其设计遵循四层单向调用，具备清晰的边界划分、完善的生命周期控制与自动清理机制。通过 AgentRuntimeStateManager 保证并发安全，通过 DAL 提供统一的 CRUD 与向量操作接口，满足复杂场景下的上下文构建与恢复需求。未来可进一步优化查询性能与向量索引重建效率。
@@ -365,7 +365,16 @@ R["AgentRuntimeStateManager"] --> H
   - 重建向量：调用 DAL::rebuild_vectors(ctx)
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/service/domain/runtime/memory.rs:14-120](file://src/service/domain/runtime/memory.rs#L14-L120)
-- [src/handlers/hr/agent/settle_memory.rs:68-123](file://src/handlers/hr/agent/settle_memory.rs#L68-L123)
-- [src/service/dal/memory.rs:684-750](file://src/service/dal/memory.rs#L684-L750)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/service/domain/runtime/memory.rs:14-120](src/service/domain/runtime/memory.rs#L14-L120)
+- [src/handlers/hr/agent/settle_memory.rs:68-123](src/handlers/hr/agent/settle_memory.rs#L68-L123)
+- [src/service/dal/memory.rs:684-750](src/service/dal/memory.rs#L684-L750)
+
+
+### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
+#### ① Design 决策快照
+- [memory_system_enhancement_design.md](docs/design/memory_system_enhancement_design.md) — 决策 4 休息双轨：上下文过载 N 轮小憩（清 Working 内存，不做长期沉淀）+ 每天 4 点睡眠（完整 Short→Long 沉淀）
+#### ② Plan 落地快照
+- [唤醒上下文与睡眠约束.md](docs/plan/唤醒上下文与睡眠约束.md) — ThinkingOptions.for_scene(Settle) 仅 Working/Short 记忆参与上下文；Resting 状态清 Working 不影响 Long-term
+#### ④ RAG 原子知识卡
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §3 休息触发双轨机制表（短暂休息/每日睡眠对比）

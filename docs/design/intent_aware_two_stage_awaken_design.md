@@ -8,6 +8,17 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [runtime_design.md](./runtime_design.md) — Runtime 领域总纲与唤醒机制基础
 > - [message_interaction_design.md](./message_interaction_design.md) — 用户-Agent 消息交互与前台调度
+> - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎（IA 场景专用 policy_group）
+> - 【② Plan 落地快照】
+>   - [唤醒上下文与睡眠约束.md](docs/plan/唤醒上下文与睡眠约束.md) — ThinkingOptions 统一参数 + PromptBuilder 两阶段方法内聚
+> - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐）】
+>   - [运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) — awaken / analyze_input_intent 接口契约 + 两阶段入口
+>   - [Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — 两阶段流程编排 + trait 签名
+>   - [Agent 状态管理.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/Agent%20状态管理.md) — Busy 状态内两阶段流程状态转换
+> - 【④ RAG 原子知识卡（Batch11 精确对应 1 张 + 横向关联 2 张）】
+>   - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md) — Phase1/2 串联总卡（IntentAnalysis 7 字段 + 6 级 JSON 降级 + 工具白名单 + think_loop 复用 + Prompt 仅供参考原则）
+>   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md) — Phase1 独立 think_runtime 注册清理机制
+>   - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) — policy_set!(IntentAnalyze) 场景策略组配置
 
 > 范围：只覆盖**总纲与核心理念、接口定义、数据流边界、Prompt 设计原则**；具体落地代码细节由 `docs/superpowers/plans/2026-08-14-intent-analyze-two-stage-awaken.md` 承接。
 

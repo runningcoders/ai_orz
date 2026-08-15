@@ -9,6 +9,14 @@
 > - [AGENTS.md](../../AGENTS.md) — 项目架构总纲 §测试隔离原则
 > - [集成测试基础设施.md](./集成测试基础设施.md) — 6 层测试基础设施架构定义与扩展模式
 > - [向量存储架构设计](../design/vector_search_architecture.md) — FTS5+向量混合搜索原理
+> - 【① Design 设计总纲（Batch11 精确对应 1 篇）】
+>   - [skill_system_enhancement_design.md](../design/skill_system_enhancement_design.md) — 技能系统增强（决策 4 安装幂等 + 决策 6 唤醒注入 Token 熔断粒度）
+> - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐主题④）】
+>   - [技能系统.md](docs/wiki/zh/content/功能模块/技能系统.md) — Skill 6 字段结构 + Prompt 四层熔断分层测试断言
+>   - [技能包管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md) — 技能包幂等安装测试流程（第二次 installed=0）
+>   - [HR 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/HR%20领域编排.md) — HRDomain.skill / HRDomain.agent 入职绑定集成测试目标
+> - 【④ RAG 原子知识卡（Batch11 精确对应 1 张）】
+>   - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — §4.1 必守红线 9 条（install 幂等/入职不阻断/熔断永不抛错）对应集成测试断言清单
 
 ---
 
@@ -122,13 +130,7 @@ HTTP 端点层（Part A，Task 1-12，CI-safe）
 
 ## 五、验收清单（2026-08-03 全部达成 ✅）
 
-- [x] Part A 12 个 HTTP 端点集成测试全部 PASS（无 API Key 环境可跑）
-- [x] Part B 3 个真实向量测试全部 PASS（`#[ignore]`，需 `.env` 中 TEST_EMBEDDING_API_KEY）
-- [x] Follow-up Tool/Skill 9 个集成测试全部 PASS（4 FTS5 + 5 真实向量）
-- [x] DoubaoVision ProviderType 枚举化：`DoubaoVision = 7` 显式值，全项目无 `model_name.contains("vision")` 字符串匹配
-- [x] Skill 删除向量索引补洞：删除 Skill 后 vss 表对应行消失，混合搜索不返回已删除 Skill
-- [x] `cargo fmt --all -- --check` 通过；`cargo clippy --test <target> -- -D warnings` 三个 target 全零告警
-- [x] 现有集成测试（auth/sysinit/lark/github/a2a 等）零回归，全部 PASS
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -169,6 +171,7 @@ HTTP 端点层（Part A，Task 1-12，CI-safe）
    - 向量断言前固定：`tokio::time::sleep(Duration::from_secs(2)).await;`（给异步索引用足够时间窗口）
 
 4. **收尾质量检查**（每次修改集成测试后必跑）：
-   - `cargo test --test xxx_test -- --nocapture`（Part A 全绿）
-   - 如写了 ignored 测试：`cargo test --test xxx_test -- --ignored --nocapture`（本地有 API Key 时跑）
-   - `cargo fmt --all -- --check` + `cargo clippy --test xxx_test -- -D warnings`（零告警才提交）
+   - 执行模块集成测试（xxx_test，Part A 全绿验证）（Part A 全绿）
+   - 如写了 ignored 测试：执行模块真实向量集成测试（xxx_test，本地 API Key 环境）（本地有 API Key 时跑）
+   - 格式化规范检查（全工程零差异） + Clippy 静态检查（xxx_test target 零告警才提交）（零告警才提交）
+

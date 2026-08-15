@@ -1,21 +1,21 @@
-# Agent 循环消费者
+# Agent 循环消费者（代码落地层）
 
 <cite>
 **本文引用的文件**
-- [agent_loop_consumer.rs](file://src/consumer/agent_loop_consumer.rs)
-- [think_round_stats_consumer.rs](file://src/consumer/think_round_stats_consumer.rs)
-- [tool_exec_log_consumer.rs](file://src/consumer/tool_exec_log_consumer.rs)
-- [tool_exec_stats_consumer.rs](file://src/consumer/tool_exec_stats_consumer.rs)
-- [agent_loop.rs](file://src/models/events/agent_loop.rs)
-- [think_round.rs](file://src/models/events/think_round.rs)
-- [tool_exec.rs](file://src/models/events/tool_exec.rs)
-- [agent_state.rs](file://src/models/events/agent_state.rs)
-- [agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [busy_guard.rs](file://src/service/domain/runtime/busy_guard.rs)
-- [awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [mod.rs（运行时域）](file://src/service/domain/runtime/mod.rs)
-- [message.rs（消息消费者）](file://src/consumer/message.rs)
-- [agent.rs（枚举：AgentRuntimeState）](file://common/src/enums/agent.rs)
+- [agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
+- [think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs)
+- [tool_exec_log_consumer.rs](src/consumer/tool_exec_log_consumer.rs)
+- [tool_exec_stats_consumer.rs](src/consumer/tool_exec_stats_consumer.rs)
+- [agent_loop.rs](src/models/events/agent_loop.rs)
+- [think_round.rs](src/models/events/think_round.rs)
+- [tool_exec.rs](src/models/events/tool_exec.rs)
+- [agent_state.rs](src/models/events/agent_state.rs)
+- [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [busy_guard.rs](src/service/domain/runtime/busy_guard.rs)
+- [awakening.rs](src/service/domain/runtime/awakening.rs)
+- [mod.rs（运行时域）](src/service/domain/runtime/mod.rs)
+- [message.rs（消息消费者）](src/consumer/message.rs)
+- [agent.rs（枚举：AgentRuntimeState）](common/src/enums/agent.rs)
 </cite>
 
 ## 目录
@@ -33,7 +33,11 @@
 12. [结论](#结论)
 
 ## 简介
-本文件面向“Agent 循环消费者”，围绕 Agent 的唤醒、思考与沉淀生命周期，系统说明状态机转换、上下文维护、内存管理、并发控制、资源隔离、超时处理、执行计划生成、工具调用协调与结果聚合，以及监控统计、调试信息收集、配置优化、扩缩容策略和故障恢复机制。内容严格基于仓库中已实现的 AOP 事件模型、运行时状态管理与消费者实现。
+本文件面向"Agent 循环消费者"，围绕 Agent 的唤醒、思考与沉淀生命周期，系统说明状态机转换、上下文维护、内存管理、并发控制、资源隔离、超时处理、执行计划生成、工具调用协调与结果聚合，以及监控统计、调试信息收集、配置优化、扩缩容策略和故障恢复机制。内容严格基于仓库中已实现的 AOP 事件模型、运行时状态管理与消费者实现。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「Agent 循环消费者」主题的 **代码落地层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [Agent 循环消费者（框架层）](docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/Agent 循环消费者.md)
 
 ## 项目结构
 Agent 循环由“运行时域”驱动，通过 AOP 发布三类关键事件：
@@ -78,22 +82,22 @@ MOD --> S1
 ```
 
 图表来源
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [think_round_stats_consumer.rs:29-43](file://src/consumer/think_round_stats_consumer.rs#L29-L43)
-- [tool_exec_log_consumer.rs:26-40](file://src/consumer/tool_exec_log_consumer.rs#L26-L40)
-- [tool_exec_stats_consumer.rs:27-41](file://src/consumer/tool_exec_stats_consumer.rs#L27-L41)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [think_round_stats_consumer.rs:29-43](src/consumer/think_round_stats_consumer.rs#L29-L43)
+- [tool_exec_log_consumer.rs:26-40](src/consumer/tool_exec_log_consumer.rs#L26-L40)
+- [tool_exec_stats_consumer.rs:27-41](src/consumer/tool_exec_stats_consumer.rs#L27-L41)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 章节来源
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [think_round_stats_consumer.rs:29-43](file://src/consumer/think_round_stats_consumer.rs#L29-L43)
-- [tool_exec_log_consumer.rs:26-40](file://src/consumer/tool_exec_log_consumer.rs#L26-L40)
-- [tool_exec_stats_consumer.rs:27-41](file://src/consumer/tool_exec_stats_consumer.rs#L27-L41)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [think_round_stats_consumer.rs:29-43](src/consumer/think_round_stats_consumer.rs#L29-L43)
+- [tool_exec_log_consumer.rs:26-40](src/consumer/tool_exec_log_consumer.rs#L26-L40)
+- [tool_exec_stats_consumer.rs:27-41](src/consumer/tool_exec_stats_consumer.rs#L27-L41)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ## 核心组件
 - Agent 运行时状态管理器：纯内存全局单例，提供 Idle/Resting/Busy 状态切换、原子 try_set_busy、不可用判断、状态变更事件发布。
@@ -106,13 +110,13 @@ MOD --> S1
   - tool_exec_stats_consumer：将工具执行统计写入统计存储。
 
 章节来源
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [think_round_stats_consumer.rs:29-43](file://src/consumer/think_round_stats_consumer.rs#L29-L43)
-- [tool_exec_log_consumer.rs:26-40](file://src/consumer/tool_exec_log_consumer.rs#L26-L40)
-- [tool_exec_stats_consumer.rs:27-41](file://src/consumer/tool_exec_stats_consumer.rs#L27-L41)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [think_round_stats_consumer.rs:29-43](src/consumer/think_round_stats_consumer.rs#L29-L43)
+- [tool_exec_log_consumer.rs:26-40](src/consumer/tool_exec_log_consumer.rs#L26-L40)
+- [tool_exec_stats_consumer.rs:27-41](src/consumer/tool_exec_stats_consumer.rs#L27-L41)
 
 ## 架构总览
 Agent 循环采用“运行时域 + AOP 事件 + 同步消费者”的解耦架构：
@@ -149,13 +153,13 @@ R->>S : set_idle(agent_id) via BusyGuard drop
 ```
 
 图表来源
-- [message.rs:225-317](file://src/consumer/message.rs#L225-L317)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [think_round_stats_consumer.rs:29-43](file://src/consumer/think_round_stats_consumer.rs#L29-L43)
-- [tool_exec_log_consumer.rs:26-40](file://src/consumer/tool_exec_log_consumer.rs#L26-L40)
-- [tool_exec_stats_consumer.rs:27-41](file://src/consumer/tool_exec_stats_consumer.rs#L27-L41)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
+- [message.rs:225-317](src/consumer/message.rs#L225-L317)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [think_round_stats_consumer.rs:29-43](src/consumer/think_round_stats_consumer.rs#L29-L43)
+- [tool_exec_log_consumer.rs:26-40](src/consumer/tool_exec_log_consumer.rs#L26-L40)
+- [tool_exec_stats_consumer.rs:27-41](src/consumer/tool_exec_stats_consumer.rs#L27-L41)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
 
 ## 详细组件分析
 
@@ -175,14 +179,14 @@ Resting --> Idle : "set_idle"
 ```
 
 图表来源
-- [agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 章节来源
-- [agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ### 唤醒与沉淀的生命周期
 - 唤醒（awaken）：
@@ -213,16 +217,16 @@ PublishFinish --> End(["结束，自动 set_idle"])
 ```
 
 图表来源
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop.rs:1-79](file://src/models/events/agent_loop.rs#L1-L79)
-- [think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
-- [tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop.rs:1-79](src/models/events/agent_loop.rs#L1-L79)
+- [think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
+- [tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
 
 章节来源
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_loop.rs:1-79](file://src/models/events/agent_loop.rs#L1-L79)
-- [think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
-- [tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_loop.rs:1-79](src/models/events/agent_loop.rs#L1-L79)
+- [think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
+- [tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
 
 ### 执行计划生成、工具调用协调与结果聚合
 - 执行计划：由运行时域根据当前场景（awaken/settle）选择可用工具集，构造提示词与工具描述，驱动模型进行函数调用。
@@ -230,10 +234,10 @@ PublishFinish --> End(["结束，自动 set_idle"])
 - 结果聚合：消费者分别负责日志与统计落库；think_round_stats_consumer 汇总 token 用量；tool_exec_stats_consumer 汇总工具调用成功率与耗时。
 
 章节来源
-- [think_round_stats_consumer.rs:29-73](file://src/consumer/think_round_stats_consumer.rs#L29-L73)
-- [tool_exec_log_consumer.rs:26-53](file://src/consumer/tool_exec_log_consumer.rs#L26-L53)
-- [tool_exec_stats_consumer.rs:27-73](file://src/consumer/tool_exec_stats_consumer.rs#L27-L73)
-- [tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
+- [think_round_stats_consumer.rs:29-73](src/consumer/think_round_stats_consumer.rs#L29-L73)
+- [tool_exec_log_consumer.rs:26-53](src/consumer/tool_exec_log_consumer.rs#L26-L53)
+- [tool_exec_stats_consumer.rs:27-73](src/consumer/tool_exec_stats_consumer.rs#L27-L73)
+- [tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
 
 ### 上下文维护与内存管理
 - 上下文：awaken 过程中会 enrich ctx（如 model_provider_id/model_name），供后续调用链复用。
@@ -241,9 +245,9 @@ PublishFinish --> End(["结束，自动 set_idle"])
 - 消息关联：Busy 状态携带 current_message_id，便于追踪当前处理的消息。
 
 章节来源
-- [agent_runtime_state.rs:11-19](file://src/pkg/agent_runtime_state.rs#L11-L19)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:11-19](src/pkg/agent_runtime_state.rs#L11-L19)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
 
 ## 依赖关系分析
 - 运行时域依赖状态管理器与 AOP 发布能力。
@@ -263,20 +267,20 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
 ```
 
 图表来源
-- [message.rs:225-317](file://src/consumer/message.rs#L225-L317)
-- [mod.rs（运行时域）:392-429](file://src/service/domain/runtime/mod.rs#L392-L429)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [think_round_stats_consumer.rs:29-43](file://src/consumer/think_round_stats_consumer.rs#L29-L43)
-- [tool_exec_log_consumer.rs:26-40](file://src/consumer/tool_exec_log_consumer.rs#L26-L40)
-- [tool_exec_stats_consumer.rs:27-41](file://src/consumer/tool_exec_stats_consumer.rs#L27-L41)
+- [message.rs:225-317](src/consumer/message.rs#L225-L317)
+- [mod.rs（运行时域）:392-429](src/service/domain/runtime/mod.rs#L392-L429)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [think_round_stats_consumer.rs:29-43](src/consumer/think_round_stats_consumer.rs#L29-L43)
+- [tool_exec_log_consumer.rs:26-40](src/consumer/tool_exec_log_consumer.rs#L26-L40)
+- [tool_exec_stats_consumer.rs:27-41](src/consumer/tool_exec_stats_consumer.rs#L27-L41)
 
 章节来源
-- [message.rs:225-317](file://src/consumer/message.rs#L225-L317)
-- [mod.rs（运行时域）:392-429](file://src/service/domain/runtime/mod.rs#L392-L429)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
+- [message.rs:225-317](src/consumer/message.rs#L225-L317)
+- [mod.rs（运行时域）:392-429](src/service/domain/runtime/mod.rs#L392-L429)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
 
 ## 性能与并发控制
 - 并发安全：
@@ -290,8 +294,8 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
   - 建议在外部网关/调度层增加请求级超时，结合 Agent 内部深度限制形成双重保护。
 
 章节来源
-- [agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [message.rs:246-293](file://src/consumer/message.rs#L246-L293)
+- [agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [message.rs:246-293](src/consumer/message.rs#L246-L293)
 
 ## 故障恢复与超时处理
 - 状态恢复：
@@ -305,10 +309,10 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
   - 结合最大思考深度与外部超时，避免长尾请求拖垮系统。
 
 章节来源
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
-- [message.rs:225-317](file://src/consumer/message.rs#L225-L317)
-- [agent_loop.rs:1-79](file://src/models/events/agent_loop.rs#L1-L79)
-- [tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [message.rs:225-317](src/consumer/message.rs#L225-L317)
+- [agent_loop.rs:1-79](src/models/events/agent_loop.rs#L1-L79)
+- [tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
 
 ## 监控统计与调试
 - 循环生命周期：
@@ -321,11 +325,11 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
   - AgentStateEvent 在状态切换时发布，可用于 UI 展示与审计。
 
 章节来源
-- [agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
-- [think_round_stats_consumer.rs:29-73](file://src/consumer/think_round_stats_consumer.rs#L29-L73)
-- [tool_exec_log_consumer.rs:26-53](file://src/consumer/tool_exec_log_consumer.rs#L26-L53)
-- [tool_exec_stats_consumer.rs:27-73](file://src/consumer/tool_exec_stats_consumer.rs#L27-L73)
-- [agent_state.rs:1-53](file://src/models/events/agent_state.rs#L1-L53)
+- [agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
+- [think_round_stats_consumer.rs:29-73](src/consumer/think_round_stats_consumer.rs#L29-L73)
+- [tool_exec_log_consumer.rs:26-53](src/consumer/tool_exec_log_consumer.rs#L26-L53)
+- [tool_exec_stats_consumer.rs:27-73](src/consumer/tool_exec_stats_consumer.rs#L27-L73)
+- [agent_state.rs:1-53](src/models/events/agent_state.rs#L1-L53)
 
 ## 配置优化与扩缩容
 - 配置要点：
@@ -339,9 +343,9 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
   - 建议在启动时校验并修复异常 Busy 状态（例如长时间处于 Busy 的 Agent 强制置 Idle）。
 
 章节来源
-- [message.rs:246-293](file://src/consumer/message.rs#L246-L293)
-- [agent_runtime_state.rs:1-19](file://src/pkg/agent_runtime_state.rs#L1-L19)
-- [tool_exec.rs:56-59](file://src/models/events/tool_exec.rs#L56-L59)
+- [message.rs:246-293](src/consumer/message.rs#L246-L293)
+- [agent_runtime_state.rs:1-19](src/pkg/agent_runtime_state.rs#L1-L19)
+- [tool_exec.rs:56-59](src/models/events/tool_exec.rs#L56-L59)
 
 ## 集成方式
 - 与模型提供商：
@@ -353,11 +357,11 @@ AOP --> TS["tool_exec_stats_consumer.rs"]
   - 向量搜索与全文检索在其它模块中提供，Agent 可通过工具间接使用。
 
 章节来源
-- [think_round.rs:1-124](file://src/models/events/think_round.rs#L1-L124)
-- [tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [think_round_stats_consumer.rs:29-73](file://src/consumer/think_round_stats_consumer.rs#L29-L73)
-- [tool_exec_log_consumer.rs:26-53](file://src/consumer/tool_exec_log_consumer.rs#L26-L53)
-- [tool_exec_stats_consumer.rs:27-73](file://src/consumer/tool_exec_stats_consumer.rs#L27-L73)
+- [think_round.rs:1-124](src/models/events/think_round.rs#L1-L124)
+- [tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [think_round_stats_consumer.rs:29-73](src/consumer/think_round_stats_consumer.rs#L29-L73)
+- [tool_exec_log_consumer.rs:26-53](src/consumer/tool_exec_log_consumer.rs#L26-L53)
+- [tool_exec_stats_consumer.rs:27-73](src/consumer/tool_exec_stats_consumer.rs#L27-L73)
 
 ## 结论
 Agent 循环消费者通过 AOP 事件将“唤醒—思考—沉淀”的核心流程与“日志—统计—状态”的横切关注点解耦。运行时域负责编排与发布，消费者专注记录与度量，状态管理器提供内存级并发安全与可见性。借助 BusyGuard 与最大思考深度限制，系统在异常与高负载下具备更强的鲁棒性。未来可按需引入分布式状态与更细粒度的超时控制，进一步提升可扩展性与稳定性。

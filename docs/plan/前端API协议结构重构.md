@@ -100,13 +100,7 @@ common/src/api/*.rs（协议结构体已存在，含 #[param(source)] 标注）
 
 ## 五、验收清单（2026-07-27 全部达成 ✅）
 
-- [x] 54 个拆参数方法全部改造完成（finance 14 + hr 18 + project 10 + system 6 + log_stats 2 + message 4）
-- [x] `StatsOptions` 和 `build_url_with_stats` 从 `frontend/src/api/mod.rs` 彻底删除，零残留调用
-- [x] `hr.rs::list_tools` 改为 `pub use super::finance::list_tools`，消除重复实现
-- [x] 前端编译通过：`cd frontend && cargo check --target wasm32-unknown-unknown` 零 error
-- [x] 前端测试通过：46 个测试 100% 通过
-- [x] 调用方（pages + hooks）全部同步更新，无遗漏编译错误
-- [x] body-only 和单字段方法保持不动，未过度结构体化
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -135,3 +129,4 @@ common/src/api/*.rs（协议结构体已存在，含 #[param(source)] 标注）
 4. **调用方更新**：[frontend/src/pages/](../../frontend/src/pages/) 和 [frontend/src/hooks/](../../frontend/src/hooks/) — 按编译错误定位，构造 Request 结构体传入（可在调用文件顶部定义 helper fn 减少重复构造代码）
 
 完成。
+

@@ -165,23 +165,11 @@ AgentKind::Remote = 2 → HTTP 远程（A2A 协议 / 兼容 REST Agent Service�
 
 ## 五、验收清单（2026-07-18 全部达成 ✅）
 
-- [x] AgentKind 枚举 4 个测试全通过（default/is_external/from_i32/to_i32）
-- [x] migration 应用验证：sqlite3 `PRAGMA table_info(agents)` 含 `kind|INTEGER|1|0|0`
-- [x] ExternalAgentConfig 8 个序列化测试：Cli 变体 round-trip / Remote 变体 round-trip / 旧 JSON 向后兼容（external_config=None）/ AgentPo 默认 kind=Local
-- [x] CodexRuntimeDao 3 个测试：短输出/长输出/超时 kill 路径覆盖
-- [x] A2aRuntimeDao 2 个测试：成功响应/超时路径覆盖
-- [x] ExternalCortex 7 个测试（备用实现）：prompt 无工具 / prompt 有工具 / embeddings 等行为
-- [x] PromptBuilder trait 3 个行为测试（builtin_tools / bound_tools / chained calls 累积）
-- [x] CodexAgentDal 5 个测试：委托 create / find_by_id / rebuild_vectors / 默认 builder 复用 / 重复 build
-- [x] A2aAgentDal 3 个测试：委托 create / get_agent / 默认 builder 复用
-- [x] RuntimeDomain awaken 路由测试：Local→think、Cli/Remote→invoke_external 两条路径
-- [x] HrDomain get_agent 路由测试：Local 装配 brain（wake_agent_brain 被调用）；外部不装配
-- [x] 单元测试合计：14 新增 + 120 回归 = 134 全部通过；cargo build 零错误
-- [x] 手动冒烟：POST /api/v1/agents/external kind=cli command=cat 创建成功，kind=Cli，external_config 正确序列化
-
 **未完成项说明**：前端 Agent 列表页/详情页的外部 Agent 创建入口与类型徽章（本计划 v5 范围不含，已拆分独立前端 Task 处理，后端 API 已就绪可直接对接）。
 
 ---
+
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ## 六、执行结果摘要（2026-07-18，14 个 Task 分阶段落地）
 
@@ -197,8 +185,8 @@ AgentKind::Remote = 2 → HTTP 远程（A2A 协议 / 兼容 REST Agent Service�
 | A2aAgentDal 派生 Dal | 3/3 tests PASS |
 | RuntimeDomain awaken 路由（按 kind 分发） | 2/2 tests PASS |
 | HrDomain get_agent 装配链路（Local vs 外部） | 1/1 test PASS |
-| 后端 lib 全量 cargo test（回归 120） | 120/120 tests PASS |
-| cargo build（全 workspace） | Zero errors |
+| 后端 lib 全量 后端全量测试（回归 120） | 120/120 tests PASS |
+| 工程编译 workspace） | Zero errors |
 | 手动冒烟（cat CLI Agent 创建） | kind=Cli + external_config 写入 DB 正确 |
 | 文档 docs/external_agent_design.md | 已创建，涵盖设计决策 + API 用法 |
 
@@ -233,3 +221,4 @@ AgentKind::Remote = 2 → HTTP 远程（A2A 协议 / 兼容 REST Agent Service�
    - 模式：管理操作（create/update/delete/list/get）**全部委托** `Arc<dyn AgentDal>`，仅 `prompt_builder()` 工厂方法返回自己的 builder
    - PromptBuilder 实现：继承 DefaultPromptBuilder（Deref），仅 override `build()` 头尾拼接自己的前缀/后缀
    - 代码入口样板：[agent_codex.rs](../../src/service/dal/agent_codex.rs)（委托 9 方法 + prompt_builder 工厂最简模式）
+

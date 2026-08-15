@@ -2,17 +2,28 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/dao/mod.rs](file://src/service/dao/mod.rs)
-- [src/service/dao/agent/mod.rs](file://src/service/dao/agent/mod.rs)
-- [src/service/dao/agent/sqlite.rs](file://src/service/dao/agent/sqlite.rs)
-- [src/service/dao/message/mod.rs](file://src/service/dao/message/mod.rs)
-- [src/service/dao/message/sqlite.rs](file://src/service/dao/message/sqlite.rs)
-- [src/service/dao/memory/mod.rs](file://src/service/dao/memory/mod.rs)
-- [src/service/dao/cortex/mod.rs](file://src/service/dao/cortex/mod.rs)
-- [src/service/dao/cortex/native/mod.rs](file://src/service/dao/cortex/native/mod.rs)
-- [src/pkg/storage/mod.rs](file://src/pkg/storage/mod.rs)
-- [src/pkg/storage/vector.rs](file://src/pkg/storage/vector.rs)
-- [common/src/error/mod.rs](file://common/src/error/mod.rs)
+- [src/service/dao/mod.rs](src/service/dao/mod.rs)
+- [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
+- [src/service/dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
+- [src/service/dao/message/mod.rs](src/service/dao/message/mod.rs)
+- [src/service/dao/message/sqlite.rs](src/service/dao/message/sqlite.rs)
+- [src/service/dao/memory/mod.rs](src/service/dao/memory/mod.rs)
+- [src/service/dao/cortex/mod.rs](src/service/dao/cortex/mod.rs)
+- [src/service/dao/cortex/native/mod.rs](src/service/dao/cortex/native/mod.rs)
+- [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
+- [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
+- [common/src/error/mod.rs](common/src/error/mod.rs)
+### 本文关联的三类文档（四类互引闭环）
+#### ① Design 决策快照
+- [entity_list_query_search_design.md](docs/design/entity_list_query_search_design.md) — DAO 层 push_query_filters 模式金标准 + query/list/count/search 四方法签名统一模式
+- [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — DAO 层 push_query_filters 提取要求 + COUNT 与 LIST 复用 WHERE
+- [sqlx_guide.md](docs/design/sqlx_guide.md) — SQLite STRICT 表 + 枚举 as 标注三要素 + 软删除 status=0 过滤约定
+#### ② Plan 落地快照
+- [批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — 13 域 DAO 改造清单 + push_query_filters 提取模式 + COUNT 与 LIST 100% 共享 WHERE
+- [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — 新增 DAO 模板（STRICT 表→PO→trait→push_query_filters→query/list/count→trait 注册→DAL→Domain→Handler）
+#### ④ RAG 原子知识卡
+- [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — 10 条硬约束（禁止 list 独立拼 WHERE / 禁止独立 count_by_xxx / PagedResult total 必须来自 COUNT 查询）
+- [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](docs/wiki/knowledge/zh/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB.md) — §3 查询三要素一致（STRICT 表 + status 转义 + 枚举 as）+ §红线 5 COUNT 与 LIST push_query_filters 必须同一函数
 </cite>
 
 ## 目录
@@ -58,12 +69,12 @@ L --> N
 ```
 
 图表来源
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
 
 章节来源
-- [src/service/dao/mod.rs:1-56](file://src/service/dao/mod.rs#L1-L56)
-- [src/pkg/storage/mod.rs:1-212](file://src/pkg/storage/mod.rs#L1-L212)
+- [src/service/dao/mod.rs:1-56](src/service/dao/mod.rs#L1-L56)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
 
 ## 核心组件
 - 存储门面 Storage：封装 SqlitePool、VectorStore、Stats，负责迁移、后端选择与 Stats 初始化。
@@ -73,11 +84,11 @@ L --> N
 - 统一错误模型：common::error::Result<T>，基于 Error/ErrorCode/ErrorType 的强类型错误体系。
 
 章节来源
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/service/dao/cortex/mod.rs:1-82](file://src/service/dao/cortex/mod.rs#L1-L82)
-- [src/service/dao/cortex/native/mod.rs:19-88](file://src/service/dao/cortex/native/mod.rs#L19-L88)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/service/dao/cortex/mod.rs:1-82](src/service/dao/cortex/mod.rs#L1-L82)
+- [src/service/dao/cortex/native/mod.rs:19-88](src/service/dao/cortex/native/mod.rs#L19-L88)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
 
 ## 架构总览
 DAO 层采用“接口 + 实现”的适配器模式：
@@ -110,11 +121,11 @@ Cortex-->>Caller : VectorIndexParams
 ```
 
 图表来源
-- [src/service/dao/agent/sqlite.rs:141-256](file://src/service/dao/agent/sqlite.rs#L141-L256)
-- [src/service/dao/message/sqlite.rs:429-527](file://src/service/dao/message/sqlite.rs#L429-L527)
-- [src/pkg/storage/mod.rs:56-122](file://src/pkg/storage/mod.rs#L56-L122)
-- [src/pkg/storage/vector.rs:22-74](file://src/pkg/storage/vector.rs#L22-L74)
-- [src/service/dao/cortex/mod.rs:24-45](file://src/service/dao/cortex/mod.rs#L24-L45)
+- [src/service/dao/agent/sqlite.rs:141-256](src/service/dao/agent/sqlite.rs#L141-L256)
+- [src/service/dao/message/sqlite.rs:429-527](src/service/dao/message/sqlite.rs#L429-L527)
+- [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
+- [src/pkg/storage/vector.rs:22-74](src/pkg/storage/vector.rs#L22-L74)
+- [src/service/dao/cortex/mod.rs:24-45](src/service/dao/cortex/mod.rs#L24-L45)
 
 ## 详细组件分析
 
@@ -139,12 +150,12 @@ Exec --> End(["返回结果"])
 ```
 
 图表来源
-- [src/service/dao/agent/sqlite.rs:141-256](file://src/service/dao/agent/sqlite.rs#L141-L256)
-- [src/service/dao/agent/sqlite.rs:331-383](file://src/service/dao/agent/sqlite.rs#L331-L383)
+- [src/service/dao/agent/sqlite.rs:141-256](src/service/dao/agent/sqlite.rs#L141-L256)
+- [src/service/dao/agent/sqlite.rs:331-383](src/service/dao/agent/sqlite.rs#L331-L383)
 
 章节来源
-- [src/service/dao/agent/mod.rs:12-90](file://src/service/dao/agent/mod.rs#L12-L90)
-- [src/service/dao/agent/sqlite.rs:64-329](file://src/service/dao/agent/sqlite.rs#L64-L329)
+- [src/service/dao/agent/mod.rs:12-90](src/service/dao/agent/mod.rs#L12-L90)
+- [src/service/dao/agent/sqlite.rs:64-329](src/service/dao/agent/sqlite.rs#L64-L329)
 
 ### Message DAO（SQLite + FTS5 + 向量）
 - 查询参数与搜索入参：MessageQuery 支持任务/项目/发送方/接收方/类型/状态/分页/组织隔离等组合条件；MessageSearch 统一关键词与向量搜索。
@@ -178,12 +189,12 @@ MessageDao <.. MessageVectorDao : "解耦"
 ```
 
 图表来源
-- [src/service/dao/message/mod.rs:61-176](file://src/service/dao/message/mod.rs#L61-L176)
-- [src/service/dao/message/mod.rs:178-211](file://src/service/dao/message/mod.rs#L178-L211)
+- [src/service/dao/message/mod.rs:61-176](src/service/dao/message/mod.rs#L61-L176)
+- [src/service/dao/message/mod.rs:178-211](src/service/dao/message/mod.rs#L178-L211)
 
 章节来源
-- [src/service/dao/message/mod.rs:9-57](file://src/service/dao/message/mod.rs#L9-L57)
-- [src/service/dao/message/sqlite.rs:71-527](file://src/service/dao/message/sqlite.rs#L71-L527)
+- [src/service/dao/message/mod.rs:9-57](src/service/dao/message/mod.rs#L9-L57)
+- [src/service/dao/message/sqlite.rs:71-527](src/service/dao/message/sqlite.rs#L71-L527)
 
 ### Memory DAO（短期记忆 + 长期知识图谱 + 向量）
 - 短期记忆：原始追踪不可修改删除，仅追加；索引可创建/更新/查询/遗忘；支持 FTS5 全文检索。
@@ -201,12 +212,12 @@ E --> F["vector: upsert_short_term_vector"]
 ```
 
 图表来源
-- [src/service/dao/memory/mod.rs:66-182](file://src/service/dao/memory/mod.rs#L66-L182)
-- [src/service/dao/memory/mod.rs:488-553](file://src/service/dao/memory/mod.rs#L488-L553)
+- [src/service/dao/memory/mod.rs:66-182](src/service/dao/memory/mod.rs#L66-L182)
+- [src/service/dao/memory/mod.rs:488-553](src/service/dao/memory/mod.rs#L488-L553)
 
 章节来源
-- [src/service/dao/memory/mod.rs:15-58](file://src/service/dao/memory/mod.rs#L15-L58)
-- [src/service/dao/memory/mod.rs:66-486](file://src/service/dao/memory/mod.rs#L66-L486)
+- [src/service/dao/memory/mod.rs:15-58](src/service/dao/memory/mod.rs#L15-L58)
+- [src/service/dao/memory/mod.rs:66-486](src/service/dao/memory/mod.rs#L66-L486)
 
 ### Cortex DAO（外部模型 API 集成）
 - 路由机制：CortexDispatcher 根据 provider.provider_type 路由到 native::registry 中的具体实现（当前 OpenAI 兼容）。
@@ -230,12 +241,12 @@ Impl-->>DAL : VectorIndexParams
 ```
 
 图表来源
-- [src/service/dao/cortex/mod.rs:24-45](file://src/service/dao/cortex/mod.rs#L24-L45)
-- [src/service/dao/cortex/native/mod.rs:90-139](file://src/service/dao/cortex/native/mod.rs#L90-L139)
+- [src/service/dao/cortex/mod.rs:24-45](src/service/dao/cortex/mod.rs#L24-L45)
+- [src/service/dao/cortex/native/mod.rs:90-139](src/service/dao/cortex/native/mod.rs#L90-L139)
 
 章节来源
-- [src/service/dao/cortex/mod.rs:1-82](file://src/service/dao/cortex/mod.rs#L1-L82)
-- [src/service/dao/cortex/native/mod.rs:19-88](file://src/service/dao/cortex/native/mod.rs#L19-L88)
+- [src/service/dao/cortex/mod.rs:1-82](src/service/dao/cortex/mod.rs#L1-L82)
+- [src/service/dao/cortex/native/mod.rs:19-88](src/service/dao/cortex/native/mod.rs#L19-L88)
 
 ### 存储适配器与向量后端
 - Storage 门面：
@@ -277,13 +288,13 @@ VectorStore <|.. LanceVectorStore
 ```
 
 图表来源
-- [src/pkg/storage/mod.rs:36-122](file://src/pkg/storage/mod.rs#L36-L122)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/pkg/storage/vector.rs:76-291](file://src/pkg/storage/vector.rs#L76-L291)
+- [src/pkg/storage/mod.rs:36-122](src/pkg/storage/mod.rs#L36-L122)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/vector.rs:76-291](src/pkg/storage/vector.rs#L76-L291)
 
 章节来源
-- [src/pkg/storage/mod.rs:56-122](file://src/pkg/storage/mod.rs#L56-L122)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/mod.rs:56-122](src/pkg/storage/mod.rs#L56-L122)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 
 ## 依赖关系分析
 - DAO 模块依赖 Storage 提供的 SqlitePool 与 VectorStore。
@@ -306,15 +317,15 @@ Cortex --> Err
 ```
 
 图表来源
-- [src/service/dao/agent/sqlite.rs:64-329](file://src/service/dao/agent/sqlite.rs#L64-L329)
-- [src/service/dao/message/sqlite.rs:71-527](file://src/service/dao/message/sqlite.rs#L71-L527)
-- [src/service/dao/memory/mod.rs:66-486](file://src/service/dao/memory/mod.rs#L66-L486)
-- [src/service/dao/cortex/mod.rs:24-45](file://src/service/dao/cortex/mod.rs#L24-L45)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
+- [src/service/dao/agent/sqlite.rs:64-329](src/service/dao/agent/sqlite.rs#L64-L329)
+- [src/service/dao/message/sqlite.rs:71-527](src/service/dao/message/sqlite.rs#L71-L527)
+- [src/service/dao/memory/mod.rs:66-486](src/service/dao/memory/mod.rs#L66-L486)
+- [src/service/dao/cortex/mod.rs:24-45](src/service/dao/cortex/mod.rs#L24-L45)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
 
 章节来源
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
 
 ## 性能考量
 - SQLite 连接池：max_connections=5，适合单文件写并发有限场景。
@@ -341,11 +352,11 @@ Cortex --> Err
   - 利用 common::error::Error 的结构化字段定位问题。
 
 章节来源
-- [src/service/dao/agent/sqlite.rs:141-157](file://src/service/dao/agent/sqlite.rs#L141-L157)
-- [src/service/dao/message/sqlite.rs:429-447](file://src/service/dao/message/sqlite.rs#L429-L447)
-- [src/pkg/storage/vector.rs:254-257](file://src/pkg/storage/vector.rs#L254-L257)
-- [src/pkg/storage/mod.rs:164-178](file://src/pkg/storage/mod.rs#L164-L178)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
+- [src/service/dao/agent/sqlite.rs:141-157](src/service/dao/agent/sqlite.rs#L141-L157)
+- [src/service/dao/message/sqlite.rs:429-447](src/service/dao/message/sqlite.rs#L429-L447)
+- [src/pkg/storage/vector.rs:254-257](src/pkg/storage/vector.rs#L254-L257)
+- [src/pkg/storage/mod.rs:164-178](src/pkg/storage/mod.rs#L164-L178)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
 
 ## 结论
 DAO 层通过清晰的接口抽象、SQLite 持久化、向量搜索适配器与外部模型 API 路由，实现了高内聚、低耦合的数据访问层。结合 FTS5 全文检索、多后端向量存储与统一错误模型，提供了类型安全、可扩展且高性能的数据访问能力。遵循四层单向调用与 RequestContext 上下文传递，确保代码可测试性与可维护性。
@@ -367,9 +378,9 @@ DAO 层通过清晰的接口抽象、SQLite 持久化、向量搜索适配器与
   - 在 CortexDaoRegistry::get 中增加路由分支。
 
 章节来源
-- [src/service/dao/mod.rs:29-55](file://src/service/dao/mod.rs#L29-L55)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [src/service/dao/cortex/native/mod.rs:101-124](file://src/service/dao/cortex/native/mod.rs#L101-L124)
+- [src/service/dao/mod.rs:29-55](src/service/dao/mod.rs#L29-L55)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [src/service/dao/cortex/native/mod.rs:101-124](src/service/dao/cortex/native/mod.rs#L101-L124)
 
 ### 性能调优建议
 - 调整向量搜索 top_k 与距离阈值。
@@ -385,5 +396,5 @@ DAO 层通过清晰的接口抽象、SQLite 持久化、向量搜索适配器与
 - 全文检索：FTS5 已内置，无需额外依赖。
 
 章节来源
-- [src/service/dao/cortex/mod.rs:24-45](file://src/service/dao/cortex/mod.rs#L24-L45)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
+- [src/service/dao/cortex/mod.rs:24-45](src/service/dao/cortex/mod.rs#L24-L45)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)

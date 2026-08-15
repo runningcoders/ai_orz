@@ -8,6 +8,9 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [tool_design.md](./tool_design.md) — 工具系统总纲（通用 Builtin 是其核心子集）
 > - [builtins_http_tool_design.md](./builtins_http_tool_design.md) — HTTP Tool Runtime（用户注册式，定位互补而非替代）
+> - 【② Plan 落地】[进程管理与shell_exec修复.md](../plan/进程管理与shell_exec修复.md) — shell_exec 黑名单 + fs 路径安全
+> - 【③ Wiki 长文】[工具注册表.md](docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md) — 内置工具系统子板块入口
+> - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §4 红线 2/3 shell_exec 命令黑名单 + fs 路径安全
 
 ## 概述
 

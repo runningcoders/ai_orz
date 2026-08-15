@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/organization/mod.rs](file://src/handlers/organization/mod.rs)
-- [src/handlers/organization/auth/login.rs](file://src/handlers/organization/auth/login.rs)
-- [src/handlers/organization/organizations/list_organizations.rs](file://src/handlers/organization/organizations/list_organizations.rs)
-- [src/handlers/organization/organizations/get_organization.rs](file://src/handlers/organization/organizations/get_organization.rs)
-- [src/handlers/organization/user/create_user.rs](file://src/handlers/organization/user/create_user.rs)
-- [common/src/api/organization.rs](file://common/src/api/organization.rs)
-- [src/service/domain/organization/mod.rs](file://src/service/domain/organization/mod.rs)
-- [src/service/dal/organization.rs](file://src/service/dal/organization.rs)
-- [src/models/organization.rs](file://src/models/organization.rs)
+- [src/handlers/organization/mod.rs](src/handlers/organization/mod.rs)
+- [src/handlers/organization/auth/login.rs](src/handlers/organization/auth/login.rs)
+- [src/handlers/organization/organizations/list_organizations.rs](src/handlers/organization/organizations/list_organizations.rs)
+- [src/handlers/organization/organizations/get_organization.rs](src/handlers/organization/organizations/get_organization.rs)
+- [src/handlers/organization/user/create_user.rs](src/handlers/organization/user/create_user.rs)
+- [common/src/api/organization.rs](common/src/api/organization.rs)
+- [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
+- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/models/organization.rs](src/models/organization.rs)
 </cite>
 
 ## 目录
@@ -57,16 +57,16 @@ L1 --> M1
 ```
 
 图表来源
-- [src/handlers/organization/organizations/list_organizations.rs:1-40](file://src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [src/handlers/organization/organizations/get_organization.rs:1-48](file://src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/handlers/organization/user/create_user.rs:1-72](file://src/handlers/organization/user/create_user.rs#L1-L72)
-- [src/handlers/organization/auth/login.rs:1-69](file://src/handlers/organization/auth/login.rs#L1-L69)
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
+- [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
+- [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 章节来源
-- [src/handlers/organization/mod.rs:1-15](file://src/handlers/organization/mod.rs#L1-L15)
+- [src/handlers/organization/mod.rs:1-15](src/handlers/organization/mod.rs#L1-L15)
 
 ## 核心组件
 - 适配器层（Handlers）
@@ -82,9 +82,9 @@ L1 --> M1
   - OrganizationPo：组织持久化对象，包含状态、范围、时间戳等字段。
 
 章节来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 ## 架构总览
 遵循严格四层单向调用：Handler → Domain → DAL → DAO；跨层统一通过 RequestContext 传递租户上下文（如 organization_id），实现多租户数据隔离。
@@ -105,10 +105,10 @@ H-->>C : "ListOrganizationsResponse"
 ```
 
 图表来源
-- [src/handlers/organization/organizations/list_organizations.rs:1-40](file://src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
+- [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 ## 详细组件分析
 
@@ -132,12 +132,12 @@ MapDTO --> Resp["返回 ListOrganizationsResponse"]
 ```
 
 图表来源
-- [src/handlers/organization/organizations/list_organizations.rs:1-40](file://src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 章节来源
-- [src/handlers/organization/organizations/list_organizations.rs:1-40](file://src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [common/src/api/organization.rs:122-140](file://common/src/api/organization.rs#L122-L140)
+- [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
+- [common/src/api/organization.rs:122-140](common/src/api/organization.rs#L122-L140)
 
 ### 获取组织详情接口
 - 路径与方法：GET /api/v1/organizations/{id}
@@ -164,12 +164,12 @@ H-->>C : "GetOrganizationResponse"
 ```
 
 图表来源
-- [src/handlers/organization/organizations/get_organization.rs:1-48](file://src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 章节来源
-- [src/handlers/organization/organizations/get_organization.rs:1-48](file://src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [common/src/api/organization.rs:188-201](file://common/src/api/organization.rs#L188-L201)
+- [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
+- [common/src/api/organization.rs:188-201](common/src/api/organization.rs#L188-L201)
 
 ### 创建用户接口
 - 路径与方法：POST /api/v1/organizations/users
@@ -197,11 +197,11 @@ H-->>C : "CreateUserResponse"
 ```
 
 图表来源
-- [src/handlers/organization/user/create_user.rs:1-72](file://src/handlers/organization/user/create_user.rs#L1-L72)
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 
 章节来源
-- [src/handlers/organization/user/create_user.rs:1-72](file://src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
 
 ### 登录接口
 - 路径与方法：POST /organization/auth/login
@@ -228,11 +228,11 @@ H-->>C : "Set-Cookie + ApiResponse{user_id, username, organization_id, token}"
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:1-69](file://src/handlers/organization/auth/login.rs#L1-L69)
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
+- [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
 
 章节来源
-- [src/handlers/organization/auth/login.rs:1-69](file://src/handlers/organization/auth/login.rs#L1-L69)
+- [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 
 ### 当前组织信息获取与更新
 - 能力概述：
@@ -245,7 +245,7 @@ H-->>C : "Set-Cookie + ApiResponse{user_id, username, organization_id, token}"
   - 这些接口通常依赖当前请求上下文中的 organization_id，确保只操作当前租户的数据。
 
 章节来源
-- [common/src/api/organization.rs:159-186](file://common/src/api/organization.rs#L159-L186)
+- [common/src/api/organization.rs:159-186](common/src/api/organization.rs#L159-L186)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的业务能力，不直接访问 DAL。
@@ -261,13 +261,13 @@ L --> M["Models(Po)"]
 ```
 
 图表来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
 
 章节来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 ## 性能考虑
 - 查询优化：
@@ -290,9 +290,9 @@ L --> M["Models(Po)"]
   - 查看日志与错误码，定位具体失败阶段。
 
 章节来源
-- [src/handlers/organization/organizations/get_organization.rs:1-48](file://src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [src/handlers/organization/user/create_user.rs:1-72](file://src/handlers/organization/user/create_user.rs#L1-L72)
-- [src/handlers/organization/auth/login.rs:1-69](file://src/handlers/organization/auth/login.rs#L1-L69)
+- [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 
 ## 结论
 组织管理模块通过清晰的层次划分与严格的上下文传递，实现了多租户数据隔离与权限控制。API 覆盖了组织 CRUD、用户管理、当前组织信息与认证登录等关键能力，适合企业级场景使用。建议在后续迭代中完善权限策略与审计日志，提升安全性与可观测性。
@@ -307,8 +307,8 @@ L --> M["Models(Po)"]
   - 响应体：包含组织 ID、名称、描述与总数
 
 章节来源
-- [src/handlers/organization/organizations/list_organizations.rs:1-40](file://src/handlers/organization/organizations/list_organizations.rs#L1-L40)
-- [common/src/api/organization.rs:122-140](file://common/src/api/organization.rs#L122-L140)
+- [src/handlers/organization/organizations/list_organizations.rs:1-40](src/handlers/organization/organizations/list_organizations.rs#L1-L40)
+- [common/src/api/organization.rs:122-140](common/src/api/organization.rs#L122-L140)
 
 ### 获取组织详情
 - 请求：GET /api/v1/organizations/{id}
@@ -318,8 +318,8 @@ L --> M["Models(Po)"]
   - 响应体：组织 ID、名称、描述、Base URL、状态、创建时间
 
 章节来源
-- [src/handlers/organization/organizations/get_organization.rs:1-48](file://src/handlers/organization/organizations/get_organization.rs#L1-L48)
-- [common/src/api/organization.rs:188-201](file://common/src/api/organization.rs#L188-L201)
+- [src/handlers/organization/organizations/get_organization.rs:1-48](src/handlers/organization/organizations/get_organization.rs#L1-L48)
+- [common/src/api/organization.rs:188-201](common/src/api/organization.rs#L188-L201)
 
 ### 创建用户
 - 请求：POST /api/v1/organizations/users
@@ -329,7 +329,7 @@ L --> M["Models(Po)"]
   - 注意：必须在已认证的组织上下文中调用
 
 章节来源
-- [src/handlers/organization/user/create_user.rs:1-72](file://src/handlers/organization/user/create_user.rs#L1-L72)
+- [src/handlers/organization/user/create_user.rs:1-72](src/handlers/organization/user/create_user.rs#L1-L72)
 
 ### 登录
 - 请求：POST /organization/auth/login
@@ -339,11 +339,11 @@ L --> M["Models(Po)"]
   - 响应头：Set-Cookie（包含 JWT）
 
 章节来源
-- [src/handlers/organization/auth/login.rs:1-69](file://src/handlers/organization/auth/login.rs#L1-L69)
+- [src/handlers/organization/auth/login.rs:1-69](src/handlers/organization/auth/login.rs#L1-L69)
 
 ### 当前组织信息
 - 获取当前组织：返回 OrganizationInfoResponse
 - 更新当前组织：支持 name、description、base_url 的可选更新
 
 章节来源
-- [common/src/api/organization.rs:159-186](file://common/src/api/organization.rs#L159-L186)
+- [common/src/api/organization.rs:159-186](common/src/api/organization.rs#L159-L186)

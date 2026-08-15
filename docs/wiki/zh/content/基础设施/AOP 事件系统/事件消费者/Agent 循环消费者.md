@@ -1,17 +1,17 @@
-# Agent 循环消费者
+# Agent 循环消费者（框架层）
 
 <cite>
 **本文引用的文件**
-- [agent_loop_consumer.rs](file://src/consumer/agent_loop_consumer.rs)
-- [mod.rs（consumer 注册）](file://src/consumer/mod.rs)
-- [consumer.rs（AOP Consumer trait）](file://src/pkg/aop/core/consumer.rs)
-- [registry.rs（AOP 调度与重试）](file://src/pkg/aop/core/registry.rs)
-- [agent_loop.rs（AgentLoopEvent）](file://src/models/events/agent_loop.rs)
-- [think_round.rs（ThinkRoundEvent）](file://src/models/events/think_round.rs)
-- [awakening.rs（awaken/settle 事件发布）](file://src/service/domain/runtime/awakening.rs)
-- [busy_guard.rs（Busy RAII 清理）](file://src/service/domain/runtime/busy_guard.rs)
-- [agent_runtime_state.rs（状态管理与 try_set_busy）](file://src/pkg/agent_runtime_state.rs)
-- [message.rs（MessageConsumer 唤醒流程）](file://src/consumer/message.rs)
+- [agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
+- [mod.rs（consumer 注册）](src/consumer/mod.rs)
+- [consumer.rs（AOP Consumer trait）](src/pkg/aop/core/consumer.rs)
+- [registry.rs（AOP 调度与重试）](src/pkg/aop/core/registry.rs)
+- [agent_loop.rs（AgentLoopEvent）](src/models/events/agent_loop.rs)
+- [think_round.rs（ThinkRoundEvent）](src/models/events/think_round.rs)
+- [awakening.rs（awaken/settle 事件发布）](src/service/domain/runtime/awakening.rs)
+- [busy_guard.rs（Busy RAII 清理）](src/service/domain/runtime/busy_guard.rs)
+- [agent_runtime_state.rs（状态管理与 try_set_busy）](src/pkg/agent_runtime_state.rs)
+- [message.rs（MessageConsumer 唤醒流程）](src/consumer/message.rs)
 </cite>
 
 ## 目录
@@ -27,12 +27,16 @@
 10. [附录：自定义事件处理最佳实践](#附录自定义事件处理最佳实践)
 
 ## 简介
-本文件面向“Agent 循环消费者”的实现与使用，聚焦 AgentLoopConsumer 的设计与行为，覆盖以下主题：
+本文件面向"Agent 循环消费者"的实现与使用，聚焦 AgentLoopConsumer 的设计与行为，覆盖以下主题：
 - Agent 生命周期事件的处理：唤醒、思考轮次、沉淀等
 - 状态转换逻辑：Idle/Busy/Resting 的原子切换与保护
 - 异步处理机制：同步/异步消费模式、重试与退避
 - 事件过滤规则、错误重试策略与性能优化技巧
 - 自定义 Agent 事件处理的示例与最佳实践
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「Agent 循环消费者」主题的 **框架层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [Agent 循环消费者（代码落地层）](docs/wiki/zh/content/核心模块/AOP 事件系统/消费者框架/Agent 循环消费者.md)
 
 ## 项目结构
 AgentLoopConsumer 位于 consumer 层，订阅 AOP 事件中心发布的 agent.loop 与 agent.think.round 事件，用于记录 Agent 循环的开始/结束与每轮 think 的指标。它通过统一的 Consumer trait 接入 AOP 框架，并遵循四层单向调用原则（Adapter → Domain → DAL → DAO），自身属于 Adapter 层的事件消费实现。
@@ -57,14 +61,14 @@ REG --> |Async 入队| Q
 ```
 
 图表来源
-- [agent_loop_consumer.rs:26-43](file://src/consumer/agent_loop_consumer.rs#L26-L43)
-- [consumer.rs:6-13](file://src/pkg/aop/core/consumer.rs#L6-L13)
-- [registry.rs:394-435](file://src/pkg/aop/core/registry.rs#L394-L435)
-- [awakening.rs:775-804](file://src/service/domain/runtime/awakening.rs#L775-L804)
+- [agent_loop_consumer.rs:26-43](src/consumer/agent_loop_consumer.rs#L26-L43)
+- [consumer.rs:6-13](src/pkg/aop/core/consumer.rs#L6-L13)
+- [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
 
 章节来源
-- [mod.rs（consumer 注册）:16-37](file://src/consumer/mod.rs#L16-L37)
-- [consumer.rs:6-13](file://src/pkg/aop/core/consumer.rs#L6-L13)
+- [mod.rs（consumer 注册）:16-37](src/consumer/mod.rs#L16-L37)
+- [consumer.rs:6-13](src/pkg/aop/core/consumer.rs#L6-L13)
 
 ## 核心组件
 - AgentLoopConsumer：订阅 agent.loop 与 agent.think.round 事件，进行日志记录与可观测性采集。
@@ -75,12 +79,12 @@ REG --> |Async 入队| Q
 - MessageConsumer：消息到达后触发 Agent 唤醒，内部会设置 Busy、发布循环事件、执行 awaken 或 settle。
 
 章节来源
-- [agent_loop_consumer.rs:12-43](file://src/consumer/agent_loop_consumer.rs#L12-L43)
-- [agent_loop.rs:4-23](file://src/models/events/agent_loop.rs#L4-L23)
-- [think_round.rs:4-39](file://src/models/events/think_round.rs#L4-L39)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
-- [agent_runtime_state.rs:85-119](file://src/pkg/agent_runtime_state.rs#L85-L119)
-- [message.rs:290-317](file://src/consumer/message.rs#L290-L317)
+- [agent_loop_consumer.rs:12-43](src/consumer/agent_loop_consumer.rs#L12-L43)
+- [agent_loop.rs:4-23](src/models/events/agent_loop.rs#L4-L23)
+- [think_round.rs:4-39](src/models/events/think_round.rs#L4-L39)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
+- [message.rs:290-317](src/consumer/message.rs#L290-L317)
 
 ## 架构总览
 Agent 循环的生命周期由 RuntimeDomain 在 awaken 与 sleep_and_settle 两个阶段发布事件；AgentLoopConsumer 作为同步消费者记录这些事件，便于追踪与监控。
@@ -103,10 +107,10 @@ Producer->>State : set_idle(agent_id) via BusyGuard drop
 ```
 
 图表来源
-- [awakening.rs:775-804](file://src/service/domain/runtime/awakening.rs#L775-L804)
-- [agent_loop.rs:25-59](file://src/models/events/agent_loop.rs#L25-L59)
-- [agent_loop_consumer.rs:43-74](file://src/consumer/agent_loop_consumer.rs#L43-L74)
-- [busy_guard.rs:21-32](file://src/service/domain/runtime/busy_guard.rs#L21-L32)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
+- [agent_loop.rs:25-59](src/models/events/agent_loop.rs#L25-L59)
+- [agent_loop_consumer.rs:43-74](src/consumer/agent_loop_consumer.rs#L43-L74)
+- [busy_guard.rs:21-32](src/service/domain/runtime/busy_guard.rs#L21-L32)
 
 ## 详细组件分析
 
@@ -138,12 +142,12 @@ Skip1 --> End
 ```
 
 图表来源
-- [agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
-- [agent_loop.rs:25-59](file://src/models/events/agent_loop.rs#L25-L59)
-- [think_round.rs:41-105](file://src/models/events/think_round.rs#L41-L105)
+- [agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
+- [agent_loop.rs:25-59](src/models/events/agent_loop.rs#L25-L59)
+- [think_round.rs:41-105](src/models/events/think_round.rs#L41-L105)
 
 章节来源
-- [agent_loop_consumer.rs:26-97](file://src/consumer/agent_loop_consumer.rs#L26-L97)
+- [agent_loop_consumer.rs:26-97](src/consumer/agent_loop_consumer.rs#L26-L97)
 
 ### Agent 生命周期事件发布
 - awaken 阶段：
@@ -178,14 +182,14 @@ RT->>ST : set_idle(agent_id) via BusyGuard
 ```
 
 图表来源
-- [message.rs:290-317](file://src/consumer/message.rs#L290-L317)
-- [awakening.rs:775-804](file://src/service/domain/runtime/awakening.rs#L775-L804)
-- [busy_guard.rs:21-32](file://src/service/domain/runtime/busy_guard.rs#L21-L32)
-- [agent_runtime_state.rs:85-119](file://src/pkg/agent_runtime_state.rs#L85-L119)
+- [message.rs:290-317](src/consumer/message.rs#L290-L317)
+- [awakening.rs:775-804](src/service/domain/runtime/awakening.rs#L775-L804)
+- [busy_guard.rs:21-32](src/service/domain/runtime/busy_guard.rs#L21-L32)
+- [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
 
 章节来源
-- [awakening.rs:775-829](file://src/service/domain/runtime/awakening.rs#L775-L829)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [awakening.rs:775-829](src/service/domain/runtime/awakening.rs#L775-L829)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ### 状态转换与并发安全
 - 状态枚举：Idle、Busy、Resting
@@ -203,20 +207,20 @@ Resting --> Idle : "set_idle"
 ```
 
 图表来源
-- [agent_runtime_state.rs:85-119](file://src/pkg/agent_runtime_state.rs#L85-L119)
-- [busy_guard.rs:21-32](file://src/service/domain/runtime/busy_guard.rs#L21-L32)
+- [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
+- [busy_guard.rs:21-32](src/service/domain/runtime/busy_guard.rs#L21-L32)
 
 章节来源
-- [agent_runtime_state.rs:85-119](file://src/pkg/agent_runtime_state.rs#L85-L119)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ### 思考轮次事件与指标
 - ThinkRoundEvent 记录每轮 think 的轮次、耗时、是否触发工具调用、模型信息、token 用量、组织/用户/任务/项目上下文
 - AgentLoopConsumer 以 debug 级别记录关键指标，便于问题定位与性能分析
 
 章节来源
-- [think_round.rs:4-124](file://src/models/events/think_round.rs#L4-L124)
-- [agent_loop_consumer.rs:75-90](file://src/consumer/agent_loop_consumer.rs#L75-L90)
+- [think_round.rs:4-124](src/models/events/think_round.rs#L4-L124)
+- [agent_loop_consumer.rs:75-90](src/consumer/agent_loop_consumer.rs#L75-L90)
 
 ## 依赖关系分析
 - AgentLoopConsumer 依赖 AOP Consumer trait 与 Event 类型
@@ -236,14 +240,14 @@ ST --> REG
 ```
 
 图表来源
-- [consumer.rs:6-13](file://src/pkg/aop/core/consumer.rs#L6-L13)
-- [agent_loop.rs:4-23](file://src/models/events/agent_loop.rs#L4-L23)
-- [think_round.rs:4-39](file://src/models/events/think_round.rs#L4-L39)
-- [registry.rs:394-435](file://src/pkg/aop/core/registry.rs#L394-L435)
+- [consumer.rs:6-13](src/pkg/aop/core/consumer.rs#L6-L13)
+- [agent_loop.rs:4-23](src/models/events/agent_loop.rs#L4-L23)
+- [think_round.rs:4-39](src/models/events/think_round.rs#L4-L39)
+- [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
 
 章节来源
-- [consumer.rs:6-13](file://src/pkg/aop/core/consumer.rs#L6-L13)
-- [registry.rs:394-435](file://src/pkg/aop/core/registry.rs#L394-L435)
+- [consumer.rs:6-13](src/pkg/aop/core/consumer.rs#L6-L13)
+- [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
 
 ## 性能考量
 - 同步消费模式：AgentLoopConsumer 采用 Sync 模式，避免额外队列开销，适合轻量日志记录
@@ -255,8 +259,8 @@ ST --> REG
 - 指标埋点：AOP 框架在 publish/consume/success/failure 处埋点，结合 AopStatsHook 收集统计
 
 章节来源
-- [consumer.rs:32-70](file://src/pkg/aop/core/consumer.rs#L32-L70)
-- [registry.rs:394-435](file://src/pkg/aop/core/registry.rs#L394-L435)
+- [consumer.rs:32-70](src/pkg/aop/core/consumer.rs#L32-L70)
+- [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
 
 ## 故障排查指南
 - Agent 永远 Busy：
@@ -274,10 +278,10 @@ ST --> REG
   - 使用 try_set_busy 替代先查后设，避免 TOCTOU
 
 章节来源
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
-- [agent_runtime_state.rs:85-119](file://src/pkg/agent_runtime_state.rs#L85-L119)
-- [consumer.rs:32-70](file://src/pkg/aop/core/consumer.rs#L32-L70)
-- [registry.rs:394-435](file://src/pkg/aop/core/registry.rs#L394-L435)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent_runtime_state.rs:85-119](src/pkg/agent_runtime_state.rs#L85-L119)
+- [consumer.rs:32-70](src/pkg/aop/core/consumer.rs#L32-L70)
+- [registry.rs:394-435](src/pkg/aop/core/registry.rs#L394-L435)
 
 ## 结论
 AgentLoopConsumer 通过 AOP 框架订阅 Agent 循环的关键事件，提供轻量、可靠的日志与可观测性支持。结合 BusyGuard 与 try_set_busy，系统实现了安全的状态转换与并发控制。通过合理的消费模式、事件过滤与重试退避策略，保证了高吞吐下的稳定性与性能。
@@ -298,5 +302,5 @@ AgentLoopConsumer 通过 AOP 框架订阅 Agent 循环的关键事件，提供�
   - 在 consumer/mod.rs 的 init 中注册新消费者
 
 章节来源
-- [consumer.rs:6-70](file://src/pkg/aop/core/consumer.rs#L6-L70)
-- [mod.rs（consumer 注册）:16-37](file://src/consumer/mod.rs#L16-L37)
+- [consumer.rs:6-70](src/pkg/aop/core/consumer.rs#L6-L70)
+- [mod.rs（consumer 注册）:16-37](src/consumer/mod.rs#L16-L37)

@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/user/mod.rs](file://src/handlers/user/mod.rs)
-- [src/handlers/user/profile/mod.rs](file://src/handlers/user/profile/mod.rs)
-- [src/handlers/user/profile/get_current_user.rs](file://src/handlers/user/profile/get_current_user.rs)
-- [src/handlers/user/profile/update_current_user.rs](file://src/handlers/user/profile/update_current_user.rs)
-- [common/src/api/user.rs](file://common/src/api/user.rs)
-- [src/models/user.rs](file://src/models/user.rs)
-- [src/service/domain/organization/user.rs](file://src/service/domain/organization/user.rs)
-- [common/src/enums/user.rs](file://common/src/enums/user.rs)
-- [migrations/20260810000000_users_preferences.sql](file://migrations/20260810000000_users_preferences.sql)
-- [frontend/src/pages/user/profile.rs](file://frontend/src/pages/user/profile.rs)
+- [src/handlers/user/mod.rs](src/handlers/user/mod.rs)
+- [src/handlers/user/profile/mod.rs](src/handlers/user/profile/mod.rs)
+- [src/handlers/user/profile/get_current_user.rs](src/handlers/user/profile/get_current_user.rs)
+- [src/handlers/user/profile/update_current_user.rs](src/handlers/user/profile/update_current_user.rs)
+- [common/src/api/user.rs](common/src/api/user.rs)
+- [src/models/user.rs](src/models/user.rs)
+- [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs)
+- [common/src/enums/user.rs](common/src/enums/user.rs)
+- [migrations/20260810000000_users_preferences.sql](migrations/20260810000000_users_preferences.sql)
+- [frontend/src/pages/user/profile.rs](frontend/src/pages/user/profile.rs)
 </cite>
 
 ## 更新摘要
@@ -68,17 +68,17 @@ J["Frontend<br/>Profile Page"] -.-> C
 ```
 
 **图表来源**
-- [src/handlers/user/profile/get_current_user.rs:1-71](file://src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](file://src/handlers/user/profile/update_current_user.rs#L1-L195)
-- [common/src/api/user.rs:1-228](file://common/src/api/user.rs#L1-L228)
-- [src/models/user.rs:1-146](file://src/models/user.rs#L1-L146)
-- [src/service/domain/organization/user.rs:1-124](file://src/service/domain/organization/user.rs#L1-L124)
-- [migrations/20260810000000_users_preferences.sql:1-13](file://migrations/20260810000000_users_preferences.sql#L1-L13)
-- [frontend/src/pages/user/profile.rs:1-148](file://frontend/src/pages/user/profile.rs#L1-L148)
+- [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [common/src/api/user.rs:1-228](common/src/api/user.rs#L1-L228)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
+- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
+- [frontend/src/pages/user/profile.rs:1-148](frontend/src/pages/user/profile.rs#L1-L148)
 
 章节来源
-- [src/handlers/user/mod.rs:1-4](file://src/handlers/user/mod.rs#L1-L4)
-- [src/handlers/user/profile/mod.rs:1-8](file://src/handlers/user/profile/mod.rs#L1-L8)
+- [src/handlers/user/mod.rs:1-4](src/handlers/user/mod.rs#L1-L4)
+- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L8)
 
 ## 核心组件
 - 请求/响应 DTO
@@ -96,10 +96,10 @@ J["Frontend<br/>Profile Page"] -.-> C
 **更新**：所有 DTO 和模型已扩展支持用户偏好字段，支持 Markdown 格式的偏好内容。
 
 章节来源
-- [common/src/api/user.rs:8-60](file://common/src/api/user.rs#L8-L60)
-- [src/models/user.rs:10-42](file://src/models/user.rs#L10-L42)
-- [src/service/domain/organization/user.rs:119-122](file://src/service/domain/organization/user.rs#L119-L122)
-- [common/src/enums/user.rs:8-21](file://common/src/enums/user.rs#L8-L21)
+- [common/src/api/user.rs:8-60](common/src/api/user.rs#L8-L60)
+- [src/models/user.rs:10-42](src/models/user.rs#L10-L42)
+- [src/service/domain/organization/user.rs:119-122](src/service/domain/organization/user.rs#L119-L122)
+- [common/src/enums/user.rs:8-21](common/src/enums/user.rs#L8-L21)
 
 ## 架构总览
 本模块严格遵循 Adapter → Domain → DAL → DAO 的单向调用链：
@@ -126,12 +126,12 @@ Handler-->>Client : "UserInfoResponse(含 preferences)"
 ```
 
 **图表来源**
-- [src/handlers/user/profile/get_current_user.rs:18-70](file://src/handlers/user/profile/get_current_user.rs#L18-L70)
-- [src/service/domain/organization/user.rs:119-122](file://src/service/domain/organization/user.rs#L119-L122)
+- [src/handlers/user/profile/get_current_user.rs:18-70](src/handlers/user/profile/get_current_user.rs#L18-L70)
+- [src/service/domain/organization/user.rs:119-122](src/service/domain/organization/user.rs#L119-L122)
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:1-71](file://src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/service/domain/organization/user.rs:1-124](file://src/service/domain/organization/user.rs#L1-L124)
+- [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
+- [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
 
 ## 详细组件分析
 
@@ -156,11 +156,11 @@ BuildResp --> Return["返回 GetCurrentUserResponse"]
 ```
 
 **图表来源**
-- [src/handlers/user/profile/get_current_user.rs:18-70](file://src/handlers/user/profile/get_current_user.rs#L18-L70)
+- [src/handlers/user/profile/get_current_user.rs:18-70](src/handlers/user/profile/get_current_user.rs#L18-L70)
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:1-71](file://src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [common/src/api/user.rs:8-40](file://common/src/api/user.rs#L8-L40)
+- [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
+- [common/src/api/user.rs:8-40](common/src/api/user.rs#L8-L40)
 
 ### 更新当前用户信息（PUT /api/v1/user/me）
 - 功能：允许当前用户更新显示名称、邮箱、密码哈希、**用户偏好**
@@ -208,12 +208,12 @@ Handler-->>Client : "UpdateCurrentUserResponse"
 ```
 
 **图表来源**
-- [src/handlers/user/profile/update_current_user.rs:18-102](file://src/handlers/user/profile/update_current_user.rs#L18-L102)
-- [src/service/domain/organization/user.rs:48-51](file://src/service/domain/organization/user.rs#L48-L51)
+- [src/handlers/user/profile/update_current_user.rs:18-102](src/handlers/user/profile/update_current_user.rs#L18-L102)
+- [src/service/domain/organization/user.rs:48-51](src/service/domain/organization/user.rs#L48-L51)
 
 章节来源
-- [src/handlers/user/profile/update_current_user.rs:1-195](file://src/handlers/user/profile/update_current_user.rs#L1-L195)
-- [common/src/api/user.rs:42-60](file://common/src/api/user.rs#L42-L60)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [common/src/api/user.rs:42-60](common/src/api/user.rs#L42-L60)
 
 ### 数据模型与枚举
 - UserPo：包含 id、organization_id、username、display_name、email、password_hash、role、status、created_by、modified_by、created_at、updated_at、**preferences**
@@ -253,13 +253,13 @@ UserPo --> UserStatus : "使用"
 ```
 
 **图表来源**
-- [src/models/user.rs:10-42](file://src/models/user.rs#L10-L42)
-- [common/src/enums/user.rs:8-21](file://common/src/enums/user.rs#L8-L21)
-- [common/src/enums/user.rs:114-147](file://common/src/enums/user.rs#L114-L147)
+- [src/models/user.rs:10-42](src/models/user.rs#L10-L42)
+- [common/src/enums/user.rs:8-21](common/src/enums/user.rs#L8-L21)
+- [common/src/enums/user.rs:114-147](common/src/enums/user.rs#L114-L147)
 
 章节来源
-- [src/models/user.rs:1-146](file://src/models/user.rs#L1-L146)
-- [common/src/enums/user.rs:1-212](file://common/src/enums/user.rs#L1-L212)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [common/src/enums/user.rs:1-212](common/src/enums/user.rs#L1-L212)
 
 ### 数据库迁移与存储
 - **迁移文件**：`migrations/20260810000000_users_preferences.sql`
@@ -268,7 +268,7 @@ UserPo --> UserStatus : "使用"
 - **访问控制**：只允许用户本人通过 update_current_user 修改，Agent 无写入路径
 
 章节来源
-- [migrations/20260810000000_users_preferences.sql:1-13](file://migrations/20260810000000_users_preferences.sql#L1-L13)
+- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
 
 ### 前端界面增强
 - **个人资料页面**：新增"我的偏好"区块，支持 Markdown 格式编辑与展示
@@ -277,7 +277,7 @@ UserPo --> UserStatus : "使用"
 - **用户体验**：支持空状态提示、编辑按钮、完成编辑等操作
 
 章节来源
-- [frontend/src/pages/user/profile.rs:1-148](file://frontend/src/pages/user/profile.rs#L1-L148)
+- [frontend/src/pages/user/profile.rs:1-148](frontend/src/pages/user/profile.rs#L1-L148)
 
 ## 依赖关系分析
 - Handler 依赖：
@@ -306,17 +306,17 @@ M --> P["Preferences Field"]
 ```
 
 **图表来源**
-- [src/handlers/user/profile/get_current_user.rs:1-71](file://src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](file://src/handlers/user/profile/update_current_user.rs#L1-L195)
-- [src/service/domain/organization/user.rs:1-124](file://src/service/domain/organization/user.rs#L1-L124)
-- [common/src/api/user.rs:1-228](file://common/src/api/user.rs#L1-L228)
-- [src/models/user.rs:1-146](file://src/models/user.rs#L1-L146)
-- [common/src/enums/user.rs:1-212](file://common/src/enums/user.rs#L1-L212)
+- [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
+- [common/src/api/user.rs:1-228](common/src/api/user.rs#L1-L228)
+- [src/models/user.rs:1-146](src/models/user.rs#L1-L146)
+- [common/src/enums/user.rs:1-212](common/src/enums/user.rs#L1-L212)
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:1-71](file://src/handlers/user/profile/get_current_user.rs#L1-L71)
-- [src/handlers/user/profile/update_current_user.rs:1-195](file://src/handlers/user/profile/update_current_user.rs#L1-L195)
-- [src/service/domain/organization/user.rs:1-124](file://src/service/domain/organization/user.rs#L1-L124)
+- [src/handlers/user/profile/get_current_user.rs:1-71](src/handlers/user/profile/get_current_user.rs#L1-L71)
+- [src/handlers/user/profile/update_current_user.rs:1-195](src/handlers/user/profile/update_current_user.rs#L1-L195)
+- [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
 
 ## 性能考虑
 - 单次查询：获取与更新均基于用户 ID 精确查询，时间复杂度 O(1)
@@ -341,8 +341,8 @@ M --> P["Preferences Field"]
   - **检查 agent_id 上下文，确认是否为 Agent 调用**
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:22-35](file://src/handlers/user/profile/get_current_user.rs#L22-L35)
-- [src/handlers/user/profile/update_current_user.rs:23-57](file://src/handlers/user/profile/update_current_user.rs#L23-L57)
+- [src/handlers/user/profile/get_current_user.rs:22-35](src/handlers/user/profile/get_current_user.rs#L22-L35)
+- [src/handlers/user/profile/update_current_user.rs:23-57](src/handlers/user/profile/update_current_user.rs#L23-L57)
 
 ## 结论
 当前用户管理模块提供了安全的个人信息获取与更新能力，**新增用户偏好双源机制**，支持用户通过 Markdown 格式设置个人偏好。模块遵循严格的分层架构与最小权限原则，实现了 Agent 安全守卫，确保只有真人用户才能修改偏好数据。后续可扩展头像上传等功能，保持与现有 DTO 和 Domain 的一致性。
@@ -362,7 +362,7 @@ M --> P["Preferences Field"]
 **更新**：所有响应现在都包含用户偏好信息，支持 Markdown 格式内容。
 
 章节来源
-- [common/src/api/user.rs:8-60](file://common/src/api/user.rs#L8-L60)
+- [common/src/api/user.rs:8-60](common/src/api/user.rs#L8-L60)
 
 ### 调用序列图（获取与更新）
 ```mermaid
@@ -388,9 +388,9 @@ H2-->>C : "UpdateCurrentUserResponse"
 ```
 
 **图表来源**
-- [src/handlers/user/profile/get_current_user.rs:18-70](file://src/handlers/user/profile/get_current_user.rs#L18-L70)
-- [src/handlers/user/profile/update_current_user.rs:18-102](file://src/handlers/user/profile/update_current_user.rs#L18-L102)
-- [src/service/domain/organization/user.rs:119-122](file://src/service/domain/organization/user.rs#L119-L122)
+- [src/handlers/user/profile/get_current_user.rs:18-70](src/handlers/user/profile/get_current_user.rs#L18-L70)
+- [src/handlers/user/profile/update_current_user.rs:18-102](src/handlers/user/profile/update_current_user.rs#L18-L102)
+- [src/service/domain/organization/user.rs:119-122](src/service/domain/organization/user.rs#L119-L122)
 
 ### 安全与隐私保护
 - 身份认证：JWT 中间件确保 RequestContext.user_id 有效
@@ -401,8 +401,8 @@ H2-->>C : "UpdateCurrentUserResponse"
 - **偏好数据隔离**：用户自述偏好与 Agent 观察总结的偏好走不同数据源
 
 章节来源
-- [src/handlers/user/profile/update_current_user.rs:40-57](file://src/handlers/user/profile/update_current_user.rs#L40-L57)
-- [src/models/user.rs:37-41](file://src/models/user.rs#L37-L41)
+- [src/handlers/user/profile/update_current_user.rs:40-57](src/handlers/user/profile/update_current_user.rs#L40-L57)
+- [src/models/user.rs:37-41](src/models/user.rs#L37-L41)
 
 ### 用户偏好最佳实践
 - **内容格式**：使用 Markdown 格式编写偏好，支持列表、强调、链接等语法
@@ -412,8 +412,8 @@ H2-->>C : "UpdateCurrentUserResponse"
 - **隐私考虑**：避免在偏好中包含敏感个人信息
 
 章节来源
-- [frontend/src/pages/user/profile.rs:81-112](file://frontend/src/pages/user/profile.rs#L81-L112)
-- [migrations/20260810000000_users_preferences.sql:1-13](file://migrations/20260810000000_users_preferences.sql#L1-L13)
+- [frontend/src/pages/user/profile.rs:81-112](frontend/src/pages/user/profile.rs#L81-L112)
+- [migrations/20260810000000_users_preferences.sql:1-13](migrations/20260810000000_users_preferences.sql#L1-L13)
 
 ### 扩展建议（头像上传）
 - 头像上传：建议复用附件/资源管理模块，新增头像专用用途标识与访问控制

@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [memory.rs](file://src/models/memory.rs)
-- [memory.rs](file://common/src/enums/memory.rs)
-- [memory.rs](file://src/service/dal/memory.rs)
-- [memory.rs](file://src/service/domain/runtime/memory.rs)
-- [save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
-- [settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-- [query_memory.rs](file://src/handlers/hr/agent/query_memory.rs)
-- [knowledge_graph.rs](file://frontend/src/pages/hr/knowledge_graph.rs)
-- [20260724000000_knowledge_node_tags.sql](file://migrations/20260724000000_knowledge_node_tags.sql)
-- [20260731000001_knowledge_node_is_published.sql](file://migrations/20260731000001_knowledge_node_is_published.sql)
-- [2026-07-31-knowledge-graph-published-sharing.md](file://docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md)
-- [TEMPLATE_MEMORY_COGNITION/skill.md](file://src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md)
+- [memory.rs](src/models/memory.rs)
+- [memory.rs](common/src/enums/memory.rs)
+- [memory.rs](src/service/dal/memory.rs)
+- [memory.rs](src/service/domain/runtime/memory.rs)
+- [save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
+- [settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [knowledge_graph.rs](frontend/src/pages/hr/knowledge_graph.rs)
+- [20260724000000_knowledge_node_tags.sql](migrations/20260724000000_knowledge_node_tags.sql)
+- [20260731000001_knowledge_node_is_published.sql](migrations/20260731000001_knowledge_node_is_published.sql)
+- [2026-07-31-knowledge-graph-published-sharing.md](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md)
+- [TEMPLATE_MEMORY_COGNITION/skill.md](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md)
 </cite>
 
 ## 目录
@@ -75,20 +75,20 @@ O1 --> S2
 ```
 
 图表来源
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
-- [save_long_term_memory.rs:21-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [query_memory.rs:21-74](file://src/handlers/hr/agent/query_memory.rs#L21-L74)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
+- [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
 
 章节来源
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
-- [save_long_term_memory.rs:21-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [query_memory.rs:21-74](file://src/handlers/hr/agent/query_memory.rs#L21-L74)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
+- [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
 
 ## 核心组件
 - 模型与枚举
@@ -105,15 +105,15 @@ O1 --> S2
   - query_memory：结构化过滤查询，含权限控制（他人仅见 published）。
 
 章节来源
-- [memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [memory.rs:12-30](file://common/src/enums/memory.rs#L12-L30)
-- [memory.rs:96-182](file://common/src/enums/memory.rs#L96-L182)
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
-- [save_long_term_memory.rs:21-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [query_memory.rs:21-74](file://src/handlers/hr/agent/query_memory.rs#L21-L74)
+- [memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
+- [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
+- [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
 
 ## 架构总览
 长期记忆层通过 DAL 编排 DAO 与向量服务，提供统一的搜索、查询、图谱遍历与沉淀能力。Domain 作为门面屏蔽 DAL 细节，Handler/工具通过 Domain 暴露能力。
@@ -144,10 +144,10 @@ H-->>U : 响应
 ```
 
 图表来源
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
 
 ## 详细组件分析
 
@@ -215,14 +215,14 @@ KnowledgeReferencePo <.. Memory : "引用"
 ```
 
 图表来源
-- [memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [memory.rs:12-30](file://common/src/enums/memory.rs#L12-L30)
-- [memory.rs:96-182](file://common/src/enums/memory.rs#L96-L182)
+- [memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
+- [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
 
 章节来源
-- [memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [memory.rs:12-30](file://common/src/enums/memory.rs#L12-L30)
-- [memory.rs:96-182](file://common/src/enums/memory.rs#L96-L182)
+- [memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
+- [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
 
 ### 知识节点创建流程（AI 沉淀）
 - 触发方式
@@ -256,16 +256,16 @@ MarkSettled --> EndDone["结束沉淀完成"]
 ```
 
 图表来源
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs:148-177](file://src/service/dal/memory.rs#L148-L177)
-- [memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
-- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](file://src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [memory.rs:148-177](src/service/dal/memory.rs#L148-L177)
+- [memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
 章节来源
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs:148-177](file://src/service/dal/memory.rs#L148-L177)
-- [memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
-- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](file://src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [memory.rs:148-177](src/service/dal/memory.rs#L148-L177)
+- [memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
 ### 关系管理与图谱更新策略
 - 关系抽取
@@ -295,13 +295,13 @@ H-->>A : 响应
 ```
 
 图表来源
-- [save_long_term_memory.rs:21-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
+- [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
 
 章节来源
-- [save_long_term_memory.rs:21-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
-- [memory.rs:96-182](file://common/src/enums/memory.rs#L96-L182)
-- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](file://src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
+- [save_long_term_memory.rs:21-109](src/handlers/hr/agent/save_long_term_memory.rs#L21-L109)
+- [memory.rs:96-182](common/src/enums/memory.rs#L96-L182)
+- [TEMPLATE_MEMORY_COGNITION/skill.md:45-109](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md#L45-L109)
 
 ### 发布机制（蜂巢共享、权限控制、版本管理）
 - 共享与权限
@@ -322,16 +322,16 @@ QueryExec --> Return["返回结果含 published 或自身节点"]
 ```
 
 图表来源
-- [query_memory.rs:44-74](file://src/handlers/hr/agent/query_memory.rs#L44-L74)
-- [search_memory.rs:51-53](file://src/handlers/hr/agent/search_memory.rs#L51-L53)
-- [20260731000001_knowledge_node_is_published.sql:1-12](file://migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- [2026-07-31-knowledge-graph-published-sharing.md:81-145](file://docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
+- [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
+- [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
+- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- [2026-07-31-knowledge-graph-published-sharing.md:81-145](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
 
 章节来源
-- [query_memory.rs:44-74](file://src/handlers/hr/agent/query_memory.rs#L44-L74)
-- [search_memory.rs:51-53](file://src/handlers/hr/agent/search_memory.rs#L51-L53)
-- [20260731000001_knowledge_node_is_published.sql:1-12](file://migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- [2026-07-31-knowledge-graph-published-sharing.md:81-145](file://docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
+- [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
+- [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
+- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- [2026-07-31-knowledge-graph-published-sharing.md:81-145](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
 
 ### 查询 API 使用示例
 - 节点查询
@@ -361,13 +361,13 @@ H-->>FE : 返回 MemoryResult[]
 ```
 
 图表来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
 
 章节来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [query_memory.rs:21-74](file://src/handlers/hr/agent/query_memory.rs#L21-L74)
-- [memory.rs:88-102](file://src/service/dal/memory.rs#L88-L102)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [query_memory.rs:21-74](src/handlers/hr/agent/query_memory.rs#L21-L74)
+- [memory.rs:88-102](src/service/dal/memory.rs#L88-L102)
 
 ### 维护策略（定期整理、冲突解决、性能优化）
 - 定期整理
@@ -393,14 +393,14 @@ SetMetaKN --> REnd
 ```
 
 图表来源
-- [memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [20260724000000_knowledge_node_tags.sql:1-77](file://migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
-- [20260731000001_knowledge_node_is_published.sql:1-12](file://migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
+- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
 
 章节来源
-- [memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [20260724000000_knowledge_node_tags.sql:1-77](file://migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
-- [20260731000001_knowledge_node_is_published.sql:1-12](file://migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
+- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [20260724000000_knowledge_node_tags.sql:1-77](migrations/20260724000000_knowledge_node_tags.sql#L1-L77)
+- [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
 
 ## 依赖关系分析
 - 模块耦合
@@ -423,12 +423,12 @@ VDAO --> VS["向量存储"]
 ```
 
 图表来源
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 
 章节来源
-- [memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [memory.rs:11-119](file://src/service/domain/runtime/memory.rs#L11-L119)
+- [memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [memory.rs:11-119](src/service/domain/runtime/memory.rs#L11-L119)
 
 ## 性能考虑
 - 混合搜索优先级：Hybrid > Vector > Keyword/None；组内按向量距离或 BM25 rank 排序。
@@ -449,10 +449,10 @@ VDAO --> VS["向量存储"]
   - 检查 seed_node_ids 是否为空；调整 traversal_depth/breadth；确认关系存在且方向正确。
 
 章节来源
-- [memory.rs:392-475](file://src/service/dal/memory.rs#L392-L475)
-- [memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [query_memory.rs:44-74](file://src/handlers/hr/agent/query_memory.rs#L44-L74)
-- [search_memory.rs:67-121](file://src/handlers/hr/agent/search_memory.rs#L67-L121)
+- [memory.rs:392-475](src/service/dal/memory.rs#L392-L475)
+- [memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
+- [search_memory.rs:67-121](src/handlers/hr/agent/search_memory.rs#L67-L121)
 
 ## 结论
 长期记忆层通过清晰的层次划分与严格的单向依赖，实现了从短期记忆到长期知识的沉淀、关系管理与共享发布。DAL 提供强大的混合搜索、图谱遍历与向量重建能力，Handler/工具暴露简洁接口供 Agent 与前端使用。配合 FTS5 与向量索引优化，系统在准确性与性能上取得平衡。未来可进一步扩展版本管理与更细粒度的权限控制。
@@ -465,4 +465,4 @@ VDAO --> VS["向量存储"]
   - 节点类型识别：knowledge_node/short_term/relation 等，标签与摘要展示。
 
 章节来源
-- [knowledge_graph.rs:30-56](file://frontend/src/pages/hr/knowledge_graph.rs#L30-L56)
+- [knowledge_graph.rs:30-56](frontend/src/pages/hr/knowledge_graph.rs#L30-L56)

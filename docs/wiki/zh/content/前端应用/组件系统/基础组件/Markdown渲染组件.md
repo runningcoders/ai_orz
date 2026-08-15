@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**   
-- [frontend/src/components/markdown.rs](file://frontend/src/components/markdown.rs)
-- [frontend/styles/input.css](file://frontend/styles/input.css)
-- [frontend/src/pages/message/chat.rs](file://frontend/src/pages/message/chat.rs)
-- [frontend/src/components/chat/message_bubble.rs](file://frontend/src/components/chat/message_bubble.rs)
-- [frontend/src/pages/hr/memory_search.rs](file://frontend/src/pages/hr/memory_search.rs)
-- [common/src/api/project.rs](file://common/src/api/project.rs)
-- [common/src/api/task.rs](file://common/src/api/task.rs)
-- [src/handlers/project/projects/response.rs](file://src/handlers/project/projects/response.rs)
-- [src/handlers/project/task/response.rs](file://src/handlers/project/task/response.rs)
+- [frontend/src/components/markdown.rs](frontend/src/components/markdown.rs)
+- [frontend/styles/input.css](frontend/styles/input.css)
+- [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs)
+- [frontend/src/components/chat/message_bubble.rs](frontend/src/components/chat/message_bubble.rs)
+- [frontend/src/pages/hr/memory_search.rs](frontend/src/pages/hr/memory_search.rs)
+- [common/src/api/project.rs](common/src/api/project.rs)
+- [common/src/api/task.rs](common/src/api/task.rs)
+- [src/handlers/project/projects/response.rs](src/handlers/project/projects/response.rs)
+- [src/handlers/project/task/response.rs](src/handlers/project/task/response.rs)
 </cite>
 
 ## 更新摘要
@@ -77,26 +77,26 @@ RT --> TD
 ```
 
 图示来源
-- [frontend/src/components/markdown.rs:39-90](file://frontend/src/components/markdown.rs#L39-L90)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [frontend/src/pages/message/chat.rs:1243](file://frontend/src/pages/message/chat.rs#L1243)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:39-90](frontend/src/components/markdown.rs#L39-L90)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [frontend/src/pages/message/chat.rs:1243](frontend/src/pages/message/chat.rs#L1243)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 章节来源
-- [frontend/src/components/markdown.rs:39-90](file://frontend/src/components/markdown.rs#L39-L90)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [frontend/src/pages/message/chat.rs:1243](file://frontend/src/pages/message/chat.rs#L1243)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:39-90](frontend/src/components/markdown.rs#L39-L90)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [frontend/src/pages/message/chat.rs:1243](frontend/src/pages/message/chat.rs#L1243)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 核心组件
 - MarkdownRenderer 组件：封装 pulldown-cmark 渲染为 HTML，并通过 dangerous_inner_html 注入；支持 compact 模式；对含 mermaid 代码块的内容在挂载后调用 JS 渲染层替换为 SVG。
@@ -111,8 +111,8 @@ RT --> TD
 - 紧凑模式：专为小容器场景优化的样式，收紧字号与边距。
 
 章节来源
-- [frontend/src/components/markdown.rs:39-165](file://frontend/src/components/markdown.rs#L39-L165)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
+- [frontend/src/components/markdown.rs:39-165](frontend/src/components/markdown.rs#L39-L165)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
 
 ## 架构总览
 Markdown 渲染贯穿"后端数据 → 前端组件 → 样式呈现"的全链路：
@@ -133,16 +133,15 @@ H-->>DTO : 映射 execution_plan/execution_result
 API-->>FE : JSON(包含 Markdown 字段)
 FE->>C : 传入 content(描述/计划/结果)
 C-->>FE : 渲染后的HTML(含表格/任务列表)
-Note over C,FE : 若含
-```mermaid，则调用JS渲染为SVG
+Note over C,FE : 若含 mermaid 代码块，则调用 JS 渲染为 SVG
 ```
 
 图示来源
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [frontend/src/components/markdown.rs:39-90](file://frontend/src/components/markdown.rs#L39-L90)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [frontend/src/components/markdown.rs:39-90](frontend/src/components/markdown.rs#L39-L90)
 
 ## 详细组件分析
 
@@ -171,11 +170,11 @@ Replace --> End
 ```
 
 图示来源
-- [frontend/src/components/markdown.rs:39-90](file://frontend/src/components/markdown.rs#L39-L90)
-- [frontend/src/components/markdown.rs:117-144](file://frontend/src/components/markdown.rs#L117-L144)
+- [frontend/src/components/markdown.rs:39-90](frontend/src/components/markdown.rs#L39-L90)
+- [frontend/src/components/markdown.rs:117-144](frontend/src/components/markdown.rs#L117-L144)
 
 章节来源
-- [frontend/src/components/markdown.rs:39-165](file://frontend/src/components/markdown.rs#L39-L165)
+- [frontend/src/components/markdown.rs:39-165](frontend/src/components/markdown.rs#L39-L165)
 
 ### Compact 模式优化
 Compact 模式专为小容器场景设计，提供以下优化：
@@ -191,23 +190,23 @@ Compact 模式专为小容器场景设计，提供以下优化：
 - 侧边栏面板中的预览内容
 
 章节来源
-- [frontend/styles/input.css:337-372](file://frontend/styles/input.css#L337-L372)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
+- [frontend/styles/input.css:337-372](frontend/styles/input.css#L337-L372)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
 
 ### 聊天消息 Markdown 渲染
 - 仅 Text 类型消息气泡使用 MarkdownRenderer compact 模式，保持气泡宽度与代码块换行协调。
 - ToolCall、附件类型保持现状不渲染。
 
 章节来源
-- [frontend/src/pages/message/chat.rs:1243](file://frontend/src/pages/message/chat.rs#L1243)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/message/chat.rs:1243](frontend/src/pages/message/chat.rs#L1243)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
 
 ### 记忆内容 Markdown 渲染
 - 记忆搜索与 Agent 记忆面板中，content/summary 展开时使用 MarkdownRenderer compact 模式，列表态保留截断预览。
 
 章节来源
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
 
 ### 后端 DTO 与 Handler 映射
 - GetProjectResponse：新增 execution_plan、execution_result 字段，带默认序列化控制。
@@ -279,16 +278,16 @@ TasksResponse --> GetTaskResponse : "映射字段"
 ```
 
 图示来源
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 章节来源
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 依赖关系分析
 - 组件注册：components/mod.rs 注册 markdown 模块，供其他页面导入。
@@ -310,24 +309,24 @@ CT["common::api::GetTaskResponse"] --> RT["task/response.rs"]
 ```
 
 图示来源
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [frontend/src/pages/message/chat.rs:1243](file://frontend/src/pages/message/chat.rs#L1243)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [frontend/src/pages/message/chat.rs:1243](frontend/src/pages/message/chat.rs#L1243)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 章节来源
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [frontend/src/pages/message/chat.rs:1243](file://frontend/src/pages/message/chat.rs#L1243)
-- [frontend/src/components/chat/message_bubble.rs:73](file://frontend/src/components/chat/message_bubble.rs#L73)
-- [frontend/src/pages/hr/memory_search.rs:170](file://frontend/src/pages/hr/memory_search.rs#L170)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [frontend/src/pages/message/chat.rs:1243](frontend/src/pages/message/chat.rs#L1243)
+- [frontend/src/components/chat/message_bubble.rs:73](frontend/src/components/chat/message_bubble.rs#L73)
+- [frontend/src/pages/hr/memory_search.rs:170](frontend/src/pages/hr/memory_search.rs#L170)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 性能考虑
 - 渲染缓存：use_memo 按 content 缓存 HTML，避免聊天多消息场景每帧重复解析。
@@ -345,10 +344,10 @@ CT["common::api::GetTaskResponse"] --> RT["task/response.rs"]
 - 性能问题：检查是否有大量重复渲染，确认use_memo缓存是否正常工作。
 
 章节来源
-- [frontend/src/components/markdown.rs:117-165](file://frontend/src/components/markdown.rs#L117-L165)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:117-165](frontend/src/components/markdown.rs#L117-L165)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 结论
 Markdown 渲染组件为项目提供了统一、安全、可扩展的 Markdown 展示能力。通过前后端协作，Project/Task 的执行计划与结果得以完整呈现；详情页、聊天消息、记忆内容等 Markdown 性质字段得到一致化处理。Compact 模式的优化提升了小容器场景下的用户体验，而 Mermaid 支持作为可选阶段，增强了可视化能力而不影响核心功能。建议后续持续完善测试覆盖与性能监控，确保大规模内容下的稳定表现。

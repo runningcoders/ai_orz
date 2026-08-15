@@ -8,6 +8,22 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [event_design.md](./event_design.md) — 归档：旧版 EventQueueDao 事件总线（已废弃对比参考）
 > - [agent_loop_engine_design.md](./agent_loop_engine_design.md) — Agent 循环驱动：事件+定时双链路
+> - 【② Plan 落地（Batch9 关联）】
+>   - [agent_loop_engine_plan.md](../plan/agent_loop_engine_plan.md) — 8 类 DomainEvent → AgentLoopConsumer 唤醒
+> - 【③ Wiki 长文（Batch9 新增 4 篇 + 原 7 篇保留）】
+>   - [AOP 事件系统.md](docs/wiki/zh/content/%E5%9F%BA%E7%A1%80%E8%AE%BE%E6%96%BD/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F.md) — 生产-消费-调度三段架构总览
+>   - [AOP 事件系统.md](docs/wiki/zh/content/%E6%A0%B8%E5%BF%83%E6%A8%A1%E5%9D%97/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F.md) — DomainEvent 枚举定义 + 事件消费链路
+>   - [AOP 事件系统.md](docs/wiki/zh/content/%E5%8A%9F%E8%83%BD%E6%A8%A1%E5%9D%97/%E7%B3%BB%E7%BB%9F%E7%AE%A1%E7%90%86/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F.md) — 系统管理面板 AOP 监控入口
+>   - [AOP 事件系统架构.md](docs/wiki/zh/content/%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1/AOP%20%E4%BA%8B%E4%BB%B6%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md) — Event/Publisher/Consumer/Registry 四角色 + Sync/Async 双模式
+>   - [注册中心与调度器.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/AOP%20核心架构/注册中心与调度器.md) — self_ref Arc 循环注入 + start_all worker 启动流程
+>   - [事件消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/事件消费者.md) — 8 类消费者动作映射表
+>   - [定时触发生产者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/定时触发生产者.md) — CronTriggerProducer 每分钟 tick → list_due → publish → mark_executed
+>   - [后台任务系统.md](docs/wiki/zh/content/基础设施/后台任务系统.md) — 启动总顺序红线 + 事件中心异步处理链路
+>   - [AOP 监控面板.md](docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP%20监控面板.md) — 5 指标卡片 + 饼图 + 时序折线 UI
+>   - [系统领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/System%20领域编排.md) — AOP 监控处理器与 Stats 查询集成
+> - 【④ RAG 原子知识卡（Batch6 原有 1 张 + Batch9 新增 1 张）】
+>   - [AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg%2Faop%2Fcore%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg%2Faop%2Fcore%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md) — 零业务耦合硬边界 + lib.rs 启动 6 步严格顺序 + 6 条回归红线（含 consumer::init 禁写 DB）
+>   - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — DomainEvent 8 大类别枚举 + 事件 3 阶段生命周期 + 8 Consumer 全能力 + 9 条分层红线
 
 > **2026-07-20 更新**：本文档已全面更新，反映基于 AOP 事件中心的生产-消费架构。
 > **2026-07-21 更新**：清理 Message DAL 中冗余的队列操作接口（`dequeue_next_message`/`ack_message`/`nack_message`）。队列的出队/确认/回退完全由 AOP 框架负责，业务 Consumer 的 `ack`/`nack` 仅更新 DB 消息状态。

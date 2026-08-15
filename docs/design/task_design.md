@@ -8,6 +8,18 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [project_design.md](./project_design.md) — 项目实体与任务关联（一对多）
 > - [task_scheduler_design.md](./task_scheduler_design.md) — 定时任务 CronTrigger 触发机制
+> - 【② Plan 落地（真实定稿 2 张）】
+>   - [项目任务增强.md](../plan/项目任务增强.md) — execution_plan/result 字段设计 + progress_summary 聚合算法 + TaskGraph DAG
+>   - [后台任务管理页面与列表清理接口重构.md](../plan/后台任务管理页面与列表清理接口重构.md) — 任务 query 接口通用 count 与 PagedResult 统一
+> - 【③ Wiki 长文（人类百科 6 篇）】
+>   - [任务管理.md](docs/wiki/zh/content/功能模块/项目管理/任务管理.md) — 四态卡片 UI + 进度条 + 依赖图 Mermaid 渲染
+>   - [项目管理.md](docs/wiki/zh/content/功能模块/项目管理/项目管理.md) — 项目详情 5 Tab + 进度百分比总览卡
+>   - [任务生命周期管理.md](docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/任务生命周期管理.md) — 创建→分配→pending→in_progress→completed→取消软删路径
+>   - [执行计划与结果追踪.md](docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/执行计划与结果追踪.md) — execution_plan 步骤列表/预计耗时/风险 + execution_result 输出条目规范
+>   - [项目和任务模型.md](docs/wiki/zh/content/数据模型/项目和任务模型/项目和任务模型.md) — TaskPo/ProjectPo 字段对照表 + dependencies 数组 DAG 语义
+>   - [任务管理功能.md](docs/wiki/zh/content/前端应用/页面模块/项目管理页面/任务管理功能.md) — 前端 TaskTable status 色标 + progress 进度条组件
+> - 【④ RAG 原子知识卡（Batch6 新增 1 张）】
+>   - [任务状态机与项目聚合：TaskStatus 4 态 + progress 0-100 自动联动 + execution_plan_result JSON Patch + TaskGraph 依赖 DAG](docs/wiki/knowledge/zh/任务状态机与项目聚合：TaskStatus%204%20态%20+%20progress%200-100%20自动联动%20+%20execution_plan_result%20JSON%20Patch%20+%20TaskGraph%20依赖%20DAG/任务状态机与项目聚合：TaskStatus%204%20态%20+%20progress%200-100%20自动联动%20+%20execution_plan_result%20JSON%20Patch%20+%20TaskGraph%20依赖%20DAG.md) — 四态顺序禁逆向 + dependencies 环检测 + 6 条回归红线（含 TaskStatus 禁数字比较 + Cancelled=0 软删必过滤）
 
 ## 简介
 

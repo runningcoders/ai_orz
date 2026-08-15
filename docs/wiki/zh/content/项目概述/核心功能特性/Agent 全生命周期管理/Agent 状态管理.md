@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [src/models/events/agent_state.rs](file://src/models/events/agent_state.rs)
-- [src/models/events/agent_loop.rs](file://src/models/events/agent_loop.rs)
-- [src/consumer/message.rs](file://src/consumer/message.rs)
-- [src/consumer/scheduler.rs](file://src/consumer/scheduler.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/consumer/agent_loop_consumer.rs](file://src/consumer/agent_loop_consumer.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [src/models/events/agent_state.rs](src/models/events/agent_state.rs)
+- [src/models/events/agent_loop.rs](src/models/events/agent_loop.rs)
+- [src/consumer/message.rs](src/consumer/message.rs)
+- [src/consumer/scheduler.rs](src/consumer/scheduler.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/consumer/agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
 </cite>
 
 ## 目录
@@ -61,20 +61,20 @@ M1 --> H1
 ```
 
 图表来源
-- [common/src/enums/agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [src/pkg/agent_runtime_state.rs:11-157](file://src/pkg/agent_runtime_state.rs#L11-L157)
-- [src/models/events/agent_state.rs:4-52](file://src/models/events/agent_state.rs#L4-L52)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
-- [src/handlers/hr/agent/get_agent.rs:90-100](file://src/handlers/hr/agent/get_agent.rs#L90-L100)
-- [src/handlers/hr/agent/list_agents.rs:35-50](file://src/handlers/hr/agent/list_agents.rs#L35-L50)
+- [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [src/pkg/agent_runtime_state.rs:11-157](src/pkg/agent_runtime_state.rs#L11-L157)
+- [src/models/events/agent_state.rs:4-52](src/models/events/agent_state.rs#L4-L52)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/handlers/hr/agent/get_agent.rs:90-100](src/handlers/hr/agent/get_agent.rs#L90-L100)
+- [src/handlers/hr/agent/list_agents.rs:35-50](src/handlers/hr/agent/list_agents.rs#L35-L50)
 
 章节来源
-- [common/src/enums/agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [src/pkg/agent_runtime_state.rs:11-157](file://src/pkg/agent_runtime_state.rs#L11-L157)
-- [src/models/events/agent_state.rs:4-52](file://src/models/events/agent_state.rs#L4-L52)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
-- [src/handlers/hr/agent/get_agent.rs:90-100](file://src/handlers/hr/agent/get_agent.rs#L90-L100)
-- [src/handlers/hr/agent/list_agents.rs:35-50](file://src/handlers/hr/agent/list_agents.rs#L35-L50)
+- [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [src/pkg/agent_runtime_state.rs:11-157](src/pkg/agent_runtime_state.rs#L11-L157)
+- [src/models/events/agent_state.rs:4-52](src/models/events/agent_state.rs#L4-L52)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/handlers/hr/agent/get_agent.rs:90-100](src/handlers/hr/agent/get_agent.rs#L90-L100)
+- [src/handlers/hr/agent/list_agents.rs:35-50](src/handlers/hr/agent/list_agents.rs#L35-L50)
 
 ## 核心组件
 - AgentStatus：Agent 的持久化生命周期状态（面试中、待入职、已入职、待离职、已离职、已删除），用于业务侧对 Agent 可用性的长期控制。
@@ -85,11 +85,11 @@ M1 --> H1
 - AgentLoopConsumer：订阅 agent.loop 与 agent.think.round 事件，输出结构化日志便于追踪。
 
 章节来源
-- [common/src/enums/agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [src/pkg/agent_runtime_state.rs:11-157](file://src/pkg/agent_runtime_state.rs#L11-L157)
-- [src/models/events/agent_state.rs:4-52](file://src/models/events/agent_state.rs#L4-L52)
-- [src/models/events/agent_loop.rs:4-79](file://src/models/events/agent_loop.rs#L4-L79)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [src/pkg/agent_runtime_state.rs:11-157](src/pkg/agent_runtime_state.rs#L11-L157)
+- [src/models/events/agent_state.rs:4-52](src/models/events/agent_state.rs#L4-L52)
+- [src/models/events/agent_loop.rs:4-79](src/models/events/agent_loop.rs#L4-L79)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ## 架构总览
 Agent 状态管理的调用方向严格遵循 Adapter → Domain → DAL → DAO 单向原则。状态相关的关键路径如下：
@@ -120,10 +120,10 @@ end
 ```
 
 图表来源
-- [src/consumer/message.rs:140-195](file://src/consumer/message.rs#L140-L195)
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [src/models/events/agent_state.rs:4-52](file://src/models/events/agent_state.rs#L4-L52)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/consumer/message.rs:140-195](src/consumer/message.rs#L140-L195)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/models/events/agent_state.rs:4-52](src/models/events/agent_state.rs#L4-L52)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ## 详细组件分析
 
@@ -150,14 +150,14 @@ Busy --> Resting : "强制休息/回收上下文"
 ```
 
 图表来源
-- [common/src/enums/agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/consumer/scheduler.rs:150-170](file://src/consumer/scheduler.rs#L150-L170)
+- [common/src/enums/agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/consumer/scheduler.rs:150-170](src/consumer/scheduler.rs#L150-L170)
 
 章节来源
-- [common/src/enums/agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/consumer/scheduler.rs:150-170](file://src/consumer/scheduler.rs#L150-L170)
+- [common/src/enums/agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/consumer/scheduler.rs:150-170](src/consumer/scheduler.rs#L150-L170)
 
 ### 状态更新 API 与同步机制
 - 原子设置 Busy：try_set_busy(agent_id, message_id) 在 DashMap 内原子检查 is_unavailable 并写入状态，避免 TOCTOU 竞态。
@@ -176,12 +176,12 @@ Publish --> ReturnTrue["返回 true"]
 ```
 
 图表来源
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ### 生命周期关键事件
 - 唤醒循环（awaken）：
@@ -205,12 +205,12 @@ AOP-->>Cons : 消费并记录日志
 ```
 
 图表来源
-- [src/models/events/agent_loop.rs:4-79](file://src/models/events/agent_loop.rs#L4-L79)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/models/events/agent_loop.rs:4-79](src/models/events/agent_loop.rs#L4-L79)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 章节来源
-- [src/models/events/agent_loop.rs:4-79](file://src/models/events/agent_loop.rs#L4-L79)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/models/events/agent_loop.rs:4-79](src/models/events/agent_loop.rs#L4-L79)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ### 状态监控与调试
 - 查看当前状态：
@@ -223,10 +223,10 @@ AOP-->>Cons : 消费并记录日志
   - 在消费端对异常路径统一 set_idle，保证状态一致性。
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:90-100](file://src/handlers/hr/agent/get_agent.rs#L90-L100)
-- [src/handlers/hr/agent/list_agents.rs:35-50](file://src/handlers/hr/agent/list_agents.rs#L35-L50)
-- [src/models/events/agent_state.rs:4-52](file://src/models/events/agent_state.rs#L4-L52)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/handlers/hr/agent/get_agent.rs:90-100](src/handlers/hr/agent/get_agent.rs#L90-L100)
+- [src/handlers/hr/agent/list_agents.rs:35-50](src/handlers/hr/agent/list_agents.rs#L35-L50)
+- [src/models/events/agent_state.rs:4-52](src/models/events/agent_state.rs#L4-L52)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ### 异常处理与问题排查
 - 并发重复唤醒：
@@ -242,9 +242,9 @@ AOP-->>Cons : 消费并记录日志
   - 解决：完善 agent.loop/think.round 事件字段，结合 trace_id 串联日志。
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [src/consumer/message.rs:140-195](file://src/consumer/message.rs#L140-L195)
-- [src/models/events/agent_loop.rs:4-79](file://src/models/events/agent_loop.rs#L4-L79)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/consumer/message.rs:140-195](src/consumer/message.rs#L140-L195)
+- [src/models/events/agent_loop.rs:4-79](src/models/events/agent_loop.rs#L4-L79)
 
 ## 依赖关系分析
 - 模块耦合：
@@ -267,20 +267,20 @@ Ev --> Cons["AgentLoopConsumer"]
 ```
 
 图表来源
-- [src/consumer/message.rs:140-195](file://src/consumer/message.rs#L140-L195)
-- [src/consumer/scheduler.rs:150-170](file://src/consumer/scheduler.rs#L150-L170)
-- [src/handlers/hr/agent/get_agent.rs:90-100](file://src/handlers/hr/agent/get_agent.rs#L90-L100)
-- [src/handlers/hr/agent/list_agents.rs:35-50](file://src/handlers/hr/agent/list_agents.rs#L35-L50)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/consumer/message.rs:140-195](src/consumer/message.rs#L140-L195)
+- [src/consumer/scheduler.rs:150-170](src/consumer/scheduler.rs#L150-L170)
+- [src/handlers/hr/agent/get_agent.rs:90-100](src/handlers/hr/agent/get_agent.rs#L90-L100)
+- [src/handlers/hr/agent/list_agents.rs:35-50](src/handlers/hr/agent/list_agents.rs#L35-L50)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 章节来源
-- [src/consumer/message.rs:140-195](file://src/consumer/message.rs#L140-L195)
-- [src/consumer/scheduler.rs:150-170](file://src/consumer/scheduler.rs#L150-L170)
-- [src/handlers/hr/agent/get_agent.rs:90-100](file://src/handlers/hr/agent/get_agent.rs#L90-L100)
-- [src/handlers/hr/agent/list_agents.rs:35-50](file://src/handlers/hr/agent/list_agents.rs#L35-L50)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/consumer/message.rs:140-195](src/consumer/message.rs#L140-L195)
+- [src/consumer/scheduler.rs:150-170](src/consumer/scheduler.rs#L150-L170)
+- [src/handlers/hr/agent/get_agent.rs:90-100](src/handlers/hr/agent/get_agent.rs#L90-L100)
+- [src/handlers/hr/agent/list_agents.rs:35-50](src/handlers/hr/agent/list_agents.rs#L35-L50)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ## 性能考虑
 - 原子切换：try_set_busy 在内存锁粒度内完成检查与写入，避免额外 RPC/DB 开销。
@@ -307,9 +307,9 @@ Ev --> Cons["AgentLoopConsumer"]
   - 完善事件字段（如 model_provider_id、tokens 等）以便更精细分析。
 
 章节来源
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [src/consumer/message.rs:140-195](file://src/consumer/message.rs#L140-L195)
-- [src/consumer/agent_loop_consumer.rs:26-96](file://src/consumer/agent_loop_consumer.rs#L26-L96)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [src/consumer/message.rs:140-195](src/consumer/message.rs#L140-L195)
+- [src/consumer/agent_loop_consumer.rs:26-96](src/consumer/agent_loop_consumer.rs#L26-L96)
 
 ## 结论
 Agent 状态管理通过“持久化生命周期 + 纯内存运行时状态”的双层设计，实现了高并发下的安全切换与可观测性。核心要点包括：
@@ -330,3 +330,12 @@ Agent 状态管理通过“持久化生命周期 + 纯内存运行时状态”�
   - 对关键路径添加 trace_id，便于端到端追踪。
 
 [本节为补充说明，无需特定文件引用]
+
+
+### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
+#### ① Design 决策快照
+- [intent_aware_two_stage_awaken_design.md](docs/design/intent_aware_two_stage_awaken_design.md) — Busy 状态内两阶段流程状态转换：IntentAnalyze → Awaken → Idle（Phase1 失败不影响 Phase2，降级 Level 5/6 等价单阶段流程）
+#### ② Plan 落地快照
+- [唤醒上下文与睡眠约束.md](docs/plan/唤醒上下文与睡眠约束.md) — BusyGuard RAII 防护 + Resting 状态内沉淀不被新消息打断（排队不丢）
+#### ④ RAG 原子知识卡
+- [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md) — §4.1 红线 3 need_clarification 绝不短路 + Level 6 降级绝不中断 awaken 链路

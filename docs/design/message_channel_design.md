@@ -8,6 +8,18 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [message_interaction_design.md](./message_interaction_design.md) — 用户-Agent 消息交互链路与前台调度
 > - [lark_cli_integration.md](./lark_cli_integration.md) — 飞书渠道多应用化与 lark-cli 工具集成
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 凭证引用检查 + 加密的落地实现
+> - 【② Plan 落地】[飞书集成二期.md](../plan/lark-cli_集成二期.md) — 飞书 WS 私信入站落地
+> - 【③ Wiki 长文】[身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md) — §5 渠道引用检查 + §5 AES 加密
+> - 【③ Wiki 长文】[消息渠道管理.md](docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md)
+> - 【③ Wiki 长文】[消息渠道适配器.md](docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md)
+> - 【③ Wiki 长文】[多渠道消息系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md)
+> - 【③ Wiki 长文】[消息通道生产者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/消息通道生产者.md)
+> - 【④ RAG 卡】[身份凭证 Domain 统一 CRUD](docs/wiki/knowledge/zh/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用.md) — §3/§4 渠道引用拒删前置检查
+> - 【④ RAG 卡】[AES-256-GCM 敏感字段加密](docs/wiki/knowledge/zh/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容.md) — §1 闭包注入设计动机
+> - 【④ RAG 卡 2 张（Batch4 新增）】
+>   - [消息渠道入站适配中台：MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all stop_all 生命周期](docs/wiki/knowledge/zh/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期/消息渠道入站适配中台：MessageInboundAdapter%20trait%20+%20MessageAdapterRegistry%20全局注册%20+%20start_all%20stop_all%20生命周期.md) — pkg/adapter 纯基础设施分层 + start_all 非 fail-fast
+>   - [Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标](docs/wiki/knowledge/zh/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标.md) — 飞书双向闭环
 
 ## 🚀 实现完成状态（2026-08-05 更新）
 

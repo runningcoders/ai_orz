@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [router.rs](file://src/router.rs)
-- [project.rs](file://common/src/api/project.rs)
-- [mod.rs（项目处理器入口）](file://src/handlers/project/mod.rs)
-- [projects/mod.rs](file://src/handlers/project/projects/mod.rs)
-- [create_project.rs](file://src/handlers/project/projects/create_project.rs)
-- [task/mod.rs](file://src/handlers/project/task/mod.rs)
-- [create_task.rs](file://src/handlers/project/task/create_task.rs)
-- [artifact/mod.rs](file://src/handlers/project/artifact/mod.rs)
-- [create_artifact.rs](file://src/handlers/project/artifact/create_artifact.rs)
-- [mod.rs（领域层入口）](file://src/service/domain/project/mod.rs)
-- [project.rs（领域模型）](file://src/models/project.rs)
-- [project.rs（状态枚举）](file://common/src/enums/project.rs)
-- [task.rs（任务枚举）](file://common/src/enums/task.rs)
+- [router.rs](src/router.rs)
+- [project.rs](common/src/api/project.rs)
+- [mod.rs（项目处理器入口）](src/handlers/project/mod.rs)
+- [projects/mod.rs](src/handlers/project/projects/mod.rs)
+- [create_project.rs](src/handlers/project/projects/create_project.rs)
+- [task/mod.rs](src/handlers/project/task/mod.rs)
+- [create_task.rs](src/handlers/project/task/create_task.rs)
+- [artifact/mod.rs](src/handlers/project/artifact/mod.rs)
+- [create_artifact.rs](src/handlers/project/artifact/create_artifact.rs)
+- [mod.rs（领域层入口）](src/service/domain/project/mod.rs)
+- [project.rs（领域模型）](src/models/project.rs)
+- [project.rs（状态枚举）](common/src/enums/project.rs)
+- [task.rs（任务枚举）](common/src/enums/task.rs)
 </cite>
 
 ## 目录
@@ -50,12 +50,12 @@ D_Proj --> DAL_Art["DAL: ArtifactDal"]
 ```
 
 图表来源
-- [router.rs:145-240](file://src/router.rs#L145-L240)
-- [mod.rs（领域层入口）:91-105](file://src/service/domain/project/mod.rs#L91-L105)
+- [router.rs:145-240](src/router.rs#L145-L240)
+- [mod.rs（领域层入口）:91-105](src/service/domain/project/mod.rs#L91-L105)
 
 章节来源
-- [router.rs:145-240](file://src/router.rs#L145-L240)
-- [mod.rs（项目处理器入口）:1-6](file://src/handlers/project/mod.rs#L1-L6)
+- [router.rs:145-240](src/router.rs#L145-L240)
+- [mod.rs（项目处理器入口）:1-6](src/handlers/project/mod.rs#L1-L6)
 
 ## 核心组件
 - 项目领域（ProjectDomain）：聚合项目管理、任务管理、工件管理能力，对外暴露统一 trait 与单例访问。
@@ -64,11 +64,11 @@ D_Proj --> DAL_Art["DAL: ArtifactDal"]
 - 路由：集中注册受保护的项目、任务、工件接口，统一 JWT 认证与请求上下文中间件。
 
 章节来源
-- [mod.rs（领域层入口）:61-105](file://src/service/domain/project/mod.rs#L61-L105)
-- [project.rs（领域模型）:60-80](file://src/models/project.rs#L60-L80)
-- [create_project.rs:10-46](file://src/handlers/project/projects/create_project.rs#L10-L46)
-- [create_task.rs:12-85](file://src/handlers/project/task/create_task.rs#L12-L85)
-- [create_artifact.rs:13-53](file://src/handlers/project/artifact/create_artifact.rs#L13-L53)
+- [mod.rs（领域层入口）:61-105](src/service/domain/project/mod.rs#L61-L105)
+- [project.rs（领域模型）:60-80](src/models/project.rs#L60-L80)
+- [create_project.rs:10-46](src/handlers/project/projects/create_project.rs#L10-L46)
+- [create_task.rs:12-85](src/handlers/project/task/create_task.rs#L12-L85)
+- [create_artifact.rs:13-53](src/handlers/project/artifact/create_artifact.rs#L13-L53)
 
 ## 架构总览
 下图展示从 HTTP 请求到领域层的调用链，以及领域层对 DAL 的组合使用方式。
@@ -91,9 +91,9 @@ H-->>C : GetProjectResponse
 ```
 
 图表来源
-- [router.rs:145-175](file://src/router.rs#L145-L175)
-- [create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [mod.rs（领域层入口）:111-129](file://src/service/domain/project/mod.rs#L111-L129)
+- [router.rs:145-175](src/router.rs#L145-L175)
+- [create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [mod.rs（领域层入口）:111-129](src/service/domain/project/mod.rs#L111-L129)
 
 ## 详细组件分析
 
@@ -115,14 +115,14 @@ stateDiagram-v2
 ```
 
 图表来源
-- [project.rs（状态枚举）:8-27](file://common/src/enums/project.rs#L8-L27)
-- [mod.rs（领域层入口）:184-225](file://src/service/domain/project/mod.rs#L184-L225)
-- [project.rs（领域模型）:173-183](file://src/models/project.rs#L173-L183)
+- [project.rs（状态枚举）:8-27](common/src/enums/project.rs#L8-L27)
+- [mod.rs（领域层入口）:184-225](src/service/domain/project/mod.rs#L184-L225)
+- [project.rs（领域模型）:173-183](src/models/project.rs#L173-L183)
 
 章节来源
-- [project.rs（状态枚举）:8-27](file://common/src/enums/project.rs#L8-L27)
-- [mod.rs（领域层入口）:184-225](file://src/service/domain/project/mod.rs#L184-L225)
-- [project.rs（领域模型）:173-183](file://src/models/project.rs#L173-L183)
+- [project.rs（状态枚举）:8-27](common/src/enums/project.rs#L8-L27)
+- [mod.rs（领域层入口）:184-225](src/service/domain/project/mod.rs#L184-L225)
+- [project.rs（领域模型）:173-183](src/models/project.rs#L173-L183)
 
 ### 任务管理与状态流转
 - 任务状态包括：已取消、待审核、待开始、进行中、已完成、已归档。
@@ -140,13 +140,13 @@ SendMsg --> Done
 ```
 
 图表来源
-- [create_task.rs:21-85](file://src/handlers/project/task/create_task.rs#L21-L85)
-- [mod.rs（领域层入口）:232-359](file://src/service/domain/project/mod.rs#L232-L359)
+- [create_task.rs:21-85](src/handlers/project/task/create_task.rs#L21-L85)
+- [mod.rs（领域层入口）:232-359](src/service/domain/project/mod.rs#L232-L359)
 
 章节来源
-- [task.rs（任务枚举）:8-27](file://common/src/enums/task.rs#L8-L27)
-- [create_task.rs:21-85](file://src/handlers/project/task/create_task.rs#L21-L85)
-- [mod.rs（领域层入口）:232-359](file://src/service/domain/project/mod.rs#L232-L359)
+- [task.rs（任务枚举）:8-27](common/src/enums/task.rs#L8-L27)
+- [create_task.rs:21-85](src/handlers/project/task/create_task.rs#L21-L85)
+- [mod.rs（领域层入口）:232-359](src/service/domain/project/mod.rs#L232-L359)
 
 ### 工件（Artifact）管理
 - 支持三类来源：附件引用型、生成内容型、预留远程 URL。
@@ -176,14 +176,14 @@ H-->>C : CreateArtifactResponse
 ```
 
 图表来源
-- [create_artifact.rs:22-53](file://src/handlers/project/artifact/create_artifact.rs#L22-L53)
-- [create_artifact.rs:55-146](file://src/handlers/project/artifact/create_artifact.rs#L55-L146)
-- [mod.rs（领域层入口）:361-498](file://src/service/domain/project/mod.rs#L361-L498)
+- [create_artifact.rs:22-53](src/handlers/project/artifact/create_artifact.rs#L22-L53)
+- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L146)
+- [mod.rs（领域层入口）:361-498](src/service/domain/project/mod.rs#L361-L498)
 
 章节来源
-- [create_artifact.rs:22-53](file://src/handlers/project/artifact/create_artifact.rs#L22-L53)
-- [create_artifact.rs:55-146](file://src/handlers/project/artifact/create_artifact.rs#L55-L146)
-- [mod.rs（领域层入口）:361-498](file://src/service/domain/project/mod.rs#L361-L498)
+- [create_artifact.rs:22-53](src/handlers/project/artifact/create_artifact.rs#L22-L53)
+- [create_artifact.rs:55-146](src/handlers/project/artifact/create_artifact.rs#L55-L146)
+- [mod.rs（领域层入口）:361-498](src/service/domain/project/mod.rs#L361-L498)
 
 ### 复杂查询与关联数据加载
 - 项目查询支持 ids、keyword、root_user_id、status_in、owner_agent_id 与分页；搜索支持 FTS5 + 向量语义混合检索。
@@ -191,18 +191,18 @@ H-->>C : CreateArtifactResponse
 - 任务查询支持 project_id、assignee_type、assignee_id、status、limit 等；搜索同样支持关键词与向量语义。
 
 章节来源
-- [project.rs（API DTO）:33-72](file://common/src/api/project.rs#L33-L72)
-- [project.rs（API DTO）:214-251](file://common/src/api/project.rs#L214-L251)
-- [mod.rs（领域层入口）:160-179](file://src/service/domain/project/mod.rs#L160-L179)
-- [mod.rs（领域层入口）:284-313](file://src/service/domain/project/mod.rs#L284-L313)
+- [project.rs（API DTO）:33-72](common/src/api/project.rs#L33-L72)
+- [project.rs（API DTO）:214-251](common/src/api/project.rs#L214-L251)
+- [mod.rs（领域层入口）:160-179](src/service/domain/project/mod.rs#L160-L179)
+- [mod.rs（领域层入口）:284-313](src/service/domain/project/mod.rs#L284-L313)
 
 ### 协作功能与通知
 - 任务分配给 Agent 时，处理器构造任务分配命令并通过消息领域投递通知，实现跨域协作。
 - 项目负责人（owner_agent_id）可在项目上下文中被注入 RequestContext，便于后续流程追踪。
 
 章节来源
-- [create_task.rs:65-82](file://src/handlers/project/task/create_task.rs#L65-L82)
-- [project.rs（领域模型）:265-280](file://src/models/project.rs#L265-L280)
+- [create_task.rs:65-82](src/handlers/project/task/create_task.rs#L65-L82)
+- [project.rs（领域模型）:265-280](src/models/project.rs#L265-L280)
 
 ## 依赖关系分析
 - Handler 依赖领域层单例 domain()，不直接访问 DAL/DAO。
@@ -223,12 +223,12 @@ D --> DAL_A["ArtifactDal"]
 ```
 
 图表来源
-- [router.rs:145-240](file://src/router.rs#L145-L240)
-- [mod.rs（领域层入口）:61-105](file://src/service/domain/project/mod.rs#L61-L105)
+- [router.rs:145-240](src/router.rs#L145-L240)
+- [mod.rs（领域层入口）:61-105](src/service/domain/project/mod.rs#L61-L105)
 
 章节来源
-- [router.rs:145-240](file://src/router.rs#L145-L240)
-- [mod.rs（领域层入口）:61-105](file://src/service/domain/project/mod.rs#L61-L105)
+- [router.rs:145-240](src/router.rs#L145-L240)
+- [mod.rs（领域层入口）:61-105](src/service/domain/project/mod.rs#L61-L105)
 
 ## 性能考虑
 - 列表与搜索接口均支持分页，避免全量拉取。
@@ -245,10 +245,10 @@ D --> DAL_A["ArtifactDal"]
 - 附件不存在：基于附件创建工件时，若附件未找到将返回未找到错误。
 
 章节来源
-- [create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [create_task.rs:21-85](file://src/handlers/project/task/create_task.rs#L21-L85)
-- [create_artifact.rs:22-53](file://src/handlers/project/artifact/create_artifact.rs#L22-L53)
-- [create_artifact.rs:55-101](file://src/handlers/project/artifact/create_artifact.rs#L55-L101)
+- [create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [create_task.rs:21-85](src/handlers/project/task/create_task.rs#L21-L85)
+- [create_artifact.rs:22-53](src/handlers/project/artifact/create_artifact.rs#L22-L53)
+- [create_artifact.rs:55-101](src/handlers/project/artifact/create_artifact.rs#L55-L101)
 
 ## 结论
 项目管理模块以清晰的分层架构与统一的领域抽象，提供了完善的项目、任务与工件管理能力。通过丰富的查询条件、按需加载与协作通知机制，满足复杂业务场景下的项目管理需求。建议在集成测试中覆盖关键状态流转与边界条件，确保稳定性与一致性。
@@ -263,7 +263,7 @@ D --> DAL_A["ArtifactDal"]
 - 工件：POST/GET /api/v1/project/artifacts、POST /api/v1/project/artifacts/text、POST /api/v1/project/artifacts/register-from-path、GET/DELETE/PUT /api/v1/project/artifacts/{id}、GET /api/v1/project/artifacts/{id}/content
 
 章节来源
-- [router.rs:145-240](file://src/router.rs#L145-L240)
+- [router.rs:145-240](src/router.rs#L145-L240)
 
 ### 项目创建示例
 - 请求体字段：name、description、priority、tags、owner_agent_id（可选）
@@ -272,9 +272,9 @@ D --> DAL_A["ArtifactDal"]
 - 响应：GetProjectResponse（含基础信息与可选统计/产物/进度汇总）
 
 章节来源
-- [project.rs（API DTO）:10-31](file://common/src/api/project.rs#L10-L31)
-- [create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [mod.rs（领域层入口）:111-129](file://src/service/domain/project/mod.rs#L111-L129)
+- [project.rs（API DTO）:10-31](common/src/api/project.rs#L10-L31)
+- [create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [mod.rs（领域层入口）:111-129](src/service/domain/project/mod.rs#L111-L129)
 
 ### 任务分配示例
 - 请求体字段：title、description、priority、tags、assignee_type、assignee_id、project_id、due_at、dependencies、root_user_id（可选）
@@ -283,8 +283,8 @@ D --> DAL_A["ArtifactDal"]
 - 协作通知：若 assignee_type=Agent，发送任务分配消息
 
 章节来源
-- [create_task.rs:21-85](file://src/handlers/project/task/create_task.rs#L21-L85)
-- [mod.rs（领域层入口）:249-265](file://src/service/domain/project/mod.rs#L249-L265)
+- [create_task.rs:21-85](src/handlers/project/task/create_task.rs#L21-L85)
+- [mod.rs（领域层入口）:249-265](src/service/domain/project/mod.rs#L249-L265)
 
 ### 进度更新示例
 - 端点：PUT /api/v1/tasks/{id}/progress
@@ -292,9 +292,9 @@ D --> DAL_A["ArtifactDal"]
 - 领域调用：TaskDomain.task_manage().update_progress(...)
 
 章节来源
-- [router.rs:200-213](file://src/router.rs#L200-L213)
-- [task/mod.rs:1-28](file://src/handlers/project/task/mod.rs#L1-L28)
-- [mod.rs（领域层入口）:352-359](file://src/service/domain/project/mod.rs#L352-L359)
+- [router.rs:200-213](src/router.rs#L200-L213)
+- [task/mod.rs:1-28](src/handlers/project/task/mod.rs#L1-L28)
+- [mod.rs（领域层入口）:352-359](src/service/domain/project/mod.rs#L352-L359)
 
 ### 工件创建示例（附件类型）
 - 端点：POST /api/v1/project/artifacts
@@ -303,8 +303,8 @@ D --> DAL_A["ArtifactDal"]
 - 领域调用：ArtifactDomain.artifact_manage().create_attachment_artifact(...)
 
 章节来源
-- [create_artifact.rs:55-101](file://src/handlers/project/artifact/create_artifact.rs#L55-L101)
-- [mod.rs（领域层入口）:366-379](file://src/service/domain/project/mod.rs#L366-L379)
+- [create_artifact.rs:55-101](src/handlers/project/artifact/create_artifact.rs#L55-L101)
+- [mod.rs（领域层入口）:366-379](src/service/domain/project/mod.rs#L366-L379)
 
 ### 工件创建示例（生成内容类型）
 - 端点：POST /api/v1/project/artifacts
@@ -313,8 +313,8 @@ D --> DAL_A["ArtifactDal"]
 - 领域调用：ArtifactDomain.artifact_manage().create_generated_artifact(...)
 
 章节来源
-- [create_artifact.rs:103-146](file://src/handlers/project/artifact/create_artifact.rs#L103-L146)
-- [mod.rs（领域层入口）:465-480](file://src/service/domain/project/mod.rs#L465-L480)
+- [create_artifact.rs:103-146](src/handlers/project/artifact/create_artifact.rs#L103-L146)
+- [mod.rs（领域层入口）:465-480](src/service/domain/project/mod.rs#L465-L480)
 
 ### 复杂查询与搜索
 - 项目查询：POST /api/v1/projects/query，支持 ids、keyword、root_user_id、status_in、owner_agent_id、分页
@@ -323,7 +323,7 @@ D --> DAL_A["ArtifactDal"]
 - 任务搜索：POST /api/v1/tasks/search，支持 keyword、ids、root_user_id、status_in、assignee_type、assignee_id、分页
 
 章节来源
-- [project.rs（API DTO）:214-251](file://common/src/api/project.rs#L214-L251)
-- [router.rs:145-213](file://src/router.rs#L145-L213)
-- [mod.rs（领域层入口）:160-179](file://src/service/domain/project/mod.rs#L160-L179)
-- [mod.rs（领域层入口）:295-313](file://src/service/domain/project/mod.rs#L295-L313)
+- [project.rs（API DTO）:214-251](common/src/api/project.rs#L214-L251)
+- [router.rs:145-213](src/router.rs#L145-L213)
+- [mod.rs（领域层入口）:160-179](src/service/domain/project/mod.rs#L160-L179)
+- [mod.rs（领域层入口）:295-313](src/service/domain/project/mod.rs#L295-L313)

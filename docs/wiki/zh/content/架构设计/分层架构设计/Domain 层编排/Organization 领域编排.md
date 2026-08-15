@@ -2,29 +2,29 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/domain/organization/mod.rs](file://src/service/domain/organization/mod.rs)
-- [src/service/domain/organization/org.rs](file://src/service/domain/organization/org.rs)
-- [src/service/domain/organization/user.rs](file://src/service/domain/organization/user.rs)
-- [src/service/dal/organization.rs](file://src/service/dal/organization.rs)
-- [src/models/organization.rs](file://src/models/organization.rs)
-- [common/src/enums/organization.rs](file://common/src/enums/organization.rs)
-- [src/handlers/organization/initialize_system.rs](file://src/handlers/organization/initialize_system.rs)
-- [src/handlers/organization/auth/login.rs](file://src/handlers/organization/auth/login.rs)
-- [src/handlers/organization/auth/logout.rs](file://src/handlers/organization/auth/logout.rs)
-- [src/handlers/organization/organizations/get_organization.rs](file://src/handlers/organization/organizations/get_organization.rs)
-- [src/handlers/organization/organizations/list_organizations.rs](file://src/handlers/organization/organizations/list_organizations.rs)
-- [src/handlers/organization/organizations/update_organization.rs](file://src/handlers/organization/organizations/update_organization.rs)
-- [src/handlers/organization/organizations/delete_organization.rs](file://src/handlers/organization/organizations/delete_organization.rs)
-- [src/handlers/organization/user/create_user.rs](file://src/handlers/organization/user/create_user.rs)
-- [src/handlers/organization/user/list_users_by_current_organization.rs](file://src/handlers/organization/user/list_users_by_current_organization.rs)
-- [src/handlers/organization/user/query_users.rs](file://src/handlers/organization/user/query_users.rs)
-- [src/handlers/organization/user/update_user.rs](file://src/handlers/organization/user/update_user.rs)
-- [src/handlers/organization/user/delete_user.rs](file://src/handlers/organization/user/delete_user.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/middleware/require_role.rs](file://src/middleware/require_role.rs)
-- [common/src/enums/user.rs](file://common/src/enums/user.rs)
-- [migrations/20260420000000_initial.sql](file://migrations/20260420000000_initial.sql)
-- [docs/organization_design.md](file://docs/organization_design.md)
+- [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
+- [src/service/domain/organization/org.rs](src/service/domain/organization/org.rs)
+- [src/service/domain/organization/user.rs](src/service/domain/organization/user.rs)
+- [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/models/organization.rs](src/models/organization.rs)
+- [common/src/enums/organization.rs](common/src/enums/organization.rs)
+- [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)
+- [src/handlers/organization/auth/login.rs](src/handlers/organization/auth/login.rs)
+- [src/handlers/organization/auth/logout.rs](src/handlers/organization/auth/logout.rs)
+- [src/handlers/organization/organizations/get_organization.rs](src/handlers/organization/organizations/get_organization.rs)
+- [src/handlers/organization/organizations/list_organizations.rs](src/handlers/organization/organizations/list_organizations.rs)
+- [src/handlers/organization/organizations/update_organization.rs](src/handlers/organization/organizations/update_organization.rs)
+- [src/handlers/organization/organizations/delete_organization.rs](src/handlers/organization/organizations/delete_organization.rs)
+- [src/handlers/organization/user/create_user.rs](src/handlers/organization/user/create_user.rs)
+- [src/handlers/organization/user/list_users_by_current_organization.rs](src/handlers/organization/user/list_users_by_current_organization.rs)
+- [src/handlers/organization/user/query_users.rs](src/handlers/organization/user/query_users.rs)
+- [src/handlers/organization/user/update_user.rs](src/handlers/organization/user/update_user.rs)
+- [src/handlers/organization/user/delete_user.rs](src/handlers/organization/user/delete_user.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/middleware/require_role.rs](src/middleware/require_role.rs)
+- [common/src/enums/user.rs](common/src/enums/user.rs)
+- [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
+- [docs/organization_design.md](docs/organization_design.md)
 </cite>
 
 ## 目录
@@ -87,15 +87,15 @@ C2 --> DB
 ```
 
 图表来源
-- [src/handlers/organization/initialize_system.rs:1-200](file://src/handlers/organization/initialize_system.rs#L1-L200)
-- [src/handlers/organization/auth/login.rs:1-200](file://src/handlers/organization/auth/login.rs#L1-L200)
-- [src/handlers/organization/organizations/get_organization.rs:1-200](file://src/handlers/organization/organizations/get_organization.rs#L1-L200)
-- [src/handlers/organization/user/create_user.rs:1-200](file://src/handlers/organization/user/create_user.rs#L1-L200)
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
+- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L200)
+- [src/handlers/organization/organizations/get_organization.rs:1-200](src/handlers/organization/organizations/get_organization.rs#L1-L200)
+- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 章节来源
-- [docs/organization_design.md:1-218](file://docs/organization_design.md#L1-L218)
+- [docs/organization_design.md:1-218](docs/organization_design.md#L1-L218)
 
 ## 核心组件
 - 领域入口与单例
@@ -110,10 +110,10 @@ C2 --> DB
   - OrganizationDal：对 OrganizationDao 的统一封装，提供 is_initialized、get_by_id、create、query、list_all、update、delete、count 等
 
 章节来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/domain/organization/org.rs:1-134](file://src/service/domain/organization/org.rs#L1-L134)
-- [src/service/domain/organization/user.rs:1-124](file://src/service/domain/organization/user.rs#L1-L124)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/domain/organization/org.rs:1-134](src/service/domain/organization/org.rs#L1-L134)
+- [src/service/domain/organization/user.rs:1-124](src/service/domain/organization/user.rs#L1-L124)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 ## 架构总览
 Organization 领域采用严格的四层单向调用，确保职责清晰与可测试性：
@@ -150,9 +150,9 @@ Handler-->>Client : 返回初始化结果
 ```
 
 图表来源
-- [src/handlers/organization/initialize_system.rs:1-200](file://src/handlers/organization/initialize_system.rs#L1-L200)
-- [src/service/domain/organization/org.rs:53-90](file://src/service/domain/organization/org.rs#L53-L90)
-- [src/service/dal/organization.rs:93-95](file://src/service/dal/organization.rs#L93-L95)
+- [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
+- [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
+- [src/service/dal/organization.rs:93-95](src/service/dal/organization.rs#L93-L95)
 
 ## 详细组件分析
 
@@ -179,12 +179,12 @@ Return --> End(["结束"])
 ```
 
 图表来源
-- [src/service/domain/organization/org.rs:12-36](file://src/service/domain/organization/org.rs#L12-L36)
-- [src/service/domain/organization/org.rs:53-90](file://src/service/domain/organization/org.rs#L53-L90)
+- [src/service/domain/organization/org.rs:12-36](src/service/domain/organization/org.rs#L12-L36)
+- [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
 
 章节来源
-- [src/service/domain/organization/org.rs:12-90](file://src/service/domain/organization/org.rs#L12-L90)
-- [src/handlers/organization/initialize_system.rs:1-200](file://src/handlers/organization/initialize_system.rs#L1-L200)
+- [src/service/domain/organization/org.rs:12-90](src/service/domain/organization/org.rs#L12-L90)
+- [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
 
 ### 用户认证与授权编排
 - 认证流程：
@@ -221,14 +221,14 @@ Login-->>Client : 返回令牌(由JWT中间件处理)
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:1-200](file://src/handlers/organization/auth/login.rs#L1-L200)
-- [src/service/domain/organization/user.rs:85-117](file://src/service/domain/organization/user.rs#L85-L117)
+- [src/handlers/organization/auth/login.rs:1-200](src/handlers/organization/auth/login.rs#L1-L200)
+- [src/service/domain/organization/user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
 
 章节来源
-- [src/service/domain/organization/user.rs:85-117](file://src/service/domain/organization/user.rs#L85-L117)
-- [src/middleware/jwt_auth.rs:1-200](file://src/middleware/jwt_auth.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200)
-- [common/src/enums/user.rs:1-200](file://common/src/enums/user.rs#L1-L200)
+- [src/service/domain/organization/user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
+- [src/middleware/jwt_auth.rs:1-200](src/middleware/jwt_auth.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 ### 权限模型与继承
 - 角色体系：SuperAdmin > Admin > Member
@@ -251,12 +251,12 @@ F --> |否| H["拒绝"]
 ```
 
 图表来源
-- [common/src/enums/user.rs:1-200](file://common/src/enums/user.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200)
+- [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
 
 章节来源
-- [common/src/enums/user.rs:1-200](file://common/src/enums/user.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200)
+- [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
 
 ### 组织管理与成员关系维护
 - 组织管理：
@@ -297,31 +297,31 @@ OrganizationPo <.. UserPo : "多对一(组织-用户)"
 ```
 
 图表来源
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
-- [common/src/enums/organization.rs:1-101](file://common/src/enums/organization.rs#L1-L101)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
+- [common/src/enums/organization.rs:1-101](common/src/enums/organization.rs#L1-L101)
 
 章节来源
-- [src/models/organization.rs:1-62](file://src/models/organization.rs#L1-L62)
-- [common/src/enums/organization.rs:1-101](file://common/src/enums/organization.rs#L1-L101)
+- [src/models/organization.rs:1-62](src/models/organization.rs#L1-L62)
+- [common/src/enums/organization.rs:1-101](common/src/enums/organization.rs#L1-L101)
 
 ### 复杂业务编排示例
 - 组织注册（系统初始化）
   - 步骤：检查是否已初始化 → 创建组织 → 创建超级管理员 → 返回 ID
-  - 参考路径：[src/handlers/organization/initialize_system.rs:1-200](file://src/handlers/organization/initialize_system.rs#L1-L200), [src/service/domain/organization/org.rs:53-90](file://src/service/domain/organization/org.rs#L53-L90)
+  - 参考路径：[src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200), [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
 - 用户邀请与加入
   - 步骤：校验用户名唯一性 → 创建用户并绑定组织 → 设置角色 → 返回用户信息
-  - 参考路径：[src/handlers/organization/user/create_user.rs:1-200](file://src/handlers/organization/user/create_user.rs#L1-L200), [src/service/domain/organization/user.rs:43-46](file://src/service/domain/organization/user.rs#L43-L46)
+  - 参考路径：[src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200), [src/service/domain/organization/user.rs:43-46](src/service/domain/organization/user.rs#L43-L46)
 - 权限分配与继承
   - 步骤：路由层最小权限校验 → 敏感操作二次校验 → 执行变更
-  - 参考路径：[src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200), [common/src/enums/user.rs:1-200](file://common/src/enums/user.rs#L1-L200)
+  - 参考路径：[src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200), [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 章节来源
-- [src/handlers/organization/initialize_system.rs:1-200](file://src/handlers/organization/initialize_system.rs#L1-L200)
-- [src/service/domain/organization/org.rs:53-90](file://src/service/domain/organization/org.rs#L53-L90)
-- [src/handlers/organization/user/create_user.rs:1-200](file://src/handlers/organization/user/create_user.rs#L1-L200)
-- [src/service/domain/organization/user.rs:43-46](file://src/service/domain/organization/user.rs#L43-L46)
-- [src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200)
-- [common/src/enums/user.rs:1-200](file://common/src/enums/user.rs#L1-L200)
+- [src/handlers/organization/initialize_system.rs:1-200](src/handlers/organization/initialize_system.rs#L1-L200)
+- [src/service/domain/organization/org.rs:53-90](src/service/domain/organization/org.rs#L53-L90)
+- [src/handlers/organization/user/create_user.rs:1-200](src/handlers/organization/user/create_user.rs#L1-L200)
+- [src/service/domain/organization/user.rs:43-46](src/service/domain/organization/user.rs#L43-L46)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
+- [common/src/enums/user.rs:1-200](common/src/enums/user.rs#L1-L200)
 
 ## 依赖关系分析
 - 模块耦合
@@ -345,14 +345,14 @@ M2["require_role.rs"] -.-> H
 ```
 
 图表来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
-- [src/middleware/jwt_auth.rs:1-200](file://src/middleware/jwt_auth.rs#L1-L200)
-- [src/middleware/require_role.rs:1-200](file://src/middleware/require_role.rs#L1-L200)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
+- [src/middleware/jwt_auth.rs:1-200](src/middleware/jwt_auth.rs#L1-L200)
+- [src/middleware/require_role.rs:1-200](src/middleware/require_role.rs#L1-L200)
 
 章节来源
-- [src/service/domain/organization/mod.rs:1-200](file://src/service/domain/organization/mod.rs#L1-L200)
-- [src/service/dal/organization.rs:1-126](file://src/service/dal/organization.rs#L1-L126)
+- [src/service/domain/organization/mod.rs:1-200](src/service/domain/organization/mod.rs#L1-L200)
+- [src/service/dal/organization.rs:1-126](src/service/dal/organization.rs#L1-L126)
 
 ## 性能考虑
 - 查询优化
@@ -377,7 +377,7 @@ M2["require_role.rs"] -.-> H
   - 结合集成测试验证关键流程（如 Auth/CRUD/消息投递）
 
 章节来源
-- [docs/organization_design.md:160-218](file://docs/organization_design.md#L160-L218)
+- [docs/organization_design.md:160-218](docs/organization_design.md#L160-L218)
 
 ## 结论
 Organization 领域通过清晰的四层架构与严格的单向依赖，实现了组织与用户管理的稳定编排。核心能力包括：
@@ -399,5 +399,5 @@ Organization 领域通过清晰的四层架构与严格的单向依赖，实现�
   - 认证：POST /api/organization/auth/login，POST /api/organization/auth/logout
 
 章节来源
-- [migrations/20260420000000_initial.sql:1-200](file://migrations/20260420000000_initial.sql#L1-L200)
-- [docs/organization_design.md:89-103](file://docs/organization_design.md#L89-L103)
+- [migrations/20260420000000_initial.sql:1-200](migrations/20260420000000_initial.sql#L1-L200)
+- [docs/organization_design.md:89-103](docs/organization_design.md#L89-L103)

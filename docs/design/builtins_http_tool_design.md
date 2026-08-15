@@ -8,6 +8,9 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [tool_design.md](./tool_design.md) — 工具系统总纲（HTTP Tool Runtime 是工具系统的一个子运行时）
 > - [generic_builtin_tools_design.md](./generic_builtin_tools_design.md) — 通用 Builtin 工具（文件读写/HTTP Fetch，与 HTTP Tool Runtime 定位互补）
+> - 【③ Wiki 长文】[工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md)
+> - 【③ Wiki 长文】[工具管理.md](docs/wiki/zh/content/前端应用/页面模块/Finance%20管理页面/工具管理/工具管理.md) — HTTP 工具 create_form 三 Tab
+> - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §4 红线 §HTTP method 白名单双端校验
 
 ## 概述
 

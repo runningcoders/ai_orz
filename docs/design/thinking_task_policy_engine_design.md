@@ -1,13 +1,25 @@
 # Agent 思考运行时 + 策略引擎设计
 
 > 🎯 **本文档定位**：Agent 思考运行时（AgentThinkRuntime）收敛 + 策略引擎组件（pkg/policy/）的整体设计大纲与关键决策思路；设计评审定稿快照，接口细节与宏展开以实际代码为准。
-> 状态：v2.0（2026-08-14 已评审，2026-08-15 整理）
-> 查阅场景：需要理解思考循环可观察性设计动机、策略引擎解耦哲学、policy_set! 声明宏组合模式、前端轮询+取消链路边界时打开；字段级 trait 定义与策略实现体直接读代码。
+> 状态：v2.0（2026-08-14 已评审，2026-08-15 整理，2026-08-17 wiki/RAG 互引回填）
+> 触发场景：需要理解思考循环可观察性设计动机、策略引擎解耦哲学、policy_set! 声明宏组合模式、前端轮询+取消链路边界时打开；字段级 trait 定义与策略实现体直接读代码。
 >
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
 > - [runtime_design.md](./runtime_design.md) — 两阶段唤醒 Runtime 设计（策略引擎的上游调用方）
 > - [tool_design.md](./tool_design.md) — 工具调用架构（策略判断结果影响工具执行链路）
+> - 【③ Wiki 百科长文 系统化上下文必读】
+>   - [运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) — §5 策略引擎集成与思考运行时挂载子章节
+>   - [Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — §5 RuntimeDomain 3 个观测/编排接口小节
+>   - [思考运行时面板观测接口.md](docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md) — 前端 runtime 面板 + 3 Handler 对接
+>   - [思考轮次统计消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md) — exit_reason + ThinkRoundEvent DuckDB 入库
+> - 【④ RAG 原子知识卡（总结+索引）— 读 §4 硬约束 → §2 关键文件表 → §3 架构约定 → §1 概述】
+>   - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md)
+>   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md)
+>   - [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件.md)
+>   - [思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路](docs/wiki/knowledge/zh/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路/思考退出原因%20exit_reason%20统计与%20ThinkRoundEvent%20AOP%20事件链路.md)
+>   - [两阶段唤醒：IntentAnalyze Phase1 意图分析 + Awaken Phase2 正式执行串联（IntentAnalysis 7 字段 + 6 级 JSON 降级）](docs/wiki/knowledge/zh/两阶段唤醒：IntentAnalyze%20Phase1%20意图分析%20+%20Awaken%20Phase2%20正式执行串联（IntentAnalysis%207%20字段%20+%206%20级%20JSON%20降级）/两阶段唤醒：IntentAnalyze%20Phase1%20意图分析%20+%20Awaken%20Phase2%20正式执行串联（IntentAnalysis%207%20字段%20+%206%20级%20JSON%20降级）.md) — policy_set!(IntentAnalyze) 场景策略由本卡策略引擎驱动
+>   - [AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视](docs/wiki/knowledge/zh/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视/AgentRuntimeInfo%20三态状态机%20+%20BusyGuard%20RAII：Idle%20Busy%20Resting%20转换%20+%20task_id%20project_id%20业务上下文透视.md) — 思考运行时挂在 Busy 态 runtime_info.think_runtime 上（§103 业务上下文字段决策）
 
 ---
 
@@ -205,31 +217,31 @@ pub trait Policy: Send + Sync + 'static {
     }
 }
 ```
-> 当前实现参考：[policy_engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 当前实现参考：[policy_engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 ### 4.2 Metrics
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 **think_loop 构造 Metrics 示例**：
 
-> 相关实现细节见：[runtime think_loop + policy](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 相关实现细节见：[runtime think_loop + policy](src/service/domain/runtime/)
 
 ### 4.3 PolicyGroup
 
 策略组本身实现 Policy trait，支持 And/Or 组合关系，可嵌套。所有派生字段（id/name/condition_desc/required_metrics）从子策略自动拼接生成。
 
-> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 相关实现细节见：[policy engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 **自动生成效果**：
 
-> 相关实现细节见：[pkg/agent_runtime_state.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/agent_runtime_state.rs)
+> 相关实现细节见：[pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 
 ### 4.4 PolicyBuilder + policy_set! 宏
 
 #### PolicyBuilder（底层 API）
 
-> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 相关实现细节见：[policy engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 #### policy_set! 宏（推荐用法）
 
@@ -238,29 +250,29 @@ pub trait Policy: Send + Sync + 'static {
 
 **三种模式**：
 
-> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 相关实现细节见：[policy engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 **底层 API 使用场景**（PolicyBuilder 直接使用）：
 
-> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 相关实现细节见：[policy engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 > 💡 宏内部使用 TT munching 递归处理混合模式的条目，通过 `policy_set_mixed!` 辅助宏逐条匹配（平铺策略 / OR 子组 / AND 子组）。
 
 ### 4.5 内置策略
 
-> 相关实现细节见：[policy engine 模块](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/policy_engine.rs)
+> 相关实现细节见：[policy engine 模块](src/service/domain/runtime/policy_engine.rs)
 
 ### 4.6 业务侧 action 映射
 
 策略引擎不感知业务 action，业务侧维护策略 id → ThinkLoopResult 映射：
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 ### 4.7 按场景构造策略组
 
 通过 `config_resolve` 从 Agent 配置 + 系统配置解析参数，`policy_set!` 宏构造策略组：
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 > 💡 当前实现中所有场景共用同一套策略组（UserCancel OR MaxRounds OR Timeout），ContextOverflowPolicy 暂未启用（run_think_loop 已有独立的上下文溢出检测逻辑，后续可整合）。
 
@@ -279,7 +291,7 @@ pub trait Policy: Send + Sync + 'static {
 
 ### 5.1 AgentThinkRuntime
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 **设计要点**：
 - 不实现 BackgroundTask trait，不注册到 Registry
@@ -289,11 +301,11 @@ pub trait Policy: Send + Sync + 'static {
 
 ### 5.2 AgentRuntimeStateManager 扩展
 
-> 相关实现细节见：[pkg/agent_runtime_state.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/agent_runtime_state.rs)
+> 相关实现细节见：[pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 
 **BusyGuard 扩展**：Drop 时同步清理 think_runtime。
 
-> 相关实现细节见：[runtime think_loop + policy](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/)
+> 相关实现细节见：[runtime think_loop + policy](src/service/domain/runtime/)
 
 ### 5.3 trace_id 生成机制（决策基础）
 
@@ -301,10 +313,10 @@ pub trait Policy: Send + Sync + 'static {
 
 | 场景 | 生成方式 | 格式 | 代码位置 |
 |------|---------|------|---------|
-| **IntentAnalyze**（Phase 1） | 字符串拼接，不建 MemoryTrace | `intent-analyze-{ctx.log_id}` | awakening.rs:1145 |
-| **Awaken**（主循环 Phase 2） | `MemoryTrace::new()` | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs:546 |
-| **Settle**（上下文压缩） | `MemoryTrace::new()` 新建 | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs:954 |
-| **Summary**（总结退出） | `MemoryTrace::new()` 新建，log_id 用 `summary-{parent}` | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs:1329 |
+| **IntentAnalyze**（Phase 1） | 字符串拼接，不建 MemoryTrace | `intent-analyze-{ctx.log_id}` | awakening.rs#L1145 |
+| **Awaken**（主循环 Phase 2） | `MemoryTrace::new()` | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs#L546 |
+| **Settle**（上下文压缩） | `MemoryTrace::new()` 新建 | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs#L954 |
+| **Summary**（总结退出） | `MemoryTrace::new()` 新建，log_id 用 `summary-{parent}` | `trace-{agent_id}-{timestamp_nanos}-{random_u16}` | awakening.rs#L1329 |
 
 **复用规则**：run_think_loop 内部所有轮次复用同一个 trace_id，但跨子流程会生成新的。
 
@@ -337,7 +349,7 @@ Summary:         trace-{agent}-{ts3}-{rand3}   ← 新 trace_id，log_id = summa
 
 ### 5.4 ThinkRuntimeSnapshot 完整定义
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 **注意**：`ThinkRuntimeSnapshot` **不实现** `TaskProgressSnapshot`，因为思考流程没有进度概念。它是独立的运行时快照结构，通过 `AgentRuntimeStatusResponse` 返回给前端。
 
@@ -448,7 +460,7 @@ pub trait RuntimeDomain: Send + Sync {
     fn list_busy_agents(&self, ctx: RequestContext) -> Vec<AgentRuntimeInfo>;
 }
 ```
-> 当前实现参考：[runtime policy + think_loop](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 当前实现参考：[runtime policy + think_loop](src/service/domain/runtime/think_loop.rs)
 
 **职责分工**：cancel 的"信号触发"在 runtime domain（操作 cancel_token），"信号响应"在 think_loop（下一轮检测到取消后返回 Cancelled）。Handler 只做参数校验和调用 domain，不感知 cancel 实现细节。
 
@@ -489,7 +501,7 @@ AgentRuntimeInfo.think_runtime = None         ← 后续查询返回 None
 
 ### 7.1 run_think_loop 签名变化
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 ### 7.2 ThinkLoopResult 新增 Cancelled 变体
 
@@ -501,11 +513,11 @@ pub enum ThinkLoopResult {
     Cancelled { messages: Vec<ChatMessage>, total_rounds: usize },  // 新增
 }
 ```
-> 当前实现：[runtime/types.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/types.rs)
+> 当前实现：[runtime/types.rs](src/service/domain/runtime/types.rs)
 
 ### 7.3 循环体改造（伪代码）
 
-> 相关实现细节见：[runtime/think_loop.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/think_loop.rs)
+> 相关实现细节见：[runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 
 **改造要点**：
 - `max_rounds` 和 `timeout_secs` 控制逻辑被 `policy: &dyn Policy` 替代，控制逻辑从硬编码变为策略驱动
@@ -712,12 +724,12 @@ pub struct CancelThinkingResponse {
 
 ### 5.1 新增内置策略类型（如成本上限 / 工具调用次数限制 / 日配额）
 现有 5 个内置策略：MaxRoundsPolicy / TimeoutPolicy / ContextOverflowPolicy / UserCancelPolicy / EmptyResponsePolicy。
-1. 在 `src/pkg/policy/` 下新增策略实现文件，实现 `Policy` trait，参考现有：[policy 模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/policy)
-2. 在 `policy_set!` 宏体中加入新策略的声明分支（如果扩展宏语法），或直接通过 PolicyBuilder::with_policy 手动注册，参考：[pkg/policy/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/policy/mod.rs)
-3. 对应 ThinkRuntimeSnapshot 新增字段时，保持 BusyGuard Drop 时的清理逻辑一致，参考：[domain/runtime state_manager](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime)
+1. 在 `src/pkg/policy/` 下新增策略实现文件，实现 `Policy` trait，参考现有：[policy 模块](src/pkg/policy)
+2. 在 `policy_set!` 宏体中加入新策略的声明分支（如果扩展宏语法），或直接通过 PolicyBuilder::with_policy 手动注册，参考：[pkg/policy/mod.rs](src/pkg/policy/mod.rs)
+3. 对应 ThinkRuntimeSnapshot 新增字段时，保持 BusyGuard Drop 时的清理逻辑一致，参考：[domain/runtime state_manager](src/service/domain/runtime)
 
 ### 5.2 新增运行时观察维度（如成本估算 / 当前执行的工具栈深度）
 如果未来需要在前端运行时面板中展示更丰富的维度：
-1. 扩展 ThinkRuntimeSnapshot 结构体字段，保持写入时机为每轮 think 上报节点，参考：[AgentThinkRuntime](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime)
-2. runtime-status / runtime-list 两个 handler 无需变更 DTO 结构即可透出，DTO 定义见：[common/src/api/runtime.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/runtime.rs)
-3. 前端运行时面板扩展展示，入口参考现有页面：[frontend/src/pages/agent](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/agent)
+1. 扩展 ThinkRuntimeSnapshot 结构体字段，保持写入时机为每轮 think 上报节点，参考：[AgentThinkRuntime](src/service/domain/runtime)
+2. runtime-status / runtime-list 两个 handler 无需变更 DTO 结构即可透出，DTO 定义见：[common/src/api/runtime.rs](common/src/api/runtime.rs)
+3. 前端运行时面板扩展展示，入口参考现有页面：[frontend/src/pages/agent](frontend/src/pages/agent)

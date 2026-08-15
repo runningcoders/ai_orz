@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/project.rs](file://common/src/api/project.rs)
-- [common/src/enums/project.rs](file://common/src/enums/project.rs)
-- [src/models/project.rs](file://src/models/project.rs)
-- [src/service/dal/project.rs](file://src/service/dal/project.rs)
-- [src/service/domain/project/mod.rs](file://src/service/domain/project/mod.rs)
-- [src/handlers/project/projects/create_project.rs](file://src/handlers/project/projects/create_project.rs)
-- [src/handlers/project/projects/update_project.rs](file://src/handlers/project/projects/update_project.rs)
+- [common/src/api/project.rs](common/src/api/project.rs)
+- [common/src/enums/project.rs](common/src/enums/project.rs)
+- [src/models/project.rs](src/models/project.rs)
+- [src/service/dal/project.rs](src/service/dal/project.rs)
+- [src/service/domain/project/mod.rs](src/service/domain/project/mod.rs)
+- [src/handlers/project/projects/create_project.rs](src/handlers/project/projects/create_project.rs)
+- [src/handlers/project/projects/update_project.rs](src/handlers/project/projects/update_project.rs)
 </cite>
 
 ## 目录
@@ -61,15 +61,15 @@ L1 --> P3
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:1-47](file://src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/handlers/project/projects/update_project.rs:1-41](file://src/handlers/project/projects/update_project.rs#L1-L41)
-- [src/service/domain/project/mod.rs:91-226](file://src/service/domain/project/mod.rs#L91-L226)
-- [src/service/dal/project.rs:90-209](file://src/service/dal/project.rs#L90-L209)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/handlers/project/projects/update_project.rs:1-41](src/handlers/project/projects/update_project.rs#L1-L41)
+- [src/service/domain/project/mod.rs:91-226](src/service/domain/project/mod.rs#L91-L226)
+- [src/service/dal/project.rs:90-209](src/service/dal/project.rs#L90-L209)
 
 章节来源
-- [common/src/api/project.rs:1-255](file://common/src/api/project.rs#L1-L255)
-- [src/service/domain/project/mod.rs:91-226](file://src/service/domain/project/mod.rs#L91-L226)
-- [src/service/dal/project.rs:90-209](file://src/service/dal/project.rs#L90-L209)
+- [common/src/api/project.rs:1-255](common/src/api/project.rs#L1-L255)
+- [src/service/domain/project/mod.rs:91-226](src/service/domain/project/mod.rs#L91-L226)
+- [src/service/dal/project.rs:90-209](src/service/dal/project.rs#L90-L209)
 
 ## 核心组件
 - 项目实体与 PO
@@ -85,12 +85,12 @@ L1 --> P3
   - create_project/update_project：将请求参数透传到 Domain，完成创建/更新并返回详情。
 
 章节来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [common/src/enums/project.rs:8-27](file://common/src/enums/project.rs#L8-L27)
-- [src/service/domain/project/mod.rs:110-226](file://src/service/domain/project/mod.rs#L110-L226)
-- [src/service/dal/project.rs:213-221](file://src/service/dal/project.rs#L213-L221)
-- [src/handlers/project/projects/create_project.rs:10-46](file://src/handlers/project/projects/create_project.rs#L10-L46)
-- [src/handlers/project/projects/update_project.rs:10-40](file://src/handlers/project/projects/update_project.rs#L10-L40)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [common/src/enums/project.rs:8-27](common/src/enums/project.rs#L8-L27)
+- [src/service/domain/project/mod.rs:110-226](src/service/domain/project/mod.rs#L110-L226)
+- [src/service/dal/project.rs:213-221](src/service/dal/project.rs#L213-L221)
+- [src/handlers/project/projects/create_project.rs:10-46](src/handlers/project/projects/create_project.rs#L10-L46)
+- [src/handlers/project/projects/update_project.rs:10-40](src/handlers/project/projects/update_project.rs#L10-L40)
 
 ## 架构总览
 本项目采用严格的四层单向调用：
@@ -119,9 +119,9 @@ H-->>C : CreateProjectResponse(GetProjectResponse)
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [src/service/domain/project/mod.rs:118-129](file://src/service/domain/project/mod.rs#L118-L129)
-- [src/service/dal/project.rs:225-274](file://src/service/dal/project.rs#L225-L274)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [src/service/domain/project/mod.rs:118-129](src/service/domain/project/mod.rs#L118-L129)
+- [src/service/dal/project.rs:225-274](src/service/dal/project.rs#L225-L274)
 
 ## 详细组件分析
 
@@ -180,14 +180,14 @@ Project --> ProjectPo : "聚合"
 ```
 
 图表来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [src/models/project.rs:214-263](file://src/models/project.rs#L214-L263)
-- [src/models/project.rs:282-315](file://src/models/project.rs#L282-L315)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [src/models/project.rs:214-263](src/models/project.rs#L214-L263)
+- [src/models/project.rs:282-315](src/models/project.rs#L282-L315)
 
 章节来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [src/models/project.rs:214-263](file://src/models/project.rs#L214-L263)
-- [src/models/project.rs:282-315](file://src/models/project.rs#L282-L315)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [src/models/project.rs:214-263](src/models/project.rs#L214-L263)
+- [src/models/project.rs:282-315](src/models/project.rs#L282-L315)
 
 ### 项目状态管理与生命周期
 - 状态枚举
@@ -212,16 +212,16 @@ Active --> Archived
 ```
 
 图表来源
-- [common/src/enums/project.rs:8-27](file://common/src/enums/project.rs#L8-L27)
-- [src/models/project.rs:173-183](file://src/models/project.rs#L173-L183)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
-- [src/service/domain/project/mod.rs:219-226](file://src/service/domain/project/mod.rs#L219-L226)
+- [common/src/enums/project.rs:8-27](common/src/enums/project.rs#L8-L27)
+- [src/models/project.rs:173-183](src/models/project.rs#L173-L183)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
+- [src/service/domain/project/mod.rs:219-226](src/service/domain/project/mod.rs#L219-L226)
 
 章节来源
-- [common/src/enums/project.rs:8-27](file://common/src/enums/project.rs#L8-L27)
-- [src/models/project.rs:173-183](file://src/models/project.rs#L173-L183)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
-- [src/service/domain/project/mod.rs:219-226](file://src/service/domain/project/mod.rs#L219-L226)
+- [common/src/enums/project.rs:8-27](common/src/enums/project.rs#L8-L27)
+- [src/models/project.rs:173-183](src/models/project.rs#L173-L183)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
+- [src/service/domain/project/mod.rs:219-226](src/service/domain/project/mod.rs#L219-L226)
 
 ### 创建流程（Create）
 - Handler 接收 CreateProjectRequest，校验用户上下文，透传 owner_agent_id。
@@ -245,12 +245,12 @@ D-->>H : Project
 ```
 
 图表来源
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [src/service/dal/project.rs:225-274](file://src/service/dal/project.rs#L225-L274)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [src/service/dal/project.rs:225-274](src/service/dal/project.rs#L225-L274)
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [src/service/dal/project.rs:225-274](file://src/service/dal/project.rs#L225-L274)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [src/service/dal/project.rs:225-274](src/service/dal/project.rs#L225-L274)
 
 ### 更新流程（Update）
 - Handler 接收 UpdateProjectRequest，调用 Domain.update_basic 更新名称、描述、优先级、标签、执行计划/结果等。
@@ -273,12 +273,12 @@ D-->>H : Project
 ```
 
 图表来源
-- [src/handlers/project/projects/update_project.rs:19-40](file://src/handlers/project/projects/update_project.rs#L19-L40)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
+- [src/handlers/project/projects/update_project.rs:19-40](src/handlers/project/projects/update_project.rs#L19-L40)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
 
 章节来源
-- [src/handlers/project/projects/update_project.rs:19-40](file://src/handlers/project/projects/update_project.rs#L19-L40)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
+- [src/handlers/project/projects/update_project.rs:19-40](src/handlers/project/projects/update_project.rs#L19-L40)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
 
 ### 查询与搜索（Query/Search）
 - Query：通用综合查询，支持 ids/keyword/status_in/owner_agent_id 过滤与分页。
@@ -304,18 +304,18 @@ Page --> End(["结束"])
 ```
 
 图表来源
-- [src/service/dal/project.rs:490-703](file://src/service/dal/project.rs#L490-L703)
+- [src/service/dal/project.rs:490-703](src/service/dal/project.rs#L490-L703)
 
 章节来源
-- [src/service/dal/project.rs:490-703](file://src/service/dal/project.rs#L490-L703)
+- [src/service/dal/project.rs:490-703](src/service/dal/project.rs#L490-L703)
 
 ### 删除（归档）与软删除策略
 - 归档：通过 DAL.archive 将状态置为 Archived，并清理向量索引。
 - 软删除：状态 Deleted 默认被过滤，不在常规查询中返回。
 
 章节来源
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
-- [common/src/enums/project.rs:8-27](file://common/src/enums/project.rs#L8-L27)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
+- [common/src/enums/project.rs:8-27](common/src/enums/project.rs#L8-L27)
 
 ### 权限控制与上下文
 - Handler 从 RequestContext 获取当前用户 ID，作为 root_user_id 与 modified_by。
@@ -323,8 +323,8 @@ Page --> End(["结束"])
 - 系统级查询（如 list_all_by_status）用于调度场景，忽略 root_user_id 过滤。
 
 章节来源
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [src/service/dal/project.rs:124-130](file://src/service/dal/project.rs#L124-L130)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [src/service/dal/project.rs:124-130](src/service/dal/project.rs#L124-L130)
 
 ### 版本管理与执行计划/结果
 - execution_plan：Agent Loop 规划阶段产出，可随项目更新。
@@ -332,17 +332,17 @@ Page --> End(["结束"])
 - 这些字段参与更新流程，并在更新时触发向量索引重建（若内容变化）。
 
 章节来源
-- [src/models/project.rs:52-58](file://src/models/project.rs#L52-L58)
-- [src/handlers/project/projects/update_project.rs:19-40](file://src/handlers/project/projects/update_project.rs#L19-L40)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
+- [src/models/project.rs:52-58](src/models/project.rs#L52-L58)
+- [src/handlers/project/projects/update_project.rs:19-40](src/handlers/project/projects/update_project.rs#L19-L40)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
 
 ### 项目模板机制
 - 模板可通过 workflow/guidance 字段定义标准运作流程与指导建议，为空时使用默认流程。
 - 创建项目时可传入 workflow/guidance，后续可由 Agent 或管理员更新。
 
 章节来源
-- [src/models/project.rs:24-27](file://src/models/project.rs#L24-L27)
-- [common/src/api/project.rs:10-28](file://common/src/api/project.rs#L10-L28)
+- [src/models/project.rs:24-27](src/models/project.rs#L24-L27)
+- [common/src/api/project.rs:10-28](common/src/api/project.rs#L10-L28)
 
 ### 批量操作与数据导入导出
 - 批量查询：支持 ids 批量过滤（query/search）。
@@ -350,8 +350,8 @@ Page --> End(["结束"])
 - 数据导入：基于 CreateProjectRequest 批量调用创建接口，注意幂等与错误重试。
 
 章节来源
-- [common/src/api/project.rs:214-251](file://common/src/api/project.rs#L214-L251)
-- [src/service/dal/project.rs:132-181](file://src/service/dal/project.rs#L132-L181)
+- [common/src/api/project.rs:214-251](common/src/api/project.rs#L214-L251)
+- [src/service/dal/project.rs:132-181](src/service/dal/project.rs#L132-L181)
 
 ### 与组织、用户、Agent 的关联关系
 - root_user_id：项目归属的用户（根用户）。
@@ -359,9 +359,9 @@ Page --> End(["结束"])
 - 数据一致性：创建/更新时由 Handler 注入 root_user_id/modified_by；DAL 在归档时清理向量索引，保持索引与状态一致。
 
 章节来源
-- [src/models/project.rs:34-37](file://src/models/project.rs#L34-L37)
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
+- [src/models/project.rs:34-37](src/models/project.rs#L34-L37)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 单例，Domain 依赖 DAL 单例，DAL 依赖多个 DAO（ProjectDao/ProjectVectorDao/ProjectStatsDao）。
@@ -379,12 +379,12 @@ L --> CT["CortexDao"]
 ```
 
 图表来源
-- [src/service/domain/project/mod.rs:63-89](file://src/service/domain/project/mod.rs#L63-L89)
-- [src/service/dal/project.rs:29-47](file://src/service/dal/project.rs#L29-L47)
+- [src/service/domain/project/mod.rs:63-89](src/service/domain/project/mod.rs#L63-L89)
+- [src/service/dal/project.rs:29-47](src/service/dal/project.rs#L29-L47)
 
 章节来源
-- [src/service/domain/project/mod.rs:63-89](file://src/service/domain/project/mod.rs#L63-L89)
-- [src/service/dal/project.rs:29-47](file://src/service/dal/project.rs#L29-L47)
+- [src/service/domain/project/mod.rs:63-89](src/service/domain/project/mod.rs#L63-L89)
+- [src/service/dal/project.rs:29-47](src/service/dal/project.rs#L29-L47)
 
 ## 性能考虑
 - 向量索引：创建/更新时按需重建，内容未变则跳过；失败降级不影响主流程。
@@ -393,10 +393,10 @@ L --> CT["CortexDao"]
 - 重建向量：provider 变更或集合元数据不一致时清空重建，避免重复计算。
 
 章节来源
-- [src/service/dal/project.rs:230-274](file://src/service/dal/project.rs#L230-L274)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
-- [src/service/dal/project.rs:490-703](file://src/service/dal/project.rs#L490-L703)
-- [src/service/dal/project.rs:738-800](file://src/service/dal/project.rs#L738-L800)
+- [src/service/dal/project.rs:230-274](src/service/dal/project.rs#L230-L274)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
+- [src/service/dal/project.rs:490-703](src/service/dal/project.rs#L490-L703)
+- [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
 
 ## 故障排查指南
 - 向量索引失败：查看日志中的 vector_index/vector_search/rebuild_vectors 警告，确认 Embedding Provider 配置与可用性。
@@ -405,9 +405,9 @@ L --> CT["CortexDao"]
 - 权限问题：确认 root_user_id 与 modified_by 是否正确注入，列表查询是否受限于 root_user_id。
 
 章节来源
-- [src/service/dal/project.rs:230-274](file://src/service/dal/project.rs#L230-L274)
-- [src/service/dal/project.rs:490-703](file://src/service/dal/project.rs#L490-L703)
-- [src/service/dal/project.rs:738-800](file://src/service/dal/project.rs#L738-L800)
+- [src/service/dal/project.rs:230-274](src/service/dal/project.rs#L230-L274)
+- [src/service/dal/project.rs:490-703](src/service/dal/project.rs#L490-L703)
+- [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
 
 ## 结论
 本项目对“项目”实体提供了完整的 CRUD、查询与搜索能力，并通过 Domain 层统一状态流转与业务规则，DAL 层封装统计与向量索引维护，Handler 层专注参数与上下文处理。整体架构清晰、职责分明，具备良好的可扩展性与容错性。
@@ -426,8 +426,8 @@ L --> CT["CortexDao"]
 - 错误：缺少用户上下文时返回 InvalidRequest
 
 章节来源
-- [common/src/api/project.rs:10-31](file://common/src/api/project.rs#L10-L31)
-- [src/handlers/project/projects/create_project.rs:22-46](file://src/handlers/project/projects/create_project.rs#L22-L46)
+- [common/src/api/project.rs:10-31](common/src/api/project.rs#L10-L31)
+- [src/handlers/project/projects/create_project.rs:22-46](src/handlers/project/projects/create_project.rs#L22-L46)
 
 ### 获取项目详情
 - 路径：GET /api/v1/projects/{id}
@@ -442,7 +442,7 @@ L --> CT["CortexDao"]
 - 响应：GetProjectResponse
 
 章节来源
-- [common/src/api/project.rs:33-147](file://common/src/api/project.rs#L33-L147)
+- [common/src/api/project.rs:33-147](common/src/api/project.rs#L33-L147)
 
 ### 获取项目列表
 - 路径：GET /api/v1/projects
@@ -450,8 +450,8 @@ L --> CT["CortexDao"]
 - 响应：ListProjectsResponse（projects 列表）
 
 章节来源
-- [common/src/api/project.rs:65-97](file://common/src/api/project.rs#L65-L97)
-- [common/src/api/project.rs:207-212](file://common/src/api/project.rs#L207-L212)
+- [common/src/api/project.rs:65-97](common/src/api/project.rs#L65-L97)
+- [common/src/api/project.rs:207-212](common/src/api/project.rs#L207-L212)
 
 ### 更新项目基本信息
 - 路径：PUT /api/v1/projects/{id}
@@ -462,8 +462,8 @@ L --> CT["CortexDao"]
 - 响应：UpdateProjectResponse（即 GetProjectResponse）
 
 章节来源
-- [common/src/api/project.rs:167-190](file://common/src/api/project.rs#L167-L190)
-- [src/handlers/project/projects/update_project.rs:19-40](file://src/handlers/project/projects/update_project.rs#L19-L40)
+- [common/src/api/project.rs:167-190](common/src/api/project.rs#L167-L190)
+- [src/handlers/project/projects/update_project.rs:19-40](src/handlers/project/projects/update_project.rs#L19-L40)
 
 ### 更新项目状态
 - 路径：PATCH /api/v1/projects/{id}/status
@@ -473,7 +473,7 @@ L --> CT["CortexDao"]
 - 响应：UpdateProjectStatusResponse（即 GetProjectResponse）
 
 章节来源
-- [common/src/api/project.rs:192-205](file://common/src/api/project.rs#L192-L205)
+- [common/src/api/project.rs:192-205](common/src/api/project.rs#L192-L205)
 
 ### 通用查询
 - 路径：POST /api/v1/projects/query
@@ -482,7 +482,7 @@ L --> CT["CortexDao"]
 - 响应：PagedResult<ProjectListItem>
 
 章节来源
-- [common/src/api/project.rs:214-230](file://common/src/api/project.rs#L214-L230)
+- [common/src/api/project.rs:214-230](common/src/api/project.rs#L214-L230)
 
 ### 搜索项目
 - 路径：POST /api/v1/projects/search
@@ -491,4 +491,4 @@ L --> CT["CortexDao"]
 - 响应：SearchProjectsResponse（PagedResult<ProjectListItem>）
 
 章节来源
-- [common/src/api/project.rs:232-251](file://common/src/api/project.rs#L232-L251)
+- [common/src/api/project.rs:232-251](common/src/api/project.rs#L232-L251)

@@ -2,21 +2,21 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/src/pages/finance/mod.rs](file://frontend/src/pages/finance/mod.rs)
-- [frontend/src/pages/finance/tools.rs](file://frontend/src/pages/finance/tools.rs)
-- [frontend/src/pages/finance/mcp_servers.rs](file://frontend/src/pages/finance/mcp_servers.rs)
-- [frontend/src/pages/finance/model_providers.rs](file://frontend/src/pages/finance/model_providers.rs)
-- [frontend/src/pages/finance/message_channels.rs](file://frontend/src/pages/finance/message_channels.rs)
-- [frontend/src/pages/finance/attachments.rs](file://frontend/src/pages/finance/attachments.rs)
-- [frontend/src/api/finance.rs](file://frontend/src/api/finance.rs)
-- [src/handlers/finance/mod.rs](file://src/handlers/finance/mod.rs)
-- [src/handlers/finance/tool/mod.rs](file://src/handlers/finance/tool/mod.rs)
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
-- [src/handlers/finance/message_channel/mod.rs](file://src/handlers/finance/message_channel/mod.rs)
-- [src/handlers/finance/attachment/mod.rs](file://src/handlers/finance/attachment/mod.rs)
-- [src/pkg/tool_tracing/mod.rs](file://src/pkg/tool_tracing/mod.rs)
-- [src/consumer/message.rs](file://src/consumer/message.rs)
+- [frontend/src/pages/finance/mod.rs](frontend/src/pages/finance/mod.rs)
+- [frontend/src/pages/finance/tools.rs](frontend/src/pages/finance/tools.rs)
+- [frontend/src/pages/finance/mcp_servers.rs](frontend/src/pages/finance/mcp_servers.rs)
+- [frontend/src/pages/finance/model_providers.rs](frontend/src/pages/finance/model_providers.rs)
+- [frontend/src/pages/finance/message_channels.rs](frontend/src/pages/finance/message_channels.rs)
+- [frontend/src/pages/finance/attachments.rs](frontend/src/pages/finance/attachments.rs)
+- [frontend/src/api/finance.rs](frontend/src/api/finance.rs)
+- [src/handlers/finance/mod.rs](src/handlers/finance/mod.rs)
+- [src/handlers/finance/tool/mod.rs](src/handlers/finance/tool/mod.rs)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
+- [src/handlers/finance/message_channel/mod.rs](src/handlers/finance/message_channel/mod.rs)
+- [src/handlers/finance/attachment/mod.rs](src/handlers/finance/attachment/mod.rs)
+- [src/pkg/tool_tracing/mod.rs](src/pkg/tool_tracing/mod.rs)
+- [src/consumer/message.rs](src/consumer/message.rs)
 </cite>
 
 ## 目录
@@ -66,13 +66,13 @@ SVC --> VEC["向量存储<br/>LanceDB/HNSW/SqliteVss"]
 ```
 
 图表来源
-- [frontend/src/pages/finance/mod.rs:1-12](file://frontend/src/pages/finance/mod.rs#L1-L12)
-- [frontend/src/api/finance.rs:24-332](file://frontend/src/api/finance.rs#L24-L332)
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
+- [frontend/src/pages/finance/mod.rs:1-12](frontend/src/pages/finance/mod.rs#L1-L12)
+- [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
+- [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
 
 章节来源
-- [frontend/src/pages/finance/mod.rs:1-12](file://frontend/src/pages/finance/mod.rs#L1-L12)
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
+- [frontend/src/pages/finance/mod.rs:1-12](frontend/src/pages/finance/mod.rs#L1-L12)
+- [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
 
 ## 核心组件
 - 工具管理：支持列表、查询、搜索、启用/禁用、删除、调试调用、标签聚合、调用记录查询。
@@ -82,12 +82,12 @@ SVC --> VEC["向量存储<br/>LanceDB/HNSW/SqliteVss"]
 - 附件管理：支持文本附件创建、文件上传、内容获取与更新、删除。
 
 章节来源
-- [frontend/src/pages/finance/tools.rs:1-289](file://frontend/src/pages/finance/tools.rs#L1-L289)
-- [frontend/src/pages/finance/mcp_servers.rs:1-306](file://frontend/src/pages/finance/mcp_servers.rs#L1-L306)
-- [frontend/src/pages/finance/model_providers.rs:1-502](file://frontend/src/pages/finance/model_providers.rs#L1-L502)
-- [frontend/src/pages/finance/message_channels.rs:1-332](file://frontend/src/pages/finance/message_channels.rs#L1-L332)
-- [frontend/src/pages/finance/attachments.rs:1-187](file://frontend/src/pages/finance/attachments.rs#L1-L187)
-- [frontend/src/api/finance.rs:24-332](file://frontend/src/api/finance.rs#L24-L332)
+- [frontend/src/pages/finance/tools.rs:1-289](frontend/src/pages/finance/tools.rs#L1-L289)
+- [frontend/src/pages/finance/mcp_servers.rs:1-306](frontend/src/pages/finance/mcp_servers.rs#L1-L306)
+- [frontend/src/pages/finance/model_providers.rs:1-502](frontend/src/pages/finance/model_providers.rs#L1-L502)
+- [frontend/src/pages/finance/message_channels.rs:1-332](frontend/src/pages/finance/message_channels.rs#L1-L332)
+- [frontend/src/pages/finance/attachments.rs:1-187](frontend/src/pages/finance/attachments.rs#L1-L187)
+- [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
 
 ## 架构总览
 Finance 管理页面遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。前端通过 API 封装调用后端 Handler，Handler 委托领域服务完成业务逻辑，DAL/DAO 负责持久化与查询。AOP 与日志追踪贯穿关键路径，保障可观测性。
@@ -110,12 +110,12 @@ API-->>UI : 渲染/提示/刷新
 ```
 
 图表来源
-- [frontend/src/api/finance.rs:24-332](file://frontend/src/api/finance.rs#L24-L332)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [src/handlers/finance/attachment/mod.rs:1-21](file://src/handlers/finance/attachment/mod.rs#L1-L21)
+- [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
 
 ## 详细组件分析
 
@@ -155,17 +155,17 @@ Debug --> Render
 ```
 
 图表来源
-- [frontend/src/pages/finance/tools.rs:36-101](file://frontend/src/pages/finance/tools.rs#L36-L101)
-- [frontend/src/pages/finance/tools.rs:153-170](file://frontend/src/pages/finance/tools.rs#L153-L170)
-- [frontend/src/pages/finance/tools.rs:218-255](file://frontend/src/pages/finance/tools.rs#L218-L255)
-- [frontend/src/pages/finance/tools.rs:267-285](file://frontend/src/pages/finance/tools.rs#L267-L285)
-- [frontend/src/api/finance.rs:107-163](file://frontend/src/api/finance.rs#L107-L163)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
+- [frontend/src/pages/finance/tools.rs:36-101](frontend/src/pages/finance/tools.rs#L36-L101)
+- [frontend/src/pages/finance/tools.rs:153-170](frontend/src/pages/finance/tools.rs#L153-L170)
+- [frontend/src/pages/finance/tools.rs:218-255](frontend/src/pages/finance/tools.rs#L218-L255)
+- [frontend/src/pages/finance/tools.rs:267-285](frontend/src/pages/finance/tools.rs#L267-L285)
+- [frontend/src/api/finance.rs:107-163](frontend/src/api/finance.rs#L107-L163)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 
 章节来源
-- [frontend/src/pages/finance/tools.rs:1-289](file://frontend/src/pages/finance/tools.rs#L1-L289)
-- [frontend/src/api/finance.rs:107-163](file://frontend/src/api/finance.rs#L107-L163)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
+- [frontend/src/pages/finance/tools.rs:1-289](frontend/src/pages/finance/tools.rs#L1-L289)
+- [frontend/src/api/finance.rs:107-163](frontend/src/api/finance.rs#L107-L163)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 
 ### MCP 服务器集成
 - 功能要点
@@ -190,15 +190,15 @@ API-->>UI : 刷新列表/提示
 ```
 
 图表来源
-- [frontend/src/pages/finance/mcp_servers.rs:48-99](file://frontend/src/pages/finance/mcp_servers.rs#L48-L99)
-- [frontend/src/pages/finance/mcp_servers.rs:208-222](file://frontend/src/pages/finance/mcp_servers.rs#L208-L222)
-- [frontend/src/api/finance.rs:205-235](file://frontend/src/api/finance.rs#L205-L235)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [frontend/src/pages/finance/mcp_servers.rs:48-99](frontend/src/pages/finance/mcp_servers.rs#L48-L99)
+- [frontend/src/pages/finance/mcp_servers.rs:208-222](frontend/src/pages/finance/mcp_servers.rs#L208-L222)
+- [frontend/src/api/finance.rs:205-235](frontend/src/api/finance.rs#L205-L235)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
 
 章节来源
-- [frontend/src/pages/finance/mcp_servers.rs:1-306](file://frontend/src/pages/finance/mcp_servers.rs#L1-L306)
-- [frontend/src/api/finance.rs:205-235](file://frontend/src/api/finance.rs#L205-L235)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [frontend/src/pages/finance/mcp_servers.rs:1-306](frontend/src/pages/finance/mcp_servers.rs#L1-L306)
+- [frontend/src/api/finance.rs:205-235](frontend/src/api/finance.rs#L205-L235)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
 
 ### 模型提供商管理
 - 功能要点
@@ -225,16 +225,16 @@ API-->>UI : 提示/刷新/打开切换确认
 ```
 
 图表来源
-- [frontend/src/pages/finance/model_providers.rs:64-116](file://frontend/src/pages/finance/model_providers.rs#L64-L116)
-- [frontend/src/pages/finance/model_providers.rs:118-132](file://frontend/src/pages/finance/model_providers.rs#L118-L132)
-- [frontend/src/pages/finance/model_providers.rs:134-159](file://frontend/src/pages/finance/model_providers.rs#L134-L159)
-- [frontend/src/api/finance.rs:24-103](file://frontend/src/api/finance.rs#L24-L103)
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [frontend/src/pages/finance/model_providers.rs:64-116](frontend/src/pages/finance/model_providers.rs#L64-L116)
+- [frontend/src/pages/finance/model_providers.rs:118-132](frontend/src/pages/finance/model_providers.rs#L118-L132)
+- [frontend/src/pages/finance/model_providers.rs:134-159](frontend/src/pages/finance/model_providers.rs#L134-L159)
+- [frontend/src/api/finance.rs:24-103](frontend/src/api/finance.rs#L24-L103)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
 
 章节来源
-- [frontend/src/pages/finance/model_providers.rs:1-502](file://frontend/src/pages/finance/model_providers.rs#L1-L502)
-- [frontend/src/api/finance.rs:24-103](file://frontend/src/api/finance.rs#L24-L103)
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [frontend/src/pages/finance/model_providers.rs:1-502](frontend/src/pages/finance/model_providers.rs#L1-L502)
+- [frontend/src/api/finance.rs:24-103](frontend/src/api/finance.rs#L24-L103)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
 
 ### 消息渠道管理
 - 功能要点
@@ -260,15 +260,15 @@ API-->>UI : 提示/刷新
 ```
 
 图表来源
-- [frontend/src/pages/finance/message_channels.rs:50-121](file://frontend/src/pages/finance/message_channels.rs#L50-L121)
-- [frontend/src/pages/finance/message_channels.rs:202-218](file://frontend/src/pages/finance/message_channels.rs#L202-L218)
-- [frontend/src/api/finance.rs:167-201](file://frontend/src/api/finance.rs#L167-L201)
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [frontend/src/pages/finance/message_channels.rs:50-121](frontend/src/pages/finance/message_channels.rs#L50-L121)
+- [frontend/src/pages/finance/message_channels.rs:202-218](frontend/src/pages/finance/message_channels.rs#L202-L218)
+- [frontend/src/api/finance.rs:167-201](frontend/src/api/finance.rs#L167-L201)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 
 章节来源
-- [frontend/src/pages/finance/message_channels.rs:1-332](file://frontend/src/pages/finance/message_channels.rs#L1-L332)
-- [frontend/src/api/finance.rs:167-201](file://frontend/src/api/finance.rs#L167-L201)
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [frontend/src/pages/finance/message_channels.rs:1-332](frontend/src/pages/finance/message_channels.rs#L1-L332)
+- [frontend/src/api/finance.rs:167-201](frontend/src/api/finance.rs#L167-L201)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 
 ### 附件管理
 - 功能要点
@@ -292,15 +292,15 @@ API-->>UI : 提示/刷新
 ```
 
 图表来源
-- [frontend/src/pages/finance/attachments.rs:41-73](file://frontend/src/pages/finance/attachments.rs#L41-L73)
-- [frontend/src/pages/finance/attachments.rs:162-183](file://frontend/src/pages/finance/attachments.rs#L162-L183)
-- [frontend/src/api/finance.rs:237-282](file://frontend/src/api/finance.rs#L237-L282)
-- [src/handlers/finance/attachment/mod.rs:1-21](file://src/handlers/finance/attachment/mod.rs#L1-L21)
+- [frontend/src/pages/finance/attachments.rs:41-73](frontend/src/pages/finance/attachments.rs#L41-L73)
+- [frontend/src/pages/finance/attachments.rs:162-183](frontend/src/pages/finance/attachments.rs#L162-L183)
+- [frontend/src/api/finance.rs:237-282](frontend/src/api/finance.rs#L237-L282)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
 
 章节来源
-- [frontend/src/pages/finance/attachments.rs:1-187](file://frontend/src/pages/finance/attachments.rs#L1-L187)
-- [frontend/src/api/finance.rs:237-282](file://frontend/src/api/finance.rs#L237-L282)
-- [src/handlers/finance/attachment/mod.rs:1-21](file://src/handlers/finance/attachment/mod.rs#L1-L21)
+- [frontend/src/pages/finance/attachments.rs:1-187](frontend/src/pages/finance/attachments.rs#L1-L187)
+- [frontend/src/api/finance.rs:237-282](frontend/src/api/finance.rs#L237-L282)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
 
 ## 依赖关系分析
 - 前端依赖
@@ -325,15 +325,15 @@ HF --> MSG["消息投递"]
 ```
 
 图表来源
-- [frontend/src/api/finance.rs:24-332](file://frontend/src/api/finance.rs#L24-L332)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/pkg/tool_tracing/mod.rs:1-12](file://src/pkg/tool_tracing/mod.rs#L1-L12)
-- [src/consumer/message.rs:439-477](file://src/consumer/message.rs#L439-L477)
+- [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/pkg/tool_tracing/mod.rs:1-12](src/pkg/tool_tracing/mod.rs#L1-L12)
+- [src/consumer/message.rs:439-477](src/consumer/message.rs#L439-L477)
 
 章节来源
-- [frontend/src/api/finance.rs:24-332](file://frontend/src/api/finance.rs#L24-L332)
-- [src/pkg/tool_tracing/mod.rs:1-12](file://src/pkg/tool_tracing/mod.rs#L1-L12)
-- [src/consumer/message.rs:439-477](file://src/consumer/message.rs#L439-L477)
+- [frontend/src/api/finance.rs:24-332](frontend/src/api/finance.rs#L24-L332)
+- [src/pkg/tool_tracing/mod.rs:1-12](src/pkg/tool_tracing/mod.rs#L1-L12)
+- [src/consumer/message.rs:439-477](src/consumer/message.rs#L439-L477)
 
 ## 性能考虑
 - 前端优化
@@ -364,8 +364,8 @@ HF --> MSG["消息投递"]
   - 在后端日志中搜索相关 call_id 或 agent_id，定位问题根因。
 
 章节来源
-- [src/pkg/tool_tracing/mod.rs:1-12](file://src/pkg/tool_tracing/mod.rs#L1-L12)
-- [src/consumer/message.rs:439-477](file://src/consumer/message.rs#L439-L477)
+- [src/pkg/tool_tracing/mod.rs:1-12](src/pkg/tool_tracing/mod.rs#L1-L12)
+- [src/consumer/message.rs:439-477](src/consumer/message.rs#L439-L477)
 
 ## 结论
 Finance 管理页面模块以清晰的前后端分层与模块化设计，提供了完整的工具管理、MCP 集成、模型提供商管理、消息渠道管理与附件管理能力。通过信号驱动的数据绑定、严格的表单验证、健壮的异步处理与错误恢复机制，以及完善的日志与统计追踪，确保了系统的可维护性与可观测性。建议在后续迭代中继续强化性能优化与安全加固，进一步提升用户体验与系统稳定性。

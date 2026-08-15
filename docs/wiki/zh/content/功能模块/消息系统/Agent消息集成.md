@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**   
-- [send_message_to_agent.rs](file://src/handlers/finance/message/send_message_to_agent.rs)
-- [send_task_assignment_message.rs](file://src/handlers/finance/message/send_task_assignment_message.rs)
-- [message.rs（消费者）](file://src/consumer/message.rs)
-- [message_domain/mod.rs](file://src/service/domain/message/mod.rs)
-- [awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [busy_guard.rs](file://src/service/domain/runtime/busy_guard.rs)
-- [jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [router.rs](file://src/router.rs)
-- [message.rs（API DTOs）](file://common/src/api/message.rs)
-- [a2a.rs（A2A运行时DAO）](file://src/service/dao/agent_runtime/a2a.rs)
-- [external_agent_design.md](file://docs/external_agent_design.md)
-- [message_channel.rs（生产者）](file://src/producer/message_channel.rs)
+- [send_message_to_agent.rs](src/handlers/finance/message/send_message_to_agent.rs)
+- [send_task_assignment_message.rs](src/handlers/finance/message/send_task_assignment_message.rs)
+- [message.rs（消费者）](src/consumer/message.rs)
+- [message_domain/mod.rs](src/service/domain/message/mod.rs)
+- [awakening.rs](src/service/domain/runtime/awakening.rs)
+- [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [busy_guard.rs](src/service/domain/runtime/busy_guard.rs)
+- [jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [router.rs](src/router.rs)
+- [message.rs（API DTOs）](common/src/api/message.rs)
+- [a2a.rs（A2A运行时DAO）](src/service/dao/agent_runtime/a2a.rs)
+- [external_agent_design.md](docs/external_agent_design.md)
+- [message_channel.rs（生产者）](src/producer/message_channel.rs)
 </cite>
 
 ## 目录
@@ -54,22 +54,22 @@ Runtime --> State["Agent运行时状态管理器"]
 ```
 
 图表来源
-- [router.rs:12-37](file://src/router.rs#L12-L37)
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [router.rs:12-37](src/router.rs#L12-L37)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 章节来源
-- [router.rs:12-37](file://src/router.rs#L12-L37)
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [router.rs:12-37](src/router.rs#L12-L37)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 ## 核心组件
 - HTTP处理器
@@ -89,14 +89,14 @@ Runtime --> State["Agent运行时状态管理器"]
   - JWT中间件双模式认证（Cookie/Bearer），路由层保护受保护端点。
 
 章节来源
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [router.rs:12-37](file://src/router.rs#L12-L37)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [router.rs:12-37](src/router.rs#L12-L37)
 
 ## 架构总览
 下图展示从HTTP请求到Agent唤醒的完整链路，包含认证、路由、领域、事件与消费者。
@@ -126,12 +126,12 @@ W-->>A : ack/nack
 ```
 
 图表来源
-- [router.rs:12-37](file://src/router.rs#L12-L37)
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [router.rs:12-37](src/router.rs#L12-L37)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 ## 详细组件分析
 
@@ -164,12 +164,12 @@ Send --> Return["返回 message_id"]
 ```
 
 图表来源
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [message_domain/mod.rs:121-143](file://src/service/domain/message/mod.rs#L121-L143)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [message_domain/mod.rs:121-143](src/service/domain/message/mod.rs#L121-L143)
 
 章节来源
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [message_domain/mod.rs:121-143](file://src/service/domain/message/mod.rs#L121-L143)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [message_domain/mod.rs:121-143](src/service/domain/message/mod.rs#L121-L143)
 
 ### 任务分配消息 send_task_assignment_message
 - 功能要点
@@ -191,12 +191,12 @@ Note over D : 消息持久化并发布 MESSAGE_CREATED
 ```
 
 图表来源
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
-- [message_domain/mod.rs:310-315](file://src/service/domain/message/mod.rs#L310-L315)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message_domain/mod.rs:310-315](src/service/domain/message/mod.rs#L310-L315)
 
 章节来源
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
-- [message_domain/mod.rs:310-315](file://src/service/domain/message/mod.rs#L310-L315)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message_domain/mod.rs:310-315](src/service/domain/message/mod.rs#L310-L315)
 
 ### 消费者与Agent唤醒
 - 事件消费
@@ -227,16 +227,16 @@ Awaken --> Done["完成并释放Busy"]
 ```
 
 图表来源
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [message.rs（消费者）:147-357](file://src/consumer/message.rs#L147-L357)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [message.rs（消费者）:147-357](src/consumer/message.rs#L147-L357)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 章节来源
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [message.rs（消费者）:147-357](file://src/consumer/message.rs#L147-L357)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [message.rs（消费者）:147-357](src/consumer/message.rs#L147-L357)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 ### Agent状态管理与Busy清理
 - 原子占用
@@ -264,12 +264,12 @@ AgentRuntimeStateManager <.. BusyGuard : "drop时调用set_idle"
 ```
 
 图表来源
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 章节来源
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [busy_guard.rs:1-32](file://src/service/domain/runtime/busy_guard.rs#L1-L32)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [busy_guard.rs:1-32](src/service/domain/runtime/busy_guard.rs#L1-L32)
 
 ### 消息协议与外部Agent（A2A）
 - 本地消息协议
@@ -291,12 +291,12 @@ Local->>Local : 调用Domain发送用户消息/更新任务状态
 ```
 
 图表来源
-- [a2a.rs:150-195](file://src/service/dao/agent_runtime/a2a.rs#L150-L195)
-- [external_agent_design.md:107-188](file://docs/external_agent_design.md#L107-L188)
+- [a2a.rs:150-195](src/service/dao/agent_runtime/a2a.rs#L150-L195)
+- [external_agent_design.md:107-188](docs/external_agent_design.md#L107-L188)
 
 章节来源
-- [a2a.rs:150-195](file://src/service/dao/agent_runtime/a2a.rs#L150-L195)
-- [external_agent_design.md:107-188](file://docs/external_agent_design.md#L107-L188)
+- [a2a.rs:150-195](src/service/dao/agent_runtime/a2a.rs#L150-L195)
+- [external_agent_design.md:107-188](docs/external_agent_design.md#L107-L188)
 
 ### 消息路由与消息通道生产者
 - 路由规则
@@ -314,10 +314,10 @@ Deliver --> Log["记录投递日志"]
 ```
 
 图表来源
-- [message_channel.rs:40-90](file://src/producer/message_channel.rs#L40-L90)
+- [message_channel.rs:40-90](src/producer/message_channel.rs#L40-L90)
 
 章节来源
-- [message_channel.rs:40-90](file://src/producer/message_channel.rs#L40-L90)
+- [message_channel.rs:40-90](src/producer/message_channel.rs#L40-L90)
 
 ## 依赖关系分析
 - 模块耦合
@@ -339,16 +339,16 @@ Router --> Handler
 ```
 
 图表来源
-- [router.rs:12-37](file://src/router.rs#L12-L37)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [router.rs:12-37](src/router.rs#L12-L37)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 章节来源
-- [router.rs:12-37](file://src/router.rs#L12-L37)
-- [message_domain/mod.rs:281-331](file://src/service/domain/message/mod.rs#L281-L331)
-- [message.rs（消费者）:78-111](file://src/consumer/message.rs#L78-L111)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
+- [router.rs:12-37](src/router.rs#L12-L37)
+- [message_domain/mod.rs:281-331](src/service/domain/message/mod.rs#L281-L331)
+- [message.rs（消费者）:78-111](src/consumer/message.rs#L78-L111)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
 
 ## 性能与可靠性
 - 队列与优先级
@@ -363,9 +363,9 @@ Router --> Handler
   - 状态变更发布AgentStateEvent；awaken发布AgentLoopEvent；工具调用日志持久化JSONL。
 
 章节来源
-- [message.rs（消费者）:130-140](file://src/consumer/message.rs#L130-L140)
-- [agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
+- [message.rs（消费者）:130-140](src/consumer/message.rs#L130-L140)
+- [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
 
 ## 故障排查指南
 - 常见问题
@@ -383,10 +383,10 @@ Router --> Handler
   - 查看工具调用日志与trace_ref定位问题。
 
 章节来源
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [message.rs（消费者）:359-389](file://src/consumer/message.rs#L359-L389)
-- [agent_runtime_state.rs:73-107](file://src/pkg/agent_runtime_state.rs#L73-L107)
-- [message.rs（消费者）:198-294](file://src/consumer/message.rs#L198-L294)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [message.rs（消费者）:359-389](src/consumer/message.rs#L359-L389)
+- [agent_runtime_state.rs:73-107](src/pkg/agent_runtime_state.rs#L73-L107)
+- [message.rs（消费者）:198-294](src/consumer/message.rs#L198-L294)
 
 ## 结论
 Agent消息集成功能通过清晰的层次划分与AOP事件驱动，实现了高可靠的消息投递与Agent唤醒。结合原子状态管理、RAII清理、优先级队列与重试机制，系统在并发与容错方面具备良好表现。配合JWT认证与路由保护，确保了安全性与权限控制。建议在生产环境持续监控AOP事件队列与Agent状态，结合SSE与日志追踪进行端到端诊断。
@@ -404,8 +404,8 @@ Agent消息集成功能通过清晰的层次划分与AOP事件驱动，实现了
   - 列表/搜索：返回消息列表与分页信息。
 
 章节来源
-- [message.rs（API DTOs）:7-102](file://common/src/api/message.rs#L7-L102)
-- [message.rs（API DTOs）:104-172](file://common/src/api/message.rs#L104-L172)
-- [message.rs（API DTOs）:174-235](file://common/src/api/message.rs#L174-L235)
-- [send_message_to_agent.rs:29-92](file://src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
-- [send_task_assignment_message.rs:22-47](file://src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)
+- [message.rs（API DTOs）:7-102](common/src/api/message.rs#L7-L102)
+- [message.rs（API DTOs）:104-172](common/src/api/message.rs#L104-L172)
+- [message.rs（API DTOs）:174-235](common/src/api/message.rs#L174-L235)
+- [send_message_to_agent.rs:29-92](src/handlers/finance/message/send_message_to_agent.rs#L29-L92)
+- [send_task_assignment_message.rs:22-47](src/handlers/finance/message/send_task_assignment_message.rs#L22-L47)

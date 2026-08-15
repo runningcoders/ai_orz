@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/dao/cortex/native/http.rs](file://src/service/dao/cortex/native/http.rs)
-- [src/service/dao/lark/http.rs](file://src/service/dao/lark/http.rs)
-- [src/service/dao/slack/http.rs](file://src/service/dao/slack/http.rs)
-- [src/service/dao/webhook/http.rs](file://src/service/dao/webhook/http.rs)
-- [src/service/dao/wechat/http.rs](file://src/service/dao/wechat/http.rs)
-- [src/service/dao/a2a_callback/http.rs](file://src/service/dao/a2a_callback/http.rs)
-- [src/handlers/a2a/callback.rs](file://src/handlers/a2a/callback.rs)
-- [common/src/config.rs](file://common/src/config.rs)
-- [common/src/error/mod.rs](file://common/src/error/mod.rs)
+- [src/service/dao/cortex/native/http.rs](src/service/dao/cortex/native/http.rs)
+- [src/service/dao/lark/http.rs](src/service/dao/lark/http.rs)
+- [src/service/dao/slack/http.rs](src/service/dao/slack/http.rs)
+- [src/service/dao/webhook/http.rs](src/service/dao/webhook/http.rs)
+- [src/service/dao/wechat/http.rs](src/service/dao/wechat/http.rs)
+- [src/service/dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs)
+- [src/handlers/a2a/callback.rs](src/handlers/a2a/callback.rs)
+- [common/src/config.rs](common/src/config.rs)
+- [common/src/error/mod.rs](common/src/error/mod.rs)
 </cite>
 
 ## 目录
@@ -55,16 +55,16 @@ D1 --> L4
 ```
 
 图表来源
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/service/dao/lark/http.rs:219-289](file://src/service/dao/lark/http.rs#L219-L289)
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 
 章节来源
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/service/dao/lark/http.rs:219-289](file://src/service/dao/lark/http.rs#L219-L289)
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 
 ## 核心组件
 - OpenAI 兼容模型调用（Chat Completions / Embeddings / 多模态 Embeddings）
@@ -78,15 +78,15 @@ D1 --> L4
   - 当前为占位实现，返回“不支持”错误，便于后续扩展。
 
 章节来源
-- [src/service/dao/cortex/native/http.rs:15-36](file://src/service/dao/cortex/native/http.rs#L15-L36)
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
-- [src/service/dao/cortex/native/http.rs:204-309](file://src/service/dao/cortex/native/http.rs#L204-L309)
-- [src/service/dao/lark/http.rs:80-217](file://src/service/dao/lark/http.rs#L80-L217)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/slack/http.rs:39-59](file://src/service/dao/slack/http.rs#L39-L59)
-- [src/service/dao/webhook/http.rs:39-62](file://src/service/dao/webhook/http.rs#L39-L62)
-- [src/service/dao/wechat/http.rs:39-59](file://src/service/dao/wechat/http.rs#L39-L59)
+- [src/service/dao/cortex/native/http.rs:15-36](src/service/dao/cortex/native/http.rs#L15-L36)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
+- [src/service/dao/cortex/native/http.rs:204-309](src/service/dao/cortex/native/http.rs#L204-L309)
+- [src/service/dao/lark/http.rs:80-217](src/service/dao/lark/http.rs#L80-L217)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/slack/http.rs:39-59](src/service/dao/slack/http.rs#L39-L59)
+- [src/service/dao/webhook/http.rs:39-62](src/service/dao/webhook/http.rs#L39-L62)
+- [src/service/dao/wechat/http.rs:39-59](src/service/dao/wechat/http.rs#L39-L59)
 
 ## 架构总览
 下图展示一次“远程 A2A 回调触发 → 本地任务状态更新 → 向用户投递消息”的完整流程，以及“本地消息推送至飞书”的并行链路。
@@ -111,9 +111,9 @@ Lark->>Remote : 发送飞书消息
 ```
 
 图表来源
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/service/dao/lark/http.rs:219-289](file://src/service/dao/lark/http.rs#L219-L289)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 
 ## 详细组件分析
 
@@ -146,12 +146,12 @@ ToolCheck -- 否 --> ReturnFinal["返回 Final 结果"]
 ```
 
 图表来源
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 
 章节来源
-- [src/service/dao/cortex/native/http.rs:15-36](file://src/service/dao/cortex/native/http.rs#L15-L36)
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
-- [src/service/dao/cortex/native/http.rs:204-309](file://src/service/dao/cortex/native/http.rs#L204-L309)
+- [src/service/dao/cortex/native/http.rs:15-36](src/service/dao/cortex/native/http.rs#L15-L36)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
+- [src/service/dao/cortex/native/http.rs:204-309](src/service/dao/cortex/native/http.rs#L204-L309)
 
 ### 飞书渠道（lark/http.rs）
 - 职责
@@ -184,12 +184,12 @@ LarkDao-->>Caller : token
 ```
 
 图表来源
-- [src/service/dao/lark/http.rs:80-153](file://src/service/dao/lark/http.rs#L80-L153)
+- [src/service/dao/lark/http.rs:80-153](src/service/dao/lark/http.rs#L80-L153)
 
 章节来源
-- [src/service/dao/lark/http.rs:22-78](file://src/service/dao/lark/http.rs#L22-L78)
-- [src/service/dao/lark/http.rs:80-217](file://src/service/dao/lark/http.rs#L80-L217)
-- [src/service/dao/lark/http.rs:219-289](file://src/service/dao/lark/http.rs#L219-L289)
+- [src/service/dao/lark/http.rs:22-78](src/service/dao/lark/http.rs#L22-L78)
+- [src/service/dao/lark/http.rs:80-217](src/service/dao/lark/http.rs#L80-L217)
+- [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 
 ### A2A 回调（a2a_callback/http.rs 与 handlers/a2a/callback.rs）
 - 职责
@@ -216,12 +216,12 @@ Msg-->>A2ADao : 可选：回推任务上下文由上层决定
 ```
 
 图表来源
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
 
 章节来源
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
 
 ### Slack / Webhook / 微信（占位实现）
 - 现状
@@ -231,9 +231,9 @@ Msg-->>A2ADao : 可选：回推任务上下文由上层决定
   - 在消息投递域中按渠道类型分发到对应 DAO。
 
 章节来源
-- [src/service/dao/slack/http.rs:39-59](file://src/service/dao/slack/http.rs#L39-L59)
-- [src/service/dao/webhook/http.rs:39-62](file://src/service/dao/webhook/http.rs#L39-L62)
-- [src/service/dao/wechat/http.rs:39-59](file://src/service/dao/wechat/http.rs#L39-L59)
+- [src/service/dao/slack/http.rs:39-59](src/service/dao/slack/http.rs#L39-L59)
+- [src/service/dao/webhook/http.rs:39-62](src/service/dao/webhook/http.rs#L39-L62)
+- [src/service/dao/wechat/http.rs:39-59](src/service/dao/wechat/http.rs#L39-L59)
 
 ## 依赖关系分析
 - 模块耦合
@@ -259,15 +259,15 @@ Cortex --> Prov["ModelProviderPo"]
 ```
 
 图表来源
-- [src/handlers/a2a/callback.rs:17-198](file://src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/service/dao/lark/http.rs:219-289](file://src/service/dao/lark/http.rs#L219-L289)
-- [src/service/dao/cortex/native/http.rs:82-202](file://src/service/dao/cortex/native/http.rs#L82-L202)
-- [common/src/config.rs:490-549](file://common/src/config.rs#L490-L549)
+- [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
+- [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
+- [common/src/config.rs:490-549](common/src/config.rs#L490-L549)
 
 章节来源
-- [common/src/config.rs:490-549](file://common/src/config.rs#L490-L549)
-- [common/src/error/mod.rs:1-25](file://common/src/error/mod.rs#L1-L25)
+- [common/src/config.rs:490-549](common/src/config.rs#L490-L549)
+- [common/src/error/mod.rs:1-25](common/src/error/mod.rs#L1-L25)
 
 ## 性能与并发
 - 连接复用
@@ -301,12 +301,12 @@ Cortex --> Prov["ModelProviderPo"]
   - 当前为占位实现，需先实现具体推送逻辑后再测试。
 
 章节来源
-- [src/service/dao/lark/http.rs:102-153](file://src/service/dao/lark/http.rs#L102-L153)
-- [src/service/dao/a2a_callback/http.rs:41-157](file://src/service/dao/a2a_callback/http.rs#L41-L157)
-- [src/service/dao/cortex/native/http.rs:130-202](file://src/service/dao/cortex/native/http.rs#L130-L202)
-- [src/service/dao/slack/http.rs:39-59](file://src/service/dao/slack/http.rs#L39-L59)
-- [src/service/dao/webhook/http.rs:39-62](file://src/service/dao/webhook/http.rs#L39-L62)
-- [src/service/dao/wechat/http.rs:39-59](file://src/service/dao/wechat/http.rs#L39-L59)
+- [src/service/dao/lark/http.rs:102-153](src/service/dao/lark/http.rs#L102-L153)
+- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/cortex/native/http.rs:130-202](src/service/dao/cortex/native/http.rs#L130-L202)
+- [src/service/dao/slack/http.rs:39-59](src/service/dao/slack/http.rs#L39-L59)
+- [src/service/dao/webhook/http.rs:39-62](src/service/dao/webhook/http.rs#L39-L62)
+- [src/service/dao/wechat/http.rs:39-59](src/service/dao/wechat/http.rs#L39-L59)
 
 ## 结论
 本仓库的外部 API 数据访问对象以 DAO 层为核心，围绕 OpenAI 兼容模型调用、飞书渠道、A2A 回调实现了稳定可靠的 HTTP 封装与第三方集成。当前实现具备基础鉴权、错误映射与日志记录能力；在连接池复用、自动重试与限流方面仍有优化空间。建议逐步完善 Slack/Webhook/微信渠道，并在通用 HTTP 层引入重试与限流策略，以提升整体鲁棒性与可观测性。

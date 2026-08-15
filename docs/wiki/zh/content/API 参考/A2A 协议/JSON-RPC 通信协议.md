@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [jsonrpc.rs](file://src/handlers/a2a/jsonrpc.rs)
-- [mod.rs](file://src/handlers/a2a/mod.rs)
-- [mapper.rs](file://src/handlers/a2a/mapper.rs)
-- [send_task.rs](file://src/handlers/a2a/send_task.rs)
-- [get_task.rs](file://src/handlers/a2a/get_task.rs)
-- [cancel_task.rs](file://src/handlers/a2a/cancel_task.rs)
-- [a2a.rs](file://common/src/api/a2a.rs)
-- [router.rs](file://src/router.rs)
-- [ai_orz.toml](file://common/config/ai_orz.toml)
-- [integration_test.rs](file://src/handlers/a2a/integration_test.rs)
+- [jsonrpc.rs](src/handlers/a2a/jsonrpc.rs)
+- [mod.rs](src/handlers/a2a/mod.rs)
+- [mapper.rs](src/handlers/a2a/mapper.rs)
+- [send_task.rs](src/handlers/a2a/send_task.rs)
+- [get_task.rs](src/handlers/a2a/get_task.rs)
+- [cancel_task.rs](src/handlers/a2a/cancel_task.rs)
+- [a2a.rs](common/src/api/a2a.rs)
+- [router.rs](src/router.rs)
+- [ai_orz.toml](common/config/ai_orz.toml)
+- [integration_test.rs](src/handlers/a2a/integration_test.rs)
 </cite>
 
 ## 目录
@@ -57,17 +57,17 @@ Domain --> DB["SQLite"]
 ```
 
 图表来源
-- [router.rs:27-56](file://src/router.rs#L27-L56)
-- [jsonrpc.rs:21-75](file://src/handlers/a2a/jsonrpc.rs#L21-L75)
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
-- [get_task.rs:17-48](file://src/handlers/a2a/get_task.rs#L17-L48)
-- [cancel_task.rs:17-54](file://src/handlers/a2a/cancel_task.rs#L17-L54)
-- [mapper.rs:14-84](file://src/handlers/a2a/mapper.rs#L14-L84)
+- [router.rs:27-56](src/router.rs#L27-L56)
+- [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
+- [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
+- [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
+- [mapper.rs:14-84](src/handlers/a2a/mapper.rs#L14-L84)
 
 章节来源
-- [mod.rs:1-22](file://src/handlers/a2a/mod.rs#L1-L22)
-- [router.rs:12-58](file://src/router.rs#L12-L58)
-- [jsonrpc.rs:1-75](file://src/handlers/a2a/jsonrpc.rs#L1-L75)
+- [mod.rs:1-22](src/handlers/a2a/mod.rs#L1-L22)
+- [router.rs:12-58](src/router.rs#L12-L58)
+- [jsonrpc.rs:1-75](src/handlers/a2a/jsonrpc.rs#L1-L75)
 
 ## 核心组件
 - JSON-RPC 入口与分发：负责解析请求体、校验版本、按 method 分发到具体处理器，并将结果或错误封装为 JSON-RPC 响应。
@@ -80,14 +80,14 @@ Domain --> DB["SQLite"]
 - 路由与中间件：/a2a 端点受 JWT 保护，/a2a/subscribe SSE 流式端点同样受 JWT 保护；/.well-known/agent.json 公开发现端点；/a2a/callback/{task_id} 公开回调端点。
 
 章节来源
-- [a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
-- [a2a.rs:147-306](file://common/src/api/a2a.rs#L147-L306)
-- [jsonrpc.rs:21-75](file://src/handlers/a2a/jsonrpc.rs#L21-L75)
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
-- [get_task.rs:17-48](file://src/handlers/a2a/get_task.rs#L17-L48)
-- [cancel_task.rs:17-54](file://src/handlers/a2a/cancel_task.rs#L17-L54)
-- [mapper.rs:14-99](file://src/handlers/a2a/mapper.rs#L14-L99)
-- [router.rs:21-56](file://src/router.rs#L21-L56)
+- [a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
+- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
+- [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
+- [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
+- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
+- [router.rs:21-56](src/router.rs#L21-L56)
 
 ## 架构总览
 A2A JSON-RPC 通信层遵循四层单向调用：Adapter（HTTP Handler / 公开回调 Handler / AOP Producer）→ Domain → DAL → DAO。Handler 层组合 agent 与 project 两个维度，不直接唤醒 Agent；唤醒由 consumer 异步闭环。所有公共方法跨层传递使用 RequestContext::clone()。
@@ -116,13 +116,13 @@ H-->>C : JsonRpcResponse{result}
 ```
 
 图表来源
-- [router.rs:27-38](file://src/router.rs#L27-L38)
-- [jsonrpc.rs:21-75](file://src/handlers/a2a/jsonrpc.rs#L21-L75)
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
+- [router.rs:27-38](src/router.rs#L27-L38)
+- [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 
 章节来源
-- [router.rs:12-58](file://src/router.rs#L12-L58)
-- [jsonrpc.rs:1-75](file://src/handlers/a2a/jsonrpc.rs#L1-L75)
+- [router.rs:12-58](src/router.rs#L12-L58)
+- [jsonrpc.rs:1-75](src/handlers/a2a/jsonrpc.rs#L1-L75)
 
 ## 详细组件分析
 
@@ -152,10 +152,10 @@ WrapOk --> End
 ```
 
 图表来源
-- [jsonrpc.rs:21-75](file://src/handlers/a2a/jsonrpc.rs#L21-L75)
+- [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
 
 章节来源
-- [jsonrpc.rs:1-75](file://src/handlers/a2a/jsonrpc.rs#L1-L75)
+- [jsonrpc.rs:1-75](src/handlers/a2a/jsonrpc.rs#L1-L75)
 
 ### 任务提交（tasks/send）
 - 从 RequestContext 获取用户 ID，校验上下文。
@@ -191,10 +191,10 @@ S-->>H : A2aTask(working)
 ```
 
 图表来源
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 
 章节来源
-- [send_task.rs:1-128](file://src/handlers/a2a/send_task.rs#L1-L128)
+- [send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
 
 ### 任务查询（tasks/get）
 - 根据 task_id 查询项目，不存在则返回 not_found。
@@ -222,11 +222,11 @@ G-->>H : A2aTask
 ```
 
 图表来源
-- [get_task.rs:17-48](file://src/handlers/a2a/get_task.rs#L17-L48)
-- [mapper.rs:57-84](file://src/handlers/a2a/mapper.rs#L57-L84)
+- [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
+- [mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 章节来源
-- [get_task.rs:1-49](file://src/handlers/a2a/get_task.rs#L1-L49)
+- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
 
 ### 任务取消（tasks/cancel）
 - 查询项目确保存在。
@@ -259,11 +259,11 @@ C-->>H : A2aTask
 ```
 
 图表来源
-- [cancel_task.rs:17-54](file://src/handlers/a2a/cancel_task.rs#L17-L54)
-- [mapper.rs:57-84](file://src/handlers/a2a/mapper.rs#L57-L84)
+- [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
+- [mapper.rs:57-84](src/handlers/a2a/mapper.rs#L57-L84)
 
 章节来源
-- [cancel_task.rs:1-55](file://src/handlers/a2a/cancel_task.rs#L1-L55)
+- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
 
 ### 消息映射器（mapper）
 - project_status_to_a2a_state：将内部 ProjectStatus 映射为 A2A TaskState（Active/PendingReview→Submitted，InProgress→Working，Completed→Completed，Archived→Canceled，Deleted→Failed）。
@@ -306,10 +306,10 @@ Mapper --> A2aArtifact : "转换"
 ```
 
 图表来源
-- [mapper.rs:14-99](file://src/handlers/a2a/mapper.rs#L14-L99)
+- [mapper.rs:14-99](src/handlers/a2a/mapper.rs#L14-L99)
 
 章节来源
-- [mapper.rs:1-99](file://src/handlers/a2a/mapper.rs#L1-L99)
+- [mapper.rs:1-99](src/handlers/a2a/mapper.rs#L1-L99)
 
 ### 协议类型与错误码
 - JSON-RPC 请求：包含 jsonrpc、id、method、params。
@@ -321,8 +321,8 @@ Mapper --> A2aArtifact : "转换"
 - 方法参数：SendTaskParams（id、message、session_id、metadata、notification_url）、GetTaskParams（id、history_length）、CancelTaskParams（id）。
 
 章节来源
-- [a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
-- [a2a.rs:147-306](file://common/src/api/a2a.rs#L147-L306)
+- [a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
+- [a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
 
 ### 路由与中间件
 - /.well-known/agent.json：公开发现端点，仅需要 RequestContext。
@@ -332,7 +332,7 @@ Mapper --> A2aArtifact : "转换"
 - 中间件顺序：jwt_auth_middleware（外层）→ request_context_middleware（内层），确保 RequestContext 包含 JWT 注入的用户信息。
 
 章节来源
-- [router.rs:21-56](file://src/router.rs#L21-L56)
+- [router.rs:21-56](src/router.rs#L21-L56)
 
 ## 依赖关系分析
 - Handler 层依赖 Domain 层进行业务编排，不直接访问 DAL/DAO。
@@ -351,15 +351,15 @@ Router["router.rs"] --> Handler
 ```
 
 图表来源
-- [router.rs:21-56](file://src/router.rs#L21-L56)
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
-- [get_task.rs:17-48](file://src/handlers/a2a/get_task.rs#L17-L48)
-- [cancel_task.rs:17-54](file://src/handlers/a2a/cancel_task.rs#L17-L54)
+- [router.rs:21-56](src/router.rs#L21-L56)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
+- [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
+- [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
 
 章节来源
-- [send_task.rs:1-128](file://src/handlers/a2a/send_task.rs#L1-L128)
-- [get_task.rs:1-49](file://src/handlers/a2a/get_task.rs#L1-L49)
-- [cancel_task.rs:1-55](file://src/handlers/a2a/cancel_task.rs#L1-L55)
+- [send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
+- [get_task.rs:1-49](src/handlers/a2a/get_task.rs#L1-L49)
+- [cancel_task.rs:1-55](src/handlers/a2a/cancel_task.rs#L1-L55)
 
 ## 性能考虑
 - 异步提交：tasks/send 立即返回 working 状态，不阻塞等待 Agent 回复，降低请求延迟。
@@ -380,10 +380,10 @@ Router["router.rs"] --> Handler
 - 缺少用户上下文：send_task 校验 ctx.uid() 为空时报错，检查 JWT 是否正确携带。
 
 章节来源
-- [jsonrpc.rs:21-75](file://src/handlers/a2a/jsonrpc.rs#L21-L75)
-- [send_task.rs:31-43](file://src/handlers/a2a/send_task.rs#L31-L43)
-- [get_task.rs:17-25](file://src/handlers/a2a/get_task.rs#L17-L25)
-- [cancel_task.rs:17-25](file://src/handlers/a2a/cancel_task.rs#L17-L25)
+- [jsonrpc.rs:21-75](src/handlers/a2a/jsonrpc.rs#L21-L75)
+- [send_task.rs:31-43](src/handlers/a2a/send_task.rs#L31-L43)
+- [get_task.rs:17-25](src/handlers/a2a/get_task.rs#L17-L25)
+- [cancel_task.rs:17-25](src/handlers/a2a/cancel_task.rs#L17-L25)
 
 ## 结论
 A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 Agent 协作能力。通过 JSON-RPC 2.0 的请求/响应模型、严格的错误码体系与灵活的映射器设计，系统能够高效地处理任务提交、查询与取消，并支持异步唤醒与回调推送。配合路由中间件的认证与上下文注入，确保了安全性与可观测性。建议在集成测试中覆盖完整流程，并结合监控指标持续优化性能与稳定性。
@@ -401,8 +401,8 @@ A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 
 - 最佳实践：合理设置 history_length，避免过大响应；轮询间隔建议指数退避。
 
 章节来源
-- [a2a.rs:290-298](file://common/src/api/a2a.rs#L290-L298)
-- [get_task.rs:17-48](file://src/handlers/a2a/get_task.rs#L17-L48)
+- [a2a.rs:290-298](common/src/api/a2a.rs#L290-L298)
+- [get_task.rs:17-48](src/handlers/a2a/get_task.rs#L17-L48)
 
 ### 异步调用模式（tasks/send）
 - 目的：提交任务并立即获得 working 状态，后续通过轮询或回调获取结果。
@@ -414,8 +414,8 @@ A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 
 - 最佳实践：session_id 用于多轮对话关联；notification_url 提升实时性；content 截断避免过长项目名称。
 
 章节来源
-- [a2a.rs:269-288](file://common/src/api/a2a.rs#L269-L288)
-- [send_task.rs:31-127](file://src/handlers/a2a/send_task.rs#L31-L127)
+- [a2a.rs:269-288](common/src/api/a2a.rs#L269-L288)
+- [send_task.rs:31-127](src/handlers/a2a/send_task.rs#L31-L127)
 
 ### 取消任务（tasks/cancel）
 - 目的：将任务标记为 canceled。
@@ -426,8 +426,8 @@ A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 
 - 最佳实践：确保任务处于可取消状态；取消后仍可查询历史消息。
 
 章节来源
-- [a2a.rs:300-305](file://common/src/api/a2a.rs#L300-L305)
-- [cancel_task.rs:17-54](file://src/handlers/a2a/cancel_task.rs#L17-L54)
+- [a2a.rs:300-305](common/src/api/a2a.rs#L300-L305)
+- [cancel_task.rs:17-54](src/handlers/a2a/cancel_task.rs#L17-L54)
 
 ### 连接管理与会话保持
 - 连接管理：基于 HTTP/HTTPS 长连接或短连接，建议客户端实现重试与超时。
@@ -442,4 +442,4 @@ A2A JSON-RPC 通信层以标准化协议与清晰的分层架构实现了外部 
 - 执行方式：使用 sqlx::test 运行，确保 SQLite 环境就绪。
 
 章节来源
-- [integration_test.rs:1-135](file://src/handlers/a2a/integration_test.rs#L1-L135)
+- [integration_test.rs:1-135](src/handlers/a2a/integration_test.rs#L1-L135)

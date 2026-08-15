@@ -1,8 +1,8 @@
 # Handler 管理面 API 补齐方案
 
-> 📦 **归档标记（2026-08-15）**：本文档描述的早期 **Handler 补齐四大设计原则 + 管理面 CRUD 覆盖矩阵** 已被 [AGENTS.md](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md) §3.1（分层架构 + Handler 设计补充）与 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)（开发者实操手册，含反模式与规范示例）正式收编为全局开发规范；具体 Handler 落地按 AGENTS §4.5「每个业务方法一个独立文件」执行。
+> 📦 **归档标记（2026-08-15）**：本文档描述的早期 **Handler 补齐四大设计原则 + 管理面 CRUD 覆盖矩阵** 已被 [AGENTS.md](AGENTS.md) §3.1（分层架构 + Handler 设计补充）与 [docs/LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)（开发者实操手册，含反模式与规范示例）正式收编为全局开发规范；具体 Handler 落地按 AGENTS §4.5「每个业务方法一个独立文件」执行。
 > 保留原因：历史审计——追溯 2026-06-04 时点对 Handler 职责边界的原始 4 条设计原则（与 Action 对应/按 Domain 能力补/区分管理运行面/统一状态接口）是如何上升为全局规范的。
-> 当前生效方案请参考：[AGENTS.md §3.1 + §4.5](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md)（Handler 分层职责 + 拆分规范）+ [LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)（实践 7 适配层架构原则 + 反模式示例）
+> 当前生效方案请参考：[AGENTS.md §3.1 + §4.5](AGENTS.md)（Handler 分层职责 + 拆分规范）+ [LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md)（实践 7 适配层架构原则 + 反模式示例）
 
 > 记录日期：2026-06-04  
 > 背景：Domain 层已经沉淀了较多管理维度能力，但 Handler / Router 暴露不完整。本文档记录管理面 CRUD Handler 的补齐边界、覆盖矩阵和分阶段实施计划。

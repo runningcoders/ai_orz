@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/mcp_server.rs](file://common/src/api/mcp_server.rs)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [src/pkg/tool_registry/mcp.rs](file://src/pkg/tool_registry/mcp.rs)
-- [src/service/dal/mcp_server.rs](file://src/service/dal/mcp_server.rs)
-- [src/service/dal/mcp_tool.rs](file://src/service/dal/mcp_tool.rs)
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
-- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
-- [src/service/domain/finance/mcp_server.rs](file://src/service/domain/finance/mcp_server.rs)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
+- [common/src/api/mcp_server.rs](common/src/api/mcp_server.rs)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
+- [src/service/dal/mcp_server.rs](src/service/dal/mcp_server.rs)
+- [src/service/dal/mcp_tool.rs](src/service/dal/mcp_tool.rs)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
+- [src/service/domain/finance/mcp_server.rs](src/service/domain/finance/mcp_server.rs)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
 </cite>
 
 ## 目录
@@ -74,24 +74,24 @@ L2 --> DB
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/service/domain/finance/mcp_server.rs:1-39](file://src/service/domain/finance/mcp_server.rs#L1-L39)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/service/domain/finance/mcp_server.rs:1-39](file://src/service/domain/finance/mcp_server.rs#L1-L39)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
 
 ## 核心组件
 - MCP Server 实体与配置：定义传输类型、状态、连接配置及脱敏能力
@@ -101,13 +101,13 @@ L2 --> DB
 - HTTP Handlers：暴露 MCP Server CRUD、状态更新、工具同步与列表接口
 
 章节来源
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
 
 ## 架构总览
 下图展示从 HTTP 请求到 MCP 工具执行的完整链路，包括工具同步流程与运行时调用路径。
@@ -144,11 +144,11 @@ DalTool-->>Handler : 返回结果
 ```
 
 图表来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/service/dal/mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [src/pkg/tool_registry/mcp.rs:90-140](file://src/pkg/tool_registry/mcp.rs#L90-L140)
-- [src/pkg/tool_registry/mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [src/service/dal/mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/service/dal/mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [src/pkg/tool_registry/mcp.rs:90-140](src/pkg/tool_registry/mcp.rs#L90-L140)
+- [src/pkg/tool_registry/mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [src/service/dal/mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
 
 ## 详细组件分析
 
@@ -209,13 +209,13 @@ McpServerPo --> McpServerStatus : "枚举"
 ```
 
 图表来源
-- [src/models/mcp_server.rs:17-58](file://src/models/mcp_server.rs#L17-L58)
-- [src/models/mcp_server.rs:60-95](file://src/models/mcp_server.rs#L60-L95)
-- [src/models/mcp_server.rs:97-167](file://src/models/mcp_server.rs#L97-L167)
-- [src/models/mcp_server.rs:224-322](file://src/models/mcp_server.rs#L224-L322)
+- [src/models/mcp_server.rs:17-58](src/models/mcp_server.rs#L17-L58)
+- [src/models/mcp_server.rs:60-95](src/models/mcp_server.rs#L60-L95)
+- [src/models/mcp_server.rs:97-167](src/models/mcp_server.rs#L97-L167)
+- [src/models/mcp_server.rs:224-322](src/models/mcp_server.rs#L224-L322)
 
 章节来源
-- [src/models/mcp_server.rs:1-322](file://src/models/mcp_server.rs#L1-L322)
+- [src/models/mcp_server.rs:1-322](src/models/mcp_server.rs#L1-L322)
 
 ### MCP Server DAL（创建/更新/删除/状态）
 - 创建：校验配置后持久化，填充审计字段
@@ -236,11 +236,11 @@ Invalidate --> End(["完成"])
 ```
 
 图表来源
-- [src/service/dal/mcp_server.rs:105-129](file://src/service/dal/mcp_server.rs#L105-L129)
-- [src/service/dal/mcp_server.rs:132-159](file://src/service/dal/mcp_server.rs#L132-L159)
+- [src/service/dal/mcp_server.rs:105-129](src/service/dal/mcp_server.rs#L105-L129)
+- [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
 
 章节来源
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
 
 ### MCP Tool DAL（工具同步/执行/列表）
 - 同步：从远端 MCP 服务拉取工具元数据，写入/更新本地 ToolPo，未保留的工具标记为 Stale
@@ -270,12 +270,12 @@ DalTool-->>Caller : synced count
 ```
 
 图表来源
-- [src/service/dal/mcp_tool.rs:108-167](file://src/service/dal/mcp_tool.rs#L108-L167)
-- [src/service/dal/mcp_tool.rs:169-217](file://src/service/dal/mcp_tool.rs#L169-L217)
-- [src/service/dal/mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
+- [src/service/dal/mcp_tool.rs:108-167](src/service/dal/mcp_tool.rs#L108-L167)
+- [src/service/dal/mcp_tool.rs:169-217](src/service/dal/mcp_tool.rs#L169-L217)
+- [src/service/dal/mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
 
 章节来源
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
 
 ### MCP Tool Registry（连接管理/工具发现/调用）
 - 连接：基于 stdio 启动子进程，设置环境变量，建立会话；支持连接超时与初始化超时
@@ -302,13 +302,13 @@ ErrHttp --> Return
 ```
 
 图表来源
-- [src/pkg/tool_registry/mcp.rs:72-101](file://src/pkg/tool_registry/mcp.rs#L72-L101)
-- [src/pkg/tool_registry/mcp.rs:103-140](file://src/pkg/tool_registry/mcp.rs#L103-L140)
-- [src/pkg/tool_registry/mcp.rs:142-192](file://src/pkg/tool_registry/mcp.rs#L142-L192)
-- [src/pkg/tool_registry/mcp.rs:200-240](file://src/pkg/tool_registry/mcp.rs#L200-L240)
+- [src/pkg/tool_registry/mcp.rs:72-101](src/pkg/tool_registry/mcp.rs#L72-L101)
+- [src/pkg/tool_registry/mcp.rs:103-140](src/pkg/tool_registry/mcp.rs#L103-L140)
+- [src/pkg/tool_registry/mcp.rs:142-192](src/pkg/tool_registry/mcp.rs#L142-L192)
+- [src/pkg/tool_registry/mcp.rs:200-240](src/pkg/tool_registry/mcp.rs#L200-L240)
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 ### HTTP 处理器（API）
 - MCP Server 管理：创建、获取、列表、更新、状态更新、删除
@@ -316,9 +316,9 @@ ErrHttp --> Return
 - 工具列表：GET /api/v1/mcp-servers/{server_id}/tools
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的管理能力
@@ -341,18 +341,18 @@ DalTool --> Registry["MCP Tool Registry"]
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-39](file://src/service/domain/finance/mcp_server.rs#L1-L39)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 章节来源
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/service/domain/finance/mcp_server.rs:1-39](file://src/service/domain/finance/mcp_server.rs#L1-L39)
-- [src/service/dal/mcp_server.rs:1-160](file://src/service/dal/mcp_server.rs#L1-L160)
-- [src/service/dal/mcp_tool.rs:1-385](file://src/service/dal/mcp_tool.rs#L1-L385)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/service/domain/finance/mcp_server.rs:1-39](src/service/domain/finance/mcp_server.rs#L1-L39)
+- [src/service/dal/mcp_server.rs:1-160](src/service/dal/mcp_server.rs#L1-L160)
+- [src/service/dal/mcp_tool.rs:1-385](src/service/dal/mcp_tool.rs#L1-L385)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 ## 性能与可靠性
 - 超时控制：工具列表与调用均设置超时，避免阻塞；连接初始化也设置超时
@@ -376,9 +376,9 @@ DalTool --> Registry["MCP Tool Registry"]
 - 流式 HTTP 未实现：当前不支持 streamable_http，需改用 stdio 或等待后续实现
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:200-268](file://src/pkg/tool_registry/mcp.rs#L200-L268)
-- [src/service/dal/mcp_server.rs:132-159](file://src/service/dal/mcp_server.rs#L132-L159)
-- [src/service/dal/mcp_tool.rs:325-344](file://src/service/dal/mcp_tool.rs#L325-L344)
+- [src/pkg/tool_registry/mcp.rs:200-268](src/pkg/tool_registry/mcp.rs#L200-L268)
+- [src/service/dal/mcp_server.rs:132-159](src/service/dal/mcp_server.rs#L132-L159)
+- [src/service/dal/mcp_tool.rs:325-344](src/service/dal/mcp_tool.rs#L325-L344)
 
 ## 结论
 本项目实现了 MCP 服务器的标准化管理与工具同步机制，通过 DAL 与 Tool Registry 的组合，提供了安全的 stdio 连接、严格的超时与资源管理、一致的状态与缓存失效策略。配合 HTTP Handler 暴露的 API，可实现企业级的 MCP 服务器接入、工具发现与调用。未来可扩展 streamable_http 传输、连接池与熔断降级等特性。
@@ -392,24 +392,24 @@ DalTool --> Registry["MCP Tool Registry"]
 - 默认 stdio 配置提供合理的超时与响应大小限制
 
 章节来源
-- [common/src/api/mcp_server.rs:10-32](file://common/src/api/mcp_server.rs#L10-L32)
-- [src/models/mcp_server.rs:125-150](file://src/models/mcp_server.rs#L125-L150)
+- [common/src/api/mcp_server.rs:10-32](common/src/api/mcp_server.rs#L10-L32)
+- [src/models/mcp_server.rs:125-150](src/models/mcp_server.rs#L125-L150)
 
 ### 工具同步与列表
 - 同步：调用 sync_mcp_tools 将远端工具元数据写入本地 ToolPo，便于后续管理与执行
 - 列表：按服务器列出已同步工具，支持分页与关键字搜索
 
 章节来源
-- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](file://src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
-- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](file://src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
-- [src/service/dal/mcp_tool.rs:169-217](file://src/service/dal/mcp_tool.rs#L169-L217)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-34](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L34)
+- [src/service/dal/mcp_tool.rs:169-217](src/service/dal/mcp_tool.rs#L169-L217)
 
 ### 工具调用追踪与日志
 - 执行路径通过 ToolCallDao 执行，返回 ToolCallEntry，便于追踪与统计
 - 建议在测试环境中初始化 ToolCallLogger，并将 trace base path 指向临时目录
 
 章节来源
-- [src/service/dal/mcp_tool.rs:219-250](file://src/service/dal/mcp_tool.rs#L219-L250)
+- [src/service/dal/mcp_tool.rs:219-250](src/service/dal/mcp_tool.rs#L219-L250)
 
 ### 多服务器管理与负载均衡
 - 当前实现为单实例运行时，未内置连接池或负载均衡
@@ -430,5 +430,5 @@ DalTool --> Registry["MCP Tool Registry"]
 - 避免在 ToolPo.config 中重复存储服务器凭据，仅保存 server_id 与 tool_name
 
 章节来源
-- [src/models/mcp_server.rs:152-167](file://src/models/mcp_server.rs#L152-L167)
-- [src/pkg/tool_registry/mcp.rs:28-40](file://src/pkg/tool_registry/mcp.rs#L28-L40)
+- [src/models/mcp_server.rs:152-167](src/models/mcp_server.rs#L152-L167)
+- [src/pkg/tool_registry/mcp.rs:28-40](src/pkg/tool_registry/mcp.rs#L28-L40)

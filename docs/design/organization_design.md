@@ -8,6 +8,14 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [api_protocol_convention.md](./api_protocol_convention.md) — HTTP 接口协议与返回格式约定
 > - [common-error-type.md](./common-error-type.md) — 统一错误码与用户可见错误规范
+> - 【② Plan 落地】[用户偏好双源设计.md](../plan/用户偏好双源设计.md) — 自报偏好 + 推断偏好 双源合并逻辑
+> - 【② Plan 落地】[调用者类型上下文.md](../plan/调用者类型上下文.md) — caller_type User/Agent/System 三枚举
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 凭证 AES256-GCM 加密
+> - 【③ Wiki 长文】[用户与组织管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户与组织管理.md) — 全景：初始化→创建组织→邀请成员→分配角色→配置偏好
+> - 【③ Wiki 长文】[组织管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/组织管理.md) — 多级组织架构树 + root_org_id 级联
+> - 【③ Wiki 长文】[用户认证与授权.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户认证与授权.md) — JWT Cookie+Bearer 双模式
+> - 【③ Wiki 长文】[用户管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户管理.md) — 用户列表 + 角色分配 + 偏好配置 UI
+> - 【④ RAG 卡】[组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步](docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步.md) — §UserRole 并查集规则 §JWT双模式 §偏好双源冲突 §7 条红线
 
 ## 模块概述
 

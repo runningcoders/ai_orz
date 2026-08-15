@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/http_fetch.rs](file://src/pkg/tool_registry/http_fetch.rs)
-- [src/pkg/tool_registry/http.rs](file://src/pkg/tool_registry/http.rs)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [common/src/constants/http_header.rs](file://common/src/constants/http_header.rs)
-- [src/pkg/tool_registry/http_tests.rs](file://src/pkg/tool_registry/http_tests.rs)
+- [src/pkg/tool_registry/http_fetch.rs](src/pkg/tool_registry/http_fetch.rs)
+- [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
+- [src/pkg/tool_registry/http_tests.rs](src/pkg/tool_registry/http_tests.rs)
 </cite>
 
 ## 目录
@@ -48,15 +48,15 @@ F --> G
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:29-101](file://src/pkg/tool_registry/mod.rs#L29-L101)
-- [src/pkg/tool_registry/http_fetch.rs:19-58](file://src/pkg/tool_registry/http_fetch.rs#L19-L58)
-- [src/pkg/tool_registry/http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
-- [src/pkg/tool_registry/tool_security.rs:1-16](file://src/pkg/tool_registry/tool_security.rs#L1-L16)
+- [src/pkg/tool_registry/mod.rs:29-101](src/pkg/tool_registry/mod.rs#L29-L101)
+- [src/pkg/tool_registry/http_fetch.rs:19-58](src/pkg/tool_registry/http_fetch.rs#L19-L58)
+- [src/pkg/tool_registry/http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
+- [src/pkg/tool_registry/tool_security.rs:1-16](src/pkg/tool_registry/tool_security.rs#L1-L16)
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-101](file://src/pkg/tool_registry/mod.rs#L29-L101)
-- [src/pkg/tool_registry/http_fetch.rs:19-58](file://src/pkg/tool_registry/http_fetch.rs#L19-L58)
-- [src/pkg/tool_registry/http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
+- [src/pkg/tool_registry/mod.rs:29-101](src/pkg/tool_registry/mod.rs#L29-L101)
+- [src/pkg/tool_registry/http_fetch.rs:19-58](src/pkg/tool_registry/http_fetch.rs#L19-L58)
+- [src/pkg/tool_registry/http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
 
 ## 核心组件
 - HttpFetchToolFactory：创建内置的“fetch_url”工具，仅允许HTTPS GET，默认拒绝HTTP与本地网络目标，具备DNS pinning、禁止重定向、默认超时与响应大小限制。
@@ -65,10 +65,10 @@ F --> G
 - ToolRegistry：全局工具注册中心，按协议分发到对应工厂创建可执行工具实例。
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [src/pkg/tool_registry/http.rs:41-114](file://src/pkg/tool_registry/http.rs#L41-L114)
-- [src/pkg/tool_registry/tool_security.rs:17-231](file://src/pkg/tool_registry/tool_security.rs#L17-L231)
-- [src/pkg/tool_registry/mod.rs:29-101](file://src/pkg/tool_registry/mod.rs#L29-L101)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/http.rs:41-114](src/pkg/tool_registry/http.rs#L41-L114)
+- [src/pkg/tool_registry/tool_security.rs:17-231](src/pkg/tool_registry/tool_security.rs#L17-L231)
+- [src/pkg/tool_registry/mod.rs:29-101](src/pkg/tool_registry/mod.rs#L29-L101)
 
 ## 架构总览
 HTTP请求工具采用“工厂+运行时”的模式：
@@ -98,10 +98,10 @@ Tool-->>Caller : {status, headers, content_length, body}
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:81-101](file://src/pkg/tool_registry/mod.rs#L81-L101)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-231](file://src/pkg/tool_registry/tool_security.rs#L92-L231)
+- [src/pkg/tool_registry/mod.rs:81-101](src/pkg/tool_registry/mod.rs#L81-L101)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-231](src/pkg/tool_registry/tool_security.rs#L92-L231)
 
 ## 详细组件分析
 
@@ -131,13 +131,13 @@ Return --> End
 ```
 
 图表来源
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-169](file://src/pkg/tool_registry/tool_security.rs#L92-L169)
-- [src/pkg/tool_registry/tool_security.rs:184-231](file://src/pkg/tool_registry/tool_security.rs#L184-L231)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-169](src/pkg/tool_registry/tool_security.rs#L92-L169)
+- [src/pkg/tool_registry/tool_security.rs:184-231](src/pkg/tool_registry/tool_security.rs#L184-L231)
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-231](file://src/pkg/tool_registry/tool_security.rs#L92-L231)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-231](src/pkg/tool_registry/tool_security.rs#L92-L231)
 
 ### 数据库注册型HTTP工具（HttpCoreTool）
 - 配置模型（HttpToolConfig）
@@ -180,14 +180,14 @@ Tool-->>Caller : {status, headers, content_length, body}
 ```
 
 图表来源
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http.rs:222-392](file://src/pkg/tool_registry/http.rs#L222-L392)
-- [src/pkg/tool_registry/tool_security.rs:92-231](file://src/pkg/tool_registry/tool_security.rs#L92-L231)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http.rs:222-392](src/pkg/tool_registry/http.rs#L222-L392)
+- [src/pkg/tool_registry/tool_security.rs:92-231](src/pkg/tool_registry/tool_security.rs#L92-L231)
 
 章节来源
-- [src/pkg/tool_registry/http.rs:41-220](file://src/pkg/tool_registry/http.rs#L41-L220)
-- [src/pkg/tool_registry/http.rs:222-599](file://src/pkg/tool_registry/http.rs#L222-L599)
-- [src/pkg/tool_registry/tool_security.rs:92-231](file://src/pkg/tool_registry/tool_security.rs#L92-L231)
+- [src/pkg/tool_registry/http.rs:41-220](src/pkg/tool_registry/http.rs#L41-L220)
+- [src/pkg/tool_registry/http.rs:222-599](src/pkg/tool_registry/http.rs#L222-L599)
+- [src/pkg/tool_registry/tool_security.rs:92-231](src/pkg/tool_registry/tool_security.rs#L92-L231)
 
 ### 安全与通用工具（tool_security）
 - SSRF防护
@@ -212,8 +212,8 @@ Tool-->>Caller : {status, headers, content_length, body}
   - 仅支持{{args.key}}形式，且key不能为空、不能包含空白字符。
 
 章节来源
-- [src/pkg/tool_registry/tool_security.rs:17-231](file://src/pkg/tool_registry/tool_security.rs#L17-L231)
-- [src/pkg/tool_registry/tool_security.rs:233-312](file://src/pkg/tool_registry/tool_security.rs#L233-L312)
+- [src/pkg/tool_registry/tool_security.rs:17-231](src/pkg/tool_registry/tool_security.rs#L17-L231)
+- [src/pkg/tool_registry/tool_security.rs:233-312](src/pkg/tool_registry/tool_security.rs#L233-L312)
 
 ### 工具注册中心（ToolRegistry）
 - 全局单例，维护内置工具工厂映射与HTTP协议工厂。
@@ -224,7 +224,7 @@ Tool-->>Caller : {status, headers, content_length, body}
 - 提供注册、注销、列举内置工具ID等能力。
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-132](file://src/pkg/tool_registry/mod.rs#L29-L132)
+- [src/pkg/tool_registry/mod.rs:29-132](src/pkg/tool_registry/mod.rs#L29-L132)
 
 ## 依赖关系分析
 - http_fetch.rs 依赖 tool_security 进行安全校验与响应处理。
@@ -243,14 +243,14 @@ REG --> FACT["HttpToolFactory/HttpFetchToolFactory"]
 ```
 
 图表来源
-- [src/pkg/tool_registry/http_fetch.rs:1-18](file://src/pkg/tool_registry/http_fetch.rs#L1-L18)
-- [src/pkg/tool_registry/http.rs:1-22](file://src/pkg/tool_registry/http.rs#L1-L22)
-- [src/pkg/tool_registry/mod.rs:1-28](file://src/pkg/tool_registry/mod.rs#L1-L28)
+- [src/pkg/tool_registry/http_fetch.rs:1-18](src/pkg/tool_registry/http_fetch.rs#L1-L18)
+- [src/pkg/tool_registry/http.rs:1-22](src/pkg/tool_registry/http.rs#L1-L22)
+- [src/pkg/tool_registry/mod.rs:1-28](src/pkg/tool_registry/mod.rs#L1-L28)
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:1-18](file://src/pkg/tool_registry/http_fetch.rs#L1-L18)
-- [src/pkg/tool_registry/http.rs:1-22](file://src/pkg/tool_registry/http.rs#L1-L22)
-- [src/pkg/tool_registry/mod.rs:1-28](file://src/pkg/tool_registry/mod.rs#L1-L28)
+- [src/pkg/tool_registry/http_fetch.rs:1-18](src/pkg/tool_registry/http_fetch.rs#L1-L18)
+- [src/pkg/tool_registry/http.rs:1-22](src/pkg/tool_registry/http.rs#L1-L22)
+- [src/pkg/tool_registry/mod.rs:1-28](src/pkg/tool_registry/mod.rs#L1-L28)
 
 ## 性能与安全考量
 - 性能
@@ -285,9 +285,9 @@ REG --> FACT["HttpToolFactory/HttpFetchToolFactory"]
   - 对于重定向场景，确认服务端是否返回3xx，工具默认不跟随。
 
 章节来源
-- [src/pkg/tool_registry/http.rs:222-599](file://src/pkg/tool_registry/http.rs#L222-L599)
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-231](file://src/pkg/tool_registry/tool_security.rs#L92-L231)
+- [src/pkg/tool_registry/http.rs:222-599](src/pkg/tool_registry/http.rs#L222-L599)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-231](src/pkg/tool_registry/tool_security.rs#L92-L231)
 
 ## 结论
 HTTP请求工具通过内置与数据库注册两种模式，提供了安全、可控、可扩展的HTTP能力。内置工具以最小权限原则提供HTTPS GET抓取；数据库注册工具支持更丰富的配置与模板化能力，同时保持严格的安全默认值。通过集中化的安全模块，实现了SSRF防护、域名控制、大小限制、超时控制、重定向限制与响应脱敏等关键能力，满足多Agent协作框架对外部HTTP调用的安全与可靠性要求。
@@ -299,7 +299,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
   - 输入：{"url": "https://example.com"}
   - 行为：仅HTTPS，禁止本地网络，禁止重定向，默认超时与响应大小限制。
   - 输出：{status, headers, content_length, body}
-  - 参考测试用例路径：[src/pkg/tool_registry/http_fetch.rs:155-243](file://src/pkg/tool_registry/http_fetch.rs#L155-L243)
+  - 参考测试用例路径：[src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L243)
 
 - 数据库注册HTTP工具（GET）
   - 配置示例（ToolPo.config）：
@@ -314,7 +314,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
     - blocked_domains: ["localhost", "127.0.0.1"]
     - allow_local_network: false
   - 行为：参数校验、URL模板渲染、安全校验、发送请求、响应处理。
-  - 参考测试用例路径：[src/pkg/tool_registry/http_tests.rs:53-98](file://src/pkg/tool_registry/http_tests.rs#L53-L98)
+  - 参考测试用例路径：[src/pkg/tool_registry/http_tests.rs:53-98](src/pkg/tool_registry/http_tests.rs#L53-L98)
 
 - 数据库注册HTTP工具（POST）
   - 配置示例（ToolPo.config）：
@@ -327,7 +327,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
     - allowed_status_codes: [201, 200]
     - allowed_domains: ["api.example.com"]
   - 行为：POST时自动序列化body为JSON，其余流程同GET。
-  - 参考实现路径：[src/pkg/tool_registry/http.rs:174-178](file://src/pkg/tool_registry/http.rs#L174-L178)
+  - 参考实现路径：[src/pkg/tool_registry/http.rs:174-178](src/pkg/tool_registry/http.rs#L174-L178)
 
 - 安全最佳实践
   - 始终设置allowed_domains，避免任意公网访问。
@@ -337,7 +337,7 @@ HTTP请求工具通过内置与数据库注册两种模式，提供了安全、�
   - 利用common/http_header.rs中的标准头注入追踪与上下文信息。
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:155-243](file://src/pkg/tool_registry/http_fetch.rs#L155-L243)
-- [src/pkg/tool_registry/http_tests.rs:53-98](file://src/pkg/tool_registry/http_tests.rs#L53-L98)
-- [src/pkg/tool_registry/http.rs:174-178](file://src/pkg/tool_registry/http.rs#L174-L178)
-- [common/src/constants/http_header.rs:1-20](file://common/src/constants/http_header.rs#L1-L20)
+- [src/pkg/tool_registry/http_fetch.rs:155-243](src/pkg/tool_registry/http_fetch.rs#L155-L243)
+- [src/pkg/tool_registry/http_tests.rs:53-98](src/pkg/tool_registry/http_tests.rs#L53-L98)
+- [src/pkg/tool_registry/http.rs:174-178](src/pkg/tool_registry/http.rs#L174-L178)
+- [common/src/constants/http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)

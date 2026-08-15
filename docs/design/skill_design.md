@@ -7,6 +7,17 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [skill_system_enhancement_design.md](./skill_system_enhancement_design.md) — 技能系统增强：tag 过滤、技能包、唤醒注入机制
+> - 【② Plan 落地（真实定稿 1 张）】
+>   - [预置基础技能导入重构.md](../plan/预置基础技能导入重构.md) — 5 套 TEMPLATE_* 目录结构 + default.json 编译期嵌入快照
+> - 【③ Wiki 长文（人类百科 6 篇）】
+>   - [技能系统.md](docs/wiki/zh/content/功能模块/技能系统.md) — 沉淀→分类→状态→安装四步用户故事总览
+>   - [技能包管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md) — Tag 筛选 + 批量安装 + 历史记录面板
+>   - [技能与工具绑定.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/技能与工具绑定.md) — 入职流程：创建 Agent→装默认技能→配凭证→绑工具→上线
+>   - [Agent 和技能模型.md](docs/wiki/zh/content/数据模型/Agent%20和技能模型/Agent%20和技能模型.md) — SkillPo 字段 + Vectorizable skill 向量化实现
+>   - [系统初始化.md](docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md) — init_base_data 内 import_default_skills_if_empty() 首次启动自动导入
+>   - [技能管理系统.md](docs/wiki/zh/content/前端应用/页面模块/HR%20管理页面/技能管理系统.md) — 前端编辑器：左侧文件树 + 中间 Markdown + 右侧 Prompt 预览
+> - 【④ RAG 原子知识卡（Batch6 新增 1 张 + 关联平行卡 1 张）】
+>   - [技能系统 Seed 预置导入与 Agent 入职绑定：5 套 TEMPLATE_* 编译期嵌入 + install_skill_pack 幂等 Tag 分发 + Prompt Token 熔断](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 5 套模板（工具/记忆/项目/沟通/技能自管理）+ Draft 副本 id 重命名 + 6 条回归红线（含 content_path 防路径穿越）
 
 ## 设计目标
 

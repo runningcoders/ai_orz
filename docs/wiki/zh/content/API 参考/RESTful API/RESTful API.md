@@ -2,27 +2,37 @@
 
 <cite>
 **本文引用的文件**
-- [router.rs](file://src/router.rs)
-- [jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [require_role.rs](file://src/middleware/require_role.rs)
-- [auth.rs](file://common/src/api/auth.rs)
-- [mod.rs（统一响应与分页）](file://common/src/api/mod.rs)
-- [lark_integration.rs（飞书集成DTO）](file://common/src/api/lark_integration.rs)
-- [code.rs（错误码定义）](file://common/src/error/code.rs)
-- [login.rs（登录处理器）](file://src/handlers/organization/auth/login.rs)
-- [subscribe_sse.rs（SSE 订阅）](file://src/handlers/finance/message/subscribe_sse.rs)
-- [create_credential.rs（创建凭证处理器）](file://src/handlers/finance/lark_integration/create_credential.rs)
-- [update_credential.rs（更新凭证处理器）](file://src/handlers/finance/lark_integration/update_credential.rs)
-- [delete_credential.rs（删除凭证处理器）](file://src/handlers/finance/lark_integration/delete_credential.rs)
-- [set_default_credential.rs（设置默认凭证处理器）](file://src/handlers/finance/lark_integration/set_default_credential.rs)
-- [auth_start.rs（授权开始处理器）](file://src/handlers/finance/lark_integration/auth_start.rs)
-- [auth_complete.rs（授权完成处理器）](file://src/handlers/finance/lark_integration/auth_complete.rs)
-- [auth_status.rs（授权状态处理器）](file://src/handlers/finance/lark_integration/auth_status.rs)
-- [auth_logout.rs（授权登出处理器）](file://src/handlers/finance/lark_integration/auth_logout.rs)
-- [bind_start.rs（绑定开始处理器）](file://src/handlers/finance/lark_integration/bind_start.rs)
-- [bind_status.rs（绑定状态处理器）](file://src/handlers/finance/lark_integration/bind_status.rs)
-- [bind_cancel.rs（绑定取消处理器）](file://src/handlers/finance/lark_integration/bind_cancel.rs)
-- [get_status.rs（绑定快照聚合处理器）](file://src/handlers/finance/lark_integration/get_status.rs)
+- [router.rs](src/router.rs)
+- [jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [require_role.rs](src/middleware/require_role.rs)
+- [auth.rs](common/src/api/auth.rs)
+- [mod.rs（统一响应与分页）](common/src/api/mod.rs)
+- [lark_integration.rs（飞书集成DTO）](common/src/api/lark_integration.rs)
+- [code.rs（错误码定义）](common/src/error/code.rs)
+- [login.rs（登录处理器）](src/handlers/organization/auth/login.rs)
+- [subscribe_sse.rs（SSE 订阅）](src/handlers/finance/message/subscribe_sse.rs)
+- [create_credential.rs（创建凭证处理器）](src/handlers/finance/lark_integration/create_credential.rs)
+- [update_credential.rs（更新凭证处理器）](src/handlers/finance/lark_integration/update_credential.rs)
+- [delete_credential.rs（删除凭证处理器）](src/handlers/finance/lark_integration/delete_credential.rs)
+- [set_default_credential.rs（设置默认凭证处理器）](src/handlers/finance/lark_integration/set_default_credential.rs)
+- [auth_start.rs（授权开始处理器）](src/handlers/finance/lark_integration/auth_start.rs)
+- [auth_complete.rs（授权完成处理器）](src/handlers/finance/lark_integration/auth_complete.rs)
+- [auth_status.rs（授权状态处理器）](src/handlers/finance/lark_integration/auth_status.rs)
+- [auth_logout.rs（授权登出处理器）](src/handlers/finance/lark_integration/auth_logout.rs)
+- [bind_start.rs（绑定开始处理器）](src/handlers/finance/lark_integration/bind_start.rs)
+- [bind_status.rs（绑定状态处理器）](src/handlers/finance/lark_integration/bind_status.rs)
+- [bind_cancel.rs（绑定取消处理器）](src/handlers/finance/lark_integration/bind_cancel.rs)
+- [get_status.rs（绑定快照聚合处理器）](src/handlers/finance/lark_integration/get_status.rs)
+### 本文关联的三类文档（四类互引闭环）
+#### ① Design 决策快照
+- [entity_list_query_search_design.md](docs/design/entity_list_query_search_design.md) — RESTful 接口三模式：list（GET 默认分页）/ query（POST 精确过滤）/ search（POST 关键词搜索）；路由签名与 URL 路径约定
+- [api_protocol_convention.md](docs/design/api_protocol_convention.md) — 禁止裸原始类型响应；DTO 只定义在 common crate；请求参数结构体化；JWT Cookie/Bearer 双模式
+- [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — PaginationParams 统一 4 字段；PagedResult<T> { items, total } 统一分页信封
+#### ② Plan 落地快照
+- [批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — 24 组 Query 结构体 + 20 个 handler 改造；三接口职责二分；push_query_filters WHERE 共享
+- [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — list 简化为 query 语法糖；新增 DAO 标准模板；MAX_PAGE_SIZE=100
+#### ④ RAG 原子知识卡
+- [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — §2 HTTP 签名对照表；§3 PagedResult::map 保持 total 不变；§4 10 条硬约束
 </cite>
 
 ## 更新摘要
@@ -71,12 +81,12 @@ G --> I["实例级飞书集成路由<br/>/finance/identity/lark/*"]
 ```
 
 **图表来源**
-- [router.rs:12-136](file://src/router.rs#L12-L136)
-- [router.rs:216-247](file://src/router.rs#L216-L247)
+- [router.rs:12-136](src/router.rs#L12-L136)
+- [router.rs:216-247](src/router.rs#L216-L247)
 
 **章节来源**
-- [router.rs:12-136](file://src/router.rs#L12-L136)
-- [router.rs:216-247](file://src/router.rs#L216-L247)
+- [router.rs:12-136](src/router.rs#L12-L136)
+- [router.rs:216-247](src/router.rs#L216-L247)
 
 ## 核心组件
 - 统一响应体 ApiResponse<T>：包含 code、message、data 字段，成功时 data 存在
@@ -89,11 +99,11 @@ G --> I["实例级飞书集成路由<br/>/finance/identity/lark/*"]
 - **新增**：用户级飞书集成DTO类型，包含凭证CRUD、OAuth认证、绑定管理等完整数据结构
 
 **章节来源**
-- [mod.rs（统一响应与分页）:6-83](file://common/src/api/mod.rs#L6-L83)
-- [lark_integration.rs:1-294](file://common/src/api/lark_integration.rs#L1-L294)
-- [code.rs:5-142](file://common/src/error/code.rs#L5-L142)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
+- [mod.rs（统一响应与分页）:6-83](common/src/api/mod.rs#L6-L83)
+- [lark_integration.rs:1-294](common/src/api/lark_integration.rs#L1-L294)
+- [code.rs:5-142](common/src/error/code.rs#L5-L142)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
 
 ## 架构总览
 请求进入 Axum 路由器后，先匹配路径并选择对应中间件链：
@@ -122,9 +132,9 @@ H-->>C : ApiResponse<T>
 ```
 
 **图表来源**
-- [router.rs:96-136](file://src/router.rs#L96-L136)
-- [jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
+- [router.rs:96-136](src/router.rs#L96-L136)
+- [jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
 
 ## 详细接口文档
 
@@ -143,8 +153,8 @@ H-->>C : ApiResponse<T>
   - 个别高危操作在 Handler 内部二次校验 SuperAdmin
 
 **章节来源**
-- [mod.rs（统一响应与分页）:6-83](file://common/src/api/mod.rs#L6-L83)
-- [router.rs:110-117](file://src/router.rs#L110-L117)
+- [mod.rs（统一响应与分页）:6-83](common/src/api/mod.rs#L6-L83)
+- [router.rs:110-117](src/router.rs#L110-L117)
 
 ### 认证与会话
 - 登录
@@ -178,10 +188,10 @@ H-->>C : ApiResponse<T>
   - DELETE /api/v1/organization/user/id/{user_id}（删除用户）
 
 **章节来源**
-- [router.rs:63-94](file://src/router.rs#L63-L94)
-- [router.rs:242-290](file://src/router.rs#L242-L290)
-- [auth.rs:5-38](file://common/src/api/auth.rs#L5-L38)
-- [login.rs:18-69](file://src/handlers/organization/auth/login.rs#L18-L69)
+- [router.rs:63-94](src/router.rs#L63-L94)
+- [router.rs:242-290](src/router.rs#L242-L290)
+- [auth.rs:5-38](common/src/api/auth.rs#L5-L38)
+- [login.rs:18-69](src/handlers/organization/auth/login.rs#L18-L69)
 
 ### HR（智能体与技能）
 - 智能体
@@ -221,7 +231,7 @@ H-->>C : ApiResponse<T>
   - GET/PUT /api/v1/hr/skills/{skill_id}/files/{*filename}（读取/更新文件内容）
 
 **章节来源**
-- [router.rs:292-413](file://src/router.rs#L292-L413)
+- [router.rs:292-413](src/router.rs#L292-L413)
 
 ### Finance（模型、消息、附件、MCP、工具）
 - 附件
@@ -280,7 +290,7 @@ H-->>C : ApiResponse<T>
   - DELETE /api/v1/finance/tools/{id}（删除）
 
 **章节来源**
-- [router.rs:415-601](file://src/router.rs#L415-L601)
+- [router.rs:415-601](src/router.rs#L415-L601)
 
 ### Project（项目、任务、产物）
 - 项目
@@ -313,8 +323,8 @@ H-->>C : ApiResponse<T>
   - GET /api/v1/project/artifacts/{id}/content（获取内容）
 
 **章节来源**
-- [router.rs:145-240](file://src/router.rs#L145-L240)
-- [router.rs:177-213](file://src/router.rs#L177-L213)
+- [router.rs:145-240](src/router.rs#L145-L240)
+- [router.rs:177-213](src/router.rs#L177-L213)
 
 ### System（系统管理）
 - 定时触发器
@@ -360,7 +370,7 @@ H-->>C : ApiResponse<T>
   - POST /api/v1/system/tasks/cleanup（清理任务）
 
 **章节来源**
-- [router.rs:603-739](file://src/router.rs#L603-L739)
+- [router.rs:603-739](src/router.rs#L603-L739)
 
 ### A2A 协议
 - Agent Card（公开发现）
@@ -373,7 +383,7 @@ H-->>C : ApiResponse<T>
   - POST /api/v1/a2a/callback/{task_id}
 
 **章节来源**
-- [router.rs:19-58](file://src/router.rs#L19-L58)
+- [router.rs:19-58](src/router.rs#L19-L58)
 
 ### 用户级飞书集成（User Lark Integration）
 **新增** 用户级飞书集成API提供完整的凭证管理、OAuth认证和绑定功能，位于 `/api/v1/user/lark-integration/` 路径下。这些接口专注于用户个人维度的飞书集成配置。
@@ -442,20 +452,20 @@ H-->>C : ApiResponse<T>
   - 行为：三源聚合查询（凭证库、引用渠道、用户授权状态）
 
 **章节来源**
-- [router.rs:216-247](file://src/router.rs#L216-L247)
-- [lark_integration.rs:1-294](file://common/src/api/lark_integration.rs#L1-L294)
-- [create_credential.rs:1-34](file://src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
-- [update_credential.rs:1-37](file://src/handlers/finance/lark_integration/update_credential.rs#L1-L37)
-- [delete_credential.rs:1-28](file://src/handlers/finance/lark_integration/delete_credential.rs#L1-L28)
-- [set_default_credential.rs:1-28](file://src/handlers/finance/lark_integration/set_default_credential.rs#L1-L28)
-- [auth_start.rs:1-28](file://src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
-- [auth_complete.rs:1-30](file://src/handlers/finance/lark_integration/auth_complete.rs#L1-L30)
-- [auth_status.rs:1-37](file://src/handlers/finance/lark_integration/auth_status.rs#L1-L37)
-- [auth_logout.rs:1-36](file://src/handlers/finance/lark_integration/auth_logout.rs#L1-L36)
-- [bind_start.rs:1-27](file://src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
-- [bind_status.rs:1-45](file://src/handlers/finance/lark_integration/bind_status.rs#L1-L45)
-- [bind_cancel.rs:1-27](file://src/handlers/finance/lark_integration/bind_cancel.rs#L1-L27)
-- [get_status.rs:1-102](file://src/handlers/finance/lark_integration/get_status.rs#L1-L102)
+- [router.rs:216-247](src/router.rs#L216-L247)
+- [lark_integration.rs:1-294](common/src/api/lark_integration.rs#L1-L294)
+- [create_credential.rs:1-34](src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
+- [update_credential.rs:1-37](src/handlers/finance/lark_integration/update_credential.rs#L1-L37)
+- [delete_credential.rs:1-28](src/handlers/finance/lark_integration/delete_credential.rs#L1-L28)
+- [set_default_credential.rs:1-28](src/handlers/finance/lark_integration/set_default_credential.rs#L1-L28)
+- [auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
+- [auth_complete.rs:1-30](src/handlers/finance/lark_integration/auth_complete.rs#L1-L30)
+- [auth_status.rs:1-37](src/handlers/finance/lark_integration/auth_status.rs#L1-L37)
+- [auth_logout.rs:1-36](src/handlers/finance/lark_integration/auth_logout.rs#L1-L36)
+- [bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [bind_status.rs:1-45](src/handlers/finance/lark_integration/bind_status.rs#L1-L45)
+- [bind_cancel.rs:1-27](src/handlers/finance/lark_integration/bind_cancel.rs#L1-L27)
+- [get_status.rs:1-102](src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ### 实例级飞书集成（Finance Lark Integration）
 **现有** 实例级飞书集成API提供飞书消息通道的管理能力，位于 `/api/v1/finance/identity/lark/` 路径下。这些接口专注于实例维度的飞书消息通道配置。
@@ -524,8 +534,8 @@ H-->>C : ApiResponse<T>
   - 行为：三源聚合查询（凭证库、引用渠道、用户授权状态）
 
 **章节来源**
-- [router.rs:216-247](file://src/router.rs#L216-L247)
-- [lark_integration.rs:1-294](file://common/src/api/lark_integration.rs#L1-L294)
+- [router.rs:216-247](src/router.rs#L216-L247)
+- [lark_integration.rs:1-294](common/src/api/lark_integration.rs#L1-L294)
 
 ### 特殊交互
 
@@ -536,7 +546,7 @@ H-->>C : ApiResponse<T>
 - 行为：建立长连接，服务端周期性发送 keep-alive；客户端断开自动注销连接
 
 **章节来源**
-- [subscribe_sse.rs:1-92](file://src/handlers/finance/message/subscribe_sse.rs#L1-L92)
+- [subscribe_sse.rs:1-92](src/handlers/finance/message/subscribe_sse.rs#L1-L92)
 
 #### 文件上传与附件
 - 二进制上传：POST /api/v1/finance/attachments/upload
@@ -547,7 +557,7 @@ H-->>C : ApiResponse<T>
 - 删除：DELETE /api/v1/finance/attachments/{id}
 
 **章节来源**
-- [router.rs:415-444](file://src/router.rs#L415-L444)
+- [router.rs:415-444](src/router.rs#L415-L444)
 
 ### 分页、搜索与过滤
 - 分页参数：limit、offset（适用于列表/查询接口）
@@ -556,10 +566,10 @@ H-->>C : ApiResponse<T>
 - 标签：部分实体提供 /tags 端点（GET 获取可用标签）
 
 **章节来源**
-- [mod.rs（统一响应与分页）:55-83](file://common/src/api/mod.rs#L55-L83)
-- [router.rs:145-213](file://src/router.rs#L145-L213)
-- [router.rs:292-413](file://src/router.rs#L292-L413)
-- [router.rs:415-601](file://src/router.rs#L415-L601)
+- [mod.rs（统一响应与分页）:55-83](common/src/api/mod.rs#L55-L83)
+- [router.rs:145-213](src/router.rs#L145-L213)
+- [router.rs:292-413](src/router.rs#L292-L413)
+- [router.rs:415-601](src/router.rs#L415-L601)
 
 ### 认证与权限流程
 
@@ -570,8 +580,8 @@ H-->>C : ApiResponse<T>
   - API 工具：在 Authorization 头添加 Bearer <token>
 
 **章节来源**
-- [auth.rs:5-38](file://common/src/api/auth.rs#L5-L38)
-- [login.rs:18-69](file://src/handlers/organization/auth/login.rs#L18-L69)
+- [auth.rs:5-38](common/src/api/auth.rs#L5-L38)
+- [login.rs:18-69](src/handlers/organization/auth/login.rs#L18-L69)
 
 #### JWT 中间件
 - 认证顺序：优先 Cookie，其次 Authorization: Bearer
@@ -580,8 +590,8 @@ H-->>C : ApiResponse<T>
   - API：401 JSON（error_code 与 message）
 
 **章节来源**
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [jwt_auth.rs:139-156](file://src/middleware/jwt_auth.rs#L139-L156)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [jwt_auth.rs:139-156](src/middleware/jwt_auth.rs#L139-L156)
 
 #### 角色权限（RBAC）
 - 系统路由整体要求 Admin（SuperAdmin 也可）
@@ -589,8 +599,8 @@ H-->>C : ApiResponse<T>
 - 不满足权限返回 403 JSON
 
 **章节来源**
-- [router.rs:110-117](file://src/router.rs#L110-L117)
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
+- [router.rs:110-117](src/router.rs#L110-L117)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
 
 ## 依赖关系分析
 - 路由层依赖中间件进行认证与上下文注入
@@ -613,14 +623,14 @@ FL --> FD["Finance Domain Layer"]
 ```
 
 **图表来源**
-- [router.rs:12-136](file://src/router.rs#L12-L136)
-- [mod.rs（统一响应与分页）:6-83](file://common/src/api/mod.rs#L6-L83)
-- [code.rs:5-142](file://common/src/error/code.rs#L5-L142)
+- [router.rs:12-136](src/router.rs#L12-L136)
+- [mod.rs（统一响应与分页）:6-83](common/src/api/mod.rs#L6-L83)
+- [code.rs:5-142](common/src/error/code.rs#L5-L142)
 
 **章节来源**
-- [router.rs:12-136](file://src/router.rs#L12-L136)
-- [mod.rs（统一响应与分页）:6-83](file://common/src/api/mod.rs#L6-L83)
-- [code.rs:5-142](file://common/src/error/code.rs#L5-L142)
+- [router.rs:12-136](src/router.rs#L12-L136)
+- [mod.rs（统一响应与分页）:6-83](common/src/api/mod.rs#L6-L83)
+- [code.rs:5-142](common/src/error/code.rs#L5-L142)
 
 ## 性能与速率限制
 - SSE 连接：
@@ -661,9 +671,9 @@ FL --> FD["Finance Domain Layer"]
   - 实例级接口错误重点关注实例配置问题
 
 **章节来源**
-- [code.rs:5-142](file://common/src/error/code.rs#L5-L142)
-- [jwt_auth.rs:139-156](file://src/middleware/jwt_auth.rs#L139-L156)
-- [require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
+- [code.rs:5-142](common/src/error/code.rs#L5-L142)
+- [jwt_auth.rs:139-156](src/middleware/jwt_auth.rs#L139-L156)
+- [require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
 
 ## 结论
 AI Orz 的 RESTful API 采用清晰的分层与中间件机制，统一响应与错误码提升了一致性；JWT 双模式认证与 RBAC 权限控制保障了安全性；SSE 与附件上传等特性满足了实时与多媒体需求。**新增的用户级与实例级飞书集成API**提供了完整的凭证管理、OAuth认证和绑定功能，通过不同Domain层编排实现了复杂的业务流程。用户级接口专注于个人维度的飞书集成配置，实例级接口专注于实例维度的消息通道管理。建议在生产环境结合网关层实施速率限制与审计，确保稳定与安全。
@@ -690,4 +700,4 @@ AI Orz 的 RESTful API 采用清晰的分层与中间件机制，统一响应与
 - config_missing/config_invalid：500
 
 **章节来源**
-- [code.rs:5-142](file://common/src/error/code.rs#L5-L142)
+- [code.rs:5-142](common/src/error/code.rs#L5-L142)

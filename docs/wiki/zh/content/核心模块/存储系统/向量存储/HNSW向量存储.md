@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [hnsw.rs](file://src/pkg/storage/hnsw.rs)
-- [vector.rs](file://src/pkg/storage/vector.rs)
-- [mod.rs](file://src/pkg/storage/mod.rs)
-- [vector_search_architecture.md](file://docs/vector_search_architecture.md)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md](file://docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md)
-- [config.rs](file://common/src/config.rs)
-- [vector.rs（模型定义）](file://src/models/vector.rs)
+- [hnsw.rs](src/pkg/storage/hnsw.rs)
+- [vector.rs](src/pkg/storage/vector.rs)
+- [mod.rs](src/pkg/storage/mod.rs)
+- [vector_search_architecture.md](docs/vector_search_architecture.md)
+- [2026-07-16-hnsw-persistence-and-async-rebuild.md](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md)
+- [config.rs](common/src/config.rs)
+- [vector.rs（模型定义）](src/models/vector.rs)
 </cite>
 
 ## 目录
@@ -53,13 +53,13 @@ D --> I["bincode 持久化<br/>hnsw_index/*.bincode"]
 ```
 
 图表来源
-- [mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [vector.rs:18-83](file://src/pkg/storage/vector.rs#L18-L83)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
+- [mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [vector.rs:18-83](src/pkg/storage/vector.rs#L18-L83)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
 
 章节来源
-- [mod.rs:1-212](file://src/pkg/storage/mod.rs#L1-L212)
-- [vector_search_architecture.md:161-206](file://docs/vector_search_architecture.md#L161-L206)
+- [mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
 
 ## 核心组件
 - HnswStore：基于 instant-distance 的纯 Rust HNSW 索引实现，支持余弦距离、lazy rebuild、持久化与后台定时落盘
@@ -68,10 +68,10 @@ D --> I["bincode 持久化<br/>hnsw_index/*.bincode"]
 - Storage 门面：根据配置创建具体后端实例，对外暴露 vector() 访问器
 
 章节来源
-- [hnsw.rs:20-125](file://src/pkg/storage/hnsw.rs#L20-L125)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
-- [vector.rs:18-83](file://src/pkg/storage/vector.rs#L18-L83)
-- [mod.rs:36-148](file://src/pkg/storage/mod.rs#L36-L148)
+- [hnsw.rs:20-125](src/pkg/storage/hnsw.rs#L20-L125)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
+- [vector.rs:18-83](src/pkg/storage/vector.rs#L18-L83)
+- [mod.rs:36-148](src/pkg/storage/mod.rs#L36-L148)
 
 ## 架构总览
 HNSW 在系统中的位置与调用链：
@@ -101,13 +101,13 @@ H-->>DAL : VectorSearchHit[]
 ```
 
 图表来源
-- [hnsw.rs:442-491](file://src/pkg/storage/hnsw.rs#L442-L491)
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
-- [hnsw.rs:377-388](file://src/pkg/storage/hnsw.rs#L377-L388)
+- [hnsw.rs:442-491](src/pkg/storage/hnsw.rs#L442-L491)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:377-388](src/pkg/storage/hnsw.rs#L377-L388)
 
 章节来源
-- [vector_search_architecture.md:425-463](file://docs/vector_search_architecture.md#L425-L463)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:1-12](file://docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L1-L12)
+- [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
+- [2026-07-16-hnsw-persistence-and-async-rebuild.md:1-12](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L1-L12)
 
 ## 详细组件分析
 
@@ -152,12 +152,12 @@ CollectionData --> FloatPoint : "封装向量"
 ```
 
 图表来源
-- [hnsw.rs:20-34](file://src/pkg/storage/hnsw.rs#L20-L34)
-- [hnsw.rs:36-125](file://src/pkg/storage/hnsw.rs#L36-L125)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
+- [hnsw.rs:20-34](src/pkg/storage/hnsw.rs#L20-L34)
+- [hnsw.rs:36-125](src/pkg/storage/hnsw.rs#L36-L125)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
 
 章节来源
-- [hnsw.rs:1-125](file://src/pkg/storage/hnsw.rs#L1-L125)
+- [hnsw.rs:1-125](src/pkg/storage/hnsw.rs#L1-L125)
 
 ### 持久化与冷启动
 - 持久化格式：bincode 2.0，每个 collection 一个 .bincode 文件，集合元数据集中保存在 collections_meta.bincode
@@ -174,13 +174,13 @@ FlushTask --> End(["就绪"])
 ```
 
 图表来源
-- [hnsw.rs:189-219](file://src/pkg/storage/hnsw.rs#L189-L219)
-- [hnsw.rs:221-301](file://src/pkg/storage/hnsw.rs#L221-L301)
-- [hnsw.rs:377-388](file://src/pkg/storage/hnsw.rs#L377-L388)
+- [hnsw.rs:189-219](src/pkg/storage/hnsw.rs#L189-L219)
+- [hnsw.rs:221-301](src/pkg/storage/hnsw.rs#L221-L301)
+- [hnsw.rs:377-388](src/pkg/storage/hnsw.rs#L377-L388)
 
 章节来源
-- [hnsw.rs:189-430](file://src/pkg/storage/hnsw.rs#L189-L430)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:112-325](file://docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L112-L325)
+- [hnsw.rs:189-430](src/pkg/storage/hnsw.rs#L189-L430)
+- [2026-07-16-hnsw-persistence-and-async-rebuild.md:112-325](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L112-L325)
 
 ### 增量更新与重建机制
 - 增量更新：upsert/delete 仅修改内存 HashMap 并标记 dirty，不直接操作图结构
@@ -208,11 +208,11 @@ Domain-->>API : RebuildProgressResponse
 ```
 
 图表来源
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](file://docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
-- [hnsw.rs:565-572](file://src/pkg/storage/hnsw.rs#L565-L572)
+- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
+- [hnsw.rs:565-572](src/pkg/storage/hnsw.rs#L565-L572)
 
 章节来源
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](file://docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
+- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
 
 ### 参数配置与影响（M、efConstruction、efSearch）
 - M：每个节点的最大连接数，影响图的连通性与查询速度；值越大搜索越快但内存占用更高
@@ -224,8 +224,8 @@ Domain-->>API : RebuildProgressResponse
 - 因此无法直接调整这些参数；如需精细调优，需扩展 Builder 配置或替换底层库
 
 章节来源
-- [hnsw.rs:107-125](file://src/pkg/storage/hnsw.rs#L107-L125)
-- [vector_search_architecture.md:425-463](file://docs/vector_search_architecture.md#L425-L463)
+- [hnsw.rs:107-125](src/pkg/storage/hnsw.rs#L107-L125)
+- [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
 
 ### 向量数据结构与元信息
 - VectorRow：包含 id、vector、meta（content_hash、embedding_model、indexed_at、expire_at）
@@ -233,8 +233,8 @@ Domain-->>API : RebuildProgressResponse
 - SearchMatchInfo：混合搜索结果元信息，记录匹配类型、向量距离、关键词字段、BM25 评分等
 
 章节来源
-- [vector.rs:9-67](file://src/models/vector.rs#L9-L67)
-- [vector.rs:94-136](file://src/models/vector.rs#L94-L136)
+- [vector.rs:9-67](src/models/vector.rs#L9-L67)
+- [vector.rs:94-136](src/models/vector.rs#L94-L136)
 
 ## 依赖关系分析
 - Storage 门面根据配置选择后端：InMemory/LanceDB/Hnsw/SqliteVss
@@ -253,13 +253,13 @@ DAL --> VectorTrait["VectorStore trait"]
 ```
 
 图表来源
-- [mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [config.rs:78-114](file://common/src/config.rs#L78-L114)
-- [hnsw.rs:10-18](file://src/pkg/storage/hnsw.rs#L10-L18)
+- [mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [config.rs:78-114](common/src/config.rs#L78-L114)
+- [hnsw.rs:10-18](src/pkg/storage/hnsw.rs#L10-L18)
 
 章节来源
-- [mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [config.rs:78-114](file://common/src/config.rs#L78-L114)
+- [mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [config.rs:78-114](common/src/config.rs#L78-L114)
 
 ## 性能与容量规划
 - 写入性能：upsert 为 O(1) HashMap 插入，标记 dirty；无即时图构建开销
@@ -280,9 +280,9 @@ DAL --> VectorTrait["VectorStore trait"]
 - 切换 Provider 冲突：Domain 层校验唯一性，返回 409 并提供当前 Provider 信息
 
 章节来源
-- [hnsw.rs:221-301](file://src/pkg/storage/hnsw.rs#L221-L301)
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
-- [vector_search_architecture.md:448-463](file://docs/vector_search_architecture.md#L448-L463)
+- [hnsw.rs:221-301](src/pkg/storage/hnsw.rs#L221-L301)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
+- [vector_search_architecture.md:448-463](docs/vector_search_architecture.md#L448-L463)
 
 ## 结论
 HNSW 在本项目中以 lazy rebuild 策略实现了高性能近似最近邻搜索，结合 bincode 持久化与后台落盘，兼顾了开发体验与生产可靠性。虽然当前未暴露 M/efConstruction/efSearch 参数，但通过合理的数据规模控制与监控，可满足大多数业务场景。未来如需精细调优，可扩展 Builder 配置或替换底层库。

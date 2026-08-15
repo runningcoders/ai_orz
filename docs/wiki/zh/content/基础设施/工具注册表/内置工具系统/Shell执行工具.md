@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [shell_exec.rs](file://src/pkg/tool_registry/shell_exec.rs)
-- [shell_tests.rs](file://src/pkg/tool_registry/shell_tests.rs)
-- [builtin.rs](file://src/pkg/tool_registry/builtin.rs)
-- [tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [config.rs](file://src/config.rs)
-- [tool_execution.rs](file://src/service/domain/runtime/tool_execution.rs)
-- [tool_exec.rs](file://src/models/events/tool_exec.rs)
+- [shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
+- [builtin.rs](src/pkg/tool_registry/builtin.rs)
+- [tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [config.rs](src/config.rs)
+- [tool_execution.rs](src/service/domain/runtime/tool_execution.rs)
+- [tool_exec.rs](src/models/events/tool_exec.rs)
 </cite>
 
 ## 目录
@@ -47,16 +47,16 @@ B --> H["AOP事件<br/>tool_exec.rs"]
 ```
 
 图表来源
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
 
 章节来源
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
 
 ## 核心组件
 - ShellExecToolFactory：内置工具工厂，负责生成 ToolPo（元数据、参数Schema、默认配置）与 CoreTool 实例。
@@ -65,8 +65,8 @@ B --> H["AOP事件<br/>tool_exec.rs"]
 - ShellExecParams：调用参数，包括 command、working_dir、timeout_ms、max_output_size_bytes、background、env。
 
 章节来源
-- [shell_exec.rs:20-87](file://src/pkg/tool_registry/shell_exec.rs#L20-L87)
-- [shell_exec.rs:89-166](file://src/pkg/tool_registry/shell_exec.rs#L89-L166)
+- [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
+- [shell_exec.rs:89-166](src/pkg/tool_registry/shell_exec.rs#L89-L166)
 
 ## 架构总览
 Shell执行工具遵循四层单向调用原则：Adapter → Domain → DAL → DAO。ShellExecCoreTool属于 pkg/tool_registry（通用工具层），由 Runtime Domain 在工具执行流程中调用；AOP事件通过 models/events 发布，供消费者收集统计与日志。
@@ -95,10 +95,10 @@ AOP-->>Caller : 统计/日志消费
 ```
 
 图表来源
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
 
 ## 详细组件分析
 
@@ -131,12 +131,12 @@ ShellExecToolFactory --> CoreTool : "创建执行器"
 ```
 
 图表来源
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
 
 章节来源
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
 
 ### ShellExecCoreTool 执行流程
 - 参数解析：从 JSON 反序列化为 ShellExecParams，校验必填字段。
@@ -175,14 +175,14 @@ ReturnFG --> End
 ```
 
 图表来源
-- [shell_exec.rs:168-207](file://src/pkg/tool_registry/shell_exec.rs#L168-L207)
-- [shell_exec.rs:210-254](file://src/pkg/tool_registry/shell_exec.rs#L210-L254)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [shell_exec.rs:168-207](src/pkg/tool_registry/shell_exec.rs#L168-L207)
+- [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
 
 章节来源
-- [shell_exec.rs:168-207](file://src/pkg/tool_registry/shell_exec.rs#L168-L207)
-- [shell_exec.rs:210-254](file://src/pkg/tool_registry/shell_exec.rs#L210-L254)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [shell_exec.rs:168-207](src/pkg/tool_registry/shell_exec.rs#L168-L207)
+- [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
 
 ### 安全控制措施
 - 工作目录沙箱：
@@ -201,10 +201,10 @@ ReturnFG --> End
   - 所有输出统一写入 base_data_path/tools/shell_exec/logs/{trace_id}.log，便于审计与回溯。
 
 章节来源
-- [shell_exec.rs:168-207](file://src/pkg/tool_registry/shell_exec.rs#L168-L207)
-- [shell_exec.rs:210-254](file://src/pkg/tool_registry/shell_exec.rs#L210-L254)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
-- [config.rs:38-73](file://src/config.rs#L38-L73)
+- [shell_exec.rs:168-207](src/pkg/tool_registry/shell_exec.rs#L168-L207)
+- [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [config.rs:38-73](src/config.rs#L38-L73)
 
 ### 错误处理、日志与监控
 - 错误处理：
@@ -216,9 +216,9 @@ ReturnFG --> End
   - 工具执行完成后，Runtime Domain 发布 agent.tool.executed 事件，包含 entry、组织/用户上下文、输入/输出长度等，供AOP消费者记录统计与指标。
 
 章节来源
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
 
 ## 依赖关系分析
 - ShellExecToolFactory 依赖 ToolPo 与 CoreTool 接口，由 builtin.rs 统一注册。
@@ -243,18 +243,18 @@ RT --> EVT["tool_exec.rs<br/>AOP事件"]
 ```
 
 图表来源
-- [config.rs:38-73](file://src/config.rs#L38-L73)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
+- [config.rs:38-73](src/config.rs#L38-L73)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
 
 章节来源
-- [config.rs:38-73](file://src/config.rs#L38-L73)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
-- [tool_execution.rs:13-38](file://src/service/domain/runtime/tool_execution.rs#L13-L38)
-- [tool_exec.rs:27-64](file://src/models/events/tool_exec.rs#L27-L64)
+- [config.rs:38-73](src/config.rs#L38-L73)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [tool_execution.rs:13-38](src/service/domain/runtime/tool_execution.rs#L13-L38)
+- [tool_exec.rs:27-64](src/models/events/tool_exec.rs#L27-L64)
 
 ## 性能与资源限制
 - 超时控制：默认 300秒，可按需调整；超时后强制终止进程，避免僵尸进程。
@@ -283,8 +283,8 @@ RT --> EVT["tool_exec.rs<br/>AOP事件"]
   - 排查：确保 base_data_path 及 tools/shell_exec/logs 目录存在且有写权限。
 
 章节来源
-- [shell_exec.rs:168-207](file://src/pkg/tool_registry/shell_exec.rs#L168-L207)
-- [shell_exec.rs:257-466](file://src/pkg/tool_registry/shell_exec.rs#L257-L466)
+- [shell_exec.rs:168-207](src/pkg/tool_registry/shell_exec.rs#L168-L207)
+- [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
 
 ## 结论
 ShellExecToolFactory 提供了安全可控的Shell命令执行能力，通过工作目录沙箱、环境变量白名单、输出限制、超时控制与日志落盘等机制，满足受限环境下的系统命令执行需求。结合 Runtime Domain 的工具执行流程与AOP事件，实现了完整的可观测性与可追溯性。建议在生产环境中严格配置 allowed_env、additional_allowed_paths 与超时/输出限制，并定期审计日志与指标。
@@ -306,6 +306,6 @@ ShellExecToolFactory 提供了安全可控的Shell命令执行能力，通过工
   - 通过 shell_tests.rs 验证配置解析、环境变量过滤、参数解析等行为是否符合预期。
 
 章节来源
-- [shell_tests.rs:4-20](file://src/pkg/tool_registry/shell_tests.rs#L4-L20)
-- [shell_tests.rs:43-78](file://src/pkg/tool_registry/shell_tests.rs#L43-L78)
-- [shell_tests.rs:80-145](file://src/pkg/tool_registry/shell_tests.rs#L80-L145)
+- [shell_tests.rs:4-20](src/pkg/tool_registry/shell_tests.rs#L4-L20)
+- [shell_tests.rs:43-78](src/pkg/tool_registry/shell_tests.rs#L43-L78)
+- [shell_tests.rs:80-145](src/pkg/tool_registry/shell_tests.rs#L80-L145)

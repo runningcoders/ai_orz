@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/project.rs](file://src/models/project.rs)
-- [src/models/task.rs](file://src/models/task.rs)
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [src/service/dal/project.rs](file://src/service/dal/project.rs)
-- [src/service/dal/task.rs](file://src/service/dal/task.rs)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
-- [src/pkg/request_context.rs](file://src/pkg/request_context.rs)
-- [src/middleware/request_context.rs](file://src/middleware/request_context.rs)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [src/models/project.rs](src/models/project.rs)
+- [src/models/task.rs](src/models/task.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [src/service/dal/project.rs](src/service/dal/project.rs)
+- [src/service/dal/task.rs](src/service/dal/task.rs)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/pkg/request_context.rs](src/pkg/request_context.rs)
+- [src/middleware/request_context.rs](src/middleware/request_context.rs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 </cite>
 
 ## 目录
@@ -50,10 +50,10 @@ H --> D --> DAL --> DAO --> DB
 ```
 
 图示来源
-- [docs/ARCHITECTURE.md:11-46](file://docs/ARCHITECTURE.md#L11-L46)
+- [docs/ARCHITECTURE.md:11-46](docs/ARCHITECTURE.md#L11-L46)
 
 章节来源
-- [docs/ARCHITECTURE.md:11-46](file://docs/ARCHITECTURE.md#L11-L46)
+- [docs/ARCHITECTURE.md:11-46](docs/ARCHITECTURE.md#L11-L46)
 
 ## 核心组件
 - PO 与业务实体：ProjectPo/Project、TaskPo/Task、AgentPo/Agent，业务实体内部持有 po 字段，提供 from_po/into_po 转换方法。
@@ -62,11 +62,11 @@ H --> D --> DAL --> DAO --> DB
 - 中间件：从请求头提取上下文并注入到请求扩展，同时将 log_id 写回响应头。
 
 章节来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [src/models/task.rs:16-81](file://src/models/task.rs#L16-L81)
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
-- [src/pkg/request_context.rs:10-61](file://src/pkg/request_context.rs#L10-L61)
-- [src/middleware/request_context.rs:16-40](file://src/middleware/request_context.rs#L16-L40)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [src/models/task.rs:16-81](src/models/task.rs#L16-L81)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
+- [src/pkg/request_context.rs:10-61](src/pkg/request_context.rs#L10-L61)
+- [src/middleware/request_context.rs:16-40](src/middleware/request_context.rs#L16-L40)
 
 ## 架构总览
 PO 与业务实体分层的核心原则：
@@ -126,12 +126,12 @@ Agent --> AgentPo : "持有"
 ```
 
 图示来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [src/models/task.rs:16-81](file://src/models/task.rs#L16-L81)
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [src/models/task.rs:16-81](src/models/task.rs#L16-L81)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
 
 章节来源
-- [docs/ARCHITECTURE.md:398-486](file://docs/ARCHITECTURE.md#L398-L486)
+- [docs/ARCHITECTURE.md:398-486](docs/ARCHITECTURE.md#L398-L486)
 
 ## 详细组件分析
 
@@ -160,15 +160,15 @@ DAL-->>Handler : Ok(())
 ```
 
 图示来源
-- [src/service/dal/project.rs:223-274](file://src/service/dal/project.rs#L223-L274)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
+- [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
 章节来源
-- [src/models/project.rs:15-80](file://src/models/project.rs#L15-L80)
-- [src/service/dal/project.rs:223-274](file://src/service/dal/project.rs#L223-L274)
-- [src/service/dal/project.rs:374-433](file://src/service/dal/project.rs#L374-L433)
-- [src/service/dal/project.rs:448-456](file://src/service/dal/project.rs#L448-L456)
+- [src/models/project.rs:15-80](src/models/project.rs#L15-L80)
+- [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
+- [src/service/dal/project.rs:374-433](src/service/dal/project.rs#L374-L433)
+- [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
 ### Task 分层示例
 - 数据结构：TaskPo 对应 tasks 表；Task 业务实体聚合搜索匹配、统计、产物等。
@@ -188,12 +188,12 @@ Publish --> End
 ```
 
 图示来源
-- [src/service/dal/task.rs:607-643](file://src/service/dal/task.rs#L607-L643)
+- [src/service/dal/task.rs:607-643](src/service/dal/task.rs#L607-L643)
 
 章节来源
-- [src/models/task.rs:16-81](file://src/models/task.rs#L16-L81)
-- [src/service/dal/task.rs:607-643](file://src/service/dal/task.rs#L607-L643)
-- [src/service/dal/task.rs:645-658](file://src/service/dal/task.rs#L645-L658)
+- [src/models/task.rs:16-81](src/models/task.rs#L16-L81)
+- [src/service/dal/task.rs:607-643](src/service/dal/task.rs#L607-L643)
+- [src/service/dal/task.rs:645-658](src/service/dal/task.rs#L645-L658)
 
 ### Agent 分层示例
 - 数据结构：AgentPo 对应 agents 表；Agent 业务实体聚合 Brain、工具、技能、运行时状态、统计等。
@@ -221,15 +221,15 @@ DAL-->>Handler : Ok(())
 ```
 
 图示来源
-- [src/service/dal/agent.rs:701-721](file://src/service/dal/agent.rs#L701-L721)
-- [src/service/dal/agent.rs:723-738](file://src/service/dal/agent.rs#L723-L738)
-- [src/service/dal/agent.rs:740-761](file://src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent.rs:701-721](src/service/dal/agent.rs#L701-L721)
+- [src/service/dal/agent.rs:723-738](src/service/dal/agent.rs#L723-L738)
+- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
 
 章节来源
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
-- [src/service/dal/agent.rs:701-721](file://src/service/dal/agent.rs#L701-L721)
-- [src/service/dal/agent.rs:723-738](file://src/service/dal/agent.rs#L723-L738)
-- [src/service/dal/agent.rs:740-761](file://src/service/dal/agent.rs#L740-L761)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
+- [src/service/dal/agent.rs:701-721](src/service/dal/agent.rs#L701-L721)
+- [src/service/dal/agent.rs:723-738](src/service/dal/agent.rs#L723-L738)
+- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
 
 ### RequestContext 跨层传递机制
 - 构建与注入：中间件从请求头提取 log_id、user_id、username、organization_id、user_role、caller_type，创建 RequestContext 并注入到请求扩展；响应头写回 log_id。
@@ -250,15 +250,15 @@ Svc-->>Client : 响应含 log_id
 ```
 
 图示来源
-- [src/middleware/request_context.rs:16-40](file://src/middleware/request_context.rs#L16-L40)
-- [src/pkg/request_context.rs:295-356](file://src/pkg/request_context.rs#L295-L356)
-- [src/pkg/request_context.rs:582-632](file://src/pkg/request_context.rs#L582-L632)
+- [src/middleware/request_context.rs:16-40](src/middleware/request_context.rs#L16-L40)
+- [src/pkg/request_context.rs:295-356](src/pkg/request_context.rs#L295-L356)
+- [src/pkg/request_context.rs:582-632](src/pkg/request_context.rs#L582-L632)
 
 章节来源
-- [src/pkg/request_context.rs:10-61](file://src/pkg/request_context.rs#L10-L61)
-- [src/pkg/request_context.rs:295-356](file://src/pkg/request_context.rs#L295-L356)
-- [src/pkg/request_context.rs:582-632](file://src/pkg/request_context.rs#L582-L632)
-- [src/middleware/request_context.rs:16-40](file://src/middleware/request_context.rs#L16-L40)
+- [src/pkg/request_context.rs:10-61](src/pkg/request_context.rs#L10-L61)
+- [src/pkg/request_context.rs:295-356](src/pkg/request_context.rs#L295-L356)
+- [src/pkg/request_context.rs:582-632](src/pkg/request_context.rs#L582-L632)
+- [src/middleware/request_context.rs:16-40](src/middleware/request_context.rs#L16-L40)
 
 ### 软删除设计与审计字段管理
 - 软删除范式：status = 0 视为已删除，常规查询默认过滤；例如 TaskStatus::Cancelled、AgentStatus::Deleted、ModelProviderStatus::Deleted。
@@ -266,11 +266,11 @@ Svc-->>Client : 响应含 log_id
 - 一致性保障：DAL 层在状态变更后发布事件（如 TaskStatusChangedEvent），确保下游消费者基于真实状态进行后续处理。
 
 章节来源
-- [docs/ARCHITECTURE.md:466-486](file://docs/ARCHITECTURE.md#L466-L486)
-- [src/models/project.rs:214-263](file://src/models/project.rs#L214-L263)
-- [src/models/task.rs:237-315](file://src/models/task.rs#L237-L315)
-- [src/models/agent.rs:378-404](file://src/models/agent.rs#L378-L404)
-- [src/service/dal/task.rs:607-643](file://src/service/dal/task.rs#L607-L643)
+- [docs/ARCHITECTURE.md:466-486](docs/ARCHITECTURE.md#L466-L486)
+- [src/models/project.rs:214-263](src/models/project.rs#L214-L263)
+- [src/models/task.rs:237-315](src/models/task.rs#L237-L315)
+- [src/models/agent.rs:378-404](src/models/agent.rs#L378-L404)
+- [src/service/dal/task.rs:607-643](src/service/dal/task.rs#L607-L643)
 
 ### 数据验证规则与一致性
 - 枚举类型安全：common 中定义枚举并使用 #[repr(i32)] + sqlx::Type，实现 SQLite 类型映射与序列化保持整数输出。
@@ -278,10 +278,10 @@ Svc-->>Client : 响应含 log_id
 - 向量索引降级：向量化失败仅 warn 降级，不阻塞主流程，确保可用性。
 
 章节来源
-- [docs/ARCHITECTURE.md:516-537](file://docs/ARCHITECTURE.md#L516-L537)
-- [src/models/task.rs:210-214](file://src/models/task.rs#L210-L214)
-- [src/service/dal/project.rs:223-274](file://src/service/dal/project.rs#L223-L274)
-- [src/service/dal/task.rs:223-255](file://src/service/dal/task.rs#L223-L255)
+- [docs/ARCHITECTURE.md:516-537](docs/ARCHITECTURE.md#L516-L537)
+- [src/models/task.rs:210-214](src/models/task.rs#L210-L214)
+- [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
+- [src/service/dal/task.rs:223-255](src/service/dal/task.rs#L223-L255)
 
 ## 依赖关系分析
 - 依赖方向：Handler → Domain → DAL → DAO → models，无反向依赖。
@@ -299,11 +299,11 @@ DAL -.-> S["Stats"]
 ```
 
 图示来源
-- [docs/ARCHITECTURE.md:325-363](file://docs/ARCHITECTURE.md#L325-L363)
-- [src/pkg/request_context.rs:582-632](file://src/pkg/request_context.rs#L582-L632)
+- [docs/ARCHITECTURE.md:325-363](docs/ARCHITECTURE.md#L325-L363)
+- [src/pkg/request_context.rs:582-632](src/pkg/request_context.rs#L582-L632)
 
 章节来源
-- [docs/ARCHITECTURE.md:325-363](file://docs/ARCHITECTURE.md#L325-L363)
+- [docs/ARCHITECTURE.md:325-363](docs/ARCHITECTURE.md#L325-L363)
 
 ## 性能考量
 - 零转换成本：业务实体内部持有 po，DAL 层直接通过 &xxx.po 传递给 DAO，避免字段逐一映射开销。
@@ -312,9 +312,9 @@ DAL -.-> S["Stats"]
 - 内存过滤：Agent 列表按 runtime_state 过滤时，先查全量再内存过滤+分页，避免 N+1 查询。
 
 章节来源
-- [docs/ARCHITECTURE.md:412-433](file://docs/ARCHITECTURE.md#L412-L433)
-- [src/service/dal/agent.rs:216-242](file://src/service/dal/agent.rs#L216-L242)
-- [src/service/dal/project.rs:223-274](file://src/service/dal/project.rs#L223-L274)
+- [docs/ARCHITECTURE.md:412-433](docs/ARCHITECTURE.md#L412-L433)
+- [src/service/dal/agent.rs:216-242](src/service/dal/agent.rs#L216-L242)
+- [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
 
 ## 故障排查指南
 - 向量索引失败：检查 Embedding Provider 配置与 Cortex 连接；查看日志中的 vector_index 警告。
@@ -323,10 +323,10 @@ DAL -.-> S["Stats"]
 - 软删除后查询不到：确认查询是否默认过滤 status=0；如需历史数据，使用 query 方法绕过过滤。
 
 章节来源
-- [src/service/dal/project.rs:223-274](file://src/service/dal/project.rs#L223-L274)
-- [src/service/dal/task.rs:607-643](file://src/service/dal/task.rs#L607-L643)
-- [src/pkg/request_context.rs:295-356](file://src/pkg/request_context.rs#L295-L356)
-- [docs/ARCHITECTURE.md:466-486](file://docs/ARCHITECTURE.md#L466-L486)
+- [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
+- [src/service/dal/task.rs:607-643](src/service/dal/task.rs#L607-L643)
+- [src/pkg/request_context.rs:295-356](src/pkg/request_context.rs#L295-L356)
+- [docs/ARCHITECTURE.md:466-486](docs/ARCHITECTURE.md#L466-L486)
 
 ## 结论
 AI Orz 系统通过严格的 PO 与业务实体分层，实现了清晰的职责边界与高内聚低耦合的设计。DAL 层作为转换与编排中心，既保证了数据一致性，又提供了灵活的扩展点。RequestContext 贯穿全链路，确保了上下文的一致性与可追踪性。软删除与审计字段管理增强了数据的可维护性与合规性。整体架构具备良好的性能与可扩展性，为多 Agent 协作框架奠定了坚实基础。
@@ -336,5 +336,5 @@ AI Orz 系统通过严格的 PO 与业务实体分层，实现了清晰的职责
 - 测试规范：每个 DAO/DAL/Domain 模块对应单元测试，使用随机临时 SQLite 文件，保证独立运行。
 
 章节来源
-- [docs/ARCHITECTURE.md:366-395](file://docs/ARCHITECTURE.md#L366-L395)
-- [docs/ARCHITECTURE.md:562-577](file://docs/ARCHITECTURE.md#L562-L577)
+- [docs/ARCHITECTURE.md:366-395](docs/ARCHITECTURE.md#L366-L395)
+- [docs/ARCHITECTURE.md:562-577](docs/ARCHITECTURE.md#L562-L577)

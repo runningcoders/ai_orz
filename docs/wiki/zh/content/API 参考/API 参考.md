@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [src/main.rs](file://src/main.rs)
-- [src/router.rs](file://src/router.rs)
-- [common/src/api/mod.rs](file://common/src/api/mod.rs)
-- [common/src/api/a2a.rs](file://common/src/api/a2a.rs)
-- [src/handlers/a2a/mod.rs](file://src/handlers/a2a/mod.rs)
-- [src/handlers/a2a/jsonrpc.rs](file://src/handlers/a2a/jsonrpc.rs)
-- [src/handlers/a2a/send_task.rs](file://src/handlers/a2a/send_task.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/middleware/request_context.rs](file://src/middleware/request_context.rs)
-- [common/src/api/auth.rs](file://common/src/api/auth.rs)
-- [src/handlers/organization/auth/login.rs](file://src/handlers/organization/auth/login.rs)
-- [common/src/error/code.rs](file://common/src/error/code.rs)
-- [common/config/ai_orz.toml](file://common/config/ai_orz.toml)
+- [src/main.rs](src/main.rs)
+- [src/router.rs](src/router.rs)
+- [common/src/api/mod.rs](common/src/api/mod.rs)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/handlers/a2a/mod.rs](src/handlers/a2a/mod.rs)
+- [src/handlers/a2a/jsonrpc.rs](src/handlers/a2a/jsonrpc.rs)
+- [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/middleware/request_context.rs](src/middleware/request_context.rs)
+- [common/src/api/auth.rs](common/src/api/auth.rs)
+- [src/handlers/organization/auth/login.rs](src/handlers/organization/auth/login.rs)
+- [common/src/error/code.rs](common/src/error/code.rs)
+- [common/config/ai_orz.toml](common/config/ai_orz.toml)
 </cite>
 
 ## 目录
@@ -58,14 +58,14 @@ DAL --> DB["数据库"]
 ```
 
 图表来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 章节来源
-- [src/main.rs:1-5](file://src/main.rs#L1-L5)
-- [src/router.rs:12-740](file://src/router.rs#L12-L740)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [src/main.rs:1-5](src/main.rs#L1-L5)
+- [src/router.rs:12-740](src/router.rs#L12-L740)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 
 ## 核心组件
 - 统一响应体 ApiResponse<T>：包含 code、message、data，用于所有 HTTP 响应。
@@ -75,11 +75,11 @@ DAL --> DB["数据库"]
 - 请求上下文：从请求头提取用户信息、组织、角色，生成或透传 LogId。
 
 章节来源
-- [common/src/api/mod.rs:6-83](file://common/src/api/mod.rs#L6-L83)
-- [common/src/api/a2a.rs:10-145](file://common/src/api/a2a.rs#L10-L145)
-- [common/src/api/auth.rs:1-39](file://common/src/api/auth.rs#L1-L39)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
+- [common/src/api/a2a.rs:10-145](common/src/api/a2a.rs#L10-L145)
+- [common/src/api/auth.rs:1-39](common/src/api/auth.rs#L1-L39)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ## 架构总览
 整体调用链：
@@ -110,9 +110,9 @@ H-->>C : "统一响应/流式响应"
 ```
 
 图表来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ## 详细接口说明
 
@@ -127,9 +127,9 @@ H-->>C : "统一响应/流式响应"
 - 请求上下文：X-User-Id、X-User-Name、X-Organization-Id、X-User-Role、Caller-Type；LogId 写回响应头。
 
 章节来源
-- [common/src/api/mod.rs:6-83](file://common/src/api/mod.rs#L6-L83)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [common/src/api/mod.rs:6-83](common/src/api/mod.rs#L6-L83)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ### 认证与组织
 - POST /api/v1/organization/auth/login
@@ -142,9 +142,9 @@ H-->>C : "统一响应/流式响应"
   - 列出组织（公开查询，无需登录）。
 
 章节来源
-- [common/src/api/auth.rs:1-39](file://common/src/api/auth.rs#L1-L39)
-- [src/handlers/organization/auth/login.rs:18-69](file://src/handlers/organization/auth/login.rs#L18-L69)
-- [src/router.rs:63-94](file://src/router.rs#L63-L94)
+- [common/src/api/auth.rs:1-39](common/src/api/auth.rs#L1-L39)
+- [src/handlers/organization/auth/login.rs:18-69](src/handlers/organization/auth/login.rs#L18-L69)
+- [src/router.rs:63-94](src/router.rs#L63-L94)
 
 ### 项目与任务（REST）
 - 项目
@@ -168,7 +168,7 @@ H-->>C : "统一响应/流式响应"
   - GET /api/v1/agents/{agent_id}/tasks
 
 章节来源
-- [src/router.rs:145-213](file://src/router.rs#L145-L213)
+- [src/router.rs:145-213](src/router.rs#L145-L213)
 
 ### 产物（Artifacts，REST）
 - POST /api/v1/artifacts
@@ -181,7 +181,7 @@ H-->>C : "统一响应/流式响应"
 - GET /api/v1/artifacts/{id}/content
 
 章节来源
-- [src/router.rs:215-240](file://src/router.rs#L215-L240)
+- [src/router.rs:215-240](src/router.rs#L215-L240)
 
 ### 组织管理（受保护）
 - GET /api/v1/organization/me
@@ -193,7 +193,7 @@ H-->>C : "统一响应/流式响应"
 - 子路由 /api/v1/organization/user/*（创建、列表、更新、删除用户等）
 
 章节来源
-- [src/router.rs:242-290](file://src/router.rs#L242-L290)
+- [src/router.rs:242-290](src/router.rs#L242-L290)
 
 ### HR（智能体与技能）
 - 智能体
@@ -212,7 +212,7 @@ H-->>C : "统一响应/流式响应"
   - CRUD、查询、搜索、标签、文件内容读取/更新、推荐种子节点、记忆检索等
 
 章节来源
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ### 财务（模型、消息通道、MCP、工具）
 - 附件上传/文本附件/内容获取/更新/删除
@@ -223,7 +223,7 @@ H-->>C : "统一响应/流式响应"
 - 工具：CRUD、查询、搜索、标签、调试调用、绑定/解绑
 
 章节来源
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/router.rs:415-601](src/router.rs#L415-L601)
 
 ### 系统管理（需 Admin 角色）
 - 定时任务：CRUD、暂停/恢复
@@ -235,7 +235,7 @@ H-->>C : "统一响应/流式响应"
 - 后台任务：进度查询、列表、清理
 
 章节来源
-- [src/router.rs:603-739](file://src/router.rs#L603-L739)
+- [src/router.rs:603-739](src/router.rs#L603-L739)
 
 ### A2A 协议接口
 
@@ -245,8 +245,8 @@ H-->>C : "统一响应/流式响应"
   - 返回组织级 AgentCard（名称、描述、版本、URL、能力声明、技能列表、默认输入/输出模式）。
 
 章节来源
-- [src/router.rs:19-26](file://src/router.rs#L19-L26)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
+- [src/router.rs:19-26](src/router.rs#L19-L26)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 
 #### JSON-RPC 2.0 入口
 - POST /a2a
@@ -281,13 +281,13 @@ J-->>C : "JsonRpcResponse(result|error)"
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:21-94](file://src/handlers/a2a/jsonrpc.rs#L21-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
-- [common/src/api/a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
+- [src/handlers/a2a/jsonrpc.rs:21-94](src/handlers/a2a/jsonrpc.rs#L21-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
+- [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:1-94](file://src/handlers/a2a/jsonrpc.rs#L1-L94)
-- [common/src/api/a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
+- [src/handlers/a2a/jsonrpc.rs:1-94](src/handlers/a2a/jsonrpc.rs#L1-L94)
+- [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 #### A2A 任务提交（tasks/send）
 - 行为：
@@ -312,10 +312,10 @@ ReturnTask --> End(["结束"])
 ```
 
 图表来源
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 章节来源
-- [src/handlers/a2a/send_task.rs:1-128](file://src/handlers/a2a/send_task.rs#L1-L128)
+- [src/handlers/a2a/send_task.rs:1-128](src/handlers/a2a/send_task.rs#L1-L128)
 
 #### A2A 订阅（SSE）
 - POST /a2a/subscribe
@@ -323,7 +323,7 @@ ReturnTask --> End(["结束"])
   - 建立 SSE 流式通道，接收任务状态更新与消息推送。
 
 章节来源
-- [src/router.rs:39-48](file://src/router.rs#L39-L48)
+- [src/router.rs:39-48](src/router.rs#L39-L48)
 
 #### A2A 回调（外部 Agent 推送）
 - POST /a2a/callback/{task_id}
@@ -331,7 +331,7 @@ ReturnTask --> End(["结束"])
   - 用于外部 Agent 推送任务更新到本服务。
 
 章节来源
-- [src/router.rs:49-56](file://src/router.rs#L49-L56)
+- [src/router.rs:49-56](src/router.rs#L49-L56)
 
 ### 实时通信（SSE/WebSocket）
 - SSE 订阅：
@@ -340,8 +340,8 @@ ReturnTask --> End(["结束"])
 - WebSocket：当前代码库未发现显式 WebSocket 路由；如需扩展，可在 router.rs 中新增 ws 路由并接入消息通道。
 
 章节来源
-- [src/router.rs:485-496](file://src/router.rs#L485-L496)
-- [src/router.rs:39-48](file://src/router.rs#L39-L48)
+- [src/router.rs:485-496](src/router.rs#L485-L496)
+- [src/router.rs:39-48](src/router.rs#L39-L48)
 
 ## 依赖关系分析
 - 路由依赖中间件：
@@ -372,12 +372,12 @@ H3 --> DomainSys["System 领域"]
 ```
 
 图表来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](file://src/handlers/a2a/mod.rs#L1-L28)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
 
 章节来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/handlers/a2a/mod.rs:1-28](file://src/handlers/a2a/mod.rs#L1-L28)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
 
 ## 性能与速率限制
 - 异步处理：
@@ -409,10 +409,10 @@ H3 --> DomainSys["System 领域"]
   - 系统日志查询与统计接口可用于问题定位。
 
 章节来源
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [common/src/api/a2a.rs:121-145](file://common/src/api/a2a.rs#L121-L145)
-- [common/src/error/code.rs:1-146](file://common/src/error/code.rs#L1-L146)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [common/src/api/a2a.rs:121-145](common/src/api/a2a.rs#L121-L145)
+- [common/src/error/code.rs:1-146](common/src/error/code.rs#L1-L146)
 
 ## 结论
 AI Orz 提供了完整的 RESTful API、A2A 协议接口与实时通信能力，具备统一的认证、上下文、错误处理与监控机制。通过模块化路由与中间件设计，服务具备良好的可扩展性与可维护性。建议在生产环境启用 HTTPS、调整 JWT 密钥与过期时间，并在网关层实施速率限制与审计。
@@ -427,9 +427,9 @@ AI Orz 提供了完整的 RESTful API、A2A 协议接口与实时通信能力，
 - API 版本：/api/v1。
 
 章节来源
-- [common/src/api/a2a.rs:10-36](file://common/src/api/a2a.rs#L10-L36)
-- [src/handlers/a2a/jsonrpc.rs:37-44](file://src/handlers/a2a/jsonrpc.rs#L37-L44)
-- [src/router.rs:12-18](file://src/router.rs#L12-L18)
+- [common/src/api/a2a.rs:10-36](common/src/api/a2a.rs#L10-L36)
+- [src/handlers/a2a/jsonrpc.rs:37-44](src/handlers/a2a/jsonrpc.rs#L37-L44)
+- [src/router.rs:12-18](src/router.rs#L12-L18)
 
 ### 安全考虑
 - JWT：
@@ -441,9 +441,9 @@ AI Orz 提供了完整的 RESTful API、A2A 协议接口与实时通信能力，
   - 建议启用 HTTPS；Cookie secure 标志可根据环境配置。
 
 章节来源
-- [common/config/ai_orz.toml:36-42](file://common/config/ai_orz.toml#L36-L42)
-- [src/router.rs:110-117](file://src/router.rs#L110-L117)
-- [src/handlers/organization/auth/login.rs:40-49](file://src/handlers/organization/auth/login.rs#L40-L49)
+- [common/config/ai_orz.toml:36-42](common/config/ai_orz.toml#L36-L42)
+- [src/router.rs:110-117](src/router.rs#L110-L117)
+- [src/handlers/organization/auth/login.rs:40-49](src/handlers/organization/auth/login.rs#L40-L49)
 
 ### 向后兼容与迁移
 - 统一响应格式 ApiResponse<T> 与分页结构已稳定，建议客户端基于此适配。

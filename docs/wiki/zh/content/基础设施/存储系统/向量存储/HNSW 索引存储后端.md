@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [hnsw.rs](file://src/pkg/storage/hnsw.rs)
-- [vector.rs](file://src/pkg/storage/vector.rs)
-- [lance.rs](file://src/pkg/storage/lance.rs)
-- [vector_search_architecture.md](file://docs/vector_search_architecture.md)
-- [2026-07-16-vector-search-enhancement.md](file://docs/superpowers/plans/2026-07-16-vector-search-enhancement.md)
-- [vector.rs（模型定义）](file://src/models/vector.rs)
+- [hnsw.rs](src/pkg/storage/hnsw.rs)
+- [vector.rs](src/pkg/storage/vector.rs)
+- [lance.rs](src/pkg/storage/lance.rs)
+- [vector_search_architecture.md](docs/vector_search_architecture.md)
+- [2026-07-16-vector-search-enhancement.md](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md)
+- [vector.rs（模型定义）](src/models/vector.rs)
 </cite>
 
 ## 目录
@@ -48,13 +48,13 @@ VS --> LANCE
 ```
 
 图表来源
-- [vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
-- [lance.rs:26-33](file://src/pkg/storage/lance.rs#L26-L33)
+- [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
+- [lance.rs:26-33](src/pkg/storage/lance.rs#L26-L33)
 
 章节来源
-- [vector.rs:1-74](file://src/pkg/storage/vector.rs#L1-L74)
-- [vector_search_architecture.md:161-206](file://docs/vector_search_architecture.md#L161-L206)
+- [vector.rs:1-74](src/pkg/storage/vector.rs#L1-L74)
+- [vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
 
 ## 核心组件
 - VectorStore trait：定义统一的向量存储接口，包括集合初始化、upsert、search、get、delete、clear_collection、flush 等。
@@ -63,9 +63,9 @@ VS --> LANCE
 - LanceVectorStore：基于 LanceDB 的高性能嵌入式向量数据库，生产级列式存储。
 
 章节来源
-- [vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
-- [lance.rs:26-33](file://src/pkg/storage/lance.rs#L26-L33)
+- [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
+- [lance.rs:26-33](src/pkg/storage/lance.rs#L26-L33)
 
 ## 架构总览
 HnswStore 将每个 collection 的数据与索引分离管理：数据以 HashMap 驻留内存，索引按需重建并缓存；元数据与集合信息通过 bincode 序列化到磁盘，后台任务定期落盘，Drop 兜底保证一致性。
@@ -89,10 +89,10 @@ Store->>Disk : Drop时兜底落盘
 ```
 
 图表来源
-- [hnsw.rs:442-491](file://src/pkg/storage/hnsw.rs#L442-L491)
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
-- [hnsw.rs:344-388](file://src/pkg/storage/hnsw.rs#L344-L388)
-- [hnsw.rs:403-430](file://src/pkg/storage/hnsw.rs#L403-L430)
+- [hnsw.rs:442-491](src/pkg/storage/hnsw.rs#L442-L491)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
+- [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
 
 ## 详细组件分析
 
@@ -135,12 +135,12 @@ CollectionData --> FloatPoint : "封装点与余弦距离"
 ```
 
 图表来源
-- [hnsw.rs:20-34](file://src/pkg/storage/hnsw.rs#L20-L34)
-- [hnsw.rs:36-62](file://src/pkg/storage/hnsw.rs#L36-L62)
-- [hnsw.rs:149-166](file://src/pkg/storage/hnsw.rs#L149-L166)
+- [hnsw.rs:20-34](src/pkg/storage/hnsw.rs#L20-L34)
+- [hnsw.rs:36-62](src/pkg/storage/hnsw.rs#L36-L62)
+- [hnsw.rs:149-166](src/pkg/storage/hnsw.rs#L149-L166)
 
 章节来源
-- [hnsw.rs:1-617](file://src/pkg/storage/hnsw.rs#L1-L617)
+- [hnsw.rs:1-617](src/pkg/storage/hnsw.rs#L1-L617)
 
 ### HNSW 算法与懒重建
 - 核心思想：HNSW（Hierarchical Navigable Small World）通过多层导航图加速近似最近邻搜索，具备 O(logN) 查询复杂度与高召回率。
@@ -162,12 +162,12 @@ Sort --> End(["返回结果"])
 ```
 
 图表来源
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
-- [hnsw.rs:107-124](file://src/pkg/storage/hnsw.rs#L107-L124)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:107-124](src/pkg/storage/hnsw.rs#L107-L124)
 
 章节来源
-- [hnsw.rs:107-124](file://src/pkg/storage/hnsw.rs#L107-L124)
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:107-124](src/pkg/storage/hnsw.rs#L107-L124)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
 
 ### 内存管理与持久化策略
 - 内存布局：每个 collection 维护 vectors（HashMap）、deleted（HashSet）、cached_index（HnswMap）、dirty flag。
@@ -201,14 +201,14 @@ Store->>FS : 兜底落盘
 ```
 
 图表来源
-- [hnsw.rs:344-388](file://src/pkg/storage/hnsw.rs#L344-L388)
-- [hnsw.rs:403-430](file://src/pkg/storage/hnsw.rs#L403-L430)
-- [hnsw.rs:473-489](file://src/pkg/storage/hnsw.rs#L473-L489)
+- [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
+- [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
+- [hnsw.rs:473-489](src/pkg/storage/hnsw.rs#L473-L489)
 
 章节来源
-- [hnsw.rs:344-388](file://src/pkg/storage/hnsw.rs#L344-L388)
-- [hnsw.rs:403-430](file://src/pkg/storage/hnsw.rs#L403-L430)
-- [hnsw.rs:473-489](file://src/pkg/storage/hnsw.rs#L473-L489)
+- [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
+- [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
+- [hnsw.rs:473-489](src/pkg/storage/hnsw.rs#L473-L489)
 
 ### 向量 CRUD 与搜索实现要点
 - 初始化集合：ensure_collection 创建空集合并记录维度。
@@ -219,10 +219,10 @@ Store->>FS : 兜底落盘
 - 搜索：若 dirty 则重建索引；执行最近邻搜索；过滤过期条目；按距离排序返回。
 
 章节来源
-- [hnsw.rs:390-400](file://src/pkg/storage/hnsw.rs#L390-L400)
-- [hnsw.rs:442-491](file://src/pkg/storage/hnsw.rs#L442-L491)
-- [hnsw.rs:545-572](file://src/pkg/storage/hnsw.rs#L545-L572)
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:390-400](src/pkg/storage/hnsw.rs#L390-L400)
+- [hnsw.rs:442-491](src/pkg/storage/hnsw.rs#L442-L491)
+- [hnsw.rs:545-572](src/pkg/storage/hnsw.rs#L545-L572)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
 
 ### 与 SQLite VSS 的对比与适用场景
 - HnswStore：
@@ -237,9 +237,9 @@ Store->>FS : 兜底落盘
   - 适用：大规模数据、生产环境、对吞吐与延迟要求较高。
 
 章节来源
-- [vector.rs:76-235](file://src/pkg/storage/vector.rs#L76-L235)
-- [lance.rs:1-294](file://src/pkg/storage/lance.rs#L1-L294)
-- [vector_search_architecture.md:178-184](file://docs/vector_search_architecture.md#L178-L184)
+- [vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
+- [lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
+- [vector_search_architecture.md:178-184](docs/vector_search_architecture.md#L178-L184)
 
 ## 依赖关系分析
 - HnswStore 依赖 instant-distance 库提供 HnswMap/Builder/Search；使用 bincode 进行序列化；使用 tokio::sync::RwLock 保证并发安全；使用 chrono 记录时间戳。
@@ -260,14 +260,14 @@ VS --> MODELS["models/vector.rs"]
 ```
 
 图表来源
-- [hnsw.rs:10-18](file://src/pkg/storage/hnsw.rs#L10-L18)
-- [vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [vector.rs:1-192](file://src/models/vector.rs#L1-L192)
+- [hnsw.rs:10-18](src/pkg/storage/hnsw.rs#L10-L18)
+- [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [vector.rs:1-192](src/models/vector.rs#L1-L192)
 
 章节来源
-- [hnsw.rs:10-18](file://src/pkg/storage/hnsw.rs#L10-L18)
-- [vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [vector.rs:1-192](file://src/models/vector.rs#L1-L192)
+- [hnsw.rs:10-18](src/pkg/storage/hnsw.rs#L10-L18)
+- [vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [vector.rs:1-192](src/models/vector.rs#L1-L192)
 
 ## 性能与参数调优
 - 当前实现未暴露 HNSW 构建参数（如 efConstruction、M、efSearch），因为 instant-distance 0.6.1 的 Builder 默认构建索引，且不支持增量插入。
@@ -283,8 +283,8 @@ VS --> MODELS["models/vector.rs"]
   - 针对 HnswStore 的性能评估，可设计压测脚本测量 upsert/search 耗时与重建频率，结合日志观察 dirty 标志变化与落盘周期。
 
 章节来源
-- [vector_search_architecture.md:425-463](file://docs/vector_search_architecture.md#L425-L463)
-- [2026-07-16-vector-search-enhancement.md:27-51](file://docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)
+- [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
+- [2026-07-16-vector-search-enhancement.md:27-51](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)
 
 ## 故障排查指南
 - 搜索结果为空：
@@ -298,21 +298,21 @@ VS --> MODELS["models/vector.rs"]
   - Domain 层校验唯一性；若冲突返回 409，前端需引导用户二次确认后走 switch 接口并异步重建索引。
 
 章节来源
-- [hnsw.rs:493-543](file://src/pkg/storage/hnsw.rs#L493-L543)
-- [hnsw.rs:344-388](file://src/pkg/storage/hnsw.rs#L344-L388)
-- [hnsw.rs:403-430](file://src/pkg/storage/hnsw.rs#L403-L430)
-- [vector_search_architecture.md:448-463](file://docs/vector_search_architecture.md#L448-L463)
+- [hnsw.rs:493-543](src/pkg/storage/hnsw.rs#L493-L543)
+- [hnsw.rs:344-388](src/pkg/storage/hnsw.rs#L344-L388)
+- [hnsw.rs:403-430](src/pkg/storage/hnsw.rs#L403-L430)
+- [vector_search_architecture.md:448-463](docs/vector_search_architecture.md#L448-L463)
 
 ## 结论
 HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余弦距离、bincode 持久化与后台落盘能力，适合中小规模与零依赖场景。通过 VectorStore 抽象，上层可无缝切换后端。与 SQLite VSS 相比，HnswStore 更轻量、易部署；与 LanceDB 相比，后者更适合大规模生产负载。建议在业务侧合理拆分集合、控制过期策略与 top_k，并结合后台任务与兜底落盘保障数据一致性。
 
 ## 附录
 - 关键数据结构路径：
-  - VectorRow、VectorSearchHit、VectorIndexParams、Vectorizable：[vector.rs（模型定义）:1-192](file://src/models/vector.rs#L1-L192)
+  - VectorRow、VectorSearchHit、VectorIndexParams、Vectorizable：[vector.rs（模型定义）:1-192](src/models/vector.rs#L1-L192)
 - 后端实现路径：
-  - HnswStore：[hnsw.rs:1-617](file://src/pkg/storage/hnsw.rs#L1-L617)
-  - SqliteVssStore：[vector.rs:76-235](file://src/pkg/storage/vector.rs#L76-L235)
-  - LanceVectorStore：[lance.rs:1-294](file://src/pkg/storage/lance.rs#L1-L294)
+  - HnswStore：[hnsw.rs:1-617](src/pkg/storage/hnsw.rs#L1-L617)
+  - SqliteVssStore：[vector.rs:76-235](src/pkg/storage/vector.rs#L76-L235)
+  - LanceVectorStore：[lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
 - 架构与设计文档：
-  - 向量搜索架构：[vector_search_architecture.md:161-206](file://docs/vector_search_architecture.md#L161-L206)
-  - HNSW 增强计划：[2026-07-16-vector-search-enhancement.md:27-51](file://docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)
+  - 向量搜索架构：[vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
+  - HNSW 增强计划：[2026-07-16-vector-search-enhancement.md:27-51](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)

@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/memory.rs](file://src/models/memory.rs)
-- [src/service/dal/memory.rs](file://src/service/dal/memory.rs)
-- [src/service/domain/runtime/memory.rs](file://src/service/domain/runtime/memory.rs)
-- [common/src/enums/memory.rs](file://common/src/enums/memory.rs)
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [src/models/prompt_builder.rs](file://src/models/prompt_builder.rs)
-- [src/service/domain/runtime/awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [src/consumer/message.rs](file://src/consumer/message.rs)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
+- [src/models/memory.rs](src/models/memory.rs)
+- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/domain/runtime/memory.rs](src/service/domain/runtime/memory.rs)
+- [common/src/enums/memory.rs](common/src/enums/memory.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [src/models/prompt_builder.rs](src/models/prompt_builder.rs)
+- [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
+- [src/consumer/message.rs](src/consumer/message.rs)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
 </cite>
 
 ## 目录
@@ -65,18 +65,18 @@ R1 --> E1
 ```
 
 图表来源
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
-- [src/service/dal/memory.rs:1-800](file://src/service/dal/memory.rs#L1-L800)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [src/service/domain/runtime/awakening.rs:354-456](file://src/service/domain/runtime/awakening.rs#L354-L456)
-- [src/consumer/message.rs:290-317](file://src/consumer/message.rs#L290-L317)
-- [common/src/enums/memory.rs:1-212](file://common/src/enums/memory.rs#L1-L212)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
+- [src/service/dal/memory.rs:1-800](src/service/dal/memory.rs#L1-L800)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [src/service/domain/runtime/awakening.rs:354-456](src/service/domain/runtime/awakening.rs#L354-L456)
+- [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
+- [common/src/enums/memory.rs:1-212](common/src/enums/memory.rs#L1-L212)
 
 章节来源
-- [src/models/memory.rs:1-424](file://src/models/memory.rs#L1-L424)
-- [src/service/dal/memory.rs:1-800](file://src/service/dal/memory.rs#L1-L800)
-- [src/service/domain/runtime/memory.rs:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [common/src/enums/memory.rs:1-212](file://common/src/enums/memory.rs#L1-L212)
+- [src/models/memory.rs:1-424](src/models/memory.rs#L1-L424)
+- [src/service/dal/memory.rs:1-800](src/service/dal/memory.rs#L1-L800)
+- [src/service/domain/runtime/memory.rs:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [common/src/enums/memory.rs:1-212](common/src/enums/memory.rs#L1-L212)
 
 ## 核心组件
 - 记忆实体与 PO
@@ -99,14 +99,14 @@ R1 --> E1
   - MemoryType：Trace/ShortTerm/KnowledgeNode/Relation/All。
 
 章节来源
-- [src/models/memory.rs:15-424](file://src/models/memory.rs#L15-L424)
-- [src/service/dal/memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [src/service/domain/runtime/memory.rs:10-119](file://src/service/domain/runtime/memory.rs#L10-L119)
-- [src/models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [src/models/agent.rs:330-427](file://src/models/agent.rs#L330-L427)
-- [common/src/enums/memory.rs:12-30](file://common/src/enums/memory.rs#L12-L30)
-- [common/src/enums/memory.rs:56-94](file://common/src/enums/memory.rs#L56-L94)
-- [common/src/enums/memory.rs:184-212](file://common/src/enums/memory.rs#L184-L212)
+- [src/models/memory.rs:15-424](src/models/memory.rs#L15-L424)
+- [src/service/dal/memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
+- [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [src/models/agent.rs:330-427](src/models/agent.rs#L330-L427)
+- [common/src/enums/memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
+- [common/src/enums/memory.rs:56-94](common/src/enums/memory.rs#L56-L94)
+- [common/src/enums/memory.rs:184-212](common/src/enums/memory.rs#L184-L212)
 
 ## 架构总览
 核心记忆在系统中承担“基础配置与系统级信息”的持久化与加载职责，并与 Agent 唤醒流程紧密耦合。整体调用方向严格遵循 Adapter → Domain → DAL → DAO，禁止跨层调用与同层互调。
@@ -133,18 +133,18 @@ Runtime-->>Consumer : AwakeningResult
 ```
 
 图表来源
-- [src/consumer/message.rs:290-317](file://src/consumer/message.rs#L290-L317)
-- [src/service/domain/runtime/awakening.rs:415-456](file://src/service/domain/runtime/awakening.rs#L415-L456)
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/service/dal/memory.rs:278-312](file://src/service/dal/memory.rs#L278-L312)
-- [src/models/prompt_builder.rs:31-64](file://src/models/prompt_builder.rs#L31-L64)
+- [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
+- [src/service/domain/runtime/awakening.rs:415-456](src/service/domain/runtime/awakening.rs#L415-L456)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+- [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 章节来源
-- [src/consumer/message.rs:290-317](file://src/consumer/message.rs#L290-L317)
-- [src/service/domain/runtime/awakening.rs:415-456](file://src/service/domain/runtime/awakening.rs#L415-L456)
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/service/dal/memory.rs:278-312](file://src/service/dal/memory.rs#L278-L312)
-- [src/models/prompt_builder.rs:31-64](file://src/models/prompt_builder.rs#L31-L64)
+- [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
+- [src/service/domain/runtime/awakening.rs:415-456](src/service/domain/runtime/awakening.rs#L415-L456)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/service/dal/memory.rs:278-312](src/service/dal/memory.rs#L278-L312)
+- [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 ## 详细组件分析
 
@@ -164,11 +164,11 @@ Runtime-->>Consumer : AwakeningResult
   - 包装 PO 与搜索匹配信息（向量距离/FTS排名），便于上层统一处理。
 
 章节来源
-- [src/models/memory.rs:15-156](file://src/models/memory.rs#L15-L156)
-- [src/models/memory.rs:158-210](file://src/models/memory.rs#L158-L210)
-- [src/models/memory.rs:212-266](file://src/models/memory.rs#L212-L266)
-- [src/models/memory.rs:268-307](file://src/models/memory.rs#L268-L307)
-- [src/models/memory.rs:309-374](file://src/models/memory.rs#L309-L374)
+- [src/models/memory.rs:15-156](src/models/memory.rs#L15-L156)
+- [src/models/memory.rs:158-210](src/models/memory.rs#L158-L210)
+- [src/models/memory.rs:212-266](src/models/memory.rs#L212-L266)
+- [src/models/memory.rs:268-307](src/models/memory.rs#L268-L307)
+- [src/models/memory.rs:309-374](src/models/memory.rs#L309-L374)
 
 ### 读写操作与更新策略
 - 写操作（create）
@@ -188,10 +188,10 @@ Runtime-->>Consumer : AwakeningResult
   - 向量集合维护 model_provider_id，切换 Embedding Provider 时触发 rebuild_vectors。
 
 章节来源
-- [src/service/dal/memory.rs:104-177](file://src/service/dal/memory.rs#L104-L177)
-- [src/service/dal/memory.rs:377-516](file://src/service/dal/memory.rs#L377-L516)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [common/src/enums/memory.rs:12-30](file://common/src/enums/memory.rs#L12-L30)
+- [src/service/dal/memory.rs:104-177](src/service/dal/memory.rs#L104-L177)
+- [src/service/dal/memory.rs:377-516](src/service/dal/memory.rs#L377-L516)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [common/src/enums/memory.rs:12-30](common/src/enums/memory.rs#L12-L30)
 
 ### 唤醒过程中的加载流程与优先级
 - 装配 Brain
@@ -218,16 +218,16 @@ Think --> End(["结束"])
 ```
 
 图表来源
-- [src/service/domain/runtime/awakening.rs:379-413](file://src/service/domain/runtime/awakening.rs#L379-L413)
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/models/agent.rs:359-376](file://src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:1028-1044](file://src/service/dal/agent.rs#L1028-L1044)
+- [src/service/domain/runtime/awakening.rs:379-413](src/service/domain/runtime/awakening.rs#L379-L413)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
+- [src/service/dal/agent.rs:1028-1044](src/service/dal/agent.rs#L1028-L1044)
 
 章节来源
-- [src/service/domain/runtime/awakening.rs:379-456](file://src/service/domain/runtime/awakening.rs#L379-L456)
-- [src/service/domain/runtime/memory.rs:14-33](file://src/service/domain/runtime/memory.rs#L14-L33)
-- [src/models/agent.rs:359-376](file://src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:1028-1044](file://src/service/dal/agent.rs#L1028-L1044)
+- [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
+- [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
+- [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
+- [src/service/dal/agent.rs:1028-1044](src/service/dal/agent.rs#L1028-L1044)
 
 ### 核心记忆与其他记忆层的交互
 - 与短期/长期记忆
@@ -240,9 +240,9 @@ Think --> End(["结束"])
   - 支持从种子节点出发进行 BFS/DFS 遍历，返回节点与关系，用于推荐起点与探索。
 
 章节来源
-- [src/service/dal/memory.rs:190-276](file://src/service/dal/memory.rs#L190-L276)
-- [src/service/dal/memory.rs:518-576](file://src/service/dal/memory.rs#L518-L576)
-- [src/service/dal/memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
+- [src/service/dal/memory.rs:190-276](src/service/dal/memory.rs#L190-L276)
+- [src/service/dal/memory.rs:518-576](src/service/dal/memory.rs#L518-L576)
+- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
 
 ## 依赖关系分析
 - 模块耦合
@@ -267,18 +267,18 @@ AW --> PB["PromptBuilder"]
 ```
 
 图表来源
-- [src/service/domain/runtime/memory.rs:10-119](file://src/service/domain/runtime/memory.rs#L10-L119)
-- [src/service/dal/memory.rs:41-68](file://src/service/dal/memory.rs#L41-L68)
-- [src/service/domain/runtime/awakening.rs:379-456](file://src/service/domain/runtime/awakening.rs#L379-L456)
-- [src/models/agent.rs:359-376](file://src/models/agent.rs#L359-L376)
-- [src/models/prompt_builder.rs:31-64](file://src/models/prompt_builder.rs#L31-L64)
+- [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
+- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
+- [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
+- [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 章节来源
-- [src/service/domain/runtime/memory.rs:10-119](file://src/service/domain/runtime/memory.rs#L10-L119)
-- [src/service/dal/memory.rs:41-68](file://src/service/dal/memory.rs#L41-L68)
-- [src/service/domain/runtime/awakening.rs:379-456](file://src/service/domain/runtime/awakening.rs#L379-L456)
-- [src/models/agent.rs:359-376](file://src/models/agent.rs#L359-L376)
-- [src/models/prompt_builder.rs:31-64](file://src/models/prompt_builder.rs#L31-L64)
+- [src/service/domain/runtime/memory.rs:10-119](src/service/domain/runtime/memory.rs#L10-L119)
+- [src/service/dal/memory.rs:41-68](src/service/dal/memory.rs#L41-L68)
+- [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
+- [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
+- [src/models/prompt_builder.rs:31-64](src/models/prompt_builder.rs#L31-L64)
 
 ## 性能考量
 - 向量重建优化
@@ -291,10 +291,10 @@ AW --> PB["PromptBuilder"]
   - 唤醒时使用 BusyGuard 管理状态，避免重复唤醒；消费者层原子占用 Agent，防止 TOCTOU 竞态。
 
 章节来源
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/memory.rs:220-276](file://src/service/dal/memory.rs#L220-L276)
-- [src/service/dal/memory.rs:578-652](file://src/service/dal/memory.rs#L578-L652)
-- [src/consumer/message.rs:290-317](file://src/consumer/message.rs#L290-L317)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/memory.rs:220-276](src/service/dal/memory.rs#L220-L276)
+- [src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+- [src/consumer/message.rs:290-317](src/consumer/message.rs#L290-L317)
 
 ## 故障排查指南
 - 向量索引失败
@@ -308,9 +308,9 @@ AW --> PB["PromptBuilder"]
   - 处理：确认 BusyGuard 是否正确释放；检查 awaken 前失败路径是否清理状态。
 
 章节来源
-- [src/service/dal/memory.rs:400-460](file://src/service/dal/memory.rs#L400-L460)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/domain/runtime/awakening.rs:424-456](file://src/service/domain/runtime/awakening.rs#L424-L456)
+- [src/service/dal/memory.rs:400-460](src/service/dal/memory.rs#L400-L460)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/domain/runtime/awakening.rs:424-456](src/service/domain/runtime/awakening.rs#L424-L456)
 
 ## 结论
 核心记忆通过严格的分层架构与统一的 DAL 接口，实现了 Agent 基础配置与系统级信息的持久化管理。其读写操作具备幂等性与降级策略，版本管理通过状态与时间戳保障一致性。在 Agent 唤醒过程中，核心记忆按优先级加载到 Prompt，确保推理质量与可追溯性。未来可通过 brain 缓存与更细粒度的向量索引优化进一步提升性能。
@@ -338,6 +338,6 @@ AW --> PB["PromptBuilder"]
   - rebuild_vectors()：重建向量索引。
 
 章节来源
-- [src/models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [src/service/dal/memory.rs:72-177](file://src/service/dal/memory.rs#L72-L177)
-- [src/service/dal/memory.rs:377-799](file://src/service/dal/memory.rs#L377-L799)
+- [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [src/service/dal/memory.rs:72-177](src/service/dal/memory.rs#L72-L177)
+- [src/service/dal/memory.rs:377-799](src/service/dal/memory.rs#L377-L799)

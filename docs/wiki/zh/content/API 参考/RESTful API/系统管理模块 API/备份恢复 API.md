@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/system/backup/mod.rs](file://src/handlers/system/backup/mod.rs)
-- [src/handlers/system/backup/create_backup.rs](file://src/handlers/system/backup/create_backup.rs)
-- [src/handlers/system/backup/list_backups.rs](file://src/handlers/system/backup/list_backups.rs)
-- [src/handlers/system/backup/delete_backup.rs](file://src/handlers/system/backup/delete_backup.rs)
-- [src/handlers/system/backup/restore_backup.rs](file://src/handlers/system/backup/restore_backup.rs)
-- [src/router.rs](file://src/router.rs)
-- [src/service/domain/system/mod.rs](file://src/service/domain/system/mod.rs)
-- [src/service/dal/backup.rs](file://src/service/dal/backup.rs)
-- [common/src/error/code.rs](file://common/src/error/code.rs)
-- [frontend/src/pages/system/backup.rs](file://frontend/src/pages/system/backup.rs)
+- [src/handlers/system/backup/mod.rs](src/handlers/system/backup/mod.rs)
+- [src/handlers/system/backup/create_backup.rs](src/handlers/system/backup/create_backup.rs)
+- [src/handlers/system/backup/list_backups.rs](src/handlers/system/backup/list_backups.rs)
+- [src/handlers/system/backup/delete_backup.rs](src/handlers/system/backup/delete_backup.rs)
+- [src/handlers/system/backup/restore_backup.rs](src/handlers/system/backup/restore_backup.rs)
+- [src/router.rs](src/router.rs)
+- [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
+- [src/service/dal/backup.rs](src/service/dal/backup.rs)
+- [common/src/error/code.rs](common/src/error/code.rs)
+- [frontend/src/pages/system/backup.rs](frontend/src/pages/system/backup.rs)
 </cite>
 
 ## 目录
@@ -54,14 +54,14 @@ DAL --> FS["文件系统<br/>base_data_path/backups/*"]
 ```
 
 图表来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/handlers/system/backup/mod.rs:1-32](file://src/handlers/system/backup/mod.rs#L1-L32)
-- [src/service/domain/system/mod.rs:261-277](file://src/service/domain/system/mod.rs#L261-L277)
-- [src/service/dal/backup.rs:70-84](file://src/service/dal/backup.rs#L70-L84)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/handlers/system/backup/mod.rs:1-32](src/handlers/system/backup/mod.rs#L1-L32)
+- [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
+- [src/service/dal/backup.rs:70-84](src/service/dal/backup.rs#L70-L84)
 
 章节来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/handlers/system/backup/mod.rs:1-32](file://src/handlers/system/backup/mod.rs#L1-L32)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/handlers/system/backup/mod.rs:1-32](src/handlers/system/backup/mod.rs#L1-L32)
 
 ## 核心组件
 - Adapter（HTTP 层）
@@ -78,12 +78,12 @@ DAL --> FS["文件系统<br/>base_data_path/backups/*"]
   - 支持重建索引（防御性）
 
 章节来源
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/handlers/system/backup/list_backups.rs:1-22](file://src/handlers/system/backup/list_backups.rs#L1-L22)
-- [src/handlers/system/backup/delete_backup.rs:1-25](file://src/handlers/system/backup/delete_backup.rs#L1-L25)
-- [src/handlers/system/backup/restore_backup.rs:1-35](file://src/handlers/system/backup/restore_backup.rs#L1-L35)
-- [src/service/domain/system/mod.rs:261-277](file://src/service/domain/system/mod.rs#L261-L277)
-- [src/service/dal/backup.rs:1-84](file://src/service/dal/backup.rs#L1-L84)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L22)
+- [src/handlers/system/backup/delete_backup.rs:1-25](src/handlers/system/backup/delete_backup.rs#L1-L25)
+- [src/handlers/system/backup/restore_backup.rs:1-35](src/handlers/system/backup/restore_backup.rs#L1-L35)
+- [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
+- [src/service/dal/backup.rs:1-84](src/service/dal/backup.rs#L1-L84)
 
 ## 架构总览
 备份流程从 HTTP 请求进入，经路由分发到对应 Handler，进行权限校验后调用 Domain，再由 Domain 委派给 DAL 完成归档或索引操作。恢复流程返回可执行的 bash 脚本，由运维在目标环境执行。
@@ -120,11 +120,11 @@ H-->>C : 200 text/plain + 脚本
 ```
 
 图表来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/handlers/system/backup/create_backup.rs:16-26](file://src/handlers/system/backup/create_backup.rs#L16-L26)
-- [src/handlers/system/backup/restore_backup.rs:18-35](file://src/handlers/system/backup/restore_backup.rs#L18-L35)
-- [src/service/domain/system/mod.rs:261-277](file://src/service/domain/system/mod.rs#L261-L277)
-- [src/service/dal/backup.rs:100-243](file://src/service/dal/backup.rs#L100-L243)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/handlers/system/backup/create_backup.rs:16-26](src/handlers/system/backup/create_backup.rs#L16-L26)
+- [src/handlers/system/backup/restore_backup.rs:18-35](src/handlers/system/backup/restore_backup.rs#L18-L35)
+- [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
+- [src/service/dal/backup.rs:100-243](src/service/dal/backup.rs#L100-L243)
 
 ## 详细接口规范
 
@@ -136,9 +136,9 @@ H-->>C : 200 text/plain + 脚本
 - 错误响应：统一使用 common::error 的错误码与 HTTP 状态码映射
 
 章节来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
-- [common/src/error/code.rs:1-146](file://common/src/error/code.rs#L1-L146)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
+- [common/src/error/code.rs:1-146](common/src/error/code.rs#L1-L146)
 
 ### 创建备份
 - 方法：POST
@@ -175,9 +175,9 @@ H-->>C : 200 text/plain + 脚本
   }
 
 章节来源
-- [src/handlers/system/backup/create_backup.rs:1-27](file://src/handlers/system/backup/create_backup.rs#L1-L27)
-- [src/service/dal/backup.rs:21-34](file://src/service/dal/backup.rs#L21-L34)
-- [src/service/dal/backup.rs:100-152](file://src/service/dal/backup.rs#L100-L152)
+- [src/handlers/system/backup/create_backup.rs:1-27](src/handlers/system/backup/create_backup.rs#L1-L27)
+- [src/service/dal/backup.rs:21-34](src/service/dal/backup.rs#L21-L34)
+- [src/service/dal/backup.rs:100-152](src/service/dal/backup.rs#L100-L152)
 
 ### 列出备份
 - 方法：GET
@@ -198,8 +198,8 @@ H-->>C : 200 text/plain + 脚本
 - 主体：[BackupInfo, ...]
 
 章节来源
-- [src/handlers/system/backup/list_backups.rs:1-22](file://src/handlers/system/backup/list_backups.rs#L1-L22)
-- [src/service/dal/backup.rs:154-174](file://src/service/dal/backup.rs#L154-L174)
+- [src/handlers/system/backup/list_backups.rs:1-22](src/handlers/system/backup/list_backups.rs#L1-L22)
+- [src/service/dal/backup.rs:154-174](src/service/dal/backup.rs#L154-L174)
 
 ### 删除备份
 - 方法：DELETE
@@ -222,8 +222,8 @@ H-->>C : 200 text/plain + 脚本
 - 主体：空
 
 章节来源
-- [src/handlers/system/backup/delete_backup.rs:1-25](file://src/handlers/system/backup/delete_backup.rs#L1-L25)
-- [src/service/dal/backup.rs:176-196](file://src/service/dal/backup.rs#L176-L196)
+- [src/handlers/system/backup/delete_backup.rs:1-25](src/handlers/system/backup/delete_backup.rs#L1-L25)
+- [src/service/dal/backup.rs:176-196](src/service/dal/backup.rs#L176-L196)
 
 ### 获取恢复脚本
 - 方法：POST
@@ -253,8 +253,8 @@ H-->>C : 200 text/plain + 脚本
 - 主体：bash 脚本文本
 
 章节来源
-- [src/handlers/system/backup/restore_backup.rs:1-35](file://src/handlers/system/backup/restore_backup.rs#L1-L35)
-- [src/service/dal/backup.rs:198-243](file://src/service/dal/backup.rs#L198-L243)
+- [src/handlers/system/backup/restore_backup.rs:1-35](src/handlers/system/backup/restore_backup.rs#L1-L35)
+- [src/service/dal/backup.rs:198-243](src/service/dal/backup.rs#L198-L243)
 
 ## 依赖关系分析
 - 路由注册：/backups 子集挂载于系统模块下
@@ -278,14 +278,14 @@ DAL --> FS["文件系统"]
 ```
 
 图表来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/service/domain/system/mod.rs:261-277](file://src/service/domain/system/mod.rs#L261-L277)
-- [src/service/dal/backup.rs:70-84](file://src/service/dal/backup.rs#L70-L84)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
+- [src/service/dal/backup.rs:70-84](src/service/dal/backup.rs#L70-L84)
 
 章节来源
-- [src/router.rs:634-646](file://src/router.rs#L634-L646)
-- [src/service/domain/system/mod.rs:261-277](file://src/service/domain/system/mod.rs#L261-L277)
-- [src/service/dal/backup.rs:70-84](file://src/service/dal/backup.rs#L70-L84)
+- [src/router.rs:634-646](src/router.rs#L634-L646)
+- [src/service/domain/system/mod.rs:261-277](src/service/domain/system/mod.rs#L261-L277)
+- [src/service/dal/backup.rs:70-84](src/service/dal/backup.rs#L70-L84)
 
 ## 性能与容量建议
 - 归档范围：包含 base_data_path 下除 backups/ 与 logs/ 外的全部数据；大目录归档耗时与磁盘 I/O 成正比
@@ -294,9 +294,9 @@ DAL --> FS["文件系统"]
 - 索引重建：当 _index.json 缺失或损坏时，系统会扫描 backups/ 重建索引，可能带来额外 IO
 
 章节来源
-- [src/service/dal/backup.rs:100-152](file://src/service/dal/backup.rs#L100-L152)
-- [src/service/dal/backup.rs:154-174](file://src/service/dal/backup.rs#L154-L174)
-- [src/service/dal/backup.rs:358-394](file://src/service/dal/backup.rs#L358-L394)
+- [src/service/dal/backup.rs:100-152](src/service/dal/backup.rs#L100-L152)
+- [src/service/dal/backup.rs:154-174](src/service/dal/backup.rs#L154-L174)
+- [src/service/dal/backup.rs:358-394](src/service/dal/backup.rs#L358-L394)
 
 ## 故障排查指南
 - 403 Forbidden：确认当前用户角色为 SuperAdmin；检查路由层与 handler 内权限校验
@@ -305,10 +305,10 @@ DAL --> FS["文件系统"]
 - 恢复脚本无效：确认已停止服务后再执行；核对 data_dir 与备份文件路径
 
 章节来源
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
-- [src/service/dal/backup.rs:176-196](file://src/service/dal/backup.rs#L176-L196)
-- [src/service/dal/backup.rs:198-243](file://src/service/dal/backup.rs#L198-L243)
-- [common/src/error/code.rs:1-146](file://common/src/error/code.rs#L1-L146)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
+- [src/service/dal/backup.rs:176-196](src/service/dal/backup.rs#L176-L196)
+- [src/service/dal/backup.rs:198-243](src/service/dal/backup.rs#L198-L243)
+- [common/src/error/code.rs:1-146](common/src/error/code.rs#L1-L146)
 
 ## 结论
 备份恢复 API 提供了面向运维的可靠数据保护能力：通过统一的 HTTP 接口创建、查看、删除备份，并提供安全的恢复脚本生成。权限控制严格，错误处理清晰，适合纳入生产环境的灾备流程。
@@ -327,6 +327,6 @@ DAL --> FS["文件系统"]
   - 传输层启用 HTTPS；对恢复脚本进行审计与留痕
 
 章节来源
-- [src/handlers/system/backup/mod.rs:19-32](file://src/handlers/system/backup/mod.rs#L19-L32)
-- [src/service/dal/backup.rs:198-243](file://src/service/dal/backup.rs#L198-L243)
-- [frontend/src/pages/system/backup.rs:1-322](file://frontend/src/pages/system/backup.rs#L1-L322)
+- [src/handlers/system/backup/mod.rs:19-32](src/handlers/system/backup/mod.rs#L19-L32)
+- [src/service/dal/backup.rs:198-243](src/service/dal/backup.rs#L198-L243)
+- [frontend/src/pages/system/backup.rs:1-322](frontend/src/pages/system/backup.rs#L1-L322)

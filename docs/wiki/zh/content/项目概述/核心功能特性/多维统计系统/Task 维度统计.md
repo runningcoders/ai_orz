@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/stats/task_event.rs](file://src/pkg/stats/task_event.rs)
-- [src/consumer/task_event_consumer.rs](file://src/consumer/task_event_consumer.rs)
-- [common/src/models/stats.rs](file://common/src/models/stats.rs)
-- [src/service/dao/task/mod.rs](file://src/service/dao/task/mod.rs)
-- [src/service/dao/task/stats_duckdb.rs](file://src/service/dao/task/stats_duckdb.rs)
-- [common/src/enums/task.rs](file://common/src/enums/task.rs)
-- [src/pkg/stats/mod.rs](file://src/pkg/stats/mod.rs)
+- [src/pkg/stats/task_event.rs](src/pkg/stats/task_event.rs)
+- [src/consumer/task_event_consumer.rs](src/consumer/task_event_consumer.rs)
+- [common/src/models/stats.rs](common/src/models/stats.rs)
+- [src/service/dao/task/mod.rs](src/service/dao/task/mod.rs)
+- [src/service/dao/task/stats_duckdb.rs](src/service/dao/task/stats_duckdb.rs)
+- [common/src/enums/task.rs](common/src/enums/task.rs)
+- [src/pkg/stats/mod.rs](src/pkg/stats/mod.rs)
 </cite>
 
 ## 目录
@@ -58,18 +58,18 @@ C --> F
 ```
 
 图表来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/mod.rs:1-56](file://src/pkg/stats/mod.rs#L1-L56)
-- [src/service/dao/task/mod.rs:141-229](file://src/service/dao/task/mod.rs#L141-L229)
-- [src/service/dao/task/stats_duckdb.rs:24-67](file://src/service/dao/task/stats_duckdb.rs#L24-L67)
-- [src/consumer/task_event_consumer.rs:38-137](file://src/consumer/task_event_consumer.rs#L38-L137)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/mod.rs:1-56](src/pkg/stats/mod.rs#L1-L56)
+- [src/service/dao/task/mod.rs:141-229](src/service/dao/task/mod.rs#L141-L229)
+- [src/service/dao/task/stats_duckdb.rs:24-67](src/service/dao/task/stats_duckdb.rs#L24-L67)
+- [src/consumer/task_event_consumer.rs:38-137](src/consumer/task_event_consumer.rs#L38-L137)
 
 章节来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/mod.rs:1-56](file://src/pkg/stats/mod.rs#L1-L56)
-- [src/service/dao/task/mod.rs:141-229](file://src/service/dao/task/mod.rs#L141-L229)
-- [src/service/dao/task/stats_duckdb.rs:24-67](file://src/service/dao/task/stats_duckdb.rs#L24-L67)
-- [src/consumer/task_event_consumer.rs:38-137](file://src/consumer/task_event_consumer.rs#L38-L137)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/mod.rs:1-56](src/pkg/stats/mod.rs#L1-L56)
+- [src/service/dao/task/mod.rs:141-229](src/service/dao/task/mod.rs#L141-L229)
+- [src/service/dao/task/stats_duckdb.rs:24-67](src/service/dao/task/stats_duckdb.rs#L24-L67)
+- [src/consumer/task_event_consumer.rs:38-137](src/consumer/task_event_consumer.rs#L38-L137)
 
 ## 核心组件
 - TaskEvent：任务生命周期事件的数据模型，包含时间戳、任务标识、项目标识、事件类型、组织/操作者/分配者信息、状态流转、执行时长与优先级等字段，并映射到 DuckDB 的 task_events 表。
@@ -79,12 +79,12 @@ C --> F
 - 通用统计模型：CallSummary、TimeSeriesPoint、TokenSumResult、StatsFetchOptions 等，统一在 common 层暴露给各层使用。
 
 章节来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/task_event.rs:139-255](file://src/pkg/stats/task_event.rs#L139-L255)
-- [src/service/dao/task/mod.rs:141-229](file://src/service/dao/task/mod.rs#L141-L229)
-- [src/consumer/task_event_consumer.rs:38-137](file://src/consumer/task_event_consumer.rs#L38-L137)
-- [common/src/models/stats.rs:8-72](file://common/src/models/stats.rs#L8-L72)
-- [common/src/models/stats.rs:121-149](file://common/src/models/stats.rs#L121-L149)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/task_event.rs:139-255](src/pkg/stats/task_event.rs#L139-L255)
+- [src/service/dao/task/mod.rs:141-229](src/service/dao/task/mod.rs#L141-L229)
+- [src/consumer/task_event_consumer.rs:38-137](src/consumer/task_event_consumer.rs#L38-L137)
+- [common/src/models/stats.rs:8-72](common/src/models/stats.rs#L8-L72)
+- [common/src/models/stats.rs:121-149](common/src/models/stats.rs#L121-L149)
 
 ## 架构总览
 任务统计遵循“采集→持久化→查询→展示”的链路：
@@ -114,10 +114,10 @@ Domain-->>App : 返回统计结果
 ```
 
 图表来源
-- [src/pkg/stats/task_event.rs:151-214](file://src/pkg/stats/task_event.rs#L151-L214)
-- [src/consumer/task_event_consumer.rs:52-137](file://src/consumer/task_event_consumer.rs#L52-L137)
-- [src/service/dao/task/mod.rs:169-229](file://src/service/dao/task/mod.rs#L169-L229)
-- [src/service/dao/task/stats_duckdb.rs:30-67](file://src/service/dao/task/stats_duckdb.rs#L30-L67)
+- [src/pkg/stats/task_event.rs:151-214](src/pkg/stats/task_event.rs#L151-L214)
+- [src/consumer/task_event_consumer.rs:52-137](src/consumer/task_event_consumer.rs#L52-L137)
+- [src/service/dao/task/mod.rs:169-229](src/service/dao/task/mod.rs#L169-L229)
+- [src/service/dao/task/stats_duckdb.rs:30-67](src/service/dao/task/stats_duckdb.rs#L30-L67)
 
 ## 详细组件分析
 
@@ -159,12 +159,12 @@ TaskStatTable --> TaskEvent : "持久化"
 ```
 
 图表来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/task_event.rs:139-255](file://src/pkg/stats/task_event.rs#L139-L255)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/task_event.rs:139-255](src/pkg/stats/task_event.rs#L139-L255)
 
 章节来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/task_event.rs:139-255](file://src/pkg/stats/task_event.rs#L139-L255)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/task_event.rs:139-255](src/pkg/stats/task_event.rs#L139-L255)
 
 ### 任务统计 DAO 与 DuckDB 实现
 - 查询参数：TaskStatsQuery 包含 task_id（必填）、filters、time_range、aggregations。
@@ -191,12 +191,12 @@ ReturnStats --> End
 ```
 
 图表来源
-- [src/service/dao/task/mod.rs:186-229](file://src/service/dao/task/mod.rs#L186-L229)
-- [src/service/dao/task/stats_duckdb.rs:30-67](file://src/service/dao/task/stats_duckdb.rs#L30-L67)
+- [src/service/dao/task/mod.rs:186-229](src/service/dao/task/mod.rs#L186-L229)
+- [src/service/dao/task/stats_duckdb.rs:30-67](src/service/dao/task/stats_duckdb.rs#L30-L67)
 
 章节来源
-- [src/service/dao/task/mod.rs:141-229](file://src/service/dao/task/mod.rs#L141-L229)
-- [src/service/dao/task/stats_duckdb.rs:24-67](file://src/service/dao/task/stats_duckdb.rs#L24-L67)
+- [src/service/dao/task/mod.rs:141-229](src/service/dao/task/mod.rs#L141-L229)
+- [src/service/dao/task/stats_duckdb.rs:24-67](src/service/dao/task/stats_duckdb.rs#L24-L67)
 
 ### 任务完成事件消费（TaskEventConsumer）
 - 订阅事件：task.status_changed。
@@ -224,10 +224,10 @@ end
 ```
 
 图表来源
-- [src/consumer/task_event_consumer.rs:52-137](file://src/consumer/task_event_consumer.rs#L52-L137)
+- [src/consumer/task_event_consumer.rs:52-137](src/consumer/task_event_consumer.rs#L52-L137)
 
 章节来源
-- [src/consumer/task_event_consumer.rs:38-137](file://src/consumer/task_event_consumer.rs#L38-L137)
+- [src/consumer/task_event_consumer.rs:38-137](src/consumer/task_event_consumer.rs#L38-L137)
 
 ### 任务状态与生命周期
 - 任务状态枚举：Cancelled、PendingReview、Pending、InProgress、Completed、Archived。
@@ -235,8 +235,8 @@ end
 - 执行时长：duration_ms 可用于计算单次任务执行耗时，结合事件序列可推导端到端时长。
 
 章节来源
-- [common/src/enums/task.rs:8-47](file://common/src/enums/task.rs#L8-L47)
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
+- [common/src/enums/task.rs:8-47](common/src/enums/task.rs#L8-L47)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
 
 ## 依赖关系分析
 - 统计事件依赖：TaskEvent 依赖 ai_orz_macros::StatsEvent 派生，自动注册到 Stats 子系统。
@@ -254,16 +254,16 @@ Domain --> DuckDB
 ```
 
 图表来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/mod.rs:1-56](file://src/pkg/stats/mod.rs#L1-L56)
-- [src/service/dao/task/mod.rs:169-229](file://src/service/dao/task/mod.rs#L169-L229)
-- [src/consumer/task_event_consumer.rs:52-137](file://src/consumer/task_event_consumer.rs#L52-L137)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/mod.rs:1-56](src/pkg/stats/mod.rs#L1-L56)
+- [src/service/dao/task/mod.rs:169-229](src/service/dao/task/mod.rs#L169-L229)
+- [src/consumer/task_event_consumer.rs:52-137](src/consumer/task_event_consumer.rs#L52-L137)
 
 章节来源
-- [src/pkg/stats/task_event.rs:12-45](file://src/pkg/stats/task_event.rs#L12-L45)
-- [src/pkg/stats/mod.rs:1-56](file://src/pkg/stats/mod.rs#L1-L56)
-- [src/service/dao/task/mod.rs:169-229](file://src/service/dao/task/mod.rs#L169-L229)
-- [src/consumer/task_event_consumer.rs:52-137](file://src/consumer/task_event_consumer.rs#L52-L137)
+- [src/pkg/stats/task_event.rs:12-45](src/pkg/stats/task_event.rs#L12-L45)
+- [src/pkg/stats/mod.rs:1-56](src/pkg/stats/mod.rs#L1-L56)
+- [src/service/dao/task/mod.rs:169-229](src/service/dao/task/mod.rs#L169-L229)
+- [src/consumer/task_event_consumer.rs:52-137](src/consumer/task_event_consumer.rs#L52-L137)
 
 ## 性能与存储策略
 - 采集性能：
@@ -298,9 +298,9 @@ Domain --> DuckDB
   - 结合时间段计算平均 QPS，评估任务吞吐能力。
 
 章节来源
-- [src/service/dao/task/mod.rs:141-229](file://src/service/dao/task/mod.rs#L141-L229)
-- [src/service/dao/task/stats_duckdb.rs:30-67](file://src/service/dao/task/stats_duckdb.rs#L30-L67)
-- [common/src/models/stats.rs:8-72](file://common/src/models/stats.rs#L8-L72)
+- [src/service/dao/task/mod.rs:141-229](src/service/dao/task/mod.rs#L141-L229)
+- [src/service/dao/task/stats_duckdb.rs:30-67](src/service/dao/task/stats_duckdb.rs#L30-L67)
+- [common/src/models/stats.rs:8-72](common/src/models/stats.rs#L8-L72)
 
 ## 可视化展示建议
 - 任务执行趋势图：
@@ -331,9 +331,9 @@ Domain --> DuckDB
   - 考虑对历史数据进行归档与压缩。
 
 章节来源
-- [src/pkg/stats/task_event.rs:151-214](file://src/pkg/stats/task_event.rs#L151-L214)
-- [src/consumer/task_event_consumer.rs:60-103](file://src/consumer/task_event_consumer.rs#L60-L103)
-- [src/service/dao/task/stats_duckdb.rs:30-67](file://src/service/dao/task/stats_duckdb.rs#L30-L67)
+- [src/pkg/stats/task_event.rs:151-214](src/pkg/stats/task_event.rs#L151-L214)
+- [src/consumer/task_event_consumer.rs:60-103](src/consumer/task_event_consumer.rs#L60-L103)
+- [src/service/dao/task/stats_duckdb.rs:30-67](src/service/dao/task/stats_duckdb.rs#L30-L67)
 
 ## 结论
 任务维度统计通过 TaskEvent 与 DuckDB 实现了高扩展性与高性能的事件采集与查询。结合 TaskStatsDao 的聚合能力，可灵活支持多种统计需求。配合 TaskEventConsumer 的异步处理，系统在保障主流程性能的同时，完成了任务完成后的补偿与通知。建议在生产环境中实施数据归档与压缩策略，并结合可视化手段持续监控任务健康与性能瓶颈。

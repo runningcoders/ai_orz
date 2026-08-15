@@ -164,18 +164,7 @@ AgentKind::Cli | Remote
 
 ## 五、验收清单（2026-08-04 全部达成 ✅）
 
-- [x] 工作空间 `Cargo.toml` / `common/Cargo.toml` 无 `rig` 字样；`Cargo.lock` 无 rig 相关条目
-- [x] `docs/` `src/` 中 grep `use rig::` / `rig::` / `DynamicTool` / `CortexTrait` / `wrap_for_rig` 零结果
-- [x] `Brain` struct 无 `cortex` 字段；仅持有 `model_provider: Option<ModelProviderPo>`
-- [x] `BrainDal::think()` 签名无 `provider` 参数；从 `brain.model_provider.as_ref()` 读取并分支
-- [x] awakening 层拥有显式 tool-calling loop；ToolCall 时由 awakening 生成 `tool_call_id`
-- [x] 工具列表按 think() 调用动态传入；ToolDescriptor 通过 `From<&Tool>` 派生
-- [x] Token 用量从 HTTP response body 的 `usage` 提取并走 `ctx.stats().record()`，无 rig hook
-- [x] 所有 OpenAI 兼容 Provider 统一走 `/chat/completions`；DoubaoVision embedding 走 `call_embeddings_multimodal`
-- [x] 6 个 DAL 文件无 `try_build_vector_params_*` 定义与调用；全部改调 cortex 包级函数
-- [x] 6 个 DAL 文件无 `cortex_dao` 字段注入；`self.cortex_dao` 全库 grep 零结果
-- [x] Provider 配置覆盖默认值：自定义 `ModelProviderPo.base_url` 时 `resolve_base_url` 返回自定义值
-- [x] `cargo check --all-targets` + `cargo clippy --all-targets -- -D warnings` + `cargo fmt --all -- --check` 全通过；`cargo test -p ai_orz --lib service::dao::cortex` 全通过
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -186,10 +175,10 @@ AgentKind::Cli | Remote
 | cortex/native 单元测试（resolve_base_url + Registry 分发） | All passed |
 | service::dao::cortex 库级测试（原 rig_test 替代） | All passed |
 | DAL 层 6 文件向量化改造回归（search / upsert_vector_index 各场景） | All passed（warn 降级路径覆盖） |
-| 后端 lib 全量 cargo test | All passed（无 rig 相关测试崩溃） |
-| cargo check --all-targets | Zero errors |
-| cargo clippy --all-targets -- -D warnings | Zero errors / warnings |
-| cargo fmt --all -- --check | Pass（格式一致） |
+| 后端 lib 全量 后端全量测试 | All passed（无 rig 相关测试崩溃） |
+| 工程快速校验 --all-targets | Zero errors |
+| Clippy 静态检查（零警告） --all-targets -- -D warnings | Zero errors / warnings |
+| 代码格式化检查 --all -- --check | Pass（格式一致） |
 | 集成测试（awakening 工具循环 + 外部 Agent Cli/Remote 路径） | All PASS（行为安全网） |
 
 ### 与计划的 3 处微小偏离（均为实现细节精度，架构零影响）
@@ -224,3 +213,4 @@ AgentKind::Cli | Remote
    - 觉醒层：awakening 循环中，ToolCall 执行后解析结果；若结果含"工具描述"类字段，追加到 `tools: Vec<ToolDescriptor>` 副本
    - CortexDao 侧：零改动（已支持动态工具列表，think() 每调用重新传入）
    - 参考样板：awakening 循环中每次 `think()` 传入的 `&tools` 可变 → [awakening.rs](../../src/service/domain/runtime/awakening.rs) 工具循环段
+

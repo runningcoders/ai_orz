@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/storage/lance.rs](file://src/pkg/storage/lance.rs)
-- [src/pkg/storage/vector.rs](file://src/pkg/storage/vector.rs)
-- [src/pkg/storage/hnsw.rs](file://src/pkg/storage/hnsw.rs)
-- [src/pkg/storage/mem_vector.rs](file://src/pkg/storage/mem_vector.rs)
-- [src/pkg/storage/mod.rs](file://src/pkg/storage/mod.rs)
-- [src/models/vector.rs](file://src/models/vector.rs)
-- [common/src/config.rs](file://common/src/config.rs)
-- [src/service/dao/message/vector.rs](file://src/service/dao/message/vector.rs)
+- [src/pkg/storage/lance.rs](src/pkg/storage/lance.rs)
+- [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
+- [src/pkg/storage/hnsw.rs](src/pkg/storage/hnsw.rs)
+- [src/pkg/storage/mem_vector.rs](src/pkg/storage/mem_vector.rs)
+- [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
+- [src/models/vector.rs](src/models/vector.rs)
+- [common/src/config.rs](common/src/config.rs)
+- [src/service/dao/message/vector.rs](src/service/dao/message/vector.rs)
 </cite>
 
 ## 目录
@@ -46,12 +46,12 @@ D --> H["InMemoryVectorStore(内存)"]
 ```
 
 图表来源
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 
 章节来源
-- [src/pkg/storage/mod.rs:1-212](file://src/pkg/storage/mod.rs#L1-L212)
-- [src/pkg/storage/vector.rs:1-74](file://src/pkg/storage/vector.rs#L1-L74)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
+- [src/pkg/storage/vector.rs:1-74](src/pkg/storage/vector.rs#L1-L74)
 
 ## 核心组件
 - VectorStore 抽象：定义 init_collection、upsert、search、get、delete、clear_collection、flush 及模型提供者元数据能力
@@ -62,8 +62,8 @@ D --> H["InMemoryVectorStore(内存)"]
 - 通用数据结构：VectorMeta、VectorRow、VectorSearchHit、VectorIndexParams、SearchResult 等
 
 章节来源
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/models/vector.rs:9-168](file://src/models/vector.rs#L9-L168)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/models/vector.rs:9-168](src/models/vector.rs#L9-L168)
 
 ## 架构总览
 LanceVectorStore 通过 LanceDB 连接管理集合（表），懒加载并缓存 Table 引用；写入时构造 Arrow RecordBatch 批量追加；搜索时执行向量检索并映射为标准命中结果。
@@ -88,8 +88,8 @@ DAO-->>App : ok
 ```
 
 图表来源
-- [src/service/dao/message/vector.rs:38-49](file://src/service/dao/message/vector.rs#L38-L49)
-- [src/pkg/storage/lance.rs:134-199](file://src/pkg/storage/lance.rs#L134-L199)
+- [src/service/dao/message/vector.rs:38-49](src/service/dao/message/vector.rs#L38-L49)
+- [src/pkg/storage/lance.rs:134-199](src/pkg/storage/lance.rs#L134-L199)
 
 ```mermaid
 sequenceDiagram
@@ -109,8 +109,8 @@ DAO-->>App : results
 ```
 
 图表来源
-- [src/service/dao/message/vector.rs:51-59](file://src/service/dao/message/vector.rs#L51-L59)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
+- [src/service/dao/message/vector.rs:51-59](src/service/dao/message/vector.rs#L51-L59)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
 
 ## 详细组件分析
 
@@ -138,11 +138,11 @@ class LanceVectorStore {
 ```
 
 图表来源
-- [src/pkg/storage/lance.rs:26-124](file://src/pkg/storage/lance.rs#L26-L124)
-- [src/pkg/storage/lance.rs:127-365](file://src/pkg/storage/lance.rs#L127-L365)
+- [src/pkg/storage/lance.rs:26-124](src/pkg/storage/lance.rs#L26-L124)
+- [src/pkg/storage/lance.rs:127-365](src/pkg/storage/lance.rs#L127-L365)
 
 章节来源
-- [src/pkg/storage/lance.rs:1-365](file://src/pkg/storage/lance.rs#L1-L365)
+- [src/pkg/storage/lance.rs:1-365](src/pkg/storage/lance.rs#L1-L365)
 
 ### 向量存储抽象与多后端
 - VectorStore Trait：统一 CRUD、刷新与模型提供者元数据能力
@@ -175,15 +175,15 @@ VectorStore <|.. InMemoryVectorStore
 ```
 
 图表来源
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/pkg/storage/lance.rs:127-365](file://src/pkg/storage/lance.rs#L127-L365)
-- [src/pkg/storage/hnsw.rs:432-616](file://src/pkg/storage/hnsw.rs#L432-L616)
-- [src/pkg/storage/mem_vector.rs:119-275](file://src/pkg/storage/mem_vector.rs#L119-L275)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/lance.rs:127-365](src/pkg/storage/lance.rs#L127-L365)
+- [src/pkg/storage/hnsw.rs:432-616](src/pkg/storage/hnsw.rs#L432-L616)
+- [src/pkg/storage/mem_vector.rs:119-275](src/pkg/storage/mem_vector.rs#L119-L275)
 
 章节来源
-- [src/pkg/storage/vector.rs:1-291](file://src/pkg/storage/vector.rs#L1-L291)
-- [src/pkg/storage/hnsw.rs:1-617](file://src/pkg/storage/hnsw.rs#L1-L617)
-- [src/pkg/storage/mem_vector.rs:1-276](file://src/pkg/storage/mem_vector.rs#L1-L276)
+- [src/pkg/storage/vector.rs:1-291](src/pkg/storage/vector.rs#L1-L291)
+- [src/pkg/storage/hnsw.rs:1-617](src/pkg/storage/hnsw.rs#L1-L617)
+- [src/pkg/storage/mem_vector.rs:1-276](src/pkg/storage/mem_vector.rs#L1-L276)
 
 ### 数据模型与索引参数
 - VectorMeta：内容哈希、嵌入模型、索引时间、过期时间
@@ -193,7 +193,7 @@ VectorStore <|.. InMemoryVectorStore
 - SearchResult<T>：业务实体与匹配元信息包装
 
 章节来源
-- [src/models/vector.rs:9-168](file://src/models/vector.rs#L9-L168)
+- [src/models/vector.rs:9-168](src/models/vector.rs#L9-L168)
 
 ### 配置与后端选择
 - 默认后端为 LanceDb，可通过配置切换为 InMemory、Hnsw、SqliteVss
@@ -201,10 +201,10 @@ VectorStore <|.. InMemoryVectorStore
 - Storage::new 根据配置实例化对应后端
 
 章节来源
-- [common/src/config.rs:98-114](file://common/src/config.rs#L98-L114)
-- [common/src/config.rs:178-203](file://common/src/config.rs#L178-L203)
-- [common/src/config.rs:264-278](file://common/src/config.rs#L264-L278)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
+- [common/src/config.rs:98-114](common/src/config.rs#L98-L114)
+- [common/src/config.rs:178-203](common/src/config.rs#L178-L203)
+- [common/src/config.rs:264-278](common/src/config.rs#L264-L278)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 ## 依赖关系分析
 - DAO 仅依赖 VectorStore 抽象，不感知具体后端
@@ -226,12 +226,12 @@ SVS --> SQLX["sqlx/vss0"]
 ```
 
 图表来源
-- [src/service/dao/message/vector.rs:38-83](file://src/service/dao/message/vector.rs#L38-L83)
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
+- [src/service/dao/message/vector.rs:38-83](src/service/dao/message/vector.rs#L38-L83)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 章节来源
-- [src/service/dao/message/vector.rs:1-84](file://src/service/dao/message/vector.rs#L1-L84)
-- [src/pkg/storage/mod.rs:1-212](file://src/pkg/storage/mod.rs#L1-L212)
+- [src/service/dao/message/vector.rs:1-84](src/service/dao/message/vector.rs#L1-L84)
+- [src/pkg/storage/mod.rs:1-212](src/pkg/storage/mod.rs#L1-L212)
 
 ## 性能与优化
 
@@ -271,10 +271,10 @@ SVS --> SQLX["sqlx/vss0"]
 - 性能退化：检查是否频繁重建索引（HNSW）；评估 top_k 与批量大小
 
 章节来源
-- [src/pkg/storage/lance.rs:43-124](file://src/pkg/storage/lance.rs#L43-L124)
-- [src/pkg/storage/lance.rs:134-199](file://src/pkg/storage/lance.rs#L134-L199)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
-- [src/pkg/storage/hnsw.rs:432-616](file://src/pkg/storage/hnsw.rs#L432-L616)
+- [src/pkg/storage/lance.rs:43-124](src/pkg/storage/lance.rs#L43-L124)
+- [src/pkg/storage/lance.rs:134-199](src/pkg/storage/lance.rs#L134-L199)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
+- [src/pkg/storage/hnsw.rs:432-616](src/pkg/storage/hnsw.rs#L432-L616)
 
 ## 结论
 LanceVectorStore 将 LanceDB 的列式存储、内置索引与持久化能力无缝接入 AI Orz 的向量存储抽象层，提供高性能、易扩展的语义检索能力。结合过期策略、批量写入与并发缓存，满足生产级需求。对于不同场景，可选择 LanceDB（默认）、HNSW（纯 Rust）、SQLite VSS（已有 SQLite 生态）或内存实现，灵活权衡性能与依赖。
@@ -295,18 +295,18 @@ LanceVectorStore 将 LanceDB 的列式存储、内置索引与持久化能力无
   - 劣势：重启丢失；不适合大规模生产
 
 章节来源
-- [src/pkg/storage/vector.rs:76-291](file://src/pkg/storage/vector.rs#L76-L291)
-- [src/pkg/storage/hnsw.rs:1-617](file://src/pkg/storage/hnsw.rs#L1-L617)
-- [src/pkg/storage/mem_vector.rs:1-276](file://src/pkg/storage/mem_vector.rs#L1-L276)
+- [src/pkg/storage/vector.rs:76-291](src/pkg/storage/vector.rs#L76-L291)
+- [src/pkg/storage/hnsw.rs:1-617](src/pkg/storage/hnsw.rs#L1-L617)
+- [src/pkg/storage/mem_vector.rs:1-276](src/pkg/storage/mem_vector.rs#L1-L276)
 
 ### 版本管理与模型提供者追踪
 - HNSW 后端维护集合级元数据（model_provider_id、dimensions、vector_count、updated_at），便于重建与升级
 - LanceDB 通过 embedding_model 与 indexed_at 记录模型与时间戳，结合 expire_at 实现生命周期管理
 
 章节来源
-- [src/pkg/storage/hnsw.rs:127-147](file://src/pkg/storage/hnsw.rs#L127-L147)
-- [src/pkg/storage/hnsw.rs:473-489](file://src/pkg/storage/hnsw.rs#L473-L489)
-- [src/pkg/storage/lance.rs:90-104](file://src/pkg/storage/lance.rs#L90-L104)
+- [src/pkg/storage/hnsw.rs:127-147](src/pkg/storage/hnsw.rs#L127-L147)
+- [src/pkg/storage/hnsw.rs:473-489](src/pkg/storage/hnsw.rs#L473-L489)
+- [src/pkg/storage/lance.rs:90-104](src/pkg/storage/lance.rs#L90-L104)
 
 ### 备份与恢复
 - LanceDB：直接备份向量数据库目录；恢复时指向同一目录即可
@@ -314,6 +314,6 @@ LanceVectorStore 将 LanceDB 的列式存储、内置索引与持久化能力无
 - SQLite VSS：备份 SQLite 主库与 vss 虚拟表所在数据库文件
 
 章节来源
-- [src/pkg/storage/mod.rs:78-93](file://src/pkg/storage/mod.rs#L78-L93)
-- [src/pkg/storage/hnsw.rs:321-342](file://src/pkg/storage/hnsw.rs#L321-L342)
-- [src/pkg/storage/hnsw.rs:303-319](file://src/pkg/storage/hnsw.rs#L303-L319)
+- [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
+- [src/pkg/storage/hnsw.rs:321-342](src/pkg/storage/hnsw.rs#L321-L342)
+- [src/pkg/storage/hnsw.rs:303-319](src/pkg/storage/hnsw.rs#L303-L319)

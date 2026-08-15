@@ -8,6 +8,9 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [unified-idl-http-handler.md](./unified-idl-http-handler.md) — 统一参数 IDL + 自动生成 HTTP handler（同属「一份定义多端复用」思路）
 > - [tool_design.md](./tool_design.md) — 工具系统总纲
+> - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — DTO/参数 IDL 对齐
+> - 【③ Wiki 长文】[工具注册与发现.md](docs/wiki/zh/content/功能模块/工具生态系统/工具注册与发现.md) — 宏注册机制说明
+> - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §2 §register_handler_tool.rs 宏实现位置 §4 红线 6 参数名 1:1
 
 ## 设计目标
 

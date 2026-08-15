@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/a2a/agent_card.rs](file://src/handlers/a2a/agent_card.rs)
-- [common/src/api/a2a.rs](file://common/src/api/a2a.rs)
-- [src/router.rs](file://src/router.rs)
-- [common/src/config.rs](file://common/src/config.rs)
-- [common/src/api/a2a_test.rs](file://common/src/api/a2a_test.rs)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](file://docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- [src/handlers/a2a/agent_card.rs](src/handlers/a2a/agent_card.rs)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/router.rs](src/router.rs)
+- [common/src/config.rs](common/src/config.rs)
+- [common/src/api/a2a_test.rs](common/src/api/a2a_test.rs)
+- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
 </cite>
 
 ## 目录
@@ -44,16 +44,16 @@ Types --> Response["JSON 响应"]
 ```
 
 图表来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 章节来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 核心组件
 - Agent卡片数据结构：定义在共享模块中，包含组织名称、描述、协议版本、端点URL、能力声明、技能列表、默认输入/输出模式等字段。
@@ -63,9 +63,9 @@ Types --> Response["JSON 响应"]
 - 配置：协议版本、端点路径、卡片路径来自A2aServerConfig。
 
 章节来源
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 架构总览
 Agent卡片发现是纯读操作，无状态、无鉴权、无数据库访问。其职责是将组织级能力以标准格式暴露给外部系统，便于其他Agent或服务进行服务发现。
@@ -85,10 +85,10 @@ H-->>C : JSON 响应 (200 OK)
 ```
 
 图表来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
 
 ## 详细组件分析
 
@@ -105,7 +105,7 @@ H-->>C : JSON 响应 (200 OK)
 这些字段共同构成服务发现的元数据，帮助调用方了解服务端能力边界与交互方式。
 
 章节来源
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
 
 ### HTTP端点设计与请求响应
 - 端点：GET /.well-known/agent.json
@@ -114,8 +114,8 @@ H-->>C : JSON 响应 (200 OK)
 - 响应：200 OK，Content-Type为application/json，Body为AgentCard序列化结果
 
 章节来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
 
 ### 版本兼容性与能力协商
 - 版本字段version来源于配置A2aServerConfig.protocol_version，默认值为“0.3.0”。
@@ -123,9 +123,9 @@ H-->>C : JSON 响应 (200 OK)
 - 客户端应依据version与capabilities决定后续调用策略（例如是否启用SSE订阅或推送回调）。
 
 章节来源
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
-- [common/src/api/a2a.rs:38-47](file://common/src/api/a2a.rs#L38-L47)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](file://docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
+- [common/src/api/a2a.rs:38-47](common/src/api/a2a.rs#L38-L47)
+- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
 
 ### 通信约束与服务发现机制
 - 传输协议：JSON-RPC 2.0 over HTTP POST（后续方法调用），卡片发现为独立GET端点。
@@ -133,8 +133,8 @@ H-->>C : JSON 响应 (200 OK)
 - 服务发现：通过/.well-known/agent.json获取统一入口与能力描述，再根据url字段调用具体方法。
 
 章节来源
-- [src/router.rs:21-38](file://src/router.rs#L21-L38)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](file://docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
+- [src/router.rs:21-38](src/router.rs#L21-L38)
+- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
 
 ### Agent能力描述与技能清单
 - 能力声明：当前实现中streaming=false，push_notifications=true。
@@ -142,8 +142,8 @@ H-->>C : JSON 响应 (200 OK)
 - 默认输入/输出模式：均为"text"。
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:16-33](file://src/handlers/a2a/agent_card.rs#L16-L33)
-- [common/src/api/a2a.rs:38-62](file://common/src/api/a2a.rs#L38-L62)
+- [src/handlers/a2a/agent_card.rs:16-33](src/handlers/a2a/agent_card.rs#L16-L33)
+- [common/src/api/a2a.rs:38-62](common/src/api/a2a.rs#L38-L62)
 
 ### 注册流程、动态更新与缓存策略
 - 注册流程：Agent卡片并非从数据库注册，而是运行时从配置生成。因此不存在传统意义上的“注册”动作。
@@ -151,8 +151,8 @@ H-->>C : JSON 响应 (200 OK)
 - 缓存策略：当前实现无内存缓存；每次请求都会读取配置并构造响应。可在网关或CDN层做静态资源缓存以提升性能。
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ### API调用示例与客户端集成指南
 - 请求：GET {base_url}/.well-known/agent.json
@@ -172,10 +172,10 @@ H-->>C : JSON 响应 (200 OK)
   4) 使用url作为JSON-RPC端点发起后续调用（需携带JWT）
 
 章节来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ### 验证规则与安全考虑
 - 输入验证：卡片发现为只读GET，不涉及用户输入，无需参数校验。
@@ -186,8 +186,8 @@ H-->>C : JSON 响应 (200 OK)
 - 错误处理：当前实现未显式抛出错误；若配置缺失或异常，将按框架默认行为返回错误响应。
 
 章节来源
-- [src/router.rs:21-38](file://src/router.rs#L21-L38)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
+- [src/router.rs:21-38](src/router.rs#L21-L38)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
 
 ### 性能优化建议
 - 前端/网关缓存：由于卡片内容变化不频繁，可在浏览器或反向代理层缓存较长时间（如24小时）。
@@ -212,16 +212,16 @@ Handler --> Config["config.rs"]
 ```
 
 图表来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 章节来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 性能考虑
 - 卡片发现为轻量GET请求，CPU与IO开销极低
@@ -237,8 +237,8 @@ Handler --> Config["config.rs"]
 - 能力不支持：根据capabilities调整客户端行为（如禁用SSE或推送）
 
 章节来源
-- [src/router.rs:21-38](file://src/router.rs#L21-L38)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-38](src/router.rs#L21-L38)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 结论
 Agent卡片发现提供了标准化的服务发现入口，使外部系统能够快速获取组织级能力、协议版本与通信约束。该实现简洁、无状态、易扩展，适合在生产环境中配合网关缓存与监控使用。后续可根据需求引入热更新、更丰富的能力描述与更细粒度的版本策略。
@@ -275,7 +275,7 @@ AgentCard --> AgentSkill : "包含多个"
 ```
 
 图表来源
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
 
 ### 序列图：GET /.well-known/agent.json 调用流程
 ```mermaid
@@ -293,10 +293,10 @@ Handler-->>Client : 200 OK + JSON
 ```
 
 图表来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-36](file://src/handlers/a2a/agent_card.rs#L13-L36)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
-- [common/src/api/a2a.rs:16-62](file://common/src/api/a2a.rs#L16-L62)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-36](src/handlers/a2a/agent_card.rs#L13-L36)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
+- [common/src/api/a2a.rs:16-62](common/src/api/a2a.rs#L16-L62)
 
 ### 流程图：客户端集成决策
 ```mermaid

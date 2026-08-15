@@ -121,18 +121,7 @@
 
 ## 五、验收清单（2026-07-25 全部达成 ✅）
 
-- [x] **hud_palette 抽取**：新建文件 hex_to_rgba + draw_hud_background + 4 子函数
-- [x] **graph_canvas.rs 同步改造**：clear 改为调用；私有 hex_to_rgba 删除；约 5 处 Self::hex_to_rgba 全替换
-- [x] **ChartRenderer trait 定义**：chart_scene.rs 新建
-- [x] **charts/ 模块 + line_chart.rs 新建**：LineChart 组件完整实现 rAF 循环/DPR/HUD 背景/坐标/折线发光+流光/呼吸数据点/X 轴日期
-- [x] **format_timestamp 测试**：format_timestamp 用 js_sys::Date，label 是"月-日"格式；单元测试通过
-- [x] **stats.rs 4 个 StatsPanel 加时序图**：render_time_series_chart 辅助函数 + Agent/Project/Task/ModelProvider 面板包裹外层 div + 折线图展示
-- [x] **ToolStatsPanel 不改（无 model_call_time_series 数据）**
-- [x] **4 详情页 stats_interval 参数确认**（已全部传递）
-- [x] **后端 with_model_call_stats=true 自动开启 with_time_series（已开启）**
-- [x] **视觉回归**：知识图谱页面 HUD 背景抽取后与抽取前一致（肉眼对比）
-- [x] **前端 wasm32 编译通过；clippy 零警告；fmt 格式化通过**
-- [x] **前端测试 34 + line_chart 新增测试全部通过**
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -149,7 +138,6 @@
 
 ### 与计划的偏离（业务零影响）
 1. 原计划 Task 2 设计"LineChart 组件强实现 ChartRenderer trait"→ 实际 Phase 1 务实模式：trait 定义保留，但 LineChart 组件内部直接实现 rAF 循环不强制实现 trait。理由：单图表时 trait 抽象无收益，等环形图出现后再抽不迟（更贴合 §4.1 新增路径）
-2. 原计划 Task 5 Step 3 "检查 Domain 层 with_time_series 自动开启"→ 实际验证后发现 Domain 层已是正确实现（with_model_call_stats=true 自动 with_time_series=true），无需修改，零代码改动
 
 ---
 
@@ -165,3 +153,4 @@
    - LineChart 当前无 tooltip。增加：组件内加 hover_position: Signal<Option<(f64, f64)>>；onmousemove handler 映射（Dioxus onmounted 后 addEventListener）→ 找到最近的 x 值对应数据点；绘制 HUD 风格 tooltip 框（径向渐变白底 + 橙色边 + 数据详情数值标签）
 4. **Phase 4 全局 Dashboard 页**
    - 路由 `/dashboard`；后端新增全局统计聚合接口（总 Agent/总任务/7 日调用趋势/各 AOP 队列长度/飞书 WS 健康）；前端组合 6 张图表（2×3 网格）+ 6 个统计卡；使用 Grid + stats 水平 stat 卡片布局模式复用
+

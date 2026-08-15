@@ -2,17 +2,17 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/organization/mod.rs](file://src/handlers/organization/mod.rs)
-- [src/handlers/organization/auth/login.rs](file://src/handlers/organization/auth/login.rs)
-- [src/handlers/organization/auth/logout.rs](file://src/handlers/organization/auth/logout.rs)
-- [src/handlers/organization/organizations/get_organization.rs](file://src/handlers/organization/organizations/get_organization.rs)
-- [src/handlers/organization/organizations/list_organizations.rs](file://src/handlers/organization/organizations/list_organizations.rs)
-- [src/handlers/organization/user/create_user.rs](file://src/handlers/organization/user/create_user.rs)
-- [src/handlers/organization/user/list_users_by_current_organization.rs](file://src/handlers/organization/user/list_users_by_current_organization.rs)
-- [common/src/api/organization.rs](file://common/src/api/organization.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/middleware/require_role.rs](file://src/middleware/require_role.rs)
-- [src/pkg/jwt.rs](file://src/pkg/jwt.rs)
+- [src/handlers/organization/mod.rs](src/handlers/organization/mod.rs)
+- [src/handlers/organization/auth/login.rs](src/handlers/organization/auth/login.rs)
+- [src/handlers/organization/auth/logout.rs](src/handlers/organization/auth/logout.rs)
+- [src/handlers/organization/organizations/get_organization.rs](src/handlers/organization/organizations/get_organization.rs)
+- [src/handlers/organization/organizations/list_organizations.rs](src/handlers/organization/organizations/list_organizations.rs)
+- [src/handlers/organization/user/create_user.rs](src/handlers/organization/user/create_user.rs)
+- [src/handlers/organization/user/list_users_by_current_organization.rs](src/handlers/organization/user/list_users_by_current_organization.rs)
+- [common/src/api/organization.rs](common/src/api/organization.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/middleware/require_role.rs](src/middleware/require_role.rs)
+- [src/pkg/jwt.rs](src/pkg/jwt.rs)
 </cite>
 
 ## 目录
@@ -67,17 +67,17 @@ C --> E
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/handlers/organization/auth/logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/organizations/list_organizations.rs:17-39](file://src/handlers/organization/organizations/list_organizations.rs#L17-L39)
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
-- [src/middleware/jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/list_organizations.rs:17-39](src/handlers/organization/organizations/list_organizations.rs#L17-L39)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/middleware/jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
 
 章节来源
-- [src/handlers/organization/mod.rs:1-15](file://src/handlers/organization/mod.rs#L1-L15)
+- [src/handlers/organization/mod.rs:1-15](src/handlers/organization/mod.rs#L1-L15)
 
 ## 核心组件
 - JWT 认证中间件：支持 Cookie 与 Authorization: Bearer 双模式提取 token，验证后将用户标识、用户名、组织 ID、角色注入请求头，供后续 request_context_middleware 构建 RequestContext。
@@ -87,14 +87,14 @@ C --> E
 - 用户处理器：在当前组织内创建用户、列出当前组织用户等，严格以 RequestContext.organization_id 作为数据隔离键。
 
 章节来源
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/middleware/require_role.rs:1-39](file://src/middleware/require_role.rs#L1-L39)
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/handlers/organization/auth/logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/organizations/list_organizations.rs:17-39](file://src/handlers/organization/organizations/list_organizations.rs#L17-L39)
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L39)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/list_organizations.rs:17-39](src/handlers/organization/organizations/list_organizations.rs#L17-L39)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
 
 ## 架构总览
 下图展示了从请求进入、认证授权、到领域服务处理的完整流程，体现多租户隔离与 RBAC 控制点。
@@ -119,10 +119,10 @@ Handler-->>Client : "JSON 响应"
 ```
 
 图表来源
-- [src/middleware/jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/middleware/jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
 
 ## 详细组件分析
 
@@ -149,13 +149,13 @@ L-->>C : "Set-Cookie + {user_id, username, organization_id, token}"
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/pkg/jwt.rs:70-105](file://src/pkg/jwt.rs#L70-L105)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/pkg/jwt.rs:70-105](src/pkg/jwt.rs#L70-L105)
 
 章节来源
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/handlers/organization/auth/logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [src/pkg/jwt.rs:11-136](file://src/pkg/jwt.rs#L11-L136)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [src/pkg/jwt.rs:11-136](src/pkg/jwt.rs#L11-L136)
 
 ### 组织处理器（CRUD）
 - 获取组织信息：根据 organization_id 查询组织，不存在返回 404。
@@ -172,12 +172,12 @@ MapResp --> End(["返回响应"])
 ```
 
 图表来源
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
 
 章节来源
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/organizations/list_organizations.rs:17-39](file://src/handlers/organization/organizations/list_organizations.rs#L17-L39)
-- [common/src/api/organization.rs:142-244](file://common/src/api/organization.rs#L142-L244)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/list_organizations.rs:17-39](src/handlers/organization/organizations/list_organizations.rs#L17-L39)
+- [common/src/api/organization.rs:142-244](common/src/api/organization.rs#L142-L244)
 
 ### 用户处理器（组织内用户管理）
 - 创建用户：在当前组织内创建新用户，角色转换与 UserPo 构造后交由领域服务处理。
@@ -192,11 +192,11 @@ CallDomain --> Return["返回 CreateUserResponse"]
 ```
 
 图表来源
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
 
 章节来源
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
 
 ### 认证与授权机制
 - JWT 认证中间件：
@@ -226,14 +226,14 @@ RequireRoleMiddleware ..> JwtAuthMiddleware : "依赖已解析的 RequestContext
 ```
 
 图表来源
-- [src/middleware/jwt_auth.rs:36-156](file://src/middleware/jwt_auth.rs#L36-L156)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
-- [src/pkg/jwt.rs:52-136](file://src/pkg/jwt.rs#L52-L136)
+- [src/middleware/jwt_auth.rs:36-156](src/middleware/jwt_auth.rs#L36-L156)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
+- [src/pkg/jwt.rs:52-136](src/pkg/jwt.rs#L52-L136)
 
 章节来源
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/middleware/require_role.rs:1-39](file://src/middleware/require_role.rs#L1-L39)
-- [src/pkg/jwt.rs:1-159](file://src/pkg/jwt.rs#L1-L159)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/middleware/require_role.rs:1-39](src/middleware/require_role.rs#L1-L39)
+- [src/pkg/jwt.rs:1-159](src/pkg/jwt.rs#L1-L159)
 
 ### 多租户数据隔离与 RBAC 权限模型
 - 多租户隔离：
@@ -254,14 +254,14 @@ DAO --> Resp["返回响应"]
 ```
 
 图表来源
-- [src/middleware/jwt_auth.rs:56-84](file://src/middleware/jwt_auth.rs#L56-L84)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:21-32](file://src/handlers/organization/user/list_users_by_current_organization.rs#L21-L32)
+- [src/middleware/jwt_auth.rs:56-84](src/middleware/jwt_auth.rs#L56-L84)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:21-32](src/handlers/organization/user/list_users_by_current_organization.rs#L21-L32)
 
 章节来源
-- [src/middleware/jwt_auth.rs:56-84](file://src/middleware/jwt_auth.rs#L56-L84)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:21-32](file://src/handlers/organization/user/list_users_by_current_organization.rs#L21-L32)
+- [src/middleware/jwt_auth.rs:56-84](src/middleware/jwt_auth.rs#L56-L84)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:21-32](src/handlers/organization/user/list_users_by_current_organization.rs#L21-L32)
 
 ### 会话管理与安全策略
 - 会话管理：
@@ -273,9 +273,9 @@ DAO --> Resp["返回响应"]
   - 所有写操作建议通过 require_role_middleware 限制最小角色。
 
 章节来源
-- [src/handlers/organization/auth/login.rs:40-54](file://src/handlers/organization/auth/login.rs#L40-L54)
-- [src/handlers/organization/auth/logout.rs:18-30](file://src/handlers/organization/auth/logout.rs#L18-L30)
-- [src/handlers/organization/user/create_user.rs:12-14](file://src/handlers/organization/user/create_user.rs#L12-L14)
+- [src/handlers/organization/auth/login.rs:40-54](src/handlers/organization/auth/login.rs#L40-L54)
+- [src/handlers/organization/auth/logout.rs:18-30](src/handlers/organization/auth/logout.rs#L18-L30)
+- [src/handlers/organization/user/create_user.rs:12-14](src/handlers/organization/user/create_user.rs#L12-L14)
 
 ## 依赖关系分析
 - 处理器依赖：
@@ -301,19 +301,19 @@ RequireRole["角色权限中间件"] --> UserRole["UserRole 枚举"]
 ```
 
 图表来源
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/handlers/organization/auth/logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/organizations/list_organizations.rs:17-39](file://src/handlers/organization/organizations/list_organizations.rs#L17-L39)
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
-- [src/middleware/jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/list_organizations.rs:17-39](src/handlers/organization/organizations/list_organizations.rs#L17-L39)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/middleware/jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
 
 章节来源
-- [common/src/api/organization.rs:1-244](file://common/src/api/organization.rs#L1-L244)
-- [src/middleware/jwt_auth.rs:36-87](file://src/middleware/jwt_auth.rs#L36-L87)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
+- [common/src/api/organization.rs:1-244](common/src/api/organization.rs#L1-L244)
+- [src/middleware/jwt_auth.rs:36-87](src/middleware/jwt_auth.rs#L36-L87)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
 
 ## 性能考虑
 - JWT 解码与验证为轻量级 CPU 操作，建议在高频路径中复用配置单例（已实现）。
@@ -335,9 +335,9 @@ RequireRole["角色权限中间件"] --> UserRole["UserRole 枚举"]
   - 验证用户名与密码哈希是否正确，领域服务是否返回用户信息。
 
 章节来源
-- [src/middleware/jwt_auth.rs:139-156](file://src/middleware/jwt_auth.rs#L139-L156)
-- [src/middleware/require_role.rs:29-35](file://src/middleware/require_role.rs#L29-L35)
-- [src/handlers/organization/organizations/get_organization.rs:27-27](file://src/handlers/organization/organizations/get_organization.rs#L27-L27)
+- [src/middleware/jwt_auth.rs:139-156](src/middleware/jwt_auth.rs#L139-L156)
+- [src/middleware/require_role.rs:29-35](src/middleware/require_role.rs#L29-L35)
+- [src/handlers/organization/organizations/get_organization.rs:27-27](src/handlers/organization/organizations/get_organization.rs#L27-L27)
 
 ## 结论
 Organization 模块通过 JWT 认证与 RBAC 权限控制，实现了安全的组织与用户管理能力。多租户数据隔离以 RequestContext.organization_id 为核心，贯穿处理器与领域服务，确保数据边界清晰。建议在生产环境中：
@@ -358,9 +358,9 @@ Organization 模块通过 JWT 认证与 RBAC 权限控制，实现了安全的�
   - GET /api/v1/organizations/users：列出当前组织用户。
 
 章节来源
-- [src/handlers/organization/auth/login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [src/handlers/organization/auth/logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [src/handlers/organization/organizations/get_organization.rs:17-47](file://src/handlers/organization/organizations/get_organization.rs#L17-L47)
-- [src/handlers/organization/organizations/list_organizations.rs:17-39](file://src/handlers/organization/organizations/list_organizations.rs#L17-L39)
-- [src/handlers/organization/user/create_user.rs:14-58](file://src/handlers/organization/user/create_user.rs#L14-L58)
-- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](file://src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)
+- [src/handlers/organization/auth/login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [src/handlers/organization/auth/logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [src/handlers/organization/organizations/get_organization.rs:17-47](src/handlers/organization/organizations/get_organization.rs#L17-L47)
+- [src/handlers/organization/organizations/list_organizations.rs:17-39](src/handlers/organization/organizations/list_organizations.rs#L17-L39)
+- [src/handlers/organization/user/create_user.rs:14-58](src/handlers/organization/user/create_user.rs#L14-L58)
+- [src/handlers/organization/user/list_users_by_current_organization.rs:16-59](src/handlers/organization/user/list_users_by_current_organization.rs#L16-L59)

@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/http.rs](file://src/pkg/tool_registry/http.rs)
-- [src/pkg/tool_registry/http_fetch.rs](file://src/pkg/tool_registry/http_fetch.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [src/pkg/tool_registry/http_tests.rs](file://src/pkg/tool_registry/http_tests.rs)
-- [frontend/src/api/mod.rs](file://frontend/src/api/mod.rs)
-- [src/service/dao/a2a_callback/http.rs](file://src/service/dao/a2a_callback/http.rs)
-- [common/src/constants/http_header.rs](file://common/src/constants/http_header.rs)
-- [docs/request_context_design.md](file://docs/request_context_design.md)
-- [src/router.rs](file://src/router.rs)
+- [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
+- [src/pkg/tool_registry/http_fetch.rs](src/pkg/tool_registry/http_fetch.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [src/pkg/tool_registry/http_tests.rs](src/pkg/tool_registry/http_tests.rs)
+- [frontend/src/api/mod.rs](frontend/src/api/mod.rs)
+- [src/service/dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs)
+- [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
+- [docs/request_context_design.md](docs/request_context_design.md)
+- [src/router.rs](src/router.rs)
 </cite>
 
 ## 目录
@@ -61,22 +61,22 @@ F --> G
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [src/router.rs:12-37](file://src/router.rs#L12-L37)
-- [common/src/constants/http_header.rs:1-19](file://common/src/constants/http_header.rs#L1-L19)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [src/router.rs:12-37](src/router.rs#L12-L37)
+- [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [src/router.rs:12-37](file://src/router.rs#L12-L37)
-- [common/src/constants/http_header.rs:1-19](file://common/src/constants/http_header.rs#L1-L19)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [src/router.rs:12-37](src/router.rs#L12-L37)
+- [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
 
 ## 核心组件
 - 协议级 HTTP 工具（HttpCoreTool）
@@ -92,17 +92,17 @@ F --> G
   - 将内部消息序列化为 A2A Task，POST 到外部 webhook，带超时与错误包装。
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:41-114](file://src/pkg/tool_registry/http.rs#L41-L114)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:19-52](file://src/pkg/tool_registry/http_fetch.rs#L19-L52)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/pkg/tool_registry/tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:172-231](file://src/pkg/tool_registry/tool_security.rs#L172-L231)
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [frontend/src/api/mod.rs:87-174](file://frontend/src/api/mod.rs#L87-L174)
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/pkg/tool_registry/http.rs:41-114](src/pkg/tool_registry/http.rs#L41-L114)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:19-52](src/pkg/tool_registry/http_fetch.rs#L19-L52)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/pkg/tool_registry/tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
 
 ## 架构总览
 后端 HTTP 工具以“配置驱动 + 安全前置校验”的方式组织：ToolPo 中存储 HttpToolConfig，运行时解析并执行；所有外部网络访问必须通过安全工具库的 SSRF 防护、域名策略与 DNS 固定。前端则通过统一客户端封装简化调用，集中处理认证、错误与上传。
@@ -129,13 +129,13 @@ Tool-->>Caller : 返回 {status, headers, content_length, body}
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:200-231](file://src/pkg/tool_registry/tool_security.rs#L200-L231)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:200-231](src/pkg/tool_registry/tool_security.rs#L200-L231)
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 
 ## 详细组件分析
 
@@ -177,17 +177,17 @@ ErrStatus --> End
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http.rs:222-228](file://src/pkg/tool_registry/http.rs#L222-L228)
-- [src/pkg/tool_registry/http.rs:369-392](file://src/pkg/tool_registry/http.rs#L369-L392)
-- [src/pkg/tool_registry/tool_security.rs:200-231](file://src/pkg/tool_registry/tool_security.rs#L200-L231)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http.rs:222-228](src/pkg/tool_registry/http.rs#L222-L228)
+- [src/pkg/tool_registry/http.rs:369-392](src/pkg/tool_registry/http.rs#L369-L392)
+- [src/pkg/tool_registry/tool_security.rs:200-231](src/pkg/tool_registry/tool_security.rs#L200-L231)
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:41-114](file://src/pkg/tool_registry/http.rs#L41-L114)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http.rs:222-228](file://src/pkg/tool_registry/http.rs#L222-L228)
-- [src/pkg/tool_registry/http.rs:369-392](file://src/pkg/tool_registry/http.rs#L369-L392)
-- [src/pkg/tool_registry/tool_security.rs:200-231](file://src/pkg/tool_registry/tool_security.rs#L200-L231)
+- [src/pkg/tool_registry/http.rs:41-114](src/pkg/tool_registry/http.rs#L41-L114)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http.rs:222-228](src/pkg/tool_registry/http.rs#L222-L228)
+- [src/pkg/tool_registry/http.rs:369-392](src/pkg/tool_registry/http.rs#L369-L392)
+- [src/pkg/tool_registry/tool_security.rs:200-231](src/pkg/tool_registry/tool_security.rs#L200-L231)
 
 ### 内置 HTTP Fetch 工具（HttpFetchCoreTool）
 - 功能特性
@@ -210,13 +210,13 @@ HttpFetchCoreTool --> ToolSecurity : "使用"
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:172-231](file://src/pkg/tool_registry/tool_security.rs#L172-L231)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
 
 **章节来源**
-- [src/pkg/tool_registry/http_fetch.rs:19-52](file://src/pkg/tool_registry/http_fetch.rs#L19-L52)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/pkg/tool_registry/http_fetch.rs:19-52](src/pkg/tool_registry/http_fetch.rs#L19-L52)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
 
 ### 前端 API 客户端
 - 功能特性
@@ -242,14 +242,14 @@ API-->>UI : 返回数据或 ApiError
 ```
 
 **图表来源**
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [frontend/src/api/mod.rs:87-174](file://frontend/src/api/mod.rs#L87-L174)
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
 
 **章节来源**
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [frontend/src/api/mod.rs:87-174](file://frontend/src/api/mod.rs#L87-L174)
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
 
 ### A2A 回调 DAO
 - 功能特性
@@ -272,10 +272,10 @@ Dao-->>Domain : Ok 或 Error
 ```
 
 **图表来源**
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
 
 **章节来源**
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
 
 ## 依赖关系分析
 - 后端 HTTP 工具依赖安全工具库进行 SSRF 防护、响应限制与头部脱敏。
@@ -292,20 +292,20 @@ Router --> Headers["http_header.rs"]
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [src/router.rs:12-37](file://src/router.rs#L12-L37)
-- [common/src/constants/http_header.rs:1-19](file://common/src/constants/http_header.rs#L1-L19)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [src/router.rs:12-37](src/router.rs#L12-L37)
+- [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-- [src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
-- [frontend/src/api/mod.rs:26-45](file://frontend/src/api/mod.rs#L26-L45)
-- [src/router.rs:12-37](file://src/router.rs#L12-L37)
-- [common/src/constants/http_header.rs:1-19](file://common/src/constants/http_header.rs#L1-L19)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+- [src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
+- [frontend/src/api/mod.rs:26-45](frontend/src/api/mod.rs#L26-L45)
+- [src/router.rs:12-37](src/router.rs#L12-L37)
+- [common/src/constants/http_header.rs:1-19](common/src/constants/http_header.rs#L1-L19)
 
 ## 性能考量
 - 连接复用
@@ -326,39 +326,39 @@ Router --> Headers["http_header.rs"]
 - 网络异常
   - 现象：请求失败，错误信息包含“http request failed”。
   - 排查：检查 URL 模板是否正确、域名是否在白名单、本地网络是否允许、DNS 解析是否成功。
-  - 参考：[src/pkg/tool_registry/http.rs:126-183](file://src/pkg/tool_registry/http.rs#L126-L183)、[src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+  - 参考：[src/pkg/tool_registry/http.rs:126-183](src/pkg/tool_registry/http.rs#L126-L183)、[src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 - 超时处理
   - 现象：请求超时，错误信息包含超时相关描述。
   - 排查：检查 per-tool timeout_ms 是否合理，确认默认与硬上限。
-  - 参考：[src/pkg/tool_registry/http.rs:56-57](file://src/pkg/tool_registry/http.rs#L56-L57)、[src/pkg/tool_registry/tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
+  - 参考：[src/pkg/tool_registry/http.rs:56-57](src/pkg/tool_registry/http.rs#L56-L57)、[src/pkg/tool_registry/tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
 - 证书验证问题
   - 现象：HTTPS 连接失败，证书相关错误。
   - 排查：确认系统信任链正确，必要时在应用层配置 CA 或禁用验证（谨慎使用）。
-  - 参考：[src/pkg/tool_registry/http.rs:149-157](file://src/pkg/tool_registry/http.rs#L149-L157)
+  - 参考：[src/pkg/tool_registry/http.rs:149-157](src/pkg/tool_registry/http.rs#L149-L157)
 - 重定向问题
   - 现象：收到 3xx 状态码，错误提示“unexpected http status code”。
   - 排查：确认是否允许重定向，当前默认不跟随。
-  - 参考：[src/pkg/tool_registry/http.rs:151-152](file://src/pkg/tool_registry/http.rs#L151-L152)、[src/pkg/tool_registry/http_tests.rs:739-757](file://src/pkg/tool_registry/http_tests.rs#L739-L757)
+  - 参考：[src/pkg/tool_registry/http.rs:151-152](src/pkg/tool_registry/http.rs#L151-L152)、[src/pkg/tool_registry/http_tests.rs:739-757](src/pkg/tool_registry/http_tests.rs#L739-L757)
 - 响应过大
   - 现象：错误提示“http response too large”。
   - 排查：调整 response_max_bytes，确认服务端响应大小。
-  - 参考：[src/pkg/tool_registry/tool_security.rs:200-231](file://src/pkg/tool_registry/tool_security.rs#L200-L231)
+  - 参考：[src/pkg/tool_registry/tool_security.rs:200-231](src/pkg/tool_registry/tool_security.rs#L200-L231)
 - 敏感信息泄露
   - 现象：错误信息中包含 URL、查询参数或头部值。
   - 排查：确认错误信息已脱敏，避免泄露敏感内容。
-  - 参考：[src/pkg/tool_registry/http_tests.rs:910-1005](file://src/pkg/tool_registry/http_tests.rs#L910-L1005)、[src/pkg/tool_registry/tool_security.rs:172-198](file://src/pkg/tool_registry/tool_security.rs#L172-L198)
+  - 参考：[src/pkg/tool_registry/http_tests.rs:910-1005](src/pkg/tool_registry/http_tests.rs#L910-L1005)、[src/pkg/tool_registry/tool_security.rs:172-198](src/pkg/tool_registry/tool_security.rs#L172-L198)
 
 **章节来源**
-- [src/pkg/tool_registry/http.rs:126-183](file://src/pkg/tool_registry/http.rs#L126-L183)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/http.rs:56-57](file://src/pkg/tool_registry/http.rs#L56-L57)
-- [src/pkg/tool_registry/tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
-- [src/pkg/tool_registry/http.rs:149-157](file://src/pkg/tool_registry/http.rs#L149-L157)
-- [src/pkg/tool_registry/http.rs:151-152](file://src/pkg/tool_registry/http.rs#L151-L152)
-- [src/pkg/tool_registry/http_tests.rs:739-757](file://src/pkg/tool_registry/http_tests.rs#L739-L757)
-- [src/pkg/tool_registry/tool_security.rs:200-231](file://src/pkg/tool_registry/tool_security.rs#L200-L231)
-- [src/pkg/tool_registry/http_tests.rs:910-1005](file://src/pkg/tool_registry/http_tests.rs#L910-L1005)
-- [src/pkg/tool_registry/tool_security.rs:172-198](file://src/pkg/tool_registry/tool_security.rs#L172-L198)
+- [src/pkg/tool_registry/http.rs:126-183](src/pkg/tool_registry/http.rs#L126-L183)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/http.rs:56-57](src/pkg/tool_registry/http.rs#L56-L57)
+- [src/pkg/tool_registry/tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [src/pkg/tool_registry/http.rs:149-157](src/pkg/tool_registry/http.rs#L149-L157)
+- [src/pkg/tool_registry/http.rs:151-152](src/pkg/tool_registry/http.rs#L151-L152)
+- [src/pkg/tool_registry/http_tests.rs:739-757](src/pkg/tool_registry/http_tests.rs#L739-L757)
+- [src/pkg/tool_registry/tool_security.rs:200-231](src/pkg/tool_registry/tool_security.rs#L200-L231)
+- [src/pkg/tool_registry/http_tests.rs:910-1005](src/pkg/tool_registry/http_tests.rs#L910-L1005)
+- [src/pkg/tool_registry/tool_security.rs:172-198](src/pkg/tool_registry/tool_security.rs#L172-L198)
 
 ## 结论
 本项目的 HTTP 客户端工具在后端以“配置驱动 + 安全前置校验”为核心，提供安全的远程调用能力；前端提供统一的 API 客户端封装，简化调用与错误处理。通过 SSRF 防护、域名策略、响应限制与超时控制，确保外部调用的安全性与稳定性。建议在高频调用场景下复用 Client 以提升性能，并根据业务需求实现重试与缓存策略。
@@ -367,11 +367,11 @@ Router --> Headers["http_header.rs"]
 
 ## 附录
 - 代码示例路径
-  - 后端 HTTP 工具调用：[src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-  - 内置 Fetch 工具调用：[src/pkg/tool_registry/http_fetch.rs:60-138](file://src/pkg/tool_registry/http_fetch.rs#L60-L138)
-  - 前端 API 客户端调用：[frontend/src/api/mod.rs:87-174](file://frontend/src/api/mod.rs#L87-L174)
-  - 前端 multipart 上传：[frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
-  - A2A 回调 DAO 调用：[src/service/dao/a2a_callback/http.rs:43-145](file://src/service/dao/a2a_callback/http.rs#L43-L145)
+  - 后端 HTTP 工具调用：[src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+  - 内置 Fetch 工具调用：[src/pkg/tool_registry/http_fetch.rs:60-138](src/pkg/tool_registry/http_fetch.rs#L60-L138)
+  - 前端 API 客户端调用：[frontend/src/api/mod.rs:87-174](frontend/src/api/mod.rs#L87-L174)
+  - 前端 multipart 上传：[frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
+  - A2A 回调 DAO 调用：[src/service/dao/a2a_callback/http.rs:43-145](src/service/dao/a2a_callback/http.rs#L43-L145)
 - 配置项说明
   - HttpToolConfig 字段：method/url/headers/query/body/timeout_ms/response_max_bytes/allowed_status_codes/response_json_pointer/allowed_domains/blocked_domains/allow_local_network。
   - 默认与硬上限：DEFAULT_TIMEOUT_MS/HARD_TIMEOUT_MS、DEFAULT_RESPONSE_MAX_BYTES/HARD_RESPONSE_MAX_BYTES。

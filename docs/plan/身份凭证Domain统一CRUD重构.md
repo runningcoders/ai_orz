@@ -107,11 +107,7 @@ common 模型（知识下沉）
 
 ## 五、验收清单（2026-08-15 全部达成 ✅）
 
-- [x] trait `IdentityCredentialManage` 不再有 `*_lark_credential` / `*_github_credential` 命名方法
-- [x] 新增凭证类型时：common 扩 2 个变体 + domain 两处 match + 1 个 handler 目录，**trait 零改动**
-- [x] domain `identity_credential.rs` 不再直接出现 `encrypt_channel_secret` 字段级调用（仅作为原语传入模型方法）
-- [x] 集成测试 lark/github 原样通过（行为安全网）
-- [x] 前端零改动
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -148,3 +144,4 @@ common 模型（知识下沉）
 4. **前端**：api + 区块组件，复制参考 [frontend/src/pages/finance/identity_github.rs](../../frontend/src/pages/finance/identity_github.rs)
 
 完成。
+

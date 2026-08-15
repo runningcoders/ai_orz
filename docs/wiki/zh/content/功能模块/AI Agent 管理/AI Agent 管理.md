@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [agent.rs](file://common/src/enums/agent.rs)
-- [agent_kind.rs](file://common/src/enums/agent_kind.rs)
-- [agent.rs](file://src/models/agent.rs)
-- [agent.rs](file://src/service/dal/agent.rs)
-- [external_agent_design.md](file://docs/external_agent_design.md)
-- [message_interaction_design.md](file://docs/message_interaction_design.md)
-- [project_management_design.md](file://docs/project_management_design.md)
-- [awaken_context_and_sleep_constraint.md](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md)
-- [stats_query_design.md](file://docs/stats_query_design.md)
-- [agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
+- [agent.rs](common/src/enums/agent.rs)
+- [agent_kind.rs](common/src/enums/agent_kind.rs)
+- [agent.rs](src/models/agent.rs)
+- [agent.rs](src/service/dal/agent.rs)
+- [external_agent_design.md](docs/external_agent_design.md)
+- [message_interaction_design.md](docs/message_interaction_design.md)
+- [project_management_design.md](docs/project_management_design.md)
+- [awaken_context_and_sleep_constraint.md](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md)
+- [stats_query_design.md](docs/stats_query_design.md)
+- [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 </cite>
 
 ## 目录
@@ -73,22 +73,22 @@ DOC5 --> D1
 ```
 
 图表来源
-- [agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [agent_kind.rs:8-80](file://common/src/enums/agent_kind.rs#L8-L80)
-- [agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](file://src/service/dal/agent.rs#L100-L193)
-- [agent_runtime_state.rs:11-132](file://src/pkg/agent_runtime_state.rs#L11-L132)
+- [agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
+- [agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 章节来源
-- [agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [agent_kind.rs:8-80](file://common/src/enums/agent_kind.rs#L8-L80)
-- [agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](file://src/service/dal/agent.rs#L100-L193)
-- [agent_runtime_state.rs:11-132](file://src/pkg/agent_runtime_state.rs#L11-L132)
+- [agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
+- [agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 ## 核心组件
 - Agent 生命周期状态：Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded（含 Deleted 软删除）
@@ -99,12 +99,12 @@ DOC5 --> D1
 - 运行时状态管理器：原子 try_set_busy 避免并发重复唤醒，发布状态变更事件
 
 章节来源
-- [agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [agent_kind.rs:8-80](file://common/src/enums/agent_kind.rs#L8-L80)
-- [agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [agent.rs:100-193](file://src/service/dal/agent.rs#L100-L193)
-- [agent_runtime_state.rs:31-132](file://src/pkg/agent_runtime_state.rs#L31-L132)
+- [agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
+- [agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent_runtime_state.rs:31-132](src/pkg/agent_runtime_state.rs#L31-L132)
 
 ## 架构总览
 Agent 管理采用分层架构：Handler → Domain → DAL → DAO；外部 Agent 通过 DAL 派生（Codex/A2a）与 DAO 抽象（Cortex/AgentRuntimeDao）解耦执行后端。消息交互通过 AOP 事件中心异步处理，SSE 实时推送。
@@ -128,14 +128,14 @@ CONSUMER-->>U : SSE 推送回复
 ```
 
 图表来源
-- [message_interaction_design.md:162-219](file://docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](file://src/service/dal/agent.rs#L100-L193)
-- [agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
+- [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
+- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
-- [message_interaction_design.md:162-219](file://docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](file://src/service/dal/agent.rs#L100-L193)
-- [agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
+- [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
+- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 详细组件分析
 
@@ -157,12 +157,12 @@ Note right of Onboarded : "运行时状态 : Idle/Resting/Busy"
 ```
 
 图表来源
-- [agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [agent_runtime_state.rs:11-132](file://src/pkg/agent_runtime_state.rs#L11-L132)
+- [agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 章节来源
-- [agent.rs:8-78](file://common/src/enums/agent.rs#L8-L78)
-- [agent_runtime_state.rs:31-132](file://src/pkg/agent_runtime_state.rs#L31-L132)
+- [agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
+- [agent_runtime_state.rs:31-132](src/pkg/agent_runtime_state.rs#L31-L132)
 
 ### Agent 类型与执行后端
 - Local：使用内置 Brain（Cortex/Rig），走 prompt + tools 推理链路
@@ -189,13 +189,13 @@ AgentPo --> ExternalAgentConfig : "持有"
 ```
 
 图表来源
-- [agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [agent.rs:502-553](file://src/models/agent.rs#L502-L553)
+- [agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [agent.rs:502-553](src/models/agent.rs#L502-L553)
 
 章节来源
-- [agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [agent.rs:502-553](file://src/models/agent.rs#L502-L553)
-- [external_agent_design.md:1-66](file://docs/external_agent_design.md#L1-L66)
+- [agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [agent.rs:502-553](src/models/agent.rs#L502-L553)
+- [external_agent_design.md:1-66](docs/external_agent_design.md#L1-L66)
 
 ### 唤醒机制与思考循环
 - 唤醒入口：wake_agent_brain 按 kind 装配 Brain（Local 加载 model_provider+Cortex；外部为虚拟 Brain）
@@ -221,21 +221,21 @@ Reply --> End
 ```
 
 图表来源
-- [awaken_context_and_sleep_constraint.md:20-23](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
-- [awaken_context_and_sleep_constraint.md:343-431](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
-- [project_management_design.md:567-601](file://docs/project_management_design.md#L567-L601)
+- [awaken_context_and_sleep_constraint.md:20-23](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
+- [awaken_context_and_sleep_constraint.md:343-431](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
+- [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
 
 章节来源
-- [awaken_context_and_sleep_constraint.md:20-23](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
-- [awaken_context_and_sleep_constraint.md:343-431](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
-- [project_management_design.md:567-601](file://docs/project_management_design.md#L567-L601)
+- [awaken_context_and_sleep_constraint.md:20-23](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
+- [awaken_context_and_sleep_constraint.md:343-431](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
+- [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
 
 ### 记忆系统与沉淀（sleep_and_settle）
 - Settle 场景：仅加载记忆相关 skill 与工具，生成待沉淀摘要，调用 builder.build_sleep_prompt 形成沉淀提示
 - 双层过滤：Auto 工具在 wake_agent_brain 中过滤；Manual 工具在 sleep_and_settle 中过滤，确保沉淀过程不触发消息流程
 
 章节来源
-- [awaken_context_and_sleep_constraint.md:515-555](file://docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L515-L555)
+- [awaken_context_and_sleep_constraint.md:515-555](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L515-L555)
 
 ### 技能与工具绑定
 - 运行时配置包含 installed_tags（工具包 tag）与 installed_skill_packs（技能包 tag）
@@ -243,9 +243,9 @@ Reply --> End
 - 唤醒时根据 tags 自动注入对应工具到 Prompt（免绑定）
 
 章节来源
-- [agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [agent.rs:429-465](file://src/models/agent.rs#L429-L465)
-- [mod.rs:206-247](file://src/service/domain/hr/mod.rs#L206-L247)
+- [agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [agent.rs:429-465](src/models/agent.rs#L429-L465)
+- [mod.rs:206-247](src/service/domain/hr/mod.rs#L206-L247)
 
 ### A2A 协议集成与外部 Agent 通信
 - 三类 Agent：Local/Cli/Remote；Brain 装配链路按 kind 分发
@@ -270,10 +270,10 @@ ADP-->>API : 返回 ok
 ```
 
 图表来源
-- [external_agent_design.md:107-199](file://docs/external_agent_design.md#L107-L199)
+- [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 
 章节来源
-- [external_agent_design.md:107-199](file://docs/external_agent_design.md#L107-L199)
+- [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 
 ### 配置模板与示例
 - AgentRuntimeConfig 默认值：max_thinking_depth=10、max_thinking_rounds=90、thinking_interval_ms=0、max_tool_calls_per_step=5、enable_reflection=false、require_user_confirm=true
@@ -283,9 +283,9 @@ ADP-->>API : 返回 ok
 - 工具包/技能包：通过 tags 管理，支持安装/卸载/查询
 
 章节来源
-- [agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [agent.rs:429-465](file://src/models/agent.rs#L429-L465)
+- [agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [agent.rs:429-465](src/models/agent.rs#L429-L465)
 
 ### 监控、日志与调试
 - 统计指标：Agent 唤醒次数、模型调用统计、工具调用统计、时序聚合
@@ -294,9 +294,9 @@ ADP-->>API : 返回 ok
 - 向量索引：自动 upsert，失败降级不影响主流程
 
 章节来源
-- [stats_query_design.md:195-451](file://docs/stats_query_design.md#L195-L451)
-- [agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [agent.rs:244-312](file://src/service/dal/agent.rs#L244-L312)
+- [stats_query_design.md:195-451](docs/stats_query_design.md#L195-L451)
+- [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
 
 ## 依赖关系分析
 - AgentDal 依赖多个 DAO：AgentDao、AgentVectorDao、AgentStatsDao、ToolStatsDao、ModelProviderStatsDao、CortexDao、ModelProviderDao
@@ -316,12 +316,12 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 ```
 
 图表来源
-- [agent.rs:196-204](file://src/service/dal/agent.rs#L196-L204)
-- [agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
+- [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 章节来源
-- [agent.rs:196-204](file://src/service/dal/agent.rs#L196-L204)
-- [agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
+- [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ## 性能考量
 - 向量搜索降级：无 Embedding Provider 或写入失败时降级为关键词搜索，不影响主流程
@@ -330,10 +330,10 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 - 批量操作：搜索时按 chunk 批量获取 Po，减少 N+1 查询
 
 章节来源
-- [agent.rs:244-312](file://src/service/dal/agent.rs#L244-L312)
-- [agent.rs:373-405](file://src/service/dal/agent.rs#L373-L405)
-- [agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:563-588](file://src/service/dal/agent.rs#L563-L588)
+- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [agent.rs:373-405](src/service/dal/agent.rs#L373-L405)
+- [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [agent.rs:563-588](src/service/dal/agent.rs#L563-L588)
 
 ## 故障排查指南
 - 无法唤醒 Agent：检查运行时状态是否为 Busy/Resting；确认 try_set_busy 是否成功
@@ -342,10 +342,10 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 - A2A 回调未生效：验证回调 URL、task_id 一致性、a2a_synced_msgs 去重计数；检查轮询任务是否运行
 
 章节来源
-- [agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:244-312](file://src/service/dal/agent.rs#L244-L312)
-- [stats_query_design.md:416-451](file://docs/stats_query_design.md#L416-L451)
-- [external_agent_design.md:107-199](file://docs/external_agent_design.md#L107-L199)
+- [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [stats_query_design.md:416-451](docs/stats_query_design.md#L416-L451)
+- [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 
 ## 结论
 本方案以清晰的 Agent 生命周期与运行时状态机为基础，结合 DAL 抽象与外部 Agent 解耦，实现了从创建、配置、唤醒、思考循环、记忆沉淀到销毁的全流程管理。通过 A2A 协议集成与 SSE 实时推送，提供了可扩展的 Agent 生态。统计与日志体系保障可观测性与可维护性，适合在生产环境中规模化部署与运维。

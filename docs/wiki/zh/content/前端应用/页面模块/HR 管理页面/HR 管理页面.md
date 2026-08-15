@@ -2,20 +2,20 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/src/pages/hr/mod.rs](file://frontend/src/pages/hr/mod.rs)
-- [frontend/src/api/hr.rs](file://frontend/src/api/hr.rs)
-- [frontend/src/pages/hr/agents.rs](file://frontend/src/pages/hr/agents.rs)
-- [frontend/src/pages/hr/agent_detail.rs](file://frontend/src/pages/hr/agent_detail.rs)
-- [frontend/src/pages/hr/skills.rs](file://frontend/src/pages/hr/skills.rs)
-- [frontend/src/pages/hr/knowledge_graph.rs](file://frontend/src/pages/hr/knowledge_graph.rs)
-- [frontend/src/pages/hr/memory_search.rs](file://frontend/src/pages/hr/memory_search.rs)
-- [src/handlers/hr/mod.rs](file://src/handlers/hr/mod.rs)
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [src/handlers/hr/skill/mod.rs](file://src/handlers/hr/skill/mod.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/skill/list_skills.rs](file://src/handlers/hr/skill/list_skills.rs)
-- [src/router.rs](file://src/router.rs)
+- [frontend/src/pages/hr/mod.rs](frontend/src/pages/hr/mod.rs)
+- [frontend/src/api/hr.rs](frontend/src/api/hr.rs)
+- [frontend/src/pages/hr/agents.rs](frontend/src/pages/hr/agents.rs)
+- [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs)
+- [frontend/src/pages/hr/skills.rs](frontend/src/pages/hr/skills.rs)
+- [frontend/src/pages/hr/knowledge_graph.rs](frontend/src/pages/hr/knowledge_graph.rs)
+- [frontend/src/pages/hr/memory_search.rs](frontend/src/pages/hr/memory_search.rs)
+- [src/handlers/hr/mod.rs](src/handlers/hr/mod.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [src/handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
+- [src/router.rs](src/router.rs)
 </cite>
 
 ## 目录
@@ -51,13 +51,13 @@ H_Skill --> DOM
 ```
 
 **图表来源**
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 **章节来源**
-- [frontend/src/pages/hr/mod.rs:1-8](file://frontend/src/pages/hr/mod.rs#L1-L8)
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [frontend/src/pages/hr/mod.rs:1-8](frontend/src/pages/hr/mod.rs#L1-L8)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ## 核心组件
 - Agent 列表页：支持分页、状态过滤、关键词搜索（防抖与竞态保护），创建本地/外部 Agent，删除确认。
@@ -67,11 +67,11 @@ H_Skill --> DOM
 - 记忆搜索页：条件查询与语义检索双模式，结果展示与标签/摘要呈现。
 
 **章节来源**
-- [frontend/src/pages/hr/agents.rs:1-649](file://frontend/src/pages/hr/agents.rs#L1-L649)
-- [frontend/src/pages/hr/agent_detail.rs:1-800](file://frontend/src/pages/hr/agent_detail.rs#L1-L800)
-- [frontend/src/pages/hr/skills.rs:1-378](file://frontend/src/pages/hr/skills.rs#L1-L378)
-- [frontend/src/pages/hr/knowledge_graph.rs:1-759](file://frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
-- [frontend/src/pages/hr/memory_search.rs:1-181](file://frontend/src/pages/hr/memory_search.rs#L1-L181)
+- [frontend/src/pages/hr/agents.rs:1-649](frontend/src/pages/hr/agents.rs#L1-L649)
+- [frontend/src/pages/hr/agent_detail.rs:1-800](frontend/src/pages/hr/agent_detail.rs#L1-L800)
+- [frontend/src/pages/hr/skills.rs:1-378](frontend/src/pages/hr/skills.rs#L1-L378)
+- [frontend/src/pages/hr/knowledge_graph.rs:1-759](frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
+- [frontend/src/pages/hr/memory_search.rs:1-181](frontend/src/pages/hr/memory_search.rs#L1-L181)
 
 ## 架构总览
 后端遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 通过宏注册为工具并生成 HTTP 路由，统一使用 RequestContext 传递用户与日志上下文。
@@ -97,15 +97,15 @@ HS-->>FE : JSON响应
 ```
 
 **图表来源**
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
 
 **章节来源**
-- [src/router.rs:96-136](file://src/router.rs#L96-L136)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/router.rs:96-136](src/router.rs#L96-L136)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 详细组件分析
 
@@ -142,15 +142,15 @@ API-->>A : 渲染表格
 ```
 
 **图表来源**
-- [frontend/src/pages/hr/agents.rs:84-139](file://frontend/src/pages/hr/agents.rs#L84-L139)
-- [src/router.rs:292-324](file://src/router.rs#L292-L324)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [frontend/src/pages/hr/agents.rs:84-139](frontend/src/pages/hr/agents.rs#L84-L139)
+- [src/router.rs:292-324](src/router.rs#L292-L324)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
 
 **章节来源**
-- [frontend/src/pages/hr/agents.rs:1-649](file://frontend/src/pages/hr/agents.rs#L1-L649)
-- [frontend/src/pages/hr/agent_detail.rs:1-800](file://frontend/src/pages/hr/agent_detail.rs#L1-L800)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [frontend/src/pages/hr/agents.rs:1-649](frontend/src/pages/hr/agents.rs#L1-L649)
+- [frontend/src/pages/hr/agent_detail.rs:1-800](frontend/src/pages/hr/agent_detail.rs#L1-L800)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 
 ### 技能管理系统（浏览、安装卸载、版本控制）
 - 技能库页
@@ -175,13 +175,13 @@ Search --> Render
 ```
 
 **图表来源**
-- [frontend/src/pages/hr/skills.rs:42-105](file://frontend/src/pages/hr/skills.rs#L42-L105)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [frontend/src/pages/hr/skills.rs:42-105](frontend/src/pages/hr/skills.rs#L42-L105)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
 
 **章节来源**
-- [frontend/src/pages/hr/skills.rs:1-378](file://frontend/src/pages/hr/skills.rs#L1-L378)
-- [frontend/src/pages/hr/agent_detail.rs:561-798](file://frontend/src/pages/hr/agent_detail.rs#L561-L798)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [frontend/src/pages/hr/skills.rs:1-378](frontend/src/pages/hr/skills.rs#L1-L378)
+- [frontend/src/pages/hr/agent_detail.rs:561-798](frontend/src/pages/hr/agent_detail.rs#L561-L798)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
 
 ### 知识图谱可视化（实体关系、节点交互、导航）
 - 推荐起点：按关联度数 Top N 推荐，点击即展开。
@@ -209,11 +209,11 @@ KG-->>U : 渲染图谱(高亮/选中)
 ```
 
 **图表来源**
-- [frontend/src/pages/hr/knowledge_graph.rs:163-239](file://frontend/src/pages/hr/knowledge_graph.rs#L163-L239)
-- [src/router.rs:401-412](file://src/router.rs#L401-L412)
+- [frontend/src/pages/hr/knowledge_graph.rs:163-239](frontend/src/pages/hr/knowledge_graph.rs#L163-L239)
+- [src/router.rs:401-412](src/router.rs#L401-L412)
 
 **章节来源**
-- [frontend/src/pages/hr/knowledge_graph.rs:1-759](file://frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
+- [frontend/src/pages/hr/knowledge_graph.rs:1-759](frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
 
 ### 记忆搜索（语义检索、结果展示、记忆管理）
 - 双模式：空关键词走 query_memory（条件过滤）；有关键词走 search_memory（向量检索）。
@@ -230,10 +230,10 @@ S --> Res
 ```
 
 **图表来源**
-- [frontend/src/pages/hr/memory_search.rs:19-75](file://frontend/src/pages/hr/memory_search.rs#L19-L75)
+- [frontend/src/pages/hr/memory_search.rs:19-75](frontend/src/pages/hr/memory_search.rs#L19-L75)
 
 **章节来源**
-- [frontend/src/pages/hr/memory_search.rs:1-181](file://frontend/src/pages/hr/memory_search.rs#L1-L181)
+- [frontend/src/pages/hr/memory_search.rs:1-181](frontend/src/pages/hr/memory_search.rs#L1-L181)
 
 ## 依赖关系分析
 - 前端依赖
@@ -257,15 +257,15 @@ Router --> H_S["handlers/hr/skill/*"]
 ```
 
 **图表来源**
-- [frontend/src/pages/hr/agents.rs:1-649](file://frontend/src/pages/hr/agents.rs#L1-L649)
-- [frontend/src/pages/hr/agent_detail.rs:1-800](file://frontend/src/pages/hr/agent_detail.rs#L1-L800)
-- [frontend/src/pages/hr/skills.rs:1-378](file://frontend/src/pages/hr/skills.rs#L1-L378)
-- [frontend/src/pages/hr/knowledge_graph.rs:1-759](file://frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
-- [frontend/src/pages/hr/memory_search.rs:1-181](file://frontend/src/pages/hr/memory_search.rs#L1-L181)
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [frontend/src/pages/hr/agents.rs:1-649](frontend/src/pages/hr/agents.rs#L1-L649)
+- [frontend/src/pages/hr/agent_detail.rs:1-800](frontend/src/pages/hr/agent_detail.rs#L1-L800)
+- [frontend/src/pages/hr/skills.rs:1-378](frontend/src/pages/hr/skills.rs#L1-L378)
+- [frontend/src/pages/hr/knowledge_graph.rs:1-759](frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
+- [frontend/src/pages/hr/memory_search.rs:1-181](frontend/src/pages/hr/memory_search.rs#L1-L181)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 **章节来源**
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ## 性能考虑
 - 前端优化
@@ -294,10 +294,10 @@ Router --> H_S["handlers/hr/skill/*"]
   - 确认请求携带有效 JWT；受保护路由需通过 jwt_auth_middleware。
 
 **章节来源**
-- [frontend/src/pages/hr/agents.rs:73-139](file://frontend/src/pages/hr/agents.rs#L73-L139)
-- [frontend/src/pages/hr/agent_detail.rs:238-279](file://frontend/src/pages/hr/agent_detail.rs#L238-L279)
-- [frontend/src/pages/hr/knowledge_graph.rs:241-325](file://frontend/src/pages/hr/knowledge_graph.rs#L241-L325)
-- [src/router.rs:96-136](file://src/router.rs#L96-L136)
+- [frontend/src/pages/hr/agents.rs:73-139](frontend/src/pages/hr/agents.rs#L73-L139)
+- [frontend/src/pages/hr/agent_detail.rs:238-279](frontend/src/pages/hr/agent_detail.rs#L238-L279)
+- [frontend/src/pages/hr/knowledge_graph.rs:241-325](frontend/src/pages/hr/knowledge_graph.rs#L241-L325)
+- [src/router.rs:96-136](src/router.rs#L96-L136)
 
 ## 结论
 HR 管理页面以清晰的模块化组织实现了 Agent 全生命周期管理、技能体系化运营、知识图谱可视化与记忆检索一体化。前后端通过统一路由与 API 封装解耦，配合防抖、竞态保护、SSE 实时推送与向量检索，提供稳定流畅的管理体验。后续可在权限细化、缓存策略与图谱大规模渲染方面继续优化。
@@ -316,9 +316,9 @@ HR 管理页面以清晰的模块化组织实现了 Agent 全生命周期管理�
   - 后端路由与处理器：router.rs、handlers/hr/*
 
 **章节来源**
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
-- [frontend/src/pages/hr/agents.rs:1-649](file://frontend/src/pages/hr/agents.rs#L1-L649)
-- [frontend/src/pages/hr/agent_detail.rs:1-800](file://frontend/src/pages/hr/agent_detail.rs#L1-L800)
-- [frontend/src/pages/hr/skills.rs:1-378](file://frontend/src/pages/hr/skills.rs#L1-L378)
-- [frontend/src/pages/hr/knowledge_graph.rs:1-759](file://frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
-- [frontend/src/pages/hr/memory_search.rs:1-181](file://frontend/src/pages/hr/memory_search.rs#L1-L181)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
+- [frontend/src/pages/hr/agents.rs:1-649](frontend/src/pages/hr/agents.rs#L1-L649)
+- [frontend/src/pages/hr/agent_detail.rs:1-800](frontend/src/pages/hr/agent_detail.rs#L1-L800)
+- [frontend/src/pages/hr/skills.rs:1-378](frontend/src/pages/hr/skills.rs#L1-L378)
+- [frontend/src/pages/hr/knowledge_graph.rs:1-759](frontend/src/pages/hr/knowledge_graph.rs#L1-L759)
+- [frontend/src/pages/hr/memory_search.rs:1-181](frontend/src/pages/hr/memory_search.rs#L1-L181)

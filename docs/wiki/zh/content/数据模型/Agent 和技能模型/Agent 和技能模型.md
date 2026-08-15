@@ -2,21 +2,21 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [common/src/enums/agent_kind.rs](file://common/src/enums/agent_kind.rs)
-- [src/models/skill.rs](file://src/models/skill.rs)
-- [common/src/enums/skill.rs](file://common/src/enums/skill.rs)
-- [src/models/tool.rs](file://src/models/tool.rs)
-- [common/src/enums/tool.rs](file://common/src/enums/tool.rs)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [common/src/enums/mcp_server.rs](file://common/src/enums/mcp_server.rs)
-- [migrations/20260420000000_initial.sql](file://migrations/20260420000000_initial.sql)
-- [migrations/20260623000000_mcp_servers.sql](file://migrations/20260623000000_mcp_servers.sql)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [src/service/domain/hr/mod.rs](file://src/service/domain/hr/mod.rs)
-- [src/service/dao/tool_call/impl.rs](file://src/service/dao/tool_call/impl.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
+- [src/models/skill.rs](src/models/skill.rs)
+- [common/src/enums/skill.rs](common/src/enums/skill.rs)
+- [src/models/tool.rs](src/models/tool.rs)
+- [common/src/enums/tool.rs](common/src/enums/tool.rs)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [common/src/enums/mcp_server.rs](common/src/enums/mcp_server.rs)
+- [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
+- [migrations/20260623000000_mcp_servers.sql](migrations/20260623000000_mcp_servers.sql)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
+- [src/service/dao/tool_call/impl.rs](src/service/dao/tool_call/impl.rs)
 </cite>
 
 ## 目录
@@ -76,22 +76,22 @@ S --> T
 ```
 
 图表来源
-- [src/models/agent.rs:15-121](file://src/models/agent.rs#L15-L121)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/mcp_server.rs:17-123](file://src/models/mcp_server.rs#L17-L123)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/service/dao/tool_call/impl.rs:17-44](file://src/service/dao/tool_call/impl.rs#L17-L44)
-- [src/pkg/tool_registry/tool_security.rs:17-139](file://src/pkg/tool_registry/tool_security.rs#L17-L139)
+- [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/service/dao/tool_call/impl.rs:17-44](src/service/dao/tool_call/impl.rs#L17-L44)
+- [src/pkg/tool_registry/tool_security.rs:17-139](src/pkg/tool_registry/tool_security.rs#L17-L139)
 
 章节来源
-- [src/models/agent.rs:15-121](file://src/models/agent.rs#L15-L121)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/mcp_server.rs:17-123](file://src/models/mcp_server.rs#L17-L123)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/service/dao/tool_call/impl.rs:17-44](file://src/service/dao/tool_call/impl.rs#L17-L44)
-- [src/pkg/tool_registry/tool_security.rs:17-139](file://src/pkg/tool_registry/tool_security.rs#L17-L139)
+- [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/service/dao/tool_call/impl.rs:17-44](src/service/dao/tool_call/impl.rs#L17-L44)
+- [src/pkg/tool_registry/tool_security.rs:17-139](src/pkg/tool_registry/tool_security.rs#L17-L139)
 
 ## 核心组件
 - Agent
@@ -110,13 +110,13 @@ S --> T
   - 状态：Enabled/Disabled/Deleted；传输：Stdio/StreamableHttp
 
 章节来源
-- [src/models/agent.rs:15-121](file://src/models/agent.rs#L15-L121)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/mcp_server.rs:97-123](file://src/models/mcp_server.rs#L97-L123)
-- [src/models/mcp_server.rs:224-280](file://src/models/mcp_server.rs#L224-L280)
+- [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/mcp_server.rs:97-123](src/models/mcp_server.rs#L97-L123)
+- [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
 
 ## 架构总览
 Agent 作为编排中心，装配 Brain 与 Tools，并可安装/卸载 Skills。工具通过全局注册表按协议分发到具体实现，执行时携带 RequestContext，并记录调用轨迹。MCP Server 提供远程工具发现与执行通道。
@@ -142,10 +142,10 @@ TRACE-->>U : 结果/错误
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [src/service/dao/tool_call/impl.rs:118-154](file://src/service/dao/tool_call/impl.rs#L118-L154)
-- [src/pkg/tool_registry/tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
-- [src/service/domain/hr/mod.rs:154-247](file://src/service/domain/hr/mod.rs#L154-L247)
+- [src/pkg/tool_registry/mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [src/service/dao/tool_call/impl.rs:118-154](src/service/dao/tool_call/impl.rs#L118-L154)
+- [src/pkg/tool_registry/tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [src/service/domain/hr/mod.rs:154-247](src/service/domain/hr/mod.rs#L154-L247)
 
 ## 详细组件分析
 
@@ -176,17 +176,17 @@ Offboarded --> Deleted : "软删除"
 ```
 
 图表来源
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [common/src/enums/agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [src/models/agent.rs:15-121](file://src/models/agent.rs#L15-L121)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
 
 章节来源
-- [common/src/enums/agent.rs:8-99](file://common/src/enums/agent.rs#L8-L99)
-- [common/src/enums/agent_kind.rs:8-80](file://common/src/enums/agent_kind.rs#L8-L80)
-- [src/models/agent.rs:15-121](file://src/models/agent.rs#L15-L121)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
+- [common/src/enums/agent.rs:8-99](common/src/enums/agent.rs#L8-L99)
+- [common/src/enums/agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
+- [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
 
 ### Skill 实体与版本管理
 - 字段与关系
@@ -213,15 +213,15 @@ Update --> Done
 ```
 
 图表来源
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/skill.rs:127-150](file://src/models/skill.rs#L127-L150)
-- [src/service/domain/hr/mod.rs:249-290](file://src/service/domain/hr/mod.rs#L249-L290)
-- [src/service/domain/hr/mod.rs:355-392](file://src/service/domain/hr/mod.rs#L355-L392)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/skill.rs:127-150](src/models/skill.rs#L127-L150)
+- [src/service/domain/hr/mod.rs:249-290](src/service/domain/hr/mod.rs#L249-L290)
+- [src/service/domain/hr/mod.rs:355-392](src/service/domain/hr/mod.rs#L355-L392)
 
 章节来源
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [common/src/enums/skill.rs:6-79](file://common/src/enums/skill.rs#L6-L79)
-- [src/service/domain/hr/mod.rs:249-392](file://src/service/domain/hr/mod.rs#L249-L392)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [src/service/domain/hr/mod.rs:249-392](src/service/domain/hr/mod.rs#L249-L392)
 
 ### Tool 实体与注册模式
 - 协议与控制模式
@@ -272,16 +272,16 @@ Tool --> CoreTool : "持有"
 ```
 
 图表来源
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/tool.rs:16-34](file://src/models/tool.rs#L16-L34)
-- [common/src/enums/tool.rs:9-162](file://common/src/enums/tool.rs#L9-L162)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/tool.rs:16-34](src/models/tool.rs#L16-L34)
+- [common/src/enums/tool.rs:9-162](common/src/enums/tool.rs#L9-L162)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
 
 章节来源
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [common/src/enums/tool.rs:9-162](file://common/src/enums/tool.rs#L9-L162)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [common/src/enums/tool.rs:9-162](common/src/enums/tool.rs#L9-L162)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
 
 ### MCP Server 集成与工具发现
 - 传输与配置
@@ -312,16 +312,16 @@ API-->>FE : 同步完成
 ```
 
 图表来源
-- [migrations/20260623000000_mcp_servers.sql:4-20](file://migrations/20260623000000_mcp_servers.sql#L4-L20)
-- [src/models/mcp_server.rs:17-123](file://src/models/mcp_server.rs#L17-L123)
-- [src/models/mcp_server.rs:224-280](file://src/models/mcp_server.rs#L224-L280)
-- [src/pkg/tool_registry/mod.rs:92-100](file://src/pkg/tool_registry/mod.rs#L92-L100)
+- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
+- [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
+- [src/pkg/tool_registry/mod.rs:92-100](src/pkg/tool_registry/mod.rs#L92-L100)
 
 章节来源
-- [migrations/20260623000000_mcp_servers.sql:4-20](file://migrations/20260623000000_mcp_servers.sql#L4-L20)
-- [src/models/mcp_server.rs:17-123](file://src/models/mcp_server.rs#L17-L123)
-- [src/models/mcp_server.rs:224-280](file://src/models/mcp_server.rs#L224-L280)
-- [src/pkg/tool_registry/mod.rs:92-100](file://src/pkg/tool_registry/mod.rs#L92-L100)
+- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [src/models/mcp_server.rs:17-123](src/models/mcp_server.rs#L17-L123)
+- [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
+- [src/pkg/tool_registry/mod.rs:92-100](src/pkg/tool_registry/mod.rs#L92-L100)
 
 ### 实体关系与多态
 - 关系
@@ -343,18 +343,18 @@ MCP_SERVERS ||--o{ TOOLS : "发现并注册(MCP)"
 ```
 
 图表来源
-- [migrations/20260420000000_initial.sql:202-244](file://migrations/20260420000000_initial.sql#L202-L244)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/mcp_server.rs:224-280](file://src/models/mcp_server.rs#L224-L280)
+- [migrations/20260420000000_initial.sql:202-244](migrations/20260420000000_initial.sql#L202-L244)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
 
 章节来源
-- [migrations/20260420000000_initial.sql:202-244](file://migrations/20260420000000_initial.sql#L202-L244)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
-- [src/models/tool.rs:57-106](file://src/models/tool.rs#L57-L106)
-- [src/models/mcp_server.rs:224-280](file://src/models/mcp_server.rs#L224-L280)
+- [migrations/20260420000000_initial.sql:202-244](migrations/20260420000000_initial.sql#L202-L244)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
+- [src/models/tool.rs:57-106](src/models/tool.rs#L57-L106)
+- [src/models/mcp_server.rs:224-280](src/models/mcp_server.rs#L224-L280)
 
 ## 依赖关系分析
 - 低耦合高内聚
@@ -377,16 +377,16 @@ Skills --> Parent["父技能(SkillPo.parent_skill_id)"]
 ```
 
 图表来源
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
 
 章节来源
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
-- [src/models/skill.rs:20-124](file://src/models/skill.rs#L20-L124)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [src/models/skill.rs:20-124](src/models/skill.rs#L20-L124)
 
 ## 性能考量
 - 工具调用
@@ -413,10 +413,10 @@ Skills --> Parent["父技能(SkillPo.parent_skill_id)"]
   - 乐观锁冲突（并发编辑 skill.md）
 
 章节来源
-- [src/models/tool.rs:163-201](file://src/models/tool.rs#L163-L201)
-- [src/pkg/tool_registry/tool_security.rs:92-139](file://src/pkg/tool_registry/tool_security.rs#L92-L139)
-- [src/pkg/tool_registry/tool_security.rs:335-419](file://src/pkg/tool_registry/tool_security.rs#L335-L419)
-- [src/service/domain/hr/mod.rs:355-392](file://src/service/domain/hr/mod.rs#L355-L392)
+- [src/models/tool.rs:163-201](src/models/tool.rs#L163-L201)
+- [src/pkg/tool_registry/tool_security.rs:92-139](src/pkg/tool_registry/tool_security.rs#L92-L139)
+- [src/pkg/tool_registry/tool_security.rs:335-419](src/pkg/tool_registry/tool_security.rs#L335-L419)
+- [src/service/domain/hr/mod.rs:355-392](src/service/domain/hr/mod.rs#L355-L392)
 
 ## 结论
 本模型以 Agent 为核心，结合 Skill 的版本化与安装机制、Tool 的多协议注册与执行、以及 MCP Server 的工具发现，构建了可扩展、安全可控的智能体能力体系。通过清晰的枚举、分层架构与严格的安全校验，系统能够在保证稳定性的同时快速扩展新能力。
@@ -436,5 +436,5 @@ Skills --> Parent["父技能(SkillPo.parent_skill_id)"]
   - 索引优化：针对常用查询字段建立索引（如 skills.status/category/updated_at）
 
 章节来源
-- [migrations/20260420000000_initial.sql:39-244](file://migrations/20260420000000_initial.sql#L39-L244)
-- [migrations/20260623000000_mcp_servers.sql:4-20](file://migrations/20260623000000_mcp_servers.sql#L4-L20)
+- [migrations/20260420000000_initial.sql:39-244](migrations/20260420000000_initial.sql#L39-L244)
+- [migrations/20260623000000_mcp_servers.sql:4-20](migrations/20260623000000_mcp_servers.sql#L4-L20)

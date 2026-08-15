@@ -2,20 +2,20 @@
 
 <cite>
 **本文引用的文件**
-- [router.rs](file://src/router.rs)
-- [send_message.rs](file://src/handlers/finance/message/send_message.rs)
-- [list_messages.rs](file://src/handlers/finance/message/list_messages.rs)
-- [search_messages.rs](file://src/handlers/finance/message/search_messages.rs)
-- [subscribe_sse.rs](file://src/handlers/finance/message/subscribe_sse.rs)
-- [send_message_to_agent.rs](file://src/handlers/finance/message/send_message_to_agent.rs)
-- [message.rs](file://src/models/message.rs)
-- [mod.rs](file://src/service/domain/message/mod.rs)
-- [message.rs](file://src/service/dal/message.rs)
-- [message_push.rs](file://src/service/dao/message_push.rs)
-- [message_channel_design.md](file://docs/message_channel_design.md)
-- [2026-07-14-sse-message-push.md](file://docs/superpowers/plans/2026-07-14-sse-message-push.md)
-- [message_interaction_design.md](file://docs/message_interaction_design.md)
-- [app.rs](file://tests/common/app.rs)
+- [router.rs](src/router.rs)
+- [send_message.rs](src/handlers/finance/message/send_message.rs)
+- [list_messages.rs](src/handlers/finance/message/list_messages.rs)
+- [search_messages.rs](src/handlers/finance/message/search_messages.rs)
+- [subscribe_sse.rs](src/handlers/finance/message/subscribe_sse.rs)
+- [send_message_to_agent.rs](src/handlers/finance/message/send_message_to_agent.rs)
+- [message.rs](src/models/message.rs)
+- [mod.rs](src/service/domain/message/mod.rs)
+- [message.rs](src/service/dal/message.rs)
+- [message_push.rs](src/service/dao/message_push.rs)
+- [message_channel_design.md](docs/message_channel_design.md)
+- [2026-07-14-sse-message-push.md](docs/superpowers/plans/2026-07-14-sse-message-push.md)
+- [message_interaction_design.md](docs/message_interaction_design.md)
+- [app.rs](tests/common/app.rs)
 </cite>
 
 ## 目录
@@ -60,18 +60,18 @@ DALP --> DAO2["SsePushDao<br/>service/dao/message_push.rs"]
 ```
 
 图表来源
-- [router.rs:480-524](file://src/router.rs#L480-L524)
-- [send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
-- [send_message_to_agent.rs:1-98](file://src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
-- [list_messages.rs:1-122](file://src/handlers/finance/message/list_messages.rs#L1-L122)
-- [search_messages.rs:1-79](file://src/handlers/finance/message/search_messages.rs#L1-L79)
-- [subscribe_sse.rs:1-93](file://src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [mod.rs:32-66](file://src/service/domain/message/mod.rs#L32-L66)
-- [message.rs:20-122](file://src/service/dal/message.rs#L20-L122)
-- [message_push.rs:1-58](file://src/service/dao/message_push.rs#L1-L58)
+- [router.rs:480-524](src/router.rs#L480-L524)
+- [send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
+- [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
+- [list_messages.rs:1-122](src/handlers/finance/message/list_messages.rs#L1-L122)
+- [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [mod.rs:32-66](src/service/domain/message/mod.rs#L32-L66)
+- [message.rs:20-122](src/service/dal/message.rs#L20-L122)
+- [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
 
 章节来源
-- [router.rs:480-524](file://src/router.rs#L480-L524)
+- [router.rs:480-524](src/router.rs#L480-L524)
 
 ## 核心组件
 - 消息模型与事件
@@ -89,11 +89,11 @@ DALP --> DAO2["SsePushDao<br/>service/dao/message_push.rs"]
   - SsePushDaoImpl：内存级 broadcast channel 管理用户连接集合与连接映射。
 
 章节来源
-- [message.rs:18-247](file://src/models/message.rs#L18-L247)
-- [mod.rs:119-378](file://src/service/domain/message/mod.rs#L119-L378)
-- [message.rs:131-193](file://src/service/dal/message.rs#L131-L193)
-- [message.rs:393-564](file://src/service/dal/message.rs#L393-L564)
-- [message_push.rs:1-58](file://src/service/dao/message_push.rs#L1-L58)
+- [message.rs:18-247](src/models/message.rs#L18-L247)
+- [mod.rs:119-378](src/service/domain/message/mod.rs#L119-L378)
+- [message.rs:131-193](src/service/dal/message.rs#L131-L193)
+- [message.rs:393-564](src/service/dal/message.rs#L393-L564)
+- [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
 
 ## 架构总览
 消息从 Handler 进入，经 Domain 编排，DAL 完成持久化与搜索增强，DAO 落库与索引更新；投递时通过多渠道分发（含 SSE）。
@@ -120,13 +120,13 @@ CH-->>C : data : JSON
 ```
 
 图表来源
-- [send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
-- [send_message_to_agent.rs:1-98](file://src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
-- [search_messages.rs:1-79](file://src/handlers/finance/message/search_messages.rs#L1-L79)
-- [subscribe_sse.rs:1-93](file://src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [message.rs:131-193](file://src/service/dal/message.rs#L131-L193)
-- [message.rs:393-564](file://src/service/dal/message.rs#L393-L564)
-- [message_push.rs:1-58](file://src/service/dao/message_push.rs#L1-L58)
+- [send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
+- [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
+- [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [message.rs:131-193](src/service/dal/message.rs#L131-L193)
+- [message.rs:393-564](src/service/dal/message.rs#L393-L564)
+- [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
 
 ## 详细组件分析
 
@@ -154,13 +154,13 @@ H-->>U : {message_id}
 ```
 
 图表来源
-- [send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
-- [message.rs:131-193](file://src/service/dal/message.rs#L131-L193)
-- [message_push.rs:1-58](file://src/service/dao/message_push.rs#L1-L58)
+- [send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
+- [message.rs:131-193](src/service/dal/message.rs#L131-L193)
+- [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
 
 章节来源
-- [send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
-- [message.rs:131-193](file://src/service/dal/message.rs#L131-L193)
+- [send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
+- [message.rs:131-193](src/service/dal/message.rs#L131-L193)
 
 ### 发送消息给 Agent（协作）
 - 路由：POST /api/v1/messages/agents
@@ -187,10 +187,10 @@ CallDomain --> End(["返回 message_id"])
 ```
 
 图表来源
-- [send_message_to_agent.rs:1-98](file://src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
+- [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
 
 章节来源
-- [send_message_to_agent.rs:1-98](file://src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
+- [send_message_to_agent.rs:1-98](src/handlers/finance/message/send_message_to_agent.rs#L1-L98)
 
 ### 消息列表与分页
 - 路由：GET /api/v1/messages
@@ -216,10 +216,10 @@ I --> J["返回 {messages,total}"]
 ```
 
 图表来源
-- [list_messages.rs:1-122](file://src/handlers/finance/message/list_messages.rs#L1-L122)
+- [list_messages.rs:1-122](src/handlers/finance/message/list_messages.rs#L1-L122)
 
 章节来源
-- [list_messages.rs:1-122](file://src/handlers/finance/message/list_messages.rs#L1-L122)
+- [list_messages.rs:1-122](src/handlers/finance/message/list_messages.rs#L1-L122)
 
 ### 混合搜索（全文 + 向量）
 - 路由：POST /api/v1/finance/messages/search
@@ -246,12 +246,12 @@ H-->>C : SearchMessagesResponse
 ```
 
 图表来源
-- [search_messages.rs:1-79](file://src/handlers/finance/message/search_messages.rs#L1-L79)
-- [message.rs:393-564](file://src/service/dal/message.rs#L393-L564)
+- [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
+- [message.rs:393-564](src/service/dal/message.rs#L393-L564)
 
 章节来源
-- [search_messages.rs:1-79](file://src/handlers/finance/message/search_messages.rs#L1-L79)
-- [message.rs:393-564](file://src/service/dal/message.rs#L393-L564)
+- [search_messages.rs:1-79](src/handlers/finance/message/search_messages.rs#L1-L79)
+- [message.rs:393-564](src/service/dal/message.rs#L393-L564)
 
 ### SSE 实时推送
 - 路由：GET /api/v1/finance/messages/sse
@@ -277,12 +277,12 @@ Note over H,S : 客户端断开 → stream drop → unsubscribe
 ```
 
 图表来源
-- [subscribe_sse.rs:1-93](file://src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [2026-07-14-sse-message-push.md:58-221](file://docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [2026-07-14-sse-message-push.md:58-221](docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
 
 章节来源
-- [subscribe_sse.rs:1-93](file://src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [2026-07-14-sse-message-push.md:58-221](file://docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
+- [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
+- [2026-07-14-sse-message-push.md:58-221](docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
 
 ### 消息模型与事件
 - Message 实现 Event trait，priority 默认 5，order_key 优先 task_id，其次 project_id，最后消息 id。
@@ -333,12 +333,12 @@ Message --> MessagePo : "组合"
 ```
 
 图表来源
-- [message.rs:18-247](file://src/models/message.rs#L18-L247)
-- [message.rs:249-400](file://src/models/message.rs#L249-L400)
+- [message.rs:18-247](src/models/message.rs#L18-L247)
+- [message.rs:249-400](src/models/message.rs#L249-L400)
 
 章节来源
-- [message.rs:18-247](file://src/models/message.rs#L18-L247)
-- [message.rs:249-400](file://src/models/message.rs#L249-L400)
+- [message.rs:18-247](src/models/message.rs#L18-L247)
+- [message.rs:249-400](src/models/message.rs#L249-L400)
 
 ## 依赖关系分析
 - Handler 仅依赖 Domain 暴露的 trait，不直接访问 DAL/DAO。
@@ -357,13 +357,13 @@ DP --> DAO_S["SsePushDao"]
 ```
 
 图表来源
-- [mod.rs:32-66](file://src/service/domain/message/mod.rs#L32-L66)
-- [message.rs:20-122](file://src/service/dal/message.rs#L20-L122)
-- [message_push.rs:1-58](file://src/service/dao/message_push.rs#L1-L58)
+- [mod.rs:32-66](src/service/domain/message/mod.rs#L32-L66)
+- [message.rs:20-122](src/service/dal/message.rs#L20-L122)
+- [message_push.rs:1-58](src/service/dao/message_push.rs#L1-L58)
 
 章节来源
-- [mod.rs:32-66](file://src/service/domain/message/mod.rs#L32-L66)
-- [message.rs:20-122](file://src/service/dal/message.rs#L20-L122)
+- [mod.rs:32-66](src/service/domain/message/mod.rs#L32-L66)
+- [message.rs:20-122](src/service/dal/message.rs#L20-L122)
 
 ## 性能与可靠性
 - 向量索引
@@ -391,10 +391,10 @@ DP --> DAO_S["SsePushDao"]
   - 集成测试工具支持连接 SSE 端点并收集 data 事件，可用于端到端验证。
 
 章节来源
-- [list_messages.rs:25-36](file://src/handlers/finance/message/list_messages.rs#L25-L36)
-- [message.rs:150-193](file://src/service/dal/message.rs#L150-L193)
-- [subscribe_sse.rs:17-85](file://src/handlers/finance/message/subscribe_sse.rs#L17-L85)
-- [app.rs:199-263](file://tests/common/app.rs#L199-L263)
+- [list_messages.rs:25-36](src/handlers/finance/message/list_messages.rs#L25-L36)
+- [message.rs:150-193](src/service/dal/message.rs#L150-L193)
+- [subscribe_sse.rs:17-85](src/handlers/finance/message/subscribe_sse.rs#L17-L85)
+- [app.rs:199-263](tests/common/app.rs#L199-L263)
 
 ## 结论
 该消息处理 API 以清晰的分层与明确的职责划分实现了高可用的消息收发、搜索与实时推送。通过 FTS5 + 向量混合搜索提升检索质量；通过 SSE 实现低延迟推送；通过 DAL 的降级策略保障核心链路稳定。建议在生产环境关注向量服务可用性、SSE 连接规模与数据库索引维护。
@@ -411,7 +411,7 @@ DP --> DAO_S["SsePushDao"]
 - GET /api/v1/finance/messages/sse — SSE 订阅实时消息
 
 章节来源
-- [router.rs:480-524](file://src/router.rs#L480-L524)
+- [router.rs:480-524](src/router.rs#L480-L524)
 
 ### 请求/响应要点
 - 列表请求：ListMessagesRequest 支持 project/task/from/to/before/after/limit。
@@ -421,8 +421,8 @@ DP --> DAO_S["SsePushDao"]
 - SSE：EventSource 接收 data 行，JSON 负载由服务端序列化；keep-alive 文本用于心跳。
 
 章节来源
-- [common/src/api/message.rs:7-172](file://common/src/api/message.rs#L7-L172)
-- [subscribe_sse.rs:52-93](file://src/handlers/finance/message/subscribe_sse.rs#L52-L93)
+- [common/src/api/message.rs:7-172](common/src/api/message.rs#L7-L172)
+- [subscribe_sse.rs:52-93](src/handlers/finance/message/subscribe_sse.rs#L52-L93)
 
 ### 消息格式与模板
 - 文本消息：content 存储完整文本。
@@ -432,8 +432,8 @@ DP --> DAO_S["SsePushDao"]
 - Prompt 格式化：MessagePo.to_prompt 统一输出结构化提示，便于大模型理解。
 
 章节来源
-- [message.rs:249-400](file://src/models/message.rs#L249-L400)
-- [common/src/api/message.rs:174-235](file://common/src/api/message.rs#L174-L235)
+- [message.rs:249-400](src/models/message.rs#L249-L400)
+- [common/src/api/message.rs:174-235](common/src/api/message.rs#L174-L235)
 
 ### 批量发送与异步处理
 - 批量发送：可通过循环调用 send_to_user/send_to_agent 实现；注意控制并发与限流。
@@ -441,8 +441,8 @@ DP --> DAO_S["SsePushDao"]
 - 多渠道投递：deliver_message 可将消息推送到多个渠道（含 SSE），失败项独立记录。
 
 章节来源
-- [message.rs:131-193](file://src/service/dal/message.rs#L131-L193)
-- [message_channel_design.md:517-614](file://docs/message_channel_design.md#L517-L614)
+- [message.rs:131-193](src/service/dal/message.rs#L131-L193)
+- [message_channel_design.md:517-614](docs/message_channel_design.md#L517-L614)
 
 ### 优先级队列与重试机制
 - 优先级：Message.priority 默认 5，可在扩展中覆盖。
@@ -450,4 +450,4 @@ DP --> DAO_S["SsePushDao"]
 - 重试：当前代码未内置统一重试策略；建议在消费者层结合幂等键与退避重试。
 
 章节来源
-- [message.rs:222-247](file://src/models/message.rs#L222-L247)
+- [message.rs:222-247](src/models/message.rs#L222-L247)

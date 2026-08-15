@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/a2a/agent_card.rs](file://src/handlers/a2a/agent_card.rs)
-- [common/src/api/a2a.rs](file://common/src/api/a2a.rs)
-- [src/router.rs](file://src/router.rs)
-- [common/src/config.rs](file://common/src/config.rs)
-- [src/handlers/a2a/jsonrpc.rs](file://src/handlers/a2a/jsonrpc.rs)
-- [src/handlers/a2a/send_task.rs](file://src/handlers/a2a/send_task.rs)
-- [tests/integration/a2a_flow_test.rs](file://tests/integration/a2a_flow_test.rs)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](file://docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- [src/handlers/a2a/agent_card.rs](src/handlers/a2a/agent_card.rs)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/router.rs](src/router.rs)
+- [common/src/config.rs](common/src/config.rs)
+- [src/handlers/a2a/jsonrpc.rs](src/handlers/a2a/jsonrpc.rs)
+- [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
+- [tests/integration/a2a_flow_test.rs](tests/integration/a2a_flow_test.rs)
+- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
 </cite>
 
 ## 目录
@@ -45,16 +45,16 @@ RPC --> Send["任务提交<br/>src/handlers/a2a/send_task.rs"]
 ```
 
 图表来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 章节来源
-- [src/router.rs:12-59](file://src/router.rs#L12-L59)
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:12-59](src/router.rs#L12-L59)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 核心组件
 - Agent Card 端点：GET /.well-known/agent.json，公开访问，无需 JWT，返回组织级能力描述。
@@ -64,9 +64,9 @@ RPC --> Send["任务提交<br/>src/handlers/a2a/send_task.rs"]
 - 配置开关：A2aServerConfig.enabled 控制 JSON-RPC 端点是否可用；protocol_version、endpoint、card_path 决定版本与路径。
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 架构总览
 A2A 发现机制遵循四层单向调用原则：适配层（HTTP Handler）→ 领域层 → 数据访问层 → 持久化层。Agent Card 属于适配层公开端点，仅读取配置并返回静态能力描述，不耦合具体内部 Agent。
@@ -86,10 +86,10 @@ H-->>C : 返回 JSON Agent Card
 ```
 
 图表来源
-- [src/router.rs:21-26](file://src/router.rs#L21-L26)
-- [src/handlers/a2a/agent_card.rs:13-35](file://src/handlers/a2a/agent_card.rs#L13-L35)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-26](src/router.rs#L21-L26)
+- [src/handlers/a2a/agent_card.rs:13-35](src/handlers/a2a/agent_card.rs#L13-L35)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 详细组件分析
 
@@ -133,11 +133,11 @@ AgentCard --> AgentSkill : "包含多个"
 ```
 
 图表来源
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 
 章节来源
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
 
 ### 路由与中间件
 - 路由注册：在 create_router 中注册 /.well-known/agent.json 与 /a2a、/a2a/subscribe、/a2a/callback/{task_id}。
@@ -161,10 +161,10 @@ CB --> End
 ```
 
 图表来源
-- [src/router.rs:21-59](file://src/router.rs#L21-L59)
+- [src/router.rs:21-59](src/router.rs#L21-L59)
 
 章节来源
-- [src/router.rs:21-59](file://src/router.rs#L21-L59)
+- [src/router.rs:21-59](src/router.rs#L21-L59)
 
 ### JSON-RPC 入口与方法分发
 - POST /a2a：接收 JSON-RPC 2.0 请求，校验 jsonrpc 版本，按 method 分发到 tasks/send、tasks/get、tasks/cancel。
@@ -191,13 +191,13 @@ J-->>C : JsonRpcResponse.success/error
 ```
 
 图表来源
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
-- [common/src/api/a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
+- [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
 
 章节来源
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ### 任务提交流程（tasks/send）
 - 步骤：
@@ -224,10 +224,10 @@ I --> J
 ```
 
 图表来源
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 章节来源
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ### 版本管理与动态发现
 - 版本管理：
@@ -239,9 +239,9 @@ I --> J
   - 能力字段 streaming/push_notifications 指示服务端支持特性。
 
 章节来源
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
-- [src/handlers/a2a/jsonrpc.rs:22-44](file://src/handlers/a2a/jsonrpc.rs#L22-L44)
-- [src/handlers/a2a/agent_card.rs:13-35](file://src/handlers/a2a/agent_card.rs#L13-L35)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
+- [src/handlers/a2a/jsonrpc.rs:22-44](src/handlers/a2a/jsonrpc.rs#L22-L44)
+- [src/handlers/a2a/agent_card.rs:13-35](src/handlers/a2a/agent_card.rs#L13-L35)
 
 ### 安全考虑与最佳实践
 - 认证策略：
@@ -257,9 +257,9 @@ I --> J
   - tasks/send 要求有效的 user 上下文与可用的前台 Agent。
 
 章节来源
-- [src/router.rs:21-59](file://src/router.rs#L21-L59)
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [src/router.rs:21-59](src/router.rs#L21-L59)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ## 依赖关系分析
 - 路由依赖：router.rs 注册 A2A 相关路由，并挂载中间件。
@@ -281,19 +281,19 @@ Send --> Types
 ```
 
 图表来源
-- [src/router.rs:21-59](file://src/router.rs#L21-L59)
-- [src/handlers/a2a/agent_card.rs:1-36](file://src/handlers/a2a/agent_card.rs#L1-L36)
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-59](src/router.rs#L21-L59)
+- [src/handlers/a2a/agent_card.rs:1-36](src/handlers/a2a/agent_card.rs#L1-L36)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 章节来源
-- [src/router.rs:21-59](file://src/router.rs#L21-L59)
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
-- [common/src/api/a2a.rs:10-62](file://common/src/api/a2a.rs#L10-L62)
-- [common/src/config.rs:510-549](file://common/src/config.rs#L510-L549)
+- [src/router.rs:21-59](src/router.rs#L21-L59)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
+- [common/src/api/a2a.rs:10-62](common/src/api/a2a.rs#L10-L62)
+- [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 
 ## 性能与可用性
 - Agent Card 为静态响应，无数据库查询，延迟极低。
@@ -325,10 +325,10 @@ Send --> Types
   - 验证回调端点可被外部系统访问。
 
 章节来源
-- [tests/integration/a2a_flow_test.rs:24-65](file://tests/integration/a2a_flow_test.rs#L24-L65)
-- [tests/integration/a2a_flow_test.rs:67-200](file://tests/integration/a2a_flow_test.rs#L67-L200)
-- [src/handlers/a2a/jsonrpc.rs:22-94](file://src/handlers/a2a/jsonrpc.rs#L22-L94)
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
+- [tests/integration/a2a_flow_test.rs:24-65](tests/integration/a2a_flow_test.rs#L24-L65)
+- [tests/integration/a2a_flow_test.rs:67-200](tests/integration/a2a_flow_test.rs#L67-L200)
+- [src/handlers/a2a/jsonrpc.rs:22-94](src/handlers/a2a/jsonrpc.rs#L22-L94)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
 
 ## 结论
 本项目实现了符合 A2A 规范的 Agent 发现机制：通过公开端点 /.well-known/agent.json 暴露组织级能力描述，结合 JSON-RPC 2.0 提供任务提交、查询与取消能力。Agent Card 的结构清晰、能力声明明确，配合配置开关与路由中间件，既保证了安全性又提升了可扩展性。推荐在生产环境中启用 HTTPS、严格校验输入、合理配置 consumer 并发与推送通道，以获得稳定高效的跨 Agent 协作体验。
@@ -350,6 +350,6 @@ Send --> Types
   - 响应：JsonRpcResponse.success(result=A2aTask)。
 
 章节来源
-- [common/src/api/a2a.rs:147-306](file://common/src/api/a2a.rs#L147-L306)
-- [tests/integration/a2a_flow_test.rs:67-200](file://tests/integration/a2a_flow_test.rs#L67-L200)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-175](file://docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L175)
+- [common/src/api/a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [tests/integration/a2a_flow_test.rs:67-200](tests/integration/a2a_flow_test.rs#L67-L200)
+- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-175](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L175)

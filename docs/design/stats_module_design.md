@@ -7,6 +7,19 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Stats 是基础设施层模块）
 > - [stats_query_design.md](./stats_query_design.md) — 统计查询模块（为前端提供数据查询的 Domain 层封装）
+> - 【② Plan 落地（真实定稿 3 张）】
+>   - [统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — DuckDB 表结构 + record_event! 宏自动推断实现
+>   - [统计图表Phase2.md](../plan/统计图表Phase2.md) — 五维度统计面板（Agent/Project/Task/ModelProvider/Tool）+ TokenSumResult 接口
+>   - [统计图表第三期.md](../plan/统计图表第三期.md) — AOP 事件统计面板集成 RuntimeStatsCollector 内存滑动窗口
+> - 【③ Wiki 长文（人类百科总入口 3 篇 + 细分 2 篇）】
+>   - [多维统计系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md) — 五维度总览卡片入口
+>   - [Agent 维度统计.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Agent 维度统计.md) — 日调用次数 + Token 消耗分布饼图
+>   - [Tool 维度统计.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Tool 维度统计.md) — 成功失败率柱状图 + 平均耗时箱线图
+>   - [AOP 统计与监控.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/统计与监控.md) — 内存版 AopStatsCollector 事件吞吐/积压/平均耗时
+>   - [AOP 监控面板.md](docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP%20监控面板.md) — 前端总览卡 + 事件分布饼图 + 最近 60min 时序
+> - 【④ RAG 原子知识卡（Batch6 原有 1 张 + Batch9 新增 1 张）】
+>   - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/wiki/knowledge/zh/DuckDB%20多维统计双层互补：record_event!%20宏自动表推断%20+%20RuntimeStatsCollector%20内存滑动窗口%20+%205%20维度开箱即用表/DuckDB%20多维统计双层互补：record_event!%20宏自动表推断%20+%20RuntimeStatsCollector%20内存滑动窗口%20+%205%20维度开箱即用表.md) — record_event! 三种调用模式 + 持久化/内存选型铁律表 + 6 条回归红线（含 batch_size/WINDOW_MINUTES 阈值）
+>   - [统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示](docs/wiki/knowledge/zh/%E7%BB%9F%E8%AE%A1%E6%9F%A5%E8%AF%A2%20API%20%E4%B8%8E%E5%89%8D%E7%AB%AF%E4%BB%AA%E8%A1%A8%E7%9B%98%EF%BC%9ADuckDB%205%20%E7%BB%B4%E8%A1%A8%E6%9F%A5%E8%AF%A2%20+%20RuntimeStats%20%E5%86%85%E5%AD%98%E6%BB%91%E5%8A%A8%E8%81%9A%E5%90%88%20+%20StatsHandler%20REST%20API%20+%20%E5%89%8D%E7%AB%AF%20Line%2FDonut%2FGauge%20%E5%B1%95%E7%A4%BA/%E7%BB%9F%E8%AE%A1%E6%9F%A5%E8%AF%A2%20API%20%E4%B8%8E%E5%89%8D%E7%AB%AF%E4%BB%AA%E8%A1%A8%E7%9B%98%EF%BC%9ADuckDB%205%20%E7%BB%B4%E8%A1%A8%E6%9F%A5%E8%AF%A2%20+%20RuntimeStats%20%E5%86%85%E5%AD%98%E6%BB%91%E5%8A%A8%E8%81%9A%E5%90%88%20+%20StatsHandler%20REST%20API%20+%20%E5%89%8D%E7%AB%AF%20Line%2FDonut%2FGauge%20%E5%B1%95%E7%A4%BA.md) — 双层选型铁律表 + 5 Stats DAO 全实体覆盖 + 10 条硬约束
 
 ## 定位与目标
 

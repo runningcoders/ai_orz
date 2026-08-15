@@ -2,20 +2,28 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/src/api/mod.rs](file://frontend/src/api/mod.rs)
-- [frontend/src/api/auth.rs](file://frontend/src/api/auth.rs)
-- [frontend/src/api/organization.rs](file://frontend/src/api/organization.rs)
-- [frontend/src/api/project.rs](file://frontend/src/api/project.rs)
-- [frontend/src/api/hr.rs](file://frontend/src/api/hr.rs)
-- [frontend/src/api/system.rs](file://frontend/src/api/system.rs)
-- [common/src/api/system.rs](file://common/src/api/system.rs)
-- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
-- [src/handlers/system/process/shell_status.rs](file://src/handlers/system/process/shell_status.rs)
-- [src/handlers/system/process/shell_kill.rs](file://src/handlers/system/process/shell_kill.rs)
-- [frontend/src/pages/system/processes.rs](file://frontend/src/pages/system/processes.rs)
-- [frontend/src/components/process_detail.rs](file://frontend/src/components/process_detail.rs)
-- [frontend/src/components/chat/tool_calls_tab.rs](file://frontend/src/components/chat/tool_calls_tab.rs)
-- [src/router.rs](file://src/router.rs)
+- [frontend/src/api/mod.rs](frontend/src/api/mod.rs)
+- [frontend/src/api/auth.rs](frontend/src/api/auth.rs)
+- [frontend/src/api/organization.rs](frontend/src/api/organization.rs)
+- [frontend/src/api/project.rs](frontend/src/api/project.rs)
+- [frontend/src/api/hr.rs](frontend/src/api/hr.rs)
+- [frontend/src/api/system.rs](frontend/src/api/system.rs)
+- [common/src/api/system.rs](common/src/api/system.rs)
+- [src/handlers/system/process/shell_list.rs](src/handlers/system/process/shell_list.rs)
+- [src/handlers/system/process/shell_status.rs](src/handlers/system/process/shell_status.rs)
+- [src/handlers/system/process/shell_kill.rs](src/handlers/system/process/shell_kill.rs)
+- [frontend/src/pages/system/processes.rs](frontend/src/pages/system/processes.rs)
+- [frontend/src/components/process_detail.rs](frontend/src/components/process_detail.rs)
+- [frontend/src/components/chat/tool_calls_tab.rs](frontend/src/components/chat/tool_calls_tab.rs)
+- [src/router.rs](src/router.rs)
+
+### 本文关联的三类文档（四类互引闭环）
+
+**① 设计文档（Design）**：
+- [前端架构设计](docs/design/frontend_architecture.md) — 前端整体分层与模块划分
+
+**④ RAG 原子知识卡**：
+- [前端整体架构 RAG 卡](docs/wiki/knowledge/zh/前端整体架构：Dioxus%20Router%2041%20%E8%B7%AF%E7%94%B1%20+%20API%20%E5%AE%A2%E6%88%B7%E7%AB%AF%2013%20%E6%A8%A1%E5%9D%97%20+%20Hooks%203%E4%B8%AA%20+%20Store%202%E4%B8%AA%20+%20%E7%BB%84%E4%BB%B6%E4%BD%93%E7%B3%BB%206%E5%B1%82/前端整体架构：Dioxus%20Router%2041%20%E8%B7%AF%E7%94%B1%20+%20API%20%E5%AE%A2%E6%88%B7%E7%AB%AF%2013%20%E6%A8%A1%E5%9D%97%20+%20Hooks%203%E4%B8%AA%20+%20Store%202%E4%B8%AA%20+%20%E7%BB%84%E4%BB%B6%E4%BD%93%E7%B3%BB%206%E5%B1%82.md) — 41 路由 + 13 API 模块 + 3 Hooks 架构速查
 </cite>
 
 ## 更新摘要
@@ -58,15 +66,15 @@ J --> K["工具调用Tab<br/>tool_calls_tab.rs"]
 ```
 
 图表来源
-- [frontend/src/api/mod.rs:28-35](file://frontend/src/api/mod.rs#L28-L35)
-- [frontend/src/config.rs:76-79](file://frontend/src/config.rs#L76-L79)
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
-- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/mod.rs:28-35](frontend/src/api/mod.rs#L28-L35)
+- [frontend/src/config.rs:76-79](frontend/src/config.rs#L76-L79)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
 
 章节来源
-- [frontend/src/api/mod.rs:1-433](file://frontend/src/api/mod.rs#L1-L433)
-- [frontend/src/config.rs:1-85](file://frontend/src/config.rs#L1-L85)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [frontend/src/api/mod.rs:1-433](frontend/src/api/mod.rs#L1-L433)
+- [frontend/src/config.rs:1-85](frontend/src/config.rs#L1-L85)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 
 ## 核心组件
 - 统一请求封装：提供 GET/POST/PUT/DELETE 及文本、Multipart 上传等能力，统一解析 ApiResponse<T>，并处理 401 重定向。
@@ -77,14 +85,14 @@ J --> K["工具调用Tab<br/>tool_calls_tab.rs"]
 - **进程管理**：新增统一后台进程管理功能，支持进程列表查询、状态监控、日志查看和进程终止操作。
 
 章节来源
-- [frontend/src/api/mod.rs:87-287](file://frontend/src/api/mod.rs#L87-L287)
-- [frontend/src/api/mod.rs:289-318](file://frontend/src/api/mod.rs#L289-L318)
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
-- [frontend/src/api/mod.rs:405-432](file://frontend/src/api/mod.rs#L405-L432)
-- [frontend/src/config.rs:12-85](file://frontend/src/config.rs#L12-L85)
-- [frontend/src/store/auth.rs:13-57](file://frontend/src/store/auth.rs#L13-L57)
-- [common/src/api/mod.rs:6-73](file://common/src/api/mod.rs#L6-L73)
-- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/mod.rs:87-287](frontend/src/api/mod.rs#L87-L287)
+- [frontend/src/api/mod.rs:289-318](frontend/src/api/mod.rs#L289-L318)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/mod.rs:405-432](frontend/src/api/mod.rs#L405-L432)
+- [frontend/src/config.rs:12-85](frontend/src/config.rs#L12-L85)
+- [frontend/src/store/auth.rs:13-57](frontend/src/store/auth.rs#L13-L57)
+- [common/src/api/mod.rs:6-73](common/src/api/mod.rs#L6-L73)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
 
 ## 架构总览
 前端通过业务 API 模块调用统一请求封装，统一封装负责：
@@ -113,9 +121,9 @@ API-->>UI : 返回数据或错误
 ```
 
 图表来源
-- [frontend/src/api/mod.rs:28-35](file://frontend/src/api/mod.rs#L28-L35)
-- [frontend/src/api/mod.rs:87-114](file://frontend/src/api/mod.rs#L87-L114)
-- [frontend/src/config.rs:76-79](file://frontend/src/config.rs#L76-L79)
+- [frontend/src/api/mod.rs:28-35](frontend/src/api/mod.rs#L28-L35)
+- [frontend/src/api/mod.rs:87-114](frontend/src/api/mod.rs#L87-L114)
+- [frontend/src/config.rs:76-79](frontend/src/config.rs#L76-L79)
 
 ## 详细组件分析
 
@@ -143,16 +151,16 @@ ExtractData --> ReturnOk["返回 T"]
 ```
 
 图表来源
-- [frontend/src/api/mod.rs:87-114](file://frontend/src/api/mod.rs#L87-L114)
-- [frontend/src/api/mod.rs:143-174](file://frontend/src/api/mod.rs#L143-L174)
-- [frontend/src/api/mod.rs:203-234](file://frontend/src/api/mod.rs#L203-L234)
-- [frontend/src/api/mod.rs:263-287](file://frontend/src/api/mod.rs#L263-L287)
-- [frontend/src/api/mod.rs:38-45](file://frontend/src/api/mod.rs#L38-L45)
-- [frontend/src/api/mod.rs:47-85](file://frontend/src/api/mod.rs#L47-L85)
+- [frontend/src/api/mod.rs:87-114](frontend/src/api/mod.rs#L87-L114)
+- [frontend/src/api/mod.rs:143-174](frontend/src/api/mod.rs#L143-L174)
+- [frontend/src/api/mod.rs:203-234](frontend/src/api/mod.rs#L203-L234)
+- [frontend/src/api/mod.rs:263-287](frontend/src/api/mod.rs#L263-L287)
+- [frontend/src/api/mod.rs:38-45](frontend/src/api/mod.rs#L38-L45)
+- [frontend/src/api/mod.rs:47-85](frontend/src/api/mod.rs#L47-L85)
 
 章节来源
-- [frontend/src/api/mod.rs:87-287](file://frontend/src/api/mod.rs#L87-L287)
-- [frontend/src/api/mod.rs:289-318](file://frontend/src/api/mod.rs#L289-L318)
+- [frontend/src/api/mod.rs:87-287](frontend/src/api/mod.rs#L87-L287)
+- [frontend/src/api/mod.rs:289-318](frontend/src/api/mod.rs#L289-L318)
 
 ### 认证与令牌管理
 - 认证方式：基于 HttpOnly Cookie 的 JWT，前端不直接持有 token。
@@ -176,12 +184,12 @@ UI->>UI : 跳转 /login
 ```
 
 图表来源
-- [frontend/src/store/auth.rs:13-43](file://frontend/src/store/auth.rs#L13-L43)
-- [frontend/src/api/mod.rs:38-45](file://frontend/src/api/mod.rs#L38-L45)
+- [frontend/src/store/auth.rs:13-43](frontend/src/store/auth.rs#L13-L43)
+- [frontend/src/api/mod.rs:38-45](frontend/src/api/mod.rs#L38-L45)
 
 章节来源
-- [frontend/src/store/auth.rs:1-94](file://frontend/src/store/auth.rs#L1-L94)
-- [frontend/src/api/mod.rs:38-45](file://frontend/src/api/mod.rs#L38-L45)
+- [frontend/src/store/auth.rs:1-94](frontend/src/store/auth.rs#L1-L94)
+- [frontend/src/api/mod.rs:38-45](frontend/src/api/mod.rs#L38-L45)
 
 ### 配置与 URL 构造
 - 配置优先级：localStorage 覆盖 > 编译时默认值。
@@ -189,7 +197,7 @@ UI->>UI : 跳转 /login
 - URL 拼接：api_path 通过 trim_end_matches('/') 后拼接，避免重复斜杠。
 
 章节来源
-- [frontend/src/config.rs:12-85](file://frontend/src/config.rs#L12-L85)
+- [frontend/src/config.rs:12-85](frontend/src/config.rs#L12-L85)
 
 ### 业务模块 API 概览
 - 认证模块：系统初始化检查、异步初始化、登录、登出。
@@ -199,26 +207,26 @@ UI->>UI : 跳转 /login
 - **系统管理**：健康检查、定时触发器、备份管理、日志查询、AOP 监控、**统一后台进程管理**。
 
 章节来源
-- [frontend/src/api/auth.rs:10-40](file://frontend/src/api/auth.rs#L10-L40)
-- [frontend/src/api/organization.rs:13-61](file://frontend/src/api/organization.rs#L13-L61)
-- [frontend/src/api/project.rs:16-162](file://frontend/src/api/project.rs#L16-L162)
-- [frontend/src/api/hr.rs:25-310](file://frontend/src/api/hr.rs#L25-L310)
-- [frontend/src/api/system.rs:1-356](file://frontend/src/api/system.rs#L1-L356)
+- [frontend/src/api/auth.rs:10-40](frontend/src/api/auth.rs#L10-L40)
+- [frontend/src/api/organization.rs:13-61](frontend/src/api/organization.rs#L13-L61)
+- [frontend/src/api/project.rs:16-162](frontend/src/api/project.rs#L16-L162)
+- [frontend/src/api/hr.rs:25-310](frontend/src/api/hr.rs#L25-L310)
+- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L356)
 
 ### 分页与查询参数构造
 - 分页：build_pagination_url 将 PaginationParams(limit/offset) 转为 query string。
 - 查询：build_query_string 过滤 None 项并拼接 key=value。
 
 章节来源
-- [frontend/src/api/mod.rs:405-432](file://frontend/src/api/mod.rs#L405-L432)
-- [common/src/api/mod.rs:55-73](file://common/src/api/mod.rs#L55-L73)
+- [frontend/src/api/mod.rs:405-432](frontend/src/api/mod.rs#L405-L432)
+- [common/src/api/mod.rs:55-73](common/src/api/mod.rs#L55-L73)
 
 ### 多部分表单上传
 - 使用 web-sys 原生 fetch 与 FormData，设置 SameOrigin 凭据，解析 ApiResponse<T>。
 - 错误路径：构造 Request、fetch、Response 转换、JSON 解析均捕获并包装为 ApiError。
 
 章节来源
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
 
 ### 统一后台进程管理功能
 
@@ -266,11 +274,11 @@ pub struct ShellStatusResponse {
 - **进程详情组件**：共享组件，支持弹窗展示进程详细信息和操作按钮
 
 章节来源
-- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
-- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
-- [src/handlers/system/process/shell_list.rs:1-144](file://src/handlers/system/process/shell_list.rs#L1-L144)
-- [src/handlers/system/process/shell_status.rs:1-39](file://src/handlers/system/process/shell_status.rs#L1-L39)
-- [src/handlers/system/process/shell_kill.rs:1-31](file://src/handlers/system/process/shell_kill.rs#L1-L31)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
+- [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)
+- [src/handlers/system/process/shell_list.rs:1-144](src/handlers/system/process/shell_list.rs#L1-L144)
+- [src/handlers/system/process/shell_status.rs:1-39](src/handlers/system/process/shell_status.rs#L1-L39)
+- [src/handlers/system/process/shell_kill.rs:1-31](src/handlers/system/process/shell_kill.rs#L1-L31)
 
 ### 项目详情接口增强 - with_progress_summary 支持
 
@@ -318,9 +326,9 @@ pub struct ProjectProgressSummary {
 ```
 
 章节来源
-- [frontend/src/api/project.rs:35-59](file://frontend/src/api/project.rs#L35-L59)
-- [common/src/api/project.rs:33-63](file://common/src/api/project.rs#L33-L63)
-- [common/src/models/stats.rs:150-172](file://common/src/models/stats.rs#L150-L172)
+- [frontend/src/api/project.rs:35-59](frontend/src/api/project.rs#L35-L59)
+- [common/src/api/project.rs:33-63](common/src/api/project.rs#L33-L63)
+- [common/src/models/stats.rs:150-172](common/src/models/stats.rs#L150-L172)
 
 ## 依赖关系分析
 - 运行时依赖：Dioxus（UI框架）、reqwest（HTTP 客户端）、web-sys/wasm-bindgen（浏览器 API 桥接）。
@@ -341,13 +349,13 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 ```
 
 图表来源
-- [frontend/Cargo.toml:11-25](file://frontend/Cargo.toml#L11-L25)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
-- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
+- [frontend/Cargo.toml:11-25](frontend/Cargo.toml#L11-L25)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
 
 章节来源
-- [frontend/Cargo.toml:1-26](file://frontend/Cargo.toml#L1-L26)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [frontend/Cargo.toml:1-26](frontend/Cargo.toml#L1-L26)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 
 ## 性能考虑
 - 连接复用：reqwest Client 使用 OnceLock 全局单例，减少握手开销。
@@ -373,9 +381,9 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
   - 日志无法查看：检查日志文件路径和权限
 
 章节来源
-- [frontend/src/api/mod.rs:38-85](file://frontend/src/api/mod.rs#L38-L85)
-- [frontend/src/api/mod.rs:320-403](file://frontend/src/api/mod.rs#L320-L403)
-- [frontend/src/api/system.rs:332-356](file://frontend/src/api/system.rs#L332-L356)
+- [frontend/src/api/mod.rs:38-85](frontend/src/api/mod.rs#L38-L85)
+- [frontend/src/api/mod.rs:320-403](frontend/src/api/mod.rs#L320-L403)
+- [frontend/src/api/system.rs:332-356](frontend/src/api/system.rs#L332-L356)
 
 ## 结论
 该 API 客户端以统一封装为核心，结合共享 DTO 与配置管理，实现了稳定、一致的 HTTP 交互体验。通过集中式错误处理与 401 拦截，提升了用户体验与安全性。各业务模块清晰分层，便于扩展与维护。建议在生产环境中结合缓存与重试策略进一步优化性能与鲁棒性。
@@ -393,7 +401,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 - 登出：POST /api/v1/organization/auth/logout
 
 章节来源
-- [frontend/src/api/auth.rs:10-40](file://frontend/src/api/auth.rs#L10-L40)
+- [frontend/src/api/auth.rs:10-40](frontend/src/api/auth.rs#L10-L40)
 
 ### 组织与用户
 - 公开获取组织列表：GET /api/v1/organization/list
@@ -407,7 +415,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 - 删除用户：DELETE /api/v1/organization/user/id/{user_id}
 
 章节来源
-- [frontend/src/api/organization.rs:13-61](file://frontend/src/api/organization.rs#L13-L61)
+- [frontend/src/api/organization.rs:13-61](frontend/src/api/organization.rs#L13-L61)
 
 ### 项目与任务
 - 项目列表：GET /api/v1/projects?limit=&offset=
@@ -434,7 +442,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 **已更新** 项目详情接口现已支持 `with_progress_summary` 查询参数，用于获取项目进度汇总数据。
 
 章节来源
-- [frontend/src/api/project.rs:16-162](file://frontend/src/api/project.rs#L16-L162)
+- [frontend/src/api/project.rs:16-162](frontend/src/api/project.rs#L16-L162)
 
 ### HR（Agent/技能/工具）
 - Agent 列表：GET /api/v1/hr/agents?limit=&offset=
@@ -458,7 +466,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 - 推荐种子节点：POST /api/v1/hr/agents/recommend_seed_nodes
 
 章节来源
-- [frontend/src/api/hr.rs:25-310](file://frontend/src/api/hr.rs#L25-L310)
+- [frontend/src/api/hr.rs:25-310](frontend/src/api/hr.rs#L25-L310)
 
 ### 系统管理
 - 健康检查：GET /health
@@ -486,8 +494,8 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
   - 终止进程：POST /api/v1/system/processes/{pid}/kill
 
 章节来源
-- [frontend/src/api/system.rs:1-356](file://frontend/src/api/system.rs#L1-L356)
-- [src/router.rs:739-751](file://src/router.rs#L739-L751)
+- [frontend/src/api/system.rs:1-356](frontend/src/api/system.rs#L1-L356)
+- [src/router.rs:739-751](src/router.rs#L739-L751)
 
 ### 统一响应与分页
 - 统一响应：ApiResponse<T> { code, message, data }
@@ -495,7 +503,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
 - 分页结果：PagedResult<T> { items, total }
 
 章节来源
-- [common/src/api/mod.rs:6-73](file://common/src/api/mod.rs#L6-L73)
+- [common/src/api/mod.rs:6-73](common/src/api/mod.rs#L6-L73)
 
 ### 项目进度汇总数据结构
 - **ProjectProgressSummary**：项目进度汇总数据结构，包含任务统计和整体进度信息
@@ -508,7 +516,7 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
   - `overall_percent`: 整体进度百分比（0-100，任务进度均值）
 
 章节来源
-- [common/src/models/stats.rs:150-172](file://common/src/models/stats.rs#L150-L172)
+- [common/src/models/stats.rs:150-172](common/src/models/stats.rs#L150-L172)
 
 ### 进程管理数据结构
 - **ProcessInfo**：进程信息数据结构
@@ -535,4 +543,4 @@ PROC --> HANDLER["shell_list/status/kill handlers"]
   - `log_tail`: 日志尾部
 
 章节来源
-- [common/src/api/system.rs:240-328](file://common/src/api/system.rs#L240-L328)
+- [common/src/api/system.rs:240-328](common/src/api/system.rs#L240-L328)

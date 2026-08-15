@@ -7,6 +7,14 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [browser_e2e_test_design.md](./browser_e2e_test_design.md) — 浏览器端 E2E/操作验证用例 Playbook 体系
+> - [sqlx_guide.md](./sqlx_guide.md) — SQLite + SQLx 0.8 规范与 #[sqlx::test] 隔离
+> - 【② Plan 落地】[Agent管理集成测试.md](../plan/Agent管理集成测试.md) — 19 集成测试 target 清单 + onboard_agent 回滚断言矩阵
+> - 【② Plan 落地】[AOP生产消费事件中心重构.md](../plan/AOP生产消费事件中心重构.md) — event_delivery 集成测试链路：publish→消费者 ack→断言表记录
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — credential_crud 集成测试 AES256-GCM 加解密 roundtrip 断言
+> - 【③ Wiki 百科】[测试指南.md](docs/wiki/zh/content/测试指南/测试指南.md) — 1124 测试分布总览：984 后端(897单元+87集成) + 82 前端 + 58 common
+> - 【③ Wiki 百科】[端到端测试基础设施.md](docs/wiki/zh/content/测试指南/端到端测试基础设施.md) — Playwright E2E 本地 `just e2e` + 失败视频自动保存
+> - 【③ Wiki 百科】[持续集成与发布工作流.md](docs/wiki/zh/content/基础设施/持续集成与发布工作流.md) — CI 四阶段闸门 check/test/coverage/build + cargo-llvm-cov 38%/45% 阈值
+> - 【④ RAG 知识卡】[测试与质量工程](docs/wiki/knowledge/zh/%E6%B5%8B%E8%AF%95%E4%B8%8E%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B%EF%BC%9A1124%E6%B5%8B%E8%AF%95100%%E9%80%9A%E8%BF%87%20+%20984%E5%90%8E%E7%AB%AF82%E5%89%8D%E7%AB%AF%20+%2087%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%9519targets%20+%20cargo-llvm-cov%2038%25/45%25%E9%97%A8%E6%A7%9B%20+%20clippy%E9%9B%B6%E5%AE%B9%E5%BF%8D+Playwright%20E2E/%E6%B5%8B%E8%AF%95%E4%B8%8E%E8%B4%A8%E9%87%8F%E5%B7%A5%E7%A8%8B%EF%BC%9A1124%E6%B5%8B%E8%AF%95100%%E9%80%9A%E8%BF%87%20+%20984%E5%90%8E%E7%AB%AF82%E5%89%8D%E7%AB%AF%20+%2087%E9%9B%86%E6%88%90%E6%B5%8B%E8%AF%9519targets%20+%20cargo-llvm-cov%2038%25/45%25%E9%97%A8%E6%A7%9B%20+%20clippy%E9%9B%B6%E5%AE%B9%E5%BF%8D+Playwright%20E2E.md) — §4 阶段 CI 闸门 §init_full_test_env 启动顺序 §8 条红线
 
 ## 概述
 

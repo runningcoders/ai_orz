@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/finance/attachment/mod.rs](file://src/handlers/finance/attachment/mod.rs)
-- [src/handlers/finance/attachment/upload_attachment.rs](file://src/handlers/finance/attachment/upload_attachment.rs)
-- [src/handlers/finance/attachment/get_attachment.rs](file://src/handlers/finance/attachment/get_attachment.rs)
-- [src/handlers/finance/attachment/list_attachments.rs](file://src/handlers/finance/attachment/list_attachments.rs)
-- [src/handlers/finance/attachment/create_text_attachment.rs](file://src/handlers/finance/attachment/create_text_attachment.rs)
-- [src/handlers/finance/attachment/update_attachment_content.rs](file://src/handlers/finance/attachment/update_attachment_content.rs)
-- [src/handlers/finance/attachment/delete_attachment.rs](file://src/handlers/finance/attachment/delete_attachment.rs)
-- [src/handlers/finance/attachment/get_attachment_content.rs](file://src/handlers/finance/attachment/get_attachment_content.rs)
-- [src/handlers/finance/attachment/response.rs](file://src/handlers/finance/attachment/response.rs)
-- [src/models/attachment.rs](file://src/models/attachment.rs)
-- [src/service/dal/attachment.rs](file://src/service/dal/attachment.rs)
-- [common/src/enums/file.rs](file://common/src/enums/file.rs)
-- [common/src/api/attachment.rs](file://common/src/api/attachment.rs)
+- [src/handlers/finance/attachment/mod.rs](src/handlers/finance/attachment/mod.rs)
+- [src/handlers/finance/attachment/upload_attachment.rs](src/handlers/finance/attachment/upload_attachment.rs)
+- [src/handlers/finance/attachment/get_attachment.rs](src/handlers/finance/attachment/get_attachment.rs)
+- [src/handlers/finance/attachment/list_attachments.rs](src/handlers/finance/attachment/list_attachments.rs)
+- [src/handlers/finance/attachment/create_text_attachment.rs](src/handlers/finance/attachment/create_text_attachment.rs)
+- [src/handlers/finance/attachment/update_attachment_content.rs](src/handlers/finance/attachment/update_attachment_content.rs)
+- [src/handlers/finance/attachment/delete_attachment.rs](src/handlers/finance/attachment/delete_attachment.rs)
+- [src/handlers/finance/attachment/get_attachment_content.rs](src/handlers/finance/attachment/get_attachment_content.rs)
+- [src/handlers/finance/attachment/response.rs](src/handlers/finance/attachment/response.rs)
+- [src/models/attachment.rs](src/models/attachment.rs)
+- [src/service/dal/attachment.rs](src/service/dal/attachment.rs)
+- [common/src/enums/file.rs](common/src/enums/file.rs)
+- [common/src/api/attachment.rs](common/src/api/attachment.rs)
 </cite>
 
 ## 目录
@@ -67,17 +67,17 @@ L --> A
 ```
 
 图表来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/attachment/create_text_attachment.rs:13-45](file://src/handlers/finance/attachment/create_text_attachment.rs#L13-L45)
-- [src/handlers/finance/attachment/get_attachment.rs:13-42](file://src/handlers/finance/attachment/get_attachment.rs#L13-L42)
-- [src/handlers/finance/attachment/list_attachments.rs:13-45](file://src/handlers/finance/attachment/list_attachments.rs#L13-L45)
-- [src/handlers/finance/attachment/update_attachment_content.rs:13-45](file://src/handlers/finance/attachment/update_attachment_content.rs#L13-L45)
-- [src/handlers/finance/attachment/delete_attachment.rs:11-45](file://src/handlers/finance/attachment/delete_attachment.rs#L11-L45)
-- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](file://src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/service/dal/attachment.rs:45-85](file://src/service/dal/attachment.rs#L45-L85)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/attachment/create_text_attachment.rs:13-45](src/handlers/finance/attachment/create_text_attachment.rs#L13-L45)
+- [src/handlers/finance/attachment/get_attachment.rs:13-42](src/handlers/finance/attachment/get_attachment.rs#L13-L42)
+- [src/handlers/finance/attachment/list_attachments.rs:13-45](src/handlers/finance/attachment/list_attachments.rs#L13-L45)
+- [src/handlers/finance/attachment/update_attachment_content.rs:13-45](src/handlers/finance/attachment/update_attachment_content.rs#L13-L45)
+- [src/handlers/finance/attachment/delete_attachment.rs:11-45](src/handlers/finance/attachment/delete_attachment.rs#L11-L45)
+- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
+- [src/service/dal/attachment.rs:45-85](src/service/dal/attachment.rs#L45-L85)
 
 章节来源
-- [src/handlers/finance/attachment/mod.rs:1-21](file://src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
 
 ## 核心组件
 - 模型与实体
@@ -92,8 +92,8 @@ L --> A
   - 上传、文本创建、详情获取、列表查询、内容更新、内容读取、删除。
 
 章节来源
-- [src/models/attachment.rs:9-117](file://src/models/attachment.rs#L9-L117)
-- [src/service/dal/attachment.rs:45-85](file://src/service/dal/attachment.rs#L45-L85)
+- [src/models/attachment.rs:9-117](src/models/attachment.rs#L9-L117)
+- [src/service/dal/attachment.rs:45-85](src/service/dal/attachment.rs#L45-L85)
 
 ## 架构总览
 附件管理遵循严格的分层与单向依赖：
@@ -122,8 +122,8 @@ H-->>C : "201 Created + ApiResponse"
 ```
 
 图表来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/service/dal/attachment.rs:96-134](file://src/service/dal/attachment.rs#L96-L134)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/service/dal/attachment.rs:96-134](src/service/dal/attachment.rs#L96-L134)
 
 ## 详细组件分析
 
@@ -152,12 +152,12 @@ Insert --> Return["返回 201 + 附件详情"]
 ```
 
 图表来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/service/dal/attachment.rs:96-134](file://src/service/dal/attachment.rs#L96-L134)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/service/dal/attachment.rs:96-134](src/service/dal/attachment.rs#L96-L134)
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/service/dal/attachment.rs:96-134](file://src/service/dal/attachment.rs#L96-L134)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/service/dal/attachment.rs:96-134](src/service/dal/attachment.rs#L96-L134)
 
 ### 创建文本附件（POST /attachments/text）
 - 功能：以 UTF-8 文本直接创建小型附件，自动推断或接受 MIME 类型。
@@ -168,8 +168,8 @@ Insert --> Return["返回 201 + 附件详情"]
   - 将文本转为字节后复用通用上传流程
 
 章节来源
-- [src/handlers/finance/attachment/create_text_attachment.rs:13-45](file://src/handlers/finance/attachment/create_text_attachment.rs#L13-L45)
-- [src/service/dal/attachment.rs:136-151](file://src/service/dal/attachment.rs#L136-L151)
+- [src/handlers/finance/attachment/create_text_attachment.rs:13-45](src/handlers/finance/attachment/create_text_attachment.rs#L13-L45)
+- [src/service/dal/attachment.rs:136-151](src/service/dal/attachment.rs#L136-L151)
 
 ### 获取附件详情（GET /attachments/{id}）
 - 功能：按 ID 获取附件元数据，仅允许所有者（root_user_id）访问。
@@ -181,7 +181,7 @@ Insert --> Return["返回 201 + 附件详情"]
   - 返回附件详情
 
 章节来源
-- [src/handlers/finance/attachment/get_attachment.rs:13-42](file://src/handlers/finance/attachment/get_attachment.rs#L13-L42)
+- [src/handlers/finance/attachment/get_attachment.rs:13-42](src/handlers/finance/attachment/get_attachment.rs#L13-L42)
 
 ### 列出附件（GET /attachments）
 - 功能：分页列出当前用户的附件，支持按 purpose 与 file_type 过滤。
@@ -192,7 +192,7 @@ Insert --> Return["返回 201 + 附件详情"]
   - 透传分页参数至 DAL
 
 章节来源
-- [src/handlers/finance/attachment/list_attachments.rs:13-45](file://src/handlers/finance/attachment/list_attachments.rs#L13-L45)
+- [src/handlers/finance/attachment/list_attachments.rs:13-45](src/handlers/finance/attachment/list_attachments.rs#L13-L45)
 
 ### 读取文本内容（GET /attachments/{id}/content）
 - 功能：读取附件的 UTF-8 文本内容与编码信息。
@@ -203,7 +203,7 @@ Insert --> Return["返回 201 + 附件详情"]
   - 读取文本内容并返回元数据与内容
 
 章节来源
-- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](file://src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
+- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
 
 ### 更新文本内容（PUT /attachments/{id}/content）
 - 功能：全量替换附件的 UTF-8 文本内容，支持乐观锁（expected_updated_at）。
@@ -215,8 +215,8 @@ Insert --> Return["返回 201 + 附件详情"]
   - 返回更新后的内容与时间戳
 
 章节来源
-- [src/handlers/finance/attachment/update_attachment_content.rs:13-45](file://src/handlers/finance/attachment/update_attachment_content.rs#L13-L45)
-- [src/service/dal/attachment.rs:175-189](file://src/service/dal/attachment.rs#L175-L189)
+- [src/handlers/finance/attachment/update_attachment_content.rs:13-45](src/handlers/finance/attachment/update_attachment_content.rs#L13-L45)
+- [src/service/dal/attachment.rs:175-189](src/service/dal/attachment.rs#L175-L189)
 
 ### 删除附件（DELETE /attachments/{id}）
 - 功能：软删除附件（仅修改状态），保留审计数据。
@@ -227,7 +227,7 @@ Insert --> Return["返回 201 + 附件详情"]
   - 执行软删除
 
 章节来源
-- [src/handlers/finance/attachment/delete_attachment.rs:11-45](file://src/handlers/finance/attachment/delete_attachment.rs#L11-L45)
+- [src/handlers/finance/attachment/delete_attachment.rs:11-45](src/handlers/finance/attachment/delete_attachment.rs#L11-L45)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 的 attachment_manage 入口，不直接访问 DAL/DAO。
@@ -280,12 +280,12 @@ AttachmentDal <|.. AttachmentDalImpl : "实现"
 ```
 
 图表来源
-- [src/models/attachment.rs:9-117](file://src/models/attachment.rs#L9-L117)
-- [src/service/dal/attachment.rs:45-92](file://src/service/dal/attachment.rs#L45-L92)
+- [src/models/attachment.rs:9-117](src/models/attachment.rs#L9-L117)
+- [src/service/dal/attachment.rs:45-92](src/service/dal/attachment.rs#L45-L92)
 
 章节来源
-- [src/models/attachment.rs:9-117](file://src/models/attachment.rs#L9-L117)
-- [src/service/dal/attachment.rs:45-92](file://src/service/dal/attachment.rs#L45-L92)
+- [src/models/attachment.rs:9-117](src/models/attachment.rs#L9-L117)
+- [src/service/dal/attachment.rs:45-92](src/service/dal/attachment.rs#L45-L92)
 
 ## 性能与容量建议
 - 文件大小限制
@@ -324,9 +324,9 @@ AttachmentDal <|.. AttachmentDalImpl : "实现"
   - 统计上传成功率、失败原因分布与平均耗时。
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:26-71](file://src/handlers/finance/attachment/upload_attachment.rs#L26-L71)
-- [src/handlers/finance/attachment/get_attachment.rs:26-39](file://src/handlers/finance/attachment/get_attachment.rs#L26-L39)
-- [src/handlers/finance/attachment/delete_attachment.rs:24-42](file://src/handlers/finance/attachment/delete_attachment.rs#L24-L42)
+- [src/handlers/finance/attachment/upload_attachment.rs:26-71](src/handlers/finance/attachment/upload_attachment.rs#L26-L71)
+- [src/handlers/finance/attachment/get_attachment.rs:26-39](src/handlers/finance/attachment/get_attachment.rs#L26-L39)
+- [src/handlers/finance/attachment/delete_attachment.rs:24-42](src/handlers/finance/attachment/delete_attachment.rs#L24-L42)
 
 ## 结论
 附件管理 API 以清晰的分层与明确的职责边界实现了安全的文件上传、文本内容管理与查询能力。通过统一的 DAL 编排与稳健的错误处理，满足日常业务需求。建议在生产环境结合对象存储与 CDN 提升性能，并通过分块上传与任务队列支持大规模场景。
@@ -389,8 +389,8 @@ AttachmentDal <|.. AttachmentDalImpl : "实现"
   - Document、Image、Audio、Video、Binary（由 MIME 前缀或扩展名推断）
 
 章节来源
-- [src/service/dal/attachment.rs:198-277](file://src/service/dal/attachment.rs#L198-L277)
-- [common/src/enums/file.rs:18-34](file://common/src/enums/file.rs#L18-L34)
+- [src/service/dal/attachment.rs:198-277](src/service/dal/attachment.rs#L198-L277)
+- [common/src/enums/file.rs:18-34](common/src/enums/file.rs#L18-L34)
 
 ### 高级用法示例
 - 批量上传

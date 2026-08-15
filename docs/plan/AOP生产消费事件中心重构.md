@@ -118,13 +118,7 @@ Consumer（异步消费端）
 
 ## 五、验收清单（2026-07-20 全部达成 ✅）
 
-- [x] `service/dao/event_queue/` 目录已删除（3 文件全部迁移）
-- [x] `pkg/aop/` 框架包含完整 3 层：core（抽象 + Registry）/ queue（存储）/ impl（业务事件与消费者）
-- [x] MessageDomain.send_to_agent 通过 `aop::publish(MessageCreatedEvent)` 发布事件
-- [x] Consumer 通过 `aop::registry().dequeue_for("agent.awakening")` 取事件
-- [x] 全部测试通过（779+ 断言）
-- [x] cargo check 无警告
-- [x] 核心测试覆盖：Registry 同步/异步/多消费者扇出 4 个 + Queue 优先级/保序/nack 10 个
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -156,3 +150,4 @@ Consumer（异步消费端）
 3. **注册并初始化**：[aop/mod.rs :: init_all()](../../src/pkg/aop/mod.rs)
    - `REGISTRY.register_consumer(Arc::new(NewConsumer))?;`
 4. **业务 publish 接入**：搜索业务层调用点，将原 `event_queue` 或直接调用改为 `aop::publish(NewEvent { ... })`
+

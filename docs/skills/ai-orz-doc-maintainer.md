@@ -2,19 +2,19 @@
 
 > 🎯 本文档是 AI Orz 项目「4 类文档完整链路管理（design / plan / wiki 长文 / RAG 知识卡）」中 doc 一侧的 Skill spec：负责 design 决策快照 + plan 落地结果快照 + superpowers 执行蓝图归档精简，并强制四类文档互引闭环（写 design/plan 时必须在关联文档段显式引用对应 wiki 长文 + RAG 卡），保证读者从任何一类都能跳到另外三类。
 >
-> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-doc-maintainer/SKILL.md](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-doc-maintainer/SKILL.md)
+> 简短入口版（可直接注册为 Trae Skill）见：[.trae/skills/ai-orz-doc-maintainer/SKILL.md](.trae/skills/ai-orz-doc-maintainer/SKILL.md)
 >
-> 平行 Skill（负责另外两类 + 四类互引的另一半职责）：[ai-orz-wiki-maintainer.md](file:///Users/aman/Technology/rust/ai_orz/docs/skills/ai-orz-wiki-maintainer.md) + [对应注册版](file:///Users/aman/Technology/rust/ai_orz/.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
+> 平行 Skill（负责另外两类 + 四类互引的另一半职责）：[ai-orz-wiki-maintainer.md](docs/skills/ai-orz-wiki-maintainer.md) + [对应注册版](.trae/skills/ai-orz-wiki-maintainer/SKILL.md)
 >
 > 状态：v2.0（2026-08-15，v2.0 架构升级：从「doc 四象限独立管理」→「4 类文档（design/plan/wiki长文/RAG卡）完整互引闭环」；用户明确给出四类文档定义：design=为什么、plan=怎么做+结果、wiki=是什么、RAG卡=总结+索引）
 > 查阅场景：任何需要写 design/plan 文档、需要精简归档 superpowers 执行蓝图、或者需要判断"一段代码能不能保留在文档里"的时候打开；如果是 wiki 长文/知识卡的生命周期管理（包括与 design/plan 互引回填）请走 ai-orz-wiki-maintainer；两类文档互引部分两 Skill 有交叉，边界见本档 §1.3。
 >
 > 关联文档：
-> - [AGENTS.md §2.1 文档编写与维护规范（强制执行）](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md#L92-L358) — 本文档的 SSOT，所有细则以 AGENTS 为准；本 Skill 是把 AGENTS §2.1 翻译成可执行的 agent 工作流步骤 + 判定表 + 归档模板
-> - [docs/plan/2026-08-15-文档规范与仓库精简.md](file:///Users/aman/Technology/rust/ai_orz/docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — 本文档覆盖的 SOP 真实执行过一次（2026-08-15，释放 ≈8 万行 / -69% 活跃文档行数）
-> - [docs/skills/ai-orz-wiki-maintainer.md](file:///Users/aman/Technology/rust/ai_orz/docs/skills/ai-orz-wiki-maintainer.md) — 平行 Skill：专门负责维护 docs/wiki 的人类长文 + RAG 知识卡，并负责回填本 Skill 写 design/plan 时留下的 wiki/RAG 卡路径占位
-> - 对应人类百科长文：（待 wiki 同步到 Skill 文档时再回填绝对路径）
-> - 对应 RAG 知识卡：（待 wiki 同步时生成知识卡后回填绝对路径）
+> - [AGENTS.md §2.1 文档编写与维护规范（强制执行）](AGENTS.md#L92-L358) — 本文档的 SSOT，所有细则以 AGENTS 为准；本 Skill 是把 AGENTS §2.1 翻译成可执行的 agent 工作流步骤 + 判定表 + 归档模板
+> - [docs/plan/2026-08-15-文档规范与仓库精简.md](docs/plan/2026-08-15-%E6%96%87%E6%A1%A3%E8%A7%84%E8%8C%83%E4%B8%8E%E4%BB%93%E5%BA%93%E7%B2%BE%E7%AE%80.md) — 本文档覆盖的 SOP 真实执行过一次（2026-08-15，释放 ≈8 万行 / -69% 活跃文档行数）
+> - [docs/skills/ai-orz-wiki-maintainer.md](docs/skills/ai-orz-wiki-maintainer.md) — 平行 Skill：专门负责维护 docs/wiki 的人类长文 + RAG 知识卡，并负责回填本 Skill 写 design/plan 时留下的 wiki/RAG 卡路径占位
+> - 对应人类百科长文：（待 wiki 同步到 Skill 文档时再回填相对仓库根路径）
+> - 对应 RAG 知识卡：（待 wiki 同步时生成知识卡后回填相对仓库根路径）
 
 ---
 
@@ -29,7 +29,7 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 | ① **Design** | `docs/design/*.md` | **为什么做**（设计决策 + 关键决策表）| 👉 `ai-orz-doc-maintainer`（本 Skill）| 单篇 200-400 行，定稿后不追代码 |
 | ② **Plan** | `docs/plan/*.md` | **怎么做 + 落地结果快照**（7 章骨架，无 checkbox/命令） | 👉 `ai-orz-doc-maintainer`（本 Skill）| 单篇 150-250 行 |
 | ③ **Wiki 长文（百科）** | `docs/wiki/zh/content/` 8 大板块 | **是什么**（系统化人类百科，10 节目录 + cite + 来源） | 👉 `ai-orz-wiki-maintainer` | 353 篇 ≈134k 行，跟随代码增量同步 |
-| ④ **RAG 知识卡（总结+索引）** | `docs/wiki/knowledge/zh/`（+ 两个顶层模块 + E2E 子模块） | **总结 + 索引**（给 Agent RAG 召回的原子知识单元） | 👉 `ai-orz-wiki-maintainer` | 54 张 ≈2.3k 行，增量增长允许重叠 |
+| ④ **RAG 知识卡（总结+索引）** | `docs/wiki/knowledge/zh/`（+ 两个顶层模块 + E2E 子模块） | **总结 + 索引**（给 Agent RAG 召回的原子知识单元） | 👉 `ai-orz-wiki-maintainer` | ~70 张 ≈3k 行，增量增长按 AGENTS §2.1.3 图谱法则 5 级决策合并/拆分；仅 Level 3 互补视角平行卡允许独立存在且必须显式关联声明，禁止裸重叠 |
 
 **必须四类一起维护的原因**：
 - 只更新 ①②（doc 侧）不更新 ③④ → 人类找不到系统化百科，Agent RAG 仍召回过期知识（与代码不一致）
@@ -57,7 +57,7 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 - 任何文档中的「代码块性质判定」与「代码引用路径引导替换」
 - AGENTS §2.1 的 4 件套文件头（🎯定位 / 状态 / 查阅场景 / 关联文档）补全
 - 文档中 placeholder 清除（TBD / TODO / 酌情 / 参考 Task 等）
-- ⭐ **四类互引 doc 侧职责**：写 ① design / ② plan 时，必须在「关联文档」段显式列出对应 ③ wiki 长文 + ④ RAG 卡的**目标绝对路径**（如果当时 wiki 还没同步，先写「占位目标路径」，注明「待 wiki 同步后由 ai-orz-wiki-maintainer 回填真实路径」）；等 wiki-maintainer 完成同步后，若本 Skill 是最后执行方，负责回头把占位路径替换为真实存在的路径。
+- ⭐ **四类互引 doc 侧职责**：写 ① design / ② plan 时，必须在「关联文档」段显式列出对应 ③ wiki 长文 + ④ RAG 卡的**目标相对仓库根路径**（如果当时 wiki 还没同步，先写「占位目标路径」，注明「待 wiki 同步后由 ai-orz-wiki-maintainer 回填真实路径」）；等 wiki-maintainer 完成同步后，若本 Skill 是最后执行方，负责回头把占位路径替换为真实存在的路径。
 
 ❌ **不做（转给 ai-orz-wiki-maintainer）**：
 - `docs/wiki/` 下的人类长文更新
@@ -67,16 +67,18 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 
 ### 1.3 四类文档互引铁律（强制执行；doc 侧视角）
 
-**路径格式约定**（与 wiki-maintainer 完全一致，四类文档统一规则）：
-- 引用**源码文件**（.rs/.ts/.toml/.sql 等）→ 统一写 `file://相对项目根的路径`（仅 wiki cite 区/章节来源段使用；doc 侧 design/plan 用绝对路径）
-- 引用**另外三类文档**（design/plan/wiki 长文/RAG 卡的 .md 路径）→ 统一写 **`file:///绝对完整路径`**（AGENTS §2.1 定义的代码引用首选格式；这是 v2.0 升级的关键——**显式文档互引用绝对路径，一眼就能区分"跳代码"还是"跳文档"**）
+**路径格式约定**（AGENTS §2.1.2 相对路径统一格式，三环境通跳；与 wiki-maintainer 完全一致，四类文档统一规则）：
+- 引用**源码文件**（.rs/.ts/.toml/.sql 等）→ 统一写 `相对路径#Ln-Lm`（如 `src/pkg/logging.rs#L15-L42`；design/plan 的涉及文件清单表 / 代码块路径引导都沿用此格式，GitHub 原生高亮 + IDE 文件级跳转）
+- 引用**另外三类文档**（design/plan/wiki 长文/RAG 卡的 .md 路径）→ 统一写**相对仓库根路径**（如 `docs/design/x_design.md`；GitHub 原生解析 + IDE 可点 + 文档中心通跳——**一律相对路径，永不写本机绝对路径与 `file://` 伪协议**）
+
+**⭐【路径格式硬约束】文档与 RAG 卡中所有路径引用（关联文档头部 / §三涉及文件清单 / 代码块路径引导）必须使用 AGENTS §2.1.2 相对路径格式（行号 `#Lx-Ly`）**：出现 `file:///` 绝对路径 / `file://` 伪协议 / legacy 冒号行号 → 执行结果 FAIL，改完再过。
 
 互引规则矩阵（doc 侧本 Skill 负责的两类为主体）：
 
 | 主体类型 | 在哪个位置引用另外三类 | 需要引用的三类 & 写法 |
 |---------|----------------------|---------------------|
-| **① Design（本 Skill 职责）**| 文头「关联文档」段（模板 A 强制） | ② plan：`[文档标题](file:///abs/path/docs/plan/x.md)`（没有对应 plan 就注明「暂无对应 plan 文档」）<br>③ wiki 长文：⭐ **强制至少 1 条**目标最终绝对路径（占位或真实）；若有多组长文至少列主组 1 篇<br>④ RAG 知识卡：⭐ **强制至少 1 条**对应卡目标最终绝对路径（占位或真实）；同主题有多张平行卡时至少列 1 张主卡 |
-| **② Plan（本 Skill 职责）**| 文头「关联文档」段 + §三 涉及文件清单末尾「落地索引」两行 | ① design：`[文档标题](file:///abs/path/docs/design/x_design.md)`（没有对应 design 就注明，但强烈建议有）<br>③ wiki 长文：⭐ **强制至少 1 条**（与 design 同规则）<br>④ RAG 知识卡：⭐ **强制至少 1 条**（与 design 同规则）；plan 是落地结果，所以必须有对应卡作为索引，绝不允许只写 plan 不填卡路径占位 |
+| **① Design（本 Skill 职责）**| 文头「关联文档」段（模板 A 强制） | ② plan：`[文档标题](docs/plan/x.md)`（没有对应 plan 就注明「暂无对应 plan 文档」）<br>③ wiki 长文：⭐ **强制至少 1 条**目标最终相对仓库根路径（占位或真实）；若有多组长文至少列主组 1 篇<br>④ RAG 知识卡：⭐ **强制至少 1 条**对应卡目标最终相对仓库根路径（占位或真实）；同主题有多张平行卡时至少列 1 张主卡 |
+| **② Plan（本 Skill 职责）**| 文头「关联文档」段 + §三 涉及文件清单末尾「落地索引」两行 | ① design：`[文档标题](docs/design/x_design.md)`（没有对应 design 就注明，但强烈建议有）<br>③ wiki 长文：⭐ **强制至少 1 条**（与 design 同规则）<br>④ RAG 知识卡：⭐ **强制至少 1 条**（与 design 同规则）；plan 是落地结果，所以必须有对应卡作为索引，绝不允许只写 plan 不填卡路径占位 |
 
 ```
                         ┌──────────────┐
@@ -128,14 +130,14 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 > 关联文档：
 > - [上层权威文档](../../AGENTS.md) — 简要说明关联点
 > - [横向相关 design/plan 文档](../design/xxx.md) — 简要说明关联点
-> - [对应 Wiki 长文：主题名](file:///绝对项目根路径/docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】对应人类百科长文目标最终绝对路径；若 wiki 还未同步，先占位写路径并注明「占位：待 wiki 同步后回填」
-> - [对应 RAG 知识卡：主题名](file:///绝对项目根路径/docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】对应知识卡目标最终绝对路径；同上，占位写法相同
+> - [对应 Wiki 长文：主题名](docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】对应人类百科长文目标最终相对仓库根路径；若 wiki 还未同步，先占位写路径并注明「占位：待 wiki 同步后回填」
+> - [对应 RAG 知识卡：主题名](docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】对应知识卡目标最终相对仓库根路径；同上，占位写法相同
 ```
 
 **关于「占位路径」的标准写法**（本 Skill 与 wiki-maintainer 约定好的统一格式）：
 ```
-> - [对应 Wiki 长文：身份凭证统一CRUD分发](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/Finance 处理器/身份凭证统一CRUD分发/身份凭证统一CRUD分发.md) — 占位：待 ai-orz-wiki-maintainer 同步代码到 wiki 后回填真实路径有效性
-> - [对应 RAG 知识卡：身份凭证统一 CRUD 分发策略](file:///Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/身份凭证Domain统一CRUD分发按kind收口/身份凭证Domain统一CRUD分发按kind收口.md) — 占位：待 ai-orz-wiki-maintainer 生成知识卡后回填真实路径有效性
+> - [对应 Wiki 长文：身份凭证统一CRUD分发](docs/wiki/zh/content/核心模块/Finance 处理器/身份凭证统一CRUD分发/身份凭证统一CRUD分发.md) — 占位：待 ai-orz-wiki-maintainer 同步代码到 wiki 后回填真实路径有效性
+> - [对应 RAG 知识卡：身份凭证统一 CRUD 分发策略](docs/wiki/knowledge/zh/身份凭证Domain统一CRUD分发按kind收口/身份凭证Domain统一CRUD分发按kind收口.md) — 占位：待 ai-orz-wiki-maintainer 生成知识卡后回填真实路径有效性
 ```
 **路径名必须精确到最终真实目标名**（不要写「todo」「待填」这类模糊路径），因为 wiki-maintainer 会反向 grep 这些占位路径来确定「我需要同步哪篇长文/哪张卡」。
 
@@ -170,7 +172,7 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 | **3. enum 变体列表**（全是 `Variant(i32)` 或带字段声明但无 impl）| 契约 ✅ | 同上 | 同上 |
 | **4. SQL `CREATE TABLE` Schema** | 契约 ✅ | 同上（设计文档常用，保留可读性强）| 同上 + 附 migrations/ 目录对应路径 |
 | **5. 目录树 ASCII 图** / 数据流 ASCII 图（纯文本矩形图）| 契约 ✅ | 强烈建议保留（无对应源码，这是架构意图） | 不用附源码路径 |
-| **6. 函数 `{ }` 内部逻辑 / match 分支体 / for 循环 / if 控制流** | 实现快照 ❌ | **禁止** | 删 → 一句话路径引导：`> 字段级逻辑见 [xxx.rs::func](file:///.../xxx.rs#Lxx-Lxx)` |
+| **6. 函数 `{ }` 内部逻辑 / match 分支体 / for 循环 / if 控制流** | 实现快照 ❌ | **禁止** | 删 → 一句话路径引导：`> 字段级逻辑见 [xxx.rs::func](src/.../xxx.rs#Lxx-Lxx)` |
 | **7. 完整测试代码 / `cargo test` 具体参数 / `git commit` 命令 / bash 执行脚本** | 实现快照 ❌ | **禁止** | 删 → plan 文档 §6 执行结果摘要只写"X passed / 0 failed"表格，无命令细节 |
 | **8. Superpowers 蓝图中的 Task/Step 流程 checklist**（带 `- [x]` 语法）| 实现快照 ❌（plan/archive 中禁止）| **禁止**（仅 superpowers 临时文档中允许存在） | 删 → 用 §5 验收清单 或 §6 执行结果摘要表格替代 |
 | **9. design 文档中完整函数调用栈示例（能直接编译的）**| 实现快照 ❌ | **禁止** | 删 → 替换为 ASCII 数据流图（是契约型）或路径引导 |
@@ -179,10 +181,10 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 ### 契约代码块保留时「源码路径引导」的标准写法
 
 ```
-> 当前实现：[file.rs::StructName](file:///绝对路径/到/file.rs#L起始行-L结束行)
+> 当前实现：[file.rs::StructName](src/path/to/file.rs#L起始行-L结束行)
 ```
 
-- 必须是**绝对路径**（项目根开始的绝对路径，不是相对路径；wiki 才写 `file://相对路径`——两套引用格式分野明确！）
+- 必须是**相对仓库根路径 + `#Ln-Lm` 行号**（AGENTS §2.1.2 统一格式；GitHub 原生高亮 + IDE 可点 + 文档中心通跳——不再区分 doc 侧 / wiki 侧两套引用格式）
 - 放在代码块**紧邻下一行**，不要隔开
 - 允许省略行号，但不推荐（文档是决策快照，写行号方便未来读者核对"当时的版本是哪段"）
 
@@ -194,17 +196,17 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 
 标准格式（与 AGENTS §2.1 完全一致）：
 ```
-[简短描述](file:///绝对路径/到文件.rs#L起始行-L结束行)
+[简短描述](src/相对路径/到/file.rs#L起始行-L结束行)
 ```
 
 - 文字描述要把"读者为什么要点这个链接"的动机写出来
-- 路径是文件系统绝对路径 `/Users/.../ai_orz/path/to/file.rs`，点击后 IDE 立刻跳转
+- 路径是相对仓库根路径（如 `src/service/domain/finance/identity_credential.rs`），GitHub 原生高亮 + IDE 可点 + 文档中心通跳
 - 行号范围**推荐写**（让读者跳到精确位置，而不是自己搜文件）
 
 **错误对比**：
 | 错（贴代码块，20 行） | 对（路径引导，1 行） |
 |---|---|
-| 完整 impl 块代码（20 行） | `> IdentityCredentialManage::update 分发逻辑见 [identity_credential.rs::update](file:///.../identity_credential.rs#L80-L210)` |
+| 完整 impl 块代码（20 行） | `> IdentityCredentialManage::update 分发逻辑见 [identity_credential.rs::update](src/service/domain/finance/identity_credential.rs#L80-L210)` |
 
 ---
 
@@ -224,8 +226,8 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 > 关联文档：
 > - [AGENTS.md §X.X](../../AGENTS.md) — 适用的架构规范
 > - [相关 plan 文档](../plan/xxx.md) — 落地实施计划与结果（若无则写「暂无对应 plan 文档」）
-> - [对应 Wiki 长文：主题名](file:///绝对项目根路径/docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】占位或真实路径
-> - [对应 RAG 知识卡：主题名](file:///绝对项目根路径/docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】占位或真实路径
+> - [对应 Wiki 长文：主题名](docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】占位或真实路径
+> - [对应 RAG 知识卡：主题名](docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】占位或真实路径
 
 ---
 
@@ -241,13 +243,13 @@ AI Orz 项目维护**四类文档完整链路**，必须**同时维护、显式�
 ```
 ASCII 图
 ```
-> 关键结构定义见：[mod.rs::Name](file:///.../mod.rs#Lxx-Lxx)
+> 关键结构定义见：[mod.rs::Name](src/.../mod.rs#Lxx-Lxx)
 
 ## 三、涉及文件清单（按分层索引：DAO/DAL/Domain/Adapter/Models/Frontend/Common）
 | 文件 | 角色 | 内容摘要 |
 |------|------|---------|
-| [path.rs](file:///...) | DAO 层 | 负责什么数据访问 |
-| **落地索引（四类互引）** | ③ [Wiki 长文主题名](file:///绝对长文路径) ④ [RAG 卡名](file:///绝对卡路径) | ⭐ 与文头关联文档对齐，方便读者从文件表直接跳百科/卡 |
+| [path.rs](src/...) | DAO 层 | 负责什么数据访问 |
+| **落地索引（四类互引）** | ③ [Wiki 长文主题名](docs/wiki/zh/content/<板块>/<子主题>/同名.md) ④ [RAG 卡名](docs/wiki/knowledge/zh/<卡目录名>/同名.md) | ⭐ 与文头关联文档对齐，方便读者从文件表直接跳百科/卡 |
 | **零改动面** | [说明] | — |
 
 ## 四、关键边界 / 行为红线（回归必保，编号列表 1 句 1 条）
@@ -256,7 +258,7 @@ ASCII 图
 
 ## 五、扩展模式（新增同类功能走哪条路）
 ### 5.1 [场景一]
-步骤 1 → 改哪个文件 → 参考 [某现有变体](file:///.../file.rs#Lxx-Lxx)
+步骤 1 → 改哪个文件 → 参考 [某现有变体](src/.../file.rs#Lxx-Lxx)
 步骤 2 → 改哪个 match 分支 → ...
 ```
 
@@ -272,8 +274,8 @@ ASCII 图
 > 关联文档：
 > - [相关设计文档](../design/xxx_design.md) — 设计动机；若无则写「暂无对应 design 文档（强烈建议补写）」
 > - [AGENTS §X.X](../../AGENTS.md) — 适用的架构规范
-> - [对应 Wiki 长文：主题名](file:///绝对项目根路径/docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】占位或真实路径；plan 是落地结果，必须对应百科长文
-> - [对应 RAG 知识卡：主题名](file:///绝对项目根路径/docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】占位或真实路径；plan 是落地结果，必须对应知识卡索引
+> - [对应 Wiki 长文：主题名](docs/wiki/zh/content/<板块>/<子主题>/同名.md) — ⭐【四类互引强制】占位或真实路径；plan 是落地结果，必须对应百科长文
+> - [对应 RAG 知识卡：主题名](docs/wiki/knowledge/zh/<卡目录名>/同名.md) — ⭐【四类互引强制】占位或真实路径；plan 是落地结果，必须对应知识卡索引
 
 ---
 
@@ -299,8 +301,8 @@ ASCII 图
 ## 三、涉及文件清单（每行带可点击路径 + 变更摘要）
 | 文件 | 角色 | 变更内容 |
 |------|------|---------|
-| [common/src/models/xxx.rs](file:///...) | 模型层 | 新增 N 个方法 + 2 枚举 |
-| **落地索引（四类互引）** | ③ [Wiki 长文主题名](file:///绝对长文路径) ④ [RAG 卡名](file:///绝对卡路径) | ⭐【强制】与文头关联文档对齐，写 plan 时这两行是落地成果的索引出口；不要等 wiki 同步，先写精确占位路径 |
+| [common/src/models/xxx.rs](common/src/models/xxx.rs) | 模型层 | 新增 N 个方法 + 2 枚举 |
+| **落地索引（四类互引）** | ③ [Wiki 长文主题名](docs/wiki/zh/content/<板块>/<子主题>/同名.md) ④ [RAG 卡名](docs/wiki/knowledge/zh/<卡目录名>/同名.md) | ⭐【强制】与文头关联文档对齐，写 plan 时这两行是落地成果的索引出口；不要等 wiki 同步，先写精确占位路径 |
 | **零改动面** | 前端/DTO/路由/集成测试 | 对外契约不变 |
 
 ## 四、[分发点 / 改动入口] 速查表（新增同类功能第一站）
@@ -308,7 +310,7 @@ ASCII 图
 | 现有分支 | 处理逻辑 | 新增类型时参考 |
 |---------|---------|--------------|
 | 类型 A | ... | 如需 xxx 走此分支体 |
-> 代码入口：[file.rs::fn 尾段](file:///.../file.rs#Lxxx-Lxxx)
+> 代码入口：[file.rs::fn 尾段](src/.../file.rs#Lxxx-Lxxx)
 
 ## 五、验收清单（YYYY-MM-DD 达成情况，无 checkbox 语法用表格）
 | 验收项 | 结果 |
@@ -329,10 +331,10 @@ ASCII 图
 
 ## 七、后续扩展路径（4 步模板）
 > **核心不变量**：trait/DTO/路由机制不动
-1. common 模型：[path.rs](file:///...) — 做什么
-2. domain 分发：[path.rs](file:///...) — 做什么
-3. handler 目录：复制 [模板](file:///...) 改字段名
-4. 前端：api + 区块组件，复制 [模板](file:///...)
+1. common 模型：[path.rs](src/...) — 做什么
+2. domain 分发：[path.rs](src/...) — 做什么
+3. handler 目录：复制 [模板](src/...) 改字段名
+4. 前端：api + 区块组件，复制 [模板](frontend/src/...)
 ```
 
 ### 5.3 模板 C：docs/archive/*.md（归档，只改文件头）
@@ -342,7 +344,7 @@ ASCII 图
 
 > 📦 **归档标记（YYYY-MM-DD）**：本文档描述的方案已被 [新文档名或提交 SHA] 取代。
 > 保留原因：[方便对比新旧设计思路 / 历史审计 / 未来回退参考]。
-> 当前生效方案请参考：[../design/新文档.md](...) 或提交 [abc1234](https://github.com/xxx/commit/abc1234)
+> 当前生效方案请参考：[../design/新文档.md](../design/新文档.md) 或提交 [abc1234](https://github.com/xxx/commit/abc1234)
 
 [原正文保留不动，绝不修改]
 ```
@@ -390,7 +392,7 @@ ASCII 图
        ↳ 在 ①② 的「关联文档段 + §三清单」中写好 ③ wiki 长文 + ④ RAG 卡的**精确占位目标路径**（允许写「占位」标签，但路径名必须是最终真实路径）
        ↳ 顺序理由：先定设计决策与实施脉络，wiki 才有东西可写
 （3）调用 【ai-orz-wiki-maintainer】→ 同步 wiki 长文 + 知识卡 ✅
-       ↳ 在 ③ wiki 长文的 <cite> 区、④ RAG 卡的 source_files[] 中写回 ① design + ② plan 的真实绝对路径
+       ↳ 在 ③ wiki 长文的 <cite> 区、④ RAG 卡的 source_files[] 中写回 ① design + ② plan 的真实相对仓库根路径
        ↳ 若第 (2) 步写的占位路径与实际 wiki 卡路径不一致，**wiki-maintainer 以实际生成路径为准，并反向通知 doc-maintainer 回头修改 ①② 中的占位路径**
 （4）若还有「占位路径」未回填 → **由最后执行的那一方负责回填**（一般是 wiki-maintainer 作为最后一步，若它没回填，doc-maintainer 在执行时 grep 自己写的占位标签，发现真路径已存在就替换）
 ```
@@ -412,9 +414,9 @@ ASCII 图
 - [ ] **⭐ 四类互引 doc 侧覆盖率底线**：
   - [ ] 本次新建/更新的 design 文档 → 关联文档段含：至少 1 条 plan（或注明暂无）+ **至少 1 条 wiki 长文占位/真实路径 + 至少 1 条 RAG 卡占位/真实路径**（0 条 wiki/RAG = 不合格）
   - [ ] 本次新建/更新的 plan 文档 → 关联文档段含：至少 1 条 design（或注明暂无）+ **至少 1 条 wiki 长文 + 至少 1 条 RAG 卡**（plan 是落地结果，必须有卡索引，0 条 = 不合格）
-  - [ ] 所有占位路径格式为：`[主题名](file:///...docs/wiki/...同名.md) — 占位：待 wiki 同步后回填`，路径名是精确目标名，不是 todo/待填
+  - [ ] 所有占位路径格式为：`[主题名](docs/wiki/.../同名.md) — 占位：待 wiki 同步后回填`，路径名是精确目标名，不是 todo/待填
 - [ ] 代码块性质判定：**0 个实现快照块**（函数体/测试/命令/checkbox）残留？
-- [ ] 所有契约代码块，紧邻下一行都有 `> 当前实现：[绝对路径]` 引导？
+- [ ] 所有契约代码块，紧邻下一行都有 `> 当前实现：[相对路径#Ln-Lm]` 引导？
 - [ ] 所有文档中的路径链接，真实存在的路径 100% 指向真实文件；**占位路径**允许当时不存在，但必须是精确目标最终路径？
 - [ ] Placeholder：0 命中（TBD / TODO / 酌情 / 参考 Task）？
 - [ ] superpowers 下超 7 天的旧蓝图——有没有处置（迁移 plan / 删 / 封存）？

@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [common/src/api/agent.rs](file://common/src/api/agent.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/handlers/hr/agent/query_agents.rs](file://src/handlers/hr/agent/query_agents.rs)
-- [src/handlers/hr/agent/search_agents.rs](file://src/handlers/hr/agent/search_agents.rs)
-- [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-- [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-- [src/handlers/hr/agent/create_external_agent.rs](file://src/handlers/hr/agent/create_external_agent.rs)
-- [src/handlers/hr/agent/get_reception_agent.rs](file://src/handlers/hr/agent/get_reception_agent.rs)
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [common/src/enums/agent_kind.rs](file://common/src/enums/agent_kind.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [common/src/api/agent.rs](common/src/api/agent.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/handlers/hr/agent/query_agents.rs](src/handlers/hr/agent/query_agents.rs)
+- [src/handlers/hr/agent/search_agents.rs](src/handlers/hr/agent/search_agents.rs)
+- [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+- [src/handlers/hr/agent/create_external_agent.rs](src/handlers/hr/agent/create_external_agent.rs)
+- [src/handlers/hr/agent/get_reception_agent.rs](src/handlers/hr/agent/get_reception_agent.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
 </cite>
 
 ## 目录
@@ -75,11 +75,11 @@ D2 --> DAL
 ```
 
 图表来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [common/src/api/agent.rs:1-394](file://common/src/api/agent.rs#L1-L394)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 
 ## 核心组件
 - 请求/响应 DTO：统一在 common 层定义，便于前后端共享
@@ -88,16 +88,16 @@ D2 --> DAL
 - 数据访问（DAL/DAO）：实现查询、搜索、分页等持久化逻辑
 
 章节来源
-- [common/src/api/agent.rs:1-394](file://common/src/api/agent.rs#L1-L394)
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [src/handlers/hr/agent/search_agents.rs:1-68](file://src/handlers/hr/agent/search_agents.rs#L1-L68)
-- [src/handlers/hr/agent/update_agent.rs:1-87](file://src/handlers/hr/agent/update_agent.rs#L1-L87)
-- [src/handlers/hr/agent/delete_agent.rs:1-35](file://src/handlers/hr/agent/delete_agent.rs#L1-L35)
-- [src/handlers/hr/agent/create_external_agent.rs:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
-- [src/handlers/hr/agent/get_reception_agent.rs:1-39](file://src/handlers/hr/agent/get_reception_agent.rs#L1-L39)
+- [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [src/handlers/hr/agent/update_agent.rs:1-87](src/handlers/hr/agent/update_agent.rs#L1-L87)
+- [src/handlers/hr/agent/delete_agent.rs:1-35](src/handlers/hr/agent/delete_agent.rs#L1-L35)
+- [src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+- [src/handlers/hr/agent/get_reception_agent.rs:1-39](src/handlers/hr/agent/get_reception_agent.rs#L1-L39)
 
 ## 架构总览
 遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 仅做参数解析与上下文传递，Domain 承载业务规则，DAL/DAO 专注数据访问。
@@ -117,8 +117,8 @@ H-->>C : "CreateAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [common/src/api/agent.rs:10-38](file://common/src/api/agent.rs#L10-L38)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 ## 详细组件分析
 
@@ -142,12 +142,12 @@ ReadBack --> Resp["返回 CreateAgentResponse"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [common/src/api/agent.rs:10-38](file://common/src/api/agent.rs#L10-L38)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [common/src/api/agent.rs:10-38](file://common/src/api/agent.rs#L10-L38)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 ### 获取 Agent 详情（get_agent）
 - 功能：根据 ID 获取 Agent 详情，支持可选统计信息加载
@@ -173,12 +173,12 @@ H-->>C : "GetAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [common/src/api/agent.rs:80-182](file://common/src/api/agent.rs#L80-L182)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [common/src/api/agent.rs:80-182](common/src/api/agent.rs#L80-L182)
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [common/src/api/agent.rs:80-182](file://common/src/api/agent.rs#L80-L182)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [common/src/api/agent.rs:80-182](common/src/api/agent.rs#L80-L182)
 
 ### 列出 Agent（list_agents）
 - 功能：分页列出 Agent，默认排除 Deleted，按 created_at 降序
@@ -189,8 +189,8 @@ H-->>C : "GetAgentResponse"
   - 列表项包含运行时状态（来自 runtime_info）
 
 章节来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [common/src/api/agent.rs:254-268](file://common/src/api/agent.rs#L254-L268)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [common/src/api/agent.rs:254-268](common/src/api/agent.rs#L254-L268)
 
 ### 通用查询 Agent（query_agents）
 - 功能：POST body 复杂查询，支持 ids、keyword、status、created_by、model_provider_id、roles、runtime_state、分页
@@ -201,8 +201,8 @@ H-->>C : "GetAgentResponse"
   - 将查询条件映射为 AgentQuery
 
 章节来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [common/src/api/agent.rs:270-293](file://common/src/api/agent.rs#L270-L293)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [common/src/api/agent.rs:270-293](common/src/api/agent.rs#L270-L293)
 
 ### 搜索 Agent（search_agents）
 - 功能：关键词搜索，支持 FTS5 + 向量语义混合搜索，同时支持过滤条件与分页
@@ -213,8 +213,8 @@ H-->>C : "GetAgentResponse"
   - 适合“语义相关性”场景
 
 章节来源
-- [src/handlers/hr/agent/search_agents.rs:1-68](file://src/handlers/hr/agent/search_agents.rs#L1-L68)
-- [common/src/api/agent.rs:295-316](file://common/src/api/agent.rs#L295-L316)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [common/src/api/agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 ### 更新 Agent（update_agent）
 - 功能：更新 Agent 元信息与配置（名称、描述、能力、灵魂提示词、模型提供商 ID）
@@ -225,8 +225,8 @@ H-->>C : "GetAgentResponse"
   - 记录 modified_by 与 updated_at
 
 章节来源
-- [src/handlers/hr/agent/update_agent.rs:1-87](file://src/handlers/hr/agent/update_agent.rs#L1-L87)
-- [common/src/api/agent.rs:184-245](file://common/src/api/agent.rs#L184-L245)
+- [src/handlers/hr/agent/update_agent.rs:1-87](src/handlers/hr/agent/update_agent.rs#L1-L87)
+- [common/src/api/agent.rs:184-245](common/src/api/agent.rs#L184-L245)
 
 ### 删除 Agent（delete_agent）
 - 功能：软删除 Agent（标记为 Deleted）
@@ -237,8 +237,8 @@ H-->>C : "GetAgentResponse"
   - 调用 Domain.delete_agent
 
 章节来源
-- [src/handlers/hr/agent/delete_agent.rs:1-35](file://src/handlers/hr/agent/delete_agent.rs#L1-L35)
-- [common/src/api/agent.rs:218-252](file://common/src/api/agent.rs#L218-L252)
+- [src/handlers/hr/agent/delete_agent.rs:1-35](src/handlers/hr/agent/delete_agent.rs#L1-L35)
+- [common/src/api/agent.rs:218-252](common/src/api/agent.rs#L218-L252)
 
 ### 外部 Agent 集成（create_external_agent）
 - 功能：创建 CLI 或 Remote 类型的 Agent，设置 external_config
@@ -263,12 +263,12 @@ ReadCreated --> R["返回响应"]
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_external_agent.rs:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
-- [common/src/enums/agent_kind.rs:1-80](file://common/src/enums/agent_kind.rs#L1-L80)
+- [src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+- [common/src/enums/agent_kind.rs:1-80](common/src/enums/agent_kind.rs#L1-L80)
 
 章节来源
-- [src/handlers/hr/agent/create_external_agent.rs:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
-- [common/src/enums/agent_kind.rs:1-80](file://common/src/enums/agent_kind.rs#L1-L80)
+- [src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+- [common/src/enums/agent_kind.rs:1-80](common/src/enums/agent_kind.rs#L1-L80)
 
 ### 接待 Agent（get_reception_agent）
 - 功能：统一路由到当前可用的前台 Agent
@@ -279,8 +279,8 @@ ReadCreated --> R["返回响应"]
   - 回退到任意 Onboarded Agent
 
 章节来源
-- [src/handlers/hr/agent/get_reception_agent.rs:1-39](file://src/handlers/hr/agent/get_reception_agent.rs#L1-L39)
-- [common/src/api/agent.rs:380-394](file://common/src/api/agent.rs#L380-L394)
+- [src/handlers/hr/agent/get_reception_agent.rs:1-39](src/handlers/hr/agent/get_reception_agent.rs#L1-L39)
+- [common/src/api/agent.rs:380-394](common/src/api/agent.rs#L380-L394)
 
 ### 状态管理
 - 生命周期状态（持久化）：Deleted、Interviewing、PendingOnboard、Onboarded、Offboarded、PendingOffboard
@@ -299,10 +299,10 @@ Onboarded --> Deleted : "软删除"
 ```
 
 图表来源
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
 
 章节来源
-- [common/src/enums/agent.rs:8-111](file://common/src/enums/agent.rs#L8-L111)
+- [common/src/enums/agent.rs:8-111](common/src/enums/agent.rs#L8-L111)
 
 ## 依赖关系分析
 - Handler 依赖 common 层的 DTO 与枚举
@@ -319,14 +319,14 @@ C --> D["DAL/DAO"]
 ```
 
 图表来源
-- [common/src/api/agent.rs:1-394](file://common/src/api/agent.rs#L1-L394)
-- [common/src/enums/agent.rs:1-152](file://common/src/enums/agent.rs#L1-L152)
-- [common/src/enums/agent_kind.rs:1-152](file://common/src/enums/agent_kind.rs#L1-L152)
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
+- [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
+- [common/src/enums/agent.rs:1-152](common/src/enums/agent.rs#L1-L152)
+- [common/src/enums/agent_kind.rs:1-152](common/src/enums/agent_kind.rs#L1-L152)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [common/src/api/agent.rs:1-394](file://common/src/api/agent.rs#L1-L394)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
 
 ## 性能考虑
 - 列表与查询：
@@ -353,11 +353,11 @@ C --> D["DAL/DAO"]
   - 对于搜索/查询，逐步缩小过滤条件定位问题
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:18-25](file://src/handlers/hr/agent/create_agent.rs#L18-L25)
-- [src/handlers/hr/agent/get_agent.rs:24-46](file://src/handlers/hr/agent/get_agent.rs#L24-L46)
-- [src/handlers/hr/agent/update_agent.rs:31-35](file://src/handlers/hr/agent/update_agent.rs#L31-L35)
-- [src/handlers/hr/agent/delete_agent.rs:23-27](file://src/handlers/hr/agent/delete_agent.rs#L23-L27)
-- [src/handlers/hr/agent/create_external_agent.rs:34-44](file://src/handlers/hr/agent/create_external_agent.rs#L34-L44)
+- [src/handlers/hr/agent/create_agent.rs:18-25](src/handlers/hr/agent/create_agent.rs#L18-L25)
+- [src/handlers/hr/agent/get_agent.rs:24-46](src/handlers/hr/agent/get_agent.rs#L24-L46)
+- [src/handlers/hr/agent/update_agent.rs:31-35](src/handlers/hr/agent/update_agent.rs#L31-L35)
+- [src/handlers/hr/agent/delete_agent.rs:23-27](src/handlers/hr/agent/delete_agent.rs#L23-L27)
+- [src/handlers/hr/agent/create_external_agent.rs:34-44](src/handlers/hr/agent/create_external_agent.rs#L34-L44)
 
 ## 结论
 本 API 提供完整的 Agent 生命周期管理能力，并通过通用查询与搜索接口满足复杂筛选与语义检索需求。结合状态管理与外部 Agent 集成，可支撑多样化的协作场景。建议在大规模数据下优先使用 query/search 的分页与过滤能力，并在详情接口按需加载统计信息以提升性能。
@@ -372,63 +372,63 @@ C --> D["DAL/DAO"]
   - 路径：/api/v1/agents
   - 请求体：CreateAgentRequest（name、roles、description、capabilities、soul、model_provider_id）
   - 响应：CreateAgentResponse（id、name、description、created_at）
-  - 参考：[common/src/api/agent.rs:10-38](file://common/src/api/agent.rs#L10-L38)
+  - 参考：[common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 - 获取 Agent 详情（get_agent）
   - 方法：GET
   - 路径：/api/v1/agents/{id}
   - 查询参数：with_stats、with_model_call_stats、stats_time_start、stats_time_end、stats_interval
   - 响应：GetAgentResponse（含 external_config、runtime_state、tools、stats 等）
-  - 参考：[common/src/api/agent.rs:80-182](file://common/src/api/agent.rs#L80-L182)
+  - 参考：[common/src/api/agent.rs:80-182](common/src/api/agent.rs#L80-L182)
 
 - 列出 Agent（list_agents）
   - 方法：GET
   - 路径：/api/v1/hr/agents
   - 查询参数：pagination（limit、offset）
   - 响应：PagedResult<AgentListItem>
-  - 参考：[common/src/api/agent.rs:254-268](file://common/src/api/agent.rs#L254-L268)
+  - 参考：[common/src/api/agent.rs:254-268](common/src/api/agent.rs#L254-L268)
 
 - 通用查询 Agent（query_agents）
   - 方法：POST
   - 路径：/api/v1/hr/agents/query
   - 请求体：AgentQueryRequest（ids、keyword、status、created_by、model_provider_id、roles、runtime_state、pagination）
   - 响应：PagedResult<AgentListItem>
-  - 参考：[common/src/api/agent.rs:270-293](file://common/src/api/agent.rs#L270-L293)
+  - 参考：[common/src/api/agent.rs:270-293](common/src/api/agent.rs#L270-L293)
 
 - 搜索 Agent（search_agents）
   - 方法：POST
   - 路径：/api/v1/hr/agents/search
   - 请求体：SearchAgentsRequest（keyword、status、created_by、model_provider_id、roles、runtime_state、pagination）
   - 响应：PagedResult<AgentListItem>
-  - 参考：[common/src/api/agent.rs:295-316](file://common/src/api/agent.rs#L295-L316)
+  - 参考：[common/src/api/agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 - 更新 Agent（update_agent）
   - 方法：PUT
   - 路径：/api/v1/agents/{id}
   - 请求体：UpdateAgentRequest（name、roles、description、capabilities、soul、model_provider_id）
   - 响应：UpdateAgentResponse
-  - 参考：[common/src/api/agent.rs:184-245](file://common/src/api/agent.rs#L184-L245)
+  - 参考：[common/src/api/agent.rs:184-245](common/src/api/agent.rs#L184-L245)
 
 - 删除 Agent（delete_agent）
   - 方法：DELETE
   - 路径：/api/v1/agents/{id}
   - 请求体：DeleteAgentRequest（id）
   - 响应：DeleteAgentResponse（success）
-  - 参考：[common/src/api/agent.rs:218-252](file://common/src/api/agent.rs#L218-L252)
+  - 参考：[common/src/api/agent.rs:218-252](common/src/api/agent.rs#L218-L252)
 
 - 外部 Agent 集成（create_external_agent）
   - 方法：POST
   - 路径：/api/v1/hr/agents/external
   - 请求体：CreateExternalAgentRequest（kind、command/endpoint 等）
   - 响应：CreateExternalAgentResponse（id、name、kind、created_at）
-  - 参考：[src/handlers/hr/agent/create_external_agent.rs:1-124](file://src/handlers/hr/agent/create_external_agent.rs#L1-L124)
+  - 参考：[src/handlers/hr/agent/create_external_agent.rs:1-124](src/handlers/hr/agent/create_external_agent.rs#L1-L124)
 
 - 接待 Agent（get_reception_agent）
   - 方法：GET
   - 路径：/api/v1/hr/agents/reception
   - 请求体：无
   - 响应：GetReceptionAgentResponse（agent_id、agent_name）
-  - 参考：[common/src/api/agent.rs:380-394](file://common/src/api/agent.rs#L380-L394)
+  - 参考：[common/src/api/agent.rs:380-394](common/src/api/agent.rs#L380-L394)
 
 ### 状态与类型
 - 生命周期状态：Deleted、Interviewing、PendingOnboard、Onboarded、Offboarded、PendingOffboard
@@ -436,5 +436,5 @@ C --> D["DAL/DAO"]
 - Agent 类型：Local、Cli、Remote
 
 章节来源
-- [common/src/enums/agent.rs:8-111](file://common/src/enums/agent.rs#L8-L111)
-- [common/src/enums/agent_kind.rs:1-80](file://common/src/enums/agent_kind.rs#L1-L80)
+- [common/src/enums/agent.rs:8-111](common/src/enums/agent.rs#L8-L111)
+- [common/src/enums/agent_kind.rs:1-80](common/src/enums/agent_kind.rs#L1-L80)

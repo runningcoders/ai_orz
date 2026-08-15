@@ -10,6 +10,13 @@
 > - [vector_search_architecture.md](./vector_search_architecture.md) — 向量搜索底层架构
 > - [memory_search_enhancement_design.md](./memory_search_enhancement_design.md) — 记忆搜索 FTS5 改造（本设计参照）
 > - [AGENTS.md](../../AGENTS.md) — 分层架构规范 §3.1 DAO/DAL 分层约定
+> - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界
+> - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+> - 【③ Wiki 长文】[存储系统.md](docs/wiki/zh/content/基础设施/存储系统/存储系统.md) — §6 实体 FTS5 同构 + 混合检索合并
+> - 【③ Wiki 长文】[记忆搜索机制.md](docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/记忆搜索机制.md) — 搜索记忆场景三种模式自动判定
+> - 【③ Wiki 长文】[Agent 搜索与推荐.md](docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 搜索与推荐.md) — Agent search 自动模式 vs 纯关键词 vs 纯向量
+> - 【④ RAG 卡 1 张】
+>   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — 模式判定策略 + 加权融合权重表 + 向量失败降级
 
 ---
 

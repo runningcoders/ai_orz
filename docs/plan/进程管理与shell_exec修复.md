@@ -103,26 +103,26 @@ handlers/system/process/
 | 文件 | 角色 | 变更内容 |
 |------|------|---------|
 | **pkg 基础设施（新增/改造）** | | |
-| [src/pkg/request_context.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/request_context.rs) | RequestContext | 新增 `tool_call_id: Option<String>` 字段 + builder 方法 + getter；默认 None 不影响现有构造点 |
-| [src/pkg/process/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/process/mod.rs) | 进程注册中心（新增） | ProcessEntry / ProcessStatus 结构体；ProcessRegistry 全局单例（register/get/list/mark_exited/refresh/tail_log）；Unix 原语（libc）is_alive/terminate；Windows 桩 unsupported |
-| [src/pkg/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/mod.rs) | pkg 模块注册 | 新增 `pub mod process;` |
+| [src/pkg/request_context.rs](src/pkg/request_context.rs) | RequestContext | 新增 `tool_call_id: Option<String>` 字段 + builder 方法 + getter；默认 None 不影响现有构造点 |
+| [src/pkg/process/mod.rs](src/pkg/process/mod.rs) | 进程注册中心（新增） | ProcessEntry / ProcessStatus 结构体；ProcessRegistry 全局单例（register/get/list/mark_exited/refresh/tail_log）；Unix 原语（libc）is_alive/terminate；Windows 桩 unsupported |
+| [src/pkg/mod.rs](src/pkg/mod.rs) | pkg 模块注册 | 新增 `pub mod process;` |
 | Cargo.toml（workspace 根） | 依赖声明 | 新增 `libc` 依赖 |
 | **DAO 层（call_id 注入 + 幂等）** | | |
-| [src/service/dao/tool_call/impl.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/tool_call/impl.rs#L78) | ToolCallDao::execute | 取 id 顺序：ctx.tool_call_id() → 复用；否则 UUID v7 生成并 ctx.to_builder().tool_call_id(id).build()；幂等防重逻辑（仅业务指定路径） |
+| [src/service/dao/tool_call/impl.rs](src/service/dao/tool_call/impl.rs#L78) | ToolCallDao::execute | 取 id 顺序：ctx.tool_call_id() → 复用；否则 UUID v7 生成并 ctx.to_builder().tool_call_id(id).build()；幂等防重逻辑（仅业务指定路径） |
 | **工具层（shell_exec 重构）** | | |
-| [src/pkg/tool_registry/shell_exec.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/shell_exec.rs) | shell_exec 核心 | sync/background 统一 spawn + stdout/stderr 重定向 `{call_id}.log`；超时语义默认 detach + timeout_action 参数；ProcessRegistry 注册/注销；返回 JSON 补 call_id 字段；parameters_schema 同步；tags 追加 "shell" |
-| [src/pkg/tool_tracing/logger.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_tracing/logger.rs) | ToolCallLogger | 复用既有 `read_call_by_id` 做幂等防重反查（限定 tool 目录扫描） |
+| [src/pkg/tool_registry/shell_exec.rs](src/pkg/tool_registry/shell_exec.rs) | shell_exec 核心 | sync/background 统一 spawn + stdout/stderr 重定向 `{call_id}.log`；超时语义默认 detach + timeout_action 参数；ProcessRegistry 注册/注销；返回 JSON 补 call_id 字段；parameters_schema 同步；tags 追加 "shell" |
+| [src/pkg/tool_tracing/logger.rs](src/pkg/tool_tracing/logger.rs) | ToolCallLogger | 复用既有 `read_call_by_id` 做幂等防重反查（限定 tool 目录扫描） |
 | **Domain 层（权限边界）** | | |
-| [src/service/domain/system/mod.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/system/mod.rs) | SystemDomain | 新增 `ProcessManager` trait 定义；由 SystemDomainImpl 实现（可拆 process.rs 子文件）；scope 校验 + 调 pkg/process 原语；get/list/kill/status(tail_lines) 4 方法 |
+| [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs) | SystemDomain | 新增 `ProcessManager` trait 定义；由 SystemDomainImpl 实现（可拆 process.rs 子文件）；scope 校验 + 调 pkg/process 原语；get/list/kill/status(tail_lines) 4 方法 |
 | **Adapter 层（Handler + LLM 工具双露）** | | |
 | common/src/api/system.rs（或对应分组） | 参数/响应 DTO | 新增 ShellStatusParams/Response、ShellKillParams/Response、ShellListResponse（对齐 shell_exec 返回结构） |
-| [src/handlers/system/process/shell_status.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_status.rs) | shell_status（新增） | `#[register_handler_tool(id="shell_status", tags="shell")]` + `#[generate_http_handler]`；调 system domain process_status |
-| [src/handlers/system/process/shell_kill.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_kill.rs) | shell_kill（新增） | 同上：id="shell_kill" tags="shell"；调 kill_process |
+| [src/handlers/system/process/shell_status.rs](src/handlers/system/process/shell_status.rs) | shell_status（新增） | `#[register_handler_tool(id="shell_status", tags="shell")]` + `#[generate_http_handler]`；调 system domain process_status |
+| [src/handlers/system/process/shell_kill.rs](src/handlers/system/process/shell_kill.rs) | shell_kill（新增） | 同上：id="shell_kill" tags="shell"；调 kill_process |
 | src/handlers/system/process/shell_list.rs | shell_list（新增，前端配套） | 同上：id="shell_list" tags="shell"；list_processes（见 [前端工具与进程管理.md](前端工具与进程管理.md) 配套） |
 | src/handlers/system/mod.rs + router.rs | Handler 路由注册 | system nest 下注册 /processes GET、/processes/{pid}/status GET、/processes/{pid}/kill POST |
 | **文档修订** | | |
-| [docs/design/tool_design.md](file:///Users/aman/Technology/rust/ai_orz/docs/design/tool_design.md) | 工具设计（只追加不改旧文） | 追加「2026-08-09 更新」章节：同步默认 + Agent background 调用级决策 + dispatch_mode=async 仅显式配置；shell_exec 超时 detach；统一进程管理架构 |
-| [AGENTS.md](file:///Users/aman/Technology/rust/ai_orz/AGENTS.md) | 功能总览表 | 新增「统一后台进程管理」功能行；测试统计口径同步 |
+| [docs/design/tool_design.md](docs/design/tool_design.md) | 工具设计（只追加不改旧文） | 追加「2026-08-09 更新」章节：同步默认 + Agent background 调用级决策 + dispatch_mode=async 仅显式配置；shell_exec 超时 detach；统一进程管理架构 |
+| [AGENTS.md](AGENTS.md) | 功能总览表 | 新增「统一后台进程管理」功能行；测试统计口径同步 |
 
 ---
 
@@ -132,7 +132,7 @@ handlers/system/process/
 
 | 步骤 | 动作 | 参考入口 |
 |------|------|---------|
-| 1 | 优先取 `ctx.tool_call_id()`，缺失回退 `ctx.log_id` 用于日志文件命名 | [shell_exec.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/shell_exec.rs) 日志命名段 |
+| 1 | 优先取 `ctx.tool_call_id()`，缺失回退 `ctx.log_id` 用于日志文件命名 | [shell_exec.rs](src/pkg/tool_registry/shell_exec.rs) 日志命名段 |
 | 2 | spawn 成功后 `ProcessRegistry::global().register(ProcessEntry{ ... call_id: ctx.tool_call_id(), agent_id: ctx.agent_id(), project_id: ctx.project_id(), task_id: ctx.task_id() })` | shell_exec.rs 注册段 |
 | 3 | 返回 JSON 中携带 `{ call_id, pid, log_path }` 字段（确保 JSONL call_trace.output 反查链路） | shell_exec.rs 返回体构建段 |
 | 4 | 进程退出后 `ProcessRegistry::global().mark_exited(pid, exit_code)` | shell_exec.rs sync/background 退出收尾段 |
@@ -143,21 +143,14 @@ handlers/system/process/
 
 | 分发点 | 处理逻辑 | 新增时参考 |
 |-------|---------|-----------|
-| Handler 骨架模式 | `#[register_handler_tool(id="xxx", tags="shell")]` + `#[generate_http_handler]` 宏双露；内部调对应 system domain manager 方法 | [src/handlers/system/process/shell_kill.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/system/process/shell_kill.rs) + shell_status.rs 三件套 |
+| Handler 骨架模式 | `#[register_handler_tool(id="xxx", tags="shell")]` + `#[generate_http_handler]` 宏双露；内部调对应 system domain manager 方法 | [src/handlers/system/process/shell_kill.rs](src/handlers/system/process/shell_kill.rs) + shell_status.rs 三件套 |
 | DTO 契约放置 | `common/src/api/system.rs`（或对应域分组） | 现有 system API DTO 同目录 |
 
 ---
 
 ## 五、验收清单
 
-- [ ] pkg/process 单测：register/get/list/tail_log 基础操作；真实 spawn `sleep` 进程验证 is_alive → terminate → mark_exited 三状态流转（native 环境）
-- [ ] shell_exec 新增用例：`sleep 2` + timeout_ms=100 → 返回 timeout 体 + pid 仍存活 + registry 有条目；timeout_action=kill 分支；现有 7 个解析类测试保持通过
-- [ ] call_id 四关联断言：经 ToolCallDao::execute 调 shell_exec → entry.call_id == 日志文件名主干 == ProcessEntry.call_id == 返回 JSON.call_id；ctx.tool_call_id 缺失时回退 log_id 的兼容用例
-- [ ] 幂等防重：业务指定 call_id 首次执行落盘 → 同 call_id 再次调用直接返回历史结果（不重复执行，entry.metadata.deduplicated=true）；历史 Failed 同 call_id 允许重试；自动生成 call_id 路径不触发防重查询
-- [ ] SystemDomain ProcessManager scope：agent 不匹配返回 PermissionDenied；匹配放行；无 agent ctx 放行；kill 生效后状态同步
-- [ ] shell_status/shell_kill/shell_list 三件套：双露路由注册成功；Handler 单元/集成测试复用 request_tool_call 既有模式
-- [ ] 门槛：cargo test 后端全绿 + cargo clippy --all-targets -- -D warnings + cargo fmt --all --check
-- [ ] 门槛：前端进程管理页面（见配套计划）联调通过；shell_list 返回的条目与 shell_status 返回的详情一致
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -187,3 +180,4 @@ handlers/system/process/
 2. **前端进程管理页内嵌日志 tail WebSocket**：当前 shell_status 返回一次性 tail_lines；后续升级 SSE/WS 推送日志增量（复用现有 AOP 事件中心），入口 [前端工具与进程管理.md](前端工具与进程管理.md) ProcessDetailContent 组件
 3. **Windows 进程原语补齐**：`#[cfg(windows)]` 下用 winapi 或者 windows crate 实现 is_alive/terminate；CI 加 windows runner 跑对应测试
 4. **除 shell_exec 外的进程类工具接入**：如新增 `python_exec` / `docker_run` 等进程类工具，按 §四 4.1 四步接入（call_id 消费 → registry 注册 → 返回体携带 → 退出标记）；进程元数据字段（agent_id/project_id/task_id）已在 ProcessEntry 预留
+

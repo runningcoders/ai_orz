@@ -2,17 +2,17 @@
 
 <cite>
 **本文引用的文件**
-- [项目系统设计文档](file://docs/project_design.md)
-- [项目管理系统设计文档](file://docs/project_management_design.md)
-- [架构说明](file://docs/ARCHITECTURE.md)
-- [Project Domain 入口与接口定义](file://src/service/domain/project/mod.rs)
-- [Task 业务实现](file://src/service/domain/project/task.rs)
-- [Artifact 业务实现](file://src/service/domain/project/artifact.rs)
-- [任务图构建器](file://src/service/domain/project/task_graph.rs)
-- [Project DAL](file://src/service/dal/project.rs)
-- [Task DAL](file://src/service/dal/task.rs)
-- [Artifact DAL](file://src/service/dal/artifact.rs)
-- [Handler 路由分组（项目/任务/工件）](file://src/handlers/project/mod.rs)
+- [项目系统设计文档](docs/project_design.md)
+- [项目管理系统设计文档](docs/project_management_design.md)
+- [架构说明](docs/ARCHITECTURE.md)
+- [Project Domain 入口与接口定义](src/service/domain/project/mod.rs)
+- [Task 业务实现](src/service/domain/project/task.rs)
+- [Artifact 业务实现](src/service/domain/project/artifact.rs)
+- [任务图构建器](src/service/domain/project/task_graph.rs)
+- [Project DAL](src/service/dal/project.rs)
+- [Task DAL](src/service/dal/task.rs)
+- [Artifact DAL](src/service/dal/artifact.rs)
+- [Handler 路由分组（项目/任务/工件）](src/handlers/project/mod.rs)
 </cite>
 
 ## 目录
@@ -74,15 +74,15 @@ D2 --> DG
 ```
 
 图表来源
-- [Project Domain 入口与接口定义:63-105](file://src/service/domain/project/mod.rs#L63-L105)
-- [Project DAL:213-221](file://src/service/dal/project.rs#L213-L221)
-- [Task DAL:211-219](file://src/service/dal/task.rs#L211-L219)
-- [Artifact DAL:95-98](file://src/service/dal/artifact.rs#L95-L98)
-- [任务图构建器:17-28](file://src/service/domain/project/task_graph.rs#L17-L28)
+- [Project Domain 入口与接口定义:63-105](src/service/domain/project/mod.rs#L63-L105)
+- [Project DAL:213-221](src/service/dal/project.rs#L213-L221)
+- [Task DAL:211-219](src/service/dal/task.rs#L211-L219)
+- [Artifact DAL:95-98](src/service/dal/artifact.rs#L95-L98)
+- [任务图构建器:17-28](src/service/domain/project/task_graph.rs#L17-L28)
 
 章节来源
-- [项目管理系统设计文档:11-32](file://docs/project_management_design.md#L11-L32)
-- [架构说明:24-33](file://docs/ARCHITECTURE.md#L24-L33)
+- [项目管理系统设计文档:11-32](docs/project_management_design.md#L11-L32)
+- [架构说明:24-33](docs/ARCHITECTURE.md#L24-L33)
 
 ## 核心组件
 - ProjectDomainImpl：聚合 Project/Task/Artifact 管理能力，提供单例访问与初始化。
@@ -92,13 +92,13 @@ D2 --> DG
 - ProjectDal/TaskDal/ArtifactDal：封装 DAO，提供混合搜索、统计、向量索引维护等能力。
 
 章节来源
-- [Project Domain 入口与接口定义:63-105](file://src/service/domain/project/mod.rs#L63-L105)
-- [Task 业务实现:18-526](file://src/service/domain/project/task.rs#L18-L526)
-- [Artifact 业务实现:16-532](file://src/service/domain/project/artifact.rs#L16-L532)
-- [任务图构建器:17-67](file://src/service/domain/project/task_graph.rs#L17-L67)
-- [Project DAL:213-221](file://src/service/dal/project.rs#L213-L221)
-- [Task DAL:211-219](file://src/service/dal/task.rs#L211-L219)
-- [Artifact DAL:95-98](file://src/service/dal/artifact.rs#L95-L98)
+- [Project Domain 入口与接口定义:63-105](src/service/domain/project/mod.rs#L63-L105)
+- [Task 业务实现:18-526](src/service/domain/project/task.rs#L18-L526)
+- [Artifact 业务实现:16-532](src/service/domain/project/artifact.rs#L16-L532)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
+- [Project DAL:213-221](src/service/dal/project.rs#L213-L221)
+- [Task DAL:211-219](src/service/dal/task.rs#L211-L219)
+- [Artifact DAL:95-98](src/service/dal/artifact.rs#L95-L98)
 
 ## 架构总览
 Project 领域通过 Domain 层统一编排业务规则，DAL 层负责数据访问与增强（混合搜索、统计、向量索引），DAO 层专注持久化。Handler 仅做请求解析与 DTO 转换，不承载业务逻辑。
@@ -121,14 +121,14 @@ Handler-->>Client : HTTP 响应
 ```
 
 图表来源
-- [Project Domain 入口与接口定义:63-105](file://src/service/domain/project/mod.rs#L63-L105)
-- [Project DAL:213-221](file://src/service/dal/project.rs#L213-L221)
-- [Task DAL:211-219](file://src/service/dal/task.rs#L211-L219)
-- [Artifact DAL:95-98](file://src/service/dal/artifact.rs#L95-L98)
+- [Project Domain 入口与接口定义:63-105](src/service/domain/project/mod.rs#L63-L105)
+- [Project DAL:213-221](src/service/dal/project.rs#L213-L221)
+- [Task DAL:211-219](src/service/dal/task.rs#L211-L219)
+- [Artifact DAL:95-98](src/service/dal/artifact.rs#L95-L98)
 
 章节来源
-- [项目管理系统设计文档:138-175](file://docs/project_management_design.md#L138-L175)
-- [架构说明:56-64](file://docs/ARCHITECTURE.md#L56-L64)
+- [项目管理系统设计文档:138-175](docs/project_management_design.md#L138-L175)
+- [架构说明:56-64](docs/ARCHITECTURE.md#L56-L64)
 
 ## 详细组件分析
 
@@ -150,13 +150,13 @@ SkipVector --> Done
 ```
 
 图表来源
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
-- [Project DAL:448-456](file://src/service/dal/project.rs#L448-L456)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
+- [Project DAL:448-456](src/service/dal/project.rs#L448-L456)
 
 章节来源
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
-- [Project DAL:488-703](file://src/service/dal/project.rs#L488-L703)
-- [Project DAL:738-800](file://src/service/dal/project.rs#L738-L800)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
+- [Project DAL:488-703](src/service/dal/project.rs#L488-L703)
+- [Project DAL:738-800](src/service/dal/project.rs#L738-L800)
 
 ### 任务依赖与 DAG 编排
 - 依赖存储：dependencies 字段为前置任务 ID 列表。
@@ -171,10 +171,10 @@ B --> D["任务D"]
 ```
 
 图表来源
-- [任务图构建器:31-54](file://src/service/domain/project/task_graph.rs#L31-L54)
+- [任务图构建器:31-54](src/service/domain/project/task_graph.rs#L31-L54)
 
 章节来源
-- [任务图构建器:17-67](file://src/service/domain/project/task_graph.rs#L17-L67)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
 
 ### 工件创建与版本控制编排
 - 创建工件：支持附件引用型与生成内容型；项目级与任务级两种归属。
@@ -204,13 +204,13 @@ Handler-->>Client : 响应
 ```
 
 图表来源
-- [Artifact 业务实现:27-71](file://src/service/domain/project/artifact.rs#L27-L71)
-- [Artifact 业务实现:342-399](file://src/service/domain/project/artifact.rs#L342-L399)
-- [Artifact DAL:176-194](file://src/service/dal/artifact.rs#L176-L194)
+- [Artifact 业务实现:27-71](src/service/domain/project/artifact.rs#L27-L71)
+- [Artifact 业务实现:342-399](src/service/domain/project/artifact.rs#L342-L399)
+- [Artifact DAL:176-194](src/service/dal/artifact.rs#L176-L194)
 
 章节来源
-- [Artifact 业务实现:27-532](file://src/service/domain/project/artifact.rs#L27-L532)
-- [Artifact DAL:95-194](file://src/service/dal/artifact.rs#L95-L194)
+- [Artifact 业务实现:27-532](src/service/domain/project/artifact.rs#L27-L532)
+- [Artifact DAL:95-194](src/service/dal/artifact.rs#L95-L194)
 
 ### 任务状态流转编排
 - 统一入口：transition_status 校验状态机合法性。
@@ -227,11 +227,11 @@ Record --> Done(["完成"])
 ```
 
 图表来源
-- [Task 业务实现:394-482](file://src/service/domain/project/task.rs#L394-L482)
+- [Task 业务实现:394-482](src/service/domain/project/task.rs#L394-L482)
 
 章节来源
-- [Task 业务实现:281-392](file://src/service/domain/project/task.rs#L281-L392)
-- [Task 业务实现:394-482](file://src/service/domain/project/task.rs#L394-L482)
+- [Task 业务实现:281-392](src/service/domain/project/task.rs#L281-L392)
+- [Task 业务实现:394-482](src/service/domain/project/task.rs#L394-L482)
 
 ## 依赖关系分析
 - Domain 依赖 DAL，DAL 依赖 DAO；Handler 仅依赖 Domain。
@@ -247,16 +247,16 @@ DL --> V["向量存储"]
 ```
 
 图表来源
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
-- [Task DAL:223-255](file://src/service/dal/task.rs#L223-L255)
-- [Project DAL:488-703](file://src/service/dal/project.rs#L488-L703)
-- [Task DAL:366-571](file://src/service/dal/task.rs#L366-L571)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
+- [Task DAL:223-255](src/service/dal/task.rs#L223-L255)
+- [Project DAL:488-703](src/service/dal/project.rs#L488-L703)
+- [Task DAL:366-571](src/service/dal/task.rs#L366-L571)
 
 章节来源
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
-- [Task DAL:223-255](file://src/service/dal/task.rs#L223-L255)
-- [Project DAL:488-703](file://src/service/dal/project.rs#L488-L703)
-- [Task DAL:366-571](file://src/service/dal/task.rs#L366-L571)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
+- [Task DAL:223-255](src/service/dal/task.rs#L223-L255)
+- [Project DAL:488-703](src/service/dal/project.rs#L488-L703)
+- [Task DAL:366-571](src/service/dal/task.rs#L366-L571)
 
 ## 性能考虑
 - 向量索引降级：Embedding Provider 不可用或写入失败时，记录日志并继续主流程。
@@ -265,8 +265,8 @@ DL --> V["向量存储"]
 - 截断与分页：搜索结果限制最大条数，避免全量返回。
 
 章节来源
-- [Project DAL:488-703](file://src/service/dal/project.rs#L488-L703)
-- [Task DAL:366-571](file://src/service/dal/task.rs#L366-L571)
+- [Project DAL:488-703](src/service/dal/project.rs#L488-L703)
+- [Task DAL:366-571](src/service/dal/task.rs#L366-L571)
 
 ## 故障排查指南
 - 向量索引失败：检查 Embedding Provider 配置与网络；查看日志中 vector_index/vector_search 相关告警。
@@ -275,10 +275,10 @@ DL --> V["向量存储"]
 - 任务状态非法：transition_status 拒绝非法流转，检查当前状态与目标状态组合。
 
 章节来源
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
-- [Task DAL:223-255](file://src/service/dal/task.rs#L223-L255)
-- [Artifact 业务实现:273-340](file://src/service/domain/project/artifact.rs#L273-L340)
-- [Task 业务实现:394-482](file://src/service/domain/project/task.rs#L394-L482)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
+- [Task DAL:223-255](src/service/dal/task.rs#L223-L255)
+- [Artifact 业务实现:273-340](src/service/domain/project/artifact.rs#L273-L340)
+- [Task 业务实现:394-482](src/service/domain/project/task.rs#L394-L482)
 
 ## 结论
 Project 领域通过清晰的层次划分与统一的编排入口，实现了项目生命周期、任务依赖 DAG、工件版本控制的完整闭环。DAL 层的混合搜索与向量索引降级策略提升了系统鲁棒性，Domain 层的权限校验与乐观锁保障了数据一致性。未来可进一步扩展 Agent 自主编排能力，结合思考循环与工具调用，实现更复杂的自动化流程。
@@ -290,8 +290,8 @@ Project 领域通过清晰的层次划分与统一的编排入口，实现了项
 - 流程：Domain 构造 Project → DAL 写入 → 可选向量索引维护 → 返回项目实体。
 
 章节来源
-- [Project Domain 入口与接口定义:118-129](file://src/service/domain/project/mod.rs#L118-L129)
-- [Project DAL:225-274](file://src/service/dal/project.rs#L225-L274)
+- [Project Domain 入口与接口定义:118-129](src/service/domain/project/mod.rs#L118-L129)
+- [Project DAL:225-274](src/service/dal/project.rs#L225-L274)
 
 ### 任务分解与依赖管理
 - 输入：标题、描述、优先级、标签、root_user_id、分配对象、project_id、due_at、dependencies。
@@ -299,8 +299,8 @@ Project 领域通过清晰的层次划分与统一的编排入口，实现了项
 - 依赖图：基于 dependencies 构建 DAG，渲染为 Mermaid 字符串。
 
 章节来源
-- [Task 业务实现:51-109](file://src/service/domain/project/task.rs#L51-L109)
-- [任务图构建器:17-67](file://src/service/domain/project/task_graph.rs#L17-L67)
+- [Task 业务实现:51-109](src/service/domain/project/task.rs#L51-L109)
+- [任务图构建器:17-67](src/service/domain/project/task_graph.rs#L17-L67)
 
 ### 工件关联管理
 - 输入：project_id、task_id（可选）、name、description、file_type、file_meta、tags、created_by。
@@ -308,5 +308,5 @@ Project 领域通过清晰的层次划分与统一的编排入口，实现了项
 - 更新：部分更新 name/description/tags/content，支持乐观锁。
 
 章节来源
-- [Artifact 业务实现:27-71](file://src/service/domain/project/artifact.rs#L27-L71)
-- [Artifact 业务实现:273-340](file://src/service/domain/project/artifact.rs#L273-L340)
+- [Artifact 业务实现:27-71](src/service/domain/project/artifact.rs#L27-L71)
+- [Artifact 业务实现:273-340](src/service/domain/project/artifact.rs#L273-L340)

@@ -7,6 +7,13 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [ui_design_system.md](./ui_design_system.md) — 前端视觉设计系统与样式规范（Canvas 渲染对齐该规范）
+> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — LineChart LTTB 降采样 + ChartScene 统一基类
+> - 【② Plan 落地】[统计图表Phase2.md](../plan/统计图表Phase2.md) — DonutChart 多环 + Dashboard 指标卡片组合
+> - 【② Plan 落地】[统计图表第三期.md](../plan/统计图表第三期.md) — AopGauge 双刻度仪表盘 + 种子节点推荐高亮外发光
+> - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](../plan/知识图谱推荐起点与组件复用重构.md) — GraphCanvas 组件两端复用 HR/Workspace 双页面
+> - 【③ Wiki 百科】[图表组件.md](docs/wiki/zh/content/前端应用/组件系统/图表组件/图表组件.md) — LineChart/DonutChart/Gauge 三组件使用模式
+> - 【③ Wiki 百科】[业务组件.md](docs/wiki/zh/content/前端应用/组件系统/业务组件.md) — GraphCanvas/RuntimePanel 等 HUD 风格组件总览
+> - 【④ RAG 知识卡】[Canvas HUD 可视化](docs/wiki/knowledge/zh/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95.md) — §CanvasScene Trait 4 方法 §ForceLayout α 冷却 §7 条红线
 
 > 最后更新：2026-07-24
 > 适用范围：Dioxus + web-sys Canvas 2D 渲染栈，用于指导后续页面从 SVG/DOM 迁移到 Canvas，或新建 Canvas 场景化页面。
@@ -17,7 +24,7 @@
 
 ### 1.1 `/workspace` 工作台页面
 
-**文件**：[frontend/src/pages/workspace.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/workspace.rs)
+**文件**：[frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs)
 
 **定位**：Canvas 渲染基础设施的**验证型试点页面**，不是真实业务功能页。用 6 个模拟节点（3 Agent + 3 Tool）+ 6 条连线，验证 CanvasScene 组件的渲染、事件桥接、力导向、拖拽、hover/选中、4 种粒子系统开关。
 
@@ -33,11 +40,11 @@
 
 ## 2. 可复用资产清单
 
-所有资产位于 [frontend/src/components/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/) 目录，按职责分层：
+所有资产位于 [frontend/src/components/](frontend/src/components/) 目录，按职责分层：
 
 ### 2.1 核心组件：`CanvasScene`
 
-**文件**：[canvas_scene.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/canvas_scene.rs)
+**文件**：[canvas_scene.rs](frontend/src/components/canvas_scene.rs)
 
 **职责**：封装 `<canvas>` 元素 + 2D Context 初始化 + 持续渲染循环 + 力导向 + 拖拽 + hover/选中 + 粒子集成。业务页面只需传入 `CanvasSceneProps`，无需关心底层细节。
 
@@ -81,7 +88,7 @@ pub struct CanvasEdge {
 
 ### 2.3 渲染器抽象：`CanvasRenderer` trait
 
-**文件**：[canvas_scene.rs:40-65](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/canvas_scene.rs#L40-L65)
+**文件**：[canvas_scene.rs:40-65](frontend/src/components/canvas_scene.rs#L40-L65)
 
 **职责**：抽象渲染逻辑，业务场景实现此 trait 定义自己的渲染样式。
 
@@ -104,7 +111,7 @@ pub trait CanvasRenderer {
 
 ### 2.4 力导向布局：`ForceLayout`
 
-**文件**：[force_layout.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/force_layout.rs)
+**文件**：[force_layout.rs](frontend/src/components/force_layout.rs)
 
 **职责**：纯函数式力导向布局算法，模拟斥力（库仑）+ 吸引力（胡克）+ 阻尼 + 边界约束。
 
@@ -124,7 +131,7 @@ pub trait CanvasRenderer {
 
 ### 2.5 粒子系统：4 种 + `ParticleSystem` trait
 
-**文件**：[particles.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/particles.rs)
+**文件**：[particles.rs](frontend/src/components/particles.rs)
 
 | 粒子系统 | 用途 | 触发方式 |
 |---------|------|---------|
@@ -285,7 +292,7 @@ let y = e.client_coordinates().y - rect.top();
 
 ### 4.3 注意事项
 
-- **文本排版退化**：Canvas 原生 `fill_text` 无换行、无富文本。若需要复杂文本，要么用 DOM 覆盖层，要么引入 pretext（见 [frontend_roadmap.md 6.1](file:///Users/aman/Technology/rust/ai_orz/docs/frontend_roadmap.md)）
+- **文本排版退化**：Canvas 原生 `fill_text` 无换行、无富文本。若需要复杂文本，要么用 DOM 覆盖层，要么引入 pretext（见 [frontend_roadmap.md 6.1](docs/frontend_roadmap.md)）
 - **可访问性**：Canvas 内元素无 ARIA、无键盘导航。重要交互控件仍用 DOM
 - **事件精度**：命中检测靠 `hit_test` 几何计算，复杂形状需自己实现
 - **包体**：web-sys 的 Canvas features 已在 Cargo.toml 配置，无额外依赖
@@ -294,7 +301,7 @@ let y = e.client_coordinates().y - rect.top();
 
 ## 5. Cargo.toml 依赖配置
 
-已在 [frontend/Cargo.toml](file:///Users/aman/Technology/rust/ai_orz/frontend/Cargo.toml#L16) 配置 web-sys 的 Canvas features：
+已在 [frontend/Cargo.toml](frontend/Cargo.toml#L16) 配置 web-sys 的 Canvas features：
 
 ```toml
 web-sys = { version = "0.3.103", features = [
@@ -309,9 +316,9 @@ web-sys = { version = "0.3.103", features = [
 
 ## 6. 相关文档
 
-- [frontend_roadmap.md](file:///Users/aman/Technology/rust/ai_orz/docs/frontend_roadmap.md) — 前端整体路线图，含游戏化重构五阶段路径
-- [frontend_architecture.md](file:///Users/aman/Technology/rust/ai_orz/docs/design/frontend_architecture.md) — 前端架构设计
+- [frontend_roadmap.md](docs/frontend_roadmap.md) — 前端整体路线图，含游戏化重构五阶段路径
+- [frontend_architecture.md](docs/design/frontend_architecture.md) — 前端架构设计
 - 实施计划：
-  - [2026-07-24-canvas-rendering-infrastructure.md](file:///Users/aman/Technology/rust/ai_orz/docs/superpowers/plans/2026-07-24-canvas-rendering-infrastructure.md)
-  - [2026-07-24-canvas-dynamic-rendering.md](file:///Users/aman/Technology/rust/ai_orz/docs/superpowers/plans/2026-07-24-canvas-dynamic-rendering.md)
-  - [2026-07-24-canvas-particle-systems.md](file:///Users/aman/Technology/rust/ai_orz/docs/superpowers/plans/2026-07-24-canvas-particle-systems.md)
+  - [2026-07-24-canvas-rendering-infrastructure.md](docs/superpowers/plans/2026-07-24-canvas-rendering-infrastructure.md)
+  - [2026-07-24-canvas-dynamic-rendering.md](docs/superpowers/plans/2026-07-24-canvas-dynamic-rendering.md)
+  - [2026-07-24-canvas-particle-systems.md](docs/superpowers/plans/2026-07-24-canvas-particle-systems.md)

@@ -8,11 +8,15 @@ source_files:
     - Cargo.toml
     - start.sh
     - build.sh
+    - scripts/build_frontend.sh
     - frontend/build.rs
     - frontend/Cargo.toml
     - rust-toolchain.toml
     - .github/workflows/rust.yml
     - .github/workflows/release.yml
+    - .env.example
+    - common/config/ai_orz.toml
+    - migrations/
 ---
 
 ## 1. 使用的系统与工具
@@ -33,8 +37,12 @@ source_files:
 - `frontend/build.rs`：编译期 Tailwind CSS 编译、docs 静态资源复制、后端配置读取并生成 `COMPILED_CONFIG` 常量。
 - `frontend/Cargo.toml`：Dioxus WASM 包定义，依赖 `common` 共享类型。
 - `rust-toolchain.toml`：固定 stable toolchain + wasm32 target。
-- `.github/workflows/rust.yml`：fmt → clippy → backend(test) / frontend(clippy+wasm) / coverage 并行流水线，启用 sccache、SQLX_OFFLINE=true。
-- `.github/workflows/release.yml`：matrix 构建 x86_64-linux-gnu 与 aarch64-darwin，复用 `./start.sh build`，打包 `ai_orz-{tag}-{target}.tar.gz` 并上传 artifact，tag 触发时发布到 GitHub Release。
+- `scripts/build_frontend.sh`：封装 `dx build --release`、查找 dx 输出目录（兼容新旧路径）、复制 `index.html` 与 `public/` 静态资源到仓库根 `dist/`，并清理未被引用的旧 hash 资产。被 `start.sh` 和 CI e2e job 共用。
+- `.github/workflows/rust.yml`：fmt → clippy → backend(test) / frontend(clippy+wasm) / coverage 并行流水线，启用 sccache、SQLX_OFFLINE=true；另缓存 `~/.cache/ort`（ONNX Runtime 预编译二进制）。
+- `.github/workflows/release.yml`：matrix 构建 `ubuntu-latest → x86_64-unknown-linux-gnu` 与 `macos-latest → aarch64-apple-darwin`（不做交叉编译，lancedb/ort-sys 交叉链太重），安装 dioxus-cli → 复用 `./start.sh build` → 打包 `ai_orz-{tag}-{target}.tar.gz` 并上传 artifact；仅当 push tag 形如 `refs/tags/v*` 或手动触发 `workflow_dispatch` 时执行；对 `${REF_NAME}` 做白名单正则校验，拒绝 shell/路径特殊字符。
+- `.env.example`：环境变量模板（`DATABASE_URL`、`SQLX_OFFLINE=true`、可选的 LLM/Embedding 测试密钥 `TEST_*`）
+- `common/config/ai_orz.toml`：默认配置模板，作为前端编译期回退源
+- `migrations/*.sql`：SQLx 数据库迁移脚本（时间戳命名），迁移功能通过 sqlx `migrate` feature 在首次运行自动执行
 
 ## 3. 架构与约定
 
@@ -47,10 +55,20 @@ source_files:
 4. **部署产物**：release workflow 将后端二进制与 `dist/` 目录打包为 `ai_orz-{tag}-{target}.tar.gz`，解压后直接运行 `./ai_orz`，监听 `0.0.0.0:3000`，前端静态资源从同目录 `dist/` 提供。
 
 ### CI 流水线设计
-- **分阶段门禁**：`fmt`（最快，独立 job）→ `lint`（clippy --all-targets -- -D warnings，需安装 protoc 以满足 lancedb/lance-encoding 的 build script）→ 下游 job 并行。
-- **缓存策略**：全局启用 sccache（`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort`（ort-sys 预编译 ONNX Runtime）做独立缓存。
-- **覆盖率门禁**：`coverage` job 与 backend/frontend 并行，使用 `cargo-llvm-cov`，push main 要求 fail-under-lines ≥ 45%，PR 要求 ≥ 38%；报告通过 `--ignore-filename-regex` 排除 tests/common、registry、rustc、build.rs、target。
-- **前端交叉编译**：`frontend` job 安装 `wasm32-unknown-unknown` target 并对前端代码执行 `cargo clippy --target wasm32-unknown-unknown`，确保 WASM 目标可编译。
+```mermaid
+graph LR
+  A[push/PR to main] --> B[lint: rustfmt + clippy -D warnings]
+  B --> C[backend: cargo build + unit + integration tests]
+  B --> D[frontend: wasm32 check + clippy + tests]
+  C --> E[coverage: cargo-llvm-cov report]
+  D -.-> E
+```
+- **分阶段门禁**：`fmt`（最快，独立 job）→ `lint`（clippy --all-targets -- -D warnings，需安装 protoc 以满足 lancedb/lance-encoding 的 build script）→ 下游 job 并行（backend / frontend / coverage 三者依赖 lint 后并行）。
+- **缓存策略**：全局启用 sccache（`mozilla-actions/sccache-action`，`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort`（ort-sys 预编译 ONNX Runtime）做独立缓存。
+- **覆盖率门禁**：`coverage` job 与 backend/frontend 并行，使用 `cargo-llvm-cov`，push main 要求 fail-under-lines ≥ 45%，PR 要求 ≥ 38%；报告通过 `--ignore-filename-regex` 排除 tests/common、registry、rustc、build.rs、target；报告同时输出日志与 GitHub Summary。
+- **前端交叉编译**：`frontend` job 安装 `wasm32-unknown-unknown` target 并执行 `cargo check --target wasm32-unknown-unknown` → `cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` → `cargo test`，确保 WASM 目标可编译。
+- **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试当前已移出 CI，仅在 `e2e/` 目录本地运行 Playwright。
+- **环境约束**：`CARGO_INCREMENTAL=0`（让 sccache 完全接管缓存，避免增量编译干扰）、`SQLX_OFFLINE=true`（使用 `.sqlx/` 离线 schema）。
 
 ### 开发与生产模式约定
 - `./start.sh dev`：后台同时启动 `cargo run`（后端 API，默认 3000）和 `dx serve`（前端开发服务器，默认 8080），Ctrl+C 时通过 trap 终止两个子进程。
@@ -68,4 +86,13 @@ source_files:
 - **Release 触发条件**：仅当 push tag 匹配 `v*` 或手动触发 `workflow_dispatch` 时执行 release workflow；publish job 进一步限制 `startsWith(github.ref, 'refs/tags/v')`，防止非 v 前缀 tag 发布。
 - **增量编译互斥**：CI 显式设置 `CARGO_INCREMENTAL=0`，让 sccache 完全接管缓存，避免增量编译与 sccache 内容寻址冲突。
 - **SQLX 离线模式**：所有 CI job 设置 `SQLX_OFFLINE=true`，依赖 `.sqlx/` 中的查询缓存，无需连接数据库即可编译。
-- **Tag 校验**：release workflow 对 `REF_NAME` 执行正则 `^[A-Za-z0-9._-]+$` 校验，拒绝 shell/路径特殊字符，防止注入攻击。
+- **单入口原则**：所有构建/启动场景均通过 `start.sh` 子命令进入（`dev`/`build`/`prod`/`backend`/`frontend`/`help`），禁止绕过脚本直接调用 `cargo` 或 `dx`。
+- **产物位置约定**：前端静态资源统一产出到仓库根 `dist/`（由 `scripts/build_frontend.sh` 负责，统一逻辑被 start.sh 和 CI 共用），后端二进制位于 `target/release/ai_orz`；生产模式下后端从同目录 `dist/` 提供前端 SPA。
+- **跨模块依赖边界**：workspace 中 `common` 与 `ai-orz-macros` 不依赖后端 `service` 代码，保持可独立编译；前端通过 `common` 共享 DTO/枚举/错误类型。
+- **无 Dockerfile**：项目未使用容器化镜像，发布产物为自包含 tar.gz（二进制 + dist/ 静态文件 + migrations 内嵌），解压后可直接运行。
+- **集成测试注册**：新增集成测试需在根 `Cargo.toml` 的 `[[test]]` 段注册，否则不会被 `cargo test --test '*'` 发现。
+- **SQL 变更流程**：SQL 变更需添加迁移脚本至 `migrations/`（时间戳命名），并在本地通过 sqlx-cli 更新 `.sqlx/` 缓存；`.env.example` 强制设置 `SQLX_OFFLINE=true`。
+- **前端配置同步**：前端配置修改需同步更新 `common/config/ai_orz.toml` 默认值，因为 `frontend/build.rs` 会将其作为回退配置嵌入；`cargo:rerun-if-changed` 监听两个配置文件变更触发重建。
+- **降级容错**：`frontend/build.rs` 中 Tailwind CSS 编译失败不会中断构建（仅 warning），`dx build --release` 的 wasm-opt 失败也被 `|| true` 忽略——这意味着前端产物可能不完整，需人工确认。
+- **workspace 版本管理现状**：workspace 未使用 `[workspace.dependencies]` 集中管理版本，各 crate 各自声明依赖版本，存在潜在版本漂移风险。
+- **Tag 校验**：release workflow 对 `REF_NAME` 执行正则 `^[A-Za-z0-9._-]+$` 校验，拒绝 shell/路径特殊字符，防止注入攻击；publish job 进一步限制 `startsWith(github.ref, 'refs/tags/v')`，防止非 v 前缀 tag 发布。

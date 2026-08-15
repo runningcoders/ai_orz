@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/storage/lance.rs](file://src/pkg/storage/lance.rs)
-- [src/pkg/storage/mod.rs](file://src/pkg/storage/mod.rs)
-- [src/pkg/storage/vector.rs](file://src/pkg/storage/vector.rs)
-- [src/models/vector.rs](file://src/models/vector.rs)
-- [common/src/config.rs](file://common/src/config.rs)
-- [docs/vector_search_architecture.md](file://docs/vector_search_architecture.md)
-- [src/service/dal/memory.rs](file://src/service/dal/memory.rs)
-- [src/service/dal/project.rs](file://src/service/dal/project.rs)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
+- [src/pkg/storage/lance.rs](src/pkg/storage/lance.rs)
+- [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
+- [src/pkg/storage/vector.rs](src/pkg/storage/vector.rs)
+- [src/models/vector.rs](src/models/vector.rs)
+- [common/src/config.rs](common/src/config.rs)
+- [docs/vector_search_architecture.md](docs/vector_search_architecture.md)
+- [src/service/dal/memory.rs](src/service/dal/memory.rs)
+- [src/service/dal/project.rs](src/service/dal/project.rs)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
 </cite>
 
 ## 目录
@@ -50,18 +50,18 @@ B --> H["配置与后端选择<br/>config.rs"]
 ```
 
 图表来源
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:26-62](file://src/pkg/storage/lance.rs#L26-L62)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/models/vector.rs:9-67](file://src/models/vector.rs#L9-L67)
-- [common/src/config.rs:78-114](file://common/src/config.rs#L78-L114)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:26-62](src/pkg/storage/lance.rs#L26-L62)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/models/vector.rs:9-67](src/models/vector.rs#L9-L67)
+- [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
 
 章节来源
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:26-62](file://src/pkg/storage/lance.rs#L26-L62)
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/models/vector.rs:9-67](file://src/models/vector.rs#L9-L67)
-- [common/src/config.rs:78-114](file://common/src/config.rs#L78-L114)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:26-62](src/pkg/storage/lance.rs#L26-L62)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/models/vector.rs:9-67](src/models/vector.rs#L9-L67)
+- [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
 
 ## 核心组件
 - VectorStore Trait：定义统一的向量存储接口，包括初始化集合、upsert、search、get、delete、clear_collection、flush、获取/设置集合的 model_provider_id 等。
@@ -70,10 +70,10 @@ B --> H["配置与后端选择<br/>config.rs"]
 - 通用数据结构：VectorRow、VectorSearchHit、VectorIndexParams、VectorMeta、Vectorizable 等，用于跨后端统一表示向量数据与索引参数。
 
 章节来源
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/pkg/storage/lance.rs:26-62](file://src/pkg/storage/lance.rs#L26-L62)
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/models/vector.rs:9-67](file://src/models/vector.rs#L9-L67)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/lance.rs:26-62](src/pkg/storage/lance.rs#L26-L62)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/models/vector.rs:9-67](src/models/vector.rs#L9-L67)
 
 ## 架构总览
 向量搜索采用“索引与数据完全分离”的分层模式：业务 DAO 负责基础数据 CRUD，向量 DAO 仅维护向量索引；DAL 层组合两者实现混合搜索与索引生命周期管理。Storage 门面在启动时根据配置选择具体后端，DAL 通过 RequestContext 获取向量存储实例进行调用。
@@ -97,14 +97,14 @@ Lance-->>DAL : Vec<VectorSearchHit>
 ```
 
 图表来源
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:127-199](file://src/pkg/storage/lance.rs#L127-L199)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:127-199](src/pkg/storage/lance.rs#L127-L199)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
 
 章节来源
-- [docs/vector_search_architecture.md:13-43](file://docs/vector_search_architecture.md#L13-L43)
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:127-282](file://src/pkg/storage/lance.rs#L127-L282)
+- [docs/vector_search_architecture.md:13-43](docs/vector_search_architecture.md#L13-L43)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:127-282](src/pkg/storage/lance.rs#L127-L282)
 
 ## 详细组件分析
 
@@ -125,15 +125,15 @@ AddRows --> End(["完成"])
 ```
 
 图表来源
-- [src/pkg/storage/lance.rs:64-123](file://src/pkg/storage/lance.rs#L64-L123)
-- [src/pkg/storage/lance.rs:134-199](file://src/pkg/storage/lance.rs#L134-L199)
+- [src/pkg/storage/lance.rs:64-123](src/pkg/storage/lance.rs#L64-L123)
+- [src/pkg/storage/lance.rs:134-199](src/pkg/storage/lance.rs#L134-L199)
 
 章节来源
-- [src/pkg/storage/lance.rs:26-62](file://src/pkg/storage/lance.rs#L26-L62)
-- [src/pkg/storage/lance.rs:64-123](file://src/pkg/storage/lance.rs#L64-L123)
-- [src/pkg/storage/lance.rs:127-199](file://src/pkg/storage/lance.rs#L127-L199)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
-- [src/pkg/storage/lance.rs:284-363](file://src/pkg/storage/lance.rs#L284-L363)
+- [src/pkg/storage/lance.rs:26-62](src/pkg/storage/lance.rs#L26-L62)
+- [src/pkg/storage/lance.rs:64-123](src/pkg/storage/lance.rs#L64-L123)
+- [src/pkg/storage/lance.rs:127-199](src/pkg/storage/lance.rs#L127-L199)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
+- [src/pkg/storage/lance.rs:284-363](src/pkg/storage/lance.rs#L284-L363)
 
 ### 向量存储抽象与多后端
 - VectorStore Trait：统一接口，所有后端实现相同方法签名，便于替换与测试隔离。
@@ -143,8 +143,8 @@ AddRows --> End(["完成"])
   - SqliteVssStore：基于 SQLite VSS 扩展，需要系统依赖，适合已有 SQLite 生态。
 
 章节来源
-- [src/pkg/storage/vector.rs:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [src/pkg/storage/vector.rs:76-291](file://src/pkg/storage/vector.rs#L76-L291)
+- [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [src/pkg/storage/vector.rs:76-291](src/pkg/storage/vector.rs#L76-L291)
 
 ### 通用数据结构
 - VectorMeta：内容哈希、模型名称、索引时间、过期时间。
@@ -154,8 +154,8 @@ AddRows --> End(["完成"])
 - Vectorizable：实体决定哪些字段参与向量化、集合名、内容哈希计算、过期策略与重索引判断。
 
 章节来源
-- [src/models/vector.rs:9-67](file://src/models/vector.rs#L9-L67)
-- [src/models/vector.rs:94-168](file://src/models/vector.rs#L94-L168)
+- [src/models/vector.rs:9-67](src/models/vector.rs#L9-L67)
+- [src/models/vector.rs:94-168](src/models/vector.rs#L94-L168)
 
 ### DAL 层索引生命周期与重建
 - 重建触发：当 Embedding Provider 切换或集合未记录 model_provider_id 时，DAL 层会清空集合并逐条重新索引。
@@ -187,14 +187,14 @@ end
 ```
 
 图表来源
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/project.rs:740-831](file://src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](file://src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
+- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
 
 章节来源
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/project.rs:740-831](file://src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](file://src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
+- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
 
 ## 依赖关系分析
 - Storage 门面依赖配置 DatabaseConfig.vector_store_type 选择后端。
@@ -214,17 +214,17 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 ```
 
 图表来源
-- [common/src/config.rs:78-114](file://common/src/config.rs#L78-L114)
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:10-14](file://src/pkg/storage/lance.rs#L10-L14)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/project.rs:740-831](file://src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](file://src/service/dal/agent.rs#L840-L879)
+- [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
+- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
 
 章节来源
-- [common/src/config.rs:78-114](file://common/src/config.rs#L78-L114)
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
-- [src/pkg/storage/lance.rs:10-14](file://src/pkg/storage/lance.rs#L10-L14)
+- [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+- [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
 
 ## 性能与特性
 - 列式存储与 Arrow：LanceVectorStore 使用 Arrow 列式格式（FixedSizeListArray 存储向量），减少 I/O 与序列化开销，提升批量写入与检索效率。
@@ -239,12 +239,12 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
   - LanceDb：生产级高性能、列式存储、内置索引，适合大数据集与高并发检索。
 
 章节来源
-- [src/pkg/storage/lance.rs:10-14](file://src/pkg/storage/lance.rs#L10-L14)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/project.rs:740-831](file://src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](file://src/service/dal/agent.rs#L840-L879)
-- [docs/vector_search_architecture.md:178-184](file://docs/vector_search_architecture.md#L178-L184)
+- [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
+- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [docs/vector_search_architecture.md:178-184](docs/vector_search_architecture.md#L178-L184)
 
 ## 故障排查指南
 - 连接与建表错误：LanceDB connect/create table 异常通常由路径权限或 schema 不匹配引起；检查 base_data_path 与 dimensions 一致性。
@@ -254,12 +254,12 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - 降级日志：向量化失败仅 warn，不影响主流程；关注日志中 rebuild_vectors 相关警告定位问题。
 
 章节来源
-- [src/pkg/storage/lance.rs:43-62](file://src/pkg/storage/lance.rs#L43-L62)
-- [src/pkg/storage/lance.rs:134-199](file://src/pkg/storage/lance.rs#L134-L199)
-- [src/pkg/storage/lance.rs:201-282](file://src/pkg/storage/lance.rs#L201-L282)
-- [src/service/dal/memory.rs:654-799](file://src/service/dal/memory.rs#L654-L799)
-- [src/service/dal/project.rs:740-831](file://src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](file://src/service/dal/agent.rs#L840-L879)
+- [src/pkg/storage/lance.rs:43-62](src/pkg/storage/lance.rs#L43-L62)
+- [src/pkg/storage/lance.rs:134-199](src/pkg/storage/lance.rs#L134-L199)
+- [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
+- [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
+- [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
+- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
 
 ## 结论
 LanceVectorStore 通过 LanceDB 的列式存储与 HNSW 索引，为项目提供了高性能、可扩展的向量检索能力。结合 Storage 门面的多后端支持与 DAL 层的索引生命周期管理，系统在版本控制、增量更新与压缩存储方面具备良好工程实践。相比其他后端，LanceDB 在生产环境的大数据集与高并发场景下更具优势。推荐在生产环境中默认使用 LanceDb，并在测试与开发阶段使用 InMemory 以简化依赖。
@@ -281,7 +281,7 @@ LanceVectorStore 通过 LanceDB 的列式存储与 HNSW 索引，为项目提供
   - 监控重建任务进度与错误日志，确保切换 Embedding Provider 后的索引一致性。
 
 章节来源
-- [common/src/config.rs:78-114](file://common/src/config.rs#L78-L114)
-- [common/src/config.rs:244-278](file://common/src/config.rs#L244-L278)
-- [docs/vector_search_architecture.md:342-356](file://docs/vector_search_architecture.md#L342-L356)
-- [src/pkg/storage/mod.rs:56-93](file://src/pkg/storage/mod.rs#L56-L93)
+- [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
+- [common/src/config.rs:244-278](common/src/config.rs#L244-L278)
+- [docs/vector_search_architecture.md:342-356](docs/vector_search_architecture.md#L342-L356)
+- [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)

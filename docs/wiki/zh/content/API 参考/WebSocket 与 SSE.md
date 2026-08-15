@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/finance/message/subscribe_sse.rs](file://src/handlers/finance/message/subscribe_sse.rs)
-- [src/service/dal/message_push.rs](file://src/service/dal/message_push.rs)
-- [src/service/dao/message_push.rs](file://src/service/dao/message_push.rs)
-- [src/service/domain/message/mod.rs](file://src/service/domain/message/mod.rs)
-- [src/service/domain/message/delivery.rs](file://src/service/domain/message/delivery.rs)
-- [src/handlers/a2a/send_subscribe.rs](file://src/handlers/a2a/send_subscribe.rs)
-- [src/service/dao/lark/ws.rs](file://src/service/dao/lark/ws.rs)
-- [frontend/src/utils/message.rs](file://frontend/src/utils/message.rs)
-- [docs/message_interaction_design.md](file://docs/message_interaction_design.md)
-- [docs/testing_guidelines.md](file://docs/testing_guidelines.md)
+- [src/handlers/finance/message/subscribe_sse.rs](src/handlers/finance/message/subscribe_sse.rs)
+- [src/service/dal/message_push.rs](src/service/dal/message_push.rs)
+- [src/service/dao/message_push.rs](src/service/dao/message_push.rs)
+- [src/service/domain/message/mod.rs](src/service/domain/message/mod.rs)
+- [src/service/domain/message/delivery.rs](src/service/domain/message/delivery.rs)
+- [src/handlers/a2a/send_subscribe.rs](src/handlers/a2a/send_subscribe.rs)
+- [src/service/dao/lark/ws.rs](src/service/dao/lark/ws.rs)
+- [frontend/src/utils/message.rs](frontend/src/utils/message.rs)
+- [docs/message_interaction_design.md](docs/message_interaction_design.md)
+- [docs/testing_guidelines.md](docs/testing_guidelines.md)
 </cite>
 
 ## 目录
@@ -56,14 +56,14 @@ WS --> HANDLER["LarkEventHandler"]
 ```
 
 图表来源
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/service/domain/message/delivery.rs:438-459](file://src/service/domain/message/delivery.rs#L438-L459)
-- [src/service/dal/message_push.rs:71-104](file://src/service/dal/message_push.rs#L71-L104)
-- [src/service/dao/message_push.rs:60-131](file://src/service/dao/message_push.rs#L60-L131)
-- [src/service/dao/lark/ws.rs:152-228](file://src/service/dao/lark/ws.rs#L152-L228)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/service/domain/message/delivery.rs:438-459](src/service/domain/message/delivery.rs#L438-L459)
+- [src/service/dal/message_push.rs:71-104](src/service/dal/message_push.rs#L71-L104)
+- [src/service/dao/message_push.rs:60-131](src/service/dao/message_push.rs#L60-L131)
+- [src/service/dao/lark/ws.rs:152-228](src/service/dao/lark/ws.rs#L152-L228)
 
 章节来源
-- [docs/message_interaction_design.md:162-245](file://docs/message_interaction_design.md#L162-L245)
+- [docs/message_interaction_design.md:162-245](docs/message_interaction_design.md#L162-L245)
 
 ## 核心组件
 - SSE 订阅端点：负责从认证上下文提取用户 ID，创建并维护 SSE 流，封装清理逻辑，设置 keep-alive 心跳。
@@ -74,12 +74,12 @@ WS --> HANDLER["LarkEventHandler"]
 - 飞书 WebSocket 接入：获取连接地址、建立 WS、定时发送 ping、接收事件并回调处理器。
 
 章节来源
-- [src/handlers/finance/message/subscribe_sse.rs:17-92](file://src/handlers/finance/message/subscribe_sse.rs#L17-L92)
-- [src/service/domain/message/mod.rs:250-331](file://src/service/domain/message/mod.rs#L250-L331)
-- [src/service/dal/message_push.rs:12-114](file://src/service/dal/message_push.rs#L12-L114)
-- [src/service/dao/message_push.rs:12-136](file://src/service/dao/message_push.rs#L12-L136)
-- [src/handlers/a2a/send_subscribe.rs:35-124](file://src/handlers/a2a/send_subscribe.rs#L35-L124)
-- [src/service/dao/lark/ws.rs:48-90](file://src/service/dao/lark/ws.rs#L48-L90)
+- [src/handlers/finance/message/subscribe_sse.rs:17-92](src/handlers/finance/message/subscribe_sse.rs#L17-L92)
+- [src/service/domain/message/mod.rs:250-331](src/service/domain/message/mod.rs#L250-L331)
+- [src/service/dal/message_push.rs:12-114](src/service/dal/message_push.rs#L12-L114)
+- [src/service/dao/message_push.rs:12-136](src/service/dao/message_push.rs#L12-L136)
+- [src/handlers/a2a/send_subscribe.rs:35-124](src/handlers/a2a/send_subscribe.rs#L35-L124)
+- [src/service/dao/lark/ws.rs:48-90](src/service/dao/lark/ws.rs#L48-L90)
 
 ## 架构总览
 SSE 与 WebSocket 在本项目中承担不同职责：
@@ -114,10 +114,10 @@ P->>O : unregister(conn_id)
 ```
 
 图表来源
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/service/domain/message/delivery.rs:438-459](file://src/service/domain/message/delivery.rs#L438-L459)
-- [src/service/dal/message_push.rs:71-104](file://src/service/dal/message_push.rs#L71-L104)
-- [src/service/dao/message_push.rs:60-131](file://src/service/dao/message_push.rs#L60-L131)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/service/domain/message/delivery.rs:438-459](src/service/domain/message/delivery.rs#L438-L459)
+- [src/service/dal/message_push.rs:71-104](src/service/dal/message_push.rs#L71-L104)
+- [src/service/dao/message_push.rs:60-131](src/service/dao/message_push.rs#L60-L131)
 
 ## 详细组件分析
 
@@ -145,10 +145,10 @@ Drop --> |否| Stream
 ```
 
 图表来源
-- [src/handlers/finance/message/subscribe_sse.rs:17-92](file://src/handlers/finance/message/subscribe_sse.rs#L17-L92)
+- [src/handlers/finance/message/subscribe_sse.rs:17-92](src/handlers/finance/message/subscribe_sse.rs#L17-L92)
 
 章节来源
-- [src/handlers/finance/message/subscribe_sse.rs:17-92](file://src/handlers/finance/message/subscribe_sse.rs#L17-L92)
+- [src/handlers/finance/message/subscribe_sse.rs:17-92](src/handlers/finance/message/subscribe_sse.rs#L17-L92)
 
 ### 消息推送 DAL/DAO 与广播机制
 - DAL 职责
@@ -181,12 +181,12 @@ MessagePushDalImpl --> SsePushDaoImpl : "委托"
 ```
 
 图表来源
-- [src/service/dal/message_push.rs:71-114](file://src/service/dal/message_push.rs#L71-L114)
-- [src/service/dao/message_push.rs:40-131](file://src/service/dao/message_push.rs#L40-L131)
+- [src/service/dal/message_push.rs:71-114](src/service/dal/message_push.rs#L71-L114)
+- [src/service/dao/message_push.rs:40-131](src/service/dao/message_push.rs#L40-L131)
 
 章节来源
-- [src/service/dal/message_push.rs:12-114](file://src/service/dal/message_push.rs#L12-L114)
-- [src/service/dao/message_push.rs:12-136](file://src/service/dao/message_push.rs#L12-L136)
+- [src/service/dal/message_push.rs:12-114](src/service/dal/message_push.rs#L12-L114)
+- [src/service/dao/message_push.rs:12-136](src/service/dao/message_push.rs#L12-L136)
 
 ### A2A 任务 SSE 流式接口
 - 功能要点
@@ -220,10 +220,10 @@ end
 ```
 
 图表来源
-- [src/handlers/a2a/send_subscribe.rs:35-124](file://src/handlers/a2a/send_subscribe.rs#L35-L124)
+- [src/handlers/a2a/send_subscribe.rs:35-124](src/handlers/a2a/send_subscribe.rs#L35-L124)
 
 章节来源
-- [src/handlers/a2a/send_subscribe.rs:1-212](file://src/handlers/a2a/send_subscribe.rs#L1-L212)
+- [src/handlers/a2a/send_subscribe.rs:1-212](src/handlers/a2a/send_subscribe.rs#L1-L212)
 
 ### 飞书 WebSocket 长连接（事件入站）
 - 协议要点
@@ -256,13 +256,13 @@ WS->>LARK : 关闭连接
 ```
 
 图表来源
-- [src/service/dao/lark/ws.rs:92-143](file://src/service/dao/lark/ws.rs#L92-L143)
-- [src/service/dao/lark/ws.rs:152-228](file://src/service/dao/lark/ws.rs#L152-L228)
-- [src/service/dao/lark/ws.rs:230-290](file://src/service/dao/lark/ws.rs#L230-L290)
+- [src/service/dao/lark/ws.rs:92-143](src/service/dao/lark/ws.rs#L92-L143)
+- [src/service/dao/lark/ws.rs:152-228](src/service/dao/lark/ws.rs#L152-L228)
+- [src/service/dao/lark/ws.rs:230-290](src/service/dao/lark/ws.rs#L230-L290)
 
 章节来源
-- [src/service/dao/lark/ws.rs:48-90](file://src/service/dao/lark/ws.rs#L48-L90)
-- [src/service/dao/lark/ws.rs:152-290](file://src/service/dao/lark/ws.rs#L152-L290)
+- [src/service/dao/lark/ws.rs:48-90](src/service/dao/lark/ws.rs#L48-L90)
+- [src/service/dao/lark/ws.rs:152-290](src/service/dao/lark/ws.rs#L152-L290)
 
 ### 客户端集成与错误处理
 - 前端使用 EventSource 订阅 SSE，自动携带 Cookie，由 JWT 中间件完成认证。
@@ -270,8 +270,8 @@ WS->>LARK : 关闭连接
 - 错误处理：SSE 流中通过 event("error") 传递错误信息；客户端需捕获并重试。
 
 章节来源
-- [docs/message_interaction_design.md:162-245](file://docs/message_interaction_design.md#L162-L245)
-- [frontend/src/utils/message.rs:42-84](file://frontend/src/utils/message.rs#L42-L84)
+- [docs/message_interaction_design.md:162-245](docs/message_interaction_design.md#L162-L245)
+- [frontend/src/utils/message.rs:42-84](frontend/src/utils/message.rs#L42-L84)
 
 ## 依赖关系分析
 - Handler 依赖领域层，领域层依赖 DAL，DAL 依赖 DAO。
@@ -288,16 +288,16 @@ L["Lark WS"] --> NET["tokio_tungstenite/reqwest"]
 ```
 
 图表来源
-- [src/service/domain/message/mod.rs:250-331](file://src/service/domain/message/mod.rs#L250-L331)
-- [src/service/dal/message_push.rs:71-114](file://src/service/dal/message_push.rs#L71-L114)
-- [src/service/dao/message_push.rs:60-131](file://src/service/dao/message_push.rs#L60-L131)
-- [src/service/dao/lark/ws.rs:152-228](file://src/service/dao/lark/ws.rs#L152-L228)
+- [src/service/domain/message/mod.rs:250-331](src/service/domain/message/mod.rs#L250-L331)
+- [src/service/dal/message_push.rs:71-114](src/service/dal/message_push.rs#L71-L114)
+- [src/service/dao/message_push.rs:60-131](src/service/dao/message_push.rs#L60-L131)
+- [src/service/dao/lark/ws.rs:152-228](src/service/dao/lark/ws.rs#L152-L228)
 
 章节来源
-- [src/service/domain/message/mod.rs:250-331](file://src/service/domain/message/mod.rs#L250-L331)
-- [src/service/dal/message_push.rs:71-114](file://src/service/dal/message_push.rs#L71-L114)
-- [src/service/dao/message_push.rs:60-131](file://src/service/dao/message_push.rs#L60-L131)
-- [src/service/dao/lark/ws.rs:152-228](file://src/service/dao/lark/ws.rs#L152-L228)
+- [src/service/domain/message/mod.rs:250-331](src/service/domain/message/mod.rs#L250-L331)
+- [src/service/dal/message_push.rs:71-114](src/service/dal/message_push.rs#L71-L114)
+- [src/service/dao/message_push.rs:60-131](src/service/dao/message_push.rs#L60-L131)
+- [src/service/dao/lark/ws.rs:152-228](src/service/dao/lark/ws.rs#L152-L228)
 
 ## 性能考虑
 - 广播通道容量：默认 channel(100)，在高并发下可能丢消息，建议根据峰值调整。
@@ -316,7 +316,7 @@ L["Lark WS"] --> NET["tokio_tungstenite/reqwest"]
 - 日志定位：关注 lark ws 相关日志（连接、心跳、接收错误），以及 SSE 推送计数。
 
 章节来源
-- [docs/testing_guidelines.md:479-499](file://docs/testing_guidelines.md#L479-L499)
+- [docs/testing_guidelines.md:479-499](docs/testing_guidelines.md#L479-L499)
 
 ## 结论
 本项目通过分层架构清晰分离了实时通信的职责：SSE 用于浏览器侧的消息与任务状态推送，WebSocket 用于第三方平台的事件入站。基于内存广播通道的推送机制具备低延迟与高吞吐特性，配合严格的生命周期管理与心跳策略，保障了连接的稳定性与资源可控。建议在大规模部署时关注广播通道容量、连接数上限与监控指标，持续优化性能与可观测性。
@@ -333,7 +333,7 @@ L["Lark WS"] --> NET["tokio_tungstenite/reqwest"]
   - 对于 A2A 场景，订阅 tasks/sendSubscribe 并按 project_id 过滤
 
 章节来源
-- [src/service/dal/message_push.rs:12-33](file://src/service/dal/message_push.rs#L12-L33)
-- [src/handlers/a2a/send_subscribe.rs:85-124](file://src/handlers/a2a/send_subscribe.rs#L85-L124)
-- [src/service/dao/lark/ws.rs:48-90](file://src/service/dao/lark/ws.rs#L48-L90)
-- [frontend/src/utils/message.rs:42-84](file://frontend/src/utils/message.rs#L42-L84)
+- [src/service/dal/message_push.rs:12-33](src/service/dal/message_push.rs#L12-L33)
+- [src/handlers/a2a/send_subscribe.rs:85-124](src/handlers/a2a/send_subscribe.rs#L85-L124)
+- [src/service/dao/lark/ws.rs:48-90](src/service/dao/lark/ws.rs#L48-L90)
+- [frontend/src/utils/message.rs:42-84](frontend/src/utils/message.rs#L42-L84)

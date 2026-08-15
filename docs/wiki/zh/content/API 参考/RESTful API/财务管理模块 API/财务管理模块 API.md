@@ -2,23 +2,23 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/finance/mod.rs](file://src/handlers/finance/mod.rs)
-- [src/handlers/finance/attachment/mod.rs](file://src/handlers/finance/attachment/mod.rs)
-- [src/handlers/finance/attachment/upload_attachment.rs](file://src/handlers/finance/attachment/upload_attachment.rs)
-- [src/handlers/finance/attachment/get_attachment_content.rs](file://src/handlers/finance/attachment/get_attachment_content.rs)
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
-- [src/handlers/finance/message/mod.rs](file://src/handlers/finance/message/mod.rs)
-- [src/handlers/finance/message/send_message.rs](file://src/handlers/finance/message/send_message.rs)
-- [src/handlers/finance/message/subscribe_sse.rs](file://src/handlers/finance/message/subscribe_sse.rs)
-- [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
-- [src/handlers/finance/model_provider/call_model.rs](file://src/handlers/finance/model_provider/call_model.rs)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs)
-- [src/handlers/finance/tool/mod.rs](file://src/handlers/finance/tool/mod.rs)
-- [src/handlers/finance/tool/request_tool_call.rs](file://src/handlers/finance/tool/request_tool_call.rs)
-- [src/models/attachment.rs](file://src/models/attachment.rs)
-- [src/models/mcp_server.rs](file://src/models/mcp_server.rs)
-- [src/models/model_provider.rs](file://src/models/model_provider.rs)
+- [src/handlers/finance/mod.rs](src/handlers/finance/mod.rs)
+- [src/handlers/finance/attachment/mod.rs](src/handlers/finance/attachment/mod.rs)
+- [src/handlers/finance/attachment/upload_attachment.rs](src/handlers/finance/attachment/upload_attachment.rs)
+- [src/handlers/finance/attachment/get_attachment_content.rs](src/handlers/finance/attachment/get_attachment_content.rs)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
+- [src/handlers/finance/message/mod.rs](src/handlers/finance/message/mod.rs)
+- [src/handlers/finance/message/send_message.rs](src/handlers/finance/message/send_message.rs)
+- [src/handlers/finance/message/subscribe_sse.rs](src/handlers/finance/message/subscribe_sse.rs)
+- [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
+- [src/handlers/finance/model_provider/call_model.rs](src/handlers/finance/model_provider/call_model.rs)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs](src/handlers/finance/model_provider/rebuild_vectors_task.rs)
+- [src/handlers/finance/tool/mod.rs](src/handlers/finance/tool/mod.rs)
+- [src/handlers/finance/tool/request_tool_call.rs](src/handlers/finance/tool/request_tool_call.rs)
+- [src/models/attachment.rs](src/models/attachment.rs)
+- [src/models/mcp_server.rs](src/models/mcp_server.rs)
+- [src/models/model_provider.rs](src/models/model_provider.rs)
 </cite>
 
 ## 目录
@@ -64,15 +64,15 @@ E --> I["models/model_provider.rs"]
 ```
 
 图表来源
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
-- [src/handlers/finance/attachment/mod.rs:1-21](file://src/handlers/finance/attachment/mod.rs#L1-L21)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/message/mod.rs:1-17](file://src/handlers/finance/message/mod.rs#L1-L17)
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
+- [src/handlers/finance/attachment/mod.rs:1-21](src/handlers/finance/attachment/mod.rs#L1-L21)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 
 章节来源
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
+- [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
 
 ## 核心组件
 - 附件管理
@@ -96,14 +96,14 @@ E --> I["models/model_provider.rs"]
   - 工具查询/调试：检索、标签、调试调用
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](file://src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/handlers/finance/message/send_message.rs:9-40](file://src/handlers/finance/message/send_message.rs#L9-L40)
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
-- [src/handlers/finance/tool/request_tool_call.rs:11-53](file://src/handlers/finance/tool/request_tool_call.rs#L11-L53)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/handlers/finance/message/send_message.rs:9-40](src/handlers/finance/message/send_message.rs#L9-L40)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
+- [src/handlers/finance/tool/request_tool_call.rs:11-53](src/handlers/finance/tool/request_tool_call.rs#L11-L53)
 
 ## 架构总览
 财务模块遵循 Adapter → Domain → DAL → DAO 的单向调用链。Handler 通过 domain() 访问领域服务，DAL 负责跨层实体转换，DAO 负责持久化。
@@ -126,9 +126,9 @@ Handler-->>Client : "JSON/SSE/二进制响应"
 ```
 
 图表来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
 
 ## 详细组件分析
 
@@ -158,12 +158,12 @@ CallDomain --> Resp["返回 CREATED + 附件详情"]
 ```
 
 图表来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](file://src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/models/attachment.rs:9-186](file://src/models/attachment.rs#L9-L186)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
+- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L186)
 
 ### MCP 服务器管理
 - 创建 MCP 服务器
@@ -212,12 +212,12 @@ McpServerPo --> McpServerConfig : "序列化/反序列化"
 ```
 
 图表来源
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
 
 章节来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
 
 ### 消息处理
 - 发送消息
@@ -245,12 +245,12 @@ Note over Client,Handler : "客户端断开 → Drop 触发 unsubscribe_sse"
 ```
 
 图表来源
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/handlers/finance/message/send_message.rs:9-40](file://src/handlers/finance/message/send_message.rs#L9-L40)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/message/send_message.rs:9-40](src/handlers/finance/message/send_message.rs#L9-L40)
 
 章节来源
-- [src/handlers/finance/message/send_message.rs:9-40](file://src/handlers/finance/message/send_message.rs#L9-L40)
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/message/send_message.rs:9-40](src/handlers/finance/message/send_message.rs#L9-L40)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
 
 ### 模型提供商管理
 - 调用模型
@@ -284,13 +284,13 @@ Handler-->>Client : "JSON 响应"
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
-- [src/models/model_provider.rs:9-248](file://src/models/model_provider.rs#L9-L248)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/models/model_provider.rs:9-248](src/models/model_provider.rs#L9-L248)
 
 章节来源
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
-- [src/models/model_provider.rs:9-248](file://src/models/model_provider.rs#L9-L248)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
+- [src/models/model_provider.rs:9-248](src/models/model_provider.rs#L9-L248)
 
 ### 工具管理
 - 手动工具同步调用
@@ -313,10 +313,10 @@ Exec --> Resp["返回 call_id/status/result"]
 ```
 
 图表来源
-- [src/handlers/finance/tool/request_tool_call.rs:11-53](file://src/handlers/finance/tool/request_tool_call.rs#L11-L53)
+- [src/handlers/finance/tool/request_tool_call.rs:11-53](src/handlers/finance/tool/request_tool_call.rs#L11-L53)
 
 章节来源
-- [src/handlers/finance/tool/request_tool_call.rs:11-53](file://src/handlers/finance/tool/request_tool_call.rs#L11-L53)
+- [src/handlers/finance/tool/request_tool_call.rs:11-53](src/handlers/finance/tool/request_tool_call.rs#L11-L53)
 
 ## 依赖关系分析
 - Handler 依赖领域服务 domain()，不直接访问 DAL/DAO
@@ -341,10 +341,10 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:131-162](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L131-L162)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:131-162](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L131-L162)
 
 章节来源
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
 
 ## 性能与扩展性
 - 向量重建任务
@@ -375,10 +375,10 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 查看 test_connection 返回的错误信息
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-120](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L120)
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:108-120](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L108-L120)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
 
 ## 结论
 财务管理模块提供了完整的附件、MCP 服务器、消息、模型提供商与工具管理能力，采用清晰的四层架构与严格的单向依赖。通过 SSE 实时推送、后台向量重建任务、上下文增强与脱敏策略，满足高可用与安全合规要求。建议在生产环境结合监控与日志，关注向量重建任务进度与 SSE 连接健康度。
@@ -409,9 +409,9 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 示例场景：管理员清理过期附件
 
 章节来源
-- [src/handlers/finance/attachment/upload_attachment.rs:17-82](file://src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
-- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](file://src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
-- [src/models/attachment.rs:9-186](file://src/models/attachment.rs#L9-L186)
+- [src/handlers/finance/attachment/upload_attachment.rs:17-82](src/handlers/finance/attachment/upload_attachment.rs#L17-L82)
+- [src/handlers/finance/attachment/get_attachment_content.rs:12-37](src/handlers/finance/attachment/get_attachment_content.rs#L12-L37)
+- [src/models/attachment.rs:9-186](src/models/attachment.rs#L9-L186)
 
 ### MCP 服务器管理
 - 创建 MCP 服务器
@@ -426,8 +426,8 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 示例场景：临时禁用某 MCP 服务器以进行维护
 
 章节来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
-- [src/models/mcp_server.rs:17-322](file://src/models/mcp_server.rs#L17-L322)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:14-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L14-L47)
+- [src/models/mcp_server.rs:17-322](src/models/mcp_server.rs#L17-L322)
 
 ### 消息处理
 - 发送消息
@@ -448,8 +448,8 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 示例场景：按关键词检索历史对话
 
 章节来源
-- [src/handlers/finance/message/send_message.rs:9-40](file://src/handlers/finance/message/send_message.rs#L9-L40)
-- [src/handlers/finance/message/subscribe_sse.rs:52-92](file://src/handlers/finance/message/subscribe_sse.rs#L52-L92)
+- [src/handlers/finance/message/send_message.rs:9-40](src/handlers/finance/message/send_message.rs#L9-L40)
+- [src/handlers/finance/message/subscribe_sse.rs:52-92](src/handlers/finance/message/subscribe_sse.rs#L52-L92)
 
 ### 模型提供商管理
 - 调用模型
@@ -475,9 +475,9 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 示例场景：更换底层嵌入模型以提升检索质量
 
 章节来源
-- [src/handlers/finance/model_provider/call_model.rs:11-41](file://src/handlers/finance/model_provider/call_model.rs#L11-L41)
-- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](file://src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
-- [src/models/model_provider.rs:9-248](file://src/models/model_provider.rs#L9-L248)
+- [src/handlers/finance/model_provider/call_model.rs:11-41](src/handlers/finance/model_provider/call_model.rs#L11-L41)
+- [src/handlers/finance/model_provider/rebuild_vectors_task.rs:16-193](src/handlers/finance/model_provider/rebuild_vectors_task.rs#L16-L193)
+- [src/models/model_provider.rs:9-248](src/models/model_provider.rs#L9-L248)
 
 ### 工具管理
 - 手动工具同步调用
@@ -496,4 +496,4 @@ T_Rebuild --> DAL_Tool["dal.tool.rebuild_vectors"]
   - 示例场景：检索工具、查看详情、调试调用以验证行为
 
 章节来源
-- [src/handlers/finance/tool/request_tool_call.rs:11-53](file://src/handlers/finance/tool/request_tool_call.rs#L11-L53)
+- [src/handlers/finance/tool/request_tool_call.rs:11-53](src/handlers/finance/tool/request_tool_call.rs#L11-L53)

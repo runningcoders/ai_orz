@@ -2,21 +2,21 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/hr/skill/mod.rs](file://src/handlers/hr/skill/mod.rs)
-- [src/handlers/hr/skill/create_skill.rs](file://src/handlers/hr/skill/create_skill.rs)
-- [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-- [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
-- [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-- [src/handlers/hr/skill/list_skills.rs](file://src/handlers/hr/skill/list_skills.rs)
-- [src/handlers/hr/skill/query_skills.rs](file://src/handlers/hr/skill/query_skills.rs)
-- [src/handlers/hr/skill/search_skills.rs](file://src/handlers/hr/skill/search_skills.rs)
-- [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
-- [src/handlers/hr/skill/list_skill_files.rs](file://src/handlers/hr/skill/list_skill_files.rs)
-- [src/handlers/hr/skill/get_skill_file_content.rs](file://src/handlers/hr/skill/get_skill_file_content.rs)
-- [src/handlers/hr/skill/update_skill_file_content.rs](file://src/handlers/hr/skill/update_skill_file_content.rs)
-- [common/src/api/skill.rs](file://common/src/api/skill.rs)
-- [src/models/skill.rs](file://src/models/skill.rs)
+- [src/handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs)
+- [src/handlers/hr/skill/create_skill.rs](src/handlers/hr/skill/create_skill.rs)
+- [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+- [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
+- [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+- [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
+- [src/handlers/hr/skill/query_skills.rs](src/handlers/hr/skill/query_skills.rs)
+- [src/handlers/hr/skill/search_skills.rs](src/handlers/hr/skill/search_skills.rs)
+- [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+- [src/handlers/hr/skill/list_skill_files.rs](src/handlers/hr/skill/list_skill_files.rs)
+- [src/handlers/hr/skill/get_skill_file_content.rs](src/handlers/hr/skill/get_skill_file_content.rs)
+- [src/handlers/hr/skill/update_skill_file_content.rs](src/handlers/hr/skill/update_skill_file_content.rs)
+- [common/src/api/skill.rs](common/src/api/skill.rs)
+- [src/models/skill.rs](src/models/skill.rs)
 </cite>
 
 ## 目录
@@ -47,12 +47,12 @@ A --> F["响应转换<br/>handlers/hr/skill/response.rs"]
 ```
 
 图表来源
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
-- [common/src/api/skill.rs:1-466](file://common/src/api/skill.rs#L1-L466)
-- [src/models/skill.rs:1-193](file://src/models/skill.rs#L1-L193)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
+- [common/src/api/skill.rs:1-466](common/src/api/skill.rs#L1-L466)
+- [src/models/skill.rs:1-193](src/models/skill.rs#L1-L193)
 
 章节来源
-- [src/handlers/hr/skill/mod.rs:1-36](file://src/handlers/hr/skill/mod.rs#L1-L36)
+- [src/handlers/hr/skill/mod.rs:1-36](src/handlers/hr/skill/mod.rs#L1-L36)
 
 ## 核心组件
 - 请求/响应 DTO：统一在 common/src/api/skill.rs 中定义，包含创建、更新、查询、搜索、文件操作、Agent 安装/卸载等全部接口契约。
@@ -61,9 +61,9 @@ A --> F["响应转换<br/>handlers/hr/skill/response.rs"]
 - 响应转换：handlers/hr/skill/response.rs 将领域模型转换为对外 DTO。
 
 章节来源
-- [common/src/api/skill.rs:1-466](file://common/src/api/skill.rs#L1-L466)
-- [src/models/skill.rs:1-193](file://src/models/skill.rs#L1-L193)
-- [src/handlers/hr/skill/response.rs:1-47](file://src/handlers/hr/skill/response.rs#L1-L47)
+- [common/src/api/skill.rs:1-466](common/src/api/skill.rs#L1-L466)
+- [src/models/skill.rs:1-193](src/models/skill.rs#L1-L193)
+- [src/handlers/hr/skill/response.rs:1-47](src/handlers/hr/skill/response.rs#L1-L47)
 
 ## 架构总览
 遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 仅做参数校验与上下文装配，不直接访问数据库或文件系统；所有业务规则在 Domain 层实现。
@@ -87,9 +87,9 @@ Handler-->>Client : "JSON 响应"
 ```
 
 图表来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [src/handlers/hr/skill/get_skill.rs:1-31](file://src/handlers/hr/skill/get_skill.rs#L1-L31)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
 
 ## 详细组件分析
 
@@ -121,11 +121,11 @@ Fetch --> Resp["返回 SkillDetail"]
 ```
 
 图表来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [common/src/api/skill.rs:11-28](file://common/src/api/skill.rs#L11-L28)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [common/src/api/skill.rs:11-28](common/src/api/skill.rs#L11-L28)
 
 ### 更新 Skill（PUT /api/v1/skills/{skill_id}）
 - 职责：更新元数据（name/description/tags/category/status）、主内容 skill.md、导入附加文件。
@@ -159,11 +159,11 @@ H-->>Client : "200 OK + SkillDetail"
 ```
 
 图表来源
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
 
 章节来源
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [common/src/api/skill.rs:60-86](file://common/src/api/skill.rs#L60-L86)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [common/src/api/skill.rs:60-86](common/src/api/skill.rs#L60-L86)
 
 ### 删除 Skill（DELETE /api/v1/skills/{skill_id}）
 - 职责：删除指定 Skill（不可恢复）。
@@ -172,7 +172,7 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：无体（204/200 语义由框架决定）。
 
 章节来源
-- [src/handlers/hr/skill/delete_skill.rs:1-34](file://src/handlers/hr/skill/delete_skill.rs#L1-L34)
+- [src/handlers/hr/skill/delete_skill.rs:1-34](src/handlers/hr/skill/delete_skill.rs#L1-L34)
 
 ### 获取 Skill 详情（GET /api/v1/skills/{skill_id}）
 - 职责：返回 Skill 的完整元数据与文件摘要。
@@ -180,8 +180,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 错误处理：不存在时返回 NotFound。
 
 章节来源
-- [src/handlers/hr/skill/get_skill.rs:1-31](file://src/handlers/hr/skill/get_skill.rs#L1-L31)
-- [src/handlers/hr/skill/response.rs:21-38](file://src/handlers/hr/skill/response.rs#L21-L38)
+- [src/handlers/hr/skill/get_skill.rs:1-31](src/handlers/hr/skill/get_skill.rs#L1-L31)
+- [src/handlers/hr/skill/response.rs:21-38](src/handlers/hr/skill/response.rs#L21-L38)
 
 ### 列出 Skill（GET /api/v1/skills）
 - 职责：分页列出公开 Skill，默认排除 Expired。
@@ -189,8 +189,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：PagedResult<SkillListItem>。
 
 章节来源
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
-- [common/src/api/skill.rs:266-280](file://common/src/api/skill.rs#L266-L280)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [common/src/api/skill.rs:266-280](common/src/api/skill.rs#L266-L280)
 
 ### 通用查询（POST /api/v1/hr/skills/query）
 - 职责：支持 ids、keyword、status、category、author_id、parent_skill_id、tags、分页等组合过滤。
@@ -198,8 +198,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：PagedResult<SkillListItem>。
 
 章节来源
-- [src/handlers/hr/skill/query_skills.rs:1-50](file://src/handlers/hr/skill/query_skills.rs#L1-L50)
-- [common/src/api/skill.rs:282-302](file://common/src/api/skill.rs#L282-L302)
+- [src/handlers/hr/skill/query_skills.rs:1-50](src/handlers/hr/skill/query_skills.rs#L1-L50)
+- [common/src/api/skill.rs:282-302](common/src/api/skill.rs#L282-L302)
 
 ### 搜索 Skill（POST /api/v1/skills/search）
 - 职责：基于关键词进行 FTS5 + 向量语义混合搜索，并支持同等的过滤条件与分页。
@@ -207,8 +207,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：PagedResult<SkillListItem>。
 
 章节来源
-- [src/handlers/hr/skill/search_skills.rs:1-50](file://src/handlers/hr/skill/search_skills.rs#L1-L50)
-- [common/src/api/skill.rs:307-330](file://common/src/api/skill.rs#L307-L330)
+- [src/handlers/hr/skill/search_skills.rs:1-50](src/handlers/hr/skill/search_skills.rs#L1-L50)
+- [common/src/api/skill.rs:307-330](common/src/api/skill.rs#L307-L330)
 
 ### 安装 Skill 到 Agent（POST /api/v1/agents/{agent_id}/skills/{skill_id}）
 - 职责：为指定 Agent 安装一个公开 Skill，创建私有副本。
@@ -216,8 +216,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：InstallSkillToAgentResponse（含 agent_id、source_skill_id、skill）。
 
 章节来源
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](file://src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
-- [common/src/api/skill.rs:173-193](file://common/src/api/skill.rs#L173-L193)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-37](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L37)
+- [common/src/api/skill.rs:173-193](common/src/api/skill.rs#L173-L193)
 
 ### 从 Agent 卸载 Skill（DELETE /api/v1/hr/agents/{agent_id}/skills/{skill_id}）
 - 职责：删除 Agent 的 Skill 私有副本（DB 记录 + 文件目录）。
@@ -225,8 +225,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：UninstallSkillFromAgentResponse（含 agent_id、skill_id、deleted）。
 
 章节来源
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
-- [common/src/api/skill.rs:445-465](file://common/src/api/skill.rs#L445-L465)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-35](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L35)
+- [common/src/api/skill.rs:445-465](common/src/api/skill.rs#L445-L465)
 
 ### 列出 Skill 文件（GET /api/v1/skills/{skill_id}/files）
 - 职责：返回 Skill 的文件清单（文件名、大小、是否已预读内容）。
@@ -234,8 +234,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：ListSkillFilesResponse。
 
 章节来源
-- [src/handlers/hr/skill/list_skill_files.rs:1-44](file://src/handlers/hr/skill/list_skill_files.rs#L1-L44)
-- [common/src/api/skill.rs:195-208](file://common/src/api/skill.rs#L195-L208)
+- [src/handlers/hr/skill/list_skill_files.rs:1-44](src/handlers/hr/skill/list_skill_files.rs#L1-L44)
+- [common/src/api/skill.rs:195-208](common/src/api/skill.rs#L195-L208)
 
 ### 读取 Skill 文件内容（GET /api/v1/skills/{skill_id}/files/{filename}）
 - 职责：读取指定文本文件内容。
@@ -243,8 +243,8 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：GetSkillFileContentResponse。
 
 章节来源
-- [src/handlers/hr/skill/get_skill_file_content.rs:1-39](file://src/handlers/hr/skill/get_skill_file_content.rs#L1-L39)
-- [common/src/api/skill.rs:210-227](file://common/src/api/skill.rs#L210-L227)
+- [src/handlers/hr/skill/get_skill_file_content.rs:1-39](src/handlers/hr/skill/get_skill_file_content.rs#L1-L39)
+- [common/src/api/skill.rs:210-227](common/src/api/skill.rs#L210-L227)
 
 ### 更新 Skill 文件内容（PUT /api/v1/skills/{skill_id}/files/{filename}）
 - 职责：创建或覆盖文本文件内容，支持乐观锁 expected_updated_at。
@@ -252,15 +252,15 @@ H-->>Client : "200 OK + SkillDetail"
 - 响应：UpdateSkillFileContentResponse。
 
 章节来源
-- [src/handlers/hr/skill/update_skill_file_content.rs:1-35](file://src/handlers/hr/skill/update_skill_file_content.rs#L1-L35)
-- [common/src/api/skill.rs:229-249](file://common/src/api/skill.rs#L229-L249)
+- [src/handlers/hr/skill/update_skill_file_content.rs:1-35](src/handlers/hr/skill/update_skill_file_content.rs#L1-L35)
+- [common/src/api/skill.rs:229-249](common/src/api/skill.rs#L229-L249)
 
 ### 标签系统（GET /api/v1/skills/tags）
 - 职责：聚合已发布 Skill 的不重复标签列表，用于前端筛选。
 - 响应：ListSkillTagsResponse。
 
 章节来源
-- [common/src/api/skill.rs:434-443](file://common/src/api/skill.rs#L434-L443)
+- [common/src/api/skill.rs:434-443](common/src/api/skill.rs#L434-L443)
 
 ## 依赖关系分析
 - Handler 依赖：
@@ -283,14 +283,14 @@ H --> Resp["响应 DTO"]
 ```
 
 图表来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [src/models/skill.rs:107-150](file://src/models/skill.rs#L107-L150)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/models/skill.rs:107-150](src/models/skill.rs#L107-L150)
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/update_skill.rs:1-127](file://src/handlers/hr/skill/update_skill.rs#L1-L127)
-- [src/models/skill.rs:107-150](file://src/models/skill.rs#L107-L150)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/update_skill.rs:1-127](src/handlers/hr/skill/update_skill.rs#L1-L127)
+- [src/models/skill.rs:107-150](src/models/skill.rs#L107-L150)
 
 ## 性能考虑
 - 列表与搜索：
@@ -317,9 +317,9 @@ H --> Resp["响应 DTO"]
   - 查看 Domain/DAL 返回的错误信息以定位根因。
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:22-32](file://src/handlers/hr/skill/create_skill.rs#L22-L32)
-- [src/handlers/hr/skill/update_skill.rs:37-54](file://src/handlers/hr/skill/update_skill.rs#L37-L54)
-- [src/handlers/hr/skill/update_skill_file_content.rs:18-31](file://src/handlers/hr/skill/update_skill_file_content.rs#L18-L31)
+- [src/handlers/hr/skill/create_skill.rs:22-32](src/handlers/hr/skill/create_skill.rs#L22-L32)
+- [src/handlers/hr/skill/update_skill.rs:37-54](src/handlers/hr/skill/update_skill.rs#L37-L54)
+- [src/handlers/hr/skill/update_skill_file_content.rs:18-31](src/handlers/hr/skill/update_skill_file_content.rs#L18-L31)
 
 ## 结论
 Skill 处理器以清晰的层次划分与严格的参数校验保障稳定性；通过 Domain 抽象出复杂的文件与权限逻辑，Handler 保持轻量。结合 FTS5 与向量搜索，既能满足精确过滤也能支持语义检索。建议后续继续完善错误码文档与监控埋点，提升可观测性。
@@ -335,8 +335,8 @@ Skill 处理器以清晰的层次划分与严格的参数校验保障稳定性�
 - 文件项：SkillFileItem（filename、file_size、has_content）
 
 章节来源
-- [common/src/api/skill.rs:99-157](file://common/src/api/skill.rs#L99-L157)
-- [common/src/api/skill.rs:195-208](file://common/src/api/skill.rs#L195-L208)
+- [common/src/api/skill.rs:99-157](common/src/api/skill.rs#L99-L157)
+- [common/src/api/skill.rs:195-208](common/src/api/skill.rs#L195-L208)
 
 ### 典型 API 调用示例
 
@@ -413,7 +413,7 @@ Skill 处理器以清晰的层次划分与严格的参数校验保障稳定性�
   - 响应：ListSkillTagsResponse
 
 章节来源
-- [common/src/api/skill.rs:11-466](file://common/src/api/skill.rs#L11-L466)
+- [common/src/api/skill.rs:11-466](common/src/api/skill.rs#L11-L466)
 
 ### 错误码与含义
 - InvalidRequest：参数校验失败（如必填为空、格式不合法）。
@@ -422,9 +422,9 @@ Skill 处理器以清晰的层次划分与严格的参数校验保障稳定性�
 - 其他：由框架或底层服务抛出的异常（如权限不足、IO 错误）。
 
 章节来源
-- [src/handlers/hr/skill/create_skill.rs:22-32](file://src/handlers/hr/skill/create_skill.rs#L22-L32)
-- [src/handlers/hr/skill/update_skill.rs:37-54](file://src/handlers/hr/skill/update_skill.rs#L37-L54)
-- [src/handlers/hr/skill/update_skill_file_content.rs:18-31](file://src/handlers/hr/skill/update_skill_file_content.rs#L18-L31)
+- [src/handlers/hr/skill/create_skill.rs:22-32](src/handlers/hr/skill/create_skill.rs#L22-L32)
+- [src/handlers/hr/skill/update_skill.rs:37-54](src/handlers/hr/skill/update_skill.rs#L37-L54)
+- [src/handlers/hr/skill/update_skill_file_content.rs:18-31](src/handlers/hr/skill/update_skill_file_content.rs#L18-L31)
 
 ### 开发规范与最佳实践
 - 分层与调用方向：严格 Adapter → Domain → DAL → DAO，禁止跨层与同层互调。

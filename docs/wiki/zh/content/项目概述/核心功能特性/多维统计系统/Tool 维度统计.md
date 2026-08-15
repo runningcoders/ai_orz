@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/stats/tool_call.rs](file://src/pkg/stats/tool_call.rs)
-- [src/models/events/tool_exec.rs](file://src/models/events/tool_exec.rs)
-- [src/consumer/tool_exec_stats_consumer.rs](file://src/consumer/tool_exec_stats_consumer.rs)
-- [src/consumer/tool_exec_log_consumer.rs](file://src/consumer/tool_exec_log_consumer.rs)
-- [src/service/dao/tool/mod.rs](file://src/service/dao/tool/mod.rs)
-- [src/service/dal/agent.rs](file://src/service/dal/agent.rs)
-- [src/service/domain/runtime/tool_call_query.rs](file://src/service/domain/runtime/tool_call_query.rs)
-- [src/handlers/finance/tool/response.rs](file://src/handlers/finance/tool/response.rs)
-- [frontend/src/api/finance.rs](file://frontend/src/api/finance.rs)
-- [ai-orz-macros/src/lib.rs](file://ai-orz-macros/src/lib.rs)
-- [ai-orz-macros/src/stats_event.rs](file://ai-orz-macros/src/stats_event.rs)
-- [src/pkg/aop/core/registry.rs](file://src/pkg/aop/core/registry.rs)
+- [src/pkg/stats/tool_call.rs](src/pkg/stats/tool_call.rs)
+- [src/models/events/tool_exec.rs](src/models/events/tool_exec.rs)
+- [src/consumer/tool_exec_stats_consumer.rs](src/consumer/tool_exec_stats_consumer.rs)
+- [src/consumer/tool_exec_log_consumer.rs](src/consumer/tool_exec_log_consumer.rs)
+- [src/service/dao/tool/mod.rs](src/service/dao/tool/mod.rs)
+- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/domain/runtime/tool_call_query.rs](src/service/domain/runtime/tool_call_query.rs)
+- [src/handlers/finance/tool/response.rs](src/handlers/finance/tool/response.rs)
+- [frontend/src/api/finance.rs](frontend/src/api/finance.rs)
+- [ai-orz-macros/src/lib.rs](ai-orz-macros/src/lib.rs)
+- [ai-orz-macros/src/stats_event.rs](ai-orz-macros/src/stats_event.rs)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
 </cite>
 
 ## 目录
@@ -80,24 +80,24 @@ Frontend --> Handler
 ```
 
 图表来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/consumer/tool_exec_log_consumer.rs:1-52](file://src/consumer/tool_exec_log_consumer.rs#L1-L52)
-- [src/pkg/stats/tool_call.rs:1-228](file://src/pkg/stats/tool_call.rs#L1-L228)
-- [src/service/dao/tool/mod.rs:66-239](file://src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
-- [src/handlers/finance/tool/response.rs:1-46](file://src/handlers/finance/tool/response.rs#L1-L46)
-- [frontend/src/api/finance.rs:116-150](file://frontend/src/api/finance.rs#L116-L150)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/consumer/tool_exec_log_consumer.rs:1-52](src/consumer/tool_exec_log_consumer.rs#L1-L52)
+- [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
+- [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
+- [src/handlers/finance/tool/response.rs:1-46](src/handlers/finance/tool/response.rs#L1-L46)
+- [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
 章节来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/consumer/tool_exec_log_consumer.rs:1-52](file://src/consumer/tool_exec_log_consumer.rs#L1-L52)
-- [src/pkg/stats/tool_call.rs:1-228](file://src/pkg/stats/tool_call.rs#L1-L228)
-- [src/service/dao/tool/mod.rs:66-239](file://src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
-- [src/handlers/finance/tool/response.rs:1-46](file://src/handlers/finance/tool/response.rs#L1-L46)
-- [frontend/src/api/finance.rs:116-150](file://frontend/src/api/finance.rs#L116-L150)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/consumer/tool_exec_log_consumer.rs:1-52](src/consumer/tool_exec_log_consumer.rs#L1-L52)
+- [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
+- [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
+- [src/handlers/finance/tool/response.rs:1-46](src/handlers/finance/tool/response.rs#L1-L46)
+- [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
 ## 核心组件
 - ToolExecEvent：工具执行完成后发布的 AOP 事件，携带完整调用上下文与度量信息
@@ -108,12 +108,12 @@ Frontend --> Handler
 - 前端 API：通过 with_stats 及时间范围参数拉取工具统计
 
 章节来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/pkg/stats/tool_call.rs:1-228](file://src/pkg/stats/tool_call.rs#L1-L228)
-- [src/service/dao/tool/mod.rs:66-239](file://src/service/dao/tool/mod.rs#L66-L239)
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
-- [frontend/src/api/finance.rs:116-150](file://frontend/src/api/finance.rs#L116-L150)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/pkg/stats/tool_call.rs:1-228](src/pkg/stats/tool_call.rs#L1-L228)
+- [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
+- [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
 
 ## 架构总览
 下图展示了从工具执行到统计查询的端到端流程，包括 AOP 事件分发、统计落库、DAO 聚合与前端展示。
@@ -143,12 +143,12 @@ H-->>F : 返回工具详情(含 stats)
 ```
 
 图表来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/consumer/tool_exec_log_consumer.rs:1-52](file://src/consumer/tool_exec_log_consumer.rs#L1-L52)
-- [src/pkg/stats/tool_call.rs:121-228](file://src/pkg/stats/tool_call.rs#L121-L228)
-- [src/service/dao/tool/mod.rs:129-239](file://src/service/dao/tool/mod.rs#L129-L239)
-- [src/handlers/finance/tool/response.rs:27-46](file://src/handlers/finance/tool/response.rs#L27-L46)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/consumer/tool_exec_log_consumer.rs:1-52](src/consumer/tool_exec_log_consumer.rs#L1-L52)
+- [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
+- [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
+- [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 ## 详细组件分析
 
@@ -158,7 +158,7 @@ H-->>F : 返回工具详情(含 stats)
 - 事件类型：agent.tool.executed；顺序键按 agent_id 保证同一 Agent 的工具日志顺序
 
 章节来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
 
 ### ToolExecStatsConsumer：统计消费者
 - 订阅事件：agent.tool.executed
@@ -166,7 +166,7 @@ H-->>F : 返回工具详情(含 stats)
 - 特点：同步消费，避免阻塞主流程；无 ctx 时使用系统级 RequestContext
 
 章节来源
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
 
 ### ToolCallEvent：Stats 事件与表结构
 - 标签字段（tag）：tool_id、tool_name、agent_id、project_id、task_id、organization_id、user_id
@@ -175,10 +175,10 @@ H-->>F : 返回工具详情(含 stats)
 - 宏生成：通过 #[derive(StatsEvent)] 自动生成 StatEvent 实现
 
 章节来源
-- [src/pkg/stats/tool_call.rs:12-41](file://src/pkg/stats/tool_call.rs#L12-L41)
-- [src/pkg/stats/tool_call.rs:121-228](file://src/pkg/stats/tool_call.rs#L121-L228)
-- [ai-orz-macros/src/lib.rs:22-45](file://ai-orz-macros/src/lib.rs#L22-L45)
-- [ai-orz-macros/src/stats_event.rs:1-72](file://ai-orz-macros/src/stats_event.rs#L1-L72)
+- [src/pkg/stats/tool_call.rs:12-41](src/pkg/stats/tool_call.rs#L12-L41)
+- [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
+- [ai-orz-macros/src/lib.rs:22-45](ai-orz-macros/src/lib.rs#L22-L45)
+- [ai-orz-macros/src/stats_event.rs:1-72](ai-orz-macros/src/stats_event.rs#L1-L72)
 
 ### ToolStatsDao：统计查询与聚合
 - 查询参数：ToolStatsQuery（tool_id、agent_id、filters、time_range、aggregations）
@@ -205,18 +205,18 @@ Build --> End(["返回 ToolStats"])
 ```
 
 图表来源
-- [src/service/dao/tool/mod.rs:129-175](file://src/service/dao/tool/mod.rs#L129-L175)
-- [src/service/dao/tool/mod.rs:177-239](file://src/service/dao/tool/mod.rs#L177-L239)
+- [src/service/dao/tool/mod.rs:129-175](src/service/dao/tool/mod.rs#L129-L175)
+- [src/service/dao/tool/mod.rs:177-239](src/service/dao/tool/mod.rs#L177-L239)
 
 章节来源
-- [src/service/dao/tool/mod.rs:66-239](file://src/service/dao/tool/mod.rs#L66-L239)
+- [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)
 
 ### Agent DAL：工具调用分布汇总
 - 在获取 Agent 统计时，若已启用 call_summary，则额外调用 sum_calls_by_tool 填充 tool_call_summary
 - 失败降级：查询失败仅 warn 日志，不阻塞主流程
 
 章节来源
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
 
 ### 查询限制与上下文约束
 - 工具调用查询需具备 scoped RequestContext（agent/project/task），防止越权
@@ -224,15 +224,15 @@ Build --> End(["返回 ToolStats"])
 - 校验 query 与 context 的 scope 一致性
 
 章节来源
-- [src/service/domain/runtime/tool_call_query.rs:1-86](file://src/service/domain/runtime/tool_call_query.rs#L1-L86)
+- [src/service/domain/runtime/tool_call_query.rs:1-86](src/service/domain/runtime/tool_call_query.rs#L1-L86)
 
 ### 前端 API 与统计参数
 - 前端通过 /api/v1/finance/tools/{id}?with_stats=...&stats_time_start=...&stats_time_end=...&stats_interval=... 获取工具详情与统计
 - 后端响应中附带 stats 字段，便于前端渲染趋势图与分布图
 
 章节来源
-- [frontend/src/api/finance.rs:116-150](file://frontend/src/api/finance.rs#L116-L150)
-- [src/handlers/finance/tool/response.rs:27-46](file://src/handlers/finance/tool/response.rs#L27-L46)
+- [frontend/src/api/finance.rs:116-150](frontend/src/api/finance.rs#L116-L150)
+- [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 ## 依赖关系分析
 - AOP 注册中心维护消费者与生产者数量、队列长度与统计，便于实时监控
@@ -252,20 +252,20 @@ Handler --> Front["前端"]
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:486-531](file://src/pkg/aop/core/registry.rs#L486-L531)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/pkg/stats/tool_call.rs:121-228](file://src/pkg/stats/tool_call.rs#L121-L228)
-- [src/service/dao/tool/mod.rs:129-239](file://src/service/dao/tool/mod.rs#L129-L239)
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
-- [src/handlers/finance/tool/response.rs:27-46](file://src/handlers/finance/tool/response.rs#L27-L46)
+- [src/pkg/aop/core/registry.rs:486-531](src/pkg/aop/core/registry.rs#L486-L531)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
+- [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
+- [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 章节来源
-- [src/pkg/aop/core/registry.rs:486-531](file://src/pkg/aop/core/registry.rs#L486-L531)
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/pkg/stats/tool_call.rs:121-228](file://src/pkg/stats/tool_call.rs#L121-L228)
-- [src/service/dao/tool/mod.rs:129-239](file://src/service/dao/tool/mod.rs#L129-L239)
-- [src/service/dal/agent.rs:783-814](file://src/service/dal/agent.rs#L783-L814)
-- [src/handlers/finance/tool/response.rs:27-46](file://src/handlers/finance/tool/response.rs#L27-L46)
+- [src/pkg/aop/core/registry.rs:486-531](src/pkg/aop/core/registry.rs#L486-L531)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/pkg/stats/tool_call.rs:121-228](src/pkg/stats/tool_call.rs#L121-L228)
+- [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
+- [src/service/dal/agent.rs:783-814](src/service/dal/agent.rs#L783-L814)
+- [src/handlers/finance/tool/response.rs:27-46](src/handlers/finance/tool/response.rs#L27-L46)
 
 ## 性能与优化
 - 批量写入：ToolCallStatTable 提供 bulk_insert_events，减少数据库往返
@@ -291,10 +291,10 @@ Handler --> Front["前端"]
 - 性能问题：查看 AOP 队列长度与消费者耗时，必要时调整批大小或查询范围
 
 章节来源
-- [src/consumer/tool_exec_stats_consumer.rs:1-73](file://src/consumer/tool_exec_stats_consumer.rs#L1-L73)
-- [src/service/dao/tool/mod.rs:129-239](file://src/service/dao/tool/mod.rs#L129-L239)
-- [src/service/domain/runtime/tool_call_query.rs:1-86](file://src/service/domain/runtime/tool_call_query.rs#L1-L86)
-- [src/pkg/aop/core/registry.rs:486-531](file://src/pkg/aop/core/registry.rs#L486-L531)
+- [src/consumer/tool_exec_stats_consumer.rs:1-73](src/consumer/tool_exec_stats_consumer.rs#L1-L73)
+- [src/service/dao/tool/mod.rs:129-239](src/service/dao/tool/mod.rs#L129-L239)
+- [src/service/domain/runtime/tool_call_query.rs:1-86](src/service/domain/runtime/tool_call_query.rs#L1-L86)
+- [src/pkg/aop/core/registry.rs:486-531](src/pkg/aop/core/registry.rs#L486-L531)
 
 ## 结论
 本项目实现了从工具执行到统计落库、聚合查询与前端展示的完整闭环。通过 AOP 事件解耦采集与消费，Stats 事件与 DuckDB 提供高效存储与聚合，DAO/DAL 提供多维度查询能力，满足工具性能分析、调用频率统计与错误模式识别的需求。配合 AOP 队列监控与查询限制，可在高并发场景下保持稳定与可观测性。
@@ -313,6 +313,6 @@ Handler --> Front["前端"]
   - sum_calls_by_tool：按工具分组统计
 
 章节来源
-- [src/models/events/tool_exec.rs:1-65](file://src/models/events/tool_exec.rs#L1-L65)
-- [src/pkg/stats/tool_call.rs:12-41](file://src/pkg/stats/tool_call.rs#L12-L41)
-- [src/service/dao/tool/mod.rs:66-239](file://src/service/dao/tool/mod.rs#L66-L239)
+- [src/models/events/tool_exec.rs:1-65](src/models/events/tool_exec.rs#L1-L65)
+- [src/pkg/stats/tool_call.rs:12-41](src/pkg/stats/tool_call.rs#L12-L41)
+- [src/service/dao/tool/mod.rs:66-239](src/service/dao/tool/mod.rs#L66-L239)

@@ -2,18 +2,32 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/styles/input.css](file://frontend/styles/input.css)
-- [frontend/index.html](file://frontend/index.html)
-- [frontend/package.json](file://frontend/package.json)
-- [frontend/Dioxus.toml](file://frontend/Dioxus.toml)
-- [frontend/src/components/button.rs](file://frontend/src/components/button.rs)
-- [frontend/src/components/modal.rs](file://frontend/src/components/modal.rs)
-- [frontend/src/components/toast.rs](file://frontend/src/components/toast.rs)
-- [frontend/src/components/state.rs](file://frontend/src/components/state.rs)
-- [frontend/src/components/graph.rs](file://frontend/src/components/graph.rs)
-- [frontend/src/components/canvas_scene.rs](file://frontend/src/components/canvas_scene.rs)
-- [frontend/src/pages/workspace.rs](file://frontend/src/pages/workspace.rs)
-- [frontend/src/pages/system/docs.rs](file://frontend/src/pages/system/docs.rs)
+- [frontend/styles/input.css](frontend/styles/input.css)
+- [frontend/index.html](frontend/index.html)
+- [frontend/package.json](frontend/package.json)
+- [frontend/Dioxus.toml](frontend/Dioxus.toml)
+- [frontend/src/components/button.rs](frontend/src/components/button.rs)
+- [frontend/src/components/modal.rs](frontend/src/components/modal.rs)
+- [frontend/src/components/toast.rs](frontend/src/components/toast.rs)
+- [frontend/src/components/state.rs](frontend/src/components/state.rs)
+- [frontend/src/components/graph.rs](frontend/src/components/graph.rs)
+- [frontend/src/components/canvas_scene.rs](frontend/src/components/canvas_scene.rs)
+- [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs)
+- [frontend/src/pages/system/docs.rs](frontend/src/pages/system/docs.rs)
+
+### 本文关联的三类文档（四类互引闭环）
+
+**① 设计文档（Design）**：
+- [Canvas 渲染与可视化手册](docs/design/canvas_rendering_playbook.md) — HUD 风格 Canvas 渲染、图表与知识图谱可视化规范
+- 【Batch10 追加】[ui_design_system.md](docs/design/ui_design_system.md) — Tailwind CSS v4 + DaisyUI v5；orz-light oklch 自定义主题色板（p1-p9 紫蓝渐变主色/o1-o9 橙金强调/g1-g9 成功/b1-b9 错误/r1-r9 危险/n1-n12 灰阶）；30+ DaisyUI 主题切换（data-theme 属性）；HUD 流光条 .hud-streamer 动画；.btn-primary / .card / .stats 等工具类统一
+
+**② 落地计划（Plan）**：
+- [知识图谱推荐起点与组件复用重构](docs/plan/知识图谱推荐起点与组件复用重构.md) — 知识图谱推荐起点与 Canvas 组件复用重构
+- [统计图表Phase1基础设施与时序图展示重构](docs/plan/统计图表Phase1基础设施与时序图展示重构.md) — 图表组件落地点与前后端对接
+
+**④ RAG 原子知识卡**：
+- [Canvas HUD 可视化 RAG 卡](docs/wiki/knowledge/zh/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95.md) — GraphCanvas + Line/Donut + Gauge 仪表盘速查
+- 【Batch10 追加】[UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束](docs/wiki/knowledge/zh/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束.md) — §3.4 DaisyUI v5 主题配置详解 + §红线 6 禁止定义未在 Design System 枚举的自定义 CSS 类 + §红线 7 色值必须来自 oklch 色板（禁止硬编码 #hex/rgb）
 </cite>
 
 ## 更新摘要
@@ -61,17 +75,17 @@ B --> H
 ```
 
 **图示来源**
-- [frontend/styles/input.css:1-45](file://frontend/styles/input.css#L1-L45)
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/package.json:4-11](file://frontend/package.json#L4-L11)
-- [frontend/Dioxus.toml:1-18](file://frontend/Dioxus.toml#L1-L18)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/package.json:4-11](frontend/package.json#L4-L11)
+- [frontend/Dioxus.toml:1-18](frontend/Dioxus.toml#L1-L18)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 **章节来源**
-- [frontend/styles/input.css:1-45](file://frontend/styles/input.css#L1-L45)
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/package.json:4-11](file://frontend/package.json#L4-L11)
-- [frontend/Dioxus.toml:1-18](file://frontend/Dioxus.toml#L1-L18)
+- [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/package.json:4-11](frontend/package.json#L4-L11)
+- [frontend/Dioxus.toml:1-18](frontend/Dioxus.toml#L1-L18)
 
 ## 核心组件
 - **按钮（Button）**：封装多种变体（主色、强调、次要、危险、幽灵），尺寸控制，禁用态与点击事件处理，全部基于 DaisyUI 的 btn 系列类。
@@ -82,13 +96,13 @@ B --> H
 - **Markdown 渲染器**：基于 pulldown-cmark 的完整 Markdown 解析器，支持表格、删除线、任务列表等扩展语法，输出符合设计规范的 HTML。
 
 **章节来源**
-- [frontend/src/components/button.rs:1-50](file://frontend/src/components/button.rs#L1-L50)
-- [frontend/src/components/modal.rs:1-44](file://frontend/src/components/modal.rs#L1-L44)
-- [frontend/src/components/toast.rs:1-104](file://frontend/src/components/toast.rs#L1-L104)
-- [frontend/src/components/state.rs:1-50](file://frontend/src/components/state.rs#L1-L50)
-- [frontend/src/components/graph.rs:323-450](file://frontend/src/components/graph.rs#L323-L450)
-- [frontend/src/components/canvas_scene.rs:519-578](file://frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/src/components/button.rs:1-50](frontend/src/components/button.rs#L1-L50)
+- [frontend/src/components/modal.rs:1-44](frontend/src/components/modal.rs#L1-L44)
+- [frontend/src/components/toast.rs:1-104](frontend/src/components/toast.rs#L1-L104)
+- [frontend/src/components/state.rs:1-50](frontend/src/components/state.rs#L1-L50)
+- [frontend/src/components/graph.rs:323-450](frontend/src/components/graph.rs#L323-L450)
+- [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 ## 架构总览
 样式架构遵循"集中主题 + 原子类 + 组件语义"的分层：
@@ -111,12 +125,12 @@ W --> A["最终渲染结果"]
 ```
 
 **图示来源**
-- [frontend/styles/input.css:42-72](file://frontend/styles/input.css#L42-L72)
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/src/components/button.rs:27-49](file://frontend/src/components/button.rs#L27-L49)
-- [frontend/src/components/modal.rs:16-43](file://frontend/src/components/modal.rs#L16-L43)
-- [frontend/src/components/toast.rs:8-25](file://frontend/src/components/toast.rs#L8-L25)
-- [frontend/styles/input.css:203-336](file://frontend/styles/input.css#L203-L336)
+- [frontend/styles/input.css:42-72](frontend/styles/input.css#L42-L72)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/src/components/button.rs:27-49](frontend/src/components/button.rs#L27-L49)
+- [frontend/src/components/modal.rs:16-43](frontend/src/components/modal.rs#L16-L43)
+- [frontend/src/components/toast.rs:8-25](frontend/src/components/toast.rs#L8-L25)
+- [frontend/styles/input.css:203-336](frontend/styles/input.css#L203-L336)
 
 ## 详细组件分析
 
@@ -126,8 +140,8 @@ W --> A["最终渲染结果"]
 - **字体**：sans 使用系统字体栈，mono 使用 SF Mono/Monaco/Cascadia Code/Roboto Mono 等，保证代码与终端显示一致性。
 
 **章节来源**
-- [frontend/styles/input.css:42-72](file://frontend/styles/input.css#L42-L72)
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
+- [frontend/styles/input.css:42-72](frontend/styles/input.css#L42-L72)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
 
 ### 间距系统与布局约定
 - **间距**：优先使用 Tailwind 的 spacing 工具类（如 gap-2/gap-4/padding/margin），保持 8px 基准节奏。
@@ -135,9 +149,9 @@ W --> A["最终渲染结果"]
 - **栅格**：工作台统计区域使用 grid-cols-2 md:grid-cols-4 实现小屏双列、大屏四列。
 
 **章节来源**
-- [frontend/src/pages/workspace.rs:724-743](file://frontend/src/pages/workspace.rs#L724-L743)
-- [frontend/src/pages/message/search.rs:55-79](file://frontend/src/pages/message/search.rs#L55-L79)
-- [frontend/src/pages/hr/memory_search.rs:77-103](file://frontend/src/pages/hr/memory_search.rs#L77-L103)
+- [frontend/src/pages/workspace.rs:724-743](frontend/src/pages/workspace.rs#L724-L743)
+- [frontend/src/pages/message/search.rs:55-79](frontend/src/pages/message/search.rs#L55-L79)
+- [frontend/src/pages/hr/memory_search.rs:77-103](frontend/src/pages/hr/memory_search.rs#L77-L103)
 
 ### 组件样式约定
 - **按钮**：通过 Button 组件统一映射到 btn-primary/btn-secondary/btn-outline/btn-error/btn-ghost，并提供 btn-sm 尺寸。
@@ -146,11 +160,11 @@ W --> A["最终渲染结果"]
 - **状态**：loading-spinner/loading-md、alert/alert-error/alert-success 统一提示样式。
 
 **章节来源**
-- [frontend/src/components/button.rs:27-49](file://frontend/src/components/button.rs#L27-L49)
-- [frontend/src/components/modal.rs:16-43](file://frontend/src/components/modal.rs#L16-L43)
-- [frontend/src/components/toast.rs:8-25](file://frontend/src/components/toast.rs#L8-L25)
-- [frontend/src/components/state.rs:6-12](file://frontend/src/components/state.rs#L6-L12)
-- [frontend/src/components/state.rs:25-36](file://frontend/src/components/state.rs#L25-L36)
+- [frontend/src/components/button.rs:27-49](frontend/src/components/button.rs#L27-L49)
+- [frontend/src/components/modal.rs:16-43](frontend/src/components/modal.rs#L16-L43)
+- [frontend/src/components/toast.rs:8-25](frontend/src/components/toast.rs#L8-L25)
+- [frontend/src/components/state.rs:6-12](frontend/src/components/state.rs#L6-L12)
+- [frontend/src/components/state.rs:25-36](frontend/src/components/state.rs#L25-L36)
 
 ### 响应式设计策略与移动端适配
 - **媒体查询**：index.html 中对登录页进行移动端适配（flex-direction 切换、字号调整、特性列表隐藏）。
@@ -159,9 +173,9 @@ W --> A["最终渲染结果"]
 - **移动端优化**：触摸目标大小优化、输入框字体大小调整、导航菜单折叠等。
 
 **章节来源**
-- [frontend/index.html:241-247](file://frontend/index.html#L241-L247)
-- [frontend/src/pages/workspace.rs:724-743](file://frontend/src/pages/workspace.rs#L724-L743)
-- [frontend/index.html:307-310](file://frontend/index.html#L307-L310)
+- [frontend/index.html:241-247](frontend/index.html#L241-L247)
+- [frontend/src/pages/workspace.rs:724-743](frontend/src/pages/workspace.rs#L724-L743)
+- [frontend/index.html:307-310](frontend/index.html#L307-L310)
 
 ### 可访问性支持
 - **语义化标签**：使用 dialog、form、button、table、thead/tbody/th/td 等语义元素，便于屏幕阅读器识别。
@@ -169,9 +183,9 @@ W --> A["最终渲染结果"]
 - **对比度与可读性**：通过 DaisyUI 语义色与 base-content 文本色保证明暗主题下的对比度；代码块使用 monospace 字体提升可读性。
 
 **章节来源**
-- [frontend/src/components/modal.rs:21-39](file://frontend/src/components/modal.rs#L21-L39)
-- [frontend/src/pages/hr/memory_search.rs:85-95](file://frontend/src/pages/hr/memory_search.rs#L85-L95)
-- [frontend/index.html:66-77](file://frontend/index.html#L66-L77)
+- [frontend/src/components/modal.rs:21-39](frontend/src/components/modal.rs#L21-L39)
+- [frontend/src/pages/hr/memory_search.rs:85-95](frontend/src/pages/hr/memory_search.rs#L85-L95)
+- [frontend/index.html:66-77](frontend/index.html#L66-L77)
 
 ### 主题定制方法与样式变量管理
 - **主题覆盖**：在 input.css 中使用 [data-theme="orz-light"] 覆盖语义色与圆角，便于统一品牌色。
@@ -179,8 +193,8 @@ W --> A["最终渲染结果"]
 - **变量命名**：遵循 oklch 色彩空间与语义变量名（primary/secondary/accent/neutral/base/info/success/warning/error），便于维护与替换。
 
 **章节来源**
-- [frontend/styles/input.css:2-37](file://frontend/styles/input.css#L2-L37)
-- [frontend/styles/input.css:47-72](file://frontend/styles/input.css#L47-L72)
+- [frontend/styles/input.css:2-37](frontend/styles/input.css#L2-L37)
+- [frontend/styles/input.css:47-72](frontend/styles/input.css#L47-L72)
 
 ### CSS 模块化组织
 - **单一入口**：styles/input.css 作为 Tailwind 入口，集中主题、动画与自定义样式。
@@ -188,8 +202,8 @@ W --> A["最终渲染结果"]
 - **组件级样式**：组件尽量使用 Tailwind/DaisyUI 类，减少自定义 CSS；复杂动画集中在 input.css。
 
 **章节来源**
-- [frontend/styles/input.css:1-45](file://frontend/styles/input.css#L1-L45)
-- [frontend/index.html:8-417](file://frontend/index.html#L8-L417)
+- [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
+- [frontend/index.html:8-417](frontend/index.html#L8-L417)
 
 ### 常用样式模式与动画效果
 - **HUD 流光条**：左侧竖条 + 流动高光，用于未读消息提示。
@@ -198,9 +212,9 @@ W --> A["最终渲染结果"]
 - **Toast 进度条**：底部进度条随时间收缩，提示自动消失。
 
 **章节来源**
-- [frontend/styles/input.css:74-202](file://frontend/styles/input.css#L74-L202)
-- [frontend/index.html:14-29](file://frontend/index.html#L14-L29)
-- [frontend/index.html:401-410](file://frontend/index.html#L401-L410)
+- [frontend/styles/input.css:74-202](frontend/styles/input.css#L74-L202)
+- [frontend/index.html:14-29](frontend/index.html#L14-L29)
+- [frontend/index.html:401-410](frontend/index.html#L401-L410)
 
 ### 交互状态实现方式
 - **拖拽与命中检测**：CanvasScene 中 mousedown/mousemove/mouseup/onmouseleave 实现节点拖拽与 hover 高亮；选中节点触发光晕。
@@ -208,9 +222,9 @@ W --> A["最终渲染结果"]
 - **键盘交互**：搜索输入框支持 Enter 触发搜索；模态框支持 ESC 关闭。
 
 **章节来源**
-- [frontend/src/components/canvas_scene.rs:519-578](file://frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/src/components/workspace_graph.rs:545-570](file://frontend/src/components/workspace_graph.rs#L545-L570)
-- [frontend/src/pages/hr/memory_search.rs:85-95](file://frontend/src/pages/hr/memory_search.rs#L85-L95)
+- [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
+- [frontend/src/components/workspace_graph.rs:545-570](frontend/src/components/workspace_graph.rs#L545-L570)
+- [frontend/src/pages/hr/memory_search.rs:85-95](frontend/src/pages/hr/memory_search.rs#L85-L95)
 
 ### Markdown 渲染样式系统
 **新增** 完整的 Markdown 渲染样式系统，基于 pulldown-cmark 解析器，提供丰富的内容呈现能力：
@@ -224,8 +238,8 @@ W --> A["最终渲染结果"]
 - **分隔线**：水平分隔线的样式定义
 
 **章节来源**
-- [frontend/styles/input.css:203-336](file://frontend/styles/input.css#L203-L336)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/styles/input.css:203-336](frontend/styles/input.css#L203-L336)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 ### 代码块格式化与语法高亮基础
 **新增** 代码块格式化样式，为未来的语法高亮功能奠定基础：
@@ -236,7 +250,7 @@ W --> A["最终渲染结果"]
 - **字体优化**：使用项目配置的等宽字体栈，确保代码的可读性
 
 **章节来源**
-- [frontend/styles/input.css:283-305](file://frontend/styles/input.css#L283-L305)
+- [frontend/styles/input.css:283-305](frontend/styles/input.css#L283-L305)
 
 ## 依赖关系分析
 样式与组件之间的依赖关系如下：
@@ -260,19 +274,19 @@ M --> O
 ```
 
 **图示来源**
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/styles/input.css:1-45](file://frontend/styles/input.css#L1-L45)
-- [frontend/src/components/button.rs:27-49](file://frontend/src/components/button.rs#L27-L49)
-- [frontend/src/components/modal.rs:16-43](file://frontend/src/components/modal.rs#L16-L43)
-- [frontend/src/components/toast.rs:8-25](file://frontend/src/components/toast.rs#L8-L25)
-- [frontend/src/components/state.rs:6-12](file://frontend/src/components/state.rs#L6-L12)
-- [frontend/src/components/graph.rs:323-450](file://frontend/src/components/graph.rs#L323-L450)
-- [frontend/src/components/canvas_scene.rs:519-578](file://frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
+- [frontend/src/components/button.rs:27-49](frontend/src/components/button.rs#L27-L49)
+- [frontend/src/components/modal.rs:16-43](frontend/src/components/modal.rs#L16-L43)
+- [frontend/src/components/toast.rs:8-25](frontend/src/components/toast.rs#L8-L25)
+- [frontend/src/components/state.rs:6-12](frontend/src/components/state.rs#L6-L12)
+- [frontend/src/components/graph.rs:323-450](frontend/src/components/graph.rs#L323-L450)
+- [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 **章节来源**
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/styles/input.css:1-45](file://frontend/styles/input.css#L1-L45)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/styles/input.css:1-45](frontend/styles/input.css#L1-L45)
 
 ## 性能考虑
 - **构建优化**：Tailwind CLI 使用 --minify 压缩输出；Dioxus wasm_opt level=4 优化 WASM。
@@ -283,11 +297,11 @@ M --> O
 - **Markdown 渲染**：使用 pulldown-cmark 进行高效的 Markdown 解析，避免客户端 JavaScript 开销。
 
 **章节来源**
-- [frontend/package.json:4-11](file://frontend/package.json#L4-L11)
-- [frontend/Dioxus.toml:5-6](file://frontend/Dioxus.toml#L5-L6)
-- [frontend/src/components/canvas_scene.rs:519-578](file://frontend/src/components/canvas_scene.rs#L519-L578)
-- [frontend/index.html:241-247](file://frontend/index.html#L241-L247)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/package.json:4-11](frontend/package.json#L4-L11)
+- [frontend/Dioxus.toml:5-6](frontend/Dioxus.toml#L5-L6)
+- [frontend/src/components/canvas_scene.rs:519-578](frontend/src/components/canvas_scene.rs#L519-L578)
+- [frontend/index.html:241-247](frontend/index.html#L241-L247)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 ## 故障排查指南
 - **主题不生效**：检查 index.html 的 data-theme 是否正确设置；确认 input.css 中对应主题变量已覆盖。
@@ -298,10 +312,10 @@ M --> O
 - **Markdown 渲染问题**：确认 pulldown-cmark 选项正确配置；检查 markdown-body 样式是否被其他样式覆盖。
 
 **章节来源**
-- [frontend/index.html:1-12](file://frontend/index.html#L1-L12)
-- [frontend/styles/input.css:47-72](file://frontend/styles/input.css#L47-L72)
-- [frontend/package.json:4-11](file://frontend/package.json#L4-L11)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/index.html:1-12](frontend/index.html#L1-L12)
+- [frontend/styles/input.css:47-72](frontend/styles/input.css#L47-L72)
+- [frontend/package.json:4-11](frontend/package.json#L4-L11)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
 
 ## 结论
 AI Orz 前端的样式系统以 Tailwind CSS v4 与 DaisyUI v5 为核心，通过集中主题变量、原子类与语义化组件类，实现了统一的视觉语言与高效的开发体验。新增的 Markdown 渲染样式系统提供了完整的文档展示能力，支持丰富的内容格式和代码块格式化。结合 index.html 的页面级样式与 input.css 的自定义动画，覆盖了从基础布局到复杂图形交互的全链路需求。响应式策略与可访问性支持确保了多端一致性与无障碍体验。建议后续继续遵循"组件优先使用原子类、复杂动画集中管理"的原则，持续优化样式体积与渲染性能。
@@ -313,7 +327,7 @@ AI Orz 前端的样式系统以 Tailwind CSS v4 与 DaisyUI v5 为核心，通�
 - **Markdown 扩展**：当前支持表格、删除线、任务列表等扩展语法，可根据需要添加更多 pulldown-cmark 选项。
 
 **章节来源**
-- [frontend/package.json:4-11](file://frontend/package.json#L4-L11)
-- [frontend/styles/input.css:2-37](file://frontend/styles/input.css#L2-L37)
-- [frontend/styles/input.css:47-72](file://frontend/styles/input.css#L47-L72)
-- [frontend/src/pages/system/docs.rs:191-201](file://frontend/src/pages/system/docs.rs#L191-L201)
+- [frontend/package.json:4-11](frontend/package.json#L4-L11)
+- [frontend/styles/input.css:2-37](frontend/styles/input.css#L2-L37)
+- [frontend/styles/input.css:47-72](frontend/styles/input.css#L47-L72)
+- [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)

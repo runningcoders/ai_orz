@@ -2,17 +2,17 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/health.rs](file://src/handlers/health.rs)
-- [src/handlers/system/health_metrics.rs](file://src/handlers/system/health_metrics.rs)
-- [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/service/domain/system/aop_monitor.rs](file://src/service/domain/system/aop_monitor.rs)
-- [src/service/domain/system/aop_stats.rs](file://src/service/domain/system/aop_stats.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [common/src/api/log_stats.rs](file://common/src/api/log_stats.rs)
-- [common/src/models/stats.rs](file://common/src/models/stats.rs)
-- [src/pkg/stats/mod.rs](file://src/pkg/stats/mod.rs)
+- [src/handlers/health.rs](src/handlers/health.rs)
+- [src/handlers/system/health_metrics.rs](src/handlers/system/health_metrics.rs)
+- [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/service/domain/system/aop_monitor.rs](src/service/domain/system/aop_monitor.rs)
+- [src/service/domain/system/aop_stats.rs](src/service/domain/system/aop_stats.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
+- [common/src/models/stats.rs](common/src/models/stats.rs)
+- [src/pkg/stats/mod.rs](src/pkg/stats/mod.rs)
 </cite>
 
 ## 目录
@@ -53,18 +53,18 @@ D_SYS --> PROJ["ProjectDomain"]
 ```
 
 图表来源
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/service/domain/system/aop_monitor.rs:7-26](file://src/service/domain/system/aop_monitor.rs#L7-L26)
-- [src/service/domain/system/aop_stats.rs:14-52](file://src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/pkg/aop/mod.rs:36-60](file://src/pkg/aop/mod.rs#L36-L60)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
+- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 章节来源
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/pkg/aop/mod.rs:36-60](file://src/pkg/aop/mod.rs#L36-L60)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 ## 核心组件
 - 健康检查
@@ -83,11 +83,11 @@ D_SYS --> PROJ["ProjectDomain"]
   - 日志级别分布与时序查询参数定义见 common/src/api/log_stats.rs。
 
 章节来源
-- [src/handlers/health.rs:4-15](file://src/handlers/health.rs#L4-L15)
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [common/src/api/log_stats.rs:7-77](file://common/src/api/log_stats.rs#L7-L77)
+- [src/handlers/health.rs:4-15](src/handlers/health.rs#L4-L15)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
 
 ## 架构总览
 监控数据流分为两条路径：
@@ -109,14 +109,14 @@ H-->>C : JSON 响应
 ```
 
 图表来源
-- [src/handlers/system/aop_stats.rs:16-30](file://src/handlers/system/aop_stats.rs#L16-L30)
-- [src/service/domain/system/aop_stats.rs:14-20](file://src/service/domain/system/aop_stats.rs#L14-L20)
-- [src/consumer/aop_stats_collector.rs:74-111](file://src/consumer/aop_stats_collector.rs#L74-L111)
+- [src/handlers/system/aop_stats.rs:16-30](src/handlers/system/aop_stats.rs#L16-L30)
+- [src/service/domain/system/aop_stats.rs:14-20](src/service/domain/system/aop_stats.rs#L14-L20)
+- [src/consumer/aop_stats_collector.rs:74-111](src/consumer/aop_stats_collector.rs#L74-L111)
 
 章节来源
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/service/domain/system/aop_stats.rs:14-52](file://src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 ## 详细组件分析
 
@@ -146,11 +146,11 @@ BuildResp --> End(["返回响应"])
 ```
 
 图表来源
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
 章节来源
-- [src/handlers/health.rs:4-15](file://src/handlers/health.rs#L4-L15)
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/health.rs:4-15](src/handlers/health.rs#L4-L15)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
 ### AOP 队列监控
 - GET /api/v1/system/aop/stats
@@ -177,14 +177,14 @@ H-->>C : JSON 列表
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:73-117](file://src/handlers/system/aop.rs#L73-L117)
-- [src/service/domain/system/aop_monitor.rs:16-22](file://src/service/domain/system/aop_monitor.rs#L16-L22)
-- [src/pkg/aop/mod.rs:36-60](file://src/pkg/aop/mod.rs#L36-L60)
+- [src/handlers/system/aop.rs:73-117](src/handlers/system/aop.rs#L73-L117)
+- [src/service/domain/system/aop_monitor.rs:16-22](src/service/domain/system/aop_monitor.rs#L16-L22)
+- [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/service/domain/system/aop_monitor.rs:7-26](file://src/service/domain/system/aop_monitor.rs#L7-L26)
-- [src/pkg/aop/mod.rs:36-60](file://src/pkg/aop/mod.rs#L36-L60)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
+- [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
 
 ### AOP 实时统计
 - GET /api/v1/system/aop/stats/overview
@@ -216,14 +216,14 @@ SystemDomainImpl --> AopStatsCollector : "读取快照"
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:43-195](file://src/consumer/aop_stats_collector.rs#L43-L195)
-- [src/service/domain/system/aop_stats.rs:14-52](file://src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
+- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
+- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
 
 章节来源
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/service/domain/system/aop_stats.rs:14-52](file://src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/consumer/aop_stats_collector.rs:43-195](file://src/consumer/aop_stats_collector.rs#L43-L195)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
 
 ### 监控数据采集与存储
 - 内存实时采集
@@ -234,9 +234,9 @@ SystemDomainImpl --> AopStatsCollector : "读取快照"
   - 无 RequestContext 的场景（如 AOP 消费者）可通过全局 Stats 单例写入。
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:1-52](file://src/consumer/aop_stats_collector.rs#L1-L52)
-- [src/pkg/stats/mod.rs:1-57](file://src/pkg/stats/mod.rs#L1-L57)
-- [src/pkg/stats/mod.rs:152-171](file://src/pkg/stats/mod.rs#L152-L171)
+- [src/consumer/aop_stats_collector.rs:1-52](src/consumer/aop_stats_collector.rs#L1-L52)
+- [src/pkg/stats/mod.rs:1-57](src/pkg/stats/mod.rs#L1-L57)
+- [src/pkg/stats/mod.rs:152-171](src/pkg/stats/mod.rs#L152-L171)
 
 ### 可视化展示
 - 前端 HUD 仪表盘墙通过 /system/health/metrics 获取聚合指标，减少并发请求。
@@ -261,18 +261,18 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
-- [src/service/domain/system/aop_monitor.rs:7-26](file://src/service/domain/system/aop_monitor.rs#L7-L26)
-- [src/service/domain/system/aop_stats.rs:14-52](file://src/service/domain/system/aop_stats.rs#L14-L52)
-- [src/pkg/aop/mod.rs:36-60](file://src/pkg/aop/mod.rs#L36-L60)
-- [src/consumer/aop_stats_collector.rs:43-195](file://src/consumer/aop_stats_collector.rs#L43-L195)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
+- [src/service/domain/system/aop_monitor.rs:7-26](src/service/domain/system/aop_monitor.rs#L7-L26)
+- [src/service/domain/system/aop_stats.rs:14-52](src/service/domain/system/aop_stats.rs#L14-L52)
+- [src/pkg/aop/mod.rs:36-60](src/pkg/aop/mod.rs#L36-L60)
+- [src/consumer/aop_stats_collector.rs:43-195](src/consumer/aop_stats_collector.rs#L43-L195)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
 ## 性能考量
 - 健康指标聚合端点将多个域查询合并为一次响应，降低前端并发压力。
@@ -293,9 +293,9 @@ H3["handlers/system/health_metrics.rs"] --> D3["service/domain/hr|project|task"]
   - 若 backend_online=true 但某项计数异常，检查对应 Domain 计数逻辑与 DAO 查询条件。
 
 章节来源
-- [src/handlers/system/aop.rs:43-145](file://src/handlers/system/aop.rs#L43-L145)
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L145)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
 ## 结论
 AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持久化统计，提供从健康检查到队列监控、从概览到细粒度分布的全链路观测能力。通过统一的健康指标聚合端点，前端可高效构建仪表盘；通过 AOP 队列与事件接口，运维可快速定位瓶颈与异常。
@@ -312,7 +312,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
     - data: { status: "ok", version: "<版本号>" }
 
 章节来源
-- [src/handlers/health.rs:4-15](file://src/handlers/health.rs#L4-L15)
+- [src/handlers/health.rs:4-15](src/handlers/health.rs#L4-L15)
 
 ### 健康指标聚合
 - GET /api/v1/system/health/metrics
@@ -329,7 +329,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
     - uptime_secs: number
 
 章节来源
-- [src/handlers/system/health_metrics.rs:33-134](file://src/handlers/system/health_metrics.rs#L33-L134)
+- [src/handlers/system/health_metrics.rs:33-134](src/handlers/system/health_metrics.rs#L33-L134)
 
 ### AOP 队列监控
 - GET /api/v1/system/aop/stats
@@ -347,7 +347,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - 响应：事件详情（含 payload_preview）；不存在返回 404。
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
 
 ### AOP 实时统计
 - GET /api/v1/system/aop/stats/overview
@@ -370,8 +370,8 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - 响应：items 数组，每项 label、value。
 
 章节来源
-- [src/handlers/system/aop_stats.rs:16-72](file://src/handlers/system/aop_stats.rs#L16-L72)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/handlers/system/aop_stats.rs:16-72](src/handlers/system/aop_stats.rs#L16-L72)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 ### 日志统计（辅助）
 - 查询参数与数据结构
@@ -381,7 +381,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - LogTimeSeriesResponse：points(interval_start, count)
 
 章节来源
-- [common/src/api/log_stats.rs:7-77](file://common/src/api/log_stats.rs#L7-L77)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
 
 ### 监控指标类型与聚合
 - 通用统计模型
@@ -393,7 +393,7 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
   - AgentStats、ProjectStats、TaskStats、ToolStats、ModelCallStats、ProjectProgressSummary
 
 章节来源
-- [common/src/models/stats.rs:8-172](file://common/src/models/stats.rs#L8-L172)
+- [common/src/models/stats.rs:8-172](common/src/models/stats.rs#L8-L172)
 
 ### 监控数据存储、历史查询与导出
 - 内存实时：AopStatsCollector 提供概览、时序、分布查询，重启重置。
@@ -401,5 +401,5 @@ AI Orz 的监控体系以 AOP 事件为中心，结合内存实时统计与持�
 - 导出建议：对长周期历史数据，建议通过持久化统计表的 SQL 导出至 CSV/Parquet 供离线分析。
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:1-52](file://src/consumer/aop_stats_collector.rs#L1-L52)
-- [src/pkg/stats/mod.rs:1-57](file://src/pkg/stats/mod.rs#L1-L57)
+- [src/consumer/aop_stats_collector.rs:1-52](src/consumer/aop_stats_collector.rs#L1-L52)
+- [src/pkg/stats/mod.rs:1-57](src/pkg/stats/mod.rs#L1-L57)

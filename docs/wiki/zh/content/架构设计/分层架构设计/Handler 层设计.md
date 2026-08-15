@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/mod.rs](file://src/handlers/mod.rs)
-- [src/router.rs](file://src/router.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/middleware/request_context.rs](file://src/middleware/request_context.rs)
-- [src/middleware/require_role.rs](file://src/middleware/require_role.rs)
-- [common/src/api/mod.rs](file://common/src/api/mod.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/project/projects/create_project.rs](file://src/handlers/project/projects/create_project.rs)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [src/handlers/mod.rs](src/handlers/mod.rs)
+- [src/router.rs](src/router.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/middleware/request_context.rs](src/middleware/request_context.rs)
+- [src/middleware/require_role.rs](src/middleware/require_role.rs)
+- [common/src/api/mod.rs](common/src/api/mod.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/project/projects/create_project.rs](src/handlers/project/projects/create_project.rs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 </cite>
 
 ## 目录
@@ -42,15 +42,15 @@ D --> G["统一响应 ApiResponse<T>"]
 ```
 
 图表来源
-- [src/router.rs:12-136](file://src/router.rs#L12-L136)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [src/router.rs:12-136](src/router.rs#L12-L136)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 章节来源
-- [src/handlers/mod.rs:1-11](file://src/handlers/mod.rs#L1-L11)
-- [src/router.rs:12-136](file://src/router.rs#L12-L136)
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [src/handlers/mod.rs:1-11](src/handlers/mod.rs#L1-L11)
+- [src/router.rs:12-136](src/router.rs#L12-L136)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 ## 核心组件
 - 路由与中间件：
@@ -65,11 +65,11 @@ D --> G["统一响应 ApiResponse<T>"]
   - ApiResponse<T> 作为所有 HTTP 响应的标准包装，包含 code/message/data。
 
 章节来源
-- [src/router.rs:61-136](file://src/router.rs#L61-L136)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [src/router.rs:61-136](src/router.rs#L61-L136)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 ## 架构总览
 Handler 层严格遵循单向调用：Adapter（Handler）→ Domain → DAL → DAO。Handler 仅负责 DTO 解析、RequestContext 补全、DTO↔Command/Query 转换、响应组装，不承载复杂业务规则。
@@ -97,10 +97,10 @@ Resp-->>Client : JSON 响应
 ```
 
 图表来源
-- [src/router.rs:96-136](file://src/router.rs#L96-L136)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [src/router.rs:96-136](src/router.rs#L96-L136)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 ## 详细组件分析
 
@@ -112,14 +112,14 @@ Resp-->>Client : JSON 响应
   - 构造业务实体（Agent/Skill），调用 domain().agent_manage()/skill_domain() 完成业务编排。
   - 将 Domain 返回的业务实体转换为响应 DTO，使用 ApiResponse 包装。
 - 示例路径：
-  - 创建 Agent：[create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-  - 列出/查询/搜索 Agent：[list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)、[query_agents.rs](file://src/handlers/hr/agent/query_agents.rs)、[search_agents.rs](file://src/handlers/hr/agent/search_agents.rs)
-  - 技能管理：[create_skill_handler](file://src/handlers/hr/skill/)、[install/uninstall skill to/from agent](file://src/handlers/hr/skill/)
+  - 创建 Agent：[create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+  - 列出/查询/搜索 Agent：[list_agents.rs](src/handlers/hr/agent/list_agents.rs)、[query_agents.rs](src/handlers/hr/agent/query_agents.rs)、[search_agents.rs](src/handlers/hr/agent/search_agents.rs)
+  - 技能管理：[create_skill_handler](src/handlers/hr/skill/)、[install/uninstall skill to/from agent](src/handlers/hr/skill/)
 
 章节来源
-- [src/handlers/hr/mod.rs:1-11](file://src/handlers/hr/mod.rs#L1-L11)
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [src/handlers/hr/mod.rs:1-11](src/handlers/hr/mod.rs#L1-L11)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ### Finance 模块 Handler 组织结构与职责
 - 目录结构：handlers/finance/{attachment, mcp_server, mcp_tool, message, message_channel, model_provider, tool}。
@@ -129,13 +129,13 @@ Resp-->>Client : JSON 响应
   - 工具与 MCP 服务器管理（同步工具、绑定/解绑、调试调用）。
   - 附件管理（上传、文本附件、内容读写、删除）。
 - 示例路径：
-  - 模型提供商：[model_provider/*](file://src/handlers/finance/model_provider/)
-  - 消息通道：[message_channel/*](file://src/handlers/finance/message_channel/)
-  - 工具管理：[tool/*](file://src/handlers/finance/tool/)
+  - 模型提供商：[model_provider/*](src/handlers/finance/model_provider/)
+  - 消息通道：[message_channel/*](src/handlers/finance/message_channel/)
+  - 工具管理：[tool/*](src/handlers/finance/tool/)
 
 章节来源
-- [src/handlers/finance/mod.rs:1-15](file://src/handlers/finance/mod.rs#L1-L15)
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
+- [src/handlers/finance/mod.rs:1-15](src/handlers/finance/mod.rs#L1-L15)
+- [src/router.rs:415-601](src/router.rs#L415-L601)
 
 ### Project 模块 Handler 组织结构与职责
 - 目录结构：handlers/project/{artifact, projects, task}。
@@ -144,14 +144,14 @@ Resp-->>Client : JSON 响应
   - 任务管理（创建、列表、查询、搜索、更新、进度、状态变更）。
   - 产物管理（创建、列表、获取内容、更新、删除）。
 - 示例路径：
-  - 创建项目：[create_project.rs](file://src/handlers/project/projects/create_project.rs)
-  - 任务路由：[task_routes:177-213](file://src/router.rs#L177-L213)
-  - 产物路由：[artifact_routes:215-240](file://src/router.rs#L215-L240)
+  - 创建项目：[create_project.rs](src/handlers/project/projects/create_project.rs)
+  - 任务路由：[task_routes:177-213](src/router.rs#L177-L213)
+  - 产物路由：[artifact_routes:215-240](src/router.rs#L215-L240)
 
 章节来源
-- [src/handlers/project/mod.rs:1-6](file://src/handlers/project/mod.rs#L1-L6)
-- [src/handlers/project/projects/create_project.rs:1-47](file://src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/router.rs:145-240](file://src/router.rs#L145-L240)
+- [src/handlers/project/mod.rs:1-6](src/handlers/project/mod.rs#L1-L6)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/router.rs:145-240](src/router.rs#L145-L240)
 
 ### System 模块 Handler 组织结构与职责
 - 目录结构：handlers/system/{backup, cron_trigger, logs, seed, aop, health_metrics, task_cleanup, task_list, task_progress}。
@@ -163,8 +163,8 @@ Resp-->>Client : JSON 响应
   - System 路由整体要求 Admin 权限；某些高危操作在 handler 内部二次校验 SuperAdmin。
 
 章节来源
-- [src/handlers/system/mod.rs:1-13](file://src/handlers/system/mod.rs#L1-L13)
-- [src/router.rs:603-739](file://src/router.rs#L603-L739)
+- [src/handlers/system/mod.rs:1-13](src/handlers/system/mod.rs#L1-L13)
+- [src/router.rs:603-739](src/router.rs#L603-L739)
 
 ### 中间件集成与认证授权
 - 中间件顺序（洋葱模型）：
@@ -178,10 +178,10 @@ Resp-->>Client : JSON 响应
   - 基于 UserRole 继承关系，检查当前用户是否满足最小角色要求。
 
 章节来源
-- [src/router.rs:96-136](file://src/router.rs#L96-L136)
-- [src/middleware/jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [src/middleware/require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
+- [src/router.rs:96-136](src/router.rs#L96-L136)
+- [src/middleware/jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [src/middleware/require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
 
 ### 请求上下文传递与参数验证
 - RequestContext 由中间件从请求头提取并注入扩展，Handler 中通过 ctx.uid()/ctx.user_role() 获取用户信息。
@@ -190,9 +190,9 @@ Resp-->>Client : JSON 响应
   - 错误通过 common::error::{Result, bail_err, err} 抛出，统一转换为 ApiResponse。
 
 章节来源
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [src/handlers/hr/agent/create_agent.rs:18-41](file://src/handlers/hr/agent/create_agent.rs#L18-L41)
-- [src/handlers/project/projects/create_project.rs:22-43](file://src/handlers/project/projects/create_project.rs#L22-L43)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [src/handlers/hr/agent/create_agent.rs:18-41](src/handlers/hr/agent/create_agent.rs#L18-L41)
+- [src/handlers/project/projects/create_project.rs:22-43](src/handlers/project/projects/create_project.rs#L22-L43)
 
 ### 响应格式化机制
 - 所有 Handler 返回 Result<T>，T 为 common::api 中的响应 DTO。
@@ -200,7 +200,7 @@ Resp-->>Client : JSON 响应
 - 错误响应：ApiResponse.error(code, message)，由框架统一序列化。
 
 章节来源
-- [common/src/api/mod.rs:6-49](file://common/src/api/mod.rs#L6-L49)
+- [common/src/api/mod.rs:6-49](common/src/api/mod.rs#L6-L49)
 
 ### 新增 Handler 最佳实践
 - 步骤：
@@ -209,13 +209,13 @@ Resp-->>Client : JSON 响应
   3. 在 router.rs 中注册路由，必要时添加 require_role_middleware。
   4. 在 Domain 层实现业务逻辑，Handler 仅做 DTO 转换与调用。
 - 示例参考：
-  - 创建 Agent：[create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-  - 创建项目：[create_project.rs](file://src/handlers/project/projects/create_project.rs)
+  - 创建 Agent：[create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+  - 创建项目：[create_project.rs](src/handlers/project/projects/create_project.rs)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [src/handlers/project/projects/create_project.rs:1-47](file://src/handlers/project/projects/create_project.rs#L1-L47)
-- [src/router.rs:292-413](file://src/router.rs#L292-L413)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [src/handlers/project/projects/create_project.rs:1-47](src/handlers/project/projects/create_project.rs#L1-L47)
+- [src/router.rs:292-413](src/router.rs#L292-L413)
 
 ### 异步操作与事务管理建议
 - 异步操作：
@@ -226,8 +226,8 @@ Resp-->>Client : JSON 响应
   - Handler 不直接管理事务，仅传递 ctx.clone() 给 Domain。
 
 章节来源
-- [src/router.rs:603-739](file://src/router.rs#L603-L739)
-- [docs/ARCHITECTURE.md:325-386](file://docs/ARCHITECTURE.md#L325-L386)
+- [src/router.rs:603-739](src/router.rs#L603-L739)
+- [docs/ARCHITECTURE.md:325-386](docs/ARCHITECTURE.md#L325-L386)
 
 ## 依赖分析
 Handler 层依赖关系清晰，无跨层调用：
@@ -245,10 +245,10 @@ M["中间件"] --> H
 ```
 
 图表来源
-- [docs/ARCHITECTURE.md:325-386](file://docs/ARCHITECTURE.md#L325-L386)
+- [docs/ARCHITECTURE.md:325-386](docs/ARCHITECTURE.md#L325-L386)
 
 章节来源
-- [docs/ARCHITECTURE.md:325-386](file://docs/ARCHITECTURE.md#L325-L386)
+- [docs/ARCHITECTURE.md:325-386](docs/ARCHITECTURE.md#L325-L386)
 
 ## 性能考虑
 - 避免在 Handler 中执行重型计算，移至 Domain/DAL。
@@ -268,9 +268,9 @@ M["中间件"] --> H
   - 确认 request_context_middleware 已注入 RequestContext，Handler 中 ctx.uid() 非空。
 
 章节来源
-- [src/middleware/jwt_auth.rs:139-155](file://src/middleware/jwt_auth.rs#L139-L155)
-- [src/middleware/require_role.rs:20-38](file://src/middleware/require_role.rs#L20-L38)
-- [src/middleware/request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [src/middleware/jwt_auth.rs:139-155](src/middleware/jwt_auth.rs#L139-L155)
+- [src/middleware/require_role.rs:20-38](src/middleware/require_role.rs#L20-L38)
+- [src/middleware/request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ## 结论
 Handler 层在 AI Orz 系统中承担“薄适配”职责，严格遵循分层架构与单一职责原则。通过统一的中间件链、DTO 与响应格式、清晰的模块组织，确保了可维护性与可扩展性。新增 Handler 时应遵循现有规范，将业务逻辑下沉至 Domain 层，保持 Handler 的简洁与专注。
@@ -287,5 +287,5 @@ Handler 层在 AI Orz 系统中承担“薄适配”职责，严格遵循分层�
   - 可选：角色权限校验
 
 章节来源
-- [src/router.rs:12-136](file://src/router.rs#L12-L136)
-- [src/router.rs:292-739](file://src/router.rs#L292-L739)
+- [src/router.rs:12-136](src/router.rs#L12-L136)
+- [src/router.rs:292-739](src/router.rs#L292-L739)

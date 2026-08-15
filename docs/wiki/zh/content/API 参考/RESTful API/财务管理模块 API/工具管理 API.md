@@ -1,19 +1,19 @@
-# 工具管理 API
+# 工具管理 API（API 参考层）
 
 <cite>
 **本文引用的文件**
-- [common/src/api/tool.rs](file://common/src/api/tool.rs)
-- [src/handlers/finance/tool/mod.rs](file://src/handlers/finance/tool/mod.rs)
-- [src/handlers/finance/tool/create_tool.rs](file://src/handlers/finance/tool/create_tool.rs)
-- [src/handlers/finance/tool/debug_call_tool.rs](file://src/handlers/finance/tool/debug_call_tool.rs)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/pkg/tool_registry/builtin.rs](file://src/pkg/tool_registry/builtin.rs)
-- [src/pkg/tool_registry/http.rs](file://src/pkg/tool_registry/http.rs)
-- [src/pkg/tool_registry/shell_exec.rs](file://src/pkg/tool_registry/shell_exec.rs)
-- [src/pkg/tool_registry/mcp.rs](file://src/pkg/tool_registry/mcp.rs)
-- [src/service/domain/finance/tool_provider.rs](file://src/service/domain/finance/tool_provider.rs)
-- [src/service/domain/runtime/tool_execution.rs](file://src/service/domain/runtime/tool_execution.rs)
-- [src/models/tool.rs](file://src/models/tool.rs)
+- [common/src/api/tool.rs](common/src/api/tool.rs)
+- [src/handlers/finance/tool/mod.rs](src/handlers/finance/tool/mod.rs)
+- [src/handlers/finance/tool/create_tool.rs](src/handlers/finance/tool/create_tool.rs)
+- [src/handlers/finance/tool/debug_call_tool.rs](src/handlers/finance/tool/debug_call_tool.rs)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/pkg/tool_registry/builtin.rs](src/pkg/tool_registry/builtin.rs)
+- [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
+- [src/pkg/tool_registry/shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [src/pkg/tool_registry/mcp.rs](src/pkg/tool_registry/mcp.rs)
+- [src/service/domain/finance/tool_provider.rs](src/service/domain/finance/tool_provider.rs)
+- [src/service/domain/runtime/tool_execution.rs](src/service/domain/runtime/tool_execution.rs)
+- [src/models/tool.rs](src/models/tool.rs)
 </cite>
 
 ## 目录
@@ -29,7 +29,11 @@
 10. [附录：API 参考](#附录api-参考)
 
 ## 简介
-本文件面向“工具管理 API”，覆盖工具的创建、配置、绑定、执行、调试等接口，并说明工具注册发现、权限控制、执行上下文、结果缓存、错误重试、异步执行、性能分析与工具链编排等企业级能力。系统采用严格四层单向调用：Adapter（HTTP Handler / 公开回调）→ Domain → DAL → DAO；通用基础设施工具统一在 pkg 层实现，无业务感知。
+本文件面向"工具管理 API"，覆盖工具的创建、配置、绑定、执行、调试等接口，并说明工具注册发现、权限控制、执行上下文、结果缓存、错误重试、异步执行、性能分析与工具链编排等企业级能力。系统采用严格四层单向调用：Adapter（HTTP Handler / 公开回调）→ Domain → DAL → DAO；通用基础设施工具统一在 pkg 层实现，无业务感知。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「工具管理 API」主题的 **API 参考层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [工具管理 API（业务功能层）](docs/wiki/zh/content/功能模块/工具生态系统/工具管理 API.md)
 
 ## 项目结构
 围绕工具管理的代码分布在以下层次：
@@ -49,16 +53,16 @@ D --> G["调用轨迹与统计<br/>tool_tracing/stats"]
 ```
 
 图表来源
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 章节来源
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 ## 核心组件
 - 工具模型与实体：ToolPo（持久化对象）、Tool（完整实体，含可执行对象与可选统计/匹配信息）。
@@ -73,14 +77,14 @@ D --> G["调用轨迹与统计<br/>tool_tracing/stats"]
 - 适配器（Handler）：创建工具、调试调用、查询/搜索工具、绑定/解绑 Agent、查询调用轨迹等。
 
 章节来源
-- [src/models/tool.rs:1-314](file://src/models/tool.rs#L1-L314)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
-- [src/pkg/tool_registry/http.rs:1-599](file://src/pkg/tool_registry/http.rs#L1-L599)
-- [src/pkg/tool_registry/shell_exec.rs:1-490](file://src/pkg/tool_registry/shell_exec.rs#L1-L490)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/models/tool.rs:1-314](src/models/tool.rs#L1-L314)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/pkg/tool_registry/http.rs:1-599](src/pkg/tool_registry/http.rs#L1-L599)
+- [src/pkg/tool_registry/shell_exec.rs:1-490](src/pkg/tool_registry/shell_exec.rs#L1-L490)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 
 ## 架构总览
 工具管理遵循“配置即工具”的设计：数据库中的 ToolPo 描述工具元数据与协议配置，注册中心根据协议类型将 ToolPo 转换为可执行的 CoreTool 实例。运行时执行器负责授权、状态检查、协议路由与轨迹记录。
@@ -108,11 +112,11 @@ Handler-->>Client : "调试响应"
 ```
 
 图表来源
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/handlers/finance/tool/debug_call_tool.rs:1-35](file://src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 ## 详细组件分析
 
@@ -160,10 +164,10 @@ Tool --> ToolPo : "包含持久化对象"
 ```
 
 图表来源
-- [src/models/tool.rs:1-314](file://src/models/tool.rs#L1-L314)
+- [src/models/tool.rs:1-314](src/models/tool.rs#L1-L314)
 
 章节来源
-- [src/models/tool.rs:1-314](file://src/models/tool.rs#L1-L314)
+- [src/models/tool.rs:1-314](src/models/tool.rs#L1-L314)
 
 ### 工具注册与发现
 - 全局注册表：维护内置工具工厂、HTTP 协议工厂与 MCP 工具工厂；按协议分派 create_tool。
@@ -184,14 +188,14 @@ CreateInstance --> End(["返回可执行工具"])
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
-- [src/pkg/tool_registry/builtin.rs:1-44](file://src/pkg/tool_registry/builtin.rs#L1-L44)
-- [src/pkg/tool_registry/http.rs:1-599](file://src/pkg/tool_registry/http.rs#L1-L599)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/pkg/tool_registry/builtin.rs:1-44](src/pkg/tool_registry/builtin.rs#L1-L44)
+- [src/pkg/tool_registry/http.rs:1-599](src/pkg/tool_registry/http.rs#L1-L599)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
-- [src/pkg/tool_registry/builtin.rs:1-44](file://src/pkg/tool_registry/builtin.rs#L1-L44)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/pkg/tool_registry/builtin.rs:1-44](src/pkg/tool_registry/builtin.rs#L1-L44)
 
 ### HTTP 工具
 - 配置项：方法、URL 模板、头/查询/体模板、超时、最大响应字节、允许状态码、JSON Pointer、域名白/黑名单、本地网络访问开关。
@@ -217,10 +221,10 @@ Err --> L
 ```
 
 图表来源
-- [src/pkg/tool_registry/http.rs:1-599](file://src/pkg/tool_registry/http.rs#L1-L599)
+- [src/pkg/tool_registry/http.rs:1-599](src/pkg/tool_registry/http.rs#L1-L599)
 
 章节来源
-- [src/pkg/tool_registry/http.rs:1-599](file://src/pkg/tool_registry/http.rs#L1-L599)
+- [src/pkg/tool_registry/http.rs:1-599](src/pkg/tool_registry/http.rs#L1-L599)
 
 ### Shell 工具
 - 配置项：默认超时、默认最大输出、额外允许路径、环境变量白名单。
@@ -243,10 +247,10 @@ Sum --> RetFG["返回退出码/是否截断/日志路径/摘要"]
 ```
 
 图表来源
-- [src/pkg/tool_registry/shell_exec.rs:1-490](file://src/pkg/tool_registry/shell_exec.rs#L1-L490)
+- [src/pkg/tool_registry/shell_exec.rs:1-490](src/pkg/tool_registry/shell_exec.rs#L1-L490)
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:1-490](file://src/pkg/tool_registry/shell_exec.rs#L1-L490)
+- [src/pkg/tool_registry/shell_exec.rs:1-490](src/pkg/tool_registry/shell_exec.rs#L1-L490)
 
 ### MCP 工具
 - 配置项：server_id、tool_name；服务器连接细节与凭据位于 McpServerPo.config，不重复存放于工具配置。
@@ -269,12 +273,12 @@ RT-->>Exec : "序列化结果或错误"
 ```
 
 图表来源
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
 
 章节来源
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
 
 ### 领域服务：工具提供管理
 - 创建/更新/删除/查询/搜索工具：包含策略校验（如 MCP 仅 Manual、HTTP 配置合法性）。
@@ -283,7 +287,7 @@ RT-->>Exec : "序列化结果或错误"
 - 标签聚合：列出所有启用工具的 distinct tags。
 
 章节来源
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
 
 ### 领域服务：运行时执行
 - 按协议路由：MCP 走 mcp_tool_dal；Builtin/Http 走 tool_dal。
@@ -293,7 +297,7 @@ RT-->>Exec : "序列化结果或错误"
 - 轨迹返回：返回 ToolExecutionResult，包含真实 call_id 与 trace_ref。
 
 章节来源
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
 
 ### 适配器（HTTP 处理器）
 - 创建工具：禁止创建内置工具；校验用户上下文；构造 ToolPo 并交由领域服务创建。
@@ -301,9 +305,9 @@ RT-->>Exec : "序列化结果或错误"
 - 其他处理器：查询/搜索工具、绑定/解绑、调用轨迹查询等（见模块导出）。
 
 章节来源
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/handlers/finance/tool/debug_call_tool.rs:1-35](file://src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/handlers/finance/tool/debug_call_tool.rs:1-35](src/handlers/finance/tool/debug_call_tool.rs#L1-L35)
 
 ## 依赖关系分析
 - Handler 依赖领域服务，领域服务依赖 DAL/DAO，DAL/DAO 依赖模型与工具注册中心。
@@ -323,16 +327,16 @@ D2 --> TR["调用轨迹"]
 ```
 
 图表来源
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 章节来源
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/service/domain/finance/tool_provider.rs:1-166](file://src/service/domain/finance/tool_provider.rs#L1-L166)
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/mod.rs:1-132](file://src/pkg/tool_registry/mod.rs#L1-L132)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/service/domain/finance/tool_provider.rs:1-166](src/service/domain/finance/tool_provider.rs#L1-L166)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/mod.rs:1-132](src/pkg/tool_registry/mod.rs#L1-L132)
 
 ## 性能与可靠性
 - 超时与限流：HTTP 工具支持 per-tool 超时与响应大小限制；MCP 工具会话建立与调用均有超时；Shell 工具支持超时与输出大小限制。
@@ -352,10 +356,10 @@ D2 --> TR["调用轨迹"]
 - 权限问题：Manual 工具需显式授权；internal 标签工具不可绑定给 Agent；Admin 调试接口需管理员角色。
 
 章节来源
-- [src/service/domain/runtime/tool_execution.rs:1-219](file://src/service/domain/runtime/tool_execution.rs#L1-L219)
-- [src/pkg/tool_registry/http.rs:1-599](file://src/pkg/tool_registry/http.rs#L1-L599)
-- [src/pkg/tool_registry/shell_exec.rs:1-490](file://src/pkg/tool_registry/shell_exec.rs#L1-L490)
-- [src/pkg/tool_registry/mcp.rs:1-399](file://src/pkg/tool_registry/mcp.rs#L1-L399)
+- [src/service/domain/runtime/tool_execution.rs:1-219](src/service/domain/runtime/tool_execution.rs#L1-L219)
+- [src/pkg/tool_registry/http.rs:1-599](src/pkg/tool_registry/http.rs#L1-L599)
+- [src/pkg/tool_registry/shell_exec.rs:1-490](src/pkg/tool_registry/shell_exec.rs#L1-L490)
+- [src/pkg/tool_registry/mcp.rs:1-399](src/pkg/tool_registry/mcp.rs#L1-L399)
 
 ## 结论
 工具管理 API 通过“配置即工具”的注册中心机制，统一了内置、HTTP、Shell、MCP 等多类工具的创建、配置、绑定与执行。系统在安全、性能与可观测性方面提供了企业级保障：SSRF 防护、超时与大小限制、沙箱化执行、调用轨迹与统计、异步执行与错误重试。建议在生产环境中结合调用轨迹与统计进行持续优化，并通过领域服务编排实现复杂工具链与重试策略。
@@ -376,4 +380,4 @@ D2 --> TR["调用轨迹"]
 - 调用轨迹：QueryToolCallEntriesRequest/Response、GetToolCallEntryRequest/Response
 
 章节来源
-- [common/src/api/tool.rs:1-430](file://common/src/api/tool.rs#L1-L430)
+- [common/src/api/tool.rs:1-430](common/src/api/tool.rs#L1-L430)

@@ -131,15 +131,7 @@
 
 ## 五、验收清单（2026-07-22 全部达成 ✅）
 
-- [x] 构建工具链搭建完成：Tailwind CSS v4 + DaisyUI v5 + Trunk pre-build hook
-- [x] 自定义 orz-light 主题色值与品牌严格对齐（Mistral 橙 #fa520f + 金色 #ffb83e + 暖象牙背景 #fffaeb）
-- [x] 基础组件全部迁移：Button/Modal/Loading/EmptyState/Toast/Stats/Graph
-- [x] 布局组件迁移：Navbar + AppLayout（移动端汉堡菜单正常）
-- [x] 主题切换功能上线：use_theme hook + 设置页面主题选择器 + localStorage 持久化 + 30+ 内置主题
-- [x] 逐页面迁移完成：第一批简单页面 + 第二批复杂页面 + Chat 页面（DaisyUI chat 组件）
-- [x] 旧 CSS 清理完成：index.html 删除已迁移样式，input.css 只保留真正必要的自定义样式
-- [x] 全量编译和测试通过：trunk build 零错误，前端测试 100% 通过
-- [x] 全页面视觉回归检查：所有页面加载、交互、主题切换正常，无样式丢失
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -169,3 +161,4 @@
 4. **新增页面级动画**：简单动画用 Tailwind animate-* / transition-*；复杂动画（typing 动画、进度条动画等）在 [styles/input.css](../../frontend/styles/input.css) 的 "Custom overrides" 区域追加 @keyframes + 自定义类，页面中直接引用类名
 
 完成。
+

@@ -2,27 +2,27 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/skill.rs](file://common/src/api/skill.rs)
-- [src/router.rs](file://src/router.rs)
-- [src/handlers/hr/skill/mod.rs](file://src/handlers/hr/skill/mod.rs)
-- [src/handlers/hr/skill/create_skill.rs](file://src/handlers/hr/skill/create_skill.rs)
-- [src/handlers/hr/skill/get_skill.rs](file://src/handlers/hr/skill/get_skill.rs)
-- [src/handlers/hr/skill/list_skills.rs](file://src/handlers/hr/skill/list_skills.rs)
-- [src/handlers/hr/skill/update_skill.rs](file://src/handlers/hr/skill/update_skill.rs)
-- [src/handlers/hr/skill/delete_skill.rs](file://src/handlers/hr/skill/delete_skill.rs)
-- [src/handlers/hr/skill/install_skill_to_agent.rs](file://src/handlers/hr/skill/install_skill_to_agent.rs)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs)
-- [src/handlers/hr/skill/get_skill_file_content.rs](file://src/handlers/hr/skill/get_skill_file_content.rs)
-- [src/handlers/hr/skill/update_skill_file_content.rs](file://src/handlers/hr/skill/update_skill_file_content.rs)
-- [src/handlers/hr/skill/list_skill_tags.rs](file://src/handlers/hr/skill/list_skill_tags.rs)
-- [src/handlers/hr/skill/search_skills.rs](file://src/handlers/hr/skill/search_skills.rs)
-- [src/handlers/hr/skill/list_agent_skills.rs](file://src/handlers/hr/skill/list_agent_skills.rs)
-- [src/service/domain/hr/mod.rs](file://src/service/domain/hr/mod.rs)
-- [src/service/domain/hr/skill.rs](file://src/service/domain/hr/skill.rs)
-- [src/service/dal/skill.rs](file://src/service/dal/skill.rs)
-- [src/service/dao/skill/sqlite.rs](file://src/service/dao/skill/sqlite.rs)
-- [src/models/skill.rs](file://src/models/skill.rs)
-- [common/src/enums/skill.rs](file://common/src/enums/skill.rs)
+- [common/src/api/skill.rs](common/src/api/skill.rs)
+- [src/router.rs](src/router.rs)
+- [src/handlers/hr/skill/mod.rs](src/handlers/hr/skill/mod.rs)
+- [src/handlers/hr/skill/create_skill.rs](src/handlers/hr/skill/create_skill.rs)
+- [src/handlers/hr/skill/get_skill.rs](src/handlers/hr/skill/get_skill.rs)
+- [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
+- [src/handlers/hr/skill/update_skill.rs](src/handlers/hr/skill/update_skill.rs)
+- [src/handlers/hr/skill/delete_skill.rs](src/handlers/hr/skill/delete_skill.rs)
+- [src/handlers/hr/skill/install_skill_to_agent.rs](src/handlers/hr/skill/install_skill_to_agent.rs)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
+- [src/handlers/hr/skill/get_skill_file_content.rs](src/handlers/hr/skill/get_skill_file_content.rs)
+- [src/handlers/hr/skill/update_skill_file_content.rs](src/handlers/hr/skill/update_skill_file_content.rs)
+- [src/handlers/hr/skill/list_skill_tags.rs](src/handlers/hr/skill/list_skill_tags.rs)
+- [src/handlers/hr/skill/search_skills.rs](src/handlers/hr/skill/search_skills.rs)
+- [src/handlers/hr/skill/list_agent_skills.rs](src/handlers/hr/skill/list_agent_skills.rs)
+- [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
+- [src/service/domain/hr/skill.rs](src/service/domain/hr/skill.rs)
+- [src/service/dal/skill.rs](src/service/dal/skill.rs)
+- [src/service/dao/skill/sqlite.rs](src/service/dao/skill/sqlite.rs)
+- [src/models/skill.rs](src/models/skill.rs)
+- [common/src/enums/skill.rs](common/src/enums/skill.rs)
 </cite>
 
 ## 目录
@@ -93,16 +93,16 @@ DAL_Skill --> DAO_SQLite
 ```
 
 **图表来源**
-- [src/router.rs:361-401](file://src/router.rs#L361-L401)
-- [src/handlers/hr/skill/mod.rs:1-35](file://src/handlers/hr/skill/mod.rs#L1-L35)
-- [src/service/domain/hr/mod.rs:38-92](file://src/service/domain/hr/mod.rs#L38-L92)
-- [src/service/domain/hr/skill.rs:1-39](file://src/service/domain/hr/skill.rs#L1-L39)
-- [src/service/dal/skill.rs:678-721](file://src/service/dal/skill.rs#L678-L721)
-- [src/service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [src/router.rs:361-401](src/router.rs#L361-L401)
+- [src/handlers/hr/skill/mod.rs:1-35](src/handlers/hr/skill/mod.rs#L1-L35)
+- [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
+- [src/service/domain/hr/skill.rs:1-39](src/service/domain/hr/skill.rs#L1-L39)
+- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 **章节来源**
-- [src/router.rs:361-401](file://src/router.rs#L361-L401)
-- [src/handlers/hr/skill/mod.rs:1-35](file://src/handlers/hr/skill/mod.rs#L1-L35)
+- [src/router.rs:361-401](src/router.rs#L361-L401)
+- [src/handlers/hr/skill/mod.rs:1-35](src/handlers/hr/skill/mod.rs#L1-L35)
 
 ## 核心组件
 - 请求/响应 DTO：定义在 common 层，前后端共享
@@ -119,10 +119,10 @@ DAL_Skill --> DAO_SQLite
 - SkillAuthorType：User/Agent
 
 **章节来源**
-- [common/src/api/skill.rs:11-465](file://common/src/api/skill.rs#L11-L465)
-- [src/models/skill.rs:20-193](file://src/models/skill.rs#L20-L193)
-- [common/src/enums/skill.rs:6-79](file://common/src/enums/skill.rs#L6-L79)
-- [src/service/domain/hr/mod.rs:317-392](file://src/service/domain/hr/mod.rs#L317-L392)
+- [common/src/api/skill.rs:11-465](common/src/api/skill.rs#L11-L465)
+- [src/models/skill.rs:20-193](src/models/skill.rs#L20-L193)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [src/service/domain/hr/mod.rs:317-392](src/service/domain/hr/mod.rs#L317-L392)
 
 ## 架构总览
 技能包管理的请求处理链路如下：
@@ -151,11 +151,11 @@ H-->>C : JSON 响应
 ```
 
 **图表来源**
-- [src/router.rs:361-401](file://src/router.rs#L361-L401)
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/service/domain/hr/skill.rs:1-39](file://src/service/domain/hr/skill.rs#L1-L39)
-- [src/service/dal/skill.rs:678-721](file://src/service/dal/skill.rs#L678-L721)
-- [src/service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [src/router.rs:361-401](src/router.rs#L361-L401)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/service/domain/hr/skill.rs:1-39](src/service/domain/hr/skill.rs#L1-L39)
+- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ## 详细组件分析
 
@@ -198,19 +198,19 @@ Delete --> End
 ```
 
 **图表来源**
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/get_skill.rs:1-30](file://src/handlers/hr/skill/get_skill.rs#L1-L30)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
-- [src/handlers/hr/skill/update_skill.rs:1-126](file://src/handlers/hr/skill/update_skill.rs#L1-L126)
-- [src/handlers/hr/skill/delete_skill.rs:1-34](file://src/handlers/hr/skill/delete_skill.rs#L1-L34)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/get_skill.rs:1-30](src/handlers/hr/skill/get_skill.rs#L1-L30)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [src/handlers/hr/skill/update_skill.rs:1-126](src/handlers/hr/skill/update_skill.rs#L1-L126)
+- [src/handlers/hr/skill/delete_skill.rs:1-34](src/handlers/hr/skill/delete_skill.rs#L1-L34)
 
 **章节来源**
-- [common/src/api/skill.rs:11-465](file://common/src/api/skill.rs#L11-L465)
-- [src/handlers/hr/skill/create_skill.rs:1-92](file://src/handlers/hr/skill/create_skill.rs#L1-L92)
-- [src/handlers/hr/skill/get_skill.rs:1-30](file://src/handlers/hr/skill/get_skill.rs#L1-L30)
-- [src/handlers/hr/skill/list_skills.rs:1-41](file://src/handlers/hr/skill/list_skills.rs#L1-L41)
-- [src/handlers/hr/skill/update_skill.rs:1-126](file://src/handlers/hr/skill/update_skill.rs#L1-L126)
-- [src/handlers/hr/skill/delete_skill.rs:1-34](file://src/handlers/hr/skill/delete_skill.rs#L1-L34)
+- [common/src/api/skill.rs:11-465](common/src/api/skill.rs#L11-L465)
+- [src/handlers/hr/skill/create_skill.rs:1-92](src/handlers/hr/skill/create_skill.rs#L1-L92)
+- [src/handlers/hr/skill/get_skill.rs:1-30](src/handlers/hr/skill/get_skill.rs#L1-L30)
+- [src/handlers/hr/skill/list_skills.rs:1-41](src/handlers/hr/skill/list_skills.rs#L1-L41)
+- [src/handlers/hr/skill/update_skill.rs:1-126](src/handlers/hr/skill/update_skill.rs#L1-L126)
+- [src/handlers/hr/skill/delete_skill.rs:1-34](src/handlers/hr/skill/delete_skill.rs#L1-L34)
 
 ### Agent 绑定与解绑
 - 安装 install_skill_to_agent
@@ -238,15 +238,15 @@ H-->>C : InstallSkillToAgentResponse
 ```
 
 **图表来源**
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-36](file://src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
-- [src/service/domain/hr/skill.rs:153-198](file://src/service/domain/hr/skill.rs#L153-L198)
-- [src/service/dao/skill/sqlite.rs:275-295](file://src/service/dao/skill/sqlite.rs#L275-L295)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-36](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
+- [src/service/domain/hr/skill.rs:153-198](src/service/domain/hr/skill.rs#L153-L198)
+- [src/service/dao/skill/sqlite.rs:275-295](src/service/dao/skill/sqlite.rs#L275-L295)
 
 **章节来源**
-- [src/handlers/hr/skill/install_skill_to_agent.rs:1-36](file://src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
-- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-34](file://src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L34)
-- [src/service/domain/hr/skill.rs:153-198](file://src/service/domain/hr/skill.rs#L153-L198)
-- [src/service/dao/skill/sqlite.rs:275-295](file://src/service/dao/skill/sqlite.rs#L275-L295)
+- [src/handlers/hr/skill/install_skill_to_agent.rs:1-36](src/handlers/hr/skill/install_skill_to_agent.rs#L1-L36)
+- [src/handlers/hr/skill/uninstall_skill_from_agent.rs:1-34](src/handlers/hr/skill/uninstall_skill_from_agent.rs#L1-L34)
+- [src/service/domain/hr/skill.rs:153-198](src/service/domain/hr/skill.rs#L153-L198)
+- [src/service/dao/skill/sqlite.rs:275-295](src/service/dao/skill/sqlite.rs#L275-L295)
 
 ### 文件管理
 - 列出文件 list_skill_files
@@ -277,14 +277,14 @@ J --> K
 ```
 
 **图表来源**
-- [src/handlers/hr/skill/get_skill_file_content.rs:1-38](file://src/handlers/hr/skill/get_skill_file_content.rs#L1-L38)
-- [src/handlers/hr/skill/update_skill_file_content.rs:1-34](file://src/handlers/hr/skill/update_skill_file_content.rs#L1-L34)
-- [common/src/api/skill.rs:229-249](file://common/src/api/skill.rs#L229-L249)
+- [src/handlers/hr/skill/get_skill_file_content.rs:1-38](src/handlers/hr/skill/get_skill_file_content.rs#L1-L38)
+- [src/handlers/hr/skill/update_skill_file_content.rs:1-34](src/handlers/hr/skill/update_skill_file_content.rs#L1-L34)
+- [common/src/api/skill.rs:229-249](common/src/api/skill.rs#L229-L249)
 
 **章节来源**
-- [src/handlers/hr/skill/get_skill_file_content.rs:1-38](file://src/handlers/hr/skill/get_skill_file_content.rs#L1-L38)
-- [src/handlers/hr/skill/update_skill_file_content.rs:1-34](file://src/handlers/hr/skill/update_skill_file_content.rs#L1-L34)
-- [common/src/api/skill.rs:229-249](file://common/src/api/skill.rs#L229-L249)
+- [src/handlers/hr/skill/get_skill_file_content.rs:1-38](src/handlers/hr/skill/get_skill_file_content.rs#L1-L38)
+- [src/handlers/hr/skill/update_skill_file_content.rs:1-34](src/handlers/hr/skill/update_skill_file_content.rs#L1-L34)
+- [common/src/api/skill.rs:229-249](common/src/api/skill.rs#L229-L249)
 
 ### 标签系统与批量操作
 - 列出标签 list_skill_tags
@@ -315,14 +315,14 @@ H-->>C : {tags : [...]}
 ```
 
 **图表来源**
-- [src/handlers/hr/skill/list_skill_tags.rs:1-28](file://src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
-- [src/service/dal/skill.rs:692-694](file://src/service/dal/skill.rs#L692-L694)
-- [src/service/dao/skill/sqlite.rs:261-273](file://src/service/dao/skill/sqlite.rs#L261-L273)
+- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
+- [src/service/dal/skill.rs:692-694](src/service/dal/skill.rs#L692-L694)
+- [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
 **章节来源**
-- [src/handlers/hr/skill/list_skill_tags.rs:1-28](file://src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
-- [src/service/dal/skill.rs:678-721](file://src/service/dal/skill.rs#L678-L721)
-- [src/service/dao/skill/sqlite.rs:261-273](file://src/service/dao/skill/sqlite.rs#L261-L273)
+- [src/handlers/hr/skill/list_skill_tags.rs:1-28](src/handlers/hr/skill/list_skill_tags.rs#L1-L28)
+- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dao/skill/sqlite.rs:261-273](src/service/dao/skill/sqlite.rs#L261-L273)
 
 ### 搜索与查询
 - 列表查询 query_skills
@@ -363,12 +363,12 @@ PagedResult_T_ <.. SearchSkillsRequest : "返回分页"
 ```
 
 **图表来源**
-- [common/src/api/skill.rs:282-330](file://common/src/api/skill.rs#L282-L330)
-- [src/handlers/hr/skill/search_skills.rs:1-50](file://src/handlers/hr/skill/search_skills.rs#L1-L50)
+- [common/src/api/skill.rs:282-330](common/src/api/skill.rs#L282-L330)
+- [src/handlers/hr/skill/search_skills.rs:1-50](src/handlers/hr/skill/search_skills.rs#L1-L50)
 
 **章节来源**
-- [src/handlers/hr/skill/search_skills.rs:1-50](file://src/handlers/hr/skill/search_skills.rs#L1-L50)
-- [common/src/api/skill.rs:282-330](file://common/src/api/skill.rs#L282-L330)
+- [src/handlers/hr/skill/search_skills.rs:1-50](src/handlers/hr/skill/search_skills.rs#L1-L50)
+- [common/src/api/skill.rs:282-330](common/src/api/skill.rs#L282-L330)
 
 ### 版本管理与状态机
 - 状态：Draft（草稿）、Published（已发布）、Expired（过期）
@@ -391,12 +391,12 @@ Expired --> [*] : "删除"
 ```
 
 **图表来源**
-- [common/src/enums/skill.rs:6-79](file://common/src/enums/skill.rs#L6-L79)
-- [src/service/domain/hr/mod.rs:249-290](file://src/service/domain/hr/mod.rs#L249-L290)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [src/service/domain/hr/mod.rs:249-290](src/service/domain/hr/mod.rs#L249-L290)
 
 **章节来源**
-- [common/src/enums/skill.rs:6-79](file://common/src/enums/skill.rs#L6-L79)
-- [src/service/domain/hr/mod.rs:249-290](file://src/service/domain/hr/mod.rs#L249-L290)
+- [common/src/enums/skill.rs:6-79](common/src/enums/skill.rs#L6-L79)
+- [src/service/domain/hr/mod.rs:249-290](src/service/domain/hr/mod.rs#L249-L290)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 单例 HrDomain，通过 skill_manage() 获取 SkillManage 接口
@@ -414,14 +414,14 @@ DA --> DB["SQLite"]
 ```
 
 **图表来源**
-- [src/service/domain/hr/mod.rs:38-92](file://src/service/domain/hr/mod.rs#L38-L92)
-- [src/service/dal/skill.rs:678-721](file://src/service/dal/skill.rs#L678-L721)
-- [src/service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
+- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 **章节来源**
-- [src/service/domain/hr/mod.rs:38-92](file://src/service/domain/hr/mod.rs#L38-L92)
-- [src/service/dal/skill.rs:678-721](file://src/service/dal/skill.rs#L678-L721)
-- [src/service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [src/service/domain/hr/mod.rs:38-92](src/service/domain/hr/mod.rs#L38-L92)
+- [src/service/dal/skill.rs:678-721](src/service/dal/skill.rs#L678-L721)
+- [src/service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ## 性能与扩展性
 - 搜索性能：FTS5 + 向量语义混合搜索，按参数自动选择策略，支持降级
@@ -450,9 +450,9 @@ DA --> DB["SQLite"]
   - DAL/DAO 层记录 SQL 与 IO 异常
 
 **章节来源**
-- [src/handlers/hr/skill/create_skill.rs:26-32](file://src/handlers/hr/skill/create_skill.rs#L26-L32)
-- [src/handlers/hr/skill/get_skill_file_content.rs:27-35](file://src/handlers/hr/skill/get_skill_file_content.rs#L27-L35)
-- [src/service/domain/hr/skill.rs:153-184](file://src/service/domain/hr/skill.rs#L153-L184)
+- [src/handlers/hr/skill/create_skill.rs:26-32](src/handlers/hr/skill/create_skill.rs#L26-L32)
+- [src/handlers/hr/skill/get_skill_file_content.rs:27-35](src/handlers/hr/skill/get_skill_file_content.rs#L27-L35)
+- [src/service/domain/hr/skill.rs:153-184](src/service/domain/hr/skill.rs#L153-L184)
 
 ## 结论
 技能包管理 API 提供了完整的生命周期管理能力，涵盖 CRUD、Agent 绑定、文件管理、标签聚合、搜索与批量操作、版本管理等。系统采用清晰的分层架构，确保高内聚低耦合，便于扩展与维护。建议在生产环境启用 FTS5 与向量搜索以提升检索效率，并结合乐观锁保障文件一致性。
@@ -482,5 +482,5 @@ DA --> DB["SQLite"]
   - 卸载技能包：按 tag 移除并可选删除副本
 
 **章节来源**
-- [src/router.rs:361-401](file://src/router.rs#L361-L401)
-- [common/src/api/skill.rs:11-465](file://common/src/api/skill.rs#L11-L465)
+- [src/router.rs:361-401](src/router.rs#L361-L401)
+- [common/src/api/skill.rs:11-465](common/src/api/skill.rs#L11-L465)

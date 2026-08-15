@@ -8,6 +8,15 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [project_design.md](./project_design.md) — 项目基础实体设计（PM 系统的底层依赖）
 > - [agent_loop_engine_design.md](./agent_loop_engine_design.md) — Agent 自主跟进项目进度驱动机制
+> - 【② Plan 落地（Batch9 关联）】
+>   - [项目任务增强.md](../plan/项目任务增强.md) — TaskGraph DAG + Artifact 按需注入模式
+> - 【③ Wiki 长文（Batch9 新增）】
+>   - [项目管理.md](docs/wiki/zh/content/功能模块/项目管理/项目管理.md) — 项目详情 5 Tab 聚合 + 管理面 API 映射
+>   - [多 Agent 协作机制.md](docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/多%20Agent%20协作机制.md) — Project Domain 唯一编排层 + 思考循环状态机
+>   - [制品和附件.md](docs/wiki/zh/content/数据模型/项目和任务模型/制品和附件.md) — Artifact 双关联三来源（attachment/generated_content/remote_url）
+>   - [Domain 层编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Domain%20层编排.md) — DAO→DAL→Domain→Handler 单向分层
+> - 【④ RAG 原子知识卡（Batch9 新增）】
+>   - [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88.md) — Project Domain 架构 + TaskGraph 构建算法 + ArtifactManage 权限校验
 
 ## 简介
 

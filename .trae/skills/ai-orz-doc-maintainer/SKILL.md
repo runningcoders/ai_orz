@@ -14,9 +14,9 @@ The four doc types defined by project SSOT (always maintained and linked togethe
 | ① Design | `docs/design/*.md` | Why (decision snapshot) | **This skill** |
 | ② Plan | `docs/plan/*.md` | How + landing result | **This skill** |
 | ③ Wiki long articles | `docs/wiki/zh/content/` (8 sections, ~353) | What is it (encyclopedia) | ai-orz-wiki-maintainer |
-| ④ RAG knowledge cards | `docs/wiki/knowledge/zh/` (54+, overlaps OK) | Summary + index (for Agent RAG) | ai-orz-wiki-maintainer |
+| ④ RAG knowledge cards | `docs/wiki/knowledge/zh/` (54+, **按 AGENTS §2.1.3 图谱法则决策合并/拆分，禁止裸重叠**) | Summary + index (for Agent RAG) | ai-orz-wiki-maintainer |
 
-Specifically this skill enforces **AGENTS.md §2.1** across `design/` decision snapshots, `plan/` 7-section landing summaries, `archive/` tombstoned references, and lifecycle of temporary `docs/superpowers/*` execution artifacts (must be disposed within 7 days of feature completion). On top, it owns the **DOC-SIDE HALF of the 4-doc cross-citation**: every new design/plan must carry, in its "关联文档" header block + §3 inventory table, explicit absolute-path links to (iii) the corresponding wiki long-article final target path and (iv) the corresponding RAG card final target path. If the wiki side hasn't been synced yet, write **precise placeholder target paths** with tag `占位：待 ai-orz-wiki-maintainer 同步后回填真实路径有效性` (never write vague "TBD" paths; the paths MUST be the final real names so wiki-maintainer can back-grep them).
+Specifically this skill enforces **AGENTS.md §2.1** across `design/` decision snapshots, `plan/` 7-section landing summaries, `archive/` tombstoned references, and lifecycle of temporary `docs/superpowers/*` execution artifacts (must be disposed within 7 days of feature completion). On top, it owns the **DOC-SIDE HALF of the 4-doc cross-citation**: every new design/plan must carry, in its "关联文档" header block + §3 inventory table, explicit repo-relative-path links to (iii) the corresponding wiki long-article final target path and (iv) the corresponding RAG card final target path. If the wiki side hasn't been synced yet, write **precise placeholder relative paths (final real file names)** with tag `占位：待 ai-orz-wiki-maintainer 同步后回填真实路径有效性` (never write vague "TBD" paths; the paths MUST be the final real names so wiki-maintainer can back-grep them).
 
 ## When to use (trigger conditions)
 
@@ -32,8 +32,8 @@ Specifically this skill enforces **AGENTS.md §2.1** across `design/` decision s
 
 1. Place correctly: `docs/design/<topic>_design.md` (match existing naming style).
 2. Apply **Template A** (5 chapters: Goals & decision table / ASCII architecture / file inventory table by layer / boundary & behavior redlines / extension patterns). Decision table (§1.X with Q/Plan/Reason) is mandatory.
-3. **⭐ CRITICAL (v2.0) File-head 4-metadata "关联文档" section MUST carry 4 more entries besides AGENTS references**: (a) related plan doc OR explicit "暂无对应 plan 文档"; (b) **precise absolute placeholder path for the matching wiki long-article** with `占位：待 ai-orz-wiki-maintainer 同步后回填真实路径有效性` tag; (c) **precise absolute placeholder path for the matching RAG knowledge card** with same placeholder tag. Path names must be FINAL REAL TARGET NAMES (same as the md basename + 3-level dirs that wiki-maintainer will actually create).
-4. Inventory table §三 rows must carry **clickable absolute paths with `file:///.../ai_orz/... :Ln-Lm`** anchors. Do NOT invent paths for files not yet created. Add a last row **"落地索引（四类互引）"** listing wiki long-article + RAG card paths (same as header).
+3. **⭐ CRITICAL (v2.0) File-head 4-metadata "关联文档" section MUST carry 4 more entries besides AGENTS references**: (a) related plan doc OR explicit "暂无对应 plan 文档"; (b) **precise placeholder relative path (final real file name) for the matching wiki long-article** with `占位：待 ai-orz-wiki-maintainer 同步后回填真实路径有效性` tag; (c) **precise placeholder relative path (final real file name) for the matching RAG knowledge card** with same placeholder tag. Path names must be FINAL REAL TARGET NAMES (same as the md basename + 3-level dirs that wiki-maintainer will actually create).
+4. Inventory table §三 rows must carry **clickable repo-relative paths with `#Ln-Lm`** anchors (e.g. `src/xxx.rs#L12-L50`). Do NOT invent paths for files not yet created. Add a last row **"落地索引（四类互引）"** listing wiki long-article + RAG card paths (same as header).
 5. Run the **code-block judgment table** below. Keep contract blocks and add a path line immediately under; delete snapshot blocks and replace with a 1-line path citation.
 
 ### Workflow B — Superpowers blueprint → Plan archive (highest frequency, `docs/plan/`)
@@ -45,7 +45,7 @@ Specifically this skill enforces **AGENTS.md §2.1** across `design/` decision s
 5. **⭐ CRITICAL (v2.0) Fill mandatory file-head 4-metadata**: 🎯定位 / 状态(枚举值 4 选一) / 查阅场景 / **关联文档**. "关联文档" MUST include (same as Workflow A): related design doc OR "暂无对应 design 文档（强烈建议补写）" + **wiki long-article placeholder/real path** + **RAG card placeholder/real path**. Plan is a landing-result snapshot → RAG card link is STRICTER than design: never write "暂缺", always write a precise placeholder even if it's the only doc referencing that card name.
 6. Apply **Template B** (7 chapters + §3 inventory last row "落地索引（四类互引）" listing wiki + RAG paths + §5 acceptance table includes "四类互引占位路径已写入" checkmark row + §6 execution summary includes "四类互引覆盖率" row).
 7. Finally `git rm docs/superpowers/plans/<original>`; if historically useful → move to `docs/archive/superpowers-archive/` with a tombstone header.
-8. If you (doc-maintainer) are executing AFTER wiki-maintainer has already synced the matching wiki + RAG cards for this feature, run `find docs/wiki/knowledge -name "<placeholder-basename>.md"` to confirm real paths exist → replace ALL placeholders in header + §三 + §五 + §六 with REAL existing absolute paths (this skill owns resolution when it's the last executor).
+8. If you (doc-maintainer) are executing AFTER wiki-maintainer has already synced the matching wiki + RAG cards for this feature, run `find docs/wiki/knowledge -name "<placeholder-basename>.md"` to confirm real paths exist → replace ALL placeholders in header + §三 + §五 + §六 with REAL existing repo-relative paths (this skill owns resolution when it's the last executor).
 
 ### Workflow C — Full-repo docs sweep (code-block + placeholder + header + cross-citation pass)
 
@@ -62,7 +62,7 @@ Specifically this skill enforces **AGENTS.md §2.1** across `design/` decision s
 
 | Case | Type | Keep? | Action if NO |
 |------|------|-------|--------------|
-| Trait signatures w/o `{ impl }` | Contract ✅ | Optional | Keep → path guide `> 当前实现：[file.rs::Name](file:///abs/path/file.rs#Lx-Ly)` under block |
+| Trait signatures w/o `{ impl }` | Contract ✅ | Optional | Keep → path guide `> 当前实现：[file.rs::Name](src/path/file.rs#Lx-Ly)` under block |
 | Struct field lists / Enum variant lists | Contract ✅ | Optional | Same as above |
 | SQL `CREATE TABLE` schemas | Contract ✅ | Optional (recommended in design docs) | Same + link migrations dir |
 | ASCII tree / flow diagrams (pure text art) | Contract ✅ | Keep strongly | No path required — this is architecture intent |
@@ -87,7 +87,8 @@ Always hand off to these 3 canonical templates from AGENTS §2.1 (as updated for
 - **⭐ 4-doc cross-citation DOC-SIDE COVERAGE 底线**: (a) Every NEW/UPDATED design → 关联文档 has ≥1 plan (or "暂无") + **≥1 wiki placeholder/real + ≥1 RAG placeholder/real**. (b) Every NEW/UPDATED plan → 关联文档 has ≥1 design + **≥1 wiki path + ≥1 RAG path** — PLANS ARE LANDING RESULTS; writing a plan with 0 RAG card link = FAIL. (c) All placeholder paths = precise final target names, not "todo"/"待填"/"tbd" vague words.
 - Superpowers blueprints ≥ 7 days old must be disposed (archive plan or delete or tombstone).
 - Never mutate superpowers blueprints in place; always copy → prune → remove original.
-- All path citations (under kept contract blocks, or replacements for deleted snapshots, AND ALL 4-doc cross-links) use clickable **absolute** file paths with optional `#Ln-Lm` ranges. Wiki alone uses relative `file://relative` scheme for code sources but wiki→doc cross-links ALSO use absolute `file:///`.
+- All path citations (under kept contract blocks, or replacements for deleted snapshots, AND ALL 4-doc cross-links) use clickable **repo-relative** paths with optional `#Ln-Lm` ranges (AGENTS §2.1.2). No `file://` pseudo-protocol anywhere.
+- **⭐【路径格式硬约束】文档与 RAG 卡中所有路径引用（cite 节 / 章节来源 / source_files[] / 关联文档头部）必须使用 AGENTS §2.1.2 相对路径格式（行号 `#Lx-Ly`）**：出现 `file:///` 绝对路径 / `file://` 伪协议 / legacy 冒号行号 → 执行结果 FAIL，改完再过。
 
 ## Fallbacks
 

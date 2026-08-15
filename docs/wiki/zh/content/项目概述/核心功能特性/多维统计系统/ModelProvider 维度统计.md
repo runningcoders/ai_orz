@@ -2,13 +2,13 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/stats/model_call.rs](file://src/pkg/stats/model_call.rs)
-- [src/pkg/stats/collector.rs](file://src/pkg/stats/collector.rs)
-- [common/src/models/stats.rs](file://common/src/models/stats.rs)
-- [src/service/dal/model_provider.rs](file://src/service/dal/model_provider.rs)
-- [common/src/api/model_provider.rs](file://common/src/api/model_provider.rs)
-- [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/model_call.rs](src/pkg/stats/model_call.rs)
+- [src/pkg/stats/collector.rs](src/pkg/stats/collector.rs)
+- [common/src/models/stats.rs](common/src/models/stats.rs)
+- [src/service/dal/model_provider.rs](src/service/dal/model_provider.rs)
+- [common/src/api/model_provider.rs](common/src/api/model_provider.rs)
+- [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
 </cite>
 
 ## 目录
@@ -50,18 +50,18 @@ E["AOP 实时统计<br/>AopStatsCollector"] -.->|仅内存快照| F["系统监�
 ```
 
 图表来源
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/service/dal/model_provider.rs:98-104](file://src/service/dal/model_provider.rs#L98-L104)
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/pkg/stats/collector.rs:451-527](file://src/pkg/stats/collector.rs#L451-L527)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/service/dal/model_provider.rs:98-104](src/service/dal/model_provider.rs#L98-L104)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/pkg/stats/collector.rs:451-527](src/pkg/stats/collector.rs#L451-L527)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 章节来源
-- [src/pkg/stats/model_call.rs:12-39](file://src/pkg/stats/model_call.rs#L12-L39)
-- [src/pkg/stats/collector.rs:102-132](file://src/pkg/stats/collector.rs#L102-L132)
-- [common/src/models/stats.rs:17-28](file://common/src/models/stats.rs#L17-L28)
-- [src/service/dal/model_provider.rs:124-156](file://src/service/dal/model_provider.rs#L124-L156)
-- [common/src/api/model_provider.rs:82-133](file://common/src/api/model_provider.rs#L82-L133)
+- [src/pkg/stats/model_call.rs:12-39](src/pkg/stats/model_call.rs#L12-L39)
+- [src/pkg/stats/collector.rs:102-132](src/pkg/stats/collector.rs#L102-L132)
+- [common/src/models/stats.rs:17-28](common/src/models/stats.rs#L17-L28)
+- [src/service/dal/model_provider.rs:124-156](src/service/dal/model_provider.rs#L124-L156)
+- [common/src/api/model_provider.rs:82-133](common/src/api/model_provider.rs#L82-L133)
 
 ## 核心组件
 - ModelCallEvent：记录每次模型调用的标签与度量，包括 agent/project/task/model_provider_id/model_name/organization/user 等标签，以及 call_count/tokens_input/tokens_output/total_tokens 等度量
@@ -71,11 +71,11 @@ E["AOP 实时统计<br/>AopStatsCollector"] -.->|仅内存快照| F["系统监�
 - AOP 实时统计：内存中维护发布/消费/成功/失败等状态与耗时，用于实时监控
 
 章节来源
-- [src/pkg/stats/model_call.rs:12-39](file://src/pkg/stats/model_call.rs#L12-L39)
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/service/dal/model_provider.rs:98-104](file://src/service/dal/model_provider.rs#L98-L104)
-- [common/src/models/stats.rs:17-28](file://common/src/models/stats.rs#L17-L28)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/model_call.rs:12-39](src/pkg/stats/model_call.rs#L12-L39)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/service/dal/model_provider.rs:98-104](src/service/dal/model_provider.rs#L98-L104)
+- [common/src/models/stats.rs:17-28](common/src/models/stats.rs#L17-L28)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 ## 架构总览
 下图展示从 HTTP 请求到统计落库与查询的整体流程，以及实时统计的并行路径。
@@ -104,10 +104,10 @@ Note over Realtime,Client : 实时统计内存独立于持久化统计，用于�
 ```
 
 图表来源
-- [common/src/api/model_provider.rs:82-133](file://common/src/api/model_provider.rs#L82-L133)
-- [src/service/dal/model_provider.rs:124-156](file://src/service/dal/model_provider.rs#L124-L156)
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/pkg/stats/collector.rs:451-527](file://src/pkg/stats/collector.rs#L451-L527)
+- [common/src/api/model_provider.rs:82-133](common/src/api/model_provider.rs#L82-L133)
+- [src/service/dal/model_provider.rs:124-156](src/service/dal/model_provider.rs#L124-L156)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/pkg/stats/collector.rs:451-527](src/pkg/stats/collector.rs#L451-L527)
 
 ## 详细组件分析
 
@@ -153,12 +153,12 @@ ModelCallStatTable --> ModelCallEvent : "持久化"
 ```
 
 图表来源
-- [src/pkg/stats/model_call.rs:12-39](file://src/pkg/stats/model_call.rs#L12-L39)
-- [src/pkg/stats/model_call.rs:110-219](file://src/pkg/stats/model_call.rs#L110-L219)
+- [src/pkg/stats/model_call.rs:12-39](src/pkg/stats/model_call.rs#L12-L39)
+- [src/pkg/stats/model_call.rs:110-219](src/pkg/stats/model_call.rs#L110-L219)
 
 章节来源
-- [src/pkg/stats/model_call.rs:12-39](file://src/pkg/stats/model_call.rs#L12-L39)
-- [src/pkg/stats/model_call.rs:122-219](file://src/pkg/stats/model_call.rs#L122-L219)
+- [src/pkg/stats/model_call.rs:12-39](src/pkg/stats/model_call.rs#L12-L39)
+- [src/pkg/stats/model_call.rs:122-219](src/pkg/stats/model_call.rs#L122-L219)
 
 ### 统计查询与聚合
 - 聚合查询
@@ -183,14 +183,14 @@ Group --> Return["返回 AggregationRow 列表"]
 ```
 
 图表来源
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/pkg/stats/collector.rs:368-446](file://src/pkg/stats/collector.rs#L368-L446)
-- [src/pkg/stats/collector.rs:529-566](file://src/pkg/stats/collector.rs#L529-L566)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/pkg/stats/collector.rs:368-446](src/pkg/stats/collector.rs#L368-L446)
+- [src/pkg/stats/collector.rs:529-566](src/pkg/stats/collector.rs#L529-L566)
 
 章节来源
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/pkg/stats/collector.rs:368-446](file://src/pkg/stats/collector.rs#L368-L446)
-- [src/pkg/stats/collector.rs:451-527](file://src/pkg/stats/collector.rs#L451-L527)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/pkg/stats/collector.rs:368-446](src/pkg/stats/collector.rs#L368-L446)
+- [src/pkg/stats/collector.rs:451-527](src/pkg/stats/collector.rs#L451-L527)
 
 ### DAL 层统计装配
 - get_stats：根据 StatsFetchOptions 决定返回 call_summary/token_summary/time_series
@@ -212,12 +212,12 @@ end
 ```
 
 图表来源
-- [src/service/dal/model_provider.rs:124-156](file://src/service/dal/model_provider.rs#L124-L156)
-- [src/service/dal/model_provider.rs:206-221](file://src/service/dal/model_provider.rs#L206-L221)
+- [src/service/dal/model_provider.rs:124-156](src/service/dal/model_provider.rs#L124-L156)
+- [src/service/dal/model_provider.rs:206-221](src/service/dal/model_provider.rs#L206-L221)
 
 章节来源
-- [src/service/dal/model_provider.rs:124-156](file://src/service/dal/model_provider.rs#L124-L156)
-- [src/service/dal/model_provider.rs:206-221](file://src/service/dal/model_provider.rs#L206-L221)
+- [src/service/dal/model_provider.rs:124-156](src/service/dal/model_provider.rs#L124-L156)
+- [src/service/dal/model_provider.rs:206-221](src/service/dal/model_provider.rs#L206-L221)
 
 ### 实时监控（内存统计）
 - AopStatsCollector 提供：
@@ -238,10 +238,10 @@ class AopStatsCollector {
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:49-195](file://src/consumer/aop_stats_collector.rs#L49-L195)
+- [src/consumer/aop_stats_collector.rs:49-195](src/consumer/aop_stats_collector.rs#L49-L195)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 ## 依赖关系分析
 - 事件与表：ModelCallEvent → ModelCallStatTable → model_call_events
@@ -260,14 +260,14 @@ AOP["AOP 实时统计"] --> Mon["监控面板"]
 ```
 
 图表来源
-- [src/pkg/stats/model_call.rs:110-219](file://src/pkg/stats/model_call.rs#L110-L219)
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/model_call.rs:110-219](src/pkg/stats/model_call.rs#L110-L219)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 章节来源
-- [src/pkg/stats/model_call.rs:110-219](file://src/pkg/stats/model_call.rs#L110-L219)
-- [src/pkg/stats/collector.rs:319-365](file://src/pkg/stats/collector.rs#L319-L365)
-- [src/consumer/aop_stats_collector.rs:74-195](file://src/consumer/aop_stats_collector.rs#L74-L195)
+- [src/pkg/stats/model_call.rs:110-219](src/pkg/stats/model_call.rs#L110-L219)
+- [src/pkg/stats/collector.rs:319-365](src/pkg/stats/collector.rs#L319-L365)
+- [src/consumer/aop_stats_collector.rs:74-195](src/consumer/aop_stats_collector.rs#L74-L195)
 
 ## 性能与成本考量
 - 写入性能
@@ -299,9 +299,9 @@ AOP["AOP 实时统计"] --> Mon["监控面板"]
   - 关注 DAL 层统计注入失败的降级日志
 
 章节来源
-- [src/pkg/stats/collector.rs:102-132](file://src/pkg/stats/collector.rs#L102-L132)
-- [src/pkg/stats/collector.rs:568-656](file://src/pkg/stats/collector.rs#L568-L656)
-- [src/service/dal/model_provider.rs:144-150](file://src/service/dal/model_provider.rs#L144-L150)
+- [src/pkg/stats/collector.rs:102-132](src/pkg/stats/collector.rs#L102-L132)
+- [src/pkg/stats/collector.rs:568-656](src/pkg/stats/collector.rs#L568-L656)
+- [src/service/dal/model_provider.rs:144-150](src/service/dal/model_provider.rs#L144-L150)
 
 ## 结论
 本项目实现了以 ModelProvider 为核心的模型调用统计体系：
@@ -323,6 +323,6 @@ AOP["AOP 实时统计"] --> Mon["监控面板"]
   - 时序：Hourly/Daily 两种粒度，返回 TimeSeriesPoint
 
 章节来源
-- [common/src/api/model_provider.rs:82-133](file://common/src/api/model_provider.rs#L82-L133)
-- [common/src/models/stats.rs:17-28](file://common/src/models/stats.rs#L17-L28)
-- [src/pkg/stats/collector.rs:451-527](file://src/pkg/stats/collector.rs#L451-L527)
+- [common/src/api/model_provider.rs:82-133](common/src/api/model_provider.rs#L82-L133)
+- [common/src/models/stats.rs:17-28](common/src/models/stats.rs#L17-L28)
+- [src/pkg/stats/collector.rs:451-527](src/pkg/stats/collector.rs#L451-L527)

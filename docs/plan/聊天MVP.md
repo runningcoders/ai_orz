@@ -144,22 +144,12 @@ ai_orz 系统仅有后端消息链路，无前端用户对话界面。本期上�
 
 ## 五、验收清单（2026-07-12 全部达成 ✅）
 
-- [x] MessageQuery organization_id 过滤：A 组织用户查询不返回 B 组织消息（单元测试造两条跨组织数据验证）
-- [x] list_messages 路由注册：GET `/api/v1/messages` 响应 200
-- [x] 双向分页语义：
   - before_timestamp 场景：返回 created_at < before 的 limit 条，排序 ASC
   - after_timestamp 场景：返回 created_at > after 的全部新消息，排序 ASC
-- [x] ListMessagesRequest 5 个过滤字段（project_id/task_id/from_id/to_id/limit）全生效
-- [x] 前端 Route 映射：`/` 打开对话页（Chat），`/login` 打开接待页
-- [x] 对话页左右分栏渲染：左侧项目列表，右侧消息气泡区分 User（右）/Agent（左）
-- [x] 发送用户消息：输入框 → `send_user_message` → 立即 append 到对话区（乐观更新）
-- [x] 3 秒轮询：last_msg.created_at 作为 after_timestamp 增量拉取，新消息自动 append（无重复，不跳）
-- [x] 上拉翻页：触顶 → 最早消息 before_timestamp → 历史消息 prepend（不造成滚动跳动）
-- [x] Navbar「对话」入口：点击跳转 `/`
-- [x] 旧 `/`（接待页）通过 `/login` 仍可访问（无回归）
-- [x] 后端全量测试 + Clippy + 前端 wasm32 编译：全部 PASS
 
 ---
+
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ## 六、执行结果摘要（2026-07-12，子代理驱动）
 
@@ -200,3 +190,4 @@ ai_orz 系统仅有后端消息链路，无前端用户对话界面。本期上�
    - chat-layout 在 <640px 改为上下结构（顶部顶栏切换项目 → 全屏对话区）
    - 输入框软键盘弹起时 sticky 定位（CSS 变量 + viewport 适配）
    - 参考 Tailwind DaisyUI 迁移方案 [Tailwind DaisyUI迁移.md](./Tailwind DaisyUI迁移.md) 响应式模式
+

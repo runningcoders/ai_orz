@@ -8,6 +8,15 @@
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [task_design.md](./task_design.md) — 任务实体基础（定时触发创建的目标实例）
 > - [agent_loop_engine_design.md](./agent_loop_engine_design.md) — Agent 自主循环驱动（CronTrigger 作为补偿链路）
+> - [runtime_design.md](./runtime_design.md) — Agent 唤醒/休息状态机（Resting 期间 agent_rest 不让唤醒）
+> - [consumer_architecture.md](./consumer_architecture.md) — AOP SchedulerConsumer 注册顺序和消费模式
+> - 【② Plan 落地】[唤醒上下文与睡眠约束.md](../plan/唤醒上下文与睡眠约束.md) — agent_rest 每天 4 点触发 + Resting 期间 pending_message 不唤醒
+> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) — stats_collect 每 5 分钟 cron → RuntimeStatsCollector flush 到 DuckDB
+> - 【② Plan 落地】[通用后台任务模块与Seed异步化重构.md](../plan/通用后台任务模块与Seed异步化重构.md) — 自定义 cron CRUD + 5 字段表达式校验 + <1 分钟拦截
+> - 【② Plan 落地】[AOP生产消费事件中心重构.md](../plan/AOP生产消费事件中心重构.md) — SchedulerTriggerFiredEvent 事件 → Consumer 分发处理链路
+> - 【③ Wiki 百科】[定时任务管理.md](docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/定时任务管理.md) — SystemTriggers 页面：2 条系统默认 readonly + 用户 CRUD + 立即触发按钮
+> - 【③ Wiki 百科】[定时任务调度.md](docs/wiki/zh/content/功能模块/系统管理/定时任务调度.md) — 调度总览：5 字段 cron + 轮询 + AOP 事件分发 + SchedulerConsumer 处理
+> - 【④ RAG 知识卡】[Cron 任务调度与系统启动顺序](docs/wiki/knowledge/zh/Cron%20%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%90%AF%E5%8A%A8%E9%A1%BA%E5%BA%8F%EF%BC%9A5%E5%AD%97%E6%AE%B5cron%E8%A7%A3%E6%9E%90%20+%20ensure_system_cron_triggers%202%E6%9D%A1%E6%B3%A8%E5%85%A5%20+%20CronTriggerConsumer%20%E4%BA%8B%E4%BB%B6%20+%20%E4%B8%A4%E9%98%B6%E6%AE%B5init/aop%E4%B8%A5%E6%A0%BC%E5%88%86%E7%A6%BB/Cron%20%E4%BB%BB%E5%8A%A1%E8%B0%83%E5%BA%A6%E4%B8%8E%E7%B3%BB%E7%BB%9F%E5%90%AF%E5%8A%A8%E9%A1%BA%E5%BA%8F%EF%BC%9A5%E5%AD%97%E6%AE%B5cron%E8%A7%A3%E6%9E%90%20+%20ensure_system_cron_triggers%202%E6%9D%A1%E6%B3%A8%E5%85%A5%20+%20CronTriggerConsumer%20%E4%BA%8B%E4%BB%B6%20+%20%E4%B8%A4%E9%98%B6%E6%AE%B5init/aop%E4%B8%A5%E6%A0%BC%E5%88%86%E7%A6%BB.md) — §启动 6 步顺序 §ensure_system_cron_triggers 2 条默认 §8 条红线
 
 ## 📌 设计目标
 

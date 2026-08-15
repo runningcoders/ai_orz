@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [fts5.rs](file://src/pkg/storage/fts5.rs)
-- [20260712000000_memory_fts5.sql](file://migrations/20260712000000_memory_fts5.sql)
-- [20260712000001_entity_fts5.sql](file://migrations/20260712000001_entity_fts5.sql)
-- [sqlite.rs（消息 DAO）](file://src/service/dao/message/sqlite.rs)
-- [sqlite.rs（技能 DAO）](file://src/service/dao/skill/sqlite.rs)
-- [sqlite.rs（工具 DAO）](file://src/service/dao/tool/sqlite.rs)
-- [sqlite.rs（Agent DAO）](file://src/service/dao/agent/sqlite.rs)
-- [vector.rs（模型与匹配信息）](file://src/models/vector.rs)
-- [search_skills.rs（Handler）](file://src/handlers/hr/skill/search_skills.rs)
-- [router.rs（路由注册）](file://src/router.rs)
+- [fts5.rs](src/pkg/storage/fts5.rs)
+- [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
+- [20260712000001_entity_fts5.sql](migrations/20260712000001_entity_fts5.sql)
+- [sqlite.rs（消息 DAO）](src/service/dao/message/sqlite.rs)
+- [sqlite.rs（技能 DAO）](src/service/dao/skill/sqlite.rs)
+- [sqlite.rs（工具 DAO）](src/service/dao/tool/sqlite.rs)
+- [sqlite.rs（Agent DAO）](src/service/dao/agent/sqlite.rs)
+- [vector.rs（模型与匹配信息）](src/models/vector.rs)
+- [search_skills.rs（Handler）](src/handlers/hr/skill/search_skills.rs)
+- [router.rs（路由注册）](src/router.rs)
 </cite>
 
 ## 目录
@@ -46,14 +46,14 @@ DAO --> DB["SQLite + FTS5<br/>migrations/*_fts5.sql"]
 ```
 
 图表来源
-- [router.rs:329-401](file://src/router.rs#L329-L401)
-- [search_skills.rs:14-49](file://src/handlers/hr/skill/search_skills.rs#L14-L49)
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [20260712000001_entity_fts5.sql:18-66](file://migrations/20260712000001_entity_fts5.sql#L18-L66)
+- [router.rs:329-401](src/router.rs#L329-L401)
+- [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [20260712000001_entity_fts5.sql:18-66](migrations/20260712000001_entity_fts5.sql#L18-L66)
 
 章节来源
-- [router.rs:329-401](file://src/router.rs#L329-L401)
-- [search_skills.rs:14-49](file://src/handlers/hr/skill/search_skills.rs#L14-L49)
+- [router.rs:329-401](src/router.rs#L329-L401)
+- [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
 
 ## 核心组件
 - FTS5 关键词转义工具：escape_fts5_keyword，负责将用户输入安全地封装为 FTS5 短语匹配字符串，避免空格被解释为 AND，并对双引号等特殊字符进行转义。
@@ -62,11 +62,11 @@ DAO --> DB["SQLite + FTS5<br/>migrations/*_fts5.sql"]
 - 搜索结果包装：SearchMatchInfo 携带 fts_rank（BM25 相关性评分），用于前端展示与排序参考。
 
 章节来源
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
-- [20260712000000_memory_fts5.sql:12-92](file://migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](file://migrations/20260712000001_entity_fts5.sql#L14-L246)
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [vector.rs:120-125](file://src/models/vector.rs#L120-L125)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
+- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
+- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [vector.rs:120-125](src/models/vector.rs#L120-L125)
 
 ## 架构总览
 下图展示了从请求到数据库检索的关键路径，包括关键词转义、FTS5 MATCH、JOIN 主表、BM25 排序与分页。
@@ -94,10 +94,10 @@ H-->>C : 返回结果
 ```
 
 图表来源
-- [router.rs:329-401](file://src/router.rs#L329-L401)
-- [search_skills.rs:14-49](file://src/handlers/hr/skill/search_skills.rs#L14-L49)
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
+- [router.rs:329-401](src/router.rs#L329-L401)
+- [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
 
 ## 详细组件分析
 
@@ -117,10 +117,10 @@ WrapQuotes --> End(["返回短语匹配字符串"])
 ```
 
 图表来源
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
 
 章节来源
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
 
 ### FTS5 表创建与维护
 - 虚拟表定义：为记忆与实体分别创建 FTS5 虚拟表，指定索引列与分词器 trigram（支持中文/英文混合）。
@@ -143,12 +143,12 @@ AGENTS ||--o{ AGENTS_FTS : "rowid 关联"
 ```
 
 图表来源
-- [20260712000000_memory_fts5.sql:12-92](file://migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](file://migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
+- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
 
 章节来源
-- [20260712000000_memory_fts5.sql:12-92](file://migrations/20260712000000_memory_fts5.sql#L12-L92)
-- [20260712000001_entity_fts5.sql:14-246](file://migrations/20260712000001_entity_fts5.sql#L14-L246)
+- [20260712000000_memory_fts5.sql:12-92](migrations/20260712000000_memory_fts5.sql#L12-L92)
+- [20260712000001_entity_fts5.sql:14-246](migrations/20260712000001_entity_fts5.sql#L14-L246)
 
 ### 搜索实现与 MATCH 查询
 - 统一模式：DAO 层使用 QueryBuilder 动态拼装 SQL，核心步骤如下：
@@ -181,16 +181,16 @@ DAO-->>DAO : 映射为 PO 列表含 fts_rank
 ```
 
 图表来源
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [sqlite.rs（工具 DAO）:402-453](file://src/service/dao/tool/sqlite.rs#L402-L453)
-- [sqlite.rs（Agent DAO）:155-186](file://src/service/dao/agent/sqlite.rs#L155-L186)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
+- [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)
 
 章节来源
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [sqlite.rs（工具 DAO）:402-453](file://src/service/dao/tool/sqlite.rs#L402-L453)
-- [sqlite.rs（Agent DAO）:155-186](file://src/service/dao/agent/sqlite.rs#L155-L186)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
+- [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)
 
 ### 相关性排序与分页
 - 相关性排序：FTS5 的 rank 字段由 BM25 算法计算，越小越相关；DAO 层统一 ORDER BY rank。
@@ -200,9 +200,9 @@ DAO-->>DAO : 映射为 PO 列表含 fts_rank
 - 结果包装：SearchMatchInfo 包含 fts_rank，便于上层进行排序与展示。
 
 章节来源
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [sqlite.rs（工具 DAO）:429-453](file://src/service/dao/tool/sqlite.rs#L429-L453)
-- [vector.rs:120-125](file://src/models/vector.rs#L120-L125)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [sqlite.rs（工具 DAO）:429-453](src/service/dao/tool/sqlite.rs#L429-L453)
+- [vector.rs:120-125](src/models/vector.rs#L120-L125)
 
 ### 增量更新与批量重建
 - 增量更新：通过触发器自动维护 FTS5 索引，主表 INSERT/UPDATE/DELETE 时自动同步 FTS5 虚拟表，无需应用层干预。
@@ -212,8 +212,8 @@ DAO-->>DAO : 映射为 PO 列表含 fts_rank
   - 对于大表重建，建议在低峰期执行，并结合事务与批处理优化。
 
 章节来源
-- [20260712000000_memory_fts5.sql:32-92](file://migrations/20260712000000_memory_fts5.sql#L32-L92)
-- [20260712000001_entity_fts5.sql:68-246](file://migrations/20260712000001_entity_fts5.sql#L68-L246)
+- [20260712000000_memory_fts5.sql:32-92](migrations/20260712000000_memory_fts5.sql#L32-L92)
+- [20260712000001_entity_fts5.sql:68-246](migrations/20260712000001_entity_fts5.sql#L68-L246)
 
 ### 缓存机制
 - 当前代码未显式实现 FTS5 查询结果的缓存层。如需提升热点查询性能，可在 DAL 层引入内存缓存（如 LRU）或 Redis 缓存，结合 key 设计（keyword + filters + page）与过期策略。
@@ -250,16 +250,16 @@ DAL --> DAO_A
 ```
 
 图表来源
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [sqlite.rs（工具 DAO）:402-453](file://src/service/dao/tool/sqlite.rs#L402-L453)
-- [sqlite.rs（Agent DAO）:155-186](file://src/service/dao/agent/sqlite.rs#L155-L186)
-- [router.rs:329-401](file://src/router.rs#L329-L401)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
+- [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)
+- [router.rs:329-401](src/router.rs#L329-L401)
 
 章节来源
-- [fts5.rs:6-18](file://src/pkg/storage/fts5.rs#L6-L18)
-- [router.rs:329-401](file://src/router.rs#L329-L401)
+- [fts5.rs:6-18](src/pkg/storage/fts5.rs#L6-L18)
+- [router.rs:329-401](src/router.rs#L329-L401)
 
 ## 性能考量
 - 分词器选择：trigram 适合中英文混合文本，但会产生更多子串匹配，需注意索引大小与查询开销。
@@ -294,8 +294,8 @@ DAL --> DAO_A
   - 统计不同 keyword 的命中率与平均 rank，识别异常查询。
 
 章节来源
-- [sqlite.rs（消息 DAO）:440-458](file://src/service/dao/message/sqlite.rs#L440-L458)
-- [20260712000001_entity_fts5.sql:6-10](file://migrations/20260712000001_entity_fts5.sql#L6-L10)
+- [sqlite.rs（消息 DAO）:440-458](src/service/dao/message/sqlite.rs#L440-L458)
+- [20260712000001_entity_fts5.sql:6-10](migrations/20260712000001_entity_fts5.sql#L6-L10)
 
 ## 结论
 本项目通过统一的 escape_fts5_keyword 与标准化的 DAO 层搜索实现，结合 FTS5 虚拟表与触发器，实现了稳定高效的关键词搜索能力。BM25 相关性排序与分页控制保障了结果质量与性能。未来可在此基础上引入缓存、更精细的监控与调优策略，进一步提升搜索体验。
@@ -310,35 +310,35 @@ DAL --> DAO_A
   - 请求体：SearchSkillsRequest（包含 keyword、ids、status、category、author_id、parent_skill_id、tags、pagination 等）
   - 行为：keyword 经 escape_fts5_keyword 转义后执行 FTS5 MATCH，JOIN skills 主表，ORDER BY rank，LIMIT/OFFSET 分页
   - 参考实现：
-    - [search_skills.rs:14-49](file://src/handlers/hr/skill/search_skills.rs#L14-L49)
-    - [router.rs:357-366](file://src/router.rs#L357-L366)
-    - [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
+    - [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
+    - [router.rs:357-366](src/router.rs#L357-L366)
+    - [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
 
 - 消息搜索
   - 方法：POST /finance/messages/search（根据路由与 Handler 命名推断）
   - 请求体：MessageSearch（keyword、query_vector、top_k、filters）
   - 行为：keyword 转义后 MATCH messages_fts，JOIN messages，按 status 过滤，ORDER BY rank，LIMIT
   - 参考实现：
-    - [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
+    - [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
 
 - 工具搜索
   - 方法：POST /finance/tools/search（根据路由与 Handler 命名推断）
   - 请求体：ToolSearch（keyword、filters）
   - 行为：keyword 转义后 MATCH tools_fts，JOIN tools，可选 INNER JOIN agent_tools 按 agent_id 过滤，ORDER BY rank，LIMIT/OFFSET
   - 参考实现：
-    - [sqlite.rs（工具 DAO）:402-453](file://src/service/dao/tool/sqlite.rs#L402-L453)
+    - [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
 
 - Agent 搜索
   - 方法：POST /hr/agents/search（根据路由与 Handler 命名推断）
   - 请求体：AgentSearch（keyword、filters）
   - 行为：keyword 转义后 MATCH agents_fts，JOIN agents，支持 ids/status 过滤，ORDER BY rank
   - 参考实现：
-    - [sqlite.rs（Agent DAO）:155-186](file://src/service/dao/agent/sqlite.rs#L155-L186)
+    - [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)
 
 章节来源
-- [search_skills.rs:14-49](file://src/handlers/hr/skill/search_skills.rs#L14-L49)
-- [router.rs:357-366](file://src/router.rs#L357-L366)
-- [sqlite.rs（消息 DAO）:430-527](file://src/service/dao/message/sqlite.rs#L430-L527)
-- [sqlite.rs（技能 DAO）:335-363](file://src/service/dao/skill/sqlite.rs#L335-L363)
-- [sqlite.rs（工具 DAO）:402-453](file://src/service/dao/tool/sqlite.rs#L402-L453)
-- [sqlite.rs（Agent DAO）:155-186](file://src/service/dao/agent/sqlite.rs#L155-L186)
+- [search_skills.rs:14-49](src/handlers/hr/skill/search_skills.rs#L14-L49)
+- [router.rs:357-366](src/router.rs#L357-L366)
+- [sqlite.rs（消息 DAO）:430-527](src/service/dao/message/sqlite.rs#L430-L527)
+- [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
+- [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
+- [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)

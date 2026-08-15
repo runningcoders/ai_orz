@@ -2,25 +2,25 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/finance/mod.rs](file://src/handlers/finance/mod.rs)
-- [src/router.rs](file://src/router.rs)
-- [common/src/api/mod.rs](file://common/src/api/mod.rs)
-- [common/src/api/lark_integration.rs](file://common/src/api/lark_integration.rs)
-- [src/handlers/finance/tool/mod.rs](file://src/handlers/finance/tool/mod.rs)
-- [src/handlers/finance/mcp_server/mod.rs](file://src/handlers/finance/mcp_server/mod.rs)
-- [src/handlers/finance/message/mod.rs](file://src/handlers/finance/message/mod.rs)
-- [src/handlers/finance/model_provider/mod.rs](file://src/handlers/finance/model_provider/mod.rs)
-- [src/handlers/finance/message_channel/mod.rs](file://src/handlers/finance/message_channel/mod.rs)
-- [src/handlers/finance/lark_integration/mod.rs](file://src/handlers/finance/lark_integration/mod.rs)
-- [src/handlers/finance/lark_integration/create_credential.rs](file://src/handlers/finance/lark_integration/create_credential.rs)
-- [src/handlers/finance/lark_integration/auth_start.rs](file://src/handlers/finance/lark_integration/auth_start.rs)
-- [src/handlers/finance/lark_integration/bind_start.rs](file://src/handlers/finance/lark_integration/bind_start.rs)
-- [src/handlers/finance/lark_integration/get_status.rs](file://src/handlers/finance/lark_integration/get_status.rs)
-- [src/handlers/finance/tool/create_tool.rs](file://src/handlers/finance/tool/create_tool.rs)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
-- [src/handlers/finance/message/send_message.rs](file://src/handlers/finance/message/send_message.rs)
-- [src/handlers/finance/model_provider/create_model_provider.rs](file://src/handlers/finance/model_provider/create_model_provider.rs)
-- [src/handlers/finance/message_channel/create_message_channel.rs](file://src/handlers/finance/message_channel/create_message_channel.rs)
+- [src/handlers/finance/mod.rs](src/handlers/finance/mod.rs)
+- [src/router.rs](src/router.rs)
+- [common/src/api/mod.rs](common/src/api/mod.rs)
+- [common/src/api/lark_integration.rs](common/src/api/lark_integration.rs)
+- [src/handlers/finance/tool/mod.rs](src/handlers/finance/tool/mod.rs)
+- [src/handlers/finance/mcp_server/mod.rs](src/handlers/finance/mcp_server/mod.rs)
+- [src/handlers/finance/message/mod.rs](src/handlers/finance/message/mod.rs)
+- [src/handlers/finance/model_provider/mod.rs](src/handlers/finance/model_provider/mod.rs)
+- [src/handlers/finance/message_channel/mod.rs](src/handlers/finance/message_channel/mod.rs)
+- [src/handlers/finance/lark_integration/mod.rs](src/handlers/finance/lark_integration/mod.rs)
+- [src/handlers/finance/lark_integration/create_credential.rs](src/handlers/finance/lark_integration/create_credential.rs)
+- [src/handlers/finance/lark_integration/auth_start.rs](src/handlers/finance/lark_integration/auth_start.rs)
+- [src/handlers/finance/lark_integration/bind_start.rs](src/handlers/finance/lark_integration/bind_start.rs)
+- [src/handlers/finance/lark_integration/get_status.rs](src/handlers/finance/lark_integration/get_status.rs)
+- [src/handlers/finance/tool/create_tool.rs](src/handlers/finance/tool/create_tool.rs)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
+- [src/handlers/finance/message/send_message.rs](src/handlers/finance/message/send_message.rs)
+- [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs)
+- [src/handlers/finance/message_channel/create_message_channel.rs](src/handlers/finance/message_channel/create_message_channel.rs)
 </cite>
 
 ## 更新摘要
@@ -68,12 +68,12 @@ F --> G["DAL/DAO层<br/>持久化与外部服务"]
 ```
 
 **图表来源**
-- [src/router.rs:104-136](file://src/router.rs#L104-L136)
-- [src/router.rs:217-247](file://src/router.rs#L217-L247)
+- [src/router.rs:104-136](src/router.rs#L104-L136)
+- [src/router.rs:217-247](src/router.rs#L217-L247)
 
 **章节来源**
-- [src/handlers/finance/mod.rs:1-16](file://src/handlers/finance/mod.rs#L1-L16)
-- [src/router.rs:217-247](file://src/router.rs#L217-L247)
+- [src/handlers/finance/mod.rs:1-16](src/handlers/finance/mod.rs#L1-L16)
+- [src/router.rs:217-247](src/router.rs#L217-L247)
 
 ## 核心组件
 - 工具管理（tool）
@@ -99,12 +99,12 @@ F --> G["DAL/DAO层<br/>持久化与外部服务"]
   - 关键处理器：create_credential、update_credential、delete_credential、set_default_credential、auth_start、auth_complete、auth_status、auth_logout、bind_start、bind_status、bind_cancel、get_status。
 
 **章节来源**
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/message/mod.rs:1-17](file://src/handlers/finance/message/mod.rs#L1-L17)
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/handlers/finance/lark_integration/mod.rs:1-18](file://src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L18)
 
 ## 架构总览
 Finance 模块遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 仅负责参数校验、上下文提取与响应组装；业务逻辑下沉至 Domain，数据访问通过 DAL/DAO。所有公共方法首参为 ctx: RequestContext，跨层传递使用 ctx.clone()。
@@ -131,11 +131,11 @@ H-->>Client : "CreateToolResponse"
 ```
 
 **图表来源**
-- [src/router.rs:104-136](file://src/router.rs#L104-L136)
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/router.rs:104-136](src/router.rs#L104-L136)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
 
 **章节来源**
-- [src/router.rs:104-136](file://src/router.rs#L104-L136)
+- [src/router.rs:104-136](src/router.rs#L104-L136)
 
 ## 详细组件分析
 
@@ -165,12 +165,12 @@ CallDomain --> Resp["返回CreateToolResponse"]
 ```
 
 **图表来源**
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
 
 **章节来源**
-- [src/handlers/finance/tool/mod.rs:1-46](file://src/handlers/finance/tool/mod.rs#L1-L46)
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/router.rs:557-601](file://src/router.rs#L557-L601)
+- [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/router.rs:557-601](src/router.rs#L557-L601)
 
 ### MCP服务器管理（mcp_server）
 - 职责与边界
@@ -194,12 +194,12 @@ H-->>Client : "CreateMcpServerResponse"
 ```
 
 **图表来源**
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
 
 **章节来源**
-- [src/handlers/finance/mcp_server/mod.rs:1-24](file://src/handlers/finance/mcp_server/mod.rs#L1-L24)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
-- [src/router.rs:525-548](file://src/router.rs#L525-L548)
+- [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:1-48](src/handlers/finance/mcp_server/create_mcp_server.rs#L1-L48)
+- [src/router.rs:525-548](src/router.rs#L525-L548)
 
 ### 消息系统（message）
 - 职责与边界
@@ -222,12 +222,12 @@ H-->>Client : "SendMessageResponse{message_id}"
 ```
 
 **图表来源**
-- [src/handlers/finance/message/send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
+- [src/handlers/finance/message/send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
 
 **章节来源**
-- [src/handlers/finance/message/mod.rs:1-17](file://src/handlers/finance/message/mod.rs#L1-L17)
-- [src/handlers/finance/message/send_message.rs:1-41](file://src/handlers/finance/message/send_message.rs#L1-L41)
-- [src/router.rs:482-496](file://src/router.rs#L482-L496)
+- [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
+- [src/handlers/finance/message/send_message.rs:1-41](src/handlers/finance/message/send_message.rs#L1-L41)
+- [src/router.rs:482-496](src/router.rs#L482-L496)
 
 ### 消息通道（message_channel）
 - 职责与边界
@@ -249,12 +249,12 @@ CallDomain --> Resp["返回to_detail(channel)"]
 ```
 
 **图表来源**
-- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
 
 **章节来源**
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
-- [src/router.rs:498-524](file://src/router.rs#L498-L524)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/router.rs:498-524](src/router.rs#L498-L524)
 
 ### 模型提供商（model_provider）
 - 职责与边界
@@ -276,12 +276,12 @@ H-->>Client : "CreateModelProviderResponse"
 ```
 
 **图表来源**
-- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
+- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
 
 **章节来源**
-- [src/handlers/finance/model_provider/mod.rs:1-25](file://src/handlers/finance/model_provider/mod.rs#L1-L25)
-- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
-- [src/router.rs:446-480](file://src/router.rs#L446-L480)
+- [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
+- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
+- [src/router.rs:446-480](src/router.rs#L446-L480)
 
 ### 飞书集成（lark_integration）
 **新增功能**
@@ -327,16 +327,16 @@ H-->>Client : "LarkBindStartResponse"
 ```
 
 **图表来源**
-- [src/handlers/finance/lark_integration/create_credential.rs:1-34](file://src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
-- [src/handlers/finance/lark_integration/auth_start.rs:1-28](file://src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
-- [src/handlers/finance/lark_integration/bind_start.rs:1-27](file://src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/create_credential.rs:1-34](src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
 
 **章节来源**
-- [src/handlers/finance/lark_integration/mod.rs:1-18](file://src/handlers/finance/lark_integration/mod.rs#L1-L18)
-- [src/handlers/finance/lark_integration/create_credential.rs:1-34](file://src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
-- [src/handlers/finance/lark_integration/auth_start.rs:1-28](file://src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
-- [src/handlers/finance/lark_integration/bind_start.rs:1-27](file://src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
-- [src/handlers/finance/lark_integration/get_status.rs:1-102](file://src/handlers/finance/lark_integration/get_status.rs#L1-L102)
+- [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/lark_integration/create_credential.rs:1-34](src/handlers/finance/lark_integration/create_credential.rs#L1-L34)
+- [src/handlers/finance/lark_integration/auth_start.rs:1-28](src/handlers/finance/lark_integration/auth_start.rs#L1-L28)
+- [src/handlers/finance/lark_integration/bind_start.rs:1-27](src/handlers/finance/lark_integration/bind_start.rs#L1-L27)
+- [src/handlers/finance/lark_integration/get_status.rs:1-102](src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ## 依赖分析
 - 路由依赖
@@ -364,13 +364,13 @@ LI --> D
 ```
 
 **图表来源**
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
-- [src/router.rs:217-247](file://src/router.rs#L217-L247)
+- [src/router.rs:415-601](src/router.rs#L415-L601)
+- [src/router.rs:217-247](src/router.rs#L217-L247)
 
 **章节来源**
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
-- [src/router.rs:217-247](file://src/router.rs#L217-L247)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
+- [src/router.rs:415-601](src/router.rs#L415-L601)
+- [src/router.rs:217-247](src/router.rs#L217-L247)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 
 ## 性能考虑
 - 批量操作与分页
@@ -405,10 +405,10 @@ LI --> D
   - **新增** 飞书集成问题：检查设备码有效期、浏览器授权流程、配置文件路径。
 
 **章节来源**
-- [src/handlers/finance/tool/create_tool.rs:1-72](file://src/handlers/finance/tool/create_tool.rs#L1-L72)
-- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](file://src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
-- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
-- [src/handlers/finance/lark_integration/get_status.rs:1-102](file://src/handlers/finance/lark_integration/get_status.rs#L1-L102)
+- [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
+- [src/handlers/finance/model_provider/create_model_provider.rs:1-69](src/handlers/finance/model_provider/create_model_provider.rs#L1-L69)
+- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/handlers/finance/lark_integration/get_status.rs:1-102](src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ## 结论
 Finance 模块以清晰的处理器分层与统一的中间件链，提供了工具、MCP服务器、消息系统与模型提供商的全生命周期管理能力。**新增的飞书集成功能**进一步完善了身份认证和第三方集成能力，支持完整的凭证管理、用户认证和绑定工作流。通过 Domain 层抽象与 DAL/DAO 的数据访问分离，保证了可扩展性与可维护性。建议在集成时严格遵循参数校验、权限控制与错误处理规范，并结合分页、SSE与后台任务优化性能与用户体验。
@@ -483,7 +483,7 @@ Finance 模块以清晰的处理器分层与统一的中间件链，提供了工
       - 响应：ApiResponse<LarkIntegrationStatusResponse>
 
 **章节来源**
-- [src/router.rs:415-601](file://src/router.rs#L415-L601)
-- [src/router.rs:217-247](file://src/router.rs#L217-L247)
-- [common/src/api/mod.rs:1-156](file://common/src/api/mod.rs#L1-L156)
-- [common/src/api/lark_integration.rs:1-294](file://common/src/api/lark_integration.rs#L1-L294)
+- [src/router.rs:415-601](src/router.rs#L415-L601)
+- [src/router.rs:217-247](src/router.rs#L217-L247)
+- [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
+- [common/src/api/lark_integration.rs:1-294](common/src/api/lark_integration.rs#L1-L294)

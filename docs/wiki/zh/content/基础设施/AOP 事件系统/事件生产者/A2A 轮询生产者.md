@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/producer/a2a_polling.rs](file://src/producer/a2a_polling.rs)
-- [common/src/api/a2a.rs](file://common/src/api/a2a.rs)
-- [src/handlers/a2a/mod.rs](file://src/handlers/a2a/mod.rs)
-- [src/handlers/a2a/send_task.rs](file://src/handlers/a2a/send_task.rs)
-- [src/handlers/a2a/get_task.rs](file://src/handlers/a2a/get_task.rs)
-- [src/service/dao/agent_runtime/a2a.rs](file://src/service/dao/agent_runtime/a2a.rs)
-- [src/models/events/a2a_task_update.rs](file://src/models/events/a2a_task_update.rs)
-- [src/service/dao/a2a_callback/mod.rs](file://src/service/dao/a2a_callback/mod.rs)
+- [src/producer/a2a_polling.rs](src/producer/a2a_polling.rs)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/handlers/a2a/mod.rs](src/handlers/a2a/mod.rs)
+- [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
+- [src/handlers/a2a/get_task.rs](src/handlers/a2a/get_task.rs)
+- [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
+- [src/models/events/a2a_task_update.rs](src/models/events/a2a_task_update.rs)
+- [src/service/dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs)
 </cite>
 
 ## 目录
@@ -64,13 +64,13 @@ D2 --> L2
 ```
 
 图表来源
-- [src/handlers/a2a/mod.rs:1-28](file://src/handlers/a2a/mod.rs#L1-L28)
-- [src/producer/a2a_polling.rs:16-58](file://src/producer/a2a_polling.rs#L16-L58)
-- [src/service/dao/agent_runtime/a2a.rs:29-68](file://src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
+- [src/producer/a2a_polling.rs:16-58](src/producer/a2a_polling.rs#L16-L58)
+- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
 
 章节来源
-- [src/handlers/a2a/mod.rs:1-28](file://src/handlers/a2a/mod.rs#L1-L28)
+- [src/handlers/a2a/mod.rs:1-28](src/handlers/a2a/mod.rs#L1-L28)
 
 ## 核心组件
 - A2A 轮询生产者（A2aPollingProducer）
@@ -89,10 +89,10 @@ D2 --> L2
   - 将消息变更以完整 A2A Task 形式推送到客户端注册的 notification_url
 
 章节来源
-- [src/producer/a2a_polling.rs:16-58](file://src/producer/a2a_polling.rs#L16-L58)
-- [common/src/api/a2a.rs:1-306](file://common/src/api/a2a.rs#L1-L306)
-- [src/service/dao/agent_runtime/a2a.rs:29-68](file://src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:16-58](src/producer/a2a_polling.rs#L16-L58)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
+- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
 
 ## 架构总览
 轮询生产者作为 AOP Producer 被调度器周期触发，读取远程 Agent 的 InProgress 任务，通过 A2A 运行时 DAO 调用 tasks/get，将新消息推送到用户，并更新本地任务状态。同时，A2A 回调通道支持 PushNotifications，将任务状态变化推送到客户端。
@@ -117,9 +117,9 @@ end
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](file://src/producer/a2a_polling.rs#L60-L270)
-- [src/service/dao/agent_runtime/a2a.rs:207-247](file://src/service/dao/agent_runtime/a2a.rs#L207-L247)
-- [common/src/api/a2a.rs:147-198](file://common/src/api/a2a.rs#L147-L198)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/service/dao/agent_runtime/a2a.rs:207-247](src/service/dao/agent_runtime/a2a.rs#L207-L247)
+- [common/src/api/a2a.rs:147-198](common/src/api/a2a.rs#L147-L198)
 
 ## 详细组件分析
 
@@ -165,10 +165,10 @@ ForEachAgent --> End
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](file://src/producer/a2a_polling.rs#L60-L270)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
 
 章节来源
-- [src/producer/a2a_polling.rs:16-270](file://src/producer/a2a_polling.rs#L16-L270)
+- [src/producer/a2a_polling.rs:16-270](src/producer/a2a_polling.rs#L16-L270)
 
 ### A2A 协议与消息格式
 - Agent Card：组织级能力描述，包含名称、版本、URL、能力声明、技能列表、默认输入输出模式
@@ -179,7 +179,7 @@ ForEachAgent --> End
 - 方法参数：SendTaskParams、GetTaskParams、CancelTaskParams
 
 章节来源
-- [common/src/api/a2a.rs:1-306](file://common/src/api/a2a.rs#L1-L306)
+- [common/src/api/a2a.rs:1-306](common/src/api/a2a.rs#L1-L306)
 
 ### A2A 运行时 DAO（HTTP JSON-RPC）
 - 功能
@@ -195,11 +195,11 @@ ForEachAgent --> End
   - 从 tasks/send 结果中提取 assistant/agent 的 text parts 拼接
 
 章节来源
-- [src/service/dao/agent_runtime/a2a.rs:29-68](file://src/service/dao/agent_runtime/a2a.rs#L29-L68)
-- [src/service/dao/agent_runtime/a2a.rs:86-148](file://src/service/dao/agent_runtime/a2a.rs#L86-L148)
-- [src/service/dao/agent_runtime/a2a.rs:150-205](file://src/service/dao/agent_runtime/a2a.rs#L150-L205)
-- [src/service/dao/agent_runtime/a2a.rs:207-247](file://src/service/dao/agent_runtime/a2a.rs#L207-L247)
-- [src/service/dao/agent_runtime/a2a.rs:249-275](file://src/service/dao/agent_runtime/a2a.rs#L249-L275)
+- [src/service/dao/agent_runtime/a2a.rs:29-68](src/service/dao/agent_runtime/a2a.rs#L29-L68)
+- [src/service/dao/agent_runtime/a2a.rs:86-148](src/service/dao/agent_runtime/a2a.rs#L86-L148)
+- [src/service/dao/agent_runtime/a2a.rs:150-205](src/service/dao/agent_runtime/a2a.rs#L150-L205)
+- [src/service/dao/agent_runtime/a2a.rs:207-247](src/service/dao/agent_runtime/a2a.rs#L207-L247)
+- [src/service/dao/agent_runtime/a2a.rs:249-275](src/service/dao/agent_runtime/a2a.rs#L249-L275)
 
 ### A2A 回调（PushNotifications）
 - 功能
@@ -210,8 +210,8 @@ ForEachAgent --> End
   - test_connection(ctx, channel)
 
 章节来源
-- [src/handlers/a2a/send_task.rs:93-114](file://src/handlers/a2a/send_task.rs#L93-L114)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/handlers/a2a/send_task.rs:93-114](src/handlers/a2a/send_task.rs#L93-L114)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
 
 ### 任务状态映射与同步
 - 远程状态到本地状态的映射
@@ -223,8 +223,8 @@ ForEachAgent --> End
   - 使用 a2a_synced_msgs 计数增量同步消息
 
 章节来源
-- [src/producer/a2a_polling.rs:218-259](file://src/producer/a2a_polling.rs#L218-L259)
-- [src/models/events/a2a_task_update.rs:1-36](file://src/models/events/a2a_task_update.rs#L1-L36)
+- [src/producer/a2a_polling.rs:218-259](src/producer/a2a_polling.rs#L218-L259)
+- [src/models/events/a2a_task_update.rs:1-36](src/models/events/a2a_task_update.rs#L1-L36)
 
 ## 依赖分析
 - 轮询生产者依赖
@@ -250,14 +250,14 @@ D2 --> C["A2A 回调 DAO"]
 ```
 
 图表来源
-- [src/producer/a2a_polling.rs:60-270](file://src/producer/a2a_polling.rs#L60-L270)
-- [src/handlers/a2a/get_task.rs:17-49](file://src/handlers/a2a/get_task.rs#L17-L49)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
 
 章节来源
-- [src/producer/a2a_polling.rs:60-270](file://src/producer/a2a_polling.rs#L60-L270)
-- [src/handlers/a2a/get_task.rs:17-49](file://src/handlers/a2a/get_task.rs#L17-L49)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)
 
 ## 性能考虑
 - 轮询频率
@@ -291,11 +291,11 @@ D2 --> C["A2A 回调 DAO"]
   - 使用回调 DAO 的 test_connection 进行连通性测试
 
 章节来源
-- [src/producer/a2a_polling.rs:114-128](file://src/producer/a2a_polling.rs#L114-L128)
-- [src/producer/a2a_polling.rs:165-180](file://src/producer/a2a_polling.rs#L165-L180)
-- [src/producer/a2a_polling.rs:234-259](file://src/producer/a2a_polling.rs#L234-L259)
-- [src/service/dao/agent_runtime/a2a.rs:116-148](file://src/service/dao/agent_runtime/a2a.rs#L116-L148)
-- [src/service/dao/a2a_callback/mod.rs:32-45](file://src/service/dao/a2a_callback/mod.rs#L32-L45)
+- [src/producer/a2a_polling.rs:114-128](src/producer/a2a_polling.rs#L114-L128)
+- [src/producer/a2a_polling.rs:165-180](src/producer/a2a_polling.rs#L165-L180)
+- [src/producer/a2a_polling.rs:234-259](src/producer/a2a_polling.rs#L234-L259)
+- [src/service/dao/agent_runtime/a2a.rs:116-148](src/service/dao/agent_runtime/a2a.rs#L116-L148)
+- [src/service/dao/a2a_callback/mod.rs:32-45](src/service/dao/a2a_callback/mod.rs#L32-L45)
 
 ## 结论
 A2A 轮询生产者通过稳定的轮询机制，实现了远程 Agent 任务的持续跟踪与结果回灌。结合 A2A 协议规范、JSON-RPC 通信、增量消息同步与状态映射，形成了可靠的跨 Agent 协作闭环。配合回调通道，可在需要时主动推送任务进展，提升用户体验。建议在部署环境中完善超时、重试与监控指标，确保高可用与可观测性。
@@ -315,9 +315,9 @@ A2A 轮询生产者通过稳定的轮询机制，实现了远程 Agent 任务的
   - 通过 Authorization: Bearer <token> 传递认证令牌
 
 章节来源
-- [common/src/api/a2a.rs:64-145](file://common/src/api/a2a.rs#L64-L145)
-- [common/src/api/a2a.rs:147-306](file://common/src/api/a2a.rs#L147-L306)
-- [src/service/dao/agent_runtime/a2a.rs:102-108](file://src/service/dao/agent_runtime/a2a.rs#L102-L108)
+- [common/src/api/a2a.rs:64-145](common/src/api/a2a.rs#L64-L145)
+- [common/src/api/a2a.rs:147-306](common/src/api/a2a.rs#L147-L306)
+- [src/service/dao/agent_runtime/a2a.rs:102-108](src/service/dao/agent_runtime/a2a.rs#L102-L108)
 
 ### 集成示例（概念流程）
 - 客户端调用 tasks/send 提交任务
@@ -326,7 +326,7 @@ A2A 轮询生产者通过稳定的轮询机制，实现了远程 Agent 任务的
 - 如需推送，客户端提供 notification_url，服务端通过回调 DAO 推送完整 A2A Task
 
 章节来源
-- [src/handlers/a2a/send_task.rs:31-128](file://src/handlers/a2a/send_task.rs#L31-L128)
-- [src/handlers/a2a/get_task.rs:17-49](file://src/handlers/a2a/get_task.rs#L17-L49)
-- [src/producer/a2a_polling.rs:60-270](file://src/producer/a2a_polling.rs#L60-L270)
-- [src/service/dao/a2a_callback/mod.rs:1-50](file://src/service/dao/a2a_callback/mod.rs#L1-L50)
+- [src/handlers/a2a/send_task.rs:31-128](src/handlers/a2a/send_task.rs#L31-L128)
+- [src/handlers/a2a/get_task.rs:17-49](src/handlers/a2a/get_task.rs#L17-L49)
+- [src/producer/a2a_polling.rs:60-270](src/producer/a2a_polling.rs#L60-L270)
+- [src/service/dao/a2a_callback/mod.rs:1-50](src/service/dao/a2a_callback/mod.rs#L1-L50)

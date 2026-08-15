@@ -7,6 +7,12 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
 > - [ui_design_system.md](./ui_design_system.md) — UI 设计系统（主题/色彩/组件规范）
+> - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — Finance Tools 三 Tab 三视图实现
+> - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — API 客户端 DTO re-export 自 common::api 规范
+> - 【② Plan 落地】[聊天MVP.md](../plan/聊天MVP.md) — 对话页 SSE 订阅 + use_resource 资源加载模式
+> - 【③ Wiki 百科】[前端应用.md](docs/wiki/zh/content/前端应用/前端应用.md) — 前端入口总览：WASM 编译 + Dioxus 运行时
+> - 【③ Wiki 百科】[钩子系统.md](docs/wiki/zh/content/前端应用/组件系统/钩子系统.md) — use_resource/use_breakpoint/use_require_auth 三 Hooks 规范
+> - 【④ RAG 知识卡】[前端整体架构](docs/wiki/knowledge/zh/前端整体架构：Dioxus%20Router%2041%20%E8%B7%AF%E7%94%B1%20+%20API%20%E5%AE%A2%E6%88%B7%E7%AB%AF%2013%20%E6%A8%A1%E5%9D%97%20+%20Hooks%203%E4%B8%AA%20+%20Store%202%E4%B8%AA%20+%20%E7%BB%84%E4%BB%B6%E4%BD%93%E7%B3%BB%206%E5%B1%82/前端整体架构：Dioxus%20Router%2041%20%E8%B7%AF%E7%94%B1%20+%20API%20%E5%AE%A2%E6%88%B7%E7%AB%AF%2013%20%E6%A8%A1%E5%9D%97%20+%20Hooks%203%E4%B8%AA%20+%20Store%202%E4%B8%AA%20+%20%E7%BB%84%E4%BB%B6%E4%BD%93%E7%B3%BB%206%E5%B1%82.md) — §41 路由表 + §组件 6 层单向引用 + §7 条红线
 
 ## 概述
 
@@ -125,7 +131,7 @@ frontend/
 - 编译产物输出到 `public/output.css`，由 Dioxus 自动打包
 
 **自定义主题 orz-light**：
-> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
+> 相关实现细节见：[frontend 前端目录](frontend/src/)
 
 **主题切换**：
 - `use_theme()` Hook 返回 `ThemeController`（Clone+Copy）
@@ -250,11 +256,11 @@ frontend/
 
 ### 环境准备
 
-> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
+> 相关实现细节见：[frontend 前端目录](frontend/src/)
 
 ### 开发命令
 
-> 相关实现细节见：[frontend 前端目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/)
+> 相关实现细节见：[frontend 前端目录](frontend/src/)
 
 ### 样式使用规范
 
@@ -326,11 +332,11 @@ frontend/
 
 ### 5.1 新增业务域页面模块
 前端页面按业务域与后端 Handler 域对齐。新增一个业务域时：
-1. 在 `frontend/src/pages/` 下新建目录，复制现有业务域模板，参考：[pages 目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages)
-2. 在 `frontend/src/api/` 下新增对应域的 API client 模块，复用 `common::api::*` DTO 类型，参考：[api 目录](file:///Users/aman/Technology/rust/ai_orz/frontend/src/api)
-3. 在 Dioxus Router 配置中注册路由，入口参考：[main.rs 路由注册](file:///Users/aman/Technology/rust/ai_orz/frontend/src/main.rs)
+1. 在 `frontend/src/pages/` 下新建目录，复制现有业务域模板，参考：[pages 目录](frontend/src/pages)
+2. 在 `frontend/src/api/` 下新增对应域的 API client 模块，复用 `common::api::*` DTO 类型，参考：[api 目录](frontend/src/api)
+3. 在 Dioxus Router 配置中注册路由，入口参考：[main.rs 路由注册](frontend/src/main.rs)
 
 ### 5.2 新增 HUD Canvas 可视化图表类型
 现有 GraphCanvas 支持知识图谱等可视化。如果未来新增图表类型：
-1. 优先复用 HUD Canvas 渲染基础设施，不单独开独立 canvas 实例，参考：[components/graph_canvas.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/graph_canvas.rs)
-2. 数据模型复用通用 `GraphNode` / `GraphEdge` 结构；若新增字段保持向后兼容（Option 字段），参考：[components/graph.rs](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/graph.rs)
+1. 优先复用 HUD Canvas 渲染基础设施，不单独开独立 canvas 实例，参考：[components/graph_canvas.rs](frontend/src/components/graph_canvas.rs)
+2. 数据模型复用通用 `GraphNode` / `GraphEdge` 结构；若新增字段保持向后兼容（Option 字段），参考：[components/graph.rs](frontend/src/components/graph.rs)

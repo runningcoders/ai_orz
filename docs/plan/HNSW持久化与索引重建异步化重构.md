@@ -135,19 +135,7 @@ new() → create_dir_all(hnsw_index_dir)
 
 ## 五、验收清单（2026-07-16 全部达成 ✅）
 
-- [x] 配置项：DatabaseConfig.hnsw_index_dir + AppConfig.hnsw_index_dir() + Default 值
-- [x] HNSW 持久化：CollectionData 加 bincode Serialize/Deserialize；FloatPoint 包装 vec Serialize
-- [x] HnswStore.new() 冷启动扫目录加载；start_flush_task 60s 周期；Drop impl 兜底 flush
-- [x] VectorStore trait 加 flush() 默认空实现；HnswStore 覆盖实现立即 flush_all_dirty
-- [x] CollectionMeta 三条件增量判断：model_provider_id= + dimensions= + vector_count=DB实际 → 跳过
-- [x] Finance Domain 加 rebuild_task: Arc<RwLock<Option<RebuildTask>>>（并发控制）
-- [x] switch_embedding 改为后台 spawn，立即返回 task_id；任务存在时 ErrorCode::RebuildInProgress
-- [x] RebuildProgressResponse DTO：status/current_step/total_steps/step_message/percent/error/result 字段
-- [x] get_rebuild_progress handler：按 task_id 读 task，percent = current_step*100/total_steps（total=0 容错 0）
-- [x] SwitchEmbeddingResponse 扩 task_id + skipped 字段；前端可区分"跳过/执行中"
-- [x] 5 个步骤 rebuild 流程内部：每步更新 RebuildTask 字段，完成写 result；失败写 error
-- [x] 后端测试：HNSW save/load 往返测试（内存→磁盘→再加载，向量相同）+ 增量跳过 case + 进行中冲突 case
-- [x] Clippy 后端零警告；fmt check 通过
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -180,3 +168,4 @@ new() → create_dir_all(hnsw_index_dir)
    - 目前 RebuildTask 是 Finance Domain 内部专用。参考通用后台任务模块：改实现 BackgroundTask trait（task_id/task_type=RebuildVectors/progress/run），通过 registry.register 统一管理；get_rebuild_progress 走**装饰模式**（先 registry.get_progress 快照 → 装饰 RebuildProgressResponse），消除重复 Arc<RwLock<Option<Task>>> 样板
 4. **RebuildTask 进度细化（向量级百分比而非步骤级）**
    - 现在 Rebuild 6 步等比，第 3 步"分批 embedding 调 provider"占总时间 95% 以上但只是一步。优化：step=3 内部再分子进度（每完成 100 条向量更新 step_message = f"嵌入中 {processed}/{total_vectors} {percent}%"，percent 用 (3*100 + sub_percent_3) / 6 计算）；进度条体感更平滑，不会卡在 50% 长时间不动
+

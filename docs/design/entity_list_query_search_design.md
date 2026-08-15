@@ -7,6 +7,21 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构（Handler 层接口约定）
 > - [pagination_and_count_convention.md](./pagination_and_count_convention.md) — 分页参数与通用 count 查询规范（本规范的分页部分的底层）
+> - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — 全实体 FTS5 + 向量混合搜索统一设计（search 接口底层）
+> - [vector_search_architecture.md](./vector_search_architecture.md) — 向量搜索底层架构
+> - 【② Plan 落地】[批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — query 核心/list 语法糖原则 + 5 实体三层对称模式
+> - 【② Plan 落地】[Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — 姊妹计划：分页参数统一 + list 接口简化
+> - 【③ Wiki 长文】[Agent 搜索与查询.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md) — Agent 实体 list/query/search 三接口样板
+> - 【③ Wiki 长文】[Agent 搜索与推荐.md](docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 搜索与推荐.md) — 前端搜索面板场景映射
+> - 【③ Wiki 长文】[Agent 实体.md](docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md) — §AgentQuery DTO 过滤条件
+> - 【③ Wiki 长文（Batch10 追加）】[API协议规范.md](docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md) — 三分接口 HTTP 路由签名约定
+> - 【③ Wiki 长文（Batch10 追加）】[数据对象层 (DAO).md](docs/wiki/zh/content/核心模块/服务层/数据对象层%20(DAO)/数据对象层%20(DAO).md) — push_query_filters 复用 WHERE 子句实现
+> - 【③ Wiki 长文（Batch10 追加）】[知识图谱搜索.md](docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md) — 综合搜索场景映射
+> - 【③ Wiki 长文（Batch10 追加）】[RESTful API.md](docs/wiki/zh/content/API%20参考/RESTful%20API/RESTful%20API.md) — 三接口总览
+> - 【④ RAG 卡 2 张（已有）】
+>   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — search 模式样板 + 加权融合
+>   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/wiki/knowledge/zh/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity.md) — Vectorizable 底层支撑 search 的向量层
+> - 【④ RAG 卡（Batch10 新增）】[Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — 全链路三分查询规范 + 8 条硬约束红线
 
 > 本文档总结 Agent 实体统一改造中沉淀的三场景设计经验，作为其他实体（Tool/Skill/Project/Task 等）改造的规范基准。
 > 关联计划：[2026-07-31-unify-agent-search-query.md](superpowers/plans/2026-07-31-unify-agent-search-query.md)

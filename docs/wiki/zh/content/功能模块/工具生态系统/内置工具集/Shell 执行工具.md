@@ -1,19 +1,19 @@
-# Shell 执行工具
+# Shell 执行工具（业务功能层）
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/shell_exec.rs](file://src/pkg/tool_registry/shell_exec.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/pkg/tool_registry/builtin.rs](file://src/pkg/tool_registry/builtin.rs)
-- [src/pkg/process/mod.rs](file://src/pkg/process/mod.rs)
-- [src/service/domain/system/process.rs](file://src/service/domain/system/process.rs)
-- [src/handlers/system/process/shell_list.rs](file://src/handlers/system/process/shell_list.rs)
-- [src/handlers/system/process/shell_status.rs](file://src/handlers/system/process/shell_status.rs)
-- [src/handlers/system/process/shell_kill.rs](file://src/handlers/system/process/shell_kill.rs)
-- [src/config.rs](file://src/config.rs)
-- [common/config/ai_orz.toml](file://common/config/ai_orz.toml)
-- [src/pkg/tool_registry/shell_tests.rs](file://src/pkg/tool_registry/shell_tests.rs)
+- [src/pkg/tool_registry/shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/pkg/tool_registry/builtin.rs](src/pkg/tool_registry/builtin.rs)
+- [src/pkg/process/mod.rs](src/pkg/process/mod.rs)
+- [src/service/domain/system/process.rs](src/service/domain/system/process.rs)
+- [src/handlers/system/process/shell_list.rs](src/handlers/system/process/shell_list.rs)
+- [src/handlers/system/process/shell_status.rs](src/handlers/system/process/shell_status.rs)
+- [src/handlers/system/process/shell_kill.rs](src/handlers/system/process/shell_kill.rs)
+- [src/config.rs](src/config.rs)
+- [common/config/ai_orz.toml](common/config/ai_orz.toml)
+- [src/pkg/tool_registry/shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
 </cite>
 
 ## 更新摘要
@@ -42,6 +42,11 @@
 
 **最新更新**：增强了统一的后台进程管理能力，实现了超时移交机制和 call_id 全链路关联，提供了完整的进程管理三件套（shell_list、shell_status、shell_kill）。
 
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「Shell 执行工具」主题的 **业务功能层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [Shell 执行工具（框架层）](docs/wiki/zh/content/基础设施/工具注册表/Shell%20执行工具.md)
+> - [Shell 执行工具（代码落地层）](docs/wiki/zh/content/核心模块/工具注册表/Shell%20执行工具.md)
+
 ## 项目结构
 Shell 执行工具位于工具注册表模块中，作为内置工具之一被统一注册与管理。其关键位置如下：
 - 工具实现与参数定义：shell_exec.rs
@@ -68,16 +73,16 @@ D --> K["环境变量过滤<br/>allowed_env + 敏感词过滤"]
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/mod.rs:29-108](file://src/pkg/tool_registry/mod.rs#L29-L108)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/shell_exec.rs:20-166](file://src/pkg/tool_registry/shell_exec.rs#L20-L166)
-- [src/pkg/process/mod.rs:57-124](file://src/pkg/process/mod.rs#L57-L124)
-- [src/service/domain/system/process.rs:37-90](file://src/service/domain/system/process.rs#L37-L90)
+- [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/shell_exec.rs:20-166](src/pkg/tool_registry/shell_exec.rs#L20-L166)
+- [src/pkg/process/mod.rs:57-124](src/pkg/process/mod.rs#L57-L124)
+- [src/service/domain/system/process.rs:37-90](src/service/domain/system/process.rs#L37-L90)
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-108](file://src/pkg/tool_registry/mod.rs#L29-L108)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/shell_exec.rs:20-166](file://src/pkg/tool_registry/shell_exec.rs#L20-L166)
+- [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/shell_exec.rs:20-166](src/pkg/tool_registry/shell_exec.rs#L20-L166)
 
 ## 核心组件
 - ShellExecConfig：工具配置项，包含默认超时、最大输出大小、额外允许路径、允许的环境变量名白名单。
@@ -88,11 +93,11 @@ D --> K["环境变量过滤<br/>allowed_env + 敏感词过滤"]
 - 工具注册：通过 BuiltinToolFactory 将 shell_exec 注册到全局 ToolRegistry，供上层按协议类型创建实例。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:20-166](file://src/pkg/tool_registry/shell_exec.rs#L20-L166)
-- [src/pkg/process/mod.rs:24-124](file://src/pkg/process/mod.rs#L24-L124)
-- [src/service/domain/system/process.rs:227-249](file://src/service/domain/system/process.rs#L227-L249)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/mod.rs:29-108](file://src/pkg/tool_registry/mod.rs#L29-L108)
+- [src/pkg/tool_registry/shell_exec.rs:20-166](src/pkg/tool_registry/shell_exec.rs#L20-L166)
+- [src/pkg/process/mod.rs:24-124](src/pkg/process/mod.rs#L24-L124)
+- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L227-L249)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
 
 ## 架构总览
 Shell 执行工具遵循"适配器→领域→数据访问"的分层原则，本工具属于工具注册表层的内置实现，对外暴露统一的 CoreTool 接口，内部通过系统进程管理完成命令执行。
@@ -126,10 +131,10 @@ end
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/shell_exec.rs:267-498](file://src/pkg/tool_registry/shell_exec.rs#L267-L498)
-- [src/pkg/tool_registry/mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/service/domain/system/process.rs:37-90](file://src/service/domain/system/process.rs#L37-L90)
+- [src/pkg/tool_registry/shell_exec.rs:267-498](src/pkg/tool_registry/shell_exec.rs#L267-L498)
+- [src/pkg/tool_registry/mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/service/domain/system/process.rs:37-90](src/service/domain/system/process.rs#L37-L90)
 
 ## 详细组件分析
 
@@ -153,12 +158,12 @@ TimeoutAction --> Kill["kill: 超时立即终止"]
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/shell_exec.rs:267-306](file://src/pkg/tool_registry/shell_exec.rs#L267-L306)
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/pkg/tool_registry/shell_exec.rs:267-306](src/pkg/tool_registry/shell_exec.rs#L267-L306)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:267-306](file://src/pkg/tool_registry/shell_exec.rs#L267-L306)
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/pkg/tool_registry/shell_exec.rs:267-306](src/pkg/tool_registry/shell_exec.rs#L267-L306)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
 
 ### 环境变量继承与安全过滤
 - 继承策略：仅继承 allowed_env 白名单中的环境变量。
@@ -178,10 +183,10 @@ MergeExtra --> EndEnv["最终环境"]
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/shell_exec.rs:219-263](file://src/pkg/tool_registry/shell_exec.rs#L219-L263)
+- [src/pkg/tool_registry/shell_exec.rs:219-263](src/pkg/tool_registry/shell_exec.rs#L219-L263)
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:219-263](file://src/pkg/tool_registry/shell_exec.rs#L219-L263)
+- [src/pkg/tool_registry/shell_exec.rs:219-263](src/pkg/tool_registry/shell_exec.rs#L219-L263)
 
 ### 统一后台进程管理与超时移交
 **新增功能**：实现了统一的后台进程管理机制，支持超时移交策略。
@@ -218,14 +223,14 @@ end
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/shell_exec.rs:373-498](file://src/pkg/tool_registry/shell_exec.rs#L373-L498)
-- [src/pkg/process/mod.rs:76-124](file://src/pkg/process/mod.rs#L76-L124)
-- [src/service/domain/system/process.rs:58-73](file://src/service/domain/system/process.rs#L58-L73)
+- [src/pkg/tool_registry/shell_exec.rs:373-498](src/pkg/tool_registry/shell_exec.rs#L373-L498)
+- [src/pkg/process/mod.rs:76-124](src/pkg/process/mod.rs#L76-L124)
+- [src/service/domain/system/process.rs:58-73](src/service/domain/system/process.rs#L58-L73)
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:373-498](file://src/pkg/tool_registry/shell_exec.rs#L373-L498)
-- [src/pkg/process/mod.rs:76-124](file://src/pkg/process/mod.rs#L76-L124)
-- [src/service/domain/system/process.rs:58-73](file://src/service/domain/system/process.rs#L58-L73)
+- [src/pkg/tool_registry/shell_exec.rs:373-498](src/pkg/tool_registry/shell_exec.rs#L373-L498)
+- [src/pkg/process/mod.rs:76-124](src/pkg/process/mod.rs#L76-L124)
+- [src/service/domain/system/process.rs:58-73](src/service/domain/system/process.rs#L58-L73)
 
 ### call_id 单一事实源与全链路关联
 **新增功能**：实现了 call_id 的全链路关联机制，确保日志、进程信息和工具调用的唯一性。
@@ -247,14 +252,14 @@ UseCallId --> ReturnJson["返回JSON包含 call_id"]
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/shell_exec.rs:314-325](file://src/pkg/tool_registry/shell_exec.rs#L314-L325)
-- [src/pkg/tool_registry/shell_exec.rs:373-391](file://src/pkg/tool_registry/shell_exec.rs#L373-L391)
-- [src/pkg/tool_registry/shell_exec.rs:398-409](file://src/pkg/tool_registry/shell_exec.rs#L398-L409)
+- [src/pkg/tool_registry/shell_exec.rs:314-325](src/pkg/tool_registry/shell_exec.rs#L314-L325)
+- [src/pkg/tool_registry/shell_exec.rs:373-391](src/pkg/tool_registry/shell_exec.rs#L373-L391)
+- [src/pkg/tool_registry/shell_exec.rs:398-409](src/pkg/tool_registry/shell_exec.rs#L398-L409)
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:314-325](file://src/pkg/tool_registry/shell_exec.rs#L314-L325)
-- [src/pkg/tool_registry/shell_exec.rs:373-391](file://src/pkg/tool_registry/shell_exec.rs#L373-L391)
-- [src/pkg/tool_registry/shell_exec.rs:398-409](file://src/pkg/tool_registry/shell_exec.rs#L398-L409)
+- [src/pkg/tool_registry/shell_exec.rs:314-325](src/pkg/tool_registry/shell_exec.rs#L314-L325)
+- [src/pkg/tool_registry/shell_exec.rs:373-391](src/pkg/tool_registry/shell_exec.rs#L373-L391)
+- [src/pkg/tool_registry/shell_exec.rs:398-409](src/pkg/tool_registry/shell_exec.rs#L398-L409)
 
 ### 进程管理三件套接口
 **新增功能**：提供了完整的进程管理接口，同时暴露为 HTTP API 和 LLM 工具。
@@ -284,14 +289,14 @@ Handler-->>Client : 进程状态详情
 ```
 
 **图表来源**
-- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
-- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](src/handlers/system/process/shell_kill.rs#L18-L30)
 
 章节来源
-- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
-- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](src/handlers/system/process/shell_kill.rs#L18-L30)
 
 ### 沙箱隔离机制与资源限制
 - 工作目录沙箱：限制在执行 base_data_path 或 additional_allowed_paths 内，防止越权访问。
@@ -302,10 +307,10 @@ Handler-->>Client : 进程状态详情
 - **新增**：Agent 权限隔离，确保进程管理的范围控制。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:20-68](file://src/pkg/tool_registry/shell_exec.rs#L20-L68)
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
-- [src/pkg/tool_registry/shell_exec.rs:267-498](file://src/pkg/tool_registry/shell_exec.rs#L267-L498)
-- [src/service/domain/system/process.rs:21-31](file://src/service/domain/system/process.rs#L21-L31)
+- [src/pkg/tool_registry/shell_exec.rs:20-68](src/pkg/tool_registry/shell_exec.rs#L20-L68)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/pkg/tool_registry/shell_exec.rs:267-498](src/pkg/tool_registry/shell_exec.rs#L267-L498)
+- [src/service/domain/system/process.rs:21-31](src/service/domain/system/process.rs#L21-L31)
 
 ### 命令白名单控制
 当前实现未提供"命令白名单"（仅允许特定命令）的直接开关。可通过以下策略间接实现：
@@ -314,7 +319,7 @@ Handler-->>Client : 进程状态详情
 - 如需更细粒度控制，可在上层封装一层命令审批逻辑后再调用 shell_exec。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:267-306](file://src/pkg/tool_registry/shell_exec.rs#L267-L306)
+- [src/pkg/tool_registry/shell_exec.rs:267-306](src/pkg/tool_registry/shell_exec.rs#L267-L306)
 
 ### 管道操作与 IO 处理
 - 同步模式下，stdout 与 stderr 分别通过管道读取并合并到输出缓冲区。
@@ -323,8 +328,8 @@ Handler-->>Client : 进程状态详情
 - **更新**：统一了日志流式模型，sync 和 background 模式都从 spawn 起把 stdout/stderr 重定向到日志文件。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:334-355](file://src/pkg/tool_registry/shell_exec.rs#L334-L355)
-- [src/pkg/tool_registry/shell_exec.rs:420-437](file://src/pkg/tool_registry/shell_exec.rs#L420-L437)
+- [src/pkg/tool_registry/shell_exec.rs:334-355](src/pkg/tool_registry/shell_exec.rs#L334-L355)
+- [src/pkg/tool_registry/shell_exec.rs:420-437](src/pkg/tool_registry/shell_exec.rs#L420-L437)
 
 ## 依赖关系分析
 - 工具注册表：ToolRegistry 维护内置工具工厂映射，按协议分发创建。
@@ -372,16 +377,16 @@ ShellExecCoreTool --> ProcessManager : "权限控制"
 ```
 
 **图表来源**
-- [src/pkg/tool_registry/mod.rs:29-108](file://src/pkg/tool_registry/mod.rs#L29-L108)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/shell_exec.rs:151-166](file://src/pkg/tool_registry/shell_exec.rs#L151-L166)
-- [src/pkg/process/mod.rs:57-124](file://src/pkg/process/mod.rs#L57-L124)
-- [src/service/domain/system/process.rs:227-249](file://src/service/domain/system/process.rs#L227-L249)
+- [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/shell_exec.rs:151-166](src/pkg/tool_registry/shell_exec.rs#L151-L166)
+- [src/pkg/process/mod.rs:57-124](src/pkg/process/mod.rs#L57-L124)
+- [src/service/domain/system/process.rs:227-249](src/service/domain/system/process.rs#L227-L249)
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-108](file://src/pkg/tool_registry/mod.rs#L29-L108)
-- [src/pkg/tool_registry/builtin.rs:26-43](file://src/pkg/tool_registry/builtin.rs#L26-L43)
-- [src/pkg/tool_registry/shell_exec.rs:151-166](file://src/pkg/tool_registry/shell_exec.rs#L151-L166)
+- [src/pkg/tool_registry/mod.rs:29-108](src/pkg/tool_registry/mod.rs#L29-L108)
+- [src/pkg/tool_registry/builtin.rs:26-43](src/pkg/tool_registry/builtin.rs#L26-L43)
+- [src/pkg/tool_registry/shell_exec.rs:151-166](src/pkg/tool_registry/shell_exec.rs#L151-L166)
 
 ## 性能考虑
 - 超时与内存保护：通过默认超时与最大输出大小限制，避免长时间占用与内存膨胀。
@@ -418,10 +423,10 @@ ShellExecCoreTool --> ProcessManager : "权限控制"
   - 排查：确认 RequestContext 中是否正确设置了 tool_call_id；检查日志文件名是否为 {call_id}.log。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
-- [src/pkg/tool_registry/shell_exec.rs:219-263](file://src/pkg/tool_registry/shell_exec.rs#L219-L263)
-- [src/pkg/tool_registry/shell_exec.rs:267-498](file://src/pkg/tool_registry/shell_exec.rs#L267-L498)
-- [src/service/domain/system/process.rs:21-31](file://src/service/domain/system/process.rs#L21-L31)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/pkg/tool_registry/shell_exec.rs:219-263](src/pkg/tool_registry/shell_exec.rs#L219-L263)
+- [src/pkg/tool_registry/shell_exec.rs:267-498](src/pkg/tool_registry/shell_exec.rs#L267-L498)
+- [src/service/domain/system/process.rs:21-31](src/service/domain/system/process.rs#L21-L31)
 
 ## 结论
 Shell 执行工具提供了安全的命令执行能力，涵盖参数解析、工作目录白名单、环境变量白名单与敏感过滤、超时与输出大小限制、后台模式与日志落盘等特性。通过工具注册表统一管理，易于扩展与维护。
@@ -437,31 +442,31 @@ Shell 执行工具提供了安全的命令执行能力，涵盖参数解析、�
 - 要点：设置合理超时；输出可能较大，注意 max_output_size_bytes；建议使用后台模式并查看日志。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:267-498](file://src/pkg/tool_registry/shell_exec.rs#L267-L498)
+- [src/pkg/tool_registry/shell_exec.rs:267-498](src/pkg/tool_registry/shell_exec.rs#L267-L498)
 
 ### 文件批处理
 - 场景：批量复制/移动/转换文件。
 - 要点：工作目录限定在项目根或额外允许路径；避免访问敏感文件；输出过大时查看日志。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
-- [src/pkg/tool_registry/shell_exec.rs:334-355](file://src/pkg/tool_registry/shell_exec.rs#L334-L355)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/pkg/tool_registry/shell_exec.rs:334-355](src/pkg/tool_registry/shell_exec.rs#L334-L355)
 
 ### 脚本执行
 - 场景：执行预置脚本（如构建、测试、部署）。
 - 要点：通过 env 注入必要变量；设置超时；后台运行并监控日志。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:308-312](file://src/pkg/tool_registry/shell_exec.rs#L308-L312)
-- [src/pkg/tool_registry/shell_exec.rs:393-410](file://src/pkg/tool_registry/shell_exec.rs#L393-L410)
+- [src/pkg/tool_registry/shell_exec.rs:308-312](src/pkg/tool_registry/shell_exec.rs#L308-L312)
+- [src/pkg/tool_registry/shell_exec.rs:393-410](src/pkg/tool_registry/shell_exec.rs#L393-L410)
 
 ### 管道操作
 - 场景：组合多个命令并通过管道传递数据。
 - 要点：在 Unix 环境下使用 /bin/sh -c 支持管道；注意输出大小限制与日志落盘。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:505-516](file://src/pkg/tool_registry/shell_exec.rs#L505-L516)
-- [src/pkg/tool_registry/shell_exec.rs:420-437](file://src/pkg/tool_registry/shell_exec.rs#L420-L437)
+- [src/pkg/tool_registry/shell_exec.rs:505-516](src/pkg/tool_registry/shell_exec.rs#L505-L516)
+- [src/pkg/tool_registry/shell_exec.rs:420-437](src/pkg/tool_registry/shell_exec.rs#L420-L437)
 
 ### 进程管理最佳实践
 **新增**：使用进程管理三件套进行后台进程管理。
@@ -486,9 +491,9 @@ POST /api/v1/system/processes/{pid}/kill
 ```
 
 章节来源
-- [src/handlers/system/process/shell_list.rs:19-49](file://src/handlers/system/process/shell_list.rs#L19-L49)
-- [src/handlers/system/process/shell_status.rs:19-38](file://src/handlers/system/process/shell_status.rs#L19-L38)
-- [src/handlers/system/process/shell_kill.rs:18-30](file://src/handlers/system/process/shell_kill.rs#L18-L30)
+- [src/handlers/system/process/shell_list.rs:19-49](src/handlers/system/process/shell_list.rs#L19-L49)
+- [src/handlers/system/process/shell_status.rs:19-38](src/handlers/system/process/shell_status.rs#L19-L38)
+- [src/handlers/system/process/shell_kill.rs:18-30](src/handlers/system/process/shell_kill.rs#L18-L30)
 
 ### 安全最佳实践
 - 命令注入防护：在上层对用户输入进行严格校验，限制允许的命令集合与参数格式。
@@ -498,9 +503,9 @@ POST /api/v1/system/processes/{pid}/kill
 - **新增**：call_id 追踪：通过统一的 call_id 实现全链路追踪，便于审计和问题排查。
 
 章节来源
-- [src/pkg/tool_registry/shell_exec.rs:219-263](file://src/pkg/tool_registry/shell_exec.rs#L219-L263)
-- [src/pkg/tool_registry/shell_exec.rs:177-216](file://src/pkg/tool_registry/shell_exec.rs#L177-L216)
-- [src/service/domain/system/process.rs:21-31](file://src/service/domain/system/process.rs#L21-L31)
+- [src/pkg/tool_registry/shell_exec.rs:219-263](src/pkg/tool_registry/shell_exec.rs#L219-L263)
+- [src/pkg/tool_registry/shell_exec.rs:177-216](src/pkg/tool_registry/shell_exec.rs#L177-L216)
+- [src/service/domain/system/process.rs:21-31](src/service/domain/system/process.rs#L21-L31)
 
 ### 性能调优建议
 - 进程池管理：在高并发场景下，考虑对 shell_exec 调用进行排队与复用，减少进程创建开销。
@@ -520,5 +525,5 @@ POST /api/v1/system/processes/{pid}/kill
 - **新增**：call_id 全链路关联测试
 
 章节来源
-- [src/pkg/tool_registry/shell_tests.rs:169-326](file://src/pkg/tool_registry/shell_tests.rs#L169-L326)
-- [src/service/domain/system/process.rs:92-229](file://src/service/domain/system/process.rs#L92-L229)
+- [src/pkg/tool_registry/shell_tests.rs:169-326](src/pkg/tool_registry/shell_tests.rs#L169-L326)
+- [src/service/domain/system/process.rs:92-229](src/service/domain/system/process.rs#L92-L229)

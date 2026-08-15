@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [src/models/agent.rs](file://src/models/agent.rs)
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [common/src/enums/agent_kind.rs](file://common/src/enums/agent_kind.rs)
-- [migrations/20260420000000_initial.sql](file://migrations/20260420000000_initial.sql)
-- [migrations/20260719000000_add_kind_to_agents.sql](file://migrations/20260719000000_add_kind_to_agents.sql)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
+- [src/models/agent.rs](src/models/agent.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
+- [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
+- [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260719000000_add_kind_to_agents.sql)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 </cite>
 
 ## 目录
@@ -67,22 +67,22 @@ I --> A
 ```
 
 **图表来源**
-- [src/models/agent.rs:15-105](file://src/models/agent.rs#L15-L105)
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [migrations/20260420000000_initial.sql:39-54](file://migrations/20260420000000_initial.sql#L39-L54)
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
-- [migrations/20260719000000_add_kind_to_agents.sql:1-5](file://migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
+- [src/models/agent.rs:15-105](src/models/agent.rs#L15-L105)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
+- [migrations/20260719000000_add_kind_to_agents.sql:1-5](migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
 
 **章节来源**
-- [src/models/agent.rs:15-105](file://src/models/agent.rs#L15-L105)
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [migrations/20260420000000_initial.sql:39-54](file://migrations/20260420000000_initial.sql#L39-L54)
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
-- [migrations/20260719000000_add_kind_to_agents.sql:1-5](file://migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
+- [src/models/agent.rs:15-105](src/models/agent.rs#L15-L105)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
+- [migrations/20260719000000_add_kind_to_agents.sql:1-5](migrations/20260719000000_add_kind_to_agents.sql#L1-L5)
 
 ## 核心组件
 - AgentPo：持久化对象，映射 agents 表，包含 ID、名称、角色、描述、灵魂设定、能力、运行时配置、模型提供商、状态、类型、审计字段等。
@@ -94,11 +94,11 @@ I --> A
 - AgentRuntimeState：内存运行态（空闲、休息、忙碌），由 AgentRuntimeStateManager 维护。
 
 **章节来源**
-- [src/models/agent.rs:15-105](file://src/models/agent.rs#L15-L105)
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [src/pkg/agent_runtime_state.rs:11-19](file://src/pkg/agent_runtime_state.rs#L11-L19)
+- [src/models/agent.rs:15-105](src/models/agent.rs#L15-L105)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [src/pkg/agent_runtime_state.rs:11-19](src/pkg/agent_runtime_state.rs#L11-L19)
 
 ## 架构总览
 Agent 数据模型遵循四层单向调用原则：Adapter → Domain → DAL → DAO。AgentPo 仅在 DAO/DAL 内部使用；Domain 对外暴露业务实体 Agent。Agent 的生命周期与运行态分别通过持久化状态 AgentStatus 与内存状态 AgentRuntimeState 共同管理。
@@ -121,9 +121,9 @@ Domain-->>Adapter : "返回响应"
 ```
 
 **图表来源**
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [migrations/20260420000000_initial.sql:39-54](file://migrations/20260420000000_initial.sql#L39-L54)
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
 
 ## 详细组件分析
 
@@ -140,9 +140,9 @@ Domain-->>Adapter : "返回响应"
 - vectorize_text 对 name、role、description、capabilities 进行拼接，用于向量检索；soul 不参与向量化。
 
 **章节来源**
-- [src/models/agent.rs:330-358](file://src/models/agent.rs#L330-L358)
-- [src/models/agent.rs:359-427](file://src/models/agent.rs#L359-L427)
-- [src/models/agent.rs:627-650](file://src/models/agent.rs#L627-L650)
+- [src/models/agent.rs:330-358](src/models/agent.rs#L330-L358)
+- [src/models/agent.rs:359-427](src/models/agent.rs#L359-L427)
+- [src/models/agent.rs:627-650](src/models/agent.rs#L627-L650)
 
 ### 状态机与生命周期管理
 - 生命周期状态（持久化）：Interviewing（默认）、PendingOnboard、Onboarded、PendingOffboard、Offboarded、Deleted
@@ -162,13 +162,13 @@ stateDiagram-v2
 ```
 
 **图表来源**
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [src/pkg/agent_runtime_state.rs:62-107](file://src/pkg/agent_runtime_state.rs#L62-L107)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [src/pkg/agent_runtime_state.rs:62-107](src/pkg/agent_runtime_state.rs#L62-L107)
 
 **章节来源**
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [src/pkg/agent_runtime_state.rs:11-19](file://src/pkg/agent_runtime_state.rs#L11-L19)
-- [src/pkg/agent_runtime_state.rs:62-107](file://src/pkg/agent_runtime_state.rs#L62-L107)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [src/pkg/agent_runtime_state.rs:11-19](src/pkg/agent_runtime_state.rs#L11-L19)
+- [src/pkg/agent_runtime_state.rs:62-107](src/pkg/agent_runtime_state.rs#L62-L107)
 
 ### 运行时配置 AgentRuntimeConfig
 - 最大思考深度：跨消息累计的工具调用数上限，达到后停止唤醒并通知用户
@@ -198,12 +198,12 @@ Summarize --> End
 ```
 
 **图表来源**
-- [src/models/agent.rs:15-69](file://src/models/agent.rs#L15-L69)
-- [src/models/agent.rs:107-184](file://src/models/agent.rs#L107-L184)
+- [src/models/agent.rs:15-69](src/models/agent.rs#L15-L69)
+- [src/models/agent.rs:107-184](src/models/agent.rs#L107-L184)
 
 **章节来源**
-- [src/models/agent.rs:15-69](file://src/models/agent.rs#L15-L69)
-- [src/models/agent.rs:107-184](file://src/models/agent.rs#L107-L184)
+- [src/models/agent.rs:15-69](src/models/agent.rs#L15-L69)
+- [src/models/agent.rs:107-184](src/models/agent.rs#L107-L184)
 
 ### 外部 Agent 配置（CLI 与 A2A 远程）
 - CLI 子进程：command、args、work_dir、env、timeout_secs、prompt_template（可选，使用 {prompt} 占位符）
@@ -234,12 +234,12 @@ ExternalAgentConfig <|-- RemoteAgentConfig
 ```
 
 **图表来源**
-- [src/models/agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [src/models/agent.rs:555-573](file://src/models/agent.rs#L555-L573)
+- [src/models/agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [src/models/agent.rs:555-573](src/models/agent.rs#L555-L573)
 
 **章节来源**
-- [src/models/agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [src/models/agent.rs:555-573](file://src/models/agent.rs#L555-L573)
+- [src/models/agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [src/models/agent.rs:555-573](src/models/agent.rs#L555-L573)
 
 ### 类型区分与能力描述
 - AgentKind：Local（本地 Brain 执行）、Cli（CLI 子进程包装）、Remote（A2A 协议远程调用）
@@ -247,9 +247,9 @@ ExternalAgentConfig <|-- RemoteAgentConfig
 - 元数据存储：AgentPo 作为 PO 在 DAO/DAL 内部使用，Agent 业务对象组合 Brain、Tools、Skills、运行时信息与统计
 
 **章节来源**
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [src/models/agent.rs:330-358](file://src/models/agent.rs#L330-L358)
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [src/models/agent.rs:330-358](src/models/agent.rs#L330-L358)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
 
 ### 与 Skill、Tool 的绑定关系与外键约束
 - 工具绑定：agent_tools 表通过 (agent_id, tool_id) 主键建立多对多关系
@@ -264,12 +264,12 @@ SKILLS ||--o{ AGENTS : "技能副本(业务层)"
 ```
 
 **图表来源**
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
 
 **章节来源**
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
-- [src/models/agent.rs:186-222](file://src/models/agent.rs#L186-L222)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
+- [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
 
 ### 创建、更新与删除的业务规则
 - 创建：
@@ -284,9 +284,9 @@ SKILLS ||--o{ AGENTS : "技能副本(业务层)"
   - 建议同时清理 agent_tools 关联与技能副本引用
 
 **章节来源**
-- [src/models/agent.rs:378-404](file://src/models/agent.rs#L378-L404)
-- [src/models/agent.rs:418-465](file://src/models/agent.rs#L418-L465)
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
+- [src/models/agent.rs:378-404](src/models/agent.rs#L378-L404)
+- [src/models/agent.rs:418-465](src/models/agent.rs#L418-L465)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
 
 ## 依赖关系分析
 - AgentPo 依赖 AgentStatus、AgentKind、AgentRuntimeConfig
@@ -306,12 +306,12 @@ AgentRuntimeStateManager --> AgentRuntimeState
 ```
 
 **图表来源**
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [src/pkg/agent_runtime_state.rs:11-19](file://src/pkg/agent_runtime_state.rs#L11-L19)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [src/pkg/agent_runtime_state.rs:11-19](src/pkg/agent_runtime_state.rs#L11-L19)
 
 **章节来源**
-- [src/models/agent.rs:186-358](file://src/models/agent.rs#L186-L358)
-- [src/pkg/agent_runtime_state.rs:11-19](file://src/pkg/agent_runtime_state.rs#L11-L19)
+- [src/models/agent.rs:186-358](src/models/agent.rs#L186-L358)
+- [src/pkg/agent_runtime_state.rs:11-19](src/pkg/agent_runtime_state.rs#L11-L19)
 
 ## 性能考量
 - 思考深度与轮次限制：防止无限循环与过度消耗模型资源
@@ -329,9 +329,9 @@ AgentRuntimeStateManager --> AgentRuntimeState
 - 绑定关系缺失：确认 agent_tools 表中是否存在对应记录
 
 **章节来源**
-- [src/pkg/agent_runtime_state.rs:62-107](file://src/pkg/agent_runtime_state.rs#L62-L107)
-- [src/models/agent.rs:15-69](file://src/models/agent.rs#L15-L69)
-- [src/models/agent.rs:71-105](file://src/models/agent.rs#L71-L105)
+- [src/pkg/agent_runtime_state.rs:62-107](src/pkg/agent_runtime_state.rs#L62-L107)
+- [src/models/agent.rs:15-69](src/models/agent.rs#L15-L69)
+- [src/models/agent.rs:71-105](src/models/agent.rs#L71-L105)
 
 ## 结论
 Agent 实体通过清晰的 PO/业务对象分层、严格的状态机与运行时配置，实现了可观测、可控、可扩展的多 Agent 协作框架。结合 Skill/Tool 绑定与外部执行器配置，既能满足本地推理，也能无缝集成 CLI 与 A2A 远程执行，满足不同场景下的智能体需求。
@@ -344,8 +344,8 @@ Agent 实体通过清晰的 PO/业务对象分层、严格的状态机与运行�
 - 运行时配置参考：AgentRuntimeConfig、ExternalAgentConfig
 
 **章节来源**
-- [migrations/20260420000000_initial.sql:39-54](file://migrations/20260420000000_initial.sql#L39-L54)
-- [migrations/20260420000000_initial.sql:220-227](file://migrations/20260420000000_initial.sql#L220-L227)
-- [common/src/enums/agent.rs:8-30](file://common/src/enums/agent.rs#L8-L30)
-- [common/src/enums/agent_kind.rs:8-25](file://common/src/enums/agent_kind.rs#L8-L25)
-- [src/models/agent.rs:15-105](file://src/models/agent.rs#L15-L105)
+- [migrations/20260420000000_initial.sql:39-54](migrations/20260420000000_initial.sql#L39-L54)
+- [migrations/20260420000000_initial.sql:220-227](migrations/20260420000000_initial.sql#L220-L227)
+- [common/src/enums/agent.rs:8-30](common/src/enums/agent.rs#L8-L30)
+- [common/src/enums/agent_kind.rs:8-25](common/src/enums/agent_kind.rs#L8-L25)
+- [src/models/agent.rs:15-105](src/models/agent.rs#L15-L105)

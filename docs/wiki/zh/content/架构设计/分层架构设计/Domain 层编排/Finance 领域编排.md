@@ -2,16 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/domain/finance/mod.rs](file://src/service/domain/finance/mod.rs)
-- [src/service/domain/finance/model_provider.rs](file://src/service/domain/finance/model_provider.rs)
-- [src/service/domain/finance/mcp_server.rs](file://src/service/domain/finance/mcp_server.rs)
-- [src/service/domain/finance/tool_provider.rs](file://src/service/domain/finance/tool_provider.rs)
-- [src/service/domain/finance/message_channel.rs](file://src/service/domain/finance/message_channel.rs)
-- [src/service/domain/finance/attachment.rs](file://src/service/domain/finance/attachment.rs)
-- [src/handlers/finance/mcp_server/create_mcp_server.rs](file://src/handlers/finance/mcp_server/create_mcp_server.rs)
-- [src/router.rs](file://src/router.rs)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
-- [docs/mcp_tool_design.md](file://docs/mcp_tool_design.md)
+- [src/service/domain/finance/mod.rs](src/service/domain/finance/mod.rs)
+- [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs)
+- [src/service/domain/finance/mcp_server.rs](src/service/domain/finance/mcp_server.rs)
+- [src/service/domain/finance/tool_provider.rs](src/service/domain/finance/tool_provider.rs)
+- [src/service/domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs)
+- [src/service/domain/finance/attachment.rs](src/service/domain/finance/attachment.rs)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
+- [src/router.rs](src/router.rs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/mcp_tool_design.md](docs/mcp_tool_design.md)
 </cite>
 
 ## 目录
@@ -55,12 +55,12 @@ H --> N["AttachmentDal"]
 ```
 
 图表来源
-- [src/service/domain/finance/mod.rs:47-90](file://src/service/domain/finance/mod.rs#L47-L90)
-- [src/service/domain/finance/mod.rs:97-115](file://src/service/domain/finance/mod.rs#L97-L115)
+- [src/service/domain/finance/mod.rs:47-90](src/service/domain/finance/mod.rs#L47-L90)
+- [src/service/domain/finance/mod.rs:97-115](src/service/domain/finance/mod.rs#L97-L115)
 
 章节来源
-- [src/service/domain/finance/mod.rs:1-115](file://src/service/domain/finance/mod.rs#L1-L115)
-- [docs/ARCHITECTURE.md:24-64](file://docs/ARCHITECTURE.md#L24-L64)
+- [src/service/domain/finance/mod.rs:1-115](src/service/domain/finance/mod.rs#L1-L115)
+- [docs/ARCHITECTURE.md:24-64](docs/ARCHITECTURE.md#L24-L64)
 
 ## 核心组件
 - 模型提供商（ModelProvider）：LLM/Embedding 提供商配置与切换，支持连接测试、启用状态切换、向量索引重建触发。
@@ -70,11 +70,11 @@ H --> N["AttachmentDal"]
 - 附件（Attachment）：通用上传文件资产，文本内容读写限制与安全校验，按用户隔离读取。
 
 章节来源
-- [src/service/domain/finance/model_provider.rs:13-149](file://src/service/domain/finance/model_provider.rs#L13-L149)
-- [src/service/domain/finance/mcp_server.rs:13-81](file://src/service/domain/finance/mcp_server.rs#L13-L81)
-- [src/service/domain/finance/tool_provider.rs:13-166](file://src/service/domain/finance/tool_provider.rs#L13-L166)
-- [src/service/domain/finance/message_channel.rs:12-73](file://src/service/domain/finance/message_channel.rs#L12-L73)
-- [src/service/domain/finance/attachment.rs:17-137](file://src/service/domain/finance/attachment.rs#L17-L137)
+- [src/service/domain/finance/model_provider.rs:13-149](src/service/domain/finance/model_provider.rs#L13-L149)
+- [src/service/domain/finance/mcp_server.rs:13-81](src/service/domain/finance/mcp_server.rs#L13-L81)
+- [src/service/domain/finance/tool_provider.rs:13-166](src/service/domain/finance/tool_provider.rs#L13-L166)
+- [src/service/domain/finance/message_channel.rs:12-73](src/service/domain/finance/message_channel.rs#L12-L73)
+- [src/service/domain/finance/attachment.rs:17-137](src/service/domain/finance/attachment.rs#L17-L137)
 
 ## 架构总览
 Finance Domain 严格遵循分层单向调用：Adapter（Handler）→ Domain → DAL → DAO。Domain 不直接操作 PO，PO 仅在 DAL/DAO 内部使用；所有 service 层方法首参为 RequestContext，跨层传递使用 ctx.clone()。
@@ -99,12 +99,12 @@ Handler-->>Client : JSON 响应
 ```
 
 图表来源
-- [docs/ARCHITECTURE.md:24-64](file://docs/ARCHITECTURE.md#L24-L64)
-- [src/service/domain/finance/mod.rs:47-90](file://src/service/domain/finance/mod.rs#L47-L90)
+- [docs/ARCHITECTURE.md:24-64](docs/ARCHITECTURE.md#L24-L64)
+- [src/service/domain/finance/mod.rs:47-90](src/service/domain/finance/mod.rs#L47-L90)
 
 章节来源
-- [docs/ARCHITECTURE.md:24-64](file://docs/ARCHITECTURE.md#L24-L64)
-- [src/service/domain/finance/mod.rs:47-90](file://src/service/domain/finance/mod.rs#L47-L90)
+- [docs/ARCHITECTURE.md:24-64](docs/ARCHITECTURE.md#L24-L64)
+- [src/service/domain/finance/mod.rs:47-90](src/service/domain/finance/mod.rs#L47-L90)
 
 ## 详细组件分析
 
@@ -126,10 +126,10 @@ EnableNew --> ReturnPrev["返回旧 provider用于重建索引"]
 ```
 
 图表来源
-- [src/service/domain/finance/model_provider.rs:103-149](file://src/service/domain/finance/model_provider.rs#L103-L149)
+- [src/service/domain/finance/model_provider.rs:103-149](src/service/domain/finance/model_provider.rs#L103-L149)
 
 章节来源
-- [src/service/domain/finance/model_provider.rs:13-149](file://src/service/domain/finance/model_provider.rs#L13-L149)
+- [src/service/domain/finance/model_provider.rs:13-149](src/service/domain/finance/model_provider.rs#L13-L149)
 
 ### MCP 服务器编排（MCP Server）
 - 创建/获取/查询/列表/更新/状态更新/删除：全部委托 DAL。
@@ -153,11 +153,11 @@ McpServerManage <|.. FinanceDomainImpl
 ```
 
 图表来源
-- [src/service/domain/finance/mod.rs:293-342](file://src/service/domain/finance/mod.rs#L293-L342)
-- [src/service/domain/finance/mcp_server.rs:13-81](file://src/service/domain/finance/mcp_server.rs#L13-L81)
+- [src/service/domain/finance/mod.rs:293-342](src/service/domain/finance/mod.rs#L293-L342)
+- [src/service/domain/finance/mcp_server.rs:13-81](src/service/domain/finance/mcp_server.rs#L13-L81)
 
 章节来源
-- [src/service/domain/finance/mcp_server.rs:13-81](file://src/service/domain/finance/mcp_server.rs#L13-L81)
+- [src/service/domain/finance/mcp_server.rs:13-81](src/service/domain/finance/mcp_server.rs#L13-L81)
 
 ### 工具提供商编排（Tool Provider）
 - 工具生命周期：创建/获取/查询/列表/更新/删除，支持内置工具同步到 DB。
@@ -177,17 +177,17 @@ AddBind --> Done(["完成"])
 ```
 
 图表来源
-- [src/service/domain/finance/tool_provider.rs:73-114](file://src/service/domain/finance/tool_provider.rs#L73-L114)
+- [src/service/domain/finance/tool_provider.rs:73-114](src/service/domain/finance/tool_provider.rs#L73-L114)
 
 章节来源
-- [src/service/domain/finance/tool_provider.rs:13-166](file://src/service/domain/finance/tool_provider.rs#L13-L166)
+- [src/service/domain/finance/tool_provider.rs:13-166](src/service/domain/finance/tool_provider.rs#L13-L166)
 
 ### 消息渠道编排（Message Channel）
 - 渠道配置 CRUD、分页查询、连通性测试：全部委托 DAL。
 - list_message_channels 通过默认查询返回所有渠道项。
 
 章节来源
-- [src/service/domain/finance/message_channel.rs:12-73](file://src/service/domain/finance/message_channel.rs#L12-L73)
+- [src/service/domain/finance/message_channel.rs:12-73](src/service/domain/finance/message_channel.rs#L12-L73)
 
 ### 附件编排（Attachment）
 - 上传与文本附件：创建时进行文件名安全校验、文本大小限制、MIME 类型白名单校验。
@@ -205,11 +205,11 @@ Create --> Return(["返回 Attachment"])
 ```
 
 图表来源
-- [src/service/domain/finance/attachment.rs:27-39](file://src/service/domain/finance/attachment.rs#L27-L39)
-- [src/service/domain/finance/attachment.rs:159-204](file://src/service/domain/finance/attachment.rs#L159-L204)
+- [src/service/domain/finance/attachment.rs:27-39](src/service/domain/finance/attachment.rs#L27-L39)
+- [src/service/domain/finance/attachment.rs:159-204](src/service/domain/finance/attachment.rs#L159-L204)
 
 章节来源
-- [src/service/domain/finance/attachment.rs:17-137](file://src/service/domain/finance/attachment.rs#L17-L137)
+- [src/service/domain/finance/attachment.rs:17-137](src/service/domain/finance/attachment.rs#L17-L137)
 
 ## 依赖关系分析
 Finance Domain 依赖多个 DAL，形成清晰的组合关系：
@@ -234,10 +234,10 @@ FD --> BD["BrainDal"]
 ```
 
 图表来源
-- [src/service/domain/finance/mod.rs:464-472](file://src/service/domain/finance/mod.rs#L464-L472)
+- [src/service/domain/finance/mod.rs:464-472](src/service/domain/finance/mod.rs#L464-L472)
 
 章节来源
-- [src/service/domain/finance/mod.rs:464-472](file://src/service/domain/finance/mod.rs#L464-L472)
+- [src/service/domain/finance/mod.rs:464-472](src/service/domain/finance/mod.rs#L464-L472)
 
 ## 性能与可用性
 - 连接池策略
@@ -274,11 +274,11 @@ FD --> BD["BrainDal"]
   - 排查：确认文件类型为文本类、MIME 在白名单、内容为 UTF-8；检查 expected_updated_at 冲突。
 
 章节来源
-- [src/service/domain/finance/model_provider.rs:93-101](file://src/service/domain/finance/model_provider.rs#L93-L101)
-- [src/service/domain/finance/model_provider.rs:103-149](file://src/service/domain/finance/model_provider.rs#L103-L149)
-- [src/service/domain/finance/mcp_server.rs:53-65](file://src/service/domain/finance/mcp_server.rs#L53-L65)
-- [src/service/domain/finance/tool_provider.rs:148-166](file://src/service/domain/finance/tool_provider.rs#L148-L166)
-- [src/service/domain/finance/attachment.rs:68-124](file://src/service/domain/finance/attachment.rs#L68-L124)
+- [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
+- [src/service/domain/finance/model_provider.rs:103-149](src/service/domain/finance/model_provider.rs#L103-L149)
+- [src/service/domain/finance/mcp_server.rs:53-65](src/service/domain/finance/mcp_server.rs#L53-L65)
+- [src/service/domain/finance/tool_provider.rs:148-166](src/service/domain/finance/tool_provider.rs#L148-L166)
+- [src/service/domain/finance/attachment.rs:68-124](src/service/domain/finance/attachment.rs#L68-L124)
 
 ## 结论
 Finance Domain 通过统一的 trait 聚合与 DAL 编排，将模型提供商、MCP 服务器、工具提供商、消息渠道与附件管理等外部能力纳入一致的计费与管理边界。Handler 保持薄适配，Domain 承载业务规则与编排，DAL/DAO 专注数据访问。该设计保证了可扩展性、可维护性与安全性，并通过分页、连接池、降级与监控等手段保障可用性与性能。
@@ -314,8 +314,8 @@ end
 ```
 
 图表来源
-- [src/service/domain/finance/model_provider.rs:31-40](file://src/service/domain/finance/model_provider.rs#L31-L40)
-- [src/service/domain/finance/model_provider.rs:93-101](file://src/service/domain/finance/model_provider.rs#L93-L101)
+- [src/service/domain/finance/model_provider.rs:31-40](src/service/domain/finance/model_provider.rs#L31-L40)
+- [src/service/domain/finance/model_provider.rs:93-101](src/service/domain/finance/model_provider.rs#L93-L101)
 
 ### 示例二：工具链组合（MCP 工具 + Http 工具协作）
 - 场景：先通过 MCP 工具获取数据，再用 Http 工具处理或转发。
@@ -334,8 +334,8 @@ Exec2 --> Result["汇总结果"]
 ```
 
 图表来源
-- [src/service/domain/finance/tool_provider.rs:138-145](file://src/service/domain/finance/tool_provider.rs#L138-L145)
-- [src/service/domain/finance/tool_provider.rs:148-166](file://src/service/domain/finance/tool_provider.rs#L148-L166)
+- [src/service/domain/finance/tool_provider.rs:138-145](src/service/domain/finance/tool_provider.rs#L138-L145)
+- [src/service/domain/finance/tool_provider.rs:148-166](src/service/domain/finance/tool_provider.rs#L148-L166)
 
 ### 示例三：消息多渠道分发（同一消息投递至多个渠道）
 - 场景：一条消息需要同时发送到飞书、企业微信、Slack 等渠道。
@@ -361,7 +361,7 @@ FD-->>H : 汇总结果
 ```
 
 图表来源
-- [src/service/domain/finance/message_channel.rs:30-43](file://src/service/domain/finance/message_channel.rs#L30-L43)
+- [src/service/domain/finance/message_channel.rs:30-43](src/service/domain/finance/message_channel.rs#L30-L43)
 
 ### 示例四：MCP 服务器创建与工具同步
 - 场景：新增 MCP Server 后，同步远端 tools/list 到本地 Tool 表。
@@ -389,6 +389,6 @@ H-->>FE : 创建成功
 ```
 
 图表来源
-- [src/handlers/finance/mcp_server/create_mcp_server.rs:22-47](file://src/handlers/finance/mcp_server/create_mcp_server.rs#L22-L47)
-- [docs/mcp_tool_design.md:250-275](file://docs/mcp_tool_design.md#L250-L275)
-- [src/router.rs:551-556](file://src/router.rs#L551-L556)
+- [src/handlers/finance/mcp_server/create_mcp_server.rs:22-47](src/handlers/finance/mcp_server/create_mcp_server.rs#L22-L47)
+- [docs/mcp_tool_design.md:250-275](docs/mcp_tool_design.md#L250-L275)
+- [src/router.rs:551-556](src/router.rs#L551-L556)

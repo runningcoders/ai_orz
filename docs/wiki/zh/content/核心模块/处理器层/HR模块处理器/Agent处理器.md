@@ -2,23 +2,23 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/hr/agent/mod.rs](file://src/handlers/hr/agent/mod.rs)
-- [src/handlers/hr/agent/create_agent.rs](file://src/handlers/hr/agent/create_agent.rs)
-- [src/handlers/hr/agent/update_agent.rs](file://src/handlers/hr/agent/update_agent.rs)
-- [src/handlers/hr/agent/delete_agent.rs](file://src/handlers/hr/agent/delete_agent.rs)
-- [src/handlers/hr/agent/get_agent.rs](file://src/handlers/hr/agent/get_agent.rs)
-- [src/handlers/hr/agent/list_agents.rs](file://src/handlers/hr/agent/list_agents.rs)
-- [src/handlers/hr/agent/query_agents.rs](file://src/handlers/hr/agent/query_agents.rs)
-- [src/handlers/hr/agent/search_agents.rs](file://src/handlers/hr/agent/search_agents.rs)
-- [src/handlers/hr/agent/update_agent_status.rs](file://src/handlers/hr/agent/update_agent_status.rs)
-- [src/handlers/hr/agent/install_tool_pack.rs](file://src/handlers/hr/agent/install_tool_pack.rs)
-- [src/handlers/hr/agent/uninstall_tool_pack.rs](file://src/handlers/hr/agent/uninstall_tool_pack.rs)
-- [src/handlers/hr/agent/install_skill_pack.rs](file://src/handlers/hr/agent/install_skill_pack.rs)
-- [src/handlers/hr/agent/uninstall_skill_pack.rs](file://src/handlers/hr/agent/uninstall_skill_pack.rs)
-- [src/handlers/hr/agent/list_installed_tool_packs.rs](file://src/handlers/hr/agent/list_installed_tool_packs.rs)
-- [src/handlers/hr/agent/list_installed_skill_packs.rs](file://src/handlers/hr/agent/list_installed_skill_packs.rs)
-- [common/src/api/agent.rs](file://common/src/api/agent.rs)
-- [src/models/agent.rs](file://src/models/agent.rs)
+- [src/handlers/hr/agent/mod.rs](src/handlers/hr/agent/mod.rs)
+- [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
+- [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs)
+- [src/handlers/hr/agent/delete_agent.rs](src/handlers/hr/agent/delete_agent.rs)
+- [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
+- [src/handlers/hr/agent/list_agents.rs](src/handlers/hr/agent/list_agents.rs)
+- [src/handlers/hr/agent/query_agents.rs](src/handlers/hr/agent/query_agents.rs)
+- [src/handlers/hr/agent/search_agents.rs](src/handlers/hr/agent/search_agents.rs)
+- [src/handlers/hr/agent/update_agent_status.rs](src/handlers/hr/agent/update_agent_status.rs)
+- [src/handlers/hr/agent/install_tool_pack.rs](src/handlers/hr/agent/install_tool_pack.rs)
+- [src/handlers/hr/agent/uninstall_tool_pack.rs](src/handlers/hr/agent/uninstall_tool_pack.rs)
+- [src/handlers/hr/agent/install_skill_pack.rs](src/handlers/hr/agent/install_skill_pack.rs)
+- [src/handlers/hr/agent/uninstall_skill_pack.rs](src/handlers/hr/agent/uninstall_skill_pack.rs)
+- [src/handlers/hr/agent/list_installed_tool_packs.rs](src/handlers/hr/agent/list_installed_tool_packs.rs)
+- [src/handlers/hr/agent/list_installed_skill_packs.rs](src/handlers/hr/agent/list_installed_skill_packs.rs)
+- [common/src/api/agent.rs](common/src/api/agent.rs)
+- [src/models/agent.rs](src/models/agent.rs)
 </cite>
 
 ## 目录
@@ -76,12 +76,12 @@ H8 --> L2
 ```
 
 图表来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](file://src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
 
 ## 核心组件
 - 请求/响应 DTO：集中在 common 层，包含创建、更新、查询、搜索、分页、统计开关、工具包/技能包安装卸载等类型。
@@ -89,10 +89,10 @@ H8 --> L2
 - 处理器：每个 HTTP 端点一个函数，使用宏注册为 Handler Tool，并调用 hr::domain().agent_manage() 完成业务。
 
 章节来源
-- [common/src/api/agent.rs:1-394](file://common/src/api/agent.rs#L1-L394)
-- [src/models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [src/models/agent.rs:186-328](file://src/models/agent.rs#L186-L328)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
+- [common/src/api/agent.rs:1-394](common/src/api/agent.rs#L1-L394)
+- [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [src/models/agent.rs:186-328](src/models/agent.rs#L186-L328)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
 
 ## 架构总览
 所有处理器遵循 Adapter → Domain → DAL → DAO 的单向调用链。处理器只做参数解析、上下文增强、调用领域服务、组装响应；不直接访问数据库或跨层调用。
@@ -115,10 +115,10 @@ H-->>C : "GetAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/agent/get_agent.rs:24-137](file://src/handlers/hr/agent/get_agent.rs#L24-L137)
+- [src/handlers/hr/agent/get_agent.rs:24-137](src/handlers/hr/agent/get_agent.rs#L24-L137)
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
 
 ## 详细组件分析
 
@@ -143,11 +143,11 @@ H-->>C : "CreateAgentResponse"
 ```
 
 图表来源
-- [src/handlers/hr/agent/create_agent.rs:18-59](file://src/handlers/hr/agent/create_agent.rs#L18-L59)
+- [src/handlers/hr/agent/create_agent.rs:18-59](src/handlers/hr/agent/create_agent.rs#L18-L59)
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:1-60](file://src/handlers/hr/agent/create_agent.rs#L1-L60)
-- [common/src/api/agent.rs:10-38](file://common/src/api/agent.rs#L10-L38)
+- [src/handlers/hr/agent/create_agent.rs:1-60](src/handlers/hr/agent/create_agent.rs#L1-L60)
+- [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 ### 更新 Agent（PUT /api/v1/agents/{id}）
 - 功能：增量更新名称、描述、能力、灵魂、模型提供商等元信息，并记录修改人与时间。
@@ -156,8 +156,8 @@ H-->>C : "CreateAgentResponse"
 - 响应：UpdateAgentResponse（id、name、description、capabilities、soul、kind、model_provider_id、updated_at）。
 
 章节来源
-- [src/handlers/hr/agent/update_agent.rs:1-87](file://src/handlers/hr/agent/update_agent.rs#L1-L87)
-- [common/src/api/agent.rs:184-245](file://common/src/api/agent.rs#L184-L245)
+- [src/handlers/hr/agent/update_agent.rs:1-87](src/handlers/hr/agent/update_agent.rs#L1-L87)
+- [common/src/api/agent.rs:184-245](common/src/api/agent.rs#L184-L245)
 
 ### 删除 Agent（DELETE /api/v1/agents/{id}）
 - 功能：逻辑删除 Agent。
@@ -166,8 +166,8 @@ H-->>C : "CreateAgentResponse"
 - 响应：DeleteAgentResponse（success）。
 
 章节来源
-- [src/handlers/hr/agent/delete_agent.rs:1-35](file://src/handlers/hr/agent/delete_agent.rs#L1-L35)
-- [common/src/api/agent.rs:218-252](file://common/src/api/agent.rs#L218-L252)
+- [src/handlers/hr/agent/delete_agent.rs:1-35](src/handlers/hr/agent/delete_agent.rs#L1-L35)
+- [common/src/api/agent.rs:218-252](common/src/api/agent.rs#L218-L252)
 
 ### 获取 Agent 详情（GET /api/v1/agents/{id}）
 - 功能：返回 Agent 详细信息，支持按需加载统计与模型调用统计，并附带外部执行器配置（CLI/Remote）、运行时状态、当前消息 ID、已绑定工具 ID 列表。
@@ -193,11 +193,11 @@ Resp --> End(["结束"])
 ```
 
 图表来源
-- [src/handlers/hr/agent/get_agent.rs:24-137](file://src/handlers/hr/agent/get_agent.rs#L24-L137)
+- [src/handlers/hr/agent/get_agent.rs:24-137](src/handlers/hr/agent/get_agent.rs#L24-L137)
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [common/src/api/agent.rs:80-182](file://common/src/api/agent.rs#L80-L182)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [common/src/api/agent.rs:80-182](common/src/api/agent.rs#L80-L182)
 
 ### 列出 Agent（GET /api/v1/hr/agents）
 - 功能：分页列出 Agent，默认排除 Deleted，按 created_at 降序。
@@ -206,8 +206,8 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/list_agents.rs:1-62](file://src/handlers/hr/agent/list_agents.rs#L1-L62)
-- [common/src/api/agent.rs:254-268](file://common/src/api/agent.rs#L254-L268)
+- [src/handlers/hr/agent/list_agents.rs:1-62](src/handlers/hr/agent/list_agents.rs#L1-L62)
+- [common/src/api/agent.rs:254-268](common/src/api/agent.rs#L254-L268)
 
 ### 通用查询 Agent（POST /api/v1/hr/agents/query）
 - 功能：完整条件过滤查询（ids、keyword、status、roles、model_provider_id、runtime_state、分页）。
@@ -215,8 +215,8 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/query_agents.rs:1-69](file://src/handlers/hr/agent/query_agents.rs#L1-L69)
-- [common/src/api/agent.rs:270-293](file://common/src/api/agent.rs#L270-L293)
+- [src/handlers/hr/agent/query_agents.rs:1-69](src/handlers/hr/agent/query_agents.rs#L1-L69)
+- [common/src/api/agent.rs:270-293](common/src/api/agent.rs#L270-L293)
 
 ### 搜索 Agent（POST /api/v1/hr/agents/search）
 - 功能：FTS5 + 向量语义混合搜索，同时支持完整过滤条件与分页。
@@ -224,8 +224,8 @@ Resp --> End(["结束"])
 - 响应：PagedResult<AgentListItem>。
 
 章节来源
-- [src/handlers/hr/agent/search_agents.rs:1-68](file://src/handlers/hr/agent/search_agents.rs#L1-L68)
-- [common/src/api/agent.rs:295-316](file://common/src/api/agent.rs#L295-L316)
+- [src/handlers/hr/agent/search_agents.rs:1-68](src/handlers/hr/agent/search_agents.rs#L1-L68)
+- [common/src/api/agent.rs:295-316](common/src/api/agent.rs#L295-L316)
 
 ### 更新 Agent 状态（PUT /api/v1/agents/{id}/status）
 - 功能：切换 Agent 生命周期状态（如启用/禁用），并返回最新详情。
@@ -233,9 +233,9 @@ Resp --> End(["结束"])
 - 响应：UpdateAgentStatusResponse（同 GetAgentResponse 结构）。
 
 章节来源
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](file://src/handlers/hr/agent/update_agent_status.rs#L1-L129)
-- [common/src/api/agent.rs:205-216](file://common/src/api/agent.rs#L205-L216)
-- [common/src/api/agent.rs:318-319](file://common/src/api/agent.rs#L318-L319)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [common/src/api/agent.rs:205-216](common/src/api/agent.rs#L205-L216)
+- [common/src/api/agent.rs:318-319](common/src/api/agent.rs#L318-L319)
 
 ### 工具包安装/卸载/查询
 - 安装工具包（POST /api/v1/agents/{agent_id}/tool-packs/{tag}）
@@ -249,10 +249,10 @@ Resp --> End(["结束"])
   - 响应：ListInstalledToolPacksResponse（agent_id、installed_tags）。
 
 章节来源
-- [src/handlers/hr/agent/install_tool_pack.rs:1-41](file://src/handlers/hr/agent/install_tool_pack.rs#L1-L41)
-- [src/handlers/hr/agent/uninstall_tool_pack.rs:1-41](file://src/handlers/hr/agent/uninstall_tool_pack.rs#L1-L41)
-- [src/handlers/hr/agent/list_installed_tool_packs.rs:1-32](file://src/handlers/hr/agent/list_installed_tool_packs.rs#L1-L32)
-- [common/src/api/agent.rs:321-378](file://common/src/api/agent.rs#L321-L378)
+- [src/handlers/hr/agent/install_tool_pack.rs:1-41](src/handlers/hr/agent/install_tool_pack.rs#L1-L41)
+- [src/handlers/hr/agent/uninstall_tool_pack.rs:1-41](src/handlers/hr/agent/uninstall_tool_pack.rs#L1-L41)
+- [src/handlers/hr/agent/list_installed_tool_packs.rs:1-32](src/handlers/hr/agent/list_installed_tool_packs.rs#L1-L32)
+- [common/src/api/agent.rs:321-378](common/src/api/agent.rs#L321-L378)
 
 ### 技能包安装/卸载/查询
 - 安装技能包（POST /api/v1/agents/{agent_id}/skill-packs/{tag}）
@@ -266,9 +266,9 @@ Resp --> End(["结束"])
   - 响应：ListSkillPacksResponse。
 
 章节来源
-- [src/handlers/hr/agent/install_skill_pack.rs:1-34](file://src/handlers/hr/agent/install_skill_pack.rs#L1-L34)
-- [src/handlers/hr/agent/uninstall_skill_pack.rs:1-35](file://src/handlers/hr/agent/uninstall_skill_pack.rs#L1-L35)
-- [src/handlers/hr/agent/list_installed_skill_packs.rs:1-29](file://src/handlers/hr/agent/list_installed_skill_packs.rs#L1-L29)
+- [src/handlers/hr/agent/install_skill_pack.rs:1-34](src/handlers/hr/agent/install_skill_pack.rs#L1-L34)
+- [src/handlers/hr/agent/uninstall_skill_pack.rs:1-35](src/handlers/hr/agent/uninstall_skill_pack.rs#L1-L35)
+- [src/handlers/hr/agent/list_installed_skill_packs.rs:1-29](src/handlers/hr/agent/list_installed_skill_packs.rs#L1-L29)
 
 ### 运行时配置与状态管理
 - 运行时配置（AgentRuntimeConfig）
@@ -279,10 +279,10 @@ Resp --> End(["结束"])
   - 状态流转合法性由 Domain 层校验。
 
 章节来源
-- [src/models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [src/models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
-- [src/handlers/hr/agent/get_agent.rs:93-104](file://src/handlers/hr/agent/get_agent.rs#L93-L104)
-- [src/handlers/hr/agent/list_agents.rs:39-43](file://src/handlers/hr/agent/list_agents.rs#L39-L43)
+- [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [src/models/agent.rs:330-553](src/models/agent.rs#L330-L553)
+- [src/handlers/hr/agent/get_agent.rs:93-104](src/handlers/hr/agent/get_agent.rs#L93-L104)
+- [src/handlers/hr/agent/list_agents.rs:39-43](src/handlers/hr/agent/list_agents.rs#L39-L43)
 
 ## 依赖关系分析
 - 处理器仅依赖 hr::domain().agent_manage() 与必要的 finance_domain().tool_provider_manage()（用于工具绑定列表）。
@@ -306,12 +306,12 @@ M["uninstall_skill_pack.rs"] --> B
 ```
 
 图表来源
-- [src/handlers/hr/agent/get_agent.rs:99-104](file://src/handlers/hr/agent/get_agent.rs#L99-L104)
-- [src/handlers/hr/agent/update_agent_status.rs:91-95](file://src/handlers/hr/agent/update_agent_status.rs#L91-L95)
+- [src/handlers/hr/agent/get_agent.rs:99-104](src/handlers/hr/agent/get_agent.rs#L99-L104)
+- [src/handlers/hr/agent/update_agent_status.rs:91-95](src/handlers/hr/agent/update_agent_status.rs#L91-L95)
 
 章节来源
-- [src/handlers/hr/agent/get_agent.rs:1-138](file://src/handlers/hr/agent/get_agent.rs#L1-L138)
-- [src/handlers/hr/agent/update_agent_status.rs:1-129](file://src/handlers/hr/agent/update_agent_status.rs#L1-L129)
+- [src/handlers/hr/agent/get_agent.rs:1-138](src/handlers/hr/agent/get_agent.rs#L1-L138)
+- [src/handlers/hr/agent/update_agent_status.rs:1-129](src/handlers/hr/agent/update_agent_status.rs#L1-L129)
 
 ## 性能考量
 - 列表与查询默认排除 Deleted，减少无效数据扫描。
@@ -332,10 +332,10 @@ M["uninstall_skill_pack.rs"] --> B
   - 对工具包/技能包操作，确认 tag 是否存在且权限正确。
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:22-25](file://src/handlers/hr/agent/create_agent.rs#L22-L25)
-- [src/handlers/hr/agent/update_agent.rs:31-35](file://src/handlers/hr/agent/update_agent.rs#L31-L35)
-- [src/handlers/hr/agent/delete_agent.rs:23-27](file://src/handlers/hr/agent/delete_agent.rs#L23-L27)
-- [src/handlers/hr/agent/get_agent.rs:28-38](file://src/handlers/hr/agent/get_agent.rs#L28-L38)
+- [src/handlers/hr/agent/create_agent.rs:22-25](src/handlers/hr/agent/create_agent.rs#L22-L25)
+- [src/handlers/hr/agent/update_agent.rs:31-35](src/handlers/hr/agent/update_agent.rs#L31-L35)
+- [src/handlers/hr/agent/delete_agent.rs:23-27](src/handlers/hr/agent/delete_agent.rs#L23-L27)
+- [src/handlers/hr/agent/get_agent.rs:28-38](src/handlers/hr/agent/get_agent.rs#L28-L38)
 
 ## 结论
 Agent 处理器以清晰的职责边界与严格的分层调用实现 Agent 全生命周期管理。通过 DTO 与领域模型的解耦、运行时配置与状态的可观测性、以及工具包/技能包的 tag 化管理，既保证了扩展性，也提升了运维效率。建议在新增处理器时严格遵循现有模式：仅做参数解析与上下文增强，业务逻辑下沉至 Domain/DAL/DAO。
@@ -361,8 +361,8 @@ Agent 处理器以清晰的职责边界与严格的分层调用实现 Agent 全�
 - GET /api/v1/agents/{agent_id}/skill-packs：列出已安装技能包
 
 章节来源
-- [src/handlers/hr/agent/mod.rs:1-55](file://src/handlers/hr/agent/mod.rs#L1-L55)
-- [common/src/api/agent.rs:10-394](file://common/src/api/agent.rs#L10-L394)
+- [src/handlers/hr/agent/mod.rs:1-55](src/handlers/hr/agent/mod.rs#L1-L55)
+- [common/src/api/agent.rs:10-394](common/src/api/agent.rs#L10-L394)
 
 ### 关键请求/响应字段说明
 - CreateAgentRequest：name、roles、description、capabilities、soul、model_provider_id
@@ -378,7 +378,7 @@ Agent 处理器以清晰的职责边界与严格的分层调用实现 Agent 全�
 - ListInstalledSkillPacksRequest：agent_id（路径）
 
 章节来源
-- [common/src/api/agent.rs:10-394](file://common/src/api/agent.rs#L10-L394)
+- [common/src/api/agent.rs:10-394](common/src/api/agent.rs#L10-L394)
 
 ### 错误码与处理约定
 - InvalidRequest：当请求缺少必要上下文（如用户 ID）时返回。
@@ -386,9 +386,9 @@ Agent 处理器以清晰的职责边界与严格的分层调用实现 Agent 全�
 - 其他错误：由 Domain/DAL/DAO 抛出，统一经错误体系转换为 HTTP 响应。
 
 章节来源
-- [src/handlers/hr/agent/create_agent.rs:22-25](file://src/handlers/hr/agent/create_agent.rs#L22-L25)
-- [src/handlers/hr/agent/update_agent.rs:31-35](file://src/handlers/hr/agent/update_agent.rs#L31-L35)
-- [src/handlers/hr/agent/delete_agent.rs:23-27](file://src/handlers/hr/agent/delete_agent.rs#L23-L27)
+- [src/handlers/hr/agent/create_agent.rs:22-25](src/handlers/hr/agent/create_agent.rs#L22-L25)
+- [src/handlers/hr/agent/update_agent.rs:31-35](src/handlers/hr/agent/update_agent.rs#L31-L35)
+- [src/handlers/hr/agent/delete_agent.rs:23-27](src/handlers/hr/agent/delete_agent.rs#L23-L27)
 
 ### 开发规范与最佳实践
 - 严格分层：处理器只负责参数解析与调用领域服务，禁止跨层调用。
@@ -400,9 +400,9 @@ Agent 处理器以清晰的职责边界与严格的分层调用实现 Agent 全�
 - 可观测性：详情接口支持按需加载统计，列表/详情均暴露运行时状态以便前端展示。
 
 章节来源
-- [src/models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [src/handlers/hr/agent/get_agent.rs:24-40](file://src/handlers/hr/agent/get_agent.rs#L24-L40)
-- [src/handlers/hr/agent/install_tool_pack.rs:9-13](file://src/handlers/hr/agent/install_tool_pack.rs#L9-L13)
-- [src/handlers/hr/agent/uninstall_tool_pack.rs:9-13](file://src/handlers/hr/agent/uninstall_tool_pack.rs#L9-L13)
-- [src/handlers/hr/agent/install_skill_pack.rs:9-14](file://src/handlers/hr/agent/install_skill_pack.rs#L9-L14)
-- [src/handlers/hr/agent/uninstall_skill_pack.rs:9-14](file://src/handlers/hr/agent/uninstall_skill_pack.rs#L9-L14)
+- [src/models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [src/handlers/hr/agent/get_agent.rs:24-40](src/handlers/hr/agent/get_agent.rs#L24-L40)
+- [src/handlers/hr/agent/install_tool_pack.rs:9-13](src/handlers/hr/agent/install_tool_pack.rs#L9-L13)
+- [src/handlers/hr/agent/uninstall_tool_pack.rs:9-13](src/handlers/hr/agent/uninstall_tool_pack.rs#L9-L13)
+- [src/handlers/hr/agent/install_skill_pack.rs:9-14](src/handlers/hr/agent/install_skill_pack.rs#L9-L14)
+- [src/handlers/hr/agent/uninstall_skill_pack.rs:9-14](src/handlers/hr/agent/uninstall_skill_pack.rs#L9-L14)

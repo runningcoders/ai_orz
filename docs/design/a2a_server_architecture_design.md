@@ -11,6 +11,15 @@
 > - [a2a_server_design.md](../archive/a2a_server_design.md) — 归档：早期 RESTful Callback 方案（已废弃，保留对比）
 > - [consumer_architecture.md](./consumer_architecture.md) — 事件消费架构（A2A 异步唤醒复用）
 > - [AGENTS.md](../../AGENTS.md) §3.2：Handler 层 mapper 转换约定
+> - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+> - 【③ Wiki 长文】[API 参考.md](docs/wiki/zh/content/API 参考/API 参考.md) — §A2A 协议接口完整时序图与路由表
+> - 【③ Wiki 长文】[Agent 发现机制.md](docs/wiki/zh/content/API 参考/A2A 协议/Agent 发现机制.md) — /.well-known/agent.json 公开端点说明
+> - 【③ Wiki 长文】[Agent卡片发现.md](docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md) — Handler 层 agent_card 端点
+> - 【③ Wiki 长文】[AI Agent 管理.md](docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md) — 外部 Agent（Remote/Cli）管理与配置
+> - 【④ RAG 卡 3 张】
+>   - [A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息](docs/wiki/knowledge/zh/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息.md) — common DTO 单一事实源
+>   - [A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建](docs/wiki/knowledge/zh/A2A%20Server%20Handler%20层：JSON-RPC%20方法路由%20+%20公开无鉴权路由%20+%20notification_url%20回调渠道自动创建/A2A%20Server%20Handler%20层：JSON-RPC%20方法路由%20+%20公开无鉴权路由%20+%20notification_url%20回调渠道自动创建.md) — 公开路由 + 7 Handler 分发
+>   - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A%20Client%20+%20外部%20Agent%20Runtime：A2aRuntimeDao%20HTTP%20调用%20+%20ExternalCortexDao%20桥接%20+%20A2aCallbackDao%20Push%20推送/A2A%20Client%20+%20外部%20Agent%20Runtime：A2aRuntimeDao%20HTTP%20调用%20+%20ExternalCortexDao%20桥接%20+%20A2aCallbackDao%20Push%20推送.md) — 出站 A2A Client + 外部 Agent 桥接统一 think()
 
 ---
 

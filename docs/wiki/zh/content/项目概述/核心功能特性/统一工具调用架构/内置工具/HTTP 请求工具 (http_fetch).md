@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [src/pkg/tool_registry/http_fetch.rs](file://src/pkg/tool_registry/http_fetch.rs)
-- [src/pkg/tool_registry/http.rs](file://src/pkg/tool_registry/http.rs)
-- [src/pkg/tool_registry/mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [src/pkg/tool_registry/tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [src/models/tool.rs](file://src/models/tool.rs)
-- [src/pkg/tool_registry/http_tests.rs](file://src/pkg/tool_registry/http_tests.rs)
+- [src/pkg/tool_registry/http_fetch.rs](src/pkg/tool_registry/http_fetch.rs)
+- [src/pkg/tool_registry/http.rs](src/pkg/tool_registry/http.rs)
+- [src/pkg/tool_registry/mod.rs](src/pkg/tool_registry/mod.rs)
+- [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [src/models/tool.rs](src/models/tool.rs)
+- [src/pkg/tool_registry/http_tests.rs](src/pkg/tool_registry/http_tests.rs)
 </cite>
 
 ## 目录
@@ -44,16 +44,16 @@ E --> F["reqwest 客户端"]
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [src/pkg/tool_registry/http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [src/pkg/tool_registry/http.rs:23-114](file://src/pkg/tool_registry/http.rs#L23-L114)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/http.rs:23-114](src/pkg/tool_registry/http.rs#L23-L114)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 
 ## 核心组件
 - HttpFetchCoreTool（内置）
@@ -70,12 +70,12 @@ E --> F["reqwest 客户端"]
   - 提供常量（默认/硬上限）、SSRF 检查、域名匹配、URL 模板边界校验、响应体读取限制、敏感头脱敏等。
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
-- [src/pkg/tool_registry/http.rs:41-114](file://src/pkg/tool_registry/http.rs#L41-L114)
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [src/pkg/tool_registry/tool_security.rs:8-15](file://src/pkg/tool_registry/tool_security.rs#L8-L15)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:172-231](file://src/pkg/tool_registry/tool_security.rs#L172-L231)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/http.rs:41-114](src/pkg/tool_registry/http.rs#L41-L114)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/tool_security.rs:8-15](src/pkg/tool_registry/tool_security.rs#L8-L15)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
 
 ## 架构总览
 HTTP 工具的执行链路如下：
@@ -104,11 +104,11 @@ Tool-->>Caller : {status, headers, content_length, body}
 ```
 
 图表来源
-- [src/pkg/tool_registry/mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:184-231](file://src/pkg/tool_registry/tool_security.rs#L184-L231)
+- [src/pkg/tool_registry/mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:184-231](src/pkg/tool_registry/tool_security.rs#L184-L231)
 
 ## 详细组件分析
 
@@ -147,12 +147,12 @@ Return --> End
 ```
 
 图表来源
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:184-231](file://src/pkg/tool_registry/tool_security.rs#L184-L231)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:184-231](src/pkg/tool_registry/tool_security.rs#L184-L231)
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:19-143](file://src/pkg/tool_registry/http_fetch.rs#L19-L143)
+- [src/pkg/tool_registry/http_fetch.rs:19-143](src/pkg/tool_registry/http_fetch.rs#L19-L143)
 
 ### 协议级 HTTP 工具（HttpCoreTool）
 - 功能
@@ -210,13 +210,13 @@ HttpCoreTool --> ToolPo : "持有"
 ```
 
 图表来源
-- [src/pkg/tool_registry/http.rs:41-96](file://src/pkg/tool_registry/http.rs#L41-L96)
-- [src/models/tool.rs:57-88](file://src/models/tool.rs#L57-L88)
+- [src/pkg/tool_registry/http.rs:41-96](src/pkg/tool_registry/http.rs#L41-L96)
+- [src/models/tool.rs:57-88](src/models/tool.rs#L57-L88)
 
 章节来源
-- [src/pkg/tool_registry/http.rs:41-228](file://src/pkg/tool_registry/http.rs#L41-L228)
-- [src/pkg/tool_registry/http.rs:230-392](file://src/pkg/tool_registry/http.rs#L230-L392)
-- [src/pkg/tool_registry/http.rs:394-594](file://src/pkg/tool_registry/http.rs#L394-L594)
+- [src/pkg/tool_registry/http.rs:41-228](src/pkg/tool_registry/http.rs#L41-L228)
+- [src/pkg/tool_registry/http.rs:230-392](src/pkg/tool_registry/http.rs#L230-L392)
+- [src/pkg/tool_registry/http.rs:394-594](src/pkg/tool_registry/http.rs#L394-L594)
 
 ### 工具注册表（ToolRegistry）
 - 职责
@@ -228,7 +228,7 @@ HttpCoreTool --> ToolPo : "持有"
   - HTTP 工具通过 HttpToolFactory 创建，默认使用 DefaultHttpToolFactory。
 
 章节来源
-- [src/pkg/tool_registry/mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
+- [src/pkg/tool_registry/mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
 
 ## 依赖关系分析
 - 内置工具依赖安全库进行 SSRF 防护、响应体限制与敏感头脱敏。
@@ -246,16 +246,16 @@ C --> B
 ```
 
 图表来源
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 
 章节来源
-- [src/pkg/tool_registry/http_fetch.rs:60-143](file://src/pkg/tool_registry/http_fetch.rs#L60-L143)
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/http_fetch.rs:60-143](src/pkg/tool_registry/http_fetch.rs#L60-L143)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
 
 ## 性能与并发
 - 连接池
@@ -293,12 +293,12 @@ C --> B
   - 默认接受 200/201/202/204，可自定义；不在白名单则视为异常。
 
 章节来源
-- [src/pkg/tool_registry/tool_security.rs:17-90](file://src/pkg/tool_registry/tool_security.rs#L17-L90)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:172-231](file://src/pkg/tool_registry/tool_security.rs#L172-L231)
-- [src/pkg/tool_registry/http.rs:222-228](file://src/pkg/tool_registry/http.rs#L222-L228)
-- [src/pkg/tool_registry/http.rs:230-392](file://src/pkg/tool_registry/http.rs#L230-L392)
-- [src/pkg/tool_registry/http.rs:394-594](file://src/pkg/tool_registry/http.rs#L394-L594)
+- [src/pkg/tool_registry/tool_security.rs:17-90](src/pkg/tool_registry/tool_security.rs#L17-L90)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
+- [src/pkg/tool_registry/http.rs:222-228](src/pkg/tool_registry/http.rs#L222-L228)
+- [src/pkg/tool_registry/http.rs:230-392](src/pkg/tool_registry/http.rs#L230-L392)
+- [src/pkg/tool_registry/http.rs:394-594](src/pkg/tool_registry/http.rs#L394-L594)
 
 ## 使用示例
 以下为常见场景的配置与调用思路（以配置与参数为主，不展示代码片段）：
@@ -329,10 +329,10 @@ C --> B
   - 配置 timeout_ms 控制单次请求超时；重试应在上层编排层实现，避免工具内部隐式重试。
 
 章节来源
-- [src/pkg/tool_registry/http.rs:41-220](file://src/pkg/tool_registry/http.rs#L41-L220)
-- [src/pkg/tool_registry/http.rs:230-392](file://src/pkg/tool_registry/http.rs#L230-L392)
-- [src/pkg/tool_registry/http.rs:394-594](file://src/pkg/tool_registry/http.rs#L394-L594)
-- [src/pkg/tool_registry/tool_security.rs:172-231](file://src/pkg/tool_registry/tool_security.rs#L172-L231)
+- [src/pkg/tool_registry/http.rs:41-220](src/pkg/tool_registry/http.rs#L41-L220)
+- [src/pkg/tool_registry/http.rs:230-392](src/pkg/tool_registry/http.rs#L230-L392)
+- [src/pkg/tool_registry/http.rs:394-594](src/pkg/tool_registry/http.rs#L394-L594)
+- [src/pkg/tool_registry/tool_security.rs:172-231](src/pkg/tool_registry/tool_security.rs#L172-L231)
 
 ## 故障排除指南
 - 网络错误
@@ -358,11 +358,11 @@ C --> B
   - 排查：对照 parameters_schema 检查类型（string/integer/number/boolean/object/array/null）；移除未知属性（当 additionalProperties=false）。
 
 章节来源
-- [src/pkg/tool_registry/http.rs:126-220](file://src/pkg/tool_registry/http.rs#L126-L220)
-- [src/pkg/tool_registry/http.rs:230-392](file://src/pkg/tool_registry/http.rs#L230-L392)
-- [src/pkg/tool_registry/http.rs:394-594](file://src/pkg/tool_registry/http.rs#L394-L594)
-- [src/pkg/tool_registry/tool_security.rs:92-170](file://src/pkg/tool_registry/tool_security.rs#L92-L170)
-- [src/pkg/tool_registry/tool_security.rs:184-231](file://src/pkg/tool_registry/tool_security.rs#L184-L231)
+- [src/pkg/tool_registry/http.rs:126-220](src/pkg/tool_registry/http.rs#L126-L220)
+- [src/pkg/tool_registry/http.rs:230-392](src/pkg/tool_registry/http.rs#L230-L392)
+- [src/pkg/tool_registry/http.rs:394-594](src/pkg/tool_registry/http.rs#L394-L594)
+- [src/pkg/tool_registry/tool_security.rs:92-170](src/pkg/tool_registry/tool_security.rs#L92-L170)
+- [src/pkg/tool_registry/tool_security.rs:184-231](src/pkg/tool_registry/tool_security.rs#L184-L231)
 
 ## 结论
 http_fetch 工具提供了安全、可控的 HTTP 请求能力，内置工具适合快速抓取公开 HTTPS 资源，协议工具适合企业级集成与精细化配置。通过严格的 SSRF 防护、模板校验、响应限制与敏感信息脱敏，能够在保障安全的前提下满足多样化的外部服务调用需求。生产环境中建议结合连接池、并发控制与缓存策略进一步优化性能与稳定性。

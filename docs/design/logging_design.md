@@ -85,7 +85,7 @@ log_info!("config loaded from {}", path);
 // 带结构化字段
 log_info!(count = 42, status = "ok", "batch processed");
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ### 2. 带上下文日志（请求级别）
 
@@ -95,7 +95,7 @@ log_info!(count = 42, status = "ok", "batch processed");
 ```rust
 log_{level}!(ctx.clone(), "operation_name", <tracing fields>);
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)（log_warn! / log_error! / log_debug! 格式一致，见同文件第 30/47/64 行）
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)（log_warn! / log_error! / log_debug! 格式一致，见同文件第 30/47/64 行）
 
 **参数说明**：
 - `ctx`：`RequestContext` 直接通过 clone() 传递值
@@ -113,7 +113,7 @@ log_warn!(ctx.clone(), "validate_input", "invalid email format: {}", email);
 // 错误日志
 log_error!(ctx.clone(), "update_project", "db error: {:?}", err);
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26) / [log_warn!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L30-L43) / [log_error!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L47-L60)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26) / [log_warn!](src/lib.rs#L30-L43) / [log_error!](src/lib.rs#L47-L60)
 
 ### 3. 上下文包含字段
 
@@ -160,7 +160,7 @@ pub struct RequestContext {
     // ...
 }
 ```
-> Derive 宏定义见：[ai-orz-macros/src/lib.rs::derive_log_fields](file:///Users/aman/Technology/rust/ai_orz/ai-orz-macros/src/lib.rs#L701-L704)；字段扫描逻辑见同 crate [log_fields.rs](file:///Users/aman/Technology/rust/ai_orz/ai-orz-macros/src/log_fields.rs)
+> Derive 宏定义见：[ai-orz-macros/src/lib.rs::derive_log_fields](ai-orz-macros/src/lib.rs#L701-L704)；字段扫描逻辑见同 crate [log_fields.rs](ai-orz-macros/src/log_fields.rs)
 
 **类型处理规则**：
 - `String` → 直接输出字符串值
@@ -194,7 +194,7 @@ macro_rules! log_info {
     }};
 }
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)（真实代码位置，包含完整 4 个主宏 + 4 个 sys_* 兼容别名）
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)（真实代码位置，包含完整 4 个主宏 + 4 个 sys_* 兼容别名）
 
 ### 关键技术点
 
@@ -235,7 +235,7 @@ logging::info("some message");  // ❌ 已删除
 ```rust
 log_info!("some message");      // ✅
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ### 从旧宏调用迁移
 
@@ -244,14 +244,14 @@ log_info!("some message");      // ✅
 sys_info!("system message");    // 仍可用（兼容别名）
 sys_info!(ctx.clone(), "op", "msg");    // ❌ 旧形式已不支持
 ```
-> 兼容别名宏定义见：[src/lib.rs::sys_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L80-L95)（sys_warn!/sys_error!/sys_debug! 同区段）
+> 兼容别名宏定义见：[src/lib.rs::sys_info!](src/lib.rs#L80-L95)（sys_warn!/sys_error!/sys_debug! 同区段）
 
 **现在**：
 ```rust
 log_info!("system message");                    // ✅ 无上下文
 log_info!(ctx.clone(), "operation", "message {}", x);  // ✅ 带上下文（必须传 &ctx）
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ### 所有权问题
 
@@ -262,13 +262,13 @@ log_info!(ctx.clone(), "operation", "message {}", x);  // ✅ 带上下文（必
 log_info!(&ctx, "operation", "message");
 log_info!(ctx.clone(), "operation", "message");
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ❌ **不需要 clone**（虽然不会报错，但多余）：
 ```rust
 log_info!(ctx.clone(), "operation", "message");  // clone 多余，&ctx 即可
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ---
 
@@ -286,7 +286,7 @@ log_debug!("config: {:?}", config);
 // 漂亮打印
 log_debug!("config: {:#?}", config);
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26) / [log_debug!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L64-L77)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26) / [log_debug!](src/lib.rs#L64-L77)
 
 ### 结构化字段
 
@@ -298,7 +298,7 @@ log_info!(user_id = 123, action = "login", "user logged in");
 let count = 42;
 log_info!(count, "processed");  // 等价于 count = count
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)（tracing 结构化字段通过 `$($fields:tt)*` 透传）
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)（tracing 结构化字段通过 `$($fields:tt)*` 透传）
 
 ### 特殊前缀
 
@@ -309,7 +309,7 @@ log_info!(%user, "user info");
 // ? 前缀 = Debug
 log_debug!(?config, "config loaded");
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26) / [log_debug!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L64-L77)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26) / [log_debug!](src/lib.rs#L64-L77)
 
 ---
 
@@ -329,7 +329,7 @@ log_debug!(?config, "config loaded");
 // 输出: json {"key": "value"}
 log_info!("json {{\"key\": \"value\"}}");
 ```
-> 宏定义见：[src/lib.rs::log_info!](file:///Users/aman/Technology/rust/ai_orz/src/lib.rs#L13-L26)
+> 宏定义见：[src/lib.rs::log_info!](src/lib.rs#L13-L26)
 
 ---
 

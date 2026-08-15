@@ -2,17 +2,17 @@
 
 <cite>
 **本文引用的文件**
-- [common/enums/agent.rs](file://common/src/enums/agent.rs)
-- [models/agent.rs](file://src/models/agent.rs)
-- [pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [service/domain/runtime/mod.rs](file://src/service/domain/runtime/mod.rs)
-- [service/domain/runtime/awakening.rs](file://src/service/domain/runtime/awakening.rs)
-- [consumer/message.rs](file://src/consumer/message.rs)
-- [router.rs](file://src/router.rs)
-- [handlers/finance/message/send_message_to_agent.rs](file://src/handlers/finance/message/send_message_to_agent.rs)
-- [service/domain/hr/mod.rs](file://src/service/domain/hr/mod.rs)
-- [service/dao/skill/sqlite.rs](file://src/service/dao/skill/sqlite.rs)
-- [frontend/components/workspace_graph.rs](file://frontend/src/components/workspace_graph.rs)
+- [common/enums/agent.rs](common/src/enums/agent.rs)
+- [models/agent.rs](src/models/agent.rs)
+- [pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [service/domain/runtime/mod.rs](src/service/domain/runtime/mod.rs)
+- [service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
+- [consumer/message.rs](src/consumer/message.rs)
+- [router.rs](src/router.rs)
+- [handlers/finance/message/send_message_to_agent.rs](src/handlers/finance/message/send_message_to_agent.rs)
+- [service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
+- [service/dao/skill/sqlite.rs](src/service/dao/skill/sqlite.rs)
+- [frontend/components/workspace_graph.rs](frontend/src/components/workspace_graph.rs)
 </cite>
 
 ## 目录
@@ -70,22 +70,22 @@ HR --> DAL
 ```
 
 图表来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
-- [handlers/finance/message/send_message_to_agent.rs:37-57](file://src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
+- [router.rs:329-364](src/router.rs#L329-L364)
+- [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 
 章节来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
-- [handlers/finance/message/send_message_to_agent.rs:37-57](file://src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
+- [router.rs:329-364](src/router.rs#L329-L364)
+- [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 
 ## 核心组件
 - Agent 状态机
@@ -105,13 +105,13 @@ HR --> DAL
   - 按 tag 批量安装/卸载技能到 Agent 目录；支持重新安装覆盖；列出已安装 tags。
 
 章节来源
-- [common/enums/agent.rs:8-111](file://common/src/enums/agent.rs#L8-L111)
-- [models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
+- [common/enums/agent.rs:8-111](common/src/enums/agent.rs#L8-L111)
+- [models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
 
 ## 架构总览
 下图展示从 HTTP 请求到 Agent 唤醒、执行、沉淀的完整链路，以及状态管理与 AOP 事件的交互。
@@ -142,11 +142,11 @@ end
 ```
 
 图表来源
-- [handlers/finance/message/send_message_to_agent.rs:37-57](file://src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
-- [pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
+- [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 详细组件分析
 
@@ -175,12 +175,12 @@ stateDiagram-v2
 ```
 
 图表来源
-- [common/enums/agent.rs:64-111](file://common/src/enums/agent.rs#L64-L111)
-- [pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
+- [common/enums/agent.rs:64-111](common/src/enums/agent.rs#L64-L111)
+- [pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
 
 章节来源
-- [common/enums/agent.rs:8-111](file://common/src/enums/agent.rs#L8-L111)
-- [pkg/agent_runtime_state.rs:51-107](file://src/pkg/agent_runtime_state.rs#L51-L107)
+- [common/enums/agent.rs:8-111](common/src/enums/agent.rs#L8-L111)
+- [pkg/agent_runtime_state.rs:51-107](src/pkg/agent_runtime_state.rs#L51-L107)
 
 ### Agent 创建与配置
 - 创建
@@ -193,8 +193,8 @@ stateDiagram-v2
   - Remote：A2A 远程执行器，配置 endpoint、agent_name、auth_token、超时。
 
 章节来源
-- [models/agent.rs:15-167](file://src/models/agent.rs#L15-L167)
-- [models/agent.rs:330-553](file://src/models/agent.rs#L330-L553)
+- [models/agent.rs:15-167](src/models/agent.rs#L15-L167)
+- [models/agent.rs:330-553](src/models/agent.rs#L330-L553)
 
 ### 自动入职流程（安装工具包和技能包）
 - 工具包安装/卸载
@@ -219,14 +219,14 @@ Skip --> End
 ```
 
 图表来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [router.rs:329-364](src/router.rs#L329-L364)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 章节来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [router.rs:329-364](src/router.rs#L329-L364)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ### 工具绑定方式
 - 路由
@@ -237,7 +237,7 @@ Skip --> End
   - 详情页支持搜索/选择工具并进行绑定/解绑操作。
 
 章节来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
+- [router.rs:329-364](src/router.rs#L329-L364)
 
 ### 唤醒循环的工作原理
 - 入口
@@ -280,15 +280,15 @@ end
 ```
 
 图表来源
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
-- [pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
+- [pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:108-173](file://src/service/domain/runtime/mod.rs#L108-L173)
-- [service/domain/runtime/awakening.rs:1-804](file://src/service/domain/runtime/awakening.rs#L1-L804)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:108-173](src/service/domain/runtime/mod.rs#L108-L173)
+- [service/domain/runtime/awakening.rs:1-804](src/service/domain/runtime/awakening.rs#L1-L804)
 
 ### Agent 间通信机制
 - 消息路由策略
@@ -300,9 +300,9 @@ end
   - 前端 WorkspaceGraph 通过 Task.assignee_type=Agent 建立 Project ↔ Agent 边，便于观察协作关系。
 
 章节来源
-- [handlers/finance/message/send_message_to_agent.rs:37-57](file://src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
-- [frontend/components/workspace_graph.rs:114-151](file://frontend/src/components/workspace_graph.rs#L114-L151)
-- [frontend/components/workspace_graph.rs:257-331](file://frontend/src/components/workspace_graph.rs#L257-L331)
+- [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+- [frontend/components/workspace_graph.rs:114-151](frontend/src/components/workspace_graph.rs#L114-L151)
+- [frontend/components/workspace_graph.rs:257-331](frontend/src/components/workspace_graph.rs#L257-L331)
 
 ### 在项目与任务中协调多 Agent 协作
 - 关系建模
@@ -315,9 +315,9 @@ end
   - 通过消息将任务分派给不同 Agent；各 Agent 独立唤醒、执行、沉淀；前端以图形式展示协作拓扑。
 
 章节来源
-- [frontend/components/workspace_graph.rs:114-151](file://frontend/src/components/workspace_graph.rs#L114-L151)
-- [frontend/components/workspace_graph.rs:257-331](file://frontend/src/components/workspace_graph.rs#L257-L331)
-- [frontend/components/workspace_graph.rs:398-436](file://frontend/src/components/workspace_graph.rs#L398-L436)
+- [frontend/components/workspace_graph.rs:114-151](frontend/src/components/workspace_graph.rs#L114-L151)
+- [frontend/components/workspace_graph.rs:257-331](frontend/src/components/workspace_graph.rs#L257-L331)
+- [frontend/components/workspace_graph.rs:398-436](frontend/src/components/workspace_graph.rs#L398-L436)
 
 ### 监控与调试
 - 运行时状态事件
@@ -328,9 +328,9 @@ end
   - 通过 AwakeningResult.trace_ids 串联输入/输出 Trace；结合 MemoryTrace 可回溯完整思考链。
 
 章节来源
-- [pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [service/domain/runtime/mod.rs:175-228](file://src/service/domain/runtime/mod.rs#L175-L228)
-- [service/domain/runtime/awakening.rs:424-455](file://src/service/domain/runtime/awakening.rs#L424-L455)
+- [pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [service/domain/runtime/mod.rs:175-228](src/service/domain/runtime/mod.rs#L175-L228)
+- [service/domain/runtime/awakening.rs:424-455](src/service/domain/runtime/awakening.rs#L424-L455)
 
 ### 扩展自定义 Agent 类型
 - 新增 AgentKind
@@ -343,9 +343,9 @@ end
   - 在 wake_agent_brain 中为新类型构造合适的 Brain（可能不带 Cortex），并确保工具/技能加载路径兼容。
 
 章节来源
-- [service/domain/runtime/mod.rs:361-378](file://src/service/domain/runtime/mod.rs#L361-L378)
-- [models/agent.rs:71-105](file://src/models/agent.rs#L71-L105)
-- [models/agent.rs:467-553](file://src/models/agent.rs#L467-L553)
+- [service/domain/runtime/mod.rs:361-378](src/service/domain/runtime/mod.rs#L361-L378)
+- [models/agent.rs:71-105](src/models/agent.rs#L71-L105)
+- [models/agent.rs:467-553](src/models/agent.rs#L467-L553)
 
 ## 依赖关系分析
 - 分层依赖
@@ -369,16 +369,16 @@ F["消费者"] --> E
 ```
 
 图表来源
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:248-378](file://src/service/domain/runtime/mod.rs#L248-L378)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:248-378](src/service/domain/runtime/mod.rs#L248-L378)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 章节来源
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [service/domain/runtime/mod.rs:248-378](file://src/service/domain/runtime/mod.rs#L248-L378)
-- [service/domain/hr/mod.rs:249-291](file://src/service/domain/hr/mod.rs#L249-L291)
-- [service/dao/skill/sqlite.rs:261-295](file://src/service/dao/skill/sqlite.rs#L261-L295)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [service/domain/runtime/mod.rs:248-378](src/service/domain/runtime/mod.rs#L248-L378)
+- [service/domain/hr/mod.rs:249-291](src/service/domain/hr/mod.rs#L249-L291)
+- [service/dao/skill/sqlite.rs:261-295](src/service/dao/skill/sqlite.rs#L261-L295)
 
 ## 性能考量
 - 并发安全
@@ -405,9 +405,9 @@ F["消费者"] --> E
   - 使用 AwakeningResult.trace_ids 串联 Trace，回溯思考链。
 
 章节来源
-- [consumer/message.rs:122-162](file://src/consumer/message.rs#L122-L162)
-- [pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
-- [service/domain/runtime/mod.rs:175-228](file://src/service/domain/runtime/mod.rs#L175-L228)
+- [consumer/message.rs:122-162](src/consumer/message.rs#L122-L162)
+- [pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
+- [service/domain/runtime/mod.rs:175-228](src/service/domain/runtime/mod.rs#L175-L228)
 
 ## 结论
 本方案通过严格的分层架构与清晰的职责划分，实现了 Agent 的全生命周期管理：从创建、配置、自动入职，到唤醒循环、工具/技能绑定、沉淀与监控。借助运行时状态管理器与 AOP 事件，系统具备良好的可观测性与可扩展性。未来可通过新增 AgentKind 与 PromptBuilder 灵活扩展自定义 Agent 类型，满足多样化业务需求。
@@ -425,5 +425,5 @@ F["消费者"] --> E
   - 发送消息到 Agent：POST /messages（支持 to_agent_id 或 project_id）
 
 章节来源
-- [router.rs:329-364](file://src/router.rs#L329-L364)
-- [handlers/finance/message/send_message_to_agent.rs:37-57](file://src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+- [router.rs:329-364](src/router.rs#L329-L364)
+- [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)

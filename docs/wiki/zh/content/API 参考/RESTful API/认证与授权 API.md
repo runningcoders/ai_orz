@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [router.rs](file://src/router.rs)
-- [jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [require_role.rs](file://src/middleware/require_role.rs)
-- [request_context.rs](file://src/middleware/request_context.rs)
-- [jwt.rs](file://src/pkg/jwt.rs)
-- [auth.rs](file://common/src/api/auth.rs)
-- [login.rs](file://src/handlers/organization/auth/login.rs)
-- [logout.rs](file://src/handlers/organization/auth/logout.rs)
-- [user.rs](file://src/service/domain/organization/user.rs)
-- [http_header.rs](file://common/src/constants/http_header.rs)
-- [code.rs](file://common/src/error/code.rs)
-- [types.rs](file://common/src/error/types.rs)
-- [mod.rs](file://frontend/src/api/mod.rs)
+- [router.rs](src/router.rs)
+- [jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [require_role.rs](src/middleware/require_role.rs)
+- [request_context.rs](src/middleware/request_context.rs)
+- [jwt.rs](src/pkg/jwt.rs)
+- [auth.rs](common/src/api/auth.rs)
+- [login.rs](src/handlers/organization/auth/login.rs)
+- [logout.rs](src/handlers/organization/auth/logout.rs)
+- [user.rs](src/service/domain/organization/user.rs)
+- [http_header.rs](common/src/constants/http_header.rs)
+- [code.rs](common/src/error/code.rs)
+- [types.rs](common/src/error/types.rs)
+- [mod.rs](frontend/src/api/mod.rs)
 </cite>
 
 ## 目录
@@ -57,15 +57,15 @@ Handler --> JwtTool["JWT 工具<br/>encode/decode"]
 ```
 
 **图表来源**
-- [router.rs:61-136](file://src/router.rs#L61-L136)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [jwt.rs:70-106](file://src/pkg/jwt.rs#L70-L106)
+- [router.rs:61-136](src/router.rs#L61-L136)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [jwt.rs:70-106](src/pkg/jwt.rs#L70-L106)
 
 **章节来源**
-- [router.rs:61-136](file://src/router.rs#L61-L136)
+- [router.rs:61-136](src/router.rs#L61-L136)
 
 ## 核心组件
 - 登录接口：POST /api/v1/organization/auth/login
@@ -81,13 +81,13 @@ Handler --> JwtTool["JWT 工具<br/>encode/decode"]
 - 请求上下文：将用户信息（X-User-Id、X-Username、X-Organization-Id、X-User-Role、X-Caller-Type）注入 RequestContext，供后续处理器使用
 
 **章节来源**
-- [auth.rs:5-38](file://common/src/api/auth.rs#L5-L38)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [jwt.rs:11-106](file://src/pkg/jwt.rs#L11-L106)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
-- [request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [auth.rs:5-38](common/src/api/auth.rs#L5-L38)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [jwt.rs:11-106](src/pkg/jwt.rs#L11-L106)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
+- [request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ## 架构总览
 认证与授权采用“中间件 + 领域校验”的分层模式：
@@ -115,9 +115,9 @@ H-->>C : 200 OK + Set-Cookie + {user_id, username, organization_id, token}
 ```
 
 **图表来源**
-- [router.rs:61-94](file://src/router.rs#L61-L94)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [jwt.rs:70-106](file://src/pkg/jwt.rs#L70-L106)
+- [router.rs:61-94](src/router.rs#L61-L94)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [jwt.rs:70-106](src/pkg/jwt.rs#L70-L106)
 
 ## 详细组件分析
 
@@ -146,14 +146,14 @@ Resp --> End
 ```
 
 **图表来源**
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [user.rs:85-117](file://src/service/domain/organization/user.rs#L85-L117)
-- [jwt.rs:70-106](file://src/pkg/jwt.rs#L70-L106)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
+- [jwt.rs:70-106](src/pkg/jwt.rs#L70-L106)
 
 **章节来源**
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [user.rs:85-117](file://src/service/domain/organization/user.rs#L85-L117)
-- [jwt.rs:70-106](file://src/pkg/jwt.rs#L70-L106)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
+- [jwt.rs:70-106](src/pkg/jwt.rs#L70-L106)
 
 ### 登出流程
 - 入口：POST /api/v1/organization/auth/logout
@@ -171,11 +171,11 @@ L-->>C : 200 OK + Set-Cookie(过期=0) + {success : true}
 ```
 
 **图表来源**
-- [router.rs:61-94](file://src/router.rs#L61-L94)
-- [logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
+- [router.rs:61-94](src/router.rs#L61-L94)
+- [logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
 
 **章节来源**
-- [logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
+- [logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
 
 ### JWT 令牌机制
 - Claims 字段：user_id、username、organization_id、role、exp、iat
@@ -206,10 +206,10 @@ JwtConfig --> Claims : "创建/解码"
 ```
 
 **图表来源**
-- [jwt.rs:11-106](file://src/pkg/jwt.rs#L11-L106)
+- [jwt.rs:11-106](src/pkg/jwt.rs#L11-L106)
 
 **章节来源**
-- [jwt.rs:11-106](file://src/pkg/jwt.rs#L11-L106)
+- [jwt.rs:11-106](src/pkg/jwt.rs#L11-L106)
 
 ### 认证中间件（JWT）
 - 双模式：优先 Cookie，其次 Authorization: Bearer
@@ -238,12 +238,12 @@ end
 ```
 
 **图表来源**
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 **章节来源**
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [request_context.rs:20-40](file://src/middleware/request_context.rs#L20-L40)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [request_context.rs:20-40](src/middleware/request_context.rs#L20-L40)
 
 ### 权限控制（RBAC）与角色管理
 - 角色层级：SuperAdmin > Admin > Member
@@ -262,12 +262,12 @@ C --> |否| E["返回 403 Forbidden"]
 ```
 
 **图表来源**
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
-- [user.rs:34-99](file://common/src/enums/user.rs#L34-L99)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
+- [user.rs:34-99](common/src/enums/user.rs#L34-L99)
 
 **章节来源**
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
-- [user.rs:34-99](file://common/src/enums/user.rs#L34-L99)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
+- [user.rs:34-99](common/src/enums/user.rs#L34-L99)
 
 ### 会话管理
 - 浏览器场景：使用 HttpOnly Cookie（名称固定）自动携带 token
@@ -286,12 +286,12 @@ FE->>FE : 重定向到 /login
 ```
 
 **图表来源**
-- [jwt_auth.rs:139-155](file://src/middleware/jwt_auth.rs#L139-L155)
-- [mod.rs:37-45](file://frontend/src/api/mod.rs#L37-L45)
+- [jwt_auth.rs:139-155](src/middleware/jwt_auth.rs#L139-L155)
+- [mod.rs:37-45](frontend/src/api/mod.rs#L37-L45)
 
 **章节来源**
-- [jwt_auth.rs:139-155](file://src/middleware/jwt_auth.rs#L139-L155)
-- [mod.rs:37-45](file://frontend/src/api/mod.rs#L37-L45)
+- [jwt_auth.rs:139-155](src/middleware/jwt_auth.rs#L139-L155)
+- [mod.rs:37-45](frontend/src/api/mod.rs#L37-L45)
 
 ## 依赖关系分析
 - 路由依赖中间件：protected_routes 统一挂载 jwt_auth_middleware 与 request_context_middleware；system 路由额外挂载 require_role_middleware
@@ -312,18 +312,18 @@ Frontend["frontend/api/mod.rs"] --> JwtAuth
 ```
 
 **图表来源**
-- [router.rs:61-136](file://src/router.rs#L61-L136)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [http_header.rs:1-20](file://common/src/constants/http_header.rs#L1-L20)
-- [code.rs:1-146](file://common/src/error/code.rs#L1-L146)
-- [types.rs:106-246](file://common/src/error/types.rs#L106-L246)
-- [mod.rs:37-45](file://frontend/src/api/mod.rs#L37-L45)
+- [router.rs:61-136](src/router.rs#L61-L136)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [http_header.rs:1-20](common/src/constants/http_header.rs#L1-L20)
+- [code.rs:1-146](common/src/error/code.rs#L1-L146)
+- [types.rs:106-246](common/src/error/types.rs#L106-L246)
+- [mod.rs:37-45](frontend/src/api/mod.rs#L37-L45)
 
 **章节来源**
-- [router.rs:61-136](file://src/router.rs#L61-L136)
-- [jwt_auth.rs:25-87](file://src/middleware/jwt_auth.rs#L25-L87)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
+- [router.rs:61-136](src/router.rs#L61-L136)
+- [jwt_auth.rs:25-87](src/middleware/jwt_auth.rs#L25-L87)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
 
 ## 性能考虑
 - JWT 解码与签名验证为轻量操作，开销主要在于密钥长度与算法选择（HS256）
@@ -348,10 +348,10 @@ Frontend["frontend/api/mod.rs"] --> JwtAuth
   - 确认前端在 401 时清理登录态并重定向到登录页
 
 **章节来源**
-- [jwt_auth.rs:139-155](file://src/middleware/jwt_auth.rs#L139-L155)
-- [require_role.rs:16-38](file://src/middleware/require_role.rs#L16-L38)
-- [user.rs:85-117](file://src/service/domain/organization/user.rs#L85-L117)
-- [mod.rs:37-45](file://frontend/src/api/mod.rs#L37-L45)
+- [jwt_auth.rs:139-155](src/middleware/jwt_auth.rs#L139-L155)
+- [require_role.rs:16-38](src/middleware/require_role.rs#L16-L38)
+- [user.rs:85-117](src/service/domain/organization/user.rs#L85-L117)
+- [mod.rs:37-45](frontend/src/api/mod.rs#L37-L45)
 
 ## 结论
 AI Orz 的认证与授权体系通过路由分层、中间件链与领域校验实现清晰的职责分离。JWT 提供无状态的身份凭证，RBAC 提供细粒度的权限控制，前后端协作确保会话管理与错误处理的一致性。建议在新增受保护接口时遵循现有中间件模式，并在必要时叠加角色权限校验。
@@ -398,8 +398,8 @@ AI Orz 的认证与授权体系通过路由分层、中间件链与领域校验�
     - 403 Forbidden（权限不足）
 
 **章节来源**
-- [auth.rs:5-38](file://common/src/api/auth.rs#L5-L38)
-- [login.rs:18-68](file://src/handlers/organization/auth/login.rs#L18-L68)
-- [logout.rs:15-39](file://src/handlers/organization/auth/logout.rs#L15-L39)
-- [router.rs:61-136](file://src/router.rs#L61-L136)
-- [code.rs:1-146](file://common/src/error/code.rs#L1-L146)
+- [auth.rs:5-38](common/src/api/auth.rs#L5-L38)
+- [login.rs:18-68](src/handlers/organization/auth/login.rs#L18-L68)
+- [logout.rs:15-39](src/handlers/organization/auth/logout.rs#L15-L39)
+- [router.rs:61-136](src/router.rs#L61-L136)
+- [code.rs:1-146](common/src/error/code.rs#L1-L146)

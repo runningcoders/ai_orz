@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [create_memory.rs](file://src/handlers/hr/agent/create_memory.rs)
-- [save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
-- [save_long_term_memory.rs](file://src/handlers/hr/agent/save_long_term_memory.rs)
-- [settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-- [query_memory.rs](file://src/handlers/hr/agent/query_memory.rs)
-- [delete_memory.rs](file://src/handlers/hr/agent/delete_memory.rs)
-- [memory.rs（模型）](file://src/models/memory.rs)
-- [memory.rs（枚举）](file://common/src/enums/memory.rs)
-- [memory.rs（DAL）](file://src/service/dal/memory.rs)
-- [mod.rs（DAO 接口）](file://src/service/dao/memory/mod.rs)
-- [vector_search_architecture.md](file://docs/vector_search_architecture.md)
+- [create_memory.rs](src/handlers/hr/agent/create_memory.rs)
+- [save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
+- [save_long_term_memory.rs](src/handlers/hr/agent/save_long_term_memory.rs)
+- [settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [query_memory.rs](src/handlers/hr/agent/query_memory.rs)
+- [delete_memory.rs](src/handlers/hr/agent/delete_memory.rs)
+- [memory.rs（模型）](src/models/memory.rs)
+- [memory.rs（枚举）](common/src/enums/memory.rs)
+- [memory.rs（DAL）](src/service/dal/memory.rs)
+- [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
+- [vector_search_architecture.md](docs/vector_search_architecture.md)
 </cite>
 
 ## 目录
@@ -47,12 +47,12 @@ D --> E["数据库/向量后端"]
 ```
 
 图表来源
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 章节来源
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 核心组件
 - 记忆类型与状态
@@ -70,9 +70,9 @@ D --> E["数据库/向量后端"]
   - 混合排序：Hybrid > Vector > Keyword，组内按 distance/rank 排序
 
 章节来源
-- [memory.rs（枚举）:1-212](file://common/src/enums/memory.rs#L1-L212)
-- [memory.rs（模型）:1-424](file://src/models/memory.rs#L1-L424)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [memory.rs（枚举）:1-212](common/src/enums/memory.rs#L1-L212)
+- [memory.rs（模型）:1-424](src/models/memory.rs#L1-L424)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 架构总览
 记忆系统采用“关系型数据 + FTS5 关键词 + 向量语义”的三位一体检索体系。Handler 仅做入参与鉴权，Domain/DAL 负责编排，DAO 专注持久化与索引维护。向量搜索支持多后端（InMemory/LanceDB/HNSW），FTS5 通过 SQLite 虚拟表与触发器自动同步。
@@ -96,9 +96,9 @@ Handler-->>Client : "SearchMemoryResponse"
 ```
 
 图表来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 详细组件分析
 
@@ -124,10 +124,10 @@ CallDomain2 --> ReturnID
 ```
 
 图表来源
-- [create_memory.rs:21-126](file://src/handlers/hr/agent/create_memory.rs#L21-L126)
+- [create_memory.rs:21-126](src/handlers/hr/agent/create_memory.rs#L21-L126)
 
 章节来源
-- [create_memory.rs:21-126](file://src/handlers/hr/agent/create_memory.rs#L21-L126)
+- [create_memory.rs:21-126](src/handlers/hr/agent/create_memory.rs#L21-L126)
 
 ### 保存短期记忆（save_short_term_memory）
 - 功能：以神经工具方式保存短期记忆，支持 tags 与 trace_ids
@@ -135,7 +135,7 @@ CallDomain2 --> ReturnID
 - 输出：SaveShortTermMemoryResponse.memory_id
 
 章节来源
-- [save_short_term_memory.rs:11-57](file://src/handlers/hr/agent/save_short_term_memory.rs#L11-L57)
+- [save_short_term_memory.rs:11-57](src/handlers/hr/agent/save_short_term_memory.rs#L11-L57)
 
 ### 保存长期记忆（save_long_term_memory）
 - 功能：保存长期知识节点，并可附带关系列表
@@ -146,7 +146,7 @@ CallDomain2 --> ReturnID
 - 输出：SaveLongTermMemoryResponse.node_id, relation_ids
 
 章节来源
-- [save_long_term_memory.rs:13-109](file://src/handlers/hr/agent/save_long_term_memory.rs#L13-L109)
+- [save_long_term_memory.rs:13-109](src/handlers/hr/agent/save_long_term_memory.rs#L13-L109)
 
 ### 记忆沉淀（settle_memory）
 - 功能：触发 Agent 在 Resting 状态下对未沉淀短期记忆进行归纳总结，转化为长期知识节点并建立关系
@@ -172,10 +172,10 @@ H-->>H : "记录日志并返回 settled_count"
 ```
 
 图表来源
-- [settle_memory.rs:74-155](file://src/handlers/hr/agent/settle_memory.rs#L74-L155)
+- [settle_memory.rs:74-155](src/handlers/hr/agent/settle_memory.rs#L74-L155)
 
 章节来源
-- [settle_memory.rs:22-155](file://src/handlers/hr/agent/settle_memory.rs#L22-L155)
+- [settle_memory.rs:22-155](src/handlers/hr/agent/settle_memory.rs#L22-L155)
 
 ### 记忆检索（search_memory）
 - 功能：支持关键词、向量语义、图谱遍历三种模式，返回去重后的结果
@@ -202,10 +202,10 @@ Merge --> Out(["返回搜索结果"])
 ```
 
 图表来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 
 章节来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
 
 ### 记忆查询（query_memory）
 - 功能：按 agent_id、memory_type、status、tags、task_id 等条件过滤查询
@@ -213,7 +213,7 @@ Merge --> Out(["返回搜索结果"])
 - 输出：QueryMemoryResponse.results
 
 章节来源
-- [query_memory.rs:12-75](file://src/handlers/hr/agent/query_memory.rs#L12-L75)
+- [query_memory.rs:12-75](src/handlers/hr/agent/query_memory.rs#L12-L75)
 
 ### 记忆删除（delete_memory）
 - 功能：按 ID 删除记忆，限制 Trace/Relation 不可删
@@ -221,7 +221,7 @@ Merge --> Out(["返回搜索结果"])
 - 输出：DeleteMemoryResponse.memory_id
 
 章节来源
-- [delete_memory.rs:11-55](file://src/handlers/hr/agent/delete_memory.rs#L11-L55)
+- [delete_memory.rs:11-55](src/handlers/hr/agent/delete_memory.rs#L11-L55)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的统一接口（create/query/search/traverse_graph/update/delete）
@@ -262,12 +262,12 @@ DAL --> DAO : "组合"
 ```
 
 图表来源
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 章节来源
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
-- [mod.rs（DAO 接口）:45-60](file://src/service/dao/memory/mod.rs#L45-L60)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
+- [mod.rs（DAO 接口）:45-60](src/service/dao/memory/mod.rs#L45-L60)
 
 ## 性能与优化
 - 混合搜索策略
@@ -290,8 +290,8 @@ DAL --> DAO : "组合"
   - 沉淀周期调优：结合 Agent 空闲时段批量处理，降低峰值压力
 
 章节来源
-- [vector_search_architecture.md:72-131](file://docs/vector_search_architecture.md#L72-L131)
-- [memory.rs（DAL）:1147-1188](file://src/service/dal/memory.rs#L1147-L1188)
+- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
+- [memory.rs（DAL）:1147-1188](src/service/dal/memory.rs#L1147-L1188)
 
 ## 故障排查指南
 - 缺少用户上下文
@@ -308,10 +308,10 @@ DAL --> DAO : "组合"
   - 处理：确认存在 Active 状态的短期记忆；检查 Agent 状态是否为可用；查看沉淀日志
 
 章节来源
-- [create_memory.rs:21-41](file://src/handlers/hr/agent/create_memory.rs#L21-L41)
-- [delete_memory.rs:20-55](file://src/handlers/hr/agent/delete_memory.rs#L20-L55)
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [settle_memory.rs:74-155](file://src/handlers/hr/agent/settle_memory.rs#L74-L155)
+- [create_memory.rs:21-41](src/handlers/hr/agent/create_memory.rs#L21-L41)
+- [delete_memory.rs:20-55](src/handlers/hr/agent/delete_memory.rs#L20-L55)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [settle_memory.rs:74-155](src/handlers/hr/agent/settle_memory.rs#L74-L155)
 
 ## 结论
 记忆管理 API 提供了从创建到沉淀、检索、查询、删除的完整生命周期管理能力，并通过 FTS5 与向量搜索实现高可用的混合检索。通过清晰的层次划分与统一的接口设计，系统在可扩展性、可维护性与性能方面具备良好基础。建议在生产环境结合业务规模选择合适的向量后端，并合理配置阈值与分页参数以获得最佳体验。
@@ -329,6 +329,6 @@ DAL --> DAO : "组合"
   - search_memory、query_memory 等接口在前端 hr/api.rs 中封装，便于页面调用
 
 章节来源
-- [search_memory.rs:24-153](file://src/handlers/hr/agent/search_memory.rs#L24-L153)
-- [query_memory.rs:21-75](file://src/handlers/hr/agent/query_memory.rs#L21-L75)
-- [vector_search_architecture.md:72-131](file://docs/vector_search_architecture.md#L72-L131)
+- [search_memory.rs:24-153](src/handlers/hr/agent/search_memory.rs#L24-L153)
+- [query_memory.rs:21-75](src/handlers/hr/agent/query_memory.rs#L21-L75)
+- [vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)

@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/user/mod.rs](file://src/handlers/user/mod.rs)
-- [src/handlers/user/profile/mod.rs](file://src/handlers/user/profile/mod.rs)
-- [src/handlers/user/profile/get_current_user.rs](file://src/handlers/user/profile/get_current_user.rs)
-- [src/handlers/user/profile/update_current_user.rs](file://src/handlers/user/profile/update_current_user.rs)
-- [common/src/api/user.rs](file://common/src/api/user.rs)
-- [src/middleware/jwt_auth.rs](file://src/middleware/jwt_auth.rs)
-- [src/pkg/request_context.rs](file://src/pkg/request_context.rs)
-- [src/models/user.rs](file://src/models/user.rs)
+- [src/handlers/user/mod.rs](src/handlers/user/mod.rs)
+- [src/handlers/user/profile/mod.rs](src/handlers/user/profile/mod.rs)
+- [src/handlers/user/profile/get_current_user.rs](src/handlers/user/profile/get_current_user.rs)
+- [src/handlers/user/profile/update_current_user.rs](src/handlers/user/profile/update_current_user.rs)
+- [common/src/api/user.rs](common/src/api/user.rs)
+- [src/middleware/jwt_auth.rs](src/middleware/jwt_auth.rs)
+- [src/pkg/request_context.rs](src/pkg/request_context.rs)
+- [src/models/user.rs](src/models/user.rs)
 </cite>
 
 ## 目录
@@ -64,16 +64,16 @@ H2 --> DTO
 ```
 
 图表来源
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
-- [src/models/user.rs:1-98](file://src/models/user.rs#L1-L98)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
+- [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
 
 章节来源
-- [src/handlers/user/mod.rs:1-5](file://src/handlers/user/mod.rs#L1-L5)
-- [src/handlers/user/profile/mod.rs:1-8](file://src/handlers/user/profile/mod.rs#L1-L8)
+- [src/handlers/user/mod.rs:1-5](src/handlers/user/mod.rs#L1-L5)
+- [src/handlers/user/profile/mod.rs:1-8](src/handlers/user/profile/mod.rs#L1-L8)
 
 ## 核心组件
 - 身份认证中间件：支持 Cookie 与 Bearer 双模式，验证后将用户标识注入请求头，供后续 RequestContext 构建使用。
@@ -84,11 +84,11 @@ H2 --> DTO
 - DTO：统一前后端的数据契约，包括 Get/Update 当前用户的请求与响应结构。
 
 章节来源
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
 
 ## 架构总览
 遵循严格四层单向调用：Adapter → Domain → DAL → DAO。处理器不直接操作数据库，而是通过 organization::domain().user_manage() 完成用户相关操作。
@@ -116,11 +116,11 @@ Handler-->>Client : 返回UserInfoResponse
 ```
 
 图表来源
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
-- [src/models/user.rs:1-98](file://src/models/user.rs#L1-L98)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
 
 ## 详细组件分析
 
@@ -144,11 +144,11 @@ BuildResp --> End(["返回响应"])
 ```
 
 图表来源
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
 
 ### 更新当前用户资料处理器
 - 功能：仅允许更新显示名称、邮箱、密码哈希；自动维护 updated_at 与 modified_by；调用领域层保存。
@@ -173,10 +173,10 @@ Persist --> Resp["构造并返回新信息"]
 ```
 
 图表来源
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
 
 章节来源
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
 
 ### 数据模型与DTO
 - UserPo：持久化对象，包含 id、organization_id、username、display_name、email、password_hash、role、status、created_by、modified_by、created_at、updated_at。
@@ -186,8 +186,8 @@ Persist --> Resp["构造并返回新信息"]
   - UserInfoResponse：对外暴露的用户信息视图，隐藏空值与敏感细节
 
 章节来源
-- [src/models/user.rs:1-98](file://src/models/user.rs#L1-L98)
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
+- [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
 
 ### API 调用示例
 - 获取当前用户
@@ -204,9 +204,9 @@ Persist --> Resp["构造并返回新信息"]
   - 响应：{ data: UserInfoResponse }
 
 章节来源
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
 
 ### 数据同步机制与缓存策略
 - 数据同步：处理器通过领域层进行读写，DAL/DAO 层负责 SQL 执行与一致性保障；如需跨服务同步，建议在领域层触发事件（AOP Producer），由消费者异步处理。
@@ -249,20 +249,20 @@ E --> G
 ```
 
 图表来源
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
-- [src/models/user.rs:1-98](file://src/models/user.rs#L1-L98)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
+- [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
 
 章节来源
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [common/src/api/user.rs:1-233](file://common/src/api/user.rs#L1-L233)
-- [src/models/user.rs:1-98](file://src/models/user.rs#L1-L98)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [common/src/api/user.rs:1-233](common/src/api/user.rs#L1-L233)
+- [src/models/user.rs:1-98](src/models/user.rs#L1-L98)
 
 ## 性能考虑
 - 最小化 I/O：处理器只做必要校验与转换，数据库访问交由领域/DAL 层优化。
@@ -281,10 +281,10 @@ E --> G
 - 日志追踪：利用 RequestContext 中的 log_id 串联全链路日志，定位问题。
 
 章节来源
-- [src/middleware/jwt_auth.rs:1-156](file://src/middleware/jwt_auth.rs#L1-L156)
-- [src/pkg/request_context.rs:1-632](file://src/pkg/request_context.rs#L1-L632)
-- [src/handlers/user/profile/get_current_user.rs:1-66](file://src/handlers/user/profile/get_current_user.rs#L1-L66)
-- [src/handlers/user/profile/update_current_user.rs:1-91](file://src/handlers/user/profile/update_current_user.rs#L1-L91)
+- [src/middleware/jwt_auth.rs:1-156](src/middleware/jwt_auth.rs#L1-L156)
+- [src/pkg/request_context.rs:1-632](src/pkg/request_context.rs#L1-L632)
+- [src/handlers/user/profile/get_current_user.rs:1-66](src/handlers/user/profile/get_current_user.rs#L1-L66)
+- [src/handlers/user/profile/update_current_user.rs:1-91](src/handlers/user/profile/update_current_user.rs#L1-L91)
 
 ## 结论
 User 模块处理器严格遵循四层单向调用，通过 JWT 中间件与 RequestContext 完成身份与上下文传递，处理器专注于参数校验、权限控制与响应组装；敏感字段与空值在响应层进行过滤，保障隐私。事务与持久化由领域/DAL/DAO 层统一管理，便于扩展与测试。建议后续按需引入缓存与文件上传能力，并完善事件驱动的同步机制。

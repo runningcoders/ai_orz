@@ -8,6 +8,19 @@
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范 §向量化实体规范
 > - [memory_design.md](../memory_design.md) — 记忆系统（短期/长期记忆实体 Vectorizable 实现的使用方）
 > - [tool_design.md](./tool_design.md) — 工具/技能实体 Vectorizable 实现的使用方
+> - [full_entity_fts5_search_design.md](./full_entity_fts5_search_design.md) — FTS5 全文搜索统一标准（6 实体同构 search 模式）
+> - [memory_search_enhancement_design.md](./memory_search_enhancement_design.md) — 记忆搜索扩展（tags 过滤/图谱遍历/种子节点推荐）
+> - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界
+> - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+> - 【③ Wiki 长文】[存储系统.md](docs/wiki/zh/content/基础设施/存储系统/存储系统.md) — §VectorStore 多后端 + 混合检索合并排序
+> - 【③ Wiki 长文】[基础设施.md](docs/wiki/zh/content/基础设施/基础设施.md) — §可插拔向量后端初始化流程
+> - 【③ Wiki 长文】[记忆和向量系统.md](docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md) — 7 类 PO Vectorizable 实现列表
+> - 【③ Wiki 长文】[记忆系统架构.md](docs/wiki/zh/content/架构设计/记忆系统架构.md) — §记忆搜索扩展层
+> - 【③ Wiki 长文】[Agent 搜索与查询.md](docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md) — §AgentSearch 三场景 list/query/search
+> - 【④ RAG 卡 3 张】
+>   - [向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity](docs/wiki/knowledge/zh/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity/向量存储抽象%20VectorStore%20+%20多后端%20+%20Vectorizable%20trait%20统一索引入口%20+%20embed_entity.md) — 向量基础设施 + 统一 embed_entity 工厂
+>   - [三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）](docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md) — 6 实体 search 同构模式 + 加权融合排序
+>   - [记忆领域搜索增强：FTS5 tags 语义过滤 + knowledge graph traverse 图谱遍历 + recommend_seed_nodes 种子节点推荐](docs/wiki/knowledge/zh/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐/记忆领域搜索增强：FTS5%20tags%20语义过滤%20+%20knowledge%20graph%20traverse%20图谱遍历%20+%20recommend_seed_nodes%20种子节点推荐.md) — tags 过滤 + BFS 遍历 + 推荐
 
 ## 概述
 
@@ -107,7 +120,7 @@ SkillDal.create()
 
 每个实体的 DAL 层统一实现 `search()` 方法，内部执行：
 
-> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](src/service/dal/memory.rs)
 
 ### 向量索引生命周期
 
@@ -166,7 +179,7 @@ pub trait VectorStore: Send + Sync {
     async fn list_by_source_ids(&self, collection: &str, source_ids: &[String]) -> Result<Vec<VectorRow>>;
 }
 ```
-> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 当前实现参考：[vector_search 模块 + dao/memory vector](src/service/dao/memory/)
 
 ### 后端对比
 
@@ -194,7 +207,7 @@ pub struct VectorSearchHit {
     pub distance: f32,
 }
 ```
-> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 当前实现参考：[vector_search 模块 + dao/memory vector](src/service/dao/memory/)
 
 ---
 
@@ -202,21 +215,21 @@ pub struct VectorSearchHit {
 
 ### mod.rs 统一入口
 
-> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](src/service/dal/memory.rs)
 
 ### sqlite.rs - 基础数据 DAO
 
-> 相关实现细节见：[向量搜索架构](file:///Users/aman/Technology/rust/ai_orz/src/pkg/vector_search/)
+> 相关实现细节见：[向量搜索架构](src/pkg/vector_search/)
 
 ### vector.rs - 向量索引 DAO
 
-> 相关实现细节见：[dal/memory.rs 向量混合搜索](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
+> 相关实现细节见：[dal/memory.rs 向量混合搜索](src/service/dal/memory.rs)
 
 ---
 
 ## Domain 层组合示例
 
-> 相关实现细节见：[向量索引模块](file:///Users/aman/Technology/rust/ai_orz/src/pkg/vector_search/)
+> 相关实现细节见：[向量索引模块](src/pkg/vector_search/)
 
 ---
 
@@ -235,7 +248,7 @@ pub enum VectorStoreType {
     LanceDB,   // LanceDB 嵌入式向量数据库
 }
 ```
-> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 当前实现参考：[vector_search 模块 + dao/memory vector](src/service/dao/memory/)
 
 默认值：
 - 核心数据库：`ai_orz.db`
@@ -258,7 +271,7 @@ struct StorageInner {
 #[derive(Clone)]
 struct Storage;
 ```
-> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 当前实现参考：[vector_search 模块 + dao/memory vector](src/service/dao/memory/)
 
 ### 构造方法
 
@@ -388,7 +401,7 @@ pub enum VectorStoreType {
     SqliteVss,   // SQLite VSS 扩展
 }
 ```
-> 当前实现参考：[vector_search 模块 + dao/memory vector](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 当前实现参考：[vector_search 模块 + dao/memory vector](src/service/dao/memory/)
 
 ---
 
@@ -417,12 +430,12 @@ pub enum VectorStoreType {
 
 ### 5.1 新增向量存储后端（如 Qdrant / Milvus / PgLance）
 当前 `VectorStore` trait 有 4 个实现：LanceDB 默认 / HNSW / InMemory / SQLite VSS。新增后端：
-1. 在 `src/pkg/storage/vector.rs` 实现 `VectorStore` trait，保持构造器分离原则（默认 new() + 专用 with_xxx()），参考现有 trait：[storage/vector.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage/vector.rs)
-2. 集合路径与命名规范沿用 `{base_data_path}/vectors/` + `vss_{collection}` 约定，切换后端时上层 DAO/DAL 零改动，参考：[Storage 初始化入口](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage)
-3. 写入/删除失败时保持优雅降级（ok() + warn），绝不阻断业务写入主流程；搜索不可用时回退到 FTS5 关键词通道，参考：[dal 层调用点](file:///Users/aman/Technology/rust/ai_orz/src/service/dal)
+1. 在 `src/pkg/storage/vector.rs` 实现 `VectorStore` trait，保持构造器分离原则（默认 new() + 专用 with_xxx()），参考现有 trait：[storage/vector.rs](src/pkg/storage/vector.rs)
+2. 集合路径与命名规范沿用 `{base_data_path}/vectors/` + `vss_{collection}` 约定，切换后端时上层 DAO/DAL 零改动，参考：[Storage 初始化入口](src/pkg/storage)
+3. 写入/删除失败时保持优雅降级（ok() + warn），绝不阻断业务写入主流程；搜索不可用时回退到 FTS5 关键词通道，参考：[dal 层调用点](src/service/dal)
 
 ### 5.2 新增 Vectorizable 实体或扩展现有向量化字段组合
 当前已有 AgentPo / ToolPo / TaskPo / SkillPo / ShortTermMemoryIndexPo / LongTermKnowledgeNodePo 实现 Vectorizable。新增实体：
-1. 在 PO 上直接 `impl Vectorizable for XxxPo`，向量化字段组合由 PO 自身决定（信息专家原则），禁止在 DAL 层手工 format! 拼接文本，参考：[models/vector.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/vector.rs)
-2. DAL create/update 后统一调用 `embed_entity(ctx, cortex, po)` 完成索引（含 content_hash 去重与 expire_at），禁止绕过通用 embed_entity 单独向量化，参考：[embed_entity 定义](file:///Users/aman/Technology/rust/ai_orz/src/pkg/storage/vector.rs)
-3. 对应混合搜索 DAO 查询中，过滤条件复用现有 Query 的 push_query_filters，保持「向量候选 → 业务过滤 → 融合排序」三段流程一致，参考：[dao 层 query 实现](file:///Users/aman/Technology/rust/ai_orz/src/service/dao)
+1. 在 PO 上直接 `impl Vectorizable for XxxPo`，向量化字段组合由 PO 自身决定（信息专家原则），禁止在 DAL 层手工 format! 拼接文本，参考：[models/vector.rs](src/models/vector.rs)
+2. DAL create/update 后统一调用 `embed_entity(ctx, cortex, po)` 完成索引（含 content_hash 去重与 expire_at），禁止绕过通用 embed_entity 单独向量化，参考：[embed_entity 定义](src/pkg/storage/vector.rs)
+3. 对应混合搜索 DAO 查询中，过滤条件复用现有 Query 的 push_query_filters，保持「向量候选 → 业务过滤 → 融合排序」三段流程一致，参考：[dao 层 query 实现](src/service/dao)

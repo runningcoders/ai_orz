@@ -2,12 +2,12 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/system/logs/query_logs.rs](file://src/handlers/system/logs/query_logs.rs)
-- [src/handlers/system/logs/log_stats.rs](file://src/handlers/system/logs/log_stats.rs)
-- [common/src/api/log_stats.rs](file://common/src/api/log_stats.rs)
-- [src/service/domain/system/mod.rs](file://src/service/domain/system/mod.rs)
-- [src/service/dal/log_query.rs](file://src/service/dal/log_query.rs)
-- [docs/logging_design.md](file://docs/logging_design.md)
+- [src/handlers/system/logs/query_logs.rs](src/handlers/system/logs/query_logs.rs)
+- [src/handlers/system/logs/log_stats.rs](src/handlers/system/logs/log_stats.rs)
+- [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
+- [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
+- [src/service/dal/log_query.rs](src/service/dal/log_query.rs)
+- [docs/logging_design.md](docs/logging_design.md)
 </cite>
 
 ## 目录
@@ -44,16 +44,16 @@ DAL --> FS["日志文件<br/>ai_orz.log.YYYY-MM-DD"]
 ```
 
 图表来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](file://src/handlers/system/logs/log_stats.rs#L1-L118)
-- [src/service/domain/system/mod.rs:151-170](file://src/service/domain/system/mod.rs#L151-L170)
-- [src/service/dal/log_query.rs:100-210](file://src/service/dal/log_query.rs#L100-L210)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
+- [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
+- [src/service/dal/log_query.rs:100-210](src/service/dal/log_query.rs#L100-L210)
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](file://src/handlers/system/logs/log_stats.rs#L1-L118)
-- [src/service/domain/system/mod.rs:151-170](file://src/service/domain/system/mod.rs#L151-L170)
-- [src/service/dal/log_query.rs:100-210](file://src/service/dal/log_query.rs#L100-L210)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
+- [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
+- [src/service/dal/log_query.rs:100-210](src/service/dal/log_query.rs#L100-L210)
 
 ## 核心组件
 - HTTP Handler
@@ -68,9 +68,9 @@ DAL --> FS["日志文件<br/>ai_orz.log.YYYY-MM-DD"]
   - LogQueryRequest、LogStatsQueryParams、LogEntry、LogPageResult、LogLevelDistributionResponse、LogTimeSeriesResponse。
 
 章节来源
-- [common/src/api/log_stats.rs:41-77](file://common/src/api/log_stats.rs#L41-L77)
-- [src/service/dal/log_query.rs:34-82](file://src/service/dal/log_query.rs#L34-L82)
-- [src/service/domain/system/mod.rs:151-170](file://src/service/domain/system/mod.rs#L151-L170)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
+- [src/service/dal/log_query.rs:34-82](src/service/dal/log_query.rs#L34-L82)
+- [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
 
 ## 架构总览
 日志查询与统计的整体流程如下：
@@ -94,9 +94,9 @@ H-->>C : "200 OK + 分页数据"
 ```
 
 图表来源
-- [src/handlers/system/logs/query_logs.rs:13-28](file://src/handlers/system/logs/query_logs.rs#L13-L28)
-- [src/service/domain/system/mod.rs:281-342](file://src/service/domain/system/mod.rs#L281-L342)
-- [src/service/dal/log_query.rs:120-210](file://src/service/dal/log_query.rs#L120-L210)
+- [src/handlers/system/logs/query_logs.rs:13-28](src/handlers/system/logs/query_logs.rs#L13-L28)
+- [src/service/domain/system/mod.rs:281-342](src/service/domain/system/mod.rs#L281-L342)
+- [src/service/dal/log_query.rs:120-210](src/service/dal/log_query.rs#L120-L210)
 
 ## 详细组件分析
 
@@ -125,10 +125,10 @@ H-->>C : "200 OK + 分页数据"
   - 文件扫描：仅扫描最近 MAX_SCAN_DAYS 天的日志文件，文件名需符合 ai_orz.log.YYYY-MM-DD。
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [common/src/api/log_stats.rs:52-77](file://common/src/api/log_stats.rs#L52-L77)
-- [src/service/dal/log_query.rs:120-210](file://src/service/dal/log_query.rs#L120-L210)
-- [src/service/dal/log_query.rs:217-258](file://src/service/dal/log_query.rs#L217-L258)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [common/src/api/log_stats.rs:52-77](common/src/api/log_stats.rs#L52-L77)
+- [src/service/dal/log_query.rs:120-210](src/service/dal/log_query.rs#L120-L210)
+- [src/service/dal/log_query.rs:217-258](src/service/dal/log_query.rs#L217-L258)
 
 #### 请求示例
 - 查询最近 1 小时内 ERROR 级别且包含关键字 “timeout” 的日志，第 1 页，每页 50 条：
@@ -166,9 +166,9 @@ H-->>C : "200 OK + 分页数据"
   - 通过 DAL 拉取时间范围内的日志（上限 MAX_SCAN_ENTRIES），在 Domain 侧按 level 聚合。
 
 章节来源
-- [src/handlers/system/logs/log_stats.rs:25-49](file://src/handlers/system/logs/log_stats.rs#L25-L49)
-- [common/src/api/log_stats.rs:7-23](file://common/src/api/log_stats.rs#L7-L23)
-- [src/service/domain/system/mod.rs:286-309](file://src/service/domain/system/mod.rs#L286-L309)
+- [src/handlers/system/logs/log_stats.rs:25-49](src/handlers/system/logs/log_stats.rs#L25-L49)
+- [common/src/api/log_stats.rs:7-23](common/src/api/log_stats.rs#L7-L23)
+- [src/service/domain/system/mod.rs:286-309](src/service/domain/system/mod.rs#L286-L309)
 
 #### 请求示例
 - GET /api/v1/system/logs/stats/level-distribution?start_time=<24h前>&end_time=<现在>
@@ -195,9 +195,9 @@ H-->>C : "200 OK + 分页数据"
   - 通过 DAL 拉取时间范围内的日志（上限 MAX_SCAN_ENTRIES），在 Domain 侧将 timestamp 解析为 unix ms，并按小时对齐聚合。
 
 章节来源
-- [src/handlers/system/logs/log_stats.rs:51-76](file://src/handlers/system/logs/log_stats.rs#L51-L76)
-- [common/src/api/log_stats.rs:25-39](file://common/src/api/log_stats.rs#L25-L39)
-- [src/service/domain/system/mod.rs:311-342](file://src/service/domain/system/mod.rs#L311-L342)
+- [src/handlers/system/logs/log_stats.rs:51-76](src/handlers/system/logs/log_stats.rs#L51-L76)
+- [common/src/api/log_stats.rs:25-39](common/src/api/log_stats.rs#L25-L39)
+- [src/service/domain/system/mod.rs:311-342](src/service/domain/system/mod.rs#L311-L342)
 
 #### 请求示例
 - GET /api/v1/system/logs/stats/time-series?start_time=<24h前>&end_time=<现在>
@@ -229,9 +229,9 @@ H-->>C : "200 OK + 分页数据"
   - 通过 #[derive(LogFields)] 将 RequestContext 的业务字段注入到 tracing span，便于跨层追踪。
 
 章节来源
-- [src/service/dal/log_query.rs:1-23](file://src/service/dal/log_query.rs#L1-L23)
-- [docs/logging_design.md:106-127](file://docs/logging_design.md#L106-L127)
-- [docs/logging_design.md:132-165](file://docs/logging_design.md#L132-L165)
+- [src/service/dal/log_query.rs:1-23](src/service/dal/log_query.rs#L1-L23)
+- [docs/logging_design.md:106-127](docs/logging_design.md#L106-L127)
+- [docs/logging_design.md:132-165](docs/logging_design.md#L132-L165)
 
 ### 搜索语法与过滤规则
 - 关键词匹配
@@ -247,15 +247,15 @@ H-->>C : "200 OK + 分页数据"
   - 分页在内存中进行，先收集匹配项（上限 MAX_SCAN_ENTRIES），再 skip/take。
 
 章节来源
-- [src/service/dal/log_query.rs:147-209](file://src/service/dal/log_query.rs#L147-L209)
-- [src/service/dal/log_query.rs:263-354](file://src/service/dal/log_query.rs#L263-L354)
+- [src/service/dal/log_query.rs:147-209](src/service/dal/log_query.rs#L147-L209)
+- [src/service/dal/log_query.rs:263-354](src/service/dal/log_query.rs#L263-L354)
 
 ### 访问控制
 - 路由层强制要求管理员角色（Admin/SuperAdmin），非管理员无法访问日志相关接口。
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-4](file://src/handlers/system/logs/query_logs.rs#L1-L4)
-- [src/handlers/system/logs/log_stats.rs:1-5](file://src/handlers/system/logs/log_stats.rs#L1-L5)
+- [src/handlers/system/logs/query_logs.rs:1-4](src/handlers/system/logs/query_logs.rs#L1-L4)
+- [src/handlers/system/logs/log_stats.rs:1-5](src/handlers/system/logs/log_stats.rs#L1-L5)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 的 log_query 接口。
@@ -273,14 +273,14 @@ Common --> Domain
 ```
 
 图表来源
-- [src/handlers/system/logs/query_logs.rs:13-28](file://src/handlers/system/logs/query_logs.rs#L13-L28)
-- [src/service/domain/system/mod.rs:151-170](file://src/service/domain/system/mod.rs#L151-L170)
-- [common/src/api/log_stats.rs:41-77](file://common/src/api/log_stats.rs#L41-L77)
+- [src/handlers/system/logs/query_logs.rs:13-28](src/handlers/system/logs/query_logs.rs#L13-L28)
+- [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:13-28](file://src/handlers/system/logs/query_logs.rs#L13-L28)
-- [src/service/domain/system/mod.rs:151-170](file://src/service/domain/system/mod.rs#L151-L170)
-- [common/src/api/log_stats.rs:41-77](file://common/src/api/log_stats.rs#L41-L77)
+- [src/handlers/system/logs/query_logs.rs:13-28](src/handlers/system/logs/query_logs.rs#L13-L28)
+- [src/service/domain/system/mod.rs:151-170](src/service/domain/system/mod.rs#L151-L170)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
 
 ## 性能考虑
 - 扫描上限
@@ -296,9 +296,9 @@ Common --> Domain
   - 分页查询时合理设置 page_size，避免过大导致响应延迟。
 
 章节来源
-- [src/service/dal/log_query.rs:112-118](file://src/service/dal/log_query.rs#L112-L118)
-- [src/service/dal/log_query.rs:147-209](file://src/service/dal/log_query.rs#L147-L209)
-- [src/service/domain/system/mod.rs:286-342](file://src/service/domain/system/mod.rs#L286-L342)
+- [src/service/dal/log_query.rs:112-118](src/service/dal/log_query.rs#L112-L118)
+- [src/service/dal/log_query.rs:147-209](src/service/dal/log_query.rs#L147-L209)
+- [src/service/domain/system/mod.rs:286-342](src/service/domain/system/mod.rs#L286-L342)
 
 ## 故障排查指南
 - 常见问题
@@ -315,8 +315,8 @@ Common --> Domain
   - 检查日志轮转配置与磁盘空间。
 
 章节来源
-- [src/service/dal/log_query.rs:263-354](file://src/service/dal/log_query.rs#L263-L354)
-- [src/service/dal/log_query.rs:217-258](file://src/service/dal/log_query.rs#L217-L258)
+- [src/service/dal/log_query.rs:263-354](src/service/dal/log_query.rs#L263-L354)
+- [src/service/dal/log_query.rs:217-258](src/service/dal/log_query.rs#L217-L258)
 
 ## 结论
 AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler → Domain → DAL 的分层设计，提供了灵活的过滤、分页与统计能力。配合管理员访问控制与合理的性能保护，适用于错误排查、性能分析与审计追踪等典型场景。建议在生产环境中结合日志轮转策略与监控告警，确保可观测性与稳定性。
@@ -332,9 +332,9 @@ AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler
   - 日志时序统计（按小时桶），支持 start_time、end_time。
 
 章节来源
-- [src/handlers/system/logs/query_logs.rs:1-29](file://src/handlers/system/logs/query_logs.rs#L1-L29)
-- [src/handlers/system/logs/log_stats.rs:1-118](file://src/handlers/system/logs/log_stats.rs#L1-L118)
-- [common/src/api/log_stats.rs:41-77](file://common/src/api/log_stats.rs#L41-L77)
+- [src/handlers/system/logs/query_logs.rs:1-29](src/handlers/system/logs/query_logs.rs#L1-L29)
+- [src/handlers/system/logs/log_stats.rs:1-118](src/handlers/system/logs/log_stats.rs#L1-L118)
+- [common/src/api/log_stats.rs:41-77](common/src/api/log_stats.rs#L41-L77)
 
 ### 数据结构参考
 - LogQueryRequest：查询参数集合。
@@ -345,8 +345,8 @@ AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler
 - LogTimeSeriesResponse：时序响应。
 
 章节来源
-- [common/src/api/log_stats.rs:7-77](file://common/src/api/log_stats.rs#L7-L77)
-- [src/service/dal/log_query.rs:34-82](file://src/service/dal/log_query.rs#L34-L82)
+- [common/src/api/log_stats.rs:7-77](common/src/api/log_stats.rs#L7-L77)
+- [src/service/dal/log_query.rs:34-82](src/service/dal/log_query.rs#L34-L82)
 
 ### 日志轮转与存储策略
 - 轮转方式：tracing-appender 按日滚动，生成 ai_orz.log.YYYY-MM-DD。
@@ -355,5 +355,5 @@ AI Orz 的日志查询与统计功能以 tracing JSON 为基础，通过 Handler
 - 建议：定期清理过期日志文件，避免磁盘占用过高。
 
 章节来源
-- [src/service/dal/log_query.rs:1-23](file://src/service/dal/log_query.rs#L1-L23)
-- [src/service/dal/log_query.rs:217-258](file://src/service/dal/log_query.rs#L217-L258)
+- [src/service/dal/log_query.rs:1-23](src/service/dal/log_query.rs#L1-L23)
+- [src/service/dal/log_query.rs:217-258](src/service/dal/log_query.rs#L217-L258)

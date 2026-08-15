@@ -7,6 +7,11 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [testing_guidelines.md](./testing_guidelines.md) — 项目单元/集成测试通用编写规范（Playbook 是 E2E 层补充）
+> - 【② Plan 落地】[Agent管理集成测试.md](docs/plan/Agent管理集成测试.md) — init_full_test_env 启动顺序对齐 + 19 targets 集成测试模式可复用
+> - 【③ Wiki 长文（Batch10 追加）】[测试指南.md](docs/wiki/zh/content/测试指南/测试指南.md) — 测试金字塔分层 + 1124 测试总览 + Playwright E2E 预留位
+> - 【③ Wiki 长文（Batch10 追加）】[持续集成与发布工作流.md](docs/wiki/zh/content/基础设施/持续集成与发布工作流.md) — CI 四阶段闸门：clippy→单元→集成→Playwright E2E
+> - 【③ Wiki 长文（Batch10 追加）】[技术栈概览.md](docs/wiki/zh/content/项目概述/技术栈概览.md) — dioxus-playwright 技术选型说明
+> - 【④ RAG 卡（Batch10 新增）】[Playwright Browser E2E 端到端测试：dioxus-playwright Fixture + 本地独立启动 + 登录鉴权流程 + 3 大类页面覆盖](docs/wiki/knowledge/zh/Playwright%20Browser%20E2E%20端到端测试：dioxus-playwright%20Fixture%20+%20本地独立启动%20+%20登录鉴权流程%20+%203%20大类页面覆盖/Playwright%20Browser%20E2E%20端到端测试：dioxus-playwright%20Fixture%20+%20本地独立启动%20+%20登录鉴权流程%20+%203%20大类页面覆盖.md) — 双模式执行契约 + Fixture 抽取 + 7 条硬约束红线
 
 ## 📌 设计目标
 

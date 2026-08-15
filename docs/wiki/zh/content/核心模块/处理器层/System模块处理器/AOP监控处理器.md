@@ -2,14 +2,14 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
-- [src/handlers/system/aop_stats.rs](file://src/handlers/system/aop_stats.rs)
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [src/pkg/aop/core/registry.rs](file://src/pkg/aop/core/registry.rs)
-- [src/pkg/aop/core/metrics_hook.rs](file://src/pkg/aop/core/metrics_hook.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/consumer/aop_stats_hook.rs](file://src/consumer/aop_stats_hook.rs)
-- [common/src/api/log_stats.rs](file://common/src/api/log_stats.rs)
+- [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
+- [src/handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
+- [src/pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs)
+- [common/src/api/log_stats.rs](common/src/api/log_stats.rs)
 </cite>
 
 ## 目录
@@ -57,16 +57,16 @@ HK --> C
 ```
 
 图表来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](file://src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
-- [src/pkg/aop/mod.rs:1-61](file://src/pkg/aop/mod.rs#L1-L61)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
+- [src/pkg/aop/mod.rs:1-61](src/pkg/aop/mod.rs#L1-L61)
 
 ## 核心组件
 - AOP事件中心（Registry）：统一注册消费者/生产者，发布事件时注入元信息到JSON顶层，按消费者模式（同步/异步）分发；在关键生命周期节点触发指标Hook。
@@ -77,12 +77,12 @@ HK --> C
   - 实时统计：概览、时间序列、分布三个只读接口，直接读取内存快照，零DB开销。
 
 章节来源
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/metrics_hook.rs:16-89](file://src/pkg/aop/core/metrics_hook.rs#L16-L89)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](file://src/consumer/aop_stats_collector.rs#L54-L196)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/metrics_hook.rs:16-89](src/pkg/aop/core/metrics_hook.rs#L16-L89)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ## 架构总览
 AOP监控采用“事件驱动+内存统计”的轻量架构：
@@ -117,10 +117,10 @@ API->>COL : overview/time_series/distribution
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:333-444](file://src/pkg/aop/core/registry.rs#L333-L444)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:61-196](file://src/consumer/aop_stats_collector.rs#L61-L196)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:333-444](src/pkg/aop/core/registry.rs#L333-L444)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:61-196](src/consumer/aop_stats_collector.rs#L61-L196)
 
 ## 详细组件分析
 
@@ -169,13 +169,13 @@ Registry --> AopMetricsHook : "调用"
 ```
 
 图表来源
-- [src/pkg/aop/core/registry.rs:11-561](file://src/pkg/aop/core/registry.rs#L11-L561)
-- [src/pkg/aop/core/metrics_hook.rs:57-89](file://src/pkg/aop/core/metrics_hook.rs#L57-L89)
+- [src/pkg/aop/core/registry.rs:11-561](src/pkg/aop/core/registry.rs#L11-L561)
+- [src/pkg/aop/core/metrics_hook.rs:57-89](src/pkg/aop/core/metrics_hook.rs#L57-L89)
 
 章节来源
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/pkg/aop/core/registry.rs:260-487](file://src/pkg/aop/core/registry.rs#L260-L487)
-- [src/pkg/aop/core/registry.rs:509-553](file://src/pkg/aop/core/registry.rs#L509-L553)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/pkg/aop/core/registry.rs:260-487](src/pkg/aop/core/registry.rs#L260-L487)
+- [src/pkg/aop/core/registry.rs:509-553](src/pkg/aop/core/registry.rs#L509-L553)
 
 ### AopStatsHook（统计采集Hook）
 - 职责：实现AopMetricsHook，在四个回调中调用AopStatsCollector.record，并通过tokio::spawn后台执行record，避免阻塞AOP主流程。
@@ -199,10 +199,10 @@ Spawn --> End(["完成"])
 ```
 
 图表来源
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
 
 章节来源
-- [src/consumer/aop_stats_hook.rs:1-118](file://src/consumer/aop_stats_hook.rs#L1-L118)
+- [src/consumer/aop_stats_hook.rs:1-118](src/consumer/aop_stats_hook.rs#L1-L118)
 
 ### AopStatsCollector（内存统计聚合）
 - 职责：维护分钟级桶的计数与耗时累计，提供overview/time_series/distribution三类查询。
@@ -225,10 +225,10 @@ B --> E(["完成"])
 ```
 
 图表来源
-- [src/consumer/aop_stats_collector.rs:61-72](file://src/consumer/aop_stats_collector.rs#L61-L72)
+- [src/consumer/aop_stats_collector.rs:61-72](src/consumer/aop_stats_collector.rs#L61-L72)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:16-196](file://src/consumer/aop_stats_collector.rs#L16-L196)
+- [src/consumer/aop_stats_collector.rs:16-196](src/consumer/aop_stats_collector.rs#L16-L196)
 
 ### HTTP接口层
 - 队列监控接口（/api/v1/system/aop/*）：
@@ -256,12 +256,12 @@ API-->>Client : 响应体
 ```
 
 图表来源
-- [src/handlers/system/aop_stats.rs:16-30](file://src/handlers/system/aop_stats.rs#L16-L30)
-- [src/consumer/aop_stats_collector.rs:74-111](file://src/consumer/aop_stats_collector.rs#L74-L111)
+- [src/handlers/system/aop_stats.rs:16-30](src/handlers/system/aop_stats.rs#L16-L30)
+- [src/consumer/aop_stats_collector.rs:74-111](src/consumer/aop_stats_collector.rs#L74-L111)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ## 依赖关系分析
 - 模块耦合：
@@ -285,13 +285,13 @@ API --> COL
 ```
 
 图表来源
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
-- [src/pkg/aop/core/registry.rs:97-206](file://src/pkg/aop/core/registry.rs#L97-L206)
-- [src/consumer/aop_stats_hook.rs:35-82](file://src/consumer/aop_stats_hook.rs#L35-L82)
-- [src/consumer/aop_stats_collector.rs:54-196](file://src/consumer/aop_stats_collector.rs#L54-L196)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
+- [src/pkg/aop/core/registry.rs:97-206](src/pkg/aop/core/registry.rs#L97-L206)
+- [src/consumer/aop_stats_hook.rs:35-82](src/consumer/aop_stats_hook.rs#L35-L82)
+- [src/consumer/aop_stats_collector.rs:54-196](src/consumer/aop_stats_collector.rs#L54-L196)
 
 章节来源
-- [common/src/api/log_stats.rs:1-77](file://common/src/api/log_stats.rs#L1-L77)
+- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L77)
 
 ## 性能与高可用设计
 - 性能特性
@@ -324,8 +324,8 @@ API --> COL
   - 修复消费者逻辑错误，确保成功/失败路径均正确上报Hook。
 
 章节来源
-- [src/handlers/system/aop.rs:43-145](file://src/handlers/system/aop.rs#L43-L145)
-- [src/pkg/aop/core/registry.rs:333-444](file://src/pkg/aop/core/registry.rs#L333-L444)
+- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L145)
+- [src/pkg/aop/core/registry.rs:333-444](src/pkg/aop/core/registry.rs#L333-L444)
 
 ## 结论
 AOP监控系统以“事件驱动+内存统计”为核心，提供低侵入、高性能的指标采集与可视化能力。通过Registry的生命周期Hook与AopStatsCollector的分钟级聚合，实现了概览、时序、分布三类实时监控；HTTP接口直接读取内存快照，满足运维与排障需求。未来可通过持久化与预聚合进一步提升长周期分析与查询性能。
@@ -346,16 +346,16 @@ AOP监控系统以“事件驱动+内存统计”为核心，提供低侵入、�
   - GET /api/v1/system/aop/stats/distribution?group_by={consumer|status|kind}&status=...
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/aop_stats.rs:16-73](file://src/handlers/system/aop_stats.rs#L16-L73)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/aop_stats.rs:16-73](src/handlers/system/aop_stats.rs#L16-L73)
 
 ### 自定义监控指标配置
 - 实现AopMetricsHook并在启动时注入到Registry，即可在事件生命周期中采集自定义指标。
 - 推荐做法：将统计写入AopStatsCollector或通过Hook扩展其他指标后端（如Prometheus/时序数据库）。
 
 章节来源
-- [src/pkg/aop/core/metrics_hook.rs:57-89](file://src/pkg/aop/core/metrics_hook.rs#L57-L89)
-- [src/consumer/aop_stats_hook.rs:15-33](file://src/consumer/aop_stats_hook.rs#L15-L33)
+- [src/pkg/aop/core/metrics_hook.rs:57-89](src/pkg/aop/core/metrics_hook.rs#L57-L89)
+- [src/consumer/aop_stats_hook.rs:15-33](src/consumer/aop_stats_hook.rs#L15-L33)
 
 ### 告警规则设置建议
 - 基于实时统计阈值：
@@ -377,4 +377,4 @@ AOP监控系统以“事件驱动+内存统计”为核心，提供低侵入、�
   - 结合日志统计DTO结构（如common/src/api/log_stats.rs）统一输出格式，便于对接现有监控平台。
 
 章节来源
-- [common/src/api/log_stats.rs:1-77](file://common/src/api/log_stats.rs#L1-L77)
+- [common/src/api/log_stats.rs:1-77](common/src/api/log_stats.rs#L1-L77)

@@ -51,7 +51,7 @@
 
 ### 3.1 改造 1：fs_write Agent 路径隔离
 
-修改 [fs_write.rs](file:///Users/aman/Technology/rust/ai_orz/src/pkg/tool_registry/fs_write.rs) 的 `FsWriteCoreTool::call`：
+修改 [fs_write.rs](src/pkg/tool_registry/fs_write.rs) 的 `FsWriteCoreTool::call`：
 
 1. 不再丢弃 ctx，从 `ctx.agent_id()` 获取 agent_id
 2. base_path 从全局 `.ai_orz` 改为 `config::get().agent_data_dir(agent_id)`
@@ -134,7 +134,7 @@ pub struct RegisterArtifactFromPathParams {
 
 当前 `update_artifact_content` 是 HTTP only handler，**没有注册为工具**。本次补工具注册：
 
-**方式**：在现有 [update_artifact_content.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/project/artifact/update_artifact_content.rs) 的函数上加 `#[register_handler_tool(...)]` 宏：
+**方式**：在现有 [update_artifact_content.rs](src/handlers/project/artifact/update_artifact_content.rs) 的函数上加 `#[register_handler_tool(...)]` 宏：
 
 ```rust
 #[register_handler_tool(
@@ -152,7 +152,7 @@ pub async fn update_artifact_content(...) -> Result<...>
 
 ### 3.5 改造 5：调整 `query_artifacts` 的 tag
 
-修改 [query_artifacts.rs](file:///Users/aman/Technology/rust/ai_orz/src/handlers/project/artifact/query_artifacts.rs) 的宏属性：
+修改 [query_artifacts.rs](src/handlers/project/artifact/query_artifacts.rs) 的宏属性：
 
 ```rust
 // 改前
@@ -174,7 +174,7 @@ pub async fn update_artifact_content(...) -> Result<...>
 
 ### 3.6 改造 6：Domain 层新增方法
 
-在 [ArtifactManage trait](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/project/mod.rs#L329-L426) 新增两个方法：
+在 [ArtifactManage trait](src/service/domain/project/mod.rs#L329-L426) 新增两个方法：
 
 #### `create_generated_artifact`（文本类）
 
@@ -225,14 +225,14 @@ async fn create_generated_artifact_from_file(
 7. **错误回滚**：若 copy 失败，调 `delete` 回滚 DB 记录
 8. 返回 artifact
 
-**注意**：Domain 层需要能计算 artifact 的目标存储路径。当前 `resolve_generated_content_path` 在 DAO 层（[sqlite.rs:41-59](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/artifact/sqlite.rs#L41-L59)）。两种方案：
+**注意**：Domain 层需要能计算 artifact 的目标存储路径。当前 `resolve_generated_content_path` 在 DAO 层（[sqlite.rs:41-59](src/service/dao/artifact/sqlite.rs#L41-L59)）。两种方案：
 - **方案 A**：在 Domain 层用 `config::get().artifact_project_dir(project_id).join(artifact_id).join(file_name)` 直接计算（config 已是公共方法）
 - **方案 B**：在 DAL/DAO 层暴露 `resolve_content_path` 方法
 - **推荐 A**：避免新增 DAL 方法，config 方法已足够
 
 ### 3.7 改造 7：打通 create_artifact handler 的 GeneratedContent 分支
 
-修改 [create_artifact.rs:40-44](file:///Users/aman/Technology/rust/ai_orz/src/handlers/project/artifact/create_artifact.rs#L40-L44)：
+修改 [create_artifact.rs:40-44](src/handlers/project/artifact/create_artifact.rs#L40-L44)：
 
 ```rust
 ArtifactSourceType::GeneratedContent => {

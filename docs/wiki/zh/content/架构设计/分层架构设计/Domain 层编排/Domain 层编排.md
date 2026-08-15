@@ -2,17 +2,29 @@
 
 <cite>
 **本文引用的文件**
-- [src/service/domain/mod.rs](file://src/service/domain/mod.rs)
-- [src/service/domain/hr/mod.rs](file://src/service/domain/hr/mod.rs)
-- [src/service/domain/hr/agent.rs](file://src/service/domain/hr/agent.rs)
-- [src/service/domain/finance/mod.rs](file://src/service/domain/finance/mod.rs)
-- [src/service/domain/project/mod.rs](file://src/service/domain/project/mod.rs)
-- [src/service/domain/project/task.rs](file://src/service/domain/project/task.rs)
-- [src/service/domain/system/mod.rs](file://src/service/domain/system/mod.rs)
-- [src/models/events/mod.rs](file://src/models/events/mod.rs)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
-- [AGENTS.md](file://AGENTS.md)
+- [src/service/domain/mod.rs](src/service/domain/mod.rs)
+- [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
+- [src/service/domain/hr/agent.rs](src/service/domain/hr/agent.rs)
+- [src/service/domain/finance/mod.rs](src/service/domain/finance/mod.rs)
+- [src/service/domain/project/mod.rs](src/service/domain/project/mod.rs)
+- [src/service/domain/project/task.rs](src/service/domain/project/task.rs)
+- [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
+- [src/models/events/mod.rs](src/models/events/mod.rs)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [AGENTS.md](AGENTS.md)
 </cite>
+
+### 本文关联的三类文档（四类互引闭环）
+
+**① 设计文档（Design）**：
+- [项目领域架构设计](docs/design/project_design.md) — Project Domain 分层架构设计
+- [项目管理增强设计](docs/design/project_management_design.md) — Project Domain 六子模块职责边界 + Domain 层纯透传与按需注入区分
+
+**② 落地计划（Plan）**：
+- [项目任务增强](docs/plan/项目任务增强.md) — Project Domain 从纯透传 DAL 扩展为按需聚合（task_graph/artifacts/progress_summary）
+
+**④ RAG 原子知识卡**：
+- [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88.md) — ProjectManage 六能力分层映射（ProjectManage/TaskManage/TaskGraphManage/ArtifactManage/ProgressManage/ContextManage）+ 红线（禁止 Domain 调 Domain）
 
 ## 目录
 1. [引言](#引言)
@@ -45,12 +57,12 @@ I["domain::init_all_base_data()"] --> J["system::init_base_data()"]
 ```
 
 图表来源
-- [src/service/domain/mod.rs:23-42](file://src/service/domain/mod.rs#L23-L42)
+- [src/service/domain/mod.rs:23-42](src/service/domain/mod.rs#L23-L42)
 
 章节来源
-- [src/service/domain/mod.rs:1-42](file://src/service/domain/mod.rs#L1-L42)
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](file://AGENTS.md#L150-L186)
+- [src/service/domain/mod.rs:1-42](src/service/domain/mod.rs#L1-L42)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [AGENTS.md:150-186](AGENTS.md#L150-L186)
 
 ## 核心组件
 - 领域单例与装配：各域通过 OnceLock 持有 Arc<dyn Trait> 的领域实例，构造时注入所需 DAL（如 AgentDal、ToolDal、SkillDal、ModelProviderDal、MessageChannelDal、McpServerDal、McpToolDal、BrainDal、AttachmentDal、ProjectDal、TaskDal、ArtifactDal、CronTriggerDal、BackupDal、LogQueryDal）。
@@ -59,12 +71,12 @@ I["domain::init_all_base_data()"] --> J["system::init_base_data()"]
 - 领域事件：在关键业务动作处记录统计事件（如任务创建），并可通过 models/events 下的事件类型进行后续消费。
 
 章节来源
-- [src/service/domain/hr/mod.rs:36-57](file://src/service/domain/hr/mod.rs#L36-L57)
-- [src/service/domain/finance/mod.rs:47-90](file://src/service/domain/finance/mod.rs#L47-L90)
-- [src/service/domain/project/mod.rs:63-89](file://src/service/domain/project/mod.rs#L63-L89)
-- [src/service/domain/system/mod.rs:20-32](file://src/service/domain/system/mod.rs#L20-L32)
-- [src/models/events/mod.rs:1-21](file://src/models/events/mod.rs#L1-L21)
-- [AGENTS.md:284-288](file://AGENTS.md#L284-L288)
+- [src/service/domain/hr/mod.rs:36-57](src/service/domain/hr/mod.rs#L36-L57)
+- [src/service/domain/finance/mod.rs:47-90](src/service/domain/finance/mod.rs#L47-L90)
+- [src/service/domain/project/mod.rs:63-89](src/service/domain/project/mod.rs#L63-L89)
+- [src/service/domain/system/mod.rs:20-32](src/service/domain/system/mod.rs#L20-L32)
+- [src/models/events/mod.rs:1-21](src/models/events/mod.rs#L1-L21)
+- [AGENTS.md:284-288](AGENTS.md#L284-L288)
 
 ## 架构总览
 Domain 层遵循严格单向调用：Adapter → Domain → DAL → DAO。Domain 不直接访问 DAO，仅组合多个 DAL 完成业务编排；DAL 负责 PO ↔ 业务实体转换与单一数据源操作；DAO 专注持久化与外部出站调用。
@@ -86,12 +98,12 @@ Dald --> DAO
 ```
 
 图表来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](file://AGENTS.md#L150-L186)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [AGENTS.md:150-186](AGENTS.md#L150-L186)
 
 章节来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](file://AGENTS.md#L150-L186)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [AGENTS.md:150-186](AGENTS.md#L150-L186)
 
 ## 详细组件分析
 
@@ -130,7 +142,7 @@ HR-->>H : Agent(含工具/技能)
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:92-155](file://src/service/domain/hr/agent.rs#L92-L155)
+- [src/service/domain/hr/agent.rs:92-155](src/service/domain/hr/agent.rs#L92-L155)
 
 ```mermaid
 flowchart TD
@@ -149,12 +161,12 @@ W --> R["结束"]
 ```
 
 图表来源
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
 
 章节来源
-- [src/service/domain/hr/mod.rs:131-291](file://src/service/domain/hr/mod.rs#L131-L291)
-- [src/service/domain/hr/agent.rs:60-155](file://src/service/domain/hr/agent.rs#L60-L155)
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/hr/mod.rs:131-291](src/service/domain/hr/mod.rs#L131-L291)
+- [src/service/domain/hr/agent.rs:60-155](src/service/domain/hr/agent.rs#L60-L155)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
 
 ### Finance 领域编排
 - 职责边界：模型提供商、消息渠道、工具提供商（含 Agent 借用关系）、MCP Server/Tool、附件资产。
@@ -187,11 +199,11 @@ FinanceDomain <|.. FinanceDomainImpl
 ```
 
 图表来源
-- [src/service/domain/finance/mod.rs:94-115](file://src/service/domain/finance/mod.rs#L94-L115)
-- [src/service/domain/finance/mod.rs:461-522](file://src/service/domain/finance/mod.rs#L461-L522)
+- [src/service/domain/finance/mod.rs:94-115](src/service/domain/finance/mod.rs#L94-L115)
+- [src/service/domain/finance/mod.rs:461-522](src/service/domain/finance/mod.rs#L461-L522)
 
 章节来源
-- [src/service/domain/finance/mod.rs:117-457](file://src/service/domain/finance/mod.rs#L117-L457)
+- [src/service/domain/finance/mod.rs:117-457](src/service/domain/finance/mod.rs#L117-L457)
 
 ### Project 领域编排
 - 职责边界：Project、Task、Artifact 的业务编排，包含状态流转、进度更新、产物创建与读取、详情聚合。
@@ -224,12 +236,12 @@ PD-->>H : Task(含 artifacts)
 ```
 
 图表来源
-- [src/service/domain/project/task.rs:51-109](file://src/service/domain/project/task.rs#L51-L109)
-- [src/service/domain/project/task.rs:116-144](file://src/service/domain/project/task.rs#L116-L144)
+- [src/service/domain/project/task.rs:51-109](src/service/domain/project/task.rs#L51-L109)
+- [src/service/domain/project/task.rs:116-144](src/service/domain/project/task.rs#L116-L144)
 
 章节来源
-- [src/service/domain/project/mod.rs:93-226](file://src/service/domain/project/mod.rs#L93-L226)
-- [src/service/domain/project/task.rs:51-144](file://src/service/domain/project/task.rs#L51-L144)
+- [src/service/domain/project/mod.rs:93-226](src/service/domain/project/mod.rs#L93-L226)
+- [src/service/domain/project/task.rs:51-144](src/service/domain/project/task.rs#L51-L144)
 
 ### System 领域编排
 - 职责边界：Cron Trigger 管理、备份、日志查询、AOP 监控与统计、基础数据注入。
@@ -256,12 +268,12 @@ Sys-->>Init : 完成
 ```
 
 图表来源
-- [src/service/domain/system/mod.rs:34-46](file://src/service/domain/system/mod.rs#L34-L46)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [src/service/domain/system/mod.rs:34-46](src/service/domain/system/mod.rs#L34-L46)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 章节来源
-- [src/service/domain/system/mod.rs:102-204](file://src/service/domain/system/mod.rs#L102-L204)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [src/service/domain/system/mod.rs:102-204](src/service/domain/system/mod.rs#L102-L204)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 ## 依赖关系分析
 - 耦合度：Domain 仅依赖 DAL 接口，低耦合；DAL 依赖 DAO 接口，面向多态实现。
@@ -296,14 +308,14 @@ end
 ```
 
 图表来源
-- [src/service/domain/hr/mod.rs:61-83](file://src/service/domain/hr/mod.rs#L61-L83)
-- [src/service/domain/finance/mod.rs:461-495](file://src/service/domain/finance/mod.rs#L461-L495)
-- [src/service/domain/project/mod.rs:502-523](file://src/service/domain/project/mod.rs#L502-L523)
-- [src/service/domain/system/mod.rs:60-78](file://src/service/domain/system/mod.rs#L60-L78)
+- [src/service/domain/hr/mod.rs:61-83](src/service/domain/hr/mod.rs#L61-L83)
+- [src/service/domain/finance/mod.rs:461-495](src/service/domain/finance/mod.rs#L461-L495)
+- [src/service/domain/project/mod.rs:502-523](src/service/domain/project/mod.rs#L502-L523)
+- [src/service/domain/system/mod.rs:60-78](src/service/domain/system/mod.rs#L60-L78)
 
 章节来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](file://AGENTS.md#L150-L186)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [AGENTS.md:150-186](AGENTS.md#L150-L186)
 
 ## 性能与可维护性
 - 性能特性：
@@ -319,10 +331,10 @@ end
   - 单元测试隔离：每个模块对应测试文件，使用独立临时 SQLite，互不干扰。
 
 章节来源
-- [AGENTS.md:585-755](file://AGENTS.md#L585-L755)
-- [AGENTS.md:562-577](file://AGENTS.md#L562-L577)
-- [src/service/domain/hr/agent.rs:313-397](file://src/service/domain/hr/agent.rs#L313-L397)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [AGENTS.md:585-755](AGENTS.md#L585-L755)
+- [AGENTS.md:562-577](AGENTS.md#L562-L577)
+- [src/service/domain/hr/agent.rs:313-397](src/service/domain/hr/agent.rs#L313-L397)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 ## 故障排查指南
 - 常见错误与定位：
@@ -337,9 +349,9 @@ end
   - 切换 Embedding Provider 等关键操作需特别注意失败回滚。
 
 章节来源
-- [src/service/domain/hr/agent.rs:213-270](file://src/service/domain/hr/agent.rs#L213-L270)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
-- [AGENTS.md:453-498](file://AGENTS.md#L453-L498)
+- [src/service/domain/hr/agent.rs:213-270](src/service/domain/hr/agent.rs#L213-L270)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
+- [AGENTS.md:453-498](AGENTS.md#L453-L498)
 
 ## 结论
 Domain 层作为业务编排核心，通过组合多个 DAL 完成复杂业务流程，集中封装业务规则与状态机，并以领域事件与统计埋点支撑可观测性。HR、Finance、Project、System 四大域职责清晰、边界明确，遵循严格分层与单向依赖，具备良好的可测试性与可维护性。未来可在跨 DAL 事务、更多领域事件与状态机扩展方面持续完善。
@@ -351,7 +363,7 @@ Domain 层作为业务编排核心，通过组合多个 DAL 完成复杂业务�
   - 日志与事件：见 AGENTS.md 的日志系统与事件设计。
 
 章节来源
-- [docs/ARCHITECTURE.md:325-385](file://docs/ARCHITECTURE.md#L325-L385)
-- [AGENTS.md:150-186](file://AGENTS.md#L150-L186)
-- [AGENTS.md:585-755](file://AGENTS.md#L585-L755)
-- [AGENTS.md:453-498](file://AGENTS.md#L453-L498)
+- [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
+- [AGENTS.md:150-186](AGENTS.md#L150-L186)
+- [AGENTS.md:585-755](AGENTS.md#L585-L755)
+- [AGENTS.md:453-498](AGENTS.md#L453-L498)

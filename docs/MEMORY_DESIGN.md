@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_stm_agent ON short_term_memory_index(agent_id);
 CREATE INDEX IF NOT EXISTS idx_stm_created ON short_term_memory_index(created_at DESC);
 CREATE VIRTUAL TABLE IF NOT EXISTS stm_fts USING FTS5(summary, content=short_term_memory_index);
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **设计说明**：
 - `id` 是多个原始 `trace_id` 拼接后的 SHA256 hash，唯一标识这个聚合短期记忆
@@ -109,7 +109,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_node_fts USING fts5(
     tokenize = 'trigram'
 );
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **设计说明**：
 - 节点关系独立存储，本表只存储节点自身信息
@@ -138,7 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_knr_source ON knowledge_node_relation(source_node
 CREATE INDEX IF NOT EXISTS idx_knr_target ON knowledge_node_relation(target_node_id);
 CREATE INDEX IF NOT EXISTS idx_knr_type ON knowledge_node_relation(relation_type);
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **预定义关系类型** (`KnowledgeRelationType` 枚举):
 
@@ -185,7 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_kr_knowledge ON knowledge_reference(knowledge_id)
 CREATE INDEX IF NOT EXISTS idx_kr_short_term ON knowledge_reference(short_term_id);
 CREATE INDEX IF NOT EXISTS idx_kr_trace ON knowledge_reference(trace_id);
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 **设计说明**：
 - 新增 `trace_id`/`date_path`/`byte_start`/`byte_length`，每个原始细节都有完整可追溯的位置信息
@@ -202,7 +202,7 @@ Agent 表扩展核心记忆字段：
 ALTER TABLE agents ADD COLUMN soul TEXT;
 ALTER TABLE agents ADD COLUMN capabilities TEXT;
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 核心记忆从 Agent 表读取，运行时组装到 `CoreMemory`。
 
@@ -213,13 +213,13 @@ ALTER TABLE agents ADD COLUMN capabilities TEXT;
 原始记忆细节以 **JSONL**（每行一条 JSON 对象）格式按日期存储在文件系统中，兼顾人类可读 + 程序易解析/统计：
 
 **完整路径（相对于 base_data_path）：**
-> 相关实现细节见：[memory 系统](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[memory 系统](src/service/domain/runtime/memory.rs)
 
 **一条 JSONL 记录示例（MemoryTraceRow）：**
-> 相关实现细节见：[memory 系统](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[memory 系统](src/service/domain/runtime/memory.rs)
 
 **`knowledge_reference` 表中 `date_path` 存储格式：**
-> 相关实现细节见：[memory 系统](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[memory 系统](src/service/domain/runtime/memory.rs)
 存储相对路径，读取时与配置的 `base_data_path` 拼接得到完整路径，避免重复拼接。
 
 **byte_start / byte_length 定位方式：** JSONL 按行存储，`byte_start` 指向某一行首字节偏移，`byte_length` 是该行字节长度，可直接 `pread` 精确定位一条完整的 MemoryTraceRow，无需解析整个文件。
@@ -307,7 +307,7 @@ pub trait MemoryDaoTrait: Send + Sync {
     fn find_relations_by_type(...) -> Result<Vec<KnowledgeNodeRelationPo>, AppError>;
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ---
 
@@ -325,7 +325,7 @@ pub enum MemoryType {
     All,            // 所有类型
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 2. PO 统一枚举
 
@@ -340,7 +340,7 @@ pub enum MemoryPo {
     Relation(KnowledgeNodeRelationPo),
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 3. 业务实体
 
@@ -354,7 +354,7 @@ pub struct Memory {
     pub search_match: Option<SearchMatchInfo>,
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 命名对齐：
 - Skill = SkillPo + search_match
@@ -387,7 +387,7 @@ pub struct MemorySearch {
     pub filters: MemoryQuery,  // 包含 memory_type
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 5. DAL 统一接口
 
@@ -403,7 +403,7 @@ pub trait MemoryDal: Send + Sync {
         -> Result<Vec<Memory>, AppError>;
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 6. 类型关系图
 
@@ -459,7 +459,7 @@ MemoryPo (enum)
 - `batch_append_memory_traces(ctx, traces) -> Vec<ShortTermMemoryIndexPo>`
 
 **新增**：
-> 相关实现细节见：[dao/memory/sqlite 层](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/sqlite.rs)
+> 相关实现细节见：[dao/memory/sqlite 层](src/service/dao/memory/sqlite.rs)
 
 ### 3. Schema 变更
 
@@ -469,7 +469,7 @@ MemoryPo (enum)
 ALTER TABLE short_term_memory_index
     ADD COLUMN trace_ids TEXT NOT NULL DEFAULT '[]';  -- JSON 数组
 ```
-> 对应迁移文件参考：[migrations/ 目录](file:///Users/aman/Technology/rust/ai_orz/migrations/)
+> 对应迁移文件参考：[migrations/ 目录](migrations/)
 
 `ShortTermMemoryIndexPo` 同步新增 `trace_ids: Vec<String>` 字段（序列化时转 JSON 字符串）。
 
@@ -491,10 +491,10 @@ pub enum MemoryPo {
     Relation(KnowledgeNodeRelationPo),
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 `Memory` 业务实体新增辅助方法：
-> 相关实现细节见：[dao/memory/ 向量索引](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/)
+> 相关实现细节见：[dao/memory/ 向量索引](src/service/dao/memory/)
 
 ### 5. MemoryCreateParams 设计
 
@@ -519,7 +519,7 @@ pub enum MemoryCreateParams {
     CreateRelations(Vec<KnowledgeNodeRelationPo>),
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 6. DAL 写入接口
 
@@ -551,7 +551,7 @@ pub trait MemoryDal: Send + Sync {
     ) -> Result<(), AppError>;
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 7. create 方法分发流程
 
@@ -580,7 +580,7 @@ pub trait MemoryDal: Send + Sync {
 
 ### 10. 典型业务调用顺序
 
-> 相关实现细节见：[dal/memory.rs + runtime/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
+> 相关实现细节见：[dal/memory.rs + runtime/memory.rs](src/service/dal/memory.rs)
 
 ### 11. 改动范围清单
 
@@ -752,7 +752,7 @@ pub struct SearchMemoryParams {
     pub tags: Option<Vec<String>>,         // 标签过滤（OR 语义，命中任一 tag 即可）
 }
 ```
-> 当前实现：[models/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/models/memory.rs)
+> 当前实现：[models/memory.rs](src/models/memory.rs)
 
 ### 16.5 标签过滤（2026-07-24 新增）
 
@@ -1023,7 +1023,7 @@ Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风�
 
 合并后的画像会渲染为一段 `【用户画像】` block，注入在每个 Agent prompt 的 common_context 末尾：
 
-> 相关实现细节见：[memory 系统](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[memory 系统](src/service/domain/runtime/memory.rs)
 
 **渲染策略**：
 - 永远把「声明偏好」放前面，且字号视觉上更突出
@@ -1044,7 +1044,7 @@ Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风�
 
 ### 18.6 调用位置与 DAL 接口
 
-> 相关实现细节见：[memory 系统](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/memory.rs)
+> 相关实现细节见：[memory 系统](src/service/domain/runtime/memory.rs)
 
 调用链路：
 - `awaken_agent_brain` → `build_common_context` → `user_dal.get_user_profile(ctx, uid, Some(agent_id))` → 将 `merged_prompt_block` 拼入 prompt
@@ -1074,13 +1074,13 @@ Agent 与用户交互的过程中会逐渐观察到用户的偏好（语言风�
 
 ### 5.1 新增记忆实体或扩展向量化范围
 当前 ShortTermMemoryIndexPo / LongTermKnowledgeNodePo 已实现 Vectorizable。若新增记忆层级或其他需要向量索引的 PO：
-1. 在 `src/models/vector.rs` 的 `Vectorizable` trait 中不改动；新增 PO 直接 `impl Vectorizable for XxxPo`，参考：[LongTermKnowledgeNodePo::vectorize_text](file:///Users/aman/Technology/rust/ai_orz/src/models/vector.rs)
-2. 对应 DAL 在 create/update 后调用统一的 `embed_entity(ctx, cortex, po)` 完成索引，禁止手动 `format!` 拼接文本，参考：[dal/memory.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/memory.rs)
-3. 对应 SQL Schema 在 `migrations/` 下的迁移文件中新增表与列，保持 STRICT 模式与索引一致性，参考：[migrations 目录](file:///Users/aman/Technology/rust/ai_orz/migrations)
+1. 在 `src/models/vector.rs` 的 `Vectorizable` trait 中不改动；新增 PO 直接 `impl Vectorizable for XxxPo`，参考：[LongTermKnowledgeNodePo::vectorize_text](src/models/vector.rs)
+2. 对应 DAL 在 create/update 后调用统一的 `embed_entity(ctx, cortex, po)` 完成索引，禁止手动 `format!` 拼接文本，参考：[dal/memory.rs](src/service/dal/memory.rs)
+3. 对应 SQL Schema 在 `migrations/` 下的迁移文件中新增表与列，保持 STRICT 模式与索引一致性，参考：[migrations 目录](migrations)
 
 ### 5.2 新增用户偏好沉淀来源或图谱节点类型
 如果未来扩展偏好来源或新增图谱节点 tag：
-1. 新来源沉淀沿用 `tag = user_preference:xxx` 的命名空间约定，保持查询时 json_each OR 过滤不变，参考：[memory query SQL](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/memory/sqlite.rs)
-2. `UserProfile::merge_and_sanitize` 三级安全守卫保持不放宽，新增来源同样经过长度/模式过滤，参考：[dal/user.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/user.rs)
-3. 前端知识图谱可视化扩展节点类型时，复用现有多色边框渲染机制，参考：[frontend GraphCanvas 组件](file:///Users/aman/Technology/rust/ai_orz/frontend/src/components/graph_canvas.rs)
+1. 新来源沉淀沿用 `tag = user_preference:xxx` 的命名空间约定，保持查询时 json_each OR 过滤不变，参考：[memory query SQL](src/service/dao/memory/sqlite.rs)
+2. `UserProfile::merge_and_sanitize` 三级安全守卫保持不放宽，新增来源同样经过长度/模式过滤，参考：[dal/user.rs](src/service/dal/user.rs)
+3. 前端知识图谱可视化扩展节点类型时，复用现有多色边框渲染机制，参考：[frontend GraphCanvas 组件](frontend/src/components/graph_canvas.rs)
 

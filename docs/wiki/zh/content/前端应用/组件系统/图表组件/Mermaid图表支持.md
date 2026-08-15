@@ -2,15 +2,15 @@
 
 <cite>
 **本文引用的文件**
-- [frontend/src/components/markdown.rs](file://frontend/src/components/markdown.rs)
-- [frontend/index.html](file://frontend/index.html)
-- [common/src/api/project.rs](file://common/src/api/project.rs)
-- [common/src/api/task.rs](file://common/src/api/task.rs)
-- [src/handlers/project/projects/response.rs](file://src/handlers/project/projects/response.rs)
-- [src/handlers/project/task/response.rs](file://src/handlers/project/task/response.rs)
-- [frontend/src/pages/project/project_detail.rs](file://frontend/src/pages/project/project_detail.rs)
-- [frontend/src/pages/message/chat.rs](file://frontend/src/pages/message/chat.rs)
-- [frontend/styles/input.css](file://frontend/styles/input.css)
+- [frontend/src/components/markdown.rs](frontend/src/components/markdown.rs)
+- [frontend/index.html](frontend/index.html)
+- [common/src/api/project.rs](common/src/api/project.rs)
+- [common/src/api/task.rs](common/src/api/task.rs)
+- [src/handlers/project/projects/response.rs](src/handlers/project/projects/response.rs)
+- [src/handlers/project/task/response.rs](src/handlers/project/task/response.rs)
+- [frontend/src/pages/project/project_detail.rs](frontend/src/pages/project/project_detail.rs)
+- [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs)
+- [frontend/styles/input.css](frontend/styles/input.css)
 </cite>
 
 ## 更新摘要
@@ -79,20 +79,20 @@ HR_T --> CT
 ```
 
 **图示来源**
-- [frontend/src/components/markdown.rs:1-206](file://frontend/src/components/markdown.rs#L1-L206)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:1-206](frontend/src/components/markdown.rs#L1-L206)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 **章节来源**
-- [frontend/src/components/markdown.rs:1-206](file://frontend/src/components/markdown.rs#L1-L206)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:1-206](frontend/src/components/markdown.rs#L1-L206)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 核心组件
 - **MarkdownRenderer**：基于 pulldown-cmark 将 Markdown 转为 HTML，启用表格、删除线、任务列表扩展；**新增安全特性**：原始 HTML 事件降级为文本，确保 dangerous_inner_html 注入安全；按 content 缓存 HTML；含 mermaid 代码块时延迟扫描并调用 window.__renderMermaid。
@@ -103,9 +103,9 @@ HR_T --> CT
 **更新** 新增了完整的 XSS 防护机制，通过 pulldown-cmark 的事件映射将所有原始 HTML 转换为纯文本，防止潜在的脚本注入攻击。
 
 **章节来源**
-- [frontend/src/components/markdown.rs:35-206](file://frontend/src/components/markdown.rs#L35-L206)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
+- [frontend/src/components/markdown.rs:35-206](frontend/src/components/markdown.rs#L35-L206)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
 
 ## 架构总览
 后端通过共享 DTO 暴露 execution_plan/execution_result 与 task_graph（Mermaid 字符串），Handler 将其映射到响应体；前端各页面使用 MarkdownRenderer/MermaidDiagram 进行渲染，Mermaid 由 index.html 提供的 JS 接口完成最终 SVG 生成。
@@ -129,10 +129,10 @@ IDX-->>FE : 替换为SVG
 ```
 
 **图示来源**
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [frontend/src/components/markdown.rs:61-115](file://frontend/src/components/markdown.rs#L61-L115)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [frontend/src/components/markdown.rs:61-115](frontend/src/components/markdown.rs#L61-L115)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
 
 ## 详细组件分析
 
@@ -158,11 +158,11 @@ Replace --> End
 **更新** 新增了 XSS 安全检查步骤，确保所有原始 HTML 都被正确转义。
 
 **图示来源**
-- [frontend/src/components/markdown.rs:35-115](file://frontend/src/components/markdown.rs#L35-L115)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
+- [frontend/src/components/markdown.rs:35-115](frontend/src/components/markdown.rs#L35-L115)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
 
 **章节来源**
-- [frontend/src/components/markdown.rs:35-206](file://frontend/src/components/markdown.rs#L35-L206)
+- [frontend/src/components/markdown.rs:35-206](frontend/src/components/markdown.rs#L35-L206)
 
 ### 后端DTO与Handler映射
 - Project 响应新增 execution_plan、execution_result、task_graph 字段，按需返回。
@@ -233,16 +233,16 @@ TasksResponseMapper --> GetTaskResponse : "映射"
 ```
 
 **图示来源**
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 **章节来源**
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ### 页面集成点
 - 项目详情页：展示 description/workflow/guidance/execution_plan/execution_result 的 Markdown；当 with_task_graph=true 时渲染 Mermaid 依赖图。
@@ -268,12 +268,12 @@ A->>MD : 展开短期记忆/knowledge summary(compact)
 ```
 
 **图示来源**
-- [frontend/src/pages/project/project_detail.rs:367-450](file://frontend/src/pages/project/project_detail.rs#L367-L450)
-- [frontend/src/pages/message/chat.rs:1-800](file://frontend/src/pages/message/chat.rs#L1-L800)
+- [frontend/src/pages/project/project_detail.rs:367-450](frontend/src/pages/project/project_detail.rs#L367-L450)
+- [frontend/src/pages/message/chat.rs:1-800](frontend/src/pages/message/chat.rs#L1-L800)
 
 **章节来源**
-- [frontend/src/pages/project/project_detail.rs:367-450](file://frontend/src/pages/project/project_detail.rs#L367-L450)
-- [frontend/src/pages/message/chat.rs:1-800](file://frontend/src/pages/message/chat.rs#L1-L800)
+- [frontend/src/pages/project/project_detail.rs:367-450](frontend/src/pages/project/project_detail.rs#L367-L450)
+- [frontend/src/pages/message/chat.rs:1-800](frontend/src/pages/message/chat.rs#L1-L800)
 
 ## 依赖关系分析
 - 前端组件对 JS 全局函数的弱依赖：若 vendor 缺失或函数不存在，call_window_fn 静默跳过，不影响 Markdown 渲染。
@@ -294,18 +294,18 @@ HR_T["task/response.rs"] --> CT["common::api::GetTaskResponse"]
 ```
 
 **图示来源**
-- [frontend/src/components/markdown.rs:125-165](file://frontend/src/components/markdown.rs#L125-L165)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:125-165](frontend/src/components/markdown.rs#L125-L165)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 **章节来源**
-- [frontend/src/components/markdown.rs:125-165](file://frontend/src/components/markdown.rs#L125-L165)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [frontend/styles/input.css:203-372](file://frontend/styles/input.css#L203-L372)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:125-165](frontend/src/components/markdown.rs#L125-L165)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [frontend/styles/input.css:203-372](frontend/styles/input.css#L203-L372)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 性能考虑
 - Markdown 解析缓存：use_memo 按 content 缓存 HTML，避免聊天等高频渲染场景重复解析。
@@ -329,12 +329,12 @@ HR_T["task/response.rs"] --> CT["common::api::GetTaskResponse"]
   - 检查 markdown.rs 中的事件映射逻辑是否正确执行。
 
 **章节来源**
-- [frontend/src/components/markdown.rs:125-206](file://frontend/src/components/markdown.rs#L125-L206)
-- [frontend/index.html:421-477](file://frontend/index.html#L421-L477)
-- [common/src/api/project.rs:99-153](file://common/src/api/project.rs#L99-L153)
-- [common/src/api/task.rs:136-194](file://common/src/api/task.rs#L136-L194)
-- [src/handlers/project/projects/response.rs:20-45](file://src/handlers/project/projects/response.rs#L20-L45)
-- [src/handlers/project/task/response.rs:25-53](file://src/handlers/project/task/response.rs#L25-L53)
+- [frontend/src/components/markdown.rs:125-206](frontend/src/components/markdown.rs#L125-L206)
+- [frontend/index.html:421-477](frontend/index.html#L421-L477)
+- [common/src/api/project.rs:99-153](common/src/api/project.rs#L99-L153)
+- [common/src/api/task.rs:136-194](common/src/api/task.rs#L136-L194)
+- [src/handlers/project/projects/response.rs:20-45](src/handlers/project/projects/response.rs#L20-L45)
+- [src/handlers/project/task/response.rs:25-53](src/handlers/project/task/response.rs#L25-L53)
 
 ## 结论
 本项目通过统一的 MarkdownRenderer 与 MermaidDiagram 组件，结合后端共享 DTO 与 Handler 映射，实现了从数据到可视化的完整链路。**最新更新**增强了安全性，通过 pulldown-cmark 的 XSS 防护机制确保内容注入安全。Mermaid 采用 vendor JS 方案，具备离线可用、主题自适应、懒加载等优势，且可在必要时移除而不影响 Markdown 基础能力。整体设计兼顾安全性（XSS 防护）、性能（缓存与懒加载）与可扩展性（按需字段与组件化）。

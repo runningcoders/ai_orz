@@ -10,6 +10,14 @@
 > - [skill_design.md](./skill_design.md) — 技能系统基础设计
 > - [tool_design.md](./tool_design.md) — 工具系统基础设计（tag 过滤通用优化）
 > - [runtime_design.md](./runtime_design.md) — 唤醒流程与 PromptBuilder
+> - 【② Plan 落地快照（Batch11 精确新增）】
+>   - [Agent管理集成测试.md](docs/plan/Agent管理集成测试.md) — 技能安装幂等测试 + 入职绑定失败降级 + Prompt Token 预算断言
+> - 【③ Wiki 长文 ≥3 篇（Batch11 精确对齐）】
+>   - [技能系统.md](docs/wiki/zh/content/功能模块/技能系统.md) — Skill 6 字段结构 + Tag 维度管理 + Prompt 熔断分层
+>   - [技能包管理.md](docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md) — 技能包 Tag 批量安装 + 入职绑定流程 + 幂等性保证
+>   - [HR 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/HR%20领域编排.md) — HRDomain.skill / HRDomain.agent 两子域职责 + install_skill_pack 编排链路
+> - 【④ RAG 原子知识卡（Batch11 精确对应 1 张）】
+>   - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — 5 套 TEMPLATE + 幂等安装 + 入职绑定 + 四层 Prompt Token 预算熔断（Layer1-4 17K 上限）
 
 ---
 

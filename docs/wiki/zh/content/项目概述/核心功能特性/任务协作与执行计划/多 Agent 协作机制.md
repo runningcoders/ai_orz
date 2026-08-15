@@ -2,20 +2,32 @@
 
 <cite>
 **本文引用的文件**
-- [src/consumer/message.rs](file://src/consumer/message.rs)
-- [src/consumer/mod.rs](file://src/consumer/mod.rs)
-- [src/pkg/agent_runtime_state.rs](file://src/pkg/agent_runtime_state.rs)
-- [src/service/domain/runtime/mod.rs](file://src/service/domain/runtime/mod.rs)
-- [common/src/enums/agent.rs](file://common/src/enums/agent.rs)
-- [src/handlers/a2a/callback.rs](file://src/handlers/a2a/callback.rs)
-- [src/producer/message_channel.rs](file://src/producer/message_channel.rs)
-- [common/src/api/a2a.rs](file://common/src/api/a2a.rs)
-- [src/service/dao/agent_runtime/a2a.rs](file://src/service/dao/agent_runtime/a2a.rs)
-- [src/consumer/task_event_consumer.rs](file://src/consumer/task_event_consumer.rs)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md](file://docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md](file://docs/superpowers/plans/2026-07-20-aop-event-center.md)
-- [docs/external_agent_design.md](file://docs/external_agent_design.md)
+- [src/consumer/message.rs](src/consumer/message.rs)
+- [src/consumer/mod.rs](src/consumer/mod.rs)
+- [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [src/service/domain/runtime/mod.rs](src/service/domain/runtime/mod.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)
+- [src/handlers/a2a/callback.rs](src/handlers/a2a/callback.rs)
+- [src/producer/message_channel.rs](src/producer/message_channel.rs)
+- [common/src/api/a2a.rs](common/src/api/a2a.rs)
+- [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
+- [src/consumer/task_event_consumer.rs](src/consumer/task_event_consumer.rs)
+- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md](docs/superpowers/plans/2026-07-20-aop-event-center.md)
+- [docs/external_agent_design.md](docs/external_agent_design.md)
 </cite>
+
+### 本文关联的三类文档（四类互引闭环）
+
+**① 设计文档（Design）**：
+- [项目领域架构设计](docs/design/project_design.md) — Project 一对多任务关联 + 进度追踪设计
+- [项目管理增强设计](docs/design/project_management_design.md) — Project Domain 六能力整合 + 任务 DAG 依赖编排
+
+**② 落地计划（Plan）**：
+- [项目任务增强](docs/plan/项目任务增强.md) — TaskGraph DAG 构建 + FetchOptions 按需注入 + ProgressSummary 实时聚合
+
+**④ RAG 原子知识卡**：
+- [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88.md) — Project Domain 唯一编排层 + ContextManage 对话上下文聚合 + Agent 思考循环承载
 
 ## 目录
 1. [简介](#简介)
@@ -83,13 +95,13 @@ PD --> DB
 ```
 
 图表来源
-- [src/consumer/mod.rs:16-36](file://src/consumer/mod.rs#L16-L36)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](file://docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
+- [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 
 章节来源
-- [src/consumer/mod.rs:16-36](file://src/consumer/mod.rs#L16-L36)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](file://docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
 
 ## 核心组件
 - 事件中心与消费者注册：通过 Registry 统一注册 Producer/Consumer，异步消费者使用独立队列，支持 ack/nack 可靠投递。
@@ -99,11 +111,11 @@ PD --> DB
 - A2A 外部协作：通过 HTTP JSON-RPC 2.0 与远程 Agent 交互，回调与轮询双通道，映射本地 Task 状态并增量同步消息。
 
 章节来源
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](file://docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
-- [src/pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
-- [src/service/domain/runtime/mod.rs:33-49](file://src/service/domain/runtime/mod.rs#L33-L49)
-- [docs/external_agent_design.md:152-199](file://docs/external_agent_design.md#L152-L199)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
+- [src/pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
+- [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
+- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
 
 ## 架构总览
 多 Agent 协作的核心流程是“消息驱动 + 事件编排 + 状态机控制”。外部或内部消息进入后，经 AOP 事件中心路由到对应 Consumer；Consumer 根据角色与上下文调度 Domain；Domain 协调 DAL/DAO 完成持久化与外部调用；Agent 的运行时状态由 AgentRuntimeStateManager 统一管理，确保并发安全与可观测性。
@@ -134,9 +146,9 @@ MC-->>MQ : ack/nack
 ```
 
 图表来源
-- [src/consumer/message.rs:78-141](file://src/consumer/message.rs#L78-L141)
-- [src/consumer/message.rs:147-357](file://src/consumer/message.rs#L147-L357)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:809-878](file://docs/superpowers/plans/2026-07-20-aop-event-center.md#L809-L878)
+- [src/consumer/message.rs:78-141](src/consumer/message.rs#L78-L141)
+- [src/consumer/message.rs:147-357](src/consumer/message.rs#L147-L357)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md:809-878](docs/superpowers/plans/2026-07-20-aop-event-center.md#L809-L878)
 
 ## 详细组件分析
 
@@ -152,10 +164,10 @@ MC-->>MQ : ack/nack
   - CronTriggerConsumer 定时检查进行中项目，向 Owner Agent 推送跟进通知，防止阻塞。
 
 章节来源
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
-- [src/consumer/message.rs:147-357](file://src/consumer/message.rs#L147-L357)
-- [src/consumer/task_event_consumer.rs:1-46](file://src/consumer/task_event_consumer.rs#L1-L46)
-- [src/producer/message_channel.rs:40-115](file://src/producer/message_channel.rs#L40-L115)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
+- [src/consumer/message.rs:147-357](src/consumer/message.rs#L147-L357)
+- [src/consumer/task_event_consumer.rs:1-46](src/consumer/task_event_consumer.rs#L1-L46)
+- [src/producer/message_channel.rs:40-115](src/producer/message_channel.rs#L40-L115)
 
 ### 负载均衡与可用性控制
 - 原子占用
@@ -179,14 +191,14 @@ Done --> End
 ```
 
 图表来源
-- [src/consumer/message.rs:147-196](file://src/consumer/message.rs#L147-L196)
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [common/src/enums/agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
+- [src/consumer/message.rs:147-196](src/consumer/message.rs#L147-L196)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [common/src/enums/agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
 
 章节来源
-- [src/consumer/message.rs:147-196](file://src/consumer/message.rs#L147-L196)
-- [src/pkg/agent_runtime_state.rs:85-107](file://src/pkg/agent_runtime_state.rs#L85-L107)
-- [common/src/enums/agent.rs:64-99](file://common/src/enums/agent.rs#L64-L99)
+- [src/consumer/message.rs:147-196](src/consumer/message.rs#L147-L196)
+- [src/pkg/agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
+- [common/src/enums/agent.rs:64-99](common/src/enums/agent.rs#L64-L99)
 
 ### Agent 间通信协议与数据交换格式
 - A2A 协议
@@ -214,16 +226,16 @@ MD-->>Local : SSE/渠道投递
 ```
 
 图表来源
-- [common/src/api/a2a.rs:1-47](file://common/src/api/a2a.rs#L1-L47)
-- [src/handlers/a2a/callback.rs:47-158](file://src/handlers/a2a/callback.rs#L47-L158)
-- [src/service/dao/agent_runtime/a2a.rs:1-47](file://src/service/dao/agent_runtime/a2a.rs#L1-L47)
-- [docs/external_agent_design.md:152-199](file://docs/external_agent_design.md#L152-L199)
+- [common/src/api/a2a.rs:1-47](common/src/api/a2a.rs#L1-L47)
+- [src/handlers/a2a/callback.rs:47-158](src/handlers/a2a/callback.rs#L47-L158)
+- [src/service/dao/agent_runtime/a2a.rs:1-47](src/service/dao/agent_runtime/a2a.rs#L1-L47)
+- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
 
 章节来源
-- [common/src/api/a2a.rs:1-47](file://common/src/api/a2a.rs#L1-L47)
-- [src/handlers/a2a/callback.rs:47-158](file://src/handlers/a2a/callback.rs#L47-L158)
-- [src/service/dao/agent_runtime/a2a.rs:1-47](file://src/service/dao/agent_runtime/a2a.rs#L1-L47)
-- [docs/external_agent_design.md:152-199](file://docs/external_agent_design.md#L152-L199)
+- [common/src/api/a2a.rs:1-47](common/src/api/a2a.rs#L1-L47)
+- [src/handlers/a2a/callback.rs:47-158](src/handlers/a2a/callback.rs#L47-L158)
+- [src/service/dao/agent_runtime/a2a.rs:1-47](src/service/dao/agent_runtime/a2a.rs#L1-L47)
+- [docs/external_agent_design.md:152-199](docs/external_agent_design.md#L152-L199)
 
 ### 任务进度同步、冲突解决与一致性保证
 - 进度同步
@@ -237,10 +249,10 @@ MD-->>Local : SSE/渠道投递
   - A2A 回调与轮询均基于已同步计数去重，幂等处理。
 
 章节来源
-- [src/consumer/task_event_consumer.rs:1-46](file://src/consumer/task_event_consumer.rs#L1-L46)
-- [src/consumer/message.rs:198-244](file://src/consumer/message.rs#L198-L244)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:375-424](file://docs/superpowers/plans/2026-07-20-aop-event-center.md#L375-L424)
-- [docs/external_agent_design.md:176-199](file://docs/external_agent_design.md#L176-L199)
+- [src/consumer/task_event_consumer.rs:1-46](src/consumer/task_event_consumer.rs#L1-L46)
+- [src/consumer/message.rs:198-244](src/consumer/message.rs#L198-L244)
+- [docs/superpowers/plans/2026-07-20-aop-event-center.md:375-424](docs/superpowers/plans/2026-07-20-aop-event-center.md#L375-L424)
+- [docs/external_agent_design.md:176-199](docs/external_agent_design.md#L176-L199)
 
 ### 依赖关系与并行执行优化
 - 依赖关系
@@ -251,9 +263,9 @@ MD-->>Local : SSE/渠道投递
   - think 循环内置超时与最大迭代次数，防止无限循环；每轮发布 ThinkRoundEvent 供统计与追踪。
 
 章节来源
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
-- [src/service/domain/runtime/mod.rs:33-49](file://src/service/domain/runtime/mod.rs#L33-L49)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](file://docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
+- [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
+- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
 
 ## 依赖关系分析
 ```mermaid
@@ -291,14 +303,14 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
 ```
 
 图表来源
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
-- [src/pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
-- [src/service/domain/runtime/mod.rs:33-49](file://src/service/domain/runtime/mod.rs#L33-L49)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
+- [src/pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
+- [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
 
 章节来源
-- [src/consumer/message.rs:64-141](file://src/consumer/message.rs#L64-L141)
-- [src/pkg/agent_runtime_state.rs:31-157](file://src/pkg/agent_runtime_state.rs#L31-L157)
-- [src/service/domain/runtime/mod.rs:33-49](file://src/service/domain/runtime/mod.rs#L33-L49)
+- [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
+- [src/pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
+- [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
 
 ## 性能与并发特性
 - 消费者并发与背压
@@ -311,10 +323,10 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
   - A2aRuntimeDao 支持 timeout_secs 配置，避免远端慢调用拖垮整体。
 
 章节来源
-- [src/consumer/message.rs:130-141](file://src/consumer/message.rs#L130-L141)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](file://docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
-- [src/pkg/agent_runtime_state.rs:31-107](file://src/pkg/agent_runtime_state.rs#L31-L107)
-- [src/service/dao/agent_runtime/a2a.rs:29-47](file://src/service/dao/agent_runtime/a2a.rs#L29-L47)
+- [src/consumer/message.rs:130-141](src/consumer/message.rs#L130-L141)
+- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
+- [src/pkg/agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
+- [src/service/dao/agent_runtime/a2a.rs:29-47](src/service/dao/agent_runtime/a2a.rs#L29-L47)
 
 ## 故障转移、重试与恢复
 - 重试机制
@@ -329,10 +341,10 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
   - 非致命错误（如 stats 查询失败）不阻塞主流程；临时错误释放 Busy 允许重试。
 
 章节来源
-- [src/consumer/message.rs:114-141](file://src/consumer/message.rs#L114-L141)
-- [src/consumer/message.rs:180-196](file://src/consumer/message.rs#L180-L196)
-- [src/consumer/message.rs:359-389](file://src/consumer/message.rs#L359-L389)
-- [docs/external_agent_design.md:176-199](file://docs/external_agent_design.md#L176-L199)
+- [src/consumer/message.rs:114-141](src/consumer/message.rs#L114-L141)
+- [src/consumer/message.rs:180-196](src/consumer/message.rs#L180-L196)
+- [src/consumer/message.rs:359-389](src/consumer/message.rs#L359-L389)
+- [docs/external_agent_design.md:176-199](docs/external_agent_design.md#L176-L199)
 
 ## 监控与调试
 - 事件与日志
@@ -347,9 +359,9 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
   - 结合 ThinkRoundEvent 与 ToolCallEntry 定位瓶颈与异常。
 
 章节来源
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:1598-1693](file://docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L1598-L1693)
-- [src/consumer/mod.rs:16-36](file://src/consumer/mod.rs#L16-L36)
-- [src/pkg/agent_runtime_state.rs:134-157](file://src/pkg/agent_runtime_state.rs#L134-L157)
+- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:1598-1693](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L1598-L1693)
+- [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
+- [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ## 结论
 本项目通过“消息驱动 + AOP 事件中心 + 状态机控制”的多 Agent 协作机制，实现了任务的高效分配、可靠的流转与一致的状态同步。关键设计包括：

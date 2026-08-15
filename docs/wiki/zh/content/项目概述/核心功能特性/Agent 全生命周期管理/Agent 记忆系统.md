@@ -2,19 +2,19 @@
 
 <cite>
 **本文引用的文件**
-- [memory.rs](file://src/models/memory.rs)
-- [memory.rs（枚举）](file://common/src/enums/memory.rs)
-- [memory.rs（DAL）](file://src/service/dal/memory.rs)
-- [mod.rs（DAO 接口）](file://src/service/dao/memory/mod.rs)
-- [vector.rs（DAO 向量层）](file://src/service/dao/memory/vector.rs)
-- [memory.rs（Domain 运行时）](file://src/service/domain/runtime/memory.rs)
-- [save_short_term_memory.rs](file://src/handlers/hr/agent/save_short_term_memory.rs)
-- [search_memory.rs](file://src/handlers/hr/agent/search_memory.rs)
-- [settle_memory.rs](file://src/handlers/hr/agent/settle_memory.rs)
-- [vector.rs（存储抽象）](file://src/pkg/storage/vector.rs)
-- [mod.rs（存储门面）](file://src/pkg/storage/mod.rs)
-- [20260712000000_memory_fts5.sql](file://migrations/20260712000000_memory_fts5.sql)
-- [memory_test.rs（集成测试）](file://tests/integration/memory_test.rs)
+- [memory.rs](src/models/memory.rs)
+- [memory.rs（枚举）](common/src/enums/memory.rs)
+- [memory.rs（DAL）](src/service/dal/memory.rs)
+- [mod.rs（DAO 接口）](src/service/dao/memory/mod.rs)
+- [vector.rs（DAO 向量层）](src/service/dao/memory/vector.rs)
+- [memory.rs（Domain 运行时）](src/service/domain/runtime/memory.rs)
+- [save_short_term_memory.rs](src/handlers/hr/agent/save_short_term_memory.rs)
+- [search_memory.rs](src/handlers/hr/agent/search_memory.rs)
+- [settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [vector.rs（存储抽象）](src/pkg/storage/vector.rs)
+- [mod.rs（存储门面）](src/pkg/storage/mod.rs)
+- [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
+- [memory_test.rs（集成测试）](tests/integration/memory_test.rs)
 </cite>
 
 ## 目录
@@ -70,20 +70,20 @@ A2 --> V1
 ```
 
 图表来源
-- [save_short_term_memory.rs:1-58](file://src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
-- [search_memory.rs:1-222](file://src/handlers/hr/agent/search_memory.rs#L1-L222)
-- [settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
-- [memory.rs（Domain 运行时）:1-120](file://src/service/domain/runtime/memory.rs#L1-L120)
-- [memory.rs（DAL）:1-200](file://src/service/dal/memory.rs#L1-L200)
-- [mod.rs（DAO 接口）:1-200](file://src/service/dao/memory/mod.rs#L1-L200)
-- [vector.rs（存储抽象）:1-200](file://src/pkg/storage/vector.rs#L1-L200)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [search_memory.rs:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
+- [settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [memory.rs（Domain 运行时）:1-120](src/service/domain/runtime/memory.rs#L1-L120)
+- [memory.rs（DAL）:1-200](src/service/dal/memory.rs#L1-L200)
+- [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
+- [vector.rs（存储抽象）:1-200](src/pkg/storage/vector.rs#L1-L200)
 
 章节来源
-- [memory.rs:1-424](file://src/models/memory.rs#L1-L424)
-- [memory.rs（枚举）:1-212](file://common/src/enums/memory.rs#L1-L212)
-- [memory.rs（DAL）:1-200](file://src/service/dal/memory.rs#L1-L200)
-- [mod.rs（DAO 接口）:1-200](file://src/service/dao/memory/mod.rs#L1-L200)
-- [vector.rs（存储抽象）:1-200](file://src/pkg/storage/vector.rs#L1-L200)
+- [memory.rs:1-424](src/models/memory.rs#L1-L424)
+- [memory.rs（枚举）:1-212](common/src/enums/memory.rs#L1-L212)
+- [memory.rs（DAL）:1-200](src/service/dal/memory.rs#L1-L200)
+- [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
+- [vector.rs（存储抽象）:1-200](src/pkg/storage/vector.rs#L1-L200)
 
 ## 核心组件
 - 短期记忆：以 ShortTermMemoryIndexPo 表示，聚合多条原始记忆细节（trace_ids），包含 summary/tags/status 等，用于快速检索与向量化。
@@ -93,9 +93,9 @@ A2 --> V1
 - 全文检索：FTS5 虚拟表 + trigram 分词器，对 summary/tags/node_description 等字段进行关键词匹配与 BM25 相关性排序。
 
 章节来源
-- [memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [memory.rs（DAL）:1000-1011](file://src/service/dal/memory.rs#L1000-L1011)
-- [20260712000000_memory_fts5.sql:1-92](file://migrations/20260712000000_memory_fts5.sql#L1-L92)
+- [memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [memory.rs（DAL）:1000-1011](src/service/dal/memory.rs#L1000-L1011)
+- [20260712000000_memory_fts5.sql:1-92](migrations/20260712000000_memory_fts5.sql#L1-L92)
 
 ## 架构总览
 记忆系统采用分层解耦设计：
@@ -128,12 +128,12 @@ H-->>U : 返回 memory_id
 ```
 
 图表来源
-- [save_short_term_memory.rs:1-58](file://src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
-- [memory.rs（Domain 运行时）:91-94](file://src/service/domain/runtime/memory.rs#L91-L94)
-- [memory.rs（DAL）:104-111](file://src/service/dal/memory.rs#L104-L111)
-- [mod.rs（DAO 接口）:102-117](file://src/service/dao/memory/mod.rs#L102-L117)
-- [vector.rs（DAO 向量层）:36-51](file://src/service/dao/memory/vector.rs#L36-L51)
-- [vector.rs（存储抽象）:27-33](file://src/pkg/storage/vector.rs#L27-L33)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [memory.rs（Domain 运行时）:91-94](src/service/domain/runtime/memory.rs#L91-L94)
+- [memory.rs（DAL）:104-111](src/service/dal/memory.rs#L104-L111)
+- [mod.rs（DAO 接口）:102-117](src/service/dao/memory/mod.rs#L102-L117)
+- [vector.rs（DAO 向量层）:36-51](src/service/dao/memory/vector.rs#L36-L51)
+- [vector.rs（存储抽象）:27-33](src/pkg/storage/vector.rs#L27-L33)
 
 ## 详细组件分析
 
@@ -148,8 +148,8 @@ H-->>U : 返回 memory_id
   - 使用场景：知识图谱构建、主题推荐、跨会话推理、全局检索。
 
 章节来源
-- [memory.rs:158-320](file://src/models/memory.rs#L158-L320)
-- [memory.rs（枚举）:12-30](file://common/src/enums/memory.rs#L12-L30)
+- [memory.rs:158-320](src/models/memory.rs#L158-L320)
+- [memory.rs（枚举）:12-30](common/src/enums/memory.rs#L12-L30)
 
 ### 记忆的创建与保存
 - 原始追踪（不可变）：通过 AppendTraces 将 MemoryTrace 写入每日 JSONL，返回位置信息（date_path + line_number），便于后续溯源。
@@ -168,13 +168,13 @@ T5 --> End
 ```
 
 图表来源
-- [mod.rs（DAO 接口）:67-117](file://src/service/dao/memory/mod.rs#L67-L117)
-- [memory.rs:342-366](file://src/models/memory.rs#L342-L366)
-- [vector.rs（DAO 向量层）:36-51](file://src/service/dao/memory/vector.rs#L36-L51)
+- [mod.rs（DAO 接口）:67-117](src/service/dao/memory/mod.rs#L67-L117)
+- [memory.rs:342-366](src/models/memory.rs#L342-L366)
+- [vector.rs（DAO 向量层）:36-51](src/service/dao/memory/vector.rs#L36-L51)
 
 章节来源
-- [mod.rs（DAO 接口）:67-117](file://src/service/dao/memory/mod.rs#L67-L117)
-- [memory.rs:342-366](file://src/models/memory.rs#L342-L366)
+- [mod.rs（DAO 接口）:67-117](src/service/dao/memory/mod.rs#L67-L117)
+- [memory.rs:342-366](src/models/memory.rs#L342-L366)
 
 ### 记忆的查询与混合检索
 - 关键词检索：FTS5 MATCH + BM25 排序，适用于精确关键词匹配。
@@ -208,17 +208,17 @@ H-->>C : 返回 MemoryResult[]
 ```
 
 图表来源
-- [search_memory.rs:24-154](file://src/handlers/hr/agent/search_memory.rs#L24-L154)
-- [memory.rs（DAL）:74-81](file://src/service/dal/memory.rs#L74-L81)
-- [mod.rs（DAO 接口）:169-182](file://src/service/dao/memory/mod.rs#L169-L182)
-- [vector.rs（DAO 向量层）:67-79](file://src/service/dao/memory/vector.rs#L67-L79)
-- [vector.rs（存储抽象）:35-43](file://src/pkg/storage/vector.rs#L35-L43)
+- [search_memory.rs:24-154](src/handlers/hr/agent/search_memory.rs#L24-L154)
+- [memory.rs（DAL）:74-81](src/service/dal/memory.rs#L74-L81)
+- [mod.rs（DAO 接口）:169-182](src/service/dao/memory/mod.rs#L169-L182)
+- [vector.rs（DAO 向量层）:67-79](src/service/dao/memory/vector.rs#L67-L79)
+- [vector.rs（存储抽象）:35-43](src/pkg/storage/vector.rs#L35-L43)
 
 章节来源
-- [search_memory.rs:24-154](file://src/handlers/hr/agent/search_memory.rs#L24-L154)
-- [memory.rs（DAL）:74-81](file://src/service/dal/memory.rs#L74-L81)
-- [mod.rs（DAO 接口）:169-182](file://src/service/dao/memory/mod.rs#L169-L182)
-- [vector.rs（DAO 向量层）:67-79](file://src/service/dao/memory/vector.rs#L67-L79)
+- [search_memory.rs:24-154](src/handlers/hr/agent/search_memory.rs#L24-L154)
+- [memory.rs（DAL）:74-81](src/service/dal/memory.rs#L74-L81)
+- [mod.rs（DAO 接口）:169-182](src/service/dao/memory/mod.rs#L169-L182)
+- [vector.rs（DAO 向量层）:67-79](src/service/dao/memory/vector.rs#L67-L79)
 
 ### 记忆的沉淀（短期 → 长期）
 - 触发方式：Handler 直接调用 sleep_and_settle，或由 CronTrigger agent_rest 定时触发。
@@ -244,13 +244,13 @@ R-->>H : 沉淀完成
 ```
 
 图表来源
-- [settle_memory.rs:74-123](file://src/handlers/hr/agent/settle_memory.rs#L74-L123)
-- [memory.rs（DAL）:578-606](file://src/service/dal/memory.rs#L578-L606)
-- [mod.rs（DAO 接口）:162-167](file://src/service/dao/memory/mod.rs#L162-L167)
+- [settle_memory.rs:74-123](src/handlers/hr/agent/settle_memory.rs#L74-L123)
+- [memory.rs（DAL）:578-606](src/service/dal/memory.rs#L578-L606)
+- [mod.rs（DAO 接口）:162-167](src/service/dao/memory/mod.rs#L162-L167)
 
 章节来源
-- [settle_memory.rs:22-123](file://src/handlers/hr/agent/settle_memory.rs#L22-L123)
-- [memory.rs（DAL）:148-176](file://src/service/dal/memory.rs#L148-L176)
+- [settle_memory.rs:22-123](src/handlers/hr/agent/settle_memory.rs#L22-L123)
+- [memory.rs（DAL）:148-176](src/service/dal/memory.rs#L148-L176)
 
 ### 向量存储与全文搜索能力
 - 向量存储
@@ -262,9 +262,9 @@ R-->>H : 沉淀完成
   - 支持 BM25 相关性评分，结合业务过滤（agent_id、status、tags、task_id 等）。
 
 章节来源
-- [vector.rs（DAO 向量层）:36-124](file://src/service/dao/memory/vector.rs#L36-L124)
-- [vector.rs（存储抽象）:18-74](file://src/pkg/storage/vector.rs#L18-L74)
-- [20260712000000_memory_fts5.sql:12-79](file://migrations/20260712000000_memory_fts5.sql#L12-L79)
+- [vector.rs（DAO 向量层）:36-124](src/service/dao/memory/vector.rs#L36-L124)
+- [vector.rs（存储抽象）:18-74](src/pkg/storage/vector.rs#L18-L74)
+- [20260712000000_memory_fts5.sql:12-79](migrations/20260712000000_memory_fts5.sql#L12-L79)
 
 ### 记忆的生命周期管理与清理策略
 - 状态机
@@ -278,9 +278,9 @@ R-->>H : 沉淀完成
   - rebuild_vectors 清空集合后全量重建，单条失败不影响整体，记录告警。
 
 章节来源
-- [memory.rs（枚举）:12-30](file://common/src/enums/memory.rs#L12-L30)
-- [memory.rs（DAL）:171-176](file://src/service/dal/memory.rs#L171-L176)
-- [vector.rs（存储抽象）:51-73](file://src/pkg/storage/vector.rs#L51-L73)
+- [memory.rs（枚举）:12-30](common/src/enums/memory.rs#L12-L30)
+- [memory.rs（DAL）:171-176](src/service/dal/memory.rs#L171-L176)
+- [vector.rs（存储抽象）:51-73](src/pkg/storage/vector.rs#L51-L73)
 
 ## 依赖关系分析
 - 耦合与内聚
@@ -300,14 +300,14 @@ DAO_M --> FS["JSONL(原始追踪)"]
 ```
 
 图表来源
-- [memory.rs（DAL）:181-186](file://src/service/dal/memory.rs#L181-L186)
-- [mod.rs（DAO 接口）:1-200](file://src/service/dao/memory/mod.rs#L1-L200)
-- [vector.rs（存储抽象）:1-74](file://src/pkg/storage/vector.rs#L1-L74)
+- [memory.rs（DAL）:181-186](src/service/dal/memory.rs#L181-L186)
+- [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
+- [vector.rs（存储抽象）:1-74](src/pkg/storage/vector.rs#L1-L74)
 
 章节来源
-- [memory.rs（DAL）:181-186](file://src/service/dal/memory.rs#L181-L186)
-- [mod.rs（DAO 接口）:1-200](file://src/service/dao/memory/mod.rs#L1-L200)
-- [vector.rs（存储抽象）:1-74](file://src/pkg/storage/vector.rs#L1-L74)
+- [memory.rs（DAL）:181-186](src/service/dal/memory.rs#L181-L186)
+- [mod.rs（DAO 接口）:1-200](src/service/dao/memory/mod.rs#L1-L200)
+- [vector.rs（存储抽象）:1-74](src/pkg/storage/vector.rs#L1-L74)
 
 ## 性能考量
 - 向量检索
@@ -334,9 +334,9 @@ DAO_M --> FS["JSONL(原始追踪)"]
   - 关注单条失败日志；确认 embedding 模型与维度正确；必要时重新初始化集合。
 
 章节来源
-- [memory_test.rs:486-522](file://tests/integration/memory_test.rs#L486-L522)
-- [20260712000000_memory_fts5.sql:12-79](file://migrations/20260712000000_memory_fts5.sql#L12-L79)
-- [vector.rs（存储抽象）:51-73](file://src/pkg/storage/vector.rs#L51-L73)
+- [memory_test.rs:486-522](tests/integration/memory_test.rs#L486-L522)
+- [20260712000000_memory_fts5.sql:12-79](migrations/20260712000000_memory_fts5.sql#L12-L79)
+- [vector.rs（存储抽象）:51-73](src/pkg/storage/vector.rs#L51-L73)
 
 ## 结论
 Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全文检索与向量语义检索，实现了高效、可扩展的记忆管理能力。沉淀机制将高频交互转化为结构化知识，支持知识图谱遍历与跨 Agent 共享。多层抽象与可插拔向量后端保障了系统在多种部署环境下的稳定性与性能。
@@ -347,15 +347,15 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
 
 - 添加短期记忆
   - 调用 save_short_term_memory，传入 summary、tags、trace_ids、task_id 等，返回 memory_id。
-  - 参考路径：[保存短期记忆 Handler:1-58](file://src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+  - 参考路径：[保存短期记忆 Handler:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
 
 - 查询历史记忆
   - 调用 search_memory，支持 keyword、query_vector、top_k、filters（agent_id、memory_type、tags、task_id、include_shared）。
-  - 参考路径：[搜索记忆 Handler:1-222](file://src/handlers/hr/agent/search_memory.rs#L1-L222)
+  - 参考路径：[搜索记忆 Handler:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
 
 - 沉淀重要信息
   - 调用 settle_memory，传入 limit；系统将在 Resting 状态下自主归纳并创建/更新知识节点。
-  - 参考路径：[沉淀记忆 Handler:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
+  - 参考路径：[沉淀记忆 Handler:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
 
 - 最佳实践
   - 控制短期记忆规模：合理设置 limit，避免过多 Active 记忆影响检索质量。
@@ -364,6 +364,15 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
   - 监控与降级：当向量服务不可用时，优先回退到关键词检索，保证可用性。
 
 章节来源
-- [save_short_term_memory.rs:1-58](file://src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
-- [search_memory.rs:1-222](file://src/handlers/hr/agent/search_memory.rs#L1-L222)
-- [settle_memory.rs:1-155](file://src/handlers/hr/agent/settle_memory.rs#L1-L155)
+- [save_short_term_memory.rs:1-58](src/handlers/hr/agent/save_short_term_memory.rs#L1-L58)
+- [search_memory.rs:1-222](src/handlers/hr/agent/search_memory.rs#L1-L222)
+- [settle_memory.rs:1-155](src/handlers/hr/agent/settle_memory.rs#L1-L155)
+
+
+### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
+#### ① Design 决策快照
+- [memory_system_enhancement_design.md](docs/design/memory_system_enhancement_design.md) — Agent 视角记忆生命周期：入职默认 Core 记忆 + 唤醒后 Working 装载 + 对话 Short-term 索引 + 每天 4 点 Resting 自动沉淀 Long-term
+#### ② Plan 落地快照
+- [唤醒上下文与睡眠约束.md](docs/plan/唤醒上下文与睡眠约束.md) — 记忆写入工具拆分：save_short_term / save_long_term 替代 create_memory（Agent 唤醒工具列表只注入这两个专用工具）
+#### ④ RAG 原子知识卡
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §4.1 红线 1 工具拆分红线（Agent 工具列表绝不注入 create_memory）

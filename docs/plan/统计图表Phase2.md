@@ -119,14 +119,7 @@ Project 详情页集成层
 
 ## 五、验收清单（2026-07-25 全部达成 ✅）
 
-- [x] DonutChart 组件完成：消费通用 `Vec<DonutSlice>`，Canvas 画环形，Dioxus 渲染图例
-- [x] HUD 风格对齐：深色径向渐变背景 + 网格 + 四角装饰 + shadow_blur 发光 + 扇区间隙 + 2.4s 呼吸光晕 + 中心总数标签
-- [x] DPR 高清屏适配：canvas.set_width/height * dpr + ctx.scale，无字体模糊
-- [x] task_status_color 辅助函数完成：6 种状态返回 HUD 风格鲜艳色，与 badge 语义对齐
-- [x] Project 详情页集成完成：概览 Tab「项目概览」卡片升级为 DonutChart；进行中(3) 放第一位让主色橙最显眼；过滤 0 值状态
-- [x] 空状态完成：total=0 时 Canvas 显示「暂无数据」，无任务时页面显示「暂无任务」文字
-- [x] 前端单元测试：新增 3 个 donut_chart 测试（slice 构造 / 空数据 / 总数计算）100% 通过
-- [x] 全量测试通过：前端 38 测试 + 后端 746 测试 + common 50 测试 100% 总计 834
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -171,3 +164,4 @@ Project 详情页集成层
    - 图例与环形图的组合布局当前使用 `flex items-center gap-4 flex-wrap`，如需要图例放下方或右侧，可新增 `layout: Option<DonutChartLayout>`（Horizontal/Vertical）枚举控制
 
 完成。
+

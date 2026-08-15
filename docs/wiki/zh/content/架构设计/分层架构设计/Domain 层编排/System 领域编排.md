@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [src/handlers/system/mod.rs](file://src/handlers/system/mod.rs)
-- [src/handlers/system/aop.rs](file://src/handlers/system/aop.rs)
-- [src/handlers/system/health_metrics.rs](file://src/handlers/system/health_metrics.rs)
-- [src/handlers/system/seed/mod.rs](file://src/handlers/system/seed/mod.rs)
-- [src/consumer/mod.rs](file://src/consumer/mod.rs)
-- [src/pkg/aop/mod.rs](file://src/pkg/aop/mod.rs)
-- [src/pkg/aop/core/mod.rs](file://src/pkg/aop/core/mod.rs)
-- [src/service/domain/system/mod.rs](file://src/service/domain/system/mod.rs)
-- [src/service/domain/system/aop_monitor.rs](file://src/service/domain/system/aop_monitor.rs)
-- [src/consumer/aop_stats_collector.rs](file://src/consumer/aop_stats_collector.rs)
-- [src/pkg/stats/mod.rs](file://src/pkg/stats/mod.rs)
-- [src/handlers/health.rs](file://src/handlers/health.rs)
+- [src/handlers/system/mod.rs](src/handlers/system/mod.rs)
+- [src/handlers/system/aop.rs](src/handlers/system/aop.rs)
+- [src/handlers/system/health_metrics.rs](src/handlers/system/health_metrics.rs)
+- [src/handlers/system/seed/mod.rs](src/handlers/system/seed/mod.rs)
+- [src/consumer/mod.rs](src/consumer/mod.rs)
+- [src/pkg/aop/mod.rs](src/pkg/aop/mod.rs)
+- [src/pkg/aop/core/mod.rs](src/pkg/aop/core/mod.rs)
+- [src/service/domain/system/mod.rs](src/service/domain/system/mod.rs)
+- [src/service/domain/system/aop_monitor.rs](src/service/domain/system/aop_monitor.rs)
+- [src/consumer/aop_stats_collector.rs](src/consumer/aop_stats_collector.rs)
+- [src/pkg/stats/mod.rs](src/pkg/stats/mod.rs)
+- [src/handlers/health.rs](src/handlers/health.rs)
 </cite>
 
 ## 目录
@@ -74,27 +74,27 @@ C1 --> A1
 ```
 
 图示来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
-- [src/service/domain/system/mod.rs:20-114](file://src/service/domain/system/mod.rs#L20-L114)
-- [src/service/domain/system/aop_monitor.rs:7-27](file://src/service/domain/system/aop_monitor.rs#L7-L27)
-- [src/pkg/aop/mod.rs:33-60](file://src/pkg/aop/mod.rs#L33-L60)
-- [src/pkg/aop/core/mod.rs:1-14](file://src/pkg/aop/core/mod.rs#L1-L14)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
-- [src/pkg/stats/mod.rs:152-170](file://src/pkg/stats/mod.rs#L152-L170)
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)
+- [src/service/domain/system/mod.rs:20-114](src/service/domain/system/mod.rs#L20-L114)
+- [src/service/domain/system/aop_monitor.rs:7-27](src/service/domain/system/aop_monitor.rs#L7-L27)
+- [src/pkg/aop/mod.rs:33-60](src/pkg/aop/mod.rs#L33-L60)
+- [src/pkg/aop/core/mod.rs:1-14](src/pkg/aop/core/mod.rs#L1-L14)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
+- [src/pkg/stats/mod.rs:152-170](src/pkg/stats/mod.rs#L152-L170)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
 
 章节来源
-- [src/handlers/system/mod.rs:1-13](file://src/handlers/system/mod.rs#L1-L13)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
-- [src/service/domain/system/mod.rs:20-114](file://src/service/domain/system/mod.rs#L20-L114)
-- [src/pkg/aop/mod.rs:33-60](file://src/pkg/aop/mod.rs#L33-L60)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
-- [src/pkg/stats/mod.rs:152-170](file://src/pkg/stats/mod.rs#L152-L170)
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/handlers/system/mod.rs:1-13](src/handlers/system/mod.rs#L1-L13)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)
+- [src/service/domain/system/mod.rs:20-114](src/service/domain/system/mod.rs#L20-L114)
+- [src/pkg/aop/mod.rs:33-60](src/pkg/aop/mod.rs#L33-L60)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
+- [src/pkg/stats/mod.rs:152-170](src/pkg/stats/mod.rs#L152-L170)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
 
 ## 核心组件
 - AOP 事件中心与调度：提供全局 Registry、发布/消费、队列监控与统计 Hook，纯框架无业务感知
@@ -105,12 +105,12 @@ C1 --> A1
 - 系统基础数据：启动时确保系统级 Cron 触发器存在（agent_rest、project_followup）
 
 章节来源
-- [src/pkg/aop/mod.rs:33-60](file://src/pkg/aop/mod.rs#L33-L60)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
-- [src/pkg/stats/mod.rs:1-175](file://src/pkg/stats/mod.rs#L1-L175)
-- [src/service/domain/system/mod.rs:34-46](file://src/service/domain/system/mod.rs#L34-L46)
+- [src/pkg/aop/mod.rs:33-60](src/pkg/aop/mod.rs#L33-L60)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)
+- [src/pkg/stats/mod.rs:1-175](src/pkg/stats/mod.rs#L1-L175)
+- [src/service/domain/system/mod.rs:34-46](src/service/domain/system/mod.rs#L34-L46)
 
 ## 架构总览
 System 领域采用“Handler → Domain → DAL/DAO”的单向调用，AOP 与 Stats 作为 pkg 基础设施贯穿全链路。
@@ -136,12 +136,12 @@ Handler-->>Client : HealthMetricsResponse
 ```
 
 图示来源
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
-- [src/service/domain/system/aop_monitor.rs:7-27](file://src/service/domain/system/aop_monitor.rs#L7-L27)
-- [src/pkg/aop/mod.rs:33-60](file://src/pkg/aop/mod.rs#L33-L60)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/pkg/stats/mod.rs:152-170](file://src/pkg/stats/mod.rs#L152-L170)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
+- [src/service/domain/system/aop_monitor.rs:7-27](src/service/domain/system/aop_monitor.rs#L7-L27)
+- [src/pkg/aop/mod.rs:33-60](src/pkg/aop/mod.rs#L33-L60)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/pkg/stats/mod.rs:152-170](src/pkg/stats/mod.rs#L152-L170)
 
 ## 详细组件分析
 
@@ -164,12 +164,12 @@ BuildResp --> End(["返回响应"])
 ```
 
 图示来源
-- [src/handlers/system/aop.rs:14-41](file://src/handlers/system/aop.rs#L14-L41)
-- [src/service/domain/system/aop_monitor.rs:7-27](file://src/service/domain/system/aop_monitor.rs#L7-L27)
+- [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
+- [src/service/domain/system/aop_monitor.rs:7-27](src/service/domain/system/aop_monitor.rs#L7-L27)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/service/domain/system/aop_monitor.rs:7-27](file://src/service/domain/system/aop_monitor.rs#L7-L27)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/service/domain/system/aop_monitor.rs:7-27](src/service/domain/system/aop_monitor.rs#L7-L27)
 
 ### 健康指标聚合编排
 - 职责：为前端 HUD 提供单一聚合端点，避免多次并发请求
@@ -195,10 +195,10 @@ HM-->>Client : HealthMetricsResponse
 ```
 
 图示来源
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
 
 章节来源
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
 
 ### 种子数据管理编排
 - 职责：跨域快照导出/导入、敏感字段处理、幂等写入、DryRun 校验
@@ -226,10 +226,10 @@ Skills --> Result["返回 created/updated/skipped"]
 ```
 
 图示来源
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)
 
 章节来源
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)
 
 ### 统计收集与 AOP 指标
 - 内存运行时统计：AopStatsCollector 基于 RuntimeStatsCollector，提供概览、时序、分布查询
@@ -254,12 +254,12 @@ AopStatsCollector --> Stats : "互补内存 vs 持久化"
 ```
 
 图示来源
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/pkg/stats/mod.rs:1-175](file://src/pkg/stats/mod.rs#L1-L175)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/mod.rs:1-175](src/pkg/stats/mod.rs#L1-L175)
 
 章节来源
-- [src/consumer/aop_stats_collector.rs:43-196](file://src/consumer/aop_stats_collector.rs#L43-L196)
-- [src/pkg/stats/mod.rs:1-175](file://src/pkg/stats/mod.rs#L1-L175)
+- [src/consumer/aop_stats_collector.rs:43-196](src/consumer/aop_stats_collector.rs#L43-L196)
+- [src/pkg/stats/mod.rs:1-175](src/pkg/stats/mod.rs#L1-L175)
 
 ### 系统基础数据与定时任务
 - 两阶段初始化：同步 init 注册单例与 AOP producer/consumer；异步 init_base_data 幂等注入默认基础数据
@@ -284,12 +284,12 @@ SkipProjectFollowup --> Done
 ```
 
 图示来源
-- [src/service/domain/system/mod.rs:34-46](file://src/service/domain/system/mod.rs#L34-L46)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [src/service/domain/system/mod.rs:34-46](src/service/domain/system/mod.rs#L34-L46)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 章节来源
-- [src/service/domain/system/mod.rs:34-46](file://src/service/domain/system/mod.rs#L34-L46)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [src/service/domain/system/mod.rs:34-46](src/service/domain/system/mod.rs#L34-L46)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 ## 依赖关系分析
 - Handler 层仅负责参数校验与结果映射，不直接访问 DAO/DAL
@@ -307,14 +307,14 @@ C["consumer/*"] --> A
 ```
 
 图示来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/service/domain/system/mod.rs:20-114](file://src/service/domain/system/mod.rs#L20-L114)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/service/domain/system/mod.rs:20-114](src/service/domain/system/mod.rs#L20-L114)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
 
 章节来源
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/service/domain/system/mod.rs:20-114](file://src/service/domain/system/mod.rs#L20-L114)
-- [src/consumer/mod.rs:16-37](file://src/consumer/mod.rs#L16-L37)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/service/domain/system/mod.rs:20-114](src/service/domain/system/mod.rs#L20-L114)
+- [src/consumer/mod.rs:16-37](src/consumer/mod.rs#L16-L37)
 
 ## 性能考量
 - AOP 队列监控：all_queue_stats 为 O(N) 遍历消费者，N 为注册消费者数，通常较小
@@ -332,10 +332,10 @@ C["consumer/*"] --> A
 - 系统定时任务缺失：检查 ensure_system_cron_triggers 是否执行成功，确认 payload 去重逻辑
 
 章节来源
-- [src/handlers/system/aop.rs:43-145](file://src/handlers/system/aop.rs#L43-L145)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/handlers/system/seed/mod.rs:420-671](file://src/handlers/system/seed/mod.rs#L420-L671)
-- [src/service/domain/system/mod.rs:358-415](file://src/service/domain/system/mod.rs#L358-L415)
+- [src/handlers/system/aop.rs:43-145](src/handlers/system/aop.rs#L43-L145)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/seed/mod.rs:420-671](src/handlers/system/seed/mod.rs#L420-L671)
+- [src/service/domain/system/mod.rs:358-415](src/service/domain/system/mod.rs#L358-L415)
 
 ## 结论
 System 领域通过清晰的 Handler→Domain→DAL/DAO 分层与 AOP/Stats 基础设施，实现了高内聚、低耦合的系统级编排。AOP 监控与健康指标聚合提供了强大的可观测性；种子数据管理保障了跨环境一致性与可迁移性；系统基础数据的幂等初始化确保了稳定启动。结合内存与持久化统计，系统在性能与可观测性之间取得平衡。
@@ -349,7 +349,7 @@ System 领域通过清晰的 Handler→Domain→DAL/DAO 分层与 AOP/Stats 基�
 - 种子数据端点：导出/导入/差异对比/默认模板获取
 
 章节来源
-- [src/handlers/health.rs:1-16](file://src/handlers/health.rs#L1-L16)
-- [src/handlers/system/health_metrics.rs:28-134](file://src/handlers/system/health_metrics.rs#L28-L134)
-- [src/handlers/system/aop.rs:14-145](file://src/handlers/system/aop.rs#L14-L145)
-- [src/handlers/system/seed/mod.rs:273-671](file://src/handlers/system/seed/mod.rs#L273-L671)
+- [src/handlers/health.rs:1-16](src/handlers/health.rs#L1-L16)
+- [src/handlers/system/health_metrics.rs:28-134](src/handlers/system/health_metrics.rs#L28-L134)
+- [src/handlers/system/aop.rs:14-145](src/handlers/system/aop.rs#L14-L145)
+- [src/handlers/system/seed/mod.rs:273-671](src/handlers/system/seed/mod.rs#L273-L671)

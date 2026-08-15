@@ -1,14 +1,14 @@
-# Shell 执行工具
+# Shell 执行工具（框架层）
 
 <cite>
 **本文引用的文件**
-- [shell_exec.rs](file://src/pkg/tool_registry/shell_exec.rs)
-- [tool_security.rs](file://src/pkg/tool_registry/tool_security.rs)
-- [builtin.rs](file://src/pkg/tool_registry/builtin.rs)
-- [mod.rs](file://src/pkg/tool_registry/mod.rs)
-- [tool.rs](file://src/models/tool.rs)
-- [config.rs](file://common/src/config.rs)
-- [shell_tests.rs](file://src/pkg/tool_registry/shell_tests.rs)
+- [shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [tool_security.rs](src/pkg/tool_registry/tool_security.rs)
+- [builtin.rs](src/pkg/tool_registry/builtin.rs)
+- [mod.rs](src/pkg/tool_registry/mod.rs)
+- [tool.rs](src/models/tool.rs)
+- [config.rs](common/src/config.rs)
+- [shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
 </cite>
 
 ## 目录
@@ -24,7 +24,12 @@
 10. [附录：使用示例](#附录使用示例)
 
 ## 简介
-本技术文档聚焦于 Shell 执行工具，围绕命令执行引擎、进程管理、输入输出流处理、参数注入、环境变量控制、工作目录隔离、安全沙箱（路径白名单、敏感变量过滤）、超时与资源限制等主题展开。该工具以“内置工具”的形式注册到全局工具注册表，通过统一的 CoreTool 接口被上层调用，支持同步执行与后台运行两种模式，并将输出落盘为日志文件，便于审计与回溯。
+本技术文档聚焦于 Shell 执行工具，围绕命令执行引擎、进程管理、输入输出流处理、参数注入、环境变量控制、工作目录隔离、安全沙箱（路径白名单、敏感变量过滤）、超时与资源限制等主题展开。该工具以"内置工具"的形式注册到全局工具注册表，通过统一的 CoreTool 接口被上层调用，支持同步执行与后台运行两种模式，并将输出落盘为日志文件，便于审计与回溯。
+
+> 📌 视角说明（AGENTS §2.1.3 Level 3 互补视角平行卡）：
+> 本长文是「Shell 执行工具」主题的 **框架层** 视角。同主题还有以下平行视角卡，请按需交叉阅读：
+> - [Shell 执行工具（业务功能层）](docs/wiki/zh/content/功能模块/工具生态系统/内置工具集/Shell%20执行工具.md)
+> - [Shell 执行工具（代码落地层）](docs/wiki/zh/content/核心模块/工具注册表/Shell%20执行工具.md)
 
 ## 项目结构
 Shell 执行工具位于工具注册子系统内，遵循“Adapter → Domain → DAL → DAO”的单向分层原则；Shell 工具属于 pkg 层的通用能力实现，不感知业务领域。其关键文件与职责如下：
@@ -48,18 +53,18 @@ E --> H["安全工具<br/>tool_security.rs"]
 ```
 
 图表来源
-- [mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [config.rs:244-257](file://common/src/config.rs#L244-L257)
-- [tool_security.rs:314-419](file://src/pkg/tool_registry/tool_security.rs#L314-L419)
+- [mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [config.rs:244-257](common/src/config.rs#L244-L257)
+- [tool_security.rs:314-419](src/pkg/tool_registry/tool_security.rs#L314-L419)
 
 章节来源
-- [mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [config.rs:244-257](file://common/src/config.rs#L244-L257)
-- [tool_security.rs:314-419](file://src/pkg/tool_registry/tool_security.rs#L314-L419)
+- [mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [config.rs:244-257](common/src/config.rs#L244-L257)
+- [tool_security.rs:314-419](src/pkg/tool_registry/tool_security.rs#L314-L419)
 
 ## 核心组件
 - ShellExecConfig：工具级配置，包括默认超时、最大输出大小、额外允许路径、允许继承的环境变量白名单。
@@ -69,11 +74,11 @@ E --> H["安全工具<br/>tool_security.rs"]
 - 工具注册表：将 shell_exec 作为内置工具注册，供上层通过统一接口调用。
 
 章节来源
-- [shell_exec.rs:20-87](file://src/pkg/tool_registry/shell_exec.rs#L20-L87)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [shell_exec.rs:151-208](file://src/pkg/tool_registry/shell_exec.rs#L151-L208)
-- [mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [tool.rs:16-32](file://src/models/tool.rs#L16-L32)
+- [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [shell_exec.rs:151-208](src/pkg/tool_registry/shell_exec.rs#L151-L208)
+- [mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [tool.rs:16-32](src/models/tool.rs#L16-L32)
 
 ## 架构总览
 Shell 执行工具在系统中的位置与交互如下：
@@ -107,9 +112,9 @@ end
 ```
 
 图表来源
-- [mod.rs:81-102](file://src/pkg/tool_registry/mod.rs#L81-L102)
-- [shell_exec.rs:256-466](file://src/pkg/tool_registry/shell_exec.rs#L256-L466)
-- [config.rs:399-415](file://common/src/config.rs#L399-L415)
+- [mod.rs:81-102](src/pkg/tool_registry/mod.rs#L81-L102)
+- [shell_exec.rs:256-466](src/pkg/tool_registry/shell_exec.rs#L256-L466)
+- [config.rs:399-415](common/src/config.rs#L399-L415)
 
 ## 详细组件分析
 
@@ -142,13 +147,13 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
 ```
 
 图表来源
-- [shell_exec.rs:256-466](file://src/pkg/tool_registry/shell_exec.rs#L256-L466)
-- [shell_exec.rs:473-484](file://src/pkg/tool_registry/shell_exec.rs#L473-L484)
-- [config.rs:399-415](file://common/src/config.rs#L399-L415)
+- [shell_exec.rs:256-466](src/pkg/tool_registry/shell_exec.rs#L256-L466)
+- [shell_exec.rs:473-484](src/pkg/tool_registry/shell_exec.rs#L473-L484)
+- [config.rs:399-415](common/src/config.rs#L399-L415)
 
 章节来源
-- [shell_exec.rs:256-466](file://src/pkg/tool_registry/shell_exec.rs#L256-L466)
-- [shell_exec.rs:473-484](file://src/pkg/tool_registry/shell_exec.rs#L473-L484)
+- [shell_exec.rs:256-466](src/pkg/tool_registry/shell_exec.rs#L256-L466)
+- [shell_exec.rs:473-484](src/pkg/tool_registry/shell_exec.rs#L473-L484)
 
 ### 输入输出流处理
 - 同步模式：使用 Stdio::piped() 捕获 stdout/stderr，异步读取到内存缓冲区，再写入日志文件；若超出阈值，仅返回前 N 字节摘要，并在响应中标记 truncated。
@@ -156,9 +161,9 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
 - 日志路径：统一存储在 base_data_path/tools/shell_exec/logs/{trace_id}.log，便于按追踪 ID 检索。
 
 章节来源
-- [shell_exec.rs:295-356](file://src/pkg/tool_registry/shell_exec.rs#L295-L356)
-- [shell_exec.rs:357-466](file://src/pkg/tool_registry/shell_exec.rs#L357-L466)
-- [config.rs:399-415](file://common/src/config.rs#L399-L415)
+- [shell_exec.rs:295-356](src/pkg/tool_registry/shell_exec.rs#L295-L356)
+- [shell_exec.rs:357-466](src/pkg/tool_registry/shell_exec.rs#L357-L466)
+- [config.rs:399-415](common/src/config.rs#L399-L415)
 
 ### 命令参数注入与环境变量设置
 - 参数注入：通过 ShellExecParams 接收 command、working_dir、timeout_ms、max_output_size_bytes、background、env。
@@ -168,9 +173,9 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
   - 额外覆盖：支持通过 env 字段注入额外键值对，覆盖或新增环境变量。
 
 章节来源
-- [shell_exec.rs:20-87](file://src/pkg/tool_registry/shell_exec.rs#L20-L87)
-- [shell_exec.rs:210-254](file://src/pkg/tool_registry/shell_exec.rs#L210-L254)
-- [shell_tests.rs:43-102](file://src/pkg/tool_registry/shell_tests.rs#L43-L102)
+- [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
+- [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_tests.rs:43-102](src/pkg/tool_registry/shell_tests.rs#L43-L102)
 
 ### 工作目录控制
 - 解析策略：
@@ -181,8 +186,8 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
 - 目录存在性：若不存在则自动创建。
 
 章节来源
-- [shell_exec.rs:168-207](file://src/pkg/tool_registry/shell_exec.rs#L168-L207)
-- [shell_exec.rs:264-279](file://src/pkg/tool_registry/shell_exec.rs#L264-L279)
+- [shell_exec.rs:168-207](src/pkg/tool_registry/shell_exec.rs#L168-L207)
+- [shell_exec.rs:264-279](src/pkg/tool_registry/shell_exec.rs#L264-L279)
 
 ### 安全沙箱机制、命令白名单、资源限制与超时控制
 - 工作目录沙箱：严格限制执行目录范围，防止逃逸到系统敏感区域。
@@ -193,9 +198,9 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
 - 命令白名单：当前实现未提供命令白名单机制；如需启用，应在上游（如 Agent 编排层）增加命令白名单校验后再下发给 shell_exec。
 
 章节来源
-- [shell_exec.rs:20-87](file://src/pkg/tool_registry/shell_exec.rs#L20-L87)
-- [shell_exec.rs:210-254](file://src/pkg/tool_registry/shell_exec.rs#L210-L254)
-- [shell_exec.rs:256-466](file://src/pkg/tool_registry/shell_exec.rs#L256-L466)
+- [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
+- [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_exec.rs:256-466](src/pkg/tool_registry/shell_exec.rs#L256-L466)
 
 ### 类图（代码级）
 ```mermaid
@@ -245,10 +250,10 @@ ShellExecCoreTool --> ToolPo : "持有"
 ```
 
 图表来源
-- [shell_exec.rs:20-87](file://src/pkg/tool_registry/shell_exec.rs#L20-L87)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [shell_exec.rs:151-208](file://src/pkg/tool_registry/shell_exec.rs#L151-L208)
-- [tool.rs:16-32](file://src/models/tool.rs#L16-L32)
+- [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [shell_exec.rs:151-208](src/pkg/tool_registry/shell_exec.rs#L151-L208)
+- [tool.rs:16-32](src/models/tool.rs#L16-L32)
 
 ## 依赖关系分析
 - 工具注册表依赖内置工具工厂列表，shell_exec 作为其中之一被注册。
@@ -265,18 +270,18 @@ CoreTool --> Security["tool_security(fs/sensitive)"]
 ```
 
 图表来源
-- [mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [config.rs:244-257](file://common/src/config.rs#L244-L257)
-- [tool_security.rs:314-419](file://src/pkg/tool_registry/tool_security.rs#L314-L419)
+- [mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [config.rs:244-257](common/src/config.rs#L244-L257)
+- [tool_security.rs:314-419](src/pkg/tool_registry/tool_security.rs#L314-L419)
 
 章节来源
-- [mod.rs:29-102](file://src/pkg/tool_registry/mod.rs#L29-L102)
-- [builtin.rs:27-43](file://src/pkg/tool_registry/builtin.rs#L27-L43)
-- [shell_exec.rs:89-148](file://src/pkg/tool_registry/shell_exec.rs#L89-L148)
-- [config.rs:244-257](file://common/src/config.rs#L244-L257)
-- [tool_security.rs:314-419](file://src/pkg/tool_registry/tool_security.rs#L314-L419)
+- [mod.rs:29-102](src/pkg/tool_registry/mod.rs#L29-L102)
+- [builtin.rs:27-43](src/pkg/tool_registry/builtin.rs#L27-L43)
+- [shell_exec.rs:89-148](src/pkg/tool_registry/shell_exec.rs#L89-L148)
+- [config.rs:244-257](common/src/config.rs#L244-L257)
+- [tool_security.rs:314-419](src/pkg/tool_registry/tool_security.rs#L314-L419)
 
 ## 性能与资源限制
 - 超时控制：默认 300 秒，可按需调整；建议结合任务类型设置合理上限，避免长期占用资源。
@@ -294,9 +299,9 @@ CoreTool --> Security["tool_security(fs/sensitive)"]
 - 进程启动失败：检查命令是否存在、工作目录权限、Shell 可用性与环境变量完整性。
 
 章节来源
-- [shell_exec.rs:264-279](file://src/pkg/tool_registry/shell_exec.rs#L264-L279)
-- [shell_exec.rs:385-466](file://src/pkg/tool_registry/shell_exec.rs#L385-L466)
-- [shell_tests.rs:43-102](file://src/pkg/tool_registry/shell_tests.rs#L43-L102)
+- [shell_exec.rs:264-279](src/pkg/tool_registry/shell_exec.rs#L264-L279)
+- [shell_exec.rs:385-466](src/pkg/tool_registry/shell_exec.rs#L385-L466)
+- [shell_tests.rs:43-102](src/pkg/tool_registry/shell_tests.rs#L43-L102)
 
 ## 结论
 Shell 执行工具提供了安全可控的命令执行能力，具备工作目录沙箱、环境变量白名单与敏感过滤、超时与输出大小限制、后台模式与日志落盘等特性。建议在更高层（如 Agent 编排）引入命令白名单与更细粒度的资源配额，以进一步增强安全性与稳定性。
@@ -325,6 +330,6 @@ Shell 执行工具提供了安全可控的命令执行能力，具备工作目�
   - 后台模式适合长时间任务，避免阻塞调用方。
 
 章节来源
-- [shell_exec.rs:70-87](file://src/pkg/tool_registry/shell_exec.rs#L70-L87)
-- [shell_exec.rs:256-466](file://src/pkg/tool_registry/shell_exec.rs#L256-L466)
-- [shell_tests.rs:104-145](file://src/pkg/tool_registry/shell_tests.rs#L104-L145)
+- [shell_exec.rs:70-87](src/pkg/tool_registry/shell_exec.rs#L70-L87)
+- [shell_exec.rs:256-466](src/pkg/tool_registry/shell_exec.rs#L256-L466)
+- [shell_tests.rs:104-145](src/pkg/tool_registry/shell_tests.rs#L104-L145)

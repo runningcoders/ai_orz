@@ -2,18 +2,18 @@
 
 <cite>
 **本文引用的文件**
-- [common/src/api/message_channel.rs](file://common/src/api/message_channel.rs)
-- [src/handlers/finance/message_channel/mod.rs](file://src/handlers/finance/message_channel/mod.rs)
-- [src/handlers/finance/message_channel/create_message_channel.rs](file://src/handlers/finance/message_channel/create_message_channel.rs)
-- [src/handlers/finance/message_channel/test_message_channel_connection.rs](file://src/handlers/finance/message_channel/test_message_channel_connection.rs)
-- [src/service/domain/finance/message_channel.rs](file://src/service/domain/finance/message_channel.rs)
-- [src/service/dal/message_channel.rs](file://src/service/dal/message_channel.rs)
-- [src/service/dao/message_channel/mod.rs](file://src/service/dao/message_channel/mod.rs)
-- [src/service/dao/message_channel/sqlite.rs](file://src/service/dao/message_channel/sqlite.rs)
-- [src/models/message_channel.rs](file://src/models/message_channel.rs)
-- [common/src/enums/message_channel.rs](file://common/src/enums/message_channel.rs)
-- [migrations/20260508000000_message_channels.sql](file://migrations/20260508000000_message_channels.sql)
-- [docs/message_channel_design.md](file://docs/message_channel_design.md)
+- [common/src/api/message_channel.rs](common/src/api/message_channel.rs)
+- [src/handlers/finance/message_channel/mod.rs](src/handlers/finance/message_channel/mod.rs)
+- [src/handlers/finance/message_channel/create_message_channel.rs](src/handlers/finance/message_channel/create_message_channel.rs)
+- [src/handlers/finance/message_channel/test_message_channel_connection.rs](src/handlers/finance/message_channel/test_message_channel_connection.rs)
+- [src/service/domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs)
+- [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs)
+- [src/service/dao/message_channel/mod.rs](src/service/dao/message_channel/mod.rs)
+- [src/service/dao/message_channel/sqlite.rs](src/service/dao/message_channel/sqlite.rs)
+- [src/models/message_channel.rs](src/models/message_channel.rs)
+- [common/src/enums/message_channel.rs](common/src/enums/message_channel.rs)
+- [migrations/20260508000000_message_channels.sql](migrations/20260508000000_message_channels.sql)
+- [docs/message_channel_design.md](docs/message_channel_design.md)
 </cite>
 
 ## 目录
@@ -48,15 +48,15 @@ D --> F["DB: message_channels 表"]
 ```
 
 图表来源
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [src/service/domain/finance/message_channel.rs:1-73](file://src/service/domain/finance/message_channel.rs#L1-L73)
-- [src/service/dal/message_channel.rs:1-127](file://src/service/dal/message_channel.rs#L1-L127)
-- [src/service/dao/message_channel/mod.rs:1-98](file://src/service/dao/message_channel/mod.rs#L1-L98)
-- [migrations/20260508000000_message_channels.sql:1-31](file://migrations/20260508000000_message_channels.sql#L1-L31)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
+- [src/service/dal/message_channel.rs:1-127](src/service/dal/message_channel.rs#L1-L127)
+- [src/service/dao/message_channel/mod.rs:1-98](src/service/dao/message_channel/mod.rs#L1-L98)
+- [migrations/20260508000000_message_channels.sql:1-31](migrations/20260508000000_message_channels.sql#L1-L31)
 
 章节来源
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [docs/message_channel_design.md:52-69](file://docs/message_channel_design.md#L52-L69)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [docs/message_channel_design.md:52-69](docs/message_channel_design.md#L52-L69)
 
 ## 核心组件
 - 枚举与实体
@@ -72,12 +72,12 @@ D --> F["DB: message_channels 表"]
   - DAO：SQLite 持久化与具体渠道推送实现。
 
 章节来源
-- [common/src/enums/message_channel.rs:1-122](file://common/src/enums/message_channel.rs#L1-L122)
-- [src/models/message_channel.rs:1-260](file://src/models/message_channel.rs#L1-L260)
-- [common/src/api/message_channel.rs:1-315](file://common/src/api/message_channel.rs#L1-L315)
-- [src/service/domain/finance/message_channel.rs:1-73](file://src/service/domain/finance/message_channel.rs#L1-L73)
-- [src/service/dal/message_channel.rs:1-127](file://src/service/dal/message_channel.rs#L1-L127)
-- [src/service/dao/message_channel/mod.rs:1-98](file://src/service/dao/message_channel/mod.rs#L1-L98)
+- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L122)
+- [src/models/message_channel.rs:1-260](src/models/message_channel.rs#L1-L260)
+- [common/src/api/message_channel.rs:1-315](common/src/api/message_channel.rs#L1-L315)
+- [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
+- [src/service/dal/message_channel.rs:1-127](src/service/dal/message_channel.rs#L1-L127)
+- [src/service/dao/message_channel/mod.rs:1-98](src/service/dao/message_channel/mod.rs#L1-L98)
 
 ## 架构总览
 消息渠道管理采用严格分层与单向依赖：
@@ -107,11 +107,11 @@ Handler-->>Client : 200 + 脱敏详情
 ```
 
 图表来源
-- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
-- [src/service/domain/finance/message_channel.rs:1-73](file://src/service/domain/finance/message_channel.rs#L1-L73)
-- [src/service/dal/message_channel.rs:148-158](file://src/service/dal/message_channel.rs#L148-L158)
-- [src/service/dao/message_channel/sqlite.rs:20-55](file://src/service/dao/message_channel/sqlite.rs#L20-L55)
-- [migrations/20260508000000_message_channels.sql:5-23](file://migrations/20260508000000_message_channels.sql#L5-L23)
+- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
+- [src/service/dal/message_channel.rs:148-158](src/service/dal/message_channel.rs#L148-L158)
+- [src/service/dao/message_channel/sqlite.rs:20-55](src/service/dao/message_channel/sqlite.rs#L20-L55)
+- [migrations/20260508000000_message_channels.sql:5-23](migrations/20260508000000_message_channels.sql#L5-L23)
 
 ## 详细组件分析
 
@@ -130,12 +130,12 @@ Deleted --> [*]
 ```
 
 图表来源
-- [common/src/enums/message_channel.rs:82-122](file://common/src/enums/message_channel.rs#L82-L122)
-- [src/models/message_channel.rs:67-107](file://src/models/message_channel.rs#L67-L107)
+- [common/src/enums/message_channel.rs:82-122](common/src/enums/message_channel.rs#L82-L122)
+- [src/models/message_channel.rs:67-107](src/models/message_channel.rs#L67-L107)
 
 章节来源
-- [common/src/enums/message_channel.rs:1-122](file://common/src/enums/message_channel.rs#L1-L122)
-- [src/models/message_channel.rs:19-113](file://src/models/message_channel.rs#L19-L113)
+- [common/src/enums/message_channel.rs:1-122](common/src/enums/message_channel.rs#L1-L122)
+- [src/models/message_channel.rs:19-113](src/models/message_channel.rs#L19-L113)
 
 ### 渠道配置与存储
 - 配置结构：ChannelConfig 以 JSON 形式存储，包含飞书、微信、邮件、Slack、Webhook 等渠道专属字段。
@@ -165,12 +165,12 @@ integer updated_at
 ```
 
 图表来源
-- [migrations/20260508000000_message_channels.sql:5-31](file://migrations/20260508000000_message_channels.sql#L5-L31)
-- [src/models/message_channel.rs:115-155](file://src/models/message_channel.rs#L115-L155)
+- [migrations/20260508000000_message_channels.sql:5-31](migrations/20260508000000_message_channels.sql#L5-L31)
+- [src/models/message_channel.rs:115-155](src/models/message_channel.rs#L115-L155)
 
 章节来源
-- [src/models/message_channel.rs:197-255](file://src/models/message_channel.rs#L197-L255)
-- [migrations/20260508000000_message_channels.sql:1-31](file://migrations/20260508000000_message_channels.sql#L1-L31)
+- [src/models/message_channel.rs:197-255](src/models/message_channel.rs#L197-L255)
+- [migrations/20260508000000_message_channels.sql:1-31](migrations/20260508000000_message_channels.sql#L1-L31)
 
 ### 管理面 API 清单
 - 受保护路由（示例）：
@@ -188,9 +188,9 @@ integer updated_at
   - 测试连接通过 Domain/DAL 分发到具体渠道 DAO 执行连通性检查。
 
 章节来源
-- [docs/message_channel_design.md:52-69](file://docs/message_channel_design.md#L52-L69)
-- [src/handlers/finance/message_channel/mod.rs:1-22](file://src/handlers/finance/message_channel/mod.rs#L1-L22)
-- [common/src/api/message_channel.rs:9-228](file://common/src/api/message_channel.rs#L9-L228)
+- [docs/message_channel_design.md:52-69](docs/message_channel_design.md#L52-L69)
+- [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
+- [common/src/api/message_channel.rs:9-228](common/src/api/message_channel.rs#L9-L228)
 
 ### 创建渠道流程
 - Handler 接收请求，构造 ChannelConfig 与 MessageChannelPo，调用 Domain.create_message_channel。
@@ -216,16 +216,16 @@ H-->>H : 组装脱敏响应
 ```
 
 图表来源
-- [src/handlers/finance/message_channel/create_message_channel.rs:22-78](file://src/handlers/finance/message_channel/create_message_channel.rs#L22-L78)
-- [src/service/domain/finance/message_channel.rs:14-20](file://src/service/domain/finance/message_channel.rs#L14-L20)
-- [src/service/dal/message_channel.rs:148-150](file://src/service/dal/message_channel.rs#L148-L150)
-- [src/service/dao/message_channel/sqlite.rs:20-55](file://src/service/dao/message_channel/sqlite.rs#L20-L55)
+- [src/handlers/finance/message_channel/create_message_channel.rs:22-78](src/handlers/finance/message_channel/create_message_channel.rs#L22-L78)
+- [src/service/domain/finance/message_channel.rs:14-20](src/service/domain/finance/message_channel.rs#L14-L20)
+- [src/service/dal/message_channel.rs:148-150](src/service/dal/message_channel.rs#L148-L150)
+- [src/service/dao/message_channel/sqlite.rs:20-55](src/service/dao/message_channel/sqlite.rs#L20-L55)
 
 章节来源
-- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](file://src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
-- [src/service/domain/finance/message_channel.rs:1-73](file://src/service/domain/finance/message_channel.rs#L1-L73)
-- [src/service/dal/message_channel.rs:148-150](file://src/service/dal/message_channel.rs#L148-L150)
-- [src/service/dao/message_channel/sqlite.rs:20-55](file://src/service/dao/message_channel/sqlite.rs#L20-L55)
+- [src/handlers/finance/message_channel/create_message_channel.rs:1-79](src/handlers/finance/message_channel/create_message_channel.rs#L1-L79)
+- [src/service/domain/finance/message_channel.rs:1-73](src/service/domain/finance/message_channel.rs#L1-L73)
+- [src/service/dal/message_channel.rs:148-150](src/service/dal/message_channel.rs#L148-L150)
+- [src/service/dao/message_channel/sqlite.rs:20-55](src/service/dao/message_channel/sqlite.rs#L20-L55)
 
 ### 测试渠道连接流程
 - Handler 获取渠道并校验归属后，调用 Domain.test_message_channel。
@@ -251,13 +251,13 @@ H-->>H : 组装 TestResponse
 ```
 
 图表来源
-- [src/handlers/finance/message_channel/test_message_channel_connection.rs:17-56](file://src/handlers/finance/message_channel/test_message_channel_connection.rs#L17-L56)
-- [src/service/domain/finance/message_channel.rs:63-71](file://src/service/domain/finance/message_channel.rs#L63-L71)
-- [src/service/dal/message_channel.rs:202-222](file://src/service/dal/message_channel.rs#L202-L222)
+- [src/handlers/finance/message_channel/test_message_channel_connection.rs:17-56](src/handlers/finance/message_channel/test_message_channel_connection.rs#L17-L56)
+- [src/service/domain/finance/message_channel.rs:63-71](src/service/domain/finance/message_channel.rs#L63-L71)
+- [src/service/dal/message_channel.rs:202-222](src/service/dal/message_channel.rs#L202-L222)
 
 章节来源
-- [src/handlers/finance/message_channel/test_message_channel_connection.rs:1-57](file://src/handlers/finance/message_channel/test_message_channel_connection.rs#L1-L57)
-- [src/service/dal/message_channel.rs:202-222](file://src/service/dal/message_channel.rs#L202-L222)
+- [src/handlers/finance/message_channel/test_message_channel_connection.rs:1-57](src/handlers/finance/message_channel/test_message_channel_connection.rs#L1-L57)
+- [src/service/dal/message_channel.rs:202-222](src/service/dal/message_channel.rs#L202-L222)
 
 ### 消息分发与路由（运行面）
 - DAL.deliver_message 查询用户所有已启用渠道，按 scope_project 过滤后逐个推送。
@@ -277,11 +277,11 @@ Next --> |否| End(["结束"])
 ```
 
 图表来源
-- [src/service/dal/message_channel.rs:226-284](file://src/service/dal/message_channel.rs#L226-L284)
-- [src/service/dal/message_channel.rs:289-335](file://src/service/dal/message_channel.rs#L289-L335)
+- [src/service/dal/message_channel.rs:226-284](src/service/dal/message_channel.rs#L226-L284)
+- [src/service/dal/message_channel.rs:289-335](src/service/dal/message_channel.rs#L289-L335)
 
 章节来源
-- [src/service/dal/message_channel.rs:226-335](file://src/service/dal/message_channel.rs#L226-L335)
+- [src/service/dal/message_channel.rs:226-335](src/service/dal/message_channel.rs#L226-L335)
 
 ### 批量操作与查询
 - 列表/查询：支持按用户、Agent、类型、状态、分页、排序等多条件组合查询。
@@ -289,9 +289,9 @@ Next --> |否| End(["结束"])
 - 注意：当前管理面未提供一次性批量更新多个渠道状态的专用接口，建议通过循环调用或后端批处理任务完成。
 
 章节来源
-- [src/service/dao/message_channel/mod.rs:11-36](file://src/service/dao/message_channel/mod.rs#L11-L36)
-- [src/service/dao/message_channel/sqlite.rs:92-130](file://src/service/dao/message_channel/sqlite.rs#L92-L130)
-- [common/src/api/message_channel.rs:82-128](file://common/src/api/message_channel.rs#L82-L128)
+- [src/service/dao/message_channel/mod.rs:11-36](src/service/dao/message_channel/mod.rs#L11-L36)
+- [src/service/dao/message_channel/sqlite.rs:92-130](src/service/dao/message_channel/sqlite.rs#L92-L130)
+- [common/src/api/message_channel.rs:82-128](common/src/api/message_channel.rs#L82-L128)
 
 ## 依赖关系分析
 - Handler 依赖 Domain 暴露的管理方法，不直接访问 DAL/DAO。
@@ -313,12 +313,12 @@ DL --> AC["DAO(A2aCallbackDao)"]
 ```
 
 图表来源
-- [src/service/dal/message_channel.rs:131-142](file://src/service/dal/message_channel.rs#L131-L142)
-- [src/service/domain/finance/message_channel.rs:11-73](file://src/service/domain/finance/message_channel.rs#L11-L73)
+- [src/service/dal/message_channel.rs:131-142](src/service/dal/message_channel.rs#L131-L142)
+- [src/service/domain/finance/message_channel.rs:11-73](src/service/domain/finance/message_channel.rs#L11-L73)
 
 章节来源
-- [src/service/dal/message_channel.rs:131-142](file://src/service/dal/message_channel.rs#L131-L142)
-- [src/service/domain/finance/message_channel.rs:11-73](file://src/service/domain/finance/message_channel.rs#L11-L73)
+- [src/service/dal/message_channel.rs:131-142](src/service/dal/message_channel.rs#L131-L142)
+- [src/service/domain/finance/message_channel.rs:11-73](src/service/domain/finance/message_channel.rs#L11-L73)
 
 ## 性能考虑
 - 查询优化：DAO 使用 QueryBuilder 构建动态 SQL，支持排序与分页，减少不必要的数据传输。
@@ -327,9 +327,9 @@ DL --> AC["DAO(A2aCallbackDao)"]
 - 可扩展性：新增渠道只需在 DAL 的 match 中添加分支，编译期保证完整性。
 
 章节来源
-- [src/service/dao/message_channel/sqlite.rs:92-130](file://src/service/dao/message_channel/sqlite.rs#L92-L130)
-- [migrations/20260508000000_message_channels.sql:25-31](file://migrations/20260508000000_message_channels.sql#L25-L31)
-- [src/service/dal/message_channel.rs:289-313](file://src/service/dal/message_channel.rs#L289-L313)
+- [src/service/dao/message_channel/sqlite.rs:92-130](src/service/dao/message_channel/sqlite.rs#L92-L130)
+- [migrations/20260508000000_message_channels.sql:25-31](migrations/20260508000000_message_channels.sql#L25-L31)
+- [src/service/dal/message_channel.rs:289-313](src/service/dal/message_channel.rs#L289-L313)
 
 ## 故障排查指南
 - 常见错误
@@ -344,10 +344,10 @@ DL --> AC["DAO(A2aCallbackDao)"]
   - 若 Webhook 未实现，集成测试已覆盖 unsupported_operation 场景，后续实现后可将失败转为成功。
 
 章节来源
-- [src/handlers/finance/message_channel/test_message_channel_connection.rs:20-56](file://src/handlers/finance/message_channel/test_message_channel_connection.rs#L20-L56)
-- [src/models/message_channel.rs:67-107](file://src/models/message_channel.rs#L67-L107)
-- [src/service/dal/message_channel.rs:202-222](file://src/service/dal/message_channel.rs#L202-L222)
-- [docs/message_channel_design.md:23-36](file://docs/message_channel_design.md#L23-L36)
+- [src/handlers/finance/message_channel/test_message_channel_connection.rs:20-56](src/handlers/finance/message_channel/test_message_channel_connection.rs#L20-L56)
+- [src/models/message_channel.rs:67-107](src/models/message_channel.rs#L67-L107)
+- [src/service/dal/message_channel.rs:202-222](src/service/dal/message_channel.rs#L202-L222)
+- [docs/message_channel_design.md:23-36](docs/message_channel_design.md#L23-L36)
 
 ## 结论
 消息渠道管理 API 提供了完整的渠道生命周期管理能力，并通过严格的分层与纯 match 分发机制实现了多渠道支持与可扩展的消息路由。当前管理面已具备 CRUD、查询、状态管理与连接测试能力；运行面消息分发已具备框架与部分渠道实现，通用 Webhook 尚未完全实现但已有明确的失败聚合策略。后续可按需扩展新渠道类型与推送实现。
@@ -365,6 +365,6 @@ DL --> AC["DAO(A2aCallbackDao)"]
   - 批量操作：通过循环调用 /status 或后端批处理任务完成批量状态更新。
 
 章节来源
-- [src/models/message_channel.rs:197-255](file://src/models/message_channel.rs#L197-L255)
-- [src/service/dal/message_channel.rs:289-313](file://src/service/dal/message_channel.rs#L289-L313)
-- [docs/message_channel_design.md:478-513](file://docs/message_channel_design.md#L478-L513)
+- [src/models/message_channel.rs:197-255](src/models/message_channel.rs#L197-L255)
+- [src/service/dal/message_channel.rs:289-313](src/service/dal/message_channel.rs#L289-L313)
+- [docs/message_channel_design.md:478-513](docs/message_channel_design.md#L478-L513)

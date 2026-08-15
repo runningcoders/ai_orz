@@ -77,26 +77,26 @@ Frontend 层（后续新增）：Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5，41 
 | 文件 | 角色 | 摘要 |
 |------|------|------|
 | **DAO 层（25 个，全覆盖）** | | |
-| [src/service/dao/](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/) | DAO 根目录 | agent/artifact/attachment/brain/cron_trigger/lark/mcp_server/memory/message/model_provider/project/skill/task/tool/tool_call/user 等 25 模块 |
-| [src/service/dao/a2a_callback/](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/a2a_callback/) | A2A 回调 DAO | A2A 异步回调 Push 端点（独立 DAO 模块） |
-| [src/service/dao/lark/](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/lark/) | 飞书渠道 DAO | HTTP + WebSocket P2P（5 渠道 DAO 之一） |
+| [src/service/dao/](src/service/dao/) | DAO 根目录 | agent/artifact/attachment/brain/cron_trigger/lark/mcp_server/memory/message/model_provider/project/skill/task/tool/tool_call/user 等 25 模块 |
+| [src/service/dao/a2a_callback/](src/service/dao/a2a_callback/) | A2A 回调 DAO | A2A 异步回调 Push 端点（独立 DAO 模块） |
+| [src/service/dao/lark/](src/service/dao/lark/) | 飞书渠道 DAO | HTTP + WebSocket P2P（5 渠道 DAO 之一） |
 | **DAL 层（23 个，全覆盖）** | | |
-| [src/service/dal/](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/) | DAL 根目录 | agent/agent_a2a/artifact/attachment/backup/brain/cron_trigger/lark/log_query/mcp_server/mcp_tool/memory/message/message_channel/message_push/model_provider/organization/project/skill/task/tool/user 共 23 |
+| [src/service/dal/](src/service/dal/) | DAL 根目录 | agent/agent_a2a/artifact/attachment/backup/brain/cron_trigger/lark/log_query/mcp_server/mcp_tool/memory/message/message_channel/message_push/model_provider/organization/project/skill/task/tool/user 共 23 |
 | **Domain 层（7 领域，全覆盖）** | | |
-| [src/service/domain/finance/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/finance/) | finance 领域 | model_provider/attachment/mcp_server/mcp_tool/tool/message_channel |
-| [src/service/domain/hr/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/hr/) | hr 领域 | agent 管理 / skill 管理 |
-| [src/service/domain/organization/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/organization/) | organization | 组织/用户/认证 |
-| [src/service/domain/message/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/message/) | message 领域 | 消息管理 + 5 出站渠道 + 飞书 P2P 入站 + SSE 推送 + 多渠道投递 |
-| [src/service/domain/project/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/project/) | project 领域 | Project/Task/Artifact 管理 |
-| [src/service/domain/runtime/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/runtime/) | runtime 领域 | Agent 唤醒、工具执行、记忆读写（内部调用） |
-| [src/service/domain/system/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/system/) | system 领域 | Cron Trigger 管理、AOP 监控、备份恢复、日志查询 |
+| [src/service/domain/finance/](src/service/domain/finance/) | finance 领域 | model_provider/attachment/mcp_server/mcp_tool/tool/message_channel |
+| [src/service/domain/hr/](src/service/domain/hr/) | hr 领域 | agent 管理 / skill 管理 |
+| [src/service/domain/organization/](src/service/domain/organization/) | organization | 组织/用户/认证 |
+| [src/service/domain/message/](src/service/domain/message/) | message 领域 | 消息管理 + 5 出站渠道 + 飞书 P2P 入站 + SSE 推送 + 多渠道投递 |
+| [src/service/domain/project/](src/service/domain/project/) | project 领域 | Project/Task/Artifact 管理 |
+| [src/service/domain/runtime/](src/service/domain/runtime/) | runtime 领域 | Agent 唤醒、工具执行、记忆读写（内部调用） |
+| [src/service/domain/system/](src/service/domain/system/) | system 领域 | Cron Trigger 管理、AOP 监控、备份恢复、日志查询 |
 | **Consumer 层（100%）** | | |
-| [src/consumer/](file:///Users/aman/Technology/rust/ai_orz/src/consumer/) | Consumer 根目录 | GenericConsumer 泛型框架 + Message Topic 三层分发 + 崩溃恢复 + 优先级排序 |
+| [src/consumer/](src/consumer/) | Consumer 根目录 | GenericConsumer 泛型框架 + Message Topic 三层分发 + 崩溃恢复 + 优先级排序 |
 | **Handler 层（~95%，8 大域 API）** | | |
-| [src/handlers/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/) | Handler 根目录 | organization/hr/finance/project/user/health/system/a2a 8 大业务域 |
+| [src/handlers/](src/handlers/) | Handler 根目录 | organization/hr/finance/project/user/health/system/a2a 8 大业务域 |
 | **Frontend 层（快照时已落地）** | | |
-| [frontend/src/pages/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/) | 页面模块 | organization/hr/finance/project/message/system/user + workspace（30+ 页面） |
-| [frontend/styles/input.css](file:///Users/aman/Technology/rust/ai_orz/frontend/styles/input.css) | 设计系统 | Tailwind CSS v4 主题配置 + DaisyUI v5 组件定制（orz-light 品牌主题） |
+| [frontend/src/pages/](frontend/src/pages/) | 页面模块 | organization/hr/finance/project/message/system/user + workspace（30+ 页面） |
+| [frontend/styles/input.css](frontend/styles/input.css) | 设计系统 | Tailwind CSS v4 主题配置 + DaisyUI v5 组件定制（orz-light 品牌主题） |
 
 ---
 
@@ -110,7 +110,7 @@ Frontend 层（后续新增）：Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5，41 
 | 注册 DAL 消费方 | `src/service/dal/<domain>/` 中注入新 DAO，`Arc<dyn XxxDao + Send + Sync>` | 参考 DAL 目录下任一现有模块依赖注入模式 |
 | 注册 Domain 承载 | `src/service/domain/<领域>/` 中通过 DAL 间接调用，永不直调 DAO | 严格单向分层（参见 §二 架构图） |
 
-> 代码入口：[service/dao/ 根目录](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/)
+> 代码入口：[service/dao/ 根目录](src/service/dao/)
 
 ### 4.2 新增 Handler API 接口
 
@@ -120,21 +120,13 @@ Frontend 层（后续新增）：Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5，41 
 | 路由注册 | `src/router.rs` 对应业务域 nest 下追加 | 按领域分组，router 顺序注意避免路径遮蔽 |
 | **禁止操作** | ❌ Handler 中直接 use service::dal / service::dao；永远只调 domain | 违反即破坏分层契约 |
 
-> 代码入口：[handlers/ 根目录](file:///Users/aman/Technology/rust/ai_orz/src/handlers/)
+> 代码入口：[handlers/ 根目录](src/handlers/)
 
 ---
 
 ## 五、验收清单（2026-07-25 全部达成 ✅）
 
-- [x] DAO 层：25 个模块 100% 被 DAL 使用，零闲置
-- [x] DAL 层：23 个模块 100% 被 Domain 使用，零闲置
-- [x] Domain 层：7 大领域 100% 完整实现
-- [x] Handler 层：8 大业务域 API（含 a2a 公开回调）基本达成（~95%）
-- [x] Consumer 层：100% — GenericConsumer 框架 + Message Topic 三层分发 + 崩溃恢复
-- [x] 分层审计：Handler → Domain → DAL → DAO 严格单向，0 例跨层调用
-- [x] 依赖注入：Domain 层 `Arc<dyn Trait>` 注入 DAL，符合 DIP 原则
-- [x] PO 边界：Domain 层及以上零 PO 依赖
-- [x] Frontend 层（2026-07-25 更新）：Tailwind v4 + DaisyUI v5 迁移完成，41 路由 30+ 主题
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -160,7 +152,8 @@ Frontend 层（后续新增）：Dioxus 0.7 + Tailwind CSS v4 + DaisyUI v5，41 
 
 > **核心不变量**：严格单向分层架构、DAO/DAL/Domain 三层覆盖率 100% 的底线不突破；Handler 永不直调 DAL/DAO。
 
-1. **新实体接入链路**：[src/service/dao/](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/) → [src/service/dal/](file:///Users/aman/Technology/rust/ai_orz/src/service/dal/) → [src/service/domain/](file:///Users/aman/Technology/rust/ai_orz/src/service/domain/) → [src/handlers/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/)，严格按 DAO→DAL→Domain→Handler 顺序逐级接入
-2. **新 Handler 接口**：复制 [src/handlers/hr/agent/](file:///Users/aman/Technology/rust/ai_orz/src/handlers/hr/agent/) 5 文件 CRUD 模板，永远只调对应 Domain
-3. **前端新增页面**：[frontend/src/pages/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/pages/) 按业务域目录分组，API 客户端调用 [frontend/src/api/](file:///Users/aman/Technology/rust/ai_orz/frontend/src/api/) 对应域
+1. **新实体接入链路**：[src/service/dao/](src/service/dao/) → [src/service/dal/](src/service/dal/) → [src/service/domain/](src/service/domain/) → [src/handlers/](src/handlers/)，严格按 DAO→DAL→Domain→Handler 顺序逐级接入
+2. **新 Handler 接口**：复制 [src/handlers/hr/agent/](src/handlers/hr/agent/) 5 文件 CRUD 模板，永远只调对应 Domain
+3. **前端新增页面**：[frontend/src/pages/](frontend/src/pages/) 按业务域目录分组，API 客户端调用 [frontend/src/api/](frontend/src/api/) 对应域
 4. **下次架构审计节点**：每完成一轮重大功能迭代（如新增业务域），按本报告同款结构生成新快照，对比完成度演进曲线
+

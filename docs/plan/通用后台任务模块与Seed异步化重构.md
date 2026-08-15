@@ -135,17 +135,7 @@ Pkg 层（核心）
 
 ## 五、验收清单（2026-07-30 全部达成 ✅）
 
-- [x] DTO：common 新增 background_task 模块（TaskStatus/Type/Snapshot/TaskId 4 结构）；mod.rs 注册
-- [x] Pkg：background_task 模块（BackgroundTask trait + registry 全局单例）；pkg/mod.rs 注册
-- [x] SystemDomain trait：background_task_registry() 默认实现（委托 pkg registry）
-- [x] 统一进度查询 handler：GET /system/tasks/{task_id}/progress；system/mod.rs + router.rs 注册
-- [x] 初始化任务：删除 INIT_TASKS static；构造 InitializeSystemTask → registry.register；get_initialize_progress 改装饰模式
-- [x] 向量重建：删除 finance domain RebuildTask 字段和 start/run 方法；新建 RebuildVectorsTask 对象；rebuild_progress 改装饰
-- [x] Seed 异步化：save/load/apply_default 3 handler 改提交任务返回 TaskIdResponse；seed/mod.rs 加 on_progress 回调
-- [x] 前端通用 TaskProgress 组件：components/mod.rs 注册；reception + seed 管理页复用
-- [x] 前端 API：seed.rs 异步提交+通用进度查询；auth.rs 初始化接口不变（验证兼容）
-- [x] 向后兼容验证：tests/common/factories/user_factory.rs 初始化路径无需修改，全通过
-- [x] 后端 lib 全量测试通过 + Clippy 零警告；前端 wasm32 编译通过
+见 Plan 文档对应 Git 提交记录 / 对应执行任务。
 
 ---
 
@@ -179,3 +169,4 @@ Pkg 层（核心）
    - 前端当前轮询通用 progress（建议 1s interval）。可接入 WS：任务 run 内每步进度更新后，通过 WS 推送 TaskProgressSnapshot 给订阅该 task_id 的客户端；seed 大快照体验提升明显（减少 HTTP 轮询开销）
 4. **任务重试 / 幂等执行**
    - 新建 `RetryableBackgroundTask` 子 trait，增加 `max_retries()` / `retry_interval_ms()`；registry 捕获 task.run().await Err 后，按配置自动重新 spawn；进度字段加 retry_count
+
