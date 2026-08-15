@@ -1,5 +1,14 @@
 # 查询接口分页与通用 count 规范
 
+> 🎯 **本文档定位**：查询接口 list/query 统一返回 PagedResult 的契约实践指南——分页参数传递链路、count 与 query 复用过滤逻辑、DAO push_query_filters 模式约定
+> 状态：定稿（2026-07-25 分页+count 规范写定，AGENTS.md 红线摘要已迁移完成；2026-08-15 整理补代码路径引用）
+> 查阅场景：新增全量实体 query/list 接口、排查 count 与 query 结果不一致、对齐 DAO push_query_filters 模式与全链路参数透传时打开；具体实现看 common/src/api/ 与对应 DAO
+>
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构（§4.9/§4.10 为本规范的红线摘要来源）
+> - [entity_list_query_search_design.md](./entity_list_query_search_design.md) — list/query/search 三接口职责边界（分页是该规范的子集）
+> - [api_protocol_convention.md](./api_protocol_convention.md) — API 协议规范（common DTO 单一事实源）
+
 > 📌 **决策快照**：2026-07-24（分页规范）/ 2026-07-25（通用 count 规范）写定，从 AGENTS.md 4.9/4.10 迁移而来。
 > AGENTS.md 只保留红线摘要，完整实现模式以本文档为准；现状描述以 wiki 为准。
 
@@ -42,6 +51,7 @@ impl<T> PagedResult<T> {
     pub fn map<U>(self, f: impl FnMut(T) -> U) -> PagedResult<U> { ... }
 }
 ```
+> 实际定义见：[common/src/api/mod.rs::PaginationParams](file:///Users/aman/Technology/rust/ai_orz/common/src/api/mod.rs#L56-L64) 与 [PagedResult\<T\>](file:///Users/aman/Technology/rust/ai_orz/common/src/api/mod.rs#L67-L84)
 
 ## 三、全链路分页参数传递
 
@@ -101,6 +111,7 @@ async fn query(&self, ctx: RequestContext, query: XxxQuery)
     Ok(common::api::PagedResult { items, total: total as usize })
 }
 ```
+> 实际 `push_query_filters` + `query` 模式参考：[src/service/dao/agent/sqlite.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/agent/sqlite.rs#L332)（push_query_filters）与同文件中 `query` 方法；各实体位置：user/ [L269](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/user/sqlite.rs#L269)、project/ [L399](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/project/sqlite.rs#L399)、task/ [L446](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/task/sqlite.rs#L446)、tool/ [L489](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/tool/sqlite.rs#L489)、skill/ [L559](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/skill/sqlite.rs#L559)
 
 ## 五、Handler 层模式
 
@@ -121,6 +132,7 @@ pub async fn query_agents(
     Ok(page.map(|agent| AgentListItem { ... }))  // 用 map 转换类型
 }
 ```
+> 实际 Query 结构体定义：[common/src/api/agent.rs::AgentQueryRequest](file:///Users/aman/Technology/rust/ai_orz/common/src/api/agent.rs#L300)；其他实体 Query 定义：user/ [UserQueryRequest L123](file:///Users/aman/Technology/rust/ai_orz/common/src/api/user.rs#L123)、project/ task/ tool/ skill/ 等同目录下对应 `XxxQueryRequest`。Handler 实际实现见 `src/handlers/agent/` 对应文件。
 
 **list handler**（GET，只接受分页，内部固定默认过滤）：
 
@@ -139,6 +151,7 @@ pub async fn list_agents(
     Ok(page.map(|agent| AgentListItem { ... }))
 }
 ```
+> 实际 list 请求与 handler：[common/src/api/agent.rs](file:///Users/aman/Technology/rust/ai_orz/common/src/api/agent.rs) 中 `ListAgentsRequest`（仅含 pagination）；Handler 路由实现见 `src/handlers/agent/` 对应 list_xxx 函数。
 
 ## 六、各实体的 list 默认过滤和排序
 
@@ -198,6 +211,7 @@ async fn count_by_assignee(&self, ctx: RequestContext, assignee_id: &str) -> Res
     }).await
 }
 ```
+> 实际 count 通用方法+count 语法糖参考：[src/service/dao/project/sqlite.rs](file:///Users/aman/Technology/rust/ai_orz/src/service/dao/project/sqlite.rs#L399)（push_query_filters 与其上方的 count/count_by_root_user/count_by_root_user_and_status 实现）；其他实体 DAO 同结构。DAL/Domain 透传实现见正文参考章节。
 
 ### 各层实现要点
 
@@ -244,6 +258,7 @@ async fn count_by_xxx(&self, ctx: RequestContext, ...) -> Result<u64> {
     Ok(items.len() as u64)
 }
 ```
+> 以上为红线反模式（契约型❌用法对照），正确实现一律对齐 §2~§7 的模式；各实体规范实现见 `src/service/dao/*/sqlite.rs` 与 `common/src/api/*` 的 Query 结构体定义。本文档无快照型 `#[test]` 或 `cargo test` 命令需要剥离。
 
 ## 九、参考实现
 
