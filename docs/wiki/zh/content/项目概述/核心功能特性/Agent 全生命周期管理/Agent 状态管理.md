@@ -334,8 +334,8 @@ Agent 状态管理通过“持久化生命周期 + 纯内存运行时状态”�
 
 ### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
 #### ① Design 决策快照
-- [intent_aware_two_stage_awaken_design.md](docs/design/intent_aware_two_stage_awaken_design.md) — Busy 状态内两阶段流程状态转换：IntentAnalyze → Awaken → Idle（Phase1 失败不影响 Phase2，降级 Level 5/6 等价单阶段流程）
+- [intent_aware_two_stage_awaken_design.md](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md) — Busy 状态内两阶段流程状态转换：IntentAnalyze → Awaken → Idle（Phase1 失败不影响 Phase2，降级 Level 5/6 等价单阶段流程）
 #### ② Plan 落地快照
-- [唤醒上下文与睡眠约束.md](docs/plan/唤醒上下文与睡眠约束.md) — BusyGuard RAII 防护 + Resting 状态内沉淀不被新消息打断（排队不丢）
+- [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — BusyGuard RAII 防护 + Resting 状态内沉淀不被新消息打断（排队不丢）
 #### ④ RAG 原子知识卡
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联/Intent%20感知两阶段唤醒：IntentAnalyze%20Phase1%20七字段意图分析%20+%206%20级%20JSON%20降级兜底%20+%20Awaken%20Phase2%20正式执行串联.md) — §4.1 红线 3 need_clarification 绝不短路 + Level 6 降级绝不中断 awaken 链路

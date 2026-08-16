@@ -17,7 +17,7 @@ source_files:
   - common/src/enums/thinking_scene.rs#L1-L50
   - docs/design/thinking_task_policy_engine_design.md
   - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
-  - docs/design/policy_set_macro_simplification_and_mixed_mode.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
+  - docs/archive/design-archive/policy_set_macro_simplification_and_mixed_mode.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
 ---
@@ -43,7 +43,7 @@ source_files:
 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | think_loop 驱动循环 | 每轮构造 `Metrics::new().with("rounds", n).with("elapsed_ms", ...).with("cancel", ...)`，调用 policy.evaluate(&metrics)，拿到命中列表进入 exit_reason 分支或继续 |
 | 【对应 Wiki 长文】运行时领域.md | 系统化上下文（必读 §5）| [运行时领域](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) |
 | 【① Design】thinking_task_policy_engine_design.md | 决策背景/关键决策表 | [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
-| 【② Plan】执行蓝图（待转 plan 目录）| 完整 7 章落地 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：ai-orz-doc-maintainer 精简到 docs/plan/ 后回填真实 plan 路径）|
+| 【② Plan】执行蓝图（待转 plan 目录）| 完整 7 章落地 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：ai-orz-doc-maintainer 精简到 docs/archive/plan-archive/ 后回填真实 plan 路径）|
 
 ## §3 架构约定
 

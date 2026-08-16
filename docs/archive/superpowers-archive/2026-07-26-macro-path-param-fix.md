@@ -47,7 +47,7 @@
 | `common/src/api/user.rs` | 4 个 path-only struct 补 `Default` |
 | `common/src/api/task.rs` | 4 个 path-only struct 补 `Default` |
 | `common/src/api/seed.rs` | 1 个 path-only struct 补 `Default`（LoadSeedRequest 是混合，跳过） |
-| `docs/design/unified-idl-http-handler.md` | 同步"path-only struct 必须 derive Default"硬约束 |
+| `docs/archive/design-archive/unified-idl-http-handler.md` | 同步"path-only struct 必须 derive Default"硬约束 |
 
 ---
 
@@ -1134,14 +1134,14 @@ git log -3 --oneline
 
 ### Task 7: 更新设计文档同步宏修复后的行为
 
-**目的：** `docs/design/unified-idl-http-handler.md` 当前文档描述与实现一致（修复前两者不一致），需要补充"path-only struct 必须 derive Default"的硬约束说明。
+**目的：** `docs/archive/design-archive/unified-idl-http-handler.md` 当前文档描述与实现一致（修复前两者不一致），需要补充"path-only struct 必须 derive Default"的硬约束说明。
 
 **Files:**
-- Modify: `docs/design/unified-idl-http-handler.md`
+- Modify: `docs/archive/design-archive/unified-idl-http-handler.md`
 
 - [ ] **Step 1: 阅读现有文档相关章节**
 
-Run: Read `docs/design/unified-idl-http-handler.md` 全文，重点查看：
+Run: Read `docs/archive/design-archive/unified-idl-http-handler.md` 全文，重点查看：
 - 第 51-59 行的 `#[param(source = ...)]` 说明
 - 第 180-188 行的"支持的组合"表
 - 第 213-220 行的优先级规则
@@ -1203,7 +1203,7 @@ Default 不是必需的（但加上无害）。
 - [ ] **Step 5: Commit 文档更新**
 
 ```bash
-git add docs/design/unified-idl-http-handler.md
+git add docs/archive/design-archive/unified-idl-http-handler.md
 git commit -m "docs: 同步宏 path 参数解析修复后的行为说明
 
 - 新增"path-only struct 必须 derive Default"硬约束说明

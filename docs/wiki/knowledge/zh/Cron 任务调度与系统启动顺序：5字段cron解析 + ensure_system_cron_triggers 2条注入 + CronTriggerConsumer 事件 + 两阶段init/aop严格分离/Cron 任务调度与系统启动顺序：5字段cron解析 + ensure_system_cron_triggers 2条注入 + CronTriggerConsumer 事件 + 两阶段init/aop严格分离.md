@@ -19,13 +19,13 @@ source_files:
   - src/consumer/scheduler.rs#L1-L90 (SchedulerConsumer Sync 消费 SchedulerTriggerFiredEvent：match kind：agent_rest → HR::agent_rest_all(ctx) 遍历所有在线 Agent 做 settle 沉淀；stats_collect → DuckDB record_event 汇总 + RuntimeStatsCollector flush；backup 每日 → Finance::Backup.create)
   - src/lib.rs#L20-L70 (启动总顺序强制执行：pkg::init_all → service::init → producer::init → consumer::init → service::init_base_data().await【2 条系统 cron 注入于此】→ aop stats hook → aop::init_all()【AOP 调度器启动，cron producer 开始 poll】→ HTTP 启动；红线：**init_base_data 绝对不能放 consumer::init / producer::init 之前**，否则 poll 时系统 cron 还没注入就漏掉)
   - src/handlers/system/cron_trigger/list_cron_triggers.rs (Handler：管理员 list_cron_triggers，支持按 kind/status 过滤，分页；用户创建自定义 cron POST create_cron_trigger 需 cron 表达式格式校验 + 不允许创建 */1 * * * * < 1 分钟过于频繁的任务（防止队列爆）)
-  - docs/design/task_scheduler_design.md（§5 字段 cron 解析约束 §轮询间隔 60s 与 fire 时间误差容忍 §乐观并发锁 last_fired_at CAS 更新）
+  - docs/archive/design-archive/task_scheduler_design.md（§5 字段 cron 解析约束 §轮询间隔 60s 与 fire 时间误差容忍 §乐观并发锁 last_fired_at CAS 更新）
   - docs/design/runtime_design.md（§Agent 唤醒链路与 agent_rest 关系 §Resting 状态不允许唤醒 §Resting 结束后 BusyGuard 自动回 Idle）
-  - docs/design/event_design.md（§SchedulerTriggerFiredEvent 事件负载 §8 类消费者注册顺序 §Ack/Nack delivery attempt 记录）
-  - docs/design/consumer_architecture.md（§SchedulerConsumer 与 AgentLoopConsumer 注册顺序 §AOP Registry register 顺序 = 消费顺序）
-  - docs/plan/唤醒上下文与睡眠约束.md（§agent_rest 每天 4 点触发 §resting 期间 pending_message 不唤醒 §settle 写入知识图谱后 Agent 自动转入 Idle）
-  - docs/plan/统计图表Phase1基础设施与时序图展示重构.md（§stats_collect 每 5 分钟 cron 任务 §DuckDB record_event! 汇总 RuntimeStatsCollector memory 数据）
-  - docs/plan/通用后台任务模块与Seed异步化重构.md（§自定义 cron trigger 创建表单 §5 字段 cron 校验 §禁止 < 1 分钟间隔 §trigger 启用/禁用切换）
+  - docs/archive/design-archive/event_design.md（§SchedulerTriggerFiredEvent 事件负载 §8 类消费者注册顺序 §Ack/Nack delivery attempt 记录）
+  - docs/archive/design-archive/consumer_architecture.md（§SchedulerConsumer 与 AgentLoopConsumer 注册顺序 §AOP Registry register 顺序 = 消费顺序）
+  - docs/archive/plan-archive/唤醒上下文与睡眠约束.md（§agent_rest 每天 4 点触发 §resting 期间 pending_message 不唤醒 §settle 写入知识图谱后 Agent 自动转入 Idle）
+  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（§stats_collect 每 5 分钟 cron 任务 §DuckDB record_event! 汇总 RuntimeStatsCollector memory 数据）
+  - docs/archive/plan-archive/通用后台任务模块与Seed异步化重构.md（§自定义 cron trigger 创建表单 §5 字段 cron 校验 §禁止 < 1 分钟间隔 §trigger 启用/禁用切换）
   - docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/定时任务管理.md（定时任务页面：SystemTriggers 页面，两条系统默认 readonly，用户自定义可 CRUD + 立即触发按钮）
   - docs/wiki/zh/content/功能模块/系统管理/定时任务调度.md（调度总览：5 字段 cron + 轮询 + 事件分发 + 消费者处理链路 + 监控指标）
   - docs/wiki/zh/content/核心模块/AOP 事件系统/消费者框架/定时任务消费者.md（SchedulerConsumer 职责：3 类系统任务 agent_rest/stats_collect/backup_daily + 用户自定义 kind 派发到对应 handler）
@@ -56,7 +56,7 @@ source_files:
 | lib.rs run() 启动总顺序 | 6 步序列 | pkg::init → service::init → producer/consumer::init → service::init_base_data().await → aop::init_all → axum serve；每一步用 comment 标注顺序与 why（防止未来有人手贱调整） | `:L20-L70` |
 
 **章节来源**
-- [task_scheduler_design.md:L1-L60](docs/design/task_scheduler_design.md#L1-L60)
+- [task_scheduler_design.md:L1-L60](docs/archive/design-archive/task_scheduler_design.md#L1-L60)
 - [system/mod.rs:L43-L90](src/service/domain/system/mod.rs#L43-L90)
 - [lib.rs run()](src/lib.rs)
 

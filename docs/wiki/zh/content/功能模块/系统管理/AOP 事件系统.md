@@ -21,10 +21,10 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [消费者与生产者架构设计](docs/design/consumer_architecture.md) — AOP 生产消费异步框架总设计 + 系统管理面板 AOP 监控接入点设计
+- [消费者与生产者架构设计](docs/archive/design-archive/consumer_architecture.md) — AOP 生产消费异步框架总设计 + 系统管理面板 AOP 监控接入点设计
 
 **② 落地计划（Plan）**：
-- [Agent 循环驱动引擎 Plan](docs/plan/agent_loop_engine_plan.md) — AOP 事件 → Consumer → Agent 唤醒 → 管理面板监控闭环
+- [Agent 循环驱动引擎 Plan](docs/archive/plan-archive/agent_loop_engine_plan.md) — AOP 事件 → Consumer → Agent 唤醒 → 管理面板监控闭环
 
 **④ RAG 原子知识卡**：
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — 8 Consumer 全能力映射到 AOP 监控面板的 5 指标卡片 + 事件分布饼图 + 时序折线

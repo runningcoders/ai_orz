@@ -7,8 +7,8 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 整体分层架构
 > - [canvas_rendering_playbook.md](./canvas_rendering_playbook.md) — Canvas 渲染栈视觉对齐该设计系统
-> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](docs/plan/统计图表Phase1基础设施与时序图展示重构.md) — charts/ 子目录组件落地与复用约束
-> - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](docs/plan/知识图谱推荐起点与组件复用重构.md) — Graph/GraphCanvas/KanbanCanvas 6 层组件分层复用
+> - 【② Plan 落地】[统计图表Phase1基础设施与时序图展示重构.md](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) — charts/ 子目录组件落地与复用约束
+> - 【② Plan 落地】[知识图谱推荐起点与组件复用重构.md](docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md) — Graph/GraphCanvas/KanbanCanvas 6 层组件分层复用
 > - 【③ Wiki 长文（Batch10 追加）】[组件系统.md](docs/wiki/zh/content/前端应用/组件系统/组件系统.md) — 全量组件清单与使用说明
 > - 【③ Wiki 长文（Batch10 追加）】[UI 样式与主题.md](docs/wiki/zh/content/前端应用/UI%20样式与主题.md) — orz-light 主题 + 30+ 切换机制 + HUD 特效
 > - 【③ Wiki 长文（Batch10 追加）】[前端架构设计.md](docs/wiki/zh/content/前端应用/前端架构设计.md) — Router/CSS 设计系统/API 客户端/状态管理/页面模块
@@ -67,7 +67,7 @@
 ### 相关文档
 
 - **架构文档**: `docs/design/frontend_architecture.md` — 前端整体架构说明
-- **架构现状**: `docs/plan/architecture_status_20260725.md` — 含前端层完成度跟踪
+- **架构现状**: `docs/archive/plan-archive/architecture_status_20260725.md` — 含前端层完成度跟踪
 - **本文档下方**: 保持原始 Mistral 设计系统规范，作为设计决策的权威参考
 
 > 下方内容为原始设计系统规范，作为设计决策与样式扩展的参考依据。

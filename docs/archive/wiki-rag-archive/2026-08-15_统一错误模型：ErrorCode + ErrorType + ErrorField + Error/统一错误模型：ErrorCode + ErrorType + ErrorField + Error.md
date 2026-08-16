@@ -12,7 +12,7 @@ source_files:
     - common/src/error/macros.rs
     - common/src/error/axum.rs
     - common/src/error_test.rs
-    - docs/design/common-error-type.md
+    - docs/archive/design-archive/common-error-type.md
 ---
 
 ## 1. 系统/方案概述
@@ -34,7 +34,7 @@ source_files:
 - `common/src/error/macros.rs` — `err!` / `bail_err!` / `ensure_err!` / `define_error_codes!` 四个宏，支持 inline json `field: {k:v}`、`source:`、显式 `error_type` 覆盖等多种语法。
 - `common/src/error/axum.rs` — `IntoResponse` 实现，将 `Error` 转为 Axum 响应。
 - `common/src/error_test.rs` — 针对错误模型的契约测试，验证 code_str、http_status、error_type、field、source 等行为。
-- `docs/design/common-error-type.md` — 设计文档，明确分层使用规范与 HTTP 响应格式约定。
+- `docs/archive/design-archive/common-error-type.md` — 设计文档，明确分层使用规范与 HTTP 响应格式约定。
 
 ## 3. 架构与约定
 

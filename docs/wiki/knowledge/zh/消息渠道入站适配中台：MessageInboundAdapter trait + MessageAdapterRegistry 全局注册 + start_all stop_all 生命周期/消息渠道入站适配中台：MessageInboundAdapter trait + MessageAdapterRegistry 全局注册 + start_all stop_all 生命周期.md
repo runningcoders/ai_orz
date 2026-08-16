@@ -18,9 +18,9 @@ source_files:
   - src/service/dal/lark.rs#L632-L710（LarkMessageChannelDal 实现 MessageInboundAdapter：channel_type = Lark；start = running RwLock 检查+置位+回调注入+启用的飞书渠道按 app_id 聚合+resolve_channel_credentials+调用 lark_dao 开启 WS；stop = running=false + 断开全部 WS；listener_stats() 透传 metrics 供系统健康面板）
   - src/service/dal/message_channel.rs#L329-L367（MessageChannelDalImpl push_to_channel：match ChannelType 分发出站调用（纯分发无 trait，漏加编译直接报错）。入站链路由 LarkMessageChannelDal 独立实现 MessageInboundAdapter，两者对称但独立）
   - common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）
-  - docs/design/message_channel_design.md
-  - docs/plan/飞书P2P消息集成.md（v4 AOP 入站中台方案落地：MessageInboundAdapter trait + Registry + LarkEventDispatcher）
-  - docs/plan/lark-cli_集成二期.md（二期 WS 指数退避重连 + 凭证用户级管理 = 入站中台依赖的基础设施）
+  - docs/archive/design-archive/message_channel_design.md
+  - docs/archive/plan-archive/飞书P2P消息集成.md（v4 AOP 入站中台方案落地：MessageInboundAdapter trait + Registry + LarkEventDispatcher）
+  - docs/archive/plan-archive/lark-cli_集成二期.md（二期 WS 指数退避重连 + 凭证用户级管理 = 入站中台依赖的基础设施）
   - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md
   - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/消息领域.md
@@ -107,7 +107,7 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 | [dal/lark.rs](/src/service/dal/lark.rs) | Lark 渠道：MessageInboundAdapter 实现 + start 多应用聚合 | impl MessageInboundAdapter for LarkMessageChannelDal ~L632；start 内：query_enabled_lark_channels + 按 app_id 聚合去重 + resolve_channel_credentials + lark_dao 开 WS |
 | [dal/message_channel.rs](/src/service/dal/message_channel.rs) | 消息渠道 DAL：出站分发（对照参考）| push_to_channel ChannelType match 纯分发（入站走独立 trait）~L329 |
 | [producer/message_channel.rs](/src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调 |
-| 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/design/message_channel_design.md |
+| 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/archive/design-archive/message_channel_design.md |
 | 【③ Wiki 长文 1】消息渠道适配器.md | 新增入站渠道三步流程（用户视角） | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md |
 | 【③ Wiki 长文 2】多渠道消息系统.md | 入站+出站全链路图 | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md |
 | 【③ Wiki 长文 3】消息通道生产者.md | AOP 事件生产者如何调用 start_all 并把 AdaptedMessage 映射为内部事件 | docs/wiki/zh/content/基础设施/AOP%20事件系统/事件生产者/消息通道生产者.md |

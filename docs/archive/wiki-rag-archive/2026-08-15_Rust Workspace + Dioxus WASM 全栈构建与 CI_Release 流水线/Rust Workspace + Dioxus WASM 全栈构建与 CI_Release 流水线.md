@@ -25,7 +25,7 @@ source_files:
 - **前端构建脚本**：`scripts/build_frontend.sh` 封装 `dx build --release`、查找 dx 输出目录（兼容新旧路径）、复制 `index.html` 与 `public/` 静态资源到仓库根 `dist/`，并清理未被引用的旧 hash 资产。该脚本被 `start.sh` 和 CI e2e job 共用，保证「产物如何进入 dist/」只有一处逻辑。
 - **Tailwind CSS v4 编译**：`frontend/build.rs` 在 cargo 构建时调用 `node_modules/.bin/tailwindcss -i styles/input.css -o public/output.css --minify`，若 `node_modules` 缺失则自动执行 `npm install`，失败时以 warning 跳过而非中断构建。
 - **编译期配置注入**：`frontend/build.rs` 读取 `.ai_orz/ai_orz.toml`（不存在则回退到 `common/config/ai_orz.toml`），解析为 `AppConfig` 并生成 `OUT_DIR/compiled_config.rs`，提供 `COMPILED_CONFIG` 常量与 `get_config()` 函数，确保前后端配置一致。
-- **文档中心静态资源**：同 build.rs 递归扫描 `docs/design/`、`docs/plan/`、`docs/archive/`、`docs/wiki/zh/content/`，复制到 `frontend/public/docs/` 并生成 `index.json` 供前端运行时加载。
+- **文档中心静态资源**：同 build.rs 递归扫描 `docs/design/`、`docs/archive/plan-archive/`、`docs/archive/`、`docs/wiki/zh/content/`，复制到 `frontend/public/docs/` 并生成 `index.json` 供前端运行时加载。
 
 ## 2. CI 流水线（GitHub Actions）
 

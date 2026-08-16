@@ -9,7 +9,7 @@ source_files:
   - common/src/api/a2a.rs:Ln-Lm（AgentCard + Capabilities + JsonRpcRequest/Response + A2aTask + A2aMessage + SendTask/GetTask/CancelTask/SubscribeParams）
   - src/handlers/a2a/jsonrpc.rs:Ln-Lm（JSON-RPC 2.0 方法路由分发，按 method: params 映射）
   - src/handlers/a2a/agent_card.rs:Ln-Lm（GET /.well-known/agent.json AgentCard 公开端点）
-  - docs/design/a2a_server_architecture_design.md
+  - docs/archive/design-archive/a2a_server_architecture_design.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/API 参考/API 参考.md
   - docs/wiki/zh/content/API 参考/A2A 协议/Agent 发现机制.md
@@ -39,7 +39,7 @@ source_files:
 | [src/handlers/a2a/jsonrpc.rs](src/handlers/a2a/jsonrpc.rs) | JSON-RPC 2.0 方法路由分发 | extract_method() → match "tasks/send" | "tasks/get" | "tasks/cancel" | "tasks/subscribe" | "artifacts/get" → 对应 Handler 函数；错误统一包装成 JsonRpc error（code/message/data）|
 | [src/handlers/a2a/agent_card.rs](src/handlers/a2a/agent_card.rs) | GET /.well-known/agent.json 发现端点 | 组织配置（name/desc/URL）拼装 AgentCard JSON 返回；**无 JWT 鉴权**（公开发现端点）；Capabilities 声明当前 Server 支持的方法集 |
 | [src/handlers/a2a/mapper.rs](src/handlers/a2a/mapper.rs) | 内部实体 ⇄ A2A 协议对象 互转 | Task/Message → A2aTask/A2aMessage；A2aMessage → 内部 Message 字段映射；**DTO mapper 独立文件**（Handler 不写字段级映射代码）|
-| 【① Design 定稿】a2a_server_architecture_design.md | 协议架构选型 + 状态机设计 | docs/design/a2a_server_architecture_design.md |
+| 【① Design 定稿】a2a_server_architecture_design.md | 协议架构选型 + 状态机设计 | docs/archive/design-archive/a2a_server_architecture_design.md |
 | 【③ Wiki 长文 1】API 参考.md §A2A 协议接口 | 路由表 + 任务生命周期时序图 | docs/wiki/zh/content/API 参考/API 参考.md |
 | 【③ Wiki 长文 2】Agent 发现机制.md | AgentCard/.well-known 端点说明 | docs/wiki/zh/content/API 参考/A2A 协议/Agent 发现机制.md |
 | 【平行卡 1】A2A Server Handler 层（JSON-RPC 分发 + 7 Handler） | 服务端实现 | docs/wiki/knowledge/zh/A2A%20Server%20Handler%20层：JSON-RPC%20方法路由%20+%20公开无鉴权路由%20+%20notification_url%20回调渠道自动创建/A2A%20Server%20Handler%20层：JSON-RPC%20方法路由%20+%20公开无鉴权路由%20+%20notification_url%20回调渠道自动创建.md |

@@ -35,7 +35,7 @@
 | 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
 | 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
 | 🧪 质量工程 | 1124 测试 100% 通过率（后端 984：897单元+87集成 / 前端 82 / common 58，DAO/DAL/Domain/Handler/Pkg全覆盖；集成 87个/19 targets：Auth/SysInit CoreCRUD MsgDelivery VectorDegradation A2AFow PresetSkills CronTriggers LarkIntegration MsgChannel AgentAwaken 宏集成）、clippy `-D warnings` 双端零容忍、cargo-llvm-cov 覆盖率门槛（PR 38%/main 45%）、分层模块 DAO25/DAL23/Domain7/Handler8 零闲置（每 domain 含 init_base_data 扩展点）、E2E Playwright（仅本地） |
-| 📚 **知识体系 + RAG 自索引** | **4 类文档闭环：**① `docs/design/` 为什么 / ② `docs/plan/` 怎么做+结果 / ③ `docs/wiki/zh/content/` 百科（8 大板块 353 篇）/ ④ `docs/wiki/knowledge/zh/` 54+ 张 RAG 原子知识卡（总结+索引，RAG 第一召回层）；**四类显式双向互引**（代码引用 `相对路径#L起始-L结束`，文档引用 `相对仓库根路径`）。**阅读链路（严格顺序，禁跳过 Wiki）**：④卡 → ③长文 → 源码 → ①Design → ②Plan。知识卡 YAML `scope[]` 按 glob 过滤关注文件集，`source_files[]` 必须四类齐全。同主题多张平行卡：全部召回、并行阅读、不去重、不删旧卡。维护 Skill：ai-orz-wiki-maintainer（③+④）+ ai-orz-doc-maintainer（①+②） |
+| 📚 **知识体系 + RAG 自索引** | **4 类文档，单向引用模型（v2.1）：**① `docs/design/` 为什么 / ② `docs/plan/` 怎么做+结果（两者为历史快照，写定冻结，完成后精简归档）/ ③ `docs/wiki/zh/content/` 百科（8 大板块 353 篇）/ ④ `docs/wiki/knowledge/zh/` 54+ 张 RAG 原子知识卡（总结+索引，RAG 第一召回层）；③④ 为活文档，`<cite>` / `source_files[]` **单向指向** ①② 与源码（代码引用 `相对路径#L起始-L结束`，文档引用 `相对仓库根路径`）；①② **不反向链** ③④（冻结文档无法跟进 wiki 改版 = 永久断链）。**阅读链路（严格顺序，禁跳过 Wiki）**：④卡 → ③长文 → 源码 → ①Design → ②Plan。知识卡 YAML `scope[]` 按 glob 过滤关注文件集，`source_files[]` 必须含源码锚点 + ③ 长文（①② 有则写）。同主题多张平行卡：按 §2.1.3 图谱法则判定合并/拆分，禁止裸重叠。维护 Skill：ai-orz-wiki-maintainer（③+④ 活文档）+ ai-orz-doc-maintainer（①+② 全生命周期含归档） |
 
 ---
 
@@ -43,29 +43,47 @@
 
 > 📌 **按需要读取详细设计文档**
 
-### docs 内容脉络（四类文档闭环，v2.0）
+### docs 内容脉络（四类文档，单向引用模型 v2.1）
 
 **标准阅读链路（强制执行）**：`④ RAG 知识卡 → ③ Wiki 百科长文 → 源码 → ① Design → ② Plan`。**禁止跳过 ③ Wiki 长文**直接从 ④ 跳源码。
 
 | 目录 | 用途 | 约束 | 维护 Skill |
 |------|------|------|-----------|
-| ④ `docs/wiki/knowledge/zh/` | RAG 第一召回层：54+ 张原子卡（总结+索引）| YAML 5 字段 + 4 节固定；`source_files[]` **必须 4 类齐全**（含 ③ Wiki 长文相对仓库根路径 ≥1 条）；同主题允许多张平行卡 | ai-orz-wiki-maintainer |
-| ③ `docs/wiki/zh/content/`（入口 `docs/wiki/`）| 百科：8 大板块 353 篇（是什么）| 10 节固定目录；`<cite>` 强制关联 ①/②/④ 相对仓库根路径 | ai-orz-wiki-maintainer |
-| ① `docs/design/` | 决策快照（为什么）| 写定后不追代码；「关联文档」段强制列 ③ Wiki + ④ RAG 占位/真实路径 | ai-orz-doc-maintainer |
-| ② `docs/plan/` | 落地快照（怎么做+结果）| 7 章骨架（无 checkbox/命令/代码快照）；「关联文档」强制 ③+④ 路径（**plan 0 RAG = FAIL**）| ai-orz-doc-maintainer |
-| `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明 | ai-orz-doc-maintainer |
+| ④ `docs/wiki/knowledge/zh/` | RAG 第一召回层：54+ 张原子卡（总结+索引）| YAML 5 字段 + 4 节固定；`source_files[]` 含源码锚点 + ③ 长文（≥1 条，④→③ 活文档区闭环）+ ①②（有则写）；同主题多卡按 §2.1.3 图谱法则判定 | ai-orz-wiki-maintainer |
+| ③ `docs/wiki/zh/content/`（入口 `docs/wiki/`）| 百科：8 大板块 353 篇（是什么）| 10 节固定目录；`<cite>` 关联源码 + ④ RAG 卡（①② 有则写，单向引用）| ai-orz-wiki-maintainer |
+| ① `docs/design/` | 决策快照（为什么）| 写定后不追代码；关联文档段仅可链 ② plan（冻结互链）+ 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档（归档件不写跨象限引用）| ai-orz-doc-maintainer |
+| ② `docs/plan/` | 落地快照（怎么做+结果）| 7 章骨架（无 checkbox/命令/代码快照）；关联文档段仅可链 ① design + 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档 | ai-orz-doc-maintainer |
+| `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明；归档件不写任何跨象限引用；按来源分子目录（`design-archive/` / `plan-archive/` / `superpowers-archive/YYYY-MM-DD/` / `wiki-rag-archive/YYYY-MM-DD_<卡名>/`），**根目录禁散放** | ai-orz-doc-maintainer |
 | `docs/superpowers/*/` | 开发期执行蓝图（临时） | 功能完成 7 天内处置：→ plan 7 章模板 / → archive 封存 | ai-orz-doc-maintainer |
 | `docs/ARCHITECTURE.md` | 核心概念与实体关系 | 唯一权威纲要，手工维护 | — |
 | `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 分层实践与避坑 | Agent 必遵循，手工维护 | — |
 
-**路径格式铁律（互引时统一）**：
+**路径格式铁律（引用时统一）**：
 - 跳代码 → `相对路径#L起始-L结束`（如 `src/pkg/logging.rs#L15-L42`，GitHub 原生高亮，IDE 文件级跳转）
-- 跳文档（①/②/③/④之间）→ **`相对仓库根路径`**（如 `docs/design/xxx.md`，IDE 可点 + GitHub 可解析）
-- 覆盖率底线：每类文档必须显式链接另外至少 1 条对应主题文档，禁止孤立
+- 跳文档 → **`相对仓库根路径`**（如 `docs/design/xxx.md`，IDE 可点 + GitHub 可解析）
+- 引用方向：**只有 ③④（活文档）→ ①② / 源码 / 兄弟卡是受维护方向**；①② → ③④ 禁止新建（存量不要求回删）
 
-**维护流程顺序（防死锁：最后执行者回填占位）**：
-1. 代码变化 → 同时同步 ③ + ④（缺一会导致 RAG 召回过期知识）
-2. 新功能设计 → ① design 先写 ③+④ 精确占位路径 → ② plan 补齐占位 → ③+④ wiki 同步时回填真实路径 → 若 doc-maintainer 最后执行则 doc 回填
+**维护流程（单向，无交叉等待）**：
+1. 代码变化 → 只同步 ③ + ④（缺一会导致 RAG 召回过期知识）；wiki/RAG 的 cite、source_files 单向指向 ①② 与源码
+2. 新功能开发 → doc-maintainer 写 ① design + ② plan（只写自身内容 + ①② 互链）→ 功能完成 → 场景 D 精简归档 → 通知 wiki-maintainer 重定向 ③④ 中的旧路径
+
+#### 文件落位与命名约定（强制执行，新建文档先查本表）
+
+| 象限 | 落位目录 | 命名格式 | 示例 |
+|------|---------|---------|------|
+| ① 功能设计 | `docs/design/` | 英文 snake_case，`<topic>_design.md` | `runtime_design.md` |
+| ① 长期规范（不归档） | `docs/design/` | 英文 snake_case，`<topic>_guide.md` / `<topic>_convention.md` | `sqlx_guide.md`、`api_protocol_convention.md` |
+| ② 落地快照 | `docs/plan/` | **中文主题名**（无日期前缀，与功能语义同名） | `身份凭证Domain统一CRUD重构.md` |
+| 历史决策归档 | `docs/archive/design-archive/` | 保留原文件名 | `docs/archive/design-archive/a2a_server_design.md` |
+| 已完成 plan 归档 | `docs/archive/plan-archive/` | 保留原文件名 | `docs/archive/plan-archive/聊天MVP.md` |
+| superpowers 蓝图处置 | `docs/archive/superpowers-archive/YYYY-MM-DD/` | 保留原蓝图名 | `docs/archive/superpowers-archive/2026-08-16/xxx.md` |
+| RAG 重复副卡归档 | `docs/archive/wiki-rag-archive/YYYY-MM-DD_<卡名>/` | 目录名 = 卡名 | `2026-08-15_统一错误模型…/` |
+
+**红线**：
+- ❌ 在 `docs/` 下自创新目录（如 `docs/specs/`、`docs/notes/`）——四象限之外无处安放
+- ❌ plan 文件名带日期前缀（`2026-08-15-xxx.md` 是 superpowers 蓝图风格，进 `docs/plan/` 时必须去掉日期）
+- ❌ 归档件散放在 `docs/archive/` 根目录——必须进对应子目录
+- ❌ design 用中文命名 / plan 用英文命名（保持两目录既有风格一致性，便于 grep 与目录扫描）
 
 ---
 
@@ -258,13 +276,14 @@ Step 0. 前置查重（必填分支，不可省略）
 增量构建 Wiki / RAG 卡时，**必须按以下顺序触发技能**，不可跳过前置：
 
 1. **第一步：触发 `ai-orz-wiki-maintainer` 技能** — 该技能 Step 0 前置查重会自动按 §2.1.3.2 的 5 级算法做合并/拆分判定，把结果写进 SOP Step 5 产物。
-2. **同步互引**：判定拆分后，该技能会强制写齐 §2.1.3.3 四种关系的双方声明，以及 Design/Plan/Wiki 三类文档关联引用补齐。
-3. **只有在新增 Design / Plan 文档时**，才前置触发 `ai-orz-doc-maintainer` 技能，顺序仍然是 doc-maintainer 先落地占位 → wiki-maintainer 最后回填真实路径（防死锁）。
+2. **同步互引**：判定拆分后，该技能会强制写齐 §2.1.3.3 四种关系的双方声明（声明载体：RAG 卡 source_files[] 互引 + §3 首句，以及 Wiki 长文 §1 视角声明——均为 ③④ 活文档区内部，符合单向引用模型）。
+3. **只有在新增 Design / Plan 文档时**，才触发 `ai-orz-doc-maintainer` 技能（写完即冻结，不写任何指向 ③④ 的链接，无回填流程）。
 
 > **⚠️ ⛔ 明确禁止的反模式**：
 > - ❌ 直接 Write 工具新建 md 文件，绕开 ai-orz-wiki-maintainer 技能 = 跳过 5 级决策 = FAIL。
 > - ❌ 在 SOP 中写 "Overlaps OK" / "允许重叠" / "重叠不用管" 等措辞 = 绕过 Level 1/2 判定 = FAIL。本次 v2.1 升级后，**整个代码库所有文档中一律删除此类措辞**（保留的唯一合法重叠是 §2.1.3 Level 3 明确声明关联关系的互补视角平行卡）。
-> - ❌ 新增 RAG 卡后，Design / Plan / Wiki 长文中仍然只引用「自己这张新卡路径」，不补引兄弟关联卡 / 主卡 / 总卡路径 = 关联关系没入链路 = FAIL。
+> - ❌ 新增 RAG 卡后，Wiki 长文中仍然只引用「自己这张新卡路径」，不补引兄弟关联卡 / 主卡 / 总卡路径 = 关联关系没入链路 = FAIL。
+> - ❌ 在 design/plan（含归档件）中新增指向 wiki/RAG 卡的链接 = 违反单向引用模型 = FAIL（存量已有不要求回删，但任何新写的 ①② 文档不得再包含 ③④ 链接）。
 
 ---
 

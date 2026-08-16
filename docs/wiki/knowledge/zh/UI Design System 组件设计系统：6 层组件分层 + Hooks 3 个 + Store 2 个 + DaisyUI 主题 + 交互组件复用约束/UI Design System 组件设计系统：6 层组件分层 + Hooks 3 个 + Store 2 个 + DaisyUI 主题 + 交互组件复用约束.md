@@ -25,8 +25,8 @@ source_files:
   - "frontend/src/layouts/navbar.rs#L1-L80"
   - "frontend/styles/input.css:L1-L120"
   - "docs/design/ui_design_system.md"
-  - "docs/plan/统计图表Phase1基础设施与时序图展示重构.md"
-  - "docs/plan/知识图谱推荐起点与组件复用重构.md"
+  - "docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md"
+  - "docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md"
   - "docs/wiki/zh/content/前端应用/组件系统/组件系统.md"
   - "docs/wiki/zh/content/前端应用/UI%20样式与主题.md"
   - "docs/wiki/zh/content/前端应用/前端架构设计.md"
@@ -58,8 +58,8 @@ source_files:
 | Navbar 顶部导航 | frontend/src/layouts/navbar.rs | L1-L80 品牌 + 桌面导航（对话/消息搜索/工作台/HR/Finance/Project/System）+ 移动端汉堡抽屉；登出流程：先调后端 logout API 清 cookie，再清前端 store |
 | Tailwind + DaisyUI 主题配置 | frontend/styles/input.css | L1-L120 `@import "tailwindcss"` + `@plugin "daisyui"` 声明 31 主题；`[data-theme="orz-light"]` 自定义 oklch 色值；HUD 流光条 keyframes `.hud-streak`；知识图谱 `.kg-bg` 背景网格 |
 | Design 规范文档 | docs/design/ui_design_system.md | Mistral 暖色系设计原则 + DaisyUI 5 迁移落地章节；HUD 驾驶舱效果说明；组件清单参考 |
-| Plan 统计图表基础设施 | docs/plan/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
-| Plan 知识图谱组件复用 | docs/plan/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
+| Plan 统计图表基础设施 | docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
+| Plan 知识图谱组件复用 | docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
 
 # §3 架构与约定
 

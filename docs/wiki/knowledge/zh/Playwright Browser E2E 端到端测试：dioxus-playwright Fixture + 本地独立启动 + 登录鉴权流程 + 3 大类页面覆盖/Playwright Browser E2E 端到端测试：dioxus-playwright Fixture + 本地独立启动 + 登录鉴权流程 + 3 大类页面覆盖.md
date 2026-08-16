@@ -17,8 +17,8 @@ source_files:
   - "src/models"
   - "src/handlers/organization/auth/login.rs"
   - "frontend/src/pages"
-  - "docs/design/browser_e2e_test_design.md"
-  - "docs/plan/Agent管理集成测试.md"
+  - "docs/archive/design-archive/browser_e2e_test_design.md"
+  - "docs/archive/plan-archive/Agent管理集成测试.md"
   - "docs/wiki/zh/content/测试指南/测试指南.md"
   - "docs/wiki/zh/content/基础设施/持续集成与发布工作流.md"
   - "docs/wiki/zh/content/项目概述/技术栈概览.md"
@@ -35,8 +35,8 @@ source_files:
 | init_full_test_env 启动顺序对齐 | tests/common/env.rs | L1-L87 8 步初始化：config→storage→jwt→tool_tracing→tool_registry→service.init→producer+consumer→service.init_base_data；OnceCell 串行化，测试间唯一 ID 隔离 |
 | 集成测试目标清单 | Cargo.toml | L86-L172 `[[test]]` 块注册：agent_management/tool_skill_vector/message_vector/a2a_flow/preset_skills/core_crud 等 19 targets |
 | Agent 集成测试样板（可复用模式） | tests/integration/agent_management_test.rs | 24 个测试分层：12 HTTP CI-safe + 5 真实向量 + 4 FTS5；含 RealModelConfig 守卫 + create_embedding_provider 辅助 |
-| Design 规范 | docs/design/browser_e2e_test_design.md | Playbook 双模式（Playwright解析驱动 / Agent驱动）+ Action 枚举规范 + data-testid 一等公民 + 冷却层机制 |
-| Plan 落地计划 | docs/plan/Agent管理集成测试.md | 集成测试 3 波落地骨架 + Part A/B/Follow-up 分层 + 5 条红线（CI-safe/#[ignore]/OnceCell/异步窗口/混合排序） |
+| Design 规范 | docs/archive/design-archive/browser_e2e_test_design.md | Playbook 双模式（Playwright解析驱动 / Agent驱动）+ Action 枚举规范 + data-testid 一等公民 + 冷却层机制 |
+| Plan 落地计划 | docs/archive/plan-archive/Agent管理集成测试.md | 集成测试 3 波落地骨架 + Part A/B/Follow-up 分层 + 5 条红线（CI-safe/#[ignore]/OnceCell/异步窗口/混合排序） |
 | 测试金字塔总览 | docs/wiki/zh/content/测试指南/测试指南.md | 1124 测试分布：984 后端 + 82 前端 + 87 集成 + Playwright E2E 预留位 |
 | CI 闸门阶段 | docs/wiki/zh/content/基础设施/持续集成与发布工作流.md | CI 四阶段：clippy→单元测试→集成测试→Playwright E2E（最后闸门） |
 | 技术栈总览 | docs/wiki/zh/content/项目概述/技术栈概览.md | 后端 Rust + Axum；前端 Dioxus 0.7 + WASM；E2E dioxus-playwright 选型 |

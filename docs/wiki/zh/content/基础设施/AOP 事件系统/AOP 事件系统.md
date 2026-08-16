@@ -19,10 +19,10 @@
 
 **本文关联三类文档（四类互引闭环）**
 - 【① Design 决策快照】
-  - [consumer_architecture.md](docs/design/consumer_architecture.md) — 生产-消费异步框架总设计，分层解耦 + 启动顺序红线
-  - [event_design.md](docs/design/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅作参考对比
+  - [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) — 生产-消费异步框架总设计，分层解耦 + 启动顺序红线
+  - [event_design.md](docs/archive/design-archive/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅作参考对比
 - 【② Plan 落地快照】
-  - [AOP生产消费事件中心重构.md](docs/plan/AOP生产消费事件中心重构.md) — Registry 单例 + consumer::init 注册顺序 + ack/nack 语义实现
+  - [AOP生产消费事件中心重构.md](docs/archive/plan-archive/AOP生产消费事件中心重构.md) — Registry 单例 + consumer::init 注册顺序 + ack/nack 语义实现
 - 【④ RAG 原子知识卡】
   - [AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg%2Faop%2Fcore%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg%2Faop%2Fcore%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md) — 零业务耦合硬边界 + lib.rs 启动 6 步严格顺序 + consumer::init 禁写 DB 等 6 条红线
 - 【③ Wiki 关联长文】
@@ -30,10 +30,10 @@
   - [事件消费者.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/事件消费者.md) — 8 类消费者一览表
   - [后台任务系统.md](docs/wiki/zh/content/基础设施/后台任务系统.md) — 启动顺序红线说明
 - 【① Design 决策快照 - Batch9 补充】
-  - [consumer_architecture.md](docs/design/consumer_architecture.md) — 生产-消费异步框架总设计（分层解耦 + 启动顺序红线）
-  - [event_design.md](docs/design/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃（仅对比参考）
+  - [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) — 生产-消费异步框架总设计（分层解耦 + 启动顺序红线）
+  - [event_design.md](docs/archive/design-archive/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃（仅对比参考）
 - 【② Plan 落地快照 - Batch9 补充】
-  - [agent_loop_engine_plan.md](docs/plan/agent_loop_engine_plan.md) — Agent 循环引擎：DomainEvent 8 类 → AgentLoopConsumer 唤醒调度
+  - [agent_loop_engine_plan.md](docs/archive/plan-archive/agent_loop_engine_plan.md) — Agent 循环引擎：DomainEvent 8 类 → AgentLoopConsumer 唤醒调度
 - 【④ RAG 原子知识卡 - Batch9 新增平行卡】
   - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — 8 类 DomainEvent 枚举（Message/Task/AgentAwake/Schedule/ToolExec/ThinkRound 等）+ 事件 3 阶段生命周期 + 9 条分层红线
 </cite>

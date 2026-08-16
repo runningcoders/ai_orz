@@ -28,12 +28,12 @@ source_files:
   - src/consumer/message.rs#L1-L80 (MessageConsumer Sync 消费：AOP message.created → 拉渠道订阅者 → 调 MessagePushDao.push 发多渠道；Ack/Nack 记录在 message_delivery_attempts 表)
   - src/consumer/agent_loop.rs#L1-L100 (AgentLoopConsumer：消息投递完成后若接收者是 Agent 且非 Busy → AOP publish agent.wake 事件 → 再走 Agent 唤醒链路；形成 用户消息→立即驱动Agent 的完整闭环)
   - src/middleware/sse.rs (Axum SSE 流式中间件：EventSource /subscribe；按 user_id 广播 channel；重连自动补发 last_event_id 之后的事件；心跳 15s)
-  - docs/design/message_interaction_design.md（§前台/工作Agent 角色调度 §项目上下文路由隔离 §messages 表变更说明）
-  - docs/design/agent_loop_engine_design.md（§Agent循环事件驱动 §两阶段唤醒挂点 §重复唤醒互斥 BusyGuard RAII）
-  - docs/design/message_channel_design.md（§出站多渠道推送 §消息渠道注册表 §飞书/Slack/Email 三渠道参数）
-  - docs/plan/agent_loop_engine_plan.md（§事件+定时双链路驱动 §consumer::agent_loop 注册顺序）
-  - docs/plan/聊天MVP.md（§前台页面发送消息 §SSE 实时推送 §多渠道已读同步）
-  - docs/plan/飞书P2P消息集成.md（§飞书私信入站 §飞书卡片出站）
+  - docs/archive/design-archive/message_interaction_design.md（§前台/工作Agent 角色调度 §项目上下文路由隔离 §messages 表变更说明）
+  - docs/archive/design-archive/agent_loop_engine_design.md（§Agent循环事件驱动 §两阶段唤醒挂点 §重复唤醒互斥 BusyGuard RAII）
+  - docs/archive/design-archive/message_channel_design.md（§出站多渠道推送 §消息渠道注册表 §飞书/Slack/Email 三渠道参数）
+  - docs/archive/plan-archive/agent_loop_engine_plan.md（§事件+定时双链路驱动 §consumer::agent_loop 注册顺序）
+  - docs/archive/plan-archive/聊天MVP.md（§前台页面发送消息 §SSE 实时推送 §多渠道已读同步）
+  - docs/archive/plan-archive/飞书P2P消息集成.md（§飞书私信入站 §飞书卡片出站）
   - docs/wiki/zh/content/功能模块/消息系统/消息系统.md（消息系统全景：入站→路由→存储→SSE 推送→多渠道出站 5 段链路总览）
   - docs/wiki/zh/content/功能模块/消息系统/消息管理.md（消息列表/已读/软删 + 会话 thread 聚合）
   - docs/wiki/zh/content/功能模块/消息系统/实时推送.md（SSE 协议说明：EventSource URL / 重连 last-event-id / 15s 心跳帧）

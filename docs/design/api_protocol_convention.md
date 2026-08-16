@@ -78,4 +78,4 @@ pub async fn delete_backup(...) -> Result<DeleteBackupResponse> { ... }
 ## 关联文档
 
 - [docs/LAYERED_ARCHITECTURE_PRACTICE.md](../LAYERED_ARCHITECTURE_PRACTICE.md) — 分层架构实践（Handler 属适配层，DTO↔Command 转换职责）
-- [docs/design/NAMING_CONVENTION.md](./NAMING_CONVENTION.md) — 全项目命名约定
+- [docs/archive/design-archive/NAMING_CONVENTION.md](../archive/design-archive/NAMING_CONVENTION.md) — 全项目命名约定

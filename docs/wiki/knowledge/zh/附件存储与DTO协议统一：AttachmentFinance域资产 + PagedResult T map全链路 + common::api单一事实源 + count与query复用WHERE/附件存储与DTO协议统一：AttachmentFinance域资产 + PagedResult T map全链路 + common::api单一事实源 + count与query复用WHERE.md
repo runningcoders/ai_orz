@@ -18,14 +18,14 @@ source_files:
   - common/src/models/pagination.rs#L1-L80 (PagedResult<T> { items: Vec<T>, total: u64 } + Pagination(page, page_size) + PageQuery；PagedResult::map<U>(fn item→U) 把 DAO PO → DAL Entity → Domain DTO 全链路转换)
   - common/src/api/project_task.rs#L1-L50 (ProjectTask 模块 DTO：GetTasksRequest / QueryTaskRequest / UpdateTaskProgressRequest / PagedResult<TaskDto>；所有请求参数使用 struct + #[derive(Params) + serde(deny_unknown_fields)])
   - common/src/api/message_send.rs#L1-L40 (消息 DTO 示例：SendMessageRequest + SendMessageResponse；禁止裸 bool/String 响应，必须用结构体包裹)
-  - docs/design/attachment_storage.md（§Attachment 归 Finance 域作为用户通用资产 §元数据与文件存储路径解耦 §统一 multipart 上传链路）
+  - docs/archive/design-archive/attachment_storage.md（§Attachment 归 Finance 域作为用户通用资产 §元数据与文件存储路径解耦 §统一 multipart 上传链路）
   - docs/design/pagination_and_count_convention.md（§query 核心 list 语法糖 §COUNT 与 LIST 复用 push_query_filters §PagedResult::map 全链路）
   - docs/design/api_protocol_convention.md（§common DTO 单一事实源 §请求参数 struct 化 §禁止裸原始类型响应）
-  - docs/design/unified-idl-http-handler.md（§统一 Handler 模块命名约定 §一个业务方法一个独立文件 §DTO 仅在 common 定义）
-  - docs/plan/项目任务增强.md（§Project/Task Artifact 按需注入 §with_artifacts option 字段）
-  - docs/plan/Query接口分页与List接口简化重构.md（§list 接口只接分页 §query 接口接完整过滤 §通用 count 复用 WHERE）
-  - docs/plan/批量查询与通用Query接口增强重构.md（§Query 结构体化 §PagedResult 统一返回格式 §IN 列表 400 分块）
-  - docs/plan/前端API协议结构重构.md（§前端 DTO 镜像 → 直接从 common::api re-export §禁止 frontend/src/api 本地定义 DTO 重复项）
+  - docs/archive/design-archive/unified-idl-http-handler.md（§统一 Handler 模块命名约定 §一个业务方法一个独立文件 §DTO 仅在 common 定义）
+  - docs/archive/plan-archive/项目任务增强.md（§Project/Task Artifact 按需注入 §with_artifacts option 字段）
+  - docs/archive/plan-archive/Query接口分页与List接口简化重构.md（§list 接口只接分页 §query 接口接完整过滤 §通用 count 复用 WHERE）
+  - docs/archive/plan-archive/批量查询与通用Query接口增强重构.md（§Query 结构体化 §PagedResult 统一返回格式 §IN 列表 400 分块）
+  - docs/archive/plan-archive/前端API协议结构重构.md（§前端 DTO 镜像 → 直接从 common::api re-export §禁止 frontend/src/api 本地定义 DTO 重复项）
   - docs/wiki/zh/content/数据模型/项目和任务模型/制品和附件.md（Attachment 通用资产 vs Artifact 项目产物的关联关系 + SQL 结构）
   - docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md（common DTO 单一事实源 + ApiResponse<T> 信封标准）
   - docs/wiki/zh/content/架构设计/API协议规范/分页与计数规范.md（query 核心 vs list 语法糖 + count 通用 WHERE 复用）
@@ -60,7 +60,7 @@ source_files:
 **章节来源**
 - [finance/attachment.rs:L1-L120](src/service/domain/finance/attachment.rs#L1-L120)
 - [pagination.rs:L1-L80](common/src/models/pagination.rs#L1-L80)
-- [attachment_storage.md:L15-L50](docs/design/attachment_storage.md#L15-L50)
+- [attachment_storage.md:L15-L50](docs/archive/design-archive/attachment_storage.md#L15-L50)
 
 ---
 

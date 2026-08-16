@@ -25,12 +25,12 @@
 - [get_status.rs（绑定快照聚合处理器）](src/handlers/finance/lark_integration/get_status.rs)
 ### 本文关联的三类文档（四类互引闭环）
 #### ① Design 决策快照
-- [entity_list_query_search_design.md](docs/design/entity_list_query_search_design.md) — RESTful 接口三模式：list（GET 默认分页）/ query（POST 精确过滤）/ search（POST 关键词搜索）；路由签名与 URL 路径约定
+- [entity_list_query_search_design.md](docs/archive/design-archive/entity_list_query_search_design.md) — RESTful 接口三模式：list（GET 默认分页）/ query（POST 精确过滤）/ search（POST 关键词搜索）；路由签名与 URL 路径约定
 - [api_protocol_convention.md](docs/design/api_protocol_convention.md) — 禁止裸原始类型响应；DTO 只定义在 common crate；请求参数结构体化；JWT Cookie/Bearer 双模式
 - [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — PaginationParams 统一 4 字段；PagedResult<T> { items, total } 统一分页信封
 #### ② Plan 落地快照
-- [批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — 24 组 Query 结构体 + 20 个 handler 改造；三接口职责二分；push_query_filters WHERE 共享
-- [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — list 简化为 query 语法糖；新增 DAO 标准模板；MAX_PAGE_SIZE=100
+- [批量查询与通用Query接口增强重构.md](docs/archive/plan-archive/批量查询与通用Query接口增强重构.md) — 24 组 Query 结构体 + 20 个 handler 改造；三接口职责二分；push_query_filters WHERE 共享
+- [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — list 简化为 query 语法糖；新增 DAO 标准模板；MAX_PAGE_SIZE=100
 #### ④ RAG 原子知识卡
 - [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — §2 HTTP 签名对照表；§3 PagedResult::map 保持 total 不变；§4 10 条硬约束
 </cite>

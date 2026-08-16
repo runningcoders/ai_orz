@@ -21,9 +21,9 @@ source_files:
   - src/producer/cron_trigger.rs#L1-L90 (CronTriggerProducer 每分钟 tick：CronTriggerDal.list_due 查到期 → 逐个 publish(cron.trigger) 事件 → mark_trigger_executed 更新 next_run_at)
   - src/consumer/scheduler.rs#L1-L130 (CronTriggerConsumer：Sync 模式；payload.action match "agent_rest" → 调 load_and_settle 沉淀链路)
   - src/lib.rs#L150-L250 (启动总顺序严格对齐 §4.10：pkg::init_all → service::init → producer::init → consumer::init → init_base_data → stats hook → aop::init_all)
-  - docs/design/consumer_architecture.md（§整体架构 pkg/aop 分层 + §启动顺序；§业务消费者 8 类一览表）
-  - docs/design/event_design.md（⚠️ 旧版归档参考：EventQueueDao 废弃原因与迁移路径）
-  - docs/plan/AOP生产消费事件中心重构.md（落地计划：registry 单例 + consumer::init 注册顺序 + ack/nack 语义设计）
+  - docs/archive/design-archive/consumer_architecture.md（§整体架构 pkg/aop 分层 + §启动顺序；§业务消费者 8 类一览表）
+  - docs/archive/design-archive/event_design.md（⚠️ 旧版归档参考：EventQueueDao 废弃原因与迁移路径）
+  - docs/archive/plan-archive/AOP生产消费事件中心重构.md（落地计划：registry 单例 + consumer::init 注册顺序 + ack/nack 语义设计）
   - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md（事件系统总入口：生产-消费-调度 三段架构图）
   - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 核心架构/注册中心与调度器.md（Registry 全局单例：self_ref 循环注入目的 + start_all 内部 worker 启动流程）
   - docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/事件消费者.md（8 类消费者一览表：事件源 + handle 业务动作映射表）

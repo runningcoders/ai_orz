@@ -17,9 +17,9 @@ source_files:
   - src/service/dao/task/mod.rs:Ln-Lm（TaskSearch 统一入参：keyword + query_vector Option + top_k + 业务 filters TaskQuery 复用）
   - src/service/dao/agent/mod.rs:Ln-Lm（AgentSearch：同模式；vector_distance_threshold 可选覆盖）
   - src/service/dao/tool/mod.rs:Ln-Lm（ToolSearch）、src/service/dao/skill/mod.rs:Ln-Lm（SkillSearch）、src/service/dao/project/mod.rs:Ln-Lm（ProjectSearch）、src/service/dao/message/mod.rs:Ln-Lm（MessageSearch）
-  - docs/design/vector_search_architecture.md
-  - docs/design/entity_list_query_search_design.md
-  - docs/design/full_entity_fts5_search_design.md
+  - docs/archive/design-archive/vector_search_architecture.md
+  - docs/archive/design-archive/entity_list_query_search_design.md
+  - docs/archive/design-archive/full_entity_fts5_search_design.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/基础设施/存储系统/存储系统.md
   - docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md
@@ -71,9 +71,9 @@ source_files:
 | [dao/task/mod.rs](src/service/dao/task/mod.rs) | TaskSearch 入参 | `keyword/query_vector/top_k/filters: TaskQuery` 四字段同构 |
 | [dao/agent/mod.rs](src/service/dao/agent/mod.rs) | AgentSearch | 同模式 + vector_distance_threshold 可选覆盖 |
 | [dao/tool/mod.rs](src/service/dao/tool/mod.rs) | ToolSearch；[dao/skill/mod.rs](src/service/dao/skill/mod.rs) SkillSearch；[dao/project/mod.rs](src/service/dao/project/mod.rs) ProjectSearch；[dao/message/mod.rs](src/service/dao/message/mod.rs) MessageSearch | 6 类 Search 结构体统一字段 |
-| 【① Design 1】vector_search_architecture.md §混合搜索策略 | 为什么 α=0.55/β=0.45 权重、为什么合并分要越大越好 | docs/design/vector_search_architecture.md |
-| 【① Design 2】entity_list_query_search_design.md §search 模式统一 | 为什么 search 接口复用 filters XxxQuery（不复制一份字段）| docs/design/entity_list_query_search_design.md |
-| 【① Design 3】full_entity_fts5_search_design.md §FTS5 rank 归一化 | BM25 评分跨实体量纲不一为什么要批次内相对归一化 | docs/design/full_entity_fts5_search_design.md |
+| 【① Design 1】vector_search_architecture.md §混合搜索策略 | 为什么 α=0.55/β=0.45 权重、为什么合并分要越大越好 | docs/archive/design-archive/vector_search_architecture.md |
+| 【① Design 2】entity_list_query_search_design.md §search 模式统一 | 为什么 search 接口复用 filters XxxQuery（不复制一份字段）| docs/archive/design-archive/entity_list_query_search_design.md |
+| 【① Design 3】full_entity_fts5_search_design.md §FTS5 rank 归一化 | BM25 评分跨实体量纲不一为什么要批次内相对归一化 | docs/archive/design-archive/full_entity_fts5_search_design.md |
 | 【③ Wiki 长文 1】存储系统.md §混合检索 | 合并排序归一化公式说明 | docs/wiki/zh/content/基础设施/存储系统/存储系统.md |
 | 【③ Wiki 长文 2】Agent 搜索与查询.md §AgentSearch 三场景 | list(无)/query(过滤)/search(关键词+向量) | docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md |
 | 【③ Wiki 长文 3】Agent 搜索与推荐.md §混合搜索 UI | 前端展示 match_type 徽标 | docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 搜索与推荐.md |

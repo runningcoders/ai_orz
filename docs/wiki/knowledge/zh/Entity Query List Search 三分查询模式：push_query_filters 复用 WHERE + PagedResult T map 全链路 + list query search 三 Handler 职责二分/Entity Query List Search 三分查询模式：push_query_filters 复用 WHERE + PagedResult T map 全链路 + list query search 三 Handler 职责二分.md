@@ -16,9 +16,9 @@ source_files:
   - "src/handlers/hr/agent/list_agents.rs#L1-L61"
   - "src/handlers/hr/agent/query_agents.rs#L1-L68"
   - "src/handlers/hr/agent/search_agents.rs#L1-L67"
-  - "docs/design/entity_list_query_search_design.md"
-  - "docs/plan/批量查询与通用Query接口增强重构.md"
-  - "docs/plan/Query接口分页与List接口简化重构.md"
+  - "docs/archive/design-archive/entity_list_query_search_design.md"
+  - "docs/archive/plan-archive/批量查询与通用Query接口增强重构.md"
+  - "docs/archive/plan-archive/Query接口分页与List接口简化重构.md"
   - "docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md"
   - "docs/wiki/zh/content/核心模块/服务层/数据对象层%20(DAO)/数据对象层%20(DAO).md"
   - "docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md"
@@ -40,9 +40,9 @@ source_files:
 | list_agents Handler | src/handlers/hr/agent/list_agents.rs | L1-L61 GET 请求，语法糖：构造 `AgentQuery{exclude_status=Deleted, pagination}` 统一走 Domain.query，返回 PagedResult.map |
 | query_agents Handler | src/handlers/hr/agent/query_agents.rs | L1-L68 POST body，完整过滤字段透传 AgentQuery，返回 PagedResult.map |
 | search_agents Handler | src/handlers/hr/agent/search_agents.rs | L1-L67 POST body，构造 `AgentSearch{keyword, filters=AgentQuery{...}}` 调用 Domain.search_agents |
-| Design 规范文档 | docs/design/entity_list_query_search_design.md | 三分场景定义 + 六层（DTO/DAO/DAL/Domain/Handler/Frontend）改造要点 + 检查清单 + 各实体状态表 |
-| Plan 重构计划 1 | docs/plan/批量查询与通用Query接口增强重构.md | query 是核心/list 是语法糖原则 + 5 实体三层对称模式 + IN 400 分块上限红线 |
-| Plan 重构计划 2 | docs/plan/Query接口分页与List接口简化重构.md | 姊妹计划：分页参数统一 + list 接口简化延续同一原则 |
+| Design 规范文档 | docs/archive/design-archive/entity_list_query_search_design.md | 三分场景定义 + 六层（DTO/DAO/DAL/Domain/Handler/Frontend）改造要点 + 检查清单 + 各实体状态表 |
+| Plan 重构计划 1 | docs/archive/plan-archive/批量查询与通用Query接口增强重构.md | query 是核心/list 是语法糖原则 + 5 实体三层对称模式 + IN 400 分块上限红线 |
+| Plan 重构计划 2 | docs/archive/plan-archive/Query接口分页与List接口简化重构.md | 姊妹计划：分页参数统一 + list 接口简化延续同一原则 |
 
 # §3 架构与约定
 

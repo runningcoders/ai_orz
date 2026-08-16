@@ -14,8 +14,8 @@ source_files:
   - src/service/dao/cortex/native/mod.rs:Ln-Lm（CortexDao.embed() 向量生成 + embed_text_for_search() 搜索场景查询向量构造）
   - src/pkg/storage/fts5.rs:Ln-Lm（escape_fts5_keyword FTS5 短语匹配转义）
   - src/service/dal/*（各业务 DAL search() 内部统一 embed_entity → upsert → search 调用链路）
-  - docs/design/vector_search_architecture.md
-  - docs/design/full_entity_fts5_search_design.md
+  - docs/archive/design-archive/vector_search_architecture.md
+  - docs/archive/design-archive/full_entity_fts5_search_design.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/基础设施/存储系统/存储系统.md
   - docs/wiki/zh/content/基础设施/基础设施.md
@@ -55,8 +55,8 @@ source_files:
 | [pkg/storage/fts5.rs](src/pkg/storage/fts5.rs) | FTS5 关键词转义 | `escape_fts5_keyword(keyword) -> String`（短语匹配；含 6 组单元测试覆盖空串/转义/空格/特殊字符）|
 | [dao/cortex/native/mod.rs](src/service/dao/cortex/native/mod.rs) | cortex 向量生成 | `embed(ctx, provider, texts: &[String]) -> Vec<Vec<f32>>` 主入口；`embed_text_for_search(ctx, provider, keyword) -> VectorIndexParams` 搜索场景专用（带 hash + 模型信息）|
 | [models/agent.rs](src/models/agent.rs) + memory/... 等 | Vectorizable 7 类实现 | AgentPo::vectorize_text（name+description+role_setting）、ToolPo（name+description+input_schema）、TaskPo（title+description+execution_plan）、ShortTermMemoryIndexPo、LongTermKnowledgeNodePo 等 |
-| 【① Design 1】vector_search_architecture.md | 为什么选 VectorStore trait + LanceDB 默认后端 + 为什么 collection 按业务分 | docs/design/vector_search_architecture.md |
-| 【① Design 2】full_entity_fts5_search_design.md | escape_fts5_keyword 设计动机（FTS5 SQL 注入防护）| docs/design/full_entity_fts5_search_design.md |
+| 【① Design 1】vector_search_architecture.md | 为什么选 VectorStore trait + LanceDB 默认后端 + 为什么 collection 按业务分 | docs/archive/design-archive/vector_search_architecture.md |
+| 【① Design 2】full_entity_fts5_search_design.md | escape_fts5_keyword 设计动机（FTS5 SQL 注入防护）| docs/archive/design-archive/full_entity_fts5_search_design.md |
 | 【③ Wiki 长文 1】存储系统.md §向量存储抽象与多后端 | VectorStore 类图、后端对比表、init_collection 时序 | docs/wiki/zh/content/基础设施/存储系统/存储系统.md |
 | 【③ Wiki 长文 2】记忆和向量系统.md §Vectorizable | 7 PO Vectorizable 列表 | docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md |
 | 【平行卡】三位一体混合搜索（FTS5 + 向量 + 合并排序） | DAL 层 search() 统一策略 | docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md |

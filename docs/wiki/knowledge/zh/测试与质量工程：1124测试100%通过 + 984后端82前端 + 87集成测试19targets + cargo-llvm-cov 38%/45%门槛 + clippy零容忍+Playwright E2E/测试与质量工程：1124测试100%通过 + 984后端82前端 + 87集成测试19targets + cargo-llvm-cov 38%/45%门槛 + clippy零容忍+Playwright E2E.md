@@ -18,12 +18,12 @@ source_files:
   - tests/integration/agent_management_test.rs#L1-L100 (Agent CRUD + 入职五步集成测试：模拟 onboard_agent → 断言 agents.status=Active + installed_skill_packs COUNT=3 + agent_tool_bindings COUNT≥5；步骤 3 失败模拟 → 回滚 agent_id COUNT=0)
   - src/service/dao/cron_trigger/sqlite_test.rs (DAO 层单元测试：#[sqlx::test] 独立内存 SQLite 数据库；每次 test 全新 DB，不依赖全局状态；test_create_cron_trigger + test_list_due_triggers + test_query_count_reuse_where 三条独立)
   - .github/workflows/ci.yml (GitHub CI 流水线：4 Stage = check(clippy --all-targets -D warnings) + test(cargo test --workspace --exclude frontend 后端 + cargo test -p frontend wasm32) + coverage(cargo-llvm-cov --threshold 38% PR / 45% main) + build(dist release))
-  - docs/design/testing_guidelines.md#L1-L50 (§测试分层金字塔：DAO/DAL/Domain/Handler 单元 → 集成测试 target → E2E Playwright；§#[sqlx::test] 隔离约定；§common 测试 init_full_test_env 启动顺序)
+  - docs/archive/design-archive/testing_guidelines.md#L1-L50 (§测试分层金字塔：DAO/DAL/Domain/Handler 单元 → 集成测试 target → E2E Playwright；§#[sqlx::test] 隔离约定；§common 测试 init_full_test_env 启动顺序)
   - docs/design/sqlx_guide.md#L1-L60 (§SQLite STRICT 强制所有表；§枚举字段 status as "status: TaskStatus" 显式标注；§.sqlx 目录必须纳入版本控制（query! 离线元数据）；§软删除 status=0 默认过滤)
-  - docs/design/browser_e2e_test_design.md（§Playwright 本地 E2E 约定：仅本地跑不进 CI（因为要 LLM Key 成本）；§login → 创建 Agent → 发消息 完整 happy path 用例；§Video 录制失败自动上传 Artifact）
-  - docs/plan/AOP生产消费事件中心重构.md（§集成测试 target=event_delivery：AOP publish → 消费者 ack/nack → message_delivery_attempts 查询断言链路）
-  - docs/plan/身份凭证Domain统一CRUD重构.md（§集成测试 target=credential_crud：8 个 Handler 接口调用断言 AES256-GCM 加解密 roundtrip）
-  - docs/plan/Agent管理集成测试.md（§19 集成测试 target 清单与依赖顺序 §onboard_agent 回滚断言 §UserRole 权限组合三角色 × 三资源矩阵）
+  - docs/archive/design-archive/browser_e2e_test_design.md（§Playwright 本地 E2E 约定：仅本地跑不进 CI（因为要 LLM Key 成本）；§login → 创建 Agent → 发消息 完整 happy path 用例；§Video 录制失败自动上传 Artifact）
+  - docs/archive/plan-archive/AOP生产消费事件中心重构.md（§集成测试 target=event_delivery：AOP publish → 消费者 ack/nack → message_delivery_attempts 查询断言链路）
+  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md（§集成测试 target=credential_crud：8 个 Handler 接口调用断言 AES256-GCM 加解密 roundtrip）
+  - docs/archive/plan-archive/Agent管理集成测试.md（§19 集成测试 target 清单与依赖顺序 §onboard_agent 回滚断言 §UserRole 权限组合三角色 × 三资源矩阵）
   - docs/wiki/zh/content/测试指南/测试指南.md（测试入口总览：1124 测试分布 + 984 后端细分 897 单元 87 集成 + 82 前端 + 58 common + 运行命令 `cargo test --workspace`）
   - docs/wiki/zh/content/测试指南/端到端测试基础设施.md（Playwright E2E：本地命令 `just e2e` + 环境变量 AI_ORZ_ADMIN_PASSWORD + 失败视频自动保存到 e2e-artifacts/）
   - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md（CI 四阶段：check/test/coverage/build + PR coverage threshold 38% + main branch 45% + cargo-llvm-cov 运行 `--fail-under-lines` 严格模式）
@@ -50,12 +50,12 @@ source_files:
 | tests/integration/ 19 targets 20 文件 | 跨模块集成测试 | 文件名即 target 名：a2a_flow（A2A 协议 roundtrip）、agent_awaken（两阶段唤醒 IntentAnalyze + Awaken）、core_crud（所有 Domain 的基础 CRUD）、system_cron_triggers（2 条默认注入 + list_due 触发）、vector_degradation（向量存储 down → FTS5-only 降级） | 见 integration/ mod 结构 |
 | src/**/sqlite_test.rs DAO 层单测 | 纯 DAO CRUD | `#[sqlx::test]` 宏自动创建独立 SQLite 内存库（每次 test 全新）；test_query_count_reuse_where：query 过滤 status=Pending → 断言 total == count(query) 同条件（push_query_filters 共享检查） | 见 cron_trigger/sqlite_test.rs |
 | .github/workflows/ci.yml CI 流水线 | 4 阶段闸门 | stage1 check(clippy -D warnings x86+wasm32) → stage2 test(cargo test --workspace 全部) → stage3 coverage(cargo-llvm-cov 38%/45%) → stage4 build(release dist docker)；每个 stage 失败立即停，不往下跑 | 见 ci.yml jobs |
-| docs/design/testing_guidelines.md 测试设计 | 金字塔分层 | 金字塔图：DAO单元(底) → DAL → Domain → Handler → 集成测试(中) → E2E(尖)；每一层责任：DAO 层只测 SQL（+边界），集成测试测真实链路（跨 Domain），E2E 测用户 happy path | `:L1-L50` |
+| docs/archive/design-archive/testing_guidelines.md 测试设计 | 金字塔分层 | 金字塔图：DAO单元(底) → DAL → Domain → Handler → 集成测试(中) → E2E(尖)；每一层责任：DAO 层只测 SQL（+边界），集成测试测真实链路（跨 Domain），E2E 测用户 happy path | `:L1-L50` |
 | docs/design/sqlx_guide.md SQL 规范 | sqlx 0.8 + SQLite | STRICT 模式所有表必须；枚举 `as "status: TaskStatus"` 显式标注；.sqlx/ 目录必须 git 提交（query! 离线编译元数据，CI 无网也能过）；软删除 status=0 WHERE 默认过滤 | `:L1-L60` |
 
 **章节来源**
 - [env.rs:L1-L120](tests/common/env.rs#L1-L120)
-- [testing_guidelines.md:L1-L80](docs/design/testing_guidelines.md#L1-L80)
+- [testing_guidelines.md:L1-L80](docs/archive/design-archive/testing_guidelines.md#L1-L80)
 - [ci.yml](.github/workflows/ci.yml)
 
 ---

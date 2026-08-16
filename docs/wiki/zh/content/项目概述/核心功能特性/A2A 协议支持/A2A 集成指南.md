@@ -12,7 +12,7 @@
 - [src/handlers/a2a/agent_card.rs](src/handlers/a2a/agent_card.rs)
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
-- [docs/archive/a2a_server_design.md](docs/archive/a2a_server_design.md)
+- [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
 - [docs/superpowers/plans/2026-07-19-a2a-server.md](docs/superpowers/plans/2026-07-19-a2a-server.md)
 </cite>
 
@@ -257,7 +257,7 @@ ai_orz 作为 A2A Server 提供了标准化的 JSON-RPC 2.0 接口，支持外�
 
 章节来源
 - [common/src/config.rs:512-549](common/src/config.rs#L512-L549)
-- [docs/archive/a2a_server_design.md:421-433](docs/archive/a2a_server_design.md#L421-L433)
+- [docs/archive/design-archive/a2a_server_design.md:421-433](docs/archive/design-archive/a2a_server_design.md#L421-L433)
 
 ### 注册外部 Agent（CLI 工具、远程服务）
 - CLI 工具：

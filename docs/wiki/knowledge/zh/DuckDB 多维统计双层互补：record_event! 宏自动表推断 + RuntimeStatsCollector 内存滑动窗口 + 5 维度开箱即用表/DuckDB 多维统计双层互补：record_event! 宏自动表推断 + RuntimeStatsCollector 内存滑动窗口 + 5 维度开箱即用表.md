@@ -17,11 +17,11 @@ source_files:
   - src/pkg/stats/model_call.rs (ModelCallStatTable：模型调用维度表字段 tokens_input/tokens_output + ModelProvider 维度统计)
   - src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<(EventKind, &str)> 的 AOP 中心统计面板数据)
   - src/service/domain/system/aop_stats.rs#L1-L80 (system domain aop_stats：handler 层查询接口 — 总览 / 分布 / 时序三段返回)
-  - docs/design/stats_module_design.md（§定位与目标：持久化 vs 内存版双层互补；§默认表 5 类 AgentAwake/ModelCall/ToolCall/TaskEvent/ProjectEvent）
-  - docs/design/stats_query_design.md（§Domain 层封装：StatFilter + StatAggregation 五维度查询封装）
-  - docs/plan/统计图表Phase1基础设施与时序图展示重构.md（Phase1 落地：DuckDB 表结构 + record_event! 宏自动推断）
-  - docs/plan/统计图表Phase2.md（Phase2 落地：五维度统计面板 + TokenSumResult 接口）
-  - docs/plan/统计图表第三期.md（Phase3 落地：AOP 事件统计面板集成 RuntimeStatsCollector 内存版）
+  - docs/archive/design-archive/stats_module_design.md（§定位与目标：持久化 vs 内存版双层互补；§默认表 5 类 AgentAwake/ModelCall/ToolCall/TaskEvent/ProjectEvent）
+  - docs/archive/design-archive/stats_query_design.md（§Domain 层封装：StatFilter + StatAggregation 五维度查询封装）
+  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（Phase1 落地：DuckDB 表结构 + record_event! 宏自动推断）
+  - docs/archive/plan-archive/统计图表Phase2.md（Phase2 落地：五维度统计面板 + TokenSumResult 接口）
+  - docs/archive/plan-archive/统计图表第三期.md（Phase3 落地：AOP 事件统计面板集成 RuntimeStatsCollector 内存版）
   - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md（五维度总览：Agent/Project/Task/ModelProvider/Tool 五张卡片 + 入口说明）
   - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Agent 维度统计.md（Agent 维度时序折线：日调用次数、Token 消耗分布饼图）
   - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Tool 维度统计.md（Tool 成功/失败率柱状图 + 平均耗时箱线图）

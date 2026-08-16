@@ -17,9 +17,9 @@ source_files:
   - src/handlers/hr/agent/settle_memory.rs#L1-L133 (HTTP 神经工具触发 + load_and_settle 公共函数：加载 Agent + 注入 Runtime 上下文 + 调 sleep_and_settle)
   - src/models/memory/short_term_memory_index_po.rs (ShortTermMemoryIndexPo::vectorize_text() 实现 = Vectorizable trait 短期记忆向量化文本来源)
   - src/models/memory/long_term_knowledge_node_po.rs (LongTermKnowledgeNodePo::vectorize_text() 实现 + vector_collection() 返回 "memory:knowledge_node")
-  - docs/design/memory_system_enhancement_design.md（§1 决策 1/5：工具拆分策略 + 沉淀冲突处理 = 合并而非新建重复节点）
-  - docs/design/memory_search_enhancement_design.md（§5 扩展模式 + §2 三位一体架构含 Vectorizable trait 入口）
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径 → 预期 docs/plan/记忆系统增强工具拆分与定时沉淀.md）
+  - docs/archive/design-archive/memory_system_enhancement_design.md（§1 决策 1/5：工具拆分策略 + 沉淀冲突处理 = 合并而非新建重复节点）
+  - docs/archive/design-archive/memory_search_enhancement_design.md（§5 扩展模式 + §2 三位一体架构含 Vectorizable trait 入口）
+  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径 → 预期 docs/archive/plan-archive/记忆系统增强工具拆分与定时沉淀.md）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/记忆沉淀机制.md（沉淀架构图 + CronTriggerConsumer→DAL 链路）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/四层记忆系统.md（Core/Working/Short-term/Long-term 四层定位与数据流向）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/长期记忆 (Long-term Memory).md（知识节点 + 知识关系 PO 结构与读写）

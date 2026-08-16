@@ -17,11 +17,11 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [项目领域架构设计](docs/design/project_design.md) — Project Domain 分层架构设计
-- [项目管理增强设计](docs/design/project_management_design.md) — Project Domain 六子模块职责边界 + Domain 层纯透传与按需注入区分
+- [项目领域架构设计](docs/archive/design-archive/project_design.md) — Project Domain 分层架构设计
+- [项目管理增强设计](docs/archive/design-archive/project_management_design.md) — Project Domain 六子模块职责边界 + Domain 层纯透传与按需注入区分
 
 **② 落地计划（Plan）**：
-- [项目任务增强](docs/plan/项目任务增强.md) — Project Domain 从纯透传 DAL 扩展为按需聚合（task_graph/artifacts/progress_summary）
+- [项目任务增强](docs/archive/plan-archive/项目任务增强.md) — Project Domain 从纯透传 DAL 扩展为按需聚合（task_graph/artifacts/progress_summary）
 
 **④ RAG 原子知识卡**：
 - [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88/%E9%A1%B9%E7%9B%AE%E9%A2%86%E5%9F%9F%E4%B8%8E%E5%88%B6%E5%93%81%E8%81%9A%E5%90%88%EF%BC%9AProjectService%20%E5%85%AD%E8%83%BD%E5%8A%9B%20+%20TaskGraph%20DAG%20%E4%BE%9D%E8%B5%96%E7%BC%96%E6%8E%92%20+%20Artifact%20%E5%88%B6%E5%93%81%E5%8F%8C%E5%85%B3%E8%81%94%20+%20%E5%AF%B9%E8%AF%9D%E4%B8%8A%E4%B8%8B%E6%96%87%E8%81%9A%E5%90%88.md) — ProjectManage 六能力分层映射（ProjectManage/TaskManage/TaskGraphManage/ArtifactManage/ProgressManage/ContextManage）+ 红线（禁止 Domain 调 Domain）

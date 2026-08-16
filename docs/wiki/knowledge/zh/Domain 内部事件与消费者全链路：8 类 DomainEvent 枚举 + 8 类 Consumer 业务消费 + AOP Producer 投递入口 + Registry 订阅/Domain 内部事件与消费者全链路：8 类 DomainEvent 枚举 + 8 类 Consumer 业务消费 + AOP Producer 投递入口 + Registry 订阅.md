@@ -17,9 +17,9 @@ source_files:
   - src/consumer/scheduler.rs
   - src/producer/cron_trigger.rs
   - src/producer/message_channel.rs
-  - docs/design/event_design.md
-  - docs/design/consumer_architecture.md
-  - docs/plan/agent_loop_engine_plan.md
+  - docs/archive/design-archive/event_design.md
+  - docs/archive/design-archive/consumer_architecture.md
+  - docs/archive/plan-archive/agent_loop_engine_plan.md
   - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md
   - docs/wiki/zh/content/核心模块/AOP 事件系统/AOP 事件系统.md
   - docs/wiki/zh/content/架构设计/AOP 事件系统架构.md
@@ -40,7 +40,7 @@ source_files:
 | [consumer/message.rs](src/consumer/message.rs) | 消息消费者 | Async 模式，concurrency=4；interested_events=message.created；on_event 反序列化→按 to_role 分发 Agent/User/System；ack 仅更新 DB status=Processed |
 | [consumer/scheduler.rs](src/consumer/scheduler.rs) | Cron 调度消费者 | Sync 模式；interested_events=cron.trigger；on_event 按 payload.action 分发 handler |
 | [producer/cron_trigger.rs](src/producer/cron_trigger.rs) | 定时轮询生产者 | poll_interval_secs=60；poll() → list_due_triggers → 逐个 publish CronTriggerEvent → mark_trigger_executed 更新 next_run_at |
-| [consumer_architecture.md](docs/design/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动 8 步严格顺序；consumer::init() 禁写 DB 红线 |
+| [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动 8 步严格顺序；consumer::init() 禁写 DB 红线 |
 
 ## §3 架构与约定
 

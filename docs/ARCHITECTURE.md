@@ -63,7 +63,7 @@ ai_orz/
 - ✅ 所有前后端共用的 request/response DTO 都放在 `common/src/api/`，消除重复定义
 - ✅ 通用响应包装 `ApiResponse<T>` 也只保留在 `common::api`，Handler 不再定义本地响应包装
 - ✅ 所有公共枚举都放在 common，保证前后端类型一致
-- ✅ 统一错误类型：`common::error::{ErrorCode, Error, Result}` 作为前后端、HTTP handler 宏、LLM 工具调用共享错误契约；详见 `docs/design/common-error-type.md`
+- ✅ 统一错误类型：`common::error::{ErrorCode, Error, Result}` 作为前后端、HTTP handler 宏、LLM 工具调用共享错误契约；详见 `docs/archive/design-archive/common-error-type.md`
 - ✅ PO 实体保持在后端 `models/`，不移动到 common（只需要前端看到 DTO）
 - ✅ 后端数据库枚举字段直接使用 common 中的枚举类型，实现编译期类型安全
 
@@ -110,7 +110,7 @@ ai_orz/
 
 ### 8. AOP Event Center（AOP 事件中心）
 - **定义**：纯框架级事件生产-订阅-调度中心，支持同步/异步消费、轮询生产者、顺序保证
-- **设计文档**：详见 [docs/design/consumer_architecture.md](./design/consumer_architecture.md)
+- **设计文档**：详见 [docs/archive/design-archive/consumer_architecture.md](./archive/design-archive/consumer_architecture.md)
 - **关键约束**：AOP 框架零业务依赖，业务事件的生产者（`producer/`）和消费者（`consumer/`）分别注册到 AOP
 
 ---
@@ -139,7 +139,7 @@ Organization (组织)
 - `jwt_auth_middleware`（外层）：验证 JWT，将 `user_id`/`username`/`organization_id`/`role` 写入请求头
 - `request_context_middleware`（内层）：从请求头提取信息，创建 `RequestContext` 并通过 `Extension` 注入
 
-> **顺序约束**：JWT 必须先于 RequestContext 执行，否则 RequestContext 会读不到 JWT 注入的用户身份，导致受保护路由返回 401/403。Axum 0.8 中后添加的 `layer` 在更内层，因此 `router.rs` 中 `request_context_middleware` 先 add、`jwt_auth_middleware` 后 add 才能保证 JWT 在外层先执行。详见 [docs/design/unified-idl-http-handler.md](./design/unified-idl-http-handler.md) 与 `src/router.rs`。
+> **顺序约束**：JWT 必须先于 RequestContext 执行，否则 RequestContext 会读不到 JWT 注入的用户身份，导致受保护路由返回 401/403。Axum 0.8 中后添加的 `layer` 在更内层，因此 `router.rs` 中 `request_context_middleware` 先 add、`jwt_auth_middleware` 后 add 才能保证 JWT 在外层先执行。详见 [docs/archive/design-archive/unified-idl-http-handler.md](./archive/design-archive/unified-idl-http-handler.md) 与 `src/router.rs`。
 
 ---
 
@@ -211,7 +211,7 @@ data/
 
 ## 事件总线架构
 
-详见独立设计文档：[docs/design/consumer_architecture.md](./design/consumer_architecture.md)（事件队列泛型 topic 设计详见 [docs/design/event_design.md](./design/event_design.md)）
+详见独立设计文档：[docs/archive/design-archive/consumer_architecture.md](./archive/design-archive/consumer_architecture.md)（事件队列泛型 topic 设计详见 [docs/archive/design-archive/event_design.md](./archive/design-archive/event_design.md)）
 
 ### 核心设计要点
 

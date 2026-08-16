@@ -16,8 +16,8 @@ source_files:
   - src/service/dal/memory.rs#L721-L804 (fetch_nodes_by_ids + IN 分块 400：单列表 ids IN 1 bind/id → 400 × 1 = 400 < 999；多次 DAO query_knowledge_nodes 后做共享可见性过滤 + 去重)
   - src/models/memory/knowledge_relation_po.rs (KnowledgeRelationPo：from_node_id/to_node_id/relation_type/weight 四字段；traverse 返回的边会去重 weight 最大的一条)
   - common/src/api/memory.rs (TraverseKnowledgeGraphParams / TraverseKnowledgeGraphResponse：返回 nodes + edges + ordered_levels 三段，前端按 levels 做层级渲染)
-  - docs/plan/图谱遍历查询优化.md（完整 7 章：DFS 栈预取批量缓存 + IN 分块 400 模式 + 测试覆盖 5 场景）
-  - docs/design/memory_search_enhancement_design.md（§1 决策 2：图谱遍历位置放 DAL；§三 涉及文件 list_relations_batch 抽取）
+  - docs/archive/plan-archive/图谱遍历查询优化.md（完整 7 章：DFS 栈预取批量缓存 + IN 分块 400 模式 + 测试覆盖 5 场景）
+  - docs/archive/design-archive/memory_search_enhancement_design.md（§1 决策 2：图谱遍历位置放 DAL；§三 涉及文件 list_relations_batch 抽取）
   - （占位：待 ai-orz-doc-maintainer 落地后回填 design/traverse_performance_optimization.md 路径 → 目前只有 Plan，是 Batch 先落地、Design 后补的反模式，按 §4.10 两阶段初始化规范，Design 文档应补齐决策表）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md（§6 图谱遍历 纯图谱/语义+遍历 两种使用模式 + §8 故障排查 N+1 定位）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/知识关系管理.md（知识关系 PO 与 relation_type 枚举（因果/关联/前置/后置/引用））

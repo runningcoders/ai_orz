@@ -23,9 +23,9 @@ source_files:
   - frontend/src/utils/time.rs (utils 5 子模块：time 格式化时间戳/ message 截断字数+Markdown预览/ status 枚举转中文标签/ file 字节大小转MB格式化；禁止跨 utils 互引)
   - docs/design/frontend_architecture.md（§Dioxus WebAssembly 渲染管线 §41条路由表 §API客户端分层 + 拦截器 §响应式原则 + 状态只读）
   - docs/design/ui_design_system.md（§HUD 驾驶舱风格 §DaisyUI 30+主题枚举 §Tailwind v4 @theme 自定义类 §橙光光晕 .hud-glow CSS）
-  - docs/plan/前端工具与进程管理.md（§Finance Tools Tab 三视图 Builtin/HTTP/MCP §进程列表 Modal 复用 §前端 DTO re-export 自 common::api）
-  - docs/plan/前端API协议结构重构.md（§frontend/src/api/*.rs 本地 struct 清理 §pub use common::api::* 统一入口 §DTO 漂移检查）
-  - docs/plan/聊天MVP.md（§对话页 SSE 订阅 §use_resource 拉 message 列表 §ChatSidePanel 侧栏项目信息）
+  - docs/archive/plan-archive/前端工具与进程管理.md（§Finance Tools Tab 三视图 Builtin/HTTP/MCP §进程列表 Modal 复用 §前端 DTO re-export 自 common::api）
+  - docs/archive/plan-archive/前端API协议结构重构.md（§frontend/src/api/*.rs 本地 struct 清理 §pub use common::api::* 统一入口 §DTO 漂移检查）
+  - docs/archive/plan-archive/聊天MVP.md（§对话页 SSE 订阅 §use_resource 拉 message 列表 §ChatSidePanel 侧栏项目信息）
   - docs/wiki/zh/content/前端应用/前端应用.md（前端入口总览：WASM 编译 + Dioxus 运行时 + build.rs 自动 npm install + Tailwind v4 实时编译）
   - docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/HR 管理页面.md（HR 域 5 页面：Agent 列表/详情 + Skill 列表/详情 + 记忆搜索 + 知识图谱 Canvas）
   - docs/wiki/zh/content/前端应用/组件系统/钩子系统.md（use_resource/use_breakpoint/use_require_auth 三 Hooks 设计模式 + 依赖数组触发条件）

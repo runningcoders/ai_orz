@@ -13,7 +13,7 @@ source_files:
     - common/src/error/axum.rs
     - src/middleware/jwt_auth.rs
     - src/middleware/require_role.rs
-    - docs/design/common-error-type.md
+    - docs/archive/design-archive/common-error-type.md
     - common/src/error_test.rs
 ---
 
@@ -36,7 +36,7 @@ source_files:
 - `common/src/error/axum.rs`：`impl IntoResponse for Error`，将 `Error` 直接作为 Axum handler 返回值，输出 `{ "code": i32, "error_code": str, "message": str, "data": null }` 并映射到对应 HTTP status。
 - `src/middleware/jwt_auth.rs`：认证中间件，未认证时根据请求特征返回 302 重定向（浏览器）或 401 JSON（API）。
 - `src/middleware/require_role.rs`：权限中间件，角色不足时返回 403 JSON。
-- `docs/design/common-error-type.md`：设计文档，完整描述分层使用规范与 HTTP 响应格式约定。
+- `docs/archive/design-archive/common-error-type.md`：设计文档，完整描述分层使用规范与 HTTP 响应格式约定。
 
 ## 3. 架构与约定
 

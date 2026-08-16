@@ -16,7 +16,7 @@
 - [common/src/config.rs](common/src/config.rs)
 - [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
 - [src/producer/a2a_polling.rs](src/producer/a2a_polling.rs)
-- [docs/archive/a2a_server_design.md](docs/archive/a2a_server_design.md)
+- [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
 - [docs/external_agent_design.md](docs/external_agent_design.md)
 </cite>
 
@@ -144,7 +144,7 @@ J-->>C : JsonRpcResponse(result=A2aTask)
 - [src/handlers/a2a/send_task.rs:32-127](src/handlers/a2a/send_task.rs#L32-L127)
 
 章节来源
-- [docs/archive/a2a_server_design.md:40-131](docs/archive/a2a_server_design.md#L40-L131)
+- [docs/archive/design-archive/a2a_server_design.md:40-131](docs/archive/design-archive/a2a_server_design.md#L40-L131)
 
 ## 详细组件分析
 
@@ -429,7 +429,7 @@ A2A 协议支持在本项目中实现了完整的 Server 与 Client 能力：Ser
 
 章节来源
 - [common/src/config.rs:22-59](common/src/config.rs#L22-L59)
-- [docs/archive/a2a_server_design.md:421-433](docs/archive/a2a_server_design.md#L421-L433)
+- [docs/archive/design-archive/a2a_server_design.md:421-433](docs/archive/design-archive/a2a_server_design.md#L421-L433)
 
 ### 外部 Agent 注册与通信
 - 注册 Remote Agent：在 HR 管理端创建 External Agent，kind=Remote，填写 endpoint/agent_name/auth_token/timeout_secs。

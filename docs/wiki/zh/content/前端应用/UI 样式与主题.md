@@ -18,12 +18,12 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [Canvas 渲染与可视化手册](docs/design/canvas_rendering_playbook.md) — HUD 风格 Canvas 渲染、图表与知识图谱可视化规范
+- [Canvas 渲染与可视化手册](docs/archive/design-archive/canvas_rendering_playbook.md) — HUD 风格 Canvas 渲染、图表与知识图谱可视化规范
 - 【Batch10 追加】[ui_design_system.md](docs/design/ui_design_system.md) — Tailwind CSS v4 + DaisyUI v5；orz-light oklch 自定义主题色板（p1-p9 紫蓝渐变主色/o1-o9 橙金强调/g1-g9 成功/b1-b9 错误/r1-r9 危险/n1-n12 灰阶）；30+ DaisyUI 主题切换（data-theme 属性）；HUD 流光条 .hud-streamer 动画；.btn-primary / .card / .stats 等工具类统一
 
 **② 落地计划（Plan）**：
-- [知识图谱推荐起点与组件复用重构](docs/plan/知识图谱推荐起点与组件复用重构.md) — 知识图谱推荐起点与 Canvas 组件复用重构
-- [统计图表Phase1基础设施与时序图展示重构](docs/plan/统计图表Phase1基础设施与时序图展示重构.md) — 图表组件落地点与前后端对接
+- [知识图谱推荐起点与组件复用重构](docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md) — 知识图谱推荐起点与 Canvas 组件复用重构
+- [统计图表Phase1基础设施与时序图展示重构](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) — 图表组件落地点与前后端对接
 
 **④ RAG 原子知识卡**：
 - [Canvas HUD 可视化 RAG 卡](docs/wiki/knowledge/zh/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95.md) — GraphCanvas + Line/Donut + Gauge 仪表盘速查

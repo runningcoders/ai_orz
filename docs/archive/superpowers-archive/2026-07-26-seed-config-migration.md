@@ -2116,7 +2116,7 @@ git commit -m "feat(seed): 添加 9 个 seed Handler + 编排各 domain + 注册
 
 **Files:**
 - Modify: `src/handlers/system/seed/seed_handler_test.rs`（新建）
-- Create: `docs/design/seed-config-migration.md`
+- Create: `docs/archive/design-archive/seed-config-migration.md`
 
 - [ ] **Step 1: 创建 handler 层集成测试 `src/handlers/system/seed/seed_handler_test.rs`**
 
@@ -2336,7 +2336,7 @@ mod seed_handler_test;
 Run: `cargo test --lib handlers::system::seed 2>&1 | tail -20`
 Expected: PASS
 
-- [ ] **Step 4: 创建文档 `docs/design/seed-config-migration.md`**
+- [ ] **Step 4: 创建文档 `docs/archive/design-archive/seed-config-migration.md`**
 
 ```markdown
 # Seed 配置迁移中心
@@ -2469,7 +2469,7 @@ Expected: 全部返回 200 + 正确响应
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/handlers/system/seed/seed_handler_test.rs docs/design/seed-config-migration.md
+git add src/handlers/system/seed/seed_handler_test.rs docs/archive/design-archive/seed-config-migration.md
 git commit -m "test(seed): 添加 handler 层集成测试 + 设计文档"
 ```
 

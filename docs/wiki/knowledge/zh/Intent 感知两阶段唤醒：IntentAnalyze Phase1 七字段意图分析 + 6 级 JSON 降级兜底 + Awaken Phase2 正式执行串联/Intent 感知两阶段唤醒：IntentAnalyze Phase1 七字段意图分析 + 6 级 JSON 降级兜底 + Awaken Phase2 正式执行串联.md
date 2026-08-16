@@ -24,10 +24,10 @@ source_files:
   - "src/service/dal/agent.rs#L1667-L1715"
   - "src/models/prompt_builder.rs#L104-L123"
   - "src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md"
-  - "docs/design/intent_aware_two_stage_awaken_design.md"
+  - "docs/archive/design-archive/intent_aware_two_stage_awaken_design.md"
   - "docs/design/runtime_design.md"
-  - "docs/plan/唤醒上下文与睡眠约束.md"
-  - "docs/plan/运行时问题修复.md"
+  - "docs/archive/plan-archive/唤醒上下文与睡眠约束.md"
+  - "docs/archive/plan-archive/运行时问题修复.md"
   - "docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md"
   - "docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md"
   - "docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/Agent%20循环消费者.md"
@@ -55,8 +55,8 @@ source_files:
 | [RuntimeDomain trait 方法签名](src/service/domain/runtime/mod.rs#L205-L225) | 领域层对外契约 | `analyze_input_intent(ctx, agent, message, options) -> Result<IntentAnalysis>`；可独立复用于：消息路由预分析 / 澄清追问 / Agent 协作消息分发 |
 | [Phase2 awaken 两阶段串联](src/service/domain/runtime/awakening.rs#L150-L180) | 正式执行入口 | awaken 内部先调 analyze_input_intent → need_clarification 先渲染 Prompt → 正式 think loop；【输入理解结果】区块明确标注「仅供参考，不一致可推翻」 |
 | [共享 run_think_loop 引擎](src/service/domain/runtime/think_loop.rs#L117-L160) | 两阶段复用的思考内核 | 超时控制 / 多轮迭代 / 策略评估 / 工具调用分发；Phase1 与 Phase2 走同一内核仅 scene 参数不同 |
-| [两阶段唤醒 Design 总纲](docs/design/intent_aware_two_stage_awaken_design.md) | 为什么 / 决策表 | §关键决策表 §4.2 降级兜底表 §5 非目标边界 |
-| [唤醒上下文 Plan 落地快照](docs/plan/唤醒上下文与睡眠约束.md) | 怎么做 + 结果 | ThinkingOptions 统一参数 / PromptBuilder 公共方法复用 |
+| [两阶段唤醒 Design 总纲](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md) | 为什么 / 决策表 | §关键决策表 §4.2 降级兜底表 §5 非目标边界 |
+| [唤醒上下文 Plan 落地快照](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) | 怎么做 + 结果 | ThinkingOptions 统一参数 / PromptBuilder 公共方法复用 |
 | [运行时领域 Wiki 长文](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) | 人类百科 | §5 两阶段唤醒流程详细说明 §8 故障排查 |
 
 ---
@@ -109,7 +109,7 @@ source_files:
 | 5 | 降级 Level 5/6 必须打 `log_warn!(&ctx, "intent_analyze_degrade", ...)` 含降级级别与原始 snippet 前 100 字 | grep `log_warn.*intent_analyze_degrade` | [intent_analyze.rs#L70-L80](src/service/domain/runtime/intent_analyze.rs#L70-L80) |
 | 6 | 两阶段唤醒的 Phase1 / Phase2 **必须复用同一 run_think_loop 引擎**，仅 scene 参数不同；禁止复制粘贴两套 think loop 逻辑 | run_think_loop 仅一处定义 | [think_loop.rs#L117-L160](src/service/domain/runtime/think_loop.rs#L117-L160) |
 | 7 | analyze_input_intent 作为通用方法**必须可独立被外部调用**（消息预路由 / 澄清重理解等），不能与 awaken 内部私有耦合；trait 定义在 RuntimeDomain 总接口 | `pub async fn analyze_input_intent` 在 trait 层公开 | [mod.rs#L205-L225](src/service/domain/runtime/mod.rs#L205-L225) |
-| 8 | 方案 B（技能 SOP 版理解流程）与方案 A+（本卡 IntentAnalyze）**SOP 核心逻辑一致但强度不同**：Prompt 约束描述不得前后矛盾；Agent 读不到两个互相打架的方法论 | 对照 Design §5.3 分工边界表 | [intent_aware_two_stage_awaken_design.md §5.3](docs/design/intent_aware_two_stage_awaken_design.md#L410-L422) |
+| 8 | 方案 B（技能 SOP 版理解流程）与方案 A+（本卡 IntentAnalyze）**SOP 核心逻辑一致但强度不同**：Prompt 约束描述不得前后矛盾；Agent 读不到两个互相打架的方法论 | 对照 Design §5.3 分工边界表 | [intent_aware_two_stage_awaken_design.md §5.3](docs/archive/design-archive/intent_aware_two_stage_awaken_design.md#L410-L422) |
 | 9 | **禁止 awaken 对 Phase1 analyze 结果 `?` 冒泡**：错误吞掉降级 None；用 `?` 会把意图分析服务不可用升级为整次唤醒失败，P0 故障 | 集成测试模拟 cortex panick → awaken 仍返回 200 且正常响应 | [awakening.rs awaken Phase1 串联 match 分支](src/service/domain/runtime/awakening.rs#L230-L280) |
 | 10 | **禁止 IntentAnalyze 的 is_tool_allowed 白名单包含执行类 tag**（send_message / lark_push / shell_exec / task_create / file_write）| thinking_scene_tool_whitelist 单元测试：IntentAnalyze 允许 neural/search tags、禁止 messaging/shell tags | [awakening.rs#L1322-L1355](src/service/domain/runtime/awakening.rs#L1322-L1355) |
 | 11 | **PromptBuilder 默认实现不写 Phase1 专用指令**：外部 Agent（RemoteAgent/CodexCli）默认回退 build()，内部两阶段仅 DefaultPromptBuilder 完整实现 build_intent_analyze_prompt() | grep 其他 PromptBuilder 实现，不应出现 Phase1 专用指令字符串 | [models/prompt_builder.rs#L104-L123](src/models/prompt_builder.rs#L104-L123) trait 默认实现 |

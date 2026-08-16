@@ -22,7 +22,7 @@ source_files:
   - scripts/tools/coverage.sh#L1-L80
   - .github/workflows/ci.yml#L1-L200
   - .github/workflows/docs.yml#L1-L150
-  - docs/design/build_and_deployment_workflow_design.md
+  - docs/archive/design-archive/build_and_deployment_workflow_design.md
   - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md
   - docs/wiki/knowledge/zh/构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI/构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI.md
 ---
@@ -51,7 +51,7 @@ source_files:
 | [.github/workflows/docs.yml](.github/workflows/docs.yml) | Docs CI 门禁 | `make ci-docs-lint`（调用 docs_lint.sh）+ docs_migrate --dry-run（确认迁移后 diff=0，防止 PR 引入遗留旧格式没 migrate）。|
 | 【Level4 总卡】构建流水线：cargo 构建 + dioxus 前端打包 + docker 镜像 + GitHub Actions CI | 本卡是总卡的 scripts/ 归置细粒度拆卡 | [构建流水线总卡](docs/wiki/knowledge/zh/构建流水线：cargo%20构建%20+%20dioxus%20前端打包%20+%20docker%20镜像%20+%20GitHub%20Actions%20CI/构建流水线：cargo%20构建%20+%20dioxus%20前端打包%20+%20docker%20镜像%20+%20GitHub%20Actions%20CI.md) |
 | 【Wiki 长文】持续集成与发布工作流.md | 系统化上下文 + §8 Troubleshooting | [持续集成与发布工作流](docs/wiki/zh/content/基础设施/持续集成与发布工作流.md) |
-| 【① Design】build_and_deployment_workflow_design.md | 构建部署设计决策 | [docs/design/build_and_deployment_workflow_design.md](docs/design/build_and_deployment_workflow_design.md) |
+| 【① Design】build_and_deployment_workflow_design.md | 构建部署设计决策 | [docs/archive/design-archive/build_and_deployment_workflow_design.md](docs/archive/design-archive/build_and_deployment_workflow_design.md) |
 
 ## §3 架构约定
 

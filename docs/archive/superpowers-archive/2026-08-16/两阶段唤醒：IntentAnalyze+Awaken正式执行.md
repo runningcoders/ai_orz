@@ -1,4 +1,4 @@
-📦 归档标记（2026-08-16）：被 [docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md)
+📦 归档标记（2026-08-16）：被 [docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/archive/plan-archive/两阶段唤醒：IntentAnalyze+Awaken正式执行.md)
 
 ---
 
@@ -11,7 +11,7 @@
 > - Task 1~4 全部实现并提交
 > - Task 5 质量验证通过：后端 + 前端 clippy `-D warnings` 零警告，全 workspace 测试 100% 通过
 > - 配套增强（计划外）：轮次/超时全面配置化（Agent runtime_config > ai_orz.toml > 硬编码），默认轮次调大至 365；新增 `AgentRuntimeConfigInfo` 嵌套结构体替代打平字段；前端 Agent 配置表单适配
-> - 设计文档：[intent_aware_two_stage_awaken_design.md](../../design/intent_aware_two_stage_awaken_design.md)
+> - 设计文档：[intent_aware_two_stage_awaken_design.md](../../archive/design-archive/intent_aware_two_stage_awaken_design.md)
 > - 架构总纲更新：[runtime_design.md 25.13 节](../../design/runtime_design.md)（v3.8 增量）
 
 **Goal:** (1) 在「协作沟通」技能中新增「理解用户消息 SOP」（方案 B）；(2) 新增 `ThinkingScene::IntentAnalyze` 场景 + 通用复用函数 `analyze_input_intent()`，让 Agent 先做意图识别/指代消歧/语义检索再输出结构化 JSON；(3) 将 `awaken` 串联为两阶段流程：先理解、再执行，把 `IntentAnalysis` 结果渲染成 Prompt 中的【输入理解结果】区块。

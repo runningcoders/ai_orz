@@ -15,11 +15,11 @@
 ### 本文关联的三类文档（四类互引闭环，2026-08-16 增量补齐）
 
 **① 设计文档（Design）**：
-- docs/design/doc_link_classifier_and_quality_gates.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
+- docs/archive/design-archive/doc_link_classifier_and_quality_gates.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
 - [docs/design/frontend_architecture.md](docs/design/frontend_architecture.md) — 前端组件体系与路由总设计
 
 **② 落地计划（Plan）**：
-- docs/plan/frontend_markdown_renderer_doclinkclassifier_bridge.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
+- docs/archive/plan-archive/frontend_markdown_renderer_doclinkclassifier_bridge.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
 
 **④ RAG 原子知识卡**：
 - [前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发](docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md) — §红线 1 链接必须先 classify 再渲染；§红线 5 禁止直接渲染真实 href 给站内 wiki/代码链接（统一走全局 click 拦截器）

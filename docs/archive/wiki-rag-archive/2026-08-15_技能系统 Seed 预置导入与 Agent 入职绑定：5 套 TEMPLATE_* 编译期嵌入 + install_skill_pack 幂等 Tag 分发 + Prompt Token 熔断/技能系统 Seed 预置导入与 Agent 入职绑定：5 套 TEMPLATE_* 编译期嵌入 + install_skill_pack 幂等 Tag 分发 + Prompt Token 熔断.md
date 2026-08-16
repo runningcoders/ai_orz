@@ -23,9 +23,9 @@ source_files:
   - src/service/domain/hr/skill.rs#L12-L60 (SkillManage 子 trait：create_skill 文件元数据 + 写 skill.md 文件两步；update_skill 先路径安全校验 → 元数据 → 写入/删除文件 → 导入文件的顺序五步，严格防失败时产生脏数据)
   - src/handlers/hr/agent/install_skill_pack.rs#L1-L33 (install_skill_pack Handler + register_handler_tool 神经工具暴露：按 tag 查询所有 Published 技能 → 拷贝 Draft 副本到 Agent；idempotent：tag 已存在返回 installed_count=0)
   - src/service/dal/skill/mod.rs (SkillDal trait：query 技能 + search 技能 + 按 tag 批量查；按 id 查内容；写文件走 content_path 相对路径防越权)
-  - docs/design/skill_design.md（§数据库设计 skills 表；§文件存储相对路径管理；§三种状态：待沉淀/可用/过期 + 软删除）
-  - docs/design/skill_system_enhancement_design.md（§唤醒注入机制：启动时间按 installed_skill_packs 拉技能的 to_prompt_summary 注入 Agent 角色 Prompt）
-  - docs/plan/预置基础技能导入重构.md（落地：5 套 TEMPLATE_* 目录结构 + default.json 快照 + 编译期嵌入方式）
+  - docs/archive/design-archive/skill_design.md（§数据库设计 skills 表；§文件存储相对路径管理；§三种状态：待沉淀/可用/过期 + 软删除）
+  - docs/archive/design-archive/skill_system_enhancement_design.md（§唤醒注入机制：启动时间按 installed_skill_packs 拉技能的 to_prompt_summary 注入 Agent 角色 Prompt）
+  - docs/archive/plan-archive/预置基础技能导入重构.md（落地：5 套 TEMPLATE_* 目录结构 + default.json 快照 + 编译期嵌入方式）
   - docs/wiki/zh/content/功能模块/技能系统.md（技能系统总览：沉淀流程 → 标签分类 → 状态流转 → 安装到 Agent 的四步用户故事）
   - docs/wiki/zh/content/功能模块/AI Agent 管理/技能包管理.md（技能包管理面板：Tag 筛选 + 批量安装 + 安装历史记录列表）
   - docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/技能与工具绑定.md（入职流程：创建 Agent → 安装默认技能包 → 配置身份凭证 → 绑定工具包 → 上线）

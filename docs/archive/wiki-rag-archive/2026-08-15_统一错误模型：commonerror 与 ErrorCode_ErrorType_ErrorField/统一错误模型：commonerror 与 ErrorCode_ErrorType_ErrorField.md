@@ -13,7 +13,7 @@ source_files:
     - common/src/error/axum.rs
     - src/middleware/jwt_auth.rs
     - src/service/dao/lark/error.rs
-    - docs/design/common-error-type.md
+    - docs/archive/design-archive/common-error-type.md
 ---
 
 ## 1. 系统/方案概述
@@ -38,7 +38,7 @@ HTTP 适配层在 `common/src/error/axum.rs` 中实现 `IntoResponse for Error`�
 - `common/src/error/axum.rs`：`impl IntoResponse for Error`，Axum 路由层零样板错误返回。
 - `src/middleware/jwt_auth.rs`：认证中间件，失败时根据请求特征返回 302 重定向或 401 JSON（兼容旧 `ApiResponse` 格式）。
 - `src/service/dao/lark/error.rs`：DAO 层局部错误类型示例，提供 `LarkResponse.into_result/check`、`From<LarkWsError>` 等，将第三方错误映射为 `ThirdPartyError`。
-- `docs/design/common-error-type.md`：设计文档，明确分层职责、HTTP 响应格式与迁移阶段。
+- `docs/archive/design-archive/common-error-type.md`：设计文档，明确分层职责、HTTP 响应格式与迁移阶段。
 
 ## 3. 架构与约定
 

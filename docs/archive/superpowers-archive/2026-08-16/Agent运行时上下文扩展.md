@@ -1,4 +1,4 @@
-📦 归档标记（2026-08-16）：被 [docs/plan/Agent运行时上下文扩展.md](docs/plan/Agent运行时上下文扩展.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/plan/Agent运行时上下文扩展.md](docs/plan/Agent运行时上下文扩展.md)
+📦 归档标记（2026-08-16）：被 [docs/archive/plan-archive/Agent运行时上下文扩展.md](docs/archive/plan-archive/Agent运行时上下文扩展.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/archive/plan-archive/Agent运行时上下文扩展.md](docs/archive/plan-archive/Agent运行时上下文扩展.md)
 
 ---
 

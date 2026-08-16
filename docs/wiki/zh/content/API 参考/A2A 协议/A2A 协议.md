@@ -14,7 +14,7 @@
 - [src/handlers/a2a/mapper.rs](src/handlers/a2a/mapper.rs)
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
-- [docs/archive/a2a_server_design.md](docs/archive/a2a_server_design.md)
+- [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
 - [docs/external_agent_design.md](docs/external_agent_design.md)
 </cite>
 
@@ -200,7 +200,7 @@ end
 
 **章节来源**
 - [src/handlers/a2a/send_task.rs:32-127](src/handlers/a2a/send_task.rs#L32-L127)
-- [docs/archive/a2a_server_design.md:361-387](docs/archive/a2a_server_design.md#L361-L387)
+- [docs/archive/design-archive/a2a_server_design.md:361-387](docs/archive/design-archive/a2a_server_design.md#L361-L387)
 
 ### 任务查询（tasks/get）
 - 根据 id 查询 Project，再查询 Messages 与 Artifacts。
@@ -259,7 +259,7 @@ end
 
 **章节来源**
 - [src/router.rs:21-56](src/router.rs#L21-L56)
-- [docs/archive/a2a_server_design.md:79-106](docs/archive/a2a_server_design.md#L79-L106)
+- [docs/archive/design-archive/a2a_server_design.md:79-106](docs/archive/design-archive/a2a_server_design.md#L79-L106)
 
 ## 依赖关系分析
 - 路由层负责注册 A2A 端点与中间件顺序（jwt_auth → request_context）。

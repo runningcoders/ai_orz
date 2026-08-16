@@ -7,7 +7,7 @@
 > 关联文档：
 > - [AGENTS.md](../AGENTS.md) — 项目整体分层架构与开发规范
 > - [design/runtime_design.md](./design/runtime_design.md) — 两阶段唤醒 Runtime（sleep_and_settle / awaken_for_summary 沉淀调用方）
-> - [design/vector_search_architecture.md](./design/vector_search_architecture.md) — 向量索引架构（记忆实体 Vectorizable trait 实现的上游约束）
+> - [archive/design-archive/vector_search_architecture.md](./archive/design-archive/vector_search_architecture.md) — 向量索引架构（记忆实体 Vectorizable trait 实现的上游约束）
 
 ## 核心设计思想
 

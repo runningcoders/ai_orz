@@ -77,7 +77,7 @@
 |------|---------|
 | `ai-orz-macros/src/lib.rs` | 1. 修改 `collect_path_and_query_fields_from_type` 返回值新增 `flattened_query_fields`<br>2. 重写 `(true, true)` 分支用 `RawQuery` + `serde_json::Value` 提取 query 字段<br>3. 修复 `(true, false)` 混合分支：从 `Query<#params_ty>` 改为不影响（已正确，无需改） |
 | `tests/http_handler_macro_test.rs` | 修复 2 个失败测试 + 新增 6 个针对 path+query 边界的测试 |
-| `docs/design/unified-idl-http-handler.md` | 更新 `(true, true)` 分支行为说明、补充修复历史 |
+| `docs/archive/design-archive/unified-idl-http-handler.md` | 更新 `(true, true)` 分支行为说明、补充修复历史 |
 
 ### 不修改文件
 
@@ -908,14 +908,14 @@ Expected: 宏生成的 handler 函数体包含 `axum::extract::RawQuery` 和 `se
 
 ### Task 6: 更新设计文档同步宏修复后的行为
 
-**目的：** 让 `docs/design/unified-idl-http-handler.md` 反映 (true, true) 分支的新行为，移除"path+query GET 需带 body"的限制说明（如有）。
+**目的：** 让 `docs/archive/design-archive/unified-idl-http-handler.md` 反映 (true, true) 分支的新行为，移除"path+query GET 需带 body"的限制说明（如有）。
 
 **Files:**
-- Modify: `docs/design/unified-idl-http-handler.md`
+- Modify: `docs/archive/design-archive/unified-idl-http-handler.md`
 
 - [ ] **Step 1: 阅读现有文档相关章节**
 
-Run: Read `docs/design/unified-idl-http-handler.md`
+Run: Read `docs/archive/design-archive/unified-idl-http-handler.md`
 重点查看：
 - 第 51-59 行 `#[param(source = ...)]` 说明
 - 第 180-188 行 "支持的组合" 表
@@ -975,7 +975,7 @@ Run: Read `docs/design/unified-idl-http-handler.md`
 - [ ] **Step 5: Commit 文档更新**
 
 ```bash
-git add docs/design/unified-idl-http-handler.md
+git add docs/archive/design-archive/unified-idl-http-handler.md
 git commit -m "docs: 同步 (true, true) 宏分支 RawQuery 修复方案
 
 - 更新支持的组合表：补充子分支自动判定逻辑

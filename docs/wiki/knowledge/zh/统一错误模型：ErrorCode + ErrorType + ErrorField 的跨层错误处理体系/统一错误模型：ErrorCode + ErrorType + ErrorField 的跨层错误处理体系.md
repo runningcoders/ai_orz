@@ -14,7 +14,7 @@ source_files:
     - src/middleware/jwt_auth.rs
     - src/middleware/require_role.rs
     - src/service/dao/lark/error.rs
-    - docs/design/common-error-type.md
+    - docs/archive/design-archive/common-error-type.md
 ---
 
 ## 1. 整体方案
@@ -25,7 +25,7 @@ source_files:
 - **`ErrorCode`**（具体错误码）：通过 `define_error_codes!` 宏在 `common/src/error/code.rs` 中集中声明，每个 variant 绑定一个 `type`、HTTP status 和稳定字符串 code（如 `"invalid_request"`），不携带业务字段。
 - **`Error`**（统一结构体）：聚合 `code + error_type + msg + field: Option<ErrorField> + source: Option<Arc<anyhow::Error>>`，实现 `Serialize/Deserialize`，对外序列化时跳过 `source`。
 
-该设计在 `docs/design/common-error-type.md` 中有完整设计文档，并已完成 Phase 1~3 全部落地。
+该设计在 `docs/archive/design-archive/common-error-type.md` 中有完整设计文档，并已完成 Phase 1~3 全部落地。
 
 ## 2. 关键文件与位置
 
@@ -120,7 +120,7 @@ source_files:
 3. 新增错误码必须通过 `define_error_codes!` 在 `common/src/error/code.rs` 中声明，同时指定 `type`、`http` 状态码和稳定 `code` 字符串。
 4. 所有 `From<E>` 转换必须明确映射到合适的 `ErrorCode` + `ErrorType`，禁止吞掉错误信息。
 5. 中间件中的认证/鉴权错误不走 `Error::IntoResponse`，而应直接构造 `ApiResponse` 并返回对应 `StatusCode`。
-6. 设计文档 `docs/design/common-error-type.md` 规定整个项目已完成统一错误模型重构，业务代码内部全部使用 `common::error::{Error, Result}`。
+6. 设计文档 `docs/archive/design-archive/common-error-type.md` 规定整个项目已完成统一错误模型重构，业务代码内部全部使用 `common::error::{Error, Result}`。
 7. **禁止直接使用裸 `anyhow::Result` 作为对外 API**：业务代码内部统一使用 `common::error::Result`；仅在实现外部 trait 要求时使用 `anyhow::Result`，并在边界处转换为 `Error`。
 8. **分层职责边界**：DAO 不调 DAO、DAL 不调 DAL、Domain 不调 Domain；错误应在各自层产生并按语义映射，禁止跨层混用错误类型。
 9. **错误码唯一性**：每个 `ErrorCode` variant 对应一个明确错误语义，禁止用纯数字码作为第一形态。

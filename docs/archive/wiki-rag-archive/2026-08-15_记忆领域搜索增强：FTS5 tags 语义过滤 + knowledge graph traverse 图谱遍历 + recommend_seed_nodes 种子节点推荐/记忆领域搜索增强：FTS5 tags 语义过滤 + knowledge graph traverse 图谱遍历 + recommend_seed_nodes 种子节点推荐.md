@@ -14,8 +14,8 @@ source_files:
   - common/src/models/graph.rs:Ln-Lm（LongTermKnowledgeGraphEdge / LongTermKnowledgeGraphNode 图谱结构；边类型枚举）
   - src/models/agent.rs:Ln-Lm（LongTermKnowledgeNodePo tags 字段 JSON 数组 + is_published 冗余字段加速索引）
   - migrations/*_memory_fts5.sql:Ln-Lm（知识节点 FTS5 虚拟表 + tags 部分索引）
-  - docs/design/memory_search_enhancement_design.md
-  - docs/design/vector_search_architecture.md
+  - docs/archive/design-archive/memory_search_enhancement_design.md
+  - docs/archive/design-archive/vector_search_architecture.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
   - docs/wiki/zh/content/架构设计/记忆系统架构.md
@@ -63,8 +63,8 @@ source_files:
 | [dal/memory.rs](src/service/dal/memory.rs) | traverse_knowledge_graph() BFS + recommend_seed_nodes() 推荐 | BFS：VecDeque + visited + max_depth 上限；推荐：connectivity/content/share 三要素评分 0.45/0.35/0.2 |
 | [common/src/models/graph.rs](common/src/models/graph.rs)（或 models/memory/*.rs）| 图谱结构定义 | LongTermKnowledgeNodePo（tags 数组 + is_published）、GraphEdge { from, to, edge_type, created_at }、GraphTraverseResult（nodes+edges+levels）|
 | [migrations/*memory_fts5.sql](migrations)（对应编号文件）| 记忆 FTS5 + 部分索引 DDL | FTS5 虚拟表 MATCH；idx_ltkn_is_published WHERE is_published = 1 部分索引 |
-| 【① Design 1】memory_search_enhancement_design.md | tags 部分索引动机 + 推荐评分 3 因子权重 | docs/design/memory_search_enhancement_design.md |
-| 【① Design 2】vector_search_architecture.md §LongTermKnowledge collection | 为什么图谱节点 collection 叫 "memory:knowledge_node" | docs/design/vector_search_architecture.md |
+| 【① Design 1】memory_search_enhancement_design.md | tags 部分索引动机 + 推荐评分 3 因子权重 | docs/archive/design-archive/memory_search_enhancement_design.md |
+| 【① Design 2】vector_search_architecture.md §LongTermKnowledge collection | 为什么图谱节点 collection 叫 "memory:knowledge_node" | docs/archive/design-archive/vector_search_architecture.md |
 | 【③ Wiki 长文 1】记忆搜索机制.md §FTS5 tags 过滤 + §BFS 图谱扩展 | 搜索用户视角说明 | docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/记忆搜索机制.md |
 | 【③ Wiki 长文 2】记忆系统架构.md §长期知识图谱 §搜索扩展层 | 架构层级分层图 | docs/wiki/zh/content/架构设计/记忆系统架构.md |
 | 【③ Wiki 长文 3】记忆系统管理.md §种子节点推荐面板 | 前端 UI 推荐 reasons 展示 | docs/wiki/zh/content/功能模块/AI%20Agent%20管理/记忆系统管理.md |

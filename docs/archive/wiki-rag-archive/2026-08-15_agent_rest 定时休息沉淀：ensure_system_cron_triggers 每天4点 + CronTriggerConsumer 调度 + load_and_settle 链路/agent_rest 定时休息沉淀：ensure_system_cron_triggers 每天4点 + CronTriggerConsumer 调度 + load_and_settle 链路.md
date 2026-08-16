@@ -19,9 +19,9 @@ source_files:
   - src/models/cron_trigger.rs (CronTriggerPo：cron_expression/interval_seconds/payload/next_run_at/last_run_at/is_enabled 六字段核心)
   - src/pkg/cron/mod.rs#L1-L60 (next_run_at 计算 + system_timezone 获取；Cron 表达式解析基于 chrono-crate)
   - tests/integration/system_cron_triggers_test.rs (系统级集成测试：校验 init_base_data 后 agent_rest + project_followup 两条触发器确实存在且 is_enabled=1)
-  - docs/design/memory_system_enhancement_design.md（§1 决策 3/4：SystemDomain + CronManager；休息双轨 = 上下文过载小憩 + 每日定时睡眠沉淀）
+  - docs/archive/design-archive/memory_system_enhancement_design.md（§1 决策 3/4：SystemDomain + CronManager；休息双轨 = 上下文过载小憩 + 每日定时睡眠沉淀）
   - docs/design/runtime_design.md（AgentRuntimeInfo::Resting 状态定义与 BusyGuard 嵌套，防止沉淀期被外部唤醒并发冲突）
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径 → 预期 docs/plan/定时任务系统建设与agent_rest沉淀链路.md）
+  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径 → 预期 docs/archive/plan-archive/定时任务系统建设与agent_rest沉淀链路.md）
   - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/记忆沉淀机制.md（沉淀工作队列架构图 §2 CronTriggerProducer→Consumer→DAL 链路 + §8 故障排查）
   - docs/wiki/zh/content/功能模块/系统管理功能/系统定时任务管理.md（后台 CronTrigger 面板：暂停/恢复/手工触发按钮与状态列）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md（§4 三态 FSM Idle/Busy/Resting Resting 态 RAII 保护）

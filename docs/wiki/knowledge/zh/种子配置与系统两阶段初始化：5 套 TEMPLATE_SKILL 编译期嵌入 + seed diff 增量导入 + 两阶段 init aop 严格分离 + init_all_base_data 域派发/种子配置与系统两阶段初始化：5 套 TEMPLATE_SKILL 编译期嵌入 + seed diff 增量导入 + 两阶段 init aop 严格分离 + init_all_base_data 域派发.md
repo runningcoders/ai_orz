@@ -23,8 +23,8 @@ source_files:
   - "src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"
   - "src/lib.rs#L97-L154"
   - "src/service/domain/mod.rs#L23-L45"
-  - "docs/design/seed-config-migration.md"
-  - "docs/plan/Agent管理集成测试.md"
+  - "docs/archive/design-archive/seed-config-migration.md"
+  - "docs/archive/plan-archive/Agent管理集成测试.md"
   - "docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md"
   - "docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md"
   - "docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md"
@@ -51,8 +51,8 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 | 两阶段启动调用链 | src/lib.rs | L97-L154 `run()` 函数：①pkg::init_all → ②service::init → ③producer::init → ④consumer::init → ⑤service::init_base_data（第二阶段） → ⑥AOP 统计注入 → ⑦aop::init_all（第三阶段调度器启动） |
 | init_all_base_data 域派发 | src/service/domain/mod.rs | L23-L45 `init_all_base_data()` 派发：system::init_base_data（cron triggers） + finance::init_base_data（内置工具同步），未来新域需在此注册 |
 | Seed Handler 跨 domain 编排 | src/handlers/system/seed/*.rs | assemble_snapshot_from_db（拉取各 domain 数据→组装 Snapshot）/apply_snapshot_to_db（跨域 CRUD 编排）+ 10 个 HTTP handler（list/get_file/save/load/delete/diff/diff_files/get_default/apply_default） |
-| Design 规范 | docs/design/seed-config-migration.md | 4 种导入策略、敏感字段占位符与字段级 diff 设计、模块结构图、架构原则（纯工具箱，不跨域调用）、8 API 列表 |
-| Plan 集成测试（初始化对齐） | docs/plan/Agent管理集成测试.md | §init_full_test_env 启动顺序与 run() 严格对齐；基础数据缺步导致 cron baseline 断言为 0 的历史教训 |
+| Design 规范 | docs/archive/design-archive/seed-config-migration.md | 4 种导入策略、敏感字段占位符与字段级 diff 设计、模块结构图、架构原则（纯工具箱，不跨域调用）、8 API 列表 |
+| Plan 集成测试（初始化对齐） | docs/archive/plan-archive/Agent管理集成测试.md | §init_full_test_env 启动顺序与 run() 严格对齐；基础数据缺步导致 cron baseline 断言为 0 的历史教训 |
 | Wiki 系统初始化长文 | docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md | 用户视角的两阶段启动解释 + System Initialization 流程说明 |
 | Wiki 种子数据管理长文 | docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md | Seed 导入导出 GUI 说明 + 4 策略选择指导 |
 | Wiki 技能包管理长文 | docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md | 预置技能（TEMPLATE_*）与 Seed 的关系 |

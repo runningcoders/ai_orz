@@ -18,11 +18,11 @@
 ### 本文关联的三类文档（四类互引闭环）
 
 **① 设计文档（Design）**：
-- [消费者与生产者架构设计](docs/design/consumer_architecture.md) — AOP 生产消费异步框架：8 Consumer 注册顺序 + Sync/Async 双模式 + ack/nack 语义
-- [事件总线设计（归档参考）](docs/design/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅对比参考
+- [消费者与生产者架构设计](docs/archive/design-archive/consumer_architecture.md) — AOP 生产消费异步框架：8 Consumer 注册顺序 + Sync/Async 双模式 + ack/nack 语义
+- [事件总线设计（归档参考）](docs/archive/design-archive/event_design.md) — ⚠️ 旧版 EventQueueDao 已废弃，仅对比参考
 
 **② 落地计划（Plan）**：
-- [Agent 循环驱动引擎 Plan](docs/plan/agent_loop_engine_plan.md) — DomainEvent 8 类 → AgentLoopConsumer 唤醒 + 三层兜底架构（字段+事件+定时）
+- [Agent 循环驱动引擎 Plan](docs/archive/plan-archive/agent_loop_engine_plan.md) — DomainEvent 8 类 → AgentLoopConsumer 唤醒 + 三层兜底架构（字段+事件+定时）
 
 **④ RAG 原子知识卡**：
 - [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85/Domain%20%E5%86%85%E9%83%A8%E4%BA%8B%E4%BB%B6%E4%B8%8E%E6%B6%88%E8%B4%B9%E8%80%85%E5%85%A8%E9%93%BE%E8%B7%AF%EF%BC%9A8%20%E7%B1%BB%20DomainEvent%20%E6%9E%9A%E4%B8%BE%20+%208%20%E7%B1%BB%20Consumer%20%E4%B8%9A%E5%8A%A1%E6%B6%88%E8%B4%B9%20+%20AOP%20Producer%20%E6%8A%95%E9%80%92%E5%85%A5%E5%8F%A3%20+%20Registry%20%E8%AE%A2%E9%98%85.md) — DomainEvent 8 大类别枚举（Message/Task/AgentAwake/Schedule/ToolExecLog/ToolExecStats/ThinkRound/AgentRuntimeState）+ Event Trait 五字段约束

@@ -19,11 +19,11 @@ source_files:
   - src/service/domain/project/service.rs#L1-L120 (ProjectDomain::get_project_detail 聚合：基础 PO → 查所有任务 → 算 progress_summary 百分比 → 调 task_graph 生成 → 注入 artifacts；整体是典型 Domain 多 DAL 组合编排)
   - src/service/domain/project/task.rs#L1-L150 (Task Domain 子模块：update_progress 自动流转 status → progress=0→Pending, >0<100→InProgress, =100→Completed；execution_plan JSON 写入严格 Schema)
   - common/src/api/project_task.rs (UpdateTaskProgressRequest：progress + execution_plan_delta + execution_result_delta；不允许整字段覆盖，前端只传增量，后端按 patch 合并)
-  - docs/design/task_design.md（§数据库设计 tasks 表完整字段；§状态机 Cancelled=0 软删约定；§一对多 project_id 关联）
-  - docs/design/project_design.md（§Project实体 owner_agent_id 语义；§last_followup_at 项目巡检机制与 CronTrigger project_followup 联动）
-  - docs/design/project_management_design.md（§任务状态上报 §实时通知 §补偿机制 4 条设计目标落地状态）
-  - docs/plan/项目任务增强.md（落地：execution_plan/result 字段加入、progress_summary 聚合算法、TaskGraph DAG 构建）
-  - docs/plan/后台任务管理页面与列表清理接口重构.md（落地：任务 query 接口重构、通用 count 与 PagedResult 统一）
+  - docs/archive/design-archive/task_design.md（§数据库设计 tasks 表完整字段；§状态机 Cancelled=0 软删约定；§一对多 project_id 关联）
+  - docs/archive/design-archive/project_design.md（§Project实体 owner_agent_id 语义；§last_followup_at 项目巡检机制与 CronTrigger project_followup 联动）
+  - docs/archive/design-archive/project_management_design.md（§任务状态上报 §实时通知 §补偿机制 4 条设计目标落地状态）
+  - docs/archive/plan-archive/项目任务增强.md（落地：execution_plan/result 字段加入、progress_summary 聚合算法、TaskGraph DAG 构建）
+  - docs/archive/plan-archive/后台任务管理页面与列表清理接口重构.md（落地：任务 query 接口重构、通用 count 与 PagedResult 统一）
   - docs/wiki/zh/content/功能模块/项目管理/任务管理.md（任务四态卡片 UI + 进度条组件 + 依赖图 Mermaid 渲染）
   - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/任务生命周期管理.md（生命周期：创建→分配→pending→in_progress→completed + 取消软删路径）
   - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/执行计划与结果追踪.md（execution_plan 结构化字段内容规范：步骤列表 + 预计耗时 + 风险；execution_result 输出结构化条目）

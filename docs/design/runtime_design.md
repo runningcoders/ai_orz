@@ -345,7 +345,7 @@ ThinkResult::ToolCall?
 > - **中层**：`call_tool`——直接执行层，转发到底层 DAO
 > - **底层**：`ToolCallDao.execute` + `decorate`——装饰器收敛，记录真实 ToolCallEntry trace
 >
-> **命名清理（2026-08-05）**：原 `ToolCallDao::call_manual` 重命名为 `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。同时删除 `ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法，`call_tool` 直接调 DAO。详见 `docs/design/tool_design.md` "工具调用架构演进"。
+> **命名清理（2026-08-05）**：原 `ToolCallDao::call_manual` 重命名为 `ToolCallDao::execute`，消除"manual"语义重载（旧名误导：实际所有工具都走这里，不分 Auto/Manual）。同时删除 `ToolDal::call_manual` / `McpToolDal::call_manual` 纯转发方法，`call_tool` 直接调 DAO。详见 `docs/archive/design-archive/tool_design.md` "工具调用架构演进"。
 >
 > **同步 vs 异步 Manual**：`execute_manual` 根据 `tool.po.config.dispatch_mode` 选择 internal 工具——`sync`（默认）走 `request_tool_call` 在当前轮内通过 `call_tool` 同步执行并返回结果；`async` 走 `send_tool_call_message` 派发消息，结果在下一轮 awaken 送达。Agent 不直接调用这两个 internal 工具。
 

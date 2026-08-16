@@ -17,7 +17,7 @@ source_files:
   - src/pkg/storage/fts5.rs
   - .sqlx/query-*.json
   - docs/design/sqlx_guide.md
-  - docs/plan/Query接口分页与List接口简化重构.md
+  - docs/archive/plan-archive/Query接口分页与List接口简化重构.md
   - docs/wiki/zh/content/核心模块/存储系统/存储架构设计.md
   - docs/wiki/zh/content/基础设施/存储系统/存储系统.md
   - docs/wiki/zh/content/开发指南.md
@@ -37,7 +37,7 @@ source_files:
 | [dao/task/sqlite.rs](src/service/dao/task/sqlite.rs) | Task DAO SQLite 实现 | INSERT 用双引号包裹关键字 `"status"` `"assignee_type"`；枚举字段 INSERT 时转 `as i32`；sqlx::query! 占位符 `?` 与参数严格对齐 |
 | [sqlx_guide.md](docs/design/sqlx_guide.md) | SQLx 开发规范手册 | STRICT 开启原因 + 坑点；枚举常见错误排查表；FTS5 trigram 中文 3 字符限制；.sqlx 缓存必须纳入 git 版本控制 |
 | [pkg/storage/fts5.rs](src/pkg/storage/fts5.rs) | FTS5 关键词转义工具 | `escape_fts5_keyword` 函数（短语匹配 + 内部双引号双写转义）；DAO 层统一从 storage 导入，禁止跨 DAO 互相引用 |
-| [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) | 查询重构 Plan 快照 | COUNT 与 LIST 复用 push_query_filters 约定；QueryBuilder 动态 WHERE 条件构建模式 |
+| [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) | 查询重构 Plan 快照 | COUNT 与 LIST 复用 push_query_filters 约定；QueryBuilder 动态 WHERE 条件构建模式 |
 
 ## §3 架构与约定
 

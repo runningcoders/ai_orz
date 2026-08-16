@@ -1,4 +1,4 @@
-📦 归档标记（2026-08-16）：被 [docs/plan/文档链接统一与DocLinkClassifier工具链.md](docs/plan/文档链接统一与DocLinkClassifier工具链.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/plan/文档链接统一与DocLinkClassifier工具链.md](docs/plan/文档链接统一与DocLinkClassifier工具链.md)
+📦 归档标记（2026-08-16）：被 [docs/archive/plan-archive/文档链接统一与DocLinkClassifier工具链.md](docs/archive/plan-archive/文档链接统一与DocLinkClassifier工具链.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/archive/plan-archive/文档链接统一与DocLinkClassifier工具链.md](docs/archive/plan-archive/文档链接统一与DocLinkClassifier工具链.md)
 
 ---
 
@@ -147,7 +147,7 @@ impl DocLinkClassifier {
         }
         if lower.starts_with("docs/design/") {
             DocLinkTarget::DesignDoc { path: clean.into_owned() }
-        } else if lower.starts_with("docs/plan/") {
+        } else if lower.starts_with("docs/archive/plan-archive/") {
             DocLinkTarget::PlanDoc { path: clean.into_owned() }
         } else if lower.starts_with("docs/wiki/zh/content/") {
             let slug = clean["docs/wiki/zh/content/".len()..]
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn t09_plan_doc() {
-        assert!(matches!(DocLinkClassifier::classify("docs/plan/日志管理重构.md"),
+        assert!(matches!(DocLinkClassifier::classify("docs/archive/plan-archive/日志管理重构.md"),
             DocLinkTarget::PlanDoc { .. }));
     }
 

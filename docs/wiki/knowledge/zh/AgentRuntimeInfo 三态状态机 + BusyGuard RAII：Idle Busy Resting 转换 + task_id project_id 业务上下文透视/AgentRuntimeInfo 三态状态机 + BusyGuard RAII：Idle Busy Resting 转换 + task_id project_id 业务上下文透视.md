@@ -25,8 +25,8 @@ source_files:
   - common/src/enums/agent_runtime_state.rs:Ln-Lm（AgentRuntimeState enum { Idle, Busy, Resting } + #[repr(i32)] + #[derive(sqlx::Type)] + is_unavailable() → Busy || Resting，true 表示不可再接受新消息；默认 Frontend API 序列化用 "idle"/"busy"/"resting" 字符串）
   - docs/design/runtime_design.md
   - docs/design/thinking_task_policy_engine_design.md
-  - docs/plan/运行时问题修复.md（核心修复项：BusyGuard RAII 防状态泄漏 + try_set_busy CAS 修复 TOCTOU）
-  - docs/plan/唤醒上下文与睡眠约束.md（ThinkingOptions task_id/project_id 注入 = 业务上下文的源头）
+  - docs/archive/plan-archive/运行时问题修复.md（核心修复项：BusyGuard RAII 防状态泄漏 + try_set_busy CAS 修复 TOCTOU）
+  - docs/archive/plan-archive/唤醒上下文与睡眠约束.md（ThinkingOptions task_id/project_id 注入 = 业务上下文的源头）
   - docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
   - docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/消息消费者.md

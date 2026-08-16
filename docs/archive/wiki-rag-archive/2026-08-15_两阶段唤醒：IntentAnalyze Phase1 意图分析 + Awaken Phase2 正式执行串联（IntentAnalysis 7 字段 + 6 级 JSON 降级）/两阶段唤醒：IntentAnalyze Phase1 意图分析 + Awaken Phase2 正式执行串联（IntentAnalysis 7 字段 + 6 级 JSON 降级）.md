@@ -23,10 +23,10 @@ source_files:
   - src/service/dal/agent.rs#L1667-L1715（单元测试 build_intent_analyze_prompt_contains_sop_and_schema：包含阶段一标题 + 7 字段名 + INTENT_ANALYSIS_START 锚点）
   - src/service/domain/runtime/awakening.rs#L1322-L1355（单元测试 thinking_scene_tool_whitelist：IntentAnalyze 允许 neural/search tags、禁止 messaging/shell tags）
   - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md:Ln-Lm（TEMPLATE_COMMUNICATION 默认沟通技能末尾追加「理解用户消息 SOP」完整一章：五步走 + 澄清判断原则）
-  - docs/design/intent_aware_two_stage_awaken_design.md
+  - docs/archive/design-archive/intent_aware_two_stage_awaken_design.md
   - docs/design/runtime_design.md
-  - docs/plan/唤醒上下文与睡眠约束.md（ThinkingOptions 统一选项 + PromptBuilder 公共方法复用 + 场景工具白名单过滤）
-  - docs/plan/运行时问题修复.md（阶段 1 可用性修复：AOP queue ack/nack + BusyGuard RAII + try_set_busy CAS 语义）
+  - docs/archive/plan-archive/唤醒上下文与睡眠约束.md（ThinkingOptions 统一选项 + PromptBuilder 公共方法复用 + 场景工具白名单过滤）
+  - docs/archive/plan-archive/运行时问题修复.md（阶段 1 可用性修复：AOP queue ack/nack + BusyGuard RAII + try_set_busy CAS 语义）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
   - docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/Agent 循环消费者.md
@@ -89,7 +89,7 @@ source_files:
 | [common enums ThinkingScene](/common/src/enums)（对应文件）| ThinkingScene::IntentAnalyze 变体 + is_tool_allowed() 白名单 | ThinkingScene enum；is_tool_allowed(&[tag]) 白名单判定 |
 | [runtime/mod.rs](/src/service/domain/runtime/mod.rs) | RuntimeAwakening trait 第 4 方法签名 | analyze_input_intent 方法 + 典型调用方注释 |
 | [TEMPLATE_COMMUNICATION/skill.md](/src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) | 方案 B 沟通技能末尾追加章节 | 末尾「理解用户消息 SOP」完整一章（五步 + 澄清判断） |
-| 【① Design 1】intent_aware_two_stage_awaken_design.md | 为什么方案 A+（两阶段串联+7 字段 JSON）而非方案 B-only；澄清短路为什么暂不启用 | docs/design/intent_aware_two_stage_awaken_design.md |
+| 【① Design 1】intent_aware_two_stage_awaken_design.md | 为什么方案 A+（两阶段串联+7 字段 JSON）而非方案 B-only；澄清短路为什么暂不启用 | docs/archive/design-archive/intent_aware_two_stage_awaken_design.md |
 | 【① Design 2】runtime_design.md v3.8 节 | awaken 整体流程架构：wake_brain → Phase1 IA → Phase2 执行 → 压缩循环 → Summary 沉淀 | docs/design/runtime_design.md |
 | 【③ Wiki 长文 1】运行时领域.md | awaken 子流程说明 | docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md |
 | 【③ Wiki 长文 2】Runtime 领域编排.md | Domain 层四方法编排入口（wake/awaken/sleep/analyze）| docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md |

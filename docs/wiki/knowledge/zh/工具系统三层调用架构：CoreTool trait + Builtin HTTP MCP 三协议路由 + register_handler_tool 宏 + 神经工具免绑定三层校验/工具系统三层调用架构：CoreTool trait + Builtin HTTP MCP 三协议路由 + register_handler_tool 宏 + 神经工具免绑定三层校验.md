@@ -20,14 +20,14 @@ source_files:
   - src/service/domain/finance/tool_provider.rs#L1-L80 (Finance Domain ToolProvider：Builtin/HTTP/MCP 三协议路由 + tag=neural 免绑定 / tag=internal 加载过滤 两层)
   - src/handlers/finance/tool/create_http_tool.rs#L1-L40 (HTTP 工具创建：create_form method 白名单 GET/POST + 端点 URL 校验 + header 安全注入)
   - ai-orz-macros/src/register_handler_tool.rs (register_handler_tool! 过程宏：把 Handler 函数包装成 register_tool CallableTool；参数结构自动→JSON Schema)
-  - docs/design/tool_design.md（§三层调用架构职责表 + §工具包 tag 免绑定三层校验 + §CoreTool trait 扁平化演进）
-  - docs/design/mcp_tool_design.md（§MCP 服务器启动幂等 + §描述符 JSON 缓存 + §run_mcp 参数 schema）
-  - docs/design/builtins_http_tool_design.md（§create_form method 白名单 GET/POST + §header 禁止 Authorization Cookie 穿透）
-  - docs/design/generic_builtin_tools_design.md（§4 个通用内置工具参数规范 + §文件读写范围校验 §shell_exec 命令黑名单）
-  - docs/design/handler-tool-registration-macro.md（§register_handler_tool! 6 步宏展开 + §CallableTool trait 契约）
-  - docs/plan/进程管理与shell_exec修复.md（§shell_exec 白名单 + 进程双暴露 shell_list HTTP+ToolCall）
-  - docs/plan/前端工具与进程管理.md（§前端工具管理页面：HTTP/MCP/Builtin 三 Tab 维护）
-  - docs/plan/移除rig依赖与向量存储后端解耦.md（§ToolCallDao.call_manual→execute 重命名 + BrainDal→CortexDaoRegistry 扁平化）
+  - docs/archive/design-archive/tool_design.md（§三层调用架构职责表 + §工具包 tag 免绑定三层校验 + §CoreTool trait 扁平化演进）
+  - docs/archive/design-archive/mcp_tool_design.md（§MCP 服务器启动幂等 + §描述符 JSON 缓存 + §run_mcp 参数 schema）
+  - docs/archive/design-archive/builtins_http_tool_design.md（§create_form method 白名单 GET/POST + §header 禁止 Authorization Cookie 穿透）
+  - docs/archive/design-archive/generic_builtin_tools_design.md（§4 个通用内置工具参数规范 + §文件读写范围校验 §shell_exec 命令黑名单）
+  - docs/archive/design-archive/handler-tool-registration-macro.md（§register_handler_tool! 6 步宏展开 + §CallableTool trait 契约）
+  - docs/archive/plan-archive/进程管理与shell_exec修复.md（§shell_exec 白名单 + 进程双暴露 shell_list HTTP+ToolCall）
+  - docs/archive/plan-archive/前端工具与进程管理.md（§前端工具管理页面：HTTP/MCP/Builtin 三 Tab 维护）
+  - docs/archive/plan-archive/移除rig依赖与向量存储后端解耦.md（§ToolCallDao.call_manual→execute 重命名 + BrainDal→CortexDaoRegistry 扁平化）
   - docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md（工具系统全景：注册→分组→执行→统计四步用户故事）
   - docs/wiki/zh/content/项目概述/核心功能特性/统一工具调用架构/统一工具调用架构.md（Builtin/HTTP/MCP 三协议路由说明 + 工具包 tag 分组机制）
   - docs/wiki/zh/content/功能模块/工具生态系统/工具注册与发现.md（CoreTool trait 契约 + 注册表单例加载流程）
@@ -61,7 +61,7 @@ source_files:
 | ai-orz-macros register_handler_tool.rs | Handler 转神经工具宏 | `#[register_handler_tool(name="install_skill_pack", description="按 tag 安装技能包")]` 自动生成 CallableTool 的 name/description + 参数结构转 JSON Schema；宏展开 6 步见 handler-tool-registration-macro 设计文档 | 见宏过程定义 |
 
 **章节来源**
-- [tool_design.md:L30-L70](docs/design/tool_design.md#L30-L70)
+- [tool_design.md:L30-L70](docs/archive/design-archive/tool_design.md#L30-L70)
 - [impl.rs:L1-L120](src/service/dao/tool_call/impl.rs#L1-L120)
 - [tool_provider.rs:L1-L80](src/service/domain/finance/tool_provider.rs#L1-L80)
 

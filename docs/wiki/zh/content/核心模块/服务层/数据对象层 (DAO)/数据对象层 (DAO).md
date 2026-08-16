@@ -15,12 +15,12 @@
 - [common/src/error/mod.rs](common/src/error/mod.rs)
 ### 本文关联的三类文档（四类互引闭环）
 #### ① Design 决策快照
-- [entity_list_query_search_design.md](docs/design/entity_list_query_search_design.md) — DAO 层 push_query_filters 模式金标准 + query/list/count/search 四方法签名统一模式
+- [entity_list_query_search_design.md](docs/archive/design-archive/entity_list_query_search_design.md) — DAO 层 push_query_filters 模式金标准 + query/list/count/search 四方法签名统一模式
 - [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — DAO 层 push_query_filters 提取要求 + COUNT 与 LIST 复用 WHERE
 - [sqlx_guide.md](docs/design/sqlx_guide.md) — SQLite STRICT 表 + 枚举 as 标注三要素 + 软删除 status=0 过滤约定
 #### ② Plan 落地快照
-- [批量查询与通用Query接口增强重构.md](docs/plan/批量查询与通用Query接口增强重构.md) — 13 域 DAO 改造清单 + push_query_filters 提取模式 + COUNT 与 LIST 100% 共享 WHERE
-- [Query接口分页与List接口简化重构.md](docs/plan/Query接口分页与List接口简化重构.md) — 新增 DAO 模板（STRICT 表→PO→trait→push_query_filters→query/list/count→trait 注册→DAL→Domain→Handler）
+- [批量查询与通用Query接口增强重构.md](docs/archive/plan-archive/批量查询与通用Query接口增强重构.md) — 13 域 DAO 改造清单 + push_query_filters 提取模式 + COUNT 与 LIST 100% 共享 WHERE
+- [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — 新增 DAO 模板（STRICT 表→PO→trait→push_query_filters→query/list/count→trait 注册→DAL→Domain→Handler）
 #### ④ RAG 原子知识卡
 - [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — 10 条硬约束（禁止 list 独立拼 WHERE / 禁止独立 count_by_xxx / PagedResult total 必须来自 COUNT 查询）
 - [SQLite + SQLx 0.8 存储工程规范：STRICT 表模式 + FTS5 全文检索 + 枚举 i32 类型安全 + .sqlx 离线构建 + sqlx::test 隔离](docs/wiki/knowledge/zh/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB/SQLite%20+%20SQLx%200.8%20%E5%AD%98%E5%82%A8%E5%B7%A5%E7%A8%8B%E8%A7%84%E8%8C%83%EF%BC%9ASTRICT%20%E8%A1%A8%E6%A8%A1%E5%BC%8F%20+%20FTS5%20%E5%85%A8%E6%96%87%E6%A3%80%E7%B4%A2%20+%20%E6%9E%9A%E4%B8%BE%20i32%20%E7%B1%BB%E5%9E%8B%E5%AE%89%E5%85%A8%20+%20.sqlx%20%E7%A6%BB%E7%BA%BF%E6%9E%84%E5%BB%BA%20+%20sqlx%3A%3Atest%20%E9%9A%94%E7%A6%BB.md) — §3 查询三要素一致（STRICT 表 + status 转义 + 枚举 as）+ §红线 5 COUNT 与 LIST push_query_filters 必须同一函数

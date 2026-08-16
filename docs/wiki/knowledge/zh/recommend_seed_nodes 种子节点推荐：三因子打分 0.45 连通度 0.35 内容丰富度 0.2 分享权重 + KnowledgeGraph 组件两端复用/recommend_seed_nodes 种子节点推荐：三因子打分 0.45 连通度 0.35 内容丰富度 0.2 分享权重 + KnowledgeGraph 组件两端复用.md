@@ -17,8 +17,8 @@ source_files:
   - frontend/src/pages/hr/agent_detail.rs#L1090-L1120 (Agent 详情页 Tab5：内嵌 KnowledgeGraph { agent_id: Some(current_agent_id.clone()) } —— 证明「组件两端复用」生效)
   - common/src/api/memory.rs (RecommendSeedNodesParams / RecommendedSeedNode { node, score, reasons: Vec<String> }：reasons 数组给前端展示「为什么推荐这个节点」)
   - frontend/src/components/graph_canvas/knowledge_graph_canvas.rs (画布渲染子组件：接收 nodes + edges + levels，Dioxus 独立 state，与推荐逻辑完全解耦)
-  - docs/plan/知识图谱推荐起点与组件复用重构.md（完整 7 章：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义）
-  - docs/design/memory_search_enhancement_design.md（§1 决策表 扩展；§3 涉及文件清单包含前端知识图谱页面）
+  - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md（完整 7 章：度数统计 + 前端组件拆分 HrKnowledgeGraph vs KnowledgeGraph 两端复用 + agent_id Option 语义）
+  - docs/archive/design-archive/memory_search_enhancement_design.md（§1 决策表 扩展；§3 涉及文件清单包含前端知识图谱页面）
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Design 路径 design/seed_node_recommendation_and_component_reuse.md → 目前只有 Plan，后续需补齐决策表与红线）
   - docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md（种子节点推荐面板：reasons 列展示每个节点的推荐原因 + 点击按钮后跳画布定位节点）
   - docs/wiki/zh/content/架构设计/记忆系统架构.md（§图谱可视化子系统：推荐起点 + 画布渲染 + 链式探索三段）

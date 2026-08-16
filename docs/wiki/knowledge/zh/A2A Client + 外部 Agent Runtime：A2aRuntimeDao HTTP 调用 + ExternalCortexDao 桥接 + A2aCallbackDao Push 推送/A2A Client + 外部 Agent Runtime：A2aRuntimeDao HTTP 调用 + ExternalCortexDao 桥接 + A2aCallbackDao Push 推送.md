@@ -16,7 +16,7 @@ source_files:
   - src/service/dal/agent_a2a.rs:Ln-Lm（A2aAgentDal 委托 Arc<dyn AgentDal>；不重写 prompt_builder，DefaultPromptBuilder 走 trait 默认方法）
   - src/service/dao/a2a_callback/http.rs:Ln-Lm（A2aCallbackDaoHttpImpl：Push 时查 scope_project 全量消息列表 + 组装 A2aMessages → POST webhook_url；test_connection 发 ping）
   - src/models/agent.rs:Ln-Lm（ExternalAgentConfig 枚举：Cli{command,args,work_dir,env,timeout,prompt_template} / Remote{endpoint,agent_name,auth_token,timeout}）
-  - docs/design/a2a_server_architecture_design.md
+  - docs/archive/design-archive/a2a_server_architecture_design.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md
   - docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md
@@ -55,7 +55,7 @@ source_files:
 | [dal/agent_a2a.rs](src/service/dal/agent_a2a.rs) | A2aAgentDal 委托 | struct A2aAgentDal { base: Arc<dyn AgentDal> }；impl AgentDal 全方法委托 base；未重写 prompt_builder（Default）|
 | [dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs) | A2aCallbackDao HTTP Push | push(ctx, message, channel, options)：查项目消息 → 映射 A2aMessages → POST webhook_url；OnceLock 单例 + factory methods |
 | [models/agent.rs](src/models/agent.rs) | ExternalAgentConfig 枚举 | Cli / Remote 变体；与 runtime dao 1:1 对应 |
-| 【① Design】a2a_server_architecture_design.md §二 ExternalCortexDao 桥接 | 为什么要桥接成 CortexDao（统一 think 链路、不侵入内部 brain）| docs/design/a2a_server_architecture_design.md |
+| 【① Design】a2a_server_architecture_design.md §二 ExternalCortexDao 桥接 | 为什么要桥接成 CortexDao（统一 think 链路、不侵入内部 brain）| docs/archive/design-archive/a2a_server_architecture_design.md |
 | 【③ Wiki 长文 1】AI Agent 管理.md §外部 Agent | 外部 Agent 配置字段含义 + 创建流程 | docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md |
 | 【③ Wiki 长文 2】Agent 实体.md §ExternalAgentConfig | PO 模型字段说明 | docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md |
 | 【平行卡 1】协议层 | DTO 类型定义 | docs/wiki/knowledge/zh/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息.md |

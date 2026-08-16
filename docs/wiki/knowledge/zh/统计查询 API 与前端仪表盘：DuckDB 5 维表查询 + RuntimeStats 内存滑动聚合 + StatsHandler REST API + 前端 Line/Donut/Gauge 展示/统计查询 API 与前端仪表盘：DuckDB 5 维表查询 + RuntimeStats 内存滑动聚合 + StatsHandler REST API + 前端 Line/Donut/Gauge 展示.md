@@ -17,9 +17,9 @@ source_files:
   - src/service/dao/model_provider/stats_duckdb.rs
   - src/service/dal/stats.rs
   - frontend/src/components
-  - docs/design/stats_module_design.md
-  - docs/design/stats_query_design.md
-  - docs/plan/统计图表Phase1基础设施与时序图展示重构.md
+  - docs/archive/design-archive/stats_module_design.md
+  - docs/archive/design-archive/stats_query_design.md
+  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
   - docs/wiki/zh/content/基础设施/AOP 事件系统/统计与监控.md
   - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md
   - docs/wiki/zh/content/功能模块/系统管理/系统监控与健康检查.md
@@ -36,9 +36,9 @@ source_files:
 | [pkg/stats/mod.rs](src/pkg/stats/mod.rs) | Stats 顶层（DuckDB 持久化版） | `Stats::open()` + `batch_size` 批量写入；`record_event!` 宏三种模式（自动表/结构体/显式表）；global_stats() 无 ctx 单例访问；5 张专用表：default_events/model_call_events/tool_call_events/agent_awake_events/project_events/task_events |
 | [pkg/stats/runtime/mod.rs](src/pkg/stats/runtime/mod.rs) | RuntimeStatsCollector 内存版 | WINDOW_MINUTES=60 滑动窗口；泛型 K 维度键（Clone+Eq+Hash+Send+Sync）；record(key, Option<duration>)：None 只计数 Some 计数+累计耗时；snapshot() 深拷贝返回 RuntimeStatsSnapshot + buckets 升序桶 + total_counts 全生命周期；evict_old_buckets 每分钟淘汰 |
 | [handlers/system/aop_stats.rs](src/handlers/system/aop_stats.rs) | AOP 实时统计 HTTP 接口 | 3 端点：GET overview（5 指标 total_published/consumed/success/failed/avg_duration_ms）；GET time-series（event_kind/consumer_name/status 过滤 + bucket 聚合）；GET distribution（group_by=event_kind/consumer_name/status + status 过滤） |
-| [stats_module_design.md](docs/design/stats_module_design.md) | Stats 双层互补框架设计 | StatEvent + StatTable 双 trait；专用表 is_dedicated_table() + column_sql()/metric_sql() 表自描述；query_aggregation 通用聚合；query_time_series 时序；双路径选型铁律表 |
-| [stats_query_design.md](docs/design/stats_query_design.md) | 统计查询 Domain 层设计 | 5 Stats DAO 全实体覆盖：Agent/Project/Task/Tool/ModelProvider；StatsFetchOptions 按需动态注入模式（列表默认不加载，详情页按需开）；DAL 层统一 get_stats(id, options) + get_model_call_stats(id, options) |
-| [统计图表Phase1基础设施与时序图展示重构.md](docs/plan/统计图表Phase1基础设施与时序图展示重构.md) | 统计 Phase1 Plan 快照 | DuckDB 建表 + record_event! 宏自动推断；前端图表组件封装（LineChart/DonutChart/GaugeChart 三组件） |
+| [stats_module_design.md](docs/archive/design-archive/stats_module_design.md) | Stats 双层互补框架设计 | StatEvent + StatTable 双 trait；专用表 is_dedicated_table() + column_sql()/metric_sql() 表自描述；query_aggregation 通用聚合；query_time_series 时序；双路径选型铁律表 |
+| [stats_query_design.md](docs/archive/design-archive/stats_query_design.md) | 统计查询 Domain 层设计 | 5 Stats DAO 全实体覆盖：Agent/Project/Task/Tool/ModelProvider；StatsFetchOptions 按需动态注入模式（列表默认不加载，详情页按需开）；DAL 层统一 get_stats(id, options) + get_model_call_stats(id, options) |
+| [统计图表Phase1基础设施与时序图展示重构.md](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) | 统计 Phase1 Plan 快照 | DuckDB 建表 + record_event! 宏自动推断；前端图表组件封装（LineChart/DonutChart/GaugeChart 三组件） |
 | [多维统计系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md) | 五维度总览 Wiki | Agent/Project/Task/ModelProvider/Tool 五维度统计卡片入口 |
 
 ## §3 架构与约定

@@ -13,7 +13,7 @@ source_files:
   - src/handlers/a2a/send_subscribe.rs:Ln-Lm（tasks/subscribe：SSE 流式订阅任务变更）
   - src/handlers/a2a/callback.rs:Ln-Lm（A2A 外部通知回调：第三方 Server 推送到我方 notification_url 入口）
   - src/router.rs:Ln-Lm（公开路由：/.well-known/agent.json、/a2a POST、/a2a/subscribe SSE、/a2a/callback — 无 JWT 鉴权）
-  - docs/design/a2a_server_architecture_design.md
+  - docs/archive/design-archive/a2a_server_architecture_design.md
   - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/API 参考/API 参考.md
   - docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md
@@ -46,7 +46,7 @@ A2A 协议是**面向外部第三方 Agent 系统**的公开接入面，所有 H
 | [handlers/a2a/callback.rs](src/handlers/a2a/callback.rs) | 入站回调（第三方推过来）| HMAC X-A2A-Signature 校验 → 解析 A2aTask → 更新内部 task；401 拒绝伪造回调 |
 | [handlers/a2a/agent_card.rs](src/handlers/a2a/agent_card.rs) | /.well-known/agent.json 发现 | 公开静态 JSON；**无任何鉴权、无 DB 读**（直接从组织配置拼装）|
 | [router.rs](src/router.rs) | 公开路由分组 | `/a2a` POST、`/a2a/subscribe` GET SSE、`/.well-known/agent.json` GET、`/a2a/callback` POST — 统一挂载在公开路由组（不经过 JWT middleware）|
-| 【① Design】a2a_server_architecture_design.md §三 Handler 架构 | 无鉴权路由设计 + 幂等语义 | docs/design/a2a_server_architecture_design.md |
+| 【① Design】a2a_server_architecture_design.md §三 Handler 架构 | 无鉴权路由设计 + 幂等语义 | docs/archive/design-archive/a2a_server_architecture_design.md |
 | 【③ Wiki 长文】API 参考.md §A2A 协议接口时序图 | tasks/send→working→notification Push / 30s tasks/get 兜底双重时序 | docs/wiki/zh/content/API 参考/API 参考.md |
 | 【平行卡 1】协议层 | AgentCard/JsonRpc/A2aTask 定义 | docs/wiki/knowledge/zh/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息/A2A%20协议层：AgentCard%20发现%20+%20JSON-RPC%202.0%20+%20A2aTask%20任务状态机%20+%20A2aMessage%20双向消息.md |
 | 【平行卡 2】A2A Client + 外部 Agent Runtime | A2aRuntimeDao 出站调用 | docs/wiki/knowledge/zh/A2A%20Client%20+%20外部%20Agent%20Runtime：A2aRuntimeDao%20HTTP%20调用%20+%20ExternalCortexDao%20桥接%20+%20A2aCallbackDao%20Push%20推送/A2A%20Client%20+%20外部%20Agent%20Runtime：A2aRuntimeDao%20HTTP%20调用%20+%20ExternalCortexDao%20桥接%20+%20A2aCallbackDao%20Push%20推送.md |

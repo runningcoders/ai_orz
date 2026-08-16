@@ -1,0 +1,234 @@
+# 组织初始化与用户认证模块设计文档
+
+> 📦 归档标记（2026-08-16）：归档冻结。保留原因：organization_design 设计文档归档冻结，设计决策已沉淀至 wiki 长文。生效方案：见源码和 wiki 长文。
+
+> 关联文档：
+> - [AGENTS.md](../../AGENTS.md) — 整体分层架构
+> - [api_protocol_convention.md](./api_protocol_convention.md) — HTTP 接口协议与返回格式约定
+> - [common-error-type.md](./common-error-type.md) — 统一错误码与用户可见错误规范
+> - 【② Plan 落地】[用户偏好双源设计.md](../plan/用户偏好双源设计.md) — 自报偏好 + 推断偏好 双源合并逻辑
+> - 【② Plan 落地】[调用者类型上下文.md](../plan/调用者类型上下文.md) — caller_type User/Agent/System 三枚举
+> - 【② Plan 落地】[身份凭证Domain统一CRUD重构.md](../plan/身份凭证Domain统一CRUD重构.md) — 凭证 AES256-GCM 加密
+> - 【③ Wiki 长文】[用户与组织管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户与组织管理.md) — 全景：初始化→创建组织→邀请成员→分配角色→配置偏好
+> - 【③ Wiki 长文】[组织管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/组织管理.md) — 多级组织架构树 + root_org_id 级联
+> - 【③ Wiki 长文】[用户认证与授权.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户认证与授权.md) — JWT Cookie+Bearer 双模式
+> - 【③ Wiki 长文】[用户管理.md](docs/wiki/zh/content/功能模块/用户与组织管理/用户管理.md) — 用户列表 + 角色分配 + 偏好配置 UI
+> - 【④ RAG 卡】[组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步](docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步/组织权限与用户偏好：Organization多级%20+%20UserRole并查集继承%20+%20JWT双模式%20+%20偏好双源沉淀%20+%20Agent入职五步.md) — §UserRole 并查集规则 §JWT双模式 §偏好双源冲突 §7 条红线
+
+## 模块概述
+
+本模块实现了系统初始化功能，支持首次启动从零创建第一个组织和超级管理员用户，同时提供完整的组织管理和用户管理 HTTP API。
+
+## 架构设计
+
+### 整体分层架构（对齐项目现有模式）
+
+```
+handler → domain → dal → dao → sqlite
+```
+
+| 层级 | 职责 |
+|------|------|
+| **handler** | HTTP 接口层，按功能分组：`organization/organization/` 组织管理接口、`organization/user/` 用户管理接口 |
+| **domain** | 业务逻辑层，定义 `OrganizationDomain` trait，包含 `OrganizationManage` 和 `UserManage` 两个子 trait |
+| **dal** | 数据访问层，封装数据库访问 |
+| **dao** | 数据访问对象层，sqlite 具体实现 |
+
+### 目录结构
+
+#### handler 层（按功能二次分组）
+
+```
+src/handlers/organization/
+├── initialize_system.rs        # 系统初始化（顶层独立）
+├── organization/              # 组织管理分组
+│   ├── mod.rs
+│   ├── delete_organization.rs  # 删除组织
+│   ├── get_organization.rs     # 获取组织信息
+│   ├── list_organizations.rs   # 获取组织列表
+│   └── update_organization.rs  # 更新组织
+├── user/                      # 用户管理分组
+│   ├── mod.rs
+│   ├── create_user.rs          # 创建新用户
+│   ├── delete_user.rs          # 删除用户
+│   ├── get_user_by_username.rs  # 根据用户名查询用户（登录用）
+│   ├── list_users_by_organization.rs  # 根据组织查询用户列表
+│   └── update_user.rs         # 更新用户信息
+└── mod.rs                     # 顶层导出
+```
+
+#### domain 层
+
+```
+src/service/domain/organization/
+├── mod.rs      # 顶层 trait 定义 + 单例 + init
+├── org.rs       # 组织管理 trait 实现
+└── user.rs     # 用户管理 trait 实现
+```
+
+#### dal 层
+
+```
+src/service/dal/
+└── organization.rs  # OrganizationDal 实现
+```
+
+#### dao 层
+
+```
+src/service/dao/organization/
+├── mod.rs        # trait 定义
+└── sqlite.rs    # sqlite 实现
+
+src/service/dao/user/
+├── mod.rs    # trait 定义
+└── sqlite.rs  # sqlite 实现
+```
+
+## 功能清单
+
+### 系统初始化流程
+
+1. 服务启动
+2. 调用 `domain.organization_manage().check_initialized()` 检查是否已有组织
+3. 如果没有组织 → 前端自动跳转到初始化向导页面
+4. 用户填写：组织名称、描述、超级管理员用户名、bcrypt 加密后的密码、显示名称、邮箱
+5. 后端调用 `initialize_system()` → 自动：
+   - 生成组织 ID
+   - 创建组织记录
+   - 生成用户 ID
+   - 创建超级管理员用户 → 关联 organization_id，角色 = SuperAdmin
+   - 返回 `(organization_id, user_id)` 给前端
+6. 初始化完成 → 前端跳转登录页面
+
+### HTTP API 接口
+
+| 方法 | 路径 | 功能 | Handler 文件 |
+|------|------|------|------|
+| POST | `/api/organization/initialize` | 系统初始化 | `initialize_system.rs` |
+| GET | `/api/organization/{org_id}` | 获取组织信息 | `organization/get_organization.rs` |
+| GET | `/api/organization/list` | 获取组织列表 | `organization/list_organizations.rs` |
+| PUT | `/api/organization/update` | 更新组织信息 | `organization/update_organization.rs` |
+| DELETE | `/api/organization/{org_id}` | 删除组织 | `organization/delete_organization.rs` |
+| POST | `/api/organization/user` | 创建新用户 | `user/create_user.rs` |
+| GET | `/api/organization/user/{username}` | 根据用户名查询用户（登录）| `user/get_user_by_username.rs` |
+| GET | `/api/organization/{org_id}/users` | 获取组织下用户列表 | `user/list_users_by_organization.rs` |
+| PUT | `/api/organization/user/update` | 更新用户信息 | `user/update_user.rs` |
+| DELETE | `/api/organization/user/{user_id}` | 删除用户 | `user/delete_user.rs` |
+
+## 数据模型
+
+### OrganizationPo (组织持久化对象)
+
+```rust
+pub struct OrganizationPo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub deleted: i32,  // 0-未删除, 1-已删除
+}
+```
+
+### UserPo (用户持久化对象)
+
+```rust
+pub struct UserPo {
+    pub id: String,
+    pub organization_id: String,
+    pub username: String,
+    pub password_hash: String,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    pub role: i32,  // 0-SuperAdmin, 1-OrgAdmin, 2-OrgMember
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub deleted: i32,
+}
+```
+
+### UserRole 枚举
+
+定义在 `common/src/enums/user.rs`，与数据库 `users.role` 字段一致（SuperAdmin=0）：
+
+```rust
+#[repr(i32)]
+pub enum UserRole {
+    #[default]
+    SuperAdmin = 0,   // 超级管理员（根节点）
+    Admin = 1,        // 管理员
+    Member = 2,        // 普通成员
+}
+```
+
+**并查集角色继承体系**（上级角色 = 下级角色权限 + 额外权限）：
+
+- `parent()`：`Member → Admin → SuperAdmin`（SuperAdmin 为根，无上级）
+- `has_permission(user_role, min_role)`：从 `min_role` 沿祖先链遍历，路径上包含 `user_role` 则满足
+  - 例：`user=SuperAdmin, min_role=Member` → `Member→Admin→SuperAdmin` ✅ 满足
+  - 例：`user=Member, min_role=Admin` → `Admin→SuperAdmin` ❌ 不满足
+- 路由层用 `require_role_middleware(UserRole::Admin)` 等做最小权限校验，handler 内部可用 `UserRole::has_permission` 二次校验（如备份高危操作要求 SuperAdmin）
+
+> **历史说明**：项目早期曾存在 `common/src/enums/user_role.rs`（命名 `OrgAdmin/OrgMember`，依赖未启用的 `rusqlite` feature）和 `common/src/enums/user.rs`（当前版本）两份定义。前者从未被 `mod.rs` 声明为子模块、签名与调用方不兼容，已于 2026-07-26 删除，UserRole 统一到 `user.rs`。
+
+## 日志模块设计
+
+### 输出配置
+
+| 输出位置 | 说明 | 默认路径 |
+|----------|------|----------|
+| 控制台 | 始终输出，方便开发调试 | - |
+| 文件 | 按日期自动滚动，持久化日志 | `/data/logs` |
+
+### 日志特性
+
+- ✅ 自动创建日志目录（不存在时创建）
+- ✅ 按日期自动轮换，每天新建一个日志文件
+- ✅ 非阻塞写入，不阻塞主线程
+- ✅ 同时输出到控制台和日志文件
+- ✅ 可配置日志根路径（修改 `LOG_ROOT` 常量即可）
+- ✅ 文件名格式：`ai_orz.log.YYYY-MM-DD`
+
+### 日志目录结构
+
+```
+/data/logs/
+├── ai_orz.log.2026-04-08
+├── ai_orz.log.2026-04-07
+├── ai_orz.log.2026-04-06
+└── ...
+```
+
+## 开发日志
+
+### 开发日期
+**2026-04-08**
+
+### 完成功能（开发期落地快照，2026-04-08）
+
+> 本清单为开发期落地记录；落地现状以 [组织与权限 wiki 长文](docs/wiki/zh/content/功能模块/组织与权限/组织与权限架构.md) 与 [UserRole/RAG 知识卡](docs/wiki/knowledge/zh/组织与权限/UserRole 枚举并查集继承体系.md) 为准。
+
+- 数据库表创建 `organizations` + `users`
+- 模型定义 `OrganizationPo` + `UserPo` + `UserRole`
+- DAO 层实现
+- DAL 层实现
+- Domain 层实现（对齐项目现有结构）
+- Handler 层实现（按功能二次分组对齐项目现有结构）
+- 日志模块分离测试代码到独立文件 `logging_test.rs`
+- 添加 `tracing-appender` 依赖实现按日期滚动日志
+- 默认日志路径配置为 `/data/logs`，可配置
+- 自动创建日志目录
+- 编译成功，所有测试通过
+
+### 验证结果
+
+```
+running 30 tests
+test result: ok. 30 passed; 0 failed; 99 warnings emitted;
+```
+
+**✅ 全部测试通过，编译成功，功能完成**
+
+## 作者
+开发: AI Orz 开发团队

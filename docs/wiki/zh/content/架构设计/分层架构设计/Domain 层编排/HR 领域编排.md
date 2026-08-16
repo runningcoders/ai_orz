@@ -401,8 +401,8 @@ HR 领域编排通过清晰的层次划分与严格的业务规则，实现了 A
 
 ### 本文关联的三类文档（四类互引闭环，Batch11 精确对齐）
 #### ① Design 决策快照
-- [skill_system_enhancement_design.md](docs/design/skill_system_enhancement_design.md) — HR 域 Skill + Agent 两子域协作：HrDomain::onboard_agent → install_default_skill_packs（5 套 TEMPLATE）→ SkillDomain.install_skill_pack(tag) 幂等
+- [skill_system_enhancement_design.md](docs/archive/design-archive/skill_system_enhancement_design.md) — HR 域 Skill + Agent 两子域协作：HrDomain::onboard_agent → install_default_skill_packs（5 套 TEMPLATE）→ SkillDomain.install_skill_pack(tag) 幂等
 #### ② Plan 落地快照
-- [Agent管理集成测试.md](docs/plan/Agent管理集成测试.md) — Task 8-9 工具包 + 技能包生命周期集成测试（入职安装 + 幂等重装 + 安装失败降级）
+- [Agent管理集成测试.md](docs/archive/plan-archive/Agent管理集成测试.md) — Task 8-9 工具包 + 技能包生命周期集成测试（入职安装 + 幂等重装 + 安装失败降级）
 #### ④ RAG 原子知识卡
 - [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — §2 锚点速查 HrDomain.skill 操作 + AgentDomain.install_skill_pack 主入口 + §4.2 入职绑定扩展模式

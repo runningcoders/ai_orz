@@ -16,9 +16,9 @@ source_files:
   - src/service/dal/message_channel.rs:Ln-Lm（渠道引用检查）
   - src/pkg/tool_registry/lark_cli.rs:Ln-Lm（clear_cli_config）
   - src/pkg/tool_registry/gh_cli.rs:Ln-Lm（clear_gh_auth）
-  - docs/design/message_channel_design.md
-  - docs/design/lark_cli_integration.md
-  - docs/plan/身份凭证Domain统一CRUD重构.md
+  - docs/archive/design-archive/message_channel_design.md
+  - docs/archive/design-archive/lark_cli_integration.md
+  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
   - docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
 ---
@@ -47,9 +47,9 @@ source_files:
 | [src/pkg/tool_registry/lark_cli.rs](src/pkg/tool_registry/lark_cli.rs) | clear_cli_config(home)：清 HOME 下 lark-cli config | 凭证 update（secret_changed=true）后触发；失败 log_warn 不阻断 |
 | [src/pkg/tool_registry/gh_cli.rs](src/pkg/tool_registry/gh_cli.rs) | clear_gh_auth(home)：清 HOME gh 登录态 | 删除的 GithubToken 是当前活动凭证时触发；失败 log_warn 不阻断 |
 | 【对应 Wiki 长文】身份凭证管理.md | 系统化上下文 §5 Domain 统一 CRUD 小节 | [身份凭证管理](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一%20Domain%20CRUD%20加密存储与生命周期联动）.md) |
-| 【② Plan 定稿】§四 类型分发速查表 + §七 4 步模板 | 新增凭证类型 domain 2 处 match 扩展模板 | docs/plan/身份凭证Domain统一CRUD重构.md |
-| 【① Design 1】message_channel_design.md §4.1 渠道引用拒删 | Conflict 错误来源 | docs/design/message_channel_design.md |
-| 【① Design 2】lark_cli_integration.md §四 WS 移交 + 清 HOME config | 后置联动设计动机 | docs/design/lark_cli_integration.md |
+| 【② Plan 定稿】§四 类型分发速查表 + §七 4 步模板 | 新增凭证类型 domain 2 处 match 扩展模板 | docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md |
+| 【① Design 1】message_channel_design.md §4.1 渠道引用拒删 | Conflict 错误来源 | docs/archive/design-archive/message_channel_design.md |
+| 【① Design 2】lark_cli_integration.md §四 WS 移交 + 清 HOME config | 后置联动设计动机 | docs/archive/design-archive/lark_cli_integration.md |
 | 【平行卡】模型层信息下沉（6 行为方法 + 默认槽位）| 模型层基础能力定义 | docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立/身份凭证模型层信息下沉：CredentialDetail%20行为%20+%20CredentialDetailPatch%20补丁语义%20+%20默认槽位独立.md |
 
 ## §3 架构约定

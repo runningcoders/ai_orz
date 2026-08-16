@@ -22,7 +22,7 @@ source_files:
   - src/handlers/identity_credential/delete_identity_credential.rs#L1-L100
   - src/pkg/encryption.rs#L1-L100
   - common/src/api/identity_credential.rs#L1-L200
-  - docs/plan/身份凭证Domain统一CRUD重构.md
+  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md
   - docs/wiki/zh/content/功能模块/系统管理/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
   - docs/wiki/zh/content/功能模块/外部集成/消息渠道管理.md
   - docs/wiki/zh/content/功能模块/外部集成/飞书集成系统.md
@@ -57,7 +57,7 @@ CredentialDetail 字段下沉（b4f9a560 的关键重构）：之前各集成定
 | 细粒度拆解卡：Domain 层 | 5 类型无关方法 + 2 Command + match kind 分发生命周期副作用 | [身份凭证 Domain 统一 CRUD 卡](docs/wiki/knowledge/zh/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用.md) |
 | 细粒度拆解卡：Handler 层 | 八文件迁移 + DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式 | [身份凭证 Handler 八文件迁移卡](docs/wiki/knowledge/zh/身份凭证%20Handler%20八文件迁移：DTO%20零改动%20+%20CreateCredentialCmd%20构造器%20+%20统一调用方式/身份凭证%20Handler%20八文件迁移：DTO%20零改动%20+%20CreateCredentialCmd%20构造器%20+%20统一调用方式.md) |
 | 【Wiki 长文】身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md | 系统化上下文（§5 详细分析 + §8 Troubleshooting）| [身份凭证管理长文](docs/wiki/zh/content/功能模块/系统管理/身份凭证管理（统一%20Domain%20CRUD%20加密存储与生命周期联动）.md) |
-| 【② Plan】身份凭证 Domain 统一 CRUD 重构.md | 落地 7 章快照 | [docs/plan/身份凭证Domain统一CRUD重构.md](docs/plan/身份凭证Domain统一CRUD重构.md) |
+| 【② Plan】身份凭证 Domain 统一 CRUD 重构.md | 落地 7 章快照 | [docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md](docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md) |
 
 ## §3 架构约定
 

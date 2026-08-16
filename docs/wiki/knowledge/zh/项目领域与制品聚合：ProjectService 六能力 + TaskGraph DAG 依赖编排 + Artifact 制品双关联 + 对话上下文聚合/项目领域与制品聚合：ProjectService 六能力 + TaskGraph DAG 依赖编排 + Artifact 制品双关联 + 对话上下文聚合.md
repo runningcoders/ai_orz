@@ -15,9 +15,9 @@ source_files:
   - src/models/project.rs#L16-L358
   - src/service/dal/project.rs
   - src/handlers/project/mod.rs
-  - docs/design/project_design.md
-  - docs/design/project_management_design.md
-  - docs/plan/项目任务增强.md
+  - docs/archive/design-archive/project_design.md
+  - docs/archive/design-archive/project_management_design.md
+  - docs/archive/plan-archive/项目任务增强.md
   - docs/wiki/zh/content/功能模块/项目管理/项目管理.md
   - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/多 Agent 协作机制.md
   - docs/wiki/zh/content/数据模型/项目和任务模型/制品和附件.md
@@ -37,9 +37,9 @@ source_files:
 | [project/artifact.rs](src/service/domain/project/artifact.rs) | ArtifactManage 产物管理 | 创建三入口（attachment/project-level/task-level）；双关联校验：`validate_project_and_task` 强制 task.project_id == project_id；generated_content 乐观锁 expected_updated_at 冲突 409 |
 | [models/project.rs](src/models/project.rs) | Project 业务实体聚合 | PO 单向持有 + 7 个 Option 按需字段（search_match/stats/model_call_stats/task_graph/artifacts/progress_summary）；`progress_summary_from_tasks` 实时聚合；`to_prompt_summary` 对话上下文摘要 |
 | [dal/project.rs](src/service/dal/project.rs) | ProjectDal 数据业务层 | ProjectFetchOptions 三选项 with_task_graph/with_artifacts/with_progress_summary；纯 PO↔实体转换，Domain 层注入聚合 |
-| [project_design.md](docs/design/project_design.md) | 项目基础实体设计 | projects 表 STRICT 模式；root_user_id 所有权 + owner_agent_id 执行负责人双轨；软删除 status = 0 默认过滤 |
-| [project_management_design.md](docs/design/project_management_design.md) | 项目管理增强设计 | 单向持有链 Project→Task→Artifact；分层边界 DAO(仅 PO)→DAL(转换)→Domain(仅实体)→Handler(实体+DTO)；写操作接收实体，读操作接收 ID |
-| [项目任务增强.md](docs/plan/项目任务增强.md) | 任务增强 Plan 快照 | pkg/utils/graph 零业务约束；按需返回 6 步模板；Artifact 复用 ArtifactDetail DTO 禁建重复结构 |
+| [project_design.md](docs/archive/design-archive/project_design.md) | 项目基础实体设计 | projects 表 STRICT 模式；root_user_id 所有权 + owner_agent_id 执行负责人双轨；软删除 status = 0 默认过滤 |
+| [project_management_design.md](docs/archive/design-archive/project_management_design.md) | 项目管理增强设计 | 单向持有链 Project→Task→Artifact；分层边界 DAO(仅 PO)→DAL(转换)→Domain(仅实体)→Handler(实体+DTO)；写操作接收实体，读操作接收 ID |
+| [项目任务增强.md](docs/archive/plan-archive/项目任务增强.md) | 任务增强 Plan 快照 | pkg/utils/graph 零业务约束；按需返回 6 步模板；Artifact 复用 ArtifactDetail DTO 禁建重复结构 |
 
 ## §3 架构与约定
 
