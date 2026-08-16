@@ -40,6 +40,9 @@ target
 /.idea
 .vscode
 
+# Trae IDE 配置与本地数据（含 skills、settings 等）
+/.trae/
+
 # Qoder CN IDE / Qoder 原所有内容（本地配置、repowiki旧内容）全部忽略；wiki已迁移到 docs/wiki 实目录托管
 /.qoder-cn
 /.qoder
