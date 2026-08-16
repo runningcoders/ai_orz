@@ -129,8 +129,11 @@ cmd_dev() {
     # 说明：后端 host 编译（target/debug/）与 dx 的 wasm 编译
     # （target/wasm32-unknown-unknown/debug/）是不同 target 子目录，cargo build 锁互不阻塞，
     # 仅依赖解析瞬间有 package cache 秒级排队——不存在长持锁问题（已实测验证）。
+    # --interactive=false：禁用 dx 的 TUI。TUI 会开启终端 raw mode（关闭 ISIG），
+    # 导致 Ctrl+C 不再产生 SIGINT、整组进程都收不到信号，脚本 trap 永远不触发而卡死。
+    # 关闭后 Ctrl+C 正常发信号给全组；热重载不受影响（文件监听驱动，与 TUI 无关）。
     # exec：让 FRONTEND_PID 直接指向 dx 进程（否则 kill 到的是子 shell，dx 会变孤儿进程）
-    (cd frontend && exec dx serve) &
+    (cd frontend && exec dx serve --interactive=false) &
     FRONTEND_PID=$!
 
     echo "📦 启动后端开发服务器（冷构建可能需要数分钟）..."
