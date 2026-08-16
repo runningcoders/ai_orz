@@ -6,7 +6,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e serve run
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run
 
 help: ## 显示本帮助
 	@echo "AI Orz 开发命令（详细说明见文件头注释）："
@@ -65,13 +65,25 @@ coverage: ## 覆盖率门禁，FAIL_UNDER 默认 45
 		--ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
 		--fail-under-lines $(FAIL_UNDER)
 
-# ===== 运行 =====
+# ===== 运行 / 编译（路由到 start.sh 与 scripts/，逻辑只有一处）=====
+
+dev: ## 开发模式：后端 cargo run + 前端 dx serve 双服务
+	./start.sh dev
+
+serve: ## 仅启动前端开发服务器（路由 start.sh frontend）
+	./start.sh frontend
+
+run: ## 仅启动后端开发服务器（路由 start.sh backend）
+	./start.sh backend
+
+build: ## 全量 release 编译：前端 dist/ + 后端二进制（= CI release 口径）
+	./start.sh build
+
+build-fe: ## 仅编译前端 release 并复制产物到 dist/（路由 scripts/build_frontend.sh）
+	./scripts/build_frontend.sh
+
+prod: ## 生产模式：编译 release 并运行生产二进制（0.0.0.0:3000）
+	./start.sh prod
 
 e2e: ## Playwright E2E（仅本地，已移出 CI）
 	cd e2e && npx playwright test
-
-serve: ## 启动前端开发服务器（dx serve）
-	cd frontend && dx serve
-
-run: ## 启动后端服务
-	cargo run
