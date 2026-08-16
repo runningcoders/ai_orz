@@ -124,25 +124,28 @@ cmd_dev() {
     }
     trap cleanup INT TERM
 
-    echo "📦 启动后端开发服务器（先编译后运行，冷构建可能需要数分钟）..."
-    cargo run &
-    BACKEND_PID=$!
-
     echo "🎨 启动前端开发服务器（WASM 编译中）..."
+    # 前端先启动：wasm 编译快（8-16s），先拿到 target 构建锁让页面尽快就绪；
+    # 若后端先启动，冷构建会持锁数分钟，dx serve 的 wasm build 排队等锁，
+    # 浏览器会一直停在 building 占位页（后端与前端共用 workspace target 目录，cargo 锁互斥）
     # exec：让 FRONTEND_PID 直接指向 dx 进程（否则 kill 到的是子 shell，dx 会变孤儿进程）
     (cd frontend && exec dx serve) &
     FRONTEND_PID=$!
+
+    echo "📦 启动后端开发服务器（冷构建可能需要数分钟，会排队等前端释放构建锁）..."
+    cargo run &
+    BACKEND_PID=$!
 
     echo ""
     echo "⏳ 等待服务就绪，编译日志会持续输出（属正常现象，勿关闭窗口）..."
     echo ""
 
-    if wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
-        echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
-    fi
-    if [ "$INT_RECEIVED" != "1" ] && wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
+    if wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
         echo "${GREEN}✅ 前端就绪${NC}: ${BLUE}http://localhost:8080${NC}"
         echo "   （浏览器若仍显示编译页，等 WASM 编译完成会自动刷新）"
+    fi
+    if [ "$INT_RECEIVED" != "1" ] && wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
+        echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
     fi
 
     echo ""
