@@ -1,0 +1,13 @@
+# 项目级 cargo 配置（仅作用于本仓库，随 git 提交对全队生效）
+
+[target.wasm32-unknown-unknown]
+# 前端 WASM 链接不需要 lld，保持默认链接器
+linker = "rust-lld"
+
+[build]
+# 限制并发编译进程数，避免内存被打爆（M 系列芯片日常开发 8 足够）
+jobs = 8
+
+# 注意：cargo 官方目前没有 [cache] auto-clean 配置项。
+# 增量缓存治理依赖 Makefile 的 `make clean-slim`（清理 incremental + 陈旧 deps 快照），
+# 建议每 1-2 周或 target 超过 10GB 时手动执行一次。

@@ -6,7 +6,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim
 
 help: ## 显示本帮助
 	@echo "AI Orz 开发命令（详细说明见文件头注释）："
@@ -64,6 +64,26 @@ coverage: ## 覆盖率门禁，FAIL_UNDER 默认 45
 	cargo llvm-cov report \
 		--ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
 		--fail-under-lines $(FAIL_UNDER)
+
+# ===== 磁盘治理 =====
+
+clean-slim: ## 瘦身 target：清增量缓存+陈旧快照，保留依赖缓存（下次编译仅几十秒）
+	@echo "== 当前 target 体积 =="
+	@du -sh target frontend/target 2>/dev/null || true
+	@echo ""
+	@echo "== 清理增量编译缓存（膨胀主因，可安全删除）=="
+	rm -rf target/debug/incremental target/wasm32-unknown-unknown/debug/incremental \
+		target/wasm32-unknown-unknown/release/incremental 2>/dev/null || true
+	find target -name "*.fingerprint" -type d -name "incremental" -exec rm -rf {} + 2>/dev/null || true
+	@echo "== 清理 30 天未访问的陈旧 deps 快照（带哈希后缀的旧版本）=="
+	find target/debug/deps target/wasm32-unknown-unknown -name "*-[0-9a-f]\{16\}.*" -atime +30 -delete 2>/dev/null || true
+	@echo ""
+	@echo "== 清理后体积 =="
+	@du -sh target frontend/target 2>/dev/null || true
+
+clean: ## 全量清理 target（下次编译为完整冷构建，慎用）
+	cargo clean
+	cd frontend && cargo clean
 
 # ===== 运行 / 编译（路由到 scripts/ 下脚本，逻辑只有一处）=====
 
