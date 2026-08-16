@@ -331,7 +331,10 @@ impl CredentialDetail {
                     verification_token: token_slot,
                 } = self
                 else {
-                    bail_err!(InvalidRequest, "补丁类型与凭证类型不匹配，无法应用飞书凭证补丁");
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用飞书凭证补丁"
+                    );
                 };
                 if let Some(v) = app_id
                     .map(|s| s.trim().to_string())
@@ -360,7 +363,10 @@ impl CredentialDetail {
             }
             CredentialDetailPatch::GithubToken { token } => {
                 let Self::GithubToken { token: token_slot } = self else {
-                    bail_err!(InvalidRequest, "补丁类型与凭证类型不匹配，无法应用 GitHub 凭证补丁");
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用 GitHub 凭证补丁"
+                    );
                 };
                 if let Some(v) = token
                     .map(|s| s.trim().to_string())
@@ -517,9 +523,11 @@ mod tests {
     #[test]
     fn test_resolve_github_credential() {
         // 空 / 仅 Lark 凭证 → None
-        assert!(UserIdentityCredentials::default()
-            .resolve_github_credential()
-            .is_none());
+        assert!(
+            UserIdentityCredentials::default()
+                .resolve_github_credential()
+                .is_none()
+        );
         let lark_only = UserIdentityCredentials {
             items: vec![lark_credential("cred-1", "A")],
             ..Default::default()
@@ -639,7 +647,11 @@ mod tests {
         assert_eq!(app_id, "cli_x", "app_id 非敏感原样保留");
         assert_eq!(app_secret, "enc:s1");
         assert_eq!(encrypt_key.as_deref(), Some("enc:k1"));
-        assert_eq!(verification_token.as_deref(), Some("vt"), "verification_token 非加密字段");
+        assert_eq!(
+            verification_token.as_deref(),
+            Some("vt"),
+            "verification_token 非加密字段"
+        );
 
         // encrypt_key=None 不调用加密器
         let no_key = CredentialDetail::LarkApp {
@@ -656,7 +668,9 @@ mod tests {
         }
         .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
         .unwrap();
-        assert!(matches!(gh_enc, CredentialDetail::GithubToken { ref token } if token == "enc:ghp_x"));
+        assert!(
+            matches!(gh_enc, CredentialDetail::GithubToken { ref token } if token == "enc:ghp_x")
+        );
     }
 
     /// 测试用错误构造（避免测试依赖具体 error 变体）
@@ -680,7 +694,9 @@ mod tests {
         let mut detail = plain_lark_detail();
         let before = detail.clone();
         let impact = detail
-            .apply_patch(CredentialDetailPatch::Unchanged, |s| Ok(format!("enc:{}", s)))
+            .apply_patch(CredentialDetailPatch::Unchanged, |s| {
+                Ok(format!("enc:{}", s))
+            })
             .unwrap();
         assert_eq!(detail, before);
         assert!(!impact.secret_changed);
@@ -740,20 +756,22 @@ mod tests {
     fn test_apply_patch_kind_mismatch_rejected() {
         // github 补丁打到 lark 凭证 → 报错
         let mut detail = plain_lark_detail();
-        assert!(detail
-            .apply_patch(
-                CredentialDetailPatch::GithubToken {
-                    token: Some("t".to_string()),
-                },
-                |s| Ok(s.to_string()),
-            )
-            .is_err());
+        assert!(
+            detail
+                .apply_patch(
+                    CredentialDetailPatch::GithubToken {
+                        token: Some("t".to_string()),
+                    },
+                    |s| Ok(s.to_string()),
+                )
+                .is_err()
+        );
         // lark 补丁打到 github 凭证 → 报错
         let mut gh = CredentialDetail::GithubToken {
             token: "enc:v1:t".to_string(),
         };
-        assert!(gh
-            .apply_patch(
+        assert!(
+            gh.apply_patch(
                 CredentialDetailPatch::LarkApp {
                     app_id: None,
                     app_secret: None,
@@ -762,7 +780,8 @@ mod tests {
                 },
                 |s| Ok(s.to_string()),
             )
-            .is_err());
+            .is_err()
+        );
     }
 
     #[test]
@@ -798,7 +817,10 @@ mod tests {
             .set_default_for(CredentialKind::LarkApp, Some("cred-1".to_string()))
             .unwrap();
         assert_eq!(creds.default_credential_id.as_deref(), Some("cred-1"));
-        assert_eq!(creds.default_github_credential_id, None, "两类型默认互不影响");
+        assert_eq!(
+            creds.default_github_credential_id, None,
+            "两类型默认互不影响"
+        );
         // 设置 github 默认
         creds
             .set_default_for(CredentialKind::GithubToken, Some("gh-1".to_string()))
@@ -824,13 +846,17 @@ mod tests {
             ..Default::default()
         };
         // 不存在 → NotFound
-        assert!(creds
-            .set_default_for(CredentialKind::GithubToken, Some("no-such".to_string()))
-            .is_err());
+        assert!(
+            creds
+                .set_default_for(CredentialKind::GithubToken, Some("no-such".to_string()))
+                .is_err()
+        );
         // 类型不匹配（拿 lark kind 设 github 凭证）→ InvalidRequest
-        assert!(creds
-            .set_default_for(CredentialKind::LarkApp, Some("gh-1".to_string()))
-            .is_err());
+        assert!(
+            creds
+                .set_default_for(CredentialKind::LarkApp, Some("gh-1".to_string()))
+                .is_err()
+        );
     }
 
     #[test]

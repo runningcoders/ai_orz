@@ -24,7 +24,9 @@ pub async fn create_credential(
             &user_id,
             CreateCredentialCmd {
                 name: params.name,
-                detail: CredentialDetail::GithubToken { token: params.token },
+                detail: CredentialDetail::GithubToken {
+                    token: params.token,
+                },
             },
         )
         .await?;

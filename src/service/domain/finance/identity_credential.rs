@@ -103,10 +103,9 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             .unwrap_or_default()
             .to_string();
         let kind = credential.kind;
-        let impact = credential.detail.apply_patch(
-            cmd.patch,
-            |s: &str| crate::pkg::crypto::encrypt_channel_secret(s),
-        )?;
+        let impact = credential.detail.apply_patch(cmd.patch, |s: &str| {
+            crate::pkg::crypto::encrypt_channel_secret(s)
+        })?;
         credential.updated_at = chrono::Utc::now().to_rfc3339();
         let new_primary_id = credential
             .detail
@@ -230,13 +229,26 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         let library = self.load_credential_library(ctx, user_id).await?;
         let default_id = library.default_github_credential_id.clone();
         let mut credentials = Vec::new();
-        for credential in library.items.iter().filter(|c| matches!(c.kind, CredentialKind::GithubToken)) {
+        for credential in library
+            .items
+            .iter()
+            .filter(|c| matches!(c.kind, CredentialKind::GithubToken))
+        {
             let CredentialDetail::GithubToken { token } = &credential.detail else {
                 continue;
             };
             // token 尾号（解密失败按空串处理，不阻断状态聚合）
             let token_tail = crate::pkg::crypto::decrypt_channel_secret(token)
-                .map(|plain| plain.chars().rev().take(4).collect::<String>().chars().rev().collect())
+                .map(|plain| {
+                    plain
+                        .chars()
+                        .rev()
+                        .take(4)
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect()
+                })
                 .unwrap_or_default();
             credentials.push(common::api::GithubCredentialSnapshot {
                 credential_id: credential.id.clone(),

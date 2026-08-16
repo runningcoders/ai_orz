@@ -426,10 +426,7 @@ mod tests {
     #[test]
     fn lark_home_path_is_user_isolated() {
         let home = lark_home(Path::new("/data/.ai_orz"), "user-001");
-        assert_eq!(
-            home,
-            PathBuf::from("/data/.ai_orz/users/user-001")
-        );
+        assert_eq!(home, PathBuf::from("/data/.ai_orz/users/user-001"));
     }
 
     #[test]

@@ -3,9 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
-use common::api::{
-    SetDefaultGithubCredentialRequest, SetDefaultGithubCredentialResponse,
-};
+use common::api::{SetDefaultGithubCredentialRequest, SetDefaultGithubCredentialResponse};
 use common::error::Result;
 use common::models::CredentialKind;
 
@@ -24,7 +22,12 @@ pub async fn set_default_credential(
     };
     domain()
         .identity_credential_manage()
-        .set_default_credential(ctx, &user_id, CredentialKind::GithubToken, target.as_deref())
+        .set_default_credential(
+            ctx,
+            &user_id,
+            CredentialKind::GithubToken,
+            target.as_deref(),
+        )
         .await?;
 
     Ok(SetDefaultGithubCredentialResponse { success: true })

@@ -28,7 +28,10 @@ async fn test_github_integration_status_empty(pool: SqlitePool) {
         .get("credentials")
         .and_then(|v| v.as_array())
         .expect("credentials array");
-    assert!(credentials.is_empty(), "fresh user has no github credentials");
+    assert!(
+        credentials.is_empty(),
+        "fresh user has no github credentials"
+    );
     // 测试 HOME（临时目录）下无 gh 登录态 → 必然未登录
     assert_eq!(
         data.get("auth")
@@ -89,7 +92,10 @@ async fn test_github_credential_crud_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("credentials array");
     assert_eq!(credentials.len(), 2, "should have 2 credentials: {}", body);
-    assert!(!body.to_string().contains(token_plain), "token plaintext must never be echoed");
+    assert!(
+        !body.to_string().contains(token_plain),
+        "token plaintext must never be echoed"
+    );
     let first = &credentials[0];
     assert_eq!(
         first.get("token_tail").and_then(|v| v.as_str()),
@@ -192,7 +198,11 @@ async fn test_github_credential_validation_errors(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    assert!(status.is_client_error(), "empty name should 4xx, got {}", status);
+    assert!(
+        status.is_client_error(),
+        "empty name should 4xx, got {}",
+        status
+    );
 
     // 空 token
     let (status, _) = app
@@ -202,7 +212,11 @@ async fn test_github_credential_validation_errors(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    assert!(status.is_client_error(), "empty token should 4xx, got {}", status);
+    assert!(
+        status.is_client_error(),
+        "empty token should 4xx, got {}",
+        status
+    );
 
     // 删未知凭证
     let (status, _) = app
@@ -211,7 +225,11 @@ async fn test_github_credential_validation_errors(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    assert!(status.is_client_error(), "unknown credential delete should 4xx, got {}", status);
+    assert!(
+        status.is_client_error(),
+        "unknown credential delete should 4xx, got {}",
+        status
+    );
 
     // 默认指向未知凭证
     let (status, _) = app
@@ -221,5 +239,9 @@ async fn test_github_credential_validation_errors(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    assert!(status.is_client_error(), "unknown credential default should 4xx, got {}", status);
+    assert!(
+        status.is_client_error(),
+        "unknown credential default should 4xx, got {}",
+        status
+    );
 }

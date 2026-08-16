@@ -14,7 +14,9 @@ use crate::api::github_integration::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
-use common::api::{CreateGithubCredentialRequest, GithubIntegrationStatusResponse, UpdateGithubCredentialRequest};
+use common::api::{
+    CreateGithubCredentialRequest, GithubIntegrationStatusResponse, UpdateGithubCredentialRequest,
+};
 
 /// GitHub 凭证子区块（嵌入 FinanceIdentity 页面）
 #[component]

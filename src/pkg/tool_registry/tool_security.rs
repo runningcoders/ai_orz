@@ -516,7 +516,11 @@ pub mod fs {
     /// - `{base}/users/{any}/agents/{other}`：用户树内其他 Agent 的工作区
     ///
     /// 用户/系统直接调用（agent_id 为 None）不受限。
-    pub fn crosses_agent_workspace(base_root: &Path, target: &Path, agent_id: Option<&str>) -> bool {
+    pub fn crosses_agent_workspace(
+        base_root: &Path,
+        target: &Path,
+        agent_id: Option<&str>,
+    ) -> bool {
         let Some(current) = agent_id else {
             return false;
         };
@@ -548,11 +552,15 @@ pub mod fs {
     fn relative_to_root(base_root: &Path, target: &Path) -> Option<PathBuf> {
         let root_variants = [
             base_root.to_path_buf(),
-            base_root.canonicalize().unwrap_or_else(|_| base_root.to_path_buf()),
+            base_root
+                .canonicalize()
+                .unwrap_or_else(|_| base_root.to_path_buf()),
         ];
         let target_variants = [
             target.to_path_buf(),
-            target.canonicalize().unwrap_or_else(|_| target.to_path_buf()),
+            target
+                .canonicalize()
+                .unwrap_or_else(|_| target.to_path_buf()),
         ];
         for root in &root_variants {
             for tgt in &target_variants {

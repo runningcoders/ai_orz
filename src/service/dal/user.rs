@@ -199,7 +199,9 @@ impl crate::pkg::tool_registry::gh_cli::GhCredentialResolver for GhDalCredential
         let Some(user_id) = ctx.user_id.clone() else {
             return Ok(None);
         };
-        let Some(library) = dal().get_identity_credentials(ctx.clone(), &user_id).await?
+        let Some(library) = dal()
+            .get_identity_credentials(ctx.clone(), &user_id)
+            .await?
         else {
             return Ok(None);
         };

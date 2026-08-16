@@ -4,10 +4,9 @@
 //! 集成状态聚合 / 凭证 CRUD / 默认凭证。
 
 use common::api::{
-    CreateGithubCredentialRequest, CreateGithubCredentialResponse,
-    GithubIntegrationStatusResponse, SetDefaultGithubCredentialRequest,
-    SetDefaultGithubCredentialResponse, UpdateGithubCredentialRequest,
-    UpdateGithubCredentialResponse,
+    CreateGithubCredentialRequest, CreateGithubCredentialResponse, GithubIntegrationStatusResponse,
+    SetDefaultGithubCredentialRequest, SetDefaultGithubCredentialResponse,
+    UpdateGithubCredentialRequest, UpdateGithubCredentialResponse,
 };
 
 use super::{ApiError, api_delete, api_get_or_default, api_post, api_put};
@@ -17,8 +16,7 @@ const BASE: &str = "/api/v1/finance/identity/github";
 // ===== 集成状态聚合 =====
 
 /// 获取当前用户 GitHub 集成状态（凭证快照 + gh 登录态实测）
-pub async fn get_github_integration_status(
-) -> Result<GithubIntegrationStatusResponse, ApiError> {
+pub async fn get_github_integration_status() -> Result<GithubIntegrationStatusResponse, ApiError> {
     api_get_or_default(&format!("{}/status", BASE)).await
 }
 

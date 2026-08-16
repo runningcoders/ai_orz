@@ -203,8 +203,7 @@ mod subprocess_tests {
             .unwrap();
         assert_eq!(output.get("success"), Some(&serde_json::Value::Bool(true)));
         let out = output.get("output").and_then(|v| v.as_str()).unwrap();
-        let expected_ws =
-            crate::pkg::paths::user_agent_workspace(&base, "test-user", "agent-x");
+        let expected_ws = crate::pkg::paths::user_agent_workspace(&base, "test-user", "agent-x");
         let expected_ws = expected_ws.canonicalize().unwrap_or(expected_ws);
         assert!(
             out.contains(expected_ws.to_str().unwrap()),
@@ -237,8 +236,7 @@ mod subprocess_tests {
         setup();
         let base = ensure_test_base_data_path();
         let tool = shell_tool();
-        let other_dir =
-            crate::pkg::paths::user_agent_workspace(&base, "other-user", "agent-y");
+        let other_dir = crate::pkg::paths::user_agent_workspace(&base, "other-user", "agent-y");
 
         let output = tool
             .call(
@@ -250,10 +248,7 @@ mod subprocess_tests {
             )
             .await
             .unwrap();
-        assert_eq!(
-            output.get("success"),
-            Some(&serde_json::Value::Bool(false))
-        );
+        assert_eq!(output.get("success"), Some(&serde_json::Value::Bool(false)));
         assert_eq!(
             output.get("require_confirmation"),
             Some(&serde_json::Value::Bool(true))

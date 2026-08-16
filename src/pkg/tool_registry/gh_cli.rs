@@ -198,11 +198,7 @@ pub fn sanitize_gh_output(output: &str) -> String {
             let lower = line.to_lowercase();
             let sensitive = SENSITIVE_KEYWORDS.iter().any(|k| lower.contains(k))
                 || TOKEN_PREFIXES.iter().any(|p| line.contains(p));
-            if sensitive {
-                "[REDACTED]"
-            } else {
-                line
-            }
+            if sensitive { "[REDACTED]" } else { line }
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -210,7 +206,10 @@ pub fn sanitize_gh_output(output: &str) -> String {
 
 /// token 摘要 marker 路径（记录当前已落盘登录 token 的指纹）
 fn token_marker_path(home_dir: &Path) -> PathBuf {
-    home_dir.join(".config").join("gh").join(".ai_orz_token_marker")
+    home_dir
+        .join(".config")
+        .join("gh")
+        .join(".ai_orz_token_marker")
 }
 
 /// 计算 token 摘要（sha256 前 16 位 hex，仅作变更检测指纹，不可逆推 token）
@@ -322,7 +321,7 @@ pub async fn gh_auth_status(home_dir: &Path) -> GhAuthStatus {
             return GhAuthStatus {
                 hint: Some(format!("gh auth status 执行失败: {}", e)),
                 ..Default::default()
-            }
+            };
         }
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -445,7 +444,10 @@ impl CoreTool for GhCliCoreTool {
                 let sanitized = sanitize_gh_output(&combined);
                 let truncated = sanitized.len() as u64 > max_output_bytes;
                 let summary = if truncated {
-                    format!("{}\n\n... [truncated]", &sanitized[..max_output_bytes as usize])
+                    format!(
+                        "{}\n\n... [truncated]",
+                        &sanitized[..max_output_bytes as usize]
+                    )
                 } else {
                     sanitized
                 };

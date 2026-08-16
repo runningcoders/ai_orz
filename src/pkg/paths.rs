@@ -45,11 +45,7 @@ pub fn user_shared_workspace(base_data_path: &Path, user_id: &str) -> PathBuf {
 ///
 /// 注意与 [`agent_workspace`]（Agent 自身工作区，无用户上下文）区分：
 /// 带 `user_` 前缀的函数均在用户目录树下，参数含 `user_id`。
-pub fn user_agent_workspace(
-    base_data_path: &Path,
-    user_id: &str,
-    agent_id: &str,
-) -> PathBuf {
+pub fn user_agent_workspace(base_data_path: &Path, user_id: &str, agent_id: &str) -> PathBuf {
     user_home(base_data_path, user_id)
         .join("agents")
         .join(agent_id)
@@ -142,6 +138,9 @@ mod tests {
             default_workspace(base, Some("u1"), None),
             PathBuf::from("/data/.ai_orz")
         );
-        assert_eq!(default_workspace(base, None, None), PathBuf::from("/data/.ai_orz"));
+        assert_eq!(
+            default_workspace(base, None, None),
+            PathBuf::from("/data/.ai_orz")
+        );
     }
 }

@@ -475,10 +475,7 @@ mod tests {
         let factory = FsWriteToolFactory;
         let tool = factory.create(factory.create_po());
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-        let ctx = new_test_ctx("u1", pool)
-            .to_builder()
-            .agent_id("a1")
-            .build();
+        let ctx = new_test_ctx("u1", pool).to_builder().agent_id("a1").build();
 
         // 自己的用户工作区：写入成功
         let out = tool
