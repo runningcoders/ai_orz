@@ -6,7 +6,11 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim hooks
+
+# git hooks 目录指向仓库内 .githooks/（pre-push 自动跑 fmt-check，跳过用 git push --no-verify）
+hooks:
+	git config core.hooksPath .githooks
 
 help: ## 显示本帮助
 	@echo "AI Orz 开发命令（详细说明见文件头注释）："
@@ -14,13 +18,11 @@ help: ## 显示本帮助
 
 # ===== 格式化 =====
 
-fmt: ## 全仓格式化（根 + frontend 两个 workspace）
+fmt: ## 全仓格式化（根 workspace 单命令覆盖全部 5 个 crate）
 	cargo fmt --all
-	cd frontend && cargo fmt --all
 
 fmt-check: ## 格式检查（CI fmt job 口径）
 	cargo fmt --all -- --check
-	cd frontend && cargo fmt --all -- --check
 
 # ===== 静态检查 =====
 
