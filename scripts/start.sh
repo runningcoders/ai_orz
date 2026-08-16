@@ -67,36 +67,9 @@ EOF
 }
 
 # 启动前预检：清理残留的 ai_orz 后端 / dx serve 前端进程与端口占用
-# 避免 DuckDB 文件锁冲突（单写者）和 dx 构建锁争抢
+# 逻辑收敛在 scripts/cleanup.sh（可独立执行：./scripts/cleanup.sh [--dry-run] 或 make clean-proc）
 preflight_cleanup() {
-    local cleaned=0
-
-    # 残留后端二进制进程（上次未正常退出，持有 .ai_orz/stats.duckdb 锁）
-    local stale_be
-    stale_be=$(/bin/ps aux | /usr/bin/grep -E "target/(debug|release)/ai_orz( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
-    for pid in $stale_be; do
-        echo "${YELLOW}🧹 清理残留后端进程 PID=$pid（避免 DuckDB 锁冲突）${NC}"
-        kill "$pid" 2>/dev/null || true
-        cleaned=1
-    done
-
-    # 残留 dx serve 进程（持有 8080 端口与构建锁）
-    local stale_dx
-    stale_dx=$(/bin/ps aux | /usr/bin/grep -E "dx serve( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
-    for pid in $stale_dx; do
-        echo "${YELLOW}🧹 清理残留 dx serve 进程 PID=$pid（释放 8080 端口）${NC}"
-        kill "$pid" 2>/dev/null || true
-        cleaned=1
-    done
-
-    if [ "$cleaned" = "1" ]; then
-        sleep 1
-        # 温和杀不掉的强杀
-        for pid in $stale_be $stale_dx; do
-            kill -9 "$pid" 2>/dev/null || true
-        done
-        sleep 1
-    fi
+    "$SCRIPT_DIR/cleanup.sh"
 }
 
 # 等待端口就绪（纯 bash /dev/tcp，无外部依赖）
@@ -183,6 +156,7 @@ cmd_dev() {
 # 仅启动后端
 cmd_backend() {
     print_banner
+    preflight_cleanup
     cd "$REPO_ROOT"
     echo "📦 启动后端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:3000${NC}"
@@ -230,6 +204,8 @@ cmd_prod() {
     print_banner
 
     cmd_build
+
+    preflight_cleanup
 
     echo ""
     echo "🚀 启动生产服务..."
