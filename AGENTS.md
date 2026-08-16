@@ -53,7 +53,7 @@
 | ③ `docs/wiki/zh/content/`（入口 `docs/wiki/`）| 百科：8 大板块 353 篇（是什么）| 10 节固定目录；`<cite>` 关联源码 + ④ RAG 卡（①② 有则写，单向引用）| ai-orz-wiki-maintainer |
 | ① `docs/design/` | 决策快照（为什么）| 写定后不追代码；关联文档段仅可链 ② plan（冻结互链）+ 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档（归档件不写跨象限引用）| ai-orz-doc-maintainer |
 | ② `docs/plan/` | 落地快照（怎么做+结果）| 7 章骨架（无 checkbox/命令/代码快照）；关联文档段仅可链 ① design + 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档 | ai-orz-doc-maintainer |
-| `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明；归档件不写任何跨象限引用；按来源分子目录（`design-archive/` / `plan-archive/` / `superpowers-archive/YYYY-MM-DD/` / `wiki-rag-archive/YYYY-MM-DD_<卡名>/`），**根目录禁散放** | ai-orz-doc-maintainer |
+| `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明；归档件不写任何跨象限引用；按来源分子目录（`design-archive/` / `plan-archive/` / `superpowers-archive/YYYY-MM-DD/`），**根目录禁散放** | ai-orz-doc-maintainer |
 | `docs/superpowers/*/` | 开发期执行蓝图（临时） | 功能完成 7 天内处置：→ plan 7 章模板 / → archive 封存 | ai-orz-doc-maintainer |
 | `docs/ARCHITECTURE.md` | 核心概念与实体关系 | 唯一权威纲要，手工维护 | — |
 | `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 分层实践与避坑 | Agent 必遵循，手工维护 | — |
@@ -77,7 +77,6 @@
 | 历史决策归档 | `docs/archive/design-archive/` | 保留原文件名 | `docs/archive/design-archive/a2a_server_design.md` |
 | 已完成 plan 归档 | `docs/archive/plan-archive/` | 保留原文件名 | `docs/archive/plan-archive/聊天MVP.md` |
 | superpowers 蓝图处置 | `docs/archive/superpowers-archive/YYYY-MM-DD/` | 保留原蓝图名 | `docs/archive/superpowers-archive/2026-08-16/xxx.md` |
-| RAG 重复副卡归档 | `docs/archive/wiki-rag-archive/YYYY-MM-DD_<卡名>/` | 目录名 = 卡名 | `2026-08-15_统一错误模型…/` |
 
 **红线**：
 - ❌ 在 `docs/` 下自创新目录（如 `docs/specs/`、`docs/notes/`）——四象限之外无处安放
@@ -97,7 +96,7 @@
 4. **跳源码锚点**：从长文 cite/章节来源段 OR 卡 `source_files[]`，按 `相对路径#Ln-Lm` 读真实代码
 5. **按需补跳 ① Design / ② Plan**：① 找为什么/决策表；② 找扩展入口速查表 §4 + §七 4 步扩展模板
 
-**同主题多张平行卡**：全部召回、并行阅读、不做去重、不删旧卡（语义相近 = 不同切面，信息互补）。⚠️ **但「完全重复版本」不属此类**——scope[] 互为子集、§4 硬约束重叠率 > 90%、只是措辞不同的重复卡，必须走「吸收合并 + 副卡归档」，绝不可当作「平行互补」保留。见下方 §2.1.3 图谱节点组织法则。
+**同主题多张平行卡**：全部召回、并行阅读、不做去重、不删旧卡（语义相近 = 不同切面，信息互补）。⚠️ **但「完全重复版本」不属此类**——scope[] 互为子集、§4 硬约束重叠率 > 90%、只是措辞不同的重复卡，必须走「吸收合并 + 直接删除副卡」，绝不可当作「平行互补」保留。见下方 §2.1.3 图谱节点组织法则。
 
 **RAG 元问题第一跳**（如何使用知识卡 / 召回不到 / scope 匹配 / source_files 写法）→ 命中：
 - [RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配](docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
@@ -209,12 +208,12 @@ Step 0. 前置查重（必填分支，不可省略）
     │
     └── 命中 ≥ 1 张 → 按 Level 1~4 逐层判定（按顺序优先级从高到低）
             │
-            ├── Level 1（完全重复）❌禁止新建，强制合并 + 归档副卡
+            ├── Level 1（完全重复）❌禁止新建，强制合并 + 删除副卡
             │   判定：scope[] 互为子集 AND §4 硬约束重叠率 > 90%
             │         AND 主题 T 是旧卡主题的同义词/不同措辞
             │   动作：把 T 独有源码锚点 → 旧卡 §2；T 独有硬约束 → 旧卡 §4；
             │         旧卡 YAML scope[]/source_files[] 取并集；
-            │         T 的草稿副卡 → 移 docs/archive/wiki-rag-archive/YYYY-MM-DD_* 归档；
+            │         T 的草稿副卡 → 直接删除（历史靠 git 追溯，不归档）；
             │         Design/Plan/Wiki 所有引用副卡路径 → 替换为旧卡路径。
             │
             ├── Level 2（主卡-子卡 层级包含）优先合并，合并不下才拆分
@@ -264,7 +263,7 @@ Step 0. 前置查重（必填分支，不可省略）
 
 | 关系类型 | 判定 | 主卡/旧卡侧声明位置 + 固定句式 | 子卡/副卡/兄弟卡侧声明位置 + 固定句式 |
 |---|---|---|---|
-| **①完全重复**（Level 1） | scope 全等 + 主题同义 + §4 重叠率>90% | 主卡吸收合并，§2/§4 追加内容；无需额外声明。副卡移 `docs/archive/wiki-rag-archive/YYYY-MM-DD_*/` 并加 Template C 归档头（📦 标记 3 行，见 §2.1.2 Template C）。Design/Plan/Wiki 中所有副卡路径 → 替换为主卡路径。 | （副卡不再召回，归档保留不裸删。归档头第一行写：`被 [主卡名](主卡相对仓库根路径) 取代`） |
+| **①完全重复**（Level 1） | scope 全等 + 主题同义 + §4 重叠率>90% | 主卡吸收合并，§2/§4 追加内容；无需额外声明。副卡**直接删除**（不归档，历史靠 git 追溯）。Design/Plan/Wiki 中所有副卡路径 → 替换为主卡路径。 | （副卡不再召回，已删除） |
 | **②主卡-子卡**（Level 2） | scope[子] ⊂ scope[主]，真包含层级 | 主卡 §2 表格末行：`细粒度拆解：[子卡名](docs/wiki/knowledge/zh/子卡名.md)` | 子卡 §3 首句：`本卡是 [主卡名](docs/wiki/knowledge/zh/主卡名.md) 的 XX 模块细粒度展开`；子卡 `source_files[]` 末尾追加主卡相对仓库根路径 |
 | **③总卡-视角细卡**（Level 3） | scope 交集 30-80%，同一体系不同层面/分层 | 每张卡 §3 首句统一句式：`本卡与 [兄弟卡A名](docs/wiki/knowledge/zh/A卡名.md) + [兄弟卡B名](docs/wiki/knowledge/zh/B卡名.md) + … 构成 XX 体系的 YY/ZZ/… 互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡`；每张卡 `source_files[]` 末尾追加**所有**兄弟卡相对仓库根路径（互相完整闭环）| （与左列相同，Level 3 是对称兄弟关系，每张写法一致）|
 | **④总卡-细卡**（Level 4） | scope[总] ⊃ scope[细]，总卡有总分结构 | 总卡 §2 表格末行：`细粒度拆解卡：[细卡1名](path) + [细卡2名](path) + …` | 细卡 §3 首句：`本卡为 [总卡名](docs/wiki/knowledge/zh/总卡名.md) 描述的 XX 体系中 YY 模块的细粒度独立召回卡`；细卡 `source_files[]` 追加总卡相对仓库根路径 |
@@ -309,7 +308,7 @@ Step 0. 前置查重（必填分支，不可省略）
 —— 重复检查自我声明（AGENTS §2.1.3.6 v2.1）——
 本次候选主题总数：<N> 个
 Step 0 5 级判定结果 →
-  Level 1（完全重复 → 合并归档副卡）：<X> 张
+  Level 1（完全重复 → 合并删除副卡）：<X> 张
   Level 2（主卡-子卡 → 合并到主卡）：<M> 张
   Level 2（主卡-子卡 → 拆分新建子卡 + 声明）：<K> 张
   Level 3（视角兄弟卡 → 独立新建 + 互声明）：<P> 张
