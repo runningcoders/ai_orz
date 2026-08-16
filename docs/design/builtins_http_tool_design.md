@@ -457,36 +457,44 @@ http_post(url, body, headers)
 
 ---
 
-## 实施计划
+## 实施进度
 
-### Phase 1：文档与接口确认
+### Phase 1：文档与接口确认（已完成）
 
-- [x] 明确 HTTP Runtime 与 HTTP Tool 的区别；
-- [x] 明确 `ToolProtocol` 与 `ControlMode` 正交；
-- [x] 明确 HTTP Runtime 放在 `src/pkg/tool_registry/http.rs`；
-- [x] 确认 `HttpToolConfig` 第一版字段。
+| 项目 | 结论 |
+|------|------|
+| HTTP Runtime vs HTTP Tool 区别 | 已明确 |
+| `ToolProtocol` 与 `ControlMode` 关系 | 已明确正交 |
+| HTTP Runtime 代码位置 | 已确定：`src/pkg/tool_registry/http.rs` |
+| `HttpToolConfig` 第一版字段 | 已确认 |
 
-### Phase 2：HTTP Runtime 基础实现
+### Phase 2：HTTP Runtime 基础实现（已完成）
 
-- [x] 在 `src/pkg/tool_registry/http.rs` 实现 `HttpToolConfig`；
-- [x] 为每次调用创建带 DNS pinning 的 `reqwest::Client`；
-- [x] 实现 `HttpCoreTool`；
-- [x] `ToolRegistry.create_tool()` 支持 `ToolProtocol::Http`。
+| 模块 | 状态 |
+|------|------|
+| `src/pkg/tool_registry/http.rs` 中 `HttpToolConfig` 实现 | 已完成 |
+| 每次调用创建带 DNS pinning 的 `reqwest::Client` | 已完成 |
+| `HttpCoreTool` 实现 | 已完成 |
+| `ToolRegistry.create_tool()` 支持 `ToolProtocol::Http` | 已完成 |
 
 ### Phase 3：安全与测试
 
-- [x] SSRF 防护；
-- [x] timeout / response size limit；
-- [x] header 脱敏；
-- [x] GET / POST 测试；
-- [ ] `Manual` HTTP 工具不进入 `wrap_for_rig` 测试。
+| 项目 | 状态 |
+|------|------|
+| SSRF 防护 | 已完成 |
+| timeout / response size limit | 已完成 |
+| header 脱敏 | 已完成 |
+| GET / POST 测试 | 已完成 |
+| `Manual` HTTP 工具不进入 `wrap_for_rig` 测试 | 占位：待 Auto/Manual 覆盖测试补齐时一并接入 |
 
 ### Phase 4：管理面联调
 
-- [ ] 页面/Handler 创建 HTTP Tool；
-- [ ] 绑定到 Agent；
-- [ ] 通过 ToolCallRequest 执行；
-- [ ] ToolCallResult 回写后，按统计模块轮次预算触发 Agent 下一轮唤醒。
+| 项目 | 状态 |
+|------|------|
+| 页面/Handler 创建 HTTP Tool | 占位：待独立管理面计划安排后落地 |
+| 绑定到 Agent | 占位：待创建能力完成后联动 |
+| 通过 ToolCallRequest 执行 | 占位：待绑定链路完成后验证 |
+| ToolCallResult 回写触发 Agent 下一轮唤醒 | 占位：待统计模块预算判定链路接入后开启 |
 
 ## 管理面脱敏与校验补充
 

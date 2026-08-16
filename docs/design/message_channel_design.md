@@ -397,16 +397,18 @@ impl MessageProcessDomain {
 
 ---
 
-## 📋 实现任务清单
+## 📋 实施路线（分层落地顺序）
 
-- [ ] 创建 `common/src/enums/message_channel.rs` 枚举
-- [ ] 创建 `src/models/message_channel.rs` PO 结构体
-- [ ] 创建数据库迁移脚本
-- [ ] 实现 `MessageChannelDao` SQLite 实现
-- [ ] 实现 `MessageChannelDal`
-- [ ] 实现 `MessageChannelDomain`
-- [ ] 编写单元测试
-- [ ] 在 Message Domain 中集成渠道推送
+| 步骤 | 模块 | 落地点 |
+|------|------|--------|
+| 1 | common 层枚举 | 创建 `common/src/enums/message_channel.rs` 渠道类型/状态枚举 |
+| 2 | models PO | 创建 `src/models/message_channel.rs` 消息渠道持久化对象 |
+| 3 | DB 迁移 | 创建数据库迁移脚本（表 + 索引 + 软删除约定） |
+| 4 | DAO 层 | 实现 `MessageChannelDao` SQLite 实现（CRUD + 查询） |
+| 5 | DAL 层 | 实现 `MessageChannelDal`（PO ↔ Entity 转换 + 业务校验） |
+| 6 | Domain 层 | 实现 `MessageChannelDomain`（面向 Handler 的业务能力） |
+| 7 | 单元测试 | 覆盖 DAO → DAL → Domain 三层链路的正向/异常分支 |
+| 8 | 集成联调 | 在 Message Domain 中集成渠道推送，打通出站骨架调用 |
 
 ---
 
@@ -500,33 +502,7 @@ src/service/
 
 以 `lark_dao.rs` 为例：
 
-```rust
-#[derive(Clone, Default)]
-pub struct LarkDao;
-
-impl LarkDao {
-    /// 推送消息（约定方法名）
-    pub async fn push(
-        &self,
-        _ctx: RequestContext,
-        _message: &Message,
-        _channel: &MessageChannel,
-    ) -> Result<(), String> {
-        // TODO: 实现飞书推送逻辑
-        Err("飞书推送未实现".to_string())
-    }
-    
-    /// 测试连接（约定方法名）
-    pub async fn test_connection(
-        &self,
-        _ctx: RequestContext,
-        _channel: &MessageChannel,
-    ) -> Result<(), String> {
-        // TODO: 实现飞书连接测试逻辑
-        Err("飞书测试未实现".to_string())
-    }
-}
-```
+> 实现见：[src/service/dao/lark/message_push.rs#L12-L86](src/service/dao/lark/message_push.rs#L12-L86)（飞书卡片序列化 + `push()` 实现）；`test_connection()` 约定方法签名见 mod 导出。
 
 ✅ 关键点：
 - 完全独立，不实现任何 trait

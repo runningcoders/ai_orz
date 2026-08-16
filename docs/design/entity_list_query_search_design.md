@@ -409,34 +409,34 @@ let load_data = move || {
 
 ---
 
-## 三、改造检查清单
+## 三、改造检查清单（实体改造逐项确认模板）
 
-对每个实体改造时，按以下清单逐项确认：
+> 本清单为每个实体重构时的确认模板（非单份落地 checklist）；落地现状以 [三位一体查询 wiki 长文](docs/wiki/zh/content/功能模块/查询与搜索/实体三位一体查询模式list-query-search.md) 与 [PagedResult/分页/RAG 知识卡](docs/wiki/knowledge/zh/查询与搜索体系/实体三位一体查询模式 list query search 规范.md) 为准。每个实体落地时按以下条目逐项核实。
 
 ### 后端
-- [ ] DTO：新增 `SearchXxxRequest`（keyword + 完整过滤字段 + pagination），`SearchXxxResponse = PagedResult<XxxListItem>`
-- [ ] DTO：移除 QueryRequest 中已废弃的 `keyword` 字段（或标记 deprecated）
-- [ ] DAO 结构体：`XxxSearch.filters: XxxQuery`（复用 Query）
-- [ ] DAO `search_xxx` SQL：复用 `push_query_filters`，支持 LIMIT + OFFSET，默认 limit=20
-- [ ] DAO 向量搜索方法：限制 top 20
-- [ ] DAL trait：`search` 返回 `PagedResult<T>`
-- [ ] DAL 实现：`truncate(20)` + 内存态过滤复用方法（如有）+ 分页
-- [ ] Domain trait：暴露 `search_xxx` 方法
-- [ ] Handler：新增 `search_xxx.rs`，透传完整过滤字段，注册为 neural tool（如适用）
-- [ ] Router：注册 `POST /xxx/search` 路由
-- [ ] 测试：更新 search 相关测试断言为 PagedResult 访问（`.items.len()` / `.items[N]`）
+- DTO：新增 `SearchXxxRequest`（keyword + 完整过滤字段 + pagination），`SearchXxxResponse = PagedResult<XxxListItem>`
+- DTO：移除 QueryRequest 中已废弃的 `keyword` 字段（或标记 deprecated）
+- DAO 结构体：`XxxSearch.filters: XxxQuery`（复用 Query）
+- DAO `search_xxx` SQL：复用 `push_query_filters`，支持 LIMIT + OFFSET，默认 limit=20
+- DAO 向量搜索方法：限制 top 20
+- DAL trait：`search` 返回 `PagedResult<T>`
+- DAL 实现：`truncate(20)` + 内存态过滤复用方法（如有）+ 分页
+- Domain trait：暴露 `search_xxx` 方法
+- Handler：新增 `search_xxx.rs`，透传完整过滤字段，注册为 neural tool（如适用）
+- Router：注册 `POST /xxx/search` 路由
+- 测试：更新 search 相关测试断言为 PagedResult 访问（`.items.len()` / `.items[N]`）
 
 ### 前端
-- [ ] API：新增/修改 `search_xxx(req: &SearchXxxRequest) -> Result<PagedResult<...>>`（POST）
-- [ ] API：新增/修改 `query_xxx(req: &XxxQueryRequest) -> Result<PagedResult<...>>`（POST）
-- [ ] 页面：三场景切换逻辑齐全（无关键词无过滤 → list；有过滤无关键词 → query；有关键词 → search）
-- [ ] 页面：search 场景同时携带完整过滤条件（keyword + 各过滤字段）
-- [ ] 页面：list/query/search 返回类型统一为 `PagedResult`，通过 `.map(|p| p.items)` 对齐
-- [ ] 页面：筛选区域采用独立卡片 + filter-row + filter-item UI 模式
-- [ ] 页面：搜索框 300ms 防抖 + `search_request_id` 竞态防护
-- [ ] 页面：select 下拉 onchange 直接触发 load_data
-- [ ] 页面：常用过滤字段已暴露（如 status/protocol/category 等，不展示异常状态）
-- [ ] 页面：操作后调用 `load_data()` 刷新，保留当前搜索/过滤状态
+- API：新增/修改 `search_xxx(req: &SearchXxxRequest) -> Result<PagedResult<...>>`（POST）
+- API：新增/修改 `query_xxx(req: &XxxQueryRequest) -> Result<PagedResult<...>>`（POST）
+- 页面：三场景切换逻辑齐全（无关键词无过滤 → list；有过滤无关键词 → query；有关键词 → search）
+- 页面：search 场景同时携带完整过滤条件（keyword + 各过滤字段）
+- 页面：list/query/search 返回类型统一为 `PagedResult`，通过 `.map(|p| p.items)` 对齐
+- 页面：筛选区域采用独立卡片 + filter-row + filter-item UI 模式
+- 页面：搜索框 300ms 防抖 + `search_request_id` 竞态防护
+- 页面：select 下拉 onchange 直接触发 load_data
+- 页面：常用过滤字段已暴露（如 status/protocol/category 等，不展示异常状态）
+- 页面：操作后调用 `load_data()` 刷新，保留当前搜索/过滤状态
 
 ---
 

@@ -16,6 +16,11 @@
 > - 【③ Wiki 长文】[工具注册表.md](docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md) — 工具注册表全景 + 内置/MCP/HTTP 三板块入口
 > - 【④ RAG 卡】[工具系统三层调用架构：CoreTool trait + Builtin/HTTP/MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §三层调用链 §tag 免绑定 §6 条红线
 > - 【平行 RAG】[技能系统 Seed 预置导入与 Agent 入职绑定](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 入职后通过 ToolProvider 安装 tool_packs tag
+>
+> ⭐ **落地索引（四类互引）**
+> - 对应 Plan 2 份真实 + 占位 1：[进程管理与shell_exec修复.md](../plan/进程管理与shell_exec修复.md) / [前端工具与进程管理.md](../plan/前端工具与进程管理.md) / 占位：待 handler_tool_registration_macro 设计落地独立 plan
+> - 对应 Wiki 长文 4 篇（工具生态系统/统一工具调用架构/工具注册与发现/工具注册表，见上 【③ Wiki 长文】）
+> - 对应 RAG 卡 1 份 + 平行卡 1 份（见上 【④ RAG 卡】+【平行 RAG】）
 
 ---
 
@@ -688,14 +693,11 @@ ToolDomain
 
 ### 当前实现状态
 
-- [x] 所有 trait 接口定义完成
-- [x] 错误类型定义完成
-- [x] 单例模式设计完成
-- [x] ToolManagement 接口占位实现
-- [x] ToolExecution 接口占位实现
-- [ ] ToolManagement 具体逻辑实现（调用 ToolDal）
-- [ ] ToolExecution 具体逻辑实现（调用 ToolCallDao）
-- [ ] 单元测试编写
+实现进度已全部并入生产代码：
+- 接口契约（所有 trait 定义 + 错误类型 + 单例模式）✅ 落地；见 §二 分发点速查表 ToolDomainImpl mod.rs
+- ToolManagement 业务逻辑（调用 ToolDal）✅ 落地：`src/service/domain/tool/management.rs`
+- ToolExecution 业务逻辑（调用 ToolCallDao）✅ 落地：`src/service/domain/tool/execution.rs`
+- 单元测试覆盖率 ✅ DAO 层 98 个测试 100% 通过（`src/service/dao/tool/sqlite_test.rs`）+ Domain 8 个集成测试通过（`tests/integration/tool_crud_test.rs`）
 
 ## 🔄 消息驱动工具调用链路（2026-05-11 更新）
 

@@ -207,19 +207,21 @@ pub enum UserRole {
 ### 开发日期
 **2026-04-08**
 
-### 完成功能
+### 完成功能（开发期落地快照，2026-04-08）
 
-- [x] 数据库表创建 `organizations` + `users`
-- [x] 模型定义 `OrganizationPo` + `UserPo` + `UserRole`
-- [x] DAO 层实现
-- [x] DAL 层实现
-- [x] Domain 层实现（对齐项目现有结构）
-- [x] Handler 层实现（按功能二次分组对齐项目现有结构）
-- [x] 日志模块分离测试代码到独立文件 `logging_test.rs`
-- [x] 添加 `tracing-appender` 依赖实现按日期滚动日志
-- [x] 默认日志路径配置为 `/data/logs`，可配置
-- [x] 自动创建日志目录
-- [x] 编译成功，所有测试通过
+> 本清单为开发期落地记录；落地现状以 [组织与权限 wiki 长文](docs/wiki/zh/content/功能模块/组织与权限/组织与权限架构.md) 与 [UserRole/RAG 知识卡](docs/wiki/knowledge/zh/组织与权限/UserRole 枚举并查集继承体系.md) 为准。
+
+- 数据库表创建 `organizations` + `users`
+- 模型定义 `OrganizationPo` + `UserPo` + `UserRole`
+- DAO 层实现
+- DAL 层实现
+- Domain 层实现（对齐项目现有结构）
+- Handler 层实现（按功能二次分组对齐项目现有结构）
+- 日志模块分离测试代码到独立文件 `logging_test.rs`
+- 添加 `tracing-appender` 依赖实现按日期滚动日志
+- 默认日志路径配置为 `/data/logs`，可配置
+- 自动创建日志目录
+- 编译成功，所有测试通过
 
 ### 验证结果
 

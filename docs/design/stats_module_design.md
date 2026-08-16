@@ -20,6 +20,11 @@
 > - 【④ RAG 原子知识卡（Batch6 原有 1 张 + Batch9 新增 1 张）】
 >   - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/wiki/knowledge/zh/DuckDB%20多维统计双层互补：record_event!%20宏自动表推断%20+%20RuntimeStatsCollector%20内存滑动窗口%20+%205%20维度开箱即用表/DuckDB%20多维统计双层互补：record_event!%20宏自动表推断%20+%20RuntimeStatsCollector%20内存滑动窗口%20+%205%20维度开箱即用表.md) — record_event! 三种调用模式 + 持久化/内存选型铁律表 + 6 条回归红线（含 batch_size/WINDOW_MINUTES 阈值）
 >   - [统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示](docs/wiki/knowledge/zh/%E7%BB%9F%E8%AE%A1%E6%9F%A5%E8%AF%A2%20API%20%E4%B8%8E%E5%89%8D%E7%AB%AF%E4%BB%AA%E8%A1%A8%E7%9B%98%EF%BC%9ADuckDB%205%20%E7%BB%B4%E8%A1%A8%E6%9F%A5%E8%AF%A2%20+%20RuntimeStats%20%E5%86%85%E5%AD%98%E6%BB%91%E5%8A%A8%E8%81%9A%E5%90%88%20+%20StatsHandler%20REST%20API%20+%20%E5%89%8D%E7%AB%AF%20Line%2FDonut%2FGauge%20%E5%B1%95%E7%A4%BA/%E7%BB%9F%E8%AE%A1%E6%9F%A5%E8%AF%A2%20API%20%E4%B8%8E%E5%89%8D%E7%AB%AF%E4%BB%AA%E8%A1%A8%E7%9B%98%EF%BC%9ADuckDB%205%20%E7%BB%B4%E8%A1%A8%E6%9F%A5%E8%AF%A2%20+%20RuntimeStats%20%E5%86%85%E5%AD%98%E6%BB%91%E5%8A%A8%E8%81%9A%E5%90%88%20+%20StatsHandler%20REST%20API%20+%20%E5%89%8D%E7%AB%AF%20Line%2FDonut%2FGauge%20%E5%B1%95%E7%A4%BA.md) — 双层选型铁律表 + 5 Stats DAO 全实体覆盖 + 10 条硬约束
+>
+> ⭐ **落地索引（四类互引）**
+> - 对应 Plan 3 份真实：[统计图表Phase1基础设施与时序图展示重构.md](../plan/统计图表Phase1基础设施与时序图展示重构.md) / [统计图表Phase2.md](../plan/统计图表Phase2.md) / [统计图表第三期.md](../plan/统计图表第三期.md)
+> - 对应 Wiki 长文 5 篇（多维统计系统/Agent维度/Tool维度/AOP统计与监控/AOP监控面板，见上 【③ Wiki 长文】）
+> - 对应 RAG 卡 2 份真实（DuckDB 双层互补卡 + 统计查询API与仪表盘卡，见上 【④ RAG 原子知识卡】）
 
 ## 定位与目标
 
@@ -842,36 +847,40 @@ impl AopStatsCollector {
 | 实时监控、前端轮询渲染 | 内存版 |
 | 重启即重置是可接受的 | 内存版 |
 
-## 当前已实现
+## 当前已实现（持久化版核心）
 
-- [x] duckdb-rs 1.4 升级适配，解决所有 API 不兼容问题
-- [x] 核心设计：按事件类型自动绑定表，每个事件类型对应唯一表
-- [x] `Stats` 自动缓冲，批量写入，每个事件类型独立缓冲
-- [x] `record_event!` 宏简化调用，自动推断表，自动填充 timestamp
-- [x] `query_aggregation` 通用聚合查询（支持过滤、分组、聚合）
-- [x] `query_time_series` 时序查询（支持 Hourly/Daily）
-- [x] `StatParam` 类型安全参数枚举（解决 `dyn ToSql` 的 `Send` 问题）
-- [x] 统计结果模型迁移到 `common/src/models/stats.rs`（`StatsInterval`、`TimeSeriesPoint`、`TokenSumResult`）
-- [x] 专用事件 `ModelCallEvent` / `ToolCallEvent` 独立文件，各自绑定专用表
-- [x] 专用表使用独立字段结构（VARCHAR/BIGINT），查询性能更优
-- [x] `StatTable` trait 表自描述：`is_dedicated_table()`、`column_sql()`、`metric_sql()`、`filter_equals_sql()`、`filter_range_sql()`
-- [x] 查询构建逻辑下放到表实现，消除硬编码表结构判断
-- [x] `Stats` 反向索引 `tables_by_name`，支持按表名查找 `ErasedStatTable` 元数据
-- [x] rig hook 自动采集模型调用统计（`ModelCallEvent`）
-- [x] `ToolCallLoggingDecorator` 统一采集工具调用统计（`ToolCallEvent`，覆盖 manual + auto）
-- [x] `RequestContext::stats_opt()` 安全获取 Stats
-- [x] 所有单元测试通过 ✅
+| 模块 | 实现情况 |
+|------|---------|
+| duckdb-rs 1.4 升级适配 | 已完成，解决所有 API 不兼容问题 |
+| 表自动绑定设计 | 已完成，按事件类型自动绑定唯一表 |
+| Stats 缓冲与批量写入 | 已完成，每个事件类型独立缓冲 |
+| `record_event!` 宏 | 已完成，自动推断表 + 自动填充 timestamp |
+| `query_aggregation` 通用聚合查询 | 已完成（过滤/分组/聚合） |
+| `query_time_series` 时序查询 | 已完成（支持 Hourly/Daily） |
+| `StatParam` 类型安全参数枚举 | 已完成，解决 `dyn ToSql` 的 `Send` 问题 |
+| 统计结果模型收敛 | 已迁移到 `common/src/models/stats.rs`（StatsInterval/TimeSeriesPoint/TokenSumResult） |
+| 专用事件独立文件 | 已完成：`ModelCallEvent` + `ToolCallEvent` 各自绑定专用表 |
+| 专用表字段结构优化 | 已完成（VARCHAR/BIGINT 独立列，查询性能更优） |
+| `StatTable` trait 表自描述 | 已完成：`is_dedicated_table()` + `column_sql()` + `metric_sql()` + `filter_equals_sql()` + `filter_range_sql()` |
+| 查询构建下放到表实现 | 已完成，消除硬编码表结构判断 |
+| `tables_by_name` 反向索引 | 已完成，支持按表名查找 `ErasedStatTable` 元数据 |
+| 模型调用统计 hook | 已接入（`ModelCallEvent` 自动采集） |
+| 工具调用统计 decorator | 已完成（`ToolCallLoggingDecorator`，覆盖 manual + auto） |
+| `RequestContext::stats_opt()` 安全访问 | 已完成 |
+| 单元测试 | 全部通过 |
 
-### 内存版 runtime 子模块（pkg/stats/runtime/）
+### 内存版 runtime 子模块（pkg/stats/runtime/）已完成
 
-- [x] `RuntimeStatsCollector<K>` 泛型内存收集器（滑动窗口 60 分钟 + 总计数器全生命周期）
-- [x] `record(key, duration: Option<u64>)` 灵活计时（None 不累计，Some 累计）
-- [x] `snapshot()` 返回深拷贝，释放读锁后业务层安全聚合
-- [x] `uptime_secs()` 收集器运行时长
-- [x] `pkg/stats/mod.rs` 双访问路径（完整 `runtime::RuntimeStatsCollector` + 短路径 re-export）
-- [x] 8 个泛型核心单元测试通过 ✅
-- [x] AOP 已接入（`AopStatsCollector` wrap `RuntimeStatsCollector<(String, String, String)>`）
-- [x] AOP 7 个 wrap 层 + hook 集成测试通过 ✅
+| 模块 | 实现情况 |
+|------|---------|
+| `RuntimeStatsCollector<K>` 泛型内存收集器 | 已完成：60 分钟滑动窗口 + 全生命周期总计数器 |
+| `record(key, duration)` 灵活计时 | 已完成（None 不累计、Some 累计） |
+| `snapshot()` 深拷贝输出 | 已完成：释放读锁后业务层可安全聚合 |
+| `uptime_secs()` 运行时长 | 已完成 |
+| 双访问路径（pkg/stats/mod.rs） | 已完成：完整 `runtime::RuntimeStatsCollector` + 短路径 re-export |
+| 泛型核心单元测试 | 8 个全部通过 |
+| AOP 接入 | 已接入（`AopStatsCollector` 包装 `RuntimeStatsCollector<(String, String, String)>`） |
+| AOP wrap 层 + hook 集成测试 | 7 个全部通过 |
 
 ## 开放性问题
 

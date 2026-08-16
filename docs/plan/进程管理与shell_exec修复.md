@@ -10,9 +10,14 @@
 > - 新增任何 spawn 进程/产日志的工具，参考 §四 4.1 速查表接入 ctx.tool_call_id() 消费模式
 >
 > 关联文档：
-> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
-> - [tool_design.md](../design/tool_design.md) — 工具系统设计（2026-08-09 更新章节追加：统一进程管理架构 + shell_exec 超时 detach 语义）
-> - [前端工具与进程管理.md](前端工具与进程管理.md) — 前端进程管理页面 + shell_list API 配套前端消费端
+> - 对应 design 文档：[tool_design.md](../design/tool_design.md) — 工具系统设计（统一进程管理架构 + shell_exec 超时 detach 语义）
+> - 姊妹 Plan 与规范：
+>   - [ARCHITECTURE.md](../ARCHITECTURE.md) — 唯一权威架构总纲（分层边界 + pkg 基础设施约定）
+>   - [前端工具与进程管理.md](前端工具与进程管理.md) — 前端进程管理页面 + shell_list API 配套前端消费端
+> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md](docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md) — shell_exec/shell_status/shell_kill 进程管理双露工具
+> - Wiki 长文真实路径：[docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md) — 工具系统全景，含进程管理器位置
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤/进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤.md](docs/wiki/knowledge/zh/进程列表通过%20shell_list%20LLM%20工具双暴露，复用%20Agent%20scope%20过滤/进程列表通过%20shell_list%20LLM%20工具双暴露，复用%20Agent%20scope%20过滤.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页/进程详情采用共享组件 + Modal 弹窗，不新建独立路由页.md](docs/wiki/knowledge/zh/进程详情采用共享组件%20+%20Modal%20弹窗，不新建独立路由页/进程详情采用共享组件%20+%20Modal%20弹窗，不新建独立路由页.md)
 
 ---
 
@@ -164,7 +169,7 @@ handlers/system/process/
 | 幂等防重 3 分支（Completed 直接返回 / Failed 重试 / 自动生成 ID 不触发） | 待执行 |
 | ProcessManager scope 三分支（不匹配拒 / 匹配放行 / 无 agent 放行）+ kill 生效 | 待执行 |
 | shell三件套 Handler 双露路由注册 | 待执行 |
-| Clippy + fmt | 待确认干净 |
+| Clippy + fmt | 执行状态：已按项目规范执行 clippy 校验与 fmt 格式化流程 |
 | AGENTS.md 功能条目/测试数更新 | 待同步 |
 
 ### 与计划的偏离

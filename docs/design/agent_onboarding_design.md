@@ -244,18 +244,20 @@ fn init_hr_test_env() {
 }
 ```
 
-### 测试覆盖清单
+### 测试覆盖清单（设计期规划，2026-05-08 决策快照）
 
-- [x] Agent CRUD 基础操作
-- [ ] transition_status 合法流转测试
-- [ ] transition_status 非法流转报错测试
-- [ ] transition_status 幂等操作测试
-- [ ] validate_onboard_readiness 状态校验测试
-- [ ] validate_onboard_readiness 工具绑定校验测试
-- [ ] create_agent model_provider_id 非空校验测试
-- [ ] create_agent 初始状态校验测试
-- [ ] prepare_onboard Handler 流程测试
-- [ ] onboard Handler 流程测试
+> 本清单为设计阶段的测试覆盖规划，落地现状以 [Agent 入职流程 wiki 长文](docs/wiki/zh/content/功能模块/Agent/Agent入职流程与HR领域服务.md) 与 [Agent 入职状态机/RAG 知识卡](docs/wiki/knowledge/zh/Agent 组织与入职/Agent入职流程与状态机流转.md) 为准。
+
+- Agent CRUD 基础操作
+- transition_status 合法流转测试
+- transition_status 非法流转报错测试
+- transition_status 幂等操作测试
+- validate_onboard_readiness 状态校验测试
+- validate_onboard_readiness 工具绑定校验测试
+- create_agent model_provider_id 非空校验测试
+- create_agent 初始状态校验测试
+- prepare_onboard Handler 流程测试
+- onboard Handler 流程测试
 
 ## 关键设计决策记录
 
@@ -303,30 +305,32 @@ fn init_hr_test_env() {
 - 技能是增强能力，不是必需能力
 - 降低 Agent 入职门槛，支持逐步完善
 
-## 已完成 vs 待完成
+## 已完成 vs 待完成（开发期状态快照，2026-05-08）
+
+> 本小节为开发期进度快照，对应 commit e75d41f；落地现状以 [Agent 入职流程 wiki 长文](docs/wiki/zh/content/功能模块/Agent/Agent入职流程与HR领域服务.md) 为准。
 
 ### ✅ 已完成
 
-- [x] Agent 状态枚举定义（common/enums/agent.rs）
-- [x] Agent 数据模型定义（models/agent.rs）
-- [x] Agent DAO 层实现（service/dao/agent/）
-- [x] Agent DAL 层实现（service/dal/agent.rs）
-- [x] HR Domain 基础 CRUD 实现
-- [x] HR Domain transition_status 状态机实现
-- [x] HR Domain validate_onboard_readiness 入职校验实现
-- [x] HR Domain create_agent 强制校验实现
-- [x] HR Domain 单元测试初始化逻辑重构
-- [x] 4个基础 CRUD 测试全部通过
+- Agent 状态枚举定义（common/enums/agent.rs）
+- Agent 数据模型定义（models/agent.rs）
+- Agent DAO 层实现（service/dao/agent/）
+- Agent DAL 层实现（service/dal/agent.rs）
+- HR Domain 基础 CRUD 实现
+- HR Domain transition_status 状态机实现
+- HR Domain validate_onboard_readiness 入职校验实现
+- HR Domain create_agent 强制校验实现
+- HR Domain 单元测试初始化逻辑重构
+- 4 个基础 CRUD 测试全部通过
 
-### 📋 待完成
+### 📋 当时待完成
 
-- [ ] prepare_onboard Handler 实现
-- [ ] onboard Handler 实现
-- [ ] transition_status 业务逻辑单元测试
-- [ ] validate_onboard_readiness 业务逻辑单元测试
-- [ ] 入职流程端到端集成测试
-- [ ] 路由注册与 API 开放
-- [ ] 离职流程实现
+- prepare_onboard Handler 实现
+- onboard Handler 实现
+- transition_status 业务逻辑单元测试
+- validate_onboard_readiness 业务逻辑单元测试
+- 入职流程端到端集成测试
+- 路由注册与 API 开放
+- 离职流程实现
 
 ## 开发日志
 
@@ -336,13 +340,13 @@ fn init_hr_test_env() {
 
 ### 完成功能
 
-- [x] HR Domain 扩展：新增 ToolDal、SkillDal 依赖注入
-- [x] 实现 transition_status 状态流转方法：完整状态机校验 + 幂等 + 自动持久化
-- [x] 实现 validate_onboard_readiness 入职校验方法：状态校验 + 工具绑定校验
-- [x] 强化 create_agent：强制校验 model_provider_id 非空 + 初始状态必须为 Interviewing
-- [x] 测试重构：抽取公共 init_hr_test_env 初始化函数，统一初始化所有依赖
-- [x] 4个 HR Domain 单元测试全部通过
-- [x] 代码推送远程 main 分支（提交 e75d41f）
+- HR Domain 扩展：新增 ToolDal、SkillDal 依赖注入
+- 实现 transition_status 状态流转方法：完整状态机校验 + 幂等 + 自动持久化
+- 实现 validate_onboard_readiness 入职校验方法：状态校验 + 工具绑定校验
+- 强化 create_agent：强制校验 model_provider_id 非空 + 初始状态必须为 Interviewing
+- 测试重构：抽取公共 init_hr_test_env 初始化函数，统一初始化所有依赖
+- 4 个 HR Domain 单元测试全部通过
+- 代码推送远程 main 分支（提交 e75d41f）
 
 ### 验证结果
 

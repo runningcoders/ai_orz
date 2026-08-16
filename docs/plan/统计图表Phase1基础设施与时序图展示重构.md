@@ -7,8 +7,16 @@
 > - 若需在 StatsPanel 增加更多时序图或页面级 Dashboard，直接跳转对应组件文件（见 §涉及文件）
 >
 > 关联文档：
-> - [通用后台任务模块](./通用后台任务模块与Seed异步化重构.md) — 姊妹：任务进度百分比的可视化面板
-> - [HNSW 持久化与向量重建异步化](./HNSW持久化与索引重建异步化重构.md) — 向量重建进度后续可接同款折线图组件
+> - 对应 design 文档：[stats_module_design.md](../design/stats_module_design.md) — DuckDB 持久化 + RuntimeStats 内存双层统计框架设计
+> - 姊妹 Plan 关联：
+>   - [统计图表Phase2.md](统计图表Phase2.md) — 五维度统计面板（Agent/Project/Task/ModelProvider/Tool）+ TokenSumResult 接口
+>   - [统计图表第三期.md](统计图表第三期.md) — AOP 事件统计面板集成 RuntimeStatsCollector 内存滑动窗口
+>   - [通用后台任务模块与Seed异步化重构.md](通用后台任务模块与Seed异步化重构.md) — 姊妹：任务进度百分比可视化面板
+>   - [HNSW持久化与索引重建异步化重构.md](HNSW持久化与索引重建异步化重构.md) — 向量重建进度后续可接同款折线图组件
+> - Wiki 长文真实路径：[docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md) — 五维度总览卡片入口
+> - Wiki 长文真实路径：[docs/wiki/zh/content/前端应用/组件系统/可视化组件/HUD Canvas 图表组件族.md](docs/wiki/zh/content/前端应用/组件系统/可视化组件/HUD%20Canvas%20图表组件族.md) — ChartRenderer trait + hud_palette + LineChart/Dount/Gauge 复用
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md](docs/wiki/knowledge/zh/统计查询%20API%20与前端仪表盘：DuckDB%205%20维表查询%20+%20RuntimeStats%20内存滑动聚合%20+%20StatsHandler%20REST%20API%20+%20前端%20Line/Donut/Gauge%20展示/统计查询%20API%20与前端仪表盘：DuckDB%205%20维表查询%20+%20RuntimeStats%20内存滑动聚合%20+%20StatsHandler%20REST%20API%20+%20前端%20Line/Donut/Gauge%20展示.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md](docs/wiki/knowledge/zh/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕/Canvas%20HUD%20可视化：GraphCanvas%20知识图谱%20+%20图表场景LineDonut%20+%20仪表盘Gauge双版%20+%20HudPalette橙光光晕.md)
 
 ---
 
@@ -112,7 +120,7 @@
 
 ### 4.2 LineChart 增加双 Y 轴（叠加 Token 消耗 + 调用次数）
 
-当前 LineChart 只显示 call_count（Y 轴 max_value = data.iter().map(|p| p.call_count).max()）。如果需要叠加 token_input/output：
+当前 LineChart 只显示 call_count（Y 轴 max_value = data.iter().map(|p| p.call_count).max()）。如需叠加 token_input/output：
 1. Props 加 `series_type: LineChartSeriesType` 枚举 `CallCount / TokenInput / TokenOutput / Call+TokenDual`
 2. draw_line 支持多折线（颜色用不同透明度的橙/蓝），图例新增
 3. render_time_series_chart 辅助加默认 `series_type=CallCount` 不变，ModelProviderStatsPanel 可额外渲染一张 Token 消耗趋势图

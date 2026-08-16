@@ -432,22 +432,22 @@ fn calculate_cron_next(cron_expr: &str, from_time: i64) -> Option<i64> {
 
 ---
 
-## 📋 实现任务清单
+## 📋 实现任务清单（落地完成态）
 
-> ✅ 全部已实现（2026-07-12 落地，2026-07-15 前端体验优化）
+> ✅ 全部已实现（2026-07-12 落地，2026-07-15 前端体验优化）；落地现状以 [Cron 触发器 wiki 长文](docs/wiki/zh/content/功能模块/调度与触发/Cron触发器与定时任务调度.md) 与 [CronManager/RAG 知识卡](docs/wiki/knowledge/zh/调度与触发体系/Cron 触发器与 CronManager 任务调度.md) 为准。
 
-- [x] 创建 `common/src/enums/` 下 TriggerType 枚举
-- [x] 创建 `src/models/cron_trigger.rs` PO 结构体（含 `payload` 字段承载 action + extra）
-- [x] 创建数据库迁移脚本
-- [x] 实现 `CronTriggerDao` SQLite 实现（`src/service/dao/cron_trigger/sqlite.rs`）
-- [x] 实现 `CronTriggerDal`（`src/service/dal/cron_trigger.rs`）
-- [x] 实现 `CronManager` 子能力并归属 `SystemDomain`（`src/service/domain/system/`）
-- [x] 实现 `CronTriggerProducer`（AOP Producer 模式，`src/producer/cron_trigger.rs`）
-- [x] 实现 `CronTriggerConsumer`（按 `payload.action` 分发，`src/consumer/scheduler.rs`）
-- [x] 注册 Producer 到 AOP 事件中心（`src/producer/mod.rs`）
-- [x] 实现 `agent_rest` Action 模板（触发 Agent 休息与记忆沉淀，定时触发记忆沉淀）
-- [x] 前端定时触发器页面（7 列展示 + Action 模板化 + Cron 预设按钮 + 编辑复用创建弹窗）
-- [x] 编写单元测试
+- 创建 `common/src/enums/` 下 TriggerType 枚举
+- 创建 `src/models/cron_trigger.rs` PO 结构体（含 `payload` 字段承载 action + extra）
+- 创建数据库迁移脚本
+- 实现 `CronTriggerDao` SQLite 实现（`src/service/dao/cron_trigger/sqlite.rs`）
+- 实现 `CronTriggerDal`（`src/service/dal/cron_trigger.rs`）
+- 实现 `CronManager` 子能力并归属 `SystemDomain`（`src/service/domain/system/`）
+- 实现 `CronTriggerProducer`（AOP Producer 模式，`src/producer/cron_trigger.rs`）
+- 实现 `CronTriggerConsumer`（按 `payload.action` 分发，`src/consumer/scheduler.rs`）
+- 注册 Producer 到 AOP 事件中心（`src/producer/mod.rs`）
+- 实现 `agent_rest` Action 模板（触发 Agent 休息与记忆沉淀，定时触发记忆沉淀）
+- 前端定时触发器页面（7 列展示 + Action 模板化 + Cron 预设按钮 + 编辑复用创建弹窗）
+- 编写单元测试
 
 ---
 

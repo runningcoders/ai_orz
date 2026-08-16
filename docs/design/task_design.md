@@ -119,9 +119,11 @@ ai_orz 任务系统用于管理用户待办、项目任务、系统自动化任�
 | 2026-04-14 | 初始数据层设计，新增 root_user_id 字段 | 王挺 |
 | 2026-04-15 | 新增 start_at/end_at/dependencies 三个字段，TaskStatus 新增 Archived 归档状态 | 王挺 |
 
-## 后续待开发
+## 后续待开发（设计决策快照）
 
-- [ ] DAL 层业务逻辑实现
-- [ ] Domain 层领域服务
-- [ ] HTTP API 接口
-- [ ] 任务通知机制
+> 本文件为 2026-04-15 决策快照，写定不追代码；以下条目记录当时的后续规划，落地现状以 [Task 状态机 wiki 长文](docs/wiki/zh/content/功能模块/任务与项目/Task 实体状态机与进度追踪.md) 与 [Task CRUD/RAG 知识卡](docs/wiki/knowledge/zh/任务与项目体系/Task 实体 CRUD 与状态机设计.md) 为准。
+
+- DAL 层业务逻辑实现
+- Domain 层领域服务
+- HTTP API 接口
+- 任务通知机制

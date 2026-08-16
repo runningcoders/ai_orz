@@ -1,3 +1,7 @@
+📦 归档标记（2026-08-16）：被 [docs/plan/文档链接统一与DocLinkClassifier工具链.md](docs/plan/文档链接统一与DocLinkClassifier工具链.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/plan/文档链接统一与DocLinkClassifier工具链.md](docs/plan/文档链接统一与DocLinkClassifier工具链.md)
+
+---
+
 # 文档路径引用统一化 + DocLinkClassifier 通用组件 Implementation Plan (v2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

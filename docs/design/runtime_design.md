@@ -9,7 +9,13 @@
 > - [tool_design.md](./tool_design.md) — 工具调用架构与三层执行链路
 > - [thinking_task_policy_engine_design.md](./thinking_task_policy_engine_design.md) — 策略引擎与运行时可视化配套设计
 > - [intent_aware_two_stage_awaken_design.md](./intent_aware_two_stage_awaken_design.md) — 两阶段唤醒设计总纲（Phase1 IA + Phase2 执行）
-> - 【② Plan 落地】（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+> - 【② Plan 落地 6 份】
+>   - [Agent运行时上下文扩展.md](../plan/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + BusyGuard RAII
+>   - [前端运行时观测面板.md](../plan/前端运行时观测面板.md) — RuntimePanel 组件 + Workspace 运行中 Agent 卡片
+>   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](../plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze Phase1 + Awaken Phase2 + 6 级 JSON 降级
+>   - [策略引擎与思考运行时策略增强.md](../plan/策略引擎与思考运行时策略增强.md) — Policy trait + PolicyGroup + policy_set! + AgentThinkRuntime
+>   - [运行时API可观测与退出原因字段.md](../plan/运行时API可观测与退出原因字段.md) — 3 接口 runtime-status/cancel-thinking/runtime-list + exit_reason 维度
+>   - 占位：待文档链接统一+DocLinkClassifier 关联 runtime vNext
 > - 【③ Wiki 长文 7 篇】
 >   - [运行时领域.md](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) — Runtime 领域四方法入口（wake/awaken/sleep/analyze）
 >   - [Runtime 领域编排.md](docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md) — Domain 层编排
@@ -24,6 +30,17 @@
 >   - [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) — 各 ThinkingScene 策略组
 >   - [Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md)
 >   - [思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件](docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件/思考运行时前端观测：runtime-status%20cancel-thinking%20runtime-list%20接口与%20runtime_panel%20组件.md) — runtime_list 三过滤器（state/task_id/project_id）
+>
+> ⭐ **落地索引（四类互引）**
+> - 对应 Plan 6 份落地快照：
+>   - [Agent运行时上下文扩展.md](../plan/Agent运行时上下文扩展.md) — task_id/project_id 双字段 + 三态 FSM + BusyGuard RAII
+>   - [前端运行时观测面板.md](../plan/前端运行时观测面板.md) — RuntimePanel 组件 + 工作台运行中 Agent 卡片
+>   - [两阶段唤醒：IntentAnalyze+Awaken正式执行.md](../plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) — IntentAnalyze 先理解 + Awaken 正式执行 + 6 级 JSON 降级
+>   - [策略引擎与思考运行时策略增强.md](../plan/策略引擎与思考运行时策略增强.md) — Policy trait/PolicyGroup 组合宏/policy_set + AgentThinkRuntime
+>   - [运行时API可观测与退出原因字段.md](../plan/运行时API可观测与退出原因字段.md) — runtime-status/cancel-thinking/runtime-list 接口 + exit_reason 统计维度
+>   - 占位：待思考运行时 vNext 独立 plan 补充（如需）
+> - 对应 Wiki 长文 7 篇（见上方 【③ Wiki 长文 7 篇】）
+> - 对应 RAG 卡 5 张（见上方 【④ RAG 卡 5 张】）
 
 ---
 

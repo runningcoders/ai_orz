@@ -322,23 +322,25 @@ ensure_err!(
 
 ## 6. 分阶段落地计划（已完成）
 
+> 本小节为开发期落地记录；设计现状以 [统一错误模型 wiki 长文](docs/wiki/zh/content/功能模块/系统管理/统一错误与异常处理模型.md) 为准。
+
 ### Phase 1：完成 common 类型定义
-- [x] 定义 `ErrorType`、`ErrorCode`（基础变体）、`ErrorField`、`Error`、`Result`
-- [x] 实现 `define_error_codes!` 宏
-- [x] 实现 `err!`/`bail_err!`/`ensure_err!`
-- [x] 单元测试
+- 定义 `ErrorType`、`ErrorCode`（基础变体）、`ErrorField`、`Error`、`Result`
+- 实现 `define_error_codes!` 宏
+- 实现 `err!`/`bail_err!`/`ensure_err!`
+- 单元测试
 
 ### Phase 2：全项目迁移统一错误模型
-- [x] 将所有项目文件从 `Result<T, E>` 双泛型迁移到 `Result<T>` 单泛型
-- [x] 删除 `ToolExecutionError` 定义，统一使用 `common::error::Error`
-- [x] 将 `ToolCallTraceRef` 集成到 `ErrorField` 中，保留工具执行追踪能力
-- [x] 修复所有 trait 实现中外部要求使用 `anyhow::Result` 的冲突
-- [x] 修复所有错误转换问题，添加 `From<E>` 实现支持 `?` 自动转换
+- 将所有项目文件从 `Result<T, E>` 双泛型迁移到 `Result<T>` 单泛型
+- 删除 `ToolExecutionError` 定义，统一使用 `common::error::Error`
+- 将 `ToolCallTraceRef` 集成到 `ErrorField` 中，保留工具执行追踪能力
+- 修复所有 trait 实现中外部要求使用 `anyhow::Result` 的冲突
+- 修复所有错误转换问题，添加 `From<E>` 实现支持 `?` 自动转换
 
 ### Phase 3：验证测试
-- [x] 修复所有测试错误，保证测试语法正确
-- [x] 所有 490 个单元测试全部通过
-- [x] 保持 API 兼容，序列化格式满足前端期望
+- 修复所有测试错误，保证测试语法正确
+- 所有 490 个单元测试全部通过
+- 保持 API 兼容，序列化格式满足前端期望
 
 ### 迁移总结：
 - 整个项目已完成统一错误模型重构，业务代码内部全部使用 `common::error::{Error, Result}`

@@ -440,24 +440,26 @@ pub trait DeliveryDomain {
 }
 ```
 
-## 当前实现进度
+## 当前实现进度（已全部完成）
 
-- [x] 数据库 schema 设计完成，迁移已执行（含 reply_to_id 字段
-- [x] 枚举定义完成（common）
-- [x] PO 和工具调用结构体定义完成（models）
-- [x] DAO 层完成，支持按会话/项目/任务查询
-- [x] DAL 层完成
-- [x] Domain 层完成：delivery + management，所有测试通过
-- [x] 事件总线重构完成：泛型 topic 分离设计，彻底解决消息错乱
-- [x] Tool Domain 层框架已搭建（management + execution）
-- [x] Handler 层完成：发送消息、列表查询、搜索、SSE 订阅等接口上线
-- [x] SSE 实时推送系统上线（替代短轮询，订阅者模式 + broadcast 通道）
-- [x] AOP 事件中心迁移完成（MessageCreatedEvent 替代旧事件总线）
-- [x] 双模式认证统一（HttpOnly Cookie + JWT 浏览器 / Bearer token API）
-- [x] root_id 消息链追踪（用户发起消息生成 root_id，Agent 回复继承）
-- [x] TaskAssignment 消息类型已实现（任务分配自动通知 Agent）
-- [x] 消息渠道系统骨架完成（飞书 P2P 私信 WebSocket 入站已上线，微信/Slack/邮件/Webhook 出站骨架就绪）
+| 模块 | 完成情况 |
+|------|---------|
+| 数据库 schema | 已完成，迁移已执行（含 reply_to_id 字段） |
+| common 枚举定义 | 已完成 |
+| models PO + 工具调用结构体 | 已完成 |
+| DAO 层（会话/项目/任务查询） | 已完成 |
+| DAL 层 | 已完成 |
+| Domain 层（delivery + management + 测试） | 已完成，所有测试通过 |
+| 事件总线重构（泛型 topic 分离） | 已完成，解决消息错乱问题 |
+| Tool Domain 层框架（management + execution） | 已搭建完成 |
+| Handler 层接口（发送/列表/搜索/SSE） | 已上线 |
+| SSE 实时推送系统 | 已上线，订阅者模式 + broadcast 通道 |
+| AOP 事件中心迁移 | 已完成（MessageCreatedEvent 替代旧事件总线） |
+| 双模式认证统一 | 已完成（Cookie 浏览器模式 + Bearer token API 模式） |
+| root_id 消息链追踪 | 已完成（用户发起消息生成，Agent 回复继承） |
+| TaskAssignment 消息类型 | 已实现（任务分配自动通知 Agent） |
+| 消息渠道系统骨架 | 已完成（飞书 WS 入站上线；微信/Slack/邮件/Webhook 出站骨架就绪） |
 
-所有单元测试：**830 个测试全部通过 ✅**（后端 746 + 前端 34 + common 50）
+所有单元测试：**830 个测试全部通过**（后端 746 + 前端 34 + common 50）
 
 最后更新：2026-07-25

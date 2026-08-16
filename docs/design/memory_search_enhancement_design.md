@@ -35,7 +35,7 @@
 |-----|-------|-----|
 | MATCH 死代码 | P0 阻塞 | `query_short_term` / `query_knowledge_nodes` 使用了 FTS5 MATCH 语法，但从未创建 FTS 虚拟表，实际调用运行时报错 |
 | LIKE 能力不足 | P0 质量 | 无分词、无相关性排序、无多词搜索、性能退化 |
-| 综合搜索不完整 | P1 体验 | 关系搜索是 TODO 空实现；`MatchType::Keyword` 从未实际使用；向量阈值硬编码 0.8 |
+| 综合搜索不完整 | P1 体验 | 关系搜索是空实现（原代码未补全）；`MatchType::Keyword` 从未实际使用；向量阈值硬编码 0.8 |
 
 ### 关键决策表
 
@@ -91,7 +91,7 @@ MemoryDal.search() ── 三路入口 ──┐
 | [src/service/dao/memory/mod.rs](../../src/service/dao/memory/mod.rs) | MemoryDao trait | 新增 `search_relations()`；`MemorySearch` 新增 `vector_distance_threshold`；移除 query 方法 keyword 语义 |
 | [src/service/dao/memory/sqlite.rs](../../src/service/dao/memory/sqlite.rs) | SQLite impl | search_short_term / search_knowledge_nodes：LIKE → FTS5 MATCH + BM25；新增 search_relations；新增 `escape_fts5_keyword()` 转义工具；移除 query_short_term / query_knowledge_nodes 中的 MATCH 死代码 |
 | **DAL 层（混合搜索 + 关系实现）** | | |
-| [src/service/dal/memory.rs](../../src/service/dal/memory.rs) | MemoryDal 混合层 | search_short_term_internal / search_knowledge_nodes_internal：三路合并排序 + SearchMatchInfo 打标签；search_relations_internal 从 TODO 改为调用 DAO；向量阈值从硬编码读 MemorySearch 参数 |
+| [src/service/dal/memory.rs](../../src/service/dal/memory.rs) | MemoryDal 混合层 | search_short_term_internal / search_knowledge_nodes_internal：三路合并排序 + SearchMatchInfo 打标签；search_relations_internal 从空实现补为调用 DAO；向量阈值从硬编码读 MemorySearch 参数 |
 | **模型层** | | |
 | [common/src/models/vector.rs](../../common/src/models/vector.rs) | SearchMatchInfo | 新增 `fts_rank: Option<f32>` 字段 |
 | **零改动面** | | |

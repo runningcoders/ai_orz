@@ -213,11 +213,11 @@ async fn list_skill_files_handler(ctx: RequestContext, params: ListSkillFilesPar
 4. **类型安全**：参数解析由 serde 完成，编译时检查
 5. **参数文档自动生成**：JSON Schema 自动从类型生成
 
-## 待验证
+## 待验证事项（验证顺序）
 
-- [ ] 实际测试一个现有 Handler 改造，验证可用性
-- [ ] 确认 `ctor` 全局注册是否正常工作
-- [ ] 确认 Rig 调用流程是否能正常调用
+1. 实际测试一个现有 Handler 改造，验证可用性
+2. 确认 `ctor` 全局注册是否正常工作
+3. 确认 Rig 调用流程是否能正常调用
 
 ## 更新记录
 

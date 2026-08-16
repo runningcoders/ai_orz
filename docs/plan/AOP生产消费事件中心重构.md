@@ -7,8 +7,14 @@
 > - 若需了解 Registry 分发/队列实现细节，直接跳转对应代码文件（见 §涉及文件）
 >
 > 关联文档：
-> - [AGENTS.md](../../AGENTS.md) — 分层架构规范
-> - [消息通道设计](../design/message_channel_design.md) — 消息系统原设计文档
+> - 对应 design 文档：暂无对应独立 AOP 设计文档（强烈建议补写，当前设计决策散落在 pkg/aop/ 源码）
+> - 上游规范与关联：
+>   - [AGENTS.md](../../AGENTS.md) — 分层架构规范（§3.1 适配层 AOP Producer 与 Consumer 分层定位约定）
+>   - [message_channel_design.md](../design/message_channel_design.md) — 消息渠道系统骨架（消息出站链路）
+> - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件中心设计与实现.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/AOP%20事件中心设计与实现.md) — 统一 publish 入口 + Registry 订阅者注册 + Queue 队列实现
+> - Wiki 长文真实路径：[docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者概览.md](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者概览.md) — 8 类消费者定位与并发策略
+> - RAG 卡真实路径 1：[docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md](docs/wiki/knowledge/zh/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册/AOP%20生产消费事件中心：纯框架零业务%20+%20pkg/aop/core%206%20Trait%20+%20Registry%20全局单例%20+%208%20类业务消费者注册.md)
+> - RAG 卡真实路径 2：[docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md](docs/wiki/knowledge/zh/Domain%20内部事件与消费者全链路：8%20类%20DomainEvent%20枚举%20+%208%20类%20Consumer%20业务消费%20+%20AOP%20Producer%20投递入口%20+%20Registry%20订阅/Domain%20内部事件与消费者全链路：8%20类%20DomainEvent%20枚举%20+%208%20类%20Consumer%20业务消费%20+%20AOP%20Producer%20投递入口%20+%20Registry%20订阅.md)
 
 ---
 
@@ -132,7 +138,7 @@ Consumer（异步消费端）
 | Clippy | 零错误零警告 |
 
 ### 与计划的偏离（业务零影响）
-1. 原计划 §Task4 consumer/message.rs 逻辑一次性迁移到 AgentAwakeningConsumer → 实际分两阶段：先打通链路（on_event 留 TODO 占位），后续迭代补全唤醒逻辑（确保迁移风险可控）
+1. 原计划一次性迁移 consumer/message.rs 到 AgentAwakeningConsumer → 实际分两阶段：先打通链路框架（on_event 方法初版只打通框架占位），下一迭代补全唤醒业务逻辑（确保迁移风险可控）
 2. 原计划 Event 泛型队列直接存储 → 实际通过 serde_json 序列化中转（解决 trait object 下 Event trait 非 object-safe 问题）
 
 ---

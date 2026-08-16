@@ -12,6 +12,14 @@
 > - 【③ Wiki 长文】[工具生态系统.md](docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md) — 工具系统全景
 > - 【③ Wiki 长文】[工具注册表.md](docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md) — MCP 工具子板块入口
 > - 【④ RAG 卡】[工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验/工具系统三层调用架构：CoreTool%20trait%20+%20Builtin%20HTTP%20MCP%20三协议路由%20+%20register_handler_tool%20宏%20+%20神经工具免绑定三层校验.md) — §3 §MCP 协议选择铁律
+> - 占位：待 MCP 运行面最小闭环独立 plan（v3.1 计划安排）落地后回填真实 Plan 路径
+> - 占位：待 MCP 专用 Wiki 长文（MCP 子系统独立设计说明书）同步后回填真实 Wiki 长文路径
+> - 占位：待 MCP 专用 RAG 知识卡（MCP Server/Tool 双层建模 + Stale 管理）wiki-maintainer 同步后回填真实 RAG 卡路径
+>
+> ⭐ **落地索引（四类互引）**
+> - 对应 Plan：[前端工具与进程管理.md](../plan/前端工具与进程管理.md)（MCP Server 前端配置面板）+ 占位：待 MCP 管理面联调独立 plan 落地
+> - 对应 Wiki 长文：工具生态系统/工具注册表（见上 【③ Wiki 长文】）+ 占位：待 MCP 子系统独立长文 wiki-maintainer 同步
+> - 对应 RAG 卡：工具系统三层调用架构总卡 §MCP 协议铁律段（见上）+ 占位：待 MCP 专用 RAG 卡 wiki-maintainer 同步
 
 ## 概述
 
@@ -1220,13 +1228,13 @@ MCP 安全边界比 HTTP Tool 更严格，因为 stdio MCP Server 等价于启�
 
 ---
 
-## 待确认问题
+## 设计决策留痕（历史未定事项 → 当前结论）
 
-1. stdio `command` 是否采用 allowlist？allowlist 放配置还是代码常量？
-2. MCP Server 是否只允许管理员配置？
-3. MCP Tool 同步时，远端删除的 tool 是禁用、软删除，还是保留 stale 状态？已确定采用 `ToolStatus::Stale`：保留本地记录与绑定但禁止 Prompt 展示和 Runtime 执行；远端重新出现时仅 `Stale` 自动恢复为 `Enabled`，不覆盖管理员 `Disabled`。
-4. MCP trace 默认全脱敏已作为第一版安全默认值落地；后续是否需要按 server/tool 配置 trace policy？
-5. 大型 MCP ToolCallResult 的默认审计详情已通过 `trace_ref/call_id -> ToolCallEntry` 查询链路承载；只有需要用户下载或成为 Project Artifact 时，才进入 attachment / artifact 产物化设计。
+1. stdio `command` allowlist 策略：第一版仅管理员可配置 MCP Server（见决策 2），command 不做代码层 allowlist 硬编码，可由管理员侧配置面板约束；配置收敛路径见管理面实现。
+2. MCP Server 管理权限：第一版仅管理员可创建/修改（SuperAdmin 角色），普通用户对 MCP Server 配置无写入权限。
+3. MCP Tool 远端删除处理策略：已确定采用 `ToolStatus::Stale`：保留本地记录与绑定关系但禁止 Prompt 展示和 Runtime 执行；远端重新出现时仅 `Stale` 自动恢复为 `Enabled`，不覆盖管理员手动标记的 `Disabled`。
+4. MCP trace 脱敏策略：默认全脱敏已作为第一版安全默认值落地；占位：待管理面差异化 trace policy 配置能力迭代完成后启用细粒度策略。
+5. MCP ToolCallResult 审计与产物化：默认审计详情通过 `trace_ref/call_id -> ToolCallEntry` 查询链路承载；占位：待 Attachment 子系统产物化能力升级后接入用户下载与 Artifact 归档链路。
 
 ---
 

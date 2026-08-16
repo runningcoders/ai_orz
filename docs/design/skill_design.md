@@ -18,6 +18,11 @@
 >   - [技能管理系统.md](docs/wiki/zh/content/前端应用/页面模块/HR%20管理页面/技能管理系统.md) — 前端编辑器：左侧文件树 + 中间 Markdown + 右侧 Prompt 预览
 > - 【④ RAG 原子知识卡（Batch6 新增 1 张 + 关联平行卡 1 张）】
 >   - [技能系统 Seed 预置导入与 Agent 入职绑定：5 套 TEMPLATE_* 编译期嵌入 + install_skill_pack 幂等 Tag 分发 + Prompt Token 熔断](docs/wiki/knowledge/zh/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断/技能系统%20Seed%20预置导入与%20Agent%20入职绑定：5%20套%20TEMPLATE_*%20编译期嵌入%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Prompt%20Token%20熔断.md) — 5 套模板（工具/记忆/项目/沟通/技能自管理）+ Draft 副本 id 重命名 + 6 条回归红线（含 content_path 防路径穿越）
+>
+> ⭐ **落地索引（四类互引）**
+> - 对应 Plan 1 份真实：[预置基础技能导入重构.md](../plan/预置基础技能导入重构.md) + 占位：待 Skill 文件引用导入（Batch 2.5）独立 plan 落地
+> - 对应 Wiki 长文 6 篇（技能系统/技能包管理/技能与工具绑定/Agent和技能模型/系统初始化/技能管理系统，见上 【③ Wiki 长文】）
+> - 对应 RAG 卡 1 份真实 + 关联平行卡 1 份（见上 【④ RAG 原子知识卡】）
 
 ## 设计目标
 

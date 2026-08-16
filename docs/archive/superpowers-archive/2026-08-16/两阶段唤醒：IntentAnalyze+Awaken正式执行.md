@@ -1,3 +1,7 @@
+📦 归档标记（2026-08-16）：被 [docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md) 取代。保留原因：原始执行蓝图含逐步命令/检查清单，留作审计参考。生效方案：[docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md](docs/plan/两阶段唤醒：IntentAnalyze+Awaken正式执行.md)
+
+---
+
 # 意图感知两阶段唤醒 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
