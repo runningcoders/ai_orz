@@ -125,14 +125,15 @@ cmd_dev() {
     trap cleanup INT TERM
 
     echo "🎨 启动前端开发服务器（WASM 编译中）..."
-    # 前端先启动：wasm 编译快（8-16s），先拿到 target 构建锁让页面尽快就绪；
-    # 若后端先启动，冷构建会持锁数分钟，dx serve 的 wasm build 排队等锁，
-    # 浏览器会一直停在 building 占位页（后端与前端共用 workspace target 目录，cargo 锁互斥）
+    # 前端先启动（体验优化，非必须）：wasm 增量编译快（8-16s），页面最先可用。
+    # 说明：后端 host 编译（target/debug/）与 dx 的 wasm 编译
+    # （target/wasm32-unknown-unknown/debug/）是不同 target 子目录，cargo build 锁互不阻塞，
+    # 仅依赖解析瞬间有 package cache 秒级排队——不存在长持锁问题（已实测验证）。
     # exec：让 FRONTEND_PID 直接指向 dx 进程（否则 kill 到的是子 shell，dx 会变孤儿进程）
     (cd frontend && exec dx serve) &
     FRONTEND_PID=$!
 
-    echo "📦 启动后端开发服务器（冷构建可能需要数分钟，会排队等前端释放构建锁）..."
+    echo "📦 启动后端开发服务器（冷构建可能需要数分钟）..."
     cargo run &
     BACKEND_PID=$!
 
