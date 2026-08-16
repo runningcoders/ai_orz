@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: e2e
-title: AI Orz 端到端测试（Playwright E2E）
-scope:
-    - e2e/
-source_files: []
-depends_on: []
-related_to: []
