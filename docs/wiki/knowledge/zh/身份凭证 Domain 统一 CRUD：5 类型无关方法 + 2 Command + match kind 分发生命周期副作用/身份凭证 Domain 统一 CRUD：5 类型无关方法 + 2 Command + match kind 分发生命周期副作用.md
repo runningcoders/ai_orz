@@ -46,7 +46,7 @@ source_files:
 | [src/service/dal/lark.rs](src/service/dal/lark.rs) | LarkChannelDal：find_channels_by_credential_id / handover_listeners_after_credential_change | find_channels_by_credential_id：查「LarkApp 凭证被哪些 MessageChannel 引用」（前置检查）；handover_listeners_after_credential_change(old_app_id, new_app_id, secret_changed)：凭证变更后 WS 监听移交（断连重建）|
 | [src/pkg/tool_registry/lark_cli.rs](src/pkg/tool_registry/lark_cli.rs) | clear_cli_config(home)：清 HOME 下 lark-cli config | 凭证 update（secret_changed=true）后触发；失败 log_warn 不阻断 |
 | [src/pkg/tool_registry/gh_cli.rs](src/pkg/tool_registry/gh_cli.rs) | clear_gh_auth(home)：清 HOME gh 登录态 | 删除的 GithubToken 是当前活动凭证时触发；失败 log_warn 不阻断 |
-| 【对应 Wiki 长文】身份凭证管理.md | 系统化上下文 §5 Domain 统一 CRUD 小节 | /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md |
+| 【对应 Wiki 长文】身份凭证管理.md | 系统化上下文 §5 Domain 统一 CRUD 小节 | [身份凭证管理](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一%20Domain%20CRUD%20加密存储与生命周期联动）.md) |
 | 【② Plan 定稿】§四 类型分发速查表 + §七 4 步模板 | 新增凭证类型 domain 2 处 match 扩展模板 | docs/plan/身份凭证Domain统一CRUD重构.md |
 | 【① Design 1】message_channel_design.md §4.1 渠道引用拒删 | Conflict 错误来源 | docs/design/message_channel_design.md |
 | 【① Design 2】lark_cli_integration.md §四 WS 移交 + 清 HOME config | 后置联动设计动机 | docs/design/lark_cli_integration.md |

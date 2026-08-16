@@ -11,6 +11,19 @@
 - [common/src/api/task.rs](common/src/api/task.rs)
 - [src/handlers/project/projects/response.rs](src/handlers/project/projects/response.rs)
 - [src/handlers/project/task/response.rs](src/handlers/project/task/response.rs)
+
+### 本文关联的三类文档（四类互引闭环，2026-08-16 增量补齐）
+
+**① 设计文档（Design）**：
+- docs/design/doc_link_classifier_and_quality_gates.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
+- [docs/design/frontend_architecture.md](docs/design/frontend_architecture.md) — 前端组件体系与路由总设计
+
+**② 落地计划（Plan）**：
+- docs/plan/frontend_markdown_renderer_doclinkclassifier_bridge.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
+
+**④ RAG 原子知识卡**：
+- [前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发](docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md) — §红线 1 链接必须先 classify 再渲染；§红线 5 禁止直接渲染真实 href 给站内 wiki/代码链接（统一走全局 click 拦截器）
+- [DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链](docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md) — Level3 兄弟卡：DocLinkClassifier 在 common crate 前后端复用，前端通过 WASM 调用同一套分类逻辑
 </cite>
 
 ## 更新摘要
@@ -19,6 +32,7 @@
 - 增强了性能优化，通过use_memo缓存HTML避免重复解析
 - 改进了Mermaid图渲染机制，支持延迟扫描和JS互操作
 - 完善了样式系统，提供紧凑模式专用样式类
+**2026-08-16 增量更新**：补齐 cite 区四类互引闭环（1 Design 真实 + 1 Design 占位 + 1 Plan 占位 + 2 RAG 卡）；关联 T7（前端 MarkdownRenderer DocLinkClassifier JS 桥接）主题并引用兄弟卡 T6（后端分类器）；§5 链接处理章节来源行号降级（因 fcb08db6 改造加入 classify 调用与 data-repo-href 属性注入，导致 markdown.rs 行号范围漂移，优先降级为无行号范围引用）。
 
 ## 目录
 1. [简介](#简介)

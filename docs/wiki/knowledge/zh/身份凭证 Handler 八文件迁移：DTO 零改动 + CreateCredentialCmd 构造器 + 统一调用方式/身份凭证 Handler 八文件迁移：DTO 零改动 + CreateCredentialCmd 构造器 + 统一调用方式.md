@@ -49,8 +49,8 @@ source_files:
 | [github_integration/*_credential.rs](src/handlers/finance/github_integration/create_credential.rs)（4 个文件模式完全一致）| github CRUD Handler | CredentialDetail::GithubToken / CredentialDetailPatch::GithubToken / CredentialKind::GithubToken 对应 |
 | common/src/api/finance_credential.rs（或 common/src/api/finance.rs）| DTO（前后端共用，Handler Request/Response）| LarkCredentialCreateRequest / GithubCredentialUpdateRequest 等结构体**零字段改动**；仅 Update Response 新增可选 `secret_changed: bool` 字段（向前兼容）|
 | src/service/domain/finance/mod.rs Commands | CreateCredentialCmd / UpdateCredentialCmd | Handler → Domain 的中间表达 |
-| 【对应 Wiki 长文 1】身份凭证管理.md | 系统化上下文 §5 Handler 迁移小节 | /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md |
-| 【对应 Wiki 长文 2】飞书集成系统.md | 飞书凭证 Handler 字段细节 + WS 移交 | /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md |
+| 【对应 Wiki 长文 1】身份凭证管理.md | 系统化上下文 §5 Handler 迁移小节 | [身份凭证管理](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一%20Domain%20CRUD%20加密存储与生命周期联动）.md) |
+| 【对应 Wiki 长文 2】飞书集成系统.md | 飞书凭证 Handler 字段细节 + WS 移交 | [飞书集成系统](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md) |
 | 【② Plan 定稿】§三 涉及文件 Handler 8 个迁移表 | 每个 Handler 改写摘要 | docs/plan/身份凭证Domain统一CRUD重构.md |
 | 【① Design】api_protocol_convention.md | Handler 拆分规范（每方法一文件）/ DTO 定义位置（common）/ 禁止裸响应 / 结构体化请求参数 | docs/design/api_protocol_convention.md |
 

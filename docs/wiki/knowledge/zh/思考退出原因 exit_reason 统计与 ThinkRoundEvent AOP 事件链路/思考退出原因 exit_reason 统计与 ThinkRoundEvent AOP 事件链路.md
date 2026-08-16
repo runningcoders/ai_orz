@@ -34,9 +34,9 @@ source_files:
 | [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs) | AOP 消费者（事件订阅→统计入库）| Registry 订阅 ThinkRoundEvent topic；record_event! 宏投递 DuckDB 多维统计；按 scene + exit_reason 聚合；exit_reason 分布按月/按 Agent 维度存 5 分钟聚合表 |
 | [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs) | 事件投递方 + exit_reason 归一映射 | `map_triggered_to_result(policy_hit_ids) -> ThinkLoopResult`：所有策略命中 → ThinkLoopResult → exit_reason 字符串（单一事实源）；awaken 返回前 publish(AgentAwakeEvent{ exit_reason: Some(...) })；think_loop 每轮 publish(ThinkRoundEvent) |
 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs) | 每轮 ThinkRoundEvent 构造 | 每轮结束：组装 ThinkRoundEvent（policy_hit_ids 来自 Policy.evaluate() 结果，即本轮命中的所有策略 id 列表：or 组全部 / and 组全部）|
-| 【Wiki 长文 1】运行时领域.md §5 详细分析 | exit_reason 归一化位置 + 与策略引擎协作 | /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md |
-| 【Wiki 长文 2】思考轮次统计消费者.md | 消费者链路详情（消费框架约定）| /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md |
-| 【平行卡】AgentThinkRuntime（last_exit_reason 与 exit_reason 同源约束）| Agent 状态侧 | /Users/aman/Technology/rust/ai_orz/docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md |
+| 【Wiki 长文 1】运行时领域.md §5 详细分析 | exit_reason 归一化位置 + 与策略引擎协作 | [运行时领域](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) |
+| 【Wiki 长文 2】思考轮次统计消费者.md | 消费者链路详情（消费框架约定）| [思考轮次统计消费者](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md) |
+| 【平行卡】AgentThinkRuntime（last_exit_reason 与 exit_reason 同源约束）| Agent 状态侧 | [AgentThinkRuntime 卡](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md) |
 | 【① Design】thinking_task_policy_engine_design.md §一 §二 exit_reason 决策 | 设计决策表：为什么统一字符串映射 | [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
 | 【② Plan】执行蓝图 §Task 8 统计事件接入 | 事件接入步骤 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：转 docs/plan/ 后回填）|
 

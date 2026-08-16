@@ -38,7 +38,7 @@ source_files:
 | [common/src/api/runtime.rs](common/src/api/runtime.rs) | DTO 单一事实源（前后端共用）| `RuntimeStatusRequest` / `RuntimeStatusResponse` / `RuntimeListRequest` / `RuntimeListResponse` / `RuntimeListItem` / `CancelThinkingResponse` / `ThinkRuntimeSnapshotDTO` 全部定义在此；禁止前端/handler 本地镜像 |
 | [frontend/src/components/runtime_panel.rs](frontend/src/components/runtime_panel.rs) | 前端组件（RuntimePanel）| props: agent_id (single) 或 list_mode=true；use_resource 轮询：500ms interval（思考中）或 2s interval（空闲，降低成本）；取消按钮：POST cancel-thinking → was_thinking=true 时加 1s loading；UI：进度条（rounds / max_rounds 百分比）+ 2 列表格：Key/Value（场景 Scene / 当前轮次 / 已用时间 / 输入输出 tokens / 当前工具调用 / 最近退出原因）|
 | [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs) | 内存态实现（StateManager）| 三个 Domain 方法在 `impl AgentRuntimeStateManager`：fn runtime_status_snapshot / fn runtime_list(organization_id, pagination) / fn cancel_think(agent_id)。DashMap 读不加锁（DashMap 自身并发安全） |
-| 【Wiki 长文】思考运行时面板观测接口.md（新建）| 系统化上下文 §1-§10 | /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md |
+| 【Wiki 长文】思考运行时面板观测接口.md（新建）| 系统化上下文 §1-§10 | [思考运行时面板观测接口](docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md) |
 | 【① Design】thinking_task_policy_engine_design.md §三 L60-L80 接口层架构图 | 接口层 vs 状态管理层数据流图 | [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
 | 【② Plan】执行蓝图 §File Structure 表格 | 改动文件清单 + Handler/前端组件变更摘要 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：转 docs/plan/ 后回填）|
 

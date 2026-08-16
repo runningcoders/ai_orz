@@ -41,7 +41,7 @@ source_files:
 | [src/models/user.rs](src/models/user.rs) | UserPo：identity_credentials 列定义（TEXT）| users.sql DDL 中 identity_credentials TEXT 默认空串（空串=无凭证），与 UserIdentityCredentials.to_column_value 输出一致；字段级读取走 UserDal.get_identity_credentials |
 | [src/service/dao/user/sqlite.rs](src/service/dao/user/sqlite.rs) | DAO 层：get_identity_credentials 读取原始列值 + save_identity_credentials 写回 | 纯列读写 + 反序列化封装（**禁止在 DAO 层做字段级校验**）|
 | [src/service/dal/user.rs](src/service/dal/user.rs) | DAL 层：save_identity_credentials 的事务/行级更新（并发安全） | 并发写凭证库时乐观锁：UPDATE users SET identity_credentials = $1, version = version+1 WHERE id = $2 AND version = $3；失败重试最多 3 次 |
-| 【对应 Wiki 长文】身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md | 系统化上下文（必读 §5 模型层信息下沉小节）| /Users/aman/Technology/rust/ai_orz/docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md |
+| 【对应 Wiki 长文】身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md | 系统化上下文（必读 §5 模型层信息下沉小节）| [身份凭证管理](docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一%20Domain%20CRUD%20加密存储与生命周期联动）.md) |
 | 【② Plan 定稿】身份凭证Domain统一CRUD重构.md §三 涉及文件 §四 扩展模板 | 改动清单 + 新增凭证类型 4 步模板 | docs/plan/身份凭证Domain统一CRUD重构.md |
 | 【① Design 1】message_channel_design.md §3 凭证引用检查 | resolve_lark_credential_ref 设计动机 | docs/design/message_channel_design.md |
 | 【① Design 2】lark_cli_integration.md §二 凭证变更 WS 移交 | secret_changed 字段来源（CredentialUpdateImpact）| docs/design/lark_cli_integration.md |
