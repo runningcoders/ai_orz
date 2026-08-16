@@ -66,28 +66,88 @@ ai_orz - 统一启动脚本
 EOF
 }
 
+# 启动前预检：清理残留的 ai_orz 后端 / dx serve 前端进程与端口占用
+# 避免 DuckDB 文件锁冲突（单写者）和 dx 构建锁争抢
+preflight_cleanup() {
+    local cleaned=0
+
+    # 残留后端二进制进程（上次未正常退出，持有 .ai_orz/stats.duckdb 锁）
+    local stale_be
+    stale_be=$(/bin/ps aux | /usr/bin/grep -E "target/(debug|release)/ai_orz( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
+    for pid in $stale_be; do
+        echo "${YELLOW}🧹 清理残留后端进程 PID=$pid（避免 DuckDB 锁冲突）${NC}"
+        kill "$pid" 2>/dev/null || true
+        cleaned=1
+    done
+
+    # 残留 dx serve 进程（持有 8080 端口与构建锁）
+    local stale_dx
+    stale_dx=$(/bin/ps aux | /usr/bin/grep -E "dx serve( |$)" | /usr/bin/grep -v grep | /usr/bin/awk '{print $2}')
+    for pid in $stale_dx; do
+        echo "${YELLOW}🧹 清理残留 dx serve 进程 PID=$pid（释放 8080 端口）${NC}"
+        kill "$pid" 2>/dev/null || true
+        cleaned=1
+    done
+
+    if [ "$cleaned" = "1" ]; then
+        sleep 1
+        # 温和杀不掉的强杀
+        for pid in $stale_be $stale_dx; do
+            kill -9 "$pid" 2>/dev/null || true
+        done
+        sleep 1
+    fi
+}
+
+# 等待端口就绪（纯 bash /dev/tcp，无外部依赖）
+# 用法: wait_for_port <host> <port> <超时秒> <描述> [监控PID]
+wait_for_port() {
+    local host=$1 port=$2 timeout=${3:-600} desc=$4 monitor_pid=${5:-}
+    local elapsed=0
+    while ! (echo > "/dev/tcp/$host/$port") 2>/dev/null; do
+        # 被监控进程已退出（编译失败等），提前结束等待
+        if [ -n "$monitor_pid" ] && ! kill -0 "$monitor_pid" 2>/dev/null; then
+            echo "${RED}❌ $desc 进程已退出（疑似编译失败），请检查上方日志${NC}"
+            return 1
+        fi
+        if [ "$elapsed" -ge "$timeout" ]; then
+            echo "${RED}⏰ 等待 $desc 超时（${timeout}s），请检查上方编译日志${NC}"
+            return 1
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+    return 0
+}
+
 # 开发模式：同时启动后端 + 前端
 cmd_dev() {
     print_banner
 
+    preflight_cleanup
     cd "$REPO_ROOT"
 
-    echo "📦 启动后端开发服务器..."
+    echo "📦 启动后端开发服务器（先编译后运行，冷构建可能需要数分钟）..."
     cargo run &
     BACKEND_PID=$!
 
-    # 等待后端基本就绪
-    sleep 2
-
-    echo "🎨 启动前端开发服务器..."
-    cd frontend
-    dx serve &
+    echo "🎨 启动前端开发服务器（WASM 编译中）..."
+    # exec：让 FRONTEND_PID 直接指向 dx 进程（否则 kill 到的是子 shell，dx 会变孤儿进程）
+    (cd frontend && exec dx serve) &
     FRONTEND_PID=$!
 
     echo ""
-    echo "${GREEN}✅ 双服务已启动${NC}"
-    echo "   后端 API: ${BLUE}http://localhost:3000${NC}"
-    echo "   前端 UI:  ${BLUE}http://localhost:8080${NC}"
+    echo "⏳ 等待服务就绪，编译日志会持续输出（属正常现象，勿关闭窗口）..."
+    echo ""
+
+    if wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
+        echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
+    fi
+    if wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
+        echo "${GREEN}✅ 前端就绪${NC}: ${BLUE}http://localhost:8080${NC}"
+        echo "   （浏览器若仍显示编译页，等 WASM 编译完成会自动刷新）"
+    fi
+
     echo ""
     echo "按 Ctrl+C 停止所有服务"
     echo ""
@@ -122,6 +182,7 @@ cmd_backend() {
 # 仅启动前端
 cmd_frontend() {
     print_banner
+    preflight_cleanup
     cd "$REPO_ROOT/frontend"
     echo "🎨 启动前端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:8080${NC}"
