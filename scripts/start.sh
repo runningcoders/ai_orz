@@ -105,6 +105,10 @@ wait_for_port() {
     local host=$1 port=$2 timeout=${3:-600} desc=$4 monitor_pid=${5:-}
     local elapsed=0
     while ! (echo > "/dev/tcp/$host/$port") 2>/dev/null; do
+        # Ctrl+C 被按下：立即退出等待，让外层 trap cleanup 生效
+        if [ "$INT_RECEIVED" = "1" ]; then
+            return 1
+        fi
         # 被监控进程已退出（编译失败等），提前结束等待
         if [ -n "$monitor_pid" ] && ! kill -0 "$monitor_pid" 2>/dev/null; then
             echo "${RED}❌ $desc 进程已退出（疑似编译失败），请检查上方日志${NC}"
@@ -114,7 +118,9 @@ wait_for_port() {
             echo "${RED}⏰ 等待 $desc 超时（${timeout}s），请检查上方编译日志${NC}"
             return 1
         fi
-        sleep 2
+        # sleep 放子进程跑，INT 信号到来时立即打断 sleep（不阻塞 trap）
+        sleep 2 &
+        wait $!
         elapsed=$((elapsed + 2))
     done
     return 0
@@ -126,6 +132,24 @@ cmd_dev() {
 
     preflight_cleanup
     cd "$REPO_ROOT"
+
+    # 中断标志：trap 里置 1，轮询循环检测到即退出
+    INT_RECEIVED=0
+    cleanup() {
+        INT_RECEIVED=1
+        echo ""
+        echo "🛑 正在停止服务..."
+        kill $BACKEND_PID 2>/dev/null || true
+        kill $FRONTEND_PID 2>/dev/null || true
+        # 给进程 2 秒优雅退出时间，杀不掉再强杀
+        sleep 2
+        kill -9 $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
+        wait $BACKEND_PID 2>/dev/null || true
+        wait $FRONTEND_PID 2>/dev/null || true
+        echo "${GREEN}👋 服务已停止${NC}"
+        exit 0
+    }
+    trap cleanup INT TERM
 
     echo "📦 启动后端开发服务器（先编译后运行，冷构建可能需要数分钟）..."
     cargo run &
@@ -143,7 +167,7 @@ cmd_dev() {
     if wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
         echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
     fi
-    if wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
+    if [ "$INT_RECEIVED" != "1" ] && wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
         echo "${GREEN}✅ 前端就绪${NC}: ${BLUE}http://localhost:8080${NC}"
         echo "   （浏览器若仍显示编译页，等 WASM 编译完成会自动刷新）"
     fi
@@ -151,19 +175,6 @@ cmd_dev() {
     echo ""
     echo "按 Ctrl+C 停止所有服务"
     echo ""
-
-    # 捕获中断信号，优雅终止子进程
-    cleanup() {
-        echo ""
-        echo "🛑 正在停止服务..."
-        kill $BACKEND_PID 2>/dev/null || true
-        kill $FRONTEND_PID 2>/dev/null || true
-        wait $BACKEND_PID 2>/dev/null || true
-        wait $FRONTEND_PID 2>/dev/null || true
-        echo "${GREEN}👋 服务已停止${NC}"
-        exit 0
-    }
-    trap cleanup INT TERM
 
     wait $BACKEND_PID $FRONTEND_PID
     cleanup
