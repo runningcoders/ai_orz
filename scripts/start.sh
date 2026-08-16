@@ -3,12 +3,13 @@
 # 一个脚本覆盖开发、生产、构建、单服务启动所有场景
 #
 # Usage:
-#   ./start.sh dev      开发模式（后端 cargo run + 前端 dx serve）【默认】
-#   ./start.sh prod     生产模式（编译 + 运行 release 二进制）
-#   ./start.sh build    仅编译（前端 release + 后端 release）
-#   ./start.sh backend  仅启动后端（cargo run）
-#   ./start.sh frontend 仅启动前端开发服务器（dx serve）
-#   ./start.sh help     显示帮助
+#   ./scripts/start.sh dev      开发模式（后端 cargo run + 前端 dx serve）【默认】
+#   ./scripts/start.sh prod     生产模式（编译 + 运行 release 二进制）
+#   ./scripts/start.sh build    仅编译（前端 release + 后端 release）
+#   ./scripts/start.sh backend  仅启动后端（cargo run）
+#   ./scripts/start.sh frontend 仅启动前端开发服务器（dx serve）
+#   ./scripts/start.sh help     显示帮助
+# 也可通过根目录 Makefile 路由：make dev / make prod / make build / make run / make serve
 
 set -e
 
@@ -18,6 +19,7 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODE="${1:-dev}"
 
 # 颜色输出（使用实际转义字符，避免 echo -e 兼容性问题）
@@ -38,7 +40,7 @@ print_help() {
     cat << 'EOF'
 ai_orz - 统一启动脚本
 
-用法: ./start.sh [模式]
+用法: ./scripts/start.sh [模式]
 
 模式:
   dev       开发模式（默认）：同时启动后端 cargo run + 前端 dx serve
@@ -56,10 +58,11 @@ ai_orz - 统一启动脚本
   help      显示此帮助信息
 
 示例:
-  ./start.sh dev      # 开发全栈
-  ./start.sh prod     # 生产部署
-  ./start.sh build    # CI 构建
-  ./start.sh backend  # 只跑后端 API
+  ./scripts/start.sh dev      # 开发全栈
+  ./scripts/start.sh prod     # 生产部署
+  ./scripts/start.sh build    # CI 构建
+  ./scripts/start.sh backend  # 只跑后端 API
+  或等价 make 命令：make dev / make prod / make build / make run / make serve
 EOF
 }
 
@@ -67,7 +70,7 @@ EOF
 cmd_dev() {
     print_banner
 
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
 
     echo "📦 启动后端开发服务器..."
     cargo run &
@@ -109,7 +112,7 @@ cmd_dev() {
 # 仅启动后端
 cmd_backend() {
     print_banner
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
     echo "📦 启动后端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:3000${NC}"
     echo ""
@@ -119,7 +122,7 @@ cmd_backend() {
 # 仅启动前端
 cmd_frontend() {
     print_banner
-    cd "$SCRIPT_DIR/frontend"
+    cd "$REPO_ROOT/frontend"
     echo "🎨 启动前端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:8080${NC}"
     echo ""
@@ -129,19 +132,19 @@ cmd_frontend() {
 # 仅构建
 cmd_build() {
     print_banner
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
 
     echo "🔨 开始编译..."
     echo ""
 
-    # 编译前端（逻辑抽取到 scripts/build_frontend.sh，与 CI e2e job 共用）
+    # 编译前端（同目录 build_frontend.sh，与 CI e2e job 共用，保证「产物怎么进 dist/」只有一处逻辑）
     echo "🎨 编译前端 (release)..."
-    "$SCRIPT_DIR/scripts/build_frontend.sh"
+    "$SCRIPT_DIR/build_frontend.sh"
 
     # 编译后端
     echo ""
     echo "🏗️  编译后端 (release)..."
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
     cargo build --release
 
     echo ""
@@ -161,7 +164,7 @@ cmd_prod() {
     echo "   监听: ${BLUE}0.0.0.0:${SERVER_PORT:-3000}${NC}"
     echo ""
 
-    cd "$SCRIPT_DIR"
+    cd "$REPO_ROOT"
     ./target/release/ai_orz
 }
 

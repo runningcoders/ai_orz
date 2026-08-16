@@ -78,7 +78,7 @@
 # 克隆并启动
 git clone https://github.com/runningcoders/ai_orz
 cd ai_orz
-./start.sh prod     # 生产模式：自动编译 + 启动
+make prod           # 生产模式：自动编译 + 启动
 ```
 
 服务监听 `0.0.0.0:3000`，浏览器打开 `http://localhost:3000` 即可使用。
@@ -86,7 +86,7 @@ cd ai_orz
 **开发模式**（前端热重载）：
 
 ```bash
-./start.sh dev      # 同时启动后端 cargo run + 前端 dx serve
+make dev            # 同时启动后端 cargo run + 前端 dx serve
 # 后端: http://localhost:3000
 # 前端: http://localhost:8080
 ```
@@ -94,10 +94,11 @@ cd ai_orz
 **更多用法**：
 
 ```bash
-./start.sh help     # 查看所有模式
-./start.sh build    # 仅编译（前端 release + 后端 release）
-./start.sh backend  # 只启动后端
-./start.sh frontend # 只启动前端
+make help           # 查看所有命令（格式化/测试/门禁/构建一应俱全）
+make build          # 仅编译（前端 release + 后端 release）
+make run            # 只启动后端
+make serve          # 只启动前端
+# 等价底层入口：./scripts/start.sh <dev|prod|build|backend|frontend|help>
 ```
 
 首次启动会自动生成默认配置文件 `ai_orz.toml`，可按需修改。

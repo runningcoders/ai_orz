@@ -78,7 +78,7 @@ jobs:
 
     # 复用本地构建链路：dx build --release → 产物复制到 dist/ → cargo build --release
     - name: Build release (frontend + backend)
-      run: ./start.sh build
+      run: ./scripts/start.sh build
 
     # 打包：目录内自带 dist/，解压后 ./ai_orz 即可运行
     # （.ai_orz/ai_orz.toml 首次启动自动生成，migrations 已内嵌）

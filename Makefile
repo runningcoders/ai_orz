@@ -65,25 +65,25 @@ coverage: ## 覆盖率门禁，FAIL_UNDER 默认 45
 		--ignore-filename-regex "(tests/common/|/cargo/registry/|/rustc/|build.rs|target/)" \
 		--fail-under-lines $(FAIL_UNDER)
 
-# ===== 运行 / 编译（路由到 start.sh 与 scripts/，逻辑只有一处）=====
+# ===== 运行 / 编译（路由到 scripts/ 下脚本，逻辑只有一处）=====
 
 dev: ## 开发模式：后端 cargo run + 前端 dx serve 双服务
-	./start.sh dev
+	./scripts/start.sh dev
 
-serve: ## 仅启动前端开发服务器（路由 start.sh frontend）
-	./start.sh frontend
+serve: ## 仅启动前端开发服务器（路由 scripts/start.sh frontend）
+	./scripts/start.sh frontend
 
-run: ## 仅启动后端开发服务器（路由 start.sh backend）
-	./start.sh backend
+run: ## 仅启动后端开发服务器（路由 scripts/start.sh backend）
+	./scripts/start.sh backend
 
 build: ## 全量 release 编译：前端 dist/ + 后端二进制（= CI release 口径）
-	./start.sh build
+	./scripts/start.sh build
 
 build-fe: ## 仅编译前端 release 并复制产物到 dist/（路由 scripts/build_frontend.sh）
 	./scripts/build_frontend.sh
 
 prod: ## 生产模式：编译 release 并运行生产二进制（0.0.0.0:3000）
-	./start.sh prod
+	./scripts/start.sh prod
 
 e2e: ## Playwright E2E（仅本地，已移出 CI）
 	cd e2e && npx playwright test

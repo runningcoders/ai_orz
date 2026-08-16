@@ -2,7 +2,7 @@
 // E2E 服务编排脚本（由 Playwright webServer 调用）
 //
 // 职责：
-// 1. 校验 dist/ 前端产物存在（不存在提示先执行 ./start.sh build）
+// 1. 校验 dist/ 前端产物存在（不存在提示先执行 make build）
 // 2. 创建干净的隔离数据目录 .e2e-runtime/，写入独立端口配置
 // 3. 定位后端二进制（AI_ORZ_E2E_BINARY > release > debug），缺失时自动 cargo build
 // 4. 以后台进程方式启动服务，Playwright 通过 /health 轮询就绪
@@ -26,7 +26,7 @@ const hasHashedWasm =
   fs.existsSync(distAssets) && fs.readdirSync(distAssets).some((f) => f.endsWith('.wasm'));
 const hasLegacyWasm = fs.existsSync(path.join(distDir, 'pkg', 'frontend_bg.wasm'));
 if (!fs.existsSync(path.join(distDir, 'index.html')) || (!hasHashedWasm && !hasLegacyWasm)) {
-  console.error('[e2e] dist/ 缺少前端构建产物，请先执行 ./start.sh build');
+  console.error('[e2e] dist/ 缺少前端构建产物，请先执行 make build');
   process.exit(1);
 }
 

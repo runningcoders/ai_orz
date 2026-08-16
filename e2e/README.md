@@ -15,7 +15,7 @@ npx playwright test -g "可访问：/$"   # 按名称过滤单跑
 npx playwright show-report            # 查看最近一次 HTML 报告
 ```
 
-前置条件：`./start.sh build` 已产出 `dist/`（前端构建产物）。
+前置条件：`make build` 已产出 `dist/`（前端构建产物）。
 后端二进制优先级：`AI_ORZ_E2E_BINARY` > `target/debug/ai_orz` > `target/release/ai_orz`
 （**debug 优先**：本地 release 常是陈旧构建，E2E 必须与当前代码一致）。
 
