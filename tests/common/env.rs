@@ -25,14 +25,36 @@ static ENV_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
 pub async fn init_full_test_env(_pool: SqlitePool) -> RequestContext {
     ENV_INIT
         .get_or_init(|| async {
-            // 1. Load global AppConfig (idempotent; reads `.ai_orz/ai_orz.toml`)
-            let _ = ai_orz::config::init();
+            // 0. 隔离基础数据目录：每个测试二进制进程独占一个 tempdir 作为
+            //    AI_ORZ_BASE_PATH，避免 cargo test --test '*' 并行跑多个集成
+            //    测试二进制时并发写共享目录 `.ai_orz/ai_orz.toml` 造成
+            //    TOML 文件部分写入→解析失败→`a2a_server` 回退 Default(enabled=false)
+            //    → tasks/send 返回 METHOD_NOT_FOUND 的 CI 偶现失败。
+            //
+            // 安全性：set_var 标记 unsafe 是因为跨线程读/写 env 会导致 UB。
+            // 此处位于 ENV_INIT OnceCell 的 get_or_init 闭包内，是进程启动后
+            // 所有测试代码执行之前的单例初始化，没有其他线程在并发读写 env，
+            // 因此是安全的。后续所有 env::var 读取都会在 set 完成后发生。
+            let base_tmp = tempfile::tempdir().expect("创建 base data 临时目录失败");
+            unsafe {
+                std::env::set_var(
+                    common::config::BASE_DATA_PATH_ENV,
+                    base_tmp.path().as_os_str(),
+                );
+            }
+            // Leak：进程生命周期内保持目录存在，测试结束由 OS 回收 tempdir。
+            std::mem::forget(base_tmp);
+
+            // 1. Load global AppConfig (idempotent; writes default to isolated base path)
+            //    显式 unwrap：配置加载失败必须立刻终止，静默忽略会导致后续
+            //    config::get() 拿到空 OnceLock 发生无关 panic，定位成本极高。
+            ai_orz::config::init().expect("集成测试 config 初始化失败");
 
             // 2. pkg::storage — isolate to a tempdir + InMemory vector store to avoid
             //    polluting the dev `.ai_orz/` directory. Pattern proven by
             //    `tests/http_handler_macro_test.rs::ensure_storage_initialized`.
             //    用 InMemory 而非 default LanceDb，避免 block_in_place 要求 multi-thread runtime
-            let tmp = tempfile::tempdir().expect("创建临时目录失败");
+            let tmp = tempfile::tempdir().expect("创建 storage 临时目录失败");
             let db_config = DatabaseConfig {
                 vector_store_type: VectorStoreType::InMemory,
                 ..Default::default()
