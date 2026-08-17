@@ -104,17 +104,22 @@ pub fn FinanceModelProviders() -> Element {
                     } else if resp.status == ModelProviderStatus::Disabled as i32 {
                         toast.info("已创建为未启用状态；在列表点「启用」并确认切换后生效");
                     }
+                    // Embedding（FastEmbed 等向量模型）无对话端点，连接测试必失败，跳过
+                    let should_test_connection =
+                        new_capability() != ModelCapability::Embedding as i32;
                     new_capability.set(0);
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
                         Err(e) => toast.error(&e),
                     }
-                    spawn(async move {
-                        match test_model_provider_connection(&resp.id).await {
-                            Ok(_) => toast.success("创建成功，连接测试通过"),
-                            Err(e) => toast.error(format!("创建成功但测试失败: {}", e)),
-                        }
-                    });
+                    if should_test_connection {
+                        spawn(async move {
+                            match test_model_provider_connection(&resp.id).await {
+                                Ok(_) => toast.success("创建成功，连接测试通过"),
+                                Err(e) => toast.error(format!("创建成功但测试失败: {}", e)),
+                            }
+                        });
+                    }
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
             }

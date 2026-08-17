@@ -210,7 +210,7 @@ pub struct UpdateModelProviderStatusRequest {
     /// Provider ID
     #[param(source = "path")]
     pub id: String,
-    /// Target status (0=disabled/deleted, 1=normal/enabled)
+    /// Target status（0=软删除，1=启用，2=禁用-可再启用；本接口用于 1↔2 切换，删除走独立 delete 接口）
     pub status: i32,
 }
 

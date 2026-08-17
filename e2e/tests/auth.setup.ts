@@ -30,6 +30,11 @@ setup('系统初始化 → 错误密码 → 登录成功（全流程冒烟）', 
   await tid(page, 'init-org-name').fill(ORG_NAME);
   await tid(page, 'init-username').fill(ADMIN_USER);
   await tid(page, 'init-password').fill(ADMIN_PASS);
+
+  // 两步向导：Step 1 基础信息填完后点「下一步」进入 Step 2 模型配置
+  await tid(page, 'init-next-step').click();
+  await expect(tid(page, 'init-wizard-step-2')).toBeVisible();
+
   await tid(page, 'init-chat-provider-name').fill('TestChat');
   await tid(page, 'init-chat-provider-type').selectOption({ label: 'OpenAI' });
   await tid(page, 'init-chat-model-name').fill('gpt-4o-mini');
