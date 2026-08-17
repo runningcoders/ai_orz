@@ -18,6 +18,21 @@ if [ -f "$HOME/.cargo/env" ]; then
     source "$HOME/.cargo/env"
 fi
 
+# PATH 探测增强：服务器 / CI / IDE 调起的非交互 shell 常缺用户级与包管理器 bin
+# （与 check_deps.sh 同款逻辑，保证 check 通过后 dx/cargo/node 实际可用）
+for _dir in "$HOME/.cargo/bin" "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin "$HOME/bin"; do
+    if [ -d "$_dir" ]; then
+        case ":$PATH:" in *":$_dir:"*) ;; *) PATH="$_dir:$PATH" ;; esac
+    fi
+done
+if ! command -v node >/dev/null 2>&1 && [ -d "$HOME/.nvm/versions/node" ]; then
+    _nvm_bin=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
+    if [ -n "$_nvm_bin" ]; then
+        PATH="$_nvm_bin:$PATH"
+    fi
+fi
+export PATH
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODE="${1:-dev}"
@@ -70,6 +85,16 @@ EOF
 # 逻辑收敛在 scripts/cleanup.sh（可独立执行：./scripts/cleanup.sh [--dry-run] 或 make clean-proc）
 preflight_cleanup() {
     "$SCRIPT_DIR/cleanup.sh"
+}
+
+# 启动前预检：依赖检查（工具链缺失时给出精确安装命令，--fix 可自动装可自动项）
+# 逻辑收敛在 scripts/check_deps.sh（可独立执行：./scripts/check_deps.sh [模式] [--fix] 或 make doctor）
+preflight_deps() {
+    if ! "$SCRIPT_DIR/check_deps.sh" "$MODE"; then
+        echo ""
+        echo "${YELLOW}💡 一键修复可自动项: ./scripts/check_deps.sh $MODE --fix（或 make doctor FIX=1）后重试${NC}"
+        exit 1
+    fi
 }
 
 # 等待端口就绪（纯 bash /dev/tcp，无外部依赖）
@@ -225,28 +250,24 @@ cmd_prod() {
 
 # 主逻辑
 case "$MODE" in
-    dev)
-        cmd_dev
-        ;;
-    backend)
-        cmd_backend
-        ;;
-    frontend)
-        cmd_frontend
-        ;;
-    build)
-        cmd_build
-        ;;
-    prod)
-        cmd_prod
-        ;;
     help|--help|-h)
         print_help
         ;;
     *)
-        echo "${RED}未知模式: $MODE${NC}"
-        echo ""
-        print_help
-        exit 1
+        # 依赖预检（help 之外的所有模式）：新机器上一次性提示缺什么、怎么装
+        preflight_deps
+        case "$MODE" in
+            dev) cmd_dev ;;
+            backend) cmd_backend ;;
+            frontend) cmd_frontend ;;
+            build) cmd_build ;;
+            prod) cmd_prod ;;
+            *)
+                echo "${RED}未知模式: $MODE${NC}"
+                echo ""
+                print_help
+                exit 1
+                ;;
+        esac
         ;;
 esac

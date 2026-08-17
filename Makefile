@@ -6,7 +6,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim clean-proc hooks
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim clean-proc doctor hooks
 
 # git hooks 目录指向仓库内 .githooks/（pre-push 自动跑 fmt-check，跳过用 git push --no-verify）
 hooks:
@@ -71,6 +71,11 @@ coverage: ## 覆盖率门禁，FAIL_UNDER 默认 45
 
 clean-proc: ## 清理残留死进程（后端/dx/端口占用；start.sh 启动前也会自动执行）
 	./scripts/cleanup.sh
+
+# ===== 依赖治理 =====
+
+doctor: ## 依赖预检：MODE 指定模式（默认 dev），FIX=1 自动安装可自动项
+	./scripts/check_deps.sh $(MODE) $(if $(FIX),--fix)
 
 # ===== 磁盘治理 =====
 
