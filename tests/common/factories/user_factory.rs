@@ -87,14 +87,14 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
         description: Some("Integration test org".to_string()),
         admin_display_name: Some("Test Admin".to_string()),
         admin_email: Some("admin@test.local".to_string()),
-        chat_model: ModelProviderInitConfig {
+        chat_model: Some(ModelProviderInitConfig {
             name: "Test Chat Provider".to_string(),
             provider_type: 0, // OpenAI
             model_name: "gpt-4o-mini".to_string(),
             api_key: "test-key".to_string(),
             base_url: None,
             description: Some("test chat model".to_string()),
-        },
+        }),
         embedding_model: None,
     };
 

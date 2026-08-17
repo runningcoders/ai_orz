@@ -43,11 +43,10 @@ pub struct InitializeSystemTask {
 impl InitializeSystemTask {
     /// 创建新的初始化任务对象（状态为 Pending，等待 registry spawn 后执行）
     pub fn new(ctx: RequestContext, params: InitializeSystemRequest) -> Self {
-        let total_steps = if params.embedding_model.is_some() {
-            5
-        } else {
-            4
-        };
+        // 基础 3 步（组织 + 内置工具 + 预置技能）+ 对话模型(0/1) + 向量模型(0/1)
+        let total_steps = 3
+            + usize::from(params.chat_model.is_some())
+            + usize::from(params.embedding_model.is_some());
         Self {
             task_id: uuid::Uuid::new_v4().to_string(),
             ctx,
@@ -134,7 +133,7 @@ impl InitializeSystemTask {
     /// 执行初始化步骤（从原 run_initialize_steps 迁移逻辑）
     ///
     /// 每步通过 `set_step` 更新进度，保持原有业务逻辑不变：
-    /// 创建组织+Owner → chat provider → embedding provider（可选）→ 同步内置工具 → 导入预置技能
+    /// 创建组织+Owner → chat provider（可选）→ embedding provider（可选）→ 同步内置工具 → 导入预置技能
     async fn run_steps(&self) -> Result<InitializeSystemResponse> {
         let ctx = self.ctx.clone();
         let params = self.params.clone();
@@ -146,28 +145,35 @@ impl InitializeSystemTask {
             .create_org_and_owner(ctx.clone(), params.clone())
             .await?;
 
-        // Step 2: 创建 chat provider
-        self.set_step(2, "正在配置对话模型");
-        let chat_provider = crate::models::model_provider::ModelProvider::new(
-            params.chat_model.name,
-            common::enums::ProviderType::from_i32(params.chat_model.provider_type),
-            common::enums::ModelCapability::Agent,
-            params.chat_model.model_name,
-            params.chat_model.api_key,
-            params.chat_model.base_url,
-            params.chat_model.description,
-            user_id.clone(),
-        );
-        let chat_provider_id = chat_provider.po.id.clone();
-        finance::domain()
-            .model_provider_manage()
-            .create_model_provider(ctx.clone(), &chat_provider)
-            .await?;
+        let mut step = 2;
 
-        // Step 3: 创建 embedding provider（可选）
-        let mut next_step = 3;
+        // Step（可选）: 创建 chat provider — 未配置时跳过，后续在模型管理中补配
+        let chat_provider_id = if let Some(chat_config) = params.chat_model.clone() {
+            self.set_step(step, "正在配置对话模型");
+            let chat_provider = crate::models::model_provider::ModelProvider::new(
+                chat_config.name,
+                common::enums::ProviderType::from_i32(chat_config.provider_type),
+                common::enums::ModelCapability::Agent,
+                chat_config.model_name,
+                chat_config.api_key,
+                chat_config.base_url,
+                chat_config.description,
+                user_id.clone(),
+            );
+            let provider_id = chat_provider.po.id.clone();
+            finance::domain()
+                .model_provider_manage()
+                .create_model_provider(ctx.clone(), &chat_provider)
+                .await?;
+            step += 1;
+            Some(provider_id)
+        } else {
+            None
+        };
+
+        // Step（可选）: 创建 embedding provider — 未配置时跳过向量索引
         let embedding_provider_id = if let Some(embedding_config) = params.embedding_model {
-            self.set_step(3, "正在配置向量模型");
+            self.set_step(step, "正在配置向量模型");
             let embedding_provider = crate::models::model_provider::ModelProvider::new(
                 embedding_config.name,
                 common::enums::ProviderType::from_i32(embedding_config.provider_type),
@@ -183,22 +189,22 @@ impl InitializeSystemTask {
                 .model_provider_manage()
                 .create_model_provider(ctx.clone(), &embedding_provider)
                 .await?;
-            next_step = 4;
+            step += 1;
             Some(provider_id)
         } else {
             None
         };
 
-        // Step 4/5: 同步内置工具到 DB
-        self.set_step(next_step, "正在同步内置工具");
+        // Step: 同步内置工具到 DB
+        self.set_step(step, "正在同步内置工具");
         let tool_count = finance::domain()
             .tool_provider_manage()
             .sync_builtin_tools(ctx.clone())
             .await?;
         sys_info!("initialize_system: 同步 {} 个内置工具到 DB", tool_count);
 
-        // Step 5/6: 导入预置技能
-        self.set_step(next_step + 1, "正在导入预置技能");
+        // Step: 导入预置技能
+        self.set_step(step + 1, "正在导入预置技能");
         let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
         let skill_result = crate::handlers::system::seed::apply_preset_skills(
             ctx.clone(),
@@ -244,6 +250,24 @@ pub async fn initialize_system(
     ctx: RequestContext,
     params: InitializeSystemRequest,
 ) -> Result<TaskIdResponse> {
+    // 边界校验：配置了模型则字段必须完整（前端分步校验只覆盖正常路径）
+    if let Some(chat) = params.chat_model.as_ref()
+        && (chat.name.trim().is_empty()
+            || chat.model_name.trim().is_empty()
+            || chat.api_key.trim().is_empty())
+    {
+        return Err(Error::bad_request(
+            "chat_model provided but name / model_name / api_key is empty",
+        ));
+    }
+    if let Some(emb) = params.embedding_model.as_ref()
+        && (emb.name.trim().is_empty() || emb.model_name.trim().is_empty())
+    {
+        return Err(Error::bad_request(
+            "embedding_model provided but name / model_name is empty",
+        ));
+    }
+
     let task = Arc::new(InitializeSystemTask::new(ctx, params));
     let task_id = registry().register(task).await;
     Ok(TaskIdResponse { task_id })
