@@ -7,6 +7,7 @@
 - [src/handlers/organization/organizations/list_organizations.rs](src/handlers/organization/organizations/list_organizations.rs)
 - [src/handlers/organization/organizations/get_organization.rs](src/handlers/organization/organizations/get_organization.rs)
 - [src/handlers/organization/user/create_user.rs](src/handlers/organization/user/create_user.rs)
+- [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)
 - [common/src/api/organization.rs](common/src/api/organization.rs)
 - [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
 - [src/service/dal/organization.rs](src/service/dal/organization.rs)
@@ -347,3 +348,24 @@ L --> M["Models(Po)"]
 
 章节来源
 - [common/src/api/organization.rs:159-186](common/src/api/organization.rs#L159-L186)
+
+### 系统初始化接口（首次启动）
+- 检查初始化状态
+  - 路径与方法：GET /api/organization/check-initialized
+  - 响应：`{ initialized: bool }`
+- 提交初始化（异步）
+  - 路径与方法：POST /api/organization/initialize-system
+  - 请求体 `InitializeSystemRequest`：
+    - `organization_name` / `admin_username` / `admin_password_hash`：必填
+    - `description` / `admin_display_name` / `admin_email`：可选
+    - `chat_model: Option<ModelProviderInitConfig>`：**可选**（`#[serde(default)]`），未配置时跳过创建；创建 Agent 前需在模型管理中补配
+    - `embedding_model: Option<ModelProviderInitConfig>`：**可选**，未配置时跳过向量索引；后续补配会自动触发全量重建
+  - 响应：`InitializeSystemAsyncResponse { task_id: String }`（异步任务 ID，用于轮询进度）
+- 查询初始化进度
+  - 路径与方法：GET /api/organization/init-progress?task_id={task_id}
+  - 响应：`InitProgressResponse`；完成时 `result` 字段为 `InitializeSystemResponse { organization_id, user_id, chat_provider_id: Option<String>, embedding_provider_id: Option<String> }`
+- 步骤数动态计算：`total_steps = 3 + usize::from(chat_model.is_some()) + usize::from(embedding_model.is_some())`；基础 3 步 = 创建组织 + 同步内置工具 + 导入预置技能；对话/向量模型步骤按请求提供情况条件化出现。
+
+章节来源
+- [src/handlers/organization/initialize_system.rs](src/handlers/organization/initialize_system.rs)
+- [common/src/api/organization.rs:7-120](common/src/api/organization.rs#L7-L120)

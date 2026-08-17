@@ -6,9 +6,13 @@ scope:
     - '**'
 source_files:
     - Cargo.toml
-    - start.sh
-    - build.sh
+    - Makefile
+    - scripts/start.sh
+    - scripts/check_deps.sh
+    - scripts/cleanup.sh
+    - scripts/build.sh
     - scripts/build_frontend.sh
+    - frontend/Dioxus.toml
     - frontend/build.rs
     - frontend/Cargo.toml
     - rust-toolchain.toml
@@ -16,24 +20,32 @@ source_files:
     - .github/workflows/release.yml
     - .env.example
     - common/config/ai_orz.toml
+    - tests/e2e/
     - migrations/
 ---
 
 ## 1. 使用的系统与工具
 
 - **Cargo Workspace**：根 `Cargo.toml` 将 `ai_orz`（后端）、`frontend`（Dioxus WASM）、`common`（共享 crate）、`ai-orz-macros`（过程宏）聚合为单一 workspace，resolver = "2"。
-- **统一启动脚本**：`start.sh` 是开发/构建/生产唯一入口，支持 `dev`、`build`、`prod`、`backend`、`frontend`、`help` 六个子命令；`build.sh` 仅作为转发到 `start.sh build` 的薄壳。
-- **Dioxus 前端构建**：通过 `dx build --release` 编译 WASM，产物由 `start.sh` 复制到 `dist/pkg/`，并复制 `index.html` 到 `dist/`；Tailwind CSS 在 `frontend/build.rs` 中通过调用 `node_modules/.bin/tailwindcss -i styles/input.css -o public/output.css --minify` 编译。
+- **Makefile 统一入口**：根目录唯一命令入口，覆盖 dev/prod/build/test/quality/tool 27+ target（`make dev` / `make prod` / `make build` / `make doctor` / `make clean-proc` / `make e2e`）；每个 target 简单转发到 `scripts/*.sh`，逻辑只有一处。
+- **统一启动脚本**：`scripts/start.sh` 是开发/构建/生产唯一入口，支持 `dev`、`build`、`prod`、`backend`、`frontend`、`help` 六个子命令；`build.sh` 仅作为转发到 `start.sh build` 的薄壳。dev 模式新增 `preflight_deps`（调 `check_deps.sh`）+ `preflight_cleanup`（调 `cleanup.sh`）两道闸门；支持 `DX_BACKEND_URL` 环境变量覆盖 `Dioxus.toml` 中 dx 视角 proxy backend。
+- **依赖预检脚本**：`scripts/check_deps.sh` 按 5 种模式（dev/frontend/backend/build/prod）做工具链完整性检查，缺失时打印精确安装命令，`--fix` 可自动装可自动项（rustup target / dx / brew protobuf / npm install）。
+- **残留进程清理脚本**：`scripts/cleanup.sh` 清理 ai_orz 后端/dx serve 前端残留进程与端口占用（默认 3000/8080），支持 `--dry-run`。
+- **Dioxus 前端构建**：通过 `dx build --release` 编译 WASM，产物由 `start.sh` 复制到 `dist/pkg/`，并复制 `index.html` 到 `dist/`；Tailwind CSS 在 `frontend/build.rs` 中通过调用 `node_modules/.bin/tailwindcss -i styles/input.css -o public/output.css --minify` 编译；`frontend/Dioxus.toml` 配置 `[[web.proxy]] backend="http://localhost:3000/api"` 将 dev 模式 API 请求反代到后端 3000（dx 进程视角的 localhost）。
 - **配置内嵌**：`frontend/build.rs` 在编译期读取 `.ai_orz/ai_orz.toml`（不存在则回退到 `common/config/ai_orz.toml`），解析为 `AppConfig` 后生成 `compiled_config.rs`，以字符串常量形式嵌入前端二进制，保证前后端配置一致。
 - **数据库迁移内嵌**：后端使用 sqlx `migrate` feature，迁移 SQL 位于 `migrations/` 目录，首次运行自动生成 `.ai_orz/ai_orz.toml`。
-- **CI/CD**：GitHub Actions 提供两套 workflow —— `.github/workflows/rust.yml`（push/PR 触发 lint、测试、覆盖率）和 `.github/workflows/release.yml`（tag `v*` 触发多平台 release 打包与 GitHub Release 发布）。
+- **CI/CD**：GitHub Actions 提供两套 workflow —— `.github/workflows/rust.yml`（push/PR 触发 lint、测试、覆盖率）和 `.github/workflows/release.yml`（tag `v*` 触发多平台 release 打包与 GitHub Release 发布）；E2E 测试已归入 `tests/e2e/` 子目录，仅本地执行。
 - **工具链锁定**：`rust-toolchain.toml` 固定 channel = "stable"，并预注册 `wasm32-unknown-unknown` target。
 
 ## 2. 关键文件
 
 - `Cargo.toml`（workspace 根）：定义 workspace members、后端包依赖、`[[test]]` 集成测试条目。
-- `start.sh`：统一编排 dev/build/prod/backend/frontend 五种模式，负责 dx/cargo 调用、进程管理、信号捕获、产物拷贝。
+- `Makefile`：统一入口 27+ target（dev / prod / build / run / serve / test / fmt / clippy / clippy-fe / docs-lint / coverage / doctor / clean-proc / e2e 等）。
+- `scripts/start.sh`：统一编排 dev/build/prod/backend/frontend 五种模式，负责 dx/cargo 调用、进程管理、信号捕获、产物拷贝；启动前跑 `preflight_deps`（依赖检查）+ `preflight_cleanup`（残留进程清理）；支持 `DX_BACKEND_URL` 环境变量临时覆盖 dev proxy 目标地址。
+- `scripts/check_deps.sh`：新服务器一键依赖检查（5 种模式 + `--fix` 自动安装）。
+- `scripts/cleanup.sh`：残留 ai_orz/dx serve 进程清理 + 端口占用复查。
 - `build.sh`：`exec start.sh build` 的薄包装。
+- `frontend/Dioxus.toml`：`[[web.proxy]] backend="http://localhost:3000/api"` 将 dx dev server 的 `/api/*` 反代到后端 3000；`watch_path=["src","styles","index.html"]` 避免监听 build.rs 产物导致多余重编译。
 - `frontend/build.rs`：编译期 Tailwind CSS 编译、docs 静态资源复制、后端配置读取并生成 `COMPILED_CONFIG` 常量。
 - `frontend/Cargo.toml`：Dioxus WASM 包定义，依赖 `common` 共享类型。
 - `rust-toolchain.toml`：固定 stable toolchain + wasm32 target。
@@ -42,6 +54,7 @@ source_files:
 - `.github/workflows/release.yml`：matrix 构建 `ubuntu-latest → x86_64-unknown-linux-gnu` 与 `macos-latest → aarch64-apple-darwin`（不做交叉编译，lancedb/ort-sys 交叉链太重），安装 dioxus-cli → 复用 `./scripts/start.sh build` → 打包 `ai_orz-{tag}-{target}.tar.gz` 并上传 artifact；仅当 push tag 形如 `refs/tags/v*` 或手动触发 `workflow_dispatch` 时执行；对 `${REF_NAME}` 做白名单正则校验，拒绝 shell/路径特殊字符。
 - `.env.example`：环境变量模板（`DATABASE_URL`、`SQLX_OFFLINE=true`、可选的 LLM/Embedding 测试密钥 `TEST_*`）
 - `common/config/ai_orz.toml`：默认配置模板，作为前端编译期回退源
+- `tests/e2e/`：Playwright E2E 测试子目录（从仓库根 `e2e/` 并入 `tests/e2e/`）：包含 `playwright.config.ts`、`tests/auth.setup.ts`、`tests/navigation.spec.ts`、`scripts/diagnose-page.mjs`、`scripts/start-server.mjs`；Cargo autotests 不递归子目录，与 Rust 集成测试互不干扰；仅本地执行（不进 CI）
 - `migrations/*.sql`：SQLx 数据库迁移脚本（时间戳命名），迁移功能通过 sqlx `migrate` feature 在首次运行自动执行
 
 ## 3. 架构与约定
@@ -67,11 +80,11 @@ graph LR
 - **缓存策略**：全局启用 sccache（`mozilla-actions/sccache-action`，`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort`（ort-sys 预编译 ONNX Runtime）做独立缓存。
 - **覆盖率门禁**：`coverage` job 与 backend/frontend 并行，使用 `cargo-llvm-cov`，push main 要求 fail-under-lines ≥ 45%，PR 要求 ≥ 38%；报告通过 `--ignore-filename-regex` 排除 tests/common、registry、rustc、build.rs、target；报告同时输出日志与 GitHub Summary。
 - **前端交叉编译**：`frontend` job 安装 `wasm32-unknown-unknown` target 并执行 `cargo check --target wasm32-unknown-unknown` → `cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` → `cargo test`，确保 WASM 目标可编译。
-- **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试当前已移出 CI，仅在 `tests/e2e/` 目录本地运行 Playwright（Cargo autotests 不递归子目录，与 Rust 集成测试互不干扰）。
+- **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试位于 `tests/e2e/`（已从仓库根 `e2e/` 并入），通过 Cargo autotests 不递归子目录特性与 Rust 集成测试完全隔离，仅本地执行 `cd tests/e2e && npx playwright test` 或 `make e2e`。
 - **环境约束**：`CARGO_INCREMENTAL=0`（让 sccache 完全接管缓存，避免增量编译干扰）、`SQLX_OFFLINE=true`（使用 `.sqlx/` 离线 schema）。
 
 ### 开发与生产模式约定
-- `make dev`（路由 `./scripts/start.sh dev`）：后台同时启动 `cargo run`（后端 API，默认 3000）和 `dx serve`（前端开发服务器，默认 8080），Ctrl+C 时通过 trap 终止两个子进程。
+- `make dev`（路由 `./scripts/start.sh dev`）：启动前先 `preflight_deps`（依赖检查）+ `preflight_cleanup`（残留进程清理）；随后后台同时启动 `cargo run`（后端 API，默认 3000）和 `dx serve --interactive=false`（前端开发服务器，默认 8080，禁用 TUI 防止 Ctrl+C 卡死）；日志加 📦/🎨 前缀分流；API 请求通过 `Dioxus.toml [[web.proxy]]` 反代到后端；`DX_BACKEND_URL` 环境变量可临时覆盖 proxy 目标（前后端分机部署逃生舱）；Ctrl+C 时通过 trap 终止两个子进程并恢复 Dioxus.toml。
 - `make prod`（路由 `./scripts/start.sh prod`）：先执行 `cmd_build`，再运行 `./target/release/ai_orz`，监听 `0.0.0.0:${SERVER_PORT:-3000}`。
 - `make build`（路由 `./scripts/start.sh build`）：仅编译，不启动服务；前端构建允许 `wasm-opt` 失败（`|| true`），但会检查最终产物是否存在。
 

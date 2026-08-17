@@ -25,7 +25,7 @@ source_files:
   - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md（§集成测试 target=credential_crud：8 个 Handler 接口调用断言 AES256-GCM 加解密 roundtrip）
   - docs/archive/plan-archive/Agent管理集成测试.md（§19 集成测试 target 清单与依赖顺序 §onboard_agent 回滚断言 §UserRole 权限组合三角色 × 三资源矩阵）
   - docs/wiki/zh/content/测试指南/测试指南.md（测试入口总览：1124 测试分布 + 984 后端细分 897 单元 87 集成 + 82 前端 + 58 common + 运行命令 `cargo test --workspace`）
-  - docs/wiki/zh/content/测试指南/端到端测试基础设施.md（Playwright E2E：本地命令 `just e2e` + 环境变量 AI_ORZ_ADMIN_PASSWORD + 失败视频自动保存到 e2e-artifacts/）
+  - docs/wiki/zh/content/测试指南/端到端测试基础设施.md（Playwright E2E：本地命令 `make e2e` + 环境变量 AI_ORZ_ADMIN_PASSWORD + 失败视频自动保存到 tests/e2e/test-results/）
   - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md（CI 四阶段：check/test/coverage/build + PR coverage threshold 38% + main branch 45% + cargo-llvm-cov 运行 `--fail-under-lines` 严格模式）
   - 【平行卡 1】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（8 类消费者注册顺序测试：a2a_flow 集成测试断言 CronTriggerConsumer 必须在 AgentLoopConsumer 之后 register）
   - 【平行卡 2】docs/wiki/knowledge/zh/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）.md（vector_degradation 集成测试 target：向量存储 Mock 失败 → 搜索自动降级 FTS5-only 断言结果非空 score>0）
@@ -117,6 +117,6 @@ STAGE 4. build(release)【2-3min，仅 main branch 触发】
 3. **clippy `allow(xxx)` 需附注释说明原因，禁用裸 allow**：代码里 `#[allow(unused)]` 没说明 = 违反（下个版本 clippy 升级后 warning 消失，没人知道为什么 allow）；正确写法：`#[allow(clippy::too_many_arguments)] // 此函数是 10 参数聚合 DTO，构造器模式没必要拆分`。
 4. **.sqlx/ 目录必须 git 提交（query! 宏离线元数据）**：CI 环境无 LLM API Key 无法运行 sqlx prepare 离线生成；如果新写了 `sqlx::query!` 没跑 `cargo sqlx prepare` 提交 .sqlx → CI 编译报错「找不到 query 元数据」；解决：本地跑一次 `cargo sqlx prepare --workspace`，git add .sqlx/ 再 push。
 5. **覆盖率 cargo-llvm-cov 不能在 debug 模式跑（结果不准）**：需 `--release` 或默认 profile（llvm-cov 自己处理）；debug 模式对 drop_in_place / 泛型展开统计偏高；CI 里 cargo-llvm-cov 的 profile 已在 ci.yml 固定，不要本地 `cargo test` 后拿「我本地测有 50%」来杠。
-6. **Playwright E2E 不进 CI（仅本地 `just e2e`）**：E2E 需要登录→调用真实 LLM，成本高且偶发 flaky（模型响应超时）。CI 不跑；发布前 release manager 本地跑一次，失败视频自动保存 e2e-artifacts/ 附到 PR；纯登录/创建 Agent 等不涉及 LLM 的 E2E 子集可后续改加进 CI。
+6. **Playwright E2E 不进 CI（仅本地 `make e2e`）**：E2E 需要登录→调用真实 LLM，成本高且偶发 flaky（模型响应超时）。CI 不跑；发布前 release manager 本地跑一次，失败视频自动保存 tests/e2e/test-results/ 附到 PR；纯登录/创建 Agent 等不涉及 LLM 的 E2E 子集可后续改加进 CI。
 7. **集成测试 19 targets 不能有相互依赖的前置条件（进程隔离）**：agent_management_test 的 agent_id 不能被 a2a_flow_test 复用；每个 target 自己 init_full_test_env 造独立数据。跨 target 复用数据会导致：单独跑 cargo test a2a_flow 通过，但一起跑 `cargo test` 并行随机失败（Heisenbug）。
 8. **前端 wasm32 单元测试不 mock 网络请求，直接测纯逻辑组件**：测试 GraphCanvas、PagedResult::map UI 渲染、use_resource deps 变化触发不发 HTTP；HTTP 用真实 API client 测试放集成/Playwright E2E。否则 wasm32 里模拟网络需要 wasm-bindgen-test 引入 js-sys 庞大依赖，测试启动超 10 秒无法接受。

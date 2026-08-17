@@ -20,15 +20,15 @@ source_files:
   - common/src/api/model_provider.rs#L9-L80 (CreateModelProviderResponse 含 status/rebuild_task_id；UpdateModelProviderResponse 含 rebuild_task_id)
   - common/src/api/organization.rs#L20-L65 (InitializeSystemRequest.chat_model: Option + serde(default)；chat_provider_id: Option<String>)
   - src/models/model_provider.rs#L70-L197 (ModelProvider Po + Entity；vector_collection = "embeddings"；status 默认 Normal)
-  - src/service/domain/finance/model_provider.rs#L1-L160 (create_model_provider Embedding 降级逻辑；update_model_provider 409 switch_required；switch_embedding 软删旧+启用新)
-  - src/handlers/finance/model_provider/create_model_provider.rs#L1-L80 (回读落库状态；首个 Embedding 创建注册 RebuildVectorsTask；响应 status + rebuild_task_id)
-  - src/handlers/finance/model_provider/update_model_provider.rs#L1-L80 (embedding_config_changed 检测；仅 Normal Embedding 配置变化触发重建)
+  - src/service/domain/finance/model_provider.rs#L1-L200 (create_model_provider Embedding 降级逻辑；update_model_provider 409 switch_required；switch_embedding 软删旧+启用新；max_context_length/recommended_context_length 上下文长度配置)
+  - src/handlers/finance/model_provider/create_model_provider.rs#L1-L90 (回读落库状态；首个 Normal Embedding 创建注册 RebuildVectorsTask；响应含 status + rebuild_task_id + 上下文长度；Config 含 max_context_length/recommended_context_length)
+  - src/handlers/finance/model_provider/update_model_provider.rs#L1-L145 (was_enabled_embedding 用更新前值判断；embedding_config_changed 仅 Normal Embedding 配置变化触发重建；Disabled 编辑不重建；上下文长度 partial update 三态逻辑)
   - src/handlers/finance/model_provider/switch_embedding.rs#L1-L55 (切换：软删旧 provider + 启用新 + 全量重建)
-  - src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L194 (RebuildVectorsTask：7 类实体顺序重建向量索引)
-  - src/handlers/organization/initialize_system.rs#L1-L284 (初始化动态步骤数：3 + chat + embedding；条件化创建 provider；边界校验)
-  - frontend/src/pages/finance/model_providers.rs#L1-L502 (创建 Modal capability 选择；禁用 status=2；删除 Embedding 警示文案)
-  - frontend/src/pages/reception.rs#L1-L650 (初始化 2 步表单；对话/向量模型可选 + 跳过后果提示)
-  - tests/integration/model_provider_embedding_test.rs (Embedding 生命周期 6 用例)
+  - src/handlers/finance/model_provider/rebuild_vectors_task.rs#L1-L200 (RebuildVectorsTask：7 类实体顺序重建向量索引)
+  - src/handlers/organization/initialize_system.rs#L1-L300 (初始化动态步骤数：3 + chat + embedding；条件化创建 provider；边界校验)
+  - frontend/src/pages/finance/model_providers.rs#L1-L600 (创建 Modal capability 选择；禁用 status=2；删除 Embedding 警示文案；上下文长度字段表单)
+  - frontend/src/pages/reception.rs#L1-L700 (初始化 2 步表单；对话/向量模型可选 + 跳过后果提示；上下文长度输入)
+  - tests/integration/model_provider_embedding_test.rs (Embedding 生命周期 6+ 用例：创建/禁用/切换/重建/上下文长度)
   - docs/plan/系统初始化模型配置策略调整.md
   - docs/wiki/zh/content/功能模块/模型提供商管理.md
   - docs/wiki/zh/content/前端应用/页面模块/Finance 管理页面/模型提供商管理.md
