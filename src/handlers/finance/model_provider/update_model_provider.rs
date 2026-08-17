@@ -1,11 +1,14 @@
 //! Handler: PUT /api/v1/model-providers/{id} - Update model provider configuration
 
+use crate::handlers::finance::model_provider::rebuild_vectors_task::RebuildVectorsTask;
 use crate::pkg::RequestContext;
+use crate::pkg::background_task::registry;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateModelProviderRequest, UpdateModelProviderResponse};
 use common::enums::ModelProviderStatus;
 use common::error::Result;
+use std::sync::Arc;
 
 use crate::enrich_ctx;
 
@@ -38,6 +41,25 @@ pub async fn update_model_provider(
         })?;
 
     let ctx = enrich_ctx!(&ctx, &provider);
+
+    // Embedding 配置变化检测：仅「使用中(Normal)」的配置变化需要重建向量索引；
+    // Disabled 的编辑不重建（启用切换时 switch 全量重建兜底）。
+    // 注意：status 判断必须用更新前的值（在 params.status 应用前记录）。
+    let was_enabled_embedding =
+        provider.po.capability.is_embedding() && provider.po.status == ModelProviderStatus::Normal;
+    let embedding_config_changed = was_enabled_embedding
+        && (params
+            .model_name
+            .as_deref()
+            .is_some_and(|v| v != provider.po.model_name)
+            || params
+                .api_key
+                .as_deref()
+                .is_some_and(|v| v != provider.po.api_key)
+            || params
+                .base_url
+                .as_deref()
+                .is_some_and(|v| provider.po.base_url.as_deref() != Some(v)));
 
     // Update fields
     if let Some(name) = params.name {
@@ -78,8 +100,17 @@ pub async fn update_model_provider(
 
     domain()
         .model_provider_manage()
-        .update_model_provider(ctx, &provider)
+        .update_model_provider(ctx.clone(), &provider)
         .await?;
+
+    // 使用中 Embedding 的配置变化 → 向量空间变化，注册全量重建。
+    // 本路径触发的重建不软删旧 provider（同模型原地改配置），与 switch 语义不同，属预期。
+    let rebuild_task_id = if embedding_config_changed {
+        let task = Arc::new(RebuildVectorsTask::new(ctx));
+        Some(registry().register(task).await)
+    } else {
+        None
+    };
 
     let config = provider.po.config();
     Ok(UpdateModelProviderResponse {
@@ -105,6 +136,7 @@ pub async fn update_model_provider(
         },
         status: provider.po.status as i32,
         updated_at: provider.po.updated_at,
+        rebuild_task_id,
         max_context_length: config.max_context_length,
         recommended_context_length: config.recommended_context_length,
     })

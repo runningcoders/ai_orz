@@ -15,6 +15,11 @@ use ::common::api::CreateModelProviderRequest;
 use ::common::enums::{ModelCapability, ProviderType};
 use sqlx::SqlitePool;
 
+/// Embedding 状态敏感用例互斥锁：所有集成测试共享同一个全局 DB 的
+/// 「已启用 Embedding Provider」状态，本文件用例必须串行执行 + 用例开始前
+/// 清理启用态，才能拿到确定性的「首个/第二个」创建场景。
+static EMBEDDING_STATE_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn embedding_req(name: &str) -> CreateModelProviderRequest {
     CreateModelProviderRequest {
         name: name.to_string(),
@@ -31,12 +36,29 @@ fn embedding_req(name: &str) -> CreateModelProviderRequest {
 
 const PROVIDERS_PATH: &str = "/api/v1/finance/model-providers";
 
+/// 清理全局启用态：软删所有已启用的 Embedding provider，使后续断言拿到
+/// 「无任何启用者」的初始态（其他测试文件不创建 embedding provider）。
+async fn ensure_no_enabled_embedding(app: &TestApp, jwt: &str) {
+    let (status, body) = app.get_with_jwt(PROVIDERS_PATH, jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    for p in data["providers"].as_array().expect("providers array") {
+        if p["capability"].as_str() == Some("Embedding") && p["status"].as_i64() == Some(1) {
+            let id = p["id"].as_str().expect("provider id").to_string();
+            let _ = app
+                .delete_with_jwt(&format!("{}/{}", PROVIDERS_PATH, id), jwt)
+                .await;
+        }
+    }
+}
+
 /// 已有启用的 Embedding 时，创建第二个成功但为未启用状态（Disabled=2）
 #[sqlx::test]
 async fn test_create_second_embedding_lands_disabled(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
 
     // 首个 → 启用
     let (status, _) = app
@@ -83,6 +105,8 @@ async fn test_enable_disabled_embedding_requires_switch_confirm(pool: SqlitePool
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
 
     let _ = app
         .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-A"), &jwt)
@@ -107,5 +131,125 @@ async fn test_enable_disabled_embedding_requires_switch_confirm(pool: SqlitePool
             .contains("embedding_provider_switch_required"),
         "expected switch_required error, got: {}",
         body
+    );
+}
+
+/// 后补场景：初始化未配向量模型，事后创建首个 Embedding（落库 Normal）→ 携带 rebuild_task_id
+#[sqlx::test]
+async fn test_create_first_embedding_provider_triggers_rebuild(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-Late"), &jwt)
+        .await;
+    assert_eq!(status, 200);
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("status").and_then(|v| v.as_i64()),
+        Some(1),
+        "first embedding lands Normal"
+    );
+    assert!(
+        data.get("rebuild_task_id")
+            .and_then(|v| v.as_str())
+            .is_some(),
+        "first embedding creation should register rebuild task"
+    );
+}
+
+/// 已有启用者时创建第二个（Disabled）→ 不携带 rebuild_task_id（重建推迟到切换时）
+#[sqlx::test]
+async fn test_create_disabled_embedding_no_rebuild(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let _ = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-A"), &jwt)
+        .await;
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-B"), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("status").and_then(|v| v.as_i64()),
+        Some(2),
+        "second embedding lands Disabled"
+    );
+    assert!(
+        data.get("rebuild_task_id").is_none(),
+        "disabled embedding creation must NOT register rebuild (deferred to switch)"
+    );
+}
+
+/// 编辑使用中（Normal）embedding 的 model_name → 触发重建
+#[sqlx::test]
+async fn test_update_enabled_embedding_model_triggers_rebuild(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-Edit"), &jwt)
+        .await;
+    let id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("id")
+        .to_string();
+
+    let update = serde_json::json!({ "id": id, "model_name": "BAAI/bge-m3" });
+    let (status, body) = app
+        .put_with_jwt(&format!("{}/{}", PROVIDERS_PATH, id), &update, &jwt)
+        .await;
+    assert_eq!(status, 200);
+    assert!(
+        crate::common::assert_api_ok(status, &body)
+            .get("rebuild_task_id")
+            .and_then(|v| v.as_str())
+            .is_some(),
+        "model_name change on enabled embedding should trigger rebuild"
+    );
+}
+
+/// 编辑未启用（Disabled）embedding 的 model_name → 不触发重建
+#[sqlx::test]
+async fn test_update_disabled_embedding_no_rebuild(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let _guard = EMBEDDING_STATE_MUTEX.lock().await;
+    ensure_no_enabled_embedding(&app, &jwt).await;
+
+    let _ = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-A"), &jwt)
+        .await;
+    let (status, body) = app
+        .post_with_jwt(PROVIDERS_PATH, &embedding_req("Embedding-B"), &jwt)
+        .await;
+    let b_id = crate::common::assert_api_ok(status, &body)
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("id")
+        .to_string();
+
+    let update = serde_json::json!({ "id": b_id, "model_name": "BAAI/bge-m3" });
+    let (status, body) = app
+        .put_with_jwt(&format!("{}/{}", PROVIDERS_PATH, b_id), &update, &jwt)
+        .await;
+    assert_eq!(status, 200);
+    assert!(
+        crate::common::assert_api_ok(status, &body)
+            .get("rebuild_task_id")
+            .is_none(),
+        "editing disabled embedding must NOT trigger rebuild"
     );
 }
