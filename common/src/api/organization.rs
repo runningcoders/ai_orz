@@ -19,8 +19,9 @@ pub struct InitializeSystemRequest {
     pub admin_display_name: Option<String>,
     /// 超级管理员邮箱（可选）
     pub admin_email: Option<String>,
-    /// 对话模型配置（用于 Agent 思考和对话）
-    pub chat_model: ModelProviderInitConfig,
+    /// 对话模型配置（用于 Agent 思考和对话，可选 — 不传时跳过，创建 Agent 前需在模型管理中补配）
+    #[serde(default)]
+    pub chat_model: Option<ModelProviderInitConfig>,
     /// 向量模型配置（用于 Embedding 向量化，可选 — 不传时跳过向量索引）
     #[serde(default)]
     pub embedding_model: Option<ModelProviderInitConfig>,
@@ -54,8 +55,8 @@ pub struct InitializeSystemResponse {
     pub organization_id: String,
     /// 超级管理员用户 ID
     pub user_id: String,
-    /// 对话模型 Provider ID
-    pub chat_provider_id: String,
+    /// 对话模型 Provider ID（None 表示初始化时未配置对话模型）
+    pub chat_provider_id: Option<String>,
     /// 向量模型 Provider ID（None 表示未创建向量模型）
     pub embedding_provider_id: Option<String>,
 }
