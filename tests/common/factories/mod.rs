@@ -10,5 +10,6 @@ pub use agent_factory::create_test_agent;
 pub use project_factory::create_test_project;
 #[allow(unused_imports)]
 pub use user_factory::{
-    BootstrappedSystem, bootstrap_and_login, bootstrap_system, login_and_get_jwt,
+    BootstrappedSystem, bootstrap_and_login, bootstrap_system, bootstrap_system_minimal,
+    login_and_get_jwt,
 };

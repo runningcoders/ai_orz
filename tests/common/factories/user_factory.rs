@@ -30,8 +30,8 @@ pub struct BootstrappedSystem {
     pub embedding_provider_id: Option<String>,
 }
 
-/// 轮询初始化进度直到完成或失败
-async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_json::Value {
+/// 轮询初始化进度直到完成或失败（供各初始化变体复用）
+pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_json::Value {
     loop {
         let (status, body) = app
             .get(&format!(
@@ -136,6 +136,47 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
         chat_provider_id,
         embedding_provider_id,
     }
+}
+
+/// 最小初始化变体：跳过对话模型（`chat_model: None`），embedding 可选传入。
+///
+/// 返回 `(原始结果 JSON, admin 用户名, admin 密码哈希)`：
+/// - 不组装 `BootstrappedSystem` —— 跳过 chat 时 `chat_provider_id` 为 null，
+///   其 `String` 字段会 parse 失败，调用方直接按 JSON 断言；
+/// - 附带凭证供用例验证最小初始化后管理员「可登录」。
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+pub async fn bootstrap_system_minimal(
+    app: &TestApp,
+    embedding_model: Option<ModelProviderInitConfig>,
+) -> (serde_json::Value, String, String) {
+    // 串行化：与 bootstrap_system 共享同一把锁，避免并行 init 竞争
+    let _guard = BOOTSTRAP_MUTEX.lock().await;
+
+    let username = format!("min-admin-{}", uuid::Uuid::now_v7());
+    let password_hash = format!("hash-{}", uuid::Uuid::now_v7());
+    let org_name = format!("MinOrg-{}", uuid::Uuid::now_v7());
+
+    let req = InitializeSystemRequest {
+        organization_name: org_name,
+        admin_username: username.clone(),
+        admin_password_hash: password_hash.clone(),
+        description: None,
+        admin_display_name: None,
+        admin_email: None,
+        chat_model: None,
+        embedding_model,
+    };
+
+    let (status, body) = app.post("/api/v1/organization/initialize", &req).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let task_id = data
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .expect("missing task_id in initialize response")
+        .to_string();
+
+    let result = poll_initialize_progress(app, &task_id).await;
+    (result, username, password_hash)
 }
 
 /// Login as the given user via the real `/organization/auth/login` endpoint.
