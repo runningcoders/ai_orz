@@ -10,7 +10,24 @@ level = "4"
 
 [web.watcher]
 index_on_404 = true
-watch_path = ["src", "public", "index.html"]
+# 只监听源码与样式入口：public/ 不监听 —— build.rs 的产物（output.css、docs/）
+# 落在 public/ 下，监听会在首次生成时自触发一轮多余的重编译（页面闪回 build 页）。
+# styles/ 加入监听保证改 input.css 能触发热重载（build.rs rerun → tailwind 重编译）；
+# public/ 下的静态资产（图片/vendor）由 dev server 直接从磁盘 serve，改完刷新即生效。
+watch_path = ["src", "styles", "index.html"]
+
+# dev 模式 API 代理：前端 origin 是 dx 的 8080，而 config.rs 默认用「当前 origin」当
+# API base（prod 同源假设），无代理时 API 请求打到 dx 的 index_on_404 占位页（200+HTML）
+# → 前端报 "200: error decoding response body"。代理到后端 3000 后 dev/prod 都是同源。
+# 仅 dx serve 的 dev server 生效，dx build --release 不受影响；后端未就绪时自动重试 30s。
+# 注意：dx 的 web.proxy 是数组（Vec），必须用 [[web.proxy]] 双中括号语法
+#
+# backend 是「dx 进程视角」的地址（dx serve 进程发起转发连接），不是浏览器视角——
+# start.sh 总是同机启动 dx 与后端，故 localhost 对本地 / 远程沙箱等一切场景恒正确。
+# 前后端分机部署时通过环境变量覆盖（勿改此文件）：
+#   DX_BACKEND_URL=http://192.168.1.5:3000/api ./scripts/start.sh dev
+[[web.proxy]]
+backend = "http://localhost:3000/api"
 
 [bundle]
 identifier = "com.ai-orz.app"

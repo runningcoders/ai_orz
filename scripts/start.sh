@@ -78,7 +78,26 @@ ai_orz - 统一启动脚本
   ./scripts/start.sh build    # CI 构建
   ./scripts/start.sh backend  # 只跑后端 API
   或等价 make 命令：make dev / make prod / make build / make run / make serve
+
+环境变量:
+  DX_BACKEND_URL  覆盖前端 dev server 的 API 代理目标（dx 视角的 backend 地址）
+                  默认 http://localhost:3000/api —— dx 与后端由本脚本同机启动，
+                  本地 / 远程沙箱 / 服务器均无需设置（localhost 是 dx 进程视角）。
+                  仅前后端分机部署（如前端 dev 在本机、后端在远端）时指定：
+                    DX_BACKEND_URL=http://192.168.1.5:3000/api ./scripts/start.sh dev
+                  设置后运行期间临时替换 frontend/Dioxus.toml，退出自动恢复。
 EOF
+}
+
+# 打印当前生效的后端代理地址 + 未覆盖时给出设置引导（dev/frontend 模式共用）
+print_backend_hint() {
+    if [ -n "${DX_BACKEND_URL:-}" ]; then
+        echo "🔀 后端 API 代理: ${BLUE}$DX_BACKEND_URL${NC} ${YELLOW}（已覆盖默认 localhost:3000）${NC}"
+    else
+        echo "🔗 后端 API 代理: ${BLUE}http://localhost:3000/api${NC}（与后端同机，默认即可）"
+        echo "   前后端分机部署？用环境变量指向远端后端："
+        echo "   ${YELLOW}DX_BACKEND_URL=http://<后端地址>:3000/api ./scripts/start.sh $MODE${NC}"
+    fi
 }
 
 # 启动前预检：清理残留的 ai_orz 后端 / dx serve 前端进程与端口占用
@@ -94,6 +113,33 @@ preflight_deps() {
         echo ""
         echo "${YELLOW}💡 一键修复可自动项: ./scripts/check_deps.sh $MODE --fix（或 make doctor FIX=1）后重试${NC}"
         exit 1
+    fi
+}
+
+# ===== DX_BACKEND_URL：后端不在本机时的 proxy 逃生舱 =====
+# 默认不动：Dioxus.toml 的 proxy backend=http://localhost:3000 是「dx 进程视角」的
+# loopback（dx serve 与后端由本脚本同机启动，localhost 恒正确，远程沙箱同理）。
+# 仅当前后端分机部署（如前端 dev 在本机、后端在远端）时，设置：
+#   DX_BACKEND_URL=http://192.168.1.5:3000/api ./scripts/start.sh dev
+# 实现：启动 dx 前临时替换 Dioxus.toml 的 backend 行（备份 .dxbak），退出时恢复。
+DX_BAK="$REPO_ROOT/frontend/Dioxus.toml.dxbak"
+
+apply_dx_backend_override() {
+    [ -n "${DX_BACKEND_URL:-}" ] || return 0
+    if ! grep -q '^backend = ' "$REPO_ROOT/frontend/Dioxus.toml"; then
+        echo "${RED}DX_BACKEND_URL 已设置但 Dioxus.toml 中未找到 backend 配置行${NC}" >&2
+        exit 1
+    fi
+    cp "$REPO_ROOT/frontend/Dioxus.toml" "$DX_BAK"
+    sed "s|^backend = \".*\"|backend = \"$DX_BACKEND_URL\"|" \
+        "$REPO_ROOT/frontend/Dioxus.toml" > "$REPO_ROOT/frontend/Dioxus.toml.tmp" \
+        && mv "$REPO_ROOT/frontend/Dioxus.toml.tmp" "$REPO_ROOT/frontend/Dioxus.toml"
+    echo "${YELLOW}🔀 DX proxy backend 已临时覆盖为: $DX_BACKEND_URL（退出时自动恢复）${NC}"
+}
+
+restore_dx_backend_override() {
+    if [ -f "$DX_BAK" ]; then
+        mv "$DX_BAK" "$REPO_ROOT/frontend/Dioxus.toml"
     fi
 }
 
@@ -133,7 +179,11 @@ cmd_dev() {
 
     # 中断标志：trap 里置 1，轮询循环检测到即退出
     INT_RECEIVED=0
+    CLEANUP_DONE=0
     cleanup() {
+        # 幂等保护：EXIT trap 与显式调用可能先后触发，只执行一次
+        [ "$CLEANUP_DONE" = "1" ] && return 0
+        CLEANUP_DONE=1
         INT_RECEIVED=1
         echo ""
         echo "🛑 正在停止服务..."
@@ -144,10 +194,15 @@ cmd_dev() {
         kill -9 $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
         wait $BACKEND_PID 2>/dev/null || true
         wait $FRONTEND_PID 2>/dev/null || true
+        restore_dx_backend_override
         echo "${GREEN}👋 服务已停止${NC}"
         exit 0
     }
-    trap cleanup INT TERM
+    # EXIT：Ctrl+C / kill / set -e 异常退出时兜底恢复 Dioxus.toml（若被覆盖）
+    trap cleanup INT TERM EXIT
+
+    apply_dx_backend_override
+    print_backend_hint
 
     echo "🎨 启动前端开发服务器（WASM 编译中）..."
     # 前端先启动（体验优化，非必须）：wasm 增量编译快（8-16s），页面最先可用。
@@ -158,11 +213,13 @@ cmd_dev() {
     # 导致 Ctrl+C 不再产生 SIGINT、整组进程都收不到信号，脚本 trap 永远不触发而卡死。
     # 关闭后 Ctrl+C 正常发信号给全组；热重载不受影响（文件监听驱动，与 TUI 无关）。
     # exec：让 FRONTEND_PID 直接指向 dx 进程（否则 kill 到的是子 shell，dx 会变孤儿进程）
-    (cd frontend && exec dx serve --interactive=false) &
+    # > >(awk)：输出加 🎨 前缀，与后端 📦 日志区分（两者编译日志会交替输出）；
+    # process substitution 保持 exec 语义，FRONTEND_PID 仍是 dx 本体，awk 随 dx 退出自动结束
+    (cd frontend && exec dx serve --interactive=false) > >(awk '{ printf "🎨 %s\n", $0; fflush() }') 2>&1 &
     FRONTEND_PID=$!
 
     echo "📦 启动后端开发服务器（冷构建可能需要数分钟）..."
-    cargo run &
+    cargo run > >(awk '{ printf "📦 %s\n", $0; fflush() }') 2>&1 &
     BACKEND_PID=$!
 
     echo ""
@@ -200,11 +257,14 @@ cmd_backend() {
 cmd_frontend() {
     print_banner
     preflight_cleanup
+    apply_dx_backend_override
+    trap restore_dx_backend_override EXIT
+    print_backend_hint
     cd "$REPO_ROOT/frontend"
     echo "🎨 启动前端开发服务器..."
     echo "   地址: ${BLUE}http://localhost:8080${NC}"
     echo ""
-    dx serve
+    dx serve --interactive=false
 }
 
 # 仅构建
