@@ -15,7 +15,7 @@ use common::api::{
     CallModelRequest, CreateModelProviderRequest, ListModelProvidersResponseItem,
     SwitchEmbeddingProviderRequest, UpdateModelProviderStatusRequest,
 };
-use common::enums::{ModelCapability, ProviderType};
+use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use dioxus_router::Link;
 
 #[component]
@@ -27,6 +27,7 @@ pub fn FinanceModelProviders() -> Element {
 
     let mut name = use_signal(String::new);
     let mut provider_type = use_signal(|| ProviderType::OpenAI);
+    let mut new_capability = use_signal(|| 0i32); // 0=Agent(对话) 1=Embedding(向量)
     let mut model_name = use_signal(String::new);
     let mut api_key = use_signal(String::new);
     let mut base_url = use_signal(String::new);
@@ -71,7 +72,7 @@ pub fn FinanceModelProviders() -> Element {
             let req = CreateModelProviderRequest {
                 name: name(),
                 provider_type: provider_type(),
-                capability: ModelCapability::Agent,
+                capability: ModelCapability::from_i32(new_capability()),
                 model_name: model_name(),
                 api_key: api_key(),
                 base_url: if base_url().is_empty() {
@@ -98,6 +99,12 @@ pub fn FinanceModelProviders() -> Element {
                     max_context_length.set(String::new());
                     recommended_context_length.set(String::new());
                     toast.success("创建成功");
+                    if resp.rebuild_task_id.is_some() {
+                        toast.info("已触发向量索引全量重建，期间语义搜索可能不完整");
+                    } else if resp.status == ModelProviderStatus::Disabled as i32 {
+                        toast.info("已创建为未启用状态；在列表点「启用」并确认切换后生效");
+                    }
+                    new_capability.set(0);
                     match list_model_providers().await {
                         Ok(list) => providers.set(list.providers),
                         Err(e) => toast.error(&e),
@@ -231,7 +238,8 @@ pub fn FinanceModelProviders() -> Element {
                                                                 move |_| {
                                                                     let id = id.clone();
                                                                     spawn(async move {
-                                                                        if let Ok(()) = toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 0 }).await {}
+                                                                        // Disabled=2：真禁用（条目保留可再启用）；软删除走「删除」按钮
+                                                                        if let Ok(()) = toggle_model_provider(UpdateModelProviderStatusRequest { id, status: ModelProviderStatus::Disabled as i32 }).await {}
                                                                         match list_model_providers().await {
                                                                             Ok(list) => providers.set(list.providers),
                                                                             Err(e) => toast.error(&e),
@@ -365,6 +373,23 @@ pub fn FinanceModelProviders() -> Element {
                 }
                 div { class: "form-control w-full",
                     label { class: "label",
+                        span { class: "label-text font-medium", "能力类型 *" }
+                    }
+                    select {
+                        class: "select select-bordered w-full",
+                        "data-testid": "mp-create-capability",
+                        value: "{new_capability}",
+                        onchange: move |e| {
+                            if let Ok(v) = e.value().parse::<i32>() {
+                                new_capability.set(v);
+                            }
+                        },
+                        option { value: "0", "Agent（对话 / 思考）" }
+                        option { value: "1", "Embedding（向量化 / 语义搜索）" }
+                    }
+                }
+                div { class: "form-control w-full",
+                    label { class: "label",
                         span { class: "label-text font-medium", "模型名称 *" }
                     }
                     input { class: "input input-bordered w-full", value: "{model_name}",
@@ -372,7 +397,13 @@ pub fn FinanceModelProviders() -> Element {
                 }
                 div { class: "form-control w-full",
                     label { class: "label",
-                        span { class: "label-text font-medium", "API Key" }
+                        span { class: "label-text font-medium",
+                            if new_capability() == ModelCapability::Embedding as i32 {
+                                "API Key（FastEmbed 无需填写）"
+                            } else {
+                                "API Key *"
+                            }
+                        }
                     }
                     input { class: "input input-bordered w-full", r#type: "password", value: "{api_key}",
                         oninput: move |e| api_key.set(e.value()), placeholder: "sk-..." }
@@ -476,7 +507,16 @@ pub fn FinanceModelProviders() -> Element {
         ConfirmDialog {
             show: show_delete_confirm(),
             title: "确认删除".to_string(),
-            message: "确定删除此模型提供商？此操作不可撤销。".to_string(),
+            message: {
+                let id = pending_delete_id();
+                let is_embedding = providers.read().iter()
+                    .any(|p| p.id == id && p.capability.is_embedding());
+                if is_embedding {
+                    "确定删除此模型提供商？若它是使用中的向量模型，删除后语义搜索将失效，需重新配置并全量重建向量索引。".to_string()
+                } else {
+                    "确定删除此模型提供商？此操作不可撤销。".to_string()
+                }
+            },
             on_confirm: move |_| {
                 let id = pending_delete_id();
                 show_delete_confirm.set(false);
