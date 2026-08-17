@@ -50,6 +50,8 @@ pub struct CreateModelProviderResponse {
     pub description: Option<String>,
     /// Created timestamp
     pub created_at: i64,
+    /// 创建后的状态（0=已删除 1=启用 2=未启用 — embedding 已有启用者时创建为 2）
+    pub status: i32,
     /// 上下文窗口长度（模型支持的最大 token 数）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,

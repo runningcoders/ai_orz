@@ -118,9 +118,11 @@ impl From<i64> for AgentRuntimeState {
 pub enum ModelProviderStatus {
     /// Deleted (soft deleted)
     Deleted = 0,
-    /// Normal (available)
+    /// Normal (available / enabled)
     #[default]
     Normal = 1,
+    /// Disabled (created but not enabled; embedding providers pending switch)
+    Disabled = 2,
 }
 
 impl ModelProviderStatus {
@@ -128,6 +130,8 @@ impl ModelProviderStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Deleted,
+            1 => Self::Normal,
+            2 => Self::Disabled,
             _ => Self::Normal,
         }
     }

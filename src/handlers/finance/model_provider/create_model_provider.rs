@@ -45,23 +45,26 @@ pub async fn create_model_provider(
         .create_model_provider(ctx.clone(), &provider)
         .await?;
 
-    let config = provider.po.config();
+    // 回读落库状态（domain 对已有启用者的 embedding 创建降级为 Disabled）
+    let created = domain()
+        .model_provider_manage()
+        .get_model_provider(ctx, &provider.po.id)
+        .await?
+        .ok_or_else(|| common::error::Error::internal("created provider not found after create"))?;
+
+    let config = created.po.config();
     Ok(CreateModelProviderResponse {
-        id: provider.po.id.clone(),
-        name: provider.po.name.clone(),
-        provider_type: provider.po.provider_type,
-        model_name: provider.po.model_name.clone(),
-        description: if provider
-            .po
-            .description
-            .as_ref()
-            .is_none_or(|d| d.is_empty())
-        {
+        id: created.po.id.clone(),
+        name: created.po.name.clone(),
+        provider_type: created.po.provider_type,
+        model_name: created.po.model_name.clone(),
+        description: if created.po.description.as_ref().is_none_or(|d| d.is_empty()) {
             None
         } else {
-            provider.po.description.clone()
+            created.po.description.clone()
         },
-        created_at: provider.po.created_at,
+        created_at: created.po.created_at,
+        status: created.po.status as i32,
         max_context_length: config.max_context_length,
         recommended_context_length: config.recommended_context_length,
     })

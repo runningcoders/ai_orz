@@ -167,6 +167,10 @@ path = "tests/integration/project_in_progress_owner_test.rs"
 name = "system_cron_triggers_test"
 path = "tests/integration/system_cron_triggers_test.rs"
 
+[[test]]
+name = "model_provider_embedding_test"
+path = "tests/integration/model_provider_embedding_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]

@@ -16,8 +16,24 @@ impl ModelProviderManage for FinanceDomainImpl {
         ctx: RequestContext,
         provider: &ModelProvider,
     ) -> Result<()> {
-        let ctx = enrich_ctx!(&ctx, provider);
-        self.model_provider_dal.create(ctx, provider).await
+        // Embedding「创建不阻塞 + 启用时切换」：已有启用的 Embedding Provider 时，
+        // 新的允许创建但降级为 Disabled（未启用）；启用时走 update 守卫 409
+        // → 前端 switch modal 确认 → switch_embedding（软删旧+启用新+全量重建）。
+        // 首个 Embedding 直接 Normal 启用（当前无任何启用者）。
+        let mut provider = provider.clone();
+        if provider.po.capability.is_embedding()
+            && provider.po.status == ModelProviderStatus::Normal
+            && self
+                .model_provider_dal
+                .find_enabled_embedding_provider(ctx.clone())
+                .await?
+                .is_some()
+        {
+            provider.po.status = ModelProviderStatus::Disabled;
+        }
+
+        let ctx = enrich_ctx!(&ctx, &provider);
+        self.model_provider_dal.create(ctx, &provider).await
     }
 
     async fn get_model_provider(
