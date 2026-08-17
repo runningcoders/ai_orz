@@ -67,7 +67,7 @@ graph LR
 - **缓存策略**：全局启用 sccache（`mozilla-actions/sccache-action`，`RUSTC_WRAPPER=sccache`），按 `sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}` 缓存；另对 `~/.cache/ort`（ort-sys 预编译 ONNX Runtime）做独立缓存。
 - **覆盖率门禁**：`coverage` job 与 backend/frontend 并行，使用 `cargo-llvm-cov`，push main 要求 fail-under-lines ≥ 45%，PR 要求 ≥ 38%；报告通过 `--ignore-filename-regex` 排除 tests/common、registry、rustc、build.rs、target；报告同时输出日志与 GitHub Summary。
 - **前端交叉编译**：`frontend` job 安装 `wasm32-unknown-unknown` target 并执行 `cargo check --target wasm32-unknown-unknown` → `cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` → `cargo test`，确保 WASM 目标可编译。
-- **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试当前已移出 CI，仅在 `e2e/` 目录本地运行 Playwright。
+- **测试组织**：单元测试 `cargo test --lib`（含 `pkg/`、`models/`、`service/dao/*_test.rs` 等模块内 `#[cfg(test)]`）；集成测试在根 `Cargo.toml` 中显式声明 `[[test]]` 条目指向 `tests/integration/*.rs`，CI 通过 `cargo test --test '*'` 批量执行；E2E 测试当前已移出 CI，仅在 `tests/e2e/` 目录本地运行 Playwright（Cargo autotests 不递归子目录，与 Rust 集成测试互不干扰）。
 - **环境约束**：`CARGO_INCREMENTAL=0`（让 sccache 完全接管缓存，避免增量编译干扰）、`SQLX_OFFLINE=true`（使用 `.sqlx/` 离线 schema）。
 
 ### 开发与生产模式约定

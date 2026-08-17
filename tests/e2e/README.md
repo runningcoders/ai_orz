@@ -7,7 +7,7 @@
 ## 运行
 
 ```bash
-cd e2e
+cd tests/e2e
 npm install                # 首次
 npx playwright install chromium
 npx playwright test        # 全量：setup（初始化+登录冒烟）+ 15 条路由导航巡检

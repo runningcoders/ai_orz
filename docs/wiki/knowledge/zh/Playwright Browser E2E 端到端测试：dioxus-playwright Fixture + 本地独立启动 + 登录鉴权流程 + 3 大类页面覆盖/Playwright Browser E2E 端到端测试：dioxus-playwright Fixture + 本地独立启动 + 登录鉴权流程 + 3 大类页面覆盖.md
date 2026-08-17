@@ -55,6 +55,8 @@ E2E 用例以 Markdown 文件（Playbook）作为「人读 / 解析器读 / Agen
 | A. 解析驱动 | Playbook → AST → Playwright API | tests/e2e/runners/playwright_runner.rs | CI 冒烟、回归测试、PR 闸门 | 100% 稳定 | 快 |
 | B. Agent 驱动 | Playbook 原文当 Prompt → LLM + Browser 工具 | tests/e2e/runners/agent_runner.rs | 探索性 QA、复杂多步业务路径、UI 微变容错 | 偶发漂移 | 慢 |
 
+> 注：上表 Runner 路径为设计规划命名（未落地）。当前 `tests/e2e/` 是已落地的 Playwright TS 工程（`playwright.config.ts` + `tests/*.spec.ts`，入口 `make e2e`），与本卡描述的 Rust 端 Playbook 双模式是同一 E2E 体系的两条演进路线。
+
 Playbook 格式 = YAML Front Matter（id/tags/roles/setup）+ Steps 表格（Step/Action/Target/Data/Assert）。Action 枚举统一使用：navigate / click / type / select / toggle / wait / assert / screenshot。
 
 ## 3.2 本地独立启动 Fixture 对齐生产顺序

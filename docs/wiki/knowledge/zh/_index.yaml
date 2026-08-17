@@ -13,11 +13,11 @@ modules:
         children: []
         depends_on: []
         related_to: []
-    e2e:
+    tests/e2e:
         dir_name: AI Orz 端到端测试（Playwright E2E）
         title: AI Orz 端到端测试（Playwright E2E）
         scope:
-            - e2e/
+            - tests/e2e/
         source_files: []
         children: []
         depends_on: []

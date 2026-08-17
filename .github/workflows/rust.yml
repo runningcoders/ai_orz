@@ -284,5 +284,5 @@ jobs:
       run: sccache --stop-server || true
 
   # ===== 6. E2E（已移出 CI，仅本地运行）=====
-  # Playwright 浏览器端到端工程保留在 e2e/ 目录（cd e2e && npx playwright test），
+  # Playwright 浏览器端到端工程保留在 tests/e2e/ 目录（cd tests/e2e && npx playwright test），
   # 待前后端协议化改造（common DTO 全量复用）落地后再评估重新接入 CI。

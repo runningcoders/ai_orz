@@ -13,7 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '..', '..');
+// tests/e2e/scripts/ → 仓库根需上溯 3 层
+const repoRoot = path.resolve(here, '..', '..', '..');
 
 const port = process.env.AI_ORZ_E2E_PORT ?? '3310';
 const runtimeDir = path.join(repoRoot, '.e2e-runtime');

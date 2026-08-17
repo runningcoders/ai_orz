@@ -113,4 +113,4 @@ prod: ## 生产模式：编译 release 并运行生产二进制（0.0.0.0:3000�
 	./scripts/start.sh prod
 
 e2e: ## Playwright E2E（仅本地，已移出 CI）
-	cd e2e && npx playwright test
+	cd tests/e2e && npx playwright test
