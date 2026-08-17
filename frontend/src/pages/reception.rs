@@ -36,7 +36,11 @@ pub fn Reception() -> Element {
     let mut init_submitting = use_signal(|| false);
     let mut init_progress = use_signal(|| Option::<TaskProgressSnapshot>::None);
 
-    // 对话模型配置
+    // 两步表单状态
+    let mut init_step = use_signal(|| 1u8); // 1=基础信息 2=模型配置
+
+    // 对话模型配置（可选 — 可跳过，创建 Agent 前补配）
+    let mut enable_chat = use_signal(|| true); // 默认启用
     let mut chat_provider_name = use_signal(String::new);
     let mut chat_provider_type = use_signal(|| 0i32); // 0=OpenAI
     let mut chat_model_name = use_signal(String::new);
@@ -133,16 +137,27 @@ pub fn Reception() -> Element {
         });
     };
 
+    // 向导导航：Step 1「下一步」仅校验基础信息区
+    let on_next_step = move |_| {
+        if org_name().is_empty() || init_username().is_empty() || init_password().is_empty() {
+            toast.error("组织名称、用户名、密码不能为空");
+            return;
+        }
+        init_step.set(2);
+    };
+
+    let on_prev_step = move |_| {
+        init_step.set(1);
+    };
+
     // 初始化提交
     let on_submit_init = move |_| {
         spawn(async move {
-            if org_name().is_empty() || init_username().is_empty() || init_password().is_empty() {
-                toast.error("组织名称、用户名、密码不能为空");
-                return;
-            }
-            if chat_provider_name().is_empty()
-                || chat_model_name().is_empty()
-                || chat_api_key().is_empty()
+            // 基础信息已在 Step 1 校验，这里仅校验模型区
+            if enable_chat()
+                && (chat_provider_name().is_empty()
+                    || chat_model_name().is_empty()
+                    || chat_api_key().is_empty())
             {
                 toast.error("对话模型的 Provider 名称、模型名称、API Key 不能为空");
                 return;
@@ -174,17 +189,21 @@ pub fn Reception() -> Element {
                 } else {
                     Some(email())
                 },
-                chat_model: common::api::ModelProviderInitConfig {
-                    name: chat_provider_name(),
-                    provider_type: chat_provider_type(),
-                    model_name: chat_model_name(),
-                    api_key: chat_api_key(),
-                    base_url: if chat_base_url().is_empty() {
-                        None
-                    } else {
-                        Some(chat_base_url())
-                    },
-                    description: None,
+                chat_model: if enable_chat() {
+                    Some(common::api::ModelProviderInitConfig {
+                        name: chat_provider_name(),
+                        provider_type: chat_provider_type(),
+                        model_name: chat_model_name(),
+                        api_key: chat_api_key(),
+                        base_url: if chat_base_url().is_empty() {
+                            None
+                        } else {
+                            Some(chat_base_url())
+                        },
+                        description: None,
+                    })
+                } else {
+                    None
                 },
                 embedding_model: if enable_embedding() {
                     Some(common::api::ModelProviderInitConfig {
@@ -403,233 +422,298 @@ pub fn Reception() -> Element {
                             } else {
                                 // 初始化表单
                                 form { onsubmit: move |e| { e.prevent_default(); on_submit_init(e); },
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "组织名称 *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        "data-testid": "init-org-name",
-                                        value: "{org_name}",
-                                        oninput: move |e| org_name.set(e.value()),
-                                        placeholder: "例如：我的组织",
-                                    }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "组织描述" }
-                                    textarea {
-                                        class: "textarea textarea-bordered w-full",
-                                        value: "{org_description}",
-                                        oninput: move |e| org_description.set(e.value()),
-                                        placeholder: "简单描述一下您的组织...",
-                                    }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "管理员用户名 *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        "data-testid": "init-username",
-                                        value: "{init_username}",
-                                        oninput: move |e| init_username.set(e.value()),
-                                        placeholder: "例如：admin",
-                                    }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "管理员密码 *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "password",
-                                        "data-testid": "init-password",
-                                        value: "{init_password}",
-                                        oninput: move |e| init_password.set(e.value()),
-                                        placeholder: "请输入密码",
-                                    }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "显示名称" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        value: "{display_name}",
-                                        oninput: move |e| display_name.set(e.value()),
-                                        placeholder: "例如：超级管理员",
-                                    }
-                                }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "邮箱" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "email",
-                                        value: "{email}",
-                                        oninput: move |e| email.set(e.value()),
-                                        placeholder: "admin@example.com",
-                                    }
-                                }
-
-                                // 分隔线 - 对话模型
-                                div { class: "divider text-sm opacity-70", "对话模型配置" }
-
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "Provider 名称 *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        "data-testid": "init-chat-provider-name",
-                                        value: "{chat_provider_name}",
-                                        oninput: move |e| chat_provider_name.set(e.value()),
-                                        placeholder: "例如：OpenAI",
-                                    }
-                                }
-
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "服务商类型 *" }
-                                    select {
-                                        class: "select select-bordered w-full",
-                                        "data-testid": "init-chat-provider-type",
-                                        value: "{chat_provider_type}",
-                                        onchange: move |e| {
-                                            if let Ok(v) = e.value().parse::<i32>() {
-                                                chat_provider_type.set(v);
-                                            }
-                                        },
-                                        option { value: "0", "OpenAI" }
-                                        option { value: "1", "DeepSeek" }
-                                        option { value: "2", "Qwen" }
-                                        option { value: "3", "Doubao" }
-                                        option { value: "4", "Ollama" }
-                                        option { value: "5", "Custom" }
-                                    }
-                                }
-
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "模型名称 *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        "data-testid": "init-chat-model-name",
-                                        value: "{chat_model_name}",
-                                        oninput: move |e| chat_model_name.set(e.value()),
-                                        placeholder: "例如：gpt-4o-mini",
-                                    }
-                                }
-
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "API Key *" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "password",
-                                        "data-testid": "init-chat-api-key",
-                                        value: "{chat_api_key}",
-                                        oninput: move |e| chat_api_key.set(e.value()),
-                                        placeholder: "sk-...",
-                                    }
-                                }
-
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "Base URL" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        value: "{chat_base_url}",
-                                        oninput: move |e| chat_base_url.set(e.value()),
-                                        placeholder: "自定义代理地址（可选）",
-                                    }
-                                }
-
-                                // 分隔线 - 向量模型（可选）
-                                div { class: "form-control w-full",
-                                    label { class: "label cursor-pointer justify-start gap-2",
-                                        input {
-                                            r#type: "checkbox",
-                                            class: "checkbox checkbox-primary",
-                                            "data-testid": "init-enable-embedding",
-                                            checked: enable_embedding(),
-                                            onchange: move |e| enable_embedding.set(e.checked()),
-                                        }
-                                        span { class: "label-text", "启用向量模型（用于语义搜索）" }
-                                    }
-                                }
-
-                                if enable_embedding() {
-                                    div { class: "divider text-sm opacity-70", "向量模型配置" }
-
-                                    div { class: "form-control w-full",
-                                        label { class: "form-label", "Provider 名称 *" }
-                                        input {
-                                            class: "input input-bordered w-full",
-                                            r#type: "text",
-                                            "data-testid": "init-embedding-provider-name",
-                                            value: "{embedding_provider_name}",
-                                            oninput: move |e| embedding_provider_name.set(e.value()),
-                                            placeholder: "例如：FastEmbed",
+                                    // ===== 步骤指示器 =====
+                                    ul { class: "steps steps-primary w-full mb-2",
+                                        "data-testid": "init-wizard-steps",
+                                        li { class: "step step-primary", "基础信息" }
+                                        li {
+                                            class: if init_step() >= 2 { "step step-primary" } else { "step" },
+                                            "模型配置"
                                         }
                                     }
 
-                                    div { class: "form-control w-full",
-                                        label { class: "form-label", "服务商类型 *" }
-                                        select {
-                                            class: "select select-bordered w-full",
-                                            "data-testid": "init-embedding-provider-type",
-                                            value: "{embedding_provider_type}",
-                                            onchange: move |e| {
-                                                if let Ok(v) = e.value().parse::<i32>() {
-                                                    embedding_provider_type.set(v);
+                                    if init_step() == 1 {
+                                        // ===== Step 1: 基础信息 =====
+                                        div { "data-testid": "init-wizard-step-1",
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "组织名称 *" }
+                                                input {
+                                                    class: "input input-bordered w-full",
+                                                    r#type: "text",
+                                                    "data-testid": "init-org-name",
+                                                    value: "{org_name}",
+                                                    oninput: move |e| org_name.set(e.value()),
+                                                    placeholder: "例如：我的组织",
                                                 }
-                                            },
-                                            option { value: "0", "OpenAI" }
-                                            option { value: "1", "DeepSeek" }
-                                            option { value: "2", "Qwen" }
-                                            option { value: "3", "Doubao" }
-                                            option { value: "4", "Ollama" }
-                                            option { value: "5", "Custom" }
-                                            option { value: "6", "FastEmbed（本地，无需 API Key）" }
-                                            option { value: "7", "DoubaoVision（豆包多模态 Embedding）" }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "组织描述" }
+                                                textarea {
+                                                    class: "textarea textarea-bordered w-full",
+                                                    value: "{org_description}",
+                                                    oninput: move |e| org_description.set(e.value()),
+                                                    placeholder: "简单描述一下您的组织...",
+                                                }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "管理员用户名 *" }
+                                                input {
+                                                    class: "input input-bordered w-full",
+                                                    r#type: "text",
+                                                    "data-testid": "init-username",
+                                                    value: "{init_username}",
+                                                    oninput: move |e| init_username.set(e.value()),
+                                                    placeholder: "例如：admin",
+                                                }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "管理员密码 *" }
+                                                input {
+                                                    class: "input input-bordered w-full",
+                                                    r#type: "password",
+                                                    "data-testid": "init-password",
+                                                    value: "{init_password}",
+                                                    oninput: move |e| init_password.set(e.value()),
+                                                    placeholder: "请输入密码",
+                                                }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "显示名称" }
+                                                input {
+                                                    class: "input input-bordered w-full",
+                                                    r#type: "text",
+                                                    value: "{display_name}",
+                                                    oninput: move |e| display_name.set(e.value()),
+                                                    placeholder: "例如：超级管理员",
+                                                }
+                                            }
+                                            div { class: "form-control w-full",
+                                                label { class: "form-label", "邮箱" }
+                                                input {
+                                                    class: "input input-bordered w-full",
+                                                    r#type: "email",
+                                                    value: "{email}",
+                                                    oninput: move |e| email.set(e.value()),
+                                                    placeholder: "admin@example.com",
+                                                }
+                                            }
+
+                                            div { class: "form-control mt-4",
+                                                button {
+                                                    r#type: "button",
+                                                    class: "btn btn-primary w-full",
+                                                    "data-testid": "init-next-step",
+                                                    onclick: on_next_step,
+                                                    "下一步"
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // ===== Step 2: 模型配置 =====
+                                        div { class: "flex flex-col gap-1", "data-testid": "init-wizard-step-2",
+
+                                            // 对话模型开关（可选）
+                                            div { class: "form-control w-full",
+                                                label { class: "label cursor-pointer justify-start gap-2",
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        class: "checkbox checkbox-primary",
+                                                        "data-testid": "init-enable-chat",
+                                                        checked: enable_chat(),
+                                                        onchange: move |e| enable_chat.set(e.checked()),
+                                                    }
+                                                    span { class: "label-text", "配置对话模型（用于 Agent 思考与对话，推荐）" }
+                                                }
+                                            }
+
+                                            if enable_chat() {
+                                                div { class: "divider text-sm opacity-70", "对话模型配置" }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "Provider 名称 *" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        "data-testid": "init-chat-provider-name",
+                                                        value: "{chat_provider_name}",
+                                                        oninput: move |e| chat_provider_name.set(e.value()),
+                                                        placeholder: "例如：OpenAI",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "服务商类型 *" }
+                                                    select {
+                                                        class: "select select-bordered w-full",
+                                                        "data-testid": "init-chat-provider-type",
+                                                        value: "{chat_provider_type}",
+                                                        onchange: move |e| {
+                                                            if let Ok(v) = e.value().parse::<i32>() {
+                                                                chat_provider_type.set(v);
+                                                            }
+                                                        },
+                                                        option { value: "0", "OpenAI" }
+                                                        option { value: "1", "DeepSeek" }
+                                                        option { value: "2", "Qwen" }
+                                                        option { value: "3", "Doubao" }
+                                                        option { value: "4", "Ollama" }
+                                                        option { value: "5", "Custom" }
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "模型名称 *" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        "data-testid": "init-chat-model-name",
+                                                        value: "{chat_model_name}",
+                                                        oninput: move |e| chat_model_name.set(e.value()),
+                                                        placeholder: "例如：gpt-4o-mini",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "API Key *" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "password",
+                                                        "data-testid": "init-chat-api-key",
+                                                        value: "{chat_api_key}",
+                                                        oninput: move |e| chat_api_key.set(e.value()),
+                                                        placeholder: "sk-...",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "Base URL" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        value: "{chat_base_url}",
+                                                        oninput: move |e| chat_base_url.set(e.value()),
+                                                        placeholder: "自定义代理地址（可选）",
+                                                    }
+                                                }
+                                            } else {
+                                                div {
+                                                    class: "alert alert-warning text-sm py-2 mb-1",
+                                                    "data-testid": "init-chat-skip-hint",
+                                                    "未配置对话模型：可稍后使用，但创建 Agent 前需先在「模型提供商管理」中配置"
+                                                }
+                                            }
+
+                                            // 向量模型开关（推荐）
+                                            div { class: "form-control w-full",
+                                                label { class: "label cursor-pointer justify-start gap-2",
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        class: "checkbox checkbox-primary",
+                                                        "data-testid": "init-enable-embedding",
+                                                        checked: enable_embedding(),
+                                                        onchange: move |e| enable_embedding.set(e.checked()),
+                                                    }
+                                                    span { class: "label-text", "启用向量模型（推荐 — 用于语义搜索）" }
+                                                }
+                                            }
+
+                                            if enable_embedding() {
+                                                div { class: "divider text-sm opacity-70", "向量模型配置" }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "Provider 名称 *" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        "data-testid": "init-embedding-provider-name",
+                                                        value: "{embedding_provider_name}",
+                                                        oninput: move |e| embedding_provider_name.set(e.value()),
+                                                        placeholder: "例如：FastEmbed",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "服务商类型 *" }
+                                                    select {
+                                                        class: "select select-bordered w-full",
+                                                        "data-testid": "init-embedding-provider-type",
+                                                        value: "{embedding_provider_type}",
+                                                        onchange: move |e| {
+                                                            if let Ok(v) = e.value().parse::<i32>() {
+                                                                embedding_provider_type.set(v);
+                                                            }
+                                                        },
+                                                        option { value: "0", "OpenAI" }
+                                                        option { value: "1", "DeepSeek" }
+                                                        option { value: "2", "Qwen" }
+                                                        option { value: "3", "Doubao" }
+                                                        option { value: "4", "Ollama" }
+                                                        option { value: "5", "Custom" }
+                                                        option { value: "6", "FastEmbed（本地，无需 API Key）" }
+                                                        option { value: "7", "DoubaoVision（豆包多模态 Embedding）" }
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "模型名称 *" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        "data-testid": "init-embedding-model-name",
+                                                        value: "{embedding_model_name}",
+                                                        oninput: move |e| embedding_model_name.set(e.value()),
+                                                        placeholder: "例如：BAAI/bge-small-en-v1.5",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "API Key" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "password",
+                                                        value: "{embedding_api_key}",
+                                                        oninput: move |e| embedding_api_key.set(e.value()),
+                                                        placeholder: "FastEmbed 无需填写",
+                                                    }
+                                                }
+
+                                                div { class: "form-control w-full",
+                                                    label { class: "form-label", "Base URL" }
+                                                    input {
+                                                        class: "input input-bordered w-full",
+                                                        r#type: "text",
+                                                        value: "{embedding_base_url}",
+                                                        oninput: move |e| embedding_base_url.set(e.value()),
+                                                        placeholder: "自定义代理地址（可选）",
+                                                    }
+                                                }
+                                            } else {
+                                                div {
+                                                    class: "alert alert-warning text-sm py-2 mb-1",
+                                                    "data-testid": "init-embedding-skip-hint",
+                                                    "未启用向量模型：语义搜索不可用；后续补配时将自动全量重建向量索引，实体较多时耗时较长"
+                                                }
+                                            }
+
+                                            // 按钮组
+                                            div { class: "flex gap-2 mt-4",
+                                                button {
+                                                    r#type: "button",
+                                                    class: "btn btn-ghost flex-1",
+                                                    onclick: on_prev_step,
+                                                    "上一步"
+                                                }
+                                                button {
+                                                    r#type: "submit",
+                                                    class: "btn btn-primary flex-1",
+                                                    "data-testid": "init-submit",
+                                                    disabled: init_submitting(),
+                                                    "完成初始化"
+                                                }
+                                            }
                                         }
                                     }
-
-                                    div { class: "form-control w-full",
-                                        label { class: "form-label", "模型名称 *" }
-                                        input {
-                                            class: "input input-bordered w-full",
-                                            r#type: "text",
-                                            "data-testid": "init-embedding-model-name",
-                                            value: "{embedding_model_name}",
-                                            oninput: move |e| embedding_model_name.set(e.value()),
-                                            placeholder: "例如：BAAI/bge-small-en-v1.5",
-                                        }
-                                    }
-
-                                    div { class: "form-control w-full",
-                                        label { class: "form-label", "API Key" }
-                                        input {
-                                            class: "input input-bordered w-full",
-                                            r#type: "password",
-                                            value: "{embedding_api_key}",
-                                            oninput: move |e| embedding_api_key.set(e.value()),
-                                            placeholder: "FastEmbed 无需填写",
-                                        }
-                                    }
-
-                                    div { class: "form-control w-full",
-                                        label { class: "form-label", "Base URL" }
-                                        input {
-                                            class: "input input-bordered w-full",
-                                            r#type: "text",
-                                            value: "{embedding_base_url}",
-                                            oninput: move |e| embedding_base_url.set(e.value()),
-                                            placeholder: "自定义代理地址（可选）",
-                                        }
-                                    }
-                                }
-
-                                button {
-                                    class: "btn btn-primary btn-lg w-full",
-                                    r#type: "submit",
-                                    "data-testid": "init-submit",
-                                    disabled: init_submitting(),
-                                    if init_submitting() { "初始化中..." } else { "完成初始化" }
-                                }
-                            } // form 结束
+                                } // form 结束
                             } // else (非 init_submitting) 结束
                         } // 未初始化分支结束
                     } // loading 结束
