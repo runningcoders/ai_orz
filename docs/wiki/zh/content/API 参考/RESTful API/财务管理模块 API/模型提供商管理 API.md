@@ -14,6 +14,9 @@
 - [src/models/model_provider.rs](src/models/model_provider.rs)
 - [common/src/enums/provider.rs](common/src/enums/provider.rs)
 - [common/src/enums/mod.rs](common/src/enums/mod.rs)
+- [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs)
+- [src/handlers/finance/model_provider/update_model_provider.rs](src/handlers/finance/model_provider/update_model_provider.rs)
+- [common/src/enums/agent.rs](common/src/enums/agent.rs)  ← ModelProviderStatus 新增 Disabled=2
 </cite>
 
 ## 目录
@@ -85,7 +88,7 @@ D1 --> E1
 ## 核心组件
 - 请求/响应 DTO：创建、更新、查询、列表、删除、连接测试、模型调用、切换嵌入提供商、重建进度等
 - Provider 类型与能力：OpenAI、DeepSeek、Qwen、Doubao、Ollama、Custom、FastEmbed、DoubaoVision；Agent/Embedding 能力区分
-- 领域服务：创建/获取/更新/删除/查询提供商；唯一性校验（仅一个启用的 Embedding 提供商）；连接测试；切换嵌入提供商
+- 领域服务：创建/获取/更新/删除/查询提供商；唯一性校验（仅一个启用的 Embedding 提供商）；连接测试；切换嵌入提供商；创建 Embedding 时已有启用者降级为 Disabled(2)；启用走切换确认；创建/更新按生效状态条件触发重建
 - 数据访问层：CRUD、综合查询、统计注入（可选）、启用中的 Embedding 提供商查询
 - 后台任务：RebuildVectorsTask，串行执行 7 类实体的向量重建并暴露进度
 
@@ -222,9 +225,11 @@ Handler-->>Client : RebuildProgressResponse
 
 ### 领域与数据访问层要点
 - 领域层：
-  - 创建/更新时进行唯一性约束：仅允许一个启用的 Embedding 提供商
+  - 创建：Embedding 采用「创建不阻塞 + 启用时切换」策略——已有启用 Embedding 时新创建降级为 Disabled(2)，首个创建直接 Normal 启用
+  - 更新：仅使用中(Normal) Embedding 的 model_name/api_key/base_url 变化触发重建；Disabled 编辑不触发（启用时 switch 全量重建兜底）
   - 切换嵌入提供商：先禁用旧，再启用新，必要时触发重建
   - 连接测试：委托底层 brain_dal.test_connection
+- ModelProviderStatus 枚举：Deleted=0(软删除) / Normal=1(启用) / Disabled=2(未启用)
 - 数据访问层：
   - 提供带选项的查询：可注入 ModelCallStats（汇总、token 统计、时序），失败降级不影响主流程
   - 提供综合查询与分页
@@ -321,7 +326,7 @@ R --> T["RebuildVectorsTask"]
   - 方法：POST
   - 路径：/api/v1/finance/model-providers
   - 请求体：CreateModelProviderRequest
-  - 响应：CreateModelProviderResponse
+  - 响应：CreateModelProviderResponse（含 status(i32) 和 rebuild_task_id(Option<String>) 字段）
   - 说明：支持 name、provider_type、capability、model_name、api_key、base_url、description、max_context_length、recommended_context_length
 
 - 获取模型提供商详情
@@ -334,7 +339,7 @@ R --> T["RebuildVectorsTask"]
   - 方法：PUT
   - 路径：/api/v1/finance/model-providers/{id}
   - 请求体：UpdateModelProviderRequest
-  - 响应：UpdateModelProviderResponse
+  - 响应：UpdateModelProviderResponse（含 rebuild_task_id(Option<String>) 字段）
 
 - 更新状态（启用/禁用）
   - 方法：PUT

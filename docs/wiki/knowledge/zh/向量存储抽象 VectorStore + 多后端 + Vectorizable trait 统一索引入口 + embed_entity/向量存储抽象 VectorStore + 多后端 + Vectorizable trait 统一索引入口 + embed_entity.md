@@ -16,10 +16,11 @@ source_files:
   - src/service/dal/*（各业务 DAL search() 内部统一 embed_entity → upsert → search 调用链路）
   - docs/archive/design-archive/vector_search_architecture.md
   - docs/archive/design-archive/full_entity_fts5_search_design.md
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+  - docs/plan/系统初始化模型配置策略调整.md（Embedding 创建/更新重建触发条件矩阵）
   - docs/wiki/zh/content/基础设施/存储系统/存储系统.md
   - docs/wiki/zh/content/基础设施/基础设施.md
   - docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md
+  - 【平行卡】docs/wiki/knowledge/zh/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md（Embedding 业务生命周期与重建触发条件）
 ---
 
 # 向量存储抽象 + Vectorizable trait 统一索引
