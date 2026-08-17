@@ -16,6 +16,7 @@ use common::api::{
     ListAgentsResponseItem, ListModelProvidersResponseItem, SearchAgentsRequest,
 };
 use common::enums::AgentStatus;
+use dioxus_router::Link;
 
 /// Agent kind 对应的 badge 样式和标签
 fn kind_badge_class(kind: &str) -> &'static str {
@@ -458,15 +459,25 @@ pub fn HrAgents() -> Element {
                     label { class: "label",
                         span { class: "label-text font-medium", "模型提供商 *" }
                     }
-                    if model_providers.read().is_empty() {
-                        input { class: "input input-bordered w-full", value: "{new_model_provider_id}",
-                            oninput: move |e| new_model_provider_id.set(e.value()),
-                            placeholder: "请先在财务管理中配置模型提供商" }
+                    if model_providers.read().iter().filter(|mp| mp.capability.is_agent()).count() == 0 {
+                        div { class: "flex flex-col gap-1",
+                            input {
+                                class: "input input-bordered w-full opacity-60",
+                                value: "{new_model_provider_id}",
+                                oninput: move |e| new_model_provider_id.set(e.value()),
+                                placeholder: "暂无可用对话模型，请先在「模型提供商管理」中配置"
+                            }
+                            Link {
+                                class: "link link-primary link-hover text-xs",
+                                to: crate::pages::Route::FinanceModelProviders {},
+                                "前往模型提供商管理 →"
+                            }
+                        }
                     } else {
                         select { class: "select select-bordered w-full", value: "{new_model_provider_id}",
                             onchange: move |e| new_model_provider_id.set(e.value()),
                             option { value: "", "-- 请选择 --" }
-                            for mp in model_providers.read().iter() {
+                            for mp in model_providers.read().iter().filter(|mp| mp.capability.is_agent()) {
                                 option { value: "{mp.id}", "{mp.name} ({mp.model_name})" }
                             }
                         }
