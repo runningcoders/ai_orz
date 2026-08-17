@@ -28,7 +28,11 @@ pub fn Settings() -> Element {
         let mut cfg = config.write();
         cfg.reset_to_default();
         drop(cfg);
-        toast.success("已重置为默认配置");
+        // 持久化解除：删除 localStorage 键，回到 origin 动态探测（而非保存 origin 快照）
+        match config.read().clear_saved() {
+            Ok(_) => toast.success("已清除保存的配置，恢复自动探测后端地址"),
+            Err(e) => toast.error(&e),
+        }
     };
 
     let current = config.read().clone();

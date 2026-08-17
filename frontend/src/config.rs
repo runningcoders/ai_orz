@@ -82,6 +82,19 @@ impl FrontendConfig {
         *self = Self::default();
     }
 
+    /// 解除用户保存的配置：删除 localStorage 键，回到 origin 动态探测。
+    ///
+    /// 与 `reset_to_default` + `save` 的区别：后者会把「点击瞬间的 origin 快照」持久化，
+    /// 换环境访问（如换机器/换域名）仍被旧快照粘住；删除键才能恢复真正的默认行为。
+    pub fn clear_saved(&self) -> Result<(), String> {
+        if let Some(storage) = local_storage() {
+            storage
+                .remove_item("ai_orz_config")
+                .map_err(|e| format!("{:?}", e))?;
+        }
+        Ok(())
+    }
+
     pub fn api_url(&self, path: &str) -> String {
         let base = self.api_base_url.trim_end_matches('/');
         format!("{}{}", base, path)
