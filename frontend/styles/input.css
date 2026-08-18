@@ -77,6 +77,40 @@
 }
 
 /* ============================================================
+ * 表单控件聚焦态：悬浮 + 阴影底
+ * 替换 DaisyUI v5 默认的 outline: 2px solid var(--color-base-content)
+ * （近黑色硬描边，离周围内容太近且观感生硬），
+ * 改为轻微上浮 + 柔和投影 + primary 色边框与淡光晕，30+ 主题自动适配。
+ * 覆盖 .input / .textarea / .select / .file-input
+ * ============================================================ */
+.input,
+.textarea,
+.select,
+.file-input {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.input:focus,
+.input:focus-within,
+.textarea:focus,
+.textarea:focus-within,
+.select:focus,
+.select:focus-within,
+.file-input:focus,
+.file-input:focus-within {
+  outline: none;
+  isolation: isolate;
+  border-color: color-mix(in oklab, var(--color-primary) 55%, var(--color-base-content));
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 20px -8px color-mix(in oklab, var(--color-base-content) 40%, transparent),
+    0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent);
+}
+
+/* ============================================================
  * 驾驶舱风格：HUD 流光条（未读消息提示）
  * 用法：父元素 position: relative; overflow: hidden;
  *       <span class="hud-streak" /> 渲染左侧竖条 + 流动高光
