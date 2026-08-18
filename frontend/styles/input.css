@@ -107,7 +107,7 @@
   transform: translateY(-1px);
   box-shadow:
     0 8px 20px -8px color-mix(in oklab, var(--color-base-content) 40%, transparent),
-    0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent);
+    inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 30%, transparent);
 }
 
 /* ============================================================
