@@ -148,7 +148,7 @@ UPDATE cron_triggers SET name = ?, trigger_type = ?, cron_expression = ?, interv
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let updated_by = ctx.caller_id_or_system();
         sqlx::query(
             r#"
@@ -194,7 +194,7 @@ LIMIT ?
         last_run_at: i64,
     ) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let updated_by = ctx.caller_id_or_system();
         sqlx::query(
             r#"

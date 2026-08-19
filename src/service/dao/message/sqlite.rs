@@ -221,7 +221,7 @@ FROM messages WHERE id = ? AND "status" != 0
 
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         // 软删除：更新状态为 Recalled (0)，保留数据用于审计
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
         sqlx::query!(
             r#"
@@ -261,7 +261,7 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE id = ?
 
     async fn delete_by_task_id(&self, ctx: RequestContext, task_id: &str) -> Result<()> {
         // 软删除：批量更新任务下所有消息状态为 Recalled (0)，保留数据用于审计
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
         sqlx::query!(
             r#"
@@ -283,7 +283,7 @@ UPDATE messages SET "status" = 0, updated_at = ?, modified_by = ? WHERE task_id 
         id: &str,
         status: MessageStatus,
     ) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
         let status_i32 = status as i32;
         sqlx::query!(

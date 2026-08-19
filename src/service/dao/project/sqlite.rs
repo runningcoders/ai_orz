@@ -209,7 +209,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
 
     async fn update(&self, ctx: RequestContext, project: &ProjectPo) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let status_i32 = project.status as i32;
         sqlx::query!(
             "UPDATE projects SET name = ?, description = ?, workflow = ?, guidance = ?, \"status\" = ?, priority = ?, tags = ?, root_user_id = ?, owner_agent_id = ?, start_at = ?, due_at = ?, end_at = ?, modified_by = ?, updated_at = ?, execution_plan = ?, execution_result = ?, last_followup_at = ? WHERE id = ?",
@@ -228,7 +228,7 @@ impl ProjectDao for ProjectDaoSqliteImpl {
         modified_by: &str,
     ) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let status_i32 = status as i32;
         sqlx::query!(
             "UPDATE projects SET \"status\" = ?, modified_by = ?, updated_at = ? WHERE id = ?",

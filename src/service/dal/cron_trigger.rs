@@ -160,7 +160,7 @@ impl CronTriggerDal for CronTriggerDalImpl {
                         id
                     )
                 })?;
-                let next_run_at = executed_at + interval;
+                let next_run_at = executed_at + interval * 1000;
                 self.cron_trigger_dao
                     .update_next_run_at(ctx, id, next_run_at, executed_at)
                     .await
@@ -174,7 +174,7 @@ impl CronTriggerDal for CronTriggerDalImpl {
                     )
                 })?;
                 let timezone = crate::pkg::cron::system_timezone();
-                let from = chrono::DateTime::<chrono::Utc>::from_timestamp(executed_at, 0)
+                let from = chrono::DateTime::<chrono::Utc>::from_timestamp(executed_at / 1000, 0)
                     .unwrap_or_else(chrono::Utc::now);
                 let next_run_at = crate::pkg::cron::next_run_at(&expression, &timezone, from)?;
                 self.cron_trigger_dao

@@ -411,8 +411,8 @@ impl AgentPo {
             kind: common::enums::AgentKind::Local,
             created_by: creator.clone(),
             modified_by: creator,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
+            created_at: common::constants::utils::current_timestamp_ms(),
+            updated_at: common::constants::utils::current_timestamp_ms(),
         }
     }
 
@@ -436,7 +436,7 @@ impl AgentPo {
     /// 设置运行时配置
     pub fn set_runtime_config(&mut self, config: &AgentRuntimeConfig) {
         self.runtime_config = config.to_json();
-        self.updated_at = current_timestamp();
+        self.updated_at = common::constants::utils::current_timestamp_ms();
     }
 
     /// 获取已安装的工具包 tags
@@ -608,14 +608,6 @@ fn rand_u32() -> u32 {
         .unwrap()
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }
 
 impl crate::pkg::request_context::EnrichContext for AgentPo {

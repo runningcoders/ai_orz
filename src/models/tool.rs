@@ -219,7 +219,7 @@ impl ToolPo {
         } else {
             id
         };
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let control_mode = match protocol {
             ToolProtocol::Http | ToolProtocol::Mcp => ControlMode::Manual,
             _ => ControlMode::Auto,
@@ -266,7 +266,7 @@ impl ToolPo {
 
     /// 更新时间戳和修改者
     pub fn touch(&mut self, modifier: Option<String>) {
-        self.updated_at = common::constants::utils::current_timestamp();
+        self.updated_at = common::constants::utils::current_timestamp_ms();
         self.updated_by = modifier;
     }
 

@@ -173,13 +173,13 @@ impl Project {
     /// 启动项目
     pub fn start(&mut self) {
         self.po.status = ProjectStatus::InProgress;
-        self.po.start_at = Some(utils::current_timestamp());
+        self.po.start_at = Some(utils::current_timestamp_ms());
     }
 
     /// 完成项目
     pub fn complete(&mut self) {
         self.po.status = ProjectStatus::Completed;
-        self.po.end_at = Some(utils::current_timestamp());
+        self.po.end_at = Some(utils::current_timestamp_ms());
     }
 
     /// 生成 Prompt 用的摘要字符串
@@ -229,7 +229,7 @@ impl ProjectPo {
         end_at: Option<i64>,
         created_by: String,
     ) -> Self {
-        let now = utils::current_timestamp();
+        let now = utils::current_timestamp_ms();
         // tags 序列化为 JSON 字符串存储
         let tags_json = serde_json::to_string(&tags).unwrap_or_default();
         Self {

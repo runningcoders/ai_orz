@@ -55,7 +55,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 
     async fn update(&self, ctx: RequestContext, po: &MessageChannelPo) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let channel_type_i32 = po.channel_type as i32;
         let status_i32 = po.status as i32;
 
@@ -199,7 +199,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 
     async fn set_status(&self, ctx: RequestContext, id: &str, status: ChannelStatus) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let status_i32 = status as i32;
 
         sqlx::query!(
@@ -223,7 +223,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 
     async fn mark_push_success(&self, ctx: RequestContext, id: &str) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
 
         sqlx::query!(
             r#"
@@ -243,7 +243,7 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
     }
 
     async fn mark_push_failed(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let error_str = error.to_string();
         let error_opt = Some(error_str);
 

@@ -4,7 +4,7 @@ use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
 use crate::service::domain::hr::{HrDomainImpl, SkillManage, UpdateSkillParams};
-use common::constants::utils::current_timestamp;
+use common::constants::utils::current_timestamp_ms;
 use common::enums::SkillStatus;
 use common::error::{Result, bail_err};
 use std::path::{Component, Path};
@@ -270,7 +270,7 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.write_file(&po, filename, content)?;
 
         // 更新 skill 元数据
-        po.updated_at = current_timestamp();
+        po.updated_at = current_timestamp_ms();
         po.modifier_id = ctx.caller_id_or_system();
         self.skill_dal
             .update(

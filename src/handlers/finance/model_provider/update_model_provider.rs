@@ -12,14 +12,6 @@ use std::sync::Arc;
 
 use crate::enrich_ctx;
 
-/// Get current timestamp
-fn current_timestamp() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
-}
-
 /// Update an existing model provider configuration (name, credentials, model name, etc.)
 #[register_handler_tool(
     id = "update_model_provider",
@@ -96,7 +88,7 @@ pub async fn update_model_provider(
     }
     // Update modified_by and updated_at
     provider.po.modified_by = ctx.uid();
-    provider.po.updated_at = current_timestamp();
+    provider.po.updated_at = common::constants::utils::current_timestamp_ms();
 
     domain()
         .model_provider_manage()

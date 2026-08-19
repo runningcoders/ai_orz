@@ -292,7 +292,7 @@ impl McpServerPo {
         } else {
             id
         };
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         Self {
             id,
             name,
@@ -315,7 +315,7 @@ impl McpServerPo {
     }
 
     pub fn touch(&mut self, modifier: Option<String>) {
-        self.updated_at = common::constants::utils::current_timestamp();
+        self.updated_at = common::constants::utils::current_timestamp_ms();
         self.updated_by = modifier;
     }
 }

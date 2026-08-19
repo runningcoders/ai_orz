@@ -464,7 +464,7 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
             uuid::Uuid::now_v7().to_string(),
             "系统默认-项目进度巡检".into(),
             TriggerType::Interval,
-            common::constants::utils::current_timestamp() + 3600,
+            common::constants::utils::current_timestamp_ms() + 3600 * 1000,
             Some("system".into()),
         );
         trigger.interval_seconds = Some(3600);

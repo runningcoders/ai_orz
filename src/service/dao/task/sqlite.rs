@@ -327,7 +327,7 @@ WHERE tasks_fts MATCH "#,
     async fn update(&self, ctx: RequestContext, task: &TaskPo) -> Result<()> {
         let pool = ctx.db_pool();
         let ctx_user_id = ctx.user_id.clone().unwrap_or_default();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let status_i32 = task.status as i32;
         let priority_i32 = task.priority;
         let assignee_type_i32 = task.assignee_type as i32;
@@ -387,7 +387,7 @@ WHERE id = ?
         modified_by: &str,
     ) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let status_i32 = status as i32;
         sqlx::query!(
             r#"

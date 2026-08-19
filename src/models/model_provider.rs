@@ -137,7 +137,7 @@ impl ModelProvider {
     /// 更新时间戳
     pub fn touch(&mut self, modifier: &str) {
         self.po.modified_by = modifier.to_string();
-        self.po.updated_at = current_timestamp();
+        self.po.updated_at = common::constants::utils::current_timestamp_ms();
     }
 }
 
@@ -170,8 +170,8 @@ impl ModelProviderPo {
             status: ModelProviderStatus::Normal,
             created_by: creator.clone(),
             modified_by: creator,
-            created_at: current_timestamp(),
-            updated_at: current_timestamp(),
+            created_at: common::constants::utils::current_timestamp_ms(),
+            updated_at: common::constants::utils::current_timestamp_ms(),
         }
     }
 
@@ -219,14 +219,6 @@ fn rand_u32() -> u32 {
         .unwrap()
         .as_nanos() as u32;
     time2.wrapping_add(hasher.finish() as u32)
-}
-
-fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
 }
 
 impl crate::pkg::request_context::EnrichContext for ModelProviderPo {

@@ -50,7 +50,7 @@ impl Producer for CronTriggerProducer {
         };
 
         let ctx = RequestContext::new_system();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
 
         let triggers = system::domain()
             .cron_manager()
@@ -69,7 +69,7 @@ impl Producer for CronTriggerProducer {
                 trigger_id: trigger.id.clone(),
                 trigger_name: trigger.name.clone(),
                 payload: trigger.payload.clone(),
-                created_at: common::constants::utils::current_timestamp(),
+                created_at: common::constants::utils::current_timestamp_ms(),
             };
 
             registry.publish(event).await;

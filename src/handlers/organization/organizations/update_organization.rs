@@ -42,7 +42,7 @@ pub async fn update_organization(
     if let Some(status) = params.status {
         org.status = status.into();
     }
-    org.updated_at = utils::current_timestamp();
+    org.updated_at = utils::current_timestamp_ms();
 
     domain.organization_manage().update(ctx, &org).await?;
 

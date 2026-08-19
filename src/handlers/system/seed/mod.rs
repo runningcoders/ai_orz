@@ -397,7 +397,7 @@ pub async fn assemble_snapshot_from_db_with_progress(
 
     Ok(SeedSnapshot {
         version: SeedSnapshot::CURRENT_VERSION.to_string(),
-        generated_at: common::constants::utils::current_timestamp(),
+        generated_at: common::constants::utils::current_timestamp_ms(),
         description,
         source_organization_id: org_id.to_string(),
         organization: organization_def,
@@ -524,8 +524,8 @@ pub async fn apply_snapshot_to_db_with_progress(
             status: common::enums::UserStatus::from_i32(user_def.status),
             created_by: "seed_import".to_string(),
             modified_by: "seed_import".to_string(),
-            created_at: common::constants::utils::current_timestamp(),
-            updated_at: common::constants::utils::current_timestamp(),
+            created_at: common::constants::utils::current_timestamp_ms(),
+            updated_at: common::constants::utils::current_timestamp_ms(),
             // 用户自述偏好不在 seed 定义中：已有用户保留现场设置，新用户默认空
             preferences: existing
                 .as_ref()

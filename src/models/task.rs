@@ -172,14 +172,14 @@ impl Task {
     /// 启动任务
     pub fn start(&mut self) {
         self.po.status = TaskStatus::InProgress;
-        self.po.start_at = Some(utils::current_timestamp());
+        self.po.start_at = Some(utils::current_timestamp_ms());
     }
 
     /// 完成任务
     pub fn complete(&mut self) {
         self.po.status = TaskStatus::Completed;
         self.po.progress = 100;
-        self.po.end_at = Some(utils::current_timestamp());
+        self.po.end_at = Some(utils::current_timestamp_ms());
     }
 
     /// 取消任务
@@ -210,7 +210,7 @@ impl Task {
     /// 设置任务进度（0-100，超出范围会被截断）
     pub fn set_progress(&mut self, progress: i32) {
         self.po.progress = progress.clamp(0, 100);
-        self.po.updated_at = utils::current_timestamp();
+        self.po.updated_at = utils::current_timestamp_ms();
     }
 
     /// 生成 Prompt 用的摘要字符串
@@ -253,7 +253,7 @@ impl TaskPo {
         project_id: Option<String>,
         created_by: String,
     ) -> Self {
-        let now = utils::current_timestamp();
+        let now = utils::current_timestamp_ms();
         // tags 序列化为 JSON 字符串存储
         let tags_json = serde_json::to_string(&tags).unwrap_or_default();
         // dependencies 序列化为 JSON 字符串存储，如果为空则存 None
@@ -304,13 +304,13 @@ impl TaskPo {
     /// 增加思考深度（每次思考调用）
     pub fn increment_thinking_depth(&mut self) {
         self.thinking_depth += 1;
-        self.updated_at = utils::current_timestamp();
+        self.updated_at = utils::current_timestamp_ms();
     }
 
     /// 重置思考深度（用户回复后）
     pub fn reset_thinking_depth(&mut self) {
         self.thinking_depth = 0;
-        self.updated_at = utils::current_timestamp();
+        self.updated_at = utils::current_timestamp_ms();
     }
 }
 

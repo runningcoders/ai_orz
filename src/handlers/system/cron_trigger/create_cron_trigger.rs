@@ -27,7 +27,7 @@ pub async fn create_cron_trigger(
                     "interval_seconds is required for Interval trigger"
                 )
             })?;
-            common::constants::utils::current_timestamp() + interval
+            common::constants::utils::current_timestamp_ms() + interval * 1000
         }
         TriggerType::Cron => {
             let expression = params.cron_expression.as_deref().ok_or_else(|| {

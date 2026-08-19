@@ -137,7 +137,7 @@ FROM model_providers WHERE 1=1
     }
 
     async fn update(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let provider_type = provider.provider_type as i32;
         let capability = provider.capability as i32;
         let status = provider.status as i32;
@@ -168,7 +168,7 @@ WHERE id = ?
     }
 
     async fn delete(&self, ctx: RequestContext, provider: &ModelProviderPo) -> Result<()> {
-        let current_timestamp = Utc::now().timestamp();
+        let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
         let pool = ctx.db_pool();
         sqlx::query!(

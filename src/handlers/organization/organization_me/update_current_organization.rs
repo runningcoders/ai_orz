@@ -47,7 +47,7 @@ pub async fn update_current_organization(
     }
 
     // 更新修改时间
-    org.updated_at = utils::current_timestamp();
+    org.updated_at = utils::current_timestamp_ms();
     if let Some(modifier_id) = ctx.user_id.clone() {
         org.modified_by = modifier_id;
     }

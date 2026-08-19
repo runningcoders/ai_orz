@@ -29,9 +29,9 @@ pub struct OrganizationPo {
     pub created_by: String,
     /// 修改人
     pub modified_by: String,
-    /// 创建时间戳（秒）
+    /// 创建时间戳（毫秒）
     pub created_at: i64,
-    /// 更新时间戳（秒）
+    /// 更新时间戳（毫秒）
     pub updated_at: i64,
 }
 
@@ -44,7 +44,7 @@ impl OrganizationPo {
         base_url: Option<String>,
         created_by: String,
     ) -> Self {
-        let now = utils::current_timestamp();
+        let now = utils::current_timestamp_ms();
         Self {
             id,
             name,

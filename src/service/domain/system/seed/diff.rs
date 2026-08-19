@@ -26,7 +26,7 @@ pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
             kind: DiffKind::FileVsFile,
             base_source: base.source_organization_id.clone(),
             target_source: target.source_organization_id.clone(),
-            compared_at: common::constants::utils::current_timestamp(),
+            compared_at: common::constants::utils::current_timestamp_ms(),
         },
         summary,
         organization: org_diff,

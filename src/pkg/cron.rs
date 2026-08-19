@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use common::error::{Result, err};
 
-/// 解析 cron 表达式并计算从指定时间起的下一次触发时间（UTC 时间戳，秒）
+/// 解析 cron 表达式并计算从指定时间起的下一次触发时间（UTC 时间戳，毫秒）
 ///
 /// # 参数
 /// - `expression`: cron 表达式（5 字段或 6-7 字段）
@@ -17,7 +17,7 @@ use common::error::{Result, err};
 /// - `from`: 从哪个时间点开始计算（UTC）
 ///
 /// # 返回
-/// 下一次触发时间的 UTC 时间戳（秒），与 `next_run_at` 字段单位一致
+/// 下一次触发时间的 UTC 时间戳（毫秒），与 `next_run_at` 字段单位一致
 pub fn next_run_at(expression: &str, timezone: &str, from: DateTime<Utc>) -> Result<i64> {
     let tz = parse_timezone(timezone)?;
     let schedule = parse_schedule(expression)?;
@@ -29,7 +29,7 @@ pub fn next_run_at(expression: &str, timezone: &str, from: DateTime<Utc>) -> Res
             expression
         )
     })?;
-    Ok(next.with_timezone(&Utc).timestamp())
+    Ok(next.with_timezone(&Utc).timestamp_millis())
 }
 
 /// 校验 cron 表达式是否合法（能在指定时区下产生未来的触发时间）
@@ -131,7 +131,7 @@ mod tests {
         // 2026-08-14 10:00 UTC = 2026-08-14 18:00 北京时间
         // 下一个凌晨 4 点 = 2026-08-15 04:00 北京时间 = 2026-08-14 20:00 UTC
         let next = next_run_at("0 4 * * *", "Asia/Shanghai", from).unwrap();
-        let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
+        let next_dt = DateTime::<Utc>::from_timestamp_millis(next).unwrap();
         assert_eq!(
             next_dt.format("%Y-%m-%d %H:%M").to_string(),
             "2026-08-14 20:00"
@@ -146,7 +146,7 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = next_run_at("0 4 * * *", "Asia/Shanghai", from).unwrap();
-        let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
+        let next_dt = DateTime::<Utc>::from_timestamp_millis(next).unwrap();
         assert_eq!(
             next_dt.format("%Y-%m-%d %H:%M").to_string(),
             "2026-08-14 20:00"
@@ -160,7 +160,7 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let next = next_run_at("0 4 * * *", "UTC", from).unwrap();
-        let next_dt = DateTime::<Utc>::from_timestamp(next, 0).unwrap();
+        let next_dt = DateTime::<Utc>::from_timestamp_millis(next).unwrap();
         assert_eq!(
             next_dt.format("%Y-%m-%d %H:%M").to_string(),
             "2026-08-15 04:00"
