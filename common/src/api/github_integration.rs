@@ -1,7 +1,7 @@
 //! GitHub 集成（用户级）API DTO - 前后端共享
 //!
 //! 路由统一挂 `/api/v1/finance/identity/github/`：
-//! - PAT 凭证 CRUD（users 表 identity_credentials JSON 列，token 加密落库永不回显）
+//! - PAT 凭证 CRUD（user_credentials 独立表，token 加密落库永不回显）
 //! - 登录态探测（gh auth status --json 实测，凭证绑定后由 gh_cli 工具自动登录）
 //! - 默认凭证（多条 token 时 gh_cli 工具身份优先取默认）
 

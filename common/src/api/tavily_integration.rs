@@ -1,7 +1,7 @@
 //! Tavily 集成（用户级）API DTO - 前后端共享
 //!
 //! 路由统一挂 `/api/v1/finance/identity/tavily/`：
-//! - 个人 API key 凭证 CRUD（users 表 identity_credentials JSON 列，key 加密落库永不回显）
+//! - 个人 API key 凭证 CRUD（user_credentials 独立表，key 加密落库永不回显）
 //! - 默认凭证（多条 key 时 tavily_search 工具身份优先取默认）
 //! - 集成状态聚合（凭证快照 + 共享 key 配置状态，双轨授权的实例侧可见性）
 

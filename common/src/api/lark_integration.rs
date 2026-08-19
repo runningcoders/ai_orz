@@ -1,7 +1,7 @@
 //! 飞书集成（用户级）API DTO - 前后端共享
 //!
 //! 路由统一挂 `/api/v1/finance/identity/lark/`：
-//! - 凭证 CRUD（users 表 identity_credentials JSON 列）
+//! - 凭证 CRUD（user_credentials 独立表）
 //! - 用户 OAuth device flow（auth start/complete/status/logout）
 //! - 绑定快照聚合（status）
 //! - config init --new 自动化绑定（bind start/status/cancel）
