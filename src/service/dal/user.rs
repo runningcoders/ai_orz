@@ -26,7 +26,10 @@ pub fn dal() -> Arc<dyn UserDal + Send + Sync> {
 
 /// 初始化 User DAL
 pub fn init() {
-    let _ = USER_DAL.set(new(user::dao(), crate::service::dao::user_credential::dao()));
+    let _ = USER_DAL.set(new(
+        user::dao(),
+        crate::service::dao::user_credential::dao(),
+    ));
 }
 
 /// 创建 User DAL（返回 trait 对象）
@@ -97,8 +100,11 @@ pub trait UserDal: Send + Sync {
     ) -> Result<u64>;
 
     /// 插入凭证
-    async fn insert_credential(&self, ctx: RequestContext, credential: &UserCredential)
-    -> Result<()>;
+    async fn insert_credential(
+        &self,
+        ctx: RequestContext,
+        credential: &UserCredential,
+    ) -> Result<()>;
 
     /// 按主键查找活跃凭证（引用/解析语义下软删凭证视为不存在）
     async fn find_credential_by_id(
@@ -108,8 +114,11 @@ pub trait UserDal: Send + Sync {
     ) -> Result<Option<UserCredential>>;
 
     /// 更新凭证（行级全字段：name/detail/visibility/is_default 由 Domain 编排后整体写入）
-    async fn update_credential(&self, ctx: RequestContext, credential: &UserCredential)
-    -> Result<()>;
+    async fn update_credential(
+        &self,
+        ctx: RequestContext,
+        credential: &UserCredential,
+    ) -> Result<()>;
 
     /// 软删除凭证（默认标记联动清除）
     async fn soft_delete_credential(&self, ctx: RequestContext, id: &str) -> Result<()>;
@@ -123,8 +132,7 @@ pub trait UserDal: Send + Sync {
     ) -> Result<Option<UserCredential>>;
 
     /// 设立默认凭证（作用域由目标凭据 visibility 派生；同事务清旧立新）
-    async fn set_default_credential(&self, ctx: RequestContext, credential_id: &str)
-    -> Result<()>;
+    async fn set_default_credential(&self, ctx: RequestContext, credential_id: &str) -> Result<()>;
 
     /// 取消个人默认（该用户该 kind 的 private 默认清位，无默认时幂等无操作）
     async fn clear_default_credential(
@@ -313,7 +321,9 @@ impl crate::pkg::tool_registry::gh_cli::GhCredentialResolver for GhDalCredential
         let common::models::CredentialDetail::GithubToken { token } = credential.detail() else {
             return Ok(None);
         };
-        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(token.as_str())?))
+        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(
+            token.as_str(),
+        )?))
     }
 }
 
@@ -341,6 +351,8 @@ impl crate::pkg::tool_registry::tavily_search::TavilyCredentialResolver
         let common::models::CredentialDetail::TavilyKey { api_key } = credential.detail() else {
             return Ok(None);
         };
-        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(api_key.as_str())?))
+        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(
+            api_key.as_str(),
+        )?))
     }
 }

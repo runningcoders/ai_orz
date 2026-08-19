@@ -353,9 +353,7 @@ impl MessageChannelDalImpl {
             ChannelType::Lark => {
                 // 凭证解析在 DAL 层完成（按凭证 ID 查 user_credentials 行），
                 // DAO 只接收已解析凭证执行出站调用
-                let credentials = self
-                    .resolve_lark_credentials(ctx.clone(), channel)
-                    .await?;
+                let credentials = self.resolve_lark_credentials(ctx.clone(), channel).await?;
                 self.lark_dao
                     .push(ctx, message, channel, &credentials)
                     .await
@@ -364,11 +362,7 @@ impl MessageChannelDalImpl {
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
             ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
             ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
-            ChannelType::A2aCallback => {
-                self.a2a_callback_dao
-                    .push(ctx, message, channel)
-                    .await
-            }
+            ChannelType::A2aCallback => self.a2a_callback_dao.push(ctx, message, channel).await,
         }
     }
 

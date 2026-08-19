@@ -7,13 +7,13 @@
 
 use crate::models::user_credential::{UserCredential, UserCredentialPo};
 use crate::pkg::RequestContext;
-use crate::service::dao::user_credential::UserCredentialQuery;
 use crate::service::dal::user::UserDal;
+use crate::service::dao::user_credential::UserCredentialQuery;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
 use common::api::PaginationParams;
-use common::error::{Result, bail_err, err};
 use common::enums::UserRole;
+use common::error::{Result, bail_err, err};
 use common::models::{CredentialKind, CredentialVisibility};
 
 /// 凭证列表分页上限（单用户凭证为个位数量级，1000 覆盖全量场景）
@@ -153,9 +153,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             .unwrap_or_default()
             .to_string();
 
-        user_dal
-            .update_credential(ctx.clone(), &credential)
-            .await?;
+        user_dal.update_credential(ctx.clone(), &credential).await?;
 
         // 类型分发：更新后联动（失败仅告警）
         if kind == CredentialKind::LarkApp

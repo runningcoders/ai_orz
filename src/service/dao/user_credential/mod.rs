@@ -69,8 +69,7 @@ pub trait UserCredentialDao: Send + Sync {
     async fn count(&self, ctx: RequestContext, query: UserCredentialQuery) -> Result<u64>;
 
     /// 按主键查找活跃凭证（status != 0；引用/解析语义下软删凭证视为不存在）
-    async fn find_by_id(&self, ctx: RequestContext, id: &str)
-    -> Result<Option<UserCredentialPo>>;
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserCredentialPo>>;
 
     /// 解析用户某类型可用凭证（§2.3 链 2→5 单点实现，作用域优先）
     ///

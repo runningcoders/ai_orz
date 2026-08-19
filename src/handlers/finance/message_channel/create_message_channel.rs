@@ -29,7 +29,12 @@ pub fn validate_lark_credential_ref(
     let credential_id = lark_credential_id
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| err!(InvalidRequest, "飞书渠道必须引用用户级应用凭证（lark_credential_id）"))?;
+        .ok_or_else(|| {
+            err!(
+                InvalidRequest,
+                "飞书渠道必须引用用户级应用凭证（lark_credential_id）"
+            )
+        })?;
     let credential = credentials
         .iter()
         .find(|c| c.id() == credential_id)
@@ -155,12 +160,8 @@ mod tests {
     #[test]
     fn lark_credential_ref_required_for_lark_type() {
         let credentials = lark_credentials("cred-1");
-        assert!(
-            validate_lark_credential_ref(ChannelType::Lark, None, &credentials).is_err()
-        );
-        assert!(
-            validate_lark_credential_ref(ChannelType::Lark, Some("  "), &credentials).is_err()
-        );
+        assert!(validate_lark_credential_ref(ChannelType::Lark, None, &credentials).is_err());
+        assert!(validate_lark_credential_ref(ChannelType::Lark, Some("  "), &credentials).is_err());
         // 引用不存在的凭证
         assert!(
             validate_lark_credential_ref(ChannelType::Lark, Some("missing"), &credentials).is_err()

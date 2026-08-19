@@ -358,7 +358,10 @@ mod tests {
             serde_json::to_value(CredentialVisibility::Public).unwrap(),
             "public"
         );
-        assert_eq!(CredentialVisibility::default(), CredentialVisibility::Private);
+        assert_eq!(
+            CredentialVisibility::default(),
+            CredentialVisibility::Private
+        );
     }
 
     #[test]

@@ -231,7 +231,6 @@ UPDATE users SET status = 0, modified_by = ?, updated_at = ? WHERE id = ?
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
         Ok(total as u64)
     }
-
 }
 
 /// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）

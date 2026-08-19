@@ -118,7 +118,8 @@ WHERE id = ?
     ) -> Result<PagedResult<UserCredentialPo>> {
         let pool = ctx.db_pool();
 
-        let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM user_credentials WHERE 1=1");
+        let mut count_builder =
+            QueryBuilder::new("SELECT COUNT(*) FROM user_credentials WHERE 1=1");
         push_query_filters(&mut count_builder, &query);
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
 
@@ -154,17 +155,14 @@ WHERE id = ?
 
     async fn count(&self, ctx: RequestContext, query: UserCredentialQuery) -> Result<u64> {
         let pool = ctx.db_pool();
-        let mut count_builder = QueryBuilder::new("SELECT COUNT(*) FROM user_credentials WHERE 1=1");
+        let mut count_builder =
+            QueryBuilder::new("SELECT COUNT(*) FROM user_credentials WHERE 1=1");
         push_query_filters(&mut count_builder, &query);
         let total: i64 = count_builder.build_query_scalar().fetch_one(pool).await?;
         Ok(total as u64)
     }
 
-    async fn find_by_id(
-        &self,
-        ctx: RequestContext,
-        id: &str,
-    ) -> Result<Option<UserCredentialPo>> {
+    async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserCredentialPo>> {
         let po = sqlx::query_as!(
             UserCredentialPo,
             r#"
@@ -332,9 +330,7 @@ fn push_query_filters<'args>(
         builder.push(" AND kind = ").push_bind(kind);
     }
     if let Some(visibility) = query.visibility {
-        builder
-            .push(" AND visibility = ")
-            .push_bind(visibility);
+        builder.push(" AND visibility = ").push_bind(visibility);
     }
     if let Some(is_default) = query.is_default {
         builder
