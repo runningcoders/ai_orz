@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
 use common::api::{SetDefaultTavilyCredentialRequest, SetDefaultTavilyCredentialResponse};
-use common::error::Result;
+use common::error::{Result, bail_err};
 use common::models::CredentialKind;
 
 #[generate_http_handler]
@@ -13,6 +13,9 @@ pub async fn set_default_credential(
     params: SetDefaultTavilyCredentialRequest,
 ) -> Result<SetDefaultTavilyCredentialResponse> {
     let user_id = ctx.uid();
+    if user_id.is_empty() {
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    }
 
     let trimmed = params.credential_id.trim().to_string();
     let target = if trimmed.is_empty() {

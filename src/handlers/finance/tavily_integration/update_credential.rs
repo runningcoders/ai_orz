@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::{UpdateCredentialCmd, domain};
 use ai_orz_macros::generate_http_handler;
 use common::api::{UpdateTavilyCredentialRequest, UpdateTavilyCredentialResponse};
-use common::error::Result;
+use common::error::{Result, bail_err};
 use common::models::CredentialDetailPatch;
 
 #[generate_http_handler]
@@ -13,6 +13,9 @@ pub async fn update_credential(
     params: UpdateTavilyCredentialRequest,
 ) -> Result<UpdateTavilyCredentialResponse> {
     let user_id = ctx.uid();
+    if user_id.is_empty() {
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    }
 
     domain()
         .identity_credential_manage()

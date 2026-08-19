@@ -15,10 +15,11 @@
 
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
+use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
 use common::api::LarkWsMetrics;
 use common::error::{Result, err};
-use common::models::{CredentialDetail, CredentialKind, UserIdentityCredentials};
+use common::models::{CredentialDetail, CredentialKind};
 use std::sync::Arc;
 
 pub mod error;
@@ -50,34 +51,16 @@ impl std::fmt::Debug for LarkAppCredentials {
     }
 }
 
-/// 从用户凭证库解析渠道引用的飞书应用凭证（纯函数，可测）
+/// 从凭证行解析飞书应用凭证（纯函数，可测）
 ///
-/// 解析规则：渠道 `lark_credential_id` → 凭证库按 ID 查找 → 校验 kind=LarkApp → 解密 secret；
+/// 解析规则：凭证行（已由调用方经 `UserCredentialDao::find_by_id` 按
+/// 渠道 `lark_credential_id` 查得）→ 校验 kind=LarkApp → 解密 secret；
 /// 任一环节失败返回引导性错误（前端提示去飞书集成页绑定/补全凭证）。
 pub fn resolve_lark_credentials(
-    library: &UserIdentityCredentials,
+    credential: &UserCredentialPo,
     channel: &MessageChannel,
 ) -> Result<LarkAppCredentials> {
-    let credential_id = channel
-        .config()
-        .lark_credential_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            err!(
-                InvalidRequest,
-                "飞书渠道缺少凭证引用 lark_credential_id channel_id={}，请先在飞书集成中绑定应用",
-                channel.po.id
-            )
-        })?;
-    let credential = library.find_by_id(credential_id).ok_or_else(|| {
-        err!(
-            InvalidRequest,
-            "飞书渠道引用的凭证不存在 channel_id={} credential_id={}，请在飞书集成中重新绑定",
-            channel.po.id,
-            credential_id
-        )
-    })?;
+    let credential_id = credential.id.as_str();
     if credential.kind != CredentialKind::LarkApp {
         return Err(err!(
             InvalidRequest,
@@ -88,7 +71,7 @@ pub fn resolve_lark_credentials(
     }
     let CredentialDetail::LarkApp {
         app_id, app_secret, ..
-    } = &credential.detail
+    } = &credential.detail.0
     else {
         return Err(err!(
             InvalidRequest,

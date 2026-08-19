@@ -4,7 +4,6 @@ use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use common::api::PagedResult;
 use common::error::Result;
-use common::models::UserIdentityCredentials;
 
 /// User 查询参数
 #[derive(Debug, Clone, Default)]
@@ -52,22 +51,6 @@ pub trait UserDao: Send + Sync {
 
     /// 统计符合查询条件的用户数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
     async fn count(&self, ctx: RequestContext, query: UserQuery) -> Result<u64>;
-
-    /// 按用户 ID 直查身份凭证库（解析后的结构体，消息链路兜底路径）
-    ///
-    /// 用户不存在时返回 None；存在但无凭证时返回空库
-    async fn find_identity_credentials_by_user_id(
-        &self,
-        ctx: RequestContext,
-        user_id: &str,
-    ) -> Result<Option<UserIdentityCredentials>>;
-
-    /// 按用户名直查身份凭证库（解析后的结构体，消息链路兜底路径）
-    async fn find_identity_credentials_by_username(
-        &self,
-        ctx: RequestContext,
-        username: &str,
-    ) -> Result<Option<UserIdentityCredentials>>;
 }
 
 pub mod sqlite;

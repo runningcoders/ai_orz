@@ -19,4 +19,5 @@ pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod user;
+pub mod user_credential;
 pub mod vector;

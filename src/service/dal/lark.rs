@@ -33,16 +33,17 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 use common::enums::{ChannelStatus, ChannelType};
 use common::error::{Result, err};
-use common::models::UserIdentityCredentials;
+use common::models::CredentialKind;
 
 use crate::models::message_channel::MessageChannel;
+use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::{MessageAdapterCallback, MessageInboundAdapter};
 use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao, LarkEventHandler, LarkMessageEvent};
 use crate::service::dao::message_channel::MessageChannelQuery;
-use crate::service::dao::user::UserDao;
+use crate::service::dao::user_credential::UserCredentialDao;
 
 // ==================== lark_cli 凭证解析器 ====================
 
@@ -78,10 +79,10 @@ pub fn dal() -> Arc<LarkMessageChannelDal> {
 ///
 /// 无条件注册：飞书启停由渠道数据驱动（无渠道时 `start()` 不建任何连接）。
 pub fn init() {
-    let instance = new_with_user_dao(
+    let instance = new_with_credential_dao(
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
-        crate::service::dao::user::dao(),
+        crate::service::dao::user_credential::dao(),
     );
     // 注册到消息入站适配中台
     if let Err(e) = crate::pkg::adapter::message::registry().register(instance.clone()) {
@@ -91,30 +92,16 @@ pub fn init() {
     sys_info!("lark message adapter registered to adapter registry");
 }
 
-/// 创建 LarkMessageChannelDal 实例（无 user dao 兜底，凭证引用解析不可用；测试兼容入口）
-pub fn new(
-    message_channel_dal: Arc<dyn MessageChannelDal>,
-    lark_dao: Arc<dyn LarkDao>,
-) -> Arc<LarkMessageChannelDal> {
-    Arc::new(LarkMessageChannelDal {
-        message_channel_dal,
-        lark_dao,
-        user_dao: None,
-        running: RwLock::new(false),
-        callback: RwLock::new(None),
-    })
-}
-
 /// 创建 LarkMessageChannelDal 实例（测试可注入隔离依赖）
-pub fn new_with_user_dao(
+pub fn new_with_credential_dao(
     message_channel_dal: Arc<dyn MessageChannelDal>,
     lark_dao: Arc<dyn LarkDao>,
-    user_dao: Arc<dyn UserDao>,
+    credential_dao: Arc<dyn UserCredentialDao>,
 ) -> Arc<LarkMessageChannelDal> {
     Arc::new(LarkMessageChannelDal {
         message_channel_dal,
         lark_dao,
-        user_dao: Some(user_dao),
+        credential_dao,
         running: RwLock::new(false),
         callback: RwLock::new(None),
     })
@@ -133,8 +120,8 @@ pub struct LarkMessageChannelDal {
     message_channel_dal: Arc<dyn MessageChannelDal>,
     /// 飞书 DAO（HTTP API + WebSocket 长连接池）
     lark_dao: Arc<dyn LarkDao>,
-    /// 用户 DAO（凭证引用解析：渠道 lark_credential_id → users.identity_credentials）
-    user_dao: Option<Arc<dyn UserDao>>,
+    /// 用户凭证 DAO（凭证引用解析：渠道 lark_credential_id → user_credentials 行）
+    credential_dao: Arc<dyn UserCredentialDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
     /// 运行期回调句柄（start 时注入，供运行期新建连接复用）
@@ -158,50 +145,42 @@ fn identity_mode_of(channel: &MessageChannel) -> String {
 }
 
 impl LarkMessageChannelDal {
-    /// 加载指定用户的凭证库（用户不存在/查询失败返回 None）
-    async fn load_user_library(
+    /// 按凭证 ID 加载凭证行（凭证不存在/已软删/查询失败返回 None）
+    async fn load_credential_row(
         &self,
         ctx: RequestContext,
-        user_id: &str,
-    ) -> Option<UserIdentityCredentials> {
-        let user_dao = self.user_dao.as_ref()?;
-        match user_dao
-            .find_identity_credentials_by_user_id(ctx, user_id)
-            .await
-        {
-            Ok(Some(l)) => Some(l),
-            Ok(None) => {
-                log_warn!("lark user {} 不存在，凭证库不可加载", user_id);
-                None
-            }
+        credential_id: &str,
+    ) -> Option<UserCredentialPo> {
+        match self.credential_dao.find_by_id(ctx, credential_id).await {
+            Ok(po) => po,
             Err(e) => {
-                log_warn!("lark user {} 凭证库查询失败: {}", user_id, e);
+                log_warn!("lark credential {} 查询失败: {}", credential_id, e);
                 None
             }
         }
     }
 
-    /// 带缓存的用户凭证库加载（同一批渠道扫描中同用户只查一次，消除 N+1）
-    async fn cached_library(
+    /// 带缓存的凭证行加载（同一批渠道扫描中同凭证只查一次，消除 N+1）
+    async fn cached_credential(
         &self,
-        cache: &mut HashMap<String, Option<UserIdentityCredentials>>,
+        cache: &mut HashMap<String, Option<UserCredentialPo>>,
         ctx: RequestContext,
-        user_id: &str,
-    ) -> Option<UserIdentityCredentials> {
-        if let Some(l) = cache.get(user_id) {
-            return l.clone();
+        credential_id: &str,
+    ) -> Option<UserCredentialPo> {
+        if let Some(po) = cache.get(credential_id) {
+            return po.clone();
         }
-        let loaded = self.load_user_library(ctx, user_id).await;
-        cache.insert(user_id.to_string(), loaded.clone());
+        let loaded = self.load_credential_row(ctx, credential_id).await;
+        cache.insert(credential_id.to_string(), loaded.clone());
         loaded
     }
 
-    /// 基于已加载凭证库解析渠道凭证（纯查找，不查库）
-    fn resolve_credentials_with_library(
-        library: &UserIdentityCredentials,
+    /// 基于已加载凭证行解析渠道凭证（纯查找，不查库）
+    fn resolve_credentials_from_row(
+        row: &UserCredentialPo,
         channel: &MessageChannel,
     ) -> Option<LarkAppCredentials> {
-        match crate::service::dao::lark::resolve_lark_credentials(library, channel) {
+        match crate::service::dao::lark::resolve_lark_credentials(row, channel) {
             Ok(c) => Some(c),
             Err(e) => {
                 log_warn!("lark channel {} 凭证引用解析失败: {}", channel.po.id, e);
@@ -210,16 +189,21 @@ impl LarkMessageChannelDal {
         }
     }
 
-    /// 解析渠道引用的飞书应用凭证（引用 ID → 用户凭证库，缺失/失败返回 None）
+    /// 解析渠道引用的飞书应用凭证（引用 ID → 凭证行，缺失/失败返回 None）
     ///
-    /// 凭证库查询复用调用方上下文的连接池（测试隔离友好）。
+    /// 凭证查询复用调用方上下文的连接池（测试隔离友好）。
     async fn resolve_channel_credentials(
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
     ) -> Option<LarkAppCredentials> {
-        let library = self.load_user_library(ctx, channel.user_id()).await?;
-        Self::resolve_credentials_with_library(&library, channel)
+        let credential_id = channel
+            .config()
+            .lark_credential_id
+            .as_deref()
+            .filter(|s| !s.is_empty())?;
+        let row = self.load_credential_row(ctx, credential_id).await?;
+        Self::resolve_credentials_from_row(&row, channel)
     }
 
     /// 解析渠道引用凭证的 app_id（供按应用分组/过滤与 Domain 生命周期联动）
@@ -249,7 +233,8 @@ impl LarkMessageChannelDal {
     ///
     /// 按 `ctx.user_id` 查询该用户启用的 Lark 渠道，经凭证引用解析取可用凭证（已解密），
     /// 附带渠道身份模式（auto/bot/user，缺省 auto）。
-    /// 优先取引用**用户选定默认凭证**的渠道；未设默认时回退第一条可用渠道。
+    /// 优先取引用**用户默认凭证**（`find_default` 解析链：个人默认 > 个人其他 >
+    /// 组织默认 > 组织其他 public）的渠道；默认凭证未被渠道引用时回退第一条可用渠道。
     /// 未绑定或凭证不完整返回 `None`，由调用方给出引导性错误。
     pub async fn resolve_credentials_for_user(
         &self,
@@ -260,10 +245,12 @@ impl LarkMessageChannelDal {
         };
         // 复用调用方上下文的 storage，避免依赖全局单例（测试友好）
         let query_ctx = ctx.to_builder().build();
-        // 凭证库只加载一次（同用户多渠道免重复查库）
-        let Some(library) = self.load_user_library(query_ctx.clone(), &user_id).await else {
-            return Ok(None);
-        };
+        // 用户默认 Lark 凭证（可能为 None：未设默认且无活跃凭证）
+        let default_id = self
+            .credential_dao
+            .find_default(query_ctx.clone(), &user_id, CredentialKind::LarkApp)
+            .await?
+            .map(|po| po.id);
         let query = MessageChannelQuery {
             user_id: Some(user_id),
             channel_type: Some(ChannelType::Lark),
@@ -272,19 +259,31 @@ impl LarkMessageChannelDal {
         };
         let page = self
             .message_channel_dal
-            .query_channels(query_ctx, query)
+            .query_channels(query_ctx.clone(), query)
             .await?;
-        let default_id = library.default_credential_id.clone();
+        // 凭证行按 ID 缓存（同凭证被多渠道引用时免重复查库）
+        let mut cache: HashMap<String, Option<UserCredentialPo>> = HashMap::new();
         let mut fallback: Option<(LarkAppCredentials, String)> = None;
         for channel in &page.items {
-            let Some(credentials) = Self::resolve_credentials_with_library(&library, channel)
+            let Some(credential_id) = channel
+                .config()
+                .lark_credential_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
             else {
                 continue;
             };
+            let Some(row) = self
+                .cached_credential(&mut cache, query_ctx.clone(), credential_id)
+                .await
+            else {
+                continue;
+            };
+            let Some(credentials) = Self::resolve_credentials_from_row(&row, channel) else {
+                continue;
+            };
             let mode = identity_mode_of(channel);
-            let is_default = default_id
-                .as_deref()
-                .is_some_and(|d| channel.config().lark_credential_id.as_deref() == Some(d));
+            let is_default = default_id.as_deref() == Some(credential_id);
             if is_default {
                 return Ok(Some((credentials, mode)));
             }
@@ -468,20 +467,27 @@ impl LarkMessageChannelDal {
         }
         let candidates = self.query_enabled_lark_channels().await?;
         let sys_ctx = RequestContext::new_system();
-        let mut cache: HashMap<String, Option<UserIdentityCredentials>> = HashMap::new();
+        let mut cache: HashMap<String, Option<UserCredentialPo>> = HashMap::new();
         let mut found = None;
         for channel in candidates {
             if !listens_inbound(&channel) {
                 continue;
             }
-            let Some(library) = self
-                .cached_library(&mut cache, sys_ctx.clone(), channel.user_id())
+            let Some(credential_id) = channel
+                .config()
+                .lark_credential_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(row) = self
+                .cached_credential(&mut cache, sys_ctx.clone(), credential_id)
                 .await
             else {
                 continue;
             };
-            let Some(credentials) = Self::resolve_credentials_with_library(&library, &channel)
-            else {
+            let Some(credentials) = Self::resolve_credentials_from_row(&row, &channel) else {
                 continue;
             };
             if credentials.app_id == app_id {
@@ -505,20 +511,27 @@ impl LarkMessageChannelDal {
     pub async fn release_listener_if_unused(&self, app_id: &str) -> Result<()> {
         let channels = self.query_enabled_lark_channels().await?;
         let sys_ctx = RequestContext::new_system();
-        let mut cache: HashMap<String, Option<UserIdentityCredentials>> = HashMap::new();
+        let mut cache: HashMap<String, Option<UserCredentialPo>> = HashMap::new();
         let mut still_needed = false;
         for channel in channels {
             if !listens_inbound(&channel) {
                 continue;
             }
-            let Some(library) = self
-                .cached_library(&mut cache, sys_ctx.clone(), channel.user_id())
+            let Some(credential_id) = channel
+                .config()
+                .lark_credential_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let Some(row) = self
+                .cached_credential(&mut cache, sys_ctx.clone(), credential_id)
                 .await
             else {
                 continue;
             };
-            let Some(credentials) = Self::resolve_credentials_with_library(&library, &channel)
-            else {
+            let Some(credentials) = Self::resolve_credentials_from_row(&row, &channel) else {
                 continue;
             };
             if credentials.app_id == app_id {
@@ -791,19 +804,11 @@ pub mod test_support {
     use super::*;
 
     /// 创建测试用 LarkMessageChannelDal（不注册到全局 registry）
-    pub fn new_for_test(
+    pub fn new_for_test_with_credential_dao(
         message_channel_dal: Arc<dyn MessageChannelDal>,
         lark_dao: Arc<dyn LarkDao>,
+        credential_dao: Arc<dyn UserCredentialDao>,
     ) -> Arc<LarkMessageChannelDal> {
-        new(message_channel_dal, lark_dao)
-    }
-
-    /// 创建测试用 LarkMessageChannelDal（注入 user dao，支持凭证引用解析测试）
-    pub fn new_for_test_with_user_dao(
-        message_channel_dal: Arc<dyn MessageChannelDal>,
-        lark_dao: Arc<dyn LarkDao>,
-        user_dao: Arc<dyn UserDao>,
-    ) -> Arc<LarkMessageChannelDal> {
-        new_with_user_dao(message_channel_dal, lark_dao, user_dao)
+        new_with_credential_dao(message_channel_dal, lark_dao, credential_dao)
     }
 }

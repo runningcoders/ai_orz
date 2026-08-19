@@ -531,11 +531,6 @@ pub async fn apply_snapshot_to_db_with_progress(
                 .as_ref()
                 .map(|u| u.preferences.clone())
                 .unwrap_or_default(),
-            // 身份凭证库同理：seed 不触碰，已有用户保留现场绑定
-            identity_credentials: existing
-                .as_ref()
-                .map(|u| u.identity_credentials.clone())
-                .unwrap_or_default(),
         };
 
         if existing.is_some() {

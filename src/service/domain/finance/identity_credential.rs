@@ -2,13 +2,22 @@
 //!
 //! 身份凭证是驱动下游关键环节（渠道建联、lark_cli 工具身份）的资产，
 //! 归属 finance domain 统一管理（含生命周期联动与飞书集成授权/绑定）。
+//! 存储为独立表 `user_credentials`（一凭证一行），Domain 经 UserDal 行级读写，
+//! 默认标记作用域由凭据 visibility 派生（private=个人默认 / public=组织默认）。
 
+use crate::models::user_credential::{UserCredential, UserCredentialPo};
 use crate::pkg::RequestContext;
+use crate::service::dao::user_credential::UserCredentialQuery;
 use crate::service::dal::user::UserDal;
 use crate::service::domain::finance::FinanceDomainImpl;
 use async_trait::async_trait;
+use common::api::PaginationParams;
 use common::error::{Result, bail_err, err};
-use common::models::{CredentialDetail, CredentialKind, UserIdentityCredential};
+use common::enums::UserRole;
+use common::models::{CredentialKind, CredentialVisibility};
+
+/// 凭证列表分页上限（单用户凭证为个位数量级，1000 覆盖全量场景）
+const CREDENTIAL_PAGE_LIMIT: usize = 1000;
 
 impl FinanceDomainImpl {
     /// 用户 DAL 引用（测试实例未注入时报内部错误）
@@ -18,36 +27,67 @@ impl FinanceDomainImpl {
             .ok_or_else(|| err!(Internal, "FinanceDomain user_dal 未注入"))
     }
 
-    /// 加载用户凭证库（用户不存在报错，无凭证返回空库）
-    async fn load_credential_library(
+    /// 用户存在性检查（凭证资产防呆：目标用户不存在时报 NotFound）
+    async fn ensure_user_exists(&self, ctx: RequestContext, user_id: &str) -> Result<()> {
+        if self.user_dal()?.find_by_id(ctx, user_id).await?.is_none() {
+            bail_err!(NotFound, "用户不存在 user_id={}", user_id);
+        }
+        Ok(())
+    }
+
+    /// 加载目标凭证并校验归属（不属于该用户按不存在处理，不泄露存在性）
+    async fn load_owned_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<common::models::UserIdentityCredentials> {
-        self.user_dal()?
-            .get_identity_credentials(ctx, user_id)
+        credential_id: &str,
+    ) -> Result<UserCredential> {
+        let credential = self
+            .user_dal()?
+            .find_credential_by_id(ctx, credential_id)
             .await?
-            .ok_or_else(|| err!(NotFound, "用户不存在 user_id={}", user_id))
+            .ok_or_else(|| err!(NotFound, "凭证不存在 credential_id={}", credential_id))?;
+        if credential.user_id() != user_id {
+            bail_err!(NotFound, "凭证不存在 credential_id={}", credential_id);
+        }
+        Ok(credential)
+    }
+
+    /// 构造该用户的凭证查询（活跃凭证全量，按创建序）
+    fn owned_credential_query(user_id: &str) -> UserCredentialQuery {
+        UserCredentialQuery {
+            user_id: Some(user_id.to_string()),
+            pagination: PaginationParams {
+                limit: Some(CREDENTIAL_PAGE_LIMIT),
+                offset: Some(0),
+            },
+            ..Default::default()
+        }
     }
 }
 
 /// 为 FinanceDomainImpl 实现 IdentityCredentialManage
 #[async_trait]
 impl super::IdentityCredentialManage for FinanceDomainImpl {
-    /// 读取用户身份凭证库（用户不存在返回 None，无凭证返回空库）
+    /// 读取用户身份凭证列表（用户不存在返回 None，无凭证返回空列表）
     async fn get_identity_credentials(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<Option<common::models::UserIdentityCredentials>> {
-        self.user_dal()?
-            .get_identity_credentials(ctx, user_id)
-            .await
+    ) -> Result<Option<Vec<UserCredential>>> {
+        let user_dal = self.user_dal()?.clone();
+        if user_dal.find_by_id(ctx.clone(), user_id).await?.is_none() {
+            return Ok(None);
+        }
+        let page = user_dal
+            .query_credentials(ctx, Self::owned_credential_query(user_id))
+            .await?;
+        Ok(Some(page.items))
     }
 
     // ==================== 统一凭证 CRUD（类型差异经 detail 行为 + match kind 分发） ====================
 
-    /// 创建凭证（明文 detail → 规范化/校验/加密落库）
+    /// 创建凭证（明文 detail → 规范化/校验/加密落库，private 起步）
     async fn create_credential(
         &self,
         ctx: RequestContext,
@@ -65,19 +105,20 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             detail.encrypt_sensitive(|s: &str| crate::pkg::crypto::encrypt_channel_secret(s))?;
 
         let user_dal = self.user_dal()?.clone();
-        let mut library = self.load_credential_library(ctx.clone(), user_id).await?;
-        let now = chrono::Utc::now().to_rfc3339();
+        self.ensure_user_exists(ctx.clone(), user_id).await?;
         let credential_id = uuid::Uuid::now_v7().to_string();
-        library.items.push(UserIdentityCredential {
-            id: credential_id.clone(),
+        let po = UserCredentialPo::new(
+            credential_id.clone(),
+            ctx.organization_id().cloned().unwrap_or_default(),
+            user_id.to_string(),
             kind,
             name,
-            created_at: now.clone(),
-            updated_at: now,
             detail,
-        });
+            CredentialVisibility::Private,
+            ctx.caller_id_or_system(),
+        );
         user_dal
-            .save_identity_credentials(ctx, user_id, &library)
+            .insert_credential(ctx, &UserCredential::from_po(po))
             .await?;
         Ok(credential_id)
     }
@@ -90,31 +131,30 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         cmd: super::UpdateCredentialCmd,
     ) -> Result<()> {
         let user_dal = self.user_dal()?.clone();
-        let mut library = self.load_credential_library(ctx.clone(), user_id).await?;
-        let credential = library
-            .find_by_id_mut(&cmd.credential_id)
-            .ok_or_else(|| err!(NotFound, "凭证不存在 credential_id={}", cmd.credential_id))?;
+        let mut credential = self
+            .load_owned_credential(ctx.clone(), user_id, &cmd.credential_id)
+            .await?;
         if let Some(n) = cmd.name.as_deref().filter(|s| !s.trim().is_empty()) {
-            credential.name = n.trim().to_string();
+            credential.po.name = n.trim().to_string();
         }
         let old_primary_id = credential
-            .detail
+            .detail()
             .primary_id()
             .unwrap_or_default()
             .to_string();
-        let kind = credential.kind;
-        let impact = credential.detail.apply_patch(cmd.patch, |s: &str| {
+        let kind = credential.kind();
+        let impact = credential.po.detail.0.apply_patch(cmd.patch, |s: &str| {
             crate::pkg::crypto::encrypt_channel_secret(s)
         })?;
-        credential.updated_at = chrono::Utc::now().to_rfc3339();
+        credential.po.modified_by = ctx.caller_id_or_system();
         let new_primary_id = credential
-            .detail
+            .detail()
             .primary_id()
             .unwrap_or_default()
             .to_string();
 
         user_dal
-            .save_identity_credentials(ctx, user_id, &library)
+            .update_credential(ctx.clone(), &credential)
             .await?;
 
         // 类型分发：更新后联动（失败仅告警）
@@ -152,13 +192,12 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         credential_id: &str,
     ) -> Result<()> {
         let user_dal = self.user_dal()?.clone();
-        let mut library = self.load_credential_library(ctx.clone(), user_id).await?;
-        let Some(credential) = library.find_by_id(credential_id).cloned() else {
-            bail_err!(NotFound, "凭证不存在 credential_id={}", credential_id);
-        };
+        let credential = self
+            .load_owned_credential(ctx.clone(), user_id, credential_id)
+            .await?;
 
         // 类型分发：前置检查（Lark 渠道引用 / GitHub 生效凭证快照）
-        let github_was_active = match credential.kind {
+        let github_was_active = match credential.kind() {
             CredentialKind::LarkApp => {
                 if let Some(lark_dal) = &self.lark_channel_dal {
                     let channels = lark_dal
@@ -174,22 +213,21 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 }
                 false
             }
-            CredentialKind::GithubToken => library
-                .resolve_github_credential()
-                .is_some_and(|c| c.id == credential_id),
+            CredentialKind::GithubToken => user_dal
+                .find_default_credential(ctx.clone(), user_id, CredentialKind::GithubToken)
+                .await?
+                .is_some_and(|active| active.id() == credential_id),
             // TavilyKey：无渠道引用与本地运行态，直接删除
             CredentialKind::TavilyKey => false,
         };
 
-        library.remove_by_id(credential_id);
-        // 删掉的凭证若恰为该类型默认，联动清除对应默认槽位
-        library.clear_default_for(credential.kind, credential_id);
+        // 软删（DAO 联动清默认标记：删掉的凭证若为默认，对应作用域默认槽位自动空出）
         user_dal
-            .save_identity_credentials(ctx, user_id, &library)
+            .soft_delete_credential(ctx.clone(), credential_id)
             .await?;
 
         // 类型分发：后置联动（失败仅告警；剩余凭证存在时下次调用自动重建）
-        if credential.kind == CredentialKind::GithubToken && github_was_active {
+        if credential.kind() == CredentialKind::GithubToken && github_was_active {
             let home = crate::pkg::tool_registry::gh_cli::gh_home(
                 &crate::config::get().base_data_path(),
                 user_id,
@@ -206,7 +244,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         Ok(())
     }
 
-    /// 设置默认凭证（各类型默认槽位独立）
+    /// 设置默认凭证（作用域由目标凭据 visibility 派生：private=个人默认 / public=组织默认）
     async fn set_default_credential(
         &self,
         ctx: RequestContext,
@@ -215,11 +253,43 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         credential_id: Option<&str>,
     ) -> Result<()> {
         let user_dal = self.user_dal()?.clone();
-        let mut library = self.load_credential_library(ctx.clone(), user_id).await?;
-        library.set_default_for(kind, credential_id.map(|s| s.to_string()))?;
-        user_dal
-            .save_identity_credentials(ctx, user_id, &library)
-            .await
+        match credential_id.map(str::trim).filter(|s| !s.is_empty()) {
+            // None/空白：取消该用户该类型个人默认（幂等）
+            None => user_dal.clear_default_credential(ctx, user_id, kind).await,
+            Some(credential_id) => {
+                let credential = self
+                    .load_owned_credential(ctx.clone(), user_id, credential_id)
+                    .await?;
+                if credential.kind() != kind {
+                    bail_err!(
+                        InvalidRequest,
+                        "凭证类型不匹配：目标凭证为 {:?}，请求类型为 {:?}",
+                        credential.kind(),
+                        kind
+                    );
+                }
+                // 权限门控：private=个人默认仅所有者本人可设；
+                // public=组织默认需 org 管理权限（Admin+），防成员劫持组织默认
+                match credential.visibility() {
+                    CredentialVisibility::Private => {
+                        if ctx.uid() != user_id {
+                            bail_err!(Forbidden, "个人默认凭证仅所有者本人可设置");
+                        }
+                    }
+                    CredentialVisibility::Public => {
+                        let role = ctx
+                            .user_role
+                            .map(UserRole::from)
+                            .unwrap_or(UserRole::Member);
+                        if !UserRole::has_permission(role, UserRole::Admin) {
+                            bail_err!(Forbidden, "设置组织默认凭证需要管理员权限");
+                        }
+                    }
+                }
+                // DAO 同事务「清同作用域旧默认 → 立新默认」（双部分唯一索引兜底并发）
+                user_dal.set_default_credential(ctx, credential_id).await
+            }
+        }
     }
 
     /// GitHub 集成状态聚合（凭证快照 + gh 登录态实测）
@@ -228,15 +298,14 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<common::api::GithubIntegrationStatusResponse> {
-        let library = self.load_credential_library(ctx, user_id).await?;
-        let default_id = library.default_github_credential_id.clone();
+        let user_dal = self.user_dal()?.clone();
+        let mut query = Self::owned_credential_query(user_id);
+        query.kind = Some(CredentialKind::GithubToken);
+        let page = user_dal.query_credentials(ctx, query).await?;
         let mut credentials = Vec::new();
-        for credential in library
-            .items
-            .iter()
-            .filter(|c| matches!(c.kind, CredentialKind::GithubToken))
-        {
-            let CredentialDetail::GithubToken { token } = &credential.detail else {
+        for credential in page.items {
+            let common::models::CredentialDetail::GithubToken { token } = credential.detail()
+            else {
                 continue;
             };
             // token 尾号（解密失败按空串处理，不阻断状态聚合）
@@ -253,10 +322,10 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 })
                 .unwrap_or_default();
             credentials.push(common::api::GithubCredentialSnapshot {
-                credential_id: credential.id.clone(),
-                name: credential.name.clone(),
+                credential_id: credential.id().to_string(),
+                name: credential.name().to_string(),
                 token_tail,
-                is_default: default_id.as_deref() == Some(credential.id.as_str()),
+                is_default: credential.po.is_default,
             });
         }
         let home = crate::pkg::tool_registry::gh_cli::gh_home(
@@ -280,15 +349,14 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<common::api::TavilyIntegrationStatusResponse> {
-        let library = self.load_credential_library(ctx, user_id).await?;
-        let default_id = library.default_tavily_credential_id.clone();
+        let user_dal = self.user_dal()?.clone();
+        let mut query = Self::owned_credential_query(user_id);
+        query.kind = Some(CredentialKind::TavilyKey);
+        let page = user_dal.query_credentials(ctx, query).await?;
         let mut credentials = Vec::new();
-        for credential in library
-            .items
-            .iter()
-            .filter(|c| matches!(c.kind, CredentialKind::TavilyKey))
-        {
-            let CredentialDetail::TavilyKey { api_key } = &credential.detail else {
+        for credential in page.items {
+            let common::models::CredentialDetail::TavilyKey { api_key } = credential.detail()
+            else {
                 continue;
             };
             // key 尾号（解密失败按空串处理，不阻断状态聚合）
@@ -305,10 +373,10 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 })
                 .unwrap_or_default();
             credentials.push(common::api::TavilyCredentialSnapshot {
-                credential_id: credential.id.clone(),
-                name: credential.name.clone(),
+                credential_id: credential.id().to_string(),
+                name: credential.name().to_string(),
                 api_key_tail,
-                is_default: default_id.as_deref() == Some(credential.id.as_str()),
+                is_default: credential.po.is_default,
             });
         }
         Ok(common::api::TavilyIntegrationStatusResponse {

@@ -292,15 +292,16 @@ pub struct UpdateCredentialCmd {
 ///
 /// 用户身份凭证是驱动下游关键环节（渠道建联、lark_cli 工具身份）的资产，
 /// 归属 finance domain 统一管理，便于统一审计；
-/// 含统一凭证 CRUD + 默认凭证 + 飞书集成授权/绑定（经 Domain 包装 pkg）。
+/// 存储为独立表 user_credentials（一凭证一行），含统一凭证 CRUD +
+/// 默认凭证（作用域由凭据 visibility 派生）+ 飞书集成授权/绑定（经 Domain 包装 pkg）。
 #[async_trait]
 pub trait IdentityCredentialManage: Send + Sync {
-    /// 读取用户身份凭证库（用户不存在返回 None，无凭证返回空库）
+    /// 读取用户身份凭证列表（用户不存在返回 None，无凭证返回空列表）
     async fn get_identity_credentials(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<Option<common::models::UserIdentityCredentials>>;
+    ) -> Result<Option<Vec<crate::models::user_credential::UserCredential>>>;
 
     // ==================== 统一凭证 CRUD（封顶 5 个，不随类型增长） ====================
 
@@ -335,9 +336,11 @@ pub trait IdentityCredentialManage: Send + Sync {
         credential_id: &str,
     ) -> Result<()>;
 
-    /// 设置默认凭证（各类型默认槽位独立）
+    /// 设置默认凭证（作用域由目标凭据 visibility 派生：private=个人默认 / public=组织默认）
     ///
-    /// None/空白表示取消该类型默认；Some 校验凭证存在且类型匹配。
+    /// None/空白表示取消该用户该类型个人默认（幂等）；Some 校验凭证存在、
+    /// 归属该用户且类型匹配。权限门控：private 默认仅所有者本人可设，
+    /// public 默认需 org 管理权限（Admin+）。
     async fn set_default_credential(
         &self,
         ctx: RequestContext,

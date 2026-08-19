@@ -61,8 +61,7 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dal::message_push::dal(),
         crate::service::dal::attachment::dal(),
-    )
-    .with_user_dal(crate::service::dal::user::dal());
+    );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
 
@@ -77,10 +76,6 @@ struct MessageDomainImpl {
     message_push_dal: Arc<dyn MessagePushDal>,
     /// 用于在发送消息时按 ID 查找附件
     attachment_dal: Arc<dyn AttachmentDal>,
-    /// 用户 DAL（投递给用户时预加载用户实体附带渠道推送 options）
-    ///
-    /// 测试构造可为 None，此时凭证解析走 DAO 兜底查库路径
-    user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
 }
 
 impl MessageDomainImpl {
@@ -96,17 +91,7 @@ impl MessageDomainImpl {
             message_channel_dal,
             message_push_dal,
             attachment_dal,
-            user_dal: None,
         }
-    }
-
-    /// 注入用户 DAL（builder 风格，生产 init 链路使用）
-    fn with_user_dal(
-        mut self,
-        user_dal: Arc<dyn crate::service::dal::user::UserDal + Send + Sync>,
-    ) -> Self {
-        self.user_dal = Some(user_dal);
-        self
     }
 }
 

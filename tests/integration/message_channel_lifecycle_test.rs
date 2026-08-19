@@ -1,7 +1,7 @@
 //! Integration tests for the Lark message channel lifecycle.
 //!
 //! Covers（无真实飞书网络，断言失败路径与响应结构）：
-//! - 为用户写入 LarkApp 凭证（users.identity_credentials）→ 创建 Lark 渠道（凭证引用）
+//! - 为用户写入 LarkApp 凭证（user_credentials 表）→ 创建 Lark 渠道（凭证引用）
 //!   → 详情回显引用 ID/凭证名且 secret 绝不出现
 //! - 创建 Lark 渠道缺少凭证引用 → 400 校验错误
 //! - 连接测试 → 假凭证/无网络场景返回结构化失败（success=false + error）
@@ -12,41 +12,39 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-// 本地 mod common（tests/common）与外部 crate common 同名，用绝对路径消歧
-use ::common::models::{
-    CredentialDetail, CredentialKind, UserIdentityCredential, UserIdentityCredentials,
-};
+use ::common::models::CredentialDetail;
 use serde_json::json;
 use sqlx::SqlitePool;
 
-/// 直接写 users.identity_credentials（测试期无凭证管理端点时的最短路径）
+/// 直接写 user_credentials 表（测试期最短路径，kind/visibility 为 snake_case 字符串）
 ///
 /// 注意：handler 链路走全局 storage 连接池（init_full_test_env 初始化），
 /// 与 sqlx::test 注入的隔离池不是同一个库，故 seed 必须写全局池。
 async fn seed_user_lark_credential(user_id: &str, credential_id: &str, app_secret: &str) {
-    let library = UserIdentityCredentials {
-        items: vec![UserIdentityCredential {
-            id: credential_id.to_string(),
-            kind: CredentialKind::LarkApp,
-            name: "集成测试凭证".to_string(),
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-            updated_at: "2026-01-01T00:00:00Z".to_string(),
-            detail: CredentialDetail::LarkApp {
-                app_id: "cli_integration_test".to_string(),
-                // 明文直通兼容：解密路径对未加密值原样返回
-                app_secret: app_secret.to_string(),
-                encrypt_key: None,
-                verification_token: None,
-            },
-        }],
-        ..Default::default()
+    let detail = CredentialDetail::LarkApp {
+        app_id: "cli_integration_test".to_string(),
+        // 明文直通兼容：解密路径对未加密值原样返回
+        app_secret: app_secret.to_string(),
+        encrypt_key: None,
+        verification_token: None,
     };
-    sqlx::query("UPDATE users SET identity_credentials = ? WHERE id = ?")
-        .bind(library.to_column_value())
-        .bind(user_id)
-        .execute(ai_orz::pkg::storage::get().sqlite_pool())
-        .await
-        .expect("seed identity_credentials failed");
+    let now = ::common::constants::utils::current_timestamp_ms();
+    sqlx::query(
+        r#"
+INSERT INTO user_credentials
+    (id, org_id, user_id, kind, name, detail, visibility, is_default, status,
+     created_by, modified_by, created_at, updated_at)
+VALUES (?, 'org-1', ?, 'lark_app', '集成测试凭证', ?, 'private', 0, 1, 'system', 'system', ?, ?)
+        "#,
+    )
+    .bind(credential_id)
+    .bind(user_id)
+    .bind(serde_json::to_string(&detail).expect("serialize credential detail"))
+    .bind(now)
+    .bind(now)
+    .execute(ai_orz::pkg::storage::get().sqlite_pool())
+    .await
+    .expect("seed user_credentials failed");
 }
 
 /// Lark 渠道全链路：创建（凭证引用）→ 脱敏断言 → 连接测试（结构化失败）→ 禁用 → 删除

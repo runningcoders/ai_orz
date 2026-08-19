@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences, identity_credentials\nFROM users WHERE id = ? AND status != 0\n            ",
+  "query": "\nSELECT id, org_id, user_id,\n    kind as \"kind: CredentialKind\", name, detail as \"detail: Json<common::models::CredentialDetail>\",\n    visibility as \"visibility: CredentialVisibility\", is_default as \"is_default: bool\", status as \"status: i32\",\n    created_by, modified_by, created_at, updated_at\nFROM user_credentials WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -9,69 +9,64 @@
         "type_info": "Text"
       },
       {
-        "name": "organization_id",
+        "name": "org_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "username",
+        "name": "user_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "display_name",
+        "name": "kind: CredentialKind",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "email",
+        "name": "name",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "password_hash",
+        "name": "detail: Json<common::models::CredentialDetail>",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "role: UserRole",
+        "name": "visibility: CredentialVisibility",
         "ordinal": 6,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "status: UserStatus",
+        "name": "is_default: bool",
         "ordinal": 7,
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "status: i32",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 10,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 11,
         "type_info": "Integer"
       },
       {
-        "name": "preferences",
+        "name": "updated_at",
         "ordinal": 12,
-        "type_info": "Text"
-      },
-      {
-        "name": "identity_credentials",
-        "ordinal": 13,
-        "type_info": "Text"
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -90,9 +85,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "099bb165bec99d8126be599ffa2a8cc8d1dc2543bff9b2bc37f1ea0bae4d2c71"
+  "hash": "606c30b0695312adce38a4620bada6a3375d4715322cc8ad802b7e5d8a422435"
 }

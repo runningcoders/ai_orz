@@ -384,24 +384,10 @@ impl MessageDelivery for MessageDomainImpl {
         cmd: DeliverMessageCommand<'_>,
     ) -> Result<crate::service::dal::message_channel::DeliveryResult> {
         // 1. 投递到已配置的消息渠道（飞书/微信/钉钉等）
-        // 预加载归属用户附带 options，飞书凭证解析走首选路径；
-        // 查询失败不阻断投递，降级走 DAO 兜底查库路径
-        let push_user = match &self.user_dal {
-            Some(user_dal) => user_dal
-                .find_by_id(ctx.clone(), cmd.user_id)
-                .await
-                .ok()
-                .flatten(),
-            None => None,
-        };
+        // 飞书凭证由渠道 DAL 按引用 ID 直查凭证行（主键查询，无需预加载用户）
         let channel_result = self
             .message_channel_dal
-            .deliver_message(
-                ctx.clone(),
-                cmd.message,
-                cmd.user_id,
-                &crate::models::message_channel::ChannelPushOptions { user: push_user },
-            )
+            .deliver_message(ctx.clone(), cmd.message, cmd.user_id)
             .await?;
 
         // 2. 投递到 SSE 长连接（如果用户有在线连接）

@@ -4,7 +4,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
 use common::api::{DeleteTavilyCredentialRequest, DeleteTavilyCredentialResponse};
-use common::error::Result;
+use common::error::{Result, bail_err};
 
 #[generate_http_handler]
 pub async fn delete_credential(
@@ -12,6 +12,9 @@ pub async fn delete_credential(
     params: DeleteTavilyCredentialRequest,
 ) -> Result<DeleteTavilyCredentialResponse> {
     let user_id = ctx.uid();
+    if user_id.is_empty() {
+        bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    }
 
     domain()
         .identity_credential_manage()

@@ -45,7 +45,6 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-        _options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error> {
         let webhook_url = channel
             .po
@@ -152,12 +151,6 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
     ) -> std::result::Result<(), common::error::Error> {
         let msg_po = crate::models::message::MessagePo::default();
         let msg = crate::models::message::Message::from_po(msg_po);
-        self.push(
-            ctx,
-            &msg,
-            channel,
-            &crate::models::message_channel::ChannelPushOptions::default(),
-        )
-        .await
+        self.push(ctx, &msg, channel).await
     }
 }

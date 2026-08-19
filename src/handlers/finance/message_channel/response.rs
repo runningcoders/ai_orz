@@ -1,10 +1,10 @@
 use crate::models::message_channel::{ChannelConfig, MessageChannel};
+use crate::models::user_credential::UserCredential;
 use common::api::{MessageChannelDetail, MessageChannelListItem};
-use common::models::UserIdentityCredentials;
 
 pub(super) fn to_list_item(
     channel: &MessageChannel,
-    credentials: Option<&UserIdentityCredentials>,
+    credentials: Option<&[UserCredential]>,
 ) -> MessageChannelListItem {
     MessageChannelListItem {
         id: channel.po.id.clone(),
@@ -36,7 +36,7 @@ pub(super) fn to_list_item(
 
 pub(super) fn to_detail(
     channel: &MessageChannel,
-    credentials: Option<&UserIdentityCredentials>,
+    credentials: Option<&[UserCredential]>,
 ) -> MessageChannelDetail {
     MessageChannelDetail {
         id: channel.po.id.clone(),
@@ -80,15 +80,15 @@ fn non_empty_clone(value: Option<&str>) -> Option<String> {
     value.filter(|v| !v.is_empty()).map(|v| v.to_string())
 }
 
-/// 凭证引用 ID 反查凭证名称（未传凭证库或未找到时为 None）
+/// 凭证引用 ID 反查凭证名称（未传凭证列表或未找到时为 None）
 fn credential_name(
     credential_id: Option<&str>,
-    library: Option<&UserIdentityCredentials>,
+    credentials: Option<&[UserCredential]>,
 ) -> Option<String> {
     let id = credential_id.filter(|v| !v.is_empty())?;
-    library
-        .and_then(|lib| lib.find_by_id(id))
-        .map(|c| c.name.clone())
+    credentials
+        .and_then(|creds| creds.iter().find(|c| c.id() == id))
+        .map(|c| c.name().to_string())
 }
 
 fn has_config_secret(config: &ChannelConfig) -> bool {

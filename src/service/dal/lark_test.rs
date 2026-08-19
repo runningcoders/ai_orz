@@ -2,13 +2,14 @@
 //!
 //! 覆盖凭证引用模型核心路径：
 //! - `find_channel_by_lark_identity`：app_id + open_id 二维定位（跨应用隔离）
-//! - `resolve_credentials_for_user`：渠道引用 ID → 用户凭证库 → 解密凭证 + 身份模式
+//! - `resolve_credentials_for_user`：渠道引用 ID → 凭证行 → 解密凭证 + 身份模式
 //! - 监听生命周期无网络路径：无渠道引用时 ensure/release 均安全返回
 
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::models::user::UserPo;
+use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
-use crate::service::dal::lark::test_support::new_for_test_with_user_dao;
+use crate::service::dal::lark::test_support::new_for_test_with_credential_dao;
 use crate::service::dal::message_channel::init as message_channel_dal_init;
 use crate::service::dao::a2a_callback::init as a2a_callback_dao_init;
 use crate::service::dao::email::init as email_dao_init;
@@ -16,19 +17,18 @@ use crate::service::dao::lark::init as lark_dao_init;
 use crate::service::dao::message_channel::init as message_channel_dao_init;
 use crate::service::dao::slack::init as slack_dao_init;
 use crate::service::dao::user::init as user_dao_init;
+use crate::service::dao::user_credential::init as user_credential_dao_init;
 use crate::service::dao::webhook::init as webhook_dao_init;
 use crate::service::dao::wechat::init as wechat_dao_init;
 use common::enums::{ChannelStatus, ChannelType};
-use common::models::{
-    CredentialDetail, CredentialKind, UserIdentityCredential, UserIdentityCredentials,
-};
+use common::models::{CredentialDetail, CredentialKind, CredentialVisibility};
 use sqlx::SqlitePool;
 
 fn init_all_test_daos() {
     message_channel_dao_init();
     a2a_callback_dao_init();
-    // user dao 必须先于 lark dal 与 message_channel dal 初始化（两者均注入 user::dao() 做凭证引用解析）
     user_dao_init();
+    user_credential_dao_init();
     lark_dao_init();
     wechat_dao_init();
     slack_dao_init();
@@ -37,10 +37,9 @@ fn init_all_test_daos() {
     message_channel_dal_init();
 }
 
-/// 创建携带 LarkApp 凭证的测试用户（明文直通兼容：解密路径对未加密值原样返回）
-async fn seed_lark_user(ctx: &RequestContext, user_id: &str, app_id: &str, app_secret: &str) {
-    let secret = app_secret.to_string();
-    let mut user = UserPo::new(
+/// 创建测试用户（凭证已独立建表，用户行不再携带凭证信息）
+async fn seed_user(ctx: &RequestContext, user_id: &str) {
+    let user = UserPo::new(
         user_id.to_string(),
         "org-1".to_string(),
         format!("{}-name", user_id),
@@ -50,30 +49,37 @@ async fn seed_lark_user(ctx: &RequestContext, user_id: &str, app_id: &str, app_s
         common::enums::UserRole::Member,
         "admin".to_string(),
     );
-    user.identity_credentials = UserIdentityCredentials {
-        items: vec![UserIdentityCredential {
-            id: format!("cred-{}", user_id),
-            kind: CredentialKind::LarkApp,
-            name: format!("凭证-{}", user_id),
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-            updated_at: "2026-01-01T00:00:00Z".to_string(),
-            detail: CredentialDetail::LarkApp {
-                app_id: app_id.to_string(),
-                app_secret: secret,
-                encrypt_key: None,
-                verification_token: None,
-            },
-        }],
-        ..Default::default()
-    }
-    .to_column_value();
     crate::service::dao::user::dao()
         .insert(ctx.clone(), &user)
         .await
         .unwrap();
 }
 
-/// 创建飞书测试渠道（凭证仅存引用 ID，app_id/secret 在用户凭证库）
+/// 创建携带 LarkApp 凭证的测试用户（明文直通兼容：解密路径对未加密值原样返回）
+async fn seed_lark_user(ctx: &RequestContext, user_id: &str, app_id: &str, app_secret: &str) {
+    seed_user(ctx, user_id).await;
+    let po = UserCredentialPo::new(
+        format!("cred-{}", user_id),
+        "org-1".to_string(),
+        user_id.to_string(),
+        CredentialKind::LarkApp,
+        format!("凭证-{}", user_id),
+        CredentialDetail::LarkApp {
+            app_id: app_id.to_string(),
+            app_secret: app_secret.to_string(),
+            encrypt_key: None,
+            verification_token: None,
+        },
+        CredentialVisibility::Private,
+        "admin".to_string(),
+    );
+    crate::service::dao::user_credential::dao()
+        .insert(ctx.clone(), &po)
+        .await
+        .unwrap();
+}
+
+/// 创建飞书测试渠道（凭证仅存引用 ID，app_id/secret 在凭证表）
 fn lark_channel(
     channel_id: &str,
     user_id: &str,
@@ -107,12 +113,12 @@ async fn init_env(pool: SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx("admin", pool)
 }
 
-/// 注入 user dao 的测试 DAL（凭证引用解析可用）
+/// 注入凭证 DAO 的测试 DAL（凭证引用解析可用）
 fn test_dal() -> std::sync::Arc<crate::service::dal::lark::LarkMessageChannelDal> {
-    new_for_test_with_user_dao(
+    new_for_test_with_credential_dao(
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
-        crate::service::dao::user::dao(),
+        crate::service::dao::user_credential::dao(),
     )
 }
 
@@ -205,7 +211,7 @@ async fn find_channel_by_lark_identity_skips_disabled_channel(pool: SqlitePool) 
     assert!(found.is_none());
 }
 
-/// 按用户解析凭证：渠道引用 → 用户凭证库解密凭证 + 身份模式；无渠道用户返回 None
+/// 按用户解析凭证：渠道引用 → 凭证行解密凭证 + 身份模式；无渠道用户返回 None
 #[sqlx::test]
 async fn resolve_credentials_for_user_returns_enabled_channel_credentials(pool: SqlitePool) {
     let ctx = init_env(pool).await;
@@ -239,7 +245,7 @@ async fn resolve_credentials_for_user_returns_enabled_channel_credentials(pool: 
     assert!(credentials.is_none());
 }
 
-/// 引用悬空（凭证 ID 在用户凭证库中不存在）时解析返回 None 而非报错
+/// 引用悬空（凭证 ID 在凭证表中不存在）时解析返回 None 而非报错
 #[sqlx::test]
 async fn resolve_credentials_for_user_returns_none_for_dangling_ref(pool: SqlitePool) {
     let ctx = init_env(pool).await;

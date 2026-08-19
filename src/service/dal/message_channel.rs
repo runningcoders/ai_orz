@@ -15,17 +15,15 @@ use serde::Serialize;
 use crate::enrich_ctx;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
-use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
 use crate::service::dao::email::EmailDao;
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao, resolve_lark_credentials};
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
 use crate::service::dao::slack::SlackDao;
-use crate::service::dao::user::UserDao;
+use crate::service::dao::user_credential::UserCredentialDao;
 use crate::service::dao::webhook::WebhookDao;
 use crate::service::dao::wechat::WechatDao;
-use common::models::UserIdentityCredentials;
 
 // ==================== 单例管理 ====================
 
@@ -57,7 +55,7 @@ pub fn new(
         email_dao: email::dao(),
         webhook_dao: webhook::dao(),
         a2a_callback_dao: a2a_callback::dao(),
-        user_dao: crate::service::dao::user::dao(),
+        credential_dao: crate::service::dao::user_credential::dao(),
     })
 }
 
@@ -118,7 +116,6 @@ pub trait MessageChannelDal: Send + Sync {
     /// - `ctx`: 请求上下文
     /// - `message`: 消息实体
     /// - `user_id`: 用户 ID
-    /// - `options`: 推送选项（上层已加载的用户实体可附带下传，飞书凭证解析免重复查库）
     ///
     /// # 返回
     /// 分发结果详情，包含各渠道的推送状态
@@ -127,7 +124,6 @@ pub trait MessageChannelDal: Send + Sync {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
-        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> Result<DeliveryResult>;
 }
 
@@ -146,8 +142,8 @@ struct MessageChannelDalImpl {
     webhook_dao: Arc<dyn WebhookDao + Send + Sync>,
     a2a_callback_dao: Arc<dyn A2aCallbackDao + Send + Sync>,
 
-    /// 用户 DAO（飞书凭证引用解析：渠道仅存 credential_id，凭证库在归属用户的 users 表）
-    user_dao: Arc<dyn UserDao + Send + Sync>,
+    /// 用户凭证 DAO（飞书凭证引用解析：渠道仅存 credential_id，凭证行在 user_credentials 表）
+    credential_dao: Arc<dyn UserCredentialDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -218,7 +214,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
         match channel.channel_type() {
             ChannelType::Lark => {
                 let credentials = self
-                    .resolve_lark_credentials(ctx.clone(), &channel, None)
+                    .resolve_lark_credentials(ctx.clone(), &channel)
                     .await
                     .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))?;
                 self.lark_dao.test_connection(ctx, &credentials).await
@@ -243,7 +239,6 @@ impl MessageChannelDal for MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         user_id: &str,
-        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> Result<DeliveryResult> {
         let ctx = enrich_ctx!(&ctx, message);
         // 1. 查询用户的所有活跃渠道
@@ -280,9 +275,7 @@ impl MessageChannelDal for MessageChannelDalImpl {
 
         for po in filtered_channels {
             let channel = MessageChannel::from_po(po);
-            let result = self
-                .push_to_channel(ctx.clone(), message, &channel, options)
-                .await;
+            let result = self.push_to_channel(ctx.clone(), message, &channel).await;
 
             // 4. 更新渠道推送状态
             let _ = self
@@ -305,26 +298,40 @@ impl MessageChannelDal for MessageChannelDalImpl {
 // ==================== 私有内部方法 ====================
 
 impl MessageChannelDalImpl {
-    /// 解析渠道引用的飞书应用凭证（options 附带 + user dao 兜底双路径）
+    /// 解析渠道引用的飞书应用凭证（凭证行主键查询，轻量直查）
     ///
-    /// ① options.user 已携带 → 直接用其 identity_credentials（免重复查库）；
-    /// ② options 无 → 经 user dao 按渠道归属用户查凭证库。
+    /// 渠道 `lark_credential_id` → `UserCredentialDao::find_by_id` 凭证行 →
+    /// 纯函数校验 kind + 解密 secret；凭证缺失返回引导性错误。
     async fn resolve_lark_credentials(
         &self,
         ctx: RequestContext,
         channel: &MessageChannel,
-        options_user: Option<&UserPo>,
     ) -> Result<LarkAppCredentials> {
-        if let Some(user) = options_user {
-            let library = UserIdentityCredentials::parse(&user.identity_credentials);
-            return resolve_lark_credentials(&library, channel);
-        }
-        let library = self
-            .user_dao
-            .find_identity_credentials_by_user_id(ctx, channel.user_id())
+        let credential_id = channel
+            .config()
+            .lark_credential_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "飞书渠道缺少凭证引用 lark_credential_id channel_id={}，请先在飞书集成中绑定应用",
+                    channel.po.id
+                )
+            })?;
+        let credential = self
+            .credential_dao
+            .find_by_id(ctx, credential_id)
             .await?
-            .unwrap_or_default();
-        resolve_lark_credentials(&library, channel)
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "飞书渠道引用的凭证不存在 channel_id={} credential_id={}，请在飞书集成中重新绑定",
+                    channel.po.id,
+                    credential_id
+                )
+            })?;
+        resolve_lark_credentials(&credential, channel)
     }
 
     /// 🎯 核心分发逻辑（内部私有，不对外暴露）
@@ -341,26 +348,25 @@ impl MessageChannelDalImpl {
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
-        options: &crate::models::message_channel::ChannelPushOptions,
     ) -> std::result::Result<(), common::error::Error> {
         match channel.channel_type() {
             ChannelType::Lark => {
-                // 凭证解析在 DAL 层完成（options.user 附带优先，无则查库），
+                // 凭证解析在 DAL 层完成（按凭证 ID 查 user_credentials 行），
                 // DAO 只接收已解析凭证执行出站调用
                 let credentials = self
-                    .resolve_lark_credentials(ctx.clone(), channel, options.user.as_ref())
+                    .resolve_lark_credentials(ctx.clone(), channel)
                     .await?;
                 self.lark_dao
                     .push(ctx, message, channel, &credentials)
                     .await
             }
-            ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel, options).await,
-            ChannelType::Slack => self.slack_dao.push(ctx, message, channel, options).await,
-            ChannelType::Email => self.email_dao.push(ctx, message, channel, options).await,
-            ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel, options).await,
+            ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel).await,
+            ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
+            ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
+            ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
             ChannelType::A2aCallback => {
                 self.a2a_callback_dao
-                    .push(ctx, message, channel, options)
+                    .push(ctx, message, channel)
                     .await
             }
         }

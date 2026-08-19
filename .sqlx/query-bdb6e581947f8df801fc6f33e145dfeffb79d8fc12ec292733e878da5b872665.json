@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE user_credentials SET is_default = 1, modified_by = ?, updated_at = ?\nWHERE id = ? AND status = 1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "bdb6e581947f8df801fc6f33e145dfeffb79d8fc12ec292733e878da5b872665"
+}

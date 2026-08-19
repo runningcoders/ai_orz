@@ -1,181 +1,25 @@
-//! 用户身份凭证库（users.identity_credentials JSON 列）
+//! 用户身份凭证类型契约（前后端共享）
 //!
-//! 类型化结构体约束凭证类型/详情/关键 ID，前后端共享。
-//! secret 类字段在落库前经 `pkg::crypto::encrypt_channel_secret` 加密，
-//! 本结构体本身不含加密逻辑（加密发生在 DAL 读写时）。
+//! 凭证存储于独立表 `user_credentials`（一凭证一行）：
+//! - `CredentialKind` / `CredentialVisibility` 为 TEXT 字符串枚举
+//!   （DB 值 = API 值 = snake_case 字符串，映射只此一处）
+//! - `CredentialDetail` 按 kind 区分字段集，secret 类字段在落库前经
+//!   `pkg::crypto::encrypt_channel_secret` 加密（加密发生在 Domain 编排层）
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "sqlx")]
+use sqlx::Type;
 
-use crate::error::{Result, bail_err, err};
-
-/// 用户身份凭证库（users.identity_credentials JSON 列的顶层结构）
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UserIdentityCredentials {
-    /// 凭证列表（多类型凭据共存）
-    pub items: Vec<UserIdentityCredential>,
-    /// 默认飞书凭证 ID（用户显式选择；lark_cli 工具身份优先取引用该凭证的渠道）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_credential_id: Option<String>,
-    /// 默认 GitHub 凭证 ID（gh_cli 工具身份优先；多条 token 时生效）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_github_credential_id: Option<String>,
-    /// 默认 Tavily 凭证 ID（tavily_search 工具身份优先；多条 key 时生效）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_tavily_credential_id: Option<String>,
-}
-
-impl UserIdentityCredentials {
-    /// 从 users.identity_credentials 列值解析（空串视为无凭证）
-    pub fn parse(column: &str) -> Self {
-        if column.trim().is_empty() {
-            return Self::default();
-        }
-        serde_json::from_str(column).unwrap_or_default()
-    }
-
-    /// 序列化为落库 JSON 字符串（无凭证时返回空串，保持列默认值语义）
-    pub fn to_column_value(&self) -> String {
-        if self.items.is_empty() {
-            return String::new();
-        }
-        serde_json::to_string(self).unwrap_or_default()
-    }
-
-    /// 按关键 ID 查找凭证
-    pub fn find_by_id(&self, id: &str) -> Option<&UserIdentityCredential> {
-        self.items.iter().find(|c| c.id == id)
-    }
-
-    /// 按关键 ID 查找可变凭证
-    pub fn find_by_id_mut(&mut self, id: &str) -> Option<&mut UserIdentityCredential> {
-        self.items.iter_mut().find(|c| c.id == id)
-    }
-
-    /// 按关键 ID 删除凭证，返回被删除的凭证
-    pub fn remove_by_id(&mut self, id: &str) -> Option<UserIdentityCredential> {
-        let pos = self.items.iter().position(|c| c.id == id)?;
-        Some(self.items.remove(pos))
-    }
-
-    /// 飞书渠道凭证引用统一校验（存在 + kind=LarkApp）
-    ///
-    /// 渠道创建/更新与快照聚合共用的单一校验入口；归属校验天然成立：
-    /// 凭证库本身即按渠道/请求归属用户加载。
-    pub fn resolve_lark_credential_ref(
-        &self,
-        lark_credential_id: Option<&str>,
-    ) -> Result<&UserIdentityCredential> {
-        let Some(credential_id) = lark_credential_id.map(str::trim).filter(|s| !s.is_empty())
-        else {
-            bail_err!(InvalidRequest, "飞书渠道必须选择已绑定的应用凭证");
-        };
-        let Some(credential) = self.find_by_id(credential_id) else {
-            bail_err!(
-                InvalidRequest,
-                "所选飞书凭证不存在，请先在飞书集成中绑定应用"
-            );
-        };
-        if !matches!(credential.kind, CredentialKind::LarkApp) {
-            bail_err!(InvalidRequest, "所选凭证不是飞书应用凭证，无法用于飞书渠道");
-        }
-        Ok(credential)
-    }
-
-    /// 解析 gh_cli 工具身份可用的 GitHub 凭证
-    ///
-    /// 优先取 `default_github_credential_id` 指向的 GithubToken 凭证
-    /// （指向不存在/非 GitHub 类型时忽略）；未命中回退第一条 GithubToken。
-    pub fn resolve_github_credential(&self) -> Option<&UserIdentityCredential> {
-        if let Some(default_id) = self.default_github_credential_id.as_deref()
-            && let Some(credential) = self.find_by_id(default_id)
-            && matches!(credential.kind, CredentialKind::GithubToken)
-        {
-            return Some(credential);
-        }
-        self.items
-            .iter()
-            .find(|credential| matches!(credential.kind, CredentialKind::GithubToken))
-    }
-
-    /// 解析 tavily_search 工具身份可用的 Tavily 凭证
-    ///
-    /// 优先取 `default_tavily_credential_id` 指向的 TavilyKey 凭证
-    /// （指向不存在/非 Tavily 类型时忽略）；未命中回退第一条 TavilyKey。
-    pub fn resolve_tavily_credential(&self) -> Option<&UserIdentityCredential> {
-        if let Some(default_id) = self.default_tavily_credential_id.as_deref()
-            && let Some(credential) = self.find_by_id(default_id)
-            && matches!(credential.kind, CredentialKind::TavilyKey)
-        {
-            return Some(credential);
-        }
-        self.items
-            .iter()
-            .find(|credential| matches!(credential.kind, CredentialKind::TavilyKey))
-    }
-
-    /// 按类型设置默认凭证（Some 时校验存在 + 类型匹配；None/空白清除）
-    ///
-    /// 各类型默认槽位独立（lark 与 github 互不影响）。
-    pub fn set_default_for(
-        &mut self,
-        kind: CredentialKind,
-        credential_id: Option<String>,
-    ) -> Result<()> {
-        let target = credential_id
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        let Some(id) = target else {
-            *self.default_slot_mut(kind) = None;
-            return Ok(());
-        };
-        let credential = self
-            .find_by_id(&id)
-            .ok_or_else(|| err!(NotFound, "凭证不存在 credential_id={}", id))?;
-        if credential.kind != kind {
-            bail_err!(InvalidRequest, "所选凭证类型不匹配，无法设为该类型默认凭证");
-        }
-        *self.default_slot_mut(kind) = Some(id);
-        Ok(())
-    }
-
-    /// 按类型清除指向该凭证的默认标记（删除凭证时联动）
-    pub fn clear_default_for(&mut self, kind: CredentialKind, credential_id: &str) {
-        let slot = self.default_slot_mut(kind);
-        if slot.as_deref() == Some(credential_id) {
-            *slot = None;
-        }
-    }
-
-    /// 类型 → 默认凭证槽位
-    fn default_slot_mut(&mut self, kind: CredentialKind) -> &mut Option<String> {
-        match kind {
-            CredentialKind::LarkApp => &mut self.default_credential_id,
-            CredentialKind::GithubToken => &mut self.default_github_credential_id,
-            CredentialKind::TavilyKey => &mut self.default_tavily_credential_id,
-        }
-    }
-}
-
-/// 单条用户身份凭证
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UserIdentityCredential {
-    /// 凭证关键 ID（渠道引用键，uuid）
-    pub id: String,
-    /// 凭证类型
-    pub kind: CredentialKind,
-    /// 用户自命名
-    pub name: String,
-    /// 创建时间（RFC3339）
-    pub created_at: String,
-    /// 更新时间（RFC3339）
-    pub updated_at: String,
-    /// 按 kind 区分的详情
-    pub detail: CredentialDetail,
-}
+use crate::error::{Result, bail_err};
 
 /// 凭证类型（可扩展，如后续 WechatApp）
+///
+/// 分类型枚举（映射外部系统）：TEXT 存储（`#[sqlx(rename_all = "snake_case")]`），
+/// DB 值 = 'lark_app' / 'github_token' / 'tavily_key'——与 API/JSON 值空间一致。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "sqlx", sqlx(rename_all = "snake_case"))]
 pub enum CredentialKind {
     /// 飞书自建应用凭证
     LarkApp,
@@ -183,6 +27,44 @@ pub enum CredentialKind {
     GithubToken,
     /// Tavily 搜索 API key（个人 key，tavily_search 工具身份）
     TavilyKey,
+}
+
+/// 凭证可见性（访问语义枚举）：TEXT 存储
+///
+/// private = 仅所有者用户及其下游引用；public = 同 org 用户可显式引用。
+/// 可见性同时派生默认标记的作用域（private=个人默认 / public=组织默认）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "sqlx", sqlx(rename_all = "snake_case"))]
+pub enum CredentialVisibility {
+    /// 'private'：仅所有者用户
+    #[default]
+    Private,
+    /// 'public'：同 org 用户可显式引用
+    Public,
+}
+
+/// 凭证脱敏快照（跨层展示值对象：集成状态聚合 / 引用名称渲染）
+///
+/// secret 恒不出现（detail 整体不外泄）；`is_default` 为所在作用域的默认标记
+/// （private=个人默认 / public=组织默认，作用域由 visibility 派生）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialSnapshot {
+    /// 凭证 ID（使用方引用键）
+    pub credential_id: String,
+    /// 用户自定义名称（仅展示，不参与解析）
+    pub name: String,
+    /// 凭证类型
+    pub kind: CredentialKind,
+    /// 可见性：private=仅所有者 / public=同 org 可显式引用
+    pub visibility: CredentialVisibility,
+    /// 所在作用域默认标记（作用域由 visibility 派生）
+    pub is_default: bool,
+    /// 凭证归属用户 ID（资产所有者）
+    pub user_id: String,
+    /// 外部主标识（lark app_id；无概念的类型为 None）
+    pub primary_id: Option<String>,
 }
 
 /// 凭证详情（serde 内部 tag，按类型区分字段集）
@@ -445,233 +327,66 @@ impl CredentialDetail {
 mod tests {
     use super::*;
 
-    fn lark_credential(id: &str, name: &str) -> UserIdentityCredential {
-        UserIdentityCredential {
-            id: id.to_string(),
-            kind: CredentialKind::LarkApp,
-            name: name.to_string(),
-            created_at: "2026-08-12T00:00:00Z".to_string(),
-            updated_at: "2026-08-12T00:00:00Z".to_string(),
-            detail: CredentialDetail::LarkApp {
-                app_id: "cli_a1b2c3".to_string(),
-                app_secret: "enc:v1:secret".to_string(),
-                encrypt_key: Some("enc:v1:key".to_string()),
-                verification_token: None,
-            },
-        }
-    }
-
-    fn github_credential(id: &str, name: &str) -> UserIdentityCredential {
-        UserIdentityCredential {
-            id: id.to_string(),
-            kind: CredentialKind::GithubToken,
-            name: name.to_string(),
-            created_at: "2026-08-12T00:00:00Z".to_string(),
-            updated_at: "2026-08-12T00:00:00Z".to_string(),
-            detail: CredentialDetail::GithubToken {
-                token: "enc:v1:gh-token".to_string(),
-            },
-        }
-    }
-
-    fn tavily_credential(id: &str, name: &str) -> UserIdentityCredential {
-        UserIdentityCredential {
-            id: id.to_string(),
-            kind: CredentialKind::TavilyKey,
-            name: name.to_string(),
-            created_at: "2026-08-12T00:00:00Z".to_string(),
-            updated_at: "2026-08-12T00:00:00Z".to_string(),
-            detail: CredentialDetail::TavilyKey {
-                api_key: "enc:v1:tvly-key".to_string(),
-            },
-        }
-    }
-
     #[test]
-    fn test_parse_empty_column() {
+    fn test_credential_kind_serde_snake_case() {
         assert_eq!(
-            UserIdentityCredentials::parse(""),
-            UserIdentityCredentials::default()
+            serde_json::to_value(CredentialKind::LarkApp).unwrap(),
+            "lark_app"
         );
         assert_eq!(
-            UserIdentityCredentials::parse("   "),
-            UserIdentityCredentials::default()
+            serde_json::to_value(CredentialKind::GithubToken).unwrap(),
+            "github_token"
         );
-        // 非法 JSON 容错为空库
         assert_eq!(
-            UserIdentityCredentials::parse("not-json"),
-            UserIdentityCredentials::default()
+            serde_json::to_value(CredentialKind::TavilyKey).unwrap(),
+            "tavily_key"
+        );
+        // 往返一致（DB TEXT 值 = serde 值）
+        assert_eq!(
+            serde_json::from_value::<CredentialKind>(serde_json::json!("lark_app")).unwrap(),
+            CredentialKind::LarkApp
         );
     }
 
     #[test]
-    fn test_column_round_trip() {
-        let creds = UserIdentityCredentials {
-            items: vec![
-                lark_credential("cred-1", "工作应用"),
-                lark_credential("cred-2", "测试应用"),
-            ],
-            default_credential_id: Some("cred-1".to_string()),
-            default_github_credential_id: None,
-            default_tavily_credential_id: None,
-        };
-        let column = creds.to_column_value();
-        assert!(!column.is_empty());
-        let parsed = UserIdentityCredentials::parse(&column);
-        assert_eq!(parsed, creds);
-    }
-
-    #[test]
-    fn test_legacy_column_without_default_field_parses() {
-        // 存量 JSON 无 default_credential_id 字段 → serde(default) 容错
-        let legacy = r#"{"items":[]}"#;
-        let parsed = UserIdentityCredentials::parse(legacy);
-        assert_eq!(parsed.default_credential_id, None);
-    }
-
-    #[test]
-    fn test_empty_library_serializes_to_empty_string() {
-        assert_eq!(UserIdentityCredentials::default().to_column_value(), "");
-    }
-
-    #[test]
-    fn test_find_and_remove_by_id() {
-        let mut creds = UserIdentityCredentials {
-            items: vec![
-                lark_credential("cred-1", "A"),
-                lark_credential("cred-2", "B"),
-            ],
-            ..Default::default()
-        };
-        assert!(creds.find_by_id("cred-1").is_some());
-        assert!(creds.find_by_id("cred-x").is_none());
-
-        let removed = creds.remove_by_id("cred-1");
-        assert_eq!(removed.unwrap().name, "A");
-        assert_eq!(creds.items.len(), 1);
-        assert!(creds.remove_by_id("cred-1").is_none());
+    fn test_credential_visibility_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_value(CredentialVisibility::Private).unwrap(),
+            "private"
+        );
+        assert_eq!(
+            serde_json::to_value(CredentialVisibility::Public).unwrap(),
+            "public"
+        );
+        assert_eq!(CredentialVisibility::default(), CredentialVisibility::Private);
     }
 
     #[test]
     fn test_detail_serde_tag() {
-        let cred = lark_credential("cred-1", "A");
-        let json = serde_json::to_value(&cred).unwrap();
-        assert_eq!(json["detail"]["type"], "lark_app");
-        assert_eq!(json["kind"], "lark_app");
-        assert_eq!(json["detail"]["app_id"], "cli_a1b2c3");
-    }
-
-    #[test]
-    fn test_resolve_lark_credential_ref() {
-        let mut creds = UserIdentityCredentials {
-            items: vec![lark_credential("cred-1", "A")],
-            ..Default::default()
+        let detail = CredentialDetail::LarkApp {
+            app_id: "cli_a1b2c3".to_string(),
+            app_secret: "enc:v1:secret".to_string(),
+            encrypt_key: Some("enc:v1:key".to_string()),
+            verification_token: None,
         };
-        // 缺失/空白引用拒绝
-        assert!(creds.resolve_lark_credential_ref(None).is_err());
-        assert!(creds.resolve_lark_credential_ref(Some("  ")).is_err());
-        // 不存在的引用拒绝
-        assert!(creds.resolve_lark_credential_ref(Some("missing")).is_err());
-        // 存在的 LarkApp 引用通过
-        let cred = creds.resolve_lark_credential_ref(Some("cred-1")).unwrap();
-        assert_eq!(cred.name, "A");
-
-        // 非 LarkApp 类型拒绝（当前枚举仅 LarkApp，以构造非法 kind 不现实，
-        // 改为验证空库拒绝）
-        creds.items.clear();
-        assert!(creds.resolve_lark_credential_ref(Some("cred-1")).is_err());
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["type"], "lark_app");
+        assert_eq!(json["app_id"], "cli_a1b2c3");
+        // 往返一致
+        let parsed: CredentialDetail = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, detail);
     }
 
     #[test]
     fn test_github_credential_serde_tag() {
-        let cred = github_credential("gh-1", "工作号");
-        let json = serde_json::to_value(&cred).unwrap();
-        assert_eq!(json["kind"], "github_token");
-        assert_eq!(json["detail"]["type"], "github_token");
-        assert_eq!(json["detail"]["token"], "enc:v1:gh-token");
-        // 往返一致
-        let parsed: UserIdentityCredential = serde_json::from_value(json).unwrap();
-        assert_eq!(parsed, cred);
-    }
-
-    #[test]
-    fn test_resolve_github_credential() {
-        // 空 / 仅 Lark 凭证 → None
-        assert!(
-            UserIdentityCredentials::default()
-                .resolve_github_credential()
-                .is_none()
-        );
-        let lark_only = UserIdentityCredentials {
-            items: vec![lark_credential("cred-1", "A")],
-            ..Default::default()
+        let detail = CredentialDetail::GithubToken {
+            token: "enc:v1:gh-token".to_string(),
         };
-        assert!(lark_only.resolve_github_credential().is_none());
-
-        // 单条 GitHub 凭证 → 直接命中（无需设默认）
-        let single = UserIdentityCredentials {
-            items: vec![github_credential("gh-1", "工作号")],
-            ..Default::default()
-        };
-        assert_eq!(single.resolve_github_credential().unwrap().id, "gh-1");
-
-        // 多条时默认字段指向 GithubToken → 优先默认；且与 Lark 默认互不影响
-        let multi = UserIdentityCredentials {
-            items: vec![
-                github_credential("gh-1", "工作号"),
-                github_credential("gh-2", "个人号"),
-                lark_credential("cred-1", "A"),
-            ],
-            default_credential_id: Some("cred-1".to_string()),
-            default_github_credential_id: Some("gh-2".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(multi.resolve_github_credential().unwrap().id, "gh-2");
-
-        // 默认字段指向 LarkApp → 忽略，回退第一条 GithubToken
-        let mut lark_default = multi.clone();
-        lark_default.default_github_credential_id = Some("cred-1".to_string());
-        assert_eq!(lark_default.resolve_github_credential().unwrap().id, "gh-1");
-    }
-
-    #[test]
-    fn test_tavily_credential_serde_and_resolve() {
-        // serde tag 往返一致
-        let cred = tavily_credential("tv-1", "个人搜索");
-        let json = serde_json::to_value(&cred).unwrap();
-        assert_eq!(json["kind"], "tavily_key");
-        assert_eq!(json["detail"]["type"], "tavily_key");
-        let parsed: UserIdentityCredential = serde_json::from_value(json).unwrap();
-        assert_eq!(parsed, cred);
-
-        // 空 / 仅其他类型 → None
-        assert!(
-            UserIdentityCredentials::default()
-                .resolve_tavily_credential()
-                .is_none()
-        );
-        let gh_only = UserIdentityCredentials {
-            items: vec![github_credential("gh-1", "工作号")],
-            ..Default::default()
-        };
-        assert!(gh_only.resolve_tavily_credential().is_none());
-
-        // 单条直接命中；多条默认优先；默认槽位与 github 互不影响
-        let multi = UserIdentityCredentials {
-            items: vec![
-                tavily_credential("tv-1", "个人搜索"),
-                tavily_credential("tv-2", "团队搜索"),
-                github_credential("gh-1", "工作号"),
-            ],
-            default_tavily_credential_id: Some("tv-2".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(multi.resolve_tavily_credential().unwrap().id, "tv-2");
-
-        // 默认指向 GithubToken → 忽略，回退第一条 TavilyKey
-        let mut gh_default = multi.clone();
-        gh_default.default_tavily_credential_id = Some("gh-1".to_string());
-        assert_eq!(gh_default.resolve_tavily_credential().unwrap().id, "tv-1");
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["type"], "github_token");
+        assert_eq!(json["token"], "enc:v1:gh-token");
+        let parsed: CredentialDetail = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, detail);
     }
 
     #[test]
@@ -736,29 +451,24 @@ mod tests {
                 )
                 .is_err()
         );
-
-        // 默认槽位独立
-        let mut creds = UserIdentityCredentials {
-            items: vec![tavily_credential("tv-1", "个人搜索")],
-            ..Default::default()
-        };
-        creds
-            .set_default_for(CredentialKind::TavilyKey, Some("tv-1".to_string()))
-            .unwrap();
-        assert_eq!(creds.default_tavily_credential_id.as_deref(), Some("tv-1"));
-        creds.clear_default_for(CredentialKind::TavilyKey, "tv-1");
-        assert_eq!(creds.default_tavily_credential_id, None);
     }
 
     // ==================== CredentialDetail 行为 ====================
 
     #[test]
     fn test_detail_kind_and_primary_id() {
-        let lark = lark_credential("c1", "A").detail;
+        let lark = CredentialDetail::LarkApp {
+            app_id: "cli_a1b2c3".to_string(),
+            app_secret: "s".to_string(),
+            encrypt_key: None,
+            verification_token: None,
+        };
         assert_eq!(lark.kind(), CredentialKind::LarkApp);
         assert_eq!(lark.primary_id(), Some("cli_a1b2c3"));
 
-        let gh = github_credential("g1", "B").detail;
+        let gh = CredentialDetail::GithubToken {
+            token: "t".to_string(),
+        };
         assert_eq!(gh.kind(), CredentialKind::GithubToken);
         assert_eq!(gh.primary_id(), None);
     }
@@ -796,8 +506,23 @@ mod tests {
     #[test]
     fn test_detail_validate_required_fields() {
         // 合法
-        assert!(lark_credential("c1", "A").detail.validate().is_ok());
-        assert!(github_credential("g1", "B").detail.validate().is_ok());
+        assert!(
+            CredentialDetail::LarkApp {
+                app_id: "cli_x".to_string(),
+                app_secret: "s".to_string(),
+                encrypt_key: None,
+                verification_token: None,
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            CredentialDetail::GithubToken {
+                token: "t".to_string()
+            }
+            .validate()
+            .is_ok()
+        );
         // lark 缺 app_id
         let bad = CredentialDetail::LarkApp {
             app_id: " ".to_string(),
@@ -990,84 +715,5 @@ mod tests {
             .unwrap();
         assert!(matches!(&gh, CredentialDetail::GithubToken { token } if token == "enc:ghp_new"));
         assert!(impact.secret_changed);
-    }
-
-    // ==================== 默认凭证统一操作 ====================
-
-    #[test]
-    fn test_set_default_for_each_kind() {
-        let mut creds = UserIdentityCredentials {
-            items: vec![
-                lark_credential("cred-1", "A"),
-                github_credential("gh-1", "工作号"),
-            ],
-            ..Default::default()
-        };
-        // 设置 lark 默认
-        creds
-            .set_default_for(CredentialKind::LarkApp, Some("cred-1".to_string()))
-            .unwrap();
-        assert_eq!(creds.default_credential_id.as_deref(), Some("cred-1"));
-        assert_eq!(
-            creds.default_github_credential_id, None,
-            "两类型默认互不影响"
-        );
-        // 设置 github 默认
-        creds
-            .set_default_for(CredentialKind::GithubToken, Some("gh-1".to_string()))
-            .unwrap();
-        assert_eq!(creds.default_github_credential_id.as_deref(), Some("gh-1"));
-        assert_eq!(creds.default_credential_id.as_deref(), Some("cred-1"));
-        // 空串等价取消
-        creds
-            .set_default_for(CredentialKind::GithubToken, Some("  ".to_string()))
-            .unwrap();
-        assert_eq!(creds.default_github_credential_id, None);
-        // None 清除
-        creds
-            .set_default_for(CredentialKind::LarkApp, None)
-            .unwrap();
-        assert_eq!(creds.default_credential_id, None);
-    }
-
-    #[test]
-    fn test_set_default_for_validates() {
-        let mut creds = UserIdentityCredentials {
-            items: vec![github_credential("gh-1", "工作号")],
-            ..Default::default()
-        };
-        // 不存在 → NotFound
-        assert!(
-            creds
-                .set_default_for(CredentialKind::GithubToken, Some("no-such".to_string()))
-                .is_err()
-        );
-        // 类型不匹配（拿 lark kind 设 github 凭证）→ InvalidRequest
-        assert!(
-            creds
-                .set_default_for(CredentialKind::LarkApp, Some("gh-1".to_string()))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn test_clear_default_for_on_delete() {
-        let mut creds = UserIdentityCredentials {
-            items: vec![github_credential("gh-1", "工作号")],
-            default_github_credential_id: Some("gh-1".to_string()),
-            default_credential_id: Some("gh-1".to_string()), // 异常态也一并清对位字段
-            default_tavily_credential_id: None,
-        };
-        creds.clear_default_for(CredentialKind::GithubToken, "gh-1");
-        assert_eq!(creds.default_github_credential_id, None);
-        assert_eq!(
-            creds.default_credential_id.as_deref(),
-            Some("gh-1"),
-            "只清对应类型的默认槽位"
-        );
-        // 非命中 ID 不动
-        creds.default_github_credential_id = Some("gh-2".to_string());
-        creds.clear_default_for(CredentialKind::GithubToken, "gh-1");
-        assert_eq!(creds.default_github_credential_id.as_deref(), Some("gh-2"));
     }
 }

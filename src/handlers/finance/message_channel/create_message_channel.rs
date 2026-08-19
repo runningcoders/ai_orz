@@ -2,30 +2,51 @@
 
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMessageChannelRequest, CreateMessageChannelResponse};
-use common::models::UserIdentityCredentials;
 use uuid::Uuid;
 
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
+use crate::models::user_credential::UserCredential;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
+use common::models::CredentialKind;
 
 /// 飞书渠道凭证引用必填校验（纯函数，可单测）
 ///
-/// 非飞书类型直接放行；飞书类型委托 common 凭证库的
-/// `resolve_lark_credential_ref` 统一校验（存在 + kind=LarkApp）。
-/// 归属校验天然成立：凭证库即按渠道归属用户加载。
+/// 非飞书类型直接放行；飞书类型校验引用 ID 非空 +
+/// 凭证存在且 kind=LarkApp。归属校验天然成立：
+/// 凭证列表即按渠道归属用户加载。
 pub fn validate_lark_credential_ref(
     channel_type: common::enums::ChannelType,
     lark_credential_id: Option<&str>,
-    library: &UserIdentityCredentials,
+    credentials: &[UserCredential],
 ) -> Result<()> {
     if !matches!(channel_type, common::enums::ChannelType::Lark) {
         return Ok(());
     }
-    library.resolve_lark_credential_ref(lark_credential_id)?;
+    let credential_id = lark_credential_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| err!(InvalidRequest, "飞书渠道必须引用用户级应用凭证（lark_credential_id）"))?;
+    let credential = credentials
+        .iter()
+        .find(|c| c.id() == credential_id)
+        .ok_or_else(|| {
+            err!(
+                InvalidRequest,
+                "引用的飞书凭证不存在 credential_id={}",
+                credential_id
+            )
+        })?;
+    if credential.kind() != CredentialKind::LarkApp {
+        bail_err!(
+            InvalidRequest,
+            "引用的凭证不是飞书应用凭证 credential_id={}",
+            credential_id
+        );
+    }
     Ok(())
 }
 
@@ -109,51 +130,59 @@ pub async fn create_message_channel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::user_credential::UserCredentialPo;
     use common::enums::ChannelType;
-    use common::models::{CredentialDetail, CredentialKind, UserIdentityCredential};
+    use common::models::{CredentialDetail, CredentialVisibility};
 
-    fn lark_library(credential_id: &str) -> UserIdentityCredentials {
-        UserIdentityCredentials {
-            items: vec![UserIdentityCredential {
-                id: credential_id.to_string(),
-                kind: CredentialKind::LarkApp,
-                name: "测试凭证".to_string(),
-                created_at: "2026-01-01T00:00:00Z".to_string(),
-                updated_at: "2026-01-01T00:00:00Z".to_string(),
-                detail: CredentialDetail::LarkApp {
-                    app_id: "cli_x".to_string(),
-                    app_secret: "enc:v1:secret".to_string(),
-                    encrypt_key: None,
-                    verification_token: None,
-                },
-            }],
-            ..Default::default()
-        }
+    fn lark_credentials(credential_id: &str) -> Vec<UserCredential> {
+        vec![UserCredential::from_po(UserCredentialPo::new(
+            credential_id.to_string(),
+            "org-1".to_string(),
+            "user-1".to_string(),
+            CredentialKind::LarkApp,
+            "测试凭证".to_string(),
+            CredentialDetail::LarkApp {
+                app_id: "cli_x".to_string(),
+                app_secret: "enc:v1:secret".to_string(),
+                encrypt_key: None,
+                verification_token: None,
+            },
+            CredentialVisibility::Private,
+            "user-1".to_string(),
+        ))]
     }
 
     #[test]
     fn lark_credential_ref_required_for_lark_type() {
-        let library = lark_library("cred-1");
-        assert!(validate_lark_credential_ref(ChannelType::Lark, None, &library).is_err());
-        assert!(validate_lark_credential_ref(ChannelType::Lark, Some("  "), &library).is_err());
+        let credentials = lark_credentials("cred-1");
+        assert!(
+            validate_lark_credential_ref(ChannelType::Lark, None, &credentials).is_err()
+        );
+        assert!(
+            validate_lark_credential_ref(ChannelType::Lark, Some("  "), &credentials).is_err()
+        );
         // 引用不存在的凭证
         assert!(
-            validate_lark_credential_ref(ChannelType::Lark, Some("missing"), &library).is_err()
+            validate_lark_credential_ref(ChannelType::Lark, Some("missing"), &credentials).is_err()
         );
         // 引用存在的 LarkApp 凭证
-        assert!(validate_lark_credential_ref(ChannelType::Lark, Some("cred-1"), &library).is_ok());
+        assert!(
+            validate_lark_credential_ref(ChannelType::Lark, Some("cred-1"), &credentials).is_ok()
+        );
     }
 
     #[test]
-    fn empty_library_rejects_any_ref() {
-        let library = UserIdentityCredentials::default();
-        assert!(validate_lark_credential_ref(ChannelType::Lark, Some("cred-1"), &library).is_err());
+    fn empty_credentials_rejects_any_ref() {
+        let credentials: Vec<UserCredential> = Vec::new();
+        assert!(
+            validate_lark_credential_ref(ChannelType::Lark, Some("cred-1"), &credentials).is_err()
+        );
     }
 
     #[test]
     fn non_lark_type_skips_credential_validation() {
-        let library = UserIdentityCredentials::default();
-        assert!(validate_lark_credential_ref(ChannelType::Webhook, None, &library).is_ok());
-        assert!(validate_lark_credential_ref(ChannelType::Email, None, &library).is_ok());
+        let credentials: Vec<UserCredential> = Vec::new();
+        assert!(validate_lark_credential_ref(ChannelType::Webhook, None, &credentials).is_ok());
+        assert!(validate_lark_credential_ref(ChannelType::Email, None, &credentials).is_ok());
     }
 }

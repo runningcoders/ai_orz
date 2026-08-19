@@ -324,15 +324,7 @@ async fn test_deliver_message_skeleton(pool: SqlitePool) {
     );
     let message = Message::from_po(message_po);
 
-    let result = dal
-        .deliver_message(
-            ctx,
-            &message,
-            "user-1",
-            &crate::models::message_channel::ChannelPushOptions::default(),
-        )
-        .await
-        .unwrap();
+    let result = dal.deliver_message(ctx, &message, "user-1").await.unwrap();
     // 骨架实现返回 success_count = 0（因为还没实现实际推送）
     // 这里只验证调用不报错即可
     assert_eq!(result.total, 1);

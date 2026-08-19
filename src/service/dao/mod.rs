@@ -17,6 +17,7 @@ pub mod task;
 pub mod tool;
 pub mod tool_call;
 pub mod user;
+pub mod user_credential;
 
 // 消息推送渠道 DAO（无状态，不需要 init）
 pub mod a2a_callback;
@@ -39,6 +40,7 @@ pub fn init_all() {
     model_provider::init();
     organization::init();
     user::init();
+    user_credential::init();
     memory::init();
     task::init();
     project::init();

@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT uc.id, uc.org_id, uc.user_id,\n    uc.kind as \"kind: CredentialKind\", uc.name, uc.detail as \"detail: Json<common::models::CredentialDetail>\",\n    uc.visibility as \"visibility: CredentialVisibility\", uc.is_default as \"is_default: bool\", uc.status as \"status: i32\",\n    uc.created_by, uc.modified_by, uc.created_at, uc.updated_at\nFROM user_credentials uc, users u\nWHERE u.id = ? AND uc.kind = ? AND uc.status = 1\n  AND (uc.user_id = u.id OR (uc.org_id = u.organization_id AND uc.visibility = ?))\nORDER BY (uc.user_id = u.id) DESC, uc.is_default DESC, uc.created_at ASC\nLIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "org_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "user_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "kind: CredentialKind",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "detail: Json<common::models::CredentialDetail>",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "visibility: CredentialVisibility",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_default: bool",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "status: i32",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 12,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b61909dbf4207d2fe94a5796d3bcd5d15ff86b3c36a37f093b21068b4c16905c"
+}
