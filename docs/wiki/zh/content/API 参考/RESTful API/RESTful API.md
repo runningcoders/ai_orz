@@ -28,20 +28,24 @@
 - [entity_list_query_search_design.md](docs/archive/design-archive/entity_list_query_search_design.md) — RESTful 接口三模式：list（GET 默认分页）/ query（POST 精确过滤）/ search（POST 关键词搜索）；路由签名与 URL 路径约定
 - [api_protocol_convention.md](docs/design/api_protocol_convention.md) — 禁止裸原始类型响应；DTO 只定义在 common crate；请求参数结构体化；JWT Cookie/Bearer 双模式
 - [pagination_and_count_convention.md](docs/design/pagination_and_count_convention.md) — PaginationParams 统一 4 字段；PagedResult<T> { items, total } 统一分页信封
+- [user_credentials_design.md](docs/design/user_credentials_design.md) — 凭证 API 设计：独立表、行级 CRUD、TEXT 枚举、双部分唯一索引
+- [timestamp_convention.md](docs/design/timestamp_convention.md) — 时间戳统一为毫秒级 Unix 时间戳（i64）、UTC 时区、标准字段命名
 #### ② Plan 落地快照
 - [批量查询与通用Query接口增强重构.md](docs/archive/plan-archive/批量查询与通用Query接口增强重构.md) — 24 组 Query 结构体 + 20 个 handler 改造；三接口职责二分；push_query_filters WHERE 共享
 - [Query接口分页与List接口简化重构.md](docs/archive/plan-archive/Query接口分页与List接口简化重构.md) — list 简化为 query 语法糖；新增 DAO 标准模板；MAX_PAGE_SIZE=100
+- [用户身份凭证独立表落地.md](docs/plan/用户身份凭证独立表落地.md) — 凭证 API handler 改造、DAO/DAL 变更、路由更新
 #### ④ RAG 原子知识卡
 - [Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分](docs/wiki/knowledge/zh/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分/Entity%20Query%20List%20Search%20三分查询模式：push_query_filters%20复用%20WHERE%20+%20PagedResult%20T%20map%20全链路%20+%20list%20query%20search%20三%20Handler%20职责二分.md) — §2 HTTP 签名对照表；§3 PagedResult::map 保持 total 不变；§4 10 条硬约束
 </cite>
 
 ## 更新摘要
-**变更内容**
+**变更内容（2026-08-19 增量更新）**
+- 新增 design/plan 引用：user_credentials_design.md、timestamp_convention.md、用户身份凭证独立表落地.md
+- 新增凭证管理 API：POST/PUT/DELETE /credentials、OAuth 设备流（/auth/*）、绑定管理（/bind/*）
+- 时间戳约定：所有 API 时间字段统一使用毫秒级 Unix 时间戳（i64），UTC 时区
+- Embedding Provider API：switch_embedding、rebuild_vectors_task、rebuild_progress
 - 新增用户级飞书集成端点，位于 `/api/v1/user/lark-integration/` 路径下
-- 新增凭证管理（POST/PUT/DELETE /credentials）、OAuth设备流认证（/auth/*）、绑定自动化（/bind/*）等12个新端点
-- 更新路由结构图以反映新的用户级飞书集成路由
-- 新增用户级飞书集成的请求/响应示例和错误处理说明
-- 修正现有飞书集成文档中的路由路径，区分用户级与实例级接口
+- 路由结构图已反映用户级飞书集成路由与凭证管理端点
 
 ## 目录
 1. [简介](#简介)

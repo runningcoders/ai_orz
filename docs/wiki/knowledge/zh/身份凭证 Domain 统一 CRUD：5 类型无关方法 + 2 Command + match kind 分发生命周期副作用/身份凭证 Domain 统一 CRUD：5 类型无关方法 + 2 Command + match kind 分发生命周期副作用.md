@@ -9,18 +9,20 @@ scope:
   - "src/service/dal/lark.rs"
   - "src/service/dal/message_channel.rs"
 source_files:
-  - src/service/domain/finance/mod.rs:Ln-Lm（IdentityCredentialManage trait + Commands）
-  - src/service/domain/finance/identity_credential.rs:Ln-Lm（统一 CRUD 实现）
-  - src/service/dal/user.rs:Ln-Lm（save_identity_credentials 乐观锁并发）
-  - src/service/dal/lark.rs:Ln-Lm（find_channels_by_credential_id + handover_listeners）
-  - src/service/dal/message_channel.rs:Ln-Lm（渠道引用检查）
+  - src/service/domain/finance/mod.rs#L1-L120（IdentityCredentialManage trait + CreateCredentialCmd/UpdateCredentialCmd）
+  - src/service/domain/finance/identity_credential.rs#L1-L454（统一 CRUD 实现：create_credential/update_credential/delete_credential/set_default_credential/github_integration_status/tavily_integration_status + lark 授权绑定）
+  - src/service/dal/user.rs#L86-L150（UserDal 凭证行级方法：query_credentials/insert_credential/update_credential/soft_delete_credential/find_default_credential/set_default_credential/clear_default_credential）
+  - src/service/dao/user_credential/mod.rs#L1-L102（UserCredentialDao trait + UserCredentialQuery）
+  - src/service/dao/user_credential/sqlite.rs#L216-L312（set_default 同事务清旧立新 + clear_default）
+  - src/service/dal/lark.rs#L1-L50（find_channels_by_credential_id + handover_listeners_after_credential_change）
+  - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：UserCredentialPo → LarkAppCredentials）
+  - src/service/dal/message_channel.rs#L1-L50（渠道凭证引用检查 + resolve_lark_credentials 消费）
   - src/pkg/tool_registry/lark_cli.rs:Ln-Lm（clear_cli_config）
   - src/pkg/tool_registry/gh_cli.rs:Ln-Lm（clear_gh_auth）
-  - docs/archive/design-archive/message_channel_design.md
-  - docs/archive/design-archive/lark_cli_integration.md
-  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md
+  - docs/plan/用户身份凭证独立表落地.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
   - docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
+  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
 ---
 
 # 身份凭证 Domain 统一 CRUD

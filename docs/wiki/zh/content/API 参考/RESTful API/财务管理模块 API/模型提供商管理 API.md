@@ -17,7 +17,22 @@
 - [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs)
 - [src/handlers/finance/model_provider/update_model_provider.rs](src/handlers/finance/model_provider/update_model_provider.rs)
 - [common/src/enums/agent.rs](common/src/enums/agent.rs)  ← ModelProviderStatus 新增 Disabled=2
+- [src/service/domain/finance/identity_credential.rs](src/service/domain/finance/identity_credential.rs)
+- [src/models/user_credential.rs](src/models/user_credential.rs)
+- [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
+- [src/service/dao/user_credential/sqlite.rs](src/service/dao/user_credential/sqlite.rs)
+- [common/src/api/tavily_integration.rs](common/src/api/tavily_integration.rs)
+- [src/handlers/finance/tavily_integration/create_credential.rs](src/handlers/finance/tavily_integration/create_credential.rs)
+- [src/handlers/finance/tavily_integration/get_status.rs](src/handlers/finance/tavily_integration/get_status.rs)
+- [docs/plan/用户身份凭证独立表落地.md](docs/plan/用户身份凭证独立表落地.md)
 </cite>
+
+## 更新摘要
+**变更内容（2026-08-19 增量更新）**
+- 新增 Embedding Provider 支持引用：ModelCapability::Embedding、Disabled=2 状态管理
+- 新增凭证 API 端点引用：identity_credential 统一 Domain CRUD + Tavily 集成凭证
+- 新增 user_credentials 独立表落地引用
+- 补充 Tavily 集成凭证 API DTO 与 Handler 文件引用
 
 ## 目录
 1. [简介](#简介)
@@ -388,9 +403,17 @@ R --> T["RebuildVectorsTask"]
   - 查询参数：task_id（用于兼容）
   - 响应：RebuildProgressResponse
 
+- **凭证管理 API（新增引用）**
+  - Tavily 集成状态：GET /api/v1/finance/identity/tavily/status
+  - Tavily 凭证 CRUD：POST/PUT/DELETE /api/v1/finance/identity/tavily/credentials
+  - Tavily 默认凭证：POST /api/v1/finance/identity/tavily/credentials/default
+  - 统一 Domain：identity_credential_manage() 提供 create/update/delete/set_default 类型无关 CRUD
+
 章节来源
 - [common/src/api/model_provider.rs:9-391](common/src/api/model_provider.rs#L9-L391)
 - [src/handlers/finance/model_provider/test_connection.rs:1-68](src/handlers/finance/model_provider/test_connection.rs#L1-L68)
 - [src/handlers/finance/model_provider/call_model.rs:1-42](src/handlers/finance/model_provider/call_model.rs#L1-L42)
 - [src/handlers/finance/model_provider/switch_embedding.rs:1-55](src/handlers/finance/model_provider/switch_embedding.rs#L1-L55)
 - [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
+- [common/src/api/tavily_integration.rs:1-107](common/src/api/tavily_integration.rs#L1-L107)
+- [src/service/domain/finance/identity_credential.rs:1-454](src/service/domain/finance/identity_credential.rs#L1-L454)

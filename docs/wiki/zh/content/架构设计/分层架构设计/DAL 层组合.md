@@ -9,10 +9,25 @@
 - [src/service/dal/tool.rs](src/service/dal/tool.rs)
 - [src/service/dal/memory.rs](src/service/dal/memory.rs)
 - [src/service/dal/organization.rs](src/service/dal/organization.rs)
+- [src/service/dal/user.rs](src/service/dal/user.rs)
 - [src/service/dao/mod.rs](src/service/dao/mod.rs)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
+- [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
+- [src/service/dao/lark_message_channel/mod.rs](src/service/dao/lark_message_channel/mod.rs)
 - [src/pkg/storage/mod.rs](src/pkg/storage/mod.rs)
+- [src/models/user_credential.rs](src/models/user_credential.rs)
+
+### 本文关联的设计/计划文档
+- [用户身份凭证独立表设计](docs/design/user_credentials_design.md) — UserCredentialDao 一表一 DAO 模式、行级 CRUD
+- [用户身份凭证独立表落地](docs/plan/用户身份凭证独立表落地.md) — UserDal 凭证方法替换、DAO/DAL 变更
 </cite>
+
+## 更新摘要
+**变更内容（2026-08-19 增量更新）**
+- 新增 UserDal：组合 UserCredentialDao 提供凭证 CRUD、默认凭证管理
+- 新增 UserCredentialDao：独立 user_credentials 表 DAO，行级 CRUD 取代原 JSON read-modify-write
+- 新增 LarkMessageChannelDao：Lark 消息通道外部 API 出站调用
+- 更新 DAL/DAO 架构图：反映 UserDal + UserCredentialDao + LarkMessageChannelDao
 
 ## 目录
 1. [简介](#简介)
@@ -41,14 +56,16 @@ C["ProjectDal"]
 D["ToolDal"]
 E["MemoryDal"]
 F["OrganizationDal"]
+G["UserDal"]
 end
 subgraph "DAO 层"
 DA["AgentDao / AgentVectorDao / AgentStatsDao"]
 DB["MessageDao / MessageVectorDao"]
 DC["ProjectDao / ProjectVectorDao / ProjectStatsDao"]
-DD["ToolDao / ToolVectorDao / ToolStatsDao"]
+DD["ToolDao / ToolCallDao / ToolVectorDao / ToolStatsDao"]
 DE["MemoryDao / MemoryVectorDao"]
 DF["OrganizationDao"]
+DG["UserCredentialDao / LarkMessageChannelDao"]
 end
 subgraph "存储层"
 S["Storage<br/>SqlitePool + VectorStore + Stats"]
@@ -59,12 +76,14 @@ C --> DC
 D --> DD
 E --> DE
 F --> DF
+G --> DG
 DA --> S
 DB --> S
 DC --> S
 DD --> S
 DE --> S
 DF --> S
+DG --> S
 ```
 
 图表来源
@@ -84,6 +103,7 @@ DF --> S
 - ToolDal：组合 ToolDao、ToolCallDao、ToolVectorDao、CortexDao、ModelProviderDao、ToolStatsDao，提供工具注册、执行、搜索、统计、内置工具同步等能力。
 - MemoryDal：组合 MemoryDao、MemoryVectorDao、CortexDao、ModelProviderDao，提供记忆创建/更新/删除、混合搜索、知识图谱遍历、短期记忆沉淀、向量重建等能力。
 - OrganizationDal：组合 OrganizationDao，提供组织初始化检查、CRUD、计数等能力。
+- UserDal：组合 UserCredentialDao、LarkMessageChannelDao，提供凭证 CRUD、默认凭证管理、Lark 消息通道配置与推送等能力。
 
 章节来源
 - [src/service/dal/agent.rs:28-73](src/service/dal/agent.rs#L28-L73)
@@ -92,6 +112,7 @@ DF --> S
 - [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
 - [src/service/dal/memory.rs:39-68](src/service/dal/memory.rs#L39-L68)
 - [src/service/dal/organization.rs:13-32](src/service/dal/organization.rs#L13-L32)
+- [src/service/dal/user.rs:28-73](src/service/dal/user.rs#L28-L73)
 
 ## 架构总览
 DAL 层采用“组合模式”：每个 DAL 持有多个 DAO 的 trait 对象，通过方法编排完成复杂业务逻辑。统一的 SearchParams/Query/Search 参数在 DAL 层组装，DAO 层专注 SQL/向量/统计的具体实现。存储层通过 Storage 统一管理 SqlitePool、VectorStore 与 Stats，支持多后端向量存储与连接池配置。

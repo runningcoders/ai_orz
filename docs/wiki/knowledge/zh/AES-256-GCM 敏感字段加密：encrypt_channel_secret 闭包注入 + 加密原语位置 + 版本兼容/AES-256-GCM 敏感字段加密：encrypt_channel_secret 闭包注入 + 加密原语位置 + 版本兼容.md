@@ -11,13 +11,16 @@ source_files:
   - src/pkg/crypto.rs:Ln-Lm（encrypt_channel_secret + decrypt_channel_secret AES-256-GCM 实现）
   - src/pkg/config.rs:Ln-Lm（MASTER_KEY 加载与校验）
   - common/src/models/identity_credentials.rs:Ln-Lm（encrypt_sensitive/apply_patch 闭包参数）
-  - src/service/domain/finance/identity_credential.rs:Ln-Lm（Domain 层闭包传入位置 + 调用点）
-  - src/service/dal/user.rs:Ln-Lm（decrypt 场景——读取凭证后解密敏感字段用于渠道建连）
-  - docs/archive/design-archive/message_channel_design.md
-  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md
+  - src/service/domain/finance/identity_credential.rs#L91-L183（Domain 层闭包传入位置 + 调用点：create_credential encrypt_sensitive / update_credential apply_patch）
+  - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：解密 app_secret 用于渠道建连）
+  - src/service/dal/message_channel.rs#L1-L50（渠道凭证解析 + resolve_lark_credentials 消费）
+  - src/models/user_credential.rs#L1-L140（UserCredentialPo.detail：Json<CredentialDetail> 加密态存储）
+  - migrations/20260420000000_initial.sql#L405-L419（user_credentials 表 detail TEXT 列）
+  - docs/plan/用户身份凭证独立表落地.md
   - docs/wiki/zh/content/架构设计/数据存储架构.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
   - docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
+  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
 ---
 
 # AES-256-GCM 敏感字段加密（闭包注入模式）
@@ -28,9 +31,9 @@ source_files:
 **闭包注入解耦模式（关键设计）**：common 层模型（CredentialDetail.encrypt_sensitive / apply_patch）需要对敏感字段加密，但 common crate 不能直接依赖后端 pkg::crypto（否则 common 被污染前端 WASM 构建、common 单元测试无法独立跑）。解决方式：**加密/解密原语以闭包形式从 Domain 层传入模型层**——`encrypt_sensitive(encrypt_fn: impl Fn(&str) -> Result<String>)` 和 `apply_patch(patch, encrypt_fn: impl Fn(&str) -> Result<String>)` 的 encrypt_fn 参数就是 Domain 传入的 `|s| pkg::crypto::encrypt_channel_secret(s)`；common 本身零 crypto 依赖。
 
 **调用链概览**：
-- 创建流程（加密点 1）：Handler 明文 CreateCredentialCmd → Domain.create_credential → `detail = detail.encrypt_sensitive(|s| pkg::crypto::encrypt_channel_secret(s))?`（仅敏感字段加密）→ 用户凭证库 JSON 序列化 → 落库 users.identity_credentials 列。
+- 创建流程（加密点 1）：Handler 明文 CreateCredentialCmd → Domain.create_credential → `detail = detail.encrypt_sensitive(|s| pkg::crypto::encrypt_channel_secret(s))?`（仅敏感字段加密）→ UserCredentialPo.detail 序列化 → 落库 user_credentials 表 detail TEXT 列。
 - 更新流程（加密点 2）：Domain.update_credential → `impact = credential.detail.apply_patch(patch, |s| pkg::crypto::encrypt_channel_secret(s))?` → **仅被补丁覆盖成新明文的敏感字段**进入 encrypt_fn 调用（未改动字段不重复加密，避免二次加密解密失败）。
-- 渠道建连流程（解密点 唯一）：MessageChannelDal.create/connect → 查用户凭证库 → `pkg::crypto::decrypt_channel_secret(encrypted_app_secret)?` → 得到明文 secret 用于飞书 WS 建联 / API 请求。**明文绝不落地**（仅内存中短暂持有，建联完成立即 drop）。
+- 渠道建连流程（解密点 唯一）：MessageChannelDal.create/connect → 查 user_credentials 表 → resolve_lark_credentials 解密 app_secret → 得到明文 secret 用于飞书 WS 建联 / API 请求。**明文绝不落地**（仅内存中短暂持有，建联完成立即 drop）。
 
 ## §2 关键文件路径表格（读代码直接跳）
 

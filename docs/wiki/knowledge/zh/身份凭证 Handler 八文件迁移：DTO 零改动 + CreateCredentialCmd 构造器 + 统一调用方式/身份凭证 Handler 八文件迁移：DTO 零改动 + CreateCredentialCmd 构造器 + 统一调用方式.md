@@ -21,11 +21,14 @@ source_files:
   - src/handlers/finance/github_integration/delete_credential.rs:Ln-Lm
   - src/handlers/finance/github_integration/set_default_credential.rs:Ln-Lm
   - common/src/api/finance_credential.rs:Ln-Lm（若命名不同则 common/src/api/ 下对应凭证模块）
-  - src/service/domain/finance/mod.rs:Ln-Lm（CreateCredentialCmd / UpdateCredentialCmd 定义）
+  - src/service/domain/finance/mod.rs#L1-L120（CreateCredentialCmd / UpdateCredentialCmd 定义）
+  - src/service/domain/finance/identity_credential.rs#L91-L183（create_credential / update_credential 实现 + 类型分发联动）
+  - src/models/user_credential.rs#L1-L140（UserCredentialPo + UserCredential 实体）
   - docs/design/api_protocol_convention.md
-  - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md
+  - docs/plan/用户身份凭证独立表落地.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md
+  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
 ---
 
 # 身份凭证 Handler 八文件迁移

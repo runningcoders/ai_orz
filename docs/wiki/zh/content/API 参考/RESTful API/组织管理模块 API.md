@@ -12,7 +12,17 @@
 - [src/service/domain/organization/mod.rs](src/service/domain/organization/mod.rs)
 - [src/service/dal/organization.rs](src/service/dal/organization.rs)
 - [src/models/organization.rs](src/models/organization.rs)
+
+### 本文关联的设计文档
+- [api_protocol_convention.md](docs/design/api_protocol_convention.md) — API 协议规范、DTO 单一事实源
+- [timestamp_convention.md](docs/design/timestamp_convention.md) — 时间戳统一为毫秒级 Unix 时间戳（i64）、UTC 时区
 </cite>
+
+## 更新摘要
+**变更内容（2026-08-19 增量更新）**
+- 所有时间字段（created_at/updated_at）统一为毫秒级 Unix 时间戳（i64），UTC 时区
+- 新增 timestamp_convention.md 设计文档引用
+- 新增 api_protocol_convention.md 设计文档引用
 
 ## 目录
 1. [简介](#简介)

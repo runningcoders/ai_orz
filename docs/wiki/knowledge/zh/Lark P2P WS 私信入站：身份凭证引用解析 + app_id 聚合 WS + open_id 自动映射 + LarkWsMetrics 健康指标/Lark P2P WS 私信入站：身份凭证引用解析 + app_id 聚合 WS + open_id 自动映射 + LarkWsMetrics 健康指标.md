@@ -9,28 +9,21 @@ scope:
   - "src/models/message_channel.rs"
   - "src/pkg/adapter/message.rs"
 source_files:
-  - src/service/dal/lark.rs#L122-L160（LarkMessageChannelDal 结构体四字段：message_channel_dal 基础+ lark_dao + user_dao（凭证引用解析）+ running RwLock + callback RwLock；辅助 fn listens_inbound 缺省=true；fn identity_mode_of 缺省="auto"）
-  - src/service/dal/lark.rs:LarkMessageChannelDal.start()（实现 MessageInboundAdapter.start：running 冲突检测 + set_callback → query_enabled_lark_channels 全部开启入站的飞书渠道 → filter listens_inbound=true → resolve_channel_credentials(sys_ctx, &channel) 查凭证引用 → 按 app_id HashMap 去重（同 app_id 共享 WS 连接）→ 遍历 by_app 调用 lark_dao.start_listener(app, credentials, LarkAdapterHandler { callback })）
-  - src/service/dal/lark.rs:resolve_channel_credentials(ctx, &channel)（飞书凭证引用解析：channel.config.lark_credential_id → 先看 ChannelPushOptions.user 自带 identity_credentials → 无则 user_dal 查用户凭证库 kind=LarkApp → 找到后通过 AES-256-GCM 解密得到 app_id + app_secret → 返回 LarkAppCredentials。整个过程引用只读不落明文）
-  - src/service/dal/lark.rs:query_enabled_lark_channels()（通过基础 MessageChannelDal 查所有 status=启用 + channel_type=Lark + config.lark_listen_inbound != Some(false) 的渠道）
-  - src/service/dao/lark/http.rs#L236-L260（LarkWsTokenSource：WS 连接鉴权 token。因为 WS 会断线重连，重连时必须重新拉取 tenant_access_token；LarkWsTokenSource 用共享 per-app token_caches（HashMap<app_id, SharedTokenCache>）缓存避免重复请求；在重连时异步调用 `internal.tenant_access_token()`；返回的 token 用于 WS 建连握手）
-  - src/service/dao/lark/ws.rs 或对应文件:Ln-Lm（LarkDao.start_listener(app, credentials, handler)：WebSocket 长连接建立 + 事件订阅（im.message.receive_v1）+ 心跳检测 + 自动断线重连（指数退避：1s→2s→4s→30s max）+ 每条 LarkEventPayload 通过 handler.on_event(payload) 交付给上层 LarkAdapterHandler）
-  - src/service/dal/lark.rs 内定义的 LarkAdapterHandler 结构（桥接层：LarkEventHandler 接口把飞书 im.message.receive_v1 事件 → AdaptedMessage。关键映射：event.payload.event.sender.sender_id.open_id → AdaptedMessage.external_user_id；event.payload.event.message_id → external_message_id；event.payload.event.create_time → received_at；文本消息 content 字段 base64 decode → text → content）
-  - src/service/dal/lark.rs:listener_stats() → LarkWsMetrics（调用 lark_dao.listener_stats()：按 app_id 维度聚合指标 current_connections/reconnect_count/last_ping_latency_ms/inbound_message_count_last_minute/disconnect_reason）
-  - src/models/message_channel.rs#L206-L240（ChannelConfig lark 字段：lark_credential_id 引用 + lark_identity_mode auto/bot/user + lark_open_id 用户绑定 + lark_user_name 展示 + lark_listen_inbound 是否监听入站）
-  - src/producer/message_channel.rs 收到 AdaptedMessage 后的用户身份自动映射：AdaptedMessage(ChannelType=Lark, external_user_id=open_xxx) → 查 MessageChannel 表中 lark_open_id = open_xxx 的记录 → 得到该渠道归属 user_id + agent_id → 如果消息接收方 agent_id = 渠道绑定的 agent，则 sender = user_id，receiver = agent_id → 新建 MessagePo → 发布 NewMessage AOP 事件唤醒 Agent
-  - docs/archive/design-archive/lark_cli_integration.md
-  - docs/archive/design-archive/message_channel_design.md
-  - docs/archive/plan-archive/飞书P2P消息集成.md（Lark P2P 双向链路专项：三级凭证解析 + open_id 映射 + v4 入站中台落地）
-  - docs/archive/plan-archive/lark-cli_集成二期.md（凭证用户级管理 + WS 指数退避重连 = 本卡依赖的底层能力）
+  - src/service/dal/lark.rs#L1-L50（LarkMessageChannelDal 结构体 + resolve_channel_credentials 三级引用解析）
+  - src/service/dal/lark.rs:LarkMessageChannelDal.start()（按 app_id 聚合 + resolve_channel_credentials 查凭证引用）
+  - src/service/dal/lark.rs:resolve_channel_credentials(ctx, &channel)（飞书凭证引用解析：channel.config.lark_credential_id → UserCredentialDao.find_by_id → 解密得到 app_id + app_secret）
+  - src/service/dao/user_credential/mod.rs#L71-L83（find_by_id + find_default 方法）
+  - src/service/dao/user_credential/sqlite.rs#L165-L214（find_by_id + find_default SQLite 实现）
+  - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：UserCredentialPo → LarkAppCredentials）
+  - src/service/dao/lark/http.rs#L236-L260（LarkWsTokenSource：WS 连接鉴权 token）
+  - src/service/dao/lark/ws.rs 或对应文件:Ln-Lm（LarkDao.start_listener：WebSocket 长连接 + 事件订阅 + 自动断线重连）
+  - src/models/message_channel.rs#L206-L240（ChannelConfig lark 字段：lark_credential_id 引用）
+  - src/service/dal/message_channel.rs#L1-L50（MessageChannelDal 凭证解析 + resolve_lark_credentials 消费）
+  - docs/plan/用户身份凭证独立表落地.md
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md
   - docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/事件生产者/消息通道生产者.md
-  - docs/wiki/zh/content/API 参考/RESTful API/财务管理模块 API/消息渠道管理 API.md
-  - docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/系统健康检查.md（Lark WS 指标面板展示）
-  - 【平行卡1】消息渠道入站适配中台：MessageInboundAdapter trait + Registry + start_all stop_all（本 Batch 卡 3）
-  - 【平行卡2】身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用（lark_credential_id 凭证引用的维护者）
-  - 【平行卡3】AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容（resolve_channel_credentials 解密凭证时调用）
+  - docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
+  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
 ---
 
 # Lark P2P WS 私信入站（凭证引用解析 + 多渠道按 app_id 聚合 + 用户身份自动映射 + 健康指标）

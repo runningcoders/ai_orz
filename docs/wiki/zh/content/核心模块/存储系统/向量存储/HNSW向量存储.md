@@ -2,13 +2,16 @@
 
 <cite>
 **本文引用的文件**
-- [hnsw.rs](src/pkg/storage/hnsw.rs)
-- [vector.rs](src/pkg/storage/vector.rs)
-- [mod.rs](src/pkg/storage/mod.rs)
+- [hnsw.rs（HnswStore 实现）](src/pkg/storage/hnsw.rs)
+- [vector.rs（VectorStore trait）](src/pkg/storage/vector.rs)
+- [mod.rs（Storage 门面）](src/pkg/storage/mod.rs)
 - [vector_search_architecture.md](docs/vector_search_architecture.md)
 - [2026-07-16-hnsw-persistence-and-async-rebuild.md](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md)
 - [config.rs](common/src/config.rs)
 - [vector.rs（模型定义）](src/models/vector.rs)
+- [model_provider.rs（Embedding Provider 切换 Domain）](src/service/domain/finance/model_provider.rs)
+- [model_provider.rs（DAL 重建调度）](src/service/dal/model_provider.rs)
+- [identity_credential.rs（凭证 Domain）](src/service/domain/finance/identity_credential.rs)
 </cite>
 
 ## 目录
@@ -22,6 +25,12 @@
 8. [故障排查指南](#故障排查指南)
 9. [结论](#结论)
 10. [附录](#附录)
+
+## 更新摘要
+**变更内容（2026-08-19 增量更新）**
+- 补充 Embedding Provider 切换触发的异步重建引用：model_provider Domain / DAL 重建调度
+- 补充向量数据结构元信息（VectorMeta / VectorRow / VectorIndexParams / SearchMatchInfo）行号精确定位
+- 统一 cite 条目标注子模块职责（HnswStore 实现 / VectorStore trait / Storage 门面）
 
 ## 简介
 本文件面向 AI Orz 的 HNSW 向量存储实现，系统性阐述 HNSW（分层可导航小世界图）在本项目中的原理、实现细节与工程化落地。内容覆盖：
@@ -233,8 +242,8 @@ Domain-->>API : RebuildProgressResponse
 - SearchMatchInfo：混合搜索结果元信息，记录匹配类型、向量距离、关键词字段、BM25 评分等
 
 章节来源
-- [vector.rs:9-67](src/models/vector.rs#L9-L67)
-- [vector.rs:94-136](src/models/vector.rs#L94-L136)
+- [vector.rs:9-67](src/models/vector.rs#L9-L67)：VectorMeta / VectorRow / VectorSearchHit / VectorIndexParams
+- [vector.rs:94-125](src/models/vector.rs#L94-L125)：MatchType / SearchMatchInfo（混合搜索元信息）
 
 ## 依赖关系分析
 - Storage 门面根据配置选择后端：InMemory/LanceDB/Hnsw/SqliteVss

@@ -1,13 +1,15 @@
 ---
 kind: RAG 原子知识卡
-name: 测试与质量工程：1124测试100%通过 + 984后端82前端58common + 87集成测试19targets + cargo-llvm-cov PR38%/main45%门槛 + clippy -D warnings零容忍 + Playwright E2E
+name: 测试与质量工程：974测试100%通过 + 984后端82前端58common + 87集成测试19targets + cargo-llvm-cov PR38%/main45%门槛 + clippy -D warnings零容忍 + Playwright E2E
 category: 基础设施 / 质量工程
 scope:
   - "tests/common/**"
   - "tests/integration/**"
+  - "tests/e2e/**"
   - "tests/http_handler_macro_test.rs"
   - "src/**/*test_support.rs"
   - "src/**/tests/*.rs"
+  - "src/service/dal/*_test.rs"
   - ".github/workflows/**"
   - "frontend/tests/**"
   - "common/**"
@@ -16,6 +18,11 @@ source_files:
   - tests/common/factories/agent_factory.rs (测试工厂：AgentFactory + create_test_agent(ctx) → 随机 id + 默认 status=Active + 默认 ModelProvider InMemoryMock；所有 Agent 集成测试用工厂造数据，不手写 UserPo/AgentPo)
   - tests/integration/ (87 集成测试 19 targets：a2a_flow agent_awaken agent_management auth_sysinit core_crud cron github lark memory message_channel message_delivery message_vector preset_skills project_owner project_task real_model system_cron tool_call tool_vector vector_degradation 共 20 个文件；87 指文件×模块组合)
   - tests/integration/agent_management_test.rs#L1-L100 (Agent CRUD + 入职五步集成测试：模拟 onboard_agent → 断言 agents.status=Active + installed_skill_packs COUNT=3 + agent_tool_bindings COUNT≥5；步骤 3 失败模拟 → 回滚 agent_id COUNT=0)
+  - tests/integration/browser_tool_test.rs (浏览器工具集成测试：Playwright 驱动浏览器工具调用，验证 DOM 操作与工具输出一致性)
+  - tests/integration/message_channel_lifecycle_test.rs (消息渠道生命周期测试：凭证-渠道引用管理、OAuth 降级、连接测试结构化响应)
+  - tests/e2e/ (Playwright E2E 端到端测试：playwright.config.ts + tests/auth.setup.ts + tests/navigation.spec.ts + scripts/start-server.mjs)
+  - src/service/dal/lark_test.rs#L1-L283 (飞书 DAL 单元测试：凭证解析、渠道定位、监听生命周期)
+  - src/service/dal/message_channel_test.rs (消息渠道 DAL 单元测试：渠道 CRUD、引用完整性、状态过滤)
   - src/service/dao/cron_trigger/sqlite_test.rs (DAO 层单元测试：#[sqlx::test] 独立内存 SQLite 数据库；每次 test 全新 DB，不依赖全局状态；test_create_cron_trigger + test_list_due_triggers + test_query_count_reuse_where 三条独立)
   - .github/workflows/ci.yml (GitHub CI 流水线：4 Stage = check(clippy --all-targets -D warnings) + test(cargo test --workspace --exclude frontend 后端 + cargo test -p frontend wasm32) + coverage(cargo-llvm-cov --threshold 38% PR / 45% main) + build(dist release))
   - docs/archive/design-archive/testing_guidelines.md#L1-L50 (§测试分层金字塔：DAO/DAL/Domain/Handler 单元 → 集成测试 target → E2E Playwright；§#[sqlx::test] 隔离约定；§common 测试 init_full_test_env 启动顺序)
@@ -24,7 +31,7 @@ source_files:
   - docs/archive/plan-archive/AOP生产消费事件中心重构.md（§集成测试 target=event_delivery：AOP publish → 消费者 ack/nack → message_delivery_attempts 查询断言链路）
   - docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md（§集成测试 target=credential_crud：8 个 Handler 接口调用断言 AES256-GCM 加解密 roundtrip）
   - docs/archive/plan-archive/Agent管理集成测试.md（§19 集成测试 target 清单与依赖顺序 §onboard_agent 回滚断言 §UserRole 权限组合三角色 × 三资源矩阵）
-  - docs/wiki/zh/content/测试指南/测试指南.md（测试入口总览：1124 测试分布 + 984 后端细分 897 单元 87 集成 + 82 前端 + 58 common + 运行命令 `cargo test --workspace`）
+  - docs/wiki/zh/content/测试指南/测试指南.md（测试入口总览：974 测试分布 + 984 后端细分 897 单元 87 集成 + 82 前端 + 58 common + 运行命令 `cargo test --workspace`）
   - docs/wiki/zh/content/测试指南/端到端测试基础设施.md（Playwright E2E：本地命令 `make e2e` + 环境变量 AI_ORZ_ADMIN_PASSWORD + 失败视频自动保存到 tests/e2e/test-results/）
   - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md（CI 四阶段：check/test/coverage/build + PR coverage threshold 38% + main branch 45% + cargo-llvm-cov 运行 `--fail-under-lines` 严格模式）
   - 【平行卡 1】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（8 类消费者注册顺序测试：a2a_flow 集成测试断言 CronTriggerConsumer 必须在 AgentLoopConsumer 之后 register）
@@ -33,9 +40,9 @@ source_files:
 
 ## §1 概述
 
-**本卡角色**：1124 测试 100% 通过率 + 覆盖率门槛 + clippy 零容忍体系的知识卡。覆盖测试金字塔 5 层（DAO 单元 897 / 集成测试 87×19 targets / 前端 82 / common 58）、`#[sqlx::test]` 独立内存 SQLite、init_full_test_env 真实启动顺序、cargo-llvm-cov PR38%/main45% 门槛、clippy `-D warnings` 后端 + wasm32 双端、Playwright E2E（仅本地）。**定位：新增测试放哪层、CI 覆盖率卡门槛怎么过、排查集成测试 Agent 入职失败因为 init_base_data 顺序错、写 sqlx::query! 报 .sqlx 元数据找不到时读。**
+**本卡角色**：974 测试 100% 通过率 + 覆盖率门槛 + clippy 零容忍体系的知识卡。覆盖测试金字塔 5 层（DAO 单元 897 / 集成测试 87×19 targets / 前端 82 / common 58）、`#[sqlx::test]` 独立内存 SQLite、init_full_test_env 真实启动顺序、cargo-llvm-cov PR38%/main45% 门槛、clippy `-D warnings` 后端 + wasm32 双端、Playwright E2E（仅本地）。**定位：新增测试放哪层、CI 覆盖率卡门槛怎么过、排查集成测试 Agent 入职失败因为 init_base_data 顺序错、写 sqlx::query! 报 .sqlx 元数据找不到时读。**
 
-- **1124 测试 100% 通过率分层（金字塔自上而下）**（测试指南总览）：① 后端 984 = DAO/DAL/Domain/Handler/Pkg 单元测试 897（单个文件独立，每个文件顶部 `#[cfg(test)] mod tests`）+ 集成测试 87（跨模块，tests/integration/ 每个 .rs 一个独立 test target，互不污染）；② 前端 82（frontend/tests/，cargo test -p frontend 编译为 wasm32-unknown-unknown，通过 Dioxus Runtime mock DOM）；③ common crate 58（DTO 序列化反序列化 roundtrip、枚举 has_permission 三角色矩阵、PagedResult::map 泛型断言）。通过率 = 全部测试必须 green，CI 中任一测试 fail = PR 不可合并。
+- **974 测试 100% 通过率分层（金字塔自上而下）**（测试指南总览）：① 后端 984 = DAO/DAL/Domain/Handler/Pkg 单元测试 897（单个文件独立，每个文件顶部 `#[cfg(test)] mod tests`）+ 集成测试 87（跨模块，tests/integration/ 每个 .rs 一个独立 test target，互不污染）；② 前端 82（frontend/tests/，cargo test -p frontend 编译为 wasm32-unknown-unknown，通过 Dioxus Runtime mock DOM）；③ common crate 58（DTO 序列化反序列化 roundtrip、枚举 has_permission 三角色矩阵、PagedResult::map 泛型断言）。通过率 = 全部测试必须 green，CI 中任一测试 fail = PR 不可合并。
 - **覆盖率门槛 PR 38% / main 45%（cargo-llvm-cov 严格 lines 模式）**（CI coverage stage）：`cargo llvm-cov --workspace --exclude frontend --fail-under-lines {38|45} --lcov --output-path coverage.lcov`；统计规则：test-only 代码（tests/*、*test_support.rs、cfg(test) mod 内部）不计入 lines 覆盖率（自动排除）。低于门槛 fail；main 合并到 release 前 45% 门槛更高，防止发布版本覆盖率退化；覆盖率低于阈值可加 PR 评论「此重构测试覆盖待后续补全，豁免一次」，但需 2 个 reviewer approve。
 - **clippy `-D warnings` 双端零容忍（后端 x86 + 前端 wasm32）**（CI check stage）：① 后端默认 target x86_64-apple-darwin：`cargo clippy --workspace --exclude frontend --all-targets -- -D warnings`；② 前端 target wasm32-unknown-unknown（Dioxus WASM）：`cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings`；双端任一 warning 触发即 CI fail。常见清理：unused_import / dead_code / explicit_write（std::io::Write 未 import 时自动触发）/ match 多余 arm；clippy lint 配置在 `.cargo/config.toml`，自定义规则在 ai-orz-macros 里（禁止 role >= 2 数字比较等项目级红线）。
 

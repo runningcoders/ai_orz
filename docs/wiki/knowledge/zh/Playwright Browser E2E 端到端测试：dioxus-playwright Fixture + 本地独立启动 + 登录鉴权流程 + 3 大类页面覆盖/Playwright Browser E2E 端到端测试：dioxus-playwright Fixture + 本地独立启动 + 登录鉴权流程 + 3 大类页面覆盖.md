@@ -10,6 +10,10 @@ scope:
   - "common/src/enums/**/*.rs"
   - "src/models/**/*.rs"
 source_files:
+  - "tests/e2e/playwright.config.ts"
+  - "tests/e2e/tests/auth.setup.ts"
+  - "tests/e2e/tests/navigation.spec.ts"
+  - "tests/e2e/scripts/start-server.mjs"
   - "tests/common/env.rs#L1-L87"
   - "tests/integration/agent_management_test.rs"
   - "Cargo.toml#L86-L172"

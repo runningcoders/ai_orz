@@ -15,6 +15,7 @@ scope:
   - "common/src/api/organization.rs"
   - "frontend/src/pages/finance/model_providers.rs"
   - "frontend/src/pages/reception.rs"
+  - "frontend/src/api/mod.rs"
 source_files:
   - common/src/enums/agent.rs#L118-L135 (ModelProviderStatus 枚举：Deleted=0 软删除 / Normal=1 启用 / Disabled=2 未启用)
   - common/src/api/model_provider.rs#L9-L80 (CreateModelProviderResponse 含 status/rebuild_task_id；UpdateModelProviderResponse 含 rebuild_task_id)
@@ -28,6 +29,7 @@ source_files:
   - src/handlers/organization/initialize_system.rs#L1-L300 (初始化动态步骤数：3 + chat + embedding；条件化创建 provider；边界校验)
   - frontend/src/pages/finance/model_providers.rs#L1-L600 (创建 Modal capability 选择；禁用 status=2；删除 Embedding 警示文案；上下文长度字段表单)
   - frontend/src/pages/reception.rs#L1-L700 (初始化 2 步表单；对话/向量模型可选 + 跳过后果提示；上下文长度输入)
+  - frontend/src/api/mod.rs (API 客户端统一入口；model_provider 模块请求转发)
   - tests/integration/model_provider_embedding_test.rs (Embedding 生命周期 6+ 用例：创建/禁用/切换/重建/上下文长度)
   - docs/plan/系统初始化模型配置策略调整.md
   - docs/wiki/zh/content/功能模块/模型提供商管理.md
@@ -35,6 +37,7 @@ source_files:
   - docs/wiki/zh/content/API 参考/RESTful API/财务管理模块 API/模型提供商管理 API.md
   - docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
   - 【平行卡】docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+  - 【测试覆盖引用】docs/wiki/knowledge/zh/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E.md
 ---
 
 # Embedding Provider 生命周期与重建触发条件

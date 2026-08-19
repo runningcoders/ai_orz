@@ -8,6 +8,13 @@
 - [src/service/domain/finance/tool_provider.rs](src/service/domain/finance/tool_provider.rs)
 - [src/service/domain/finance/message_channel.rs](src/service/domain/finance/message_channel.rs)
 - [src/service/domain/finance/attachment.rs](src/service/domain/finance/attachment.rs)
+- [src/service/domain/finance/identity_credential.rs](src/service/domain/finance/identity_credential.rs)
+- [src/models/user_credential.rs](src/models/user_credential.rs)
+- [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
+- [src/service/dao/user_credential/sqlite.rs](src/service/dao/user_credential/sqlite.rs)
+- [src/service/dal/user.rs](src/service/dal/user.rs)
+- [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
+- [docs/plan/用户身份凭证独立表落地.md](docs/plan/用户身份凭证独立表落地.md)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
 - [src/router.rs](src/router.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -32,9 +39,9 @@
 Finance Domain 作为“计费相关外部能力”的统一入口，通过 trait 聚合 ModelProvider、MessageChannel、ToolProvider、MCP Server/Tool、Attachment 等子域管理能力，对外暴露统一接口；Handler 仅做 DTO 转换与请求级编排，Domain 负责业务规则与 DAL 编排，DAL/DAO 专注数据访问。
 
 ## 项目结构
-Finance Domain 位于 service/domain/finance，采用“单例 + trait 聚合”的组织方式：
+Finance Domain 位于 service/domain/finance，采用"单例 + trait 聚合"的组织方式：
 - 单例初始化：在应用启动时通过 domain::init() 注册全局 FinanceDomainImpl，内部注入各 DAL 单例。
-- trait 聚合：FinanceDomain 暴露 model_provider_manage、message_channel_manage、tool_provider_manage、mcp_server_manage、mcp_tool_manage、attachment_manage 六个子能力入口。
+- trait 聚合：FinanceDomain 暴露 model_provider_manage、message_channel_manage、tool_provider_manage、mcp_server_manage、mcp_tool_manage、attachment_manage、identity_credential_manage 七个子能力入口。
 - 子模块实现：每个子模块实现对应 Manage trait，封装校验、合并、权限控制等规则，再委托给 DAL。
 
 ```mermaid
@@ -68,6 +75,7 @@ H --> N["AttachmentDal"]
 - 工具提供商（Tool Provider）：工具注册、查询、搜索、内置工具同步、Agent 工具借用（绑定/解绑），含协议与控制模式策略校验。
 - 消息渠道（Message Channel）：消息渠道配置 CRUD、连通性测试、分页查询。
 - 附件（Attachment）：通用上传文件资产，文本内容读写限制与安全校验，按用户隔离读取。
+- 身份凭证（IdentityCredential）：用户身份凭证独立表 user_credentials 行级 CRUD，支持 LarkApp/GithubToken/TavilyKey 等多类型；默认标记作用域由 visibility 派生（private=个人默认 / public=组织默认）；set_default 权限门控（private 仅所有者本人 / public 需 Admin+）；删除前置检查（Lark 渠道引用 Conflict 拒删）+ 后置联动（清 HOME cli config / WS 移交 / 清 gh auth）。
 
 章节来源
 - [src/service/domain/finance/model_provider.rs:13-149](src/service/domain/finance/model_provider.rs#L13-L149)

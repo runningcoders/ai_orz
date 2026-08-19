@@ -13,22 +13,51 @@
 - [src/handlers/finance/message_channel/mod.rs](src/handlers/finance/message_channel/mod.rs)
 - [src/handlers/finance/lark_integration/mod.rs](src/handlers/finance/lark_integration/mod.rs)
 - [src/handlers/finance/lark_integration/create_credential.rs](src/handlers/finance/lark_integration/create_credential.rs)
+- [src/handlers/finance/lark_integration/update_credential.rs](src/handlers/finance/lark_integration/update_credential.rs)
+- [src/handlers/finance/lark_integration/delete_credential.rs](src/handlers/finance/lark_integration/delete_credential.rs)
+- [src/handlers/finance/lark_integration/set_default_credential.rs](src/handlers/finance/lark_integration/set_default_credential.rs)
 - [src/handlers/finance/lark_integration/auth_start.rs](src/handlers/finance/lark_integration/auth_start.rs)
 - [src/handlers/finance/lark_integration/bind_start.rs](src/handlers/finance/lark_integration/bind_start.rs)
 - [src/handlers/finance/lark_integration/get_status.rs](src/handlers/finance/lark_integration/get_status.rs)
+- [src/handlers/finance/github_integration/create_credential.rs](src/handlers/finance/github_integration/create_credential.rs)
+- [src/handlers/finance/github_integration/update_credential.rs](src/handlers/finance/github_integration/update_credential.rs)
+- [src/handlers/finance/github_integration/delete_credential.rs](src/handlers/finance/github_integration/delete_credential.rs)
+- [src/handlers/finance/github_integration/set_default_credential.rs](src/handlers/finance/github_integration/set_default_credential.rs)
+- [src/service/domain/finance/identity_credential.rs](src/service/domain/finance/identity_credential.rs)
+- [src/models/user_credential.rs](src/models/user_credential.rs)
+- [src/service/dao/user_credential/mod.rs](src/service/dao/user_credential/mod.rs)
+- [src/service/dao/user_credential/sqlite.rs](src/service/dao/user_credential/sqlite.rs)
+- [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
+- [docs/plan/用户身份凭证独立表落地.md](docs/plan/用户身份凭证独立表落地.md)
 - [src/handlers/finance/tool/create_tool.rs](src/handlers/finance/tool/create_tool.rs)
 - [src/handlers/finance/mcp_server/create_mcp_server.rs](src/handlers/finance/mcp_server/create_mcp_server.rs)
 - [src/handlers/finance/message/send_message.rs](src/handlers/finance/message/send_message.rs)
 - [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs)
 - [src/handlers/finance/message_channel/create_message_channel.rs](src/handlers/finance/message_channel/create_message_channel.rs)
+- [src/handlers/finance/tavily_integration/mod.rs](src/handlers/finance/tavily_integration/mod.rs)
+- [src/handlers/finance/tavily_integration/create_credential.rs](src/handlers/finance/tavily_integration/create_credential.rs)
+- [src/handlers/finance/tavily_integration/update_credential.rs](src/handlers/finance/tavily_integration/update_credential.rs)
+- [src/handlers/finance/tavily_integration/delete_credential.rs](src/handlers/finance/tavily_integration/delete_credential.rs)
+- [src/handlers/finance/tavily_integration/set_default_credential.rs](src/handlers/finance/tavily_integration/set_default_credential.rs)
+- [src/handlers/finance/tavily_integration/get_status.rs](src/handlers/finance/tavily_integration/get_status.rs)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs](src/handlers/finance/mcp_tool/sync_mcp_tools.rs)
+- [src/handlers/finance/tool/search_tools.rs](src/handlers/finance/tool/search_tools.rs)
+- [src/handlers/finance/tool/query_tools.rs](src/handlers/finance/tool/query_tools.rs)
+- [src/handlers/finance/tool/list_tools.rs](src/handlers/finance/tool/list_tools.rs)
+- [common/src/api/tavily_integration.rs](common/src/api/tavily_integration.rs)
+- [frontend/src/pages/finance/identity_tavily.rs](frontend/src/pages/finance/identity_tavily.rs)
+- [frontend/src/api/tavily_integration.rs](frontend/src/api/tavily_integration.rs)
 </cite>
 
 ## 更新摘要
-**变更内容**
-- 新增飞书集成（lark_integration）子模块，包含12个新API端点
-- 扩展Finance模块功能，支持凭证管理、用户认证、绑定工作流
-- 增强路由配置，添加 `/api/v1/finance/identity/lark/*` 路由组
-- 完善DTO定义，支持完整的飞书集成业务流程
+**变更内容（2026-08-19 增量更新）**
+- **新增 Tavily 集成（tavily_integration）子模块**：凭证 CRUD、默认凭证设置、集成状态聚合
+- **新增 MCP 工具列表处理器**：list_mcp_tools_by_server、sync_mcp_tools 完整引用
+- **补充工具搜索/查询/列表处理器**：search_tools、query_tools、list_tools 详细引用
+- 新增 Tavily 集成前端页面与 API 客户端引用
+- 路由新增 `/api/v1/finance/identity/tavily/*` 路由组
+- 更新 Finance 模块架构图与核心组件列表
 
 ## 目录
 1. [简介](#简介)
@@ -49,11 +78,12 @@
 Finance 模块位于 handlers/finance，按功能域划分为多个子模块：
 - tool：工具生命周期管理与调用调试
 - mcp_server：MCP服务器配置与状态管理
-- mcp_tool：MCP工具同步与查询
+- mcp_tool：MCP 工具同步（sync_mcp_tools）与列表查询（list_mcp_tools_by_server）
 - message：消息发送、列表、搜索与SSE订阅
 - message_channel：消息通道（如飞书、微信、邮件、Slack等）配置与管理
 - model_provider：模型提供商配置、切换、测试与向量重建任务
 - **lark_integration**：**新增** 飞书集成管理，包括凭证CRUD、用户认证、绑定工作流
+- **tavily_integration**：**新增** Tavily 搜索集成，包括凭证 CRUD、默认凭证、集成状态聚合
 
 路由统一在 router.rs 中注册到 /api/v1/finance 下，受 JWT 认证保护，部分端点额外要求管理员角色。
 
@@ -62,7 +92,7 @@ graph TB
 A["HTTP客户端"] --> B["Axum Router<br/>/api/v1/finance/*"]
 B --> C["JWT中间件"]
 C --> D["RequestContext中间件"]
-D --> E["Finance Handlers<br/>tool/mcp_server/message/message_channel/model_provider/lark_integration"]
+D --> E["Finance Handlers<br/>tool/mcp_server/mcp_tool/message/message_channel/model_provider/lark_integration/tavily_integration"]
 E --> F["Domain层<br/>service::domain::finance"]
 F --> G["DAL/DAO层<br/>持久化与外部服务"]
 ```
@@ -97,14 +127,21 @@ F --> G["DAL/DAO层<br/>持久化与外部服务"]
 - **飞书集成（lark_integration）**：**新增**
   - 职责：管理飞书应用凭证、用户OAuth认证、绑定工作流、状态聚合查询。
   - 关键处理器：create_credential、update_credential、delete_credential、set_default_credential、auth_start、auth_complete、auth_status、auth_logout、bind_start、bind_status、bind_cancel、get_status。
+- **Tavily 集成（tavily_integration）**：**新增**
+  - 职责：管理 Tavily 搜索 API Key 凭证、默认凭证设置、集成状态聚合（个人凭证快照 + 实例共享 key 配置状态）。
+  - 关键处理器：create_credential、update_credential、delete_credential、set_default_credential、get_status。
+  - 路由：`/api/v1/finance/identity/tavily/*`（status、credentials CRUD、credentials/default）
+  - 前端页面：`identity_tavily.rs`（凭证列表/创建/编辑/设默认/删除）
 
 **章节来源**
 - [src/handlers/finance/tool/mod.rs:1-46](src/handlers/finance/tool/mod.rs#L1-L46)
 - [src/handlers/finance/mcp_server/mod.rs:1-24](src/handlers/finance/mcp_server/mod.rs#L1-L24)
+- [src/handlers/finance/mcp_tool/mod.rs:1-20](src/handlers/finance/mcp_tool/mod.rs#L1-L20)
 - [src/handlers/finance/message/mod.rs:1-17](src/handlers/finance/message/mod.rs#L1-L17)
 - [src/handlers/finance/message_channel/mod.rs:1-22](src/handlers/finance/message_channel/mod.rs#L1-L22)
 - [src/handlers/finance/model_provider/mod.rs:1-25](src/handlers/finance/model_provider/mod.rs#L1-L25)
 - [src/handlers/finance/lark_integration/mod.rs:1-18](src/handlers/finance/lark_integration/mod.rs#L1-L18)
+- [src/handlers/finance/tavily_integration/mod.rs:1-12](src/handlers/finance/tavily_integration/mod.rs#L1-L12)
 
 ## 架构总览
 Finance 模块遵循四层单向调用：Adapter（HTTP Handler）→ Domain → DAL → DAO。Handler 仅负责参数校验、上下文提取与响应组装；业务逻辑下沉至 Domain，数据访问通过 DAL/DAO。所有公共方法首参为 ctx: RequestContext，跨层传递使用 ctx.clone()。
@@ -342,6 +379,9 @@ H-->>Client : "LarkBindStartResponse"
 - 路由依赖
   - finance_routes 将各处理器挂载到 /api/v1/finance/*，统一受 JWT 保护，部分端点附加 require_role_middleware（如 debug_call_tool）。
   - **新增** lark_integration_routes 专门处理飞书集成相关路由，挂载到 /api/v1/finance/identity/lark/*。
+  - **新增** tavily_integration_routes 专门处理 Tavily 集成相关路由，挂载到 /api/v1/finance/identity/tavily/*。
+  - mcp_tool 路由挂载到 /api/v1/finance/mcp-servers/{server_id}/tools/sync 与 /{server_id}/tools。
+  - 工具搜索/查询/列表路由：/tools（GET/POST）、/tools/query（POST）、/tools/search（POST）。
 - 处理器依赖
   - 各处理器依赖 common::api 中的请求/响应DTO；依赖 service::domain::finance 提供的领域服务；依赖 crate::models 中的实体对象进行转换。
 - 上下文与认证
@@ -351,16 +391,20 @@ H-->>Client : "LarkBindStartResponse"
 graph LR
 R["router.rs<br/>finance_routes"] --> T["handlers/finance/tool/*"]
 R --> M["handlers/finance/mcp_server/*"]
+R --> MT["handlers/finance/mcp_tool/*"]
 R --> MS["handlers/finance/message/*"]
 R --> MC["handlers/finance/message_channel/*"]
 R --> MP["handlers/finance/model_provider/*"]
 R --> LI["handlers/finance/lark_integration/*"]
+R --> TI["handlers/finance/tavily_integration/*"]
 T --> D["service::domain::finance"]
 M --> D
+MT --> D
 MS --> D
 MC --> D
 MP --> D
 LI --> D
+TI --> D
 ```
 
 **图表来源**
@@ -385,9 +429,14 @@ LI --> D
 - 鉴权与限流
   - 敏感操作（如 debug_call_tool）限制管理员角色；必要时结合网关层限流。
 - **新增** 飞书集成优化
-  - 凭证存储采用JSON列，减少表关联开销
+  - 凭证存储迁移至独立表 user_credentials（行级 CRUD，天然消解并发丢更新）
+  - 默认标记作用域由 visibility 派生（private=个人默认 / public=组织默认），双部分唯一索引兜底
   - 绑定会话内存态管理，完成后清理
   - OAuth token文件系统缓存，避免重复认证
+- **新增** Tavily 集成优化
+  - 凭证加密存储（AES-256-GCM），API key 永不回显，仅展示尾号
+  - 集成状态聚合采用双轨授权（个人凭证 + 实例共享 key），按优先级 fallback
+  - 默认凭证槽位支持多条 key 时的快速切换
 
 [本节为通用指导，不直接分析具体文件]
 
@@ -398,11 +447,13 @@ LI --> D
   - 模型提供商测试失败：检查密钥、基础URL与网络可达性。
   - 消息通道测试失败：核对通道配置（如飞书/微信/邮件/Slack/Webhook）与凭据。
   - **新增** 飞书集成错误：检查凭证有效性、OAuth配置、网络连接。
+  - **新增** Tavily 集成错误：检查 API Key 是否有效、实例共享 key 是否已配置、用户凭证是否加密存储。
 - 定位步骤
   - 查看日志ID（来自 RequestContext）追踪请求链路。
   - 检查 Domain/DAL 层抛出的错误码与消息。
   - 对敏感调试接口（如 debug_call_tool）确认管理员权限。
   - **新增** 飞书集成问题：检查设备码有效期、浏览器授权流程、配置文件路径。
+  - **新增** Tavily 集成问题：检查加密通道是否可用、默认凭证是否正确设置、共享 key 配置状态。
 
 **章节来源**
 - [src/handlers/finance/tool/create_tool.rs:1-72](src/handlers/finance/tool/create_tool.rs#L1-L72)
@@ -411,7 +462,7 @@ LI --> D
 - [src/handlers/finance/lark_integration/get_status.rs:1-102](src/handlers/finance/lark_integration/get_status.rs#L1-L102)
 
 ## 结论
-Finance 模块以清晰的处理器分层与统一的中间件链，提供了工具、MCP服务器、消息系统与模型提供商的全生命周期管理能力。**新增的飞书集成功能**进一步完善了身份认证和第三方集成能力，支持完整的凭证管理、用户认证和绑定工作流。通过 Domain 层抽象与 DAL/DAO 的数据访问分离，保证了可扩展性与可维护性。建议在集成时严格遵循参数校验、权限控制与错误处理规范，并结合分页、SSE与后台任务优化性能与用户体验。
+Finance 模块以清晰的处理器分层与统一的中间件链，提供了工具、MCP服务器、消息系统、模型提供商、**MCP工具**与**身份凭证集成**的全生命周期管理能力。**新增的飞书集成与 Tavily 集成**进一步完善了身份认证和第三方集成能力，支持完整的凭证管理、用户认证、绑定工作流与网络搜索集成。通过 Domain 层抽象与 DAL/DAO 的数据访问分离，保证了可扩展性与可维护性。建议在集成时严格遵循参数校验、权限控制与错误处理规范，并结合分页、SSE与后台任务优化性能与用户体验。
 
 [本节为总结，不直接分析具体文件]
 
@@ -426,6 +477,16 @@ Finance 模块以清晰的处理器分层与统一的中间件链，提供了工
     - 请求体：参考 common::api::CreateMcpServerRequest
     - 响应：ApiResponse<CreateMcpServerResponse>
   - 同步工具：POST /api/v1/finance/mcp-servers/{server_id}/tools/sync
+- MCP工具
+  - 同步远端工具：POST /api/v1/finance/mcp-servers/{server_id}/tools/sync
+    - 处理器：sync_mcp_tools
+  - 列出服务器工具：GET /api/v1/finance/mcp-servers/{server_id}/tools
+    - 处理器：list_mcp_tools_by_server
+- 工具管理
+  - 创建工具：POST /api/v1/finance/tools
+  - 列出工具：GET /api/v1/finance/tools
+  - 查询工具：POST /api/v1/finance/tools/query
+  - 搜索工具：POST /api/v1/finance/tools/search
 - 消息系统
   - 发送消息：POST /api/v1/finance/messages
     - 请求体：参考 common::api::SendMessageParams
@@ -481,9 +542,34 @@ Finance 模块以清晰的处理器分层与统一的中间件链，提供了工
   - 状态聚合：
     - 获取状态：GET /api/v1/finance/identity/lark/status
       - 响应：ApiResponse<LarkIntegrationStatusResponse>
+- **Tavily 集成（新增）**
+  - 集成状态：
+    - 获取状态：GET /api/v1/finance/identity/tavily/status
+      - 响应：ApiResponse<TavilyIntegrationStatusResponse>
+      - 说明：返回个人凭证快照（key 尾号 + 默认标记）+ 实例共享 key 配置状态
+  - 凭证管理：
+    - 创建凭证：POST /api/v1/finance/identity/tavily/credentials
+      - 请求体：参考 common::api::CreateTavilyCredentialRequest
+      - 响应：ApiResponse<CreateTavilyCredentialResponse>
+    - 更新凭证：PUT /api/v1/finance/identity/tavily/credentials/{id}
+      - 请求体：参考 common::api::UpdateTavilyCredentialRequest
+      - 响应：ApiResponse<UpdateTavilyCredentialResponse>
+    - 删除凭证：DELETE /api/v1/finance/identity/tavily/credentials/{id}
+      - 请求体：参考 common::api::DeleteTavilyCredentialRequest
+      - 响应：ApiResponse<DeleteTavilyCredentialResponse>
+    - 设置默认凭证：POST /api/v1/finance/identity/tavily/credentials/default
+      - 请求体：参考 common::api::SetDefaultTavilyCredentialRequest
+      - 响应：ApiResponse<SetDefaultTavilyCredentialResponse>
 
 **章节来源**
-- [src/router.rs:415-601](src/router.rs#L415-L601)
-- [src/router.rs:217-247](src/router.rs#L217-L247)
+- [src/router.rs:574-770](src/router.rs#L574-L770)
+- [src/router.rs:217-291](src/router.rs#L217-L291)
 - [common/src/api/mod.rs:1-156](common/src/api/mod.rs#L1-L156)
 - [common/src/api/lark_integration.rs:1-294](common/src/api/lark_integration.rs#L1-L294)
+- [common/src/api/tavily_integration.rs:1-107](common/src/api/tavily_integration.rs#L1-L107)
+- [src/handlers/finance/tavily_integration/mod.rs:1-12](src/handlers/finance/tavily_integration/mod.rs#L1-L12)
+- [src/handlers/finance/mcp_tool/sync_mcp_tools.rs:1-28](src/handlers/finance/mcp_tool/sync_mcp_tools.rs#L1-L28)
+- [src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs:1-30](src/handlers/finance/mcp_tool/list_mcp_tools_by_server.rs#L1-L30)
+- [src/handlers/finance/tool/search_tools.rs](src/handlers/finance/tool/search_tools.rs)
+- [src/handlers/finance/tool/query_tools.rs](src/handlers/finance/tool/query_tools.rs)
+- [src/handlers/finance/tool/list_tools.rs](src/handlers/finance/tool/list_tools.rs)
