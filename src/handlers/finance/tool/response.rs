@@ -1,12 +1,35 @@
-use common::api::{ToolCallEntryDetail, ToolCallStatusDto, ToolDetail, ToolListItem};
+use common::api::{RuntimeReady, ToolCallEntryDetail, ToolCallStatusDto, ToolDetail, ToolListItem};
 use common::enums::ToolStatus;
 use reqwest::Url;
 use serde_json::{Map, Value};
+use std::collections::HashMap;
 
 use crate::models::tool::Tool;
+use crate::pkg::RequestContext;
+use crate::pkg::tool_registry::tool_readiness;
 use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
 
-pub(crate) fn to_list_item(tool: &Tool) -> ToolListItem {
+/// 批量探测工具运行时就绪状态（三层就绪提示体系第①层：清单级标志）。
+///
+/// 未注册探测器的工具不进入返回 map（`to_list_item` 落 `Unknown` 默认值）；
+/// 探测带 TTL 缓存（CLI 型 30s / key 型按用户 30s），列表高频调用无重复开销。
+pub(crate) async fn probe_runtime_ready(
+    ctx: &RequestContext,
+    tools: &[Tool],
+) -> HashMap<String, RuntimeReady> {
+    let mut ready = HashMap::new();
+    for tool in tools {
+        let id = tool.po.id.clone();
+        let status = tool_readiness::probe(&id, ctx).await;
+        // 未注册探测器 → Unknown，无需占用 map（默认值即 Unknown）
+        if status != RuntimeReady::Unknown {
+            ready.insert(id, status);
+        }
+    }
+    ready
+}
+
+pub(crate) fn to_list_item(tool: &Tool, runtime_ready: RuntimeReady) -> ToolListItem {
     ToolListItem {
         id: tool.po.id.clone(),
         name: tool.po.name.clone(),
@@ -21,6 +44,7 @@ pub(crate) fn to_list_item(tool: &Tool) -> ToolListItem {
         created_by: tool.po.created_by.clone().unwrap_or_default(),
         created_at: tool.po.created_at,
         updated_at: tool.po.updated_at,
+        runtime_ready,
     }
 }
 

@@ -8,6 +8,7 @@ pub mod health_metrics;
 pub mod logs;
 pub mod process;
 pub mod seed;
+pub mod storage;
 pub mod task_cleanup;
 pub mod task_list;
 pub mod task_progress;

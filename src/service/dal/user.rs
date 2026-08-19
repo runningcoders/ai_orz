@@ -214,3 +214,34 @@ impl crate::pkg::tool_registry::gh_cli::GhCredentialResolver for GhDalCredential
         Ok(Some(crate::pkg::crypto::decrypt_channel_secret(token)?))
     }
 }
+
+// ==================== tavily_search 凭证解析器 ====================
+
+/// tavily_search 工具身份来源：按用户凭证库解析 Tavily API key（解密后明文）
+///
+/// 优先取 default_tavily_credential_id 指向的 TavilyKey 凭证，未命中回退第一条。
+pub struct TavilyDalCredentialResolver;
+
+#[async_trait::async_trait]
+impl crate::pkg::tool_registry::tavily_search::TavilyCredentialResolver
+    for TavilyDalCredentialResolver
+{
+    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<String>> {
+        let Some(user_id) = ctx.user_id.clone() else {
+            return Ok(None);
+        };
+        let Some(library) = dal()
+            .get_identity_credentials(ctx.clone(), &user_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let Some(credential) = library.resolve_tavily_credential() else {
+            return Ok(None);
+        };
+        let common::models::CredentialDetail::TavilyKey { api_key } = &credential.detail else {
+            return Ok(None);
+        };
+        Ok(Some(crate::pkg::crypto::decrypt_channel_secret(api_key)?))
+    }
+}

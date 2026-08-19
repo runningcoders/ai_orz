@@ -415,3 +415,58 @@ pub struct QueryLogsResponse {
     /// 每页条数
     pub page_size: usize,
 }
+
+// ==================== 工具日志存储监控（① 运行时输出层治理）====================
+
+/// 单个日期分区的工具日志占用
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ToolLogDayStatItem {
+    /// 日期目录名（YYYYMMDD）
+    pub day: String,
+    /// 日志文件数
+    pub files: u64,
+    /// 占用字节数
+    pub bytes: u64,
+}
+
+/// GET /api/v1/system/storage/tool-logs 请求
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Params)]
+pub struct GetToolLogStorageRequest {}
+
+/// GET /api/v1/system/storage/tool-logs 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ToolLogStorageResponse {
+    /// 总占用字节数
+    pub total_bytes: u64,
+    /// 总文件数
+    pub total_files: u64,
+    /// 按天占用（升序）
+    pub by_day: Vec<ToolLogDayStatItem>,
+    /// 保留天数配置（0 = 不自动清理；修改 ai_orz.toml [tool_log].retention_days 后重启生效）
+    pub retention_days: u32,
+}
+
+/// POST /api/v1/system/storage/tool-logs/cleanup 请求
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Params)]
+pub struct CleanupToolLogsRequest {
+    /// 本次清理使用的保留天数（缺省读 [tool_log].retention_days 配置；0 = 清理关闭，空跑）
+    #[serde(default)]
+    pub retention_days: Option<u32>,
+}
+
+/// POST /api/v1/system/storage/tool-logs/cleanup 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CleanupToolLogsResponse {
+    /// 是否执行了清理（retention = 0 时 false，表示清理关闭空跑）
+    pub success: bool,
+    /// 使用的保留天数
+    pub retention_days: u32,
+    /// 删除的日期目录数
+    pub removed_dirs: u64,
+    /// 删除的日志文件数
+    pub removed_files: u64,
+    /// 释放的字节数
+    pub freed_bytes: u64,
+    /// 因 Running 进程保护跳过的目录数
+    pub skipped_dirs: u64,
+}

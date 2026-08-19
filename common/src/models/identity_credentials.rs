@@ -19,6 +19,9 @@ pub struct UserIdentityCredentials {
     /// 默认 GitHub 凭证 ID（gh_cli 工具身份优先；多条 token 时生效）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_github_credential_id: Option<String>,
+    /// 默认 Tavily 凭证 ID（tavily_search 工具身份优先；多条 key 时生效）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_tavily_credential_id: Option<String>,
 }
 
 impl UserIdentityCredentials {
@@ -94,6 +97,22 @@ impl UserIdentityCredentials {
             .find(|credential| matches!(credential.kind, CredentialKind::GithubToken))
     }
 
+    /// 解析 tavily_search 工具身份可用的 Tavily 凭证
+    ///
+    /// 优先取 `default_tavily_credential_id` 指向的 TavilyKey 凭证
+    /// （指向不存在/非 Tavily 类型时忽略）；未命中回退第一条 TavilyKey。
+    pub fn resolve_tavily_credential(&self) -> Option<&UserIdentityCredential> {
+        if let Some(default_id) = self.default_tavily_credential_id.as_deref()
+            && let Some(credential) = self.find_by_id(default_id)
+            && matches!(credential.kind, CredentialKind::TavilyKey)
+        {
+            return Some(credential);
+        }
+        self.items
+            .iter()
+            .find(|credential| matches!(credential.kind, CredentialKind::TavilyKey))
+    }
+
     /// 按类型设置默认凭证（Some 时校验存在 + 类型匹配；None/空白清除）
     ///
     /// 各类型默认槽位独立（lark 与 github 互不影响）。
@@ -132,6 +151,7 @@ impl UserIdentityCredentials {
         match kind {
             CredentialKind::LarkApp => &mut self.default_credential_id,
             CredentialKind::GithubToken => &mut self.default_github_credential_id,
+            CredentialKind::TavilyKey => &mut self.default_tavily_credential_id,
         }
     }
 }
@@ -161,6 +181,8 @@ pub enum CredentialKind {
     LarkApp,
     /// GitHub 访问令牌（PAT / OAuth token）
     GithubToken,
+    /// Tavily 搜索 API key（个人 key，tavily_search 工具身份）
+    TavilyKey,
 }
 
 /// 凭证详情（serde 内部 tag，按类型区分字段集）
@@ -182,6 +204,11 @@ pub enum CredentialDetail {
     GithubToken {
         /// 访问令牌（PAT / OAuth token，落库前加密）
         token: String,
+    },
+    /// Tavily 搜索 API key（落库前经 encrypt_channel_secret 加密）
+    TavilyKey {
+        /// API key（落库前加密）
+        api_key: String,
     },
 }
 
@@ -207,6 +234,11 @@ pub enum CredentialDetailPatch {
         /// 访问令牌（None/空白保持不变；提供时以明文传入，内部加密写入）
         token: Option<String>,
     },
+    /// Tavily API key 补丁
+    TavilyKey {
+        /// API key（None/空白保持不变；提供时以明文传入，内部加密写入）
+        api_key: Option<String>,
+    },
 }
 
 /// detail 变更影响摘要（Domain 据此决定联动动作，无需感知字段细节）
@@ -222,6 +254,7 @@ impl CredentialDetail {
         match self {
             Self::LarkApp { .. } => CredentialKind::LarkApp,
             Self::GithubToken { .. } => CredentialKind::GithubToken,
+            Self::TavilyKey { .. } => CredentialKind::TavilyKey,
         }
     }
 
@@ -230,6 +263,7 @@ impl CredentialDetail {
         match self {
             Self::LarkApp { app_id, .. } => Some(app_id.as_str()),
             Self::GithubToken { .. } => None,
+            Self::TavilyKey { .. } => None,
         }
     }
 
@@ -254,6 +288,9 @@ impl CredentialDetail {
             Self::GithubToken { token } => Self::GithubToken {
                 token: token.trim().to_string(),
             },
+            Self::TavilyKey { api_key } => Self::TavilyKey {
+                api_key: api_key.trim().to_string(),
+            },
         }
     }
 
@@ -270,6 +307,11 @@ impl CredentialDetail {
             Self::GithubToken { token } => {
                 if token.is_empty() {
                     bail_err!(InvalidRequest, "GitHub Token 不能为空");
+                }
+            }
+            Self::TavilyKey { api_key } => {
+                if api_key.is_empty() {
+                    bail_err!(InvalidRequest, "Tavily API Key 不能为空");
                 }
             }
         }
@@ -299,6 +341,9 @@ impl CredentialDetail {
             }),
             Self::GithubToken { token } => Ok(Self::GithubToken {
                 token: encrypt(&token)?,
+            }),
+            Self::TavilyKey { api_key } => Ok(Self::TavilyKey {
+                api_key: encrypt(&api_key)?,
             }),
         }
     }
@@ -376,6 +421,21 @@ impl CredentialDetail {
                     impact.secret_changed = true;
                 }
             }
+            CredentialDetailPatch::TavilyKey { api_key } => {
+                let Self::TavilyKey { api_key: key_slot } = self else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用 Tavily 凭证补丁"
+                    );
+                };
+                if let Some(v) = api_key
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *key_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+            }
         }
         Ok(impact)
     }
@@ -414,6 +474,19 @@ mod tests {
         }
     }
 
+    fn tavily_credential(id: &str, name: &str) -> UserIdentityCredential {
+        UserIdentityCredential {
+            id: id.to_string(),
+            kind: CredentialKind::TavilyKey,
+            name: name.to_string(),
+            created_at: "2026-08-12T00:00:00Z".to_string(),
+            updated_at: "2026-08-12T00:00:00Z".to_string(),
+            detail: CredentialDetail::TavilyKey {
+                api_key: "enc:v1:tvly-key".to_string(),
+            },
+        }
+    }
+
     #[test]
     fn test_parse_empty_column() {
         assert_eq!(
@@ -440,6 +513,7 @@ mod tests {
             ],
             default_credential_id: Some("cred-1".to_string()),
             default_github_credential_id: None,
+            default_tavily_credential_id: None,
         };
         let column = creds.to_column_value();
         assert!(!column.is_empty());
@@ -550,6 +624,7 @@ mod tests {
             ],
             default_credential_id: Some("cred-1".to_string()),
             default_github_credential_id: Some("gh-2".to_string()),
+            ..Default::default()
         };
         assert_eq!(multi.resolve_github_credential().unwrap().id, "gh-2");
 
@@ -557,6 +632,122 @@ mod tests {
         let mut lark_default = multi.clone();
         lark_default.default_github_credential_id = Some("cred-1".to_string());
         assert_eq!(lark_default.resolve_github_credential().unwrap().id, "gh-1");
+    }
+
+    #[test]
+    fn test_tavily_credential_serde_and_resolve() {
+        // serde tag 往返一致
+        let cred = tavily_credential("tv-1", "个人搜索");
+        let json = serde_json::to_value(&cred).unwrap();
+        assert_eq!(json["kind"], "tavily_key");
+        assert_eq!(json["detail"]["type"], "tavily_key");
+        let parsed: UserIdentityCredential = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, cred);
+
+        // 空 / 仅其他类型 → None
+        assert!(
+            UserIdentityCredentials::default()
+                .resolve_tavily_credential()
+                .is_none()
+        );
+        let gh_only = UserIdentityCredentials {
+            items: vec![github_credential("gh-1", "工作号")],
+            ..Default::default()
+        };
+        assert!(gh_only.resolve_tavily_credential().is_none());
+
+        // 单条直接命中；多条默认优先；默认槽位与 github 互不影响
+        let multi = UserIdentityCredentials {
+            items: vec![
+                tavily_credential("tv-1", "个人搜索"),
+                tavily_credential("tv-2", "团队搜索"),
+                github_credential("gh-1", "工作号"),
+            ],
+            default_tavily_credential_id: Some("tv-2".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(multi.resolve_tavily_credential().unwrap().id, "tv-2");
+
+        // 默认指向 GithubToken → 忽略，回退第一条 TavilyKey
+        let mut gh_default = multi.clone();
+        gh_default.default_tavily_credential_id = Some("gh-1".to_string());
+        assert_eq!(gh_default.resolve_tavily_credential().unwrap().id, "tv-1");
+    }
+
+    #[test]
+    fn test_tavily_detail_lifecycle() {
+        // 规范化 + 校验
+        let plain = CredentialDetail::TavilyKey {
+            api_key: " tvly-xxx ".to_string(),
+        }
+        .normalized();
+        assert!(matches!(&plain, CredentialDetail::TavilyKey { api_key } if api_key == "tvly-xxx"));
+        assert!(plain.validate().is_ok());
+        assert!(
+            CredentialDetail::TavilyKey {
+                api_key: String::new()
+            }
+            .validate()
+            .is_err()
+        );
+
+        // 加密敏感字段
+        let enc = CredentialDetail::TavilyKey {
+            api_key: "tvly-plain".to_string(),
+        }
+        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+        .unwrap();
+        assert!(
+            matches!(&enc, CredentialDetail::TavilyKey { api_key } if api_key == "enc:tvly-plain")
+        );
+
+        // 补丁：空白不变、非空轮换、类型不匹配报错
+        let mut detail = CredentialDetail::TavilyKey {
+            api_key: "enc:v1:old".to_string(),
+        };
+        let impact = detail
+            .apply_patch(
+                CredentialDetailPatch::TavilyKey {
+                    api_key: Some("  ".to_string()),
+                },
+                |s| Ok(format!("enc:{}", s)),
+            )
+            .unwrap();
+        assert!(!impact.secret_changed);
+        let impact = detail
+            .apply_patch(
+                CredentialDetailPatch::TavilyKey {
+                    api_key: Some("tvly-new".to_string()),
+                },
+                |s| Ok(format!("enc:{}", s)),
+            )
+            .unwrap();
+        assert!(impact.secret_changed);
+        assert!(
+            matches!(&detail, CredentialDetail::TavilyKey { api_key } if api_key == "enc:tvly-new")
+        );
+        assert!(
+            detail
+                .apply_patch(
+                    CredentialDetailPatch::GithubToken {
+                        token: Some("t".to_string()),
+                    },
+                    |s| Ok(s.to_string()),
+                )
+                .is_err()
+        );
+
+        // 默认槽位独立
+        let mut creds = UserIdentityCredentials {
+            items: vec![tavily_credential("tv-1", "个人搜索")],
+            ..Default::default()
+        };
+        creds
+            .set_default_for(CredentialKind::TavilyKey, Some("tv-1".to_string()))
+            .unwrap();
+        assert_eq!(creds.default_tavily_credential_id.as_deref(), Some("tv-1"));
+        creds.clear_default_for(CredentialKind::TavilyKey, "tv-1");
+        assert_eq!(creds.default_tavily_credential_id, None);
     }
 
     // ==================== CredentialDetail 行为 ====================
@@ -865,6 +1056,7 @@ mod tests {
             items: vec![github_credential("gh-1", "工作号")],
             default_github_credential_id: Some("gh-1".to_string()),
             default_credential_id: Some("gh-1".to_string()), // 异常态也一并清对位字段
+            default_tavily_credential_id: None,
         };
         creds.clear_default_for(CredentialKind::GithubToken, "gh-1");
         assert_eq!(creds.default_github_credential_id, None);

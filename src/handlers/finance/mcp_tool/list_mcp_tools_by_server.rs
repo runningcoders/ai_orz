@@ -6,7 +6,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListMcpToolsByServerRequest, ListMcpToolsByServerResponse, ToolListItem};
 use common::error::Result;
 
-use super::super::tool::response::to_list_item;
+use super::super::tool::response::{probe_runtime_ready, to_list_item};
 
 /// List local MCP Tool records bound to one MCP Server.
 #[register_handler_tool(
@@ -22,10 +22,18 @@ pub async fn list_mcp_tools_by_server(
 ) -> Result<ListMcpToolsByServerResponse> {
     let result = domain()
         .mcp_tool_manage()
-        .list_mcp_tools_by_server(ctx, params)
+        .list_mcp_tools_by_server(ctx.clone(), params)
         .await?;
 
-    let tools: Vec<ToolListItem> = result.items.iter().map(to_list_item).collect();
+    let ready = probe_runtime_ready(&ctx, &result.items).await;
+    let tools: Vec<ToolListItem> = result
+        .items
+        .iter()
+        .map(|t| {
+            let runtime_ready = ready.get(&t.po.id).cloned().unwrap_or_default();
+            to_list_item(t, runtime_ready)
+        })
+        .collect();
     Ok(ListMcpToolsByServerResponse {
         tools,
         total: result.total,

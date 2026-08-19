@@ -19,6 +19,7 @@
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::tool_readiness;
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -315,11 +316,12 @@ impl CoreTool for LarkCliCoreTool {
             }));
         };
         let home_dir = lark_home(&get().base_data_path(), &user_id);
-        if !binary_available(LARK_CLI_BIN) {
-            return Ok(serde_json::json!({
-                "success": false,
-                "error": "未找到 lark-cli 二进制，请先安装：https://github.com/larksuite/lark-cli"
-            }));
+        if !tool_readiness::command_available(LARK_CLI_BIN) {
+            return Ok(tool_readiness::cli_not_installed_json(
+                "lark-cli",
+                "安装 lark-cli：https://github.com/larksuite/lark-cli",
+                "或确认 lark-cli 已安装且在服务进程的 PATH 中",
+            ));
         }
         ensure_cli_config(&home_dir, &app_id, &app_secret).await?;
         // 幂等对齐渠道身份模式（auto/bot/user，缺省 auto）
@@ -427,13 +429,6 @@ mod tests {
     fn lark_home_path_is_user_isolated() {
         let home = lark_home(Path::new("/data/.ai_orz"), "user-001");
         assert_eq!(home, PathBuf::from("/data/.ai_orz/users/user-001"));
-    }
-
-    #[test]
-    fn binary_available_detects_common_tools() {
-        // 系统基础命令应可探测到；不存在的名称返回 false
-        assert!(binary_available("sh"));
-        assert!(!binary_available("definitely-not-a-real-binary-xyz"));
     }
 
     #[test]

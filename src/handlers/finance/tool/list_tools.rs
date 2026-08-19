@@ -7,7 +7,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{ListToolsRequest, PagedResult, ToolListItem};
 use common::error::Result;
 
-use super::response::to_list_item;
+use super::response::{probe_runtime_ready, to_list_item};
 
 /// List all tools with optional filtering by agent, keyword, and enabled status
 #[register_handler_tool(
@@ -27,7 +27,7 @@ pub async fn list_tools(
     let page = domain()
         .tool_provider_manage()
         .query_tools(
-            ctx,
+            ctx.clone(),
             ToolQuery {
                 pagination: params.pagination,
                 ..Default::default()
@@ -35,5 +35,9 @@ pub async fn list_tools(
         )
         .await?;
 
-    Ok(page.map(|t| to_list_item(&t)))
+    let ready = probe_runtime_ready(&ctx, &page.items).await;
+    Ok(page.map(|t| {
+        let runtime_ready = ready.get(&t.po.id).cloned().unwrap_or_default();
+        to_list_item(&t, runtime_ready)
+    }))
 }

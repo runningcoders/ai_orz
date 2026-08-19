@@ -268,6 +268,28 @@ fn github_integration_routes() -> Router {
         )
 }
 
+fn tavily_integration_routes() -> Router {
+    use crate::handlers::finance::tavily_integration as ti;
+    Router::new()
+        .route("/status", get(ti::get_status::get_status_handler))
+        .route(
+            "/credentials",
+            post(ti::create_credential::create_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            put(ti::update_credential::update_credential_handler),
+        )
+        .route(
+            "/credentials/{id}",
+            delete(ti::delete_credential::delete_credential_handler),
+        )
+        .route(
+            "/credentials/default",
+            post(ti::set_default_credential::set_default_credential_handler),
+        )
+}
+
 fn project_routes() -> Router {
     Router::new()
         .route(
@@ -554,6 +576,7 @@ fn finance_routes() -> Router {
     Router::new()
         .nest("/identity/lark", lark_integration_routes())
         .nest("/identity/github", github_integration_routes())
+        .nest("/identity/tavily", tavily_integration_routes())
         .route(
             "/attachments/upload",
             post(handlers::finance::attachment::upload_attachment),
@@ -832,6 +855,15 @@ fn system_routes() -> Router {
         .route(
             "/health/metrics",
             get(handlers::system::health_metrics::get_health_metrics_handler),
+        )
+        // Tool log storage routes - 工具日志存储监控与清理（① 运行时输出层治理）
+        .route(
+            "/storage/tool-logs",
+            get(handlers::system::storage::tool_log_stats::get_tool_log_storage_handler),
+        )
+        .route(
+            "/storage/tool-logs/cleanup",
+            post(handlers::system::storage::tool_log_cleanup::cleanup_tool_logs_handler),
         )
         // Seed routes - 配置迁移（导出/导入/diff）
         .nest(

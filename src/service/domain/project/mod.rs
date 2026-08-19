@@ -58,7 +58,7 @@ mod project_test;
 #[cfg(test)]
 mod task_graph_test;
 
-pub use artifact::ListArtifactsParams;
+pub use artifact::{ListArtifactsParams, ProjectScreenshotStorer, ProjectToolOutputRegistrar};
 
 // ==================== 单例 ====================
 

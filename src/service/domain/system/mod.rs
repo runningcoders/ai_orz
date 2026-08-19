@@ -431,6 +431,9 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     let has_project_followup = existing
         .iter()
         .any(|t| t.payload.contains("\"project_followup\""));
+    let has_tool_log_cleanup = existing
+        .iter()
+        .any(|t| t.payload.contains("\"tool_log_cleanup\""));
 
     // 1. agent_rest：每天凌晨 4 点执行一次睡眠沉淀（Cron 表达式，系统时区）
     if !has_agent_rest {
@@ -469,6 +472,30 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         trigger.is_enabled = 1;
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
         sys_info!("已创建系统级定时任务: project_followup");
+    }
+
+    // 3. tool_log_cleanup：每天凌晨 5 点清理超期工具运行日志（① 运行时输出 TTL，
+    //    保留天数读 [tool_log].retention_days；Running 进程日志受保护不删）
+    if !has_tool_log_cleanup {
+        let expression = "0 5 * * *"; // 每天 05:00（分 时 日 月 周）
+        let timezone = crate::pkg::cron::system_timezone();
+        let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-工具日志清理".into(),
+            TriggerType::Cron,
+            next_run_at,
+            Some("system".into()),
+        );
+        trigger.cron_expression = Some(expression.into());
+        trigger.payload = r#"{"action":"tool_log_cleanup","extra":{}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!(
+            "已创建系统级定时任务: tool_log_cleanup (cron: {} {})",
+            expression,
+            timezone
+        );
     }
 
     Ok(())

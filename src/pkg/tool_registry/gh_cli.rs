@@ -179,14 +179,6 @@ pub fn gh_home(base_data_path: &Path, user_id: &str) -> PathBuf {
     crate::pkg::paths::user_home(base_data_path, user_id)
 }
 
-/// 探测二进制是否在 PATH 中可用
-pub fn binary_available(name: &str) -> bool {
-    let Some(path_var) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path_var).any(|dir| dir.join(name).is_file())
-}
-
 /// 输出脱敏：token/secret 类关键字行与 GitHub token 前缀行整行替换为 `[REDACTED]`
 pub fn sanitize_gh_output(output: &str) -> String {
     /// GitHub token 常见格式前缀（gho_/ghu_/ghs_/ghr_/ghp_）
@@ -301,7 +293,7 @@ pub struct GhAuthStatus {
 /// 未登录时 gh 退出码非 0，属正常态而非错误；
 /// gh 二进制缺失时返回带 hint 的未登录快照（与 lark auth status 降级模式一致）。
 pub async fn gh_auth_status(home_dir: &Path) -> GhAuthStatus {
-    if !binary_available(GH_CLI_BIN) {
+    if !crate::pkg::tool_registry::tool_readiness::command_available(GH_CLI_BIN) {
         return GhAuthStatus {
             logged_in: false,
             user_name: None,
@@ -378,11 +370,14 @@ impl CoreTool for GhCliCoreTool {
         };
         let base_path = get().base_data_path();
         let home_dir = gh_home(&base_path, &user_id);
-        if !binary_available(GH_CLI_BIN) {
-            return Ok(serde_json::json!({
-                "success": false,
-                "error": "未找到 gh 二进制，请先安装：https://cli.github.com"
-            }));
+        if !crate::pkg::tool_registry::tool_readiness::command_available(GH_CLI_BIN) {
+            return Ok(
+                crate::pkg::tool_registry::tool_readiness::cli_not_installed_json(
+                    "gh",
+                    "安装 GitHub CLI：https://cli.github.com（brew install gh）",
+                    "或确认 gh 已安装且在服务进程的 PATH 中",
+                ),
+            );
         }
         ensure_gh_auth(&home_dir, &token).await?;
 

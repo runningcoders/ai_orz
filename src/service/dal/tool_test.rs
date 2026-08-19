@@ -467,7 +467,7 @@ async fn test_delete_builtin_tool_protected(pool: SqlitePool) {
 /// 测试 sync_builtin_tools_to_db 功能
 #[sqlx::test]
 async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
-    let (tool_dal, ctx) = init_test_env(pool, true).await;
+    let (tool_dal, ctx) = init_test_env(pool.clone(), true).await;
 
     // ========== 测试：首次同步应该插入工具 ==========
     let inserted = tool_dal
@@ -476,12 +476,28 @@ async fn test_sync_builtin_tools_to_db(pool: SqlitePool) {
         .unwrap();
     assert!(inserted > 0, "should insert at least one tool");
 
-    // ========== 测试：二次同步应该幂等，不插入重复内容 ==========
+    // ========== 测试：二次同步幂等（已入库工具不重复插入） ==========
+    // 注意：单元测试并行共享全局 ToolRegistry，其他测试可能在两次同步
+    // 之间追加新工厂，因此不断言 inserted_again == 0；改为验证
+    // 「表行数增量 == 返回的插入数」——若 sync 重复插入已有工具，
+    // 行数增量将大于插入数
+    let count_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tools")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let inserted_again = tool_dal
         .sync_builtin_tools_to_db(ctx.clone())
         .await
         .unwrap();
-    assert_eq!(inserted_again, 0, "should not insert duplicate tools");
+    let count_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tools")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        count_after - count_before,
+        inserted_again as i64,
+        "row growth must equal reported inserts (no duplicate tools)"
+    );
 
     // ========== 验证：工具确实存在 ==========
     let found = tool::dao()

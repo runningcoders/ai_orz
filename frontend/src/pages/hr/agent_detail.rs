@@ -21,7 +21,7 @@ use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
     GetAgentResponse, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
-    ProjectListItem, ProjectQueryRequest, SendMessageToAgentParams, SkillListItem,
+    ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams, SkillListItem,
     SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
     UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
     UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
@@ -949,6 +949,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let tool_name = tool.name.clone();
                                                     let tool_desc = tool.description.as_deref().unwrap_or("");
                                                     let tags = tool.tags.clone();
+                                                    let runtime_ready = tool.runtime_ready.clone();
+                                                    // 未就绪警示 badge（advisory）：悬浮显示原因与修复提示，不阻止绑定
+                                                    let not_ready_title = match &runtime_ready {
+                                                        RuntimeReady::NotReady { reason, hint } => {
+                                                            format!("未就绪（{}）：{}", reason, hint)
+                                                        }
+                                                        _ => String::new(),
+                                                    };
                                                     rsx! {
                                                         div {
                                                             class: "card bg-base-200",
@@ -956,7 +964,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             div { class: "card-body p-4",
                                                                 div { class: "flex justify-between items-start",
                                                                     span { class: "font-medium", "{tool_name}" }
-                                                                    span { class: "badge badge-success", "已绑定" }
+                                                                    div { class: "flex gap-1",
+                                                                        if !not_ready_title.is_empty() {
+                                                                            span {
+                                                                                class: "badge badge-warning badge-outline",
+                                                                                title: "{not_ready_title}",
+                                                                                "未就绪"
+                                                                            }
+                                                                        }
+                                                                        span { class: "badge badge-success", "已绑定" }
+                                                                    }
                                                                 }
                                                                 p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
                                                                 if !tags.is_empty() {

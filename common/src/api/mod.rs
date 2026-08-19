@@ -122,6 +122,7 @@ pub mod system;
 pub mod task;
 #[cfg(test)]
 mod task_test;
+pub mod tavily_integration;
 pub mod text_content;
 #[cfg(test)]
 mod text_content_test;
@@ -156,6 +157,7 @@ pub use seed::*;
 pub use skill::*;
 pub use system::*;
 pub use task::*;
+pub use tavily_integration::*;
 pub use text_content::*;
 pub use tool::*;
 pub use user::*;

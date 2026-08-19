@@ -177,6 +177,8 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             CredentialKind::GithubToken => library
                 .resolve_github_credential()
                 .is_some_and(|c| c.id == credential_id),
+            // TavilyKey：无渠道引用与本地运行态，直接删除
+            CredentialKind::TavilyKey => false,
         };
 
         library.remove_by_id(credential_id);
@@ -269,6 +271,49 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 user_name: auth.user_name,
                 hint: auth.hint,
             },
+        })
+    }
+
+    /// Tavily 集成状态聚合（凭证快照 + 共享 key 配置状态，双轨授权的实例侧可见性）
+    async fn tavily_integration_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<common::api::TavilyIntegrationStatusResponse> {
+        let library = self.load_credential_library(ctx, user_id).await?;
+        let default_id = library.default_tavily_credential_id.clone();
+        let mut credentials = Vec::new();
+        for credential in library
+            .items
+            .iter()
+            .filter(|c| matches!(c.kind, CredentialKind::TavilyKey))
+        {
+            let CredentialDetail::TavilyKey { api_key } = &credential.detail else {
+                continue;
+            };
+            // key 尾号（解密失败按空串处理，不阻断状态聚合）
+            let api_key_tail = crate::pkg::crypto::decrypt_channel_secret(api_key)
+                .map(|plain| {
+                    plain
+                        .chars()
+                        .rev()
+                        .take(4)
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect()
+                })
+                .unwrap_or_default();
+            credentials.push(common::api::TavilyCredentialSnapshot {
+                credential_id: credential.id.clone(),
+                name: credential.name.clone(),
+                api_key_tail,
+                is_default: default_id.as_deref() == Some(credential.id.as_str()),
+            });
+        }
+        Ok(common::api::TavilyIntegrationStatusResponse {
+            credentials,
+            shared_key_configured: !crate::config::get().tavily.api_key.trim().is_empty(),
         })
     }
 

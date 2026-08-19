@@ -55,11 +55,13 @@ async fn test_execute_injects_call_id_and_links_full_chain() {
         Some(entry.call_id.as_str())
     );
 
-    // 日志文件名主干 == call_id
+    // 日志文件名主干 == call_id（按天分区目录 YYYYMMDD 下）
+    let day_dir = chrono::Local::now().format("%Y%m%d").to_string();
     let log_path = ensure_test_base_data_path()
         .join("tools")
         .join("shell_exec")
         .join("logs")
+        .join(&day_dir)
         .join(format!("{}.log", entry.call_id));
     assert!(log_path.exists(), "log file should be named by call_id");
 

@@ -5,8 +5,9 @@
 
 pub use common::api::{
     AopStatsDistributionItem, AopStatsDistributionResponse, AopStatsOverviewResponse,
-    AopStatsTimeSeriesPoint, AopStatsTimeSeriesResponse, BackupInfo, EventDetailResponse,
-    EventSummaryResponse, HealthMetricsResponse, LogEntry, QueryLogsResponse, QueueStatsResponse,
+    AopStatsTimeSeriesPoint, AopStatsTimeSeriesResponse, BackupInfo, CleanupToolLogsRequest,
+    CleanupToolLogsResponse, EventDetailResponse, EventSummaryResponse, HealthMetricsResponse,
+    LogEntry, QueryLogsResponse, QueueStatsResponse, ToolLogStorageResponse,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_post_empty, api_put};
@@ -191,6 +192,20 @@ pub async fn get_aop_stats_distribution(
 /// 获取系统健康指标（HUD 仪表盘墙用）
 pub async fn get_health_metrics() -> Result<HealthMetricsResponse, ApiError> {
     api_get("/api/v1/system/health/metrics").await
+}
+
+// ===== 工具日志存储监控与清理（① 运行时输出层治理） =====
+
+/// 工具日志存储占用统计（按天分区 + 保留策略）
+pub async fn get_tool_log_storage() -> Result<ToolLogStorageResponse, ApiError> {
+    api_get("/api/v1/system/storage/tool-logs").await
+}
+
+/// 手动清理超期工具日志（retention_days 缺省读服务端 [tool_log] 配置）
+pub async fn cleanup_tool_logs(
+    req: common::api::CleanupToolLogsRequest,
+) -> Result<CleanupToolLogsResponse, ApiError> {
+    api_post("/api/v1/system/storage/tool-logs/cleanup", &req).await
 }
 
 // ===== 统一后台进程管理（shell_list / shell_status / shell_kill 的 HTTP 面） =====

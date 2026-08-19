@@ -210,6 +210,27 @@ pub type SearchToolsResponse = PagedResult<ToolListItem>;
 /// Tool list item alias (frontend compatibility)
 pub type ListToolsResponseItem = ToolListItem;
 
+/// 工具运行时就绪预检结果（三层就绪提示体系第①层：清单级标志）
+///
+/// 附加信息而非硬约束：未就绪不阻止绑定，仅作提示；
+/// `unknown` 表示探测异常（best-effort，不阻塞列表接口）。
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum RuntimeReady {
+    /// 就绪（CLI 二进制可寻址 / 授权可用）
+    Ready,
+    /// 未就绪：含原因与可操作提示
+    NotReady {
+        /// 原因码：cli_not_installed / api_key_missing 等
+        reason: String,
+        /// 可操作提示（安装命令 / 配置路径）
+        hint: String,
+    },
+    /// 探测异常，结果未知
+    #[default]
+    Unknown,
+}
+
 /// Tool list item
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ToolListItem {
@@ -239,6 +260,8 @@ pub struct ToolListItem {
     pub created_at: i64,
     /// Updated timestamp
     pub updated_at: i64,
+    /// Runtime readiness pre-check (CLI installed / authorization available; advisory only)
+    pub runtime_ready: RuntimeReady,
 }
 
 /// Update tool request

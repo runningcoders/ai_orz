@@ -16,6 +16,7 @@ pub mod process;
 pub mod request_context;
 pub mod stats;
 pub mod storage;
+pub mod tool_log_retention;
 pub mod tool_registry;
 pub mod tool_tracing;
 pub mod utils;

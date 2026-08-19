@@ -80,6 +80,7 @@ impl Consumer for CronTriggerConsumer {
                 self.handle_agent_rest(&event, &payload.extra).await?;
             }
             "project_followup" => self.handle_project_followup(&payload.extra).await?,
+            "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
             _ => {
                 sys_warn!(
                     "unknown action '{}' for trigger {} (id: {})",
@@ -190,6 +191,36 @@ impl CronTriggerConsumer {
             }
         }
 
+        Ok(())
+    }
+
+    /// tool_log_cleanup 动作：清理超期工具运行日志（① 运行时输出 TTL）
+    ///
+    /// 保留天数读 `[tool_log].retention_days` 配置（0 = 不清理）；
+    /// Running 进程日志所在日期目录受保护跳过（见 tool_log_retention 模块）。
+    async fn handle_tool_log_cleanup(&self) -> Result<()> {
+        let config = crate::config::get();
+        let retention_days = config.tool_log.retention_days;
+        if retention_days == 0 {
+            sys_info!("tool_log_cleanup: retention_days = 0，跳过清理");
+            return Ok(());
+        }
+
+        let base_path = config.base_data_path();
+        let report = tokio::task::spawn_blocking(move || {
+            crate::pkg::tool_log_retention::cleanup_tool_logs(&base_path, retention_days)
+        })
+        .await
+        .map_err(|e| Error::internal(format!("tool log cleanup task join error: {}", e)))?;
+
+        sys_info!(
+            "tool_log_cleanup 完成: 扫描 {} 个日志根，删除 {} 个日期目录 / {} 个文件，释放 {} 字节，{} 个目录因 Running 保护跳过",
+            report.scanned_roots,
+            report.removed_dirs,
+            report.removed_files,
+            report.freed_bytes,
+            report.skipped_dirs
+        );
         Ok(())
     }
 }

@@ -5,8 +5,9 @@
 //! - 用户授权状态查询（`auth status --json`）与取消授权（`auth logout`）
 //! - config init --new 自动化绑定会话（bind session，内存注册表）
 //!
-//! 复用一期 HOME 隔离设施（`tool_registry::lark_cli` 的 `lark_home`/`binary_available`
-//! /`ensure_cli_config`/`sanitize_lark_output`）。
+//! 复用一期 HOME 隔离设施（`tool_registry::lark_cli` 的 `lark_home`
+//! /`ensure_cli_config`/`sanitize_lark_output`）与 tool_readiness 的
+//! `command_available` 二进制探测。
 //!
 //! # 约定
 //!
@@ -14,9 +15,8 @@
 //! - keychain 不可用 → 降级返回（degraded=true + hint），不抛 500
 //! - 输出经 `sanitize_lark_output` 脱敏；JSON 解析逻辑为纯函数（fixture 可测）
 
-use crate::pkg::tool_registry::lark_cli::{
-    LARK_CLI_BIN, binary_available, lark_home, sanitize_lark_output,
-};
+use crate::pkg::tool_registry::lark_cli::{LARK_CLI_BIN, lark_home, sanitize_lark_output};
+use crate::pkg::tool_registry::tool_readiness::command_available;
 use anyhow::anyhow;
 use common::error::{Result, err};
 use serde::Deserialize;
@@ -71,7 +71,7 @@ pub struct LarkAuthOutcome {
 
 /// 解析用户 lark-cli HOME 并校验前置条件（二进制可用 + 已绑定应用 config）
 fn prepare_lark_home(user_id: &str) -> Result<std::path::PathBuf> {
-    if !binary_available(LARK_CLI_BIN) {
+    if !command_available(LARK_CLI_BIN) {
         return Err(err!(
             InvalidRequest,
             "未找到 lark-cli 二进制，请先安装：https://github.com/larksuite/lark-cli"
@@ -451,7 +451,7 @@ async fn scan_bind_output(
 /// 返回 `(session_id, verification_url)`；URL 未能在启动窗口内抓到时返回空串，
 /// 前端通过 status 轮询补取。
 pub async fn start_bind_session(user_id: &str) -> Result<(String, String)> {
-    if !binary_available(LARK_CLI_BIN) {
+    if !command_available(LARK_CLI_BIN) {
         return Err(err!(
             InvalidRequest,
             "未找到 lark-cli 二进制，请先安装：https://github.com/larksuite/lark-cli"

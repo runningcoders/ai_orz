@@ -11,6 +11,7 @@ pub mod mcp_tool;
 pub mod message;
 pub mod message_channel;
 pub mod model_provider;
+pub mod tavily_integration;
 pub mod tool;
 
 // handler 函数导出供路由使用

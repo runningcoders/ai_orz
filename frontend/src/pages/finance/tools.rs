@@ -9,7 +9,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    ListToolsRequest, ListToolsResponseItem, SearchToolsRequest, ToolQueryRequest,
+    ListToolsRequest, ListToolsResponseItem, RuntimeReady, SearchToolsRequest, ToolQueryRequest,
     UpdateToolStatusRequest,
 };
 use common::enums::{ToolProtocol, ToolStatus};
@@ -197,6 +197,7 @@ pub fn FinanceTools() -> Element {
                                 th { "名称" }
                                 th { "协议" }
                                 th { "状态" }
+                                th { "就绪" }
                                 th { "操作" }
                             }}
                             tbody {
@@ -207,6 +208,25 @@ pub fn FinanceTools() -> Element {
                                         let protocol = t.protocol;
                                         let status = t.status;
                                         let is_enabled = status == ToolStatus::Enabled;
+                                        let runtime_ready = t.runtime_ready.clone();
+                                        // 就绪 badge 三态（advisory）：未就绪悬浮显示原因与修复提示；Unknown（无探测器）弱化展示
+                                        let (ready_class, ready_title, ready_text) = match &runtime_ready {
+                                            RuntimeReady::Ready => (
+                                                "badge badge-success badge-outline",
+                                                "运行环境就绪（CLI 已安装 / 授权可用）".to_string(),
+                                                "就绪",
+                                            ),
+                                            RuntimeReady::NotReady { reason, hint } => (
+                                                "badge badge-warning badge-outline",
+                                                format!("未就绪（{}）：{}", reason, hint),
+                                                "未就绪",
+                                            ),
+                                            RuntimeReady::Unknown => (
+                                                "text-base-content/40 text-xs",
+                                                String::new(),
+                                                "—",
+                                            ),
+                                        };
                                         let id_disable = id.clone();
                                         let id_enable = id.clone();
                                         let id_delete = id.clone();
@@ -222,6 +242,13 @@ pub fn FinanceTools() -> Element {
                                                         span { class: "badge badge-success", "启用" }
                                                     } else {
                                                         span { class: "badge badge-error", "禁用" }
+                                                    }
+                                                }
+                                                td {
+                                                    span {
+                                                        class: "{ready_class}",
+                                                        title: "{ready_title}",
+                                                        "{ready_text}"
                                                     }
                                                 }
                                                 td { class: "flex gap-2 items-center",

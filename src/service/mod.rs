@@ -20,8 +20,29 @@ pub fn init() {
         dal::user::GhDalCredentialResolver,
     ));
 
+    // tavily_search 工具凭证解析器：按用户凭证库取解密后 Tavily API key
+    crate::pkg::tool_registry::tavily_search::set_credential_resolver(Box::new(
+        dal::user::TavilyDalCredentialResolver,
+    ));
+
     // 初始化 Domain 层（依赖 DAL）
     domain::init_all();
+
+    // 工具就绪探测器（三层就绪提示体系）：
+    // browser/lark_cli/gh_cli → CLI 二进制探测；tavily_search → 授权双轨探测
+    crate::pkg::tool_registry::tool_readiness::register_default_probes();
+
+    // browser 工具截图产物存储器：project Domain 实现
+    // （截图拷贝入项目产物目录 + GeneratedContent 产物记录）
+    crate::pkg::tool_registry::browser::set_screenshot_storer(Box::new(
+        domain::project::ProjectScreenshotStorer,
+    ));
+
+    // mark_artifact 工具产物注册器：project Domain 实现
+    // （工具运行日志复制晋升入项目产物目录，与 ① 层 TTL 清理解耦）
+    crate::pkg::tool_registry::mark_artifact::set_artifact_registrar(Box::new(
+        domain::project::ProjectToolOutputRegistrar,
+    ));
 }
 
 /// 第二阶段：异步初始化各 Domain 的基础数据（幂等写入默认条目等）。

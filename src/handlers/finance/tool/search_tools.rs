@@ -11,7 +11,7 @@ use common::api::{PagedResult, SearchToolsRequest, ToolListItem};
 use common::enums::ToolStatus;
 use common::error::Result;
 
-use super::response::to_list_item;
+use super::response::{probe_runtime_ready, to_list_item};
 
 /// Search tools with full filtering (FTS5 + vector semantic search)
 #[register_handler_tool(
@@ -45,8 +45,12 @@ pub async fn search_tools(
 
     let page = domain()
         .tool_provider_manage()
-        .search_tools(ctx, search)
+        .search_tools(ctx.clone(), search)
         .await?;
 
-    Ok(page.map(|t| to_list_item(&t)))
+    let ready = probe_runtime_ready(&ctx, &page.items).await;
+    Ok(page.map(|t| {
+        let runtime_ready = ready.get(&t.po.id).cloned().unwrap_or_default();
+        to_list_item(&t, runtime_ready)
+    }))
 }

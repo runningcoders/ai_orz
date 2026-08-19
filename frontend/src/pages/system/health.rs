@@ -8,15 +8,21 @@
 //! - 待处理任务数
 //! - 运行时长
 //! - 飞书 WS 监听连接（活跃连接数 + per-app state/重连次数明细）
+//! - 工具日志存储（① 运行时输出层：占用统计 + 手动清理）
 //!
-//! 10 秒轮询刷新（use_effect + spawn + loop + sleep_ms）。
+//! 健康指标 10 秒轮询刷新（use_effect + spawn + loop + sleep_ms）；
+//! 工具日志存储为磁盘扫描（低频），挂载时加载一次 + 清理后手动刷新。
 
 use dioxus::prelude::*;
 
-use crate::api::system::{HealthMetricsResponse, check_health, get_health_metrics};
+use crate::api::system::{
+    CleanupToolLogsRequest, HealthMetricsResponse, ToolLogStorageResponse, check_health,
+    cleanup_tool_logs, get_health_metrics, get_tool_log_storage,
+};
 use crate::components::gauge::Gauge;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::file::format_file_size;
 
 fn aop_color(pending: u64) -> String {
     if pending >= 10 {
@@ -79,11 +85,27 @@ fn ws_gauge_color(active_connections: u64, any_reconnecting: bool) -> String {
     }
 }
 
+/// 工具日志保留天数 → 展示文案（0 = 不清理）
+fn retention_text(days: u32) -> String {
+    if days == 0 {
+        "不清理".to_string()
+    } else {
+        format!("{} 天", days)
+    }
+}
+
 #[component]
 pub fn SystemHealth() -> Element {
     let mut loading = use_signal(|| false);
     let mut metrics: Signal<Option<HealthMetricsResponse>> = use_signal(|| None);
     let toast = use_toast();
+
+    // 工具日志存储（① 运行时输出层）：占用统计 + 手动清理
+    // 磁盘扫描低频数据，不进 10 秒轮询，挂载加载一次 + 清理后刷新
+    let mut storage: Signal<Option<ToolLogStorageResponse>> = use_signal(|| None);
+    let mut cleaning = use_signal(|| false);
+    // 本次清理的保留天数覆盖（空 = 用服务端 [tool_log].retention_days 配置）
+    let mut retention_input = use_signal(String::new);
 
     let mut load_metrics = move || {
         loading.set(true);
@@ -96,7 +118,16 @@ pub fn SystemHealth() -> Element {
         });
     };
 
-    // 初始加载 + 10 秒轮询
+    let load_storage = move || {
+        spawn(async move {
+            match get_tool_log_storage().await {
+                Ok(s) => storage.set(Some(s)),
+                Err(e) => toast.error(format!("加载工具日志存储统计失败: {}", e)),
+            }
+        });
+    };
+
+    // 初始加载 + 10 秒轮询（健康指标）
     use_effect(move || {
         load_metrics();
         spawn(async move {
@@ -105,7 +136,44 @@ pub fn SystemHealth() -> Element {
                 load_metrics();
             }
         });
+        load_storage();
     });
+
+    // 手动清理超期工具日志（保留天数可用输入框覆盖；0 = 清理关闭空跑）
+    let handle_cleanup_tool_logs = move |_| {
+        if cleaning() {
+            return;
+        }
+        let retention_override = retention_input.read().trim().parse::<u32>().ok();
+        cleaning.set(true);
+        spawn(async move {
+            match cleanup_tool_logs(CleanupToolLogsRequest {
+                retention_days: retention_override,
+            })
+            .await
+            {
+                Ok(r) => {
+                    if r.success {
+                        toast.success(format!(
+                            "工具日志清理完成：删除 {} 个日期目录 / {} 个文件，释放 {}（{} 个目录因运行中进程保护跳过）",
+                            r.removed_dirs,
+                            r.removed_files,
+                            format_file_size(r.freed_bytes),
+                            r.skipped_dirs
+                        ));
+                    } else {
+                        toast.error("清理未执行：保留天数为 0（自动清理已关闭）");
+                    }
+                    match get_tool_log_storage().await {
+                        Ok(s) => storage.set(Some(s)),
+                        Err(e) => toast.error(format!("刷新工具日志统计失败: {}", e)),
+                    }
+                }
+                Err(e) => toast.error(format!("工具日志清理失败: {}", e)),
+            }
+            cleaning.set(false);
+        });
+    };
 
     let m_opt = metrics.read().clone();
 
@@ -289,6 +357,79 @@ pub fn SystemHealth() -> Element {
             } else {
                 div { class: "text-center py-12 text-base-content/50", "暂无数据" }
             }
+
+            // 工具日志存储（① 运行时输出层治理：占用统计 + 按天明细 + 手动清理）
+            div { class: "card bg-base-100 shadow-md",
+                div { class: "card-body",
+                    div { class: "flex justify-between items-center flex-wrap gap-2",
+                        h3 { class: "card-title text-base", "工具日志存储" }
+                        div { class: "flex items-center gap-2",
+                            input {
+                                class: "input input-sm input-bordered w-28",
+                                r#type: "number",
+                                min: "0",
+                                placeholder: "保留天数",
+                                title: "本次清理的保留天数覆盖（留空 = 服务端配置；0 = 清理关闭）",
+                                value: "{retention_input}",
+                                oninput: move |e| retention_input.set(e.value()),
+                            }
+                            button {
+                                class: "btn btn-warning btn-sm",
+                                disabled: cleaning(),
+                                onclick: handle_cleanup_tool_logs,
+                                if cleaning() { "清理中..." } else { "立即清理" }
+                            }
+                        }
+                    }
+
+                    if let Some(s) = storage.read().clone() {
+                        // 占用概览
+                        div { class: "stats stats-vertical sm:stats-horizontal shadow w-full",
+                            div { class: "stat",
+                                div { class: "stat-title", "总占用" }
+                                div { class: "stat-value text-lg", "{format_file_size(s.total_bytes)}" }
+                            }
+                            div { class: "stat",
+                                div { class: "stat-title", "日志文件数" }
+                                div { class: "stat-value text-lg", "{s.total_files}" }
+                            }
+                            div { class: "stat",
+                                div { class: "stat-title", "保留策略" }
+                                div { class: "stat-value text-lg",
+                                    "{retention_text(s.retention_days)}"
+                                }
+                                div { class: "stat-desc",
+                                    "每日 05:00 自动清理（ai_orz.toml [tool_log] 可配，运行中进程日志受保护）"
+                                }
+                            }
+                        }
+
+                        // 按天占用明细（降序：最新在前）
+                        if s.by_day.is_empty() {
+                            div { class: "text-base-content/50 text-sm py-2", "暂无工具运行日志" }
+                        } else {
+                            div { class: "overflow-x-auto",
+                                table { class: "table table-zebra table-sm",
+                                    thead { tr { th { "日期" }, th { "文件数" }, th { "占用" } } }
+                                    tbody {
+                                        for day in s.by_day.iter().rev() {
+                                            tr {
+                                                td { class: "font-mono text-sm", "{day.day}" }
+                                                td { "{day.files}" }
+                                                td { "{format_file_size(day.bytes)}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        div { class: "flex justify-center py-6",
+                            span { class: "loading loading-spinner" }
+                        }
+                    }
+                }
+            }
         }
         }
     }
@@ -333,5 +474,11 @@ mod tests {
         assert_eq!(ws_gauge_color(1, false), "#10b981");
         // 无连接 → 灰
         assert_eq!(ws_gauge_color(0, false), "#64748b");
+    }
+
+    #[test]
+    fn test_retention_text() {
+        assert_eq!(retention_text(0), "不清理");
+        assert_eq!(retention_text(30), "30 天");
     }
 }

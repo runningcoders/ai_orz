@@ -486,6 +486,100 @@ impl super::ArtifactManage for ProjectDomainImpl {
     }
 }
 
+// ==================== browser 工具截图产物存储器 ====================
+
+/// browser 内置工具的截图产物存储器（pkg `ScreenshotStorer` 的 Domain 实现）
+///
+/// 复用 `create_generated_artifact_from_file`：截图拷贝入项目产物目录并落
+/// GeneratedContent 产物记录（ctx 带 task_id 时挂任务级，否则项目级），
+/// 由 `service::init` 注册给 pkg 层 browser 工具。
+pub struct ProjectScreenshotStorer;
+
+#[async_trait::async_trait]
+impl crate::pkg::tool_registry::browser::ScreenshotStorer for ProjectScreenshotStorer {
+    async fn store_screenshot(
+        &self,
+        ctx: RequestContext,
+        source_path: std::path::PathBuf,
+        file_name: String,
+    ) -> Result<crate::pkg::tool_registry::browser::ScreenshotArtifact> {
+        let Some(project_id) = ctx.project_id.clone() else {
+            bail_err!(
+                InvalidRequest,
+                "当前上下文缺少项目上下文（project_id），无法归档截图产物"
+            );
+        };
+        let artifact = super::domain()
+            .artifact_manage()
+            .create_generated_artifact_from_file(
+                ctx.clone(),
+                project_id,
+                ctx.task_id.clone(),
+                file_name.clone(),
+                "browser 工具截图".to_string(),
+                source_path,
+                file_name,
+                "image/png".to_string(),
+                FileType::Image,
+                vec!["browser".to_string(), "screenshot".to_string()],
+                ctx.uid().to_string(),
+            )
+            .await?;
+        Ok(crate::pkg::tool_registry::browser::ScreenshotArtifact {
+            artifact_id: artifact.po.id.clone(),
+            name: artifact.po.name.clone(),
+        })
+    }
+}
+
+// ==================== mark_artifact 工具产物注册器 ====================
+
+/// mark_artifact 内置工具的产物注册器（pkg `ArtifactRegistrar` 的 Domain 实现）
+///
+/// 复用 `create_generated_artifact_from_file`：把工具运行日志复制晋升入项目
+/// 产物目录并落 GeneratedContent 产物记录（带 tool-output 标签，可治理），
+/// 由 `service::init` 注册给 pkg 层 mark_artifact 工具。
+/// 与 ① 层运行日志生命周期解耦：TTL 清理不触碰产物副本。
+pub struct ProjectToolOutputRegistrar;
+
+#[async_trait::async_trait]
+impl crate::pkg::tool_registry::mark_artifact::ArtifactRegistrar for ProjectToolOutputRegistrar {
+    async fn register_tool_output(
+        &self,
+        ctx: RequestContext,
+        call_id: String,
+        log_path: std::path::PathBuf,
+        project_id: String,
+        task_id: Option<String>,
+        name: String,
+        description: String,
+    ) -> Result<crate::pkg::tool_registry::mark_artifact::ToolOutputArtifact> {
+        let file_name = format!("tool-output-{}.log", call_id);
+        let artifact = super::domain()
+            .artifact_manage()
+            .create_generated_artifact_from_file(
+                ctx.clone(),
+                project_id,
+                task_id,
+                name,
+                description,
+                log_path,
+                file_name,
+                "text/plain".to_string(),
+                FileType::Document,
+                vec!["tool-output".to_string(), call_id.clone()],
+                ctx.uid().to_string(),
+            )
+            .await?;
+        Ok(
+            crate::pkg::tool_registry::mark_artifact::ToolOutputArtifact {
+                artifact_id: artifact.po.id.clone(),
+                name: artifact.po.name.clone(),
+            },
+        )
+    }
+}
+
 impl ProjectDomainImpl {
     async fn validate_project_access(&self, ctx: RequestContext, project_id: &str) -> Result<()> {
         let Some(project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {

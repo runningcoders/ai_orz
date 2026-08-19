@@ -2,12 +2,15 @@
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::tool_registry::ToolRegistry;
+use crate::pkg::tool_registry::browser::BrowserToolFactory;
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
 use crate::pkg::tool_registry::gh_cli::GhCliToolFactory;
 use crate::pkg::tool_registry::http_fetch::HttpFetchToolFactory;
 use crate::pkg::tool_registry::lark_cli::LarkCliToolFactory;
+use crate::pkg::tool_registry::mark_artifact::MarkArtifactToolFactory;
 use crate::pkg::tool_registry::shell_exec::ShellExecToolFactory;
+use crate::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
 use dyn_clone::DynClone;
 use dyn_clone::clone_trait_object;
 use once_cell::sync::Lazy;
@@ -35,6 +38,15 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
             ("shell_exec".to_string(), Box::new(ShellExecToolFactory)),
             ("lark_cli".to_string(), Box::new(LarkCliToolFactory)),
             ("gh_cli".to_string(), Box::new(GhCliToolFactory)),
+            (
+                "tavily_search".to_string(),
+                Box::new(TavilySearchToolFactory),
+            ),
+            ("browser".to_string(), Box::new(BrowserToolFactory)),
+            (
+                "mark_artifact".to_string(),
+                Box::new(MarkArtifactToolFactory),
+            ),
         ]
     });
 
@@ -60,6 +72,9 @@ mod tests {
             ("shell_exec", vec!["shell"]),
             ("lark_cli", vec!["lark"]),
             ("gh_cli", vec!["github"]),
+            ("tavily_search", vec!["search", "network"]),
+            ("browser", vec!["browser", "network"]),
+            ("mark_artifact", vec!["artifact"]),
         ];
         for (id, tags) in expected {
             let factory = GENERIC_BUILTIN_TOOLS

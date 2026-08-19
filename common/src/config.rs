@@ -57,9 +57,20 @@ pub struct AppConfig {
     #[serde(default)]
     pub a2a_server: A2aServerConfig,
 
+    /// Tavily 网络搜索配置（tavily_search 工具）
+    #[serde(default)]
+    pub tavily: TavilyConfig,
+    /// agent-browser CLI（browser 内置工具）
+    #[serde(default)]
+    pub browser: BrowserConfig,
+
     /// Agent 运行时默认配置（系统级，可被 Agent 实体的 runtime_config 覆盖）
     #[serde(default)]
     pub agent: AgentConfig,
+
+    /// 工具运行日志配置（shell_exec 等工具的运行时输出清理策略）
+    #[serde(default)]
+    pub tool_log: ToolLogConfig,
 }
 
 /// Agent 运行时配置（系统级默认值）
@@ -226,6 +237,26 @@ fn default_log_format() -> String {
 }
 
 fn default_log_retention_days() -> u32 {
+    30 // 默认保留 30 天
+}
+
+/// 工具运行日志配置（shell_exec 等工具的 ① 运行时输出，见 docs/design/tool_output_boundary_design.md）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ToolLogConfig {
+    /// 工具日志保留天数（0 = 不清理），默认 30
+    #[serde(default = "default_tool_log_retention_days")]
+    pub retention_days: u32,
+}
+
+impl Default for ToolLogConfig {
+    fn default() -> Self {
+        Self {
+            retention_days: default_tool_log_retention_days(),
+        }
+    }
+}
+
+fn default_tool_log_retention_days() -> u32 {
     30 // 默认保留 30 天
 }
 
@@ -594,4 +625,68 @@ fn default_a2a_endpoint() -> String {
 
 fn default_a2a_card_path() -> String {
     "/.well-known/agent.json".to_string()
+}
+
+/// Tavily 网络搜索配置（tavily_search 工具）
+///
+/// api_key 为实例共享兜底授权：个人 key 优先走用户身份凭证库
+/// （CredentialKind::TavilyKey），用户未绑定且此处非空时兜底使用；
+/// 两者皆缺时工具调用返回 api_key_missing 引导。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TavilyConfig {
+    /// 共享 API key（实例级兜底；个人 key 优先走用户凭证库）
+    #[serde(default)]
+    pub api_key: String,
+    /// 请求超时（毫秒）
+    #[serde(default = "default_tavily_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+impl Default for TavilyConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            timeout_ms: default_tavily_timeout_ms(),
+        }
+    }
+}
+
+fn default_tavily_timeout_ms() -> u64 {
+    15_000
+}
+
+/// agent-browser CLI 配置（browser 内置工具）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BrowserConfig {
+    /// agent-browser 二进制名或绝对路径（绝对路径优先）
+    #[serde(default = "default_browser_command")]
+    pub command: String,
+    /// 单次子命令超时（毫秒）
+    #[serde(default = "default_browser_timeout_ms")]
+    pub timeout_ms: u64,
+    /// 输出截断上限（字节）
+    #[serde(default = "default_browser_max_output_bytes")]
+    pub max_output_bytes: u64,
+}
+
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            command: default_browser_command(),
+            timeout_ms: default_browser_timeout_ms(),
+            max_output_bytes: default_browser_max_output_bytes(),
+        }
+    }
+}
+
+fn default_browser_command() -> String {
+    "agent-browser".to_string()
+}
+
+fn default_browser_timeout_ms() -> u64 {
+    60_000
+}
+
+fn default_browser_max_output_bytes() -> u64 {
+    262_144
 }

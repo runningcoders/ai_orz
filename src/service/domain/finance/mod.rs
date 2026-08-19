@@ -353,6 +353,13 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
     ) -> Result<common::api::GithubIntegrationStatusResponse>;
 
+    /// Tavily 集成状态聚合（凭证快照 + 共享 key 配置状态）
+    async fn tavily_integration_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<common::api::TavilyIntegrationStatusResponse>;
+
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================
 
     /// 发起飞书用户授权 device flow（返回设备码 + 验证 URL）

@@ -35,6 +35,22 @@ log_subdir = "logs"
 # 是否启用 A2A Server（JSON-RPC 端点）
 enabled = true
 
+# Tavily 网络搜索配置（tavily_search 工具）
+[tavily]
+# 共享 API key（实例级兜底；个人 key 优先走用户身份凭证库，两者皆缺时工具调用返回引导）
+# api_key = "tvly-xxx"
+# 请求超时（毫秒）
+timeout_ms = 15000
+
+# 浏览器自动化配置（browser 内置工具，包装 agent-browser CLI）
+[browser]
+# agent-browser 二进制名或绝对路径（绝对路径优先；未安装时工具调用返回安装引导）
+command = "agent-browser"
+# 单次子命令超时（毫秒）
+timeout_ms = 60000
+# 输出截断上限（字节）
+max_output_bytes = 262144
+
 # JWT配置
 [jwt]
 # JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置
@@ -57,4 +73,9 @@ intent_analyze_max_rounds = 365
 summary_max_rounds = 365
 # 思考超时（秒），0 = 不限制
 think_timeout_secs = 0
+
+# 工具运行日志配置（shell_exec 等工具的运行时输出清理策略）
+[tool_log]
+# 工具日志保留天数（0 = 不清理），超期日志由系统定时任务自动清理（运行中进程的日志受保护不删）
+retention_days = 30
 
