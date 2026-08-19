@@ -31,7 +31,7 @@ pub struct EventRef {
     pub order_key: String,
     /// 优先级（数值越大优先级越高）
     pub priority: u8,
-    /// 创建时间戳（秒）
+    /// 创建时间戳（毫秒）
     pub created_at: i64,
 }
 
@@ -81,7 +81,7 @@ pub trait Event: Send + Sync + std::fmt::Debug + std::any::Any + 'static {
         5
     }
 
-    /// 创建时间戳（秒），同优先级按创建时间升序消费
+    /// 创建时间戳（毫秒），同优先级按创建时间升序消费
     fn created_at(&self) -> i64;
 
     /// 生成用于堆排序和队列存储的 EventRef

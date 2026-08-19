@@ -73,7 +73,7 @@ impl McpServerDal for McpServerDalImpl {
     async fn create(&self, ctx: RequestContext, server: &McpServer) -> Result<()> {
         validate_mcp_server_po(&server.po)?;
         let mut po = server.po.clone();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let uid = ctx.caller_id();
         po.created_at = now;
         po.updated_at = now;

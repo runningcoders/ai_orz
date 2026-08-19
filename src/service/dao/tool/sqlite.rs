@@ -283,7 +283,7 @@ impl ToolDao for ToolDaoSqliteImpl {
         created_by: Option<String>,
     ) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
 
         sqlx::query(
             r#"
@@ -393,7 +393,7 @@ impl ToolDao for ToolDaoSqliteImpl {
                     .bind(po.control_mode as i32)
                     .bind(&po.parameters_schema)
                     .bind(&po.tags)
-                    .bind(common::constants::utils::current_timestamp())
+                    .bind(common::constants::utils::current_timestamp_ms())
                     .bind(&po.updated_by)
                     .bind(&tool_id)
                     .execute(ctx.db_pool())

@@ -433,12 +433,12 @@ impl super::ProjectManage for ProjectDomainImpl {
             ProjectStatus::InProgress => {
                 project.po.status = ProjectStatus::InProgress;
                 if project.po.start_at.is_none() {
-                    project.po.start_at = Some(utils::current_timestamp());
+                    project.po.start_at = Some(utils::current_timestamp_ms());
                 }
             }
             ProjectStatus::Completed => {
                 project.po.status = ProjectStatus::Completed;
-                project.po.end_at = Some(utils::current_timestamp());
+                project.po.end_at = Some(utils::current_timestamp_ms());
             }
             ProjectStatus::Archived | ProjectStatus::Active | ProjectStatus::PendingReview => {
                 project.po.status = target_status;

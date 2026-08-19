@@ -57,7 +57,7 @@ pub async fn update_current_user(
     }
 
     // 更新修改时间和修改人
-    user.updated_at = utils::current_timestamp();
+    user.updated_at = utils::current_timestamp_ms();
     if let Some(modifier_id) = ctx.user_id.clone() {
         user.modified_by = modifier_id;
     }

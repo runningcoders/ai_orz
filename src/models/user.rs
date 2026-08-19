@@ -30,9 +30,9 @@ pub struct UserPo {
     pub created_by: String,
     /// 修改人
     pub modified_by: String,
-    /// 创建时间戳（秒）
+    /// 创建时间戳（毫秒）
     pub created_at: i64,
-    /// 更新时间戳（秒）
+    /// 更新时间戳（毫秒）
     pub updated_at: i64,
     /// 用户自述偏好（声明式画像，Markdown 自由文本，空字符串表示未设置）
     ///
@@ -82,7 +82,7 @@ impl UserPo {
         role: UserRole,
         created_by: String,
     ) -> Self {
-        let now = utils::current_timestamp();
+        let now = utils::current_timestamp_ms();
         Self {
             id,
             organization_id,

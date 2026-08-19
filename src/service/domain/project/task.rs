@@ -442,12 +442,12 @@ impl super::TaskManage for ProjectDomainImpl {
             TaskStatus::InProgress => {
                 task.po.status = TaskStatus::InProgress;
                 if task.po.start_at.is_none() {
-                    task.po.start_at = Some(utils::current_timestamp());
+                    task.po.start_at = Some(utils::current_timestamp_ms());
                 }
             }
             TaskStatus::Completed => {
                 task.po.status = TaskStatus::Completed;
-                task.po.end_at = Some(utils::current_timestamp());
+                task.po.end_at = Some(utils::current_timestamp_ms());
             }
             TaskStatus::PendingReview | TaskStatus::Pending | TaskStatus::Archived => {
                 task.po.status = target_status;

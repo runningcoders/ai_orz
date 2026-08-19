@@ -112,7 +112,7 @@ pub struct AttachmentTextContent {
     pub encoding: String,
     /// 内容大小（bytes）。
     pub size: u64,
-    /// 更新时间戳。
+    /// 更新时间戳（毫秒）。
     pub updated_at: i64,
 }
 

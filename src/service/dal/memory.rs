@@ -618,8 +618,8 @@ impl MemoryDal for MemoryDalImpl {
                 tags: index.tags.clone(),
                 status: MemoryStatus::Active,
                 is_published: crate::service::dao::memory::sqlite::tags_has_published(&index.tags),
-                created_at: common::constants::utils::current_timestamp(),
-                updated_at: common::constants::utils::current_timestamp(),
+                created_at: common::constants::utils::current_timestamp_ms(),
+                updated_at: common::constants::utils::current_timestamp_ms(),
             };
 
             let mut results = self

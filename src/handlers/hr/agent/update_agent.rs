@@ -25,7 +25,7 @@ pub async fn update_agent(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64
+            .as_millis() as i64
     }
 
     let mut agent = domain()

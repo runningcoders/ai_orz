@@ -144,7 +144,7 @@ impl McpServerDao for McpServerDaoSqliteImpl {
         status: McpServerStatus,
     ) -> Result<()> {
         let pool = ctx.db_pool();
-        let now = common::constants::utils::current_timestamp();
+        let now = common::constants::utils::current_timestamp_ms();
         let uid = ctx.caller_id_or_system();
         sqlx::query(
             r#"

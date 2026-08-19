@@ -13,7 +13,7 @@ fn current_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs() as i64
+        .as_millis() as i64
 }
 
 /// Update user information (requires admin permissions)
