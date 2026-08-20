@@ -1,607 +1,162 @@
 # AI Orz - Agent 开发规范总览
 
-> 🎯 **本文档供 AI 助手快速理解项目**：5 分钟了解项目是什么、代码怎么组织、开发遵循什么规范。
+> 🎯 **本文档供 AI 助手快速理解项目**：3 分钟了解项目是什么、代码怎么组织、去哪找规范。
 >
-> 本文档只维护**架构规范与开发约定**；功能现状以 [docs/wiki/](./docs/wiki/) 为准，变更历史以 git log 为准，设计决策见 [docs/design/](./docs/design/)。
+> 功能现状以 [docs/wiki/](./docs/wiki/) 为准；编码规范全文见 [docs/CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)；文档维护细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)。
 
 ---
 
-## 一、项目概览
+## 一、项目速览
 
-### 1.1 项目是什么
-
-**AI Orz** - 全栈 Rust 多 Agent 协作框架，以组织化形式管理和执行 AI 代理任务
+**AI Orz** — 全栈 Rust 多 Agent 协作框架，以组织化形式管理和执行 AI 代理任务。
 
 - **后端**：Rust + Axum + SQLite + sqlx 0.8 + 原生 CortexDao（OpenAI 兼容）
 - **前端**：Dioxus 0.7 (WebAssembly) + Tailwind CSS v4 + DaisyUI v5
-- **技术特色**：严格分层架构、类型安全、1124 个测试 100% 通过率、clippy `-D warnings` 零容忍（后端 + 前端 wasm32）、cargo-llvm-cov 覆盖率门槛（PR 38% / main 45%）、30+ 主题切换
+- **质量**：1124 测试 100% 通过 · clippy `-D warnings` 双端零容忍 · cargo-llvm-cov 38%/45% 门槛
 
-### 1.2 核心能力域概览
+### 核心能力域
 
-> 功能细节（页面、接口、组件实现）以 wiki 为准，本表只做域级速览。
-
-| 能力域 | 覆盖范围 |
-|--------|---------|
-| 👥 组织与权限 | 多级组织、用户角色（Member → Admin → SuperAdmin 并查集继承）、JWT Cookie + Bearer 双模式认证、**用户偏好双源沉淀**（users.preferences 自报 + 知识图谱 `user_preference` tag 推断） |
-| 🤖 Agent | 全生命周期（创建/配置/工具绑定/入职）、唤醒执行、**两阶段唤醒（IntentAnalyze 先理解再执行 + Awaken 正式执行）**、多回合循环控制、Auto/Manual 工具调用三层分发、Agent 间协作、**思考运行时可观测（runtime-status/cancel-thinking/runtime-list 接口 + 前端轮询面板）**、**策略引擎（Policy trait + PolicyGroup + policy_set! 宏，5 个内置策略 + 混合模式组合）** |
-| 🧠 记忆 | 四层记忆（Core/Working/Short-term/Long-term）、休息沉淀机制（agent_rest 定时）、知识图谱可视化、**task_id 注意力聚焦 + trace_ids 强制写入**、**种子节点推荐 recommend_seed_nodes + 图谱遍历 traverse_knowledge_graph** |
-| 💬 对话与消息 | 用户 ↔ Agent 双向对话、SSE 实时推送、消息渠道（飞书 WS 入站已上线，微信/Slack/邮件/Webhook 出站骨架）、**用户身份凭证中枢（AES-256-GCM 加密存储 identity_credentials）** |
-| 📋 任务与项目 | 任务状态机 + 进度追踪（0-100）、execution_plan/execution_result、项目聚合对话上下文、统一附件与产物存储 |
-| 🛠️ 工具与技能 | 统一工具调用架构、工具包/技能包（tag 分组）、5 份预置技能、MCP 服务器集成 |
-| 🔌 外部 Agent | A2A 协议 Client/Server、异步结果回传（Push 回调 + 30 秒轮询兜底） |
-| 🔎 搜索 | FTS5 关键词 + 向量语义 + 图谱关系三位一体混合搜索，LanceDB 默认 + 多后端（HNSW/InMemory/SQLite VSS）、**tags 语义过滤** |
-| 📊 统计与监控 | DuckDB 多维统计（五维度）、运行时内存统计收集器、AOP 队列监控、系统健康仪表盘（7 维度含飞书 WS）、**AgentAwakeEvent exit_reason 字段（思考退出原因统计分析）** |
-| 🚀 异步基础设施 | AOP 事件中心（纯框架零业务依赖）、消费者框架（8 类消费者：调度/Agent 循环/任务/消息/工具执行/日志/统计/思考轮次）、定时触发器（cron，启动幂等注入 2 条系统默认任务） |
-| 🖥️ 系统运维 | 结构化日志（宏化）、后台进程管理（shell_exec 双露工具）、数据备份恢复、日志在线查询 |
-| 🎨 前端 | Dioxus Router 41 条路由 + Tailwind v4 + DaisyUI v5 + 30+ 主题、HUD Canvas 可视化（图谱/图表/看板/仪表盘）、Markdown + Mermaid 全链路渲染、**文档中心动态加载 design/plan/archive/wiki** |
-| 🧪 质量工程 | 1124 测试 100% 通过率（后端 984：897单元+87集成 / 前端 82 / common 58，DAO/DAL/Domain/Handler/Pkg全覆盖；集成 87个/19 targets：Auth/SysInit CoreCRUD MsgDelivery VectorDegradation A2AFow PresetSkills CronTriggers LarkIntegration MsgChannel AgentAwaken 宏集成）、clippy `-D warnings` 双端零容忍、cargo-llvm-cov 覆盖率门槛（PR 38%/main 45%）、分层模块 DAO25/DAL23/Domain7/Handler8 零闲置（每 domain 含 init_base_data 扩展点）、E2E Playwright（仅本地） |
-| 📚 **知识体系 + RAG 自索引** | **4 类文档，单向引用模型（v2.1）：**① `docs/design/` 为什么 / ② `docs/plan/` 怎么做+结果（两者为历史快照，写定冻结，完成后精简归档）/ ③ `docs/wiki/zh/content/` 百科（8 大板块 353 篇）/ ④ `docs/wiki/knowledge/zh/` 54+ 张 RAG 原子知识卡（总结+索引，RAG 第一召回层）；③④ 为活文档，`<cite>` / `source_files[]` **单向指向** ①② 与源码（代码引用 `相对路径#L起始-L结束`，文档引用 `相对仓库根路径`）；①② **不反向链** ③④（冻结文档无法跟进 wiki 改版 = 永久断链）。**阅读链路（严格顺序，禁跳过 Wiki）**：④卡 → ③长文 → 源码 → ①Design → ②Plan。知识卡 YAML `scope[]` 按 glob 过滤关注文件集，`source_files[]` 必须含源码锚点 + ③ 长文（①② 有则写）。同主题多张平行卡：按 §2.1.3 图谱法则判定合并/拆分，禁止裸重叠。维护 Skill：ai-orz-wiki-maintainer（③+④ 活文档）+ ai-orz-doc-maintainer（①+② 全生命周期含归档） |
+| 域 | 一句话说明 |
+|----|-----------|
+| 👥 组织权限 | 多级组织 + 角色并查集继承 + JWT 双模式 + 偏好双源沉淀 |
+| 🤖 Agent | 全生命周期 + 两阶段唤醒（IntentAnalyze → Awaken）+ 策略引擎 |
+| 🧠 记忆 | 四层记忆 + 休息沉淀 + 知识图谱 + 种子推荐 |
+| 💬 对话消息 | SSE 实时推送 + 多渠道入站（飞书 WS）+ 5 类出站骨架 |
+| 📋 任务项目 | 任务状态机 + 进度追踪 + TaskGraph DAG + 项目聚合上下文 |
+| 🛠️ 工具技能 | 三层调用架构 + 5 份预置技能 + MCP 集成 |
+| 🔌 外部 Agent | A2A 协议 Client/Server + 异步回调 |
+| 🔎 搜索 | FTS5 + 向量 + 图谱三位一体混合搜索 |
+| 📊 统计监控 | DuckDB 五维统计 + 运行时观测 + 系统健康仪表盘 |
+| 🚀 异步基建 | AOP 事件中心 + 8 类消费者 + cron 定时触发器 |
+| 🎨 前端 | Dioxus 41 路由 + HUD Canvas + Markdown/Mermaid 全链路 |
 
 ---
 
-## 二、文档快速索引
+## 二、架构速览
 
-> 📌 **按需要读取详细设计文档**
+### 分层架构（严格单向调用）
 
-### docs 内容脉络（四类文档，单向引用模型 v2.1）
+```
+Adapter (适配层)    → 协议解析 / 鉴权 / DTO↔Command 转换
+    ↓
+Domain (领域层)     → 核心业务逻辑编排 / 跨领域事务 / 产生内部事件
+    ↓
+DAL (业务数据层)    → 组合多个 DAO / PO↔Entity 双向转换
+    ↓
+DAO (数据访问层)    → 单一数据源 CRUD / 外部 API 出站调用
+    ↓
+Models (PO)
+```
 
-**标准阅读链路（强制执行）**：`④ RAG 知识卡 → ③ Wiki 百科长文 → 源码 → ① Design → ② Plan`。**禁止跳过 ③ Wiki 长文**直接从 ④ 跳源码。
+**核心红线**：禁止跨层调用、禁止同层互调、PO 不暴露到 Domain 层及以上。
 
-| 目录 | 用途 | 约束 | 维护 Skill |
-|------|------|------|-----------|
-| ④ `docs/wiki/knowledge/zh/` | RAG 第一召回层：54+ 张原子卡（总结+索引）| YAML 5 字段 + 4 节固定；`source_files[]` 含源码锚点 + ③ 长文（≥1 条，④→③ 活文档区闭环）+ ①②（有则写）；同主题多卡按 §2.1.3 图谱法则判定 | ai-orz-wiki-maintainer |
-| ③ `docs/wiki/zh/content/`（入口 `docs/wiki/`）| 百科：8 大板块 353 篇（是什么）| 10 节固定目录；`<cite>` 关联源码 + ④ RAG 卡（①② 有则写，单向引用）| ai-orz-wiki-maintainer |
-| ① `docs/design/` | 决策快照（为什么）| 写定后不追代码；关联文档段仅可链 ② plan（冻结互链）+ 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档（归档件不写跨象限引用）| ai-orz-doc-maintainer |
-| ② `docs/plan/` | 落地快照（怎么做+结果）| 7 章骨架（无 checkbox/命令/代码快照）；关联文档段仅可链 ① design + 上层权威文档；**禁止新增指向 ③④ 的链接**；功能完成后精简归档 | ai-orz-doc-maintainer |
-| `docs/archive/` | 历史归档 | 只进不出，文头加一句归档说明；归档件不写任何跨象限引用；按来源分子目录（`design-archive/` / `plan-archive/` / `superpowers-archive/YYYY-MM-DD/`），**根目录禁散放** | ai-orz-doc-maintainer |
-| `docs/superpowers/*/` | 开发期执行蓝图（临时） | 功能完成 7 天内处置：→ plan 7 章模板 / → archive 封存 | ai-orz-doc-maintainer |
-| `docs/ARCHITECTURE.md` | 核心概念与实体关系 | 唯一权威纲要，手工维护 | — |
-| `docs/LAYERED_ARCHITECTURE_PRACTICE.md` | 分层实践与避坑 | Agent 必遵循，手工维护 | — |
+> 完整分层职责表 + 避坑实例 → [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)
 
-**路径格式铁律（引用时统一）**：
-- 跳代码 → `相对路径#L起始-L结束`（如 `src/pkg/logging.rs#L15-L42`，GitHub 原生高亮，IDE 文件级跳转）
-- 跳文档 → **`相对仓库根路径`**（如 `docs/design/xxx.md`，IDE 可点 + GitHub 可解析）
-- 引用方向：**只有 ③④（活文档）→ ①② / 源码 / 兄弟卡是受维护方向**；①② → ③④ 禁止新建（存量不要求回删）
+### 实体关系
 
-**维护流程（单向，无交叉等待）**：
-1. 代码变化 → 只同步 ③ + ④（缺一会导致 RAG 召回过期知识）；wiki/RAG 的 cite、source_files 单向指向 ①② 与源码
-2. 新功能开发 → doc-maintainer 写 ① design + ② plan（只写自身内容 + ①② 互链）→ 功能完成 → 场景 D 精简归档 → 通知 wiki-maintainer 重定向 ③④ 中的旧路径
+```
+Organization ──┬── User
+                ├── ModelProvider
+                └── Agent
+                     └── Brain
+                          ├── Cortex（思考执行，绑定 ModelProvider）
+                          └── Memory
+                               ├── Core（角色设定、能力清单）
+                               ├── Working（当前会话工作记忆）
+                               ├── Short-Term（最近会话摘要索引）
+                               └── Long-Term（长期沉淀知识图谱）
+```
 
-#### 文件落位与命名约定（强制执行，新建文档先查本表）
+---
 
-| 象限 | 落位目录 | 命名格式 | 示例 |
-|------|---------|---------|------|
-| ① 功能设计 | `docs/design/` | 英文 snake_case，`<topic>_design.md` | `runtime_design.md` |
-| ① 长期规范（不归档） | `docs/design/` | 英文 snake_case，`<topic>_guide.md` / `<topic>_convention.md` | `sqlx_guide.md`、`api_protocol_convention.md` |
-| ② 落地快照 | `docs/plan/` | **中文主题名**（无日期前缀，与功能语义同名） | `身份凭证Domain统一CRUD重构.md` |
-| 历史决策归档 | `docs/archive/design-archive/` | 保留原文件名 | `docs/archive/design-archive/a2a_server_design.md` |
-| 已完成 plan 归档 | `docs/archive/plan-archive/` | 保留原文件名 | `docs/archive/plan-archive/聊天MVP.md` |
-| superpowers 蓝图处置 | `docs/archive/superpowers-archive/YYYY-MM-DD/` | 保留原蓝图名 | `docs/archive/superpowers-archive/2026-08-16/xxx.md` |
+## 三、开发规范路由表
+
+> 📌 **按需读取**：每种场景只需要读对应的规范文档即可，无需通读全量。
+
+| 你要做什么 | 读取文档 |
+|-----------|---------|
+| **命名 / 函数前缀**（`get_`/`query_`/`search_`/`embed_` 等） | [CODE_STANDARDS.md §1](./docs/CODE_STANDARDS.md) |
+| **数据对象分层**（DTO / Entity / PO / Command 边界） | [CODE_STANDARDS.md §2](./docs/CODE_STANDARDS.md) |
+| **Trait 定义位置 / Domain 层约定** | [CODE_STANDARDS.md §3](./docs/CODE_STANDARDS.md) |
+| **RequestContext 参数传递** | [CODE_STANDARDS.md §4](./docs/CODE_STANDARDS.md) |
+| **枚举类型安全**（DB 映射型 / 纯领域型） | [CODE_STANDARDS.md §5](./docs/CODE_STANDARDS.md) |
+| **SQLite + SQLx 规范**（STRICT / FTS5 / 测试隔离） | [CODE_STANDARDS.md §6](./docs/CODE_STANDARDS.md) |
+| **Handler 双宏标注**（`generate_http_handler` + `register_handler_tool`） | [CODE_STANDARDS.md §7](./docs/CODE_STANDARDS.md) |
+| **日志宏使用**（`log_info!` / `log_error!`） | [CODE_STANDARDS.md §8](./docs/CODE_STANDARDS.md) |
+| **向量化实体**（`Vectorizable` trait / `embed_entity`） | [CODE_STANDARDS.md §9](./docs/CODE_STANDARDS.md) |
+| **查询分页 + 通用 count**（`PagedResult` / `push_query_filters`） | [CODE_STANDARDS.md §10](./docs/CODE_STANDARDS.md) |
+| **两阶段初始化 + 基础数据注入** | [CODE_STANDARDS.md §11](./docs/CODE_STANDARDS.md) |
+| **统一错误处理**（`err!` / `bail_err!` / `ensure_err!`） | [CODE_STANDARDS.md §12](./docs/CODE_STANDARDS.md) |
+| **统计事件**（`record_event!` / `StatsEvent` derive） | [CODE_STANDARDS.md §13](./docs/CODE_STANDARDS.md) |
+| **前后端 API 协议**（DTO 单一事实源 / 结构体化参数） | [CODE_STANDARDS.md §14](./docs/CODE_STANDARDS.md) |
+| **基础设施工具位置**（FTS5/向量/日志/JWT 放 pkg/） | [CODE_STANDARDS.md §14.1](./docs/CODE_STANDARDS.md) |
+
+---
+
+## 四、文档索引
+
+| 分类 | 文档 | 场景 |
+|------|------|------|
+| **编码规范 SSOT** | [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md) | 所有编码规则（命名/分层/宏/错误/日志等） |
+| **架构总纲** | [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 实体关系、设计哲学、核心概念 |
+| **分层实践** | [LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md) | 适配层架构 + 反模式避坑 |
+| **文档维护** | [DOCUMENTATION.md](./docs/DOCUMENTATION.md) | 四类文档编写/引用/图谱法则 |
+| **API 协议** | [api_protocol_convention.md](./docs/design/api_protocol_convention.md) | common DTO 单一事实源 |
+| **SQL 规范** | [sqlx_guide.md](./docs/design/sqlx_guide.md) | SQLx 0.8 + SQLite 工程规范 |
+| **日志规范** | [logging_design.md](./docs/design/logging_design.md) | 统一宏 + tracing 语法 |
+| **Runtime** | [runtime_design.md](./docs/design/runtime_design.md) | Agent 唤醒 + 工具二分 |
+| **策略引擎** | [thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md) | Policy trait + policy_set! 宏 |
+| **前端架构** | [frontend_architecture.md](./docs/design/frontend_architecture.md) | Dioxus + 41 路由 |
+| **查询规范** | [pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md) | 分页 + 通用 count |
+| **记忆设计** | [memory_design.md](./docs/memory_design.md) | 四层记忆系统 |
+| **Wiki 百科** | [docs/wiki/](./docs/wiki/) | 8 大板块 353 篇（功能实现细节）|
+| **RAG 知识卡** | [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/) | 54+ 张原子卡（第一召回层）|
+
+---
+
+## 五、RAG 查询操作指令
+
+**查询前 5 步**（强制执行）：
+
+1. **scope 预过滤** → 用每张卡 YAML `scope[]` glob 匹配当前上下文关注的文件集
+2. **读命中知识卡 ④** → §4 硬约束 → §2 关键文件表 → §3 架构约定 → §1 概述
+3. **强制跳 Wiki 长文 ③** → 从 `source_files[]` 找 `docs/wiki/zh/content/...` 链接，读 §5 分析 + §8 故障排查
+4. **跳源码锚点** → 按 `相对路径#Ln-Lm` 读真实代码
+5. **按需补跳** → ① Design（为什么）/ ② Plan（怎么做）
+
+**阅读链路**：`④ RAG 知识卡 → ③ Wiki 长文 → 源码 → ① Design → ② Plan`（禁止跳过 ③）
+
+**同主题多卡**：全部召回、并行阅读、不做去重。完全重复（scope 互为子集 + §4 重叠率 > 90%）→ 走合并流程。
+
+**元问题第一跳**：[RAG 知识索引卡](docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
+
+---
+
+## 六、文档规范速记
+
+**全量细则见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)**：
+
+- 路径引用一律 `相对仓库根路径 + #Lx-Ly`；禁 `file://` 伪协议、绝对路径、冒号行号
+- 新增 Wiki/RAG 卡 → 先触发 `ai-orz-wiki-maintainer` 过 5 级查重
+- 新增 design/plan → 触发 `ai-orz-doc-maintainer`
+- 引用单向：③④ 活文档 → ①② 快照 + 源码
+- 归档件只加归档头，正文永不修改
+
+**文件落位**：
+
+| 象限 | 目录 | 命名 |
+|------|------|------|
+| 功能设计 | `docs/design/` | 英文 snake_case（如 `runtime_design.md`）|
+| 长期规范 | `docs/design/` | 英文 snake_case（`*_guide.md` / `*_convention.md`）|
+| 落地快照 | `docs/plan/` | 中文主题名（如 `身份凭证Domain统一CRUD重构.md`）|
+| 归档 | `docs/archive/{design,plan}-archive/` | 保留原文件名 |
 
 **红线**：
-- ❌ 在 `docs/` 下自创新目录（如 `docs/specs/`、`docs/notes/`）——四象限之外无处安放
-- ❌ plan 文件名带日期前缀（`2026-08-15-xxx.md` 是 superpowers 蓝图风格，进 `docs/plan/` 时必须去掉日期）
-- ❌ 归档件散放在 `docs/archive/` 根目录——必须进对应子目录
-- ❌ design 用中文命名 / plan 用英文命名（保持两目录既有风格一致性，便于 grep 与目录扫描）
+- ❌ 在 `docs/` 下自创新目录
+- ❌ plan 文件名带日期前缀
+- ❌ 归档件散放在 `docs/archive/` 根目录
+- ❌ design 用中文命名 / plan 用英文命名
 
 ---
 
-### RAG 查询操作指令
-
-**查询前准备**：本仓库已接入 Trae/IDE RAG，对 54+ 张 `docs/wiki/knowledge/zh/` 原子卡做向量语义 chunk 召回。按以下 5 步执行：
-
-1. **scope 预过滤**：若当前上下文含「用户指定关注文件集」或已知 IDE 打开文件列表 → 先用每张卡 YAML `scope[]` glob 匹配，不匹配的卡直接丢弃（不参与向量打分）
-2. **读命中卡 ④**：优先读 §4 硬约束（最高权重）→ §2 关键文件表 → §3 架构约定 → §1 概述
-3. **强制跳对应 Wiki 长文 ③**：从卡 `source_files[]` 中找 ③ Wiki 长文相对仓库根路径（`docs/wiki/zh/content/...`）形式的链接，立即跳 §5 详细分析 + §8 故障排查（系统化上下文，短卡不够）
-4. **跳源码锚点**：从长文 cite/章节来源段 OR 卡 `source_files[]`，按 `相对路径#Ln-Lm` 读真实代码
-5. **按需补跳 ① Design / ② Plan**：① 找为什么/决策表；② 找扩展入口速查表 §4 + §七 4 步扩展模板
-
-**同主题多张平行卡**：全部召回、并行阅读、不做去重、不删旧卡（语义相近 = 不同切面，信息互补）。⚠️ **但「完全重复版本」不属此类**——scope[] 互为子集、§4 硬约束重叠率 > 90%、只是措辞不同的重复卡，必须走「吸收合并 + 直接删除副卡」，绝不可当作「平行互补」保留。见 [文档规范 §3](./docs/DOCUMENTATION.md)。
-
-**RAG 元问题第一跳**（如何使用知识卡 / 召回不到 / scope 匹配 / source_files 写法）→ 命中：
-- [RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配](docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
-
-### 文档索引
-
-| 分类 | 文档 | 优先级 |
-|------|------|--------|
-| **架构总览** | [README.md](./README.md) / [docs/wiki/](./docs/wiki/)（③ Wiki 百科入口，8 大板块） / [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/)（④ RAG 第一召回层）/ [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) / [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | ⭐⭐⭐ |
-| **文档规范** | [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)（四类文档编写/引用/图谱法则/归档全量规范，即本文 §2.1 细则） | ⭐⭐⭐ |
-| **分层实践** | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)（Agent 必遵循，含适配层架构原则） | ⭐⭐⭐ |
-| **API 协议** | [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)（common DTO 单一事实源） | ⭐⭐⭐ |
-| **SQL 规范** | [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md)（SQLx 0.8 + SQLite、STRICT、FTS5、测试隔离） | ⭐⭐⭐ |
-| **日志规范** | [docs/design/logging_design.md](./docs/design/logging_design.md)（统一宏、上下文检测） | ⭐⭐⭐ |
-| **Runtime** | [docs/design/runtime_design.md](./docs/design/runtime_design.md)（Agent 唤醒、神经 vs 外骨骼工具二分） | ⭐⭐⭐ |
-| **策略引擎** | [docs/design/thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md)（Policy trait + policy_set! 宏 + 思考运行时可观测） | ⭐⭐⭐ |
-| **前端** | [docs/design/frontend_architecture.md](./docs/design/frontend_architecture.md) / [docs/design/ui_design_system.md](./docs/design/ui_design_system.md) | ⭐⭐⭐ / ⭐⭐ |
-| **查询规范** | [docs/design/pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md)（分页 + 通用 count） | ⭐⭐ |
-| **记忆设计** | [docs/memory_design.md](./docs/memory_design.md)（四层记忆系统、检索策略） | ⭐⭐ |
-| **模块设计** | tool / message_interaction / message_channel / lark_cli_integration / consumer_architecture / task_scheduler / event / skill / vector_search_architecture / external_agent（均在 docs/design/ 下） | ⭐⭐ |
-| **业务设计** | task / project / organization / attachment_storage（均在 docs/design/ 下） | ⭐ |
-
----
-
-### §2.1 文档编写与维护规范
-
-> 🎯 **铁律**：代码是 SSOT（字段级细节跳源码），文档只承载代码无法表达的信息：设计动机、模块边界、影响面、扩展路径。
-
-**全量细则（强制执行）见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)**：文件头四件套（§1）/ 路径引用格式（§2）/ RAG 卡图谱法则与 5 级决策算法（§3）/ design·plan·archive 章节模板（§4）。**写任何文档前先读它。**
-
-红线速记：
-- 路径引用一律相对仓库根路径 + `#Lx-Ly` 行号；禁 `file://` 伪协议、本机绝对路径、`path:15-42` 冒号行号（docs_lint CI 门禁）
-- 新增 Wiki 长文 / RAG 卡 → 先触发 `ai-orz-wiki-maintainer` 技能过 5 级查重（禁止裸重叠）；新增 design/plan → 触发 `ai-orz-doc-maintainer` 技能
-- 引用单向：③④ 活文档 → ①② 快照 + 源码；①② 禁止新增指向 ③④ 的链接
-- 归档件只加归档头，正文永不修改；plan 完成后精简为 7 节
-
----
-
-## 三、核心架构规范（必须遵守）
-
-### 3.1 代码分层架构
-
-**严格单向调用，禁止跨层和同层互调**：
-
-```
-Adapter (适配层)
-    ├─ HTTP Handler（用户 API + 外部回调）
-    └─ AOP Producer（轮询 + 外部 WS 事件接入）
-    │
-    │ 只调用 Domain；负责协议解析、校验、ID 映射、DTO↔Command 转换
-    ▼
-Domain (领域层)
-    │ 组合多个 DAL，实现核心业务逻辑，产生内部事件
-    ▼
-DAL (业务数据层)
-    │ 组合多个 DAO，提供业务级数据操作，PO↔Entity 转换
-    ▼
-DAO (数据访问层)
-    ├─ 本地 DB DAO：单一数据源 CRUD
-    └─ 外部 API DAO：出站外部调用（如 LarkDao.push、A2aRuntimeDao.send_task）
-    │
-    ▼
-Models (PO 持久化实体)
-```
-
-**各层职责边界**：
-
-| 层级 | 可以做 | 禁止做 |
-|------|--------|--------|
-| **DAO** | 单一/多个数据源访问<br>本地 DB：SQL 拼接、PO 读写<br>外部 API：出站调用、出站格式转换（如 Markdown→飞书卡片） | ❌ DAO 调 DAO、❌ 业务逻辑、❌ 实体组装/装饰 |
-| **DAL** | 依赖多个 DAO、PO ↔ Entity 双向转换、业务级数据操作 | ❌ DAL 调 DAL |
-| **Domain** | 依赖多个 DAL、核心业务逻辑编排、跨领域事务、产生内部事件 | ❌ Domain 调 Domain、❌ 直接调用 DAO（跨层）、❌ 直接调用外部 API |
-| **Adapter（适配层）** | HTTP Handler（用户 API + 公开回调）、AOP Producer（WS/轮询）<br>协议解析、参数校验、鉴权、幂等检查<br>外部 ID ↔ 内部 ID 映射<br>DTO/外部结构 ↔ Command 转换<br>按 Action 编排 Domain 调用<br>组装响应（HTTP Handler） | ❌ 直接调用 DAL/DAO（跨层）、❌ 承载核心业务规则<br>❌ 把外部协议包装成内部事件投递<br>❌ Handler/Producer 之间互调<br>❌ 抽象通用 Adapter 框架 |
-
-**适配层核心认知**：HTTP Handler 是面向用户/前端的 Adapter，公开回调 Handler 是面向外部系统 HTTP 回调的 Adapter，AOP Producer 是面向外部 WS 事件/定时轮询的 Adapter——三者**同属适配层，职责完全相同**：把外部输入适配成 Domain 方法调用。Consumer 不在适配层（它处理 Domain 产生的内部事件）。出站外部调用统一封装在外部 DAO 中。详见 [docs/LAYERED_ARCHITECTURE_PRACTICE.md - 实践 7](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)。
-
-**Handler 设计补充**：HTTP Handler 与用户 Action 直接对应，一个接口按需求完成自己的请求级编排即可；复用优先通过组织 Command/Query 参数和调用 Domain 能力完成，不为了复用提前抽象 `BaseHandler` / `GenericActionHandler`。复杂业务规则、状态流转、权限语义必须下沉到 Domain。
-
-### 3.2 目录结构
-
-```
-ai_orz/
-├── common/                     # 公共共享 crate（前后端共用）
-│   ├── src/api/               # API 请求响应 DTO 按功能分组
-│   ├── src/constants/         # 公共常量、基础类型
-│   ├── src/enums/            # 公共枚举（UserRole、TaskStatus 等）
-│   ├── src/error/            # 统一错误类型
-│   └── src/models/           # 跨层共享模型（ToolCallTraceRef、StatsInterval 等）
-│
-├── ai-orz-macros/             # 自定义宏 crate（日志宏、统计事件宏）
-│
-├── src/                        # 后端服务
-│   ├── handlers/              # HTTP 接口层（适配层：用户 API + 外部回调，按业务域分组，每个方法一个文件）
-│   │   └── a2a/               #   └─ A2A 公开回调端点（无 JWT 鉴权）
-│   ├── producer/              # AOP 事件生产者（适配层：轮询 + 外部渠道 WS 事件接入）
-│   ├── consumer/              # AOP 事件消费者（内部事件处理，消费 Domain 产生的内部事件）
-│   ├── service/
-│   │   ├── dao/               # 数据访问层 DAO（本地 DB CRUD + 外部 API 出站调用，如 lark/a2a/slack）
-│   │   ├── dal/               # 业务数据访问层 DAL
-│   │   └── domain/            # 领域层 Domain
-│   ├── models/                # PO 持久化实体 + 业务实体 + 内部事件定义
-│   ├── middleware/            # Axum 中间件
-│   └── pkg/                   # 公共工具包
-│       ├── aop/               # AOP 事件中心纯框架（Event/Producer/Consumer/Registry/Queue）
-│       ├── adapter/           # 通用适配器基础设施（消息入站适配中台）
-│       ├── stats/            # DuckDB 统计模块（record_event! 宏、查询 API）
-│       └── *test_support.rs  # 测试支持文件（request_context、storage）
-│
-├── frontend/                   # Dioxus 前端（Tailwind CSS v4 + DaisyUI v5）
-│   ├── src/api/               # API 客户端
-│   ├── src/components/        # UI 组件（Button/Modal/Toast/State/Stats/Graph/GraphCanvas/Chat）
-│   ├── src/hooks/             # 自定义 Hooks（use_resource/use_breakpoint/use_require_auth）
-│   ├── src/layouts/           # 布局组件（AppLayout/Navbar）
-│   ├── src/pages/             # 页面模块（按业务域分组）
-│   ├── src/store/             # 状态管理（auth/toast）
-│   ├── src/utils/             # 通用工具函数（按功能分子模块：time/file/message/status）
-│   ├── styles/input.css       # Tailwind CSS 入口（主题配置、自定义工具类）
-│   └── build.rs               # 构建脚本（自动 npm install + Tailwind CSS 编译）
-│
-└── docs/                       # 详细设计文档
-```
-
-#### 3.2.1 基础设施公共工具位置约定（强制执行）
-
-**核心原则：通用工具函数必须放在基础设施层，禁止散落在业务 DAO 中造成跨 DAO 依赖。**
-
-| 工具类型 | 存放位置 | 示例 |
-|----------|----------|------|
-| **FTS5 全文搜索工具** | `src/pkg/storage/fts5.rs` | `escape_fts5_keyword` |
-| **向量存储抽象** | `src/pkg/storage/vector.rs` | `VectorStore` trait |
-| **日志宏** | `src/pkg/logging.rs` + `ai-orz-macros` | `log_info!`, `log_error!` |
-| **统计事件宏** | `src/pkg/stats/` + `ai-orz-macros` | `record_event!` |
-| **运行时统计基础设施** | `src/pkg/stats/runtime/` | `RuntimeStatsCollector<K>`（内存版，与 `pkg/stats/` 顶层 DuckDB 持久化版互补） |
-| **JWT 工具** | `src/pkg/jwt.rs` | `encode_token`, `decode_token` |
-
-**反模式（禁止）：**
-- ❌ 在某个业务 DAO 中定义通用工具函数，其他 DAO 直接 import（造成 DAO → DAO 依赖）
-- ❌ 为了复用在每个 DAO 中复制粘贴相同代码
-- ❌ 把业务逻辑相关的工具放到 pkg 层（pkg 层必须无业务感知）
-
-**正确模式：**
-- ✅ 跨模块复用的通用工具 → 放到 `src/pkg/` 对应子模块
-- ✅ 模块内部辅助函数 → 模块内部私有，不对外导出
-- ✅ 单个文件使用的小工具 → 文件内定义，不上升到模块级
-
-### 3.3 命名规范
-
-| 元素 | 规范 | 示例 |
-|------|------|------|
-| **变量/函数/方法** | snake_case | `user_id`, `create_agent`, `get_user_by_id` |
-| **类型/结构体/枚举/Trait** | PascalCase | `AgentPo`, `RequestContext`, `AgentDao` |
-| **常量** | SNAKE_CASE | `MAX_SIZE`, `LOG_ID`, `DEFAULT_TIMEOUT` |
-| **文件名/目录名** | snake_case | `agent.rs`, `request_context.rs`, `sqlite_test.rs` |
-
-**函数/方法前缀约定：**
-
-| 操作 | 前缀 | 示例 |
-|------|------|------|
-| 获取数据（有参数） | `get_` | `get_agent_by_id`, `get_user_name` |
-| 获取单例/无参数 | 直接命名 | `agent_dao()`, `uid()` |
-| 创建/新增 | `new_`, `create_` | `new_agent()`, `create_user()` |
-| 修改/更新 | `update_` | `update_agent()` |
-| 删除（软删除） | `delete_` | `delete_agent()` |
-| 列表/批量 | `find_all`, `find_by_` | `find_all_agents()`, `find_by_org()` |
-| 布尔判断 | `is_`, `has_`, `can_` | `is_deleted()`, `has_permission()` |
-| **查询（带过滤/分页）** | `query_` | `query_agents(ctx, query) -> PagedResult<Agent>`，**必须复用 `find_by_` 的 WHERE 条件**（见 §4.9）|
-| **统计计数** | `count_` | `count_agents(ctx, query) -> Result<u64>`，**与 query 复用同一套过滤**（见 §4.9）|
-| **搜索（FTS/向量/图谱）** | `search_` | `search_knowledge(ctx, keyword) -> Vec<SearchResult>`，支持混合检索 |
-| **向量嵌入** | `embed_` | `embed_entity(ctx, cortex, po)` / `embed_text(ctx, cortex, text)` |
-| **向量检索** | `find_nearest_` | `find_nearest_vectors(ctx, table, embedding, top_k)` |
-| **图谱遍历** | `traverse_` | `traverse_knowledge_graph(ctx, node_id, depth)` |
-| **事件/状态查询** | `list_` | `list_events(ctx, agent_id, since)`（时间序列查询，非分页列表）|
-
-**集合变量：** 使用复数形式 `agents`, `user_ids`
-
-**Trait 与实现类命名：**
-- Trait 不加 `Trait` 后缀：`trait AgentDao { ... }`
-- 实现类加 `Impl` 后缀：`struct AgentDaoSqliteImpl`
-
-### 3.4 数据对象四层清晰定义
-
-| 对象类型 | 定义位置 | 用途 |
-|----------|----------|------|
-| **API DTO** | `common/src/api/**` | HTTP 请求/响应，前后端复用；通用响应包装使用 `common::api::ApiResponse<T>` |
-| **跨层共享模型** | `common/src/models/**` | DAO/DAL/Domain/API 共用的结果结构体（StatsInterval、TimeSeriesPoint、TokenSumResult 等） |
-| **Command/Query** | `src/service/domain/*/mod.rs` | Domain 层输入，表达业务意图 |
-| **业务实体** | `src/models/*.rs` | 核心业务对象，包含行为和状态 |
-| **PO (持久化对象)** | `src/models/*.rs` | 数据库映射，1:1 对应表结构 |
-
-### 3.5 PO 与业务实体分层边界规范（强制执行）
-
-**核心原则：PO 仅在 DAO/DAL 层内部使用，绝对不对外暴露到 Domain 层及以上**
-
-| 层级 | 可使用对象 | 数据传递方式 | 说明 |
-|------|------------|------------|------|
-| **DAO 层** | 仅 PO | PO ↔ 数据库 | 单一数据源 CRUD，SQL 拼接，无业务逻辑；含外部 API 出站调用 |
-| **DAL 层** | 内部：PO，对外：业务实体 | PO ↔ 业务实体 双向转换 | 组合 DAO，完成业务级数据操作 |
-| **Domain 层** | 仅业务实体 | 业务实体 ↔ Command | 核心业务逻辑编排，产生内部事件，无 PO 依赖 |
-| **Adapter 层** | 业务实体 + DTO/外部结构 | DTO/外部结构 ↔ Command | HTTP Handler + AOP Producer，外部协议转换与校验 |
-
-**业务实体内部设计**：业务实体内部持有 PO 字段（`pub struct Project { pub po: ProjectPo }`），DAL 层直接通过 `&xxx.po` 传递给 DAO，避免字段逐一映射。
-
-**DAL 层接口签名**：统一使用业务实体，不使用 PO——写操作接收 `&Project` 引用，读操作返回 `Option<Project>` / `Vec<Project>`。
-
-**RequestContext 跨层传递**：统一使用 `ctx.clone()`（内部 Arc 引用，clone 成本极低），避免所有权移动导致编译错误。
-
-**软删除约定**：`status = 0` 视为软删除，常规查询默认过滤（如 `TaskStatus::Cancelled = 0`）；需要查询历史/恢复时用 `query` 方法绕过过滤。
-
----
-
-## 四、关键约定（强制执行）
-
-### 4.1 Trait 定义位置规范
-
-| 层级 | Trait 定义位置 | 实现位置 | 示例 |
-|------|---------------|---------|------|
-| **DAO** | 子模块目录 `mod.rs`（如 `dao/agent/mod.rs`） | 各存储实现文件（如 `sqlite.rs`、`stats_duckdb.rs`） | `AgentDao` 定义在 `dao/agent/mod.rs`，实现在 `dao/agent/sqlite.rs` |
-| **DAL** | 各自文件中（如 `dal/agent.rs`） | 同文件内 | `AgentDal` trait + impl 都在 `dal/agent.rs` |
-| **Domain** | 主模块 `mod.rs`（如 `domain/message/mod.rs`） | 子模块文件中 | `MessageDelivery` trait 在 `domain/message/mod.rs`，`impl MessageDelivery for MessageDomainImpl` 在 `domain/message/delivery.rs` |
-
-**Domain 层具体约定：**
-- 主模块 `mod.rs` 中定义总 trait（如 `MessageDomain`）和所有子能力 trait（如 `MessageDelivery`、`MessageManagement`）
-- 子模块文件（如 `delivery.rs`、`management.rs`）中写 `impl SubTrait for DomainImpl`，不要在子模块中定义新的 struct 包装器
-- DomainImpl 结构体定义在主模块 `mod.rs` 中，子模块通过 `use super::DomainImpl` 引入
-
-### 4.2 RequestContext 参数
-
-**所有 service 层（DAO/DAL/Domain）公共方法的第一个参数必须是 `ctx: RequestContext`**
-
-```rust
-// ✅ 正确
-fn wake_cortex(&self, ctx: RequestContext, provider: &ModelProvider, prompt: &str) -> Result<String>;
-
-// ❌ 错误 - 缺少 ctx
-fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
-```
-
-用户相关信息从 `ctx.uid()` / `ctx.uname()` 获取，不再单独传参；内部私有方法可省略，只读操作也需要传递（便于日志记录）。
-
-### 4.3 枚举类型安全
-
-所有存储在数据库中的枚举状态/角色字段，**必须使用 Rust 枚举类型**（统一定义在 `common/src/enums/`），禁止裸 `i32`。分两类：
-
-- **DB 映射型**（TaskStatus/UserRole/ProjectStatus 等）：`#[repr(i32)]` + `#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]` + `#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]`（feature gate 为 WASM 前端编译必需）；默认变体标 `#[default]`；实现 `From<i32>`（未知值落 `Default`，不 panic）、`From<i64>`、`From<Self> for i32` 及 `from_i32()`/`to_i32()` 辅助方法。**权限类枚举例外**：UserRole 未知值落最低权限 `Member`，防提权。参考实现：[task.rs](common/src/enums/task.rs)
-- **纯领域型**（MemoryRole/KnowledgeRelationType 等，不映射 DB 列）：无 repr/sqlx 派生，实现 `From<String>` 字符串匹配。参考实现：[memory.rs](common/src/enums/memory.rs)
-- SQL 侧配合：枚举列查询写 `status as "status: TaskStatus"`（见 4.4）
-
-### 4.4 SQLite + SQLx 规范
-
-- **所有表必须启用 `STRICT` 模式**
-- **SQL 关键字必须转义**：`status` → `"status"`
-- **枚举字段显式标注**：`status as "status: TaskStatus"`
-- **软删除约定**：已删除 `status = 0`，查询默认过滤
-- **`.sqlx` 目录必须纳入版本控制**
-- **测试使用 `#[sqlx::test]`**，每个测试独立内存数据库
-
-### 4.5 Handler 拆分规范
-
-- 按业务域分组（hr、finance、organization、user 等）
-- **每个业务方法一个独立文件**，单个文件只放一个 handler 函数
-- `mod.rs` 只保留模块导出，不存放实现
-- 所有 DTO 从 `common/src/api/` 导入；通用响应包装统一使用 `common::api::ApiResponse<T>`，禁止在 `src/handlers` 定义本地 `ApiResponse`
-- **所有 handler 必须用两个宏标注**（AI 宏自动生成路由注册 + 工具注册）：
-
-```rust
-#[register_handler_tool(
-    id = "query_agents",
-    name = "query_agents",
-    description = "Query agents with full filtering support",
-    params = "common::api::AgentQueryRequest",
-    tags = "collaboration"
-)]
-#[generate_http_handler]
-pub async fn query_agents(ctx: RequestContext, params: AgentQueryRequest) -> Result<PagedResult<AgentListItem>> { ... }
-```
-
-**`#[generate_http_handler]`**：自动生成 Axum 路由（方法 + 路径 + 中间件），handler 签名固定为 `(ctx: RequestContext, params: Params) -> Result<T>`
-**`#[register_handler_tool]`**：同时注册为内置工具，Agent 可通过工具调用方式触发该 handler
-
-### 4.6 测试隔离原则
-
-- 无状态组件可使用单例（OnceLock）
-- 有状态内存组件必须每次新建实例
-- 测试使用独立数据库，不依赖全局状态
-- 所有测试使用 `#[sqlx::test]` 宏
-
-### 4.7 日志系统规范（强制执行）
-
-**核心原则：项目内所有代码必须使用统一日志宏，禁止直接调用 tracing::*!**
-
-| 级别 | 宏名 |
-|------|------|
-| INFO | `log_info!` |
-| WARN | `log_warn!` |
-| ERROR | `log_error!` |
-| DEBUG | `log_debug!` |
-
-**两种调用模式（宏自动检测）：**
-
-```rust
-// ✅ 模式 1：无上下文（系统级别，第一个参数是字符串）
-log_info!("application started");
-log_info!("config loaded from {}", path);
-
-// ✅ 模式 2：带上下文（请求级别，&ctx + operation 字符串）
-log_info!(&ctx, "create_memory", "created memory id={}", memory_id);
-log_error!(&ctx, "update_project", "db error: {:?}", err);
-```
-
-**禁止的写法**：直接调用 `tracing::info!`；传 ctx 值而非 `&ctx`；Operation 传变量（必须是字符串字面量）。
-
-> 💡 完整规范（检测机制、tracing 语法速查）见 [docs/design/logging_design.md](./docs/design/logging_design.md)
-
-### 4.8 向量化实体规范（强制执行）
-
-**核心原则：所有支持向量索引的 PO 必须实现 `Vectorizable` trait，禁止在 DAL 层手工拼接向量文本**
-
-```rust
-// src/models/vector.rs
-pub trait Vectorizable: Send + Sync {
-    /// 生成待向量化的文本内容（由 PO 自己决定哪些字段参与向量化）
-    fn vectorize_text(&self) -> String;
-    /// 向量集合名称（对应 vss_{collection} 表）
-    fn vector_collection() -> &'static str where Self: Sized;
-    // 以下为默认实现，通常无需覆盖
-    fn vector_content_hash(&self) -> String { ... }
-    fn vector_expire_at(&self) -> Option<i64> { ... }
-    fn needs_reindex(&self, existing_hash: &str) -> bool { ... }
-}
-```
-
-**调用规范**：
-
-| 场景 | 正确写法 | 错误写法 |
-|------|---------|---------|
-| 索引场景（create/update/rebuild） | `embed_entity(ctx, cortex, po)` | `embed_text_for_search(ctx, cortex, &format!(...))` |
-| 获取 collection 名 | `Po::vector_collection()` | 硬编码 `"namespace"` 字符串 |
-
-**已实现 Vectorizable 的实体**：AgentPo（`agents`）、ToolPo/Tool（`tools`）、TaskPo（`tasks`）、SkillPo/Skill（`skills`）、ShortTermMemoryIndexPo（`memory:short_term`）、LongTermKnowledgeNodePo（`memory:knowledge_node`）。
-
-**禁止的写法**：DAL 层手工 `format!` 拼接向量文本；在 PO 上添加独立 `vector_text()` 方法（应实现 trait）；硬编码 collection 名。
-
-> 💡 **设计动机**：将"哪些字段参与向量化"的知识封装在 PO 内部（信息专家原则），DAL 层无需感知 PO 的字段结构。未来调整向量化字段组合，只需改 PO 的 `vectorize_text()` 一处。
-
-### 4.9 查询分页与通用 count 规范（强制执行）
-
-**核心原则：query 是核心查询能力，list 是语法糖；count 与 query 复用同一套过滤条件。** 完整实现模式见 [docs/design/pagination_and_count_convention.md](./docs/design/pagination_and_count_convention.md)。
-
-- **query**（POST body，完整查询条件 + pagination）与 **list**（GET，只接受分页，内部固定默认过滤和排序）统一返回 `PagedResult<T> { items, total }`
-- pagination 随 Query 结构体全链路透传，每层用 `PagedResult::map()` 转换内部类型
-- DAO 层必须抽取 `push_query_filters`，COUNT 与 LIST 复用同一套 WHERE 条件
-- 三层统一 `count(ctx, query) -> Result<u64>` 透传；特定 `count_by_xxx` 一律构造 Query 后调用通用 count
-
-**禁止的写法**：
-- ❌ list 接口接受查询字段（ids/status/keyword 等必须走 query）
-- ❌ DAO query 方法返回 `Vec` 而非 `PagedResult`
-- ❌ Handler 层把 `PagedResult` 当 `Vec` 用（应取 `.items`）
-- ❌ count 独立拼 WHERE 不复用 `push_query_filters`；`count_by_xxx` 独立实现 SQL；query 后取 `len()` 当 count
-
-### 4.10 两阶段初始化 + 基础数据注入规范（强制执行）
-
-**核心原则：启动拆成两阶段 ——「基础设施就绪」与「基础数据注入」严格分离，绝不混在消费者注册代码里。**
-
-**启动总顺序（`lib.rs::run()` 强制执行）**：
-
-```
-pkg::init_all()                  # 最底层：日志/存储/JWT/工具注册（一次性全局 OnceLock）
-  → service::init()              # 阶段 ①（同步、纯内存）：DAO → DAL → Domain 单例注册，绝不碰 DB
-  → producer::init() / consumer::init()  # AOP 基础设施（订阅者注册，绝不注入 DB 默认值！）
-  → service::init_base_data().await      # 阶段 ②（异步、DB IO、幂等）：
-      └─► domain::init_all_base_data()   #   派发到每个 domain 的 init_base_data()
-  → AOP stats hook + aop::init_all()     # 事件总线调度器启动（真正开始轮询/消费）
-  → HTTP 服务启动
-```
-
-**各层扩展点**：
-
-| 想补什么默认数据 → 放在哪里 | 正确做法 | 错误做法（禁止） |
-|---------------------------|---------|----------------|
-| 某 domain 的系统默认 DB 行（cron triggers、默认角色等） | 在该 domain 的 `mod.rs` 加 `pub async fn init_base_data()`（try/warn 包裹的幂等检查：先查后插），在 `domain::init_all_base_data()` 追加一行 `.await` | 写到 consumer::init、HTTP handler、外部 migration 脚本 |
-| 生产者/消费者 AOP 订阅者注册 | producer::init() / consumer::init() 内部调用 registry 注册 | 把业务代码塞到 init 函数里直接发事件 |
-
-**Consumer 边界红线**：`consumer::init()` 只做一件事——把 Consumer 注册到 AOP Registry。写 DB 默认值、触发内部事件、调用改变全局状态的业务方法，一律禁止。
-
-**测试环境同步对齐**：`tests/common/env.rs` 的 `init_full_test_env` 必须严格遵循真实启动顺序（基础设施 → service::init → producer::init → consumer::init → service::init_base_data），不要在测试里手动造「应该启动就有」的默认数据。
-
-### 4.11 前后端 API 协议规范（强制执行）
-
-**核心原则：`common` crate 是前后端 API 协议的单一事实源。** 详见 [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)。
-
-1. **禁止裸原始类型响应**：handler 即便只返回一个字段也必须用标准 Response 结构体（`ApiResponse<T>` 信封的 data 内禁止裸 bool/()/String）；无业务字段的操作用 `<Action>Response { success: bool }`。
-2. **DTO 只定义在 common**：Request/Response 一律先定义在 `common/src/api/<域>.rs`；禁止 `frontend/src/api/` 本地镜像；禁止 handler 直接返回 DAL/Domain 内部结构体（DAL 需要时 re-export common 定义）。
-3. **请求参数必须结构体化**：新增接口的请求参数（path / query / body）一律用结构体定义在 `common/src/api/<域>.rs`，通过 `#[derive(Params)]` + `#[param(source = "path"|"query")]` 注解声明参数来源；禁止在 handler 签名中散落 `Path<String>` / `Query<HashMap>` 等裸提取器。结构体即接口契约，便于扩展字段、前后端复用、文档生成。
-4. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
-5. **前端复用后端结构体**：前端 API client 优先复用 `common::api::*` 中的 Request/Response 结构体作为参数和返回类型，减少前后端字段定义漂移；前端自定义结构体仅用于纯展示层（如聚合多个接口数据的 ViewModel）。
-6. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
-
-**DTO 命名约定**：
-
-| 操作 | Request 命名 | Response 命名 | 说明 |
-|------|------------|-------------|------|
-| 获取单个 | `Get{Entity}Request` | `Get{Entity}Response` | 如 `GetAgentRequest` / `GetAgentResponse` |
-| 创建 | `Create{Entity}Request` | `Create{Entity}Response` | Response 通常含 `id` |
-| 更新 | `Update{Entity}Request` | `Update{Entity}Response` | Response 可复用 Get |
-| 删除 | `Delete{Entity}Request`（可选） | `Delete{Entity}Response` | Response 仅 `{ success: bool }` |
-| 列表（语法糖） | `List{Entities}Request` | `List{Entities}Response` | 只含 pagination |
-| 查询（完整） | `{Entity}QueryRequest` | `PagedResult<{Entity}ListItem>` | POST + body，完整过滤 |
-| 搜索（语义） | `Search{Entities}Request` | `PagedResult<{Entity}ListItem>` | FTS5 + 向量混合 |
-
-### 4.12 统一错误处理规范（强制执行）
-
-**核心原则：所有错误必须通过 `common::error` 的三个宏构造，禁止手写 `Error::new()`**
-
-| 宏 | 用途 | 示例 |
-|------|------|------|
-| `err!` | 构造错误（不返回） | `err!(NotFound, "Agent {} not found", id)` |
-| `bail_err!` | 构造并立即 `return Err(...)` | `bail_err!(InvalidRequest, "参数不合法: {}", e)` |
-| `ensure_err!` | 条件检查，不满足则 `bail_err!` | `ensure_err!(age >= 18, InvalidRequest, "未成年禁止")` |
-
-**常用 ErrorCode 分类**（`common/src/error/code.rs`）：
-
-| 分类 | 典型变体 | HTTP 状态码 |
-|------|---------|------------|
-| **用户输入** | `InvalidRequest`, `NotFound`, `Unauthorized`, `Forbidden` | 400/404/401/403 |
-| **业务逻辑** | `Conflict`, `RateLimited`, `QuotaExceeded` | 409/429 |
-| **系统** | `Internal`, `DatabaseError`, `Timeout` | 500/504 |
-| **外部集成** | `LarkApiError`, `A2aProtocolError`, `ToolExecutionFailed` | 502 |
-| **身份凭证** | `CredentialEncryptionFailed`, `CredentialDecryptionFailed` | 500 |
-
-**带字段和 source 的高级用法**：
-
-```rust
-// 带 JSON 字段（用于前端展示）
-err!(InvalidRequest, "字段校验失败", field: { field: "email", reason: "invalid format" });
-
-// 带 source（包装底层错误，保留原始错误链）
-.map_err(|e| err!(DatabaseError, "查询失败: {}", source: e))?;
-```
-
-**禁止的写法**：
-- ❌ `Error::new(ErrorCode::NotFound, "...")` — 必须用 `err!` 宏
-- ❌ `.map_err(|e| anyhow::anyhow!(...))` — 必须映射为项目 `Error`
-- ❌ 裸字符串错误（`anyhow::Result` / `Box<dyn Error>`）作为公共 API 返回值
-
-### 4.13 统计事件规范（强制执行）
-
-**核心原则：所有业务事件统计必须通过 `record_event!` 宏写入，禁止直接操作 DuckDB 连接**
-
-```rust
-// 1. 定义事件结构体（derive StatsEvent 宏自动生成表映射）
-#[derive(Debug, Clone, StatsEvent)]
-pub struct ModelCallEvent {
-    pub timestamp: i64,
-    pub agent_id: Option<String>,
-    pub model_provider_id: String,
-    pub tokens_input: u64,
-    pub tokens_output: u64,
-}
-
-// 2. 在业务代码中（Domain/Consumer 层）记录事件
-record_event!(&ctx, ModelCallEvent {
-    timestamp: now,
-    agent_id: Some(agent_id.to_string()),
-    model_provider_id: provider_id.to_string(),
-    tokens_input: input,
-    tokens_output: output,
-}).await?;
-```
-
-**`record_event!` 特性**：
-- 自动从 `ctx` 获取 Stats 实例，无需手动传连接
-- 事件结构体类型自动路由到对应的 StatTable
-- 支持内存版（`RuntimeStatsCollector`，重启重置）和持久化版（DuckDB，跨重启）
-
-**已内置的统计事件**：`AgentAwakeEvent`、`ModelCallEvent`、`ToolCallEvent`、`TaskEvent`、`ProjectEvent`
-
----
-
-## 五、核心概念与实体关系
-
-### 5.1 实体关系
-
-```
-Organization (组织)
-├── User (用户)
-├── ModelProvider (模型配置)
-└── Agent (智能代理)
-     └── Brain
-          └── Cortex
-               └── ModelProvider (LLM 配置)
-```
-
-### 5.2 Agent 思考 + 记忆
-
-```
-Agent
-└── Brain
-     ├── Cortex           # 思考执行，绑定 ModelProvider
-     └── Memory           # 记忆系统
-          ├── Core        # 核心认知：角色设定、能力清单
-          ├── Working     # 当前会话工作记忆
-          ├── Short-Term  # 最近会话摘要索引
-          └── Long-Term   # 长期沉淀知识图谱
-```
-
----
-
-*本文档是 AI 助手的快速入门手册：规范与约定看本文，功能现状看 wiki，设计决策看 docs/design/，避坑经验看 docs/LAYERED_ARCHITECTURE_PRACTICE.md*
+*规范与约定看 [CODE_STANDARDS.md](./docs/CODE_STANDARDS.md)，功能现状看 [wiki](./docs/wiki/)，设计决策看 [docs/design/](./docs/design/)，文档维护细则看 [DOCUMENTATION.md](./docs/DOCUMENTATION.md)*

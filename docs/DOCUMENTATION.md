@@ -1,11 +1,12 @@
 # 文档编写与维护规范（Documentation Convention）
 
 > 🎯 **定位**：顶级项目文档规范——四类文档（design/plan/wiki/RAG 卡）的文件头、路径引用、知识卡图谱法则、章节模板与归档约定全量细则
-> 状态：v2.1（2026-08-20 自 AGENTS.md §2.1 原体迁出，章节编号独立排布）
+> 状态：v2.1（2026-08-20 自 AGENTS.md 原体迁出，章节编号独立排布）
 > 触发场景：编写 / 修改 / 归档任何 docs/ 文档、新增 Wiki 长文或 RAG 知识卡、修正文档引用路径时打开
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) — 上层权威文档（§2.1 仅保留速览）
+> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册（文档规范速记指向本文）
+> - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT
 > - [ai-orz-wiki-maintainer](./skills/ai-orz-wiki-maintainer.md) / [ai-orz-doc-maintainer](./skills/ai-orz-doc-maintainer.md) — 本规范的两个执行技能
 
 > 🎯 **铁律**：代码是 SSOT（字段级细节跳源码），文档只承载代码无法表达的信息：设计动机、模块边界、影响面、扩展路径。

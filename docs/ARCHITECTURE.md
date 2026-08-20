@@ -10,8 +10,9 @@
 > - 理解核心概念（Agent/Brain/Memory/Organization 等实体关系）
 >
 > 关联文档：
-> - [AGENTS.md](../AGENTS.md) §3 代码分层架构规范 + §3.2 目录结构 — 实操层强制执行规范
-> - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — AGENTS §3.1 的配套示例化展开（反模式/避坑）
+> - [CODE_STANDARDS.md](./CODE_STANDARDS.md) — 编码规范 SSOT（命名/分层/宏/错误/日志等全量规范）
+> - [AGENTS.md](../AGENTS.md) — Agent 快速入门手册（架构速览 + 开发规范路由表）
+> - [LAYERED_ARCHITECTURE_PRACTICE.md](./LAYERED_ARCHITECTURE_PRACTICE.md) — 分层实践与避坑（反模式/实例化展开）
 > - [docs/wiki/](./wiki/) — 代码现状百科，字段级实现细节以 wiki/源文件为准
 >
 //! > 最后更新：2026-08-13
