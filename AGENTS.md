@@ -262,6 +262,13 @@ ai_orz/
 | 删除（软删除） | `delete_` | `delete_agent()` |
 | 列表/批量 | `find_all`, `find_by_` | `find_all_agents()`, `find_by_org()` |
 | 布尔判断 | `is_`, `has_`, `can_` | `is_deleted()`, `has_permission()` |
+| **查询（带过滤/分页）** | `query_` | `query_agents(ctx, query) -> PagedResult<Agent>`，**必须复用 `find_by_` 的 WHERE 条件**（见 §4.9）|
+| **统计计数** | `count_` | `count_agents(ctx, query) -> Result<u64>`，**与 query 复用同一套过滤**（见 §4.9）|
+| **搜索（FTS/向量/图谱）** | `search_` | `search_knowledge(ctx, keyword) -> Vec<SearchResult>`，支持混合检索 |
+| **向量嵌入** | `embed_` | `embed_entity(ctx, cortex, po)` / `embed_text(ctx, cortex, text)` |
+| **向量检索** | `find_nearest_` | `find_nearest_vectors(ctx, table, embedding, top_k)` |
+| **图谱遍历** | `traverse_` | `traverse_knowledge_graph(ctx, node_id, depth)` |
+| **事件/状态查询** | `list_` | `list_events(ctx, agent_id, since)`（时间序列查询，非分页列表）|
 
 **集合变量：** 使用复数形式 `agents`, `user_ids`
 
