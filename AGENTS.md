@@ -359,6 +359,22 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 - **每个业务方法一个独立文件**，单个文件只放一个 handler 函数
 - `mod.rs` 只保留模块导出，不存放实现
 - 所有 DTO 从 `common/src/api/` 导入；通用响应包装统一使用 `common::api::ApiResponse<T>`，禁止在 `src/handlers` 定义本地 `ApiResponse`
+- **所有 handler 必须用两个宏标注**（AI 宏自动生成路由注册 + 工具注册）：
+
+```rust
+#[register_handler_tool(
+    id = "query_agents",
+    name = "query_agents",
+    description = "Query agents with full filtering support",
+    params = "common::api::AgentQueryRequest",
+    tags = "collaboration"
+)]
+#[generate_http_handler]
+pub async fn query_agents(ctx: RequestContext, params: AgentQueryRequest) -> Result<PagedResult<AgentListItem>> { ... }
+```
+
+**`#[generate_http_handler]`**：自动生成 Axum 路由（方法 + 路径 + 中间件），handler 签名固定为 `(ctx: RequestContext, params: Params) -> Result<T>`
+**`#[register_handler_tool]`**：同时注册为内置工具，Agent 可通过工具调用方式触发该 handler
 
 ### 4.6 测试隔离原则
 
@@ -477,6 +493,98 @@ pkg::init_all()                  # 最底层：日志/存储/JWT/工具注册（
 4. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
 5. **前端复用后端结构体**：前端 API client 优先复用 `common::api::*` 中的 Request/Response 结构体作为参数和返回类型，减少前后端字段定义漂移；前端自定义结构体仅用于纯展示层（如聚合多个接口数据的 ViewModel）。
 6. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
+
+**DTO 命名约定**：见 §4.14 末尾命名表。
+
+### 4.12 统一错误处理规范（强制执行）
+
+**核心原则：所有错误必须通过 `common::error` 的三个宏构造，禁止手写 `Error::new()`**
+
+| 宏 | 用途 | 示例 |
+|------|------|------|
+| `err!` | 构造错误（不返回） | `err!(NotFound, "Agent {} not found", id)` |
+| `bail_err!` | 构造并立即 `return Err(...)` | `bail_err!(InvalidRequest, "参数不合法: {}", e)` |
+| `ensure_err!` | 条件检查，不满足则 `bail_err!` | `ensure_err!(age >= 18, InvalidRequest, "未成年禁止")` |
+
+**常用 ErrorCode 分类**（`common/src/error/code.rs`）：
+
+| 分类 | 典型变体 | HTTP 状态码 |
+|------|---------|------------|
+| **用户输入** | `InvalidRequest`, `NotFound`, `Unauthorized`, `Forbidden` | 400/404/401/403 |
+| **业务逻辑** | `Conflict`, `RateLimited`, `QuotaExceeded` | 409/429 |
+| **系统** | `Internal`, `DatabaseError`, `Timeout` | 500/504 |
+| **外部集成** | `LarkApiError`, `A2aProtocolError`, `ToolExecutionFailed` | 502 |
+| **身份凭证** | `CredentialEncryptionFailed`, `CredentialDecryptionFailed` | 500 |
+
+**带字段和 source 的高级用法**：
+
+```rust
+// 带 JSON 字段（用于前端展示）
+err!(InvalidRequest, "字段校验失败", field: { field: "email", reason: "invalid format" });
+
+// 带 source（包装底层错误，保留原始错误链）
+.map_err(|e| err!(DatabaseError, "查询失败: {}", source: e))?;
+```
+
+**禁止的写法**：
+- ❌ `Error::new(ErrorCode::NotFound, "...")` — 必须用 `err!` 宏
+- ❌ `.map_err(|e| anyhow::anyhow!(...))` — 必须映射为项目 `Error`
+- ❌ 裸字符串错误（`anyhow::Result` / `Box<dyn Error>`）作为公共 API 返回值
+
+### 4.13 统计事件规范（强制执行）
+
+**核心原则：所有业务事件统计必须通过 `record_event!` 宏写入，禁止直接操作 DuckDB 连接**
+
+```rust
+// 1. 定义事件结构体（derive StatsEvent 宏自动生成表映射）
+#[derive(Debug, Clone, StatsEvent)]
+pub struct ModelCallEvent {
+    pub timestamp: i64,
+    pub agent_id: Option<String>,
+    pub model_provider_id: String,
+    pub tokens_input: u64,
+    pub tokens_output: u64,
+}
+
+// 2. 在业务代码中（Domain/Consumer 层）记录事件
+record_event!(&ctx, ModelCallEvent {
+    timestamp: now,
+    agent_id: Some(agent_id.to_string()),
+    model_provider_id: provider_id.to_string(),
+    tokens_input: input,
+    tokens_output: output,
+}).await?;
+```
+
+**`record_event!` 特性**：
+- 自动从 `ctx` 获取 Stats 实例，无需手动传连接
+- 事件结构体类型自动路由到对应的 StatTable
+- 支持内存版（`RuntimeStatsCollector`，重启重置）和持久化版（DuckDB，跨重启）
+
+**已内置的统计事件**：`AgentAwakeEvent`、`ModelCallEvent`、`ToolCallEvent`、`TaskEvent`、`ProjectEvent`
+
+### 4.14 前后端 API 协议规范（强制执行）
+
+**核心原则：`common` crate 是前后端 API 协议的单一事实源。** 详见 [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)。
+
+1. **禁止裸原始类型响应**：handler 即便只返回一个字段也必须用标准 Response 结构体（`ApiResponse<T>` 信封的 data 内禁止裸 bool/()/String）；无业务字段的操作用 `<Action>Response { success: bool }`。
+2. **DTO 只定义在 common**：Request/Response 一律先定义在 `common/src/api/<域>.rs`；禁止 `frontend/src/api/` 本地镜像；禁止 handler 直接返回 DAL/Domain 内部结构体（DAL 需要时 re-export common 定义）。
+3. **请求参数必须结构体化**：新增接口的请求参数（path / query / body）一律用结构体定义在 `common/src/api/<域>.rs`，通过 `#[derive(Params)]` + `#[param(source = "path"|"query")]` 注解声明参数来源；禁止在 handler 签名中散落 `Path<String>` / `Query<HashMap>` 等裸提取器。结构体即接口契约，便于扩展字段、前后端复用、文档生成。
+4. **共享枚举禁止数字比较**：权限判断用 `UserRole` 枚举方法（has_permission/find_root），禁止 `role == 0`/`role >= 2` 类数字大小比较。
+5. **前端复用后端结构体**：前端 API client 优先复用 `common::api::*` 中的 Request/Response 结构体作为参数和返回类型，减少前后端字段定义漂移；前端自定义结构体仅用于纯展示层（如聚合多个接口数据的 ViewModel）。
+6. **前端兼容导入**：既有导入路径多的 api 模块用 `pub use common::api::{...}` re-export 保持路径；注意 frontend 是 bin crate，无人引用的 re-export 会触发 unused import，只 re-export 实际被引用的类型。
+
+**DTO 命名约定**：
+
+| 操作 | Request 命名 | Response 命名 | 说明 |
+|------|------------|-------------|------|
+| 获取单个 | `Get{Entity}Request` | `Get{Entity}Response` | 如 `GetAgentRequest` / `GetAgentResponse` |
+| 创建 | `Create{Entity}Request` | `Create{Entity}Response` | Response 通常含 `id` |
+| 更新 | `Update{Entity}Request` | `Update{Entity}Response` | Response 可复用 Get |
+| 删除 | `Delete{Entity}Request`（可选） | `Delete{Entity}Response` | Response 仅 `{ success: bool }` |
+| 列表（语法糖） | `List{Entities}Request` | `List{Entities}Response` | 只含 pagination |
+| 查询（完整） | `{Entity}QueryRequest` | `PagedResult<{Entity}ListItem>` | POST + body，完整过滤 |
+| 搜索（语义） | `Search{Entities}Request` | `PagedResult<{Entity}ListItem>` | FTS5 + 向量混合 |
 
 ---
 
