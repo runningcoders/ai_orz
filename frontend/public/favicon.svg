@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="orz-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd900"/>
+      <stop offset="50%" stop-color="#ff8105"/>
+      <stop offset="100%" stop-color="#fa520f"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="8" ry="8" fill="url(#orz-gradient)"/>
+  <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" 
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="28" font-weight="800" fill="#1f1f1f" letter-spacing="-1">Orz</text>
+</svg>
