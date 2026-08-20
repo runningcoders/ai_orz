@@ -14,7 +14,7 @@ source_files:
     - docs/wiki/knowledge/zh/_index.yaml
     - docs/skills/ai-orz-wiki-maintainer.md
     - docs/skills/ai-orz-doc-maintainer.md
-    - AGENTS.md#L92-L358
+    - docs/DOCUMENTATION.md
     - docs/wiki/zh/content/架构设计/文档体系规范/四类文档互引闭环管理/四类文档互引闭环管理.md
     - docs/wiki/zh/content/基础设施/知识库与知识图谱/RAG 知识卡索引机制/RAG 知识卡索引机制.md
 ---

@@ -10,7 +10,7 @@
 > 查阅场景：任何需要写 design/plan 文档、需要精简归档 superpowers 执行蓝图、需要判断"一段代码能不能保留在文档里"、或需要把已完成的 design/plan 精简归档的时候打开；如果是 wiki 长文/知识卡的同步（跟随代码变更）请走 ai-orz-wiki-maintainer。
 >
 > 关联文档：
-> - [AGENTS.md §2.1 文档编写与维护规范（强制执行）](AGENTS.md#L92-L358) — 本文档的 SSOT，所有细则以 AGENTS 为准；本 Skill 是把 AGENTS §2.1 翻译成可执行的 agent 工作流步骤 + 判定表 + 归档模板
+> - [AGENTS §2.1 文档编写与维护规范（强制执行）](../DOCUMENTATION.md) — 本文档的 SSOT，所有细则以该规范为准；本 Skill 是把 AGENTS §2.1 翻译成可执行的 agent 工作流步骤 + 判定表 + 归档模板
 > - [docs/skills/ai-orz-wiki-maintainer.md](docs/skills/ai-orz-wiki-maintainer.md) — 平行 Skill：活文档维护方；本 Skill 归档 design/plan 后通知它做引用重定向
 
 ---

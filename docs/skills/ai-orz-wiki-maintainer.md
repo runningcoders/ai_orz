@@ -10,7 +10,7 @@
 > 查阅场景：任何需要把代码变更同步进 docs/wiki/ 的两套知识库、或需要重定向因归档产生的失效引用时打开；如果是 design/plan 的生命周期管理（新建/精简/归档）请走 ai-orz-doc-maintainer。
 >
 > 关联文档：
-> - [AGENTS.md §2.1 文档编写与维护规范](AGENTS.md#L92-L358) — 文件头四件套 + 代码块性质判定铁律（四类文档全部遵守）
+> - [AGENTS §2.1 文档编写与维护规范](../DOCUMENTATION.md) — 文件头四件套 + 代码块性质判定铁律（四类文档全部遵守）
 > - [docs/skills/ai-orz-doc-maintainer.md](docs/skills/ai-orz-doc-maintainer.md) — 平行 Skill：历史快照维护方；其场景 D 归档流程会触发本 Skill 的引用重定向
 
 ---

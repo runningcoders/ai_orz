@@ -96,7 +96,7 @@
 4. **跳源码锚点**：从长文 cite/章节来源段 OR 卡 `source_files[]`，按 `相对路径#Ln-Lm` 读真实代码
 5. **按需补跳 ① Design / ② Plan**：① 找为什么/决策表；② 找扩展入口速查表 §4 + §七 4 步扩展模板
 
-**同主题多张平行卡**：全部召回、并行阅读、不做去重、不删旧卡（语义相近 = 不同切面，信息互补）。⚠️ **但「完全重复版本」不属此类**——scope[] 互为子集、§4 硬约束重叠率 > 90%、只是措辞不同的重复卡，必须走「吸收合并 + 直接删除副卡」，绝不可当作「平行互补」保留。见下方 §2.1.3 图谱节点组织法则。
+**同主题多张平行卡**：全部召回、并行阅读、不做去重、不删旧卡（语义相近 = 不同切面，信息互补）。⚠️ **但「完全重复版本」不属此类**——scope[] 互为子集、§4 硬约束重叠率 > 90%、只是措辞不同的重复卡，必须走「吸收合并 + 直接删除副卡」，绝不可当作「平行互补」保留。见 [文档规范 §2.1.3](./docs/DOCUMENTATION.md)。
 
 **RAG 元问题第一跳**（如何使用知识卡 / 召回不到 / scope 匹配 / source_files 写法）→ 命中：
 - [RAG 知识索引：如何使用知识卡片做召回检索、锚定与 scope 匹配](docs/wiki/knowledge/zh/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D/RAG%20%E7%9F%A5%E8%AF%86%E7%B4%A2%E5%BC%95%EF%BC%9A%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E7%9F%A5%E8%AF%86%E5%8D%A1%E7%89%87%E5%81%9A%E5%8F%AC%E5%9B%9E%E6%A3%80%E7%B4%A2%E3%80%81%E9%94%9A%E5%AE%9A%E4%B8%8E%20scope%20%E5%8C%B9%E9%85%8D.md)
@@ -106,6 +106,7 @@
 | 分类 | 文档 | 优先级 |
 |------|------|--------|
 | **架构总览** | [README.md](./README.md) / [docs/wiki/](./docs/wiki/)（③ Wiki 百科入口，8 大板块） / [docs/wiki/knowledge/zh/](./docs/wiki/knowledge/zh/)（④ RAG 第一召回层）/ [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) / [docs/CODE_WIKI.md](./docs/CODE_WIKI.md) | ⭐⭐⭐ |
+| **文档规范** | [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)（四类文档编写/引用/图谱法则/归档全量规范，即本文 §2.1 细则） | ⭐⭐⭐ |
 | **分层实践** | [docs/LAYERED_ARCHITECTURE_PRACTICE.md](./docs/LAYERED_ARCHITECTURE_PRACTICE.md)（Agent 必遵循，含适配层架构原则） | ⭐⭐⭐ |
 | **API 协议** | [docs/design/api_protocol_convention.md](./docs/design/api_protocol_convention.md)（common DTO 单一事实源） | ⭐⭐⭐ |
 | **SQL 规范** | [docs/design/sqlx_guide.md](./docs/design/sqlx_guide.md)（SQLx 0.8 + SQLite、STRICT、FTS5、测试隔离） | ⭐⭐⭐ |
@@ -120,256 +121,17 @@
 
 ---
 
-### §2.1 文档编写与维护规范（强制执行）
+### §2.1 文档编写与维护规范
 
 > 🎯 **铁律**：代码是 SSOT（字段级细节跳源码），文档只承载代码无法表达的信息：设计动机、模块边界、影响面、扩展路径。
 
----
+**全量细则（强制执行）见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)**：文件头四件套（§2.1.1）/ 路径引用格式（§2.1.2）/ RAG 卡图谱法则与 5 级决策算法（§2.1.3）/ design·plan·archive 章节模板（§2.1.4）。**写任何文档前先读它。**
 
-#### 2.1.1 强制文件头（标题后紧跟）
-
-```markdown
-# [文档标题]
-
-> 🎯 **定位**：[一句话说明角色/象限/精度]
-> 状态：[草稿|定稿|vX.Y|归档 YYYY-MM-DD]
-> 触发场景：[一句话告诉 Agent 何时打开，否则直接读代码]
->
-> 关联文档：
-> - [上层权威文档](../../AGENTS.md) — 关联点
-> - [横向文档](../design/xxx.md) — 关联点
-```
-
-**状态枚举**：草稿（设计中）/ 定稿（不追代码）/ vX.Y（YYYY-MM-DD，多版本）/ 归档 YYYY-MM-DD（只进不出）
-**归档清单项**：删除 writing-plans 标记（`REQUIRED SUB-SKILL` 行）与所有 `- [ ] Step N` checkbox
-
----
-
-#### 2.1.2 路径引用统一规范（强制执行，三环境通跳）
-
-> 🎯 **核心原则：一律写「相对仓库根的相对路径」，永不写本机绝对路径，永不写 `file://` / `file:///` 伪协议。行号用 `#Lx-Ly` fragment（GitHub 原生兼容；IDE 降级为文件级跳转，可接受）。**
-
-| 引用类型 | 唯一合法格式 | 例子 |
-|----------|------------|------|
-| 代码（行范围） | `[描述](路径#L起始-L结束)` | `[日志初始化](src/pkg/logging.rs#L15-L42)` |
-| 代码（单行） | `[描述](路径#L行)` | `[UserRole 定义](common/src/enums/user.rs#L8)` |
-| 代码（无行号） | `[描述](路径)` | `[初始迁移](migrations/20260420000000_initial.sql)` |
-| 文档互引 | `[描述](docs/...md)` | `[日志设计](docs/design/logging_design.md)` |
-| Wiki 长文 | `[描述](docs/wiki/zh/content/...md)` | `[日志系统](docs/wiki/zh/content/功能模块/系统管理/日志管理系统.md)` |
-| RAG 卡 | `[描述](docs/wiki/knowledge/zh/...md)` | `[日志宏卡](docs/wiki/knowledge/zh/日志系统/日志宏设计.md)` |
-| 外部链接 | 直接写 http(s) | `[sqlx](https://docs.rs/sqlx)` |
-
-**三环境行为**：
-| 环境 | 行为 |
-|------|------|
-| GitHub 仓库页 | 相对链接自动解析为 `blob/<branch>/path#Lx-Ly` 并高亮行 ✅ |
-| 本地 IDE | Cmd+Click 打开文件（fragment 被忽略，文件级跳转）⚠️ |
-| 前端文档中心 | 渲染期后处理 + 点击拦截 → GitHub blob 新窗口 ✅ |
-
-**注意**：md 链接目标里的空格必须写成 `%20`（如 `CoreTool%20trait`），中文字符原样保留。
-
-**红线（tools/docs_lint CI 必 fail）**：
-- ❌ 本机绝对路径（`file:///Users/...` 或裸 `/Users/...`）
-- ❌ `file://` 伪协议前缀
-- ❌ 行号写 legacy 冒号格式 `path:15-42`（存量已迁移归零；分类器兼容解析但新文禁写）
-
-**契约型代码块规则（不变）**：trait 签名/struct 字段/enum 变体/SQL schema/ASCII 图可留代码块，紧邻下方附 `> 当前实现：[xxx.rs#L12-L50](src/xxx.rs#L12-L50)`；实现快照型（函数体/控制流/命令）删代码块，改 `> 逻辑见：[func](src/xxx.rs#L288-L352)`。
-
----
-
-#### 2.1.3 知识图谱节点组织与 RAG 卡拆分合并强制规范（强制执行）
-
-> 🎯 **定位**：治理「增量构建 Wiki / RAG 卡时，不查重直接新建，导致 30+ 张完全重复版本」的系统性问题。定义知识图谱节点「合并/拆分/关联」的判定标准与标准写法。
->
-> **适用范围**：`docs/wiki/zh/content/` ③ Wiki 长文节点 + `docs/wiki/knowledge/zh/` ④ RAG 原子知识卡节点。**所有执行 wiki 同步 / 新增 RAG 卡的 Agent（ai-orz-wiki-maintainer 技能）必须先过本法则，再决定是「合并」还是「新建」。**
-
----
-
-##### 2.1.3.1 黄金法则（两条，优先级最高）
-
-1. **优先合并**：候选主题 T 到来 → 先扫现存节点做相似度匹配，命中已有节点就**先尝试合并**。只有合并失败（颗粒度爆炸、视角完全不兼容）才考虑拆分建新节点。
-2. **明确拆分 + 必连线**：确有关联但不适合合并时，才分开展示。拆分后必须在两张卡之间**建立显式关联声明**（source_files[] 互引 + §3 说明关系类型）。拆分不连线 = 两张孤立重复命中 = FAIL。
-
----
-
-##### 2.1.3.2 5 级决策算法（每个候选主题 T 必须走一次，不可跳过）
-
-```
-候选主题 T（来自代码改动或 Design 文档）
-    │
-    ▼
-Step 0. 前置查重（必填分支，不可省略）
-    扫 docs/wiki/knowledge/zh 全部 md：
-      ① name 关键词模糊匹配
-      ② category 精确匹配
-      ③ scope[] glob 交集面积 >= 30%
-    │
-    ├── 命中 0 张 → 【Level 5：纯新主题】 → 直接新建卡 ✅
-    │
-    └── 命中 ≥ 1 张 → 按 Level 1~4 逐层判定（按顺序优先级从高到低）
-            │
-            ├── Level 1（完全重复）❌禁止新建，强制合并 + 删除副卡
-            │   判定：scope[] 互为子集 AND §4 硬约束重叠率 > 90%
-            │         AND 主题 T 是旧卡主题的同义词/不同措辞
-            │   动作：把 T 独有源码锚点 → 旧卡 §2；T 独有硬约束 → 旧卡 §4；
-            │         旧卡 YAML scope[]/source_files[] 取并集；
-            │         T 的草稿副卡 → 直接删除（历史靠 git 追溯，不归档）；
-            │         Design/Plan/Wiki 所有引用副卡路径 → 替换为旧卡路径。
-            │
-            ├── Level 2（主卡-子卡 层级包含）优先合并，合并不下才拆分
-            │   判定：scope[T] ⊂ scope[旧卡]（真子集）
-            │         （如「日志自动上下文字段注入」⊂「日志系统」）
-            │   动作首选（合并）：T 内容合并进旧卡 §3 加编号小节 + §4 追加硬约束 +
-            │                       §2 追加独有源码锚点
-            │   动作备选（拆分，满足以下任一才允许）：
-            │         a) 合并后主卡 §4 硬约束超过 15 条；或
-            │         b) 旧卡 scope[] 与 T scope[] 实际是两个不相交主题的并集
-            │   拆分后声明：
-            │         主卡 §2 表格末行加：`细粒度拆解：[子卡名](docs/wiki/knowledge/zh/子卡名.md)`
-            │         子卡 §3 开头加：`本卡是 [主卡名](docs/wiki/knowledge/zh/主卡名.md) 的 XX 模块细粒度展开`
-            │         子卡 source_files[] 末尾追加主卡相对仓库根路径
-            │
-            ├── Level 3（总卡-视角细卡 分层/分视角）允许拆分，但必互相声明关联
-            │   判定：scope[] 交集 30%-80%，是同一体系的不同层面
-            │   典型模式：
-            │     • 严格分层：身份凭证 Model 层 / Domain 层 / Handler 层（三张）
-            │     • 协议三角：A2A 协议层 / Client 端 / Server 端（三张）
-            │     • 双端视角：DuckDB 统计写入侧 / StatsHandler REST 查询侧（两张）
-            │     • 双端实现：AOP 框架层 / Domain 事件消费者全链路业务层（两张）
-            │   动作：允许每张独立建卡，不合并
-            │   必做关联声明（每张都写，缺一张 = FAIL）：
-            │     • 每张卡 source_files[] 末尾追加其余几张兄弟卡的绝对路径
-            │     • 每张卡 §3 架构约定开头加一句：
-            │       「本卡与 [兄弟卡A名](path) + [兄弟卡B名](path) 构成 XX 体系的
-            │         YY / ZZ 互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡」
-            │
-            └── Level 4（总卡-细卡 总分结构）保留主总卡 + 子细卡，并互相引用
-                判定：scope[旧卡] ⊃ scope[T]（真超集），旧卡 §3 已有总分说明
-                典型模式：Memory 搜索三合一（总卡）+ recommend_seed_nodes 三因子推荐
-                        + knowledge_graph traverse BFS/DFS（两张细卡）
-                动作：旧卡保留作为「总卡」，T 新建作为「细粒度子卡」
-                必做关联声明：
-                  • 总卡 §2 关键文件表末尾加一行：`细粒度拆解卡：[子卡名](docs/wiki/knowledge/zh/子卡名.md)`
-                  • 子卡 §3 开头加：`本卡为 [总卡名](docs/wiki/knowledge/zh/总卡名.md) 描述的 XX 体系中
-                                       YY 模块的细粒度独立召回卡`
-                  • 子卡 source_files[] 追加总卡相对仓库根路径
-```
-
-**红线**：跳过 Step 0 前置查重 → 直接新建 RAG 卡 = FAIL。Level 1 完全重复场景下仍然新建卡（即使写了 Overlaps 说明）= FAIL。Level 2/3/4 拆分后**没写关联声明**= FAIL，视为两张孤立重复卡，需回退修正。
-
----
-
-##### 2.1.3.3 四种节点关系类型声明速查表（强制对齐用词）
-
-| 关系类型 | 判定 | 主卡/旧卡侧声明位置 + 固定句式 | 子卡/副卡/兄弟卡侧声明位置 + 固定句式 |
-|---|---|---|---|
-| **①完全重复**（Level 1） | scope 全等 + 主题同义 + §4 重叠率>90% | 主卡吸收合并，§2/§4 追加内容；无需额外声明。副卡**直接删除**（不归档，历史靠 git 追溯）。Design/Plan/Wiki 中所有副卡路径 → 替换为主卡路径。 | （副卡不再召回，已删除） |
-| **②主卡-子卡**（Level 2） | scope[子] ⊂ scope[主]，真包含层级 | 主卡 §2 表格末行：`细粒度拆解：[子卡名](docs/wiki/knowledge/zh/子卡名.md)` | 子卡 §3 首句：`本卡是 [主卡名](docs/wiki/knowledge/zh/主卡名.md) 的 XX 模块细粒度展开`；子卡 `source_files[]` 末尾追加主卡相对仓库根路径 |
-| **③总卡-视角细卡**（Level 3） | scope 交集 30-80%，同一体系不同层面/分层 | 每张卡 §3 首句统一句式：`本卡与 [兄弟卡A名](docs/wiki/knowledge/zh/A卡名.md) + [兄弟卡B名](docs/wiki/knowledge/zh/B卡名.md) + … 构成 XX 体系的 YY/ZZ/… 互补视角；按 AGENTS §2.1.3 Level 3 保留平行卡`；每张卡 `source_files[]` 末尾追加**所有**兄弟卡相对仓库根路径（互相完整闭环）| （与左列相同，Level 3 是对称兄弟关系，每张写法一致）|
-| **④总卡-细卡**（Level 4） | scope[总] ⊃ scope[细]，总卡有总分结构 | 总卡 §2 表格末行：`细粒度拆解卡：[细卡1名](path) + [细卡2名](path) + …` | 细卡 §3 首句：`本卡为 [总卡名](docs/wiki/knowledge/zh/总卡名.md) 描述的 XX 体系中 YY 模块的细粒度独立召回卡`；细卡 `source_files[]` 追加总卡相对仓库根路径 |
-
----
-
-##### 2.1.3.4 工具链约定（引导 Agent 正确使用技能）
-
-增量构建 Wiki / RAG 卡时，**必须按以下顺序触发技能**，不可跳过前置：
-
-1. **第一步：触发 `ai-orz-wiki-maintainer` 技能** — 该技能 Step 0 前置查重会自动按 §2.1.3.2 的 5 级算法做合并/拆分判定，把结果写进 SOP Step 5 产物。
-2. **同步互引**：判定拆分后，该技能会强制写齐 §2.1.3.3 四种关系的双方声明（声明载体：RAG 卡 source_files[] 互引 + §3 首句，以及 Wiki 长文 §1 视角声明——均为 ③④ 活文档区内部，符合单向引用模型）。
-3. **只有在新增 Design / Plan 文档时**，才触发 `ai-orz-doc-maintainer` 技能（写完即冻结，不写任何指向 ③④ 的链接，无回填流程）。
-
-> **⚠️ ⛔ 明确禁止的反模式**：
-> - ❌ 直接 Write 工具新建 md 文件，绕开 ai-orz-wiki-maintainer 技能 = 跳过 5 级决策 = FAIL。
-> - ❌ 在 SOP 中写 "Overlaps OK" / "允许重叠" / "重叠不用管" 等措辞 = 绕过 Level 1/2 判定 = FAIL。本次 v2.1 升级后，**整个代码库所有文档中一律删除此类措辞**（保留的唯一合法重叠是 §2.1.3 Level 3 明确声明关联关系的互补视角平行卡）。
-> - ❌ 新增 RAG 卡后，Wiki 长文中仍然只引用「自己这张新卡路径」，不补引兄弟关联卡 / 主卡 / 总卡路径 = 关联关系没入链路 = FAIL。
-> - ❌ 在 design/plan（含归档件）中新增指向 wiki/RAG 卡的链接 = 违反单向引用模型 = FAIL（存量已有不要求回删，但任何新写的 ①② 文档不得再包含 ③④ 链接）。
-
----
-
-##### 2.1.3.5 _module.yaml 驱动模块子卡的豁免条款（仅适用于 AI Orz 多模块工作区 / 多 Agent 执行框架 两组模块卡组）
-
-**背景**：`docs/wiki/knowledge/zh/AI Orz 多模块工作区（后端服务 + Dioxus 前端 + 共享 crate）/` 与 `AI Orz 多 Agent 执行框架（Rust 后端 + Dioxus 前端）/` 两个目录下存在 `_module.yaml` 驱动的模块化知识树，通常包含：概述 / 架构设计 / 技术栈 / 编码规范 / 特殊配置与命令 / 子模块进一步的下钻 6 类平行子卡。它们天生 scope[] 多为顶层通配，scope 交集判定会 100% 命中，会与 §2.1.3.2 的 5 级决策算法冲突。
-
-**豁免规则（仅对这两组目录生效）**：
-- **5 级决策算法改为基于 `_module.yaml` 的 `role:` / `section:` 字段判定**：
-  - 若 `_module.yaml` 中该子卡的 `role` / `section` 标签与现存任意子卡完全相同 → 判定为 Level 1 完全重复（同一层同一 role 不应两张卡），走合并+归档；
-  - 若 `_module.yaml` 中该子卡的 `role` / `section` 标签为 6 类标准角色中现存没有的新角色 → 判定为 Level 3 互补视角平行卡，允许独立新建，但必须在每张子卡的 YAML `source_files[]` 末尾追加「同组其余 5 张子卡绝对路径」形成完整闭环互引。
-- 现有 11 张模块子卡已人工核验通过角色去重，无需重判。
-
----
-
-##### 2.1.3.6 Commit 消息「重复检查自我声明」签名规范（强制执行，wiki-maintainer 每次提交必带）
-
-> 🎯 目的：**透明化 Step 0 判定结果，形成责任链闭环**。如果某次错判把「语义别名」标成了 Level 5，你通过 git log 能立刻定位到那次提交的自我声明，回溯判定过程，避免重复卡「悄悄进入仓库很久后才发现但找不到源头」。
-
-**模板（必须原样粘贴到 wiki-maintainer 每次提交的 commit message 末尾，占独立一段；数字必须与本次 Step 0 实际执行结果一致，禁止写 0 蒙混）**：
-
-```
-—— 重复检查自我声明（AGENTS §2.1.3.6 v2.1）——
-本次候选主题总数：<N> 个
-Step 0 5 级判定结果 →
-  Level 1（完全重复 → 合并删除副卡）：<X> 张
-  Level 2（主卡-子卡 → 合并到主卡）：<M> 张
-  Level 2（主卡-子卡 → 拆分新建子卡 + 声明）：<K> 张
-  Level 3（视角兄弟卡 → 独立新建 + 互声明）：<P> 张
-  Level 4（总卡-细卡 → 新建细卡 + 声明）：<Q> 张
-  Level 5（纯新主题 → 直接新建）：<R> 张
-  合计处理 RAG 卡：<X+M+K+P+Q+R> 次（含合并，不与新建重复计数）
-——
-  🔍 语义别名疑似清单（name/scope 不命中但语义读下来近似同主题）：
-    • <疑似1：候选主题 T_name → 疑似对应现存卡 <现存卡名>；建议：人工确认后决定合并 or 新建>
-    • <疑似2：... >
-    • 0 条（如无则写这一句；6 大高重复领域被判 Level5 的必须至少写 1-2 条留痕，即使最后结论仍为 Level5）
-——
-```
-
-**红线**：自我声明段 6 个分级数字（X/M/K/P/Q/R）加总必须等于候选主题总数 N（Σ = N）。语义别名疑似清单不得为了省事永远写 0——如果候选主题的领域是知识库已有密集覆盖的主题（如「日志 / 配置 / 统计 / 构建 / 前端样式」等本轮被识别出高重复率的 6 大领域），必须至少执行一次"通读现存卡 title 做语义比对"，写 1-2 条疑似项（即使最后结论是"判 Level 5 没问题"也要把这个判断过程留下来）。
-
----
-
-#### 2.1.4 各象限章节模板
-
-文件头统一按 2.1.1；章节内容用下列清单，字段级细节填相对路径链接（`路径#Lx-Ly`），**不贴实现快照代码块**。
-
-##### 模板 A：`docs/design/*.md`（决策快照，为什么）
-
-| 章节 | 内容要点 |
-|------|---------|
-| 一、设计目标 | 设计哲学 + **关键决策表**（问题/方案/原因 3 列）|
-| 二、架构思路 | ASCII 分层/数据流图 + 关键结构定义源码链接 |
-| 三、涉及文件清单 | 分层索引表（文件/角色/内容摘要）+ **零改动面**说明 |
-| 四、关键边界 / 行为红线 | 编号列表，每条一句话（回归必保语义）|
-| 五、扩展模式 | 按场景列步骤 + 每步参考文件链接 |
-
-**红线**：写定后不追代码；发现契约与代码不一致 → 文头加一句 `注：本文件为决策快照，接口细节以代码为准`。
-**参考实例**：[docs/design/thinking_task_policy_engine_design.md](./docs/design/thinking_task_policy_engine_design.md)
-
----
-
-##### 模板 B：`docs/plan/*.md`（落地快照，怎么做+结果）
-
-| 章节 | 内容要点 |
-|------|---------|
-| 一、目标 | 问题/解决方式表 + **收敛后效果**一句话（架构收益）|
-| 二、架构思路 | ASCII 知识下沉路径 + **关键边界/行为红线** |
-| 三、涉及文件清单 | 分层表（每行路径链接 + 变更摘要）+ **零改动面** |
-| 四、分发点速查表 | 改动点 × N，每点：分支表 + 代码入口链接 |
-| 五、验收清单 | checkbox（完成时更新状态）|
-| 六、执行结果摘要 | 各模块验证结果表 + 与计划偏离项 |
-| 七、后续扩展路径 | **4 步模板**：common 模型 / domain 分发 / handler 目录 / 前端 |
-
-**红线（功能完成时强制执行）**：删除 writing-plans 产生的 Task/Step checkbox、失败测试代码块、所有实现代码块、`cargo test/build` 命令；只保留以上 7 节概述（目标 ≈ 150 行级）。
-**参考实例**：[docs/plan/身份凭证Domain统一CRUD重构.md](./docs/plan/身份凭证Domain统一CRUD重构.md)
-
----
-
-##### 模板 C：`docs/archive/*.md`（归档）
-
-只在文件头加一句：
-```
-> 📦 归档标记（YYYY-MM-DD）：被 [新文档/SHA] 取代。保留原因：[xxx]。生效方案：[../design/new.md | commit abc123]
-```
-正文永不修改。
+红线速记：
+- 路径引用一律相对仓库根路径 + `#Lx-Ly` 行号；禁 `file://` 伪协议、本机绝对路径、`path:15-42` 冒号行号（docs_lint CI 门禁）
+- 新增 Wiki 长文 / RAG 卡 → 先触发 `ai-orz-wiki-maintainer` 技能过 5 级查重（禁止裸重叠）；新增 design/plan → 触发 `ai-orz-doc-maintainer` 技能
+- 引用单向：③④ 活文档 → ①② 快照 + 源码；①② 禁止新增指向 ③④ 的链接
+- 归档件只加归档头，正文永不修改；plan 完成后精简为 7 节
 
 ---
 
@@ -569,11 +331,11 @@ fn wake_cortex(&self, provider: &ModelProvider, prompt: &str) -> Result<String>;
 
 ### 4.3 枚举类型安全
 
-所有存储在数据库中的枚举状态/角色字段，**必须使用 Rust 枚举类型**，禁止直接使用 `i32` 存储
+所有存储在数据库中的枚举状态/角色字段，**必须使用 Rust 枚举类型**（统一定义在 `common/src/enums/`），禁止裸 `i32`。分两类：
 
-- 添加 `#[repr(i32)]` + `#[derive(sqlx::Type)]`
-- 实现 `From<i64>` 适配 sqlx 类型推断
-- 枚举统一定义在 `common/src/enums/`
+- **DB 映射型**（TaskStatus/UserRole/ProjectStatus 等）：`#[repr(i32)]` + `#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]` + `#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]`（feature gate 为 WASM 前端编译必需）；默认变体标 `#[default]`；实现 `From<i32>`（未知值落 `Default`，不 panic）、`From<i64>`、`From<Self> for i32` 及 `from_i32()`/`to_i32()` 辅助方法。**权限类枚举例外**：UserRole 未知值落最低权限 `Member`，防提权。参考实现：[task.rs](common/src/enums/task.rs)
+- **纯领域型**（MemoryRole/KnowledgeRelationType 等，不映射 DB 列）：无 repr/sqlx 派生，实现 `From<String>` 字符串匹配。参考实现：[memory.rs](common/src/enums/memory.rs)
+- SQL 侧配合：枚举列查询写 `status as "status: TaskStatus"`（见 4.4）
 
 ### 4.4 SQLite + SQLx 规范
 
