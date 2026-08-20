@@ -9,28 +9,45 @@ scope:
   - "src/service/dal/lark.rs"（LarkMessageChannelDal 实现 trait）
   - "src/service/dal/message_channel.rs"
 source_files:
+
   - src/pkg/adapter/message.rs#L46-L78（MessageInboundAdapter trait：4 方法 channel_type()/start(callback)/stop()/is_running()；async_trait 标注；start 接收 Arc<dyn MessageAdapterCallback> 投递回调；重复启动 Conflict 错误）
+
   - src/pkg/adapter/message.rs#L36-L44（MessageAdapterCallback：on_message(AdaptedMessage) 回调接口。入站适配器收到外部消息后统一为 AdaptedMessage，调用此回调投递；生产者层注册此回调将 AdaptedMessage 转换为 Agent 消息入站事件）
-  - src/pkg/adapter/message.rs#L82-L100（MessageAdapterRegistry 注册中台：内部 adapters: RwLock<Vec<Arc<dyn MessageInboundAdapter>>>；register() / start_all() / stop_all() / list_running() 四个方法；start_all 内部遍历调用 adapter.start(callback) 遇到错误继续跑下一个不整组 failfast，单渠道挂不影响其他渠道）
+  - 'src/pkg/adapter/message.rs#L82-L100（MessageAdapterRegistry 注册中台：内部 adapters: RwLock<Vec<Arc<dyn MessageInboundAdapter>>>；register() / start_all() / stop_all() / list_running() 四个方法；start_all 内部遍历调用 adapter.start(callback) 遇到错误继续跑下一个不整组 failfast，单渠道挂不影响其他渠道）'
+
   - src/pkg/adapter/mod.rs#L47-L70（AdapterRegistry 父层注册中心：按 ChannelType 存储 Arc<dyn Any + Send + Sync>，支持 downcast。未来支持 Webhook Adapter/Slack Adapter 等多种适配器形态，供 producer 按渠道类型 downcast 取具体实现）
+
   - src/pkg/adapter/mod.rs#L21-L45（AdaptedMessage 基础设施层统一结构：channel_type + 外部消息原始负载 + 渠道侧用户标识 + 原始时间戳，owned 结构，producer 据此构造 SendToAgentCommand 投递内部消息系统）
-  - src/producer/message_channel.rs:Ln-Lm（消息通道生产者：启动时调用 registry.start_all(inject_message_cb) → 收到 AdaptedMessage → 按渠道+open_id 找 MessageChannel → 反查用户/Agent → publish AOP 事件 NewMessage 触发 consumer；优雅关闭调用 stop_all）
+  - 'src/producer/message_channel.rs:Ln-Lm（消息通道生产者：启动时调用 registry.start_all(inject_message_cb) → 收到 AdaptedMessage → 按渠道+open_id 找 MessageChannel → 反查用户/Agent → publish AOP 事件 NewMessage 触发 consumer；优雅关闭调用 stop_all）'
+
   - src/service/dal/lark.rs#L632-L710（LarkMessageChannelDal 实现 MessageInboundAdapter：channel_type = Lark；start = running RwLock 检查+置位+回调注入+启用的飞书渠道按 app_id 聚合+resolve_channel_credentials+调用 lark_dao 开启 WS；stop = running=false + 断开全部 WS；listener_stats() 透传 metrics 供系统健康面板）
+
   - src/service/dal/message_channel.rs#L329-L367（MessageChannelDalImpl push_to_channel：match ChannelType 分发出站调用（纯分发无 trait，漏加编译直接报错）。入站链路由 LarkMessageChannelDal 独立实现 MessageInboundAdapter，两者对称但独立）
-  - common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）
+  - 'common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）'
+
   - docs/archive/design-archive/message_channel_design.md
+
   - docs/archive/plan-archive/飞书P2P消息集成.md（v4 AOP 入站中台方案落地：MessageInboundAdapter trait + Registry + LarkEventDispatcher）
+
   - docs/archive/plan-archive/lark-cli_集成二期.md（二期 WS 指数退避重连 + 凭证用户级管理 = 入站中台依赖的基础设施）
+
   - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md
+
   - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md
+
   - docs/wiki/zh/content/核心模块/服务层/领域层/消息领域.md
+
   - docs/wiki/zh/content/基础设施/AOP 事件系统/事件生产者/消息通道生产者.md
+
   - docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md
+
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Message 领域编排.md
+
   - 【平行卡1】身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用 docs/wiki/knowledge/zh/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用/身份凭证%20Domain%20统一%20CRUD：5%20类型无关方法%20+%202%20Command%20+%20match%20kind%20分发生命周期副作用.md
+
   - 【平行卡2】AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容 docs/wiki/knowledge/zh/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容.md
-  - 【平行卡3】Lark P2P WS 私信入站：resolve_channel_credentials + 用户身份自动映射 + 监听健康指标（本 Batch 卡 4）
----
+
+  - 【平行卡3】Lark P2P WS 私信入站：resolve_channel_credentials + 用户身份自动映射 + 监听健康指标（本 Batch 卡 4）---
 
 # 消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）
 

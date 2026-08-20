@@ -12,6 +12,7 @@
 - [src/models/events/mod.rs](src/models/events/mod.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [AGENTS.md](AGENTS.md)
+- [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md)
 </cite>
 
 ### 本文关联的三类文档（四类互引闭环）

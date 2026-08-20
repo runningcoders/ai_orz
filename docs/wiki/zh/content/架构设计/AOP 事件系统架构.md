@@ -11,6 +11,7 @@
 - [src/pkg/aop/core/scheduler.rs](src/pkg/aop/core/scheduler.rs)
 - [src/pkg/aop/queue/mod.rs](src/pkg/aop/queue/mod.rs)
 - [src/pkg/aop/queue/in_memory.rs](src/pkg/aop/queue/in_memory.rs)
+- [Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅](docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md)
 </cite>
 
 ### 本文关联的三类文档（四类互引闭环）

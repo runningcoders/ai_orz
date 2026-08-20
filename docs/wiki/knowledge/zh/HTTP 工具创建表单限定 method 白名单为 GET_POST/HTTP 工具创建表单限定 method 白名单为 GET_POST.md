@@ -3,6 +3,10 @@ kind: design
 name: HTTP 工具创建表单限定 method 白名单为 GET/POST
 source: session
 category: adr
+scope:
+    - 'frontend/src/pages/settings.rs'
+source_files:
+    - docs/wiki/zh/content/前端应用/页面模块/Finance 管理页面/工具管理/HTTP工具创建界面.md
 ---
 
 # HTTP 工具创建表单限定 method 白名单为 GET/POST

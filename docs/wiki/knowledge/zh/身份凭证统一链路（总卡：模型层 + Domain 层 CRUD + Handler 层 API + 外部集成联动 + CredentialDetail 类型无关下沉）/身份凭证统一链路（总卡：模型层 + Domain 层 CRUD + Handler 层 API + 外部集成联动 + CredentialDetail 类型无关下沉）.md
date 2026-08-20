@@ -1,30 +1,38 @@
 ---
 kind: wiki_knowledge_card
-name: 身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）
+name: 身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail
+  类型无关下沉）
 category: 身份凭证
 scope:
-  - "src/service/domain/identity_credential/**"
-  - "src/service/dal/identity_credential.rs"
-  - "src/service/dao/identity_credential/**"
-  - "src/handlers/identity_credential/**"
-  - "src/models/identity_credential.rs"
-  - "common/src/api/identity_credential.rs"
+- src/service/domain/identity_credential/**
+- src/service/dal/identity_credential.rs
+- src/service/dao/identity_credential/**
+- src/handlers/identity_credential/**
+- src/models/identity_credential.rs
+- common/src/api/identity_credential.rs
 source_files:
-  - migrations/20260420000000_initial.sql#L405-L419（user_credentials 表定义）
-  - migrations/20260420000000_initial.sql#L751-L764（双部分唯一索引 + 列索引）
-  - src/models/user_credential.rs#L1-L140（UserCredentialPo + UserCredential 实体）
-  - src/service/dao/user_credential/mod.rs#L1-L102（UserCredentialDao trait + UserCredentialQuery）
-  - src/service/dao/user_credential/sqlite.rs#L1-L358（SQLite 实现：insert/update/soft_delete/query/count/find_by_id/find_default/set_default/clear_default）
-  - src/service/domain/finance/identity_credential.rs#L1-L454（Domain 统一 CRUD：create/update/delete/set_default + 类型分发联动）
-  - src/service/dal/user.rs#L86-L150（UserDal 凭证行级方法：query_credentials/insert_credential/update_credential/soft_delete_credential/find_default_credential）
-  - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：UserCredentialPo → LarkAppCredentials 解析）
-  - src/service/dal/lark.rs#L1-L50（LarkMessageChannelDal 凭证解析注入 UserCredentialDao）
-  - src/service/dal/message_channel.rs#L1-L50（MessageChannelDal 凭证解析 + resolve_lark_credentials 消费）
-  - docs/plan/用户身份凭证独立表落地.md
-  - docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
-  - docs/wiki/knowledge/zh/身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式/身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式.md
-  - docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
-  - docs/wiki/knowledge/zh/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标.md
+- migrations/20260420000000_initial.sql#L405-L419
+- migrations/20260420000000_initial.sql#L751-L764
+- src/models/user_credential.rs#L1-L140
+- src/service/dao/user_credential/mod.rs#L1-L102
+- src/service/dao/user_credential/sqlite.rs#L1-L358
+- src/service/domain/finance/identity_credential.rs#L1-L454
+- src/service/dal/user.rs#L86-L150
+- src/service/dao/lark/mod.rs#L54-L96
+- src/service/dal/lark.rs#L1-L50
+- src/service/dal/message_channel.rs#L1-L50
+- docs/plan/用户身份凭证独立表落地.md
+- docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证
+  Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
+- docs/wiki/knowledge/zh/身份凭证 Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式/身份凭证
+  Handler 八文件迁移：DTO 零改动 + CreateCredentialCmd 构造器 + 统一调用方式.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
+- docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义
+  + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
+- docs/wiki/knowledge/zh/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 +
+  LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics
+  健康指标.md
+
 ---
 
 # 身份凭证统一链路（总卡）

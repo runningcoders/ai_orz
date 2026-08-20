@@ -3,27 +3,32 @@ kind: wiki_knowledge_card
 name: GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页
 category: 外部集成
 scope:
-  - "src/pkg/tool_registry/gh_cli.rs"
-  - "src/service/domain/github_integration/**"
-  - "src/handlers/github_integration/**"
-  - "frontend/src/pages/integrations/github.rs"
-  - "src/service/domain/identity_credential/**"
+- src/pkg/tool_registry/gh_cli.rs
+- src/service/domain/github_integration/**
+- src/handlers/github_integration/**
+- frontend/src/pages/integrations/github.rs
+- src/service/domain/identity_credential/**
 source_files:
-  - src/pkg/tool_registry/gh_cli.rs#L1-L260
-  - src/service/domain/github_integration/mod.rs#L1-L90
-  - src/service/domain/github_integration/pr.rs#L1-L200
-  - src/service/domain/github_integration/repo.rs#L1-L180
-  - src/handlers/github_integration/list_repos.rs#L1-L120
-  - src/handlers/github_integration/create_pr.rs#L1-L140
-  - frontend/src/pages/integrations/github.rs#L1-L300
-  - frontend/src/api/github_integration.rs#L1-L100
-  - common/src/api/github_integration.rs#L1-L150
-  - src/service/domain/identity_credential/crud.rs#L200-L280
-  - docs/archive/design-archive/github_integration_subsystem.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
-  - docs/archive/plan-archive/github_integration_gh_cli_credential_crud_and_frontend.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
-  - docs/wiki/zh/content/功能模块/外部集成/GitHub 集成.md
-  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
-  - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md
+- src/pkg/tool_registry/gh_cli.rs#L1-L260
+- src/service/domain/github_integration/mod.rs#L1-L90
+- src/service/domain/github_integration/pr.rs#L1-L200
+- src/service/domain/github_integration/repo.rs#L1-L180
+- src/handlers/github_integration/list_repos.rs#L1-L120
+- src/handlers/github_integration/create_pr.rs#L1-L140
+- frontend/src/pages/integrations/github.rs#L1-L300
+- frontend/src/api/github_integration.rs#L1-L100
+- common/src/api/github_integration.rs#L1-L150
+- src/service/domain/identity_credential/crud.rs#L200-L280
+- docs/archive/design-archive/github_integration_subsystem.md
+- docs/archive/plan-archive/github_integration_gh_cli_credential_crud_and_frontend.md
+- docs/wiki/zh/content/功能模块/外部集成/GitHub 集成.md
+- docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）.md
+- docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
+  宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
+  宏 + 神经工具免绑定三层校验.md
+
 ---
 
 # GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页

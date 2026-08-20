@@ -3,6 +3,10 @@ kind: design
 name: Mermaid 图表采用 vendor mermaid.js 的独立阶段实现
 source: session
 category: adr
+scope:
+    - 'frontend/src/components/**/Mermaid*'
+source_files:
+    - docs/wiki/zh/content/前端应用/组件系统/图表组件/Mermaid图表支持.md
 ---
 
 # Mermaid 图表采用 vendor mermaid.js 的独立阶段实现

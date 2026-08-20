@@ -12,6 +12,7 @@
 - [awaken_context_and_sleep_constraint.md](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md)
 - [stats_query_design.md](docs/stats_query_design.md)
 - [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
 </cite>
 
 ## 目录

@@ -3,34 +3,35 @@ kind: knowledge_card
 name: UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束
 category: 前端可视化
 scope:
-  - "frontend/src/components/**/*.rs"
-  - "frontend/src/hooks/**/*.rs"
-  - "frontend/src/store/**/*.rs"
-  - "frontend/src/layouts/**/*.rs"
-  - "frontend/styles/**/*.css"
-  - "frontend/src/pages/**/*.rs"
+- frontend/src/components/**/*.rs
+- frontend/src/hooks/**/*.rs
+- frontend/src/store/**/*.rs
+- frontend/src/layouts/**/*.rs
+- frontend/styles/**/*.css
+- frontend/src/pages/**/*.rs
 source_files:
-  - "frontend/src/components/button.rs#L1-L49"
-  - "frontend/src/components/modal.rs#L1-L43"
-  - "frontend/src/components/toast.rs#L1-L103"
-  - "frontend/src/components/state.rs"
-  - "frontend/src/components/stats.rs"
-  - "frontend/src/components/graph.rs"
-  - "frontend/src/components/graph_canvas.rs"
-  - "frontend/src/hooks/use_resource.rs#L1-L40"
-  - "frontend/src/hooks/use_workspace_data.rs"
-  - "frontend/src/store/auth.rs#L1-L100"
-  - "frontend/src/store/toast.rs#L1-L100"
-  - "frontend/src/layouts/app_layout.rs#L1-L27"
-  - "frontend/src/layouts/navbar.rs#L1-L80"
-  - "frontend/styles/input.css:L1-L120"
-  - "docs/design/ui_design_system.md"
-  - "docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md"
-  - "docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md"
-  - "docs/wiki/zh/content/前端应用/组件系统/组件系统.md"
-  - "docs/wiki/zh/content/前端应用/UI%20样式与主题.md"
-  - "docs/wiki/zh/content/前端应用/前端架构设计.md"
-  - "docs/wiki/zh/content/前端应用/前端应用.md"
+- frontend/src/components/button.rs#L1-L49
+- frontend/src/components/modal.rs#L1-L43
+- frontend/src/components/toast.rs#L1-L103
+- frontend/src/components/state.rs
+- frontend/src/components/stats.rs
+- frontend/src/components/graph.rs
+- frontend/src/components/graph_canvas.rs
+- frontend/src/hooks/use_resource.rs#L1-L40
+- frontend/src/hooks/use_workspace_data.rs
+- frontend/src/store/auth.rs#L1-L100
+- frontend/src/store/toast.rs#L1-L100
+- frontend/src/layouts/app_layout.rs#L1-L27
+- frontend/src/layouts/navbar.rs#L1-L80
+- frontend/styles/input.css:L1-L120
+- docs/design/ui_design_system.md
+- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
+- docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
+- docs/wiki/zh/content/前端应用/组件系统/组件系统.md
+- docs/wiki/zh/content/前端应用/UI 样式与主题.md
+- docs/wiki/zh/content/前端应用/前端架构设计.md
+- docs/wiki/zh/content/前端应用/前端应用.md
+
 ---
 
 # §1 概述与定位

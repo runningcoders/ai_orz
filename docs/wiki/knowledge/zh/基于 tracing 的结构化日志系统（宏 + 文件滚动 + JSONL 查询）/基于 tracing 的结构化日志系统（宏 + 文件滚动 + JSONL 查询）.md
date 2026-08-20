@@ -18,6 +18,7 @@ source_files:
     - src/pkg/tool_tracing/logger.rs
     - src/pkg/daily_jsonl.rs
     - docs/design/logging_design.md
+    - docs/wiki/zh/content/基础设施/日志系统.md
 ---
 
 ## 1. 使用的框架与工具

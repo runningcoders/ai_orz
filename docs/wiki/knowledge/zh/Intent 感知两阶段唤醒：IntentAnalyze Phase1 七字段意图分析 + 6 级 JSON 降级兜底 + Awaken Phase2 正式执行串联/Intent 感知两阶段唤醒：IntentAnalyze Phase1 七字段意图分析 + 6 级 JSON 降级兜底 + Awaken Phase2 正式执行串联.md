@@ -1,38 +1,40 @@
 ---
 kind: rag_card
-name: Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联
+name: Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2
+  正式执行串联
 category: 领域建模
 scope:
-  - "src/service/domain/runtime/**/*.rs"
-  - "src/service/domain/runtime/*.rs"
-  - "src/models/prompt_builder.rs"
-  - "src/service/dal/agent.rs"
-  - "common/src/enums/*.rs"
-  - "common/src/api/runtime.rs"
-  - "src/consumer/message.rs"
+- src/service/domain/runtime/**/*.rs
+- src/service/domain/runtime/*.rs
+- src/models/prompt_builder.rs
+- src/service/dal/agent.rs
+- common/src/enums/*.rs
+- common/src/api/runtime.rs
+- src/consumer/message.rs
 source_files:
-  - "src/service/domain/runtime/types.rs#L178-L195"
-  - "src/service/domain/runtime/intent_analyze.rs#L1-L90"
-  - "src/service/domain/runtime/intent_analyze.rs#L27-L80"
-  - "src/service/domain/runtime/awakening.rs#L150-L180"
-  - "src/service/domain/runtime/awakening.rs#L230-L280"
-  - "src/service/domain/runtime/awakening.rs#L862-L908"
-  - "src/service/domain/runtime/awakening.rs#L1322-L1355"
-  - "src/service/domain/runtime/mod.rs#L203-L225"
-  - "src/service/domain/runtime/think_loop.rs#L117-L160"
-  - "src/service/dal/agent.rs#L1022-L1080"
-  - "src/service/dal/agent.rs#L1667-L1715"
-  - "src/models/prompt_builder.rs#L104-L123"
-  - "src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md"
-  - "docs/archive/design-archive/intent_aware_two_stage_awaken_design.md"
-  - "docs/design/runtime_design.md"
-  - "docs/archive/plan-archive/唤醒上下文与睡眠约束.md"
-  - "docs/archive/plan-archive/运行时问题修复.md"
-  - "docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md"
-  - "docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/Runtime%20领域编排.md"
-  - "docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/Agent%20循环消费者.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/Agent%20状态管理.md"
-  - "docs/wiki/zh/content/核心模块/处理器层/HR模块处理器/Agent处理器.md"
+- src/service/domain/runtime/types.rs#L178-L195
+- src/service/domain/runtime/intent_analyze.rs#L1-L90
+- src/service/domain/runtime/intent_analyze.rs#L27-L80
+- src/service/domain/runtime/awakening.rs#L150-L180
+- src/service/domain/runtime/awakening.rs#L230-L280
+- src/service/domain/runtime/awakening.rs#L862-L908
+- src/service/domain/runtime/awakening.rs#L1322-L1355
+- src/service/domain/runtime/mod.rs#L203-L225
+- src/service/domain/runtime/think_loop.rs#L117-L160
+- src/service/dal/agent.rs#L1022-L1080
+- src/service/dal/agent.rs#L1667-L1715
+- src/models/prompt_builder.rs#L104-L123
+- src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
+- docs/archive/design-archive/intent_aware_two_stage_awaken_design.md
+- docs/design/runtime_design.md
+- docs/archive/plan-archive/唤醒上下文与睡眠约束.md
+- docs/archive/plan-archive/运行时问题修复.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
+- docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/Agent 循环消费者.md
+- docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 状态管理.md
+- docs/wiki/zh/content/核心模块/处理器层/HR模块处理器/Agent处理器.md
+
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）

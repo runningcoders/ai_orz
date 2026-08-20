@@ -28,6 +28,8 @@
 **④ RAG 原子知识卡**：
 - [Canvas HUD 可视化 RAG 卡](docs/wiki/knowledge/zh/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95/Canvas%20HUD%20%E5%8F%AF%E8%A7%86%E5%8C%96%EF%BC%9AGraphCanvas%20%E7%9F%A5%E8%AF%86%E5%9B%BE%E8%B0%B1%20+%20%E5%9B%BE%E8%A1%A8%E5%9C%BA%E6%99%AFLineDonut%20+%20%E4%BB%AA%E8%A1%A8%E7%9B%98Gauge%E5%8F%8C%E7%89%88%20+%20HudPalette%E6%A9%99%E5%85%89%E5%85%89%E6%99%95.md) — GraphCanvas + Line/Donut + Gauge 仪表盘速查
 - 【Batch10 追加】[UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束](docs/wiki/knowledge/zh/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束/UI%20Design%20System%20组件设计系统：6%20层组件分层%20+%20Hooks%203%20个%20+%20Store%202%20个%20+%20DaisyUI%20主题%20+%20交互组件复用约束.md) — §3.4 DaisyUI v5 主题配置详解 + §红线 6 禁止定义未在 Design System 枚举的自定义 CSS 类 + §红线 7 色值必须来自 oklch 色板（禁止硬编码 #hex/rgb）
+- [Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格](docs/wiki/knowledge/zh/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md)
+- [前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层](docs/wiki/knowledge/zh/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md)
 </cite>
 
 ## 更新摘要

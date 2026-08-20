@@ -24,6 +24,7 @@
 **④ RAG 原子知识卡**：
 - [前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发](docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md) — §红线 1 链接必须先 classify 再渲染；§红线 5 禁止直接渲染真实 href 给站内 wiki/代码链接（统一走全局 click 拦截器）
 - [DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链](docs/wiki/knowledge/zh/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链/DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链.md) — Level3 兄弟卡：DocLinkClassifier 在 common crate 前后端复用，前端通过 WASM 调用同一套分类逻辑
+- [统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段](docs/wiki/knowledge/zh/统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段/统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段.md)
 </cite>
 
 ## 更新摘要

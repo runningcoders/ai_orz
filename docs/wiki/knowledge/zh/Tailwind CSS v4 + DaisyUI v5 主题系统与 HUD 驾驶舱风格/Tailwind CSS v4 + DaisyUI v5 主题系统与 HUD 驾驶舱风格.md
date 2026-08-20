@@ -13,6 +13,7 @@ source_files:
     - frontend/src/pages/settings.rs
     - docs/design/ui_design_system.md
     - docs/design/frontend_architecture.md
+    - docs/wiki/zh/content/前端应用/UI 样式与主题.md
 ---
 
 ## 1. 样式体系概览

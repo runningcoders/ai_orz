@@ -1,36 +1,38 @@
 ---
 kind: rag_card
-name: Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并
+name: Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle
+  向量去重合并
 category: 领域建模
 scope:
-  - "src/service/domain/runtime/summary.rs"
-  - "src/service/domain/runtime/memory.rs"
-  - "src/service/domain/memory/**"
-  - "src/service/dal/memory.rs"
-  - "src/service/dao/memory/**"
-  - "src/consumer/scheduler.rs"
-  - "src/producer/cron_trigger.rs"
-  - "src/handlers/hr/agent/settle_memory.rs"
-  - "src/models/cron_trigger.rs"
-  - "src/pkg/cron/*.rs"
-  - "src/service/domain/system/mod.rs"
-  - "src/models/memory*.rs"
-  - "common/src/enums/memory.rs"
+- src/service/domain/runtime/summary.rs
+- src/service/domain/runtime/memory.rs
+- src/service/domain/memory/**
+- src/service/dal/memory.rs
+- src/service/dao/memory/**
+- src/consumer/scheduler.rs
+- src/producer/cron_trigger.rs
+- src/handlers/hr/agent/settle_memory.rs
+- src/models/cron_trigger.rs
+- src/pkg/cron/*.rs
+- src/service/domain/system/mod.rs
+- src/models/memory*.rs
+- common/src/enums/memory.rs
 source_files:
-  - "src/handlers/hr/agent/settle_memory.rs#L75-L154"
-  - "src/service/dal/memory.rs#L578-L652"
-  - "src/service/domain/runtime/summary.rs#L36-L80"
-  - "src/service/domain/system/mod.rs#L420-L470"
-  - "src/consumer/scheduler.rs#L53-L131"
-  - "src/handlers/hr/agent/save_short_term_memory.rs#L19-L56"
-  - "src/handlers/hr/agent/save_long_term_memory.rs#L21-L108"
-  - "src/models/memory.rs#L158-L320"
-  - "docs/archive/design-archive/memory_system_enhancement_design.md"
-  - "docs/archive/plan-archive/唤醒上下文与睡眠约束.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/记忆沉淀机制.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/四层记忆系统.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 记忆系统.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/工作记忆%20(Working%20Memory).md"
+- src/handlers/hr/agent/settle_memory.rs#L75-L154
+- src/service/dal/memory.rs#L578-L652
+- src/service/domain/runtime/summary.rs#L36-L80
+- src/service/domain/system/mod.rs#L420-L470
+- src/consumer/scheduler.rs#L53-L131
+- src/handlers/hr/agent/save_short_term_memory.rs#L19-L56
+- src/handlers/hr/agent/save_long_term_memory.rs#L21-L108
+- src/models/memory.rs#L158-L320
+- docs/archive/design-archive/memory_system_enhancement_design.md
+- docs/archive/plan-archive/唤醒上下文与睡眠约束.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/记忆沉淀机制.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/四层记忆系统.md
+- docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 记忆系统.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/工作记忆 (Working Memory).md
+
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）

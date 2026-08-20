@@ -1,28 +1,30 @@
 ---
 kind: knowledge_card
-name: Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T map 全链路 + list query search 三 Handler 职责二分
+name: Entity Query List Search 三分查询模式：push_query_filters 复用 WHERE + PagedResult T
+  map 全链路 + list query search 三 Handler 职责二分
 category: 知识架构
 scope:
-  - "common/src/api/**/*.rs"
-  - "src/service/dao/*/sqlite.rs"
-  - "src/service/dal/*.rs"
-  - "src/service/domain/*/mod.rs"
-  - "src/handlers/**/*.rs"
+- common/src/api/**/*.rs
+- src/service/dao/*/sqlite.rs
+- src/service/dal/*.rs
+- src/service/domain/*/mod.rs
+- src/handlers/**/*.rs
 source_files:
-  - "common/src/api/mod.rs#L55-L83"
-  - "common/src/api/agent.rs#L282-L344"
-  - "src/service/dao/agent/sqlite.rs#L109-L382"
-  - "src/service/dal/agent.rs#L98-L193"
-  - "src/handlers/hr/agent/list_agents.rs#L1-L61"
-  - "src/handlers/hr/agent/query_agents.rs#L1-L68"
-  - "src/handlers/hr/agent/search_agents.rs#L1-L67"
-  - "docs/archive/design-archive/entity_list_query_search_design.md"
-  - "docs/archive/plan-archive/批量查询与通用Query接口增强重构.md"
-  - "docs/archive/plan-archive/Query接口分页与List接口简化重构.md"
-  - "docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md"
-  - "docs/wiki/zh/content/核心模块/服务层/数据对象层%20(DAO)/数据对象层%20(DAO).md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md"
-  - "docs/wiki/zh/content/API%20参考/RESTful%20API/RESTful%20API.md"
+- common/src/api/mod.rs#L55-L83
+- common/src/api/agent.rs#L282-L344
+- src/service/dao/agent/sqlite.rs#L109-L382
+- src/service/dal/agent.rs#L98-L193
+- src/handlers/hr/agent/list_agents.rs#L1-L61
+- src/handlers/hr/agent/query_agents.rs#L1-L68
+- src/handlers/hr/agent/search_agents.rs#L1-L67
+- docs/archive/design-archive/entity_list_query_search_design.md
+- docs/archive/plan-archive/批量查询与通用Query接口增强重构.md
+- docs/archive/plan-archive/Query接口分页与List接口简化重构.md
+- docs/wiki/zh/content/架构设计/API协议规范/API协议规范.md
+- docs/wiki/zh/content/核心模块/服务层/数据对象层 (DAO)/数据对象层 (DAO).md
+- docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md
+- docs/wiki/zh/content/API 参考/RESTful API/RESTful API.md
+
 ---
 
 # §1 概述与定位

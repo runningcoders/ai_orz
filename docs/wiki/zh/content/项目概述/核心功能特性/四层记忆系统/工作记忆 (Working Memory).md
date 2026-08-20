@@ -10,6 +10,7 @@
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [src/consumer/scheduler.rs](src/consumer/scheduler.rs)
 - [tests/integration/memory_test.rs](tests/integration/memory_test.rs)
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md)
 </cite>
 
 ## 目录

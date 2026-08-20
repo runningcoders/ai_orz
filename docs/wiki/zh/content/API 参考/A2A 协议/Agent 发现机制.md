@@ -10,6 +10,7 @@
 - [src/handlers/a2a/send_task.rs](src/handlers/a2a/send_task.rs)
 - [tests/integration/a2a_flow_test.rs](tests/integration/a2a_flow_test.rs)
 - [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- [A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息](docs/wiki/knowledge/zh/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息.md)
 </cite>
 
 ## 目录

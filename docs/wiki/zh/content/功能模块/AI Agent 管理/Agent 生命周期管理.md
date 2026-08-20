@@ -16,6 +16,7 @@
 - [docs/message_interaction_design.md](docs/message_interaction_design.md)
 - [docs/stats_query_design.md](docs/stats_query_design.md)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
+- [AgentRuntimeInfo 状态机 + BusyGuard RAII：Idle/Busy/Resting 三态转换 + task_id/project_id 业务上下文 + 前端 runtime-list 过滤](docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md)
 </cite>
 
 ## 目录

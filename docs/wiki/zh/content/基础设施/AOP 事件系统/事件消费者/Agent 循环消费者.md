@@ -12,6 +12,7 @@
 - [busy_guard.rs（Busy RAII 清理）](src/service/domain/runtime/busy_guard.rs)
 - [agent_runtime_state.rs（状态管理与 try_set_busy）](src/pkg/agent_runtime_state.rs)
 - [message.rs（MessageConsumer 唤醒流程）](src/consumer/message.rs)
+- [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 </cite>
 
 ## 目录

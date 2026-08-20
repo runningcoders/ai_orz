@@ -16,6 +16,7 @@
 - [src/handlers/hr/agent/get_agent.rs](src/handlers/hr/agent/get_agent.rs)
 - [src/handlers/hr/skill/list_skills.rs](src/handlers/hr/skill/list_skills.rs)
 - [src/router.rs](src/router.rs)
+- [前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层](docs/wiki/knowledge/zh/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层/前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层.md)
 </cite>
 
 ## 目录

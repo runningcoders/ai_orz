@@ -11,6 +11,7 @@
 - [frontend/src/pages/project/project_detail.rs](frontend/src/pages/project/project_detail.rs)
 - [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs)
 - [frontend/styles/input.css](frontend/styles/input.css)
+- [Mermaid 图表采用 vendor mermaid.js 的独立阶段实现](docs/wiki/knowledge/zh/Mermaid 图表采用 vendor mermaid.js 的独立阶段实现/Mermaid 图表采用 vendor mermaid.js 的独立阶段实现.md)
 </cite>
 
 ## 更新摘要

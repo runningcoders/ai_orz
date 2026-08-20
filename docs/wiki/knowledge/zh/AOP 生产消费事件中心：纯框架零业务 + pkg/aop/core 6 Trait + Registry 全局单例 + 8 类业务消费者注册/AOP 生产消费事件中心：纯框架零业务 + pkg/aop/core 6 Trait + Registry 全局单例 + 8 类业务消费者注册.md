@@ -3,34 +3,43 @@ kind: RAG 原子知识卡
 name: AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册
 category: 基础设施 / 异步事件
 scope:
-  - "src/pkg/aop/**"
-  - "src/consumer/**"
-  - "src/producer/**"
-  - "src/service/domain/system/aop_monitor.rs"
-  - "src/lib.rs (init 顺序)"
+- src/pkg/aop/**
+- src/consumer/**
+- src/producer/**
+- src/service/domain/system/aop_monitor.rs
+- src/lib.rs (init 顺序)
 source_files:
-  - src/pkg/aop/mod.rs#L1-L68 (AOP 模块总入口：全局 Registry OnceLock + publish() 便捷方法 + init_all/shutdown_all 生命周期)
-  - src/pkg/aop/core/event.rs (Event trait：event_kind() 分类键 + to_json() 序列化；所有业务事件需实现，不要求 Clone/Send)
-  - src/pkg/aop/core/consumer.rs (Consumer trait：consume_mode(Async/Sync) + handle(ctx, event_json) + ack/nack；业务消费者实现，禁止发新事件)
-  - src/pkg/aop/core/registry.rs#L1-L120 (Registry：publish/register_consumer/register_producer；self_ref Arc 循环引用 + start_all 调度器启动)
-  - src/pkg/aop/core/producer.rs (Producer trait：start/stop + tick 方法；定时扫描类生产者实现，如 CronTriggerProducer)
-  - src/pkg/aop/core/scheduler.rs (调度器：异步消费者 worker 池 + 轮询间隔 + shutdown 标志位；零业务依赖纯并发框架)
-  - src/pkg/aop/queue/in_memory.rs (InMemoryEventQueue：VecDeque + 互斥锁；ACK/NACK 语义；崩溃不恢复——持久化由业务层保证)
-  - src/consumer/mod.rs#L1-L42 (业务消费者注册：consumer::init 按顺序注册 7 类消费者——消息/调度/工具日志/工具统计/Agent 循环/思考轮次/任务事件)
-  - src/producer/mod.rs (生产者注册：producer::init 注册 CronTriggerProducer 每分钟扫到期触发器 + MessageChannelProducer 消息渠道 WS 入站 + A2aPollingProducer 外部任务轮询)
-  - src/producer/cron_trigger.rs#L1-L90 (CronTriggerProducer 每分钟 tick：CronTriggerDal.list_due 查到期 → 逐个 publish(cron.trigger) 事件 → mark_trigger_executed 更新 next_run_at)
-  - src/consumer/scheduler.rs#L1-L130 (CronTriggerConsumer：Sync 模式；payload.action match "agent_rest" → 调 load_and_settle 沉淀链路)
-  - src/lib.rs#L150-L250 (启动总顺序严格对齐 §4.10：pkg::init_all → service::init → producer::init → consumer::init → init_base_data → stats hook → aop::init_all)
-  - docs/archive/design-archive/consumer_architecture.md（§整体架构 pkg/aop 分层 + §启动顺序；§业务消费者 8 类一览表）
-  - docs/archive/design-archive/event_design.md（⚠️ 旧版归档参考：EventQueueDao 废弃原因与迁移路径）
-  - docs/archive/plan-archive/AOP生产消费事件中心重构.md（落地计划：registry 单例 + consumer::init 注册顺序 + ack/nack 语义设计）
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md（事件系统总入口：生产-消费-调度 三段架构图）
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 核心架构/注册中心与调度器.md（Registry 全局单例：self_ref 循环注入目的 + start_all 内部 worker 启动流程）
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/事件消费者.md（8 类消费者一览表：事件源 + handle 业务动作映射表）
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/事件生产者/定时触发生产者.md（CronTriggerProducer tick 流程：每分钟扫 list_due → 发事件 → mark_executed）
-  - docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP 监控面板.md（前端面板 5 指标卡片 + 事件分布饼图 + 时序折线）
-  - 【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md（AopStatsHook publish 前自动打点到 RuntimeStatsCollector）
-  - 【平行卡 2】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md（CronTriggerProducer → cron.trigger 事件 → CronTriggerConsumer agent_rest 分支）
+- src/pkg/aop/mod.rs#L1-L68 (AOP 模块总入口：全局 Registry OnceLock + publish() 便捷方法 + init_all/shutdown_all
+  生命周期)
+- src/pkg/aop/core/event.rs (Event trait：event_kind() 分类键 + to_json() 序列化；所有业务事件需实现，不要求
+  Clone/Send)
+- src/pkg/aop/core/consumer.rs (Consumer trait：consume_mode(Async/Sync) + handle(ctx,
+  event_json) + ack/nack；业务消费者实现，禁止发新事件)
+- 'src/pkg/aop/core/registry.rs#L1-L120 '
+- 'src/pkg/aop/core/producer.rs '
+- 'src/pkg/aop/core/scheduler.rs '
+- 'src/pkg/aop/queue/in_memory.rs '
+- 'src/consumer/mod.rs#L1-L42 '
+- 'src/producer/mod.rs '
+- src/producer/cron_trigger.rs#L1-L90 (CronTriggerProducer 每分钟 tick：CronTriggerDal.list_due
+  查到期 → 逐个 publish(cron.trigger) 事件 → mark_trigger_executed 更新 next_run_at)
+- 'src/consumer/scheduler.rs#L1-L130 '
+- 'src/lib.rs#L150-L250 '
+- docs/archive/design-archive/consumer_architecture.md
+- docs/archive/design-archive/event_design.md
+- docs/archive/plan-archive/AOP生产消费事件中心重构.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 核心架构/注册中心与调度器.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/事件消费者.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/事件生产者/定时触发生产者.md
+- docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP 监控面板.md
+- 【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector
+  内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector
+  内存滑动窗口 + 5 维度开箱即用表.md
+- 【平行卡 2】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest
+  每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+
+  agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md
+
 ---
 
 ## §1 概述

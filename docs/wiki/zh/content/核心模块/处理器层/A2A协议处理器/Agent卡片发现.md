@@ -8,6 +8,8 @@
 - [common/src/config.rs](common/src/config.rs)
 - [common/src/api/a2a_test.rs](common/src/api/a2a_test.rs)
 - [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- [A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建](docs/wiki/knowledge/zh/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建.md)
+- [A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息](docs/wiki/knowledge/zh/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息.md)
 </cite>
 
 ## 目录

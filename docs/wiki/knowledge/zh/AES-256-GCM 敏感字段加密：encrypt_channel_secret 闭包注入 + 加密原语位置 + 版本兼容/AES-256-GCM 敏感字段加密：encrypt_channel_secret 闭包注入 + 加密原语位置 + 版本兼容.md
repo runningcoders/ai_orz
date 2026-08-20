@@ -3,24 +3,28 @@ kind: wiki_knowledge_card
 name: AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容
 category: pkg层加密基础设施
 scope:
-  - "src/pkg/crypto.rs"
-  - "src/pkg/config.rs"
-  - "common/src/models/identity_credentials.rs"
-  - "src/service/dal/user.rs"
+- src/pkg/crypto.rs
+- src/pkg/config.rs
+- common/src/models/identity_credentials.rs
+- src/service/dal/user.rs
 source_files:
-  - src/pkg/crypto.rs:Ln-Lm（encrypt_channel_secret + decrypt_channel_secret AES-256-GCM 实现）
-  - src/pkg/config.rs:Ln-Lm（MASTER_KEY 加载与校验）
-  - common/src/models/identity_credentials.rs:Ln-Lm（encrypt_sensitive/apply_patch 闭包参数）
-  - src/service/domain/finance/identity_credential.rs#L91-L183（Domain 层闭包传入位置 + 调用点：create_credential encrypt_sensitive / update_credential apply_patch）
-  - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：解密 app_secret 用于渠道建连）
-  - src/service/dal/message_channel.rs#L1-L50（渠道凭证解析 + resolve_lark_credentials 消费）
-  - src/models/user_credential.rs#L1-L140（UserCredentialPo.detail：Json<CredentialDetail> 加密态存储）
-  - migrations/20260420000000_initial.sql#L405-L419（user_credentials 表 detail TEXT 列）
-  - docs/plan/用户身份凭证独立表落地.md
-  - docs/wiki/zh/content/架构设计/数据存储架构.md
-  - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
-  - docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
-  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
+- src/pkg/crypto.rs:Ln-Lm
+- src/pkg/config.rs:Ln-Lm
+- common/src/models/identity_credentials.rs:Ln-Lm
+- src/service/domain/finance/identity_credential.rs#L91-L183
+- src/service/dao/lark/mod.rs#L54-L96
+- src/service/dal/message_channel.rs#L1-L50
+- src/models/user_credential.rs#L1-L140
+- migrations/20260420000000_initial.sql#L405-L419
+- docs/plan/用户身份凭证独立表落地.md
+- docs/wiki/zh/content/架构设计/数据存储架构.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
+- docs/wiki/knowledge/zh/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义
+  + 默认槽位独立/身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立.md
+- docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）.md
+
 ---
 
 # AES-256-GCM 敏感字段加密（闭包注入模式）

@@ -1,26 +1,30 @@
 ---
 kind: wiki_knowledge_card
-name: A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送
+name: A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 +
+  A2aCallbackDao Push 推送
 category: dao 外部调用 + domain 适配层
 scope:
-  - "src/service/dao/agent_runtime/**/*.rs"
-  - "src/service/dao/cortex/external.rs"
-  - "src/service/dao/a2a_callback/**/*.rs"
-  - "src/service/dal/agent_a2a.rs"
-  - "src/models/agent.rs"
+- src/service/dao/agent_runtime/**/*.rs
+- src/service/dao/cortex/external.rs
+- src/service/dao/a2a_callback/**/*.rs
+- src/service/dal/agent_a2a.rs
+- src/models/agent.rs
 source_files:
-  - src/service/dao/agent_runtime/mod.rs:Ln-Lm（AgentRuntimeDao trait：单一 invoke(ctx, agent, prompt) -> Result<String> 抽象）
-  - src/service/dao/agent_runtime/a2a.rs:Ln-Lm（A2aRuntimeDao impl：HTTP JSON-RPC tasks/send、REQUEST_ID_COUNTER 单调递增、extract_text_from_task_result、call_a2a_jsonrpc 通用函数）
-  - src/service/dao/agent_runtime/codex.rs:Ln-Lm（CodexRuntimeDao CLI 子进程实现：tokio stdin/stdout 异步、work_dir/env/timeout）
-  - src/service/dao/cortex/external.rs:Ln-Lm（ExternalCortexDao：从 AgentPo external_config 构造 runtime_dao；brain.think() 分发调用；统一包装 ThinkResult::Final）
-  - src/service/dal/agent_a2a.rs:Ln-Lm（A2aAgentDal 委托 Arc<dyn AgentDal>；不重写 prompt_builder，DefaultPromptBuilder 走 trait 默认方法）
-  - src/service/dao/a2a_callback/http.rs:Ln-Lm（A2aCallbackDaoHttpImpl：Push 时查 scope_project 全量消息列表 + 组装 A2aMessages → POST webhook_url；test_connection 发 ping）
-  - src/models/agent.rs:Ln-Lm（ExternalAgentConfig 枚举：Cli{command,args,work_dir,env,timeout,prompt_template} / Remote{endpoint,agent_name,auth_token,timeout}）
-  - docs/archive/design-archive/a2a_server_architecture_design.md
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
-  - docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md
-  - docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md
-  - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+- src/service/dao/agent_runtime/mod.rs:Ln-Lm（AgentRuntimeDao trait：单一 invoke(ctx,
+  agent, prompt) -> Result<String> 抽象）
+- src/service/dao/agent_runtime/a2a.rs:Ln-Lm
+- src/service/dao/agent_runtime/codex.rs:Ln-Lm
+- src/service/dao/cortex/external.rs:Ln-Lm（ExternalCortexDao：从 AgentPo external_config
+  构造 runtime_dao；brain.think() 分发调用；统一包装 ThinkResult::Final）
+- src/service/dal/agent_a2a.rs:Ln-Lm
+- src/service/dao/a2a_callback/http.rs:Ln-Lm
+- src/models/agent.rs:Ln-Lm
+- docs/archive/design-archive/a2a_server_architecture_design.md
+- ''
+- docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md
+- docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 实体.md
+- docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+
 ---
 
 # A2A Client + 外部 Agent Runtime（出站调用 + 内部桥接）

@@ -16,6 +16,7 @@ source_files:
     - scripts/start.sh
     - .env.example
     - tests/common/env.rs
+    - docs/wiki/zh/content/配置与部署.md
 ---
 
 ## 1. 整体方案

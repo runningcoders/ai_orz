@@ -3,27 +3,35 @@ kind: RAG 原子知识卡
 name: 知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出
 category: 记忆系统 / 图谱遍历
 scope:
-  - "src/service/dal/memory.rs"
-  - "src/service/dao/memory/**"
-  - "src/handlers/hr/agent/traverse_graph.rs"
-  - "common/src/api/memory.rs"
+- src/service/dal/memory.rs
+- src/service/dao/memory/**
+- src/handlers/hr/agent/traverse_graph.rs
+- common/src/api/memory.rs
 source_files:
-  - src/service/dal/memory.rs#L139-L164 (MemoryDal trait：traverse_knowledge_graph 签名：seed_node_ids + traversal_depth + traversal_strategy(enum BFS/DFS))
-  - src/service/dal/memory.rs#L518-L577 (traverse_knowledge_graph 总入口：按 strategy enum 分发给 traverse_bfs / traverse_dfs；最后统一做可见性过滤（agent_id + published）)
-  - src/service/dal/memory.rs#L805-L890 (traverse_bfs：队列前沿 + levels Vec<Vec<NodeId>> 分层返回；每层 fetch_nodes_by_ids 批量；BFS 天然 = 最短路径链探索)
-  - src/service/dal/memory.rs#L891-L990 (traverse_dfs：栈 + edge_cache + 栈前沿批量预取当前栈上所有未访问节点的所有边，修复 DFS N+1 问题；IN 列表 400 分块)
-  - src/service/dal/memory.rs#L653-L720 (list_relations_batch + IN 分块 400：from_id IN 和 to_id IN 两个列表每节点 2 bind → 400 × 2 = 800 < SQLite 999 上限，留 199 安全余量；结果按 created_at ASC 重排保持稳定顺序契约)
-  - src/service/dal/memory.rs#L721-L804 (fetch_nodes_by_ids + IN 分块 400：单列表 ids IN 1 bind/id → 400 × 1 = 400 < 999；多次 DAO query_knowledge_nodes 后做共享可见性过滤 + 去重)
-  - src/models/memory/knowledge_relation_po.rs (KnowledgeRelationPo：from_node_id/to_node_id/relation_type/weight 四字段；traverse 返回的边会去重 weight 最大的一条)
-  - common/src/api/memory.rs (TraverseKnowledgeGraphParams / TraverseKnowledgeGraphResponse：返回 nodes + edges + ordered_levels 三段，前端按 levels 做层级渲染)
-  - docs/archive/plan-archive/图谱遍历查询优化.md（完整 7 章：DFS 栈预取批量缓存 + IN 分块 400 模式 + 测试覆盖 5 场景）
-  - docs/archive/design-archive/memory_search_enhancement_design.md（§1 决策 2：图谱遍历位置放 DAL；§三 涉及文件 list_relations_batch 抽取）
-  - （占位：待 ai-orz-doc-maintainer 落地后回填 design/traverse_performance_optimization.md 路径 → 目前只有 Plan，是 Batch 先落地、Design 后补的反模式，按 §4.10 两阶段初始化规范，Design 文档应补齐决策表）
-  - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md（§6 图谱遍历 纯图谱/语义+遍历 两种使用模式 + §8 故障排查 N+1 定位）
-  - docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/知识关系管理.md（知识关系 PO 与 relation_type 枚举（因果/关联/前置/后置/引用））
-  - docs/wiki/zh/content/架构设计/记忆系统架构.md（§知识图谱子系统：Node + Edge 存储 + 遍历 API 三层）
-  - 【平行卡 1】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐.md（搜索扩展的 traverse 调用方 = 三位一体搜索里的「图谱关系」路径；本卡是 traverse 实现细节）
-  - 【平行卡 2】docs/wiki/knowledge/zh/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md（用户进入图谱页面的「起步入口」推荐；用户点击推荐卡片后调用的就是本卡的 traverse_knowledge_graph）
+- src/service/dal/memory.rs#L139-L164 (MemoryDal trait：traverse_knowledge_graph 签名：seed_node_ids
+  + traversal_depth + traversal_strategy(enum BFS/DFS))
+- src/service/dal/memory.rs#L518-L577 (traverse_knowledge_graph 总入口：按 strategy enum
+  分发给 traverse_bfs / traverse_dfs；最后统一做可见性过滤（agent_id + published）)
+- 'src/service/dal/memory.rs#L805-L890 '
+- 'src/service/dal/memory.rs#L891-L990 '
+- 'src/service/dal/memory.rs#L653-L720 '
+- 'src/service/dal/memory.rs#L721-L804 '
+- 'src/models/memory/knowledge_relation_po.rs '
+- 'common/src/api/memory.rs '
+- docs/archive/plan-archive/图谱遍历查询优化.md
+- docs/archive/design-archive/memory_search_enhancement_design.md
+- ''
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/知识关系管理.md（知识关系 PO
+  与 relation_type 枚举（因果/关联/前置/后置/引用））
+- docs/wiki/zh/content/架构设计/记忆系统架构.md
+- 【平行卡 1】docs/wiki/knowledge/zh/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历
+  + recommend_seed_nodes 三因子推荐/记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 +
+  recommend_seed_nodes 三因子推荐.md
+- 【平行卡 2】docs/wiki/knowledge/zh/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35 内容丰富度
+  0.2 分享权重 + KnowledgeGraph 组件两端复用/recommend_seed_nodes 种子节点推荐：三因子打分 0.45 连通度 0.35
+  内容丰富度 0.2 分享权重 + KnowledgeGraph 组件两端复用.md
+
 ---
 
 ## §1 概述

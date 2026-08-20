@@ -8,6 +8,7 @@
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
 - [migrations/20260719000000_add_kind_to_agents.sql](migrations/20260719000000_add_kind_to_agents.sql)
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
+- [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
 </cite>
 
 ## 目录

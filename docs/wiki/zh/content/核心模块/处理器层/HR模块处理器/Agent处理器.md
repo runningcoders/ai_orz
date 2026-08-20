@@ -19,6 +19,7 @@
 - [src/handlers/hr/agent/list_installed_skill_packs.rs](src/handlers/hr/agent/list_installed_skill_packs.rs)
 - [common/src/api/agent.rs](common/src/api/agent.rs)
 - [src/models/agent.rs](src/models/agent.rs)
+- [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
 </cite>
 
 ## 目录

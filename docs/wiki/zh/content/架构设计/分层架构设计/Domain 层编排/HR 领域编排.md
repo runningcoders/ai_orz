@@ -9,6 +9,7 @@
 - [src/consumer/agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [src/handlers/hr/agent/settle_memory.rs](src/handlers/hr/agent/settle_memory.rs)
+- [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md)
 </cite>
 
 ## 目录

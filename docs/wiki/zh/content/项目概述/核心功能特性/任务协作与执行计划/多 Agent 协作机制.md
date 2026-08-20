@@ -15,6 +15,7 @@
 - [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md)
 - [docs/superpowers/plans/2026-07-20-aop-event-center.md](docs/superpowers/plans/2026-07-20-aop-event-center.md)
 - [docs/external_agent_design.md](docs/external_agent_design.md)
+- [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md)
 </cite>
 
 ### 本文关联的三类文档（四类互引闭环）

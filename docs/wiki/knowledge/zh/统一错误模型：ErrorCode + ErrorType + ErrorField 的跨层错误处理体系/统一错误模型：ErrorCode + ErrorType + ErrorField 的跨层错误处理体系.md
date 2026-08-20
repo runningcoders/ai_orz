@@ -15,6 +15,7 @@ source_files:
     - src/middleware/require_role.rs
     - src/service/dao/lark/error.rs
     - docs/archive/design-archive/common-error-type.md
+    - docs/wiki/zh/content/API 参考/错误处理与状态码.md
 ---
 
 ## 1. 整体方案

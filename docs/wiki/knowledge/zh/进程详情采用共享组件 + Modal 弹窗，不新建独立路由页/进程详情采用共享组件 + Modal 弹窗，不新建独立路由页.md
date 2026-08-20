@@ -3,6 +3,10 @@ kind: design
 name: 进程详情采用共享组件 + Modal 弹窗，不新建独立路由页
 source: session
 category: adr
+scope:
+    - 'frontend/src/components/**/*Process*'
+source_files:
+    - docs/wiki/zh/content/功能模块/系统管理/后台进程管理系统.md
 ---
 
 # 进程详情采用共享组件 + Modal 弹窗，不新建独立路由页

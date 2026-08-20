@@ -3,26 +3,29 @@ kind: wiki_knowledge_card
 name: DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链
 category: 工具链文档门禁
 scope:
-  - "common/src/doc_link.rs"
-  - "crates/docs_lint/**"
-  - "crates/docs_migrate/**"
-  - "scripts/tools/docs_lint.sh"
-  - "scripts/tools/docs_migrate.sh"
+- common/src/doc_link.rs
+- crates/docs_lint/**
+- crates/docs_migrate/**
+- scripts/tools/docs_lint.sh
+- scripts/tools/docs_migrate.sh
 source_files:
-  - common/src/doc_link.rs#L1-L320
-  - crates/docs_lint/src/main.rs#L1-L200
-  - crates/docs_lint/src/rules/illegal_path_prefix_rule.rs#L1-L120
-  - crates/docs_lint/src/rules/legacy_colon_line_number_rule.rs#L1-L100
-  - crates/docs_lint/src/rules/missing_cross_reference_rule.rs#L1-L160
-  - crates/docs_migrate/src/main.rs#L1-L220
-  - crates/docs_migrate/src/migrations/path_to_hash_fragment.rs#L1-L140
-  - crates/docs_migrate/src/migrations/file_protocol_cleaner.rs#L1-L100
-  - scripts/tools/docs_lint.sh#L1-L60
-  - scripts/tools/docs_migrate.sh#L1-L60
-  - docs/archive/design-archive/doc_link_classifier_and_quality_gates.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
-  - docs/superpowers/plans/2026-08-16-docs-link-unification-and-classifier.md
-  - docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md
-  - docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 + 点击拦截站内分发.md
+- common/src/doc_link.rs#L1-L320
+- crates/docs_lint/src/main.rs#L1-L200
+- crates/docs_lint/src/rules/illegal_path_prefix_rule.rs#L1-L120
+- crates/docs_lint/src/rules/legacy_colon_line_number_rule.rs#L1-L100
+- crates/docs_lint/src/rules/missing_cross_reference_rule.rs#L1-L160
+- crates/docs_migrate/src/main.rs#L1-L220
+- crates/docs_migrate/src/migrations/path_to_hash_fragment.rs#L1-L140
+- crates/docs_migrate/src/migrations/file_protocol_cleaner.rs#L1-L100
+- scripts/tools/docs_lint.sh#L1-L60
+- scripts/tools/docs_migrate.sh#L1-L60
+- docs/archive/design-archive/doc_link_classifier_and_quality_gates.md
+- docs/superpowers/plans/2026-08-16-docs-link-unification-and-classifier.md
+- docs/wiki/zh/content/基础设施/持续集成与发布工作流/文档链接质量门禁.md
+- docs/wiki/knowledge/zh/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href
+  标注 + 点击拦截站内分发/前端 MarkdownRenderer 接入 DocLinkClassifier JS 桥接：data-repo-href 标注 +
+  点击拦截站内分发.md
+
 ---
 
 # DocLinkClassifier 通用分类器 + docs_lint 二进制门禁 + docs_migrate 迁移脚本工具链

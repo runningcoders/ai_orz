@@ -1,46 +1,53 @@
 ---
 kind: RAG 原子知识卡
-name: 消息交互与SSE推送：MessageDomain delivery+management 双能力 + AgentLoopConsumer 循环驱动 + 多渠道出站（飞书/Slack/Email/Webhook/微信）
+name: 消息交互与SSE推送：MessageDomain delivery+management 双能力 + AgentLoopConsumer 循环驱动 +
+  多渠道出站（飞书/Slack/Email/Webhook/微信）
 category: 业务模块 / 消息系统
 scope:
-  - "src/service/domain/message/**"
-  - "src/service/dal/message*.rs"
-  - "src/service/dao/message_push.rs"
-  - "src/service/dao/lark/http.rs"
-  - "src/service/dao/lark/ws.rs"
-  - "src/service/dao/slack/http.rs"
-  - "src/service/dao/email/smtp.rs"
-  - "src/service/dao/webhook/http.rs"
-  - "src/service/dao/wechat/http.rs"
-  - "src/consumer/message.rs"
-  - "src/consumer/agent_loop.rs"
-  - "src/middleware/sse.rs"
-  - "common/src/api/message*.rs"
+- src/service/domain/message/**
+- src/service/dal/message*.rs
+- src/service/dao/message_push.rs
+- src/service/dao/lark/http.rs
+- src/service/dao/lark/ws.rs
+- src/service/dao/slack/http.rs
+- src/service/dao/email/smtp.rs
+- src/service/dao/webhook/http.rs
+- src/service/dao/wechat/http.rs
+- src/consumer/message.rs
+- src/consumer/agent_loop.rs
+- src/middleware/sse.rs
+- common/src/api/message*.rs
 source_files:
-  - src/service/domain/message/mod.rs#L1-L60 (MessageDomain 双 trait：MessageDelivery 投递 + MessageManagement 管理；子模块 delivery.rs 管理.rs 分别 impl)
-  - src/service/domain/message/delivery.rs#L1-L150 (MessageDelivery：send_message_to_user / send_message_to_agent → 先落 messages 表 → 再 AOP publish message.created → 同时 SSE 推当前在线用户)
-  - src/service/domain/message/management.rs#L1-L100 (MessageManagement：query_messages（分页）/ list_threads（会话）/ mark_read（标记已读，HUD 未读橙光减 1） / delete_message（软删）)
-  - src/service/dao/message_push.rs (MessagePushDao 出站分发中心：match kind = "lark_p2p" → LarkDao.push_card / "slack" → SlackDao / "email" → EmailDao / "webhook" → WebhookDao / "wechat" → WeChatDao；多渠道一入口，Ack 统一语义)
-  - src/service/dao/lark/http.rs#L50-L120 (LarkDao.push_interactive_card：飞书卡片 Markdown→飞书卡片 JSON 映射 + user_access_token 缓存 2h)
-  - src/service/dao/slack/http.rs (SlackDao.push_message：Block Kit 转换 + channel_id 查 SlackUser 映射)
-  - src/dao/email/smtp.rs (EmailDao.send：lettre + tokio-rustls TLS；模板渲染 tera 注入 name/content)
-  - src/service/dao/webhook/http.rs (WebhookDao.push：签名 HMAC-SHA256 X-Signature Header 防篡改；超时 10s；失败 3 次指数退避)
-  - src/consumer/message.rs#L1-L80 (MessageConsumer Sync 消费：AOP message.created → 拉渠道订阅者 → 调 MessagePushDao.push 发多渠道；Ack/Nack 记录在 message_delivery_attempts 表)
-  - src/consumer/agent_loop.rs#L1-L100 (AgentLoopConsumer：消息投递完成后若接收者是 Agent 且非 Busy → AOP publish agent.wake 事件 → 再走 Agent 唤醒链路；形成 用户消息→立即驱动Agent 的完整闭环)
-  - src/middleware/sse.rs (Axum SSE 流式中间件：EventSource /subscribe；按 user_id 广播 channel；重连自动补发 last_event_id 之后的事件；心跳 15s)
-  - docs/archive/design-archive/message_interaction_design.md（§前台/工作Agent 角色调度 §项目上下文路由隔离 §messages 表变更说明）
-  - docs/archive/design-archive/agent_loop_engine_design.md（§Agent循环事件驱动 §两阶段唤醒挂点 §重复唤醒互斥 BusyGuard RAII）
-  - docs/archive/design-archive/message_channel_design.md（§出站多渠道推送 §消息渠道注册表 §飞书/Slack/Email 三渠道参数）
-  - docs/archive/plan-archive/agent_loop_engine_plan.md（§事件+定时双链路驱动 §consumer::agent_loop 注册顺序）
-  - docs/archive/plan-archive/聊天MVP.md（§前台页面发送消息 §SSE 实时推送 §多渠道已读同步）
-  - docs/archive/plan-archive/飞书P2P消息集成.md（§飞书私信入站 §飞书卡片出站）
-  - docs/wiki/zh/content/功能模块/消息系统/消息系统.md（消息系统全景：入站→路由→存储→SSE 推送→多渠道出站 5 段链路总览）
-  - docs/wiki/zh/content/功能模块/消息系统/消息管理.md（消息列表/已读/软删 + 会话 thread 聚合）
-  - docs/wiki/zh/content/功能模块/消息系统/实时推送.md（SSE 协议说明：EventSource URL / 重连 last-event-id / 15s 心跳帧）
-  - docs/wiki/zh/content/核心模块/服务层/领域层/消息领域.md（MessageDomain 双能力 trait：delivery + management；子模块结构）
-  - docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md（多渠道全景：入站 Lark WS + 出站 5 渠道）
-  - 【平行卡 1】docs/wiki/knowledge/zh/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics 健康指标.md（飞书 WS 私信入站 → WS 消息转内部 Message → AOP publish → 本卡 MessageConsumer 消费；互为出入站）
-  - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（MessageConsumer + AgentLoopConsumer 是 AOP 8 类消费者中的 2 类；启动顺序 consumer::init 必须在 init_base_data 之后）
+- 'src/service/domain/message/mod.rs#L1-L60 '
+- 'src/service/domain/message/delivery.rs#L1-L150 '
+- src/service/domain/message/management.rs#L1-L100 (MessageManagement：query_messages（分页）/
+  list_threads（会话）/ mark_read（标记已读，HUD 未读橙光减 1） / delete_message（软删）)
+- 'src/service/dao/message_push.rs '
+- 'src/service/dao/lark/http.rs#L50-L120 '
+- 'src/service/dao/slack/http.rs '
+- 'src/dao/email/smtp.rs '
+- 'src/service/dao/webhook/http.rs '
+- 'src/consumer/message.rs#L1-L80 '
+- 'src/consumer/agent_loop.rs#L1-L100 '
+- 'src/middleware/sse.rs '
+- docs/archive/design-archive/message_interaction_design.md
+- docs/archive/design-archive/agent_loop_engine_design.md
+- docs/archive/design-archive/message_channel_design.md
+- docs/archive/plan-archive/agent_loop_engine_plan.md
+- docs/archive/plan-archive/聊天MVP.md
+- docs/archive/plan-archive/飞书P2P消息集成.md
+- docs/wiki/zh/content/功能模块/消息系统/消息系统.md
+- docs/wiki/zh/content/功能模块/消息系统/消息管理.md
+- docs/wiki/zh/content/功能模块/消息系统/实时推送.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/消息领域.md
+- docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md
+- 【平行卡 1】docs/wiki/knowledge/zh/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id
+  自动映射 + LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射
+  + LarkWsMetrics 健康指标.md
+- 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
+  全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
+  类业务消费者注册.md
+
 ---
 
 ## §1 概述

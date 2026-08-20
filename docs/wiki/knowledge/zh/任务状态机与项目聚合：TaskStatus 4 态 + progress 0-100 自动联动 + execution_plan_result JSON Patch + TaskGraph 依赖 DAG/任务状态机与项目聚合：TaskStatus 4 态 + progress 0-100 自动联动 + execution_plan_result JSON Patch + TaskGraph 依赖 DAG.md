@@ -1,36 +1,44 @@
 ---
 kind: RAG 原子知识卡
-name: 任务状态机 + 项目聚合进度追踪：TaskStatus 4 态流转 + execution_plan_result 结构化存储 + TaskGraph 依赖 DAG Mermaid
+name: 任务状态机 + 项目聚合进度追踪：TaskStatus 4 态流转 + execution_plan_result 结构化存储 + TaskGraph
+  依赖 DAG Mermaid
 category: 业务模块 / 项目任务
 scope:
-  - "src/models/task.rs"
-  - "src/models/project.rs"
-  - "src/service/dal/task*.rs"
-  - "src/service/dal/project*.rs"
-  - "src/service/domain/project/**"
-  - "common/src/enums/task.rs"
+- src/models/task.rs
+- src/models/project.rs
+- src/service/dal/task*.rs
+- src/service/dal/project*.rs
+- src/service/domain/project/**
+- common/src/enums/task.rs
 source_files:
-  - common/src/enums/task.rs (TaskStatus 枚举：#[repr(i32)] + #[derive(sqlx::Type)] + From<i64> — 0=Cancelled(软删) 1=Pending 2=InProgress 3=Completed；禁止数字比较，要用枚举匹配)
-  - src/models/task.rs#L16-L93 (TaskPo 字段表：status TaskStatus 枚举、progress 0-100 整数、dependencies JSON 数组前置任务、execution_plan/execution_result 两大 JSON 字符串字段)
-  - src/models/task.rs#L65-L93 (Task 业务实体：po + search_match + stats + model_call_stats + artifacts 五个可选注入；Domain 层按需要聚合查询，非每次全量)
-  - src/models/project.rs#L15-L58 (ProjectPo：owner_agent_id(PMO Agent 可空)、execution_plan/execution_result 同步字段、last_followup_at 巡检时间戳、progress_summary 在业务实体实时算不落库)
-  - src/models/project.rs#L60-L80 (Project 业务实体：task_graph(Mermaid 字符串，按需注入)、progress_summary(ProjectProgressSummary 结构含 total/completed/in_progress/cancelled/percentage))
-  - src/service/domain/project/task_graph.rs#L1-L60 (build_task_graph_mermaid：基于 Task.dependencies 字段构建 DAG；方向 B 完成→A 执行；按 TaskStatus 分颜色样式分类 cancelled/pending_review/...)
-  - src/service/domain/project/service.rs#L1-L120 (ProjectDomain::get_project_detail 聚合：基础 PO → 查所有任务 → 算 progress_summary 百分比 → 调 task_graph 生成 → 注入 artifacts；整体是典型 Domain 多 DAL 组合编排)
-  - src/service/domain/project/task.rs#L1-L150 (Task Domain 子模块：update_progress 自动流转 status → progress=0→Pending, >0<100→InProgress, =100→Completed；execution_plan JSON 写入严格 Schema)
-  - common/src/api/project_task.rs (UpdateTaskProgressRequest：progress + execution_plan_delta + execution_result_delta；不允许整字段覆盖，前端只传增量，后端按 patch 合并)
-  - docs/archive/design-archive/task_design.md（§数据库设计 tasks 表完整字段；§状态机 Cancelled=0 软删约定；§一对多 project_id 关联）
-  - docs/archive/design-archive/project_design.md（§Project实体 owner_agent_id 语义；§last_followup_at 项目巡检机制与 CronTrigger project_followup 联动）
-  - docs/archive/design-archive/project_management_design.md（§任务状态上报 §实时通知 §补偿机制 4 条设计目标落地状态）
-  - docs/archive/plan-archive/项目任务增强.md（落地：execution_plan/result 字段加入、progress_summary 聚合算法、TaskGraph DAG 构建）
-  - docs/archive/plan-archive/后台任务管理页面与列表清理接口重构.md（落地：任务 query 接口重构、通用 count 与 PagedResult 统一）
-  - docs/wiki/zh/content/功能模块/项目管理/任务管理.md（任务四态卡片 UI + 进度条组件 + 依赖图 Mermaid 渲染）
-  - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/任务生命周期管理.md（生命周期：创建→分配→pending→in_progress→completed + 取消软删路径）
-  - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/执行计划与结果追踪.md（execution_plan 结构化字段内容规范：步骤列表 + 预计耗时 + 风险；execution_result 输出结构化条目）
-  - docs/wiki/zh/content/功能模块/项目管理/项目管理.md（项目详情聚合页：5 Tab（概览/任务列表/依赖图/对话/产物）+ 进度百分比总览卡）
-  - docs/wiki/zh/content/前端应用/页面模块/项目管理页面/任务管理功能.md（前端 TaskTable 组件：status 色标 + progress 进度条 + dependencies 列点击跳转）
-  - 【平行卡 1】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md（另一条系统触发器 project_followup：每 3600s 扫项目 → 唤醒 owner_agent 跟进 + 更新 last_followup_at）
-  - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（TaskEventConsumer 处理 task.status_changed 事件，给用户发 SSE 通知）
+- common/src/enums/task.rs (TaskStatus 枚举：#[repr(i32)] +
+- 'src/models/task.rs#L16-L93 '
+- 'src/models/task.rs#L65-L93 '
+- src/models/project.rs#L15-L58 (ProjectPo：owner_agent_id(PMO Agent 可空)、execution_plan/execution_result
+  同步字段、last_followup_at 巡检时间戳、progress_summary 在业务实体实时算不落库)
+- src/models/project.rs#L60-L80 (Project 业务实体：task_graph(Mermaid 字符串，按需注入)、progress_summary(ProjectProgressSummary
+  结构含 total/completed/in_progress/cancelled/percentage))
+- 'src/service/domain/project/task_graph.rs#L1-L60 '
+- 'src/service/domain/project/service.rs#L1-L120 '
+- 'src/service/domain/project/task.rs#L1-L150 '
+- 'common/src/api/project_task.rs '
+- docs/archive/design-archive/task_design.md
+- docs/archive/design-archive/project_design.md
+- docs/archive/design-archive/project_management_design.md
+- docs/archive/plan-archive/项目任务增强.md
+- docs/archive/plan-archive/后台任务管理页面与列表清理接口重构.md
+- docs/wiki/zh/content/功能模块/项目管理/任务管理.md
+- docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/任务生命周期管理.md
+- docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/执行计划与结果追踪.md
+- docs/wiki/zh/content/功能模块/项目管理/项目管理.md（项目详情聚合页：5 Tab（概览/任务列表/依赖图/对话/产物）+ 进度百分比总览卡）
+- docs/wiki/zh/content/前端应用/页面模块/项目管理页面/任务管理功能.md
+- 【平行卡 1】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest
+  每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+
+  agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md
+- 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
+  全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
+  类业务消费者注册.md
+
 ---
 
 ## §1 概述

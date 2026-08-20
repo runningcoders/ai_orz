@@ -1,40 +1,46 @@
 ---
 kind: RAG 原子知识卡
-name: 工具系统三层调用架构：CoreTool trait + Builtin/HTTP/MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验
+name: 工具系统三层调用架构：CoreTool trait + Builtin/HTTP/MCP 三协议路由 + register_handler_tool 宏
+  + 神经工具免绑定三层校验
 category: 基础设施 / 工具注册表
 scope:
-  - "src/service/dao/tool/**"
-  - "src/service/dao/tool_call/**"
-  - "src/service/dao/mcp_tool/**"
-  - "src/service/dao/mcp_server/**"
-  - "src/service/dal/tool*.rs"
-  - "src/service/domain/finance/tool_provider.rs"
-  - "ai-orz-macros/src/register_handler_tool/**"
-  - "src/handlers/**/*tool*.rs"
+- src/service/dao/tool/**
+- src/service/dao/tool_call/**
+- src/service/dao/mcp_tool/**
+- src/service/dao/mcp_server/**
+- src/service/dal/tool*.rs
+- src/service/domain/finance/tool_provider.rs
+- ai-orz-macros/src/register_handler_tool/**
+- src/handlers/**/*tool*.rs
 source_files:
-  - src/service/dao/tool/mod.rs (ToolDao trait：CRUD + Vectorizable skill 向量搜索集成 + tool_packs 按 tag 分组)
-  - src/service/dao/tool_call/mod.rs (ToolCallDao trait：统一 execute 原语；Builtin impl / MCP impl 双实现)
-  - src/service/dao/tool_call/impl.rs#L1-L120 (Builtin ToolCall 实现：shell_exec / fs_read / fs_write / http_fetch 四个内置工具 + 参数校验白名单 + request_context cross_boundary)
-  - src/service/dao/tool_call/mcp.rs (MCP ToolCall 实现：run_mcp server_name + tool_name + args JSON；server 注册表动态加载)
-  - src/service/dao/mcp_server/mod.rs (McpServerDao：server CRUD + enabled/disabled + descriptor JSON 缓存；连接健康检查)
-  - src/service/domain/finance/tool_provider.rs#L1-L80 (Finance Domain ToolProvider：Builtin/HTTP/MCP 三协议路由 + tag=neural 免绑定 / tag=internal 加载过滤 两层)
-  - src/handlers/finance/tool/create_http_tool.rs#L1-L40 (HTTP 工具创建：create_form method 白名单 GET/POST + 端点 URL 校验 + header 安全注入)
-  - ai-orz-macros/src/register_handler_tool.rs (register_handler_tool! 过程宏：把 Handler 函数包装成 register_tool CallableTool；参数结构自动→JSON Schema)
-  - docs/archive/design-archive/tool_design.md（§三层调用架构职责表 + §工具包 tag 免绑定三层校验 + §CoreTool trait 扁平化演进）
-  - docs/archive/design-archive/mcp_tool_design.md（§MCP 服务器启动幂等 + §描述符 JSON 缓存 + §run_mcp 参数 schema）
-  - docs/archive/design-archive/builtins_http_tool_design.md（§create_form method 白名单 GET/POST + §header 禁止 Authorization Cookie 穿透）
-  - docs/archive/design-archive/generic_builtin_tools_design.md（§4 个通用内置工具参数规范 + §文件读写范围校验 §shell_exec 命令黑名单）
-  - docs/archive/design-archive/handler-tool-registration-macro.md（§register_handler_tool! 6 步宏展开 + §CallableTool trait 契约）
-  - docs/archive/plan-archive/进程管理与shell_exec修复.md（§shell_exec 白名单 + 进程双暴露 shell_list HTTP+ToolCall）
-  - docs/archive/plan-archive/前端工具与进程管理.md（§前端工具管理页面：HTTP/MCP/Builtin 三 Tab 维护）
-  - docs/archive/plan-archive/移除rig依赖与向量存储后端解耦.md（§ToolCallDao.call_manual→execute 重命名 + BrainDal→CortexDaoRegistry 扁平化）
-  - docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md（工具系统全景：注册→分组→执行→统计四步用户故事）
-  - docs/wiki/zh/content/项目概述/核心功能特性/统一工具调用架构/统一工具调用架构.md（Builtin/HTTP/MCP 三协议路由说明 + 工具包 tag 分组机制）
-  - docs/wiki/zh/content/功能模块/工具生态系统/工具注册与发现.md（CoreTool trait 契约 + 注册表单例加载流程）
-  - docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md（工具注册表全景 + 内置工具系统/MCP 工具/HTTP 工具三个子板块入口）
-  - docs/wiki/zh/content/前端应用/页面模块/Finance 管理页面/工具管理/工具管理.md（前端工具管理页面：三 Tab 视图 + create_http_tool 表单）
-  - 【平行卡 1】docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md（技能 install_skill_pack 完成后，Agent 再通过 ToolProvider 安装工具包 tag）
-  - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（ToolExecLogConsumer + ToolExecStatsConsumer 两个业务消费者，消费 tool.executed 事件写日志+打统计）
+- 'src/service/dao/tool/mod.rs '
+- 'src/service/dao/tool_call/mod.rs '
+- 'src/service/dao/tool_call/impl.rs#L1-L120 '
+- 'src/service/dao/tool_call/mcp.rs '
+- 'src/service/dao/mcp_server/mod.rs '
+- 'src/service/domain/finance/tool_provider.rs#L1-L80 '
+- 'src/handlers/finance/tool/create_http_tool.rs#L1-L40 '
+- 'ai-orz-macros/src/register_handler_tool.rs '
+- docs/archive/design-archive/tool_design.md
+- docs/archive/design-archive/mcp_tool_design.md
+- docs/archive/design-archive/builtins_http_tool_design.md
+- docs/archive/design-archive/generic_builtin_tools_design.md
+- docs/archive/design-archive/handler-tool-registration-macro.md
+- docs/archive/plan-archive/进程管理与shell_exec修复.md
+- docs/archive/plan-archive/前端工具与进程管理.md
+- docs/archive/plan-archive/移除rig依赖与向量存储后端解耦.md
+- docs/wiki/zh/content/功能模块/工具生态系统/工具生态系统.md
+- docs/wiki/zh/content/项目概述/核心功能特性/统一工具调用架构/统一工具调用架构.md
+- docs/wiki/zh/content/功能模块/工具生态系统/工具注册与发现.md
+- docs/wiki/zh/content/基础设施/工具注册表/工具注册表.md
+- docs/wiki/zh/content/前端应用/页面模块/Finance 管理页面/工具管理/工具管理.md
+- 【平行卡 1】docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等
+  Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack
+  幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md
+- 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
+  全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
+  类业务消费者注册.md
+
 ---
 
 ## §1 概述

@@ -3,35 +3,46 @@ kind: RAG 原子知识卡
 name: 前端整体架构：Dioxus Router 41 路由 + API 客户端 13 模块 + Hooks 3个 + Store 2个 + 组件体系 6层
 category: 前端应用 / 架构总览
 scope:
-  - "frontend/src/api/**"
-  - "frontend/src/components/**"
-  - "frontend/src/hooks/**"
-  - "frontend/src/layouts/**"
-  - "frontend/src/pages/**"
-  - "frontend/src/store/**"
-  - "frontend/src/utils/**"
-  - "frontend/src/main.rs"
-  - "frontend/src/config.rs"
+- frontend/src/api/**
+- frontend/src/components/**
+- frontend/src/hooks/**
+- frontend/src/layouts/**
+- frontend/src/pages/**
+- frontend/src/store/**
+- frontend/src/utils/**
+- frontend/src/main.rs
+- frontend/src/config.rs
 source_files:
-  - frontend/src/pages/mod.rs#L61-L163 (Dioxus Router enum Route：41 条路由 = 登录/对话 2 + 组织 2 + HR 5 + Finance 11 + Project 6 + System 9 + 用户 1 + 工作台 1 + 设置 1；Dioxus 0.7 派生宏 #[route("/path")])
-  - frontend/src/api/mod.rs (API 客户端聚合 13 子模块：auth/background_task/finance/github/hr/lark/log_stats/message/organization/project/seed/system；统一封装 Result<ApiResponse<T>> + JWT 自动携带 Cookie)
-  - frontend/src/hooks/use_resource.rs (use_resource：通用异步资源 Hook，参数 FnOnce() -> Result<T> + Vec<Dep>；Dioxus use_future + use_signal 包装；use_breakpoint 断点 Hook 用于响应式)
-  - frontend/src/store/auth.rs (AuthStore：全局单例 use_shared_state<AuthState>；字段 token/user_id/username/organization_id/role；login() 写 store + 触发全局 rerender；logout() 清空 store + Cookie 删除)
-  - frontend/src/store/toast.rs (ToastStore：全局消息队列，push_info/push_success/push_warn/push_error 四 API；顶部 HUD 层自动渲染，5s 自动消失，点击关闭)
-  - frontend/src/layouts/app_layout.rs (AppLayout：顶层布局 = Navbar 顶部导航 + Sidebar 左侧菜单(6大域Tab) + Main 内容区 + Toast 容器 + HUD 未读橙光条；use_require_auth 守卫重定向 /login)
-  - frontend/src/components/mod.rs (组件体系 6 层：1.基础 Button/Modal/Toast/Confirm/Markdown/CodeEditor 2.状态 State 3.统计 Stats 4.图表 Charts(Line/Donut) 5.业务 Chat(气泡/侧栏/打字)/GraphCanvas/Gauge/RuntimePanel 6.复合 KanbanCanvas/WorkspaceGraph)
-  - frontend/src/utils/time.rs (utils 5 子模块：time 格式化时间戳/ message 截断字数+Markdown预览/ status 枚举转中文标签/ file 字节大小转MB格式化；禁止跨 utils 互引)
-  - docs/design/frontend_architecture.md（§Dioxus WebAssembly 渲染管线 §41条路由表 §API客户端分层 + 拦截器 §响应式原则 + 状态只读）
-  - docs/design/ui_design_system.md（§HUD 驾驶舱风格 §DaisyUI 30+主题枚举 §Tailwind v4 @theme 自定义类 §橙光光晕 .hud-glow CSS）
-  - docs/archive/plan-archive/前端工具与进程管理.md（§Finance Tools Tab 三视图 Builtin/HTTP/MCP §进程列表 Modal 复用 §前端 DTO re-export 自 common::api）
-  - docs/archive/plan-archive/前端API协议结构重构.md（§frontend/src/api/*.rs 本地 struct 清理 §pub use common::api::* 统一入口 §DTO 漂移检查）
-  - docs/archive/plan-archive/聊天MVP.md（§对话页 SSE 订阅 §use_resource 拉 message 列表 §ChatSidePanel 侧栏项目信息）
-  - docs/wiki/zh/content/前端应用/前端应用.md（前端入口总览：WASM 编译 + Dioxus 运行时 + build.rs 自动 npm install + Tailwind v4 实时编译）
-  - docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/HR 管理页面.md（HR 域 5 页面：Agent 列表/详情 + Skill 列表/详情 + 记忆搜索 + 知识图谱 Canvas）
-  - docs/wiki/zh/content/前端应用/组件系统/钩子系统.md（use_resource/use_breakpoint/use_require_auth 三 Hooks 设计模式 + 依赖数组触发条件）
-  - docs/wiki/zh/content/前端应用/UI 样式与主题.md（DaisyUI 30+ 主题：dark/light/cyberpunk/synthwave/coffee；theme=localStorage 持久化 + 用户偏好自报同步）
-  - 【平行卡 1】docs/wiki/knowledge/zh/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md（样式系统：Tailwind v4 @theme + DaisyUI 组件类 + .hud-glow 橙光 + 30+ 主题切换）
-  - 【平行卡 2】docs/wiki/knowledge/zh/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE.md（DTO 协议：前端 API client 通过 common::api re-export，禁止本地定义重复 DTO）
+- frontend/src/pages/mod.rs#L61-L163 (Dioxus Router enum Route：41 条路由 = 登录/对话 2 +
+  组织 2 + HR 5 + Finance 11 + Project 6 + System 9 + 用户 1 + 工作台 1 + 设置 1；Dioxus 0.7
+  派生宏
+- 'frontend/src/api/mod.rs '
+- frontend/src/hooks/use_resource.rs (use_resource：通用异步资源 Hook，参数 FnOnce() -> Result<T>
+  + Vec<Dep>；Dioxus use_future + use_signal 包装；use_breakpoint 断点 Hook 用于响应式)
+- frontend/src/store/auth.rs (AuthStore：全局单例 use_shared_state<AuthState>；字段 token/user_id/username/organization_id/role；login()
+  写 store + 触发全局 rerender；logout() 清空 store + Cookie 删除)
+- 'frontend/src/store/toast.rs '
+- frontend/src/layouts/app_layout.rs (AppLayout：顶层布局 = Navbar 顶部导航 + Sidebar 左侧菜单(6大域Tab)
+  + Main 内容区 + Toast 容器 + HUD 未读橙光条；use_require_auth 守卫重定向 /login)
+- frontend/src/components/mod.rs (组件体系 6 层：1.基础 Button/Modal/Toast/Confirm/Markdown/CodeEditor
+  2.状态 State 3.统计 Stats 4.图表 Charts(Line/Donut) 5.业务 Chat(气泡/侧栏/打字)/GraphCanvas/Gauge/RuntimePanel
+  6.复合 KanbanCanvas/WorkspaceGraph)
+- 'frontend/src/utils/time.rs '
+- docs/design/frontend_architecture.md
+- docs/design/ui_design_system.md
+- docs/archive/plan-archive/前端工具与进程管理.md
+- docs/archive/plan-archive/前端API协议结构重构.md
+- docs/archive/plan-archive/聊天MVP.md
+- docs/wiki/zh/content/前端应用/前端应用.md
+- docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/HR 管理页面.md
+- docs/wiki/zh/content/前端应用/组件系统/钩子系统.md
+- docs/wiki/zh/content/前端应用/UI 样式与主题.md
+- 【平行卡 1】docs/wiki/knowledge/zh/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind
+  CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md
+- 【平行卡 2】docs/wiki/knowledge/zh/附件存储与DTO协议统一：AttachmentFinance域资产 + PagedResult T
+  map全链路 + common::api单一事实源 + count与query复用WHERE/附件存储与DTO协议统一：AttachmentFinance域资产
+  + PagedResult T map全链路 + common::api单一事实源 + count与query复用WHERE.md
+
 ---
 
 ## §1 概述

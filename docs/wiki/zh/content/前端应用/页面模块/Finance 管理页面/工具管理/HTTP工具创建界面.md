@@ -12,6 +12,7 @@
 - [frontend/src/components/chat/tool_calls_tab.rs](frontend/src/components/chat/tool_calls_tab.rs)
 - [frontend/src/api/system.rs](frontend/src/api/system.rs)
 - [frontend/src/api/finance.rs](frontend/src/api/finance.rs)
+- [HTTP 工具创建表单限定 method 白名单为 GET/POST](docs/wiki/knowledge/zh/HTTP 工具创建表单限定 method 白名单为 GET_POST/HTTP 工具创建表单限定 method 白名单为 GET_POST.md)
 </cite>
 
 ## 更新摘要

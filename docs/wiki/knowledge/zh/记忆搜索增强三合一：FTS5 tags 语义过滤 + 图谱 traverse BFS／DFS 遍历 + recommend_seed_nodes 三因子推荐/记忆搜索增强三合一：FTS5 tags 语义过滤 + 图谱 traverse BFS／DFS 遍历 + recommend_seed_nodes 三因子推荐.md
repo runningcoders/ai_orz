@@ -3,37 +3,38 @@ kind: rag_card
 name: 记忆搜索增强三合一：FTS5 tags 语义过滤 + 图谱 traverse BFS／DFS 遍历 + recommend_seed_nodes 三因子推荐
 category: 知识架构
 scope:
-  - "src/service/dal/memory.rs"
-  - "src/service/dao/memory/**/*.rs"
-  - "src/service/dao/memory/*.rs"
-  - "src/service/dao/memory/vector.rs"
-  - "src/service/domain/runtime/memory.rs"
-  - "src/handlers/hr/agent/search_memory.rs"
-  - "src/handlers/hr/agent/recommend_seed_nodes.rs"
-  - "common/src/api/neural_tools.rs"
-  - "common/src/models/graph.rs"
-  - "src/models/agent.rs"
-  - "migrations/*memory_fts5.sql"
+- src/service/dal/memory.rs
+- src/service/dao/memory/**/*.rs
+- src/service/dao/memory/*.rs
+- src/service/dao/memory/vector.rs
+- src/service/domain/runtime/memory.rs
+- src/handlers/hr/agent/search_memory.rs
+- src/handlers/hr/agent/recommend_seed_nodes.rs
+- common/src/api/neural_tools.rs
+- common/src/models/graph.rs
+- src/models/agent.rs
+- migrations/*memory_fts5.sql
 source_files:
-  - "src/service/dao/memory/sqlite.rs#L439-L520"
-  - "src/service/dao/memory/sqlite.rs#L884-L970"
-  - "src/service/dao/memory/vector.rs#L81-L124"
-  - "src/service/dal/memory.rs#L97-L177"
-  - "src/service/dal/memory.rs#L314-L380"
-  - "src/service/dal/memory.rs#L518-L576"
-  - "src/handlers/hr/agent/search_memory.rs#L24-L100"
-  - "common/src/models/graph.rs"
-  - "src/models/memory.rs"
-  - "migrations/"
-  - "docs/archive/design-archive/memory_search_enhancement_design.md"
-  - "docs/archive/design-archive/vector_search_architecture.md"
-  - "docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆%20(Long-term%20Memory)/知识关系管理.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆%20(Short-term%20Memory)/记忆搜索机制.md"
-  - "docs/wiki/zh/content/架构设计/记忆系统架构.md"
-  - "docs/wiki/zh/content/功能模块/AI%20Agent%20管理/记忆系统管理.md"
-  - "docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md"
+- src/service/dao/memory/sqlite.rs#L439-L520
+- src/service/dao/memory/sqlite.rs#L884-L970
+- src/service/dao/memory/vector.rs#L81-L124
+- src/service/dal/memory.rs#L97-L177
+- src/service/dal/memory.rs#L314-L380
+- src/service/dal/memory.rs#L518-L576
+- src/handlers/hr/agent/search_memory.rs#L24-L100
+- common/src/models/graph.rs
+- src/models/memory.rs
+- migrations/
+- docs/archive/design-archive/memory_search_enhancement_design.md
+- docs/archive/design-archive/vector_search_architecture.md
+- docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/长期记忆 (Long-term Memory)/知识关系管理.md
+- docs/wiki/zh/content/项目概述/核心功能特性/综合搜索能力/知识图谱搜索.md
+- docs/wiki/zh/content/项目概述/核心功能特性/四层记忆系统/短期记忆 (Short-term Memory)/记忆搜索机制.md
+- docs/wiki/zh/content/架构设计/记忆系统架构.md
+- docs/wiki/zh/content/功能模块/AI Agent 管理/记忆系统管理.md
+- docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md
+
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）

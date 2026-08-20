@@ -6,11 +6,10 @@ scope:
   - "common/src/api/a2a.rs"
   - "common/src/enums/external_agent*.rs"
 source_files:
-  - common/src/api/a2a.rs:Ln-Lm（AgentCard + Capabilities + JsonRpcRequest/Response + A2aTask + A2aMessage + SendTask/GetTask/CancelTask/SubscribeParams）
-  - src/handlers/a2a/jsonrpc.rs:Ln-Lm（JSON-RPC 2.0 方法路由分发，按 method: params 映射）
-  - src/handlers/a2a/agent_card.rs:Ln-Lm（GET /.well-known/agent.json AgentCard 公开端点）
+  - common/src/api/a2a.rs
+  - src/handlers/a2a/jsonrpc.rs
+  - src/handlers/a2a/agent_card.rs
   - docs/archive/design-archive/a2a_server_architecture_design.md
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
   - docs/wiki/zh/content/API 参考/API 参考.md
   - docs/wiki/zh/content/API 参考/A2A 协议/Agent 发现机制.md
   - docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md

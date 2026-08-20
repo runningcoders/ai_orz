@@ -3,6 +3,11 @@ kind: design
 name: 通过 common DTO 补全 Project/Task execution_plan/result 读取链路
 source: session
 category: adr
+scope:
+    - 'common/src/api/project*.rs'
+    - 'common/src/api/task*.rs'
+source_files:
+    - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/执行计划与结果追踪.md
 ---
 
 # 通过 common DTO 补全 Project/Task execution_plan/result 读取链路

@@ -15,6 +15,7 @@
 - [mod.rs（存储门面）](src/pkg/storage/mod.rs)
 - [20260712000000_memory_fts5.sql](migrations/20260712000000_memory_fts5.sql)
 - [memory_test.rs（集成测试）](tests/integration/memory_test.rs)
+- [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md)
 </cite>
 
 ## 目录

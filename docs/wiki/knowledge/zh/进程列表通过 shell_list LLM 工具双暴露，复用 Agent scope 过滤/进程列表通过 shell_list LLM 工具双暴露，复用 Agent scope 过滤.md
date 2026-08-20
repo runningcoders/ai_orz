@@ -3,6 +3,10 @@ kind: design
 name: 进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤
 source: session
 category: adr
+scope:
+    - 'src/pkg/tool_registry/builtin.rs'
+source_files:
+    - docs/wiki/zh/content/功能模块/系统管理/后台进程管理系统.md
 ---
 
 # 进程列表通过 shell_list LLM 工具双暴露，复用 Agent scope 过滤

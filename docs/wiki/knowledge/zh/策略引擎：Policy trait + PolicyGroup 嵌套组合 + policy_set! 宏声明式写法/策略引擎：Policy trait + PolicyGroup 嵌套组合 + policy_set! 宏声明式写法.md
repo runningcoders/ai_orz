@@ -3,23 +3,24 @@ kind: wiki_knowledge_card
 name: 策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + 混合模式支持
 category: pkg层基础设施
 scope:
-  - "src/pkg/policy/**"
-  - "src/service/domain/runtime/*.rs"
-  - "common/src/enums/thinking_scene.rs"
-  - "src/pkg/policy/mixed.rs"
+- src/pkg/policy/**
+- src/service/domain/runtime/*.rs
+- common/src/enums/thinking_scene.rs
+- src/pkg/policy/mixed.rs
 source_files:
-  - src/pkg/policy/mod.rs#L14-L96
-  - src/pkg/policy/builtin.rs#L1-L120
-  - src/pkg/policy/tests.rs#L1-L200
-  - src/pkg/policy/mixed.rs#L1-L60
-  - src/service/domain/runtime/awakening.rs#L1-L150
-  - src/service/domain/runtime/think_loop.rs#L1-L120
-  - common/src/enums/thinking_scene.rs#L1-L50
-  - docs/design/thinking_task_policy_engine_design.md
-  - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
-  - docs/archive/design-archive/policy_set_macro_simplification_and_mixed_mode.md（占位：待 ai-orz-doc-maintainer 落地后回填真实路径）
-  - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
-  - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+- src/pkg/policy/mod.rs#L14-L96
+- src/pkg/policy/builtin.rs#L1-L120
+- src/pkg/policy/tests.rs#L1-L200
+- src/pkg/policy/mixed.rs#L1-L60
+- src/service/domain/runtime/awakening.rs#L1-L150
+- src/service/domain/runtime/think_loop.rs#L1-L120
+- common/src/enums/thinking_scene.rs#L1-L50
+- docs/design/thinking_task_policy_engine_design.md
+- docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
+- docs/archive/design-archive/policy_set_macro_simplification_and_mixed_mode.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
+- docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+
 ---
 
 # 策略引擎框架

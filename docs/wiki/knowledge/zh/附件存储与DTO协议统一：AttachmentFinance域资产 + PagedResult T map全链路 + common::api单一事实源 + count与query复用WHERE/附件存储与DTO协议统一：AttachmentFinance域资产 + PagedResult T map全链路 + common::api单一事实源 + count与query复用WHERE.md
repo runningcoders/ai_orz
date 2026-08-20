@@ -15,7 +15,7 @@ source_files:
   - src/service/dal/attachment.rs (AttachmentDal trait：create_meta / get_by_id（校验 owner_id==ctx.uid）/ list_by_ids（批量查询，IN 分块 400）/ list_by_query（分页）/ count（复用 query WHERE）；文件写路径走相对 content_path 绝对落盘前防穿越)
   - src/service/dao/attachment/mod.rs (AttachmentDao：SQLite attachments 表 CRUD + file_path Blob 数据 + 分块存储；Vectorizable 未启用（附件通常大文件不直接向量化，用 artifact 摘要向量化）)
   - src/service/domain/project/artifact.rs#L1-L80 (Project Artifact Domain：create_artifact = 生成 artifact_id → attachment_id 引用 Finance 已上传的附件 → 写入 project_artifacts 关联表；按 project_id 查询所有 artifact 时用 JOIN attachments 拿文件大小+名称)
-  - common/src/models/pagination.rs#L1-L80 (PagedResult<T> { items: Vec<T>, total: u64 } + Pagination(page, page_size) + PageQuery；PagedResult::map<U>(fn item→U) 把 DAO PO → DAL Entity → Domain DTO 全链路转换)
+  - 'common/src/models/pagination.rs#L1-L80 (PagedResult<T> { items: Vec<T>, total: u64 } + Pagination(page, page_size) + PageQuery；PagedResult::map<U>(fn item→U) 把 DAO PO → DAL Entity → Domain DTO 全链路转换)'
   - common/src/api/project_task.rs#L1-L50 (ProjectTask 模块 DTO：GetTasksRequest / QueryTaskRequest / UpdateTaskProgressRequest / PagedResult<TaskDto>；所有请求参数使用 struct + #[derive(Params) + serde(deny_unknown_fields)])
   - common/src/api/message_send.rs#L1-L40 (消息 DTO 示例：SendMessageRequest + SendMessageResponse；禁止裸 bool/String 响应，必须用结构体包裹)
   - docs/archive/design-archive/attachment_storage.md（§Attachment 归 Finance 域作为用户通用资产 §元数据与文件存储路径解耦 §统一 multipart 上传链路）

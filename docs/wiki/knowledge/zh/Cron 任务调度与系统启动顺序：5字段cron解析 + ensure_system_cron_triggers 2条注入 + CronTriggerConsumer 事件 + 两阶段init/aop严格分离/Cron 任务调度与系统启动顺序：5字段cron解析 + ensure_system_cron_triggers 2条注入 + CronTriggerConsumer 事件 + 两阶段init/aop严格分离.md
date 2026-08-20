@@ -1,36 +1,57 @@
 ---
 kind: RAG 原子知识卡
-name: Cron 任务调度与系统启动顺序：5 字段 cron 解析 + ensure_system_cron_triggers 2 条注入 + CronTriggerProducer 60s 轮询 + 两阶段 init/init_base_data/aop 严格分离
+name: Cron 任务调度与系统启动顺序：5 字段 cron 解析 + ensure_system_cron_triggers 2 条注入 + CronTriggerProducer
+  60s 轮询 + 两阶段 init/init_base_data/aop 严格分离
 category: 基础设施 / 调度与启动
 scope:
-  - "src/service/dao/cron_trigger/**"
-  - "src/service/dal/cron_trigger.rs"
-  - "src/service/domain/system/mod.rs"
-  - "src/producer/cron_trigger.rs"
-  - "src/consumer/scheduler.rs"
-  - "src/handlers/system/cron_trigger/**"
-  - "src/models/events/cron_trigger.rs"
-  - "src/lib.rs (启动总顺序)"
+- src/service/dao/cron_trigger/**
+- src/service/dal/cron_trigger.rs
+- src/service/domain/system/mod.rs
+- src/producer/cron_trigger.rs
+- src/consumer/scheduler.rs
+- src/handlers/system/cron_trigger/**
+- src/models/events/cron_trigger.rs
+- src/lib.rs (启动总顺序)
 source_files:
-  - src/service/dao/cron_trigger/mod.rs#L1-L80 (CronTriggerDao trait：CRUD + list_due_triggers(now_ts, limit) WHERE next_fire_at<=now + enabled；5 字段 cron 表达式 minute hour day-of-month month day-of-week → 计算下一次 fire 时间戳)
-  - src/service/dao/cron_trigger/sqlite.rs#L1-L120 (SQLite impl：cron_parse crate 解析 5 字段表达式 → `iterator.upcoming(Utc).next()` 算 next_fire_at；list_due_triggers 按 last_fired_at + next_fire_at 双字段锁乐观并发)
-  - src/service/domain/system/mod.rs#L43-L90 (SystemDomain::init_base_data → ensure_system_cron_triggers：先查 cron_triggers WHERE kind IN("agent_rest", "stats_collect") COUNT → 0 则 INSERT 两条系统默认：① agent_rest cron="0 4 * * *" 每天 4 点 ② stats_collect cron="*/5 * * * *" 每 5 分钟收集统计)
-  - src/producer/cron_trigger.rs#L38-L80 (CronTriggerProducer AOP Producer：poll_interval_secs=60 每分钟轮询；poll() 内 system().cron_manager().list_due(ctx, now, 100) → 每条 due → aop::publish(SchedulerTriggerFiredEvent{cron_trigger_id, kind, payload}) → UPDATE SET last_fired_at=now, next_fire_at=calc_next())
-  - src/consumer/scheduler.rs#L1-L90 (SchedulerConsumer Sync 消费 SchedulerTriggerFiredEvent：match kind：agent_rest → HR::agent_rest_all(ctx) 遍历所有在线 Agent 做 settle 沉淀；stats_collect → DuckDB record_event 汇总 + RuntimeStatsCollector flush；backup 每日 → Finance::Backup.create)
-  - src/lib.rs#L20-L70 (启动总顺序强制执行：pkg::init_all → service::init → producer::init → consumer::init → service::init_base_data().await【2 条系统 cron 注入于此】→ aop stats hook → aop::init_all()【AOP 调度器启动，cron producer 开始 poll】→ HTTP 启动；红线：**init_base_data 绝对不能放 consumer::init / producer::init 之前**，否则 poll 时系统 cron 还没注入就漏掉)
-  - src/handlers/system/cron_trigger/list_cron_triggers.rs (Handler：管理员 list_cron_triggers，支持按 kind/status 过滤，分页；用户创建自定义 cron POST create_cron_trigger 需 cron 表达式格式校验 + 不允许创建 */1 * * * * < 1 分钟过于频繁的任务（防止队列爆）)
-  - docs/archive/design-archive/task_scheduler_design.md（§5 字段 cron 解析约束 §轮询间隔 60s 与 fire 时间误差容忍 §乐观并发锁 last_fired_at CAS 更新）
-  - docs/design/runtime_design.md（§Agent 唤醒链路与 agent_rest 关系 §Resting 状态不允许唤醒 §Resting 结束后 BusyGuard 自动回 Idle）
-  - docs/archive/design-archive/event_design.md（§SchedulerTriggerFiredEvent 事件负载 §8 类消费者注册顺序 §Ack/Nack delivery attempt 记录）
-  - docs/archive/design-archive/consumer_architecture.md（§SchedulerConsumer 与 AgentLoopConsumer 注册顺序 §AOP Registry register 顺序 = 消费顺序）
-  - docs/archive/plan-archive/唤醒上下文与睡眠约束.md（§agent_rest 每天 4 点触发 §resting 期间 pending_message 不唤醒 §settle 写入知识图谱后 Agent 自动转入 Idle）
-  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（§stats_collect 每 5 分钟 cron 任务 §DuckDB record_event! 汇总 RuntimeStatsCollector memory 数据）
-  - docs/archive/plan-archive/通用后台任务模块与Seed异步化重构.md（§自定义 cron trigger 创建表单 §5 字段 cron 校验 §禁止 < 1 分钟间隔 §trigger 启用/禁用切换）
-  - docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/定时任务管理.md（定时任务页面：SystemTriggers 页面，两条系统默认 readonly，用户自定义可 CRUD + 立即触发按钮）
-  - docs/wiki/zh/content/功能模块/系统管理/定时任务调度.md（调度总览：5 字段 cron + 轮询 + 事件分发 + 消费者处理链路 + 监控指标）
-  - docs/wiki/zh/content/核心模块/AOP 事件系统/消费者框架/定时任务消费者.md（SchedulerConsumer 职责：3 类系统任务 agent_rest/stats_collect/backup_daily + 用户自定义 kind 派发到对应 handler）
-  - 【平行卡 1】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（AOP 框架：Producer/Consumer/Registry 三核心 + 8 类消费者 SchedulerConsumer 是其中之一）
-  - 【平行卡 2】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md（agent_rest cron → HR::agent_rest_all → 每个 Active Agent 调 settle 沉淀 Working→Short→Long 记忆）
+- src/service/dao/cron_trigger/mod.rs#L1-L80 (CronTriggerDao trait：CRUD + list_due_triggers(now_ts,
+  limit) WHERE next_fire_at<=now + enabled；5 字段 cron 表达式 minute hour day-of-month
+  month day-of-week → 计算下一次 fire 时间戳)
+- src/service/dao/cron_trigger/sqlite.rs#L1-L120 (SQLite impl：cron_parse crate 解析
+  5 字段表达式 → `iterator.upcoming(Utc).next()` 算 next_fire_at；list_due_triggers 按 last_fired_at
+  + next_fire_at 双字段锁乐观并发)
+- src/service/domain/system/mod.rs#L43-L90 (SystemDomain::init_base_data → ensure_system_cron_triggers：先查
+  cron_triggers WHERE kind IN("agent_rest", "stats_collect") COUNT → 0 则 INSERT 两条系统默认：①
+  agent_rest cron="0 4 * * *" 每天 4 点 ② stats_collect cron="*/5 * * * *" 每 5 分钟收集统计)
+- src/producer/cron_trigger.rs#L38-L80 (CronTriggerProducer AOP Producer：poll_interval_secs=60
+  每分钟轮询；poll() 内 system().cron_manager().list_due(ctx, now, 100) → 每条 due → aop::publish(SchedulerTriggerFiredEvent{cron_trigger_id,
+  kind, payload}) → UPDATE SET last_fired_at=now, next_fire_at=calc_next())
+- src/consumer/scheduler.rs#L1-L90 (SchedulerConsumer Sync 消费 SchedulerTriggerFiredEvent：match
+  kind：agent_rest → HR::agent_rest_all(ctx) 遍历所有在线 Agent 做 settle 沉淀；stats_collect
+  → DuckDB record_event 汇总 + RuntimeStatsCollector flush；backup 每日 → Finance::Backup.create)
+- src/lib.rs#L20-L70 (启动总顺序强制执行：pkg::init_all → service::init → producer::init → consumer::init
+  → service::init_base_data().await【2 条系统 cron 注入于此】→ aop stats hook → aop::init_all()【AOP
+  调度器启动，cron producer 开始 poll】→ HTTP 启动；红线：**init_base_data 绝对不能放 consumer::init /
+  producer::init 之前**，否则 poll 时系统 cron 还没注入就漏掉)
+- src/handlers/system/cron_trigger/list_cron_triggers.rs (Handler：管理员 list_cron_triggers，支持按
+  kind/status 过滤，分页；用户创建自定义 cron POST create_cron_trigger 需 cron 表达式格式校验 + 不允许创建 */1
+  * * * * < 1 分钟过于频繁的任务（防止队列爆）)
+- docs/archive/design-archive/task_scheduler_design.md
+- docs/design/runtime_design.md
+- docs/archive/design-archive/event_design.md
+- docs/archive/design-archive/consumer_architecture.md
+- docs/archive/plan-archive/唤醒上下文与睡眠约束.md
+- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
+- docs/archive/plan-archive/通用后台任务模块与Seed异步化重构.md
+- docs/wiki/zh/content/项目概述/核心功能特性/系统管理功能/定时任务管理.md
+- docs/wiki/zh/content/功能模块/系统管理/定时任务调度.md
+- docs/wiki/zh/content/核心模块/AOP 事件系统/消费者框架/定时任务消费者.md
+- 【平行卡 1】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
+  全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
+  类业务消费者注册.md
+- 【平行卡 2】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest
+  每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+
+  agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md
+
 ---
 
 ## §1 概述

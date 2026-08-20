@@ -3,6 +3,10 @@ kind: design
 name: 聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文
 source: session
 category: adr
+scope:
+    - 'frontend/src/**/ChatSidePanel*'
+source_files:
+    - docs/wiki/zh/content/前端应用/页面模块/消息与工作区页面/聊天侧面板/聊天侧面板.md
 ---
 
 # 聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文

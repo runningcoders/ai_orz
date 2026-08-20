@@ -1,45 +1,47 @@
 ---
 kind: rag_card
-name: Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断
+name: Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt
+  Token 熔断
 category: 基础设施
 scope:
-  - "src/service/domain/hr/skill.rs"
-  - "src/service/domain/hr/agent.rs"
-  - "src/service/domain/system/seed/**"
-  - "src/service/dal/skill*.rs"
-  - "src/handlers/hr/agent/install_skill_pack.rs"
-  - "src/handlers/hr/skill/*.rs"
-  - "src/models/skill.rs"
-  - "common/src/enums/tool_tag.rs"
-  - "common/src/api/hr.rs"
+- src/service/domain/hr/skill.rs
+- src/service/domain/hr/agent.rs
+- src/service/domain/system/seed/**
+- src/service/dal/skill*.rs
+- src/handlers/hr/agent/install_skill_pack.rs
+- src/handlers/hr/skill/*.rs
+- src/models/skill.rs
+- common/src/enums/tool_tag.rs
+- common/src/api/hr.rs
 source_files:
-  - "src/models/skill.rs#L9-L100"
-  - "src/models/skill.rs#L88-L92"
-  - "src/service/domain/system/seed/mod.rs#L1-L16"
-  - "src/service/domain/system/seed/default.rs#L1-L9"
-  - "src/service/domain/hr/skill.rs#L16-L190"
-  - "src/service/domain/hr/skill.rs#L12-L60"
-  - "src/service/domain/hr/agent.rs#L419-L520"
-  - "src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"
-  - "src/models/skill.rs#L22-L160"
-  - "src/handlers/hr/agent/install_skill_pack.rs#L1-L33"
-  - "src/handlers/hr/skill/install_skill_pack.rs#L19-L85"
-  - "src/service/dal/skill/mod.rs"
-  - "docs/archive/design-archive/skill_design.md"
-  - "docs/archive/design-archive/skill_system_enhancement_design.md"
-  - "docs/archive/plan-archive/Agent管理集成测试.md"
-  - "docs/archive/plan-archive/预置基础技能导入重构.md"
-  - "docs/wiki/zh/content/功能模块/技能系统.md"
-  - "docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md"
-  - "docs/wiki/zh/content/项目概述/核心功能特性/Agent%20全生命周期管理/技能与工具绑定.md"
-  - "docs/wiki/zh/content/数据模型/Agent%20和技能模型/Agent%20和技能模型.md"
-  - "docs/wiki/zh/content/前端应用/页面模块/HR%20管理页面/技能管理系统.md"
-  - "docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md"
-  - "docs/wiki/zh/content/架构设计/分层架构设计/Domain%20层编排/HR%20领域编排.md"
+- src/models/skill.rs#L9-L100
+- src/models/skill.rs#L88-L92
+- src/service/domain/system/seed/mod.rs#L1-L16
+- src/service/domain/system/seed/default.rs#L1-L9
+- src/service/domain/hr/skill.rs#L16-L190
+- src/service/domain/hr/skill.rs#L12-L60
+- src/service/domain/hr/agent.rs#L419-L520
+- src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md
+- src/models/skill.rs#L22-L160
+- src/handlers/hr/agent/install_skill_pack.rs#L1-L33
+- src/handlers/hr/skill/install_skill_pack.rs#L19-L85
+- src/service/dal/skill/mod.rs
+- docs/archive/design-archive/skill_design.md
+- docs/archive/design-archive/skill_system_enhancement_design.md
+- docs/archive/plan-archive/Agent管理集成测试.md
+- docs/archive/plan-archive/预置基础技能导入重构.md
+- docs/wiki/zh/content/功能模块/技能系统.md
+- docs/wiki/zh/content/功能模块/AI Agent 管理/技能包管理.md
+- docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/技能与工具绑定.md
+- docs/wiki/zh/content/数据模型/Agent 和技能模型/Agent 和技能模型.md
+- docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/技能管理系统.md
+- docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
+- docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/HR 领域编排.md
+
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）

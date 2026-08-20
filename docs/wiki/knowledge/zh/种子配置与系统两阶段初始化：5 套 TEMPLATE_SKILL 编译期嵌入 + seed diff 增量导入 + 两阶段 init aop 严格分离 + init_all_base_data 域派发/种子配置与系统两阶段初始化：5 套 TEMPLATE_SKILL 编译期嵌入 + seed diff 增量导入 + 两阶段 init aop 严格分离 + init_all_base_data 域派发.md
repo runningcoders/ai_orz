@@ -1,34 +1,36 @@
 ---
 kind: knowledge_card
-name: 种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发
+name: 种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离
+  + init_all_base_data 域派发
 category: 基础设施
 scope:
-  - "src/service/domain/system/seed/**/*.rs"
-  - "src/service/domain/system/seed/skills/**/*.md"
-  - "src/service/domain/mod.rs"
-  - "src/lib.rs"
-  - "src/handlers/system/seed/**/*.rs"
+- src/service/domain/system/seed/**/*.rs
+- src/service/domain/system/seed/skills/**/*.md
+- src/service/domain/mod.rs
+- src/lib.rs
+- src/handlers/system/seed/**/*.rs
 source_files:
-  - "src/service/domain/system/seed/mod.rs#L1-L16"
-  - "src/service/domain/system/seed/defs.rs#L1-L223"
-  - "src/service/domain/system/seed/embedded.rs#L1-L68"
-  - "src/service/domain/system/seed/diff.rs#L9-L120"
-  - "src/service/domain/system/seed/store.rs"
-  - "src/service/domain/system/seed/default.rs"
-  - "src/service/domain/system/seed/default.json"
-  - "src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md"
-  - "src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md"
-  - "src/lib.rs#L97-L154"
-  - "src/service/domain/mod.rs#L23-L45"
-  - "docs/archive/design-archive/seed-config-migration.md"
-  - "docs/archive/plan-archive/Agent管理集成测试.md"
-  - "docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md"
-  - "docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md"
-  - "docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md"
-  - "docs/wiki/zh/content/核心模块/处理器层/System模块处理器/种子数据处理器.md"
+- src/service/domain/system/seed/mod.rs#L1-L16
+- src/service/domain/system/seed/defs.rs#L1-L223
+- src/service/domain/system/seed/embedded.rs#L1-L68
+- src/service/domain/system/seed/diff.rs#L9-L120
+- src/service/domain/system/seed/store.rs
+- src/service/domain/system/seed/default.rs
+- src/service/domain/system/seed/default.json
+- src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md
+- src/lib.rs#L97-L154
+- src/service/domain/mod.rs#L23-L45
+- docs/archive/design-archive/seed-config-migration.md
+- docs/archive/plan-archive/Agent管理集成测试.md
+- docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
+- docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
+- docs/wiki/zh/content/功能模块/AI Agent 管理/技能包管理.md
+- docs/wiki/zh/content/核心模块/处理器层/System模块处理器/种子数据处理器.md
+
 ---
 
 # §1 概述与定位

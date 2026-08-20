@@ -3,28 +3,32 @@ kind: wiki_knowledge_card
 name: 运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化
 category: 工具系统
 scope:
-  - "src/pkg/tool_registry/**"
-  - "src/handlers/runtime/**"
-  - "src/service/domain/runtime/*.rs"
-  - "src/pkg/aop/think/**"
+- src/pkg/tool_registry/**
+- src/handlers/runtime/**
+- src/service/domain/runtime/*.rs
+- src/pkg/aop/think/**
 source_files:
-  - src/pkg/tool_registry/runtime_tools.rs#L1-L150
-  - src/handlers/runtime/runtime_status.rs#L1-L120
-  - src/handlers/runtime/cancel_thinking.rs#L1-L100
-  - src/handlers/runtime/runtime_list.rs#L1-L120
-  - src/service/domain/runtime/management.rs#L1-L200
-  - src/service/domain/runtime/awakening.rs#L1-L150
-  - src/pkg/aop/think/registry.rs#L1-L100
-  - docs/design/runtime_design.md
-  - docs/design/thinking_task_policy_engine_design.md
-  - docs/archive/design-archive/tool_and_skill_system.md
-  - docs/archive/plan-archive/runtime_tool_registration_as_agent_callable_tools.md（占位：待 ai-orz-doc-maintainer 落地）
-  - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
-  - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
-  - docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md
-  - docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md
-  - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + 混合模式支持/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + 混合模式支持.md
-  - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md
+- src/pkg/tool_registry/runtime_tools.rs#L1-L150
+- src/handlers/runtime/runtime_status.rs#L1-L120
+- src/handlers/runtime/cancel_thinking.rs#L1-L100
+- src/handlers/runtime/runtime_list.rs#L1-L120
+- src/service/domain/runtime/management.rs#L1-L200
+- src/service/domain/runtime/awakening.rs#L1-L150
+- src/pkg/aop/think/registry.rs#L1-L100
+- docs/design/runtime_design.md
+- docs/design/thinking_task_policy_engine_design.md
+- docs/archive/design-archive/tool_and_skill_system.md
+- docs/archive/plan-archive/runtime_tool_registration_as_agent_callable_tools.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
+- docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
+- docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md
+- docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md
+- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法
+  + 混合模式支持/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + 混合模式支持.md
+- docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
+  宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
+  宏 + 神经工具免绑定三层校验.md
+
 ---
 
 # 运行时诊断工具注册为 Agent 可调用工具

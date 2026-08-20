@@ -3,6 +3,10 @@ kind: design
 name: 统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段
 source: session
 category: adr
+scope:
+    - 'frontend/src/components/**/Markdown*'
+source_files:
+    - docs/wiki/zh/content/前端应用/组件系统/基础组件/Markdown渲染组件.md
 ---
 
 # 统一使用 pulldown-cmark + MarkdownRenderer 组件渲染 Markdown 字段

@@ -9,22 +9,33 @@ scope:
   - "src/models/message_channel.rs"
   - "src/pkg/adapter/message.rs"
 source_files:
+
   - src/service/dal/lark.rs#L1-L50（LarkMessageChannelDal 结构体 + resolve_channel_credentials 三级引用解析）
-  - src/service/dal/lark.rs:LarkMessageChannelDal.start()（按 app_id 聚合 + resolve_channel_credentials 查凭证引用）
-  - src/service/dal/lark.rs:resolve_channel_credentials(ctx, &channel)（飞书凭证引用解析：channel.config.lark_credential_id → UserCredentialDao.find_by_id → 解密得到 app_id + app_secret）
+  - 'src/service/dal/lark.rs:LarkMessageChannelDal.start()（按 app_id 聚合 + resolve_channel_credentials 查凭证引用）'
+  - 'src/service/dal/lark.rs:resolve_channel_credentials(ctx, &channel)（飞书凭证引用解析：channel.config.lark_credential_id → UserCredentialDao.find_by_id → 解密得到 app_id + app_secret）'
+
   - src/service/dao/user_credential/mod.rs#L71-L83（find_by_id + find_default 方法）
+
   - src/service/dao/user_credential/sqlite.rs#L165-L214（find_by_id + find_default SQLite 实现）
+
   - src/service/dao/lark/mod.rs#L54-L96（resolve_lark_credentials：UserCredentialPo → LarkAppCredentials）
+
   - src/service/dao/lark/http.rs#L236-L260（LarkWsTokenSource：WS 连接鉴权 token）
-  - src/service/dao/lark/ws.rs 或对应文件:Ln-Lm（LarkDao.start_listener：WebSocket 长连接 + 事件订阅 + 自动断线重连）
+  - 'src/service/dao/lark/ws.rs 或对应文件:Ln-Lm（LarkDao.start_listener：WebSocket 长连接 + 事件订阅 + 自动断线重连）'
+
   - src/models/message_channel.rs#L206-L240（ChannelConfig lark 字段：lark_credential_id 引用）
+
   - src/service/dal/message_channel.rs#L1-L50（MessageChannelDal 凭证解析 + resolve_lark_credentials 消费）
+
   - docs/plan/用户身份凭证独立表落地.md
+
   - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/飞书集成系统.md
+
   - docs/wiki/zh/content/功能模块/消息系统/消息渠道管理.md
+
   - docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
-  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
----
+
+  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md---
 
 # Lark P2P WS 私信入站（凭证引用解析 + 多渠道按 app_id 聚合 + 用户身份自动映射 + 健康指标）
 

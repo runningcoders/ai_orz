@@ -17,6 +17,7 @@
 - [src/pkg/tool_registry/tool_security.rs](src/pkg/tool_registry/tool_security.rs)
 - [src/service/domain/hr/mod.rs](src/service/domain/hr/mod.rs)
 - [src/service/dao/tool_call/impl.rs](src/service/dao/tool_call/impl.rs)
+- [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md)
 </cite>
 
 ## 目录

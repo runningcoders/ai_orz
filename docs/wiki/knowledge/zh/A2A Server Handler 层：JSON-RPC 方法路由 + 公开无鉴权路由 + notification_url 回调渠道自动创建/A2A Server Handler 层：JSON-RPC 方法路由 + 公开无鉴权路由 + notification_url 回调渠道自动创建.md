@@ -3,20 +3,21 @@ kind: wiki_knowledge_card
 name: A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建
 category: a2a 适配器层（公开 Handler）
 scope:
-  - "src/handlers/a2a/*.rs"
-  - "src/router.rs"
+- src/handlers/a2a/*.rs
+- src/router.rs
 source_files:
-  - src/handlers/a2a/jsonrpc.rs:Ln-Lm（JSON-RPC 2.0 方法分发 + 5 标准 method → Handler 函数）
-  - src/handlers/a2a/send_task.rs:Ln-Lm（tasks/send：创建任务 + 可选 notification_url A2aCallback 渠道自动创建）
-  - src/handlers/a2a/get_task.rs:Ln-Lm（tasks/get：按 task_id 轮询任务状态）
-  - src/handlers/a2a/cancel_task.rs:Ln-Lm（tasks/cancel：取消任务，幂等）
-  - src/handlers/a2a/send_subscribe.rs:Ln-Lm（tasks/subscribe：SSE 流式订阅任务变更）
-  - src/handlers/a2a/callback.rs:Ln-Lm（A2A 外部通知回调：第三方 Server 推送到我方 notification_url 入口）
-  - src/router.rs:Ln-Lm（公开路由：/.well-known/agent.json、/a2a POST、/a2a/subscribe SSE、/a2a/callback — 无 JWT 鉴权）
-  - docs/archive/design-archive/a2a_server_architecture_design.md
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
-  - docs/wiki/zh/content/API 参考/API 参考.md
-  - docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md
+- src/handlers/a2a/jsonrpc.rs:Ln-Lm
+- src/handlers/a2a/send_task.rs:Ln-Lm
+- src/handlers/a2a/get_task.rs:Ln-Lm
+- src/handlers/a2a/cancel_task.rs:Ln-Lm
+- src/handlers/a2a/send_subscribe.rs:Ln-Lm
+- src/handlers/a2a/callback.rs:Ln-Lm
+- src/router.rs:Ln-Lm
+- docs/archive/design-archive/a2a_server_architecture_design.md
+- ''
+- docs/wiki/zh/content/API 参考/API 参考.md
+- docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md
+
 ---
 
 # A2A Server Handler 层（公开无鉴权路由）

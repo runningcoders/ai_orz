@@ -14,6 +14,7 @@
 - [ai-orz-macros/src/lib.rs](ai-orz-macros/src/lib.rs)
 - [ai-orz-macros/src/stats_event.rs](ai-orz-macros/src/stats_event.rs)
 - [src/pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs)
+- [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md)
 </cite>
 
 ## 目录

@@ -3,21 +3,26 @@ kind: wiki_knowledge_card
 name: 身份凭证模型层信息下沉：CredentialDetail 行为 + CredentialDetailPatch 补丁语义 + 默认槽位独立
 category: common模型层
 scope:
-  - "common/src/models/identity_credentials.rs"
-  - "common/src/enums/credential*.rs"
+- common/src/models/identity_credentials.rs
+- common/src/enums/credential*.rs
 source_files:
-  - common/src/models/identity_credentials.rs:Ln-Lm
-  - common/src/enums/credential_kind.rs:Ln-Lm
-  - src/models/user_credential.rs#L1-L140（UserCredentialPo + UserCredential 实体）
-  - src/service/dao/user_credential/mod.rs#L1-L102（UserCredentialDao trait + UserCredentialQuery）
-  - src/service/dao/user_credential/sqlite.rs#L315-L358（push_query_filters：查询过滤条件复用）
-  - src/service/dal/user.rs#L86-L150（UserDal 凭证行级方法）
-  - migrations/20260420000000_initial.sql#L405-L419（user_credentials 表定义）
-  - docs/plan/用户身份凭证独立表落地.md
-  - docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
-  - docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
-  - docs/wiki/knowledge/zh/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容.md
-  - docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md
+- common/src/models/identity_credentials.rs:Ln-Lm
+- common/src/enums/credential_kind.rs:Ln-Lm
+- src/models/user_credential.rs#L1-L140
+- src/service/dao/user_credential/mod.rs#L1-L102
+- src/service/dao/user_credential/sqlite.rs#L315-L358
+- src/service/dal/user.rs#L86-L150
+- migrations/20260420000000_initial.sql#L405-L419
+- docs/plan/用户身份凭证独立表落地.md
+- docs/wiki/zh/content/核心模块/服务层/领域层/财务领域/身份凭证管理（统一 Domain CRUD 加密存储与生命周期联动）.md
+- docs/wiki/knowledge/zh/身份凭证 Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用/身份凭证
+  Domain 统一 CRUD：5 类型无关方法 + 2 Command + match kind 分发生命周期副作用.md
+- docs/wiki/knowledge/zh/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 +
+  版本兼容/AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容.md
+- docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动
+  + CredentialDetail 类型无关下沉）.md
+
 ---
 
 # 身份凭证模型层信息下沉

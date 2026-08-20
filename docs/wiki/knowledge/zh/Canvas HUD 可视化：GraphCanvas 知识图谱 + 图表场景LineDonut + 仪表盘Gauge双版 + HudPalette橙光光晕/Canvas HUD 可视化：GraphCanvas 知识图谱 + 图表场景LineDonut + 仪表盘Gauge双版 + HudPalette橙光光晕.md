@@ -18,13 +18,13 @@ scope:
   - "frontend/src/components/particles.rs"
   - "frontend/src/components/kanban_canvas.rs"
 source_files:
-  - frontend/src/components/graph_canvas.rs#L1-L80 (GraphCanvas 组件：dioxus_canvas::Canvas 节点 + 2D Context 渲染；属性 knowledge_graph: KnowledgeGraphDto + 交互：拖拽节点 + 滚轮缩放 + hover 显示摘要 tooltip)
+  - 'frontend/src/components/graph_canvas.rs#L1-L80 (GraphCanvas 组件：dioxus_canvas::Canvas 节点 + 2D Context 渲染；属性 knowledge_graph: KnowledgeGraphDto + 交互：拖拽节点 + 滚轮缩放 + hover 显示摘要 tooltip)'
   - frontend/src/components/canvas_scene.rs (CanvasScene Trait：统一 Scene 生命周期 fn setup(ctx) / fn update(dt_secs) / fn draw(&2DContext) / fn handle_event(event)；GraphScene / ChartScene / WorkspaceScene 三实现)
-  - frontend/src/components/graph.rs (Graph 数据结构：节点 nodes: Vec<Node{id,label,x,y,attr}> + 边 edges: Vec<Edge{src,dst,weight}>；Vec<id> 索引而非 HashMap，查邻接用 edges 遍历)
+  - 'frontend/src/components/graph.rs (Graph 数据结构：节点 nodes: Vec<Node{id,label,x,y,attr}> + 边 edges: Vec<Edge{src,dst,weight}>；Vec<id> 索引而非 HashMap，查邻接用 edges 遍历)'
   - frontend/src/components/force_layout.rs#L1-L100 (ForceLayout 力导向算法：每 tick 算斥力（所有节点对库仑力）+ 引力（边胡克力）+ 中心拉力；alpha 冷却 0.99^tick；300 帧后停止节省 CPU)
   - frontend/src/components/layered_layout.rs (LayeredLayout 分层布局：按 knowledge node depth 或 category 分层；Sugiyama 四阶段简易版，去除交叉最小化，用在 Agent 依赖树和项目任务 DAG)
-  - frontend/src/components/chart_scene.rs#L1-L60 (ChartScene 统一图表场景：折线 LineChart 数据点 + 时间轴 + 坐标轴 + 鼠标 hover 十字准星 +  tooltip；Donut 饼图多环)
-  - frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿)
+  - frontend/src/components/chart_scene.rs#L1-L60 (ChartScene 统一图表场景：折线 LineChart 数据点 + 时间轴 + 坐标轴 + 鼠标 hover 十字准星 + tooltip；Donut 饼图多环)
+  - 'frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿)'
   - frontend/src/components/gauge.rs (Gauge 仪表盘：240° 圆弧刻度 + 指针 + 0-100 值映射；HUD 风格橙光描边；AopGauge 同组件 + 双刻度（队列长度 + 延迟毫秒）)
   - frontend/src/components/hud_palette.rs (HudPalette 调色板：HUD_ORANGE #FF8C00 / HUD_BLUE #00BFFF / HUD_GREEN #32CD32 / HUD_RED #FF4444；draw_glow_stroke(ctx, color, line_width) 加 box-shadow 光晕 blur 8px 渲染橙光条)
   - docs/archive/design-archive/canvas_rendering_playbook.md（§CanvasScene 统一渲染管线 §力导向参数 α 冷却规则 §橙光光晕 blur 值调优 §5 层 Canvas 节点叠放顺序）
@@ -36,7 +36,7 @@ source_files:
   - docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/知识图谱可视化.md（HR 知识图谱页面：GraphCanvas + ForceLayout + 节点点击跳转 /hr/memory-search?id=）
   - docs/wiki/zh/content/前端应用/组件系统/图表组件/图表组件.md（图表组件总览：LineChart/DonutChart/Gauge 三组件 + 使用模式 + 降采样与性能建议）
   - docs/wiki/zh/content/前端应用/组件系统/业务组件.md（业务组件：GraphCanvas/RuntimePanel/ChatSidePanel/MessageBubble 四件套 + HUD 风格示例）
-  - 【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md（统计数据来源：stats_query API 返回 TimeSeriesPoint[] → LineChart 组件渲染）
+  - '【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md（统计数据来源：stats_query API 返回 TimeSeriesPoint[] → LineChart 组件渲染）'
   - 【平行卡 2】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md（KnowledgeGraphDto 数据来源：traverse_knowledge_graph API → GraphCanvas 渲染的 nodes/edges）
 ---
 

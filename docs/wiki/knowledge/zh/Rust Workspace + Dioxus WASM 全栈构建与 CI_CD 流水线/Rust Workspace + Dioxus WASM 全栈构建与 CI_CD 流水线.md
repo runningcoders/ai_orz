@@ -22,6 +22,7 @@ source_files:
     - common/config/ai_orz.toml
     - tests/e2e/
     - migrations/
+    - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md
 ---
 
 ## 1. 使用的系统与工具

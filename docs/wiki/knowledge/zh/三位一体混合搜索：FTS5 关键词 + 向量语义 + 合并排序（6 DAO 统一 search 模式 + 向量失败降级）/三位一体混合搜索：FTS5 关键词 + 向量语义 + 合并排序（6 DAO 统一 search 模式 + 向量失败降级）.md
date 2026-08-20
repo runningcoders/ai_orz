@@ -10,22 +10,29 @@ scope:
   - "src/service/dal/project.rs"
   - "src/service/dao/*/mod.rs"（6 DAO Search 入参结构体：AgentSearch/ToolSearch 等）
 source_files:
+
   - src/service/dal/task.rs:Ln-Lm（TaskDal.search：向量搜索→FTS5→合并/归一化/加权/分页；向量失败降级；并发并行策略）
-  - src/service/dal/project.rs:Ln-Lm（ProjectDal.search：3 步同模式；try_build_vector_params_for_search 公共辅助）
-  - src/service/dal/tool.rs:Ln-Lm（ToolDal.search：向量距离阈值默认 0.8；FTS5 关键词 rank 归一化）
-  - src/service/dal/skill.rs:Ln-Lm（SkillDal.search：同 3 步模式；vector_scores/vector_ids HashMap/HashSet 容器）
-  - src/service/dao/task/mod.rs:Ln-Lm（TaskSearch 统一入参：keyword + query_vector Option + top_k + 业务 filters TaskQuery 复用）
-  - src/service/dao/agent/mod.rs:Ln-Lm（AgentSearch：同模式；vector_distance_threshold 可选覆盖）
-  - src/service/dao/tool/mod.rs:Ln-Lm（ToolSearch）、src/service/dao/skill/mod.rs:Ln-Lm（SkillSearch）、src/service/dao/project/mod.rs:Ln-Lm（ProjectSearch）、src/service/dao/message/mod.rs:Ln-Lm（MessageSearch）
+  - 'src/service/dal/project.rs:Ln-Lm（ProjectDal.search：3 步同模式；try_build_vector_params_for_search 公共辅助）'
+  - 'src/service/dal/tool.rs:Ln-Lm（ToolDal.search：向量距离阈值默认 0.8；FTS5 关键词 rank 归一化）'
+  - 'src/service/dal/skill.rs:Ln-Lm（SkillDal.search：同 3 步模式；vector_scores/vector_ids HashMap/HashSet 容器）'
+  - 'src/service/dao/task/mod.rs:Ln-Lm（TaskSearch 统一入参：keyword + query_vector Option + top_k + 业务 filters TaskQuery 复用）'
+  - 'src/service/dao/agent/mod.rs:Ln-Lm（AgentSearch：同模式；vector_distance_threshold 可选覆盖）'
+  - 'src/service/dao/tool/mod.rs:Ln-Lm（ToolSearch）、src/service/dao/skill/mod.rs:Ln-Lm（SkillSearch）、src/service/dao/project/mod.rs:Ln-Lm（ProjectSearch）、src/service/dao/message/mod.rs:Ln-Lm（MessageSearch）'
+
   - docs/archive/design-archive/vector_search_architecture.md
+
   - docs/archive/design-archive/entity_list_query_search_design.md
+
   - docs/archive/design-archive/full_entity_fts5_search_design.md
-  - （占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）
+  - '（占位：待 ai-orz-doc-maintainer 落地后回填真实 Plan 路径）'
+
   - docs/wiki/zh/content/基础设施/存储系统/存储系统.md
+
   - docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/Agent 搜索与查询.md
+
   - docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 搜索与推荐.md
-  - docs/wiki/zh/content/架构设计/记忆系统架构.md
----
+
+  - docs/wiki/zh/content/架构设计/记忆系统架构.md---
 
 # 三位一体混合搜索（FTS5 + 向量 + 合并排序）
 

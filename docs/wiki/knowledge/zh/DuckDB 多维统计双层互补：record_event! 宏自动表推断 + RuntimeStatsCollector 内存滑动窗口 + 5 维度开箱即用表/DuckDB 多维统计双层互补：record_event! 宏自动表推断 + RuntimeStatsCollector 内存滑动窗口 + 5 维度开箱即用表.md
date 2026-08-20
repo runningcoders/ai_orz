@@ -3,32 +3,36 @@ kind: RAG 原子知识卡
 name: DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表
 category: 基础设施 / 统计监控
 scope:
-  - "src/pkg/stats/**"
-  - "src/service/domain/system/aop_stats.rs"
-  - "src/service/domain/system/aop_monitor.rs"
-  - "ai-orz-macros/src/**"
-  - "src/handlers/sys/**/stats*.rs"
+- src/pkg/stats/**
+- src/service/domain/system/aop_stats.rs
+- src/service/domain/system/aop_monitor.rs
+- ai-orz-macros/src/**
+- src/handlers/sys/**/stats*.rs
 source_files:
-  - src/pkg/stats/mod.rs#L1-L60 (模块总入口：持久化顶层 + runtime 子模块双层互补；record_event! 宏的三种调用模式说明)
-  - src/pkg/stats/traits.rs (StatTable / StatEvent 两个 trait：注册表契约 + 事件序列化契约；自定义事件只需 impl 这两个)
-  - src/pkg/stats/collector.rs#L1-L100 (Stats 核心收集器：DuckDB open + register_table + record 批量写入 + StatParam/StatFilter 五维度过滤聚合)
-  - src/pkg/stats/runtime/mod.rs#L1-L80 (RuntimeStatsCollector 泛型内存收集器：WINDOW_MINUTES=60 滑动窗口 + TimeBucketSnapshot 分钟桶快照)
-  - src/pkg/stats/tool_call.rs (ToolCallStatTable：工具调用维度表，字段 success/failure/tokens/duration，对应 DAO record_event! 打点)
-  - src/pkg/stats/model_call.rs (ModelCallStatTable：模型调用维度表字段 tokens_input/tokens_output + ModelProvider 维度统计)
-  - src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<(EventKind, &str)> 的 AOP 中心统计面板数据)
-  - src/service/domain/system/aop_stats.rs#L1-L80 (system domain aop_stats：handler 层查询接口 — 总览 / 分布 / 时序三段返回)
-  - docs/archive/design-archive/stats_module_design.md（§定位与目标：持久化 vs 内存版双层互补；§默认表 5 类 AgentAwake/ModelCall/ToolCall/TaskEvent/ProjectEvent）
-  - docs/archive/design-archive/stats_query_design.md（§Domain 层封装：StatFilter + StatAggregation 五维度查询封装）
-  - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（Phase1 落地：DuckDB 表结构 + record_event! 宏自动推断）
-  - docs/archive/plan-archive/统计图表Phase2.md（Phase2 落地：五维度统计面板 + TokenSumResult 接口）
-  - docs/archive/plan-archive/统计图表第三期.md（Phase3 落地：AOP 事件统计面板集成 RuntimeStatsCollector 内存版）
-  - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md（五维度总览：Agent/Project/Task/ModelProvider/Tool 五张卡片 + 入口说明）
-  - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Agent 维度统计.md（Agent 维度时序折线：日调用次数、Token 消耗分布饼图）
-  - docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Tool 维度统计.md（Tool 成功/失败率柱状图 + 平均耗时箱线图）
-  - docs/wiki/zh/content/基础设施/AOP 事件系统/统计与监控.md（AopStatsCollector 内存版数据：事件吞吐/积压/平均耗时）
-  - docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP 监控面板.md（前端面板：总览卡片 + 事件类型分布饼图 + 最近 60 分钟时序折线）
-  - 【平行卡 1】docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md（ThinkRoundStatsConsumer → 调 ToolCallStatTable record_event!）
-  - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例.md（AOP 事件发布后走 AopStatsHook，实时打点到 RuntimeStatsCollector）
+- 'src/pkg/stats/mod.rs#L1-L60 '
+- 'src/pkg/stats/traits.rs '
+- 'src/pkg/stats/collector.rs#L1-L100 '
+- 'src/pkg/stats/runtime/mod.rs#L1-L80 '
+- 'src/pkg/stats/tool_call.rs '
+- 'src/pkg/stats/model_call.rs '
+- src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<(EventKind,
+  &str)> 的 AOP 中心统计面板数据)
+- 'src/service/domain/system/aop_stats.rs#L1-L80 '
+- docs/archive/design-archive/stats_module_design.md
+- docs/archive/design-archive/stats_query_design.md
+- docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
+- docs/archive/plan-archive/统计图表Phase2.md
+- docs/archive/plan-archive/统计图表第三期.md
+- docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md
+- docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Agent 维度统计.md
+- docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/Tool 维度统计.md
+- docs/wiki/zh/content/基础设施/AOP 事件系统/统计与监控.md
+- docs/wiki/zh/content/前端应用/页面模块/系统管理页面/AOP 监控面板.md
+- 【平行卡 1】docs/wiki/knowledge/zh/思考退出原因 exit_reason 统计与 ThinkRoundEvent AOP 事件链路/思考退出原因
+  exit_reason 统计与 ThinkRoundEvent AOP 事件链路.md
+- 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
+  全局单例/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例.md
+
 ---
 
 ## §1 概述
