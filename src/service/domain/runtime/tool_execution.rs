@@ -1,6 +1,6 @@
 //! Runtime Tool Execution 具体实现
 
-use crate::models::tool::{Tool, ToolExecutionResult};
+use crate::models::tool::{Tool, ToolExecutionRequest, ToolExecutionResult};
 use crate::pkg::credential::{FetchedCredential, ResolvedRequirement};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_readiness;
@@ -42,10 +42,29 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         let tool_id = tool.po.id.clone();
         ensure_tool_enabled(&tool_id, &tool.po.status)?;
 
+        // 凭据编排单点（D26）：requirements → resolve →
+        // 未命中直接返回结构化引导（不构造实例、不进 DAL）；
+        // 命中（含空需求 → Some(empty)）经统一传参进 DAL，由 per-call
+        // 重组装的实例经 `CoreTool::check` 注入（D22 create → check → call）。
+        let requirements =
+            crate::pkg::tool_registry::get_registry().credential_requirements(&tool.po);
+        let Some(resolved) = self.resolve_tool_credentials(&ctx, &requirements).await? else {
+            return Ok(ToolExecutionResult::new(
+                crate::pkg::credential::credential_missing_json(&requirements[0]),
+                tool_id.clone(),
+                format!("credential_missing_{}", uuid::Uuid::now_v7()),
+            ));
+        };
+
+        let request = ToolExecutionRequest {
+            tool: tool.po.clone(),
+            args,
+            resolved,
+        };
         let execution = match tool.po.protocol {
-            ToolProtocol::Mcp => self.mcp_tool_dal.call_tool(ctx, tool, args).await,
+            ToolProtocol::Mcp => self.mcp_tool_dal.call_tool(ctx, request).await,
             ToolProtocol::Builtin | ToolProtocol::Http => {
-                self.tool_dal.call_tool(ctx, tool, args).await
+                self.tool_dal.call_tool(ctx, request).await
             }
         };
 
@@ -311,8 +330,6 @@ impl RuntimeDomainImpl {
     /// - `LarkApp` 走渠道路径（`LarkCredentialDal::resolve_credentials_for_user`，
     ///   明文态 + 派生属性 identity_mode，D24）；
     /// - 其余 kind 统一走 `UserDal::find_default_credential`（DB 加密态，纯单轨 D27）。
-    // 过渡态：call_tool 编排在 Step 2 接线，当前生产调用方仅测试注入
-    #[allow(dead_code)]
     pub(super) async fn resolve_tool_credentials(
         &self,
         ctx: &RequestContext,

@@ -4,7 +4,7 @@
 //! McpServerPo, then ask McpToolCallDao for an executable MCP CoreTool.
 
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{ToolExecutionRequest, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
@@ -225,7 +225,7 @@ async fn mcp_tool_dal_syncs_stdio_server_tools_into_tool_records(pool: SqlitePoo
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) -> Result<()> {
+async fn sync_then_call_stdio_mcp_tool_returns_result(pool: SqlitePool) -> Result<()> {
     let (dal, ctx) = init_test_env(pool);
     let script = write_echo_mcp_server_script();
     let server = mcp_server_with_command(
@@ -254,10 +254,18 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         })
     );
 
+    // 统一传参（D26）：PO 载体直传，实例由 DAL per-call 重组装
     let (result, _entry) = dal
-        .call_tool_by_id(ctx.clone(), tool_id.clone(), json!({ "text": "hello MCP" }))
+        .call_tool(
+            ctx.clone(),
+            ToolExecutionRequest {
+                tool: persisted.clone(),
+                args: json!({ "text": "hello MCP" }),
+                resolved: Vec::new(),
+            },
+        )
         .await
-        .expect("synced MCP stdio tool should execute by id");
+        .expect("synced MCP stdio tool should execute via unified params");
 
     assert_eq!(result["structuredContent"]["echo"], "hello MCP");
     assert_eq!(result["isError"], false);
@@ -266,12 +274,14 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
         .get_by_id(ctx.clone(), tool_id.clone())
         .await?
         .expect("synced MCP tool should be executable");
-    let management_tool = Tool::from_po_for_management(executable.po.clone());
     let (from_management_result, _entry) = dal
         .call_tool(
             ctx.clone(),
-            &management_tool,
-            json!({ "text": "management MCP" }),
+            ToolExecutionRequest {
+                tool: executable.po.clone(),
+                args: json!({ "text": "management MCP" }),
+                resolved: Vec::new(),
+            },
         )
         .await
         .expect("McpToolDal should reassemble executable MCP tool from authorized metadata");
@@ -281,7 +291,14 @@ async fn sync_then_call_stdio_mcp_tool_by_id_returns_result(pool: SqlitePool) ->
     );
     assert_eq!(from_management_result["isError"], false);
     let (manual_result, _entry) = dal
-        .call_tool(ctx, &executable, json!({ "text": "manual MCP" }))
+        .call_tool(
+            ctx,
+            ToolExecutionRequest {
+                tool: executable.po,
+                args: json!({ "text": "manual MCP" }),
+                resolved: Vec::new(),
+            },
+        )
         .await
         .expect("manual MCP stdio tool call should return trace entry");
 
@@ -650,7 +667,7 @@ async fn mcp_tool_dal_rejects_non_mcp_tool(pool: SqlitePool) -> Result<()> {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn mcp_tool_dal_rejects_disabled_tool_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+async fn mcp_tool_dal_rejects_disabled_tool_when_calling(pool: SqlitePool) -> Result<()> {
     let (dal, ctx) = init_test_env(pool);
     let server = mcp_server("disabled-tool-server");
     let mut po = mcp_tool_po(&server.id, "read_file");
@@ -662,7 +679,14 @@ async fn mcp_tool_dal_rejects_disabled_tool_when_calling_by_id(pool: SqlitePool)
     tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
 
     let err = dal
-        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .call_tool(
+            ctx.clone(),
+            ToolExecutionRequest {
+                tool: po.clone(),
+                args: json!({ "path": "/tmp/a" }),
+                resolved: Vec::new(),
+            },
+        )
         .await
         .expect_err("McpToolDal should reject disabled MCP tool before execution");
 
@@ -672,7 +696,7 @@ async fn mcp_tool_dal_rejects_disabled_tool_when_calling_by_id(pool: SqlitePool)
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn mcp_tool_dal_rejects_stale_tool_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+async fn mcp_tool_dal_rejects_stale_tool_when_calling(pool: SqlitePool) -> Result<()> {
     let (dal, ctx) = init_test_env(pool);
     let server = mcp_server("stale-tool-server");
     let mut po = mcp_tool_po(&server.id, "read_file");
@@ -684,7 +708,14 @@ async fn mcp_tool_dal_rejects_stale_tool_when_calling_by_id(pool: SqlitePool) ->
     tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
 
     let err = dal
-        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .call_tool(
+            ctx.clone(),
+            ToolExecutionRequest {
+                tool: po.clone(),
+                args: json!({ "path": "/tmp/a" }),
+                resolved: Vec::new(),
+            },
+        )
         .await
         .expect_err("McpToolDal should reject stale MCP tool before execution");
 
@@ -694,7 +725,7 @@ async fn mcp_tool_dal_rejects_stale_tool_when_calling_by_id(pool: SqlitePool) ->
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn mcp_tool_dal_rejects_disabled_server_when_calling_by_id(pool: SqlitePool) -> Result<()> {
+async fn mcp_tool_dal_rejects_disabled_server_when_calling(pool: SqlitePool) -> Result<()> {
     let (dal, ctx) = init_test_env(pool);
     let mut server = mcp_server("disabled-server");
     server.status = crate::models::mcp_server::McpServerStatus::Disabled;
@@ -706,7 +737,14 @@ async fn mcp_tool_dal_rejects_disabled_server_when_calling_by_id(pool: SqlitePoo
     tool::new_tool_dao().create_tool(ctx.clone(), &po).await?;
 
     let err = dal
-        .call_tool_by_id(ctx.clone(), po.id.clone(), json!({ "path": "/tmp/a" }))
+        .call_tool(
+            ctx.clone(),
+            ToolExecutionRequest {
+                tool: po,
+                args: json!({ "path": "/tmp/a" }),
+                resolved: Vec::new(),
+            },
+        )
         .await
         .expect_err("McpToolDal should reject disabled MCP server before execution");
 

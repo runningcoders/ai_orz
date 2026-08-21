@@ -238,7 +238,7 @@ mod tests {
     use crate::models::brain::Brain;
     use crate::models::memory::Memory;
     use crate::models::model_provider::ModelProvider;
-    use crate::models::tool::{Tool, ToolCallTraceRef, ToolPo};
+    use crate::models::tool::{Tool, ToolCallTraceRef, ToolExecutionRequest, ToolPo};
     use crate::pkg::RequestContext;
     use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
     use crate::pkg::tool_tracing::logger::{ToolCallLogger, ToolCallQuery};
@@ -620,38 +620,19 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        async fn call_tool_by_id(
-            &self,
-            _ctx: RequestContext,
-            tool_id: String,
-            args: Value,
-        ) -> Result<(Value, ToolCallEntry)> {
-            self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
-            let entry = ToolCallEntry {
-                tool_id: tool_id.clone(),
-                call_id: "test-call-id".to_string(),
-                ..Default::default()
-            };
-            Ok((
-                json!({ "called_by": "tool_dal", "tool_id": tool_id, "args": args }),
-                entry,
-            ))
-        }
-
         async fn call_tool(
             &self,
             _ctx: RequestContext,
-            tool: &Tool,
-            args: Value,
+            request: ToolExecutionRequest,
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
             let entry = ToolCallEntry {
-                tool_id: tool.po.id.clone(),
+                tool_id: request.tool.id.clone(),
                 call_id: "test-call-id".to_string(),
                 ..Default::default()
             };
             Ok((
-                json!({ "called_by": "tool_dal", "tool_id": tool.po.id, "args": args }),
+                json!({ "called_by": "tool_dal", "tool_id": request.tool.id, "args": request.args }),
                 entry,
             ))
         }
@@ -747,48 +728,10 @@ mod tests {
             unimplemented!("not needed by tool execution routing tests")
         }
 
-        async fn call_tool_by_id(
-            &self,
-            _ctx: RequestContext,
-            tool_id: String,
-            args: Value,
-        ) -> Result<(Value, ToolCallEntry)> {
-            self.call_by_id_count.fetch_add(1, Ordering::SeqCst);
-            if let Some(error_message) = &self.error_message {
-                return Err(match &self.error_trace_ref {
-                    Some(trace_ref) => {
-                        use common::error::{ErrorCode, ErrorType};
-                        let mut err = common::error::Error::typed(
-                            ErrorCode::ToolExecutionFailed,
-                            ErrorType::Tool,
-                            error_message.clone(),
-                        );
-                        let mut field = common::error::ErrorField::new();
-                        field.insert(
-                            "trace_ref".to_string(),
-                            serde_json::to_value(trace_ref.clone()).unwrap_or_default(),
-                        );
-                        err = err.with_field(field);
-                        err
-                    }
-                    None => common::error::Error::tool_call_failed(error_message.clone()),
-                });
-            }
-            Ok((
-                json!({ "called_by": "mcp_tool_dal", "tool_id": tool_id, "args": args }),
-                ToolCallEntry {
-                    tool_id: tool_id.clone(),
-                    call_id: "test-call-id".to_string(),
-                    ..Default::default()
-                },
-            ))
-        }
-
         async fn call_tool(
             &self,
             _ctx: RequestContext,
-            tool: &Tool,
-            args: Value,
+            request: ToolExecutionRequest,
         ) -> Result<(Value, ToolCallEntry)> {
             self.call_tool_count.fetch_add(1, Ordering::SeqCst);
             if let Some(error_message) = &self.error_message {
@@ -812,9 +755,9 @@ mod tests {
                 });
             }
             Ok((
-                json!({ "called_by": "mcp_tool_dal", "tool_id": tool.po.id, "args": args }),
+                json!({ "called_by": "mcp_tool_dal", "tool_id": request.tool.id, "args": request.args }),
                 ToolCallEntry {
-                    tool_id: tool.po.id.clone(),
+                    tool_id: request.tool.id.clone(),
                     call_id: "test-call-id".to_string(),
                     ..Default::default()
                 },

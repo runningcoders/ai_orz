@@ -3,7 +3,7 @@
 //! 基础工具数据访问层，提供工具查询和管理能力
 //! 负责组合 DAO 完成业务级数据操作
 
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{Tool, ToolExecutionRequest, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -12,7 +12,7 @@ use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
 use common::enums::ToolStatus;
-use common::error::Result;
+use common::error::{Result, bail_err};
 use common::models::{StatsFetchOptions, StatsInterval, ToolStats};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
@@ -143,25 +143,16 @@ pub trait ToolDal: Send + Sync {
     /// 返回新增的工具数量
     async fn sync_builtin_tools_to_db(&self, ctx: RequestContext) -> Result<usize>;
 
-    /// 执行工具调用（通过工具 ID）
-    /// 自动获取完整工具实体然后执行。
-    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为真实 call_id。
-    async fn call_tool_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)>;
-
     /// 执行已获取的工具并返回调用追踪 entry
     ///
-    /// 统一执行入口：Auto/Manual/普通工具都走此路径。
-    /// 内部转发到 `ToolCallDao::execute`，由 DAO 层通过 AOP ToolExecEvent 捕获 trace。
+    /// 统一执行入口：Auto/Manual/普通工具都走此路径（domain → DAL 统一传参，D26）。
+    /// 内部 per-call 经 registry 重组装新实例（D22 单次实例，不复用调用方
+    /// 预装配实例）→ `CoreTool::check` 注入凭据 → 转发到 `ToolCallDao::execute`
+    /// （幂等防重/trace/AOP 全保留），由 DAO 层通过 AOP ToolExecEvent 捕获 trace。
     async fn call_tool(
         &self,
         ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
+        request: ToolExecutionRequest,
     ) -> Result<(Value, ToolCallEntry)>;
 
     /// 执行 Auto 工具调用
@@ -174,7 +165,15 @@ pub trait ToolDal: Send + Sync {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.call_tool(ctx, tool, args).await
+        self.call_tool(
+            ctx,
+            ToolExecutionRequest {
+                tool: tool.po.clone(),
+                args,
+                resolved: Vec::new(),
+            },
+        )
+        .await
     }
 
     /// 执行 Manual 工具调用（通过特殊 tool 转发）
@@ -192,7 +191,15 @@ pub trait ToolDal: Send + Sync {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        self.call_tool(ctx, tool, args).await
+        self.call_tool(
+            ctx,
+            ToolExecutionRequest {
+                tool: tool.po.clone(),
+                args,
+                resolved: Vec::new(),
+            },
+        )
+        .await
     }
 
     /// 搜索工具（向量 + 关键词混合搜索）
@@ -512,26 +519,6 @@ impl ToolDal for ToolDalImpl {
         Ok(self.tool_dao.sync_builtin_tools_to_db(ctx).await?)
     }
 
-    async fn call_tool_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)> {
-        // 获取完整工具
-        let tool = self
-            .get_by_id(ctx.clone(), tool_id.clone())
-            .await
-            .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?;
-
-        let tool = tool.ok_or_else(|| {
-            common::error::Error::tool_call_failed(format!("Tool not found: {}", tool_id))
-        })?;
-
-        // 执行工具
-        self.call_tool(ctx, &tool, args).await
-    }
-
     async fn search(
         &self,
         ctx: RequestContext,
@@ -742,11 +729,27 @@ impl ToolDal for ToolDalImpl {
     async fn call_tool(
         &self,
         ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
+        request: ToolExecutionRequest,
     ) -> Result<(Value, ToolCallEntry)> {
+        // per-call 经 registry 重组装新实例（D22 单次实例：不复用调用方
+        // 预装配的 request.tool 来源实例）；check 在实例装入 Tool 前完成
+        // （局部 mut），Tool 结构无需 mut。
+        let Some(mut our_tool) = self.tool_call_dao.assemble_core_tool(&request.tool)? else {
+            bail_err!(
+                ToolExecutionFailed,
+                "Tool {} is not executable",
+                request.tool.id
+            );
+        };
+        our_tool.check(&request.resolved)?;
+        let tool = Tool {
+            po: request.tool,
+            our_tool,
+            search_match: None,
+            stats: None,
+        };
         self.tool_call_dao
-            .execute(ctx, tool, args)
+            .execute(ctx, &tool, request.args)
             .await
             .map_err(Into::into)
     }
@@ -757,8 +760,17 @@ impl ToolDal for ToolDalImpl {
         tool: &Tool,
         args: Value,
     ) -> Result<(Value, ToolCallEntry)> {
-        // Auto 工具直接执行（call_tool 内部含装饰器）
-        self.call_tool(ctx, tool, args).await
+        // Auto 工具直接执行（call_tool 内部含装饰器）；
+        // 直连入口不经 domain 凭据编排，注入空集（check 按空集放行）
+        self.call_tool(
+            ctx,
+            ToolExecutionRequest {
+                tool: tool.po.clone(),
+                args,
+                resolved: Vec::new(),
+            },
+        )
+        .await
     }
 
     async fn execute_manual(

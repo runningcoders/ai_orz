@@ -78,6 +78,23 @@ impl ToolExecutionResult {
     }
 }
 
+/// domain → DAL 统一工具执行传参（D26）。
+///
+/// `tool` 为 PO 载体：可执行实例由 DAL per-call 重组装（D22 单次实例，
+/// 不复用调用方预装配实例）；`resolved` 为编排层（domain
+/// `resolve_tool_credentials`）加工完成的凭据注入值，DAL 组装实例后经
+/// `CoreTool::check` 注入实例字段。
+///
+/// 命名与 `ToolExecutionResult` 成对；内部调用结构非 HTTP DTO，不进 common。
+pub struct ToolExecutionRequest {
+    /// 工具 PO 载体（协议路由与重组装依据）
+    pub tool: ToolPo,
+    /// 调用参数
+    pub args: Value,
+    /// 凭据注入值（无凭据需求的工具为空集）
+    pub resolved: Vec<crate::pkg::credential::ResolvedRequirement>,
+}
+
 /// Tool 持久化对象
 ///
 /// 对应 SQL 建表语句：`migrations/20260420000000_initial.sql`

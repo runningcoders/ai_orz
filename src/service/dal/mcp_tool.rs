@@ -4,7 +4,7 @@
 //! dependency preparation out of the generic `ToolDal`.
 
 use crate::models::mcp_server::McpServerStatus;
-use crate::models::tool::{Tool, ToolPo};
+use crate::models::tool::{Tool, ToolExecutionRequest, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::mcp::{McpToolConfig, RemoteMcpTool};
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
@@ -60,24 +60,16 @@ pub trait McpToolDal: Send + Sync {
         params: ListMcpToolsByServerRequest,
     ) -> Result<PagedResult<Tool>>;
 
-    /// Execute an MCP tool by standard ToolPo id.
-    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为真实 call_id。
-    async fn call_tool_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)>;
-
-    /// Execute an already assembled MCP tool.
+    /// Execute an MCP tool with unified execution params (D26).
     ///
-    /// Use this when the caller already has the complete `Tool` entity so the
-    /// execution path does not re-query tool metadata.
+    /// `ToolExecutionRequest.tool` is the PO carrier: the executable instance
+    /// is re-assembled per call (connection isolation, D23) and receives
+    /// credential injections via `CoreTool::check` (D22 create → check → call).
+    /// 成功时返回 (Value, ToolCallEntry)，entry.call_id 为真实 call_id。
     async fn call_tool(
         &self,
         ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
+        request: ToolExecutionRequest,
     ) -> Result<(Value, ToolCallEntry)>;
 
     /// Invalidate cached MCP runtime/session for a server.
@@ -216,35 +208,19 @@ impl McpToolDal for McpToolDalImpl {
         })
     }
 
-    async fn call_tool_by_id(
-        &self,
-        ctx: RequestContext,
-        tool_id: String,
-        args: Value,
-    ) -> Result<(Value, ToolCallEntry)> {
-        let tool = self
-            .get_by_id(ctx.clone(), tool_id.clone())
-            .await
-            .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?
-            .ok_or_else(|| {
-                common::error::Error::tool_call_failed(format!("Tool not found: {tool_id}"))
-            })?;
-
-        self.call_tool(ctx, &tool, args).await
-    }
-
     async fn call_tool(
         &self,
         ctx: RequestContext,
-        tool: &Tool,
-        args: Value,
+        request: ToolExecutionRequest,
     ) -> Result<(Value, ToolCallEntry)> {
-        let executable = self
-            .assemble_executable_tool(ctx.clone(), &tool.po)
+        // per-call 重组装可执行实例（连接隔离 D23）→ check 注入（D22）→ execute
+        let mut executable = self
+            .assemble_executable_tool(ctx.clone(), &request.tool)
             .await
             .map_err(|e| common::error::Error::tool_call_failed(e.to_string()).with_source(e))?;
+        executable.our_tool.check(&request.resolved)?;
         self.mcp_tool_call_dao
-            .execute(ctx, &executable, args)
+            .execute(ctx, &executable, request.args)
             .await
             .map_err(Into::into)
     }
