@@ -978,8 +978,8 @@ async fn resolve_requirements_rejects_length_mismatch() { ... }  // requirements
 - Modify: src/handlers/finance/mcp_server/response.rs
 - Test: src/models/mcp_server_test.rs、src/handlers/finance/mcp_server/response_test.rs、list_mcp_servers_test.rs
 
-- [ ] **Step 1：改测试先行**——三个测试文件中删除 env/headers 构造与断言，新增 `credential_requirements` 字段断言（`#[serde(default)]` 空数组序列化省略：`skip_serializing_if = "Vec::is_empty"`；反序列化旧数据无该字段 → 空数组）。
-- [ ] **Step 2：Model 改造**：
+- [x] **Step 1：改测试先行**——三个测试文件中删除 env/headers 构造与断言，新增 `credential_requirements` 字段断言（`#[serde(default)]` 空数组序列化省略：`skip_serializing_if = "Vec::is_empty"`；反序列化旧数据无该字段 → 空数组）。
+- [x] **Step 2：Model 改造**：
 
 ```rust
 pub struct McpServerConfig {
@@ -1001,7 +1001,7 @@ pub struct McpServerConfig {
   - `default_stdio()` / `default_streamable_http()`：`credential_requirements: Vec::new()`，删 env/headers。
   - `redacted_for_management()`：删 env/headers 打码段；requirements 非敏感直接保留；URL 脱敏逻辑不动。
   - 删除 `use std::collections::BTreeMap;`（若无他用）。
-- [ ] **Step 3：DTO 同步**——`McpServerConfigDto` 删 `env`/`headers`（含 `BTreeMap` import），增：
+- [x] **Step 3：DTO 同步**——`McpServerConfigDto` 删 `env`/`headers`（含 `BTreeMap` import），增：
 
 ```rust
 /// Credential requirements (type-level declarations, non-sensitive).
@@ -1010,8 +1010,8 @@ pub credential_requirements: Vec<common::models::CredentialRequirement>,
 ```
 
   注意：`CredentialRequirement` 已有 `JsonSchema`（Task 1.2），DTO derive 不受影响。
-- [ ] **Step 4：response.rs 转换**——`to_model_config` / `to_config_dto` 删 env/headers 映射，补 `credential_requirements: config.credential_requirements.clone()`。
-- [ ] **Step 5：handler 校验接入**——create_mcp_server.rs / update_mcp_server.rs 在 `to_model_config` 后：
+- [x] **Step 4：response.rs 转换**——`to_model_config` / `to_config_dto` 删 env/headers 映射，补 `credential_requirements: config.credential_requirements.clone()`。
+- [x] **Step 5：handler 校验接入**——create_mcp_server.rs / update_mcp_server.rs 在 `to_model_config` 后：
 
 ```rust
 let model_config = to_model_config(params.config);
@@ -1025,7 +1025,7 @@ crate::pkg::credential::validate_requirements(
 ```
 
   （update 的 transport 分支：取更新后生效的 transport——`params.transport.map(to_model_transport).unwrap_or(server.po.transport)`。）
-- [ ] **Step 6：`cargo test --lib mcp_server` + 修复所有编译波及（前端 mcp_servers.rs 构造 `McpServerConfigDto` 用 `..Default::default()` 不受字段删除影响，若显式构造则同步删）+ 提交** `git commit -m "feat(mcp): replace env/headers with credential_requirements"`。
+- [x] **Step 6：`cargo test --lib mcp_server` + 修复所有编译波及（前端 mcp_servers.rs 构造 `McpServerConfigDto` 用 `..Default::default()` 不受字段删除影响，若显式构造则同步删）+ 提交** `git commit -m "feat(mcp): replace env/headers with credential_requirements"`（commit 4e9255f6）。
 
 ### Task 3.2：CoreTool 生命周期方法 + MCP 运行时注入 + 连接隔离
 
@@ -1035,7 +1035,7 @@ crate::pkg::credential::validate_requirements(
 - Modify: src/service/dao/tool_call/mcp.rs（`list_mcp_tools(ctx, server)` trait + impl）
 - Test: src/pkg/tool_registry/mcp_tests.rs
 
-- [ ] **Step 1：CoreTool trait 增生命周期方法（D22，默认实现让 fs_read/shell_exec 等零改动）**：
+- [x] **Step 1：CoreTool trait 增生命周期方法（D22，默认实现让 fs_read/shell_exec 等零改动）**：
 
 ```rust
 /// 工具凭据需求声明（共享工具从实例 config 读；内置工具静态声明；默认空）
@@ -1053,19 +1053,19 @@ fn check(
 }
 ```
 
-- [ ] **Step 2：McpCoreTool 实现生命周期 + env 注入重构**：
+- [x] **Step 2：McpCoreTool 实现生命周期 + env 注入重构**：
   - 新增实例字段：`credential_injections: Vec<(String, String)>`（check 写入的 Env 注入值）+ `user_scope: Option<String>`（连接隔离键的用户维度，check 时从注入条目附带的 user 信息写入——编排层 resolved 里无 user，改由 check 签名追加 `user_id: Option<&str>` 参数或实例创建时注入；**取实例创建时由工厂/dal 写入**——assemble 处持有 ctx）。
   - `credential_requirements()`：`self.server_config.credential_requirements.clone()`。
   - `check(resolved)`：逐条 match binding（Env → 收集 `(name, value)`；非 Env → 防御性 Err，配置期已校验）；存 `credential_injections`。
   - `call` 内删除取数逻辑；`connect_stdio_client(server, config, env_injections)`：删除 L214-216 静态 env 循环，改遍历 `credential_injections`；`process.env_clear()` 保持（红线 6）。
-- [ ] **Step 3：连接隔离（D23）**——`McpClientRuntime` 连接缓存键：`config.credential_requirements` 非空 → `(server_id, user_scope)`（实例维度）；空 → `server_id`（现状全局共享）。`invalidate_mcp_server(server_id)` 同步适配：清除该 server 前缀匹配的全部键。
-- [ ] **Step 4：tools 同步路径（D18）**——`dao/tool_call/mcp.rs` trait + impl `list_mcp_tools(&self, ctx, server)`：domain sync 编排先 `resolve_tool_credentials`（Task 3.3）→ 命中则构造注入值调用 `list_stdio_tools(server, env_injections)`；未命中 → `Err(InvalidRequest, 引导文案)`（同步是管理动作，可读错误优于静默空列表）。
-- [ ] **Step 5：测试**：
+- [x] **Step 3：连接隔离（D23）**——`McpClientRuntime` 连接缓存键：`config.credential_requirements` 非空 → `(server_id, user_scope)`（实例维度）；空 → `server_id`（现状全局共享）。`invalidate_mcp_server(server_id)` 同步适配：清除该 server 前缀匹配的全部键。
+- [x] **Step 4：tools 同步路径（D18）**——`dao/tool_call/mcp.rs` trait + impl `list_mcp_tools(&self, ctx, server)`：domain sync 编排先 `resolve_tool_credentials`（Task 3.3）→ 命中则构造注入值调用 `list_stdio_tools(server, env_injections)`；未命中 → `Err(InvalidRequest, 引导文案)`（同步是管理动作，可读错误优于静默空列表）。
+- [x] **Step 5：测试**：
   - 改写存量 env 用例（`mcp_server_with_command` 等）：config 无 env 字段后构造调整。
   - 新增 `stdio_tool_injects_resolved_env`：本地 echo 脚本 MCP（既有 `write_echo_mcp_server_script` 模式）+ requirements 声明（generic_token/Env）+ **实例 check 注入**（测试直接构造 resolved 传入，不经 DB——取数链路在 Task 3.3 domain 测试覆盖）→ 子进程回显 env 值断言。
   - 新增 `missing_credential_returns_guidance_json`（编排层 None → 引导；本 Task 测 pkg 侧 check 前 requirements 非空且 resolved 空 → 防御 Err 路径，端到端引导在 Task 3.3）。
   - 新增 `connection_key_isolated_per_user`：同 server 两实例不同 user_scope → runtime 连接键不同（单测连接键生成函数，不起真实子进程）。
-- [ ] **Step 6：全绿 + 提交** `git commit -m "feat(mcp): core tool lifecycle with per-user connection isolation"`。
+- [x] **Step 6：全绿 + 提交** `git commit -m "feat(mcp): core tool lifecycle with per-user connection isolation"`（commit 07dd7cf4）。
 
 ### Task 3.3：domain 编排 resolve_tool_credentials + 调用入口统一（D26）+ 内置三员工厂化 + Dal resolver 三删
 
@@ -1106,7 +1106,7 @@ fn check(
   - **[identity_credential.rs](../../../src/service/domain/finance/identity_credential.rs#L387)**：`tavily_integration_status` 删 `shared_key_configured` 字段；[common/src/api/tavily_integration.rs](../../../common/src/api/tavily_integration.rs#L92) DTO 字段删除；[frontend identity_tavily.rs](../../../frontend/src/pages/finance/identity_tavily.rs#L150)（L150-L152 / L235-L241 两处分支）同步删（提示语单路径）；[web_search_tool_test.rs](../../../tests/integration/web_search_tool_test.rs) 断言删该字段。
   - 行为变化：未绑个人 key 的用户 tavily_search 从「共享兜底可用」变「api_key_missing 引导」——预期内，与 GithubToken 行为对齐。`cargo test --lib` + `make test-be` + 前端构建全绿后独立提交 `git commit -m "refactor(tavily): remove shared config key fallback, single-track user credential only (D27)"`。
 
-- [ ] **Step 1：domain `resolve_tool_credentials`（D17 编排链 ①②③ 单点，生产端二元路由；依赖注入，落位 runtime/tool_execution.rs）**：
+- [x] **Step 1：domain `resolve_tool_credentials`（D17 编排链 ①②③ 单点，生产端二元路由；依赖注入，落位 runtime/tool_execution.rs）**（commit 518b955f：方法 pub(super) 可见性（模块树测试需要）；匿名 ctx（user_id None）提前返回 Ok(None)；FetchedCredential 补 already_decrypted 字段 + resolve_requirements 密文解密分支；a2a integration_test 补 user_credential/lark dal init）：
   - **依赖注入（禁止方法内取全局单例）**：RuntimeDomainImpl 增两个字段（与既有 tool_dal / mcp_tool_dal 同模式）：
     - `user_dal: Arc<dyn UserDal + Send + Sync>`——既有 trait，`find_default_credential(ctx, &user_id, kind, platform)`；
     - `lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>`——**Step 0 建的凭据子 trait**（[dal/lark/credentials.rs](../../../src/service/dal/lark/credentials.rs)，`LarkDalImpl` 实现；runtime 只消费凭据面，按需取子 trait 不持总 trait）。
@@ -1162,7 +1162,7 @@ impl RuntimeDomainImpl {
   > **明文/密文标记**：lark dal 的 `resolve_credentials_for_user` 内部已解密（返回明文），user dal 返回 DB 加密态——`FetchedCredential` 增 `already_decrypted: bool` 字段（lark 分支 true / user dal false），`resolve_requirements` 内 `if !fc.already_decrypted { decrypt_detail(...)? }`。Task 2.3 的结构体定义同步补此字段。
   > **落位说明**：函数落 runtime 而非 finance domain——唯一消费方是同模块 `call_tool` 编排；依赖全部经构造注入（user_dal / lark_credentials 字段）+ pkg 纯函数 + config 读取，零 finance domain 依赖，规避 domain 同层互调红线。私有方法不进 RuntimeToolExecution trait（内部编排细节，测试经 `call_tool` 公开入口覆盖；LarkCredentialDal 子 trait 本身可独立 stub 单测）。
 
-- [ ] **Step 1b：CLI 命令与工具参数 PO config 闭环 + readiness 数据驱动重构（D28，独立提交）**——工具是「我们包装的内置工具」，其使用的二进制名/路径与行为参数是工具自身属性，应在工具管理页可改（用户决策）；readiness 探测与凭据解析同构（需 PO config + 用户凭据两类数据），按 D17 同一哲学重构：取数上移 domain，pkg 只留纯函数。依赖 Step 1（复用 `resolve_tool_credentials`），先于 Step 4（赶在 resolver 删除前接管 tavily 探测）：
+- [x] **Step 1b：CLI 命令与工具参数 PO config 闭环 + readiness 数据驱动重构（D28，独立提交）**（commit b6641713：browser PO config 含 install_hint 通道；browser_tool_test 集成测试从 DB tools 表 PO config 读命令验证 D28 端到端；10 个 domain readiness 单测 + 三工厂 CLI config 不变式断言）——工具是「我们包装的内置工具」，其使用的二进制名/路径与行为参数是工具自身属性，应在工具管理页可改（用户决策）；readiness 探测与凭据解析同构（需 PO config + 用户凭据两类数据），按 D17 同一哲学重构：取数上移 domain，pkg 只留纯函数。依赖 Step 1（复用 `resolve_tool_credentials`），先于 Step 4（赶在 resolver 删除前接管 tavily 探测）：
   - **三工具命令进 PO config（统一「CLI 型 = po.config.command」不变式）**：
     - [browser.rs](../../../src/pkg/tool_registry/browser.rs)：PO config 默认 `{ command: "agent-browser", timeout_ms: 60000, max_output_bytes: 262144 }`（工厂 create_po 写入默认值）；spawn 预检与命令构造（L258）读 `self.po` 的 config；timeout 缺省（L271，params.timeout_ms 优先）与 max_output_bytes（L272）同源改读；引导文案「ai_orz.toml 的 [browser].command」→「在工具配置中修改命令路径」；parameters_schema L153 描述同步。
     - [gh_cli.rs](../../../src/pkg/tool_registry/gh_cli.rs)：PO config 默认 `{ command: "gh" }`；spawn 处 `GH_CLI_BIN` 常量 → 读 `self.po` config（常量保留为缺省值来源）。
@@ -1175,7 +1175,7 @@ impl RuntimeDomainImpl {
     - **调用点切换**：[response.rs](../../../src/handlers/finance/tool/response.rs#L23) `tool_readiness::probe(&id, ctx)` → runtime domain `tool_readiness(&ctx, &tool)`（handler 已持有 Tool 实体，直接传入；domain 获取方式对照同文件其他 domain 调用先例）；[service/mod.rs](../../../src/service/mod.rs#L33) init 的 `register_default_probes()` 调用行删除（与 Step 5 的 resolver 三行删除合并后 init 凭据/探测注册清零）。
   - 测试：browser_tool_test.rs L97/L183 `get().browser.command` → PO config 缺省读取；tool_readiness.rs 内嵌测试（cache-hit / user-scoped / ttl / tavily probe）迁移改写为 domain `tool_readiness` 测试（CLI 型纯函数 + key 型经 `new_with_all` 注入 StubUserDal/StubLarkCredentialDal，无需 DB）；gh_cli / lark_cli spawn 读 PO config 既有测试核对。`cargo test --lib` + `make test-be` 全绿后独立提交 `git commit -m "refactor(tools): cli command and tool params into po config, data-driven readiness (D28)"`。
 
-- [ ] **Step 2：统一传参 ToolExecutionRequest + 调用链改造（D22 create → check → call + D26）**：
+- [x] **Step 2：统一传参 ToolExecutionRequest + 调用链改造（D22 create → check → call + D26）**（commit 68ed836f：`tool` 字段落位 `ToolPo` 而非 Tool——Tool 的 Clone 是 unreachable!()，PO 载体正是 plan 注释本意；mcp_tool_test 四处 call_tool_by_id 调用迁移 call_tool 直传；execute_auto/manual 内部暂适配空 resolved request，Step 3 随 think_loop 切换删除）：
   1. [models/tool.rs](../../../src/models/tool.rs) 新增结构体（内部调用结构非 HTTP DTO 不进 common；命名规避 cortex_types 既有 `ToolCallRequest`（LLM 调用描述符），与既有 `ToolExecutionResult` 成对）：
 
 ```rust
@@ -1192,12 +1192,12 @@ pub struct ToolExecutionRequest {
   4. `McpToolDal::call_tool`：既有 `assemble_executable_tool` 已是 per-call 重组装（连接隔离 D23）→ 组装后对 `our_tool` 实例 `check(&request.resolved)?` → `mcp_tool_call_dao.execute`。
   5. **双删（D26）**：`ToolDal::call_tool_by_id` / `McpToolDal::call_tool_by_id`（trait 声明 + impl）删除——全仓无生产调用方（domain 自有 `call_tool_by_id` 保留，debug handler 在用；mcp_tool_test 调用迁移见 Step 6）。
   - `Tool` 结构中 `our_tool: Box<dyn CoreTool>` 的可变性：check 发生在实例装入 Tool 前（局部 mut / `as_mut()`），`Tool` 构造时已 check 完毕，结构无需 `mut`。
-- [ ] **Step 3：think_loop 切换 + dispatch_manual_tool（D26 入口统一）**：
+- [x] **Step 3：think_loop 切换 + dispatch_manual_tool（D26 入口统一）**（commit 4a610c0d：dispatch_manual_tool 返回 ToolExecutionResult 而非 (Value, ToolCallEntry)——与 trait 其余方法统一返回类型，语义等价；顺带删除 RuntimeDomainImpl::tool_dal() 死代码辅助方法；tool_call_test 两处集成测试迁移 domain 入口）：
   - [think_loop.rs](../../../src/service/domain/runtime/think_loop.rs) control_mode 分发（L256-L271 区域）改走 domain `tool_execution()`：Auto → `call_tool(ctx, tool, tc.arguments)`（协议路由，**顺带修复 Auto-MCP 主循环不可执行**——现状 `assemble_core_tool` 对 Mcp 返回 None 走 ManagementOnlyTool 占位）；Manual → `dispatch_manual_tool(ctx, tool, tc.arguments)`。传入 `tool` 仅作 PO 载体（think_loop 从 agent.tools() 按 name 命中即可），实例由 DAL 重组装。
   - RuntimeToolExecution trait（[runtime/mod.rs](../../../src/service/domain/runtime/mod.rs)）新增 `dispatch_manual_tool(ctx, tool, args)`：特殊 tool 转发逻辑从 `ToolDalImpl::execute_manual`（dal/tool.rs L764-L824）**原样上移**——parse_dispatch_mode 选 request_tool_call（sync）/ send_tool_call_message（async）→ registry 创建转发器实例 → 包装 tool_id/tool_name/params/project_id/task_id 参数 → call → 占位 entry。转发器本身无凭据需求（registry 创建即 call，不走 check 注入）；**真实执行兜回** request_tool_call handler → `call_manual_tool_for_agent` → `call_tool`，凭据在真实执行时编排（D26）。
   - `ToolDal::execute_auto` / `execute_manual`（trait 声明 + 默认实现 + ToolDalImpl 重写）删除——think_loop 是唯一调用方。
   - request_tool_call.rs / send_tool_call_message.rs doc 注释「由 ToolDal::execute_manual 内部转发」→「由 domain dispatch_manual_tool 内部转发」（handler 逻辑零改动）。
-- [ ] **Step 4：内置三员工厂化（删 per-tool trait，D17 v1.5）**：
+- [x] **Step 4：内置三员工厂化（删 per-tool trait，D17 v1.5）**（commit be1575dc：每工具模块级 credential_requirements() 自由函数作单点声明——工厂覆写与 CoreTool 实例方法同源调用，声明零漂移 + 一致性测试锁定；lark check 三字段全量到齐才置位（部分注入保持 None 出引导）；**Step 5 内容连带提前完成**——pkg 定义删除后 service/mod.rs 注册行编译必失败，一并与 dal/user.rs、dal/lark/credentials.rs 的 resolver 实现段删除；web_search_tool_test 改写为 D17 编排链等价组合；call 内保留字段 None 单分支防御引导（credential_missing_json 现状为通用文案，不支持 per-requirement hint））：
   - **gh_cli.rs**：删除 `GhCredentialResolver` trait + `RESOLVER` OnceLock + setter/getter（L50-L64）；CoreTool impl 增 `credential_requirements() -> vec![CredentialRequirement { kind: GithubToken, ..默认 }]` 与 `check`（存 `token: Option<String>` 实例字段）；`call` 内取数段（L350-L362）删除，改用 `self.token`（None → 绑定引导 JSON，文案不变；「解析器未就绪」分支一并消失）。
   - **tavily_search.rs**：删除 `TavilyCredentialResolver` trait + OnceLock + setter/getter（L48-L62）；`resolve_api_key` 函数整体移除（用户凭证取数上移 Step 1 编排层，共享兜底已随 D27 Step 0b 废除）；CoreTool impl 增 requirements `[TavilyKey]` + `check`（存 `api_key: Option<String>`）；`call` 用实例字段。
   - **lark_cli.rs**（v1.5 统一）：删除 `LarkCredentialResolver` trait + `RESOLVER` OnceLock + setter/getter（L47-L62）；CoreTool impl 增 requirements——同凭据三条（D4 多字段模式）：
@@ -1219,8 +1219,8 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
 
     `check` 存三元组实例字段（`credentials: Option<(String, String, String)>`）；`call` 内取数段（L296-L309）删除——「解析器未就绪」与「未绑定」两分支均消失（未绑定引导统一编排层，文案沿用「请先在个人设置的飞书集成中绑定应用，并创建引用该凭证的 Lark 渠道」，经 `credential_missing_json` 定制 hint 传入）。
   - 内置工具编排统一（D26 收益）：Builtin 与 MCP/HTTP 同经 domain `call_tool` 单点编排（Step 2 第 3 步 registry 重组装已覆盖），无需单独核对调用点。
-- [ ] **Step 5：service 层清理**——`dal/user.rs` 删 `GhDalCredentialResolver` / `TavilyDalCredentialResolver`（L301-L358）；`dal/lark/credentials.rs`（Step 0 实际落位）删 `LarkDalCredentialResolver` 及 pkg trait impl 段（原 L47-L63，`resolve_credentials_for_user` 保留为 `LarkCredentialDal` trait 方法）；`service/mod.rs` init 删对应**三行**注册（**无任何新增注册项**，凭据相关注册清零）。
-- [ ] **Step 6：测试**：
+- [x] **Step 5：service 层清理**（随 Step 4 commit be1575dc 连带完成：pkg trait 定义删除后注册行编译必失败，实际执行顺序内聚；grep 收口核对——六 resolver 类型 + set/get_credential_resolver + CredentialDataProvider + register_default_probes 全仓零残留）——`dal/user.rs` 删 `GhDalCredentialResolver` / `TavilyDalCredentialResolver`（L301-L358）；`dal/lark/credentials.rs`（Step 0 实际落位）删 `LarkDalCredentialResolver` 及 pkg trait impl 段（原 L47-L63，`resolve_credentials_for_user` 保留为 `LarkCredentialDal` trait 方法）；`service/mod.rs` init 删对应**三行**注册（**无任何新增注册项**，凭据相关注册清零）。
+- [x] **Step 6：测试**（零修复一次全绿：lib 1026 passed；集成 23 target 102 passed / 0 failed / 32 ignored（均需真实 API key）；clippy --all-targets 零警告）：
   - gh_cli / tavily / lark_cli 既有测试改造：「未注册 resolver → 引导」路径同构变更为「未 check 实例（字段 None）→ 引导」，断言文案核对更新；check 注入后 call → 正常路径断言。lark_cli 既有 `call_without_resolver_returns_error_json`（L453）改写为 `call_without_check_returns_guidance`。
   - domain `resolve_tool_credentials`（经 `new_with_all` 注入 stub：StubLarkCredentialDal / StubUserDal，无需 DB）：生产路由（LarkApp → 子 trait 返回附 attributes{identity_mode}）、find_default 逐条命中 / 任一未命中 None。
   - `new_with_all` / `new_with_tool_dals` 既有调用点（tool_execution_test 六处 + 其他模块引用处 grep 核对）同步补两个新参数（stub 默认返回 None / 空实现即可，不影响既有测试语义）。
@@ -1228,8 +1228,8 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
   - think_loop 分发：Auto 工具经 domain `call_tool`（MCP 工具路由 mcp_tool_dal，修复主循环不可执行）；Manual 经 `dispatch_manual_tool`（特殊 tool 参数包装断言，复用既有 execute_manual 测试模式迁移）。
   - 迁移：mcp_tool_test.rs 四处 `call_tool_by_id` 调用（L258/L665/L687/L709）→ `get_by_id` + `call_tool`（新签名）；tool_execution_test.rs mock ToolDal/McpToolDal `call_tool` 签名适配 ToolExecutionRequest（L389/L516 mock call_tool_by_id 保留——domain 方法不动）。
   - 端到端：MCP requirements + DB 凭据 → call 注入成功；无凭据 → 引导 JSON。
-- [ ] **Step 7：收口 grep**——`GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓零残留（含 doc 注释与测试）；`execute_auto` / `execute_manual` / `dispatch_manual_tool` 全仓仅剩 domain（DAL 零残留）；`call_tool_by_id` 全仓仅剩 domain trait/impl/test + debug handler（DAL 零残留）；`git diff src/service/dal/lark.rs` 仅剩 L47-L63 段删除（`resolve_credentials_for_user` 零改动）。
-- [ ] **Step 8：全绿 + 提交** `git commit -m "refactor(credential): orchestrate resolution in domain with unified tool call entry"`。
+- [x] **Step 7：收口 grep**（全部通过）——`GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓零残留（含 doc 注释与测试）；`execute_auto` / `execute_manual` 全仓零残留、`dispatch_manual_tool` 仅剩 domain + handler doc 注释；`call_tool_by_id` 全仓仅剩 domain trait/impl/test + debug handler（DAL 零残留）。
+- [x] **Step 8：全绿 + 提交**（各 Step 独立提交，提交链：a22eede3 → 12ebdbd1 → 518b955f → b6641713 → 68ed836f → 4a610c0d → be1575dc；全量测试 + clippy 三门禁全绿，无额外收口提交需要）。
 
 ### Task 3.4：前端 MCP 表单凭据需求区
 
