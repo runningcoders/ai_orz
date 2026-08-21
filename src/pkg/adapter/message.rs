@@ -1,7 +1,7 @@
 //! 消息入站适配器注册中心（基础设施层）
 //!
 //! 作为通用适配器基础设施，提供统一的消息入站适配能力。
-//! 各渠道 DAL（如 `LarkMessageChannelDal`）实现 `MessageInboundAdapter` trait，
+//! 各渠道 DAL（如 `LarkDalImpl`）实现 `MessageInboundAdapter` trait，
 //! 在 init 时向 `MessageAdapterRegistry` 注册自己。
 //!
 //! producer 层（`producer/message_channel.rs`）通过中台提供的

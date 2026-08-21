@@ -648,8 +648,9 @@ pub struct FinanceDomainImpl {
     pub tool_dal: Arc<dyn ToolDal>,
     pub brain_dal: Arc<dyn BrainDal>,
     pub attachment_dal: Arc<dyn AttachmentDal + Send + Sync>,
-    /// 飞书消息渠道 DAL（渠道生命周期联动 WS 监听用；测试实例可为 None）
-    pub lark_channel_dal: Option<Arc<crate::service::dal::lark::LarkMessageChannelDal>>,
+    /// 飞书 DAL 总 trait（凭据 + 监听两面：渠道生命周期联动 WS 监听、
+    /// 凭证变更/删除联动用；测试实例可为 None）
+    pub lark_channel_dal: Option<Arc<dyn crate::service::dal::lark::LarkDal>>,
     /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
     pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
 }
@@ -678,10 +679,10 @@ impl FinanceDomainImpl {
         }
     }
 
-    /// 注入飞书消息渠道 DAL（渠道生命周期联动）
+    /// 注入飞书 DAL（渠道生命周期联动 + 凭证变更联动）
     pub fn with_lark_channel_dal(
         mut self,
-        lark_channel_dal: Arc<crate::service::dal::lark::LarkMessageChannelDal>,
+        lark_channel_dal: Arc<dyn crate::service::dal::lark::LarkDal>,
     ) -> Self {
         self.lark_channel_dal = Some(lark_channel_dal);
         self

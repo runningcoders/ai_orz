@@ -1,4 +1,4 @@
-//! LarkMessageChannelDal 单元测试
+//! LarkDalImpl 单元测试
 //!
 //! 覆盖凭证引用模型核心路径：
 //! - `find_channel_by_lark_identity`：app_id + open_id 二维定位（跨应用隔离）
@@ -10,6 +10,7 @@ use crate::models::user::UserPo;
 use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::lark::test_support::new_for_test_with_credential_dao;
+use crate::service::dal::lark::{LarkCredentialDal, LarkListenerDal};
 use crate::service::dal::message_channel::init as message_channel_dal_init;
 use crate::service::dao::a2a_callback::init as a2a_callback_dao_init;
 use crate::service::dao::email::init as email_dao_init;
@@ -114,7 +115,7 @@ async fn init_env(pool: SqlitePool) -> RequestContext {
 }
 
 /// 注入凭证 DAO 的测试 DAL（凭证引用解析可用）
-fn test_dal() -> std::sync::Arc<crate::service::dal::lark::LarkMessageChannelDal> {
+fn test_dal() -> std::sync::Arc<crate::service::dal::lark::LarkDalImpl> {
     new_for_test_with_credential_dao(
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),

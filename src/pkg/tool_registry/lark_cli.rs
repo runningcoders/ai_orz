@@ -14,7 +14,7 @@
 //! # 分层说明
 //!
 //! `LarkCredentialResolver` trait 定义在 pkg 层（无上层依赖），具体实现由
-//! `LarkMessageChannelDal` 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
+//! `LarkDalCredentialResolver` 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};

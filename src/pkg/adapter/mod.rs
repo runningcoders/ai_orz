@@ -1,7 +1,7 @@
 //! 外部消息适配者注册中心
 //!
 //! 作为基础设施层，提供统一的适配者注册与获取能力。
-//! 各渠道 DAL（如 `LarkMessageChannelDal`）在 init 时向注册中心注册自己，
+//! 各渠道 DAL（如 `LarkDalImpl`）在 init 时向注册中心注册自己，
 //! producer 层通过注册中心获取适配者，运行适配得到内部消息后投递。
 //!
 //! 设计原则：
@@ -64,7 +64,7 @@ impl AdapterRegistry {
 
     /// 注册适配者
     ///
-    /// `T` 是具体 DAL 类型（如 `LarkMessageChannelDal`）。
+    /// `T` 是具体 DAL 类型（如 `LarkDalImpl`）。
     /// 重复注册同一渠道会返回 `Conflict` 错误。
     pub fn register<T>(&self, channel_type: ChannelType, adapter: Arc<T>) -> Result<()>
     where
