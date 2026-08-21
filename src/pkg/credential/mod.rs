@@ -7,8 +7,90 @@
 //! 不隶属 tool_registry（依赖方向 tool_registry → credential 单向）：
 //! 凭据加工是凭据域通用能力，未来非工具消费方（渠道出站认证等）可直接引用。
 
-use common::error::Result;
-use common::models::CredentialDetail;
+use common::error::{Result, bail_err, err};
+use common::models::{CredentialDetail, CredentialEnhancerKind, CredentialKind};
+
+mod enhancer;
+pub use enhancer::*;
+
+// ==================== 凭据对象（代理增强） ====================
+
+/// 解析后的凭据对象：detail 明文态 + 派生属性 + 默认增强器装配（D7/D24）
+///
+/// 生命周期仅当次调用栈（工具实例不复用，D22）；
+/// 由 resolve_requirements 从 FetchedCredential 构造。
+pub struct ResolvedCredential {
+    credential_id: String,
+    detail: CredentialDetail,
+    attributes: std::collections::BTreeMap<String, String>,
+}
+
+impl ResolvedCredential {
+    /// 构造（resolve_requirements 内部与测试用）
+    pub(crate) fn new(
+        credential_id: String,
+        detail: CredentialDetail,
+        attributes: std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            credential_id,
+            detail,
+            attributes,
+        }
+    }
+
+    /// 凭证 ID（OAuthTokenManager 缓存键等）
+    pub fn credential_id(&self) -> &str {
+        &self.credential_id
+    }
+
+    /// detail 明文态（供增强器取多字段上下文）
+    pub fn detail(&self) -> &CredentialDetail {
+        &self.detail
+    }
+
+    /// 获取指定增强器的结果（代理执行；supports 不匹配 → 错误）
+    pub async fn enhance(&self, kind: CredentialEnhancerKind) -> Result<CredentialEnhancedValue> {
+        let enhancer = enhancer_for(kind)?;
+        if !enhancer.supports(self.detail.kind()) {
+            bail_err!(InvalidRequest, "该凭据类型不支持所选增强器");
+        }
+        enhancer.enhance(self).await
+    }
+
+    /// 规范可用值（D6）：复合形态走默认增强器；单值 kind 查找链（D24）：
+    /// detail 字段 → attributes 派生属性 → primary_secret
+    pub async fn canonical_value(&self, field: Option<&str>) -> Result<String> {
+        match (self.detail.kind(), field) {
+            // 显式选择默认增强器幂等等价 None（D11）由取值侧归一，此处只按 kind 分派
+            (CredentialKind::OAuth, None) => {
+                Ok(match self.enhance(CredentialEnhancerKind::AccessToken).await? {
+                    CredentialEnhancedValue::Value(v) => v,
+                })
+            }
+            (CredentialKind::UserPassword, None) => {
+                Ok(match self.enhance(CredentialEnhancerKind::BasicAuth).await? {
+                    CredentialEnhancedValue::Value(v) => v,
+                })
+            }
+            (_, Some(field_name)) => self.extract_field(field_name),
+            _ => Ok(self.detail.primary_secret().to_string()),
+        }
+    }
+
+    /// 字段提取（serde JSON 泛化取 detail 字段，miss 则查 attributes，D24 查找链）
+    fn extract_field(&self, field: &str) -> Result<String> {
+        let value = serde_json::to_value(&self.detail)
+            .map_err(|_| err!(Internal, "凭据 detail 序列化失败"))?;
+        if let Some(v) = value.get(field).and_then(|v| v.as_str()) {
+            return Ok(v.to_string());
+        }
+        self.attributes
+            .get(field)
+            .cloned()
+            .ok_or_else(|| err!(InvalidRequest, "凭据字段不存在: {}", field))
+    }
+}
 
 // ==================== 解密单点 ====================
 

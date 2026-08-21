@@ -16,7 +16,7 @@ use crate::error::{Result, bail_err};
 ///
 /// 分类型枚举（映射外部系统）：TEXT 存储（`#[sqlx(rename_all = "snake_case")]`），
 /// DB 值 = 'lark_app' / 'github_token' / 'tavily_key'——与 API/JSON 值空间一致。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "sqlx", sqlx(rename_all = "snake_case"))]
@@ -44,6 +44,18 @@ impl CredentialKind {
             self,
             Self::GenericToken | Self::OAuth | Self::UserPassword
         )
+    }
+
+    /// 稳定字符串名（snake_case，与 serde/DB 值空间一致；引导文案与展示用）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::LarkApp => "lark_app",
+            Self::GithubToken => "github_token",
+            Self::TavilyKey => "tavily_key",
+            Self::GenericToken => "generic_token",
+            Self::OAuth => "oauth",
+            Self::UserPassword => "user_password",
+        }
     }
 }
 
