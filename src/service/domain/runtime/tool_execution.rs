@@ -1,13 +1,16 @@
 //! Runtime Tool Execution 具体实现
 
 use crate::models::tool::{Tool, ToolExecutionResult};
+use crate::pkg::credential::{FetchedCredential, ResolvedRequirement};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::{Error, Result, bail_err};
+use common::models::{CredentialDetail, CredentialKind, CredentialRequirement};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[async_trait::async_trait]
 impl RuntimeToolExecution for RuntimeDomainImpl {
@@ -182,6 +185,76 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         let query = super::tool_call_query::with_context_scope(ctx, query)?;
         let mut entries = self.tool_call_logger.query_calls(query)?;
         Ok(entries.pop())
+    }
+}
+
+impl RuntimeDomainImpl {
+    /// 工具调用编排取数（D17 编排链 ①②③ 单点）：生产路由 → pkg 纯函数加工；
+    /// 任一未命中 → `Ok(None)`（调用方出引导）。
+    ///
+    /// 生产路由二元化（D17 v1.5）：
+    /// - `LarkApp` 走渠道路径（`LarkCredentialDal::resolve_credentials_for_user`，
+    ///   明文态 + 派生属性 identity_mode，D24）；
+    /// - 其余 kind 统一走 `UserDal::find_default_credential`（DB 加密态，纯单轨 D27）。
+    // 过渡态：call_tool 编排在 Step 2 接线，当前生产调用方仅测试注入
+    #[allow(dead_code)]
+    pub(super) async fn resolve_tool_credentials(
+        &self,
+        ctx: &RequestContext,
+        requirements: &[CredentialRequirement],
+    ) -> Result<Option<Vec<ResolvedRequirement>>> {
+        if requirements.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let mut fetched = Vec::with_capacity(requirements.len());
+        for requirement in requirements {
+            let fetched_credential = match requirement.kind {
+                // 生产路由（D17 v1.5）：LarkApp 走渠道路径，附派生属性（D24）
+                CredentialKind::LarkApp => {
+                    self.lark_credentials
+                        .resolve_credentials_for_user(ctx)
+                        .await?
+                        .map(|(creds, mode)| FetchedCredential {
+                            credential_id: creds.app_id.clone(), // 生产端无独立 id，以 app_id 代
+                            detail: CredentialDetail::LarkApp {
+                                app_id: creds.app_id,
+                                app_secret: creds.app_secret,
+                                encrypt_key: None,
+                                verification_token: None,
+                            },
+                            attributes: BTreeMap::from([("identity_mode".to_string(), mode)]),
+                            already_decrypted: true,
+                        })
+                }
+                // 其余 kind 统一走 user dal find_default（tavily 纯单轨 D27，无兜底）
+                _ => {
+                    let Some(user_id) = ctx.user_id.clone() else {
+                        return Ok(None);
+                    };
+                    self.user_dal
+                        .find_default_credential(
+                            ctx.clone(),
+                            &user_id,
+                            requirement.kind,
+                            requirement.platform.as_deref(),
+                        )
+                        .await?
+                        .map(|credential| FetchedCredential {
+                            credential_id: credential.id().to_string(),
+                            detail: credential.detail().clone(),
+                            attributes: BTreeMap::new(),
+                            already_decrypted: false,
+                        })
+                }
+            };
+            let Some(credential) = fetched_credential else {
+                return Ok(None);
+            };
+            fetched.push(credential);
+        }
+        Ok(Some(
+            crate::pkg::credential::resolve_requirements(requirements, &fetched).await?,
+        ))
     }
 }
 

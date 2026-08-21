@@ -506,6 +506,8 @@ async fn test_awaken_manual_tools_in_prompt(pool: SqlitePool) {
         ai_orz::service::dal::mcp_tool::dal(),
         ai_orz::service::dal::agent::dal(),
         Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        ai_orz::service::dal::user::dal(),
+        ai_orz::service::dal::lark::dal(),
     );
 
     let result = runtime
@@ -618,6 +620,8 @@ async fn test_awaken_project_task_context_in_prompt(pool: SqlitePool) {
         ai_orz::service::dal::mcp_tool::dal(),
         ai_orz::service::dal::agent::dal(),
         Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        ai_orz::service::dal::user::dal(),
+        ai_orz::service::dal::lark::dal(),
     );
 
     let result = runtime
@@ -721,6 +725,8 @@ async fn test_awaken_error_releases_busy_guard(pool: SqlitePool) {
         ai_orz::service::dal::mcp_tool::dal(),
         ai_orz::service::dal::agent::dal(),
         Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        ai_orz::service::dal::user::dal(),
+        ai_orz::service::dal::lark::dal(),
     );
 
     // awaken 前先设置 Busy（模拟 handle_agent_message 的 try_set_busy）
@@ -1104,6 +1110,8 @@ async fn awaken_two_stage_happy_path(pool: SqlitePool) {
         ai_orz::service::dal::mcp_tool::dal(),
         ai_orz::service::dal::agent::dal(),
         Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+        ai_orz::service::dal::user::dal(),
+        ai_orz::service::dal::lark::dal(),
     );
 
     // ===== 调用 awaken（两阶段串联执行）=====

@@ -21,9 +21,11 @@ use crate::service::dal::agent::AgentDal;
 use crate::service::dal::agent_a2a::A2aAgentDal;
 use crate::service::dal::agent_codex::CodexAgentDal;
 use crate::service::dal::brain::BrainDal;
+use crate::service::dal::lark::LarkCredentialDal;
 use crate::service::dal::mcp_tool::McpToolDal;
 use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dal::tool::ToolDal;
+use crate::service::dal::user::UserDal;
 use crate::service::dao::memory::{MemoryQuery, MemorySearch};
 use common::enums::AgentRuntimeState;
 use common::error::Result;
@@ -304,6 +306,10 @@ struct RuntimeDomainImpl {
     /// A2A 远程类型外部 Agent Dal（提供 RemotePromptBuilder）
     a2a_agent_dal: Arc<A2aAgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
+    /// 用户 DAL（工具凭据编排取数：find_default_credential 生产路由，D17）
+    user_dal: Arc<dyn UserDal + Send + Sync>,
+    /// 飞书凭据面子 trait（LarkApp 生产路由：resolve_credentials_for_user）
+    lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
 }
 
 impl std::fmt::Debug for RuntimeDomainImpl {
@@ -316,6 +322,8 @@ impl std::fmt::Debug for RuntimeDomainImpl {
             .field("codex_agent_dal", &"<CodexAgentDal>")
             .field("a2a_agent_dal", &"<A2aAgentDal>")
             .field("tool_call_logger", &"<ToolCallLogger>")
+            .field("user_dal", &"<UserDal>")
+            .field("lark_credentials", &"<LarkCredentialDal>")
             .finish()
     }
 }
@@ -330,6 +338,8 @@ impl Clone for RuntimeDomainImpl {
             codex_agent_dal: self.codex_agent_dal.clone(),
             a2a_agent_dal: self.a2a_agent_dal.clone(),
             tool_call_logger: self.tool_call_logger.clone(),
+            user_dal: self.user_dal.clone(),
+            lark_credentials: self.lark_credentials.clone(),
         }
     }
 }
@@ -347,6 +357,8 @@ impl RuntimeDomainImpl {
             codex_agent_dal,
             a2a_agent_dal,
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
+            user_dal: crate::service::dal::user::dal(),
+            lark_credentials: crate::service::dal::lark::dal(),
         }
     }
 
@@ -359,6 +371,8 @@ impl RuntimeDomainImpl {
         tool_dal: Arc<dyn ToolDal>,
         mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
         agent_dal: Arc<dyn AgentDal>,
+        user_dal: Arc<dyn UserDal + Send + Sync>,
+        lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
     ) -> Self {
         let codex_agent_dal = Arc::new(CodexAgentDal::new(agent_dal.clone()));
         let a2a_agent_dal = Arc::new(A2aAgentDal::new(agent_dal.clone()));
@@ -370,6 +384,8 @@ impl RuntimeDomainImpl {
             codex_agent_dal,
             a2a_agent_dal,
             tool_call_logger: Arc::new(ToolCallLogger::get().clone()),
+            user_dal,
+            lark_credentials,
         }
     }
 
@@ -380,6 +396,8 @@ impl RuntimeDomainImpl {
         mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
         agent_dal: Arc<dyn AgentDal>,
         tool_call_logger: Arc<ToolCallLogger>,
+        user_dal: Arc<dyn UserDal + Send + Sync>,
+        lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
     ) -> Self {
         let codex_agent_dal = Arc::new(CodexAgentDal::new(agent_dal.clone()));
         let a2a_agent_dal = Arc::new(A2aAgentDal::new(agent_dal.clone()));
@@ -391,6 +409,8 @@ impl RuntimeDomainImpl {
             codex_agent_dal,
             a2a_agent_dal,
             tool_call_logger,
+            user_dal,
+            lark_credentials,
         }
     }
 
@@ -512,9 +532,17 @@ pub fn new_with_tool_dals(
     tool_dal: Arc<dyn ToolDal>,
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     agent_dal: Arc<dyn AgentDal>,
+    user_dal: Arc<dyn UserDal + Send + Sync>,
+    lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
 ) -> Arc<dyn RuntimeDomain> {
-    let domain =
-        RuntimeDomainImpl::new_with_tool_dals(brain_dal, tool_dal, mcp_tool_dal, agent_dal);
+    let domain = RuntimeDomainImpl::new_with_tool_dals(
+        brain_dal,
+        tool_dal,
+        mcp_tool_dal,
+        agent_dal,
+        user_dal,
+        lark_credentials,
+    );
     Arc::new(domain)
 }
 
@@ -525,6 +553,8 @@ pub fn new_with_all(
     mcp_tool_dal: Arc<dyn McpToolDal + Send + Sync>,
     agent_dal: Arc<dyn AgentDal>,
     tool_call_logger: Arc<ToolCallLogger>,
+    user_dal: Arc<dyn UserDal + Send + Sync>,
+    lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>,
 ) -> Arc<dyn RuntimeDomain> {
     let domain = RuntimeDomainImpl::new_with_all(
         brain_dal,
@@ -532,6 +562,8 @@ pub fn new_with_all(
         mcp_tool_dal,
         agent_dal,
         tool_call_logger,
+        user_dal,
+        lark_credentials,
     );
     Arc::new(domain)
 }

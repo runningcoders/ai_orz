@@ -922,6 +922,9 @@ mod tests {
     use crate::pkg::RequestContext;
     use crate::pkg::tool_tracing::logger::ToolCallLogger;
     use crate::service::dal::brain::BrainDal;
+    use crate::service::domain::runtime::tool_execution_test::credential_stubs::{
+        StubLarkCredentialDal, StubUserDal,
+    };
     use async_trait::async_trait;
     use common::enums::skill::SkillAuthorType;
     use common::enums::{AgentStatus, MessageRole, MessageType, ModelCapability, ProviderType};
@@ -1170,6 +1173,8 @@ mod tests {
             crate::service::dal::mcp_tool::dal(),
             crate::service::dal::agent::dal(),
             Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let result = runtime
@@ -1232,6 +1237,8 @@ mod tests {
             crate::service::dal::mcp_tool::dal(),
             crate::service::dal::agent::dal(),
             Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let result = runtime
@@ -1288,6 +1295,8 @@ mod tests {
             crate::service::dal::mcp_tool::dal(),
             crate::service::dal::agent::dal(),
             Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         runtime

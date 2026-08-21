@@ -158,11 +158,13 @@ pub struct ResolvedRequirement {
 pub struct FetchedCredential {
     /// 凭证 ID（OAuthTokenManager 缓存键）
     pub credential_id: String,
-    /// dal 生产路径凭据：lark dal 为明文（already_decrypted=true）；
-    /// user dal 为 DB 加密态（false）；无其他生产路径（tavily 共享兜底已废除，D27）
+    /// dal 生产路径取回的凭据形态
     pub detail: CredentialDetail,
     /// lark dal 派生属性（D24：identity_mode 等；user dal 生产路径为空集）
     pub attributes: std::collections::BTreeMap<String, String>,
+    /// 明文标记：lark dal 为明文（true，resolve_credentials_for_user 内部已解密）；
+    /// user dal 为 DB 加密态（false）；无其他生产路径（tavily 共享兜底已废除，D27）
+    pub already_decrypted: bool,
 }
 
 /// 纯函数加工：requirements 与编排层生产的凭据按序配对 → 逐条（按需）解密 + 取注入值。
@@ -179,7 +181,11 @@ pub async fn resolve_requirements(
     for (requirement, fc) in requirements.iter().zip(fetched) {
         // lark dal 生产路径明文直取（already_decrypted=true）；
         // 其余路径 DB 加密态按 kind 解密（明文兼容：无前缀值原样返回）
-        let detail = decrypt_detail(fc.detail.clone())?;
+        let detail = if fc.already_decrypted {
+            fc.detail.clone()
+        } else {
+            decrypt_detail(fc.detail.clone())?
+        };
         let credential = ResolvedCredential::new(
             fc.credential_id.clone(),
             detail,
@@ -647,6 +653,7 @@ mod tests {
             credential_id: "cred-r".to_string(),
             detail,
             attributes: Default::default(),
+            already_decrypted: false,
         }
     }
 
@@ -684,7 +691,7 @@ mod tests {
         assert!(resolved[1].value.starts_with("Basic "));
     }
 
-    /// lark dal 明文生产路径：无密文前缀直通（decrypt 透传）
+    /// lark dal 明文生产路径（already_decrypted=true）：detail 直通不经过解密
     #[tokio::test]
     async fn resolve_requirements_passes_plaintext_detail_through() {
         let requirements = vec![req(
@@ -696,12 +703,17 @@ mod tests {
                 field: "credential".to_string(),
             },
         )];
-        let fetched = vec![fetched(CredentialDetail::LarkApp {
-            app_id: "cli_plain".to_string(),
-            app_secret: "plain-sec".to_string(),
-            encrypt_key: None,
-            verification_token: None,
-        })];
+        let fetched = vec![FetchedCredential {
+            credential_id: "cred-r".to_string(),
+            detail: CredentialDetail::LarkApp {
+                app_id: "cli_plain".to_string(),
+                app_secret: "plain-sec".to_string(),
+                encrypt_key: None,
+                verification_token: None,
+            },
+            attributes: Default::default(),
+            already_decrypted: true,
+        }];
         let resolved = resolve_requirements(&requirements, &fetched).await.unwrap();
         assert_eq!(resolved[0].value, "cli_plain");
     }

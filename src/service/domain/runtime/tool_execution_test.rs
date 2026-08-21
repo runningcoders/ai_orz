@@ -1,5 +1,237 @@
 //! Runtime ToolExecution protocol routing tests.
 
+/// 凭据编排取数测试 stub（runtime 各测试模块共享注入，无需 DB）
+///
+/// 默认 `none()` 为未命中语义（既有测试不涉及凭据编排，语义不受影响）；
+/// `with_*` 构造可配置命中值供 `resolve_tool_credentials` 测试使用。
+#[cfg(test)]
+pub(crate) mod credential_stubs {
+    use crate::models::message_channel::MessageChannel;
+    use crate::models::user::UserPo;
+    use crate::models::user_credential::UserCredential;
+    use crate::pkg::RequestContext;
+    use crate::service::dao::lark::LarkAppCredentials;
+    use crate::service::dao::user::UserQuery;
+    use crate::service::dao::user_credential::UserCredentialQuery;
+    use crate::service::dal::lark::LarkCredentialDal;
+    use crate::service::dal::user::UserDal;
+    use async_trait::async_trait;
+    use common::api::PagedResult;
+    use common::error::Result;
+    use common::models::CredentialKind;
+
+    /// UserDal stub：`find_default_credential` 可配置，其余方法与本模块测试无关
+    pub(crate) struct StubUserDal {
+        default_credential: Option<UserCredential>,
+    }
+
+    impl StubUserDal {
+        /// 未命中语义（默认注入）
+        pub(crate) fn none() -> Self {
+            Self {
+                default_credential: None,
+            }
+        }
+
+        /// 命中指定默认凭证
+        pub(crate) fn with_default(credential: UserCredential) -> Self {
+            Self {
+                default_credential: Some(credential),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl UserDal for StubUserDal {
+        async fn create(&self, _ctx: RequestContext, _user: &UserPo) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_by_id(&self, _ctx: RequestContext, _id: &str) -> Result<Option<UserPo>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_by_username(
+            &self,
+            _ctx: RequestContext,
+            _username: &str,
+        ) -> Result<Option<UserPo>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn query(
+            &self,
+            _ctx: RequestContext,
+            _query: UserQuery,
+        ) -> Result<PagedResult<UserPo>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_by_organization_id(
+            &self,
+            _ctx: RequestContext,
+            _org_id: &str,
+        ) -> Result<Vec<UserPo>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn update(&self, _ctx: RequestContext, _user: &UserPo) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn delete(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn exists_by_username(&self, _ctx: RequestContext, _username: &str) -> Result<bool> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn count_by_organization_id(
+            &self,
+            _ctx: RequestContext,
+            _org_id: &str,
+        ) -> Result<u64> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn count(&self, _ctx: RequestContext, _query: UserQuery) -> Result<u64> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn query_credentials(
+            &self,
+            _ctx: RequestContext,
+            _query: UserCredentialQuery,
+        ) -> Result<PagedResult<UserCredential>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn count_credentials(
+            &self,
+            _ctx: RequestContext,
+            _query: UserCredentialQuery,
+        ) -> Result<u64> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn insert_credential(
+            &self,
+            _ctx: RequestContext,
+            _credential: &UserCredential,
+        ) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_credential_by_id(
+            &self,
+            _ctx: RequestContext,
+            _id: &str,
+        ) -> Result<Option<UserCredential>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn update_credential(
+            &self,
+            _ctx: RequestContext,
+            _credential: &UserCredential,
+        ) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn soft_delete_credential(&self, _ctx: RequestContext, _id: &str) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_default_credential(
+            &self,
+            _ctx: RequestContext,
+            _user_id: &str,
+            _kind: CredentialKind,
+            _platform: Option<&str>,
+        ) -> Result<Option<UserCredential>> {
+            Ok(self.default_credential.clone())
+        }
+
+        async fn set_default_credential(
+            &self,
+            _ctx: RequestContext,
+            _credential_id: &str,
+        ) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn clear_default_credential(
+            &self,
+            _ctx: RequestContext,
+            _user_id: &str,
+            _kind: CredentialKind,
+            _platform: Option<&str>,
+        ) -> Result<()> {
+            unimplemented!("not needed by credential stub")
+        }
+    }
+
+    /// LarkCredentialDal stub：`resolve_credentials_for_user` 可配置，其余方法与本模块测试无关
+    pub(crate) struct StubLarkCredentialDal {
+        credentials: Option<(LarkAppCredentials, String)>,
+    }
+
+    impl StubLarkCredentialDal {
+        /// 未命中语义（默认注入）
+        pub(crate) fn none() -> Self {
+            Self { credentials: None }
+        }
+
+        /// 命中指定凭证 + 身份模式
+        pub(crate) fn with_credentials(app_id: &str, app_secret: &str, mode: &str) -> Self {
+            Self {
+                credentials: Some((
+                    LarkAppCredentials {
+                        app_id: app_id.to_string(),
+                        app_secret: app_secret.to_string(),
+                    },
+                    mode.to_string(),
+                )),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LarkCredentialDal for StubLarkCredentialDal {
+        async fn resolve_credentials_for_user(
+            &self,
+            _ctx: &RequestContext,
+        ) -> Result<Option<(LarkAppCredentials, String)>> {
+            Ok(self.credentials.clone())
+        }
+
+        async fn resolve_channel_app_id(
+            &self,
+            _ctx: RequestContext,
+            _channel: &MessageChannel,
+        ) -> Option<String> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_channels_by_credential_id(
+            &self,
+            _credential_id: &str,
+        ) -> Result<Vec<MessageChannel>> {
+            unimplemented!("not needed by credential stub")
+        }
+
+        async fn find_channel_by_lark_identity(
+            &self,
+            _ctx: RequestContext,
+            _app_id: &str,
+            _open_id: &str,
+        ) -> Result<Option<MessageChannel>> {
+            unimplemented!("not needed by credential stub")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::models::agent::{Agent, AgentPo};
@@ -24,6 +256,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
+
+    use super::credential_stubs::{StubLarkCredentialDal, StubUserDal};
 
     struct StubBrainDal;
 
@@ -623,6 +857,8 @@ mod tests {
             mcp_tool_dal,
             agent_dal,
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
         (temp_dir, runtime)
     }
@@ -730,6 +966,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger.clone(),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
         let call_id = format!("runtime-query-{}", uuid::Uuid::now_v7());
         let entry = test_tool_call_entry(
@@ -769,6 +1007,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let error = runtime
@@ -790,6 +1030,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let error = runtime
@@ -817,6 +1059,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
         let mut ctx = test_ctx();
         ctx.agent_id = Some("runtime-agent-only".to_string());
@@ -848,6 +1092,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let error = runtime
@@ -876,6 +1122,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let error = runtime
@@ -907,6 +1155,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
 
         let error = runtime
@@ -934,6 +1184,8 @@ mod tests {
             Arc::new(RecordingMcpToolDal::new()),
             Arc::new(StubAgentDal::new()),
             logger.clone(),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
         );
         let call_id = format!("runtime-get-{}", uuid::Uuid::now_v7());
         let entry = test_tool_call_entry(
@@ -1474,5 +1726,129 @@ mod tests {
         assert_eq!(tool_dal.list_for_agent_calls(), 1);
         assert_eq!(tool_dal.query_calls(), 1);
         assert_eq!(tool_dal.call_tool_calls(), 0);
+    }
+
+    // ==================== resolve_tool_credentials（D17 生产路由二元化） ====================
+
+    use crate::models::user_credential::{UserCredential, UserCredentialPo};
+    use crate::service::domain::runtime::RuntimeDomainImpl;
+    use common::models::{
+        CredentialBinding, CredentialDetail, CredentialKind, CredentialRequirement,
+        CredentialVisibility,
+    };
+
+    fn credential_requirement(kind: CredentialKind, field: Option<&str>) -> CredentialRequirement {
+        CredentialRequirement {
+            kind,
+            platform: None,
+            field: field.map(String::from),
+            enhancer: None,
+            binding: CredentialBinding::Internal {
+                field: "credential".to_string(),
+            },
+        }
+    }
+
+    /// 构造带凭据 stub 的具体类型实例（私有方法 resolve_tool_credentials 需具体类型调用）
+    fn credential_runtime(user_dal: StubUserDal, lark_credentials: StubLarkCredentialDal) -> RuntimeDomainImpl {
+        let temp_dir = tempdir().expect("tempdir should be created");
+        RuntimeDomainImpl::new_with_all(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
+            Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+            Arc::new(user_dal),
+            Arc::new(lark_credentials),
+        )
+    }
+
+    /// LarkApp 生产路由：走 lark 凭据子 trait，attributes 附 identity_mode（D24）
+    #[tokio::test]
+    async fn resolve_tool_credentials_lark_route_sets_identity_mode_attribute() {
+        let runtime = credential_runtime(
+            StubUserDal::none(),
+            StubLarkCredentialDal::with_credentials("cli_a", "sec", "user"),
+        );
+        let requirements = vec![credential_requirement(
+            CredentialKind::LarkApp,
+            Some("identity_mode"),
+        )];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&test_ctx(), &requirements)
+            .await
+            .unwrap()
+            .expect("lark route should hit");
+
+        assert_eq!(resolved.len(), 1);
+        // attributes 查找链命中派生属性（identity_mode 由生产端注入，D24）
+        assert_eq!(resolved[0].value, "user");
+    }
+
+    /// user dal 生产路由：find_default_credential 命中 → 加密态经 pkg 解密取注入值
+    #[tokio::test]
+    async fn resolve_tool_credentials_user_dal_route_hits_default_credential() {
+        let credential = UserCredential::from_po(UserCredentialPo::new(
+            "cred-gh-1".to_string(),
+            "org-1".to_string(),
+            "test-user".to_string(),
+            CredentialKind::GithubToken,
+            "gh default".to_string(),
+            CredentialDetail::GithubToken {
+                token: "ghp_plain".to_string(),
+            },
+            CredentialVisibility::Private,
+            "test-user".to_string(),
+        ));
+        let runtime = credential_runtime(
+            StubUserDal::with_default(credential),
+            StubLarkCredentialDal::none(),
+        );
+        let requirements = vec![credential_requirement(CredentialKind::GithubToken, None)];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&test_ctx(), &requirements)
+            .await
+            .unwrap()
+            .expect("user dal route should hit");
+
+        assert_eq!(resolved.len(), 1);
+        // already_decrypted=false → pkg 解密路径（明文兼容：无 enc:v1: 前缀原样返回）
+        assert_eq!(resolved[0].value, "ghp_plain");
+    }
+
+    /// 任一 requirement 未命中 → Ok(None)（调用方出引导）
+    #[tokio::test]
+    async fn resolve_tool_credentials_returns_none_when_any_requirement_misses() {
+        let runtime = credential_runtime(
+            StubUserDal::none(), // GithubToken 未命中
+            StubLarkCredentialDal::with_credentials("cli_a", "sec", "auto"),
+        );
+        let requirements = vec![
+            credential_requirement(CredentialKind::LarkApp, Some("identity_mode")),
+            credential_requirement(CredentialKind::GithubToken, None),
+        ];
+
+        let resolved = runtime
+            .resolve_tool_credentials(&test_ctx(), &requirements)
+            .await
+            .unwrap();
+
+        assert!(resolved.is_none());
+    }
+
+    /// 空 requirements → Ok(Some(empty))（无凭据需求直通）
+    #[tokio::test]
+    async fn resolve_tool_credentials_empty_requirements_returns_some_empty() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+
+        let resolved = runtime
+            .resolve_tool_credentials(&test_ctx(), &[])
+            .await
+            .unwrap();
+
+        assert!(resolved.is_some());
+        assert!(resolved.unwrap().is_empty());
     }
 }
