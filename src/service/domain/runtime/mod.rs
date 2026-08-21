@@ -244,6 +244,22 @@ pub trait RuntimeToolExecution: Send + Sync {
         args: serde_json::Value,
     ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
 
+    /// Dispatch a Manual tool call from the think loop (D26 unified entry).
+    ///
+    /// Special-tool forwarding: parse `dispatch_mode` to pick the forwarder
+    /// (`request_tool_call` sync / `send_tool_call_message` async), create the
+    /// forwarder instance via registry, wrap tool_id/tool_name/params/
+    /// project_id/task_id args, call it, then return a placeholder trace ref.
+    /// The forwarder itself needs no credentials; real execution flows back
+    /// through the request_tool_call handler → `call_manual_tool_for_agent`
+    /// → `call_tool` where credentials are orchestrated (D26).
+    async fn dispatch_manual_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &crate::models::tool::Tool,
+        args: serde_json::Value,
+    ) -> std::result::Result<crate::models::tool::ToolExecutionResult, common::error::Error>;
+
     /// Execute a message-mode Manual tool call for one Agent.
     ///
     /// This entry point owns runtime authorization for `ToolCallRequest`:
@@ -429,11 +445,6 @@ impl RuntimeDomainImpl {
     /// 获取 Brain DAL 引用
     fn brain_dal(&self) -> &dyn BrainDal {
         &*self.brain_dal
-    }
-
-    /// 获取 Tool DAL 引用
-    fn tool_dal(&self) -> &dyn ToolDal {
-        &*self.tool_dal
     }
 
     /// 根据 agent.kind 返回对应的 PromptBuilder

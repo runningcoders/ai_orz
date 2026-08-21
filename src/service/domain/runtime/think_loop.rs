@@ -8,7 +8,7 @@ use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
 use crate::models::events::ThinkRoundEvent;
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
 use crate::pkg::request_context::RequestContext;
-use crate::service::domain::runtime::RuntimeDomainImpl;
+use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
@@ -253,27 +253,25 @@ impl RuntimeDomainImpl {
                             content,
                             tool_calls: Some(tool_calls.clone()),
                         });
-                        // 按 control_mode 分发执行
+                        // 按 control_mode 分发执行（D26 入口统一：Auto → call_tool
+                        // 协议路由（含凭据编排，Auto-MCP 亦可执行）；Manual →
+                        // dispatch_manual_tool 特殊工具转发）
                         for tc in tool_calls {
                             match agent.tools().iter().find(|t| t.po.name == tc.name) {
                                 Some(tool) => {
                                     let call_result = match tool.po.control_mode {
                                         common::enums::tool::ControlMode::Auto => {
-                                            self.tool_dal()
-                                                .execute_auto(ctx.clone(), tool, tc.arguments)
-                                                .await
+                                            self.call_tool(ctx.clone(), tool, tc.arguments).await
                                         }
-                                        common::enums::tool::ControlMode::Manual => {
-                                            self.tool_dal()
-                                                .execute_manual(ctx.clone(), tool, tc.arguments)
-                                                .await
-                                        }
+                                        common::enums::tool::ControlMode::Manual => self
+                                            .dispatch_manual_tool(ctx.clone(), tool, tc.arguments)
+                                            .await,
                                     };
                                     match call_result {
-                                        Ok((value, _entry)) => {
+                                        Ok(result) => {
                                             messages.push(ChatMessage::tool(
                                                 tc.id,
-                                                format!("{}", value),
+                                                format!("{}", result.result),
                                             ));
                                         }
                                         Err(e) => {

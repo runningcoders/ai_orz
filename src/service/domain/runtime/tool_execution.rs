@@ -1,6 +1,6 @@
 //! Runtime Tool Execution 具体实现
 
-use crate::models::tool::{Tool, ToolExecutionRequest, ToolExecutionResult};
+use crate::models::tool::{Tool, ToolExecutionRequest, ToolExecutionResult, ToolPo};
 use crate::pkg::credential::{FetchedCredential, ResolvedRequirement};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_readiness;
@@ -96,6 +96,66 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             result,
             entry.tool_id.clone(),
             entry.call_id.clone(),
+        ))
+    }
+
+    async fn dispatch_manual_tool(
+        &self,
+        ctx: RequestContext,
+        tool: &Tool,
+        args: Value,
+    ) -> Result<ToolExecutionResult> {
+        let mode = parse_dispatch_mode(tool);
+        let special_tool_id = match mode {
+            "async" => "send_tool_call_message",
+            _ => "request_tool_call",
+        };
+
+        // 通过 registry 创建特殊 tool 实例（不加装饰器，特殊 tool 只是转发器）
+        let special_po = ToolPo::new(
+            special_tool_id.to_string(),
+            special_tool_id.to_string(),
+            "manual tool dispatcher".to_string(),
+            ToolProtocol::Builtin,
+            serde_json::Value::Null,
+            None,
+            vec![],
+            None,
+        );
+        let special_tool = crate::pkg::tool_registry::get_registry()
+            .create_tool(special_po)
+            .ok_or_else(|| {
+                common::error::err!(
+                    Internal,
+                    "special tool {} not found in registry",
+                    special_tool_id
+                )
+            })?;
+
+        // 组织参数：把真实工具调用包装成特殊 tool 的参数格式
+        // RequestToolCallParams / SendToolCallMessageParams 字段一致：
+        // tool_id, tool_name, params, project_id, task_id（agent_id 由 ctx 携带）
+        let special_args = serde_json::json!({
+            "tool_id": tool.po.id,
+            "tool_name": tool.po.name,
+            "params": args,
+            "project_id": ctx.project_id().cloned(),
+            "task_id": ctx.task_id().cloned(),
+        });
+
+        // 调用特殊 tool（不加装饰器）
+        // 特殊 tool handler 内部会调 call_manual_tool_for_agent → call_tool（凭据在真实执行时编排，D26）
+        let result_value = special_tool.call(ctx, special_args).await?;
+
+        // 占位 trace 引用（真实 trace 在 call_tool 层记录）
+        Ok(ToolExecutionResult::new(
+            result_value,
+            tool.po.id.clone(),
+            format!(
+                "manual_dispatch_{}_{}",
+                special_tool_id,
+                uuid::Uuid::now_v7()
+            ),
         ))
     }
 
@@ -401,6 +461,16 @@ fn ensure_tool_enabled(tool_id: &str, status: &ToolStatus) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 解析 Manual 工具的分发模式（po.config.dispatch_mode：sync 默认 / async）
+fn parse_dispatch_mode(tool: &Tool) -> &'static str {
+    if let Some(mode) = tool.po.config.get("dispatch_mode").and_then(|v| v.as_str())
+        && mode == "async"
+    {
+        return "async";
+    }
+    "sync"
 }
 
 fn map_mcp_tool_error(tool_id: &str, error: &Error) -> String {

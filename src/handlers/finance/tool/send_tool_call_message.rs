@@ -1,6 +1,6 @@
 //! Handler: 发送工具调用消息（异步，内部系统工具）
 //!
-//! 内部系统工具：不可绑定给 Agent，由 ToolDal::execute_manual 内部转发调用。
+//! 内部系统工具：不可绑定给 Agent，由 domain dispatch_manual_tool 内部转发调用。
 
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{self, SendToolCallRequestCommand};
@@ -10,7 +10,7 @@ use common::error::Result;
 
 /// 发送工具调用消息（异步）
 ///
-/// 作为 manual 工具异步分发的内部转发器，由 ToolDal::execute_manual 通过 registry 创建实例并调用。
+/// 作为 manual 工具异步分发的内部转发器，由 domain dispatch_manual_tool 通过 registry 创建实例并调用。
 /// 消息发送后立即返回，工具执行结果通过 ToolCallResult 消息在下一轮 awaken 中送达。
 #[register_handler_tool(
     id = "send_tool_call_message",

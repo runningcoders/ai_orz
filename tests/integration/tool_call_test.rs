@@ -4,7 +4,7 @@
 //! - Part A: debug_call_tool 端点（Builtin/HTTP 工具调用 + SSRF 防护，CI-safe）
 //! - Part B: Manual 异步消息链（Consumer 处理 ToolCallRequest → ToolCallResult，CI-safe）
 //! - Part C: Auto awaken 工具执行（真实 LLM，#[ignore]）
-//! - Part D: Manual 工具统一执行路径（execute_manual 同步/异步，CI-safe）
+//! - Part D: Manual 工具统一执行路径（dispatch_manual_tool 同步/异步，CI-safe）
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -422,13 +422,13 @@ async fn test_tool_call_trace_recorded(pool: SqlitePool) {
 }
 
 // =================================================================
-// Part D: Manual 工具统一执行路径（execute_manual，CI-safe）
+// Part D: Manual 工具统一执行路径（dispatch_manual_tool，CI-safe）
 // =================================================================
 
-/// 同步 Manual 工具通过 execute_manual 执行：
-/// 创建 Manual HTTP 工具（dispatch_mode 默认 sync）→ execute_manual 转发到 request_tool_call → 验证结果
+/// 同步 Manual 工具通过 dispatch_manual_tool 执行：
+/// 创建 Manual HTTP 工具（dispatch_mode 默认 sync）→ dispatch_manual_tool 转发到 request_tool_call → 验证结果
 #[sqlx::test]
-async fn test_execute_manual_sync(pool: SqlitePool) {
+async fn test_dispatch_manual_tool_sync(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
@@ -461,11 +461,13 @@ async fn test_execute_manual_sync(pool: SqlitePool) {
         .expect("get tool failed")
         .expect("tool not found");
 
-    // 5. 调用 execute_manual（同步路径：通过 request_tool_call 特殊工具转发）
-    let (value, _entry) = ai_orz::service::dal::tool::dal()
-        .execute_manual(ctx, &tool, json!({}))
+    // 5. 调用 dispatch_manual_tool（同步路径：通过 request_tool_call 特殊工具转发）
+    let value = ai_orz::service::domain::runtime::domain()
+        .tool_execution()
+        .dispatch_manual_tool(ctx, &tool, json!({}))
         .await
-        .expect("execute_manual sync failed");
+        .expect("dispatch_manual_tool sync failed")
+        .result;
 
     // 6. 验证返回结果（request_tool_call 返回 RequestToolCallResponse）
     assert_eq!(
@@ -488,10 +490,10 @@ async fn test_execute_manual_sync(pool: SqlitePool) {
     );
 }
 
-/// 异步 Manual 工具通过 execute_manual 派发：
-/// 创建 Manual HTTP 工具（dispatch_mode=async）→ execute_manual 转发到 send_tool_call_message → 验证消息派发
+/// 异步 Manual 工具通过 dispatch_manual_tool 派发：
+/// 创建 Manual HTTP 工具（dispatch_mode=async）→ dispatch_manual_tool 转发到 send_tool_call_message → 验证消息派发
 #[sqlx::test]
-async fn test_execute_manual_async(pool: SqlitePool) {
+async fn test_dispatch_manual_tool_async(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
@@ -542,11 +544,13 @@ async fn test_execute_manual_async(pool: SqlitePool) {
         .expect("get tool failed")
         .expect("tool not found");
 
-    // 5. 调用 execute_manual（异步路径：通过 send_tool_call_message 特殊工具转发）
-    let (value, _entry) = ai_orz::service::dal::tool::dal()
-        .execute_manual(ctx, &tool, json!({}))
+    // 5. 调用 dispatch_manual_tool（异步路径：通过 send_tool_call_message 特殊工具转发）
+    let value = ai_orz::service::domain::runtime::domain()
+        .tool_execution()
+        .dispatch_manual_tool(ctx, &tool, json!({}))
         .await
-        .expect("execute_manual async failed");
+        .expect("dispatch_manual_tool async failed")
+        .result;
 
     // 6. 验证返回占位结果（send_tool_call_message 返回 SendToolCallMessageResponse）
     assert_eq!(
