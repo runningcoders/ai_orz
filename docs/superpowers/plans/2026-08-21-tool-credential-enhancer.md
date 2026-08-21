@@ -406,14 +406,14 @@ cargo test --lib
 
 ## Phase 2：pkg 凭据纯值加工模块（增强器 + 解密 + resolve_requirements + 校验）
 
-> 交付物：新建 `src/pkg/tool_registry/credential_requirement.rs`——**纯值加工模块，零数据访问**（无 ctx / 无端口 trait / 无 OnceLock 注入注册，D17）；全部逻辑可纯函数构造测试（无 DB / 无 mock provider）。gh_cli / tavily 的 per-tool resolver 删除与工厂化改造在 Phase 3 统一执行。
+> 交付物：新建 `src/pkg/credential/`（门面 mod.rs + 子模块 enhancer.rs）——**凭据域纯值加工模块，零数据访问**（无 ctx / 无端口 trait / 无 OnceLock 注入注册，D17），不隶属 tool_registry（依赖方向 tool_registry → credential 单向）；全部逻辑可纯函数构造测试（无 DB / 无 mock provider）。gh_cli / tavily 的 per-tool resolver 删除与工厂化改造在 Phase 3 统一执行。
 
 ### Task 2.1：模块骨架 + decrypt_detail 解密单点
 
 **Files:**
-- Create: src/pkg/tool_registry/credential_requirement.rs
-- Modify: src/pkg/tool_registry/mod.rs（`pub mod credential_requirement;`）
-- Test: credential_requirement.rs 内嵌 `mod tests`
+- Create: src/pkg/credential/mod.rs
+- Modify: src/pkg/mod.rs（`pub mod credential;`）
+- Test: src/pkg/credential/mod.rs 内嵌 `mod tests`
 
 - [ ] **Step 1：创建模块**——纯值加工定位，骨架（本 Task 只含 doc 头 + 解密函数，后续 Task 追加增强器与编排）：
 
@@ -479,14 +479,15 @@ fn decrypt_detail_passes_non_sensitive_fields() {
 
 > 上述测试写法以 pkg::crypto 现有测试基建为准：若已有 encrypt/decrypt 测试辅助（固定测试密钥），直接用它构造加密态样本做全字段断言；没有则本 Task 测试降级为「非敏感字段透传」+ 依赖 Phase 3 集成测试覆盖解密链路，注释说明。
 
-- [ ] **Step 4：`cargo test --lib credential_requirement` 通过 + 提交** `git commit -m "feat(credential): credential requirement module skeleton with decrypt"`。
+- [ ] **Step 4：`cargo test --lib pkg::credential` 通过 + 提交** `git commit -m "feat(credential): credential module skeleton with decrypt"`。
 
 ### Task 2.2：增强器 trait + 三个内置增强器 + OAuthTokenManager
 
 **Files:**
-- Modify: src/pkg/tool_registry/credential_requirement.rs（追加）
+- Create: src/pkg/credential/enhancer.rs
+- Modify: src/pkg/credential/mod.rs（`mod enhancer; pub use enhancer::*;`）
 
-- [ ] **Step 1：实现**（核心代码）：
+- [ ] **Step 1：实现**（核心代码，enhancer.rs）：
 
 ```rust
 // ==================== 凭据增强器 ====================
@@ -705,7 +706,7 @@ async fn token_manager_rejects_local_network_endpoint() {
 ### Task 2.3：ResolvedCredential + resolve_requirements 纯函数 + validate_requirements
 
 **Files:**
-- Modify: src/pkg/tool_registry/credential_requirement.rs（追加）
+- Modify: src/pkg/credential/mod.rs（追加）
 
 - [ ] **Step 1：实现**：
 
@@ -962,7 +963,7 @@ async fn resolve_requirements_rejects_length_mismatch() { ... }  // requirements
 - [ ] **Step 4：全绿 + 提交** `git commit -m "feat(credential): resolved credential with pure resolve_requirements/validation"`。
 
 **Phase 2 收口检查：**
-- [ ] `cargo test --lib credential_requirement` + clippy 全绿（全纯函数，无 DB / 无 OnceLock 注入）。
+- [ ] `cargo test --lib pkg::credential` + clippy 全绿（全纯函数，无 DB / 无 OnceLock 注入）。
 - [ ] 模块 grep 确认：无 `RequestContext` / 无 `CredentialDataProvider` / 无 `set_` 注入注册（OAuthTokenManager 内部 OnceLock 缓存除外）。
 
 ---
@@ -1014,7 +1015,7 @@ pub credential_requirements: Vec<common::models::CredentialRequirement>,
 
 ```rust
 let model_config = to_model_config(params.config);
-crate::pkg::tool_registry::credential_requirement::validate_requirements(
+crate::pkg::credential::validate_requirements(
     &model_config.credential_requirements,
     match transport {
         McpTransport::Stdio => common::models::CredentialRequirementScope::McpStdio,
@@ -1046,7 +1047,7 @@ fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> 
 /// 实例单次使用（create → check → call），凭据是对象状态（D22 红线）。
 fn check(
     &mut self,
-    resolved: &[crate::pkg::tool_registry::credential_requirement::ResolvedRequirement],
+    resolved: &[crate::pkg::credential::ResolvedRequirement],
 ) -> common::error::Result<()> {
     Ok(())
 }
@@ -1120,7 +1121,7 @@ pub async fn resolve_tool_credentials(
         };
         fetched.push(credential);
     }
-    Ok(Some(pkg::tool_registry::credential_requirement::resolve_requirements(requirements, &fetched).await?))
+    Ok(Some(pkg::credential::resolve_requirements(requirements, &fetched).await?))
 }
 ```
 
@@ -1217,7 +1218,7 @@ pub credential_requirements: Vec<common::models::CredentialRequirement>,
 
 - [ ] **Step 3：validate_config 增两段**（在 `validate_scalar_template_object` 调用后）：
   - 敏感名拒绝：headers/query 的每个 key 过 `is_sensitive_header` → 命中即 Err（`validate_scalar_template_object` 内 field_name=="headers"/"query" 分支各加一条，或在 validate_config 独立遍历——取独立遍历，语义清晰）。
-  - `credential_requirement::validate_requirements(&config.credential_requirements, CredentialRequirementScope::HttpTool)?`。
+  - `pkg::credential::validate_requirements(&config.credential_requirements, CredentialRequirementScope::HttpTool)?`。
 - [ ] **Step 4：运行时注入（D22 生命周期，与 McpCoreTool 同构）**——`HttpCoreTool` 增 `credential_requirements()`（从 config 读）与 `check`（存 `header_injections: Vec<(String, String)>` + `query_injections: Vec<(String, String)>` 实例字段）；`execute_http_call` 不取数，模板 headers/query 渲染**之后**叠加实例注入值：
 
 ```rust

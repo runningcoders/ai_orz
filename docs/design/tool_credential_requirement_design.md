@@ -1,7 +1,7 @@
 # 共享工具凭据增强器设计（MCP / HTTP 工具接入身份凭证体系）
 
 > 🎯 **定位**：① Design 决策快照——记录「共享工具凭据从配置内嵌原文改为类型级需求声明 + 凭据增强器模型（编排取数 → pkg 纯函数加工 → check 注入单次实例 → binding 纯放置）」的动机、(kind, platform) 匹配键、增强器 trait 契约与默认装配规则、显式增强器组合语义、supports 矩阵、OAuth 生命周期内聚、MCP env/headers 字段整体移除与 HTTP 敏感名拒绝策略
-> 状态：定稿 v1.5（2026-08-21，经需求声明 → 凭据模板变量 → 凭据增强器 → 编排注入 → Lark 统一五轮迭代收敛；v1.4 取数上移编排层 + D22 实例生命周期 + D23 连接隔离；v1.5 **Lark 统一入模型**——生产端二元化（user dal / lark dal，D17），dal 产出的不只是凭据还有派生属性（D24 attributes），内置工具消费形态补 Internal binding（D25）；lark_cli 工厂化，per-tool resolver trait 三清零，`service::init` 凭据注册项全部删除）
+> 状态：定稿 v1.6（2026-08-21，经需求声明 → 凭据模板变量 → 凭据增强器 → 编排注入 → Lark 统一五轮迭代收敛；v1.4 取数上移编排层 + D22 实例生命周期 + D23 连接隔离；v1.5 **Lark 统一入模型**——生产端二元化（user dal / lark dal，D17），dal 产出的不只是凭据还有派生属性（D24 attributes），内置工具消费形态补 Internal binding（D25）；lark_cli 工厂化，per-tool resolver trait 三清零，`service::init` 凭据注册项全部删除；v1.6 **pkg 加工模块独立落位 `src/pkg/credential/`**——凭据域纯值加工不隶属 tool_registry，依赖方向 tool_registry → credential 单向，未来非工具消费方（渠道出站认证等）可直接引用）
 > 触发场景：实现/修改 MCP Server 或 HTTP 工具的凭据注入、新增凭据类型（generic_token / oauth / user_password）、新增或修改凭据增强器、修改 supports 矩阵或敏感配置校验规则、排查「共享工具以谁的身份执行」问题时打开
 >
 > 关联文档：
@@ -241,7 +241,7 @@ pub fn resolve_requirements(
 ) -> Result<Vec<ResolvedRequirement>>;
 ```
 
-> 当前实现：trait、三个内置增强器、`ResolvedCredential` / `resolve_requirements` 随本设计新建，落位于 src/pkg/tool_registry/credential_requirement.rs；**模块无 ctx / 无数据访问 / 无注入注册**——取数编排（生产路由 → 本函数 → tavily 兜底）在 domain `resolve_tool_credentials` 单点（见 §三 service 层清单）。
+> 当前实现：trait、三个内置增强器、`ResolvedCredential` / `resolve_requirements` 随本设计新建，落位于 src/pkg/credential/（门面 mod.rs；增强器与 OAuthTokenManager 在子模块 enhancer.rs）——凭据域纯值加工模块，不隶属 tool_registry（依赖方向 tool_registry → credential 单向）；**模块无 ctx / 无数据访问 / 无注入注册**——取数编排（生产路由 → 本函数 → tavily 兜底）在 domain `resolve_tool_credentials` 单点（见 §三 service 层清单）。
 
 ### 2.5 内置增强器一览（v1）
 
@@ -300,7 +300,7 @@ pub struct CredentialDetailOAuth {
 
 刷新流程（`get_access_token` 内聚）：缓存命中且剩余有效期 > 60s → 直返；否则校验 `token_endpoint` SSRF（红线 7）→ `POST {token_endpoint}`（`grant_type=refresh_token&client_id&client_secret&refresh_token[&scope]`，form-encoded）→ 解析 `access_token` / `expires_in` → 写缓存（过期时刻提前 60s）→ 返回。刷新失败不缓存失败结果。
 
-> 当前实现：OAuthTokenManager 随本设计新建，落位于 src/pkg/tool_registry/credential_requirement.rs（AccessToken 增强器内部）；HTTP 调用复用项目既有 client，日志/错误不含任何 token 值。
+> 当前实现：OAuthTokenManager 随本设计新建，落位于 src/pkg/credential/enhancer.rs（AccessToken 增强器内部）；HTTP 调用复用项目既有 client，日志/错误不含任何 token 值。
 
 ## 三、涉及文件清单
 
@@ -329,7 +329,7 @@ pub struct CredentialDetailOAuth {
 
 | 操作 | 路径 | 内容 |
 |------|------|------|
-| 新建 | src/pkg/tool_registry/credential_requirement.rs | **纯值加工模块，零数据访问**（D17）：`decrypt_detail`（按 kind 解密，与 encrypt_sensitive 对称）+ §2.4 `CredentialEnhancer` trait + 三个内置增强器（BearerToken / BasicAuth / AccessToken 含 §2.5.1 OAuthTokenManager，OnceLock 仅内部缓存）+ `FetchedCredential`（含 attributes，D24）+ `ResolvedCredential`（enhance / canonical_value 查找链 detail→attributes→primary_secret + 默认装配规则）+ `resolve_requirements(requirements, fetched)`（纯函数：requirement + dal 生产凭据 → 注入值列表，内部解密+增强）+ `validate_requirements`（协议匹配 / 三元组去重 / platform↔kind / field↔enhancer 互斥 / enhancer↔kind supports 矩阵 / 显式默认幂等归一 / binding↔消费端类型含 Internal）+ `credential_missing_json`（编排层引导） |
+| 新建 | src/pkg/credential/（mod.rs + enhancer.rs） | **凭据域纯值加工模块，零数据访问**（D17），不隶属 tool_registry（依赖方向 tool_registry → credential 单向）：`decrypt_detail`（按 kind 解密，与 encrypt_sensitive 对称）+ §2.4 `CredentialEnhancer` trait + 三个内置增强器（BearerToken / BasicAuth / AccessToken 含 §2.5.1 OAuthTokenManager，OnceLock 仅内部缓存）+ `FetchedCredential`（含 attributes，D24）+ `ResolvedCredential`（enhance / canonical_value 查找链 detail→attributes→primary_secret + 默认装配规则）+ `resolve_requirements(requirements, fetched)`（纯函数：requirement + dal 生产凭据 → 注入值列表，内部解密+增强）+ `validate_requirements`（协议匹配 / 三元组去重 / platform↔kind / field↔enhancer 互斥 / enhancer↔kind supports 矩阵 / 显式默认幂等归一 / binding↔消费端类型含 Internal）+ `credential_missing_json`（编排层引导） |
 | 修改 | [tool.rs](../../src/models/tool.rs) | `CoreTool` trait 增生命周期方法（D22）：`credential_requirements(&self) -> &[CredentialRequirement]`（默认空切片）+ `check(&mut self, resolved: &[ResolvedRequirement]) -> Result<()>`（默认空实现）；各协议实现覆写 |
 | 修改 | [mod.rs](../../src/pkg/tool_registry/mod.rs#L90-L108) | `ToolRegistry::create_tool` 后编排辅助：`credential_requirements(&self, po) -> Vec<...>`（Builtin 查 factory 静态声明 / Mcp·Http 从 config 解析）——domain 读需求统一入口 |
 | 修改 | [gh_cli.rs](../../src/pkg/tool_registry/gh_cli.rs#L50-L64) | **删除** `GhCredentialResolver` trait / RESOLVER OnceLock / set·get_credential_resolver；CoreTool 实现改 D22 生命周期：静态 requirements `[GithubToken]` + `check` 存 token 字段；`call` 内取数段（L350-L362）删除，改用实例字段（D17） |
@@ -374,7 +374,7 @@ pub struct CredentialDetailOAuth {
 |------|------|------|
 | 修改 | [mcp_tests.rs](../../src/pkg/tool_registry/mcp_tests.rs) | env 注入命中 / 缺凭据引导 / platform 匹配用例；存量 env 用例改写 |
 | 修改 | [http_tests.rs](../../src/pkg/tool_registry/http_tests.rs) | 敏感名静态值与模板拒绝 / header·query 注入 / BasicAuth canonical 注入用例 |
-| 新增（同文件 mod tests） | src/pkg/tool_registry/credential_requirement.rs | requirements 校验（协议匹配、三元组去重、platform↔kind、field↔enhancer 互斥、supports 矩阵含专用 kind 拒绝、显式默认幂等归一、Internal binding 合法性）/ resolve_requirements 纯函数（oauth → access_token、user_password → Basic 串、generic_token → token、field 提取、attributes 查找链 D24）/ BearerToken 包裹组合（"Bearer " + access_token）/ OAuthTokenManager（缓存命中、过期刷新、失败不缓存、SSRF 拒绝）用例——全纯函数构造，无需 DB / mock provider |
+| 新增（内嵌 mod tests） | src/pkg/credential/{mod,enhancer}.rs | requirements 校验（协议匹配、三元组去重、platform↔kind、field↔enhancer 互斥、supports 矩阵含专用 kind 拒绝、显式默认幂等归一、Internal binding 合法性）/ resolve_requirements 纯函数（oauth → access_token、user_password → Basic 串、generic_token → token、field 提取、attributes 查找链 D24）/ BearerToken 包裹组合（"Bearer " + access_token）/ OAuthTokenManager（缓存命中、过期刷新、失败不缓存、SSRF 拒绝）用例——全纯函数构造，无需 DB / mock provider |
 | 新增（domain 侧） | domain/finance/identity_credential.rs（内嵌 tests） | resolve_tool_credentials 编排：生产路由（LarkApp 走 lark dal 含 attributes / 其余走 user dal）、find_default 逐条命中 / 未命中 None / tavily 共享 config 兜底合成（sqlx 内存池） |
 | 修改 | [mcp_server_test.rs](../../src/models/mcp_server_test.rs)、[response_test.rs](../../src/handlers/finance/mcp_server/response_test.rs)、[list_mcp_servers_test.rs](../../src/handlers/finance/mcp_server/list_mcp_servers_test.rs) | env/headers 删除后构造与断言同步改写 |
 | 修改 | [identity_credentials.rs](../../common/src/models/identity_credentials.rs#L326-L722)（内嵌 tests） | GenericToken / OAuth / UserPassword serde / 加密 / 补丁 / primary_secret / platform 匹配规则用例 |
