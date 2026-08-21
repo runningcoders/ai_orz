@@ -127,7 +127,7 @@ pub struct OAuthTokenManager {
     cache: Mutex<HashMap<String, CachedToken>>,
 }
 
-fn oauth_token_manager() -> &'static OAuthTokenManager {
+pub(crate) fn oauth_token_manager() -> &'static OAuthTokenManager {
     static MANAGER: OnceLock<OAuthTokenManager> = OnceLock::new();
     MANAGER.get_or_init(|| OAuthTokenManager {
         cache: Mutex::new(HashMap::new()),
@@ -135,6 +135,18 @@ fn oauth_token_manager() -> &'static OAuthTokenManager {
 }
 
 impl OAuthTokenManager {
+    /// 测试辅助：预填缓存（命中分支免网络）
+    #[cfg(test)]
+    pub(crate) fn seed_for_test(&self, credential_id: &str, token: &str, ttl: Duration) {
+        self.cache.lock().unwrap().insert(
+            credential_id.to_string(),
+            CachedToken {
+                token: token.to_string(),
+                expires_at: Instant::now() + ttl,
+            },
+        );
+    }
+
     /// 取 access_token：缓存命中直返，否则走 refresh_token 换取
     pub async fn get_access_token(
         &self,
