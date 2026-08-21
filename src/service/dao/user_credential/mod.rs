@@ -29,6 +29,9 @@ pub struct UserCredentialQuery {
     pub user_id: Option<String>,
     /// 按凭证类型查询
     pub kind: Option<CredentialKind>,
+    /// 按平台精确匹配（generic 类凭据过滤；None 表示不限该条件——
+    /// 与 find_default 的 platform 语义不同：find_default 的 None 要求 platform IS NULL）
+    pub platform: Option<String>,
     /// 按可见性查询（private / public）
     pub visibility: Option<CredentialVisibility>,
     /// 按默认标记查询（作用域由 visibility 派生）
@@ -71,15 +74,17 @@ pub trait UserCredentialDao: Send + Sync {
     /// 按主键查找活跃凭证（status != 0；引用/解析语义下软删凭证视为不存在）
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<UserCredentialPo>>;
 
-    /// 解析用户某类型可用凭证（§2.3 链 2→5 单点实现，作用域优先）
+    /// 解析用户某类型可用凭证（§2.3 链 2→5 单点实现，作用域优先；匹配键 (kind, platform) 二元组）
     ///
     /// 链序：个人默认 > 个人其他活跃（创建序）> 组织默认 > 组织其他 public 活跃；
     /// org 作用域经 JOIN users 取目标用户组织，调用方无需先查用户。
+    /// platform：Some(p) 匹配 platform = p 的行；None 匹配 platform IS NULL（专用 kind 语义）。
     async fn find_default(
         &self,
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<Option<UserCredentialPo>>;
 
     /// 设立默认凭证（同事务清旧立新；作用域由目标凭据 visibility 派生）
@@ -89,14 +94,19 @@ pub trait UserCredentialDao: Send + Sync {
     /// 目标不存在或已软删时返回 NotFound。
     async fn set_default(&self, ctx: RequestContext, credential_id: &str) -> Result<()>;
 
-    /// 取消个人默认（该用户该 kind 的 private 默认清位，无默认时幂等无操作）
+    /// 取消个人默认（该用户该 (kind, platform) 的 private 默认清位，无默认时幂等无操作；
+    /// platform 语义同 find_default：None 匹配 platform IS NULL）
     async fn clear_default(
         &self,
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<()>;
 }
 
 pub mod sqlite;
 pub use self::sqlite::{dao, init, new};
+
+#[cfg(test)]
+mod sqlite_test;

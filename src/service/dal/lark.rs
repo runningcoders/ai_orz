@@ -248,7 +248,7 @@ impl LarkMessageChannelDal {
         // 用户默认 Lark 凭证（可能为 None：未设默认且无活跃凭证）
         let default_id = self
             .credential_dao
-            .find_default(query_ctx.clone(), &user_id, CredentialKind::LarkApp)
+            .find_default(query_ctx.clone(), &user_id, CredentialKind::LarkApp, None)
             .await?
             .map(|po| po.id);
         let query = MessageChannelQuery {

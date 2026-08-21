@@ -123,23 +123,26 @@ pub trait UserDal: Send + Sync {
     /// 软删除凭证（默认标记联动清除）
     async fn soft_delete_credential(&self, ctx: RequestContext, id: &str) -> Result<()>;
 
-    /// 解析用户某类型可用凭证（§2.3 链 2→5 单点：个人默认 > 个人其他 > 组织默认 > 组织其他 public）
+    /// 解析用户某类型可用凭证（§2.3 链 2→5 单点：个人默认 > 个人其他 > 组织默认 > 组织其他 public；
+    /// 匹配键 (kind, platform) 二元组，platform None = IS NULL 专用 kind 语义）
     async fn find_default_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<Option<UserCredential>>;
 
     /// 设立默认凭证（作用域由目标凭据 visibility 派生；同事务清旧立新）
     async fn set_default_credential(&self, ctx: RequestContext, credential_id: &str) -> Result<()>;
 
-    /// 取消个人默认（该用户该 kind 的 private 默认清位，无默认时幂等无操作）
+    /// 取消个人默认（该用户该 (kind, platform) 的 private 默认清位，无默认时幂等无操作）
     async fn clear_default_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<()>;
 }
 
@@ -276,10 +279,11 @@ impl UserDal for UserDalImpl {
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<Option<UserCredential>> {
         Ok(self
             .credential_dao
-            .find_default(ctx, user_id, kind)
+            .find_default(ctx, user_id, kind, platform)
             .await?
             .map(UserCredential::from_po))
     }
@@ -293,8 +297,11 @@ impl UserDal for UserDalImpl {
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<()> {
-        self.credential_dao.clear_default(ctx, user_id, kind).await
+        self.credential_dao
+            .clear_default(ctx, user_id, kind, platform)
+            .await
     }
 }
 
@@ -313,7 +320,7 @@ impl crate::pkg::tool_registry::gh_cli::GhCredentialResolver for GhDalCredential
             return Ok(None);
         };
         let Some(credential) = dal()
-            .find_default_credential(ctx.clone(), &user_id, CredentialKind::GithubToken)
+            .find_default_credential(ctx.clone(), &user_id, CredentialKind::GithubToken, None)
             .await?
         else {
             return Ok(None);
@@ -343,7 +350,7 @@ impl crate::pkg::tool_registry::tavily_search::TavilyCredentialResolver
             return Ok(None);
         };
         let Some(credential) = dal()
-            .find_default_credential(ctx.clone(), &user_id, CredentialKind::TavilyKey)
+            .find_default_credential(ctx.clone(), &user_id, CredentialKind::TavilyKey, None)
             .await?
         else {
             return Ok(None);

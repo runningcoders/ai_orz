@@ -212,11 +212,16 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 false
             }
             CredentialKind::GithubToken => user_dal
-                .find_default_credential(ctx.clone(), user_id, CredentialKind::GithubToken)
+                .find_default_credential(ctx.clone(), user_id, CredentialKind::GithubToken, None)
                 .await?
                 .is_some_and(|active| active.id() == credential_id),
             // TavilyKey：无渠道引用与本地运行态，直接删除
             CredentialKind::TavilyKey => false,
+            // 泛型类新凭据（GenericToken/OAuth/UserPassword）：无渠道引用与本地运行态，
+            // 直接删除（创建/管理 API 另起 plan 落地）
+            CredentialKind::GenericToken | CredentialKind::OAuth | CredentialKind::UserPassword => {
+                false
+            }
         };
 
         // 软删（DAO 联动清默认标记：删掉的凭证若为默认，对应作用域默认槽位自动空出）
@@ -253,7 +258,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         let user_dal = self.user_dal()?.clone();
         match credential_id.map(str::trim).filter(|s| !s.is_empty()) {
             // None/空白：取消该用户该类型个人默认（幂等）
-            None => user_dal.clear_default_credential(ctx, user_id, kind).await,
+            None => user_dal.clear_default_credential(ctx, user_id, kind, None).await,
             Some(credential_id) => {
                 let credential = self
                     .load_owned_credential(ctx.clone(), user_id, credential_id)

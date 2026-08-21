@@ -25,6 +25,8 @@ pub struct UserCredentialPo {
     pub user_id: String,
     /// 凭证类型（TEXT 字符串枚举）
     pub kind: CredentialKind,
+    /// 平台标识（generic 类 kind 必填、专用 kind 为 NULL；匹配键 (kind, platform) 二元组）
+    pub platform: Option<String>,
     /// 用户自定义名称（仅展示，不参与解析）
     pub name: String,
     /// 凭证详情 JSON（secret 类字段落库前已加密）
@@ -64,6 +66,9 @@ impl UserCredentialPo {
             org_id,
             user_id,
             kind,
+            // generic 类凭据的 platform 由创建 API 落地时显式传入（另起 plan）；
+            // 既有专用 kind 路径恒为 None
+            platform: None,
             name,
             detail: Json(detail),
             visibility,
@@ -116,6 +121,11 @@ impl UserCredential {
     /// 凭证类型
     pub fn kind(&self) -> CredentialKind {
         self.po.kind
+    }
+
+    /// 平台标识（generic 类 kind 必填、专用 kind 为 NULL；匹配键 (kind, platform) 二元组）
+    pub fn platform(&self) -> Option<&str> {
+        self.po.platform.as_deref()
     }
 
     /// 凭证名称（仅展示）

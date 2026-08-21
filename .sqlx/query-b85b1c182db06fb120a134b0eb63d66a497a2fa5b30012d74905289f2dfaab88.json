@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE user_credentials\nSET platform = ?, name = ?, detail = ?, visibility = ?, is_default = ?, modified_by = ?, updated_at = ?\nWHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "b85b1c182db06fb120a134b0eb63d66a497a2fa5b30012d74905289f2dfaab88"
+}

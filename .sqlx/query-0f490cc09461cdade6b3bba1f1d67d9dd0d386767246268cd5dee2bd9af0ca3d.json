@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, org_id, user_id,\n    kind as \"kind: CredentialKind\", name, detail as \"detail: Json<common::models::CredentialDetail>\",\n    visibility as \"visibility: CredentialVisibility\", is_default as \"is_default: bool\", status as \"status: i32\",\n    created_by, modified_by, created_at, updated_at\nFROM user_credentials WHERE id = ? AND status != 0\n            ",
+  "query": "\nSELECT id, org_id, user_id,\n    kind as \"kind: CredentialKind\", platform, name, detail as \"detail: Json<common::models::CredentialDetail>\",\n    visibility as \"visibility: CredentialVisibility\", is_default as \"is_default: bool\", status as \"status: i32\",\n    created_by, modified_by, created_at, updated_at\nFROM user_credentials WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -24,48 +24,53 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "platform",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "detail: Json<common::models::CredentialDetail>",
+        "name": "name",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "visibility: CredentialVisibility",
+        "name": "detail: Json<common::models::CredentialDetail>",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "is_default: bool",
+        "name": "visibility: CredentialVisibility",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "status: i32",
+        "name": "is_default: bool",
         "ordinal": 8,
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "status: i32",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 12,
+        "ordinal": 13,
         "type_info": "Integer"
       }
     ],
@@ -77,6 +82,7 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -88,5 +94,5 @@
       false
     ]
   },
-  "hash": "606c30b0695312adce38a4620bada6a3375d4715322cc8ad802b7e5d8a422435"
+  "hash": "0f490cc09461cdade6b3bba1f1d67d9dd0d386767246268cd5dee2bd9af0ca3d"
 }

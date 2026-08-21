@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT uc.id, uc.org_id, uc.user_id,\n    uc.kind as \"kind: CredentialKind\", uc.name, uc.detail as \"detail: Json<common::models::CredentialDetail>\",\n    uc.visibility as \"visibility: CredentialVisibility\", uc.is_default as \"is_default: bool\", uc.status as \"status: i32\",\n    uc.created_by, uc.modified_by, uc.created_at, uc.updated_at\nFROM user_credentials uc, users u\nWHERE u.id = ? AND uc.kind = ? AND uc.status = 1\n  AND (uc.user_id = u.id OR (uc.org_id = u.organization_id AND uc.visibility = ?))\nORDER BY (uc.user_id = u.id) DESC, uc.is_default DESC, uc.created_at ASC\nLIMIT 1\n            ",
+  "query": "\nSELECT uc.id, uc.org_id, uc.user_id,\n    uc.kind as \"kind: CredentialKind\", uc.platform, uc.name, uc.detail as \"detail: Json<common::models::CredentialDetail>\",\n    uc.visibility as \"visibility: CredentialVisibility\", uc.is_default as \"is_default: bool\", uc.status as \"status: i32\",\n    uc.created_by, uc.modified_by, uc.created_at, uc.updated_at\nFROM user_credentials uc, users u\nWHERE u.id = ? AND uc.kind = ? AND uc.platform IS ? AND uc.status = 1\n  AND (uc.user_id = u.id OR (uc.org_id = u.organization_id AND uc.visibility = ?))\nORDER BY (uc.user_id = u.id) DESC, uc.is_default DESC, uc.created_at ASC\nLIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -24,59 +24,65 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "platform",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "detail: Json<common::models::CredentialDetail>",
+        "name": "name",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "visibility: CredentialVisibility",
+        "name": "detail: Json<common::models::CredentialDetail>",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "is_default: bool",
+        "name": "visibility: CredentialVisibility",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "status: i32",
+        "name": "is_default: bool",
         "ordinal": 8,
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "status: i32",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 12,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 12,
+        "ordinal": 13,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 4
     },
     "nullable": [
       false,
       false,
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -88,5 +94,5 @@
       false
     ]
   },
-  "hash": "b61909dbf4207d2fe94a5796d3bcd5d15ff86b3c36a37f093b21068b4c16905c"
+  "hash": "933941d95782d2bbc722416a24ae383f68e562859bd329b50edfc6c29849a551"
 }

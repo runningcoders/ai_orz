@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO user_credentials (\n    id, org_id, user_id, kind, platform, name, detail, visibility, is_default, status,\n    created_by, modified_by, created_at, updated_at\n)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 14
+    },
+    "nullable": []
+  },
+  "hash": "c8f6045f90a7e3845968f8f9b68f9d7602d12ec1461ffdd316c2e6a191b90647"
+}

@@ -37,7 +37,7 @@ struct UserCredentialDaoSqliteImpl;
 
 /// QueryBuilder 运行时查询列集（纯列名；类型解码由 FromRow + sqlx::Type 完成，
 /// `as "col: Type"` 标注语法仅 query! 宏有效，运行时会把列名变成字面量）
-const CREDENTIAL_COLUMNS: &str = "id, org_id, user_id, kind, name, detail, \
+const CREDENTIAL_COLUMNS: &str = "id, org_id, user_id, kind, platform, name, detail, \
     visibility, is_default, status, created_by, modified_by, created_at, updated_at";
 
 #[async_trait]
@@ -46,15 +46,16 @@ impl UserCredentialDao for UserCredentialDaoSqliteImpl {
         sqlx::query!(
             r#"
 INSERT INTO user_credentials (
-    id, org_id, user_id, kind, name, detail, visibility, is_default, status,
+    id, org_id, user_id, kind, platform, name, detail, visibility, is_default, status,
     created_by, modified_by, created_at, updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             po.id,
             po.org_id,
             po.user_id,
             po.kind as _,
+            po.platform,
             po.name,
             po.detail as _,
             po.visibility as _,
@@ -76,9 +77,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         sqlx::query!(
             r#"
 UPDATE user_credentials
-SET name = ?, detail = ?, visibility = ?, is_default = ?, modified_by = ?, updated_at = ?
+SET platform = ?, name = ?, detail = ?, visibility = ?, is_default = ?, modified_by = ?, updated_at = ?
 WHERE id = ?
             "#,
+            po.platform,
             po.name,
             po.detail as _,
             po.visibility as _,
@@ -167,7 +169,7 @@ WHERE id = ?
             UserCredentialPo,
             r#"
 SELECT id, org_id, user_id,
-    kind as "kind: CredentialKind", name, detail as "detail: Json<common::models::CredentialDetail>",
+    kind as "kind: CredentialKind", platform, name, detail as "detail: Json<common::models::CredentialDetail>",
     visibility as "visibility: CredentialVisibility", is_default as "is_default: bool", status as "status: i32",
     created_by, modified_by, created_at, updated_at
 FROM user_credentials WHERE id = ? AND status != 0
@@ -185,26 +187,29 @@ FROM user_credentials WHERE id = ? AND status != 0
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<Option<UserCredentialPo>> {
-        // 解析链 §2.3 链 2→5 单点（作用域优先）：
+        // 解析链 §2.3 链 2→5 单点（作用域优先；匹配键 (kind, platform) 二元组）：
         // 候选 = 本人活跃凭据 + 同 org public 活跃凭据（org 经 JOIN users 取得）；
         // 排序键依次为：个人作用域优先（user_id 匹配 DESC）→ 作用域内默认优先
-        // （is_default DESC）→ 创建序（created_at ASC）
+        // （is_default DESC）→ 创建序（created_at ASC）；
+        // `platform IS ?`：NULL 安全等值（None 匹配 platform IS NULL——专用 kind 语义）
         let po = sqlx::query_as!(
             UserCredentialPo,
             r#"
 SELECT uc.id, uc.org_id, uc.user_id,
-    uc.kind as "kind: CredentialKind", uc.name, uc.detail as "detail: Json<common::models::CredentialDetail>",
+    uc.kind as "kind: CredentialKind", uc.platform, uc.name, uc.detail as "detail: Json<common::models::CredentialDetail>",
     uc.visibility as "visibility: CredentialVisibility", uc.is_default as "is_default: bool", uc.status as "status: i32",
     uc.created_by, uc.modified_by, uc.created_at, uc.updated_at
 FROM user_credentials uc, users u
-WHERE u.id = ? AND uc.kind = ? AND uc.status = 1
+WHERE u.id = ? AND uc.kind = ? AND uc.platform IS ? AND uc.status = 1
   AND (uc.user_id = u.id OR (uc.org_id = u.organization_id AND uc.visibility = ?))
 ORDER BY (uc.user_id = u.id) DESC, uc.is_default DESC, uc.created_at ASC
 LIMIT 1
             "#,
             user_id,
             kind as _,
+            platform,
             CredentialVisibility::Public as _,
         )
         .fetch_optional(ctx.db_pool())
@@ -214,13 +219,13 @@ LIMIT 1
     }
 
     async fn set_default(&self, ctx: RequestContext, credential_id: &str) -> Result<()> {
-        // 作用域由目标凭据 visibility 派生：private=个人默认(user_id+kind) /
-        // public=组织默认(org_id+kind)；先取目标再同事务清旧立新
+        // 作用域由目标凭据 visibility 派生：private=个人默认(user_id+kind+platform) /
+        // public=组织默认(org_id+kind+platform)；先取目标再同事务清旧立新
         let target = sqlx::query_as!(
             UserCredentialPo,
             r#"
 SELECT id, org_id, user_id,
-    kind as "kind: CredentialKind", name, detail as "detail: Json<common::models::CredentialDetail>",
+    kind as "kind: CredentialKind", platform, name, detail as "detail: Json<common::models::CredentialDetail>",
     visibility as "visibility: CredentialVisibility", is_default as "is_default: bool", status as "status: i32",
     created_by, modified_by, created_at, updated_at
 FROM user_credentials WHERE id = ? AND status != 0
@@ -233,6 +238,8 @@ FROM user_credentials WHERE id = ? AND status != 0
 
         let now = utils::current_timestamp_ms();
         let operator = ctx.caller_id_or_system();
+        // 局部绑定避免 sqlx 宏内临时 Option<&str> 生命周期问题
+        let target_platform = target.platform.as_deref();
         let mut tx = ctx.db_pool().begin().await?;
 
         // 清同作用域旧默认（作用域列组合由 visibility 派生）
@@ -241,12 +248,13 @@ FROM user_credentials WHERE id = ? AND status != 0
                 sqlx::query!(
                     r#"
 UPDATE user_credentials SET is_default = 0, modified_by = ?, updated_at = ?
-WHERE user_id = ? AND kind = ? AND visibility = ? AND is_default = 1 AND status = 1
+WHERE user_id = ? AND kind = ? AND platform IS ? AND visibility = ? AND is_default = 1 AND status = 1
                     "#,
                     operator,
                     now,
                     target.user_id,
                     target.kind as _,
+                    target_platform,
                     CredentialVisibility::Private as _,
                 )
                 .execute(&mut *tx)
@@ -256,12 +264,13 @@ WHERE user_id = ? AND kind = ? AND visibility = ? AND is_default = 1 AND status 
                 sqlx::query!(
                     r#"
 UPDATE user_credentials SET is_default = 0, modified_by = ?, updated_at = ?
-WHERE org_id = ? AND kind = ? AND visibility = ? AND is_default = 1 AND status = 1
+WHERE org_id = ? AND kind = ? AND platform IS ? AND visibility = ? AND is_default = 1 AND status = 1
                     "#,
                     operator,
                     now,
                     target.org_id,
                     target.kind as _,
+                    target_platform,
                     CredentialVisibility::Public as _,
                 )
                 .execute(&mut *tx)
@@ -291,18 +300,20 @@ WHERE id = ? AND status = 1
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
     ) -> Result<()> {
         let operator = ctx.caller_id_or_system();
         let now = utils::current_timestamp_ms();
         sqlx::query!(
             r#"
 UPDATE user_credentials SET is_default = 0, modified_by = ?, updated_at = ?
-WHERE user_id = ? AND kind = ? AND visibility = ? AND is_default = 1 AND status = 1
+WHERE user_id = ? AND kind = ? AND platform IS ? AND visibility = ? AND is_default = 1 AND status = 1
             "#,
             operator,
             now,
             user_id,
             kind as _,
+            platform,
             CredentialVisibility::Private as _,
         )
         .execute(ctx.db_pool())
@@ -328,6 +339,10 @@ fn push_query_filters<'args>(
     }
     if let Some(kind) = query.kind {
         builder.push(" AND kind = ").push_bind(kind);
+    }
+    // 列表过滤语义：Some(p) 精确匹配、None 不限（与 find_default 的 IS NULL 语义不同）
+    if let Some(platform) = &query.platform {
+        builder.push(" AND platform = ").push_bind(platform.clone());
     }
     if let Some(visibility) = query.visibility {
         builder.push(" AND visibility = ").push_bind(visibility);
