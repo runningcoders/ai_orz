@@ -8,7 +8,6 @@ use crate::pkg::RequestContext;
 use crate::service::dao::mcp_server::{self, McpServerDao};
 use common::error::Result;
 use sqlx::SqlitePool;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 fn new_ctx(user_id: &str, pool: SqlitePool) -> RequestContext {
@@ -28,7 +27,15 @@ fn create_stdio_server(name: &str, creator: &str) -> McpServerPo {
             "-y".to_string(),
             "@modelcontextprotocol/server-filesystem".to_string(),
         ],
-        env: BTreeMap::from([("MCP_TEST_ENV".to_string(), "test-value".to_string())]),
+        credential_requirements: vec![common::models::CredentialRequirement {
+            kind: common::models::CredentialKind::GenericToken,
+            platform: Some("linear".to_string()),
+            field: None,
+            enhancer: None,
+            binding: common::models::CredentialBinding::Env {
+                name: "LINEAR_API_TOKEN".to_string(),
+            },
+        }],
         timeout_ms: 30_000,
         ..McpServerConfig::default_stdio()
     };
@@ -45,7 +52,6 @@ fn create_stdio_server(name: &str, creator: &str) -> McpServerPo {
 fn create_http_server(name: &str, creator: &str) -> McpServerPo {
     let config = McpServerConfig {
         url: Some("https://mcp.example.com/mcp".to_string()),
-        headers: BTreeMap::from([("X-Test-Header".to_string(), "test-value".to_string())]),
         timeout_ms: 30_000,
         ..McpServerConfig::default_streamable_http()
     };
@@ -74,9 +80,11 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     assert_eq!(found.transport, McpTransport::Stdio);
     assert_eq!(found.status, McpServerStatus::Enabled);
     assert_eq!(found.config().command.as_deref(), Some("npx"));
+    // 凭据需求声明持久化往返（env/headers 已移除，D14）
+    assert_eq!(found.config().credential_requirements.len(), 1);
     assert_eq!(
-        found.config().env.get("MCP_TEST_ENV"),
-        Some(&"test-value".to_string())
+        found.config().credential_requirements[0].platform.as_deref(),
+        Some("linear")
     );
 
     Ok(())

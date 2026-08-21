@@ -5,7 +5,6 @@ use crate::enums::{McpServerStatus, McpTransport};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// MCP Server connection config DTO.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -15,14 +14,11 @@ pub struct McpServerConfigDto {
     /// stdio transport args.
     #[serde(default)]
     pub args: Vec<String>,
-    /// stdio transport explicit env vars. Defaults to not inheriting process env.
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
     /// streamable HTTP URL.
     pub url: Option<String>,
-    /// streamable HTTP headers.
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
+    /// Credential requirements (type-level declarations, non-sensitive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<crate::models::CredentialRequirement>,
     /// Call timeout in milliseconds.
     pub timeout_ms: Option<u64>,
     /// Connection timeout in milliseconds.

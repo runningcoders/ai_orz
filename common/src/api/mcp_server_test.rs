@@ -3,12 +3,19 @@ use crate::api::{
     PaginationParams, UpdateMcpServerRequest, UpdateMcpServerStatusRequest,
 };
 use crate::enums::{McpServerStatus, McpTransport};
-use std::collections::BTreeMap;
+use crate::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 
 #[test]
 fn mcp_server_api_dtos_support_management_round_trip_shape() {
-    let mut env = BTreeMap::new();
-    env.insert("API_TOKEN".to_string(), "placeholder-token".to_string());
+    let requirements = vec![CredentialRequirement {
+        kind: CredentialKind::GenericToken,
+        platform: Some("linear".to_string()),
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Env {
+            name: "LINEAR_API_TOKEN".to_string(),
+        },
+    }];
 
     let create = CreateMcpServerRequest {
         name: "filesystem".to_string(),
@@ -19,9 +26,8 @@ fn mcp_server_api_dtos_support_management_round_trip_shape() {
                 "-y".to_string(),
                 "@modelcontextprotocol/server-filesystem".to_string(),
             ],
-            env: env.clone(),
             url: None,
-            headers: BTreeMap::new(),
+            credential_requirements: requirements.clone(),
             timeout_ms: Some(30_000),
             connect_timeout_ms: Some(10_000),
             response_max_bytes: Some(10 * 1024 * 1024),
@@ -29,7 +35,7 @@ fn mcp_server_api_dtos_support_management_round_trip_shape() {
     };
 
     assert_eq!(create.transport, McpTransport::Stdio);
-    assert_eq!(create.config.env, env);
+    assert_eq!(create.config.credential_requirements, requirements);
 
     let update = UpdateMcpServerRequest {
         id: "server-1".to_string(),

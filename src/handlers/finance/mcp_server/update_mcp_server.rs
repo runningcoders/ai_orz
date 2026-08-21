@@ -3,6 +3,7 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerRequest, UpdateMcpServerResponse};
 
+use crate::models::mcp_server::McpTransport;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use common::error::Result;
@@ -36,7 +37,18 @@ pub async fn update_mcp_server(
         server.po.transport = to_model_transport(transport);
     }
     if let Some(config) = params.config {
-        server.po.set_config(&to_model_config(config));
+        let model_config = to_model_config(config);
+        // 配置期校验（作用域取更新后生效的 transport）
+        crate::pkg::credential::validate_requirements(
+            &model_config.credential_requirements,
+            match server.po.transport {
+                McpTransport::Stdio => common::models::CredentialRequirementScope::McpStdio,
+                McpTransport::StreamableHttp => {
+                    common::models::CredentialRequirementScope::McpHttp
+                }
+            },
+        )?;
+        server.po.set_config(&model_config);
     }
 
     let server_id = server.po.id.clone();

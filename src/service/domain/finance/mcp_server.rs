@@ -84,22 +84,8 @@ fn merge_redacted_config(
     mut incoming: McpServerConfig,
     existing: McpServerConfig,
 ) -> McpServerConfig {
-    for (key, value) in incoming.env.iter_mut() {
-        if value == REDACTED_CONFIG_VALUE
-            && let Some(existing_value) = existing.env.get(key)
-        {
-            *value = existing_value.clone();
-        }
-    }
-
-    for (key, value) in incoming.headers.iter_mut() {
-        if value == REDACTED_CONFIG_VALUE
-            && let Some(existing_value) = existing.headers.get(key)
-        {
-            *value = existing_value.clone();
-        }
-    }
-
+    // env/headers 字段已移除（D14：凭据需求声明替代明文凭据），
+    // 仅剩 URL 的 REDACTED 占位符保留逻辑
     if incoming
         .url
         .as_deref()

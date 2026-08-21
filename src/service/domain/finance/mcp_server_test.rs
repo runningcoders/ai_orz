@@ -10,14 +10,8 @@ mod tests {
     use crate::pkg::RequestContext;
     use crate::service::domain::finance;
     use sqlx::SqlitePool;
-    use std::collections::BTreeMap;
 
     fn stdio_server(name: &str, creator: &str) -> McpServer {
-        let mut env = BTreeMap::new();
-        env.insert("MCP_API_TOKEN".to_string(), "test-token".to_string());
-        let mut headers = BTreeMap::new();
-        headers.insert("Authorization".to_string(), "Bearer test-token".to_string());
-
         McpServer::new(
             "".to_string(),
             name.to_string(),
@@ -28,9 +22,16 @@ mod tests {
                     "-y".to_string(),
                     "@modelcontextprotocol/server-memory".to_string(),
                 ],
-                env,
                 url: Some("https://example.com/mcp?api_key=test-token#frag".to_string()),
-                headers,
+                credential_requirements: vec![common::models::CredentialRequirement {
+                    kind: common::models::CredentialKind::GenericToken,
+                    platform: Some("linear".to_string()),
+                    field: None,
+                    enhancer: None,
+                    binding: common::models::CredentialBinding::Env {
+                        name: "LINEAR_API_TOKEN".to_string(),
+                    },
+                }],
                 ..McpServerConfig::default_stdio()
             },
             Some(creator.to_string()),
@@ -105,13 +106,11 @@ mod tests {
         assert_eq!(stored.po.transport, McpTransport::Stdio);
         let stored_config = stored.po.config();
         assert_eq!(stored_config.command, Some("npx".to_string()));
+        // 凭据需求声明持久化往返（env/headers 已移除，D14）
+        assert_eq!(stored_config.credential_requirements.len(), 1);
         assert_eq!(
-            stored_config.env.get("MCP_API_TOKEN"),
-            Some(&REDACTED_CONFIG_VALUE.to_string())
-        );
-        assert_eq!(
-            stored_config.headers.get("Authorization"),
-            Some(&REDACTED_CONFIG_VALUE.to_string())
+            stored_config.credential_requirements[0].platform.as_deref(),
+            Some("linear")
         );
         assert_eq!(
             stored_config.url,
@@ -154,13 +153,11 @@ mod tests {
             .expect("dal get should succeed")
             .expect("server should still exist");
         let persisted_config = persisted.po.config();
+        // requirements 为非敏感声明：更新往返原样保留（无 REDACTED 占位符语义）
+        assert_eq!(persisted_config.credential_requirements.len(), 1);
         assert_eq!(
-            persisted_config.env.get("MCP_API_TOKEN"),
-            Some(&"test-token".to_string())
-        );
-        assert_eq!(
-            persisted_config.headers.get("Authorization"),
-            Some(&"Bearer test-token".to_string())
+            persisted_config.credential_requirements[0].platform.as_deref(),
+            Some("linear")
         );
         assert_eq!(
             persisted_config.url,

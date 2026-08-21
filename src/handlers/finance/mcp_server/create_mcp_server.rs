@@ -4,7 +4,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{CreateMcpServerRequest, CreateMcpServerResponse};
 use uuid::Uuid;
 
-use crate::models::mcp_server::McpServer;
+use crate::models::mcp_server::{McpServer, McpTransport};
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use common::error::Result;
@@ -23,11 +23,23 @@ pub async fn create_mcp_server(
     ctx: RequestContext,
     params: CreateMcpServerRequest,
 ) -> Result<CreateMcpServerResponse> {
+    let transport = to_model_transport(params.transport);
+    let config = to_model_config(params.config);
+    // 配置期校验：binding ↔ 协议 / platform ↔ kind / 三元组去重（单点 pkg::credential）
+    crate::pkg::credential::validate_requirements(
+        &config.credential_requirements,
+        match transport {
+            McpTransport::Stdio => common::models::CredentialRequirementScope::McpStdio,
+            McpTransport::StreamableHttp => {
+                common::models::CredentialRequirementScope::McpHttp
+            }
+        },
+    )?;
     let server = McpServer::new(
         Uuid::now_v7().to_string(),
         params.name,
-        to_model_transport(params.transport),
-        to_model_config(params.config),
+        transport,
+        config,
         Some(ctx.uid()),
     );
     let server_id = server.po.id.clone();

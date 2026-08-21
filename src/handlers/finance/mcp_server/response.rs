@@ -35,9 +35,8 @@ pub(super) fn to_model_config(config: McpServerConfigDto) -> McpServerConfig {
     McpServerConfig {
         command: config.command,
         args: config.args,
-        env: config.env,
         url: config.url,
-        headers: config.headers,
+        credential_requirements: config.credential_requirements,
         timeout_ms: config.timeout_ms.unwrap_or(30_000),
         connect_timeout_ms: config.connect_timeout_ms.unwrap_or(10_000),
         response_max_bytes: config.response_max_bytes.unwrap_or(10 * 1024 * 1024),
@@ -48,9 +47,8 @@ pub(super) fn to_config_dto(config: &McpServerConfig) -> McpServerConfigDto {
     McpServerConfigDto {
         command: config.command.clone(),
         args: config.args.clone(),
-        env: config.env.clone(),
         url: config.url.clone(),
-        headers: config.headers.clone(),
+        credential_requirements: config.credential_requirements.clone(),
         timeout_ms: Some(config.timeout_ms),
         connect_timeout_ms: Some(config.connect_timeout_ms),
         response_max_bytes: Some(config.response_max_bytes),

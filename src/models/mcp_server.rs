@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
-use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub const REDACTED_CONFIG_VALUE: &str = "[REDACTED]";
@@ -105,15 +104,12 @@ pub struct McpServerConfig {
     /// stdio transport args。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
-    /// stdio transport 显式环境变量；默认不继承系统环境。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub env: BTreeMap<String, String>,
-    /// streamable HTTP URL。
+    /// streamable HTTP URL（管理面展示走 URL 脱敏）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    /// streamable HTTP headers。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
+    /// 凭据需求声明（唯一注入来源；env/headers 字段已移除，D14）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<common::models::CredentialRequirement>,
     /// 调用超时。
     pub timeout_ms: u64,
     /// 连接超时。
@@ -127,9 +123,8 @@ impl McpServerConfig {
         Self {
             command: None,
             args: Vec::new(),
-            env: BTreeMap::new(),
             url: None,
-            headers: BTreeMap::new(),
+            credential_requirements: Vec::new(),
             timeout_ms: 30_000,
             connect_timeout_ms: 10_000,
             response_max_bytes: 10 * 1024 * 1024,
@@ -140,9 +135,8 @@ impl McpServerConfig {
         Self {
             command: None,
             args: Vec::new(),
-            env: BTreeMap::new(),
             url: None,
-            headers: BTreeMap::new(),
+            credential_requirements: Vec::new(),
             timeout_ms: 30_000,
             connect_timeout_ms: 10_000,
             response_max_bytes: 10 * 1024 * 1024,
@@ -151,16 +145,8 @@ impl McpServerConfig {
 
     pub fn redacted_for_management(&self) -> Self {
         let mut config = self.clone();
-        config.env = config
-            .env
-            .keys()
-            .map(|key| (key.clone(), REDACTED_CONFIG_VALUE.to_string()))
-            .collect();
-        config.headers = config
-            .headers
-            .keys()
-            .map(|key| (key.clone(), REDACTED_CONFIG_VALUE.to_string()))
-            .collect();
+        // requirements 为类型级非敏感声明，管理面直接展示；
+        // 敏感值不存在于本配置（凭据落 user_credentials，调用时按需解析注入）
         config.url = config.url.as_deref().map(redact_url_for_management);
         config
     }

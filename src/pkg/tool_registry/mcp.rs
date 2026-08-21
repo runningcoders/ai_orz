@@ -3,7 +3,7 @@
 //! MCP tools are database-registered tools. `ToolPo.config` stores only the
 //! binding from a standard tool record to an MCP server/tool pair:
 //! `{ "server_id": "...", "tool_name": "..." }`.
-//! Server connection details, credentials, headers, env, and commands belong to
+//! Server connection details, credentials, and commands belong to
 //! `McpServerPo.config` and must not be duplicated into each MCP tool config.
 
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
@@ -210,10 +210,9 @@ async fn connect_stdio_client(
 
     let mut process = Command::new(resolve_command_path(command)?);
     process.args(&config.args);
+    // 凭据注入经 CoreTool::check 生命周期写入 credential_injections（Task 3.2）；
+    // 此处保持零继承红线：不注入任何进程环境变量
     process.env_clear();
-    for (key, value) in &config.env {
-        process.env(key, value);
-    }
 
     let transport = TokioChildProcess::new(process)
         .map_err(|_e| anyhow!("failed to spawn MCP stdio server {}", server.id))?;
