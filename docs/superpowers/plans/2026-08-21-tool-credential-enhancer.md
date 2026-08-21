@@ -415,7 +415,7 @@ cargo test --lib
 - Modify: src/pkg/mod.rs（`pub mod credential;`）
 - Test: src/pkg/credential/mod.rs 内嵌 `mod tests`
 
-- [ ] **Step 1：创建模块**——纯值加工定位，骨架（本 Task 只含 doc 头 + 解密函数，后续 Task 追加增强器与编排）：
+- [x] **Step 1：创建模块**——纯值加工定位，骨架（本 Task 只含 doc 头 + 解密函数，后续 Task 追加增强器与编排）：
 
 ```rust
 //! 共享工具凭据需求运行时（设计：docs/design/tool_credential_requirement_design.md）
@@ -428,7 +428,7 @@ use common::error::Result;
 use common::models::CredentialDetail;
 ```
 
-- [ ] **Step 2：解密单点**（同文件追加）：
+- [x] **Step 2：解密单点**（同文件追加）：
 
 ```rust
 // ==================== 解密单点 ====================
@@ -463,7 +463,7 @@ pub(crate) fn decrypt_detail(detail: CredentialDetail) -> Result<CredentialDetai
 }
 ```
 
-- [ ] **Step 3：解密单测**——测试用「与 encrypt_sensitive 对称」断言（`encrypt_sensitive(|s| Ok(format!("enc:{}", s)))` 加密 → `decrypt_channel_secret` 真实解密需密钥；单测改用注入闭包思路不可行时，直接构造 `decrypt_channel_secret` 可解的样本或仅测非敏感字段透传 + 结构 match；参照 pkg::crypto 既有测试模式）：
+- [x] **Step 3：解密单测**——测试用「与 encrypt_sensitive 对称」断言（`encrypt_sensitive(|s| Ok(format!("enc:{}", s)))` 加密 → `decrypt_channel_secret` 真实解密需密钥；单测改用注入闭包思路不可行时，直接构造 `decrypt_channel_secret` 可解的样本或仅测非敏感字段透传 + 结构 match；参照 pkg::crypto 既有测试模式）：
 
 ```rust
 #[test]
@@ -479,7 +479,7 @@ fn decrypt_detail_passes_non_sensitive_fields() {
 
 > 上述测试写法以 pkg::crypto 现有测试基建为准：若已有 encrypt/decrypt 测试辅助（固定测试密钥），直接用它构造加密态样本做全字段断言；没有则本 Task 测试降级为「非敏感字段透传」+ 依赖 Phase 3 集成测试覆盖解密链路，注释说明。
 
-- [ ] **Step 4：`cargo test --lib pkg::credential` 通过 + 提交** `git commit -m "feat(credential): credential module skeleton with decrypt"`。
+- [x] **Step 4：`cargo test --lib pkg::credential` 通过 + 提交** `git commit -m "feat(credential): credential module skeleton with decrypt"`。
 
 ### Task 2.2：增强器 trait + 三个内置增强器 + OAuthTokenManager
 
@@ -487,7 +487,7 @@ fn decrypt_detail_passes_non_sensitive_fields() {
 - Create: src/pkg/credential/enhancer.rs
 - Modify: src/pkg/credential/mod.rs（`mod enhancer; pub use enhancer::*;`）
 
-- [ ] **Step 1：实现**（核心代码，enhancer.rs）：
+- [x] **Step 1：实现**（核心代码，enhancer.rs）：
 
 ```rust
 // ==================== 凭据增强器 ====================
@@ -572,7 +572,7 @@ fn enhancer_for(kind: CredentialEnhancerKind) -> Result<&'static dyn CredentialE
 }
 ```
 
-- [ ] **Step 2：OAuthTokenManager**（同文件追加；错误不含 token 值）：
+- [x] **Step 2：OAuthTokenManager**（同文件追加；错误不含 token 值）：
 
 ```rust
 // ==================== OAuth refresh → access_token（TTL 缓存，D13） ====================
@@ -669,7 +669,7 @@ impl OAuthTokenManager {
 
 > `resolve_to_addrs` 需要 host:port 形态——照 http.rs L149-L157 现网写法对齐（含 port 提取）；错误码变体以 common::error 实际为准。
 
-- [ ] **Step 3：测试**（内嵌 mod tests，mock endpoint 用 `TcpListener` 本地起 HTTP 线程——模式照 http_tests.rs；SSRF 用例注意：validate_target_url 默认拒绝内网 → mock endpoint 是 127.0.0.1 会被拒！**测试策略**：TokenManager 单测直接测缓存逻辑（预填缓存命中/过期刷新分支经注入 form 的方式难以绕过 SSRF）——改为：缓存命中/提前过期用「预填 cache」测；刷新链路（SSRF 拒绝）用内网地址断言 Err。真实刷新链路放集成路径（allow_local_network 分支不在本 API 暴露，属可接受覆盖缺口，注释说明）：
+- [x] **Step 3：测试**（内嵌 mod tests，mock endpoint 用 `TcpListener` 本地起 HTTP 线程——模式照 http_tests.rs；SSRF 用例注意：validate_target_url 默认拒绝内网 → mock endpoint 是 127.0.0.1 会被拒！**测试策略**：TokenManager 单测直接测缓存逻辑（预填缓存命中/过期刷新分支经注入 form 的方式难以绕过 SSRF）——改为：缓存命中/提前过期用「预填 cache」测；刷新链路（SSRF 拒绝）用内网地址断言 Err。真实刷新链路放集成路径（allow_local_network 分支不在本 API 暴露，属可接受覆盖缺口，注释说明）：
 
 ```rust
 #[tokio::test]
@@ -701,14 +701,14 @@ async fn token_manager_rejects_local_network_endpoint() {
 }
 ```
 
-- [ ] **Step 4：测试通过 + 提交** `git commit -m "feat(credential): credential enhancers with oauth token manager"`。
+- [x] **Step 4：测试通过 + 提交** `git commit -m "feat(credential): credential enhancers with oauth token manager"`。
 
 ### Task 2.3：ResolvedCredential + resolve_requirements 纯函数 + validate_requirements
 
 **Files:**
 - Modify: src/pkg/credential/mod.rs（追加）
 
-- [ ] **Step 1：实现**：
+- [x] **Step 1：实现**：
 
 ```rust
 // ==================== 凭据对象（代理增强） ====================
@@ -833,7 +833,7 @@ pub fn credential_missing_json(requirement: &CredentialRequirement) -> serde_jso
 
 > `format!("{:?}")` 的 kind 展示改用更友好的 `kind.as_str()`——若 `CredentialKind` 无 `as_str`，在 common 加一个（六值 match，snake_case）。
 
-- [ ] **Step 2：validate_requirements**（同文件）：
+- [x] **Step 2：validate_requirements**（同文件）：
 
 ```rust
 // ==================== 配置期校验（§2.1 校验清单单点） ====================
@@ -904,7 +904,7 @@ fn binding_name(binding: &CredentialBinding) -> &str {
 }
 ```
 
-- [ ] **Step 3：测试**（内嵌 mod tests，纯逻辑无需 DB）：
+- [x] **Step 3：测试**（内嵌 mod tests，纯逻辑无需 DB）：
 
 ```rust
 fn req(kind: CredentialKind, platform: Option<&str>, field: Option<&str>,
@@ -960,11 +960,11 @@ async fn resolve_requirements_skips_decrypt_for_plaintext() { ... } // already_d
 async fn resolve_requirements_rejects_length_mismatch() { ... }  // requirements 2 条 / fetched 1 条 → Err
 ```
 
-- [ ] **Step 4：全绿 + 提交** `git commit -m "feat(credential): resolved credential with pure resolve_requirements/validation"`。
+- [x] **Step 4：全绿 + 提交** `git commit -m "feat(credential): resolved credential with pure resolve_requirements/validation"`。
 
 **Phase 2 收口检查：**
-- [ ] `cargo test --lib pkg::credential` + clippy 全绿（全纯函数，无 DB / 无 OnceLock 注入）。
-- [ ] 模块 grep 确认：无 `RequestContext` / 无 `CredentialDataProvider` / 无 `set_` 注入注册（OAuthTokenManager 内部 OnceLock 缓存除外）。
+- [x] `cargo test --lib pkg::credential` + clippy 全绿（全纯函数，无 DB / 无 OnceLock 注入）。
+- [x] 模块 grep 确认：无 `RequestContext` / 无 `CredentialDataProvider` / 无 `set_` 注入注册（OAuthTokenManager 内部 OnceLock 缓存除外）。
 
 ---
 
