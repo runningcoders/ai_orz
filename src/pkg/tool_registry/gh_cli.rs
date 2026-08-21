@@ -4,8 +4,9 @@
 //!
 //! # 凭证与隔离
 //!
-//! - 凭证不在工具入参中传递：按 `ctx.user_id` 经 `GhCredentialResolver` 查该用户
-//!   凭证库中的 GitHub token（未绑定返回引导性错误）
+//! - 凭证不在工具入参中传递：凭据需求由工厂静态声明（个人 GitHub token），
+//!   domain 编排层（`resolve_tool_credentials`）据此取用户凭证，经
+//!   `CoreTool::check` 注入实例 `token` 字段（D17 工厂化，未注入 → 绑定引导）
 //! - HOME 隔离：每次执行注入 `HOME={base_data_path}/users/{user_id}`（用户维度统一 HOME，
 //!   见 `pkg::paths::user_home`），gh 配置落在 `{home}/.config/gh/`
 //! - 首次幂等登录：marker 记录 token 摘要，token 变更时自动重新
@@ -17,20 +18,20 @@
 //!
 //! # 分层说明
 //!
-//! `GhCredentialResolver` trait 定义在 pkg 层（无上层依赖），具体实现由
-//! user DAL 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
+//! 凭据取数在 domain 编排层（D17 v1.5）：pkg 只保留纯函数与静态需求声明
+//! （工厂与实例共用单点），工具实例不直连 DAL/DAO。
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::Result;
+use common::error::{Result, err};
+use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -43,25 +44,20 @@ const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 /// 默认输出截断上限 1MB
 const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
 
-// ==================== 凭证解析器 ====================
+// ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
-/// GitHub token 凭证解析器（pkg 层抽象，由上层实现并注册）
-#[async_trait::async_trait]
-pub trait GhCredentialResolver: Send + Sync {
-    /// 解析当前上下文用户的 GitHub token（已解密）；未绑定返回 None
-    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<String>>;
-}
-
-static RESOLVER: OnceLock<Box<dyn GhCredentialResolver>> = OnceLock::new();
-
-/// 注册全局凭证解析器（service::init 阶段调用，仅首次生效）
-pub fn set_credential_resolver(resolver: Box<dyn GhCredentialResolver>) {
-    let _ = RESOLVER.set(resolver);
-}
-
-/// 获取已注册的全局凭证解析器
-pub fn get_credential_resolver() -> Option<&'static dyn GhCredentialResolver> {
-    RESOLVER.get().map(|r| r.as_ref())
+/// 凭据需求静态声明：个人 GitHub token（单条 Internal 注入实例 `token` 字段；
+/// readiness 判定与 call_tool 编排经工厂读取，check 注入经实例读取）
+fn credential_requirements() -> Vec<CredentialRequirement> {
+    vec![CredentialRequirement {
+        kind: CredentialKind::GithubToken,
+        platform: None,
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Internal {
+            field: "token".to_string(),
+        },
+    }]
 }
 
 // ==================== 工具定义 ====================
@@ -164,6 +160,11 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(GhCliCoreTool::new(po))
     }
+
+    /// 凭据需求静态声明（readiness 判定与 call_tool 编排共用，D17）
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
+    }
 }
 
 /// gh_cli 工具核心实现
@@ -171,6 +172,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
 pub struct GhCliCoreTool {
     po: ToolPo,
     config: GhCliConfig,
+    /// check 注入的 GitHub token（D22 create → check → call；None → 绑定引导）
+    token: Option<String>,
 }
 
 impl GhCliCoreTool {
@@ -180,7 +183,11 @@ impl GhCliCoreTool {
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
-        Self { po, config }
+        Self {
+            po,
+            config,
+            token: None,
+        }
     }
 }
 
@@ -360,14 +367,9 @@ impl CoreTool for GhCliCoreTool {
             }));
         }
 
-        // 1. 解析凭证（未绑定 → 引导性错误）
-        let Some(resolver) = get_credential_resolver() else {
-            return Ok(serde_json::json!({
-                "success": false,
-                "error": "gh_cli 凭证解析器未就绪，请重启服务后重试"
-            }));
-        };
-        let Some(token) = resolver.resolve(&ctx).await? else {
+        // 1. 取 check 注入的凭证（未注入 → 绑定引导；正常编排在 domain 层
+        //    resolve 阶段已出引导，此处为直调/漏 check 的防御路径）
+        let Some(token) = self.token.clone() else {
             return Ok(serde_json::json!({
                 "success": false,
                 "error": "请先在个人设置的 GitHub 集成中绑定访问令牌（Personal Access Token）"
@@ -488,6 +490,31 @@ impl CoreTool for GhCliCoreTool {
     fn po(&self) -> &ToolPo {
         &self.po
     }
+
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
+    }
+
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        for item in resolved {
+            match &item.requirement.binding {
+                // 内置工具唯一合法注入点（静态声明已限定，此处防御兜底）
+                CredentialBinding::Internal { field } if field == "token" => {
+                    self.token = Some(item.value.clone());
+                }
+                _ => {
+                    return Err(err!(
+                        InvalidRequest,
+                        "gh_cli 仅支持 token 内部凭据注入点"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -548,11 +575,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn call_without_resolver_returns_error_json() {
-        // 单测环境未注册 resolver（OnceLock 全局只设一次，此处依赖未注册状态）
-        if get_credential_resolver().is_some() {
-            return;
-        }
+    async fn call_without_check_returns_guidance() {
+        // 未 check 注入（token 字段 None）→ 绑定引导（正常编排在 domain 层出引导，此处防御）
         let tool = GhCliCoreTool::new(GhCliToolFactory.create_po());
         let ctx = test_ctx();
         let result = tool
@@ -560,7 +584,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result["success"], false);
-        assert!(result["error"].as_str().unwrap().contains("凭证解析器"));
+        assert!(result["error"].as_str().unwrap().contains("GitHub 集成"));
+    }
+
+    #[test]
+    fn check_injects_token_from_resolved_requirement() {
+        let mut tool = GhCliCoreTool::new(GhCliToolFactory.create_po());
+        assert_eq!(tool.token, None);
+        let resolved = vec![crate::pkg::credential::ResolvedRequirement {
+            requirement: credential_requirements().pop().unwrap(),
+            value: "ghp_test_token".to_string(),
+        }];
+        tool.check(&resolved).unwrap();
+        assert_eq!(tool.token.as_deref(), Some("ghp_test_token"));
+    }
+
+    #[test]
+    fn factory_and_instance_requirements_are_consistent() {
+        // 工厂声明（readiness/编排预判）与实例声明（DAL check 流程）同源，防漂移
+        let tool = GhCliCoreTool::new(GhCliToolFactory.create_po());
+        assert_eq!(
+            GhCliToolFactory.credential_requirements(),
+            tool.credential_requirements()
+        );
+        assert_eq!(
+            tool.credential_requirements()[0].kind,
+            CredentialKind::GithubToken
+        );
     }
 
     #[tokio::test]

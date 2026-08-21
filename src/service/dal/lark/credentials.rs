@@ -4,9 +4,6 @@
 //! - runtime domain 凭据编排（`resolve_credentials_for_user`）
 //! - finance domain 凭证删除联动（`find_channels_by_credential_id`）
 //! - 入站消息归属定位（`find_channel_by_lark_identity`，见 impl.rs `adapt_lark`）
-//!
-//! 另含 `LarkDalCredentialResolver`：lark_cli 工具的凭证解析器实现，
-//! 在 `service::init` 阶段注册到 pkg 层全局注入口。
 
 use common::error::Result;
 
@@ -55,22 +52,4 @@ pub trait LarkCredentialDal: Send + Sync {
         app_id: &str,
         open_id: &str,
     ) -> Result<Option<MessageChannel>>;
-}
-
-// ==================== lark_cli 凭证解析器 ====================
-
-/// lark_cli 工具的凭证解析器实现
-///
-/// 按 `ctx.user_id` 查该用户启用的 Lark 渠道，经凭证引用解析取解密后凭证 + 身份模式；
-/// 在 `service::init` 阶段注册到 pkg 层全局注入口。
-pub struct LarkDalCredentialResolver;
-
-#[async_trait::async_trait]
-impl crate::pkg::tool_registry::lark_cli::LarkCredentialResolver for LarkDalCredentialResolver {
-    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<(String, String, String)>> {
-        Ok(super::dal()
-            .resolve_credentials_for_user(ctx)
-            .await?
-            .map(|(c, mode)| (c.app_id, c.app_secret, mode)))
-    }
 }

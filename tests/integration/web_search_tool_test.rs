@@ -4,8 +4,9 @@
 //! - status 空状态：无凭证返回空列表
 //! - 凭证 CRUD 全链路：建 → 快照（key 尾号、明文不回显）→ 设默认 → 改名 → 删默认凭证
 //! - 参数校验错误：空名/空 key/未知凭证 → 4xx 引导
-//! - 授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver 解析出解密明文
-//!   （授权单轨走用户凭证库；不发起真实 Tavily 网络调用）
+//! - 授权解析：经 HTTP 绑定个人 key 后按 D17 编排链（user dal find_default +
+//!   pkg resolve_requirements）解析出解密明文（授权单轨走用户凭证库；
+//!   不发起真实 Tavily 网络调用）
 //!
 //! 路由：`/api/v1/finance/identity/tavily/`（见 `src/router.rs::finance_routes`）
 
@@ -13,7 +14,10 @@
 mod common;
 
 use ai_orz::pkg::RequestContext;
-use ai_orz::pkg::tool_registry::tavily_search::TavilyCredentialResolver;
+use ai_orz::pkg::credential::{FetchedCredential, resolve_requirements};
+use ai_orz::pkg::tool_registry::BuiltinToolFactory;
+use ai_orz::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
+use ::common::models::CredentialKind;
 use serde_json::json;
 use sqlx::SqlitePool;
 
@@ -246,11 +250,30 @@ async fn test_tavily_credential_validation_errors(pool: SqlitePool) {
     );
 }
 
-/// 授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver
+/// 按 D17 编排链解析用户默认 Tavily key（domain `resolve_tool_credentials`
+/// 的 TavilyKey 路由等价组合：user dal find_default → pkg resolve_requirements
+/// 解密 + canonical 取值）；未绑定返回 None。
+async fn resolve_tavily_key(ctx: &RequestContext, user_id: &str) -> Option<String> {
+    let credential = ai_orz::service::dal::user::dal()
+        .find_default_credential(ctx.clone(), user_id, CredentialKind::TavilyKey, None)
+        .await
+        .unwrap()?;
+    let fetched = FetchedCredential {
+        credential_id: credential.id().to_string(),
+        detail: credential.detail().clone(),
+        attributes: Default::default(),
+        already_decrypted: false,
+    };
+    let requirements = TavilySearchToolFactory.credential_requirements();
+    let resolved = resolve_requirements(&requirements, &[fetched]).await.unwrap();
+    resolved.first().map(|r| r.value.clone())
+}
+
+/// 授权解析：经 HTTP 绑定个人 key 后按 D17 编排链
 /// 能按用户解析出解密明文（默认凭证优先），且默认槽位轮换后解析结果跟随切换。
 /// 不发起真实 Tavily 网络调用。
 #[sqlx::test]
-async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
+async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
@@ -283,17 +306,14 @@ async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
         .expect("credential_id 2")
         .to_string();
 
-    // 从登录用户构造带用户上下文的 RequestContext（resolver 依赖 ctx.user_id）
+    // 从登录用户构造带用户上下文的 RequestContext（解析依赖 ctx.user_id）
     let ctx = RequestContext::builder()
         .user_id(bs.user_id.clone())
         .build();
 
     // 未设默认 → 回退第一条（cred1/key1）
-    let resolver = ai_orz::service::dal::user::TavilyDalCredentialResolver;
-    let resolved = resolver
-        .resolve(&ctx)
+    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
         .await
-        .unwrap()
         .expect("resolved key1");
     assert_eq!(resolved, key1);
 
@@ -306,10 +326,8 @@ async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
         )
         .await;
     crate::common::assert_api_ok(status, &body);
-    let resolved = resolver
-        .resolve(&ctx)
+    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
         .await
-        .unwrap()
         .expect("resolved key2");
     assert_eq!(resolved, key2);
 
@@ -321,10 +339,8 @@ async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
         )
         .await;
     crate::common::assert_api_ok(status, &body);
-    let resolved = resolver
-        .resolve(&ctx)
+    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
         .await
-        .unwrap()
         .expect("resolved key1 again");
     assert_eq!(resolved, key1);
 
@@ -336,5 +352,8 @@ async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
         )
         .await;
     crate::common::assert_api_ok(status, &body);
-    assert!(resolver.resolve(&ctx).await.unwrap().is_none());
+    assert!(
+        resolve_tavily_key(&ctx, &bs.user_id).await.is_none(),
+        "no credential left → resolution miss"
+    );
 }

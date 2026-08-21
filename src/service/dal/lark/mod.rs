@@ -22,7 +22,7 @@ mod credentials;
 mod listener;
 mod r#impl;
 
-pub use credentials::{LarkCredentialDal, LarkDalCredentialResolver};
+pub use credentials::LarkCredentialDal;
 pub use listener::LarkListenerDal;
 pub use r#impl::LarkDalImpl;
 

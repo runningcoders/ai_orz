@@ -4,8 +4,9 @@
 //!
 //! # 授权（单轨，D27）
 //!
-//! API key 仅经 `TavilyCredentialResolver` 按 `ctx.user_id` 查该用户
-//! 凭证库中的 TavilyKey（个人 key，加密存储）；未绑定 → 返回
+//! API key 仅取该用户凭证库中的 TavilyKey（个人 key，加密存储）：凭据需求由
+//! 工厂静态声明，domain 编排层（`resolve_tool_credentials`）据此取数，经
+//! `CoreTool::check` 注入实例 `api_key` 字段（D17 工厂化）；未注入 → 返回
 //! `api_key_missing` 结构化引导（绑定个人 key 单路径）。
 //!
 //! key 不在工具入参中传递，永不回显；结果返回结构化 JSON
@@ -13,8 +14,8 @@
 //!
 //! # 分层说明
 //!
-//! `TavilyCredentialResolver` trait 定义在 pkg 层（无上层依赖），具体实现由
-//! user DAL 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
+//! 凭据取数在 domain 编排层（D17 v1.5）：pkg 只保留纯函数与静态需求声明
+//! （工厂与实例共用单点），工具实例不直连 DAL/DAO。
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
@@ -23,10 +24,10 @@ use crate::pkg::tool_registry::tool_readiness;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::Result;
+use common::error::{Result, err};
+use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Tavily Search API 端点
@@ -41,35 +42,20 @@ const SNIPPET_MAX_CHARS: usize = 1000;
 /// 请求超时缺省（毫秒；可经工具 PO config 的 `timeout_ms` 覆盖）
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
 
-// ==================== 凭证解析器 ====================
+// ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
-/// Tavily API key 凭证解析器（pkg 层抽象，由上层实现并注册）
-#[async_trait]
-pub trait TavilyCredentialResolver: Send + Sync {
-    /// 解析当前上下文用户的 Tavily API key（已解密）；未绑定返回 None
-    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<String>>;
-}
-
-static RESOLVER: OnceLock<Box<dyn TavilyCredentialResolver>> = OnceLock::new();
-
-/// 注册全局凭证解析器（service::init 阶段调用，仅首次生效）
-pub fn set_credential_resolver(resolver: Box<dyn TavilyCredentialResolver>) {
-    let _ = RESOLVER.set(resolver);
-}
-
-/// 获取已注册的全局凭证解析器
-pub fn get_credential_resolver() -> Option<&'static dyn TavilyCredentialResolver> {
-    RESOLVER.get().map(|r| r.as_ref())
-}
-
-/// 授权解析（单轨，D27）：仅取该用户凭证库中的个人 TavilyKey；未绑定返回 None
-async fn resolve_api_key(ctx: &RequestContext) -> Result<Option<String>> {
-    if let Some(resolver) = get_credential_resolver()
-        && let Some(key) = resolver.resolve(ctx).await?
-    {
-        return Ok(Some(key));
-    }
-    Ok(None)
+/// 凭据需求静态声明：个人 TavilyKey（单轨 D27；单条 Internal 注入实例
+/// `api_key` 字段；readiness 判定与 call_tool 编排经工厂读取，check 注入经实例读取）
+fn credential_requirements() -> Vec<CredentialRequirement> {
+    vec![CredentialRequirement {
+        kind: CredentialKind::TavilyKey,
+        platform: None,
+        field: None,
+        enhancer: None,
+        binding: CredentialBinding::Internal {
+            field: "api_key".to_string(),
+        },
+    }]
 }
 
 /// 授权缺失引导文案（单路径：绑个人 key）
@@ -146,20 +132,12 @@ impl BuiltinToolFactory for TavilySearchToolFactory {
     }
 
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
-        Box::new(TavilySearchCoreTool { po })
+        Box::new(TavilySearchCoreTool::new(po))
     }
 
     /// 凭据需求静态声明：个人 TavilyKey（单轨，D27；readiness 据此判定，D28）
-    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
-        vec![common::models::CredentialRequirement {
-            kind: common::models::CredentialKind::TavilyKey,
-            platform: None,
-            field: None,
-            enhancer: None,
-            binding: common::models::CredentialBinding::Internal {
-                field: "api_key".to_string(),
-            },
-        }]
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
     }
 }
 
@@ -167,6 +145,14 @@ impl BuiltinToolFactory for TavilySearchToolFactory {
 #[derive(Debug, Clone)]
 pub struct TavilySearchCoreTool {
     po: ToolPo,
+    /// check 注入的 Tavily API key（D22 create → check → call；None → api_key_missing 引导）
+    api_key: Option<String>,
+}
+
+impl TavilySearchCoreTool {
+    fn new(po: ToolPo) -> Self {
+        Self { po, api_key: None }
+    }
 }
 
 /// 单条结果 snippet 截断（超长尾部加省略标记，返回截断与否）
@@ -180,7 +166,7 @@ fn truncate_snippet(content: &str) -> (String, bool) {
 
 #[async_trait]
 impl CoreTool for TavilySearchCoreTool {
-    async fn call(&self, ctx: RequestContext, args: Value) -> Result<Value> {
+    async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
         // 1. 参数解析与校验
         let params: TavilySearchParams = serde_json::from_value(args)
             .map_err(|e| anyhow!("Invalid arguments: {}", e))
@@ -208,8 +194,9 @@ impl CoreTool for TavilySearchCoreTool {
             .clamp(1, 10);
         let include_answer = params.include_answer.unwrap_or(false);
 
-        // 2. 授权解析（单轨：用户凭证库；未绑定 → 统一结构化引导）
-        let Some(api_key) = resolve_api_key(&ctx).await? else {
+        // 2. 取 check 注入的 API key（未注入 → 统一结构化引导；正常编排在
+        //    domain 层 resolve 阶段已出引导，此处为直调/漏 check 的防御路径）
+        let Some(api_key) = self.api_key.clone() else {
             return Ok(tool_readiness::api_key_missing_json(
                 API_KEY_MISSING_ERROR,
                 API_KEY_MISSING_GUIDANCE,
@@ -313,6 +300,31 @@ impl CoreTool for TavilySearchCoreTool {
     fn po(&self) -> &ToolPo {
         &self.po
     }
+
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
+    }
+
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        for item in resolved {
+            match &item.requirement.binding {
+                // 内置工具唯一合法注入点（静态声明已限定，此处防御兜底）
+                CredentialBinding::Internal { field } if field == "api_key" => {
+                    self.api_key = Some(item.value.clone());
+                }
+                _ => {
+                    return Err(err!(
+                        InvalidRequest,
+                        "tavily_search 仅支持 api_key 内部凭据注入点"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -351,9 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn call_with_empty_query_returns_error_json() {
-        let tool = TavilySearchCoreTool {
-            po: TavilySearchToolFactory.create_po(),
-        };
+        let tool = TavilySearchCoreTool::new(TavilySearchToolFactory.create_po());
         let result = tool
             .call(test_ctx(), json!({ "query": "  " }))
             .await
@@ -364,9 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn call_with_invalid_depth_returns_error_json() {
-        let tool = TavilySearchCoreTool {
-            po: TavilySearchToolFactory.create_po(),
-        };
+        let tool = TavilySearchCoreTool::new(TavilySearchToolFactory.create_po());
         let result = tool
             .call(
                 test_ctx(),
@@ -379,27 +387,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn call_without_key_returns_api_key_missing_guidance() {
-        // 单测环境：resolver 未注册（单轨授权下无共享兜底），
-        // 仅在确无 key 时断言引导结构
-        let _ = crate::config::init();
-        let tool = TavilySearchCoreTool {
-            po: TavilySearchToolFactory.create_po(),
-        };
-        let ctx = test_ctx();
-        if get_credential_resolver().is_none() {
-            let result = tool.call(ctx, json!({ "query": "rust" })).await.unwrap();
-            assert_eq!(result["success"], false);
-            assert_eq!(result["error_code"], "api_key_missing");
-            let guidance = result["guidance"].as_str().unwrap();
-            assert!(
-                guidance.contains("身份凭证"),
-                "guidance should mention personal key path"
-            );
-            assert!(
-                !guidance.contains("[tavily].api_key"),
-                "guidance should not mention removed shared config path"
-            );
-        }
+    async fn call_without_check_returns_api_key_missing_guidance() {
+        // 未 check 注入（api_key 字段 None）→ api_key_missing 引导
+        //（正常编排在 domain 层出引导，此处为直调/漏 check 的防御路径）
+        let tool = TavilySearchCoreTool::new(TavilySearchToolFactory.create_po());
+        let result = tool
+            .call(test_ctx(), json!({ "query": "rust" }))
+            .await
+            .unwrap();
+        assert_eq!(result["success"], false);
+        assert_eq!(result["error_code"], "api_key_missing");
+        let guidance = result["guidance"].as_str().unwrap();
+        assert!(
+            guidance.contains("身份凭证"),
+            "guidance should mention personal key path"
+        );
+        assert!(
+            !guidance.contains("[tavily].api_key"),
+            "guidance should not mention removed shared config path"
+        );
+    }
+
+    #[test]
+    fn check_injects_api_key_from_resolved_requirement() {
+        let mut tool = TavilySearchCoreTool::new(TavilySearchToolFactory.create_po());
+        assert_eq!(tool.api_key, None);
+        let resolved = vec![crate::pkg::credential::ResolvedRequirement {
+            requirement: credential_requirements().pop().unwrap(),
+            value: "tvly-test-key".to_string(),
+        }];
+        tool.check(&resolved).unwrap();
+        assert_eq!(tool.api_key.as_deref(), Some("tvly-test-key"));
+    }
+
+    #[test]
+    fn factory_and_instance_requirements_are_consistent() {
+        // 工厂声明（readiness/编排预判）与实例声明（DAL check 流程）同源，防漂移
+        let tool = TavilySearchCoreTool::new(TavilySearchToolFactory.create_po());
+        assert_eq!(
+            TavilySearchToolFactory.credential_requirements(),
+            tool.credential_requirements()
+        );
+        assert_eq!(
+            tool.credential_requirements()[0].kind,
+            CredentialKind::TavilyKey
+        );
     }
 }

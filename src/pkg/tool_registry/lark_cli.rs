@@ -4,8 +4,11 @@
 //!
 //! # 凭证与隔离
 //!
-//! - 凭证不在工具入参中传递：按 `ctx.user_id` 经 `LarkCredentialResolver` 查该用户
-//!   启用的 Lark 渠道取应用凭证（未绑定返回引导性错误）
+//! - 凭证不在工具入参中传递：凭据需求由工厂静态声明（同一 LarkApp 凭证
+//!   app_id/app_secret/identity_mode 三字段，D4 多字段模式），domain 编排层
+//!   （`resolve_tool_credentials`）据此取该用户启用 Lark 渠道的应用凭证，经
+//!   `CoreTool::check` 注入实例 `credentials` 三元组字段（D17 工厂化，
+//!   未注入 → 绑定引导）
 //! - HOME 隔离：每次执行注入 `HOME={base_data_path}/users/{user_id}`（用户维度统一 HOME，
 //!   见 `pkg::paths::user_home`），lark-cli 配置落在 `{home}/.lark-cli/`
 //!   首次幂等写入该目录下的 lark-cli config（secret 走 stdin，避免进程参数泄露）
@@ -13,8 +16,8 @@
 //!
 //! # 分层说明
 //!
-//! `LarkCredentialResolver` trait 定义在 pkg 层（无上层依赖），具体实现由
-//! `LarkDalCredentialResolver` 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
+//! 凭据取数在 domain 编排层（D17 v1.5）：pkg 只保留纯函数与静态需求声明
+//! （工厂与实例共用单点），工具实例不直连 DAL/DAO。
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
@@ -22,12 +25,12 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_readiness;
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
-use common::error::Result;
+use common::error::{Result, err};
+use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -40,27 +43,27 @@ const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 /// 默认输出截断上限 1MB
 const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
 
-// ==================== 凭证解析器 ====================
+// ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
-/// 飞书应用凭证解析器（pkg 层抽象，由上层实现并注册）
-#[async_trait::async_trait]
-pub trait LarkCredentialResolver: Send + Sync {
-    /// 解析当前上下文用户的飞书应用凭证；未绑定返回 None
-    ///
-    /// 返回 `(app_id, app_secret, identity_mode)`，identity_mode 缺省 "auto"
-    async fn resolve(&self, ctx: &RequestContext) -> Result<Option<(String, String, String)>>;
-}
-
-static RESOLVER: OnceLock<Box<dyn LarkCredentialResolver>> = OnceLock::new();
-
-/// 注册全局凭证解析器（service::init 阶段调用，仅首次生效）
-pub fn set_credential_resolver(resolver: Box<dyn LarkCredentialResolver>) {
-    let _ = RESOLVER.set(resolver);
-}
-
-/// 获取已注册的全局凭证解析器
-pub fn get_credential_resolver() -> Option<&'static dyn LarkCredentialResolver> {
-    RESOLVER.get().map(|r| r.as_ref())
+/// 凭据需求静态声明：同一 LarkApp 凭证三字段（D4 多字段模式；
+/// readiness 判定与 call_tool 编排经工厂读取，check 注入经实例读取）
+fn credential_requirements() -> Vec<CredentialRequirement> {
+    fn internal(field: &str) -> CredentialRequirement {
+        CredentialRequirement {
+            kind: CredentialKind::LarkApp,
+            platform: None,
+            field: Some(field.to_string()),
+            binding: CredentialBinding::Internal {
+                field: field.to_string(),
+            },
+            enhancer: None,
+        }
+    }
+    vec![
+        internal("app_id"),
+        internal("app_secret"),
+        internal("identity_mode"),
+    ]
 }
 
 // ==================== 工具定义 ====================
@@ -154,6 +157,11 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(LarkCliCoreTool::new(po))
     }
+
+    /// 凭据需求静态声明（readiness 判定与 call_tool 编排共用，D17）
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
+    }
 }
 
 /// lark_cli 工具核心实现
@@ -161,6 +169,9 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
 pub struct LarkCliCoreTool {
     po: ToolPo,
     config: LarkCliConfig,
+    /// check 注入的飞书应用凭证三元组 `(app_id, app_secret, identity_mode)`
+    ///（D22 create → check → call；None → 绑定引导）
+    credentials: Option<(String, String, String)>,
 }
 
 impl LarkCliCoreTool {
@@ -170,7 +181,11 @@ impl LarkCliCoreTool {
         } else {
             serde_json::from_value(po.config.clone()).unwrap_or_default()
         };
-        Self { po, config }
+        Self {
+            po,
+            config,
+            credentials: None,
+        }
     }
 }
 
@@ -306,15 +321,9 @@ impl CoreTool for LarkCliCoreTool {
             }));
         }
 
-        // 1. 解析凭证（未绑定 → 引导性错误）
-        let Some(resolver) = get_credential_resolver() else {
-            return Ok(serde_json::json!({
-                "success": false,
-                "error": "lark_cli 凭证解析器未就绪，请重启服务后重试"
-            }));
-        };
-        let credentials = resolver.resolve(&ctx).await?;
-        let Some((app_id, app_secret, identity_mode)) = credentials else {
+        // 1. 取 check 注入的凭证（未注入 → 绑定引导；正常编排在 domain 层
+        //    resolve 阶段已出引导，此处为直调/漏 check 的防御路径）
+        let Some((app_id, app_secret, identity_mode)) = self.credentials.clone() else {
             return Ok(serde_json::json!({
                 "success": false,
                 "error": "请先在个人设置的飞书集成中绑定应用，并创建引用该凭证的 Lark 渠道"
@@ -417,6 +426,42 @@ impl CoreTool for LarkCliCoreTool {
     fn po(&self) -> &ToolPo {
         &self.po
     }
+
+    fn credential_requirements(&self) -> Vec<CredentialRequirement> {
+        credential_requirements()
+    }
+
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        let (mut app_id, mut app_secret, mut identity_mode) = (None, None, None);
+        for item in resolved {
+            match &item.requirement.binding {
+                // 内置工具唯一合法注入点（静态声明已限定，此处防御兜底）
+                CredentialBinding::Internal { field } if field == "app_id" => {
+                    app_id = Some(item.value.clone());
+                }
+                CredentialBinding::Internal { field } if field == "app_secret" => {
+                    app_secret = Some(item.value.clone());
+                }
+                CredentialBinding::Internal { field } if field == "identity_mode" => {
+                    identity_mode = Some(item.value.clone());
+                }
+                _ => {
+                    return Err(err!(
+                        InvalidRequest,
+                        "lark_cli 仅支持 app_id/app_secret/identity_mode 内部凭据注入点"
+                    ));
+                }
+            }
+        }
+        // 三字段全量到齐才置位（部分注入 → 保持 None，call 出绑定引导）
+        if let (Some(a), Some(s), Some(m)) = (app_id, app_secret, identity_mode) {
+            self.credentials = Some((a, s, m));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -467,11 +512,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn call_without_resolver_returns_error_json() {
-        // 单测环境未注册 resolver（OnceLock 全局只设一次，此处依赖未注册状态）
-        if get_credential_resolver().is_some() {
-            return;
-        }
+    async fn call_without_check_returns_guidance() {
+        // 未 check 注入（credentials 字段 None）→ 绑定引导
+        //（正常编排在 domain 层出引导，此处为直调/漏 check 的防御路径）
         let tool = LarkCliCoreTool::new(LarkCliToolFactory.create_po());
         let ctx = test_ctx();
         let result = tool
@@ -479,7 +522,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result["success"], false);
-        assert!(result["error"].as_str().unwrap().contains("凭证解析器"));
+        assert!(result["error"]
+            .as_str()
+            .unwrap()
+            .contains("飞书集成中绑定应用"));
+    }
+
+    #[test]
+    fn check_injects_credentials_triple_from_resolved_requirements() {
+        let mut tool = LarkCliCoreTool::new(LarkCliToolFactory.create_po());
+        assert_eq!(tool.credentials, None);
+        let resolved: Vec<crate::pkg::credential::ResolvedRequirement> =
+            credential_requirements()
+                .into_iter()
+                .map(|requirement| crate::pkg::credential::ResolvedRequirement {
+                    value: match &requirement.field {
+                        Some(field) if field == "app_id" => "cli_test".to_string(),
+                        Some(field) if field == "app_secret" => "sec_test".to_string(),
+                        _ => "tenant".to_string(),
+                    },
+                    requirement,
+                })
+                .collect();
+        tool.check(&resolved).unwrap();
+        assert_eq!(
+            tool.credentials,
+            Some((
+                "cli_test".to_string(),
+                "sec_test".to_string(),
+                "tenant".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn factory_and_instance_requirements_are_consistent() {
+        // 工厂声明（readiness/编排预判）与实例声明（DAL check 流程）同源，防漂移
+        let tool = LarkCliCoreTool::new(LarkCliToolFactory.create_po());
+        assert_eq!(
+            LarkCliToolFactory.credential_requirements(),
+            tool.credential_requirements()
+        );
+        let requirements = tool.credential_requirements();
+        assert_eq!(requirements.len(), 3);
+        assert!(requirements
+            .iter()
+            .all(|r| r.kind == CredentialKind::LarkApp));
     }
 
     #[tokio::test]
