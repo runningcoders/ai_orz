@@ -69,6 +69,8 @@ pub fn get_credential_resolver() -> Option<&'static dyn LarkCredentialResolver> 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LarkCliConfig {
+    /// lark-cli 二进制名或绝对路径（缺省 `LARK_CLI_BIN`；存量 config 无该字段 → 常量兜底，D28）
+    pub command: Option<String>,
     /// 默认超时（毫秒）
     pub default_timeout_ms: Option<u64>,
     /// 默认输出截断上限（字节）
@@ -76,6 +78,13 @@ pub struct LarkCliConfig {
 }
 
 impl LarkCliConfig {
+    /// lark-cli 命令（缺省 `LARK_CLI_BIN` 兜底）
+    pub fn command(&self) -> String {
+        self.command
+            .clone()
+            .unwrap_or_else(|| LARK_CLI_BIN.to_string())
+    }
+
     /// 默认超时（毫秒）
     pub fn default_timeout_ms(&self) -> u64 {
         self.default_timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)
@@ -130,7 +139,11 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
                 "required": ["command"],
                 "additionalProperties": false
             })),
-            config: serde_json::json!(LarkCliConfig::default()),
+            // CLI 命令进 PO config（D28：缺省 LARK_CLI_BIN，工具管理页可改命令路径）
+            config: serde_json::json!(LarkCliConfig {
+                command: Some(LARK_CLI_BIN.to_string()),
+                ..Default::default()
+            }),
             tags: serde_json::to_string(&vec!["lark".to_string()]).unwrap_or_default(),
             ..Default::default()
         };
@@ -316,11 +329,13 @@ impl CoreTool for LarkCliCoreTool {
             }));
         };
         let home_dir = lark_home(&get().base_data_path(), &user_id);
-        if !tool_readiness::command_available(LARK_CLI_BIN) {
+        // 命令读实例 PO config（存量 config 无 command → LARK_CLI_BIN 常量兜底，D28）
+        let bin = self.config.command();
+        if !tool_readiness::command_available(&bin) {
             return Ok(tool_readiness::cli_not_installed_json(
                 "lark-cli",
                 "安装 lark-cli：https://github.com/larksuite/lark-cli",
-                "或确认 lark-cli 已安装且在服务进程的 PATH 中",
+                "或确认 lark-cli 已安装且在服务进程的 PATH 中，或在工具配置中修改命令路径",
             ));
         }
         ensure_cli_config(&home_dir, &app_id, &app_secret).await?;
@@ -338,7 +353,7 @@ impl CoreTool for LarkCliCoreTool {
             .unwrap_or_else(|| self.config.default_timeout_ms());
         let max_output_bytes = self.config.default_max_output_size_bytes();
 
-        let mut command = Command::new(LARK_CLI_BIN);
+        let mut command = Command::new(&bin);
         command.args(&cli_args);
         command.env("HOME", &home_dir);
         command.stdout(Stdio::piped());
@@ -423,6 +438,8 @@ mod tests {
         assert_eq!(po.control_mode, ControlMode::Auto);
         assert_eq!(po.protocol, ToolProtocol::Builtin);
         assert_eq!(po.get_tags(), vec!["lark"]);
+        // CLI 命令进 PO config（D28 不变式：CLI 型 = po.config.command）
+        assert_eq!(po.cli_command().as_deref(), Some(LARK_CLI_BIN));
     }
 
     #[test]

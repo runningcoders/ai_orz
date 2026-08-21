@@ -148,6 +148,19 @@ impl BuiltinToolFactory for TavilySearchToolFactory {
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool> {
         Box::new(TavilySearchCoreTool { po })
     }
+
+    /// 凭据需求静态声明：个人 TavilyKey（单轨，D27；readiness 据此判定，D28）
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        vec![common::models::CredentialRequirement {
+            kind: common::models::CredentialKind::TavilyKey,
+            platform: None,
+            field: None,
+            enhancer: None,
+            binding: common::models::CredentialBinding::Internal {
+                field: "api_key".to_string(),
+            },
+        }]
+    }
 }
 
 /// tavily_search 工具核心实现

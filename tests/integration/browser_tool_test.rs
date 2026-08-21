@@ -14,10 +14,26 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-use ai_orz::config::get;
+use ai_orz::pkg::RequestContext;
 use ai_orz::pkg::tool_registry::tool_readiness::command_available;
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
+
+/// 从 DB 读 browser 工具 PO config 的 CLI 命令（D28 不变式：CLI 型 = po.config.command）
+///
+/// 集成测试数据在全局 Storage 单例（init_full_test_env 初始化），
+/// 不在 `#[sqlx::test]` 注入的独立 pool —— 经返回的 ctx 取真实 pool。
+async fn browser_command(ctx: &RequestContext) -> String {
+    let config: Value = sqlx::query_scalar("SELECT config FROM tools WHERE id = 'browser'")
+        .fetch_one(ctx.db_pool())
+        .await
+        .expect("browser tool config in DB");
+    config
+        .get("command")
+        .and_then(|v| v.as_str())
+        .expect("config.command field")
+        .to_string()
+}
 
 /// 从 query 接口提取 browser 工具条目（init_base_data 已同步内置工具入 DB）
 async fn fetch_browser_tool(app: &crate::common::TestApp, jwt: &str) -> Value {
@@ -58,8 +74,8 @@ async fn debug_call(app: &crate::common::TestApp, jwt: &str, args: Value) -> Val
 /// browser 内置工具同步入库 + tags（browser/network）+ 清单级就绪标志
 #[sqlx::test]
 async fn test_browser_tool_listed_with_readiness(pool: SqlitePool) {
-    let _ = crate::common::init_full_test_env(pool.clone()).await;
-    let app = crate::common::TestApp::new(pool).await;
+    let ctx = crate::common::init_full_test_env(pool).await;
+    let app = crate::common::TestApp::new(ctx.db_pool().clone()).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
     let tool = fetch_browser_tool(&app, &jwt).await;
@@ -93,8 +109,8 @@ async fn test_browser_tool_listed_with_readiness(pool: SqlitePool) {
         Some("Manual")
     );
 
-    // runtime_ready 与 CLI 可寻址性一致（第①层清单级标志）
-    let cli_available = command_available(&get().browser.command);
+    // runtime_ready 与 CLI 可寻址性一致（第①层清单级标志，命令取自 PO config）
+    let cli_available = command_available(&browser_command(&ctx).await);
     let ready = tool.get("runtime_ready").expect("runtime_ready field");
     let status_str = ready
         .get("status")
@@ -176,11 +192,11 @@ async fn test_browser_debug_call_whitelist_rejection(pool: SqlitePool) {
 /// （真实调用会产生浏览器/网络副作用）
 #[sqlx::test]
 async fn test_browser_debug_call_cli_not_installed_guidance(pool: SqlitePool) {
-    let _ = crate::common::init_full_test_env(pool.clone()).await;
-    let app = crate::common::TestApp::new(pool).await;
+    let ctx = crate::common::init_full_test_env(pool).await;
+    let app = crate::common::TestApp::new(ctx.db_pool().clone()).await;
     let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    if command_available(&get().browser.command) {
+    if command_available(&browser_command(&ctx).await) {
         // 开发机已安装 agent-browser：跳过，避免真实浏览器/网络副作用
         return;
     }
@@ -202,8 +218,8 @@ async fn test_browser_debug_call_cli_not_installed_guidance(pool: SqlitePool) {
     );
     let hint = result["hint"].as_str().unwrap_or("");
     assert!(
-        hint.contains("ai_orz.toml"),
-        "hint should mention config path: {}",
+        hint.contains("工具配置"),
+        "hint should mention tool config: {}",
         hint
     );
 }

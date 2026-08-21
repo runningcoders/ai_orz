@@ -3,9 +3,11 @@
 use crate::models::tool::{Tool, ToolExecutionResult};
 use crate::pkg::credential::{FetchedCredential, ResolvedRequirement};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::tool_readiness;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
+use common::api::RuntimeReady;
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::{Error, Result, bail_err};
 use common::models::{CredentialDetail, CredentialKind, CredentialRequirement};
@@ -186,6 +188,119 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         let mut entries = self.tool_call_logger.query_calls(query)?;
         Ok(entries.pop())
     }
+
+    async fn tool_readiness(&self, ctx: &RequestContext, tool: &Tool) -> RuntimeReady {
+        // ① CLI 型（D28「CLI 型 = po.config.command」不变式）
+        if let Some((command, install_hint)) = cli_tool_source(&tool.po) {
+            let cache_key = tool.po.id.clone();
+            if let Some((status, at)) = readiness_cache().lock().unwrap().get(&cache_key)
+                && at.elapsed() < READINESS_CACHE_TTL
+            {
+                return status.clone();
+            }
+            let status = tool_readiness::cli_binary_readiness(
+                &command,
+                install_hint.as_deref().unwrap_or_default(),
+                "或在工具配置中修改命令路径",
+            );
+            readiness_cache()
+                .lock()
+                .unwrap()
+                .insert(cache_key, (status.clone(), std::time::Instant::now()));
+            return status;
+        }
+
+        // ② key 型：凭据需求非空 → 复用 resolve_tool_credentials 取数判定（按当前查看者）
+        let requirements =
+            crate::pkg::tool_registry::get_registry().credential_requirements(&tool.po);
+        if requirements.is_empty() {
+            // ③ 两者皆无 → Ready
+            return RuntimeReady::Ready;
+        }
+        let cache_key = format!(
+            "{}|{}",
+            tool.po.id,
+            ctx.user_id.clone().unwrap_or_default()
+        );
+        if let Some((status, at)) = readiness_cache().lock().unwrap().get(&cache_key)
+            && at.elapsed() < READINESS_CACHE_TTL
+        {
+            return status.clone();
+        }
+        let status = match self.resolve_tool_credentials(ctx, &requirements).await {
+            Ok(Some(_)) => RuntimeReady::Ready,
+            Ok(None) => RuntimeReady::NotReady {
+                reason: "api_key_missing".to_string(),
+                hint: tool_readiness::credential_missing_hint(&requirements[0]),
+            },
+            // 探测异常不阻塞调用方（best-effort）
+            Err(_) => RuntimeReady::Unknown,
+        };
+        readiness_cache()
+            .lock()
+            .unwrap()
+            .insert(cache_key, (status.clone(), std::time::Instant::now()));
+        status
+    }
+}
+
+// ==================== readiness TTL 缓存与 CLI 数据源 ====================
+
+/// 就绪判定缓存 TTL：窗口内重复列表请求复用上次判定
+const READINESS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// 就绪判定缓存（key 型按 `tool_id|user_id`、CLI 型按 `tool_id`）
+static READINESS_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>>,
+> = std::sync::OnceLock::new();
+
+fn readiness_cache() -> &'static std::sync::Mutex<
+    std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>,
+> {
+    READINESS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// 清除指定工具的就绪缓存（测试专用；生产无主动失效调用方，依赖 TTL 自然过期）
+#[cfg(test)]
+pub(super) fn invalidate_readiness_cache(tool_id: &str) {
+    let prefix = format!("{}|", tool_id);
+    readiness_cache()
+        .lock()
+        .unwrap()
+        .retain(|k, _| !k.starts_with(&prefix) && k != tool_id);
+}
+
+/// 测试辅助：把指定工具的缓存时间戳拨回 TTL 前（模拟过期触发重新判定）
+#[cfg(test)]
+pub(super) fn expire_readiness_cache(tool_id: &str) {
+    let prefix = format!("{}|", tool_id);
+    readiness_cache()
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .for_each(|(k, (_, at))| {
+            if k == tool_id || k.starts_with(&prefix) {
+                *at = std::time::Instant::now() - READINESS_CACHE_TTL
+                    - std::time::Duration::from_secs(1);
+            }
+        });
+}
+
+/// CLI 型工具的命令与安装引导来源：PO config 优先，Builtin 工厂默认 PO 兜底。
+///
+/// 存量 DB PO config 无 `command`（sync 不刷新运维所有权字段 config）→
+/// 以工厂默认 PO 兜底，零迁移；两者皆无 → `None`（非 CLI 型）。
+fn cli_tool_source(po: &crate::models::tool::ToolPo) -> Option<(String, Option<String>)> {
+    if let Some(command) = po.cli_command() {
+        return Some((command, po.cli_install_hint()));
+    }
+    if po.protocol != ToolProtocol::Builtin {
+        return None;
+    }
+    let factory_po = crate::pkg::tool_registry::get_registry()
+        .get_builtin_factory(&po.id)?
+        .create_po();
+    Some((factory_po.cli_command()?, factory_po.cli_install_hint()))
 }
 
 impl RuntimeDomainImpl {

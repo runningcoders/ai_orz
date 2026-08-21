@@ -269,6 +269,18 @@ pub trait RuntimeToolExecution: Send + Sync {
         ctx: RequestContext,
         query: crate::pkg::tool_tracing::logger::ToolCallQuery,
     ) -> Result<Option<crate::pkg::tool_tracing::entry::ToolCallEntry>>;
+
+    /// 探测工具运行时就绪状态（数据驱动派生，D28）：
+    /// - CLI 型（po.config.command）→ 二进制可寻址判定（NotReady 附安装引导）；
+    /// - key 型（credential_requirements 非空）→ 凭据解析命中判定（按当前查看者）；
+    /// - 两者皆无 → Ready。
+    ///
+    /// 带 TTL 缓存（key 型按 tool|user、CLI 型按 tool），列表高频调用无重复开销。
+    async fn tool_readiness(
+        &self,
+        ctx: &RequestContext,
+        tool: &crate::models::tool::Tool,
+    ) -> common::api::RuntimeReady;
 }
 
 // ==================== 子模块  ====================

@@ -35,15 +35,6 @@ log_subdir = "logs"
 # 是否启用 A2A Server（JSON-RPC 端点）
 enabled = true
 
-# 浏览器自动化配置（browser 内置工具，包装 agent-browser CLI）
-[browser]
-# agent-browser 二进制名或绝对路径（绝对路径优先；未安装时工具调用返回安装引导）
-command = "agent-browser"
-# 单次子命令超时（毫秒）
-timeout_ms = 60000
-# 输出截断上限（字节）
-max_output_bytes = 262144
-
 # JWT配置
 [jwt]
 # JWT签名密钥（生产环境务必修改！也可以通过环境变量 JWT_SECRET 设置

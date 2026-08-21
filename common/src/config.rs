@@ -57,10 +57,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub a2a_server: A2aServerConfig,
 
-    /// agent-browser CLI（browser 内置工具）
-    #[serde(default)]
-    pub browser: BrowserConfig,
-
     /// Agent 运行时默认配置（系统级，可被 Agent 实体的 runtime_config 覆盖）
     #[serde(default)]
     pub agent: AgentConfig,
@@ -622,40 +618,4 @@ fn default_a2a_endpoint() -> String {
 
 fn default_a2a_card_path() -> String {
     "/.well-known/agent.json".to_string()
-}
-
-/// agent-browser CLI 配置（browser 内置工具）
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BrowserConfig {
-    /// agent-browser 二进制名或绝对路径（绝对路径优先）
-    #[serde(default = "default_browser_command")]
-    pub command: String,
-    /// 单次子命令超时（毫秒）
-    #[serde(default = "default_browser_timeout_ms")]
-    pub timeout_ms: u64,
-    /// 输出截断上限（字节）
-    #[serde(default = "default_browser_max_output_bytes")]
-    pub max_output_bytes: u64,
-}
-
-impl Default for BrowserConfig {
-    fn default() -> Self {
-        Self {
-            command: default_browser_command(),
-            timeout_ms: default_browser_timeout_ms(),
-            max_output_bytes: default_browser_max_output_bytes(),
-        }
-    }
-}
-
-fn default_browser_command() -> String {
-    "agent-browser".to_string()
-}
-
-fn default_browser_timeout_ms() -> u64 {
-    60_000
-}
-
-fn default_browser_max_output_bytes() -> u64 {
-    262_144
 }

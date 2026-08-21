@@ -70,6 +70,8 @@ pub fn get_credential_resolver() -> Option<&'static dyn GhCredentialResolver> {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct GhCliConfig {
+    /// gh 二进制名或绝对路径（缺省 `GH_CLI_BIN`；存量 config 无该字段 → 常量兜底，D28）
+    pub command: Option<String>,
     /// 默认超时（毫秒）
     pub default_timeout_ms: Option<u64>,
     /// 默认输出截断上限（字节）
@@ -77,6 +79,13 @@ pub struct GhCliConfig {
 }
 
 impl GhCliConfig {
+    /// gh 命令（缺省 `GH_CLI_BIN` 兜底）
+    pub fn command(&self) -> String {
+        self.command
+            .clone()
+            .unwrap_or_else(|| GH_CLI_BIN.to_string())
+    }
+
     /// 默认超时（毫秒）
     pub fn default_timeout_ms(&self) -> u64 {
         self.default_timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS)
@@ -140,7 +149,11 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
                 "required": ["command"],
                 "additionalProperties": false
             })),
-            config: serde_json::json!(GhCliConfig::default()),
+            // CLI 命令进 PO config（D28：缺省 GH_CLI_BIN，工具管理页可改命令路径）
+            config: serde_json::json!(GhCliConfig {
+                command: Some(GH_CLI_BIN.to_string()),
+                ..Default::default()
+            }),
             tags: serde_json::to_string(&vec!["github".to_string()]).unwrap_or_default(),
             ..Default::default()
         };
@@ -370,12 +383,14 @@ impl CoreTool for GhCliCoreTool {
         };
         let base_path = get().base_data_path();
         let home_dir = gh_home(&base_path, &user_id);
-        if !crate::pkg::tool_registry::tool_readiness::command_available(GH_CLI_BIN) {
+        // 命令读实例 PO config（存量 config 无 command → GH_CLI_BIN 常量兜底，D28）
+        let bin = self.config.command();
+        if !crate::pkg::tool_registry::tool_readiness::command_available(&bin) {
             return Ok(
                 crate::pkg::tool_registry::tool_readiness::cli_not_installed_json(
                     "gh",
                     "安装 GitHub CLI：https://cli.github.com（brew install gh）",
-                    "或确认 gh 已安装且在服务进程的 PATH 中",
+                    "或确认 gh 已安装且在服务进程的 PATH 中，或在工具配置中修改命令路径",
                 ),
             );
         }
@@ -406,7 +421,7 @@ impl CoreTool for GhCliCoreTool {
             .unwrap_or_else(|| self.config.default_timeout_ms());
         let max_output_bytes = self.config.default_max_output_size_bytes();
 
-        let mut command = Command::new(GH_CLI_BIN);
+        let mut command = Command::new(&bin);
         command
             .args(&cli_args)
             .env("HOME", &home_dir)
@@ -494,6 +509,8 @@ mod tests {
         assert_eq!(po.control_mode, ControlMode::Auto);
         assert_eq!(po.protocol, ToolProtocol::Builtin);
         assert_eq!(po.get_tags(), vec!["github"]);
+        // CLI 命令进 PO config（D28 不变式：CLI 型 = po.config.command）
+        assert_eq!(po.cli_command().as_deref(), Some(GH_CLI_BIN));
     }
 
     #[test]

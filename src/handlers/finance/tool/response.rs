@@ -6,24 +6,25 @@ use std::collections::HashMap;
 
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
-use crate::pkg::tool_registry::tool_readiness;
 use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
 
-/// 批量探测工具运行时就绪状态（三层就绪提示体系第①层：清单级标志）。
+/// 批量判定工具运行时就绪状态（三层就绪提示体系第①层：清单级标志）。
 ///
-/// 未注册探测器的工具不进入返回 map（`to_list_item` 落 `Unknown` 默认值）；
-/// 探测带 TTL 缓存（CLI 型 30s / key 型按用户 30s），列表高频调用无重复开销。
+/// 数据驱动判定在 domain `tool_readiness`（CLI 型 / key 型），带 TTL 缓存
+/// （CLI 型 30s / key 型按用户 30s），列表高频调用无重复开销；判定异常
+/// （best-effort Unknown）的工具不进入返回 map（`to_list_item` 落 Unknown 默认值）。
 pub(crate) async fn probe_runtime_ready(
     ctx: &RequestContext,
     tools: &[Tool],
 ) -> HashMap<String, RuntimeReady> {
+    let domain = crate::service::domain::runtime::domain();
+    let tool_execution = domain.tool_execution();
     let mut ready = HashMap::new();
     for tool in tools {
-        let id = tool.po.id.clone();
-        let status = tool_readiness::probe(&id, ctx).await;
-        // 未注册探测器 → Unknown，无需占用 map（默认值即 Unknown）
+        let status = tool_execution.tool_readiness(ctx, tool).await;
+        // 判定异常 → Unknown，无需占用 map（默认值即 Unknown）
         if status != RuntimeReady::Unknown {
-            ready.insert(id, status);
+            ready.insert(tool.po.id.clone(), status);
         }
     }
     ready

@@ -294,6 +294,43 @@ impl ToolPo {
         self.updated_by = modifier;
     }
 
+    /// CLI 型工具判定 + 命令读取单点（D28「CLI 型 = po.config.command」不变式）
+    ///
+    /// 仅 CLI 包装类内置工具（browser/gh_cli/lark_cli）的 config 含 `command`；
+    /// 存量 DB PO config 无该字段 → `None`（调用方按需以工厂默认兜底，零迁移）。
+    pub fn cli_command(&self) -> Option<String> {
+        self.config
+            .get("command")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    }
+
+    /// CLI 安装引导文案（po.config.install_hint；缺省 `None`，由调用方兜底）
+    pub fn cli_install_hint(&self) -> Option<String> {
+        self.config
+            .get("install_hint")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    }
+
+    /// 行为参数：单次调用超时（毫秒），po.config.timeout_ms 缺省 `default` 兜底
+    pub fn config_timeout_ms(&self, default: u64) -> u64 {
+        self.config
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(default)
+    }
+
+    /// 行为参数：输出截断上限（字节），po.config.max_output_bytes 缺省 `default` 兜底
+    pub fn config_max_output_bytes(&self, default: u64) -> u64 {
+        self.config
+            .get("max_output_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(default)
+    }
+
     /// 为内置工具填充缺省值（sync 时调用）
     /// 确保 protocol 一定是 Builtin，control_mode 有合理默认值
     pub fn fill_defaults_for_builtin(&mut self) {

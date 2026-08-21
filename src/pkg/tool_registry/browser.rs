@@ -29,7 +29,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::process::Command;
 
-use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::BuiltinToolFactory;
@@ -109,9 +108,24 @@ pub struct BrowserParams {
     pub command: String,
     /// 子命令参数（如 url、@e1 元素引用、待填文本）
     pub args: Option<Vec<String>>,
-    /// 单次超时覆盖（毫秒，默认取 config [browser].timeout_ms）
+    /// 单次超时覆盖（毫秒，默认取工具 PO config 的 timeout_ms）
     pub timeout_ms: Option<u64>,
 }
+
+/// agent-browser 二进制缺省命令（工具 PO config 的 `command` 缺省值来源，D28）
+const DEFAULT_COMMAND: &str = "agent-browser";
+
+/// 缺省单次超时（毫秒）
+const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+
+/// 缺省输出截断上限（字节）
+const DEFAULT_MAX_OUTPUT_BYTES: u64 = 262_144;
+
+/// 安装引导（PO config.install_hint 缺省值来源；工厂默认与 spawn 引导共用，避免漂移）
+const DEFAULT_INSTALL_HINT: &str = "brew install agent-browser 或 cargo install agent-browser（首次还需执行 agent-browser install 下载 Chrome）";
+
+/// 命令路径修改引导（PO config 化后统一文案）
+const CONFIG_PATH_HINT: &str = "或在工具配置中修改命令路径";
 
 /// browser 内置工具工厂
 #[derive(Debug, Clone, Default)]
@@ -150,13 +164,19 @@ impl BuiltinToolFactory for BrowserToolFactory {
                     },
                     "timeout_ms": {
                         "type": "integer",
-                        "description": "Optional: per-call timeout in milliseconds. Default from server config (60s)."
+                        "description": "Optional: per-call timeout in milliseconds. Default: 60000 (from tool config)."
                     }
                 },
                 "required": ["command"],
                 "additionalProperties": false
             })),
-            config: Value::Null,
+            // CLI 命令与行为参数进 PO config（D28：工具自身属性，工具管理页可改）
+            config: json!({
+                "command": DEFAULT_COMMAND,
+                "timeout_ms": DEFAULT_TIMEOUT_MS,
+                "max_output_bytes": DEFAULT_MAX_OUTPUT_BYTES,
+                "install_hint": DEFAULT_INSTALL_HINT,
+            }),
             tags: serde_json::to_string(&vec![
                 "browser".to_string(),
                 "network".to_string(),
@@ -255,21 +275,30 @@ impl CoreTool for BrowserCoreTool {
         }
 
         // 2. CLI 就绪预检（未安装 → 统一安装引导）
-        let bin = get().browser.command.clone();
+        // 命令读实例 PO config（存量 config=Null → 常量缺省兜底，零迁移，D28）
+        let bin = self
+            .po
+            .cli_command()
+            .unwrap_or_else(|| DEFAULT_COMMAND.to_string());
+        let install_hint = self
+            .po
+            .cli_install_hint()
+            .unwrap_or_else(|| DEFAULT_INSTALL_HINT.to_string());
         if !tool_readiness::command_available(&bin) {
             return Ok(tool_readiness::cli_not_installed_json(
                 "agent-browser",
-                "brew install agent-browser 或 cargo install agent-browser（首次还需执行 agent-browser install 下载 Chrome）",
-                "或在 ai_orz.toml 的 [browser].command 配置绝对路径",
+                &install_hint,
+                CONFIG_PATH_HINT,
             ));
         }
 
         // 3. spawn（不经 shell，argv 直拼；--session 隔离）
+        // timeout / max_output 同源读 PO config（params.timeout_ms 优先，缺省常量兜底）
         let session = session_id(&ctx);
         let timeout_ms = params
             .timeout_ms
-            .unwrap_or_else(|| get().browser.timeout_ms);
-        let max_output_bytes = get().browser.max_output_bytes;
+            .unwrap_or_else(|| self.po.config_timeout_ms(DEFAULT_TIMEOUT_MS));
+        let max_output_bytes = self.po.config_max_output_bytes(DEFAULT_MAX_OUTPUT_BYTES);
 
         let mut command = Command::new(&bin);
         command
@@ -290,7 +319,7 @@ impl CoreTool for BrowserCoreTool {
                     std::io::ErrorKind::NotFound => tool_readiness::cli_not_installed_json(
                         "agent-browser",
                         "brew install agent-browser 或 cargo install agent-browser",
-                        "或在 ai_orz.toml 的 [browser].command 配置绝对路径",
+                        CONFIG_PATH_HINT,
                     ),
                     std::io::ErrorKind::PermissionDenied => json!({
                         "success": false,
@@ -402,6 +431,14 @@ mod tests {
         assert_eq!(po.control_mode, ControlMode::Manual);
         assert_eq!(po.protocol, ToolProtocol::Builtin);
         assert_eq!(po.get_tags(), vec!["browser", "network"]);
+        // CLI 命令与运行参数进 PO config（D28 不变式：CLI 型 = po.config.command）
+        assert_eq!(po.cli_command().as_deref(), Some(DEFAULT_COMMAND));
+        assert!(
+            po.cli_install_hint()
+                .is_some_and(|hint| hint.contains("agent-browser"))
+        );
+        assert_eq!(po.config_timeout_ms(0), DEFAULT_TIMEOUT_MS);
+        assert_eq!(po.config_max_output_bytes(0), DEFAULT_MAX_OUTPUT_BYTES);
     }
 
     #[test]

@@ -1851,4 +1851,271 @@ mod tests {
         assert!(resolved.is_some());
         assert!(resolved.unwrap().is_empty());
     }
+
+    // ==================== tool_readiness 数据驱动判定（D28） ====================
+
+    use crate::pkg::tool_registry::browser::BrowserToolFactory;
+    use crate::pkg::tool_registry::get_registry;
+    use crate::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
+    use crate::service::domain::runtime::RuntimeToolExecution;
+    use crate::service::domain::runtime::tool_execution::{
+        expire_readiness_cache, invalidate_readiness_cache,
+    };
+    use common::api::RuntimeReady;
+
+    /// CLI 型 PO（config 带 command，可选 install_hint）
+    fn cli_readiness_tool(tool_id: &str, command: &str, install_hint: Option<&str>) -> Tool {
+        let mut config = json!({ "command": command });
+        if let Some(hint) = install_hint {
+            config["install_hint"] = json!(hint);
+        }
+        let mut po = ToolPo::new(
+            tool_id.to_string(),
+            tool_id.to_string(),
+            "cli readiness tool".to_string(),
+            ToolProtocol::Builtin,
+            config,
+            Some(json!({ "type": "object" })),
+            vec!["test".to_string()],
+            Some("test-user".to_string()),
+        );
+        po.control_mode = ControlMode::Manual;
+        Tool::from_po_for_management(po)
+    }
+
+    /// key 型 PO（Http 协议，config 声明 credential_requirements）
+    fn key_readiness_tool(tool_id: &str, requirements: &[CredentialRequirement]) -> Tool {
+        let config = json!({
+            "credential_requirements": serde_json::to_value(requirements).unwrap(),
+        });
+        let mut po = ToolPo::new(
+            tool_id.to_string(),
+            tool_id.to_string(),
+            "key readiness tool".to_string(),
+            ToolProtocol::Http,
+            config,
+            Some(json!({ "type": "object" })),
+            vec!["test".to_string()],
+            Some("test-user".to_string()),
+        );
+        po.control_mode = ControlMode::Manual;
+        Tool::from_po_for_management(po)
+    }
+
+    fn tavily_default_credential() -> UserCredential {
+        UserCredential::from_po(UserCredentialPo::new(
+            "cred-tavily-rt".to_string(),
+            "org-1".to_string(),
+            "test-user".to_string(),
+            CredentialKind::TavilyKey,
+            "tavily default".to_string(),
+            CredentialDetail::TavilyKey {
+                api_key: "tvly_plain".to_string(),
+            },
+            CredentialVisibility::Private,
+            "test-user".to_string(),
+        ))
+    }
+
+    /// CLI 型：config.command 可寻址 → Ready
+    #[tokio::test]
+    async fn runtime_tool_readiness_cli_tool_with_installed_binary_is_ready() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let tool = cli_readiness_tool("rt-cli-ready", "/bin/ls", Some("install hint"));
+        invalidate_readiness_cache("rt-cli-ready");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::Ready
+        );
+    }
+
+    /// CLI 型：不可寻址 → NotReady{cli_not_installed}，install_hint + 工具配置双通道引导
+    #[tokio::test]
+    async fn runtime_tool_readiness_cli_tool_not_installed_combines_hints() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let tool = cli_readiness_tool(
+            "rt-cli-missing",
+            "/no/such/binary-xyz",
+            Some("brew install agent-browser"),
+        );
+        invalidate_readiness_cache("rt-cli-missing");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::NotReady {
+                reason: "cli_not_installed".to_string(),
+                hint: "brew install agent-browser；或在工具配置中修改命令路径".to_string(),
+            }
+        );
+    }
+
+    /// CLI 型：存量 config 无 install_hint → hint 仅工具配置引导（零迁移兼容）
+    #[tokio::test]
+    async fn runtime_tool_readiness_cli_tool_without_install_hint_keeps_config_hint() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let tool = cli_readiness_tool("rt-cli-legacy", "/no/such/binary-xyz", None);
+        invalidate_readiness_cache("rt-cli-legacy");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::NotReady {
+                reason: "cli_not_installed".to_string(),
+                hint: "或在工具配置中修改命令路径".to_string(),
+            }
+        );
+    }
+
+    /// 无 CLI 源 + 无凭据需求 → Ready（如 fs_read 等纯内置工具）
+    #[tokio::test]
+    async fn runtime_tool_readiness_plain_tool_without_requirements_is_ready() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let tool = Tool::from_po_for_management(test_tool_po("rt-plain", ToolProtocol::Builtin));
+        invalidate_readiness_cache("rt-plain");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::Ready
+        );
+    }
+
+    /// 存量 Builtin PO（config 无 command）→ 工厂默认 PO 兜底（零迁移）
+    #[tokio::test]
+    async fn runtime_tool_readiness_builtin_legacy_po_falls_back_to_factory_default() {
+        let registry = get_registry();
+        registry.register_builtin_factory(Box::new(BrowserToolFactory));
+        let mut po = test_tool_po("browser", ToolProtocol::Builtin);
+        po.config = json!({}); // 存量 DB 形态：sync 不刷新运维所有权字段
+        let tool = Tool::from_po_for_management(po);
+        invalidate_readiness_cache("browser");
+
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        match runtime.tool_readiness(&test_ctx(), &tool).await {
+            // 本机已安装 agent-browser → 工厂默认命令可寻址
+            RuntimeReady::Ready => {}
+            RuntimeReady::NotReady { reason, hint } => {
+                assert_eq!(reason, "cli_not_installed");
+                assert!(hint.contains("工具配置"), "hint: {}", hint);
+            }
+            other => panic!("unexpected readiness: {:?}", other),
+        }
+        registry.unregister("browser");
+    }
+
+    /// key 型（Http config 声明需求）：凭据未命中 → NotReady{api_key_missing + kind 引导}
+    #[tokio::test]
+    async fn runtime_tool_readiness_key_tool_missing_credential_is_not_ready() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let requirements = [credential_requirement(CredentialKind::TavilyKey, None)];
+        let tool = key_readiness_tool("rt-key-miss", &requirements);
+        invalidate_readiness_cache("rt-key-miss");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::NotReady {
+                reason: "api_key_missing".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）".to_string(),
+            }
+        );
+    }
+
+    /// key 型：凭据命中（按当前查看者）→ Ready
+    #[tokio::test]
+    async fn runtime_tool_readiness_key_tool_with_credential_is_ready() {
+        let runtime = credential_runtime(
+            StubUserDal::with_default(tavily_default_credential()),
+            StubLarkCredentialDal::none(),
+        );
+        let requirements = [credential_requirement(CredentialKind::TavilyKey, None)];
+        let tool = key_readiness_tool("rt-key-hit", &requirements);
+        invalidate_readiness_cache("rt-key-hit");
+
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::Ready
+        );
+    }
+
+    /// key 型静态声明接线：Builtin tavily_search 工厂声明 TavilyKey 需求
+    #[tokio::test]
+    async fn runtime_tool_readiness_builtin_tavily_declares_key_requirement() {
+        let registry = get_registry();
+        registry.register_builtin_factory(Box::new(TavilySearchToolFactory));
+        let tool =
+            Tool::from_po_for_management(test_tool_po("tavily_search", ToolProtocol::Builtin));
+        invalidate_readiness_cache("tavily_search");
+
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::NotReady {
+                reason: "api_key_missing".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）".to_string(),
+            }
+        );
+        registry.unregister("tavily_search");
+    }
+
+    /// key 型 TTL 缓存：窗口内复用上次判定（stub 变化不可见），过期后重新取数
+    #[tokio::test]
+    async fn runtime_tool_readiness_key_verdict_cached_until_ttl_expiry() {
+        let requirements = [credential_requirement(CredentialKind::TavilyKey, None)];
+        let tool = key_readiness_tool("rt-key-ttl", &requirements);
+        invalidate_readiness_cache("rt-key-ttl");
+
+        let miss = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let first = miss.tool_readiness(&test_ctx(), &tool).await;
+        assert_eq!(
+            first,
+            RuntimeReady::NotReady {
+                reason: "api_key_missing".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）".to_string(),
+            }
+        );
+
+        // TTL 窗口内换命中 stub 的 runtime：缓存命中，不重新取数
+        let hit = credential_runtime(
+            StubUserDal::with_default(tavily_default_credential()),
+            StubLarkCredentialDal::none(),
+        );
+        assert_eq!(hit.tool_readiness(&test_ctx(), &tool).await, first);
+
+        // 模拟过期 → 重新判定 → Ready
+        expire_readiness_cache("rt-key-ttl");
+        assert_eq!(
+            hit.tool_readiness(&test_ctx(), &tool).await,
+            RuntimeReady::Ready
+        );
+    }
+
+    /// CLI 型缓存 + 主动失效：TTL 内复用，invalidate 后按新 PO config 重判
+    #[tokio::test]
+    async fn runtime_tool_readiness_cli_verdict_invalidated_on_demand() {
+        let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
+        let missing = cli_readiness_tool("rt-cli-inval", "/no/such/binary-xyz", None);
+        invalidate_readiness_cache("rt-cli-inval");
+
+        let first = runtime.tool_readiness(&test_ctx(), &missing).await;
+        assert_eq!(
+            first,
+            RuntimeReady::NotReady {
+                reason: "cli_not_installed".to_string(),
+                hint: "或在工具配置中修改命令路径".to_string(),
+            }
+        );
+
+        // TTL 窗口内同 tool_id 换可寻址命令：缓存命中，仍旧判定
+        let installed = cli_readiness_tool("rt-cli-inval", "/bin/ls", None);
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &installed).await,
+            first
+        );
+
+        // 主动失效 → 按新 PO config 重判 → Ready
+        invalidate_readiness_cache("rt-cli-inval");
+        assert_eq!(
+            runtime.tool_readiness(&test_ctx(), &installed).await,
+            RuntimeReady::Ready
+        );
+    }
 }

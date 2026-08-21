@@ -24,6 +24,13 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
     fn create_po(&self) -> ToolPo;
     /// Create a tool instance given the ToolPo from DB
     fn create(&self, po: ToolPo) -> Box<dyn CoreTool>;
+    /// 工具凭据需求静态声明（默认空；readiness 判定与 call_tool 编排共用，D17）
+    ///
+    /// 内置工具的需求由代码静态声明（tavily → [TavilyKey]；
+    /// gh/lark 的需求声明在 Step 4 随工厂化落地）。
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        Vec::new()
+    }
 }
 
 clone_trait_object!(BuiltinToolFactory);
