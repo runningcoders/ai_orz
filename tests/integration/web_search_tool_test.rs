@@ -1,11 +1,11 @@
 //! Integration tests for tavily_search tool & user-level Tavily integration endpoints.
 //!
 //! Covers：
-//! - status 空状态：无凭证返回空列表 + shared_key_configured=false（测试环境无共享 key）
+//! - status 空状态：无凭证返回空列表
 //! - 凭证 CRUD 全链路：建 → 快照（key 尾号、明文不回显）→ 设默认 → 改名 → 删默认凭证
 //! - 参数校验错误：空名/空 key/未知凭证 → 4xx 引导
-//! - 双轨授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver 解析出解密明文
-//!   （用户凭证优先；不发起真实 Tavily 网络调用）
+//! - 授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver 解析出解密明文
+//!   （授权单轨走用户凭证库；不发起真实 Tavily 网络调用）
 //!
 //! 路由：`/api/v1/finance/identity/tavily/`（见 `src/router.rs::finance_routes`）
 
@@ -17,7 +17,7 @@ use ai_orz::pkg::tool_registry::tavily_search::TavilyCredentialResolver;
 use serde_json::json;
 use sqlx::SqlitePool;
 
-/// 聚合快照端点：无凭证时返回空 credentials + shared_key_configured=false
+/// 聚合快照端点：无凭证时返回空 credentials（shared_key_configured 已随 D27 删除）
 #[sqlx::test]
 async fn test_tavily_integration_status_empty(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -36,10 +36,9 @@ async fn test_tavily_integration_status_empty(pool: SqlitePool) {
         credentials.is_empty(),
         "fresh user has no tavily credentials"
     );
-    assert_eq!(
-        data.get("shared_key_configured").and_then(|v| v.as_bool()),
-        Some(false),
-        "test env has no shared key: {}",
+    assert!(
+        data.get("shared_key_configured").is_none(),
+        "shared_key_configured field should be removed (D27): {}",
         body
     );
 }
@@ -247,11 +246,11 @@ async fn test_tavily_credential_validation_errors(pool: SqlitePool) {
     );
 }
 
-/// 双轨授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver
+/// 授权解析：经 HTTP 绑定个人 key 后 TavilyDalCredentialResolver
 /// 能按用户解析出解密明文（默认凭证优先），且默认槽位轮换后解析结果跟随切换。
 /// 不发起真实 Tavily 网络调用。
 #[sqlx::test]
-async fn test_tavily_credential_resolver_dual_track(pool: SqlitePool) {
+async fn test_tavily_credential_resolver_default_rotation(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
@@ -329,7 +328,7 @@ async fn test_tavily_credential_resolver_dual_track(pool: SqlitePool) {
         .expect("resolved key1 again");
     assert_eq!(resolved, key1);
 
-    // 删光后 → None（共享 key 未配置时双轨皆缺）
+    // 删光后 → None（单轨授权无兜底，未绑定即缺）
     let (status, body) = app
         .delete_with_jwt(
             &format!("/api/v1/finance/identity/tavily/credentials/{}", cred1),

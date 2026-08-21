@@ -346,7 +346,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         })
     }
 
-    /// Tavily 集成状态聚合（凭证快照 + 共享 key 配置状态，双轨授权的实例侧可见性）
+    /// Tavily 集成状态聚合（凭证快照；授权单轨走用户凭证库，D27）
     async fn tavily_integration_status(
         &self,
         ctx: RequestContext,
@@ -382,10 +382,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 is_default: credential.po.is_default,
             });
         }
-        Ok(common::api::TavilyIntegrationStatusResponse {
-            credentials,
-            shared_key_configured: !crate::config::get().tavily.api_key.trim().is_empty(),
-        })
+        Ok(common::api::TavilyIntegrationStatusResponse { credentials })
     }
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================

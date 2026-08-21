@@ -2,7 +2,7 @@
 //!
 //! 设计见 docs/design/web_search_and_browser_tools_design.md 决策 6/7/11：
 //! - **探测器**：CLI 型 → 二进制可寻址（config 绝对路径优先 → PATH 扫描）；
-//!   key 型 → 共享 config key 非空 OR 用户凭证库含对应 kind（经 Resolver 只读查询，
+//!   key 型 → 用户凭证库含对应 kind（经 Resolver 只读查询，
 //!   不发真实网络请求；key 型就绪状态按当前查看者判定，必须带用户上下文）
 //! - **TTL 缓存**：CLI 型按 tool_id、key 型按 (tool_id, user_id)，避免每次列表都探测
 //! - **统一引导**：`cli_not_installed` / `api_key_missing` 结构化 JSON（调用时兜底），
@@ -61,7 +61,7 @@ pub fn register_probe(tool_id: &str, probe: Arc<dyn ToolReadinessProbe>) {
 /// 注册内置工具的默认探测器集（service::init 阶段调用）
 ///
 /// - browser / lark_cli / gh_cli：CLI 二进制探测（browser 命令取 config，可配绝对路径）
-/// - tavily_search：授权双轨探测（共享 config OR 用户凭证库 TavilyKey，按用户区分）
+/// - tavily_search：授权探测（用户凭证库 TavilyKey，按用户区分）
 pub fn register_default_probes() {
     register_probe("browser", Arc::new(BrowserCliProbe));
     register_probe(
@@ -177,7 +177,7 @@ impl ToolReadinessProbe for FixedCliProbe {
 
 // ==================== key 型探测器 ====================
 
-/// tavily_search 授权双轨探测：共享 config key 非空 OR 该用户凭证库含 TavilyKey
+/// tavily_search 授权探测：该用户凭证库是否含 TavilyKey（单轨，D27）
 ///
 /// 经 `TavilyCredentialResolver` 只读查询（与调用时授权解析同源），
 /// 不发真实网络请求验证 key 有效性。
@@ -190,9 +190,6 @@ impl ToolReadinessProbe for TavilyKeyProbe {
     }
 
     async fn probe(&self, ctx: &RequestContext) -> RuntimeReady {
-        if !get().tavily.api_key.trim().is_empty() {
-            return RuntimeReady::Ready;
-        }
         let Some(resolver) = crate::pkg::tool_registry::tavily_search::get_credential_resolver()
         else {
             // Resolver 未注册（初始化顺序异常）：无法判定
@@ -202,7 +199,7 @@ impl ToolReadinessProbe for TavilyKeyProbe {
             Ok(Some(_)) => RuntimeReady::Ready,
             Ok(None) => RuntimeReady::NotReady {
                 reason: "api_key_missing".to_string(),
-                hint: "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块），或由管理员在服务端 ai_orz.toml 的 [tavily].api_key 配置共享 key".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）".to_string(),
             },
             Err(_) => RuntimeReady::Unknown,
         }
@@ -222,7 +219,7 @@ pub fn cli_not_installed_json(bin: &str, install_hint: &str, config_hint: &str) 
     })
 }
 
-/// 授权缺失结构化引导（双路径：绑个人凭证 / 配共享 key）
+/// 授权缺失结构化引导（引导绑定个人凭证）
 pub fn api_key_missing_json(error: &str, guidance: &str) -> Value {
     json!({
         "success": false,
@@ -380,8 +377,8 @@ mod tests {
 
     #[tokio::test]
     async fn tavily_probe_without_key_is_not_ready() {
-        // 共享 key 未配置 + Resolver 未注册（单测环境）→ Unknown
-        // （Resolver 注册态与 config 内容受测试执行顺序影响，这里只验证不 panic）
+        // Resolver 未注册（单测环境）→ Unknown；已注册且未绑定 → NotReady
+        // （Resolver 注册态受测试执行顺序影响，这里只验证不 panic）
         let _ = crate::config::init();
         register_default_probes();
         invalidate_cache("tavily_search");
@@ -417,7 +414,6 @@ mod tests {
     async fn key_probe_resolver_error_returns_unknown() {
         // 直接构造 TavilyKeyProbe 验证 Resolver 缺失场景
         let probe = TavilyKeyProbe;
-        // 共享 key 为空的前提由 config init 后默认值保证
         let _ = crate::config::init();
         let status = probe.probe(&test_ctx()).await;
         // Resolver 未注册时为 Unknown；Resolver Err 分支同走 Unknown（探测异常不阻塞）

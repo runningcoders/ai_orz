@@ -2,13 +2,11 @@
 //!
 //! 通过 Tavily Search API 让 Agent 获取实时网络搜索结果。
 //!
-//! # 双轨授权（设计见 docs/design/web_search_and_browser_tools_design.md）
+//! # 授权（单轨，D27）
 //!
-//! API key 解析顺序：
-//! 1. **用户凭证优先**：按 `ctx.user_id` 经 `TavilyCredentialResolver` 查该用户
-//!    凭证库中的 TavilyKey（个人 key，加密存储）
-//! 2. **共享 config 兜底**：用户未绑定时取 `ai_orz.toml [tavily].api_key`
-//! 3. 两者皆缺 → 返回 `api_key_missing` 结构化引导（双路径：绑个人 key / 配共享 key）
+//! API key 仅经 `TavilyCredentialResolver` 按 `ctx.user_id` 查该用户
+//! 凭证库中的 TavilyKey（个人 key，加密存储）；未绑定 → 返回
+//! `api_key_missing` 结构化引导（绑定个人 key 单路径）。
 //!
 //! key 不在工具入参中传递，永不回显；结果返回结构化 JSON
 //! （title/url/snippet 列表），LLM 自行取舍。
@@ -18,7 +16,6 @@
 //! `TavilyCredentialResolver` trait 定义在 pkg 层（无上层依赖），具体实现由
 //! user DAL 提供并在 `service::init` 注册，工具不直连 DAL/DAO。
 
-use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::BuiltinToolFactory;
@@ -41,6 +38,9 @@ const DEFAULT_MAX_RESULTS: u64 = 5;
 /// 单条 snippet 截断上限（字符）
 const SNIPPET_MAX_CHARS: usize = 1000;
 
+/// 请求超时缺省（毫秒；可经工具 PO config 的 `timeout_ms` 覆盖）
+const DEFAULT_TIMEOUT_MS: u64 = 15_000;
+
 // ==================== 凭证解析器 ====================
 
 /// Tavily API key 凭证解析器（pkg 层抽象，由上层实现并注册）
@@ -62,41 +62,19 @@ pub fn get_credential_resolver() -> Option<&'static dyn TavilyCredentialResolver
     RESOLVER.get().map(|r| r.as_ref())
 }
 
-/// 授权来源标记（调用方可见，便于区分个人/共享授权）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApiKeySource {
-    /// 用户凭证库个人 key
-    UserCredential,
-    /// 实例共享 config key
-    SharedConfig,
-}
-
-impl ApiKeySource {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::UserCredential => "user_credential",
-            Self::SharedConfig => "shared_config",
-        }
-    }
-}
-
-/// 双轨授权解析：用户凭证优先 → 共享 config 兜底；皆缺返回 None
-async fn resolve_api_key(ctx: &RequestContext) -> Result<Option<(String, ApiKeySource)>> {
+/// 授权解析（单轨，D27）：仅取该用户凭证库中的个人 TavilyKey；未绑定返回 None
+async fn resolve_api_key(ctx: &RequestContext) -> Result<Option<String>> {
     if let Some(resolver) = get_credential_resolver()
         && let Some(key) = resolver.resolve(ctx).await?
     {
-        return Ok(Some((key, ApiKeySource::UserCredential)));
-    }
-    let shared = get().tavily.api_key.trim().to_string();
-    if !shared.is_empty() {
-        return Ok(Some((shared, ApiKeySource::SharedConfig)));
+        return Ok(Some(key));
     }
     Ok(None)
 }
 
-/// 授权缺失引导文案（双路径：绑个人 key / 配共享 key）
-const API_KEY_MISSING_ERROR: &str = "未找到可用的 Tavily API key（用户凭证与实例共享配置均未提供）";
-const API_KEY_MISSING_GUIDANCE: &str = "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块），或由管理员在服务端 ai_orz.toml 的 [tavily].api_key 配置共享 key";
+/// 授权缺失引导文案（单路径：绑个人 key）
+const API_KEY_MISSING_ERROR: &str = "未找到可用的 Tavily API key（用户凭证未绑定）";
+const API_KEY_MISSING_GUIDANCE: &str = "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）";
 
 // ==================== 工具定义 ====================
 
@@ -217,16 +195,23 @@ impl CoreTool for TavilySearchCoreTool {
             .clamp(1, 10);
         let include_answer = params.include_answer.unwrap_or(false);
 
-        // 2. 双轨授权解析（皆缺 → 统一结构化引导）
-        let Some((api_key, key_source)) = resolve_api_key(&ctx).await? else {
+        // 2. 授权解析（单轨：用户凭证库；未绑定 → 统一结构化引导）
+        let Some(api_key) = resolve_api_key(&ctx).await? else {
             return Ok(tool_readiness::api_key_missing_json(
                 API_KEY_MISSING_ERROR,
                 API_KEY_MISSING_GUIDANCE,
             ));
         };
 
-        // 3. 调用 Tavily Search API
-        let timeout = Duration::from_millis(get().tavily.timeout_ms);
+        // 3. 调用 Tavily Search API（timeout 取工具 PO config，缺省 DEFAULT_TIMEOUT_MS；
+        //    存量 PO config=Null → 缺省兜底，零迁移）
+        let timeout_ms = self
+            .po
+            .config
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_TIMEOUT_MS);
+        let timeout = Duration::from_millis(timeout_ms);
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .build()
@@ -259,7 +244,7 @@ impl CoreTool for TavilySearchCoreTool {
                 .and_then(|d| d.as_str())
                 .unwrap_or("no detail");
             let hint = if status.as_u16() == 401 || status.as_u16() == 432 {
-                "API key 无效或配额不足：请检查已绑定的 Tavily key（个人凭证或共享配置）"
+                "API key 无效或配额不足：请检查已绑定的个人 Tavily key"
             } else {
                 "Tavily 服务返回错误，请稍后重试"
             };
@@ -303,7 +288,6 @@ impl CoreTool for TavilySearchCoreTool {
         let mut payload = json!({
             "success": true,
             "query": query,
-            "key_source": key_source.as_str(),
             "results": results,
             "truncated": truncated_any
         });
@@ -383,14 +367,14 @@ mod tests {
 
     #[tokio::test]
     async fn call_without_key_returns_api_key_missing_guidance() {
-        // 单测环境：resolver 未注册且共享 config 为空（config 可能被其他测试污染，
-        // 仅在确无 key 时断言引导结构）
+        // 单测环境：resolver 未注册（单轨授权下无共享兜底），
+        // 仅在确无 key 时断言引导结构
         let _ = crate::config::init();
         let tool = TavilySearchCoreTool {
             po: TavilySearchToolFactory.create_po(),
         };
         let ctx = test_ctx();
-        if get_credential_resolver().is_none() && get().tavily.api_key.trim().is_empty() {
+        if get_credential_resolver().is_none() {
             let result = tool.call(ctx, json!({ "query": "rust" })).await.unwrap();
             assert_eq!(result["success"], false);
             assert_eq!(result["error_code"], "api_key_missing");
@@ -400,8 +384,8 @@ mod tests {
                 "guidance should mention personal key path"
             );
             assert!(
-                guidance.contains("[tavily].api_key"),
-                "guidance should mention shared config path"
+                !guidance.contains("[tavily].api_key"),
+                "guidance should not mention removed shared config path"
             );
         }
     }

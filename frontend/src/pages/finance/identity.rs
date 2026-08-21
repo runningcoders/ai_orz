@@ -2,7 +2,7 @@
 //!
 //! finance domain 下的身份凭证资产主页面：按凭证类型分子区块管理当前用户的凭据。
 //! 当前含飞书（应用绑定卡 + 用户身份卡）、GitHub（PAT 凭证 + 登录态）与
-//! Tavily（API key 凭证 + 双轨授权状态）三个子区块；未来新增微信/Slack 等类型直接加区块。
+//! Tavily（API key 凭证）三个子区块；未来新增微信/Slack 等类型直接加区块。
 //!
 //! 飞书区块数据来源 = `GET /api/v1/finance/identity/lark/status` 聚合端点（不缓存 localStorage）。
 //! GitHub 区块数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。

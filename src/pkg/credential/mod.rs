@@ -159,7 +159,7 @@ pub struct FetchedCredential {
     /// 凭证 ID（OAuthTokenManager 缓存键）
     pub credential_id: String,
     /// dal 生产路径凭据：lark dal 为明文（already_decrypted=true）；
-    /// user dal / tavily 兜底为 DB 加密态（false）
+    /// user dal 为 DB 加密态（false）；无其他生产路径（tavily 共享兜底已废除，D27）
     pub detail: CredentialDetail,
     /// lark dal 派生属性（D24：identity_mode 等；user dal 生产路径为空集）
     pub attributes: std::collections::BTreeMap<String, String>,

@@ -29,7 +29,7 @@ pub fn init() {
     domain::init_all();
 
     // 工具就绪探测器（三层就绪提示体系）：
-    // browser/lark_cli/gh_cli → CLI 二进制探测；tavily_search → 授权双轨探测
+    // browser/lark_cli/gh_cli → CLI 二进制探测；tavily_search → 授权探测（用户凭证库 TavilyKey）
     crate::pkg::tool_registry::tool_readiness::register_default_probes();
 
     // browser 工具截图产物存储器：project Domain 实现

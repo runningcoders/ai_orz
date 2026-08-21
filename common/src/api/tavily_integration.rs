@@ -3,7 +3,7 @@
 //! 路由统一挂 `/api/v1/finance/identity/tavily/`：
 //! - 个人 API key 凭证 CRUD（user_credentials 独立表，key 加密落库永不回显）
 //! - 默认凭证（多条 key 时 tavily_search 工具身份优先取默认）
-//! - 集成状态聚合（凭证快照 + 共享 key 配置状态，双轨授权的实例侧可见性）
+//! - 集成状态聚合（凭证快照）
 
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
@@ -88,8 +88,6 @@ pub struct TavilyIntegrationStatusRequest {}
 pub struct TavilyIntegrationStatusResponse {
     /// 当前用户已绑定的 Tavily 个人 key 凭证（key 永不回显，仅尾号）
     pub credentials: Vec<TavilyCredentialSnapshot>,
-    /// 实例共享 key 是否已配置（[tavily].api_key；个人 key 未绑定时工具兜底使用）
-    pub shared_key_configured: bool,
 }
 
 /// 单个 Tavily 凭证快照

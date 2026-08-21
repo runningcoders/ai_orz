@@ -1,8 +1,7 @@
 //! 身份凭证 Tavily 区块（Finance → Identity 子组件）
 //!
 //! 展示当前用户 Tavily API key 凭证（key 永不回显，仅尾号）、默认凭证设置
-//! 与增删改，以及实例共享 key 配置状态（双轨授权可见性）；Agent 经
-//! tavily_search 工具以该凭证身份检索网络信息。
+//! 与增删改；Agent 经 tavily_search 工具以该凭证身份检索网络信息。
 //!
 //! 数据来源 = `GET /api/v1/finance/identity/tavily/status` 聚合端点。
 
@@ -147,10 +146,6 @@ pub fn IdentityTavilySection() -> Element {
         .as_ref()
         .map(|s| s.credentials.clone())
         .unwrap_or_default();
-    let shared_key_configured = snapshot
-        .as_ref()
-        .map(|s| s.shared_key_configured)
-        .unwrap_or(false);
 
     rsx! {
         // ==================== Tavily 凭证子区块 ====================
@@ -160,7 +155,7 @@ pub fn IdentityTavilySection() -> Element {
                 span { class: "badge badge-outline badge-sm", "TavilyKey" }
             }
             p { class: "text-xs text-base-content/50 mt-1",
-                "网络搜索（tavily_search）个人 API key 凭证；未绑定个人 key 时回退实例共享 key。"
+                "网络搜索（tavily_search）个人 API key 凭证。"
             }
 
             if loading() && snapshot.is_none() {
@@ -228,23 +223,19 @@ pub fn IdentityTavilySection() -> Element {
                     }
                 }
 
-                // ===== 授权来源卡（双轨可见性） =====
+                // ===== 授权来源卡 =====
                 div { class: "border border-base-300 rounded-lg p-4 mt-4",
                     div { class: "flex items-center justify-between flex-wrap gap-2",
                         h4 { class: "font-semibold", "授权来源" }
-                        if shared_key_configured {
-                            span { class: "badge badge-success", "个人 key 优先 + 共享 key 兜底" }
-                        } else {
-                            span { class: "badge badge-ghost", "仅个人 key" }
-                        }
+                        span { class: "badge badge-ghost", "仅个人 key" }
                     }
-                    if !shared_key_configured && credentials.is_empty() {
+                    if credentials.is_empty() {
                         div { class: "alert alert-warning mt-3",
-                            span { "个人 key 与实例共享 key 均未配置，tavily_search 调用将返回引导提示" }
+                            span { "尚未绑定个人 Tavily key，tavily_search 调用将返回引导提示" }
                         }
                     }
                     p { class: "text-xs text-base-content/50 mt-2",
-                        "个人 key 优先；未绑定时由管理员在服务端 ai_orz.toml 的 [tavily].api_key 配置共享 key 兜底。"
+                        "授权仅来自个人绑定的 Tavily key；未绑定时工具调用返回绑定引导。"
                     }
                 }
             }

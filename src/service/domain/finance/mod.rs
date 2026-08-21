@@ -356,7 +356,7 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
     ) -> Result<common::api::GithubIntegrationStatusResponse>;
 
-    /// Tavily 集成状态聚合（凭证快照 + 共享 key 配置状态）
+    /// Tavily 集成状态聚合（凭证快照）
     async fn tavily_integration_status(
         &self,
         ctx: RequestContext,

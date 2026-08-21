@@ -57,9 +57,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub a2a_server: A2aServerConfig,
 
-    /// Tavily 网络搜索配置（tavily_search 工具）
-    #[serde(default)]
-    pub tavily: TavilyConfig,
     /// agent-browser CLI（browser 内置工具）
     #[serde(default)]
     pub browser: BrowserConfig,
@@ -625,34 +622,6 @@ fn default_a2a_endpoint() -> String {
 
 fn default_a2a_card_path() -> String {
     "/.well-known/agent.json".to_string()
-}
-
-/// Tavily 网络搜索配置（tavily_search 工具）
-///
-/// api_key 为实例共享兜底授权：个人 key 优先走用户身份凭证库
-/// （CredentialKind::TavilyKey），用户未绑定且此处非空时兜底使用；
-/// 两者皆缺时工具调用返回 api_key_missing 引导。
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct TavilyConfig {
-    /// 共享 API key（实例级兜底；个人 key 优先走用户凭证库）
-    #[serde(default)]
-    pub api_key: String,
-    /// 请求超时（毫秒）
-    #[serde(default = "default_tavily_timeout_ms")]
-    pub timeout_ms: u64,
-}
-
-impl Default for TavilyConfig {
-    fn default() -> Self {
-        Self {
-            api_key: String::new(),
-            timeout_ms: default_tavily_timeout_ms(),
-        }
-    }
-}
-
-fn default_tavily_timeout_ms() -> u64 {
-    15_000
 }
 
 /// agent-browser CLI 配置（browser 内置工具）
