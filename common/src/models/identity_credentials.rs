@@ -16,7 +16,7 @@ use crate::error::{Result, bail_err};
 ///
 /// 分类型枚举（映射外部系统）：TEXT 存储（`#[sqlx(rename_all = "snake_case")]`），
 /// DB 值 = 'lark_app' / 'github_token' / 'tavily_key'——与 API/JSON 值空间一致。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "sqlx", sqlx(rename_all = "snake_case"))]
@@ -566,6 +566,97 @@ impl CredentialDetail {
     }
 }
 
+// ==================== 共享工具凭据需求声明契约 ====================
+
+use schemars::JsonSchema;
+
+/// 共享工具的凭据需求声明（类型级声明，非实例级引用；全部字段非敏感）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CredentialRequirement {
+    /// 需要的凭据类型
+    pub kind: CredentialKind,
+    /// 平台标识（generic 类 kind 必填，专用 kind 必空；匹配键二元组第二维）
+    pub platform: Option<String>,
+    /// 提取字段：None = 规范可用值；Some = detail 指定字段；与 enhancer 互斥
+    pub field: Option<String>,
+    /// 增强器类型：None = 规范可用值；显式选择默认增强器幂等等价于 None；与 field 互斥
+    pub enhancer: Option<CredentialEnhancerKind>,
+    /// 注入点（纯放置，零变换）
+    pub binding: CredentialBinding,
+}
+
+/// 凭据增强器类型（配置声明与取值共用同一值域）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialEnhancerKind {
+    /// "Bearer " + 规范可用值
+    BearerToken,
+    /// "Basic " + base64(username:password)
+    BasicAuth,
+    /// OAuth refresh → access_token（oauth 默认装配）
+    AccessToken,
+}
+
+/// 注入点（纯放置，零变换）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CredentialBinding {
+    /// 注入子进程环境变量（stdio MCP）
+    Env {
+        /// 环境变量名
+        name: String,
+    },
+    /// 注入 HTTP 请求头（http MCP / HTTP 工具）
+    Header {
+        /// 请求头名
+        name: String,
+    },
+    /// 注入 URL 查询参数（HTTP 工具）
+    Query {
+        /// 查询参数名
+        name: String,
+    },
+    /// 存工具实例字段（内置工具消费形态；field 为实例字段名）
+    Internal {
+        /// 工具实例字段名
+        field: String,
+    },
+}
+
+/// 需求声明的作用域（binding ↔ 协议匹配校验用；前端预校验与后端共用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialRequirementScope {
+    /// stdio MCP Server：仅 Env binding
+    McpStdio,
+    /// streamable HTTP MCP Server：仅 Header binding
+    McpHttp,
+    /// HTTP 工具：Header / Query binding
+    HttpTool,
+    /// 内置工具（DB 不持久化，静态声明自校验用）：仅 Internal binding
+    Builtin,
+}
+
+/// 增强器 ↔ 凭据类型可用性矩阵（单点；pkg supports 与前端下拉过滤共用）
+pub fn enhancer_supports(kind: CredentialKind, enhancer: CredentialEnhancerKind) -> bool {
+    matches!(
+        (kind, enhancer),
+        (CredentialKind::GenericToken, CredentialEnhancerKind::BearerToken)
+            | (CredentialKind::OAuth, CredentialEnhancerKind::BearerToken)
+            | (CredentialKind::OAuth, CredentialEnhancerKind::AccessToken)
+            | (CredentialKind::UserPassword, CredentialEnhancerKind::BasicAuth)
+    )
+}
+
+/// 复合形态凭据的默认增强器（oauth→AccessToken、user_password→BasicAuth）
+pub fn default_enhancer(kind: CredentialKind) -> Option<CredentialEnhancerKind> {
+    match kind {
+        CredentialKind::OAuth => Some(CredentialEnhancerKind::AccessToken),
+        CredentialKind::UserPassword => Some(CredentialEnhancerKind::BasicAuth),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1100,5 +1191,107 @@ mod tests {
             .primary_id(),
             None
         );
+    }
+
+    // ==================== CredentialRequirement 契约 ====================
+
+    #[test]
+    fn test_requirement_serde_roundtrip() {
+        let req = CredentialRequirement {
+            kind: CredentialKind::OAuth,
+            platform: Some("linear".to_string()),
+            field: None,
+            enhancer: Some(CredentialEnhancerKind::BearerToken),
+            binding: CredentialBinding::Header {
+                name: "authorization".to_string(),
+            },
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["kind"], "oauth");
+        assert_eq!(json["platform"], "linear");
+        assert_eq!(json["enhancer"], "bearer_token");
+        assert_eq!(json["binding"]["type"], "header");
+        assert_eq!(json["binding"]["name"], "authorization");
+        let parsed: CredentialRequirement = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, req);
+    }
+
+    #[test]
+    fn test_binding_serde_snake_case() {
+        let env = CredentialBinding::Env {
+            name: "API_TOKEN".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&env).unwrap()["type"],
+            "env"
+        );
+        let query = CredentialBinding::Query {
+            name: "api_key".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&query).unwrap()["type"],
+            "query"
+        );
+        let internal = CredentialBinding::Internal {
+            field: "app_id".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&internal).unwrap()["type"],
+            "internal"
+        );
+    }
+
+    #[test]
+    fn test_enhancer_supports_matrix() {
+        use CredentialEnhancerKind as E;
+        // 精确表
+        assert!(enhancer_supports(
+            CredentialKind::GenericToken,
+            E::BearerToken
+        ));
+        assert!(enhancer_supports(CredentialKind::OAuth, E::BearerToken));
+        assert!(enhancer_supports(CredentialKind::OAuth, E::AccessToken));
+        assert!(enhancer_supports(
+            CredentialKind::UserPassword,
+            E::BasicAuth
+        ));
+        // 专用 kind 零支持
+        for kind in [
+            CredentialKind::LarkApp,
+            CredentialKind::GithubToken,
+            CredentialKind::TavilyKey,
+        ] {
+            assert!(!enhancer_supports(kind, E::BearerToken));
+            assert!(!enhancer_supports(kind, E::BasicAuth));
+            assert!(!enhancer_supports(kind, E::AccessToken));
+        }
+        // 反向组合拒绝
+        assert!(!enhancer_supports(
+            CredentialKind::UserPassword,
+            E::BearerToken
+        ));
+        assert!(!enhancer_supports(
+            CredentialKind::GenericToken,
+            E::AccessToken
+        ));
+        assert!(!enhancer_supports(
+            CredentialKind::GenericToken,
+            E::BasicAuth
+        ));
+    }
+
+    #[test]
+    fn test_default_enhancer_assembly() {
+        use CredentialEnhancerKind as E;
+        assert_eq!(
+            default_enhancer(CredentialKind::OAuth),
+            Some(E::AccessToken)
+        );
+        assert_eq!(
+            default_enhancer(CredentialKind::UserPassword),
+            Some(E::BasicAuth)
+        );
+        assert_eq!(default_enhancer(CredentialKind::GenericToken), None);
+        assert_eq!(default_enhancer(CredentialKind::LarkApp), None);
     }
 }
