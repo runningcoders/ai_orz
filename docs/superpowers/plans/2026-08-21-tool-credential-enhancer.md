@@ -778,7 +778,7 @@ pub struct ResolvedRequirement {
 pub struct FetchedCredential {
     pub credential_id: String,
     /// lark dal 生产路径为明文（already_decrypted=true）；
-    /// user dal / tavily 兜底为 DB 加密态（false）
+    /// user dal 为 DB 加密态（false）；无其他生产路径（tavily 兜底已随 D27 废除）
     pub detail: CredentialDetail,
     pub already_decrypted: bool,
     /// dal 派生属性（D24：lark 的 identity_mode 等；user dal 生产路径为空集）
@@ -968,7 +968,7 @@ async fn resolve_requirements_rejects_length_mismatch() { ... }  // requirements
 
 ---
 
-## Phase 3：MCP 集成（config 删 env/headers + CoreTool 生命周期 + 编排注入 + 连接隔离）
+## Phase 3：MCP 集成（config 删 env/headers + CoreTool 生命周期 + 编排注入 + 连接隔离 + 调用入口统一 D26）
 
 ### Task 3.1：McpServerConfig / DTO 字段替换
 
@@ -1067,74 +1067,139 @@ fn check(
   - 新增 `connection_key_isolated_per_user`：同 server 两实例不同 user_scope → runtime 连接键不同（单测连接键生成函数，不起真实子进程）。
 - [ ] **Step 6：全绿 + 提交** `git commit -m "feat(mcp): core tool lifecycle with per-user connection isolation"`。
 
-### Task 3.3：domain 编排 resolve_tool_credentials + 内置三员工厂化 + Dal resolver 三删
+### Task 3.3：domain 编排 resolve_tool_credentials + 调用入口统一（D26）+ 内置三员工厂化 + Dal resolver 三删
 
 **Files:**
-- Modify: src/service/domain/finance/identity_credential.rs（新增 `resolve_tool_credentials`，落位以既有 domain 凭据文件为准）
-- Modify: 工具调用编排（domain 调 `dal.call_tool` 处）
-- Modify: src/service/dal/mcp_tool.rs（`call_tool` 增 resolved 参数 + assemble 后 check）
+- Modify: src/service/dal/lark.rs → 拆分为 src/service/dal/lark/ 文件夹（Step 0：trait 体系 + 改名，见下）
+- Modify: common/src/config.rs（Step 0b D27：删 TavilyConfig 段；Step 1b D28：删 BrowserConfig 段——全局 config 零工具参数不变式达成）
+- Modify: src/pkg/tool_registry/tavily_search.rs（Step 0b D27：timeout 挪 PO config + 单轨化）
+- Modify: src/pkg/tool_registry/browser.rs / gh_cli.rs / lark_cli.rs（Step 1b D28：CLI 命令与行为参数挪 PO config，spawn 读实例 PO）
+- Modify: src/pkg/tool_registry/tool_readiness.rs（Step 1b D28：probe 注册表机制消亡，仅留纯函数）
+- Modify: src/handlers/finance/tool/response.rs（Step 1b D28：readiness 调用点切 domain）
+- Modify: src/service/domain/finance/identity_credential.rs + common/src/api/tavily_integration.rs + frontend/src/pages/finance/identity_tavily.rs + tests/integration/web_search_tool_test.rs（Step 0b D27：shared_key_configured 全链删除）
+- Modify: src/service/domain/runtime/tool_execution.rs（新增 `resolve_tool_credentials`——落位 runtime 而非 finance domain：唯一消费方是 `call_tool` 编排，内部只向下调注入的 DAL 端口 / pkg 纯函数，零 finance domain 依赖，规避 domain 同层互调；`call_tool` 增凭据编排 + 新增 `dispatch_manual_tool`）
+- Modify: src/models/tool.rs（新增 `ToolExecutionRequest`，D26 统一传参结构）
+- Modify: src/service/domain/runtime/mod.rs（RuntimeToolExecution trait 增 `dispatch_manual_tool` 声明；RuntimeDomainImpl 增 `user_dal` / `lark_credentials` 字段——依赖注入，见 Step 1）
+- Modify: src/service/domain/runtime/think_loop.rs（control_mode 分发切换 domain，D26 入口统一）
+- Modify: src/service/dal/tool.rs（`call_tool` 改 ToolExecutionRequest 签名 + Builtin per-call 重组装 + check；删 `call_tool_by_id` / `execute_auto` / `execute_manual`）
+- Modify: src/service/dal/mcp_tool.rs（`call_tool` 改 ToolExecutionRequest 签名 + assemble 后 check；删 `call_tool_by_id`）
 - Modify: src/pkg/tool_registry/gh_cli.rs / tavily_search.rs / lark_cli.rs（删 trait + 工厂化，v1.5 Lark 统一）
-- Modify: src/pkg/tool_registry/mod.rs（`ToolRegistry::credential_requirements(&self, po)` 辅助：Builtin 查 factory 声明 / Mcp·Http 从 config 解析）
+- Modify: src/pkg/tool_registry/mod.rs（`ToolRegistry::credential_requirements(&self, po)` 辅助：Builtin 查 factory 声明 / Mcp·Http 从 config 解析；**Step 1b 建**（readiness 先用），Step 2 call_tool 编排复用）
 - Modify: src/service/dal/user.rs（删 Gh/Tavily Dal resolver）
-- Modify: src/service/dal/lark.rs（删 Lark resolver 段；resolve_credentials_for_user 适配生产端）
 - Modify: src/service/mod.rs（init 删 Gh/Tavily/Lark 三行注册）
-- Test: gh_cli / tavily / lark_cli 既有测试核对 + domain 内嵌测试
+- Modify: src/handlers/finance/tool/request_tool_call.rs / send_tool_call_message.rs（doc 注释 execute_manual → dispatch_manual_tool，逻辑零改动）
+- Test: gh_cli / tavily / lark_cli 既有测试核对 + domain 内嵌测试 + tool_execution_test / mcp_tool_test / think_loop 相关测试签名迁移 + lark_test.rs 迁移
 
-- [ ] **Step 1：domain `resolve_tool_credentials`（D17 编排链 ①②③ 单点，生产端二元路由）**：
+- [x] **Step 0：lark DAL trait 体系化 + 改名（前置重构，独立提交）**（commit a22eede3：`find_channel_by_lark_identity` 归 credentials（渠道定位对称）、`base()` 归 listener（运行面透传）；consumer/adapter 注册处维持具体类型 `Arc<LarkDalImpl>`（`adapt_lark` 固有方法需要），finance domain 持 `Arc<dyn LarkDal>`；`LarkDalCredentialResolver` 落位 credentials.rs）——现状 `LarkMessageChannelDal` 是无 trait 具体类型，且名不副实（不止 message channel）：
+  - **文件夹化** [src/service/dal/lark/](../../../src/service/dal/lark/)（原单文件 850 行拆分）：
+    - `mod.rs`：总 trait `LarkDal: LarkCredentialDal + LarkListenerDal`（组合子 trait）+ 单例 `dal()` / `init()` / `new*()` 构造；
+    - `credentials.rs`：子 trait `LarkCredentialDal`——`resolve_credentials_for_user` / `resolve_channel_app_id` / `find_channels_by_credential_id`（消费方：runtime domain 凭据编排、finance domain 凭证删除联动）；
+    - `listener.rs`：子 trait `LarkListenerDal`——`ensure_listener_for` / `release_listener_if_unused` / `sync_listener_for_channel` / `release_listener_for_channel` / `handover_listeners_after_credential_change` / `listener_stats`（消费方：finance domain 渠道联动、凭证变更联动）；
+    - `impl.rs`：`LarkDalImpl`（原 `LarkMessageChannelDal` **改名**）实现全部子 trait；`adapt_lark` / `MessageInboundAdapter` / `LarkAdapterHandler` 入站适配段留在 impl（已通过 pkg `MessageInboundAdapter` trait 暴露，无需重复建口）。
+  - **消费方类型切换**：finance domain 字段 `Option<Arc<LarkMessageChannelDal>>` → `Option<Arc<dyn LarkDal>>`（凭据 + 监听器两块都用，取总 trait）；consumer / adapter 注册处取 `Arc<dyn LarkDal>`（或维持 `LarkDalImpl` 具体类型——`LarkAdapterHandler` 内部组合非对外接口，两可，实现时以改动最小为准）；lark_test.rs 引用同步。
+  - 纯结构重构零行为变化：`cargo test --lib` + `make test-be` 全绿后独立提交 `git commit -m "refactor(lark): split lark dal into folder with credential/listener sub-traits"`。
+
+- [x] **Step 0b：tavily 共享 config 兜底废除（D27，前置独立提交）**（commit 12ebdbd1：附带删除共享兜底配套的 `ApiKeySource` 枚举与响应 `key_source` 字段——等价处理；集成测试文件已改未跑，留待最后统一验证）——全局 config `[tavily]` 是双轨授权时期遗留（[web_search_and_browser_tools_design.md](../design/web_search_and_browser_tools_design.md)），与「凭据统一走凭证库」相悖；共享 key 挪 tool PO config 同样违反 D1（凭据原文落组织共享配置 = 全员可见）：
+  - **[common/src/config.rs](../../../common/src/config.rs#L629-L655)**：`TavilyConfig` 段整体删除（api_key + timeout_ms），`Config` struct `tavily` 字段移除，`ai_orz.toml` 模板/示例 `[tavily]` 段删除（有则删）。
+  - **[tavily_search.rs](../../../src/pkg/tool_registry/tavily_search.rs)**：`resolve_api_key` 双轨改单轨（仅 `TavilyCredentialResolver`，共享分支 L90-L93 删除；本 Step 先保留双轨形态中用户凭证一支，完整 check 注入化在 Step 3 lark_cli/tavily 段落地）；timeout `get().tavily.timeout_ms`（L229）→ 读工具 PO config `config.timeout_ms` 缺省 15_000 常量（存量 PO config=Null 零迁移）；`API_KEY_MISSING_ERROR` / `API_KEY_MISSING_GUIDANCE` 文案改单路径（删「或由管理员…配置共享 key」）；L393 测试条件与断言同步。
+  - **[tool_readiness.rs](../../../src/pkg/tool_registry/tool_readiness.rs#L180-L210)**：TavilyKeyProbe 删共享 config 探测分支（L193-L195），暂保留 resolver 分支（探测机制整体重构在 Step 1b，届时 TavilyKeyProbe 消亡——resolver 删除前的过渡态）；probe hint 文案改单路径。
+  - **[identity_credential.rs](../../../src/service/domain/finance/identity_credential.rs#L387)**：`tavily_integration_status` 删 `shared_key_configured` 字段；[common/src/api/tavily_integration.rs](../../../common/src/api/tavily_integration.rs#L92) DTO 字段删除；[frontend identity_tavily.rs](../../../frontend/src/pages/finance/identity_tavily.rs#L150)（L150-L152 / L235-L241 两处分支）同步删（提示语单路径）；[web_search_tool_test.rs](../../../tests/integration/web_search_tool_test.rs) 断言删该字段。
+  - 行为变化：未绑个人 key 的用户 tavily_search 从「共享兜底可用」变「api_key_missing 引导」——预期内，与 GithubToken 行为对齐。`cargo test --lib` + `make test-be` + 前端构建全绿后独立提交 `git commit -m "refactor(tavily): remove shared config key fallback, single-track user credential only (D27)"`。
+
+- [ ] **Step 1：domain `resolve_tool_credentials`（D17 编排链 ①②③ 单点，生产端二元路由；依赖注入，落位 runtime/tool_execution.rs）**：
+  - **依赖注入（禁止方法内取全局单例）**：RuntimeDomainImpl 增两个字段（与既有 tool_dal / mcp_tool_dal 同模式）：
+    - `user_dal: Arc<dyn UserDal + Send + Sync>`——既有 trait，`find_default_credential(ctx, &user_id, kind, platform)`；
+    - `lark_credentials: Arc<dyn LarkCredentialDal + Send + Sync>`——**Step 0 建的凭据子 trait**（[dal/lark/credentials.rs](../../../src/service/dal/lark/credentials.rs)，`LarkDalImpl` 实现；runtime 只消费凭据面，按需取子 trait 不持总 trait）。
+    - 构造注入：生产 `new()` 取 `user::dal()` / `lark::dal()` 单例注入（与 tool_dal 现状一致）；测试 `new_with_tool_dals` / `new_with_all` 增参注入 stub；`Clone` / `Debug` impl 同步补字段。
 
 ```rust
-/// 工具调用编排取数：生产路由 → pkg 纯函数加工；任一未命中 → None（调用方出引导）
-pub async fn resolve_tool_credentials(
-    ctx: &RequestContext,
-    requirements: &[CredentialRequirement],
-) -> Result<Option<Vec<ResolvedRequirement>>> {
-    if requirements.is_empty() {
-        return Ok(Some(Vec::new()));
+impl RuntimeDomainImpl {
+    /// 工具调用编排取数：生产路由 → pkg 纯函数加工；任一未命中 → None（调用方出引导）
+    async fn resolve_tool_credentials(
+        &self,
+        ctx: &RequestContext,
+        requirements: &[CredentialRequirement],
+    ) -> Result<Option<Vec<ResolvedRequirement>>> {
+        if requirements.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let mut fetched = Vec::with_capacity(requirements.len());
+        for requirement in requirements {
+            let fetched_credential = match requirement.kind {
+                // 生产路由（D17 v1.5）：LarkApp 走渠道路径，附派生属性（D24）
+                CredentialKind::LarkApp => {
+                    self.lark_credentials.resolve_credentials_for_user(ctx).await?
+                        .map(|(creds, mode)| {
+                            FetchedCredential {
+                                credential_id: creds.app_id.clone(), // 生产端无独立 id，以 app_id 代
+                                detail: CredentialDetail::LarkApp {
+                                    app_id: creds.app_id,
+                                    app_secret: creds.app_secret,
+                                    encrypt_key: None,
+                                    verification_token: None,
+                                },
+                                attributes: BTreeMap::from([("identity_mode".to_string(), mode)]),
+                            }
+                        })
+                }
+                // 其余 kind 统一走 user dal find_default（tavily 纯单轨 D27，无兜底）
+                _ => {
+                    // self.user_dal.find_default_credential(ctx, &user_id, requirement.kind,
+                    //     requirement.platform.as_deref()).await?
+                    None
+                }
+            };
+            let Some(credential) = fetched_credential else {
+                return Ok(None);
+            };
+            fetched.push(credential);
+        }
+        Ok(Some(pkg::credential::resolve_requirements(requirements, &fetched).await?))
     }
-    let mut fetched = Vec::with_capacity(requirements.len());
-    for requirement in requirements {
-        let fetched_credential = match requirement.kind {
-            // 生产路由（D17 v1.5）：LarkApp 走渠道路径，附派生属性（D24）
-            CredentialKind::LarkApp => {
-                lark_dal.resolve_credentials_for_user(ctx).await?.map(|(creds, mode)| {
-                    FetchedCredential {
-                        credential_id: creds.app_id.clone(), // 生产端无独立 id，以 app_id 代
-                        detail: CredentialDetail::LarkApp {
-                            app_id: creds.app_id,
-                            app_secret: creds.app_secret,
-                            encrypt_key: None,
-                            verification_token: None,
-                        },
-                        attributes: BTreeMap::from([("identity_mode".to_string(), mode)]),
-                    }
-                })
-            }
-            // 其余 kind：user dal find_default；
-            // tavily 共享 config 兜底（D17）：kind=tavily_key 未命中 → 共享 config 合成
-            // （实现时对照 tavily_search.rs 现有 resolve_api_key 的 config 读取路径迁移）
-            _ => { /* user_dal.find_default_credential(ctx, user_id,
-                       requirement.kind, requirement.platform.as_deref()).await?
-                       或 tavily 兜底合成 FetchedCredential{attributes: 空} */ None }
-        };
-        let Some(credential) = fetched_credential else {
-            return Ok(None);
-        };
-        fetched.push(credential);
-    }
-    Ok(Some(pkg::credential::resolve_requirements(requirements, &fetched).await?))
 }
 ```
 
-  > **明文/密文标记**：lark dal 的 `resolve_credentials_for_user` 内部已解密（返回明文），user dal 返回 DB 加密态——`FetchedCredential` 增 `already_decrypted: bool` 字段（lark 分支 true / user dal 与 tavily 兜底 false），`resolve_requirements` 内 `if !fc.already_decrypted { decrypt_detail(...)? }`。Task 2.3 的结构体定义同步补此字段。
+  > **明文/密文标记**：lark dal 的 `resolve_credentials_for_user` 内部已解密（返回明文），user dal 返回 DB 加密态——`FetchedCredential` 增 `already_decrypted: bool` 字段（lark 分支 true / user dal false），`resolve_requirements` 内 `if !fc.already_decrypted { decrypt_detail(...)? }`。Task 2.3 的结构体定义同步补此字段。
+  > **落位说明**：函数落 runtime 而非 finance domain——唯一消费方是同模块 `call_tool` 编排；依赖全部经构造注入（user_dal / lark_credentials 字段）+ pkg 纯函数 + config 读取，零 finance domain 依赖，规避 domain 同层互调红线。私有方法不进 RuntimeToolExecution trait（内部编排细节，测试经 `call_tool` 公开入口覆盖；LarkCredentialDal 子 trait 本身可独立 stub 单测）。
 
-- [ ] **Step 2：调用链改造（D22：create → check → call）**——domain 工具调用编排处：
-  1. `requirements = registry.credential_requirements(&po)`（或已建实例读）。
-  2. `resolve_tool_credentials(ctx, &requirements)` → `None` → 直接返回 `credential_missing_json(&requirements[0])`（不构造实例）。
-  3. `Some(resolved)` → `dal.call_tool(ctx, tool, resolved, args)`；dal 内 `assemble_executable_tool` 创建实例（写入 `user_scope = ctx.user_id`）→ `instance.check(&resolved)?` → `execute`。
-  - `Tool` 结构中 `our_tool: Box<dyn CoreTool>` 的可变性：check 发生在 assemble 返回前（局部 mut），`Tool` 构造时已 check 完毕，结构无需 `mut`。
-- [ ] **Step 3：内置三员工厂化（删 per-tool trait，D17 v1.5）**：
+- [ ] **Step 1b：CLI 命令与工具参数 PO config 闭环 + readiness 数据驱动重构（D28，独立提交）**——工具是「我们包装的内置工具」，其使用的二进制名/路径与行为参数是工具自身属性，应在工具管理页可改（用户决策）；readiness 探测与凭据解析同构（需 PO config + 用户凭据两类数据），按 D17 同一哲学重构：取数上移 domain，pkg 只留纯函数。依赖 Step 1（复用 `resolve_tool_credentials`），先于 Step 4（赶在 resolver 删除前接管 tavily 探测）：
+  - **三工具命令进 PO config（统一「CLI 型 = po.config.command」不变式）**：
+    - [browser.rs](../../../src/pkg/tool_registry/browser.rs)：PO config 默认 `{ command: "agent-browser", timeout_ms: 60000, max_output_bytes: 262144 }`（工厂 create_po 写入默认值）；spawn 预检与命令构造（L258）读 `self.po` 的 config；timeout 缺省（L271，params.timeout_ms 优先）与 max_output_bytes（L272）同源改读；引导文案「ai_orz.toml 的 [browser].command」→「在工具配置中修改命令路径」；parameters_schema L153 描述同步。
+    - [gh_cli.rs](../../../src/pkg/tool_registry/gh_cli.rs)：PO config 默认 `{ command: "gh" }`；spawn 处 `GH_CLI_BIN` 常量 → 读 `self.po` config（常量保留为缺省值来源）。
+    - [lark_cli.rs](../../../src/pkg/tool_registry/lark_cli.rs)：PO config 默认 `{ command: "lark-cli" }`（实际值以 `LARK_CLI_BIN` 常量为准）；同上。
+    - [ToolPo](../../../src/models/tool.rs) 增 helper：`cli_command(&self) -> Option<String>`（读 config.command，CLI 型工具判定 + 命令读取单点）；browser 行为参数读取 helper（缺省常量兜底）。存量 DB PO config=Null → 读取时缺省兜底，**零迁移**。
+    - **[common/src/config.rs](../../../common/src/config.rs#L657-L692)**：`BrowserConfig` 段整体删除，`Config.browser` 字段移除——全局 config 至此零工具参数（tavily D27 / browser D28），不变式落定。
+  - **readiness 数据驱动重构**：
+    - **删除**（[tool_readiness.rs](../../../src/pkg/tool_registry/tool_readiness.rs)）：`ToolReadinessProbe` trait + `PROBES` 注册表 + `register_default_probes` + `BrowserCliProbe` / `FixedCliProbe` / `TavilyKeyProbe` + `user_scoped`——探测不再需要注册机制，readiness 成为 Tool 数据的纯派生。pkg 保留纯函数：`command_available` / `cli_binary_readiness` / `cli_not_installed_json` / `credential_missing_json`（引导文案常量与各工具 spawn 内文案统一来源，避免两处漂移）。
+    - **新增 domain 方法**（runtime/tool_execution.rs，进 `RuntimeToolExecution` trait）：`tool_readiness(&self, ctx, tool: &Tool) -> RuntimeReady`——① `tool.po.cli_command()` 存在 → CLI 型：pkg `command_available` 判定（NotReady 附 cli_not_installed + 工具对应安装引导）；② `ToolRegistry::credential_requirements(&po)` 非空 → key 型：复用 Step 1 `resolve_tool_credentials`（`Ok(Some(_))` → Ready / `Ok(None)` → NotReady{api_key_missing} 单路径引导 / `Err` → Unknown）；③ 两者皆无 → Ready。TTL 缓存（30s，key 型按 tool|user、CLI 型按 tool）迁 domain impl 内部，语义与现状等价（生产无主动失效调用方，仅测试用 invalidate——一并迁移）。
+    - **调用点切换**：[response.rs](../../../src/handlers/finance/tool/response.rs#L23) `tool_readiness::probe(&id, ctx)` → runtime domain `tool_readiness(&ctx, &tool)`（handler 已持有 Tool 实体，直接传入；domain 获取方式对照同文件其他 domain 调用先例）；[service/mod.rs](../../../src/service/mod.rs#L33) init 的 `register_default_probes()` 调用行删除（与 Step 5 的 resolver 三行删除合并后 init 凭据/探测注册清零）。
+  - 测试：browser_tool_test.rs L97/L183 `get().browser.command` → PO config 缺省读取；tool_readiness.rs 内嵌测试（cache-hit / user-scoped / ttl / tavily probe）迁移改写为 domain `tool_readiness` 测试（CLI 型纯函数 + key 型经 `new_with_all` 注入 StubUserDal/StubLarkCredentialDal，无需 DB）；gh_cli / lark_cli spawn 读 PO config 既有测试核对。`cargo test --lib` + `make test-be` 全绿后独立提交 `git commit -m "refactor(tools): cli command and tool params into po config, data-driven readiness (D28)"`。
+
+- [ ] **Step 2：统一传参 ToolExecutionRequest + 调用链改造（D22 create → check → call + D26）**：
+  1. [models/tool.rs](../../../src/models/tool.rs) 新增结构体（内部调用结构非 HTTP DTO 不进 common；命名规避 cortex_types 既有 `ToolCallRequest`（LLM 调用描述符），与既有 `ToolExecutionResult` 成对）：
+
+```rust
+/// domain → DAL 统一工具执行传参（D26）：tool 为 PO 载体（实例由 DAL per-call 重组装）
+pub struct ToolExecutionRequest {
+    pub tool: Tool,
+    pub args: Value,
+    pub resolved: Vec<crate::pkg::credential::ResolvedRequirement>,
+}
+```
+
+  2. domain `call_tool` 编排（[tool_execution.rs](../../../src/service/domain/runtime/tool_execution.rs)）：`requirements = registry.credential_requirements(&tool.po)` → `resolve_tool_credentials(ctx, &requirements)`（Step 1）→ `None` → 直接返回 `credential_missing_json(&requirements[0])` 包装结果（不构造实例）；`Some(resolved)` → 按协议路由 `dal.call_tool(ctx, ToolExecutionRequest { tool, args, resolved })`（Mcp → mcp_tool_dal；Builtin/Http → tool_dal，两个 DAL 签名一次定形）。
+  3. `ToolDal::call_tool`（Builtin/Http）：**per-call 经 registry 重组装新实例**（`tool_call_dao.assemble_core_tool(&request.tool.po)`，不复用传入 `tool.our_tool` / agent.tools() 预装配实例，D22 单次实例）→ 局部 mut 实例 `check(&request.resolved)?` → 构造 Tool → `tool_call_dao.execute(ctx, &tool, args)`（execute 签名不动，幂等防重/trace/AOP 全保留）。
+  4. `McpToolDal::call_tool`：既有 `assemble_executable_tool` 已是 per-call 重组装（连接隔离 D23）→ 组装后对 `our_tool` 实例 `check(&request.resolved)?` → `mcp_tool_call_dao.execute`。
+  5. **双删（D26）**：`ToolDal::call_tool_by_id` / `McpToolDal::call_tool_by_id`（trait 声明 + impl）删除——全仓无生产调用方（domain 自有 `call_tool_by_id` 保留，debug handler 在用；mcp_tool_test 调用迁移见 Step 6）。
+  - `Tool` 结构中 `our_tool: Box<dyn CoreTool>` 的可变性：check 发生在实例装入 Tool 前（局部 mut / `as_mut()`），`Tool` 构造时已 check 完毕，结构无需 `mut`。
+- [ ] **Step 3：think_loop 切换 + dispatch_manual_tool（D26 入口统一）**：
+  - [think_loop.rs](../../../src/service/domain/runtime/think_loop.rs) control_mode 分发（L256-L271 区域）改走 domain `tool_execution()`：Auto → `call_tool(ctx, tool, tc.arguments)`（协议路由，**顺带修复 Auto-MCP 主循环不可执行**——现状 `assemble_core_tool` 对 Mcp 返回 None 走 ManagementOnlyTool 占位）；Manual → `dispatch_manual_tool(ctx, tool, tc.arguments)`。传入 `tool` 仅作 PO 载体（think_loop 从 agent.tools() 按 name 命中即可），实例由 DAL 重组装。
+  - RuntimeToolExecution trait（[runtime/mod.rs](../../../src/service/domain/runtime/mod.rs)）新增 `dispatch_manual_tool(ctx, tool, args)`：特殊 tool 转发逻辑从 `ToolDalImpl::execute_manual`（dal/tool.rs L764-L824）**原样上移**——parse_dispatch_mode 选 request_tool_call（sync）/ send_tool_call_message（async）→ registry 创建转发器实例 → 包装 tool_id/tool_name/params/project_id/task_id 参数 → call → 占位 entry。转发器本身无凭据需求（registry 创建即 call，不走 check 注入）；**真实执行兜回** request_tool_call handler → `call_manual_tool_for_agent` → `call_tool`，凭据在真实执行时编排（D26）。
+  - `ToolDal::execute_auto` / `execute_manual`（trait 声明 + 默认实现 + ToolDalImpl 重写）删除——think_loop 是唯一调用方。
+  - request_tool_call.rs / send_tool_call_message.rs doc 注释「由 ToolDal::execute_manual 内部转发」→「由 domain dispatch_manual_tool 内部转发」（handler 逻辑零改动）。
+- [ ] **Step 4：内置三员工厂化（删 per-tool trait，D17 v1.5）**：
   - **gh_cli.rs**：删除 `GhCredentialResolver` trait + `RESOLVER` OnceLock + setter/getter（L50-L64）；CoreTool impl 增 `credential_requirements() -> vec![CredentialRequirement { kind: GithubToken, ..默认 }]` 与 `check`（存 `token: Option<String>` 实例字段）；`call` 内取数段（L350-L362）删除，改用 `self.token`（None → 绑定引导 JSON，文案不变；「解析器未就绪」分支一并消失）。
-  - **tavily_search.rs**：删除 `TavilyCredentialResolver` trait + OnceLock + setter/getter（L48-L62）；`resolve_api_key` 双轨逻辑移除（兜底已上移 Step 1）；CoreTool impl 增 requirements `[TavilyKey]` + `check`（存 `api_key: Option<(String, ApiKeySource)>`）；`call` 用实例字段。
+  - **tavily_search.rs**：删除 `TavilyCredentialResolver` trait + OnceLock + setter/getter（L48-L62）；`resolve_api_key` 函数整体移除（用户凭证取数上移 Step 1 编排层，共享兜底已随 D27 Step 0b 废除）；CoreTool impl 增 requirements `[TavilyKey]` + `check`（存 `api_key: Option<String>`）；`call` 用实例字段。
   - **lark_cli.rs**（v1.5 统一）：删除 `LarkCredentialResolver` trait + `RESOLVER` OnceLock + setter/getter（L47-L62）；CoreTool impl 增 requirements——同凭据三条（D4 多字段模式）：
 
 ```rust
@@ -1153,14 +1218,18 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
 ```
 
     `check` 存三元组实例字段（`credentials: Option<(String, String, String)>`）；`call` 内取数段（L296-L309）删除——「解析器未就绪」与「未绑定」两分支均消失（未绑定引导统一编排层，文案沿用「请先在个人设置的飞书集成中绑定应用，并创建引用该凭证的 Lark 渠道」，经 `credential_missing_json` 定制 hint 传入）。
-  - 内置工具调用编排点核对：BuiltinToolFactory `create` 后同样走 Step 2 编排（与 MCP/HTTP 同一函数复用，统一模型）。
-- [ ] **Step 4：service 层清理**——`dal/user.rs` 删 `GhDalCredentialResolver` / `TavilyDalCredentialResolver`（L301-L358）；`dal/lark.rs` 删 `LarkDalCredentialResolver` 及 trait impl 段（L47-L63，`resolve_credentials_for_user` 保留不动）；`service/mod.rs` init 删对应**三行**注册（**无任何新增注册项**，凭据相关注册清零）。
-- [ ] **Step 5：测试**：
+  - 内置工具编排统一（D26 收益）：Builtin 与 MCP/HTTP 同经 domain `call_tool` 单点编排（Step 2 第 3 步 registry 重组装已覆盖），无需单独核对调用点。
+- [ ] **Step 5：service 层清理**——`dal/user.rs` 删 `GhDalCredentialResolver` / `TavilyDalCredentialResolver`（L301-L358）；`dal/lark/credentials.rs`（Step 0 实际落位）删 `LarkDalCredentialResolver` 及 pkg trait impl 段（原 L47-L63，`resolve_credentials_for_user` 保留为 `LarkCredentialDal` trait 方法）；`service/mod.rs` init 删对应**三行**注册（**无任何新增注册项**，凭据相关注册清零）。
+- [ ] **Step 6：测试**：
   - gh_cli / tavily / lark_cli 既有测试改造：「未注册 resolver → 引导」路径同构变更为「未 check 实例（字段 None）→ 引导」，断言文案核对更新；check 注入后 call → 正常路径断言。lark_cli 既有 `call_without_resolver_returns_error_json`（L453）改写为 `call_without_check_returns_guidance`。
-  - domain `resolve_tool_credentials`（sqlx 内存池，http_tests 建池模式）：生产路由（LarkApp → lark dal 附 attributes{identity_mode}）、find_default 逐条命中 / 任一未命中 None / tavily config 兜底合成。
+  - domain `resolve_tool_credentials`（经 `new_with_all` 注入 stub：StubLarkCredentialDal / StubUserDal，无需 DB）：生产路由（LarkApp → 子 trait 返回附 attributes{identity_mode}）、find_default 逐条命中 / 任一未命中 None。
+  - `new_with_all` / `new_with_tool_dals` 既有调用点（tool_execution_test 六处 + 其他模块引用处 grep 核对）同步补两个新参数（stub 默认返回 None / 空实现即可，不影响既有测试语义）。
+  - domain `call_tool` 编排：requirements 空工具直通执行；requirements 命中 → DAL 收到含 resolved 的 ToolExecutionRequest（mock DAL 断言）；未命中 → credential_missing_json 包装。
+  - think_loop 分发：Auto 工具经 domain `call_tool`（MCP 工具路由 mcp_tool_dal，修复主循环不可执行）；Manual 经 `dispatch_manual_tool`（特殊 tool 参数包装断言，复用既有 execute_manual 测试模式迁移）。
+  - 迁移：mcp_tool_test.rs 四处 `call_tool_by_id` 调用（L258/L665/L687/L709）→ `get_by_id` + `call_tool`（新签名）；tool_execution_test.rs mock ToolDal/McpToolDal `call_tool` 签名适配 ToolExecutionRequest（L389/L516 mock call_tool_by_id 保留——domain 方法不动）。
   - 端到端：MCP requirements + DB 凭据 → call 注入成功；无凭据 → 引导 JSON。
-- [ ] **Step 6：收口 grep**——`GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓零残留（含 doc 注释与测试）；`git diff src/service/dal/lark.rs` 仅剩 L47-L63 段删除（`resolve_credentials_for_user` 零改动）。
-- [ ] **Step 7：提交** `git commit -m "refactor(credential): orchestrate resolution in domain, unify all builtin tools"`。
+- [ ] **Step 7：收口 grep**——`GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓零残留（含 doc 注释与测试）；`execute_auto` / `execute_manual` / `dispatch_manual_tool` 全仓仅剩 domain（DAL 零残留）；`call_tool_by_id` 全仓仅剩 domain trait/impl/test + debug handler（DAL 零残留）；`git diff src/service/dal/lark.rs` 仅剩 L47-L63 段删除（`resolve_credentials_for_user` 零改动）。
+- [ ] **Step 8：全绿 + 提交** `git commit -m "refactor(credential): orchestrate resolution in domain with unified tool call entry"`。
 
 ### Task 3.4：前端 MCP 表单凭据需求区
 
@@ -1180,6 +1249,7 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
 **Phase 3 收口检查：**
 - [ ] `cargo test --lib`、`make test-be`、前端双命令全绿。
 - [ ] `GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓 grep 零残留；`service::init` 凭据注册三行清零。
+- [ ] D26 入口统一收口：think_loop 无 `tool_dal().execute_auto/execute_manual` 直连；`ToolDal::call_tool_by_id` / `McpToolDal::call_tool_by_id` / `ToolDal::execute_auto` / `execute_manual` 删除；DAL `call_tool` 统一 ToolExecutionRequest 签名；Auto 模式 MCP 工具主循环可执行（协议路由到 mcp_tool_dal）。
 - [ ] 手工冒烟（可选）：启动后创建带 requirements 的 stdio server，DB config 无 env/headers 字段；同一 server 两用户调用各自注入；lark_cli 调用链与改造前行为一致。
 
 ---
