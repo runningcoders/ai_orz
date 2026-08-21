@@ -27,6 +27,24 @@ pub enum CredentialKind {
     GithubToken,
     /// Tavily 搜索 API key（个人 key，tavily_search 工具身份）
     TavilyKey,
+    /// 通用平台令牌（Notion/Linear PAT 等；platform 必填，匹配键含 platform 维度）
+    GenericToken,
+    /// OAuth 刷新凭据（platform 必填；refresh_token 换 access_token 由增强器执行）
+    #[serde(rename = "oauth")]
+    #[cfg_attr(feature = "sqlx", sqlx(rename = "oauth"))]
+    OAuth,
+    /// 用户名密码对（platform 必填；Basic 串由默认增强器组装）
+    UserPassword,
+}
+
+impl CredentialKind {
+    /// generic 类 kind：匹配键含 platform 维度（(kind, platform) 二元组）
+    pub fn requires_platform(&self) -> bool {
+        matches!(
+            self,
+            Self::GenericToken | Self::OAuth | Self::UserPassword
+        )
+    }
 }
 
 /// 凭证可见性（访问语义枚举）：TEXT 存储
@@ -92,6 +110,32 @@ pub enum CredentialDetail {
         /// API key（落库前加密）
         api_key: String,
     },
+    /// 通用平台令牌（Notion/Linear PAT 等；platform 必填，token 落库前加密）
+    GenericToken {
+        /// 平台令牌（落库前经 encrypt_channel_secret 加密）
+        token: String,
+    },
+    /// OAuth 刷新凭据（platform 必填；client_secret / refresh_token 落库前加密）
+    #[serde(rename = "oauth")]
+    OAuth {
+        /// 刷新端点（https，刷新前过 SSRF 校验）
+        token_endpoint: String,
+        /// 客户端 ID
+        client_id: String,
+        /// 落库前加密
+        client_secret: String,
+        /// 落库前加密
+        refresh_token: String,
+        /// 授权范围（可选）
+        scope: Option<String>,
+    },
+    /// 用户名密码对（platform 必填；password 落库前加密）
+    UserPassword {
+        /// 用户名
+        username: String,
+        /// 落库前加密
+        password: String,
+    },
 }
 
 /// 凭证详情补丁（Domain 更新命令组件，明文输入；非 API DTO，无需 serde）
@@ -121,6 +165,31 @@ pub enum CredentialDetailPatch {
         /// API key（None/空白保持不变；提供时以明文传入，内部加密写入）
         api_key: Option<String>,
     },
+    /// 通用平台令牌补丁
+    GenericToken {
+        /// 平台令牌（None/空白保持不变；提供时以明文传入，内部加密写入）
+        token: Option<String>,
+    },
+    /// OAuth 刷新凭据补丁（敏感字段提供时明文传入，内部加密写入）
+    OAuth {
+        /// 刷新端点（None/空白保持不变）
+        token_endpoint: Option<String>,
+        /// 客户端 ID（None/空白保持不变）
+        client_id: Option<String>,
+        /// client secret（None/空白保持不变）
+        client_secret: Option<String>,
+        /// refresh token（None/空白保持不变）
+        refresh_token: Option<String>,
+        /// None 保持不变；Some 空白清除、非空覆盖
+        scope: Option<String>,
+    },
+    /// 用户名密码对补丁
+    UserPassword {
+        /// 用户名（None/空白保持不变）
+        username: Option<String>,
+        /// 密码（None/空白保持不变；提供时以明文传入，内部加密写入）
+        password: Option<String>,
+    },
 }
 
 /// detail 变更影响摘要（Domain 据此决定联动动作，无需感知字段细节）
@@ -137,6 +206,9 @@ impl CredentialDetail {
             Self::LarkApp { .. } => CredentialKind::LarkApp,
             Self::GithubToken { .. } => CredentialKind::GithubToken,
             Self::TavilyKey { .. } => CredentialKind::TavilyKey,
+            Self::GenericToken { .. } => CredentialKind::GenericToken,
+            Self::OAuth { .. } => CredentialKind::OAuth,
+            Self::UserPassword { .. } => CredentialKind::UserPassword,
         }
     }
 
@@ -144,8 +216,22 @@ impl CredentialDetail {
     pub fn primary_id(&self) -> Option<&str> {
         match self {
             Self::LarkApp { app_id, .. } => Some(app_id.as_str()),
-            Self::GithubToken { .. } => None,
-            Self::TavilyKey { .. } => None,
+            Self::GithubToken { .. }
+            | Self::TavilyKey { .. }
+            | Self::GenericToken { .. }
+            | Self::OAuth { .. }
+            | Self::UserPassword { .. } => None,
+        }
+    }
+
+    /// 主密钥字段引用（增强器/规范值的兜底取值；调用前须已解密）
+    pub fn primary_secret(&self) -> &str {
+        match self {
+            Self::LarkApp { app_secret, .. } => app_secret,
+            Self::GithubToken { token } | Self::GenericToken { token } => token,
+            Self::TavilyKey { api_key } => api_key,
+            Self::OAuth { refresh_token, .. } => refresh_token,
+            Self::UserPassword { password, .. } => password,
         }
     }
 
@@ -173,6 +259,28 @@ impl CredentialDetail {
             Self::TavilyKey { api_key } => Self::TavilyKey {
                 api_key: api_key.trim().to_string(),
             },
+            Self::GenericToken { token } => Self::GenericToken {
+                token: token.trim().to_string(),
+            },
+            Self::OAuth {
+                token_endpoint,
+                client_id,
+                client_secret,
+                refresh_token,
+                scope,
+            } => Self::OAuth {
+                token_endpoint: token_endpoint.trim().to_string(),
+                client_id: client_id.trim().to_string(),
+                client_secret: client_secret.trim().to_string(),
+                refresh_token: refresh_token.trim().to_string(),
+                scope: scope
+                    .map(|v| v.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+            },
+            Self::UserPassword { username, password } => Self::UserPassword {
+                username: username.trim().to_string(),
+                password: password.trim().to_string(),
+            },
         }
     }
 
@@ -194,6 +302,31 @@ impl CredentialDetail {
             Self::TavilyKey { api_key } => {
                 if api_key.is_empty() {
                     bail_err!(InvalidRequest, "Tavily API Key 不能为空");
+                }
+            }
+            Self::GenericToken { token } => {
+                if token.is_empty() {
+                    bail_err!(InvalidRequest, "平台令牌不能为空");
+                }
+            }
+            Self::OAuth {
+                token_endpoint,
+                client_id,
+                client_secret,
+                refresh_token,
+                ..
+            } => {
+                if token_endpoint.is_empty()
+                    || client_id.is_empty()
+                    || client_secret.is_empty()
+                    || refresh_token.is_empty()
+                {
+                    bail_err!(InvalidRequest, "OAuth 凭据的端点/客户端/刷新令牌均不能为空");
+                }
+            }
+            Self::UserPassword { username, password } => {
+                if username.is_empty() || password.is_empty() {
+                    bail_err!(InvalidRequest, "用户名与密码均不能为空");
                 }
             }
         }
@@ -226,6 +359,26 @@ impl CredentialDetail {
             }),
             Self::TavilyKey { api_key } => Ok(Self::TavilyKey {
                 api_key: encrypt(&api_key)?,
+            }),
+            Self::GenericToken { token } => Ok(Self::GenericToken {
+                token: encrypt(&token)?,
+            }),
+            Self::OAuth {
+                token_endpoint,
+                client_id,
+                client_secret,
+                refresh_token,
+                scope,
+            } => Ok(Self::OAuth {
+                token_endpoint,
+                client_id,
+                client_secret: encrypt(&client_secret)?,
+                refresh_token: encrypt(&refresh_token)?,
+                scope,
+            }),
+            Self::UserPassword { username, password } => Ok(Self::UserPassword {
+                username,
+                password: encrypt(&password)?,
             }),
         }
     }
@@ -315,6 +468,96 @@ impl CredentialDetail {
                     .filter(|s| !s.is_empty())
                 {
                     *key_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+            }
+            CredentialDetailPatch::GenericToken { token } => {
+                let Self::GenericToken { token: token_slot } = self else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用通用令牌凭证补丁"
+                    );
+                };
+                if let Some(v) = token
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *token_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+            }
+            CredentialDetailPatch::OAuth {
+                token_endpoint,
+                client_id,
+                client_secret,
+                refresh_token,
+                scope,
+            } => {
+                let Self::OAuth {
+                    token_endpoint: endpoint_slot,
+                    client_id: client_id_slot,
+                    client_secret: secret_slot,
+                    refresh_token: refresh_slot,
+                    scope: scope_slot,
+                } = self
+                else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用 OAuth 凭证补丁"
+                    );
+                };
+                if let Some(v) = token_endpoint
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *endpoint_slot = v;
+                }
+                if let Some(v) = client_id
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *client_id_slot = v;
+                }
+                if let Some(v) = client_secret
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *secret_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+                if let Some(v) = refresh_token
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *refresh_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+                if let Some(v) = scope {
+                    *scope_slot = Some(v.trim().to_string()).filter(|s| !s.is_empty());
+                }
+            }
+            CredentialDetailPatch::UserPassword { username, password } => {
+                let Self::UserPassword {
+                    username: username_slot,
+                    password: password_slot,
+                } = self
+                else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用用户名密码凭证补丁"
+                    );
+                };
+                if let Some(v) = username
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *username_slot = v;
+                }
+                if let Some(v) = password
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *password_slot = encrypt(&v)?;
                     impact.secret_changed = true;
                 }
             }
@@ -718,5 +961,144 @@ mod tests {
             .unwrap();
         assert!(matches!(&gh, CredentialDetail::GithubToken { token } if token == "enc:ghp_new"));
         assert!(impact.secret_changed);
+    }
+
+    // ==================== GenericToken / OAuth / UserPassword ====================
+
+    #[test]
+    fn test_new_kinds_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_value(CredentialKind::GenericToken).unwrap(),
+            "generic_token"
+        );
+        assert_eq!(
+            serde_json::to_value(CredentialKind::OAuth).unwrap(),
+            "oauth"
+        );
+        assert_eq!(
+            serde_json::to_value(CredentialKind::UserPassword).unwrap(),
+            "user_password"
+        );
+    }
+
+    #[test]
+    fn test_generic_token_detail_lifecycle() {
+        let plain = CredentialDetail::GenericToken {
+            token: " ntn_xxx ".to_string(),
+        }
+        .normalized();
+        assert!(matches!(&plain, CredentialDetail::GenericToken { token } if token == "ntn_xxx"));
+        assert!(plain.validate().is_ok());
+        let enc = CredentialDetail::GenericToken {
+            token: "plain".to_string(),
+        }
+        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+        .unwrap();
+        assert!(matches!(&enc, CredentialDetail::GenericToken { token } if token == "enc:plain"));
+        let mut detail = CredentialDetail::GenericToken {
+            token: "enc:v1:old".to_string(),
+        };
+        detail
+            .apply_patch(
+                CredentialDetailPatch::GenericToken {
+                    token: Some("new".to_string()),
+                },
+                |s| Ok(format!("enc:{}", s)),
+            )
+            .unwrap();
+        assert!(matches!(&detail, CredentialDetail::GenericToken { token } if token == "enc:new"));
+    }
+
+    #[test]
+    fn test_oauth_detail_validate_and_secret() {
+        let detail = CredentialDetail::OAuth {
+            token_endpoint: "https://example.invalid/oauth/token".to_string(),
+            client_id: "cid".to_string(),
+            client_secret: "csec".to_string(),
+            refresh_token: "rt".to_string(),
+            scope: Some("read".to_string()),
+        };
+        assert!(detail.clone().normalized().validate().is_ok());
+        // 缺 token_endpoint → 校验失败
+        let bad = CredentialDetail::OAuth {
+            token_endpoint: String::new(),
+            client_id: "c".into(),
+            client_secret: "s".into(),
+            refresh_token: "r".into(),
+            scope: None,
+        };
+        assert!(bad.normalized().validate().is_err());
+        assert_eq!(detail.primary_secret(), "rt");
+        // client_secret / refresh_token 加密，client_id / token_endpoint 不加密
+        let enc = detail
+            .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+            .unwrap();
+        let CredentialDetail::OAuth {
+            client_id,
+            client_secret,
+            refresh_token,
+            ..
+        } = enc
+        else {
+            panic!("kind 不变");
+        };
+        assert_eq!(client_id, "cid");
+        assert_eq!(client_secret, "enc:csec");
+        assert_eq!(refresh_token, "enc:rt");
+    }
+
+    #[test]
+    fn test_user_password_detail() {
+        let detail = CredentialDetail::UserPassword {
+            username: "alice".to_string(),
+            password: " pw ".to_string(),
+        };
+        let normalized = detail.normalized();
+        assert!(
+            matches!(&normalized, CredentialDetail::UserPassword { username, password } if username == "alice" && password == "pw")
+        );
+        assert!(normalized.validate().is_ok());
+        let enc = CredentialDetail::UserPassword {
+            username: "alice".into(),
+            password: "p".into(),
+        }
+        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+        .unwrap();
+        // password 加密、username 不加密
+        assert!(
+            matches!(&enc, CredentialDetail::UserPassword { username, password } if username == "alice" && password == "enc:p")
+        );
+    }
+
+    #[test]
+    fn test_new_kinds_primary_id_none_and_requires_platform() {
+        let kinds = [
+            CredentialKind::GenericToken,
+            CredentialKind::OAuth,
+            CredentialKind::UserPassword,
+        ];
+        for kind in kinds {
+            assert!(kind.requires_platform(), "generic 类 kind platform 必填");
+        }
+        for kind in [
+            CredentialKind::LarkApp,
+            CredentialKind::GithubToken,
+            CredentialKind::TavilyKey,
+        ] {
+            assert!(!kind.requires_platform(), "专用 kind platform 必空");
+        }
+        // 三新变体 primary_id 均 None
+        assert_eq!(
+            CredentialDetail::GenericToken { token: "t".into() }.primary_id(),
+            None
+        );
+        assert_eq!(
+            CredentialDetail::UserPassword {
+                username: "u".into(),
+                password: "p".into()
+            }
+            .primary_id(),
+            None
+        );
     }
 }
