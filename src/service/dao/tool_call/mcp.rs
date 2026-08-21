@@ -114,8 +114,10 @@ impl McpToolCallDao for McpToolCallDaoImpl {
     }
 
     async fn list_mcp_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+        // 同步路径凭据解析在 Task 3.3 接入（domain sync 编排 resolve 后传入）；
+        // 当前无凭据需求服务器以空注入列表直连
         self.client_runtime
-            .list_tools(server)
+            .list_tools(server, &[])
             .await
             .map_err(Into::into)
     }

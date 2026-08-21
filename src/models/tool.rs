@@ -21,6 +21,30 @@ pub trait CoreTool: Send + Sync + DynClone {
     /// 获取工具对应的数据库持久化对象
     fn po(&self) -> &ToolPo;
 
+    /// 工具凭据需求声明（共享工具从实例 config 读；内置工具静态声明；默认空）
+    ///
+    /// 编排层（domain resolve_tool_credentials）据此取数加工注入值（D17）。
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        Vec::new()
+    }
+
+    /// 凭据注入生命周期：编排层在 call 前调用--校验声明与注入匹配 + 存实例字段。
+    /// 实例单次使用（create -> check -> call），凭据是对象状态（D22 红线）。
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        // 默认无凭据工具：注入非空即为编排层错配（防御）
+        if resolved.is_empty() {
+            Ok(())
+        } else {
+            Err(common::error::Error::new(
+                common::error::ErrorCode::InvalidRequest,
+                "工具未声明凭据需求，但编排层传入了注入值",
+            ))
+        }
+    }
+
     /// 获取原始的 inner 工具，如果已经被装饰过的话
     /// 默认实现返回自身，覆盖这个方法用于装饰器取出原始工具
     fn as_original(&self) -> &(dyn CoreTool + Send + Sync)

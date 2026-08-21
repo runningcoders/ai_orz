@@ -74,9 +74,13 @@ impl McpClientRuntime {
         server: &McpServerPo,
         tool_name: &str,
         args: Value,
+        env_injections: &[(String, String)],
     ) -> Result<Value> {
         let result = match server.transport {
-            McpTransport::Stdio => self.call_stdio_tool(server, tool_name, args).await,
+            McpTransport::Stdio => {
+                self.call_stdio_tool(server, tool_name, args, env_injections)
+                    .await
+            }
             McpTransport::StreamableHttp => {
                 Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
             }
@@ -87,9 +91,13 @@ impl McpClientRuntime {
         result
     }
 
-    pub async fn list_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+    pub async fn list_tools(
+        &self,
+        server: &McpServerPo,
+        env_injections: &[(String, String)],
+    ) -> Result<Vec<RemoteMcpTool>> {
         let result = match server.transport {
-            McpTransport::Stdio => self.list_stdio_tools(server).await,
+            McpTransport::Stdio => self.list_stdio_tools(server, env_injections).await,
             McpTransport::StreamableHttp => {
                 Err(anyhow!("MCP streamable HTTP runtime is not implemented yet").into())
             }
@@ -100,9 +108,13 @@ impl McpClientRuntime {
         result
     }
 
-    async fn list_stdio_tools(&self, server: &McpServerPo) -> Result<Vec<RemoteMcpTool>> {
+    async fn list_stdio_tools(
+        &self,
+        server: &McpServerPo,
+        env_injections: &[(String, String)],
+    ) -> Result<Vec<RemoteMcpTool>> {
         let config = server.config();
-        let mut client = connect_stdio_client(server, &config).await?;
+        let mut client = connect_stdio_client(server, &config, env_injections).await?;
 
         let list_result = match tokio::time::timeout(
             Duration::from_millis(config.timeout_ms),
@@ -144,6 +156,7 @@ impl McpClientRuntime {
         server: &McpServerPo,
         tool_name: &str,
         args: Value,
+        env_injections: &[(String, String)],
     ) -> Result<Value> {
         let arguments = match args {
             Value::Object(map) => map,
@@ -153,7 +166,7 @@ impl McpClientRuntime {
         };
 
         let config = server.config();
-        let mut client = connect_stdio_client(server, &config).await?;
+        let mut client = connect_stdio_client(server, &config, env_injections).await?;
 
         let params = CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments);
 
@@ -200,6 +213,7 @@ impl McpClientRuntime {
 async fn connect_stdio_client(
     server: &McpServerPo,
     config: &McpServerConfig,
+    env_injections: &[(String, String)],
 ) -> common::error::Result<RunningService<RoleClient, ()>> {
     let command = config
         .command
@@ -210,9 +224,13 @@ async fn connect_stdio_client(
 
     let mut process = Command::new(resolve_command_path(command)?);
     process.args(&config.args);
-    // 凭据注入经 CoreTool::check 生命周期写入 credential_injections（Task 3.2）；
-    // 此处保持零继承红线：不注入任何进程环境变量
+    // 零继承红线：先清空环境，再仅注入本实例 check 生命周期的凭据值（D22/D23）。
+    // 每次调用独立连接（用后即关）：连接天然按 (server, 调用者实例) 隔离，
+    // 凭据只存在于当次子进程，不存在跨用户复用面。
     process.env_clear();
+    for (key, value) in env_injections {
+        process.env(key, value);
+    }
 
     let transport = TokioChildProcess::new(process)
         .map_err(|_e| anyhow!("failed to spawn MCP stdio server {}", server.id))?;
@@ -280,6 +298,8 @@ pub struct McpCoreTool {
     config: McpToolConfig,
     server: Option<McpServerPo>,
     client_runtime: Option<Arc<McpClientRuntime>>,
+    /// check 写入的 Env 注入值（D22：凭据是实例状态，实例单次使用不复用）
+    credential_injections: Vec<(String, String)>,
 }
 
 impl McpCoreTool {
@@ -291,6 +311,7 @@ impl McpCoreTool {
             config,
             server: None,
             client_runtime: None,
+            credential_injections: Vec::new(),
         })
     }
 
@@ -311,6 +332,7 @@ impl McpCoreTool {
             config,
             server: Some(deps.server),
             client_runtime: Some(deps.client_runtime),
+            credential_injections: Vec::new(),
         })
     }
 
@@ -340,7 +362,7 @@ impl CoreTool for McpCoreTool {
         })?;
 
         client_runtime
-            .call_tool(server, &self.config.tool_name, args)
+            .call_tool(server, &self.config.tool_name, args, &self.credential_injections)
             .await
             .map_err(|e| {
                 let msg: String = e.to_string();
@@ -350,6 +372,36 @@ impl CoreTool for McpCoreTool {
 
     fn po(&self) -> &ToolPo {
         &self.po
+    }
+
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        self.server
+            .as_ref()
+            .map(|server| server.config().credential_requirements)
+            .unwrap_or_default()
+    }
+
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        let mut injections = Vec::with_capacity(resolved.len());
+        for item in resolved {
+            match &item.requirement.binding {
+                // stdio MCP 唯一合法注入点（配置期 validate_requirements 已限定，此处防御兜底）
+                common::models::CredentialBinding::Env { name } => {
+                    injections.push((name.clone(), item.value.clone()));
+                }
+                _ => {
+                    return Err(err!(
+                        InvalidRequest,
+                        "stdio MCP 仅支持 env 凭据注入点"
+                    ));
+                }
+            }
+        }
+        self.credential_injections = injections;
+        Ok(())
     }
 }
 
