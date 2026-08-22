@@ -358,18 +358,69 @@ async fn test_update_builtin_tool_protected(pool: SqlitePool) {
     );
     let _ = tool_dao.create_tool(ctx.clone(), &tool).await;
 
-    // 尝试修改内置工具应该失败
+    // ========== 段 1: 修改工厂所有权字段（name）仍然拒绝 ==========
     let found = tool_dao
         .get_by_id(ctx.clone(), tool.id.clone())
         .await
         .unwrap()
         .unwrap();
-    let mut updated = found;
-    updated.name = "should-not-work".to_string();
-    updated.touch(Some("editor".to_string()));
+    let mut renamed = found.clone();
+    renamed.name = "should-not-work".to_string();
+    renamed.touch(Some("editor".to_string()));
 
-    let result = tool_dao.update_tool(ctx.clone(), &updated).await;
-    assert!(result.is_err());
+    let result = tool_dao.update_tool(ctx.clone(), &renamed).await;
+    let err = result.expect_err("builtin factory-owned field edit must be rejected");
+    assert!(err.to_string().contains("name"));
+
+    // ========== 段 2: 修改运维所有权字段（config）放行 ==========
+    let mut config_updated = found.clone();
+    config_updated.config = serde_json::json!({
+        "command": "/usr/local/bin/gh",
+        "timeout_ms": 30_000
+    });
+    config_updated.touch(Some("editor".to_string()));
+
+    tool_dao
+        .update_tool(ctx.clone(), &config_updated)
+        .await
+        .expect("builtin config update should be allowed");
+
+    let found_after = tool_dao
+        .get_by_id(ctx.clone(), tool.id.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found_after.config,
+        serde_json::json!({
+            "command": "/usr/local/bin/gh",
+            "timeout_ms": 30_000
+        })
+    );
+    assert_eq!(
+        found_after.updated_by,
+        Some("editor".to_string()),
+        "builtin config update should record updated_by"
+    );
+
+    // ========== 段 3: 修改运维所有权字段（status）放行 ==========
+    let mut status_updated = found_after.clone();
+    status_updated.status = ToolStatus::Disabled;
+    status_updated.touch(Some("editor".to_string()));
+
+    tool_dao
+        .update_tool(ctx.clone(), &status_updated)
+        .await
+        .expect("builtin status update should be allowed");
+
+    let found_final = tool_dao
+        .get_by_id(ctx.clone(), tool.id.clone())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found_final.status, ToolStatus::Disabled);
+    // config 不被 status 更新覆盖
+    assert_eq!(found_final.config, config_updated.config);
 }
 
 #[sqlx::test]

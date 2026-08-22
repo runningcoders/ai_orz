@@ -119,11 +119,33 @@ impl ToolDao for ToolDaoSqliteImpl {
     }
 
     async fn update_tool(&self, ctx: RequestContext, po: &ToolPo) -> Result<()> {
-        // Check if this is a built-in tool
+        // Builtin 工具 diff 式字段保护（所有权语义与 sync_builtin_tools_to_db 对齐）：
+        // 工厂所有权字段（name/description/protocol/control_mode/parameters_schema/tags）
+        // 以代码定义为准，任何变更拒绝；运维所有权字段（config/status/updated_*）放行
         if let Some(existing) = self.get_by_id(ctx.clone(), po.id.clone()).await?
             && matches!(existing.protocol, common::enums::ToolProtocol::Builtin)
         {
-            return Err(anyhow::anyhow!("Built-in tools cannot be modified").into());
+            let changed_factory_field = [
+                ("name", existing.name != po.name),
+                ("description", existing.description != po.description),
+                ("protocol", existing.protocol != po.protocol),
+                ("control_mode", existing.control_mode != po.control_mode),
+                (
+                    "parameters_schema",
+                    existing.parameters_schema != po.parameters_schema,
+                ),
+                ("tags", existing.tags != po.tags),
+            ]
+            .into_iter()
+            .find(|&(_, changed)| changed);
+
+            if let Some((field, _)) = changed_factory_field {
+                return Err(anyhow::anyhow!(
+                    "Built-in tools cannot be modified: factory-owned field `{}` is immutable",
+                    field
+                )
+                .into());
+            }
         }
 
         let pool = ctx.db_pool();

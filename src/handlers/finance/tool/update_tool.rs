@@ -34,9 +34,10 @@ pub async fn update_tool(
         .await?
         .ok_or_else(|| err!(NotFound, "Tool {} not found", params.id))?;
 
-    if matches!(tool.po.protocol, ToolProtocol::Builtin) {
-        bail_err!(InvalidRequest, "内置 Tool 不允许通过管理接口修改");
-    }
+    // Builtin 字段所有权保护（D28）：工厂所有权字段与启停别名不允许经
+    // update_tool 修改，仅放行 config（走 validate_builtin_config 校验）；
+    // Builtin 启停请走 update_tool_status 专用通道
+    reject_builtin_field_edits(tool.po.protocol, &params)?;
     if matches!(params.protocol, Some(ToolProtocol::Builtin)) {
         bail_err!(InvalidRequest, "非内置 Tool 不允许被修改为内置协议");
     }
@@ -86,6 +87,28 @@ pub async fn update_tool(
     Ok(to_detail(&tool))
 }
 
+/// Builtin 工具管理接口字段保护（D28：CLI 命令与行为参数为运维所有权字段）
+///
+/// 工厂所有权字段（name/description/protocol/control_mode/parameters_schema/tags）
+/// 与启停别名 enabled 不允许经 update_tool 修改，仅放行 config（config 走
+/// validate_builtin_config 校验）；Builtin 启停走 update_tool_status 专用通道。
+fn reject_builtin_field_edits(protocol: ToolProtocol, params: &UpdateToolRequest) -> Result<()> {
+    if !matches!(protocol, ToolProtocol::Builtin) {
+        return Ok(());
+    }
+    let factory_field_edited = params.name.is_some()
+        || params.description.is_some()
+        || params.protocol.is_some()
+        || params.control_mode.is_some()
+        || params.parameters_schema.is_some()
+        || params.tags.is_some()
+        || params.enabled.is_some();
+    if factory_field_edited {
+        bail_err!(InvalidRequest, "内置工具仅支持修改 config");
+    }
+    Ok(())
+}
+
 /// Builtin 工具 config 已知字段轻量校验（D28：CLI 命令与行为参数进 PO config）
 ///
 /// 仅校验已知字段的类型与取值（command 非空 string / timeout_ms·max_output_bytes
@@ -114,6 +137,79 @@ fn validate_builtin_config(config: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reject_builtin_field_edits_passes_non_builtin_protocol() {
+        // 非 Builtin 工具不受该 guard 约束（字段编辑走既有语义）
+        for protocol in [ToolProtocol::Http, ToolProtocol::Mcp] {
+            let params = UpdateToolRequest {
+                id: "any".to_string(),
+                name: Some("renamed".to_string()),
+                protocol: Some(ToolProtocol::Builtin),
+                ..Default::default()
+            };
+            assert!(reject_builtin_field_edits(protocol, &params).is_ok());
+        }
+    }
+
+    #[test]
+    fn reject_builtin_field_edits_allows_config_only() {
+        let params = UpdateToolRequest {
+            id: "gh_cli".to_string(),
+            config: Some(serde_json::json!({ "command": "gh" })),
+            ..Default::default()
+        };
+        assert!(reject_builtin_field_edits(ToolProtocol::Builtin, &params).is_ok());
+
+        // 全空参数同样放行（无任何修改意图）
+        let empty = UpdateToolRequest {
+            id: "gh_cli".to_string(),
+            ..Default::default()
+        };
+        assert!(reject_builtin_field_edits(ToolProtocol::Builtin, &empty).is_ok());
+    }
+
+    #[test]
+    fn reject_builtin_field_edits_rejects_factory_fields_and_enabled() {
+        use common::enums::ControlMode;
+
+        let cases: Vec<UpdateToolRequest> = vec![
+            UpdateToolRequest {
+                name: Some("renamed".to_string()),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                description: Some("new description".to_string()),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                protocol: Some(ToolProtocol::Builtin),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                control_mode: Some(ControlMode::Manual),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                parameters_schema: Some(serde_json::json!({"type": "object"})),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                tags: Some(vec!["tag".to_string()]),
+                ..Default::default()
+            },
+            UpdateToolRequest {
+                enabled: Some(false),
+                ..Default::default()
+            },
+        ];
+        for params in cases {
+            let err =
+                reject_builtin_field_edits(ToolProtocol::Builtin, &params).unwrap_err();
+            assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
+            assert!(err.to_string().contains("内置工具仅支持修改 config"));
+        }
+    }
 
     #[test]
     fn validate_builtin_config_accepts_known_and_unknown_fields() {
