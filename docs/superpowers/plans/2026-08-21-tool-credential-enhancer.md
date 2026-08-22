@@ -1272,7 +1272,7 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
 - Modify: src/pkg/tool_registry/http.rs
 - Test: src/pkg/tool_registry/http_tests.rs
 
-- [ ] **Step 1：测试先行**：
+- [x] **Step 1：测试先行**（commit 3e2a95dd）：
 
 ```rust
 #[test]
@@ -1287,7 +1287,7 @@ fn validate_accepts_normal_headers() { ... }               // Content-Type/Accep
 fn validate_rejects_env_binding_for_http_tool() { ... }    // requirements 带 Env binding → Err
 ```
 
-- [ ] **Step 2：config 字段**——`HttpToolConfig` 增：
+- [x] **Step 2：config 字段**（commit 3e2a95dd）——`HttpToolConfig` 增：
 
 ```rust
 /// Credential requirements (type-level; sensitive header/query injection
@@ -1296,10 +1296,10 @@ fn validate_rejects_env_binding_for_http_tool() { ... }    // requirements 带 E
 pub credential_requirements: Vec<common::models::CredentialRequirement>,
 ```
 
-- [ ] **Step 3：validate_config 增两段**（在 `validate_scalar_template_object` 调用后）：
+- [x] **Step 3：validate_config 增两段**（commit 3e2a95dd：敏感名拒绝独立函数 validate_no_sensitive_template_keys 覆盖 headers/query 两字段，静态/模板值同判；存量测试 http_core_tool_redacts_rendered_url_from_request_errors 的 query key access_token 含 token 被新校验拒绝，改 filter 语义不变）：
   - 敏感名拒绝：headers/query 的每个 key 过 `is_sensitive_header` → 命中即 Err（`validate_scalar_template_object` 内 field_name=="headers"/"query" 分支各加一条，或在 validate_config 独立遍历——取独立遍历，语义清晰）。
   - `pkg::credential::validate_requirements(&config.credential_requirements, CredentialRequirementScope::HttpTool)?`。
-- [ ] **Step 4：运行时注入（D22 生命周期，与 McpCoreTool 同构）**——`HttpCoreTool` 增 `credential_requirements()`（从 config 读）与 `check`（存 `header_injections: Vec<(String, String)>` + `query_injections: Vec<(String, String)>` 实例字段）；`execute_http_call` 不取数，模板 headers/query 渲染**之后**叠加实例注入值：
+- [x] **Step 4：运行时注入（D22 生命周期，与 McpCoreTool 同构）**（commit 3e2a95dd：execute_http_call 是自由函数，注入值经参数传入（header 逐条 builder.header、query 经 request.query append 语义接模板 query 后）；Env/Internal binding 出现即 err InvalidRequest）——`HttpCoreTool` 增 `credential_requirements()`（从 config 读）与 `check`（存 `header_injections: Vec<(String, String)>` + `query_injections: Vec<(String, String)>` 实例字段）；`execute_http_call` 不取数，模板 headers/query 渲染**之后**叠加实例注入值：
 
 ```rust
 for (name, value) in &self.header_injections {
@@ -1311,11 +1311,11 @@ for (name, value) in &self.query_injections {
 ```
 
   编排层取数与缺凭据引导复用 Task 3.3 的 domain `resolve_tool_credentials` + `credential_missing_json`（HTTP 工具调用编排与 MCP 同一函数）。
-- [ ] **Step 5：新增运行时测试**（http_tests.rs TcpListener mock 模式）：
+- [x] **Step 5：新增运行时测试**（commit 3e2a95dd：injects_basic_auth 经 resolve_requirements 走完整增强器链路（user_password+basic_auth → Basic base64(alice:pw)），顺带覆盖 Query 分派 generic_token → api_key=ntn_secret 追加模板 query 后）：
   - `http_tool_injects_basic_auth_header`：requirements user_password/Header{authorization} + DB 凭据行 → mock server 断言收到 `authorization: Basic base64(...)`。
   - `http_tool_missing_credential_returns_guidance`。
   - `http_tool_sensitive_header_rejected_at_config_time`（覆盖 Step 1）。
-- [ ] **Step 6：全绿 + 提交** `git commit -m "feat(http-tool): credential requirements with header/query injection"`。
+- [x] **Step 6：全绿 + 提交** `git commit -m "feat(http-tool): credential requirements with header/query injection"`（commit 3e2a95dd，lib 1046 passed 全绿）。
 
 ### Task 4.2：前端 HTTP 工具表单凭据需求区
 
@@ -1323,12 +1323,12 @@ for (name, value) in &self.query_injections {
 - Modify: frontend/src/components/create_http_tool.rs
 - Modify: frontend/src/pages/finance/tools.rs
 
-- [ ] **Step 1**：同 Task 3.3 模式；binding 仅 Header/Query；transport 联动改为无 transport（HTTP 工具恒 HttpTool scope）。
-- [ ] **Step 2**：headers/query 静态编辑区增加敏感名前端预检（输入敏感名即时提示「敏感头只能通过凭据需求注入」）。
-- [ ] **Step 3**：前端测试 + clippy + 提交。
+- [x] **Step 1**（commit 04f961c5：抽共享模块 components/credential_form.rs（mcp_servers.rs 协议无关纯函数整体迁入，无复制粘贴）；校验函数升级 scope 参数化 validate_requirements_scoped 补齐后端第 4 条 enhancer↔kind supports 矩阵（六规则全对齐）；binding 显式变体下拉（Header/Query 切换保留注入名））：同 Task 3.3 模式；binding 仅 Header/Query；transport 联动改为无 transport（HTTP 工具恒 HttpTool scope）。
+- [x] **Step 2**（commit 04f961c5：headers/query 实为 JSON 文本域非 key-value 列表——预检按解析 JSON 顶层 key 实现（sensitive_keys_hint 即时红提示 + 提交二次拦截）；is_sensitive_name 前端复刻 pkg 同源规则（api-key 连字符规则修正用例））：headers/query 静态编辑区增加敏感名前端预检（输入敏感名即时提示「敏感头只能通过凭据需求注入」）。
+- [x] **Step 3**（commit 04f961c5：前端 120 passed + clippy wasm 零警告；新增 13 测试含 HttpTool binding 矩阵与敏感名矩阵）：前端测试 + clippy + 提交。
 
 **Phase 4 收口检查：**
-- [ ] 全量 `make test` + 双端 clippy 绿。
+- [x] 全量 `make test` + 双端 clippy 绿（后端 lib 1046 passed + 集成测试 23 target exit 0；前端 120 passed + clippy wasm 零警告；后端 clippy --all-targets 零警告随各 commit 验证）。
 
 ---
 
