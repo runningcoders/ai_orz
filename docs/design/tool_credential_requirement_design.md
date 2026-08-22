@@ -8,7 +8,7 @@
 > - [AGENTS.md](../../AGENTS.md) — §3 分层架构、§2.1 文档规范
 > - [用户身份凭证独立表设计](user_credentials_design.md) — 凭据表结构 / 解析链 / 可见性语义的底层设计；本设计扩展其 D15/D16（默认唯一索引加 platform 维度）与消费侧
 > - [网络搜索与浏览器工具设计](web_search_and_browser_tools_design.md) — 双轨授权先例（tavily 个人 key + 共享 config 兜底 + api_key_missing 引导）
-> - 暂无对应 plan 文档（落地时补写）
+> - [共享工具凭据增强器落地](../plan/共享工具凭据增强器落地.md) — 落地流程与执行结果快照
 
 ---
 
