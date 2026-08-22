@@ -333,6 +333,14 @@ impl MessageConsumer {
             thinking_options =
                 thinking_options.with_max_thinking_rounds(runtime_config.max_thinking_rounds);
         }
+        // 捕获"当前工作关联的用户 id"（任务/项目的 root_user_id）：
+        // Agent 间协作消息（from_role=Agent）的 from_id 是 Agent ID，消息本身不携带用户上下文，
+        // rebuild_context 重建出的 ctx 缺 user_id，会在凭据解析（resolve_tool_credentials 依赖
+        // ctx.user_id）处断链。这里复用上方已加载的任务实体（不重复查询），在真正唤醒前推导并注入。
+        let mut work_root_user_id = cached_task
+            .as_ref()
+            .map(|task| task.po.root_user_id.clone())
+            .filter(|s| !s.is_empty());
         if let Some(project_id) = &message.po.project_id
             && let Ok(Some(project)) = self
                 .project_domain
@@ -340,6 +348,9 @@ impl MessageConsumer {
                 .get(ctx.clone(), project_id)
                 .await
         {
+            if work_root_user_id.is_none() && !project.po.root_user_id.is_empty() {
+                work_root_user_id = Some(project.po.root_user_id.clone());
+            }
             thinking_options = thinking_options.with_project(project);
         }
         if let Some(task) = cached_task {
@@ -354,6 +365,13 @@ impl MessageConsumer {
                 .await
         {
             thinking_options = thinking_options.with_user_profile(sender);
+        }
+
+        // 注入推导出的用户上下文（任务/项目 root_user_id），保证凭据链路按归属用户解析
+        if ctx.user_id().is_none()
+            && let Some(root_user_id) = work_root_user_id
+        {
+            ctx = ctx.to_builder().user_id(root_user_id).build();
         }
 
         // 调用 RuntimeDomain 唤醒 Agent

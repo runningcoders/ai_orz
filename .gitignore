@@ -63,6 +63,10 @@ sqlite::memory*
 # Environment variables (contains API keys for real model integration tests)
 .env
 
+# macOS Finder 元数据（防止误提交）
+.DS_Store
+**/.DS_Store
+
 # Local test output
 test_output.log
 
