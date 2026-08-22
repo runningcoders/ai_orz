@@ -914,7 +914,7 @@ async fn http_core_tool_redacts_rendered_url_from_request_errors() {
         "method": "GET",
         "url": "http://127.0.0.1:1/search/{{args.token}}",
         "query": {
-            "access_token": "{{args.token}}"
+            "filter": "{{args.token}}"
         },
         "timeout_ms": 1_000,
         "response_max_bytes": 4_096,
@@ -948,7 +948,7 @@ async fn http_core_tool_redacts_rendered_url_from_request_errors() {
         "request error leaked rendered secret: {message}"
     );
     assert!(
-        !message.contains("access_token"),
+        !message.contains("filter"),
         "request error leaked query key: {message}"
     );
     assert!(
@@ -1057,6 +1057,270 @@ short",
     server_handle
         .join()
         .expect("test HTTP server thread should finish");
+}
+
+// ==================== Task 4.1：凭据需求配置期校验 ====================
+
+#[test]
+fn validate_rejects_sensitive_static_header() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "headers": {
+            "authorization": "Bearer x"
+        }
+    }));
+
+    let registry = ToolRegistry::default();
+    assert!(
+        registry.create_tool(po).is_none(),
+        "static sensitive header names should be rejected: they must go through credential_requirements injection"
+    );
+}
+
+#[test]
+fn validate_rejects_sensitive_templated_header() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "headers": {
+            "x-api-key": "{{args.k}}"
+        }
+    }));
+
+    let registry = ToolRegistry::default();
+    assert!(
+        registry.create_tool(po).is_none(),
+        "sensitive-name detection is value-form independent: templated values are rejected too"
+    );
+}
+
+#[test]
+fn validate_rejects_sensitive_query() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "query": {
+            "token": "v"
+        }
+    }));
+
+    let registry = ToolRegistry::default();
+    assert!(
+        registry.create_tool(po).is_none(),
+        "is_sensitive_header applies to query keys as well"
+    );
+}
+
+#[test]
+fn validate_accepts_normal_headers() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+    }));
+
+    let registry = ToolRegistry::default();
+    assert!(
+        registry.create_tool(po).is_some(),
+        "non-sensitive header/query template keys should stay accepted"
+    );
+}
+
+#[test]
+fn validate_rejects_env_binding_for_http_tool() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "credential_requirements": [
+            {
+                "kind": "generic_token",
+                "platform": "linear",
+                "binding": { "type": "env", "name": "LINEAR_TOKEN" }
+            }
+        ]
+    }));
+
+    let registry = ToolRegistry::default();
+    assert!(
+        registry.create_tool(po).is_none(),
+        "HttpTool scope only allows header/query bindings"
+    );
+}
+
+// ==================== Task 4.1：凭据注入运行时 ====================
+
+#[tokio::test]
+async fn http_tool_injects_basic_auth_header() {
+    use base64::Engine;
+
+    let (base_url, server_handle) = start_json_server(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}",
+    );
+
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": format!("{}/search", base_url),
+        "query": {
+            "q": "{{args.query}}"
+        },
+        "credential_requirements": [
+            {
+                "kind": "user_password",
+                "platform": "test-service",
+                "enhancer": "basic_auth",
+                "binding": { "type": "header", "name": "Authorization" }
+            },
+            {
+                "kind": "generic_token",
+                "platform": "test-service",
+                "binding": { "type": "query", "name": "api_key" }
+            }
+        ],
+        "timeout_ms": 5_000,
+        "response_max_bytes": 4_096,
+        "allowed_status_codes": [200],
+        "allow_local_network": true
+    }));
+
+    let registry = ToolRegistry::default();
+    let mut tool = registry
+        .create_tool(po)
+        .expect("Http tool with credential requirements should create an executable tool");
+
+    let requirements = tool.credential_requirements();
+    assert_eq!(requirements.len(), 2);
+
+    let fetched = vec![
+        crate::pkg::credential::FetchedCredential {
+            credential_id: "cred-http-1".to_string(),
+            detail: common::models::CredentialDetail::UserPassword {
+                username: "alice".to_string(),
+                password: "pw".to_string(),
+            },
+            attributes: Default::default(),
+            already_decrypted: false,
+        },
+        crate::pkg::credential::FetchedCredential {
+            credential_id: "cred-http-2".to_string(),
+            detail: common::models::CredentialDetail::GenericToken {
+                token: "ntn_secret".to_string(),
+            },
+            attributes: Default::default(),
+            already_decrypted: false,
+        },
+    ];
+    let resolved = crate::pkg::credential::resolve_requirements(&requirements, &fetched)
+        .await
+        .expect("resolve_requirements should derive injection values through the enhancer chain");
+    tool.check(&resolved)
+        .expect("check should store header/query injections");
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    let result = tool
+        .call(ctx, json!({ "query": "rust" }))
+        .await
+        .expect("HTTP core tool should execute with credential injection");
+
+    assert_eq!(result["status"], 200);
+
+    let request = server_handle
+        .join()
+        .expect("test HTTP server thread should finish");
+    let expected_basic = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode("alice:pw")
+    );
+    assert!(
+        request.contains(&format!("authorization: {expected_basic}")),
+        "request should carry the Basic-auth injected header: {request:?}"
+    );
+    assert!(
+        request.starts_with("GET /search?q=rust&api_key=ntn_secret ")
+            || request.starts_with("GET /search?api_key=ntn_secret&q=rust "),
+        "request line should append the injected query param after template rendering: {request:?}"
+    );
+}
+
+#[tokio::test]
+async fn http_tool_missing_credential_returns_guidance() {
+    let (base_url, server_handle) = start_json_server(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}",
+    );
+
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": format!("{}/search", base_url),
+        "credential_requirements": [
+            {
+                "kind": "generic_token",
+                "platform": "test-service",
+                "binding": { "type": "header", "name": "X-Api-Key" }
+            }
+        ],
+        "timeout_ms": 5_000,
+        "response_max_bytes": 4_096,
+        "allowed_status_codes": [200],
+        "allow_local_network": true
+    }));
+
+    let registry = ToolRegistry::default();
+    let mut tool = registry
+        .create_tool(po)
+        .expect("Http tool with credential requirements should create an executable tool");
+
+    // 编排层缺凭据时在 domain 层直接返回引导（不进实例）；实例层空 resolved 软路径：
+    // check 通过、实例注入为空，call 正常执行且不带注入头。
+    tool.check(&[])
+        .expect("empty resolved should pass the soft path");
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("test sqlite pool should be created");
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    let result = tool
+        .call(ctx, json!({ "query": "rust" }))
+        .await
+        .expect("empty resolved should still execute the request without injections");
+
+    assert_eq!(result["status"], 200);
+    assert_eq!(result["body"]["ok"], true);
+
+    let request = server_handle
+        .join()
+        .expect("test HTTP server thread should finish");
+    assert!(
+        !request.to_ascii_lowercase().contains("x-api-key"),
+        "no credential header should be injected on the empty-resolved soft path: {request:?}"
+    );
+}
+
+#[test]
+fn http_tool_sensitive_header_rejected_at_config_time() {
+    let po = http_tool_po(json!({
+        "method": "GET",
+        "url": "https://api.example.com/search",
+        "headers": {
+            "X-Api-Key": "static-value"
+        }
+    }));
+
+    assert!(
+        super::validate_tool_po_config(&po).is_err(),
+        "management API validation should reject sensitive header names at config time"
+    );
 }
 
 fn start_json_server(response: &'static str) -> (String, thread::JoinHandle<String>) {

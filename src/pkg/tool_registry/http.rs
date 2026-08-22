@@ -70,6 +70,11 @@ pub struct HttpToolConfig {
     /// Explicit risk-acknowledgement switch for localhost/private-network targets.
     /// Defaults to false when omitted.
     pub allow_local_network: Option<bool>,
+
+    /// Credential requirements (type-level; sensitive header/query injection
+    /// is only allowed through these bindings, D15).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<common::models::CredentialRequirement>,
 }
 
 /// Executable HTTP core tool created from `ToolPo + HttpToolConfig`.
@@ -77,6 +82,10 @@ pub struct HttpToolConfig {
 pub struct HttpCoreTool {
     po: ToolPo,
     config: HttpToolConfig,
+    /// check 写入的 Header 注入值（D22：凭据是实例状态，实例单次使用不复用）
+    header_injections: Vec<(String, String)>,
+    /// check 写入的 Query 注入值
+    query_injections: Vec<(String, String)>,
 }
 
 impl HttpCoreTool {
@@ -87,7 +96,12 @@ impl HttpCoreTool {
 
         validate_config(&config)?;
 
-        Ok(Self { po, config })
+        Ok(Self {
+            po,
+            config,
+            header_injections: Vec::new(),
+            query_injections: Vec::new(),
+        })
     }
 
     pub fn config(&self) -> &HttpToolConfig {
@@ -98,13 +112,51 @@ impl HttpCoreTool {
 #[async_trait]
 impl CoreTool for HttpCoreTool {
     async fn call(&self, _ctx: RequestContext, args: Value) -> Result<Value> {
-        execute_http_call(&self.config, self.po.parameters_schema.as_ref(), args)
-            .await
-            .map_err(|e| err!(ToolExecutionFailed, e.to_string()))
+        execute_http_call(
+            &self.config,
+            self.po.parameters_schema.as_ref(),
+            args,
+            &self.header_injections,
+            &self.query_injections,
+        )
+        .await
+        .map_err(|e| err!(ToolExecutionFailed, e.to_string()))
     }
 
     fn po(&self) -> &ToolPo {
         &self.po
+    }
+
+    fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
+        self.config.credential_requirements.clone()
+    }
+
+    fn check(
+        &mut self,
+        resolved: &[crate::pkg::credential::ResolvedRequirement],
+    ) -> Result<()> {
+        let mut header_injections = Vec::with_capacity(resolved.len());
+        let mut query_injections = Vec::with_capacity(resolved.len());
+        for item in resolved {
+            match &item.requirement.binding {
+                // HttpTool 唯二合法注入点（配置期 validate_requirements 已限定，此处防御兜底）
+                common::models::CredentialBinding::Header { name } => {
+                    header_injections.push((name.clone(), item.value.clone()));
+                }
+                common::models::CredentialBinding::Query { name } => {
+                    query_injections.push((name.clone(), item.value.clone()));
+                }
+                _ => {
+                    return Err(err!(
+                        InvalidRequest,
+                        "HTTP 工具仅支持 header/query 凭据注入点"
+                    ));
+                }
+            }
+        }
+        self.header_injections = header_injections;
+        self.query_injections = query_injections;
+        Ok(())
     }
 }
 
@@ -127,6 +179,8 @@ async fn execute_http_call(
     config: &HttpToolConfig,
     parameters_schema: Option<&Value>,
     args: Value,
+    header_injections: &[(String, String)],
+    query_injections: &[(String, String)],
 ) -> Result<Value> {
     validate_args_schema(parameters_schema, &args)?;
 
@@ -162,6 +216,12 @@ async fn execute_http_call(
         request = request.query(&query);
     }
 
+    // Credential injection happens after template rendering: injected values
+    // are placed verbatim without any template resolution (D15).
+    if !query_injections.is_empty() {
+        request = request.query(query_injections);
+    }
+
     if let Some(headers) = render_object_template(config.headers.as_ref(), &args)? {
         for (name, value) in headers {
             request = request.header(
@@ -169,6 +229,13 @@ async fn execute_http_call(
                 HeaderValue::from_str(&value).map_err(|_| anyhow!("invalid http header value"))?,
             );
         }
+    }
+
+    for (name, value) in header_injections {
+        request = request.header(
+            HeaderName::from_str(name).map_err(|_| anyhow!("invalid http header name"))?,
+            HeaderValue::from_str(value).map_err(|_| anyhow!("invalid http header value"))?,
+        );
     }
 
     if method == Method::POST
@@ -382,11 +449,38 @@ fn validate_config(config: &HttpToolConfig) -> Result<()> {
     validate_fixed_target_policy(config)?;
     validate_scalar_template_object("headers", config.headers.as_ref())?;
     validate_scalar_template_object("query", config.query.as_ref())?;
+    validate_no_sensitive_template_keys("headers", config.headers.as_ref())?;
+    validate_no_sensitive_template_keys("query", config.query.as_ref())?;
     validate_body_template(config.body.as_ref())?;
     validate_allowed_status_codes(config.allowed_status_codes.as_ref())?;
     validate_response_json_pointer(config.response_json_pointer.as_deref())?;
     timeout_ms(config)?;
     response_max_bytes(config)?;
+    crate::pkg::credential::validate_requirements(
+        &config.credential_requirements,
+        common::models::CredentialRequirementScope::HttpTool,
+    )?;
+
+    Ok(())
+}
+
+/// Sensitive credential names must not appear as fixed header/query template
+/// keys: they are only allowed via `credential_requirements` injection (D15).
+fn validate_no_sensitive_template_keys(field_name: &str, template: Option<&Value>) -> Result<()> {
+    let Some(Value::Object(object)) = template else {
+        return Ok(());
+    };
+
+    for key in object.keys() {
+        if is_sensitive_header(key) {
+            return Err(anyhow!(
+                "http {} key {} is sensitive: use credential_requirements injection instead",
+                field_name,
+                key
+            )
+            .into());
+        }
+    }
 
     Ok(())
 }
