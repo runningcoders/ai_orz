@@ -917,8 +917,9 @@ async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    // 即使 memories 端点不存在，awaken 成功本身已由 Consumer Ok + Idle 验证
-    if status == axum::http::StatusCode::OK {
+    // 即使 memories 端点不存在（SPA 回退对未注册 API 返回 200 + 空 body），
+    // awaken 成功本身已由 Consumer Ok + Idle 验证。仅在返回标准 API 信封时展示 trace 数量。
+    if status == axum::http::StatusCode::OK && body.get("code").is_some() {
         let mem_data = crate::common::assert_api_ok(status, &body);
         let memories = mem_data
             .get("results")

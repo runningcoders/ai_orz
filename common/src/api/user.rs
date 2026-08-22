@@ -188,7 +188,6 @@ pub struct DeleteUserRequest {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateUserRequest {
     /// User ID
-    #[param(source = "path")]
     pub user_id: String,
     /// 显示名称（None 表示不修改）
     pub display_name: Option<String>,

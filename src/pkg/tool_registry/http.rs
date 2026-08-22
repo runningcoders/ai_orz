@@ -291,7 +291,7 @@ fn parse_supported_method(method: &str) -> Result<Method> {
     if !common::models::is_supported_http_method(method) {
         return Err(anyhow!("unsupported http method: {}", method).into());
     }
-    Ok(if method.to_ascii_uppercase() == "GET" {
+    Ok(if method.eq_ignore_ascii_case("GET") {
         Method::GET
     } else {
         Method::POST

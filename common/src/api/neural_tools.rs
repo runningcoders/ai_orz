@@ -63,6 +63,22 @@ pub struct MemoryResult {
     /// 标签列表（仅 short_term / knowledge_node 类型有值）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    /// 匹配元信息（仅 search_memory 语义搜索有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_match: Option<MemorySearchMatch>,
+}
+
+/// 记忆匹配元信息（语义搜索场景）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct MemorySearchMatch {
+    /// 匹配类型：hybrid（FTS5+向量）/ vector（仅向量）/ keyword（仅关键词）。
+    pub match_type: String,
+    /// 向量相似度距离（越小越相似，仅向量匹配时有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_distance: Option<f32>,
+    /// FTS5 BM25 相关性评分（越小越相关，仅关键词匹配时有值）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fts_rank: Option<f32>,
 }
 
 /// 查询记忆请求参数。
@@ -137,9 +153,10 @@ pub struct UpdateMemoryResponse {
 }
 
 /// 删除记忆请求参数。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DeleteMemoryParams {
     /// 记忆 ID。
+    #[param(source = "path")]
     pub memory_id: String,
 }
 

@@ -21,6 +21,9 @@ use tower_service::Service;
 ///
 /// 注：不用 ServeDir::not_found_service(ServeFile) —— 该组合会以 404 状态码返回
 /// index.html 内容，对 SEO/健康探测/部分客户端不友好。
+///
+/// `/api/` 前缀路径例外：未匹配任何已注册后端路由时**明确返回 404**（而非 SPA 200），
+/// 避免 SPA 回退以 200 + 空 body 掩盖接口缺失/路由错配问题（便于快速定位）。
 #[derive(Clone)]
 struct SpaFallback {
     serve_dir: ServeDir,
@@ -43,13 +46,17 @@ impl Service<Request<Body>> for SpaFallback {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        let path = req.uri().path();
+        // 后端 API 未匹配任何已注册路由时明确返回 404，避免 SPA 回退以 200 掩盖接口缺失
+        if path.starts_with("/api/") {
+            let resp = Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .expect("static response always builds");
+            return Box::pin(std::future::ready(Ok(resp)));
+        }
         // 带扩展名的路径视为静态资源，缺失时由 ServeDir 返回真实 404
-        let is_file_path = req
-            .uri()
-            .path()
-            .rsplit('/')
-            .next()
-            .is_some_and(|seg| seg.contains('.'));
+        let is_file_path = path.rsplit('/').next().is_some_and(|seg| seg.contains('.'));
         if !is_file_path {
             let resp = Response::builder()
                 .status(StatusCode::OK)
@@ -569,6 +576,10 @@ fn hr_routes() -> Router {
         .route(
             "/agents/recommend_seed_nodes",
             post(handlers::hr::agent::recommend_seed_nodes_handler),
+        )
+        .route(
+            "/agents/memories/{memory_id}",
+            delete(handlers::hr::agent::delete_memory_handler),
         )
 }
 

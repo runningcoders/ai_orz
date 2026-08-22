@@ -171,14 +171,15 @@ pub struct GetSkillRequest {
 pub type GetSkillResponse = SkillDetail;
 
 /// Agent-Skill 安装请求。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct InstallSkillToAgentRequest {
+    /// 目标 Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+
     /// 源 Skill ID。
     #[param(source = "path")]
     pub skill_id: String,
-
-    /// 目标 Agent ID。
-    pub agent_id: String,
 }
 
 /// Agent-Skill 安装响应。

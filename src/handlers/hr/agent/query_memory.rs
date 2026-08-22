@@ -90,6 +90,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: None,
+            search_match: None,
         },
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
@@ -101,6 +102,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: Some(parse_tags_json(&st.tags)),
+            search_match: None,
         },
         MemoryPo::KnowledgeNode(kn) => MemoryResult {
             id: kn.id.clone(),
@@ -112,6 +114,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: Some(parse_tags_json(&kn.tags)),
+            search_match: None,
         },
         MemoryPo::Relation(rel) => MemoryResult {
             id: rel.id.clone(),
@@ -123,6 +126,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: Some(rel.target_node_id.clone()),
             relation_type: Some(format!("{:?}", rel.relation_type)),
             tags: None,
+            search_match: None,
         },
     }
 }

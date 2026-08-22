@@ -8,7 +8,7 @@ use crate::service::dal::memory::TraversalStrategy;
 use crate::service::dao::memory::MemorySearch;
 use crate::service::domain::runtime::domain as runtime_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{MemoryResult, SearchMemoryParams, SearchMemoryResponse};
+use common::api::{MemoryResult, MemorySearchMatch, SearchMemoryParams, SearchMemoryResponse};
 use common::enums::MemoryType;
 use common::error::{Result, bail_err};
 
@@ -166,6 +166,19 @@ fn memories_to_results(memories: Vec<Memory>) -> Vec<MemoryResult> {
     memories.into_iter().map(|m| memory_to_result(&m)).collect()
 }
 
+/// 将 Memory 的 SearchMatchInfo 转换为 API 响应的 MemorySearchMatch。
+fn to_search_match(memory: &Memory) -> Option<MemorySearchMatch> {
+    memory.search_match.as_ref().map(|m| MemorySearchMatch {
+        match_type: match m.match_type {
+            crate::models::vector::MatchType::Hybrid => "hybrid".to_string(),
+            crate::models::vector::MatchType::Vector => "vector".to_string(),
+            crate::models::vector::MatchType::Keyword => "keyword".to_string(),
+        },
+        vector_distance: m.vector_distance,
+        fts_rank: m.fts_rank,
+    })
+}
+
 fn memory_to_result(memory: &Memory) -> MemoryResult {
     match &memory.po {
         MemoryPo::Trace(trace) => MemoryResult {
@@ -178,6 +191,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: None,
+            search_match: to_search_match(memory),
         },
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
@@ -189,6 +203,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: Some(parse_tags_json(&st.tags)),
+            search_match: to_search_match(memory),
         },
         MemoryPo::KnowledgeNode(kn) => MemoryResult {
             id: kn.id.clone(),
@@ -200,6 +215,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: None,
             relation_type: None,
             tags: Some(parse_tags_json(&kn.tags)),
+            search_match: to_search_match(memory),
         },
         MemoryPo::Relation(rel) => MemoryResult {
             id: rel.id.clone(),
@@ -211,6 +227,7 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             target_node_id: Some(rel.target_node_id.clone()),
             relation_type: Some(format!("{:?}", rel.relation_type)),
             tags: None,
+            search_match: to_search_match(memory),
         },
     }
 }

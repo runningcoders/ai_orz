@@ -1,5 +1,10 @@
 import { defineConfig } from '@playwright/test';
 
+// 绕过系统代理，确保 Playwright 能直接访问本地后端服务
+// （企业环境常有 HTTP_PROXY，会拦截 127.0.0.1 请求导致 502）
+process.env.NO_PROXY = '127.0.0.1,localhost';
+process.env.no_proxy = '127.0.0.1,localhost';
+
 // E2E 专用端口：与本地开发服务（3000/8080）隔离，可通过环境变量覆盖
 const PORT = Number(process.env.AI_ORZ_E2E_PORT ?? 3310);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -19,6 +24,9 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    launchOptions: {
+      args: ['--no-proxy-server', '--disable-features=IsolateOrigins,site-per-process'],
+    },
   },
   projects: [
     {
