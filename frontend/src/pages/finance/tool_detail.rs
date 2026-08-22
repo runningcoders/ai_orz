@@ -131,8 +131,9 @@ fn builtin_form_from_config(config: Option<&serde_json::Value>) -> BuiltinConfig
 
 /// 以 detail config 为基底合并表单字段（防丢字段：未在表单展示的字段原样保留）
 ///
-/// 校验与后端 `validate_builtin_config` 对齐：command 非空 string；
-/// timeout_ms / max_output_bytes 正整数（留空 = 不覆盖，保留基底值或后端缺省兜底）。
+/// 合并后统一走 common 单点 `validate_builtin_tool_config`（与后端 update_tool 校验
+/// 同一实现）：command 非空 string；timeout_ms / max_output_bytes 正整数
+/// （留空 = 不覆盖，保留基底值或后端缺省兜底）。
 fn merge_builtin_config(
     base: Option<&serde_json::Value>,
     form: &BuiltinConfigFormState,
@@ -144,57 +145,49 @@ fn merge_builtin_config(
         .unwrap_or_default();
     match layout {
         BuiltinConfigForm::Browser => {
-            insert_command(&mut map, &form.command)?;
-            insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms)?;
-            insert_positive_number(&mut map, "max_output_bytes", &form.max_output_bytes)?;
+            insert_command(&mut map, &form.command);
+            insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms);
+            insert_positive_number(&mut map, "max_output_bytes", &form.max_output_bytes);
             map.insert(
                 "install_hint".to_string(),
                 serde_json::Value::String(form.install_hint.trim().to_string()),
             );
         }
         BuiltinConfigForm::GhCli | BuiltinConfigForm::LarkCli => {
-            insert_command(&mut map, &form.command)?;
+            insert_command(&mut map, &form.command);
         }
         BuiltinConfigForm::TavilySearch => {
-            insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms)?;
+            insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms);
         }
     }
-    Ok(serde_json::Value::Object(map))
+    let merged = serde_json::Value::Object(map);
+    common::models::validate_builtin_tool_config(&merged)?;
+    Ok(merged)
 }
 
-/// command 覆盖（非空校验与后端 validate_builtin_config 对齐）
-fn insert_command(
-    map: &mut serde_json::Map<String, serde_json::Value>,
-    command: &str,
-) -> Result<(), String> {
-    let trimmed = command.trim();
-    if trimmed.is_empty() {
-        return Err("command 不能为空".to_string());
-    }
+/// command 覆盖（原样放置，合法性由合并后的 common 校验统一判定）
+fn insert_command(map: &mut serde_json::Map<String, serde_json::Value>, command: &str) {
     map.insert(
         "command".to_string(),
-        serde_json::Value::String(trimmed.to_string()),
+        serde_json::Value::String(command.trim().to_string()),
     );
-    Ok(())
 }
 
-/// 数字字段覆盖：留空不覆盖（保留基底 / 缺省兜底）；非空须为正整数
+/// 数字字段覆盖：留空不覆盖（保留基底 / 缺省兜底）；非数字原样放置交由 common 校验判定
 fn insert_positive_number(
     map: &mut serde_json::Map<String, serde_json::Value>,
     field: &str,
     text: &str,
-) -> Result<(), String> {
+) {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Ok(());
+        return;
     }
-    let number = trimmed
+    let value = trimmed
         .parse::<u64>()
-        .ok()
-        .filter(|n| *n > 0)
-        .ok_or_else(|| format!("{field} 必须是正整数"))?;
-    map.insert(field.to_string(), serde_json::json!(number));
-    Ok(())
+        .map(|number| serde_json::json!(number))
+        .unwrap_or_else(|_| serde_json::Value::String(trimmed.to_string()));
+    map.insert(field.to_string(), value);
 }
 
 #[component]

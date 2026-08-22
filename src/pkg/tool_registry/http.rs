@@ -287,11 +287,15 @@ async fn execute_http_call(
 }
 
 fn parse_supported_method(method: &str) -> Result<Method> {
-    match method.to_ascii_uppercase().as_str() {
-        "GET" => Ok(Method::GET),
-        "POST" => Ok(Method::POST),
-        other => Err(anyhow!("unsupported http method: {}", other).into()),
+    // 白名单单点在 common `is_supported_http_method`（与前端表单预校验共用）
+    if !common::models::is_supported_http_method(method) {
+        return Err(anyhow!("unsupported http method: {}", method).into());
     }
+    Ok(if method.to_ascii_uppercase() == "GET" {
+        Method::GET
+    } else {
+        Method::POST
+    })
 }
 
 fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Result<()> {

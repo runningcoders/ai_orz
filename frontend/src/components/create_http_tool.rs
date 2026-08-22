@@ -3,7 +3,8 @@
 //! 对齐后端 `CreateToolRequest` 与 `HttpToolConfig` 结构：基础信息（name/description/tags）、
 //! HTTP 配置（method/url/模板/超时/SSRF 白名单）、凭据需求动态列表（HttpTool scope：Header/Query binding）。
 //!
-//! 方法白名单与后端一致（仅 GET/POST）；headers/query 模板敏感名与后端
+//! 方法白名单委托 common 单点 `is_supported_http_method`（仅 GET/POST，与后端
+//! `parse_supported_method` 共用）；headers/query 模板敏感名与后端
 //! `validate_no_sensitive_template_keys` 同判（只能经凭据需求注入，D15）。
 
 use dioxus::prelude::*;
@@ -153,7 +154,8 @@ pub fn build_create_request(form: &HttpToolFormState) -> Result<CreateToolReques
     if form.url.trim().is_empty() {
         return Err("URL 模板不能为空".to_string());
     }
-    if form.method != "GET" && form.method != "POST" {
+    // 白名单单点在 common `is_supported_http_method`（与后端 parse_supported_method 共用）
+    if !common::models::is_supported_http_method(&form.method) {
         return Err("方法仅支持 GET/POST".to_string());
     }
 

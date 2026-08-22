@@ -111,27 +111,11 @@ fn reject_builtin_field_edits(protocol: ToolProtocol, params: &UpdateToolRequest
 
 /// Builtin 工具 config 已知字段轻量校验（D28：CLI 命令与行为参数进 PO config）
 ///
-/// 仅校验已知字段的类型与取值（command 非空 string / timeout_ms·max_output_bytes
-/// 正整数），未知字段宽松保留（不做白名单封闭，保持 config 扩展性）；
-/// `config` 非对象（含 Null，存量 DB 兼容）时无已知字段可校验，直接通过。
+/// 规则本体单点在 common `validate_builtin_tool_config`（与前端表单提交前校验共用），
+/// 此处仅包装为 Error；未知字段宽松保留，`config` 非对象（含 Null，存量 DB 兼容）直接通过。
 fn validate_builtin_config(config: &serde_json::Value) -> Result<()> {
-    let Some(object) = config.as_object() else {
-        return Ok(());
-    };
-    for (key, value) in object {
-        match key.as_str() {
-            "command" if !value.as_str().is_some_and(|command| !command.is_empty()) => {
-                bail_err!(InvalidRequest, "config.command 必须为非空字符串");
-            }
-            "timeout_ms" | "max_output_bytes"
-                if !value.as_u64().is_some_and(|number| number > 0) =>
-            {
-                bail_err!(InvalidRequest, "config.{} 必须为正整数", key);
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+    common::models::validate_builtin_tool_config(config)
+        .map_err(|msg| err!(InvalidRequest, "{}", msg))
 }
 
 #[cfg(test)]
