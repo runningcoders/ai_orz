@@ -301,7 +301,7 @@ cmd_prod() {
 
     echo ""
     echo "🚀 启动生产服务..."
-    echo "   监听: ${BLUE}0.0.0.0:${SERVER_PORT:-3000}${NC}"
+    echo "   监听: ${BLUE}${AI_ORZ_LISTEN_ADDR:-0.0.0.0:3000}${NC}（AI_ORZ_LISTEN_ADDR 可覆盖）"
     echo ""
 
     cd "$REPO_ROOT"

@@ -41,10 +41,25 @@ pub async fn init_all(config: &AppConfig) {
     .await;
 
     // Initialize JWT
+    // 优先级：环境变量 JWT_SECRET → 配置文件 jwt.secret（首启可由环境变量固化）→ 内置默认
     let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "ai-orz-default-jwt-secret-change-me-in-production".to_string());
-    let jwt_expiry_hours: i64 = get_env_or_default("JWT_EXPIRY_HOURS", "168")
-        .parse()
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            config
+                .jwt
+                .secret
+                .clone()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "ai-orz-default-jwt-secret-change-me-in-production".to_string());
+    // 优先级：环境变量 JWT_EXPIRY_HOURS → 配置文件 jwt.default_expiry_hours → 168
+    let jwt_expiry_hours: i64 = std::env::var("JWT_EXPIRY_HOURS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .or_else(|| config.jwt.default_expiry_hours.map(|h| h as i64))
         .unwrap_or(168);
     jwt::init_jwt(&jwt_secret, jwt_expiry_hours);
 
@@ -59,10 +74,6 @@ pub async fn init_all(config: &AppConfig) {
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());
 
     sys_info!("All pkg modules initialized");
-}
-
-fn get_env_or_default(env_key: &str, default: &str) -> String {
-    std::env::var(env_key).unwrap_or(default.to_string())
 }
 
 #[cfg(test)]

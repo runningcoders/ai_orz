@@ -6,7 +6,7 @@
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod serve run clean clean-slim clean-proc doctor hooks
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod package serve run clean clean-slim clean-proc doctor hooks
 
 # git hooks 目录指向仓库内 .githooks/（pre-push 自动跑 fmt-check，跳过用 git push --no-verify）
 hooks:
@@ -116,6 +116,9 @@ build-fe: ## 仅编译前端 release 并复制产物到 dist/（路由 scripts/b
 
 prod: ## 生产模式：编译 release 并运行生产二进制（0.0.0.0:3000）
 	./scripts/start.sh prod
+
+package: ## 编译并打包正式发布物（tar.gz：二进制 + dist/ + start.sh 启动脚本 + README，可指定 VERSION）
+	./scripts/package.sh $(VERSION)
 
 e2e: ## Playwright E2E（仅本地，已移出 CI）
 	cd tests/e2e && npx playwright test

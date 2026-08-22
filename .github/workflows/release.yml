@@ -76,35 +76,14 @@ jobs:
         echo "$HOME/.dioxus/bin" >> $GITHUB_PATH
         dx --version
 
-    # 复用本地构建链路：dx build --release → 产物复制到 dist/ → cargo build --release
-    - name: Build release (frontend + backend)
-      run: ./scripts/start.sh build
-
-    # 打包：目录内自带 dist/，解压后 ./ai_orz 即可运行
-    # （.ai_orz/ai_orz.toml 首次启动自动生成，migrations 已内嵌）
-    - name: Package release archive
+    # 复用本地打包链路：scripts/package.sh 内部完成 前端 dx build --release → dist/ → 后端 cargo build --release → 组装 tar.gz
+    # 打包逻辑与本地 make package 完全一致（单一事实源）
+    - name: Build & package release (frontend + backend + tar.gz)
       shell: bash
       env:
         # 事件字段经 env 传入 shell，不直接在 run 中插值（防注入）
         REF_NAME: ${{ github.ref_name }}
-      run: |
-        set -euo pipefail
-        TAG="${REF_NAME:-manual}"
-        # 校验 tag 格式，拒绝含 shell/路径特殊字符的非法值
-        if ! printf '%s' "$TAG" | grep -Eq '^[A-Za-z0-9._-]+$'; then
-          echo "invalid ref name: $TAG" >&2
-          exit 1
-        fi
-        PKG_DIR="ai_orz-${TAG}-${{ matrix.target }}"
-        mkdir -p "$PKG_DIR"
-        cp target/release/ai_orz "$PKG_DIR/"
-        cp -r dist "$PKG_DIR/"
-        echo "# AI Orz ${TAG}" > "$PKG_DIR/README.txt"
-        echo "" >> "$PKG_DIR/README.txt"
-        echo "运行方式: ./ai_orz（监听 0.0.0.0:3000，前端从同目录 dist/ 提供）" >> "$PKG_DIR/README.txt"
-        echo "首次启动自动生成 .ai_orz/ai_orz.toml 配置文件" >> "$PKG_DIR/README.txt"
-        tar czf "${PKG_DIR}.tar.gz" "$PKG_DIR"
-        ls -lh "${PKG_DIR}.tar.gz"
+      run: ./scripts/package.sh "${REF_NAME:-manual}"
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v5

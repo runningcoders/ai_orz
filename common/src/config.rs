@@ -15,6 +15,12 @@ pub const BASE_DATA_PATH: &str = ".ai_orz";
 /// 环境变量名，用于覆盖默认的基础数据路径
 pub const BASE_DATA_PATH_ENV: &str = "AI_ORZ_BASE_PATH";
 
+/// 环境变量名，用于覆盖监听地址（与配置字段 server.listen_addr 完全对齐）
+pub const LISTEN_ADDR_ENV: &str = "AI_ORZ_LISTEN_ADDR";
+
+/// 环境变量名，用于覆盖敏感数据加密密钥（映射 security.secret_key）
+pub const SECRET_KEY_ENV: &str = "SECRET_KEY";
+
 /// 默认配置文件名（相对于 BASE_DATA_PATH）
 pub const CONFIG_FILE_NAME: &str = "ai_orz.toml";
 

@@ -41,6 +41,10 @@ target
 /.idea
 .vscode
 
+# Release packaging output (scripts/package.sh: make package)
+/ai_orz-*.tar.gz
+/ai_orz-*/
+
 # Trae IDE 配置与本地数据（含 skills、settings 等）
 /.trae/
 
