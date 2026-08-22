@@ -1231,25 +1231,35 @@ fn credential_requirements(&self) -> Vec<CredentialRequirement> {
 - [x] **Step 7：收口 grep**（全部通过）——`GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓零残留（含 doc 注释与测试）；`execute_auto` / `execute_manual` 全仓零残留、`dispatch_manual_tool` 仅剩 domain + handler doc 注释；`call_tool_by_id` 全仓仅剩 domain trait/impl/test + debug handler（DAL 零残留）。
 - [x] **Step 8：全绿 + 提交**（各 Step 独立提交，提交链：a22eede3 → 12ebdbd1 → 518b955f → b6641713 → 68ed836f → 4a610c0d → be1575dc；全量测试 + clippy 三门禁全绿，无额外收口提交需要）。
 
-### Task 3.4：前端 MCP 表单凭据需求区
+### Task 3.4：工具表单统一改造（config 可编辑 + 凭据需求展示/编辑）
+
+> **范围扩展（用户决策，2026-08-21）**：Task 3.3 的 D28 改动（三员工具 CLI 参数进 PO config）+ 凭据增强器落地后，工具表单需统一体现「行为参数（PO config 可编辑）+ 凭据需求声明（类型级，指向某一类凭据而非实例）」——工具详情页与 MCP server 表单是同一类问题，一并改造。Builtin 三员凭据需求是工厂静态声明（表单只读展示）；MCP server 是 requirements 主编辑战场；编辑组件做成协议无关，Task 3.5 HTTP 工具后端就绪后直接复用。
 
 **Files:**
-- Modify: frontend/src/pages/finance/mcp_servers.rs（创建 modal 增区块）
+- Modify: common/src/api/tool.rs（GetToolResponse 增 credential_requirements 字段）
+- Modify: src/handlers/finance/tool/response.rs（聚合透出 + Builtin config 轻量校验辅助）
+- Modify: src/handlers/finance/tool/update_tool.rs（config 轻量校验接入）
+- Modify: frontend/src/pages/finance/tool_detail.rs（工具配置编辑卡片 + 凭据需求只读卡片）
+- Modify: frontend/src/pages/finance/mcp_servers.rs（创建 modal 增凭据需求动态列表）
 - Modify: frontend/src/pages/finance/mcp_server_detail.rs（展示 requirements 列表，只读卡片）
 
-- [ ] **Step 1：表单状态**——`use_signal(Vec<CredentialRequirement>)` 动态列表（add/remove）；单条表单字段联动：
+- [x] **Step 1：后端 DTO + 聚合透出**（commit 1c0f788a + Step 1b commit 6c9af46d：`#[serde(default)]` 保证前端反序列化兼容；ToolListItem 未加（列表 badge 由 runtime_ready 覆盖）；config 脱敏通道中 credential_requirements 键命中敏感词被 REDACTED——独立顶层字段正是为此；**Step 1b 打通 Builtin 更新管道**：DAO guard 从全字段挡改 diff 式工厂字段保护（name/description/protocol/control_mode/parameters_schema/tags 不可改，config/status 放行），顺带修复 Builtin 启停被挡现状 bug；Builtin config 变化不触发向量重索引（vectorize_text 不含 config，语义自洽））——`GetToolResponse` 增 `credential_requirements: Vec<common::models::CredentialRequirement>`；handler response.rs 构造时从 `ToolRegistry::credential_requirements(&tool.po)` 聚合（Builtin 工厂声明 / Mcp·Http config 解析统一入口）；GetTool / UpdateTool / ListTools（ToolListItem 若需要）响应同步。`update_tool` config 轻量校验：Builtin 已知字段类型校验（command 非空 string / timeout_ms 正整数 / max_output_bytes 正整数），未知字段宽松保留（不做白名单封闭，保持 config 扩展性）。
+- [x] **Step 2：前端工具详情页两张新卡片**（commit 983a843a：GetToolResponse 无 runtime_ready 字段——经 query_tools(ids) 列表通道取 ToolListItem.runtime_ready 同源探测；CLI 型与 key 型 NotReady 文案区分；防丢合并纯函数 merge_builtin_config + 10 个单测；CredentialRequirementsTable 组件落位 components/credential_requirements.rs 供 Step 4 复用）——
+  - 「工具配置」编辑卡片：结构化字段按协议渲染（browser: command/timeout_ms/max_output_bytes/install_hint；gh/lark: command；tavily: timeout_ms；MCP/Http 工具 config 为 JSON 编辑区或继承 server 不展示），保存走既有 `update_tool`（config 整体替换，管道已通）；Builtin 未展示字段保留在提交 JSON 中（先读 detail config 再覆盖展示字段，避免整体替换丢字段）。
+  - 「凭据需求」只读卡片：表格（kind/platform/field/enhancer/binding 注入点），Builtin 工厂静态声明只读；runtime_ready NotReady 时展示绑定引导（与列表 badge 同源）。
+- [x] **Step 3：MCP server 创建 modal 凭据需求动态列表**（commit aae2ecb1：transport 变更时已有条目 binding 重包装 Env↔Header 保留注入名（binding↔transport 结构性不可能失配）；enhancer 下拉排除 default_enhancer（D11）；预校验五规则与后端对齐 + 12 个单测；核对确认无编辑 modal（仅创建+启停+删除），未做回填）——`use_signal(Vec<CredentialRequirement>)` add/remove；单条表单字段联动：
   - kind 下拉（六值，`CredentialKind` serde 值）。
   - platform 输入框：仅 `kind.requires_platform()` 显示（前端用 `common::models::CredentialKind::requires_platform`）。
   - field 输入框 / enhancer 下拉互斥（选了 field 禁用 enhancer 下拉，反之亦然）；enhancer 下拉选项按 `enhancer_supports(kind, e)` 过滤，专用 kind 时禁用并提示「该凭据类型不适用增强器」；**不提供默认增强器选项**（oauth 下拉无 access_token、user_password 无 basic_auth，D11 前端不暴露）。
   - binding：transport=stdio → 仅 Env（name 输入）；streamable_http → 仅 Header。
-- [ ] **Step 2：前端预校验**——提交前调 pkg 同规则（前端可用 common 的矩阵函数自实现 5 条规则的简化版：binding↔transport、platform↔kind、field/enhancer 互斥、注入名非空、三元组去重）。
-- [ ] **Step 3：detail 页只读展示**——requirements 表格（kind/platform/enhancer/binding type/name），非敏感直接展示。
-- [ ] **Step 4：`cd frontend && cargo test && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` + 提交**。
+  - 前端预校验（common 矩阵函数简化版：binding↔transport、platform↔kind、field/enhancer 互斥、注入名非空、三元组去重）；后端 create/update handler 已有 `validate_requirements` 双保险。
+- [x] **Step 4：MCP server detail 页 requirements 只读展示**（commit aae2ecb1：复用 CredentialRequirementsTable +12 行）——requirements 表格（kind/platform/field/enhancer/binding type/name），非敏感直接展示。
+- [x] **Step 5：`cargo test --lib` + 后端 handler 测试（requirements 聚合透出断言 + Builtin config 校验用例）+ `cd frontend && cargo test && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings` + 提交**（后端 1c0f788a + 6c9af46d：lib 1038 passed 全绿 + 集成测试 exit 0；前端 983a843a + aae2ecb1：109 passed + clippy 零警告；提交链按 Step 拆分）。
 
 **Phase 3 收口检查：**
-- [ ] `cargo test --lib`、`make test-be`、前端双命令全绿。
-- [ ] `GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓 grep 零残留；`service::init` 凭据注册三行清零。
-- [ ] D26 入口统一收口：think_loop 无 `tool_dal().execute_auto/execute_manual` 直连；`ToolDal::call_tool_by_id` / `McpToolDal::call_tool_by_id` / `ToolDal::execute_auto` / `execute_manual` 删除；DAL `call_tool` 统一 ToolExecutionRequest 签名；Auto 模式 MCP 工具主循环可执行（协议路由到 mcp_tool_dal）。
+- [x] `cargo test --lib`（1038 passed）、集成测试（23 target 全绿 exit 0）、前端双命令（109 passed + clippy 零警告）全绿。
+- [x] `GhCredentialResolver` / `TavilyCredentialResolver` / `LarkCredentialResolver` / `set_credential_resolver` / `get_credential_resolver` / `CredentialDataProvider` 全仓 grep 零残留；`service::init` 凭据注册三行清零。
+- [x] D26 入口统一收口：think_loop 无 `tool_dal().execute_auto/execute_manual` 直连；`ToolDal::call_tool_by_id` / `McpToolDal::call_tool_by_id` / `ToolDal::execute_auto` / `execute_manual` 删除；DAL `call_tool` 统一 ToolExecutionRequest 签名；Auto 模式 MCP 工具主循环可执行（协议路由到 mcp_tool_dal）。
 - [ ] 手工冒烟（可选）：启动后创建带 requirements 的 stdio server，DB config 无 env/headers 字段；同一 server 两用户调用各自注入；lark_cli 调用链与改造前行为一致。
 
 ---
