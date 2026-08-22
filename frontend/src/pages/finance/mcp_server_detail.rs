@@ -4,6 +4,7 @@ use crate::api::finance::{
     delete_mcp_server, get_mcp_server, sync_mcp_tools, update_mcp_server_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::credential_requirements::CredentialRequirementsTable;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -164,6 +165,17 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                                 div { class: "text-sm text-base-content/60", "更新时间" }
                                 div { class: "font-mono", "{crate::utils::format_datetime(s.updated_at)}" }
                             }
+                        }
+                    }
+                }
+                // ===== 凭据需求只读卡片（空列表不渲染）=====
+                if !s.config.credential_requirements.is_empty() {
+                    div { class: "card bg-base-100 shadow-md mt-4",
+                        div { class: "card-body",
+                            h3 { class: "card-title text-lg", "凭据需求" }
+                            p { class: "text-sm text-base-content/60",
+                                "工具以调用者身份注入以下凭据（类型级声明，不绑定具体凭据实例）" }
+                            CredentialRequirementsTable { requirements: s.config.credential_requirements.clone() }
                         }
                     }
                 }
