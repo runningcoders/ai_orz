@@ -8,6 +8,11 @@ use crate::api::finance::{
     update_mcp_server_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::credential_form::{
+    available_enhancers, binding_name, enhancer_from_value, enhancer_to_value,
+    has_any_enhancer_support, kind_from_value, mcp_transport_scope, normalize_requirements,
+    validate_requirements_scoped,
+};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -18,38 +23,10 @@ use common::api::{
 };
 use common::enums::{McpServerStatus, McpTransport};
 use common::models::{
-    CredentialBinding, CredentialEnhancerKind, CredentialKind, CredentialRequirement,
-    default_enhancer, enhancer_supports,
+    CredentialBinding, CredentialKind, CredentialRequirement, enhancer_supports,
 };
 
-// ==================== 凭据需求表单纯函数（单测覆盖） ====================
-
-/// 全部凭据类型（kind 下拉选项，serde 值 = 展示键）
-fn all_credential_kinds() -> [CredentialKind; 6] {
-    [
-        CredentialKind::LarkApp,
-        CredentialKind::GithubToken,
-        CredentialKind::TavilyKey,
-        CredentialKind::GenericToken,
-        CredentialKind::OAuth,
-        CredentialKind::UserPassword,
-    ]
-}
-
-/// 按 serde 值解析凭据类型
-fn kind_from_value(v: &str) -> Option<CredentialKind> {
-    all_credential_kinds().into_iter().find(|k| k.as_str() == v)
-}
-
-/// 注入点名（binding 的 name / field）
-fn binding_name(binding: &CredentialBinding) -> &str {
-    match binding {
-        CredentialBinding::Env { name }
-        | CredentialBinding::Header { name }
-        | CredentialBinding::Query { name } => name,
-        CredentialBinding::Internal { field } => field,
-    }
-}
+// ==================== MCP 表单本地辅助（共享纯函数见 components/credential_form.rs） ====================
 
 /// 按传输方式构造空名注入点（stdio → Env / streamable_http → Header）
 fn empty_binding(transport: McpTransport) -> CredentialBinding {
@@ -61,120 +38,6 @@ fn empty_binding(transport: McpTransport) -> CredentialBinding {
             name: String::new(),
         },
     }
-}
-
-/// 规范化：trim platform/field/注入名，空白 Option 归 None
-fn normalize_requirements(list: Vec<CredentialRequirement>) -> Vec<CredentialRequirement> {
-    list.into_iter()
-        .map(|mut r| {
-            r.platform = r
-                .platform
-                .map(|p| p.trim().to_string())
-                .filter(|p| !p.is_empty());
-            r.field = r
-                .field
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty());
-            let name = binding_name(&r.binding).trim().to_string();
-            r.binding = match r.binding {
-                CredentialBinding::Env { .. } => CredentialBinding::Env { name },
-                CredentialBinding::Header { .. } => CredentialBinding::Header { name },
-                CredentialBinding::Query { .. } => CredentialBinding::Query { name },
-                CredentialBinding::Internal { .. } => CredentialBinding::Internal { field: name },
-            };
-            r
-        })
-        .collect()
-}
-
-/// 前端预校验（后端 `validate_requirements` 的 MCP 简化版；失败返回具体错误文案）
-///
-/// 五条规则：binding↔transport / 注入名非空 / platform↔kind / field↔enhancer 互斥 /
-/// (kind, platform, 注入名) 三元组去重。
-fn validate_requirements(
-    requirements: &[CredentialRequirement],
-    transport: McpTransport,
-) -> Result<(), String> {
-    let mut seen = std::collections::HashSet::new();
-    for req in requirements {
-        // 1. binding ↔ transport（Env 仅 stdio / Header 仅 streamable_http）
-        let binding_matches = matches!(
-            (&req.binding, transport),
-            (CredentialBinding::Env { .. }, McpTransport::Stdio)
-                | (CredentialBinding::Header { .. }, McpTransport::StreamableHttp)
-        );
-        if !binding_matches {
-            return Err("凭据注入点与传输方式不匹配（Stdio 仅支持环境变量注入，StreamableHttp 仅支持请求头注入）".to_string());
-        }
-        // 2. 注入名非空
-        if binding_name(&req.binding).trim().is_empty() {
-            return Err("凭据注入点名不能为空".to_string());
-        }
-        // 3. platform ↔ kind（generic 类必填、专用类必空）
-        if req.kind.requires_platform() != req.platform.is_some() {
-            return Err(if req.kind.requires_platform() {
-                format!("凭据类型 {} 必须填写平台标识", req.kind.as_str())
-            } else {
-                format!("凭据类型 {} 不适用平台标识，请清空", req.kind.as_str())
-            });
-        }
-        // 4. field ↔ enhancer 互斥
-        if req.field.is_some() && req.enhancer.is_some() {
-            return Err(format!(
-                "凭据类型 {} 的提取字段与增强器互斥，只能二选一",
-                req.kind.as_str()
-            ));
-        }
-        // 5. (kind, platform, 注入名) 三元组去重
-        let key = (
-            req.kind,
-            req.platform.clone(),
-            binding_name(&req.binding).to_string(),
-        );
-        if !seen.insert(key) {
-            return Err("存在重复的凭据需求（同凭据类型 + 同平台 + 同注入点）".to_string());
-        }
-    }
-    Ok(())
-}
-
-/// 该类型是否存在任一受支持增强器（专用 kind 为 false，用于禁用提示区分）
-fn has_any_enhancer_support(kind: CredentialKind) -> bool {
-    all_enhancers()
-        .iter()
-        .any(|e| enhancer_supports(kind, *e))
-}
-
-/// 可选增强器列表（按 supports 矩阵过滤且排除默认增强器，D11 前端不暴露默认项）
-fn available_enhancers(kind: CredentialKind) -> Vec<CredentialEnhancerKind> {
-    all_enhancers()
-        .into_iter()
-        .filter(|e| enhancer_supports(kind, *e) && default_enhancer(kind) != Some(*e))
-        .collect()
-}
-
-fn all_enhancers() -> [CredentialEnhancerKind; 3] {
-    [
-        CredentialEnhancerKind::BearerToken,
-        CredentialEnhancerKind::BasicAuth,
-        CredentialEnhancerKind::AccessToken,
-    ]
-}
-
-/// 增强器下拉值（与 serde snake_case 值空间一致）
-fn enhancer_to_value(e: CredentialEnhancerKind) -> &'static str {
-    match e {
-        CredentialEnhancerKind::BearerToken => "bearer_token",
-        CredentialEnhancerKind::BasicAuth => "basic_auth",
-        CredentialEnhancerKind::AccessToken => "access_token",
-    }
-}
-
-/// 按下拉值解析增强器（"none" → None）
-fn enhancer_from_value(v: &str) -> Option<CredentialEnhancerKind> {
-    all_enhancers()
-        .into_iter()
-        .find(|e| enhancer_to_value(*e) == v)
 }
 
 #[component]
@@ -217,7 +80,7 @@ pub fn FinanceMcpServers() -> Element {
             };
             // 凭据需求预校验（规范化后执行，失败 toast 具体错误不提交）
             let requirements = normalize_requirements(new_requirements());
-            if let Err(e) = validate_requirements(&requirements, transport) {
+            if let Err(e) = validate_requirements_scoped(&requirements, mcp_transport_scope(transport)) {
                 toast.error(&e);
                 return;
             }
@@ -676,249 +539,6 @@ pub fn FinanceMcpServers() -> Element {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn req(
-        kind: CredentialKind,
-        platform: Option<&str>,
-        field: Option<&str>,
-        enhancer: Option<CredentialEnhancerKind>,
-        binding: CredentialBinding,
-    ) -> CredentialRequirement {
-        CredentialRequirement {
-            kind,
-            platform: platform.map(|s| s.to_string()),
-            field: field.map(|s| s.to_string()),
-            enhancer,
-            binding,
-        }
-    }
-
-    fn env(name: &str) -> CredentialBinding {
-        CredentialBinding::Env {
-            name: name.to_string(),
-        }
-    }
-
-    fn header(name: &str) -> CredentialBinding {
-        CredentialBinding::Header {
-            name: name.to_string(),
-        }
-    }
-
-    // ===== validate_requirements 五条规则 =====
-
-    #[test]
-    fn validate_accepts_valid_requirements() {
-        let list = vec![
-            req(
-                CredentialKind::GithubToken,
-                None,
-                None,
-                None,
-                env("GITHUB_TOKEN"),
-            ),
-            req(
-                CredentialKind::GenericToken,
-                Some("linear"),
-                Some("token"),
-                None,
-                env("LINEAR_TOKEN"),
-            ),
-            req(
-                CredentialKind::OAuth,
-                Some("okta"),
-                None,
-                Some(CredentialEnhancerKind::BearerToken),
-                env("OKTA_TOKEN"),
-            ),
-        ];
-        assert!(validate_requirements(&list, McpTransport::Stdio).is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_binding_transport_mismatch() {
-        // Env binding 用于 streamable_http → 拒绝
-        let list = vec![req(
-            CredentialKind::GithubToken,
-            None,
-            None,
-            None,
-            env("GITHUB_TOKEN"),
-        )];
-        let err = validate_requirements(&list, McpTransport::StreamableHttp).unwrap_err();
-        assert!(err.contains("不匹配"), "unexpected: {err}");
-        // Header binding 用于 stdio → 拒绝
-        let list = vec![req(
-            CredentialKind::GithubToken,
-            None,
-            None,
-            None,
-            header("authorization"),
-        )];
-        assert!(validate_requirements(&list, McpTransport::Stdio).is_err());
-    }
-
-    #[test]
-    fn validate_rejects_empty_binding_name() {
-        let list = vec![req(
-            CredentialKind::GithubToken,
-            None,
-            None,
-            None,
-            env("   "),
-        )];
-        let err = validate_requirements(&list, McpTransport::Stdio).unwrap_err();
-        assert!(err.contains("注入点名"), "unexpected: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_platform_kind_mismatch() {
-        // generic 类缺 platform → 拒绝
-        let list = vec![req(
-            CredentialKind::GenericToken,
-            None,
-            None,
-            None,
-            env("TOKEN"),
-        )];
-        let err = validate_requirements(&list, McpTransport::Stdio).unwrap_err();
-        assert!(err.contains("必须填写平台标识"), "unexpected: {err}");
-        // 专用类带 platform → 拒绝
-        let list = vec![req(
-            CredentialKind::GithubToken,
-            Some("github"),
-            None,
-            None,
-            env("TOKEN"),
-        )];
-        let err = validate_requirements(&list, McpTransport::Stdio).unwrap_err();
-        assert!(err.contains("不适用平台标识"), "unexpected: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_field_enhancer_conflict() {
-        let list = vec![req(
-            CredentialKind::GenericToken,
-            Some("linear"),
-            Some("token"),
-            Some(CredentialEnhancerKind::BearerToken),
-            env("LINEAR_TOKEN"),
-        )];
-        let err = validate_requirements(&list, McpTransport::Stdio).unwrap_err();
-        assert!(err.contains("互斥"), "unexpected: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_duplicate_triple() {
-        // 同 (kind, platform, 注入名) 三元组 → 拒绝（field 不同也算重复）
-        let list = vec![
-            req(
-                CredentialKind::GenericToken,
-                Some("linear"),
-                Some("token"),
-                None,
-                env("LINEAR_TOKEN"),
-            ),
-            req(
-                CredentialKind::GenericToken,
-                Some("linear"),
-                None,
-                Some(CredentialEnhancerKind::BearerToken),
-                env("LINEAR_TOKEN"),
-            ),
-        ];
-        let err = validate_requirements(&list, McpTransport::Stdio).unwrap_err();
-        assert!(err.contains("重复"), "unexpected: {err}");
-    }
-
-    #[test]
-    fn validate_allows_same_kind_different_binding_name() {
-        let list = vec![
-            req(
-                CredentialKind::GithubToken,
-                None,
-                None,
-                None,
-                env("GITHUB_TOKEN"),
-            ),
-            req(
-                CredentialKind::GithubToken,
-                None,
-                None,
-                None,
-                env("GH_ENTERPRISE_TOKEN"),
-            ),
-        ];
-        assert!(validate_requirements(&list, McpTransport::Stdio).is_ok());
-    }
-
-    #[test]
-    fn validate_empty_list_passes() {
-        assert!(validate_requirements(&[], McpTransport::Stdio).is_ok());
-    }
-
-    // ===== normalize_requirements =====
-
-    #[test]
-    fn normalize_trims_and_drops_empty_options() {
-        let list = vec![req(
-            CredentialKind::GenericToken,
-            Some("  linear  "),
-            Some("  "),
-            None,
-            env("  LINEAR_TOKEN  "),
-        )];
-        let normalized = normalize_requirements(list);
-        assert_eq!(normalized.len(), 1);
-        let r = &normalized[0];
-        assert_eq!(r.platform.as_deref(), Some("linear"));
-        assert_eq!(r.field, None, "空白 field 归 None");
-        assert_eq!(binding_name(&r.binding), "LINEAR_TOKEN");
-    }
-
-    // ===== 增强器选项矩阵（D11：默认增强器不暴露） =====
-
-    #[test]
-    fn available_enhancers_follow_supports_matrix_excluding_defaults() {
-        use CredentialEnhancerKind as E;
-        // 专用 kind：零可选项
-        for kind in [
-            CredentialKind::LarkApp,
-            CredentialKind::GithubToken,
-            CredentialKind::TavilyKey,
-        ] {
-            assert!(available_enhancers(kind).is_empty(), "{kind:?}");
-            assert!(!has_any_enhancer_support(kind), "{kind:?}");
-        }
-        // generic_token：仅 bearer_token（无默认增强器）
-        assert_eq!(
-            available_enhancers(CredentialKind::GenericToken),
-            vec![E::BearerToken]
-        );
-        // oauth：bearer_token 可选，access_token 为默认项不暴露
-        assert_eq!(
-            available_enhancers(CredentialKind::OAuth),
-            vec![E::BearerToken]
-        );
-        assert!(has_any_enhancer_support(CredentialKind::OAuth));
-        // user_password：basic_auth 为默认项不暴露 → 空列表但存在支持
-        assert!(available_enhancers(CredentialKind::UserPassword).is_empty());
-        assert!(has_any_enhancer_support(CredentialKind::UserPassword));
-    }
-
-    // ===== 值解析辅助 =====
-
-    #[test]
-    fn kind_and_enhancer_value_roundtrip() {
-        for kind in all_credential_kinds() {
-            assert_eq!(kind_from_value(kind.as_str()), Some(kind));
-        }
-        assert_eq!(kind_from_value("unknown"), None);
-        for e in all_enhancers() {
-            assert_eq!(enhancer_from_value(enhancer_to_value(e)), Some(e));
-        }
-        assert_eq!(enhancer_from_value("none"), None);
-    }
 
     #[test]
     fn empty_binding_follows_transport() {

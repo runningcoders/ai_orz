@@ -10,6 +10,7 @@ pub mod chat;
 pub mod code_editor;
 pub mod confirm_dialog;
 pub mod create_http_tool;
+pub mod credential_form;
 pub mod credential_requirements;
 pub mod force_layout;
 pub mod gauge;
