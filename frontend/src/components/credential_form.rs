@@ -202,6 +202,55 @@ pub fn is_sensitive_name(name: &str) -> bool {
     is_sensitive_credential_name(name)
 }
 
+/// 增强器展示名（下拉/预览共用）
+pub fn enhancer_display(e: CredentialEnhancerKind) -> &'static str {
+    match e {
+        CredentialEnhancerKind::BearerToken => "bearer_token（拼接 Bearer 前缀）",
+        CredentialEnhancerKind::BasicAuth => "basic_auth（组装 Basic 认证）",
+        CredentialEnhancerKind::AccessToken => "access_token（OAuth 换取的短期令牌）",
+    }
+}
+
+/// 注入值形态预览（只读示意：所选 kind / field / enhancer 组合最终放置进注入点的值长什么样）
+///
+/// 优先级：field 指定字段直取 > 显式增强器 > 默认增强器 > 类型规范可用值
+pub fn injection_value_preview(req: &CredentialRequirement) -> String {
+    if let Some(field) = req.field.as_deref() {
+        return format!("<{}字段值>", field);
+    }
+    let effective = req.enhancer.or_else(|| default_enhancer(req.kind));
+    match effective {
+        Some(CredentialEnhancerKind::BearerToken) => "Bearer <token>".to_string(),
+        Some(CredentialEnhancerKind::BasicAuth) => {
+            "Basic base64(<username>:<password>)".to_string()
+        }
+        Some(CredentialEnhancerKind::AccessToken) => "<access_token>".to_string(),
+        None => match req.kind {
+            // 类型规范可用值（requirement 未声明 field 时取该 kind 的主凭据字段）
+            CredentialKind::LarkApp => "<app_secret>".to_string(),
+            CredentialKind::TavilyKey => "<api_key>".to_string(),
+            _ => "<token>".to_string(),
+        },
+    }
+}
+
+/// 惯用注入名建议（None = 无明确惯例，不提示）
+///
+/// 矩阵：Bearer/BasicAuth 形态 → authorization（标准认证头）；tavily_key → api_key（官方 API 惯例）
+pub fn recommended_binding_name(req: &CredentialRequirement) -> Option<&'static str> {
+    if req.field.is_some() {
+        return None;
+    }
+    let effective = req.enhancer.or_else(|| default_enhancer(req.kind));
+    match effective {
+        Some(CredentialEnhancerKind::BearerToken) | Some(CredentialEnhancerKind::BasicAuth) => {
+            Some("authorization")
+        }
+        _ if req.kind == CredentialKind::TavilyKey => Some("api_key"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +608,122 @@ mod tests {
         for name in ["Content-Type", "Accept", "X-Api", "city", "page_size"] {
             assert!(!is_sensitive_name(name), "should not match: {name}");
         }
+    }
+
+    #[test]
+    fn injection_value_preview_covers_all_paths() {
+        use CredentialEnhancerKind as E;
+        // field 指定字段直取
+        assert_eq!(
+            injection_value_preview(&req(
+                CredentialKind::LarkApp,
+                None,
+                Some("app_id"),
+                None,
+                header("x-app-id"),
+            )),
+            "<app_id字段值>"
+        );
+        // 显式增强器
+        assert_eq!(
+            injection_value_preview(&req(
+                CredentialKind::GenericToken,
+                None,
+                None,
+                Some(E::BearerToken),
+                header("authorization"),
+            )),
+            "Bearer <token>"
+        );
+        // 默认增强器（user_password → BasicAuth，未显式选择）
+        assert_eq!(
+            injection_value_preview(&req(
+                CredentialKind::UserPassword,
+                None,
+                None,
+                None,
+                header("authorization"),
+            )),
+            "Basic base64(<username>:<password>)"
+        );
+        // 类型规范可用值（无 field 无增强器）
+        assert_eq!(
+            injection_value_preview(&req(
+                CredentialKind::TavilyKey,
+                None,
+                None,
+                None,
+                header("x-api-key"),
+            )),
+            "<api_key>"
+        );
+        assert_eq!(
+            injection_value_preview(&req(
+                CredentialKind::GithubToken,
+                None,
+                None,
+                None,
+                header("authorization"),
+            )),
+            "<token>"
+        );
+    }
+
+    #[test]
+    fn recommended_binding_name_matrix() {
+        use CredentialEnhancerKind as E;
+        // Bearer/BasicAuth 形态 → authorization（含默认增强器推导）
+        assert_eq!(
+            recommended_binding_name(&req(
+                CredentialKind::GenericToken,
+                None,
+                None,
+                Some(E::BearerToken),
+                header(""),
+            )),
+            Some("authorization")
+        );
+        assert_eq!(
+            recommended_binding_name(&req(
+                CredentialKind::UserPassword,
+                None,
+                None,
+                None,
+                header(""),
+            )),
+            Some("authorization")
+        );
+        // tavily_key → api_key
+        assert_eq!(
+            recommended_binding_name(&req(
+                CredentialKind::TavilyKey,
+                None,
+                None,
+                None,
+                header(""),
+            )),
+            Some("api_key")
+        );
+        // 无明确惯例 / field 直取不提示
+        assert_eq!(
+            recommended_binding_name(&req(
+                CredentialKind::GithubToken,
+                None,
+                None,
+                None,
+                header(""),
+            )),
+            None
+        );
+        assert_eq!(
+            recommended_binding_name(&req(
+                CredentialKind::LarkApp,
+                None,
+                Some("app_id"),
+                None,
+                header(""),
+            )),
+            None
+        );
     }
 }

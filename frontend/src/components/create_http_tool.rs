@@ -10,8 +10,9 @@ use dioxus::prelude::*;
 
 use crate::api::finance::create_tool;
 use crate::components::credential_form::{
-    available_enhancers, binding_name, enhancer_from_value, enhancer_to_value,
-    has_any_enhancer_support, is_sensitive_name, kind_from_value, normalize_requirements,
+    available_enhancers, binding_name, enhancer_display, enhancer_from_value,
+    enhancer_to_value, has_any_enhancer_support, injection_value_preview, is_sensitive_name,
+    kind_from_value, normalize_requirements, recommended_binding_name,
     validate_requirements_scoped,
 };
 use crate::components::modal::Modal;
@@ -501,6 +502,12 @@ pub fn CreateHttpToolModal(
                                     } else {
                                         "如 authorization"
                                     };
+                                    let preview = injection_value_preview(req);
+                                    let name_recommendation = if binding_name_value.is_empty() {
+                                        recommended_binding_name(req)
+                                    } else {
+                                        None
+                                    };
                                     let idx_remove = idx;
                                     let idx_kind = idx;
                                     let idx_platform = idx;
@@ -600,7 +607,7 @@ pub fn CreateHttpToolModal(
                                                         },
                                                         option { value: "none", "不使用增强器" }
                                                         for e in enhancer_opts.iter() {
-                                                            option { value: "{enhancer_to_value(*e)}", "{enhancer_to_value(*e)}" }
+                                                            option { value: "{enhancer_to_value(*e)}", "{enhancer_display(*e)}" }
                                                         }
                                                     }
                                                     if enhancer_disabled {
@@ -655,6 +662,18 @@ pub fn CreateHttpToolModal(
                                                             }
                                                         },
                                                         placeholder: "{binding_name_placeholder}" }
+                                                }
+                                            }
+                                            // ===== 注入值预览 + 惯用名建议（只读示意） =====
+                                            div { class: "flex gap-2 flex-wrap items-center text-xs text-base-content/50",
+                                                span {
+                                                    code { class: "bg-base-200 rounded px-1", "{preview}" }
+                                                    " ← 注入值形态"
+                                                }
+                                                if let Some(rec) = name_recommendation {
+                                                    span { class: "text-info",
+                                                        "建议注入名：{rec}"
+                                                    }
                                                 }
                                             }
                                         }
