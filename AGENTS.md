@@ -90,6 +90,7 @@ Organization ──┬── User
 | **统计事件**（`record_event!` / `StatsEvent` derive） | [CODE_STANDARDS.md §13](./docs/CODE_STANDARDS.md) |
 | **前后端 API 协议**（DTO 单一事实源 / 结构体化参数） | [CODE_STANDARDS.md §14](./docs/CODE_STANDARDS.md) |
 | **基础设施工具位置**（FTS5/向量/日志/JWT 放 pkg/） | [CODE_STANDARDS.md §14.1](./docs/CODE_STANDARDS.md) |
+| **双端复用逻辑下沉 common**（校验规则 / 值映射 / 白名单矩阵） | [CODE_STANDARDS.md §14.2](./docs/CODE_STANDARDS.md) |
 
 ---
 

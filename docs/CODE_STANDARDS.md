@@ -425,6 +425,24 @@ record_event!(&ctx, ModelCallEvent {
 - ❌ 为了复用在每个 DAO 中复制粘贴相同代码
 - ❌ 把业务逻辑相关的工具放到 pkg 层（pkg 层必须无业务感知）
 
+### 14.2 双端复用逻辑下沉 common
+
+**核心原则：前后端都要用的一切逻辑（契约、枚举方法、校验规则、值映射、白名单矩阵）优先放 `common` crate——这是前后端同为 Rust 的最大红利，双端复刻即双端漂移。**
+
+1. **判定标准**：只要前端（wasm）与后端（pkg / handler / domain）需要同一套行为，落位就是 common——不仅限 DTO 结构体，还包括校验函数、匹配矩阵、值域映射、脱敏规则等纯函数
+2. **落位文件**：与既有类型同址（契约函数跟契约走，如 `identity_credentials.rs` 的 `enhancer_supports` / `validate_requirements`；工具校验跟领域文件走，如 `models/tool.rs` 的 `validate_builtin_tool_config`）
+3. **依赖约束**：下沉函数必须是纯函数（`Result<(), String>` 返回文案或 `bool`），禁依赖可变状态——各端自行包装为本地错误类型（后端 `err!(InvalidRequest, ...)`、前端直接展示）
+4. **消费形态**：规则本体在 common 单点，消费方为薄委托（后端包装 / 前端模块作门面），禁止任何一端保留规则复刻
+
+**已下沉单点（参考先例）**：
+- `common::models::validate_requirements`（凭据需求六规则）+ `binding_allowed` / `binding_name` / `mcp_transport_scope` / `is_sensitive_credential_name`
+- `common::models::validate_builtin_tool_config`（Builtin 工具 config 校验）+ `is_supported_http_method`（HTTP 方法白名单）
+
+**反模式（禁止）**：
+- ❌ 前端注释写「与后端同源，规则变动需同步」——同源靠代码共享，不靠人肉同步
+- ❌ pkg 定义校验规则后前端复制等价实现（pkg 不能被 wasm 引用正是下沉 common 的理由）
+- ❌ 同一规则双端各写一份 match / 矩阵（三处以上重复必然漂移，凭据规则落地时 api-key 连字符已被复制错过一次）
+
 详见：[api_protocol_convention.md](./design/api_protocol_convention.md)
 
 ---
