@@ -82,6 +82,9 @@ pub struct GetToolResponse {
     pub config: Option<serde_json::Value>,
     /// Whether there is any non-empty configuration
     pub has_config: bool,
+    /// 凭据需求声明（类型级：Builtin 工厂静态声明 / Mcp·Http 从 config 解析；非敏感直接展示）
+    #[serde(default)]
+    pub credential_requirements: Vec<crate::models::CredentialRequirement>,
     /// Parameters JSON Schema
     pub parameters_schema: Option<serde_json::Value>,
     /// Tags list

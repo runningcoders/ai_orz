@@ -58,6 +58,10 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         control_mode: tool.po.control_mode,
         config: Some(redact_config(&tool.po.config)),
         has_config: has_config(&tool.po.config),
+        // 凭据需求聚合（D17/D28 统一入口）：Builtin 工厂静态声明 / Mcp·Http 从 config 解析；
+        // 声明本身非敏感（kind/注入点），与 config 脱敏通道互不影响
+        credential_requirements: crate::pkg::tool_registry::get_registry()
+            .credential_requirements(&tool.po),
         parameters_schema: tool.po.parameters_schema.clone(),
         tags: tool.po.get_tags(),
         status: tool.po.status,

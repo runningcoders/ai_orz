@@ -54,6 +54,11 @@ pub async fn update_tool(
         tool.po.control_mode = control_mode;
     }
     if let Some(config) = params.config {
+        // Builtin config 轻量校验（D28：CLI 命令与行为参数为运维所有权字段，
+        // sync 保留现场）；未知字段宽松保留，规则见 validate_builtin_config
+        if matches!(tool.po.protocol, ToolProtocol::Builtin) {
+            validate_builtin_config(&config)?;
+        }
         tool.po.config = config;
     }
     if let Some(parameters_schema) = params.parameters_schema {
@@ -79,4 +84,86 @@ pub async fn update_tool(
         .await?;
 
     Ok(to_detail(&tool))
+}
+
+/// Builtin 工具 config 已知字段轻量校验（D28：CLI 命令与行为参数进 PO config）
+///
+/// 仅校验已知字段的类型与取值（command 非空 string / timeout_ms·max_output_bytes
+/// 正整数），未知字段宽松保留（不做白名单封闭，保持 config 扩展性）；
+/// `config` 非对象（含 Null，存量 DB 兼容）时无已知字段可校验，直接通过。
+fn validate_builtin_config(config: &serde_json::Value) -> Result<()> {
+    let Some(object) = config.as_object() else {
+        return Ok(());
+    };
+    for (key, value) in object {
+        match key.as_str() {
+            "command" if !value.as_str().is_some_and(|command| !command.is_empty()) => {
+                bail_err!(InvalidRequest, "config.command 必须为非空字符串");
+            }
+            "timeout_ms" | "max_output_bytes"
+                if !value.as_u64().is_some_and(|number| number > 0) =>
+            {
+                bail_err!(InvalidRequest, "config.{} 必须为正整数", key);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_builtin_config_accepts_known_and_unknown_fields() {
+        let config = serde_json::json!({
+            "command": "/usr/local/bin/gh",
+            "timeout_ms": 30_000,
+            "max_output_bytes": 262_144,
+            "install_hint": "brew install gh",
+            "custom_field": "未知字段宽松保留"
+        });
+        assert!(validate_builtin_config(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_builtin_config_rejects_empty_or_non_string_command() {
+        for command in [serde_json::json!(""), serde_json::json!(42)] {
+            let config = serde_json::json!({ "command": command });
+            let err = validate_builtin_config(&config).unwrap_err();
+            assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
+            assert!(err.to_string().contains("command"));
+        }
+    }
+
+    #[test]
+    fn validate_builtin_config_rejects_non_positive_timeout_ms() {
+        for timeout_ms in [
+            serde_json::json!(-1),
+            serde_json::json!(0),
+            serde_json::json!("30000"),
+            serde_json::json!(1.5),
+        ] {
+            let config = serde_json::json!({ "timeout_ms": timeout_ms });
+            let err = validate_builtin_config(&config).unwrap_err();
+            assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
+            assert!(err.to_string().contains("timeout_ms"));
+        }
+    }
+
+    #[test]
+    fn validate_builtin_config_rejects_non_positive_max_output_bytes() {
+        let config = serde_json::json!({ "max_output_bytes": -1 });
+        let err = validate_builtin_config(&config).unwrap_err();
+        assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
+        assert!(err.to_string().contains("max_output_bytes"));
+    }
+
+    #[test]
+    fn validate_builtin_config_passes_non_object_config() {
+        // 存量 DB builtin 工具 config 可能为 Null（D28 零迁移兼容）
+        assert!(validate_builtin_config(&serde_json::Value::Null).is_ok());
+        assert!(validate_builtin_config(&serde_json::json!("legacy")).is_ok());
+    }
 }
