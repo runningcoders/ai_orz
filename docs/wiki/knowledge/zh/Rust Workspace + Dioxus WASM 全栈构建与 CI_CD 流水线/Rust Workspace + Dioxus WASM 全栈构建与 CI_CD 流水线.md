@@ -12,6 +12,8 @@ source_files:
     - scripts/cleanup.sh
     - scripts/build.sh
     - scripts/build_frontend.sh
+    - scripts/package.sh
+    - scripts/release/
     - frontend/Dioxus.toml
     - frontend/build.rs
     - frontend/Cargo.toml
@@ -28,7 +30,7 @@ source_files:
 ## 1. 使用的系统与工具
 
 - **Cargo Workspace**：根 `Cargo.toml` 将 `ai_orz`（后端）、`frontend`（Dioxus WASM）、`common`（共享 crate）、`ai-orz-macros`（过程宏）聚合为单一 workspace，resolver = "2"。
-- **Makefile 统一入口**：根目录唯一命令入口，覆盖 dev/prod/build/test/quality/tool 27+ target（`make dev` / `make prod` / `make build` / `make doctor` / `make clean-proc` / `make e2e`）；每个 target 简单转发到 `scripts/*.sh`，逻辑只有一处。
+- **Makefile 统一入口**：根目录唯一命令入口，覆盖 dev/prod/build/package/test/quality/tool 28+ target（`make dev` / `make prod` / `make build` / `make package` / `make doctor` / `make clean-proc` / `make e2e`）；每个 target 简单转发到 `scripts/*.sh`，逻辑只有一处。
 - **统一启动脚本**：`scripts/start.sh` 是开发/构建/生产唯一入口，支持 `dev`、`build`、`prod`、`backend`、`frontend`、`help` 六个子命令；`build.sh` 仅作为转发到 `start.sh build` 的薄壳。dev 模式新增 `preflight_deps`（调 `check_deps.sh`）+ `preflight_cleanup`（调 `cleanup.sh`）两道闸门；支持 `DX_BACKEND_URL` 环境变量覆盖 `Dioxus.toml` 中 dx 视角 proxy backend。
 - **依赖预检脚本**：`scripts/check_deps.sh` 按 5 种模式（dev/frontend/backend/build/prod）做工具链完整性检查，缺失时打印精确安装命令，`--fix` 可自动装可自动项（rustup target / dx / brew protobuf / npm install）。
 - **残留进程清理脚本**：`scripts/cleanup.sh` 清理 ai_orz 后端/dx serve 前端残留进程与端口占用（默认 3000/8080），支持 `--dry-run`。
@@ -51,8 +53,10 @@ source_files:
 - `frontend/Cargo.toml`：Dioxus WASM 包定义，依赖 `common` 共享类型。
 - `rust-toolchain.toml`：固定 stable toolchain + wasm32 target。
 - `scripts/build_frontend.sh`：封装 `dx build --release`、查找 dx 输出目录（兼容新旧路径）、复制 `index.html` 与 `public/` 静态资源到仓库根 `dist/`，并清理未被引用的旧 hash 资产。被 `start.sh` 和 CI e2e job 共用。
+- `scripts/package.sh`：**发布物打包脚本**（`make package` 入口）：编译（复用 `start.sh build`）→ 组装 `ai_orz-{版本}-{平台}/` 目录（二进制 + `dist/` + `script/` + `Makefile` + `README.md`）→ 产出 tar.gz；版本号自动从 git 推导（`git describe`），平台三元组取自 `rustc -vV`；本地与 CI 共用（release.yml 直接调用）。
+- `scripts/release/`：发布包内容模板源——`script/`（start/stop/restart/status/logs 运维脚本）、`Makefile`（make start/stop/restart/status/logs 统一入口）、`README.md`（Markdown 使用说明，含 `__VERSION__`/`__TARGET__` 占位符，打包时替换）。
 - `.github/workflows/rust.yml`：fmt → clippy → backend(test) / frontend(clippy+wasm) / coverage 并行流水线，启用 sccache、SQLX_OFFLINE=true；另缓存 `~/.cache/ort`（ONNX Runtime 预编译二进制）。
-- `.github/workflows/release.yml`：matrix 构建 `ubuntu-latest → x86_64-unknown-linux-gnu` 与 `macos-latest → aarch64-apple-darwin`（不做交叉编译，lancedb/ort-sys 交叉链太重），安装 dioxus-cli → 复用 `./scripts/start.sh build` → 打包 `ai_orz-{tag}-{target}.tar.gz` 并上传 artifact；仅当 push tag 形如 `refs/tags/v*` 或手动触发 `workflow_dispatch` 时执行；对 `${REF_NAME}` 做白名单正则校验，拒绝 shell/路径特殊字符。
+- `.github/workflows/release.yml`：matrix 构建 `ubuntu-latest → x86_64-unknown-linux-gnu` 与 `macos-latest → aarch64-apple-darwin`（不做交叉编译，lancedb/ort-sys 交叉链太重），安装 dioxus-cli → **直接调用 `./scripts/package.sh "${REF_NAME:-manual}"`**（编译 + 打包单一入口，与本地 `make package` 完全一致）→ 上传 `ai_orz-*.tar.gz` artifact；仅当 push tag 形如 `refs/tags/v*` 或手动触发 `workflow_dispatch` 时执行；对 `${REF_NAME}` 做白名单正则校验，拒绝 shell/路径特殊字符。
 - `.env.example`：环境变量模板（`DATABASE_URL`、`SQLX_OFFLINE=true`、可选的 LLM/Embedding 测试密钥 `TEST_*`）
 - `common/config/ai_orz.toml`：默认配置模板，作为前端编译期回退源
 - `tests/e2e/`：Playwright E2E 测试子目录（从仓库根 `e2e/` 并入 `tests/e2e/`）：包含 `playwright.config.ts`、`tests/auth.setup.ts`、`tests/navigation.spec.ts`、`scripts/diagnose-page.mjs`、`scripts/start-server.mjs`；Cargo autotests 不递归子目录，与 Rust 集成测试互不干扰；仅本地执行（不进 CI）
@@ -66,7 +70,7 @@ source_files:
 3. **产物产出**：
    - 后端：`cargo build --release` → `target/release/ai_orz`。
    - 前端：`dx build --release` → 产物位置因 dx 版本而异（`target/dx/frontend/release/web/public` 或 `pkg`），`start.sh` 自动探测并复制 `*_bg.wasm`、`frontend.js`、`snippets/` 到 `dist/pkg/`。
-4. **部署产物**：release workflow 将后端二进制与 `dist/` 目录打包为 `ai_orz-{tag}-{target}.tar.gz`，解压后直接运行 `./ai_orz`，监听 `0.0.0.0:3000`，前端静态资源从同目录 `dist/` 提供。
+4. **部署产物（发布包）**：`scripts/package.sh`（`make package`，本地与 CI 共用）将后端二进制 + `dist/` + 运维脚本 `script/`（start/stop/restart/status/logs）+ `Makefile`（make start/stop/restart/status/logs）+ `README.md` 组装为 `ai_orz-{版本}-{平台}/` 并打包成 tar.gz；解压后 `make start` 即可运行，前端静态资源从同目录 `dist/` 提供，数据保存在 `.ai_orz/`。
 
 ### CI 流水线设计
 ```mermaid
@@ -86,7 +90,7 @@ graph LR
 
 ### 开发与生产模式约定
 - `make dev`（路由 `./scripts/start.sh dev`）：启动前先 `preflight_deps`（依赖检查）+ `preflight_cleanup`（残留进程清理）；随后后台同时启动 `cargo run`（后端 API，默认 3000）和 `dx serve --interactive=false`（前端开发服务器，默认 8080，禁用 TUI 防止 Ctrl+C 卡死）；日志加 📦/🎨 前缀分流；API 请求通过 `Dioxus.toml [[web.proxy]]` 反代到后端；`DX_BACKEND_URL` 环境变量可临时覆盖 proxy 目标（前后端分机部署逃生舱）；Ctrl+C 时通过 trap 终止两个子进程并恢复 Dioxus.toml。
-- `make prod`（路由 `./scripts/start.sh prod`）：先执行 `cmd_build`，再运行 `./target/release/ai_orz`，监听 `0.0.0.0:${SERVER_PORT:-3000}`。
+- `make prod`（路由 `./scripts/start.sh prod`）：先执行 `cmd_build`，再运行 `./target/release/ai_orz`，监听 `0.0.0.0:${AI_ORZ_LISTEN_ADDR:-0.0.0.0:3000}`。
 - `make build`（路由 `./scripts/start.sh build`）：仅编译，不启动服务；前端构建允许 `wasm-opt` 失败（`|| true`），但会检查最终产物是否存在。
 
 ## 4. 约定与约束
