@@ -4,14 +4,15 @@
 //!   `pkg::credential::validate_requirements`（src/pkg/credential/mod.rs#L250-L293），
 //!   以 [`CredentialRequirementScope`] 参数化协议差异（MCP 表单经 [`mcp_transport_scope`]
 //!   从传输方式推导，HTTP 工具恒为 `HttpTool`）。
-//! - [`is_sensitive_name`] 复刻后端 `is_sensitive_header`
-//!   （src/pkg/tool_registry/tool_security.rs#L173-L182；pkg 不便 wasm 引用，
-//!   规则变动时需与后端同步）。
+//! - [`is_sensitive_name`] 委托 common 单点实现 `is_sensitive_credential_name`
+//!   （common/src/models/identity_credentials.rs；与后端 `is_sensitive_header`
+//!   同源零漂移）。
 
 use common::enums::McpTransport;
 use common::models::{
     CredentialBinding, CredentialEnhancerKind, CredentialKind, CredentialRequirement,
     CredentialRequirementScope, default_enhancer, enhancer_supports,
+    is_sensitive_credential_name,
 };
 
 /// 全部凭据类型（kind 下拉选项，serde 值 = 展示键）
@@ -195,17 +196,10 @@ pub fn enhancer_from_value(v: &str) -> Option<CredentialEnhancerKind> {
         .find(|e| enhancer_to_value(*e) == v)
 }
 
-/// 敏感名判定（与后端 `is_sensitive_header` 同源同规则：
-/// authorization/cookie/set-cookie 精确匹配，api-key/token/secret/password 子串匹配，忽略大小写）
+/// 敏感名判定（委托 common 单点 `is_sensitive_credential_name`，双端同源零漂移；
+/// 规则：authorization/cookie/set-cookie 精确匹配，api-key/token/secret/password 子串匹配，忽略大小写）
 pub fn is_sensitive_name(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
-    normalized == "authorization"
-        || normalized == "cookie"
-        || normalized == "set-cookie"
-        || normalized.contains("api-key")
-        || normalized.contains("token")
-        || normalized.contains("secret")
-        || normalized.contains("password")
+    is_sensitive_credential_name(name)
 }
 
 #[cfg(test)]

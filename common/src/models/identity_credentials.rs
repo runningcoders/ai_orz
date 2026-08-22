@@ -669,6 +669,22 @@ pub fn default_enhancer(kind: CredentialKind) -> Option<CredentialEnhancerKind> 
     }
 }
 
+/// 敏感凭据注入名判定（单点；后端 tool_security 校验与前端表单预检共用，双端同源零漂移）
+///
+/// 规则：authorization / cookie / set-cookie 精确匹配，api-key / token / secret / password
+/// 子串匹配（注意 api-key 为连字符形态，api_key 下划线不命中），忽略大小写。
+/// 命中的 header/query/env 名只能经 credential_requirements 注入，禁止静态配置。
+pub fn is_sensitive_credential_name(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    normalized == "authorization"
+        || normalized == "cookie"
+        || normalized == "set-cookie"
+        || normalized.contains("api-key")
+        || normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1305,5 +1321,27 @@ mod tests {
         );
         assert_eq!(default_enhancer(CredentialKind::GenericToken), None);
         assert_eq!(default_enhancer(CredentialKind::LarkApp), None);
+    }
+
+    #[test]
+    fn test_is_sensitive_credential_name() {
+        // 精确匹配（忽略大小写）
+        assert!(is_sensitive_credential_name("authorization"));
+        assert!(is_sensitive_credential_name("Authorization"));
+        assert!(is_sensitive_credential_name("cookie"));
+        assert!(is_sensitive_credential_name("Set-Cookie"));
+        // 子串匹配
+        assert!(is_sensitive_credential_name("X-API-KEY"));
+        assert!(is_sensitive_credential_name("x-api-key"));
+        assert!(is_sensitive_credential_name("My-Token"));
+        assert!(is_sensitive_credential_name("client_secret"));
+        assert!(is_sensitive_credential_name("user_password"));
+        // 连字符规则：api-key 命中、api_key 不命中（与后端 tool_security 历史规则一致）
+        assert!(!is_sensitive_credential_name("api_key"));
+        // 非敏感
+        assert!(!is_sensitive_credential_name("Content-Type"));
+        assert!(!is_sensitive_credential_name("Accept"));
+        assert!(!is_sensitive_credential_name("X-Api-Version"));
+        assert!(!is_sensitive_credential_name(""));
     }
 }

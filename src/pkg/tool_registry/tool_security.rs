@@ -170,15 +170,10 @@ async fn validate_resolved_addresses(
 }
 
 /// Check if a header name is sensitive and should be redacted
+///
+/// 委托 common 单点实现（`is_sensitive_credential_name`），与前端表单预检同源零漂移
 pub fn is_sensitive_header(name: &str) -> bool {
-    let normalized = name.to_ascii_lowercase();
-    normalized == "authorization"
-        || normalized == "cookie"
-        || normalized == "set-cookie"
-        || normalized.contains("api-key")
-        || normalized.contains("token")
-        || normalized.contains("secret")
-        || normalized.contains("password")
+    common::models::is_sensitive_credential_name(name)
 }
 
 /// Sanitize response headers, redacting sensitive values
