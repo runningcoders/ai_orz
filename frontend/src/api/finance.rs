@@ -135,7 +135,6 @@ pub async fn create_tool(req: CreateToolRequest) -> Result<CreateToolResponse, A
     api_post("/api/v1/finance/tools", &req).await
 }
 
-#[allow(dead_code)]
 pub async fn update_tool(req: UpdateToolRequest) -> Result<UpdateToolResponse, ApiError> {
     api_put(&format!("/api/v1/finance/tools/{}", req.id), &req).await
 }
