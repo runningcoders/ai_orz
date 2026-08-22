@@ -1,12 +1,13 @@
 //! 凭据需求表单共享纯函数（MCP 服务器 / HTTP 工具创建表单共用）
 //!
-//! - 预校验 [`validate_requirements_scoped`] 对齐后端
-//!   `pkg::credential::validate_requirements`（src/pkg/credential/mod.rs#L250-L293），
+//! - 预校验 [`validate_requirements_scoped`] 委托 common 单点
+//!   `validate_requirements`（common/src/models/identity_credentials.rs；与后端
+//!   `pkg::credential::validate_requirements` 同一实现，双端零漂移），
 //!   以 [`CredentialRequirementScope`] 参数化协议差异（MCP 表单经 [`mcp_transport_scope`]
 //!   从传输方式推导，HTTP 工具恒为 `HttpTool`）。
-//! - [`is_sensitive_name`] 委托 common 单点实现 `is_sensitive_credential_name`
-//!   （common/src/models/identity_credentials.rs；与后端 `is_sensitive_header`
-//!   同源零漂移）。
+//! - [`is_sensitive_name`] / [`binding_name`] / [`mcp_transport_scope`] /
+//!   [`enhancer_to_value`] 同为 common 单点的薄委托（模块作表单侧门面），
+//!   规则改动只改 common 一处。
 
 use common::enums::McpTransport;
 use common::models::{
@@ -32,22 +33,14 @@ pub fn kind_from_value(v: &str) -> Option<CredentialKind> {
     all_credential_kinds().into_iter().find(|k| k.as_str() == v)
 }
 
-/// 注入点名（binding 的 name / field）
+/// 注入点名（binding 的 name / field；委托 common 单点）
 pub fn binding_name(binding: &CredentialBinding) -> &str {
-    match binding {
-        CredentialBinding::Env { name }
-        | CredentialBinding::Header { name }
-        | CredentialBinding::Query { name } => name,
-        CredentialBinding::Internal { field } => field,
-    }
+    common::models::binding_name(binding)
 }
 
-/// MCP 传输方式 → 需求作用域（stdio → McpStdio / streamable_http → McpHttp）
+/// MCP 传输方式 → 需求作用域（stdio → McpStdio / streamable_http → McpHttp；委托 common 单点）
 pub fn mcp_transport_scope(transport: McpTransport) -> CredentialRequirementScope {
-    match transport {
-        McpTransport::Stdio => CredentialRequirementScope::McpStdio,
-        McpTransport::StreamableHttp => CredentialRequirementScope::McpHttp,
-    }
+    common::models::mcp_transport_scope(transport)
 }
 
 /// 规范化：trim platform/field/注入名，空白 Option 归 None
@@ -74,34 +67,7 @@ pub fn normalize_requirements(list: Vec<CredentialRequirement>) -> Vec<Credentia
         .collect()
 }
 
-/// binding ↔ scope 是否匹配（对齐后端 `pkg::credential::binding_allowed`）
-fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirementScope) -> bool {
-    matches!(
-        (binding, scope),
-        (CredentialBinding::Env { .. }, CredentialRequirementScope::McpStdio)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::McpHttp)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Query { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Internal { .. }, CredentialRequirementScope::Builtin)
-    )
-}
-
-/// binding ↔ scope 不匹配时的具体文案
-fn binding_scope_mismatch_msg(scope: CredentialRequirementScope) -> String {
-    match scope {
-        CredentialRequirementScope::McpStdio | CredentialRequirementScope::McpHttp => {
-            "凭据注入点与传输方式不匹配（Stdio 仅支持环境变量注入，StreamableHttp 仅支持请求头注入）".to_string()
-        }
-        CredentialRequirementScope::HttpTool => {
-            "凭据注入点与工具协议不匹配（HTTP 工具仅支持请求头或查询参数注入）".to_string()
-        }
-        CredentialRequirementScope::Builtin => {
-            "凭据注入点与工具协议不匹配（内置工具仅支持实例字段注入）".to_string()
-        }
-    }
-}
-
-/// 前端预校验（后端 `validate_requirements` 的等价实现；失败返回具体错误文案）
+/// 前端预校验（委托 common 单点 `validate_requirements`，与后端 handler 校验同一实现；失败返回具体错误文案）
 ///
 /// 六条规则：binding↔scope / 注入名非空 / platform↔kind / field↔enhancer 互斥 /
 /// enhancer↔kind supports 矩阵 / (kind, platform, 注入名) 三元组去重。
@@ -109,52 +75,7 @@ pub fn validate_requirements_scoped(
     requirements: &[CredentialRequirement],
     scope: CredentialRequirementScope,
 ) -> Result<(), String> {
-    let mut seen = std::collections::HashSet::new();
-    for req in requirements {
-        // 1. binding ↔ scope
-        if !binding_allowed(&req.binding, scope) {
-            return Err(binding_scope_mismatch_msg(scope));
-        }
-        // 2. 注入名非空
-        if binding_name(&req.binding).trim().is_empty() {
-            return Err("凭据注入点名不能为空".to_string());
-        }
-        // 3. platform ↔ kind（generic 类必填、专用类必空）
-        if req.kind.requires_platform() != req.platform.is_some() {
-            return Err(if req.kind.requires_platform() {
-                format!("凭据类型 {} 必须填写平台标识", req.kind.as_str())
-            } else {
-                format!("凭据类型 {} 不适用平台标识，请清空", req.kind.as_str())
-            });
-        }
-        // 4. field ↔ enhancer 互斥
-        if req.field.is_some() && req.enhancer.is_some() {
-            return Err(format!(
-                "凭据类型 {} 的提取字段与增强器互斥，只能二选一",
-                req.kind.as_str()
-            ));
-        }
-        // 5. enhancer ↔ kind supports 矩阵
-        if let Some(enhancer) = req.enhancer
-            && !enhancer_supports(req.kind, enhancer)
-        {
-            return Err(format!(
-                "凭据类型 {} 不支持增强器 {}",
-                req.kind.as_str(),
-                enhancer_to_value(enhancer)
-            ));
-        }
-        // 6. (kind, platform, 注入名) 三元组去重
-        let key = (
-            req.kind,
-            req.platform.clone(),
-            binding_name(&req.binding).to_string(),
-        );
-        if !seen.insert(key) {
-            return Err("存在重复的凭据需求（同凭据类型 + 同平台 + 同注入点）".to_string());
-        }
-    }
-    Ok(())
+    common::models::validate_requirements(requirements, scope)
 }
 
 /// 该类型是否存在任一受支持增强器（专用 kind 为 false，用于禁用提示区分）
@@ -180,13 +101,9 @@ pub fn all_enhancers() -> [CredentialEnhancerKind; 3] {
     ]
 }
 
-/// 增强器下拉值（与 serde snake_case 值空间一致）
+/// 增强器下拉值（与 serde snake_case 值空间一致；委托 common `as_str` 单点）
 pub fn enhancer_to_value(e: CredentialEnhancerKind) -> &'static str {
-    match e {
-        CredentialEnhancerKind::BearerToken => "bearer_token",
-        CredentialEnhancerKind::BasicAuth => "basic_auth",
-        CredentialEnhancerKind::AccessToken => "access_token",
-    }
+    e.as_str()
 }
 
 /// 按下拉值解析增强器（"none" → None）

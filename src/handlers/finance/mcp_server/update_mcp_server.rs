@@ -3,12 +3,11 @@
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{UpdateMcpServerRequest, UpdateMcpServerResponse};
 
-use crate::models::mcp_server::McpTransport;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use common::error::Result;
 
-use super::response::{to_detail, to_model_config, to_model_transport};
+use super::response::{to_api_transport, to_detail, to_model_config, to_model_transport};
 
 /// Update an MCP Server configuration.
 #[register_handler_tool(
@@ -41,12 +40,7 @@ pub async fn update_mcp_server(
         // 配置期校验（作用域取更新后生效的 transport）
         crate::pkg::credential::validate_requirements(
             &model_config.credential_requirements,
-            match server.po.transport {
-                McpTransport::Stdio => common::models::CredentialRequirementScope::McpStdio,
-                McpTransport::StreamableHttp => {
-                    common::models::CredentialRequirementScope::McpHttp
-                }
-            },
+            common::models::mcp_transport_scope(to_api_transport(server.po.transport)),
         )?;
         server.po.set_config(&model_config);
     }

@@ -222,74 +222,18 @@ pub fn credential_missing_json(requirement: &CredentialRequirement) -> serde_jso
 
 // ==================== 配置期校验（§2.1 校验清单单点） ====================
 
-use common::models::{CredentialBinding, CredentialRequirement, CredentialRequirementScope};
-
-/// binding ↔ 作用域匹配
-fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirementScope) -> bool {
-    matches!(
-        (binding, scope),
-        (CredentialBinding::Env { .. }, CredentialRequirementScope::McpStdio)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::McpHttp)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Query { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Internal { .. }, CredentialRequirementScope::Builtin)
-    )
-}
-
-/// 注入点名（binding 的 name / field）
-fn binding_name(binding: &CredentialBinding) -> &str {
-    match binding {
-        CredentialBinding::Env { name }
-        | CredentialBinding::Header { name }
-        | CredentialBinding::Query { name } => name,
-        CredentialBinding::Internal { field } => field,
-    }
-}
+use common::models::{CredentialRequirement, CredentialRequirementScope};
 
 /// requirements 配置期校验（创建/更新 handler 与前端预校验同一套规则）
+///
+/// 六规则本体单点在 common `validate_requirements`（前后端共用，错误文案按 scope 细分），
+/// 此处仅包装为 Error
 pub fn validate_requirements(
     requirements: &[CredentialRequirement],
     scope: CredentialRequirementScope,
 ) -> Result<()> {
-    let mut seen = std::collections::HashSet::new();
-    for req in requirements {
-        // 1. binding ↔ 协议
-        if !binding_allowed(&req.binding, scope) {
-            bail_err!(InvalidRequest, "凭据注入点与工具协议不匹配");
-        }
-        // 注入名非空
-        if binding_name(&req.binding).trim().is_empty() {
-            bail_err!(InvalidRequest, "凭据注入点名不能为空");
-        }
-        // 2. platform ↔ kind（generic 类必填、专用必空，D3）
-        if req.kind.requires_platform() != req.platform.is_some() {
-            bail_err!(
-                InvalidRequest,
-                "generic 类凭据必须声明 platform、专用类凭据不得声明"
-            );
-        }
-        // 3. field ↔ enhancer 互斥（D8）
-        if req.field.is_some() && req.enhancer.is_some() {
-            bail_err!(InvalidRequest, "凭据 field 与 enhancer 互斥");
-        }
-        // 4. enhancer ↔ kind supports 矩阵（D12；专用 kind 零支持）
-        if let Some(enhancer) = req.enhancer
-            && !common::models::enhancer_supports(req.kind, enhancer)
-        {
-            bail_err!(InvalidRequest, "该凭据类型不支持所选增强器");
-        }
-        // 5. (kind, platform, 注入点名) 三元组去重（D10）
-        let key = (
-            req.kind,
-            req.platform.clone(),
-            binding_name(&req.binding).to_string(),
-        );
-        if !seen.insert(key) {
-            bail_err!(InvalidRequest, "同一注入点存在重复凭据需求");
-        }
-    }
-    // 显式选择默认增强器幂等允许（D11），无校验分支
-    Ok(())
+    common::models::validate_requirements(requirements, scope)
+        .map_err(|msg| err!(InvalidRequest, "{}", msg))
 }
 
 #[cfg(test)]

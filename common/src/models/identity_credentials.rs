@@ -685,6 +685,115 @@ pub fn is_sensitive_credential_name(name: &str) -> bool {
         || normalized.contains("password")
 }
 
+impl CredentialEnhancerKind {
+    /// serde snake_case 值（与 DB 值域 / 前端下拉值一致）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::BearerToken => "bearer_token",
+            Self::BasicAuth => "basic_auth",
+            Self::AccessToken => "access_token",
+        }
+    }
+}
+
+/// 注入点名（binding 的 name / field）
+pub fn binding_name(binding: &CredentialBinding) -> &str {
+    match binding {
+        CredentialBinding::Env { name }
+        | CredentialBinding::Header { name }
+        | CredentialBinding::Query { name } => name,
+        CredentialBinding::Internal { field } => field,
+    }
+}
+
+/// binding ↔ 作用域匹配矩阵（配置期校验单点）
+pub fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirementScope) -> bool {
+    matches!(
+        (binding, scope),
+        (CredentialBinding::Env { .. }, CredentialRequirementScope::McpStdio)
+            | (CredentialBinding::Header { .. }, CredentialRequirementScope::McpHttp)
+            | (CredentialBinding::Header { .. }, CredentialRequirementScope::HttpTool)
+            | (CredentialBinding::Query { .. }, CredentialRequirementScope::HttpTool)
+            | (CredentialBinding::Internal { .. }, CredentialRequirementScope::Builtin)
+    )
+}
+
+/// MCP 传输方式 → 凭据需求作用域（stdio → McpStdio / streamable_http → McpHttp）
+pub fn mcp_transport_scope(transport: crate::enums::McpTransport) -> CredentialRequirementScope {
+    match transport {
+        crate::enums::McpTransport::Stdio => CredentialRequirementScope::McpStdio,
+        crate::enums::McpTransport::StreamableHttp => CredentialRequirementScope::McpHttp,
+    }
+}
+
+/// requirements 配置期校验（六规则单点；后端 handler 校验与前端表单预校验共用）
+///
+/// 规则：binding↔scope 矩阵 / 注入名非空 / platform↔kind（generic 类必填专用类必空）/
+/// field↔enhancer 互斥 / enhancer↔kind supports 矩阵 / (kind, platform, 注入名) 三元组去重。
+/// 返回具体错误文案（Err(String)），由各端自行包装为本地错误类型。
+pub fn validate_requirements(
+    requirements: &[CredentialRequirement],
+    scope: CredentialRequirementScope,
+) -> std::result::Result<(), String> {
+    let mut seen = std::collections::HashSet::new();
+    for req in requirements {
+        // 1. binding ↔ scope
+        if !binding_allowed(&req.binding, scope) {
+            return Err(match scope {
+                CredentialRequirementScope::McpStdio | CredentialRequirementScope::McpHttp => {
+                    "凭据注入点与传输方式不匹配（Stdio 仅支持环境变量注入，StreamableHttp 仅支持请求头注入）".to_string()
+                }
+                CredentialRequirementScope::HttpTool => {
+                    "凭据注入点与工具协议不匹配（HTTP 工具仅支持请求头或查询参数注入）".to_string()
+                }
+                CredentialRequirementScope::Builtin => {
+                    "凭据注入点与工具协议不匹配（内置工具仅支持实例字段注入）".to_string()
+                }
+            });
+        }
+        // 2. 注入名非空
+        if binding_name(&req.binding).trim().is_empty() {
+            return Err("凭据注入点名不能为空".to_string());
+        }
+        // 3. platform ↔ kind
+        if req.kind.requires_platform() != req.platform.is_some() {
+            return Err(if req.kind.requires_platform() {
+                format!("凭据类型 {} 必须填写平台标识", req.kind.as_str())
+            } else {
+                format!("凭据类型 {} 不适用平台标识，请清空", req.kind.as_str())
+            });
+        }
+        // 4. field ↔ enhancer 互斥
+        if req.field.is_some() && req.enhancer.is_some() {
+            return Err(format!(
+                "凭据类型 {} 的提取字段与增强器互斥，只能二选一",
+                req.kind.as_str()
+            ));
+        }
+        // 5. enhancer ↔ kind supports 矩阵
+        if let Some(enhancer) = req.enhancer
+            && !enhancer_supports(req.kind, enhancer)
+        {
+            return Err(format!(
+                "凭据类型 {} 不支持增强器 {}",
+                req.kind.as_str(),
+                enhancer.as_str()
+            ));
+        }
+        // 6. (kind, platform, 注入名) 三元组去重
+        let key = (
+            req.kind,
+            req.platform.clone(),
+            binding_name(&req.binding).to_string(),
+        );
+        if !seen.insert(key) {
+            return Err("存在重复的凭据需求（同凭据类型 + 同平台 + 同注入点）".to_string());
+        }
+    }
+    // 显式选择默认增强器幂等允许（D11），无校验分支
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1343,5 +1452,150 @@ mod tests {
         assert!(!is_sensitive_credential_name("Accept"));
         assert!(!is_sensitive_credential_name("X-Api-Version"));
         assert!(!is_sensitive_credential_name(""));
+    }
+
+    fn req(
+        kind: CredentialKind,
+        platform: Option<&str>,
+        field: Option<&str>,
+        enhancer: Option<CredentialEnhancerKind>,
+        binding: CredentialBinding,
+    ) -> CredentialRequirement {
+        CredentialRequirement {
+            kind,
+            platform: platform.map(|s| s.to_string()),
+            field: field.map(|s| s.to_string()),
+            enhancer,
+            binding,
+        }
+    }
+
+    fn header(name: &str) -> CredentialBinding {
+        CredentialBinding::Header {
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_validate_requirements_six_rules() {
+        // 合法组合（HttpTool scope：Header + platform 必填的 generic_token）
+        let ok = req(
+            CredentialKind::GenericToken,
+            Some("linear"),
+            None,
+            None,
+            header("authorization"),
+        );
+        assert!(validate_requirements(&[ok.clone()], CredentialRequirementScope::HttpTool).is_ok());
+
+        // 规则 1：Env binding 不适用 HttpTool scope
+        let env_binding = req(
+            CredentialKind::GenericToken,
+            Some("linear"),
+            None,
+            None,
+            CredentialBinding::Env {
+                name: "LINEAR_TOKEN".to_string(),
+            },
+        );
+        let err = validate_requirements(&[env_binding], CredentialRequirementScope::HttpTool)
+            .unwrap_err();
+        assert!(err.contains("HTTP 工具仅支持请求头或查询参数注入"), "{err}");
+
+        // 规则 2：注入名空白
+        let blank = req(
+            CredentialKind::GenericToken,
+            Some("linear"),
+            None,
+            None,
+            header("  "),
+        );
+        assert_eq!(
+            validate_requirements(&[blank], CredentialRequirementScope::HttpTool).unwrap_err(),
+            "凭据注入点名不能为空"
+        );
+
+        // 规则 3：generic 类缺 platform / 专用类多 platform
+        let missing_platform = req(
+            CredentialKind::GenericToken,
+            None,
+            None,
+            None,
+            header("authorization"),
+        );
+        assert_eq!(
+            validate_requirements(&[missing_platform], CredentialRequirementScope::HttpTool)
+                .unwrap_err(),
+            "凭据类型 generic_token 必须填写平台标识"
+        );
+        let extra_platform = req(
+            CredentialKind::GithubToken,
+            Some("github"),
+            None,
+            None,
+            header("authorization"),
+        );
+        assert_eq!(
+            validate_requirements(&[extra_platform], CredentialRequirementScope::HttpTool)
+                .unwrap_err(),
+            "凭据类型 github_token 不适用平台标识，请清空"
+        );
+
+        // 规则 4：field ↔ enhancer 互斥
+        let both = req(
+            CredentialKind::LarkApp,
+            None,
+            Some("app_id"),
+            Some(CredentialEnhancerKind::AccessToken),
+            header("authorization"),
+        );
+        let err = validate_requirements(&[both], CredentialRequirementScope::HttpTool).unwrap_err();
+        assert!(err.contains("互斥"), "{err}");
+
+        // 规则 5：supports 矩阵（github_token + BasicAuth 不支持）
+        let unsupported = req(
+            CredentialKind::GithubToken,
+            None,
+            None,
+            Some(CredentialEnhancerKind::BasicAuth),
+            header("authorization"),
+        );
+        let err =
+            validate_requirements(&[unsupported], CredentialRequirementScope::HttpTool).unwrap_err();
+        assert!(err.contains("不支持增强器 basic_auth"), "{err}");
+
+        // 规则 6：三元组去重
+        let dup = req(
+            CredentialKind::GenericToken,
+            Some("linear"),
+            None,
+            None,
+            header("authorization"),
+        );
+        let err = validate_requirements(
+            &[ok.clone(), dup],
+            CredentialRequirementScope::HttpTool,
+        )
+        .unwrap_err();
+        assert!(err.contains("重复"), "{err}");
+    }
+
+    #[test]
+    fn test_mcp_transport_scope_mapping() {
+        assert_eq!(
+            mcp_transport_scope(crate::enums::McpTransport::Stdio),
+            CredentialRequirementScope::McpStdio
+        );
+        assert_eq!(
+            mcp_transport_scope(crate::enums::McpTransport::StreamableHttp),
+            CredentialRequirementScope::McpHttp
+        );
+    }
+
+    #[test]
+    fn test_enhancer_kind_as_str() {
+        assert_eq!(CredentialEnhancerKind::BearerToken.as_str(), "bearer_token");
+        assert_eq!(CredentialEnhancerKind::BasicAuth.as_str(), "basic_auth");
+        assert_eq!(CredentialEnhancerKind::AccessToken.as_str(), "access_token");
     }
 }
