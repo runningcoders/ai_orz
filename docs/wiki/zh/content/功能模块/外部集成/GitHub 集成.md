@@ -18,6 +18,7 @@
 - [GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页](docs/wiki/knowledge/zh/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页/GitHub 集成：gh_cli 内置 Builtin 工具 + 凭证 CRUD API + 前端凭证管理页.md) — §红线 1 禁止把 PAT token 写进任何日志；§红线 2 禁止允许用户传任意 subcommand 字符串
 - [身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）](docs/wiki/knowledge/zh/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）/身份凭证统一链路（总卡：模型层 + Domain 层 CRUD + Handler 层 API + 外部集成联动 + CredentialDetail 类型无关下沉）.md) — Level3 兄弟卡：GITHUB_PAT 凭证存储复用身份 Domain
 - [工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) — Level3 兄弟卡：gh_cli 是 Builtin 协议典型实现
+- [共享工具凭据增强器：类型级需求声明 + domain 编排注入 + check 单次实例](docs/wiki/knowledge/zh/共享工具凭据增强器：类型级需求声明 + domain 编排注入 + check 单次实例/共享工具凭据增强器：类型级需求声明 + domain 编排注入 + check 单次实例.md) — gh_cli 凭据消费现行链路（2026-08-21 工厂化 + check 注入 + domain 编排取数，per-tool resolver 已删除）
 </cite>
 
 **【本次 2026-08-16 增量追加互引】**
@@ -35,6 +36,12 @@
 - 前端 /integrations/github 页面：凭证管理 Tab + 测试工具 Tab + PR 助手 Tab
 - 更新日期：2026-08-16
 **2026-08-16 增量补充互引**：追加 T3（身份凭证统一链路总卡 Level3 兄弟卡）RAG 卡互引；cite 区反向引用身份凭证管理长文（形成 GITHUB_PAT 凭证存储 ↔ GitHub 集成消费的双向链接闭环）；§5 详细实现分析 gh_cli 凭证获取优先级章节来源行号降级（因 identity_credential/crud.rs 新增 GITHUB_PAT 专用 match arm 导致行号范围漂移，优先降级为无行号范围引用）。
+
+**2026-08-21 增量更新（提交链 a22eede3 → 67012420，共享工具凭据增强器）**：
+- **gh_cli 工厂化**：`GhCredentialResolver` trait / RESOLVER OnceLock / `set·get_credential_resolver` 整体删除（D17）——取数上移 domain 编排层 `resolve_tool_credentials`（user dal `find_default` 单轨；`std::env::var("GITHUB_TOKEN")` fallback 一并废除，凭据无任何非凭证库来源）。
+- **check 注入 token 实例字段**：CoreTool 实现改 D22 生命周期——模块级静态 requirements `[GithubToken]` 单点声明（工厂与实例同源）+ `check(&mut self, resolved)` 注入 token 实例字段，`call` 内取数段（原 resolve_github_pat 路径）删除；未绑定引导统一走编排层 `credential_missing_json`。
+- **`gh` 二进制名进 PO config**（D28）：`po.config.command` 缺省 "gh"（工具管理页可改命令路径）；readiness 经 domain `tool_readiness` 数据驱动（CLI 型 `command_available` 探测）。
+- §3「凭证获取优先级」代码块为 d04cd9a3 时期历史实现快照，现行链路详见 [共享工具凭据增强器](docs/wiki/zh/content/基础设施/工具注册表/共享工具凭据增强器.md)；关联文档追加共享工具凭据增强器 RAG 卡。
 
 ## 目录
 1. [简介](#简介)
@@ -118,6 +125,8 @@ invoke(subcommand, args)
   │
   └─► 3. 双空 → 工具返回结构化错误 "GitHub PAT not configured, save via /integrations/github or set GITHUB_TOKEN env"
 ```
+
+> ⚠️ **2026-08-21 起上表为历史链路**（d04cd9a3 时期实现快照）：现行实现见 [共享工具凭据增强器](docs/wiki/zh/content/基础设施/工具注册表/共享工具凭据增强器.md)——`GhCredentialResolver` 与 env fallback 均已删除，取数统一走 domain `resolve_tool_credentials`（user dal `find_default` 纯单轨）→ `CoreTool::check` 注入 token 实例字段（D17/D22）；`gh` 二进制名读 `po.config.command`（D28）。
 无论走哪条路径，PAT token 最终都设置为子进程的 GITHUB_TOKEN 环境变量（仅作用于子进程，父进程内日志打印前 scrub 掩码）。
 
 ### 命令执行与超时光照
