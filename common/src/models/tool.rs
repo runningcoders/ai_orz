@@ -59,13 +59,15 @@ mod tests {
     #[test]
     fn builtin_config_validation_rules() {
         // 合法：已知字段类型正确 + 未知字段宽松保留
-        assert!(validate_builtin_tool_config(&json!({
-            "command": "agent-browser",
-            "timeout_ms": 15000,
-            "max_output_bytes": 4096,
-            "custom_field": "any"
-        }))
-        .is_ok());
+        assert!(
+            validate_builtin_tool_config(&json!({
+                "command": "agent-browser",
+                "timeout_ms": 15000,
+                "max_output_bytes": 4096,
+                "custom_field": "any"
+            }))
+            .is_ok()
+        );
         // command 空 / 非字符串
         assert_eq!(
             validate_builtin_tool_config(&json!({ "command": "" })).unwrap_err(),

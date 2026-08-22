@@ -63,16 +63,16 @@ impl ResolvedCredential {
     pub async fn canonical_value(&self, field: Option<&str>) -> Result<String> {
         match (self.detail.kind(), field) {
             // 显式选择默认增强器幂等等价 None（D11）由取值侧归一，此处只按 kind 分派
-            (CredentialKind::OAuth, None) => {
-                Ok(match self.enhance(CredentialEnhancerKind::AccessToken).await? {
+            (CredentialKind::OAuth, None) => Ok(
+                match self.enhance(CredentialEnhancerKind::AccessToken).await? {
                     CredentialEnhancedValue::Value(v) => v,
-                })
-            }
-            (CredentialKind::UserPassword, None) => {
-                Ok(match self.enhance(CredentialEnhancerKind::BasicAuth).await? {
+                },
+            ),
+            (CredentialKind::UserPassword, None) => Ok(
+                match self.enhance(CredentialEnhancerKind::BasicAuth).await? {
                     CredentialEnhancedValue::Value(v) => v,
-                })
-            }
+                },
+            ),
             (_, Some(field_name)) => self.extract_field(field_name),
             _ => Ok(self.detail.primary_secret().to_string()),
         }
@@ -186,16 +186,17 @@ pub async fn resolve_requirements(
         } else {
             decrypt_detail(fc.detail.clone())?
         };
-        let credential = ResolvedCredential::new(
-            fc.credential_id.clone(),
-            detail,
-            fc.attributes.clone(),
-        );
+        let credential =
+            ResolvedCredential::new(fc.credential_id.clone(), detail, fc.attributes.clone());
         let value = match requirement.enhancer {
             Some(kind) => match credential.enhance(kind).await? {
                 CredentialEnhancedValue::Value(v) => v,
             },
-            None => credential.canonical_value(requirement.field.as_deref()).await?,
+            None => {
+                credential
+                    .canonical_value(requirement.field.as_deref())
+                    .await?
+            }
         };
         resolved.push(ResolvedRequirement {
             requirement: requirement.clone(),
@@ -239,7 +240,10 @@ pub fn validate_requirements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::models::{CredentialBinding, CredentialEnhancerKind, CredentialRequirement, CredentialRequirementScope};
+    use common::models::{
+        CredentialBinding, CredentialEnhancerKind, CredentialRequirement,
+        CredentialRequirementScope,
+    };
 
     fn req(
         kind: CredentialKind,
@@ -315,8 +319,11 @@ mod tests {
             },
         );
         assert!(
-            validate_requirements(std::slice::from_ref(&r), CredentialRequirementScope::Builtin)
-                .is_ok()
+            validate_requirements(
+                std::slice::from_ref(&r),
+                CredentialRequirementScope::Builtin
+            )
+            .is_ok()
         );
         assert!(
             validate_requirements(
@@ -407,9 +414,7 @@ mod tests {
             Some(CredentialEnhancerKind::BasicAuth),
             header("Authorization"),
         );
-        assert!(
-            validate_requirements(&[oauth, up], CredentialRequirementScope::HttpTool).is_ok()
-        );
+        assert!(validate_requirements(&[oauth, up], CredentialRequirementScope::HttpTool).is_ok());
     }
 
     /// 同 (kind, platform, 注入名) 两条 → Err（D10）
@@ -450,8 +455,11 @@ mod tests {
             header("Authorization"),
         );
         assert!(
-            validate_requirements(&[oauth_token, oauth_bearer], CredentialRequirementScope::HttpTool)
-                .is_ok()
+            validate_requirements(
+                &[oauth_token, oauth_bearer],
+                CredentialRequirementScope::HttpTool
+            )
+            .is_ok()
         );
     }
 
@@ -467,8 +475,11 @@ mod tests {
     /// oauth 规范值 = access_token（预填缓存命中分支，D11 默认装配）
     #[tokio::test]
     async fn canonical_oauth_returns_access_token() {
-        oauth_token_manager()
-            .seed_for_test("cred-oauth", "at_abc", std::time::Duration::from_secs(300));
+        oauth_token_manager().seed_for_test(
+            "cred-oauth",
+            "at_abc",
+            std::time::Duration::from_secs(300),
+        );
         let c = ResolvedCredential::new(
             "cred-oauth".to_string(),
             CredentialDetail::OAuth {
@@ -558,7 +569,9 @@ mod tests {
             Default::default(),
         );
         assert_eq!(
-            c.enhance(CredentialEnhancerKind::BearerToken).await.unwrap(),
+            c.enhance(CredentialEnhancerKind::BearerToken)
+                .await
+                .unwrap(),
             CredentialEnhancedValue::Value("Bearer at_zz".to_string())
         );
     }
@@ -573,7 +586,9 @@ mod tests {
             Default::default(),
         );
         assert_eq!(
-            c.enhance(CredentialEnhancerKind::BearerToken).await.unwrap(),
+            c.enhance(CredentialEnhancerKind::BearerToken)
+                .await
+                .unwrap(),
             CredentialEnhancedValue::Value("Bearer ntn_xxx".to_string())
         );
     }
@@ -724,7 +739,9 @@ mod tests {
             .unwrap();
         // 落库态确为密文
         let CredentialDetail::OAuth {
-            client_secret, refresh_token, ..
+            client_secret,
+            refresh_token,
+            ..
         } = &encrypted
         else {
             panic!("kind 不变");
@@ -751,7 +768,9 @@ mod tests {
             .encrypt_sensitive(crate::pkg::crypto::encrypt_channel_secret)
             .unwrap();
         let CredentialDetail::LarkApp {
-            app_id, verification_token, ..
+            app_id,
+            verification_token,
+            ..
         } = &encrypted
         else {
             panic!("kind 不变");

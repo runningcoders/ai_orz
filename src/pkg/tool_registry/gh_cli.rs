@@ -495,10 +495,7 @@ impl CoreTool for GhCliCoreTool {
         credential_requirements()
     }
 
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         for item in resolved {
             match &item.requirement.binding {
                 // 内置工具唯一合法注入点（静态声明已限定，此处防御兜底）
@@ -506,10 +503,7 @@ impl CoreTool for GhCliCoreTool {
                     self.token = Some(item.value.clone());
                 }
                 _ => {
-                    return Err(err!(
-                        InvalidRequest,
-                        "gh_cli 仅支持 token 内部凭据注入点"
-                    ));
+                    return Err(err!(InvalidRequest, "gh_cli 仅支持 token 内部凭据注入点"));
                 }
             }
         }

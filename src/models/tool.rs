@@ -30,10 +30,7 @@ pub trait CoreTool: Send + Sync + DynClone {
 
     /// 凭据注入生命周期：编排层在 call 前调用--校验声明与注入匹配 + 存实例字段。
     /// 实例单次使用（create -> check -> call），凭据是对象状态（D22 红线）。
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         // 默认无凭据工具：注入非空即为编排层错配（防御）
         if resolved.is_empty() {
             Ok(())

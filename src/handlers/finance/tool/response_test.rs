@@ -150,5 +150,8 @@ fn tool_detail_exposes_config_declared_credential_requirements_for_http_tool() {
         }
     );
     // config 通道内同名键仍走脱敏（这正是需要独立顶层字段的原因）
-    assert_eq!(detail.config.unwrap()["credential_requirements"], "[REDACTED]");
+    assert_eq!(
+        detail.config.unwrap()["credential_requirements"],
+        "[REDACTED]"
+    );
 }

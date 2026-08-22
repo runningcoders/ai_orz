@@ -12,8 +12,7 @@
 use common::enums::McpTransport;
 use common::models::{
     CredentialBinding, CredentialEnhancerKind, CredentialKind, CredentialRequirement,
-    CredentialRequirementScope, default_enhancer, enhancer_supports,
-    is_sensitive_credential_name,
+    CredentialRequirementScope, default_enhancer, enhancer_supports, is_sensitive_credential_name,
 };
 
 /// 全部凭据类型（kind 下拉选项，serde 值 = 展示键）
@@ -80,9 +79,7 @@ pub fn validate_requirements_scoped(
 
 /// 该类型是否存在任一受支持增强器（专用 kind 为 false，用于禁用提示区分）
 pub fn has_any_enhancer_support(kind: CredentialKind) -> bool {
-    all_enhancers()
-        .iter()
-        .any(|e| enhancer_supports(kind, *e))
+    all_enhancers().iter().any(|e| enhancer_supports(kind, *e))
 }
 
 /// 可选增强器列表（按 supports 矩阵过滤且排除默认增强器，D11 前端不暴露默认项）
@@ -233,9 +230,7 @@ mod tests {
                 env("OKTA_TOKEN"),
             ),
         ];
-        assert!(
-            validate_requirements_scoped(&list, CredentialRequirementScope::McpStdio).is_ok()
-        );
+        assert!(validate_requirements_scoped(&list, CredentialRequirementScope::McpStdio).is_ok());
     }
 
     #[test]
@@ -259,34 +254,26 @@ mod tests {
             None,
             header("authorization"),
         )];
-        assert!(
-            validate_requirements_scoped(&list, CredentialRequirementScope::McpStdio).is_err()
-        );
+        assert!(validate_requirements_scoped(&list, CredentialRequirementScope::McpStdio).is_err());
     }
 
     #[test]
     fn validate_http_tool_scope_allows_header_and_query_only() {
-        let base = |binding| {
-            vec![req(
-                CredentialKind::GithubToken,
-                None,
-                None,
-                None,
-                binding,
-            )]
-        };
+        let base = |binding| vec![req(CredentialKind::GithubToken, None, None, None, binding)];
         let http = CredentialRequirementScope::HttpTool;
         assert!(validate_requirements_scoped(&base(header("authorization")), http).is_ok());
         assert!(validate_requirements_scoped(&base(query("api_key")), http).is_ok());
         let err = validate_requirements_scoped(&base(env("GITHUB_TOKEN")), http).unwrap_err();
         assert!(err.contains("仅支持请求头或查询参数"), "unexpected: {err}");
-        assert!(validate_requirements_scoped(
-            &base(CredentialBinding::Internal {
-                field: "token".to_string()
-            }),
-            http
-        )
-        .is_err());
+        assert!(
+            validate_requirements_scoped(
+                &base(CredentialBinding::Internal {
+                    field: "token".to_string()
+                }),
+                http
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -507,7 +494,13 @@ mod tests {
     #[test]
     fn is_sensitive_name_matches_backend_rules() {
         // 精确匹配（忽略大小写）
-        for name in ["authorization", "Authorization", "AUTHORIZATION", "cookie", "set-cookie"] {
+        for name in [
+            "authorization",
+            "Authorization",
+            "AUTHORIZATION",
+            "cookie",
+            "set-cookie",
+        ] {
             assert!(is_sensitive_name(name), "should match: {name}");
         }
         // 子串匹配

@@ -11,10 +11,9 @@ use dioxus::prelude::*;
 
 use crate::api::finance::create_tool;
 use crate::components::credential_form::{
-    available_enhancers, binding_name, enhancer_display, enhancer_from_value,
-    enhancer_to_value, has_any_enhancer_support, injection_value_preview, is_sensitive_name,
-    kind_from_value, normalize_requirements, recommended_binding_name,
-    validate_requirements_scoped,
+    available_enhancers, binding_name, enhancer_display, enhancer_from_value, enhancer_to_value,
+    has_any_enhancer_support, injection_value_preview, is_sensitive_name, kind_from_value,
+    normalize_requirements, recommended_binding_name, validate_requirements_scoped,
 };
 use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
@@ -121,10 +120,7 @@ pub fn sensitive_keys_hint(text: &str) -> Option<String> {
     if keys.is_empty() {
         return None;
     }
-    Some(format!(
-        "⚠ 敏感头只能通过凭据需求注入：{}",
-        keys.join("、")
-    ))
+    Some(format!("⚠ 敏感头只能通过凭据需求注入：{}", keys.join("、")))
 }
 
 /// 提交期敏感名拦截（对齐后端 `validate_no_sensitive_template_keys`）
@@ -269,15 +265,17 @@ pub fn CreateHttpToolModal(
     let requirements_list = form.read().credential_requirements.clone();
 
     let on_add_requirement = move |_| {
-        form.write().credential_requirements.push(CredentialRequirement {
-            kind: CredentialKind::GithubToken,
-            platform: None,
-            field: None,
-            enhancer: None,
-            binding: CredentialBinding::Header {
-                name: String::new(),
-            },
-        });
+        form.write()
+            .credential_requirements
+            .push(CredentialRequirement {
+                kind: CredentialKind::GithubToken,
+                platform: None,
+                field: None,
+                enhancer: None,
+                binding: CredentialBinding::Header {
+                    name: String::new(),
+                },
+            });
     };
 
     rsx! {

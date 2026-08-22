@@ -296,11 +296,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
             // ③ 两者皆无 → Ready
             return RuntimeReady::Ready;
         }
-        let cache_key = format!(
-            "{}|{}",
-            tool.po.id,
-            ctx.user_id.clone().unwrap_or_default()
-        );
+        let cache_key = format!("{}|{}", tool.po.id, ctx.user_id.clone().unwrap_or_default());
         if let Some((status, at)) = readiness_cache().lock().unwrap().get(&cache_key)
             && at.elapsed() < READINESS_CACHE_TTL
         {
@@ -333,9 +329,9 @@ static READINESS_CACHE: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>>,
 > = std::sync::OnceLock::new();
 
-fn readiness_cache() -> &'static std::sync::Mutex<
-    std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>,
-> {
+fn readiness_cache()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, (RuntimeReady, std::time::Instant)>>
+{
     READINESS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -359,7 +355,8 @@ pub(super) fn expire_readiness_cache(tool_id: &str) {
         .iter_mut()
         .for_each(|(k, (_, at))| {
             if k == tool_id || k.starts_with(&prefix) {
-                *at = std::time::Instant::now() - READINESS_CACHE_TTL
+                *at = std::time::Instant::now()
+                    - READINESS_CACHE_TTL
                     - std::time::Duration::from_secs(1);
             }
         });

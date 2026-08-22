@@ -188,8 +188,7 @@ mod tests {
             },
         ];
         for params in cases {
-            let err =
-                reject_builtin_field_edits(ToolProtocol::Builtin, &params).unwrap_err();
+            let err = reject_builtin_field_edits(ToolProtocol::Builtin, &params).unwrap_err();
             assert_eq!(err.code_enum(), common::error::ErrorCode::InvalidRequest);
             assert!(err.to_string().contains("内置工具仅支持修改 config"));
         }

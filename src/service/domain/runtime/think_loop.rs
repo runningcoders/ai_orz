@@ -263,9 +263,14 @@ impl RuntimeDomainImpl {
                                         common::enums::tool::ControlMode::Auto => {
                                             self.call_tool(ctx.clone(), tool, tc.arguments).await
                                         }
-                                        common::enums::tool::ControlMode::Manual => self
-                                            .dispatch_manual_tool(ctx.clone(), tool, tc.arguments)
-                                            .await,
+                                        common::enums::tool::ControlMode::Manual => {
+                                            self.dispatch_manual_tool(
+                                                ctx.clone(),
+                                                tool,
+                                                tc.arguments,
+                                            )
+                                            .await
+                                        }
                                     };
                                     match call_result {
                                         Ok(result) => {

@@ -7,7 +7,7 @@
 use crate::pkg::credential::ResolvedCredential;
 use async_trait::async_trait;
 use common::error::{Result, bail_err, err};
-use common::models::{CredentialEnhancerKind, CredentialDetail, CredentialKind};
+use common::models::{CredentialDetail, CredentialEnhancerKind, CredentialKind};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -45,7 +45,10 @@ impl CredentialEnhancer for BearerTokenEnhancer {
 
     async fn enhance(&self, credential: &ResolvedCredential) -> Result<CredentialEnhancedValue> {
         let canonical = credential.canonical_value(None).await?;
-        Ok(CredentialEnhancedValue::Value(format!("Bearer {}", canonical)))
+        Ok(CredentialEnhancedValue::Value(format!(
+            "Bearer {}",
+            canonical
+        )))
     }
 }
 
@@ -63,8 +66,8 @@ impl CredentialEnhancer for BasicAuthEnhancer {
             bail_err!(InvalidRequest, "basic_auth 增强器仅支持 user_password 凭据");
         };
         use base64::Engine;
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(format!("{}:{}", username, password));
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
         Ok(CredentialEnhancedValue::Value(format!("Basic {}", encoded)))
     }
 }
@@ -90,7 +93,9 @@ impl CredentialEnhancer for AccessTokenEnhancer {
 }
 
 /// 增强器注册表（OnceLock；本模块内建三增强器，未来扩展在此注册）
-pub(crate) fn enhancer_for(kind: CredentialEnhancerKind) -> Result<&'static dyn CredentialEnhancer> {
+pub(crate) fn enhancer_for(
+    kind: CredentialEnhancerKind,
+) -> Result<&'static dyn CredentialEnhancer> {
     static REGISTRY: OnceLock<Vec<&'static dyn CredentialEnhancer>> = OnceLock::new();
     let registry = REGISTRY.get_or_init(|| {
         vec![
@@ -177,13 +182,9 @@ impl OAuthTokenManager {
         // SSRF 校验 + DNS pin（复用 http.rs 同款模式；拒绝内网/环路）
         let url = reqwest::Url::parse(token_endpoint)
             .map_err(|_| err!(InvalidRequest, "oauth token_endpoint 不是合法 URL"))?;
-        let pinned = crate::pkg::tool_registry::tool_security::validate_target_url(
-            None,
-            None,
-            None,
-            &url,
-        )
-        .await?;
+        let pinned =
+            crate::pkg::tool_registry::tool_security::validate_target_url(None, None, None, &url)
+                .await?;
         let host = url
             .host_str()
             .ok_or_else(|| err!(InvalidRequest, "oauth token_endpoint 缺少 host"))?
@@ -290,10 +291,7 @@ mod tests {
         let detail = oauth_detail("https://example.invalid/token");
         assert!(mgr.get_access_token("c2", &detail).await.is_err());
         // 失败不缓存：旧条目仍在（值未被替换）
-        assert_eq!(
-            mgr.cache.lock().unwrap().get("c2").unwrap().token,
-            "stale"
-        );
+        assert_eq!(mgr.cache.lock().unwrap().get("c2").unwrap().token, "stale");
     }
 
     /// SSRF 拒绝：内网 endpoint 直接 Err（不发起请求）

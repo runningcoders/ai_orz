@@ -156,7 +156,9 @@ mod tests {
         // requirements 为非敏感声明：更新往返原样保留（无 REDACTED 占位符语义）
         assert_eq!(persisted_config.credential_requirements.len(), 1);
         assert_eq!(
-            persisted_config.credential_requirements[0].platform.as_deref(),
+            persisted_config.credential_requirements[0]
+                .platform
+                .as_deref(),
             Some("linear")
         );
         assert_eq!(

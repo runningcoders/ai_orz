@@ -680,9 +680,18 @@ mod tests {
 
     #[test]
     fn builtin_config_form_matches_factory_names() {
-        assert_eq!(builtin_config_form("browser"), Some(BuiltinConfigForm::Browser));
-        assert_eq!(builtin_config_form("gh_cli"), Some(BuiltinConfigForm::GhCli));
-        assert_eq!(builtin_config_form("lark_cli"), Some(BuiltinConfigForm::LarkCli));
+        assert_eq!(
+            builtin_config_form("browser"),
+            Some(BuiltinConfigForm::Browser)
+        );
+        assert_eq!(
+            builtin_config_form("gh_cli"),
+            Some(BuiltinConfigForm::GhCli)
+        );
+        assert_eq!(
+            builtin_config_form("lark_cli"),
+            Some(BuiltinConfigForm::LarkCli)
+        );
         assert_eq!(
             builtin_config_form("tavily_search"),
             Some(BuiltinConfigForm::TavilySearch)
@@ -704,7 +713,10 @@ mod tests {
         assert_eq!(form.timeout_ms, "30000");
         assert_eq!(form.max_output_bytes, "");
         // config 缺失 / Null（存量 DB 零迁移兼容）→ 全空表单
-        assert_eq!(builtin_form_from_config(None), BuiltinConfigFormState::default());
+        assert_eq!(
+            builtin_form_from_config(None),
+            BuiltinConfigFormState::default()
+        );
         assert_eq!(
             builtin_form_from_config(Some(&serde_json::Value::Null)),
             BuiltinConfigFormState::default()
@@ -738,8 +750,7 @@ mod tests {
             max_output_bytes: "524288".to_string(),
             install_hint: "brew install agent-browser".to_string(),
         };
-        let merged =
-            merge_builtin_config(Some(&base), &form, BuiltinConfigForm::Browser).unwrap();
+        let merged = merge_builtin_config(Some(&base), &form, BuiltinConfigForm::Browser).unwrap();
         assert_eq!(merged["command"], "agent-browser2");
         assert_eq!(merged["timeout_ms"], 120000);
         assert_eq!(merged["max_output_bytes"], 524288);
@@ -776,8 +787,7 @@ mod tests {
             timeout_ms: "abc".to_string(),
             ..Default::default()
         };
-        let err =
-            merge_builtin_config(None, &form, BuiltinConfigForm::TavilySearch).unwrap_err();
+        let err = merge_builtin_config(None, &form, BuiltinConfigForm::TavilySearch).unwrap_err();
         assert!(err.contains("timeout_ms"));
 
         // timeout_ms 非正整数（0）

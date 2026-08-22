@@ -19,18 +19,18 @@
 //! 调用 `ensure_listener_for` / `release_listener_if_unused` 联动。
 
 mod credentials;
-mod listener;
 mod r#impl;
+mod listener;
 
 pub use credentials::LarkCredentialDal;
-pub use listener::LarkListenerDal;
 pub use r#impl::LarkDalImpl;
+pub use listener::LarkListenerDal;
 
 use std::sync::{Arc, OnceLock};
 
+use crate::service::dal::message_channel::MessageChannelDal;
 use crate::service::dao::lark::LarkDao;
 use crate::service::dao::user_credential::UserCredentialDao;
-use crate::service::dal::message_channel::MessageChannelDal;
 
 // ==================== 总 trait ====================
 

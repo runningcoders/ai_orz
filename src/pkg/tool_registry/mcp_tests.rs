@@ -454,12 +454,7 @@ async fn mcp_client_runtime_consumes_invalidation_on_next_stdio_call() {
     assert!(runtime.is_invalidated(&server.id));
 
     let result = runtime
-        .call_tool(
-            &server,
-            "echo",
-            json!({ "text": "after invalidate" }),
-            &[],
-        )
+        .call_tool(&server, "echo", json!({ "text": "after invalidate" }), &[])
         .await
         .expect("next MCP stdio call after invalidation should reconnect and execute");
 

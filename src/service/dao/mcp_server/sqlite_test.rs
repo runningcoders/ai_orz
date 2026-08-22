@@ -83,7 +83,9 @@ async fn test_insert_and_find_by_id(pool: SqlitePool) -> Result<()> {
     // 凭据需求声明持久化往返（env/headers 已移除，D14）
     assert_eq!(found.config().credential_requirements.len(), 1);
     assert_eq!(
-        found.config().credential_requirements[0].platform.as_deref(),
+        found.config().credential_requirements[0]
+            .platform
+            .as_deref(),
         Some("linear")
     );
 

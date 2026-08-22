@@ -305,10 +305,7 @@ impl CoreTool for TavilySearchCoreTool {
         credential_requirements()
     }
 
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         for item in resolved {
             match &item.requirement.binding {
                 // 内置工具唯一合法注入点（静态声明已限定，此处防御兜底）

@@ -362,7 +362,12 @@ impl CoreTool for McpCoreTool {
         })?;
 
         client_runtime
-            .call_tool(server, &self.config.tool_name, args, &self.credential_injections)
+            .call_tool(
+                server,
+                &self.config.tool_name,
+                args,
+                &self.credential_injections,
+            )
             .await
             .map_err(|e| {
                 let msg: String = e.to_string();
@@ -381,10 +386,7 @@ impl CoreTool for McpCoreTool {
             .unwrap_or_default()
     }
 
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         let mut injections = Vec::with_capacity(resolved.len());
         for item in resolved {
             match &item.requirement.binding {
@@ -393,10 +395,7 @@ impl CoreTool for McpCoreTool {
                     injections.push((name.clone(), item.value.clone()));
                 }
                 _ => {
-                    return Err(err!(
-                        InvalidRequest,
-                        "stdio MCP 仅支持 env 凭据注入点"
-                    ));
+                    return Err(err!(InvalidRequest, "stdio MCP 仅支持 env 凭据注入点"));
                 }
             }
         }

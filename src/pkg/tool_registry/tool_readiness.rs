@@ -119,11 +119,7 @@ mod tests {
             cli_binary_readiness("/bin/ls", "install x", "config hint"),
             RuntimeReady::Ready
         );
-        let status = cli_binary_readiness(
-            "/no/such/binary-xyz",
-            "install x",
-            "config hint",
-        );
+        let status = cli_binary_readiness("/no/such/binary-xyz", "install x", "config hint");
         assert_eq!(
             status,
             RuntimeReady::NotReady {
@@ -157,13 +153,18 @@ mod tests {
                 field: "credential".to_string(),
             },
         };
-        assert!(credential_missing_hint(&requirement(CredentialKind::TavilyKey)).contains("Tavily"));
+        assert!(
+            credential_missing_hint(&requirement(CredentialKind::TavilyKey)).contains("Tavily")
+        );
         assert!(
             credential_missing_hint(&requirement(CredentialKind::GithubToken)).contains("GitHub")
         );
         assert!(credential_missing_hint(&requirement(CredentialKind::LarkApp)).contains("飞书"));
         // generic 类 kind 走通用引导
-        assert!(credential_missing_hint(&requirement(CredentialKind::GenericToken)).contains("身份凭证"));
+        assert!(
+            credential_missing_hint(&requirement(CredentialKind::GenericToken))
+                .contains("身份凭证")
+        );
     }
 
     #[test]

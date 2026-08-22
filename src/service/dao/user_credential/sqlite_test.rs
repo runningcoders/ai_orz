@@ -34,7 +34,12 @@ async fn seed_user(ctx: &RequestContext, user_id: &str) {
 }
 
 /// 创建 generic_token 凭证（platform 由测试显式指定；明文直通兼容：解密路径对未加密值原样返回）
-async fn seed_generic_token(ctx: &RequestContext, cred_id: &str, user_id: &str, platform: Option<&str>) {
+async fn seed_generic_token(
+    ctx: &RequestContext,
+    cred_id: &str,
+    user_id: &str,
+    platform: Option<&str>,
+) {
     let mut po = UserCredentialPo::new(
         cred_id.to_string(),
         "org-plat".to_string(),
@@ -120,13 +125,21 @@ async fn set_default_scoped_by_platform(pool: SqlitePool) {
         .await
         .unwrap()
         .unwrap();
-    assert!(linear.is_default, "linear default must survive notion set_default");
+    assert!(
+        linear.is_default,
+        "linear default must survive notion set_default"
+    );
     assert!(notion.is_default);
 
     // 清 linear 默认不影响 notion
-    dao.clear_default(ctx.clone(), "user-1", CredentialKind::GenericToken, Some("linear"))
-        .await
-        .unwrap();
+    dao.clear_default(
+        ctx.clone(),
+        "user-1",
+        CredentialKind::GenericToken,
+        Some("linear"),
+    )
+    .await
+    .unwrap();
     let linear = dao
         .find_by_id(ctx.clone(), "cred-linear")
         .await

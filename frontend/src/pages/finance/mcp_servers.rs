@@ -9,10 +9,9 @@ use crate::api::finance::{
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::credential_form::{
-    available_enhancers, binding_name, enhancer_display, enhancer_from_value,
-    enhancer_to_value, has_any_enhancer_support, injection_value_preview, kind_from_value,
-    mcp_transport_scope, normalize_requirements, recommended_binding_name,
-    validate_requirements_scoped,
+    available_enhancers, binding_name, enhancer_display, enhancer_from_value, enhancer_to_value,
+    has_any_enhancer_support, injection_value_preview, kind_from_value, mcp_transport_scope,
+    normalize_requirements, recommended_binding_name, validate_requirements_scoped,
 };
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -23,9 +22,7 @@ use common::api::{
     CreateMcpServerRequest, McpServerConfigDto, McpServerListItem, UpdateMcpServerStatusRequest,
 };
 use common::enums::{McpServerStatus, McpTransport};
-use common::models::{
-    CredentialBinding, CredentialKind, CredentialRequirement, enhancer_supports,
-};
+use common::models::{CredentialBinding, CredentialKind, CredentialRequirement, enhancer_supports};
 
 // ==================== MCP 表单本地辅助（共享纯函数见 components/credential_form.rs） ====================
 
@@ -81,7 +78,9 @@ pub fn FinanceMcpServers() -> Element {
             };
             // 凭据需求预校验（规范化后执行，失败 toast 具体错误不提交）
             let requirements = normalize_requirements(new_requirements());
-            if let Err(e) = validate_requirements_scoped(&requirements, mcp_transport_scope(transport)) {
+            if let Err(e) =
+                validate_requirements_scoped(&requirements, mcp_transport_scope(transport))
+            {
                 toast.error(&e);
                 return;
             }

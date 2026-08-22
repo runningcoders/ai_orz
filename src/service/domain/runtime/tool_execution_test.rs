@@ -10,11 +10,11 @@ pub(crate) mod credential_stubs {
     use crate::models::user::UserPo;
     use crate::models::user_credential::UserCredential;
     use crate::pkg::RequestContext;
+    use crate::service::dal::lark::LarkCredentialDal;
+    use crate::service::dal::user::UserDal;
     use crate::service::dao::lark::LarkAppCredentials;
     use crate::service::dao::user::UserQuery;
     use crate::service::dao::user_credential::UserCredentialQuery;
-    use crate::service::dal::lark::LarkCredentialDal;
-    use crate::service::dal::user::UserDal;
     use async_trait::async_trait;
     use common::api::PagedResult;
     use common::error::Result;
@@ -1693,7 +1693,10 @@ mod tests {
     }
 
     /// 构造带凭据 stub 的具体类型实例（私有方法 resolve_tool_credentials 需具体类型调用）
-    fn credential_runtime(user_dal: StubUserDal, lark_credentials: StubLarkCredentialDal) -> RuntimeDomainImpl {
+    fn credential_runtime(
+        user_dal: StubUserDal,
+        lark_credentials: StubLarkCredentialDal,
+    ) -> RuntimeDomainImpl {
         let temp_dir = tempdir().expect("tempdir should be created");
         RuntimeDomainImpl::new_with_all(
             Arc::new(StubBrainDal),
@@ -2049,10 +2052,7 @@ mod tests {
 
         // TTL 窗口内同 tool_id 换可寻址命令：缓存命中，仍旧判定
         let installed = cli_readiness_tool("rt-cli-inval", "/bin/ls", None);
-        assert_eq!(
-            runtime.tool_readiness(&test_ctx(), &installed).await,
-            first
-        );
+        assert_eq!(runtime.tool_readiness(&test_ctx(), &installed).await, first);
 
         // 主动失效 → 按新 PO config 重判 → Ready
         invalidate_readiness_cache("rt-cli-inval");

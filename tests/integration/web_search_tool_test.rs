@@ -13,11 +13,11 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+use ::common::models::CredentialKind;
 use ai_orz::pkg::RequestContext;
 use ai_orz::pkg::credential::{FetchedCredential, resolve_requirements};
 use ai_orz::pkg::tool_registry::BuiltinToolFactory;
 use ai_orz::pkg::tool_registry::tavily_search::TavilySearchToolFactory;
-use ::common::models::CredentialKind;
 use serde_json::json;
 use sqlx::SqlitePool;
 
@@ -265,7 +265,9 @@ async fn resolve_tavily_key(ctx: &RequestContext, user_id: &str) -> Option<Strin
         already_decrypted: false,
     };
     let requirements = TavilySearchToolFactory.credential_requirements();
-    let resolved = resolve_requirements(&requirements, &[fetched]).await.unwrap();
+    let resolved = resolve_requirements(&requirements, &[fetched])
+        .await
+        .unwrap();
     resolved.first().map(|r| r.value.clone())
 }
 

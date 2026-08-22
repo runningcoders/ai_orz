@@ -258,7 +258,11 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         let user_dal = self.user_dal()?.clone();
         match credential_id.map(str::trim).filter(|s| !s.is_empty()) {
             // None/空白：取消该用户该类型个人默认（幂等）
-            None => user_dal.clear_default_credential(ctx, user_id, kind, None).await,
+            None => {
+                user_dal
+                    .clear_default_credential(ctx, user_id, kind, None)
+                    .await
+            }
             Some(credential_id) => {
                 let credential = self
                     .load_owned_credential(ctx.clone(), user_id, credential_id)

@@ -40,10 +40,7 @@ pub enum CredentialKind {
 impl CredentialKind {
     /// generic 类 kind：匹配键含 platform 维度（(kind, platform) 二元组）
     pub fn requires_platform(&self) -> bool {
-        matches!(
-            self,
-            Self::GenericToken | Self::OAuth | Self::UserPassword
-        )
+        matches!(self, Self::GenericToken | Self::OAuth | Self::UserPassword)
     }
 
     /// 稳定字符串名（snake_case，与 serde/DB 值空间一致；引导文案与展示用）
@@ -653,10 +650,15 @@ pub enum CredentialRequirementScope {
 pub fn enhancer_supports(kind: CredentialKind, enhancer: CredentialEnhancerKind) -> bool {
     matches!(
         (kind, enhancer),
-        (CredentialKind::GenericToken, CredentialEnhancerKind::BearerToken)
-            | (CredentialKind::OAuth, CredentialEnhancerKind::BearerToken)
+        (
+            CredentialKind::GenericToken,
+            CredentialEnhancerKind::BearerToken
+        ) | (CredentialKind::OAuth, CredentialEnhancerKind::BearerToken)
             | (CredentialKind::OAuth, CredentialEnhancerKind::AccessToken)
-            | (CredentialKind::UserPassword, CredentialEnhancerKind::BasicAuth)
+            | (
+                CredentialKind::UserPassword,
+                CredentialEnhancerKind::BasicAuth
+            )
     )
 }
 
@@ -710,11 +712,22 @@ pub fn binding_name(binding: &CredentialBinding) -> &str {
 pub fn binding_allowed(binding: &CredentialBinding, scope: CredentialRequirementScope) -> bool {
     matches!(
         (binding, scope),
-        (CredentialBinding::Env { .. }, CredentialRequirementScope::McpStdio)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::McpHttp)
-            | (CredentialBinding::Header { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Query { .. }, CredentialRequirementScope::HttpTool)
-            | (CredentialBinding::Internal { .. }, CredentialRequirementScope::Builtin)
+        (
+            CredentialBinding::Env { .. },
+            CredentialRequirementScope::McpStdio
+        ) | (
+            CredentialBinding::Header { .. },
+            CredentialRequirementScope::McpHttp
+        ) | (
+            CredentialBinding::Header { .. },
+            CredentialRequirementScope::HttpTool
+        ) | (
+            CredentialBinding::Query { .. },
+            CredentialRequirementScope::HttpTool
+        ) | (
+            CredentialBinding::Internal { .. },
+            CredentialRequirementScope::Builtin
+        )
     )
 }
 
@@ -1358,24 +1371,15 @@ mod tests {
         let env = CredentialBinding::Env {
             name: "API_TOKEN".to_string(),
         };
-        assert_eq!(
-            serde_json::to_value(&env).unwrap()["type"],
-            "env"
-        );
+        assert_eq!(serde_json::to_value(&env).unwrap()["type"], "env");
         let query = CredentialBinding::Query {
             name: "api_key".to_string(),
         };
-        assert_eq!(
-            serde_json::to_value(&query).unwrap()["type"],
-            "query"
-        );
+        assert_eq!(serde_json::to_value(&query).unwrap()["type"], "query");
         let internal = CredentialBinding::Internal {
             field: "app_id".to_string(),
         };
-        assert_eq!(
-            serde_json::to_value(&internal).unwrap()["type"],
-            "internal"
-        );
+        assert_eq!(serde_json::to_value(&internal).unwrap()["type"], "internal");
     }
 
     #[test]
@@ -1560,8 +1564,8 @@ mod tests {
             Some(CredentialEnhancerKind::BasicAuth),
             header("authorization"),
         );
-        let err =
-            validate_requirements(&[unsupported], CredentialRequirementScope::HttpTool).unwrap_err();
+        let err = validate_requirements(&[unsupported], CredentialRequirementScope::HttpTool)
+            .unwrap_err();
         assert!(err.contains("不支持增强器 basic_auth"), "{err}");
 
         // 规则 6：三元组去重
@@ -1572,11 +1576,8 @@ mod tests {
             None,
             header("authorization"),
         );
-        let err = validate_requirements(
-            &[ok.clone(), dup],
-            CredentialRequirementScope::HttpTool,
-        )
-        .unwrap_err();
+        let err = validate_requirements(&[ok.clone(), dup], CredentialRequirementScope::HttpTool)
+            .unwrap_err();
         assert!(err.contains("重复"), "{err}");
     }
 

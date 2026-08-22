@@ -431,10 +431,7 @@ impl CoreTool for LarkCliCoreTool {
         credential_requirements()
     }
 
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         let (mut app_id, mut app_secret, mut identity_mode) = (None, None, None);
         for item in resolved {
             match &item.requirement.binding {
@@ -522,28 +519,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result["success"], false);
-        assert!(result["error"]
-            .as_str()
-            .unwrap()
-            .contains("飞书集成中绑定应用"));
+        assert!(
+            result["error"]
+                .as_str()
+                .unwrap()
+                .contains("飞书集成中绑定应用")
+        );
     }
 
     #[test]
     fn check_injects_credentials_triple_from_resolved_requirements() {
         let mut tool = LarkCliCoreTool::new(LarkCliToolFactory.create_po());
         assert_eq!(tool.credentials, None);
-        let resolved: Vec<crate::pkg::credential::ResolvedRequirement> =
-            credential_requirements()
-                .into_iter()
-                .map(|requirement| crate::pkg::credential::ResolvedRequirement {
-                    value: match &requirement.field {
-                        Some(field) if field == "app_id" => "cli_test".to_string(),
-                        Some(field) if field == "app_secret" => "sec_test".to_string(),
-                        _ => "tenant".to_string(),
-                    },
-                    requirement,
-                })
-                .collect();
+        let resolved: Vec<crate::pkg::credential::ResolvedRequirement> = credential_requirements()
+            .into_iter()
+            .map(|requirement| crate::pkg::credential::ResolvedRequirement {
+                value: match &requirement.field {
+                    Some(field) if field == "app_id" => "cli_test".to_string(),
+                    Some(field) if field == "app_secret" => "sec_test".to_string(),
+                    _ => "tenant".to_string(),
+                },
+                requirement,
+            })
+            .collect();
         tool.check(&resolved).unwrap();
         assert_eq!(
             tool.credentials,
@@ -565,9 +563,11 @@ mod tests {
         );
         let requirements = tool.credential_requirements();
         assert_eq!(requirements.len(), 3);
-        assert!(requirements
-            .iter()
-            .all(|r| r.kind == CredentialKind::LarkApp));
+        assert!(
+            requirements
+                .iter()
+                .all(|r| r.kind == CredentialKind::LarkApp)
+        );
     }
 
     #[tokio::test]

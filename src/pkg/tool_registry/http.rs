@@ -131,10 +131,7 @@ impl CoreTool for HttpCoreTool {
         self.config.credential_requirements.clone()
     }
 
-    fn check(
-        &mut self,
-        resolved: &[crate::pkg::credential::ResolvedRequirement],
-    ) -> Result<()> {
+    fn check(&mut self, resolved: &[crate::pkg::credential::ResolvedRequirement]) -> Result<()> {
         let mut header_injections = Vec::with_capacity(resolved.len());
         let mut query_injections = Vec::with_capacity(resolved.len());
         for item in resolved {
