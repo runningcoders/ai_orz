@@ -4,7 +4,7 @@
 //!
 //! # 授权（单轨，D27）
 //!
-//! API key 仅取该用户凭证库中的 TavilyKey（个人 key，加密存储）：凭据需求由
+//! API key 仅取该用户凭证库中的 GenericToken+platform="tavily"（个人 key，加密存储）：凭据需求由
 //! 工厂静态声明，domain 编排层（`resolve_tool_credentials`）据此取数，经
 //! `CoreTool::check` 注入实例 `api_key` 字段（D17 工厂化）；未注入 → 返回
 //! `api_key_missing` 结构化引导（绑定个人 key 单路径）。
@@ -44,12 +44,13 @@ const DEFAULT_TIMEOUT_MS: u64 = 15_000;
 
 // ==================== 凭据需求声明（工厂与实例共用单点，D17） ====================
 
-/// 凭据需求静态声明：个人 TavilyKey（单轨 D27；单条 Internal 注入实例
+/// 凭据需求静态声明：个人 GenericToken + platform=tavily（单轨 D27；单条 Internal 注入实例
 /// `api_key` 字段；readiness 判定与 call_tool 编排经工厂读取，check 注入经实例读取）
+const PLATFORM: &str = "tavily";
 fn credential_requirements() -> Vec<CredentialRequirement> {
     vec![CredentialRequirement {
-        kind: CredentialKind::TavilyKey,
-        platform: None,
+        kind: CredentialKind::GenericToken,
+        platform: Some(PLATFORM.to_string()),
         field: None,
         enhancer: None,
         binding: CredentialBinding::Internal {
@@ -427,7 +428,11 @@ mod tests {
         );
         assert_eq!(
             tool.credential_requirements()[0].kind,
-            CredentialKind::TavilyKey
+            CredentialKind::GenericToken
+        );
+        assert_eq!(
+            tool.credential_requirements()[0].platform.as_deref(),
+            Some("tavily")
         );
     }
 }

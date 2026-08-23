@@ -16,11 +16,10 @@ use common::models::{
 };
 
 /// 全部凭据类型（kind 下拉选项，serde 值 = 展示键）
-pub fn all_credential_kinds() -> [CredentialKind; 6] {
+pub fn all_credential_kinds() -> [CredentialKind; 5] {
     [
         CredentialKind::LarkApp,
         CredentialKind::GithubToken,
-        CredentialKind::TavilyKey,
         CredentialKind::GenericToken,
         CredentialKind::OAuth,
         CredentialKind::UserPassword,
@@ -142,7 +141,6 @@ pub fn injection_value_preview(req: &CredentialRequirement) -> String {
         None => match req.kind {
             // 类型规范可用值（requirement 未声明 field 时取该 kind 的主凭据字段）
             CredentialKind::LarkApp => "<app_secret>".to_string(),
-            CredentialKind::TavilyKey => "<api_key>".to_string(),
             _ => "<token>".to_string(),
         },
     }
@@ -150,7 +148,8 @@ pub fn injection_value_preview(req: &CredentialRequirement) -> String {
 
 /// 惯用注入名建议（None = 无明确惯例，不提示）
 ///
-/// 矩阵：Bearer/BasicAuth 形态 → authorization（标准认证头）；tavily_key → api_key（官方 API 惯例）
+/// 矩阵：Bearer/BasicAuth 形态 → authorization（标准认证头）；
+/// GenericToken+platform=tavily → api_key（Tavily 官方 API 惯例）。
 pub fn recommended_binding_name(req: &CredentialRequirement) -> Option<&'static str> {
     if req.field.is_some() {
         return None;
@@ -160,7 +159,11 @@ pub fn recommended_binding_name(req: &CredentialRequirement) -> Option<&'static 
         Some(CredentialEnhancerKind::BearerToken) | Some(CredentialEnhancerKind::BasicAuth) => {
             Some("authorization")
         }
-        _ if req.kind == CredentialKind::TavilyKey => Some("api_key"),
+        _ if req.kind == CredentialKind::GenericToken
+            && req.platform.as_deref() == Some("tavily") =>
+        {
+            Some("api_key")
+        }
         _ => None,
     }
 }
@@ -442,7 +445,6 @@ mod tests {
         for kind in [
             CredentialKind::LarkApp,
             CredentialKind::GithubToken,
-            CredentialKind::TavilyKey,
         ] {
             assert!(available_enhancers(kind).is_empty(), "{kind:?}");
             assert!(!has_any_enhancer_support(kind), "{kind:?}");
@@ -556,11 +558,11 @@ mod tests {
             )),
             "Basic base64(<username>:<password>)"
         );
-        // 类型规范可用值（无 field 无增强器）
+        // 类型规范可用值（无 field 无增强器）：GenericToken 取 <token>
         assert_eq!(
             injection_value_preview(&req(
-                CredentialKind::TavilyKey,
-                None,
+                CredentialKind::GenericToken,
+                Some("tavily"),
                 None,
                 None,
                 header("x-api-key"),
@@ -603,11 +605,11 @@ mod tests {
             )),
             Some("authorization")
         );
-        // tavily_key → api_key
+        // GenericToken + platform=tavily → api_key
         assert_eq!(
             recommended_binding_name(&req(
-                CredentialKind::TavilyKey,
-                None,
+                CredentialKind::GenericToken,
+                Some("tavily"),
                 None,
                 None,
                 header(""),

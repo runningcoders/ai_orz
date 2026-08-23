@@ -27,7 +27,13 @@ pub async fn set_default_credential(
     };
     domain()
         .identity_credential_manage()
-        .set_default_credential(ctx, &user_id, CredentialKind::LarkApp, target.as_deref())
+        .set_default_credential(
+            ctx,
+            &user_id,
+            CredentialKind::LarkApp,
+            None,
+            target.as_deref(),
+        )
         .await?;
 
     Ok(SetDefaultLarkCredentialResponse { success: true })

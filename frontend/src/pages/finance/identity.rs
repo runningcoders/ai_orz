@@ -2,11 +2,12 @@
 //!
 //! finance domain 下的身份凭证资产主页面：按凭证类型分子区块管理当前用户的凭据。
 //! 当前含飞书（应用绑定卡 + 用户身份卡）、GitHub（PAT 凭证 + 登录态）与
-//! Tavily（API key 凭证）三个子区块；未来新增微信/Slack 等类型直接加区块。
+//! 通用 API Token（单字段 API Key 类平台按 platform 分 Tab，如 Tavily、豆包搜索）三个子区块；
+//! 未来新增微信/Slack 等类型直接加区块。
 //!
 //! 飞书区块数据来源 = `GET /api/v1/finance/identity/lark/status` 聚合端点（不缓存 localStorage）。
 //! GitHub 区块数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。
-//! Tavily 区块数据来源 = `GET /api/v1/finance/identity/tavily/status` 聚合端点。
+//! 通用 Token 区块数据来源 = `GET /api/v1/finance/identity/generic-token/status?platform=xxx` 聚合端点。
 
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -20,7 +21,7 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::finance::identity_github::IdentityGithubSection;
-use crate::pages::finance::identity_tavily::IdentityTavilySection;
+use crate::pages::finance::identity_generic_token::IdentityGenericTokenSection;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateLarkCredentialRequest, LarkAuthCompleteRequest, LarkAuthStartRequest,
@@ -493,8 +494,8 @@ pub fn FinanceIdentity() -> Element {
                     // ==================== GitHub 凭证子区块 ====================
                     IdentityGithubSection {}
 
-                    // ==================== Tavily 凭证子区块 ====================
-                    IdentityTavilySection {}
+                    // ==================== 通用 API Token 凭证子区块 ====================
+                    IdentityGenericTokenSection {}
                 }
             }
 

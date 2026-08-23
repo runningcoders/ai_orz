@@ -15,7 +15,7 @@ pub mod organization;
 pub mod project;
 pub mod seed;
 pub mod system;
-pub mod tavily_integration;
+pub mod generic_token_integration;
 
 use common::api::ApiResponse;
 use reqwest::{Client, Method, RequestBuilder};
@@ -261,6 +261,39 @@ pub async fn api_put_empty<B: serde::Serialize>(path: &str, body: &B) -> Result<
         });
     }
     Ok(())
+}
+
+pub async fn api_patch<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+    path: &str,
+    body: &B,
+) -> Result<T, ApiError> {
+    let resp = build_request(Method::PATCH, path)
+        .json(body)
+        .send()
+        .await
+        .map_err(network_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        handle_unauthorized(status.as_u16());
+        return Err(parse_error_response(resp).await);
+    }
+    let api_resp: ApiResponse<T> = resp.json().await.map_err(|e| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: e.to_string(),
+    })?;
+    if !api_resp.is_success() {
+        return Err(ApiError {
+            http_status: 200,
+            error_code: None,
+            message: api_resp.message,
+        });
+    }
+    api_resp.data.ok_or_else(|| ApiError {
+        http_status: 200,
+        error_code: None,
+        message: "响应数据为空".to_string(),
+    })
 }
 
 pub async fn api_delete(path: &str) -> Result<(), ApiError> {

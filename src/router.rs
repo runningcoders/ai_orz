@@ -4,7 +4,7 @@ use axum::{
     Router,
     body::{Body, Bytes},
     http::{Request, Response, StatusCode, header},
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 use common::config::AppConfig;
 use common::enums::UserRole;
@@ -275,25 +275,25 @@ fn github_integration_routes() -> Router {
         )
 }
 
-fn tavily_integration_routes() -> Router {
-    use crate::handlers::finance::tavily_integration as ti;
+fn generic_token_integration_routes() -> Router {
+    use crate::handlers::finance::generic_token_integration as gt;
     Router::new()
-        .route("/status", get(ti::get_status::get_status_handler))
+        .route("/status", get(gt::get_status::get_status_handler))
         .route(
             "/credentials",
-            post(ti::create_credential::create_credential_handler),
+            post(gt::create_credential::create_credential_handler),
         )
         .route(
             "/credentials/{id}",
-            put(ti::update_credential::update_credential_handler),
+            patch(gt::update_credential::update_credential_handler),
         )
         .route(
             "/credentials/{id}",
-            delete(ti::delete_credential::delete_credential_handler),
+            delete(gt::delete_credential::delete_credential_handler),
         )
         .route(
             "/credentials/default",
-            post(ti::set_default_credential::set_default_credential_handler),
+            post(gt::set_default_credential::set_default_credential_handler),
         )
 }
 
@@ -587,7 +587,7 @@ fn finance_routes() -> Router {
     Router::new()
         .nest("/identity/lark", lark_integration_routes())
         .nest("/identity/github", github_integration_routes())
-        .nest("/identity/tavily", tavily_integration_routes())
+        .nest("/identity/generic-token", generic_token_integration_routes())
         .route(
             "/attachments/upload",
             post(handlers::finance::attachment::upload_attachment),

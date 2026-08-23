@@ -27,6 +27,7 @@ pub async fn create_credential(
                 detail: CredentialDetail::GithubToken {
                     token: params.token,
                 },
+                platform: None,
             },
         )
         .await?;

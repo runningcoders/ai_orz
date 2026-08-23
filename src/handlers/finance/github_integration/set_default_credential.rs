@@ -29,6 +29,7 @@ pub async fn set_default_credential(
             ctx,
             &user_id,
             CredentialKind::GithubToken,
+            None,
             target.as_deref(),
         )
         .await?;

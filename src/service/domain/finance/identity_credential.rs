@@ -101,13 +101,26 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         let detail = cmd.detail.normalized();
         detail.validate()?;
         let kind = detail.kind();
+        // platform ↔ kind 一致性：generic 类必填、专用类必空（与 validate_requirements 同源）
+        let platform = cmd.platform.map(|p| p.trim().to_string());
+        if kind.requires_platform() != platform.is_some() {
+            bail_err!(
+                InvalidRequest,
+                "平台标识与凭证类型不匹配：generic 类凭据必须填写 platform，专用类凭据不得填写"
+            );
+        }
+        if let Some(p) = platform.as_deref()
+            && p.is_empty()
+        {
+            bail_err!(InvalidRequest, "平台标识不能为空");
+        }
         let detail =
             detail.encrypt_sensitive(|s: &str| crate::pkg::crypto::encrypt_channel_secret(s))?;
 
         let user_dal = self.user_dal()?.clone();
         self.ensure_user_exists(ctx.clone(), user_id).await?;
         let credential_id = uuid::Uuid::now_v7().to_string();
-        let po = UserCredentialPo::new(
+        let mut po = UserCredentialPo::new(
             credential_id.clone(),
             ctx.organization_id().cloned().unwrap_or_default(),
             user_id.to_string(),
@@ -117,6 +130,7 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             CredentialVisibility::Private,
             ctx.caller_id_or_system(),
         );
+        po.platform = platform;
         user_dal
             .insert_credential(ctx, &UserCredential::from_po(po))
             .await?;
@@ -215,10 +229,8 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                 .find_default_credential(ctx.clone(), user_id, CredentialKind::GithubToken, None)
                 .await?
                 .is_some_and(|active| active.id() == credential_id),
-            // TavilyKey：无渠道引用与本地运行态，直接删除
-            CredentialKind::TavilyKey => false,
             // 泛型类新凭据（GenericToken/OAuth/UserPassword）：无渠道引用与本地运行态，
-            // 直接删除（创建/管理 API 另起 plan 落地）
+            // 直接删除（默认标记由 DAO 软删联动清位）
             CredentialKind::GenericToken | CredentialKind::OAuth | CredentialKind::UserPassword => {
                 false
             }
@@ -247,20 +259,29 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         Ok(())
     }
 
-    /// 设置默认凭证（作用域由目标凭据 visibility 派生：private=个人默认 / public=组织默认）
+    /// 设置默认凭证（作用域由 (kind, platform) 二元组 + visibility 派生：
+    /// private=个人默认 / public=组织默认；generic 类 kind 按 platform 再细分槽位）
     async fn set_default_credential(
         &self,
         ctx: RequestContext,
         user_id: &str,
         kind: CredentialKind,
+        platform: Option<&str>,
         credential_id: Option<&str>,
     ) -> Result<()> {
         let user_dal = self.user_dal()?.clone();
+        // platform ↔ kind 一致性（与 create_credential 同源）
+        if kind.requires_platform() != platform.is_some() {
+            bail_err!(
+                InvalidRequest,
+                "平台标识与凭证类型不匹配：generic 类凭证必须填写 platform，专用类凭证不得填写"
+            );
+        }
         match credential_id.map(str::trim).filter(|s| !s.is_empty()) {
-            // None/空白：取消该用户该类型个人默认（幂等）
+            // None/空白：取消该用户该 (kind, platform) 下个人默认（幂等）
             None => {
                 user_dal
-                    .clear_default_credential(ctx, user_id, kind, None)
+                    .clear_default_credential(ctx, user_id, kind, platform)
                     .await
             }
             Some(credential_id) => {
@@ -273,6 +294,14 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                         "凭证类型不匹配：目标凭证为 {:?}，请求类型为 {:?}",
                         credential.kind(),
                         kind
+                    );
+                }
+                if credential.po.platform.as_deref() != platform {
+                    bail_err!(
+                        InvalidRequest,
+                        "平台标识不匹配：目标凭证 platform={:?}，请求 platform={:?}",
+                        credential.po.platform,
+                        platform
                     );
                 }
                 // 权限门控：private=个人默认仅所有者本人可设；
@@ -350,24 +379,34 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         })
     }
 
-    /// Tavily 集成状态聚合（凭证快照；授权单轨走用户凭证库，D27）
-    async fn tavily_integration_status(
+    /// 通用 API Token 集成状态聚合（按 platform 维度返回该用户绑定的凭证快照）
+    async fn generic_token_status(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<common::api::TavilyIntegrationStatusResponse> {
+        platform: &str,
+    ) -> Result<common::api::GenericTokenIntegrationStatusResponse> {
+        let platform = platform.trim();
+        if platform.is_empty() {
+            bail_err!(InvalidRequest, "platform 不能为空");
+        }
         let user_dal = self.user_dal()?.clone();
         let mut query = Self::owned_credential_query(user_id);
-        query.kind = Some(CredentialKind::TavilyKey);
+        query.kind = Some(CredentialKind::GenericToken);
+        query.platform = Some(platform.to_string());
         let page = user_dal.query_credentials(ctx, query).await?;
         let mut credentials = Vec::new();
         for credential in page.items {
-            let common::models::CredentialDetail::TavilyKey { api_key } = credential.detail()
+            // 再做一次内存兜底：platform 精确匹配（DAO 查询已按 platform 过滤）
+            if credential.po.platform.as_deref() != Some(platform) {
+                continue;
+            }
+            let common::models::CredentialDetail::GenericToken { token } = credential.detail()
             else {
                 continue;
             };
-            // key 尾号（解密失败按空串处理，不阻断状态聚合）
-            let api_key_tail = crate::pkg::crypto::decrypt_channel_secret(api_key)
+            // token 尾号（解密失败按空串处理，不阻断状态聚合）
+            let api_token_tail = crate::pkg::crypto::decrypt_channel_secret(token)
                 .map(|plain| {
                     plain
                         .chars()
@@ -379,14 +418,15 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
                         .collect()
                 })
                 .unwrap_or_default();
-            credentials.push(common::api::TavilyCredentialSnapshot {
+            credentials.push(common::api::GenericTokenCredentialSnapshot {
                 credential_id: credential.id().to_string(),
                 name: credential.name().to_string(),
-                api_key_tail,
+                platform: platform.to_string(),
+                api_token_tail,
                 is_default: credential.po.is_default,
             });
         }
-        Ok(common::api::TavilyIntegrationStatusResponse { credentials })
+        Ok(common::api::GenericTokenIntegrationStatusResponse { credentials })
     }
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================

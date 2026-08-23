@@ -118,9 +118,6 @@ pub(crate) fn decrypt_detail(detail: CredentialDetail) -> Result<CredentialDetai
         CredentialDetail::GithubToken { token } => CredentialDetail::GithubToken {
             token: decrypt(token.as_str())?,
         },
-        CredentialDetail::TavilyKey { api_key } => CredentialDetail::TavilyKey {
-            api_key: decrypt(api_key.as_str())?,
-        },
         CredentialDetail::GenericToken { token } => CredentialDetail::GenericToken {
             token: decrypt(token.as_str())?,
         },
@@ -163,7 +160,7 @@ pub struct FetchedCredential {
     /// lark dal 派生属性（D24：identity_mode 等；user dal 生产路径为空集）
     pub attributes: std::collections::BTreeMap<String, String>,
     /// 明文标记：lark dal 为明文（true，resolve_credentials_for_user 内部已解密）；
-    /// user dal 为 DB 加密态（false）；无其他生产路径（tavily 共享兜底已废除，D27）
+    /// user dal 为 DB 加密态（false）；无其他生产路径（单字段 key 统一走 GenericToken，D27）
     pub already_decrypted: bool,
 }
 
@@ -206,7 +203,7 @@ pub async fn resolve_requirements(
     Ok(resolved)
 }
 
-/// 缺凭据结构化引导（复用 tavily 引导形态，D19）
+/// 缺凭据结构化引导（GenericToken 平台化引导，D19）
 pub fn credential_missing_json(requirement: &CredentialRequirement) -> serde_json::Value {
     let kind_desc = match &requirement.platform {
         Some(platform) => format!("{}/{}", requirement.kind.as_str(), platform),

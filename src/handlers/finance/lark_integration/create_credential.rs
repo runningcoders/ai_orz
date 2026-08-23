@@ -30,6 +30,7 @@ pub async fn create_credential(
                     encrypt_key: params.encrypt_key,
                     verification_token: params.verification_token,
                 },
+                platform: None,
             },
         )
         .await?;

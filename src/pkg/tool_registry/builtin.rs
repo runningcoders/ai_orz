@@ -3,6 +3,7 @@
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::tool_registry::ToolRegistry;
 use crate::pkg::tool_registry::browser::BrowserToolFactory;
+use crate::pkg::tool_registry::doubao_search::DoubaoSearchToolFactory;
 use crate::pkg::tool_registry::fs_read::FsReadToolFactory;
 use crate::pkg::tool_registry::fs_write::FsWriteToolFactory;
 use crate::pkg::tool_registry::gh_cli::GhCliToolFactory;
@@ -27,6 +28,7 @@ pub trait BuiltinToolFactory: DynClone + Send + Sync {
     /// 工具凭据需求静态声明（默认空；readiness 判定与 call_tool 编排共用，D17）
     ///
     /// 内置工具的需求由代码静态声明（tavily → [TavilyKey]；
+    /// doubao → [GenericToken+platform=doubao_search]；
     /// gh/lark 的需求声明在 Step 4 随工厂化落地）。
     fn credential_requirements(&self) -> Vec<common::models::CredentialRequirement> {
         Vec::new()
@@ -48,6 +50,10 @@ pub static GENERIC_BUILTIN_TOOLS: Lazy<Vec<(String, Box<dyn BuiltinToolFactory>)
             (
                 "tavily_search".to_string(),
                 Box::new(TavilySearchToolFactory),
+            ),
+            (
+                "doubao_search".to_string(),
+                Box::new(DoubaoSearchToolFactory),
             ),
             ("browser".to_string(), Box::new(BrowserToolFactory)),
             (
@@ -80,6 +86,7 @@ mod tests {
             ("lark_cli", vec!["lark"]),
             ("gh_cli", vec!["github"]),
             ("tavily_search", vec!["search", "network"]),
+            ("doubao_search", vec!["search", "network"]),
             ("browser", vec!["browser", "network"]),
             ("mark_artifact", vec!["artifact"]),
         ];

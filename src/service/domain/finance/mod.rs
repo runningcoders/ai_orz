@@ -275,6 +275,9 @@ pub struct CreateCredentialCmd {
     pub name: String,
     /// 明文凭证详情（类型由变体决定）
     pub detail: common::models::CredentialDetail,
+    /// 平台标识：generic 类 kind（GenericToken/OAuth/UserPassword）必填，
+    /// 专用 kind（LarkApp/GithubToken）为 None；最终落库到 user_credentials.platform。
+    pub platform: Option<String>,
 }
 
 /// 更新凭证命令（patch 为明文；None 字段保持不变）
@@ -336,9 +339,10 @@ pub trait IdentityCredentialManage: Send + Sync {
         credential_id: &str,
     ) -> Result<()>;
 
-    /// 设置默认凭证（作用域由目标凭据 visibility 派生：private=个人默认 / public=组织默认）
+    /// 设置默认凭证（作用域由 (kind, platform) 二元组 + visibility 共同决定：
+    /// private=个人默认 / public=组织默认；generic 类 kind 按 platform 再细分槽位）
     ///
-    /// None/空白表示取消该用户该类型个人默认（幂等）；Some 校验凭证存在、
+    /// None/空白表示取消该用户该 (kind, platform) 下个人默认（幂等）；Some 校验凭证存在、
     /// 归属该用户且类型匹配。权限门控：private 默认仅所有者本人可设，
     /// public 默认需 org 管理权限（Admin+）。
     async fn set_default_credential(
@@ -346,6 +350,7 @@ pub trait IdentityCredentialManage: Send + Sync {
         ctx: RequestContext,
         user_id: &str,
         kind: common::models::CredentialKind,
+        platform: Option<&str>,
         credential_id: Option<&str>,
     ) -> Result<()>;
 
@@ -356,12 +361,13 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
     ) -> Result<common::api::GithubIntegrationStatusResponse>;
 
-    /// Tavily 集成状态聚合（凭证快照）
-    async fn tavily_integration_status(
+    /// 通用 API Token 集成状态聚合（按 platform 维度返回该用户绑定的凭证快照）
+    async fn generic_token_status(
         &self,
         ctx: RequestContext,
         user_id: &str,
-    ) -> Result<common::api::TavilyIntegrationStatusResponse>;
+        platform: &str,
+    ) -> Result<common::api::GenericTokenIntegrationStatusResponse>;
 
     // ==================== 飞书集成授权/绑定（handler 禁直调 pkg，经 Domain 包装） ====================
 

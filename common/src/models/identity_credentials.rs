@@ -15,7 +15,8 @@ use crate::error::{Result, bail_err};
 /// 凭证类型（可扩展，如后续 WechatApp）
 ///
 /// 分类型枚举（映射外部系统）：TEXT 存储（`#[sqlx(rename_all = "snake_case")]`），
-/// DB 值 = 'lark_app' / 'github_token' / 'tavily_key'——与 API/JSON 值空间一致。
+/// DB 值 = 'lark_app' / 'github_token' / 'generic_token'——与 API/JSON 值空间一致。
+/// 单字段 API Key 类平台统一收敛到 `GenericToken` + `platform` 二元匹配。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
 #[serde(rename_all = "snake_case")]
@@ -25,8 +26,6 @@ pub enum CredentialKind {
     LarkApp,
     /// GitHub 访问令牌（PAT / OAuth token）
     GithubToken,
-    /// Tavily 搜索 API key（个人 key，tavily_search 工具身份）
-    TavilyKey,
     /// 通用平台令牌（Notion/Linear PAT 等；platform 必填，匹配键含 platform 维度）
     GenericToken,
     /// OAuth 刷新凭据（platform 必填；refresh_token 换 access_token 由增强器执行）
@@ -48,7 +47,6 @@ impl CredentialKind {
         match self {
             Self::LarkApp => "lark_app",
             Self::GithubToken => "github_token",
-            Self::TavilyKey => "tavily_key",
             Self::GenericToken => "generic_token",
             Self::OAuth => "oauth",
             Self::UserPassword => "user_password",
@@ -114,11 +112,6 @@ pub enum CredentialDetail {
         /// 访问令牌（PAT / OAuth token，落库前加密）
         token: String,
     },
-    /// Tavily 搜索 API key（落库前经 encrypt_channel_secret 加密）
-    TavilyKey {
-        /// API key（落库前加密）
-        api_key: String,
-    },
     /// 通用平台令牌（Notion/Linear PAT 等；platform 必填，token 落库前加密）
     GenericToken {
         /// 平台令牌（落库前经 encrypt_channel_secret 加密）
@@ -169,11 +162,6 @@ pub enum CredentialDetailPatch {
         /// 访问令牌（None/空白保持不变；提供时以明文传入，内部加密写入）
         token: Option<String>,
     },
-    /// Tavily API key 补丁
-    TavilyKey {
-        /// API key（None/空白保持不变；提供时以明文传入，内部加密写入）
-        api_key: Option<String>,
-    },
     /// 通用平台令牌补丁
     GenericToken {
         /// 平台令牌（None/空白保持不变；提供时以明文传入，内部加密写入）
@@ -214,7 +202,6 @@ impl CredentialDetail {
         match self {
             Self::LarkApp { .. } => CredentialKind::LarkApp,
             Self::GithubToken { .. } => CredentialKind::GithubToken,
-            Self::TavilyKey { .. } => CredentialKind::TavilyKey,
             Self::GenericToken { .. } => CredentialKind::GenericToken,
             Self::OAuth { .. } => CredentialKind::OAuth,
             Self::UserPassword { .. } => CredentialKind::UserPassword,
@@ -226,7 +213,6 @@ impl CredentialDetail {
         match self {
             Self::LarkApp { app_id, .. } => Some(app_id.as_str()),
             Self::GithubToken { .. }
-            | Self::TavilyKey { .. }
             | Self::GenericToken { .. }
             | Self::OAuth { .. }
             | Self::UserPassword { .. } => None,
@@ -238,7 +224,6 @@ impl CredentialDetail {
         match self {
             Self::LarkApp { app_secret, .. } => app_secret,
             Self::GithubToken { token } | Self::GenericToken { token } => token,
-            Self::TavilyKey { api_key } => api_key,
             Self::OAuth { refresh_token, .. } => refresh_token,
             Self::UserPassword { password, .. } => password,
         }
@@ -264,9 +249,6 @@ impl CredentialDetail {
             },
             Self::GithubToken { token } => Self::GithubToken {
                 token: token.trim().to_string(),
-            },
-            Self::TavilyKey { api_key } => Self::TavilyKey {
-                api_key: api_key.trim().to_string(),
             },
             Self::GenericToken { token } => Self::GenericToken {
                 token: token.trim().to_string(),
@@ -306,11 +288,6 @@ impl CredentialDetail {
             Self::GithubToken { token } => {
                 if token.is_empty() {
                     bail_err!(InvalidRequest, "GitHub Token 不能为空");
-                }
-            }
-            Self::TavilyKey { api_key } => {
-                if api_key.is_empty() {
-                    bail_err!(InvalidRequest, "Tavily API Key 不能为空");
                 }
             }
             Self::GenericToken { token } => {
@@ -365,9 +342,6 @@ impl CredentialDetail {
             }),
             Self::GithubToken { token } => Ok(Self::GithubToken {
                 token: encrypt(&token)?,
-            }),
-            Self::TavilyKey { api_key } => Ok(Self::TavilyKey {
-                api_key: encrypt(&api_key)?,
             }),
             Self::GenericToken { token } => Ok(Self::GenericToken {
                 token: encrypt(&token)?,
@@ -462,21 +436,6 @@ impl CredentialDetail {
                     .filter(|s| !s.is_empty())
                 {
                     *token_slot = encrypt(&v)?;
-                    impact.secret_changed = true;
-                }
-            }
-            CredentialDetailPatch::TavilyKey { api_key } => {
-                let Self::TavilyKey { api_key: key_slot } = self else {
-                    bail_err!(
-                        InvalidRequest,
-                        "补丁类型与凭证类型不匹配，无法应用 Tavily 凭证补丁"
-                    );
-                };
-                if let Some(v) = api_key
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                {
-                    *key_slot = encrypt(&v)?;
                     impact.secret_changed = true;
                 }
             }
@@ -821,10 +780,6 @@ mod tests {
             serde_json::to_value(CredentialKind::GithubToken).unwrap(),
             "github_token"
         );
-        assert_eq!(
-            serde_json::to_value(CredentialKind::TavilyKey).unwrap(),
-            "tavily_key"
-        );
         // 往返一致（DB TEXT 值 = serde 值）
         assert_eq!(
             serde_json::from_value::<CredentialKind>(serde_json::json!("lark_app")).unwrap(),
@@ -874,70 +829,6 @@ mod tests {
         assert_eq!(json["token"], "enc:v1:gh-token");
         let parsed: CredentialDetail = serde_json::from_value(json).unwrap();
         assert_eq!(parsed, detail);
-    }
-
-    #[test]
-    fn test_tavily_detail_lifecycle() {
-        // 规范化 + 校验
-        let plain = CredentialDetail::TavilyKey {
-            api_key: " tvly-xxx ".to_string(),
-        }
-        .normalized();
-        assert!(matches!(&plain, CredentialDetail::TavilyKey { api_key } if api_key == "tvly-xxx"));
-        assert!(plain.validate().is_ok());
-        assert!(
-            CredentialDetail::TavilyKey {
-                api_key: String::new()
-            }
-            .validate()
-            .is_err()
-        );
-
-        // 加密敏感字段
-        let enc = CredentialDetail::TavilyKey {
-            api_key: "tvly-plain".to_string(),
-        }
-        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
-        .unwrap();
-        assert!(
-            matches!(&enc, CredentialDetail::TavilyKey { api_key } if api_key == "enc:tvly-plain")
-        );
-
-        // 补丁：空白不变、非空轮换、类型不匹配报错
-        let mut detail = CredentialDetail::TavilyKey {
-            api_key: "enc:v1:old".to_string(),
-        };
-        let impact = detail
-            .apply_patch(
-                CredentialDetailPatch::TavilyKey {
-                    api_key: Some("  ".to_string()),
-                },
-                |s| Ok(format!("enc:{}", s)),
-            )
-            .unwrap();
-        assert!(!impact.secret_changed);
-        let impact = detail
-            .apply_patch(
-                CredentialDetailPatch::TavilyKey {
-                    api_key: Some("tvly-new".to_string()),
-                },
-                |s| Ok(format!("enc:{}", s)),
-            )
-            .unwrap();
-        assert!(impact.secret_changed);
-        assert!(
-            matches!(&detail, CredentialDetail::TavilyKey { api_key } if api_key == "enc:tvly-new")
-        );
-        assert!(
-            detail
-                .apply_patch(
-                    CredentialDetailPatch::GithubToken {
-                        token: Some("t".to_string()),
-                    },
-                    |s| Ok(s.to_string()),
-                )
-                .is_err()
-        );
     }
 
     // ==================== CredentialDetail 行为 ====================
@@ -1324,7 +1215,6 @@ mod tests {
         for kind in [
             CredentialKind::LarkApp,
             CredentialKind::GithubToken,
-            CredentialKind::TavilyKey,
         ] {
             assert!(!kind.requires_platform(), "专用 kind platform 必空");
         }
@@ -1400,7 +1290,6 @@ mod tests {
         for kind in [
             CredentialKind::LarkApp,
             CredentialKind::GithubToken,
-            CredentialKind::TavilyKey,
         ] {
             assert!(!enhancer_supports(kind, E::BearerToken));
             assert!(!enhancer_supports(kind, E::BasicAuth));

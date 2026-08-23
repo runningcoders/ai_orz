@@ -98,6 +98,7 @@ pub mod auth;
 pub mod background_task;
 pub mod cron_trigger;
 pub mod external_agent;
+pub mod generic_token_integration;
 pub mod github_integration;
 pub mod lark_integration;
 pub mod log_stats;
@@ -122,7 +123,6 @@ pub mod system;
 pub mod task;
 #[cfg(test)]
 mod task_test;
-pub mod tavily_integration;
 pub mod text_content;
 #[cfg(test)]
 mod text_content_test;
@@ -141,6 +141,7 @@ pub use background_task::{
 };
 pub use cron_trigger::*;
 pub use external_agent::*;
+pub use generic_token_integration::*;
 pub use github_integration::*;
 pub use lark_integration::*;
 pub use log_stats::*;
@@ -157,7 +158,6 @@ pub use seed::*;
 pub use skill::*;
 pub use system::*;
 pub use task::*;
-pub use tavily_integration::*;
 pub use text_content::*;
 pub use tool::*;
 pub use user::*;

@@ -1,20 +1,27 @@
-//! Handler: POST /api/v1/finance/identity/tavily/credentials - 手动录入创建 Tavily 凭证
+//! Handler: POST /api/v1/finance/identity/generic-token/credentials - 创建通用 API Token 凭证
 
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{CreateCredentialCmd, domain};
 use ai_orz_macros::generate_http_handler;
-use common::api::{CreateTavilyCredentialRequest, CreateTavilyCredentialResponse};
+use common::api::{
+    CreateGenericTokenCredentialRequest, CreateGenericTokenCredentialResponse,
+};
 use common::error::{Result, bail_err};
 use common::models::CredentialDetail;
 
 #[generate_http_handler]
 pub async fn create_credential(
     ctx: RequestContext,
-    params: CreateTavilyCredentialRequest,
-) -> Result<CreateTavilyCredentialResponse> {
+    params: CreateGenericTokenCredentialRequest,
+) -> Result<CreateGenericTokenCredentialResponse> {
     let user_id = ctx.uid();
     if user_id.is_empty() {
         bail_err!(InvalidRequest, "当前请求缺少用户上下文");
+    }
+
+    let platform = params.platform.trim().to_string();
+    if platform.is_empty() {
+        bail_err!(InvalidRequest, "platform 不能为空");
     }
 
     let credential_id = domain()
@@ -24,12 +31,13 @@ pub async fn create_credential(
             &user_id,
             CreateCredentialCmd {
                 name: params.name,
-                detail: CredentialDetail::TavilyKey {
-                    api_key: params.api_key,
+                detail: CredentialDetail::GenericToken {
+                    token: params.api_token,
                 },
+                platform: Some(platform),
             },
         )
         .await?;
 
-    Ok(CreateTavilyCredentialResponse { credential_id })
+    Ok(CreateGenericTokenCredentialResponse { credential_id })
 }

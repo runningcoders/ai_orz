@@ -7,7 +7,7 @@
 //!   取数与 TTL 缓存在 domain `tool_readiness`（runtime/tool_execution.rs），
 //!   pkg 只留纯函数（与凭据解析 D17 同一哲学）。
 //! - **统一引导**：`cli_not_installed` / `api_key_missing` 结构化 JSON（调用时兜底），
-//!   供 lark_cli / gh_cli / browser / tavily_search 共用
+//!   供 lark_cli / gh_cli / browser / 内置搜索工具共用
 //!
 //! 分层说明：本模块零数据访问、零注册机制；引导文案常量与各工具 spawn 内
 //! 文案统一来源，避免两处漂移。
@@ -63,9 +63,18 @@ pub fn credential_missing_hint(requirement: &CredentialRequirement) -> String {
         CredentialKind::GithubToken => {
             "请先在个人设置的 GitHub 集成中绑定访问令牌（Personal Access Token）".to_string()
         }
-        CredentialKind::TavilyKey => {
-            "绑定个人 Tavily key（设置 → 身份凭证 → Tavily 区块）".to_string()
-        }
+        // GenericToken 类凭据按 platform 出精细化引导（单字段 API Key 类多平台共用）
+        CredentialKind::GenericToken => match requirement.platform.as_deref() {
+            Some("tavily") => {
+                "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）"
+                    .to_string()
+            }
+            Some("doubao_search") => {
+                "绑定豆包搜索 key（设置 → 身份凭证 → 通用令牌，platform 选 doubao_search）"
+                    .to_string()
+            }
+            _ => "绑定个人通用令牌（设置 → 身份凭证 → 通用令牌）并设为默认".to_string(),
+        },
         _ => "绑定个人凭据（设置 → 身份凭证）并设为默认".to_string(),
     }
 }
@@ -154,9 +163,6 @@ mod tests {
             },
         };
         assert!(
-            credential_missing_hint(&requirement(CredentialKind::TavilyKey)).contains("Tavily")
-        );
-        assert!(
             credential_missing_hint(&requirement(CredentialKind::GithubToken)).contains("GitHub")
         );
         assert!(credential_missing_hint(&requirement(CredentialKind::LarkApp)).contains("飞书"));
@@ -165,6 +171,16 @@ mod tests {
             credential_missing_hint(&requirement(CredentialKind::GenericToken))
                 .contains("身份凭证")
         );
+        // GenericToken + platform=tavily 出 Tavily 专属引导
+        let mut tavily_req = requirement(CredentialKind::GenericToken);
+        tavily_req.platform = Some("tavily".to_string());
+        assert!(credential_missing_hint(&tavily_req).contains("Tavily"));
+        assert!(credential_missing_hint(&tavily_req).contains("tavily"));
+        // GenericToken + platform=doubao_search 出豆包专属引导
+        let mut doubao_req = requirement(CredentialKind::GenericToken);
+        doubao_req.platform = Some("doubao_search".to_string());
+        assert!(credential_missing_hint(&doubao_req).contains("豆包搜索"));
+        assert!(credential_missing_hint(&doubao_req).contains("doubao_search"));
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 pub mod browser;
 pub mod builtin;
+pub mod doubao_search;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_cli;

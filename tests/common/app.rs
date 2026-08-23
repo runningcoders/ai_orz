@@ -145,6 +145,29 @@ impl TestApp {
             .await
     }
 
+    /// Issue a PATCH request with a JWT token.
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+    pub async fn patch_with_jwt(
+        &self,
+        path: &str,
+        body: &impl serde::Serialize,
+        jwt: &str,
+    ) -> (StatusCode, serde_json::Value) {
+        let body_json = serde_json::to_string(body).expect("failed to serialize request body");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!("ai_orz_jwt={}", jwt))
+                .expect("invalid JWT value for header"),
+        );
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        self.request(Method::PATCH, path, headers, Some(body_json))
+            .await
+    }
+
     /// Issue a DELETE request with a JWT token.
     #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
     pub async fn delete_with_jwt(&self, path: &str, jwt: &str) -> (StatusCode, serde_json::Value) {
