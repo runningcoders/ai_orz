@@ -26,6 +26,7 @@ pub mod process_detail;
 pub mod relation_graph;
 pub mod runtime_panel;
 pub mod searchable_select;
+pub mod skill_content_input_editor;
 pub mod state;
 pub mod stats;
 pub mod task_progress;

@@ -15,7 +15,9 @@
 //! - keychain 不可用 → 降级返回（degraded=true + hint），不抛 500
 //! - 输出经 `sanitize_lark_output` 脱敏；JSON 解析逻辑为纯函数（fixture 可测）
 
-use crate::pkg::tool_registry::lark_cli::{LARK_CLI_BIN, lark_home, sanitize_lark_output};
+use crate::pkg::tool_registry::lark_cli::{
+    LARK_CLI_BIN, apply_cli_env, lark_home, sanitize_lark_output,
+};
 use crate::pkg::tool_registry::tool_readiness::command_available;
 use anyhow::anyhow;
 use common::error::{Result, err};
@@ -94,11 +96,9 @@ async fn run_cli(
     timeout: Duration,
 ) -> Result<(bool, String, String)> {
     let mut command = Command::new(LARK_CLI_BIN);
+    command.args(args);
+    apply_cli_env(&mut command, home_dir);
     command
-        .args(args)
-        .env("HOME", home_dir)
-        .env("LARKSUITE_CLI_NO_UPDATE_NOTIFIER", "1")
-        .env("LARKSUITE_CLI_NO_SKILLS_NOTIFIER", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);

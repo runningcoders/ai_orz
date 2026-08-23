@@ -290,15 +290,59 @@ pub trait AgentManage: Send + Sync {
     ) -> Result<Vec<String>>;
 }
 
-/// Skill 附加文件导入数据。
+/// Skill 文件导入统一结构 = (去哪放) × (从哪来)。
 ///
-/// Handler 负责将 Finance Attachment 转换为该领域输入，避免 HR Domain 泄漏 attachment_id 等 Finance 概念。
-#[derive(Debug, Clone)]
+/// 所有外部来源（手填文本 / URL 下载 / 附件上传）由 Handler 适配翻译为此结构，
+/// Domain 层 `process_skill_package` 纯函数统一处理。
+///
+/// 来源优先级：source_abs_path 路径优先 > content_bytes 内存内容（路径优先 = 0 拷贝优先）
+#[derive(Debug, Clone, Default)]
 pub struct SkillFileImport {
-    /// 导入到 Skill 内容目录内的相对目标路径。
-    pub target_path: String,
-    /// 文件 bytes。
-    pub bytes: Vec<u8>,
+    /// 最终在技能目录里的相对路径；None 时走 5 级降级推断链
+    pub target_path: Option<String>,
+    /// 来源 A：磁盘绝对路径（优先级高，可 0 拷贝 rename）
+    pub source_abs_path: Option<std::path::PathBuf>,
+    /// 来源 B：内存内容 bytes（次优先级；无路径时用，省临时文件）
+    pub content_bytes: Option<Vec<u8>>,
+    /// 弱线索名（附件 original_name；target=None 时推断用）
+    pub suggested_name: Option<String>,
+}
+
+/// 技能创建复合参数
+///
+/// 封装技能元数据 + 内容源处理所需的文件导入信息。
+/// 老调用点可通过 `CreateSkillParams::from_skill(&skill)` 1 行兼容构造。
+#[derive(Debug, Clone)]
+pub struct CreateSkillParams<'a> {
+    /// 技能实体（包含元数据）
+    pub skill: &'a Skill,
+    /// 统一文件导入列表（手填文本 / 附件 / URL 下载 tmp 全走这里）
+    pub imports: Vec<SkillFileImport>,
+    /// 远程内容源 URL（HTTPS，由 Handler 传入；Domain 内部 download 到 tmp 后加入 imports）
+    pub remote_source: Option<&'a str>,
+}
+
+impl<'a> CreateSkillParams<'a> {
+    /// 从 Skill 实体兼容构造（老调用点：从 skill.files 提取内容组装 imports）。
+    pub fn from_skill(skill: &'a Skill) -> Self {
+        let imports = skill
+            .files
+            .iter()
+            .filter_map(|f| {
+                f.content.as_ref().map(|c| SkillFileImport {
+                    target_path: Some(f.filename.clone()),
+                    source_abs_path: None,
+                    content_bytes: Some(c.as_bytes().to_vec()),
+                    suggested_name: None,
+                })
+            })
+            .collect();
+        Self {
+            skill,
+            imports,
+            remote_source: None,
+        }
+    }
 }
 
 /// 技能更新复合参数
@@ -306,12 +350,12 @@ pub struct SkillFileImport {
 pub struct UpdateSkillParams<'a> {
     /// 技能实体（包含要更新的元数据）
     pub skill: &'a Skill,
-    /// 文件写入操作列表（文件名 -> 内容）
-    pub file_writes: Vec<(&'a str, &'a str)>,
+    /// 统一文件导入列表（手填文本 / 附件 / URL 下载 tmp 全走这里）
+    pub imports: Vec<SkillFileImport>,
     /// 文件删除操作列表（文件名）
     pub file_deletes: Vec<&'a str>,
-    /// 附加文件导入列表（目标路径 -> bytes）
-    pub file_imports: Vec<SkillFileImport>,
+    /// 远程内容源 URL（HTTPS）
+    pub remote_source: Option<&'a str>,
 }
 
 /// Skill 管理 trait
@@ -320,7 +364,7 @@ pub struct UpdateSkillParams<'a> {
 #[async_trait::async_trait]
 pub trait SkillManage: Send + Sync {
     // A. 技能基础管理（CRUD）
-    async fn create_skill(&self, ctx: RequestContext, skill: &Skill) -> Result<()>;
+    async fn create_skill(&self, ctx: RequestContext, params: CreateSkillParams<'_>) -> Result<()>;
     async fn get_skill(&self, ctx: RequestContext, id: &str) -> Result<Option<Skill>>;
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()>;
     async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<()>;

@@ -220,6 +220,10 @@ UPDATE attachments SET size = ?, modified_by = ?, updated_at = ? WHERE id = ? AN
             .map(|path| path.exists())
             .unwrap_or(false)
     }
+
+    fn file_abs_path(&self, relative_path: &str) -> Result<PathBuf> {
+        self.resolve_relative_path(relative_path)
+    }
 }
 
 fn push_query_filters(builder: &mut QueryBuilder<'_, sqlx::Sqlite>, query: &AttachmentQuery) {

@@ -130,6 +130,16 @@ pub trait SkillDao: Send + Sync {
 
     /// 删除整个技能目录（卸载/删除时调用）
     fn delete_skill_dir(&self, skill: &SkillPo) -> Result<()>;
+
+    /// 获取技能内容目录的绝对路径
+    fn skill_dir(&self, skill: &SkillPo) -> std::path::PathBuf;
+
+    /// 获取技能目录内指定文件的绝对路径
+    fn file_abs_path(&self, skill: &SkillPo, filename: &str) -> std::path::PathBuf;
+
+    /// Delete a single file in skill dir (skill.md forbidden; canonicalize under skill_dir).
+    /// Idempotent: missing file returns Ok.
+    fn delete_file(&self, skill: &SkillPo, filename: &str) -> Result<()>;
 }
 
 // ==================== SkillVectorDao Trait ====================

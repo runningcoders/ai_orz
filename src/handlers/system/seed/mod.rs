@@ -69,60 +69,69 @@ pub struct SkillApplyResult {
     pub skipped: usize,
 }
 
-/// 解析 SkillFileDef 的文件内容
+/// 解析 SkillFileDef 为 SkillFileImport
 ///
-/// 优先级：content > ref_path > url
-/// - content：直接返回内嵌文本
-/// - ref_path：从编译期内嵌文件读取（seed/skills/ 下的文件）
-/// - url：运行时 HTTPS 抓取（30s 超时，1MB 限制）
-async fn resolve_skill_file_content(file_def: &SkillFileDef) -> Result<String> {
+/// 优先级：content > local_path > ref_path > url
+async fn resolve_skill_file_import(
+    file_def: &SkillFileDef,
+) -> Result<crate::service::domain::hr::SkillFileImport> {
+    use crate::service::domain::hr::SkillFileImport;
     // 1. content 优先级最高
     if let Some(content) = &file_def.content {
-        return Ok(content.clone());
+        return Ok(SkillFileImport {
+            target_path: Some(file_def.path.clone()),
+            source_abs_path: None,
+            content_bytes: Some(content.as_bytes().to_vec()),
+            suggested_name: None,
+        });
     }
 
-    // 2. ref_path：编译期内嵌文件
-    if let Some(ref_path) = &file_def.ref_path {
-        return crate::service::domain::system::seed::embedded::read_embedded_file(ref_path)
-            .map_err(Error::internal);
-    }
-
-    // 3. url：运行时抓取
-    if let Some(url) = &file_def.url {
-        let response = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| Error::internal(format!("HTTP client 构建失败: {}", e)))?
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| Error::internal(format!("URL 抓取失败 {}: {}", url, e)))?;
-
-        if !response.status().is_success() {
-            return Err(Error::internal(format!(
-                "URL 抓取失败 {}: HTTP {}",
-                url,
-                response.status()
-            )));
-        }
-
-        let content = response
-            .text()
-            .await
-            .map_err(|e| Error::internal(format!("URL 内容读取失败 {}: {}", url, e)))?;
-
-        // 限制 1MB
-        if content.len() > 1024 * 1024 {
+    // 2. local_path：运行时本地路径 → 0 拷贝
+    if let Some(local_path) = &file_def.local_path {
+        let abs = std::path::PathBuf::from(local_path);
+        if !abs.exists() {
             return Err(Error::bad_request(format!(
-                "URL 内容超过 1MB 限制: {}",
-                url
+                "技能文件 {} 的 local_path 不存在: {}",
+                file_def.path, local_path
             )));
         }
-        return Ok(content);
+        return Ok(SkillFileImport {
+            target_path: Some(file_def.path.clone()),
+            source_abs_path: Some(abs),
+            content_bytes: None,
+            suggested_name: None,
+        });
+    }
+
+    // 3. ref_path：编译期内嵌文件
+    if let Some(ref_path) = &file_def.ref_path {
+        let content = crate::service::domain::system::seed::embedded::read_embedded_file(ref_path)
+            .map_err(Error::internal)?;
+        return Ok(SkillFileImport {
+            target_path: Some(file_def.path.clone()),
+            source_abs_path: None,
+            content_bytes: Some(content.into_bytes()),
+            suggested_name: None,
+        });
+    }
+
+    // 4. url：运行时抓取（委托 utils::fetch_remote_content，共享 SSRF + 大小限制）
+    if let Some(url) = &file_def.url {
+        let content = crate::pkg::utils::fetch_remote_content::fetch_remote_text(
+            url,
+            &crate::pkg::utils::fetch_remote_content::FetchOptions::default(),
+        )
+        .await?;
+        return Ok(SkillFileImport {
+            target_path: Some(file_def.path.clone()),
+            source_abs_path: None,
+            content_bytes: Some(content.into_bytes()),
+            suggested_name: None,
+        });
     }
 
     Err(Error::bad_request(format!(
-        "技能文件 {} 未指定内容来源（content/ref_path/url 均为空）",
+        "技能文件 {} 未指定内容来源（content/local_path/ref_path/url 均为空）",
         file_def.path
     )))
 }
@@ -181,24 +190,19 @@ pub async fn apply_preset_skills(
         skill_po.status = common::enums::SkillStatus::from(skill_def.status);
         let skill = crate::models::skill::Skill::from_po(skill_po);
 
-        // 动态解析每个文件的内容（content > ref_path > url）
-        let mut file_contents: Vec<(String, String)> = Vec::new();
+        // 动态解析每个文件为 SkillFileImport（content > local_path > ref_path > url）
+        let mut imports: Vec<crate::service::domain::hr::SkillFileImport> = Vec::new();
         for file_def in &skill_def.files {
-            let content = resolve_skill_file_content(file_def).await?;
-            file_contents.push((file_def.path.clone(), content));
+            let import = resolve_skill_file_import(file_def).await?;
+            imports.push(import);
         }
 
         if existing.is_some() {
-            // 已存在：update_skill 写入元数据 + 文件
-            let file_writes: Vec<(&str, &str)> = file_contents
-                .iter()
-                .map(|(p, c)| (p.as_str(), c.as_str()))
-                .collect();
             let params = crate::service::domain::hr::UpdateSkillParams {
                 skill: &skill,
-                file_writes,
+                imports,
                 file_deletes: vec![],
-                file_imports: vec![],
+                remote_source: None,
             };
             hr::domain()
                 .skill_manage()
@@ -206,22 +210,17 @@ pub async fn apply_preset_skills(
                 .await?;
             result.updated += 1;
         } else {
-            // 新建：先 create_skill 写元数据，再 update_skill 写文件
             hr::domain()
                 .skill_manage()
-                .create_skill(ctx.clone(), &skill)
+                .create_skill(ctx.clone(), hr::CreateSkillParams::from_skill(&skill))
                 .await?;
 
-            if !file_contents.is_empty() {
-                let file_writes: Vec<(&str, &str)> = file_contents
-                    .iter()
-                    .map(|(p, c)| (p.as_str(), c.as_str()))
-                    .collect();
+            if !imports.is_empty() {
                 let params = crate::service::domain::hr::UpdateSkillParams {
                     skill: &skill,
-                    file_writes,
+                    imports,
                     file_deletes: vec![],
-                    file_imports: vec![],
+                    remote_source: None,
                 };
                 hr::domain()
                     .skill_manage()
@@ -263,6 +262,7 @@ async fn export_skill_files(ctx: RequestContext, skill_id: &str) -> Result<Vec<S
         defs.push(SkillFileDef {
             path: file.filename,
             content,
+            local_path: None,
             ref_path: None,
             url: None,
         });

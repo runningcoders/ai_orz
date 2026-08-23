@@ -1,20 +1,16 @@
 //! Builtin HTTP Fetch Tool - fetch content from a dynamic HTTPS URL
 //!
-//! This is a generic builtin tool that allows the agent to fetch content from
-//! any public HTTPS URL at runtime with strict security checks (SSRF protection,
-//! size limits, no local network access by default).
+//! 核心抓取逻辑委托 `pkg::utils::fetch_remote_content`，工具层仅负责参数解析 + JSON 包装。
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::BuiltinToolFactory;
-use crate::pkg::tool_registry::tool_security::*;
+use crate::pkg::utils::fetch_remote_content::{FetchOptions, fetch_remote_content};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
-use reqwest::{Method, Url, redirect};
 use serde_json::{Value, json};
-use std::time::Duration;
 
 /// Builtin HTTP fetch tool factory
 #[derive(Debug, Clone, Default)]
@@ -67,73 +63,28 @@ impl CoreTool for HttpFetchCoreTool {
             _ => return Err(anyhow!("missing required argument 'url' must be a string").into()),
         };
 
-        // Parse URL
-        let url = Url::parse(&url_str)
-            .map_err(|e| anyhow!("invalid URL: {}", e))
-            .map_err(common::error::Error::from)?;
+        // 工具场景配置：不跟随重定向、禁用代理、默认安全限制
+        let options = FetchOptions {
+            max_redirects: 0,
+            no_proxy: true,
+            ..Default::default()
+        };
 
-        // Security: only allow HTTPS by default
-        if url.scheme() != "https" {
-            return Err(anyhow!(
-                "only HTTPS URLs are allowed for security reasons, got '{}'",
-                url.scheme()
-            )
-            .into());
-        }
-
-        // Validate target with SSRF protection - default deny local network
-        let pinned_addresses = validate_target_url(
-            None, // allow_local_network: false (default deny)
-            None, // no allowed_domains restrictions
-            None, // no blocked_domains restrictions
-            &url,
-        )
-        .await?;
-
-        // Get host for DNS pinning
-        let host = url
-            .host_str()
-            .ok_or_else(|| anyhow!("URL host is required"))
-            .map_err(common::error::Error::from)?
-            .to_string();
-
-        // Build client with DNS pinning, no redirect, timeout
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(DEFAULT_TIMEOUT_MS))
-            .redirect(redirect::Policy::none())
-            .no_proxy()
-            .resolve_to_addrs(&host, &pinned_addresses)
-            .build()
-            .map_err(|e| {
-                common::error::Error::new(common::error::ErrorCode::NetworkError, e.to_string())
-            })?;
-
-        // Send GET request
-        let mut response = client
-            .request(Method::GET, url)
-            .send()
-            .await
-            .map_err(|e| anyhow!("HTTP request failed: {}", e))
-            .map_err(common::error::Error::from)?;
-
-        // Process response
-        let status = response.status().as_u16();
-        let headers = sanitize_response_headers(response.headers());
-        let bytes = read_limited_response_body(&mut response, DEFAULT_RESPONSE_MAX_BYTES).await?;
-        let content_length = bytes.len();
+        let result = fetch_remote_content(&url_str, &options).await?;
 
         // Parse body - try JSON first, fall back to string
-        let body = if bytes.is_empty() {
+        let body = if result.bytes.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&bytes)
-                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()))
+            serde_json::from_slice(&result.bytes).unwrap_or_else(|_| {
+                Value::String(String::from_utf8_lossy(&result.bytes).to_string())
+            })
         };
 
         Ok(json!({
-            "status": status,
-            "headers": headers,
-            "content_length": content_length,
+            "status": result.status,
+            "headers": result.headers,
+            "content_length": result.bytes.len(),
             "body": body,
         }))
     }
@@ -198,7 +149,7 @@ mod tests {
 
         assert!(result.is_err(), "should reject HTTP URLs");
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("only HTTPS"));
+        assert!(err.to_string().contains("only HTTPS") || err.to_string().contains("scheme"));
     }
 
     #[tokio::test]

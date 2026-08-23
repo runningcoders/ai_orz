@@ -1,6 +1,6 @@
 //! HR Domain Agent 管理单元测试
 
-use super::{HrDomain, domain};
+use super::{CreateSkillParams, HrDomain, domain};
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
@@ -521,12 +521,12 @@ async fn test_install_skill_pack(pool: SqlitePool) {
     let skill2 = create_published_skill_with_tag("CodingSkill2", "coding");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill1)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill1))
         .await
         .unwrap();
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill2)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill2))
         .await
         .unwrap();
 
@@ -572,7 +572,7 @@ async fn test_install_skill_pack_idempotent(pool: SqlitePool) {
     let skill = create_published_skill_with_tag("UniqueSkill", "writing");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -623,7 +623,7 @@ async fn test_uninstall_skill_pack(pool: SqlitePool) {
     let skill = create_published_skill_with_tag("PersistSkill", "analysis");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -690,12 +690,12 @@ async fn test_list_installed_skill_packs(pool: SqlitePool) {
     let skill2 = create_published_skill_with_tag("Skill2", "writing");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill1)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill1))
         .await
         .unwrap();
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill2)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill2))
         .await
         .unwrap();
 
@@ -737,7 +737,7 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
     let skill = create_published_skill_with_tag("ReinstallSkill", "coding");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
     domain
@@ -764,9 +764,9 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
             ctx.clone(),
             super::UpdateSkillParams {
                 skill: &updated_source,
-                file_writes: Vec::new(),
+                imports: Vec::new(),
                 file_deletes: Vec::new(),
-                file_imports: Vec::new(),
+                remote_source: None,
             },
         )
         .await

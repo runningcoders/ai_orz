@@ -54,6 +54,9 @@ pub trait AttachmentDao: Send + Sync + std::fmt::Debug {
 
     /// 判断给定相对路径文件是否存在。
     fn file_exists(&self, relative_path: &str) -> bool;
+
+    /// Resolve a relative path to absolute under attachments root (no bytes read).
+    fn file_abs_path(&self, relative_path: &str) -> Result<std::path::PathBuf>;
 }
 
 pub mod sqlite;

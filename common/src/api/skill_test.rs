@@ -1,13 +1,12 @@
 //! Skill API DTO contract tests.
 
 use super::{
-    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillDetail, SkillFileInput,
-    SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillFileContentRequest,
+    ApiResponse, CreateSkillRequest, InstallSkillToAgentResponse, SkillContentInput, SkillDetail,
+    SkillFileInput, SkillFileItem, SkillListItem, SkillSearchQuery, UpdateSkillFileContentRequest,
     UpdateSkillRequest,
 };
 use crate::enums::SkillStatus;
 use crate::enums::skill::SkillAuthorType;
-use std::collections::HashMap;
 
 #[test]
 fn skill_requests_and_responses_serialize_contract() {
@@ -17,8 +16,10 @@ fn skill_requests_and_responses_serialize_contract() {
         tags: vec!["rust".to_string(), "debugging".to_string()],
         category: Some("engineering".to_string()),
         status: Some(SkillStatus::Draft),
-        content: Some("# Rust Debugging".to_string()),
-        initial_files: None,
+        content_input: Some(SkillContentInput {
+            content: Some("# Rust Debugging".to_string()),
+            ..Default::default()
+        }),
     };
 
     let json = serde_json::to_string(&create).unwrap();
@@ -83,8 +84,7 @@ fn update_skill_request_allows_partial_fields() {
         tags: Some(vec!["updated".to_string()]),
         category: None,
         status: Some(SkillStatus::Published),
-        content: None,
-        files: None,
+        content_input: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
@@ -98,10 +98,13 @@ fn update_skill_request_allows_partial_fields() {
 #[test]
 fn update_skill_request_accepts_attachment_file_imports() {
     let request = UpdateSkillRequest {
-        files: Some(vec![SkillFileInput {
-            attachment_id: "attachment-1".to_string(),
-            target_path: "references/guide.md".to_string(),
-        }]),
+        content_input: Some(SkillContentInput {
+            files: Some(vec![SkillFileInput {
+                attachment_id: "attachment-1".to_string(),
+                target_path: "references/guide.md".to_string(),
+            }]),
+            ..Default::default()
+        }),
         ..Default::default()
     };
 
@@ -110,7 +113,11 @@ fn update_skill_request_accepts_attachment_file_imports() {
     assert!(json.contains("references/guide.md"));
 
     let decoded: UpdateSkillRequest = serde_json::from_str(&json).unwrap();
-    let files = decoded.files.expect("files should deserialize");
+    let files = decoded
+        .content_input
+        .expect("content_input should deserialize")
+        .files
+        .expect("files should deserialize");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].attachment_id, "attachment-1");
     assert_eq!(files[0].target_path, "references/guide.md");
@@ -167,39 +174,35 @@ fn install_skill_to_agent_response_returns_installed_skill_detail() {
 }
 
 #[test]
-fn create_skill_request_accepts_initial_files() {
-    let mut files = HashMap::new();
-    files.insert("skill.md".to_string(), "# Main Content".to_string());
-    files.insert("prompt.md".to_string(), "System Prompt".to_string());
-
+fn create_skill_request_accepts_content_input_files() {
     let request = CreateSkillRequest {
         name: "Multi-file Skill".to_string(),
         description: "Skill with multiple markdown files".to_string(),
         tags: vec!["template".to_string()],
         category: Some("prompt".to_string()),
         status: Some(SkillStatus::Draft),
-        content: None,
-        initial_files: Some(files),
+        content_input: Some(SkillContentInput {
+            content: Some("# Main Content".to_string()),
+            files: Some(vec![SkillFileInput {
+                attachment_id: "att-1".to_string(),
+                target_path: "prompt.md".to_string(),
+            }]),
+            ..Default::default()
+        }),
     };
 
     let json = serde_json::to_string(&request).unwrap();
-    assert!(json.contains("skill.md"));
     assert!(json.contains("Main Content"));
     assert!(json.contains("prompt.md"));
 
     let decoded: CreateSkillRequest = serde_json::from_str(&json).unwrap();
-    let decoded_files = decoded
-        .initial_files
-        .expect("initial_files should deserialize");
-    assert_eq!(decoded_files.len(), 2);
-    assert_eq!(
-        decoded_files.get("skill.md"),
-        Some(&"# Main Content".to_string())
-    );
-    assert_eq!(
-        decoded_files.get("prompt.md"),
-        Some(&"System Prompt".to_string())
-    );
+    let ci = decoded
+        .content_input
+        .expect("content_input should deserialize");
+    assert_eq!(ci.content.as_deref(), Some("# Main Content"));
+    let files = ci.files.expect("files should deserialize");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].target_path, "prompt.md");
 }
 
 #[test]

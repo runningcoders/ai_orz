@@ -65,6 +65,10 @@ impl AttachmentManage for FinanceDomainImpl {
         Ok(Some(attachment.with_read_result(read_result)))
     }
 
+    fn file_abs_path(&self, attachment: &Attachment) -> Result<std::path::PathBuf> {
+        self.attachment_dal.file_abs_path(attachment)
+    }
+
     async fn get_attachment_text_content(
         &self,
         ctx: RequestContext,

@@ -62,6 +62,7 @@ tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 tar = "0.4"
 flate2 = "1.0"
 md-5 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # 敏感数据加密（渠道凭证落库）
 aes-gcm = "0.10"

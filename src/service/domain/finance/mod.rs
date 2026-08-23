@@ -443,6 +443,9 @@ pub trait AttachmentManage: Send + Sync {
         options: AttachmentGetOptions,
     ) -> Result<Option<Attachment>>;
 
+    /// Resolve attachment file absolute path on disk (no bytes read).
+    fn file_abs_path(&self, attachment: &Attachment) -> Result<std::path::PathBuf>;
+
     /// 读取 Attachment UTF-8 文本内容。
     async fn get_attachment_text_content(
         &self,

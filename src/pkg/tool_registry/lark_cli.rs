@@ -197,6 +197,20 @@ pub fn lark_home(base_data_path: &Path, user_id: &str) -> PathBuf {
     crate::pkg::paths::user_home(base_data_path, user_id)
 }
 
+/// 统一为 lark-cli 子进程注入环境变量
+///
+/// - HOME：用户隔离目录（避免与其他用户/系统级 lark-cli 配置冲突）
+/// - LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1：关闭更新提示（避免冗余 stderr 干扰 Agent 理解）
+/// - LARKSUITE_CLI_NO_SKILLS_NOTIFIER=0：**打开** lark-cli 自带技能提示，
+///   让 Agent 与用户能从 stderr 中感知 CLI 侧可用技能，作为「导入 CLI 自带技能」
+///   的人工操作入口提示。
+pub fn apply_cli_env(command: &mut tokio::process::Command, home_dir: &Path) {
+    command
+        .env("HOME", home_dir)
+        .env("LARKSUITE_CLI_NO_UPDATE_NOTIFIER", "1")
+        .env("LARKSUITE_CLI_NO_SKILLS_NOTIFIER", "0");
+}
+
 /// 探测二进制是否在 PATH 中可用
 pub fn binary_available(name: &str) -> bool {
     let Some(path_var) = std::env::var_os("PATH") else {
@@ -235,20 +249,21 @@ pub async fn ensure_cli_config(home_dir: &Path, app_id: &str, app_secret: &str) 
         return Ok(());
     }
     tokio::fs::create_dir_all(home_dir).await?;
-    let mut child = Command::new(LARK_CLI_BIN)
-        .args([
-            "config",
-            "init",
-            "--app-id",
-            app_id,
-            "--app-secret-stdin",
-            "--brand",
-            "feishu",
-        ])
-        .env("HOME", home_dir)
-        .stdin(Stdio::piped())
+    let mut cmd = Command::new(LARK_CLI_BIN);
+    cmd.args([
+        "config",
+        "init",
+        "--app-id",
+        app_id,
+        "--app-secret-stdin",
+        "--brand",
+        "feishu",
+    ]);
+    apply_cli_env(&mut cmd, home_dir);
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = cmd
         .spawn()
         .map_err(|e| anyhow!("Failed to spawn lark-cli config init: {}", e))?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -289,11 +304,11 @@ pub async fn ensure_default_as(home_dir: &Path, mode: &str) -> Result<()> {
     {
         return Ok(());
     }
-    let status = Command::new(LARK_CLI_BIN)
-        .args(["config", "default-as", mode])
-        .env("HOME", home_dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+    let mut cmd = Command::new(LARK_CLI_BIN);
+    cmd.args(["config", "default-as", mode]);
+    apply_cli_env(&mut cmd, home_dir);
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    let status = cmd
         .status()
         .await
         .map_err(|e| anyhow!("Failed to spawn lark-cli config default-as: {}", e))?;
@@ -364,7 +379,7 @@ impl CoreTool for LarkCliCoreTool {
 
         let mut command = Command::new(&bin);
         command.args(&cli_args);
-        command.env("HOME", &home_dir);
+        apply_cli_env(&mut command, &home_dir);
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
         // 超时丢弃 future 时同步终止子进程

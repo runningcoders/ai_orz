@@ -455,12 +455,7 @@ ORDER BY updated_at DESC
         }
         Ok(())
     }
-}
 
-// ===== SkillDaoSqliteImpl 辅助方法 =====
-
-impl SkillDaoSqliteImpl {
-    /// 获取技能的完整目录路径
     fn skill_dir(&self, skill: &SkillPo) -> PathBuf {
         self.base_path
             .clone()
@@ -468,14 +463,59 @@ impl SkillDaoSqliteImpl {
             .join(&skill.content_path)
     }
 
-    /// 获取技能主文件（skill.md）的完整路径
-    fn main_content_path(&self, skill: &SkillPo) -> PathBuf {
-        self.skill_dir(skill).join("skill.md")
+    fn file_abs_path(&self, skill: &SkillPo, filename: &str) -> PathBuf {
+        self.skill_dir(skill).join(filename)
     }
 
-    /// 获取技能中指定文件的完整路径
+    fn delete_file(&self, skill: &SkillPo, filename: &str) -> Result<()> {
+        use std::path::Component;
+        let trimmed = filename.trim();
+        if trimmed.eq_ignore_ascii_case("skill.md") {
+            bail_err!(
+                InvalidRequest,
+                "禁止删除技能主文件 skill.md，请通过 content 覆盖"
+            );
+        }
+        if trimmed.is_empty()
+            || trimmed.contains("..")
+            || trimmed.starts_with('/')
+            || trimmed.contains('\\')
+        {
+            bail_err!(InvalidRequest, "文件名不合法: {}", trimmed);
+        }
+        let abs = self.file_abs_path(skill, trimmed);
+        if !abs.exists() {
+            return Ok(());
+        }
+        let canonical = std::fs::canonicalize(&abs)
+            .map_err(|e| err!(Internal, "canonicalize 失败: {}: {}", abs.display(), e))?;
+        let dir_canonical = std::fs::canonicalize(self.skill_dir(skill))
+            .map_err(|e| err!(Internal, "canonicalize skill_dir 失败: {}", e))?;
+        if !canonical.starts_with(&dir_canonical) {
+            bail_err!(InvalidRequest, "文件路径越出技能目录: {}", trimmed);
+        }
+        if let Some(Component::Normal(last)) = canonical.components().next_back()
+            && last.to_string_lossy().eq_ignore_ascii_case("skill.md")
+        {
+            bail_err!(InvalidRequest, "禁止删除技能主文件 skill.md");
+        }
+        std::fs::remove_file(&canonical)
+            .map_err(|e| err!(Internal, "删除文件失败: {}: {}", canonical.display(), e))?;
+        Ok(())
+    }
+}
+
+// ===== SkillDaoSqliteImpl 辅助方法 =====
+
+impl SkillDaoSqliteImpl {
+    /// 获取技能主文件（skill.md）的完整路径
+    fn main_content_path(&self, skill: &SkillPo) -> PathBuf {
+        self.file_abs_path(skill, "skill.md")
+    }
+
+    /// 获取技能中指定文件的完整路径（内部别名，trait 已暴露 file_abs_path）
     fn file_path(&self, skill: &SkillPo, filename: &str) -> PathBuf {
-        self.skill_dir(skill).join(filename)
+        self.file_abs_path(skill, filename)
     }
 
     fn collect_files(

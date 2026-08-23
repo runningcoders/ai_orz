@@ -250,12 +250,14 @@ mod tests {
         let file = SkillFileDef {
             path: "skill.md".to_string(),
             content: Some("# 内容".to_string()),
+            local_path: None,
             ref_path: None,
             url: None,
         };
         let json = serde_json::to_string(&file).unwrap();
         let de: SkillFileDef = serde_json::from_str(&json).unwrap();
         assert_eq!(de.content.as_ref().unwrap(), "# 内容");
+        assert!(de.local_path.is_none());
         assert!(de.ref_path.is_none());
         assert!(de.url.is_none());
     }
@@ -265,6 +267,7 @@ mod tests {
         let file = SkillFileDef {
             path: "skill.md".to_string(),
             content: None,
+            local_path: None,
             ref_path: Some("skills/platform_guide/skill.md".to_string()),
             url: None,
         };
@@ -281,6 +284,7 @@ mod tests {
         let file = SkillFileDef {
             path: "skill.md".to_string(),
             content: None,
+            local_path: None,
             ref_path: None,
             url: Some("https://example.com/guide.md".to_string()),
         };
@@ -305,6 +309,7 @@ mod tests {
             files: vec![SkillFileDef {
                 path: "skill.md".to_string(),
                 content: Some("# 测试".to_string()),
+                local_path: None,
                 ref_path: None,
                 url: None,
             }],

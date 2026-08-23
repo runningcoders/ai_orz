@@ -124,8 +124,9 @@ pub struct SkillDef {
 
 /// Skill 文件定义（支持多种内容来源）
 ///
-/// 优先级：content > ref_path > url
+/// 优先级：content > local_path > ref_path > url
 /// - content：直接内嵌文本内容
+/// - local_path：运行时本地文件绝对路径（区别于 ref_path 的编译期 embedded），走零拷贝
 /// - ref_path：引用 seed 目录下编译期内嵌文件的相对路径（如 "skills/platform_guide/skill.md"）
 /// - url：运行时从 HTTPS URL 抓取内容
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -136,6 +137,11 @@ pub struct SkillFileDef {
     /// 内嵌的文件内容（优先级最高）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+
+    /// 运行时本地文件绝对路径（区别于 ref_path 编译期 embedded）。
+    /// 指定时走 SkillFileImport.source_abs_path 0 拷贝路径。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_path: Option<String>,
 
     /// 引用 seed 目录下编译期内嵌文件的相对路径
     #[serde(default, skip_serializing_if = "Option::is_none")]

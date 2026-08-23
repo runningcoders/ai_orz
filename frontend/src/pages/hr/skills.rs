@@ -6,12 +6,13 @@ use dioxus_router::Link;
 use crate::api::hr::{create_skill, delete_skill, list_skills, query_skills, search_skills};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
+use crate::components::skill_content_input_editor::SkillContentInputEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, SearchSkillsRequest,
-    SkillQueryRequest,
+    SkillContentInput, SkillQueryRequest,
 };
 use common::enums::SkillStatus;
 
@@ -25,7 +26,7 @@ pub fn HrSkills() -> Element {
     let mut new_description = use_signal(String::new);
     let mut new_tags = use_signal(String::new);
     let mut new_category = use_signal(String::new);
-    let mut new_content = use_signal(String::new);
+    let mut new_content_input = use_signal(|| Option::<SkillContentInput>::None);
     let mut creating = use_signal(|| false);
     let mut search_keyword = use_signal(String::new);
     // 修复 HIGH #12：搜索防抖 + race condition 机制
@@ -131,12 +132,7 @@ pub fn HrSkills() -> Element {
                     Some(new_category().trim().to_string())
                 },
                 status: None,
-                content: if new_content().is_empty() {
-                    None
-                } else {
-                    Some(new_content())
-                },
-                initial_files: None,
+                content_input: new_content_input(),
             };
             match create_skill(req).await {
                 Ok(_) => {
@@ -145,7 +141,7 @@ pub fn HrSkills() -> Element {
                     new_description.set(String::new());
                     new_tags.set(String::new());
                     new_category.set(String::new());
-                    new_content.set(String::new());
+                    new_content_input.set(None);
                     load_data();
                 }
                 Err(e) => toast.error(format!("创建失败: {}", e)),
@@ -305,7 +301,7 @@ pub fn HrSkills() -> Element {
                 new_description.set(String::new());
                 new_tags.set(String::new());
                 new_category.set(String::new());
-                new_content.set(String::new());
+                new_content_input.set(None);
             },
             footer: rsx! {
                 button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
@@ -346,9 +342,10 @@ pub fn HrSkills() -> Element {
                     label { class: "label",
                         span { class: "label-text font-medium", "技能内容" }
                     }
-                    textarea { class: "textarea textarea-bordered w-full h-48", value: "{new_content}",
-                        oninput: move |e| new_content.set(e.value()),
-                        placeholder: "技能的 Markdown 内容，将写入 skill.md" }
+                    SkillContentInputEditor {
+                        value: None,
+                        on_change: move |ci| new_content_input.set(ci),
+                    }
                 }
             }
         }

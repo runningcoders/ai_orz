@@ -75,6 +75,9 @@ pub trait AttachmentDal: Send + Sync {
     /// 读取 Attachment 文件 bytes。
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>>;
 
+    /// Resolve attachment file absolute path on disk (no bytes read).
+    fn file_abs_path(&self, attachment: &Attachment) -> Result<std::path::PathBuf>;
+
     /// 全量替换 Attachment 文件内容，并刷新文件元数据。
     async fn update_file_content(
         &self,
@@ -170,6 +173,11 @@ impl AttachmentDal for AttachmentDalImpl {
 
     fn read_file(&self, attachment: &Attachment) -> Result<Vec<u8>> {
         self.attachment_dao.read_file(&attachment.po.relative_path)
+    }
+
+    fn file_abs_path(&self, attachment: &Attachment) -> Result<std::path::PathBuf> {
+        self.attachment_dao
+            .file_abs_path(&attachment.po.relative_path)
     }
 
     async fn update_file_content(

@@ -9,12 +9,13 @@ use crate::api::hr::{
 use crate::components::code_editor::CodeEditor;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
+use crate::components::skill_content_input_editor::SkillContentInputEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    GetSkillFileContentRequest, SkillDetail, SkillFileItem, UpdateSkillFileContentRequest,
-    UpdateSkillRequest,
+    GetSkillFileContentRequest, SkillContentInput, SkillDetail, SkillFileItem,
+    UpdateSkillFileContentRequest, UpdateSkillRequest,
 };
 
 #[component]
@@ -38,6 +39,7 @@ pub fn HrSkillDetail(id: String) -> Element {
     let mut edit_description = use_signal(String::new);
     let mut edit_tags = use_signal(String::new);
     let mut edit_category = use_signal(String::new);
+    let mut edit_content_input = use_signal(|| Option::<SkillContentInput>::None);
     let mut saving_meta = use_signal(|| false);
 
     // 初始加载
@@ -95,6 +97,7 @@ pub fn HrSkillDetail(id: String) -> Element {
             edit_description.set(s.description.clone());
             edit_tags.set(s.tags.join(", "));
             edit_category.set(s.category.clone());
+            edit_content_input.set(None);
             show_edit_modal.set(true);
         }
     };
@@ -126,8 +129,8 @@ pub fn HrSkillDetail(id: String) -> Element {
                 tags: Some(tags),
                 category,
                 status: None,
-                content: None,
-                files: None,
+                content_input: edit_content_input(),
+                file_deletes: None,
             };
             saving_meta.set(true);
             spawn(async move {
@@ -345,6 +348,13 @@ pub fn HrSkillDetail(id: String) -> Element {
                         label { class: "label", span { class: "label-text font-medium", "分类" } }
                         input { class: "input input-bordered w-full", value: "{edit_category}",
                             oninput: move |e| edit_category.set(e.value()), placeholder: "如 uncategorized / neural" }
+                    }
+                    div { class: "form-control w-full",
+                        label { class: "label", span { class: "label-text font-medium", "技能内容（可选）" } }
+                        SkillContentInputEditor {
+                            value: None,
+                            on_change: move |ci| edit_content_input.set(ci),
+                        }
                     }
                 }
             }

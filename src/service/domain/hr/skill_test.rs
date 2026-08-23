@@ -1,6 +1,6 @@
 //! HR Domain Skill 管理单元测试
 
-use super::{HrDomain, SkillFileImport, UpdateSkillParams};
+use super::{CreateSkillParams, HrDomain, SkillFileImport, UpdateSkillParams};
 use crate::models::skill::{Skill, SkillPo};
 use crate::pkg::RequestContext;
 use common::enums::SkillStatus;
@@ -83,7 +83,7 @@ async fn test_create_and_get_by_id(pool: SqlitePool) {
 
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -102,7 +102,7 @@ async fn test_update_skill(pool: SqlitePool) {
     let skill = create_test_skill("Original");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -110,9 +110,9 @@ async fn test_update_skill(pool: SqlitePool) {
     updated.po.name = "Updated".to_string();
     let params = UpdateSkillParams {
         skill: &updated,
-        file_writes: Vec::new(),
+        imports: Vec::new(),
         file_deletes: Vec::new(),
-        file_imports: Vec::new(),
+        remote_source: None,
     };
 
     domain
@@ -136,7 +136,7 @@ async fn test_delete_skill(pool: SqlitePool) {
     let skill = create_test_skill("ToDelete");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -171,7 +171,7 @@ async fn test_list_by_status(pool: SqlitePool) {
         };
         domain
             .skill_manage()
-            .create_skill(ctx.clone(), &skill)
+            .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
             .await
             .unwrap();
     }
@@ -197,7 +197,7 @@ async fn test_list_by_category(pool: SqlitePool) {
         };
         domain
             .skill_manage()
-            .create_skill(ctx.clone(), &skill)
+            .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
             .await
             .unwrap();
     }
@@ -223,7 +223,7 @@ async fn test_list_by_author(pool: SqlitePool) {
         };
         domain
             .skill_manage()
-            .create_skill(ctx.clone(), &skill)
+            .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
             .await
             .unwrap();
     }
@@ -254,7 +254,7 @@ async fn test_query_skills(pool: SqlitePool) {
         };
         domain
             .skill_manage()
-            .create_skill(ctx.clone(), &skill)
+            .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
             .await
             .unwrap();
     }
@@ -287,18 +287,20 @@ async fn test_update_skill_imports_attachment_file_content(pool: SqlitePool) {
     let skill = create_test_skill("ImportAttachment");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
     let params = UpdateSkillParams {
         skill: &skill,
-        file_writes: Vec::new(),
-        file_deletes: Vec::new(),
-        file_imports: vec![SkillFileImport {
-            target_path: "references/guide.md".to_string(),
-            bytes: b"# Guide".to_vec(),
+        imports: vec![SkillFileImport {
+            target_path: Some("references/guide.md".to_string()),
+            source_abs_path: None,
+            content_bytes: Some(b"# Guide".to_vec()),
+            suggested_name: None,
         }],
+        file_deletes: Vec::new(),
+        remote_source: None,
     };
 
     domain
@@ -328,7 +330,7 @@ async fn test_update_skill_rejects_unsafe_import_target_path(pool: SqlitePool) {
     let skill = create_test_skill("UnsafeImport");
     domain
         .skill_manage()
-        .create_skill(ctx.clone(), &skill)
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
         .await
         .unwrap();
 
@@ -336,20 +338,19 @@ async fn test_update_skill_rejects_unsafe_import_target_path(pool: SqlitePool) {
         "../escape.md",
         "/tmp/escape.md",
         "./guide.md",
-        "skill.md",
-        "Skill.md",
-        "SKILL.md",
         "references/",
         "references\\guide.md",
     ] {
         let params = UpdateSkillParams {
             skill: &skill,
-            file_writes: Vec::new(),
-            file_deletes: Vec::new(),
-            file_imports: vec![SkillFileImport {
-                target_path: target_path.to_string(),
-                bytes: b"bad".to_vec(),
+            imports: vec![SkillFileImport {
+                target_path: Some(target_path.to_string()),
+                source_abs_path: None,
+                content_bytes: Some(b"bad".to_vec()),
+                suggested_name: None,
             }],
+            file_deletes: Vec::new(),
+            remote_source: None,
         };
 
         let result = domain

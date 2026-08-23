@@ -125,6 +125,15 @@ pub trait SkillDal: Send + Sync {
     /// 写入文件 bytes
     fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()>;
 
+    fn skill_dir(&self, skill: &SkillPo) -> std::path::PathBuf;
+
+    fn file_abs_path(&self, skill: &SkillPo, filename: &str) -> std::path::PathBuf;
+
+    /// 删除技能目录内的指定文件（禁删 skill.md 主文件；canonicalize 校验在 skill_dir 下）。
+    ///
+    /// 不存在的文件视为成功（幂等）。
+    fn delete_file(&self, skill: &SkillPo, filename: &str) -> Result<()>;
+
     /// 查询技能的向量索引内容哈希（判断是否需要重索引）
     async fn get_vector_content_hash(
         &self,
@@ -664,6 +673,18 @@ impl SkillDal for SkillDalImpl {
 
     fn write_file_bytes(&self, skill: &SkillPo, filename: &str, bytes: &[u8]) -> Result<()> {
         self.skill_dao.write_file_bytes(skill, filename, bytes)
+    }
+
+    fn skill_dir(&self, skill: &SkillPo) -> std::path::PathBuf {
+        self.skill_dao.skill_dir(skill)
+    }
+
+    fn file_abs_path(&self, skill: &SkillPo, filename: &str) -> std::path::PathBuf {
+        self.skill_dao.file_abs_path(skill, filename)
+    }
+
+    fn delete_file(&self, skill: &SkillPo, filename: &str) -> Result<()> {
+        self.skill_dao.delete_file(skill, filename)
     }
 
     async fn get_vector_content_hash(

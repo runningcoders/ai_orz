@@ -6,7 +6,132 @@ use crate::enums::skill::SkillAuthorType;
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+/// 技能内容输入源（3 种内容源统一子结构）。
+///
+/// 前后端共享的纯方法复用群（is_empty / classify / validate_*）集中在 common DTO impl，
+/// 避免双端校验逻辑漂移。与后端同源，规则变动需同步。
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct SkillContentInput {
+    /// 直接文本内容（skill.md 主文件）。
+    pub content: Option<String>,
+    /// HTTPS URL（单 md 或技能 zip 包，zip 解压后 skill.md 须在根目录）。
+    pub url: Option<String>,
+    /// 附件文件装配列表（attachment_id + target_path 映射）。
+    pub files: Option<Vec<SkillFileInput>>,
+}
+
+/// 技能内容源分类（6 变体）。
+///
+/// 优先级：files > content > url。content 与 url 同时 Some 时为 MixedContentOverridesUrl
+/// （提示用户忽略 URL）；files + content 同时 Some 为 MixedTextAttachments（两者均处理）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillContentKind {
+    /// 无内容输入。
+    None,
+    /// 仅直接文本。
+    DirectText,
+    /// 仅 URL。
+    RemoteUrl,
+    /// 仅附件。
+    Attachments,
+    /// 文本 + URL 同时提供（文本优先，URL 被忽略）。
+    MixedContentOverridesUrl,
+    /// 附件 + 文本同时提供（两者均处理）。
+    MixedTextAttachments,
+}
+
+impl SkillContentInput {
+    /// 是否所有内容源都为空。
+    pub fn is_empty(&self) -> bool {
+        self.classify() == SkillContentKind::None
+    }
+
+    /// 分类内容源组合（6 变体）。
+    pub fn classify(&self) -> SkillContentKind {
+        let has_content = self.content.as_ref().is_some_and(|c| !c.is_empty());
+        let has_url = self.url.as_ref().is_some_and(|u| !u.is_empty());
+        let has_files = self.files.as_ref().is_some_and(|f| !f.is_empty());
+
+        match (has_content, has_url, has_files) {
+            (false, false, false) => SkillContentKind::None,
+            (true, false, false) => SkillContentKind::DirectText,
+            (false, true, false) => SkillContentKind::RemoteUrl,
+            (false, false, true) => SkillContentKind::Attachments,
+            (true, true, false) => SkillContentKind::MixedContentOverridesUrl,
+            (true, _, true) => SkillContentKind::MixedTextAttachments,
+            (false, true, true) => SkillContentKind::Attachments,
+        }
+    }
+
+    /// 校验 URL 必须为 HTTPS（纯字符串前缀校验，前后端共享）。
+    pub fn validate_url_https_only(&self) -> Result<(), String> {
+        if let Some(url) = &self.url
+            && !url.is_empty()
+            && !url.starts_with("https://")
+        {
+            return Err(format!("URL 必须为 HTTPS 协议: {}", url));
+        }
+        Ok(())
+    }
+
+    /// 校验附件 target_path 唯一性（纯逻辑，前后端共享）。
+    pub fn validate_files_unique_target(&self) -> Result<(), String> {
+        if let Some(files) = &self.files {
+            let mut seen = std::collections::HashSet::new();
+            for f in files {
+                let tp = f.target_path.trim();
+                if tp.is_empty() {
+                    continue;
+                }
+                if !seen.insert(tp) {
+                    return Err(format!("target_path 重复: {}", tp));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 校验附件 target_path 路径安全（禁止路径穿越）。
+    pub fn validate_files_path_safety(&self) -> Result<(), String> {
+        if let Some(files) = &self.files {
+            for f in files {
+                let path = f.target_path.trim();
+                if path.is_empty() {
+                    continue;
+                }
+                if path.contains("..") || path.starts_with('/') || path.contains('\\') {
+                    return Err(format!("target_path 存在路径穿越风险: {}", path));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// 综合校验（URL HTTPS + target 唯一 + 路径安全）。
+    pub fn validate_all(&self) -> Result<(), String> {
+        self.validate_url_https_only()?;
+        self.validate_files_unique_target()?;
+        self.validate_files_path_safety()?;
+        Ok(())
+    }
+}
+
+/// 校验文件名列表路径安全（公共函数，供 file_deletes 等场景复用）。
+///
+/// 与 SkillContentInput 的列表校验不同：这里所有 names 都必须非空（不存在空字符串跳过场景，
+/// 因为空文件名本身无意义），任何含 `..` / 以 `/` 开头 / 含 `\` 的路径都视为路径穿越。
+pub fn validate_filenames_path_safety(names: &[String]) -> Result<(), String> {
+    for name in names {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err("文件名不能为空".to_string());
+        }
+        if trimmed.contains("..") || trimmed.starts_with('/') || trimmed.contains('\\') {
+            return Err(format!("文件名存在路径穿越风险: {}", trimmed));
+        }
+    }
+    Ok(())
+}
 
 /// 创建 Skill 请求。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
@@ -21,10 +146,8 @@ pub struct CreateSkillRequest {
     pub category: Option<String>,
     /// 初始状态；为空时默认 Draft。
     pub status: Option<SkillStatus>,
-    /// 主内容文件 skill.md 内容。
-    pub content: Option<String>,
-    /// 初始多文件内容：filename -> content 映射，创建时直接生成所有文件。
-    pub initial_files: Option<HashMap<String, String>>,
+    /// 内容输入源（文本 / URL / 附件三选一或组合）。
+    pub content_input: Option<SkillContentInput>,
 }
 
 /// Skill 列表查询参数。
@@ -70,14 +193,12 @@ pub struct UpdateSkillRequestOriginal {
     pub category: Option<String>,
     /// 技能状态。
     pub status: Option<SkillStatus>,
-    /// 主内容文件 skill.md 内容。
-    pub content: Option<String>,
-    /// 附加文件导入列表。
-    pub files: Option<Vec<SkillFileInput>>,
+    /// 内容输入源（文本 / URL / 附件三选一或组合）。
+    pub content_input: Option<SkillContentInput>,
 }
 
 /// Skill 附加文件导入输入。
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct SkillFileInput {
     /// 已上传的通用 Attachment ID。
     pub attachment_id: String,
@@ -347,10 +468,11 @@ pub struct UpdateSkillRequest {
     pub category: Option<String>,
     /// 新技能状态。
     pub status: Option<SkillStatus>,
-    /// 新主内容文件 skill.md 内容。
-    pub content: Option<String>,
-    /// 附加文件导入列表。
-    pub files: Option<Vec<SkillFileInput>>,
+    /// 内容输入源（文本 / URL / 附件三选一或组合）。
+    pub content_input: Option<SkillContentInput>,
+    /// 要删除的技能文件名列表（相对技能目录的路径，禁止 skill.md）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_deletes: Option<Vec<String>>,
 }
 
 /// 更新 Skill 响应。
