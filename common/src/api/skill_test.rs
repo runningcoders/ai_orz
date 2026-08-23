@@ -85,6 +85,7 @@ fn update_skill_request_allows_partial_fields() {
         category: None,
         status: Some(SkillStatus::Published),
         content_input: None,
+        file_deletes: None,
     };
 
     let json = serde_json::to_string(&request).unwrap();
