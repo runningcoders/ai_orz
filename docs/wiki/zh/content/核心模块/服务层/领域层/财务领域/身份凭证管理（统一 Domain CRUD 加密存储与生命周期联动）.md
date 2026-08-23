@@ -16,6 +16,8 @@
 - [src/pkg/tool_registry/gh_cli.rs](src/pkg/tool_registry/gh_cli.rs)（clear_gh_auth）
 - [src/handlers/finance/lark_integration/](src/handlers/finance/lark_integration/)（lark 凭证 CRUD 4 Handler）
 - [src/handlers/finance/github_integration/](src/handlers/finance/github_integration/)（github 凭证 CRUD 4 Handler）
+- [src/handlers/finance/generic_token_integration/](src/handlers/finance/generic_token_integration/)（GenericToken 通用令牌 CRUD Handler）
+- [common/src/api/generic_token_integration.rs](common/src/api/generic_token_integration.rs)（通用令牌 DTO）
 - [migrations/20260812000000_users_identity_credentials.sql](migrations/20260812000000_users_identity_credentials.sql)
 - [tests/integration/lark_integration_test.rs](tests/integration/lark_integration_test.rs)
 - [tests/integration/github_integration_test.rs](tests/integration/github_integration_test.rs)
@@ -47,11 +49,27 @@
 </cite>
 
 ## 更新摘要
+**2026-08-24 更新**：新增 GenericToken + platform 二元匹配凭据机制；搜索工具（Tavily/豆包搜索）统一使用 GenericToken 类型；新增通用令牌 Handler 链路；前端新增通用 Token 管理区块。
 **Batch2 2026-08-15 新建**：对应 `docs/archive/plan-archive/身份凭证Domain统一CRUD重构.md`（2026-08-15 验收通过的重构落地项目），系统化说明：common 模型 6 行为方法 + CredentialDetailPatch 三态补丁（模型层信息下沉）、FinanceDomain IdentityCredentialManage trait 封顶 5 统一方法 + 2 Cmd + match kind 分发生命周期副作用（lark WS 移交/渠道引用拒删/gh_cli 清登录态）、8 Handler 迁移调用方式（DTO 零改动/前端零改动）、AES-256-GCM 闭包注入加密（common 零依赖 crypto，MASTER_KEY 从 env 加载）四大主题完整链路。§8 Troubleshooting 4 条，cite 区完整 4 类互引（2 Design + 真实 Plan + 4 RAG + 3 关联长文）。
 **2026-08-16 增量更新**：追加 T3（身份凭证统一链路总卡，Level4 总卡-子卡关系）与 T4（GitHub 集成 GITHUB_PAT 凭证复用）2 张 RAG 卡互引；cite 区补 GitHub 集成子系统 design/plan 规范占位；§5 FinanceDomainImpl identity_credential_manage 章节来源行号降级（因 gh_cli 凭证联动副作用 match arm 新增导致行号漂移，优先降级为无行号范围引用）。
 
 ## 简介
 本文件面向「身份凭证管理」重构后的全链路系统化说明（是什么），覆盖用户级凭证库存储结构（users.identity_credentials JSON 列 + v1 前缀 AES-256-GCM 字段级加密）、common 模型层 6 行为信息下沉、Domain 层 5 类型无关 CRUD 方法 + `match kind` 生命周期联动、Handler 层 8 文件迁移方式、以及新增凭证类型的 4 步扩展模板。帮助读者（开发者/AI Agent）理解凭证是如何从前端表单→Handler→Command→Domain→模型→加密→落库→渠道建连解密，以及「新增一种凭证类型到底改哪 4 处」。本文是新增/排查凭证问题的第一入口。
+
+### GenericToken + platform 二元匹配机制
+
+为支持多平台 API Key 类凭据（如 Tavily 搜索、豆包搜索等），系统引入 `GenericToken` 凭据类型，通过 `(kind, platform)` 二元组实现单类型多平台复用：
+
+- **CredentialKind::GenericToken**：通用令牌类型，适用于单字段 API Key 类凭据
+- **platform 字段**：标识具体平台（如 `tavily`、`doubao_search`）
+- **匹配规则**：按 `(kind=GenericToken, platform)` 精确匹配凭据
+- **前端管理**：通用令牌区块按 platform 分 Tab 展示，支持 CRUD 和默认设置
+
+新增搜索平台的步骤：
+1. 在 `common/src/models/identity_credentials.rs` 中确认 `GenericToken` 支持
+2. 创建工具实现文件，设置 `credential_requirements()` 返回 `GenericToken + platform`
+3. 在 `builtin.rs` 中注册工具工厂
+4. 在前端通用 Token 区块的 `PLATFORMS` 列表中添加平台配置
 
 ## 项目结构
 身份凭证管理链路分布在 6 层，严格单向调用（Adapter → Domain → DAL → DAO → Models），加密原语位于 pkg/crypto 独立基础设施，common 模型层通过闭包注入零依赖：

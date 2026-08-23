@@ -12,11 +12,13 @@ scope:
 - frontend/src/components/credential*.rs
 - frontend/src/components/create_http_tool.rs
 source_files:
-- common/src/models/identity_credentials.rs#L587-L795
+- common/src/models/identity_credentials.rs#L587-L830（含 GenericToken + platform 校验）
 - common/src/models/tool.rs#L29-L52
-- src/pkg/credential/mod.rs#L22-L237
+- src/pkg/credential/mod.rs#L22-L250（含 GenericToken 解密分支）
 - src/pkg/credential/enhancer.rs#L26-L210
 - src/pkg/tool_registry/mod.rs#L142-L160
+- src/pkg/tool_registry/tavily_search.rs#L47-L52（GenericToken 凭据需求）
+- src/pkg/tool_registry/doubao_search.rs#L1-L80（GenericToken 凭据需求）
 - src/service/domain/runtime/tool_execution.rs#L36-L101
 - src/service/domain/runtime/tool_execution.rs#L393-L450
 - src/models/tool.rs#L17-L96
@@ -29,7 +31,9 @@ source_files:
 
 ## §1 概述
 
-**本卡角色**：共享工具凭据增强器的全链路知识卡。覆盖工具凭据消费的两层模型——配置层类型级需求声明（`CredentialRequirement { kind, platform, field?, enhancer?, binding }`，皆非敏感零凭据实例）+ 运行层编排注入（domain `resolve_tool_credentials` 生产路由二元化 → pkg `src/pkg/credential/` 纯值加工（解密 + 增强器包裹 canonical）→ `CoreTool::check` 注入单次实例 → call 内 binding 纯放置）。**定位：给 MCP Server / HTTP 工具接凭据、新增凭据类型或增强器、排查「共享工具以谁的身份执行」、排查凭据未注入 / 敏感名被拒 / Builtin 改配置被拒时读。**
+**本卡角色**：共享工具凭据增强器的全链路知识卡。覆盖工具凭据消费的两层模型——配置层类型级需求声明（`CredentialRequirement { kind, platform, field?, enhancer?, binding }`，皆非敏感零凭据实例）+ 运行层编排注入（domain `resolve_tool_credentials` 生产路由二元化 → pkg `src/pkg/credential/` 纯值加工（解密 + 增强器包裹 canonical）→ `CoreTool::check` 注入单次实例 → call 内 binding 纯放置）。
+
+**2026-08-24 新增**：`GenericToken` 通用令牌类型落地，通过 `(kind=GenericToken, platform)` 二元匹配支持多平台 API Key 类凭据。搜索工具（Tavily/豆包）统一使用此机制，凭据需求声明为 `CredentialRequirement { kind: GenericToken, platform: Some("tavily"|"doubao_search"), ... }`。**定位：给 MCP Server / HTTP 工具接凭据、新增凭据类型或增强器、排查「共享工具以谁的身份执行」、排查凭据未注入 / 敏感名被拒 / Builtin 改配置被拒时读。**
 
 - **根除问题源**：工具是组织共享的、凭据是用户私有的——共享配置里出现 credential_id 或原文等同公开私人凭据。MCP config 的 `env` / `headers` 字段已整体删除（D14 无兼容层）；HTTP 工具 headers/query 保留协议必需字段但配置期拒绝敏感名条目（D15）。
 - **生产端二元化**（D17）：合法凭据生产者仅两个——user dal `find_default(kind, platform)`（链序：个人默认 > 个人活跃 > 组织默认 > 组织 public）与 lark dal `resolve_credentials_for_user`（渠道路径 + attributes{identity_mode}，D24）。取数上移 domain 编排层，pkg 与工具实例零数据访问，无 per-tool resolver / 无数据端口 / 无 OnceLock 注入注册（Gh / Tavily / Lark 三 resolver 已删，`service::init` 凭据注册清零）。
@@ -41,7 +45,7 @@ source_files:
 
 | 文件 | 角色 | 内容摘要 | 源码锚点 |
 |------|------|---------|---------|
-| common/src/models/identity_credentials.rs | 契约单一事实源 + 校验单点 | `CredentialRequirement` / `CredentialEnhancerKind` / `CredentialBinding` / `CredentialRequirementScope` + `enhancer_supports` 矩阵 + `default_enhancer` + `is_sensitive_credential_name` 敏感名单点 + `validate_requirements` 六规则单点（含 `binding_allowed` / `binding_name` / `mcp_transport_scope` / `as_str`；前后端委托，双端零漂移）（D2/D5/D12 单点；`CredentialKind` 六变体与 `requires_platform` 同文件） | `#L587-L795` |
+| common/src/models/identity_credentials.rs | 契约单一事实源 + 校验单点 | `CredentialRequirement` / `CredentialEnhancerKind` / `CredentialBinding` / `CredentialRequirementScope` + `enhancer_supports` 矩阵 + `default_enhancer` + `is_sensitive_credential_name` 敏感名单点 + `validate_requirements` 六规则单点（含 `binding_allowed` / `binding_name` / `mcp_transport_scope` / `as_str`；前后端委托，双端零漂移）（D2/D5/D12 单点；`CredentialKind` 七变体含 `GenericToken` + `requires_platform` 同文件；GenericToken 必须配 platform） | `#L587-L830` |
 | common/src/models/tool.rs | 工具 config 校验单点 | `validate_builtin_tool_config`（command 非空 / 数字正整数 / 未知字段宽松 / 非对象通过）+ `is_supported_http_method`（GET/POST 大小写不敏感）；后端 handler 与前端表单共用 | `#L29-L52` |
 | src/pkg/credential/mod.rs | pkg 纯值加工门面 | `ResolvedCredential`（enhance 代理 + canonical_value 查找链 detail→attributes→primary_secret）+ `decrypt_detail` 解密单点 + `resolve_requirements` 纯函数 + `validate_requirements` 校验包装（本体在 common 单点）+ `credential_missing_json` 引导（零数据访问零注入注册） | `#L22-L237` |
 | src/pkg/credential/enhancer.rs | 增强器实现 | `CredentialEnhancer` trait + BearerToken / BasicAuth / AccessToken 三实现 + `OAuthTokenManager`（TTL 缓存命中剩余 >60s 直返；miss 则 SSRF 校验 → refresh → 提前 60s 过期写缓存；失败不缓存） | `#L26-L210` |

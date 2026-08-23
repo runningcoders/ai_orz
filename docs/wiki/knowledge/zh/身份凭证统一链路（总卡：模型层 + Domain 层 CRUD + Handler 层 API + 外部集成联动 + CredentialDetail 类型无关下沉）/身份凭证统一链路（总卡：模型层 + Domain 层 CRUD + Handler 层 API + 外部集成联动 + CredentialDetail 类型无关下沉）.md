@@ -13,10 +13,12 @@ scope:
 source_files:
 - migrations/20260420000000_initial.sql#L405-L419
 - migrations/20260420000000_initial.sql#L751-L764
+- common/src/api/generic_token_integration.rs#L1-L125（通用令牌 DTO）
 - src/models/user_credential.rs#L1-L140
 - src/service/dao/user_credential/mod.rs#L1-L102
 - src/service/dao/user_credential/sqlite.rs#L1-L358
-- src/service/domain/finance/identity_credential.rs#L1-L454
+- src/service/domain/finance/identity_credential.rs#L1-L500（含 platform 写入/查询）
+- src/service/domain/finance/mod.rs#L270-L380（CreateCredentialCmd + platform 参数）
 - src/service/dal/user.rs#L86-L150
 - src/service/dao/lark/mod.rs#L54-L96
 - src/service/dal/lark.rs#L1-L50
@@ -39,7 +41,9 @@ source_files:
 
 ## §1 整体方案
 
-b4f9a560 变更把身份凭证从「分散在各外部集成 Domain 自己造轮子存凭证（飞书 LarkAppCredential / GitHub GitHubPAT / 微信 WeChatAppSecret …）」统一为**类型无关 CRUD**：一张 `identity_credentials` 表 + 一张 `CredentialDetail` JSON 字段存任意类型凭证明细，Domain 层提供 `create/get/update/delete/list/query` 类型无关统一 API；**加密下沉**：明文凭证 ↔ AES-256-GCM 加密/解密统一在 DAL 层 close 到 DAO 写入前/读取后；所有外部集成（飞书/微信/GitHub/Slack…）**只消费**身份凭证 Domain 的 getter，**不直接**碰 DAO/DB。
+b4f9a560 变更把身份凭证从「分散在各外部集成 Domain 自己造轮子存凭证（飞书 LarkAppCredential / GitHub GitHubPAT / 微信 WeChatAppSecret …）」统一为**类型无关 CRUD**。
+
+2026-08-24 新增 **GenericToken + platform 二元匹配机制**：为支持多平台 API Key 类凭据（Tavily 搜索、豆包搜索等），系统引入 `CredentialKind::GenericToken` 通用令牌类型，通过 `(kind, platform)` 二元组实现单类型多平台复用。搜索工具统一使用此机制，新增平台只需设置不同的 `platform` 值。一张 `identity_credentials` 表 + 一张 `CredentialDetail` JSON 字段存任意类型凭证明细，Domain 层提供 `create/get/update/delete/list/query` 类型无关统一 API；**加密下沉**：明文凭证 ↔ AES-256-GCM 加密/解密统一在 DAL 层 close 到 DAO 写入前/读取后；所有外部集成（飞书/微信/GitHub/Slack…）**只消费**身份凭证 Domain 的 getter，**不直接**碰 DAO/DB。
 
 CredentialDetail 字段下沉（b4f9a560 的关键重构）：之前各集成定义独立 credential_type → enum 匹配 → 硬解字段（如 `if type==LARK { read app_id field from json }`）现在改为 **Domain 层不感知 Detail 结构**，CredentialDetail 是 `serde_json::Value` 类型，各外部集成自己拿 getter 后自行 into() → 自己的强类型 Detail（LarkCredentialDetail / GitHubPATCredentialDetail …），Domain CRUD 代码完全类型无关，新增一种凭证类型无需改 Domain 层一行代码。
 
