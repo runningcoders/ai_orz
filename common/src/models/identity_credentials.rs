@@ -1212,10 +1212,7 @@ mod tests {
         for kind in kinds {
             assert!(kind.requires_platform(), "generic 类 kind platform 必填");
         }
-        for kind in [
-            CredentialKind::LarkApp,
-            CredentialKind::GithubToken,
-        ] {
+        for kind in [CredentialKind::LarkApp, CredentialKind::GithubToken] {
             assert!(!kind.requires_platform(), "专用 kind platform 必空");
         }
         // 三新变体 primary_id 均 None
@@ -1287,10 +1284,7 @@ mod tests {
             E::BasicAuth
         ));
         // 专用 kind 零支持
-        for kind in [
-            CredentialKind::LarkApp,
-            CredentialKind::GithubToken,
-        ] {
+        for kind in [CredentialKind::LarkApp, CredentialKind::GithubToken] {
             assert!(!enhancer_supports(kind, E::BearerToken));
             assert!(!enhancer_supports(kind, E::BasicAuth));
             assert!(!enhancer_supports(kind, E::AccessToken));

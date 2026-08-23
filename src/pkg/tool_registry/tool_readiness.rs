@@ -66,8 +66,7 @@ pub fn credential_missing_hint(requirement: &CredentialRequirement) -> String {
         // GenericToken 类凭据按 platform 出精细化引导（单字段 API Key 类多平台共用）
         CredentialKind::GenericToken => match requirement.platform.as_deref() {
             Some("tavily") => {
-                "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）"
-                    .to_string()
+                "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）".to_string()
             }
             Some("doubao_search") => {
                 "绑定豆包搜索 key（设置 → 身份凭证 → 通用令牌，platform 选 doubao_search）"

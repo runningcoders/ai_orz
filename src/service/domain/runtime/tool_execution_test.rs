@@ -1756,7 +1756,11 @@ mod tests {
             StubUserDal::with_default(credential),
             StubLarkCredentialDal::none(),
         );
-        let requirements = vec![credential_requirement(CredentialKind::GithubToken, None, None)];
+        let requirements = vec![credential_requirement(
+            CredentialKind::GithubToken,
+            None,
+            None,
+        )];
 
         let resolved = runtime
             .resolve_tool_credentials(&test_ctx(), &requirements)
@@ -1959,7 +1963,11 @@ mod tests {
     #[tokio::test]
     async fn runtime_tool_readiness_key_tool_missing_credential_is_not_ready() {
         let runtime = credential_runtime(StubUserDal::none(), StubLarkCredentialDal::none());
-        let requirements = [credential_requirement(CredentialKind::GenericToken, None, Some("tavily"))];
+        let requirements = [credential_requirement(
+            CredentialKind::GenericToken,
+            None,
+            Some("tavily"),
+        )];
         let tool = key_readiness_tool("rt-key-miss", &requirements);
         invalidate_readiness_cache("rt-key-miss");
 
@@ -1967,7 +1975,8 @@ mod tests {
             runtime.tool_readiness(&test_ctx(), &tool).await,
             RuntimeReady::NotReady {
                 reason: "api_key_missing".to_string(),
-                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）"
+                    .to_string(),
             }
         );
     }
@@ -1979,7 +1988,11 @@ mod tests {
             StubUserDal::with_default(tavily_default_credential()),
             StubLarkCredentialDal::none(),
         );
-        let requirements = [credential_requirement(CredentialKind::GenericToken, None, Some("tavily"))];
+        let requirements = [credential_requirement(
+            CredentialKind::GenericToken,
+            None,
+            Some("tavily"),
+        )];
         let tool = key_readiness_tool("rt-key-hit", &requirements);
         invalidate_readiness_cache("rt-key-hit");
 
@@ -2003,7 +2016,8 @@ mod tests {
             runtime.tool_readiness(&test_ctx(), &tool).await,
             RuntimeReady::NotReady {
                 reason: "api_key_missing".to_string(),
-                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）"
+                    .to_string(),
             }
         );
         registry.unregister("tavily_search");
@@ -2012,7 +2026,11 @@ mod tests {
     /// key 型 TTL 缓存：窗口内复用上次判定（stub 变化不可见），过期后重新取数
     #[tokio::test]
     async fn runtime_tool_readiness_key_verdict_cached_until_ttl_expiry() {
-        let requirements = [credential_requirement(CredentialKind::GenericToken, None, Some("tavily"))];
+        let requirements = [credential_requirement(
+            CredentialKind::GenericToken,
+            None,
+            Some("tavily"),
+        )];
         let tool = key_readiness_tool("rt-key-ttl", &requirements);
         invalidate_readiness_cache("rt-key-ttl");
 
@@ -2022,7 +2040,8 @@ mod tests {
             first,
             RuntimeReady::NotReady {
                 reason: "api_key_missing".to_string(),
-                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）".to_string(),
+                hint: "绑定个人 Tavily key（设置 → 身份凭证 → 通用令牌，platform 选 tavily）"
+                    .to_string(),
             }
         );
 

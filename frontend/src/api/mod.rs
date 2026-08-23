@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod background_task;
 pub mod finance;
+pub mod generic_token_integration;
 pub mod github_integration;
 pub mod hr;
 pub mod lark_integration;
@@ -15,7 +16,6 @@ pub mod organization;
 pub mod project;
 pub mod seed;
 pub mod system;
-pub mod generic_token_integration;
 
 use common::api::ApiResponse;
 use reqwest::{Client, Method, RequestBuilder};

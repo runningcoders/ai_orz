@@ -20,8 +20,8 @@ use crate::api::lark_integration::{
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::layouts::app_layout::AppLayout;
-use crate::pages::finance::identity_github::IdentityGithubSection;
 use crate::pages::finance::identity_generic_token::IdentityGenericTokenSection;
+use crate::pages::finance::identity_github::IdentityGithubSection;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateLarkCredentialRequest, LarkAuthCompleteRequest, LarkAuthStartRequest,

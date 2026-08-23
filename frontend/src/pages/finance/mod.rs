@@ -1,8 +1,8 @@
 pub mod attachment_detail;
 pub mod attachments;
 pub mod identity;
-pub mod identity_github;
 pub mod identity_generic_token;
+pub mod identity_github;
 pub mod mcp_server_detail;
 pub mod mcp_servers;
 pub mod message_channel_detail;

@@ -25,7 +25,11 @@ pub async fn set_default_credential(
     }
 
     let trimmed = params.credential_id.trim().to_string();
-    let target = if trimmed.is_empty() { None } else { Some(trimmed) };
+    let target = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
     domain()
         .identity_credential_manage()
         .set_default_credential(

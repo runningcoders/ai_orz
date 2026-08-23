@@ -169,10 +169,7 @@ async fn test_tavily_credential_crud_lifecycle(pool: SqlitePool) {
 
     // 删默认凭证 #2 → 快照仅剩 #1 且默认标记随删除清除
     let (status, body) = app
-        .delete_with_jwt(
-            &format!("{BASE}/credentials/{}", cred2),
-            &jwt,
-        )
+        .delete_with_jwt(&format!("{BASE}/credentials/{}", cred2), &jwt)
         .await;
     crate::common::assert_api_ok(status, &body);
     let (status, body) = app
@@ -243,10 +240,7 @@ async fn test_tavily_credential_validation_errors(pool: SqlitePool) {
 
     // 删未知凭证
     let (status, _) = app
-        .delete_with_jwt(
-            &format!("{BASE}/credentials/no-such-cred"),
-            &jwt,
-        )
+        .delete_with_jwt(&format!("{BASE}/credentials/no-such-cred"), &jwt)
         .await;
     assert!(
         status.is_client_error(),
@@ -359,10 +353,7 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
 
     // 删默认凭证 #2 → 回退第一条 key1
     let (status, body) = app
-        .delete_with_jwt(
-            &format!("{BASE}/credentials/{}", cred2),
-            &jwt,
-        )
+        .delete_with_jwt(&format!("{BASE}/credentials/{}", cred2), &jwt)
         .await;
     crate::common::assert_api_ok(status, &body);
     let resolved = resolve_tavily_key(&ctx, &bs.user_id)
@@ -372,10 +363,7 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
 
     // 删光后 → None（单轨授权无兜底，未绑定即缺）
     let (status, body) = app
-        .delete_with_jwt(
-            &format!("{BASE}/credentials/{}", cred1),
-            &jwt,
-        )
+        .delete_with_jwt(&format!("{BASE}/credentials/{}", cred1), &jwt)
         .await;
     crate::common::assert_api_ok(status, &body);
     assert!(

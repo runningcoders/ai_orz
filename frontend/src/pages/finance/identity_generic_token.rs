@@ -10,9 +10,8 @@
 use dioxus::prelude::*;
 
 use crate::api::generic_token_integration::{
-    create_generic_token_credential, delete_generic_token_credential,
-    get_generic_token_status, set_default_generic_token_credential,
-    update_generic_token_credential,
+    create_generic_token_credential, delete_generic_token_credential, get_generic_token_status,
+    set_default_generic_token_credential, update_generic_token_credential,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -54,7 +53,8 @@ pub fn IdentityGenericTokenSection() -> Element {
     let mut active_platform = use_signal(|| PLATFORMS[0].slug.to_string());
 
     // ===== 每个 platform 的状态缓存 =====
-    let mut status_map = use_signal(std::collections::HashMap::<String, GenericTokenIntegrationStatusResponse>::new);
+    let mut status_map =
+        use_signal(std::collections::HashMap::<String, GenericTokenIntegrationStatusResponse>::new);
     let mut loading_map = use_signal(std::collections::HashMap::<String, bool>::new);
 
     // ===== 录入凭证 =====
@@ -97,8 +97,6 @@ pub fn IdentityGenericTokenSection() -> Element {
             }
         });
     }
-
-
 
     let active_meta = PLATFORMS
         .iter()
@@ -194,7 +192,11 @@ pub fn IdentityGenericTokenSection() -> Element {
         .as_ref()
         .map(|s| s.credentials.clone())
         .unwrap_or_default();
-    let is_loading = loading_map.read().get(&active_platform()).copied().unwrap_or(false);
+    let is_loading = loading_map
+        .read()
+        .get(&active_platform())
+        .copied()
+        .unwrap_or(false);
 
     rsx! {
         div { class: "border border-base-300 rounded-lg p-4 mt-4",

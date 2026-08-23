@@ -3,9 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::generate_http_handler;
-use common::api::{
-    DeleteGenericTokenCredentialRequest, DeleteGenericTokenCredentialResponse,
-};
+use common::api::{DeleteGenericTokenCredentialRequest, DeleteGenericTokenCredentialResponse};
 use common::error::{Result, bail_err};
 
 #[generate_http_handler]

@@ -662,10 +662,7 @@ mod tests {
     async fn call_with_invalid_time_range_returns_error_json() {
         let tool = DoubaoSearchCoreTool::new(DoubaoSearchToolFactory.create_po());
         let result = tool
-            .call(
-                test_ctx(),
-                json!({ "query": "rust", "time_range": "hour" }),
-            )
+            .call(test_ctx(), json!({ "query": "rust", "time_range": "hour" }))
             .await
             .unwrap();
         assert_eq!(result["success"], false);

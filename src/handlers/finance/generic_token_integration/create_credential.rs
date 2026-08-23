@@ -3,9 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::{CreateCredentialCmd, domain};
 use ai_orz_macros::generate_http_handler;
-use common::api::{
-    CreateGenericTokenCredentialRequest, CreateGenericTokenCredentialResponse,
-};
+use common::api::{CreateGenericTokenCredentialRequest, CreateGenericTokenCredentialResponse};
 use common::error::{Result, bail_err};
 use common::models::CredentialDetail;
 

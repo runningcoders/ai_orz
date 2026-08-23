@@ -442,10 +442,7 @@ mod tests {
     fn available_enhancers_follow_supports_matrix_excluding_defaults() {
         use CredentialEnhancerKind as E;
         // 专用 kind：零可选项
-        for kind in [
-            CredentialKind::LarkApp,
-            CredentialKind::GithubToken,
-        ] {
+        for kind in [CredentialKind::LarkApp, CredentialKind::GithubToken] {
             assert!(available_enhancers(kind).is_empty(), "{kind:?}");
             assert!(!has_any_enhancer_support(kind), "{kind:?}");
         }
