@@ -177,6 +177,10 @@ name = "web_search_tool_test"
 path = "tests/integration/web_search_tool_test.rs"
 
 [[test]]
+name = "tool_credential_resolution_test"
+path = "tests/integration/tool_credential_resolution_test.rs"
+
+[[test]]
 name = "browser_tool_test"
 path = "tests/integration/browser_tool_test.rs"
 
