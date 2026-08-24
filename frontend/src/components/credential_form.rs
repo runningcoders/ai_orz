@@ -139,7 +139,6 @@ pub fn injection_value_preview(req: &CredentialRequirement) -> String {
         }
         Some(CredentialEnhancerKind::AccessToken) => "<access_token>".to_string(),
         None => match req.kind {
-            // 类型规范可用值（requirement 未声明 field 时取该 kind 的主凭据字段）
             CredentialKind::LarkApp => "<app_secret>".to_string(),
             _ => "<token>".to_string(),
         },
@@ -555,7 +554,8 @@ mod tests {
             )),
             "Basic base64(<username>:<password>)"
         );
-        // 类型规范可用值（无 field 无增强器）：GenericToken 取 <token>
+        // 类型规范可用值（无 field 无增强器）：主密钥字段 = primary_secret() 字段名
+        // GenericToken 是通用单字段容器，语义为 token（不强行假设为 API Key）
         assert_eq!(
             injection_value_preview(&req(
                 CredentialKind::GenericToken,
@@ -564,7 +564,7 @@ mod tests {
                 None,
                 header("x-api-key"),
             )),
-            "<api_key>"
+            "<token>"
         );
         assert_eq!(
             injection_value_preview(&req(
