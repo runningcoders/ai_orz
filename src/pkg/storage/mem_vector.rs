@@ -8,6 +8,7 @@
 use crate::models::vector::{
     VectorCollection, VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit,
 };
+use crate::pkg::paths;
 use async_trait::async_trait;
 use common::error::Result;
 use std::collections::HashMap;
@@ -28,7 +29,8 @@ impl InMemoryVectorStore {
     /// 创建新的内存向量存储（使用配置的 base_path）
     pub fn new() -> Result<Self> {
         let config = crate::config::get();
-        let base_path = config.base_data_path().join("vectors");
+        let base = config.base_data_path();
+        let base_path = paths::vectors_dir(&base);
         std::fs::create_dir_all(&base_path)?;
 
         Ok(Self {

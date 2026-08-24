@@ -3,6 +3,7 @@
 use super::mime_util;
 use super::response;
 use crate::pkg::RequestContext;
+use crate::pkg::paths;
 use crate::service::domain::project;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::artifact::{ArtifactDetail, RegisterArtifactFromPathParams};
@@ -46,7 +47,8 @@ pub async fn register_artifact_from_path(
     }
 
     // Compute source file absolute path
-    let agent_dir = crate::config::get().agent_data_dir(agent_id);
+    let base = crate::config::get().base_data_path();
+    let agent_dir = paths::agent_data_dir(&base, agent_id);
     let source_path = agent_dir.join(&params.source_path);
 
     // Security: source path must be under agent's directory (prevent traversal)

@@ -929,6 +929,18 @@ pub struct DefaultPromptBuilder {
     tool_failures: Vec<(String, u64)>,
     /// 意图分析结果（IntentAnalyze 阶段产出），供 build() 时渲染参考区块使用
     pub intent_analysis: Option<crate::service::domain::runtime::awakening::IntentAnalysis>,
+    /// 工作空间上下文：默认工作目录
+    workspace_default: Option<String>,
+    /// 工作空间上下文：用户 HOME 目录
+    workspace_user_home: Option<String>,
+    /// 工作空间上下文：用户级共享区
+    workspace_user_shared: Option<String>,
+    /// 工作空间上下文：Agent 为该用户工作的默认落盘目录
+    workspace_user_agent: Option<String>,
+    /// 工作空间上下文：Agent 自身工作区
+    workspace_agent: Option<String>,
+    /// 工作空间上下文：当前项目协作工作区（逻辑型 Project 为 None）
+    workspace_project: Option<String>,
 }
 
 impl DefaultPromptBuilder {
@@ -1016,6 +1028,41 @@ impl DefaultPromptBuilder {
             // 记忆聚焦提示：当有任务上下文时，提示 Agent 可用 task_id 过滤记忆
             s.push_str("【记忆聚焦提示】\n");
             s.push_str("如需聚焦当前任务的记忆，可用 query_memory / search_memory 的 task_id 参数过滤；默认历史记忆是跨任务全局取最近若干条。\n\n");
+        }
+        if let Some(workspace_default) = &self.workspace_default {
+            s.push_str("【工作空间与路径约定】\n");
+            s.push_str("【默认工作目录】\n");
+            s.push_str(&format!(
+                "- {}（shell_exec / fs_read / fs_write 不传 working_dir 时自动使用此目录）\n\n",
+                workspace_default
+            ));
+            s.push_str("【可用目录（全部为绝对路径）】\n");
+            if let Some(user_home) = &self.workspace_user_home {
+                s.push_str(&format!("- 用户 HOME 目录：{}（lark-cli/gh-cli/.gitconfig/.ssh 等自动读写处，不要直接写这里的业务文件）\n", user_home));
+            }
+            if let Some(user_shared) = &self.workspace_user_shared {
+                s.push_str(&format!("- 用户共享区：{}（跨 Agent 协作放这里；多 Agent 接力的项目根在 {}/projects/<project_id>/）\n", user_shared, user_shared));
+            }
+            if let Some(user_agent) = &self.workspace_user_agent {
+                s.push_str(&format!("- Agent 默认工作区：{}（无明确项目时的临时工作副本、草稿文件放这里；不要把跨 Agent 共享文件写这里）\n", user_agent));
+            }
+            if let Some(agent) = &self.workspace_agent {
+                s.push_str(&format!("- Agent 自身工作区：{}（无用户上下文的自主行为，如定时任务/记忆沉淀，使用此目录）\n", agent));
+            }
+            if let Some(project) = &self.workspace_project {
+                s.push_str(&format!("- 当前项目协作工作区：{}（克隆仓库、共享编辑文件、多 Agent 同时访问同一项目时优先用这里；逻辑型 Project 可忽略，用 Agent 默认工作区即可）\n", project));
+            }
+            s.push('\n');
+            s.push_str("【fs_read / fs_write / shell_exec 的 path 参数说明】\n");
+            s.push_str(&format!("- 相对路径均以 base_data_path（即 {} 的父目录链，结合默认工作目录解释）为锚点解析；建议一律传绝对路径，避免歧义\n", workspace_default));
+            if self.workspace_user_agent.is_some() {
+                s.push_str("- 传用户的临时请求产物 → 优先写 workspace_user_agent（若有）\n");
+            }
+            if self.workspace_user_shared.is_some() || self.workspace_project.is_some() {
+                s.push_str("- 传跨 Agent 共享/项目级文件 → 写 workspace_user_shared 或 workspace_project（若有）\n");
+            }
+            s.push_str("- 不要将业务产物写入 workspace_user_home 下的配置子目录（.config/、.ssh/、.lark-cli/ 等）\n");
+            s.push('\n');
         }
         s
     }
@@ -1376,6 +1423,23 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     fn task_context(&mut self, task: &crate::models::task::Task) {
         self.task_context = Some(task.to_prompt_summary());
+    }
+
+    fn workspace_context(
+        &mut self,
+        default_workspace: String,
+        user_home: String,
+        user_shared_workspace: String,
+        user_agent_workspace: Option<String>,
+        agent_workspace: Option<String>,
+        project_workspace: Option<String>,
+    ) {
+        self.workspace_default = Some(default_workspace);
+        self.workspace_user_home = Some(user_home);
+        self.workspace_user_shared = Some(user_shared_workspace);
+        self.workspace_user_agent = user_agent_workspace;
+        self.workspace_agent = agent_workspace;
+        self.workspace_project = project_workspace;
     }
 
     fn build(&self) -> String {

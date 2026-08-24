@@ -5,6 +5,7 @@
 use crate::models::artifact::Artifact;
 use crate::models::file::FileMeta;
 use crate::pkg::RequestContext;
+use crate::pkg::paths;
 use crate::service::dal::artifact::ArtifactQuery;
 use common::enums::{ArtifactSourceType, FileType};
 
@@ -455,12 +456,12 @@ impl super::ArtifactManage for ProjectDomainImpl {
 
         self.artifact_dal.create(ctx.clone(), &artifact).await?;
 
-        let config = crate::config::get();
-        let target_dir = config.artifact_path(&artifact.po.project_id, &artifact.po.id);
+        let base = crate::config::get().base_data_path();
+        let target_dir = paths::artifact_path(&base, &artifact.po.project_id, &artifact.po.id);
         let target_path = target_dir.join(&file_name);
 
         // Safety: target_path must be under artifacts_dir to prevent path traversal.
-        if !target_path.starts_with(config.artifacts_dir()) {
+        if !target_path.starts_with(paths::artifacts_dir(&base)) {
             let _ = self.artifact_dal.delete(ctx, &artifact.po.id).await;
             bail_err!(
                 InvalidRequest,

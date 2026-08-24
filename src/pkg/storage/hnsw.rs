@@ -189,7 +189,9 @@ impl std::fmt::Debug for HnswStore {
 impl HnswStore {
     /// 创建新的 HNSW 向量存储（使用配置的 hnsw_index_dir）
     pub fn new() -> common::error::Result<Self> {
-        let base_path = crate::config::get().hnsw_index_dir();
+        let cfg = crate::config::get();
+        let base_path =
+            crate::pkg::paths::hnsw_index_dir(&cfg.base_data_path(), &cfg.database.hnsw_index_dir);
         Self::with_path(base_path)
     }
 

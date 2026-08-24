@@ -9,6 +9,7 @@
 //! ScreenshotStorer 模式一致。
 
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
@@ -67,7 +68,7 @@ pub fn find_tool_log_by_call_id(
     base_data_path: &std::path::Path,
     call_id: &str,
 ) -> Option<PathBuf> {
-    let tools_dir = base_data_path.join("tools");
+    let tools_dir = paths::tools_root_dir(base_data_path);
     let tool_entries = std::fs::read_dir(&tools_dir).ok()?;
     for tool_entry in tool_entries.flatten() {
         let logs_root = tool_entry.path().join("logs");
@@ -247,12 +248,7 @@ mod tests {
     #[test]
     fn find_tool_log_locates_call_id_across_tools_and_days() {
         let base = tempfile::tempdir().unwrap();
-        let log_dir = base
-            .path()
-            .join("tools")
-            .join("shell_exec")
-            .join("logs")
-            .join("20260819");
+        let log_dir = paths::tool_logs_dir(base.path(), "shell_exec").join("20260819");
         std::fs::create_dir_all(&log_dir).unwrap();
         std::fs::write(log_dir.join("call-abc.log"), "output").unwrap();
 

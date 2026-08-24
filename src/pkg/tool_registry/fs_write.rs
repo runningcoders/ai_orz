@@ -1,6 +1,7 @@
 //! Builtin write_file tool implementation
 
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::fs::{
     ValidationResult, crosses_agent_workspace, crosses_user_boundary, resolve_and_validate_path,
@@ -138,7 +139,8 @@ impl CoreTool for FsWriteCoreTool {
             .ok_or_else(|| anyhow!("agent_id is required for fs_write"))?;
 
         // Get base data path from agent-specific directory
-        let base_path = crate::config::get().agent_data_dir(agent_id);
+        let base = crate::config::get().base_data_path();
+        let base_path = paths::agent_data_dir(&base, agent_id);
         // 用户身份存在时，当前用户的 HOME 树（shared 区 / Agent 工作区）也可写
         let mut allowed: Vec<String> = self
             .config

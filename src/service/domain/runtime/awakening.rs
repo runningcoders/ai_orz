@@ -16,6 +16,7 @@ use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
 use crate::pkg::agent_runtime_state::{AgentRuntimeStateManager, AgentThinkRuntime};
+use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::record_event;
@@ -293,6 +294,60 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             builder.current_trace_id(&trace_id);
             builder.system_prompt(agent);
             builder.skills(&skill_pos);
+            let base = crate::config::get().base_data_path();
+            let uid = ctx.uid();
+            let uid_ref = if uid.is_empty() {
+                None
+            } else {
+                Some(uid.as_str())
+            };
+            let default_workspace = paths::default_workspace(&base, uid_ref, Some(&agent.po.id))
+                .to_string_lossy()
+                .to_string();
+            let user_home = if uid.is_empty() {
+                paths::users_root_dir(&base).to_string_lossy().to_string()
+            } else {
+                paths::user_home(&base, &uid).to_string_lossy().to_string()
+            };
+            let user_shared_workspace = if uid.is_empty() {
+                default_workspace.clone()
+            } else {
+                paths::user_shared_workspace(&base, &uid)
+                    .to_string_lossy()
+                    .to_string()
+            };
+            let user_agent_workspace = if uid.is_empty() {
+                None
+            } else {
+                Some(
+                    paths::user_agent_workspace(&base, &uid, &agent.po.id)
+                        .to_string_lossy()
+                        .to_string(),
+                )
+            };
+            let agent_workspace = Some(
+                paths::agent_workspace(&base, &agent.po.id)
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            let project_workspace =
+                if let (Some(project), true) = (&options.project, !uid.is_empty()) {
+                    Some(
+                        paths::user_project_workspace(&base, &uid, &project.po.id)
+                            .to_string_lossy()
+                            .to_string(),
+                    )
+                } else {
+                    None
+                };
+            builder.workspace_context(
+                default_workspace,
+                user_home,
+                user_shared_workspace,
+                user_agent_workspace,
+                agent_workspace,
+                project_workspace,
+            );
             if let Some(project) = &options.project {
                 builder.project_context(project);
             }
@@ -706,6 +761,59 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         builder.current_trace_id(&trace_id);
         builder.system_prompt(agent);
         builder.skills(&skill_pos);
+        let base = crate::config::get().base_data_path();
+        let uid = ctx.uid();
+        let uid_ref = if uid.is_empty() {
+            None
+        } else {
+            Some(uid.as_str())
+        };
+        let default_workspace = paths::default_workspace(&base, uid_ref, Some(&agent.po.id))
+            .to_string_lossy()
+            .to_string();
+        let user_home = if uid.is_empty() {
+            paths::users_root_dir(&base).to_string_lossy().to_string()
+        } else {
+            paths::user_home(&base, &uid).to_string_lossy().to_string()
+        };
+        let user_shared_workspace = if uid.is_empty() {
+            default_workspace.clone()
+        } else {
+            paths::user_shared_workspace(&base, &uid)
+                .to_string_lossy()
+                .to_string()
+        };
+        let user_agent_workspace = if uid.is_empty() {
+            None
+        } else {
+            Some(
+                paths::user_agent_workspace(&base, &uid, &agent.po.id)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        };
+        let agent_workspace = Some(
+            paths::agent_workspace(&base, &agent.po.id)
+                .to_string_lossy()
+                .to_string(),
+        );
+        let project_workspace = if let (Some(project), true) = (&options.project, !uid.is_empty()) {
+            Some(
+                paths::user_project_workspace(&base, &uid, &project.po.id)
+                    .to_string_lossy()
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        builder.workspace_context(
+            default_workspace,
+            user_home,
+            user_shared_workspace,
+            user_agent_workspace,
+            agent_workspace,
+            project_workspace,
+        );
         builder.history(&recent_memories);
 
         let prompt = builder.build_sleep_prompt(pending_memories_summary, trace_ids);

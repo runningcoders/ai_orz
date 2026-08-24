@@ -3,6 +3,7 @@
 use super::{ArtifactDao, ArtifactQuery};
 use crate::models::{artifact::ArtifactPo, file::FileMeta};
 use crate::pkg::RequestContext;
+use crate::pkg::paths;
 use common::api::PagedResult;
 use common::enums::{ArtifactSourceType, FileType};
 use common::error::{Result, bail_err};
@@ -41,14 +42,12 @@ impl ArtifactDaoSqliteImpl {
     fn resolve_generated_content_path(&self, artifact: &ArtifactPo) -> Result<PathBuf> {
         // Use Config's built-in method to get the correct path:
         // {base_data_dir}/artifacts/projects/{project_id}/{artifact_id}/{file_path}
-        let config = crate::config::get();
-        let dir_path = config
-            .artifact_project_dir(&artifact.project_id)
-            .join(&artifact.id);
+        let base = crate::config::get().base_data_path();
+        let dir_path = paths::artifact_project_dir(&base, &artifact.project_id).join(&artifact.id);
         let path = dir_path.join(&artifact.file_meta.0.file_path);
 
         // Check for path traversal (double-check)
-        if !path.starts_with(config.artifacts_dir()) {
+        if !path.starts_with(paths::artifacts_dir(&base)) {
             bail_err!(
                 InvalidRequest,
                 "Invalid artifact file path: path traversal attempt detected"

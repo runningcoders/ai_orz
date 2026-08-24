@@ -12,6 +12,7 @@ use once_cell::sync::OnceCell;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
 use crate::pkg::daily_jsonl::DailyJsonlWriter;
+use crate::pkg::paths;
 
 pub const MAX_TOOL_CALL_QUERY_LIMIT: usize = 100;
 
@@ -140,10 +141,7 @@ impl ToolCallLogger {
     }
 
     fn trace_dir_for_tool(&self, tool_id: &str) -> PathBuf {
-        self.base_data_path
-            .join("tools")
-            .join(tool_id)
-            .join("call_trace")
+        paths::tool_call_trace_dir(&self.base_data_path, tool_id)
     }
 
     fn resolve_tool_ids(&self, tool_id: Option<&str>) -> Result<Vec<String>> {
@@ -152,7 +150,7 @@ impl ToolCallLogger {
             return Ok(vec![tool_id.to_string()]);
         }
 
-        let tools_dir = self.base_data_path.join("tools");
+        let tools_dir = paths::tools_root_dir(&self.base_data_path);
         if !tools_dir.exists() {
             return Ok(Vec::new());
         }

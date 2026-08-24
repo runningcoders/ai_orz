@@ -3,6 +3,7 @@
 use super::{AttachmentDao, AttachmentQuery};
 use crate::models::attachment::AttachmentPo;
 use crate::pkg::RequestContext;
+use crate::pkg::paths;
 use common::api::PagedResult;
 use common::error::{Result, bail_err};
 use sqlx::{QueryBuilder, SqlitePool};
@@ -15,9 +16,8 @@ static DAO_INSTANCE: OnceLock<Arc<dyn AttachmentDao + Send + Sync>> = OnceLock::
 
 /// 创建一个全新的 Attachment DAO 实例（用于测试）
 pub fn new() -> Arc<dyn AttachmentDao + Send + Sync> {
-    Arc::new(AttachmentDaoSqliteImpl::new(
-        crate::config::get().attachments_dir(),
-    ))
+    let base = crate::config::get().base_data_path();
+    Arc::new(AttachmentDaoSqliteImpl::new(paths::attachments_dir(&base)))
 }
 
 /// 使用指定 attachments 根目录创建 DAO（用于测试隔离）

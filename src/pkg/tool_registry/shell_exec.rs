@@ -339,11 +339,7 @@ impl CoreTool for ShellExecCoreTool {
             .unwrap_or_else(|| ctx.log_id.clone());
         // 按天分区子目录（YYYYMMDD，对齐 daily_jsonl 日期分区先例），清理单位为日期目录
         let day_dir = chrono::Local::now().format("%Y%m%d").to_string();
-        let log_dir = base_root
-            .join("tools")
-            .join("shell_exec")
-            .join("logs")
-            .join(&day_dir);
+        let log_dir = paths::tool_logs_dir(&base_root, "shell_exec").join(&day_dir);
         if !log_dir.exists() {
             create_dir_all(&log_dir).await?;
         }

@@ -3,12 +3,14 @@
 //! seeds/ 目录下管理所有 .json 快照文件
 //! 路径基于 AppConfig.base_data_path 拼接
 
+use crate::pkg::paths;
 use common::error::{Error, Result};
 use std::path::{Path, PathBuf};
 
 /// 获取 seeds/ 目录路径（基于 AppConfig.base_data_path）
 pub fn seeds_dir() -> PathBuf {
-    crate::config::get().base_data_path().join("seeds")
+    let base = crate::config::get().base_data_path();
+    paths::seeds_dir(&base)
 }
 
 /// 校验文件名安全性（防止路径穿越攻击）

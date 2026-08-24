@@ -58,6 +58,37 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置任务上下文（消息关联的任务实体摘要）
     fn task_context(&mut self, task: &crate::models::task::Task);
 
+    /// 设置工作空间上下文（各目录绝对路径 + 语义说明）
+    ///
+    /// 调用方负责通过 `pkg::paths` 模块提前计算好路径字符串再注入，
+    /// trait 保持纯抽象（不依赖 `config` / `paths` / `RequestContext`）。
+    ///
+    /// # 参数语义
+    /// - `default_workspace`：shell_exec / fs_read / fs_write 不传 working_dir 时的默认目录
+    /// - `user_home`：用户 HOME 目录（lark-cli/gh-cli/.gitconfig 等自动读写处）
+    /// - `user_shared_workspace`：用户级共享区（跨 Agent 协作文件、项目根目录放这里）
+    /// - `user_agent_workspace`：有 user+agent 上下文时，Agent 的默认落盘目录（临时工作副本）
+    /// - `agent_workspace`：无用户上下文时，Agent 自身工作区（定时任务、记忆沉淀等）
+    /// - `project_workspace`：可选，当前 project_id 对应的项目协作工作区（逻辑型 Project 可传 None）
+    fn workspace_context(
+        &mut self,
+        default_workspace: String,
+        user_home: String,
+        user_shared_workspace: String,
+        user_agent_workspace: Option<String>,
+        agent_workspace: Option<String>,
+        project_workspace: Option<String>,
+    ) {
+        let _ = (
+            default_workspace,
+            user_home,
+            user_shared_workspace,
+            user_agent_workspace,
+            agent_workspace,
+            project_workspace,
+        );
+    }
+
     /// 构建最终的 Prompt 字符串
     ///
     /// 使用 `&self` 而非 `self`，支持重复构建和 trait object 使用。

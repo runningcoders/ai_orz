@@ -11,6 +11,7 @@ use once_cell::sync::OnceCell;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::sync::Arc;
 
+use crate::pkg::paths;
 use crate::pkg::stats::Stats;
 
 /// FTS5 全文搜索工具
@@ -58,7 +59,7 @@ impl Storage {
         db_config: &common::config::DatabaseConfig,
         stats_config: &common::config::StatsConfig,
     ) -> Result<Self> {
-        let db_path = base_data_path.join(&db_config.db_file_name);
+        let db_path = paths::sqlite_db_path(base_data_path, &db_config.db_file_name);
         // create_if_missing(true): 数据库文件不存在时自动创建空文件，由后续 migration 建表
         // 避免用户手动 sqlite3 db "VACUUM;" 才能首次启动
         let connect_options = SqliteConnectOptions::new()
@@ -78,22 +79,23 @@ impl Storage {
         // 根据配置选择向量存储后端
         let vector: Arc<dyn VectorStore> = match db_config.vector_store_type {
             common::config::VectorStoreType::InMemory => {
-                let vectors_dir = base_data_path.join("vectors");
+                let vectors_dir = paths::vectors_dir(base_data_path);
                 Arc::new(InMemoryVectorStore::with_path(&vectors_dir)?)
             }
             common::config::VectorStoreType::Hnsw => Arc::new(HnswStore::new()?),
             common::config::VectorStoreType::LanceDb => {
-                let lance_dir = base_data_path.join("vectors_lance");
+                let lance_dir = paths::lance_vector_dir(base_data_path);
                 Arc::new(LanceVectorStore::new(&lance_dir)?)
             }
             common::config::VectorStoreType::SqliteVss => {
-                let vector_db_path = base_data_path.join(&db_config.vector_db_file_name);
+                let vector_db_path =
+                    paths::vector_sqlite_db_path(base_data_path, &db_config.vector_db_file_name);
                 Arc::new(SqliteVssStore::new(vector_db_path.to_str().unwrap_or_default()).await?)
             }
         };
 
         // 初始化 Stats DuckDB
-        let stats_db_path = base_data_path.join(&stats_config.db_file_name);
+        let stats_db_path = paths::stats_db_path(base_data_path, &stats_config.db_file_name);
         let stats = Stats::open(
             stats_db_path.to_str().unwrap_or_default(),
             stats_config.batch_size,

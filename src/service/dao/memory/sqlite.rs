@@ -12,6 +12,7 @@ use crate::models::memory::{
     MemoryTracePosition, ShortTermMemoryIndexPo,
 };
 use crate::pkg::RequestContext;
+use crate::pkg::paths;
 use crate::pkg::storage::escape_fts5_keyword;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch};
 use async_trait::async_trait;
@@ -99,7 +100,8 @@ impl MemoryDaoSqliteImpl {
 
     /// 获取 Agent 记忆目录完整路径（用于写入）
     fn agent_memory_dir(&self, agent_id: &str) -> PathBuf {
-        config::get().agent_memory_dir(agent_id)
+        let base = config::get().base_data_path();
+        paths::agent_memory_dir(&base, agent_id)
     }
 
     /// 获取连接池从上下文

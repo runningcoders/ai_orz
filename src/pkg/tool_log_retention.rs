@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::pkg::paths;
 use common::constants::utils::current_timestamp_ms;
 
 /// 一次清理的执行报告
@@ -52,7 +53,7 @@ pub struct ToolLogStorageStats {
 ///
 /// 返回每个工具日志根（`tools/{tool_id}/logs`）及其下的日期目录列表。
 fn scan_tool_log_roots(base_data_path: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
-    let tools_dir = base_data_path.join("tools");
+    let tools_dir = paths::tools_root_dir(base_data_path);
     if !tools_dir.is_dir() {
         return Vec::new();
     }
@@ -209,6 +210,7 @@ pub fn tool_log_storage_stats(base_data_path: &Path) -> ToolLogStorageStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pkg::paths;
     use crate::pkg::process::{ProcessEntry, ProcessStatus};
 
     fn write_log(dir: &Path, name: &str, content: &str) {
@@ -224,7 +226,7 @@ mod tests {
     #[test]
     fn cleanup_removes_expired_dirs_and_keeps_recent() {
         let base = tempfile::tempdir().unwrap();
-        let logs_root = base.path().join("tools").join("shell_exec").join("logs");
+        let logs_root = paths::tool_logs_dir(base.path(), "shell_exec");
         let old_dir = logs_root.join(old_day(40));
         let recent_dir = logs_root.join(old_day(1));
         write_log(&old_dir, "call-1.log", "old output");
@@ -242,12 +244,7 @@ mod tests {
     #[test]
     fn cleanup_zero_retention_is_noop() {
         let base = tempfile::tempdir().unwrap();
-        let old_dir = base
-            .path()
-            .join("tools")
-            .join("shell_exec")
-            .join("logs")
-            .join(old_day(400));
+        let old_dir = paths::tool_logs_dir(base.path(), "shell_exec").join(old_day(400));
         write_log(&old_dir, "call-1.log", "ancient");
 
         let report = cleanup_tool_logs(base.path(), 0);
@@ -259,7 +256,7 @@ mod tests {
     #[test]
     fn cleanup_protects_running_process_log_dir() {
         let base = tempfile::tempdir().unwrap();
-        let logs_root = base.path().join("tools").join("shell_exec").join("logs");
+        let logs_root = paths::tool_logs_dir(base.path(), "shell_exec");
         let old_dir = logs_root.join(old_day(40));
         write_log(&old_dir, "call-running.log", "still writing");
 
@@ -310,7 +307,7 @@ mod tests {
     #[test]
     fn storage_stats_aggregates_by_day() {
         let base = tempfile::tempdir().unwrap();
-        let logs_root = base.path().join("tools").join("shell_exec").join("logs");
+        let logs_root = paths::tool_logs_dir(base.path(), "shell_exec");
         let day_a = logs_root.join(old_day(2));
         let day_b = logs_root.join(old_day(1));
         write_log(&day_a, "a1.log", "11"); // 2 bytes
@@ -332,7 +329,7 @@ mod tests {
     #[test]
     fn non_date_dirs_are_ignored() {
         let base = tempfile::tempdir().unwrap();
-        let logs_root = base.path().join("tools").join("shell_exec").join("logs");
+        let logs_root = paths::tool_logs_dir(base.path(), "shell_exec");
         let junk = logs_root.join("not-a-date");
         write_log(&junk, "x.log", "junk");
 
