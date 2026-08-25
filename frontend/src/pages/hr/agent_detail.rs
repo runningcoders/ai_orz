@@ -106,9 +106,11 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut installed_skills = use_signal(Vec::<SkillListItem>::new);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
-    let mut edit_roles = use_signal(String::new);
+    let mut edit_roles = use_signal(Vec::<String>::new);
+    let mut edit_roles_input = use_signal(String::new);
     let mut edit_description = use_signal(String::new);
-    let mut edit_capabilities = use_signal(String::new);
+    let mut edit_capabilities = use_signal(Vec::<String>::new);
+    let mut edit_capabilities_input = use_signal(String::new);
     let mut edit_soul = use_signal(String::new);
     let mut edit_model_provider_id = use_signal(String::new);
     // 运行时配置编辑字段（number input 用 String 承载，提交时 parse）
@@ -368,9 +370,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 onclick: move |_| {
                                     if let Some(a) = agent_data.read().as_ref() {
                                         edit_name.set(a.name.clone());
-                                        edit_roles.set(a.roles.join(", "));
+                                        edit_roles.set(a.roles.clone());
+                                        edit_roles_input.set(String::new());
                                         edit_description.set(a.description.clone().unwrap_or_default());
-                                        edit_capabilities.set(a.capabilities.clone().unwrap_or_default().join(", "));
+                                        edit_capabilities.set(a.capabilities.clone().unwrap_or_default());
+                                        edit_capabilities_input.set(String::new());
                                         edit_soul.set(a.soul.clone().unwrap_or_default());
                                         edit_model_provider_id.set(a.model_provider_id.clone());
                                         // 加载运行时配置现有值（缺失时回退 0）
@@ -1152,14 +1156,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 return;
                                             }
                                             let roles: Vec<String> = edit_roles()
-                                                .split(',')
+                                                .into_iter()
+                                                .filter(|s| !s.trim().is_empty())
                                                 .map(|s| s.trim().to_string())
-                                                .filter(|s| !s.is_empty())
                                                 .collect();
                                             let capabilities: Vec<String> = edit_capabilities()
-                                                .split(',')
+                                                .into_iter()
+                                                .filter(|s| !s.trim().is_empty())
                                                 .map(|s| s.trim().to_string())
-                                                .filter(|s| !s.is_empty())
                                                 .collect();
                                             let soul = if edit_soul().trim().is_empty() { None } else { Some(edit_soul()) };
                                             let mp_id = if edit_model_provider_id().is_empty() { None } else { Some(edit_model_provider_id()) };
@@ -1228,14 +1232,150 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         oninput: move |e| edit_description.set(e.value()) }
                                 }
                                 div { class: "form-control w-full",
-                                    label { class: "label", span { class: "label-text font-medium", "角色（逗号分隔）" } }
-                                    input { class: "input input-bordered w-full", value: "{edit_roles}",
-                                        oninput: move |e| edit_roles.set(e.value()), placeholder: "assistant, coder" }
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "角色（多选）" }
+                                        span { class: "label-text-alt", "用于路由匹配，如前台/Web接待/代码专家 等" }
+                                    }
+                                    div { class: "flex flex-wrap gap-2 mb-2",
+                                        {
+                                            const PRESET_ROLES: &[(&str, &str)] = &[
+                                                ("reception", "Web前台接待"),
+                                                ("feishu_reception", "飞书前台接待"),
+                                                ("a2a_gateway", "A2A网关"),
+                                                ("hr_specialist", "人事专员"),
+                                                ("code_assistant", "代码助手"),
+                                            ];
+                                            PRESET_ROLES.iter().map(|(key, label)| {
+                                                let key_clone = key.to_string();
+                                                let selected = edit_roles().iter().any(|r| r == key);
+                                                let cls = if selected {
+                                                    "btn btn-primary btn-sm"
+                                                } else {
+                                                    "btn btn-outline btn-sm"
+                                                };
+                                                rsx! {
+                                                    button { class: cls,
+                                                        onclick: move |_| {
+                                                            let mut v = edit_roles();
+                                                            if let Some(pos) = v.iter().position(|x| x == key_clone.as_str()) {
+                                                                v.remove(pos);
+                                                            } else {
+                                                                v.push(key_clone.clone());
+                                                            }
+                                                            edit_roles.set(v);
+                                                        },
+                                                        "{label}"
+                                                    }
+                                                }
+                                            })
+                                        }
+                                    }
+                                    div { class: "flex flex-wrap gap-2 items-center",
+                                        if !edit_roles().is_empty() {
+                                            for role in edit_roles() {
+                                                span { class: "badge badge-accent badge-lg gap-1",
+                                                    "{role}",
+                                                    button { class: "btn btn-ghost btn-xs",
+                                                        onclick: move |_| {
+                                                            let mut v = edit_roles();
+                                                            if let Some(pos) = v.iter().position(|x| x == &role) {
+                                                                v.remove(pos);
+                                                            }
+                                                            edit_roles.set(v);
+                                                        },
+                                                        "✕"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        input { class: "input input-bordered input-sm flex-1 min-w-[180px]",
+                                            value: "{edit_roles_input}",
+                                            placeholder: "自定义角色，回车/逗号添加",
+                                            oninput: move |e| {
+                                                let val = e.value();
+                                                if let Some(comma_pos) = val.find(',') {
+                                                    let (head, rest) = val.split_at(comma_pos);
+                                                    let v = head.trim().to_string();
+                                                    if !v.is_empty() && !edit_roles().iter().any(|r| r == v.as_str()) {
+                                                        let mut arr = edit_roles();
+                                                        arr.push(v);
+                                                        edit_roles.set(arr);
+                                                    }
+                                                    edit_roles_input.set(rest[1..].trim().to_string());
+                                                } else {
+                                                    edit_roles_input.set(val);
+                                                }
+                                            },
+                                            onkeydown: move |e| {
+                                                if e.key() == Key::Enter {
+                                                    e.prevent_default();
+                                                    let v = edit_roles_input().trim().to_string();
+                                                    if !v.is_empty() && !edit_roles().iter().any(|r| r == v.as_str()) {
+                                                        let mut arr = edit_roles();
+                                                        arr.push(v);
+                                                        edit_roles.set(arr);
+                                                    }
+                                                    edit_roles_input.set(String::new());
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 div { class: "form-control w-full",
-                                    label { class: "label", span { class: "label-text font-medium", "能力（逗号分隔）" } }
-                                    input { class: "input input-bordered w-full", value: "{edit_capabilities}",
-                                        oninput: move |e| edit_capabilities.set(e.value()), placeholder: "text, vision" }
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "能力关键词（多选，用于弱匹配）" }
+                                        span { class: "label-text-alt", "如：chat、code_search、task、knowledge 等" }
+                                    }
+                                    div { class: "flex flex-wrap gap-2 items-center",
+                                        if !edit_capabilities().is_empty() {
+                                            for cap in edit_capabilities() {
+                                                span { class: "badge badge-success badge-lg gap-1",
+                                                    "{cap}",
+                                                    button { class: "btn btn-ghost btn-xs",
+                                                        onclick: move |_| {
+                                                            let mut v = edit_capabilities();
+                                                            if let Some(pos) = v.iter().position(|x| x == &cap) {
+                                                                v.remove(pos);
+                                                            }
+                                                            edit_capabilities.set(v);
+                                                        },
+                                                        "✕"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        input { class: "input input-bordered input-sm flex-1 min-w-[180px]",
+                                            value: "{edit_capabilities_input}",
+                                            placeholder: "自定义能力，回车/逗号添加",
+                                            oninput: move |e| {
+                                                let val = e.value();
+                                                if let Some(comma_pos) = val.find(',') {
+                                                    let (head, rest) = val.split_at(comma_pos);
+                                                    let v = head.trim().to_string();
+                                                    if !v.is_empty() && !edit_capabilities().iter().any(|r| r == v.as_str()) {
+                                                        let mut arr = edit_capabilities();
+                                                        arr.push(v);
+                                                        edit_capabilities.set(arr);
+                                                    }
+                                                    edit_capabilities_input.set(rest[1..].trim().to_string());
+                                                } else {
+                                                    edit_capabilities_input.set(val);
+                                                }
+                                            },
+                                            onkeydown: move |e| {
+                                                if e.key() == Key::Enter {
+                                                    e.prevent_default();
+                                                    let v = edit_capabilities_input().trim().to_string();
+                                                    if !v.is_empty() && !edit_capabilities().iter().any(|r| r == v.as_str()) {
+                                                        let mut arr = edit_capabilities();
+                                                        arr.push(v);
+                                                        edit_capabilities.set(arr);
+                                                    }
+                                                    edit_capabilities_input.set(String::new());
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label", span { class: "label-text font-medium", "灵魂提示词 (Soul)" } }
