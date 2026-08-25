@@ -40,6 +40,9 @@ pub async fn update_agent(
     if let Some(name) = params.name {
         agent.po.name = name;
     }
+    if let Some(roles) = params.roles {
+        agent.po.role = serde_json::to_string(&roles).unwrap_or_else(|_| "[]".to_string());
+    }
     if let Some(description) = params.description {
         agent.po.description = description;
     }
@@ -68,6 +71,7 @@ pub async fn update_agent(
 
     domain().agent_manage().update_agent(ctx, &agent).await?;
 
+    let roles: Vec<String> = agent.po.get_roles();
     let capabilities: Vec<String> = agent.po.get_capabilities();
 
     // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
@@ -84,6 +88,7 @@ pub async fn update_agent(
     Ok(UpdateAgentResponse {
         id: agent.id().to_string(),
         name: agent.name().to_string(),
+        roles,
         description: if agent.po.description.is_empty() {
             None
         } else {

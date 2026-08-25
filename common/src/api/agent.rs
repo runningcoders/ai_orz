@@ -255,6 +255,8 @@ pub struct UpdateAgentResponse {
     pub id: String,
     /// Agent 名称
     pub name: String,
+    /// 角色标签列表
+    pub roles: Vec<String>,
     /// Agent 描述
     pub description: Option<String>,
     /// 能力列表
