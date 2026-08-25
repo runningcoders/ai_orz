@@ -159,26 +159,21 @@ impl BrainDal for BrainDalImpl {
     ) -> Result<Brain> {
         match agent.kind {
             AgentKind::Local => {
-                // 先按 Agent 绑定的 provider 解析；绑定缺失/失效时回退到默认对话 Provider。
-                // 这样"未绑定模型的预设 Agent"也能在系统配好对话模型后直接使用，
-                // 而不是硬报 Internal 错误卡死聊天链路。
+                // Agent 与 model provider 是显式绑定关系：缺 model 配置就直接报错，
+                // 不做隐式降级。缺 model 的 Agent 应在状态层面表达"未就绪"（如 Interviewing），
+                // 使用方在绑定 model 前不应把消息路由给它。
                 let provider_po = self
                     .model_provider_dao
                     .find_by_id(ctx.clone(), &agent.model_provider_id)
                     .await?
-                    .filter(|p| p.status == common::enums::ModelProviderStatus::Normal)
-                    .or(self
-                        .model_provider_dao
-                        .get_default_agent_provider(ctx.clone())
-                        .await?);
-
-                let provider_po = provider_po.ok_or_else(|| {
-                    err!(
-                        NotFound,
-                        "Agent {} 未绑定对话模型，且系统中没有可用的默认对话模型，请在「模型提供商管理」中配置并绑定后重试",
-                        agent.id
-                    )
-                })?;
+                    .ok_or_else(|| {
+                        err!(
+                            NotFound,
+                            "Agent {} 缺少对话模型配置（model_provider_id={:?}），请先在「模型提供商管理」中绑定对话模型",
+                            agent.id,
+                            agent.model_provider_id
+                        )
+                    })?;
 
                 let runtime_config = agent.get_runtime_config();
 

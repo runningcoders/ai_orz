@@ -94,6 +94,33 @@ async fn test_wake_brain_local(pool: SqlitePool) {
     assert_eq!(brain.agent_name, "Test Agent");
 }
 
+/// 测试 wake_brain 缺 model：Local Agent 未绑定 provider 时直接报错（不隐式兜底）
+#[sqlx::test]
+async fn test_wake_brain_local_missing_provider_errors(pool: SqlitePool) {
+    let (brain_dal, ctx) = init_test_env(pool).await;
+
+    // 不插入任何 ModelProvider：Agent 的 model_provider_id 指向不存在的 provider
+    let agent = create_test_local_agent("non-existent-provider");
+
+    let result = brain_dal.wake_brain(ctx.clone(), &agent, Vec::new()).await;
+
+    // 必须明确报错（缺 model 配置），而不是静默回退到某个默认 provider
+    let msg = match result {
+        Ok(_) => {
+            panic!("缺 model 配置时应报错，而不是成功 wake_brain")
+        }
+        Err(e) => e.to_string(),
+    };
+    assert!(
+        msg.contains("缺少对话模型配置"),
+        "错误信息应明确提示缺 model 配置，实际: {msg}"
+    );
+    assert!(
+        msg.contains("model_provider_id"),
+        "错误信息应包含绑定的 provider id 上下文，实际: {msg}"
+    );
+}
+
 /// 测试 Brain DAL test_connection 功能
 #[sqlx::test]
 async fn test_test_connection(pool: SqlitePool) {

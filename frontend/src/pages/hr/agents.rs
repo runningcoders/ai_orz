@@ -160,8 +160,8 @@ pub fn HrAgents() -> Element {
     // ===== 本地 Agent 创建处理 =====
     let handle_create = move |_| {
         spawn(async move {
-            if new_name().is_empty() || new_model_provider_id().is_empty() {
-                toast.error("名称和模型提供商 ID 不能为空");
+            if new_name().is_empty() {
+                toast.error("名称不能为空");
                 return;
             }
             creating.set(true);
@@ -646,7 +646,8 @@ pub fn HrAgents() -> Element {
                 }
                 div { class: "form-control w-full",
                     label { class: "label",
-                        span { class: "label-text font-medium", "模型提供商 *" }
+                        span { class: "label-text font-medium", "模型提供商" }
+                        span { class: "label-text-alt", "可选：暂不选择则 Agent 处于面试中状态，配置对话模型后入职即可用" }
                     }
                     if model_providers.read().iter().filter(|mp| mp.capability.is_agent()).count() == 0 {
                         div { class: "flex flex-col gap-1",
@@ -654,7 +655,7 @@ pub fn HrAgents() -> Element {
                                 class: "input input-bordered w-full opacity-60",
                                 value: "{new_model_provider_id}",
                                 oninput: move |e| new_model_provider_id.set(e.value()),
-                                placeholder: "暂无可用对话模型，请先在「模型提供商管理」中配置"
+                                placeholder: "暂无可用对话模型，可稍后在「模型提供商管理」中配置并绑定"
                             }
                             Link {
                                 class: "link link-primary link-hover text-xs",
@@ -665,7 +666,7 @@ pub fn HrAgents() -> Element {
                     } else {
                         select { class: "select select-bordered w-full", value: "{new_model_provider_id}",
                             onchange: move |e| new_model_provider_id.set(e.value()),
-                            option { value: "", "-- 请选择 --" }
+                            option { value: "", "-- 暂不绑定（面试中）--" }
                             for mp in model_providers.read().iter().filter(|mp| mp.capability.is_agent()) {
                                 option { value: "{mp.id}", "{mp.name} ({mp.model_name})" }
                             }

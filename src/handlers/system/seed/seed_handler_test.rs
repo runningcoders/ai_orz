@@ -21,6 +21,7 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     // 初始化所有 DAO
     crate::service::dao::organization::init();
     crate::service::dao::user::init();
+    crate::service::dao::user_credential::init();
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
     crate::service::dao::skill::init();
@@ -60,6 +61,10 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dal::message_channel::init();
     crate::service::dal::attachment::init();
     crate::service::dal::artifact::init();
+    // user dal / lark dal：organization / message 相关 domain 注入依赖
+    crate::service::dal::user::init();
+    crate::service::dal::lark::init();
+    crate::service::dal::mcp_server::init();
 
     // 初始化所有 Domain
     // 注意：seed handler 仅使用 organization / finance / hr domain，
@@ -68,6 +73,7 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::domain::hr::init();
     crate::service::domain::finance::init();
     crate::service::domain::organization::init();
+    crate::service::domain::message::init();
 
     new_test_ctx("test-seed-handler-user", pool)
 }

@@ -50,12 +50,6 @@ impl ModelProviderDao for MockModelProviderDao {
     async fn delete(&self, _ctx: RequestContext, _provider: &ModelProviderPo) -> Result<()> {
         Ok(())
     }
-    async fn get_default_agent_provider(
-        &self,
-        _ctx: RequestContext,
-    ) -> Result<Option<ModelProviderPo>> {
-        Ok(None)
-    }
 
     async fn get_default_embedding_provider(
         &self,

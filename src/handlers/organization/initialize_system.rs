@@ -244,7 +244,12 @@ impl InitializeSystemTask {
     }
 }
 
-/// 无条件创建预设前台接待 Agent，并安装项目管理技能。
+/// 无条件创建预设前台接待 Agent。
+///
+/// - 数据源：种子配置 default.json 的 TEMPLATE_RECEPTION_AGENT（name/roles/capabilities/soul）
+/// - 创建即 Interviewing；若初始化配置了 chat provider 则绑定并直接入职（Onboarded，立即可用）
+/// - 未配置 chat provider：创建为 Interviewing（缺 model，状态表达"未就绪"），
+///   用户后续在模型管理中补配对话模型并入职后即可使用——不隐式兜底
 ///
 /// 返回新创建的 Agent ID（或已存在前台 Agent 的 ID）。
 async fn create_preset_reception_agent(
@@ -253,16 +258,17 @@ async fn create_preset_reception_agent(
     chat_provider_id: Option<String>,
 ) -> Result<Option<String>> {
     use crate::models::agent::{Agent, AgentPo};
-    use common::constants::agent_roles::ROLE_RECEPTION;
     use common::enums::AgentStatus;
 
-    // 幂等：若已存在前台角色 Agent，直接复用，不重复创建
+    // 幂等：若已存在 reception 角色且 Onboarded 的前台 Agent，直接复用
     let existing = hr::domain()
         .agent_manage()
         .query(
             ctx.clone(),
             crate::service::dao::agent::AgentQuery {
-                roles: Some(vec![ROLE_RECEPTION.to_string()]),
+                roles: Some(vec![
+                    common::constants::agent_roles::ROLE_RECEPTION.to_string(),
+                ]),
                 status: Some(AgentStatus::Onboarded),
                 pagination: common::api::PaginationParams {
                     limit: Some(1),
@@ -280,58 +286,68 @@ async fn create_preset_reception_agent(
         return Ok(Some(existing_agent.po.id));
     }
 
-    let mut po = AgentPo::new(
-        "前台接待".to_string(),
-        vec![ROLE_RECEPTION.to_string()],
-        "负责接待访客、引导用户找到对应能力，并把复杂请求升级为任务流转的通用前台 Agent"
-            .to_string(),
-        vec![
-            "chat".to_string(),
-            "task".to_string(),
-            "knowledge".to_string(),
-        ],
-        PRESET_RECEPTION_SOUL.to_string(),
-        chat_provider_id.unwrap_or_default(),
+    // 从种子配置读取前台 Agent 模板（单一数据源）
+    let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+    let agent_def = snapshot
+        .agents
+        .iter()
+        .find(|a| a.id == "TEMPLATE_RECEPTION_AGENT")
+        .ok_or_else(|| Error::internal("种子配置缺少 TEMPLATE_RECEPTION_AGENT"))?;
+
+    // 用模板字段创建，model_provider_id 用初始化配置的 chat provider（无则留空）
+    let po = AgentPo::new(
+        agent_def.name.clone(),
+        agent_def.roles.clone(),
+        agent_def.description.clone(),
+        agent_def.capabilities.clone(),
+        agent_def.soul.clone(),
+        chat_provider_id.clone().unwrap_or_default(),
         owner_id.to_string(),
     );
-    po.status = AgentStatus::Onboarded;
-
+    // 创建即 Interviewing（create_agent 强制状态），缺 model 由此状态表达
     let agent = Agent::from_po(po);
     hr::domain()
         .agent_manage()
-        .create_bootstrap_agent(ctx.clone(), &agent)
+        .create_agent(ctx.clone(), &agent)
         .await?;
     let agent_id = agent.po.id.clone();
 
+    // 若初始化已配置对话模型：直接入职（Interviewing → PendingOnboard → Onboarded），立即可用
+    if chat_provider_id.is_some() {
+        let mut agent = hr::domain()
+            .agent_manage()
+            .get_agent(
+                ctx.clone(),
+                &agent_id,
+                crate::service::dal::agent::AgentFetchOptions::default(),
+            )
+            .await?
+            .ok_or_else(|| Error::not_found(format!("前台 Agent {} 不存在", agent_id)))?;
+        hr::domain()
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+            .await?;
+        hr::domain()
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+            .await?;
+        sys_info!(
+            "initialize_system: 前台 Agent {} 已绑定对话模型并入职",
+            agent_id
+        );
+    }
+
     // 安装项目管理技能（非 neural，需 match_keys 命中才进必加载；失败不阻塞初始化）
-    match hr::domain()
+    if let Err(e) = hr::domain()
         .agent_manage()
-        .install_skill_pack(ctx, &agent_id, "project_management")
+        .install_skill_pack(ctx.clone(), &agent_id, "project_management")
         .await
     {
-        Ok(n) => sys_info!(
-            "initialize_system: 前台 Agent 安装 project_management 技能完成，{} 条",
-            n
-        ),
-        Err(e) => {
-            sys_warn!("initialize_system: 前台 Agent 安装 project_management 技能失败（忽略）: {e}")
-        }
+        sys_warn!("initialize_system: 前台 Agent 安装 project_management 技能失败（忽略）: {e}");
     }
 
     Ok(Some(agent_id))
 }
-
-/// 预设前台接待 Agent 的灵魂设定
-const PRESET_RECEPTION_SOUL: &str = "你是「前台接待」，是组织的对外接待智能体，也是用户进入系统后第一个接触的角色。
-
-你的使命：让用户以最快速度找到对的人、对的答案、对的能力。
-
-行为准则：
-1. 快速识别意图：问候、咨询、闲聊直接回应；涉及具体业务（人事、财务、代码、项目等）先判断是否有更专业的 Agent 或工具可以承接。
-2. 能答就答：基于记忆与知识回答简单问题；不确定时不编造，明确告知用户并转派。
-3. 该转则转：遇到专业问题，优先引导到对应 Agent 或创建任务流转，不越俎代庖、不冒充专家。
-4. 亲切而克制：语气友好自然，但不做做不到的承诺；不暴露内部实现细节。
-5. 沉淀记忆：记住用户的关键偏好与常用需求，写进工作记忆与偏好，下次更快服务。";
 
 /// 检查系统是否已经初始化
 #[generate_http_handler]

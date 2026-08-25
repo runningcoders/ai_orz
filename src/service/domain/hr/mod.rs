@@ -277,14 +277,6 @@ pub trait AgentManage: Send + Sync {
     /// 创建 Agent
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
-    /// 引导式创建 Agent（绕过业务校验）
-    ///
-    /// 仅供系统初始化 / seed 导入等"引导"场景使用：
-    /// - 允许 Local Agent 不绑定 model_provider_id（留空，wake 时自动回退默认 Provider）
-    /// - 允许直接写入目标状态（如 Onboarded），不必先 Interviewing
-    /// 普通业务创建请走 `create_agent`（保留状态机与绑定校验）。
-    async fn create_bootstrap_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
-
     /// 获取 Agent
     async fn get_agent(
         &self,

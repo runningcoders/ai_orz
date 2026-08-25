@@ -794,14 +794,14 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
     assert_ne!(agent_skills[0].po.name, original_name, "名称应已变化");
 }
 
-/// 创建指定角色的 Onboarded 测试 Agent（直接写库，绕开 create_agent 的 Interviewing 校验）
+/// 创建指定角色的 Onboarded 测试 Agent（走正常流程：create_agent Interviewing → 入职）
 async fn create_onboarded_agent(
     ctx: RequestContext,
     domain: &std::sync::Arc<dyn HrDomain>,
     name: &str,
     roles: Vec<&str>,
 ) -> String {
-    let mut po = AgentPo::new(
+    let po = AgentPo::new(
         name.to_string(),
         roles.into_iter().map(|s| s.to_string()).collect(),
         "test agent".to_string(),
@@ -810,14 +810,34 @@ async fn create_onboarded_agent(
         "provider-id-1".to_string(),
         "admin".to_string(),
     );
-    po.status = AgentStatus::Onboarded;
     let agent = Agent::from_po(po);
+    let id = agent.po.id.clone();
     domain
         .agent_manage()
-        .create_bootstrap_agent(ctx.clone(), &agent)
+        .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    agent.po.id.clone()
+    let mut agent = domain
+        .agent_manage()
+        .get_agent(
+            ctx.clone(),
+            &id,
+            crate::service::dal::agent::AgentFetchOptions::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .transition_status(ctx, &mut agent, AgentStatus::Onboarded)
+        .await
+        .unwrap();
+    id
 }
 
 /// 渐进式角色匹配：全匹配（tier1）优先于子串层级（tier3）
