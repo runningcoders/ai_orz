@@ -355,23 +355,72 @@ pub async fn api_get_text(path: &str) -> Result<String, ApiError> {
 
 /// 拉取前端静态资源文本（相对页面 origin，如 /docs/index.json）。
 ///
-/// 与 api_get_text 不同：不拼 API base URL，直接走当前页面 origin，
-/// 因为静态资源由 dx serve（dev）/ 后端 dist 静态服务（prod）同源提供。
+/// 与 api_get_text 不同：不拼 API base URL，直接使用当前页面 window.origin
+/// 拼绝对路径后通过 web_sys fetch 拉取（reqwest wasm 下对相对路径处理不稳定）。
 pub async fn fetch_static_text(path: &str) -> Result<String, ApiError> {
-    let resp = client().get(path).send().await.map_err(network_err)?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(ApiError {
-            http_status: status.as_u16(),
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{Request, RequestInit, Response};
+
+    let window = web_sys::window().ok_or_else(|| ApiError {
+        http_status: 0,
+        error_code: None,
+        message: "未找到 window 对象".to_string(),
+    })?;
+    let origin = window.location().origin().map_err(|_| ApiError {
+        http_status: 0,
+        error_code: None,
+        message: "获取当前 origin 失败".to_string(),
+    })?;
+    let abs_path = if path.starts_with('/') {
+        format!("{}{}", origin.trim_end_matches('/'), path)
+    } else {
+        format!("{}/{}", origin.trim_end_matches('/'), path)
+    };
+
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+    opts.set_credentials(web_sys::RequestCredentials::SameOrigin);
+
+    let request = Request::new_with_str_and_init(&abs_path, &opts).map_err(|e| ApiError {
+        http_status: 0,
+        error_code: None,
+        message: format!("构造静态资源 Request 失败: {:?}", e),
+    })?;
+
+    let resp_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| ApiError {
+            http_status: 0,
             error_code: None,
-            message: format!("静态资源请求失败: {} {}", status.as_u16(), path),
+            message: format!("静态资源网络请求失败: {:?}", e),
+        })?;
+    let resp: Response = resp_value.dyn_into().map_err(|_| ApiError {
+        http_status: 0,
+        error_code: None,
+        message: "响应转换失败".to_string(),
+    })?;
+
+    let status = resp.status();
+    if !(200..300).contains(&status) {
+        return Err(ApiError {
+            http_status: status,
+            error_code: None,
+            message: format!("静态资源请求失败: {} {}", status, path),
         });
     }
-    resp.text().await.map_err(|e| ApiError {
-        http_status: status.as_u16(),
+
+    let text_promise = resp.text().map_err(|e| ApiError {
+        http_status: status,
         error_code: None,
-        message: e.to_string(),
-    })
+        message: format!("获取响应文本失败: {:?}", e),
+    })?;
+    let text = JsFuture::from(text_promise).await.map_err(|e| ApiError {
+        http_status: status,
+        error_code: None,
+        message: format!("读取响应文本失败: {:?}", e),
+    })?;
+    Ok(text.as_string().unwrap_or_default())
 }
 
 pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
