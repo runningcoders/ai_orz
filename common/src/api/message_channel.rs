@@ -81,16 +81,22 @@ pub struct DeleteMessageChannelRequest {
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct ListMessageChannelsRequest {
     /// Filter by user ID; defaults to current logged-in user if empty
+    #[param(source = "query")]
     pub user_id: Option<String>,
     /// Filter by Agent ID
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// Filter by channel type
+    #[param(source = "query")]
     pub channel_type: Option<ChannelType>,
     /// Only return enabled channels
+    #[param(source = "query")]
     pub only_enabled: Option<bool>,
     /// Limit result count
+    #[param(source = "query")]
     pub limit: Option<usize>,
     /// Skip count
+    #[param(source = "query")]
     pub offset: Option<usize>,
 }
 

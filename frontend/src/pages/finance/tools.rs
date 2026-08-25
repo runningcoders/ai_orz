@@ -1,6 +1,7 @@
 //! 工具管理
 
 use dioxus::prelude::*;
+use std::collections::{HashMap, HashSet};
 
 use crate::api::finance::{delete_tool, list_tools, query_tools, search_tools, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
@@ -9,11 +10,59 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    ListToolsRequest, ListToolsResponseItem, RuntimeReady, SearchToolsRequest, ToolQueryRequest,
-    UpdateToolStatusRequest,
+    ListToolsRequest, ListToolsResponseItem, RuntimeReady, SearchToolsRequest, ToolListItem,
+    ToolQueryRequest, UpdateToolStatusRequest,
 };
 use common::enums::{ToolProtocol, ToolStatus};
 use dioxus_router::Link;
+
+/// 通用内置工具（CoreTool 原生实现，非 handler）：用于组内区分 handler 工具
+const GENERIC_BUILTIN_TOOL_IDS: &[&str] = &[
+    "http_fetch",
+    "fs_read",
+    "fs_write",
+    "shell_exec",
+    "lark_cli",
+    "gh_cli",
+    "tavily_search",
+    "doubao_search",
+    "browser",
+    "mark_artifact",
+];
+
+/// 是否为通用内置工具（非 handler 的 Builtin 工具）
+fn is_generic_builtin_tool(t: &ToolListItem) -> bool {
+    GENERIC_BUILTIN_TOOL_IDS.contains(&t.id.as_str())
+}
+
+/// 是否为 handler 工具（Builtin 协议且非通用内置工具）
+fn is_handler_tool(t: &ToolListItem) -> bool {
+    t.protocol == ToolProtocol::Builtin && !is_generic_builtin_tool(t)
+}
+
+/// 分组键：neural 工具归入「neural」组（最高优先级）；其余取首个 tag，无 tag 归为「未分类」
+fn tool_group_key(t: &ToolListItem) -> String {
+    if t.tags.iter().any(|s| s == "neural") {
+        "neural".to_string()
+    } else {
+        t.tags
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "未分类".to_string())
+    }
+}
+
+/// 组内排序权重：普通工具优先（0），handler 工具靠后（1）
+fn tool_kind_rank(t: &ToolListItem) -> i32 {
+    if is_handler_tool(t) { 1 } else { 0 }
+}
+
+/// 分组排序键：neural 组优先，其余按 tag 名升序；「未分类」最后
+fn group_order_key(group: &(String, Vec<ToolListItem>)) -> (i32, u8, String) {
+    let neural_rank = if group.0 == "neural" { 0 } else { 1 };
+    let uncategorized = u8::from(group.0 == "未分类");
+    (neural_rank, uncategorized, group.0.clone())
+}
 
 #[component]
 pub fn FinanceTools() -> Element {
@@ -35,6 +84,9 @@ pub fn FinanceTools() -> Element {
 
     // ===== 创建 HTTP 工具弹窗 =====
     let mut show_create = use_signal(|| false);
+
+    // ===== 分组折叠状态（tag 分组视图） =====
+    let mut collapsed_groups: Signal<HashSet<String>> = use_signal(HashSet::new);
 
     // 加载数据（三场景切换：list / query / search）
     let load_data = move || {
@@ -111,14 +163,56 @@ pub fn FinanceTools() -> Element {
 
     let tools_list = tools.read().clone();
 
+    // 按 tag 分组：neural 组最高优先级；同 tag 内普通工具优先于 handler 工具
+    let mut group_map: HashMap<String, Vec<ToolListItem>> = HashMap::new();
+    for t in tools_list.iter() {
+        group_map
+            .entry(tool_group_key(t))
+            .or_default()
+            .push(t.clone());
+    }
+    let mut groups: Vec<(String, Vec<ToolListItem>)> = group_map.into_iter().collect();
+    for (_, group_tools) in groups.iter_mut() {
+        group_tools.sort_by(|a, b| {
+            tool_kind_rank(a)
+                .cmp(&tool_kind_rank(b))
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+    }
+    groups.sort_by_key(group_order_key);
+    let collapsed_set = collapsed_groups.read().clone();
+
     rsx! {
         AppLayout {
             div { class: "flex justify-between items-center mb-4",
                 h2 { class: "card-title", "工具管理" }
-                button {
-                    class: "btn btn-primary btn-sm",
-                    onclick: move |_| show_create.set(true),
-                    "+ 创建 HTTP 工具"
+                div { class: "flex gap-2",
+                    Link {
+                        class: "btn btn-ghost btn-sm",
+                        to: crate::pages::Route::FinanceMcpServers {},
+                        "🌐 MCP 服务器"
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        onclick: move |_| show_create.set(true),
+                        "+ 创建 HTTP 工具"
+                    }
+                }
+            }
+
+            // 工具创建来源引导：不同协议工具在对应页面创建
+            div { class: "alert alert-info shadow-md mb-4",
+                div { class: "w-full text-sm space-y-1",
+                    p { class: "font-medium", "工具创建指引" }
+                    div { class: "flex flex-wrap gap-x-6 gap-y-1",
+                        span { "· HTTP 工具：点击右上角「+ 创建 HTTP 工具」，用于封装外部 REST API" }
+                        Link {
+                            class: "link link-primary",
+                            to: crate::pages::Route::FinanceMcpServers {},
+                            "· MCP 工具：前往 MCP 服务器页创建服务器并同步工具 →"
+                        }
+                        span { "· 内置工具：由系统代码注册表同步，无需手动创建" }
+                    }
                 }
             }
 
@@ -201,92 +295,131 @@ pub fn FinanceTools() -> Element {
                                 th { "操作" }
                             }}
                             tbody {
-                                for t in tools_list.iter() {
+                                for (group_key, group_tools) in groups.iter() {
                                     {
-                                        let id = t.id.clone();
-                                        let name = t.name.clone();
-                                        let protocol = t.protocol;
-                                        let status = t.status;
-                                        let is_enabled = status == ToolStatus::Enabled;
-                                        let runtime_ready = t.runtime_ready.clone();
-                                        // 就绪 badge 三态（advisory）：未就绪悬浮显示原因与修复提示；Unknown（无探测器）弱化展示
-                                        let (ready_class, ready_title, ready_text) = match &runtime_ready {
-                                            RuntimeReady::Ready => (
-                                                "badge badge-success badge-outline",
-                                                "运行环境就绪（CLI 已安装 / 授权可用）".to_string(),
-                                                "就绪",
-                                            ),
-                                            RuntimeReady::NotReady { reason, hint } => (
-                                                "badge badge-warning badge-outline",
-                                                format!("未就绪（{}）：{}", reason, hint),
-                                                "未就绪",
-                                            ),
-                                            RuntimeReady::Unknown => (
-                                                "text-base-content/40 text-xs",
-                                                String::new(),
-                                                "—",
-                                            ),
-                                        };
-                                        let id_disable = id.clone();
-                                        let id_enable = id.clone();
-                                        let id_delete = id.clone();
-                                        let id_detail = id.clone();
+                                        let key = group_key.clone();
+                                        let group_len = group_tools.len();
+                                        let is_neural_group = key == "neural";
+                                        let is_uncategorized = key == "未分类";
+                                        let default_collapsed = !is_neural_group;
+                                        let is_collapsed =
+                                            collapsed_set.contains(&key) != default_collapsed;
+                                        let arrow = if is_collapsed { "▸" } else { "▾" };
+                                        let toggle_key = key.clone();
                                         rsx! {
-                                            tr { key: "{id}",
-                                                td { class: "font-semibold",
-                                                    Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
-                                                }
-                                                td { span { class: "badge badge-neutral", "{protocol}" } }
-                                                td {
-                                                    if is_enabled {
-                                                        span { class: "badge badge-success", "启用" }
+                                            tr { key: "{key}-header", class: "bg-base-200 cursor-pointer select-none",
+                                                onclick: move |_| {
+                                                    let toggle_key = toggle_key.clone();
+                                                    let mut set = collapsed_groups.write();
+                                                    if set.contains(&toggle_key) {
+                                                        set.remove(&toggle_key);
                                                     } else {
-                                                        span { class: "badge badge-error", "禁用" }
+                                                        set.insert(toggle_key);
+                                                    }
+                                                },
+                                                td { colspan: "5", class: "px-2 py-2",
+                                                    span { class: "font-semibold",
+                                                        "{arrow} {key}"
+                                                    }
+                                                    span { class: "badge badge-ghost badge-sm ml-2", "{group_len}" }
+                                                    if is_neural_group {
+                                                        span { class: "badge badge-primary badge-sm ml-2", "神经工具" }
+                                                    } else if is_uncategorized {
+                                                        span { class: "badge badge-warning badge-sm ml-2", "未分类" }
                                                     }
                                                 }
-                                                td {
-                                                    span {
-                                                        class: "{ready_class}",
-                                                        title: "{ready_title}",
-                                                        "{ready_text}"
-                                                    }
-                                                }
-                                                td { class: "flex gap-2 items-center",
-                                                    if is_enabled {
-                                                        button { class: "btn btn-ghost btn-sm",
-                                                            onclick: move |_| {
-                                                                let id_disable = id_disable.clone();
-                                                                spawn(async move {
-                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_disable, status: ToolStatus::Disabled }).await {
-                                                                        toast.error(&e);
+                                            }
+                                            if !is_collapsed {
+                                                for t in group_tools.iter() {
+                                                    {
+                                                        let id = t.id.clone();
+                                                        let name = t.name.clone();
+                                                        let protocol = t.protocol;
+                                                        let status = t.status;
+                                                        let is_enabled = status == ToolStatus::Enabled;
+                                                        let runtime_ready = t.runtime_ready.clone();
+                                                        // 就绪 badge 三态（advisory）：未就绪悬浮显示原因与修复提示；Unknown（无探测器）弱化展示
+                                                        let (ready_class, ready_title, ready_text) = match &runtime_ready {
+                                                            RuntimeReady::Ready => (
+                                                                "badge badge-success badge-outline",
+                                                                "运行环境就绪（CLI 已安装 / 授权可用）".to_string(),
+                                                                "就绪",
+                                                            ),
+                                                            RuntimeReady::NotReady { reason, hint } => (
+                                                                "badge badge-warning badge-outline",
+                                                                format!("未就绪（{}）：{}", reason, hint),
+                                                                "未就绪",
+                                                            ),
+                                                            RuntimeReady::Unknown => (
+                                                                "text-base-content/40 text-xs",
+                                                                String::new(),
+                                                                "—",
+                                                            ),
+                                                        };
+                                                        let id_disable = id.clone();
+                                                        let id_enable = id.clone();
+                                                        let id_delete = id.clone();
+                                                        let id_detail = id.clone();
+                                                        rsx! {
+                                                            tr { key: "{id}",
+                                                                td { class: "font-semibold",
+                                                                    Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
+                                                                }
+                                                                td { span { class: "badge badge-neutral", "{protocol}" } }
+                                                                td {
+                                                                    if is_enabled {
+                                                                        span { class: "badge badge-success", "启用" }
                                                                     } else {
-                                                                        load_data();
+                                                                        span { class: "badge badge-error", "禁用" }
                                                                     }
-                                                                });
-                                                            },
-                                                            "禁用"
-                                                        }
-                                                    } else {
-                                                        button { class: "btn btn-ghost btn-sm",
-                                                            onclick: move |_| {
-                                                                let id_enable = id_enable.clone();
-                                                                spawn(async move {
-                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_enable, status: ToolStatus::Enabled }).await {
-                                                                        toast.error(&e);
+                                                                }
+                                                                td {
+                                                                    span {
+                                                                        class: "{ready_class}",
+                                                                        title: "{ready_title}",
+                                                                        "{ready_text}"
+                                                                    }
+                                                                }
+                                                                td { class: "flex gap-2 items-center",
+                                                                    if is_enabled {
+                                                                        button { class: "btn btn-ghost btn-sm",
+                                                                            onclick: move |_| {
+                                                                                let id_disable = id_disable.clone();
+                                                                                spawn(async move {
+                                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_disable, status: ToolStatus::Disabled }).await {
+                                                                                        toast.error(&e);
+                                                                                    } else {
+                                                                                        load_data();
+                                                                                    }
+                                                                                });
+                                                                            },
+                                                                            "禁用"
+                                                                        }
                                                                     } else {
-                                                                        load_data();
+                                                                        button { class: "btn btn-ghost btn-sm",
+                                                                            onclick: move |_| {
+                                                                                let id_enable = id_enable.clone();
+                                                                                spawn(async move {
+                                                                                    if let Err(e) = update_tool_status(UpdateToolStatusRequest { id: id_enable, status: ToolStatus::Enabled }).await {
+                                                                                        toast.error(&e);
+                                                                                    } else {
+                                                                                        load_data();
+                                                                                    }
+                                                                                });
+                                                                            },
+                                                                            "启用"
+                                                                        }
                                                                     }
-                                                                });
-                                                            },
-                                                            "启用"
+                                                                    button { class: "btn btn-error btn-sm",
+                                                                        onclick: move |_| {
+                                                                            pending_delete_id.set(id_delete.clone());
+                                                                            show_delete_confirm.set(true);
+                                                                        },
+                                                                        "删除"
+                                                                    }
+                                                                }
+                                                            }
                                                         }
-                                                    }
-                                                    button { class: "btn btn-error btn-sm",
-                                                        onclick: move |_| {
-                                                            pending_delete_id.set(id_delete.clone());
-                                                            show_delete_confirm.set(true);
-                                                        },
-                                                        "删除"
                                                     }
                                                 }
                                             }
