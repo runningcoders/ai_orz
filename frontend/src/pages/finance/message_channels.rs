@@ -61,12 +61,31 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_name = use_signal(String::new);
     let mut new_type = use_signal(|| "0".to_string());
     let mut new_webhook_url = use_signal(String::new);
+    let mut new_access_token = use_signal(String::new);
+    let mut new_secret = use_signal(String::new);
     let mut new_lark_credential_id = use_signal(String::new);
     let mut new_lark_identity_mode = use_signal(String::new);
     let mut new_lark_open_id = use_signal(String::new);
     let mut new_lark_user_name = use_signal(String::new);
     let mut new_agent_id = use_signal(String::new);
     let mut new_listen_inbound = use_signal(|| true);
+    // 微信
+    let mut new_wechat_app_id = use_signal(String::new);
+    let mut new_wechat_app_secret = use_signal(String::new);
+    let mut new_wechat_open_id = use_signal(String::new);
+    // 邮件
+    let mut new_email_smtp_host = use_signal(String::new);
+    let mut new_email_smtp_port = use_signal(String::new);
+    let mut new_email_username = use_signal(String::new);
+    let mut new_email_password = use_signal(String::new);
+    let mut new_email_from = use_signal(String::new);
+    let mut new_email_to = use_signal(String::new);
+    // Slack
+    let mut new_slack_bot_token = use_signal(String::new);
+    let mut new_slack_channel_id = use_signal(String::new);
+    // Webhook 高级
+    let mut new_webhook_method = use_signal(String::new);
+    let mut new_webhook_body_template = use_signal(String::new);
     let mut creating = use_signal(|| false);
 
     // Agent 下拉数据
@@ -112,32 +131,33 @@ pub fn FinanceMessageChannels() -> Element {
             }
             creating.set(true);
             let channel_type = ChannelType::from_i32(new_type().parse::<i32>().unwrap_or(0));
+            let email_port: Option<u16> = new_email_smtp_port().parse().ok();
             let req = CreateMessageChannelRequest {
                 user_id: None,
                 agent_id: none_if_empty(new_agent_id()),
                 channel_type,
                 channel_name: new_name(),
                 webhook_url: none_if_empty(new_webhook_url()),
-                access_token: None,
-                secret: None,
+                access_token: none_if_empty(new_access_token()),
+                secret: none_if_empty(new_secret()),
                 lark_credential_id: none_if_empty(new_lark_credential_id()),
                 lark_identity_mode: none_if_empty(new_lark_identity_mode()),
                 lark_open_id: none_if_empty(new_lark_open_id()),
                 lark_user_name: none_if_empty(new_lark_user_name()),
                 lark_listen_inbound: Some(new_listen_inbound()),
-                wechat_app_id: None,
-                wechat_app_secret: None,
-                wechat_open_id: None,
-                email_smtp_host: None,
-                email_smtp_port: None,
-                email_username: None,
-                email_password: None,
-                email_from_address: None,
-                email_to_address: None,
-                slack_bot_token: None,
-                slack_channel_id: None,
-                webhook_method: None,
-                webhook_body_template: None,
+                wechat_app_id: none_if_empty(new_wechat_app_id()),
+                wechat_app_secret: none_if_empty(new_wechat_app_secret()),
+                wechat_open_id: none_if_empty(new_wechat_open_id()),
+                email_smtp_host: none_if_empty(new_email_smtp_host()),
+                email_smtp_port: email_port,
+                email_username: none_if_empty(new_email_username()),
+                email_password: none_if_empty(new_email_password()),
+                email_from_address: none_if_empty(new_email_from()),
+                email_to_address: none_if_empty(new_email_to()),
+                slack_bot_token: none_if_empty(new_slack_bot_token()),
+                slack_channel_id: none_if_empty(new_slack_channel_id()),
+                webhook_method: none_if_empty(new_webhook_method()),
+                webhook_body_template: none_if_empty(new_webhook_body_template()),
             };
             match create_message_channel(req).await {
                 Ok(_) => {
@@ -145,12 +165,27 @@ pub fn FinanceMessageChannels() -> Element {
                     new_name.set(String::new());
                     new_type.set("0".to_string());
                     new_webhook_url.set(String::new());
+                    new_access_token.set(String::new());
+                    new_secret.set(String::new());
                     new_lark_credential_id.set(String::new());
                     new_lark_identity_mode.set(String::new());
                     new_lark_open_id.set(String::new());
                     new_lark_user_name.set(String::new());
                     new_agent_id.set(String::new());
                     new_listen_inbound.set(true);
+                    new_wechat_app_id.set(String::new());
+                    new_wechat_app_secret.set(String::new());
+                    new_wechat_open_id.set(String::new());
+                    new_email_smtp_host.set(String::new());
+                    new_email_smtp_port.set(String::new());
+                    new_email_username.set(String::new());
+                    new_email_password.set(String::new());
+                    new_email_from.set(String::new());
+                    new_email_to.set(String::new());
+                    new_slack_bot_token.set(String::new());
+                    new_slack_channel_id.set(String::new());
+                    new_webhook_method.set(String::new());
+                    new_webhook_body_template.set(String::new());
                     toast.success("创建成功，建议先运行连接测试");
                     match list_message_channels().await {
                         Ok(list) => channels.set(list.channels),
@@ -169,6 +204,10 @@ pub fn FinanceMessageChannels() -> Element {
 
     let new_type_value = new_type();
     let is_lark_type = new_type_value == "0";
+    let is_wechat_type = new_type_value == "1";
+    let is_slack_type = new_type_value == "2";
+    let is_email_type = new_type_value == "3";
+    let is_webhook_type = new_type_value == "4";
     let no_credentials = is_lark_type && credentials_list.is_empty();
     let credential_value = new_lark_credential_id();
     let identity_mode_value = new_lark_identity_mode();
@@ -330,8 +369,28 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                     }
 
+                    // ===== 通用：绑定 Agent + Webhook URL（非飞书渠道） =====
+                    if !is_lark_type {
+                        div { class: "form-control w-full",
+                            label { class: "label",
+                                span { class: "label-text", "绑定 Agent" }
+                            }
+                            select { class: "select select-bordered w-full", value: "{agent_value}",
+                                onchange: move |e| new_agent_id.set(e.value()),
+                                option { value: "", "不绑定（用户全局默认渠道）" }
+                                for agent in agents_list.iter() {
+                                    {
+                                        let aid = agent.id.clone();
+                                        let aname = agent.name.clone();
+                                        rsx! { option { key: "{aid}", value: "{aid}", "{aname}" } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ===== 飞书配置 =====
                     if is_lark_type {
-                        // ===== 区块一：应用凭证选择（必填，凭证在设置页绑定） =====
                         div { class: "divider text-sm font-medium m-0", "飞书应用凭证 *" }
                         if no_credentials {
                             div { class: "alert alert-warning",
@@ -371,8 +430,6 @@ pub fn FinanceMessageChannels() -> Element {
                                 }
                             }
                         }
-
-                        // ===== 区块二：用户与路由（可选） =====
                         div { class: "divider text-sm font-medium m-0", "用户与路由（可选）" }
                         div { class: "form-control w-full",
                             label { class: "label",
@@ -390,22 +447,6 @@ pub fn FinanceMessageChannels() -> Element {
                                 oninput: move |e| new_lark_user_name.set(e.value()),
                                 placeholder: "可选，用于展示" }
                         }
-                        div { class: "form-control w-full",
-                            label { class: "label",
-                                span { class: "label-text", "绑定 Agent" }
-                            }
-                            select { class: "select select-bordered w-full", value: "{agent_value}",
-                                onchange: move |e| new_agent_id.set(e.value()),
-                                option { value: "", "不绑定（用户全局默认渠道）" }
-                                for agent in agents_list.iter() {
-                                    {
-                                        let aid = agent.id.clone();
-                                        let aname = agent.name.clone();
-                                        rsx! { option { key: "{aid}", value: "{aid}", "{aname}" } }
-                                    }
-                                }
-                            }
-                        }
                         div { class: "form-control",
                             label { class: "label cursor-pointer justify-start gap-3",
                                 input { class: "toggle toggle-primary", r#type: "checkbox", checked: listen_inbound_value,
@@ -417,14 +458,129 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                     }
 
-                    if new_type_value == "4" {
+                    // ===== 微信配置 =====
+                    if is_wechat_type {
+                        div { class: "divider text-sm font-medium m-0", "微信应用配置" }
                         div { class: "form-control w-full",
-                            label { class: "label",
-                                span { class: "label-text font-medium", "Webhook URL" }
-                            }
+                            label { class: "label", span { class: "label-text font-medium", "App ID *" } }
+                            input { class: "input input-bordered w-full", value: "{new_wechat_app_id}",
+                                oninput: move |e| new_wechat_app_id.set(e.value()),
+                                placeholder: "微信公众号/企业微信 AppID" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "App Secret *" } }
+                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_wechat_app_secret}",
+                                oninput: move |e| new_wechat_app_secret.set(e.value()),
+                                placeholder: "应用密钥" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text", "用户 Open ID" } }
+                            input { class: "input input-bordered w-full font-mono", value: "{new_wechat_open_id}",
+                                oninput: move |e| new_wechat_open_id.set(e.value()),
+                                placeholder: "绑定后接收该用户消息" }
+                        }
+                    }
+
+                    // ===== 邮件配置 =====
+                    if is_email_type {
+                        div { class: "divider text-sm font-medium m-0", "邮件 SMTP 配置" }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "SMTP Host *" } }
+                            input { class: "input input-bordered w-full", value: "{new_email_smtp_host}",
+                                oninput: move |e| new_email_smtp_host.set(e.value()),
+                                placeholder: "smtp.example.com" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "SMTP Port" } }
+                            input { class: "input input-bordered w-full", value: "{new_email_smtp_port}",
+                                oninput: move |e| new_email_smtp_port.set(e.value()),
+                                placeholder: "465（SSL）/ 587（STARTTLS）" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "用户名 *" } }
+                            input { class: "input input-bordered w-full", value: "{new_email_username}",
+                                oninput: move |e| new_email_username.set(e.value()),
+                                placeholder: "邮箱账号" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "密码 *" } }
+                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_email_password}",
+                                oninput: move |e| new_email_password.set(e.value()),
+                                placeholder: "邮箱密码或授权码" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "发件地址 *" } }
+                            input { class: "input input-bordered w-full", value: "{new_email_from}",
+                                oninput: move |e| new_email_from.set(e.value()),
+                                placeholder: "noreply@example.com" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "收件地址 *" } }
+                            input { class: "input input-bordered w-full", value: "{new_email_to}",
+                                oninput: move |e| new_email_to.set(e.value()),
+                                placeholder: "接收通知的邮箱" }
+                        }
+                    }
+
+                    // ===== Slack 配置 =====
+                    if is_slack_type {
+                        div { class: "divider text-sm font-medium m-0", "Slack 应用配置" }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "Bot Token *" } }
+                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_slack_bot_token}",
+                                oninput: move |e| new_slack_bot_token.set(e.value()),
+                                placeholder: "xoxb-xxxx-xxxx-xxxx" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "Channel ID *" } }
+                            input { class: "input input-bordered w-full", value: "{new_slack_channel_id}",
+                                oninput: move |e| new_slack_channel_id.set(e.value()),
+                                placeholder: "C1234567890" }
+                        }
+                    }
+
+                    // ===== Webhook 配置 =====
+                    if is_webhook_type {
+                        div { class: "divider text-sm font-medium m-0", "Webhook 配置" }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "Webhook URL *" } }
                             input { class: "input input-bordered w-full", value: "{new_webhook_url}",
                                 oninput: move |e| new_webhook_url.set(e.value()),
                                 placeholder: "https://..." }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text font-medium", "HTTP 方法" } }
+                            select { class: "select select-bordered w-full", value: "{new_webhook_method}",
+                                onchange: move |e| new_webhook_method.set(e.value()),
+                                option { value: "", "POST（默认）" }
+                                option { value: "GET", "GET" }
+                                option { value: "POST", "POST" }
+                                option { value: "PUT", "PUT" }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text", "请求体模板（JSON，可选）" } }
+                            {
+                                let ph = r#"{"text": "{{message}}"}"#;
+                                rsx! {
+                                    textarea { class: "textarea textarea-bordered w-full font-mono text-xs", rows: 3,
+                                        value: "{new_webhook_body_template}",
+                                        oninput: move |e| new_webhook_body_template.set(e.value()),
+                                        placeholder: "{ph}" }
+                                }
+                            }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text", "Access Token（可选）" } }
+                            input { class: "input input-bordered w-full", value: "{new_access_token}",
+                                oninput: move |e| new_access_token.set(e.value()),
+                                placeholder: "Bearer token 等，用于认证" }
+                        }
+                        div { class: "form-control w-full",
+                            label { class: "label", span { class: "label-text", "签名密钥（可选）" } }
+                            input { class: "input input-bordered w-full", value: "{new_secret}",
+                                oninput: move |e| new_secret.set(e.value()),
+                                placeholder: "用于验证 webhook 请求签名" }
                         }
                     }
                 }

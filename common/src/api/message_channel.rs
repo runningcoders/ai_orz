@@ -325,6 +325,24 @@ pub struct MessageChannelDetail {
     pub lark_user_name: Option<String>,
     /// Whether inbound Lark P2P messages are listened (default true)
     pub lark_listen_inbound: bool,
+    /// 微信 Open ID（非敏感展示）
+    pub wechat_open_id: Option<String>,
+    /// 邮件 SMTP Host（非敏感展示）
+    pub email_smtp_host: Option<String>,
+    /// 邮件 SMTP Port（非敏感展示）
+    pub email_smtp_port: Option<u16>,
+    /// 邮件用户名（非敏感展示）
+    pub email_username: Option<String>,
+    /// 邮件发件地址（非敏感展示）
+    pub email_from_address: Option<String>,
+    /// 邮件收件地址（非敏感展示）
+    pub email_to_address: Option<String>,
+    /// Slack Channel ID（非敏感展示）
+    pub slack_channel_id: Option<String>,
+    /// Webhook HTTP 方法（非敏感展示）
+    pub webhook_method: Option<String>,
+    /// Webhook 请求体模板（非敏感展示）
+    pub webhook_body_template: Option<String>,
     /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
     /// Last push error message

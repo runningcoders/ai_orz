@@ -33,13 +33,28 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut testing = use_signal(|| false);
     let mut show_delete_confirm = use_signal(|| false);
 
-    // ===== 飞书配置编辑 =====
+    // ===== 配置编辑（通用） =====
     let mut show_edit_modal = use_signal(|| false);
+    let mut edit_channel_name = use_signal(String::new);
+    let mut edit_agent_id = use_signal(String::new);
     let mut edit_credential_id = use_signal(String::new);
     let mut edit_identity_mode = use_signal(String::new);
     let mut edit_open_id = use_signal(String::new);
     let mut edit_user_name = use_signal(String::new);
     let mut edit_listen_inbound = use_signal(|| true);
+    // WeChat
+    let mut edit_wechat_open_id = use_signal(String::new);
+    // Email
+    let mut edit_email_smtp_host = use_signal(String::new);
+    let mut edit_email_smtp_port = use_signal(|| 587u16);
+    let mut edit_email_username = use_signal(String::new);
+    let mut edit_email_from_address = use_signal(String::new);
+    let mut edit_email_to_address = use_signal(String::new);
+    // Slack
+    let mut edit_slack_channel_id = use_signal(String::new);
+    // Webhook
+    let mut edit_webhook_method = use_signal(String::new);
+    let mut edit_webhook_body_template = use_signal(String::new);
     let mut saving = use_signal(|| false);
 
     // ===== 飞书集成快照（凭证下拉 + 用户授权徽标） =====
@@ -133,22 +148,29 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         }
     };
 
-    // 打开编辑弹窗：预填当前凭证引用与路由字段（凭证本体在设置页管理）
+    // 打开编辑弹窗：预填当前所有类型字段
     let on_open_edit = {
-        let id = id.clone();
         move |_| {
             let current = channel.read().clone();
             if let Some(c) = &current {
+                edit_channel_name.set(c.channel_name.clone());
+                edit_agent_id.set(c.agent_id.clone().unwrap_or_default());
                 edit_credential_id.set(c.lark_credential_id.clone().unwrap_or_default());
                 edit_identity_mode.set(c.lark_identity_mode.clone().unwrap_or_default());
                 edit_open_id.set(c.lark_open_id.clone().unwrap_or_default());
                 edit_user_name.set(c.lark_user_name.clone().unwrap_or_default());
                 edit_listen_inbound.set(c.lark_listen_inbound);
+                edit_wechat_open_id.set(c.wechat_open_id.clone().unwrap_or_default());
+                edit_email_smtp_host.set(c.email_smtp_host.clone().unwrap_or_default());
+                edit_email_smtp_port.set(c.email_smtp_port.unwrap_or(587));
+                edit_email_username.set(c.email_username.clone().unwrap_or_default());
+                edit_email_from_address.set(c.email_from_address.clone().unwrap_or_default());
+                edit_email_to_address.set(c.email_to_address.clone().unwrap_or_default());
+                edit_slack_channel_id.set(c.slack_channel_id.clone().unwrap_or_default());
+                edit_webhook_method.set(c.webhook_method.clone().unwrap_or_default());
+                edit_webhook_body_template.set(c.webhook_body_template.clone().unwrap_or_default());
             }
             show_edit_modal.set(true);
-            let id = id.clone();
-            // 保留引用避免未使用告警
-            let _ = id;
         }
     };
 
@@ -156,27 +178,54 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         let id = id.clone();
         move |_| {
             let id = id.clone();
+            let current = channel.read().clone();
+            let channel_type = current
+                .as_ref()
+                .map(|c| c.channel_type)
+                .unwrap_or(ChannelType::Lark);
             saving.set(true);
             spawn(async move {
+                let channel_name = edit_channel_name();
+                let agent_id = edit_agent_id();
+                if channel_name.trim().is_empty() {
+                    toast.error("渠道名称不能为空");
+                    saving.set(false);
+                    return;
+                }
                 let credential_id = edit_credential_id();
                 let identity_mode = edit_identity_mode();
                 let open_id = edit_open_id();
                 let user_name = edit_user_name();
-                if credential_id.trim().is_empty() {
-                    toast.error("必须选择应用凭证");
-                    saving.set(false);
-                    return;
-                }
+                let wechat_open_id = edit_wechat_open_id();
+                let email_smtp_host = edit_email_smtp_host();
+                let email_smtp_port = edit_email_smtp_port();
+                let email_username = edit_email_username();
+                let email_from_address = edit_email_from_address();
+                let email_to_address = edit_email_to_address();
+                let slack_channel_id = edit_slack_channel_id();
+                let webhook_method = edit_webhook_method();
+                let webhook_body_template = edit_webhook_body_template();
+
                 let req = UpdateMessageChannelRequest {
                     id: id.clone(),
                     user_id: None,
-                    agent_id: None,
+                    agent_id: if agent_id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(agent_id)
+                    },
                     channel_type: None,
-                    channel_name: None,
+                    channel_name: Some(channel_name),
                     webhook_url: None,
                     access_token: None,
                     secret: None,
-                    lark_credential_id: Some(credential_id),
+                    lark_credential_id: if channel_type == ChannelType::Lark
+                        && !credential_id.trim().is_empty()
+                    {
+                        Some(credential_id)
+                    } else {
+                        None
+                    },
                     lark_identity_mode: if identity_mode.trim().is_empty() {
                         None
                     } else {
@@ -195,17 +244,53 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     lark_listen_inbound: Some(edit_listen_inbound()),
                     wechat_app_id: None,
                     wechat_app_secret: None,
-                    wechat_open_id: None,
-                    email_smtp_host: None,
-                    email_smtp_port: None,
-                    email_username: None,
+                    wechat_open_id: if wechat_open_id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(wechat_open_id)
+                    },
+                    email_smtp_host: if email_smtp_host.trim().is_empty() {
+                        None
+                    } else {
+                        Some(email_smtp_host)
+                    },
+                    email_smtp_port: if channel_type == ChannelType::Email {
+                        Some(email_smtp_port)
+                    } else {
+                        None
+                    },
+                    email_username: if email_username.trim().is_empty() {
+                        None
+                    } else {
+                        Some(email_username)
+                    },
                     email_password: None,
-                    email_from_address: None,
-                    email_to_address: None,
+                    email_from_address: if email_from_address.trim().is_empty() {
+                        None
+                    } else {
+                        Some(email_from_address)
+                    },
+                    email_to_address: if email_to_address.trim().is_empty() {
+                        None
+                    } else {
+                        Some(email_to_address)
+                    },
                     slack_bot_token: None,
-                    slack_channel_id: None,
-                    webhook_method: None,
-                    webhook_body_template: None,
+                    slack_channel_id: if slack_channel_id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(slack_channel_id)
+                    },
+                    webhook_method: if webhook_method.trim().is_empty() {
+                        None
+                    } else {
+                        Some(webhook_method)
+                    },
+                    webhook_body_template: if webhook_body_template.trim().is_empty() {
+                        None
+                    } else {
+                        Some(webhook_body_template)
+                    },
                 };
                 match update_message_channel(req).await {
                     Ok(_) => {
@@ -242,7 +327,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             }
             if loading() {
                 Loading {}
-            } else if let Some(c) = channel_data {
+            } else if let Some(c) = channel_data.clone() {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
                         div { class: "flex justify-between items-center mb-4",
@@ -253,6 +338,12 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                         class: "btn btn-ghost btn-sm",
                                         onclick: on_open_edit,
                                         "✏️ 编辑飞书配置"
+                                    }
+                                } else {
+                                    button {
+                                        class: "btn btn-ghost btn-sm",
+                                        onclick: on_open_edit,
+                                        "✏️ 编辑"
                                     }
                                 }
                                 button {
@@ -356,6 +447,76 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     Link { class: "btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "管理身份凭证 →" }
                                 }
                             }
+                            if c.channel_type == ChannelType::Wechat {
+                                div {
+                                    div { class: "text-sm text-base-content/60", "微信 Open ID" }
+                                    div { class: "font-mono",
+                                        if let Some(id) = &c.wechat_open_id { "{id}" } else { "未配置" }
+                                    }
+                                }
+                            }
+                            if c.channel_type == ChannelType::Email {
+                                div {
+                                    div { class: "text-sm text-base-content/60", "SMTP 服务器" }
+                                    {
+                                        let smtp = match (&c.email_smtp_host, c.email_smtp_port) {
+                                            (Some(h), Some(p)) => format!("{h}:{p}"),
+                                            (Some(h), None) => h.clone(),
+                                            _ => "未配置".to_string(),
+                                        };
+                                        rsx! { div { class: "font-mono", "{smtp}" } }
+                                    }
+                                }
+                                div {
+                                    div { class: "text-sm text-base-content/60", "用户名" }
+                                    div { class: "font-mono",
+                                        if let Some(u) = &c.email_username { "{u}" } else { "未配置" }
+                                    }
+                                }
+                                div {
+                                    div { class: "text-sm text-base-content/60", "发件地址" }
+                                    div { class: "font-mono",
+                                        if let Some(a) = &c.email_from_address { "{a}" } else { "未配置" }
+                                    }
+                                }
+                                div {
+                                    div { class: "text-sm text-base-content/60", "收件地址" }
+                                    div { class: "font-mono",
+                                        if let Some(a) = &c.email_to_address { "{a}" } else { "未配置" }
+                                    }
+                                }
+                            }
+                            if c.channel_type == ChannelType::Slack {
+                                div {
+                                    div { class: "text-sm text-base-content/60", "Channel ID" }
+                                    div { class: "font-mono",
+                                        if let Some(id) = &c.slack_channel_id { "{id}" } else { "未配置" }
+                                    }
+                                }
+                            }
+                            if c.channel_type == ChannelType::Webhook {
+                                if let Some(url) = &c.webhook_url {
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "Webhook URL" }
+                                        div { class: "font-mono text-sm break-all", "{url}" }
+                                    }
+                                }
+                                if let Some(method) = &c.webhook_method {
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "HTTP 方法" }
+                                        div { span { class: "badge badge-info badge-sm", "{method}" } }
+                                    }
+                                }
+                                if let Some(tmpl) = &c.webhook_body_template {
+                                    div { class: "md:col-span-2",
+                                        div { class: "text-sm text-base-content/60", "请求体模板" }
+                                        pre { class: "font-mono text-xs bg-base-200 p-2 rounded",
+                                            style: "white-space: pre-wrap; word-break: break-word;",
+                                            "{tmpl}"
+                                        }
+                                    }
+                                }
+                            }
                             div {
                                 div { class: "text-sm text-base-content/60", "凭据状态" }
                                 div { class: "flex gap-2 flex-wrap",
@@ -407,7 +568,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             }
 
             Modal {
-                title: "编辑飞书配置".to_string(),
+                title: {
+                    let ct = channel_data.as_ref().map(|c| c.channel_type).unwrap_or(ChannelType::Lark);
+                    format!("编辑 {} 渠道配置", channel_type_text(ct))
+                },
                 show: show_edit_modal(),
                 on_close: move |_| show_edit_modal.set(false),
                 footer: rsx! {
@@ -416,58 +580,173 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         if saving() { "保存中..." } else { "保存" }
                     }
                 },
-                div { class: "space-y-4",
-                    div { class: "form-control w-full",
-                        label { class: "label",
-                            span { class: "label-text font-medium", "应用凭证 *" }
-                        }
-                        select { class: "select select-bordered w-full", value: "{edit_credential_value}",
-                            onchange: move |e| edit_credential_id.set(e.value()),
-                            option { value: "", "请选择已绑定的应用凭证" }
-                            for cred in credentials_list.iter() {
-                                {
-                                    let cid = cred.credential_id.clone();
-                                    let cname = cred.name.clone();
-                                    let capp = cred.app_id.clone();
-                                    rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{capp}）" } }
+                {
+                    let ct = channel_data.as_ref().map(|c| c.channel_type).unwrap_or(ChannelType::Lark);
+                    rsx! {
+                        div { class: "space-y-4",
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "渠道名称 *" }
+                                }
+                                input { class: "input input-bordered w-full", value: "{edit_channel_name}",
+                                    oninput: move |e| edit_channel_name.set(e.value()), placeholder: "自定义渠道名称" }
+                            }
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "关联 Agent ID" }
+                                }
+                                input { class: "input input-bordered w-full font-mono", value: "{edit_agent_id}",
+                                    oninput: move |e| edit_agent_id.set(e.value()), placeholder: "留空表示不关联" }
+                            }
+                            if ct == ChannelType::Lark {
+                                div { class: "divider", "飞书专属配置" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "应用凭证 *" }
+                                    }
+                                    select { class: "select select-bordered w-full", value: "{edit_credential_value}",
+                                        onchange: move |e| edit_credential_id.set(e.value()),
+                                        option { value: "", "请选择已绑定的应用凭证" }
+                                        for cred in credentials_list.iter() {
+                                            {
+                                                let cid = cred.credential_id.clone();
+                                                let cname = cred.name.clone();
+                                                let capp = cred.app_id.clone();
+                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{capp}）" } }
+                                            }
+                                        }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」管理；更换凭证将触发监听重建联" }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "身份模式" }
+                                    }
+                                    select { class: "select select-bordered w-full", value: "{edit_mode_value}",
+                                        onchange: move |e| edit_identity_mode.set(e.value()),
+                                        option { value: "", "自动（auto）" }
+                                        option { value: "bot", "应用身份（bot）" }
+                                        option { value: "user", "用户身份（user）" }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "用户 Open ID" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_open_id}",
+                                        oninput: move |e| edit_open_id.set(e.value()), placeholder: "ou_xxx" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "用户昵称" }
+                                    }
+                                    input { class: "input input-bordered w-full", value: "{edit_user_name}",
+                                        oninput: move |e| edit_user_name.set(e.value()), placeholder: "可选" }
+                                }
+                                div { class: "form-control",
+                                    label { class: "label cursor-pointer justify-start gap-3",
+                                        input { class: "toggle toggle-primary", r#type: "checkbox", checked: edit_listen_inbound(),
+                                            onchange: move |_| edit_listen_inbound.set(!edit_listen_inbound()) }
+                                        span { class: "label-text",
+                                            "入站监听（接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份）"
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        label { class: "label",
-                            span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」管理；更换凭证将触发监听重建联" }
-                        }
-                    }
-                    div { class: "form-control w-full",
-                        label { class: "label",
-                            span { class: "label-text font-medium", "身份模式" }
-                        }
-                        select { class: "select select-bordered w-full", value: "{edit_mode_value}",
-                            onchange: move |e| edit_identity_mode.set(e.value()),
-                            option { value: "", "自动（auto）" }
-                            option { value: "bot", "应用身份（bot）" }
-                            option { value: "user", "用户身份（user）" }
-                        }
-                    }
-                    div { class: "form-control w-full",
-                        label { class: "label",
-                            span { class: "label-text", "用户 Open ID" }
-                        }
-                        input { class: "input input-bordered w-full font-mono", value: "{edit_open_id}",
-                            oninput: move |e| edit_open_id.set(e.value()), placeholder: "ou_xxx" }
-                    }
-                    div { class: "form-control w-full",
-                        label { class: "label",
-                            span { class: "label-text", "用户昵称" }
-                        }
-                        input { class: "input input-bordered w-full", value: "{edit_user_name}",
-                            oninput: move |e| edit_user_name.set(e.value()), placeholder: "可选" }
-                    }
-                    div { class: "form-control",
-                        label { class: "label cursor-pointer justify-start gap-3",
-                            input { class: "toggle toggle-primary", r#type: "checkbox", checked: edit_listen_inbound(),
-                                onchange: move |_| edit_listen_inbound.set(!edit_listen_inbound()) }
-                            span { class: "label-text",
-                                "入站监听（接收该应用的飞书私信消息；关闭后仅用于出站推送与 lark_cli 工具身份）"
+                            if ct == ChannelType::Wechat {
+                                div { class: "divider", "微信专属配置" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "微信 Open ID" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_wechat_open_id}",
+                                        oninput: move |e| edit_wechat_open_id.set(e.value()), placeholder: "openid_xxx" }
+                                }
+                            }
+                            if ct == ChannelType::Email {
+                                div { class: "divider", "邮件专属配置" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "SMTP 服务器 *" }
+                                    }
+                                    input { class: "input input-bordered w-full", value: "{edit_email_smtp_host}",
+                                        oninput: move |e| edit_email_smtp_host.set(e.value()), placeholder: "smtp.example.com" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text font-medium", "SMTP 端口 *" }
+                                    }
+                                    input { class: "input input-bordered w-full", value: "{edit_email_smtp_port.to_string()}",
+                                        oninput: move |e| {
+                                            if let Ok(v) = e.value().parse::<u16>() { edit_email_smtp_port.set(v); }
+                                        }, placeholder: "587" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "用户名" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_username}",
+                                        oninput: move |e| edit_email_username.set(e.value()), placeholder: "user@example.com" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "发件地址" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_from_address}",
+                                        oninput: move |e| edit_email_from_address.set(e.value()), placeholder: "from@example.com" }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "收件地址" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_to_address}",
+                                        oninput: move |e| edit_email_to_address.set(e.value()), placeholder: "to@example.com" }
+                                }
+                            }
+                            if ct == ChannelType::Slack {
+                                div { class: "divider", "Slack 专属配置" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "Channel ID" }
+                                    }
+                                    input { class: "input input-bordered w-full font-mono", value: "{edit_slack_channel_id}",
+                                        oninput: move |e| edit_slack_channel_id.set(e.value()), placeholder: "CXXXXXXXXXX" }
+                                }
+                            }
+                            if ct == ChannelType::Webhook {
+                                div { class: "divider", "Webhook 专属配置" }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "HTTP 方法" }
+                                    }
+                                    select { class: "select select-bordered w-full", value: "{edit_webhook_method}",
+                                        onchange: move |e| edit_webhook_method.set(e.value()),
+                                        option { value: "", "选择方法" }
+                                        option { value: "POST", "POST" }
+                                        option { value: "GET", "GET" }
+                                        option { value: "PUT", "PUT" }
+                                        option { value: "DELETE", "DELETE" }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "请求体模板" }
+                                    }
+                                    {
+                                        let ph = r#"{"content": "{{message}}"}"#;
+                                        rsx! {
+                                            textarea { class: "textarea textarea-bordered w-full font-mono text-xs",
+                                                value: "{edit_webhook_body_template}",
+                                                oninput: move |e| edit_webhook_body_template.set(e.value()),
+                                                placeholder: "{ph}" }
+                                        }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "支持 {{message}} 占位符，将被实际内容替换" }
+                                    }
+                                }
                             }
                         }
                     }
