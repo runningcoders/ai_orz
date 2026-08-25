@@ -44,6 +44,15 @@ pub trait ModelProviderDao: Send + Sync {
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>>;
 
+    /// 获取默认的对话（Agent）Provider（第一个可用的）
+    ///
+    /// 用于 Agent 未绑定 Provider 或绑定失效时的兜底：
+    /// 取 capability=Agent 且 status=Normal 的第一个。
+    async fn get_default_agent_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>>;
+
     /// 获取当前启用的 Embedding Provider（用于唯一性校验）
     async fn find_enabled_embedding_provider(
         &self,

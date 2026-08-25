@@ -59,6 +59,8 @@ pub struct InitializeSystemResponse {
     pub chat_provider_id: Option<String>,
     /// 向量模型 Provider ID（None 表示未创建向量模型）
     pub embedding_provider_id: Option<String>,
+    /// 预设前台 Agent ID（无条件创建；chat_provider 存在则已绑定，否则需在模型管理中补配后绑定）
+    pub reception_agent_id: Option<String>,
 }
 
 /// 系统初始化异步提交响应

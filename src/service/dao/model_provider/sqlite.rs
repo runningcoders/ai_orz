@@ -206,6 +206,27 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
         Ok(page.items.into_iter().next())
     }
 
+    async fn get_default_agent_provider(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Option<ModelProviderPo>> {
+        let page = self
+            .query(
+                ctx,
+                ModelProviderQuery {
+                    capability: Some(ModelCapability::Agent),
+                    status: Some(ModelProviderStatus::Normal),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items.into_iter().next())
+    }
+
     async fn find_enabled_embedding_provider(
         &self,
         ctx: RequestContext,

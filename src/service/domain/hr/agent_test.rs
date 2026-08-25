@@ -793,3 +793,107 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
     );
     assert_ne!(agent_skills[0].po.name, original_name, "名称应已变化");
 }
+
+/// 创建指定角色的 Onboarded 测试 Agent（直接写库，绕开 create_agent 的 Interviewing 校验）
+async fn create_onboarded_agent(
+    ctx: RequestContext,
+    domain: &std::sync::Arc<dyn HrDomain>,
+    name: &str,
+    roles: Vec<&str>,
+) -> String {
+    let mut po = AgentPo::new(
+        name.to_string(),
+        roles.into_iter().map(|s| s.to_string()).collect(),
+        "test agent".to_string(),
+        vec!["chat".to_string()],
+        "test soul".to_string(),
+        "provider-id-1".to_string(),
+        "admin".to_string(),
+    );
+    po.status = AgentStatus::Onboarded;
+    let agent = Agent::from_po(po);
+    domain
+        .agent_manage()
+        .create_bootstrap_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    agent.po.id.clone()
+}
+
+/// 渐进式角色匹配：全匹配（tier1）优先于子串层级（tier3）
+#[sqlx::test]
+async fn test_resolve_agent_progressive_role_tiers(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    // 子串层级 agent：feishu_reception 包含 reception 子串，但无精确命中
+    let substring_id =
+        create_onboarded_agent(ctx.clone(), &domain, "飞书前台", vec!["feishu_reception"]).await;
+    // 无命中 agent
+    let worker_id = create_onboarded_agent(ctx.clone(), &domain, "普通员工", vec!["worker"]).await;
+    // 全匹配 agent：reception 精确命中（创建最晚，created_at 最大）
+    let full_id = create_onboarded_agent(ctx.clone(), &domain, "通用前台", vec!["reception"]).await;
+
+    // 按 reception 匹配：应选中全匹配 agent（即使 created_at 更晚）
+    let found = domain
+        .resolve_agent(
+            ctx.clone(),
+            common::api::AgentMatchCriteria::by_role("reception"),
+        )
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(found.po.id, full_id, "tier1 全匹配应优先");
+
+    // 全匹配为空（无 reception 精确命中）时，应靠子串层级命中 feishu_reception，
+    // 而不是回退到完全无关的 worker（tier3 > 0 分 fallback）
+    let full_agent = domain
+        .agent_manage()
+        .get_agent(
+            ctx.clone(),
+            &found.po.id,
+            crate::service::dal::agent::AgentFetchOptions::default(),
+        )
+        .await
+        .unwrap()
+        .expect("全匹配 agent 应存在");
+    domain
+        .agent_manage()
+        .delete_agent(ctx.clone(), &full_agent)
+        .await
+        .unwrap();
+    let found = domain
+        .resolve_agent(
+            ctx.clone(),
+            common::api::AgentMatchCriteria::by_role("reception"),
+        )
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(found.po.id, substring_id, "tier3 子串层级应命中");
+    assert_ne!(found.po.id, worker_id, "不应回退到完全无关的 agent");
+}
+
+/// 多角色条件：tier2 部分精确（仅命中一个角色）应低于 tier1 全匹配所有角色
+#[sqlx::test]
+async fn test_resolve_agent_partial_vs_full_all_roles(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    // 只命中一个角色的 agent（tier2 部分精确）
+    let _single_id = create_onboarded_agent(ctx.clone(), &domain, "前台", vec!["reception"]).await;
+    // 命中全部两个角色的 agent（tier1 全匹配）
+    let both_id =
+        create_onboarded_agent(ctx.clone(), &domain, "全能前台", vec!["reception", "hr"]).await;
+
+    let found = domain
+        .resolve_agent(
+            ctx.clone(),
+            common::api::AgentMatchCriteria::by_roles(vec![
+                "reception".to_string(),
+                "hr".to_string(),
+            ]),
+        )
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(found.po.id, both_id, "tier1 全匹配所有角色应优先");
+}

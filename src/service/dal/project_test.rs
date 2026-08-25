@@ -115,6 +115,13 @@ impl ModelProviderDao for MockModelProviderDao {
         Ok(())
     }
 
+    async fn get_default_agent_provider(
+        &self,
+        _ctx: RequestContext,
+    ) -> common::error::Result<Option<ModelProviderPo>> {
+        Ok(None)
+    }
+
     async fn get_default_embedding_provider(
         &self,
         _ctx: RequestContext,

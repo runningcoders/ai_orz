@@ -247,12 +247,27 @@ pub fn Reception() -> Element {
                                 Ok(progress) => {
                                     let is_completed = progress.status == TaskStatus::Completed;
                                     let is_failed = progress.status == TaskStatus::Failed;
-                                    init_progress.set(Some(progress));
                                     if is_completed {
-                                        // 初始化完成，刷新页面进入登录
-                                        if let Some(window) = web_sys::window() {
-                                            let _ = window.location().reload();
+                                        // 初始化完成：提示已创建预设前台 Agent，稍作停留后刷新进入登录
+                                        let has_reception = progress
+                                            .result
+                                            .as_ref()
+                                            .and_then(|r| r.get("reception_agent_id"))
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| !s.is_empty())
+                                            .unwrap_or(false);
+                                        init_progress.set(Some(progress));
+                                        if has_reception {
+                                            toast.success("初始化完成！已为你创建「前台接待」Agent，登录后即可开始对话");
+                                        } else {
+                                            toast.success("初始化完成！可登录后在「Agent 管理」中创建前台 Agent");
                                         }
+                                        spawn(async move {
+                                            gloo_timers::future::TimeoutFuture::new(1200).await;
+                                            if let Some(window) = web_sys::window() {
+                                                let _ = window.location().reload();
+                                            }
+                                        });
                                         break;
                                     }
                                     if is_failed {

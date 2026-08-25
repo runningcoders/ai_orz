@@ -429,7 +429,8 @@ pub struct GetReceptionAgentResponse {
 /// 如果全体候选均 0 分（没命中任何条件），退化回取任意 Onboarded（created_at 最早）。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct AgentMatchCriteria {
-    /// 角色标签硬条件：命中即加高分。有交集就算不要求全中。
+    /// 角色标签渐进匹配：优先全匹配 → 部分精确 → 子串层级 → 语义（可选）。
+    /// 命中即加高分；不要求全中（渐进式，命中越多越靠前）。
     /// 典型用：["reception"] 选 Web 前台、["feishu_reception"] 选飞书前台。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub any_role: Option<Vec<String>>,
@@ -438,6 +439,12 @@ pub struct AgentMatchCriteria {
     /// 命中几条加几分。传 None 或空字符串 = 忽略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyword: Option<String>,
+
+    /// 是否启用向量语义兜底（默认 false）。
+    /// true 时：当字符串层（全/部分/子串）均无命中，用 agent 向量索引做语义相似度兜底。
+    /// 依赖系统已配置 Embedding Provider；未配置时静默跳过该维度。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_fallback: Option<bool>,
 
     /// 候选集拉取数量（默认 10）。打分前用于限制 DAL 查询范围，
     /// 避免把整个组织的 Agent 都拉到内存里算分。
@@ -451,21 +458,23 @@ impl AgentMatchCriteria {
         Self::default()
     }
 
-    /// 常用快捷构造：按任意一个命中的角色去匹配
+    /// 常用快捷构造：按任意一个命中的角色去匹配（含语义兜底）
     pub fn by_role(role: impl Into<String>) -> Self {
         Self {
             any_role: Some(vec![role.into()]),
+            semantic_fallback: Some(true),
             ..Default::default()
         }
     }
 
-    /// 常用快捷构造：多角色择一匹配
+    /// 常用快捷构造：多角色择一匹配（含语义兜底）
     pub fn by_roles(roles: Vec<String>) -> Self {
         if roles.is_empty() {
             Self::default()
         } else {
             Self {
                 any_role: Some(roles),
+                semantic_fallback: Some(true),
                 ..Default::default()
             }
         }
@@ -474,11 +483,20 @@ impl AgentMatchCriteria {
 
 /// Agent 匹配打分权重（集中在一处，方便以后调整）。
 ///
-/// 总分 = role_match × 100 + capability_keyword_hit × 10 + installed_tag_hit × 3
-/// 分差比较大 → role 命中优先；分相同才看能力/工具安装。
+/// 总分 = 渐进角色匹配分 + capability_keyword_hit × 10 + installed_tag_hit × 3
+/// 渐进角色匹配：全匹配（tier1）> 部分精确（tier2）> 子串层级（tier3）> 语义（tier4）
 pub mod match_scores {
-    /// role 每命中一条（交集大小）+ 的分
-    pub const ROLE_PER_HIT: i32 = 100;
+    /// 全匹配：criteria 所有角色都被 agent.roles 精确命中（tier1）
+    pub const ROLE_FULL_MATCH: i32 = 10000;
+
+    /// 部分精确：至少一个角色精确命中（tier2）
+    pub const ROLE_PARTIAL_MATCH: i32 = 5000;
+
+    /// 子串层级：角色名存在包含/被包含关系（如 `feishu_reception` ⊃ `reception`，tier3）
+    pub const ROLE_SUBSTRING_MATCH: i32 = 1000;
+
+    /// 语义匹配：无字符串命中，但向量语义相近（tier4）
+    pub const ROLE_SEMANTIC_MATCH: i32 = 200;
 
     /// capabilities 里关键词每匹配到一条能力 + 的分
     pub const CAPABILITY_PER_HIT: i32 = 10;

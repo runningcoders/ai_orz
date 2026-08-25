@@ -95,6 +95,13 @@ impl HrDomain for HrDomainImpl {
     /// 根据打分规则挑选最匹配的 Agent。
     ///
     /// 传空 criteria（`AgentMatchCriteria::default()`）等价于退化回"任意 Onboarded"。
+    ///
+    /// 渐进式角色匹配（按优先级从高到低）：
+    /// - tier1 全匹配：criteria 所有角色都被 agent.roles 精确命中（最高分）
+    /// - tier2 部分精确：至少一个角色精确命中（命中越多越靠前）
+    /// - tier3 子串层级：角色名存在包含/被包含关系（如 `feishu_reception` ⊃ `reception`）
+    /// - tier4 语义兜底：字符串层无命中时，若启用 semantic_fallback，用向量索引做语义相似度
+    /// - 全部 0 分：退化回任意 Onboarded（created_at 最早）
     async fn resolve_agent(
         &self,
         ctx: RequestContext,
@@ -114,28 +121,51 @@ impl HrDomain for HrDomainImpl {
             },
             ..Default::default()
         };
-        let agents = self.agent_dal.query(ctx, query).await?.items;
+        let agents = self.agent_dal.query(ctx.clone(), query).await?.items;
         if agents.is_empty() {
             return Ok(None);
         }
 
-        // 2. 逐条打分
+        // 2. 逐条打分（渐进式角色匹配 + 能力关键词 + 工具包标签弱交集）
         let any_role = criteria.any_role.unwrap_or_default();
         let keyword = criteria.keyword.as_deref().unwrap_or("").trim().to_string();
 
+        // tier2 部分精确命中的角色集合（用于跨候选比较命中个数）
         let mut scored: Vec<(Agent, i32)> = agents
             .into_iter()
             .map(|agent| {
                 let mut score = 0i32;
 
-                // 维度 1：roles 交集个数 × 100
+                // 维度 1：渐进式角色匹配（tier1 全匹配 > tier2 部分精确 > tier3 子串层级）
                 if !any_role.is_empty() {
                     let agent_roles = agent.po.get_roles();
-                    let hit = any_role
+
+                    // tier1 / tier2：精确交集
+                    let exact_hit = any_role
                         .iter()
                         .filter(|r| agent_roles.iter().any(|ar| ar == *r))
-                        .count() as i32;
-                    score += hit * match_scores::ROLE_PER_HIT;
+                        .count();
+
+                    if exact_hit == any_role.len() {
+                        // tier1：全匹配（所有 criteria 角色都精确命中）
+                        score += match_scores::ROLE_FULL_MATCH;
+                    } else if exact_hit > 0 {
+                        // tier2：部分精确，命中越多越靠前
+                        score += match_scores::ROLE_PARTIAL_MATCH + (exact_hit as i32 - 1) * 100;
+                    } else {
+                        // tier3：子串层级（无精确命中，但存在包含/被包含关系）
+                        let sub_hit = any_role
+                            .iter()
+                            .filter(|r| {
+                                agent_roles.iter().any(|ar| {
+                                    ar != *r && (ar.contains(r.as_str()) || r.contains(ar.as_str()))
+                                })
+                            })
+                            .count();
+                        if sub_hit > 0 {
+                            score += match_scores::ROLE_SUBSTRING_MATCH + (sub_hit as i32 - 1) * 50;
+                        }
+                    }
                 }
 
                 // 维度 2：capabilities 关键词子串匹配条数 × 10
@@ -163,13 +193,46 @@ impl HrDomain for HrDomainImpl {
             })
             .collect();
 
-        // 3. 排序：总分 DESC → created_at ASC（老员工优先）
+        // 3. 语义兜底（tier4）：字符串层无任何命中 且 启用了 semantic_fallback 时，
+        //    用向量索引找语义相近的 Agent 补进候选。
+        if criteria.semantic_fallback.unwrap_or(false)
+            && !any_role.is_empty()
+            && scored.iter().all(|(_, s)| *s == 0)
+        {
+            // 构造语义查询：roles 文本化，走 FTS5 + 向量混合搜索（内部自动处理 embedding）
+            let semantic_keyword = any_role.join(" ");
+            let fallback = self
+                .agent_dal
+                .search(
+                    ctx.clone(),
+                    crate::service::dao::agent::AgentSearch {
+                        keyword: Some(semantic_keyword),
+                        filters: AgentQuery {
+                            status: Some(AgentStatus::Onboarded),
+                            pagination: common::api::PaginationParams {
+                                limit: Some(5),
+                                offset: None,
+                            },
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            for agent in fallback.items {
+                if let Some(item) = scored.iter_mut().find(|(a, _)| a.po.id == agent.po.id) {
+                    item.1 += match_scores::ROLE_SEMANTIC_MATCH;
+                }
+            }
+        }
+
+        // 4. 排序：总分 DESC → created_at ASC（老员工优先）
         scored.sort_by(|a, b| {
             b.1.cmp(&a.1)
                 .then_with(|| a.0.po.created_at.cmp(&b.0.po.created_at))
         });
 
-        // 4. 取第 1 名。如果第 1 名也是 0 分（完全没命中），也返回，相当于退化回原来的 fallback。
+        // 5. 取第 1 名。如果第 1 名也是 0 分（完全没命中），也返回，相当于退化回原来的 fallback。
         Ok(scored.into_iter().next().map(|(agent, _)| agent))
     }
 }
@@ -213,6 +276,14 @@ pub trait HrDomain: Send + Sync {
 pub trait AgentManage: Send + Sync {
     /// 创建 Agent
     async fn create_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
+
+    /// 引导式创建 Agent（绕过业务校验）
+    ///
+    /// 仅供系统初始化 / seed 导入等"引导"场景使用：
+    /// - 允许 Local Agent 不绑定 model_provider_id（留空，wake 时自动回退默认 Provider）
+    /// - 允许直接写入目标状态（如 Onboarded），不必先 Interviewing
+    /// 普通业务创建请走 `create_agent`（保留状态机与绑定校验）。
+    async fn create_bootstrap_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
     /// 获取 Agent
     async fn get_agent(

@@ -83,6 +83,13 @@ impl AgentManage for HrDomainImpl {
         self.agent_dal.create(ctx, agent).await
     }
 
+    /// 引导式创建 Agent（绕过 create_agent 的 Interviewing + provider 绑定校验）
+    ///
+    /// 仅供系统初始化 / seed 导入等引导场景使用。
+    async fn create_bootstrap_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()> {
+        self.agent_dal.create(ctx, agent).await
+    }
+
     /// 获取 Agent
     ///
     /// 基础操作：根据 ID 查询 Agent
