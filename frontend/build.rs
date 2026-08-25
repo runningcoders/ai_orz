@@ -126,37 +126,10 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         sections.push(serde_json::json!({ "label": "总览", "docs": overview_docs }));
     }
 
-    // 分区 2-4：design / plan / archive 递归收集
-    for (dir_name, label) in [
-        ("design", "设计文档"),
-        ("plan", "规划"),
-        ("archive", "归档"),
-    ] {
-        let src_dir = docs_src.join(dir_name);
-        if !src_dir.is_dir() {
-            continue;
-        }
-        let entries = collect_md(&src_dir, &docs_src)?
-            .into_iter()
-            .map(|rel| {
-                let title = title_from_path(&rel);
-                let dest = dest_root.join(&rel);
-                if let Some(parent) = dest.parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-                let _ = fs::copy(docs_src.join(&rel), &dest);
-                serde_json::json!({ "title": title, "path": rel })
-            })
-            .collect::<Vec<_>>();
-        if !entries.is_empty() {
-            sections.push(serde_json::json!({ "label": label, "docs": entries }));
-        }
-    }
-
-    // 分区 5：Wiki（docs/wiki/zh/content，保留目录层级为嵌套 groups）
-    let wiki_src = docs_src.join("wiki/zh/content");
-    if wiki_src.is_dir() {
-        /// wiki 目录树节点：文件（File）或子目录（Dir，含子节点）
+    // 分区 2：知识卡片（docs/wiki/knowledge/zh，保留目录层级）
+    let knowledge_src = docs_src.join("wiki/knowledge/zh");
+    if knowledge_src.is_dir() {
+        /// 目录树节点：文件（File）或子目录（Dir，含子节点）
         enum WikiNode {
             File {
                 rel: String,
@@ -166,8 +139,6 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                 children: Vec<WikiNode>,
             },
         }
-
-        // 递归构建目录树，同时复制 *.md 到 public/docs/ 并声明监听
         fn walk_wiki(dir: &Path, base: &Path, dest_root: &Path) -> std::io::Result<Vec<WikiNode>> {
             let mut nodes = Vec::new();
             let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
@@ -180,6 +151,7 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         .file_name()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
+                    // 知识卡片目录中的子目录也一并递归处理
                     let children = walk_wiki(&path, base, dest_root)?;
                     if !children.is_empty() {
                         nodes.push(WikiNode::Dir { name, children });
@@ -199,8 +171,6 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(nodes)
         }
-
-        // 树节点 → index.json 的 group 条目（目录节点带 children 嵌套）
         fn node_to_json(node: &WikiNode) -> serde_json::Value {
             match node {
                 WikiNode::File { rel } => {
@@ -217,12 +187,109 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-
-        let tree = walk_wiki(&wiki_src, &docs_src, &dest_root)?;
+        let tree = walk_wiki(&knowledge_src, &docs_src, &dest_root)?;
         if !tree.is_empty() {
             let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
+            sections.push(serde_json::json!({ "label": "知识卡片", "groups": groups }));
+        }
+    }
+
+    // 分区 3：代码 Wiki（docs/wiki/zh/content，保留目录层级为嵌套 groups）
+    let wiki_src = docs_src.join("wiki/zh/content");
+    if wiki_src.is_dir() {
+        /// wiki 目录树节点：文件（File）或子目录（Dir，含子节点）
+        enum WikiNode2 {
+            File {
+                rel: String,
+            },
+            Dir {
+                name: String,
+                children: Vec<WikiNode2>,
+            },
+        }
+        fn walk_wiki2(
+            dir: &Path,
+            base: &Path,
+            dest_root: &Path,
+        ) -> std::io::Result<Vec<WikiNode2>> {
+            let mut nodes = Vec::new();
+            let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .collect();
+            paths.sort();
+            for path in paths {
+                if path.is_dir() {
+                    let name = path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let children = walk_wiki2(&path, base, dest_root)?;
+                    if !children.is_empty() {
+                        nodes.push(WikiNode2::Dir { name, children });
+                    }
+                } else if path.extension().is_some_and(|ext| ext == "md")
+                    && let Ok(rel) = path.strip_prefix(base)
+                {
+                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    let dest = dest_root.join(&rel_str);
+                    if let Some(parent) = dest.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::copy(&path, &dest);
+                    println!("cargo:rerun-if-changed={}", path.display());
+                    nodes.push(WikiNode2::File { rel: rel_str });
+                }
+            }
+            Ok(nodes)
+        }
+        fn node_to_json2(node: &WikiNode2) -> serde_json::Value {
+            match node {
+                WikiNode2::File { rel } => {
+                    let stem = Path::new(rel)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| rel.clone());
+                    serde_json::json!({ "title": stem, "path": rel })
+                }
+                WikiNode2::Dir { name, children } => {
+                    let children_json: Vec<serde_json::Value> =
+                        children.iter().map(node_to_json2).collect();
+                    serde_json::json!({ "label": name, "children": children_json })
+                }
+            }
+        }
+        let tree = walk_wiki2(&wiki_src, &docs_src, &dest_root)?;
+        if !tree.is_empty() {
+            let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json2).collect();
             sections.push(serde_json::json!({ "label": "代码 Wiki", "groups": groups }));
         }
+    }
+
+    // 分区 4：其他文档（design + plan + archive 合并为一个分区的 docs 列表）
+    let mut other_docs: Vec<serde_json::Value> = Vec::new();
+    for dir_name in ["design", "plan", "archive"] {
+        let src_dir = docs_src.join(dir_name);
+        if !src_dir.is_dir() {
+            continue;
+        }
+        for rel in collect_md(&src_dir, &docs_src)? {
+            let title = format!("{}/{}", dir_name, title_from_path(&rel));
+            let dest = dest_root.join(&rel);
+            if let Some(parent) = dest.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::copy(docs_src.join(&rel), &dest);
+            other_docs.push(serde_json::json!({ "title": title, "path": rel }));
+        }
+    }
+    if !other_docs.is_empty() {
+        // 按标题排序（前缀 design/plan/archive 自然形成三段）
+        other_docs.sort_by(|a, b| {
+            a.get("title")
+                .and_then(|v| v.as_str())
+                .cmp(&b.get("title").and_then(|v| v.as_str()))
+        });
+        sections.push(serde_json::json!({ "label": "其他文档", "docs": other_docs }));
     }
 
     let index = serde_json::json!({ "sections": sections });

@@ -2,10 +2,10 @@
 //!
 //! 运行时从静态资源 `/docs/index.json` 拉取目录清单（由 build.rs 复制
 //! docs/ 核心文档 + wiki 到 public/docs/ 时生成），点击条目按需 fetch 对应
-//! Markdown 文件，用 pulldown-cmark 渲染为 HTML 展示。
+//! Markdown 文件，用 MarkdownRenderer 组件渲染（自动触发 ```mermaid 图的 JS 替换）。
 //!
-//! Wiki 分区保留目录层级：扁平化为 (分组行/文档行) 序列后单层渲染，
-//! 分组行点击切换展开/折叠，支持关键词过滤（过滤时自动展开命中分支）。
+//! 分区顺序（由 build.rs 保证）：总览 → 知识卡片 → 代码 Wiki → 其他文档
+//! 其他文档分区默认收起，整体可折叠；Wiki/知识卡片保留目录层级嵌套折叠树。
 
 use std::collections::HashSet;
 
@@ -13,7 +13,7 @@ use dioxus::prelude::*;
 use serde::Deserialize;
 
 use crate::api::fetch_static_text;
-use crate::components::markdown::render_markdown;
+use crate::components::markdown::MarkdownRenderer;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::{ToastState, use_toast};
 
@@ -72,7 +72,6 @@ enum FlatEntry {
 }
 
 impl FlatEntry {
-    /// 渲染 key（分组用树路径 key，文档用文件路径）
     fn key(&self) -> String {
         match self {
             FlatEntry::Group { key, .. } => key.clone(),
@@ -86,7 +85,6 @@ impl FlatEntry {
         }
     }
 
-    /// 行展示文本（分组带 ▸/▾ 折叠指示符）
     fn text(&self) -> String {
         match self {
             FlatEntry::Group {
@@ -98,7 +96,6 @@ impl FlatEntry {
         }
     }
 
-    /// 行样式（选中文档高亮为主色）
     fn row_class(&self, selected_path: Option<&str>) -> String {
         match self {
             FlatEntry::Group { .. } => {
@@ -116,9 +113,6 @@ impl FlatEntry {
     }
 }
 
-/// 递归扁平化分组树（子节点可混合文档与目录）：
-/// - 过滤激活时只保留命中分支，且全部展开
-/// - 未过滤时分组默认折叠，仅展开 `expanded` 集合中的分组
 fn flatten_children(
     children: &[DocGroupChild],
     depth: usize,
@@ -150,7 +144,6 @@ fn flatten_children(
                     depth,
                     expanded: is_expanded,
                 });
-                // 折叠且未过滤时不展开子节点
                 if !filtering && !is_expanded {
                     continue;
                 }
@@ -174,12 +167,10 @@ fn flatten_children(
     }
 }
 
-/// 关键词是否命中标题（不区分大小写）
 fn title_matches(title: &str, filter: &str) -> bool {
     title.to_lowercase().contains(filter)
 }
 
-/// 分组自身或任意后代文档是否命中过滤词
 fn group_matches(group: &DocGroup, filter: &str) -> bool {
     if title_matches(&group.label, filter) {
         return true;
@@ -190,7 +181,6 @@ fn group_matches(group: &DocGroup, filter: &str) -> bool {
     })
 }
 
-/// 文档路径 URL 编码：wiki 文件名含中文/空格，逐段 encodeURIComponent 后拼回
 fn encode_doc_path(path: &str) -> String {
     path.split('/')
         .map(|seg| String::from(js_sys::encode_uri_component(seg)))
@@ -198,20 +188,24 @@ fn encode_doc_path(path: &str) -> String {
         .join("/")
 }
 
-/// 加载单篇文档：fetch 原始 Markdown 并渲染为 HTML
+/// 判断该 section 是否需要默认收起（目前「其他文档」默认收起）
+fn section_default_collapsed(label: &str) -> bool {
+    label == "其他文档"
+}
+
 async fn load_doc(
     path: String,
     mut selected: Signal<Option<String>>,
-    mut html: Signal<Option<String>>,
+    mut markdown: Signal<Option<String>>,
     mut loading: Signal<bool>,
     toast: ToastState,
 ) {
     selected.set(Some(path.clone()));
     loading.set(true);
     match fetch_static_text(&format!("/docs/{}", encode_doc_path(&path))).await {
-        Ok(md) => html.set(Some(render_markdown(&md))),
+        Ok(md) => markdown.set(Some(md)),
         Err(e) => {
-            html.set(None);
+            markdown.set(None);
             toast.error(format!("加载文档失败: {}", e));
         }
     }
@@ -223,13 +217,14 @@ pub fn SystemDocs() -> Element {
     let toast = use_toast();
     let mut index: Signal<Option<DocIndex>> = use_signal(|| None);
     let selected: Signal<Option<String>> = use_signal(|| None);
-    let html: Signal<Option<String>> = use_signal(|| None);
+    let markdown: Signal<Option<String>> = use_signal(|| None);
     let loading_doc = use_signal(|| false);
     let mut filter: Signal<String> = use_signal(String::new);
-    // 当前展开的分组 key 集合（wiki 目录树折叠状态）
+    // Wiki/知识卡片内部分组展开集合
     let mut expanded: Signal<HashSet<String>> = use_signal(HashSet::new);
+    // Section 级折叠状态（label -> 是否展开）；未命中的按 section_default_collapsed 决定默认值
+    let mut collapsed_sections: Signal<HashSet<String>> = use_signal(HashSet::new);
 
-    // 初始加载目录清单，并默认打开第一篇文档
     use_effect(move || {
         spawn(async move {
             match fetch_static_text("/docs/index.json").await {
@@ -242,7 +237,7 @@ pub fn SystemDocs() -> Element {
                             .map(|d| d.path.clone());
                         index.set(Some(idx));
                         if let Some(path) = first {
-                            load_doc(path, selected, html, loading_doc, toast).await;
+                            load_doc(path, selected, markdown, loading_doc, toast).await;
                         }
                     }
                     Err(e) => toast.error(format!("解析文档目录失败: {}", e)),
@@ -253,15 +248,15 @@ pub fn SystemDocs() -> Element {
     });
 
     let index_opt = index.read().clone();
-    let html_opt = html.read().clone();
     let selected_opt = selected.read().clone();
+    let markdown_opt = markdown.read().clone();
     let filter_text = filter.read().clone();
     let filter_key = filter_text.trim().to_lowercase();
     let filtering = !filter_key.is_empty();
     let expanded_set = expanded.read().clone();
+    let collapsed_set = collapsed_sections.read().clone();
 
-    // 应用过滤并扁平化分组树：得到 (分区, 平铺文档, 扁平树行) 渲染序列
-    let section_views: Vec<(DocSection, Vec<FlatEntry>)> = index_opt
+    let section_views: Vec<(DocSection, Vec<FlatEntry>, bool)> = index_opt
         .clone()
         .map(|idx| {
             idx.sections
@@ -286,7 +281,14 @@ pub fn SystemDocs() -> Element {
                     if s.docs.is_empty() && flat.is_empty() {
                         None
                     } else {
-                        Some((s, flat))
+                        let section_collapsed = if filtering {
+                            false
+                        } else {
+                            collapsed_set.contains(&s.label)
+                                || (!collapsed_set.contains(&s.label)
+                                    && section_default_collapsed(&s.label))
+                        };
+                        Some((s, flat, section_collapsed))
                     }
                 })
                 .collect()
@@ -308,10 +310,10 @@ pub fn SystemDocs() -> Element {
                 } else {
                     div { class: "flex flex-col lg:flex-row gap-4 items-start",
                         // 左侧目录
-                        div { class: "card bg-base-100 shadow w-full lg:w-72 shrink-0",
+                        div { class: "card bg-base-100 shadow w-full lg:w-80 shrink-0",
                             div { class: "card-body p-3 lg:max-h-[75vh] overflow-y-auto",
                                 input {
-                                    class: "input input-sm input-bordered w-full mb-1",
+                                    class: "input input-sm input-bordered w-full mb-2",
                                     placeholder: "过滤文档标题...",
                                     value: "{filter_text}",
                                     oninput: move |e| filter.set(e.value()),
@@ -321,67 +323,95 @@ pub fn SystemDocs() -> Element {
                                         if filtering { "无匹配文档" } else { "目录为空" }
                                     }
                                 }
-                                for (section, flat_entries) in section_views.iter() {
-                                    div { key: "{section.label}",
+                                for (section, flat_entries, collapsed) in section_views.iter() {
+                                    div { key: "{section.label}", class: "mb-1",
+                                        // Section 标题行：支持点击整体收起/展开
                                         div {
-                                            class: "text-xs font-semibold opacity-60 uppercase tracking-wide mt-2 mb-1 px-2",
-                                            "{section.label}"
+                                            class: "flex items-center justify-between px-2 py-1.5 mt-2 rounded cursor-pointer hover:bg-base-200",
+                                            onclick: {
+                                                let label = section.label.clone();
+                                                move |_| {
+                                                    let mut set = collapsed_sections.write();
+                                                    // 默认收起的 section：第一次点击展开 → 从集合移除
+                                                    // 默认展开的 section：第一次点击收起 → 加入集合
+                                                    let default = section_default_collapsed(&label);
+                                                    let currently_collapsed = if set.contains(&label) {
+                                                        true
+                                                    } else {
+                                                        default
+                                                    };
+                                                    if currently_collapsed {
+                                                        set.remove(&label);
+                                                    } else {
+                                                        set.insert(label.clone());
+                                                    }
+                                                }
+                                            },
+                                            div { class: "text-xs font-semibold opacity-70 uppercase tracking-wide",
+                                                "{section.label}"
+                                            }
+                                            span { class: "text-xs opacity-60",
+                                                if *collapsed { "▸" } else { "▾" }
+                                            }
                                         }
-                                        if !section.docs.is_empty() {
-                                            ul { class: "menu menu-sm p-0",
-                                                for doc in section.docs.iter() {
-                                                    li { key: "{doc.path}",
-                                                        a {
-                                                            class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
-                                                                "active"
-                                                            } else {
-                                                                ""
-                                                            },
-                                                            onclick: {
-                                                                let path = doc.path.clone();
-                                                                move |_| {
-                                                                    spawn(load_doc(
-                                                                        path.clone(),
-                                                                        selected,
-                                                                        html,
-                                                                        loading_doc,
-                                                                        toast,
-                                                                    ));
-                                                                }
-                                                            },
-                                                            "{doc.title}"
+
+                                        if !collapsed {
+                                            // Section 内部：直接 docs 列表 + Wiki 扁平树
+                                            if !section.docs.is_empty() {
+                                                ul { class: "menu menu-sm p-0 mt-1",
+                                                    for doc in section.docs.iter() {
+                                                        li { key: "{doc.path}",
+                                                            a {
+                                                                class: if selected_opt.as_deref() == Some(doc.path.as_str()) {
+                                                                    "active"
+                                                                } else {
+                                                                    ""
+                                                                },
+                                                                onclick: {
+                                                                    let path = doc.path.clone();
+                                                                    move |_| {
+                                                                        spawn(load_doc(
+                                                                            path.clone(),
+                                                                            selected,
+                                                                            markdown,
+                                                                            loading_doc,
+                                                                            toast,
+                                                                        ));
+                                                                    }
+                                                                },
+                                                                "{doc.title}"
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                        // wiki 扁平树：分组行点击折叠/展开，文档行点击加载
-                                        for entry in flat_entries.iter() {
-                                            div {
-                                                key: "{entry.key()}",
-                                                class: "{entry.row_class(selected_opt.as_deref())}",
-                                                style: "padding-left: {8 + entry.depth() * 12}px",
-                                                onclick: {
-                                                    let entry = entry.clone();
-                                                    move |_| match &entry {
-                                                        FlatEntry::Group { key, .. } => {
-                                                            let mut set = expanded.write();
-                                                            if !set.remove(key) {
-                                                                set.insert(key.clone());
+                                            for entry in flat_entries.iter() {
+                                                div {
+                                                    key: "{entry.key()}",
+                                                    class: "{entry.row_class(selected_opt.as_deref())}",
+                                                    style: "padding-left: {8 + entry.depth() * 12}px",
+                                                    onclick: {
+                                                        let entry = entry.clone();
+                                                        move |_| match &entry {
+                                                            FlatEntry::Group { key, .. } => {
+                                                                let mut set = expanded.write();
+                                                                if !set.remove(key) {
+                                                                    set.insert(key.clone());
+                                                                }
+                                                            }
+                                                            FlatEntry::Doc { entry: doc, .. } => {
+                                                                spawn(load_doc(
+                                                                    doc.path.clone(),
+                                                                    selected,
+                                                                    markdown,
+                                                                    loading_doc,
+                                                                    toast,
+                                                                ));
                                                             }
                                                         }
-                                                        FlatEntry::Doc { entry: doc, .. } => {
-                                                            spawn(load_doc(
-                                                                doc.path.clone(),
-                                                                selected,
-                                                                html,
-                                                                loading_doc,
-                                                                toast,
-                                                            ));
-                                                        }
-                                                    }
-                                                },
-                                                "{entry.text()}"
+                                                    },
+                                                    "{entry.text()}"
+                                                }
                                             }
                                         }
                                     }
@@ -389,17 +419,16 @@ pub fn SystemDocs() -> Element {
                             }
                         }
 
-                        // 右侧文档内容
+                        // 右侧文档内容：使用 MarkdownRenderer 组件，自动触发 mermaid 扫描替换
                         div { class: "card bg-base-100 shadow flex-1 w-full min-w-0",
                             div { class: "card-body",
                                 if loading_doc() {
                                     div { class: "flex justify-center py-12",
                                         span { class: "loading loading-spinner loading-md" }
                                     }
-                                } else if let Some(h) = html_opt.as_ref() {
-                                    div {
-                                        class: "markdown-body max-w-none overflow-x-auto",
-                                        dangerous_inner_html: "{h}"
+                                } else if let Some(md) = markdown_opt.as_ref() {
+                                    div { class: "markdown-body max-w-none overflow-x-auto",
+                                        MarkdownRenderer { content: md.clone() }
                                     }
                                 } else {
                                     div { class: "text-center opacity-60 py-12",
