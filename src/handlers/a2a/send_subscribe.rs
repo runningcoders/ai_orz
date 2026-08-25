@@ -21,7 +21,9 @@ use std::convert::Infallible;
 use std::pin::Pin;
 use tokio_stream::wrappers::BroadcastStream;
 
+use common::api::AgentMatchCriteria;
 use common::api::a2a::SendTaskParams;
+use common::constants::agent_roles::ROLE_A2A_GATEWAY;
 use common::error::Result;
 
 use crate::handlers::a2a::mapper::{build_a2a_task, extract_text_from_a2a_message};
@@ -130,7 +132,7 @@ async fn do_create_project_and_message(
     let user_id = ctx.uid();
 
     let agent = crate::service::domain::hr::domain()
-        .resolve_agent(ctx.clone())
+        .resolve_agent(ctx.clone(), AgentMatchCriteria::by_role(ROLE_A2A_GATEWAY))
         .await?
         .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
     let agent_id = agent.po.id.clone();

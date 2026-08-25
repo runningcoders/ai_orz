@@ -419,3 +419,68 @@ pub struct GetReceptionAgentResponse {
     /// 前台 Agent 名称
     pub agent_name: String,
 }
+
+/// Agent 匹配规则（打分 resolve 的查询参数）
+///
+/// 字段都是 Option，传 None 表示该维度不参与打分。
+/// 所有维度加完分后按总分 DESC、created_at ASC 取第 1 名。
+/// 如果全体候选均 0 分（没命中任何条件），退化回取任意 Onboarded（created_at 最早）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct AgentMatchCriteria {
+    /// 角色标签硬条件：命中即加高分。有交集就算不要求全中。
+    /// 典型用：["reception"] 选 Web 前台、["feishu_reception"] 选飞书前台。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub any_role: Option<Vec<String>>,
+
+    /// 能力关键词（弱参与）：在 agent.capabilities 的每条能力中做子串匹配，
+    /// 命中几条加几分。传 None 或空字符串 = 忽略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyword: Option<String>,
+
+    /// 候选集拉取数量（默认 10）。打分前用于限制 DAL 查询范围，
+    /// 避免把整个组织的 Agent 都拉到内存里算分。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_limit: Option<usize>,
+}
+
+impl AgentMatchCriteria {
+    /// 空条件 = 所有维度忽略，等价于退化回"任意 Onboarded"。
+    pub fn any() -> Self {
+        Self::default()
+    }
+
+    /// 常用快捷构造：按任意一个命中的角色去匹配
+    pub fn by_role(role: impl Into<String>) -> Self {
+        Self {
+            any_role: Some(vec![role.into()]),
+            ..Default::default()
+        }
+    }
+
+    /// 常用快捷构造：多角色择一匹配
+    pub fn by_roles(roles: Vec<String>) -> Self {
+        if roles.is_empty() {
+            Self::default()
+        } else {
+            Self {
+                any_role: Some(roles),
+                ..Default::default()
+            }
+        }
+    }
+}
+
+/// Agent 匹配打分权重（集中在一处，方便以后调整）。
+///
+/// 总分 = role_match × 100 + capability_keyword_hit × 10 + installed_tag_hit × 3
+/// 分差比较大 → role 命中优先；分相同才看能力/工具安装。
+pub mod match_scores {
+    /// role 每命中一条（交集大小）+ 的分
+    pub const ROLE_PER_HIT: i32 = 100;
+
+    /// capabilities 里关键词每匹配到一条能力 + 的分
+    pub const CAPABILITY_PER_HIT: i32 = 10;
+
+    /// installed_tags（工具包 tags）每命中一条 + 的分（弱）
+    pub const INSTALLED_TAG_PER_HIT: i32 = 3;
+}

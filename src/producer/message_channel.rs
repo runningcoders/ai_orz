@@ -1,3 +1,5 @@
+use common::api::AgentMatchCriteria;
+use common::constants::agent_roles::ROLE_FEISHU_RECEPTION;
 use common::enums::{CallerType, MessageRole, MessageType};
 use common::error::{Result, err};
 use std::sync::Arc;
@@ -39,7 +41,15 @@ impl MessageAdapterCallback for MessageChannelProducer {
 
         let to_agent_id = match msg.to_agent_id {
             Some(id) => id,
-            None => match self.hr_domain.resolve_agent(ctx.clone()).await? {
+            // 外部消息渠道（如飞书 WS 入站）→ 匹配"飞书前台"角色的 Agent
+            None => match self
+                .hr_domain
+                .resolve_agent(
+                    ctx.clone(),
+                    AgentMatchCriteria::by_role(ROLE_FEISHU_RECEPTION),
+                )
+                .await?
+            {
                 Some(agent) => agent.po.id,
                 None => {
                     log_warn!(

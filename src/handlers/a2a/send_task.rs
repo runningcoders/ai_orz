@@ -16,7 +16,9 @@
 //! 不在 domain 层混合。resolve_agent 只接受 ctx，不感知 project。
 //! handler 层不调用 wake_agent_brain / awaken，唤醒由 consumer 异步闭环。
 
+use common::api::AgentMatchCriteria;
 use common::api::a2a::{A2aTask, SendTaskParams};
+use common::constants::agent_roles::ROLE_A2A_GATEWAY;
 use common::enums::{MessageType, ProjectStatus};
 use common::error::{Result, bail_err};
 
@@ -35,9 +37,9 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
         bail_err!(InvalidRequest, "A2A 请求缺少用户上下文");
     }
 
-    // 1. handler 层显式查询前台 Agent（agent 与 project 是两个维度，不耦合）
+    // 1. handler 层显式查询前台 Agent（A2A 入口优先命中 a2a_gateway 系统角色）
     let agent = hr_domain()
-        .resolve_agent(ctx.clone())
+        .resolve_agent(ctx.clone(), AgentMatchCriteria::by_role(ROLE_A2A_GATEWAY))
         .await?
         .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
     let agent_id = agent.po.id.clone();

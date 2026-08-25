@@ -24,14 +24,15 @@ use crate::service::dal::tool as tool_dal;
 use crate::service::dal::tool::ToolDal;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::dao::skill::{SkillQuery, SkillSearch};
+use common::api::{AgentMatchCriteria, match_scores};
 use common::enums::{AgentStatus, SkillStatus};
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
 // ==================== 常量 ====================
 
-/// 飞书前台 Agent 的角色标签
-pub const FEISHU_RECEPTION_ROLE: &str = "feishu_reception";
+/// resolve_agent 默认候选集拉取数量（10 个足够打分后取 TOP1）
+const DEFAULT_CANDIDATE_LIMIT: usize = 10;
 
 // ==================== 单例 ====================
 
@@ -91,38 +92,85 @@ impl HrDomain for HrDomainImpl {
         self
     }
 
-    /// 解析当前可用的前台 Agent（统一路由方法）
+    /// 根据打分规则挑选最匹配的 Agent。
     ///
-    /// 路由优先级：
-    /// 1. 带 `feishu_reception` 角色的 Onboarded Agent
-    /// 2. 任意 Onboarded Agent
-    async fn resolve_agent(&self, ctx: RequestContext) -> Result<Option<Agent>> {
-        // 优先按 feishu_reception 角色查找
+    /// 传空 criteria（`AgentMatchCriteria::default()`）等价于退化回"任意 Onboarded"。
+    async fn resolve_agent(
+        &self,
+        ctx: RequestContext,
+        criteria: AgentMatchCriteria,
+    ) -> Result<Option<Agent>> {
+        // 1. 拉候选集：按传入的 candidate_limit，否则 10。
+        //    目前不在 SQL 层做 role 预过滤：role 是 JSON 字段，
+        //    DAL 的 AgentQuery.roles 目前是 ALL-matches 语义（要求全包含），
+        //    与本函数 ANY-matches（只要有一个交集就加分）不符，
+        //    所以全量候选先拉回来，在内存里做打分更稳妥。
+        let limit = criteria.candidate_limit.unwrap_or(DEFAULT_CANDIDATE_LIMIT);
         let query = AgentQuery {
-            roles: Some(vec![FEISHU_RECEPTION_ROLE.to_string()]),
             status: Some(AgentStatus::Onboarded),
             pagination: common::api::PaginationParams {
-                limit: Some(1),
+                limit: Some(limit.max(1)),
                 offset: None,
             },
             ..Default::default()
         };
-        let agents = self.agent_dal.query(ctx.clone(), query).await?;
-        if let Some(agent) = agents.items.into_iter().next() {
-            return Ok(Some(agent));
+        let agents = self.agent_dal.query(ctx, query).await?.items;
+        if agents.is_empty() {
+            return Ok(None);
         }
 
-        // fallback：任意 Onboarded Agent
-        let query = AgentQuery {
-            status: Some(AgentStatus::Onboarded),
-            pagination: common::api::PaginationParams {
-                limit: Some(1),
-                offset: None,
-            },
-            ..Default::default()
-        };
-        let agents = self.agent_dal.query(ctx, query).await?;
-        Ok(agents.items.into_iter().next())
+        // 2. 逐条打分
+        let any_role = criteria.any_role.unwrap_or_default();
+        let keyword = criteria.keyword.as_deref().unwrap_or("").trim().to_string();
+
+        let mut scored: Vec<(Agent, i32)> = agents
+            .into_iter()
+            .map(|agent| {
+                let mut score = 0i32;
+
+                // 维度 1：roles 交集个数 × 100
+                if !any_role.is_empty() {
+                    let agent_roles = agent.po.get_roles();
+                    let hit = any_role
+                        .iter()
+                        .filter(|r| agent_roles.iter().any(|ar| ar == *r))
+                        .count() as i32;
+                    score += hit * match_scores::ROLE_PER_HIT;
+                }
+
+                // 维度 2：capabilities 关键词子串匹配条数 × 10
+                if !keyword.is_empty() {
+                    let caps = agent.po.get_capabilities();
+                    let hit = caps
+                        .iter()
+                        .filter(|c| c.to_lowercase().contains(&keyword.to_lowercase()))
+                        .count() as i32;
+                    score += hit * match_scores::CAPABILITY_PER_HIT;
+                }
+
+                // 维度 3：安装的工具包 tags 与 any_role 的弱交集 × 3
+                // （弱维度：只在分差很小时影响 tie-break）
+                if !any_role.is_empty() {
+                    let installed = agent.po.get_installed_tags();
+                    let hit = any_role
+                        .iter()
+                        .filter(|r| installed.iter().any(|tag| tag == *r))
+                        .count() as i32;
+                    score += hit * match_scores::INSTALLED_TAG_PER_HIT;
+                }
+
+                (agent, score)
+            })
+            .collect();
+
+        // 3. 排序：总分 DESC → created_at ASC（老员工优先）
+        scored.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.0.po.created_at.cmp(&b.0.po.created_at))
+        });
+
+        // 4. 取第 1 名。如果第 1 名也是 0 分（完全没命中），也返回，相当于退化回原来的 fallback。
+        Ok(scored.into_iter().next().map(|(agent, _)| agent))
     }
 }
 
@@ -138,17 +186,24 @@ pub trait HrDomain: Send + Sync {
     /// Skill 管理能力
     fn skill_manage(&self) -> &dyn SkillManage;
 
-    /// 解析当前可用的前台 Agent（统一路由方法）
+    /// 根据打分规则挑选最匹配的 Agent（统一路由方法）。
     ///
-    /// **只接受 ctx，不感知 project**：agent 与 project 是两个维度，
+    /// **只接受 ctx + criteria，不感知 project**：agent 与 project 是两个维度，
     /// 不在 hr domain 中融合，由上层（handler 层）按需组合。
     ///
-    /// 路由优先级：
-    /// 1. 带 `feishu_reception` 角色的 Onboarded Agent
-    /// 2. 任意 Onboarded Agent
+    /// 打分逻辑：
+    /// - 维度 1：`criteria.any_role` 与 `agent.roles` 交集 × 100 分
+    /// - 维度 2：`criteria.keyword` 在 capabilities 中子串命中条数 × 10 分
+    /// - 维度 3：installed_tags 与 any_role 的弱交集 × 3 分
+    /// - 同分 tie-breaker：created_at ASC（老员工优先）
     ///
-    /// 返回 None 表示无可用前台 Agent。
-    async fn resolve_agent(&self, ctx: RequestContext) -> Result<Option<Agent>>;
+    /// 空条件（`AgentMatchCriteria::default()`）= 退化回任意 Onboarded。
+    /// 返回 None 表示无 Onboarded Agent 可用。
+    async fn resolve_agent(
+        &self,
+        ctx: RequestContext,
+        criteria: AgentMatchCriteria,
+    ) -> Result<Option<Agent>>;
 }
 
 /// Agent 管理 trait

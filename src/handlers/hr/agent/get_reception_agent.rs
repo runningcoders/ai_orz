@@ -6,7 +6,8 @@
 //!
 //! **agent 与 project 是两个维度**：resolve_agent 只接受 ctx，不感知 project。
 
-use common::api::{GetReceptionAgentRequest, GetReceptionAgentResponse};
+use common::api::{AgentMatchCriteria, GetReceptionAgentRequest, GetReceptionAgentResponse};
+use common::constants::agent_roles::ROLE_RECEPTION;
 use common::error::Result;
 
 use crate::pkg::RequestContext;
@@ -17,7 +18,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 #[register_handler_tool(
     id = "get_reception_agent",
     name = "get_reception_agent",
-    description = "Resolve the current available reception agent (unified routing). Prefer feishu_reception role onboarded agent, fallback to any onboarded agent.",
+    description = "Resolve the current available reception agent (unified routing). Prefer agents with the `reception` system role (web dialogue gateway). Score-matched against roles + capabilities, fallback to any onboarded agent.",
     params = "common::api::GetReceptionAgentRequest",
     tags = "collaboration"
 )]
@@ -27,7 +28,7 @@ pub async fn get_reception_agent(
     _params: GetReceptionAgentRequest,
 ) -> Result<GetReceptionAgentResponse> {
     let agent = domain()
-        .resolve_agent(ctx)
+        .resolve_agent(ctx, AgentMatchCriteria::by_role(ROLE_RECEPTION))
         .await?
         .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
 

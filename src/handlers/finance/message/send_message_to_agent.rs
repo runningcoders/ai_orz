@@ -14,7 +14,8 @@ use crate::service::domain::hr::domain as hr_domain;
 use crate::service::domain::message::{self, SendToAgentCommand};
 use crate::service::domain::project::domain as project_domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{SendMessageToAgentParams, SendMessageToAgentResponse};
+use common::api::{AgentMatchCriteria, SendMessageToAgentParams, SendMessageToAgentResponse};
+use common::constants::agent_roles::ROLE_RECEPTION;
 use common::error::Result;
 
 /// Send a message to another AI agent (for collaboration)
@@ -59,17 +60,17 @@ pub async fn send_message_to_agent(
                 if let Some(agent_id) = project.po.owner_agent_id {
                     agent_id
                 } else {
-                    // project 未绑定 agent，走 resolve_agent 兜底
+                    // project 未绑定 agent，走 resolve_agent 兜底（web 前台角色）
                     let agent = hr_domain()
-                        .resolve_agent(ctx.clone())
+                        .resolve_agent(ctx.clone(), AgentMatchCriteria::by_role(ROLE_RECEPTION))
                         .await?
                         .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
                     agent.po.id
                 }
             } else {
-                // 默认对话框场景（无 project_id），走 resolve_agent 兜底
+                // 默认对话框场景（无 project_id），web 前台角色
                 let agent = hr_domain()
-                    .resolve_agent(ctx.clone())
+                    .resolve_agent(ctx.clone(), AgentMatchCriteria::by_role(ROLE_RECEPTION))
                     .await?
                     .ok_or_else(|| common::error::Error::not_found("无可用前台 Agent"))?;
                 agent.po.id
