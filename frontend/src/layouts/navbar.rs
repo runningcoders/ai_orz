@@ -7,33 +7,40 @@ use crate::hooks::use_breakpoint;
 use crate::pages::Route;
 use crate::store::auth::{logout, use_auth_state};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MenuType {
+    Hr,
+    Finance,
+    Project,
+    System,
+    User,
+}
+
 #[component]
 pub fn Navbar() -> Element {
-    let mut hr_menu_open = use_signal(|| false);
-    let mut finance_menu_open = use_signal(|| false);
-    let mut project_menu_open = use_signal(|| false);
-    let mut system_menu_open = use_signal(|| false);
-    let mut user_menu_open = use_signal(|| false);
+    let mut active_menu = use_signal(|| Option::<MenuType>::None);
     let auth = use_auth_state();
     let is_mobile = use_breakpoint();
     let mut drawer_open = use_signal(|| false);
 
-    // 修复 HIGH #9 + #8：之前登出仅 clear_login_state()，不更新 AuthState 信号，
-    // 也不调用后端 logout API 使 cookie 失效。现在统一调用 logout() 清内存+localStorage，
-    // 并调用后端 logout 接口清除 HttpOnly cookie。
+    let mut close_menus = move || {
+        active_menu.set(None);
+    };
+
+    let mut toggle_menu = move |menu: MenuType| {
+        active_menu.set(if active_menu() == Some(menu) {
+            None
+        } else {
+            Some(menu)
+        });
+    };
+
     let handle_logout = move |_| {
-        // 关闭所有菜单
-        hr_menu_open.set(false);
-        finance_menu_open.set(false);
-        project_menu_open.set(false);
-        system_menu_open.set(false);
-        user_menu_open.set(false);
+        close_menus();
         drawer_open.set(false);
-        // 调用后端 logout 清除 cookie（不阻塞前端跳转）
         spawn(async move {
             let _ = api_logout().await;
         });
-        // 清前端状态（内存信号 + localStorage）
         logout();
     };
 
@@ -70,17 +77,12 @@ pub fn Navbar() -> Element {
                             tabindex: 0,
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content",
-                            onclick: move |_| {
-                                finance_menu_open.set(false);
-                                project_menu_open.set(false);
-                                system_menu_open.set(false);
-                                user_menu_open.set(false);
-                                hr_menu_open.set(!hr_menu_open());
-                            },
+                            onclick: move |_| toggle_menu(MenuType::Hr),
+                            onblur: move |_| close_menus(),
                             "人力资源",
                             span { " ▾" }
                         }
-                        if hr_menu_open() {
+                        if active_menu() == Some(MenuType::Hr) {
                             ul {
                                 tabindex: 0,
                                 class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
@@ -88,52 +90,28 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::HrAgents {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "Agent 管理"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::HrSkills {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "技能库"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::HrMemorySearch {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "记忆搜索"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::HrKnowledgeGraph {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "知识图谱"
                                     }
                                 }
@@ -147,17 +125,12 @@ pub fn Navbar() -> Element {
                             tabindex: 0,
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content",
-                            onclick: move |_| {
-                                hr_menu_open.set(false);
-                                project_menu_open.set(false);
-                                system_menu_open.set(false);
-                                user_menu_open.set(false);
-                                finance_menu_open.set(!finance_menu_open());
-                            },
+                            onclick: move |_| toggle_menu(MenuType::Finance),
+                            onblur: move |_| close_menus(),
                             "财务管理",
                             span { " ▾" }
                         }
-                        if finance_menu_open() {
+                        if active_menu() == Some(MenuType::Finance) {
                             ul {
                                 tabindex: 0,
                                 class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
@@ -165,91 +138,49 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::FinanceModelProviders {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "模型提供商"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceTools {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "工具管理"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceIdentity {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "身份凭证"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceMessageChannels {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "消息渠道"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceAttachments {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "附件管理"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceMcpServers {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "MCP 服务器"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::FinanceToolCallEntries {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "📋 工具调用记录"
                                     }
                                 }
@@ -263,17 +194,12 @@ pub fn Navbar() -> Element {
                             tabindex: 0,
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content",
-                            onclick: move |_| {
-                                hr_menu_open.set(false);
-                                finance_menu_open.set(false);
-                                system_menu_open.set(false);
-                                user_menu_open.set(false);
-                                project_menu_open.set(!project_menu_open());
-                            },
+                            onclick: move |_| toggle_menu(MenuType::Project),
+                            onblur: move |_| close_menus(),
                             "项目管理",
                             span { " ▾" }
                         }
-                        if project_menu_open() {
+                        if active_menu() == Some(MenuType::Project) {
                             ul {
                                 tabindex: 0,
                                 class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
@@ -281,26 +207,14 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::ProjectList {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "项目列表"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::ProjectArtifacts {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "项目产物"
                                     }
                                 }
@@ -314,17 +228,12 @@ pub fn Navbar() -> Element {
                             tabindex: 0,
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content",
-                            onclick: move |_| {
-                                hr_menu_open.set(false);
-                                finance_menu_open.set(false);
-                                project_menu_open.set(false);
-                                user_menu_open.set(false);
-                                system_menu_open.set(!system_menu_open());
-                            },
+                            onclick: move |_| toggle_menu(MenuType::System),
+                            onblur: move |_| close_menus(),
                             "系统",
                             span { " ▾" }
                         }
-                        if system_menu_open() {
+                        if active_menu() == Some(MenuType::System) {
                             ul {
                                 tabindex: 0,
                                 class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
@@ -332,39 +241,21 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::SystemTriggers {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "定时触发器"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::SystemHealth {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "健康检查"
                                     }
                                 }
                                 li {
                                     Link {
                                         to: Route::SystemDocs {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "文档中心"
                                     }
                                 }
@@ -375,78 +266,42 @@ pub fn Navbar() -> Element {
                                     li {
                                         Link {
                                             to: Route::SystemLogs {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "日志查询"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::SystemBackup {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "备份管理"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::SystemProcesses {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "进程管理"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::SystemAop {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "AOP 监控"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::SystemSeed {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "Seed 配置迁移"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::SystemTasks {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "后台任务"
                                         }
                                     }
@@ -466,20 +321,15 @@ pub fn Navbar() -> Element {
                             tabindex: 0,
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content gap-2",
-                            onclick: move |_| {
-                                hr_menu_open.set(false);
-                                finance_menu_open.set(false);
-                                project_menu_open.set(false);
-                                system_menu_open.set(false);
-                                user_menu_open.set(!user_menu_open());
-                            },
+                            onclick: move |_| toggle_menu(MenuType::User),
+                            onblur: move |_| close_menus(),
                             div { class: "avatar",
                                 div { class: "w-8 rounded-full bg-primary text-primary-content flex items-center justify-center text-sm font-bold", "{avatar_char}" }
                             }
                             span { "{username}" }
                             span { " ▾" }
                         }
-                        if user_menu_open() {
+                        if active_menu() == Some(MenuType::User) {
                             ul {
                                 tabindex: 0,
                                 class: "dropdown-content menu absolute top-full right-0 bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content mt-1",
@@ -487,13 +337,7 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::UserProfile {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "👤 个人信息"
                                     }
                                 }
@@ -501,26 +345,14 @@ pub fn Navbar() -> Element {
                                     li {
                                         Link {
                                             to: Route::OrganizationInfo {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "🏢 组织信息"
                                         }
                                     }
                                     li {
                                         Link {
                                             to: Route::OrganizationUsers {},
-                                            onclick: move |_| {
-                                                hr_menu_open.set(false);
-                                                finance_menu_open.set(false);
-                                                project_menu_open.set(false);
-                                                system_menu_open.set(false);
-                                                user_menu_open.set(false);
-                                            },
+                                            onclick: move |_| close_menus(),
                                             "👥 用户管理"
                                         }
                                     }
@@ -531,13 +363,7 @@ pub fn Navbar() -> Element {
                                 li {
                                     Link {
                                         to: Route::Settings {},
-                                        onclick: move |_| {
-                                            hr_menu_open.set(false);
-                                            finance_menu_open.set(false);
-                                            project_menu_open.set(false);
-                                            system_menu_open.set(false);
-                                            user_menu_open.set(false);
-                                        },
+                                        onclick: move |_| close_menus(),
                                         "⚙️ 设置"
                                     }
                                 }
@@ -594,42 +420,21 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::MessageChat {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "💬 对话"
                             }
                         }
                         li {
                             Link {
                                 to: Route::MessageSearch {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "🔍 消息搜索"
                             }
                         }
                         li {
                             Link {
                                 to: Route::Workspace {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "🚀 工作台"
                             }
                         }
@@ -638,56 +443,28 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::HrAgents {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "Agent 管理"
                             }
                         }
                         li {
                             Link {
                                 to: Route::HrSkills {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "技能库"
                             }
                         }
                         li {
                             Link {
                                 to: Route::HrMemorySearch {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "记忆搜索"
                             }
                         }
                         li {
                             Link {
                                 to: Route::HrKnowledgeGraph {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "知识图谱"
                             }
                         }
@@ -696,98 +473,49 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::FinanceModelProviders {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "模型提供商"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceTools {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "工具管理"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceIdentity {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "身份凭证"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceMessageChannels {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "消息渠道"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceAttachments {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "附件管理"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceMcpServers {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "MCP 服务器"
                             }
                         }
                         li {
                             Link {
                                 to: Route::FinanceToolCallEntries {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "📋 工具调用记录"
                             }
                         }
@@ -796,28 +524,14 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::ProjectList {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "项目列表"
                             }
                         }
                         li {
                             Link {
                                 to: Route::ProjectArtifacts {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "项目产物"
                             }
                         }
@@ -826,42 +540,21 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::SystemTriggers {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "定时触发器"
                             }
                         }
                         li {
                             Link {
                                 to: Route::SystemHealth {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "健康检查"
                             }
                         }
                         li {
                             Link {
                                 to: Route::SystemDocs {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "文档中心"
                             }
                         }
@@ -869,84 +562,42 @@ pub fn Navbar() -> Element {
                             li {
                                 Link {
                                     to: Route::SystemLogs {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "日志查询"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::SystemBackup {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "备份管理"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::SystemProcesses {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "进程管理"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::SystemAop {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "AOP 监控"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::SystemSeed {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "Seed 配置迁移"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::SystemTasks {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "后台任务"
                                 }
                             }
@@ -959,14 +610,7 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::UserProfile {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "👤 个人信息"
                             }
                         }
@@ -974,28 +618,14 @@ pub fn Navbar() -> Element {
                             li {
                                 Link {
                                     to: Route::OrganizationInfo {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "🏢 组织信息"
                                 }
                             }
                             li {
                                 Link {
                                     to: Route::OrganizationUsers {},
-                                    onclick: move |_| {
-                                        hr_menu_open.set(false);
-                                        finance_menu_open.set(false);
-                                        project_menu_open.set(false);
-                                        system_menu_open.set(false);
-                                        user_menu_open.set(false);
-                                        drawer_open.set(false);
-                                    },
+                                    onclick: move |_| drawer_open.set(false),
                                     "👥 用户管理"
                                 }
                             }
@@ -1003,14 +633,7 @@ pub fn Navbar() -> Element {
                         li {
                             Link {
                                 to: Route::Settings {},
-                                onclick: move |_| {
-                                    hr_menu_open.set(false);
-                                    finance_menu_open.set(false);
-                                    project_menu_open.set(false);
-                                    system_menu_open.set(false);
-                                    user_menu_open.set(false);
-                                    drawer_open.set(false);
-                                },
+                                onclick: move |_| drawer_open.set(false),
                                 "⚙️ 设置"
                             }
                         }
