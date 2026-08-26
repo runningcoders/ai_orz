@@ -102,7 +102,13 @@ async fn test_query_with_limit(pool: SqlitePool) {
 
     // 限制返回 2 条
     let results = dal
-        .query(ctx, OrganizationQuery { limit: Some(2), ..Default::default() })
+        .query(
+            ctx,
+            OrganizationQuery {
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
 

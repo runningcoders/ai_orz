@@ -15,9 +15,7 @@ pub async fn check_initialized() -> Result<CheckInitializedResponse, ApiError> {
 }
 
 /// 提交系统初始化（异步，返回 task_id）
-pub async fn initialize_system(
-    req: InitializeSystemRequest,
-) -> Result<TaskIdResponse, ApiError> {
+pub async fn initialize_system(req: InitializeSystemRequest) -> Result<TaskIdResponse, ApiError> {
     api_post("/api/v1/organization/initialize", &req).await
 }
 

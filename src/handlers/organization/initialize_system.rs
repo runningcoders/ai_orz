@@ -393,11 +393,12 @@ pub async fn initialize_system(
 ) -> Result<TaskIdResponse> {
     // 前置校验 1：系统尚未初始化
     let domain = organization::domain();
-    let initialized = domain.organization_manage().check_initialized(ctx.clone()).await?;
+    let initialized = domain
+        .organization_manage()
+        .check_initialized(ctx.clone())
+        .await?;
     if initialized {
-        return Err(Error::bad_request(
-            "系统已初始化，无法重复初始化",
-        ));
+        return Err(Error::bad_request("系统已初始化，无法重复初始化"));
     }
 
     // 前置校验 2：用户名唯一（避免异步任务中 UNIQUE 约束冲突导致任务失败）
