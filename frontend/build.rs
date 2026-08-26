@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = Path::new("../.ai_orz/ai_orz.toml");
 
     let config_content = if config_path.exists() {
-        fs::read_to_string(config_path)?
+        fs::read_to_string(&config_path)?
     } else {
         let default_config = include_str!("../common/config/ai_orz.toml");
         default_config.to_string()
@@ -50,13 +50,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 确定性短 ID：基于路径字符串的 128-bit 哈希
+/// 将任意长路径映射为固定长度的十六进制字符串，避免文件系统路径超长（>256 字符）
+fn short_id(rel: &str) -> String {
+    let mut h: u128 = 5381;
+    for b in rel.bytes() {
+        h = h.wrapping_mul(31).wrapping_add(b as u128);
+    }
+    format!("{:032x}", h)
+}
+
 /// 文档中心静态资源：将仓库 docs/ 中的核心文档复制到 public/docs/，
 /// 并生成目录清单 index.json 供前端文档中心页面运行时 fetch。
 ///
+/// 所有文档文件统一使用 [`short_id`] 生成的哈希短路径存储，
+/// 避免深嵌套目录名导致的路径超长问题。
+/// 原始标题和目录结构仅用于前端 UI 展示。
+///
 /// 收录范围：
-/// - docs/ 根目录的纲要文档（README/ARCHITECTURE/LAYERED/CODE_WIKI/memory_design）
-/// - docs/design/、docs/plan/、docs/archive/ 下的所有 *.md（递归）
-/// - docs/wiki/zh/content/（IDE 生成的代码百科，保留目录层级，前端嵌套折叠树展示）
+/// - docs/ 根目录的纲要文档（路径短，保留原名）
+/// - docs/wiki/knowledge/zh/（知识卡片，层级结构 → 哈希路径）
+/// - docs/wiki/zh/content/（代码 Wiki，层级结构 → 哈希路径）
+/// - docs/design/、docs/plan/、docs/archive/（扁平列表 → 哈希路径）
 fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let docs_src = Path::new(&manifest_dir).join("../docs");
@@ -73,83 +88,50 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sections: Vec<serde_json::Value> = Vec::new();
 
-    // 递归收集某个源目录下的所有 *.md，返回相对 docs/ 的路径列表（已排序）
-    let collect_md = |dir: &Path, base: &Path| -> std::io::Result<Vec<String>> {
-        let mut result = Vec::new();
-        let mut stack = vec![dir.to_path_buf()];
-        while let Some(current) = stack.pop() {
-            for entry in fs::read_dir(&current)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_dir() {
-                    stack.push(path);
-                } else if path.extension().is_some_and(|ext| ext == "md") {
-                    if let Ok(rel) = path.strip_prefix(base) {
-                        result.push(rel.to_string_lossy().replace('\\', "/"));
-                    }
-                    // 逐个文件声明监听，内容变化时触发重建
-                    println!("cargo:rerun-if-changed={}", path.display());
-                }
+    // ---- 分区 1：总览（根目录纲要文档，路径短无需哈希）----
+    {
+        let root_docs: &[(&str, &str)] = &[
+            ("README.md", "项目概览"),
+            ("ARCHITECTURE.md", "架构总纲"),
+            ("LAYERED_ARCHITECTURE_PRACTICE.md", "分层架构实践"),
+            ("CODE_WIKI.md", "代码认知入口"),
+            ("memory_design.md", "记忆系统设计"),
+        ];
+        let mut overview_docs: Vec<serde_json::Value> = Vec::new();
+        for (file, title) in root_docs {
+            let src = docs_src.join(file);
+            if src.exists() {
+                fs::copy(&src, dest_root.join(file))?;
+                println!("cargo:rerun-if-changed={}", src.display());
+                overview_docs.push(serde_json::json!({ "title": title, "path": file }));
             }
         }
-        result.sort();
-        Ok(result)
-    };
-
-    // 从文件名生成展示标题：去扩展名，下划线/连字符转空格
-    let title_from_path = |rel: &str| -> String {
-        let stem = Path::new(rel)
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| rel.to_string());
-        stem.replace(['_', '-'], " ")
-    };
-
-    // 分区 1：纲要文档（docs/ 根目录，手工排序）
-    let root_docs: &[(&str, &str)] = &[
-        ("README.md", "项目概览"),
-        ("ARCHITECTURE.md", "架构总纲"),
-        ("LAYERED_ARCHITECTURE_PRACTICE.md", "分层架构实践"),
-        ("CODE_WIKI.md", "代码认知入口"),
-        ("memory_design.md", "记忆系统设计"),
-    ];
-    let mut overview_docs: Vec<serde_json::Value> = Vec::new();
-    for (file, title) in root_docs {
-        let src = docs_src.join(file);
-        if src.exists() {
-            fs::copy(&src, dest_root.join(file))?;
-            println!("cargo:rerun-if-changed={}", src.display());
-            overview_docs.push(serde_json::json!({ "title": title, "path": file }));
+        if !overview_docs.is_empty() {
+            sections.push(serde_json::json!({ "label": "总览", "docs": overview_docs }));
         }
     }
-    if !overview_docs.is_empty() {
-        sections.push(serde_json::json!({ "label": "总览", "docs": overview_docs }));
-    }
 
-    // 分区 2：知识卡片（docs/wiki/knowledge/zh，扁平化短路径存储）
-    let knowledge_src = docs_src.join("wiki/knowledge/zh");
-    if knowledge_src.is_dir() {
-        /// 目录树节点：文件（File）或子目录（Dir，含子节点）
-        /// 文件节点存储短路径（用于磁盘存储和 URL 访问），标题保持原名
-        enum WikiNode {
+    // ---- 分区 2 & 3：层级目录型文档（知识卡片 + 代码 Wiki）----
+    // 统一使用哈希短路径：文件存为 {dest_prefix}/{hash}.md，目录结构仅用于 JSON 分组展示
+    {
+        /// 层级目录树节点
+        enum DocNode {
             File {
                 title: String,
                 short_path: String,
             },
             Dir {
                 name: String,
-                children: Vec<WikiNode>,
+                children: Vec<DocNode>,
             },
         }
-        /// 生成确定性短 ID（基于路径哈希，避免超长路径）
-        fn short_id(rel: &str) -> String {
-            let mut h: u128 = 5381;
-            for b in rel.bytes() {
-                h = h.wrapping_mul(31).wrapping_add(b as u128);
-            }
-            format!("{:032x}", h)
-        }
-        fn walk_wiki(dir: &Path, base: &Path, dest_root: &Path) -> std::io::Result<Vec<WikiNode>> {
+
+        fn walk_dir_hierarchical(
+            dir: &Path,
+            base: &Path,
+            dest_root: &Path,
+            dest_prefix: &str,
+        ) -> std::io::Result<Vec<DocNode>> {
             let mut nodes = Vec::new();
             let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
                 .filter_map(|e| e.ok().map(|e| e.path()))
@@ -161,17 +143,16 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         .file_name()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    let children = walk_wiki(&path, base, dest_root)?;
+                    let children = walk_dir_hierarchical(&path, base, dest_root, dest_prefix)?;
                     if !children.is_empty() {
-                        nodes.push(WikiNode::Dir { name, children });
+                        nodes.push(DocNode::Dir { name, children });
                     }
                 } else if path.extension().is_some_and(|ext| ext == "md")
                     && let Ok(rel) = path.strip_prefix(base)
                 {
                     let rel_str = rel.to_string_lossy().replace('\\', "/");
-                    // 生成短路径：wiki/knowledge/{short_id}.md
                     let sid = short_id(&rel_str);
-                    let short_path = format!("wiki/knowledge/{}.md", sid);
+                    let short_path = format!("{}/{}.md", dest_prefix, sid);
                     let dest = dest_root.join(&short_path);
                     if let Some(parent) = dest.parent() {
                         let _ = fs::create_dir_all(parent);
@@ -182,7 +163,7 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| rel_str.clone());
-                    nodes.push(WikiNode::File {
+                    nodes.push(DocNode::File {
                         title: stem,
                         short_path,
                     });
@@ -190,121 +171,96 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
             }
             Ok(nodes)
         }
-        fn node_to_json(node: &WikiNode) -> serde_json::Value {
+
+        fn node_to_json(node: &DocNode) -> serde_json::Value {
             match node {
-                WikiNode::File { title, short_path } => {
+                DocNode::File { title, short_path } => {
                     serde_json::json!({ "title": title, "path": short_path })
                 }
-                WikiNode::Dir { name, children } => {
+                DocNode::Dir { name, children } => {
                     let children_json: Vec<serde_json::Value> =
                         children.iter().map(node_to_json).collect();
                     serde_json::json!({ "label": name, "children": children_json })
                 }
             }
         }
-        let tree = walk_wiki(&knowledge_src, &docs_src, &dest_root)?;
-        if !tree.is_empty() {
-            let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
-            sections.push(serde_json::json!({ "label": "知识卡片", "groups": groups }));
+
+        // 分区 2：知识卡片
+        let knowledge_src = docs_src.join("wiki/knowledge/zh");
+        if knowledge_src.is_dir() {
+            let tree =
+                walk_dir_hierarchical(&knowledge_src, &docs_src, &dest_root, "wiki/knowledge")?;
+            if !tree.is_empty() {
+                let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
+                sections.push(serde_json::json!({
+                    "label": "知识卡片",
+                    "groups": groups
+                }));
+            }
+        }
+
+        // 分区 3：代码 Wiki
+        let wiki_src = docs_src.join("wiki/zh/content");
+        if wiki_src.is_dir() {
+            let tree = walk_dir_hierarchical(&wiki_src, &docs_src, &dest_root, "wiki/wiki")?;
+            if !tree.is_empty() {
+                let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json).collect();
+                sections.push(serde_json::json!({
+                    "label": "代码 Wiki",
+                    "groups": groups
+                }));
+            }
         }
     }
 
-    // 分区 3：代码 Wiki（docs/wiki/zh/content，保留目录层级为嵌套 groups）
-    let wiki_src = docs_src.join("wiki/zh/content");
-    if wiki_src.is_dir() {
-        /// wiki 目录树节点：文件（File）或子目录（Dir，含子节点）
-        enum WikiNode2 {
-            File {
-                rel: String,
-            },
-            Dir {
-                name: String,
-                children: Vec<WikiNode2>,
-            },
-        }
-        fn walk_wiki2(
-            dir: &Path,
-            base: &Path,
-            dest_root: &Path,
-        ) -> std::io::Result<Vec<WikiNode2>> {
-            let mut nodes = Vec::new();
-            let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)?
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .collect();
-            paths.sort();
-            for path in paths {
-                if path.is_dir() {
-                    let name = path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    let children = walk_wiki2(&path, base, dest_root)?;
-                    if !children.is_empty() {
-                        nodes.push(WikiNode2::Dir { name, children });
+    // ---- 分区 4：其他文档（design + plan + archive，扁平列表 + 哈希短路径）----
+    {
+        let mut other_docs: Vec<serde_json::Value> = Vec::new();
+        for dir_name in ["design", "plan", "archive"] {
+            let src_dir = docs_src.join(dir_name);
+            if !src_dir.is_dir() {
+                continue;
+            }
+            let mut stack = vec![src_dir];
+            while let Some(current) = stack.pop() {
+                for entry in fs::read_dir(&current)? {
+                    let entry = entry?;
+                    let path = entry.path();
+                    if path.is_dir() {
+                        stack.push(path);
+                    } else if path.extension().is_some_and(|ext| ext == "md")
+                        && let Ok(rel) = path.strip_prefix(&docs_src)
+                    {
+                        let rel_str = rel.to_string_lossy().replace('\\', "/");
+                        let sid = short_id(&rel_str);
+                        let short_path = format!("other/{}.md", sid);
+                        let dest = dest_root.join(&short_path);
+                        if let Some(parent) = dest.parent() {
+                            let _ = fs::create_dir_all(parent);
+                        }
+                        let _ = fs::copy(&path, &dest);
+                        println!("cargo:rerun-if-changed={}", path.display());
+                        let stem = Path::new(&rel_str)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| rel_str.clone());
+                        let display_title = format!("{}/{}", dir_name, stem);
+                        other_docs.push(serde_json::json!({
+                            "title": display_title,
+                            "path": short_path
+                        }));
                     }
-                } else if path.extension().is_some_and(|ext| ext == "md")
-                    && let Ok(rel) = path.strip_prefix(base)
-                {
-                    let rel_str = rel.to_string_lossy().replace('\\', "/");
-                    let dest = dest_root.join(&rel_str);
-                    if let Some(parent) = dest.parent() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                    let _ = fs::copy(&path, &dest);
-                    println!("cargo:rerun-if-changed={}", path.display());
-                    nodes.push(WikiNode2::File { rel: rel_str });
-                }
-            }
-            Ok(nodes)
-        }
-        fn node_to_json2(node: &WikiNode2) -> serde_json::Value {
-            match node {
-                WikiNode2::File { rel } => {
-                    let stem = Path::new(rel)
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| rel.clone());
-                    serde_json::json!({ "title": stem, "path": rel })
-                }
-                WikiNode2::Dir { name, children } => {
-                    let children_json: Vec<serde_json::Value> =
-                        children.iter().map(node_to_json2).collect();
-                    serde_json::json!({ "label": name, "children": children_json })
                 }
             }
         }
-        let tree = walk_wiki2(&wiki_src, &docs_src, &dest_root)?;
-        if !tree.is_empty() {
-            let groups: Vec<serde_json::Value> = tree.iter().map(node_to_json2).collect();
-            sections.push(serde_json::json!({ "label": "代码 Wiki", "groups": groups }));
+        if !other_docs.is_empty() {
+            other_docs.sort_by(|a, b| {
+                a.get("title")
+                    .and_then(|v| v.as_str())
+                    .cmp(&b.get("title").and_then(|v| v.as_str()))
+            });
+            sections.push(serde_json::json!({ "label": "其他文档", "docs": other_docs }));
         }
-    }
-
-    // 分区 4：其他文档（design + plan + archive 合并为一个分区的 docs 列表）
-    let mut other_docs: Vec<serde_json::Value> = Vec::new();
-    for dir_name in ["design", "plan", "archive"] {
-        let src_dir = docs_src.join(dir_name);
-        if !src_dir.is_dir() {
-            continue;
-        }
-        for rel in collect_md(&src_dir, &docs_src)? {
-            let title = format!("{}/{}", dir_name, title_from_path(&rel));
-            let dest = dest_root.join(&rel);
-            if let Some(parent) = dest.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            let _ = fs::copy(docs_src.join(&rel), &dest);
-            other_docs.push(serde_json::json!({ "title": title, "path": rel }));
-        }
-    }
-    if !other_docs.is_empty() {
-        // 按标题排序（前缀 design/plan/archive 自然形成三段）
-        other_docs.sort_by(|a, b| {
-            a.get("title")
-                .and_then(|v| v.as_str())
-                .cmp(&b.get("title").and_then(|v| v.as_str()))
-        });
-        sections.push(serde_json::json!({ "label": "其他文档", "docs": other_docs }));
     }
 
     let index = serde_json::json!({ "sections": sections });
