@@ -278,74 +278,76 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         use_signal(|| BackgroundParticles::new(props.width, props.height, 40));
     let birth_death: Signal<BirthDeathParticles> = use_signal(BirthDeathParticles::new);
 
-    // --- props 同步 effect：props 变化时保留已有节点位置，新增节点用圆形布局初始化 ---
-    let sync_nodes = props.nodes.clone();
-    let sync_width = props.width;
-    let sync_height = props.height;
+    // --- props 同步 effect：仅在 props 变化时同步（保留已有节点位置，新增节点圆形布局）---
+    // 修复死循环：原 use_effect 订阅 nodes_state 并在 effect 内 set nodes_state，
+    // 被 RAF 每帧触发后形成无限循环冻结主线程。改用 use_reactive 限定依赖为 props
+    // （PartialEq 变化才执行），并用 peek() 读取 nodes_state（不订阅自身）。
     let mut nodes_state_sync = nodes_state;
     let mut force_layout_sync = force_layout;
     let mut is_stable_sync = is_stable;
     let mut birth_death_sync = birth_death;
-    use_effect(move || {
-        let props_nodes = sync_nodes.clone();
-        let current = nodes_state_sync.read().clone();
-        let current_ids: std::collections::HashSet<&str> =
-            current.iter().map(|n| n.id.as_str()).collect();
-        let new_node_ids: Vec<String> = props_nodes
-            .iter()
-            .filter(|n| !current_ids.contains(n.id.as_str()))
-            .map(|n| n.id.clone())
-            .collect();
-        let mut merged: Vec<CanvasNode> = Vec::with_capacity(props_nodes.len());
-        for new_node in &props_nodes {
-            if let Some(existing) = current.iter().find(|n| n.id == new_node.id) {
-                // 保留已有节点位置，更新外观字段
-                merged.push(CanvasNode {
-                    id: existing.id.clone(),
-                    x: existing.x,
-                    y: existing.y,
-                    radius: new_node.radius,
-                    label: new_node.label.clone(),
-                    color: new_node.color.clone(),
-                    node_type: new_node.node_type.clone(),
-                    layer: new_node.layer,
-                });
-            } else {
-                merged.push(new_node.clone());
-            }
-        }
-        // 新增节点位置为 0,0 时用圆形布局初始化
-        let has_uninit = merged.iter().any(|n| n.x == 0.0 && n.y == 0.0);
-        if has_uninit {
-            let positions = circle_initial_layout(
-                merged.len(),
-                sync_width / 2.0,
-                sync_height / 2.0,
-                (sync_width.min(sync_height) / 3.0).max(100.0),
-            );
-            for (i, node) in merged.iter_mut().enumerate() {
-                if node.x == 0.0 && node.y == 0.0 {
-                    node.x = positions[i].0;
-                    node.y = positions[i].1;
+    use_effect(use_reactive(
+        (&props.nodes, &props.width, &props.height),
+        move |(props_nodes, sync_width, sync_height)| {
+            let current = nodes_state_sync.peek().clone();
+            let current_ids: std::collections::HashSet<&str> =
+                current.iter().map(|n| n.id.as_str()).collect();
+            let new_node_ids: Vec<String> = props_nodes
+                .iter()
+                .filter(|n| !current_ids.contains(n.id.as_str()))
+                .map(|n| n.id.clone())
+                .collect();
+            let mut merged: Vec<CanvasNode> = Vec::with_capacity(props_nodes.len());
+            for new_node in &props_nodes {
+                if let Some(existing) = current.iter().find(|n| n.id == new_node.id) {
+                    // 保留已有节点位置，更新外观字段
+                    merged.push(CanvasNode {
+                        id: existing.id.clone(),
+                        x: existing.x,
+                        y: existing.y,
+                        radius: new_node.radius,
+                        label: new_node.label.clone(),
+                        color: new_node.color.clone(),
+                        node_type: new_node.node_type.clone(),
+                        layer: new_node.layer,
+                    });
+                } else {
+                    merged.push(new_node.clone());
                 }
             }
-        }
-        if current.len() != merged.len() {
+            // 新增节点位置为 0,0 时用圆形布局初始化
+            let has_uninit = merged.iter().any(|n| n.x == 0.0 && n.y == 0.0);
+            if has_uninit {
+                let positions = circle_initial_layout(
+                    merged.len(),
+                    sync_width / 2.0,
+                    sync_height / 2.0,
+                    (sync_width.min(sync_height) / 3.0).max(100.0),
+                );
+                for (i, node) in merged.iter_mut().enumerate() {
+                    if node.x == 0.0 && node.y == 0.0 {
+                        node.x = positions[i].0;
+                        node.y = positions[i].1;
+                    }
+                }
+            }
+            if current.len() != merged.len() {
+                is_stable_sync.set(false);
+                force_layout_sync.write().sync(merged.len());
+            }
+            // 触发新增节点的诞生效果
+            if !new_node_ids.is_empty() {
+                let mut bd = birth_death_sync.write();
+                for id in &new_node_ids {
+                    if let Some(node) = merged.iter().find(|n| &n.id == id) {
+                        bd.trigger_birth(node);
+                    }
+                }
+            }
+            nodes_state_sync.set(merged);
             is_stable_sync.set(false);
-            force_layout_sync.write().sync(merged.len());
-        }
-        // 触发新增节点的诞生效果
-        if !new_node_ids.is_empty() {
-            let mut bd = birth_death_sync.write();
-            for id in &new_node_ids {
-                if let Some(node) = merged.iter().find(|n| &n.id == id) {
-                    bd.trigger_birth(node);
-                }
-            }
-        }
-        nodes_state_sync.set(merged);
-        is_stable_sync.set(false);
-    });
+        },
+    ));
 
     // --- 渲染循环 effect：request_animation_frame 递归调用，每帧步进力学 + 重绘 ---
     let render_width = props.width;
