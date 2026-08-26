@@ -75,7 +75,10 @@ pub async fn update_agent(req: UpdateAgentRequest) -> Result<UpdateAgentResponse
 }
 
 pub async fn update_agent_status(req: UpdateAgentStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status as i32 });
+    // AgentStatus 默认 serde 序列化为变体名（如 "Onboarded"），
+    // 与后端 AgentStatus Deserialize 保持一致；发送数字会解析失败
+    let status_val = serde_json::to_value(req.status).unwrap_or(serde_json::Value::Null);
+    let body = serde_json::json!({ "status": status_val });
     api_put_empty(&format!("/api/v1/hr/agents/{}/status", req.id), &body).await
 }
 
