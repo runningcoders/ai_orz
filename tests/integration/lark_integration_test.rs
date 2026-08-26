@@ -198,8 +198,12 @@ async fn test_credential_channel_reference_lifecycle(pool: SqlitePool) {
             &json!({
                 "channel_type": "Lark",
                 "channel_name": "生命周期渠道",
-                "lark_credential_id": credential_id,
-                "lark_listen_inbound": false
+                "config": {
+                    "lark": {
+                        "credential_id": credential_id,
+                        "listen_inbound": false
+                    }
+                }
             }),
             &jwt,
         )

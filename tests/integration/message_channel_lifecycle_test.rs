@@ -64,11 +64,15 @@ async fn test_lark_channel_lifecycle(pool: SqlitePool) {
             &json!({
                 "channel_type": "Lark",
                 "channel_name": "集成测试飞书渠道",
-                "lark_credential_id": "cred-lifecycle",
-                "lark_identity_mode": "bot",
-                "lark_open_id": "ou_integration",
-                "lark_user_name": "集成测试用户",
-                "lark_listen_inbound": false
+                "config": {
+                    "lark": {
+                        "credential_id": "cred-lifecycle",
+                        "identity_mode": "bot",
+                        "open_id": "ou_integration",
+                        "user_name": "集成测试用户",
+                        "listen_inbound": false
+                    }
+                }
             }),
             &jwt,
         )
@@ -80,20 +84,26 @@ async fn test_lark_channel_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_str())
         .expect("channel detail missing id")
         .to_string();
+
+    let cfg = detail.get("config").and_then(|c| c.get("lark"));
     assert_eq!(
-        detail.get("lark_credential_id").and_then(|v| v.as_str()),
+        cfg.and_then(|l| l.get("credential_id"))
+            .and_then(|v| v.as_str()),
         Some("cred-lifecycle")
     );
     assert_eq!(
-        detail.get("lark_credential_name").and_then(|v| v.as_str()),
+        cfg.and_then(|l| l.get("credential_name"))
+            .and_then(|v| v.as_str()),
         Some("集成测试凭证")
     );
     assert_eq!(
-        detail.get("lark_identity_mode").and_then(|v| v.as_str()),
+        cfg.and_then(|l| l.get("identity_mode"))
+            .and_then(|v| v.as_str()),
         Some("bot")
     );
     assert_eq!(
-        detail.get("lark_listen_inbound").and_then(|v| v.as_bool()),
+        cfg.and_then(|l| l.get("listen_inbound"))
+            .and_then(|v| v.as_bool()),
         Some(false)
     );
     // 守护：响应全链路绝不回显 secret 明文
@@ -191,7 +201,11 @@ async fn test_create_lark_channel_requires_credential_ref(pool: SqlitePool) {
             &json!({
                 "channel_type": "Lark",
                 "channel_name": "悬空引用渠道",
-                "lark_credential_id": "cred-does-not-exist"
+                "config": {
+                    "lark": {
+                        "credential_id": "cred-does-not-exist"
+                    }
+                }
             }),
             &jwt,
         )
