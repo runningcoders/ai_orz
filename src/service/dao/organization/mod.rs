@@ -2,11 +2,13 @@
 
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
+use common::enums::OrganizationScope;
 use common::error::Result;
 
 /// Organization 查询参数
 #[derive(Debug, Clone, Default)]
 pub struct OrganizationQuery {
+    pub scope: Option<OrganizationScope>,
     pub limit: Option<usize>,
 }
 

@@ -85,6 +85,10 @@ FROM organizations WHERE id = ? AND status != 0
             r#"SELECT id, name, description, base_url, status, scope, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
         );
 
+        if let Some(scope) = query.scope {
+            builder.push(" AND scope = ").push_bind(scope as i32);
+        }
+
         // 排序
         builder.push(" ORDER BY created_at DESC");
 
@@ -151,14 +155,18 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
         self.count(ctx, OrganizationQuery::default()).await
     }
 
-    async fn count(&self, ctx: RequestContext, _query: OrganizationQuery) -> Result<u64> {
-        // OrganizationQuery 当前只有 limit 字段，对 count 无影响
-        // 软删除过滤：status != 0
-        let count =
-            sqlx::query!(r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#)
-                .fetch_one(ctx.db_pool())
-                .await?;
+    async fn count(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<u64> {
+        let pool = ctx.db_pool();
+        let mut builder = sqlx::QueryBuilder::new(
+            r#"SELECT COUNT(*) as count FROM organizations WHERE status != 0"#,
+        );
 
-        Ok(count.count as u64)
+        if let Some(scope) = query.scope {
+            builder.push(" AND scope = ").push_bind(scope as i32);
+        }
+
+        let row = builder.build_query_scalar::<i64>().fetch_one(pool).await?;
+
+        Ok(row as u64)
     }
 }

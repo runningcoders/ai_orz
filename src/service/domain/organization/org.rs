@@ -37,14 +37,21 @@ fn generate_user_id() -> String {
 
 #[async_trait]
 impl super::OrganizationManage for super::OrganizationDomainImpl {
-    /// 检查系统是否已经初始化
+    /// 检查系统是否已经初始化（即是否存在 Local 组织）
+    ///
+    /// 一台设备只允许有一个 Local 组织；Remote 组织可存在多个（记录交互信息）。
     async fn check_initialized(&self, ctx: RequestContext) -> Result<bool> {
-        // 语法糖：调用通用 count
+        use crate::service::dao::organization::OrganizationQuery;
+        use common::enums::OrganizationScope;
+
         let count = self
             .org_dal
             .count(
                 ctx,
-                crate::service::dao::organization::OrganizationQuery::default(),
+                OrganizationQuery {
+                    scope: Some(OrganizationScope::Local),
+                    ..Default::default()
+                },
             )
             .await?;
         Ok(count > 0)

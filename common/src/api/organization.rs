@@ -63,13 +63,6 @@ pub struct InitializeSystemResponse {
     pub reception_agent_id: Option<String>,
 }
 
-/// 系统初始化异步提交响应
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct InitializeSystemAsyncResponse {
-    /// 异步任务 ID（用于查询进度）
-    pub task_id: String,
-}
-
 /// 初始化任务状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

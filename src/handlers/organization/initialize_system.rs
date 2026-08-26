@@ -138,6 +138,27 @@ impl InitializeSystemTask {
         let ctx = self.ctx.clone();
         let params = self.params.clone();
 
+        // 防御性校验：任务执行时再次确认系统未初始化 + 用户名唯一
+        // （防止 handler 校验通过后到任务实际执行之间的竞态条件）
+        let domain = organization::domain();
+        let initialized = domain
+            .organization_manage()
+            .check_initialized(ctx.clone())
+            .await?;
+        if initialized {
+            return Err(Error::bad_request("系统已初始化，无法重复初始化"));
+        }
+        let user_exists = domain
+            .user_manage()
+            .exists_by_username(ctx.clone(), &params.admin_username)
+            .await?;
+        if user_exists {
+            return Err(Error::bad_request(format!(
+                "用户名 '{}' 已存在",
+                params.admin_username
+            )));
+        }
+
         // Step 1: 创建组织 + Owner
         self.set_step(1, "正在创建组织和超级管理员");
         let (org_id, user_id) = organization::domain()
@@ -364,11 +385,33 @@ pub async fn check_initialized(
 /// 初始化系统（异步提交，返回 task_id）
 ///
 /// 创建自包含任务对象，注册到通用后台任务注册中心，由 registry spawn 执行。
+/// 前置校验：系统未初始化 + 用户名唯一
 #[generate_http_handler]
 pub async fn initialize_system(
     ctx: RequestContext,
     params: InitializeSystemRequest,
 ) -> Result<TaskIdResponse> {
+    // 前置校验 1：系统尚未初始化
+    let domain = organization::domain();
+    let initialized = domain.organization_manage().check_initialized(ctx.clone()).await?;
+    if initialized {
+        return Err(Error::bad_request(
+            "系统已初始化，无法重复初始化",
+        ));
+    }
+
+    // 前置校验 2：用户名唯一（避免异步任务中 UNIQUE 约束冲突导致任务失败）
+    let exists = domain
+        .user_manage()
+        .exists_by_username(ctx.clone(), &params.admin_username)
+        .await?;
+    if exists {
+        return Err(Error::bad_request(format!(
+            "用户名 '{}' 已存在",
+            params.admin_username
+        )));
+    }
+
     // 边界校验：配置了模型则字段必须完整（前端分步校验只覆盖正常路径）
     if let Some(chat) = params.chat_model.as_ref()
         && (chat.name.trim().is_empty()
