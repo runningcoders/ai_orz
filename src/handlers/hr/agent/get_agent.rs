@@ -23,11 +23,19 @@ use common::models::StatsInterval;
 )]
 #[generate_http_handler]
 pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<GetAgentResponse> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let default_range = (now - 7 * 24 * 3600 * 1000, now);
+
     let options = AgentFetchOptions {
         with_stats: params.with_stats,
         with_model_call_stats: params.with_model_call_stats,
         stats_time_range: match (params.stats_time_start, params.stats_time_end) {
             (Some(start), Some(end)) => Some((start, end)),
+            _ if params.with_stats.unwrap_or(false)
+                || params.with_model_call_stats.unwrap_or(false) =>
+            {
+                Some(default_range)
+            }
             _ => None,
         },
         stats_interval: params.stats_interval.as_deref().and_then(|s| {

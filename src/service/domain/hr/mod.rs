@@ -121,7 +121,25 @@ impl HrDomain for HrDomainImpl {
             },
             ..Default::default()
         };
-        let agents = self.agent_dal.query(ctx.clone(), query).await?.items;
+        let mut agents = self.agent_dal.query(ctx.clone(), query).await?.items;
+
+        // 回退：若无 Onboarded Agent，放宽到 Interviewing 状态（新建 Agent 尚未入职时仍可作为前台）
+        if agents.is_empty() {
+            let fallback_query = AgentQuery {
+                status: Some(AgentStatus::Interviewing),
+                pagination: common::api::PaginationParams {
+                    limit: Some(limit.max(1)),
+                    offset: None,
+                },
+                ..Default::default()
+            };
+            agents = self
+                .agent_dal
+                .query(ctx.clone(), fallback_query)
+                .await?
+                .items;
+        }
+
         if agents.is_empty() {
             return Ok(None);
         }
