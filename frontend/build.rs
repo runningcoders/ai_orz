@@ -126,18 +126,28 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
         sections.push(serde_json::json!({ "label": "总览", "docs": overview_docs }));
     }
 
-    // 分区 2：知识卡片（docs/wiki/knowledge/zh，保留目录层级）
+    // 分区 2：知识卡片（docs/wiki/knowledge/zh，扁平化短路径存储）
     let knowledge_src = docs_src.join("wiki/knowledge/zh");
     if knowledge_src.is_dir() {
         /// 目录树节点：文件（File）或子目录（Dir，含子节点）
+        /// 文件节点存储短路径（用于磁盘存储和 URL 访问），标题保持原名
         enum WikiNode {
             File {
-                rel: String,
+                title: String,
+                short_path: String,
             },
             Dir {
                 name: String,
                 children: Vec<WikiNode>,
             },
+        }
+        /// 生成确定性短 ID（基于路径哈希，避免超长路径）
+        fn short_id(rel: &str) -> String {
+            let mut h: u128 = 5381;
+            for b in rel.bytes() {
+                h = h.wrapping_mul(31).wrapping_add(b as u128);
+            }
+            format!("{:032x}", h)
         }
         fn walk_wiki(dir: &Path, base: &Path, dest_root: &Path) -> std::io::Result<Vec<WikiNode>> {
             let mut nodes = Vec::new();
@@ -151,7 +161,6 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         .file_name()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    // 知识卡片目录中的子目录也一并递归处理
                     let children = walk_wiki(&path, base, dest_root)?;
                     if !children.is_empty() {
                         nodes.push(WikiNode::Dir { name, children });
@@ -160,25 +169,31 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                     && let Ok(rel) = path.strip_prefix(base)
                 {
                     let rel_str = rel.to_string_lossy().replace('\\', "/");
-                    let dest = dest_root.join(&rel_str);
+                    // 生成短路径：wiki/knowledge/{short_id}.md
+                    let sid = short_id(&rel_str);
+                    let short_path = format!("wiki/knowledge/{}.md", sid);
+                    let dest = dest_root.join(&short_path);
                     if let Some(parent) = dest.parent() {
                         let _ = fs::create_dir_all(parent);
                     }
                     let _ = fs::copy(&path, &dest);
                     println!("cargo:rerun-if-changed={}", path.display());
-                    nodes.push(WikiNode::File { rel: rel_str });
+                    let stem = Path::new(&rel_str)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| rel_str.clone());
+                    nodes.push(WikiNode::File {
+                        title: stem,
+                        short_path,
+                    });
                 }
             }
             Ok(nodes)
         }
         fn node_to_json(node: &WikiNode) -> serde_json::Value {
             match node {
-                WikiNode::File { rel } => {
-                    let stem = Path::new(rel)
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| rel.clone());
-                    serde_json::json!({ "title": stem, "path": rel })
+                WikiNode::File { title, short_path } => {
+                    serde_json::json!({ "title": title, "path": short_path })
                 }
                 WikiNode::Dir { name, children } => {
                     let children_json: Vec<serde_json::Value> =
