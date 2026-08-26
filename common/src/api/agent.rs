@@ -228,9 +228,13 @@ pub struct UpdateAgentRequest {
 }
 
 /// 更新 Agent 状态请求
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+///
+/// `#[serde(default)]`：body 反序列化不强校验，缺失字段用 Default 兜底
+/// （id 来自 URL path、由 handler 提取后覆盖，body 中可省略）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+#[serde(default)]
 pub struct UpdateAgentStatusRequest {
-    /// Agent ID
+    /// Agent ID（来自 URL path；body 中可缺失，反序列化后由 path 参数覆盖）
     #[param(source = "path")]
     pub id: String,
 
