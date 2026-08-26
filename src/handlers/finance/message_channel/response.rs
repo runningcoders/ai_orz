@@ -106,7 +106,9 @@ fn build_lark_config(
 
 fn build_wechat_config(config: &ChannelConfig) -> Option<WechatChannelConfig> {
     let open_id = non_empty_clone(config.wechat_open_id.as_deref())?;
-    Some(WechatChannelConfig { open_id: Some(open_id) })
+    Some(WechatChannelConfig {
+        open_id: Some(open_id),
+    })
 }
 
 fn build_email_config(config: &ChannelConfig) -> Option<EmailChannelConfig> {
@@ -136,7 +138,9 @@ fn build_email_config(config: &ChannelConfig) -> Option<EmailChannelConfig> {
 
 fn build_slack_config(config: &ChannelConfig) -> Option<SlackChannelConfig> {
     let channel_id = non_empty_clone(config.slack_channel_id.as_deref())?;
-    Some(SlackChannelConfig { channel_id: Some(channel_id) })
+    Some(SlackChannelConfig {
+        channel_id: Some(channel_id),
+    })
 }
 
 fn build_webhook_config(config: &ChannelConfig) -> Option<WebhookChannelConfig> {
