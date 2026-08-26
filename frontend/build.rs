@@ -144,8 +144,16 @@ fn copy_docs() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
                     let children = walk_dir_hierarchical(&path, base, dest_root, dest_prefix)?;
+                    // 扁平化：如果目录只包含 .md 文件（无子目录），直接将文件提升到父级
+                    // 避免 "同名文件夹包同名文件" 的无意义嵌套
+                    let has_subdirs = children.iter().any(|c| matches!(c, DocNode::Dir { .. }));
                     if !children.is_empty() {
-                        nodes.push(DocNode::Dir { name, children });
+                        if has_subdirs {
+                            nodes.push(DocNode::Dir { name, children });
+                        } else {
+                            // 全部是文件，直接提升
+                            nodes.extend(children);
+                        }
                     }
                 } else if path.extension().is_some_and(|ext| ext == "md")
                     && let Ok(rel) = path.strip_prefix(base)

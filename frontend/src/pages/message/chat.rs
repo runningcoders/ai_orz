@@ -86,14 +86,9 @@ pub fn MessageChat() -> Element {
     // SSE 消息计数器：当前会话收到新消息时递增，驱动侧栏防抖刷新
     let mut refresh_tick = use_signal(|| 0u64);
 
-    // 权限检查：未登录时重定向到登录页（在所有 use_signal 之后调用）
-    if !crate::hooks::use_require_auth() {
-        return rsx! {
-            div { class: "min-h-screen flex items-center justify-center",
-                span { class: "loading loading-spinner loading-lg" }
-            }
-        };
-    }
+    // 权限检查：先注册所有 hooks，再根据 auth 状态决定是否渲染
+    // （Dioxus 要求 hooks 必须在每次 render 中按相同顺序注册，不能在条件分支中跳过）
+    let is_authenticated = crate::hooks::use_require_auth();
 
     let mut load_projects = move || {
         loading_projects.set(true);
@@ -409,6 +404,16 @@ pub fn MessageChat() -> Element {
             }
         });
     });
+
+    // 所有 hooks 已注册完毕，现在可以根据 auth 状态决定是否渲染
+    // 未登录时显示加载指示器（use_require_auth 内部会触发重定向）
+    if !is_authenticated {
+        return rsx! {
+            div { class: "min-h-screen flex items-center justify-center",
+                span { class: "loading loading-spinner loading-lg" }
+            }
+        };
+    }
 
     // 处理文件选择：上传到附件服务，把 ID 加入待发送列表
     let handle_file_select = move |files: Vec<dioxus::html::FileData>| {
