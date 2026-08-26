@@ -859,14 +859,8 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
     let (_status, body) = app
         .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
         .await;
-    let data = crate::common::assert_api_ok(
-        axum::http::StatusCode::OK,
-        &body,
-    );
-    let agent_status = data
-        .get("status")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(-1);
+    let data = crate::common::assert_api_ok(axum::http::StatusCode::OK, &body);
+    let agent_status = data.get("status").and_then(|v| v.as_i64()).unwrap_or(-1);
     assert!(
         agent_status == 1,
         "agent without model_provider_id should be in Interviewing status (1), got: {}",
