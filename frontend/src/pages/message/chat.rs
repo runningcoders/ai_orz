@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use wasm_bindgen::{JsCast, closure::Closure};
 
 use crate::api::finance::upload_attachment;
-use crate::api::hr::get_reception_agent;
+use crate::api::hr::{get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
 use crate::components::chat::ChatSidePanel;
@@ -17,8 +17,8 @@ use crate::utils::{
     replace_tmp_with_real, role_avatar,
 };
 use common::api::{
-    CreateProjectRequest, GetReceptionAgentResponse, ListProjectsRequest, ListProjectsResponseItem,
-    MessageListItem, SendMessageToAgentParams,
+    AgentListItem, CreateProjectRequest, GetReceptionAgentResponse, ListAgentsRequest,
+    ListProjectsRequest, ListProjectsResponseItem, MessageListItem, SendMessageToAgentParams,
 };
 
 /// 待发送的附件信息（仅用于 UI 展示，发送后清空）
@@ -54,6 +54,8 @@ pub fn MessageChat() -> Element {
     let mut new_project_name = use_signal(String::new);
     let mut new_project_desc = use_signal(String::new);
     let mut creating_project = use_signal(|| false);
+    let mut project_owner_agent_id = use_signal(|| Option::<String>::None);
+    let mut available_agents = use_signal(Vec::<AgentListItem>::new);
 
     // 工具卡片展开状态（message_id -> expanded）
     let mut tool_expanded = use_signal(std::collections::HashSet::<String>::new);
@@ -500,7 +502,7 @@ pub fn MessageChat() -> Element {
         }
     };
 
-    // 提交新建项目：自动绑定前台 Agent 作为 owner_agent_id
+    // 提交新建项目：优先使用用户选择的 owner agent，未选择则继承前台 Agent
     let handle_create_project_submit = move |_| {
         let name = new_project_name().trim().to_string();
         if name.is_empty() {
@@ -508,7 +510,9 @@ pub fn MessageChat() -> Element {
             return;
         }
         let desc = new_project_desc().trim().to_string();
-        let owner_agent_id = reception_agent().map(|a| a.agent_id);
+        // 优先使用用户手动选择的 agent，未选择则用前台 agent，都没有则 None
+        let owner_agent_id =
+            project_owner_agent_id().or_else(|| reception_agent().map(|a| a.agent_id));
 
         creating_project.set(true);
         spawn(async move {
@@ -521,7 +525,6 @@ pub fn MessageChat() -> Element {
             };
             match create_project(req).await {
                 Ok(resp) => {
-                    // CreateProjectResponse = GetProjectResponse，字段直接在响应上
                     let new_project = ListProjectsResponseItem {
                         id: resp.id.clone(),
                         name: resp.name.clone(),
@@ -538,10 +541,10 @@ pub fn MessageChat() -> Element {
                     projects.write().push(new_project.clone());
                     messages.set(Vec::new());
                     has_more.set(true);
-                    // 修复 M1：不再显式调用 load_messages，use_effect 监听 selected_project 变化会触发
                     show_create_project.set(false);
                     new_project_name.set(String::new());
                     new_project_desc.set(String::new());
+                    project_owner_agent_id.set(None);
                     toast.info(format!("项目「{}」已创建", name));
                 }
                 Err(e) => {
@@ -550,6 +553,19 @@ pub fn MessageChat() -> Element {
             }
             creating_project.set(false);
         });
+    };
+
+    // 打开新建项目弹窗时加载可用 Agent 列表
+    let open_create_project = move |_| {
+        // 先把默认 owner 设为当前前台 agent
+        project_owner_agent_id.set(reception_agent().map(|a| a.agent_id));
+        spawn(async move {
+            match list_agents(ListAgentsRequest::default()).await {
+                Ok(resp) => available_agents.set(resp.items),
+                Err(e) => toast.error(format!("加载 Agent 列表失败: {}", e)),
+            }
+        });
+        show_create_project.set(true);
     };
 
     let current_project = projects
@@ -692,9 +708,10 @@ pub fn MessageChat() -> Element {
         }
     } else {
         // 默认对话框（无 project_id，后端走 resolve_agent 兜底路由前台 Agent）
+        let has_reception = reception_agent().is_some();
         let reception_name = reception_agent()
             .map(|a| a.agent_name)
-            .unwrap_or_else(|| "前台 Agent".to_string());
+            .unwrap_or_else(|| "未设置".to_string());
         rsx! {
             div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
@@ -705,7 +722,11 @@ pub fn MessageChat() -> Element {
                     }
                 }
                 h2 { class: "font-semibold text-lg", "默认对话" }
-                span { class: "text-sm text-base-content/60 truncate", "当前前台：{reception_name}" }
+                if has_reception {
+                    span { class: "text-sm text-base-content/60 truncate", "当前前台：{reception_name}" }
+                } else {
+                    span { class: "text-sm text-warning truncate", "⚠ 暂无前台 Agent，请创建并入职 Agent" }
+                }
                 div { class: "flex items-center gap-2 ml-auto",
                     if sse_connected() {
                         span { class: "text-success text-sm", "● 实时" }
@@ -723,9 +744,17 @@ pub fn MessageChat() -> Element {
 
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
                 if messages().is_empty() {
-                    div { class: "text-center py-12",
-                        div { class: "text-5xl mb-3", "💬" }
-                        div { class: "text-base-content/60", "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
+                    if has_reception {
+                        div { class: "text-center py-12",
+                            div { class: "text-5xl mb-3", "💬" }
+                            div { class: "text-base-content/60", "与前台 Agent 直接沟通，复杂需求可新建项目组织" }
+                        }
+                    } else {
+                        div { class: "text-center py-12",
+                            div { class: "text-5xl mb-3", "🤖" }
+                            div { class: "text-base-content/70 font-medium mb-2", "暂无可用的前台 Agent" }
+                            div { class: "text-base-content/50 text-sm", "请前往 Agent 管理页面创建 Agent 并设置为 Onboarded 状态" }
+                        }
                     }
                 } else {
                     div {
@@ -849,7 +878,7 @@ pub fn MessageChat() -> Element {
                     button {
                         class: "btn btn-primary btn-sm",
                         r#type: "button",
-                        onclick: move |_| show_create_project.set(true),
+                        onclick: open_create_project,
                         "+ 新建项目"
                     }
                 }
@@ -978,8 +1007,34 @@ pub fn MessageChat() -> Element {
                             oninput: move |e| new_project_desc.set(e.value()),
                         }
                     }
-                    div { class: "text-sm text-base-content/60",
-                        "项目将自动绑定当前前台 Agent 作为负责人"
+                    div { class: "form-control w-full",
+                        label { class: "label",
+                            span { class: "label-text", "项目负责人 Agent" }
+                        }
+                        select {
+                            class: "select select-bordered w-full",
+                            value: "{project_owner_agent_id().unwrap_or_default()}",
+                            onchange: move |e| {
+                                let v = e.value();
+                                project_owner_agent_id.set(if v.is_empty() { None } else { Some(v) });
+                            },
+                            if available_agents().is_empty() {
+                                option { value: "", "暂无可用 Agent" }
+                            } else {
+                                option { value: "", "默认（继承前台 Agent）" }
+                                for agent in available_agents().iter() {
+                                    option {
+                                        key: "{agent.id}",
+                                        value: "{agent.id}",
+                                        selected: project_owner_agent_id() == Some(agent.id.clone()),
+                                        "{agent.name}"
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "label",
+                            span { class: "label-text-alt", "不选择时默认使用当前前台 Agent" }
+                        }
                     }
                 }
             }
