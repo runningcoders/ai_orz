@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = Path::new("../.ai_orz/ai_orz.toml");
 
     let config_content = if config_path.exists() {
-        fs::read_to_string(&config_path)?
+        fs::read_to_string(config_path)?
     } else {
         let default_config = include_str!("../common/config/ai_orz.toml");
         default_config.to_string()
