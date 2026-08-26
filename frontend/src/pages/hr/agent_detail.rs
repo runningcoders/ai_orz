@@ -54,10 +54,12 @@ fn binding_status_badge_class(is_bound: bool) -> &'static str {
 
 fn agent_status_label(status: i32) -> String {
     match status {
-        0 => "空闲".to_string(),
-        1 => "思考中".to_string(),
-        2 => "已入职".to_string(),
-        3 => "休息中".to_string(),
+        0 => "已删除".to_string(),
+        1 => "面试中".to_string(),
+        2 => "待入职".to_string(),
+        3 => "已入职".to_string(),
+        4 => "已离职".to_string(),
+        5 => "待离职".to_string(),
         _ => status.to_string(),
     }
 }
@@ -80,7 +82,14 @@ fn kind_label(kind: &str) -> String {
     }
 }
 
-const STATUS_OPTIONS: &[(i32, &str)] = &[(0, "空闲"), (1, "思考中"), (2, "已入职"), (3, "休息中")];
+const STATUS_OPTIONS: &[(i32, &str)] = &[
+    (0, "已删除"),
+    (1, "面试中"),
+    (2, "待入职"),
+    (3, "已入职"),
+    (4, "已离职"),
+    (5, "待离职"),
+];
 
 #[component]
 pub fn HrAgentDetail(id: String) -> Element {
@@ -122,6 +131,10 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
     // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆 4=关系图
     let mut active_tab = use_signal(|| 0usize);
+    // 状态切换/入职操作的 Agent ID（必须在顶层声明，不能在渲染分支中调用 use_signal）
+    // 克隆一份避免 move 走组件参数 id（后续多处仍使用 id.clone()）
+    let agent_id_for_signal = id.clone();
+    let agent_id_signal = use_signal(move || agent_id_for_signal);
     // 关系图所需数据：全局 projects + tasks + agents 列表
     let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
     let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
@@ -357,7 +370,6 @@ pub fn HrAgentDetail(id: String) -> Element {
                 .filter(|t| agent_tool_ids.contains(&t.id))
                 .cloned()
                 .collect();
-            let agent_id_signal = use_signal(|| id.clone());
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
             let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
@@ -612,6 +624,39 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "状态切换" }
+                                    // 一键入职：仅对面试中/待入职的 Agent 显示，
+                                    // 后端 transition_status 白名单为 Interviewing → PendingOnboard → Onboarded，
+                                    // 因此需按当前状态走两步（面试中先转待入职，再转已入职）
+                                    if a.status == AgentStatus::Interviewing as i32 || a.status == AgentStatus::PendingOnboard as i32 {
+                                        div { class: "flex flex-wrap items-center gap-3 mb-3 p-3 rounded-lg bg-base-200",
+                                            button {
+                                                class: "btn btn-success btn-sm",
+                                                onclick: move |_| {
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        if let Err(e) = update_agent_status(UpdateAgentStatusRequest { id: aid.clone(), status: AgentStatus::PendingOnboard }).await {
+                                                            toast.error(format!("转入待入职失败: {}", e));
+                                                            return;
+                                                        }
+                                                        match update_agent_status(UpdateAgentStatusRequest { id: aid.clone(), status: AgentStatus::Onboarded }).await {
+                                                            Ok(_) => {
+                                                                toast.success("Agent 已正式入职");
+                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                                }
+                                                            }
+                                                            Err(e) => toast.error(format!("入职失败: {}", e)),
+                                                        }
+                                                    });
+                                                },
+                                                "🚀 一键入职"
+                                            }
+                                            span { class: "text-sm text-base-content/60",
+                                                "入职后 Agent 将正式对外提供服务，并自动安装项目管理工具包"
+                                            }
+                                        }
+                                    }
                                     div { class: "flex flex-wrap gap-2",
                                         for (status, label) in STATUS_OPTIONS {
                                             {

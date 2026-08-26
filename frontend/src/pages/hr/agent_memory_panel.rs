@@ -53,8 +53,10 @@ fn fetch_memories(
     toast: crate::store::toast::ToastState,
     mut fetch_request_id: Signal<u32>,
 ) {
-    // 修复 HIGH #13：自增 request_id，结果到达时校验是否为最新请求
-    let my_id = fetch_request_id() + 1;
+    // 修复 HIGH #13：自增 request_id，结果到达时校验是否为最新请求。
+    // 用 peek() 读取，避免 use_effect 订阅 fetch_request_id：
+    // 否则每次 set 都会触发 use_effect 重跑，形成无限循环卡死页面。
+    let my_id = *fetch_request_id.peek() + 1;
     fetch_request_id.set(my_id);
     loading.set(true);
     spawn(async move {

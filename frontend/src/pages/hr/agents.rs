@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use crate::api::finance::list_model_providers;
 use crate::api::hr::{
     create_agent, create_external_agent, delete_agent, list_agents, query_agents, search_agents,
+    update_agent_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -14,6 +15,7 @@ use crate::store::toast::use_toast;
 use common::api::{
     AgentQueryRequest, CreateAgentRequest, CreateExternalAgentRequest, ListAgentsRequest,
     ListAgentsResponseItem, ListModelProvidersResponseItem, SearchAgentsRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::AgentStatus;
 use dioxus_router::Link;
@@ -34,6 +36,27 @@ fn kind_label(kind: &str) -> String {
         "cli" => "CLI".to_string(),
         "remote" => "远程".to_string(),
         _ => kind.to_string(),
+    }
+}
+
+fn agent_status_label(status: i32) -> String {
+    match status {
+        0 => "已删除".to_string(),
+        1 => "面试中".to_string(),
+        2 => "待入职".to_string(),
+        3 => "已入职".to_string(),
+        4 => "已离职".to_string(),
+        5 => "待离职".to_string(),
+        _ => status.to_string(),
+    }
+}
+
+fn agent_status_badge_class(status: i32) -> &'static str {
+    match status {
+        3 => "badge badge-success",
+        1 => "badge badge-warning",
+        2 => "badge badge-info",
+        _ => "badge badge-ghost",
     }
 }
 
@@ -156,6 +179,39 @@ pub fn HrAgents() -> Element {
             }
         });
     });
+
+    // ===== 一键入职处理：面试中→待入职→已入职（后端白名单逐级流转）=====
+    let handle_onboard = move |id: String, status: i32| {
+        let status = AgentStatus::from(status);
+        spawn(async move {
+            // 面试中需先转待入职，再转已入职
+            if status == AgentStatus::Interviewing
+                && let Err(e) = update_agent_status(UpdateAgentStatusRequest {
+                    id: id.clone(),
+                    status: AgentStatus::PendingOnboard,
+                })
+                .await
+            {
+                toast.error(format!("转入待入职失败: {}", e));
+                return;
+            }
+            match update_agent_status(UpdateAgentStatusRequest {
+                id: id.clone(),
+                status: AgentStatus::Onboarded,
+            })
+            .await
+            {
+                Ok(_) => {
+                    toast.success("Agent 已正式入职");
+                    load_data();
+                }
+                Err(e) => {
+                    toast.error(format!("入职失败: {}", e));
+                    load_data();
+                }
+            }
+        });
+    };
 
     // ===== 本地 Agent 创建处理 =====
     let handle_create = move |_| {
@@ -406,6 +462,7 @@ pub fn HrAgents() -> Element {
                                 th { "类型" }
                                 th { "角色" }
                                 th { "模型 / 执行器" }
+                                th { "状态" }
                                 th { "操作" }
                             }}
                             tbody {
@@ -416,7 +473,9 @@ pub fn HrAgents() -> Element {
                                         let aroles = agent.roles.join(", ");
                                         let akind = agent.kind.clone();
                                         let amp = agent.model_provider_id.clone();
+                                        let astatus = agent.status;
                                         let id_delete = id.clone();
+                                        let id_onboard = id.clone();
                                         let display_value = match akind.as_str() {
                                             "local" => amp.clone(),
                                             "cli" => "CLI 子进程".to_string(),
@@ -436,7 +495,19 @@ pub fn HrAgents() -> Element {
                                                 }
                                                 td { class: "text-base-content/70", "data-label": "角色", "{aroles}" }
                                                 td { class: "font-mono text-sm", "data-label": "模型/执行器", "{display_value}" }
+                                                td { "data-label": "状态",
+                                                    span { class: "{agent_status_badge_class(astatus)}",
+                                                        "{agent_status_label(astatus)}"
+                                                    }
+                                                }
                                                 td { "data-label": "操作",
+                                                    // 入职按钮：仅对面试中/待入职的 Agent 显示
+                                                    if astatus == AgentStatus::Interviewing as i32 || astatus == AgentStatus::PendingOnboard as i32 {
+                                                        button { class: "btn btn-success btn-sm",
+                                                            onclick: move |_| handle_onboard(id_onboard.clone(), astatus),
+                                                            "入职"
+                                                        }
+                                                    }
                                                     button { class: "btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_delete.clone());
