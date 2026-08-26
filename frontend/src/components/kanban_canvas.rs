@@ -65,6 +65,14 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
         data_cache.set(props_clone.clone());
     });
 
+    // RAF 渲染循环资源：保存 running flag + 回调供顶层 use_drop 清理
+    #[allow(clippy::type_complexity)]
+    struct RafResource {
+        running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>>,
+    }
+    let mut raf_resource = use_signal(|| Option::<RafResource>::None);
+
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
@@ -109,10 +117,18 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
         }
         *callback_ref.borrow_mut() = Some(closure);
 
-        use_drop(move || {
-            running.store(false, std::sync::atomic::Ordering::SeqCst);
-            *callback_ref.borrow_mut() = None;
-        });
+        raf_resource.set(Some(RafResource {
+            running,
+            callback_ref,
+        }));
+    });
+
+    use_drop(move || {
+        if let Some(res) = raf_resource.take() {
+            res.running
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            *res.callback_ref.borrow_mut() = None;
+        }
     });
 
     // 点击处理：命中检测简化为不实现（仅展示）

@@ -243,6 +243,13 @@ pub fn HrAgentDetail(id: String) -> Element {
         load_data();
     });
 
+    // SSE 资源：EventSource + Closure 供顶层 use_drop 清理
+    struct SseResource {
+        event_source: web_sys::EventSource,
+        on_message: Option<Closure<dyn FnMut(web_sys::MessageEvent)>>,
+    }
+    let mut sse_resource = use_signal(|| Option::<SseResource>::None);
+
     let sse_id = id.clone();
 
     use_effect(move || {
@@ -276,14 +283,20 @@ pub fn HrAgentDetail(id: String) -> Element {
             }
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        // 修复 H7：存储 Closure 避免 forget() 泄漏
         let on_message = Some(on_message);
 
-        use_drop(move || {
-            event_source.set_onmessage(None);
-            drop(on_message);
-            event_source.close();
-        });
+        sse_resource.set(Some(SseResource {
+            event_source,
+            on_message,
+        }));
+    });
+
+    use_drop(move || {
+        if let Some(res) = sse_resource.take() {
+            res.event_source.set_onmessage(None);
+            drop(res.on_message);
+            res.event_source.close();
+        }
     });
 
     let id_for_send = id.clone();

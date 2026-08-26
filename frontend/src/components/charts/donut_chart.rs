@@ -58,7 +58,14 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         data_cache.set(props_data.clone());
     });
 
-    // 渲染循环（复用 LineChart 的 rAF + use_drop 模式）
+    // 渲染循环资源（RAF 回调 + running flag），供顶层 use_drop 清理
+    #[allow(clippy::type_complexity)]
+    struct RafResource {
+        running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>>,
+    }
+    let mut raf_resource = use_signal(|| Option::<RafResource>::None);
+
     let render_width = width;
     let render_height = height;
     let center_label_c = center_label.clone();
@@ -124,11 +131,18 @@ pub fn DonutChart(props: DonutChartProps) -> Element {
         }
         *callback_ref.borrow_mut() = Some(closure);
 
-        // cleanup
-        use_drop(move || {
-            running.store(false, std::sync::atomic::Ordering::SeqCst);
-            *callback_ref.borrow_mut() = None;
-        });
+        raf_resource.set(Some(RafResource {
+            running,
+            callback_ref,
+        }));
+    });
+
+    use_drop(move || {
+        if let Some(res) = raf_resource.take() {
+            res.running
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            *res.callback_ref.borrow_mut() = None;
+        }
     });
 
     // 计算总数用于图例百分比

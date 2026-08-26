@@ -249,6 +249,16 @@ pub fn MessageChat() -> Element {
         }
     });
 
+    // SSE 资源管理：将 EventSource + Closure 存到 use_signal，
+    // 在顶层 use_drop 中清理（Dioxus 0.7 要求 use_drop 不能在 use_effect 内部）
+    struct SseResource {
+        event_source: web_sys::EventSource,
+        on_message: Option<Closure<dyn FnMut(web_sys::MessageEvent)>>,
+        on_open: Option<Closure<dyn FnMut(web_sys::Event)>>,
+        on_error: Option<Closure<dyn FnMut(web_sys::Event)>>,
+    }
+    let mut sse_resource = use_signal(|| Option::<SseResource>::None);
+
     use_effect(move || {
         // 修复 H5：EventSource::new 可能失败（浏览器不支持或 URL 无效），不能 unwrap
         let event_source = match web_sys::EventSource::new("/api/v1/finance/messages/sse") {
@@ -265,8 +275,6 @@ pub fn MessageChat() -> Element {
             handle_sse_message(data);
         }) as Box<dyn FnMut(web_sys::MessageEvent)>);
         event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        // 修复 H7：存储 Closure 避免 forget() 泄漏，在 use_drop 中通过 set_onmessage(None)
-        // 触发 Rust 侧 Closure drop 回收
         let on_message = Some(on_message);
 
         let on_open = Closure::wrap(Box::new(move |_: web_sys::Event| {
@@ -281,16 +289,24 @@ pub fn MessageChat() -> Element {
         event_source.set_onerror(Some(on_error.as_ref().unchecked_ref()));
         let on_error = Some(on_error);
 
-        use_drop(move || {
-            // 先清除回调引用，使 Closure 自然 drop 回收内存
-            event_source.set_onmessage(None);
-            event_source.set_onopen(None);
-            event_source.set_onerror(None);
-            drop(on_message);
-            drop(on_open);
-            drop(on_error);
-            event_source.close();
-        });
+        sse_resource.set(Some(SseResource {
+            event_source,
+            on_message,
+            on_open,
+            on_error,
+        }));
+    });
+
+    use_drop(move || {
+        if let Some(res) = sse_resource.take() {
+            res.event_source.set_onmessage(None);
+            res.event_source.set_onopen(None);
+            res.event_source.set_onerror(None);
+            drop(res.on_message);
+            drop(res.on_open);
+            drop(res.on_error);
+            res.event_source.close();
+        }
     });
 
     let slash_commands = [("/clear", "清空对话"), ("/help", "显示帮助")];

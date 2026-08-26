@@ -359,6 +359,14 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let hovered_id_c = hovered_id;
     let selected_id_c = selected_id;
     let renderer_c = renderer;
+    // RAF 渲染循环资源：保存 running flag + Closure 供顶层 use_drop 清理
+    #[allow(clippy::type_complexity)]
+    struct RafResource {
+        running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>>,
+    }
+    let mut raf_resource = use_signal(|| Option::<RafResource>::None);
+
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
             return;
@@ -481,11 +489,18 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         }
         *callback_ref.borrow_mut() = Some(closure);
 
-        // cleanup：组件卸载或 effect 重跑时停止渲染循环，并释放 Closure 打破 Rc 循环引用
-        use_drop(move || {
-            running.store(false, std::sync::atomic::Ordering::SeqCst);
-            *callback_ref.borrow_mut() = None;
-        });
+        raf_resource.set(Some(RafResource {
+            running,
+            callback_ref,
+        }));
+    });
+
+    use_drop(move || {
+        if let Some(res) = raf_resource.take() {
+            res.running
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            *res.callback_ref.borrow_mut() = None;
+        }
     });
 
     // 提取 onclick 所需字段

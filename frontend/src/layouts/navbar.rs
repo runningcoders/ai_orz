@@ -18,7 +18,7 @@ pub fn Navbar() -> Element {
         spawn(async move {
             let _ = api_logout().await;
         });
-        logout();
+        logout(auth);
     };
 
     let username = if auth().username.is_empty() {

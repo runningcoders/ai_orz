@@ -34,9 +34,8 @@ pub fn clear_login_state() {
 }
 
 /// 完整登出：清除 localStorage + 重置内存中的 AuthState 信号
-pub fn logout() {
+pub fn logout(mut auth: Signal<AuthState>) {
     clear_login_state();
-    let mut auth = use_auth_state();
     let mut state = auth.write();
     state.logged_in = false;
     state.role = 0;

@@ -457,6 +457,13 @@ pub fn Workspace() -> Element {
         let mut agent_unread = agent_unread;
         let mut msg_flow = msg_flow;
 
+        // SSE 资源：EventSource + Closure 供顶层 use_drop 清理
+        struct WsSseResource {
+            event_source: web_sys::EventSource,
+            on_message: Closure<dyn FnMut(web_sys::MessageEvent)>,
+        }
+        let mut ws_sse_resource = use_signal(|| Option::<WsSseResource>::None);
+
         use_effect(move || {
             let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                 if let Some(data) = event.data().as_string()
@@ -521,12 +528,18 @@ pub fn Workspace() -> Element {
 
             if let Ok(es) = web_sys::EventSource::new("/api/v1/finance/messages/sse") {
                 es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-                // 清理
-                use_drop(move || {
-                    es.set_onmessage(None);
-                    drop(on_message);
-                    es.close();
-                });
+                ws_sse_resource.set(Some(WsSseResource {
+                    event_source: es,
+                    on_message,
+                }));
+            }
+        });
+
+        use_drop(move || {
+            if let Some(res) = ws_sse_resource.take() {
+                res.event_source.set_onmessage(None);
+                drop(res.on_message);
+                res.event_source.close();
             }
         });
     }
