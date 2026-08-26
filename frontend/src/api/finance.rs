@@ -60,12 +60,8 @@ pub async fn update_model_provider(
 /// 启用/禁用模型提供商
 /// 启用 Embedding Provider 时可能返回 409（需切换），前端可通过 ApiError.error_code 检测
 pub async fn toggle_model_provider(req: UpdateModelProviderStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status });
-    api_put_empty(
-        &format!("/api/v1/finance/model-providers/{}", req.id),
-        &body,
-    )
-    .await
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
+    api_put_empty(&format!("/api/v1/finance/model-providers/{}", req.id), &req).await
 }
 
 pub async fn delete_model_provider(id: &str) -> Result<(), ApiError> {
@@ -82,10 +78,10 @@ pub async fn test_model_provider_connection(id: &str) -> Result<TestConnectionRe
 }
 
 pub async fn call_model_provider(req: CallModelRequest) -> Result<CallModelResponse, ApiError> {
-    let body = serde_json::json!({ "prompt": req.prompt });
+    // 用 DTO 完整拼接 body（含 id + prompt），前后端同一结构体避免序列化不匹配
     api_post(
         &format!("/api/v1/finance/model-providers/{}/call", req.id),
-        &body,
+        &req,
     )
     .await
 }
@@ -140,8 +136,8 @@ pub async fn update_tool(req: UpdateToolRequest) -> Result<UpdateToolResponse, A
 }
 
 pub async fn update_tool_status(req: UpdateToolStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status });
-    api_put_empty(&format!("/api/v1/finance/tools/{}/status", req.id), &body).await
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
+    api_put_empty(&format!("/api/v1/finance/tools/{}/status", req.id), &req).await
 }
 
 pub async fn delete_tool(id: &str) -> Result<(), ApiError> {
@@ -153,10 +149,10 @@ pub async fn delete_tool(id: &str) -> Result<(), ApiError> {
 /// 在工具详情页直接调用工具进行调试，返回执行结果 + tool_call_id。
 /// 需 Admin 及以上权限。
 pub async fn debug_call_tool(req: DebugCallToolRequest) -> Result<DebugCallToolResponse, ApiError> {
-    let body = serde_json::json!({ "args": req.args });
+    // 用 DTO 完整拼接 body（含 id + args），前后端同一结构体避免序列化不匹配
     api_post(
         &format!("/api/v1/finance/tools/{}/debug-call", req.id),
-        &body,
+        &req,
     )
     .await
 }
@@ -186,10 +182,10 @@ pub async fn update_message_channel(
 pub async fn update_message_channel_status(
     req: UpdateMessageChannelStatusRequest,
 ) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status as i32 });
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
     api_put_empty(
         &format!("/api/v1/finance/message-channels/{}/status", req.id),
-        &body,
+        &req,
     )
     .await
 }
@@ -222,10 +218,10 @@ pub async fn create_mcp_server(
 }
 
 pub async fn update_mcp_server_status(req: UpdateMcpServerStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status as i32 });
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
     api_put_empty(
         &format!("/api/v1/finance/mcp-servers/{}/status", req.id),
-        &body,
+        &req,
     )
     .await
 }

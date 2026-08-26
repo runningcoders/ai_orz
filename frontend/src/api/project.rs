@@ -67,8 +67,8 @@ pub async fn update_project(req: UpdateProjectRequest) -> Result<UpdateProjectRe
 }
 
 pub async fn update_project_status(req: UpdateProjectStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status as i32 });
-    api_put_empty(&format!("/api/v1/projects/{}/status", req.id), &body).await
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
+    api_put_empty(&format!("/api/v1/projects/{}/status", req.id), &req).await
 }
 
 // ===== 任务管理 =====
@@ -118,8 +118,8 @@ pub async fn update_task(req: UpdateTaskRequest) -> Result<UpdateTaskResponse, A
 }
 
 pub async fn update_task_status(req: UpdateTaskStatusRequest) -> Result<(), ApiError> {
-    let body = serde_json::json!({ "status": req.status as i32 });
-    api_put_empty(&format!("/api/v1/tasks/{}/status", req.id), &body).await
+    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
+    api_put_empty(&format!("/api/v1/tasks/{}/status", req.id), &req).await
 }
 
 pub async fn update_task_progress(

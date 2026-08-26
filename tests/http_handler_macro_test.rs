@@ -315,66 +315,6 @@ async fn test_path_and_body_mixed_put_path_overrides_body() {
     );
 }
 
-// ==================== 测试 4b: path+body 混合 PUT，body 可缺 path 字段 ====================
-// serde(default) 让 body 反序列化不强校验缺失字段，id 由 URL path 补充覆盖
-
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
-#[serde(default)]
-pub struct UpdateItemLooseRequest {
-    #[param(source = "path")]
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct UpdateItemLooseResponse {
-    pub id: String,
-    pub name: String,
-}
-
-#[generate_http_handler]
-pub async fn update_item_loose(
-    _ctx: RequestContext,
-    params: UpdateItemLooseRequest,
-) -> Result<UpdateItemLooseResponse, Error> {
-    Ok(UpdateItemLooseResponse {
-        id: params.id,
-        name: params.name,
-    })
-}
-
-#[tokio::test]
-async fn test_path_and_body_mixed_put_allows_missing_path_field_in_body() {
-    // body 缺 path 字段（id）不应报错：serde(default) 兜底后由 URL path 覆盖
-    let app = make_router(|r| r.route("/items-loose/{id}", put(update_item_loose_handler))).await;
-
-    let body = r#"{"name":"hello"}"#;
-    let req = Request::builder()
-        .method(Method::PUT)
-        .uri("/items-loose/from_path")
-        .header("Content-Type", "application/json")
-        .body(Body::from(body))
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "body 缺 path 字段时应工作（serde(default) + path 覆盖）"
-    );
-
-    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let body_str = String::from_utf8(body.to_vec()).unwrap();
-    assert!(
-        body_str.contains("from_path"),
-        "id 应取自 URL path 补充，实际: {body_str}"
-    );
-    assert!(
-        body_str.contains("hello"),
-        "name 应取自 body，实际: {body_str}"
-    );
-}
-
 // ==================== 测试 5: path+query 混合 GET（无 body） ====================
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]

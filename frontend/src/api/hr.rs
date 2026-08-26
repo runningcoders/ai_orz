@@ -75,11 +75,10 @@ pub async fn update_agent(req: UpdateAgentRequest) -> Result<UpdateAgentResponse
 }
 
 pub async fn update_agent_status(req: UpdateAgentStatusRequest) -> Result<(), ApiError> {
-    // AgentStatus 默认 serde 序列化为变体名（如 "Onboarded"），与后端一致；
-    // id 来自 URL path，body 只传 status（后端 id 字段已 serde(default) + path 覆盖）
-    let status_val = serde_json::to_value(req.status).unwrap_or(serde_json::Value::Null);
-    let body = serde_json::json!({ "status": status_val });
-    api_put_empty(&format!("/api/v1/hr/agents/{}/status", req.id), &body).await
+    // 直接用 DTO 结构体完整拼接 body（含 id + status）：
+    // 前后端共用同一结构体，字段与序列化类型天然一致，避免手拼 json 导致
+    // 序列化结果与后端反序列化不匹配（如 status 数字 vs 枚举名、缺 id）。
+    api_put_empty(&format!("/api/v1/hr/agents/{}/status", req.id), &req).await
 }
 
 pub async fn delete_agent(id: &str) -> Result<(), ApiError> {
