@@ -31,13 +31,17 @@ async function heartbeatDelta(page: Page, ms = 1000): Promise<number> {
 /** 进入首个 Agent 的详情页（从列表页取第一个 /hr/agents/{id} 链接）。 */
 async function gotoFirstAgentDetail(page: Page): Promise<void> {
   await page.goto('/hr/agents');
-  await expect(page.getByText('Agent 管理').first()).toBeVisible({ timeout: 45_000 });
+  // 直接等 Agent 名称链接出现。注意：不要用 getByText('Agent 管理') 断言——
+  // 它可能匹配到导航栏里默认隐藏的 <a href="/hr/agents">Agent 管理</a> 链接（hidden）。
   const link = page.locator('a[href^="/hr/agents/"]').first();
-  await expect(link).toBeVisible({ timeout: 10_000 });
+  await expect(link).toBeVisible({ timeout: 45_000 });
   const href = await link.getAttribute('href');
   expect(href, '应能从 Agent 列表拿到详情链接').toBeTruthy();
   await page.goto(href!);
-  await expect(page.getByText('概览').first()).toBeVisible({ timeout: 45_000 });
+  // 等「概览」tab 按钮出现（tab 是可见的 button 元素，避免文本歧义）
+  await expect(page.getByRole('button', { name: /概览/ }).first()).toBeVisible({
+    timeout: 45_000,
+  });
 }
 
 /** 点击指定子 tab（按文本子串匹配）。 */

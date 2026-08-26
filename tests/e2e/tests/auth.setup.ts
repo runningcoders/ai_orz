@@ -60,8 +60,11 @@ setup('系统初始化 → 错误密码 → 登录成功（全流程冒烟）', 
   // ---- 正确密码：登录后跳转对话首页 ----
   await tid(page, 'login-password').fill(ADMIN_PASS);
   await tid(page, 'login-submit').click();
-  await page.waitForURL(/\/$/);
-  await expect(page.getByText('项目列表').first()).toBeVisible({ timeout: 30_000 });
+  await page.waitForURL(/\/$/, { timeout: 60_000 });
+  // WASM 登录后重载较慢：等导航栏出现，确认页面已接管（统一布局渲染完成）。
+  // 注意：不要用 getByText('项目列表') 断言——它可能匹配到导航栏里默认隐藏的
+  // <a href="/projects">项目列表</a> 链接（hidden），导致 toBeVisible 误判失败。
+  await expect(page.getByRole('link', { name: 'AI Orz' })).toBeVisible({ timeout: 60_000 });
 
   // ---- 保存登录态（HttpOnly Cookie + localStorage 标志位）----
   fs.mkdirSync(stateDir, { recursive: true });

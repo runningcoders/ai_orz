@@ -58,7 +58,11 @@ for (const { path: route, marker } of ROUTES) {
     await expect(page.getByRole('link', { name: 'AI Orz' })).toBeVisible({ timeout: 45_000 });
 
     if (marker) {
-      await expect(page.getByText(marker).first()).toBeVisible({ timeout: 30_000 });
+      // 过滤掉导航栏里默认隐藏的下拉链接（hidden，如 <a href="/hr/agents">Agent 管理</a>），
+      // 只匹配页面内可见的 marker，避免 getByText 误命中隐藏导航项导致 toBeVisible 误判。
+      await expect(page.getByText(marker).locator('visible=true').first()).toBeVisible({
+        timeout: 30_000,
+      });
     }
 
     // 页面级错误提示不应出现（Toast error / ErrorState 共用 alert-error 样式）
