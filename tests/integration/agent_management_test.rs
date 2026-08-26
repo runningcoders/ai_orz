@@ -741,8 +741,8 @@ async fn test_get_agent_with_stats(pool: SqlitePool) {
 /// Reception agent resolution: GET /hr/agents/reception.
 ///
 /// Verifies:
-/// - With no onboarded agent → 404 error
-/// - After onboarding an agent → returns the onboarded agent's id + name
+/// - Bootstrap creates reception agent automatically → 200
+/// - After creating another onboarded agent → still 200 (reception resolution works)
 #[sqlx::test]
 async fn test_reception_agent_resolution(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -750,11 +750,20 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
 
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
 
-    // 1. No onboarded agent yet → should get 404
+    // 1. Bootstrap 自动创建了前台 Agent（并因配置了 chat provider 而 Onboarded），
+    //    因此 reception 应该能解析到一个 agent
     let (status, body) = app.get_with_jwt("/api/v1/hr/agents/reception", &jwt).await;
-    crate::common::assert_api_error(status, &body, axum::http::StatusCode::NOT_FOUND);
+    let data = crate::common::assert_api_ok(status, &body);
+    let bootstrap_resolved_id = data
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .expect("agent_id should be present in reception response");
+    assert!(
+        !bootstrap_resolved_id.is_empty(),
+        "reception agent_id should not be empty after bootstrap"
+    );
 
-    // 2. Create an agent and onboard it
+    // 2. Create another agent and onboard it
     let agent_name = format!("ReceptionAgent-{}", uuid::Uuid::now_v7());
     let agent_id =
         crate::common::factories::create_test_agent(&app, &jwt, &bs.chat_provider_id, &agent_name)
@@ -774,7 +783,7 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
     )
     .await;
 
-    // 3. Now reception should resolve to an onboarded agent
+    // 3. Now reception should still resolve to an onboarded agent
     let (status, body) = app.get_with_jwt("/api/v1/hr/agents/reception", &jwt).await;
     let data = crate::common::assert_api_ok(status, &body);
     let resolved_id = data
@@ -790,7 +799,7 @@ async fn test_reception_agent_resolution(pool: SqlitePool) {
 /// Edge cases:
 /// - GET nonexistent agent → 404 or non-zero code
 /// - DELETE nonexistent agent → 404 or non-zero code
-/// - Create Local agent without model_provider_id → error (Local kind requires it)
+/// - Create Local agent without model_provider_id → should succeed with Interviewing status
 #[sqlx::test]
 async fn test_agent_edge_cases(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -823,7 +832,7 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
         body
     );
 
-    // 3. Create Local agent without model_provider_id → should error
+    // 3. Create Local agent without model_provider_id → should succeed (Interviewing 状态)
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/hr/agents",
@@ -834,11 +843,34 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
             &jwt,
         )
         .await;
-    let _ = status;
     assert!(
-        body.get("code").and_then(|v| v.as_i64()).unwrap_or(0) != 0,
-        "creating Local agent with empty model_provider_id should fail: body={}",
+        status.is_success(),
+        "creating Local agent without model_provider_id should succeed: status={}, body={}",
+        status,
         body
+    );
+    let data = crate::common::assert_api_ok(status, &body);
+    let agent_id = data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("agent_id should be present in create response");
+
+    // 4. Agent status should be Interviewing (no model_provider_id)
+    let (_status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(
+        axum::http::StatusCode::OK,
+        &body,
+    );
+    let agent_status = data
+        .get("status")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(-1);
+    assert!(
+        agent_status == 1,
+        "agent without model_provider_id should be in Interviewing status (1), got: {}",
+        agent_status
     );
 }
 
