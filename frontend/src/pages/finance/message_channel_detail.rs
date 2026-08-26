@@ -17,6 +17,8 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
+    CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
+    CreateSlackChannelConfig, CreateWebhookChannelConfig, CreateWechatChannelConfig,
     GetMessageChannelResponse, LarkCredentialSnapshot, LarkUserAuthSnapshot,
     UpdateMessageChannelRequest, UpdateMessageChannelStatusRequest,
 };
@@ -155,20 +157,78 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             if let Some(c) = &current {
                 edit_channel_name.set(c.channel_name.clone());
                 edit_agent_id.set(c.agent_id.clone().unwrap_or_default());
-                edit_credential_id.set(c.lark_credential_id.clone().unwrap_or_default());
-                edit_identity_mode.set(c.lark_identity_mode.clone().unwrap_or_default());
-                edit_open_id.set(c.lark_open_id.clone().unwrap_or_default());
-                edit_user_name.set(c.lark_user_name.clone().unwrap_or_default());
-                edit_listen_inbound.set(c.lark_listen_inbound);
-                edit_wechat_open_id.set(c.wechat_open_id.clone().unwrap_or_default());
-                edit_email_smtp_host.set(c.email_smtp_host.clone().unwrap_or_default());
-                edit_email_smtp_port.set(c.email_smtp_port.unwrap_or(587));
-                edit_email_username.set(c.email_username.clone().unwrap_or_default());
-                edit_email_from_address.set(c.email_from_address.clone().unwrap_or_default());
-                edit_email_to_address.set(c.email_to_address.clone().unwrap_or_default());
-                edit_slack_channel_id.set(c.slack_channel_id.clone().unwrap_or_default());
-                edit_webhook_method.set(c.webhook_method.clone().unwrap_or_default());
-                edit_webhook_body_template.set(c.webhook_body_template.clone().unwrap_or_default());
+                // 从嵌套 config 读取
+                let cfg = c.config.as_ref();
+                edit_credential_id.set(
+                    cfg.and_then(|c| c.lark.as_ref())
+                        .and_then(|l| l.credential_id.clone())
+                        .unwrap_or_default(),
+                );
+                edit_identity_mode.set(
+                    cfg.and_then(|c| c.lark.as_ref())
+                        .and_then(|l| l.identity_mode.clone())
+                        .unwrap_or_default(),
+                );
+                edit_open_id.set(
+                    cfg.and_then(|c| c.lark.as_ref())
+                        .and_then(|l| l.open_id.clone())
+                        .unwrap_or_default(),
+                );
+                edit_user_name.set(
+                    cfg.and_then(|c| c.lark.as_ref())
+                        .and_then(|l| l.user_name.clone())
+                        .unwrap_or_default(),
+                );
+                edit_listen_inbound.set(
+                    cfg.and_then(|c| c.lark.as_ref())
+                        .map(|l| l.listen_inbound)
+                        .unwrap_or(true),
+                );
+                edit_wechat_open_id.set(
+                    cfg.and_then(|c| c.wechat.as_ref())
+                        .and_then(|w| w.open_id.clone())
+                        .unwrap_or_default(),
+                );
+                edit_email_smtp_host.set(
+                    cfg.and_then(|c| c.email.as_ref())
+                        .and_then(|e| e.smtp_host.clone())
+                        .unwrap_or_default(),
+                );
+                edit_email_smtp_port.set(
+                    cfg.and_then(|c| c.email.as_ref())
+                        .and_then(|e| e.smtp_port)
+                        .unwrap_or(587),
+                );
+                edit_email_username.set(
+                    cfg.and_then(|c| c.email.as_ref())
+                        .and_then(|e| e.username.clone())
+                        .unwrap_or_default(),
+                );
+                edit_email_from_address.set(
+                    cfg.and_then(|c| c.email.as_ref())
+                        .and_then(|e| e.from_address.clone())
+                        .unwrap_or_default(),
+                );
+                edit_email_to_address.set(
+                    cfg.and_then(|c| c.email.as_ref())
+                        .and_then(|e| e.to_address.clone())
+                        .unwrap_or_default(),
+                );
+                edit_slack_channel_id.set(
+                    cfg.and_then(|c| c.slack.as_ref())
+                        .and_then(|s| s.channel_id.clone())
+                        .unwrap_or_default(),
+                );
+                edit_webhook_method.set(
+                    cfg.and_then(|c| c.webhook.as_ref())
+                        .and_then(|w| w.method.clone())
+                        .unwrap_or_default(),
+                );
+                edit_webhook_body_template.set(
+                    cfg.and_then(|c| c.webhook.as_ref())
+                        .and_then(|w| w.body_template.clone())
+                        .unwrap_or_default(),
+                );
             }
             show_edit_modal.set(true);
         }
@@ -219,78 +279,104 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     webhook_url: None,
                     access_token: None,
                     secret: None,
-                    lark_credential_id: if channel_type == ChannelType::Lark
-                        && !credential_id.trim().is_empty()
-                    {
-                        Some(credential_id)
-                    } else {
-                        None
-                    },
-                    lark_identity_mode: if identity_mode.trim().is_empty() {
-                        None
-                    } else {
-                        Some(identity_mode)
-                    },
-                    lark_open_id: if open_id.trim().is_empty() {
-                        None
-                    } else {
-                        Some(open_id)
-                    },
-                    lark_user_name: if user_name.trim().is_empty() {
-                        None
-                    } else {
-                        Some(user_name)
-                    },
-                    lark_listen_inbound: Some(edit_listen_inbound()),
-                    wechat_app_id: None,
-                    wechat_app_secret: None,
-                    wechat_open_id: if wechat_open_id.trim().is_empty() {
-                        None
-                    } else {
-                        Some(wechat_open_id)
-                    },
-                    email_smtp_host: if email_smtp_host.trim().is_empty() {
-                        None
-                    } else {
-                        Some(email_smtp_host)
-                    },
-                    email_smtp_port: if channel_type == ChannelType::Email {
-                        Some(email_smtp_port)
-                    } else {
-                        None
-                    },
-                    email_username: if email_username.trim().is_empty() {
-                        None
-                    } else {
-                        Some(email_username)
-                    },
-                    email_password: None,
-                    email_from_address: if email_from_address.trim().is_empty() {
-                        None
-                    } else {
-                        Some(email_from_address)
-                    },
-                    email_to_address: if email_to_address.trim().is_empty() {
-                        None
-                    } else {
-                        Some(email_to_address)
-                    },
-                    slack_bot_token: None,
-                    slack_channel_id: if slack_channel_id.trim().is_empty() {
-                        None
-                    } else {
-                        Some(slack_channel_id)
-                    },
-                    webhook_method: if webhook_method.trim().is_empty() {
-                        None
-                    } else {
-                        Some(webhook_method)
-                    },
-                    webhook_body_template: if webhook_body_template.trim().is_empty() {
-                        None
-                    } else {
-                        Some(webhook_body_template)
-                    },
+                    config: Some(CreateMessageChannelConfig {
+                        lark: if channel_type == ChannelType::Lark {
+                            Some(CreateLarkChannelConfig {
+                                credential_id: if credential_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(credential_id)
+                                },
+                                identity_mode: if identity_mode.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(identity_mode)
+                                },
+                                open_id: if open_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(open_id)
+                                },
+                                user_name: if user_name.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(user_name)
+                                },
+                                listen_inbound: Some(edit_listen_inbound()),
+                            })
+                        } else {
+                            None
+                        },
+                        wechat: if channel_type == ChannelType::Wechat {
+                            Some(CreateWechatChannelConfig {
+                                app_id: None,
+                                app_secret: None,
+                                open_id: if wechat_open_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(wechat_open_id)
+                                },
+                            })
+                        } else {
+                            None
+                        },
+                        email: if channel_type == ChannelType::Email {
+                            Some(CreateEmailChannelConfig {
+                                smtp_host: if email_smtp_host.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(email_smtp_host)
+                                },
+                                smtp_port: Some(email_smtp_port),
+                                username: if email_username.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(email_username)
+                                },
+                                password: None,
+                                from_address: if email_from_address.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(email_from_address)
+                                },
+                                to_address: if email_to_address.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(email_to_address)
+                                },
+                            })
+                        } else {
+                            None
+                        },
+                        slack: if channel_type == ChannelType::Slack {
+                            Some(CreateSlackChannelConfig {
+                                bot_token: None,
+                                channel_id: if slack_channel_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(slack_channel_id)
+                                },
+                            })
+                        } else {
+                            None
+                        },
+                        webhook: if channel_type == ChannelType::Webhook {
+                            Some(CreateWebhookChannelConfig {
+                                method: if webhook_method.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(webhook_method)
+                                },
+                                body_template: if webhook_body_template.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(webhook_body_template)
+                                },
+                            })
+                        } else {
+                            None
+                        },
+                    }),
                 };
                 match update_message_channel(req).await {
                     Ok(_) => {
@@ -328,6 +414,14 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
             if loading() {
                 Loading {}
             } else if let Some(c) = channel_data.clone() {
+                {
+                    let cfg = c.config.as_ref();
+                    let lark_cfg = cfg.and_then(|c| c.lark.as_ref());
+                    let wechat_cfg = cfg.and_then(|c| c.wechat.as_ref());
+                    let email_cfg = cfg.and_then(|c| c.email.as_ref());
+                    let slack_cfg = cfg.and_then(|c| c.slack.as_ref());
+                    let webhook_cfg = cfg.and_then(|c| c.webhook.as_ref());
+                    rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
                         div { class: "flex justify-between items-center mb-4",
@@ -390,7 +484,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "应用凭证" }
                                     div {
-                                        if let Some(name) = &c.lark_credential_name {
+                                        if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
                                             span { class: "badge badge-outline", "{name}" }
                                         } else {
                                             span { class: "badge badge-warning badge-sm", "未绑定凭证" }
@@ -400,25 +494,25 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "身份模式" }
                                     div {
-                                        span { class: "badge badge-ghost badge-sm", "{identity_mode_text(c.lark_identity_mode.as_deref())}" }
+                                        span { class: "badge badge-ghost badge-sm", "{identity_mode_text(lark_cfg.and_then(|l| l.identity_mode.as_deref()))}" }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "用户 Open ID" }
                                     div { class: "font-mono",
-                                        if let Some(open_id) = &c.lark_open_id { "{open_id}" } else { "未配置" }
+                                        if let Some(open_id) = lark_cfg.and_then(|l| l.open_id.as_ref()) { "{open_id}" } else { "未配置" }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "用户昵称" }
                                     div {
-                                        if let Some(name) = &c.lark_user_name { "{name}" } else { "-" }
+                                        if let Some(name) = lark_cfg.and_then(|l| l.user_name.as_ref()) { "{name}" } else { "-" }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "入站监听" }
                                     div {
-                                        if c.lark_listen_inbound {
+                                        if lark_cfg.map(|l| l.listen_inbound).unwrap_or(true) {
                                             span { class: "badge badge-success badge-sm", "开启" }
                                         } else {
                                             span { class: "badge badge-ghost badge-sm", "关闭（仅出站/lark_cli）" }
@@ -431,7 +525,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div { class: "md:col-span-2 border border-base-300 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap",
                                     div { class: "flex items-center gap-2 flex-wrap",
                                         span { class: "text-sm text-base-content/60", "飞书集成" }
-                                        if let Some(name) = &c.lark_credential_name {
+                                        if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
                                             span { class: "badge badge-outline badge-sm", "凭证：{name}" }
                                         } else {
                                             span { class: "badge badge-warning badge-sm", "凭证未绑定" }
@@ -451,7 +545,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "微信 Open ID" }
                                     div { class: "font-mono",
-                                        if let Some(id) = &c.wechat_open_id { "{id}" } else { "未配置" }
+                                        if let Some(id) = wechat_cfg.and_then(|w| w.open_id.as_ref()) { "{id}" } else { "未配置" }
                                     }
                                 }
                             }
@@ -459,7 +553,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "SMTP 服务器" }
                                     {
-                                        let smtp = match (&c.email_smtp_host, c.email_smtp_port) {
+                                        let smtp = match (email_cfg.and_then(|e| e.smtp_host.as_ref()), email_cfg.and_then(|e| e.smtp_port)) {
                                             (Some(h), Some(p)) => format!("{h}:{p}"),
                                             (Some(h), None) => h.clone(),
                                             _ => "未配置".to_string(),
@@ -470,19 +564,19 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "用户名" }
                                     div { class: "font-mono",
-                                        if let Some(u) = &c.email_username { "{u}" } else { "未配置" }
+                                        if let Some(u) = email_cfg.and_then(|e| e.username.as_ref()) { "{u}" } else { "未配置" }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "发件地址" }
                                     div { class: "font-mono",
-                                        if let Some(a) = &c.email_from_address { "{a}" } else { "未配置" }
+                                        if let Some(a) = email_cfg.and_then(|e| e.from_address.as_ref()) { "{a}" } else { "未配置" }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "收件地址" }
                                     div { class: "font-mono",
-                                        if let Some(a) = &c.email_to_address { "{a}" } else { "未配置" }
+                                        if let Some(a) = email_cfg.and_then(|e| e.to_address.as_ref()) { "{a}" } else { "未配置" }
                                     }
                                 }
                             }
@@ -490,7 +584,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "Channel ID" }
                                     div { class: "font-mono",
-                                        if let Some(id) = &c.slack_channel_id { "{id}" } else { "未配置" }
+                                        if let Some(id) = slack_cfg.and_then(|s| s.channel_id.as_ref()) { "{id}" } else { "未配置" }
                                     }
                                 }
                             }
@@ -501,13 +595,13 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                         div { class: "font-mono text-sm break-all", "{url}" }
                                     }
                                 }
-                                if let Some(method) = &c.webhook_method {
+                                if let Some(method) = webhook_cfg.and_then(|w| w.method.as_ref()) {
                                     div {
                                         div { class: "text-sm text-base-content/60", "HTTP 方法" }
                                         div { span { class: "badge badge-info badge-sm", "{method}" } }
                                     }
                                 }
-                                if let Some(tmpl) = &c.webhook_body_template {
+                                if let Some(tmpl) = webhook_cfg.and_then(|w| w.body_template.as_ref()) {
                                     div { class: "md:col-span-2",
                                         div { class: "text-sm text-base-content/60", "请求体模板" }
                                         pre { class: "font-mono text-xs bg-base-200 p-2 rounded",
@@ -553,6 +647,8 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div { class: "font-mono", "{crate::utils::format_datetime(c.updated_at)}" }
                             }
                         }
+                    }
+                }
                     }
                 }
             } else {

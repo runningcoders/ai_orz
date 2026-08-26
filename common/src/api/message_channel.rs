@@ -6,6 +6,160 @@ use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+// ---------------------------------------------------------------------------
+// Nested channel configuration structs (reusable across multiple DTOs)
+// ---------------------------------------------------------------------------
+
+/// Lark 渠道配置（非敏感展示字段，用于响应 DTO）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct LarkChannelConfig {
+    /// 凭证引用 ID
+    pub credential_id: Option<String>,
+    /// 凭证名称（反查 users.identity_credentials，未找到为 None）
+    pub credential_name: Option<String>,
+    /// 身份模式（auto/bot/user）
+    pub identity_mode: Option<String>,
+    /// 用户 Open ID
+    pub open_id: Option<String>,
+    /// 用户昵称
+    pub user_name: Option<String>,
+    /// 是否监听入站消息（缺省 true）
+    pub listen_inbound: bool,
+}
+
+/// 微信渠道配置（非敏感展示字段，用于响应 DTO）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct WechatChannelConfig {
+    /// 微信 Open ID
+    pub open_id: Option<String>,
+}
+
+/// 邮件渠道配置（非敏感展示字段，用于响应 DTO）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct EmailChannelConfig {
+    /// SMTP 服务器地址
+    pub smtp_host: Option<String>,
+    /// SMTP 端口
+    pub smtp_port: Option<u16>,
+    /// 用户名
+    pub username: Option<String>,
+    /// 发件地址
+    pub from_address: Option<String>,
+    /// 收件地址
+    pub to_address: Option<String>,
+}
+
+/// Slack 渠道配置（非敏感展示字段，用于响应 DTO）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct SlackChannelConfig {
+    /// Channel ID
+    pub channel_id: Option<String>,
+}
+
+/// Webhook 渠道配置（非敏感展示字段，用于响应 DTO）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct WebhookChannelConfig {
+    /// HTTP 方法
+    pub method: Option<String>,
+    /// 请求体模板
+    pub body_template: Option<String>,
+}
+
+/// 消息渠道配置总结构体（用于响应 DTO，存放各渠道类型的非敏感展示字段）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct MessageChannelConfig {
+    /// 飞书渠道配置
+    pub lark: Option<LarkChannelConfig>,
+    /// 微信渠道配置
+    pub wechat: Option<WechatChannelConfig>,
+    /// 邮件渠道配置
+    pub email: Option<EmailChannelConfig>,
+    /// Slack 渠道配置
+    pub slack: Option<SlackChannelConfig>,
+    /// Webhook 渠道配置
+    pub webhook: Option<WebhookChannelConfig>,
+}
+
+// ---------------------------------------------------------------------------
+// Request-side nested config structs (include sensitive fields)
+// ---------------------------------------------------------------------------
+
+/// 创建/更新请求 - Lark 配置（含敏感字段）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateLarkChannelConfig {
+    /// 凭证引用 ID
+    pub credential_id: Option<String>,
+    /// 身份模式（auto/bot/user）
+    pub identity_mode: Option<String>,
+    /// 用户 Open ID
+    pub open_id: Option<String>,
+    /// 用户昵称
+    pub user_name: Option<String>,
+    /// 是否监听入站消息
+    pub listen_inbound: Option<bool>,
+}
+
+/// 创建/更新请求 - 微信配置（含敏感字段）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateWechatChannelConfig {
+    /// App ID
+    pub app_id: Option<String>,
+    /// App Secret（敏感字段）
+    pub app_secret: Option<String>,
+    /// 用户 Open ID
+    pub open_id: Option<String>,
+}
+
+/// 创建/更新请求 - 邮件配置（含敏感字段）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateEmailChannelConfig {
+    /// SMTP 服务器地址
+    pub smtp_host: Option<String>,
+    /// SMTP 端口
+    pub smtp_port: Option<u16>,
+    /// 用户名
+    pub username: Option<String>,
+    /// 密码（敏感字段）
+    pub password: Option<String>,
+    /// 发件地址
+    pub from_address: Option<String>,
+    /// 收件地址
+    pub to_address: Option<String>,
+}
+
+/// 创建/更新请求 - Slack 配置（含敏感字段）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateSlackChannelConfig {
+    /// Bot Token（敏感字段）
+    pub bot_token: Option<String>,
+    /// Channel ID
+    pub channel_id: Option<String>,
+}
+
+/// 创建/更新请求 - Webhook 配置
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateWebhookChannelConfig {
+    /// HTTP 方法
+    pub method: Option<String>,
+    /// 请求体模板
+    pub body_template: Option<String>,
+}
+
+/// 创建/更新请求 - 渠道配置总结构体（用于请求 DTO，含各渠道敏感字段）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct CreateMessageChannelConfig {
+    /// 飞书渠道配置
+    pub lark: Option<CreateLarkChannelConfig>,
+    /// 微信渠道配置
+    pub wechat: Option<CreateWechatChannelConfig>,
+    /// 邮件渠道配置
+    pub email: Option<CreateEmailChannelConfig>,
+    /// Slack 渠道配置
+    pub slack: Option<CreateSlackChannelConfig>,
+    /// Webhook 渠道配置
+    pub webhook: Option<CreateWebhookChannelConfig>,
+}
+
 /// Create Message Channel request
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct CreateMessageChannelRequest {
@@ -23,42 +177,9 @@ pub struct CreateMessageChannelRequest {
     pub access_token: Option<String>,
     /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
-    /// Lark 凭证引用 ID（指向 users.identity_credentials 中的凭证，Lark 渠道必填）
-    pub lark_credential_id: Option<String>,
-    /// Lark 身份模式（auto/bot/user，缺省 auto）
-    pub lark_identity_mode: Option<String>,
-    /// Lark user Open ID (for P2P message binding)
-    pub lark_open_id: Option<String>,
-    /// Lark user display name (for display, optional)
-    pub lark_user_name: Option<String>,
-    /// Whether to listen inbound Lark P2P messages (default true when unset)
-    pub lark_listen_inbound: Option<bool>,
-    /// WeChat App ID
-    pub wechat_app_id: Option<String>,
-    /// WeChat App Secret (only in request, not returned in response)
-    pub wechat_app_secret: Option<String>,
-    /// WeChat Open ID
-    pub wechat_open_id: Option<String>,
-    /// SMTP server host
-    pub email_smtp_host: Option<String>,
-    /// SMTP server port
-    pub email_smtp_port: Option<u16>,
-    /// Email username
-    pub email_username: Option<String>,
-    /// Email password (only in request, not returned in response)
-    pub email_password: Option<String>,
-    /// From email address
-    pub email_from_address: Option<String>,
-    /// To email address
-    pub email_to_address: Option<String>,
-    /// Slack Bot Token (only in request, not returned in response)
-    pub slack_bot_token: Option<String>,
-    /// Slack channel ID
-    pub slack_channel_id: Option<String>,
-    /// Webhook HTTP method
-    pub webhook_method: Option<String>,
-    /// Webhook body template
-    pub webhook_body_template: Option<String>,
+    /// Channel-specific configuration (lark/wechat/email/slack/webhook)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<CreateMessageChannelConfig>,
 }
 
 /// Get Message Channel request
@@ -164,42 +285,9 @@ pub struct UpdateMessageChannelRequest {
     pub access_token: Option<String>,
     /// Signing secret (only in request, not returned in response)
     pub secret: Option<String>,
-    /// Lark 凭证引用 ID（指向 users.identity_credentials 中的凭证，Lark 渠道必填）
-    pub lark_credential_id: Option<String>,
-    /// Lark 身份模式（auto/bot/user，缺省 auto）
-    pub lark_identity_mode: Option<String>,
-    /// Lark user Open ID (for P2P message binding)
-    pub lark_open_id: Option<String>,
-    /// Lark user display name (for display, optional)
-    pub lark_user_name: Option<String>,
-    /// Whether to listen inbound Lark P2P messages (default true when unset)
-    pub lark_listen_inbound: Option<bool>,
-    /// WeChat App ID
-    pub wechat_app_id: Option<String>,
-    /// WeChat App Secret (only in request, not returned in response)
-    pub wechat_app_secret: Option<String>,
-    /// WeChat Open ID
-    pub wechat_open_id: Option<String>,
-    /// SMTP server host
-    pub email_smtp_host: Option<String>,
-    /// SMTP server port
-    pub email_smtp_port: Option<u16>,
-    /// Email username
-    pub email_username: Option<String>,
-    /// Email password (only in request, not returned in response)
-    pub email_password: Option<String>,
-    /// From email address
-    pub email_from_address: Option<String>,
-    /// To email address
-    pub email_to_address: Option<String>,
-    /// Slack Bot Token (only in request, not returned in response)
-    pub slack_bot_token: Option<String>,
-    /// Slack channel ID
-    pub slack_channel_id: Option<String>,
-    /// Webhook HTTP method
-    pub webhook_method: Option<String>,
-    /// Webhook body template
-    pub webhook_body_template: Option<String>,
+    /// Channel-specific configuration (lark/wechat/email/slack/webhook)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<CreateMessageChannelConfig>,
 }
 
 /// Update Message Channel status request
@@ -266,18 +354,9 @@ pub struct MessageChannelListItem {
     pub has_secret: bool,
     /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
-    /// Lark 凭证引用 ID（非敏感展示字段）
-    pub lark_credential_id: Option<String>,
-    /// Lark 凭证名称（反查 users.identity_credentials，未找到为 None）
-    pub lark_credential_name: Option<String>,
-    /// Lark 身份模式（auto/bot/user）
-    pub lark_identity_mode: Option<String>,
-    /// Lark user Open ID (non-sensitive display field)
-    pub lark_open_id: Option<String>,
-    /// Lark user display name
-    pub lark_user_name: Option<String>,
-    /// Whether inbound Lark P2P messages are listened (default true)
-    pub lark_listen_inbound: bool,
+    /// Channel-specific configuration (non-sensitive display fields)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<MessageChannelConfig>,
     /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
     /// Last push error message
@@ -313,36 +392,9 @@ pub struct MessageChannelDetail {
     pub has_secret: bool,
     /// Whether there are sensitive fields in config
     pub has_config_secret: bool,
-    /// Lark 凭证引用 ID（非敏感展示字段）
-    pub lark_credential_id: Option<String>,
-    /// Lark 凭证名称（反查 users.identity_credentials，未找到为 None）
-    pub lark_credential_name: Option<String>,
-    /// Lark 身份模式（auto/bot/user）
-    pub lark_identity_mode: Option<String>,
-    /// Lark user Open ID (non-sensitive display field)
-    pub lark_open_id: Option<String>,
-    /// Lark user display name
-    pub lark_user_name: Option<String>,
-    /// Whether inbound Lark P2P messages are listened (default true)
-    pub lark_listen_inbound: bool,
-    /// 微信 Open ID（非敏感展示）
-    pub wechat_open_id: Option<String>,
-    /// 邮件 SMTP Host（非敏感展示）
-    pub email_smtp_host: Option<String>,
-    /// 邮件 SMTP Port（非敏感展示）
-    pub email_smtp_port: Option<u16>,
-    /// 邮件用户名（非敏感展示）
-    pub email_username: Option<String>,
-    /// 邮件发件地址（非敏感展示）
-    pub email_from_address: Option<String>,
-    /// 邮件收件地址（非敏感展示）
-    pub email_to_address: Option<String>,
-    /// Slack Channel ID（非敏感展示）
-    pub slack_channel_id: Option<String>,
-    /// Webhook HTTP 方法（非敏感展示）
-    pub webhook_method: Option<String>,
-    /// Webhook 请求体模板（非敏感展示）
-    pub webhook_body_template: Option<String>,
+    /// Channel-specific configuration (non-sensitive display fields)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<MessageChannelConfig>,
     /// Last successful push timestamp
     pub last_pushed_at: Option<i64>,
     /// Last push error message

@@ -21,7 +21,9 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    AgentListItem, CreateMessageChannelRequest, LarkCredentialSnapshot, ListAgentsRequest,
+    AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
+    CreateMessageChannelRequest, CreateSlackChannelConfig, CreateWebhookChannelConfig,
+    CreateWechatChannelConfig, LarkCredentialSnapshot, ListAgentsRequest,
     ListMessageChannelsResponseItem, UpdateMessageChannelStatusRequest,
 };
 use common::enums::{ChannelStatus, ChannelType};
@@ -140,24 +142,56 @@ pub fn FinanceMessageChannels() -> Element {
                 webhook_url: none_if_empty(new_webhook_url()),
                 access_token: none_if_empty(new_access_token()),
                 secret: none_if_empty(new_secret()),
-                lark_credential_id: none_if_empty(new_lark_credential_id()),
-                lark_identity_mode: none_if_empty(new_lark_identity_mode()),
-                lark_open_id: none_if_empty(new_lark_open_id()),
-                lark_user_name: none_if_empty(new_lark_user_name()),
-                lark_listen_inbound: Some(new_listen_inbound()),
-                wechat_app_id: none_if_empty(new_wechat_app_id()),
-                wechat_app_secret: none_if_empty(new_wechat_app_secret()),
-                wechat_open_id: none_if_empty(new_wechat_open_id()),
-                email_smtp_host: none_if_empty(new_email_smtp_host()),
-                email_smtp_port: email_port,
-                email_username: none_if_empty(new_email_username()),
-                email_password: none_if_empty(new_email_password()),
-                email_from_address: none_if_empty(new_email_from()),
-                email_to_address: none_if_empty(new_email_to()),
-                slack_bot_token: none_if_empty(new_slack_bot_token()),
-                slack_channel_id: none_if_empty(new_slack_channel_id()),
-                webhook_method: none_if_empty(new_webhook_method()),
-                webhook_body_template: none_if_empty(new_webhook_body_template()),
+                config: Some(CreateMessageChannelConfig {
+                    lark: if channel_type == ChannelType::Lark {
+                        Some(CreateLarkChannelConfig {
+                            credential_id: none_if_empty(new_lark_credential_id()),
+                            identity_mode: none_if_empty(new_lark_identity_mode()),
+                            open_id: none_if_empty(new_lark_open_id()),
+                            user_name: none_if_empty(new_lark_user_name()),
+                            listen_inbound: Some(new_listen_inbound()),
+                        })
+                    } else {
+                        None
+                    },
+                    wechat: if channel_type == ChannelType::Wechat {
+                        Some(CreateWechatChannelConfig {
+                            app_id: none_if_empty(new_wechat_app_id()),
+                            app_secret: none_if_empty(new_wechat_app_secret()),
+                            open_id: none_if_empty(new_wechat_open_id()),
+                        })
+                    } else {
+                        None
+                    },
+                    email: if channel_type == ChannelType::Email {
+                        Some(CreateEmailChannelConfig {
+                            smtp_host: none_if_empty(new_email_smtp_host()),
+                            smtp_port: email_port,
+                            username: none_if_empty(new_email_username()),
+                            password: none_if_empty(new_email_password()),
+                            from_address: none_if_empty(new_email_from()),
+                            to_address: none_if_empty(new_email_to()),
+                        })
+                    } else {
+                        None
+                    },
+                    slack: if channel_type == ChannelType::Slack {
+                        Some(CreateSlackChannelConfig {
+                            bot_token: none_if_empty(new_slack_bot_token()),
+                            channel_id: none_if_empty(new_slack_channel_id()),
+                        })
+                    } else {
+                        None
+                    },
+                    webhook: if channel_type == ChannelType::Webhook {
+                        Some(CreateWebhookChannelConfig {
+                            method: none_if_empty(new_webhook_method()),
+                            body_template: none_if_empty(new_webhook_body_template()),
+                        })
+                    } else {
+                        None
+                    },
+                }),
             };
             match create_message_channel(req).await {
                 Ok(_) => {
@@ -239,7 +273,7 @@ pub fn FinanceMessageChannels() -> Element {
                                             let channel_name = c.channel_name.clone();
                                             let channel_type = c.channel_type;
                                             let is_lark = channel_type == ChannelType::Lark;
-                                            let credential_name = c.lark_credential_name.clone();
+                                            let credential_name = c.config.as_ref().and_then(|cfg| cfg.lark.as_ref()).and_then(|l| l.credential_name.clone());
                                             let id_disable = id.clone();
                                             let id_enable = id.clone();
                                             let id_delete = id.clone();

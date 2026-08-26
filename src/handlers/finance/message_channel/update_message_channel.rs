@@ -1,9 +1,12 @@
 //! Handler: PUT /api/v1/message-channels/{id} - Update message channel configuration
 
+use crate::models::message_channel::ChannelConfig;
 use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{UpdateMessageChannelRequest, UpdateMessageChannelResponse};
+use common::api::{
+    CreateMessageChannelConfig, UpdateMessageChannelRequest, UpdateMessageChannelResponse,
+};
 
 use super::create_message_channel::validate_lark_credential_ref;
 use super::response::to_detail;
@@ -62,61 +65,7 @@ pub async fn update_message_channel(
         channel.po.secret = Some(secret);
     }
 
-    let config = &mut channel.po.config_json.0;
-    if let Some(value) = params.lark_credential_id {
-        config.lark_credential_id = Some(value);
-    }
-    if let Some(value) = params.lark_identity_mode {
-        config.lark_identity_mode = Some(value);
-    }
-    if let Some(value) = params.lark_open_id {
-        config.lark_open_id = Some(value);
-    }
-    if let Some(value) = params.lark_user_name {
-        config.lark_user_name = Some(value);
-    }
-    if let Some(value) = params.lark_listen_inbound {
-        config.lark_listen_inbound = Some(value);
-    }
-    if let Some(value) = params.wechat_app_id {
-        config.wechat_app_id = Some(value);
-    }
-    if let Some(value) = params.wechat_app_secret {
-        config.wechat_app_secret = Some(value);
-    }
-    if let Some(value) = params.wechat_open_id {
-        config.wechat_open_id = Some(value);
-    }
-    if let Some(value) = params.email_smtp_host {
-        config.email_smtp_host = Some(value);
-    }
-    if let Some(value) = params.email_smtp_port {
-        config.email_smtp_port = Some(value);
-    }
-    if let Some(value) = params.email_username {
-        config.email_username = Some(value);
-    }
-    if let Some(value) = params.email_password {
-        config.email_password = Some(value);
-    }
-    if let Some(value) = params.email_from_address {
-        config.email_from_address = Some(value);
-    }
-    if let Some(value) = params.email_to_address {
-        config.email_to_address = Some(value);
-    }
-    if let Some(value) = params.slack_bot_token {
-        config.slack_bot_token = Some(value);
-    }
-    if let Some(value) = params.slack_channel_id {
-        config.slack_channel_id = Some(value);
-    }
-    if let Some(value) = params.webhook_method {
-        config.webhook_method = Some(value);
-    }
-    if let Some(value) = params.webhook_body_template {
-        config.webhook_body_template = Some(value);
-    }
+    merge_channel_config(&mut channel.po.config_json.0, &params.config);
 
     channel.po.modified_by = current_user_id;
 
@@ -138,4 +87,171 @@ pub async fn update_message_channel(
         .await?;
 
     Ok(to_detail(&channel, Some(&credentials)))
+}
+
+/// Merge CreateMessageChannelConfig into ChannelConfig (only updates Some fields)
+fn merge_channel_config(target: &mut ChannelConfig, source: &Option<CreateMessageChannelConfig>) {
+    let Some(config) = source else {
+        return;
+    };
+
+    if let Some(lark) = &config.lark {
+        if let Some(v) = &lark.credential_id {
+            target.lark_credential_id = Some(v.clone());
+        }
+        if let Some(v) = &lark.identity_mode {
+            target.lark_identity_mode = Some(v.clone());
+        }
+        if let Some(v) = &lark.open_id {
+            target.lark_open_id = Some(v.clone());
+        }
+        if let Some(v) = &lark.user_name {
+            target.lark_user_name = Some(v.clone());
+        }
+        if let Some(v) = lark.listen_inbound {
+            target.lark_listen_inbound = Some(v);
+        }
+    }
+
+    if let Some(wechat) = &config.wechat {
+        if let Some(v) = &wechat.app_id {
+            target.wechat_app_id = Some(v.clone());
+        }
+        if let Some(v) = &wechat.app_secret {
+            target.wechat_app_secret = Some(v.clone());
+        }
+        if let Some(v) = &wechat.open_id {
+            target.wechat_open_id = Some(v.clone());
+        }
+    }
+
+    if let Some(email) = &config.email {
+        if let Some(v) = &email.smtp_host {
+            target.email_smtp_host = Some(v.clone());
+        }
+        if let Some(v) = email.smtp_port {
+            target.email_smtp_port = Some(v);
+        }
+        if let Some(v) = &email.username {
+            target.email_username = Some(v.clone());
+        }
+        if let Some(v) = &email.password {
+            target.email_password = Some(v.clone());
+        }
+        if let Some(v) = &email.from_address {
+            target.email_from_address = Some(v.clone());
+        }
+        if let Some(v) = &email.to_address {
+            target.email_to_address = Some(v.clone());
+        }
+    }
+
+    if let Some(slack) = &config.slack {
+        if let Some(v) = &slack.bot_token {
+            target.slack_bot_token = Some(v.clone());
+        }
+        if let Some(v) = &slack.channel_id {
+            target.slack_channel_id = Some(v.clone());
+        }
+    }
+
+    if let Some(webhook) = &config.webhook {
+        if let Some(v) = &webhook.method {
+            target.webhook_method = Some(v.clone());
+        }
+        if let Some(v) = &webhook.body_template {
+            target.webhook_body_template = Some(v.clone());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::api::{
+        CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
+    };
+
+    #[test]
+    fn merge_config_noop_on_none() {
+        let mut config = ChannelConfig::default();
+        merge_channel_config(&mut config, &None);
+        assert!(config.lark_credential_id.is_none());
+    }
+
+    #[test]
+    fn merge_config_updates_lark_fields() {
+        let mut config = ChannelConfig::default();
+        let source = Some(CreateMessageChannelConfig {
+            lark: Some(CreateLarkChannelConfig {
+                credential_id: Some("cred-1".to_string()),
+                identity_mode: Some("bot".to_string()),
+                open_id: Some("ou_xxx".to_string()),
+                user_name: Some("Test".to_string()),
+                listen_inbound: Some(true),
+            }),
+            wechat: None,
+            email: None,
+            slack: None,
+            webhook: None,
+        });
+        merge_channel_config(&mut config, &source);
+        assert_eq!(config.lark_credential_id.as_deref(), Some("cred-1"));
+        assert_eq!(config.lark_identity_mode.as_deref(), Some("bot"));
+        assert_eq!(config.lark_open_id.as_deref(), Some("ou_xxx"));
+        assert_eq!(config.lark_user_name.as_deref(), Some("Test"));
+        assert_eq!(config.lark_listen_inbound, Some(true));
+    }
+
+    #[test]
+    fn merge_config_updates_email_fields() {
+        let mut config = ChannelConfig::default();
+        let source = Some(CreateMessageChannelConfig {
+            lark: None,
+            wechat: None,
+            email: Some(CreateEmailChannelConfig {
+                smtp_host: Some("smtp.test.com".to_string()),
+                smtp_port: Some(587),
+                username: Some("user".to_string()),
+                password: Some("pass".to_string()),
+                from_address: Some("from@test.com".to_string()),
+                to_address: Some("to@test.com".to_string()),
+            }),
+            slack: None,
+            webhook: None,
+        });
+        merge_channel_config(&mut config, &source);
+        assert_eq!(config.email_smtp_host.as_deref(), Some("smtp.test.com"));
+        assert_eq!(config.email_smtp_port, Some(587));
+        assert_eq!(config.email_username.as_deref(), Some("user"));
+        assert_eq!(config.email_password.as_deref(), Some("pass"));
+        assert_eq!(config.email_from_address.as_deref(), Some("from@test.com"));
+        assert_eq!(config.email_to_address.as_deref(), Some("to@test.com"));
+    }
+
+    #[test]
+    fn merge_config_preserves_existing_when_not_specified() {
+        let mut config = ChannelConfig {
+            lark_credential_id: Some("old-cred".to_string()),
+            email_smtp_host: Some("old.host".to_string()),
+            ..Default::default()
+        };
+        let source = Some(CreateMessageChannelConfig {
+            lark: Some(CreateLarkChannelConfig {
+                credential_id: None,
+                identity_mode: None,
+                open_id: None,
+                user_name: None,
+                listen_inbound: None,
+            }),
+            wechat: None,
+            email: None,
+            slack: None,
+            webhook: None,
+        });
+        merge_channel_config(&mut config, &source);
+        // Existing preserved since no Some values were provided
+        assert_eq!(config.lark_credential_id.as_deref(), Some("old-cred"));
+        assert_eq!(config.email_smtp_host.as_deref(), Some("old.host"));
+    }
 }

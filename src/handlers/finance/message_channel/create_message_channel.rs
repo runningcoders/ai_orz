@@ -55,6 +55,44 @@ pub fn validate_lark_credential_ref(
     Ok(())
 }
 
+/// Extract ChannelConfig from CreateMessageChannelRequest
+fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
+    let mut config = ChannelConfig::default();
+
+    if let Some(channel_config) = &req.config {
+        if let Some(lark) = &channel_config.lark {
+            config.lark_credential_id = lark.credential_id.clone();
+            config.lark_identity_mode = lark.identity_mode.clone();
+            config.lark_open_id = lark.open_id.clone();
+            config.lark_user_name = lark.user_name.clone();
+            config.lark_listen_inbound = lark.listen_inbound;
+        }
+        if let Some(wechat) = &channel_config.wechat {
+            config.wechat_app_id = wechat.app_id.clone();
+            config.wechat_app_secret = wechat.app_secret.clone();
+            config.wechat_open_id = wechat.open_id.clone();
+        }
+        if let Some(email) = &channel_config.email {
+            config.email_smtp_host = email.smtp_host.clone();
+            config.email_smtp_port = email.smtp_port;
+            config.email_username = email.username.clone();
+            config.email_password = email.password.clone();
+            config.email_from_address = email.from_address.clone();
+            config.email_to_address = email.to_address.clone();
+        }
+        if let Some(slack) = &channel_config.slack {
+            config.slack_bot_token = slack.bot_token.clone();
+            config.slack_channel_id = slack.channel_id.clone();
+        }
+        if let Some(webhook) = &channel_config.webhook {
+            config.webhook_method = webhook.method.clone();
+            config.webhook_body_template = webhook.body_template.clone();
+        }
+    }
+
+    config
+}
+
 /// Create a new message channel for sending notifications to external services/users
 #[register_handler_tool(
     id = "create_message_channel",
@@ -82,9 +120,11 @@ pub async fn create_message_channel(
         .get_identity_credentials(ctx.clone(), &user_id)
         .await?
         .unwrap_or_default();
+
+    let channel_config = extract_channel_config(&params);
     validate_lark_credential_ref(
         params.channel_type,
-        params.lark_credential_id.as_deref(),
+        channel_config.lark_credential_id.as_deref(),
         &credentials,
     )?;
 
@@ -98,28 +138,7 @@ pub async fn create_message_channel(
         params.webhook_url.clone(),
         params.access_token.clone(),
         params.secret.clone(),
-        ChannelConfig {
-            lark_credential_id: params.lark_credential_id.clone(),
-            lark_identity_mode: params.lark_identity_mode.clone(),
-            wechat_app_id: params.wechat_app_id.clone(),
-            wechat_app_secret: params.wechat_app_secret.clone(),
-            wechat_open_id: params.wechat_open_id.clone(),
-            email_smtp_host: params.email_smtp_host.clone(),
-            email_smtp_port: params.email_smtp_port,
-            email_username: params.email_username.clone(),
-            email_password: params.email_password.clone(),
-            email_from_address: params.email_from_address.clone(),
-            email_to_address: params.email_to_address.clone(),
-            slack_bot_token: params.slack_bot_token.clone(),
-            slack_channel_id: params.slack_channel_id.clone(),
-            webhook_method: params.webhook_method.clone(),
-            webhook_headers: None,
-            webhook_body_template: params.webhook_body_template.clone(),
-            lark_open_id: params.lark_open_id.clone(),
-            lark_user_name: params.lark_user_name.clone(),
-            lark_listen_inbound: params.lark_listen_inbound,
-            extra: None,
-        },
+        channel_config,
         ctx.uid(),
     );
     let channel = MessageChannel::from_po(channel_po);
@@ -136,6 +155,7 @@ pub async fn create_message_channel(
 mod tests {
     use super::*;
     use crate::models::user_credential::UserCredentialPo;
+    use common::api::CreateMessageChannelConfig;
     use common::enums::ChannelType;
     use common::models::{CredentialDetail, CredentialVisibility};
 
@@ -185,5 +205,55 @@ mod tests {
         let credentials: Vec<UserCredential> = Vec::new();
         assert!(validate_lark_credential_ref(ChannelType::Webhook, None, &credentials).is_ok());
         assert!(validate_lark_credential_ref(ChannelType::Email, None, &credentials).is_ok());
+    }
+
+    #[test]
+    fn extract_config_handles_none() {
+        let req = CreateMessageChannelRequest {
+            user_id: None,
+            agent_id: None,
+            channel_type: ChannelType::Lark,
+            channel_name: "test".to_string(),
+            webhook_url: None,
+            access_token: None,
+            secret: None,
+            config: None,
+        };
+        let config = extract_channel_config(&req);
+        assert!(config.lark_credential_id.is_none());
+        assert!(config.wechat_app_id.is_none());
+        assert!(config.email_smtp_host.is_none());
+    }
+
+    #[test]
+    fn extract_config_extracts_lark_fields() {
+        let req = CreateMessageChannelRequest {
+            user_id: None,
+            agent_id: None,
+            channel_type: ChannelType::Lark,
+            channel_name: "test".to_string(),
+            webhook_url: None,
+            access_token: None,
+            secret: None,
+            config: Some(CreateMessageChannelConfig {
+                lark: Some(common::api::CreateLarkChannelConfig {
+                    credential_id: Some("cred-1".to_string()),
+                    identity_mode: Some("bot".to_string()),
+                    open_id: Some("ou_xxx".to_string()),
+                    user_name: Some("Test".to_string()),
+                    listen_inbound: Some(true),
+                }),
+                wechat: None,
+                email: None,
+                slack: None,
+                webhook: None,
+            }),
+        };
+        let config = extract_channel_config(&req);
+        assert_eq!(config.lark_credential_id.as_deref(), Some("cred-1"));
+        assert_eq!(config.lark_identity_mode.as_deref(), Some("bot"));
+        assert_eq!(config.lark_open_id.as_deref(), Some("ou_xxx"));
+        assert_eq!(config.lark_user_name.as_deref(), Some("Test"));
+        assert_eq!(config.lark_listen_inbound, Some(true));
     }
 }
