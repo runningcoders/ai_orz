@@ -39,7 +39,9 @@ pub fn logout(mut auth: Signal<AuthState>) {
     let mut state = auth.write();
     state.logged_in = false;
     state.role = 0;
+    state.user_id = String::new();
     state.username = String::new();
+    state.display_name = String::new();
     state.org_id = String::new();
 }
 
@@ -70,7 +72,9 @@ fn restore_role() -> i32 {
 #[derive(Clone, Debug, Default)]
 pub struct AuthState {
     pub logged_in: bool,
+    pub user_id: String,
     pub username: String,
+    pub display_name: String,
     pub role: i32,
     pub org_id: String,
     #[allow(dead_code)]
@@ -78,6 +82,17 @@ pub struct AuthState {
 }
 
 impl AuthState {
+    /// 获取显示名：优先 display_name，空时 fallback 到 username
+    pub fn display_label(&self) -> &str {
+        if !self.display_name.is_empty() {
+            &self.display_name
+        } else if !self.username.is_empty() {
+            &self.username
+        } else {
+            "用户"
+        }
+    }
+
     pub fn restore() -> Self {
         // 修复 HIGH #1：之前 restore 只恢复 logged_in，role/username/org_id 全部丢失，
         // 导致刷新页面后管理员菜单消失。现在持久化恢复 role。

@@ -60,6 +60,7 @@ pub async fn login(
             Json(ApiResponse::success(LoginResponse {
                 user_id: user.id.clone(),
                 username: user.username.clone(),
+                display_name: user.display_name.clone(),
                 organization_id: req.organization_id,
                 token,
             })),

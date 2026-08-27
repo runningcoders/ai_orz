@@ -37,9 +37,10 @@ pub fn use_require_auth() -> bool {
                         Ok(resp) => {
                             let mut state = auth.write();
                             state.role = resp.data.role;
+                            state.user_id = resp.data.user_id.clone();
                             state.username = resp.data.username.clone();
+                            state.display_name = resp.data.display_name.clone().unwrap_or_default();
                             state.org_id = resp.data.organization_id.clone();
-                            // 持久化 role 供下次刷新直接恢复
                             save_role(resp.data.role);
                         }
                         Err(_) => {

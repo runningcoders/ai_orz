@@ -104,7 +104,9 @@ pub fn Reception() -> Element {
                     mark_logged_in();
                     let mut state = auth.write();
                     state.logged_in = true;
+                    state.user_id = resp.user_id.clone();
                     state.username = resp.username.clone();
+                    state.display_name = resp.display_name.clone();
                     state.org_id = resp.organization_id.clone();
                     // 修复 R-M1：之前硬编码 role=1 导致管理员登录后看不到管理菜单。
                     // LoginResponse 不含 role，登录后立即调用 /user/me 获取真实 role。
@@ -113,7 +115,10 @@ pub fn Reception() -> Element {
                         Ok(user_info) => {
                             let mut state = auth.write();
                             state.role = user_info.data.role;
+                            state.user_id = user_info.data.user_id.clone();
                             state.username = user_info.data.username.clone();
+                            state.display_name =
+                                user_info.data.display_name.clone().unwrap_or_default();
                             state.org_id = user_info.data.organization_id.clone();
                             save_role(user_info.data.role);
                             drop(state);

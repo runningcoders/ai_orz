@@ -7,6 +7,41 @@ use crate::hooks::use_breakpoint;
 use crate::pages::Route;
 use crate::store::auth::{logout, use_auth_state};
 
+/// 根据任意字符串生成稳定的 avatar 背景色（纯前端 hash，零外部依赖）
+///
+/// 色板来自 Tailwind 色板，全部是明亮饱和色，适合白底文字
+fn avatar_color(seed: &str) -> &'static str {
+    let palette = [
+        "bg-rose-500",
+        "bg-pink-500",
+        "bg-fuchsia-500",
+        "bg-purple-500",
+        "bg-indigo-500",
+        "bg-blue-500",
+        "bg-sky-500",
+        "bg-cyan-500",
+        "bg-teal-500",
+        "bg-emerald-500",
+        "bg-green-500",
+        "bg-lime-500",
+        "bg-yellow-500",
+        "bg-amber-500",
+        "bg-orange-500",
+        "bg-red-500",
+        "bg-violet-500",
+        "bg-blue-600",
+        "bg-emerald-600",
+        "bg-amber-600",
+    ];
+    // 简单 FNV-1a 风格 hash：累计乘 31 加字节
+    let mut hash: u32 = 2166136261;
+    for b in seed.as_bytes() {
+        hash ^= *b as u32;
+        hash = hash.wrapping_mul(16777619);
+    }
+    palette[(hash as usize) % palette.len()]
+}
+
 #[component]
 pub fn Navbar() -> Element {
     let auth = use_auth_state();
@@ -21,18 +56,15 @@ pub fn Navbar() -> Element {
         logout(auth);
     };
 
-    let username = if auth().username.is_empty() {
-        "用户".to_string()
-    } else {
-        auth().username.clone()
-    };
-    let is_admin = auth().is_admin();
-    let avatar_char = username
+    let label = auth().display_label().to_string();
+    let avatar_char = label
         .chars()
         .next()
         .unwrap_or('U')
         .to_string()
         .to_uppercase();
+    let avatar_bg = avatar_color(&label);
+    let is_admin = auth().is_admin();
 
     rsx! {
         nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 shadow-md",
@@ -149,9 +181,9 @@ pub fn Navbar() -> Element {
                             role: "button",
                             class: "btn btn-ghost btn-sm text-neutral-content gap-2",
                             div { class: "avatar",
-                                div { class: "w-8 rounded-full bg-primary text-primary-content flex items-center justify-center text-sm font-bold", "{avatar_char}" }
+                                div { class: "w-8 rounded-full {avatar_bg} text-white flex items-center justify-center text-sm font-bold", "{avatar_char}" }
                             }
-                            span { "{username}" }
+                            span { "{label}" }
                             span { " ▾" }
                         }
                         ul {
@@ -201,9 +233,9 @@ pub fn Navbar() -> Element {
                         li { class: "mb-4",
                             div { class: "flex items-center gap-3 py-2",
                                 div { class: "avatar",
-                                    div { class: "w-12 rounded-full bg-primary text-primary-content flex items-center justify-center text-lg font-bold", "{avatar_char}" }
+                                    div { class: "w-12 rounded-full {avatar_bg} text-white flex items-center justify-center text-lg font-bold", "{avatar_char}" }
                                 }
-                                div { class: "font-semibold text-lg", "{username}" }
+                                div { class: "font-semibold text-lg", "{label}" }
                             }
                         }
 
