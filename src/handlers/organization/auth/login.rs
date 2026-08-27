@@ -23,17 +23,20 @@ pub async fn login(
 ) -> Result<impl IntoResponse> {
     let domain = domain();
 
-    // 验证用户名密码
+    // 验证用户名密码（verify_password 内部确保 user.organization_id == req.organization_id）
     let user = domain
         .user_manage()
-        .verify_password(ctx, &req.organization_id, &req.username, &req.password_hash)
+        .verify_password(ctx, &req.organization_id, &req.username, &req.password)
         .await?;
+
+    // 组织身份以服务端查询结果为准，不信任前端入参
+    let organization_id = user.organization_id.clone();
 
     // 签发 JWT
     let token = jwt::encode_jwt(
         user.id.as_str(),
         user.username.as_str(),
-        &req.organization_id,
+        &organization_id,
         Some(user.role.to_i32()),
     )?;
 
@@ -61,7 +64,7 @@ pub async fn login(
                 user_id: user.id.clone(),
                 username: user.username.clone(),
                 display_name: user.display_name.clone(),
-                organization_id: req.organization_id,
+                organization_id,
                 token,
             })),
         ),

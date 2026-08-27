@@ -87,7 +87,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 .admin_display_name
                 .unwrap_or_else(|| "超级管理员".to_string()),
             params.admin_email.unwrap_or_default(),
-            params.admin_password_hash,
+            crate::pkg::password::hash_password(&params.admin_password)?,
             common::enums::UserRole::SuperAdmin,
             org_id.clone(), // 系统初始化时由组织创建
         );

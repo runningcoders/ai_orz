@@ -46,8 +46,8 @@ pub struct UpdateCurrentUserRequest {
     pub display_name: Option<String>,
     /// 新邮箱地址（None 表示不修改）
     pub email: Option<String>,
-    /// 新密码哈希（None 表示不修改）
-    pub password_hash: Option<String>,
+    /// 新密码（明文传输，None 表示不修改；服务端唯一哈希点）
+    pub password: Option<String>,
     /// 新偏好自述（None 表示不修改；Agent 上下文调用时该字段被忽略，仅限用户本人修改）
     pub preferences: Option<String>,
 }
@@ -147,8 +147,8 @@ pub struct CreateUserRequest {
     pub display_name: Option<String>,
     /// 邮箱（可选）
     pub email: Option<String>,
-    /// 密码哈希（必填）
-    pub password_hash: String,
+    /// 密码（明文传输，服务端唯一哈希点）
+    pub password: String,
     /// 用户角色（必填）
     pub role: i32,
 }
@@ -197,8 +197,8 @@ pub struct UpdateUserRequest {
     pub role: Option<i32>,
     /// 用户状态（None 表示不修改）
     pub status: Option<i32>,
-    /// 密码哈希（None 表示不修改）
-    pub password_hash: Option<String>,
+    /// 新密码（明文传输，None 表示不修改；服务端唯一哈希点）
+    pub password: Option<String>,
 }
 
 /// 更新用户响应

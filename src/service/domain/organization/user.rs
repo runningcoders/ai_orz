@@ -84,15 +84,21 @@ impl super::UserManage for super::OrganizationDomainImpl {
     }
 
     /// 验证用户名密码（用于登录）
+    ///
+    /// 兼容历史明文口令：非 bcrypt 存储值按明文比对，命中后当场重哈希回写（透明升级）
     async fn verify_password(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         org_id: &str,
         username: &str,
-        password_hash: &str,
+        password: &str,
     ) -> Result<UserPo> {
         // 先查找用户
-        let user = match self.user_dal.find_by_username(_ctx, username).await? {
+        let user = match self
+            .user_dal
+            .find_by_username(ctx.clone(), username)
+            .await?
+        {
             Some(u) => u,
             None => {
                 bail_err!(InvalidRequest, "用户名或密码错误");
@@ -104,8 +110,21 @@ impl super::UserManage for super::OrganizationDomainImpl {
             bail_err!(InvalidRequest, "用户名或密码错误");
         }
 
-        // 验证密码哈希
-        if user.password_hash.as_str() != password_hash {
+        // 验证密码（bcrypt 或历史明文）
+        let stored = user.password_hash.as_str();
+        let matched = if crate::pkg::password::is_bcrypt_hash(stored) {
+            crate::pkg::password::verify_password(password, stored)?
+        } else if stored == password {
+            // 历史明文命中：透明升级为 bcrypt
+            let upgraded = crate::pkg::password::hash_password(password)?;
+            let mut updated = user.clone();
+            updated.password_hash = upgraded;
+            self.user_dal.update(ctx, &updated).await?;
+            true
+        } else {
+            false
+        };
+        if !matched {
             bail_err!(InvalidRequest, "用户名或密码错误");
         }
 
@@ -136,9 +155,10 @@ impl super::UserManage for super::OrganizationDomainImpl {
         if username.is_empty() {
             bail_err!(InvalidRequest, "用户名不能为空");
         }
-        if req.password_hash.len() < 6 {
+        if req.password.len() < 6 {
             bail_err!(InvalidRequest, "密码至少 6 位");
         }
+        let hashed = crate::pkg::password::hash_password(&req.password)?;
 
         // 2. 验证邀请码并定位组织（归一化逻辑复用组织管理实现）
         let org = self
@@ -163,7 +183,7 @@ impl super::UserManage for super::OrganizationDomainImpl {
             username,
             display_name,
             String::new(), // 注册接口暂不收集 email
-            req.password_hash,
+            hashed,
             common::enums::UserRole::Member,
             user_id,
         );

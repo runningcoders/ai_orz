@@ -60,7 +60,7 @@ async fn test_login_returns_jwt_after_initialization(pool: SqlitePool) {
         &app,
         &bs.organization_id,
         &bs.username,
-        &bs.password_hash,
+        &bs.password,
     )
     .await;
 
@@ -97,7 +97,7 @@ async fn test_initialize_system_without_chat_model(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
-    let (result, username, password_hash) =
+    let (result, username, password) =
         crate::common::factories::bootstrap_system_minimal(&app, None).await;
 
     // 轮询返回 result 即进度已完成（failed 会在工厂内 panic），此处断言核心字段
@@ -148,7 +148,7 @@ async fn test_initialize_system_without_chat_model(pool: SqlitePool) {
         .expect("organization_id should exist")
         .to_string();
     let jwt =
-        crate::common::factories::login_and_get_jwt(&app, &org_id, &username, &password_hash).await;
+        crate::common::factories::login_and_get_jwt(&app, &org_id, &username, &password).await;
     assert!(
         !jwt.is_empty(),
         "minimal bootstrap admin should be able to login"

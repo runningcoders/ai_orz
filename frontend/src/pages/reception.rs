@@ -108,7 +108,7 @@ pub fn Reception() -> Element {
             let req = LoginRequest {
                 organization_id: selected_org_id(),
                 username: login_username(),
-                password_hash: login_password(),
+                password: login_password(),
             };
 
             match login(req).await {
@@ -213,7 +213,7 @@ pub fn Reception() -> Element {
             let req = RegisterByInviteRequest {
                 invite_code: code,
                 username: reg_username(),
-                password_hash: reg_password(),
+                password: reg_password(),
                 display_name: if reg_display_name().is_empty() {
                     None
                 } else {
@@ -297,7 +297,7 @@ pub fn Reception() -> Element {
                     Some(org_description())
                 },
                 admin_username: init_username(),
-                admin_password_hash: init_password(),
+                admin_password: init_password(),
                 admin_display_name: if display_name().is_empty() {
                     None
                 } else {
@@ -495,20 +495,50 @@ pub fn Reception() -> Element {
                                 // === 登录 Tab ===
                                 div { class: "reception-form-desc", "选择组织并登录您的账户" }
 
-                                // 组织列表
-                                div { class: "reception-org-list",
-                                    for org in organizations() {
-                                        {
-                                            let is_selected = selected_org_id() == org.organization_id;
-                                            let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
-                                            rsx! {
-                                                div {
-                                                    key: "{org.organization_id}",
-                                                    class: "{class}",
-                                                    onclick: move |_| selected_org_id.set(org.organization_id.clone()),
-                                                    div { class: "reception-org-name", "{org.name}" }
-                                                    if let Some(desc) = &org.description {
-                                                        p { class: "reception-org-desc", "{desc}" }
+                                // 组织列表（按 本机 / 其他设备 分区；身份在各组织独立）
+                                div { class: "reception-org-section",
+                                    div { class: "reception-org-section-title", "本机组织" }
+                                    div { class: "reception-org-list",
+                                        for org in organizations().into_iter().filter(|o| o.scope == 0) {
+                                            {
+                                                let is_selected = selected_org_id() == org.organization_id;
+                                                let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
+                                                rsx! {
+                                                    div {
+                                                        key: "{org.organization_id}",
+                                                        class: "{class}",
+                                                        onclick: move |_| selected_org_id.set(org.organization_id.clone()),
+                                                        span { class: "reception-org-badge local", "本机" }
+                                                        div { class: "reception-org-name", "{org.name}" }
+                                                        if let Some(desc) = &org.description {
+                                                            p { class: "reception-org-desc", "{desc}" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if organizations().iter().any(|o| o.scope == 1) {
+                                    div { class: "reception-org-section",
+                                        div { class: "reception-org-section-title", "其他设备" }
+                                        div { class: "reception-org-list",
+                                            for org in organizations().into_iter().filter(|o| o.scope == 1) {
+                                                {
+                                                    let is_selected = selected_org_id() == org.organization_id;
+                                                    let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
+                                                    rsx! {
+                                                        div {
+                                                            key: "{org.organization_id}",
+                                                            class: "{class}",
+                                                            onclick: move |_| selected_org_id.set(org.organization_id.clone()),
+                                                            span { class: "reception-org-badge remote", "远程" }
+                                                            div { class: "reception-org-name", "{org.name}" }
+                                                            if let Some(desc) = &org.description {
+                                                                p { class: "reception-org-desc", "{desc}" }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }

@@ -39,7 +39,8 @@ pub async fn create_user(
         params.username.clone(),
         params.display_name.clone().unwrap_or_default(),
         params.email.clone().unwrap_or_default(),
-        params.password_hash.clone(),
+        // 服务端唯一哈希点：入参为明文密码
+        crate::pkg::password::hash_password(&params.password)?,
         role,
         ctx.user_id.clone().unwrap_or_default(),
     );

@@ -537,6 +537,11 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
     let user_id = bs.user_id.clone();
 
+    // 投递目标改为全新注册成员：其名下渠道从 0 开始，total 计数不受共享库中
+    // sibling 测试向复用管理员累积渠道的影响（确定性隔离）。
+    let (_member_jwt, member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
+
     // --- Step 1: start mock webhook ---
     // HTTP/1.1 200 OK + minimal headers so reqwest client doesn't error
     let mock_response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
@@ -545,7 +550,7 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
     // --- Step 2: create Webhook message channel via HTTP API ---
     let channel_name = format!("Webhook-{}", uuid::Uuid::now_v7());
     let create_req = json!({
-        "user_id": user_id,
+        "user_id": member_id,
         "channel_type": "Webhook",
         "channel_name": channel_name,
         "webhook_url": format!("{}/hook", base_url),
@@ -600,13 +605,13 @@ async fn test_webhook_channel_delivers_message_to_mock_server(pool: SqlitePool) 
             domain_ctx.clone(),
             DeliverMessageCommand {
                 message: &msg,
-                user_id: &user_id,
+                user_id: &member_id,
             },
         )
         .await
         .expect("deliver_message ok");
 
-    // total == 1 (the Webhook channel we created)
+    // total == 1：全新成员名下仅这一个刚创建的 Webhook 渠道
     assert_eq!(
         delivery.total, 1,
         "should have 1 configured channel, got total={}",
@@ -671,11 +676,16 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(pool: Sqli
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
     let user_id = bs.user_id.clone();
 
+    // 投递目标改为全新注册成员：其名下渠道确定为 0，不受共享库中 sibling
+    // 测试向复用管理员累积渠道的影响。
+    let (_member_jwt, member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
+
     // Note: the GET /message-channels list endpoint uses a body-based params
     // struct without explicit query param annotation, so the HTTP handler
     // requires a POST JSON body. We skip the HTTP sanity check here and rely
     // on domain deliver_message to return total==0 when no channels exist.
-    // (A freshly bootstrapped user has zero message channels by default.)
+    // (A freshly registered member has zero message channels by construction.)
 
     let agent_id = crate::common::factories::create_test_agent(
         &app,
@@ -698,7 +708,7 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(pool: Sqli
             domain_ctx.clone(),
             SendToUserCommand {
                 from_agent_id: &agent_id,
-                to_user_id: &user_id,
+                to_user_id: &member_id,
                 content: "edge case: no channels",
                 project_id: None,
                 task_id: None,
@@ -715,7 +725,7 @@ async fn test_deliver_message_no_channels_and_no_sse_still_returns_ok(pool: Sqli
             domain_ctx.clone(),
             DeliverMessageCommand {
                 message: &msg,
-                user_id: &user_id,
+                user_id: &member_id,
             },
         )
         .await;
@@ -744,6 +754,11 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool:
     let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
     let user_id = bs.user_id.clone();
 
+    // 投递目标改为全新注册成员：total==1 断言从“调度运气”变为确定性成立，
+    // 不受共享库中 sibling 测试向复用管理员累积渠道的影响。
+    let (_member_jwt, member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
+
     // Port 0 is never listening; using localhost:9 (discard port which is
     // typically not open) is not reliable cross-OS. Instead pick a free port
     // that we LISTEN on but immediately drop the listener, ensuring the port
@@ -754,7 +769,7 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool:
         "http://invalid-tld-surely-nonexistent.example.local.invalid:1/nope".to_string();
 
     let create_req = json!({
-        "user_id": user_id,
+        "user_id": &member_id,
         "channel_type": "Webhook",
         "channel_name": format!("BadWebhook-{}", uuid::Uuid::now_v7()),
         "webhook_url": webhook_url,
@@ -786,7 +801,7 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool:
             domain_ctx.clone(),
             SendToUserCommand {
                 from_agent_id: &agent_id,
-                to_user_id: &user_id,
+                to_user_id: &member_id,
                 content: "this will fail webhook but not error out",
                 project_id: None,
                 task_id: None,
@@ -802,7 +817,7 @@ async fn test_webhook_channel_invalid_url_reports_failed_without_panicking(pool:
             domain_ctx,
             DeliverMessageCommand {
                 message: &msg,
-                user_id: &user_id,
+                user_id: &member_id,
             },
         )
         .await;

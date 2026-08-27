@@ -93,7 +93,7 @@ const init = await fetch(`${BASE}/api/v1/organization/initialize`, {
   body: JSON.stringify({
     organization_name: 'E2E Debug Org',
     admin_username: 'admin',
-    admin_password_hash: 'hash-debug',
+    admin_password: 'hash-debug',
     chat_model: {
       name: 'TestChat',
       provider_type: 0,
@@ -135,7 +135,7 @@ if (!orgId) {
 const login = await fetch(`${BASE}/api/v1/organization/auth/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ organization_id: orgId, username: 'admin', password_hash: 'hash-debug' }),
+  body: JSON.stringify({ organization_id: orgId, username: 'admin', password: 'hash-debug' }),
 });
 const setCookie = login.headers.get('set-cookie');
 log(`login API -> ${login.status} cookie=${setCookie ? setCookie.split(';')[0].split('=')[0] : 'NO'}`);

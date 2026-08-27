@@ -98,7 +98,12 @@ fn doubao_requirements() -> Vec<::common::models::CredentialRequirement> {
 async fn test_generic_token_multi_platform_crud_and_resolution(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭据持有者改为全新注册成员：其名下凭据从零开始，不受共享库中
+    // sibling 用例向复用管理员写入凭据/切默认状态的影响。
+    let (jwt, user_id, _member_org) = crate::common::factories::register_fresh_member(&app).await;
 
     let tvly_key = "tvly-multi-platform-test-key";
     let doubao_key = "doubao-multi-platform-test-key";
@@ -110,21 +115,18 @@ async fn test_generic_token_multi_platform_crud_and_resolution(pool: SqlitePool)
     set_default(&app, &jwt, "tavily", &tvly_cred_id).await;
     set_default(&app, &jwt, "doubao_search", &doubao_cred_id).await;
 
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    let ctx = RequestContext::builder().user_id(user_id.clone()).build();
 
     // T1: tavily 需求 → 解析出 tavily key
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("tavily resolution should succeed");
     assert_eq!(resolved, tvly_key);
 
     // T2: doubao_search 需求 → 解析出 doubao key
-    let resolved =
-        resolve_platform_token(&ctx, &bs.user_id, "doubao_search", &doubao_requirements())
-            .await
-            .expect("doubao resolution should succeed");
+    let resolved = resolve_platform_token(&ctx, &user_id, "doubao_search", &doubao_requirements())
+        .await
+        .expect("doubao resolution should succeed");
     assert_eq!(resolved, doubao_key);
 
     // T3: 状态快照验证各自独立
@@ -157,7 +159,12 @@ async fn test_generic_token_multi_platform_crud_and_resolution(pool: SqlitePool)
 async fn test_cross_platform_isolation(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭据持有者改为全新注册成员：隔离 sibling 用例对复用管理员名下
+    // tavily/doubao_search 凭据的相互覆盖。
+    let (jwt, user_id, _member_org) = crate::common::factories::register_fresh_member(&app).await;
 
     let tvly_key = "tvly-isolation-test-key";
 
@@ -165,19 +172,17 @@ async fn test_cross_platform_isolation(pool: SqlitePool) {
     let _tvly_cred_id =
         create_generic_token(&app, &jwt, "Tavily key only", "tavily", tvly_key).await;
 
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    let ctx = RequestContext::builder().user_id(user_id.clone()).build();
 
     // T1: tavily 需求 → 能解析
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("tavily should resolve");
     assert_eq!(resolved, tvly_key);
 
     // T2: doubao_search 需求 → 不能解析（跨平台隔离）
     let resolved =
-        resolve_platform_token(&ctx, &bs.user_id, "doubao_search", &doubao_requirements()).await;
+        resolve_platform_token(&ctx, &user_id, "doubao_search", &doubao_requirements()).await;
     assert!(
         resolved.is_none(),
         "doubao_search requirement should NOT match tavily-only credential"
@@ -189,14 +194,13 @@ async fn test_cross_platform_isolation(pool: SqlitePool) {
         create_generic_token(&app, &jwt, "Doubao key only", "doubao_search", doubao_key).await;
 
     // T3: doubao 需求 → 能解析
-    let resolved =
-        resolve_platform_token(&ctx, &bs.user_id, "doubao_search", &doubao_requirements())
-            .await
-            .expect("doubao should resolve");
+    let resolved = resolve_platform_token(&ctx, &user_id, "doubao_search", &doubao_requirements())
+        .await
+        .expect("doubao should resolve");
     assert_eq!(resolved, doubao_key);
 
     // T4: tavily 需求 → 仍然解析到自己的（不会被 doubao 污染）
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("tavily should still resolve");
     assert_eq!(resolved, tvly_key);
@@ -209,20 +213,24 @@ async fn test_cross_platform_isolation(pool: SqlitePool) {
 async fn test_credential_missing_returns_none(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, _jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
 
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    // 解析主体改为全新注册成员：复用管理员的共享身份可能已被 sibling 用例
+    // 写入凭据，「无凭据」断言必须落在真正零数据的身份上才确定成立。
+    let (_member_jwt, member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
-    // 新用户无凭据 → 两种平台都解析不到
+    let ctx = RequestContext::builder().user_id(member_id.clone()).build();
+
+    // 新成员无凭据 → 两种平台都解析不到
     assert!(
-        resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+        resolve_platform_token(&ctx, &member_id, "tavily", &tavily_requirements())
             .await
             .is_none()
     );
     assert!(
-        resolve_platform_token(&ctx, &bs.user_id, "doubao_search", &doubao_requirements(),)
+        resolve_platform_token(&ctx, &member_id, "doubao_search", &doubao_requirements(),)
             .await
             .is_none()
     );
@@ -235,7 +243,12 @@ async fn test_credential_missing_returns_none(pool: SqlitePool) {
 async fn test_default_credential_switch_follows_resolution(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭据持有者改为全新注册成员：默认切换语义（含「未设默认回退第一条」）
+    // 必须基于本用例自己写入的凭据集合，不受 sibling 用例残留状态影响。
+    let (jwt, user_id, _member_org) = crate::common::factories::register_fresh_member(&app).await;
 
     let key1 = "tvly-switch-key-1111";
     let key2 = "tvly-switch-key-2222";
@@ -243,19 +256,17 @@ async fn test_default_credential_switch_follows_resolution(pool: SqlitePool) {
     let _cred1_id = create_generic_token(&app, &jwt, "一号", "tavily", key1).await;
     let cred2_id = create_generic_token(&app, &jwt, "二号", "tavily", key2).await;
 
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    let ctx = RequestContext::builder().user_id(user_id.clone()).build();
 
     // 未设默认 → 回退第一条
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("should resolve key1");
     assert_eq!(resolved, key1);
 
     // 设默认 → 解析跟随切换
     set_default(&app, &jwt, "tavily", &cred2_id).await;
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("should resolve key2");
     assert_eq!(resolved, key2);
@@ -268,7 +279,7 @@ async fn test_default_credential_switch_follows_resolution(pool: SqlitePool) {
         )
         .await;
     common::assert_api_ok(status, &body);
-    let resolved = resolve_platform_token(&ctx, &bs.user_id, "tavily", &tavily_requirements())
+    let resolved = resolve_platform_token(&ctx, &user_id, "tavily", &tavily_requirements())
         .await
         .expect("should resolve key1 after deletion");
     assert_eq!(resolved, key1);
@@ -281,19 +292,22 @@ async fn test_default_credential_switch_follows_resolution(pool: SqlitePool) {
 async fn test_resolved_requirement_field_integrity(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭据持有者改为全新注册成员：确保 find_default_credential 精确命中
+    // 本用例刚写入的凭据，避免 sibling 用例向复用管理员写入的凭据干扰。
+    let (jwt, user_id, _member_org) = crate::common::factories::register_fresh_member(&app).await;
 
     let api_token = "tvly-field-integrity-key";
     let _cred_id = create_generic_token(&app, &jwt, "Field integrity", "tavily", api_token).await;
 
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    let ctx = RequestContext::builder().user_id(user_id.clone()).build();
 
     let credential = ai_orz::service::dal::user::dal()
         .find_default_credential(
             ctx.clone(),
-            &bs.user_id,
+            &user_id,
             CredentialKind::GenericToken,
             Some("tavily"),
         )

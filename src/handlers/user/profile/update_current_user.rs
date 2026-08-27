@@ -45,8 +45,8 @@ pub async fn update_current_user(
     if let Some(new_email) = params.email {
         user.email = new_email;
     }
-    if let Some(new_password_hash) = params.password_hash {
-        user.password_hash = new_password_hash;
+    if let Some(new_password) = params.password {
+        user.password_hash = crate::pkg::password::hash_password(&new_password)?;
     }
     // 偏好自述：仅限真人 HTTP 会话修改。本 handler 同时注册为 Agent 工具，
     // Agent 上下文（ctx.agent_id 有值）调用时忽略该字段，维持「Agent 不写用户表」边界
@@ -140,7 +140,7 @@ mod tests {
             UpdateCurrentUserRequest {
                 display_name: None,
                 email: None,
-                password_hash: None,
+                password: None,
                 preferences: Some("- 回复请用中文\n- 汇报要简洁".to_string()),
             },
         )
@@ -172,7 +172,7 @@ mod tests {
             UpdateCurrentUserRequest {
                 display_name: None,
                 email: None,
-                password_hash: None,
+                password: None,
                 preferences: Some("Agent 试图写入的偏好".to_string()),
             },
         )

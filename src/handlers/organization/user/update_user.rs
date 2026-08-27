@@ -48,8 +48,8 @@ pub async fn update_user(
         // 从 i32 转换为 UserStatus 枚举
         user.status = UserStatus::from_i32(status);
     }
-    if let Some(password_hash) = params.password_hash {
-        user.password_hash = password_hash;
+    if let Some(password) = params.password {
+        user.password_hash = crate::pkg::password::hash_password(&password)?;
     }
     user.updated_at = current_timestamp();
 

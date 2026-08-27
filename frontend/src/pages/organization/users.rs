@@ -73,7 +73,7 @@ pub fn OrganizationUsers() -> Element {
             creating.set(true);
             let req = CreateOrganizationUserRequest {
                 username: new_username(),
-                password_hash: new_password(),
+                password: new_password(),
                 display_name: if new_display_name().is_empty() {
                     None
                 } else {
@@ -248,14 +248,14 @@ pub fn OrganizationUsers() -> Element {
                         let email = if edit_email().trim().is_empty() { None } else { Some(edit_email()) };
                         let role: i32 = edit_role().trim().parse().unwrap_or(UserRole::Member as i32);
                         let status: i32 = edit_status().trim().parse().unwrap_or(1);
-                        let password_hash = if edit_password().is_empty() { None } else { Some(edit_password()) };
+                        let password = if edit_password().is_empty() { None } else { Some(edit_password()) };
                         let req = UpdateUserRequest {
                             user_id: edit_user_id(),
                             display_name,
                             email,
                             role: Some(role),
                             status: Some(status),
-                            password_hash,
+                            password,
                         };
                         saving_user.set(true);
                         spawn(async move {

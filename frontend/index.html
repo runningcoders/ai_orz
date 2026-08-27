@@ -238,6 +238,25 @@
       }
       .reception-org-name { font-weight: 600; font-size: 0.95rem; }
       .reception-org-desc { font-size: 0.85rem; opacity: 0.7; margin-top: 2px; }
+      .reception-org-section + .reception-org-section { margin-top: 1rem; }
+      .reception-org-section-title {
+        font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em;
+        opacity: 0.6; text-transform: uppercase; margin-bottom: 0.5rem;
+      }
+      .reception-org-badge {
+        display: inline-block; font-size: 0.7rem; font-weight: 700;
+        padding: 0.1rem 0.45rem; border-radius: 9999px; margin-right: 0.5rem;
+        vertical-align: middle;
+      }
+      .reception-org-badge.local {
+        color: var(--fallback-pc, oklch(0.98 0 0));
+        background: var(--fallback-p, oklch(0.7 0.2 50));
+      }
+      .reception-org-badge.remote {
+        color: var(--fallback-bc, oklch(0.3 0.01 85));
+        background: var(--fallback-b3, oklch(0.9 0.01 85));
+        border: 1px solid var(--fallback-bc, oklch(0.8 0.01 85));
+      }
 
       /* ===== 初始化卡片（模型配置） ===== */
       .init-model-card {

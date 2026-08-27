@@ -503,15 +503,16 @@ pub async fn apply_snapshot_to_db_with_progress(
             continue;
         }
 
-        // 解析密码（INHERIT_CURRENT 时用 existing 的 password_hash）
+        // 解析密码（INHERIT_CURRENT 时透传 existing 的哈希；其余来源为明文，统一归一化为 bcrypt）
         let current_hash = existing.as_ref().map(|u| u.password_hash.as_str());
-        let password_hash = crate::service::domain::system::seed::diff::resolve_password(
+        let password_ref_resolved = crate::service::domain::system::seed::diff::resolve_password(
             &user_def.password_ref,
             &user_def.id,
             sensitive_values,
             current_hash,
         )
         .map_err(Error::bad_request)?;
+        let password_hash = crate::pkg::password::ensure_hashed(&password_ref_resolved)?;
 
         let user_po = crate::models::user::UserPo {
             id: user_def.id.clone(),

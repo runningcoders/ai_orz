@@ -22,7 +22,8 @@ async fn test_github_integration_status_empty(pool: SqlitePool) {
 
     // 共享 DB 下复用的 SuperAdmin 可能残留其他用例的凭证，
     // 用邀请码注册一个真正全新的成员作为空状态主体
-    let member_jwt = crate::common::factories::register_fresh_member(&app).await;
+    let (member_jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let (status, body) = app
         .get_with_jwt("/api/v1/finance/identity/github/status", &member_jwt)

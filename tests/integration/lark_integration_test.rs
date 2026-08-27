@@ -116,10 +116,15 @@ async fn test_lark_integration_endpoints_guide_errors(pool: SqlitePool) {
 async fn test_lark_integration_status_empty(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    let (_bs, _admin_jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 共享 DB 下复用的 SuperAdmin 可能残留其他用例的凭证，
+    // 用邀请码注册一个真正全新的成员作为空状态主体
+    let (member_jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let (status, body) = app
-        .get_with_jwt("/api/v1/finance/identity/lark/status", &jwt)
+        .get_with_jwt("/api/v1/finance/identity/lark/status", &member_jwt)
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     let credentials = data

@@ -32,6 +32,7 @@ pub async fn list_organizations(
             } else {
                 Some(org.description.clone())
             },
+            scope: org.scope.to_i32(),
         })
         .collect();
 

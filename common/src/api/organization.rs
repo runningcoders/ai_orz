@@ -11,8 +11,8 @@ pub struct InitializeSystemRequest {
     pub organization_name: String,
     /// 超级管理员用户名
     pub admin_username: String,
-    /// 超级管理员密码（前端已哈希）
-    pub admin_password_hash: String,
+    /// 超级管理员密码（明文传输，服务端唯一哈希点）
+    pub admin_password: String,
     /// 组织描述（可选）
     pub description: Option<String>,
     /// 超级管理员显示名称（可选）
@@ -124,6 +124,8 @@ pub struct OrganizationListItem {
     pub name: String,
     /// 组织描述（可选）
     pub description: Option<String>,
+    /// 组织范围（0=Local 本机组织，1=Remote 其他设备组织）
+    pub scope: i32,
 }
 
 /// 列出所有组织响应（登录页选择用）

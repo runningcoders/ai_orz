@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct LoginRequest {
     /// 用户名
     pub username: String,
-    /// 密码哈希（前端已经 bcrypt 哈希）
-    pub password_hash: String,
+    /// 密码（明文传输，服务端唯一哈希点）
+    pub password: String,
     /// 组织 ID
     pub organization_id: String,
 }
@@ -46,8 +46,8 @@ pub struct RegisterByInviteRequest {
     pub invite_code: String,
     /// 用户名（全局唯一）
     pub username: String,
-    /// 密码哈希（前端 bcrypt 哈希）
-    pub password_hash: String,
+    /// 密码（明文传输，服务端唯一哈希点）
+    pub password: String,
     /// 显示名称（可选）
     pub display_name: Option<String>,
 }

@@ -11,6 +11,7 @@ pub mod jwt;
 pub mod lark_integration;
 pub mod logging;
 pub mod monitoring;
+pub mod password;
 pub mod paths;
 pub mod policy;
 pub mod process;

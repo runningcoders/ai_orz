@@ -68,6 +68,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 
+# 用户密码哈希（bcrypt，服务端唯一哈希点）
+bcrypt = "0.17"
+
 # 向量搜索相关
 # 禁用 default-features 中的 image-models（避免拉入 image → exr → pulp 0.22.3 的 x86 const eval bug）
 fastembed = { version = "5.13", default-features = false, features = ["ort-download-binaries-native-tls", "hf-hub-native-tls"] }  # 纯本地向量化（纯 Rust candle 后端，零系统依赖）

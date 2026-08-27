@@ -120,7 +120,7 @@ pub fn UserProfile() -> Element {
                                     let req = UpdateCurrentUserRequest {
                                         display_name: Some(display_name_val),
                                         email: Some(email_val),
-                                        password_hash: None,
+                                        password: None,
                                         preferences: Some(preferences_val),
                                     };
                                     match update_current_user(req).await {
