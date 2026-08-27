@@ -30,7 +30,13 @@ const BASE: &str = "/api/v1/finance/identity/generic-token";
 async fn test_tavily_integration_status_empty(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 快照主体改为全新注册成员：其名下凭据从零开始，「空列表」断言不受
+    // sibling 用例向复用管理员写入凭据的影响（确定性隔离）。
+    let (jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let (status, body) = app
         .get_with_jwt(&format!("{BASE}/status?platform={PLATFORM}"), &jwt)
@@ -51,7 +57,13 @@ async fn test_tavily_integration_status_empty(pool: SqlitePool) {
 async fn test_tavily_credential_crud_lifecycle(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭证持有者改为全新注册成员：快照条数 / 默认标记等绝对断言只统计
+    // 本用例写入的凭据，不受 sibling 用例向复用管理员累积数据的影响。
+    let (jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let token_plain = "tvly-test-abc123xyz999";
 
@@ -296,7 +308,12 @@ async fn resolve_tavily_key(ctx: &RequestContext, user_id: &str) -> Option<Strin
 async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭据持有者改为全新注册成员：默认轮换语义（回退第一条 / 删光后 None）
+    // 必须基于本用例自己的凭据集合，不受 sibling 用例残留状态影响。
+    let (jwt, user_id, _member_org) = crate::common::factories::register_fresh_member(&app).await;
 
     // 建两条凭证
     let key1 = "tvly-resolve-key-1111aaaa";
@@ -326,13 +343,11 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
         .expect("credential_id 2")
         .to_string();
 
-    // 从登录用户构造带用户上下文的 RequestContext（解析依赖 ctx.user_id）
-    let ctx = RequestContext::builder()
-        .user_id(bs.user_id.clone())
-        .build();
+    // 从新成员构造带用户上下文的 RequestContext（解析依赖 ctx.user_id）
+    let ctx = RequestContext::builder().user_id(user_id.clone()).build();
 
     // 未设默认 → 回退第一条（cred1/key1）
-    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
+    let resolved = resolve_tavily_key(&ctx, &user_id)
         .await
         .expect("resolved key1");
     assert_eq!(resolved, key1);
@@ -346,7 +361,7 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
         )
         .await;
     crate::common::assert_api_ok(status, &body);
-    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
+    let resolved = resolve_tavily_key(&ctx, &user_id)
         .await
         .expect("resolved key2");
     assert_eq!(resolved, key2);
@@ -356,7 +371,7 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
         .delete_with_jwt(&format!("{BASE}/credentials/{}", cred2), &jwt)
         .await;
     crate::common::assert_api_ok(status, &body);
-    let resolved = resolve_tavily_key(&ctx, &bs.user_id)
+    let resolved = resolve_tavily_key(&ctx, &user_id)
         .await
         .expect("resolved key1 again");
     assert_eq!(resolved, key1);
@@ -367,7 +382,7 @@ async fn test_tavily_credential_resolution_default_rotation(pool: SqlitePool) {
         .await;
     crate::common::assert_api_ok(status, &body);
     assert!(
-        resolve_tavily_key(&ctx, &bs.user_id).await.is_none(),
+        resolve_tavily_key(&ctx, &user_id).await.is_none(),
         "no credential left → resolution miss"
     );
 }

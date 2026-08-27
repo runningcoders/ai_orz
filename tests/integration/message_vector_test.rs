@@ -18,6 +18,11 @@ use crate::common::TestApp;
 use serde_json::json;
 use sqlx::SqlitePool;
 
+/// 真实向量用例串行锁：这些用例围绕「全局唯一启用的 embedding provider」
+/// 维护建索引窗口（建 provider → 发消息 → 搜索/排序 → 删 provider）。
+/// 并发执行时互相拆掉对方赖以检索的 provider 会造成召回落空，故整体串行化。
+static REAL_VECTOR_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 // ===== 真实向量搜索测试辅助（与其他测试文件一致的模式）=====
 
 fn env_or_none(key: &str) -> Option<String> {
@@ -228,6 +233,8 @@ async fn test_real_message_vector_search(pool: SqlitePool) {
         eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping message vector test");
         return;
     };
+    // 串行锁保护建索引窗口（静态声明处的文档注释说明原因）
+    let _guard = REAL_VECTOR_MUTEX.lock().await;
 
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
@@ -301,6 +308,8 @@ async fn test_real_message_vector_maintenance(pool: SqlitePool) {
         eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping message maintenance test");
         return;
     };
+    // 串行锁保护建索引窗口（静态声明处的文档注释说明原因）
+    let _guard = REAL_VECTOR_MUTEX.lock().await;
 
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
@@ -378,6 +387,8 @@ async fn test_real_message_hybrid_ranking(pool: SqlitePool) {
         eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping hybrid ranking test");
         return;
     };
+    // 串行锁保护建索引窗口（静态声明处的文档注释说明原因）
+    let _guard = REAL_VECTOR_MUTEX.lock().await;
 
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
@@ -458,6 +469,8 @@ async fn test_real_message_match_type(pool: SqlitePool) {
         eprintln!("SKIP: TEST_EMBEDDING_API_KEY not set, skipping match_type test");
         return;
     };
+    // 串行锁保护建索引窗口（静态声明处的文档注释说明原因）
+    let _guard = REAL_VECTOR_MUTEX.lock().await;
 
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;

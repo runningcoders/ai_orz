@@ -146,7 +146,13 @@ async fn test_lark_integration_status_empty(pool: SqlitePool) {
 async fn test_credential_channel_reference_lifecycle(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭证与渠道持有者改为全新注册成员：结尾「快照清空」断言只看本用例
+    // 写入的数据，不受 sibling 用例向复用管理员累积数据的影响。
+    let (jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let app_secret = format!("fake-lark-secret-{}", uuid::Uuid::now_v7());
 

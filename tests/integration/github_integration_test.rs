@@ -53,7 +53,13 @@ async fn test_github_integration_status_empty(pool: SqlitePool) {
 async fn test_github_credential_crud_lifecycle(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
-    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+    // 满足 register_fresh_member 前置条件（Local 组织已初始化）
+    let _ = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 凭证持有者改为全新注册成员：快照条数 / 默认标记等绝对断言只统计
+    // 本用例写入的凭据，不受 sibling 用例向复用管理员累积数据的影响。
+    let (jwt, _member_id, _member_org) =
+        crate::common::factories::register_fresh_member(&app).await;
 
     let token_plain = "ghp_test_abc123xyz999";
 
