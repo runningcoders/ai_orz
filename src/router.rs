@@ -160,6 +160,14 @@ fn public_routes(config: Arc<AppConfig>) -> Router {
         // Login/logout - login issues new JWT token
         .route("/organization/auth/login", post(auth::login::login))
         .route("/organization/auth/logout", post(auth::logout::logout))
+        .route(
+            "/organization/auth/register",
+            post(auth::register_by_invite),
+        )
+        .route(
+            "/organization/auth/invite/validate",
+            get(auth::validate_invite_code),
+        )
         // List all organizations - public query (for login page selection, no login required)
         .route(
             "/organization/list",

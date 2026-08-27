@@ -1,8 +1,9 @@
 //! 认证相关 API
 
 use common::api::{
-    CheckInitializedResponse, InitProgressResponse, InitializeSystemRequest, LoginRequest,
-    LoginResponse, TaskIdResponse,
+    CheckInitializedResponse, InitProgressResponse, InitializeSystemRequest,
+    InviteCodeValidateResponse, LoginRequest, LoginResponse, RegisterByInviteRequest,
+    TaskIdResponse,
 };
 
 use super::{ApiError, api_get, api_post, api_post_empty};
@@ -38,4 +39,34 @@ pub async fn logout() -> Result<(), ApiError> {
     // logout 不需要返回数据，但后端返回 ApiResponse<EmptyResponse>
     let req = serde_json::json!({});
     api_post_empty("/api/v1/organization/auth/logout", &req).await
+}
+
+/// 邀请码注册（公开接口，不需要登录）
+pub async fn register_by_invite(req: RegisterByInviteRequest) -> Result<LoginResponse, ApiError> {
+    api_post("/api/v1/organization/auth/register", &req).await
+}
+
+/// RFC 3986 component 编码：unreserved 字符外全部百分号转义
+fn percent_encode_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+/// 校验邀请码有效性（公开接口，不需要登录）
+pub async fn validate_invite_code(
+    invite_code: &str,
+) -> Result<InviteCodeValidateResponse, ApiError> {
+    api_get(&format!(
+        "/api/v1/organization/auth/invite/validate?invite_code={}",
+        percent_encode_component(invite_code.trim())
+    ))
+    .await
 }

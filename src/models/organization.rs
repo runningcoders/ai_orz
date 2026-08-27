@@ -25,6 +25,8 @@ pub struct OrganizationPo {
     pub status: OrganizationStatus,
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
     pub scope: OrganizationScope,
+    /// 邀请码（唯一，NULL 表示未启用邀请注册）
+    pub invite_code: Option<String>,
     /// 创建人
     pub created_by: String,
     /// 修改人
@@ -52,10 +54,26 @@ impl OrganizationPo {
             base_url: base_url.unwrap_or_default(),
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
+            invite_code: None,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// 生成并设置一个新的邀请码（24 字符，去掉易混淆的 0/O/1/I）
+    pub fn regenerate_invite_code(&mut self) -> String {
+        use rand::Rng;
+        const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let mut rng = rand::thread_rng();
+        let code: String = (0..24)
+            .map(|_| {
+                let idx = rng.gen_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+        self.invite_code = Some(code.clone());
+        code
     }
 }

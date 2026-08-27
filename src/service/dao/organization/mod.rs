@@ -18,6 +18,13 @@ pub trait OrganizationDao: Send + Sync {
     async fn insert(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<OrganizationPo>>;
 
+    /// 根据邀请码查组织（公开注册用，公开路由也能调用）
+    async fn find_by_invite_code(
+        &self,
+        ctx: RequestContext,
+        invite_code: &str,
+    ) -> Result<Option<OrganizationPo>>;
+
     /// 通用查询
     async fn query(
         &self,

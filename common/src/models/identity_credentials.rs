@@ -1373,7 +1373,13 @@ mod tests {
             None,
             header("authorization"),
         );
-        assert!(validate_requirements(&[ok.clone()], CredentialRequirementScope::HttpTool).is_ok());
+        assert!(
+            validate_requirements(
+                std::slice::from_ref(&ok),
+                CredentialRequirementScope::HttpTool
+            )
+            .is_ok()
+        );
 
         // 规则 1：Env binding 不适用 HttpTool scope
         let env_binding = req(

@@ -44,6 +44,13 @@ pub trait OrganizationDal: Send + Sync {
     /// 根据 ID 获取组织
     async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>>;
 
+    /// 根据邀请码获取组织（仅返回未删除的有效组织）
+    async fn find_by_invite_code(
+        &self,
+        ctx: RequestContext,
+        invite_code: &str,
+    ) -> Result<Option<OrganizationPo>>;
+
     /// 创建组织
     async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
 
@@ -88,6 +95,16 @@ impl OrganizationDal for OrganizationDalImpl {
 
     async fn get_by_id(&self, ctx: RequestContext, org_id: &str) -> Result<Option<OrganizationPo>> {
         self.organization_dao.find_by_id(ctx, org_id).await
+    }
+
+    async fn find_by_invite_code(
+        &self,
+        ctx: RequestContext,
+        invite_code: &str,
+    ) -> Result<Option<OrganizationPo>> {
+        self.organization_dao
+            .find_by_invite_code(ctx, invite_code)
+            .await
     }
 
     async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {

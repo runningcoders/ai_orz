@@ -23,7 +23,7 @@ fn generate_org_id() -> String {
 }
 
 /// 生成用户 ID（16 位大写字母 + 数字）
-fn generate_user_id() -> String {
+pub(super) fn generate_user_id() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const LEN: usize = 16;
     let mut rng = rand::thread_rng();
@@ -117,6 +117,21 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     /// 调用 DAL 层 list_all 方法
     async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>> {
         self.org_dal.list_all(ctx).await
+    }
+
+    /// 根据邀请码获取组织（公开注册用，仅返回未删除的有效组织）
+    ///
+    /// 归一化规则：去首尾空白 + 统一大写（邀请码字符集本身全大写且不含易混淆的 I/O）
+    async fn find_org_by_invite_code(
+        &self,
+        ctx: RequestContext,
+        invite_code: &str,
+    ) -> Result<Option<OrganizationPo>> {
+        let code = invite_code.trim().to_ascii_uppercase();
+        if code.is_empty() {
+            return Ok(None);
+        }
+        self.org_dal.find_by_invite_code(ctx, &code).await
     }
 
     /// 更新组织信息

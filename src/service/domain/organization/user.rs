@@ -121,4 +121,55 @@ impl super::UserManage for super::OrganizationDomainImpl {
     async fn get_user_by_id(&self, ctx: RequestContext, user_id: &str) -> Result<Option<UserPo>> {
         self.user_dal.find_by_id(ctx, user_id).await
     }
+
+    /// 邀请码注册新成员（公开接口）
+    async fn register_member(
+        &self,
+        ctx: RequestContext,
+        req: common::api::RegisterByInviteRequest,
+    ) -> Result<UserPo> {
+        // 复用组织管理能力：方法定义在 OrganizationManage trait 上
+        use super::OrganizationManage as _;
+
+        // 1. 基础入参校验
+        let username = req.username.trim().to_string();
+        if username.is_empty() {
+            bail_err!(InvalidRequest, "用户名不能为空");
+        }
+        if req.password_hash.len() < 6 {
+            bail_err!(InvalidRequest, "密码至少 6 位");
+        }
+
+        // 2. 验证邀请码并定位组织（归一化逻辑复用组织管理实现）
+        let org = self
+            .find_org_by_invite_code(ctx.clone(), &req.invite_code)
+            .await?;
+        let org = match org {
+            Some(o) => o,
+            None => bail_err!(InvalidRequest, "邀请码无效或已过期"),
+        };
+
+        // 3. 用户名全局唯一预检（数据库 UNIQUE 约束兜底）
+        if self.exists_by_username(ctx.clone(), &username).await? {
+            bail_err!(InvalidRequest, "用户名 '{}' 已存在", username);
+        }
+
+        // 4. 创建 Member 用户（created_by 使用自身 ID，表示自注册）
+        let display_name = req.display_name.unwrap_or_default().trim().to_string();
+        let user_id = super::org::generate_user_id();
+        let user = UserPo::new(
+            user_id.clone(),
+            org.id,
+            username,
+            display_name,
+            String::new(), // 注册接口暂不收集 email
+            req.password_hash,
+            common::enums::UserRole::Member,
+            user_id,
+        );
+
+        self.user_dal.create(ctx, &user).await?;
+
+        Ok(user)
+    }
 }

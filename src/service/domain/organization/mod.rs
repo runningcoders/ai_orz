@@ -108,6 +108,13 @@ pub trait OrganizationManage: Send + Sync {
     /// 获取所有组织列表
     async fn list_all(&self, ctx: RequestContext) -> Result<Vec<OrganizationPo>>;
 
+    /// 根据邀请码获取组织（公开注册用，仅返回未删除的有效组织）
+    async fn find_org_by_invite_code(
+        &self,
+        ctx: RequestContext,
+        invite_code: &str,
+    ) -> Result<Option<OrganizationPo>>;
+
     /// 更新组织信息
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
 
@@ -196,4 +203,17 @@ pub trait UserManage: Send + Sync {
         ctx: RequestContext,
         user_id: &str,
     ) -> Result<Option<crate::models::user::UserPo>>;
+
+    /// 邀请码注册新成员（公开接口）
+    ///
+    /// 业务规则全部收敛在 Domain 层：
+    /// - 邀请码归一化与有效性校验
+    /// - 用户名非空 / 全局唯一预检
+    /// - 密码最小长度校验
+    /// 返回创建成功的用户（含生成的 ID 与固定 Member 角色），供 handler 签发 JWT
+    async fn register_member(
+        &self,
+        ctx: RequestContext,
+        req: common::api::RegisterByInviteRequest,
+    ) -> Result<crate::models::user::UserPo>;
 }

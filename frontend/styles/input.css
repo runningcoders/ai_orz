@@ -403,3 +403,40 @@
 .markdown-compact li {
   margin: 0.15em 0;
 }
+
+/* Reception 登录/注册 Tab */
+.reception-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--tw-color-base-300, hsl(var(--b3)));
+  margin-bottom: 1rem;
+}
+.reception-tab {
+  flex: 1;
+  text-align: center;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  font-weight: 500;
+  color: hsl(var(--bc) / 0.6);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.reception-tab:hover {
+  color: hsl(var(--bc) / 0.9);
+}
+.reception-tab.active {
+  color: hsl(var(--p));
+  border-bottom-color: hsl(var(--p));
+}
+
+/* 邀请码校验反馈 */
+.reception-invite-ok {
+  font-size: 0.8rem;
+  color: hsl(var(--su));
+  margin-top: 0.25rem;
+}
+.reception-invite-bad {
+  font-size: 0.8rem;
+  color: hsl(var(--er));
+  margin-top: 0.25rem;
+}

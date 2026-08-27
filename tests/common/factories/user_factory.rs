@@ -20,6 +20,7 @@ use ai_orz::service::dao::user::UserQuery;
 use ai_orz::service::domain::{finance, organization};
 use common::api::{
     InitializeSystemRequest, LoginRequest, ModelProviderInitConfig, PaginationParams,
+    RegisterByInviteRequest,
 };
 use common::enums::{ModelCapability, OrganizationScope, UserRole};
 
@@ -79,11 +80,11 @@ pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_jso
     }
 }
 
-/// 尝试从 service 层直接复用已存在的 Local 组织 + admin 用户 + chat provider。
+/// 尝试从 service 层直接复用已存在的 Local 组织 + SuperAdmin 用户。
 ///
-/// 返回 `Some` 表示复用成功（Local 组织存在 + SuperAdmin 用户存在）；
+/// 返回 `Some((organization_id, user_id, username, password_hash))`；
 /// 返回 `None` 表示需要走 HTTP initialize 创建新系统。
-async fn try_reuse_existing() -> Option<BootstrappedSystem> {
+async fn try_reuse_existing_local_admin() -> Option<(String, String, String, String)> {
     let ctx = ai_orz::pkg::RequestContext::from_storage(
         "test-bootstrap-reuse",
         ai_orz::pkg::storage::get().clone(),
@@ -123,15 +124,25 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
         .items
         .into_iter()
         .find(|u| u.role == UserRole::SuperAdmin)?;
-    let user_id = admin.id.clone();
-    let username = admin.username.clone();
-    let password_hash = admin.password_hash.clone();
+    Some((org_id, admin.id, admin.username, admin.password_hash))
+}
+
+/// 尝试从 service 层直接复用已存在的 Local 组织 + admin 用户 + chat provider。
+///
+/// 返回 `Some` 表示复用成功（Local 组织存在 + SuperAdmin 用户存在）；
+/// 返回 `None` 表示需要走 HTTP initialize 创建新系统。
+async fn try_reuse_existing() -> Option<BootstrappedSystem> {
+    let (org_id, user_id, username, password_hash) = try_reuse_existing_local_admin().await?;
 
     // 3. 查 chat model provider（Agent capability，由该 admin 创建）
+    let ctx = ai_orz::pkg::RequestContext::from_storage(
+        "test-bootstrap-reuse",
+        ai_orz::pkg::storage::get().clone(),
+    );
     let providers = finance::domain()
         .model_provider_manage()
         .query(
-            ctx.clone(),
+            ctx,
             ModelProviderQuery {
                 capability: Some(ModelCapability::Agent),
                 pagination: PaginationParams {
@@ -252,6 +263,21 @@ pub async fn bootstrap_system_minimal(
     // 串行化：与 bootstrap_system 共享同一把锁，避免并行 init 竞争
     let _guard = BOOTSTRAP_MUTEX.lock().await;
 
+    // 先查后建：所有集成测试共享同一全局 DB，Local 组织已被其他用例创建时，
+    // `/initialize` 必被 handler 的"系统已初始化"拦截。此处复用既有组织/管理员
+    // 并合成最小结果 —— 本调用未创建任何 provider，两个 provider 字段保持 null，
+    // 与"跳过 chat/embedding"的新建语义一致。
+    if let Some((org_id, user_id, username, password_hash)) = try_reuse_existing_local_admin().await
+    {
+        let result = serde_json::json!({
+            "organization_id": org_id,
+            "user_id": user_id,
+            "chat_provider_id": serde_json::Value::Null,
+            "embedding_provider_id": serde_json::Value::Null,
+        });
+        return (result, username, password_hash);
+    }
+
     let username = format!("min-admin-{}", uuid::Uuid::now_v7());
     let password_hash = format!("hash-{}", uuid::Uuid::now_v7());
     let org_name = format!("MinOrg-{}", uuid::Uuid::now_v7());
@@ -299,6 +325,64 @@ pub async fn login_and_get_jwt(
     data.get("token")
         .and_then(|v| v.as_str())
         .expect("missing token in login response")
+        .to_string()
+}
+
+/// 邀请码注册一个全新成员并返回其登录 JWT。
+///
+/// 用途：需要「真正干净身份」的测试 —— 复用模式下的 SuperAdmin 可能已被
+/// 其他用例写入数据（共享同一全局 DB），而新注册成员的用户维度数据必然为空。
+/// 与 BOOTSTRAP_MUTEX 共串行化，避免并发改写组织 invite_code 竞争。
+/// 前置条件：`bootstrap_system` 已执行（Local 组织存在）。
+#[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+pub async fn register_fresh_member(app: &TestApp) -> String {
+    let _guard = BOOTSTRAP_MUTEX.lock().await;
+
+    // 1. 找 Local 组织，缺 invite_code 则生成并持久化
+    let ctx = ai_orz::pkg::RequestContext::from_storage(
+        "test-register-member",
+        ai_orz::pkg::storage::get().clone(),
+    );
+    let local_orgs = organization::domain()
+        .organization_manage()
+        .query(
+            ctx.clone(),
+            OrganizationQuery {
+                scope: Some(OrganizationScope::Local),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("query local org for registration");
+    let mut org = local_orgs
+        .into_iter()
+        .next()
+        .expect("local org must exist after bootstrap");
+    let invite_code = match org.invite_code.clone() {
+        Some(code) if !code.is_empty() => code,
+        _ => {
+            let code = org.regenerate_invite_code();
+            organization::domain()
+                .organization_manage()
+                .update(ctx, &org)
+                .await
+                .expect("persist generated invite_code");
+            code
+        }
+    };
+
+    // 2. 走公开注册接口创建成员并直接返回登录态 JWT
+    let req = RegisterByInviteRequest {
+        invite_code,
+        username: format!("member-{}", uuid::Uuid::now_v7()),
+        password_hash: format!("hash-{}", uuid::Uuid::now_v7()),
+        display_name: Some("Fresh Member".to_string()),
+    };
+    let (status, body) = app.post("/api/v1/organization/auth/register", &req).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    data.get("token")
+        .and_then(|v| v.as_str())
+        .expect("missing token in register response")
         .to_string()
 }
 

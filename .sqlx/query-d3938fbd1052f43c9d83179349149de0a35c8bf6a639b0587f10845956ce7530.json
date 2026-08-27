@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', created_by, modified_by, created_at, updated_at\nFROM organizations WHERE id = ? AND status != 0\n            ",
+  "query": "\nSELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE invite_code = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -34,23 +34,28 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "invite_code",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 9,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 9,
+        "ordinal": 10,
         "type_info": "Integer"
       }
     ],
@@ -64,11 +69,12 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "eddf342dba234ab8875c563ee774dc5f118e17461d430cec01cd5af379edbff1"
+  "hash": "d3938fbd1052f43c9d83179349149de0a35c8bf6a639b0587f10845956ce7530"
 }

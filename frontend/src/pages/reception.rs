@@ -2,7 +2,9 @@
 
 use dioxus::prelude::*;
 
-use crate::api::auth::{check_initialized, initialize_system, login};
+use crate::api::auth::{
+    check_initialized, initialize_system, login, register_by_invite, validate_invite_code,
+};
 use crate::api::organization::{get_current_user_info, list_organizations_public};
 use crate::api::seed::get_task_progress;
 use crate::components::state::Loading;
@@ -10,7 +12,8 @@ use crate::components::task_progress::TaskProgress;
 use crate::store::auth::{AuthState, mark_logged_in, save_role};
 use crate::store::toast::use_toast;
 use common::api::{
-    InitializeSystemRequest, LoginRequest, OrganizationListItem, TaskProgressSnapshot, TaskStatus,
+    InitializeSystemRequest, LoginRequest, OrganizationListItem, RegisterByInviteRequest,
+    TaskProgressSnapshot, TaskStatus,
 };
 
 #[component]
@@ -25,6 +28,15 @@ pub fn Reception() -> Element {
     let mut login_username = use_signal(String::new);
     let mut login_password = use_signal(String::new);
     let mut login_submitting = use_signal(|| false);
+
+    // 注册表单
+    let mut show_register = use_signal(|| false); // false=登录 Tab, true=注册 Tab
+    let mut reg_invite_code = use_signal(String::new);
+    let mut reg_username = use_signal(String::new);
+    let mut reg_password = use_signal(String::new);
+    let mut reg_display_name = use_signal(String::new);
+    let mut reg_submitting = use_signal(|| false);
+    let mut invite_valid = use_signal(|| Option::<(bool, String)>::None); // Some((is_valid, org_name)) 或 None=未校验
 
     // 初始化表单
     let mut org_name = use_signal(String::new);
@@ -137,6 +149,108 @@ pub fn Reception() -> Element {
                 Err(e) => {
                     toast.error(&e);
                     login_submitting.set(false);
+                }
+            }
+        });
+    };
+
+    // 邀请码实时校验（debounce：输入停止 400ms 后触发）
+    let mut validate_debounce = use_signal(|| 0u64);
+    let mut on_invite_code_input = move |_| {
+        let code = reg_invite_code().trim().to_string();
+        invite_valid.set(None);
+        if code.is_empty() {
+            return;
+        }
+        validate_debounce.set(validate_debounce() + 1);
+        let snapshot = validate_debounce();
+        spawn(async move {
+            gloo_timers::future::sleep(std::time::Duration::from_millis(400)).await;
+            if snapshot != validate_debounce() {
+                return;
+            }
+            match validate_invite_code(&code).await {
+                Ok(resp) => {
+                    invite_valid.set(Some((
+                        resp.valid,
+                        resp.organization_name.unwrap_or_default(),
+                    )));
+                }
+                Err(e) => {
+                    // 网络/服务异常不能等同"码无效"：提示错误并复位为未校验，
+                    // 用户继续输入或重新聚焦即可再次触发
+                    toast.error(&e);
+                    invite_valid.set(None);
+                }
+            }
+        });
+    };
+
+    // 注册提交
+    let on_submit_register = move |_| {
+        spawn(async move {
+            let code = reg_invite_code().trim().to_string();
+            if code.is_empty() {
+                toast.error("请输入邀请码");
+                return;
+            }
+            // 前端已明确校验为无效时直接拦截，省一次无效往返；
+            // 未校验/校验中仍放行 —— 后端是权威校验方
+            if matches!(invite_valid(), Some((false, _))) {
+                toast.error("邀请码无效或已过期，请检查后重试");
+                return;
+            }
+            if reg_username().trim().is_empty() || reg_password().is_empty() {
+                toast.error("用户名和密码不能为空");
+                return;
+            }
+            if reg_password().len() < 6 {
+                toast.error("密码至少 6 位");
+                return;
+            }
+            reg_submitting.set(true);
+
+            let req = RegisterByInviteRequest {
+                invite_code: code,
+                username: reg_username(),
+                password_hash: reg_password(),
+                display_name: if reg_display_name().is_empty() {
+                    None
+                } else {
+                    Some(reg_display_name())
+                },
+            };
+
+            match register_by_invite(req).await {
+                Ok(resp) => {
+                    mark_logged_in();
+                    let mut state = auth.write();
+                    state.logged_in = true;
+                    state.user_id = resp.user_id.clone();
+                    state.username = resp.username.clone();
+                    state.display_name = resp.display_name.clone();
+                    state.org_id = resp.organization_id.clone();
+                    drop(state);
+                    // 注册后立即获取完整用户信息
+                    if let Ok(user_info) = get_current_user_info().await {
+                        let mut state = auth.write();
+                        state.role = user_info.data.role;
+                        state.user_id = user_info.data.user_id.clone();
+                        state.username = user_info.data.username.clone();
+                        state.display_name =
+                            user_info.data.display_name.clone().unwrap_or_default();
+                        state.org_id = user_info.data.organization_id.clone();
+                        save_role(user_info.data.role);
+                        drop(state);
+                    }
+                    toast.success("注册成功！欢迎加入");
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().set_href("/");
+                    }
+                }
+                Err(e) => {
+                    toast.error(&e);
+                    reg_submitting.set(false);
                 }
             }
         });
@@ -358,62 +472,146 @@ pub fn Reception() -> Element {
                         Loading {}
                     } else {
                         if initialized() {
-                            // 已初始化：登录表单
+                            // 已初始化：登录 / 注册 Tab
                             div { class: "reception-form-header",
                                 h2 { class: "reception-form-title", "欢迎回来" }
-                                p { class: "reception-form-desc", "选择组织并登录您的账户" }
                             }
 
-                            // 组织列表
-                            div { class: "reception-org-list",
-                                for org in organizations() {
-                                    {
-                                        let is_selected = selected_org_id() == org.organization_id;
-                                        let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
-                                        rsx! {
-                                            div {
-                                                key: "{org.organization_id}",
-                                                class: "{class}",
-                                                onclick: move |_| selected_org_id.set(org.organization_id.clone()),
-                                                div { class: "reception-org-name", "{org.name}" }
-                                                if let Some(desc) = &org.description {
-                                                    p { class: "reception-org-desc", "{desc}" }
+                            // Tab 切换
+                            div { class: "reception-tabs",
+                                div {
+                                    class: if !show_register() { "reception-tab active" } else { "reception-tab" },
+                                    onclick: move |_| show_register.set(false),
+                                    "登录"
+                                }
+                                div {
+                                    class: if show_register() { "reception-tab active" } else { "reception-tab" },
+                                    onclick: move |_| show_register.set(true),
+                                    "注册"
+                                }
+                            }
+
+                            if !show_register() {
+                                // === 登录 Tab ===
+                                div { class: "reception-form-desc", "选择组织并登录您的账户" }
+
+                                // 组织列表
+                                div { class: "reception-org-list",
+                                    for org in organizations() {
+                                        {
+                                            let is_selected = selected_org_id() == org.organization_id;
+                                            let class = if is_selected { "reception-org-item selected" } else { "reception-org-item" };
+                                            rsx! {
+                                                div {
+                                                    key: "{org.organization_id}",
+                                                    class: "{class}",
+                                                    onclick: move |_| selected_org_id.set(org.organization_id.clone()),
+                                                    div { class: "reception-org-name", "{org.name}" }
+                                                    if let Some(desc) = &org.description {
+                                                        p { class: "reception-org-desc", "{desc}" }
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
 
-                            form { onsubmit: move |e| { e.prevent_default(); on_submit_login(e); },
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "用户名" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "text",
-                                        "data-testid": "login-username",
-                                        value: "{login_username}",
-                                        oninput: move |e| login_username.set(e.value()),
-                                        placeholder: "请输入用户名",
+                                form { onsubmit: move |e| { e.prevent_default(); on_submit_login(e); },
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "用户名" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "text",
+                                            "data-testid": "login-username",
+                                            value: "{login_username}",
+                                            oninput: move |e| login_username.set(e.value()),
+                                            placeholder: "请输入用户名",
+                                        }
+                                    }
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "密码" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "password",
+                                            "data-testid": "login-password",
+                                            value: "{login_password}",
+                                            oninput: move |e| login_password.set(e.value()),
+                                            placeholder: "请输入密码",
+                                        }
+                                    }
+                                    button {
+                                        class: "btn btn-primary btn-lg w-full",
+                                        r#type: "submit",
+                                        "data-testid": "login-submit",
+                                        disabled: login_submitting(),
+                                        if login_submitting() { "登录中..." } else { "登录" }
                                     }
                                 }
-                                div { class: "form-control w-full",
-                                    label { class: "form-label", "密码" }
-                                    input {
-                                        class: "input input-bordered w-full",
-                                        r#type: "password",
-                                        "data-testid": "login-password",
-                                        value: "{login_password}",
-                                        oninput: move |e| login_password.set(e.value()),
-                                        placeholder: "请输入密码",
+                            } else {
+                                // === 注册 Tab ===
+                                div { class: "reception-form-desc", "使用邀请码加入一个组织" }
+
+                                form { onsubmit: move |e| { e.prevent_default(); on_submit_register(e); },
+                                    // 邀请码
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "邀请码" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "text",
+                                            "data-testid": "reg-invite-code",
+                                            value: "{reg_invite_code}",
+                                            oninput: move |e| { reg_invite_code.set(e.value()); on_invite_code_input(()); },
+                                            placeholder: "请输入组织邀请码",
+                                        }
+                                        // 邀请码校验反馈
+                                        if let Some((valid, org_name)) = &invite_valid() {
+                                            if *valid {
+                                                div { class: "reception-invite-ok", "✓ 邀请码有效，将加入「{org_name}」" }
+                                            } else {
+                                                div { class: "reception-invite-bad", "✗ 邀请码无效或已过期" }
+                                            }
+                                        }
                                     }
-                                }
-                                button {
-                                    class: "btn btn-primary btn-lg w-full",
-                                    r#type: "submit",
-                                    "data-testid": "login-submit",
-                                    disabled: login_submitting(),
-                                    if login_submitting() { "登录中..." } else { "登录" }
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "用户名" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "text",
+                                            "data-testid": "reg-username",
+                                            value: "{reg_username}",
+                                            oninput: move |e| reg_username.set(e.value()),
+                                            placeholder: "请输入用户名",
+                                        }
+                                    }
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "密码（至少 6 位）" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "password",
+                                            "data-testid": "reg-password",
+                                            value: "{reg_password}",
+                                            oninput: move |e| reg_password.set(e.value()),
+                                            placeholder: "请输入密码",
+                                        }
+                                    }
+                                    div { class: "form-control w-full",
+                                        label { class: "form-label", "显示名（可选）" }
+                                        input {
+                                            class: "input input-bordered w-full",
+                                            r#type: "text",
+                                            "data-testid": "reg-display-name",
+                                            value: "{reg_display_name}",
+                                            oninput: move |e| reg_display_name.set(e.value()),
+                                            placeholder: "不填则使用用户名",
+                                        }
+                                    }
+                                    button {
+                                        class: "btn btn-primary btn-lg w-full",
+                                        r#type: "submit",
+                                        "data-testid": "reg-submit",
+                                        disabled: reg_submitting(),
+                                        if reg_submitting() { "注册中..." } else { "注册" }
+                                    }
                                 }
                             }
                         } else {
