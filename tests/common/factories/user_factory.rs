@@ -2,14 +2,26 @@
 //!
 //! Provides helpers to:
 //! 1. Bootstrap a system (org + admin user + chat model provider) via the real
-//!    `/organization/initialize` endpoint. `embedding_model` is `None` so the
-//!    test environment never configures an embedding provider — all entity
-//!    creates take the `Ok(None)` vector-degradation path (no cortex calls).
+//!    `/organization/initialize` endpoint. **先查后建**：如果 Local 组织已存在，
+//!    直接复用已有数据（从 service 层读取）；否则才走 HTTP 初始化流程。
+//!    `embedding_model` 是 `None` — 测试环境永不配置 embedding provider。
 //! 2. Login as the admin user via the real `/organization/auth/login` endpoint
 //!    and return a JWT token.
+//!
+//! 设计锚点：一台设备只能有一个 Local 组织（scope=0）。集成测试共享同一
+//! SQLite DB，第一个 bootstrap 创建 Local 组织后，后续测试必须复用它，
+//! 不能再调 `/initialize` 创建新的 Local 组织——否则会被 handler 的
+//! "系统已初始化"检查拦截。
 
 use crate::common::app::TestApp;
-use common::api::{InitializeSystemRequest, LoginRequest, ModelProviderInitConfig};
+use ai_orz::service::dao::model_provider::ModelProviderQuery;
+use ai_orz::service::dao::organization::OrganizationQuery;
+use ai_orz::service::dao::user::UserQuery;
+use ai_orz::service::domain::{finance, organization};
+use common::api::{
+    InitializeSystemRequest, LoginRequest, ModelProviderInitConfig, PaginationParams,
+};
+use common::enums::{ModelCapability, OrganizationScope, UserRole};
 
 /// 全局互斥锁：所有集成测试共享同一个全局 DB，`bootstrap_system` 必须串行执行，
 /// 避免并行 init 任务导致 `sync_builtin_tools` 竞争（UNIQUE constraint）和
@@ -67,7 +79,90 @@ pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_jso
     }
 }
 
+/// 尝试从 service 层直接复用已存在的 Local 组织 + admin 用户 + chat provider。
+///
+/// 返回 `Some` 表示复用成功（Local 组织存在 + SuperAdmin 用户存在）；
+/// 返回 `None` 表示需要走 HTTP initialize 创建新系统。
+async fn try_reuse_existing() -> Option<BootstrappedSystem> {
+    let ctx = ai_orz::pkg::RequestContext::from_storage(
+        "test-bootstrap-reuse",
+        ai_orz::pkg::storage::get().clone(),
+    );
+
+    // 1. 查 Local 组织
+    let local_orgs = organization::domain()
+        .organization_manage()
+        .query(
+            ctx.clone(),
+            OrganizationQuery {
+                scope: Some(OrganizationScope::Local),
+                ..Default::default()
+            },
+        )
+        .await
+        .ok()?;
+    let org = local_orgs.into_iter().next()?;
+    let org_id = org.id;
+
+    // 2. 查该组织的 SuperAdmin 用户
+    let users = organization::domain()
+        .user_manage()
+        .query(
+            ctx.clone(),
+            UserQuery {
+                organization_id: Some(org_id.clone()),
+                pagination: PaginationParams {
+                    limit: Some(50),
+                    offset: None,
+                },
+            },
+        )
+        .await
+        .ok()?;
+    let admin = users
+        .items
+        .into_iter()
+        .find(|u| u.role == UserRole::SuperAdmin)?;
+    let user_id = admin.id.clone();
+    let username = admin.username.clone();
+    let password_hash = admin.password_hash.clone();
+
+    // 3. 查 chat model provider（Agent capability，由该 admin 创建）
+    let providers = finance::domain()
+        .model_provider_manage()
+        .query(
+            ctx.clone(),
+            ModelProviderQuery {
+                capability: Some(ModelCapability::Agent),
+                pagination: PaginationParams {
+                    limit: Some(50),
+                    offset: None,
+                },
+                ..Default::default()
+            },
+        )
+        .await
+        .ok()?;
+    let chat_provider = providers
+        .items
+        .into_iter()
+        .find(|p| p.po.created_by == user_id)?;
+    let chat_provider_id = chat_provider.po.id.clone();
+
+    Some(BootstrappedSystem {
+        organization_id: org_id,
+        user_id,
+        username,
+        password_hash,
+        chat_provider_id,
+        embedding_provider_id: None, // bootstrap_system 默认不创建 embedding
+    })
+}
+
 /// Bootstrap the system with one org, one admin, and one chat model provider.
+///
+/// **先查后建**：如果 Local 组织 + admin + chat provider 已存在，直接从 service
+/// 层读取复用；否则走 HTTP `/initialize` 创建。
 ///
 /// **向量降级关键**：`embedding_model: None` —— 不创建 embedding provider，
 /// `get_default_embedding_provider` 直接返回 `Ok(None)`，所有 DAL 的
@@ -75,6 +170,11 @@ pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_jso
 pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
     // 串行化：所有测试共享同一全局 DB，避免并行 init 竞争
     let _guard = BOOTSTRAP_MUTEX.lock().await;
+
+    // 先查：已有 Local 组织 → 直接复用（避免触发 handler 的"系统已初始化"拦截）
+    if let Some(bs) = try_reuse_existing().await {
+        return bs;
+    }
 
     let username = format!("admin-{}", uuid::Uuid::now_v7());
     let password_hash = format!("hash-{}", uuid::Uuid::now_v7());
