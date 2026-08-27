@@ -378,6 +378,7 @@ pub async fn login_and_get_jwt(
 /// 其他用例写入数据（共享同一全局 DB），而新注册成员的用户维度数据必然为空。
 /// 与 BOOTSTRAP_MUTEX 共串行化，避免并发改写组织 invite_code 竞争。
 /// 前置条件：`bootstrap_system` 已执行（Local 组织存在）。
+/// 适用场景与固定调用模板见 `crate::common` 模块注释「集成测试避坑参考」（纪律 A）。
 #[allow(dead_code)] // 公共测试 API，非所有测试 binary 均引用
 pub async fn register_fresh_member(app: &TestApp) -> (String, String, String) {
     let _guard = BOOTSTRAP_MUTEX.lock().await;
@@ -450,6 +451,12 @@ pub async fn register_fresh_member(app: &TestApp) -> (String, String, String) {
 /// ever created — all entity creates take the vector-degradation path with no
 /// cortex calls and no FastEmbed model downloads, keeping tests fast and
 /// CI-stable.
+///
+/// ⚠️ 共享身份警告：返回的 SuperAdmin（`bs`）数据在兄弟测试间持久累积、
+/// 且可被并发写入，仅作"系统已就绪"前置条件或纯 4xx 校验主体；涉及状态
+/// 快照（空态/精确计数/默认解析顺序）的断言请改用 [`register_fresh_member`]
+/// 全新身份或防污染断言形状——判据与模板见 `crate::common` 模块注释
+/// 「集成测试避坑参考」。
 #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
 pub async fn bootstrap_and_login(app: &TestApp) -> (BootstrappedSystem, String) {
     let bs = bootstrap_system(app).await;
