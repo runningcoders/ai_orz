@@ -236,58 +236,25 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 正常完成时保存对话历史，用于触发总结流程写入短期记忆
         let mut final_messages: Option<Vec<ChatMessage>> = None;
 
-        // =============== Phase 1：输入理解阶段（A+ P3 串联两阶段唤醒）===============
-        // 先强制跑一轮 IntentAnalyze，得到结构化理解结果（任何错误都降级为 None，不阻塞主流程）
-        let ia: Option<IntentAnalysis> = match self
-            .analyze_input_intent(ctx.clone(), agent, message, options)
-            .await
-        {
-            Ok(ia) => {
-                log_info!(
-                    &ctx,
-                    "intent_analyzed",
-                    "type={} conf={:.2} clarify={}",
-                    ia.intent_type,
-                    ia.confidence,
-                    !ia.need_clarification.is_empty()
-                );
-                Some(ia)
-            }
-            Err(e) => {
-                log_warn!(&ctx, "intent_analyze_skipped", "err={:?}", e);
-                None
-            }
-        };
-
-        // TODO(P4澄清短路): 直接把 resolutions 作为 Final 话术返回，不进入阶段二思考；
-        // 当前先进入阶段二正常执行，由 Agent 自行决定是否提问澄清。
-        // if ia.is_some() && !ia.as_ref().unwrap().need_clarification.is_empty() {
-        //     let clarify_text = ia.as_ref().unwrap().need_clarification.join("\n");
-        //     return Ok(AwakeningResult {
-        //         agent_id: agent.po.id.clone(),
-        //         trace_ids: vec![trace_id.clone()],
-        //         raw_input: String::new(),
-        //         raw_output: clarify_text,
-        //     });
-        // }
-        // =============== Phase 1 结束（失败降级不阻塞 Phase 2）===============
-
-        // Phase 1 成功时首次迭代跳过记忆注入：
-        // IntentAnalysis 已含 retrieved_context + resolutions，Phase 2 按需 search_memory 补充。
-        // Phase 1 失败降级（ia=None）或上下文压缩后：正常获取 20 条短期记忆。
-        let mut skip_memory_fetch = ia.is_some();
+        // =============== 移除强制两阶段唤醒（Phase 1）===============
+        // 原 Phase 1 IntentAnalyze 有三个硬伤：
+        //   1) 每条消息多花 1~3 轮模型调用，简单问候也付出 2x 首字延迟/token 成本；
+        //   2) skip_memory_fetch = ia.is_some() 导致主循环首轮【历史对话】为空，
+        //      多轮指代消解（这/那/上次/那个）直接失败；
+        //   3) 唯一的潜在收益"澄清短路"只是 P4 TODO，从未启用；
+        //      保留的【输入理解结果】区块还反复写了"仅供参考，可以忽略"。
+        // 移除后，单 think_loop + System 角色的回复指引直接承担全部职责，
+        // 流程与成本模型恢复直观。`analyze_input_intent` 接口仍保留在 trait，
+        // 可在入站消息路由、跨 Agent 协作分发等需要结构化理解的场景独立复用。
+        // =============== Phase 1 移除结束 ===============
 
         loop {
-            // 首次迭代且 Phase 1 成功：跳过记忆获取（IntentAnalysis 已提供上下文）
-            // 后续迭代（压缩后）：重新获取最新记忆
-            let recent_memories: Vec<_> = if skip_memory_fetch {
-                skip_memory_fetch = false;
-                Vec::new()
-            } else {
-                self.memory()
-                    .get_recent_context(ctx.clone(), &agent.po.id, 20)
-                    .await?
-            };
+            // 每轮（含压缩循环后续迭代）都获取最新 20 条短期记忆，
+            // 保证历史对话不被挖空，指代消解始终有上下文。
+            let recent_memories: Vec<_> = self
+                .memory()
+                .get_recent_context(ctx.clone(), &agent.po.id, 20)
+                .await?;
 
             // 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
             let mut builder = self.prompt_builder(agent);
@@ -359,12 +326,11 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             }
             builder.history(&recent_memories);
             builder.current_message(message);
-            // 注入 Phase 1 的理解结果到 builder（供 build() 渲染【输入理解结果】区块）
-            // Phase 1 失败时 ia = None，此处跳过不注入，build() 输出不变
-            if let Some(ref ia) = ia {
-                builder.intent_analysis(ia);
-            }
             prompt = builder.build();
+            // P0-b：用 System + User 双角色分离的初始消息（而非整段塞进一条 User），
+            // 配合 P0-a 的回复规则指引，让模型正确决定何时 Final 何时 ToolCall。
+            // `prompt` 仍保留用于 trace/stat 原始输入记录（raw_input 字段）。
+            let initial_messages = builder.build_initial_messages();
 
             // 调用共享 think loop（传入累计轮次和上限）
             // 注意：每次循环都重新设置 think_runtime，因为 sleep_and_settle 的 BusyGuard
@@ -375,7 +341,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 .run_think_loop(
                     ctx.clone(),
                     brain,
-                    &prompt,
+                    initial_messages,
                     &tool_descriptors,
                     agent,
                     ThinkingScene::Awaken,
@@ -817,6 +783,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         builder.history(&recent_memories);
 
         let prompt = builder.build_sleep_prompt(pending_memories_summary, trace_ids);
+        // P0-b：角色拆分版初始消息；prompt 仍保留用于 trace/stat 记录
+        let initial_messages =
+            builder.build_sleep_initial_messages(pending_memories_summary, trace_ids);
 
         // Step 5: 调用大脑思考（带工具调用循环，与 awaken 对称）
         // sleep 场景传递过滤后的记忆工具，Agent 可通过 function calling 调用记忆工具完成沉淀
@@ -833,7 +802,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .run_think_loop(
                 ctx.clone(),
                 brain,
-                &prompt,
+                initial_messages,
                 &tool_descriptors,
                 agent,
                 ThinkingScene::Settle,
@@ -1081,18 +1050,21 @@ mod tests {
             messages: &[crate::models::cortex_types::ChatMessage],
             _tools: &[crate::models::cortex_types::ToolDescriptor],
         ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
-            // 从 messages 中提取最后一条 user 消息作为 prompt 捕获
-            let prompt = messages
+            // 把所有初始消息的 content 按顺序拼接（等价旧版扁平 build() 输出），
+            // 保证原有断言（soul 是否注入 / skills 是否出现 / user_profile 是否携带）
+            // 在 System/User 角色拆分后仍能通过。
+            use crate::models::cortex_types::ChatMessage;
+            let prompt: String = messages
                 .iter()
-                .rev()
-                .find_map(|m| match m {
-                    crate::models::cortex_types::ChatMessage::User { content } => {
-                        Some(content.as_str())
-                    }
-                    _ => None,
+                .filter_map(|m| match m {
+                    ChatMessage::System { content } => Some(content.as_str()),
+                    ChatMessage::User { content } => Some(content.as_str()),
+                    ChatMessage::Assistant { content, .. } => content.as_deref(),
+                    ChatMessage::Tool { content, .. } => Some(content.as_str()),
                 })
-                .unwrap_or("");
-            *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
+                .collect::<Vec<_>>()
+                .join("\n");
+            *self.captured_prompt.lock().unwrap() = Some(prompt);
             Ok(crate::models::cortex_types::ThinkResult::Final {
                 content: "mock response".to_string(),
                 usage: crate::models::cortex_types::TokenUsage::default(),

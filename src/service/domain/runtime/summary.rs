@@ -150,6 +150,9 @@ impl RuntimeDomainImpl {
         }
         builder.history(&recent_memories);
         let prompt = builder.build_summary_prompt(&work_summary, total_rounds, trace_ids);
+        // P0-b：角色拆分版初始消息；prompt 仍保留用于 trace.input 记录
+        let initial_messages =
+            builder.build_summary_initial_messages(&work_summary, total_rounds, trace_ids);
 
         // 6. 构建 Summary 场景的 ToolDescriptor（只允许消息和任务管理工具）
         let brain = agent
@@ -164,7 +167,7 @@ impl RuntimeDomainImpl {
             .run_think_loop(
                 ctx.clone(),
                 brain,
-                &prompt,
+                initial_messages,
                 &tool_descriptors,
                 agent,
                 ThinkingScene::Summary,

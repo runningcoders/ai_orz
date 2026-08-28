@@ -2,6 +2,7 @@
 
 use crate::models::agent::{Agent, AgentPo};
 use crate::models::brain::Brain;
+use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
@@ -1367,6 +1368,124 @@ impl DefaultPromptBuilder {
         s.push_str("---\n\n");
         s
     }
+
+    // ==================== P0-a：最终回复指引（注入 System 消息，防止工具调用死循环）====================
+
+    /// 生成【回复规则指引】段落——直接拼入 System 消息末尾，
+    /// 明确告诉 Agent 何时用 Final 文本直接回复，何时才用 send_message 工具。
+    ///
+    /// 这是解决"简单消息 → 强制检索 → 空结果 → 重试检索 → 365 轮死循环"的核心修复。
+    fn build_final_response_guidance(&self) -> String {
+        let mut s = String::new();
+        s.push_str(
+            "================================================================================\n",
+        );
+        s.push_str("【回复规则（必须严格遵守）】\n");
+        s.push_str(
+            "================================================================================\n\n",
+        );
+
+        // ---------------- §0：审题 SOP（原两阶段唤醒的 Phase 1 简化版，3 步压缩进 System）----------------
+        // 旧 Phase 1 会独立跑一轮 think_loop 做结构化理解（意图归类/消歧/抽关键词/检索/完备性判断）。
+        // 移除 Phase 1 后，把核心 SOP 压缩成 3 步放在回复规则最前面，模型自然会执行。
+        s.push_str("§0. 先审题再回答（3 步必走，用时 <1% 注意力）：\n");
+        s.push_str("   ① 理解意图 + 消歧：判断用户当前这句话在问什么/想做什么。\n");
+        s.push_str(
+            "      若出现「这、它、那个、上次、之前」这类代词，去【历史对话】/【上下文】区块里找对应的具体对象，\n",
+        );
+        s.push_str("      没找到就问用户澄清，不要猜。\n");
+        s.push_str(
+            "   ② 判断信息是否充足：结合人设、能力清单、上下文/历史，你自己是否能直接给出正确回答？\n",
+        );
+        s.push_str(
+            "      若还缺资料 → 只做 1 次检索（见 §4）；若够了 → 直接跳到第三步输出回复。\n",
+        );
+        s.push_str(
+            "   ③ 直接输出：把最终回复文本按正常说话方式写出，不要包任何 JSON、不要用工具。\n\n",
+        );
+
+        s.push_str("§1. 何时直接回复用户（核心规则！）：\n");
+        s.push_str("   - 当你有足够信息回答当前用户的问题/消息时，**直接输出最终文本回复即可，不要调用任何工具**。\n");
+        s.push_str(
+            "   - 你的最终文本会自动发送给当前对话中的用户，**不需要**调用 send_message 工具。\n\n",
+        );
+
+        s.push_str("§2. send_message 的正确用途（不要滥用！）：\n");
+        s.push_str("   - ✅ 仅用于：向「不在当前对话中的用户/Agent」发送异步通知\n");
+        s.push_str("   - ✅ 仅用于：跨 Agent 协作时的特殊消息通道（当前对话外的人）\n");
+        s.push_str("   - ❌ 严禁：用 send_message 回复当前用户 → 请用最终文本直接回复\n\n");
+
+        s.push_str("§3. 闲聊/简单消息的检索豁免：\n");
+        s.push_str("   - 寒暄/客套/问候/纯确认类消息（如 你好、测试、OK、收到、在吗 等）属于 Chat 闲聊型\n");
+        s.push_str(
+            "   - Chat 型消息 **不需要强制性检索**，可跳过 search_memory / query_memory 等工具\n",
+        );
+        s.push_str("   - 直接给出友好自然的回复即可\n\n");
+
+        s.push_str("§4. 检索工具空结果时的处理（防死循环！）：\n");
+        s.push_str("   - 调用 search_memory / query_memory 返回空结果，意味着系统暂无相关知识\n");
+        s.push_str("   - ❌ 不要反复换参数、换工具重试（同一语义的检索只需 1 次即可）\n");
+        s.push_str(
+            "   - ✅ 空结果后直接基于已有信息答复用户；确实不知道就坦诚说「没有相关记录」\n\n",
+        );
+
+        s.push_str("§5. 禁止无意义工具调用（假忙）：\n");
+        s.push_str("   - 自问：如果没有任何工具，我能不能直接回答？\n");
+        s.push_str("   - 若能 → 直接用 Final 文本回复，不要「为了调用工具而调用工具」\n\n");
+
+        s.push_str(
+            "================================================================================\n\n",
+        );
+        s
+    }
+
+    // ==================== 角色拆分辅助方法（System / User 双消息）====================
+
+    /// Awaken 场景的 System 部分：人设 + 技能方法论 + 回复规则指引
+    fn awaken_system_part(&self) -> String {
+        let mut s = String::new();
+        if let Some(system) = &self.system_prompt {
+            s.push_str(system);
+            s.push_str("\n\n");
+        }
+        s.push_str(&self.build_skills_sections());
+        s.push_str(&self.build_final_response_guidance());
+        s
+    }
+
+    /// Awaken 场景的 User 部分：会话上下文 + 历史 + 当前消息
+    fn awaken_user_part(&self) -> String {
+        let mut s = String::new();
+        s.push_str(&self.build_common_context_sections());
+        if !self.history.is_empty() {
+            s.push_str("【历史对话】\n");
+            for h in &self.history {
+                s.push_str(h);
+                s.push('\n');
+            }
+            s.push('\n');
+        }
+        if !self.tool_failures.is_empty() {
+            s.push_str("【工具失败警告】\n");
+            s.push_str("以下工具近期失败次数较多，请谨慎使用或考虑替代方案：\n");
+            for (tool_name, fail_count) in &self.tool_failures {
+                s.push_str(&format!("- {}：失败 {} 次\n", tool_name, fail_count));
+            }
+            s.push('\n');
+        }
+        if let Some(trace_id) = &self.current_trace_id {
+            s.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        let intent_section = self.render_intent_analysis_section();
+        if !intent_section.is_empty() {
+            s.push_str(&intent_section);
+        }
+        if let Some(msg) = &self.current_message {
+            s.push_str(msg);
+            s.push_str("\n\n请回复：");
+        }
+        s
+    }
 }
 
 /// 实现 PromptBuilder trait
@@ -1664,6 +1783,165 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
     ) {
         self.intent_analysis = Some(analysis.clone());
+    }
+
+    // ==================== 角色分离版初始消息（覆盖 trait 默认实现）====================
+
+    /// Awaken 场景：真正的 System + User 角色拆分
+    /// System = 人设 + 技能方法论 + 【最终回复指引】（P0 核心修复）
+    /// User   = 用户画像/项目/任务 + 历史对话 + 警告 + Trace ID + 意图理解 + 当前消息
+    fn build_initial_messages(&self) -> Vec<ChatMessage> {
+        let system = self.awaken_system_part();
+        let user = self.awaken_user_part();
+        vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+
+    /// 沉淀场景：System（人设+技能+沉淀规范简版指引）+ User（上下文+历史+待沉淀摘要+Trace）
+    fn build_sleep_initial_messages(
+        &self,
+        pending_memories_summary: &str,
+        trace_ids: &[String],
+    ) -> Vec<ChatMessage> {
+        let mut system = String::new();
+        if let Some(s) = &self.system_prompt {
+            system.push_str(s);
+            system.push_str("\n\n");
+        }
+        system.push_str(&self.build_skills_sections());
+        system.push_str("【沉淀场景补充规则】\n");
+        system.push_str("- 你的任务是：调用 save_short_term_memory 把对话摘要写入短期记忆\n");
+        system.push_str(
+            "- 不需要给用户发消息；写完记忆后直接输出「沉淀完成」类 Final 文本结束即可\n",
+        );
+        system.push_str("- 同一语义的写入工具不要重复调用超过 1 次\n\n");
+
+        let mut user = String::new();
+        user.push_str(&self.build_common_context_sections());
+        if !self.history.is_empty() {
+            user.push_str("【历史对话】\n");
+            for h in &self.history {
+                user.push_str(h);
+                user.push('\n');
+            }
+            user.push('\n');
+        }
+        if let Some(trace_id) = &self.current_trace_id {
+            user.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        user.push_str("【待沉淀的短期记忆摘要】\n");
+        user.push_str(pending_memories_summary);
+        user.push('\n');
+        if !trace_ids.is_empty() {
+            user.push_str(
+                "【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入 trace_ids 字段）\n",
+            );
+            for tid in trace_ids {
+                user.push_str(&format!("- {}\n", tid));
+            }
+            user.push('\n');
+        }
+        user.push_str("请开始沉淀工作：");
+
+        vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+
+    /// 总结场景：System（人设+技能+总结规范简版指引）+ User（上下文+摘要+轮次+Trace）
+    fn build_summary_initial_messages(
+        &self,
+        work_summary: &str,
+        total_rounds: usize,
+        trace_ids: &[String],
+    ) -> Vec<ChatMessage> {
+        let mut system = String::new();
+        if let Some(s) = &self.system_prompt {
+            system.push_str(s);
+            system.push_str("\n\n");
+        }
+        system.push_str(&self.build_skills_sections());
+        system.push_str("【总结场景补充规则】\n");
+        system.push_str("- 总结工作后直接输出 Final 文本，不要无意义循环调工具\n");
+        system.push_str("- save_short_term_memory 必须调用 1 次即可，不要多次重复\n");
+        system.push_str("- 如果确实无目标可发送消息，用 Final 文本写出总结内容即可结束\n\n");
+
+        let mut user = String::new();
+        user.push_str(&self.build_common_context_sections());
+        if !self.history.is_empty() {
+            user.push_str("【历史对话】\n");
+            for h in &self.history {
+                user.push_str(h);
+                user.push('\n');
+            }
+            user.push('\n');
+        }
+        if let Some(trace_id) = &self.current_trace_id {
+            user.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        user.push_str(&format!(
+            "【累计思考轮次】本次工作共消耗 {} 轮思考，现在进入总结阶段\n\n",
+            total_rounds
+        ));
+        user.push_str("【本次工作对话摘要】\n");
+        user.push_str(work_summary);
+        user.push('\n');
+        if !trace_ids.is_empty() {
+            user.push_str("【依赖的 Trace ID 列表】（调用 save_short_term_memory 时填入）\n");
+            for tid in trace_ids {
+                user.push_str(&format!("- {}\n", tid));
+            }
+            user.push('\n');
+        }
+        user.push_str("请执行总结流程：");
+
+        vec![ChatMessage::system(system), ChatMessage::user(user)]
+    }
+
+    /// 意图分析场景：System（人设+技能+理解规范简版指引+原始专用指令块核心）
+    /// + User（上下文+历史+Trace+当前消息靶子）
+    fn build_intent_analyze_initial_messages(&self) -> Vec<ChatMessage> {
+        let mut system = String::new();
+        if let Some(s) = &self.system_prompt {
+            system.push_str(s);
+            system.push_str("\n\n");
+        }
+        system.push_str(&self.build_skills_sections());
+        // 追加意图分析专属指令（直接复用 build_intent_analyze_prompt 的指令部分——从
+        // "阶段一：输入理解专用指令"这一段锚点之后的内容，通过完整 build 再切片不优雅，
+        // 直接重新渲染指令块）。
+        system.push_str("### 阶段一：输入理解专用指令（仅限 IntentAnalyze 场景）\n\n");
+        system.push_str("===== 【输入理解阶段】IntentAnalyze 场景约束（非常重要！）=====\n\n");
+        system.push_str("## 你的任务：只做理解，不做执行\n\n");
+        system.push_str("你当前处于正式干活前的「审题阶段」。本阶段你的唯一目标是产出一份结构化的理解结果（JSON），然后就结束本轮思考。\n\n");
+        system.push_str("✅ 必须做：\n");
+        system.push_str("   1. 按「理解 SOP 五步走」的方法理解当前消息\n");
+        system.push_str("   2. 需要检索时调用 search_memory / recommend_seed_nodes / traverse_knowledge_graph（纯闲聊 Chat 型且无历史时可直接豁免，不必为了检索而检索）\n");
+        system.push_str("   3. 最终输出严格的 JSON 对象（含 intent_type / confidence / summary / key_terms / resolutions / need_clarification / suggested_tools 等字段），不要附加无关废话\n\n");
+        system.push_str("❌ 严格禁止：\n");
+        system.push_str("   1. 严禁给任何用户/Agent 发消息（禁止 send_message 类工具）\n");
+        system.push_str("   2. 严禁修改系统状态（禁止 create_task / update_project / update_memory 等写入类工具）\n");
+        system.push_str("   3. 信息不足时设置 need_clarification=true，不要硬猜答案\n");
+        system.push_str("   4. 同一语义的检索只需 1 次即可，不要空结果后反复换参数重试\n\n");
+
+        let mut user = String::new();
+        user.push_str(&self.build_common_context_sections());
+        if !self.history.is_empty() {
+            user.push_str("【历史对话】\n");
+            for h in &self.history {
+                user.push_str(h);
+                user.push('\n');
+            }
+            user.push('\n');
+        }
+        if let Some(trace_id) = &self.current_trace_id {
+            user.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
+        }
+        if let Some(msg) = &self.current_message {
+            user.push_str("【当前消息（作为理解靶子）】\n");
+            user.push_str(msg);
+            user.push('\n');
+        }
+        user.push_str("请开始理解并输出最终 JSON：");
+
+        vec![ChatMessage::system(system), ChatMessage::user(user)]
     }
 }
 

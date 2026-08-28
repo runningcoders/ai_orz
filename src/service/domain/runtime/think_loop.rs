@@ -118,7 +118,7 @@ impl RuntimeDomainImpl {
         &self,
         ctx: RequestContext,
         brain: &crate::models::brain::Brain,
-        prompt: &str,
+        initial_messages: Vec<ChatMessage>,
         tool_descriptors: &[ToolDescriptor],
         agent: &Agent,
         scene: ThinkingScene,
@@ -150,7 +150,7 @@ impl RuntimeDomainImpl {
         });
 
         let think_future = async {
-            let mut messages = vec![ChatMessage::user(prompt.to_string())];
+            let mut messages = initial_messages;
             // 提取模型提供商信息（所有轮次共用）
             let (model_provider_id, model_name) = match brain.model_provider() {
                 Some(po) => (Some(po.id.clone()), Some(po.model_name.clone())),

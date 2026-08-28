@@ -133,6 +133,11 @@ pub struct ToolCallRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum ChatMessage {
+    /// 系统消息（Agent 人设 / 技能方法论 / 核心规则，高优先级）
+    ///
+    /// 正确的 System role 分离能显著提升 function calling 决策质量：
+    /// 模型能明确区分"必须遵守的规则"和"用户输入的内容"。
+    System { content: String },
     /// 用户消息
     User { content: String },
     /// 助手消息（可能包含 tool_calls）
@@ -153,6 +158,13 @@ pub enum ChatMessage {
 }
 
 impl ChatMessage {
+    /// 创建 System 消息（人设 / 规则 / 方法论）
+    pub fn system(content: impl Into<String>) -> Self {
+        ChatMessage::System {
+            content: content.into(),
+        }
+    }
+
     /// 创建 User 消息
     pub fn user(content: impl Into<String>) -> Self {
         ChatMessage::User {
@@ -178,6 +190,9 @@ impl ChatMessage {
     /// `max_content_len` 限制单条消息 content 的最大字符数，超出尾部截断。
     pub fn to_summary_text(&self, max_content_len: usize) -> String {
         match self {
+            ChatMessage::System { content } => {
+                format!("[system] {}", truncate_str(content, max_content_len))
+            }
             ChatMessage::User { content } => {
                 format!("[user] {}", truncate_str(content, max_content_len))
             }

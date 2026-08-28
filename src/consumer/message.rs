@@ -23,8 +23,8 @@ use crate::service::dal::agent::AgentFetchOptions;
 use crate::service::dal::message as message_dal;
 use crate::service::domain::hr::{self as hr_domain, HrDomain};
 use crate::service::domain::message::{
-    self as message_domain, DeliverMessageCommand, MessageDomain, SendToolCallResultCommand,
-    ToolCallExecutionOutcome,
+    self as message_domain, DeliverMessageCommand, MessageDomain, SendToAgentCommand,
+    SendToUserCommand, SendToolCallResultCommand, ToolCallExecutionOutcome,
 };
 use crate::service::domain::project::{self as project_domain, ProjectDomain};
 use crate::service::domain::runtime::{
@@ -388,6 +388,108 @@ impl MessageConsumer {
             agent_id,
             awaken_result.trace_ids
         );
+
+        // =============== 关键：Framework 主动把 Final 文本转为"对等回复" ===============
+        //
+        // 设计动机（参见前一版注释）：awaken 返回的 raw_output 过去被直接丢弃，
+        // Agent 被迫在 think_loop 里额外调用 send_message 工具才能交付回复，
+        // 造成 to_user_id 推导失败 + "必须走工具才算完成任务"的 365 轮死循环。
+        // 本段改为 Framework 层按入口消息的来源角色，路由到对应的落库通道。
+        //
+        // 三路分发规则：
+        //   ┌──────────────┬───────────────────────────────────────────────┐
+        //   │ from_role=   │ 回复行为                                      │
+        //   ├──────────────┼───────────────────────────────────────────────┤
+        //   │ User         │ send_to_user(to = message.from_id)            │
+        //   │              │ → 正常用户↔Agent 对话，99% 主流场景           │
+        //   ├──────────────┼───────────────────────────────────────────────┤
+        //   │ Agent        │ send_to_agent(from=本Agent, to=message.from)  │
+        //   │              │ → 跨 Agent 协作消息的回复链路，避免把 Agent   │
+        //   │              │   ID 硬塞到 to_user_id 里导致投递失败         │
+        //   ├──────────────┼───────────────────────────────────────────────┤
+        //   │ System       │ 跳过 auto-reply（只记 debug 日志）            │
+        //   │              │ → 系统消息通常来自 cron / 取消 / 内部控制，   │
+        //   │              │   没有"对等回复对象"；通知用户/Agent 由 Agent │
+        //   │              │   在 think_loop 内部按业务语义通过 send_message│
+        //   │              │   工具主动选择目标对象                        │
+        //   └──────────────┴───────────────────────────────────────────────┘
+        //
+        // 边界（同上一版）：
+        //   - raw_output 为空（Cancel / 纯工具执行任务）不发消息；
+        //   - 发送失败仅记 warn，不返回 Err，避免 awaken 侧 nack 重复执行
+        //     造成工具副作用 / token 重复消耗；
+        //   - send_message 工具仍保留给"不在当前对话中的对象"的异步通知
+        //     （跨用户通知、任务完成后台推送、跨项目广播等）。
+        let raw_output = awaken_result.raw_output.trim();
+        if !raw_output.is_empty() {
+            let project_id = message.po.project_id.as_deref();
+            let task_id = message.po.task_id.as_deref();
+            let reply_to_id = Some(message.po.id.as_str());
+
+            let send_result: Result<()> = match message.from_role() {
+                MessageRole::User => self
+                    .message_domain
+                    .delivery()
+                    .send_to_user(
+                        ctx.clone(),
+                        SendToUserCommand {
+                            from_agent_id: agent_id,
+                            to_user_id: &message.po.from_id,
+                            content: raw_output,
+                            project_id,
+                            task_id,
+                            reply_to_id,
+                        },
+                    )
+                    .await
+                    .map(|_| ()),
+
+                MessageRole::Agent => self
+                    .message_domain
+                    .delivery()
+                    .send_to_agent(
+                        ctx.clone(),
+                        SendToAgentCommand {
+                            from_id: agent_id,
+                            from_role: MessageRole::Agent,
+                            to_agent_id: &message.po.from_id,
+                            content: raw_output,
+                            project_id,
+                            task_id,
+                            reply_to_id,
+                            attachment_ids: None,
+                            message_type: MessageType::Text,
+                        },
+                    )
+                    .await
+                    .map(|_| ()),
+
+                MessageRole::System => {
+                    // 系统触发（cron/取消/内部控制命令等）：
+                    // 没有对等回复目标，Final 文本如需落地请走 send_message 工具
+                    // 在 think_loop 里按业务语义指定明确的 to_user_id / to_agent_id。
+                    log_debug!(
+                        &ctx,
+                        "handle_agent_message",
+                        "skip auto-reply for system-originated message (from_id={}), final len={}",
+                        message.po.from_id,
+                        raw_output.len()
+                    );
+                    Ok(())
+                }
+            };
+
+            if let Err(e) = send_result {
+                log_warn!(
+                    &ctx,
+                    "handle_agent_message",
+                    "auto-reply (role={:?} → to={}) failed (non-fatal, will not retry awaken): {:?}",
+                    message.from_role(),
+                    message.po.from_id,
+                    e
+                );
+            }
+        }
 
         Ok(())
     }

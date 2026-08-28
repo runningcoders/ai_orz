@@ -20,6 +20,7 @@
 //! - 其他技能 → 必加载技能区块（按 agent roles ∪ installed_tags 匹配）
 
 use crate::models::agent::Agent;
+use crate::models::cortex_types::ChatMessage;
 use crate::models::memory::Memory;
 use crate::models::message::Message;
 use crate::models::skill::SkillPo;
@@ -150,5 +151,59 @@ pub trait PromptBuilder: Send + Sync {
         &mut self,
         _analysis: &crate::service::domain::runtime::awakening::IntentAnalysis,
     ) {
+    }
+
+    // ==================== 角色分离版初始消息（供 think_loop 使用） ====================
+    //
+    // 设计说明：
+    //   旧版把整段 Prompt 全部塞进一条 `ChatMessage::User`，等价于 legacy completion 用法。
+    //   新版按语义拆为 `ChatMessage::System`（人设/技能/回复规则等系统级约束）
+    //   + `ChatMessage::User`（用户画像/对话历史/当前消息等会话上下文），从而让
+    //   OpenAI Chat Completions 协议的 function calling 真正发挥作用。
+    //
+    //   默认实现直接回退到扁平 User 消息，保证 Cli/Remote 等场景零改动。
+    //   只有 DefaultPromptBuilder（Local Agent）提供真正的角色拆分实现。
+
+    /// 构建 Awaken 场景的初始消息（System + User 分离）。
+    ///
+    /// 默认实现：将 `build()` 结果扁平放入单条 User 消息，保证向后兼容。
+    fn build_initial_messages(&self) -> Vec<ChatMessage> {
+        vec![ChatMessage::user(self.build())]
+    }
+
+    /// 构建沉淀（Sleep/Settle）场景的初始消息。
+    ///
+    /// 默认实现：将 `build_sleep_prompt()` 结果扁平放入单条 User 消息。
+    fn build_sleep_initial_messages(
+        &self,
+        pending_memories_summary: &str,
+        trace_ids: &[String],
+    ) -> Vec<ChatMessage> {
+        vec![ChatMessage::user(
+            self.build_sleep_prompt(pending_memories_summary, trace_ids),
+        )]
+    }
+
+    /// 构建总结（Summary）场景的初始消息。
+    ///
+    /// 默认实现：将 `build_summary_prompt()` 结果扁平放入单条 User 消息。
+    fn build_summary_initial_messages(
+        &self,
+        work_summary: &str,
+        total_rounds: usize,
+        trace_ids: &[String],
+    ) -> Vec<ChatMessage> {
+        vec![ChatMessage::user(self.build_summary_prompt(
+            work_summary,
+            total_rounds,
+            trace_ids,
+        ))]
+    }
+
+    /// 构建意图分析（IntentAnalyze）场景的初始消息。
+    ///
+    /// 默认实现：将 `build_intent_analyze_prompt()` 结果扁平放入单条 User 消息。
+    fn build_intent_analyze_initial_messages(&self) -> Vec<ChatMessage> {
+        vec![ChatMessage::user(self.build_intent_analyze_prompt())]
     }
 }

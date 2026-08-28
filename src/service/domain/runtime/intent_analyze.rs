@@ -121,7 +121,9 @@ impl RuntimeDomainImpl {
         builder.current_message(message);
 
         // 5. 组装专用 Prompt（不是普通 build()）
-        let prompt = builder.build_intent_analyze_prompt();
+        let _prompt = builder.build_intent_analyze_prompt();
+        // P0-b：用 System + User 双角色拆分版初始消息
+        let initial_messages = builder.build_intent_analyze_initial_messages();
 
         // 6. 取 Agent Brain（调用方需已通过 wake_agent_brain 装配）
         let brain = agent
@@ -141,7 +143,7 @@ impl RuntimeDomainImpl {
             .run_think_loop(
                 ctx.clone(),
                 brain,
-                &prompt,
+                initial_messages,
                 &tool_descriptors,
                 agent,
                 ThinkingScene::IntentAnalyze,
