@@ -61,12 +61,36 @@ impl LanceVectorStore {
         })
     }
 
+    /// 将通用「collection 名」安全映射为 LanceDB 合法 table 名。
+    ///
+    /// 上层命名约定允许使用冒号作域分隔符（如 `memory:short_term`、`agent:profile`），
+    /// 但 LanceDB 0.26 的表名只接受字母数字、下划线、连字符、点，且内部会 unwrap
+    /// `InvalidTableName` 直接导致运行时 panic。这里在存储层做一次性过滤，避免
+    /// 调用方在各 VectorStore 实现间感知差异（其它实现如 SQLite/HNSW 对冒号更宽容）。
+    fn sanitize_table_name(collection: &str) -> String {
+        let mut out = String::with_capacity(collection.len());
+        for ch in collection.chars() {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.') {
+                out.push(ch);
+            } else {
+                out.push('_');
+            }
+        }
+        // 保证至少有一个合法字符，避免后续 Lance 再炸
+        if out.is_empty() {
+            out.push('t');
+        }
+        out
+    }
+
     /// 获取或创建表（懒加载模式）
     async fn get_or_create_table(&self, collection: &str, dimensions: i32) -> Result<Arc<Table>> {
+        let table_name = Self::sanitize_table_name(collection);
+
         // 先检查缓存
         {
             let tables = self.tables.read().await;
-            if let Some(table) = tables.get(collection) {
+            if let Some(table) = tables.get(&table_name) {
                 return Ok(table.clone());
             }
         }
@@ -76,10 +100,10 @@ impl LanceVectorStore {
             common::error::Error::internal(format!("LanceDB table names error: {}", e))
         })?;
 
-        let table = if table_names.contains(&collection.to_string()) {
+        let table = if table_names.iter().any(|t| t == &table_name) {
             // 打开已存在的表
             self.db
-                .open_table(collection)
+                .open_table(&table_name)
                 .execute()
                 .await
                 .map_err(|e| {
@@ -105,7 +129,7 @@ impl LanceVectorStore {
 
             // 创建空表 - 新版 API 直接接受 schema
             self.db
-                .create_empty_table(collection, schema.clone())
+                .create_empty_table(&table_name, schema.clone())
                 .execute()
                 .await
                 .map_err(|e| {
@@ -115,9 +139,9 @@ impl LanceVectorStore {
 
         let table_arc = Arc::new(table);
 
-        // 缓存起来
+        // 缓存起来（key 使用清洗后的合法表名，与 clear_collection 同步）
         let mut tables = self.tables.write().await;
-        tables.insert(collection.to_string(), table_arc.clone());
+        tables.insert(table_name.clone(), table_arc.clone());
 
         Ok(table_arc)
     }
@@ -356,8 +380,9 @@ impl super::VectorStore for LanceVectorStore {
             .await
             .map_err(|e| common::error::Error::internal(format!("LanceDB clear error: {}", e)))?;
 
+        let table_name = Self::sanitize_table_name(collection);
         let mut tables = self.tables.write().await;
-        tables.remove(collection);
+        tables.remove(&table_name);
 
         Ok(())
     }
