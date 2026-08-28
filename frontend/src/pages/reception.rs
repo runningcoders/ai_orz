@@ -9,7 +9,7 @@ use crate::api::organization::{get_current_user_info, list_organizations_public}
 use crate::api::seed::get_task_progress;
 use crate::components::state::Loading;
 use crate::components::task_progress::TaskProgress;
-use crate::store::auth::{AuthState, mark_logged_in, save_role};
+use crate::store::auth::{AuthState, clear_login_state, is_logged_in, mark_logged_in, save_role};
 use crate::store::toast::use_toast;
 use common::api::{
     InitializeSystemRequest, LoginRequest, OrganizationListItem, RegisterByInviteRequest,
@@ -69,9 +69,51 @@ pub fn Reception() -> Element {
 
     let mut auth = use_context::<Signal<AuthState>>();
 
-    // 页面加载检查初始化状态
+    // 页面加载：登录态自检 + 初始化状态检查
+    //
+    // 先执行自检：localStorage 脏登录态（后端清库、用户被删等）→ 立即清掉，
+    // 避免「接待页显示可登录，但受保护路由被假登录态放行」的半不一致。
+    // 自检 /user/me 成功则说明已登录但误停在接待页 → 直接跳首页。
     use_effect(move || {
         spawn(async move {
+            // 1. 登录态自检：仅当本地有 logged_in=true 标记时发请求
+            if is_logged_in() {
+                match get_current_user_info().await {
+                    Ok(user_info) => {
+                        // 登录态有效，但在接待页 → 回填 AuthState 后跳首页
+                        let mut state = auth.write();
+                        state.logged_in = true;
+                        state.role = user_info.data.role;
+                        state.user_id = user_info.data.user_id.clone();
+                        state.username = user_info.data.username.clone();
+                        state.display_name =
+                            user_info.data.display_name.clone().unwrap_or_default();
+                        state.org_id = user_info.data.organization_id.clone();
+                        save_role(user_info.data.role);
+                        drop(state);
+                        if let Some(window) = web_sys::window() {
+                            let _ = window.location().set_href("/");
+                        }
+                        return; // 自检完成直接返回，不再执行后续初始化加载
+                    }
+                    Err(e) => {
+                        // 401 已由网络层 handle_unauthorized 清 localStorage + 跳到 /login；
+                        // 其余失败（404/5xx/网络）主动清脏登录态，兜底避免假登录残留
+                        if e.http_status != 401 {
+                            clear_login_state();
+                            let mut state = auth.write();
+                            state.logged_in = false;
+                            state.role = 0;
+                            state.user_id = String::new();
+                            state.username = String::new();
+                            state.display_name = String::new();
+                            state.org_id = String::new();
+                        }
+                    }
+                }
+            }
+
+            // 2. 初始化状态检查
             match check_initialized().await {
                 Ok(resp) => {
                     if resp.initialized {
