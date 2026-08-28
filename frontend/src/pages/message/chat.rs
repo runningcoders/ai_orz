@@ -1292,10 +1292,12 @@ fn render_message_content(
     toggle_expand: impl FnMut() + 'static,
     toast: crate::store::toast::ToastState,
 ) -> Element {
+    // 气泡配色已收敛到 `styles/input.css` 的 `.chat .chat-bubble-{primary,neutral,system}`：
+    // 轻量「浅底 + 正文色 + 细边」，替代 DaisyUI 原生高饱和/近黑实底（背景过重、正文不显眼）。
     let bubble_class = if is_user {
         "chat-bubble chat-bubble-primary"
     } else if is_system {
-        "chat-bubble chat-bubble-info/20 text-info-content text-xs"
+        "chat-bubble chat-bubble-system text-xs"
     } else {
         "chat-bubble chat-bubble-neutral"
     };

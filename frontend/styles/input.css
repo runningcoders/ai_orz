@@ -379,16 +379,72 @@
   margin: 0.15em 0;
 }
 
-/* 聊天气泡宽度自适应：width: fit-content 让气泡 hug 文本内容（短消息贴身、长消息封顶），
-   避免气泡被 grid `auto` 列压成极窄竖列导致文字竖排。max-width 上限防止超宽。 */
+/* ========== 聊天气泡：宽度自适应 + 轻量配色 ========== */
+
+/* 1) 宽度：hug 文本内容（短消息贴身、长消息封顶），避免文字竖排。
+   ⚠️ 坑：气泡的 max-width 里**绝不能**用百分比。chat.rs 的气泡外面还包了一层
+   `div.group.relative`（`.chat` 的 grid item，被 `place-items:end/start` 收缩到
+   fit-content），百分比会相对这个「已经 hug 到内容宽度」的父容器计算，等于在
+   fit-content 之上再砍一刀。无头浏览器实测（720px 容器）：
+     - 气泡直挂 `.chat`：270.1px / 1 行（正常）
+     - 同文本 + group 包裹：243.1px / 2 行（270.1 × 90%，被砍）
+     - 「在吗」+ group 包裹：57.4px / 2 行（63.8 × 90%，俩字硬换行）
+   现在：百分比约束上移到 `.chat` 的直接子元素（相对 grid 列宽，参照正确，窄屏也留边），
+   气泡本身只用固定上限 28rem（= Tailwind `max-w-md`，与附件消息卡片宽度一致）。 */
+.chat > *:not(.chat-image) {
+  max-width: 90%;
+}
 .chat .chat-bubble {
   width: fit-content;
-  max-width: min(90%, 32rem);
+  max-width: 28rem;
 }
 /* 气泡内的 markdown 不应再继承全局 `max-w-none`（详情页/文档页需要铺满），
    而是填满气泡宽度，配合上面的 fit-content 正确换行。 */
 .chat .chat-bubble .markdown-body {
   max-width: 100%;
+}
+
+/* 2) 配色：DaisyUI 原生 `chat-bubble-primary` / `chat-bubble-neutral` 是高饱和 / 近黑
+   **实底**（浅色主题实测 primary = oklch(0.63 0.24 50) 橙实底、
+   neutral = oklch(0.25 0.01 50) 近黑实底），背景过重、正文被压得不显眼。
+   改为「浅底 + 正文色文字 + 细边」：内容成为视觉主体，身份靠底色/边框区分。
+   用 color-mix 混 `--color-base-100`，8 个主题（含深色）自动适配。
+   只作用于 `.chat` 内，不影响其它复用 chat-bubble-* 的地方。 */
+.chat .chat-bubble-primary {
+  background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100));
+  color: var(--color-base-content);
+  border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);
+}
+.chat .chat-bubble-neutral {
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  border: 1px solid var(--color-base-300);
+}
+/* 系统提示气泡：原 `chat-bubble-info/20 text-info-content` 在浅底上文字发虚，
+   改为浅 info 底 + info 色文字（对比度稳定）。 */
+.chat .chat-bubble-system {
+  background: color-mix(in oklab, var(--color-info) 10%, var(--color-base-100));
+  color: color-mix(in oklab, var(--color-info) 75%, var(--color-base-content));
+  border: 1px solid color-mix(in oklab, var(--color-info) 26%, transparent);
+}
+
+/* 3) 气泡内的 markdown 内嵌块（code / pre / blockquote / 表头）原本统一用
+   `--color-base-200` 作背景。Agent 气泡改成 `base-200` 浅底后，这些块会与气泡
+   **同色而整块消失**（只剩 1px 边框）。统一改用「半透明中性加深」：叠加在任何
+   气泡底色（primary 浅底 / base-200 / info 浅底）之上都能形成层次，且随主题自适应。 */
+.chat .chat-bubble .markdown-body code,
+.chat .chat-bubble .markdown-body pre,
+.chat .chat-bubble .markdown-body blockquote,
+.chat .chat-bubble .markdown-body th {
+  background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  border-color: color-mix(in oklab, var(--color-base-content) 16%, transparent);
+}
+.chat .chat-bubble .markdown-body blockquote {
+  border-left: 4px solid var(--color-primary);
+}
+.chat .chat-bubble .markdown-body pre code {
+  background: transparent;
+  border-color: transparent;
 }
 
 /* ========== 统一标签（tag / chip）样式 ========== */
