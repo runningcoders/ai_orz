@@ -18,7 +18,7 @@ use store::auth::AuthState;
 use store::toast::use_provide_toast;
 
 use crate::components::toast::ToastContainer;
-use crate::hooks::use_provide_theme;
+use crate::hooks::{use_login_liveness, use_provide_theme};
 use crate::pages::Route;
 
 fn main() {
@@ -30,6 +30,10 @@ fn App() -> Element {
     use_context_provider(|| Signal::new(AuthState::restore()));
     let _toast = use_provide_toast();
     let _theme_ctrl = use_provide_theme();
+
+    // 全生命周期登录态探活（切 tab 回来 / 最小化恢复 / 10 分钟发呆都会自检，
+    // 假登录态不必等到切路由或用户点击才被发现；未登录时零请求开销）。
+    use_login_liveness();
 
     // 初始化全局断点信号（移动端检测）
     let mut is_mobile = use_signal(|| false);
