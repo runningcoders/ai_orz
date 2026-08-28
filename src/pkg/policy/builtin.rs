@@ -255,10 +255,11 @@ impl Policy for NoProgressPolicy {
                 continue;
             }
             let key = format!("tool_calls.{name}");
-            if let Some(count) = metrics.get_u64(&key) {
-                if count >= *limit as u64 {
-                    return vec![self.id().to_string()];
-                }
+            // 折叠嵌套 if（clippy::collapsible_if）
+            if let Some(count) = metrics.get_u64(&key)
+                && count >= *limit as u64
+            {
+                return vec![self.id().to_string()];
             }
         }
         vec![]
