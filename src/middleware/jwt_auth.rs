@@ -2,7 +2,8 @@
 //!
 //! 双模式认证：优先从 Cookie 提取 JWT，fallback 从 Authorization: Bearer 提取
 //! 验证后将用户信息写入请求头，后续 request_context_middleware 从请求头创建 RequestContext
-//! - 浏览器请求（Cookie 模式）：验证失败返回 302 重定向到登录页
+//! - 浏览器页面导航请求（Cookie 模式）：验证失败返回 302 重定向到登录页
+//! - `/api/` 路径（含浏览器 fetch）：一律返回 401 JSON，不重定向
 //! - API 调用（Bearer 模式）：验证失败返回 401 JSON
 
 use crate::pkg::jwt;
@@ -137,7 +138,22 @@ fn is_browser_request(req: &Request) -> bool {
 }
 
 /// 根据请求类型返回不同的未认证响应
-fn unauthorized_response(_req: &Request, is_browser: bool) -> Response {
+///
+/// `/api/` 路径例外：无论是否浏览器请求一律返回 401 JSON。
+/// 浏览器 fetch 会自动跟随 302 重定向，若重定向到 `/` 将拿到 200 + index.html，
+/// 前端 JSON 解析报错（"expected value at line 1 column 1"）且掩盖真实 401 状态。
+fn unauthorized_response(req: &Request, is_browser: bool) -> Response {
+    if req.uri().path().starts_with("/api/") {
+        sys_debug!("Unauthorized API request, return 401");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ApiResponse::<()>::error(
+                401,
+                "未认证或认证已过期".to_string(),
+            )),
+        )
+            .into_response();
+    }
     if is_browser {
         sys_debug!("Unauthorized browser request, redirect to login");
         Redirect::to("/").into_response()

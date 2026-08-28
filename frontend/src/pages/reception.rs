@@ -3,10 +3,10 @@
 use dioxus::prelude::*;
 
 use crate::api::auth::{
-    check_initialized, initialize_system, login, register_by_invite, validate_invite_code,
+    check_initialized, get_initialize_progress, initialize_system, login, register_by_invite,
+    validate_invite_code,
 };
 use crate::api::organization::{get_current_user_info, list_organizations_public};
-use crate::api::seed::get_task_progress;
 use crate::components::state::Loading;
 use crate::components::task_progress::TaskProgress;
 use crate::store::auth::{
@@ -14,9 +14,34 @@ use crate::store::auth::{
 };
 use crate::store::toast::use_toast;
 use common::api::{
-    InitializeSystemRequest, LoginRequest, OrganizationListItem, RegisterByInviteRequest,
-    TaskProgressSnapshot, TaskStatus,
+    InitProgressResponse, InitStatus, InitializeSystemRequest, LoginRequest, LoginResponse,
+    OrganizationListItem, RegisterByInviteRequest, TaskProgressSnapshot, TaskStatus,
 };
+
+/// 将公开初始化进度响应装饰为统一 TaskProgressSnapshot（供 TaskProgress 组件渲染）。
+///
+/// 接待页初始化发生在登录之前，必须轮询公开接口 `GET /organization/initialize/progress`
+/// （返回 InitProgressResponse），而非需 JWT 的统一后台任务接口。
+fn init_progress_to_snapshot(p: &InitProgressResponse) -> TaskProgressSnapshot {
+    let status = match p.status {
+        InitStatus::Pending => TaskStatus::Pending,
+        InitStatus::Running => TaskStatus::Running,
+        InitStatus::Completed => TaskStatus::Completed,
+        InitStatus::Failed => TaskStatus::Failed,
+    };
+    TaskProgressSnapshot {
+        task_id: p.task_id.clone(),
+        task_type: "initialize_system".to_string(),
+        status,
+        current_step: p.current_step,
+        total_steps: p.total_steps,
+        step_message: p.step_message.clone(),
+        started_at: p.started_at,
+        finished_at: p.finished_at,
+        error: p.error.clone(),
+        result: p.result.as_ref().and_then(|r| serde_json::to_value(r).ok()),
+    }
+}
 
 #[component]
 pub fn Reception() -> Element {
@@ -405,24 +430,23 @@ pub fn Reception() -> Element {
                         error: None,
                         result: None,
                     }));
-                    // 启动轮询（统一接口）
+                    // 启动轮询（公开初始化进度接口 —— 登录前无 JWT，不能调 /system/tasks 统一接口）
                     spawn(async move {
                         loop {
                             gloo_timers::future::TimeoutFuture::new(300).await;
-                            match get_task_progress(&task_id).await {
+                            match get_initialize_progress(&task_id).await {
                                 Ok(progress) => {
-                                    let is_completed = progress.status == TaskStatus::Completed;
-                                    let is_failed = progress.status == TaskStatus::Failed;
+                                    let is_completed = progress.status == InitStatus::Completed;
+                                    let is_failed = progress.status == InitStatus::Failed;
+                                    init_progress.set(Some(init_progress_to_snapshot(&progress)));
                                     if is_completed {
                                         // 初始化完成：提示已创建预设前台 Agent，稍作停留后刷新进入登录
                                         let has_reception = progress
                                             .result
                                             .as_ref()
-                                            .and_then(|r| r.get("reception_agent_id"))
-                                            .and_then(|v| v.as_str())
+                                            .and_then(|r| r.reception_agent_id.as_deref())
                                             .map(|s| !s.is_empty())
                                             .unwrap_or(false);
-                                        init_progress.set(Some(progress));
                                         if has_reception {
                                             toast.success("初始化完成！已为你创建「前台接待」Agent，登录后即可开始对话");
                                         } else {
