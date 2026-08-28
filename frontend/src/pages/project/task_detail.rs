@@ -14,7 +14,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
 use crate::utils::{
-    format_timestamp_opt as format_timestamp, progress_bar_class,
+    format_timestamp_opt as format_timestamp, progress_bar_class, status::tag_chip,
     task_status_badge as status_badge, task_status_text as status_text,
 };
 use common::api::{
@@ -613,13 +613,16 @@ pub fn TaskDetail(id: String) -> Element {
                             h2 { class: "card-title", "关系图" }
                         }
                         div { class: "p-4",
-                            WorkspaceGraph {
-                                view: WorkspaceView::TaskDetail(t.id.clone()),
-                                projects: graph_projects.read().clone(),
-                                agents: graph_agents.read().clone(),
-                                tasks: graph_tasks.read().clone(),
-                                width: 800.0,
-                                height: 500.0,
+                            div { class: "w-full h-[520px]",
+                                WorkspaceGraph {
+                                    view: WorkspaceView::TaskDetail(t.id.clone()),
+                                    projects: graph_projects.read().clone(),
+                                    agents: graph_agents.read().clone(),
+                                    tasks: graph_tasks.read().clone(),
+                                    width: 800.0,
+                                    height: 500.0,
+                                    auto_size: true,
+                                }
                             }
                         }
                     }
@@ -656,7 +659,7 @@ pub fn TaskDetail(id: String) -> Element {
                                                     span { class: "badge badge-sm badge-info", "{art.mime_type}" }
                                                     span { class: "badge badge-sm", "{crate::utils::format_file_size(art.file_size)}" }
                                                     for tag in art.tags.iter() {
-                                                        span { class: "badge badge-sm badge-outline", "#{tag}" }
+                                                        span { class: "{tag_chip()}", "#{tag}" }
                                                     }
                                                 }
                                             }

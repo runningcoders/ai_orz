@@ -236,6 +236,9 @@ pub struct CanvasSceneProps {
     /// 是否启用节点诞生/消亡粒子
     #[props(default = true)]
     pub enable_birth_death_particles: bool,
+    /// 是否透明背景（HUD 全屏背景模式：去掉边框/圆角/白底，铺满父容器）
+    #[props(default = false)]
+    pub transparent: bool,
 }
 
 impl Default for CanvasSceneProps {
@@ -251,6 +254,7 @@ impl Default for CanvasSceneProps {
             enable_glow_particles: true,
             enable_background_particles: true,
             enable_birth_death_particles: true,
+            transparent: false,
         }
     }
 }
@@ -386,12 +390,26 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         let dpr = web_sys::window()
             .map(|w| w.device_pixel_ratio())
             .unwrap_or(1.0);
-        canvas.set_width((render_width * dpr) as u32);
-        canvas.set_height((render_height * dpr) as u32);
+        // 实测 canvas 真实显示尺寸（CSS px）。固定属性尺寸在 HiDPI 下会按
+        // width*dpr 显示导致溢出容器/被裁切，且 buffer 与显示尺寸不匹配会模糊。
+        // 改为按实际布局尺寸设置缓冲：既铺满容器又保持清晰。
+        let rect = canvas.get_bounding_client_rect();
+        let css_w = if rect.width() > 0.0 {
+            rect.width()
+        } else {
+            render_width
+        };
+        let css_h = if rect.height() > 0.0 {
+            rect.height()
+        } else {
+            render_height
+        };
+        canvas.set_width((css_w * dpr) as u32);
+        canvas.set_height((css_h * dpr) as u32);
         let _ = ctx.scale(dpr, dpr);
 
-        let width = render_width;
-        let height = render_height;
+        let width = css_w;
+        let height = css_h;
         // 克隆 edges 给内部 Closure（use_effect 是 FnMut 可多次调用，不能直接 move）
         let edges_inner = render_edges.clone();
 
@@ -512,7 +530,13 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
         canvas {
             width: "{props.width}",
             height: "{props.height}",
-            style: "border: 1px solid #e5e7eb; border-radius: 8px; display: block; background: #fafafa; cursor: grab;",
+            style: if props.transparent {
+                "width: 100%; height: 100%; display: block; background: transparent; cursor: grab;"
+            } else {
+                // 关键修复：非透明（卡片）模式也必须 width/height:100%，否则 canvas 按
+                // 属性尺寸（width*dpr）显示，在 HiDPI 下溢出容器并被裁切/撑破布局。
+                "width: 100%; height: 100%; display: block; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; cursor: grab;"
+            },
             onmounted: move |evt: MountedEvent| {
                 let data = evt.data();
                 if let Some(element) = data.downcast::<web_sys::Element>() {

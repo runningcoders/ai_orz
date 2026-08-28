@@ -13,6 +13,7 @@ use crate::api::finance::query_tool_call_entries;
 use crate::api::system::list_processes;
 use crate::components::modal::Modal;
 use crate::components::process_detail::ProcessDetailContent;
+use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use common::api::{
@@ -197,7 +198,7 @@ pub fn ToolCallsTab(
 
             if loading() && !loaded() {
                 div { class: "flex items-center justify-center py-12",
-                    span { class: "loading loading-spinner loading-md" }
+                    Loading { size: "md" }
                     span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
                 }
             } else if list.is_empty() {

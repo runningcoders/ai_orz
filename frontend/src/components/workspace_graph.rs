@@ -42,6 +42,9 @@ pub struct WorkspaceGraphProps {
     pub height: f64,
     /// 非中心节点点击时的视图切换回调
     pub on_view_change: Option<EventHandler<WorkspaceView>>,
+    /// 是否自适应父容器尺寸（HUD 全屏背景模式，覆盖 width/height）
+    #[props(default = false)]
+    pub auto_size: bool,
 }
 
 impl PartialEq for WorkspaceGraphProps {
@@ -160,6 +163,8 @@ fn build_project_detail_view(
     project: &ProjectListItem,
     agents: &[AgentListItem],
     tasks: &[TaskListItem],
+    graph_width: f64,
+    graph_height: f64,
 ) -> (Vec<CanvasNode>, Vec<CanvasEdge>) {
     use crate::components::layered_layout::{LayeredLayoutConfig, compute_layered_layout};
 
@@ -204,8 +209,8 @@ fn build_project_detail_view(
 
     // 计算分层布局（Task 节点从 layer=1 开始，给 Project 留 layer=0）
     let config = LayeredLayoutConfig {
-        width: 700.0,
-        height: 500.0,
+        width: graph_width,
+        height: graph_height,
         top_margin: 160.0,
         layer_height: 80.0,
         side_margin: 60.0,
@@ -486,15 +491,21 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     let projects = props.projects.clone();
     let agents = props.agents.clone();
     let tasks = props.tasks.clone();
-    let width = props.width;
-    let height = props.height;
+
+    // 自适应容器尺寸（HUD 全屏背景模式）：挂载后测量父容器真实尺寸
+    let mut measured = use_signal(|| None::<(f64, f64)>);
+    let (width, height) = if props.auto_size {
+        (*measured.read()).unwrap_or((props.width, props.height))
+    } else {
+        (props.width, props.height)
+    };
 
     // 根据视图模式构建节点和边
     let (nodes, edges) = match &view {
         WorkspaceView::Global => build_global_view(&projects, &agents, &tasks),
         WorkspaceView::ProjectDetail(pid) => {
             if let Some(p) = projects.iter().find(|p| p.id == *pid) {
-                build_project_detail_view(pid, p, &agents, &tasks)
+                build_project_detail_view(pid, p, &agents, &tasks, width, height)
             } else {
                 (Vec::new(), Vec::new())
             }
@@ -543,7 +554,17 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
     let node_count = nodes.len();
 
     rsx! {
-        div { class: "flex flex-col items-center w-full",
+        div { class: "relative flex flex-col items-center w-full h-full",
+            onmounted: move |evt: MountedEvent| {
+                if let Some(el) = evt.data().downcast::<web_sys::Element>() {
+                    let rect = el.get_bounding_client_rect();
+                    let w = rect.width();
+                    let h = rect.height();
+                    if w > 0.0 && h > 0.0 {
+                        measured.set(Some((w, h)));
+                    }
+                }
+            },
             if node_count == 0 {
                 div { class: "text-center py-12",
                     div { class: "text-5xl mb-4 opacity-30", "📊" }
@@ -555,6 +576,7 @@ pub fn WorkspaceGraph(props: WorkspaceGraphProps) -> Element {
                     height: height,
                     nodes: nodes,
                     edges: edges,
+                    transparent: props.auto_size,
                     enable_force_layout: true,
                     enable_data_flow_particles: true,
                     enable_glow_particles: true,

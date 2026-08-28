@@ -8,6 +8,7 @@
 //! - 清理已完成任务
 
 use crate::api::background_task::{cleanup_tasks, list_tasks};
+use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{ListBackgroundTasksRequest, TaskProgressSnapshot, TaskStatus};
@@ -175,7 +176,7 @@ pub fn SystemTasks() -> Element {
                     // 任务列表
                     if loading() {
                         div { class: "flex justify-center py-8",
-                            span { class: "loading loading-spinner loading-lg" }
+                            Loading { size: "lg" }
                         }
                     } else if page_tasks.is_empty() {
                         div { class: "text-center py-8 text-base-content/50",

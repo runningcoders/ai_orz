@@ -9,6 +9,7 @@
 //! GitHub 区块数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。
 //! 通用 Token 区块数据来源 = `GET /api/v1/finance/identity/generic-token/status?platform=xxx` 聚合端点。
 
+use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -464,12 +465,12 @@ pub fn FinanceIdentity() -> Element {
                                     div { class: "flex gap-2 items-center",
                                         if let Some(auth) = &user_auth {
                                             if auth.logged_in {
-                                                span { class: "badge badge-success",
+                                                span { class: "badge badge-sm badge-success",
                                                     "已授权{auth_name_suffix}"
                                                 }
                                                 button { class: "btn btn-sm btn-ghost", onclick: handle_auth_logout, "取消授权" }
                                             } else {
-                                                span { class: "badge badge-ghost", "未授权" }
+                                                span { class: "{auth_state_badge(\"未授权\")}", "未授权" }
                                                 button { class: "btn btn-sm btn-primary", disabled: auth_starting(), onclick: handle_auth_start,
                                                     if auth_starting() { "发起中..." } else { "授权用户身份" }
                                                 }

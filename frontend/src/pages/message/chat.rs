@@ -8,6 +8,7 @@ use crate::api::project::{create_project, list_projects};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
+use crate::components::state::Loading;
 use crate::layouts::navbar::Navbar;
 use crate::store::toast::use_toast;
 use crate::utils::{
@@ -426,7 +427,7 @@ pub fn MessageChat() -> Element {
     if !is_authenticated {
         return rsx! {
             div { class: "min-h-screen flex items-center justify-center",
-                span { class: "loading loading-spinner loading-lg" }
+                Loading { size: "lg" }
             }
         };
     }
@@ -627,7 +628,7 @@ pub fn MessageChat() -> Element {
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
                 if loading_messages() && messages().is_empty() {
                     div { class: "flex items-center justify-center py-12",
-                        span { class: "loading loading-spinner loading-md" }
+                        Loading { size: "md" }
                         span { class: "ml-2 text-base-content/60", "加载消息中..." }
                     }
                 } else if messages().is_empty() && !loading_messages() {
@@ -922,7 +923,7 @@ pub fn MessageChat() -> Element {
                     }
                     if loading_projects() {
                         div { class: "flex items-center justify-center py-8",
-                            span { class: "loading loading-spinner loading-sm" }
+                            Loading { size: "sm" }
                             span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
                         }
                     } else {
@@ -1189,7 +1190,7 @@ fn chat_input_area(
                                 }
                     },
                     if uploading() {
-                        span { class: "loading loading-spinner loading-sm" }
+                        Loading { size: "sm" }
                     } else { "📎" }
                 }
                 textarea {

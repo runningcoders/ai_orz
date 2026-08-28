@@ -497,7 +497,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             }
                                         },
                                         if config_saving() {
-                                            span { class: "loading loading-spinner loading-sm" }
+                                            Loading { size: "sm" }
                                             "保存中..."
                                         } else {
                                             "保存配置"
@@ -622,7 +622,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                 },
                                 if debug_calling() {
-                                    span { class: "loading loading-spinner loading-sm" }
+                                    Loading { size: "sm" }
                                     "调用中..."
                                 } else {
                                     "调用"

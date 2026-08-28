@@ -423,7 +423,7 @@ pub fn SystemTriggers() -> Element {
                                         td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
                                         td { "data-label": "类型",
                                             span {
-                                                class: "badge trigger-type-badge {trigger_type_badge_class(trigger_type)}",
+                                                class: "badge badge-sm {trigger_type_badge_class(trigger_type)}",
                                                 "{trigger_type_text(trigger_type)}"
                                             }
                                         }

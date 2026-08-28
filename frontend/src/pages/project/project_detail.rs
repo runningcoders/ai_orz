@@ -726,13 +726,16 @@ pub fn ProjectDetail(id: String) -> Element {
                             h2 { class: "card-title", "关系图" }
                         }
                         div { class: "p-4",
-                            WorkspaceGraph {
-                                view: WorkspaceView::ProjectDetail(p.id.clone()),
-                                projects: graph_projects.read().clone(),
-                                agents: graph_agents.read().clone(),
-                                tasks: tasks_list.clone(),
-                                width: 800.0,
-                                height: 500.0,
+                            div { class: "w-full h-[520px]",
+                                WorkspaceGraph {
+                                    view: WorkspaceView::ProjectDetail(p.id.clone()),
+                                    projects: graph_projects.read().clone(),
+                                    agents: graph_agents.read().clone(),
+                                    tasks: tasks_list.clone(),
+                                    width: 800.0,
+                                    height: 500.0,
+                                    auto_size: true,
+                                }
                             }
                         }
                     }

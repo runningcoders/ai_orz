@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 
 use crate::api::system::{get_process_status, kill_process};
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::state::ErrorAlert;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
 use common::api::ShellStatusResponse;
@@ -82,7 +83,7 @@ pub fn ProcessDetailContent(
         if loading() && detail().is_none() {
             div { class: "text-sm text-base-content/60 py-4 text-center", "加载中..." }
         } else if !failed().is_empty() {
-            div { class: "alert alert-error py-2 text-sm", "{failed}" }
+            ErrorAlert { message: failed() }
         } else if let Some(d) = detail().clone() {
             div { class: "space-y-3",
                 // 概要信息

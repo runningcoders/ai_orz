@@ -9,6 +9,7 @@ use dioxus_router::use_navigator;
 
 use crate::api::{hr::list_agents, project::*};
 use crate::components::modal::Modal;
+use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use common::api::{
     CreateTaskRequest, GetTaskRequest, GetTaskResponse, ListAgentsRequest, ListAgentsResponseItem,
@@ -258,7 +259,7 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
             },
             if loading_data() {
                 div { class: "flex justify-center py-8",
-                    span { class: "loading loading-spinner loading-md" }
+                    Loading { size: "md" }
                 }
             } else {
                 div { class: "space-y-4",

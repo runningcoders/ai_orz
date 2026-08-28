@@ -3,11 +3,9 @@
 use dioxus::prelude::*;
 
 #[component]
-pub fn Loading() -> Element {
+pub fn Loading(#[props(default = "md")] size: &'static str) -> Element {
     rsx! {
-        div { class: "flex justify-center py-8",
-            span { class: "loading loading-spinner loading-md mx-auto" }
-        }
+        span { class: "loading loading-spinner loading-{size}" }
     }
 }
 

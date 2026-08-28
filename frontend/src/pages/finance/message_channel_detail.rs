@@ -3,6 +3,7 @@
 //! 二期凭证引用模式：飞书渠道只存凭证引用（lark_credential_id），
 //! 凭证本身在身份凭证页（/finance/identity）飞书区块管理；详情页展示集成状态卡（凭证名 + 用户授权徽标 + 身份模式 + 跳身份凭证页）。
 
+use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -531,11 +532,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                             span { class: "badge badge-warning badge-sm", "凭证未绑定" }
                                         }
                                         if user_auth.logged_in {
-                                            span { class: "badge badge-success badge-sm",
+                                            span { class: "{auth_state_badge(\"用户已授权\")}",
                                                 "用户已授权{user_auth_suffix}"
                                             }
                                         } else {
-                                            span { class: "badge badge-ghost badge-sm", "用户未授权" }
+                                            span { class: "{auth_state_badge(\"用户未授权\")}", "用户未授权" }
                                         }
                                     }
                                     Link { class: "btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "管理身份凭证 →" }

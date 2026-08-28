@@ -5,6 +5,7 @@
 //!
 //! 数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。
 
+use crate::utils::status::*;
 use dioxus::prelude::*;
 
 use crate::api::github_integration::{
@@ -236,9 +237,9 @@ pub fn IdentityGithubSection() -> Element {
                         h4 { class: "font-semibold", "登录状态" }
                         if let Some(auth) = &auth {
                             if auth.logged_in {
-                                span { class: "badge badge-success", "已登录{auth_name_suffix}" }
+                                span { class: "badge badge-sm badge-success", "已登录{auth_name_suffix}" }
                             } else {
-                                span { class: "badge badge-ghost", "未登录" }
+                                span { class: "{auth_state_badge(\"未登录\")}", "未登录" }
                             }
                         }
                     }

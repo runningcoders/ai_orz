@@ -16,6 +16,7 @@ use crate::components::credential_form::{
     normalize_requirements, recommended_binding_name, validate_requirements_scoped,
 };
 use crate::components::modal::Modal;
+use crate::components::state::ErrorAlert;
 use crate::store::toast::use_toast;
 use common::api::CreateToolRequest;
 use common::enums::ToolProtocol;
@@ -293,7 +294,7 @@ pub fn CreateHttpToolModal(
             }),
             div { class: "max-h-[70vh] overflow-y-auto space-y-3 pr-1",
                 if !error_msg().is_empty() {
-                    div { class: "alert alert-error py-2 text-sm", "{error_msg}" }
+                    ErrorAlert { message: error_msg() }
                 }
 
                 // ===== 基础信息 =====

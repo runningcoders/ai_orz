@@ -75,6 +75,9 @@ pub struct RelationGraphProps {
     pub related_label: String,
     /// 节点点击回调
     pub on_node_click: Option<EventHandler<NodeClickEvent>>,
+    /// 是否自适应父容器尺寸（铺满包裹层，去掉固定 800×500 导致的 HiDPI 溢出）
+    #[props(default = true)]
+    pub auto_size: bool,
 }
 
 #[component]
@@ -132,7 +135,7 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
     }
 
     rsx! {
-        div { class: "flex flex-col items-center",
+        div { class: "flex flex-col items-center w-full",
             if count == 0 {
                 div { class: "text-center py-12",
                     div { class: "text-5xl mb-4 opacity-30", "🎨" }
@@ -142,26 +145,30 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
                 div { class: "text-sm text-base-content/70 mb-4",
                     "共 {count} 个关联{related_label}，拖拽节点可重新布局，点击节点查看详情"
                 }
-                CanvasScene {
-                    width: 800.0,
-                    height: 500.0,
-                    nodes: nodes,
-                    edges: edges,
-                    enable_data_flow_particles: true,
-                    enable_glow_particles: true,
-                    enable_background_particles: true,
-                    enable_birth_death_particles: true,
-                    on_node_click: on_node_click.map(|handler| {
-                        EventHandler::new(move |id: String| {
-                            if let Some((kind, is_center)) = click_map.get(&id) {
-                                handler.call(NodeClickEvent {
-                                    kind: kind.clone(),
-                                    id: id.clone(),
-                                    is_center: *is_center,
-                                });
-                            }
-                        })
-                    }),
+                // 包裹层提供确定高度（height:100% 需要父级有明确高度），canvas 内部自测量铺满
+                div { class: "w-full h-[520px]",
+                    CanvasScene {
+                        width: 800.0,
+                        height: 500.0,
+                        transparent: props.auto_size,
+                        nodes: nodes,
+                        edges: edges,
+                        enable_data_flow_particles: true,
+                        enable_glow_particles: true,
+                        enable_background_particles: true,
+                        enable_birth_death_particles: true,
+                        on_node_click: on_node_click.map(|handler| {
+                            EventHandler::new(move |id: String| {
+                                if let Some((kind, is_center)) = click_map.get(&id) {
+                                    handler.call(NodeClickEvent {
+                                        kind: kind.clone(),
+                                        id: id.clone(),
+                                        is_center: *is_center,
+                                    });
+                                }
+                            })
+                        }),
+                    }
                 }
             }
         }

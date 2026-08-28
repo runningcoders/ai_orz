@@ -3,6 +3,7 @@
 //! 前后端共享 SkillContentInput DTO，前端通过 3 个 Tab 切换内容源。
 //! 与后端同源，规则变动需同步。
 
+use crate::components::state::Loading;
 use dioxus::prelude::*;
 
 use crate::api::finance::upload_attachment;
@@ -180,7 +181,7 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                         // 文件上传
                         if uploading() {
                             div { class: "flex items-center gap-2",
-                                span { class: "loading loading-spinner loading-sm" }
+                                Loading { size: "sm" }
                                 span { class: "text-sm text-base-content/60", "上传中..." }
                             }
                         } else {

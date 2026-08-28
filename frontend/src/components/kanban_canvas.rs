@@ -42,20 +42,31 @@ pub struct KanbanCanvasProps {
     pub width: f64,
     pub height: f64,
     pub on_task_click: Option<EventHandler<String>>,
+    /// 是否自适应父容器尺寸（铺满包裹层，去掉固定 width 导致的 HiDPI 溢出）
+    #[props(default = true)]
+    pub auto_size: bool,
 }
 
 // EventHandler 无法比较，手动实现 PartialEq 时忽略 on_task_click 字段
 impl PartialEq for KanbanCanvasProps {
     fn eq(&self, other: &Self) -> bool {
-        self.columns == other.columns && self.width == other.width && self.height == other.height
+        self.columns == other.columns
+            && self.width == other.width
+            && self.height == other.height
+            && self.auto_size == other.auto_size
     }
 }
 
 /// KanbanCanvas 组件
 #[component]
 pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
-    let width = props.width;
-    let height = props.height;
+    // 自适应容器尺寸：挂载后测量包裹层真实尺寸（CSS px）
+    let mut measured = use_signal(|| None::<(f64, f64)>);
+    let (width, height) = if props.auto_size {
+        (*measured.read()).unwrap_or((props.width, props.height))
+    } else {
+        (props.width, props.height)
+    };
 
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
 
@@ -134,21 +145,38 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
     // 点击处理：命中检测简化为不实现（仅展示）
     let _on_click_handler = props.on_task_click;
     rsx! {
-        canvas {
-            width: "{width as u32}",
-            height: "{height as u32}",
-            class: "cursor-pointer",
-            style: "display: block;",
-            onclick: move |_evt: MouseEvent| {
-                // 简化：不实现点击命中检测，仅做展示
-            },
+        // 包裹层提供确定尺寸（height:100% 需要父级有明确高度），canvas 自测量铺满
+        div { class: "relative w-full h-[520px]",
             onmounted: move |evt: MountedEvent| {
-                let data = evt.data();
-                if let Some(element) = data.downcast::<web_sys::Element>() {
-                    let canvas = element.clone().unchecked_into::<HtmlCanvasElement>();
-                    canvas_ref.set(Some(canvas));
+                if let Some(el) = evt.data().downcast::<web_sys::Element>() {
+                    let rect = el.get_bounding_client_rect();
+                    let w = rect.width();
+                    let h = rect.height();
+                    if w > 0.0 && h > 0.0 {
+                        measured.set(Some((w, h)));
+                    }
                 }
             },
+            canvas {
+                width: "{width as u32}",
+                height: "{height as u32}",
+                class: "cursor-pointer",
+                style: if props.auto_size {
+                    "display: block; width: 100%; height: 100%;"
+                } else {
+                    "display: block;"
+                },
+                onclick: move |_evt: MouseEvent| {
+                    // 简化：不实现点击命中检测，仅做展示
+                },
+                onmounted: move |evt: MountedEvent| {
+                    let data = evt.data();
+                    if let Some(element) = data.downcast::<web_sys::Element>() {
+                        let canvas = element.clone().unchecked_into::<HtmlCanvasElement>();
+                        canvas_ref.set(Some(canvas));
+                    }
+                },
+            }
         }
     }
 }

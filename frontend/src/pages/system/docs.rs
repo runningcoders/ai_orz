@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 use crate::api::fetch_static_text;
 use crate::components::markdown::MarkdownRenderer;
+use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::{ToastState, use_toast};
 
@@ -305,7 +306,7 @@ pub fn SystemDocs() -> Element {
 
                 if index_opt.is_none() {
                     div { class: "flex justify-center py-12",
-                        span { class: "loading loading-spinner loading-lg" }
+                        Loading { size: "lg" }
                     }
                 } else {
                     div { class: "flex flex-col lg:flex-row gap-4 items-start",
@@ -424,7 +425,7 @@ pub fn SystemDocs() -> Element {
                             div { class: "card-body",
                                 if loading_doc() {
                                     div { class: "flex justify-center py-12",
-                                        span { class: "loading loading-spinner loading-md" }
+                                        Loading { size: "md" }
                                     }
                                 } else if let Some(md) = markdown_opt.as_ref() {
                                     div { class: "markdown-body max-w-none overflow-x-auto",

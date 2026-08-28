@@ -24,11 +24,15 @@ use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
 use crate::components::charts::line_chart::LineChart;
 use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::state::Loading;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::hooks::use_workspace_data::{WorkspaceData, use_workspace_data};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use crate::utils::{build_optimistic_user_msg, replace_tmp_with_real};
+use crate::utils::{
+    build_optimistic_user_msg, replace_tmp_with_real,
+    status::{agent_runtime_badge, tag_chip},
+};
 use common::api::{
     AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
     ProjectQueryRequest, RuntimeListRequest, RuntimeListResponse, SendMessageToAgentParams,
@@ -60,48 +64,9 @@ fn agent_runtime_label(runtime_state: i32) -> &'static str {
     }
 }
 
-/// Agent 运行时状态颜色 class（用于 badge）
-fn agent_runtime_badge_class(runtime_state: i32) -> &'static str {
-    match runtime_state {
-        0 => "badge badge-success",
-        1 => "badge badge-warning",
-        2 => "badge badge-error",
-        _ => "badge badge-ghost",
-    }
-}
-
 /// 判断是否为运行中项目（status 1-3：活跃 / 待评审 / 进行中）
 fn is_active_project(status: i32) -> bool {
     matches!(status, 1..=3)
-}
-
-/// 运行中 Agent 列表项的状态标签
-fn runtime_item_label(state: &str) -> &'static str {
-    match state {
-        "idle" => "空闲",
-        "busy" => "思考",
-        "resting" => "休息",
-        _ => "未知",
-    }
-}
-
-/// 运行中 Agent 列表项的状态 badge class
-fn runtime_item_badge(state: &str) -> &'static str {
-    match state {
-        "idle" => "badge-success",
-        "busy" => "badge-error",
-        "resting" => "badge-warning",
-        _ => "badge-ghost",
-    }
-}
-
-/// 格式化 token（Workspace 列表用，简短）
-fn format_token_ws(n: u64) -> String {
-    if n >= 1000 {
-        format!("{:.0}k", n as f64 / 1000.0)
-    } else {
-        n.to_string()
-    }
 }
 
 /// 运行中 Agent 过滤按钮的 active class
@@ -174,6 +139,10 @@ pub fn Workspace() -> Element {
     // 运行中 Agent 列表（轮询 runtime-list 接口）
     let runtime_agents = use_signal(RuntimeListResponse::default);
     let mut runtime_filter = use_signal(|| None::<String>);
+
+    // HUD 悬浮面板折叠状态
+    let mut project_panel_collapsed = use_signal(|| false);
+    let mut agent_panel_collapsed = use_signal(|| false);
 
     let sidebar = sidebar_signal.read().clone();
 
@@ -613,45 +582,128 @@ pub fn Workspace() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "flex flex-col h-full gap-4",
-                // === 顶部汇总状态条 ===
+            div { class: "relative h-full w-full overflow-hidden",
+                // === 关系图全屏背景层（HUD 底层，透明 canvas 透出主题底） ===
+                div { class: "absolute inset-0 z-0",
+                    WorkspaceGraph {
+                        view: current_view.read().clone(),
+                        projects: gp.clone(),
+                        agents: ga.clone(),
+                        tasks: gt.clone(),
+                        width: 800.0,
+                        height: 600.0,
+                        auto_size: true,
+                        on_view_change: Some(EventHandler::new(move |new_view: WorkspaceView| {
+                            current_view.set(new_view);
+                        })),
+                    }
+                }
+
+                // 图数据加载遮罩
+                if loading {
+                    div { class: "absolute inset-0 z-20 flex items-center justify-center bg-base-100/40",
+                        Loading { size: "lg" }
+                    }
+                }
+
+                // === 顶部状态栏（玻璃，悬浮顶部） ===
                 {sidebar.as_ref().map(|d| {
                     let project_count = d.projects.len();
                     let agent_count = d.agents.len();
                     let active_project_count = d.projects.iter().filter(|p| is_active_project(p.status)).count();
                     let busy_agent_count = d.agents.iter().filter(|a| a.runtime_state == 2).count();
 
+                    // 运行中 Agent 实时状态计数
+                    let ra = runtime_agents.read().clone();
+                    let idle_n = ra.items.iter().filter(|i| i.state == "idle").count();
+                    let busy_n = ra.items.iter().filter(|i| i.state == "busy").count();
+                    let rest_n = ra.items.iter().filter(|i| i.state == "resting").count();
+
+                    // 流量迷你图数据（最近 60 分钟本地累积）
+                    let flow = msg_flow.read();
+                    let mut points: Vec<TimeSeriesPoint> = flow.iter()
+                        .map(|(&k, &v)| TimeSeriesPoint {
+                            interval_start: k,
+                            tokens_input: 0,
+                            tokens_output: 0,
+                            call_count: v,
+                        })
+                        .collect();
+                    points.sort_by_key(|p| p.interval_start);
+
                     rsx! {
-                        div { class: "grid grid-cols-2 md:grid-cols-4 gap-3",
-                            div { class: "stat bg-base-100 rounded-lg shadow-sm",
-                                div { class: "stat-title", "项目" }
-                                div { class: "stat-value text-primary", "{project_count}" }
+                        div { class: "absolute top-3 left-3 right-3 z-10 hud-glass rounded-xl px-4 py-2 flex items-center gap-4 flex-wrap",
+                            // 4 个概览指标
+                            div { class: "flex items-center gap-3",
+                                div { class: "text-center",
+                                    div { class: "text-xs text-base-content/60", "项目" }
+                                    div { class: "text-lg font-semibold text-primary", "{project_count}" }
+                                }
+                                div { class: "text-center",
+                                    div { class: "text-xs text-base-content/60", "Agent" }
+                                    div { class: "text-lg font-semibold text-info", "{agent_count}" }
+                                }
+                                div { class: "text-center",
+                                    div { class: "text-xs text-base-content/60", "运行中" }
+                                    div { class: "text-lg font-semibold text-secondary", "{active_project_count}" }
+                                }
+                                div { class: "text-center",
+                                    div { class: "text-xs text-base-content/60", "忙碌" }
+                                    div { class: "text-lg font-semibold text-error", "{busy_agent_count}" }
+                                }
                             }
-                            div { class: "stat bg-base-100 rounded-lg shadow-sm",
-                                div { class: "stat-title", "Agent" }
-                                div { class: "stat-value text-info", "{agent_count}" }
+                            div { class: "h-8 w-px bg-base-content/15" }
+                            // 运行中 Agent 实时状态
+                            div { class: "flex items-center gap-3 text-xs",
+                                span { class: "flex items-center gap-1",
+                                    span { class: "w-2 h-2 rounded-full bg-success" } "空闲 {idle_n}"
+                                }
+                                span { class: "flex items-center gap-1",
+                                    span { class: "w-2 h-2 rounded-full bg-warning" } "思考 {busy_n}"
+                                }
+                                span { class: "flex items-center gap-1",
+                                    span { class: "w-2 h-2 rounded-full bg-error" } "休息 {rest_n}"
+                                }
                             }
-                            div { class: "stat bg-base-100 rounded-lg shadow-sm",
-                                div { class: "stat-title", "运行中项目" }
-                                div { class: "stat-value text-secondary", "{active_project_count}" }
-                            }
-                            div { class: "stat bg-base-100 rounded-lg shadow-sm",
-                                div { class: "stat-title", "忙碌 Agent" }
-                                div { class: "stat-value text-error", "{busy_agent_count}" }
+                            // 流量迷你图
+                            div { class: "ml-auto h-12 flex items-center",
+                                if points.is_empty() {
+                                    span { class: "text-xs text-base-content/40", "暂无流量" }
+                                } else {
+                                    LineChart {
+                                        data: points,
+                                        width: Some(160.0),
+                                        height: Some(48.0),
+                                        title: None,
+                                        value_label: None,
+                                    }
+                                }
                             }
                         }
                     }
                 })}
 
-                // === 三栏布局：左 Project / 中 Canvas / 右 Agent ===
-                div { class: "flex gap-4 flex-1 min-h-0",
-                    // 左侧 Project 列表浮层
-                    {sidebar.as_ref().map(|d| {
-                        rsx! {
-                            div { class: "w-64 flex-shrink-0 bg-base-100 rounded-lg shadow-md overflow-y-auto",
-                                div { class: "p-3 sticky top-0 bg-base-100 border-b border-base-200 z-10",
-                                    div { class: "flex justify-between items-center",
-                                        h3 { class: "text-sm font-semibold", "项目列表" }
+                // === 左侧项目面板（玻璃，悬浮左，可折叠） ===
+                {sidebar.as_ref().map(|d| {
+                    let collapsed = *project_panel_collapsed.read();
+                    rsx! {
+                        div {
+                            class: if collapsed {
+                                "absolute left-3 top-24 bottom-40 z-10 w-12 hud-glass rounded-xl flex flex-col items-center py-2"
+                            } else {
+                                "absolute left-3 top-24 bottom-40 z-10 w-64 hud-glass rounded-xl flex flex-col overflow-hidden"
+                            },
+                            div { class: "hud-panel-header p-3 border-b border-base-content/10",
+                                if !collapsed {
+                                    h3 { class: "text-sm font-semibold", "项目列表" }
+                                }
+                                div { class: "flex items-center gap-1",
+                                    button {
+                                        class: "hud-collapse-btn text-sm",
+                                        onclick: move |_| project_panel_collapsed.set(!collapsed),
+                                        if collapsed { "▶" } else { "◀" }
+                                    }
+                                    if !collapsed {
                                         button {
                                             class: "btn btn-ghost btn-xs",
                                             onclick: move |_| { current_view.set(WorkspaceView::Global); },
@@ -659,7 +711,9 @@ pub fn Workspace() -> Element {
                                         }
                                     }
                                 }
-                                div { class: "divide-y divide-base-200",
+                            }
+                            if !collapsed {
+                                div { class: "flex-1 overflow-y-auto divide-y divide-base-200",
                                     for p in d.projects.iter() {
                                         {
                                             let pid = p.id.clone();
@@ -675,7 +729,6 @@ pub fn Workspace() -> Element {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
                                                         current_view.set(WorkspaceView::ProjectDetail(pid.clone()));
-                                                        // 点击后清除该 project 的提示
                                                         project_unread.write().remove(&pid);
                                                     },
                                                     if has_unread {
@@ -692,7 +745,7 @@ pub fn Workspace() -> Element {
                                                     if !p.tags.is_empty() {
                                                         div { class: "flex flex-wrap gap-1 mt-1",
                                                             for tag in p.tags.iter().take(2) {
-                                                                span { class: "badge badge-xs badge-ghost", "{tag}" }
+                                                                span { class: "{tag_chip()}", "{tag}" }
                                                             }
                                                         }
                                                     }
@@ -708,40 +761,31 @@ pub fn Workspace() -> Element {
                                 }
                             }
                         }
-                    })}
-
-                    // 中间 Canvas 关系图
-                    div { class: "flex-1 bg-base-100 rounded-lg shadow-md p-4 min-w-0 relative",
-                        if loading {
-                            div { class: "absolute inset-0 flex items-center justify-center bg-base-100/50 z-10",
-                                span { class: "loading loading-spinner loading-lg" }
-                            }
-                        }
-                        WorkspaceGraph {
-                            view: current_view.read().clone(),
-                            projects: gp.clone(),
-                            agents: ga.clone(),
-                            tasks: gt.clone(),
-                            width: 700.0,
-                            height: 500.0,
-                            on_view_change: Some(EventHandler::new(move |new_view: WorkspaceView| {
-                                current_view.set(new_view);
-                            })),
-                        }
-                        {sidebar.is_none().then(|| rsx! {
-                            div { class: "flex items-center justify-center h-full",
-                                span { class: "loading loading-spinner loading-lg" }
-                            }
-                        })}
                     }
+                })}
 
-                    // 右侧 Agent 列表浮层
-                    {sidebar.as_ref().map(|d| {
-                        rsx! {
-                            div { class: "w-64 flex-shrink-0 bg-base-100 rounded-lg shadow-md overflow-y-auto",
-                                div { class: "p-3 sticky top-0 bg-base-100 border-b border-base-200 z-10",
-                                    div { class: "flex justify-between items-center",
-                                        h3 { class: "text-sm font-semibold", "Agent 列表" }
+                // === 右侧 Agent 面板（玻璃，悬浮右，可折叠 + 状态过滤） ===
+                {sidebar.as_ref().map(|d| {
+                    let collapsed = *agent_panel_collapsed.read();
+                    let ra_filter = runtime_filter.read().clone();
+                    rsx! {
+                        div {
+                            class: if collapsed {
+                                "absolute right-3 top-24 bottom-40 z-10 w-12 hud-glass rounded-xl flex flex-col items-center py-2"
+                            } else {
+                                "absolute right-3 top-24 bottom-40 z-10 w-64 hud-glass rounded-xl flex flex-col overflow-hidden"
+                            },
+                            div { class: "hud-panel-header p-3 border-b border-base-content/10",
+                                if !collapsed {
+                                    h3 { class: "text-sm font-semibold", "Agent 列表" }
+                                }
+                                div { class: "flex items-center gap-1",
+                                    button {
+                                        class: "hud-collapse-btn text-sm",
+                                        onclick: move |_| agent_panel_collapsed.set(!collapsed),
+                                        if collapsed { "◀" } else { "▶" }
+                                    }
+                                    if !collapsed {
                                         button {
                                             class: "btn btn-ghost btn-xs",
                                             onclick: move |_| { current_view.set(WorkspaceView::Global); },
@@ -749,8 +793,33 @@ pub fn Workspace() -> Element {
                                         }
                                     }
                                 }
-                                div { class: "divide-y divide-base-200",
-                                    for a in d.agents.iter() {
+                            }
+                            if !collapsed {
+                                // 状态过滤（原独立"运行中 Agent"卡片的过滤迁入）
+                                div { class: "flex gap-1 px-3 py-2 border-b border-base-content/10",
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, None)}",
+                                        onclick: move |_| runtime_filter.set(None),
+                                        "全部"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"busy\"))}",
+                                        onclick: move |_| runtime_filter.set(Some("busy".to_string())),
+                                        "思考"
+                                    }
+                                    button {
+                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"resting\"))}",
+                                        onclick: move |_| runtime_filter.set(Some("resting".to_string())),
+                                        "休息"
+                                    }
+                                }
+                                div { class: "flex-1 overflow-y-auto divide-y divide-base-200",
+                                    for a in d.agents.iter().filter(|a| match ra_filter.as_deref() {
+                                        None => true,
+                                        Some("busy") => a.runtime_state == 2,
+                                        Some("resting") => a.runtime_state == 1,
+                                        _ => true,
+                                    }) {
                                         {
                                             let aid = a.id.clone();
                                             let is_selected = matches!(*current_view.read(), WorkspaceView::AgentDetail(ref id) if id == &aid);
@@ -765,7 +834,6 @@ pub fn Workspace() -> Element {
                                                     class: "{item_class}",
                                                     onclick: move |_| {
                                                         current_view.set(WorkspaceView::AgentDetail(aid.clone()));
-                                                        // 点击后清除该 agent 的提示
                                                         agent_unread.write().remove(&aid);
                                                     },
                                                     if has_unread {
@@ -775,7 +843,7 @@ pub fn Workspace() -> Element {
                                                         div { class: "flex items-center gap-1 min-w-0",
                                                             span { class: "text-sm font-medium truncate", "{a.name}" }
                                                         }
-                                                        span { class: "badge badge-xs ml-2 flex-shrink-0 {agent_runtime_badge_class(a.runtime_state)}",
+                                                        span { class: "ml-2 flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
                                                             "{agent_runtime_label(a.runtime_state)}"
                                                         }
                                                     }
@@ -794,105 +862,10 @@ pub fn Workspace() -> Element {
                                 }
                             }
                         }
-                    })}
-                }
-
-                // === 运行中 Agent 卡片 ===
-                {if runtime_agents.read().total > 0 {
-                    let ra = runtime_agents.read().clone();
-                    rsx! {
-                        div { class: "bg-base-100 rounded-lg shadow-md p-4",
-                            div { class: "flex items-center justify-between mb-3",
-                                h3 { class: "text-sm font-semibold",
-                                    "🤖 运行中 Agent ({ra.total})"
-                                }
-                                // 状态过滤
-                                div { class: "join",
-                                    button {
-                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), None)}",
-                                        onclick: move |_| runtime_filter.set(None),
-                                        "全部"
-                                    }
-                                    button {
-                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), Some(\"busy\"))}",
-                                        onclick: move |_| runtime_filter.set(Some("busy".to_string())),
-                                        "思考中"
-                                    }
-                                    button {
-                                        class: "btn btn-xs join-item {filter_active_class(&runtime_filter(), Some(\"resting\"))}",
-                                        onclick: move |_| runtime_filter.set(Some("resting".to_string())),
-                                        "休息中"
-                                    }
-                                }
-                            }
-                            div { class: "space-y-2",
-                                for item in ra.items.into_iter() {
-                                    div {
-                                        class: "flex items-center justify-between p-2 bg-base-200 rounded cursor-pointer hover:bg-base-300",
-                                        onclick: move |_| {
-                                            current_view.set(WorkspaceView::AgentDetail(item.agent_id.clone()));
-                                        },
-                                        div { class: "flex items-center gap-2 min-w-0",
-                                            span { class: "badge badge-xs {runtime_item_badge(&item.state)}",
-                                                "{runtime_item_label(&item.state)}"
-                                            }
-                                            span { class: "text-sm font-mono truncate",
-                                                "{item.agent_id}"
-                                            }
-                                        }
-                                        div { class: "flex items-center gap-3 text-xs text-base-content/60",
-                                            if let Some(tr) = &item.think_runtime {
-                                                span { "{tr.scene} {tr.round}/{tr.max_rounds}" }
-                                                span { "{format_token_ws(tr.total_tokens)}t" }
-                                            }
-                                            if let Some(tid) = &item.task_id {
-                                                span { "task:{tid}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
-                } else {
-                    rsx! { div {} }
-                }}
+                })}
 
-                // === 消息流量时序图（最近 60 分钟本地累积） ===
-                div { class: "bg-base-100 rounded-lg shadow-md p-4",
-                    h3 { class: "text-sm font-semibold mb-2", "📈 消息流量（最近 60 分钟）" }
-                    {
-                        let flow = msg_flow.read();
-                        let mut points: Vec<TimeSeriesPoint> = flow.iter()
-                            .map(|(&k, &v)| TimeSeriesPoint {
-                                interval_start: k,
-                                tokens_input: 0,
-                                tokens_output: 0,
-                                call_count: v,
-                            })
-                            .collect();
-                        points.sort_by_key(|p| p.interval_start);
-                        if points.is_empty() {
-                            rsx! {
-                                div { class: "h-[120px] flex items-center justify-center text-base-content/50",
-                                    "暂无消息流量数据"
-                                }
-                            }
-                        } else {
-                            rsx! {
-                                LineChart {
-                                    data: points,
-                                    width: 700.0,
-                                    height: 150.0,
-                                    title: Some("消息量".to_string()),
-                                    value_label: Some("条/分钟".to_string()),
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // === 底部游戏式对话框 ===
+                // === 底部对话框（玻璃，悬浮底部，透明） ===
                 {
                     let focused = *chat_focused.read();
                     let msgs = chat_messages.read();
@@ -920,21 +893,17 @@ pub fn Workspace() -> Element {
                         }
                     };
 
-                    // 未聚焦：单行 + 浮动半透明最近消息
-                    // 聚焦后：可滚动消息列表 + 输入框
                     let container_class = if focused {
-                        "bg-base-100 rounded-lg shadow-lg border border-base-300 flex flex-col"
+                        "absolute bottom-3 left-3 right-3 z-10 hud-glass-strong rounded-xl border border-base-300 flex flex-col"
                     } else {
-                        "bg-base-100/80 rounded-lg shadow-sm border border-base-200 flex flex-col"
+                        "absolute bottom-3 left-3 right-3 z-10 hud-glass rounded-xl flex flex-col"
                     };
 
                     rsx! {
                         div { class: "{container_class}",
-                            // 消息显示区
                             div {
                                 class: if focused { "flex-1 overflow-y-auto p-3 max-h-48" } else { "p-2 max-h-24 overflow-hidden" },
-                                style: if focused { "" } else { "opacity: 0.6; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
-
+                                style: if focused { "" } else { "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
                                 if msgs.is_empty() && !is_typing {
                                     div { class: "text-center text-sm text-base-content/40 py-2",
                                         if focused { "💬 输入消息开始对话" } else { "💬 点击输入框开始对话" }
@@ -950,20 +919,16 @@ pub fn Workspace() -> Element {
                                     }
                                 }
                             }
-
-                            // 输入框区域
-                            div { class: "border-t border-base-200 p-2 flex items-center gap-2",
+                            div { class: "border-t border-base-content/10 p-2 flex items-center gap-2",
                                 if focused {
-                                    // 聚焦模式：完整输入框 + 发送按钮
                                     span { class: "text-xs text-base-content/50 flex-shrink-0", "{chat_title}" }
                                     input {
-                                        class: "input input-bordered input-sm flex-1",
+                                        class: "input input-bordered input-sm flex-1 bg-base-100/60",
                                         r#type: "text",
                                         placeholder: "输入消息或指令，Enter 发送...",
                                         value: "{input_val}",
                                         onfocus: move |_| chat_focused.set(true),
                                         onblur: move |_| {
-                                            // 延迟失焦，允许点击发送按钮
                                             let mut chat_focused = chat_focused;
                                             spawn(async move {
                                                 gloo_timers::future::TimeoutFuture::new(150).await;
@@ -989,9 +954,8 @@ pub fn Workspace() -> Element {
                                         "▼"
                                     }
                                 } else {
-                                    // 未聚焦模式：单行小输入框 + 图例 + 刷新
                                     input {
-                                        class: "input input-bordered input-sm flex-1 bg-base-200/50",
+                                        class: "input input-bordered input-sm flex-1 bg-base-100/60",
                                         r#type: "text",
                                         placeholder: "💬 {chat_title} - 点击输入...",
                                         value: "{input_val}",
@@ -1004,7 +968,6 @@ pub fn Workspace() -> Element {
                                             }
                                         }
                                     }
-                                    // 图例（未聚焦时显示）
                                     div { class: "flex gap-2 text-xs text-base-content/50",
                                         span { class: "flex items-center gap-1",
                                             span { class: "w-2 h-2 rounded-full bg-success" } "空闲"

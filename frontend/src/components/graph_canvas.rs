@@ -438,6 +438,9 @@ pub struct KnowledgeGraphCanvasProps {
     pub highlighted_node_ids: Option<Vec<String>>,
     /// 节点点击回调
     pub on_node_click: EventHandler<String>,
+    /// 是否自适应父容器尺寸（铺满包裹层，去掉固定 800×600 导致的 HiDPI 溢出）
+    #[props(default = true)]
+    pub auto_size: bool,
 }
 
 /// 知识图谱 Canvas 组件（HUD 驾驶舱风格）
@@ -505,21 +508,25 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
     let on_click = props.on_node_click;
 
     rsx! {
-        CanvasScene {
-            width: 800.0,
-            height: 600.0,
-            nodes: canvas_nodes,
-            edges: canvas_edges,
-            // 关闭力导向布局：保留外部 calculate_layout/expand_layout 的辐射布局
-            enable_force_layout: false,
-            // 关闭 CanvasScene 自带粒子（知识图谱用自定义 HUD 效果，避免视觉过载）
-            enable_data_flow_particles: false,
-            enable_glow_particles: false,
-            enable_background_particles: false,
-            enable_birth_death_particles: false,
-            on_node_click: Some(EventHandler::new(move |id: String| {
-                on_click.call(id);
-            })),
+        // 包裹层提供确定高度（height:100% 需要父级有明确高度），canvas 内部自测量铺满
+        div { class: "w-full h-[560px]",
+            CanvasScene {
+                width: 800.0,
+                height: 600.0,
+                transparent: props.auto_size,
+                nodes: canvas_nodes,
+                edges: canvas_edges,
+                // 关闭力导向布局：保留外部 calculate_layout/expand_layout 的辐射布局
+                enable_force_layout: false,
+                // 关闭 CanvasScene 自带粒子（知识图谱用自定义 HUD 效果，避免视觉过载）
+                enable_data_flow_particles: false,
+                enable_glow_particles: false,
+                enable_background_particles: false,
+                enable_birth_death_particles: false,
+                on_node_click: Some(EventHandler::new(move |id: String| {
+                    on_click.call(id);
+                })),
+            }
         }
     }
 }

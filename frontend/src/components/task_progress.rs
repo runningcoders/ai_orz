@@ -61,7 +61,7 @@ pub fn TaskProgress(props: TaskProgressProps) -> Element {
             } else if is_completed {
                 div {
                     class: "init-progress-icon",
-                    style: "background: oklch(0.7 0.2 145); width: 40px; height: 40px; border-radius: 50%; color: #fff; font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 0.5rem;",
+                    style: "background: var(--color-success); width: 40px; height: 40px; border-radius: 50%; color: #fff; font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-bottom: 0.5rem;",
                     "✓"
                 }
             }

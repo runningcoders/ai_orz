@@ -18,10 +18,12 @@ use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::chat::ToolCallsTab;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
+use crate::components::state::Loading;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
-    format_file_size, format_timestamp_opt as format_timestamp, progress_bar_class,
-    project_status_badge, project_status_text, task_status_badge, task_status_text,
+    agent_runtime_badge, format_file_size, format_timestamp_opt as format_timestamp,
+    priority_badge, progress_bar_class, project_status_badge, project_status_text, tag_chip,
+    task_status_badge, task_status_text,
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
@@ -265,7 +267,7 @@ pub fn ChatSidePanel(
         div { class: "p-3 border-b border-base-300 flex items-center gap-2",
             h3 { class: "font-semibold text-sm flex-1 truncate", "信息面板" }
             if loading() {
-                span { class: "loading loading-spinner loading-xs" }
+                Loading { size: "xs" }
             }
             button {
                 class: "btn btn-ghost btn-xs",
@@ -297,7 +299,7 @@ pub fn ChatSidePanel(
 fn loading_placeholder() -> Element {
     rsx! {
         div { class: "flex items-center justify-center py-12",
-            span { class: "loading loading-spinner loading-md" }
+            Loading { size: "md" }
             span { class: "ml-2 text-sm text-base-content/60", "加载中..." }
         }
     }
@@ -320,9 +322,9 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
             // 基础信息：状态 / 优先级 / 标签 / 负责人
             div { class: "flex flex-wrap items-center gap-1",
                 span { class: "{project_status_badge(p.status)}", "{project_status_text(p.status)}" }
-                span { class: "badge badge-ghost", "P{p.priority}" }
+                span { class: "{priority_badge(p.priority)}", "P{p.priority}" }
                 for tag in p.tags.iter() {
-                    span { key: "{tag}", class: "badge badge-outline", "{tag}" }
+                    span { key: "{tag}", class: "{tag_chip()}", "{tag}" }
                 }
             }
             if let Some(owner) = p.owner_agent_id.as_deref() {
@@ -456,7 +458,7 @@ fn tasks_tab(
                                 div { class: "p-2 border-t border-base-300",
                                     if is_loading {
                                         div { class: "flex items-center justify-center py-4",
-                                            span { class: "loading loading-spinner loading-sm" }
+                                            Loading { size: "sm" }
                                         }
                                     } else if let Some(detail) = task_cache.read().get(&tid) {
                                         {
@@ -517,7 +519,7 @@ fn task_expanded_content(t: GetTaskResponse, tid: String) -> Element {
                                 rsx! {
                                     Link {
                                         key: "{aid}",
-                                        class: "badge badge-outline",
+                                        class: "{tag_chip()}",
                                         to: crate::pages::Route::ProjectArtifactDetail { id: aid },
                                         "{aname}"
                                     }
@@ -667,11 +669,11 @@ fn AgentInfoTab(agent_id: String) -> Element {
             }
             div { class: "flex flex-wrap gap-1",
                 span { class: "badge badge-info", "{agent_lifecycle_text(a.status)}" }
-                span { class: if a.runtime_state == 2 { "badge badge-warning" } else { "badge badge-success" },
+                span { class: "{agent_runtime_badge(a.runtime_state)}",
                     "{agent_runtime_text(a.runtime_state)}"
                 }
                 for role in a.roles.iter() {
-                    span { key: "{role}", class: "badge badge-outline", "{role}" }
+                    span { key: "{role}", class: "{tag_chip()}", "{role}" }
                 }
             }
             if let Some(d) = desc {
@@ -685,7 +687,7 @@ fn AgentInfoTab(agent_id: String) -> Element {
                     label { class: "form-label", "能力" }
                     div { class: "flex flex-wrap gap-1",
                         for c in capabilities.iter() {
-                            span { key: "{c}", class: "badge badge-ghost", "{c}" }
+                            span { key: "{c}", class: "{tag_chip()}", "{c}" }
                         }
                     }
                 }

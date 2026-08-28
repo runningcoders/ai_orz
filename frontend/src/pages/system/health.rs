@@ -20,6 +20,7 @@ use crate::api::system::{
     cleanup_tool_logs, get_health_metrics, get_tool_log_storage,
 };
 use crate::components::gauge::Gauge;
+use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::file::format_file_size;
@@ -198,7 +199,7 @@ pub fn SystemHealth() -> Element {
 
             if loading() && metrics.read().is_none() {
                 div { class: "flex justify-center py-12",
-                    span { class: "loading loading-spinner loading-lg" }
+                    Loading { size: "lg" }
                 }
             } else if let Some(m) = m_opt.as_ref() {
                 div { class: "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4",
@@ -425,7 +426,7 @@ pub fn SystemHealth() -> Element {
                         }
                     } else {
                         div { class: "flex justify-center py-6",
-                            span { class: "loading loading-spinner" }
+                            Loading { size: "md" }
                         }
                     }
                 }

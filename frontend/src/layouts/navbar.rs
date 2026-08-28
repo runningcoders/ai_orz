@@ -70,7 +70,7 @@ pub fn Navbar() -> Element {
         nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 shadow-md",
             // 左侧：品牌
             div { class: "flex-1",
-                Link { to: Route::MessageChat {}, class: "text-yellow-300 font-bold text-lg tracking-tight cursor-pointer", "AI Orz" }
+                Link { to: Route::MessageChat {}, class: "orz-brand-logo text-lg", "AI Orz" }
             }
 
             // 中间：桌面导航

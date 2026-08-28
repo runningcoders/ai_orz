@@ -507,7 +507,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                 EmptyState { message: "开始搜索知识节点或点击推荐起点".to_string() }
             } else {
                 div { class: "flex flex-col lg:flex-row gap-4",
-                    div { class: "flex-1 min-h-96",
+                    div { class: "flex-1 min-h-[600px]",
                     div { class: "card bg-base-100 shadow-md h-full",
                         div { class: "card-body",
                             {

@@ -28,8 +28,8 @@ pub struct ButtonProps {
 pub fn Button(props: ButtonProps) -> Element {
     let variant_class = match props.variant {
         ButtonVariant::Primary => "btn btn-primary",
-        ButtonVariant::Accent => "btn btn-secondary",
-        ButtonVariant::Secondary => "btn btn-outline",
+        ButtonVariant::Accent => "btn btn-accent",
+        ButtonVariant::Secondary => "btn btn-secondary",
         ButtonVariant::Danger => "btn btn-error",
         ButtonVariant::Ghost => "btn btn-ghost",
     };

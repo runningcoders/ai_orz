@@ -16,6 +16,7 @@ use crate::pages::hr::knowledge_graph::KnowledgeGraph;
 use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
+    status::tag_chip,
 };
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
@@ -1040,9 +1041,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
                                                                 if !tags.is_empty() {
                                                                     div { class: "flex flex-wrap gap-1 mt-2",
-                                                                        for tag in tags.iter() {
-                                                                            span { class: "badge badge-ghost", "{tag}" }
-                                                                        }
+                                                                    for tag in tags.iter() {
+                                                                        span { class: "{tag_chip()}", "{tag}" }
+                                                                    }
                                                                     }
                                                                 }
                                                                 div { class: "card-actions justify-end mt-3",
@@ -1168,13 +1169,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         h2 { class: "card-title", "关系图" }
                                     }
                                     div { class: "p-4",
-                                        WorkspaceGraph {
-                                            view: WorkspaceView::AgentDetail(a.id.clone()),
-                                            projects: graph_projects.read().clone(),
-                                            agents: graph_agents.read().clone(),
-                                            tasks: graph_tasks.read().clone(),
-                                            width: 800.0,
-                                            height: 500.0,
+                                        div { class: "w-full h-[520px]",
+                                            WorkspaceGraph {
+                                                view: WorkspaceView::AgentDetail(a.id.clone()),
+                                                projects: graph_projects.read().clone(),
+                                                agents: graph_agents.read().clone(),
+                                                tasks: graph_tasks.read().clone(),
+                                                width: 800.0,
+                                                height: 500.0,
+                                                auto_size: true,
+                                            }
                                         }
                                     }
                                 }
