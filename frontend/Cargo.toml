@@ -8,6 +8,14 @@ common = { path = "../common" }
 toml = "0.8"
 serde_json = "1.0"
 
+# wasm32-unknown-unknown 构建门禁修复：dioxus 默认 devtools → tungstenite → rand 0.9
+# → getrandom 0.3.4 在 wasm32-unknown-unknown 默认不受支持，需启用其 `wasm_js` feature
+# （该 feature 仅引入 wasm-bindgen/js-sys，二者 frontend 已直接依赖，无锁膨胀）。
+# 经 feature 统一，同一 wasm 构建内的所有 getrandom 0.3.4（含 rand 传递引入）一并生效；
+# 宿主/服务端构建不受影响。
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
 [dependencies]
 dioxus = { version = "0.7.10", features = ["web", "router"] }
 reqwest = { version = "0.13.4", features = ["json"] }
