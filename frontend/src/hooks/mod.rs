@@ -158,7 +158,6 @@ pub fn use_theme() -> ThemeController {
 /// 成功时顺便回填 AuthState，保证长时间停驻后用户信息（角色、显示名、组织）保持最新，这是一致性的免费福利。
 pub fn use_login_liveness() {
     let auth = use_auth_state();
-    let navigator = use_navigator();
     let mut probe_inflight = use_signal(|| false);
     let mut last_probe_at = use_signal(|| 0f64);
 
@@ -182,7 +181,6 @@ pub fn use_login_liveness() {
 
         probe_inflight.set(true);
         let mut auth = auth;
-        let navigator = navigator;
         spawn(async move {
             let res = get_current_user_info().await;
             probe_inflight.set(false);
@@ -201,7 +199,11 @@ pub fn use_login_liveness() {
                     let is_401 = e.http_status == 401;
                     logout(auth);
                     if !is_401 {
-                        navigator.replace(Route::Reception {});
+                        // 后端异常（非 401）强制登出：本 hook 挂在 Router 祖先(App)上，
+                        // 无法使用 use_navigator，改用 web_sys 整页跳转回登录流。
+                        if let Some(window) = web_sys::window() {
+                            let _ = window.location().replace("/");
+                        }
                     }
                 }
             }
