@@ -1150,6 +1150,73 @@
         display: flex; flex-direction: column; gap: 0.5rem;
       }
 
+      /* ===== 消息气泡 MessageBubble（Agent 详情页 / 工作台底部对话框复用）=====
+         `message-*` 一族此前从未绑定 CSS，气泡只是裸文本流，发送者信息无层次。
+         配色沿用主对话页气泡的「轻量」原则：浅底 + 正文色 + 细边，
+         身份只体现在头像底色，避免高饱和实底压过正文。 */
+      .message-item {
+        display: flex; align-items: flex-start; gap: 0.5rem;
+      }
+      .message-avatar {
+        flex: none; width: 2rem; height: 2rem;
+        border-radius: 9999px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.75rem; font-weight: 700;
+        background: var(--color-base-300);
+        color: var(--color-base-content);
+        user-select: none;
+      }
+      .message-body {
+        /* min-width:0 —— flex 子项默认 min-width:auto，长内容（代码块/长单词）
+           会把容器撑破，必须显式允许收缩 */
+        min-width: 0; flex: 1;
+        background: var(--color-base-100);
+        border: 1px solid var(--color-base-300);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+      }
+      .message-meta {
+        display: flex; align-items: center; gap: 0.375rem;
+        margin-bottom: 0.25rem;
+        font-size: 0.6875rem; line-height: 1.2;
+      }
+      .message-sender {
+        font-weight: 600;
+        color: var(--color-base-content);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        max-width: 40%;
+      }
+      .message-role {
+        flex: none;
+        padding: 0 0.375rem; border-radius: 9999px;
+        background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+        color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+      }
+      .message-time {
+        flex: none; margin-left: auto;
+        color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+      }
+      .message-text {
+        display: block;
+        /* 气泡内 markdown 不继承全局 max-w-none，填满气泡宽度正确换行 */
+        max-width: 100%;
+        overflow-wrap: anywhere;
+      }
+      .message-text .markdown-body { max-width: 100%; }
+      /* 发送者身份：只体现在头像底色（轻量，不用高饱和实底） */
+      .message-item.user .message-avatar {
+        background: color-mix(in oklab, var(--color-primary) 18%, var(--color-base-100));
+        color: var(--color-primary);
+      }
+      .message-item.agent .message-avatar {
+        background: color-mix(in oklab, var(--color-secondary) 18%, var(--color-base-100));
+        color: var(--color-secondary);
+      }
+      .message-item.system .message-avatar {
+        background: color-mix(in oklab, var(--color-info) 18%, var(--color-base-100));
+        color: var(--color-info);
+      }
+
       /* ===== Soul Prompt ===== */
       .soul-prompt {
         white-space: pre-wrap; word-wrap: break-word;

@@ -1,6 +1,6 @@
 use crate::api::finance::{list_model_providers, list_tool_tags, query_tools};
 use crate::api::hr::*;
-use crate::api::message::{load_latest_messages, send_message_to_agent};
+use crate::api::message::{load_older_messages, poll_new_messages, send_message_to_agent};
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::chat::{MessageBubble, TypingIndicator};
@@ -21,17 +21,17 @@ use crate::utils::{
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
     InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
-    ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
-    ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams, SkillListItem,
-    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
+    ListMessagesRequest, ListModelProvidersResponseItem, ListToolsRequest, MessageListItem,
+    PaginationParams, ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams,
+    SkillListItem, SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem,
+    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
+    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
-use wasm_bindgen::{JsCast, closure::Closure};
 
 /// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 stats 字段字面量）
 fn build_agent_stats_request(id: String) -> GetAgentRequest {
@@ -92,6 +92,60 @@ const STATUS_OPTIONS: &[(i32, &str)] = &[
     (5, "待离职"),
 ];
 
+/// 消息流单页条数（双向查询各取 PAGE_SIZE，合并去重后取最新的 PAGE_SIZE 条）
+const MSG_PAGE_SIZE: usize = 20;
+
+/// 发送后等待 Agent 回复的轮询节奏：最多 20 次 × 3s ≈ 60s，与 is_typing 超时保护一致
+const REPLY_POLL_MAX: usize = 20;
+const REPLY_POLL_INTERVAL_MS: u32 = 3_000;
+
+/// 拉取「与指定 Agent 相关」的消息（双向 OR 查询 + 合并去重）
+///
+/// 后端 `/api/v1/finance/messages` 的 `from_id` 与 `to_id` 是 **AND** 关系，
+/// 而「与该 Agent 相关」语义是 `from_id == aid **OR** to_id == aid`，
+/// 因此分两次查询（`from_id=aid` / `to_id=aid`）后按 `message_id` 去重、
+/// 按 `created_at` 升序合并。这样翻页（before_timestamp）也是准确的，
+/// 不像旧实现那样「拉 50 条再客户端过滤」（过滤后可能不足一页，且翻页会漏消息）。
+///
+/// `before` 为 `None` 时取最新一页；否则取早于该时间戳的一页。
+async fn fetch_agent_messages(
+    aid: &str,
+    before: Option<i64>,
+) -> Result<Vec<MessageListItem>, crate::api::ApiError> {
+    let base = ListMessagesRequest {
+        limit: Some(MSG_PAGE_SIZE),
+        before_timestamp: before,
+        ..Default::default()
+    };
+
+    let from_req = ListMessagesRequest {
+        from_id: Some(aid.to_string()),
+        ..base.clone()
+    };
+    let to_req = ListMessagesRequest {
+        to_id: Some(aid.to_string()),
+        ..base
+    };
+
+    // 两次查询顺序 await（同一后端，串行开销可接受，避免引入额外并发依赖）
+    let sent = load_older_messages(from_req).await?.messages;
+    let received = load_older_messages(to_req).await?.messages;
+
+    let mut merged: Vec<MessageListItem> = Vec::with_capacity(sent.len() + received.len());
+    let mut seen: HashSet<String> = HashSet::new();
+    for m in sent.into_iter().chain(received) {
+        if seen.insert(m.message_id.clone()) {
+            merged.push(m);
+        }
+    }
+    merged.sort_by_key(|m| m.created_at);
+    // 双向各取 PAGE_SIZE，合并后可能到 2×PAGE_SIZE，只保留最新的 PAGE_SIZE 条
+    if merged.len() > MSG_PAGE_SIZE {
+        merged.drain(..merged.len() - MSG_PAGE_SIZE);
+    }
+    Ok(merged)
+}
+
 #[component]
 pub fn HrAgentDetail(id: String) -> Element {
     // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
@@ -108,6 +162,10 @@ pub fn HrAgentDetail(id: String) -> Element {
         async move { get_agent(build_agent_stats_request(id)).await }
     });
     let mut messages = use_signal(Vec::<MessageListItem>::new);
+    // 消息流分页状态（后端分页拉取，不依赖 SSE）
+    let mut msg_loading = use_signal(|| false);
+    let mut msg_loading_more = use_signal(|| false);
+    let mut msg_has_more = use_signal(|| true);
     let mut is_typing = use_signal(|| false);
     // 修复 H3：为聊天输入框分离独立 signal，避免状态污染
     let mut input_message = use_signal(String::new);
@@ -193,27 +251,17 @@ pub fn HrAgentDetail(id: String) -> Element {
                 Ok(resp) => all_tools.set(resp.items),
                 Err(e) => toast.error(format!("获取工具列表失败: {}", e)),
             }
-            match load_latest_messages(common::api::ListMessagesRequest {
-                limit: Some(50),
-                ..Default::default()
-            })
-            .await
-            {
-                Ok(resp) => {
-                    // 修复 HIGH #4：之前直接 set 全局消息，显示的是其他 Agent/用户的消息。
-                    // 后端 /messages API 不支持 agent_id 过滤，前端按 to_id/from_id 客户端过滤。
-                    // 取较多条数（50）后过滤，确保当前 agent 有足够历史。
-                    let aid_for_filter = aid.clone();
-                    let filtered: Vec<_> = resp
-                        .messages
-                        .into_iter()
-                        .filter(|m| m.to_id == aid_for_filter || m.from_id == aid_for_filter)
-                        .take(20)
-                        .collect();
-                    messages.set(filtered);
+            // 消息流：后端分页拉取，只取与本 Agent 相关的信息流
+            // （from_id=aid OR to_id=aid，见 fetch_agent_messages 的双向查询说明）
+            msg_loading.set(true);
+            match fetch_agent_messages(&aid, None).await {
+                Ok(page) => {
+                    msg_has_more.set(page.len() >= MSG_PAGE_SIZE);
+                    messages.set(page);
                 }
                 Err(e) => toast.error(format!("加载消息失败: {}", e)),
             }
+            msg_loading.set(false);
             match list_model_providers().await {
                 Ok(resp) => model_providers.set(resp.providers),
                 Err(e) => toast.error(format!("加载模型提供商列表失败: {}", e)),
@@ -271,61 +319,86 @@ pub fn HrAgentDetail(id: String) -> Element {
         }
     });
 
-    // SSE 资源：EventSource + Closure 供顶层 use_drop 清理
-    struct SseResource {
-        event_source: web_sys::EventSource,
-        on_message: Option<Closure<dyn FnMut(web_sys::MessageEvent)>>,
-    }
-    let mut sse_resource = use_signal(|| Option::<SseResource>::None);
+    // === 消息流：后端分页拉取（不使用 SSE）===
+    //
+    // Agent 详情页的对话定位是「信息流回看」，不需要实时推送：
+    // SSE 会常驻一条连接、且让消息列表与实时事件耦合（断连/重连都要处理）。
+    // 改为：进入页面拉最新一页，点「加载更早」按 before_timestamp 向前翻页，
+    // 发送消息后短时轮询拉取 Agent 回复（见 handle_send）。
 
-    let sse_id = id.clone();
+    // 上拉加载更早消息。
+    // 捕获 `rid`（Signal，Copy）而非 `id`（String）—— 让闭包保持 Copy，
+    // 才能在「加载更早」按钮等场景复用。
+    let load_more = move |_| {
+        if msg_loading_more() || !msg_has_more() {
+            return;
+        }
+        let aid = rid();
+        msg_loading_more.set(true);
+        spawn(async move {
+            let before = messages.read().first().map(|m| m.created_at);
+            match fetch_agent_messages(&aid, before).await {
+                Ok(mut older) => {
+                    if older.is_empty() {
+                        msg_has_more.set(false);
+                    } else {
+                        msg_has_more.set(older.len() >= MSG_PAGE_SIZE);
+                        older.extend(messages.read().iter().cloned());
+                        messages.set(older);
+                    }
+                }
+                Err(e) => toast.error(format!("加载更早消息失败: {}", e)),
+            }
+            msg_loading_more.set(false);
+        });
+    };
 
-    use_effect(move || {
-        // 修复 H5：EventSource::new 可能失败，不能 unwrap
-        let event_source = match web_sys::EventSource::new("/api/v1/finance/messages/sse") {
-            Ok(es) => es,
-            Err(_) => {
-                toast.error("SSE 连接初始化失败，实时消息将无法接收");
+    // 拉取本 Agent 的新消息（after_timestamp 增量），追加到列表尾部。
+    // 同 load_more：捕获 `rid` 保持闭包 Copy，供「刷新」按钮与发送后轮询共用。
+    let poll_new = move || {
+        let aid = rid();
+        spawn(async move {
+            let after = messages.read().iter().map(|m| m.created_at).max();
+            let req = ListMessagesRequest {
+                limit: Some(MSG_PAGE_SIZE),
+                after_timestamp: after,
+                ..Default::default()
+            };
+            let from_req = ListMessagesRequest {
+                from_id: Some(aid.clone()),
+                ..req.clone()
+            };
+            let to_req = ListMessagesRequest {
+                to_id: Some(aid.clone()),
+                ..req
+            };
+            let mut incoming = Vec::new();
+            for r in [from_req, to_req] {
+                if let Ok(resp) = poll_new_messages(r).await {
+                    incoming.extend(resp.messages);
+                }
+            }
+            if incoming.is_empty() {
                 return;
             }
-        };
-        let inner_id = sse_id.clone();
-        let mut inner_messages = messages;
-        let mut inner_is_typing = is_typing;
-
-        let on_message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            let msg: MessageListItem = match serde_json::from_str(&data) {
-                Ok(m) => m,
-                Err(_) => return,
-            };
-            if msg.to_id == inner_id || msg.from_id == inner_id {
-                let mut current = inner_messages.write();
+            incoming.sort_by_key(|m| m.created_at);
+            let mut current = messages.write();
+            let mut changed = false;
+            for msg in incoming {
                 // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
                 replace_tmp_with_real(&mut current, &msg);
                 if current.iter().any(|m| m.message_id == msg.message_id) {
-                    return;
+                    continue;
                 }
                 current.push(msg);
-                inner_is_typing.set(false);
+                changed = true;
             }
-        }) as Box<dyn FnMut(web_sys::MessageEvent)>);
-        event_source.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        let on_message = Some(on_message);
-
-        sse_resource.set(Some(SseResource {
-            event_source,
-            on_message,
-        }));
-    });
-
-    use_drop(move || {
-        if let Some(res) = sse_resource.take() {
-            res.event_source.set_onmessage(None);
-            drop(res.on_message);
-            res.event_source.close();
-        }
-    });
+            // 收到 Agent 的回复即可停止「思考中」提示
+            if changed && current.iter().any(|m| m.from_role == 1 && m.from_id == aid) {
+                is_typing.set(false);
+            }
+        });
+    };
 
     let id_for_send = id.clone();
     let handle_send = use_callback(move |_: ()| {
@@ -340,11 +413,18 @@ pub fn HrAgentDetail(id: String) -> Element {
         input_message.set(String::new());
         is_typing.set(true);
 
-        // 修复 M6（对齐 chat.rs）：is_typing 超时保护，防止 Agent 失败/SSE 断开时永久卡死
-        spawn(async move {
-            gloo_timers::future::TimeoutFuture::new(60_000).await;
-            is_typing.set(false);
-        });
+        // 修复 M6（对齐 chat.rs）：is_typing 超时保护，防止 Agent 失败时永久卡死。
+        // 用 `callback::Timeout::new(..).forget()` 而非 `spawn + TimeoutFuture`：
+        // 组件卸载时 spawn 的 future 被 drop，TimeoutFuture 底层 Closure::once 在
+        // 「已入队未触发」时会被浏览器调用已释放的闭包 → "closure invoked recursively
+        // or after being dropped"。forget() 有意泄漏该一次性定时器，规避该竞态。
+        gloo_timers::callback::Timeout::new(
+            REPLY_POLL_MAX as u32 * REPLY_POLL_INTERVAL_MS,
+            move || {
+                is_typing.set(false);
+            },
+        )
+        .forget();
 
         spawn(async move {
             let req = SendMessageToAgentParams {
@@ -361,6 +441,16 @@ pub fn HrAgentDetail(id: String) -> Element {
                     // 构造乐观用户消息（统一使用 build_optimistic_user_msg）
                     let user_msg = build_optimistic_user_msg(text, None, None, Some(aid.clone()));
                     messages.write().push(user_msg);
+
+                    // 无 SSE：发送后短时轮询拉取 Agent 回复（最多 ~60s，与超时保护同步）。
+                    // 一旦 `poll_new` 收到该 Agent 的消息就会把 is_typing 置回 false。
+                    for _ in 0..REPLY_POLL_MAX {
+                        gloo_timers::future::TimeoutFuture::new(REPLY_POLL_INTERVAL_MS).await;
+                        if !is_typing() {
+                            break;
+                        }
+                        poll_new();
+                    }
                 }
                 Err(e) => {
                     // 修复 M4：失败时恢复用户输入
@@ -1133,49 +1223,83 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             },
                             3 => rsx! {
-                                // === 对话与记忆 ===
-                                div { class: "mb-6",
-                                    h3 { class: "text-lg font-semibold mb-3", "对话" }
-                                    div { class: "agent-chat-messages",
-                                        if messages().is_empty() && !is_typing() {
-                                            div { class: "text-center py-12",
-                                                div { class: "text-5xl mb-4 opacity-30", "💬" }
-                                                div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
-                                            }
-                                        } else {
-                                            for msg in messages().iter().cloned() {
-                                                MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
-                                            }
-                                            if is_typing() {
-                                                TypingIndicator {}
-                                            }
-                                        }
-                                    }
-                                    div { class: "flex gap-2 mt-4",
-                                        input {
-                                            class: "input input-bordered flex-1",
-                                            r#type: "text",
-                                            placeholder: "输入消息...",
-                                            value: input_message,
-                                            oninput: move |e| input_message.set(e.value().clone()),
-                                            onkeydown: move |e| {
-                                                if e.key() == Key::Enter {
-                                                    e.prevent_default();
-                                                    handle_send(());
-                                                }
-                                            },
-                                        }
-                                        button {
-                                            class: "btn btn-primary",
-                                            onclick: move |_| handle_send(()),
-                                            "发送"
-                                        }
-                                    }
-                                }
+                                // === 对话与记忆（左右分栏）===
+                                // 原先是纵向堆叠：消息流一长就把记忆面板挤到屏幕外，
+                                // 两者还会互相抢占滚动。改为左右双栏、各自独立滚动，
+                                // 互不干扰。窄屏（< lg）回退为上下堆叠。
+                                div { class: "grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start",
 
-                                div { class: "mb-6",
-                                    h3 { class: "text-lg font-semibold mb-3", "记忆" }
-                                    AgentMemoryPanel { agent_id: Some(id.clone()) }
+                                    // ---- 左栏：消息流 ----
+                                    div { class: "flex flex-col min-h-0 lg:h-[600px]",
+                                        div { class: "flex items-center justify-between mb-2",
+                                            h3 { class: "text-lg font-semibold", "对话" }
+                                            button {
+                                                class: "btn btn-ghost btn-xs",
+                                                title: "拉取最新消息",
+                                                onclick: move |_| poll_new(),
+                                                "刷新"
+                                            }
+                                        }
+                                        div { class: "agent-chat-messages flex-1 min-h-0 max-h-[65vh] lg:max-h-none",
+                                            // 上拉翻页入口（置于顶部：列表按时间正序，早消息在上）
+                                            if msg_has_more() {
+                                                div { class: "flex justify-center pb-1",
+                                                    button {
+                                                        class: "btn btn-ghost btn-xs",
+                                                        disabled: msg_loading_more(),
+                                                        onclick: load_more,
+                                                        if msg_loading_more() { "加载中…" } else { "加载更早消息" }
+                                                    }
+                                                }
+                                            } else if !messages().is_empty() {
+                                                div { class: "text-center text-xs text-base-content/40 pb-1", "已到最早消息" }
+                                            }
+
+                                            if msg_loading() {
+                                                Loading { size: "sm" }
+                                            } else if messages().is_empty() && !is_typing() {
+                                                div { class: "text-center py-12",
+                                                    div { class: "text-5xl mb-4 opacity-30", "💬" }
+                                                    div { class: "text-base-content/70", "暂无对话记录，发送消息开始对话" }
+                                                }
+                                            } else {
+                                                for msg in messages().iter().cloned() {
+                                                    MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
+                                                }
+                                                if is_typing() {
+                                                    TypingIndicator {}
+                                                }
+                                            }
+                                        }
+                                        div { class: "flex gap-2 mt-3",
+                                            input {
+                                                class: "input input-bordered flex-1",
+                                                r#type: "text",
+                                                placeholder: "输入消息...",
+                                                value: input_message,
+                                                oninput: move |e| input_message.set(e.value().clone()),
+                                                onkeydown: move |e| {
+                                                    if e.key() == Key::Enter {
+                                                        e.prevent_default();
+                                                        handle_send(());
+                                                    }
+                                                },
+                                            }
+                                            button {
+                                                class: "btn btn-primary",
+                                                onclick: move |_| handle_send(()),
+                                                "发送"
+                                            }
+                                        }
+                                    }
+
+                                    // ---- 右栏：记忆 ----
+                                    div { class: "flex flex-col min-h-0 lg:h-[600px]",
+                                        h3 { class: "text-lg font-semibold mb-2", "记忆" }
+                                        div { class: "flex-1 min-h-0 overflow-y-auto pr-1",
+                                            AgentMemoryPanel { agent_id: Some(id.clone()) }
+                                        }
+                                    }
                                 }
                             },
                             4 => rsx! {

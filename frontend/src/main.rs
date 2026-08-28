@@ -15,6 +15,7 @@ use wasm_bindgen::JsCast;
 
 #[allow(unused_imports)]
 use store::auth::AuthState;
+use store::directory::use_provide_directory;
 use store::toast::use_provide_toast;
 
 use crate::components::toast::ToastContainer;
@@ -30,6 +31,8 @@ fn App() -> Element {
     use_context_provider(|| Signal::new(AuthState::restore()));
     let _toast = use_provide_toast();
     let _theme_ctrl = use_provide_theme();
+    // 全局名称目录（Agent 名 / 用户名）：供消息气泡渲染发送者真实名字，一次加载全站共享
+    let _directory = use_provide_directory();
 
     // 全生命周期登录态探活（切 tab 回来 / 最小化恢复 / 10 分钟发呆都会自检，
     // 假登录态不必等到切路由或用户点击才被发现；未登录时零请求开销）。

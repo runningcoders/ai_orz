@@ -29,6 +29,18 @@ pub fn role_avatar(role: i32) -> &'static str {
     }
 }
 
+/// 角色 → 中文名（0=用户, 1=Agent, 2=系统）
+///
+/// 用于气泡头部的角色标签，以及发送者名字查不到时的兜底。
+pub fn role_label(role: i32) -> &'static str {
+    match role {
+        0 => "用户",
+        1 => "Agent",
+        2 => "系统",
+        _ => "未知",
+    }
+}
+
 /// 角色 → CSS class 名（0=user, 1=agent, 2=system）
 pub fn role_class(role: i32) -> &'static str {
     match role {
@@ -37,6 +49,50 @@ pub fn role_class(role: i32) -> &'static str {
         2 => "system",
         _ => "other",
     }
+}
+
+/// 名称查找表：实体 ID → 展示名
+///
+/// 由 `store::directory::Directory` 预载并缓存（Agent 全量 + 组织用户全量）。
+pub type NameMap = std::collections::HashMap<String, String>;
+
+/// 解析消息发送者的展示名
+///
+/// `MessageListItem` 只带 `from_id` / `from_role`，不含发送者名字，
+/// 需要按角色到对应的名称表里查：
+/// - `from_role = 2`（System）→ 直接返回「系统」
+/// - `from_role = 1`（Agent）→ 查 Agent 名称表
+/// - `from_role = 0`（User）→ 查用户名称表
+///
+/// 查不到时回退到 `角色 + ID 前 6 位`，**绝不返回 "user"/"agent" 这类英文角色码**
+/// （历史上 message_bubble 曾直接把 `role_class()` 当可见文本渲染，气泡里会显示
+/// "user"/"agent" 字样）。
+pub fn resolve_sender_name(msg: &MessageListItem, agents: &NameMap, users: &NameMap) -> String {
+    match msg.from_role {
+        2 => "系统".to_string(),
+        1 => agents
+            .get(&msg.from_id)
+            .cloned()
+            .unwrap_or_else(|| short_id(&msg.from_id, "Agent")),
+        0 => users
+            .get(&msg.from_id)
+            .cloned()
+            // 查不到 → 就是当前登录用户：组织成员已由 `list_users` 全量预载，
+            // 而乐观插入的自发消息 `from_id` 是占位符 "user"
+            // （见 build_optimistic_user_msg），本就不该拿去查表。
+            .unwrap_or_else(|| "我".to_string()),
+        _ => "未知".to_string(),
+    }
+}
+
+/// 回退展示：`<前缀> <ID 前 6 位>`，避免把一长串内部 ID 直接铺到 UI 上
+pub fn short_id(id: &str, prefix: &str) -> String {
+    if id.is_empty() {
+        return prefix.to_string();
+    }
+    // 按字符边界截断，避免多字节字符被切坏
+    let short: String = id.chars().take(6).collect();
+    format!("{} {}", prefix, short)
 }
 
 /// 生成乐观消息的临时 ID（tmp_<ms>_<random>，避免同毫秒碰撞）
