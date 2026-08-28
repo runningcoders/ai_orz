@@ -169,3 +169,232 @@ pub trait LogFields {
     /// 日志宏内部调用此方法，传入日志级别和操作名称
     fn create_log_span(&self, operation: &str, level: tracing::Level) -> tracing::Span;
 }
+
+// ==================== 敏感信息脱敏 ====================
+
+/// 敏感字段名（小写子串匹配，命中即把值替换为 `***`）
+///
+/// 单一数据源：JSON 结构化脱敏与文本 KV 模式脱敏共用此列表，
+/// 新增敏感字段只需在此追加。
+pub const SENSITIVE_KEYS: &[&str] = &[
+    "password",
+    "api_key",
+    "apikey",
+    "token",
+    "secret",
+    "authorization",
+    "credential",
+];
+
+/// 判断字段名是否命中敏感字段（小写子串匹配，如 `chat_model.api_key` → `api_key` 命中）
+pub fn is_sensitive_key(key: &str) -> bool {
+    let key_lower = key.to_lowercase();
+    SENSITIVE_KEYS.iter().any(|k| key_lower.contains(k))
+}
+
+/// 递归脱敏 JSON：命中敏感字段的值替换为 `***`（就地修改）
+///
+/// 适用于能解析为 JSON 结构的日志内容（请求/响应体、DTO 调试输出等）。
+pub fn mask_sensitive_json(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                if is_sensitive_key(key) {
+                    *val = serde_json::Value::String("***".to_string());
+                } else {
+                    mask_sensitive_json(val);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items.iter_mut() {
+                mask_sensitive_json(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 文本级脱敏：在任意文本中扫描「敏感键 + 分隔符 + 值」模式，把值替换为 `***`
+///
+/// 适用于无法结构化解析的文本日志（错误信息、非 JSON 请求体、第三方返回文本等）。
+/// 支持的值形态：
+/// - `key=value` / `key: value`（裸值，止于空白、逗号、分号、`}`、`]`、引号）
+/// - `"key":"value"`（JSON 字符串形态，含转义）
+/// - `Authorization: Bearer xxx`（Bearer 后的第二个 token 一并脱敏）
+pub fn mask_sensitive_text(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        let mut matched = false;
+        for key in SENSITIVE_KEYS {
+            let key_bytes = key.as_bytes();
+            let key_end = i + key_bytes.len();
+            if key_end > bytes.len() || !bytes[i..key_end].eq_ignore_ascii_case(key_bytes) {
+                continue;
+            }
+            // 键后：可选空格 + 可选收尾引号（JSON 形态）+ 分隔符（= 或 :）
+            let mut j = key_end;
+            while j < bytes.len() && bytes[j] == b' ' {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b'"' {
+                j += 1;
+                while j < bytes.len() && bytes[j] == b' ' {
+                    j += 1;
+                }
+            }
+            if j >= bytes.len() || (bytes[j] != b'=' && bytes[j] != b':') {
+                continue;
+            }
+            j += 1;
+            while j < bytes.len() && bytes[j] == b' ' {
+                j += 1;
+            }
+            let value_start = j;
+
+            // 值形态 1：引号包裹（JSON 字符串，处理转义）
+            let mut value_end;
+            if j < bytes.len() && bytes[j] == b'"' {
+                j += 1;
+                while j < bytes.len() && bytes[j] != b'"' {
+                    if bytes[j] == b'\\' {
+                        j += 1; // 跳过转义符
+                    }
+                    j += 1;
+                }
+                value_end = (j + 1).min(bytes.len()); // 含收尾引号
+            } else {
+                // 值形态 2：裸值，止于分隔字符
+                while j < bytes.len() {
+                    let c = bytes[j];
+                    if c.is_ascii_whitespace()
+                        || matches!(c, b',' | b';' | b'}' | b']' | b'"' | b'\'')
+                    {
+                        break;
+                    }
+                    j += 1;
+                }
+                value_end = j;
+                // 值形态 3：`Bearer xxx` —— 再吞掉一个空白分隔的 token
+                if bytes[value_start..value_end].eq_ignore_ascii_case(b"bearer") {
+                    let mut k = value_end;
+                    while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+                        k += 1;
+                    }
+                    while k < bytes.len() {
+                        let c = bytes[k];
+                        if c.is_ascii_whitespace()
+                            || matches!(c, b',' | b';' | b'}' | b']' | b'"' | b'\'')
+                        {
+                            break;
+                        }
+                        k += 1;
+                    }
+                    if k > value_end {
+                        value_end = k;
+                    }
+                }
+            }
+
+            if value_end > value_start {
+                out.push_str(&text[i..value_start]);
+                out.push_str("***");
+                i = value_end;
+                matched = true;
+            }
+            break;
+        }
+
+        if !matched {
+            // 逐字符推进（多字节 UTF-8 一次推一个 char，避免切断字符边界）
+            let mut next = i + 1;
+            while next < bytes.len() && !text.is_char_boundary(next) {
+                next += 1;
+            }
+            out.push_str(&text[i..next]);
+            i = next;
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_sensitive_key_substring_match() {
+        assert!(is_sensitive_key("password"));
+        assert!(is_sensitive_key("chat_model.api_key"));
+        assert!(is_sensitive_key("AccessToken"));
+        assert!(!is_sensitive_key("username"));
+        assert!(!is_sensitive_key("base_url"));
+    }
+
+    #[test]
+    fn mask_sensitive_json_recursive() {
+        let mut value: serde_json::Value = serde_json::json!({
+            "username": "alice",
+            "password": "p@ss",
+            "chat_model": {
+                "api_key": "sk-123",
+                "base_url": "https://x",
+                "items": [{"token": "t"}]
+            }
+        });
+        mask_sensitive_json(&mut value);
+        assert_eq!(value["username"], "alice");
+        assert_eq!(value["password"], "***");
+        assert_eq!(value["chat_model"]["api_key"], "***");
+        assert_eq!(value["chat_model"]["base_url"], "https://x");
+        assert_eq!(value["chat_model"]["items"][0]["token"], "***");
+    }
+
+    #[test]
+    fn mask_sensitive_text_kv_patterns() {
+        // key=value
+        assert_eq!(
+            mask_sensitive_text("connecting with api_key=sk-123 ok"),
+            "connecting with api_key=*** ok"
+        );
+        // key: value（带空格，分隔符与空格保留）
+        assert_eq!(
+            mask_sensitive_text("password: hunter2, retry"),
+            "password: ***, retry"
+        );
+        // JSON 字符串形态
+        assert_eq!(
+            mask_sensitive_text(r#"{"api_key":"sk-123","n":1}"#),
+            r#"{"api_key":***,"n":1}"#
+        );
+        // Bearer 双 token
+        assert_eq!(
+            mask_sensitive_text("Authorization: Bearer abc.def.ghi next"),
+            "Authorization: *** next"
+        );
+        // 非敏感键不受影响
+        assert_eq!(
+            mask_sensitive_text("count=42 username=alice"),
+            "count=42 username=alice"
+        );
+        // 普通单词中的 token 子串不受影响（无分隔符不命中）
+        assert_eq!(
+            mask_sensitive_text("tokenize the input"),
+            "tokenize the input"
+        );
+        // 中文等多字节字符不受影响
+        assert_eq!(
+            mask_sensitive_text("创建 Agent：api_key=sk-1 完成"),
+            "创建 Agent：api_key=*** 完成"
+        );
+        // secret 鍵
+        assert_eq!(
+            mask_sensitive_text("client_secret = very-secret-value;"),
+            "client_secret = ***;"
+        );
+    }
+}

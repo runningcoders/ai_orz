@@ -133,6 +133,11 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             })),
         )
         .route("/health", get(handlers::health::health))
+        // API Notice 日志：请求结束时打印 method/path/status/duration + 请求/响应体预览
+        // （仅覆盖上面已注册的接口路由；必须加在 fallback_service 之前，静态资源不打）
+        .layer(axum::middleware::from_fn(
+            crate::middleware::api_notice_middleware,
+        ))
         .fallback_service(spa_service)
 }
 

@@ -333,6 +333,28 @@ log_info!("json {{\"key\": \"value\"}}");
 
 ---
 
+## 敏感信息脱敏
+
+脱敏能力统一收敛在日志库（`src/pkg/logging.rs`），供 API Notice 中间件及任何打日志的代码复用：
+
+| API | 用途 |
+|-----|------|
+| `SENSITIVE_KEYS` | 敏感字段名单一数据源（password / api_key / apikey / token / secret / authorization / credential） |
+| `is_sensitive_key(key)` | 字段名判断（小写子串匹配，`chat_model.api_key` → `api_key` 命中） |
+| `mask_sensitive_json(&mut Value)` | 递归脱敏 JSON：命中敏感字段的值替换为 `***` |
+| `mask_sensitive_text(&str) -> String` | 文本 KV 模式脱敏：扫描 `key=value` / `key: value` / `"key":"value"` / `Authorization: Bearer xxx` 形态 |
+
+使用规范：
+
+- **能解析为 JSON 的内容**（请求/响应体、DTO 调试输出）→ `mask_sensitive_json`（精确、无误伤）
+- **无法结构化解析的文本**（错误信息、表单体、第三方返回文本）→ `mask_sensitive_text`（模式扫描，保守命中）
+- 新增敏感字段只需在 `SENSITIVE_KEYS` 追加，两条路径同时生效
+- 刻意**不做** tracing 层全局自动脱敏：对所有日志消息做模式扫描会误伤正常业务文本（如聊天内容里恰好含 "token:"），且破坏日志宏零成本抽象；需要脱敏的调用点显式调用上述函数
+
+> 实现见 [src/pkg/logging.rs](../../src/pkg/logging.rs)（`SENSITIVE_KEYS` 起的「敏感信息脱敏」区段，含纯函数单测）
+
+---
+
 ## 文件位置
 
 | 文件 | 内容 |
