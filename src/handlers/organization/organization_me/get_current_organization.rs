@@ -1,5 +1,6 @@
 //! Handler: GET /api/v1/organization/me - Get current authenticated user's organization information
 
+use crate::middleware::jwt_auth::expired_jwt_cookie_header_value;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -32,7 +33,18 @@ pub async fn get_current_organization(
         .organization_manage()
         .get_by_id(ctx, &org_id)
         .await?
-        .ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
+        // JWT 通过但其引用的 organization_id 在 DB 中已不存在（后端清空数据、
+        // 组织被删除等），此时不是 404，而是「会话身份已失效」：返回 401
+        // 并附 Set-Cookie 清掉 HttpOnly JWT，前端下一次请求立即出清登录态。
+        .ok_or_else(|| {
+            common::error::Error::unauthorized(format!(
+                "当前登录身份已失效，请重新登录（组织 {org_id} 不存在）"
+            ))
+            .with_response_header(
+                axum::http::header::SET_COOKIE.as_str(),
+                expired_jwt_cookie_header_value(),
+            )
+        })?;
 
     // 转换为响应格式
     let data = OrganizationInfoResponse {

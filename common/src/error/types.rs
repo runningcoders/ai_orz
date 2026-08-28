@@ -111,12 +111,18 @@ pub struct Error {
     pub error_type: ErrorType,
     /// Human-readable message.
     pub msg: String,
-    /// Structured error context.
-    pub field: Option<ErrorField>,
+    /// Structured error context (boxed to keep Error small).
+    pub field: Option<Box<ErrorField>>,
     /// Underlying source error (not serialized, not deserialized).
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     pub source: Option<Arc<AnyhowError>>,
+    /// Optional response headers to attach (HTTP adapter only; key-value string pairs).
+    ///
+    /// 会话相关接口在 401/会话失效时，通过此字段附 Set-Cookie 清除 JWT。
+    /// 纯字符串存储以保证 `Error` 在非 HTTP 编译目标（Dioxus 前端等）下仍可编译。
+    /// Boxed 以保持 Error 栈尺寸不触 result_large_err 红线。
+    pub extra_response_headers: Box<[(String, String)]>,
 }
 
 impl Error {
@@ -129,6 +135,7 @@ impl Error {
             msg: msg.into(),
             field: None,
             source: None,
+            extra_response_headers: Box::new([]),
         }
     }
 
@@ -144,7 +151,24 @@ impl Error {
             msg: msg.into(),
             field: None,
             source: None,
+            extra_response_headers: Box::new([]),
         }
+    }
+
+    /// Attach a raw (name, value) response header.
+    ///
+    /// 典型用法：会话接口返回未认证时，附 `Set-Cookie` 清除 JWT，使下一次
+    /// 浏览器请求立即携带空 Cookie，避免"后端清库后 JWT 仍被自动携带"。
+    /// 非 HTTP 环境下这些字段静默忽略，不影响跨包使用。
+    pub fn with_response_header(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        let mut v: Vec<(String, String)> = self.extra_response_headers.into_vec();
+        v.push((name.into(), value.into()));
+        self.extra_response_headers = v.into_boxed_slice();
+        self
     }
 
     /// Shortcut: bad request / invalid request (400).
@@ -199,7 +223,7 @@ impl Error {
 
     /// Attach structured business context fields.
     pub fn with_field(mut self, field: ErrorField) -> Self {
-        self.field = Some(field);
+        self.field = Some(Box::new(field));
         self
     }
 
@@ -231,12 +255,12 @@ impl Error {
     pub fn set_tool_trace(&mut self, trace_ref: serde_json::Value) {
         let mut field = ErrorField::default();
         field.insert("trace_ref".into(), trace_ref);
-        self.field = Some(field);
+        self.field = Some(Box::new(field));
     }
 
     /// Get reference to structured fields.
     pub fn field(&self) -> Option<&ErrorField> {
-        self.field.as_ref()
+        self.field.as_deref()
     }
 
     /// Get source error.

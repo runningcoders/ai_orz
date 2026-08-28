@@ -153,3 +153,20 @@ fn unauthorized_response(_req: &Request, is_browser: bool) -> Response {
             .into_response()
     }
 }
+
+/// 构造清除 JWT Cookie 的 Set-Cookie header 字符串。
+///
+/// 参数与 [login.rs 设置 JWT](crate::handlers::organization::auth::login)、
+/// [logout.rs 清除 JWT](crate::handlers::organization::auth::logout) 完全对齐：
+/// path=/、HttpOnly、SameSite=Lax、max_age=0。调用方将返回值（name=value 拼好的整串）
+/// 直接写入 `Set-Cookie` response header。
+pub fn expired_jwt_cookie_header_value() -> String {
+    use cookie::{Cookie, SameSite};
+    let cookie = Cookie::build((JWT_COOKIE_NAME, ""))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(cookie::time::Duration::seconds(0))
+        .secure(false);
+    cookie.to_string()
+}

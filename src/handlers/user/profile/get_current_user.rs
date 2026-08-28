@@ -1,5 +1,6 @@
 //! Handler: GET /api/v1/user/me - Get current authenticated user information
 
+use crate::middleware::jwt_auth::expired_jwt_cookie_header_value;
 use crate::pkg::RequestContext;
 use crate::service::domain::organization;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -31,7 +32,18 @@ pub async fn get_current_user(
         .user_manage()
         .get_user_by_id(ctx, &user_id)
         .await?
-        .ok_or_else(|| common::error::Error::not_found("用户不存在".to_string()))?;
+        // JWT 通过了但其引用的 user_id 在 DB 中已不存在（后端数据清空、
+        // 用户被删除等），此时不是 404，而是「会话身份已失效」：返回 401
+        // 并附 Set-Cookie 清掉 HttpOnly JWT，前端下一次请求立即出清登录态。
+        .ok_or_else(|| {
+            common::error::Error::unauthorized(format!(
+                "当前登录身份已失效，请重新登录（用户 {user_id} 不存在）"
+            ))
+            .with_response_header(
+                axum::http::header::SET_COOKIE.as_str(),
+                expired_jwt_cookie_header_value(),
+            )
+        })?;
 
     // 转换为响应格式
     let role = user.user_role();

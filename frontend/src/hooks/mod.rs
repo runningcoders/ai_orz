@@ -6,7 +6,7 @@ pub mod use_workspace_data;
 
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
-use crate::store::auth::{has_saved_role, save_role, use_auth_state};
+use crate::store::auth::{has_saved_role, logout, save_role, use_auth_state};
 use crate::utils::local_storage;
 
 #[allow(unused_imports)]
@@ -43,9 +43,18 @@ pub fn use_require_auth() -> bool {
                             state.org_id = resp.data.organization_id.clone();
                             save_role(resp.data.role);
                         }
-                        Err(_) => {
-                            // 获取用户信息失败（cookie 可能过期），静默处理
-                            // 后续 API 调用会 401，由各页面自行处理
+                        Err(e) => {
+                            // 修 bug：后端清空数据/用户被删后 JWT 仍被浏览器携带，
+                            // /user/me 返回 401（修复后端）或其他失败。
+                            // 前端必须主动清登录态并跳接待页，否则进入"已登录但信息为空"
+                            // 的假登录态。注意：网络层 handle_unauthorized 会对状态码
+                            // 401 清 localStorage + 做 location 跳转，这里对非 401 的失败
+                            // 做兜底（例：后端旧版返回 404、或网络层重入失败）。
+                            let is_401 = e.http_status == 401;
+                            logout(auth);
+                            if !is_401 {
+                                navigator.replace(Route::Reception {});
+                            }
                         }
                     }
                 });

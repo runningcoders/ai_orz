@@ -2,7 +2,7 @@
 
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
 use serde_json::json;
@@ -24,6 +24,19 @@ impl IntoResponse for Error {
             "data": null
         }));
 
-        (status, body).into_response()
+        let mut extra_headers = HeaderMap::new();
+        for (name, value) in self.extra_response_headers {
+            if let (Ok(n), Ok(v)) = (HeaderName::try_from(name), HeaderValue::try_from(value)) {
+                extra_headers.append(n, v);
+            }
+        }
+
+        let mut response = (status, body).into_response();
+        for (name, value) in extra_headers {
+            if let Some(name) = name {
+                response.headers_mut().append(name, value);
+            }
+        }
+        response
     }
 }
