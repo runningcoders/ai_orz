@@ -247,6 +247,77 @@ fn test_token_budget_policy() {
 }
 
 #[test]
+fn test_token_budget_policy_disabled_when_budget_zero() {
+    // budget = 0 表示不启用：任何 token 用量都不触发
+    let policy = TokenBudgetPolicy::new(0);
+    let metrics = Metrics::new().with("total_tokens", 0u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    let metrics_high = Metrics::new().with("total_tokens", u64::MAX);
+    assert!(!policy.is_triggered(&metrics_high));
+}
+
+#[test]
+fn test_no_progress_policy() {
+    let limits = std::collections::HashMap::from([("search_memory".to_string(), 20)]);
+    let policy = NoProgressPolicy::new(limits);
+
+    // 受限工具 19 次 → 未命中
+    let metrics = Metrics::new().with("tool_calls.search_memory", 19u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // 受限工具 20 次 → 命中
+    let metrics = Metrics::new().with("tool_calls.search_memory", 20u64);
+    assert!(policy.is_triggered(&metrics));
+
+    // 非受限工具调再多次 → 不命中（代码执行类高频工具不受影响）
+    let metrics = Metrics::new().with("tool_calls.execute_code", 9999u64);
+    assert!(!policy.is_triggered(&metrics));
+
+    // 缺失 metrics → 不命中（防御性）
+    let metrics = Metrics::new();
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_no_progress_policy_multiple_tools() {
+    let limits = std::collections::HashMap::from([
+        ("search_memory".to_string(), 15),
+        ("web_search".to_string(), 5),
+    ]);
+    let policy = NoProgressPolicy::new(limits);
+
+    // 任一受限工具达到各自上限即命中
+    let metrics = Metrics::new()
+        .with("tool_calls.search_memory", 10u64)
+        .with("tool_calls.web_search", 5u64);
+    assert!(policy.is_triggered(&metrics));
+
+    // 都未达上限 → 不命中
+    let metrics = Metrics::new()
+        .with("tool_calls.search_memory", 14u64)
+        .with("tool_calls.web_search", 4u64);
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_no_progress_policy_disabled_when_empty() {
+    // 空表 = 不启用
+    let policy = NoProgressPolicy::new(std::collections::HashMap::new());
+    let metrics = Metrics::new().with("tool_calls.search_memory", 9999u64);
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
+fn test_no_progress_policy_zero_limit_ignored() {
+    // 某工具 limit = 0 = 该工具不限制
+    let limits = std::collections::HashMap::from([("search_memory".to_string(), 0)]);
+    let policy = NoProgressPolicy::new(limits);
+    let metrics = Metrics::new().with("tool_calls.search_memory", 9999u64);
+    assert!(!policy.is_triggered(&metrics));
+}
+
+#[test]
 fn test_policy_group_or() {
     let group = PolicyGroup::new(
         vec![

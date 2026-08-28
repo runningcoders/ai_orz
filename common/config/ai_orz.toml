@@ -59,6 +59,8 @@ intent_analyze_max_rounds = 365
 summary_max_rounds = 365
 # 思考超时（秒），0 = 不限制
 think_timeout_secs = 0
+# 单次唤醒 Token 预算（input+output 累计），0 = 不启用
+token_budget = 0
 
 # 工具运行日志配置（shell_exec 等工具的运行时输出清理策略）
 [tool_log]

@@ -345,6 +345,18 @@ impl ToolPo {
             .unwrap_or(default)
     }
 
+    /// 行为参数：无进展检测上限——单次思考循环内本工具累计调用达到该次数即判定死循环
+    ///
+    /// po.config.no_progress_max_calls 缺省 `None`（不限制）。
+    /// 仅检索类等易死循环工具需要配置；代码执行类高频工具不应配置。
+    pub fn config_no_progress_max_calls(&self) -> Option<usize> {
+        self.config
+            .get("no_progress_max_calls")
+            .and_then(|v| v.as_u64())
+            .filter(|v| *v > 0)
+            .map(|v| v as usize)
+    }
+
     /// 为内置工具填充缺省值（sync 时调用）
     /// 确保 protocol 一定是 Builtin，control_mode 有合理默认值
     pub fn fill_defaults_for_builtin(&mut self) {

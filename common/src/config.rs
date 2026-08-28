@@ -92,6 +92,10 @@ pub struct AgentConfig {
     /// 思考超时（秒），0 = 不限制，默认 0
     #[serde(default)]
     pub think_timeout_secs: u64,
+
+    /// 单次唤醒 Token 预算（input+output 累计），0 = 不启用，默认 0
+    #[serde(default)]
+    pub token_budget: u64,
 }
 
 impl Default for AgentConfig {
@@ -101,6 +105,7 @@ impl Default for AgentConfig {
             intent_analyze_max_rounds: 365,
             summary_max_rounds: 365,
             think_timeout_secs: 0,
+            token_budget: 0,
         }
     }
 }

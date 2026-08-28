@@ -20,7 +20,7 @@ use super::types::ThinkLoopResult;
 /// 将命中的策略 id 列表映射为 ThinkLoopResult
 ///
 /// 多个策略命中时按优先级取第一个匹配的：
-/// 用户取消 > 上下文溢出 > token 预算 > 轮次上限 > 超时
+/// 用户取消 > 上下文溢出 > token 预算 > 无进展 > 轮次上限 > 超时
 ///
 /// 兜底返回 MaxRoundsExceeded（不应发生，防御性）。
 pub(crate) fn map_triggered_to_result(
@@ -44,7 +44,9 @@ pub(crate) fn map_triggered_to_result(
                     rounds_used: round_number,
                 };
             }
-            "token_budget" | "max_rounds" | "timeout" => {
+            // no_progress / token_budget 与轮次耗尽同路：进入调用方的总结退出流程，
+            // 保证用户最终能收到一条兜底回复（而非静默失败）
+            "token_budget" | "no_progress" | "max_rounds" | "timeout" => {
                 return ThinkLoopResult::MaxRoundsExceeded {
                     messages,
                     total_rounds: round_number,
@@ -60,12 +62,20 @@ pub(crate) fn map_triggered_to_result(
     }
 }
 
+/// 连续工具调用轮数的疲劳提示阈值：达到后注入一条 System 提醒，逼模型收尾
+///
+/// 业界通用做法（OpenAI Assistants / LangChain max_iterations 同类机制）：
+/// 模型连续多轮只调工具不给最终回复时，大概率已陷入循环，注入提醒给一次自纠机会。
+const TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS: usize = 8;
+
 /// 按场景构造策略组（Or 关系：任一策略命中即退出循环）
 ///
 /// 内置策略：
 /// - UserCancelPolicy：始终注入，由 AgentThinkRuntime.cancel_flag() 驱动
 /// - MaxRoundsPolicy：轮次上限，所有场景均启用
 /// - TimeoutPolicy：超时保护，所有场景均启用（0 = 不限制）
+/// - NoProgressPolicy：单工具累计调用上限（0 = 不启用），防同工具反复调用死循环
+/// - TokenBudgetPolicy：token 预算（0 = 不启用）
 ///
 /// 注意：ContextOverflowPolicy 暂不在此处使用，因为 run_think_loop 已有
 /// 独立的上下文溢出检测逻辑（基于 ModelProvider 配置），后续可整合。
@@ -75,17 +85,34 @@ pub(crate) fn build_policy_for_scene(
     cancel_flag: Arc<std::sync::atomic::AtomicBool>,
 ) -> Box<dyn crate::pkg::policy::Policy> {
     use super::types::config_resolve;
-    use crate::pkg::policy::builtin::{MaxRoundsPolicy, TimeoutPolicy, UserCancelPolicy};
+    use crate::pkg::policy::builtin::{
+        MaxRoundsPolicy, NoProgressPolicy, TimeoutPolicy, TokenBudgetPolicy, UserCancelPolicy,
+    };
     use crate::pkg::policy::policy_set;
 
     let max_rounds = config_resolve::max_thinking_rounds(agent);
     let timeout_secs = config_resolve::think_timeout_secs(agent);
+    // 无进展检测数据源：每个工具自身的运行时配置（po.config.no_progress_max_calls），
+    // 未配置该键的工具不参与限制；token 预算 try_get 兜底（测试环境可能未初始化全局配置）
+    let tool_limits: std::collections::HashMap<String, usize> = agent
+        .tools()
+        .iter()
+        .filter_map(|t| {
+            t.po.config_no_progress_max_calls()
+                .map(|limit| (t.po.name.clone(), limit))
+        })
+        .collect();
+    let token_budget = crate::config::try_get()
+        .map(|cfg| cfg.agent.token_budget)
+        .unwrap_or(0);
 
     policy_set! {
         OR {
             UserCancelPolicy(cancel_flag),
             MaxRoundsPolicy(max_rounds),
             TimeoutPolicy(timeout_secs),
+            NoProgressPolicy(tool_limits),
+            TokenBudgetPolicy(token_budget),
         }
     }
 }
@@ -164,6 +191,12 @@ impl RuntimeDomainImpl {
             let mut total_input_tokens: u64 = 0;
             let mut total_output_tokens: u64 = 0;
             let mut total_tool_calls: usize = 0;
+            // 无进展检测状态：按工具名累计调用次数（模型会换参数绕过指纹，按名字计数更鲁棒）
+            let mut tool_call_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            // 连续工具调用轮计数 + 疲劳提示是否已注入（只注入一次）
+            let mut consecutive_tool_rounds: usize = 0;
+            let mut nudge_injected = false;
             let scene_str = scene.as_str();
             for offset in 0..available_rounds {
                 // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
@@ -248,6 +281,11 @@ impl RuntimeDomainImpl {
                         total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
                         total_output_tokens =
                             total_output_tokens.saturating_add(usage.output_tokens);
+                        consecutive_tool_rounds = consecutive_tool_rounds.saturating_add(1);
+                        // 按工具名累计调用次数（无进展检测数据源）
+                        for tc in &tool_calls {
+                            *tool_call_counts.entry(tc.name.clone()).or_insert(0) += 1;
+                        }
                         // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
                         messages.push(ChatMessage::Assistant {
                             content,
@@ -341,6 +379,27 @@ impl RuntimeDomainImpl {
                             });
                         }
 
+                        // 疲劳提示：连续多轮只调工具不给最终回复时，注入 System 提醒给模型一次自纠机会
+                        // （只注入一次，避免 System 消息堆积）
+                        if consecutive_tool_rounds >= TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS
+                            && !nudge_injected
+                        {
+                            log_info!(
+                                &ctx,
+                                "think_loop",
+                                "no final response for {} consecutive tool rounds, injecting nudge",
+                                consecutive_tool_rounds
+                            );
+                            messages.push(ChatMessage::system(format!(
+                                "【系统提醒】你已经连续 {} 轮调用工具但尚未给出最终回复。请立即评估当前进度：\n\
+                                 1. 如果已有足够信息，直接输出最终文本回复用户，不要再调用任何工具；\n\
+                                 2. 如果任务确实无法完成（如检索始终无结果），直接向用户坦诚说明情况并停止；\n\
+                                 3. 不要再继续重复或无意义的工具调用。",
+                                consecutive_tool_rounds
+                            )));
+                            nudge_injected = true;
+                        }
+
                         // 策略评估 + 运行时快照上报
                         let total_tokens = total_input_tokens.saturating_add(total_output_tokens);
                         let elapsed_secs = loop_start.elapsed().as_secs();
@@ -361,12 +420,17 @@ impl RuntimeDomainImpl {
 
                         // 评估策略：任一命中即退出循环
                         if let Some(policy) = policy {
-                            let metrics = crate::pkg::policy::Metrics::new()
+                            let mut metrics = crate::pkg::policy::Metrics::new()
                                 .with("round_number", (round + 1) as u64)
                                 .with("max_rounds", max_rounds as u64)
                                 .with("elapsed_secs", elapsed_secs)
                                 .with("total_tokens", total_tokens)
                                 .with("context_tokens", usage.input_tokens);
+                            // 按工具名上报各自累计调用次数（NoProgressPolicy 按工具差异化检测）
+                            for (name, count) in &tool_call_counts {
+                                metrics =
+                                    metrics.with(&format!("tool_calls.{name}"), *count as u64);
+                            }
                             let triggered = policy.evaluate(&metrics);
                             if !triggered.is_empty() {
                                 log_info!(
