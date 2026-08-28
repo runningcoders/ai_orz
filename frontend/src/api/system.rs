@@ -92,11 +92,11 @@ pub async fn get_restore_script(version: u64) -> Result<String, ApiError> {
         .json(&body)
         .send()
         .await
-        .map_err(super::network_err)?;
+        .map_err(|e| super::network_err(e, &path))?;
     let status = resp.status();
     if !status.is_success() {
         super::handle_unauthorized(status.as_u16());
-        return Err(super::parse_error_response(resp).await);
+        return Err(super::parse_error_response(resp, &path).await);
     }
     resp.text().await.map_err(|e| ApiError {
         http_status: 200,

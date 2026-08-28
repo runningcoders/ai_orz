@@ -203,11 +203,11 @@ pub async fn delete_skill(id: &str) -> Result<DeleteSkillResponse, ApiError> {
         .delete(crate::config::current_config().api_url(&format!("/api/v1/hr/skills/{}", id)))
         .send()
         .await
-        .map_err(super::network_err)?;
+        .map_err(|e| super::network_err(e, &format!("/api/v1/hr/skills/{}", id)))?;
     let status = resp.status();
     if !status.is_success() {
         super::handle_unauthorized(status.as_u16());
-        return Err(super::parse_error_response(resp).await);
+        return Err(super::parse_error_response(resp, &format!("/api/v1/hr/skills/{}", id)).await);
     }
     let api_resp: common::api::ApiResponse<DeleteSkillResponse> =
         resp.json().await.map_err(|e| ApiError {

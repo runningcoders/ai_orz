@@ -8,6 +8,7 @@ use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
 use crate::store::auth::{has_saved_role, is_logged_in, logout, save_role, use_auth_state};
 use crate::utils::local_storage;
+use wasm_bindgen::JsCast;
 
 #[allow(unused_imports)]
 pub use use_resource::{ResourceState, use_resource};
@@ -153,16 +154,16 @@ pub fn use_theme() -> ThemeController {
 ///     本处不再重复跳转（避免重复 location 写入历史栈）
 ///   - 非 401（旧后端返回 404、临时网络失败、服务端停机等）：主动 `logout`
 ///     清脏 localStorage + 内存 AuthState，再 `navigator.replace(Reception)` 兜底
-/// 成功：顺便回填 AuthState，保证长时间停驻后用户信息（角色、显示名、组织）
-/// 也是最新的（一致性的免费福利）。
+///
+/// 成功时顺便回填 AuthState，保证长时间停驻后用户信息（角色、显示名、组织）保持最新，这是一致性的免费福利。
 pub fn use_login_liveness() {
-    let mut auth = use_auth_state();
+    let auth = use_auth_state();
     let navigator = use_navigator();
-    let probe_inflight = use_signal(|| false);
-    let last_probe_at = use_signal(|| 0f64);
+    let mut probe_inflight = use_signal(|| false);
+    let mut last_probe_at = use_signal(|| 0f64);
 
     // 单次探活闭包：逻辑与 use_require_auth Err 分支完全对齐
-    let do_probe = move || {
+    let mut do_probe = move || {
         // 本地干净 → 不打请求（任何失败都会在三道防线的某处清掉 logged_in）
         if !is_logged_in() && !auth.read().logged_in {
             return;
@@ -219,9 +220,10 @@ pub fn use_login_liveness() {
         do_probe();
 
         // 2) 可见性事件：切 tab 回来 / 最小化恢复触发（只在 hidden=false 时探）
-        let probe_vis = do_probe.clone();
+        let mut probe_vis = do_probe;
+        let doc = document.clone();
         let cb_vis = wasm_bindgen::closure::Closure::new(move || {
-            if document.hidden() {
+            if doc.hidden() {
                 return;
             }
             probe_vis();
@@ -231,7 +233,7 @@ pub fn use_login_liveness() {
         std::mem::forget(cb_vis);
 
         // 3) 10 分钟弱心跳：前台发呆也会被扫到
-        let probe_int = do_probe;
+        let mut probe_int = do_probe;
         let cb_int = wasm_bindgen::closure::Closure::new(move || {
             probe_int();
         });

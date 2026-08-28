@@ -494,7 +494,7 @@ pub async fn api_post_multipart<T: serde::de::DeserializeOwned>(
             && let Ok(body_value) = JsFuture::from(json_promise).await
             && let Some(body_text) = body_value.as_string()
         {
-            return Err(parse_api_error_from_body(&body_text, status));
+            return Err(parse_api_error_from_body(&body_text, status, path));
         }
         return Err(ApiError {
             http_status: status,
