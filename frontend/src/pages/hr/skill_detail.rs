@@ -166,6 +166,17 @@ pub fn HrSkillDetail(id: String) -> Element {
         .as_ref()
         .and_then(|r| r.as_ref().ok())
         .map(|resp| resp.files.clone());
+    // 加载失败时（Some(Err)）取出错误文案，供下方 else / 文件列表分支显式展示
+    let skill_err_msg = skill_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().err())
+        .map(|e| format!("Skill 加载失败: {}", e));
+    let files_err_msg = files_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().err())
+        .map(|e| format!("文件列表加载失败: {}", e));
 
     rsx! {
         AppLayout {
@@ -215,7 +226,9 @@ pub fn HrSkillDetail(id: String) -> Element {
                 div { class: "card bg-base-100 shadow-md mb-6",
                     div { class: "card-body",
                         h2 { class: "card-title text-lg mb-2", "📁 文件列表 ({files_list.as_ref().map(|f| f.len()).unwrap_or(0)})" }
-                        if files_list.as_ref().map(|f| f.is_empty()).unwrap_or(true) {
+                        if let Some(e) = &files_err_msg {
+                            EmptyState { icon: "❓".to_string(), message: e.clone() }
+                        } else if files_list.as_ref().map(|f| f.is_empty()).unwrap_or(true) {
                             EmptyState { icon: "📄".to_string(), message: "此 Skill 暂无文件".to_string() }
                         } else {
                             div { class: "grid grid-cols-1 md:grid-cols-3 gap-4",
@@ -320,7 +333,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                     }
                 }
             } else {
-                EmptyState { icon: "❓".to_string(), message: "Skill 不存在或已被删除".to_string() }
+                EmptyState { icon: "❓".to_string(), message: skill_err_msg.clone().unwrap_or_else(|| "Skill 不存在或已被删除".to_string()) }
             }
 
             // 元信息编辑 Modal

@@ -65,18 +65,17 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
     let _navigator = use_navigator();
 
     // 编辑模式：加载已有任务数据
-    // 修复 HIGH #5：之前 show_for_load = props.show 是普通 bool，
-    // use_effect 在首次挂载执行后不会因 props.show 变化重跑，
-    // 导致弹窗打开后项目/Agent 列表/编辑数据永远加载不出来。
-    // 现在引入 show_signal 跟踪 show 变化，effect 依赖 signal 触发重跑。
+    // 修复 M2：props.show 是普通 prop，use_effect 不会因 prop 变化重跑。
+    // 原实现在 effect 内部同步 show_signal（鸡生蛋：effect 不重跑则
+    // show_signal 不变、effect 永不重跑）→ 弹窗 false→true 打开后永久卡在 Loading。
+    // 改为在「渲染期」把 props.show 同步进响应式 show_signal，show 变化时
+    // show_signal 改变即可触发 effect 重跑（加载项目/Agent 列表与编辑数据）。
     let mut show_signal = use_signal(|| props.show);
+    if show_signal() != props.show {
+        show_signal.set(props.show);
+    }
     let current_mode = props.mode.clone();
-    let current_show = props.show;
     use_effect(move || {
-        // 同步 props.show 到 signal（注册依赖，使 show 变化时 effect 重跑）
-        if show_signal() != current_show {
-            show_signal.set(current_show);
-        }
         if !show_signal() {
             return;
         }

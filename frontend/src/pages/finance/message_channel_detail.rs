@@ -409,6 +409,12 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         .as_ref()
         .and_then(|r| r.as_ref().ok())
         .cloned();
+    // 加载失败时（Some(Err)）取出错误文案，供下方 else 分支显式展示
+    let channel_err_msg = channel_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().err())
+        .map(|e| format!("加载失败: {}", e));
     let credentials_list = lark_credentials.read().clone();
     let user_auth = lark_user_auth.read().clone();
     let edit_credential_value = edit_credential_id();
@@ -666,7 +672,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     }
                 }
             } else {
-                EmptyState { icon: "❓".to_string(), message: "消息渠道不存在或已被删除".to_string() }
+                EmptyState { icon: "❓".to_string(), message: channel_err_msg.clone().unwrap_or_else(|| "消息渠道不存在或已被删除".to_string()) }
             }
 
             ConfirmDialog {

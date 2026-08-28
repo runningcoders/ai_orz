@@ -123,7 +123,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                     EmptyState { icon: "📦".to_string(), message: "此附件为二进制文件，不支持在线查看内容".to_string() }
                 }
             } else {
-                EmptyState { icon: "❓".to_string(), message: "附件不存在或已被删除".to_string() }
+                EmptyState { icon: "📦".to_string(), message: "该附件无法在线预览（可能为二进制或非文本内容）".to_string() }
             }
         }
     }

@@ -161,7 +161,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     on_close: move |_| show_meta_modal.set(false),
                 }
             } else {
-                EmptyState { icon: "❓".to_string(), message: "产物不存在或已被删除".to_string() }
+                EmptyState { icon: "📦".to_string(), message: "该产物无法在线预览（可能为二进制或非文本内容）".to_string() }
             }
         }
     }
