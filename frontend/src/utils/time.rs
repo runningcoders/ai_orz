@@ -1,13 +1,13 @@
 //! 时间格式化工具
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 /// 当前毫秒时间戳
+///
+/// 注意：wasm32-unknown-unknown 下 `std::time::SystemTime::now()` 未实现
+/// （`library/std/src/sys/time/unsupported.rs` 直接 panic：
+/// "time not implemented on this platform"），必须走 `js_sys::Date::now()`。
+/// 历史上这里用 SystemTime，导致发送消息/生成临时 ID 时崩溃。
 pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
+    js_sys::Date::now() as i64
 }
 
 /// 毫秒时间戳 → "HH:MM"（本地时区，解析失败返回 "--:--"）

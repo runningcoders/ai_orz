@@ -1,7 +1,6 @@
 //! 定时触发器管理 - 列表 + 创建/编辑
 
 use dioxus::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Local, TimeZone};
 
@@ -232,10 +231,9 @@ pub fn SystemTriggers() -> Element {
 
         let run_at = if form_type() == "once" {
             Some(
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0),
+                // wasm32-unknown-unknown 下 std::time::SystemTime::now() 未实现（会 panic
+                // "time not implemented on this platform"），改用 js_sys::Date::now()。
+                (js_sys::Date::now() / 1000.0) as i64,
             )
         } else {
             None
