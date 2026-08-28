@@ -14,6 +14,8 @@
 //! 工具日志存储为磁盘扫描（低频），挂载时加载一次 + 清理后手动刷新。
 
 use dioxus::prelude::*;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::api::system::{
     CleanupToolLogsRequest, HealthMetricsResponse, ToolLogStorageResponse, check_health,
@@ -128,16 +130,27 @@ pub fn SystemHealth() -> Element {
         });
     };
 
-    // 初始加载 + 10 秒轮询（健康指标）
+    // 初始加载 + 10 秒轮询（健康指标）。
+    // 用 Arc<AtomicBool> + use_drop 守卫轮询循环：组件卸载时置 false，
+    // 避免 spawn 的 loop 在离开页面后永久运行（持续打请求 + 持有已卸载组件的信号）。
+    let poll_running = Arc::new(AtomicBool::new(true));
+    let poll_running_drop = poll_running.clone();
     use_effect(move || {
+        let running = poll_running.clone();
         load_metrics();
         spawn(async move {
             loop {
                 sleep_ms(10_000).await;
+                if !running.load(Ordering::SeqCst) {
+                    break;
+                }
                 load_metrics();
             }
         });
         load_storage();
+    });
+    use_drop(move || {
+        poll_running_drop.store(false, Ordering::SeqCst);
     });
 
     // 手动清理超期工具日志（保留天数可用输入框覆盖；0 = 清理关闭空跑）

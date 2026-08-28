@@ -60,13 +60,13 @@ impl PartialEq for KanbanCanvasProps {
 /// KanbanCanvas 组件
 #[component]
 pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
-    // 自适应容器尺寸：挂载后测量包裹层真实尺寸（CSS px）
-    let mut measured = use_signal(|| None::<(f64, f64)>);
-    let (width, height) = if props.auto_size {
-        (*measured.read()).unwrap_or((props.width, props.height))
-    } else {
-        (props.width, props.height)
-    };
+    // 提取 Copy 字段供渲染 effect 使用（避免 move 整个 props）。
+    // 自适应尺寸改为在渲染循环 effect 内实测 canvas 显示尺寸（见 use_effect），
+    // 不再依赖 div.onmounted 的 measured 信号——否则子 canvas 先 mounted 时会先用
+    // fallback 尺寸设 buffer，且 measured 变化也无法触发 buffer 重设（effect 只订阅
+    // canvas_ref），造成绘制被拉伸变形。
+    let auto_size = props.auto_size;
+    let (fallback_w, fallback_h) = (props.width, props.height);
 
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
 
@@ -100,8 +100,20 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
         let dpr = web_sys::window()
             .map(|w| w.device_pixel_ratio())
             .unwrap_or(1.0);
-        canvas.set_width((width * dpr) as u32);
-        canvas.set_height((height * dpr) as u32);
+        // 实测 canvas 真实显示尺寸（CSS px）。auto_size 时铺满父容器，
+        // 用实测值设物理缓冲（×dpr）既清晰又不溢出；非 auto_size 尊重 props 固定尺寸。
+        let (w, h) = if auto_size {
+            let rect = canvas.get_bounding_client_rect();
+            if rect.width() > 0.0 {
+                (rect.width(), rect.height())
+            } else {
+                (fallback_w, fallback_h)
+            }
+        } else {
+            (fallback_w, fallback_h)
+        };
+        canvas.set_width((w * dpr) as u32);
+        canvas.set_height((h * dpr) as u32);
         let _ = ctx.scale(dpr, dpr);
 
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -113,7 +125,7 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
 
         let closure = Closure::<dyn FnMut()>::new(move || {
             let data = data_cache.read().clone();
-            draw_kanban(&ctx, width, height, &data);
+            draw_kanban(&ctx, w, h, &data);
 
             if running_clone.load(std::sync::atomic::Ordering::SeqCst)
                 && let Some(cb) = cb_ref_inner.borrow().as_ref()
@@ -145,21 +157,11 @@ pub fn KanbanCanvas(props: KanbanCanvasProps) -> Element {
     // 点击处理：命中检测简化为不实现（仅展示）
     let _on_click_handler = props.on_task_click;
     rsx! {
-        // 包裹层提供确定尺寸（height:100% 需要父级有明确高度），canvas 自测量铺满
+        // 包裹层提供确定尺寸（height:100% 需要父级有明确高度），canvas 内部自测量铺满
         div { class: "relative w-full h-[520px]",
-            onmounted: move |evt: MountedEvent| {
-                if let Some(el) = evt.data().downcast::<web_sys::Element>() {
-                    let rect = el.get_bounding_client_rect();
-                    let w = rect.width();
-                    let h = rect.height();
-                    if w > 0.0 && h > 0.0 {
-                        measured.set(Some((w, h)));
-                    }
-                }
-            },
             canvas {
-                width: "{width as u32}",
-                height: "{height as u32}",
+                width: "{fallback_w as u32}",
+                height: "{fallback_h as u32}",
                 class: "cursor-pointer",
                 style: if props.auto_size {
                     "display: block; width: 100%; height: 100%;"

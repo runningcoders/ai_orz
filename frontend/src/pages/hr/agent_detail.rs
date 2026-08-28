@@ -94,6 +94,8 @@ const STATUS_OPTIONS: &[(i32, &str)] = &[
 
 #[component]
 pub fn HrAgentDetail(id: String) -> Element {
+    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /hr/agents/A → /hr/agents/B）时组件重渲染并重新拉取数据
+    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let mut agent_data = use_signal(|| Option::<GetAgentResponse>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);

@@ -168,11 +168,24 @@ pub fn Workspace() -> Element {
     // 视图变化时按需加载图数据
     use_effect(move || {
         let view = current_view.read().clone();
+        let live_view = current_view; // 捕获信号副本，供 spawn 内检测视图是否已切换
         let sidebar_data = sidebar_signal.read().clone();
         let toast = toast;
 
         spawn(async move {
             graph_loading.set(true);
+            let my_view = view.clone();
+            // 视图切换守卫：快速切换视图时，旧视图的异步加载可能晚于新视图完成并覆盖
+            // 图数据。每次 await 后用 guard!() 检查当前视图是否仍是本任务目标，若已切换
+            // 则放弃本次结果，避免过期数据污染当前视图。
+            macro_rules! guard {
+                () => {
+                    if live_view.read().clone() != my_view {
+                        graph_loading.set(false);
+                        return;
+                    }
+                };
+            }
 
             match view {
                 WorkspaceView::Global => {
@@ -192,6 +205,7 @@ pub fn Workspace() -> Element {
                     let mut all_tasks = Vec::new();
                     for pid in &active_pids {
                         if let Ok(resp) = list_project_tasks(pid).await {
+                            guard!();
                             all_tasks.extend(resp.tasks);
                         }
                     }
@@ -209,6 +223,7 @@ pub fn Workspace() -> Element {
                     };
                     match list_project_tasks(&pid).await {
                         Ok(resp) => {
+                            guard!();
                             let tasks_vec = resp.tasks;
                             // 批量加载关联 agents（消除 N+1）
                             let assignee_ids: Vec<String> = tasks_vec
@@ -227,7 +242,10 @@ pub fn Workspace() -> Element {
                                     ..Default::default()
                                 };
                                 match query_agents(&req).await {
-                                    Ok(page) => graph_agents.set(page.items),
+                                    Ok(page) => {
+                                        guard!();
+                                        graph_agents.set(page.items)
+                                    }
                                     Err(e) => toast.error(format!("批量获取 Agent 失败: {}", e)),
                                 }
                             }
@@ -261,6 +279,7 @@ pub fn Workspace() -> Element {
                     };
                     match query_tasks(&req).await {
                         Ok(page) => {
+                            guard!();
                             let tasks = page.items;
                             // 2. 从 tasks 收集 project_ids，批量查询
                             let project_ids: Vec<String> = tasks
@@ -279,7 +298,10 @@ pub fn Workspace() -> Element {
                                     ..Default::default()
                                 };
                                 match query_projects(&req).await {
-                                    Ok(page) => graph_projects.set(page.items),
+                                    Ok(page) => {
+                                        guard!();
+                                        graph_projects.set(page.items)
+                                    }
                                     Err(e) => toast.error(format!("批量获取项目失败: {}", e)),
                                 }
                             }
@@ -311,6 +333,7 @@ pub fn Workspace() -> Element {
                     };
                     match query_tasks(&req).await {
                         Ok(page) => {
+                            guard!();
                             if let Some(task) = page.items.into_iter().next() {
                                 let pid = task.project_id.clone();
                                 let assignee_type = task.assignee_type;
@@ -319,7 +342,10 @@ pub fn Workspace() -> Element {
                                 // 2. 加载同 project 的 tasks（用于依赖 DAG）
                                 if let Some(pid) = &pid {
                                     match list_project_tasks(pid).await {
-                                        Ok(resp) => graph_tasks.set(resp.tasks),
+                                        Ok(resp) => {
+                                            guard!();
+                                            graph_tasks.set(resp.tasks)
+                                        }
                                         Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
                                     }
                                 }
@@ -333,6 +359,7 @@ pub fn Workspace() -> Element {
                                     };
                                     match query_agents(&req).await {
                                         Ok(page) => {
+                                            guard!();
                                             if let Some(a) = page.items.into_iter().next() {
                                                 graph_agents.set(vec![a]);
                                             }
@@ -350,6 +377,7 @@ pub fn Workspace() -> Element {
                                     };
                                     match query_projects(&req).await {
                                         Ok(page) => {
+                                            guard!();
                                             if let Some(p) = page.items.into_iter().next() {
                                                 graph_projects.set(vec![p]);
                                             }

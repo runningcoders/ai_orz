@@ -111,6 +111,15 @@ pub fn SystemSeed() -> Element {
     let mut delete_file_name = use_signal(String::new);
     let mut delete_loading = use_signal(|| false);
 
+    // seed 任务轮询循环的卸载守卫：组件卸载时置 false，避免 spawn 的 loop 在
+    // 导出/导入/应用任务进行中离开页面后永久运行（每 300ms 打 get_task_progress）。
+    let poll_running = use_signal(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)));
+    use_drop(move || {
+        poll_running
+            .read()
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    });
+
     /// 刷新 seed 列表
     fn reload(
         mut loading: Signal<bool>,
@@ -140,9 +149,13 @@ pub fn SystemSeed() -> Element {
         mut current_task_kind: Signal<Option<TaskKind>>,
         mut seeds: Signal<Vec<common::api::SeedFileInfo>>,
         toast: crate::store::toast::ToastState,
+        running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) {
         spawn(async move {
             loop {
+                if !running.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 gloo_timers::future::TimeoutFuture::new(300).await;
                 match get_task_progress(&task_id).await {
                     Ok(snapshot) => {
@@ -216,6 +229,7 @@ pub fn SystemSeed() -> Element {
                         current_task_kind,
                         seeds,
                         toast,
+                        poll_running.read().clone(),
                     );
                 }
                 Err(e) => {
@@ -265,6 +279,7 @@ pub fn SystemSeed() -> Element {
                         current_task_kind,
                         seeds,
                         toast,
+                        poll_running.read().clone(),
                     );
                 }
                 Err(e) => {
@@ -308,6 +323,7 @@ pub fn SystemSeed() -> Element {
                         current_task_kind,
                         seeds,
                         toast,
+                        poll_running.read().clone(),
                     );
                 }
                 Err(e) => {

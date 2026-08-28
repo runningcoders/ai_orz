@@ -1,6 +1,8 @@
 //! AOP 队列监控页面
 
 use dioxus::prelude::*;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::api::system::{
     AopStatsDistributionItem, AopStatsOverviewResponse, AopStatsTimeSeriesPoint,
@@ -391,15 +393,26 @@ fn AopStatsPanel() -> Element {
         });
     };
 
-    // 5 秒轮询：use_effect + spawn + loop + sleep_ms
+    // 5 秒轮询：use_effect + spawn + loop + sleep_ms。
+    // 用 Arc<AtomicBool> + use_drop 守卫轮询循环：组件卸载时置 false，
+    // 避免 spawn 的 loop 在离开页面后永久运行（持续打请求 + 持有已卸载组件的信号）。
+    let poll_running = Arc::new(AtomicBool::new(true));
+    let poll_running_drop = poll_running.clone();
     use_effect(move || {
+        let running = poll_running.clone();
         load_data();
         spawn(async move {
             loop {
                 sleep_ms(5000).await;
+                if !running.load(Ordering::SeqCst) {
+                    break;
+                }
                 load_data();
             }
         });
+    });
+    use_drop(move || {
+        poll_running_drop.store(false, Ordering::SeqCst);
     });
 
     let ov = overview.read().clone();

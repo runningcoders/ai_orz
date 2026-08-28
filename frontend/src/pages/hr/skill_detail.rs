@@ -20,6 +20,8 @@ use common::api::{
 
 #[component]
 pub fn HrSkillDetail(id: String) -> Element {
+    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /hr/skills/A → /hr/skills/B）时组件重渲染并重新拉取数据
+    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let toast = use_toast();
 
     let mut skill = use_signal(|| Option::<SkillDetail>::None);

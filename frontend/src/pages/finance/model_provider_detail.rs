@@ -31,6 +31,8 @@ fn build_provider_stats_request(id: String) -> GetModelProviderRequest {
 
 #[component]
 pub fn FinanceModelProviderDetail(id: String) -> Element {
+    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /model-providers/A → /model-providers/B）时组件重渲染并重新拉取数据
+    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let mut provider_data = use_signal(|| None::<GetModelProviderResponse>);
     let mut loading = use_signal(|| true);
     let toast = use_toast();

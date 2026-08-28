@@ -36,6 +36,8 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
 
 #[component]
 pub fn ProjectDetail(id: String) -> Element {
+    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /projects/A → /projects/B）时组件重渲染并重新拉取数据
+    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let mut project = use_signal(|| None::<GetProjectResponse>);
     let mut tasks = use_signal(Vec::<TaskListItem>::new);
     let mut artifacts = use_signal(Vec::<ArtifactDetail>::new);

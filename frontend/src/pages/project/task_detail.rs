@@ -26,6 +26,8 @@ use common::enums::TaskStatus;
 
 #[component]
 pub fn TaskDetail(id: String) -> Element {
+    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /tasks/A → /tasks/B）时组件重渲染并重新拉取数据
+    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let mut task = use_signal(|| None::<GetTaskResponse>);
     let mut loading = use_signal(|| true);
 

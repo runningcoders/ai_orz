@@ -62,6 +62,16 @@ pub fn FinanceIdentity() -> Element {
     let mut bind_polling = use_signal(|| false);
     let mut starting_bind = use_signal(|| false);
 
+    // 飞书绑定轮询循环的卸载守卫：组件卸载时置 false，避免 spawn 的 loop 在
+    // 绑定进行中离开页面后永久运行（每 3s 打 lark_bind_status + 持有已卸载信号）。
+    let bind_poll_running =
+        use_signal(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)));
+    use_drop(move || {
+        bind_poll_running
+            .read()
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    });
+
     // ===== 用户授权（device flow） =====
     let mut show_auth_modal = use_signal(|| false);
     let mut auth_device_code = use_signal(String::new);
@@ -197,8 +207,12 @@ pub fn FinanceIdentity() -> Element {
             starting_bind.set(false);
         });
         // 轮询任务：3s 一次直到终态
+        let running = bind_poll_running.read().clone();
         spawn(async move {
             loop {
+                if !running.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 gloo_timers::future::TimeoutFuture::new(3000).await;
                 if !bind_polling() {
                     break;
