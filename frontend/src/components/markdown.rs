@@ -21,7 +21,6 @@
 //! ```
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use dioxus::prelude::*;
 
@@ -64,12 +63,15 @@ pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool
     // 按 content 缓存 HTML，避免聊天等长列表场景每帧重复解析
     let html = use_memo(move || render_markdown(&content));
     let container_id = use_hook(|| next_container_id("md"));
-    // 含 ```mermaid 代码块时，挂载后调用 JS 渲染层替换为 SVG
+    // 含 ```mermaid 代码块时，挂载后（use_effect 已在 DOM 挂载后运行）直接调用 JS 渲染层替换为 SVG。
+    // 不再用 spawn + 30ms sleep 延迟：该 future 会在所属组件卸载时被 drop，
+    // 而 TimeoutFuture 底层 Closure::once 在「已入队未触发」时卸载会触发
+    // "closure invoked recursively or after being dropped"（工作台 SSE 流式气泡高频复现）。
     {
         let id = container_id.clone();
         use_effect(move || {
             if html().contains("language-mermaid") {
-                schedule_mermaid_scan(id.clone());
+                render_mermaid_blocks_now(&id);
             }
         });
     }
@@ -110,14 +112,6 @@ pub fn MermaidDiagram(code: String) -> Element {
             class: "mermaid-diagram overflow-x-auto",
         }
     }
-}
-
-/// 延迟扫描容器内的 ```mermaid 代码块（等待 DOM 挂载完成）
-fn schedule_mermaid_scan(element_id: String) {
-    spawn(async move {
-        gloo_timers::future::sleep(Duration::from_millis(30)).await;
-        render_mermaid_blocks_now(&element_id);
-    });
 }
 
 /// 调用 window.__renderMermaid(container)：替换容器内 language-mermaid 代码块为 SVG

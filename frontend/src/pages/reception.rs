@@ -9,7 +9,9 @@ use crate::api::organization::{get_current_user_info, list_organizations_public}
 use crate::api::seed::get_task_progress;
 use crate::components::state::Loading;
 use crate::components::task_progress::TaskProgress;
-use crate::store::auth::{AuthState, clear_login_state, is_logged_in, mark_logged_in, save_role};
+use crate::store::auth::{
+    AuthState, clear_login_state, is_logged_in, mark_logged_in, save_role, save_user_identity,
+};
 use crate::store::toast::use_toast;
 use common::api::{
     InitializeSystemRequest, LoginRequest, OrganizationListItem, RegisterByInviteRequest,
@@ -90,6 +92,7 @@ pub fn Reception() -> Element {
                             user_info.data.display_name.clone().unwrap_or_default();
                         state.org_id = user_info.data.organization_id.clone();
                         save_role(user_info.data.role);
+                        save_user_identity(&state.username, &state.display_name);
                         drop(state);
                         if let Some(window) = web_sys::window() {
                             let _ = window.location().set_href("/");
@@ -175,6 +178,7 @@ pub fn Reception() -> Element {
                                 user_info.data.display_name.clone().unwrap_or_default();
                             state.org_id = user_info.data.organization_id.clone();
                             save_role(user_info.data.role);
+                            save_user_identity(&state.username, &state.display_name);
                             drop(state);
                         }
                         Err(_) => {
@@ -283,6 +287,7 @@ pub fn Reception() -> Element {
                             user_info.data.display_name.clone().unwrap_or_default();
                         state.org_id = user_info.data.organization_id.clone();
                         save_role(user_info.data.role);
+                        save_user_identity(&state.username, &state.display_name);
                         drop(state);
                     }
                     toast.success("注册成功！欢迎加入");

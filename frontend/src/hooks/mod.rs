@@ -6,7 +6,9 @@ pub mod use_workspace_data;
 
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
-use crate::store::auth::{has_saved_role, is_logged_in, logout, save_role, use_auth_state};
+use crate::store::auth::{
+    has_saved_role, is_logged_in, logout, save_role, save_user_identity, use_auth_state,
+};
 use crate::utils::local_storage;
 use wasm_bindgen::JsCast;
 
@@ -43,6 +45,7 @@ pub fn use_require_auth() -> bool {
                             state.display_name = resp.data.display_name.clone().unwrap_or_default();
                             state.org_id = resp.data.organization_id.clone();
                             save_role(resp.data.role);
+                            save_user_identity(&state.username, &state.display_name);
                         }
                         Err(e) => {
                             // 修 bug：后端清空数据/用户被删后 JWT 仍被浏览器携带，
@@ -194,6 +197,7 @@ pub fn use_login_liveness() {
                     state.display_name = resp.data.display_name.clone().unwrap_or_default();
                     state.org_id = resp.data.organization_id.clone();
                     save_role(resp.data.role);
+                    save_user_identity(&state.username, &state.display_name);
                 }
                 Err(e) => {
                     let is_401 = e.http_status == 401;

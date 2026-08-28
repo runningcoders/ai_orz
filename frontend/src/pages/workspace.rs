@@ -572,10 +572,12 @@ pub fn Workspace() -> Element {
 
             {
                 let mut chat_is_typing = chat_is_typing;
-                spawn(async move {
-                    gloo_timers::future::TimeoutFuture::new(60_000).await;
+                // 一次性延时复位：用 callback::Timeout + forget() 泄露安全，
+                // 避免 spawn + TimeoutFuture 在组件卸载时 drop 触发 "closure invoked recursively or after being dropped"。
+                gloo_timers::callback::Timeout::new(60_000, move || {
                     chat_is_typing.set(false);
-                });
+                })
+                .forget();
             }
 
             spawn(async move {
@@ -958,10 +960,11 @@ pub fn Workspace() -> Element {
                                         onfocus: move |_| chat_focused.set(true),
                                         onblur: move |_| {
                                             let mut chat_focused = chat_focused;
-                                            spawn(async move {
-                                                gloo_timers::future::TimeoutFuture::new(150).await;
+                                            // 一次性延时：callback::Timeout + forget() 泄露安全（同 576 处说明）
+                                            gloo_timers::callback::Timeout::new(150, move || {
                                                 chat_focused.set(false);
-                                            });
+                                            })
+                                            .forget();
                                         },
                                         oninput: move |e| chat_input.set(e.value()),
                                         onkeydown: move |e| {
