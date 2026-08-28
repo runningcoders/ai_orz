@@ -8,40 +8,41 @@ use crate::components::code_editor::CodeEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{AttachmentDetail, UpdateAttachmentContentRequest};
+use common::api::UpdateAttachmentContentRequest;
 
 #[component]
 pub fn FinanceAttachmentDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /attachments/A → /attachments/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
+    // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
+    // 拉取仅在 id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::FinanceAttachmentDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
+    }
     let toast = use_toast();
 
-    let mut attachment = use_signal(|| Option::<AttachmentDetail>::None);
+    let attachment_res = use_resource(move || {
+        let id = rid();
+        async move { get_attachment_content(&id).await }
+    });
     let mut content = use_signal(String::new);
-    let mut loading = use_signal(|| true);
     let mut content_dirty = use_signal(|| false);
     let mut saving = use_signal(|| false);
     let mut is_text_type = use_signal(|| false);
 
-    let id_for_effect = id.clone();
+    // 同步：resource 完成时填充内容与元数据；用户已编辑则保留编辑内容
+    // （peek 读取 content_dirty，避免被自身写回再次触发 effect）
+    // 非文本（二进制）附件后端返回错误，Err 分支静默忽略 → is_text_type 保持 false
     use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_attachment_content(&id).await {
-                Ok(resp) => {
-                    attachment.set(Some(resp.attachment));
-                    content.set(resp.text.content);
-                    is_text_type.set(true);
-                    content_dirty.set(false);
-                }
-                Err(_e) => {
-                    // 非文本类型会返回错误，仅记录但不显示错误 toast
-                    // 因为后端对二进制附件返回 404/400
-                }
+        if let Some(resp) = attachment_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
+            if !*content_dirty.peek() {
+                content.set(resp.text.content.clone());
             }
-            loading.set(false);
-        });
+            is_text_type.set(true);
+            content_dirty.set(false);
+        }
     });
 
     let on_save = {
@@ -68,7 +69,11 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
         }
     };
 
-    let attachment_data = attachment.read().clone();
+    let attachment_data = attachment_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|resp| resp.attachment.clone());
 
     rsx! {
         AppLayout {
@@ -76,7 +81,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                 h1 { class: "text-2xl font-bold", "附件详情" }
                 Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceAttachments {}, "← 返回列表" }
             }
-            if loading() {
+            if attachment_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(a) = attachment_data {
                 div { class: "card bg-base-100 shadow-md mb-6",

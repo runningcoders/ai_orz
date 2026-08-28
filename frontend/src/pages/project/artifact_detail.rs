@@ -18,15 +18,15 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
     // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
     // 拉取仅在 id 变化时触发
     let route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut rid = use_signal(|| String::new());
-    if let crate::pages::Route::ProjectArtifactDetail { id: route_id } = &route {
-        if *rid.peek() != *route_id {
-            rid.set(route_id.clone());
-        }
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::ProjectArtifactDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
     }
     let toast = use_toast();
 
-    let artifact_res = use_resource(move || {
+    let mut artifact_res = use_resource(move || {
         let id = rid();
         async move { get_artifact_content(&id).await }
     });
@@ -39,8 +39,8 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
     // 同步：resource 完成时填充内容与元数据；用户已编辑则保留编辑内容
     // （peek 读取 content_dirty，避免被自身写回再次触发 effect）
     use_effect(move || {
-        if let Some(Ok(resp)) = artifact_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
-            if !content_dirty.peek() {
+        if let Some(resp) = artifact_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
+            if !*content_dirty.peek() {
                 content.set(resp.content.content.clone());
             }
             is_text_type.set(true);

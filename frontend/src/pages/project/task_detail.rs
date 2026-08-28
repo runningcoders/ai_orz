@@ -28,11 +28,11 @@ use common::enums::TaskStatus;
 pub fn TaskDetail(id: String) -> Element {
     // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
     let route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut rid = use_signal(|| String::new());
-    if let crate::pages::Route::TaskDetail { id: route_id } = &route {
-        if *rid.peek() != *route_id {
-            rid.set(route_id.clone());
-        }
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::TaskDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
     }
     let mut task_res = use_resource(move || {
         let id = rid();

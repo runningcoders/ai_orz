@@ -97,11 +97,11 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
     // 拉取仅在 id 变化时触发（同变体 /hr/agents/A → /hr/agents/B 也会重拉）
     let route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut rid = use_signal(|| String::new());
-    if let crate::pages::Route::HrAgentDetail { id: route_id } = &route {
-        if *rid.peek() != *route_id {
-            rid.set(route_id.clone());
-        }
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::HrAgentDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
     }
     let mut agent_res = use_resource(move || {
         let id = rid();
@@ -165,7 +165,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let all_tools_list = all_tools.read().clone();
     let installed_skills_list = installed_skills.read().clone();
 
-    let rid_for_load = rid.clone();
+    let rid_for_load = rid;
     let load_data = move || {
         let aid = rid_for_load();
         spawn(async move {

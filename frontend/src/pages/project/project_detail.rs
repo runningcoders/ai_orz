@@ -38,11 +38,11 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
 pub fn ProjectDetail(id: String) -> Element {
     // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
     let route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut rid = use_signal(|| String::new());
-    if let crate::pages::Route::ProjectDetail { id: route_id } = &route {
-        if *rid.peek() != *route_id {
-            rid.set(route_id.clone());
-        }
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::ProjectDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
     }
     let mut project_res = use_resource(move || {
         let id = rid();

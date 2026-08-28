@@ -20,20 +20,29 @@ use crate::store::toast::use_toast;
 use common::api::{
     CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateSlackChannelConfig, CreateWebhookChannelConfig, CreateWechatChannelConfig,
-    GetMessageChannelResponse, LarkCredentialSnapshot, LarkUserAuthSnapshot,
-    UpdateMessageChannelRequest, UpdateMessageChannelStatusRequest,
+    LarkCredentialSnapshot, LarkUserAuthSnapshot, UpdateMessageChannelRequest,
+    UpdateMessageChannelStatusRequest,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
 #[component]
 pub fn FinanceMessageChannelDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /message-channels/A → /message-channels/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
+    // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
+    // 拉取仅在 id 变化时触发；飞书集成状态为全局数据，独立 resource
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::FinanceMessageChannelDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
+    }
     let toast = use_toast();
     let navigator = use_navigator();
 
-    let mut channel = use_signal(|| Option::<GetMessageChannelResponse>::None);
-    let mut loading = use_signal(|| true);
+    let mut channel_res = use_resource(move || {
+        let id = rid();
+        async move { get_message_channel(&id).await }
+    });
     let mut toggling = use_signal(|| false);
     let mut testing = use_signal(|| false);
     let mut show_delete_confirm = use_signal(|| false);
@@ -66,23 +75,13 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut lark_credentials = use_signal(Vec::<LarkCredentialSnapshot>::new);
     let mut lark_user_auth = use_signal(LarkUserAuthSnapshot::default);
 
-    let id_for_effect = id.clone();
+    // 飞书集成状态为全局数据，独立 resource，结果同步到信号供渲染使用
+    let lark_res = use_resource(move || async { get_lark_integration_status().await });
     use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_message_channel(&id).await {
-                Ok(c) => channel.set(Some(c)),
-                Err(e) => toast.error(format!("加载失败: {}", e)),
-            }
-            loading.set(false);
-        });
-        spawn(async move {
-            if let Ok(status) = get_lark_integration_status().await {
-                lark_credentials.set(status.credentials);
-                lark_user_auth.set(status.user_auth);
-            }
-        });
+        if let Some(Ok(status)) = lark_res.read().as_ref() {
+            lark_credentials.set(status.credentials.clone());
+            lark_user_auth.set(status.user_auth.clone());
+        }
     });
 
     let mut on_toggle = {
@@ -104,7 +103,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             "已禁用"
                         });
                         match get_message_channel(&id).await {
-                            Ok(c) => channel.set(Some(c)),
+                            Ok(c) => channel_res.set(Some(Ok(c))),
                             Err(e) => toast.error(format!("刷新失败: {}", e)),
                         }
                     }
@@ -156,7 +155,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     // 打开编辑弹窗：预填当前所有类型字段
     let on_open_edit = {
         move |_| {
-            let current = channel.read().clone();
+            let current = channel_res
+                .read()
+                .as_ref()
+                .and_then(|r| r.as_ref().ok())
+                .cloned();
             if let Some(c) = &current {
                 edit_channel_name.set(c.channel_name.clone());
                 edit_agent_id.set(c.agent_id.clone().unwrap_or_default());
@@ -241,7 +244,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         let id = id.clone();
         move |_| {
             let id = id.clone();
-            let current = channel.read().clone();
+            let current = channel_res
+                .read()
+                .as_ref()
+                .and_then(|r| r.as_ref().ok())
+                .cloned();
             let channel_type = current
                 .as_ref()
                 .map(|c| c.channel_type)
@@ -386,7 +393,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         toast.success("已保存，建议重新运行连接测试");
                         show_edit_modal.set(false);
                         match get_message_channel(&id).await {
-                            Ok(c) => channel.set(Some(c)),
+                            Ok(c) => channel_res.set(Some(Ok(c))),
                             Err(e) => toast.error(format!("刷新失败: {}", e)),
                         }
                     }
@@ -397,7 +404,11 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         }
     };
 
-    let channel_data = channel.read().clone();
+    let channel_data = channel_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .cloned();
     let credentials_list = lark_credentials.read().clone();
     let user_auth = lark_user_auth.read().clone();
     let edit_credential_value = edit_credential_id();
@@ -414,7 +425,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 h1 { class: "text-2xl font-bold", "消息渠道详情" }
                 Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMessageChannels {}, "← 返回列表" }
             }
-            if loading() {
+            if channel_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(c) = channel_data.clone() {
                 {

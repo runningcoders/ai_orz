@@ -25,11 +25,11 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
     // M1 修复（方案 B）：响应式 id + use_resource，拉取仅在 :id 变化时触发，
     // 切换本地状态（如弹窗）不再误重拉
     let route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut id = use_signal(|| String::new());
-    if let crate::pages::Route::FinanceMcpServerDetail { id: rid } = &route {
-        if *id.peek() != *rid {
-            id.set(rid.clone());
-        }
+    let mut id = use_signal(String::new);
+    if let crate::pages::Route::FinanceMcpServerDetail { id: rid } = &route
+        && *id.peek() != *rid
+    {
+        id.set(rid.clone());
     }
     let mut server_res = use_resource(move || {
         let id = id();

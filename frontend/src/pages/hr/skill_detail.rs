@@ -14,19 +14,31 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    GetSkillFileContentRequest, SkillContentInput, SkillDetail, SkillFileItem,
-    UpdateSkillFileContentRequest, UpdateSkillRequest,
+    GetSkillFileContentRequest, SkillContentInput, UpdateSkillFileContentRequest,
+    UpdateSkillRequest,
 };
 
 #[component]
 pub fn HrSkillDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /hr/skills/A → /hr/skills/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
+    // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
+    // 拉取仅在 id 变化时触发（skill / files 各自一个 resource）
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(String::new);
+    if let crate::pages::Route::HrSkillDetail { id: route_id } = &route
+        && *rid.peek() != *route_id
+    {
+        rid.set(route_id.clone());
+    }
     let toast = use_toast();
 
-    let mut skill = use_signal(|| Option::<SkillDetail>::None);
-    let mut files = use_signal(Vec::<SkillFileItem>::new);
-    let mut loading = use_signal(|| true);
+    let mut skill_res = use_resource(move || {
+        let id = rid();
+        async move { get_skill(&id).await }
+    });
+    let mut files_res = use_resource(move || {
+        let id = rid();
+        async move { list_skill_files(&id).await }
+    });
     let mut selected_file = use_signal(String::new);
     let mut file_content = use_signal(String::new);
     let mut file_content_loading = use_signal(|| false);
@@ -43,24 +55,6 @@ pub fn HrSkillDetail(id: String) -> Element {
     let mut edit_category = use_signal(String::new);
     let mut edit_content_input = use_signal(|| Option::<SkillContentInput>::None);
     let mut saving_meta = use_signal(|| false);
-
-    // 初始加载
-    let id_for_effect = id.clone();
-    use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_skill(&id).await {
-                Ok(s) => skill.set(Some(s)),
-                Err(e) => toast.error(format!("加载 Skill 失败: {}", e)),
-            }
-            match list_skill_files(&id).await {
-                Ok(resp) => files.set(resp.files),
-                Err(e) => toast.error(format!("加载文件列表失败: {}", e)),
-            }
-            loading.set(false);
-        });
-    });
 
     // 保存文件内容
     let on_save_file = {
@@ -94,7 +88,12 @@ pub fn HrSkillDetail(id: String) -> Element {
 
     // 打开元信息编辑 Modal（填入当前值）
     let on_open_edit = move |_| {
-        if let Some(s) = skill() {
+        if let Some(s) = skill_res
+            .read()
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .cloned()
+        {
             edit_name.set(s.name.clone());
             edit_description.set(s.description.clone());
             edit_tags.set(s.tags.join(", "));
@@ -142,11 +141,11 @@ pub fn HrSkillDetail(id: String) -> Element {
                         show_edit_modal.set(false);
                         // 重新拉取详情与文件列表
                         match get_skill(&skill_id).await {
-                            Ok(s) => skill.set(Some(s)),
+                            Ok(s) => skill_res.set(Some(Ok(s))),
                             Err(e) => toast.error(format!("加载 Skill 失败: {}", e)),
                         }
                         match list_skill_files(&skill_id).await {
-                            Ok(resp) => files.set(resp.files),
+                            Ok(resp) => files_res.set(Some(Ok(resp))),
                             Err(e) => toast.error(format!("加载文件列表失败: {}", e)),
                         }
                     }
@@ -157,8 +156,16 @@ pub fn HrSkillDetail(id: String) -> Element {
         }
     };
 
-    let skill_data = skill.read().clone();
-    let files_list = files.read().clone();
+    let skill_data = skill_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .cloned();
+    let files_list = files_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|resp| resp.files.clone());
 
     rsx! {
         AppLayout {
@@ -168,7 +175,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                     "← 返回列表"
                 }
             }
-            if loading() {
+            if skill_res.read().as_ref().is_none() || files_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(s) = skill_data {
                 // 主信息卡
@@ -207,15 +214,15 @@ pub fn HrSkillDetail(id: String) -> Element {
                 // 文件列表区
                 div { class: "card bg-base-100 shadow-md mb-6",
                     div { class: "card-body",
-                        h2 { class: "card-title text-lg mb-2", "📁 文件列表 ({files_list.len()})" }
-                        if files_list.is_empty() {
+                        h2 { class: "card-title text-lg mb-2", "📁 文件列表 ({files_list.as_ref().map(|f| f.len()).unwrap_or(0)})" }
+                        if files_list.as_ref().map(|f| f.is_empty()).unwrap_or(true) {
                             EmptyState { icon: "📄".to_string(), message: "此 Skill 暂无文件".to_string() }
                         } else {
                             div { class: "grid grid-cols-1 md:grid-cols-3 gap-4",
                                 // 左侧文件列表
                                 div { class: "md:col-span-1",
                                     ul { class: "menu bg-base-200 rounded-box",
-                                        for f in files_list.iter() {
+                                        for f in files_list.as_ref().unwrap().iter() {
                                             {
                                                 let fname = f.filename.clone();
                                                 let active = selected_file() == fname;
