@@ -249,7 +249,7 @@ mod tests {
     use crate::service::dao::agent::{AgentQuery, AgentSearch};
     use crate::service::dao::tool::{ToolQuery, ToolSearch};
     use async_trait::async_trait;
-    use common::enums::{ControlMode, ToolProtocol, ToolStatus};
+    use common::enums::{CallerType, ControlMode, ToolProtocol, ToolStatus, UserRole};
     use common::error::Result;
     use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolStats};
     use serde_json::{Value, json};
@@ -769,9 +769,18 @@ mod tests {
         }
     }
 
+    /// Web 端用户请求（caller_type = User，ctx 无 agent/project/task 作用域）
     fn test_ctx() -> RequestContext {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
         crate::pkg::request_context_test_support::new_test_ctx("test-user", pool)
+    }
+
+    /// Agent 运行时请求（caller_type = Agent）——作用域 fail-closed 规则的适用对象
+    fn agent_ctx() -> RequestContext {
+        test_ctx()
+            .to_builder()
+            .caller_type(CallerType::Agent)
+            .build()
     }
 
     fn test_runtime_with_tool_dals(
@@ -806,9 +815,11 @@ mod tests {
         (temp_dir, runtime)
     }
 
+    /// Agent 运行时带作用域的请求（scope fail-closed 测试的主力 ctx）
     fn scoped_test_ctx(agent_id: &str, project_id: &str, task_id: &str) -> RequestContext {
         test_ctx()
             .to_builder()
+            .caller_type(CallerType::Agent)
             .agent_id(agent_id)
             .project_id(project_id)
             .task_id(task_id)
@@ -954,13 +965,61 @@ mod tests {
             Arc::new(StubLarkCredentialDal::none()),
         );
 
+        // Agent 调用：ctx 无任何作用域 → fail-closed
         let error = runtime
             .tool_execution()
-            .query_tool_call_entries(test_ctx(), ToolCallQuery::default())
+            .query_tool_call_entries(agent_ctx(), ToolCallQuery::default())
             .await
             .expect_err("unscoped tool call query must fail closed");
 
         assert!(error.code_enum() == common::error::ErrorCode::InvalidRequest);
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_call_query_requires_user_supplied_scope() {
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let logger = Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf()));
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(StubBrainDal),
+            Arc::new(RecordingToolDal::new(ToolProtocol::Builtin)),
+            Arc::new(RecordingMcpToolDal::new()),
+            Arc::new(StubAgentDal::new()),
+            logger,
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
+        );
+
+        // Web 用户（普通成员）无过滤条件 → 拒绝（禁止无边界遍历 trace）
+        let error = runtime
+            .tool_execution()
+            .query_tool_call_entries(test_ctx(), ToolCallQuery::default())
+            .await
+            .expect_err("user query without any scope filter must be rejected");
+        assert!(error.code_enum() == common::error::ErrorCode::InvalidRequest);
+
+        // Web 用户显式指定 agent 作用域 → 允许（Web 端 ctx 天然无作用域，只能靠查询条件收敛）
+        let result = runtime
+            .tool_execution()
+            .query_tool_call_entries(
+                test_ctx(),
+                ToolCallQuery {
+                    agent_id: Some("user-supplied-agent".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.is_ok(), "user query with explicit scope must pass");
+
+        // Admin 用户：允许全量查询（可观测性管理页）
+        let admin_ctx = test_ctx()
+            .to_builder()
+            .user_role(UserRole::Admin as i32)
+            .build();
+        let result = runtime
+            .tool_execution()
+            .query_tool_call_entries(admin_ctx, ToolCallQuery::default())
+            .await;
+        assert!(result.is_ok(), "admin unscoped query must pass");
     }
 
     #[tokio::test]
@@ -980,7 +1039,7 @@ mod tests {
         let error = runtime
             .tool_execution()
             .query_tool_call_entries(
-                test_ctx(),
+                agent_ctx(),
                 ToolCallQuery {
                     agent_id: Some("user-supplied-agent".to_string()),
                     ..Default::default()
@@ -1005,7 +1064,7 @@ mod tests {
             Arc::new(StubUserDal::none()),
             Arc::new(StubLarkCredentialDal::none()),
         );
-        let mut ctx = test_ctx();
+        let mut ctx = agent_ctx();
         ctx.agent_id = Some("runtime-agent-only".to_string());
 
         let error = runtime

@@ -1,4 +1,5 @@
 use common::api::{GetToolCallEntryRequest, QueryToolCallEntriesRequest};
+use common::enums::CallerType;
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::Once;
@@ -121,6 +122,9 @@ async fn query_tool_call_entries_handler_rejects_scope_without_context_scope() {
     ctx.agent_id = None;
     ctx.project_id = None;
     ctx.task_id = None;
+    // Agent 调用方（作用域 fail-closed 的适用对象）：ctx 无作用域时，
+    // 仅凭请求自带 agent_id 不能被信任
+    ctx.caller_type = CallerType::Agent;
 
     let error = query_tool_call_entries(
         ctx,
@@ -132,5 +136,35 @@ async fn query_tool_call_entries_handler_rejects_scope_without_context_scope() {
     .await
     .expect_err("handler must not trust request-supplied scope alone");
 
+    assert!(error.code_enum() == common::error::ErrorCode::InvalidRequest);
+}
+
+#[tokio::test]
+async fn query_tool_call_entries_handler_accepts_user_supplied_scope() {
+    init_test_singletons();
+    // Web 用户请求（User 调用方 + 无 ctx 作用域）：显式指定 agent_id 后允许查询，
+    // 否则前端「工具调用记录」页无法加载任何数据
+    let ctx = scoped_ctx()
+        .to_builder()
+        .caller_type(CallerType::User)
+        .build();
+
+    let result = query_tool_call_entries(
+        ctx.clone(),
+        QueryToolCallEntriesRequest {
+            agent_id: Some("handler-agent-1".to_string()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "user query with explicit scope must succeed"
+    );
+
+    // 无任何过滤条件 → 仍拒绝（保留"禁止无边界遍历"的兜底）
+    let error = query_tool_call_entries(ctx, QueryToolCallEntriesRequest::default())
+        .await
+        .expect_err("user query without any scope filter must be rejected");
     assert!(error.code_enum() == common::error::ErrorCode::InvalidRequest);
 }
