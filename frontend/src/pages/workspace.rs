@@ -612,7 +612,16 @@ pub fn Workspace() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "relative h-full w-full overflow-hidden",
+            // 修复：原写法 `relative h-full w-full overflow-hidden` 在 `AppLayout` 的
+            // `min-h-screen flex flex-col` + main `flex-1` 父容器下，`h-full` 因为父
+            // 高度 `min-height:100vh` + `height:auto` 对子级百分比解析为不定（definite
+            // size）而坍塌为 0，导致该 div 内部所有 `absolute inset-0` 子元素（关系图
+            // 全屏背景 / HUD 面板 / 加载遮罩）被 `overflow-hidden` 裁掉，页面整片空白。
+            // 改用 `absolute inset-0`：锚定到 `position:relative` 的 main，绕过百分比
+            // 高度解析、必然填满 `100vh - navbar` 区域（main 由 flex-1 保证该高度）。
+            // 配套把 WorkspaceGraph 内部根容器也改为 `absolute inset-0` 一致铺满，
+            // 避免它再依赖 `h-full`。
+            div { class: "absolute inset-0 overflow-hidden",
                 // === 关系图全屏背景层（HUD 底层，透明 canvas 透出主题底） ===
                 div { class: "absolute inset-0 z-0",
                     WorkspaceGraph {
