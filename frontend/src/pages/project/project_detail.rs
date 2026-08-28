@@ -21,7 +21,7 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
-    GetProjectResponse, PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
+    PaginationParams, ProjectListItem, TaskListItem, UpdateProjectRequest,
     UpdateProjectStatusRequest, UpdateTaskStatusRequest,
 };
 use common::enums::{ArtifactSourceType, ProjectStatus, TaskStatus};
@@ -36,12 +36,31 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
 
 #[component]
 pub fn ProjectDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /projects/A → /projects/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut project = use_signal(|| None::<GetProjectResponse>);
+    // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::ProjectDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
+    let mut project_res = use_resource(move || {
+        let id = rid();
+        async move {
+            let req = GetProjectRequest {
+                id,
+                with_stats: Some(true),
+                with_model_call_stats: Some(true),
+                stats_interval: Some("daily".to_string()),
+                with_artifacts: Some(true),
+                with_task_graph: Some(true),
+                ..Default::default()
+            };
+            get_project(req).await
+        }
+    });
     let mut tasks = use_signal(Vec::<TaskListItem>::new);
     let mut artifacts = use_signal(Vec::<ArtifactDetail>::new);
-    let mut loading = use_signal(|| true);
 
     // 产物新增 Modal 状态
     let mut show_artifact_modal = use_signal(|| false);
@@ -68,30 +87,11 @@ pub fn ProjectDetail(id: String) -> Element {
     let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
     let mut graph_agents = use_signal(Vec::<AgentListItem>::new);
 
-    // 初始加载：先取项目，再取任务列表和产物列表
-    let id_for_load = id.clone();
+    // 任务 / 关系图数据随 :id 变化加载（project 本身由上方 use_resource 负责）
+    let rid_for_load = rid;
     use_effect(move || {
-        loading.set(true);
-        let id_clone = id_for_load.clone();
+        let id_clone = rid_for_load();
         spawn(async move {
-            let req = GetProjectRequest {
-                id: id_clone.clone(),
-                with_stats: Some(true),
-                with_model_call_stats: Some(true),
-                stats_interval: Some("daily".to_string()),
-                with_artifacts: Some(true),
-                with_task_graph: Some(true),
-                ..Default::default()
-            };
-            match get_project(req).await {
-                Ok(p) => {
-                    if let Some(ref arts) = p.artifacts {
-                        artifacts.set(arts.clone());
-                    }
-                    project.set(Some(p));
-                }
-                Err(e) => toast.error(&e),
-            }
             match list_project_tasks(&id_clone).await {
                 Ok(resp) => {
                     let tasks_vec = resp.tasks;
@@ -118,18 +118,21 @@ pub fn ProjectDetail(id: String) -> Element {
                         }
                     }
 
-                    // graph_projects 从当前 project_data 构造（无需 API 调用）
-                    if let Some(p) = project.read().as_ref() {
-                        graph_projects.set(vec![ProjectListItem::from(p)]);
-                    }
-
                     tasks.set(tasks_vec);
                 }
                 Err(e) => toast.error(&e),
             }
-            // 产物列表已通过 get_project 的 with_artifacts=true 合并返回，无需单独调用
-            loading.set(false);
         });
+    });
+
+    // 由 project resource 派生 artifacts / graph_projects（随 project 解析而更新）
+    use_effect(move || {
+        if let Some(Ok(p)) = project_res.read().as_ref() {
+            if let Some(ref arts) = p.artifacts {
+                artifacts.set(arts.clone());
+            }
+            graph_projects.set(vec![ProjectListItem::from(p)]);
+        }
     });
 
     // 项目状态切换：启动(3)
@@ -152,7 +155,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         ..Default::default()
                     };
                     match get_project(req).await {
-                        Ok(p) => project.set(Some(p)),
+                        Ok(p) => project_res.set(Some(Ok(p))),
                         Err(e) => toast.error(&e),
                     }
                 }
@@ -181,7 +184,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         ..Default::default()
                     };
                     match get_project(req).await {
-                        Ok(p) => project.set(Some(p)),
+                        Ok(p) => project_res.set(Some(Ok(p))),
                         Err(e) => toast.error(&e),
                     }
                 }
@@ -210,7 +213,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         ..Default::default()
                     };
                     match get_project(req).await {
-                        Ok(p) => project.set(Some(p)),
+                        Ok(p) => project_res.set(Some(Ok(p))),
                         Err(e) => toast.error(&e),
                     }
                 }
@@ -292,7 +295,6 @@ pub fn ProjectDetail(id: String) -> Element {
         "tab tab-lg"
     };
 
-    let project_data = project.read().clone();
     let tasks_list = tasks.read().clone();
     let artifacts_list = artifacts.read().clone();
 
@@ -328,9 +330,11 @@ pub fn ProjectDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-        if loading() {
-            div { class: "card bg-base-100 shadow-md", Loading {} }
-        } else if let Some(p) = &project_data {
+        match project_res.read().as_ref() {
+            None => rsx! { div { class: "card bg-base-100 shadow-md", Loading {} } },
+            Some(Ok(p)) => {
+                let p = p.clone();
+                rsx! {
             // Tab 导航
             div { class: "tabs tabs-boxed mb-6",
                 button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
@@ -351,7 +355,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                 button {
                                     class: "btn btn-ghost btn-sm",
                                     onclick: move |_| {
-                                        if let Some(p) = project.read().clone() {
+                                        if let Some(p) = project_res.read().as_ref().and_then(|r| r.as_ref().ok()).cloned() {
                                             edit_name.set(p.name.clone());
                                             edit_description.set(p.description.clone().unwrap_or_default());
                                             edit_priority.set(p.priority.to_string());
@@ -796,8 +800,11 @@ pub fn ProjectDetail(id: String) -> Element {
                     });
                 },
             }
-        } else {
-            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📁".to_string(), message: "项目不存在".to_string() } }
+                }
+            }
+            Some(Err(e)) => rsx! {
+                div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) } }
+            },
         }
 
         // 编辑项目 Modal
@@ -842,7 +849,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                             ..Default::default()
                                         };
                                         match get_project(req).await {
-                                            Ok(p) => project.set(Some(p)),
+                                            Ok(p) => project_res.set(Some(Ok(p))),
                                             Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                         }
                                     }

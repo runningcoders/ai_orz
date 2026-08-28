@@ -26,10 +26,28 @@ use common::enums::TaskStatus;
 
 #[component]
 pub fn TaskDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /tasks/A → /tasks/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut task = use_signal(|| None::<GetTaskResponse>);
-    let mut loading = use_signal(|| true);
+    // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::TaskDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
+    let mut task_res = use_resource(move || {
+        let id = rid();
+        async move {
+            let req = GetTaskRequest {
+                id,
+                with_stats: Some(true),
+                with_model_call_stats: Some(true),
+                stats_interval: Some("daily".to_string()),
+                with_artifacts: Some(true),
+                ..Default::default()
+            };
+            get_task(req).await
+        }
+    });
 
     // 进度更新弹窗
     let mut show_progress_modal = use_signal(|| false);
@@ -48,80 +66,60 @@ pub fn TaskDetail(id: String) -> Element {
     let toast = use_toast();
     let navigator = use_navigator();
 
-    // 初始加载
-    let id_for_load = id.clone();
+    // 关系图数据：依赖 task_res 解析出 project_id / assignee，随 id 变化重新加载
     use_effect(move || {
-        loading.set(true);
-        let id_clone = id_for_load.clone();
-        spawn(async move {
-            let req = GetTaskRequest {
-                id: id_clone.clone(),
-                with_stats: Some(true),
-                with_model_call_stats: Some(true),
-                stats_interval: Some("daily".to_string()),
-                with_artifacts: Some(true),
-                ..Default::default()
-            };
-            match get_task(req).await {
-                Ok(t) => {
-                    new_progress.set(t.progress);
-                    // 克隆关系图所需字段后再 set，避免 move 后无法使用
-                    let pid_for_graph = t.project_id.clone();
-                    let assignee_type_for_graph = t.assignee_type;
-                    let assignee_id_for_graph = t.assignee_id.clone();
-                    task.set(Some(t));
-
-                    // 加载关系图数据（独立 spawn，不阻塞主流程）
-                    spawn(async move {
-                        // 1. 同 project 的 tasks（用于依赖 DAG）
-                        if let Some(pid) = &pid_for_graph {
-                            match list_project_tasks(pid).await {
-                                Ok(resp) => graph_tasks.set(resp.tasks),
-                                Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
-                            }
-                        }
-
-                        // 2. 批量加载关联 agent（统一走批量接口，即使只有 1 个）
-                        if assignee_type_for_graph == 1 {
-                            let ids = vec![assignee_id_for_graph.clone()];
-                            let req = AgentQueryRequest {
-                                ids: Some(ids),
-                                pagination: PaginationParams::default(),
-                                ..Default::default()
-                            };
-                            match query_agents(&req).await {
-                                Ok(page) => {
-                                    if let Some(a) = page.items.into_iter().next() {
-                                        graph_agents.set(vec![a]);
-                                    }
-                                }
-                                Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
-                            }
-                        }
-
-                        // 3. 批量加载关联 project（统一走批量接口，即使只有 1 个）
-                        if let Some(pid) = &pid_for_graph {
-                            let ids = vec![pid.clone()];
-                            let req = ProjectQueryRequest {
-                                ids: Some(ids),
-                                pagination: PaginationParams::default(),
-                                ..Default::default()
-                            };
-                            match query_projects(&req).await {
-                                Ok(page) => {
-                                    if let Some(p) = page.items.into_iter().next() {
-                                        graph_projects.set(vec![p]);
-                                    }
-                                }
-                                Err(e) => toast.error(format!("获取 Project 失败: {}", e)),
-                            }
-                        }
-                    });
+        if let Some(Ok(t)) = task_res.read().as_ref() {
+            let pid_for_graph = t.project_id.clone();
+            let assignee_type_for_graph = t.assignee_type;
+            let assignee_id_for_graph = t.assignee_id.clone();
+            spawn(async move {
+                if let Some(pid) = &pid_for_graph {
+                    match list_project_tasks(pid).await {
+                        Ok(resp) => graph_tasks.set(resp.tasks),
+                        Err(e) => toast.error(format!("获取项目任务失败: {}", e)),
+                    }
                 }
-                Err(e) => toast.error(&e),
-            }
-            loading.set(false);
-        });
+                if assignee_type_for_graph == 1 {
+                    let ids = vec![assignee_id_for_graph.clone()];
+                    let req = AgentQueryRequest {
+                        ids: Some(ids),
+                        pagination: PaginationParams::default(),
+                        ..Default::default()
+                    };
+                    match query_agents(&req).await {
+                        Ok(page) => {
+                            if let Some(a) = page.items.into_iter().next() {
+                                graph_agents.set(vec![a]);
+                            }
+                        }
+                        Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
+                    }
+                }
+                if let Some(pid) = &pid_for_graph {
+                    let ids = vec![pid.clone()];
+                    let req = ProjectQueryRequest {
+                        ids: Some(ids),
+                        pagination: PaginationParams::default(),
+                        ..Default::default()
+                    };
+                    match query_projects(&req).await {
+                        Ok(page) => {
+                            if let Some(p) = page.items.into_iter().next() {
+                                graph_projects.set(vec![p]);
+                            }
+                        }
+                        Err(e) => toast.error(format!("获取 Project 失败: {}", e)),
+                    }
+                }
+            });
+        }
+    });
+
+    // 进度初始值随 task 解析派生
+    use_effect(move || {
+        if let Some(Ok(t)) = task_res.read().as_ref() {
+            new_progress.set(t.progress);
+        }
     });
 
     // 状态切换 - 内联每个按钮的 closure 避免 move 问题
@@ -146,7 +144,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -174,7 +172,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -202,7 +200,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -230,7 +228,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -258,7 +256,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -286,7 +284,7 @@ pub fn TaskDetail(id: String) -> Element {
                     };
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
-                        task.set(Some(t));
+                        task_res.set(Some(Ok(t)));
                     }
                 }
                 Err(e) => toast.error(&e),
@@ -296,7 +294,7 @@ pub fn TaskDetail(id: String) -> Element {
 
     // 打开进度弹窗
     let open_progress_modal = move |_| {
-        if let Some(t) = task.read().as_ref() {
+        if let Some(t) = task_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
             new_progress.set(t.progress);
         }
         show_progress_modal.set(true);
@@ -316,7 +314,7 @@ pub fn TaskDetail(id: String) -> Element {
             {
                 Ok(t) => {
                     toast.success("进度已更新");
-                    task.set(Some(t));
+                    task_res.set(Some(Ok(t)));
                     show_progress_modal.set(false);
                 }
                 Err(e) => toast.error(&e),
@@ -327,7 +325,7 @@ pub fn TaskDetail(id: String) -> Element {
 
     // 返回项目（如有关联）
     let back_to_project = move |_| {
-        if let Some(t) = task.read().as_ref() {
+        if let Some(t) = task_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
             if let Some(pid) = &t.project_id {
                 navigator.push(format!("/projects/{}", pid));
             } else {
@@ -373,9 +371,11 @@ pub fn TaskDetail(id: String) -> Element {
                 "✏️ 编辑"
             }
         }
-        if loading() {
-            div { class: "card bg-base-100 shadow-md", Loading {} }
-        } else if let Some(t) = task.read().as_ref() {
+        match task_res.read().as_ref() {
+            None => rsx! { div { class: "card bg-base-100 shadow-md", Loading {} } },
+            Some(Ok(t)) => {
+                let t = t.clone();
+                rsx! {
             // Tab 导航
             div { class: "tabs tabs-boxed mb-6",
                 button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
@@ -632,9 +632,10 @@ pub fn TaskDetail(id: String) -> Element {
                 3 => rsx! {
                     // === 产物 ===
                     {
-                        let arts: Vec<_> = task.read().as_ref()
-                            .and_then(|t| t.artifacts.clone())
-                            .unwrap_or_default();
+                    let arts: Vec<_> = task_res.read().as_ref()
+                        .and_then(|r| r.as_ref().ok())
+                        .and_then(|t| t.artifacts.clone())
+                        .unwrap_or_default();
                         if arts.is_empty() {
                             rsx! { EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() } }
                         } else {
@@ -723,15 +724,18 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                 }
             }
-        } else {
-            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: "任务不存在".to_string() } }
+                }
+            }
+            Some(Err(e)) => rsx! {
+                div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) } }
+            },
         }
         TaskEditModal {
             mode: TaskEditMode::Edit { task_id: id_for_edit.clone() },
             show: show_edit_modal(),
             on_close: move |_| show_edit_modal.set(false),
             on_success: move |t: GetTaskResponse| {
-                task.set(Some(t));
+                task_res.set(Some(Ok(t)));
             },
         }
         }

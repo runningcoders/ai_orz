@@ -12,8 +12,8 @@ use crate::components::stats::ModelProviderStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    CallModelRequest, GetModelProviderRequest, GetModelProviderResponse,
-    SwitchEmbeddingProviderRequest, UpdateModelProviderRequest, UpdateModelProviderStatusRequest,
+    CallModelRequest, GetModelProviderRequest, SwitchEmbeddingProviderRequest,
+    UpdateModelProviderRequest, UpdateModelProviderStatusRequest,
 };
 use common::enums::ProviderType;
 use dioxus::prelude::*;
@@ -31,10 +31,18 @@ fn build_provider_stats_request(id: String) -> GetModelProviderRequest {
 
 #[component]
 pub fn FinanceModelProviderDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /model-providers/A → /model-providers/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut provider_data = use_signal(|| None::<GetModelProviderResponse>);
-    let mut loading = use_signal(|| true);
+    // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::FinanceModelProviderDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
+    let mut provider_res = use_resource(move || {
+        let id = rid();
+        async move { get_model_provider(build_provider_stats_request(id)).await }
+    });
     let toast = use_toast();
     let navigator = use_navigator();
 
@@ -63,23 +71,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_recommended_context_length = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
 
-    let id_for_effect = id.clone();
-    use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_model_provider(build_provider_stats_request(id)).await {
-                Ok(provider) => provider_data.set(Some(provider)),
-                Err(e) => toast.error(&e),
-            }
-            loading.set(false);
-        });
-    });
+    // 加载由上方 use_resource（rid 响应式）负责，无需 use_effect
 
     let handle_test_send = move |_| {
         spawn(async move {
             test_loading.set(true);
-            if let Some(p) = provider_data.read().clone() {
+            if let Some(p) = provider_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
                 match call_model_provider(CallModelRequest {
                     id: p.id.clone(),
                     prompt: test_prompt(),
@@ -97,7 +94,11 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let switch_id = id.clone();
     let handle_switch_confirm = move |_| {
         let reload_id = switch_id.clone();
-        let provider_id = provider_data.read().clone().map(|p| p.id);
+        let provider_id = provider_res
+            .read()
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .map(|p| p.id.clone());
         spawn(async move {
             switch_loading.set(true);
             if let Some(pid) = provider_id {
@@ -114,7 +115,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             resp.name
                         ));
                         match get_model_provider(build_provider_stats_request(reload_id)).await {
-                            Ok(provider) => provider_data.set(Some(provider)),
+                            Ok(provider) => provider_res.set(Some(Ok(provider))),
                             Err(e) => toast.error(&e),
                         }
                     }
@@ -139,9 +140,11 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 }
             }
 
-            if loading() {
-                Loading {}
-            } else if let Some(p) = provider_data.read().clone() {
+            match provider_res.read().as_ref() {
+                None => rsx! { Loading {} },
+                Some(Ok(p)) => {
+                    let p = p.clone();
+                    rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
                         div { class: "flex justify-between items-center mb-4",
@@ -180,7 +183,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                 Ok(()) => {
                                                                     toast.success("已禁用");
                                                                     match get_model_provider(build_provider_stats_request(rid)).await {
-                                                                        Ok(provider) => provider_data.set(Some(provider)),
+                                                                        Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                         Err(e) => toast.error(&e),
                                                                     }
                                                                 }
@@ -208,7 +211,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
                                                                         match get_model_provider(build_provider_stats_request(rid)).await {
-                                                                            Ok(provider) => provider_data.set(Some(provider)),
+                                                                            Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                             Err(e) => toast.error(&e),
                                                                         }
                                                                     }
@@ -226,7 +229,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
                                                                         match get_model_provider(build_provider_stats_request(rid)).await {
-                                                                            Ok(provider) => provider_data.set(Some(provider)),
+                                                                            Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                             Err(e) => toast.error(&e),
                                                                         }
                                                                     }
@@ -431,8 +434,11 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                         }
                     }
                 }
-            } else {
-                EmptyState { icon: "🧠".to_string(), message: "模型提供商不存在或已被删除".to_string() }
+                    }
+                }
+                Some(Err(e)) => rsx! {
+                    EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) }
+                },
             }
 
             ConfirmDialog {
@@ -516,7 +522,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             toast.success("已更新");
                                             show_edit_modal.set(false);
                                             match get_model_provider(build_provider_stats_request(reload_id)).await {
-                                                Ok(p) => provider_data.set(Some(p)),
+                                                Ok(p) => provider_res.set(Some(Ok(p))),
                                                 Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                             }
                                         }

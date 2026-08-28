@@ -10,41 +10,42 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
-use common::api::{ArtifactDetail, UpdateArtifactRequest};
+use common::api::UpdateArtifactRequest;
 use common::enums::ArtifactSourceType;
 
 #[component]
 pub fn ProjectArtifactDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /projects/artifacts/A → /projects/artifacts/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
+    // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
+    // 拉取仅在 id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::ProjectArtifactDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
     let toast = use_toast();
 
-    let mut artifact = use_signal(|| Option::<ArtifactDetail>::None);
+    let artifact_res = use_resource(move || {
+        let id = rid();
+        async move { get_artifact_content(&id).await }
+    });
     let mut content = use_signal(String::new);
-    let mut loading = use_signal(|| true);
     let mut content_dirty = use_signal(|| false);
     let mut saving = use_signal(|| false);
     let mut is_text_type = use_signal(|| false);
     let mut show_meta_modal = use_signal(|| false);
 
-    let id_for_effect = id.clone();
+    // 同步：resource 完成时填充内容与元数据；用户已编辑则保留编辑内容
+    // （peek 读取 content_dirty，避免被自身写回再次触发 effect）
     use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_artifact_content(&id).await {
-                Ok(resp) => {
-                    artifact.set(Some(resp.artifact));
-                    content.set(resp.content.content);
-                    is_text_type.set(true);
-                    content_dirty.set(false);
-                }
-                Err(e) => {
-                    toast.error(format!("加载产物内容失败: {}", e));
-                }
+        if let Some(Ok(resp)) = artifact_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
+            if !content_dirty.peek() {
+                content.set(resp.content.content.clone());
             }
-            loading.set(false);
-        });
+            is_text_type.set(true);
+            content_dirty.set(false);
+        }
     });
 
     let on_save = {
@@ -74,7 +75,11 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
         }
     };
 
-    let artifact_data = artifact.read().clone();
+    let artifact_data = artifact_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|resp| resp.artifact.clone());
 
     rsx! {
         AppLayout {
@@ -82,7 +87,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 h1 { class: "text-2xl font-bold", "产物详情" }
                 Link { class: "btn btn-ghost", to: crate::pages::Route::ProjectArtifacts {}, "← 返回列表" }
             }
-            if loading() {
+            if artifact_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(a) = artifact_data {
                 div { class: "card bg-base-100 shadow-md mb-6",
@@ -144,8 +149,8 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                                 tags,
                                 expected_updated_at: None,
                             }).await {
-                                Ok(updated) => {
-                                    artifact.set(Some(updated));
+                                Ok(_) => {
+                                    artifact_res.restart();
                                     toast.success("产物信息已更新");
                                     show_meta_modal.set(false);
                                 }

@@ -11,8 +11,8 @@ use crate::components::stats::ToolStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
-    DebugCallToolRequest, GetToolRequest, GetToolResponse, RuntimeReady, ToolQueryRequest,
-    UpdateToolRequest, UpdateToolStatusRequest,
+    DebugCallToolRequest, GetToolRequest, RuntimeReady, ToolQueryRequest, UpdateToolRequest,
+    UpdateToolStatusRequest,
 };
 use common::enums::{ToolProtocol, ToolStatus};
 use dioxus::prelude::*;
@@ -192,10 +192,18 @@ fn insert_positive_number(
 
 #[component]
 pub fn FinanceToolDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /finance/tools/A → /finance/tools/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut tool_data = use_signal(|| None::<GetToolResponse>);
-    let mut loading = use_signal(|| true);
+    // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::FinanceToolDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
+    let mut tool_res = use_resource(move || {
+        let id = rid();
+        async move { get_tool(build_tool_stats_request(id)).await }
+    });
     let toast = use_toast();
     let navigator = use_navigator();
 
@@ -212,37 +220,29 @@ pub fn FinanceToolDetail(id: String) -> Element {
     let mut config_form = use_signal(BuiltinConfigFormState::default);
     let mut config_saving = use_signal(|| false);
     // 运行时就绪（详情响应无此字段，经 query_tools 与列表 badge 同源探测）
-    let mut runtime_ready = use_signal(RuntimeReady::default);
-
-    use_effect(move || {
-        loading.set(true);
-        let id = id.clone();
-        let readiness_id = id.clone();
-        spawn(async move {
-            match get_tool(build_tool_stats_request(id)).await {
-                Ok(tool) => {
-                    // 从 parameters_schema 生成参数骨架
-                    if let Some(ref schema) = tool.parameters_schema {
-                        debug_args.set(generate_skeleton_from_schema(schema));
-                    }
-                    // 初始化配置编辑表单（以 detail config 为基底）
-                    config_form.set(builtin_form_from_config(tool.config.as_ref()));
-                    tool_data.set(Some(tool));
-                }
-                Err(e) => toast.error(&e),
-            }
-            // 运行时就绪探测（best-effort；与列表 badge 同源：query_tools → probe_runtime_ready）
-            if let Ok(page) = query_tools(&ToolQueryRequest {
-                ids: Some(vec![readiness_id]),
+    let runtime_ready = use_resource(move || {
+        let id = rid();
+        async move {
+            query_tools(&ToolQueryRequest {
+                ids: Some(vec![id]),
                 ..Default::default()
             })
             .await
-                && let Some(item) = page.items.into_iter().next()
-            {
-                runtime_ready.set(item.runtime_ready);
+            .ok()
+            .and_then(|page| page.items.into_iter().next().map(|item| item.runtime_ready))
+            .unwrap_or_default()
+        }
+    });
+
+    // tool_data / debug_args / config_form 同步（方案 B）：从 tool_res 派生，
+    // 运行时就绪由上方独立 runtime_ready resource 负责
+    use_effect(move || {
+        if let Some(tool) = tool_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
+            if let Some(ref schema) = tool.parameters_schema {
+                debug_args.set(generate_skeleton_from_schema(schema));
             }
-            loading.set(false);
-        });
+            config_form.set(builtin_form_from_config(tool.config.as_ref()));
+        }
     });
 
     rsx! {
@@ -256,9 +256,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 }
             }
 
-            if loading() {
-                Loading {}
-            } else if let Some(t) = tool_data.read().clone() {
+            match tool_res.read().as_ref() {
+                None => rsx! { Loading {} },
+                Some(Ok(t)) => {
+                    let t = t.clone();
+                    rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
                         div { class: "flex justify-between items-center mb-4",
@@ -276,7 +278,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                     } else {
                                                         toast.success("已禁用");
                                                         if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
-                                                            tool_data.set(Some(tool));
+                                                            tool_res.set(Some(Ok(tool)));
                                                         }
                                                     }
                                                 });
@@ -296,7 +298,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                     } else {
                                                         toast.success("已启用");
                                                         if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
-                                                            tool_data.set(Some(tool));
+                                                            tool_res.set(Some(Ok(tool)));
                                                         }
                                                     }
                                                 });
@@ -462,7 +464,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             move |_| {
                                                 let id = id.clone();
                                                 // 以 detail config 为基底合并（防丢字段），校验失败 toast 不提交
-                                                let base = tool_data.read().as_ref().and_then(|tool| tool.config.clone());
+                                                let base = tool_res.read().as_ref().and_then(|r| r.as_ref().ok()).and_then(|tool| tool.config.clone());
                                                 let form = config_form.read().clone();
                                                 let config = match merge_builtin_config(base.as_ref(), &form, layout) {
                                                     Ok(config) => config,
@@ -487,7 +489,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                             match get_tool(build_tool_stats_request(id)).await {
                                                                 Ok(tool) => {
                                                                     config_form.set(builtin_form_from_config(tool.config.as_ref()));
-                                                                    tool_data.set(Some(tool));
+                                                                    tool_res.set(Some(Ok(tool)));
                                                                 }
                                                                 Err(e) => toast.error(&e),
                                                             }
@@ -532,7 +534,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                             }
                             CredentialRequirementsTable { requirements: t.credential_requirements.clone() }
                             // 运行时就绪绑定引导（与列表 badge 同源；NotReady 时提示）
-                            if let RuntimeReady::NotReady { reason, hint } = runtime_ready() {
+                            if let RuntimeReady::NotReady { reason, hint } = runtime_ready.read().as_ref().cloned().unwrap_or_default() {
                                 div { class: "alert alert-warning mt-3 py-2 text-sm",
                                     div {
                                         p {
@@ -648,8 +650,11 @@ pub fn FinanceToolDetail(id: String) -> Element {
                         }
                     }
                 }
-            } else {
-                EmptyState { icon: "🔧".to_string(), message: "工具不存在或已被删除".to_string() }
+                    }
+                }
+                Some(Err(e)) => rsx! {
+                    EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) }
+                },
             }
 
             ConfirmDialog {

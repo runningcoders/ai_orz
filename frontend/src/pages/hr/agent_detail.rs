@@ -7,7 +7,7 @@ use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
-use crate::components::state::Loading;
+use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::AgentStatsPanel;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
@@ -20,7 +20,7 @@ use crate::utils::{
 };
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
-    GetAgentResponse, InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
+    InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListModelProvidersResponseItem, ListToolsRequest, MessageListItem, PaginationParams,
     ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams, SkillListItem,
     SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
@@ -94,9 +94,19 @@ const STATUS_OPTIONS: &[(i32, &str)] = &[
 
 #[component]
 pub fn HrAgentDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /hr/agents/A → /hr/agents/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
-    let mut agent_data = use_signal(|| Option::<GetAgentResponse>::None);
+    // 方案 B：订阅路由并把 id 同步到响应式 rid，use_resource 绑定 rid，
+    // 拉取仅在 id 变化时触发（同变体 /hr/agents/A → /hr/agents/B 也会重拉）
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut rid = use_signal(|| String::new());
+    if let crate::pages::Route::HrAgentDetail { id: route_id } = &route {
+        if *rid.peek() != *route_id {
+            rid.set(route_id.clone());
+        }
+    }
+    let mut agent_res = use_resource(move || {
+        let id = rid();
+        async move { get_agent(build_agent_stats_request(id)).await }
+    });
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
     // 修复 H3：为聊天输入框分离独立 signal，避免状态污染
@@ -141,11 +151,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 关系图所需数据：全局 projects + tasks + agents 列表
     let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
     let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
-    let mut graph_agents = use_signal(Vec::<AgentListItem>::new);
+    let graph_agents = use_signal(Vec::<AgentListItem>::new);
 
-    let agent_tool_ids = agent_data
+    let agent_tool_ids = agent_res
         .read()
         .as_ref()
+        .and_then(|r| r.as_ref().ok())
         .map(|a| a.tools.iter().cloned().collect::<HashSet<_>>())
         .unwrap_or_default();
 
@@ -154,14 +165,10 @@ pub fn HrAgentDetail(id: String) -> Element {
     let all_tools_list = all_tools.read().clone();
     let installed_skills_list = installed_skills.read().clone();
 
-    let id_for_load = id.clone();
+    let rid_for_load = rid.clone();
     let load_data = move || {
-        let aid = id_for_load.clone();
+        let aid = rid_for_load();
         spawn(async move {
-            match get_agent(build_agent_stats_request(aid.clone())).await {
-                Ok(a) => agent_data.set(Some(a)),
-                Err(e) => toast.error(format!("获取 Agent 失败: {}", e)),
-            }
             match list_installed_tool_packs(&aid).await {
                 Ok(resp) => tool_packs.set(resp.installed_tags),
                 Err(e) => toast.error(format!("获取工具包失败: {}", e)),
@@ -247,16 +254,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
                 Err(e) => toast.error(format!("获取任务列表失败: {}", e)),
             }
-            // 3. graph_agents 从当前 agent_data 构造（无需 API 调用）
-            //    agent_data 已在上方加载完成
-            if let Some(a) = agent_data.read().as_ref() {
-                graph_agents.set(vec![AgentListItem::from(a)]);
-            }
         });
     };
 
     use_effect(move || {
+        let _ = rid();
         load_data();
+    });
+
+    // graph_agents 随 agent_res 完成而同步（load_data 并发执行，避免读取不到 agent）
+    let agent_res_eff = agent_res;
+    let mut graph_agents_eff = graph_agents;
+    use_effect(move || {
+        if let Some(Ok(a)) = agent_res_eff.read().as_ref() {
+            graph_agents_eff.set(vec![AgentListItem::from(a)]);
+        }
     });
 
     // SSE 资源：EventSource + Closure 供顶层 use_drop 清理
@@ -362,9 +374,10 @@ pub fn HrAgentDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-            {match agent_data.read().as_ref() {
+            {match agent_res.read().as_ref() {
                 None => rsx! { Loading {} },
-                Some(a) => {
+                Some(Ok(a)) => {
+                    let a = a.clone();
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
             // 已绑定工具（用于卡片网格展示）：从全量工具列表中筛出 agent 已绑定的工具
@@ -396,7 +409,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                             button {
                                 class: "btn btn-ghost btn-sm",
                                 onclick: move |_| {
-                                    if let Some(a) = agent_data.read().as_ref() {
+                                    if let Some(a) = agent_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
                                         edit_name.set(a.name.clone());
                                         edit_roles.set(a.roles.clone());
                                         edit_roles_input.set(String::new());
@@ -645,7 +658,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             Ok(_) => {
                                                                 toast.success("Agent 已正式入职");
                                                                 match get_agent(build_agent_stats_request(aid.clone())).await {
-                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
                                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                 }
                                                             }
@@ -685,7 +698,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     Ok(_) => {
                                                                         toast.success(format!("状态已更新为：{}", label_clone));
                                                                         match get_agent(build_agent_stats_request(agent_id.clone())).await {
-                                                                            Ok(a) => agent_data.set(Some(a)),
+                                                                            Ok(a) => agent_res.set(Some(Ok(a))),
                                                                             Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                         }
                                                                     }
@@ -971,7 +984,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             Ok(_) => {
                                                                 toast.success("工具已绑定");
                                                                 match get_agent(build_agent_stats_request(aid.clone())).await {
-                                                                    Ok(a) => agent_data.set(Some(a)),
+                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
                                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                 }
                                                             }
@@ -1060,7 +1073,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                                     Ok(_) => {
                                                                                         toast.success(format!("工具 {} 已解绑", tname));
                                                                                         match get_agent(build_agent_stats_request(agent_id.clone())).await {
-                                                                                            Ok(a) => agent_data.set(Some(a)),
+                                                                                            Ok(a) => agent_res.set(Some(Ok(a))),
                                                                                             Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                                         }
                                                                                     }
@@ -1271,7 +1284,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         toast.success("Agent 信息已更新");
                                                         show_edit_modal.set(false);
                                                         match get_agent(build_agent_stats_request(id_clone.clone())).await {
-                                                            Ok(a) => agent_data.set(Some(a)),
+                                                            Ok(a) => agent_res.set(Some(Ok(a))),
                                                             Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                                         }
                                                     }
@@ -1589,6 +1602,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
             }
                 }
+            Some(Err(e)) => rsx! {
+                EmptyState {
+                    icon: "❓".to_string(),
+                    message: format!("加载失败: {}", e),
+                }
+            },
             }}
         }
     }

@@ -15,32 +15,29 @@ use dioxus_router::{Link, use_navigator};
 
 #[component]
 pub fn FinanceMcpServerDetail(id: String) -> Element {
-    // M1 修复：订阅路由，使同变体 :id 参数变化（如 /mcp-servers/A → /mcp-servers/B）时组件重渲染并重新拉取数据
-    let _route = dioxus_router::use_route::<crate::pages::Route>();
     let toast = use_toast();
     let navigator = use_navigator();
 
-    let mut server = use_signal(|| Option::<GetMcpServerResponse>::None);
-    let mut loading = use_signal(|| true);
     let mut syncing = use_signal(|| false);
     let mut toggling = use_signal(|| false);
     let mut show_delete_confirm = use_signal(|| false);
 
-    let id_for_effect = id.clone();
-    use_effect(move || {
-        loading.set(true);
-        let id = id_for_effect.clone();
-        spawn(async move {
-            match get_mcp_server(&id).await {
-                Ok(s) => server.set(Some(s)),
-                Err(e) => toast.error(format!("加载失败: {}", e)),
-            }
-            loading.set(false);
-        });
+    // M1 修复（方案 B）：响应式 id + use_resource，拉取仅在 :id 变化时触发，
+    // 切换本地状态（如弹窗）不再误重拉
+    let route = dioxus_router::use_route::<crate::pages::Route>();
+    let mut id = use_signal(|| String::new());
+    if let crate::pages::Route::FinanceMcpServerDetail { id: rid } = &route {
+        if *id.peek() != *rid {
+            id.set(rid.clone());
+        }
+    }
+    let mut server_res = use_resource(move || {
+        let id = id();
+        async move { get_mcp_server(&id).await }
     });
 
     let on_sync = {
-        let id = id.clone();
+        let id = id();
         move |_| {
             let id = id.clone();
             let id_reload = id.clone();
@@ -52,7 +49,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                 }
                 syncing.set(false);
                 match get_mcp_server(&id_reload).await {
-                    Ok(s) => server.set(Some(s)),
+                    Ok(s) => server_res.set(Some(Ok(s))),
                     Err(e) => toast.error(format!("刷新失败: {}", e)),
                 }
             });
@@ -60,7 +57,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
     };
 
     let mut on_toggle = {
-        let id = id.clone();
+        let id = id();
         move |new_status: McpServerStatus| {
             let id = id.clone();
             let id_reload = id.clone();
@@ -83,7 +80,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                 }
                 toggling.set(false);
                 match get_mcp_server(&id_reload).await {
-                    Ok(s) => server.set(Some(s)),
+                    Ok(s) => server_res.set(Some(Ok(s))),
                     Err(e) => toast.error(format!("刷新失败: {}", e)),
                 }
             });
@@ -91,7 +88,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
     };
 
     let on_delete = {
-        let id = id.clone();
+        let id = id();
         move |_| {
             let id = id.clone();
             show_delete_confirm.set(false);
@@ -107,7 +104,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
         }
     };
 
-    let server_data = server.read().clone();
+    let server_view = server_res.read();
 
     rsx! {
         AppLayout {
@@ -115,74 +112,79 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                 h1 { class: "text-2xl font-bold", "MCP Server 详情" }
                 Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMcpServers {}, "← 返回列表" }
             }
-            if loading() {
-                Loading {}
-            } else if let Some(s) = server_data {
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-body",
-                        div { class: "flex justify-between items-center mb-4",
-                            h2 { class: "card-title", "{s.name}" }
-                            div { class: "flex gap-2",
-                                button {
-                                    class: "btn btn-ghost btn-sm",
-                                    disabled: toggling(),
-                                    onclick: move |_| on_toggle(if s.status == McpServerStatus::Enabled { McpServerStatus::Disabled } else { McpServerStatus::Enabled }),
-                                    if s.status == McpServerStatus::Enabled { "🚫 禁用" } else { "✅ 启用" }
+            match server_view.as_ref() {
+                None => rsx! { Loading {} },
+                Some(Ok(s)) => {
+                    let s = s.clone();
+                    rsx! {
+                        div { class: "card bg-base-100 shadow-md",
+                            div { class: "card-body",
+                                div { class: "flex justify-between items-center mb-4",
+                                    h2 { class: "card-title", "{s.name}" }
+                                    div { class: "flex gap-2",
+                                        button {
+                                            class: "btn btn-ghost btn-sm",
+                                            disabled: toggling(),
+                                            onclick: move |_| on_toggle(if s.status == McpServerStatus::Enabled { McpServerStatus::Disabled } else { McpServerStatus::Enabled }),
+                                            if s.status == McpServerStatus::Enabled { "🚫 禁用" } else { "✅ 启用" }
+                                        }
+                                        button {
+                                            class: "btn btn-ghost btn-sm",
+                                            disabled: syncing(),
+                                            onclick: on_sync,
+                                            if syncing() { "同步中..." } else { "🔄 同步工具" }
+                                        }
+                                        button {
+                                            class: "btn btn-error btn-sm",
+                                            onclick: move |_| show_delete_confirm.set(true),
+                                            "🗑 删除"
+                                        }
+                                    }
                                 }
-                                button {
-                                    class: "btn btn-ghost btn-sm",
-                                    disabled: syncing(),
-                                    onclick: on_sync,
-                                    if syncing() { "同步中..." } else { "🔄 同步工具" }
-                                }
-                                button {
-                                    class: "btn btn-error btn-sm",
-                                    onclick: move |_| show_delete_confirm.set(true),
-                                    "🗑 删除"
+                                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "传输方式" }
+                                        div { class: "font-mono", "{transport_text(s.transport)}" }
+                                    }
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "状态" }
+                                        div { span { class: "badge", "{status_text(s.status)}" } }
+                                    }
+                                    div { class: "md:col-span-2",
+                                        div { class: "text-sm text-base-content/60 mb-1", "配置" }
+                                        pre {
+                                            class: "font-mono text-sm bg-base-200 p-3 rounded overflow-auto",
+                                            style: "white-space: pre-wrap; word-break: break-word;",
+                                            "{config_display(&s)}"
+                                        }
+                                    }
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "创建时间" }
+                                        div { class: "font-mono", "{crate::utils::format_datetime(s.created_at)}" }
+                                    }
+                                    div {
+                                        div { class: "text-sm text-base-content/60", "更新时间" }
+                                        div { class: "font-mono", "{crate::utils::format_datetime(s.updated_at)}" }
+                                    }
                                 }
                             }
                         }
-                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
-                            div {
-                                div { class: "text-sm text-base-content/60", "传输方式" }
-                                div { class: "font-mono", "{transport_text(s.transport)}" }
-                            }
-                            div {
-                                div { class: "text-sm text-base-content/60", "状态" }
-                                div { span { class: "badge", "{status_text(s.status)}" } }
-                            }
-                            div { class: "md:col-span-2",
-                                div { class: "text-sm text-base-content/60 mb-1", "配置" }
-                                pre {
-                                    class: "font-mono text-sm bg-base-200 p-3 rounded overflow-auto",
-                                    style: "white-space: pre-wrap; word-break: break-word;",
-                                    "{config_display(&s)}"
+                        // ===== 凭据需求只读卡片（空列表不渲染）=====
+                        if !s.config.credential_requirements.is_empty() {
+                            div { class: "card bg-base-100 shadow-md mt-4",
+                                div { class: "card-body",
+                                    h3 { class: "card-title text-lg", "凭据需求" }
+                                    p { class: "text-sm text-base-content/60",
+                                        "工具以调用者身份注入以下凭据（类型级声明，不绑定具体凭据实例）" }
+                                    CredentialRequirementsTable { requirements: s.config.credential_requirements.clone() }
                                 }
-                            }
-                            div {
-                                div { class: "text-sm text-base-content/60", "创建时间" }
-                                div { class: "font-mono", "{crate::utils::format_datetime(s.created_at)}" }
-                            }
-                            div {
-                                div { class: "text-sm text-base-content/60", "更新时间" }
-                                div { class: "font-mono", "{crate::utils::format_datetime(s.updated_at)}" }
                             }
                         }
                     }
-                }
-                // ===== 凭据需求只读卡片（空列表不渲染）=====
-                if !s.config.credential_requirements.is_empty() {
-                    div { class: "card bg-base-100 shadow-md mt-4",
-                        div { class: "card-body",
-                            h3 { class: "card-title text-lg", "凭据需求" }
-                            p { class: "text-sm text-base-content/60",
-                                "工具以调用者身份注入以下凭据（类型级声明，不绑定具体凭据实例）" }
-                            CredentialRequirementsTable { requirements: s.config.credential_requirements.clone() }
-                        }
-                    }
-                }
-            } else {
-                EmptyState { icon: "❓".to_string(), message: "MCP Server 不存在或已被删除".to_string() }
+                },
+                Some(Err(e)) => rsx! {
+                    EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) }
+                },
             }
 
             ConfirmDialog {
