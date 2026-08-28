@@ -27,7 +27,7 @@ pub struct LineChartProps {
     pub width: Option<f64>,
     /// 画布高度（CSS 像素），默认 200
     pub height: Option<f64>,
-    /// 图表标题（显示在左上角）
+    /// 图表标题（顶部居中显示；Y 轴名称由 `value_label` 提供，绘制在左上角）
     pub title: Option<String>,
     /// 数值标签描述（如 "调用次数" / "Token 消耗"）
     pub value_label: Option<String>,
@@ -169,13 +169,17 @@ fn draw_chart(
     // 1. HUD 背景
     hud_palette::draw_hud_background(ctx, width, height);
 
-    // 2. 标题
+    // 2. 标题（顶部居中）
+    //
+    // 原实现固定在左上角 (16, 14)，与 Y 轴名称（`value_label`，绘制于
+    // (pad_left, pad_top - 4)）在顶部区域重叠。改为水平居中后，两者分列
+    // 顶部两端/中部，不再互相遮挡。
     if let Some(t) = title {
         ctx.set_fill_style_str("rgba(250, 82, 15, 0.9)");
-        ctx.set_font("bold 12px sans-serif");
-        ctx.set_text_align("left");
+        ctx.set_font("bold 13px sans-serif");
+        ctx.set_text_align("center");
         ctx.set_text_baseline("top");
-        let _ = ctx.fill_text(t, 16.0, 14.0);
+        let _ = ctx.fill_text(t, width / 2.0, 12.0);
     }
 
     // 3. 空数据提示

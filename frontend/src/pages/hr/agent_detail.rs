@@ -488,6 +488,10 @@ pub fn HrAgentDetail(id: String) -> Element {
             rsx! {
                 div { class: "card bg-base-100 shadow-md",
                     div { class: "card-body",
+                        // 返回列表按钮：置于布局顶部（放底部时内容长会滚出视野）
+                        div { class: "mb-4",
+                            Link { to: "/hr/agents", class: "btn btn-ghost btn-sm", "← 返回列表" }
+                        }
                         // 顶部标题 + 编辑按钮
                         div { class: "mb-6 flex justify-between items-start",
                             div {
@@ -571,7 +575,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                         // Tab 内容
                         {match active_tab() {
                             0 => rsx! {
-                                // === 概览：基本信息 + 核心能力 + 运行时配置 + 状态切换 + 统计 ===
+                                // === 概览：基本信息 + 核心能力 + 运行时配置 + 运行时参数 + 状态切换 ===
+                                // （Agent 统计与趋势图已归入「⚡ 运行时」tab）
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "基本信息" }
                                     div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
@@ -804,12 +809,6 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     }
                                 }
 
-                                if a.stats.is_some() || a.model_call_stats.is_some() {
-                                    AgentStatsPanel {
-                                        stats: a.stats.clone(),
-                                        model_call_stats: a.model_call_stats.clone(),
-                                    }
-                                }
                             },
                             1 => rsx! {
                                 // === 工具与技能：工具包 + 技能包 + 工具绑定 ===
@@ -1326,18 +1325,22 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 KnowledgeGraph { agent_id: Some(id.clone()) }
                             },
                             6 => rsx! {
-                                // === 运行时：实时状态 + 思考快照 + 取消按钮 ===
+                                // === 运行时：统计概览（Agent 统计 + 模型调用趋势）→ 实时状态 + 思考快照 + 取消按钮 ===
+                                // 统计数据属运行时数据，统一放在运行时 tab 上半部分
+                                if a.stats.is_some() || a.model_call_stats.is_some() {
+                                    div { class: "mb-6",
+                                        AgentStatsPanel {
+                                            stats: a.stats.clone(),
+                                            model_call_stats: a.model_call_stats.clone(),
+                                        }
+                                    }
+                                }
                                 crate::components::runtime_panel::RuntimePanel {
                                     agent_id: id.clone(),
                                 }
                             },
                             _ => rsx! {},
                         }}
-
-                        // 返回列表按钮
-                        div { class: "card-actions mt-6",
-                            Link { to: "/hr/agents", class: "btn btn-ghost", "返回列表" }
-                        }
 
                         Modal {
                             title: "编辑 Agent 基本信息".to_string(),
