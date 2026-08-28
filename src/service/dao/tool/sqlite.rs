@@ -390,9 +390,9 @@ impl ToolDao for ToolDaoSqliteImpl {
             .await?;
 
             if let Some(existing) = exists {
-                // 内置工具以代码定义为准：刷新代码所有权字段
+                // 内置工具以代码定义为准：每次启动 sync 刷新代码所有权字段
                 // （name/description/control_mode/parameters_schema/tags），
-                // 运维所有权字段（config/status）保留现场设置；
+                // 运维所有权字段（config/status）保留现场设置，config 绝不写入；
                 // 字段无变化时不写库
                 if matches!(existing.protocol, common::enums::ToolProtocol::Builtin)
                     && (existing.name != po.name

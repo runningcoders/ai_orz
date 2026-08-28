@@ -1172,3 +1172,69 @@ async fn test_query_ignores_keyword_explicitly(pool: SqlitePool) {
         "不匹配的 keyword 也应被忽略，返回全部工具"
     );
 }
+
+// ===== 宏注册 handler 工具的 PO 字段约定 + sync 自愈 =====
+
+use crate::pkg::tool_registry::get_registry;
+
+/// 宏注册 handler 工具的 PO 字段约定：
+/// config 必须为 Null（留给运行时行为配置，如 no_progress_max_calls），
+/// 参数 schema 必须归位 parameters_schema（喂给模型 function calling）
+#[test]
+fn test_handler_macro_po_fields_convention() {
+    let registry = get_registry();
+    let factory = registry
+        .get_builtin_factory("search_memory")
+        .expect("search_memory 工厂应已由宏 ctor 注册");
+    let po = factory.create_po();
+    assert!(
+        po.config.is_null(),
+        "宏工具 config 应为 Null，实际: {}",
+        po.config
+    );
+    let schema = po
+        .parameters_schema
+        .as_ref()
+        .expect("参数 schema 应归位 parameters_schema 而非 config");
+    assert_eq!(schema["type"], "object");
+    assert!(schema.get("properties").is_some());
+}
+
+/// 每次启动 sync 的不变量：config 绝不写入（运维现场保留），
+/// parameters_schema 以代码为准写入
+#[sqlx::test]
+async fn test_sync_builtin_keeps_config_and_writes_schema(pool: SqlitePool) {
+    let tool_dao = init_test_env();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
+
+    let registry = get_registry();
+    let factory = registry.get_builtin_factory("search_memory").unwrap();
+    let po = factory.create_po();
+
+    // 存量：config 是运维写的运行时配置（非 schema），parameters_schema 已正确
+    let mut existing = po.clone();
+    existing.config = serde_json::json!({ "no_progress_max_calls": 15 });
+    tool_dao.create_tool(ctx.clone(), &existing).await.unwrap();
+
+    tool_dao
+        .sync_builtin_tools_to_db(ctx.clone())
+        .await
+        .unwrap();
+
+    let kept = tool_dao
+        .get_by_id(ctx.clone(), po.id.clone())
+        .await
+        .unwrap()
+        .expect("工具应存在");
+    assert_eq!(
+        kept.config
+            .get("no_progress_max_calls")
+            .and_then(|v| v.as_u64()),
+        Some(15),
+        "config 绝不写入：运维运行时配置必须保留"
+    );
+    assert!(
+        kept.parameters_schema.is_some(),
+        "parameters_schema 必须写入：模型 function calling 依赖它"
+    );
+}

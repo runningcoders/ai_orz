@@ -199,8 +199,8 @@ pub fn register_handler_tool(args: TokenStream, input: TokenStream) -> TokenStre
                     #name.to_string(),
                     #description.to_string(),
                     ToolProtocol::Builtin,
-                    schema_json,
-                    None,
+                    serde_json::Value::Null, // config（运行时行为配置，内置 handler 工具无）
+                    Some(schema_json),       // parameters_schema（参数 JSON Schema）
                     tags_vec,
                     None,
                 );
