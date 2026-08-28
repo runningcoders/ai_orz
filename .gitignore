@@ -71,6 +71,9 @@ sqlite::memory*
 .DS_Store
 **/.DS_Store
 
+# WorkBuddy 工作目录（本地产物、artifact、memory 等，非源码，不入库）
+/.workbuddy/
+
 # Local test output
 test_output.log
 
