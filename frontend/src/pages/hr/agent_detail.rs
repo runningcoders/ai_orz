@@ -48,9 +48,9 @@ fn build_agent_stats_request(id: String) -> GetAgentRequest {
 
 fn binding_status_badge_class(is_bound: bool) -> &'static str {
     if is_bound {
-        "badge badge-success"
+        "badge hud-badge badge-success"
     } else {
-        "badge badge-ghost"
+        "badge hud-badge badge-ghost"
     }
 }
 
@@ -68,10 +68,10 @@ fn agent_status_label(status: i32) -> String {
 
 fn kind_badge_class(kind: &str) -> &'static str {
     match kind {
-        "local" => "badge badge-info",
-        "cli" => "badge badge-accent",
-        "remote" => "badge badge-success",
-        _ => "badge badge-ghost",
+        "local" => "badge hud-badge badge-info",
+        "cli" => "badge hud-badge badge-accent",
+        "remote" => "badge hud-badge badge-success",
+        _ => "badge hud-badge badge-ghost",
     }
 }
 
@@ -537,7 +537,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                         }
 
                         // Tab 导航
-                        div { class: "tabs tabs-boxed mb-6",
+                        div { class: "tabs tabs-boxed hud-tabs mb-6",
                             button {
                                 class: "{tab0_class}",
                                 onclick: move |_| active_tab.set(0),

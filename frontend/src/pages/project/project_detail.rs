@@ -514,7 +514,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         if tasks_list.is_empty() {
                             EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() }
                         } else {
-                            table { class: "table table-zebra",
+                            table { class: "table hud-table table-zebra",
                                 thead { tr {
                                     th { "标题" }
                                     th { "状态" }
@@ -631,7 +631,7 @@ pub fn ProjectDetail(id: String) -> Element {
                             if artifacts_list.is_empty() {
                                 EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
                             } else {
-                                table { class: "table table-zebra",
+                                table { class: "table hud-table table-zebra",
                                     thead { tr {
                                         th { "名称" }
                                         th { "描述" }

@@ -18,9 +18,9 @@ use common::enums::UserRole;
 // 解析成 Member。统一改用 UserRole 枚举值，文案复用 display_name()。
 fn role_badge(role: i32) -> &'static str {
     match UserRole::from_i32(role) {
-        UserRole::SuperAdmin => "badge badge-info",
-        UserRole::Admin => "badge badge-success",
-        UserRole::Member => "badge badge-neutral",
+        UserRole::SuperAdmin => "badge hud-badge badge-info",
+        UserRole::Admin => "badge hud-badge badge-success",
+        UserRole::Member => "badge hud-badge badge-neutral",
     }
 }
 

@@ -101,11 +101,11 @@ fn type_label(t: &str) -> &'static str {
 
 fn type_badge_class(t: &str) -> &'static str {
     match t {
-        "knowledge_node" => "badge badge-primary",
-        "short_term" => "badge badge-success",
-        "trace" => "badge badge-warning",
-        "relation" => "badge badge-accent",
-        _ => "badge badge-neutral",
+        "knowledge_node" => "badge hud-badge badge-primary",
+        "short_term" => "badge hud-badge badge-success",
+        "trace" => "badge hud-badge badge-warning",
+        "relation" => "badge hud-badge badge-accent",
+        _ => "badge hud-badge badge-neutral",
     }
 }
 

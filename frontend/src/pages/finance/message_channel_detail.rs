@@ -712,7 +712,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     oninput: move |e| edit_agent_id.set(e.value()), placeholder: "留空表示不关联" }
                             }
                             if ct == ChannelType::Lark {
-                                div { class: "divider", "飞书专属配置" }
+                                div { class: "hud-divider divider", "飞书专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text font-medium", "应用凭证 *" }
@@ -769,7 +769,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Wechat {
-                                div { class: "divider", "微信专属配置" }
+                                div { class: "hud-divider divider", "微信专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "微信 Open ID" }
@@ -779,7 +779,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Email {
-                                div { class: "divider", "邮件专属配置" }
+                                div { class: "hud-divider divider", "邮件专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text font-medium", "SMTP 服务器 *" }
@@ -819,7 +819,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Slack {
-                                div { class: "divider", "Slack 专属配置" }
+                                div { class: "hud-divider divider", "Slack 专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "Channel ID" }
@@ -829,7 +829,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Webhook {
-                                div { class: "divider", "Webhook 专属配置" }
+                                div { class: "hud-divider divider", "Webhook 专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "HTTP 方法" }

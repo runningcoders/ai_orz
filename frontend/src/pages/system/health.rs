@@ -62,10 +62,10 @@ fn task_color(pending: u64) -> String {
 /// 飞书 WS 连接阶段 → 状态徽标样式
 fn ws_state_badge(state: &str) -> &'static str {
     match state {
-        "connected" => "badge badge-success badge-sm",
-        "connecting" => "badge badge-warning badge-sm",
-        "reconnecting" => "badge badge-error badge-sm",
-        _ => "badge badge-ghost badge-sm",
+        "connected" => "badge hud-badge badge-success badge-sm",
+        "connecting" => "badge hud-badge badge-warning badge-sm",
+        "reconnecting" => "badge hud-badge badge-error badge-sm",
+        _ => "badge hud-badge badge-ghost badge-sm",
     }
 }
 
@@ -457,9 +457,18 @@ mod tests {
 
     #[test]
     fn test_ws_state_badge_and_text_known_phases() {
-        assert_eq!(ws_state_badge("connected"), "badge badge-success badge-sm");
-        assert_eq!(ws_state_badge("connecting"), "badge badge-warning badge-sm");
-        assert_eq!(ws_state_badge("reconnecting"), "badge badge-error badge-sm");
+        assert_eq!(
+            ws_state_badge("connected"),
+            "badge hud-badge badge-success badge-sm"
+        );
+        assert_eq!(
+            ws_state_badge("connecting"),
+            "badge hud-badge badge-warning badge-sm"
+        );
+        assert_eq!(
+            ws_state_badge("reconnecting"),
+            "badge hud-badge badge-error badge-sm"
+        );
         assert_eq!(ws_state_text("connected"), "已连接");
         assert_eq!(ws_state_text("connecting"), "连接中");
         assert_eq!(ws_state_text("reconnecting"), "重连中");
@@ -467,7 +476,10 @@ mod tests {
 
     #[test]
     fn test_ws_state_unknown_falls_back() {
-        assert_eq!(ws_state_badge("other"), "badge badge-ghost badge-sm");
+        assert_eq!(
+            ws_state_badge("other"),
+            "badge hud-badge badge-ghost badge-sm"
+        );
         assert_eq!(ws_state_text("other"), "未知");
     }
 

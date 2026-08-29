@@ -16,13 +16,13 @@ pub fn task_status_text(status: i32) -> &'static str {
 /// 任务状态徽章 class
 pub fn task_status_badge(status: i32) -> &'static str {
     match status {
-        0 => "badge badge-sm badge-error",
-        1 => "badge badge-sm badge-warning",
-        2 => "badge badge-sm badge-info",
-        3 => "badge badge-sm badge-primary",
-        4 => "badge badge-sm badge-success",
-        5 => "badge badge-sm badge-neutral",
-        _ => "badge badge-sm badge-neutral",
+        0 => "badge hud-badge badge-sm badge-error",
+        1 => "badge hud-badge badge-sm badge-warning",
+        2 => "badge hud-badge badge-sm badge-info",
+        3 => "badge hud-badge badge-sm badge-primary",
+        4 => "badge hud-badge badge-sm badge-success",
+        5 => "badge hud-badge badge-sm badge-neutral",
+        _ => "badge hud-badge badge-sm badge-neutral",
     }
 }
 
@@ -54,13 +54,13 @@ pub fn project_status_text(status: i32) -> &'static str {
 /// 项目状态徽章 class（0=error, 1=info, 2=warning, 3=primary, 4=success, 5=neutral）
 pub fn project_status_badge(status: i32) -> &'static str {
     match status {
-        0 => "badge badge-sm badge-error",
-        1 => "badge badge-sm badge-info",
-        2 => "badge badge-sm badge-warning",
-        3 => "badge badge-sm badge-primary",
-        4 => "badge badge-sm badge-success",
-        5 => "badge badge-sm badge-neutral",
-        _ => "badge badge-sm badge-neutral",
+        0 => "badge hud-badge badge-sm badge-error",
+        1 => "badge hud-badge badge-sm badge-info",
+        2 => "badge hud-badge badge-sm badge-warning",
+        3 => "badge hud-badge badge-sm badge-primary",
+        4 => "badge hud-badge badge-sm badge-success",
+        5 => "badge hud-badge badge-sm badge-neutral",
+        _ => "badge hud-badge badge-sm badge-neutral",
     }
 }
 
@@ -81,10 +81,10 @@ pub fn tag_chip() -> &'static str {
 /// - 未授权 / 用户未授权 → error(红)
 pub fn auth_state_badge(state: &str) -> &'static str {
     match state {
-        "已登录" | "已授权" | "用户已授权" => "badge badge-sm badge-success",
-        "未登录" => "badge badge-sm badge-warning",
-        "未授权" | "用户未授权" => "badge badge-sm badge-error",
-        _ => "badge badge-sm badge-ghost",
+        "已登录" | "已授权" | "用户已授权" => "badge hud-badge badge-sm badge-success",
+        "未登录" => "badge hud-badge badge-sm badge-warning",
+        "未授权" | "用户未授权" => "badge hud-badge badge-sm badge-error",
+        _ => "badge hud-badge badge-sm badge-ghost",
     }
 }
 
@@ -94,9 +94,9 @@ pub fn auth_state_badge(state: &str) -> &'static str {
 /// 0=默认(中性) / 1-5=警示(琥珀) / >5=紧急(红)。
 pub fn priority_badge(priority: i32) -> &'static str {
     match priority {
-        p if p > 5 => "badge badge-sm badge-error",
-        p if p > 0 => "badge badge-sm badge-warning",
-        _ => "badge badge-sm badge-neutral",
+        p if p > 5 => "badge hud-badge badge-sm badge-error",
+        p if p > 0 => "badge hud-badge badge-sm badge-warning",
+        _ => "badge hud-badge badge-sm badge-neutral",
     }
 }
 
@@ -107,10 +107,10 @@ pub fn priority_badge(priority: i32) -> &'static str {
 /// 取代原先分散在 workspace / chat 中彼此冲突的三套映射。
 pub fn agent_runtime_badge(state: i32) -> &'static str {
     match state {
-        0 => "badge badge-sm badge-success",
-        1 => "badge badge-sm badge-neutral",
-        2 => "badge badge-sm badge-warning",
-        _ => "badge badge-sm badge-ghost",
+        0 => "badge hud-badge badge-sm badge-success",
+        1 => "badge hud-badge badge-sm badge-neutral",
+        2 => "badge hud-badge badge-sm badge-warning",
+        _ => "badge hud-badge badge-sm badge-ghost",
     }
 }
 
@@ -122,10 +122,10 @@ pub fn agent_runtime_badge(state: i32) -> &'static str {
 #[allow(dead_code)]
 pub fn agent_runtime_badge_str(state: &str) -> &'static str {
     match state {
-        "idle" => "badge badge-sm badge-success",
-        "resting" => "badge badge-sm badge-neutral",
-        "busy" => "badge badge-sm badge-warning",
-        _ => "badge badge-sm badge-ghost",
+        "idle" => "badge hud-badge badge-sm badge-success",
+        "resting" => "badge hud-badge badge-sm badge-neutral",
+        "busy" => "badge hud-badge badge-sm badge-warning",
+        _ => "badge hud-badge badge-sm badge-ghost",
     }
 }
 

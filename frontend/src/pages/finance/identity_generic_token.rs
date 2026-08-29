@@ -210,7 +210,7 @@ pub fn IdentityGenericTokenSection() -> Element {
             }
 
             // ===== 平台 Tab =====
-            div { class: "tabs tabs-boxed mt-3",
+            div { class: "tabs tabs-boxed hud-tabs mt-3",
                 role: "tablist",
                 for meta in PLATFORMS.iter() {
                     {

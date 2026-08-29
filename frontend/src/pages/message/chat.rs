@@ -1442,21 +1442,21 @@ fn render_tool_call_card(
             let (status_badge, header_class) = if is_result {
                 match json.get("is_success").and_then(|v| v.as_bool()) {
                     Some(true) => (
-                        "badge badge-success",
+                        "badge hud-badge badge-success",
                         "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-success",
                     ),
                     Some(false) => (
-                        "badge badge-error",
+                        "badge hud-badge badge-error",
                         "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-error",
                     ),
                     None => (
-                        "badge badge-info",
+                        "badge hud-badge badge-info",
                         "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-info",
                     ),
                 }
             } else {
                 (
-                    "badge badge-warning",
+                    "badge hud-badge badge-warning",
                     "flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-base-300/50 transition-colors border-l-4 border-l-warning",
                 )
             };

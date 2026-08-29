@@ -24,12 +24,12 @@ const DEFAULT_PAGE_SIZE: usize = 20;
 /// 根据日志级别返回 badge 样式类
 fn level_badge_class(level: &str) -> &'static str {
     match level.to_uppercase().as_str() {
-        "ERROR" => "badge badge-error",
-        "WARN" => "badge badge-warning",
-        "INFO" => "badge badge-info",
-        "DEBUG" => "badge badge-neutral",
-        "TRACE" => "badge badge-secondary",
-        _ => "badge badge-neutral",
+        "ERROR" => "badge hud-badge badge-error",
+        "WARN" => "badge hud-badge badge-warning",
+        "INFO" => "badge hud-badge badge-info",
+        "DEBUG" => "badge hud-badge badge-neutral",
+        "TRACE" => "badge hud-badge badge-secondary",
+        _ => "badge hud-badge badge-neutral",
     }
 }
 

@@ -15,9 +15,9 @@ use common::api::ShellStatusResponse;
 /// 进程状态徽标样式
 pub fn process_alive_badge(alive: bool) -> &'static str {
     if alive {
-        "badge badge-success"
+        "badge hud-badge badge-success"
     } else {
-        "badge badge-ghost"
+        "badge hud-badge badge-ghost"
     }
 }
 
@@ -162,8 +162,8 @@ mod tests {
 
     #[test]
     fn alive_badge_and_text_variants() {
-        assert_eq!(process_alive_badge(true), "badge badge-success");
-        assert_eq!(process_alive_badge(false), "badge badge-ghost");
+        assert_eq!(process_alive_badge(true), "badge hud-badge badge-success");
+        assert_eq!(process_alive_badge(false), "badge hud-badge badge-ghost");
         assert_eq!(process_alive_text(true), "运行中");
         assert_eq!(process_alive_text(false), "已退出");
     }

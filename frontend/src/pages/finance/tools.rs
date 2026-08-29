@@ -346,12 +346,12 @@ pub fn FinanceTools() -> Element {
                                                         // 就绪 badge 三态（advisory）：未就绪悬浮显示原因与修复提示；Unknown（无探测器）弱化展示
                                                         let (ready_class, ready_title, ready_text) = match &runtime_ready {
                                                             RuntimeReady::Ready => (
-                                                                "badge badge-success badge-outline",
+                                                                "badge hud-badge badge-success badge-outline",
                                                                 "运行环境就绪（CLI 已安装 / 授权可用）".to_string(),
                                                                 "就绪",
                                                             ),
                                                             RuntimeReady::NotReady { reason, hint } => (
-                                                                "badge badge-warning badge-outline",
+                                                                "badge hud-badge badge-warning badge-outline",
                                                                 format!("未就绪（{}）：{}", reason, hint),
                                                                 "未就绪",
                                                             ),

@@ -106,7 +106,7 @@ pub fn RuntimePanel(props: RuntimePanelProps) -> Element {
                         span { class: "text-lg font-semibold",
                             "🧠 Agent 运行时"
                         }
-                        span { class: "badge hud-badge {runtime_state_badge(&s.state)}",
+                        span { class: "badge {runtime_state_badge(&s.state)}",
                             "{runtime_state_label(&s.state)}"
                         }
                     }
@@ -175,10 +175,10 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
         _ => &think.scene,
     };
     let status_badge = match think.status.as_str() {
-        "thinking" => "badge badge-warning",
-        "cancelled" => "badge badge-error",
-        "finished" => "badge badge-success",
-        _ => "badge badge-ghost",
+        "thinking" => "badge hud-badge badge-warning",
+        "cancelled" => "badge hud-badge badge-error",
+        "finished" => "badge hud-badge badge-success",
+        _ => "badge hud-badge badge-ghost",
     };
 
     rsx! {
@@ -189,7 +189,7 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
                     span { class: "text-sm font-medium",
                         "场景：{scene_label}"
                     }
-                    span { class: "badge hud-badge badge-sm {status_badge}",
+                    span { class: "badge badge-sm {status_badge}",
                         "{think.status}"
                     }
                 }
@@ -257,10 +257,10 @@ fn runtime_state_label(state: &str) -> &'static str {
 /// 运行时状态 badge class
 fn runtime_state_badge(state: &str) -> &'static str {
     match state {
-        "idle" => "badge badge-success",
-        "busy" => "badge badge-error",
-        "resting" => "badge badge-warning",
-        _ => "badge badge-ghost",
+        "idle" => "badge hud-badge badge-success",
+        "busy" => "badge hud-badge badge-error",
+        "resting" => "badge hud-badge badge-warning",
+        _ => "badge hud-badge badge-ghost",
     }
 }
 

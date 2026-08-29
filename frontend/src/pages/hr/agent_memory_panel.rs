@@ -37,9 +37,9 @@ impl MemoryTab {
 
     fn badge_class(self) -> &'static str {
         match self {
-            MemoryTab::ShortTerm => "badge badge-info",
-            MemoryTab::KnowledgeNode => "badge badge-success",
-            MemoryTab::Relation => "badge badge-accent",
+            MemoryTab::ShortTerm => "badge hud-badge badge-info",
+            MemoryTab::KnowledgeNode => "badge hud-badge badge-success",
+            MemoryTab::Relation => "badge hud-badge badge-accent",
         }
     }
 }

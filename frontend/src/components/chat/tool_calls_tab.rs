@@ -32,9 +32,9 @@ const SUMMARY_MAX_CHARS: usize = 300;
 /// 工具调用状态徽标样式
 pub fn tool_call_status_badge(status: ToolCallStatusDto) -> &'static str {
     match status {
-        ToolCallStatusDto::Started => "badge badge-info",
-        ToolCallStatusDto::Completed => "badge badge-success",
-        ToolCallStatusDto::Failed => "badge badge-error",
+        ToolCallStatusDto::Started => "badge hud-badge badge-info",
+        ToolCallStatusDto::Completed => "badge hud-badge badge-success",
+        ToolCallStatusDto::Failed => "badge hud-badge badge-error",
     }
 }
 
@@ -323,15 +323,15 @@ mod tests {
     fn status_badge_and_text_variants() {
         assert_eq!(
             tool_call_status_badge(ToolCallStatusDto::Started),
-            "badge badge-info"
+            "badge hud-badge badge-info"
         );
         assert_eq!(
             tool_call_status_badge(ToolCallStatusDto::Completed),
-            "badge badge-success"
+            "badge hud-badge badge-success"
         );
         assert_eq!(
             tool_call_status_badge(ToolCallStatusDto::Failed),
-            "badge badge-error"
+            "badge hud-badge badge-error"
         );
         assert_eq!(tool_call_status_text(ToolCallStatusDto::Started), "执行中");
         assert_eq!(

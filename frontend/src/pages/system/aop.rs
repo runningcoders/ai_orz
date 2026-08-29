@@ -21,9 +21,9 @@ use crate::store::toast::use_toast;
 
 fn status_badge_class(status: &str) -> &'static str {
     match status {
-        "processing" => "badge badge-warning",
-        "pending" => "badge badge-info",
-        _ => "badge badge-neutral",
+        "processing" => "badge hud-badge badge-warning",
+        "pending" => "badge hud-badge badge-info",
+        _ => "badge hud-badge badge-neutral",
     }
 }
 
@@ -219,7 +219,7 @@ pub fn SystemAop() -> Element {
                                 EmptyState { icon: "📭".to_string(), message: "该队列暂无事件".to_string() }
                             } else {
                                 div { style: "overflow-x: auto;",
-                                    table { class: "table table-sm table-row-clickable",
+                                    table { class: "table hud-table table-sm table-row-clickable",
                                         thead { tr {
                                             th { "事件 ID" }
                                             th { "类型" }

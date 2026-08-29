@@ -267,7 +267,7 @@ pub fn FinanceMessageChannels() -> Element {
                         EmptyState { icon: "📡".to_string(), message: "暂无消息渠道".to_string() }
                     } else {
                         div { class: "overflow-x-auto",
-                            table { class: "table table-zebra table-pin-rows",
+                            table { class: "table hud-table table-zebra table-pin-rows",
                                 thead { tr { th { "名称" }, th { "类型" }, th { "飞书凭证" }, th { "状态" }, th { "操作" } }}
                                 tbody {
                                     for c in channels_list.iter() {
@@ -430,7 +430,7 @@ pub fn FinanceMessageChannels() -> Element {
 
                     // ===== 飞书配置 =====
                     if is_lark_type {
-                        div { class: "divider text-sm font-medium m-0", "飞书应用凭证 *" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "飞书应用凭证 *" }
                         if no_credentials {
                             HudCallout { tone: Some("warning".to_string()),
                                 span { "尚未绑定飞书应用凭证，请先前往「身份凭证」页完成绑定" }
@@ -469,7 +469,7 @@ pub fn FinanceMessageChannels() -> Element {
                                 }
                             }
                         }
-                        div { class: "divider text-sm font-medium m-0", "用户与路由（可选）" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "用户与路由（可选）" }
                         div { class: "form-control w-full",
                             label { class: "label",
                                 span { class: "label-text", "用户 Open ID" }
@@ -499,7 +499,7 @@ pub fn FinanceMessageChannels() -> Element {
 
                     // ===== 微信配置 =====
                     if is_wechat_type {
-                        div { class: "divider text-sm font-medium m-0", "微信应用配置" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "微信应用配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "App ID *" } }
                             input { class: "input input-bordered hud-input w-full", value: "{new_wechat_app_id}",
@@ -522,7 +522,7 @@ pub fn FinanceMessageChannels() -> Element {
 
                     // ===== 邮件配置 =====
                     if is_email_type {
-                        div { class: "divider text-sm font-medium m-0", "邮件 SMTP 配置" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "邮件 SMTP 配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "SMTP Host *" } }
                             input { class: "input input-bordered hud-input w-full", value: "{new_email_smtp_host}",
@@ -563,7 +563,7 @@ pub fn FinanceMessageChannels() -> Element {
 
                     // ===== Slack 配置 =====
                     if is_slack_type {
-                        div { class: "divider text-sm font-medium m-0", "Slack 应用配置" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "Slack 应用配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "Bot Token *" } }
                             input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_slack_bot_token}",
@@ -580,7 +580,7 @@ pub fn FinanceMessageChannels() -> Element {
 
                     // ===== Webhook 配置 =====
                     if is_webhook_type {
-                        div { class: "divider text-sm font-medium m-0", "Webhook 配置" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "Webhook 配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "Webhook URL *" } }
                             input { class: "input input-bordered hud-input w-full", value: "{new_webhook_url}",

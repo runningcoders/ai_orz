@@ -25,10 +25,10 @@ use dioxus_router::Link;
 /// Agent kind 对应的 badge 样式和标签
 fn kind_badge_class(kind: &str) -> &'static str {
     match kind {
-        "local" => "badge badge-info",
-        "cli" => "badge badge-accent",
-        "remote" => "badge badge-success",
-        _ => "badge badge-ghost",
+        "local" => "badge hud-badge badge-info",
+        "cli" => "badge hud-badge badge-accent",
+        "remote" => "badge hud-badge badge-success",
+        _ => "badge hud-badge badge-ghost",
     }
 }
 
@@ -55,10 +55,10 @@ fn agent_status_label(status: i32) -> String {
 
 fn agent_status_badge_class(status: i32) -> &'static str {
     match status {
-        3 => "badge badge-success",
-        1 => "badge badge-warning",
-        2 => "badge badge-info",
-        _ => "badge badge-ghost",
+        3 => "badge hud-badge badge-success",
+        1 => "badge hud-badge badge-warning",
+        2 => "badge hud-badge badge-info",
+        _ => "badge hud-badge badge-ghost",
     }
 }
 

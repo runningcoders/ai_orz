@@ -180,7 +180,7 @@ pub fn SystemTasks() -> Element {
                         }
                     } else {
                         div { class: "overflow-x-auto mt-4",
-                            table { class: "table table-zebra",
+                            table { class: "table hud-table table-zebra",
                                 thead {
                                     tr {
                                         th { "类型" }
@@ -196,10 +196,10 @@ pub fn SystemTasks() -> Element {
                                             let task_id = t.task_id.clone();
                                             let task_id_click = task_id.clone();
                                             let status_class = match t.status {
-                                                TaskStatus::Pending => "badge badge-ghost",
-                                                TaskStatus::Running => "badge badge-primary",
-                                                TaskStatus::Completed => "badge badge-success",
-                                                TaskStatus::Failed => "badge badge-error",
+                                                TaskStatus::Pending => "badge hud-badge badge-ghost",
+                                                TaskStatus::Running => "badge hud-badge badge-primary",
+                                                TaskStatus::Completed => "badge hud-badge badge-success",
+                                                TaskStatus::Failed => "badge hud-badge badge-error",
                                             };
                                             let status_label = match t.status {
                                                 TaskStatus::Pending => "等待中",

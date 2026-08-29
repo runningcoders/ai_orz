@@ -727,7 +727,7 @@ fn UserInfoTab() -> Element {
             }
             div { class: "flex flex-wrap gap-1",
                 span { class: "badge hud-badge badge-info", "{u.role_name}" }
-                span { class: if enabled { "badge badge-success" } else { "badge badge-error" },
+                span { class: if enabled { "badge hud-badge badge-success" } else { "badge hud-badge badge-error" },
                     if enabled { "已启用" } else { "已禁用" }
                 }
             }

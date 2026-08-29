@@ -47,7 +47,7 @@ pub fn Settings() -> Element {
                 signal: Some(true),
                 div { class: "card-body",
 
-                    div { class: "divider" }
+                    div { class: "hud-divider divider" }
 
                     div { class: "form-control w-full",
                         label { class: "label",
@@ -71,7 +71,7 @@ pub fn Settings() -> Element {
                         }
                     }
 
-                    div { class: "divider" }
+                    div { class: "hud-divider divider" }
 
                     div { class: "form-control w-full",
                         label { class: "label",
