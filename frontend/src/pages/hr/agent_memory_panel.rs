@@ -150,7 +150,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                     eyebrow: Some("HR".to_string()),
                     title: "记忆面板".to_string(),
                     actions: Some(rsx!{
-                    div { class: "tabs tabs-boxed",
+                    div { class: "tabs tabs-boxed hud-tabs",
                         button {
                             class: if active_tab() == MemoryTab::ShortTerm { "tab tab-active" } else { "tab" },
                             onclick: move |_| {

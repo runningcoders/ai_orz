@@ -188,7 +188,7 @@ pub fn FinanceMcpServers() -> Element {
                     EmptyState { icon: "🖥️".to_string(), message: "暂无 MCP 服务器".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr {
                                 th { "名称" }
                                 th { "传输方式" }

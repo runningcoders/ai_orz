@@ -113,7 +113,7 @@ pub fn SystemProcesses() -> Element {
                         }
                     } else {
                         div { class: "overflow-x-auto",
-                            table { class: "table table-zebra table-pin-rows",
+                            table { class: "table hud-table table-zebra table-pin-rows",
                                 thead { tr {
                                     th { "PID" }
                                     th { "命令" }

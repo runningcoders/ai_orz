@@ -301,7 +301,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "名称 *" }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         placeholder: "例如：weather_query",
                         value: "{form.read().name}",
                         oninput: move |e| form.write().name = e.value(),
@@ -310,7 +310,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "描述" }
                     textarea {
-                        class: "textarea textarea-bordered w-full",
+                        class: "textarea textarea-bordered hud-input w-full",
                         rows: 2,
                         placeholder: "工具用途说明（供 Agent 理解何时调用）",
                         value: "{form.read().description}",
@@ -320,7 +320,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "标签（逗号分隔）" }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         placeholder: "例如：weather,query",
                         value: "{form.read().tags}",
                         oninput: move |e| form.write().tags = e.value(),
@@ -332,7 +332,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control w-32",
                         label { class: "form-label", "方法 *" }
                         select {
-                            class: "select select-bordered w-full",
+                            class: "select select-bordered hud-input w-full",
                             value: "{form.read().method}",
                             onchange: move |e| form.write().method = e.value(),
                             option { value: "GET", "GET" }
@@ -342,7 +342,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "URL 模板 *" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "https://api.example.com/v1/weather?city={{city}}",
                             value: "{form.read().url}",
                             oninput: move |e| form.write().url = e.value(),
@@ -352,7 +352,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "Headers 模板（JSON，可选）" }
                     textarea {
-                        class: "textarea textarea-bordered w-full font-mono text-xs",
+                        class: "textarea textarea-bordered hud-input w-full font-mono text-xs",
                         rows: 2,
                         placeholder: r#"{{"Content-Type": "application/json"}}"#,
                         value: "{form.read().headers}",
@@ -365,7 +365,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "Query 模板（JSON，可选）" }
                     textarea {
-                        class: "textarea textarea-bordered w-full font-mono text-xs",
+                        class: "textarea textarea-bordered hud-input w-full font-mono text-xs",
                         rows: 2,
                         placeholder: r#"{{"city": "{{city}}"}}"#,
                         value: "{form.read().query}",
@@ -378,7 +378,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "Body 模板（JSON，可选，POST 用）" }
                     textarea {
-                        class: "textarea textarea-bordered w-full font-mono text-xs",
+                        class: "textarea textarea-bordered hud-input w-full font-mono text-xs",
                         rows: 2,
                         placeholder: r#"{{"query": "{{q}}"}}"#,
                         value: "{form.read().body}",
@@ -389,7 +389,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "超时（ms，可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "30000",
                             value: "{form.read().timeout_ms}",
                             oninput: move |e| form.write().timeout_ms = e.value(),
@@ -398,7 +398,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "响应上限（字节，可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "1048576",
                             value: "{form.read().response_max_bytes}",
                             oninput: move |e| form.write().response_max_bytes = e.value(),
@@ -409,7 +409,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "允许状态码（逗号分隔，可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "200,201",
                             value: "{form.read().allowed_status_codes}",
                             oninput: move |e| form.write().allowed_status_codes = e.value(),
@@ -418,7 +418,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "响应 JSON Pointer（可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "/data",
                             value: "{form.read().response_json_pointer}",
                             oninput: move |e| form.write().response_json_pointer = e.value(),
@@ -429,7 +429,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "域名白名单（逗号分隔，可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "api.example.com",
                             value: "{form.read().allowed_domains}",
                             oninput: move |e| form.write().allowed_domains = e.value(),
@@ -438,7 +438,7 @@ pub fn CreateHttpToolModal(
                     div { class: "form-control flex-1",
                         label { class: "form-label", "域名黑名单（逗号分隔，可选）" }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             placeholder: "internal.example.com",
                             value: "{form.read().blocked_domains}",
                             oninput: move |e| form.write().blocked_domains = e.value(),
@@ -460,7 +460,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     label { class: "form-label", "参数 Schema（JSON Schema，可选）" }
                     textarea {
-                        class: "textarea textarea-bordered w-full font-mono text-xs",
+                        class: "textarea textarea-bordered hud-input w-full font-mono text-xs",
                         rows: 3,
                         placeholder: r#"{{"type":"object","properties":{{"city":{{"type":"string"}}}},"required":["city"]}}"#,
                         value: "{form.read().parameters_schema}",
@@ -531,7 +531,7 @@ pub fn CreateHttpToolModal(
                                                     label { class: "label",
                                                         span { class: "label-text text-xs", "凭据类型 *" }
                                                     }
-                                                    select { class: "select select-bordered select-sm w-full", value: "{kind_value}",
+                                                    select { class: "select select-bordered hud-input select-sm w-full", value: "{kind_value}",
                                                         onchange: move |e| {
                                                             let kind = kind_from_value(&e.value()).unwrap_or(CredentialKind::GithubToken);
                                                             let mut f = form.write();
@@ -558,7 +558,7 @@ pub fn CreateHttpToolModal(
                                                         label { class: "label",
                                                             span { class: "label-text text-xs", "平台标识 *" }
                                                         }
-                                                        input { class: "input input-bordered input-sm w-full", value: "{platform_value}",
+                                                        input { class: "input input-bordered hud-input input-sm w-full", value: "{platform_value}",
                                                             oninput: move |e| {
                                                                 let v = e.value();
                                                                 let mut f = form.write();
@@ -574,7 +574,7 @@ pub fn CreateHttpToolModal(
                                                     label { class: "label",
                                                         span { class: "label-text text-xs", "提取字段（可选）" }
                                                     }
-                                                    input { class: "input input-bordered input-sm w-full", value: "{field_value}",
+                                                    input { class: "input input-bordered hud-input input-sm w-full", value: "{field_value}",
                                                         disabled: field_disabled,
                                                         oninput: move |e| {
                                                             let v = e.value();
@@ -594,7 +594,7 @@ pub fn CreateHttpToolModal(
                                                     label { class: "label",
                                                         span { class: "label-text text-xs", "增强器（可选）" }
                                                     }
-                                                    select { class: "select select-bordered select-sm w-full", value: "{enhancer_value}",
+                                                    select { class: "select select-bordered hud-input select-sm w-full", value: "{enhancer_value}",
                                                         disabled: enhancer_disabled,
                                                         onchange: move |e| {
                                                             let enhancer = enhancer_from_value(&e.value());
@@ -629,7 +629,7 @@ pub fn CreateHttpToolModal(
                                                     label { class: "label",
                                                         span { class: "label-text text-xs", "注入点类型 *" }
                                                     }
-                                                    select { class: "select select-bordered select-sm w-full", value: "{binding_kind_value}",
+                                                    select { class: "select select-bordered hud-input select-sm w-full", value: "{binding_kind_value}",
                                                         onchange: move |e| {
                                                             // 变体切换：保留已填注入名
                                                             let name = {
@@ -651,7 +651,7 @@ pub fn CreateHttpToolModal(
                                                     label { class: "label",
                                                         span { class: "label-text text-xs", "{binding_name_label}" }
                                                     }
-                                                    input { class: "input input-bordered input-sm w-full", value: "{binding_name_value}",
+                                                    input { class: "input input-bordered hud-input input-sm w-full", value: "{binding_name_value}",
                                                         oninput: move |e| {
                                                             let v = e.value();
                                                             let mut f = form.write();

@@ -143,7 +143,7 @@ pub fn FinanceToolCallEntries() -> Element {
                         EmptyState { icon: "🔍".to_string(), message: "无匹配记录".to_string() }
                     } else {
                         div { class: "overflow-x-auto",
-                            table { class: "table table-zebra table-xs",
+                            table { class: "table hud-table table-zebra table-xs",
                                 thead { tr {
                                     th { "Call ID" }
                                     th { "工具" }

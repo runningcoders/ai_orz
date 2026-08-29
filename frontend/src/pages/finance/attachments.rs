@@ -93,7 +93,7 @@ pub fn FinanceAttachments() -> Element {
                         EmptyState { icon: "📎".to_string(), message: "暂无附件".to_string() }
                     } else {
                         div { class: "overflow-x-auto",
-                            table { class: "table table-zebra table-pin-rows",
+                            table { class: "table hud-table table-zebra table-pin-rows",
                                 thead { tr { th { "文件名" }, th { "大小" }, th { "用途" }, th { "创建时间" }, th { "操作" } }}
                                 tbody {
                                     for a in attachments_list.iter() {

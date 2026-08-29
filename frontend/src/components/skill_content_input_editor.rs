@@ -83,7 +83,7 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
     rsx! {
         div { class: "w-full",
             // Tab 切换
-            div { role: "tablist", class: "tabs tabs-boxed mb-4",
+            div { role: "tablist", class: "tabs tabs-boxed hud-tabs mb-4",
                 button {
                     role: "tab",
                     class: if active_tab() == 0 { "tab tab-active" } else { "tab" },

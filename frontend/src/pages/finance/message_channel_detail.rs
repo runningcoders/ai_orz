@@ -701,14 +701,14 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "渠道名称 *" }
                                 }
-                                input { class: "input input-bordered w-full", value: "{edit_channel_name}",
+                                input { class: "input input-bordered hud-input w-full", value: "{edit_channel_name}",
                                     oninput: move |e| edit_channel_name.set(e.value()), placeholder: "自定义渠道名称" }
                             }
                             div { class: "form-control w-full",
                                 label { class: "label",
                                     span { class: "label-text font-medium", "关联 Agent ID" }
                                 }
-                                input { class: "input input-bordered w-full font-mono", value: "{edit_agent_id}",
+                                input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_agent_id}",
                                     oninput: move |e| edit_agent_id.set(e.value()), placeholder: "留空表示不关联" }
                             }
                             if ct == ChannelType::Lark {
@@ -717,7 +717,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text font-medium", "应用凭证 *" }
                                     }
-                                    select { class: "select select-bordered w-full", value: "{edit_credential_value}",
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_credential_value}",
                                         onchange: move |e| edit_credential_id.set(e.value()),
                                         option { value: "", "请选择已绑定的应用凭证" }
                                         for cred in credentials_list.iter() {
@@ -737,7 +737,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text font-medium", "身份模式" }
                                     }
-                                    select { class: "select select-bordered w-full", value: "{edit_mode_value}",
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_mode_value}",
                                         onchange: move |e| edit_identity_mode.set(e.value()),
                                         option { value: "", "自动（auto）" }
                                         option { value: "bot", "应用身份（bot）" }
@@ -748,14 +748,14 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text", "用户 Open ID" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_open_id}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_open_id}",
                                         oninput: move |e| edit_open_id.set(e.value()), placeholder: "ou_xxx" }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "用户昵称" }
                                     }
-                                    input { class: "input input-bordered w-full", value: "{edit_user_name}",
+                                    input { class: "input input-bordered hud-input w-full", value: "{edit_user_name}",
                                         oninput: move |e| edit_user_name.set(e.value()), placeholder: "可选" }
                                 }
                                 div { class: "form-control",
@@ -774,7 +774,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text", "微信 Open ID" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_wechat_open_id}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_wechat_open_id}",
                                         oninput: move |e| edit_wechat_open_id.set(e.value()), placeholder: "openid_xxx" }
                                 }
                             }
@@ -784,14 +784,14 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text font-medium", "SMTP 服务器 *" }
                                     }
-                                    input { class: "input input-bordered w-full", value: "{edit_email_smtp_host}",
+                                    input { class: "input input-bordered hud-input w-full", value: "{edit_email_smtp_host}",
                                         oninput: move |e| edit_email_smtp_host.set(e.value()), placeholder: "smtp.example.com" }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text font-medium", "SMTP 端口 *" }
                                     }
-                                    input { class: "input input-bordered w-full", value: "{edit_email_smtp_port.to_string()}",
+                                    input { class: "input input-bordered hud-input w-full", value: "{edit_email_smtp_port.to_string()}",
                                         oninput: move |e| {
                                             if let Ok(v) = e.value().parse::<u16>() { edit_email_smtp_port.set(v); }
                                         }, placeholder: "587" }
@@ -800,21 +800,21 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text", "用户名" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_username}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_username}",
                                         oninput: move |e| edit_email_username.set(e.value()), placeholder: "user@example.com" }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "发件地址" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_from_address}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_from_address}",
                                         oninput: move |e| edit_email_from_address.set(e.value()), placeholder: "from@example.com" }
                                 }
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text", "收件地址" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_email_to_address}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_email_to_address}",
                                         oninput: move |e| edit_email_to_address.set(e.value()), placeholder: "to@example.com" }
                                 }
                             }
@@ -824,7 +824,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text", "Channel ID" }
                                     }
-                                    input { class: "input input-bordered w-full font-mono", value: "{edit_slack_channel_id}",
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_slack_channel_id}",
                                         oninput: move |e| edit_slack_channel_id.set(e.value()), placeholder: "CXXXXXXXXXX" }
                                 }
                             }
@@ -834,7 +834,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     label { class: "label",
                                         span { class: "label-text", "HTTP 方法" }
                                     }
-                                    select { class: "select select-bordered w-full", value: "{edit_webhook_method}",
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_webhook_method}",
                                         onchange: move |e| edit_webhook_method.set(e.value()),
                                         option { value: "", "选择方法" }
                                         option { value: "POST", "POST" }
@@ -850,7 +850,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     {
                                         let ph = r#"{"content": "{{message}}"}"#;
                                         rsx! {
-                                            textarea { class: "textarea textarea-bordered w-full font-mono text-xs",
+                                            textarea { class: "textarea textarea-bordered hud-input w-full font-mono text-xs",
                                                 value: "{edit_webhook_body_template}",
                                                 oninput: move |e| edit_webhook_body_template.set(e.value()),
                                                 placeholder: "{ph}" }

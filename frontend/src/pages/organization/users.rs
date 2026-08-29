@@ -127,7 +127,7 @@ pub fn OrganizationUsers() -> Element {
                     EmptyState { icon: "👥".to_string(), message: "暂无用户".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr {
                                 th { "用户名" }
                                 th { "显示名称" }

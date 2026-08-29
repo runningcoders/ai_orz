@@ -268,12 +268,12 @@ pub fn IdentityGithubSection() -> Element {
             div { class: "space-y-4",
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "凭证名称 *" } }
-                    input { class: "input input-bordered w-full", value: "{new_name}",
+                    input { class: "input input-bordered hud-input w-full", value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()), placeholder: "如：工作号" }
                 }
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "Personal Access Token *" } }
-                    input { class: "input input-bordered w-full font-mono", r#type: "password", value: "{new_token}",
+                    input { class: "input input-bordered hud-input w-full font-mono", r#type: "password", value: "{new_token}",
                         oninput: move |e| new_token.set(e.value()),
                         placeholder: "ghp_xxx / github_pat_xxx，加密存储，永不回显" }
                     p { class: "text-xs text-base-content/50 mt-1",
@@ -297,12 +297,12 @@ pub fn IdentityGithubSection() -> Element {
             div { class: "space-y-4",
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "凭证名称" } }
-                    input { class: "input input-bordered w-full", value: "{edit_name}",
+                    input { class: "input input-bordered hud-input w-full", value: "{edit_name}",
                         oninput: move |e| edit_name.set(e.value()), placeholder: "留空保持不变" }
                 }
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "Personal Access Token" } }
-                    input { class: "input input-bordered w-full font-mono", r#type: "password", value: "{edit_token}",
+                    input { class: "input input-bordered hud-input w-full font-mono", r#type: "password", value: "{edit_token}",
                         oninput: move |e| edit_token.set(e.value()), placeholder: "留空保留原值，填写则轮换" }
                 }
             }

@@ -529,17 +529,17 @@ pub fn FinanceIdentity() -> Element {
                 div { class: "space-y-4",
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "凭证名称 *" } }
-                        input { class: "input input-bordered w-full", value: "{new_cred_name}",
+                        input { class: "input input-bordered hud-input w-full", value: "{new_cred_name}",
                             oninput: move |e| new_cred_name.set(e.value()), placeholder: "如：我的飞书应用" }
                     }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "App ID *" } }
-                        input { class: "input input-bordered w-full font-mono", value: "{new_cred_app_id}",
+                        input { class: "input input-bordered hud-input w-full font-mono", value: "{new_cred_app_id}",
                             oninput: move |e| new_cred_app_id.set(e.value()), placeholder: "cli_xxx" }
                     }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "App Secret *" } }
-                        input { class: "input input-bordered w-full font-mono", r#type: "password", value: "{new_cred_app_secret}",
+                        input { class: "input input-bordered hud-input w-full font-mono", r#type: "password", value: "{new_cred_app_secret}",
                             oninput: move |e| new_cred_app_secret.set(e.value()), placeholder: "加密存储，永不回显" }
                     }
                 }
@@ -560,17 +560,17 @@ pub fn FinanceIdentity() -> Element {
                     HudCallout { tone: Some("info".to_string()), span { "修改 App ID/Secret 后，关联渠道将自动重建监听连接" } }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "凭证名称" } }
-                        input { class: "input input-bordered w-full", value: "{edit_cred_name}",
+                        input { class: "input input-bordered hud-input w-full", value: "{edit_cred_name}",
                             oninput: move |e| edit_cred_name.set(e.value()), placeholder: "留空保持不变" }
                     }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "App ID" } }
-                        input { class: "input input-bordered w-full font-mono", value: "{edit_cred_app_id}",
+                        input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_cred_app_id}",
                             oninput: move |e| edit_cred_app_id.set(e.value()), placeholder: "留空保持不变" }
                     }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "App Secret" } }
-                        input { class: "input input-bordered w-full font-mono", r#type: "password", value: "{edit_cred_app_secret}",
+                        input { class: "input input-bordered hud-input w-full font-mono", r#type: "password", value: "{edit_cred_app_secret}",
                             oninput: move |e| edit_cred_app_secret.set(e.value()), placeholder: "留空保留原值，填写则覆盖" }
                     }
                 }

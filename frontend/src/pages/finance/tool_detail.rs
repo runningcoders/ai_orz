@@ -391,7 +391,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 span { class: "label-text font-medium", "命令 (command)" }
                                             }
                                             input {
-                                                class: "input input-bordered w-full font-mono text-sm",
+                                                class: "input input-bordered hud-input w-full font-mono text-sm",
                                                 value: "{config_form.read().command}",
                                                 oninput: move |e| config_form.write().command = e.value(),
                                                 placeholder: "agent-browser",
@@ -402,7 +402,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 span { class: "label-text font-medium", "安装引导 (install_hint)" }
                                             }
                                             input {
-                                                class: "input input-bordered w-full text-sm",
+                                                class: "input input-bordered hud-input w-full text-sm",
                                                 value: "{config_form.read().install_hint}",
                                                 oninput: move |e| config_form.write().install_hint = e.value(),
                                                 placeholder: "brew install agent-browser 或 cargo install agent-browser",
@@ -413,7 +413,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
                                             }
                                             input {
-                                                class: "input input-bordered w-full text-sm",
+                                                class: "input input-bordered hud-input w-full text-sm",
                                                 value: "{config_form.read().timeout_ms}",
                                                 oninput: move |e| config_form.write().timeout_ms = e.value(),
                                                 placeholder: "60000",
@@ -424,7 +424,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                 span { class: "label-text font-medium", "输出上限字节 (max_output_bytes)" }
                                             }
                                             input {
-                                                class: "input input-bordered w-full text-sm",
+                                                class: "input input-bordered hud-input w-full text-sm",
                                                 value: "{config_form.read().max_output_bytes}",
                                                 oninput: move |e| config_form.write().max_output_bytes = e.value(),
                                                 placeholder: "262144",
@@ -437,7 +437,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             span { class: "label-text font-medium", "超时毫秒 (timeout_ms)" }
                                         }
                                         input {
-                                            class: "input input-bordered w-full text-sm",
+                                            class: "input input-bordered hud-input w-full text-sm",
                                             value: "{config_form.read().timeout_ms}",
                                             oninput: move |e| config_form.write().timeout_ms = e.value(),
                                             placeholder: "15000",
@@ -450,7 +450,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             span { class: "label-text font-medium", "命令 (command)" }
                                         }
                                         input {
-                                            class: "input input-bordered w-full font-mono text-sm",
+                                            class: "input input-bordered hud-input w-full font-mono text-sm",
                                             value: "{config_form.read().command}",
                                             oninput: move |e| config_form.write().command = e.value(),
                                             placeholder: if t.name == "gh_cli" { "gh" } else { "lark-cli" },
@@ -585,7 +585,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                             span { class: "label-text font-medium", "调用参数 (JSON)" }
                         }
                         textarea {
-                            class: "textarea textarea-bordered w-full font-mono text-sm h-40",
+                            class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-40",
                             value: "{debug_args()}",
                             oninput: move |e| debug_args.set(e.value()),
                             placeholder: "输入 JSON 参数",

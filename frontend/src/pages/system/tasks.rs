@@ -292,10 +292,10 @@ pub fn SystemTasks() -> Element {
             // 详情弹窗
             if let Some(detail) = detail_task() {
                 div {
-                    class: "modal modal-open",
+                    class: "modal modal-open hud-modal",
                         onclick: move |_| detail_task.set(None),
                         div {
-                            class: "modal-box",
+                            class: "modal-box hud-modal-box",
                             onclick: |e| e.stop_propagation(),
                             h3 { class: "font-bold text-lg", "任务详情" }
                             div { class: "py-4 space-y-2",
@@ -348,10 +348,10 @@ pub fn SystemTasks() -> Element {
             // 清理确认弹窗
             if show_cleanup_confirm() {
                 div {
-                    class: "modal modal-open",
+                    class: "modal modal-open hud-modal",
                         onclick: move |_| show_cleanup_confirm.set(false),
                         div {
-                            class: "modal-box",
+                            class: "modal-box hud-modal-box",
                             onclick: |e| e.stop_propagation(),
                             h3 { class: "font-bold text-lg", "确认清理" }
                             p { class: "py-4", "将清理已完成的旧任务，每个类型保留最近 10 个。运行中的任务不受影响。" }

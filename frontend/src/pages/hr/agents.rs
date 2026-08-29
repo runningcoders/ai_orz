@@ -461,7 +461,7 @@ pub fn HrAgents() -> Element {
                     EmptyState { icon: "🤖".to_string(), message: "暂无 Agent，点击上方按钮创建第一个".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr {
                                 th { "名称" }
                                 th { "类型" }

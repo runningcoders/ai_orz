@@ -1652,10 +1652,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                             let tag_b = tag.clone();
                             rsx! {
                             div {
-                                class: "modal modal-open",
+                                class: "modal modal-open hud-modal",
                                 onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
                                 div {
-                                    class: "modal-box",
+                                    class: "modal-box hud-modal-box",
                                     onclick: move |e| e.stop_propagation(),
                                     h3 { class: "font-bold text-lg mb-2", "卸载技能包" }
                                     p { class: "text-sm text-base-content/70 mb-4",

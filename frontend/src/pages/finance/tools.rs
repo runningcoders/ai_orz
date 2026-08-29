@@ -291,7 +291,7 @@ pub fn FinanceTools() -> Element {
                     EmptyState { icon: "🔧".to_string(), message: "暂无工具".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr {
                                 th { "名称" }
                                 th { "协议" }

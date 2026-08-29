@@ -39,7 +39,7 @@ fn optional_value(value: &Option<String>) -> String {
 pub fn CredentialRequirementsTable(requirements: Vec<CredentialRequirement>) -> Element {
     rsx! {
         div { class: "overflow-x-auto",
-            table { class: "table table-zebra table-sm",
+            table { class: "table hud-table table-zebra table-sm",
                 thead { tr {
                     th { "凭据类型" }
                     th { "平台" }

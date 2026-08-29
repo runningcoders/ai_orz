@@ -205,3 +205,40 @@ pub fn HudCallout(tone: Option<String>, extra_class: Option<String>, children: E
         div { class: "{root}", {children} }
     }
 }
+
+/// HUD 分割线：两侧发丝线 + 可选等宽 eyebrow 文本。替代裸 `divider`。
+#[component]
+pub fn HudDivider(text: Option<String>, extra_class: Option<String>) -> Element {
+    let root = format!("hud-divider {}", extra_class.unwrap_or_default());
+    rsx! {
+        div { class: "{root}",
+            if let Some(t) = text {
+                span { class: "hud-divider-text", "{t}" }
+            }
+        }
+    }
+}
+
+/// HUD 表格容器：保留 DaisyUI `table` 结构，附加 `.hud-table` 皮肤（斑马纹 / 悬停发光 / 等宽表头）。
+/// 旧代码可直接在现有 `table` 元素上追加 `hud-table` 类，无需改用本组件。
+#[component]
+pub fn HudTable(extra_class: Option<String>, children: Element) -> Element {
+    let root = format!("hud-table {}", extra_class.unwrap_or_default());
+    rsx! {
+        div { class: "overflow-x-auto",
+            table { class: "{root}", {children} }
+        }
+    }
+}
+
+/// HUD 标签页容器：保留 DaisyUI `tabs` 结构，附加 `.hud-tabs` 皮肤。旧代码在 `tabs tabs-boxed` 上追加 `hud-tabs` 即可。
+#[component]
+pub fn HudTabs(extra_class: Option<String>, children: Element) -> Element {
+    let root = format!(
+        "tabs tabs-boxed hud-tabs {}",
+        extra_class.unwrap_or_default()
+    );
+    rsx! {
+        div { class: "{root}", {children} }
+    }
+}

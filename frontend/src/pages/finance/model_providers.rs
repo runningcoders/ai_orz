@@ -194,7 +194,7 @@ pub fn FinanceModelProviders() -> Element {
                     EmptyState { icon: "🧠".to_string(), message: "暂无模型提供商".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr {
                                 th { "名称" }
                                 th { "类型" }

@@ -341,7 +341,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "凭证名称 *" } }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         value: "{new_name}",
                         oninput: move |e| new_name.set(e.value()),
                         placeholder: "如：个人号"
@@ -353,7 +353,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                         span { class: "label-text-alt font-mono", "{active_meta.slug}" }
                     }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         value: "{active_meta.caption}",
                         disabled: "true",
                     }
@@ -361,7 +361,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "API Token *" } }
                     input {
-                        class: "input input-bordered w-full font-mono",
+                        class: "input input-bordered hud-input w-full font-mono",
                         r#type: "password",
                         value: "{new_token}",
                         oninput: move |e| new_token.set(e.value()),
@@ -386,7 +386,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "凭证名称" } }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         value: "{edit_name}",
                         oninput: move |e| edit_name.set(e.value()),
                         placeholder: "留空保持不变"
@@ -395,7 +395,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                 div { class: "form-control w-full",
                     label { class: "label", span { class: "label-text font-medium", "API Token" } }
                     input {
-                        class: "input input-bordered w-full font-mono",
+                        class: "input input-bordered hud-input w-full font-mono",
                         r#type: "password",
                         value: "{edit_token}",
                         oninput: move |e| edit_token.set(e.value()),

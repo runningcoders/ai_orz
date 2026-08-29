@@ -389,7 +389,7 @@ pub fn SystemTriggers() -> Element {
             } else if triggers_list.is_empty() {
                 EmptyState { icon: "⏰".to_string(), message: "暂无触发器".to_string() }
             } else {
-                table { class: "table table-zebra",
+                table { class: "table hud-table table-zebra",
                     thead { tr {
                         th { "名称" }
                         th { "类型" }

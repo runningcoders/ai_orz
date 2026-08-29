@@ -283,7 +283,7 @@ pub fn ChatSidePanel(
                 "✕"
             }
         }
-        div { class: "tabs tabs-boxed m-2",
+        div { class: "tabs tabs-boxed hud-tabs m-2",
             for (i, label) in tab_labels.iter().enumerate() {
                 button {
                     key: "{label}",

@@ -78,7 +78,7 @@ pub fn Settings() -> Element {
                             span { class: "label-text font-medium", "后端 API 地址" }
                         }
                         input {
-                            class: "input input-bordered w-full",
+                            class: "input input-bordered hud-input w-full",
                             value: "{current.api_base_url}",
                             oninput: move |e| config.write().api_base_url = e.value(),
                             placeholder: "http://localhost:3000"

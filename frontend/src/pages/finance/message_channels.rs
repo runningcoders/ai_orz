@@ -391,14 +391,14 @@ pub fn FinanceMessageChannels() -> Element {
                         label { class: "label",
                             span { class: "label-text font-medium", "渠道名称 *" }
                         }
-                        input { class: "input input-bordered w-full", value: "{new_name}",
+                        input { class: "input input-bordered hud-input w-full", value: "{new_name}",
                             oninput: move |e| new_name.set(e.value()), placeholder: "如：飞书接待渠道" }
                     }
                     div { class: "form-control w-full",
                         label { class: "label",
                             span { class: "label-text font-medium", "渠道类型" }
                         }
-                        select { class: "select select-bordered w-full", value: "{new_type_value}",
+                        select { class: "select select-bordered hud-input w-full", value: "{new_type_value}",
                             onchange: move |e| new_type.set(e.value()),
                             option { value: "0", "飞书 (Lark)" }
                             option { value: "1", "微信 (Wechat)" }
@@ -414,7 +414,7 @@ pub fn FinanceMessageChannels() -> Element {
                             label { class: "label",
                                 span { class: "label-text", "绑定 Agent" }
                             }
-                            select { class: "select select-bordered w-full", value: "{agent_value}",
+                            select { class: "select select-bordered hud-input w-full", value: "{agent_value}",
                                 onchange: move |e| new_agent_id.set(e.value()),
                                 option { value: "", "不绑定（用户全局默认渠道）" }
                                 for agent in agents_list.iter() {
@@ -441,7 +441,7 @@ pub fn FinanceMessageChannels() -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "选择凭证 *" }
                                 }
-                                select { class: "select select-bordered w-full", value: "{credential_value}",
+                                select { class: "select select-bordered hud-input w-full", value: "{credential_value}",
                                     onchange: move |e| new_lark_credential_id.set(e.value()),
                                     option { value: "", "请选择已绑定的应用凭证" }
                                     for cred in credentials_list.iter() {
@@ -461,7 +461,7 @@ pub fn FinanceMessageChannels() -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "身份模式" }
                                 }
-                                select { class: "select select-bordered w-full", value: "{identity_mode_value}",
+                                select { class: "select select-bordered hud-input w-full", value: "{identity_mode_value}",
                                     onchange: move |e| new_lark_identity_mode.set(e.value()),
                                     option { value: "", "自动（auto：按能力选择应用/用户身份）" }
                                     option { value: "bot", "应用身份（bot）" }
@@ -474,7 +474,7 @@ pub fn FinanceMessageChannels() -> Element {
                             label { class: "label",
                                 span { class: "label-text", "用户 Open ID" }
                             }
-                            input { class: "input input-bordered w-full font-mono", value: "{new_lark_open_id}",
+                            input { class: "input input-bordered hud-input w-full font-mono", value: "{new_lark_open_id}",
                                 oninput: move |e| new_lark_open_id.set(e.value()),
                                 placeholder: "ou_xxx，绑定后接收该用户的飞书私信" }
                         }
@@ -482,7 +482,7 @@ pub fn FinanceMessageChannels() -> Element {
                             label { class: "label",
                                 span { class: "label-text", "用户昵称" }
                             }
-                            input { class: "input input-bordered w-full", value: "{new_lark_user_name}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_lark_user_name}",
                                 oninput: move |e| new_lark_user_name.set(e.value()),
                                 placeholder: "可选，用于展示" }
                         }
@@ -502,19 +502,19 @@ pub fn FinanceMessageChannels() -> Element {
                         div { class: "divider text-sm font-medium m-0", "微信应用配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "App ID *" } }
-                            input { class: "input input-bordered w-full", value: "{new_wechat_app_id}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_wechat_app_id}",
                                 oninput: move |e| new_wechat_app_id.set(e.value()),
                                 placeholder: "微信公众号/企业微信 AppID" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "App Secret *" } }
-                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_wechat_app_secret}",
+                            input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_wechat_app_secret}",
                                 oninput: move |e| new_wechat_app_secret.set(e.value()),
                                 placeholder: "应用密钥" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text", "用户 Open ID" } }
-                            input { class: "input input-bordered w-full font-mono", value: "{new_wechat_open_id}",
+                            input { class: "input input-bordered hud-input w-full font-mono", value: "{new_wechat_open_id}",
                                 oninput: move |e| new_wechat_open_id.set(e.value()),
                                 placeholder: "绑定后接收该用户消息" }
                         }
@@ -525,37 +525,37 @@ pub fn FinanceMessageChannels() -> Element {
                         div { class: "divider text-sm font-medium m-0", "邮件 SMTP 配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "SMTP Host *" } }
-                            input { class: "input input-bordered w-full", value: "{new_email_smtp_host}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_email_smtp_host}",
                                 oninput: move |e| new_email_smtp_host.set(e.value()),
                                 placeholder: "smtp.example.com" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "SMTP Port" } }
-                            input { class: "input input-bordered w-full", value: "{new_email_smtp_port}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_email_smtp_port}",
                                 oninput: move |e| new_email_smtp_port.set(e.value()),
                                 placeholder: "465（SSL）/ 587（STARTTLS）" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "用户名 *" } }
-                            input { class: "input input-bordered w-full", value: "{new_email_username}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_email_username}",
                                 oninput: move |e| new_email_username.set(e.value()),
                                 placeholder: "邮箱账号" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "密码 *" } }
-                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_email_password}",
+                            input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_email_password}",
                                 oninput: move |e| new_email_password.set(e.value()),
                                 placeholder: "邮箱密码或授权码" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "发件地址 *" } }
-                            input { class: "input input-bordered w-full", value: "{new_email_from}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_email_from}",
                                 oninput: move |e| new_email_from.set(e.value()),
                                 placeholder: "noreply@example.com" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "收件地址 *" } }
-                            input { class: "input input-bordered w-full", value: "{new_email_to}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_email_to}",
                                 oninput: move |e| new_email_to.set(e.value()),
                                 placeholder: "接收通知的邮箱" }
                         }
@@ -566,13 +566,13 @@ pub fn FinanceMessageChannels() -> Element {
                         div { class: "divider text-sm font-medium m-0", "Slack 应用配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "Bot Token *" } }
-                            input { class: "input input-bordered w-full", r#type: "password", value: "{new_slack_bot_token}",
+                            input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_slack_bot_token}",
                                 oninput: move |e| new_slack_bot_token.set(e.value()),
                                 placeholder: "xoxb-xxxx-xxxx-xxxx" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "Channel ID *" } }
-                            input { class: "input input-bordered w-full", value: "{new_slack_channel_id}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_slack_channel_id}",
                                 oninput: move |e| new_slack_channel_id.set(e.value()),
                                 placeholder: "C1234567890" }
                         }
@@ -583,13 +583,13 @@ pub fn FinanceMessageChannels() -> Element {
                         div { class: "divider text-sm font-medium m-0", "Webhook 配置" }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "Webhook URL *" } }
-                            input { class: "input input-bordered w-full", value: "{new_webhook_url}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_webhook_url}",
                                 oninput: move |e| new_webhook_url.set(e.value()),
                                 placeholder: "https://..." }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text font-medium", "HTTP 方法" } }
-                            select { class: "select select-bordered w-full", value: "{new_webhook_method}",
+                            select { class: "select select-bordered hud-input w-full", value: "{new_webhook_method}",
                                 onchange: move |e| new_webhook_method.set(e.value()),
                                 option { value: "", "POST（默认）" }
                                 option { value: "GET", "GET" }
@@ -602,7 +602,7 @@ pub fn FinanceMessageChannels() -> Element {
                             {
                                 let ph = r#"{"text": "{{message}}"}"#;
                                 rsx! {
-                                    textarea { class: "textarea textarea-bordered w-full font-mono text-xs", rows: 3,
+                                    textarea { class: "textarea textarea-bordered hud-input w-full font-mono text-xs", rows: 3,
                                         value: "{new_webhook_body_template}",
                                         oninput: move |e| new_webhook_body_template.set(e.value()),
                                         placeholder: "{ph}" }
@@ -611,13 +611,13 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text", "Access Token（可选）" } }
-                            input { class: "input input-bordered w-full", value: "{new_access_token}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_access_token}",
                                 oninput: move |e| new_access_token.set(e.value()),
                                 placeholder: "Bearer token 等，用于认证" }
                         }
                         div { class: "form-control w-full",
                             label { class: "label", span { class: "label-text", "签名密钥（可选）" } }
-                            input { class: "input input-bordered w-full", value: "{new_secret}",
+                            input { class: "input input-bordered hud-input w-full", value: "{new_secret}",
                                 oninput: move |e| new_secret.set(e.value()),
                                 placeholder: "用于验证 webhook 请求签名" }
                         }

@@ -44,7 +44,7 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
                 div { class: "form-control mb-3",
                     label { class: "label", span { class: "label-text", "名称" } }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         value: name(),
                         oninput: move |e| name.set(e.value()),
                     }
@@ -52,7 +52,7 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
                 div { class: "form-control mb-3",
                     label { class: "label", span { class: "label-text", "描述" } }
                     textarea {
-                        class: "textarea textarea-bordered w-full",
+                        class: "textarea textarea-bordered hud-input w-full",
                         rows: 3,
                         value: description(),
                         oninput: move |e| description.set(e.value()),
@@ -61,7 +61,7 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
                 div { class: "form-control mb-4",
                     label { class: "label", span { class: "label-text", "标签（逗号分隔）" } }
                     input {
-                        class: "input input-bordered w-full",
+                        class: "input input-bordered hud-input w-full",
                         value: tags_text(),
                         oninput: move |e| tags_text.set(e.value()),
                     }

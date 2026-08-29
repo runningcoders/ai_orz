@@ -208,7 +208,7 @@ pub fn ProjectList() -> Element {
                     EmptyState { icon: "📁".to_string(), message: "暂无项目".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra",
+                        table { class: "table hud-table table-zebra",
                             thead { tr {
                                 th { "项目名称" }
                                 th { "状态" }

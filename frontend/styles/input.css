@@ -1329,6 +1329,85 @@
     font-variant-numeric: tabular-nums; color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
   }
 
+  /* ====== HUD 缺失原语皮肤：Divider / Table / Tabs / Modal / Input ====== */
+
+  /* 分割线：两侧发丝线 + 等宽 eyebrow 文本（替代裸 divider） */
+  .hud-divider {
+    display: flex; align-items: center; gap: .75rem; margin: 1.25rem 0;
+    color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+  }
+  .hud-divider::before, .hud-divider::after {
+    content: ""; height: 1px; flex: 1;
+    background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-base-content) 18%, transparent), transparent);
+  }
+  .hud-divider-text {
+    font-family: var(--font-family-mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* 表格皮肤：覆盖 DaisyUI .table（保留 table 结构），发丝边 + 斑马纹 + 悬停发光 */
+  .hud-table { color: var(--color-base-content); }
+  .hud-table :where(th, td) {
+    border-color: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    padding: .65rem .9rem;
+  }
+  .hud-table :where(thead th) {
+    font-family: var(--font-family-mono); font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 22%, transparent);
+  }
+  .hud-table.table-zebra :where(tbody tr:nth-child(even)) {
+    background: color-mix(in oklab, var(--color-base-content) 5%, transparent);
+  }
+  .hud-table :where(tbody tr) { transition: background .15s, box-shadow .15s; }
+  .hud-table :where(tbody tr:hover) {
+    background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+    box-shadow: inset 2px 0 0 0 var(--color-primary);
+  }
+
+  /* 标签页皮肤：覆盖 DaisyUI .tabs.tabs-boxed */
+  .hud-tabs :where(.tab) {
+    border-radius: 6px; color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+    transition: color .15s, background .15s, border-color .15s;
+  }
+  .hud-tabs :where(.tab.tab-active), .hud-tabs :where(.tab-active) {
+    background: color-mix(in oklab, var(--color-primary) 16%, transparent);
+    color: var(--color-primary);
+    border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+  }
+  .hud-tabs :where(.tab):hover:not(.tab-active) {
+    color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+  }
+
+  /* 弹窗皮肤：覆盖 DaisyUI .modal 背景 + .modal-box（渐变发丝边 + 切角投影） */
+  .hud-modal { background: color-mix(in oklab, var(--color-base-100) 32%, transparent); backdrop-filter: blur(4px); }
+  .hud-modal-box {
+    position: relative;
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-primary) 42%, var(--color-base-300)),
+        var(--color-base-300) 35%, var(--color-base-300) 65%,
+        color-mix(in oklab, var(--color-accent) 32%, var(--color-base-300))) border-box;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-shadow: 0 24px 64px -24px color-mix(in oklab, var(--color-base-content) 50%, transparent);
+  }
+  .hud-modal-box h3 { font-family: var(--font-display, 'Chakra Petch', sans-serif); }
+
+  /* 表单控件皮肤：覆盖 DaisyUI input/select/textarea（发丝边 + 聚焦辉光） */
+  .input.hud-input, .select.hud-input, .textarea.hud-input {
+    border-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+    background: color-mix(in oklab, var(--color-base-100) 60%, transparent);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .input.hud-input:focus, .select.hud-input:focus, .textarea.hud-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-primary) 45%, transparent),
+                0 0 14px -4px color-mix(in oklab, var(--color-primary) 50%, transparent);
+    outline: none;
+  }
+
   /* 未来感表格行：左侧数据条 + 悬停发光 */
   .hud-row {
     display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; align-items: center; gap: 1rem;

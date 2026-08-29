@@ -284,7 +284,7 @@ pub fn TaskList() -> Element {
             HudPanel {
                 title: "任务列表".to_string(),
                 eyebrow: "TASKS".to_string(),
-                table { class: "table table-zebra",
+                table { class: "table hud-table table-zebra",
                     thead { tr {
                         th { "标题" }
                         th { "状态" }

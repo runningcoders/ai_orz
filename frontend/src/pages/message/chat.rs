@@ -657,7 +657,7 @@ pub fn MessageChat() -> Element {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
                                     // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
-                                    div { class: "divider my-2", key: "divider-{label}", "{label}" }
+                                    div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
@@ -795,7 +795,7 @@ pub fn MessageChat() -> Element {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
                                     // 修复 L_NEW2：之前 key 含 messages().len()，切换会话时 len 变化导致 key 不稳定
-                                    div { class: "divider my-2", key: "divider-{label}", "{label}" }
+                                    div { class: "hud-divider my-2", key: "divider-{label}", "{label}" }
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {

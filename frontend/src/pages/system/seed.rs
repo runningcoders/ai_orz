@@ -429,7 +429,7 @@ pub fn SystemSeed() -> Element {
                 } else if seeds_list.is_empty() {
                     EmptyState { icon: "🌱".to_string(), message: "暂无 seed 文件".to_string() }
                 } else {
-                    table { class: "table table-zebra",
+                    table { class: "table hud-table table-zebra",
                         thead { tr {
                             th { "文件名" }
                             th { "大小" }

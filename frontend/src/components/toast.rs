@@ -49,10 +49,10 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     });
 
     let type_class = match toast_type {
-        ToastType::Success => "alert alert-success",
-        ToastType::Error => "alert alert-error",
-        ToastType::Warning => "alert alert-warning",
-        ToastType::Info => "alert alert-info",
+        ToastType::Success => "hud-callout border-success/40 bg-success/10 text-success",
+        ToastType::Error => "hud-callout border-error/40 bg-error/10 text-error",
+        ToastType::Warning => "hud-callout border-warning/40 bg-warning/10 text-warning",
+        ToastType::Info => "hud-callout border-info/40 bg-info/10 text-info",
     };
 
     let icon = match toast_type {

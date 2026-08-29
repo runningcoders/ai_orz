@@ -183,7 +183,7 @@ pub fn SystemBackup() -> Element {
                 } else if backups_list.is_empty() {
                     EmptyState { icon: "💾".to_string(), message: "暂无备份".to_string() }
                 } else {
-                    table { class: "table table-zebra",
+                    table { class: "table hud-table table-zebra",
                         thead { tr {
                             th { "版本" }
                             th { "时间" }

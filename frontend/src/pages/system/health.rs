@@ -357,7 +357,7 @@ pub fn SystemHealth() -> Element {
                             }
                         } else {
                             div { class: "overflow-x-auto",
-                                table { class: "table table-zebra table-sm",
+                                table { class: "table hud-table table-zebra table-sm",
                                     thead { tr { th { "App ID" }, th { "连接状态" }, th { "累计重连" } } }
                                     tbody {
                                         for app in m.lark_ws.apps.iter() {
@@ -414,7 +414,7 @@ pub fn SystemHealth() -> Element {
                             div { class: "text-base-content/50 text-sm py-2", "暂无工具运行日志" }
                         } else {
                             div { class: "overflow-x-auto",
-                                table { class: "table table-zebra table-sm",
+                                table { class: "table hud-table table-zebra table-sm",
                                     thead { tr { th { "日期" }, th { "文件数" }, th { "占用" } } }
                                     tbody {
                                         for day in s.by_day.iter().rev() {

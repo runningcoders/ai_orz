@@ -160,7 +160,7 @@ pub fn ProjectArtifacts() -> Element {
                     EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra",
+                        table { class: "table hud-table table-zebra",
                             thead { tr {
                                 th { "名称" }
                                 th { "描述" }

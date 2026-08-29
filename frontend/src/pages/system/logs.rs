@@ -398,7 +398,7 @@ pub fn SystemLogs() -> Element {
                     EmptyState { icon: "📋".to_string(), message: "没有匹配的日志".to_string() }
                 } else {
                     div { style: "margin-top: var(--space-4);",
-                        table { class: "table table-zebra",
+                        table { class: "table hud-table table-zebra",
                             thead { tr {
                                 th { "时间" }
                                 th { "级别" }

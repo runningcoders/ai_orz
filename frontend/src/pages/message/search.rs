@@ -86,7 +86,7 @@ pub fn MessageSearch() -> Element {
             } else {
                 HudPanel { signal: Some(true),
                     HudSection { title: format!("搜索结果 ({})", results().len()) }
-                    table { class: "table w-full",
+                    table { class: "table hud-table w-full",
                         thead {
                             tr {
                                 th { "内容" }

@@ -250,7 +250,7 @@ pub fn HrSkills() -> Element {
                     EmptyState { icon: "📚".to_string(), message: "暂无技能".to_string() }
                 } else {
                     div { class: "overflow-x-auto",
-                        table { class: "table table-zebra table-pin-rows",
+                        table { class: "table hud-table table-zebra table-pin-rows",
                             thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "操作" } }}
                             tbody {
                                 for s in skills_list.iter() {
