@@ -26,7 +26,12 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
     let now = chrono::Utc::now().timestamp_millis();
     let default_range = (now - 7 * 24 * 3600 * 1000, now);
 
+    let with_tools = params.with_tools.unwrap_or(false);
+    let with_skills = params.with_skills.unwrap_or(false);
+
     let options = AgentFetchOptions {
+        with_tools: params.with_tools,
+        with_skills: params.with_skills,
         with_stats: params.with_stats,
         with_model_call_stats: params.with_model_call_stats,
         stats_time_range: match (params.stats_time_start, params.stats_time_end) {
@@ -122,12 +127,20 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
             None => (AgentRuntimeState::Idle as i32, None, None, None),
         };
 
-    // 获取已绑定的工具 ID 列表
+    // 获取已绑定的工具 ID 列表（保留：聊天侧面板计数使用）
     let tools = finance_domain()
         .tool_provider_manage()
-        .get_agent_bound_tool_ids(ctx, &params.id)
+        .get_agent_bound_tool_ids(ctx.clone(), &params.id)
         .await
         .unwrap_or_default();
+
+    // 装配 Agent 全景视图（工具三分组 + 技能三分组），与 runtime 同源。
+    // 全景数据体量较大，按 with_tools / with_skills 开关按需装配：
+    // 两侧均关闭时后端直接短路，不做任何工具/技能查询。
+    let (tools_overview, skills_overview) = domain()
+        .agent_manage()
+        .get_agent_association_view(ctx, &agent, with_tools, with_skills)
+        .await?;
 
     Ok(GetAgentResponse {
         id: agent.id().to_string(),
@@ -160,6 +173,8 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         current_task_id,
         current_project_id,
         tools,
+        tools_overview,
+        skills_overview,
         stats: agent.stats,
         model_call_stats: agent.model_call_stats,
     })

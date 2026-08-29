@@ -1,6 +1,6 @@
 //! Agent (AI智能体) related API request/response DTOs - shared between backend and frontend
 
-use crate::api::{PagedResult, PaginationParams};
+use crate::api::{PagedResult, PaginationParams, skill::SkillListItem, tool::ToolListItem};
 use crate::enums::{AgentRuntimeState, AgentStatus};
 use crate::models::{AgentStats, ModelCallStats};
 use ai_orz_macros::Params;
@@ -98,6 +98,19 @@ pub struct GetAgentRequest {
     /// 时序查询粒度：hourly / daily
     #[param(source = "query")]
     pub stats_interval: Option<String>,
+    /// 是否装配工具全景（神经 / 直接绑定 / 工具包三分组）
+    ///
+    /// 仅当为 `true` 时才装配 `GetAgentResponse::tools_overview`；
+    /// 否则该字段为 `None`，后端跳过多次工具查询。
+    /// 该全景数据体积较大，调用方应仅在需要展示时请求（如 Agent 详情页）。
+    #[param(source = "query")]
+    pub with_tools: Option<bool>,
+    /// 是否装配技能全景（神经 / 技能包 / 独立三分组）
+    ///
+    /// 仅当为 `true` 时才装配 `GetAgentResponse::skills_overview`；
+    /// 否则该字段为 `None`，后端跳过技能查询。
+    #[param(source = "query")]
+    pub with_skills: Option<bool>,
 }
 
 /// 外部 Agent 配置信息（详情页展示用）
@@ -126,6 +139,53 @@ pub struct AgentCliConfig {
     /// 自定义 prompt 模板
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_template: Option<String>,
+}
+
+/// Agent 视角下的工具分组（工具包工具列表）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct AgentToolPackGroup {
+    /// 工具包 tag
+    pub tag: String,
+    /// 包内工具（已按优先级去重：已出现在神经工具/直接绑定的工具不再出现在包中）
+    pub tools: Vec<ToolListItem>,
+}
+
+/// Agent 视角下的工具全景（三分组：神经/直接绑定/工具包）
+///
+/// 三组互不相交，并集恰好等于运行时函数调用注入的工具全集，
+/// 与 runtime 装配逻辑完全同源（neural → bound → pack 优先级去重）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct AgentToolsOverview {
+    /// 神经工具：天生拥有，无需绑定/安装（tags 含 neural 的全部启用工具，过滤 internal）
+    pub neural_tools: Vec<ToolListItem>,
+    /// 直接绑定工具：通过 agent_tools 关联表显式绑定的工具（排除已出现在神经组的）
+    pub bound_tools: Vec<ToolListItem>,
+    /// 工具包分组：按 runtime_config.installed_tags 逐个 tag 展开（排除 neural 与 已在前两组的）
+    pub pack_groups: Vec<AgentToolPackGroup>,
+}
+
+/// Agent 视角下的技能分组（技能包技能列表）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct AgentSkillPackGroup {
+    /// 技能包 tag
+    pub tag: String,
+    /// 包内技能（已按优先级去重）
+    pub skills: Vec<SkillListItem>,
+}
+
+/// Agent 视角下的技能全景
+///
+/// 技能讲究"安装且自进化"，所有技能都必须是 Agent 自身目录下的副本
+/// （author_id = agent_id，排除 Expired），仅做分组展示。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct AgentSkillsOverview {
+    /// 神经技能：tags 含 neural 的已安装副本（对应 Prompt【神经技能】区块）
+    pub neural_skills: Vec<SkillListItem>,
+    /// 技能包分组：按 runtime_config.installed_skill_packs 逐个 tag 展开
+    /// （已排除出现在神经技能组的）
+    pub pack_groups: Vec<AgentSkillPackGroup>,
+    /// 独立技能：未命中任何技能包、也非神经标签的已安装技能
+    pub standalone_skills: Vec<SkillListItem>,
 }
 
 /// Remote 外部 Agent 配置
@@ -194,8 +254,14 @@ pub struct GetAgentResponse {
     pub current_task_id: Option<String>,
     /// 当前关联的项目 ID（仅忙碌时有效）
     pub current_project_id: Option<String>,
-    /// 已绑定的工具 ID 列表
+    /// 已绑定的工具 ID 列表（保留：聊天侧面板「已绑定工具 N 个」语义使用）
     pub tools: Vec<String>,
+    /// Agent 视角下的工具全景（三分组：神经/直接绑定/工具包），与运行时注入同源
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools_overview: Option<AgentToolsOverview>,
+    /// Agent 视角下的技能全景（三分组：神经/包/独立），均为 Agent 自身目录下的副本
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skills_overview: Option<AgentSkillsOverview>,
     /// Agent 自身统计数据（按需返回）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats: Option<AgentStats>,

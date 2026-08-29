@@ -406,6 +406,26 @@ pub trait AgentManage: Send + Sync {
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<String>>;
+
+    /// Agent 关联全景视图（工具三分组 + 技能三分组），按需装配。
+    ///
+    /// 返回的三组工具互不相交（neural → bound → pack 优先级去重），
+    /// 与 runtime 装配逻辑完全同源；技能三分组同样互不相交（neural → pack → standalone）。
+    ///
+    /// `with_tools` / `with_skills` 为开关：为 false 的一侧直接返回 `None`
+    /// 并**跳过对应查询**（全景数据体量较大，供前端按需拉取，如 Agent 详情页）。
+    ///
+    /// 前置：调用者应先 get_agent 拿到包含 runtime_config + skills 的 Agent 对象。
+    async fn get_agent_association_view(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        with_tools: bool,
+        with_skills: bool,
+    ) -> Result<(
+        Option<common::api::AgentToolsOverview>,
+        Option<common::api::AgentSkillsOverview>,
+    )>;
 }
 
 /// Skill 文件导入统一结构 = (去哪放) × (从哪来)。

@@ -1281,6 +1281,45 @@
      作用域限定为 HudPanel 子包裹层的直接子节点，不影响深层嵌套卡片。 */
   .hud-panel-body > .card-body { padding: 0; }
 
+  /* ===== HUD 面板分组色调变体 =====
+     用于同一页面内区分语义分组（如工具的神经/绑定/工具包）。
+     ⚠️ 必须用本变体，而不要用 Tailwind 的 `border-primary/30` 之类：
+     `.hud-panel` 的渐变发丝边依赖 `border: 1px solid transparent` + 渐变背景绘制到
+     border-box，直接改 border-color 会把边框变成纯色、盖掉渐变，破坏 HUD 观感。
+     本变体只替换渐变主色，机制与 `.hud-panel` 完全一致。 */
+  .hud-panel.hud-tone-primary {
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-primary) 62%, var(--color-base-300)),
+        var(--color-base-300) 40%, var(--color-base-300) 62%,
+        color-mix(in oklab, var(--color-primary) 38%, var(--color-base-300))) border-box;
+  }
+  .hud-panel.hud-tone-accent {
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-accent) 58%, var(--color-base-300)),
+        var(--color-base-300) 40%, var(--color-base-300) 62%,
+        color-mix(in oklab, var(--color-accent) 34%, var(--color-base-300))) border-box;
+  }
+  .hud-panel.hud-tone-success {
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-success) 58%, var(--color-base-300)),
+        var(--color-base-300) 40%, var(--color-base-300) 62%,
+        color-mix(in oklab, var(--color-success) 34%, var(--color-base-300))) border-box;
+  }
+  .hud-panel.hud-tone-neutral {
+    background:
+      linear-gradient(var(--color-base-100), var(--color-base-100)) padding-box,
+      linear-gradient(140deg,
+        color-mix(in oklab, var(--color-base-content) 26%, var(--color-base-300)),
+        var(--color-base-300) 40%, var(--color-base-300) 62%,
+        color-mix(in oklab, var(--color-base-content) 14%, var(--color-base-300))) border-box;
+  }
+
   /* 面板顶部信号流光条 */
   .hud-signal {
     height: 2px; border-radius: 2px; overflow: hidden; margin-bottom: .9rem; opacity: .9;

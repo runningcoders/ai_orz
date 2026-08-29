@@ -41,6 +41,8 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         tools: vec![],
         stats: None,
         model_call_stats: None,
+        tools_overview: None,
+        skills_overview: None,
     });
 
     assert!(response.is_success());

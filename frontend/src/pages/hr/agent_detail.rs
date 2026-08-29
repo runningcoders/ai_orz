@@ -35,6 +35,10 @@ use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
 
 /// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 stats 字段字面量）
+/// 详情页请求的字段开关。
+///
+/// 详情页需要展示工具/技能全景（三分组），故显式打开 `with_tools` / `with_skills`；
+/// 其余调用方（如聊天侧面板）使用 `..Default::default()`，不会装配全景数据。
 fn build_agent_stats_request(id: String) -> GetAgentRequest {
     GetAgentRequest {
         id,
@@ -43,6 +47,8 @@ fn build_agent_stats_request(id: String) -> GetAgentRequest {
         stats_time_start: None,
         stats_time_end: None,
         stats_interval: Some("daily".to_string()),
+        with_tools: Some(true),
+        with_skills: Some(true),
     }
 }
 
@@ -212,17 +218,8 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
     let graph_agents = use_signal(Vec::<AgentListItem>::new);
 
-    let agent_tool_ids = agent_res
-        .read()
-        .as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .map(|a| a.tools.iter().cloned().collect::<HashSet<_>>())
-        .unwrap_or_default();
-
     let skill_packs_list = skill_packs.read().clone();
     let tool_packs_list = tool_packs.read().clone();
-    let all_tools_list = all_tools.read().clone();
-    let installed_skills_list = installed_skills.read().clone();
 
     let rid_for_load = rid;
     let load_data = move || {
@@ -471,12 +468,29 @@ pub fn HrAgentDetail(id: String) -> Element {
                     let a = a.clone();
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
-            // 已绑定工具（用于卡片网格展示）：从全量工具列表中筛出 agent 已绑定的工具
-            let bound_tools: Vec<ToolListItem> = all_tools_list
-                .iter()
-                .filter(|t| agent_tool_ids.contains(&t.id))
-                .cloned()
-                .collect();
+            // ---- Agent 关联全景视图 ----
+            // 数据源：get_agent 返回的 tools_overview / skills_overview，
+            // 与 runtime 注入逻辑同源（neural → bound → pack 优先级去重，互不相交）
+            let tools_overview = a.tools_overview.clone().unwrap_or_default();
+            let skills_overview = a.skills_overview.clone().unwrap_or_default();
+
+            // 工具：三分组 + 统计总数
+            let all_tool_count = tools_overview.neural_tools.len()
+                + tools_overview.bound_tools.len()
+                + tools_overview
+                    .pack_groups
+                    .iter()
+                    .map(|g| g.tools.len())
+                    .sum::<usize>();
+
+            // 技能：三分组 + 统计总数
+            let all_skill_count = skills_overview.neural_skills.len()
+                + skills_overview
+                    .pack_groups
+                    .iter()
+                    .map(|g| g.skills.len())
+                    .sum::<usize>()
+                + skills_overview.standalone_skills.len();
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
             let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
             let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
@@ -990,52 +1004,222 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
 
-                                    // 已安装技能卡片网格（仅展示已安装技能，带「卸载」按钮）
-                                    if !installed_skills_list.is_empty() {
-                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                            for skill in installed_skills_list.iter() {
-                                                {
-                                                    let skill_clone = skill.clone();
-                                                    let aid = agent_id_signal();
-                                                    let skill_id = skill.id.clone();
-                                                    let skill_name = skill.name.clone();
-                                                    let skill_desc = skill.description.clone();
-                                                    rsx! {
-                                                        div {
-                                                            class: "hud-panel",
-                                                            key: "{skill_id}",
-                                                            div { class: "card-body p-4",
-                                                                div { class: "flex justify-between items-start",
-                                                                    span { class: "font-medium", "{skill_name}" }
-                                                                    span { class: "badge hud-badge badge-success", "已安装" }
-                                                                }
-                                                                if !skill_desc.is_empty() {
-                                                                    p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-                                                                }
-                                                                div { class: "card-actions justify-end mt-3",
-                                                                    button {
-                                                                        class: "btn hud-btn btn-error btn-sm",
-                                                                        onclick: move |_| {
-                                                                            let agent_id = aid.clone();
-                                                                            let sid = skill_clone.id.clone();
-                                                                            let sname = skill_clone.name.clone();
-                                                                            spawn(async move {
-                                                                                match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
-                                                                                    agent_id: agent_id.clone(),
-                                                                                    skill_id: sid.clone(),
-                                                                                }).await {
-                                                                                    Ok(_) => {
-                                                                                        toast.success(format!("技能 {} 已卸载", sname));
-                                                                                        match list_agent_skills(&agent_id).await {
-                                                                                            Ok(resp) => installed_skills.set(resp.skills),
-                                                                                            Err(e) => toast.error(format!("刷新失败: {}", e)),
-                                                                                        }
-                                                                                    }
-                                                                                    Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                    // ===== Agent 已安装技能全景（三分组：神经/技能包/独立）=====
+                                    // 与 get_agent skills_overview 同源，不再依赖 list_agent_skills 平面展示
+                                    if all_skill_count > 0 {
+                                        // -- ① 神经技能 --
+                                        if !skills_overview.neural_skills.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🧠 神经技能" }
+                                                    span { class: "badge hud-badge badge-xs badge-primary badge-outline",
+                                                        "{skills_overview.neural_skills.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for skill in skills_overview.neural_skills.iter() {
+                                                        {
+                                                            let skill_clone = skill.clone();
+                                                            let aid = agent_id_signal();
+                                                            let skill_id = skill.id.clone();
+                                                            let skill_name = skill.name.clone();
+                                                            let skill_desc = skill.description.clone();
+                                                            let tags = skill.tags.clone();
+                                                            rsx! {
+                                                                div {
+                                                                    class: "hud-panel hud-tone-primary",
+                                                                    key: "ns-{skill_id}",
+                                                                    div { class: "card-body p-4",
+                                                                        div { class: "flex justify-between items-start",
+                                                                            span { class: "font-medium", "{skill_name}" }
+                                                                            div { class: "flex gap-1",
+                                                                                span { class: "badge hud-badge badge-primary badge-xs", "神经" }
+                                                                                span { class: "badge hud-badge badge-success", "已安装" }
+                                                                            }
+                                                                        }
+                                                                        if !skill_desc.is_empty() {
+                                                                            p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                                                                        }
+                                                                        if !tags.is_empty() {
+                                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                for tag in tags.iter() {
+                                                                                    span { class: "{tag_chip()}", "{tag}" }
                                                                                 }
-                                                                            });
-                                                                        },
-                                                                        "卸载"
+                                                                            }
+                                                                        }
+                                                                        div { class: "card-actions justify-end mt-3",
+                                                                            button {
+                                                                                class: "btn hud-btn btn-error btn-sm",
+                                                                                onclick: move |_| {
+                                                                                    let agent_id = aid.clone();
+                                                                                    let sid = skill_clone.id.clone();
+                                                                                    let sname = skill_clone.name.clone();
+                                                                                    spawn(async move {
+                                                                                        match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
+                                                                                            agent_id: agent_id.clone(),
+                                                                                            skill_id: sid.clone(),
+                                                                                        }).await {
+                                                                                            Ok(_) => {
+                                                                                                toast.success(format!("技能 {} 已卸载", sname));
+                                                                                                match get_agent(build_agent_stats_request(agent_id)).await {
+                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                                                                }
+                                                                                            }
+                                                                                            Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                                                                        }
+                                                                                    });
+                                                                                },
+                                                                                "卸载"
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ② 技能包分组 --
+                                        for pack in skills_overview.pack_groups.iter() {
+                                            if !pack.skills.is_empty() {
+                                                div { class: "mb-4",
+                                                    key: "skg-{pack.tag}",
+                                                    div { class: "flex items-center gap-2 mb-2",
+                                                        h4 { class: "font-semibold text-base", "📦 技能包：{pack.tag}" }
+                                                        span { class: "badge hud-badge badge-xs badge-accent badge-outline",
+                                                            "{pack.skills.len()}"
+                                                        }
+                                                    }
+                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                        for skill in pack.skills.iter() {
+                                                            {
+                                                                let skill_clone = skill.clone();
+                                                                let aid = agent_id_signal();
+                                                                let skill_id = skill.id.clone();
+                                                                let skill_name = skill.name.clone();
+                                                                let skill_desc = skill.description.clone();
+                                                                let tags = skill.tags.clone();
+                                                                rsx! {
+                                                                    div {
+                                                                        class: "hud-panel hud-tone-accent",
+                                                                        key: "skp-{pack.tag}-{skill_id}",
+                                                                        div { class: "card-body p-4",
+                                                                            div { class: "flex justify-between items-start",
+                                                                                span { class: "font-medium", "{skill_name}" }
+                                                                                span { class: "badge hud-badge badge-success", "已安装" }
+                                                                            }
+                                                                            if !skill_desc.is_empty() {
+                                                                                p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                                                                            }
+                                                                            if !tags.is_empty() {
+                                                                                div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                    for tag in tags.iter() {
+                                                                                        span { class: "{tag_chip()}", "{tag}" }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                            div { class: "card-actions justify-end mt-3",
+                                                                                button {
+                                                                                    class: "btn hud-btn btn-error btn-sm",
+                                                                                    onclick: move |_| {
+                                                                                        let agent_id = aid.clone();
+                                                                                        let sid = skill_clone.id.clone();
+                                                                                        let sname = skill_clone.name.clone();
+                                                                                        spawn(async move {
+                                                                                            match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
+                                                                                                agent_id: agent_id.clone(),
+                                                                                                skill_id: sid.clone(),
+                                                                                            }).await {
+                                                                                                Ok(_) => {
+                                                                                                    toast.success(format!("技能 {} 已卸载", sname));
+                                                                                                    match get_agent(build_agent_stats_request(agent_id)).await {
+                                                                                                        Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                                                        Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                                                                    }
+                                                                                                }
+                                                                                                Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                                                                            }
+                                                                                        });
+                                                                                    },
+                                                                                    "卸载"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ③ 独立技能 --
+                                        if !skills_overview.standalone_skills.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🆓 独立技能" }
+                                                    span { class: "badge hud-badge badge-xs badge-neutral badge-outline",
+                                                        "{skills_overview.standalone_skills.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for skill in skills_overview.standalone_skills.iter() {
+                                                        {
+                                                            let skill_clone = skill.clone();
+                                                            let aid = agent_id_signal();
+                                                            let skill_id = skill.id.clone();
+                                                            let skill_name = skill.name.clone();
+                                                            let skill_desc = skill.description.clone();
+                                                            let tags = skill.tags.clone();
+                                                            rsx! {
+                                                                div {
+                                                                    class: "hud-panel hud-tone-neutral",
+                                                                    key: "st-{skill_id}",
+                                                                    div { class: "card-body p-4",
+                                                                        div { class: "flex justify-between items-start",
+                                                                            span { class: "font-medium", "{skill_name}" }
+                                                                            span { class: "badge hud-badge badge-success", "已安装" }
+                                                                        }
+                                                                        if !skill_desc.is_empty() {
+                                                                            p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                                                                        }
+                                                                        if !tags.is_empty() {
+                                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                for tag in tags.iter() {
+                                                                                    span { class: "{tag_chip()}", "{tag}" }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        div { class: "card-actions justify-end mt-3",
+                                                                            button {
+                                                                                class: "btn hud-btn btn-error btn-sm",
+                                                                                onclick: move |_| {
+                                                                                    let agent_id = aid.clone();
+                                                                                    let sid = skill_clone.id.clone();
+                                                                                    let sname = skill_clone.name.clone();
+                                                                                    spawn(async move {
+                                                                                        match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
+                                                                                            agent_id: agent_id.clone(),
+                                                                                            skill_id: sid.clone(),
+                                                                                        }).await {
+                                                                                            Ok(_) => {
+                                                                                                toast.success(format!("技能 {} 已卸载", sname));
+                                                                                                match get_agent(build_agent_stats_request(agent_id)).await {
+                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                                                                }
+                                                                                            }
+                                                                                            Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                                                                        }
+                                                                                    });
+                                                                                },
+                                                                                "卸载"
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -1108,72 +1292,202 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
 
-                                    // 已绑定工具卡片网格（仅展示已绑定工具，带「解绑」按钮）
-                                    if !bound_tools.is_empty() {
-                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                            for tool in bound_tools.iter() {
-                                                {
-                                                    let tool_clone = tool.clone();
-                                                    let aid = agent_id_signal();
-                                                    let tool_id = tool.id.clone();
-                                                    let tool_name = tool.name.clone();
-                                                    let tool_desc = tool.description.as_deref().unwrap_or("");
-                                                    let tags = tool.tags.clone();
-                                                    let runtime_ready = tool.runtime_ready.clone();
-                                                    // 未就绪警示 badge（advisory）：悬浮显示原因与修复提示，不阻止绑定
-                                                    let not_ready_title = match &runtime_ready {
-                                                        RuntimeReady::NotReady { reason, hint } => {
-                                                            format!("未就绪（{}）：{}", reason, hint)
-                                                        }
-                                                        _ => String::new(),
-                                                    };
-                                                    rsx! {
-                                                        div {
-                                                            class: "hud-panel",
-                                                            key: "{tool_id}",
-                                                            div { class: "card-body p-4",
-                                                                div { class: "flex justify-between items-start",
-                                                                    span { class: "font-medium", "{tool_name}" }
-                                                                    div { class: "flex gap-1",
-                                                                        if !not_ready_title.is_empty() {
-                                                                            span {
-                                                                                class: "badge hud-badge badge-warning badge-outline",
-                                                                                title: "{not_ready_title}",
-                                                                                "未就绪"
+                                    // ===== Agent 工具全景（三分组：神经/直接绑定/工具包）=====
+                                    // 与 runtime 工具注入同源，互不相交，完整展示 Agent 实际可用的所有工具
+                                    if all_tool_count > 0 {
+                                        // -- ① 神经工具：天生拥有，无需安装/绑定 --
+                                        if !tools_overview.neural_tools.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🧠 神经工具（天生可用）" }
+                                                    span { class: "badge hud-badge badge-xs badge-primary badge-outline",
+                                                        "{tools_overview.neural_tools.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for tool in tools_overview.neural_tools.iter() {
+                                                        {
+                                                            let tool_id = tool.id.clone();
+                                                            let tool_name = tool.name.clone();
+                                                            let tool_desc = tool.description.as_deref().unwrap_or("");
+                                                            let tags = tool.tags.clone();
+                                                            let runtime_ready = tool.runtime_ready.clone();
+                                                            let not_ready_title = match &runtime_ready {
+                                                                RuntimeReady::NotReady { reason, hint } => {
+                                                                    format!("未就绪（{}）：{}", reason, hint)
+                                                                }
+                                                                _ => String::new(),
+                                                            };
+                                                            rsx! {
+                                                                div {
+                                                                    class: "hud-panel hud-tone-primary",
+                                                                    key: "nt-{tool_id}",
+                                                                    div { class: "card-body p-4",
+                                                                        div { class: "flex justify-between items-start",
+                                                                            span { class: "font-medium", "{tool_name}" }
+                                                                            div { class: "flex gap-1",
+                                                                                if !not_ready_title.is_empty() {
+                                                                                    span {
+                                                                                        class: "badge hud-badge badge-warning badge-outline",
+                                                                                        title: "{not_ready_title}",
+                                                                                        "未就绪"
+                                                                                    }
+                                                                                }
+                                                                                span { class: "badge hud-badge badge-primary badge-xs", "神经" }
                                                                             }
                                                                         }
-                                                                        span { class: "badge hud-badge badge-success", "已绑定" }
+                                                                        p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
+                                                                        if !tags.is_empty() {
+                                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                for tag in tags.iter() {
+                                                                                    span { class: "{tag_chip()}", "{tag}" }
+                                                                                }
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
-                                                                p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
-                                                                if !tags.is_empty() {
-                                                                    div { class: "flex flex-wrap gap-1 mt-2",
-                                                                    for tag in tags.iter() {
-                                                                        span { class: "{tag_chip()}", "{tag}" }
-                                                                    }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ② 直接绑定工具：通过 agent_tools 显式绑定，带「解绑」按钮 --
+                                        if !tools_overview.bound_tools.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🔗 直接绑定" }
+                                                    span { class: "badge hud-badge badge-xs badge-success badge-outline",
+                                                        "{tools_overview.bound_tools.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for tool in tools_overview.bound_tools.iter() {
+                                                        {
+                                                            let tool_clone = tool.clone();
+                                                            let aid = agent_id_signal();
+                                                            let tool_id = tool.id.clone();
+                                                            let tool_name = tool.name.clone();
+                                                            let tool_desc = tool.description.as_deref().unwrap_or("");
+                                                            let tags = tool.tags.clone();
+                                                            let runtime_ready = tool.runtime_ready.clone();
+                                                            let not_ready_title = match &runtime_ready {
+                                                                RuntimeReady::NotReady { reason, hint } => {
+                                                                    format!("未就绪（{}）：{}", reason, hint)
+                                                                }
+                                                                _ => String::new(),
+                                                            };
+                                                            rsx! {
+                                                                div {
+                                                                    class: "hud-panel hud-tone-success",
+                                                                    key: "bt-{tool_id}",
+                                                                    div { class: "card-body p-4",
+                                                                        div { class: "flex justify-between items-start",
+                                                                            span { class: "font-medium", "{tool_name}" }
+                                                                            div { class: "flex gap-1",
+                                                                                if !not_ready_title.is_empty() {
+                                                                                    span {
+                                                                                        class: "badge hud-badge badge-warning badge-outline",
+                                                                                        title: "{not_ready_title}",
+                                                                                        "未就绪"
+                                                                                    }
+                                                                                }
+                                                                                span { class: "badge hud-badge badge-success", "已绑定" }
+                                                                            }
+                                                                        }
+                                                                        p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
+                                                                        if !tags.is_empty() {
+                                                                            div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                for tag in tags.iter() {
+                                                                                    span { class: "{tag_chip()}", "{tag}" }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        div { class: "card-actions justify-end mt-3",
+                                                                            button {
+                                                                                class: "btn hud-btn btn-error btn-sm",
+                                                                                onclick: move |_| {
+                                                                                    let agent_id = aid.clone();
+                                                                                    let tid = tool_clone.id.clone();
+                                                                                    let tname = tool_clone.name.clone();
+                                                                                    spawn(async move {
+                                                                                        match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await {
+                                                                                            Ok(_) => {
+                                                                                                toast.success(format!("工具 {} 已解绑", tname));
+                                                                                                match get_agent(build_agent_stats_request(agent_id.clone())).await {
+                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                                                                }
+                                                                                            }
+                                                                                            Err(e) => toast.error(format!("解绑失败: {}", e)),
+                                                                                        }
+                                                                                    });
+                                                                                },
+                                                                                "解绑"
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
-                                                                div { class: "card-actions justify-end mt-3",
-                                                                    button {
-                                                                        class: "btn hud-btn btn-error btn-sm",
-                                                                        onclick: move |_| {
-                                                                            let agent_id = aid.clone();
-                                                                            let tid = tool_clone.id.clone();
-                                                                            let tname = tool_clone.name.clone();
-                                                                            spawn(async move {
-                                                                                match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await {
-                                                                                    Ok(_) => {
-                                                                                        toast.success(format!("工具 {} 已解绑", tname));
-                                                                                        match get_agent(build_agent_stats_request(agent_id.clone())).await {
-                                                                                            Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                                            Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ③ 工具包分组（按 runtime_config.installed_tags 展开）--
+                                        for pack in tools_overview.pack_groups.iter() {
+                                            if !pack.tools.is_empty() {
+                                                div { class: "mb-4",
+                                                    key: "tpg-{pack.tag}",
+                                                    div { class: "flex items-center gap-2 mb-2",
+                                                        h4 { class: "font-semibold text-base", "📦 工具包：{pack.tag}" }
+                                                        span { class: "badge hud-badge badge-xs badge-accent badge-outline",
+                                                            "{pack.tools.len()}"
+                                                        }
+                                                    }
+                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                        for tool in pack.tools.iter() {
+                                                            {
+                                                                let tool_id = tool.id.clone();
+                                                                let tool_name = tool.name.clone();
+                                                                let tool_desc = tool.description.as_deref().unwrap_or("");
+                                                                let tags = tool.tags.clone();
+                                                                let runtime_ready = tool.runtime_ready.clone();
+                                                                let not_ready_title = match &runtime_ready {
+                                                                    RuntimeReady::NotReady { reason, hint } => {
+                                                                        format!("未就绪（{}）：{}", reason, hint)
+                                                                    }
+                                                                    _ => String::new(),
+                                                                };
+                                                                rsx! {
+                                                                    div {
+                                                                        class: "hud-panel hud-tone-accent",
+                                                                        key: "tp-{pack.tag}-{tool_id}",
+                                                                        div { class: "card-body p-4",
+                                                                            div { class: "flex justify-between items-start",
+                                                                                span { class: "font-medium", "{tool_name}" }
+                                                                                div { class: "flex gap-1",
+                                                                                    if !not_ready_title.is_empty() {
+                                                                                        span {
+                                                                                            class: "badge hud-badge badge-warning badge-outline",
+                                                                                            title: "{not_ready_title}",
+                                                                                            "未就绪"
                                                                                         }
                                                                                     }
-                                                                                    Err(e) => toast.error(format!("解绑失败: {}", e)),
+                                                                                    span { class: "badge hud-badge badge-accent badge-xs", "来自 {pack.tag}" }
                                                                                 }
-                                                                            });
-                                                                        },
-                                                                        "解绑"
+                                                                            }
+                                                                            p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
+                                                                            if !tags.is_empty() {
+                                                                                div { class: "flex flex-wrap gap-1 mt-2",
+                                                                                    for tag in tags.iter() {
+                                                                                        span { class: "{tag_chip()}", "{tag}" }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -1185,22 +1499,42 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     } else {
                                         div { class: "text-center py-12",
                                             div { class: "text-5xl mb-4 opacity-30", "🔧" }
-                                            div { class: "text-base-content/70", "暂无已绑定工具" }
+                                            div { class: "text-base-content/70", "暂无可用工具" }
                                         }
                                     }
                                 }
                             },
                             2 => rsx! {
-                                // === 状态图：Agent 与绑定 Tools 的关系图 ===
+                                // === 状态图：Agent 与全量可用 Tools（神经+绑定+工具包）的关系图 ===
+                                // 数据源：tools_overview，与 runtime 同源，不再依赖 agent_tools INNER JOIN
                                 {
-                                    let bound_tool_infos: Vec<RelationNodeInfo> = all_tools_list.iter()
-                                        .filter(|t| agent_tool_ids.contains(&t.id))
-                                        .map(|t| RelationNodeInfo::with_kind(
+                                    let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
+                                    // 神经工具
+                                    for t in tools_overview.neural_tools.iter() {
+                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
                                             t.id.clone(),
                                             t.name.clone(),
-                                            "tool",
-                                        ))
-                                        .collect();
+                                            "neural_tool",
+                                        ));
+                                    }
+                                    // 直接绑定
+                                    for t in tools_overview.bound_tools.iter() {
+                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
+                                            t.id.clone(),
+                                            t.name.clone(),
+                                            "bound_tool",
+                                        ));
+                                    }
+                                    // 工具包工具
+                                    for pack in tools_overview.pack_groups.iter() {
+                                        for t in pack.tools.iter() {
+                                            all_tool_nodes.push(RelationNodeInfo::with_kind(
+                                                t.id.clone(),
+                                                t.name.clone(),
+                                                "pack_tool",
+                                            ));
+                                        }
+                                    }
                                     let navigator = use_navigator();
                                     rsx! {
                                         RelationGraph {
@@ -1208,7 +1542,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             center_name: a.name.clone(),
                                             center_color: "#fa520f".to_string(),
                                             center_kind: Some("agent".to_string()),
-                                            related: bound_tool_infos,
+                                            related: all_tool_nodes,
                                             related_color: "#f59e0b".to_string(),
                                             related_label: "工具".to_string(),
                                             on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
@@ -1216,7 +1550,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     // 点击中心 Agent 节点，不跳转（已在当前页）
                                                     return;
                                                 }
-                                                if evt.kind.as_deref() == Some("tool") {
+                                                // 无论何种子类型（neural_tool / bound_tool / pack_tool），都跳转工具详情页
+                                                let kind_family = evt.kind.clone().unwrap_or_default();
+                                                if kind_family.ends_with("tool") || kind_family == "tool" {
                                                     navigator.push(format!("/finance/tools/{}", evt.id));
                                                 }
                                             })),

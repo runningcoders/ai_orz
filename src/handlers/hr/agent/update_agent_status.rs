@@ -142,6 +142,8 @@ pub async fn update_agent_status(
         current_task_id,
         current_project_id,
         tools,
+        tools_overview: None,
+        skills_overview: None,
         stats: None,
         model_call_stats: None,
     })

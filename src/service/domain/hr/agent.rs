@@ -6,6 +6,7 @@ use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
+use common::api::{SkillListItem, ToolListItem};
 use common::enums::AgentStatus;
 use common::error::{Result, bail_err, err};
 
@@ -318,6 +319,14 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 神经工具天生拥有，无需作为工具包安装；显式拒绝避免冗余和展示歧义
+        if tag == "neural" {
+            bail_err!(
+                InvalidRequest,
+                "neural 是系统保留标签，所有 Agent 天生拥有神经工具，无需通过工具包安装"
+            );
+        }
 
         // 幂等：已安装则跳过
         if agent.po.get_runtime_config().has_tag(tag) {
@@ -641,5 +650,266 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         Ok(agent.po.get_installed_skill_packs())
+    }
+
+    async fn get_agent_association_view(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        with_tools: bool,
+        with_skills: bool,
+    ) -> Result<(
+        Option<common::api::AgentToolsOverview>,
+        Option<common::api::AgentSkillsOverview>,
+    )> {
+        use common::api::{AgentSkillsOverview, AgentToolPackGroup, AgentToolsOverview};
+
+        const NEURAL_TAG: &str = "neural";
+        const INTERNAL_TAG: &str = "internal";
+
+        let runtime_cfg = agent.po.get_runtime_config();
+        let installed_tool_tags: Vec<String> = runtime_cfg
+            .installed_tags
+            .iter()
+            .filter(|t| t.as_str() != NEURAL_TAG)
+            .cloned()
+            .collect();
+        let installed_skill_packs: Vec<String> = runtime_cfg
+            .installed_skill_packs
+            .iter()
+            .filter(|t| t.as_str() != NEURAL_TAG)
+            .cloned()
+            .collect();
+
+        // 两侧开关都关闭时无需任何查询，直接短路
+        if !with_tools && !with_skills {
+            return Ok((None, None));
+        }
+
+        // ======================== 工具分组 ========================
+        let tools_overview: Option<AgentToolsOverview> = if with_tools {
+            // 1. 神经工具：tags 含 neural 且 不含 internal 的全部启用工具
+            let neural_candidates = self
+                .tool_dal
+                .query(
+                    ctx.clone(),
+                    crate::service::dao::tool::ToolQuery {
+                        tags: Some(vec![NEURAL_TAG.to_string()]),
+                        enabled_only: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let neural_tools_map: std::collections::BTreeMap<String, Tool> = neural_candidates
+                .items
+                .into_iter()
+                .filter(|t| {
+                    let tags = t.po.get_tags();
+                    tags.iter().any(|x| x == NEURAL_TAG) && !tags.iter().any(|x| x == INTERNAL_TAG)
+                })
+                .map(|t| (t.po.id.clone(), t))
+                .collect();
+
+            // 2. 直接绑定工具：agent_tools 关联的启用工具（去重已在神经组）
+            let bound_candidates = self
+                .tool_dal
+                .list_tools_for_agent_full(ctx.clone(), &agent.po.id)
+                .await?;
+            let mut bound_tools_map: std::collections::BTreeMap<String, Tool> =
+                std::collections::BTreeMap::new();
+            for t in bound_candidates {
+                if neural_tools_map.contains_key(&t.po.id) {
+                    continue;
+                }
+                let tags = t.po.get_tags();
+                if tags.iter().any(|x| x == INTERNAL_TAG) {
+                    continue;
+                }
+                bound_tools_map.insert(t.po.id.clone(), t);
+            }
+
+            // 3. 工具包分组：按每个 tag 展开（跳过 neural，且不重复前两组）
+            let mut pack_groups: Vec<AgentToolPackGroup> = Vec::new();
+            for tag in &installed_tool_tags {
+                let candidates = self
+                    .tool_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::tool::ToolQuery {
+                            tags: Some(vec![tag.clone()]),
+                            enabled_only: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let mut pack_tools: Vec<Tool> = Vec::new();
+                for t in candidates.items {
+                    let tid = t.po.id.clone();
+                    if neural_tools_map.contains_key(&tid) || bound_tools_map.contains_key(&tid) {
+                        continue;
+                    }
+                    let tags = t.po.get_tags();
+                    if tags.iter().any(|x| x == INTERNAL_TAG) {
+                        continue;
+                    }
+                    if !tags.iter().any(|x| x == tag) {
+                        continue;
+                    }
+                    pack_tools.push(t);
+                }
+                pack_tools.sort_by(|a, b| a.po.id.cmp(&b.po.id));
+                pack_groups.push(AgentToolPackGroup {
+                    tag: tag.clone(),
+                    tools: pack_tools.iter().map(to_tool_list_item_default).collect(),
+                });
+            }
+
+            // 汇总 bound_tools（需要已填充排除 pack 后）：上面先按 id 做去重
+            let mut bound_sorted: Vec<&Tool> = bound_tools_map.values().collect();
+            bound_sorted.sort_by(|a, b| a.po.id.cmp(&b.po.id));
+            let bound_tools_list: Vec<common::api::ToolListItem> = bound_sorted
+                .into_iter()
+                .map(to_tool_list_item_default)
+                .collect();
+
+            let mut neural_sorted: Vec<&Tool> = neural_tools_map.values().collect();
+            neural_sorted.sort_by(|a, b| a.po.id.cmp(&b.po.id));
+            let neural_tools_list: Vec<common::api::ToolListItem> = neural_sorted
+                .into_iter()
+                .map(to_tool_list_item_default)
+                .collect();
+
+            Some(AgentToolsOverview {
+                neural_tools: neural_tools_list,
+                bound_tools: bound_tools_list,
+                pack_groups,
+            })
+        } else {
+            None
+        };
+
+        // ======================== 技能分组 ========================
+        let skills_overview: Option<AgentSkillsOverview> = if with_skills {
+            // 所有 Agent 自有技能副本（author_id = agent_id，exclude Expired）
+            let all_skills = self
+                .skill_dal
+                .list_for_agent(ctx.clone(), &agent.po.id)
+                .await?;
+
+            // 第一趟：分配神经技能（优先级最高）
+            let mut neural_skill_ids: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::new();
+            let mut neural_skills: Vec<common::api::SkillListItem> = all_skills
+                .iter()
+                .filter(|s| {
+                    let tags = s.po.parse_tags();
+                    tags.iter().any(|x| x == NEURAL_TAG)
+                })
+                .map(to_skill_list_item)
+                .collect();
+            // 记录神经技能 id，供第二/三趟排除（与上面的 filter 保持同一判定）
+            for s in all_skills.iter() {
+                if s.po.parse_tags().iter().any(|x| x == NEURAL_TAG) {
+                    neural_skill_ids.insert(s.po.id.clone());
+                }
+            }
+            neural_skills.sort_by(|a, b| a.id.cmp(&b.id));
+
+            // 第二趟：按 installed_skill_packs 顺序分配（跳过已在神经组）
+            use common::api::AgentSkillPackGroup;
+            let mut pack_groups_skills: Vec<AgentSkillPackGroup> = Vec::new();
+            for tag in &installed_skill_packs {
+                let mut members: Vec<common::api::SkillListItem> = all_skills
+                    .iter()
+                    .filter(|s| {
+                        if neural_skill_ids.contains(&s.po.id) {
+                            return false;
+                        }
+                        let tags = s.po.parse_tags();
+                        tags.iter().any(|x| x == tag)
+                    })
+                    .map(to_skill_list_item)
+                    .collect();
+                members.sort_by(|a, b| a.id.cmp(&b.id));
+                pack_groups_skills.push(AgentSkillPackGroup {
+                    tag: tag.clone(),
+                    skills: members,
+                });
+            }
+
+            // 第三趟：独立技能（不在神经组、不在任一 pack）
+            let mut standalone: Vec<common::api::SkillListItem> = all_skills
+                .iter()
+                .filter(|s| {
+                    if neural_skill_ids.contains(&s.po.id) {
+                        return false;
+                    }
+                    // tags 只解析一次，避免在 any 闭包内对每个 tag 重复 parse
+                    let tags = s.po.parse_tags();
+                    let in_any_pack = installed_skill_packs
+                        .iter()
+                        .any(|tag| tags.iter().any(|x| x == tag));
+                    !in_any_pack
+                })
+                .map(to_skill_list_item)
+                .collect();
+            standalone.sort_by(|a, b| a.id.cmp(&b.id));
+
+            Some(AgentSkillsOverview {
+                neural_skills,
+                pack_groups: pack_groups_skills,
+                standalone_skills: standalone,
+            })
+        } else {
+            None
+        };
+
+        Ok((tools_overview, skills_overview))
+    }
+}
+
+// ======================== DTO 转换辅助（默认 runtime_ready=Unknown） ========================
+
+fn to_tool_list_item_default(tool: &Tool) -> ToolListItem {
+    use common::enums::ToolStatus;
+    ToolListItem {
+        id: tool.po.id.clone(),
+        name: tool.po.name.clone(),
+        description: Some(tool.po.description.clone()),
+        protocol: tool.po.protocol,
+        control_mode: tool.po.control_mode,
+        parameters_schema: tool.po.parameters_schema.clone(),
+        tags: tool.po.get_tags(),
+        status: tool.po.status,
+        has_config: has_tool_config(&tool.po.config),
+        enabled: matches!(tool.po.status, ToolStatus::Enabled),
+        created_by: tool.po.created_by.clone().unwrap_or_default(),
+        created_at: tool.po.created_at,
+        updated_at: tool.po.updated_at,
+        runtime_ready: common::api::RuntimeReady::Unknown,
+    }
+}
+
+fn has_tool_config(config: &serde_json::Value) -> bool {
+    match config {
+        serde_json::Value::Null => false,
+        serde_json::Value::Object(m) if m.is_empty() => false,
+        _ => true,
+    }
+}
+
+fn to_skill_list_item(skill: &Skill) -> SkillListItem {
+    SkillListItem {
+        id: skill.po.id.clone(),
+        name: skill.po.name.clone(),
+        description: skill.po.description.clone(),
+        tags: skill.po.parse_tags(),
+        category: skill.po.category.clone(),
+        parent_skill_id: skill.po.parent_skill_id.clone(),
+        author_id: skill.po.author_id.clone(),
+        author_type: skill.po.author_type,
+        status: skill.po.status,
+        created_at: skill.po.created_at,
+        updated_at: skill.po.updated_at,
     }
 }

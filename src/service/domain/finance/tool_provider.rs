@@ -51,7 +51,18 @@ impl ToolProviderManage for FinanceDomainImpl {
 
     /// 列出所有启用工具的 distinct tags
     async fn list_tool_tags(&self, ctx: RequestContext) -> Result<Vec<String>> {
-        self.tool_dal.list_tags(ctx.clone()).await
+        // 排除系统保留标签：
+        // - neural：天生拥有的能力，不作为工具包分发/浏览
+        // - internal：仅用于 handler 自身元数据，不对外暴露
+        const RESERVED: &[&str] = &["neural", "internal"];
+        let all = self.tool_dal.list_tags(ctx.clone()).await?;
+        let mut filtered: Vec<String> = all
+            .into_iter()
+            .filter(|t| !RESERVED.iter().any(|r| t == r))
+            .collect();
+        filtered.sort();
+        filtered.dedup();
+        Ok(filtered)
     }
 
     /// 同步内置工具到 DB（将 builtin tools registry 中的工具写入 DB）
