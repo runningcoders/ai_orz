@@ -57,7 +57,7 @@
 **优先级**：中（架构一致性改进，非阻塞性）
 
 **相关文件**：
-- Agent 改造参考：`src/service/dal/agent.rs`（`apply_runtime_state_filter` + `query` + `search`）
+- Agent 改造参考：`src/service/dal/agent/mod.rs`（`apply_runtime_state_filter` + `query` + `search`）
 - `src/handlers/hr/agent/`（list_agents / query_agents / search_agents handler）
 - 待改造：`src/handlers/hr/tool/`、`src/handlers/hr/skill/`、`src/handlers/project/`（对应实体）
 

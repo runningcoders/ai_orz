@@ -3,7 +3,7 @@
 <cite>
 **本文引用的文件**
 - [src/service/dal/mod.rs](src/service/dal/mod.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/service/dal/message.rs](src/service/dal/message.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/tool.rs](src/service/dal/tool.rs)
@@ -106,7 +106,7 @@ DG --> S
 - UserDal：组合 UserCredentialDao、LarkMessageChannelDao，提供凭证 CRUD、默认凭证管理、Lark 消息通道配置与推送等能力。
 
 章节来源
-- [src/service/dal/agent.rs:28-73](src/service/dal/agent.rs#L28-L73)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL73)
 - [src/service/dal/message.rs:20-47](src/service/dal/message.rs#L20-L47)
 - [src/service/dal/project.rs:27-67](src/service/dal/project.rs#L27-L67)
 - [src/service/dal/tool.rs:20-59](src/service/dal/tool.rs#L20-L59)
@@ -142,12 +142,12 @@ Dal-->>Caller : PagedResult<Agent>
 ```
 
 图表来源
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 - [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
 - [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
 章节来源
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 - [src/service/dao/agent/mod.rs:63-90](src/service/dao/agent/mod.rs#L63-L90)
 - [src/pkg/storage/mod.rs:78-93](src/pkg/storage/mod.rs#L78-L93)
 
@@ -182,14 +182,14 @@ Merge --> End(["返回 PagedResult"])
 ```
 
 图表来源
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 
 章节来源
-- [src/service/dal/agent.rs:28-73](src/service/dal/agent.rs#L28-L73)
-- [src/service/dal/agent.rs:341-355](src/service/dal/agent.rs#L341-L355)
-- [src/service/dal/agent.rs:425-455](src/service/dal/agent.rs#L425-L455)
-- [src/service/dal/agent.rs:701-738](src/service/dal/agent.rs#L701-L738)
-- [src/service/dal/agent.rs:765-800](src/service/dal/agent.rs#L765-L800)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL73)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL355)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL455)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL800)
 
 ### MessageDal 保存与搜索
 - 组合点：MessageDao、MessageVectorDao、CortexDao、ModelProviderDao。
@@ -340,7 +340,7 @@ DAO_Org --> Store
 
 章节来源
 - [src/pkg/storage/mod.rs:64-102](src/pkg/storage/mod.rs#L64-L102)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [src/service/dal/project.rs:738-800](src/service/dal/project.rs#L738-L800)
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 
@@ -352,8 +352,8 @@ DAO_Org --> Store
 - 归档/删除清理：archive/delete 会清理向量索引；若清理失败仅 warn，检查向量存储权限。
 
 章节来源
-- [src/service/dal/agent.rs:341-355](src/service/dal/agent.rs#L341-L355)
-- [src/service/dal/agent.rs:701-738](src/service/dal/agent.rs#L701-L738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL355)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
 - [src/service/dal/message.rs:133-193](src/service/dal/message.rs#L133-L193)
 - [src/service/dal/project.rs:448-456](src/service/dal/project.rs#L448-L456)
 
@@ -368,14 +368,14 @@ DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一�
     - 调用 AgentDal::get_agent，options.with_stats=true 加载 AgentStats。
     - options.with_model_call_stats=true 加载 ModelCallStats。
     - 内部组合 AgentStatsDao 与 ModelProviderStatsDao。
-  - 参考路径：[src/service/dal/agent.rs:357-423](src/service/dal/agent.rs#L357-L423)
+  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL423)
 
 - 示例二：混合搜索 Agent（关键词 + 向量）
   - 步骤：
     - 若有 keyword，尝试构建查询向量并执行向量搜索。
     - 同时执行 FTS5 关键词搜索。
     - 合并结果，三态匹配（Hybrid/Vector/Keyword），综合排序与分页。
-  - 参考路径：[src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+  - 参考路径：[src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 
 - 示例三：消息保存并自动向量化
   - 步骤：

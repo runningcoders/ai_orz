@@ -4,7 +4,7 @@
 **本文引用的文件**
 - [src/service/dal/mod.rs](src/service/dal/mod.rs)
 - [src/service/dao/mod.rs](src/service/dao/mod.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
 - [src/service/dao/agent/sqlite.rs](src/service/dao/agent/sqlite.rs)
 - [src/pkg/request_context.rs](src/pkg/request_context.rs)
@@ -63,8 +63,8 @@ DAO --> STATS
 - 上下文传递：所有 service 层公共方法首参为 RequestContext，跨层使用 ctx.clone()；RequestContext 提供 db_pool、vector_store、stats 等能力。
 
 章节来源
-- [src/service/dal/agent.rs:29-73](src/service/dal/agent.rs#L29-L73)
-- [src/service/dal/agent.rs:98-193](src/service/dal/agent.rs#L98-L193)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL73)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL193)
 - [src/service/dao/agent/mod.rs:12-90](src/service/dao/agent/mod.rs#L12-L90)
 - [src/pkg/request_context.rs:22-61](src/pkg/request_context.rs#L22-L61)
 
@@ -89,9 +89,9 @@ Domain-->>Adapter : "响应 DTO"
 ```
 
 图示来源
-- [src/service/dal/agent.rs:341-350](src/service/dal/agent.rs#L341-L350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL350)
 - [src/service/dao/agent/sqlite.rs:109-139](src/service/dao/agent/sqlite.rs#L109-L139)
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 
 章节来源
 - [docs/ARCHITECTURE.md:325-385](docs/ARCHITECTURE.md#L325-L385)
@@ -123,15 +123,15 @@ Page --> End
 ```
 
 图示来源
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
 - [src/service/dao/agent/sqlite.rs:141-256](src/service/dao/agent/sqlite.rs#L141-L256)
 
 章节来源
-- [src/service/dal/agent.rs:341-350](src/service/dal/agent.rs#L341-L350)
-- [src/service/dal/agent.rs:425-459](src/service/dal/agent.rs#L425-L459)
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
-- [src/service/dal/agent.rs:701-738](src/service/dal/agent.rs#L701-L738)
-- [src/service/dal/agent.rs:765-800](src/service/dal/agent.rs#L765-L800)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL459)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL800)
 
 ### Agent DAO：SQLite 查询构建器与 FTS5
 - 查询构建器：COUNT 与 LIST 复用 push_query_filters，确保 WHERE 条件一致；支持 ids/status/exclude_status/created_by/model_provider_id/roles 等过滤。
@@ -211,12 +211,12 @@ AgentDalImpl --> ModelProviderDao
 ```
 
 图示来源
-- [src/service/dal/agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
-- [src/service/dal/agent.rs:39-52](src/service/dal/agent.rs#L39-L52)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL204)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL52)
 
 章节来源
-- [src/service/dal/agent.rs:39-52](src/service/dal/agent.rs#L39-L52)
-- [src/service/dal/agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL52)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL204)
 
 ## 性能与优化
 - 查询构建器复用：COUNT 与 LIST 共用 push_query_filters，减少重复逻辑与 SQL 拼接成本。
@@ -227,8 +227,8 @@ AgentDalImpl --> ModelProviderDao
 
 章节来源
 - [src/service/dao/agent/sqlite.rs:109-139](src/service/dao/agent/sqlite.rs#L109-L139)
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [AGENTS.md:585-755](AGENTS.md#L585-L755)
 
 ## 故障排查指南
@@ -238,10 +238,10 @@ AgentDalImpl --> ModelProviderDao
 - 统计查询失败：stats 查询失败应降级记录，不影响主流程；检查 DuckDB 或内存收集器是否正常初始化。
 
 章节来源
-- [src/service/dal/agent.rs:498-540](src/service/dal/agent.rs#L498-L540)
-- [src/service/dal/agent.rs:282-312](src/service/dal/agent.rs#L282-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL540)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [src/service/dao/agent/sqlite.rs:141-170](src/service/dao/agent/sqlite.rs#L141-L170)
-- [src/service/dal/agent.rs:373-405](src/service/dal/agent.rs#L373-L405)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL405)
 
 ## 结论
 DAL 层通过 DAO 多态与 DAL 继承/组合，实现了高内聚、低耦合的业务数据访问能力。统一的查询构建器、分页规范与混合搜索策略，保障了可扩展性与性能。RequestContext 作为横切关注点，贯穿认证、日志、存储与统计，提升了可观测性与可维护性。

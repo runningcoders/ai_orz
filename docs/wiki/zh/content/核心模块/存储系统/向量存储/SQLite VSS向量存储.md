@@ -8,7 +8,7 @@
 - [common/src/config.rs](common/src/config.rs)
 - [src/models/vector.rs](src/models/vector.rs)
 - [src/service/dal/skill.rs](src/service/dal/skill.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [docs/vector_search_architecture.md](docs/vector_search_architecture.md)
 </cite>
 
@@ -69,7 +69,7 @@ B --> J["SQLx Migrate 运行迁移"]
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
 - [src/models/vector.rs:9-168](src/models/vector.rs#L9-L168)
 - [src/service/dal/skill.rs:350-513](src/service/dal/skill.rs#L350-L513)
-- [src/service/dal/agent.rs:290-337](src/service/dal/agent.rs#L290-L337)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL337)
 
 ## 架构总览
 SQLite VSS 向量存储采用“元数据表 + 虚拟表”的双表设计：
@@ -212,7 +212,7 @@ INTEGER expire_at
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
 - [src/service/dal/skill.rs:350-364](src/service/dal/skill.rs#L350-L364)
-- [src/service/dal/agent.rs:290-311](src/service/dal/agent.rs#L290-L311)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL311)
 
 ### 数据库迁移脚本
 - 迁移文件：20260505000000_vector_metadata.sql 创建 vector_metadata 表及 expire_at 索引。
@@ -237,7 +237,7 @@ INTEGER expire_at
 
 章节来源
 - [src/service/dal/skill.rs:350-513](src/service/dal/skill.rs#L350-L513)
-- [src/service/dal/agent.rs:290-337](src/service/dal/agent.rs#L290-L337)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL337)
 - [docs/vector_search_architecture.md:72-131](docs/vector_search_architecture.md#L72-L131)
 
 ## 依赖关系分析
@@ -258,12 +258,12 @@ DAL --> Cortex["CortexDao(Embedding)"]
 图表来源
 - [src/pkg/storage/mod.rs:56-133](src/pkg/storage/mod.rs#L56-L133)
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
-- [src/service/dal/agent.rs:314-337](src/service/dal/agent.rs#L314-L337)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL337)
 
 章节来源
 - [src/pkg/storage/mod.rs:56-133](src/pkg/storage/mod.rs#L56-L133)
 - [src/pkg/storage/vector.rs:18-74](src/pkg/storage/vector.rs#L18-L74)
-- [src/service/dal/agent.rs:314-337](src/service/dal/agent.rs#L314-L337)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL337)
 
 ## 性能考量
 - 连接池大小：SQLite 单文件写并发有限，默认 max_connections=5，适合多数场景。
@@ -297,7 +297,7 @@ DAL --> Cortex["CortexDao(Embedding)"]
 章节来源
 - [src/pkg/storage/vector.rs:245-262](src/pkg/storage/vector.rs#L245-L262)
 - [src/service/dal/skill.rs:350-364](src/service/dal/skill.rs#L350-L364)
-- [src/service/dal/agent.rs:290-311](src/service/dal/agent.rs#L290-L311)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL311)
 
 ## 结论
 SqliteVssStore 通过 vss0 虚拟表与 vector_metadata 元数据表的协同，实现了轻量级、可嵌入的向量相似性搜索能力。其优势在于与 SQLite 生态无缝集成、易于部署；劣势是对系统扩展依赖敏感。建议在无 vss0 环境优先使用 InMemory/HNSW/LanceDB 后端，并在生产环境做好降级与监控。对于已有 SQLite 基础设施且具备 vss0 能力的场景，SqliteVssStore 提供了低成本的向量检索方案。

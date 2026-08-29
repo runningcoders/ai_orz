@@ -9,11 +9,12 @@ scope:
 - src/pkg/policy/mixed.rs
 source_files:
 - src/pkg/policy/mod.rs#L14-L96
-- src/pkg/policy/builtin.rs#L1-L120
-- src/pkg/policy/tests.rs#L1-L200
+- src/pkg/policy/builtin.rs#L1-L270
+- src/pkg/policy/tests.rs#L1-L315
 - src/pkg/policy/mixed.rs#L1-L60
-- src/service/domain/runtime/awakening.rs#L1-L150
-- src/service/domain/runtime/think_loop.rs#L1-L120
+- src/service/domain/runtime/think_loop.rs#L90-L145
+- src/models/tool.rs#L349-L360
+- src/service/domain/runtime/compaction.rs#L1-L50
 - common/src/enums/thinking_scene.rs#L1-L50
 - docs/design/thinking_task_policy_engine_design.md
 - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
@@ -36,7 +37,8 @@ source_files:
 | 文件 | 角色 | 关键结构/宏/入口 |
 |------|------|----------------|
 | [src/pkg/policy/mod.rs](src/pkg/policy/mod.rs) | 策略引擎核心（trait/struct 定义） | `Policy` trait（id/name/condition_desc/required_metrics/evaluate/is_triggered）、`Metrics` HashMap 封装 with/get_u64/get_bool/get_f64、`PolicyRelation And/Or`、`PolicyGroup`（嵌套组合 + 自身实现 Policy）、`PolicyBuilder` with+build/or |
-| [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs) | 5 个内置策略实现 | `MaxRoundsPolicy`、`TimeoutPolicy`、`ContextOverflowPolicy`、`UserCancelPolicy`（读 AgentThinkRuntime.cancel_token 包装 Arc<AtomicBool>）、`TokenCostPolicy` |
+| [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs) | 6 个内置策略实现 | `MaxRoundsPolicy`、`TimeoutPolicy`、`ContextOverflowPolicy`、`UserCancelPolicy`（读 AgentThinkRuntime.cancel_token 包装 Arc<AtomicBool>）、`TokenCostPolicy` |
+| [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs) | 6 个内置策略实现（含新增 NoProgressPolicy） | 【新增 L203-L262】`NoProgressPolicy`：按工具差异化限制累计调用次数（数据源 `ToolPo.config.no_progress_max_calls`，未配置的工具不限制，代码执行类高频工具天然免疫）；连续单工具累计调用达上限即判定死循环 → 映射 MaxRoundsExceeded 退出 reason；触发后走 summary 兜底退出流程 |
 | [src/pkg/policy/mixed.rs](src/pkg/policy/mixed.rs) | 【7d9772ef 新增】混合模式分层：HardPolicy + SoftPolicy | `PolicyMixed { hard: PolicyGroup, soft: PolicyGroup }` 双层 evaluate 分层返回 `MixedEval { hard_hit, soft_hit }`； awakening 中根据 hard_hit 强制退出、soft_hit 写 warn 日志沉淀预警但不强制退出 |
 | [src/pkg/policy/tests.rs](src/pkg/policy/tests.rs) | 策略引擎单元测试 | 单策略命中、And 组全部命中、Or 组任一命中、嵌套 PolicyGroup、空 Metrics、required_metrics 声明等覆盖；【新增】policy_set! 简化 DSL 展开测试 + PolicyMixed 硬软分层独立命中测试（hard_hit=true 退出、soft_hit=true 不退出写日志） |
 | [common/src/enums/thinking_scene.rs](common/src/enums/thinking_scene.rs) | 思考场景枚举（Awaken/IntentAnalyze/Summary/Settle） | 每个场景对应一套 policy_set! 声明；【992dc8be 新增】`policy_set!(scene => [...])` DSL 与 Scene 变体一一对应，enum 新增变体时 macro 编译器会提醒补 arm |
@@ -55,6 +57,7 @@ source_files:
 5. **Metrics 与 required_metrics 配对**：Policy.required_metrics() 返回的 key，调用方在构造 Metrics 时**必须**全部 with 注入（即使是 0 / false）；测试里也必须覆盖全部 required_metrics（缺一个视为潜在运行时 miss）。
 6. **【7d9772ef 新增】混合模式（PolicyMixed）硬软分层严格隔离**：HardPolicy 层 = 必守红线（max_rounds/timeout/cancel/user_cancel... 任一命中强制退出）；SoftPolicy 层 = 建议预警（context_length_soft_warn/token_cost_soft_limit... 命中只写 warn! + 沉淀预警日志，不触发退出）；两层策略的 evaluate 必须**独立调用、结果互不污染**，禁止把 SoftPolicy 放到 HardPolicy 的 PolicyGroup 中合并 evaluate（会导致 soft 命中也被强制退出）。
 7. **policy_set! 宏简化后场景 = 单一事实源**：992dc8be 简化后，`policy_set!(Scene::Awaken => [...])` 是唯一装配入口；build_policy_for_scene 内部**只能** match scene → 调对应 policy_set! arm → 返回 `Box<dyn Policy>` 或 `Box<PolicyMixed>`；禁止 awakening 中手工追加策略（与「策略装配收敛到 macro」约定冲突）。
+8. **【913a5bec 新增】NoProgressPolicy 数据源严格走 ToolPo.config**：NoProgressPolicy 从 `agent.tools()` 遍历读取每个工具的 `po.config_no_progress_max_calls()`，只收集配置了该键的工具进入限制表。禁止在全局配置文件里声明工具限制——这是工具自身的运行时行为属性，不是系统级配置；每次启动 sync_builtin_tools_to_db 必须保留 config（绝不写入），只刷新 parameters_schema（代码所有权）。
 
 ## §4 约束清单（最高权重，硬红线）
 
@@ -66,3 +69,4 @@ source_files:
 6. ✅ **四类互引闭环**：本卡 `source_files[]` 含对应 Wiki 长文绝对路径 1 条（运行时领域.md）+ Design 文档 + Plan 执行蓝图占位 + 992dc8be/7d9772ef 两次变更的设计占位；Wiki 长文 cite 区的「本文关联三类文档」段必须回链本卡绝对路径 + Design + Plan。
 7. ❌ **【7d9772ef 红线】SoftPolicy 绝对禁止参与 HardPolicy 的 evaluate**：代码 review 中如果看到 `PolicyMixed { hard: PolicyGroup::new(vec![hard_a, hard_b, soft_c, ...], Or) }`（soft 混进 hard 组）—— 直接打回，因为 soft_c 命中也会触发 hard_hit=true → 强制退出，与「soft 只预警不退出」语义完全相反。拆分必须严格，测试必须覆盖「soft 混进 hard 组 = 语义错误」的代码路径用 `deny(clippy::todo)` 级静态检查阻断（或 policy_set! 宏展开时自动分类，禁止手工分组时跨组混放）。
 8. ✅ **【992dc8be 强制】policy_set! 与 ThinkingScene 变体数对齐**：common/src/enums/thinking_scene.rs 中 ThinkingScene 枚举变体数 = policy_set! 宏的 match arm 数；如果新增 ThinkingScene 变体但漏写 policy_set! arm → macro 编译期 `non_exhaustive` 报缺失 arm（禁止 `_ =>` 兜底，兜底视为漏装配，与设计文档 §约束表 7 条冲突）。build_policy_for_scene 的 match 同样禁止兜底分支。
+9. ✅ **【913a5bec 新增】疲劳提示注入只发生一次**：think_loop 内连续 8 轮全是工具调用时注入一条 System 提醒促使 Agent 自纠，使用 `has_injected_fatigue_hint: AtomicBool` 防重注入；禁止每次连续 8 轮都重复注入同一条提示。

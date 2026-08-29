@@ -85,7 +85,7 @@ DAO 层（补齐 OFFSET）
 | **DAO 层** | | |
 | 修改 [src/service/dao/agent/sqlite.rs](../../src/service/dao/agent/sqlite.rs) | Agent DAO SQLite 实现 | search_agents 方法末尾 ORDER BY 后：search_limit = min(limit.unwrap_or(20), 20) → LIMIT search_limit + OFFSET pagination.offset（若有） |
 | **DAL 层（核心）** | | |
-| 修改 [src/service/dal/agent.rs](../../src/service/dal/agent.rs) | Agent DAL 实现 | 3 处核心：① **新增 apply_runtime_state_filter 私有方法**（agents→target→pagination → PagedResult<Agent>）；② **AgentDal trait search 签名** 从 Vec 改 PagedResult<Agent>；③ **query 方法**：当有 runtime_state 过滤时复用 apply_runtime_state_filter；④ **search 方法**：向量搜索 50→20、Step 6 build agent 后补 inject_runtime_state、Step 8 truncate(20) + apply_runtime_state_filter 或手动分页包装 PagedResult |
+| 修改 [src/service/dal/agent/mod.rs](../../src/service/dal/agent/mod.rs) | Agent DAL 实现 | 3 处核心：① **新增 apply_runtime_state_filter 私有方法**（agents→target→pagination → PagedResult<Agent>）；② **AgentDal trait search 签名** 从 Vec 改 PagedResult<Agent>；③ **query 方法**：当有 runtime_state 过滤时复用 apply_runtime_state_filter；④ **search 方法**：向量搜索 50→20、Step 6 build agent 后补 inject_runtime_state、Step 8 truncate(20) + apply_runtime_state_filter 或手动分页包装 PagedResult |
 | **Domain 层** | | |
 | 修改 [src/service/domain/hr/agent.rs](../../src/service/domain/hr/agent.rs) + [mod.rs](../../src/service/domain/hr/mod.rs) | HR Domain trait | AgentManage trait search_agents 方法返回类型：Result<Vec<Agent>> → Result<PagedResult<Agent>>（同步 hr/mod.rs trait 定义） |
 | **Handler 层** | | |
@@ -118,8 +118,8 @@ DAO 层（补齐 OFFSET）
 | 2 | XxxSearchRequest DTO 扩 **完整过滤字段 + pagination flatten**（字段与 XxxQueryRequest 保持一一对应） | [SearchAgentsRequest 定义](../../common/src/api/agent.rs) |
 | 3 | XxxSearchResponse **改为 PagedResult<XxxListItem>** type alias（删除原 Vec 包裹结构体） | 同上行 SearchAgentsResponse 定义 |
 | 4 | DAO 层 search_xxx 方法 **补 OFFSET 支持 + MAX_SEARCH_RESULTS=20（或 50）上限** | [DAO search_agents OFFSET](../../src/service/dao/agent/sqlite.rs) ORDER BY 后 LIMIT/OFFSET 段 |
-| 5 | DAL 层 **XxxDal trait search 签名从 Vec → PagedResult<Entity>** | [AgentDal trait search 签名](../../src/service/dal/agent.rs) |
-| 6 | DAL 层 search 实现：**Step 构建实体后补 inject_xxx_info**（如 Agent 的 runtime_info） + 内存态过滤**抽 apply_xxx_filter 私有方法，query 和 search 共享** | [apply_runtime_state_filter 定义](../../src/service/dal/agent.rs) AgentDalImpl 私有方法 |
+| 5 | DAL 层 **XxxDal trait search 签名从 Vec → PagedResult<Entity>** | [AgentDal trait search 签名](../../src/service/dal/agent/mod.rs) |
+| 6 | DAL 层 search 实现：**Step 构建实体后补 inject_xxx_info**（如 Agent 的 runtime_info） + 内存态过滤**抽 apply_xxx_filter 私有方法，query 和 search 共享** | [apply_runtime_state_filter 定义](../../src/service/dal/agent/mod.rs) AgentDalImpl 私有方法 |
 | 7 | DAL 层 search Step 末：**truncate(MAX) + 内存过滤（如有）+ 手动分页 → 包装 PagedResult** | DAL search 方法 Step 8 末段（agent.rs 约原 672-行） |
 | 8 | Domain 层 trait 方法签名同步改返回 PagedResult | [AgentManage::search_agents 签名](../../src/service/domain/hr/agent.rs) |
 | 9 | Handler：POST body 映射 → Search { keyword, filters: XxxQuery {...所有字段映射} } → domain.search → page.map Entity→ListItem（含内存态字段 as i32 映射） | search_agents handler 字段映射段 |

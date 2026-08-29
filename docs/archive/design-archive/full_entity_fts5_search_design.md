@@ -100,7 +100,7 @@ DAO（原子搜索层）
 | [src/service/dal/message.rs](../../src/service/dal/message.rs) | Message 混合 | 新增 search() 混合方法 |
 | [src/service/dal/task.rs](../../src/service/dal/task.rs) | Task 混合 | 同上 |
 | [src/service/dal/project.rs](../../src/service/dal/project.rs) | Project 混合 | 同上 |
-| [src/service/dal/agent.rs](../../src/service/dal/agent.rs) | Agent 混合 | 同上 |
+| [src/service/dal/agent/mod.rs](../../src/service/dal/agent/mod.rs) | Agent 混合 | 同上 |
 | **模型层** | | |
 | [common/src/models/vector.rs](../../common/src/models/vector.rs) | Vectorizable trait | 6 个 PO 各自实现 embed 文本；SearchMatchInfo 含 fts_rank |
 | **零改动面** | | |

@@ -32,7 +32,7 @@
 
 **无需修改（自动兼容）：**
 - `src/service/domain/runtime/busy_guard.rs` — Drop 只调 set_idle，清空逻辑在 set_idle 内部
-- `src/service/dal/agent.rs:208-214` — inject_runtime_state 通过 get() 透传整个 AgentRuntimeInfo
+- `src/service/dal/agent/mod.rs` — inject_runtime_state 通过 get() 透传整个 AgentRuntimeInfo
 - `UpdateAgentStatusResponse` — 是 `GetAgentResponse` 的类型别名（`common/src/api/agent.rs:343`）
 
 ---

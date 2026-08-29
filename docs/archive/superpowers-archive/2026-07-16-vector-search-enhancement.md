@@ -231,7 +231,7 @@ pub struct SwitchEmbeddingProviderResponse {
 | `src/service/dal/message.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
 | `src/service/dal/task.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
 | `src/service/dal/project.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
-| `src/service/dal/agent.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
+| `src/service/dal/agent/mod.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
 | `src/service/dal/tool.rs` | 编辑 | 新增 `rebuild_vectors` 方法（核心实现） |
 | `src/service/domain/finance/mod.rs` | 编辑 | 新增 `switch_embedding_provider` + `rebuild_all_vector_indexes` |
 | `src/service/domain/finance/model_provider.rs` | 编辑 | 添加唯一性校验 + switch 实现 |

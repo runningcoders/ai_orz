@@ -7,7 +7,7 @@ scope:
 - src/service/domain/runtime/**/*.rs
 - src/service/domain/runtime/*.rs
 - src/models/prompt_builder.rs
-- src/service/dal/agent.rs
+- src/service/dal/agent/mod.rs
 - common/src/enums/*.rs
 - common/src/api/runtime.rs
 - src/consumer/message.rs
@@ -21,8 +21,8 @@ source_files:
 - src/service/domain/runtime/awakening.rs#L1322-L1355
 - src/service/domain/runtime/mod.rs#L203-L225
 - src/service/domain/runtime/think_loop.rs#L117-L160
-- src/service/dal/agent.rs#L1022-L1080
-- src/service/dal/agent.rs#L1667-L1715
+- src/service/dal/agent/mod.rsL1080
+- src/service/dal/agent/mod.rsL1715
 - src/models/prompt_builder.rs#L104-L123
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
 - docs/archive/design-archive/intent_aware_two_stage_awaken_design.md
@@ -38,6 +38,8 @@ source_files:
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）
+
+> ⚠️ **定位更新（2026-08-29）**：本卡描述的"两阶段"设计是 v3.9 快照。HEAD 代码中 awaken() 已简化为**单阶段直接执行**——Phase 1 IntentAnalyze 不再是 awaken 必经路径。intent_analyze.rs 和 analyze_input_intent trait 保留，定位为**未来入站路由/多 Agent 协作分发的独立工具**，而非 awaken 内的强制前置步骤。下文仍保留 v3.9 快照原貌供历史参考。
 
 **定位**：Agent 唤醒流程的「先理解再执行」两阶段串联——Phase1 `IntentAnalyze` 专用子循环（神经+记忆+检索工具白名单，最多 2 轮 think loop）产出结构化 7 字段 `IntentAnalysis`，Phase2 `Awaken` 把理解结果渲染成 Prompt 【输入理解结果】区块后再进入正式干活；含 6 级 JSON 解析降级兜底绝不阻塞主流程。
 
@@ -107,7 +109,7 @@ source_files:
 | 1 | IntentAnalysis 字段**绝对不强枚举** intent_type，允许 Agent 自由字符串扩展；解析失败用 Default | grep `enum IntentType` 应不存在；结构体 derive(Default) | [types.rs#L178-L195](src/service/domain/runtime/types.rs#L178-L195) |
 | 2 | Phase1 think loop 轮次**最多 2 轮**，超过强制截断 Final；不得与 Phase2 共享同一 think_runtime | options.max_rounds 上限；AgentThinkRuntime 独立注册清理 | [intent_analyze.rs#L40-L60](src/service/domain/runtime/intent_analyze.rs#L40-L60) |
 | 3 | `need_clarification` 字段**当前阶段绝不做短路 send_message**，仅渲染为 Phase2 Prompt 提示；短路机制为 P4 可选未来路径 | grep `send_message.*clarification` 在 awaken.rs 应为零 | [awakening.rs#L200-L240](src/service/domain/runtime/awakening.rs#L200-L240) |
-| 4 | retrieved_context 字段渲染到 Prompt 时**最多 10 条，每条最多 200 字**；Token 安全网硬编码截断 | DefaultPromptBuilder.intent_analysis() 实现 | [dal/agent.rs](src/service/dal/agent.rs) intent_analysis 方法 |
+| 4 | retrieved_context 字段渲染到 Prompt 时**最多 10 条，每条最多 200 字**；Token 安全网硬编码截断 | DefaultPromptBuilder.intent_analysis() 实现 | [dal/agent.rs](src/service/dal/agent/mod.rs) intent_analysis 方法 |
 | 5 | 降级 Level 5/6 必须打 `log_warn!(&ctx, "intent_analyze_degrade", ...)` 含降级级别与原始 snippet 前 100 字 | grep `log_warn.*intent_analyze_degrade` | [intent_analyze.rs#L70-L80](src/service/domain/runtime/intent_analyze.rs#L70-L80) |
 | 6 | 两阶段唤醒的 Phase1 / Phase2 **必须复用同一 run_think_loop 引擎**，仅 scene 参数不同；禁止复制粘贴两套 think loop 逻辑 | run_think_loop 仅一处定义 | [think_loop.rs#L117-L160](src/service/domain/runtime/think_loop.rs#L117-L160) |
 | 7 | analyze_input_intent 作为通用方法**必须可独立被外部调用**（消息预路由 / 澄清重理解等），不能与 awaken 内部私有耦合；trait 定义在 RuntimeDomain 总接口 | `pub async fn analyze_input_intent` 在 trait 层公开 | [mod.rs#L205-L225](src/service/domain/runtime/mod.rs#L205-L225) |
@@ -115,7 +117,7 @@ source_files:
 | 9 | **禁止 awaken 对 Phase1 analyze 结果 `?` 冒泡**：错误吞掉降级 None；用 `?` 会把意图分析服务不可用升级为整次唤醒失败，P0 故障 | 集成测试模拟 cortex panick → awaken 仍返回 200 且正常响应 | [awakening.rs awaken Phase1 串联 match 分支](src/service/domain/runtime/awakening.rs#L230-L280) |
 | 10 | **禁止 IntentAnalyze 的 is_tool_allowed 白名单包含执行类 tag**（send_message / lark_push / shell_exec / task_create / file_write）| thinking_scene_tool_whitelist 单元测试：IntentAnalyze 允许 neural/search tags、禁止 messaging/shell tags | [awakening.rs#L1322-L1355](src/service/domain/runtime/awakening.rs#L1322-L1355) |
 | 11 | **PromptBuilder 默认实现不写 Phase1 专用指令**：外部 Agent（RemoteAgent/CodexCli）默认回退 build()，内部两阶段仅 DefaultPromptBuilder 完整实现 build_intent_analyze_prompt() | grep 其他 PromptBuilder 实现，不应出现 Phase1 专用指令字符串 | [models/prompt_builder.rs#L104-L123](src/models/prompt_builder.rs#L104-L123) trait 默认实现 |
-| 12 | **INTENT_ANALYSIS_START 锚点必须存在于 Prompt 末尾**：6 级 JSON 解析 Level 4 靠此锚点定位后提取 JSON，删除则误匹配 Prompt 示例代码 {} 的概率极高 | build_intent_analyze_prompt 单元测试：含 INTENT_ANALYSIS_START 字符串 | [dal/agent.rs#L1667-L1715](src/service/dal/agent.rs#L1667-L1715) |
+| 12 | **INTENT_ANALYSIS_START 锚点必须存在于 Prompt 末尾**：6 级 JSON 解析 Level 4 靠此锚点定位后提取 JSON，删除则误匹配 Prompt 示例代码 {} 的概率极高 | build_intent_analyze_prompt 单元测试：含 INTENT_ANALYSIS_START 字符串 | [dal/agent.rs#L1667-L1715](src/service/dal/agent/mod.rsL1715) |
 | 13 | **need_clarification=true 只做参考、当前不短路 Phase2**：短路是下一迭代功能；提前启用会导致每次都先问一句澄清再执行，响应翻倍 | awaken 入口 grep 不应有 send_message.*clarification 的短路 if 分支 | [awakening.rs awaken 入口 if need_clarification 检查位置](src/service/domain/runtime/awakening.rs#L200-L240) |
 | 14 | **Template Communication SOP 章节（方案 B）与代码级 Phase1（方案 A+）并行双保险**：不要删除 skill.md 末尾的「理解用户消息 SOP」章节；即便 Phase1 流程被禁用，沟通技能也能驱动 Agent 在普通 think loop 中自行按五步理解 | TEMPLATE_COMMUNICATION/skill.md grep 「SOP」命中 | [TEMPLATE_COMMUNICATION skill.md 末尾章节](src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md) |
 

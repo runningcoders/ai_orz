@@ -113,7 +113,7 @@ AgentKind::Remote = 2 → HTTP 远程（A2A 协议 / 兼容 REST Agent Service�
 | [src/service/dal/prompt_builder_default.rs](../../src/service/dal/prompt_builder_default.rs) | DefaultPromptBuilder | Local agent 用；原 awakening PromptBuilder 链式 API 迁移；实现 PromptBuilder trait；行为测试 3 个 |
 | [src/service/dal/agent_codex.rs](../../src/service/dal/agent_codex.rs) | CodexAgentDal | 派生 Dal：管理操作委托通用 AgentDal；`prompt_builder()` 返回 CliPromptBuilder；单元测试 5 个 |
 | [src/service/dal/agent_a2a.rs](../../src/service/dal/agent_a2a.rs) | A2aAgentDal | 派生 Dal：管理操作委托通用 AgentDal；`prompt_builder()` 返回 RemotePromptBuilder；单元测试 3 个 |
-| [src/service/dal/agent.rs](../../src/service/dal/agent.rs) | 通用 AgentDal | 新增便捷方法 `wake_agent_brain(ctx, agent) -> Result<()>`（Local agent 入口：查 provider + 查 memories/tools → BrainDal.wake_brain → 赋值给 agent） |
+| [src/service/dal/agent/mod.rs](../../src/service/dal/agent/mod.rs) | 通用 AgentDal | 新增便捷方法 `wake_agent_brain(ctx, agent) -> Result<()>`（Local agent 入口：查 provider + 查 memories/tools → BrainDal.wake_brain → 赋值给 agent） |
 | [src/service/dal/brain.rs](../../src/service/dal/brain.rs) | BrainDal | **新增 `invoke_external()` 方法**（持有 AgentRuntimeDao 引用）；`think()` 内部分发：Local→cortex think，Cli/Remote→invoke_external；新增 Brain 构造便捷方法 `new_local` / `new_external(kind, ...)` |
 | [src/service/dal/mod.rs](../../src/service/dal/mod.rs) | DAL 入口 | 注册 agent_codex + agent_a2a + prompt_builder_default 模块 |
 | **Domain 层（装配 + 路由）** | | |

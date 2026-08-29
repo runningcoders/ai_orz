@@ -28,6 +28,7 @@ source_files:
 - 'src/dao/email/smtp.rs '
 - 'src/service/dao/webhook/http.rs '
 - 'src/consumer/message.rs#L1-L80 '
+- src/consumer/message.rs#L337-L492
 - 'src/consumer/agent_loop.rs#L1-L100 '
 - 'src/middleware/sse.rs '
 - docs/archive/design-archive/message_interaction_design.md
@@ -57,6 +58,8 @@ source_files:
 - **发送 4 段原子链路**（MessageDelivery::send_message_to_user/agent，内部按序，出错整体回滚）：① 先写 `messages` 表（带 status=Pending）→ ② SSE push 当前在线的目标 user_id 浏览器（通过 middleware/sse.rs 的 BroadcastChannel：Arc<RwLock<HashMap<user_id, Vec<mpsc::Sender>>>>）→ ③ AOP publish message.created 事件 → ④ 返回 Message ID。失败回滚：写 DB 后 SSE/AOP 任一步失败都不回滚 DB（消息已经落了就不能丢），但是会 return 500 给调用方附带"投递警告"标记让前端显示「发送成功但渠道推送部分失败，对方稍后能在站内收到」。
 - **SSE 中间件 + HUD 未读计数橙光**（middleware/sse.rs）：EventSource `GET /api/v1/sse/subscribe?token=JWT`；JWT 解析 user_id 后加入广播映射。事件格式 3 类：`event: message.created data: {message_id, from_id, content, thread_id, unread_count}`（unread_count 让前端所有页面右上角角标同步更新，不用再单独拉未读接口）；`event: message.read`（对方已读后自己的消息自动勾选）；`event: heartbeat data: pong` 15s 一帧防 Nginx 超时。断线重连时前端自动带 `Last-Event-ID` 头，服务端从 `message_seen_logs` 表拿用户上次最后看到的 ID → SELECT id > last-id 的 200 条补推。
 - **多渠道出站分发中心**（dao/message_push.rs + consumer/message.rs）：AOP message.created → MessageConsumer 读取目标 `channel_subscriptions` 表（用户配置：lark、slack、email、webhook、wechat 订阅勾选）→ 对每个订阅渠道调 `MessagePushDao.push(ctx, kind, channel_target, payload)`；匹配 kind 路由：lark_p2p 调 LarkDao.push_interactive_card（Markdown→飞书卡片，附回复按钮，回 A2A 回调地址）、slack 调 SlackDao.push_message（Block Kit）、email 调 EmailDao.send（tera 模板渲染 lettre SMTP）、webhook 调 WebhookDao.push（HMAC-SHA256 签名 X-Signature + 3 次指数退避 5s/20s/60s）、wechat 调 WeChatDao.push（客服消息 access_token 2h 缓存）。每次 push 结果写 `message_delivery_attempts` 表（含 status、http_status、err_msg、latency_ms），方便前端「消息投递详情」面板查看。
+
+**95a0b1bf 修复：统一回复通道 + from_role 三路分发**：`MessageConsumer.handle_agent_message` 在 awaken() 返回 raw_output 非空时，按入口消息的 `from_role` 自动生成回复——User 入口 → `delivery.send_to_user(reply_to=原消息.id, to_user_id=原消息.from_id)`；Agent 入口 → `delivery.send_to_agent(from_role=Agent, to_agent_id=原消息.from_id)`；System 入口 → 跳过（系统消息无对话对象）。从此 Agent 不需要自己调用 send_message 工具回复当前对话用户，Framework 层兜底，彻底解决"必须猜 to_user_id 才能结束任务"的心理陷阱。
 
 ---
 

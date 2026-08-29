@@ -72,7 +72,7 @@ awaken() 流程：
 | domain trait | [src/service/domain/runtime/mod.rs](src/service/domain/runtime/mod.rs) | RuntimeAwakening trait 新增 analyze_input_intent 方法签名 |
 | model trait | [src/models/prompt_builder.rs](src/models/prompt_builder.rs) | PromptBuilder trait 新增 build_intent_analyze_prompt() + intent_analysis() 注入方法 |
 | domain 实现 | [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs) | analyze_input_intent() 实现 + parse_intent_analysis_json() 6 级降级 + extract_first_json_object() 括号匹配 |
-| dal 实现 | [src/service/dal/agent.rs](src/service/dal/agent.rs) | DefaultPromptBuilder 实现 build_intent_analyze_prompt（SOP 指令块 + JSON schema 约束）+ render_intent_analysis_section + build() 渲染区块 |
+| dal 实现 | [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs) | DefaultPromptBuilder 实现 build_intent_analyze_prompt（SOP 指令块 + JSON schema 约束）+ render_intent_analysis_section + build() 渲染区块 |
 | domain 串联 | [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs) | awaken() 在构造 builder 之后、build() 之前插入 analyze_input_intent + builder.intent_analysis 注入 |
 | 集成测试 | [tests/intent_analyze_two_stage.rs](tests/intent_analyze_two_stage.rs) | analyze_input_intent 集成测试 + PromptBuilder 渲染字符串断言 |
 

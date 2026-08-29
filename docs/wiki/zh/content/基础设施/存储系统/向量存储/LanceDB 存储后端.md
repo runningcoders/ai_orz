@@ -10,7 +10,7 @@
 - [docs/vector_search_architecture.md](docs/vector_search_architecture.md)
 - [src/service/dal/memory.rs](src/service/dal/memory.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 </cite>
 
 ## 目录
@@ -189,12 +189,12 @@ end
 图表来源
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
 章节来源
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
 ## 依赖关系分析
 - Storage 门面依赖配置 DatabaseConfig.vector_store_type 选择后端。
@@ -219,7 +219,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [src/pkg/storage/lance.rs:10-14](src/pkg/storage/lance.rs#L10-L14)
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
 章节来源
 - [common/src/config.rs:78-114](common/src/config.rs#L78-L114)
@@ -243,7 +243,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 - [docs/vector_search_architecture.md:178-184](docs/vector_search_architecture.md#L178-L184)
 
 ## 故障排查指南
@@ -259,7 +259,7 @@ Lance --> Arrow["Arrow Schema/FixedSizeListArray"]
 - [src/pkg/storage/lance.rs:201-282](src/pkg/storage/lance.rs#L201-L282)
 - [src/service/dal/memory.rs:654-799](src/service/dal/memory.rs#L654-L799)
 - [src/service/dal/project.rs:740-831](src/service/dal/project.rs#L740-L831)
-- [src/service/dal/agent.rs:840-879](src/service/dal/agent.rs#L840-L879)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL879)
 
 ## 结论
 LanceVectorStore 通过 LanceDB 的列式存储与 HNSW 索引，为项目提供了高性能、可扩展的向量检索能力。结合 Storage 门面的多后端支持与 DAL 层的索引生命周期管理，系统在版本控制、增量更新与压缩存储方面具备良好工程实践。相比其他后端，LanceDB 在生产环境的大数据集与高并发场景下更具优势。推荐在生产环境中默认使用 LanceDb，并在测试与开发阶段使用 InMemory 以简化依赖。

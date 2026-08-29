@@ -106,7 +106,7 @@ AgentKind::Cli | Remote
 | [service/dal/brain.rs](../../src/service/dal/brain.rs) | BrainDal | `think()` **去掉 provider 参数**，从 `brain.model_provider.as_ref()` 读取后按 `brain.kind` 分支；新增 BrainDal 入口 `embed_entity(ctx, entity) -> Option<VectorIndexParams>` / `embed_text_for_search(ctx, text)`（内部查默认 provider + 调 cortex 包级函数） |
 | [service/domain/runtime/awakening.rs](../../src/service/domain/runtime/awakening.rs) | 唤醒 + 工具循环 | 实现显式工具调用循环（think → ToolCall → 执行 → 追加 → loop）；`wake_agent_brain()` 加载 ModelProvider 并注入 `Brain::new_local`；Cli/Remote 走 `Brain::new_external` |
 | **DAL 层向量化统一改造（删 helper → 直接调包级函数）** | | |
-| [service/dal/agent.rs](../../src/service/dal/agent.rs) | Agent DAL | 删除方法 `try_build_vector_params_for_search`；改造 `upsert_vector_index`（内联逻辑改调包级函数）+ `search`；移除 `cortex_dao` 字段 |
+| [service/dal/agent.rs](../../src/service/dal/agent/mod.rs) | Agent DAL | 删除方法 `try_build_vector_params_for_search`；改造 `upsert_vector_index`（内联逻辑改调包级函数）+ `search`；移除 `cortex_dao` 字段 |
 | [service/dal/tool.rs](../../src/service/dal/tool.rs) | Tool DAL | 删除自由函数 `try_build_vector_params_for_entity`；改造 `upsert_vector_index` / `rebuild_vectors` / `search`；移除 `cortex_dao` 字段 |
 | [service/dal/memory.rs](../../src/service/dal/memory.rs) | Memory DAL | 删除自由函数 `try_build_vector_params_for_entity`；改造 create/update/upsert_vector_index/search；移除 `cortex_dao` 字段 |
 | [service/dal/message.rs](../../src/service/dal/message.rs) | Message DAL | 删除自由函数 `try_build_vector_params_for_entity` + `_for_search`；改造调用点；移除 `cortex_dao` 字段 |
@@ -156,7 +156,7 @@ AgentKind::Cli | Remote
 | 2'. 调包级函数（搜索场景） | `crate::service::dao::cortex::embed_text_for_search(ctx, &provider, keyword).await` | search 类方法走这个 |
 | 3. 写向量索引或搜索 | 原逻辑不变，接 `vec_params` | 失败仅 warn 降级，不阻断主流程 |
 
-> 代码入口：[dal/agent.rs :: upsert_vector_index](../../src/service/dal/agent.rs)（最完整的参考样板）
+> 代码入口：[dal/agent.rs :: upsert_vector_index](../../src/service/dal/agent/mod.rs)（最完整的参考样板）
 
 ---
 
@@ -198,7 +198,7 @@ AgentKind::Cli | Remote
 
 2. **新增向量化实体（DAL 层新增实体的向量索引维护）**：
    - 参考 [dal/task.rs](../../src/service/dal/task.rs) 的 3 分支模式：查默认 provider → `cortex::embed_entity(ctx, &provider, &po)` → upsert_vector
-   - 搜索场景参考 [dal/agent.rs :: search](../../src/service/dal/agent.rs)，调 `cortex::embed_text_for_search`
+   - 搜索场景参考 [dal/agent.rs :: search](../../src/service/dal/agent/mod.rs)，调 `cortex::embed_text_for_search`
    - **严禁**重新定义 `try_build_vector_params_*` helper
    - DAL struct 移除 `cortex_dao` 字段（保留 `model_provider_dao`）
 

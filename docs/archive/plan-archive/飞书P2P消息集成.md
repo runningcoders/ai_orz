@@ -97,7 +97,7 @@ MessageChannelDal match ChannelType::Lark → lark_dao.push()
 | [src/models/message_channel.rs](../../src/models/message_channel.rs) | 渠道模型 | ChannelConfig 新增 `lark_open_id`、`lark_user_name` 字段（用户级绑定） |
 | **DAL 层（查询扩展）** | | |
 | [src/service/dal/message_channel.rs](../../src/service/dal/message_channel.rs) | 渠道 DAL | 新增 find_by_lark_open_id(ctx, open_id) 方法（按 open_id 查绑定渠道） |
-| [src/service/dal/agent.rs](../../src/service/dal/agent.rs) | Agent DAL | AgentQuery 新增 roles 参数，透传 DAO json_each 精确匹配 |
+| [src/service/dal/agent/mod.rs](../../src/service/dal/agent/mod.rs) | Agent DAL | AgentQuery 新增 roles 参数，透传 DAO json_each 精确匹配 |
 | [src/service/dao/agent/mod.rs](../../src/service/dao/agent/mod.rs) | Agent DAO trait | AgentQuery 新增 roles: Vec<String> 过滤字段 |
 | [src/service/dao/agent/sqlite.rs](../../src/service/dao/agent/sqlite.rs) | Agent DAO SQLite | query 中 roles 用 `json_each(roles)` 精确匹配（参考 SkillQuery.tags 模式） |
 | **Domain 层（能力扩展）** | | |

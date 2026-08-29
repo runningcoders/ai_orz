@@ -3,7 +3,7 @@ kind: wiki_knowledge_card
 name: 三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）
 category: DAL 层 6 业务统一混合搜索
 scope:
-  - "src/service/dal/agent.rs"
+  - "src/service/dal/agent/mod.rs"
   - "src/service/dal/tool.rs"
   - "src/service/dal/skill.rs"
   - "src/service/dal/task.rs"

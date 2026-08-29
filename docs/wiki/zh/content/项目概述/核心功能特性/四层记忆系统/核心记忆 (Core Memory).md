@@ -10,7 +10,7 @@
 - [src/models/prompt_builder.rs](src/models/prompt_builder.rs)
 - [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
 - [src/consumer/message.rs](src/consumer/message.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 </cite>
 
 ## 目录
@@ -221,13 +221,13 @@ Think --> End(["结束"])
 - [src/service/domain/runtime/awakening.rs:379-413](src/service/domain/runtime/awakening.rs#L379-L413)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:1028-1044](src/service/dal/agent.rs#L1028-L1044)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL1044)
 
 章节来源
 - [src/service/domain/runtime/awakening.rs:379-456](src/service/domain/runtime/awakening.rs#L379-L456)
 - [src/service/domain/runtime/memory.rs:14-33](src/service/domain/runtime/memory.rs#L14-L33)
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:1028-1044](src/service/dal/agent.rs#L1028-L1044)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL1044)
 
 ### 核心记忆与其他记忆层的交互
 - 与短期/长期记忆

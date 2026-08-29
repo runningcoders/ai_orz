@@ -7,7 +7,7 @@
 - [common/src/enums/agent.rs](common/src/enums/agent.rs)
 - [common/src/enums/agent_kind.rs](common/src/enums/agent_kind.rs)
 - [src/models/agent.rs](src/models/agent.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/handlers/hr/agent/create_agent.rs](src/handlers/hr/agent/create_agent.rs)
 - [src/handlers/hr/agent/create_external_agent.rs](src/handlers/hr/agent/create_external_agent.rs)
 - [src/handlers/hr/agent/install_tool_pack.rs](src/handlers/hr/agent/install_tool_pack.rs)
@@ -48,7 +48,7 @@ C --> F["存储: SQLite + LanceDB/HNSW/SqliteVss"]
 ```
 
 图表来源
-- [src/service/dal/agent.rs:340-761](src/service/dal/agent.rs#L340-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 - [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
 
 章节来源
@@ -57,7 +57,7 @@ C --> F["存储: SQLite + LanceDB/HNSW/SqliteVss"]
 - [common/src/enums/agent.rs:8-78](common/src/enums/agent.rs#L8-L78)
 - [common/src/enums/agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
 - [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
-- [src/service/dal/agent.rs:340-761](src/service/dal/agent.rs#L340-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 ## 核心组件
 - Agent 类型与状态
@@ -105,8 +105,8 @@ Handler-->>Client : "CreateAgentResponse"
 ```
 
 图表来源
-- [src/service/dal/agent.rs:340-350](src/service/dal/agent.rs#L340-L350)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 
 ## 详细组件分析
@@ -141,13 +141,13 @@ Skip --> Done
 图表来源
 - [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 - [src/models/agent.rs:378-404](src/models/agent.rs#L378-L404)
-- [src/service/dal/agent.rs:340-350](src/service/dal/agent.rs#L340-L350)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 
 章节来源
 - [common/src/api/agent.rs:10-38](common/src/api/agent.rs#L10-L38)
 - [src/models/agent.rs:378-404](src/models/agent.rs#L378-L404)
-- [src/service/dal/agent.rs:340-350](src/service/dal/agent.rs#L340-L350)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL350)
 
 ### 外部 Agent（CLI/Remote）创建与配置
 - 通过 kind 区分 CLI 与 Remote
@@ -216,11 +216,11 @@ Dal-->>Dal : "agent.set_brain(brain)"
 
 图表来源
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 章节来源
 - [src/models/agent.rs:359-376](src/models/agent.rs#L359-L376)
-- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 ### 参数调优与运行时配置
 - 最大思考深度：控制跨消息累计工具调用数，防止无限循环
@@ -242,8 +242,8 @@ Dal-->>Dal : "agent.set_brain(brain)"
 
 章节来源
 - [src/models/agent.rs:123-167](src/models/agent.rs#L123-L167)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
-- [src/service/dal/agent.rs:701-721](src/service/dal/agent.rs#L701-L721)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL721)
 
 ### API 调用示例
 - 创建内部 Agent
@@ -281,12 +281,12 @@ D --> R["AgentRuntimeStateManager"]
 ```
 
 图表来源
-- [src/service/dal/agent.rs:195-204](src/service/dal/agent.rs#L195-L204)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL204)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 
 章节来源
-- [src/service/dal/agent.rs:195-204](src/service/dal/agent.rs#L195-L204)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL204)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 
 ## 性能考量
 - 向量索引：创建/更新时自动 upsert，失败降级；无 Embedding Provider 时跳过
@@ -295,8 +295,8 @@ D --> R["AgentRuntimeStateManager"]
 - 工具调用限制：通过 max_tool_calls_per_step 与 max_thinking_rounds 控制资源消耗
 
 章节来源
-- [src/service/dal/agent.rs:474-699](src/service/dal/agent.rs#L474-L699)
-- [src/service/dal/agent.rs:357-423](src/service/dal/agent.rs#L357-L423)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL699)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL423)
 
 ## 故障排查指南
 - 向量索引失败
@@ -310,8 +310,8 @@ D --> R["AgentRuntimeStateManager"]
   - 排查：确认 tag 是否正确安装；检查唤醒流程是否读取 installed_tags
 
 章节来源
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
-- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 ## 结论
 Agent 创建与配置通过清晰的 DTO、枚举、领域模型与 DAL 抽象实现，支持内部与外部 Agent 的灵活配置。系统提示词生成、模型选择、参数调优与初始化自动流程共同构成完整的 Agent 生命周期管理能力。建议在生产环境中合理配置思考深度与轮次限制，确保向量索引可用，并通过工具包/技能包 tag 管理扩展能力。
@@ -346,5 +346,5 @@ Agent 创建与配置通过清晰的 DTO、枚举、领域模型与 DAL 抽象�
 
 章节来源
 - [src/models/agent.rs:15-121](src/models/agent.rs#L15-L121)
-- [src/service/dal/agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL312)
 - [common/src/enums/agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)

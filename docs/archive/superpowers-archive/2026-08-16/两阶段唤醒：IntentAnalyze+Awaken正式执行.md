@@ -35,7 +35,7 @@
 | Modify | `src/service/domain/runtime/awakening.rs` | 新增 `IntentAnalyze` 变体 + is_tool_allowed；新增 `IntentAnalysis` 结构体（含 serde derive）；`analyze_input_intent` 实现 |
 | Modify | `src/service/domain/runtime/mod.rs` | `RuntimeAwakening` trait 新增 `analyze_input_intent` 方法签名 |
 | Modify | `src/models/prompt_builder.rs` | `PromptBuilder` trait 新增 `build_intent_analyze_prompt()` + `intent_analysis()` 方法签名 |
-| Modify | `src/service/dal/agent.rs` | `DefaultPromptBuilder`：新增字段 `intent_analysis` / 新增方法 `build_intent_analyze_prompt` / 新增 `intent_analysis()` setter / `build()` 新增【输入理解结果】区块渲染 / 提取 `render_intent_analysis_section()` 私有方法 |
+| Modify | `src/service/dal/agent/mod.rs` | `DefaultPromptBuilder`：新增字段 `intent_analysis` / 新增方法 `build_intent_analyze_prompt` / 新增 `intent_analysis()` setter / `build()` 新增【输入理解结果】区块渲染 / 提取 `render_intent_analysis_section()` 私有方法 |
 | Modify | `tests/common/env.rs` | `init_full_test_env` 与真实启动顺序保持一致（无需改动，仅确认） |
 | Create / Test | `tests/intent_analyze_two_stage.rs`（或复用 `tests/agent_*.rs` 对应文件） | analyze_input_intent 集成测试 + DefaultPromptBuilder intent_analysis 渲染字符串断言 |
 
@@ -165,7 +165,7 @@ git commit -m "docs(skill-communication): add 理解用户消息 SOP 整章 (方
 - Modify: `src/service/domain/runtime/awakening.rs`（ThinkingScene 枚举 + is_tool_allowed + IntentAnalysis 结构体）
 - Modify: `src/service/domain/runtime/mod.rs`（RuntimeAwakening trait 新增 analyze_input_intent 签名）
 - Modify: `src/models/prompt_builder.rs`（PromptBuilder trait 新增 build_intent_analyze_prompt + intent_analysis 签名）
-- Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 新增 trait 方法的空实现，保证编译通过）
+- Modify: `src/service/dal/agent/mod.rs`（DefaultPromptBuilder 新增 trait 方法的空实现，保证编译通过）
 
 - [x] **Step 1: ThinkingScene 枚举新增 IntentAnalyze 变体 + is_tool_allowed 扩展**
 
@@ -305,7 +305,7 @@ fn intent_analysis(&mut self, _analysis: &crate::service::domain::runtime::awake
 
 - [x] **Step 5: DefaultPromptBuilder 占位空字段 + 空方法，保证编译通过**
 
-在 `src/service/dal/agent.rs` 的 DefaultPromptBuilder 结构体中新增字段（先占位，Task 3 会实现）：
+在 `src/service/dal/agent/mod.rs` 的 DefaultPromptBuilder 结构体中新增字段（先占位，Task 3 会实现）：
 
 ```rust
 pub struct DefaultPromptBuilder {
@@ -437,7 +437,7 @@ cargo test -p ai_orz --lib thinking_scene_intent_analyze_tool_white_list intent_
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
-git add src/service/domain/runtime/awakening.rs src/service/domain/runtime/mod.rs src/models/prompt_builder.rs src/service/dal/agent.rs
+git add src/service/domain/runtime/awakening.rs src/service/domain/runtime/mod.rs src/models/prompt_builder.rs src/service/dal/agent/mod.rs
 git commit -m "feat(runtime): add IntentAnalyze scene + IntentAnalysis struct + trait signatures (A+ P1)"
 ```
 
@@ -447,7 +447,7 @@ git commit -m "feat(runtime): add IntentAnalyze scene + IntentAnalysis struct + 
 
 **Files:**
 - Modify: `src/service/domain/runtime/awakening.rs`（`impl RuntimeAwakening for RuntimeDomainImpl` 中的 `analyze_input_intent` 方法）
-- Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 实现 build_intent_analyze_prompt）
+- Modify: `src/service/dal/agent/mod.rs`（DefaultPromptBuilder 实现 build_intent_analyze_prompt）
 
 - [x] **Step 1: 实现 `analyze_input_intent()` 方法**
 
@@ -704,7 +704,7 @@ fn extract_first_json_object(s: &str) -> Option<String> {
 
 - [x] **Step 2: 实现 DefaultPromptBuilder::build_intent_analyze_prompt()**
 
-在 `src/service/dal/agent.rs` 的 `impl PromptBuilder for DefaultPromptBuilder` 块中，把 Task 2 写的空壳 `build_intent_analyze_prompt()` 替换为完整实现：
+在 `src/service/dal/agent/mod.rs` 的 `impl PromptBuilder for DefaultPromptBuilder` 块中，把 Task 2 写的空壳 `build_intent_analyze_prompt()` 替换为完整实现：
 
 ```rust
 fn build_intent_analyze_prompt(&self) -> String {
@@ -827,7 +827,7 @@ cargo test -p ai_orz --lib parse_intent_analysis_json extract_first_json_object 
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
-git add src/service/domain/runtime/awakening.rs src/service/dal/agent.rs
+git add src/service/domain/runtime/awakening.rs src/service/dal/agent/mod.rs
 git commit -m "feat(runtime): implement analyze_input_intent() + build_intent_analyze_prompt() (A+ P2)"
 ```
 
@@ -837,7 +837,7 @@ git commit -m "feat(runtime): implement analyze_input_intent() + build_intent_an
 
 **Files:**
 - Modify: `src/service/domain/runtime/awakening.rs`（awaken() 方法内，在"原 awaken 查最近 20 条 + 构造 builder"之后、调用 build() 之前插入 analyze_input_intent）
-- Modify: `src/service/dal/agent.rs`（DefaultPromptBuilder 新增 `render_intent_analysis_section` 私有方法 + build() 中【当前消息】区块之前调用它）
+- Modify: `src/service/dal/agent/mod.rs`（DefaultPromptBuilder 新增 `render_intent_analysis_section` 私有方法 + build() 中【当前消息】区块之前调用它）
 
 - [x] **Step 1: awaken() 中在构造 builder 之后、build() 之前插入阶段 1**
 
@@ -1132,7 +1132,7 @@ async fn create_test_message_for_agent(
 
 ```bash
 cd /Users/aman/Technology/rust/ai_orz
-git add src/service/domain/runtime/awakening.rs src/service/dal/agent.rs tests/intent_analyze_two_stage.rs
+git add src/service/domain/runtime/awakening.rs src/service/dal/agent/mod.rs tests/intent_analyze_two_stage.rs
 git commit -m "feat(runtime): awaken two-stage chain + intent_analysis section rendering (A+ P3)"
 ```
 

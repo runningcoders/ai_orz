@@ -7,7 +7,7 @@
 - [src/models/agent.rs](src/models/agent.rs)
 - [src/service/dal/project.rs](src/service/dal/project.rs)
 - [src/service/dal/task.rs](src/service/dal/task.rs)
-- [src/service/dal/agent.rs](src/service/dal/agent.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
 - [src/pkg/request_context.rs](src/pkg/request_context.rs)
 - [src/middleware/request_context.rs](src/middleware/request_context.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -221,15 +221,15 @@ DAL-->>Handler : Ok(())
 ```
 
 图示来源
-- [src/service/dal/agent.rs:701-721](src/service/dal/agent.rs#L701-L721)
-- [src/service/dal/agent.rs:723-738](src/service/dal/agent.rs#L723-L738)
-- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL721)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 章节来源
 - [src/models/agent.rs:186-222](src/models/agent.rs#L186-L222)
-- [src/service/dal/agent.rs:701-721](src/service/dal/agent.rs#L701-L721)
-- [src/service/dal/agent.rs:723-738](src/service/dal/agent.rs#L723-L738)
-- [src/service/dal/agent.rs:740-761](src/service/dal/agent.rs#L740-L761)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL721)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL738)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL761)
 
 ### RequestContext 跨层传递机制
 - 构建与注入：中间件从请求头提取 log_id、user_id、username、organization_id、user_role、caller_type，创建 RequestContext 并注入到请求扩展；响应头写回 log_id。
@@ -313,7 +313,7 @@ DAL -.-> S["Stats"]
 
 章节来源
 - [docs/ARCHITECTURE.md:412-433](docs/ARCHITECTURE.md#L412-L433)
-- [src/service/dal/agent.rs:216-242](src/service/dal/agent.rs#L216-L242)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rsL242)
 - [src/service/dal/project.rs:223-274](src/service/dal/project.rs#L223-L274)
 
 ## 故障排查指南

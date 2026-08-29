@@ -5,7 +5,7 @@
 - [agent.rs](common/src/enums/agent.rs)
 - [agent_kind.rs](common/src/enums/agent_kind.rs)
 - [agent.rs](src/models/agent.rs)
-- [agent.rs](src/service/dal/agent.rs)
+- [agent.rs](src/service/dal/agent/mod.rs)
 - [external_agent_design.md](docs/external_agent_design.md)
 - [message_interaction_design.md](docs/message_interaction_design.md)
 - [project_management_design.md](docs/project_management_design.md)
@@ -34,7 +34,7 @@
 围绕 Agent 管理的代码主要分布在以下位置：
 - 枚举与类型定义：common/src/enums/agent.rs、common/src/enums/agent_kind.rs
 - 业务实体与运行时配置：src/models/agent.rs
-- DAL 层（数据访问与装配）：src/service/dal/agent.rs
+- DAL 层（数据访问与装配）：src/service/dal/agent/mod.rs
 - 运行时状态管理：src/pkg/agent_runtime_state.rs
 - 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/project_management_design.md、docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md、docs/stats_query_design.md
 
@@ -79,7 +79,7 @@ DOC5 --> D1
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
 - [agent.rs:330-553](src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
 - [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 章节来源
@@ -88,7 +88,7 @@ DOC5 --> D1
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
 - [agent.rs:330-553](src/models/agent.rs#L330-L553)
-- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
 - [agent_runtime_state.rs:11-132](src/pkg/agent_runtime_state.rs#L11-L132)
 
 ## 核心组件
@@ -104,7 +104,7 @@ DOC5 --> D1
 - [agent_kind.rs:8-80](common/src/enums/agent_kind.rs#L8-L80)
 - [agent.rs:15-167](src/models/agent.rs#L15-L167)
 - [agent.rs:186-328](src/models/agent.rs#L186-L328)
-- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
 - [agent_runtime_state.rs:31-132](src/pkg/agent_runtime_state.rs#L31-L132)
 
 ## 架构总览
@@ -130,12 +130,12 @@ CONSUMER-->>U : SSE 推送回复
 
 图表来源
 - [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 章节来源
 - [message_interaction_design.md:162-219](docs/message_interaction_design.md#L162-L219)
-- [agent.rs:100-193](src/service/dal/agent.rs#L100-L193)
+- [agent.rs:100-193](src/service/dal/agent/mod.rsL193)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
 
 ## 详细组件分析
@@ -297,7 +297,7 @@ ADP-->>API : 返回 ok
 章节来源
 - [stats_query_design.md:195-451](docs/stats_query_design.md#L195-L451)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
-- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
 
 ## 依赖关系分析
 - AgentDal 依赖多个 DAO：AgentDao、AgentVectorDao、AgentStatsDao、ToolStatsDao、ModelProviderStatsDao、CortexDao、ModelProviderDao
@@ -317,11 +317,11 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 ```
 
 图表来源
-- [agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
+- [agent.rs:196-204](src/service/dal/agent/mod.rsL204)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 章节来源
-- [agent.rs:196-204](src/service/dal/agent.rs#L196-L204)
+- [agent.rs:196-204](src/service/dal/agent/mod.rsL204)
 - [agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 
 ## 性能考量
@@ -331,10 +331,10 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 - 批量操作：搜索时按 chunk 批量获取 Po，减少 N+1 查询
 
 章节来源
-- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
-- [agent.rs:373-405](src/service/dal/agent.rs#L373-L405)
+- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
+- [agent.rs:373-405](src/service/dal/agent/mod.rsL405)
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:563-588](src/service/dal/agent.rs#L563-L588)
+- [agent.rs:563-588](src/service/dal/agent/mod.rsL588)
 
 ## 故障排查指南
 - 无法唤醒 Agent：检查运行时状态是否为 Busy/Resting；确认 try_set_busy 是否成功
@@ -344,7 +344,7 @@ RTM["AgentRuntimeStateManager"] --> AOP["AOP 事件中心"]
 
 章节来源
 - [agent_runtime_state.rs:85-107](src/pkg/agent_runtime_state.rs#L85-L107)
-- [agent.rs:244-312](src/service/dal/agent.rs#L244-L312)
+- [agent.rs:244-312](src/service/dal/agent/mod.rsL312)
 - [stats_query_design.md:416-451](docs/stats_query_design.md#L416-L451)
 - [external_agent_design.md:107-199](docs/external_agent_design.md#L107-L199)
 

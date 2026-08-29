@@ -4,7 +4,7 @@ name: Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short
   向量去重合并
 category: 领域建模
 scope:
-- src/service/domain/runtime/summary.rs
+- src/service/domain/runtime/compaction.rs
 - src/service/domain/runtime/memory.rs
 - src/service/domain/memory/**
 - src/service/dal/memory.rs
@@ -18,9 +18,9 @@ scope:
 - src/models/memory*.rs
 - common/src/enums/memory.rs
 source_files:
-- src/handlers/hr/agent/settle_memory.rs#L75-L154
+- src/handlers/hr/agent/settle_memory.rs#L75-L600
 - src/service/dal/memory.rs#L578-L652
-- src/service/domain/runtime/summary.rs#L36-L80
+- src/service/domain/runtime/compaction.rs#L1-L120
 - src/service/domain/system/mod.rs#L420-L470
 - src/consumer/scheduler.rs#L53-L131
 - src/handlers/hr/agent/save_short_term_memory.rs#L19-L56
@@ -139,7 +139,7 @@ source_files:
 | 5 | **沉淀状态机防护**：Resting 期间新消息**排队不丢失**（MessageConsumer try_set_busy 失败 → 延迟重试/重新入队），绝不拒绝消息 | Resting 状态并发消息集成测试：沉淀完成后消息全部被处理 0 丢失 | [consumer/message.rs try_set_busy 失败分支](src/consumer/message.rs) |
 | 6 | **沉淀幂等性**：同一天重复触发「每日睡眠」第二次，向量冲突检测必须命中合并 → 不产生重复知识节点；短期记忆已是 Settled 跳过 | 连续两次 load_and_settle 断言第二次 settled_count=0 且 知识节点数不增长 | [dal/memory.rs settle 冲突检测 merge 分支](src/service/dal/memory.rs#L590-L620) |
 | 7 | **双层工具过滤红线**：Settle 场景下 ① wake_agent_brain 的 Auto 工具 ② sleep_and_settle 的 Manual + skill，**两层都只保留 neural/memory**；禁止沉淀模式下 Agent 能调 send_message 导致循环唤醒自己 | grep is_tool_allowed Settle 场景仅 neural |memory：两层过滤代码 | [awakening.rs 双层过滤匹配](src/service/domain/runtime/awakening.rs) |
-| 8 | **沉淀 Prompt 约束硬编码写入**：build_sleep_prompt 必须包含 3 条红线（不发消息 / 只用记忆工具 / 内循环）；禁止 handler 层 format! 传入完整 Prompt，必须由 builder 内聚生成 | grep settle_memory.rs format! 约束模板行数应为 0；builder.build_sleep_prompt 内 grep "不要发送消息" 命中 | [dal/agent.rs build_sleep_prompt](src/service/dal/agent.rs) |
+| 8 | **沉淀 Prompt 约束硬编码写入**：build_sleep_prompt 必须包含 3 条红线（不发消息 / 只用记忆工具 / 内循环）；禁止 handler 层 format! 传入完整 Prompt，必须由 builder 内聚生成 | grep settle_memory.rs format! 约束模板行数应为 0；builder.build_sleep_prompt 内 grep "不要发送消息" 命中 | [dal/agent.rs build_sleep_prompt](src/service/dal/agent/mod.rs) |
 | 9 | **向量冲突阈值**：相似节点判定阈值硬编码 0.78（向量距离 ≤ 0.78 视为语义相同）；命中时 UPDATE 已有节点 + 合并关系，禁止直接 INSERT 造重复节点 | 两条语义相似的短期记忆两次 settle 断言最终 1 个知识节点 | [dal/memory.rs settle 冲突检测 vector_distance 阈值](src/service/dal/memory.rs#L590-L600) |
 | 10 | **Sleep_and_settle 参数语义**：pending_memories_summary 参数**仅为编号摘要**字符串（编号列表格式）；完整约束模板由 builder.build_sleep_prompt() 内聚，handler 层禁止传入完整 Prompt 字符串 | settle_memory.rs build_pending_memories_summary 返回字符串中应无"不要" "禁止"等约束词汇 | [settle_memory.rs build_pending_memories_summary](src/handlers/hr/agent/settle_memory.rs#L50-L74) |
 | 11 | **settle 永不硬删除短期记忆**：短期记忆消化后 status=Settled 软标记保留追溯链；物理 DELETE 破坏审计链，禁止 | 连续 settle 两次 grep DELETE FROM short_term_memory_index 次数应为 0 | [dal/memory.rs settle 完成后 UPDATE status 分支](src/service/dal/memory.rs#L630-L648) |
@@ -155,6 +155,6 @@ source_files:
 | 扩展需求 | 改动位置（N 处同步） | 参考锚点 |
 |---------|---------------------|---------|
 | 新增第三类休息触发条件（连续失败>N 次复盘 / Token 超阈值小憩） | ① awakening.rs think_loop 每次迭代结束处追加触发条件检查 → ② 设置 Resting 状态 + 调用 rest_and_digest(ctx, RestReason::ConsecutiveFailures(n)) → ③ 沉淀逻辑复用现有 settle_short_term_to_long_term（零改动） | [runtime/awakening.rs think_loop 退出检查](src/service/domain/runtime/awakening.rs) |
-| 沉淀任务步骤追加第 7 步（如「生成关联标签并推荐给 Agent 下次关注」） | DefaultPromptBuilder.build_sleep_prompt 的「你的任务」6 步编号段落末尾追加；同步更新 memory_design.md §认知要点章节保持文档对齐 | [dal/agent.rs build_sleep_prompt §你的任务](src/service/dal/agent.rs) |
+| 沉淀任务步骤追加第 7 步（如「生成关联标签并推荐给 Agent 下次关注」） | DefaultPromptBuilder.build_sleep_prompt 的「你的任务」6 步编号段落末尾追加；同步更新 memory_design.md §认知要点章节保持文档对齐 | [dal/agent.rs build_sleep_prompt §你的任务](src/service/dal/agent/mod.rs) |
 | 新增 Cron 触发器类型（如每周报表导出 / 月度数据归档） | ① consumer/scheduler.rs 追加 `match payload.action { "export_report" => ... }` 分支 → ② 对应 Domain（如 FinanceDomain）新增 export_weekly_report(ctx) 方法 → ③ ensure_system_cron_triggers 中追加 INSERT 语句（cron 表达式按需求） | [consumer/scheduler.rs 分发 match](src/consumer/scheduler.rs#L53-L131) |
 | 沉淀策略可配置化（按 Agent 可配置冲突阈值 / 每天沉淀条数 / 是否发布为共享） | ① AgentRuntimeConfig 追加 memory_settle_config JSON 字段 → ② RuntimeAwakening 透传 options 到 sleep_and_settle → ③ DAL settle_short_term_to_long_term 读取 config 覆盖默认阈值 | [models/agent.rs AgentRuntimeConfig 定义](src/models/agent.rs) |

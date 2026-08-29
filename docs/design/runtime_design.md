@@ -1,7 +1,7 @@
 # Runtime Domain 设计
 
 > 🎯 **本文档定位**：Runtime 运行时领域的整体设计大纲与关键决策思路；设计思路快照，接口细节以实际代码为准
-> 状态：v3.9（2026-08-14，变更记录见第二十章；2026-08-15 规范化整理）
+> 状态：v3.9（2026-08-14，变更记录见第二十章；2026-08-15 规范化整理）→ v3.11 增量变更（compaction/summary 替换、awaken 单阶段简化、NoProgressPolicy、ChatMessage::System 分层、统一回复通道、build_final_response_guidance）详见 Runtime 领域编排 wiki 长文
 > 查阅场景：需要理解唤醒机制设计动机、工具二分哲学、上下文拼装边界、场景化 ThinkingScene 设计时打开；字段级 trait 定义和命令结构直接看代码
 >
 > 关联文档：
@@ -1006,7 +1006,7 @@ pub enum AgentRuntimeState {
 
 **核心代码位置：**
 - `src/pkg/agent_runtime_state.rs` - 状态管理器实现
-- `src/service/dal/agent.rs` - DAL 层注入逻辑
+- `src/service/dal/agent/mod.rs` - DAL 层注入逻辑
 - `src/service/domain/runtime/awakening.rs` - 唤醒时状态切换
 
 ### 19.5 与消息消费的协作
@@ -1034,7 +1034,7 @@ pub enum AgentRuntimeState {
 | `common/src/api/agent.rs` | 修改 | DTO 新增 `runtime_state` / `current_message_id` 字段 |
 | `src/pkg/agent_runtime_state.rs` | 新增 | `AgentRuntimeStateManager` + `AgentRuntimeInfo` |
 | `src/models/agent.rs` | 修改 | `Agent` 实体新增 `runtime_info` 字段 |
-| `src/service/dal/agent.rs` | 修改 | `find_by_id` / `query` 注入运行时状态 |
+| `src/service/dal/agent/mod.rs` | 修改 | `find_by_id` / `query` 注入运行时状态 |
 | `src/service/domain/runtime/awakening.rs` | 修改 | awaken 生命周期状态切换 |
 | `src/service/domain/runtime/mod.rs` | 修改 | `RuntimeDomain` trait 新增状态查询方法 |
 | `src/consumer/message.rs` | 修改 | 消费时检查 Agent 状态 |
@@ -1185,7 +1185,7 @@ awaken() 收到 ThinkLoopResult::MaxRoundsExceeded { messages, total_rounds }
 **关键代码位置**：
 - `src/service/domain/runtime/awakening.rs` → `awaken_for_summary()` + awaken 循环中的 `pending_trace_ids` 维护
 - `src/models/prompt_builder.rs` → `build_summary_prompt(work_summary, total_rounds, trace_ids)` trait 方法
-- `src/service/dal/agent.rs` → `DefaultPromptBuilder::build_summary_prompt()` 实现
+- `src/service/dal/agent/mod.rs` → `DefaultPromptBuilder::build_summary_prompt()` 实现
 
 **设计要点**：
 - 总结场景使用 `ThinkingScene::Summary`，允许的消息和任务管理工具 tag：`neural` / `memory` / `messaging` / `project_management`
@@ -1340,10 +1340,10 @@ pub struct AgentFetchOptions {
     pub stats_task_id: Option<String>,       // 统计过滤条件（with_stats=true 时生效）
 }
 ```
-> 当前实现：[dal/agent.rs::AgentFetchOptions](src/service/dal/agent.rs#L77-L85)
+> 当前实现：[dal/agent.rs::AgentFetchOptions](src/service/dal/agent/mod.rsL85)
 
 **使用示例**：
-> 相关实现细节见：[dal/agent.rs](src/service/dal/agent.rs)
+> 相关实现细节见：[dal/agent.rs](src/service/dal/agent/mod.rs)
 
 **设计要点**：
 - 参数全部可选，使用 `Option<bool>` 而非 `bool`，便于区分"未指定"和"明确指定"
@@ -1384,7 +1384,7 @@ pub struct ToolStats {
 | `src/service/dao/tool/mod.rs` | 修改 | 新增 `ToolStatsDao` trait |
 | `src/service/dao/tool/stats_duckdb.rs` | 新增 | ToolStatsDao 的 DuckDB 实现 |
 | `src/service/dal/tool.rs` | 修改 | 新增 `get_stats` 方法 |
-| `src/service/dal/agent.rs` | 修改 | 新增 `AgentFetchOptions` + 统计注入 |
+| `src/service/dal/agent/mod.rs` | 修改 | 新增 `AgentFetchOptions` + 统计注入 |
 | `src/pkg/stats/mod.rs` | 修改 | `AgentAwakeEvent` 新增 `task_id` 字段 |
 | `src/consumer/message.rs` | 修改 | 轮次限制检查 + 任务完成检测 |
 | `src/models/message.rs` | 修改 | `to_prompt()` 按消息类型差异化 |
@@ -1900,7 +1900,7 @@ settle_memory handler / awaken 上下文压缩 / awaken 正常完成
 
 ### 25.7 PromptBuilder 扩展
 
-新增方法（trait 定义在 `src/models/prompt_builder.rs`，实现在 `src/service/dal/agent.rs`）：
+新增方法（trait 定义在 `src/models/prompt_builder.rs`，实现在 `src/service/dal/agent/mod.rs`）：
 
 > 相关实现细节见：[models/prompt_builder.rs + dal/agent.rs](src/models/prompt_builder.rs)
 
@@ -1929,7 +1929,7 @@ settle_memory handler / awaken 上下文压缩 / awaken 正常完成
 | `src/service/domain/runtime/awakening.rs` | 修改 | 新增 ThinkingScene/ThinkingOptions；wake_agent_brain 加 scene 参数 + Auto 工具过滤；awaken 加 options 参数 + 注入 project/task；新增 sleep_and_settle 实现；新增 awaken_for_summary + pending_trace_ids 跟踪 + 正常 Final 完成触发总结流程 |
 | `src/service/domain/runtime/mod.rs` | 修改 | RuntimeAwakening trait 签名升级；awakening 模块改为 pub；sleep_and_settle 加 trace_ids 参数 |
 | `src/models/prompt_builder.rs` | 修改 | PromptBuilder trait 新增 project_context/task_context/build_sleep_prompt/build_summary_prompt；两个 build 方法都接收 trace_ids 参数 |
-| `src/service/dal/agent.rs` | 修改 | DefaultPromptBuilder 实现新方法；提取 build_tools_and_skills_sections/build_common_context_sections 复用方法；build_sleep_prompt/build_summary_prompt 强制写入短期记忆指令 + trace_ids 渲染 |
+| `src/service/dal/agent/mod.rs` | 修改 | DefaultPromptBuilder 实现新方法；提取 build_tools_and_skills_sections/build_common_context_sections 复用方法；build_sleep_prompt/build_summary_prompt 强制写入短期记忆指令 + trace_ids 渲染 |
 | `src/models/project.rs` | 修改 | 新增 to_prompt_summary 方法 |
 | `src/models/task.rs` | 修改 | 新增 to_prompt_summary 方法 |
 | `src/consumer/message.rs` | 修改 | 构造 ThinkingOptions 传入 awaken；task 复用缓存、project 按需查询 |
@@ -2044,7 +2044,7 @@ awaken 循环
 - `src/service/domain/runtime/awakening.rs` → `analyze_input_intent_inner()` + `awaken()` Phase 1/2 串联逻辑
 - `src/service/domain/runtime/config_resolve.rs` → 配置解析（新增模块）
 - `src/models/prompt_builder.rs` → `build_intent_analyze_prompt()` trait 方法 + `intent_analysis()` builder 方法
-- `src/service/dal/agent.rs` → `DefaultPromptBuilder::build_intent_analyze_prompt()` 实现 + 【输入理解结果】区块渲染
+- `src/service/dal/agent/mod.rs` → `DefaultPromptBuilder::build_intent_analyze_prompt()` 实现 + 【输入理解结果】区块渲染
 - `common/src/api/agent.rs` → `AgentRuntimeConfigInfo` 嵌套结构体
 - `common/config/ai_orz.toml` → `[agent]` 配置段（轮次/超时默认值）
 - `src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md` → 理解用户消息 SOP 章节

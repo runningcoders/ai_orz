@@ -6,20 +6,29 @@
 - [src/service/domain/runtime/awakening.rs](src/service/domain/runtime/awakening.rs)
 - [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs)
 - [src/service/domain/runtime/memory.rs](src/service/domain/runtime/memory.rs)
+- [src/service/domain/runtime/compaction.rs](src/service/domain/runtime/compaction.rs)
 - [src/service/domain/runtime/tool_execution.rs](src/service/domain/runtime/tool_execution.rs)
 - [src/service/domain/runtime/busy_guard.rs](src/service/domain/runtime/busy_guard.rs)
 - [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [src/pkg/policy/mod.rs](src/pkg/policy/mod.rs)
-- [src/pkg/policy/builtin.rs](src/pkg/policy/builtin.rs)
+- [src/pkg/policy/builtin.rs#L203-L262](src/pkg/policy/builtin.rs#L203-L262)
 - [common/src/enums/thinking_scene.rs](common/src/enums/thinking_scene.rs)
 - [common/src/api/runtime.rs](common/src/api/runtime.rs)
+- [src/models/cortex_types.rs#L135-L195](src/models/cortex_types.rs#L135-L195)
 - [src/handlers/hr/agent/runtime_status.rs](src/handlers/hr/agent/runtime_status.rs)
 - [src/handlers/hr/agent/runtime_list.rs](src/handlers/hr/agent/runtime_list.rs)
 - [src/handlers/hr/agent/cancel_thinking.rs](src/handlers/hr/agent/cancel_thinking.rs)
 - [src/models/events/think_round.rs](src/models/events/think_round.rs)
 - [src/consumer/think_round_stats_consumer.rs](src/consumer/think_round_stats_consumer.rs)
 - [src/consumer/agent_loop_consumer.rs](src/consumer/agent_loop_consumer.rs)
+- [src/service/dal/agent/mod.rs](src/service/dal/agent/mod.rs)
+- [src/service/dal/agent/builder/default.rs](src/service/dal/agent/builder/default.rs)
+- [src/service/dal/agent/builder/flat.rs](src/service/dal/agent/builder/flat.rs)
+- [src/service/domain/runtime/types.rs](src/service/domain/runtime/types.rs)
+- [src/service/domain/runtime/tool_call_query.rs](src/service/domain/runtime/tool_call_query.rs)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+**更新摘要 2026-08-29**：① 补充 NoProgressPolicy 作为第六个内置策略（builtin.rs#L203-L262），退出条件从仅 MaxRounds 单一防线升级为纵深防御链（疲劳提示 8 轮 → NoProgressPolicy 20 次单工具触发 → 365 轮上限）；② PromptBuilder trait 从扁平 prompt 升级为 System/User 消息分层（ChatMessage::System 变体），首次符合 Chat Completions API 规范；③ agent.rs 拆分为 agent/mod.rs + agent/builder/*.rs 子模块；④ summary.rs 删除，新增 compaction.rs 上下文压缩模块；⑤ awaken() 移除 Phase 1 IntentAnalyze 强制调用（intent_analyze.rs 保留为独立工具，不再是 awaken 必经路径），简化为单阶段直接执行；⑥ PromptBuilder trait 新增 build_final_response_guidance() 方法，注入 §0-§5 回复规则（审题 SOP + 何时直接回复 + send_message 正确用途 + 闲聊豁免 + 检索空结果 + 禁止假忙），放在 System 消息尾部；⑦ 新增 recursive_settle_call 递归拦截（compaction.rs / think_loop.rs is_recursive_settle_call），防止 Agent 在上下文压缩过程中再次触发 settle_memory 导致无限递归。
 
 **本文关联三类文档**
 - 【① Design 决策快照】[thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) — trait 聚合与接口层数据流
@@ -37,6 +46,8 @@
 - [运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化](docs/wiki/knowledge/zh/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化/运行时诊断工具注册为 Agent 可调用工具：runtime-status cancel-thinking runtime-list 三接口工具化.md)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
+- [ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API](docs/wiki/knowledge/zh/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API/ChatMessage::System 消息角色：人设·指令·规则 与 对话内容分层传递给 Chat Completions API.md)
+- [Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位](docs/wiki/knowledge/zh/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位.md)
 </cite>
 
 ## 目录

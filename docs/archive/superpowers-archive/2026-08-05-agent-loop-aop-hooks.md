@@ -27,7 +27,7 @@
 | `src/service/domain/runtime/awakening.rs` | Modify | Extract think loop, align sleep, publish events, cleanup |
 | `src/service/domain/runtime/mod.rs` | Modify | Remove scene param from wake_agent_brain trait, fix comments |
 | `src/models/prompt_builder.rs` | Modify | Remove `tools()` trait method |
-| `src/service/dal/agent.rs` | Modify | Remove `tools` field + setter from DefaultPromptBuilder, fix comments |
+| `src/service/dal/agent/mod.rs` | Modify | Remove `tools` field + setter from DefaultPromptBuilder, fix comments |
 | `src/service/dao/tool_call/mod.rs` | Modify | Remove `decorate` from trait |
 | `src/service/dao/tool_call/impl.rs` | Modify | Replace decorator with inline execution + AOP publish |
 | `src/pkg/tool_tracing/tool_call_logger.rs` | Delete | Remove LoggingDecorator (replaced by AOP) |
@@ -1510,7 +1510,7 @@ git commit -m "refactor: replace ToolCallLoggingDecorator with AOP sync consumer
 
 **Files:**
 - Modify: `src/models/prompt_builder.rs`
-- Modify: `src/service/dal/agent.rs`
+- Modify: `src/service/dal/agent/mod.rs`
 - Modify: `src/service/domain/runtime/awakening.rs`
 - Modify: `src/service/domain/runtime/mod.rs`
 - Modify: `src/consumer/message.rs`
@@ -1525,7 +1525,7 @@ In `src/models/prompt_builder.rs`:
 
 - [ ] **Step 2: Remove `tools` field and setter from DefaultPromptBuilder**
 
-In `src/service/dal/agent.rs`:
+In `src/service/dal/agent/mod.rs`:
 1. Remove `tools: Vec<ToolPo>` field from `DefaultPromptBuilder` struct
 2. Remove the `tools()` setter implementation
 3. Remove `ToolPo` import if no longer used in that scope
@@ -1579,7 +1579,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/models/prompt_builder.rs src/service/dal/agent.rs src/service/domain/runtime/awakening.rs src/service/domain/runtime/mod.rs src/consumer/message.rs src/handlers/hr/agent/settle_memory.rs
+git add src/models/prompt_builder.rs src/service/dal/agent/mod.rs src/service/domain/runtime/awakening.rs src/service/domain/runtime/mod.rs src/consumer/message.rs src/handlers/hr/agent/settle_memory.rs
 git commit -m "refactor: remove zombie Builder.tools code, stale comments, and unused wake_agent_brain scene param"
 ```
 

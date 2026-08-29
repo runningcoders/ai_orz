@@ -12,7 +12,7 @@
 
 **Agent 标杆实现参考：**
 - DTO: `common/src/api/agent.rs` (SearchAgentsRequest)
-- DAL: `src/service/dal/agent.rs` (search 返回 PagedResult + truncate(20))
+- DAL: `src/service/dal/agent/mod.rs` (search 返回 PagedResult + truncate(20))
 - DAO: `src/service/dao/agent/sqlite.rs` (search_agents 复用 push_query_filters + OFFSET)
 - Handler: `src/handlers/hr/agent/search_agents.rs`
 - 前端: `frontend/src/api/hr.rs` + `frontend/src/pages/hr/agents.rs`

@@ -13,7 +13,7 @@ source_files:
 - common/src/api/mod.rs#L55-L83
 - common/src/api/agent.rs#L282-L344
 - src/service/dao/agent/sqlite.rs#L109-L382
-- src/service/dal/agent.rs#L98-L193
+- src/service/dal/agent/mod.rsL193
 - src/handlers/hr/agent/list_agents.rs#L1-L61
 - src/handlers/hr/agent/query_agents.rs#L1-L68
 - src/handlers/hr/agent/search_agents.rs#L1-L67
@@ -38,7 +38,7 @@ source_files:
 | PagedResult 泛型 + PaginationParams | common/src/api/mod.rs | L55-L83 `PaginationParams`（limit/offset）与 `PagedResult<T>`（items+total）定义，含 `.map()` 保持 total 不变的泛型转换方法 |
 | Agent DTO 三分请求结构 | common/src/api/agent.rs | L282-L344 `ListAgentsRequest`（仅分页）/`AgentQueryRequest`（完整过滤+分页）/`SearchAgentsRequest`（keyword+过滤+分页）/`SearchAgentsResponse=PagedResult<AgentListItem>` |
 | Agent DAO push_query_filters + query/list/count/search | src/service/dao/agent/sqlite.rs | L109-L382 `query` 方法 COUNT+LIST 复用 `push_query_filters`（L331-L382）；`search_agents` FTS5 JOIN + 复用过滤条件 + LIMIT 20 + OFFSET；`count` 复用 push_query_filters |
-| Agent DAL query/count/search 透传 | src/service/dal/agent.rs | L98-L193 trait 签名：`query→PagedResult<Agent>`、`count→u64`、`search→PagedResult<Agent>`（search 封装三态匹配+综合排序+内存态过滤） |
+| Agent DAL query/count/search 透传 | src/service/dal/agent/mod.rs | L98-L193 trait 签名：`query→PagedResult<Agent>`、`count→u64`、`search→PagedResult<Agent>`（search 封装三态匹配+综合排序+内存态过滤） |
 | list_agents Handler | src/handlers/hr/agent/list_agents.rs | L1-L61 GET 请求，语法糖：构造 `AgentQuery{exclude_status=Deleted, pagination}` 统一走 Domain.query，返回 PagedResult.map |
 | query_agents Handler | src/handlers/hr/agent/query_agents.rs | L1-L68 POST body，完整过滤字段透传 AgentQuery，返回 PagedResult.map |
 | search_agents Handler | src/handlers/hr/agent/search_agents.rs | L1-L67 POST body，构造 `AgentSearch{keyword, filters=AgentQuery{...}}` 调用 Domain.search_agents |
