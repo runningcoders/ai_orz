@@ -3,9 +3,14 @@
 //! 派生自 AgentDal，专门管理 Cli 类型外部 Agent。
 //! 通过委托模式复用 AgentDal 的所有管理操作，仅在有差异化需求时重写对应方法。
 //!
-//! 设计原则：每类 Agent Dal 配套自己的 PromptBuilder；没有专属 builder 时
-//! 复用 trait 默认方法提供的 DefaultPromptBuilder，不引入笼统的"外部 builder"。
-//! 未来实现 CliPromptBuilder 后在此重写 prompt_builder()。
+//! 设计原则：每类 Agent Dal 配套自己的 PromptBuilder。
+//!
+//! Cli Agent 不支持 OpenAI Chat 协议的角色分离，也不支持 function calling，
+//! 因此配套 `FlatPromptBuilder`：把 System + User 合成为单条纯文本提示词，
+//! 并按 `ExternalAgentConfig::Cli.prompt_template` 适配具体 CLI 的推荐格式。
+//!
+//! 若后续某个 CLI（如 codex / claude / aider）需要完全定制的拼装规则，
+//! 在此实现 `CliPromptBuilder` 并重写 `prompt_builder()` 即可，扩展点已保留。
 
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
@@ -15,13 +20,12 @@ use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use std::sync::Arc;
 
-use super::agent::{AgentDal, AgentFetchOptions};
+use super::{AgentDal, AgentFetchOptions, FlatPromptBuilder};
 
 /// Codex / CLI Agent DAL
 ///
 /// 委托 Arc<dyn AgentDal> 实现所有管理操作。
-/// prompt_builder 走 trait 默认方法返回 DefaultPromptBuilder，
-/// 实现 CliPromptBuilder 后在此重写。
+/// `prompt_builder` 重写为 `FlatPromptBuilder`，保证 System 人设不丢。
 pub struct CodexAgentDal {
     base: Arc<dyn AgentDal>,
 }
@@ -107,5 +111,13 @@ impl AgentDal for CodexAgentDal {
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
         self.base.rebuild_vectors(ctx).await
+    }
+
+    /// Cli Agent 配套扁平化 Builder
+    ///
+    /// 不走 trait 默认的 `DefaultPromptBuilder`——那会产出 `[System, User]` 角色分离
+    /// 结构，而 `BrainDal::think` 的 Cli 分支只取最后一条 User，人设和技能会整块丢失。
+    fn prompt_builder(&self) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
+        Box::new(FlatPromptBuilder::new())
     }
 }

@@ -3,9 +3,14 @@
 //! 派生自 AgentDal，专门管理 Remote 类型外部 Agent（A2A 协议）。
 //! 通过委托模式复用 AgentDal 的所有管理操作，仅在有差异化需求时重写对应方法。
 //!
-//! 设计原则：每类 Agent Dal 配套自己的 PromptBuilder；没有专属 builder 时
-//! 复用 trait 默认方法提供的 DefaultPromptBuilder，不引入笼统的"外部 builder"。
-//! 未来实现 RemotePromptBuilder 后在此重写 prompt_builder()。
+//! 设计原则：每类 Agent Dal 配套自己的 PromptBuilder。
+//!
+//! Remote Agent 通过 A2A 协议发送纯文本（`message.parts[].text`），同样不支持
+//! OpenAI Chat 的角色分离与 function calling，因此配套 `FlatPromptBuilder`，
+//! 把 System + User 合成为单条提示词，保证人设不丢。
+//!
+//! 若后续 A2A 侧需要专属格式（如结构化 parts / 元数据），
+//! 在此实现 `RemotePromptBuilder` 并重写 `prompt_builder()` 即可。
 
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
@@ -15,13 +20,12 @@ use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions};
 use std::sync::Arc;
 
-use super::agent::{AgentDal, AgentFetchOptions};
+use super::{AgentDal, AgentFetchOptions, FlatPromptBuilder};
 
 /// A2A Remote Agent DAL
 ///
 /// 委托 Arc<dyn AgentDal> 实现所有管理操作。
-/// prompt_builder 走 trait 默认方法返回 DefaultPromptBuilder，
-/// 实现 RemotePromptBuilder 后在此重写。
+/// `prompt_builder` 重写为 `FlatPromptBuilder`，保证 System 人设不丢。
 pub struct A2aAgentDal {
     base: Arc<dyn AgentDal>,
 }
@@ -107,5 +111,12 @@ impl AgentDal for A2aAgentDal {
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
         self.base.rebuild_vectors(ctx).await
+    }
+
+    /// Remote Agent 配套扁平化 Builder
+    ///
+    /// 同 `CodexAgentDal`：A2A 只发纯文本，角色分离会导致 System 人设丢失。
+    fn prompt_builder(&self) -> Box<dyn crate::models::prompt_builder::PromptBuilder> {
+        Box::new(FlatPromptBuilder::new())
     }
 }

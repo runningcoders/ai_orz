@@ -28,8 +28,6 @@ impl SearchParams {
 }
 
 pub mod agent;
-pub mod agent_a2a;
-pub mod agent_codex;
 pub mod artifact;
 pub mod attachment;
 pub mod backup;
@@ -75,12 +73,6 @@ pub fn init_all() {
     lark::init();
 }
 
-#[cfg(test)]
-pub(crate) mod agent_a2a_test;
-#[cfg(test)]
-pub(crate) mod agent_codex_test;
-#[cfg(test)]
-pub(crate) mod agent_test;
 #[cfg(test)]
 pub(crate) mod artifact_test;
 #[cfg(test)]

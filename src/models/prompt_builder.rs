@@ -41,6 +41,42 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置历史对话记忆
     fn history(&mut self, memories: &[Memory]);
 
+    /// 设置「更早的记忆」参考条目（仅 awaken 场景，压缩后的轮次）
+    ///
+    /// 压缩后下一轮以【上一轮工作压缩结果】为主，这里再补少量**更早之前**的记忆，
+    /// 让模型能快速接上连续性。必须明确标注这是「过去的记忆」，
+    /// 避免模型把它们误当成当前待办。
+    ///
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn past_memories_reference(&mut self, items: &[String]) {
+        let _ = items;
+    }
+
+    /// 设置「上一轮工作压缩结果」（仅 awaken 场景）
+    ///
+    /// 上下文压缩（ContextOverflow）的产物由框架直接注入下一轮，而不是让下一轮
+    /// 重新查询历史记忆 —— 摘要里已经有了继续工作所需的全部内容，再查一遍
+    /// 既浪费预算又会与摘要重复。需要更早期的记忆时，Agent 用 `search_memory` 检索。
+    ///
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn compacted_context(&mut self, summary: &str) {
+        let _ = summary;
+    }
+
+    /// 设置「近期已沉淀记忆」参考条目（仅沉淀场景）
+    ///
+    /// 与 `history` 的区别：这些条目**已完成沉淀**，只作为延续/补充关系的参考，
+    /// 不是待处理对象。沉淀场景不放【历史对话】全量——那会与【待沉淀的短期记忆】
+    /// 大面积重复（Active ≤ 20 时完全重复），白白吃掉上下文预算。
+    ///
+    /// 图谱里已有什么、曾经沉淀过什么，技能已要求 Agent 用 `search_memory`
+    /// 按需检索，这里只给少量「顺手可见」的线索，用于衔接上次被截断的沉淀。
+    ///
+    /// 默认实现为空（不影响 awaken / summary 等场景）。
+    fn settled_reference(&mut self, items: &[String]) {
+        let _ = items;
+    }
+
     /// 设置当前用户消息
     fn current_message(&mut self, message: &Message);
 
@@ -90,6 +126,65 @@ pub trait PromptBuilder: Send + Sync {
         );
     }
 
+    // ==================== 区块拼装（生命周期定义在 trait，实现按需覆盖） ====================
+    //
+    // 以下方法定义 Prompt 各区块的拼装能力。`DefaultPromptBuilder`（Local Agent）
+    // 提供完整实现；其他 Builder（如 FlatPromptBuilder 走扁平化协议）用不上的
+    // 方法继承默认空实现即可，无需逐一声明。
+
+    /// 构建技能区块字符串（神经技能 + 必加载技能）
+    ///
+    /// 技能按 tag 分块展示在 Prompt 中（技能是方法论，无 API 对应）。
+    /// DefaultPromptBuilder 完整实现；外部 Agent 走工具协议层，默认空。
+    fn build_skills_sections(&self) -> String {
+        String::new()
+    }
+
+    /// 构建通用上下文区块：用户画像 + 项目上下文 + 任务上下文 + 工作空间
+    ///
+    /// 这些字段都是"有值即拼装"，唤醒和沉睡场景逻辑一致。
+    /// DefaultPromptBuilder 完整实现；其他 Builder 默认空。
+    fn build_common_context_sections(&self) -> String {
+        String::new()
+    }
+
+    /// 生成【回复规则指引】段落——直接拼入 System 消息末尾
+    ///
+    /// 明确告诉 Agent 何时用 Final 文本直接回复，何时才用 send_message 工具，
+    /// 是解决"简单消息 → 强制检索 → 空结果 → 重试检索 → 365 轮死循环"的核心修复。
+    fn build_final_response_guidance(&self) -> String {
+        String::new()
+    }
+
+    /// 渲染【近期已沉淀记忆】参考区块（沉淀场景专用）
+    ///
+    /// 这些条目**已完成沉淀**，只作为延续/补充关系的参考线索，不是待处理对象。
+    /// 默认实现为空（不影响 awaken / summary 等场景）。
+    fn push_settled_reference(&self, _out: &mut String) {}
+
+    /// Awaken 场景的 System 部分：人设 + 技能方法论 + 回复规则指引
+    ///
+    /// 默认实现为空；由 `build_initial_messages` 等角色分离实现消费。
+    fn awaken_system_part(&self) -> String {
+        String::new()
+    }
+
+    /// Awaken 场景的 User 部分：会话上下文 + 历史 + 当前消息
+    ///
+    /// 默认实现为空；由 `build_initial_messages` 等角色分离实现消费。
+    fn awaken_user_part(&self) -> String {
+        String::new()
+    }
+
+    /// 渲染【输入理解结果】参考区块（IntentAnalyze 阶段产出）
+    ///
+    /// 姿态：反复强调"仅供参考，以你当下判断为准"，避免 Agent 被前置结论带偏。
+    /// 若 intent_analysis 为 None → 不渲染任何区块，返回 ""。
+    /// 默认实现为空（其他 Builder 不渲染此区块）。
+    fn render_intent_analysis_section(&self) -> String {
+        String::new()
+    }
+
     /// 构建最终的 Prompt 字符串
     ///
     /// 使用 `&self` 而非 `self`，支持重复构建和 trait object 使用。
@@ -99,7 +194,10 @@ pub trait PromptBuilder: Send + Sync {
     ///
     /// 复用已挂载的 system_prompt/skills/user_profile/project_context/task_context/history，
     /// 加上沉淀约束章节（不发消息、只用记忆工具）和待沉淀短期记忆摘要，生成最终模板。
-    /// 不使用 current_message（沉淀场景无用户消息）。
+    ///
+    /// **只服务「真正的睡觉」**：整理近期未沉淀的短期记忆 → 知识图谱。
+    /// 沉淀场景不使用 `current_message`（睡觉没有触发消息），
+    /// 主循环上下文压缩走 `compact_context()`，不经过这里。
     ///
     /// `trace_ids` 为本次沉淀所依赖的 trace 列表，写入 prompt 要求 Agent 调用
     /// save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯。
@@ -117,7 +215,10 @@ pub trait PromptBuilder: Send + Sync {
     /// 并通过消息工具（send_message 等）或任务工具（update_task_progress 等）
     /// 将总结发送给消息源或记录到 task 中。
     ///
-    /// `work_summary` 为当前工作对话的摘要文本（由 messages_to_summary 生成）。
+    /// 注：当前 awaken 的轮次耗尽与正常完成两条路径均已改走 `compact_context()`
+    /// （压缩本身即一次总结），本方法暂保留以支撑其它总结需求。
+    ///
+    /// `work_summary` 为当前工作对话的摘要文本。
     /// `total_rounds` 为累计消耗的思考轮次。
     /// `trace_ids` 为本次总结所依赖的 trace 列表，写入 prompt 要求 Agent 调用
     /// save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯。
