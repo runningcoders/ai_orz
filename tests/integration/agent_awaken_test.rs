@@ -364,7 +364,13 @@ impl BrainDal for CapturingBrainDal {
                 _ => None,
             })
             .unwrap_or("");
-        *self.captured_prompt.lock().unwrap() = Some(prompt.to_string());
+        // 只捕获首次 think() 调用的 Prompt（即主 awaken 流程拼装的 Prompt），
+        // 忽略后续因「完成后上下文压缩」触发的二次 think()——其末尾 User 消息是压缩指令，
+        // 不含业务上下文。Phase 1 两阶段唤醒已移除，主流程仅一次 think()。
+        let mut guard = self.captured_prompt.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(prompt.to_string());
+        }
         Ok(ai_orz::models::cortex_types::ThinkResult::Final {
             content: "mock response".to_string(),
             usage: ai_orz::models::cortex_types::TokenUsage::default(),
@@ -957,7 +963,7 @@ async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
 struct TwoPhaseMockBrainDal {
     /// 原子计数器：记录 think() 被调用的次数
     call_count: Arc<Mutex<usize>>,
-    /// 捕获 Phase 2（第二次调用）的 Prompt（供断言使用）
+    /// 捕获主 awaken 流程（第一次 think 调用）的 Prompt（供断言使用）
     captured_phase2_prompt: Arc<Mutex<Option<String>>>,
 }
 
@@ -972,24 +978,7 @@ impl TwoPhaseMockBrainDal {
         }
     }
 
-    /// Phase 1（首次调用）返回的 IntentAnalysis JSON：合法且带锚点
-    fn phase1_response() -> String {
-        let ia = serde_json::json!({
-            "intent_type": "TaskRequest",
-            "confidence": 0.92,
-            "key_terms": ["集成测试", "两阶段唤醒", "文档"],
-            "resolutions": ["\"上次那个文档\" → doc_id=doc_it_777"],
-            "retrieved_context": ["2026-08-14 短期记忆：doc_it_777 上一版本为 v1.3"],
-            "need_clarification": [],
-            "summary": "用户想让 Agent 处理 doc_it_777 文档的某项任务"
-        });
-        format!(
-            "--- INTENT_ANALYSIS_START ---\n{}\n--- INTENT_ANALYSIS_END ---",
-            serde_json::to_string_pretty(&ia).unwrap()
-        )
-    }
-
-    /// Phase 2（第二次调用）返回的最终响应
+    /// 主 awaken 流程（单阶段）返回的最终响应
     fn phase2_response() -> String {
         "两阶段唤醒集成测试成功：已收到 Phase 1 理解结果并进入正式执行阶段。".to_string()
     }
@@ -1042,23 +1031,17 @@ impl BrainDal for TwoPhaseMockBrainDal {
         drop(count);
 
         if this_call == 1 {
-            // ===== Phase 1：IntentAnalyze 场景（analyze_input_intent 内部调用）=====
-            // 返回合法的 IntentAnalysis JSON（带锚点），让解析逻辑成功解析
-            Ok(ai_orz::models::cortex_types::ThinkResult::Final {
-                content: Self::phase1_response(),
-                usage: ai_orz::models::cortex_types::TokenUsage::default(),
-            })
-        } else if this_call == 2 {
-            // ===== Phase 2：正式 awaken 场景（awaken loop 第 1 轮调用）=====
-            // 仅在第 2 次调用时捕获 Prompt（避免后续 awaken_for_summary 调用覆盖）
+            // ===== 单阶段主 awaken 流程（Phase 1 两阶段唤醒已移除）=====
+            // 捕获主流程 Prompt 并返回最终响应；后续因「完成后上下文压缩」触发的
+            // 二次 think() 不再覆盖捕获的 Prompt（其末尾 User 消息是压缩指令）。
             *self.captured_phase2_prompt.lock().unwrap() = Some(prompt);
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: Self::phase2_response(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
             })
         } else {
-            // ===== 后续调用（awaken_for_summary 总结流程等）=====
-            // 返回简单 Final，不再覆盖 Phase 2 捕获的 Prompt
+            // ===== 后续调用（完成后上下文压缩总结流程等）=====
+            // 返回简单 Final，不再覆盖主流程捕获的 Prompt
             Ok(ai_orz::models::cortex_types::ThinkResult::Final {
                 content: "summary done".to_string(),
                 usage: ai_orz::models::cortex_types::TokenUsage::default(),
@@ -1083,15 +1066,16 @@ impl BrainDal for TwoPhaseMockBrainDal {
     }
 }
 
-/// 集成测试：awaken 两阶段 Happy Path（A+ P3 串联）
+/// 集成测试：awaken 单阶段 Happy Path
 ///
-/// 断言三点：
-///   (i)  Phase 2 的 Prompt 中出现【输入理解结果】区块（即 render_intent_analysis_section 成功渲染）
-///   (ii) Phase 1 成功返回合法 IntentAnalysis（解析成功意味着 ia 是 Some）
-///        → 间接通过 Prompt 中出现理解区块来验证
-///   (iii)awaken 最终返回成功且 raw_output = TwoPhaseMockBrainDal::phase2_response()
+/// 对齐「移除强制两阶段唤醒（Phase 1）」的重构结果：awaken 现在走单 think_loop，
+/// 由 System 角色的回复规则指引承担全部职责。本测试验证：
+///   (i)  awaken 最终返回成功且 raw_output = TwoPhaseMockBrainDal::phase2_response()
+///   (ii) 主流程 Prompt 包含【当前消息】区块，且**不再**包含 Phase 1 的【输入理解结果】区块
+///        → 间接证明 Phase 1 两阶段唤醒已移除
+///   (iii)think() 至少被调用 1 次（单阶段主流程；实际为主流程 + 完成后上下文压缩共 2 次）
 #[sqlx::test]
-async fn awaken_two_stage_happy_path(pool: SqlitePool) {
+async fn awaken_single_stage_happy_path(pool: SqlitePool) {
     let ctx = crate::common::init_full_test_env(pool).await;
 
     let agent_id = format!("agent-two-stage-{}", Uuid::now_v7());
@@ -1139,51 +1123,39 @@ async fn awaken_two_stage_happy_path(pool: SqlitePool) {
                 "raw_input（即 Phase 2 Prompt）不应为空"
             );
         }
-        Err(e) => panic!("awaken_two_stage_happy_path 应成功，但返回 Err: {:?}", e),
+        Err(e) => panic!("awaken_single_stage_happy_path 应成功，但返回 Err: {:?}", e),
     }
 
-    // 断言 (i)(ii)：Phase 2 的 Prompt 中包含【输入理解结果】区块
-    // → 间接证明了：Phase 1 的 analyze_input_intent 返回了 Some(IntentAnalysis)，
-    //   且 builder.intent_analysis 被成功设置，build() 时在正确位置渲染了区块。
-    let p2_prompt = captured_p2_prompt
+    // 断言 (ii)：主流程 Prompt 包含【当前消息】区块，且不再包含 Phase 1 的【输入理解结果】区块
+    // → 证明 Phase 1 两阶段唤醒已移除，单 think_loop 承担全部职责
+    let main_prompt = captured_p2_prompt
         .lock()
         .unwrap()
         .clone()
-        .expect("Phase 2 应该调用 think() 并捕获到 Prompt");
+        .expect("主流程应调用 think() 并捕获到 Prompt");
 
     assert!(
-        p2_prompt.contains("【输入理解结果"),
-        "Phase 2 的 Prompt 应该包含【输入理解结果】区块（两阶段串联失败）。\n\
-         ===== Phase 2 Prompt 前 800 字 =====\n{}\n===== End =====\n\
-         \n提示：如果此处失败，先检查 awaken() 中 ia 注入是否在 builder.build() 之前。",
-        p2_prompt.chars().take(800).collect::<String>()
-    );
-
-    // 验证位置顺序：【输入理解结果】在【当前消息】之前
-    let idx_ia = p2_prompt.find("【输入理解结果").unwrap();
-    let idx_cm = p2_prompt.find("【当前消息】").unwrap();
-    assert!(
-        idx_ia < idx_cm,
-        "【输入理解结果】(idx={}) 应出现在【当前消息】(idx={}) 之前",
-        idx_ia,
-        idx_cm
-    );
-
-    // 验证内容：理解区块包含 Phase 1 返回的 intent_type 字段渲染结果
-    assert!(
-        p2_prompt.contains("TaskRequest"),
-        "Phase 2 Prompt 的理解区块应渲染 Phase 1 返回的 TaskRequest 类型"
+        main_prompt.contains("【当前消息】"),
+        "主流程 Prompt 应包含【当前消息】区块。\n\
+         ===== 主流程 Prompt 前 800 字 =====\n{}\n===== End =====",
+        main_prompt.chars().take(800).collect::<String>()
     );
     assert!(
-        p2_prompt.contains("92.00%"),
-        "Phase 2 Prompt 的置信度应渲染为百分比：0.92 → 92.00%"
+        !main_prompt.contains("【输入理解结果"),
+        "主流程 Prompt 不应再包含 Phase 1 的【输入理解结果】区块（两阶段唤醒已移除）"
+    );
+    // 主流程 Prompt 应包含用户原始消息
+    assert!(
+        main_prompt.contains("帮我把上次那个文档更新一下"),
+        "主流程 Prompt 应包含用户原始消息"
     );
 
-    // 验证 think() 至少被调用 2 次（Phase 1 + Phase 2 各一次）
+    // 断言 (iii)：think() 至少被调用 1 次（单阶段主流程）；
+    // 实际为主流程 + 完成后上下文压缩共 2 次，此处只断言下限以对准单阶段语义
     let calls = *call_count.lock().unwrap();
     assert!(
-        calls >= 2,
-        "think() 至少应被调用 2 次（Phase 1 + Phase 2），实际仅 {} 次",
+        calls >= 1,
+        "think() 至少应被调用 1 次（单阶段主流程），实际仅 {} 次",
         calls
     );
 }
