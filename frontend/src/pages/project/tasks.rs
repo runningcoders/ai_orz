@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::project::{list_projects, list_tasks, query_tasks, search_tasks};
-use crate::components::hud::{HudPanel, PageHeader, StatGrid, StatReadout};
+use crate::components::hud::{HudPanel, HudProgress, PageHeader, StatGrid, StatReadout};
 use crate::components::kanban_canvas::{KanbanCanvas, KanbanColumn, KanbanTask};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -317,12 +317,7 @@ pub fn TaskList() -> Element {
                                         td { "data-label": "状态", span { class: "{task_status_badge(t_status)}", "{task_status_text(t_status)}" } }
                                         td { "data-label": "优先级", "{t_priority}" }
                                         td { "data-label": "进度",
-                                            div { class: "progress-cell",
-                                                div { class: "progress-bar",
-                                                    div { class: "progress-bar-fill", style: "width: {t_progress}%;" }
-                                                }
-                                                span { class: "text-base-content/70 font-mono progress-text", "{t_progress}%" }
-                                            }
+                                            HudProgress { value: t_progress, tone: Some("primary".to_string()), show_value: Some(true) }
                                         }
                                         td { "data-label": "负责人",
                                             {

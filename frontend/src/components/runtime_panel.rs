@@ -9,7 +9,7 @@
 
 use crate::api::hr::{cancel_thinking, get_runtime_status};
 use crate::components::confirm_dialog::ConfirmDialog;
-use crate::components::hud::HudPanel;
+use crate::components::hud::{HudPanel, HudProgress};
 use crate::store::toast::use_toast;
 use common::api::{CancelThinkingRequest, RuntimeStatusRequest, RuntimeStatusResponse};
 use dioxus::prelude::*;
@@ -200,11 +200,7 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
                         span { "轮次 {think.round} / {think.max_rounds}" }
                         span { "{pct}%" }
                     }
-                    progress {
-                        class: "progress progress-warning w-full",
-                        value: "{think.round}",
-                        max: "{think.max_rounds}",
-                    }
+                    HudProgress { value: pct as i32, tone: Some("warning".to_string()), show_value: Some(false) }
                 }
 
                 // 指标网格

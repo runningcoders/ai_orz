@@ -6,7 +6,7 @@ use dioxus_router::{Link, use_navigator};
 use crate::api::hr::query_agents;
 use crate::api::project::*;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
-use crate::components::hud::HudPanel;
+use crate::components::hud::{HudPanel, HudProgress};
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -17,8 +17,7 @@ use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
 use crate::utils::task_status_color;
 use crate::utils::{
-    progress_bar_class, project_status_badge, project_status_text, task_status_badge,
-    task_status_text,
+    progress_tone, project_status_badge, project_status_text, task_status_badge, task_status_text,
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
@@ -457,12 +456,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                             div { class: "min-w-0",
                                 div { class: "hud-eyebrow mb-2", "整体进度" }
-                                div { class: "overview-progress",
-                                    div { class: "overview-progress-bar",
-                                        div { class: "{progress_bar_class(overall_progress)}", style: "width: {overall_progress}%;" }
-                                    }
-                                    span { class: "overview-progress-text", "{overall_progress}%" }
-                                }
+                                HudProgress { value: overall_progress, tone: Some(progress_tone(overall_progress).to_string()), show_value: Some(true) }
                             }
                             div { class: "min-w-0",
                                 div { class: "hud-eyebrow mb-2", "任务状态分布" }
@@ -553,12 +547,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     td { "data-label": "状态", span { class: "{task_status_badge(task_status)}", "{task_status_text(task_status)}" } }
                                                     td { "data-label": "优先级", "{task_priority}" }
                                                     td { "data-label": "进度",
-                                                        div { class: "progress-cell",
-                                                            div { class: "progress-bar",
-                                                                div { class: "progress-bar-fill", style: "width: {task_progress}%;" }
-                                                            }
-                                                            span { class: "text-base-content/70 font-mono progress-text", "{task_progress}%" }
-                                                        }
+                                                        HudProgress { value: task_progress, tone: Some("primary".to_string()), show_value: Some(true) }
                                                     }
                                                     td { "data-label": "操作",
                                                         div { class: "action-group",

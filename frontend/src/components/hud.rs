@@ -155,6 +155,37 @@ pub fn StatGrid(children: Element) -> Element {
     }
 }
 
+/// HUD 风格进度条：薄轨道 + 发光填充，替代全站三套旧实现
+/// （DaisyUI `progress` / 自定义 `overview-progress` / 自定义 `progress-cell`）。
+///
+/// - `value`：进度 0-100（自动 clamp）。
+/// - `tone`：warning / primary / accent / success / error / info，决定填充色与发光；默认 primary。
+/// - `show_value`：是否在轨道下方显示 `NN%` 等宽读数；默认 false。
+/// - `extra_class`：附加到根 `.hud-progress` 的额外类（如 `mt-1`）。
+#[component]
+pub fn HudProgress(
+    value: i32,
+    tone: Option<String>,
+    show_value: Option<bool>,
+    extra_class: Option<String>,
+) -> Element {
+    let v = value.clamp(0, 100);
+    let tone_cls = tone.unwrap_or_else(|| "primary".to_string());
+    let fill = format!("hud-progress-fill {}", tone_cls);
+    let show = show_value.unwrap_or(false);
+    let root = format!("hud-progress {}", extra_class.unwrap_or_default());
+    rsx! {
+        div { class: "{root}",
+            div { class: "hud-progress-track",
+                div { class: "{fill}", style: "width: {v}%;" }
+            }
+            if show {
+                span { class: "hud-progress-text", "{v}%" }
+            }
+        }
+    }
+}
+
 /// HUD 风格提示条：替代散落的裸 `alert alert-info/warning/error`。
 /// `tone`：info（默认）/ warning / error / success，决定边框、底色、文字色。
 #[component]

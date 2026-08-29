@@ -5,7 +5,7 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
-use crate::components::hud::{HudPanel, PageHeader};
+use crate::components::hud::{HudPanel, HudProgress, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -15,7 +15,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
 use crate::utils::{
-    format_timestamp_opt as format_timestamp, progress_bar_class, status::tag_chip,
+    format_timestamp_opt as format_timestamp, progress_tone, status::tag_chip,
     task_status_badge as status_badge, task_status_text as status_text,
 };
 use common::api::{
@@ -538,14 +538,7 @@ pub fn TaskDetail(id: String) -> Element {
                 signal: true,
                 div { class: "detail-card-body",
                     div { class: "detail-section",
-                        div { class: "progress-section",
-                            div { class: "overview-progress",
-                                div { class: "overview-progress-bar",
-                                    div { class: "{progress_bar_class(t.progress)}", style: "width: {t.progress}%;" }
-                                }
-                                span { class: "overview-progress-text", "{t.progress}%" }
-                            }
-                        }
+                        HudProgress { value: t.progress, tone: Some(progress_tone(t.progress).to_string()), show_value: Some(true) }
                     }
                     div { class: "detail-action-row",
                         button {
@@ -716,12 +709,7 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                     div {
                         label { class: "form-label", "预览" }
-                        div { class: "overview-progress",
-                            div { class: "overview-progress-bar",
-                                div { class: "{progress_bar_class(new_progress())}", style: "width: {new_progress()}%;" }
-                            }
-                            span { class: "overview-progress-text", "{new_progress()}%" }
-                        }
+                        HudProgress { value: new_progress(), tone: Some(progress_tone(new_progress()).to_string()), show_value: Some(true) }
                     }
                 }
             }

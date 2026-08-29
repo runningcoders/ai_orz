@@ -26,14 +26,15 @@ pub fn task_status_badge(status: i32) -> &'static str {
     }
 }
 
-/// 进度条 class（0-25=warning, 26-50=primary, 51-75=accent, 76-100=success）
-pub fn progress_bar_class(progress: i32) -> &'static str {
+/// 进度条 HUD 色调（0-25=warning, 26-50=primary, 51-75=accent, 76-100=success）
+/// 供 `HudProgress` 的 `tone` 复用。
+pub fn progress_tone(progress: i32) -> &'static str {
     match progress {
-        0..=25 => "overview-progress-fill warning",
-        26..=50 => "overview-progress-fill primary",
-        51..=75 => "overview-progress-fill accent",
-        76..=100 => "overview-progress-fill success",
-        _ => "overview-progress-fill",
+        0..=25 => "warning",
+        26..=50 => "primary",
+        51..=75 => "accent",
+        76..=100 => "success",
+        _ => "primary",
     }
 }
 

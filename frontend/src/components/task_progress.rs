@@ -20,6 +20,7 @@
 //! }
 //! ```
 
+use crate::components::hud::HudProgress;
 use common::api::{TaskProgressSnapshot, TaskStatus};
 use dioxus::prelude::*;
 
@@ -81,12 +82,8 @@ pub fn TaskProgress(props: TaskProgressProps) -> Element {
                 "步骤 {p.current_step} / {p.total_steps}"
             }
 
-            // DaisyUI 进度条
-            progress {
-                class: "progress progress-primary w-full",
-                value: "{pct}",
-                max: "100",
-            }
+            // HUD 进度条
+            HudProgress { value: pct as i32, tone: Some("primary".to_string()), show_value: Some(false) }
 
             // 失败：错误信息 + 返回按钮
             if is_failed {

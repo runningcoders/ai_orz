@@ -17,12 +17,13 @@ use crate::api::hr::get_agent;
 use crate::api::organization::get_current_user_info;
 use crate::api::project::{get_project, get_task, list_project_tasks};
 use crate::components::chat::ToolCallsTab;
+use crate::components::hud::HudProgress;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::state::Loading;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
     agent_runtime_badge, format_file_size, format_timestamp_opt as format_timestamp,
-    priority_badge, progress_bar_class, project_status_badge, project_status_text, tag_chip,
+    priority_badge, progress_tone, project_status_badge, project_status_text, tag_chip,
     task_status_badge, task_status_text,
 };
 use common::api::{
@@ -343,12 +344,7 @@ fn overview_tab(p: &GetProjectResponse) -> Element {
             if let Some(s) = &p.progress_summary {
                 div {
                     label { class: "form-label", "整体进度" }
-                    div { class: "overview-progress",
-                        div {
-                            class: "{progress_bar_class(s.overall_percent as i32)}",
-                            style: "width: {s.overall_percent}%",
-                        }
-                    }
+                    HudProgress { value: s.overall_percent as i32, tone: Some(progress_tone(s.overall_percent as i32).to_string()), show_value: Some(false) }
                     div { class: "text-xs text-base-content/60 mt-1",
                         "{s.overall_percent}% · 共 {s.total_tasks} 个任务（完成 {s.completed} / 进行中 {s.in_progress} / 待启动 {s.pending} / 已取消 {s.cancelled}）"
                     }
@@ -445,12 +441,7 @@ fn tasks_tab(
                                     span { class: "text-xs text-base-content/60", "{progress}%" }
                                     if is_expanded { "▲" } else { "▼" }
                                 }
-                                div { class: "overview-progress mt-1",
-                                    div {
-                                        class: "{progress_bar_class(progress)}",
-                                        style: "width: {progress}%",
-                                    }
-                                }
+                                HudProgress { value: progress, tone: Some(progress_tone(progress).to_string()), show_value: Some(false), extra_class: Some("mt-1".to_string()) }
                                 div { class: "text-xs text-base-content/60 mt-1", "负责人：{assignee}" }
                             }
                             // 展开详情
