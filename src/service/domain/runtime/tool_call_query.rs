@@ -94,6 +94,32 @@ pub(crate) fn ensure_call_id_present(query: &ToolCallQuery) -> Result<()> {
     }
 }
 
+fn ensure_scope_does_not_conflict(
+    field: &str,
+    context_value: Option<&str>,
+    query_value: Option<&str>,
+) -> Result<()> {
+    match (context_value, query_value) {
+        (Some(context_value), Some(query_value)) if context_value != query_value => {
+            Err(common::error::Error::bad_request(format!(
+                "tool call query {field} conflicts with request context"
+            )))
+        }
+        (None, Some(_)) => Err(common::error::Error::bad_request(format!(
+            "tool call query {field} requires matching request context scope"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+pub(crate) fn status_from_dto(status: common::api::ToolCallStatusDto) -> ToolCallStatus {
+    match status {
+        common::api::ToolCallStatusDto::Started => ToolCallStatus::Started,
+        common::api::ToolCallStatusDto::Completed => ToolCallStatus::Completed,
+        common::api::ToolCallStatusDto::Failed => ToolCallStatus::Failed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,31 +210,5 @@ mod tests {
         let mut query = empty_query();
         query.limit = Some(MAX_TOOL_CALL_QUERY_LIMIT + 1);
         assert!(with_context_scope(ctx, query).is_err());
-    }
-}
-
-fn ensure_scope_does_not_conflict(
-    field: &str,
-    context_value: Option<&str>,
-    query_value: Option<&str>,
-) -> Result<()> {
-    match (context_value, query_value) {
-        (Some(context_value), Some(query_value)) if context_value != query_value => {
-            Err(common::error::Error::bad_request(format!(
-                "tool call query {field} conflicts with request context"
-            )))
-        }
-        (None, Some(_)) => Err(common::error::Error::bad_request(format!(
-            "tool call query {field} requires matching request context scope"
-        ))),
-        _ => Ok(()),
-    }
-}
-
-pub(crate) fn status_from_dto(status: common::api::ToolCallStatusDto) -> ToolCallStatus {
-    match status {
-        common::api::ToolCallStatusDto::Started => ToolCallStatus::Started,
-        common::api::ToolCallStatusDto::Completed => ToolCallStatus::Completed,
-        common::api::ToolCallStatusDto::Failed => ToolCallStatus::Failed,
     }
 }
