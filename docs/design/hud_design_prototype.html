@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="orz-hud">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Orz · 未来感驾驶舱 设计原型 (Prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* ============================================================
+   * AI Orz — 未来感「任务指挥中心 / Mission-Control HUD」方向原型
+   * 暖色航天驾驶舱：以品牌橙 #fa520f / 信号黄 #ffd900 为锚，
+   * 深暖墨底 + 1px 发丝边 + 切角面板 + 等宽数据标签 + 流光。
+   * 刻意避开 AI Slop：青+深色 / 紫蓝渐变 / 霓虹发光 / 默认发光。
+   * ============================================================ */
+
+  /* ---- 设计令牌：两套主题共用同一组语义变量 ---- */
+  :root,
+  [data-theme="orz-hud"] {
+    --c-bg:        #0a0c11;
+    --c-bg-soft:   #0d1016;
+    --c-surface:   #0f131a;
+    --c-surface-2: #151b25;
+    --c-content:   #e7eaf2;
+    --c-muted:     rgba(231,234,242,0.58);
+    --c-faint:     rgba(231,234,242,0.34);
+    --c-line:      rgba(231,234,242,0.12);
+    --c-line-soft: rgba(231,234,242,0.07);
+    --c-primary:   #fa520f;
+    --c-primary-soft: rgba(250,82,15,0.14);
+    --c-accent:    #ffd900;
+    --c-accent-soft: rgba(255,217,0,0.12);
+    --c-info:      #5d8fd0;   /* 去饱和钢蓝，仅作数据次色，非主角 */
+    --c-success:   #4fb286;
+    --c-warning:   #e0a93b;
+    --c-error:     #e0594f;
+    --c-neutral:   #11151d;
+    --c-neutral-content: #d7dce6;
+    --brand-gradient: linear-gradient(90deg, #ffd900 0%, #ffa110 50%, #fa520f 100%);
+    --grid: rgba(250,82,15,0.05);
+    --glow: 0 0 0 1px rgba(250,82,15,0.10), 0 8px 30px -12px rgba(250,82,15,0.25);
+  }
+  [data-theme="orz-light"] {
+    --c-bg:        #f7f5f1;
+    --c-bg-soft:   #fbfaf7;
+    --c-surface:   #ffffff;
+    --c-surface-2: #f1efe9;
+    --c-content:   #211d18;
+    --c-muted:     rgba(33,29,24,0.60);
+    --c-faint:     rgba(33,29,24,0.38);
+    --c-line:      rgba(33,29,24,0.13);
+    --c-line-soft: rgba(33,29,24,0.07);
+    --c-primary:   #e8430a;
+    --c-primary-soft: rgba(232,67,10,0.10);
+    --c-accent:    #c79100;
+    --c-accent-soft: rgba(199,145,0,0.10);
+    --c-info:      #2f6fb0;
+    --c-success:   #2e8a5f;
+    --c-warning:   #b9821f;
+    --c-error:     #c43d33;
+    --c-neutral:   #211d18;
+    --c-neutral-content: #faf8f4;
+    --brand-gradient: linear-gradient(90deg, #c79100 0%, #e8430a 100%);
+    --grid: rgba(232,67,10,0.05);
+    --glow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 30px -16px rgba(232,67,10,0.22);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--c-bg);
+    color: var(--c-content);
+    font-family: 'Sora', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .3s ease, color .3s ease;
+  }
+  /* 全局细网格 + 角落品牌光晕（未来感底纹，极低存在感） */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(60% 50% at 100% 0%, var(--c-primary-soft), transparent 70%),
+      radial-gradient(50% 40% at 0% 100%, var(--c-accent-soft), transparent 70%),
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 28px 28px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 28px 28px;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .disp { font-family: 'Chakra Petch', 'Sora', sans-serif; letter-spacing: .01em; }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--c-faint);
+  }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .rel { position: relative; z-index: 1; }
+
+  /* ---- 切角 HUD 面板：1px 渐变发丝边 + 切角 + 内网格 ---- */
+  .panel {
+    position: relative;
+    background:
+      linear-gradient(var(--c-surface), var(--c-surface)) padding-box,
+      linear-gradient(140deg, color-mix(in srgb, var(--c-primary) 45%, var(--c-line)),
+        var(--c-line-soft) 35%, var(--c-line-soft) 65%,
+        color-mix(in srgb, var(--c-accent) 35%, var(--c-line))) border-box;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 1.1rem 1.25rem;
+    clip-path: polygon(0 11px, 11px 0, calc(100% - 11px) 0, 100% 11px,
+                       100% calc(100% - 11px), calc(100% - 11px) 100%, 11px 100%, 0 calc(100% - 11px));
+  }
+  .panel::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 22px 22px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 22px 22px;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,.5), transparent 60%);
+            mask-image: linear-gradient(180deg, rgba(0,0,0,.5), transparent 60%);
+  }
+  .panel > * { position: relative; z-index: 1; }
+  .panel.pad-lg { padding: 1.5rem 1.75rem; }
+
+  /* 面板顶部信号条（流光） */
+  .signal-bar {
+    height: 2px; border-radius: 2px; overflow: hidden;
+    background: linear-gradient(90deg, transparent, var(--c-primary), var(--c-accent), transparent);
+    background-size: 200% 100%;
+    animation: flow 3.2s linear infinite;
+    margin-bottom: .9rem; opacity: .9;
+  }
+  @keyframes flow { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* ---- 导航栏 ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    height: 58px; display: flex; align-items: center; gap: 1rem;
+    padding: 0 1.25rem;
+    background: color-mix(in srgb, var(--c-neutral) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--c-line);
+  }
+  .topbar::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--c-primary), var(--c-accent), transparent);
+    opacity: .55;
+  }
+  .brand {
+    font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 1.15rem;
+    letter-spacing: -.01em;
+    background: var(--brand-gradient); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .brand-mark {
+    width: 26px; height: 26px; display: grid; place-items: center; font-weight: 800;
+    color: #1a1206; border-radius: 5px; background: var(--brand-gradient);
+    clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+    font-size: 13px;
+  }
+  .nav-link {
+    font-size: .85rem; color: var(--c-muted); padding: .35rem .7rem; border-radius: 6px;
+    border: 1px solid transparent; transition: .15s; cursor: pointer; white-space: nowrap;
+  }
+  .nav-link:hover { color: var(--c-content); background: var(--c-line-soft); }
+  .nav-link.active { color: var(--c-content); border-color: var(--c-line); background: var(--c-line-soft); }
+
+  /* ---- 按钮 ---- */
+  .btn {
+    display: inline-flex; align-items: center; gap: .45rem; font-size: .85rem; font-weight: 600;
+    padding: .5rem .95rem; border-radius: 6px; cursor: pointer; transition: .16s; border: 1px solid transparent;
+    font-family: 'Sora', sans-serif;
+  }
+  .btn-primary { color: #fff; background: var(--c-primary); box-shadow: 0 6px 20px -10px var(--c-primary); }
+  .btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn-ghost { color: var(--c-content); border-color: var(--c-line); background: transparent; }
+  .btn-ghost:hover { border-color: color-mix(in srgb, var(--c-primary) 55%, var(--c-line)); box-shadow: var(--glow); }
+  .btn-sm { padding: .32rem .7rem; font-size: .8rem; }
+
+  /* ---- 徽章（对齐 status.rs 语义） ---- */
+  .badge {
+    display: inline-flex; align-items: center; gap: .3rem; font-size: 11px; font-weight: 600;
+    padding: .12rem .5rem; border-radius: 999px; font-family: 'JetBrains Mono', monospace; letter-spacing: .02em;
+  }
+  .badge-primary  { color: var(--c-primary); background: var(--c-primary-soft); border: 1px solid color-mix(in srgb, var(--c-primary) 35%, transparent); }
+  .badge-success  { color: var(--c-success); background: color-mix(in srgb, var(--c-success) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c-success) 35%, transparent); }
+  .badge-warning  { color: var(--c-warning); background: color-mix(in srgb, var(--c-warning) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c-warning) 35%, transparent); }
+  .badge-error    { color: var(--c-error); background: color-mix(in srgb, var(--c-error) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c-error) 35%, transparent); }
+  .badge-info     { color: var(--c-info); background: color-mix(in srgb, var(--c-info) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c-info) 35%, transparent); }
+  .badge-neutral  { color: var(--c-muted); background: var(--c-line-soft); border: 1px solid var(--c-line); }
+  .badge-tag      { color: var(--c-content); background: var(--c-line-soft); border: 1px solid var(--c-line); }
+
+  /* ---- 统计读数 ---- */
+  .stat-val { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 2rem; line-height: 1; }
+  .stat-val .u { font-size: .9rem; color: var(--c-faint); margin-left: 2px; }
+
+  /* ---- 进度 / 数据条 ---- */
+  .bar { height: 6px; border-radius: 99px; background: var(--c-line-soft); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 99px; background: var(--brand-gradient); }
+  .bar.info > i { background: var(--c-info); }
+  .bar.success > i { background: var(--c-success); }
+
+  /* ---- 表格行（未来感：左侧数据条 + 等宽数值） ---- */
+  .row {
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; align-items: center; gap: 1rem;
+    padding: .7rem .9rem; border-radius: 6px; border: 1px solid transparent;
+    border-left: 2px solid var(--c-line); transition: .15s; cursor: pointer;
+  }
+  .row + .row { margin-top: 2px; }
+  .row:hover { background: var(--c-line-soft); border-color: var(--c-line); box-shadow: var(--glow); }
+
+  /* ---- 关系图占位（驾驶舱底图） ---- */
+  .graph { position: relative; height: 240px; border-radius: 8px; overflow: hidden;
+    background:
+      radial-gradient(50% 60% at 50% 45%, var(--c-primary-soft), transparent 70%),
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0/26px 26px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0/26px 26px,
+      var(--c-bg-soft);
+    border: 1px solid var(--c-line);
+  }
+  .node { position: absolute; width: 12px; height: 12px; border-radius: 3px; background: var(--c-primary);
+    box-shadow: 0 0 10px var(--c-primary); animation: pulse 2.4s ease-in-out infinite; }
+  .node.a { background: var(--c-accent); box-shadow: 0 0 10px var(--c-accent); }
+  @keyframes pulse { 0%,100%{ opacity:.55; transform: scale(1);} 50%{ opacity:1; transform: scale(1.25);} }
+
+  .switch { position: fixed; right: 18px; bottom: 18px; z-index: 100; display: flex; gap: .4rem;
+    padding: .4rem; border-radius: 99px; background: var(--c-surface); border: 1px solid var(--c-line); box-shadow: var(--glow); }
+  .switch button { font-size: .78rem; padding: .35rem .8rem; border-radius: 99px; border: 1px solid transparent;
+    background: transparent; color: var(--c-muted); cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+  .switch button.on { color: #fff; background: var(--c-primary); }
+
+  .sec-title { font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 1.05rem; }
+  .divider { height: 1px; background: var(--c-line); margin: 2.2rem 0; }
+  .chip-k { color: var(--c-faint); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .swatch { width: 100%; height: 46px; border-radius: 6px; border: 1px solid var(--c-line); }
+</style>
+</head>
+<body class="rel">
+
+  <!-- 主题切换 -->
+  <div class="switch">
+    <button id="b-hud" class="on" onclick="setTheme('orz-hud')">HUD 深色</button>
+    <button id="b-light" onclick="setTheme('orz-light')">浅色</button>
+  </div>
+
+  <!-- ============ 顶部导航 ============ -->
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:.6rem" class="brand">
+      <span class="brand-mark">O</span><span>AI Orz</span>
+    </div>
+    <nav style="display:flex;gap:.2rem;margin-left:.5rem" class="hide-sm">
+      <span class="nav-link active">💬 对话</span>
+      <span class="nav-link">🚀 工作台</span>
+      <span class="nav-link">人力资源</span>
+      <span class="nav-link">财务管理</span>
+      <span class="nav-link">项目管理</span>
+      <span class="nav-link">系统</span>
+    </nav>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:.7rem">
+      <span class="badge badge-success">● 在线</span>
+      <div style="width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--c-primary);color:#fff;font-size:.8rem">A</div>
+    </div>
+  </header>
+
+  <main style="max-width:1100px;margin:0 auto;padding:2rem 1.25rem 5rem">
+
+    <p class="eyebrow">AI ORZ · DESIGN DIRECTION 01</p>
+    <h1 class="disp" style="font-size:2rem;font-weight:700;margin:.3rem 0 .4rem">任务指挥中心 · Mission-Control HUD</h1>
+    <p style="color:var(--c-muted);max-width:62ch;line-height:1.7">
+      以品牌橙 <b style="color:var(--c-primary)">#fa520f</b> 与信号黄 <b style="color:var(--c-accent)">#ffd900</b> 为锚的暖色航天驾驶舱。
+      切角面板、1px 渐变发丝边、等宽数据标签与流光，刻意避开「青+深色+霓虹」的 AI 套路。
+      本原型可在 <b>HUD 深色 / 浅色</b> 间切换，验证同一套令牌双主题自适应。
+    </p>
+
+    <div class="divider"></div>
+
+    <!-- ============ 工作台概览 ============ -->
+    <p class="eyebrow">WORKSPACE · OVERVIEW</p>
+    <div class="sec-title" style="margin:.3rem 0 1rem">工作台总览</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem">
+      <div class="panel">
+        <div class="signal-bar"></div>
+        <p class="eyebrow">活跃 Agent</p>
+        <div class="stat-val tnum" style="margin-top:.4rem">24<span class="u">/ 31</span></div>
+        <p style="color:var(--c-muted);font-size:.8rem;margin:.4rem 0 0">5 个忙碌 · 2 休息中</p>
+      </div>
+      <div class="panel">
+        <div class="signal-bar"></div>
+        <p class="eyebrow">进行中任务</p>
+        <div class="stat-val tnum" style="margin-top:.4rem">138</div>
+        <div class="bar" style="margin-top:.6rem"><i style="width:68%"></i></div>
+        <p style="color:var(--c-muted);font-size:.78rem;margin:.35rem 0 0">完成率 68%</p>
+      </div>
+      <div class="panel">
+        <div class="signal-bar"></div>
+        <p class="eyebrow">今日工具调用</p>
+        <div class="stat-val tnum" style="margin-top:.4rem">1.2<span class="u">k</span></div>
+        <p style="color:var(--c-muted);font-size:.8rem;margin:.4rem 0 0">成功率 <span style="color:var(--c-success)">97.4%</span></p>
+      </div>
+      <div class="panel">
+        <div class="signal-bar"></div>
+        <p class="eyebrow">知识节点</p>
+        <div class="stat-val tnum" style="margin-top:.4rem">9,402</div>
+        <p style="color:var(--c-muted);font-size:.8rem;margin:.4rem 0 0">+214 今日新增</p>
+      </div>
+    </div>
+
+    <!-- 关系图 + 侧栏 -->
+    <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:1rem;margin-top:1rem" class="stack">
+      <div class="panel pad-lg">
+        <div class="hud-panel-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+          <span class="eyebrow">ORGANIZATION GRAPH</span>
+          <span class="badge badge-tag">LIVE</span>
+        </div>
+        <div class="graph">
+          <span class="node" style="left:18%;top:30%"></span>
+          <span class="node a" style="left:42%;top:58%"></span>
+          <span class="node" style="left:64%;top:26%"></span>
+          <span class="node a" style="left:78%;top:64%"></span>
+          <span class="node" style="left:52%;top:40%"></span>
+          <span class="node" style="left:30%;top:72%"></span>
+        </div>
+        <p style="color:var(--c-faint);font-size:.78rem;margin-top:.7rem" class="mono">6 agents · 9 edges · 数据流实时同步</p>
+      </div>
+      <div class="panel pad-lg" style="display:flex;flex-direction:column;gap:.9rem">
+        <span class="eyebrow">SYSTEM PULSE</span>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:.82rem"><span>Cortex 推理</span><span class="mono" style="color:var(--c-success)">正常</span></div>
+          <div class="bar success" style="margin-top:.4rem"><i style="width:91%"></i></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:.82rem"><span>记忆写入</span><span class="mono" style="color:var(--c-warning)">节流</span></div>
+          <div class="bar info" style="margin-top:.4rem"><i style="width:54%"></i></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:.82rem"><span>A2A 链路</span><span class="mono" style="color:var(--c-success)">正常</span></div>
+          <div class="bar success" style="margin-top:.4rem"><i style="width:88%"></i></div>
+        </div>
+        <div style="margin-top:auto;display:flex;gap:.5rem">
+          <button class="btn btn-primary btn-sm">⚡ 新建任务</button>
+          <button class="btn btn-ghost btn-sm">查看日志</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ============ 数据表 ============ -->
+    <p class="eyebrow">AGENT REGISTRY</p>
+    <div class="sec-title" style="margin:.3rem 0 1rem">Agent 注册表</div>
+    <div class="panel" style="padding:.6rem">
+      <div class="row" style="border-left-color:var(--c-primary);color:var(--c-faint);font-size:.75rem">
+        <span class="mono">NAME</span><span class="mono">RUNTIME</span><span class="mono">TASKS</span><span>STATE</span>
+      </div>
+      <div class="row">
+        <div><div style="font-weight:600">Planner-α</div><div class="chip-k">orchestration</div></div>
+        <span class="badge badge-info">idle</span>
+        <span class="mono tnum">42</span>
+        <span class="badge badge-success">● 空闲</span>
+      </div>
+      <div class="row">
+        <div><div style="font-weight:600">Researcher-β</div><div class="chip-k">retrieval</div></div>
+        <span class="badge badge-warning">busy</span>
+        <span class="mono tnum">17</span>
+        <span class="badge badge-warning">● 忙碌</span>
+      </div>
+      <div class="row">
+        <div><div style="font-weight:600">Coder-γ</div><div class="chip-k">execution</div></div>
+        <span class="badge badge-neutral">resting</span>
+        <span class="mono tnum">8</span>
+        <span class="badge badge-neutral">● 休息</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ============ 详情卡 ============ -->
+    <p class="eyebrow">AGENT DETAIL</p>
+    <div class="sec-title" style="margin:.3rem 0 1rem">Agent 详情</div>
+    <div class="panel pad-lg">
+      <div class="signal-bar"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <h3 class="disp" style="font-size:1.3rem;margin:0">Researcher-β</h3>
+            <span class="badge badge-warning">● 忙碌</span>
+          </div>
+          <p style="color:var(--c-muted);margin:.3rem 0 0;font-size:.88rem">负责多源检索与知识沉淀的检索型 Agent</p>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-primary btn-sm">对话</button>
+          <button class="btn btn-ghost btn-sm">编辑 Soul</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1.2rem 1.5rem;margin-top:1.3rem">
+        <div><p class="eyebrow">运行时状态</p><p class="mono" style="margin:.3rem 0 0">busy · 已运行 3h12m</p></div>
+        <div><p class="eyebrow">绑定模型</p><p class="mono" style="margin:.3rem 0 0">claude-opus · temp 0.3</p></div>
+        <div><p class="eyebrow">本月任务</p><p class="mono tnum" style="margin:.3rem 0 0">312 · 完成 298</p></div>
+        <div><p class="eyebrow">能力标签</p><div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.4rem">
+          <span class="badge badge-tag">检索</span><span class="badge badge-tag">摘要</span><span class="badge badge-tag">图谱</span>
+        </div></div>
+      </div>
+      <div style="margin-top:1.3rem"><p class="eyebrow">进度</p><div class="bar" style="margin-top:.5rem"><i style="width:73%"></i></div></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ============ 接待/登录 ============ -->
+    <p class="eyebrow">RECEPTION</p>
+    <div class="sec-title" style="margin:.3rem 0 1rem">登录 · 接待页</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--c-line);border-radius:10px;overflow:hidden" class="stack">
+      <div style="padding:2.5rem;background:
+        radial-gradient(60% 50% at 80% 10%, var(--c-primary-soft), transparent 70%),
+        radial-gradient(50% 40% at 10% 100%, var(--c-accent-soft), transparent 70%),
+        linear-gradient(140deg, var(--c-bg-soft), var(--c-surface))">
+        <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:2rem">
+          <span class="brand-mark">O</span><span class="brand" style="font-size:1.3rem">AI Orz</span>
+        </div>
+        <h2 class="disp" style="font-size:2rem;font-weight:700;line-height:1.15;margin:0 0 1rem">
+          组织化调度<br><span style="background:var(--brand-gradient);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent">你的 AI 代理军团</span>
+        </h2>
+        <p style="color:var(--c-muted);line-height:1.7;max-width:34ch">多 Agent 协作框架，以组织化形式管理、执行与观测自主代理任务。</p>
+        <div style="display:flex;flex-direction:column;gap:.9rem;margin-top:1.8rem">
+          <div style="display:flex;gap:.7rem"><span style="width:30px;height:30px;border-radius:6px;background:var(--c-primary-soft);display:grid;place-items:center">⚡</span><p style="margin:0;font-size:.88rem;color:var(--c-content)"><b>两阶段唤醒</b><br><span style="color:var(--c-muted)">IntentAnalyze → Awaken 意图驱动</span></p></div>
+          <div style="display:flex;gap:.7rem"><span style="width:30px;height:30px;border-radius:6px;background:var(--c-accent-soft);display:grid;place-items:center">🧠</span><p style="margin:0;font-size:.88rem;color:var(--c-content)"><b>四层记忆</b><br><span style="color:var(--c-muted)">工作 / 短期 / 长期 / 知识图谱</span></p></div>
+        </div>
+      </div>
+      <div style="padding:2.5rem;display:flex;align-items:center;justify-content:center;background:var(--c-surface)">
+        <div style="width:100%;max-width:320px">
+          <p class="eyebrow">SIGN IN</p>
+          <h3 class="disp" style="font-size:1.4rem;margin:.3rem 0 1.2rem">登录到控制台</h3>
+          <label class="eyebrow" style="display:block;margin-bottom:.35rem">用户名</label>
+          <input class="inp" placeholder="admin" style="width:100%;padding:.6rem .8rem;border-radius:6px;border:1px solid var(--c-line);background:var(--c-bg-soft);color:var(--c-content);font-family:'JetBrains Mono',monospace;margin-bottom:1rem" />
+          <label class="eyebrow" style="display:block;margin-bottom:.35rem">密码</label>
+          <input type="password" class="inp" placeholder="••••••••" style="width:100%;padding:.6rem .8rem;border-radius:6px;border:1px solid var(--c-line);background:var(--c-bg-soft);color:var(--c-content);font-family:'JetBrains Mono',monospace;margin-bottom:1.4rem" />
+          <button class="btn btn-primary" style="width:100%;justify-content:center">进入指挥中心</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ============ 设计令牌 ============ -->
+    <p class="eyebrow">DESIGN TOKENS</p>
+    <div class="sec-title" style="margin:.3rem 0 1rem">色彩令牌（双主题共用语义变量）</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem">
+      <div><div class="swatch" style="background:var(--c-primary)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">primary · 品牌橙</p></div>
+      <div><div class="swatch" style="background:var(--c-accent)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">accent · 信号黄</p></div>
+      <div><div class="swatch" style="background:var(--c-info)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">info · 钢蓝(次)</p></div>
+      <div><div class="swatch" style="background:var(--c-success)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">success</p></div>
+      <div><div class="swatch" style="background:var(--c-warning)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">warning</p></div>
+      <div><div class="swatch" style="background:var(--c-surface)"></div><p class="mono" style="font-size:.78rem;margin:.4rem 0 0">surface · 面板</p></div>
+    </div>
+    <p style="color:var(--c-faint);font-size:.8rem;margin-top:1.2rem;line-height:1.7">
+      字体：<b class="mono">Chakra Petch</b>（展示/标题，带航天感） · <b class="mono">JetBrains Mono</b>（数据/标签/数值） · <b class="mono">Sora</b>（正文）。
+      面板统一 <b>切角 + 1px 渐变发丝边 + 内网格</b>；导航底部品牌渐变光条；状态徽章语义与 <span class="mono">status.rs</span> 一一对应。
+    </p>
+  </main>
+
+  <script>
+    function setTheme(t){
+      document.documentElement.setAttribute('data-theme', t);
+      document.getElementById('b-hud').classList.toggle('on', t==='orz-hud');
+      document.getElementById('b-light').classList.toggle('on', t==='orz-light');
+    }
+  </script>
+</body>
+</html>

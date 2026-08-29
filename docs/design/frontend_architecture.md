@@ -7,6 +7,7 @@
 > 关联文档：
 > - [AGENTS.md](../../AGENTS.md) — 项目整体分层架构与开发规范
 > - [ui_design_system.md](./ui_design_system.md) — UI 设计系统（主题/色彩/组件规范）
+> - [hud_design_prototype.html](./hud_design_prototype.html) — HUD 设计原型（未来感驾驶舱可视化基准：设计令牌 orz-hud/orz-light、切角发丝边面板、眉标/信号条等，对应 `components/hud.rs` + `styles/input.css` 的 `.hud-*` 皮肤）
 > - 【② Plan 落地】[前端工具与进程管理.md](../plan/前端工具与进程管理.md) — Finance Tools 三 Tab 三视图实现
 > - 【② Plan 落地】[前端API协议结构重构.md](../plan/前端API协议结构重构.md) — API 客户端 DTO re-export 自 common::api 规范
 > - 【② Plan 落地】[聊天MVP.md](../plan/聊天MVP.md) — 对话页 SSE 订阅 + use_resource 资源加载模式
