@@ -1,5 +1,6 @@
 //! AOP 队列监控页面
 
+use crate::components::hud::{HudPanel, HudSection, StatGrid, StatReadout};
 use dioxus::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -90,7 +91,7 @@ pub fn SystemAop() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card",
+            HudPanel { signal: None,
                 div { class: "flex gap-2 mb-4",
                     button {
                         class: "{monitor_btn_class}",
@@ -105,9 +106,8 @@ pub fn SystemAop() -> Element {
                 }
 
                 if *active_tab.read() == "monitor" {
-                    div { class: "card-header",
-                        h2 { class: "card-title", "AOP 队列监控" }
-                        div { class: "page-header-actions",
+                    HudSection { title: "AOP 队列监控".to_string(),
+                        actions: Some(rsx!{
                             button {
                                 class: "btn btn-ghost btn-sm",
                                 onclick: move |_| {
@@ -122,7 +122,7 @@ pub fn SystemAop() -> Element {
                                 },
                                 "🔄 刷新"
                             }
-                        }
+                        }),
                     }
 
                     p { class: "text-base-content/70 mb-4",
@@ -180,16 +180,15 @@ pub fn SystemAop() -> Element {
                     }
 
                     if let Some(consumer_name) = consumer.clone() {
-                        div { class: "card mt-6",
-                            div { class: "card-header",
-                                h3 { class: "card-title", "事件列表 · {consumer_name}" }
-                                div { class: "page-header-actions",
+                        HudPanel { signal: Some(true), extra_class: Some("mt-6".to_string()),
+                            HudSection { title: format!("事件列表 · {}", consumer_name),
+                                actions: Some(rsx!{
                                     select {
                                         class: "form-select form-select-sm",
                                         value: "{status_filter_val}",
                                         onchange: move |e| {
                                             filter_status.set(e.value());
-                                            let c = consumer_name.clone();
+                                            let c = consumer.clone().unwrap();
                                             let s = e.value();
                                             loading_events.set(true);
                                             selected_event.set(None);
@@ -211,7 +210,7 @@ pub fn SystemAop() -> Element {
                                         option { value: "pending", "待处理" }
                                         option { value: "processing", "处理中" }
                                     }
-                                }
+                                }),
                             }
 
                             if loading_events() {
@@ -463,35 +462,20 @@ fn AopStatsPanel() -> Element {
         div { class: "space-y-4",
             // 概览卡片
             if let Some(o) = &ov {
-                div { class: "grid grid-cols-2 md:grid-cols-5 gap-3",
-                    div { class: "stat bg-base-100 rounded-box shadow-sm",
-                        div { class: "stat-title", "总发布" }
-                        div { class: "stat-value text-primary", "{o.total_published}" }
-                    }
-                    div { class: "stat bg-base-100 rounded-box shadow-sm",
-                        div { class: "stat-title", "总消费" }
-                        div { class: "stat-value text-info", "{o.total_consumed}" }
-                    }
-                    div { class: "stat bg-base-100 rounded-box shadow-sm",
-                        div { class: "stat-title", "成功" }
-                        div { class: "stat-value text-success", "{o.total_success}" }
-                    }
-                    div { class: "stat bg-base-100 rounded-box shadow-sm",
-                        div { class: "stat-title", "失败" }
-                        div { class: "stat-value text-error", "{o.total_failed}" }
-                    }
-                    div { class: "stat bg-base-100 rounded-box shadow-sm",
-                        div { class: "stat-title", "平均耗时(ms)" }
-                        div { class: "stat-value text-warning", "{avg_dur_str}" }
-                    }
+                StatGrid {
+                    StatReadout { label: "总发布".to_string(), value: format!("{}", o.total_published), accent: Some("primary".to_string()) }
+                    StatReadout { label: "总消费".to_string(), value: format!("{}", o.total_consumed), accent: Some("info".to_string()) }
+                    StatReadout { label: "成功".to_string(), value: format!("{}", o.total_success), accent: Some("success".to_string()) }
+                    StatReadout { label: "失败".to_string(), value: format!("{}", o.total_failed), accent: Some("error".to_string()) }
+                    StatReadout { label: "平均耗时(ms)".to_string(), value: avg_dur_str, accent: Some("warning".to_string()) }
                 }
             }
 
             // 时序折线图（最近 60 分钟，按分钟桶）
             if !line_data.is_empty() {
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel { signal: Some(true),
+                    title: Some("事件趋势（最近 60 分钟，按分钟桶）".to_string()),
                     div { class: "card-body",
-                        h2 { class: "card-title", "事件趋势（最近 60 分钟，按分钟桶）" }
                         LineChart {
                             data: line_data,
                             width: Some(800.0),
@@ -506,9 +490,9 @@ fn AopStatsPanel() -> Element {
             // 分布环形图（双列）
             div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                 if !status_slices.is_empty() {
-                    div { class: "card bg-base-100 shadow-md",
+                    HudPanel { signal: Some(true),
+                        title: Some("状态分布".to_string()),
                         div { class: "card-body",
-                            h2 { class: "card-title", "状态分布" }
                             DonutChart {
                                 data: status_slices,
                                 width: Some(240.0),
@@ -519,9 +503,9 @@ fn AopStatsPanel() -> Element {
                     }
                 }
                 if !consumer_slices.is_empty() {
-                    div { class: "card bg-base-100 shadow-md",
+                    HudPanel { signal: Some(true),
+                        title: Some("消费者分布".to_string()),
                         div { class: "card-body",
-                            h2 { class: "card-title", "消费者分布" }
                             DonutChart {
                                 data: consumer_slices,
                                 width: Some(240.0),

@@ -1,5 +1,7 @@
 //! 模型提供商管理
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 
 use crate::api::finance::{
@@ -176,12 +178,15 @@ pub fn FinanceModelProviders() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center mb-4",
-                        h2 { class: "card-title", "模型提供商管理" }
+                    PageHeader {
+                        eyebrow: Some("FINANCE".to_string()),
+                        title: "模型提供商管理".to_string(),
+                        actions: Some(rsx!{
                         button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
-                    }
+                        }),
+                    },
 
                 if loading() {
                     Loading {}

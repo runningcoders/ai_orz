@@ -1,5 +1,6 @@
 //! 状态展示组件 - 加载中、空状态、错误提示
 
+use crate::components::hud::HudCallout;
 use dioxus::prelude::*;
 
 #[component]
@@ -26,7 +27,7 @@ pub fn ErrorAlert(message: String) -> Element {
         return rsx! {};
     }
     rsx! {
-        div { class: "alert alert-error flex items-center gap-2",
+        HudCallout { tone: Some("error".to_string()), extra_class: Some("flex items-center gap-2".to_string()),
             span { "⚠️" }
             span { "{message}" }
         }
@@ -39,7 +40,7 @@ pub fn SuccessAlert(message: String) -> Element {
         return rsx! {};
     }
     rsx! {
-        div { class: "alert alert-success flex items-center gap-2",
+        HudCallout { tone: Some("success".to_string()), extra_class: Some("flex items-center gap-2".to_string()),
             span { "✅" }
             span { "{message}" }
         }

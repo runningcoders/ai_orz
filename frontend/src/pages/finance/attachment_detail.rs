@@ -1,5 +1,7 @@
 //! 附件详情页 - 展示元信息 + 内容查看/编辑（仅文本类型）
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -84,23 +86,23 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
             if attachment_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(a) = attachment_data {
-                div { class: "card bg-base-100 shadow-md mb-6",
-                    div { class: "card-body",
-                        h2 { class: "card-title", "{a.original_name}" }
-                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
+                HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
+                    title: Some(a.original_name.clone()),
+                    div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
                             div { div { class: "text-sm text-base-content/60", "存储名" }, div { class: "font-mono text-sm", "{a.stored_name}" } }
                             div { div { class: "text-sm text-base-content/60", "大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.size)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }
                             div { div { class: "text-sm text-base-content/60", "用途" }, span { class: "badge badge-info", "{a.purpose}" } }
                             div { div { class: "text-sm text-base-content/60", "创建时间" }, div { class: "font-mono", "{crate::utils::format_datetime(a.created_at)}" } }
                         }
-                    }
                 }
                 if is_text_type() {
-                    div { class: "card bg-base-100 shadow-md",
+                    HudPanel { signal: Some(true),
                         div { class: "card-body",
-                            div { class: "flex justify-between items-center mb-4",
-                                h2 { class: "card-title text-lg", "📄 内容" }
+                            PageHeader {
+                                eyebrow: Some("FINANCE".to_string()),
+                                title: "📄 内容".to_string(),
+                                actions: Some(rsx!{
                                 div { class: "flex gap-2",
                                     if content_dirty() { span { class: "text-xs text-warning", "● 未保存" } }
                                     button {
@@ -110,7 +112,8 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                                         if saving() { "保存中..." } else { "💾 保存" }
                                     }
                                 }
-                            }
+                                }),
+                            },
                             CodeEditor {
                                 value: content(),
                                 on_input: move |v| { content.set(v); content_dirty.set(true); },

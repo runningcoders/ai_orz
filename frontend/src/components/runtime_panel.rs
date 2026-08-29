@@ -9,6 +9,7 @@
 
 use crate::api::hr::{cancel_thinking, get_runtime_status};
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::hud::HudPanel;
 use crate::store::toast::use_toast;
 use common::api::{CancelThinkingRequest, RuntimeStatusRequest, RuntimeStatusResponse};
 use dioxus::prelude::*;
@@ -181,8 +182,8 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
     };
 
     rsx! {
-        div { class: "card bg-base-200 shadow-sm",
-            div { class: "card-body p-4 space-y-3",
+        HudPanel { signal: None,
+            div { class: "space-y-3",
                 // 场景 + 状态
                 div { class: "flex items-center justify-between",
                     span { class: "text-sm font-medium",

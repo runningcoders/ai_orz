@@ -3,6 +3,7 @@
 //! 二期凭证引用模式：飞书渠道只存凭证引用（lark_credential_id），
 //! 凭证本身在身份凭证页（/finance/identity）飞书区块管理；详情页展示集成状态卡（凭证名 + 用户授权徽标 + 身份模式 + 跳身份凭证页）。
 
+use crate::components::hud::HudPanel;
 use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
@@ -442,43 +443,40 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     let slack_cfg = cfg.and_then(|c| c.slack.as_ref());
                     let webhook_cfg = cfg.and_then(|c| c.webhook.as_ref());
                     rsx! {
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-body",
-                        div { class: "flex justify-between items-center mb-4",
-                            h2 { class: "card-title", "{c.channel_name}" }
-                            div { class: "flex gap-2",
-                                if c.channel_type == ChannelType::Lark {
-                                    button {
-                                        class: "btn btn-ghost btn-sm",
-                                        onclick: on_open_edit,
-                                        "✏️ 编辑飞书配置"
-                                    }
-                                } else {
-                                    button {
-                                        class: "btn btn-ghost btn-sm",
-                                        onclick: on_open_edit,
-                                        "✏️ 编辑"
-                                    }
-                                }
-                                button {
-                                    class: "btn btn-ghost btn-sm",
-                                    disabled: toggling(),
-                                    onclick: move |_| on_toggle(if c.status == ChannelStatus::Active { ChannelStatus::Disabled } else { ChannelStatus::Active }),
-                                    if c.status == ChannelStatus::Active { "🚫 禁用" } else { "✅ 启用" }
-                                }
-                                button {
-                                    class: "btn btn-ghost btn-sm",
-                                    disabled: testing(),
-                                    onclick: on_test,
-                                    if testing() { "测试中..." } else { "🔌 测试连接" }
-                                }
-                                button {
-                                    class: "btn btn-error btn-sm",
-                                    onclick: move |_| show_delete_confirm.set(true),
-                                    "🗑 删除"
-                                }
+                HudPanel { signal: Some(true),
+                    title: Some(c.channel_name.clone()),
+                    actions: Some(rsx!{
+                        if c.channel_type == ChannelType::Lark {
+                            button {
+                                class: "btn btn-ghost btn-sm",
+                                onclick: on_open_edit,
+                                "✏️ 编辑飞书配置"
+                            }
+                        } else {
+                            button {
+                                class: "btn btn-ghost btn-sm",
+                                onclick: on_open_edit,
+                                "✏️ 编辑"
                             }
                         }
+                        button {
+                            class: "btn btn-ghost btn-sm",
+                            disabled: toggling(),
+                            onclick: move |_| on_toggle(if c.status == ChannelStatus::Active { ChannelStatus::Disabled } else { ChannelStatus::Active }),
+                            if c.status == ChannelStatus::Active { "🚫 禁用" } else { "✅ 启用" }
+                        }
+                        button {
+                            class: "btn btn-ghost btn-sm",
+                            disabled: testing(),
+                            onclick: on_test,
+                            if testing() { "测试中..." } else { "🔌 测试连接" }
+                        }
+                        button {
+                            class: "btn btn-error btn-sm",
+                            onclick: move |_| show_delete_confirm.set(true),
+                            "🗑 删除"
+                        }
+                    }),
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                             div {
                                 div { class: "text-sm text-base-content/60", "渠道类型" }
@@ -667,10 +665,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div { class: "font-mono", "{crate::utils::format_datetime(c.updated_at)}" }
                             }
                         }
-                    }
                 }
-                    }
-                }
+            }
+            }
             } else {
                 EmptyState { icon: "❓".to_string(), message: channel_err_msg.clone().unwrap_or_else(|| "消息渠道不存在或已被删除".to_string()) }
             }

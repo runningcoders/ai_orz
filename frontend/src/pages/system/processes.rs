@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 
 use crate::api::system::{kill_process, list_processes};
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::modal::Modal;
 use crate::components::process_detail::{
     ProcessDetailContent, process_alive_badge, process_alive_text,
@@ -69,36 +70,39 @@ pub fn SystemProcesses() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "flex justify-between items-center mb-4",
-                div { class: "flex items-center gap-3",
-                    h2 { class: "card-title", "后台进程管理" }
-                    span { class: "badge badge-outline", "运行中 {running_count} / 共 {list.len()}" }
-                }
-                div { class: "flex items-center gap-3",
-                    label { class: "label cursor-pointer gap-2 py-0",
-                        input {
-                            "type": "checkbox",
-                            class: "checkbox checkbox-sm",
-                            checked: auto_refresh(),
-                            onchange: move |_| {
-                                let v = !auto_refresh();
-                                auto_refresh.set(v);
-                            },
+            PageHeader {
+                eyebrow: Some("SYSTEM".to_string()),
+                title: "后台进程管理".to_string(),
+                actions: Some(rsx!{
+                    div { class: "flex items-center gap-3",
+                        span { class: "badge badge-outline", "运行中 {running_count} / 共 {list.len()}" }
+                    }
+                    div { class: "flex items-center gap-3",
+                        label { class: "label cursor-pointer gap-2 py-0",
+                            input {
+                                "type": "checkbox",
+                                class: "checkbox checkbox-sm",
+                                checked: auto_refresh(),
+                                onchange: move |_| {
+                                    let v = !auto_refresh();
+                                    auto_refresh.set(v);
+                                },
+                            }
+                            span { class: "label-text text-sm", "自动刷新（5s）" }
                         }
-                        span { class: "label-text text-sm", "自动刷新（5s）" }
+                        button {
+                            class: "btn btn-ghost btn-sm",
+                            onclick: move |_| {
+                                loading.set(true);
+                                load();
+                            },
+                            "刷新"
+                        }
                     }
-                    button {
-                        class: "btn btn-ghost btn-sm",
-                        onclick: move |_| {
-                            loading.set(true);
-                            load();
-                        },
-                        "刷新"
-                    }
-                }
+                }),
             }
 
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
                     if loading() && list.is_empty() {
                         Loading {}

@@ -9,6 +9,7 @@
 //! GitHub 区块数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。
 //! 通用 Token 区块数据来源 = `GET /api/v1/finance/identity/generic-token/status?platform=xxx` 聚合端点。
 
+use crate::components::hud::{HudCallout, HudPanel};
 use crate::utils::status::*;
 use dioxus::prelude::*;
 use dioxus_router::Link;
@@ -350,9 +351,9 @@ pub fn FinanceIdentity() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
+                title: Some("身份凭证".to_string()),
                 div { class: "card-body",
-                    h2 { class: "card-title text-xl mb-2", "身份凭证" }
                     p { class: "text-sm text-base-content/60",
                         "管理你的身份凭证资产；消息渠道通过引用凭证建联推送，凭证是驱动下游环节的关键资产。"
                     }
@@ -382,7 +383,7 @@ pub fn FinanceIdentity() -> Element {
                                     }
                                 }
                                 if bind_active {
-                                    div { class: "alert alert-info mt-3",
+                                    HudCallout { tone: Some("info".to_string()), extra_class: Some("mt-3".to_string()),
                                         div { class: "flex flex-col gap-1 w-full",
                                             span { "自动绑定进行中：请在浏览器完成飞书应用配置" }
                                             if !bind_url_value.is_empty() {
@@ -494,7 +495,7 @@ pub fn FinanceIdentity() -> Element {
                                 }
                                 if let Some(auth) = &user_auth {
                                     if auth.degraded {
-                                        div { class: "alert alert-warning mt-3",
+                                        HudCallout { tone: Some("warning".to_string()), extra_class: Some("mt-3".to_string()),
                                             span { "{degraded_hint}" }
                                         }
                                     }
@@ -556,7 +557,7 @@ pub fn FinanceIdentity() -> Element {
                     }
                 },
                 div { class: "space-y-4",
-                    div { class: "alert alert-info", span { "修改 App ID/Secret 后，关联渠道将自动重建监听连接" } }
+                    HudCallout { tone: Some("info".to_string()), span { "修改 App ID/Secret 后，关联渠道将自动重建监听连接" } }
                     div { class: "form-control w-full",
                         label { class: "label", span { class: "label-text font-medium", "凭证名称" } }
                         input { class: "input input-bordered w-full", value: "{edit_cred_name}",

@@ -1,5 +1,7 @@
 //! 附件管理
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -76,12 +78,15 @@ pub fn FinanceAttachments() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center mb-4",
-                        h2 { class: "card-title", "附件管理" }
+                    PageHeader {
+                        eyebrow: Some("FINANCE".to_string()),
+                        title: "附件管理".to_string(),
+                        actions: Some(rsx!{
                         button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
-                    }
+                        }),
+                    },
                     if loading() {
                         Loading {}
                     } else if attachments_list.is_empty() {

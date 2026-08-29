@@ -9,6 +9,7 @@
 //!
 //! 所有异步任务通过 `TaskProgress` 组件统一展示进度，300ms 间隔轮询。
 
+use crate::components::hud::{HudPanel, StatGrid, StatReadout};
 use dioxus::prelude::*;
 
 use crate::api::seed::{
@@ -392,34 +393,29 @@ pub fn SystemSeed() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "Seed 配置迁移" }
-                    div { class: "page-header-actions",
-                        button {
-                            class: "btn btn-ghost btn-sm",
-                            onclick: move |_| reload(loading, seeds, toast),
-                            "🔄 刷新"
-                        }
-                        button {
-                            class: "btn btn-outline btn-sm",
-                            onclick: move |_| show_apply_default_modal.set(true),
-                            "应用默认模板"
-                        }
-                        button {
-                            class: "btn btn-primary btn-sm",
-                            onclick: move |_| show_save_modal.set(true),
-                            "+ 导出当前配置"
-                        }
-                    }
+            HudPanel { signal: Some(true),
+            title: Some("Seed 配置迁移".to_string()),
+            actions: Some(rsx!{
+                button {
+                    class: "btn btn-ghost btn-sm",
+                    onclick: move |_| reload(loading, seeds, toast),
+                    "🔄 刷新"
                 }
+                button {
+                    class: "btn btn-outline btn-sm",
+                    onclick: move |_| show_apply_default_modal.set(true),
+                    "应用默认模板"
+                }
+                button {
+                    class: "btn btn-primary btn-sm",
+                    onclick: move |_| show_save_modal.set(true),
+                    "+ 导出当前配置"
+                }
+            }),
 
                 // 顶部统计
-                div { class: "overview-stats",
-                    div { class: "overview-stat-item",
-                        span { class: "overview-stat-value primary", "{total_count}" }
-                        span { class: "overview-stat-label", "快照文件数" }
-                    }
+                StatGrid {
+                    StatReadout { label: "快照文件数".to_string(), value: format!("{}", total_count), accent: Some("primary".to_string()) }
                 }
 
                 // 主体：当前有任务时显示进度，否则显示列表

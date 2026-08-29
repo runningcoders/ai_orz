@@ -5,6 +5,7 @@
 //!
 //! 数据来源 = `GET /api/v1/finance/identity/github/status` 聚合端点。
 
+use crate::components::hud::HudCallout;
 use crate::utils::status::*;
 use dioxus::prelude::*;
 
@@ -244,7 +245,7 @@ pub fn IdentityGithubSection() -> Element {
                         }
                     }
                     if let Some(hint) = auth_hint {
-                        div { class: "alert alert-warning mt-3", span { "{hint}" } }
+                        HudCallout { tone: Some("warning".to_string()), extra_class: Some("mt-3".to_string()), span { "{hint}" } }
                     }
                     p { class: "text-xs text-base-content/50 mt-2",
                         "绑定令牌后 Agent 首次调用 gh_cli 时自动登录；登录态隔离在你专属的用户目录下。"

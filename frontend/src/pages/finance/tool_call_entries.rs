@@ -1,5 +1,6 @@
 //! 工具调用记录查询页 - 列表 + 详情 Modal
 
+use crate::components::hud::HudPanel;
 use dioxus::prelude::*;
 
 use crate::api::finance::{get_tool_call_entry, query_tool_call_entries};
@@ -107,9 +108,9 @@ pub fn FinanceToolCallEntries() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
+                title: Some("工具调用记录".to_string()),
                 div { class: "card-body",
-                    h2 { class: "card-title mb-4", "工具调用记录" }
                     // 查询表单
                     div { class: "grid grid-cols-1 md:grid-cols-4 gap-4 mb-4",
                         div { class: "form-control",

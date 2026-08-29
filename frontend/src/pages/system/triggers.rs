@@ -1,5 +1,6 @@
 //! 定时触发器管理 - 列表 + 创建/编辑
 
+use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 
 use chrono::{Local, TimeZone};
@@ -334,9 +335,9 @@ pub fn SystemTriggers() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md mb-4",
+        HudPanel { signal: Some(true), extra_class: Some("mb-4".to_string()),
             div { class: "card-body",
-                h3 { class: "card-title text-sm", "📊 触发器状态分布" }
+                HudSection { title: "📊 触发器状态分布".to_string() }
                 DonutChart {
                     data: trigger_status_slices,
                     width: Some(400.0),
@@ -345,10 +346,9 @@ pub fn SystemTriggers() -> Element {
                 }
             }
         }
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-header",
-                h2 { class: "card-title", "定时触发器" }
-                div { class: "page-header-actions",
+        HudPanel { signal: Some(true),
+            title: Some("定时触发器".to_string()),
+            actions: Some(rsx!{
                     button {
                         class: "btn btn-ghost btn-sm",
                         onclick: move |_| {
@@ -383,8 +383,7 @@ pub fn SystemTriggers() -> Element {
                         },
                         "+ 创建触发器"
                     }
-                }
-            }
+            }),
             if loading() {
                 Loading {}
             } else if triggers_list.is_empty() {

@@ -10,6 +10,8 @@ use crate::hooks::{AVAILABLE_THEMES, use_theme};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 
+use crate::components::hud::HudPanel;
+
 #[component]
 pub fn Settings() -> Element {
     let mut config = use_signal(FrontendConfig::load);
@@ -39,9 +41,11 @@ pub fn Settings() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel {
+                title: "系统设置".to_string(),
+                eyebrow: Some("SETTINGS".to_string()),
+                signal: Some(true),
                 div { class: "card-body",
-                    h2 { class: "card-title text-xl mb-2", "系统设置" }
 
                     div { class: "divider" }
 

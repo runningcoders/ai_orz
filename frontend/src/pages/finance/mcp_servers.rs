@@ -1,5 +1,7 @@
 //! MCP 服务器管理
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -171,12 +173,15 @@ pub fn FinanceMcpServers() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center mb-4",
-                        h2 { class: "card-title", "MCP 服务器管理" }
+                    PageHeader {
+                        eyebrow: Some("FINANCE".to_string()),
+                        title: "MCP 服务器管理".to_string(),
+                        actions: Some(rsx!{
                         button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
-                    }
+                        }),
+                    },
                 if loading() {
                     Loading {}
                 } else if servers_list.is_empty() {

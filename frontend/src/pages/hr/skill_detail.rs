@@ -1,5 +1,6 @@
 //! Skill 详情页 - 展示元信息 + 文件列表 + 文件内容查看/编辑 + 元信息编辑
 
+use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -190,14 +191,11 @@ pub fn HrSkillDetail(id: String) -> Element {
                 Loading {}
             } else if let Some(s) = skill_data {
                 // 主信息卡
-                div { class: "card bg-base-100 shadow-md mb-6",
-                    div { class: "card-body",
-                        div { class: "flex justify-between items-center mb-4",
-                            h2 { class: "card-title", "{s.name}" }
-                            div { class: "flex gap-2",
-                                button { class: "btn btn-ghost btn-sm", onclick: on_open_edit, "✏️ 编辑" }
-                            }
-                        }
+                HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
+                    title: Some(s.name.clone()),
+                    actions: Some(rsx!{
+                        button { class: "btn btn-ghost btn-sm", onclick: on_open_edit, "✏️ 编辑" }
+                    }),
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                             div {
                                 div { class: "text-sm text-base-content/60", "描述" }
@@ -220,12 +218,11 @@ pub fn HrSkillDetail(id: String) -> Element {
                                 span { class: "badge", "{skill_status_text(s.status)}" }
                             }
                         }
-                    }
                 }
                 // 文件列表区
-                div { class: "card bg-base-100 shadow-md mb-6",
+                HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                     div { class: "card-body",
-                        h2 { class: "card-title text-lg mb-2", "📁 文件列表 ({files_list.as_ref().map(|f| f.len()).unwrap_or(0)})" }
+                        HudSection { title: format!("📁 文件列表 ({})", files_list.as_ref().map(|f| f.len()).unwrap_or(0)) }
                         if let Some(e) = &files_err_msg {
                             EmptyState { icon: "❓".to_string(), message: e.clone() }
                         } else if files_list.as_ref().map(|f| f.is_empty()).unwrap_or(true) {

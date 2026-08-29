@@ -67,10 +67,13 @@ pub fn Navbar() -> Element {
     let is_admin = auth().is_admin();
 
     rsx! {
-        nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 shadow-md",
+        nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 orz-navbar",
             // 左侧：品牌
             div { class: "flex-1",
-                Link { to: Route::MessageChat {}, class: "orz-brand-logo text-lg", "AI Orz" }
+                Link { to: Route::MessageChat {}, class: "flex items-center gap-2",
+                    span { class: "brand-mark", "O" }
+                    span { class: "orz-brand-logo text-lg font-display", "AI Orz" }
+                }
             }
 
             // 中间：桌面导航

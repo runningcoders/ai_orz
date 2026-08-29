@@ -13,6 +13,8 @@
 //! 健康指标 10 秒轮询刷新（use_effect + spawn + loop + sleep_ms）；
 //! 工具日志存储为磁盘扫描（低频），挂载时加载一次 + 清理后手动刷新。
 
+use crate::components::hud::PageHeader;
+use crate::components::hud::{HudPanel, HudSection, StatGrid, StatReadout};
 use dioxus::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -194,8 +196,10 @@ pub fn SystemHealth() -> Element {
     rsx! {
         AppLayout {
         div { class: "space-y-4",
-            div { class: "flex justify-between items-center",
-                h2 { class: "card-title", "系统健康监控" }
+            PageHeader {
+                eyebrow: Some("SYSTEM".to_string()),
+                title: "系统健康监控".to_string(),
+                actions: Some(rsx!{
                 button {
                     class: "btn btn-ghost btn-sm",
                     onclick: move |_| {
@@ -208,7 +212,8 @@ pub fn SystemHealth() -> Element {
                     },
                     "手动检查"
                 }
-            }
+                }),
+            },
 
             if loading() && metrics.read().is_none() {
                 div { class: "flex justify-center py-12",
@@ -343,9 +348,9 @@ pub fn SystemHealth() -> Element {
                 }
 
                 // 飞书 WS 连接明细（per-app state + 累计重连次数）
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel { signal: Some(true),
                     div { class: "card-body",
-                        h3 { class: "card-title text-base", "飞书渠道 WS 监听明细" }
+                        HudSection { title: "飞书渠道 WS 监听明细".to_string() }
                         if m.lark_ws.apps.is_empty() {
                             div { class: "text-base-content/50 text-sm py-2",
                                 "暂无活跃监听连接（启用飞书渠道并开启入站监听后自动建连）"
@@ -373,11 +378,10 @@ pub fn SystemHealth() -> Element {
             }
 
             // 工具日志存储（① 运行时输出层治理：占用统计 + 按天明细 + 手动清理）
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center flex-wrap gap-2",
-                        h3 { class: "card-title text-base", "工具日志存储" }
-                        div { class: "flex items-center gap-2",
+                    HudSection { title: "工具日志存储".to_string(),
+                        actions: Some(rsx!{
                             input {
                                 class: "input input-sm input-bordered w-28",
                                 r#type: "number",
@@ -393,29 +397,16 @@ pub fn SystemHealth() -> Element {
                                 onclick: handle_cleanup_tool_logs,
                                 if cleaning() { "清理中..." } else { "立即清理" }
                             }
-                        }
+                        }),
                     }
 
                     if let Some(s) = storage.read().clone() {
                         // 占用概览
-                        div { class: "stats stats-vertical sm:stats-horizontal shadow w-full",
-                            div { class: "stat",
-                                div { class: "stat-title", "总占用" }
-                                div { class: "stat-value text-lg", "{format_file_size(s.total_bytes)}" }
-                            }
-                            div { class: "stat",
-                                div { class: "stat-title", "日志文件数" }
-                                div { class: "stat-value text-lg", "{s.total_files}" }
-                            }
-                            div { class: "stat",
-                                div { class: "stat-title", "保留策略" }
-                                div { class: "stat-value text-lg",
-                                    "{retention_text(s.retention_days)}"
-                                }
-                                div { class: "stat-desc",
-                                    "每日 05:00 自动清理（ai_orz.toml [tool_log] 可配，运行中进程日志受保护）"
-                                }
-                            }
+                        StatGrid {
+                            StatReadout { label: "总占用".to_string(), value: format_file_size(s.total_bytes) }
+                            StatReadout { label: "日志文件数".to_string(), value: format!("{}", s.total_files) }
+                            StatReadout { label: "保留策略".to_string(), value: retention_text(s.retention_days),
+                                delta: Some("每日 05:00 自动清理（ai_orz.toml [tool_log] 可配，运行中进程日志受保护）".to_string()) }
                         }
 
                         // 按天占用明细（降序：最新在前）

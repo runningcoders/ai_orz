@@ -1,3 +1,4 @@
+use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 use std::collections::HashSet;
 
@@ -340,7 +341,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
             // 推荐起点区域
             {if rec_loading() {
                 Some(rsx! {
-                    div { class: "card bg-base-100 shadow-md",
+                    HudPanel { signal: Some(true),
                         div { class: "card-body py-3",
                             span { class: "text-sm text-base-content/70", "正在计算推荐起点..." }
                         }
@@ -351,7 +352,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                     let recs = recommendations();
                     let rec_count = recs.len();
                     Some(rsx! {
-                        div { class: "card bg-base-100 shadow-md",
+                        HudPanel { signal: Some(true),
                             div { class: "card-body py-3",
                                 h4 { class: "text-sm font-semibold mb-2", "🎯 推荐起点（按关联度数 Top {rec_count}）" }
                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2",
@@ -394,9 +395,9 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
             }}
 
             // 搜索框区域
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
+                title: Some("知识图谱".to_string()),
                 div { class: "card-body",
-                    h2 { class: "card-title mb-4", "知识图谱" }
                     div { class: "space-y-4",
                         div { class: "flex flex-col sm:flex-row gap-2",
                             input {
@@ -508,29 +509,30 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
             } else {
                 div { class: "flex flex-col lg:flex-row gap-4",
                     div { class: "flex-1 min-h-[600px]",
-                    div { class: "card bg-base-100 shadow-md h-full",
+                    HudPanel { signal: Some(true), extra_class: Some("h-full".to_string()),
                         div { class: "card-body",
                             {
                                 let canvas_btn_class = if graph_style() == GraphStyle::Canvas { "btn btn-xs join-item btn-primary" } else { "btn btn-xs join-item btn-ghost" };
                                 let svg_btn_class = if graph_style() == GraphStyle::Svg { "btn btn-xs join-item btn-primary" } else { "btn btn-xs join-item btn-ghost" };
                                 rsx! {
-                                    div { class: "flex justify-between items-center mb-4",
-                                        h3 { class: "card-title", "图谱视图 ({current_nodes.len()} 节点, {current_edges.len()} 关系)" }
-                                        // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
-                                        div { class: "join",
-                                            button {
-                                                class: "{canvas_btn_class}",
-                                                onclick: move |_| graph_style.set(GraphStyle::Canvas),
-                                                title: "Canvas HUD 风格（高级渲染，适合大规模节点）",
-                                                "Canvas"
+                                    HudSection { title: format!("图谱视图 ({} 节点, {} 关系)", current_nodes.len(), current_edges.len()),
+                                        actions: Some(rsx!{
+                                            // 风格切换按钮：Canvas（HUD）/ SVG（兜底）
+                                            div { class: "join",
+                                                button {
+                                                    class: "{canvas_btn_class}",
+                                                    onclick: move |_| graph_style.set(GraphStyle::Canvas),
+                                                    title: "Canvas HUD 风格（高级渲染，适合大规模节点）",
+                                                    "Canvas"
+                                                }
+                                                button {
+                                                    class: "{svg_btn_class}",
+                                                    onclick: move |_| graph_style.set(GraphStyle::Svg),
+                                                    title: "SVG 风格（兜底方案，适合少量节点）",
+                                                    "SVG"
+                                                }
                                             }
-                                            button {
-                                                class: "{svg_btn_class}",
-                                                onclick: move |_| graph_style.set(GraphStyle::Svg),
-                                                title: "SVG 风格（兜底方案，适合少量节点）",
-                                                "SVG"
-                                            }
-                                        }
+                                        }),
                                     }
                                 }
                             }
@@ -560,18 +562,19 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
 
                     if let Some(detail) = &selected_detail {
                         div { class: "w-full lg:w-96",
-                            div { class: "card bg-base-100 shadow-md",
+                            HudPanel { signal: Some(true),
                                 div { class: "card-body",
-                                    div { class: "flex justify-between items-start mb-4",
-                                        h3 { class: "card-title", "节点详情" }
-                                        button {
-                                            class: "btn btn-ghost btn-sm btn-circle",
-                                            onclick: move |_| {
-                                                selected_node_id.set(None);
-                                                selected_node_data.set(None);
-                                            },
-                                            "✕"
-                                        }
+                                    HudSection { title: "节点详情".to_string(),
+                                        actions: Some(rsx!{
+                                            button {
+                                                class: "btn btn-ghost btn-sm btn-circle",
+                                                onclick: move |_| {
+                                                    selected_node_id.set(None);
+                                                    selected_node_data.set(None);
+                                                },
+                                                "✕"
+                                            }
+                                        }),
                                     }
                                     div { class: "space-y-4",
                                         div { class: "grid grid-cols-2 gap-4",
@@ -730,7 +733,7 @@ pub fn HrKnowledgeGraph() -> Element {
     rsx! {
         AppLayout {
             div { class: "space-y-4",
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel { signal: Some(true),
                     div { class: "card-body py-3",
                         div { class: "flex gap-2 items-center",
                             span { class: "text-sm font-medium whitespace-nowrap", "Agent:" }

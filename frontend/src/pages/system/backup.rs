@@ -1,5 +1,6 @@
 //! 备份管理页面 - 列表 / 创建 / 删除 / 恢复脚本预览
 
+use crate::components::hud::{HudCallout, HudPanel, StatGrid, StatReadout};
 use dioxus::prelude::*;
 
 use crate::api::system::{
@@ -154,34 +155,26 @@ pub fn SystemBackup() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "备份管理" }
-                    div { class: "page-header-actions",
-                        button {
-                            class: "btn btn-ghost btn-sm",
-                            onclick: move |_| reload(loading, backups, toast),
-                            "🔄 刷新"
-                        }
-                        button {
-                            class: "btn btn-primary",
-                            disabled: creating(),
-                            onclick: handle_create,
-                            if creating() { "创建中..." } else { "+ 创建备份" }
-                        }
-                    }
+            HudPanel { signal: Some(true),
+            title: Some("备份管理".to_string()),
+            actions: Some(rsx!{
+                button {
+                    class: "btn btn-ghost btn-sm",
+                    onclick: move |_| reload(loading, backups, toast),
+                    "🔄 刷新"
                 }
+                button {
+                    class: "btn btn-primary",
+                    disabled: creating(),
+                    onclick: handle_create,
+                    if creating() { "创建中..." } else { "+ 创建备份" }
+                }
+            }),
 
                 // 顶部统计
-                div { class: "overview-stats",
-                    div { class: "overview-stat-item",
-                        span { class: "overview-stat-value primary", "{total_count}" }
-                        span { class: "overview-stat-label", "备份总数" }
-                    }
-                    div { class: "overview-stat-item",
-                        span { class: "overview-stat-value warning", "{latest_version}" }
-                        span { class: "overview-stat-label", "最新版本号" }
-                    }
+                StatGrid {
+                    StatReadout { label: "备份总数".to_string(), value: format!("{}", total_count), accent: Some("primary".to_string()) }
+                    StatReadout { label: "最新版本号".to_string(), value: format!("{}", latest_version), accent: Some("warning".to_string()) }
                 }
 
                 // 列表
@@ -273,9 +266,7 @@ pub fn SystemBackup() -> Element {
                 Loading {}
             } else {
                 div {
-                    div {
-                        class: "alert alert-warning",
-                        style: "margin-bottom: var(--space-4);",
+                    HudCallout { tone: Some("warning".to_string()), extra_class: Some("mb-4".to_string()),
                         "⚠️ 恢复操作将覆盖当前数据，请先停止服务并备份现有数据后再执行。"
                     }
                     pre {

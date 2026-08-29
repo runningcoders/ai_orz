@@ -1,5 +1,6 @@
 //! 个人信息
 
+use crate::components::hud::HudPanel;
 use dioxus::prelude::*;
 
 use common::api::UpdateCurrentUserRequest;
@@ -43,9 +44,9 @@ pub fn UserProfile() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md",
+        HudPanel { signal: Some(true),
+            title: Some("个人信息".to_string()),
             div { class: "card-body",
-                h2 { class: "card-title mb-4", "个人信息" }
 
                 if loading() {
                     Loading {}

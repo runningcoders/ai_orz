@@ -1,5 +1,7 @@
 //! 工具管理
 
+use crate::components::hud::PageHeader;
+use crate::components::hud::{HudCallout, HudPanel};
 use dioxus::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -184,8 +186,10 @@ pub fn FinanceTools() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "flex justify-between items-center mb-4",
-                h2 { class: "card-title", "工具管理" }
+            PageHeader {
+                eyebrow: Some("FINANCE".to_string()),
+                title: "工具管理".to_string(),
+                actions: Some(rsx!{
                 div { class: "flex gap-2",
                     Link {
                         class: "btn btn-ghost btn-sm",
@@ -198,10 +202,11 @@ pub fn FinanceTools() -> Element {
                         "+ 创建 HTTP 工具"
                     }
                 }
-            }
+                }),
+            },
 
             // 工具创建来源引导：不同协议工具在对应页面创建
-            div { class: "alert alert-info shadow-md mb-4",
+            HudCallout { tone: Some("info".to_string()), extra_class: Some("mb-4".to_string()),
                 div { class: "w-full text-sm space-y-1",
                     p { class: "font-medium", "工具创建指引" }
                     div { class: "flex flex-wrap gap-x-6 gap-y-1",
@@ -217,7 +222,7 @@ pub fn FinanceTools() -> Element {
             }
 
             // 筛选栏（独立卡片）
-            div { class: "card bg-base-100 shadow-md mb-4",
+            HudPanel { signal: Some(true), extra_class: Some("mb-4".to_string()),
                 div { class: "card-body",
                     div { class: "flex flex-wrap gap-4 items-end",
                         div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -278,7 +283,7 @@ pub fn FinanceTools() -> Element {
             }
 
             // 列表卡片
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
                 if loading() {
                     Loading {}

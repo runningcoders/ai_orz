@@ -9,6 +9,8 @@
 
 use std::collections::HashSet;
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 use serde::Deserialize;
 
@@ -299,10 +301,13 @@ pub fn SystemDocs() -> Element {
     rsx! {
         AppLayout {
             div { class: "space-y-4",
-                div { class: "flex justify-between items-center",
-                    h2 { class: "card-title", "文档中心" }
+                PageHeader {
+                    eyebrow: Some("SYSTEM".to_string()),
+                    title: "文档中心".to_string(),
+                    actions: Some(rsx!{
                     span { class: "text-sm opacity-60", "仓库 docs/ 核心文档，随前端构建更新" }
-                }
+                    }),
+                },
 
                 if index_opt.is_none() {
                     div { class: "flex justify-center py-12",
@@ -311,7 +316,7 @@ pub fn SystemDocs() -> Element {
                 } else {
                     div { class: "flex flex-col lg:flex-row gap-4 items-start",
                         // 左侧目录
-                        div { class: "card bg-base-100 shadow w-full lg:w-80 shrink-0",
+                        HudPanel { signal: Some(true), extra_class: Some("w-full lg:w-80 shrink-0".to_string()),
                             div { class: "card-body p-3 lg:max-h-[75vh] overflow-y-auto",
                                 input {
                                     class: "input input-sm input-bordered w-full mb-2",
@@ -421,7 +426,7 @@ pub fn SystemDocs() -> Element {
                         }
 
                         // 右侧文档内容：使用 MarkdownRenderer 组件，自动触发 mermaid 扫描替换
-                        div { class: "card bg-base-100 shadow flex-1 w-full min-w-0",
+                        HudPanel { signal: Some(true), extra_class: Some("flex-1 w-full min-w-0".to_string()),
                             div { class: "card-body",
                                 if loading_doc() {
                                     div { class: "flex justify-center py-12",

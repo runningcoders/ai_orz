@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use crate::api::project::{
     create_project, list_project_tasks, list_projects, query_projects, search_projects,
 };
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -128,13 +129,16 @@ pub fn ProjectList() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "flex justify-between items-center mb-4",
-            h2 { class: "card-title", "项目管理" }
-            button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+        PageHeader {
+            eyebrow: "PROJECT".to_string(),
+            title: "项目管理".to_string(),
+            actions: Some(rsx! {
+                button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+            }),
         }
 
         // 筛选栏（独立卡片）
-        div { class: "card bg-base-100 shadow-md mb-4",
+        HudPanel {
             div { class: "card-body",
                 div { class: "flex flex-wrap gap-4 items-end",
                     div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -196,7 +200,7 @@ pub fn ProjectList() -> Element {
         }
 
         // 列表卡片
-        div { class: "card bg-base-100 shadow-md",
+        HudPanel {
             div { class: "card-body",
                 if loading() {
                     Loading {}

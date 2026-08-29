@@ -6,6 +6,8 @@
 //! - 身份模式下拉（自动/应用身份/用户身份，缺省 auto）
 //! - 入站监听 toggle 默认开，关闭后仅用于出站推送与 lark_cli 工具身份
 
+use crate::components::hud::PageHeader;
+use crate::components::hud::{HudCallout, HudPanel};
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
@@ -250,12 +252,15 @@ pub fn FinanceMessageChannels() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
-                    div { class: "flex justify-between items-center mb-4",
-                        h2 { class: "card-title", "消息渠道管理" }
+                    PageHeader {
+                        eyebrow: Some("FINANCE".to_string()),
+                        title: "消息渠道管理".to_string(),
+                        actions: Some(rsx!{
                         button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建渠道" }
-                    }
+                        }),
+                    },
                     if loading() {
                         Loading {}
                     } else if channels_list.is_empty() {
@@ -427,7 +432,7 @@ pub fn FinanceMessageChannels() -> Element {
                     if is_lark_type {
                         div { class: "divider text-sm font-medium m-0", "飞书应用凭证 *" }
                         if no_credentials {
-                            div { class: "alert alert-warning",
+                            HudCallout { tone: Some("warning".to_string()),
                                 span { "尚未绑定飞书应用凭证，请先前往「身份凭证」页完成绑定" }
                                 Link { class: "btn btn-sm btn-primary", to: crate::pages::Route::FinanceIdentity {}, "前往绑定" }
                             }

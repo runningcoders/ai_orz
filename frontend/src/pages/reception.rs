@@ -14,8 +14,8 @@ use crate::store::auth::{
 };
 use crate::store::toast::use_toast;
 use common::api::{
-    InitProgressResponse, InitStatus, InitializeSystemRequest, LoginRequest, LoginResponse,
-    OrganizationListItem, RegisterByInviteRequest, TaskProgressSnapshot, TaskStatus,
+    InitProgressResponse, InitStatus, InitializeSystemRequest, LoginRequest, OrganizationListItem,
+    RegisterByInviteRequest, TaskProgressSnapshot, TaskStatus,
 };
 
 /// 将公开初始化进度响应装饰为统一 TaskProgressSnapshot（供 TaskProgress 组件渲染）。
@@ -538,8 +538,9 @@ pub fn Reception() -> Element {
 
             // 右侧表单区
             div { class: "reception-form-side",
-                div { class: "reception-form-card",
-                    if loading() {
+            div { class: "reception-form-card hud-panel p-6",
+                div { class: "hud-signal" }
+                if loading() {
                         Loading {}
                     } else {
                         if initialized() {

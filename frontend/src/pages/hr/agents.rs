@@ -1,5 +1,7 @@
 //! Agent 管理列表
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 
 use crate::api::finance::list_model_providers;
@@ -376,8 +378,10 @@ pub fn HrAgents() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                h2 { class: "card-title", "Agent 管理" }
+            PageHeader {
+                eyebrow: Some("HR".to_string()),
+                title: "Agent 管理".to_string(),
+                actions: Some(rsx!{
                 div { class: "flex gap-2 flex-wrap",
                     if !search_keyword().is_empty() || filter_status() >= 0 {
                         button { class: "btn btn-ghost",
@@ -398,10 +402,11 @@ pub fn HrAgents() -> Element {
                         "+ 外部 Agent"
                     }
                 }
-            }
+                }),
+            },
 
             // 筛选栏（独立卡片）
-            div { class: "card bg-base-100 shadow-md mb-4",
+            HudPanel { signal: Some(true), extra_class: Some("mb-4".to_string()),
                 div { class: "card-body",
                     div { class: "flex flex-wrap gap-4 items-end",
                         div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -448,7 +453,7 @@ pub fn HrAgents() -> Element {
             }
 
             // 列表卡片
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
                 if loading() {
                     Loading {}

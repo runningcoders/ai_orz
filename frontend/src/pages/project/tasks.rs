@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
 use crate::api::project::{list_projects, list_tasks, query_tasks, search_tasks};
+use crate::components::hud::{HudPanel, PageHeader, StatGrid, StatReadout};
 use crate::components::kanban_canvas::{KanbanCanvas, KanbanColumn, KanbanTask};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -163,9 +164,10 @@ pub fn TaskList() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "page-header",
-            h1 { class: "page-title", "任务管理" }
-            div { class: "page-header-actions",
+        PageHeader {
+            eyebrow: "TASKS".to_string(),
+            title: "任务管理".to_string(),
+            actions: Some(rsx! {
                 button {
                     class: if matches!(view_mode(), ViewMode::List) { "btn btn-outline active" } else { "btn btn-outline" },
                     onclick: move |_| view_mode.set(ViewMode::List),
@@ -176,39 +178,25 @@ pub fn TaskList() -> Element {
                     onclick: move |_| view_mode.set(ViewMode::Board),
                     "看板视图"
                 }
-            }
+            }),
         }
 
         // 统计概览
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-header",
-                h2 { class: "card-title", "任务概览" }
-            }
-            div { class: "overview-grid",
-                div { class: "overview-item",
-                    div { class: "overview-label", "任务总数" }
-                    div { class: "overview-stat-value", "{total}" }
-                }
-                div { class: "overview-item",
-                    div { class: "overview-label", "进行中" }
-                    div { class: "overview-stat-value primary", "{in_progress}" }
-                }
-                div { class: "overview-item",
-                    div { class: "overview-label", "待处理" }
-                    div { class: "overview-stat-value warning", "{pending}" }
-                }
-                div { class: "overview-item",
-                    div { class: "overview-label", "已完成" }
-                    div { class: "overview-stat-value success", "{completed}" }
-                }
+        HudPanel {
+            title: "任务概览".to_string(),
+            eyebrow: "OVERVIEW".to_string(),
+            StatGrid {
+                StatReadout { label: "任务总数".to_string(), value: format!("{}", total) }
+                StatReadout { label: "进行中".to_string(), value: format!("{}", in_progress), accent: Some("primary".to_string()) }
+                StatReadout { label: "待处理".to_string(), value: format!("{}", pending), accent: Some("warning".to_string()) }
+                StatReadout { label: "已完成".to_string(), value: format!("{}", completed), accent: Some("success".to_string()) }
             }
         }
 
         // 筛选栏
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-header",
-                h2 { class: "card-title", "筛选条件" }
-            }
+        HudPanel {
+            title: "筛选条件".to_string(),
+            eyebrow: "FILTERS".to_string(),
             div { class: "flex flex-wrap gap-4 items-end",
                 div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                     label { class: "form-label", "项目" }
@@ -285,15 +273,17 @@ pub fn TaskList() -> Element {
 
         // 视图内容
         if loading() {
-            div { class: "card bg-base-100 shadow-md", Loading {} }
+            HudPanel {
+                Loading {} },
         } else if tasks_list.is_empty() {
-            div { class: "card bg-base-100 shadow-md", EmptyState { icon: "📋".to_string(), message: "暂无任务".to_string() } }
+            HudPanel {
+                EmptyState { icon: "📋".to_string(),
+                message: "暂无任务".to_string() } },
         } else if matches!(view_mode(), ViewMode::List) {
             // 列表视图
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "任务列表" }
-                }
+            HudPanel {
+                title: "任务列表".to_string(),
+                eyebrow: "TASKS".to_string(),
                 table { class: "table table-zebra",
                     thead { tr {
                         th { "标题" }

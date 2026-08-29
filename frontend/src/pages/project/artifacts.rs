@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use dioxus_router::Link;
 
 use crate::api::project::{create_artifact, delete_artifact, list_artifacts, list_projects};
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -129,12 +130,11 @@ pub fn ProjectArtifacts() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                div { class: "flex justify-between items-center",
-                    h2 { class: "card-title", "项目产物管理" }
-                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
-                }
+            PageHeader { eyebrow: Some("PROJECT".to_string()), title: "项目产物管理".to_string(), actions: Some(rsx! {
+                button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
+            }) }
+            HudPanel {
+                div { class: "card-body",
 
                 if !projects_list.is_empty() {
                     div { class: "form-control w-full",

@@ -1,3 +1,4 @@
+use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::{Key, *};
 
 use crate::api::message::search_messages;
@@ -54,8 +55,8 @@ pub fn MessageSearch() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
-                h2 { class: "card-title", "消息搜索" }
+            HudPanel { signal: Some(true),
+                title: Some("消息搜索".to_string()),
                 div { class: "space-y-4",
                     div { class: "flex gap-2",
                         input {
@@ -83,8 +84,8 @@ pub fn MessageSearch() -> Element {
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {
-                div { class: "card bg-base-100 shadow-md",
-                    h3 { class: "card-title", "搜索结果 ({results().len()})" }
+                HudPanel { signal: Some(true),
+                    HudSection { title: format!("搜索结果 ({})", results().len()) }
                     table { class: "table w-full",
                         thead {
                             tr {

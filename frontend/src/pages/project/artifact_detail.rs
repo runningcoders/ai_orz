@@ -6,6 +6,7 @@ use dioxus_router::Link;
 use crate::api::project::{get_artifact_content, update_artifact};
 use crate::components::artifact_meta_modal::ArtifactMetaModal;
 use crate::components::code_editor::CodeEditor;
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
@@ -83,16 +84,21 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "mb-6 flex items-center justify-between",
-                h1 { class: "text-2xl font-bold", "产物详情" }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::ProjectArtifacts {}, "← 返回列表" }
+            PageHeader {
+                eyebrow: "PROJECT".to_string(),
+                title: "产物详情".to_string(),
+                actions: Some(rsx! {
+                    Link { class: "btn btn-ghost", to: crate::pages::Route::ProjectArtifacts {}, "← 返回列表" }
+                }),
             }
             if artifact_res.read().as_ref().is_none() {
                 Loading {}
             } else if let Some(a) = artifact_data {
-                div { class: "card bg-base-100 shadow-md mb-6",
+                HudPanel {
+                    title: "{a.name}".to_string(),
+                    eyebrow: "ARTIFACT".to_string(),
+                    signal: true,
                     div { class: "card-body",
-                        h2 { class: "card-title", "{a.name}" }
                         div { class: "card-actions justify-end",
                             button {
                                 class: "btn btn-ghost btn-sm",
@@ -110,10 +116,11 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     }
                 }
                 if is_text_type() {
-                    div { class: "card bg-base-100 shadow-md",
+                    HudPanel {
+                        title: "📄 内容".to_string(),
+                        eyebrow: "CONTENT".to_string(),
                         div { class: "card-body",
-                            div { class: "flex justify-between items-center mb-4",
-                                h2 { class: "card-title text-lg", "📄 内容" }
+                            div { class: "flex justify-end mb-4",
                                 div { class: "flex gap-2",
                                     if content_dirty() { span { class: "text-xs text-warning", "● 未保存" } }
                                     button {

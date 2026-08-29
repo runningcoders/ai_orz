@@ -16,6 +16,7 @@ pub mod force_layout;
 pub mod gauge;
 pub mod graph;
 pub mod graph_canvas;
+pub mod hud;
 pub mod hud_palette;
 pub mod kanban_canvas;
 pub mod layered_layout;

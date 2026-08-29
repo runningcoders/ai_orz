@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
+use crate::components::hud::{HudPanel, StatGrid, StatReadout};
 
 /// 工具调用分布环形图调色板（循环使用，避免单一色调）
 const TOOL_PALETTE: &[&str] = &[
@@ -89,28 +90,21 @@ fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Elemen
 #[component]
 pub fn StatsCard(title: String, icon: String, value: String, subtitle: Option<String>) -> Element {
     rsx! {
-        div { class: "stat",
-            div { class: "stat-figure text-xl", "{icon}" }
-            div { class: "stat-title text-sm", "{title}" }
-            div { class: "stat-value text-2xl text-primary", "{value}" }
-            if let Some(sub) = subtitle {
-                div { class: "stat-desc text-xs", "{sub}" }
-            }
+        StatReadout {
+            label: title,
+            value: value,
+            icon: if icon.is_empty() { None } else { Some(icon) },
+            delta: subtitle,
         }
     }
 }
 
-/// 通用统计面板外壳：统一的 card + title + stats 容器，内容由调用方通过 children 传入
+/// 通用统计面板外壳：统一的 HUD 面板 + 数值读数网格，内容由调用方通过 children 传入
 #[component]
 pub fn StatsPanel(title: String, children: Element) -> Element {
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
-            div { class: "card-body",
-                h2 { class: "card-title text-lg mb-2", "📊 {title}" }
-                div { class: "stats shadow overflow-visible",
-                    {children}
-                }
-            }
+        HudPanel { eyebrow: "STATS".to_string(), title: title,
+            StatGrid { {children} }
         }
     }
 }

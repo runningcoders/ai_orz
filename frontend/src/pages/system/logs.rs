@@ -10,6 +10,7 @@ use crate::api::log_stats::{
 use crate::api::system::{LogEntry, QueryLogsResponse, query_logs};
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::LineChart;
+use crate::components::hud::{HudPanel, HudSection};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -256,9 +257,8 @@ pub fn SystemLogs() -> Element {
             // 日志统计图表区（级别分布 + 24h 日志量时序）
             div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4",
                 // 日志级别分布 DonutChart
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-body",
-                        h3 { class: "card-title text-sm", "📊 级别分布（24h）" }
+                HudPanel { signal: Some(true),
+                    HudSection { title: "📊 级别分布（24h）".to_string() }
                         if level_distribution.read().is_empty() {
                             div { class: "h-[200px] flex items-center justify-center text-base-content/50",
                                 if stats_loading() { "加载中..." } else { "暂无数据" }
@@ -275,12 +275,10 @@ pub fn SystemLogs() -> Element {
                                 center_label: Some("日志级别".to_string()),
                             }
                         }
-                    }
                 }
                 // 日志量时序 LineChart
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-body",
-                        h3 { class: "card-title text-sm", "📈 日志量趋势（24h）" }
+                HudPanel { signal: Some(true),
+                    HudSection { title: "📈 日志量趋势（24h）".to_string() }
                         if time_series_points.read().is_empty() {
                             div { class: "h-[200px] flex items-center justify-center text-base-content/50",
                                 if stats_loading() { "加载中..." } else { "暂无数据" }
@@ -300,24 +298,21 @@ pub fn SystemLogs() -> Element {
                             }
                         }
                     }
-                }
             }
 
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "日志查询" }
-                    div { class: "page-header-actions",
-                        button {
-                            class: "btn btn-ghost btn-sm",
-                            onclick: move |_| {
-                                if let Some(q) = active_query() {
-                                    do_query(q, current_page(), loading, result, toast);
-                                }
-                            },
-                            "🔄 刷新"
-                        }
+            HudPanel { signal: Some(true),
+                title: Some("日志查询".to_string()),
+                actions: Some(rsx!{
+                    button {
+                        class: "btn btn-ghost btn-sm",
+                        onclick: move |_| {
+                            if let Some(q) = active_query() {
+                                do_query(q, current_page(), loading, result, toast);
+                            }
+                        },
+                        "🔄 刷新"
                     }
-                }
+                }),
 
                 // 查询表单
                 div { class: "filter-row",
@@ -382,7 +377,7 @@ pub fn SystemLogs() -> Element {
                     }
                 }
                 div { class: "filter-row",
-                    div { class: "page-header-actions",
+                    div { class: "flex items-center gap-2 flex-wrap",
                         button {
                             class: "btn btn-primary",
                             onclick: move |_| handle_search(()),
@@ -489,7 +484,7 @@ pub fn SystemLogs() -> Element {
                         div { class: "text-base-content/70",
                             "共 {total} 条 · 第 {cur_page} / {total_pages} 页"
                         }
-                        div { class: "page-header-actions",
+                        div { class: "flex items-center gap-2 flex-wrap",
                             button {
                                 class: "btn btn-ghost btn-sm",
                                 disabled: cur_page <= 1,

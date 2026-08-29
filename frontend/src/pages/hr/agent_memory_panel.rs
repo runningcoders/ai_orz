@@ -1,3 +1,5 @@
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::{Key, *};
 
 use crate::api::ApiError;
@@ -142,10 +144,12 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
     let agent_id_6 = agent_id.clone();
 
     rsx! {
-        div { class: "card bg-base-100 shadow-md",
+        HudPanel { signal: Some(true),
             div { class: "card-body",
-                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                    h2 { class: "card-title", "记忆面板" }
+                PageHeader {
+                    eyebrow: Some("HR".to_string()),
+                    title: "记忆面板".to_string(),
+                    actions: Some(rsx!{
                     div { class: "tabs tabs-boxed",
                         button {
                             class: if active_tab() == MemoryTab::ShortTerm { "tab tab-active" } else { "tab" },
@@ -172,7 +176,8 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             "关系"
                         }
                     }
-                }
+                    }),
+                },
 
                 div { class: "flex flex-col sm:flex-row gap-2 mb-4",
                     input {

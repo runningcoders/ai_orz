@@ -1,3 +1,4 @@
+use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::{Key, *};
 
 use crate::api::hr::{query_memory, search_memory};
@@ -79,9 +80,9 @@ pub fn HrMemorySearch() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
+                title: Some("记忆搜索".to_string()),
                 div { class: "card-body",
-                    h2 { class: "card-title mb-4", "记忆搜索" }
                     div { class: "filter-row",
                         div { class: "filter-item flex-[2]",
                             label { class: "form-label", "关键词" }
@@ -140,9 +141,9 @@ pub fn HrMemorySearch() -> Element {
             } else if results().is_empty() {
                 EmptyState { message: "开始搜索".to_string() }
             } else {
-                div { class: "card bg-base-100 shadow-md mt-4",
+                HudPanel { signal: Some(true), extra_class: Some("mt-4".to_string()),
                     div { class: "card-body",
-                        h3 { class: "card-title mb-4", "搜索结果 ({results().len()})" }
+                        HudSection { title: format!("搜索结果 ({})", results().len()) }
                         div { class: "space-y-2",
                             for item in &results() {
                                 {

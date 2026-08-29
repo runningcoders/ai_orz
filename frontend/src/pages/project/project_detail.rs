@@ -6,6 +6,7 @@ use dioxus_router::{Link, use_navigator};
 use crate::api::hr::query_agents;
 use crate::api::project::*;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
+use crate::components::hud::HudPanel;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -331,7 +332,7 @@ pub fn ProjectDetail(id: String) -> Element {
     rsx! {
         AppLayout {
         match project_res.read().as_ref() {
-            None => rsx! { div { class: "card bg-base-100 shadow-md", Loading {} } },
+            None => rsx! { HudPanel { Loading {} } },
             Some(Ok(p)) => {
                 let p = p.clone();
                 rsx! {
@@ -348,23 +349,21 @@ pub fn ProjectDetail(id: String) -> Element {
                 0 => rsx! {
                     // === 概览：基本信息 + 项目概览统计 + 状态管理 + ProjectStatsPanel ===
                     // 区域 1：项目基本信息卡片
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            div { class: "card-header-row",
-                                h2 { class: "card-title", "{p.name}" }
-                                button {
-                                    class: "btn btn-ghost btn-sm",
-                                    onclick: move |_| {
-                                        if let Some(p) = project_res.read().as_ref().and_then(|r| r.as_ref().ok()).cloned() {
-                                            edit_name.set(p.name.clone());
-                                            edit_description.set(p.description.clone().unwrap_or_default());
-                                            edit_priority.set(p.priority.to_string());
-                                            edit_tags.set(p.tags.join(", "));
-                                            show_edit_modal.set(true);
-                                        }
-                                    },
-                                    "✏️ 编辑"
-                                }
+                    HudPanel {
+                        title: p.name.clone(),
+                        div { class: "flex justify-end mb-3",
+                            button {
+                                class: "btn btn-ghost btn-sm",
+                                onclick: move |_| {
+                                    if let Some(p) = project_res.read().as_ref().and_then(|r| r.as_ref().ok()).cloned() {
+                                        edit_name.set(p.name.clone());
+                                        edit_description.set(p.description.clone().unwrap_or_default());
+                                        edit_priority.set(p.priority.to_string());
+                                        edit_tags.set(p.tags.join(", "));
+                                        show_edit_modal.set(true);
+                                    }
+                                },
+                                "✏️ 编辑"
                             }
                         }
                         div { class: "detail-grid",
@@ -413,10 +412,8 @@ pub fn ProjectDetail(id: String) -> Element {
                         || p.execution_plan.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
                         || p.execution_result.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
                     {
-                        div { class: "card bg-base-100 shadow-md",
-                            div { class: "card-header",
-                                h2 { class: "card-title", "规划与执行" }
-                            }
+                        HudPanel {
+                            title: "规划与执行".to_string(),
                             div { class: "space-y-5",
                                 if let Some(wf) = p.workflow.as_deref().filter(|s| !s.is_empty()) {
                                     div {
@@ -448,22 +445,18 @@ pub fn ProjectDetail(id: String) -> Element {
 
                     // 区域 1.6：任务依赖图（Mermaid，with_task_graph 按需返回）
                     if let Some(graph) = p.task_graph.as_deref().filter(|s| !s.is_empty()) {
-                        div { class: "card bg-base-100 shadow-md",
-                            div { class: "card-header",
-                                h2 { class: "card-title", "任务依赖图" }
-                            }
+                        HudPanel {
+                            title: "任务依赖图".to_string(),
                             MermaidDiagram { code: graph.to_string() }
                         }
                     }
 
                     // 区域 2：项目概览统计
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            h2 { class: "card-title", "项目概览" }
-                        }
-                        div { class: "overview-grid",
-                            div { class: "overview-item",
-                                div { class: "overview-label", "整体进度" }
+                    HudPanel {
+                        title: "项目概览".to_string(),
+                        div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                            div { class: "min-w-0",
+                                div { class: "hud-eyebrow mb-2", "整体进度" }
                                 div { class: "overview-progress",
                                     div { class: "overview-progress-bar",
                                         div { class: "{progress_bar_class(overall_progress)}", style: "width: {overall_progress}%;" }
@@ -471,8 +464,8 @@ pub fn ProjectDetail(id: String) -> Element {
                                     span { class: "overview-progress-text", "{overall_progress}%" }
                                 }
                             }
-                            div { class: "overview-item",
-                                div { class: "overview-label", "任务状态分布" }
+                            div { class: "min-w-0",
+                                div { class: "hud-eyebrow mb-2", "任务状态分布" }
                                 if donut_slices.is_empty() {
                                     div { class: "text-base-content/60 text-sm py-8 text-center",
                                         "暂无任务"
@@ -490,10 +483,8 @@ pub fn ProjectDetail(id: String) -> Element {
                     }
 
                     // 区域 3：状态管理
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            h2 { class: "card-title", "状态管理" }
-                        }
+                    HudPanel {
+                        title: "状态管理".to_string(),
                         div { class: "detail-action-row",
                             if p.status != 3 {
                                 button { class: "btn btn-primary", onclick: start_project, "启动项目" }
@@ -516,15 +507,13 @@ pub fn ProjectDetail(id: String) -> Element {
                 },
                 1 => rsx! {
                     // === 任务列表 ===
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            div { class: "card-header-row",
-                                h2 { class: "card-title", "任务列表" }
-                                button {
-                                    class: "btn btn-primary btn-sm",
-                                    onclick: move |_| show_task_modal.set(true),
-                                    "+ 新建任务"
-                                }
+                    HudPanel {
+                        title: "任务列表".to_string(),
+                        div { class: "flex justify-end mb-3",
+                            button {
+                                class: "btn btn-primary btn-sm",
+                                onclick: move |_| show_task_modal.set(true),
+                                "+ 新建任务"
                             }
                         }
                         if tasks_list.is_empty() {
@@ -643,10 +632,8 @@ pub fn ProjectDetail(id: String) -> Element {
                 },
                 2 => rsx! {
                     // === 产物 ===
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            h2 { class: "card-title", "项目产物" }
-                        }
+                    HudPanel {
+                        title: "项目产物".to_string(),
                         div { class: "detail-card-body",
                             div { class: "detail-toolbar",
                                 button { class: "btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
@@ -727,10 +714,8 @@ pub fn ProjectDetail(id: String) -> Element {
                 },
                 3 => rsx! {
                     // === 关系图 ===
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            h2 { class: "card-title", "关系图" }
-                        }
+                    HudPanel {
+                        title: "关系图".to_string(),
                         div { class: "p-4",
                             div { class: "w-full h-[520px]",
                                 WorkspaceGraph {
@@ -803,7 +788,10 @@ pub fn ProjectDetail(id: String) -> Element {
                 }
             }
             Some(Err(e)) => rsx! {
-                div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) } }
+                HudPanel {
+                    EmptyState { icon: "❓".to_string(),
+                    message: format!("加载失败: {}",
+                    e) } },
             },
         }
 

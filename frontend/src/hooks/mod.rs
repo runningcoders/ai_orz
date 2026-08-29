@@ -84,7 +84,7 @@ fn get_saved_theme() -> String {
     local_storage()
         .and_then(|s| s.get_item("ai_orz_theme").ok().flatten())
         .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| "orz-light".to_string())
+        .unwrap_or_else(|| "orz-hud".to_string())
 }
 
 fn set_html_theme(theme: &str) {

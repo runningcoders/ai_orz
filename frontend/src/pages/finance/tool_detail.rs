@@ -5,6 +5,7 @@ use crate::api::finance::{
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::credential_requirements::CredentialRequirementsTable;
+use crate::components::hud::{HudCallout, HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
@@ -247,13 +248,14 @@ pub fn FinanceToolDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "mb-6 flex items-center justify-between",
-                div {
-                    h1 { class: "text-2xl font-bold", "工具详情" }
-                }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceTools {},
-                    "← 返回列表"
-                }
+            PageHeader {
+                eyebrow: "FINANCE".to_string(),
+                title: "工具详情".to_string(),
+                actions: Some(rsx! {
+                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceTools {},
+                        "← 返回列表"
+                    }
+                }),
             }
 
             match tool_res.read().as_ref() {
@@ -261,10 +263,12 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 Some(Ok(t)) => {
                     let t = t.clone();
                     rsx! {
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel {
+                    title: "{t.name}".to_string(),
+                    eyebrow: "TOOL".to_string(),
+                    signal: true,
                     div { class: "card-body",
-                        div { class: "flex justify-between items-center mb-4",
-                            h2 { class: "card-title", "{t.name}" }
+                        div { class: "flex justify-end mb-4",
                             div { class: "flex gap-2",
                                 if t.enabled {
                                     button { class: "btn btn-outline btn-sm",
@@ -374,9 +378,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
 
                 // ===== 工具配置卡片（Builtin 按工厂名结构化编辑；MCP/Http/未匹配只读 JSON）=====
                 if builtin_config_form(&t.name).is_some() || t.has_config {
-                    div { class: "card bg-base-100 shadow-md mt-4",
+                    HudPanel {
+                        title: "工具配置".to_string(),
+                        eyebrow: "CONFIG".to_string(),
                         div { class: "card-body",
-                            h3 { class: "card-title text-lg", "工具配置" }
                             if let Some(layout) = builtin_config_form(&t.name) {
                                 // —— Builtin 结构化表单（D28：CLI 命令与行为参数）——
                                 if layout == BuiltinConfigForm::Browser {
@@ -522,9 +527,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
 
                 // ===== 凭据需求只读卡片（空数组不渲染）=====
                 if !t.credential_requirements.is_empty() {
-                    div { class: "card bg-base-100 shadow-md mt-4",
+                    HudPanel {
+                        title: "凭据需求".to_string(),
+                        eyebrow: "CREDENTIALS".to_string(),
                         div { class: "card-body",
-                            h3 { class: "card-title text-lg", "凭据需求" }
                             p { class: "text-sm opacity-60",
                                 if t.protocol == ToolProtocol::Builtin {
                                     "内置工具凭据需求由工厂声明，只读展示"
@@ -535,7 +541,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                             CredentialRequirementsTable { requirements: t.credential_requirements.clone() }
                             // 运行时就绪绑定引导（与列表 badge 同源；NotReady 时提示）
                             if let RuntimeReady::NotReady { reason, hint } = runtime_ready.read().as_ref().cloned().unwrap_or_default() {
-                                div { class: "alert alert-warning mt-3 py-2 text-sm",
+                                HudCallout { tone: Some("warning".to_string()), extra_class: Some("mt-3 py-2 text-sm".to_string()),
                                     div {
                                         p {
                                             if reason == "api_key_missing" {
@@ -557,9 +563,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 }
 
                 // 工具调试调用面板
-                div { class: "card bg-base-100 shadow-md mt-4",
+                HudPanel {
+                    title: "调试调用".to_string(),
+                    eyebrow: "DEBUG".to_string(),
                     div { class: "card-body",
-                        h3 { class: "card-title text-lg", "调试调用" }
 
                         // 参数 Schema 展示（如果有）
                         if let Some(ref schema) = t.parameters_schema {

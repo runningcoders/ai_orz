@@ -5,6 +5,7 @@ use dioxus_router::{Link, use_navigator};
 
 use crate::api::hr::query_agents;
 use crate::api::project::*;
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -359,20 +360,22 @@ pub fn TaskDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "page-header",
-            button {
-                class: "btn btn-outline btn-sm",
-                onclick: back_to_project,
-                "← 返回项目"
-            }
-            button {
-                class: "btn btn-primary btn-sm",
-                onclick: move |_| show_edit_modal.set(true),
-                "✏️ 编辑"
-            }
+        PageHeader { title: "任务详情".to_string(),
+            actions: Some(rsx!{
+                button {
+                    class: "btn btn-outline btn-sm",
+                    onclick: back_to_project,
+                    "← 返回项目"
+                }
+                button {
+                    class: "btn btn-primary btn-sm",
+                    onclick: move |_| show_edit_modal.set(true),
+                    "✏️ 编辑"
+                }
+            })
         }
         match task_res.read().as_ref() {
-            None => rsx! { div { class: "card bg-base-100 shadow-md", Loading {} } },
+            None => rsx! { HudPanel { Loading {} } },
             Some(Ok(t)) => {
                 let t = t.clone();
                 rsx! {
@@ -389,12 +392,14 @@ pub fn TaskDetail(id: String) -> Element {
                 0 => rsx! {
                     // === 概览：基本信息 + 标签和依赖 + 统计 ===
                     // 区域 1：基本信息
-                    div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "{t.title}" }
-                    span { class: "{status_badge(t.status)}", "{status_text(t.status)}" }
-                }
-                div { class: "detail-grid",
+                    HudPanel {
+                        title: "{t.title}".to_string(),
+                        eyebrow: "TASK".to_string(),
+                        signal: true,
+                        actions: Some(rsx! {
+                            span { class: "{status_badge(t.status)}", "{status_text(t.status)}" }
+                        }),
+                        div { class: "detail-grid",
                     div {
                         label { class: "form-label", "描述" }
                         if let Some(desc) = &t.description {
@@ -467,10 +472,9 @@ pub fn TaskDetail(id: String) -> Element {
             if t.execution_plan.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
                 || t.execution_result.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
             {
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-header",
-                        h2 { class: "card-title", "规划与执行" }
-                    }
+                HudPanel {
+                    title: "规划与执行".to_string(),
+                    eyebrow: "PLAN".to_string(),
                     div { class: "space-y-5",
                         if let Some(plan) = t.execution_plan.as_deref().filter(|s| !s.is_empty()) {
                             div {
@@ -490,10 +494,9 @@ pub fn TaskDetail(id: String) -> Element {
 
             // 区域 2：标签和依赖
             if !t.tags.is_empty() || !t.dependencies.is_empty() {
-                div { class: "card bg-base-100 shadow-md",
-                    div { class: "card-header",
-                        h2 { class: "card-title", "标签与依赖" }
-                    }
+                HudPanel {
+                    title: "标签与依赖".to_string(),
+                    eyebrow: "TAGS".to_string(),
                     div { class: "detail-card-body",
                         if !t.tags.is_empty() {
                             div { class: "detail-section",
@@ -529,10 +532,10 @@ pub fn TaskDetail(id: String) -> Element {
                 1 => rsx! {
                     // === 进度与状态：进度管理 + 状态流转 ===
                     // 区域 3：进度管理
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "进度管理" }
-                }
+            HudPanel {
+                title: "进度管理".to_string(),
+                eyebrow: "PROGRESS".to_string(),
+                signal: true,
                 div { class: "detail-card-body",
                     div { class: "detail-section",
                         div { class: "progress-section",
@@ -555,10 +558,9 @@ pub fn TaskDetail(id: String) -> Element {
             }
 
             // 区域 4：状态流转
-            div { class: "card bg-base-100 shadow-md",
-                div { class: "card-header",
-                    h2 { class: "card-title", "状态流转" }
-                }
+            HudPanel {
+                title: "状态流转".to_string(),
+                eyebrow: "STATUS".to_string(),
                 div { class: "detail-card-body",
                     div { class: "detail-action-row",
                         if t.status != 1 {
@@ -610,10 +612,9 @@ pub fn TaskDetail(id: String) -> Element {
                 },
                 2 => rsx! {
                     // === 关系图 ===
-                    div { class: "card bg-base-100 shadow-md",
-                        div { class: "card-header",
-                            h2 { class: "card-title", "关系图" }
-                        }
+                    HudPanel {
+                        title: "关系图".to_string(),
+                        eyebrow: "GRAPH".to_string(),
                         div { class: "p-4",
                             div { class: "w-full h-[520px]",
                                 WorkspaceGraph {
@@ -642,7 +643,7 @@ pub fn TaskDetail(id: String) -> Element {
                             rsx! {
                                 div { class: "space-y-3",
                                     for art in arts.iter() {
-                                        div { class: "card bg-base-100 shadow-sm",
+                                        div { class: "card bg-base-200 border border-base-300",
                                             div { class: "card-body p-4",
                                                 div { class: "flex justify-between items-start",
                                                     div {
@@ -727,7 +728,10 @@ pub fn TaskDetail(id: String) -> Element {
                 }
             }
             Some(Err(e)) => rsx! {
-                div { class: "card bg-base-100 shadow-md", EmptyState { icon: "❓".to_string(), message: format!("加载失败: {}", e) } }
+                HudPanel {
+                    EmptyState { icon: "❓".to_string(),
+                    message: format!("加载失败: {}",
+                    e) } },
             },
         }
         TaskEditModal {

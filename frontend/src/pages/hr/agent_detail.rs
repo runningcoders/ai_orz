@@ -4,6 +4,7 @@ use crate::api::message::{load_older_messages, poll_new_messages, send_message_t
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::hud::HudPanel;
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -486,16 +487,18 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab6_class = if active_tab() == 6 { "tab tab-lg tab-active" } else { "tab tab-lg" };
 
             rsx! {
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel {
+                    title: "{a.name}".to_string(),
+                    eyebrow: "AGENT".to_string(),
+                    signal: true,
                     div { class: "card-body",
                         // 返回列表按钮：置于布局顶部（放底部时内容长会滚出视野）
                         div { class: "mb-4",
                             Link { to: "/hr/agents", class: "btn btn-ghost btn-sm", "← 返回列表" }
                         }
                         // 顶部标题 + 编辑按钮
-                        div { class: "mb-6 flex justify-between items-start",
+                        div { class: "mb-6 flex justify-end items-start",
                             div {
-                                h2 { class: "card-title", "{a.name}" }
                                 if !desc.is_empty() {
                                     MarkdownRenderer { content: desc.to_string(), compact: true }
                                 }
@@ -1302,10 +1305,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             },
                             4 => rsx! {
-                                div { class: "card bg-base-100 shadow-md",
-                                    div { class: "card-header",
-                                        h2 { class: "card-title", "关系图" }
-                                    }
+                                HudPanel {
+                                    title: "关系图".to_string(),
+                                    eyebrow: "GRAPH".to_string(),
                                     div { class: "p-4",
                                         div { class: "w-full h-[520px]",
                                             WorkspaceGraph {

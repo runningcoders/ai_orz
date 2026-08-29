@@ -5,6 +5,7 @@ use crate::api::finance::{
     test_model_provider_connection, toggle_model_provider, update_model_provider,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -131,13 +132,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "mb-6 flex items-center justify-between",
-                div {
-                    h1 { class: "text-2xl font-bold", "模型提供商详情" }
-                }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceModelProviders {},
-                    "← 返回列表"
-                }
+            PageHeader {
+                eyebrow: "FINANCE".to_string(),
+                title: "模型提供商详情".to_string(),
+                actions: Some(rsx! {
+                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceModelProviders {},
+                        "← 返回列表"
+                    }
+                }),
             }
 
             match provider_res.read().as_ref() {
@@ -145,10 +147,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 Some(Ok(p)) => {
                     let p = p.clone();
                     rsx! {
-                div { class: "card bg-base-100 shadow-md",
+                HudPanel {
+                    title: "{p.name}".to_string(),
+                    eyebrow: "PROVIDER".to_string(),
+                    signal: true,
                     div { class: "card-body",
-                        div { class: "flex justify-between items-center mb-4",
-                            h2 { class: "card-title", "{p.name}" }
+                        div { class: "flex justify-end mb-4",
                             div { class: "flex gap-2",
                                 {
                                     let is_embedding = p.capability.is_embedding();

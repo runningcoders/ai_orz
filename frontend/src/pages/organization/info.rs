@@ -1,5 +1,6 @@
 //! 组织信息管理
 
+use crate::components::hud::HudPanel;
 use dioxus::prelude::*;
 
 use crate::api::organization::{get_current_organization, update_current_organization};
@@ -53,9 +54,9 @@ pub fn OrganizationInfo() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md",
+        HudPanel { signal: Some(true),
+            title: Some("组织信息".to_string()),
             div { class: "card-body",
-                h2 { class: "card-title mb-4", "组织信息" }
 
                 if loading() {
                     Loading {}

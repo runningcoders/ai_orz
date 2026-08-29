@@ -7,6 +7,7 @@
 //!
 //! 数据来源 = `GET /api/v1/finance/identity/generic-token/status?platform=xxx`。
 
+use crate::components::hud::HudCallout;
 use dioxus::prelude::*;
 
 use crate::api::generic_token_integration::{
@@ -318,7 +319,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                     }
 
                     // ===== 平台提示 =====
-                    div { class: "alert mt-3",
+                    HudCallout { tone: Some("info".to_string()), extra_class: Some("mt-3".to_string()),
                         span { "{active_meta.hint}" }
                     }
                 }

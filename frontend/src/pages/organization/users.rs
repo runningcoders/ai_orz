@@ -1,5 +1,7 @@
 //! 用户管理
 
+use crate::components::hud::HudPanel;
+use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 
 use crate::api::organization::{create_user, delete_user, list_users};
@@ -109,12 +111,15 @@ pub fn OrganizationUsers() -> Element {
 
     rsx! {
         AppLayout {
-        div { class: "card bg-base-100 shadow-md",
+        HudPanel { signal: Some(true),
             div { class: "card-body",
-                div { class: "flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4",
-                    h2 { class: "card-title", "用户管理" }
+                PageHeader {
+                    eyebrow: Some("ORG".to_string()),
+                    title: "用户管理".to_string(),
+                    actions: Some(rsx!{
                     button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加用户" }
-                }
+                    }),
+                },
 
                 if loading() {
                     Loading {}

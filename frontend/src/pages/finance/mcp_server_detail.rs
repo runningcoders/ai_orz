@@ -5,6 +5,7 @@ use crate::api::finance::{
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::credential_requirements::CredentialRequirementsTable;
+use crate::components::hud::{HudPanel, PageHeader};
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -108,19 +109,24 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "mb-6 flex items-center justify-between",
-                h1 { class: "text-2xl font-bold", "MCP Server 详情" }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMcpServers {}, "← 返回列表" }
+            PageHeader {
+                eyebrow: "FINANCE".to_string(),
+                title: "MCP Server 详情".to_string(),
+                actions: Some(rsx! {
+                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMcpServers {}, "← 返回列表" }
+                }),
             }
             match server_view.as_ref() {
                 None => rsx! { Loading {} },
                 Some(Ok(s)) => {
                     let s = s.clone();
                     rsx! {
-                        div { class: "card bg-base-100 shadow-md",
+                        HudPanel {
+                            title: "{s.name}".to_string(),
+                            eyebrow: "MCP SERVER".to_string(),
+                            signal: true,
                             div { class: "card-body",
-                                div { class: "flex justify-between items-center mb-4",
-                                    h2 { class: "card-title", "{s.name}" }
+                                div { class: "flex justify-end mb-4",
                                     div { class: "flex gap-2",
                                         button {
                                             class: "btn btn-ghost btn-sm",
@@ -171,9 +177,10 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                         }
                         // ===== 凭据需求只读卡片（空列表不渲染）=====
                         if !s.config.credential_requirements.is_empty() {
-                            div { class: "card bg-base-100 shadow-md mt-4",
+                            HudPanel {
+                                title: "凭据需求".to_string(),
+                                eyebrow: "CREDENTIALS".to_string(),
                                 div { class: "card-body",
-                                    h3 { class: "card-title text-lg", "凭据需求" }
                                     p { class: "text-sm text-base-content/60",
                                         "工具以调用者身份注入以下凭据（类型级声明，不绑定具体凭据实例）" }
                                     CredentialRequirementsTable { requirements: s.config.credential_requirements.clone() }

@@ -8,6 +8,8 @@
 //! - 清理已完成任务
 
 use crate::api::background_task::{cleanup_tasks, list_tasks};
+use crate::components::hud::PageHeader;
+use crate::components::hud::{HudCallout, HudPanel, StatGrid, StatReadout};
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -106,11 +108,13 @@ pub fn SystemTasks() -> Element {
 
     rsx! {
         AppLayout {
-            div { class: "card bg-base-100 shadow-md",
+            HudPanel { signal: Some(true),
                 div { class: "card-body",
                     // 标题栏
-                    div { class: "flex items-center justify-between",
-                        h2 { class: "card-title", "后台任务管理" }
+                    PageHeader {
+                        eyebrow: Some("SYSTEM".to_string()),
+                        title: "后台任务管理".to_string(),
+                        actions: Some(rsx!{
                         div { class: "flex gap-2",
                             button {
                                 class: "btn btn-warning btn-sm",
@@ -118,22 +122,14 @@ pub fn SystemTasks() -> Element {
                                 "清理已完成"
                             }
                         }
-                    }
+                        }),
+                    },
 
                     // 统计卡片
-                    div { class: "stats stats-horizontal shadow mt-4",
-                        div { class: "stat",
-                            div { class: "stat-title", "运行中" }
-                            div { class: "stat-value text-primary", "{running_count}" }
-                        }
-                        div { class: "stat",
-                            div { class: "stat-title", "已完成" }
-                            div { class: "stat-value text-success", "{completed_count}" }
-                        }
-                        div { class: "stat",
-                            div { class: "stat-title", "已失败" }
-                            div { class: "stat-value text-error", "{failed_count}" }
-                        }
+                    StatGrid {
+                        StatReadout { label: "运行中".to_string(), value: format!("{}", running_count), accent: Some("primary".to_string()) }
+                        StatReadout { label: "已完成".to_string(), value: format!("{}", completed_count), accent: Some("success".to_string()) }
+                        StatReadout { label: "已失败".to_string(), value: format!("{}", failed_count), accent: Some("error".to_string()) }
                     }
 
                     // 筛选栏
@@ -324,7 +320,7 @@ pub fn SystemTasks() -> Element {
                                     span { "{detail.step_message}" }
                                 }
                                 if let Some(err) = &detail.error {
-                                    div { class: "alert alert-error",
+                                    HudCallout { tone: Some("error".to_string()),
                                         span { class: "font-semibold", "错误信息:" }
                                         span { "{err}" }
                                     }
