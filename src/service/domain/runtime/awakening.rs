@@ -9,9 +9,10 @@
 //! 共享类型在 `types.rs`，think loop 引擎在 `think_loop.rs`，
 //! 意图分析核心 + JSON 解析在 `intent_analyze.rs`，总结退出在 `summary.rs`。
 
+use super::types::ThinkLoopParams;
 use crate::enrich_ctx;
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ToolDescriptor, messages_to_summary};
+use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::models::events::AgentLoopEvent;
 use crate::models::memory::MemoryTrace;
 use crate::models::message::Message;
@@ -20,15 +21,17 @@ use crate::pkg::paths;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::record_event;
+use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+use crate::service::domain::runtime::compaction::{CompactOutcome, strip_summary_block};
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
 use common::enums::ThinkingScene;
-use common::error::{Result, err};
+use common::enums::{MemoryStatus, MemoryType};
+use common::error::Result;
 use std::sync::Arc;
 
 use super::think_loop::build_policy_for_scene;
-use super::types::config_resolve;
 
 // ==================== re-export（保持外部引用路径不变）====================
 // pub use 同时完成导入（供本文件内部使用）和 re-export（供外部 awakening::xxx 访问）
@@ -81,6 +84,109 @@ pub(super) fn build_scene_tool_descriptors(
 ///
 /// sleep_and_settle / intent_analyze / summary 中重复出现的技能过滤逻辑。
 /// awaken 场景不过滤技能（全量加载），不调用此函数。
+/// 沉淀场景的「近期已沉淀记忆」参考条数
+///
+/// 只取少量：主要价值是衔接上次沉淀被预算截断的情况，让 Agent 看到「上一段沉淀到哪了」。
+/// 完整上下文由 Agent 用 `search_memory` 按需检索，不在这里铺开。
+const SETTLED_REFERENCE_LIMIT: usize = 5;
+
+/// 压缩后下一轮补充的「更早的记忆」条数
+///
+/// 只给少量：主体上下文是【上一轮工作压缩结果】，这里仅作连续性线索，
+/// 多给会挤占预算。完整历史由 Agent 用 `search_memory` 按需检索。
+const PAST_MEMORIES_LIMIT: usize = 5;
+
+impl RuntimeDomainImpl {
+    /// 查询最近若干条短期记忆摘要，作为压缩后下一轮的「更早的记忆」参考
+    ///
+    /// `exclude_id` 为本次压缩刚落库那条记忆的 id —— 它的内容已经在
+    /// 【上一轮工作压缩结果】里，必须排除，否则同一份内容出现两次。
+    ///
+    /// 查询失败不阻断：参考块是锦上添花，缺了也能正常工作。
+    async fn query_past_memories(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        exclude_id: Option<&str>,
+    ) -> Vec<String> {
+        // 多取一条：被排除的那条大概率是最新的一条，多取一条才能凑够 PAST_MEMORIES_LIMIT
+        let result = self
+            .memory()
+            .query(
+                ctx.clone(),
+                MemoryQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    memory_type: Some(MemoryType::ShortTerm),
+                    limit: Some(PAST_MEMORIES_LIMIT + 1),
+                    order: MemorySortOrder::RecentFirst,
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        match result {
+            Ok(memories) => memories
+                .iter()
+                .filter(|m| match (&m.po, exclude_id) {
+                    (crate::models::memory::MemoryPo::ShortTerm(st), Some(id)) => st.id != id,
+                    _ => true,
+                })
+                .filter_map(|m| m.to_prompt_summary())
+                .take(PAST_MEMORIES_LIMIT)
+                .collect(),
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "awaken",
+                    error = ?e,
+                    "查询更早记忆失败，跳过参考区块"
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// 查询最近若干条**已沉淀**短期记忆的摘要，作为沉淀 prompt 的参考线索
+    ///
+    /// 与 `get_recent_context` 的区别：
+    /// - 只取 `status = Settled` 的（已整合进图谱，不是待处理对象）
+    /// - 条数远少于历史对话（5 vs 20），避免与【待沉淀的短期记忆】重复占用预算
+    ///
+    /// 查询失败不阻断沉淀流程——参考块是锦上添花，缺了也能正常工作。
+    async fn query_settled_reference(&self, ctx: RequestContext, agent_id: &str) -> Vec<String> {
+        let result = self
+            .memory()
+            .query(
+                ctx.clone(),
+                MemoryQuery {
+                    agent_id: Some(agent_id.to_string()),
+                    status: Some(MemoryStatus::Settled),
+                    memory_type: Some(MemoryType::ShortTerm),
+                    limit: Some(SETTLED_REFERENCE_LIMIT),
+                    order: MemorySortOrder::RecentFirst,
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        match result {
+            Ok(memories) => memories
+                .iter()
+                .filter_map(|m| m.to_prompt_summary())
+                .collect(),
+            Err(e) => {
+                log_warn!(
+                    &ctx,
+                    "sleep_and_settle",
+                    error = ?e,
+                    "查询近期已沉淀记忆失败，跳过参考区块"
+                );
+                Vec::new()
+            }
+        }
+    }
+}
+
 pub(super) fn build_scene_skills(
     agent: &Agent,
     scene: ThinkingScene,
@@ -210,12 +316,19 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let skill_pos: Vec<crate::models::skill::SkillPo> =
             agent.skills().iter().map(|s| s.po.clone()).collect();
 
+        // 上一轮上下文压缩的产物。
+        //
+        // Some 时下一轮**不再查询历史记忆** —— 需要回顾的内容都在这份摘要里了，
+        // 再查一遍既浪费预算又会与摘要重复（详见 compaction 模块说明）。
+        // 若需要更早期的记忆，Agent 可用 search_memory 自行检索。
+        let mut compacted_context: Option<String> = None;
+        // 刚落库那条压缩记忆的 id：组装「更早的记忆」参考块时要排除它，
+        // 否则它的内容会在【上一轮工作压缩结果】和参考块里各出现一次。
+        let mut compacted_memory_id: Option<String> = None;
+
         // Step 3: 调用大脑思考（带工具调用循环 + 上下文压缩）
         // 统一走 BrainDal.think() 入口，方便审计、统计、监控
-        let brain = agent
-            .brain
-            .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
+        // brain 由 run_think_loop 内部从 agent.brain 解析（四个场景一致）
 
         // 构建 ToolDescriptor 列表（从 agent.tools 直接派生，供模型 function calling）
         let tool_descriptors: Vec<ToolDescriptor> =
@@ -249,12 +362,29 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // =============== Phase 1 移除结束 ===============
 
         loop {
-            // 每轮（含压缩循环后续迭代）都获取最新 20 条短期记忆，
-            // 保证历史对话不被挖空，指代消解始终有上下文。
-            let recent_memories: Vec<_> = self
-                .memory()
-                .get_recent_context(ctx.clone(), &agent.po.id, 20)
-                .await?;
+            // 上下文来源二选一：
+            // - 刚做过压缩 → 直接用压缩结果，不再查历史记忆（避免与摘要重复占用预算）；
+            //   同时补少量「更早的记忆」作为连续性线索
+            // - 否则 → 取最近 20 条短期记忆，保证指代消解始终有上下文
+            let recent_memories: Vec<_> = match &compacted_context {
+                Some(_) => Vec::new(),
+                None => {
+                    self.memory()
+                        .get_recent_context(ctx.clone(), &agent.po.id, 20)
+                        .await?
+                }
+            };
+            let past_memories: Vec<String> = match &compacted_context {
+                Some(_) => {
+                    self.query_past_memories(
+                        ctx.clone(),
+                        &agent.po.id,
+                        compacted_memory_id.as_deref(),
+                    )
+                    .await
+                }
+                None => Vec::new(),
+            };
 
             // 拼装 Prompt（通过工厂方法获取对应 Agent 类型的 builder）
             let mut builder = self.prompt_builder(agent);
@@ -325,6 +455,14 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 builder.user_profile(user);
             }
             builder.history(&recent_memories);
+            // 压缩产物直接注入：告诉模型「这是你上一轮工作的压缩结果」，
+            // 无需再回顾历史记忆；需要更早的记忆时用 search_memory 检索。
+            if let Some(summary) = &compacted_context {
+                builder.compacted_context(summary);
+            }
+            if !past_memories.is_empty() {
+                builder.past_memories_reference(&past_memories);
+            }
             builder.current_message(message);
             prompt = builder.build();
             // P0-b：用 System + User 双角色分离的初始消息（而非整段塞进一条 User），
@@ -339,18 +477,16 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 .set_think_runtime(&agent.po.id, think_runtime.clone());
             let think_result = self
                 .run_think_loop(
-                    ctx.clone(),
-                    brain,
-                    initial_messages,
-                    &tool_descriptors,
-                    agent,
-                    ThinkingScene::Awaken,
-                    &trace_id,
-                    max_rounds,
-                    total_rounds,
-                    config_resolve::think_timeout_secs(agent),
-                    Some(&think_runtime),
-                    Some(policy.as_ref()),
+                    ThinkLoopParams::new(
+                        ctx.clone(),
+                        agent,
+                        ThinkingScene::Awaken,
+                        &trace_id,
+                        initial_messages,
+                        &tool_descriptors,
+                    )
+                    .with_rounds(max_rounds, total_rounds)
+                    .with_monitoring(&think_runtime, policy.as_ref()),
                 )
                 .await;
 
@@ -370,40 +506,49 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     log_info!(
                         &ctx,
                         "awaken",
-                        "context overflow (total_rounds={}, tokens={}), triggering compaction via sleep_and_settle",
+                        "context overflow (total_rounds={}, tokens={}), triggering compaction",
                         total_rounds,
                         input_tokens
                     );
 
-                    // 将当前工作对话序列化为摘要，传给 sleep_and_settle 沉淀
-                    let summary = messages_to_summary(&messages, 500);
-                    let settle_options = ThinkingOptions::for_scene(ThinkingScene::Settle);
-                    // 复用休息流程沉淀记忆（内部会 set_resting → think → set_idle via RAII）
-                    // 注意：sleep_and_settle 内部会设置 Resting 状态，完成后自动恢复
-                    // 传入 pending_trace_ids 让沉淀 prompt 携带本次总结依赖的 trace 列表，
-                    // 要求 Agent 写入短期记忆时填入 trace_ids
-                    let settle_result = self
-                        .sleep_and_settle(
+                    // 上下文压缩：复用主循环完整上下文，尾部追加压缩指令。
+                    //
+                    // 不重建 Prompt 而选择「追加」的原因：追加前的前缀与上一次模型调用
+                    // 逐字节一致，可命中 provider 侧 prefix caching；同时模型看到的是
+                    // 完整原始对话，而非被按条截断过的二手摘要。
+                    //
+                    // 与 sleep_and_settle 的关键差异：**不操作 Agent 运行时状态**。
+                    // 压缩发生在 awaken 主循环内部，Agent 必须保持 Busy —— 若走
+                    // sleep_and_settle 会被切成 Resting 再掉成 Idle，导致主循环仍在
+                    // 思考时 `is_unavailable()` 返回 false，新消息可并发唤醒同一 Agent。
+                    match self
+                        .compact_context(
                             ctx.clone(),
+                            &messages,
                             agent,
-                            &summary,
-                            &settle_options,
+                            &trace_id,
                             &pending_trace_ids,
+                            false,
                         )
-                        .await;
-                    if let Err(e) = settle_result {
-                        log_warn!(
-                            &ctx,
-                            "awaken",
-                            "compaction sleep_and_settle failed: {:?}, continuing with retry",
-                            e
-                        );
-                    } else if let Ok(ref result) = settle_result {
-                        // 压缩后重置 pending_trace_ids 为本次 settle 的 trace_id
-                        // 下次总结的范围 = 自上次压缩以来
-                        pending_trace_ids = result.trace_ids.clone();
+                        .await
+                    {
+                        Ok(outcome) => {
+                            // 压缩成功：重置待沉淀范围，下次压缩/总结的边界 = 自本次压缩起
+                            pending_trace_ids = vec![trace_id.clone()];
+                            // 压缩结果直接交给下一轮，不再重新查询历史记忆
+                            compacted_context = outcome.compacted_summary;
+                            compacted_memory_id = outcome.compacted_memory_id;
+                        }
+                        Err(e) => {
+                            log_warn!(
+                                &ctx,
+                                "awaken",
+                                "compaction failed: {:?}, continuing with retry",
+                                e
+                            );
+                        }
                     }
-                    // 压缩完成后循环继续，重新获取 recent_memories 并重建 prompt
+                    // 压缩完成后循环继续：下一轮用【上一轮工作压缩结果】重建 prompt
                     continue;
                 }
                 Ok(ThinkLoopResult::MaxRoundsExceeded {
@@ -415,36 +560,46 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     log_info!(
                         &ctx,
                         "awaken",
-                        "max rounds exceeded (total={}), entering summary exit flow",
+                        "max rounds exceeded (total={}), entering compaction exit flow",
                         total_rounds
                     );
 
-                    // 进入总结退出流程：让 agent 总结当前工作并发送/记录
-                    // 传入 pending_trace_ids + awaken trace_id 作为本次总结依赖的 trace 列表
-                    let mut summary_trace_ids = pending_trace_ids.clone();
-                    if summary_trace_ids.last() != Some(&trace_id) {
-                        summary_trace_ids.push(trace_id.clone());
+                    // 轮次耗尽 → 走压缩流程。压缩本身就是一次完整总结，
+                    // 无需再跑一遍 awaken_for_summary：既省一次模型调用，
+                    // 也避免同一段对话被两套提示词重复总结。
+                    //
+                    // with_user_reply = true：压缩产出会作为 raw_output 发给用户，
+                    // 指令里要求模型最后用一句话说明进展与停止原因。
+                    let mut compact_trace_ids = pending_trace_ids.clone();
+                    if compact_trace_ids.last() != Some(&trace_id) {
+                        compact_trace_ids.push(trace_id.clone());
                     }
-                    let summary_output = self
-                        .awaken_for_summary(
+                    let compact_outcome = self
+                        .compact_context(
                             ctx.clone(),
-                            agent,
                             &messages,
-                            options,
+                            agent,
                             &trace_id,
-                            &summary_trace_ids,
+                            &compact_trace_ids,
+                            true,
                         )
                         .await
                         .unwrap_or_else(|e| {
-                            log_warn!(&ctx, "awaken", "summary exit failed: {:?}", e);
-                            String::new()
+                            log_warn!(&ctx, "awaken", "compaction exit failed: {:?}", e);
+                            CompactOutcome {
+                                final_text: String::new(),
+                                compacted_summary: None,
+                                compacted_memory_id: None,
+                            }
                         });
 
-                    // 总结完成后，用 summary 输出作为 raw_output
-                    raw_output = if summary_output.is_empty() {
-                        "任务因思考轮次耗尽而终止，已执行总结退出流程。".to_string()
+                    // 用 Final 文本作为 raw_output（会发送给用户）。
+                    // 摘要在 <compacted_summary> 标记内，属内部产物，发给用户前剥掉。
+                    let user_text = strip_summary_block(&compact_outcome.final_text);
+                    raw_output = if user_text.is_empty() {
+                        "任务因思考轮次耗尽而终止，已执行上下文压缩退出流程。".to_string()
                     } else {
-                        summary_output
+                        user_text
                     };
                     break;
                 }
@@ -578,31 +733,29 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             .write_thinking_trace(ctx.clone(), trace)
             .await?;
 
-        // Step 6.5: 正常完成时触发总结流程，写入短期记忆
-        // 仅在 Final 分支（正常完成）时触发，MaxRoundsExceeded 已在循环内执行过总结
-        // 目的：将本次工作对话总结为短期记忆，trace_ids 记录依赖的 trace 列表
+        // Step 6.5: 正常完成时压缩本次对话，写入短期记忆
+        // 仅在 Final 分支（正常完成）时触发，MaxRoundsExceeded 已在循环内执行过压缩
+        // 目的：将本次工作对话压缩为一条短期记忆，trace_ids 记录依赖的 trace 列表
         if let Some(messages) = final_messages {
-            // 构造总结依赖的 trace_ids = pending_trace_ids（已含 awaken trace_id）
-            let summary_trace_ids = pending_trace_ids.clone();
             let _ = self
-                .awaken_for_summary(
+                .compact_context(
                     ctx.clone(),
-                    agent,
                     &messages,
-                    options,
+                    agent,
                     &trace_id,
-                    &summary_trace_ids,
+                    &pending_trace_ids,
+                    false,
                 )
                 .await
                 .map_err(|e| {
                     log_warn!(
                         &ctx,
                         "awaken",
-                        "post-completion summary failed: {:?}, continuing (non-fatal)",
+                        "post-completion compaction failed: {:?}, continuing (non-fatal)",
                         e
                     );
                 });
-            // 总结失败不影响业务返回（awaken 已成功），仅记录警告
+            // 压缩失败不影响业务返回（awaken 已成功），仅记录警告
         }
 
         // Step 7: 记录 Agent 唤醒统计事件
@@ -661,8 +814,12 @@ impl RuntimeAwakening for RuntimeDomainImpl {
     ///
     /// 与 awaken 的关键差异：
     /// - 状态用 Resting（而非 Busy），通过 BusyGuard 的 set_idle 恢复（语义一致）
-    /// - current_message 用沉淀场景 prompt 构造的虚拟系统消息替代真实用户消息
     /// - 统计事件的 message_id 为 None（沉淀无关联消息）
+    ///
+    /// **只服务「真正的睡觉」**（定时任务 `agent_rest` / 神经工具触发）：
+    /// 把近期未沉淀的短期记忆整理进知识图谱。
+    /// 主循环的上下文压缩走 `compact_context()`，不复用本方法——压缩要保持 Busy
+    /// 状态且复用主循环上下文，语义与成本模型都不同。
     async fn sleep_and_settle(
         &self,
         ctx: RequestContext,
@@ -682,11 +839,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 补充 Agent 上下文到 ctx，后续调用链可复用
         let ctx = enrich_ctx!(&ctx, agent);
 
-        // Step 1: 读取最近短期记忆作为 history
-        let recent_memories = self
-            .memory()
-            .get_recent_context(ctx.clone(), &agent.po.id, 20)
-            .await?;
+        // Step 1: 取少量「已沉淀」记忆作为参考线索
+        //
+        // 刻意**不取**【历史对话】全量（原为最近 20 条短期记忆）：它与本次
+        // 【待沉淀的短期记忆】大面积重复（Active ≤ 20 条时完全重复），
+        // 白白吃掉上下文预算，还会让刚做完的预算自适应打折。
+        //
+        // 图谱里有什么、曾经沉淀过什么，技能已要求 Agent 用 search_memory 按需检索；
+        // 这里只留少量「顺手可见」的线索，用于衔接上次沉淀被预算截断的情况。
+        let settled_reference = self
+            .query_settled_reference(ctx.clone(), &agent.po.id)
+            .await;
 
         // Step 2: 预先构造 MemoryTrace 拿到 trace_id
         use common::enums::MemoryRole;
@@ -780,7 +943,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             agent_workspace,
             project_workspace,
         );
-        builder.history(&recent_memories);
+        // 沉淀场景不装配 history（避免与待沉淀列表重复），只挂参考条目
+        builder.settled_reference(&settled_reference);
 
         let prompt = builder.build_sleep_prompt(pending_memories_summary, trace_ids);
         // P0-b：角色拆分版初始消息；prompt 仍保留用于 trace/stat 记录
@@ -789,29 +953,23 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
         // Step 5: 调用大脑思考（带工具调用循环，与 awaken 对称）
         // sleep 场景传递过滤后的记忆工具，Agent 可通过 function calling 调用记忆工具完成沉淀
-        let brain = agent
-            .brain
-            .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_brain()"))?;
+        // brain 由 run_think_loop 内部从 agent.brain 解析
 
         // 构建 ToolDescriptor 列表（从 agent.tools 按场景过滤后派生，供模型 function calling）
         let tool_descriptors = build_scene_tool_descriptors(agent, scene);
 
-        // 调用共享 think loop（沉淀场景不限制轮次，给一个较大的上限）
+        // 调用共享 think loop（轮次与超时由 ThinkLoopParams::new 按 Agent 配置填充）
         let think_result = self
             .run_think_loop(
-                ctx.clone(),
-                brain,
-                initial_messages,
-                &tool_descriptors,
-                agent,
-                ThinkingScene::Settle,
-                &trace_id,
-                config_resolve::max_thinking_rounds(agent),
-                0,
-                config_resolve::think_timeout_secs(agent),
-                Some(&think_runtime),
-                Some(policy.as_ref()),
+                ThinkLoopParams::new(
+                    ctx.clone(),
+                    agent,
+                    ThinkingScene::Settle,
+                    &trace_id,
+                    initial_messages,
+                    &tool_descriptors,
+                )
+                .with_monitoring(&think_runtime, policy.as_ref()),
             )
             .await;
 

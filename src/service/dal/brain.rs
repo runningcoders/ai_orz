@@ -279,7 +279,14 @@ impl BrainDal for BrainDalImpl {
                     brain.agent_name,
                 );
 
-                // Cli agent 不支持多轮工具调用，从 messages 提取最后一条 user 消息作为 prompt
+                // Cli agent 不支持多轮工具调用，从 messages 提取最后一条 user 消息作为 prompt。
+                //
+                // 注意：这里能拿到**完整**提示词（含人设/技能），前提是 Cli Agent 配套的
+                // `FlatPromptBuilder`（见 CodexAgentDal::prompt_builder）已把 System + User
+                // 合成为单条 User 消息。若换成会产出角色分离结构的 builder，System 会在此丢失。
+                //
+                // `prompt_template` 不在此处应用——模板由 `FlatPromptBuilder` 在拼装阶段处理，
+                // 支持 {system} / {user} / {prompt} 占位符（见其文档）。
                 let prompt = extract_last_user_prompt(messages);
 
                 let external_config = brain

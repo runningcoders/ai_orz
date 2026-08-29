@@ -1,9 +1,111 @@
 //! Runtime Awakening 类型定义
 //!
 //! 集中存放 think loop / 场景选项 / 意图分析等共享类型，
-//! 供 awakening / think_loop / intent_analyze / summary 子模块复用。
+//! 供 awakening / think_loop / intent_analyze / compaction 子模块复用。
 
+use crate::models::agent::Agent;
+use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
+use crate::pkg::agent_runtime_state::AgentThinkRuntime;
 use common::enums::ThinkingScene;
+use std::sync::Arc;
+
+// ==================== think loop 入参 ====================
+
+/// 思考循环入参
+///
+/// `run_think_loop` 是 awaken / sleep_and_settle / compact_context / intent_analyze
+/// 四个场景共用的多轮思考引擎。原先直接铺 12 个参数，既触发 clippy
+/// `too_many_arguments`，也让调用点难以核对，故收敛为结构体。
+///
+/// # 关于 brain
+/// 不作为入参：四个场景取的都是 `agent.brain`，改由 `run_think_loop` 内部解析，
+/// 省去每个调用点重复写一遍「大脑未唤醒」的判空。
+///
+/// # 典型用法
+/// ```rust,ignore
+/// let params = ThinkLoopParams::new(ctx, agent, scene, trace_id, initial_messages, &tools)
+///     .with_rounds(max_rounds, start_round)
+///     .with_monitoring(&think_runtime, policy.as_ref());
+/// let result = self.run_think_loop(params).await?;
+/// ```
+pub struct ThinkLoopParams<'a> {
+    /// 请求上下文
+    pub ctx: crate::pkg::request_context::RequestContext,
+    /// 执行思考的 Agent（brain 在循环内部由其解析）
+    pub agent: &'a Agent,
+    /// 思考场景：决定事件 scene 字段与策略组
+    pub scene: ThinkingScene,
+    /// 本次思考的 trace id（事件与运行时快照上报用）
+    pub trace_id: &'a str,
+    /// 起始消息
+    ///
+    /// - awaken / settle：builder 拼出的 `[System, User]`
+    /// - compact：主循环已有完整对话 + 追加的压缩指令
+    pub initial_messages: Vec<ChatMessage>,
+    /// 可用工具（由 `build_scene_tool_descriptors` 按场景过滤）
+    pub tool_descriptors: &'a [ToolDescriptor],
+    /// 总轮次上限（跨压缩累计）
+    pub max_rounds: usize,
+    /// 本次循环的起始轮次编号（跨压缩累计），新起一段循环时为 0
+    pub start_round: usize,
+    /// 超时秒数，0 = 不限制
+    pub timeout_secs: u64,
+    /// 思考运行时快照上报点（None = 不上报，前端查不到进度）
+    pub think_runtime: Option<&'a Arc<AgentThinkRuntime>>,
+    /// 策略引擎接入点（None = 退化为旧行为，仅靠 max_rounds + timeout 控制）
+    pub policy: Option<&'a dyn crate::pkg::policy::Policy>,
+}
+
+impl<'a> ThinkLoopParams<'a> {
+    /// 构造思考循环入参
+    ///
+    /// 轮次上限与超时按 Agent 配置填默认值，调用方用
+    /// [`with_rounds`](Self::with_rounds) / [`with_monitoring`](Self::with_monitoring)
+    /// 覆盖差异项。
+    pub fn new(
+        ctx: crate::pkg::request_context::RequestContext,
+        agent: &'a Agent,
+        scene: ThinkingScene,
+        trace_id: &'a str,
+        initial_messages: Vec<ChatMessage>,
+        tool_descriptors: &'a [ToolDescriptor],
+    ) -> Self {
+        Self {
+            ctx,
+            agent,
+            scene,
+            trace_id,
+            initial_messages,
+            tool_descriptors,
+            max_rounds: config_resolve::max_thinking_rounds(agent),
+            start_round: 0,
+            timeout_secs: config_resolve::think_timeout_secs(agent),
+            think_runtime: None,
+            policy: None,
+        }
+    }
+
+    /// 覆盖轮次参数：总上限 + 本次循环的起始轮次
+    pub fn with_rounds(mut self, max_rounds: usize, start_round: usize) -> Self {
+        self.max_rounds = max_rounds;
+        self.start_round = start_round;
+        self
+    }
+
+    /// 接入思考运行时快照上报 + 策略引擎
+    ///
+    /// 两者通常成对出现：策略的 cancel_flag 由 think_runtime 提供，
+    /// 命中策略时也需要 runtime 上报最后一轮快照。
+    pub fn with_monitoring(
+        mut self,
+        think_runtime: &'a Arc<AgentThinkRuntime>,
+        policy: &'a dyn crate::pkg::policy::Policy,
+    ) -> Self {
+        self.think_runtime = Some(think_runtime);
+        self.policy = Some(policy);
+        self
+    }
+}
 
 // ==================== think loop 返回结果 ====================
 
@@ -68,15 +170,6 @@ pub(crate) mod config_resolve {
             return rc.intent_analyze_max_rounds;
         }
         config::get().agent.intent_analyze_max_rounds
-    }
-
-    /// 总结退出阶段最大思考轮次
-    pub fn summary_max_rounds(agent: &Agent) -> usize {
-        let rc = agent.po.get_runtime_config();
-        if rc.summary_max_rounds > 0 {
-            return rc.summary_max_rounds;
-        }
-        config::get().agent.summary_max_rounds
     }
 
     /// 思考超时（秒），0 = 不限制

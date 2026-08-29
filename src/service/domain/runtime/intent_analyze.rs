@@ -6,6 +6,7 @@
 //! JSON 解析函数（`parse_intent_analysis_json` 等）提供 6 级降级策略，
 //! 尽量从 Agent 自由文本输出中提取结构化 IntentAnalysis。
 
+use super::types::ThinkLoopParams;
 use crate::models::agent::Agent;
 use crate::models::message::Message;
 use crate::pkg::paths;
@@ -125,11 +126,7 @@ impl RuntimeDomainImpl {
         // P0-b：用 System + User 双角色拆分版初始消息
         let initial_messages = builder.build_intent_analyze_initial_messages();
 
-        // 6. 取 Agent Brain（调用方需已通过 wake_agent_brain 装配）
-        let brain = agent
-            .brain
-            .as_ref()
-            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
+        // 6. Agent Brain 由 run_think_loop 内部解析（调用方需已通过 wake_agent_brain 装配）
 
         // 7. 按场景构建工具描述符列表（严格白名单，只允许理解类工具）
         let tool_descriptors = build_scene_tool_descriptors(agent, scene);
@@ -141,18 +138,16 @@ impl RuntimeDomainImpl {
             init_think_runtime_and_policy(agent, ThinkingScene::IntentAnalyze, trace_id);
         let think_result = self
             .run_think_loop(
-                ctx.clone(),
-                brain,
-                initial_messages,
-                &tool_descriptors,
-                agent,
-                ThinkingScene::IntentAnalyze,
-                trace_id,
-                config_resolve::intent_analyze_max_rounds(agent),
-                0,
-                config_resolve::think_timeout_secs(agent),
-                Some(&think_runtime),
-                Some(policy.as_ref()),
+                ThinkLoopParams::new(
+                    ctx.clone(),
+                    agent,
+                    ThinkingScene::IntentAnalyze,
+                    trace_id,
+                    initial_messages,
+                    &tool_descriptors,
+                )
+                .with_rounds(config_resolve::intent_analyze_max_rounds(agent), 0)
+                .with_monitoring(&think_runtime, policy.as_ref()),
             )
             .await?;
 

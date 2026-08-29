@@ -4,10 +4,8 @@
 //! 共用的多轮思考循环，封装：超时控制 + 多轮迭代 + 工具调用分发 + 策略评估。
 
 use crate::models::agent::Agent;
-use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
+use crate::models::cortex_types::{ChatMessage, ThinkResult};
 use crate::models::events::ThinkRoundEvent;
-use crate::pkg::agent_runtime_state::AgentThinkRuntime;
-use crate::pkg::request_context::RequestContext;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
@@ -60,6 +58,16 @@ pub(crate) fn map_triggered_to_result(
         messages,
         total_rounds: round_number,
     }
+}
+
+/// 判断是否为「沉淀/压缩循环中递归触发沉淀」的工具调用
+///
+/// 处于 Settle / Compact 场景时，模型再调 `settle_memory` 即为自我递归，需拦截。
+/// 其他场景（含 Awaken）不拦截——主循环里 Agent 主动触发一次沉淀是合法需求。
+fn is_recursive_settle_call(scene: common::enums::ThinkingScene, tool_name: &str) -> bool {
+    use common::enums::ThinkingScene;
+    matches!(scene, ThinkingScene::Settle | ThinkingScene::Compact)
+        && tool_name == super::compaction::RECURSIVE_SETTLE_TOOL
 }
 
 /// 连续工具调用轮数的疲劳提示阈值：达到后注入一条 System 提醒，逼模型收尾
@@ -132,30 +140,40 @@ impl RuntimeDomainImpl {
     /// - 累计轮次达到 `max_rounds` → 返回 `MaxRoundsExceeded`
     /// - 超时 → 返回错误
     ///
-    /// `start_round` 为本次循环的起始轮次编号（跨压缩累计）。
-    /// `max_rounds` 为总轮次上限（跨压缩累计）。
+    /// 参数见 [`ThinkLoopParams`]：`start_round` 为本次循环的起始轮次编号（跨压缩累计），
+    /// `max_rounds` 为总轮次上限（跨压缩累计二者详见调用方 awaken 的压缩循环）。
     ///
-    /// `think_runtime` / `policy` 为可选的策略引擎接入点：
+    /// `params.think_runtime` / `params.policy` 为可选的策略引擎接入点：
     /// - `think_runtime`：每轮上报运行时快照（供前端 cancel-thinking/runtime-status 查询）
     /// - `policy`：每轮评估策略（用户取消/轮次上限/超时），命中即退出循环
     ///
     /// 两者都为 None 时退化为旧行为（仅靠 max_rounds + timeout_secs 控制）。
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn run_think_loop(
         &self,
-        ctx: RequestContext,
-        brain: &crate::models::brain::Brain,
-        initial_messages: Vec<ChatMessage>,
-        tool_descriptors: &[ToolDescriptor],
-        agent: &Agent,
-        scene: ThinkingScene,
-        trace_id: &str,
-        max_rounds: usize,
-        start_round: usize,
-        timeout_secs: u64,
-        think_runtime: Option<&Arc<AgentThinkRuntime>>,
-        policy: Option<&dyn crate::pkg::policy::Policy>,
+        params: super::types::ThinkLoopParams<'_>,
     ) -> Result<ThinkLoopResult> {
+        // 解构入参：后续循环体按字段名使用，避免 params. 前缀噪声
+        let super::types::ThinkLoopParams {
+            ctx,
+            agent,
+            scene,
+            trace_id,
+            initial_messages,
+            tool_descriptors,
+            max_rounds,
+            start_round,
+            timeout_secs,
+            think_runtime,
+            policy,
+        } = params;
+
+        // brain 统一在此解析：四个场景取的都是 agent.brain，
+        // 不必让每个调用点各自判空一遍「大脑未唤醒」。
+        let brain = agent
+            .brain
+            .as_ref()
+            .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
+
         /// 上下文压缩触发阈值（占最大上下文窗口的比例）
         const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
 
@@ -295,6 +313,29 @@ impl RuntimeDomainImpl {
                         // 协议路由（含凭据编排，Auto-MCP 亦可执行）；Manual →
                         // dispatch_manual_tool 特殊工具转发）
                         for tc in tool_calls {
+                            // 沉淀/压缩场景：拦截对 settle_memory 的递归调用。
+                            //
+                            // `settle_memory` 会直接触发一整套 sleep_and_settle，在沉淀或压缩
+                            // 循环里再调它属于自我递归（一次压缩可能放大成 N 次完整沉淀）。
+                            // 这里选择「运行时拦截」而非收窄工具白名单：工具仍对其他场景可见，
+                            // 且拦截时能即时给模型一句可理解的反馈，比静默过滤更容易让它改道。
+                            if is_recursive_settle_call(scene, &tc.name) {
+                                log_info!(
+                                    &ctx,
+                                    "think_loop",
+                                    "blocked recursive {} call in scene={}",
+                                    tc.name,
+                                    scene_str
+                                );
+                                messages.push(ChatMessage::tool(
+                                    tc.id,
+                                    "你当前已经在沉淀/压缩流程中，无需再调用 settle_memory —— \
+                                     重复调用会嵌套触发新的沉淀循环。\
+                                     请直接继续当前任务（写入短期记忆后输出 Final 文本结束）。"
+                                        .to_string(),
+                                ));
+                                continue;
+                            }
                             match agent.tools().iter().find(|t| t.po.name == tc.name) {
                                 Some(tool) => {
                                     let call_result = match tool.po.control_mode {
@@ -473,5 +514,42 @@ impl RuntimeDomainImpl {
                 )),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::enums::ThinkingScene;
+
+    #[test]
+    fn recursive_settle_blocked_in_settle_and_compact() {
+        // 沉淀/压缩流程中再调 settle_memory 属自我递归，必须拦截
+        assert!(is_recursive_settle_call(
+            ThinkingScene::Settle,
+            "settle_memory"
+        ));
+        assert!(is_recursive_settle_call(
+            ThinkingScene::Compact,
+            "settle_memory"
+        ));
+    }
+
+    #[test]
+    fn recursive_settle_guard_does_not_affect_other_cases() {
+        // 主循环里 Agent 主动触发一次沉淀是合法需求，不拦
+        assert!(!is_recursive_settle_call(
+            ThinkingScene::Awaken,
+            "settle_memory"
+        ));
+        // 其他工具在任何场景都不受影响
+        assert!(!is_recursive_settle_call(
+            ThinkingScene::Compact,
+            "save_short_term_memory"
+        ));
+        assert!(!is_recursive_settle_call(
+            ThinkingScene::Settle,
+            "search_memory"
+        ));
     }
 }

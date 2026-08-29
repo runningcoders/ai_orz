@@ -118,7 +118,11 @@ impl CronTriggerConsumer {
         );
 
         let ctx = RequestContext::new_system();
-        let settle_limit = payload.settle_limit.unwrap_or(10);
+        // 不传 settle_limit 时用自适应上限：实际批量由上下文预算决定，
+        // 该字段仅作为条数上限提示（见 settle_memory::PENDING_MAX_ITEMS）。
+        let settle_limit = payload
+            .settle_limit
+            .unwrap_or(crate::handlers::hr::agent::settle_memory::PENDING_MAX_ITEMS);
 
         let settled_count = load_and_settle(ctx, &payload.agent_id, settle_limit).await?;
 

@@ -157,16 +157,34 @@ pub trait MemoryDal: Send + Sync {
     /// # 参数
     /// - ctx: 请求上下文
     /// - agent_id: Agent ID
-    /// - limit: 每次处理的短期记忆数量上限
+    /// 批量把短期记忆标记为「已沉淀」（`Active` → `Settled`）
+    ///
+    /// # 用途
+    ///
+    /// 沉淀流程的**状态闭环**由框架负责，不依赖 LLM 自觉。沉淀 prompt 已明确告知
+    /// Agent 无需自行调用 `update_memory` 改状态（技能文档不改，因其可能被其它
+    /// 框架复用，那里未必有框架兜底）。
+    ///
+    /// # 语义
+    ///
+    /// - 只翻转传入 id 中**当前仍为 Active** 的记录；已被 Agent 处理过的（无论
+    ///   改成什么状态）保持原状，不覆盖模型的判断。
+    /// - 逐条更新，单条失败只记 warn 并继续，不中断整批。
+    /// - 不创建任何知识节点——知识整合是 Agent 在沉淀循环里用记忆工具完成的，
+    ///   本函数只管状态。
+    ///
+    /// # 参数
+    /// - `agent_id`: 归属校验用，防止跨 Agent 误改
+    /// - `memory_ids`: 本批沉淀处理过的短期记忆 id
     ///
     /// # 返回
-    /// - 成功返回创建的知识节点列表
-    async fn settle_short_term_to_long_term(
+    /// 实际被置为 Settled 的条数
+    async fn mark_short_term_settled(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-        limit: usize,
-    ) -> Result<Vec<Memory>>;
+        memory_ids: &[String],
+    ) -> Result<usize>;
 
     /// 🔄 重建所有记忆的向量索引
     ///
@@ -575,80 +593,57 @@ impl MemoryDal for MemoryDalImpl {
         Ok(self.build_memories(nodes, result_relations))
     }
 
-    async fn settle_short_term_to_long_term(
+    async fn mark_short_term_settled(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-        limit: usize,
-    ) -> Result<Vec<Memory>> {
-        let short_term_indexes = self
+        memory_ids: &[String],
+    ) -> Result<usize> {
+        if memory_ids.is_empty() {
+            return Ok(0);
+        }
+
+        // 先按 id + agent 捞一遍，只翻转仍为 Active 的
+        // （Agent 可能已自行处理掉一部分，不覆盖它的判断）
+        let still_active = self
             .memory_dao
             .query_short_term(
                 ctx.clone(),
                 MemoryQuery {
+                    ids: Some(memory_ids.to_vec()),
                     agent_id: Some(agent_id.to_string()),
                     status: Some(MemoryStatus::Active),
                     memory_type: Some(MemoryType::ShortTerm),
-                    limit: Some(limit),
                     ..Default::default()
                 },
             )
             .await?;
 
-        if short_term_indexes.is_empty() {
-            log_info!(
-                ctx,
-                "settle_memory",
-                "agent_id={}, 无未沉淀的短期记忆",
-                agent_id
-            );
-            return Ok(Vec::new());
-        }
-
-        let mut created_nodes: Vec<Memory> = Vec::new();
-
-        for index in &short_term_indexes {
-            let node = LongTermKnowledgeNodePo {
-                id: uuid::Uuid::now_v7().to_string(),
-                agent_id: agent_id.to_string(),
-                node_name: index.summary.clone(),
-                node_description: index.summary.clone(),
-                node_type: "summary".to_string(),
-                summary: index.summary.clone(),
-                tags: index.tags.clone(),
-                status: MemoryStatus::Active,
-                is_published: crate::service::dao::memory::sqlite::tags_has_published(&index.tags),
-                created_at: common::constants::utils::current_timestamp_ms(),
-                updated_at: common::constants::utils::current_timestamp_ms(),
-            };
-
-            let mut results = self
-                .create_knowledge_node(ctx.clone(), node, vec![])
-                .await?;
-            created_nodes.append(&mut results);
-        }
-
-        for index in &short_term_indexes {
-            let mut index_to_update = index.clone();
-            index_to_update.status = MemoryStatus::Settled;
-            if let Err(e) = self
+        let mut marked = 0usize;
+        let now = common::constants::utils::current_timestamp_ms();
+        for index in still_active {
+            let mut updated = index.clone();
+            updated.status = MemoryStatus::Settled;
+            // DAO 的 update_short_term_index 是整行 UPDATE，updated_at 取传入值，
+            // 这里必须显式刷新，否则状态改了但 updated_at 仍停在原值。
+            updated.updated_at = now;
+            match self
                 .memory_dao
-                .update_short_term_index(ctx.clone(), index_to_update)
+                .update_short_term_index(ctx.clone(), updated)
                 .await
             {
-                log_warn!(ctx, "settle_memory", memory_id= %index.id, error = ?e, "标记短期记忆为已沉淀失败");
+                Ok(_) => marked += 1,
+                Err(e) => log_warn!(
+                    ctx,
+                    "settle_memory",
+                    memory_id = %index.id,
+                    error = ?e,
+                    "标记短期记忆为已沉淀失败"
+                ),
             }
         }
 
-        log_info!(
-            ctx,
-            "settle_memory",
-            "agent_id={}, 成功沉淀 {} 条短期记忆为 {} 个知识节点",
-            agent_id,
-            short_term_indexes.len(),
-            created_nodes.len()
-        );
-        Ok(created_nodes)
+        Ok(marked)
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {

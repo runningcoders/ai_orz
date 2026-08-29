@@ -231,17 +231,6 @@ impl ChatMessage {
     }
 }
 
-/// 将消息列表序列化为摘要文本（用于上下文压缩）
-///
-/// 每条消息占一行，`max_content_len` 限制单条消息 content 长度。
-pub fn messages_to_summary(messages: &[ChatMessage], max_content_len: usize) -> String {
-    messages
-        .iter()
-        .map(|m| m.to_summary_text(max_content_len))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn truncate_str(s: &str, max_len: usize) -> &str {
     if s.len() <= max_len {
         s

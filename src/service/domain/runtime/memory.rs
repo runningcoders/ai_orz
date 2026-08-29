@@ -78,6 +78,18 @@ impl RuntimeMemory for RuntimeDomainImpl {
         dal().query(ctx, query).await
     }
 
+    async fn mark_short_term_settled(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        memory_ids: &[String],
+    ) -> Result<usize> {
+        use crate::service::dal::memory::dal;
+        dal()
+            .mark_short_term_settled(ctx, agent_id, memory_ids)
+            .await
+    }
+
     async fn recommend_seed_nodes(
         &self,
         ctx: RequestContext,

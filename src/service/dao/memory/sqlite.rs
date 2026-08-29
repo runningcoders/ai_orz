@@ -61,14 +61,6 @@ struct KnowledgeNodeSearchRow {
     fts_rank: Option<f32>,
 }
 
-/// 判断 tags JSON 数组字符串中是否包含 "published" 标签
-///
-/// tags 形如 `["rust","published"]`，序列化后 "published" 一定带双引号，
-/// 因此用 `contains("\"published\"")` 即可快速判断，避免每次反序列化。
-pub(crate) fn tags_has_published(tags: &str) -> bool {
-    tags.contains("\"published\"")
-}
-
 // ==================== 工厂方法 + 单例 ====================
 
 static MEMORY_DAO: OnceLock<Arc<dyn super::MemoryDao + Send + Sync>> = OnceLock::new();
@@ -423,7 +415,8 @@ FROM short_term_memory_index WHERE 1=1"#,
             builder.push_bind(task_id);
         }
 
-        builder.push(" ORDER BY created_at DESC");
+        // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先
+        builder.push(query.order.to_sql());
 
         if let Some(limit) = &query.limit {
             builder.push(" LIMIT ");

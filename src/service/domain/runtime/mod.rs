@@ -17,9 +17,7 @@ use crate::models::memory::{Memory, MemoryCreateParams, MemoryTrace};
 use crate::models::message::Message;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
-use crate::service::dal::agent::AgentDal;
-use crate::service::dal::agent_a2a::A2aAgentDal;
-use crate::service::dal::agent_codex::CodexAgentDal;
+use crate::service::dal::agent::{A2aAgentDal, AgentDal, CodexAgentDal};
 use crate::service::dal::brain::BrainDal;
 use crate::service::dal::lark::LarkCredentialDal;
 use crate::service::dal::mcp_tool::McpToolDal;
@@ -108,6 +106,21 @@ pub trait RuntimeMemory: Send + Sync {
     /// 通用关系型查询
     async fn query(&self, ctx: RequestContext, query: MemoryQuery) -> Result<Vec<Memory>>;
 
+    /// 批量把短期记忆标记为「已沉淀」（`Active` → `Settled`）
+    ///
+    /// 沉淀流程的状态闭环由框架负责，不依赖 LLM 自觉调用 `update_memory`
+    /// （沉淀 prompt 已明确告知 Agent 无需改状态）。
+    /// 只翻转当前仍为 Active 的记录，Agent 已处理过的不覆盖。
+    ///
+    /// # 返回
+    /// 实际被置为 Settled 的条数
+    async fn mark_short_term_settled(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+        memory_ids: &[String],
+    ) -> Result<usize>;
+
     /// 推荐知识图谱起点节点（按关联度数 Top N）
     async fn recommend_seed_nodes(
         &self,
@@ -193,6 +206,10 @@ pub trait RuntimeAwakening: Send + Sync {
     /// - options: 沉睡场景选项（scene=Settle，工具过滤用）
     /// - trace_ids: 本次沉淀所依赖的 trace 列表，传入 prompt 要求 Agent 调用
     ///   save_short_term_memory 时填入 trace_ids 字段，保证记忆可追溯
+    ///
+    /// 注意：本方法**只服务真正的睡觉**（定时任务/神经工具触发的知识图谱沉淀）。
+    /// 主循环上下文压缩请走 `compact_context()`——它复用主循环上下文且不触碰
+    /// Agent 运行时状态，与本方法的语义和成本模型都不同。
     async fn sleep_and_settle(
         &self,
         ctx: RequestContext,
@@ -304,9 +321,9 @@ pub trait RuntimeToolExecution: Send + Sync {
 
 pub mod awakening;
 mod busy_guard;
+mod compaction;
 mod intent_analyze;
 mod memory;
-mod summary;
 mod think_loop;
 mod tool_call_query;
 mod tool_execution;

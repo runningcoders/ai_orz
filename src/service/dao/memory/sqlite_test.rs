@@ -1387,3 +1387,97 @@ async fn test_list_relations_batch_chunking(pool: SqlitePool) {
     assert_eq!(results[0].id, "chunk-rel-early");
     assert_eq!(results[1].id, "chunk-rel-cross");
 }
+
+/// 排序方向：待沉淀队列要取「最早未处理」的，否则老记忆会被新记忆持续挤出窗口
+#[sqlx::test]
+async fn query_short_term_respects_sort_order(pool: SqlitePool) {
+    crate::config::init().unwrap();
+    let dao = MemoryDaoSqliteImpl::new();
+    let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
+
+    let base = chrono::Utc::now().timestamp_millis();
+    // created_at 递增：st-old 最早，st-new 最晚
+    for (i, id) in ["st-old", "st-mid", "st-new"].iter().enumerate() {
+        let index = ShortTermMemoryIndexPo {
+            id: id.to_string(),
+            agent_id: "agent-sort".to_string(),
+            task_id: None,
+            role: "user".to_string(),
+            summary: format!("摘要 {}", id),
+            tags: "[]".to_string(),
+            trace_ids: "[]".to_string(),
+            status: MemoryStatus::Active,
+            created_at: base + i as i64,
+            updated_at: base + i as i64,
+        };
+        dao.create_short_term_index(ctx.clone(), index)
+            .await
+            .unwrap();
+    }
+
+    use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+
+    // 最近优先（默认）：新的在前
+    let recent = dao
+        .query_short_term(
+            ctx.clone(),
+            MemoryQuery {
+                agent_id: Some("agent-sort".to_string()),
+                memory_type: Some(common::enums::MemoryType::ShortTerm),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let recent_ids: Vec<_> = recent.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(recent_ids, vec!["st-new", "st-mid", "st-old"]);
+
+    // 最早优先：队列语义，先进先出
+    let oldest = dao
+        .query_short_term(
+            ctx.clone(),
+            MemoryQuery {
+                agent_id: Some("agent-sort".to_string()),
+                memory_type: Some(common::enums::MemoryType::ShortTerm),
+                order: MemorySortOrder::OldestFirst,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let oldest_ids: Vec<_> = oldest.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(oldest_ids, vec!["st-old", "st-mid", "st-new"]);
+
+    // 配合 limit：取最早未处理的 2 条，应拿到最老的两条
+    let batch = dao
+        .query_short_term(
+            ctx.clone(),
+            MemoryQuery {
+                agent_id: Some("agent-sort".to_string()),
+                status: Some(MemoryStatus::Active),
+                memory_type: Some(common::enums::MemoryType::ShortTerm),
+                limit: Some(2),
+                order: MemorySortOrder::OldestFirst,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let batch_ids: Vec<_> = batch.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(batch_ids, vec!["st-old", "st-mid"]);
+}
+
+#[test]
+fn sort_order_to_sql_is_stable() {
+    use crate::service::dao::memory::MemorySortOrder;
+    assert_eq!(
+        MemorySortOrder::RecentFirst.to_sql(),
+        " ORDER BY created_at DESC"
+    );
+    assert_eq!(
+        MemorySortOrder::OldestFirst.to_sql(),
+        " ORDER BY created_at ASC"
+    );
+    // 默认值必须是最近优先，保持历史行为不变
+    assert_eq!(MemorySortOrder::default(), MemorySortOrder::RecentFirst);
+}

@@ -12,6 +12,39 @@ use common::error::Result;
 
 // ==================== 查询参数结构体 ====================
 
+/// 记忆查询的排序方向
+///
+/// 同一个「取 N 条」在不同场景下语义相反：
+/// - 取对话上下文要**最近**的（【历史对话】）
+/// - 取待沉淀队列要**最早**的（否则老记忆会被新记忆持续挤出窗口，永远轮不到沉淀）
+///
+/// # 作用域
+/// 目前仅作用于**短期记忆**查询（`query_short_term`）。长期知识节点查询固定按
+/// `updated_at DESC`（最近修改优先，便于捞回刚更新的节点），不受此字段影响。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MemorySortOrder {
+    /// 最近优先：`ORDER BY created_at DESC`
+    ///
+    /// 适用于「给我最近 N 条」的上下文类查询。
+    #[default]
+    RecentFirst,
+    /// 最早优先：`ORDER BY created_at ASC`
+    ///
+    /// 适用于「给我最早未处理的 N 条」的队列类查询（如沉淀队列、待整理队列），
+    /// 保证先进先出，不会饿死老数据。
+    OldestFirst,
+}
+
+impl MemorySortOrder {
+    /// 渲染为 SQL 的 ORDER BY 子句（含前导空格）
+    pub fn to_sql(&self) -> &'static str {
+        match self {
+            MemorySortOrder::RecentFirst => " ORDER BY created_at DESC",
+            MemorySortOrder::OldestFirst => " ORDER BY created_at ASC",
+        }
+    }
+}
+
 /// ✅ 记忆通用查询参数（用于业务过滤）
 #[derive(Debug, Clone, Default)]
 pub struct MemoryQuery {
@@ -40,6 +73,10 @@ pub struct MemoryQuery {
     /// 新增：按知识节点类型过滤（summary/concept/fact/procedure）
     /// 注意：与 memory_type 不同——memory_type 是记忆大类型，node_type 是知识节点的子类型
     pub node_type: Option<String>,
+    /// 排序方向，默认 [`MemorySortOrder::RecentFirst`]（保持历史行为）
+    ///
+    /// 队列类查询（如待沉淀短期记忆）应显式指定 [`MemorySortOrder::OldestFirst`]。
+    pub order: MemorySortOrder,
 }
 
 /// ✅ 记忆搜索统一入参（关键词搜索 + 向量语义搜索共用）
