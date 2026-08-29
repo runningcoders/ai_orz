@@ -1,7 +1,7 @@
 # 前端架构设计
 
 > 🎯 **本文档定位**：Dioxus 前端架构与技术栈选型、业务域页面组织、DaisyUI 组件体系、HUD 可视化方案的整体设计大纲与演进记录；设计思路快照，组件层级与状态管理逻辑以实际代码为准。
-> 状态：v2.0（2026-07-25 DaisyUI 迁移落地，2026-08-15 整理）
+> 状态：v2.1（2026-07-25 DaisyUI 迁移落地，2026-08-15 整理，2026-08-29 HUD 词汇全量收口）
 > 查阅场景：需要理解前端技术选型、业务域与后端 Handler 对齐策略、DaisyUI 迁移路径、HUD Canvas 可视化边界时打开；组件 props 签名、API 客户端方法直接读代码。
 >
 > 关联文档：
@@ -283,6 +283,18 @@ frontend/
 ---
 
 ## 更新记录
+
+### 2026-08-29 HUD 词汇全量收口（原语库 + 缺失原语 + 弱层统一 + 设计原型挂接）
+
+| 变更项 | 实现细节 |
+|--------|----------|
+| **HUD 原语库定型** | `components/hud.rs` 沉淀 `PageHeader`/`HudPanel`/`HudSection`/`StatReadout`/`StatGrid`/`HudCallout`/`HudProgress`/`HudTable`/`HudTabs`/`HudDivider` 十个组件；`styles/input.css` 配套 `.hud-*` 皮肤（渐变发丝边 + 玻璃质感 + 等宽眉标，锚定品牌橙 `#fa520f`/信号黄 `#ffd900`）。`state.rs` 的 `ErrorAlert/SuccessAlert` 委托 `HudCallout`，`stats.rs` 的 `StatsCard` 委托 `StatReadout`、`StatsPanel` 用 `HudPanel+StatGrid` 包裹 |
+| **补齐缺失原语** | 新增 `HudDivider`/`HudTable`/`HudTabs` 组件 + `.hud-divider`/`.hud-table`/`.hud-tabs`/`.hud-modal`/`.hud-modal-box`/`.hud-input` 皮肤；散落用法扫描收口：28 处 `table table-zebra`→`hud-table`、7 处 `tabs tabs-boxed`→`hud-tabs`、14 处裸 `divider`→`hud-divider`、4 处 `modal-box`→`hud-modal(-box)`、`input/select/textarea`→`hud-input`；`toast.rs` 单条通知由裸 `alert` 改为 `HudCallout`，闭合提示层矛盾 |
+| **进度条 / 消息气泡统一** | 新增 `HudProgress` 原语 + `.hud-progress*` 皮肤，收口三套进度条实现（DaisyUI `progress` / `overview-progress` / `progress-cell` 共 9 处）；消息气泡改为 HUD 玻璃质感（布局机制不动） |
+| **Badge / Button 弱层统一** | `input.css` 新增 `.hud-badge`/`.hud-btn` 皮肤；脚本扫描：99 处裸 `badge badge-*`→`hud-badge`、303 处裸 `btn`→`hud-btn`；2 处 `badge badge-neutral tag-item`→`tag_chip()`，`status.rs` 徽章单一事实源与 `button.rs` 薄壳未被改动 |
+| **残留子卡收口** | 4 处 `card bg-base-200` 子卡（agent_detail×2 / knowledge_graph / task_detail）改为 `hud-panel` |
+| **设计原型挂接** | `frontend/prototype-futuristic-hud.html` 移入 `docs/design/hud_design_prototype.html` 作为 HUD 词汇可视化基准，并在本文「关联文档」列明其对应 `components/hud.rs` + `styles/input.css` 的 `.hud-*` 皮肤 |
+| **验证** | 前端门禁全绿：`cargo check`(wasm32) / `fmt` / `clippy -D warnings` / `test-fe`(122 passed) / Tailwind 编译（6 类新皮肤均进入产物）；提交链 `249d49c8`→`b19c50c4`→`001d716d`→`525e7e02`→`64e9764b` |
 
 ### 2026-07-25 知识图谱 Canvas HUD + Workspace 对话机制 + 聊天共享组件抽取 + utils 模块化
 
