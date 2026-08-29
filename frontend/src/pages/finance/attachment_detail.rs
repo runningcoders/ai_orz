@@ -81,7 +81,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
         AppLayout {
             div { class: "mb-6 flex items-center justify-between",
                 h1 { class: "text-2xl font-bold", "附件详情" }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceAttachments {}, "← 返回列表" }
+                Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::FinanceAttachments {}, "← 返回列表" }
             }
             if attachment_res.read().as_ref().is_none() {
                 Loading {}
@@ -92,7 +92,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                             div { div { class: "text-sm text-base-content/60", "存储名" }, div { class: "font-mono text-sm", "{a.stored_name}" } }
                             div { div { class: "text-sm text-base-content/60", "大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.size)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }
-                            div { div { class: "text-sm text-base-content/60", "用途" }, span { class: "badge badge-info", "{a.purpose}" } }
+                            div { div { class: "text-sm text-base-content/60", "用途" }, span { class: "badge hud-badge badge-info", "{a.purpose}" } }
                             div { div { class: "text-sm text-base-content/60", "创建时间" }, div { class: "font-mono", "{crate::utils::format_datetime(a.created_at)}" } }
                         }
                 }
@@ -106,7 +106,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                                 div { class: "flex gap-2",
                                     if content_dirty() { span { class: "text-xs text-warning", "● 未保存" } }
                                     button {
-                                        class: "btn btn-primary btn-sm",
+                                        class: "btn hud-btn btn-primary btn-sm",
                                         disabled: saving() || !content_dirty(),
                                         onclick: on_save,
                                         if saving() { "保存中..." } else { "💾 保存" }

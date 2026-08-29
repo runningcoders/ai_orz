@@ -133,7 +133,7 @@ pub fn ProjectList() -> Element {
             eyebrow: "PROJECT".to_string(),
             title: "项目管理".to_string(),
             actions: Some(rsx! {
-                button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
+                button { class: "btn hud-btn btn-primary", onclick: move |_| show_modal.set(true), "+ 创建项目" }
             }),
         }
 
@@ -186,7 +186,7 @@ pub fn ProjectList() -> Element {
                     // 清除搜索按钮
                     if !search_keyword().is_empty() || status_filter().is_some() {
                         button {
-                            class: "btn btn-ghost btn-sm",
+                            class: "btn hud-btn btn-ghost btn-sm",
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 status_filter.set(None);
@@ -259,8 +259,8 @@ pub fn ProjectList() -> Element {
                 new_description.set(String::new());
             },
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },

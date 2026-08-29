@@ -642,7 +642,7 @@ pub fn Reception() -> Element {
                                         }
                                     }
                                     button {
-                                        class: "btn btn-primary btn-lg w-full",
+                                        class: "btn hud-btn btn-primary btn-lg w-full",
                                         r#type: "submit",
                                         "data-testid": "login-submit",
                                         disabled: login_submitting(),
@@ -708,7 +708,7 @@ pub fn Reception() -> Element {
                                         }
                                     }
                                     button {
-                                        class: "btn btn-primary btn-lg w-full",
+                                        class: "btn hud-btn btn-primary btn-lg w-full",
                                         r#type: "submit",
                                         "data-testid": "reg-submit",
                                         disabled: reg_submitting(),
@@ -821,7 +821,7 @@ pub fn Reception() -> Element {
                                             div { class: "form-control mt-4",
                                                 button {
                                                     r#type: "button",
-                                                    class: "btn btn-primary w-full",
+                                                    class: "btn hud-btn btn-primary w-full",
                                                     "data-testid": "init-next-step",
                                                     onclick: on_next_step,
                                                     "下一步"
@@ -1027,13 +1027,13 @@ pub fn Reception() -> Element {
                                             div { class: "flex gap-2 mt-4",
                                                 button {
                                                     r#type: "button",
-                                                    class: "btn btn-ghost flex-1",
+                                                    class: "btn hud-btn btn-ghost flex-1",
                                                     onclick: on_prev_step,
                                                     "上一步"
                                                 }
                                                 button {
                                                     r#type: "submit",
-                                                    class: "btn btn-primary flex-1",
+                                                    class: "btn hud-btn btn-primary flex-1",
                                                     "data-testid": "init-submit",
                                                     disabled: init_submitting(),
                                                     "完成初始化"

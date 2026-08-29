@@ -430,7 +430,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         AppLayout {
             div { class: "mb-6 flex items-center justify-between",
                 h1 { class: "text-2xl font-bold", "消息渠道详情" }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMessageChannels {}, "← 返回列表" }
+                Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::FinanceMessageChannels {}, "← 返回列表" }
             }
             if channel_res.read().as_ref().is_none() {
                 Loading {}
@@ -448,31 +448,31 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                     actions: Some(rsx!{
                         if c.channel_type == ChannelType::Lark {
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: on_open_edit,
                                 "✏️ 编辑飞书配置"
                             }
                         } else {
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: on_open_edit,
                                 "✏️ 编辑"
                             }
                         }
                         button {
-                            class: "btn btn-ghost btn-sm",
+                            class: "btn hud-btn btn-ghost btn-sm",
                             disabled: toggling(),
                             onclick: move |_| on_toggle(if c.status == ChannelStatus::Active { ChannelStatus::Disabled } else { ChannelStatus::Active }),
                             if c.status == ChannelStatus::Active { "🚫 禁用" } else { "✅ 启用" }
                         }
                         button {
-                            class: "btn btn-ghost btn-sm",
+                            class: "btn hud-btn btn-ghost btn-sm",
                             disabled: testing(),
                             onclick: on_test,
                             if testing() { "测试中..." } else { "🔌 测试连接" }
                         }
                         button {
-                            class: "btn btn-error btn-sm",
+                            class: "btn hud-btn btn-error btn-sm",
                             onclick: move |_| show_delete_confirm.set(true),
                             "🗑 删除"
                         }
@@ -503,16 +503,16 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     div { class: "text-sm text-base-content/60", "应用凭证" }
                                     div {
                                         if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
-                                            span { class: "badge badge-outline", "{name}" }
+                                            span { class: "badge hud-badge badge-outline", "{name}" }
                                         } else {
-                                            span { class: "badge badge-warning badge-sm", "未绑定凭证" }
+                                            span { class: "badge hud-badge badge-warning badge-sm", "未绑定凭证" }
                                         }
                                     }
                                 }
                                 div {
                                     div { class: "text-sm text-base-content/60", "身份模式" }
                                     div {
-                                        span { class: "badge badge-ghost badge-sm", "{identity_mode_text(lark_cfg.and_then(|l| l.identity_mode.as_deref()))}" }
+                                        span { class: "badge hud-badge badge-ghost badge-sm", "{identity_mode_text(lark_cfg.and_then(|l| l.identity_mode.as_deref()))}" }
                                     }
                                 }
                                 div {
@@ -531,9 +531,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     div { class: "text-sm text-base-content/60", "入站监听" }
                                     div {
                                         if lark_cfg.map(|l| l.listen_inbound).unwrap_or(true) {
-                                            span { class: "badge badge-success badge-sm", "开启" }
+                                            span { class: "badge hud-badge badge-success badge-sm", "开启" }
                                         } else {
-                                            span { class: "badge badge-ghost badge-sm", "关闭（仅出站/lark_cli）" }
+                                            span { class: "badge hud-badge badge-ghost badge-sm", "关闭（仅出站/lark_cli）" }
                                         }
                                     }
                                 }
@@ -544,9 +544,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     div { class: "flex items-center gap-2 flex-wrap",
                                         span { class: "text-sm text-base-content/60", "飞书集成" }
                                         if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
-                                            span { class: "badge badge-outline badge-sm", "凭证：{name}" }
+                                            span { class: "badge hud-badge badge-outline badge-sm", "凭证：{name}" }
                                         } else {
-                                            span { class: "badge badge-warning badge-sm", "凭证未绑定" }
+                                            span { class: "badge hud-badge badge-warning badge-sm", "凭证未绑定" }
                                         }
                                         if user_auth.logged_in {
                                             span { class: "{auth_state_badge(\"用户已授权\")}",
@@ -556,7 +556,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                             span { class: "{auth_state_badge(\"用户未授权\")}", "用户未授权" }
                                         }
                                     }
-                                    Link { class: "btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "管理身份凭证 →" }
+                                    Link { class: "btn hud-btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "管理身份凭证 →" }
                                 }
                             }
                             if c.channel_type == ChannelType::Wechat {
@@ -616,7 +616,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 if let Some(method) = webhook_cfg.and_then(|w| w.method.as_ref()) {
                                     div {
                                         div { class: "text-sm text-base-content/60", "HTTP 方法" }
-                                        div { span { class: "badge badge-info badge-sm", "{method}" } }
+                                        div { span { class: "badge hud-badge badge-info badge-sm", "{method}" } }
                                     }
                                 }
                                 if let Some(tmpl) = webhook_cfg.and_then(|w| w.body_template.as_ref()) {
@@ -632,9 +632,9 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             div {
                                 div { class: "text-sm text-base-content/60", "凭据状态" }
                                 div { class: "flex gap-2 flex-wrap",
-                                    if c.has_access_token { span { class: "badge badge-success badge-sm", "Access Token" } }
-                                    if c.has_secret { span { class: "badge badge-success badge-sm", "Secret" } }
-                                    if c.has_config_secret { span { class: "badge badge-success badge-sm", "Config Secret" } }
+                                    if c.has_access_token { span { class: "badge hud-badge badge-success badge-sm", "Access Token" } }
+                                    if c.has_secret { span { class: "badge hud-badge badge-success badge-sm", "Secret" } }
+                                    if c.has_config_secret { span { class: "badge hud-badge badge-success badge-sm", "Config Secret" } }
                                     if !c.has_access_token && !c.has_secret && !c.has_config_secret {
                                         span { class: "text-base-content/50 text-sm", "无凭据" }
                                     }
@@ -688,8 +688,8 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 show: show_edit_modal(),
                 on_close: move |_| show_edit_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: saving(), onclick: on_save_edit,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: saving(), onclick: on_save_edit,
                         if saving() { "保存中..." } else { "保存" }
                     }
                 },

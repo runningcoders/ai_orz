@@ -75,7 +75,7 @@ pub fn SystemProcesses() -> Element {
                 title: "后台进程管理".to_string(),
                 actions: Some(rsx!{
                     div { class: "flex items-center gap-3",
-                        span { class: "badge badge-outline", "运行中 {running_count} / 共 {list.len()}" }
+                        span { class: "badge hud-badge badge-outline", "运行中 {running_count} / 共 {list.len()}" }
                     }
                     div { class: "flex items-center gap-3",
                         label { class: "label cursor-pointer gap-2 py-0",
@@ -91,7 +91,7 @@ pub fn SystemProcesses() -> Element {
                             span { class: "label-text text-sm", "自动刷新（5s）" }
                         }
                         button {
-                            class: "btn btn-ghost btn-sm",
+                            class: "btn hud-btn btn-ghost btn-sm",
                             onclick: move |_| {
                                 loading.set(true);
                                 load();
@@ -144,7 +144,7 @@ pub fn SystemProcesses() -> Element {
                                                             "{process_alive_text(alive)}"
                                                         }
                                                         if p.background {
-                                                            span { class: "badge badge-info badge-sm ml-1", "后台" }
+                                                            span { class: "badge hud-badge badge-info badge-sm ml-1", "后台" }
                                                         }
                                                     }
                                                     td { class: "font-mono",
@@ -154,7 +154,7 @@ pub fn SystemProcesses() -> Element {
                                                     td { class: "text-xs", "{format_timestamp_opt(Some(p.started_at as i64))}" }
                                                     td { class: "flex gap-2 items-center",
                                                         button {
-                                                            class: "btn btn-ghost btn-sm",
+                                                            class: "btn hud-btn btn-ghost btn-sm",
                                                             onclick: move |_| detail_pid.set(Some(pid)),
                                                             "详情"
                                                         }
@@ -163,7 +163,7 @@ pub fn SystemProcesses() -> Element {
                                                                 let kill_pid = pid;
                                                                 rsx! {
                                                                     button {
-                                                                        class: "btn btn-error btn-sm",
+                                                                        class: "btn hud-btn btn-error btn-sm",
                                                                         onclick: move |_| {
                                                                             spawn(async move {
                                                                                 match kill_process(kill_pid).await {

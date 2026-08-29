@@ -135,7 +135,7 @@ pub fn FinanceToolCallEntries() -> Element {
                         }
                     }
                     div { class: "flex justify-end mb-4",
-                        button { class: "btn btn-primary btn-sm", onclick: on_search, "🔍 查询" }
+                        button { class: "btn hud-btn btn-primary btn-sm", onclick: on_search, "🔍 查询" }
                     }
                     if loading() {
                         Loading {}
@@ -167,10 +167,10 @@ pub fn FinanceToolCallEntries() -> Element {
                                                     td { class: "font-mono text-xs truncate max-w-xs", title: "{call_id}", "{call_id}" }
                                                     td { "{tool_name}" }
                                                     td { class: "font-mono text-xs", "{agent_id.as_deref().unwrap_or(\"-\")}" }
-                                                    td { span { class: "badge badge-xs {status_badge_class(status)}", "{status_text(status)}" } }
+                                                    td { span { class: "badge hud-badge badge-xs {status_badge_class(status)}", "{status_text(status)}" } }
                                                     td { class: "font-mono", "{duration_ms}ms" }
                                                     td { class: "font-mono text-xs", "{crate::utils::format_datetime(started_at as i64)}" }
-                                                    td { button { class: "btn btn-ghost btn-xs", onclick: move |_| on_click_entry(call_id.clone()), "详情" } }
+                                                    td { button { class: "btn hud-btn btn-ghost btn-xs", onclick: move |_| on_click_entry(call_id.clone()), "详情" } }
                                                 }
                                             }
                                         }
@@ -187,7 +187,7 @@ pub fn FinanceToolCallEntries() -> Element {
                 title: "工具调用详情".to_string(),
                 show: show_detail_modal(),
                 on_close: move |_| show_detail_modal.set(false),
-                footer: rsx! { button { class: "btn btn-ghost", onclick: move |_| show_detail_modal.set(false), "关闭" } },
+                footer: rsx! { button { class: "btn hud-btn btn-ghost", onclick: move |_| show_detail_modal.set(false), "关闭" } },
                 if detail_loading() {
                     Loading {}
                 } else if let Some(e) = selected {

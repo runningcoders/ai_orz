@@ -362,7 +362,7 @@ pub fn FinanceIdentity() -> Element {
                     div { class: "border border-base-300 rounded-lg p-4 mt-4",
                         div { class: "flex items-center gap-2",
                             h3 { class: "font-semibold text-lg", "飞书" }
-                            span { class: "badge badge-outline badge-sm", "LarkApp" }
+                            span { class: "badge hud-badge badge-outline badge-sm", "LarkApp" }
                         }
                         p { class: "text-xs text-base-content/50 mt-1",
                             "飞书自建应用凭证与用户身份授权；消息渠道通过引用凭证接入。"
@@ -376,10 +376,10 @@ pub fn FinanceIdentity() -> Element {
                                 div { class: "flex items-center justify-between flex-wrap gap-2",
                                     h4 { class: "font-semibold", "应用绑定" }
                                     div { class: "flex gap-2",
-                                        button { class: "btn btn-sm btn-outline", disabled: starting_bind(), onclick: handle_bind_start,
+                                        button { class: "btn hud-btn btn-sm btn-outline", disabled: starting_bind(), onclick: handle_bind_start,
                                             if starting_bind() { "启动中..." } else { "✨ 自动建应用" }
                                         }
-                                        button { class: "btn btn-sm btn-primary", onclick: move |_| show_create_cred_modal.set(true), "+ 手动录入凭证" }
+                                        button { class: "btn hud-btn btn-sm btn-primary", onclick: move |_| show_create_cred_modal.set(true), "+ 手动录入凭证" }
                                     }
                                 }
                                 if bind_active {
@@ -387,12 +387,12 @@ pub fn FinanceIdentity() -> Element {
                                         div { class: "flex flex-col gap-1 w-full",
                                             span { "自动绑定进行中：请在浏览器完成飞书应用配置" }
                                             if !bind_url_value.is_empty() {
-                                                a { class: "btn btn-sm btn-primary w-fit", href: "{bind_url_value}", target: "_blank", "打开验证链接" }
+                                                a { class: "btn hud-btn btn-sm btn-primary w-fit", href: "{bind_url_value}", target: "_blank", "打开验证链接" }
                                             } else {
                                                 span { class: "text-sm", "验证链接生成中（轮询补取）..." }
                                             }
                                         }
-                                        button { class: "btn btn-sm btn-ghost", onclick: handle_bind_cancel, "取消" }
+                                        button { class: "btn hud-btn btn-sm btn-ghost", onclick: handle_bind_cancel, "取消" }
                                     }
                                 }
                                 if credentials.is_empty() {
@@ -414,19 +414,19 @@ pub fn FinanceIdentity() -> Element {
                                                         div { class: "flex items-center justify-between flex-wrap gap-2",
                                                             div { class: "flex items-center gap-2 flex-wrap",
                                                                 span { class: "font-medium", "{cred_name}" }
-                                                                span { class: "badge badge-outline font-mono badge-sm", "{app_id}" }
+                                                                span { class: "badge hud-badge badge-outline font-mono badge-sm", "{app_id}" }
                                                                 if is_default {
-                                                                    span { class: "badge badge-success badge-sm", "默认" }
+                                                                    span { class: "badge hud-badge badge-success badge-sm", "默认" }
                                                                 }
                                                             }
                                                             div { class: "flex gap-2",
                                                                 if !is_default {
-                                                                    button { class: "btn btn-ghost btn-xs",
+                                                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                                                         onclick: move |_| handle_set_default(id_for_default.clone()),
                                                                         "设为默认"
                                                                     }
                                                                 }
-                                                                button { class: "btn btn-ghost btn-xs",
+                                                                button { class: "btn hud-btn btn-ghost btn-xs",
                                                                     onclick: move |_| {
                                                                         edit_cred_id.set(id_for_edit.clone());
                                                                         edit_cred_name.set(String::new());
@@ -435,7 +435,7 @@ pub fn FinanceIdentity() -> Element {
                                                                         show_edit_cred_modal.set(true);
                                                                     }, "编辑"
                                                                 }
-                                                                button { class: "btn btn-ghost btn-xs text-error",
+                                                                button { class: "btn hud-btn btn-ghost btn-xs text-error",
                                                                     onclick: move |_| {
                                                                         pending_delete_cred_id.set(id_for_delete.clone());
                                                                         show_delete_cred_confirm.set(true);
@@ -456,7 +456,7 @@ pub fn FinanceIdentity() -> Element {
                                                                         rsx! {
                                                                             Link {
                                                                                 key: "{ch_id}",
-                                                                                class: "btn btn-ghost btn-xs",
+                                                                                class: "btn hud-btn btn-ghost btn-xs",
                                                                                 to: crate::pages::Route::FinanceMessageChannelDetail { id: ch_id },
                                                                                 "{ch_name} {enabled_mark}"
                                                                             }
@@ -480,13 +480,13 @@ pub fn FinanceIdentity() -> Element {
                                     div { class: "flex gap-2 items-center",
                                         if let Some(auth) = &user_auth {
                                             if auth.logged_in {
-                                                span { class: "badge badge-sm badge-success",
+                                                span { class: "badge hud-badge badge-sm badge-success",
                                                     "已授权{auth_name_suffix}"
                                                 }
-                                                button { class: "btn btn-sm btn-ghost", onclick: handle_auth_logout, "取消授权" }
+                                                button { class: "btn hud-btn btn-sm btn-ghost", onclick: handle_auth_logout, "取消授权" }
                                             } else {
                                                 span { class: "{auth_state_badge(\"未授权\")}", "未授权" }
-                                                button { class: "btn btn-sm btn-primary", disabled: auth_starting(), onclick: handle_auth_start,
+                                                button { class: "btn hud-btn btn-sm btn-primary", disabled: auth_starting(), onclick: handle_auth_start,
                                                     if auth_starting() { "发起中..." } else { "授权用户身份" }
                                                 }
                                             }
@@ -521,8 +521,8 @@ pub fn FinanceIdentity() -> Element {
                 show: show_create_cred_modal(),
                 on_close: move |_| show_create_cred_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_create_cred_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: creating_cred(), onclick: handle_create_credential,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_create_cred_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: creating_cred(), onclick: handle_create_credential,
                         if creating_cred() { "绑定中..." } else { "绑定" }
                     }
                 },
@@ -551,8 +551,8 @@ pub fn FinanceIdentity() -> Element {
                 show: show_edit_cred_modal(),
                 on_close: move |_| show_edit_cred_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_edit_cred_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: saving_cred(), onclick: handle_save_credential,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_cred_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: saving_cred(), onclick: handle_save_credential,
                         if saving_cred() { "保存中..." } else { "保存" }
                     }
                 },
@@ -582,14 +582,14 @@ pub fn FinanceIdentity() -> Element {
                 show: show_auth_modal(),
                 on_close: move |_| show_auth_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_auth_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: auth_completing(), onclick: handle_auth_complete,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_auth_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: auth_completing(), onclick: handle_auth_complete,
                         if auth_completing() { "确认中..." } else { "已完成授权" }
                     }
                 },
                 div { class: "space-y-4",
                     p { class: "text-sm", "请在浏览器打开以下链接完成飞书授权，完成后点击「已完成授权」：" }
-                    a { class: "btn btn-primary w-fit", href: "{auth_url_value}", target: "_blank", "打开授权链接" }
+                    a { class: "btn hud-btn btn-primary w-fit", href: "{auth_url_value}", target: "_blank", "打开授权链接" }
                     div { class: "font-mono text-xs break-all bg-base-200 p-2 rounded", "{auth_url_value}" }
                 }
             }

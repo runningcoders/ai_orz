@@ -92,7 +92,7 @@ pub fn TaskProgress(props: TaskProgressProps) -> Element {
                 }
                 if has_cancel {
                     button {
-                        class: "btn btn-outline btn-sm mt-4",
+                        class: "btn hud-btn btn-outline btn-sm mt-4",
                         onclick: move |_| {
                             if let Some(on_cancel) = &props.on_cancel {
                                 on_cancel.call(());

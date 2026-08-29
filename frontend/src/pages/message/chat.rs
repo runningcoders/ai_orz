@@ -604,7 +604,7 @@ pub fn MessageChat() -> Element {
             div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         onclick: move |_| sidebar_open.set(true),
                         "←"
                     }
@@ -617,7 +617,7 @@ pub fn MessageChat() -> Element {
                         span { class: "text-base-content/50 text-sm", "○ 连接中..." }
                     }
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         title: "信息面板",
                         onclick: toggle_panel,
                         "ⓘ"
@@ -738,7 +738,7 @@ pub fn MessageChat() -> Element {
             div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         onclick: move |_| sidebar_open.set(true),
                         "←"
                     }
@@ -756,7 +756,7 @@ pub fn MessageChat() -> Element {
                         span { class: "text-base-content/50 text-sm", "○ 连接中..." }
                     }
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         title: "信息面板",
                         onclick: toggle_panel,
                         "ⓘ"
@@ -898,7 +898,7 @@ pub fn MessageChat() -> Element {
                 div { class: "p-3 border-b border-base-300 flex items-center justify-between",
                     h2 { class: "font-semibold", "项目列表" }
                     button {
-                        class: "btn btn-primary btn-sm",
+                        class: "btn hud-btn btn-primary btn-sm",
                         r#type: "button",
                         onclick: open_create_project,
                         "+ 新建项目"
@@ -991,12 +991,12 @@ pub fn MessageChat() -> Element {
                 on_close: move |_| show_create_project.set(false),
                 footer: rsx! {
                     button {
-                        class: "btn btn-ghost",
+                        class: "btn hud-btn btn-ghost",
                         onclick: move |_| show_create_project.set(false),
                         "取消"
                     }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         disabled: creating_project() || new_project_name().trim().is_empty(),
                         onclick: handle_create_project_submit,
                         if creating_project() {
@@ -1149,12 +1149,12 @@ fn chat_input_area(
                 div { class: "flex flex-wrap gap-2 mb-2",
                     for att in pending_attachments().iter() {
                         div {
-                            class: "badge badge-lg gap-2",
+                            class: "badge hud-badge badge-lg gap-2",
                             key: "{att.id}",
                             span { "📎" }
                             span { "{att.name}" }
                             button {
-                                class: "btn btn-ghost btn-xs btn-circle",
+                                class: "btn hud-btn btn-ghost btn-xs btn-circle",
                                 onclick: {
                                     let id = att.id.clone();
                                     move |_| {
@@ -1179,7 +1179,7 @@ fn chat_input_area(
                     },
                 }
                 button {
-                    class: "btn btn-ghost btn-square",
+                    class: "btn hud-btn btn-ghost btn-square",
                     r#type: "button",
                     disabled: uploading(),
                     onclick: move |_| {
@@ -1251,7 +1251,7 @@ fn chat_input_area(
                     },
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     onclick: move |_| handle_send(()),
                     disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
                     "发送"

@@ -258,7 +258,7 @@ pub fn FinanceMessageChannels() -> Element {
                         eyebrow: Some("FINANCE".to_string()),
                         title: "消息渠道管理".to_string(),
                         actions: Some(rsx!{
-                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建渠道" }
+                        button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建渠道" }
                         }),
                     },
                     if loading() {
@@ -286,30 +286,30 @@ pub fn FinanceMessageChannels() -> Element {
                                             rsx! {
                                                 tr { key: "{id}",
                                                     td { class: "font-semibold", "{channel_name}" }
-                                                    td { span { class: "badge badge-info", "{channel_type}" } }
+                                                    td { span { class: "badge hud-badge badge-info", "{channel_type}" } }
                                                     td {
                                                         if is_lark {
                                                             if let Some(name) = &credential_name {
-                                                                span { class: "badge badge-outline", "{name}" }
+                                                                span { class: "badge hud-badge badge-outline", "{name}" }
                                                             } else {
-                                                                span { class: "badge badge-warning", "未绑定凭证" }
+                                                                span { class: "badge hud-badge badge-warning", "未绑定凭证" }
                                                             }
                                                         } else {
                                                             span { class: "text-base-content/40 text-sm", "-" }
                                                         }
                                                     }
                                                     td {
-                                                        if is_active { span { class: "badge badge-success", "启用" } }
-                                                        else { span { class: "badge badge-error", "禁用" } }
+                                                        if is_active { span { class: "badge hud-badge badge-success", "启用" } }
+                                                        else { span { class: "badge hud-badge badge-error", "禁用" } }
                                                     }
                                                     td { class: "flex gap-2 items-center",
                                                         Link {
-                                                            class: "btn btn-ghost btn-sm",
+                                                            class: "btn hud-btn btn-ghost btn-sm",
                                                             to: crate::pages::Route::FinanceMessageChannelDetail { id: id.clone() },
                                                             "详情"
                                                         }
                                                         if is_active {
-                                                            button { class: "btn btn-ghost btn-sm",
+                                                            button { class: "btn hud-btn btn-ghost btn-sm",
                                                                 onclick: move |_| {
                                                                     let id_disable = id_disable.clone();
                                                                     spawn(async move {
@@ -325,7 +325,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                 }, "禁用"
                                                             }
                                                         } else {
-                                                            button { class: "btn btn-ghost btn-sm",
+                                                            button { class: "btn hud-btn btn-ghost btn-sm",
                                                                 onclick: move |_| {
                                                                     let id_enable = id_enable.clone();
                                                                     spawn(async move {
@@ -341,7 +341,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                 }, "启用"
                                                             }
                                                         }
-                                                        button { class: "btn btn-sm btn-primary",
+                                                        button { class: "btn hud-btn btn-sm btn-primary",
                                                             onclick: move |_| {
                                                                 let id_test = id_test.clone();
                                                                 spawn(async move {
@@ -358,7 +358,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                 });
                                                             }, "连接测试"
                                                         }
-                                                        button { class: "btn btn-error btn-sm",
+                                                        button { class: "btn hud-btn btn-error btn-sm",
                                                             onclick: move |_| {
                                                                 pending_delete_id.set(id_delete.clone());
                                                                 show_delete_confirm.set(true);
@@ -381,8 +381,8 @@ pub fn FinanceMessageChannels() -> Element {
                 show: show_add_modal(),
                 on_close: move |_| show_add_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: creating() || no_credentials, onclick: handle_create,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: creating() || no_credentials, onclick: handle_create,
                         if creating() { "创建中..." } else { "创建" }
                     }
                 },
@@ -434,7 +434,7 @@ pub fn FinanceMessageChannels() -> Element {
                         if no_credentials {
                             HudCallout { tone: Some("warning".to_string()),
                                 span { "尚未绑定飞书应用凭证，请先前往「身份凭证」页完成绑定" }
-                                Link { class: "btn btn-sm btn-primary", to: crate::pages::Route::FinanceIdentity {}, "前往绑定" }
+                                Link { class: "btn hud-btn btn-sm btn-primary", to: crate::pages::Route::FinanceIdentity {}, "前往绑定" }
                             }
                         } else {
                             div { class: "form-control w-full",

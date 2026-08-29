@@ -82,7 +82,7 @@ pub fn OrganizationInfo() -> Element {
                             textarea { class: "textarea textarea-bordered w-full", value: "{description}",
                                 oninput: move |e| description.set(e.value()) }
                         }
-                        button { class: "btn btn-primary", disabled: saving(), onclick: handle_save,
+                        button { class: "btn hud-btn btn-primary", disabled: saving(), onclick: handle_save,
                             if saving() { "保存中..." } else { "保存" }
                         }
                     }

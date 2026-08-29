@@ -203,7 +203,7 @@ pub fn IdentityGenericTokenSection() -> Element {
         div { class: "border border-base-300 rounded-lg p-4 mt-4",
             div { class: "flex items-center gap-2 flex-wrap",
                 h3 { class: "font-semibold text-lg", "通用 API Token" }
-                span { class: "badge badge-outline badge-sm", "GenericToken" }
+                span { class: "badge hud-badge badge-outline badge-sm", "GenericToken" }
             }
             p { class: "text-xs text-base-content/50 mt-1",
                 "统一管理单字段 API Key 类平台凭证（按 platform 分 Tab）；未绑定对应平台凭证时工具调用返回绑定引导。"
@@ -243,7 +243,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                     div { class: "flex items-center justify-between flex-wrap gap-2",
                         h4 { class: "font-semibold", "{active_meta.caption} API Token" }
                         button {
-                            class: "btn btn-sm btn-primary",
+                            class: "btn hud-btn btn-sm btn-primary",
                             onclick: move |_| {
                                 new_name.set(String::new());
                                 new_token.set(String::new());
@@ -274,24 +274,24 @@ pub fn IdentityGenericTokenSection() -> Element {
                                             div { class: "flex items-center justify-between flex-wrap gap-2",
                                                 div { class: "flex items-center gap-2 flex-wrap",
                                                     span { class: "font-medium", "{cred_name}" }
-                                                    span { class: "badge badge-ghost badge-sm font-mono", "{platform}" }
+                                                    span { class: "badge hud-badge badge-ghost badge-sm font-mono", "{platform}" }
                                                     if !token_tail.is_empty() {
-                                                        span { class: "badge badge-outline font-mono badge-sm", "****{token_tail}" }
+                                                        span { class: "badge hud-badge badge-outline font-mono badge-sm", "****{token_tail}" }
                                                     }
                                                     if is_default {
-                                                        span { class: "badge badge-success badge-sm", "默认" }
+                                                        span { class: "badge hud-badge badge-success badge-sm", "默认" }
                                                     }
                                                 }
                                                 div { class: "flex gap-2",
                                                     if !is_default {
                                                         button {
-                                                            class: "btn btn-ghost btn-xs",
+                                                            class: "btn hud-btn btn-ghost btn-xs",
                                                             onclick: move |_| handle_set_default(plat_for_default.clone(), id_for_default.clone()),
                                                             "设为默认"
                                                         }
                                                     }
                                                     button {
-                                                        class: "btn btn-ghost btn-xs",
+                                                        class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
                                                             edit_id.set(id_for_edit.clone());
                                                             edit_platform.set(platform.clone());
@@ -302,7 +302,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                                                         "编辑"
                                                     }
                                                     button {
-                                                        class: "btn btn-ghost btn-xs text-error",
+                                                        class: "btn hud-btn btn-ghost btn-xs text-error",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_for_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -332,8 +332,8 @@ pub fn IdentityGenericTokenSection() -> Element {
             show: show_create_modal(),
             on_close: move |_| show_create_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_create_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_create_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "绑定中..." } else { "绑定" }
                 }
             },
@@ -377,8 +377,8 @@ pub fn IdentityGenericTokenSection() -> Element {
             show: show_edit_modal(),
             on_close: move |_| show_edit_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: saving(), onclick: handle_save,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: saving(), onclick: handle_save,
                     if saving() { "保存中..." } else { "保存" }
                 }
             },

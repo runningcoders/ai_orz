@@ -136,7 +136,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 eyebrow: "FINANCE".to_string(),
                 title: "模型提供商详情".to_string(),
                 actions: Some(rsx! {
-                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceModelProviders {},
+                    Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::FinanceModelProviders {},
                         "← 返回列表"
                     }
                 }),
@@ -175,7 +175,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         .unwrap_or_default();
                                     rsx! {
                                         if is_enabled {
-                                            button { class: "btn btn-outline btn-sm",
+                                            button { class: "btn hud-btn btn-outline btn-sm",
                                                 onclick: {
                                                     let pid = provider_id.clone();
                                                     let rid = reload_id.clone();
@@ -199,7 +199,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                 "禁用"
                                             }
                                         } else {
-                                            button { class: "btn btn-primary btn-sm",
+                                            button { class: "btn hud-btn btn-primary btn-sm",
                                                 onclick: {
                                                     let pid = provider_id.clone();
                                                     let pname = provider_name.clone();
@@ -249,7 +249,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             }
                                         }
                                         button {
-                                            class: "btn btn-ghost btn-sm",
+                                            class: "btn hud-btn btn-ghost btn-sm",
                                             onclick: move |_| {
                                                 edit_name.set(edit_name_init.clone());
                                                 edit_provider_type.set(edit_provider_type_init.clone());
@@ -263,7 +263,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             },
                                             "✏️ 编辑"
                                         }
-                                        button { class: "btn btn-outline btn-sm",
+                                        button { class: "btn hud-btn btn-outline btn-sm",
                                             onclick: {
                                                 let pid = provider_id.clone();
                                                 move |_| {
@@ -278,7 +278,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             },
                                             "测试连接"
                                         }
-                                        button { class: "btn btn-outline btn-sm",
+                                        button { class: "btn hud-btn btn-outline btn-sm",
                                             onclick: move |_| {
                                                 test_prompt.set("你好，请介绍一下自己".to_string());
                                                 test_response.set(String::new());
@@ -286,7 +286,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                             },
                                             "调用测试"
                                         }
-                                        button { class: "btn btn-error btn-sm",
+                                        button { class: "btn hud-btn btn-error btn-sm",
                                             onclick: {
                                                 let pid = provider_id.clone();
                                                 move |_| {
@@ -311,7 +311,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "类型" }
                                 }
-                                div { span { class: "badge badge-info", "{p.provider_type}" } }
+                                div { span { class: "badge hud-badge badge-info", "{p.provider_type}" } }
                             }
                             div {
                                 label { class: "label",
@@ -319,9 +319,9 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 }
                                 div {
                                     if p.capability.is_embedding() {
-                                        span { class: "badge badge-warning", "embedding" }
+                                        span { class: "badge hud-badge badge-warning", "embedding" }
                                     } else {
-                                        span { class: "badge badge-success", "agent" }
+                                        span { class: "badge hud-badge badge-success", "agent" }
                                     }
                                 }
                             }
@@ -331,9 +331,9 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 }
                                 div {
                                     if p.status == 1 {
-                                        span { class: "badge badge-success", "启用" }
+                                        span { class: "badge hud-badge badge-success", "启用" }
                                     } else {
-                                        span { class: "badge badge-neutral", "禁用" }
+                                        span { class: "badge hud-badge badge-neutral", "禁用" }
                                     }
                                 }
                             }
@@ -388,8 +388,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     show: show_test_modal(),
                     on_close: move |_| show_test_modal.set(false),
                     footer: rsx! {
-                        button { class: "btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
-                        button { class: "btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
+                        button { class: "btn hud-btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
+                        button { class: "btn hud-btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
                             if test_loading() { "发送中..." } else { "发送" }
                         }
                     },
@@ -417,8 +417,8 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     show: show_switch_modal(),
                     on_close: move |_| show_switch_modal.set(false),
                     footer: rsx! {
-                        button { class: "btn btn-ghost", onclick: move |_| show_switch_modal.set(false), "取消" }
-                        button { class: "btn btn-warning", disabled: switch_loading(), onclick: handle_switch_confirm,
+                        button { class: "btn hud-btn btn-ghost", onclick: move |_| show_switch_modal.set(false), "取消" }
+                        button { class: "btn hud-btn btn-warning", disabled: switch_loading(), onclick: handle_switch_confirm,
                             if switch_loading() { "切换中..." } else { "确认切换" }
                         }
                     },
@@ -471,9 +471,9 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 show: show_edit_modal(),
                 on_close: move |_| show_edit_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         disabled: saving_meta(),
                         onclick: {
                             let id_for_submit = id.clone();

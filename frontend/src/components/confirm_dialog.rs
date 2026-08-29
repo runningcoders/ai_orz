@@ -79,7 +79,7 @@ pub fn ConfirmDialog(props: ConfirmDialogProps) -> Element {
             on_close: move |_| props.on_cancel.call(()),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     onclick: move |_| props.on_cancel.call(()),
                     "{cancel_text}"
                 }

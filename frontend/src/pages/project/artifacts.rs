@@ -131,7 +131,7 @@ pub fn ProjectArtifacts() -> Element {
     rsx! {
         AppLayout {
             PageHeader { eyebrow: Some("PROJECT".to_string()), title: "项目产物管理".to_string(), actions: Some(rsx! {
-                button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
+                button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建产物" }
             }) }
             HudPanel {
                 div { class: "card-body",
@@ -189,17 +189,17 @@ pub fn ProjectArtifacts() -> Element {
                                                         "{description}"
                                                     }
                                                 }
-                                                td { "data-label": "来源类型", span { class: "badge badge-info", "{source_type_text(source_type)}" } }
+                                                td { "data-label": "来源类型", span { class: "badge hud-badge badge-info", "{source_type_text(source_type)}" } }
                                                 td { class: "font-mono text-base-content/70", "data-label": "文件大小", "{format_file_size(file_size)}" }
                                                 td { class: "font-mono text-base-content/70", "data-label": "创建时间", "{created_at}" }
                                                 td { "data-label": "操作",
                                                     div { class: "flex gap-1",
                                                         Link {
-                                                            class: "btn btn-ghost btn-sm",
+                                                            class: "btn hud-btn btn-ghost btn-sm",
                                                             to: crate::pages::Route::ProjectArtifactDetail { id: id.clone() },
                                                             "详情"
                                                         }
-                                                        button { class: "btn btn-error btn-sm",
+                                                        button { class: "btn hud-btn btn-error btn-sm",
                                                             onclick: move |_| {
                                                                 let id_delete = id_delete.clone();
                                                                 spawn(async move {
@@ -235,8 +235,8 @@ pub fn ProjectArtifacts() -> Element {
             show: show_add_modal(),
             on_close: move |_| show_add_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },

@@ -79,16 +79,16 @@ pub fn Navbar() -> Element {
             // 中间：桌面导航
             if !is_mobile() {
                 div { class: "flex-none",
-                    Link { to: Route::MessageChat {}, class: "btn btn-ghost btn-sm text-neutral-content", "💬 对话" }
-                    Link { to: Route::MessageSearch {}, class: "btn btn-ghost btn-sm text-neutral-content", "🔍 消息搜索" }
-                    Link { to: Route::Workspace {}, class: "btn btn-ghost btn-sm text-neutral-content", "🚀 工作台" }
+                    Link { to: Route::MessageChat {}, class: "btn hud-btn btn-ghost btn-sm text-neutral-content", "💬 对话" }
+                    Link { to: Route::MessageSearch {}, class: "btn hud-btn btn-ghost btn-sm text-neutral-content", "🔍 消息搜索" }
+                    Link { to: Route::Workspace {}, class: "btn hud-btn btn-ghost btn-sm text-neutral-content", "🚀 工作台" }
 
                     // 人力资源（DaisyUI 原生 dropdown，依赖 tabindex + focus-within）
                     div { class: "dropdown dropdown-end",
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            class: "btn hud-btn btn-ghost btn-sm text-neutral-content",
                             "人力资源",
                             span { " ▾" }
                         }
@@ -108,7 +108,7 @@ pub fn Navbar() -> Element {
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            class: "btn hud-btn btn-ghost btn-sm text-neutral-content",
                             "财务管理",
                             span { " ▾" }
                         }
@@ -131,7 +131,7 @@ pub fn Navbar() -> Element {
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            class: "btn hud-btn btn-ghost btn-sm text-neutral-content",
                             "项目管理",
                             span { " ▾" }
                         }
@@ -149,7 +149,7 @@ pub fn Navbar() -> Element {
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm text-neutral-content",
+                            class: "btn hud-btn btn-ghost btn-sm text-neutral-content",
                             "系统",
                             span { " ▾" }
                         }
@@ -182,7 +182,7 @@ pub fn Navbar() -> Element {
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm text-neutral-content gap-2",
+                            class: "btn hud-btn btn-ghost btn-sm text-neutral-content gap-2",
                             div { class: "avatar",
                                 div { class: "w-8 rounded-full {avatar_bg} text-white flex items-center justify-center text-sm font-bold", "{avatar_char}" }
                             }
@@ -207,7 +207,7 @@ pub fn Navbar() -> Element {
                     // 移动端汉堡按钮
                     label {
                         r#for: "mobile-drawer",
-                        class: "btn btn-square btn-ghost text-neutral-content",
+                        class: "btn hud-btn btn-square btn-ghost text-neutral-content",
                         onclick: move |_| drawer_open.set(true),
                         "☰"
                     }

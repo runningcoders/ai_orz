@@ -201,7 +201,7 @@ pub fn SystemHealth() -> Element {
                 title: "系统健康监控".to_string(),
                 actions: Some(rsx!{
                 button {
-                    class: "btn btn-ghost btn-sm",
+                    class: "btn hud-btn btn-ghost btn-sm",
                     onclick: move |_| {
                         spawn(async move {
                             match check_health().await {
@@ -392,7 +392,7 @@ pub fn SystemHealth() -> Element {
                                 oninput: move |e| retention_input.set(e.value()),
                             }
                             button {
-                                class: "btn btn-warning btn-sm",
+                                class: "btn hud-btn btn-warning btn-sm",
                                 disabled: cleaning(),
                                 onclick: handle_cleanup_tool_logs,
                                 if cleaning() { "清理中..." } else { "立即清理" }

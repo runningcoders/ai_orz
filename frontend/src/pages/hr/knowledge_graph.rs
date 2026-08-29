@@ -367,17 +367,17 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                             let tags = rec.tags.clone();
                                             rsx! {
                                                 button {
-                                                    class: "card bg-base-200 hover:bg-base-300 transition-colors text-left p-2 rounded-lg cursor-pointer",
+                                                    class: "hud-panel hover:bg-base-300 transition-colors text-left p-2 rounded-lg cursor-pointer",
                                                     onclick: move |_| handle_node_click(nid.clone()),
                                                     div { class: "flex flex-col gap-1",
                                                         span { class: "font-medium text-sm truncate", "{name}" }
                                                         span { class: "text-xs text-base-content/70 line-clamp-2", "{desc}" }
                                                         div { class: "flex flex-wrap gap-1 mt-1",
-                                                            span { class: "badge badge-primary badge-sm", "度数 {degree}" }
-                                                            span { class: "badge badge-ghost badge-sm", "入 {incoming}" }
-                                                            span { class: "badge badge-ghost badge-sm", "出 {outgoing}" }
+                                                            span { class: "badge hud-badge badge-primary badge-sm", "度数 {degree}" }
+                                                            span { class: "badge hud-badge badge-ghost badge-sm", "入 {incoming}" }
+                                                            span { class: "badge hud-badge badge-ghost badge-sm", "出 {outgoing}" }
                                                             for tag in tags.iter().take(3) {
-                                                                span { class: "badge badge-neutral badge-sm", "{tag}" }
+                                                                span { class: "badge hud-badge badge-neutral badge-sm", "{tag}" }
                                                             }
                                                         }
                                                     }
@@ -435,7 +435,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                         span { class: "text-xs text-base-content/70", "搜索历史:" }
                                         for kw in history_list.into_iter() {
                                             button {
-                                                class: "btn btn-xs btn-ghost",
+                                                class: "btn hud-btn btn-xs btn-ghost",
                                                 onclick: move |_| {
                                                     keyword.set(kw.clone());
                                                     handle_search(());
@@ -567,7 +567,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                     HudSection { title: "节点详情".to_string(),
                                         actions: Some(rsx!{
                                             button {
-                                                class: "btn btn-ghost btn-sm btn-circle",
+                                                class: "btn hud-btn btn-ghost btn-sm btn-circle",
                                                 onclick: move |_| {
                                                     selected_node_id.set(None);
                                                     selected_node_data.set(None);
@@ -624,7 +624,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                     }
                                                     div { class: "flex flex-wrap gap-2",
                                                         for tag in tags.iter() {
-                                                            span { class: "badge badge-neutral", "{tag}" }
+                                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
                                                         }
                                                     }
                                                 }
@@ -669,7 +669,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
 
                                         div { class: "flex gap-2",
                                             button {
-                                                class: "btn btn-outline btn-sm",
+                                                class: "btn hud-btn btn-outline btn-sm",
                                                 onclick: move |_| {
                                                     selected_node_id.set(None);
                                                     selected_node_data.set(None);
@@ -749,7 +749,7 @@ pub fn HrKnowledgeGraph() -> Element {
                             }
                             if selected_agent_id().is_some() {
                                 button {
-                                    class: "btn btn-ghost btn-sm",
+                                    class: "btn hud-btn btn-ghost btn-sm",
                                     onclick: move |_| {
                                         selected_agent_id.set(None);
                                     },

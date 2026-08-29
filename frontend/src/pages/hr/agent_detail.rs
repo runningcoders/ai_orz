@@ -494,7 +494,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                     div { class: "card-body",
                         // 返回列表按钮：置于布局顶部（放底部时内容长会滚出视野）
                         div { class: "mb-4",
-                            Link { to: "/hr/agents", class: "btn btn-ghost btn-sm", "← 返回列表" }
+                            Link { to: "/hr/agents", class: "btn hud-btn btn-ghost btn-sm", "← 返回列表" }
                         }
                         // 顶部标题 + 编辑按钮
                         div { class: "mb-6 flex justify-end items-start",
@@ -504,7 +504,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             }
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| {
                                     if let Some(a) = agent_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
                                         edit_name.set(a.name.clone());
@@ -617,7 +617,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     if !capabilities.is_empty() {
                                         div { class: "flex flex-wrap gap-2",
                                             for cap in capabilities.iter() {
-                                                span { class: "badge badge-info", "{cap}" }
+                                                span { class: "badge hud-badge badge-info", "{cap}" }
                                             }
                                         }
                                     } else {
@@ -744,7 +744,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     if a.status == AgentStatus::Interviewing as i32 || a.status == AgentStatus::PendingOnboard as i32 {
                                         div { class: "flex flex-wrap items-center gap-3 mb-3 p-3 rounded-lg bg-base-200",
                                             button {
-                                                class: "btn btn-success btn-sm",
+                                                class: "btn hud-btn btn-success btn-sm",
                                                 onclick: move |_| {
                                                     let aid = agent_id_signal();
                                                     spawn(async move {
@@ -853,7 +853,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let aid = agent_id_signal();
                                                     rsx! {
                                                         span {
-                                                            class: "badge badge-accent gap-1",
+                                                            class: "badge hud-badge badge-accent gap-1",
                                                             "{tag}"
                                                             button {
                                                                 class: "badge-remove",
@@ -917,7 +917,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let tag_clone = tag.clone();
                                                     rsx! {
                                                         span {
-                                                            class: "badge badge-info gap-1",
+                                                            class: "badge hud-badge badge-info gap-1",
                                                             "{tag}"
                                                             button {
                                                                 class: "badge-remove",
@@ -1002,19 +1002,19 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let skill_desc = skill.description.clone();
                                                     rsx! {
                                                         div {
-                                                            class: "card bg-base-200",
+                                                            class: "hud-panel",
                                                             key: "{skill_id}",
                                                             div { class: "card-body p-4",
                                                                 div { class: "flex justify-between items-start",
                                                                     span { class: "font-medium", "{skill_name}" }
-                                                                    span { class: "badge badge-success", "已安装" }
+                                                                    span { class: "badge hud-badge badge-success", "已安装" }
                                                                 }
                                                                 if !skill_desc.is_empty() {
                                                                     p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
                                                                 }
                                                                 div { class: "card-actions justify-end mt-3",
                                                                     button {
-                                                                        class: "btn btn-error btn-sm",
+                                                                        class: "btn hud-btn btn-error btn-sm",
                                                                         onclick: move |_| {
                                                                             let agent_id = aid.clone();
                                                                             let sid = skill_clone.id.clone();
@@ -1129,7 +1129,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     };
                                                     rsx! {
                                                         div {
-                                                            class: "card bg-base-200",
+                                                            class: "hud-panel",
                                                             key: "{tool_id}",
                                                             div { class: "card-body p-4",
                                                                 div { class: "flex justify-between items-start",
@@ -1137,12 +1137,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     div { class: "flex gap-1",
                                                                         if !not_ready_title.is_empty() {
                                                                             span {
-                                                                                class: "badge badge-warning badge-outline",
+                                                                                class: "badge hud-badge badge-warning badge-outline",
                                                                                 title: "{not_ready_title}",
                                                                                 "未就绪"
                                                                             }
                                                                         }
-                                                                        span { class: "badge badge-success", "已绑定" }
+                                                                        span { class: "badge hud-badge badge-success", "已绑定" }
                                                                     }
                                                                 }
                                                                 p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
@@ -1155,7 +1155,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 }
                                                                 div { class: "card-actions justify-end mt-3",
                                                                     button {
-                                                                        class: "btn btn-error btn-sm",
+                                                                        class: "btn hud-btn btn-error btn-sm",
                                                                         onclick: move |_| {
                                                                             let agent_id = aid.clone();
                                                                             let tid = tool_clone.id.clone();
@@ -1236,7 +1236,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         div { class: "flex items-center justify-between mb-2",
                                             h3 { class: "text-lg font-semibold", "对话" }
                                             button {
-                                                class: "btn btn-ghost btn-xs",
+                                                class: "btn hud-btn btn-ghost btn-xs",
                                                 title: "拉取最新消息",
                                                 onclick: move |_| poll_new(),
                                                 "刷新"
@@ -1247,7 +1247,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             if msg_has_more() {
                                                 div { class: "flex justify-center pb-1",
                                                     button {
-                                                        class: "btn btn-ghost btn-xs",
+                                                        class: "btn hud-btn btn-ghost btn-xs",
                                                         disabled: msg_loading_more(),
                                                         onclick: load_more,
                                                         if msg_loading_more() { "加载中…" } else { "加载更早消息" }
@@ -1288,7 +1288,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 },
                                             }
                                             button {
-                                                class: "btn btn-primary",
+                                                class: "btn hud-btn btn-primary",
                                                 onclick: move |_| handle_send(()),
                                                 "发送"
                                             }
@@ -1349,9 +1349,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                             show: show_edit_modal(),
                             on_close: move |_| show_edit_modal.set(false),
                             footer: rsx! {
-                                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
                                 button {
-                                    class: "btn btn-primary",
+                                    class: "btn hud-btn btn-primary",
                                     disabled: saving_meta(),
                                     onclick: {
                                         let id_for_submit = id.clone();
@@ -1479,9 +1479,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap gap-2 items-center",
                                         if !edit_roles().is_empty() {
                                             for role in edit_roles() {
-                                                span { class: "badge badge-accent badge-lg gap-1",
+                                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
                                                     "{role}",
-                                                    button { class: "btn btn-ghost btn-xs",
+                                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
                                                             let mut v = edit_roles();
                                                             if let Some(pos) = v.iter().position(|x| x == &role) {
@@ -1535,9 +1535,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap gap-2 items-center",
                                         if !edit_capabilities().is_empty() {
                                             for cap in edit_capabilities() {
-                                                span { class: "badge badge-success badge-lg gap-1",
+                                                span { class: "badge hud-badge badge-success badge-lg gap-1",
                                                     "{cap}",
-                                                    button { class: "btn btn-ghost btn-xs",
+                                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
                                                             let mut v = edit_capabilities();
                                                             if let Some(pos) = v.iter().position(|x| x == &cap) {
@@ -1664,7 +1664,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-col gap-3",
                                         // 选项 A：仅移除关联
                                         button {
-                                            class: "btn btn-ghost justify-start text-left",
+                                            class: "btn hud-btn btn-ghost justify-start text-left",
                                             onclick: move |_| {
                                                 let aid = agent_id_signal();
                                                 let t = tag_a.clone();
@@ -1689,7 +1689,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                         // 选项 B：同时删除副本
                                         button {
-                                            class: "btn btn-error btn-outline justify-start text-left",
+                                            class: "btn hud-btn btn-error btn-outline justify-start text-left",
                                             onclick: move |_| {
                                                 let aid = agent_id_signal();
                                                 let t = tag_b.clone();
@@ -1717,7 +1717,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     }
                                     div { class: "modal-action",
                                         button {
-                                            class: "btn btn-ghost",
+                                            class: "btn hud-btn btn-ghost",
                                             onclick: move |_| show_skill_pack_uninstall_dialog.set(None),
                                             "取消"
                                         }

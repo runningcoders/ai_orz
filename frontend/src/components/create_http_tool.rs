@@ -286,7 +286,7 @@ pub fn CreateHttpToolModal(
             on_close: move |_| on_close.call(()),
             footer: Some(rsx! {
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: submitting(),
                     onclick: submit,
                     if submitting() { "创建中..." } else { "创建" }
@@ -472,7 +472,7 @@ pub fn CreateHttpToolModal(
                 div { class: "form-control",
                     div { class: "flex justify-between items-center",
                         span { class: "label-text font-medium", "凭据需求（可选）" }
-                        button { class: "btn btn-ghost btn-xs", onclick: on_add_requirement, "＋ 添加" }
+                        button { class: "btn hud-btn btn-ghost btn-xs", onclick: on_add_requirement, "＋ 添加" }
                     }
                     p { class: "text-xs text-base-content/60 mt-1",
                         "声明该工具所需凭据类型与注入点（请求头/查询参数）；调用时以调用者身份自动注入（类型级声明，不绑定具体凭据实例）。" }
@@ -521,7 +521,7 @@ pub fn CreateHttpToolModal(
                                         div { class: "border border-base-300 rounded-box p-3 space-y-2", key: "{idx}",
                                             div { class: "flex justify-between items-center",
                                                 span { class: "text-xs font-semibold text-base-content/60", "需求 #{idx + 1}" }
-                                                button { class: "btn btn-ghost btn-xs text-error",
+                                                button { class: "btn hud-btn btn-ghost btn-xs text-error",
                                                     onclick: move |_| {
                                                         form.write().credential_requirements.remove(idx_remove);
                                                     }, "✕ 移除" }

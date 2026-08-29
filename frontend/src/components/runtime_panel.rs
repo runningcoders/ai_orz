@@ -106,13 +106,13 @@ pub fn RuntimePanel(props: RuntimePanelProps) -> Element {
                         span { class: "text-lg font-semibold",
                             "🧠 Agent 运行时"
                         }
-                        span { class: "badge {runtime_state_badge(&s.state)}",
+                        span { class: "badge hud-badge {runtime_state_badge(&s.state)}",
                             "{runtime_state_label(&s.state)}"
                         }
                     }
                     if s.state == "busy" {
                         button {
-                            class: "btn btn-sm btn-warning",
+                            class: "btn hud-btn btn-sm btn-warning",
                             disabled: *cancelling.read(),
                             onclick: move |_| show_cancel_confirm.set(true),
                             if *cancelling.read() {
@@ -189,7 +189,7 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
                     span { class: "text-sm font-medium",
                         "场景：{scene_label}"
                     }
-                    span { class: "badge badge-sm {status_badge}",
+                    span { class: "badge hud-badge badge-sm {status_badge}",
                         "{think.status}"
                     }
                 }

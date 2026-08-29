@@ -93,7 +93,7 @@ pub fn UserProfile() -> Element {
                                     value: "{preferences}",
                                     oninput: move |e| preferences.set(e.value())
                                 }
-                                button { class: "btn btn-ghost btn-sm mt-1 self-end",
+                                button { class: "btn hud-btn btn-ghost btn-sm mt-1 self-end",
                                     onclick: move |_| editing_prefs.set(false),
                                     "完成编辑"
                                 }
@@ -105,13 +105,13 @@ pub fn UserProfile() -> Element {
                                         MarkdownRenderer { content: preferences(), compact: true }
                                     }
                                 }
-                                button { class: "btn btn-ghost btn-sm mt-1 self-end",
+                                button { class: "btn hud-btn btn-ghost btn-sm mt-1 self-end",
                                     onclick: move |_| editing_prefs.set(true),
                                     "编辑偏好"
                                 }
                             }
                         }
-                        button { class: "btn btn-primary", disabled: saving(),
+                        button { class: "btn hud-btn btn-primary", disabled: saving(),
                             onclick: move |_| {
                                 saving.set(true);
                                 let display_name_val = display_name();

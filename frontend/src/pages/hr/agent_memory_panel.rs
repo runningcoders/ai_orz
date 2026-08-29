@@ -303,7 +303,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                             if let Some(tags_list) = &tags {
                                                 div { class: "flex flex-wrap gap-1 mb-2",
                                                     for tag in tags_list.iter() {
-                                                        span { class: "badge badge-neutral badge-xs", "{tag}" }
+                                                        span { class: "badge hud-badge badge-neutral badge-xs", "{tag}" }
                                                     }
                                                 }
                                             }

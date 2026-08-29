@@ -271,13 +271,13 @@ pub fn ChatSidePanel(
                 Loading { size: "xs" }
             }
             button {
-                class: "btn btn-ghost btn-xs",
+                class: "btn hud-btn btn-ghost btn-xs",
                 title: "刷新",
                 onclick: manual_refresh,
                 "⟳"
             }
             button {
-                class: "btn btn-ghost btn-xs",
+                class: "btn hud-btn btn-ghost btn-xs",
                 title: "收起面板",
                 onclick: move |_| on_close.call(()),
                 "✕"
@@ -521,7 +521,7 @@ fn task_expanded_content(t: GetTaskResponse, tid: String) -> Element {
                 }
             }
             Link {
-                class: "btn btn-ghost btn-xs",
+                class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::TaskDetail { id: tid },
                 "在详情页打开 →"
             }
@@ -613,7 +613,7 @@ fn ArtifactRow(artifact: ArtifactDetail) -> Element {
                 div { class: "text-sm font-medium truncate", "{name}" }
                 div { class: "text-xs text-base-content/60", "{size} · {created}" }
             }
-            span { class: "badge badge-neutral badge-sm", "{source_text}" }
+            span { class: "badge hud-badge badge-neutral badge-sm", "{source_text}" }
         }
     }
 }
@@ -659,7 +659,7 @@ fn AgentInfoTab(agent_id: String) -> Element {
                 }
             }
             div { class: "flex flex-wrap gap-1",
-                span { class: "badge badge-info", "{agent_lifecycle_text(a.status)}" }
+                span { class: "badge hud-badge badge-info", "{agent_lifecycle_text(a.status)}" }
                 span { class: "{agent_runtime_badge(a.runtime_state)}",
                     "{agent_runtime_text(a.runtime_state)}"
                 }
@@ -685,7 +685,7 @@ fn AgentInfoTab(agent_id: String) -> Element {
             }
             div { class: "text-xs text-base-content/60", "已绑定工具：{a.tools.len()} 个" }
             Link {
-                class: "btn btn-ghost btn-xs",
+                class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::HrAgentDetail { id: aid },
                 "在详情页打开 →"
             }
@@ -726,7 +726,7 @@ fn UserInfoTab() -> Element {
                 }
             }
             div { class: "flex flex-wrap gap-1",
-                span { class: "badge badge-info", "{u.role_name}" }
+                span { class: "badge hud-badge badge-info", "{u.role_name}" }
                 span { class: if enabled { "badge badge-success" } else { "badge badge-error" },
                     if enabled { "已启用" } else { "已禁用" }
                 }
@@ -738,7 +738,7 @@ fn UserInfoTab() -> Element {
                 "主题等偏好设置请前往设置页调整"
             }
             Link {
-                class: "btn btn-ghost btn-xs",
+                class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::Settings {},
                 "打开设置 →"
             }

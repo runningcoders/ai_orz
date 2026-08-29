@@ -183,7 +183,7 @@ pub fn HrSkillDetail(id: String) -> Element {
         AppLayout {
             div { class: "mb-6 flex items-center justify-between",
                 h1 { class: "text-2xl font-bold", "Skill 详情" }
-                Link { class: "btn btn-ghost", to: crate::pages::Route::HrSkills {},
+                Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::HrSkills {},
                     "← 返回列表"
                 }
             }
@@ -194,7 +194,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                 HudPanel { signal: Some(true), extra_class: Some("mb-6".to_string()),
                     title: Some(s.name.clone()),
                     actions: Some(rsx!{
-                        button { class: "btn btn-ghost btn-sm", onclick: on_open_edit, "✏️ 编辑" }
+                        button { class: "btn hud-btn btn-ghost btn-sm", onclick: on_open_edit, "✏️ 编辑" }
                     }),
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
                             div {
@@ -209,7 +209,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                                 div { class: "text-sm text-base-content/60", "标签" }
                                 div { class: "flex flex-wrap gap-1",
                                     for tag in &s.tags {
-                                        span { class: "badge badge-neutral", "{tag}" }
+                                        span { class: "badge hud-badge badge-neutral", "{tag}" }
                                     }
                                 }
                             }
@@ -288,7 +288,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                 div { class: "flex gap-2",
                                                     if selected_file().ends_with(".md") {
                                                         button {
-                                                            class: "btn btn-ghost btn-sm",
+                                                            class: "btn hud-btn btn-ghost btn-sm",
                                                             onclick: move |_| {
                                                                 let cur = preview_mode();
                                                                 preview_mode.set(!cur);
@@ -300,7 +300,7 @@ pub fn HrSkillDetail(id: String) -> Element {
                                                         span { class: "text-xs text-warning", "● 未保存" }
                                                     }
                                                     button {
-                                                        class: "btn btn-primary btn-sm",
+                                                        class: "btn hud-btn btn-primary btn-sm",
                                                         disabled: saving_file() || !file_content_dirty(),
                                                         onclick: on_save_file,
                                                         if saving_file() { "保存中..." } else { "💾 保存" }
@@ -339,9 +339,9 @@ pub fn HrSkillDetail(id: String) -> Element {
                 show: show_edit_modal(),
                 on_close: move |_| show_edit_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         disabled: saving_meta(),
                         onclick: on_submit_edit,
                         if saving_meta() { "保存中..." } else { "保存" }

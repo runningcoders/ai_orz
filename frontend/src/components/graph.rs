@@ -648,7 +648,7 @@ pub fn Graph(props: GraphProps) -> Element {
         }
         // 修复 L16：添加重置视图按钮（右上角，重置缩放和平移到初始状态）
         button {
-            class: "btn btn-xs btn-ghost absolute top-2 right-2 bg-base-100/80 hover:bg-base-100 shadow-sm",
+            class: "btn hud-btn btn-xs btn-ghost absolute top-2 right-2 bg-base-100/80 hover:bg-base-100 shadow-sm",
             r#type: "button",
             title: "重置视图",
             onclick: reset_view,

@@ -120,14 +120,14 @@ pub fn ProcessDetailContent(
                 // 操作按钮
                 div { class: "flex gap-2",
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         disabled: loading(),
                         onclick: move |_| load(pid),
                         "刷新"
                     }
                     if d.alive {
                         button {
-                            class: "btn btn-error btn-sm",
+                            class: "btn hud-btn btn-error btn-sm",
                             disabled: killing(),
                             onclick: move |_| show_kill_confirm.set(true),
                             if killing() { "终止中..." } else { "终止进程" }

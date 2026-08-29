@@ -164,7 +164,7 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
                                             }
                                         }
                                         button {
-                                            class: "btn btn-ghost btn-xs",
+                                            class: "btn hud-btn btn-ghost btn-xs",
                                             onclick: move |_| {
                                                 attachments.with_mut(|list| {
                                                     list.remove(i);

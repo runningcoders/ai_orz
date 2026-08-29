@@ -109,7 +109,7 @@ pub fn SystemAop() -> Element {
                     HudSection { title: "AOP 队列监控".to_string(),
                         actions: Some(rsx!{
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| {
                                     loading_stats.set(true);
                                     spawn(async move {

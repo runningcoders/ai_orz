@@ -162,7 +162,7 @@ pub fn HrSkills() -> Element {
                 actions: Some(rsx!{
                 div { class: "flex gap-2 flex-wrap",
                     if !search_keyword().is_empty() || !filter_category().is_empty() || filter_status() >= 0 {
-                        button { class: "btn btn-ghost",
+                        button { class: "btn hud-btn btn-ghost",
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 filter_category.set(String::new());
@@ -172,7 +172,7 @@ pub fn HrSkills() -> Element {
                             "重置"
                         }
                     }
-                    button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
+                    button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建技能" }
                 }
                 }),
             },
@@ -266,18 +266,18 @@ pub fn HrSkills() -> Element {
                                                 td { "data-label": "标签",
                                                     div { class: "flex flex-wrap gap-1",
                                                         for tag in &tags {
-                                                            span { class: "badge badge-neutral", "{tag}" }
+                                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
                                                         }
                                                     }
                                                 }
                                                 td { "data-label": "操作",
                                                     div { class: "flex gap-1",
                                                         Link {
-                                                            class: "btn btn-ghost btn-sm",
+                                                            class: "btn hud-btn btn-ghost btn-sm",
                                                             to: crate::pages::Route::HrSkillDetail { id: id.clone() },
                                                             "详情"
                                                         }
-                                                        button { class: "btn btn-error btn-sm",
+                                                        button { class: "btn hud-btn btn-error btn-sm",
                                                             onclick: move |_| {
                                                                 pending_delete_id.set(id.clone());
                                                                 show_delete_confirm.set(true);
@@ -309,8 +309,8 @@ pub fn HrSkills() -> Element {
                 new_content_input.set(None);
             },
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },

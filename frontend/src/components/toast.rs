@@ -83,7 +83,7 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
         div { class: "{type_class} {animation_class} shadow-lg min-w-[280px]",
             span { class: "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 bg-current/20", "{icon}" }
             span { class: "flex-1", "{message}" }
-            button { class: "btn btn-xs btn-ghost btn-circle", onclick: handle_close, "✕" }
+            button { class: "btn hud-btn btn-xs btn-ghost btn-circle", onclick: handle_close, "✕" }
             div {
                 class: "toast-progress",
                 style: "animation-duration: {duration_ms}ms;",

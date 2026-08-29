@@ -363,12 +363,12 @@ pub fn TaskDetail(id: String) -> Element {
         PageHeader { title: "任务详情".to_string(),
             actions: Some(rsx!{
                 button {
-                    class: "btn btn-outline btn-sm",
+                    class: "btn hud-btn btn-outline btn-sm",
                     onclick: back_to_project,
                     "← 返回项目"
                 }
                 button {
-                    class: "btn btn-primary btn-sm",
+                    class: "btn hud-btn btn-primary btn-sm",
                     onclick: move |_| show_edit_modal.set(true),
                     "✏️ 编辑"
                 }
@@ -503,7 +503,7 @@ pub fn TaskDetail(id: String) -> Element {
                                 label { class: "form-label", "标签" }
                                 div { class: "tag-list",
                                     for tag in t.tags.iter() {
-                                        span { class: "badge badge-neutral tag-item", "{tag}" }
+                                        span { class: "{tag_chip()}", "{tag}" }
                                     }
                                 }
                             }
@@ -542,7 +542,7 @@ pub fn TaskDetail(id: String) -> Element {
                     }
                     div { class: "detail-action-row",
                         button {
-                            class: "btn btn-primary",
+                            class: "btn hud-btn btn-primary",
                             onclick: open_progress_modal,
                             "更新进度"
                         }
@@ -558,42 +558,42 @@ pub fn TaskDetail(id: String) -> Element {
                     div { class: "detail-action-row",
                         if t.status != 1 {
                             button {
-                                class: "btn btn-warning",
+                                class: "btn hud-btn btn-warning",
                                 onclick: on_review,
                                 "送审"
                             }
                         }
                         if t.status != 2 {
                             button {
-                                class: "btn btn-info",
+                                class: "btn hud-btn btn-info",
                                 onclick: on_pending,
                                 "待处理"
                             }
                         }
                         if t.status != 3 {
                             button {
-                                class: "btn btn-primary",
+                                class: "btn hud-btn btn-primary",
                                 onclick: on_start,
                                 "开始"
                             }
                         }
                         if t.status != 4 {
                             button {
-                                class: "btn btn-primary",
+                                class: "btn hud-btn btn-primary",
                                 onclick: on_complete,
                                 "完成"
                             }
                         }
                         if t.status != 0 && t.status != 5 {
                             button {
-                                class: "btn btn-error",
+                                class: "btn hud-btn btn-error",
                                 onclick: on_cancel,
                                 "取消"
                             }
                         }
                         if t.status != 5 {
                             button {
-                                class: "btn btn-outline",
+                                class: "btn hud-btn btn-outline",
                                 onclick: on_archive,
                                 "归档"
                             }
@@ -636,7 +636,7 @@ pub fn TaskDetail(id: String) -> Element {
                             rsx! {
                                 div { class: "space-y-3",
                                     for art in arts.iter() {
-                                        div { class: "card bg-base-200 border border-base-300",
+                                        div { class: "hud-panel border border-base-300",
                                             div { class: "card-body p-4",
                                                 div { class: "flex justify-between items-start",
                                                     div {
@@ -646,15 +646,15 @@ pub fn TaskDetail(id: String) -> Element {
                                                         }
                                                     }
                                                     Link {
-                                                        class: "btn btn-ghost btn-sm",
+                                                        class: "btn hud-btn btn-ghost btn-sm",
                                                         to: crate::pages::Route::ProjectArtifactDetail { id: art.id.clone() },
                                                         "查看详情 →"
                                                     }
                                                 }
                                                 div { class: "flex gap-2 mt-2 flex-wrap",
-                                                    span { class: "badge badge-sm", "{format_file_type(art.file_type)}" }
-                                                    span { class: "badge badge-sm badge-info", "{art.mime_type}" }
-                                                    span { class: "badge badge-sm", "{crate::utils::format_file_size(art.file_size)}" }
+                                                    span { class: "badge hud-badge badge-sm", "{format_file_type(art.file_type)}" }
+                                                    span { class: "badge hud-badge badge-sm badge-info", "{art.mime_type}" }
+                                                    span { class: "badge hud-badge badge-sm", "{crate::utils::format_file_size(art.file_size)}" }
                                                     for tag in art.tags.iter() {
                                                         span { class: "{tag_chip()}", "#{tag}" }
                                                     }
@@ -678,13 +678,13 @@ pub fn TaskDetail(id: String) -> Element {
                 footer: Some(rsx! {
                     div { class: "modal-footer-actions",
                         button {
-                            class: "btn btn-outline",
+                            class: "btn hud-btn btn-outline",
                             disabled: updating_progress(),
                             onclick: move |_| show_progress_modal.set(false),
                             "取消"
                         }
                         button {
-                            class: "btn btn-primary",
+                            class: "btn hud-btn btn-primary",
                             disabled: updating_progress(),
                             onclick: submit_progress,
                             if updating_progress() { "更新中..." } else { "更新" }

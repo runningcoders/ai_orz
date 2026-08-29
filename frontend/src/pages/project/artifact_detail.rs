@@ -88,7 +88,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 eyebrow: "PROJECT".to_string(),
                 title: "产物详情".to_string(),
                 actions: Some(rsx! {
-                    Link { class: "btn btn-ghost", to: crate::pages::Route::ProjectArtifacts {}, "← 返回列表" }
+                    Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::ProjectArtifacts {}, "← 返回列表" }
                 }),
             }
             if artifact_res.read().as_ref().is_none() {
@@ -101,7 +101,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                     div { class: "card-body",
                         div { class: "card-actions justify-end",
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| show_meta_modal.set(true),
                                 "✏️ 编辑信息"
                             }
@@ -109,7 +109,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
                             div { div { class: "text-sm text-base-content/60", "描述" }, MarkdownRenderer { content: a.description.clone(), compact: true } }
                             div { div { class: "text-sm text-base-content/60", "文件大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.file_size)}" } }
-                            div { div { class: "text-sm text-base-content/60", "来源类型" }, span { class: "badge badge-info", "{source_type_text(a.source_type)}" } }
+                            div { div { class: "text-sm text-base-content/60", "来源类型" }, span { class: "badge hud-badge badge-info", "{source_type_text(a.source_type)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }
                             div { div { class: "text-sm text-base-content/60", "创建时间" }, div { class: "font-mono", "{crate::utils::format_datetime(a.created_at)}" } }
                         }
@@ -124,7 +124,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                                 div { class: "flex gap-2",
                                     if content_dirty() { span { class: "text-xs text-warning", "● 未保存" } }
                                     button {
-                                        class: "btn btn-primary btn-sm",
+                                        class: "btn hud-btn btn-primary btn-sm",
                                         disabled: saving() || !content_dirty(),
                                         onclick: on_save,
                                         if saving() { "保存中..." } else { "💾 保存" }

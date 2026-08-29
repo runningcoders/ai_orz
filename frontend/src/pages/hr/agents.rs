@@ -384,7 +384,7 @@ pub fn HrAgents() -> Element {
                 actions: Some(rsx!{
                 div { class: "flex gap-2 flex-wrap",
                     if !search_keyword().is_empty() || filter_status() >= 0 {
-                        button { class: "btn btn-ghost",
+                        button { class: "btn hud-btn btn-ghost",
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 filter_status.set(-1);
@@ -393,11 +393,11 @@ pub fn HrAgents() -> Element {
                             "重置"
                         }
                     }
-                    button { class: "btn btn-primary",
+                    button { class: "btn hud-btn btn-primary",
                         onclick: move |_| show_add_modal.set(true),
                         "+ 本地 Agent"
                     }
-                    button { class: "btn btn-success",
+                    button { class: "btn hud-btn btn-success",
                         onclick: move |_| show_external_modal.set(true),
                         "+ 外部 Agent"
                     }
@@ -508,12 +508,12 @@ pub fn HrAgents() -> Element {
                                                 td { "data-label": "操作",
                                                     // 入职按钮：仅对面试中/待入职的 Agent 显示
                                                     if astatus == AgentStatus::Interviewing as i32 || astatus == AgentStatus::PendingOnboard as i32 {
-                                                        button { class: "btn btn-success btn-sm",
+                                                        button { class: "btn hud-btn btn-success btn-sm",
                                                             onclick: move |_| handle_onboard(id_onboard.clone(), astatus),
                                                             "入职"
                                                         }
                                                     }
-                                                    button { class: "btn btn-error btn-sm",
+                                                    button { class: "btn hud-btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -548,8 +548,8 @@ pub fn HrAgents() -> Element {
                 new_description.set(String::new());
             },
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
@@ -605,9 +605,9 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !new_roles().is_empty() {
                             for role in new_roles() {
-                                span { class: "badge badge-accent badge-lg gap-1",
+                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
                                     "{role}",
-                                    button { class: "btn btn-ghost btn-xs",
+                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
                                             let mut v = new_roles();
                                             if let Some(pos) = v.iter().position(|x| x == &role) {
@@ -661,9 +661,9 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !new_capabilities().is_empty() {
                             for cap in new_capabilities() {
-                                span { class: "badge badge-success badge-lg gap-1",
+                                span { class: "badge hud-badge badge-success badge-lg gap-1",
                                     "{cap}",
-                                    button { class: "btn btn-ghost btn-xs",
+                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
                                             let mut v = new_capabilities();
                                             if let Some(pos) = v.iter().position(|x| x == &cap) {
@@ -785,8 +785,8 @@ pub fn HrAgents() -> Element {
                 ext_auth_token.set(String::new());
             },
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_external_modal.set(false), "取消" }
-                button { class: "btn btn-success", disabled: ext_creating(), onclick: handle_create_external,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_external_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-success", disabled: ext_creating(), onclick: handle_create_external,
                     if ext_creating() { "创建中..." } else { "创建" }
                 }
             },
@@ -849,9 +849,9 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !ext_roles().is_empty() {
                             for role in ext_roles() {
-                                span { class: "badge badge-accent badge-lg gap-1",
+                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
                                     "{role}",
-                                    button { class: "btn btn-ghost btn-xs",
+                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
                                             let mut v = ext_roles();
                                             if let Some(pos) = v.iter().position(|x| x == &role) {
@@ -904,9 +904,9 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !ext_capabilities().is_empty() {
                             for cap in ext_capabilities() {
-                                span { class: "badge badge-success badge-lg gap-1",
+                                span { class: "badge hud-badge badge-success badge-lg gap-1",
                                     "{cap}",
-                                    button { class: "btn btn-ghost btn-xs",
+                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
                                             let mut v = ext_capabilities();
                                             if let Some(pos) = v.iter().position(|x| x == &cap) {

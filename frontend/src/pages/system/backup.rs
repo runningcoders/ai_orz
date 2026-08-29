@@ -159,12 +159,12 @@ pub fn SystemBackup() -> Element {
             title: Some("备份管理".to_string()),
             actions: Some(rsx!{
                 button {
-                    class: "btn btn-ghost btn-sm",
+                    class: "btn hud-btn btn-ghost btn-sm",
                     onclick: move |_| reload(loading, backups, toast),
                     "🔄 刷新"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: creating(),
                     onclick: handle_create,
                     if creating() { "创建中..." } else { "+ 创建备份" }
@@ -205,7 +205,7 @@ pub fn SystemBackup() -> Element {
                                     rsx! {
                                         tr { key: "{version}",
                                             td { "data-label": "版本",
-                                                span { class: "badge badge-info", "v{version}" }
+                                                span { class: "badge hud-badge badge-info", "v{version}" }
                                             }
                                             td { class: "font-mono text-base-content/70", style: "white-space: nowrap;", "data-label": "时间",
                                                 "{format_timestamp(&timestamp)}"
@@ -221,12 +221,12 @@ pub fn SystemBackup() -> Element {
                                             }
                                             td { "data-label": "操作",
                                                 button {
-                                                    class: "btn btn-outline btn-sm",
+                                                    class: "btn hud-btn btn-outline btn-sm",
                                                     onclick: move |_| on_click_restore(version),
                                                     "恢复"
                                                 }
                                                 button {
-                                                    class: "btn btn-error btn-sm",
+                                                    class: "btn hud-btn btn-error btn-sm",
                                                     onclick: move |_| on_click_delete(version),
                                                     "删除"
                                                 }
@@ -251,12 +251,12 @@ pub fn SystemBackup() -> Element {
             on_close: move |_| show_restore_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     onclick: move |_| show_restore_modal.set(false),
                     "关闭"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: restore_loading() || restore_script().is_empty(),
                     onclick: handle_copy_script,
                     "📋 复制脚本"
@@ -285,13 +285,13 @@ pub fn SystemBackup() -> Element {
             on_close: move |_| show_delete_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     disabled: delete_loading(),
                     onclick: move |_| show_delete_modal.set(false),
                     "取消"
                 }
                 button {
-                    class: "btn btn-error",
+                    class: "btn hud-btn btn-error",
                     disabled: delete_loading(),
                     onclick: handle_confirm_delete,
                     if delete_loading() { "删除中..." } else { "确认删除" }

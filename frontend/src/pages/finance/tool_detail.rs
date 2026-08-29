@@ -252,7 +252,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 eyebrow: "FINANCE".to_string(),
                 title: "工具详情".to_string(),
                 actions: Some(rsx! {
-                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceTools {},
+                    Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::FinanceTools {},
                         "← 返回列表"
                     }
                 }),
@@ -271,7 +271,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                         div { class: "flex justify-end mb-4",
                             div { class: "flex gap-2",
                                 if t.enabled {
-                                    button { class: "btn btn-outline btn-sm",
+                                    button { class: "btn hud-btn btn-outline btn-sm",
                                         onclick: {
                                             let id = t.id.clone();
                                             move |_| {
@@ -291,7 +291,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                         "禁用"
                                     }
                                 } else {
-                                    button { class: "btn btn-primary btn-sm",
+                                    button { class: "btn hud-btn btn-primary btn-sm",
                                         onclick: {
                                             let id = t.id.clone();
                                             move |_| {
@@ -311,7 +311,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                         "启用"
                                     }
                                 }
-                                button { class: "btn btn-error btn-sm",
+                                button { class: "btn hud-btn btn-error btn-sm",
                                     onclick: {
                                         let id = t.id.clone();
                                         move |_| {
@@ -334,7 +334,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "协议" }
                                 }
-                                div { span { class: "badge badge-neutral", "{t.protocol}" } }
+                                div { span { class: "badge hud-badge badge-neutral", "{t.protocol}" } }
                             }
                             div {
                                 label { class: "label",
@@ -342,9 +342,9 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                 }
                                 div {
                                     if t.enabled {
-                                        span { class: "badge badge-success", "启用" }
+                                        span { class: "badge hud-badge badge-success", "启用" }
                                     } else {
-                                        span { class: "badge badge-error", "禁用" }
+                                        span { class: "badge hud-badge badge-error", "禁用" }
                                     }
                                 }
                             }
@@ -361,7 +361,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                     div { class: "flex flex-wrap gap-2",
                                         for tag in t.tags.iter() {
-                                            span { class: "badge badge-neutral", "{tag}" }
+                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
                                         }
                                     }
                                 }
@@ -462,7 +462,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                 }
                                 div { class: "flex items-center gap-3 mt-3",
                                     button {
-                                        class: "btn btn-primary btn-sm",
+                                        class: "btn hud-btn btn-primary btn-sm",
                                         disabled: config_saving(),
                                         onclick: {
                                             let id = t.id.clone();
@@ -594,7 +594,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                         // 调用按钮
                         div { class: "flex items-center gap-3 mt-3",
                             button {
-                                class: "btn btn-primary",
+                                class: "btn hud-btn btn-primary",
                                 disabled: debug_calling() || !t.enabled,
                                 onclick: {
                                     let id = t.id.clone();

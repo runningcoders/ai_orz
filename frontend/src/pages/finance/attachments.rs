@@ -84,7 +84,7 @@ pub fn FinanceAttachments() -> Element {
                         eyebrow: Some("FINANCE".to_string()),
                         title: "附件管理".to_string(),
                         actions: Some(rsx!{
-                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
+                        button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 创建文本附件" }
                         }),
                     },
                     if loading() {
@@ -108,16 +108,16 @@ pub fn FinanceAttachments() -> Element {
                                                 tr { key: "{id}",
                                                     td { class: "font-semibold", "{original_name}" }
                                                     td { "{size}" }
-                                                    td { span { class: "badge badge-info", "{purpose}" } }
+                                                    td { span { class: "badge hud-badge badge-info", "{purpose}" } }
                                                     td { "{created_at}" }
                                                     td {
                                                         div { class: "flex gap-1",
                                                             Link {
-                                                                class: "btn btn-ghost btn-sm",
+                                                                class: "btn hud-btn btn-ghost btn-sm",
                                                                 to: crate::pages::Route::FinanceAttachmentDetail { id: id.clone() },
                                                                 "详情"
                                                             }
-                                                            button { class: "btn btn-error btn-sm",
+                                                            button { class: "btn hud-btn btn-error btn-sm",
                                                                 onclick: move |_| {
                                                                     pending_delete_id.set(id_delete.clone());
                                                                     show_delete_confirm.set(true);
@@ -141,8 +141,8 @@ pub fn FinanceAttachments() -> Element {
                 show: show_add_modal(),
                 on_close: move |_| show_add_modal.set(false),
                 footer: rsx! {
-                    button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                    button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                         if creating() { "创建中..." } else { "创建" }
                     }
                 },

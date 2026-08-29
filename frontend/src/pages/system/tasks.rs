@@ -117,7 +117,7 @@ pub fn SystemTasks() -> Element {
                         actions: Some(rsx!{
                         div { class: "flex gap-2",
                             button {
-                                class: "btn btn-warning btn-sm",
+                                class: "btn hud-btn btn-warning btn-sm",
                                 onclick: move |_| show_cleanup_confirm.set(true),
                                 "清理已完成"
                             }
@@ -357,12 +357,12 @@ pub fn SystemTasks() -> Element {
                             p { class: "py-4", "将清理已完成的旧任务，每个类型保留最近 10 个。运行中的任务不受影响。" }
                             div { class: "modal-action",
                                 button {
-                                    class: "btn btn-ghost",
+                                    class: "btn hud-btn btn-ghost",
                                     onclick: move |_| show_cleanup_confirm.set(false),
                                     "取消"
                                 }
                                 button {
-                                    class: "btn btn-warning",
+                                    class: "btn hud-btn btn-warning",
                                     onclick: move |_| on_cleanup(()),
                                     "确认清理"
                                 }

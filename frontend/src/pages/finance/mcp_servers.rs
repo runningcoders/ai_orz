@@ -179,7 +179,7 @@ pub fn FinanceMcpServers() -> Element {
                         eyebrow: Some("FINANCE".to_string()),
                         title: "MCP 服务器管理".to_string(),
                         actions: Some(rsx!{
-                        button { class: "btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
+                        button { class: "btn hud-btn btn-primary", onclick: move |_| show_add_modal.set(true), "+ 添加服务器" }
                         }),
                     },
                 if loading() {
@@ -219,24 +219,24 @@ pub fn FinanceMcpServers() -> Element {
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { class: "font-semibold", "{name}" }
-                                                td { span { class: "badge badge-info", "{transport}" } }
+                                                td { span { class: "badge hud-badge badge-info", "{transport}" } }
                                                 td { span { class: "text-sm text-base-content/70 truncate block max-w-xs", "{config_display}" } }
                                                 td {
                                                     if is_enabled {
-                                                        span { class: "badge badge-success", "启用" }
+                                                        span { class: "badge hud-badge badge-success", "启用" }
                                                     } else {
-                                                        span { class: "badge badge-error", "禁用" }
+                                                        span { class: "badge hud-badge badge-error", "禁用" }
                                                     }
                                                 }
                                                 td { span { class: "text-sm text-base-content/70 whitespace-nowrap", "{format_timestamp(created_at)}" } }
                                                 td { class: "flex gap-2 items-center",
                                                     Link {
-                                                        class: "btn btn-ghost btn-sm",
+                                                        class: "btn hud-btn btn-ghost btn-sm",
                                                         to: crate::pages::Route::FinanceMcpServerDetail { id: id.clone() },
                                                         "详情"
                                                     }
                                                     if is_enabled {
-                                                        button { class: "btn btn-ghost btn-sm",
+                                                        button { class: "btn hud-btn btn-ghost btn-sm",
                                                             onclick: move |_| {
                                                                 let id_disable = id_disable.clone();
                                                                 spawn(async move {
@@ -252,7 +252,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             }, "禁用"
                                                         }
                                                     } else {
-                                                        button { class: "btn btn-ghost btn-sm",
+                                                        button { class: "btn hud-btn btn-ghost btn-sm",
                                                             onclick: move |_| {
                                                                 let id_enable = id_enable.clone();
                                                                 spawn(async move {
@@ -268,7 +268,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             }, "启用"
                                                         }
                                                     }
-                                                    button { class: "btn btn-secondary btn-sm",
+                                                    button { class: "btn hud-btn btn-secondary btn-sm",
                                                         onclick: move |_| {
                                                             let id_sync = id_sync.clone();
                                                             spawn(async move {
@@ -284,7 +284,7 @@ pub fn FinanceMcpServers() -> Element {
                                                             });
                                                         }, "同步工具"
                                                     }
-                                                    button { class: "btn btn-error btn-sm",
+                                                    button { class: "btn hud-btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -307,8 +307,8 @@ pub fn FinanceMcpServers() -> Element {
             show: show_add_modal(),
             on_close: move |_| show_add_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
@@ -355,7 +355,7 @@ pub fn FinanceMcpServers() -> Element {
                 div { class: "form-control w-full",
                     div { class: "flex justify-between items-center",
                         span { class: "label-text font-medium", "凭据需求（可选）" }
-                        button { class: "btn btn-ghost btn-xs", onclick: on_add_requirement, "＋ 添加" }
+                        button { class: "btn hud-btn btn-ghost btn-xs", onclick: on_add_requirement, "＋ 添加" }
                     }
                     p { class: "text-xs text-base-content/60 mt-1",
                         "声明该服务器所需凭据类型与注入点；工具调用时以调用者身份自动注入（类型级声明，不绑定具体凭据实例）。" }
@@ -391,7 +391,7 @@ pub fn FinanceMcpServers() -> Element {
                                         div { class: "border border-base-300 rounded-box p-3 space-y-2", key: "{idx}",
                                             div { class: "flex justify-between items-center",
                                                 span { class: "text-xs font-semibold text-base-content/60", "需求 #{idx + 1}" }
-                                                button { class: "btn btn-ghost btn-xs text-error",
+                                                button { class: "btn hud-btn btn-ghost btn-xs text-error",
                                                     onclick: move |_| {
                                                         new_requirements.write().remove(idx_remove);
                                                     }, "✕ 移除" }

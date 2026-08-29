@@ -304,7 +304,7 @@ pub fn SystemLogs() -> Element {
                 title: Some("日志查询".to_string()),
                 actions: Some(rsx!{
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         onclick: move |_| {
                             if let Some(q) = active_query() {
                                 do_query(q, current_page(), loading, result, toast);
@@ -379,12 +379,12 @@ pub fn SystemLogs() -> Element {
                 div { class: "filter-row",
                     div { class: "flex items-center gap-2 flex-wrap",
                         button {
-                            class: "btn btn-primary",
+                            class: "btn hud-btn btn-primary",
                             onclick: move |_| handle_search(()),
                             "🔍 查询"
                         }
                         button {
-                            class: "btn btn-ghost",
+                            class: "btn hud-btn btn-ghost",
                             onclick: handle_reset,
                             "清空"
                         }
@@ -486,13 +486,13 @@ pub fn SystemLogs() -> Element {
                         }
                         div { class: "flex items-center gap-2 flex-wrap",
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 disabled: cur_page <= 1,
                                 onclick: go_prev,
                                 "上一页"
                             }
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 disabled: cur_page >= total_pages,
                                 onclick: go_next,
                                 "下一页"

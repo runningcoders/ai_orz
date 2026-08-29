@@ -192,12 +192,12 @@ pub fn FinanceTools() -> Element {
                 actions: Some(rsx!{
                 div { class: "flex gap-2",
                     Link {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         to: crate::pages::Route::FinanceMcpServers {},
                         "🌐 MCP 服务器"
                     }
                     button {
-                        class: "btn btn-primary btn-sm",
+                        class: "btn hud-btn btn-primary btn-sm",
                         onclick: move |_| show_create.set(true),
                         "+ 创建 HTTP 工具"
                     }
@@ -326,11 +326,11 @@ pub fn FinanceTools() -> Element {
                                                     span { class: "font-semibold",
                                                         "{arrow} {key}"
                                                     }
-                                                    span { class: "badge badge-ghost badge-sm ml-2", "{group_len}" }
+                                                    span { class: "badge hud-badge badge-ghost badge-sm ml-2", "{group_len}" }
                                                     if is_neural_group {
-                                                        span { class: "badge badge-primary badge-sm ml-2", "神经工具" }
+                                                        span { class: "badge hud-badge badge-primary badge-sm ml-2", "神经工具" }
                                                     } else if is_uncategorized {
-                                                        span { class: "badge badge-warning badge-sm ml-2", "未分类" }
+                                                        span { class: "badge hud-badge badge-warning badge-sm ml-2", "未分类" }
                                                     }
                                                 }
                                             }
@@ -370,12 +370,12 @@ pub fn FinanceTools() -> Element {
                                                                 td { class: "font-semibold",
                                                                     Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
                                                                 }
-                                                                td { span { class: "badge badge-neutral", "{protocol}" } }
+                                                                td { span { class: "badge hud-badge badge-neutral", "{protocol}" } }
                                                                 td {
                                                                     if is_enabled {
-                                                                        span { class: "badge badge-success", "启用" }
+                                                                        span { class: "badge hud-badge badge-success", "启用" }
                                                                     } else {
-                                                                        span { class: "badge badge-error", "禁用" }
+                                                                        span { class: "badge hud-badge badge-error", "禁用" }
                                                                     }
                                                                 }
                                                                 td {
@@ -387,7 +387,7 @@ pub fn FinanceTools() -> Element {
                                                                 }
                                                                 td { class: "flex gap-2 items-center",
                                                                     if is_enabled {
-                                                                        button { class: "btn btn-ghost btn-sm",
+                                                                        button { class: "btn hud-btn btn-ghost btn-sm",
                                                                             onclick: move |_| {
                                                                                 let id_disable = id_disable.clone();
                                                                                 spawn(async move {
@@ -401,7 +401,7 @@ pub fn FinanceTools() -> Element {
                                                                             "禁用"
                                                                         }
                                                                     } else {
-                                                                        button { class: "btn btn-ghost btn-sm",
+                                                                        button { class: "btn hud-btn btn-ghost btn-sm",
                                                                             onclick: move |_| {
                                                                                 let id_enable = id_enable.clone();
                                                                                 spawn(async move {
@@ -415,7 +415,7 @@ pub fn FinanceTools() -> Element {
                                                                             "启用"
                                                                         }
                                                                     }
-                                                                    button { class: "btn btn-error btn-sm",
+                                                                    button { class: "btn hud-btn btn-error btn-sm",
                                                                         onclick: move |_| {
                                                                             pending_delete_id.set(id_delete.clone());
                                                                             show_delete_confirm.set(true);

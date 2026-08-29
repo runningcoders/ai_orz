@@ -68,12 +68,12 @@ pub fn ArtifactMetaModal(props: ArtifactMetaModalProps) -> Element {
                 }
                 div { class: "modal-action",
                     button {
-                        class: "btn btn-ghost",
+                        class: "btn hud-btn btn-ghost",
                         onclick: move |_| props.on_close.call(()),
                         "取消"
                     }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         onclick: move |_| {
                             let n = if name() != saved.name { Some(name()) } else { None };
                             let d = if description() != saved.description { Some(description()) } else { None };

@@ -397,17 +397,17 @@ pub fn SystemSeed() -> Element {
             title: Some("Seed 配置迁移".to_string()),
             actions: Some(rsx!{
                 button {
-                    class: "btn btn-ghost btn-sm",
+                    class: "btn hud-btn btn-ghost btn-sm",
                     onclick: move |_| reload(loading, seeds, toast),
                     "🔄 刷新"
                 }
                 button {
-                    class: "btn btn-outline btn-sm",
+                    class: "btn hud-btn btn-outline btn-sm",
                     onclick: move |_| show_apply_default_modal.set(true),
                     "应用默认模板"
                 }
                 button {
-                    class: "btn btn-primary btn-sm",
+                    class: "btn hud-btn btn-primary btn-sm",
                     onclick: move |_| show_save_modal.set(true),
                     "+ 导出当前配置"
                 }
@@ -458,19 +458,19 @@ pub fn SystemSeed() -> Element {
                                             }
                                             td {
                                                 if is_default {
-                                                    span { class: "badge badge-warning", "默认" }
+                                                    span { class: "badge hud-badge badge-warning", "默认" }
                                                 } else {
-                                                    span { class: "badge badge-ghost", "自定义" }
+                                                    span { class: "badge hud-badge badge-ghost", "自定义" }
                                                 }
                                             }
                                             td { class: "flex gap-2",
                                                 button {
-                                                    class: "btn btn-outline btn-xs",
+                                                    class: "btn hud-btn btn-outline btn-xs",
                                                     onclick: move |_| on_click_view(name_for_view.clone()),
                                                     "查看"
                                                 }
                                                 button {
-                                                    class: "btn btn-primary btn-xs",
+                                                    class: "btn hud-btn btn-primary btn-xs",
                                                     onclick: move |_| {
                                                         load_file_name.set(name_for_load.clone());
                                                         load_strategy.set("0".to_string());
@@ -479,7 +479,7 @@ pub fn SystemSeed() -> Element {
                                                     "加载"
                                                 }
                                                 button {
-                                                    class: "btn btn-error btn-xs",
+                                                    class: "btn hud-btn btn-error btn-xs",
                                                     onclick: move |_| on_click_delete(name_for_delete.clone()),
                                                     "删除"
                                                 }
@@ -501,13 +501,13 @@ pub fn SystemSeed() -> Element {
             on_close: move |_| show_save_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     disabled: save_submitting(),
                     onclick: move |_| show_save_modal.set(false),
                     "取消"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: save_submitting(),
                     onclick: on_submit_save,
                     if save_submitting() { "提交中..." } else { "确认导出" }
@@ -541,13 +541,13 @@ pub fn SystemSeed() -> Element {
             on_close: move |_| show_load_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     disabled: load_submitting(),
                     onclick: move |_| show_load_modal.set(false),
                     "取消"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: load_submitting(),
                     onclick: on_submit_load,
                     if load_submitting() { "提交中..." } else { "确认加载" }
@@ -576,13 +576,13 @@ pub fn SystemSeed() -> Element {
             on_close: move |_| show_apply_default_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     disabled: apply_default_submitting(),
                     onclick: move |_| show_apply_default_modal.set(false),
                     "取消"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: apply_default_submitting(),
                     onclick: on_submit_apply_default,
                     if apply_default_submitting() { "提交中..." } else { "确认应用" }
@@ -611,7 +611,7 @@ pub fn SystemSeed() -> Element {
             on_close: move |_| show_view_modal.set(false),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     onclick: move |_| show_view_modal.set(false),
                     "关闭"
                 }

@@ -245,12 +245,12 @@ pub fn TaskEditModal(props: TaskEditModalProps) -> Element {
             on_close: move |_| on_close.call(()),
             footer: rsx! {
                 button {
-                    class: "btn btn-ghost",
+                    class: "btn hud-btn btn-ghost",
                     onclick: move |_| on_close.call(()),
                     "取消"
                 }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: submitting() || loading_data(),
                     onclick: handle_submit,
                     if submitting() { "提交中..." } else { if is_create { "创建" } else { "保存" } }

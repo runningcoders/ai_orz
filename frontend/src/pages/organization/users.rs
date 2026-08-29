@@ -117,7 +117,7 @@ pub fn OrganizationUsers() -> Element {
                     eyebrow: Some("ORG".to_string()),
                     title: "用户管理".to_string(),
                     actions: Some(rsx!{
-                    button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加用户" }
+                    button { class: "btn hud-btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加用户" }
                     }),
                 },
 
@@ -155,7 +155,7 @@ pub fn OrganizationUsers() -> Element {
                                                 td { class: "font-mono text-sm text-base-content/70", "data-label": "邮箱", "{uemail}" }
                                                 td { "data-label": "角色", span { class: "{role_badge(urole)}", "{role_text(urole)}" } }
                                                 td { "data-label": "操作",
-                                                    button { class: "btn btn-ghost btn-xs mr-1",
+                                                    button { class: "btn hud-btn btn-ghost btn-xs mr-1",
                                                         onclick: move |_| {
                                                             edit_user_id.set(uid_edit.clone());
                                                             edit_display_name.set(udisplay_edit.clone());
@@ -167,7 +167,7 @@ pub fn OrganizationUsers() -> Element {
                                                         },
                                                         "编辑"
                                                     }
-                                                    button { class: "btn btn-error btn-sm",
+                                                    button { class: "btn hud-btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(uid_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -191,8 +191,8 @@ pub fn OrganizationUsers() -> Element {
             show: show_modal(),
             on_close: move |_| show_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
@@ -244,9 +244,9 @@ pub fn OrganizationUsers() -> Element {
             show: show_edit_modal(),
             on_close: move |_| show_edit_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: saving_user(),
                     onclick: move |_| {
                         let display_name = if edit_display_name().trim().is_empty() { None } else { Some(edit_display_name()) };

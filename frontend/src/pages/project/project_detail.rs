@@ -17,7 +17,8 @@ use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
 use crate::store::toast::use_toast;
 use crate::utils::task_status_color;
 use crate::utils::{
-    progress_tone, project_status_badge, project_status_text, task_status_badge, task_status_text,
+    progress_tone, project_status_badge, project_status_text, tag_chip, task_status_badge,
+    task_status_text,
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, ArtifactDetail, CreateArtifactRequest, GetProjectRequest,
@@ -352,7 +353,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         title: p.name.clone(),
                         div { class: "flex justify-end mb-3",
                             button {
-                                class: "btn btn-ghost btn-sm",
+                                class: "btn hud-btn btn-ghost btn-sm",
                                 onclick: move |_| {
                                     if let Some(p) = project_res.read().as_ref().and_then(|r| r.as_ref().ok()).cloned() {
                                         edit_name.set(p.name.clone());
@@ -393,7 +394,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                 } else {
                                     div { class: "tag-list",
                                         for tag in p.tags.iter() {
-                                            span { class: "badge badge-neutral tag-item", "{tag}" }
+                                            span { class: "{tag_chip()}", "{tag}" }
                                         }
                                     }
                                 }
@@ -481,13 +482,13 @@ pub fn ProjectDetail(id: String) -> Element {
                         title: "状态管理".to_string(),
                         div { class: "detail-action-row",
                             if p.status != 3 {
-                                button { class: "btn btn-primary", onclick: start_project, "启动项目" }
+                                button { class: "btn hud-btn btn-primary", onclick: start_project, "启动项目" }
                             }
                             if p.status != 4 {
-                                button { class: "btn btn-primary", onclick: complete_project, "完成项目" }
+                                button { class: "btn hud-btn btn-primary", onclick: complete_project, "完成项目" }
                             }
                             if p.status != 5 {
-                                button { class: "btn btn-outline", onclick: archive_project, "归档项目" }
+                                button { class: "btn hud-btn btn-outline", onclick: archive_project, "归档项目" }
                             }
                         }
                     }
@@ -505,7 +506,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         title: "任务列表".to_string(),
                         div { class: "flex justify-end mb-3",
                             button {
-                                class: "btn btn-primary btn-sm",
+                                class: "btn hud-btn btn-primary btn-sm",
                                 onclick: move |_| show_task_modal.set(true),
                                 "+ 新建任务"
                             }
@@ -552,7 +553,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                     td { "data-label": "操作",
                                                         div { class: "action-group",
                                                             if task_status != 3 {
-                                                                button { class: "btn btn-outline btn-sm",
+                                                                button { class: "btn hud-btn btn-outline btn-sm",
                                                                     onclick: move |e: Event<MouseData>| {
                                                                         // 修复 HIGH #8：阻止事件冒泡到 <tr> 的 onclick，
                                                                         // 否则点击"开始"会同时触发状态更新和页面跳转
@@ -581,7 +582,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                 }
                                                             }
                                                             if task_status != 4 {
-                                                                button { class: "btn btn-primary btn-sm",
+                                                                button { class: "btn hud-btn btn-primary btn-sm",
                                                                     onclick: move |e: Event<MouseData>| {
                                                                         // 修复 HIGH #8：同上，阻止冒泡
                                                                         e.stop_propagation();
@@ -625,7 +626,7 @@ pub fn ProjectDetail(id: String) -> Element {
                         title: "项目产物".to_string(),
                         div { class: "detail-card-body",
                             div { class: "detail-toolbar",
-                                button { class: "btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
+                                button { class: "btn hud-btn btn-primary", onclick: open_artifact_modal, "+ 新增产物" }
                             }
                             if artifacts_list.is_empty() {
                                 EmptyState { icon: "📦".to_string(), message: "暂无产物".to_string() }
@@ -660,17 +661,17 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                 "{artifact_description}"
                                                             }
                                                         }
-                                                        td { "data-label": "来源类型", span { class: "badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
+                                                        td { "data-label": "来源类型", span { class: "badge hud-badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
                                                         td { "data-label": "文件大小", "{artifact_file_size}" }
                                                         td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
                                                         td { "data-label": "操作",
                                                             div { class: "flex gap-1",
                                                                 Link {
-                                                                    class: "btn btn-ghost btn-sm",
+                                                                    class: "btn hud-btn btn-ghost btn-sm",
                                                                     to: crate::pages::Route::ProjectArtifactDetail { id: artifact_id.clone() },
                                                                     "查看"
                                                                 }
-                                                                button { class: "btn btn-error btn-sm",
+                                                                button { class: "btn hud-btn btn-error btn-sm",
                                                                     onclick: move |_| {
                                                                         let aid = aid_delete.clone();
                                                                         let pid = pid_refresh.clone();
@@ -730,8 +731,8 @@ pub fn ProjectDetail(id: String) -> Element {
                 on_close: close_artifact_modal,
                 footer: Some(rsx! {
                     div { class: "modal-footer-actions",
-                        button { class: "btn btn-outline", onclick: move |_| { show_artifact_modal.set(false); }, "取消" }
-                        button { class: "btn btn-primary", onclick: submit_artifact, "创建" }
+                        button { class: "btn hud-btn btn-outline", onclick: move |_| { show_artifact_modal.set(false); }, "取消" }
+                        button { class: "btn hud-btn btn-primary", onclick: submit_artifact, "创建" }
                     }
                 }),
                 div { class: "modal-body-stack",
@@ -791,9 +792,9 @@ pub fn ProjectDetail(id: String) -> Element {
             on_close: move |_| show_edit_modal.set(false),
             footer: Some(rsx! {
                 div { class: "modal-footer-actions",
-                    button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                    button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         disabled: saving_meta(),
                         onclick: move |_| {
                             let name = edit_name.read().trim().to_string();

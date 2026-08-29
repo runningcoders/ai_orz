@@ -27,7 +27,7 @@ pub fn Modal(props: ModalProps) -> Element {
                 form {
                     method: "dialog",
                     button {
-                        class: "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
+                        class: "btn hud-btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
                         onclick: move |_| props.on_close.call(()),
                         "✕"
                     }

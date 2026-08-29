@@ -350,7 +350,7 @@ pub fn SystemTriggers() -> Element {
             title: Some("定时触发器".to_string()),
             actions: Some(rsx!{
                     button {
-                        class: "btn btn-ghost btn-sm",
+                        class: "btn hud-btn btn-ghost btn-sm",
                         onclick: move |_| {
                             loading.set(true);
                             spawn(async move {
@@ -367,7 +367,7 @@ pub fn SystemTriggers() -> Element {
                         "🔄 刷新"
                     }
                     button {
-                        class: "btn btn-primary",
+                        class: "btn hud-btn btn-primary",
                         onclick: move |_| {
                             form_name.set(String::new());
                             form_type.set("cron".to_string());
@@ -420,7 +420,7 @@ pub fn SystemTriggers() -> Element {
                                         td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
                                         td { "data-label": "类型",
                                             span {
-                                                class: "badge badge-sm {trigger_type_badge_class(trigger_type)}",
+                                                class: "badge hud-badge badge-sm {trigger_type_badge_class(trigger_type)}",
                                                 "{trigger_type_text(trigger_type)}"
                                             }
                                         }
@@ -431,9 +431,9 @@ pub fn SystemTriggers() -> Element {
                                         }
                                         td { "data-label": "状态",
                                             if is_enabled {
-                                                span { class: "badge badge-success", "运行中" }
+                                                span { class: "badge hud-badge badge-success", "运行中" }
                                             } else {
-                                                span { class: "badge badge-neutral", "暂停" }
+                                                span { class: "badge hud-badge badge-neutral", "暂停" }
                                             }
                                         }
                                         td { "data-label": "下次执行", span { class: "font-mono text-base-content/70", "{format_time(next_run_at)}" } }
@@ -449,7 +449,7 @@ pub fn SystemTriggers() -> Element {
                                         }
                                         td { "data-label": "操作",
                                             button {
-                                                class: "btn btn-ghost btn-sm",
+                                                class: "btn hud-btn btn-ghost btn-sm",
                                                 onclick: move |_| {
                                                     let edit_id = id_edit.clone();
                                                     // 重置表单
@@ -503,7 +503,7 @@ pub fn SystemTriggers() -> Element {
                                             }
                                             if is_enabled {
                                                 button {
-                                                    class: "btn btn-ghost btn-sm",
+                                                    class: "btn hud-btn btn-ghost btn-sm",
                                                     onclick: move |_| {
                                                         let pid = id_pause.clone();
                                                         spawn(async move {
@@ -523,7 +523,7 @@ pub fn SystemTriggers() -> Element {
                                                 }
                                             } else {
                                                 button {
-                                                    class: "btn btn-ghost btn-sm",
+                                                    class: "btn hud-btn btn-ghost btn-sm",
                                                     onclick: move |_| {
                                                         let rid = id_resume.clone();
                                                         spawn(async move {
@@ -543,7 +543,7 @@ pub fn SystemTriggers() -> Element {
                                                 }
                                             }
                                             button {
-                                                class: "btn btn-error btn-sm",
+                                                class: "btn hud-btn btn-error btn-sm",
                                                 onclick: move |_| {
                                                     pending_delete_id.set(id_delete.clone());
                                                     show_delete_confirm.set(true);
@@ -565,9 +565,9 @@ pub fn SystemTriggers() -> Element {
             show: show_modal(),
             on_close: move |_| show_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
                 button {
-                    class: "btn btn-primary",
+                    class: "btn hud-btn btn-primary",
                     disabled: submitting() || loading_detail(),
                     onclick: handle_submit,
                     if submitting() {
@@ -618,7 +618,7 @@ pub fn SystemTriggers() -> Element {
                                         let expr_clone = expr.to_string();
                                         rsx! {
                                             button {
-                                                class: "btn btn-ghost btn-sm cron-preset-btn",
+                                                class: "btn hud-btn btn-ghost btn-sm cron-preset-btn",
                                                 onclick: move |_| {
                                                     form_cron.set(expr_clone.clone());
                                                 },

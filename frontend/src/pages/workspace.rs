@@ -744,7 +744,7 @@ pub fn Workspace() -> Element {
                                     }
                                     if !collapsed {
                                         button {
-                                            class: "btn btn-ghost btn-xs",
+                                            class: "btn hud-btn btn-ghost btn-xs",
                                             onclick: move |_| { current_view.set(WorkspaceView::Global); },
                                             "全局"
                                         }
@@ -777,7 +777,7 @@ pub fn Workspace() -> Element {
                                                         div { class: "flex items-center gap-1 min-w-0",
                                                             span { class: "text-sm font-medium truncate", "{p.name}" }
                                                         }
-                                                        span { class: "badge badge-xs badge-ghost ml-2 flex-shrink-0",
+                                                        span { class: "badge hud-badge badge-xs badge-ghost ml-2 flex-shrink-0",
                                                             "{project_status_label(p.status)}"
                                                         }
                                                     }
@@ -826,7 +826,7 @@ pub fn Workspace() -> Element {
                                     }
                                     if !collapsed {
                                         button {
-                                            class: "btn btn-ghost btn-xs",
+                                            class: "btn hud-btn btn-ghost btn-xs",
                                             onclick: move |_| { current_view.set(WorkspaceView::Global); },
                                             "全局"
                                         }
@@ -837,17 +837,17 @@ pub fn Workspace() -> Element {
                                 // 状态过滤（原独立"运行中 Agent"卡片的过滤迁入）
                                 div { class: "flex gap-1 px-3 py-2 border-b border-base-content/10",
                                     button {
-                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, None)}",
+                                        class: "btn hud-btn btn-xs join-item {filter_active_class(&ra_filter, None)}",
                                         onclick: move |_| runtime_filter.set(None),
                                         "全部"
                                     }
                                     button {
-                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"busy\"))}",
+                                        class: "btn hud-btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"busy\"))}",
                                         onclick: move |_| runtime_filter.set(Some("busy".to_string())),
                                         "思考"
                                     }
                                     button {
-                                        class: "btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"resting\"))}",
+                                        class: "btn hud-btn btn-xs join-item {filter_active_class(&ra_filter, Some(\"resting\"))}",
                                         onclick: move |_| runtime_filter.set(Some("resting".to_string())),
                                         "休息"
                                     }
@@ -984,12 +984,12 @@ pub fn Workspace() -> Element {
                                         }
                                     }
                                     button {
-                                        class: "btn btn-primary btn-sm",
+                                        class: "btn hud-btn btn-primary btn-sm",
                                         onclick: move |_| send_trigger.set(true),
                                         "发送"
                                     }
                                     button {
-                                        class: "btn btn-ghost btn-xs",
+                                        class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| chat_focused.set(false),
                                         "▼"
                                     }
@@ -1020,7 +1020,7 @@ pub fn Workspace() -> Element {
                                         }
                                     }
                                     button {
-                                        class: "btn btn-ghost btn-xs",
+                                        class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| { refresh(); toast.info("已刷新数据"); },
                                         "🔄"
                                     }

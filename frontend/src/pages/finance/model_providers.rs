@@ -184,7 +184,7 @@ pub fn FinanceModelProviders() -> Element {
                         eyebrow: Some("FINANCE".to_string()),
                         title: "模型提供商管理".to_string(),
                         actions: Some(rsx!{
-                        button { class: "btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
+                        button { class: "btn hud-btn btn-primary", onclick: move |_| show_modal.set(true), "+ 添加提供商" }
                         }),
                     },
 
@@ -224,25 +224,25 @@ pub fn FinanceModelProviders() -> Element {
                                                 td { class: "font-semibold",
                                                     Link { to: crate::pages::Route::FinanceModelProviderDetail { id: id_detail.clone() }, "{pname}" }
                                                 }
-                                                td { span { class: "badge badge-info", "{ptype_str}" } }
+                                                td { span { class: "badge hud-badge badge-info", "{ptype_str}" } }
                                                 td {
                                                     if is_embedding {
-                                                        span { class: "badge badge-warning", "embedding" }
+                                                        span { class: "badge hud-badge badge-warning", "embedding" }
                                                     } else {
-                                                        span { class: "badge badge-success", "agent" }
+                                                        span { class: "badge hud-badge badge-success", "agent" }
                                                     }
                                                 }
                                                 td { class: "font-mono", "{pmodel}" }
                                                 td {
                                                     if is_enabled {
-                                                        span { class: "badge badge-success", "启用" }
+                                                        span { class: "badge hud-badge badge-success", "启用" }
                                                     } else {
-                                                        span { class: "badge badge-neutral", "禁用" }
+                                                        span { class: "badge hud-badge badge-neutral", "禁用" }
                                                     }
                                                 }
                                                 td { class: "flex gap-2 items-center flex-wrap",
                                                     if is_enabled {
-                                                        button { class: "btn btn-outline btn-sm",
+                                                        button { class: "btn hud-btn btn-outline btn-sm",
                                                             onclick: {
                                                                 let id = id_toggle.clone();
                                                                 move |_| {
@@ -261,7 +261,7 @@ pub fn FinanceModelProviders() -> Element {
                                                         }
                                                     } else {
                                                         button {
-                                                            class: "btn btn-sm btn-primary",
+                                                            class: "btn hud-btn btn-sm btn-primary",
                                                             onclick: {
                                                                 let id = toggle_id.clone();
                                                                 let name = toggle_name.clone();
@@ -309,7 +309,7 @@ pub fn FinanceModelProviders() -> Element {
                                                             "启用"
                                                         }
                                                     }
-                                                    button { class: "btn btn-outline btn-sm",
+                                                    button { class: "btn hud-btn btn-outline btn-sm",
                                                         onclick: move |_| {
                                                             test_provider_id.set(id_test.clone());
                                                             test_prompt.set("你好，请介绍一下自己".to_string());
@@ -318,7 +318,7 @@ pub fn FinanceModelProviders() -> Element {
                                                         },
                                                         "调用测试"
                                                     }
-                                                    button { class: "btn btn-error btn-sm",
+                                                    button { class: "btn hud-btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -342,8 +342,8 @@ pub fn FinanceModelProviders() -> Element {
             show: show_modal(),
             on_close: move |_| show_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "创建中..." } else { "创建" }
                 }
             },
@@ -463,8 +463,8 @@ pub fn FinanceModelProviders() -> Element {
             show: show_test_modal(),
             on_close: move |_| show_test_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
-                button { class: "btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_test_modal.set(false), "关闭" }
+                button { class: "btn hud-btn btn-primary", disabled: test_loading(), onclick: handle_test_send,
                     if test_loading() { "发送中..." } else { "发送" }
                 }
             },
@@ -492,8 +492,8 @@ pub fn FinanceModelProviders() -> Element {
             show: show_switch_modal(),
             on_close: move |_| show_switch_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_switch_modal.set(false), "取消" }
-                button { class: "btn btn-warning", disabled: switch_loading(), onclick: handle_switch_confirm,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_switch_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-warning", disabled: switch_loading(), onclick: handle_switch_confirm,
                     if switch_loading() { "切换中..." } else { "确认切换" }
                 }
             },

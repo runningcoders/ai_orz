@@ -161,7 +161,7 @@ pub fn IdentityGithubSection() -> Element {
         div { class: "border border-base-300 rounded-lg p-4 mt-4",
             div { class: "flex items-center gap-2",
                 h3 { class: "font-semibold text-lg", "GitHub" }
-                span { class: "badge badge-outline badge-sm", "GithubToken" }
+                span { class: "badge hud-badge badge-outline badge-sm", "GithubToken" }
             }
             p { class: "text-xs text-base-content/50 mt-1",
                 "Personal Access Token 凭证；Agent 经 gh_cli 工具以此身份操作 GitHub（repo/issue/pr 等）。"
@@ -174,7 +174,7 @@ pub fn IdentityGithubSection() -> Element {
                 div { class: "border border-base-300 rounded-lg p-4 mt-3",
                     div { class: "flex items-center justify-between flex-wrap gap-2",
                         h4 { class: "font-semibold", "访问令牌" }
-                        button { class: "btn btn-sm btn-primary", onclick: move |_| show_create_modal.set(true), "+ 绑定令牌" }
+                        button { class: "btn hud-btn btn-sm btn-primary", onclick: move |_| show_create_modal.set(true), "+ 绑定令牌" }
                     }
                     if credentials.is_empty() {
                         div { class: "text-sm text-base-content/50 py-3", "尚未绑定 GitHub 令牌" }
@@ -195,20 +195,20 @@ pub fn IdentityGithubSection() -> Element {
                                                 div { class: "flex items-center gap-2 flex-wrap",
                                                     span { class: "font-medium", "{cred_name}" }
                                                     if !token_tail.is_empty() {
-                                                        span { class: "badge badge-outline font-mono badge-sm", "****{token_tail}" }
+                                                        span { class: "badge hud-badge badge-outline font-mono badge-sm", "****{token_tail}" }
                                                     }
                                                     if is_default {
-                                                        span { class: "badge badge-success badge-sm", "默认" }
+                                                        span { class: "badge hud-badge badge-success badge-sm", "默认" }
                                                     }
                                                 }
                                                 div { class: "flex gap-2",
                                                     if !is_default {
-                                                        button { class: "btn btn-ghost btn-xs",
+                                                        button { class: "btn hud-btn btn-ghost btn-xs",
                                                             onclick: move |_| handle_set_default(id_for_default.clone()),
                                                             "设为默认"
                                                         }
                                                     }
-                                                    button { class: "btn btn-ghost btn-xs",
+                                                    button { class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
                                                             edit_id.set(id_for_edit.clone());
                                                             edit_name.set(String::new());
@@ -216,7 +216,7 @@ pub fn IdentityGithubSection() -> Element {
                                                             show_edit_modal.set(true);
                                                         }, "编辑"
                                                     }
-                                                    button { class: "btn btn-ghost btn-xs text-error",
+                                                    button { class: "btn hud-btn btn-ghost btn-xs text-error",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_for_delete.clone());
                                                             show_delete_confirm.set(true);
@@ -238,7 +238,7 @@ pub fn IdentityGithubSection() -> Element {
                         h4 { class: "font-semibold", "登录状态" }
                         if let Some(auth) = &auth {
                             if auth.logged_in {
-                                span { class: "badge badge-sm badge-success", "已登录{auth_name_suffix}" }
+                                span { class: "badge hud-badge badge-sm badge-success", "已登录{auth_name_suffix}" }
                             } else {
                                 span { class: "{auth_state_badge(\"未登录\")}", "未登录" }
                             }
@@ -260,8 +260,8 @@ pub fn IdentityGithubSection() -> Element {
             show: show_create_modal(),
             on_close: move |_| show_create_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_create_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: creating(), onclick: handle_create,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_create_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: creating(), onclick: handle_create,
                     if creating() { "绑定中..." } else { "绑定" }
                 }
             },
@@ -289,8 +289,8 @@ pub fn IdentityGithubSection() -> Element {
             show: show_edit_modal(),
             on_close: move |_| show_edit_modal.set(false),
             footer: rsx! {
-                button { class: "btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
-                button { class: "btn btn-primary", disabled: saving(), onclick: handle_save,
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_edit_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: saving(), onclick: handle_save,
                     if saving() { "保存中..." } else { "保存" }
                 }
             },

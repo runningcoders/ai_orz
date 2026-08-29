@@ -113,7 +113,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                 eyebrow: "FINANCE".to_string(),
                 title: "MCP Server 详情".to_string(),
                 actions: Some(rsx! {
-                    Link { class: "btn btn-ghost", to: crate::pages::Route::FinanceMcpServers {}, "← 返回列表" }
+                    Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::FinanceMcpServers {}, "← 返回列表" }
                 }),
             }
             match server_view.as_ref() {
@@ -129,19 +129,19 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                                 div { class: "flex justify-end mb-4",
                                     div { class: "flex gap-2",
                                         button {
-                                            class: "btn btn-ghost btn-sm",
+                                            class: "btn hud-btn btn-ghost btn-sm",
                                             disabled: toggling(),
                                             onclick: move |_| on_toggle(if s.status == McpServerStatus::Enabled { McpServerStatus::Disabled } else { McpServerStatus::Enabled }),
                                             if s.status == McpServerStatus::Enabled { "🚫 禁用" } else { "✅ 启用" }
                                         }
                                         button {
-                                            class: "btn btn-ghost btn-sm",
+                                            class: "btn hud-btn btn-ghost btn-sm",
                                             disabled: syncing(),
                                             onclick: on_sync,
                                             if syncing() { "同步中..." } else { "🔄 同步工具" }
                                         }
                                         button {
-                                            class: "btn btn-error btn-sm",
+                                            class: "btn hud-btn btn-error btn-sm",
                                             onclick: move |_| show_delete_confirm.set(true),
                                             "🗑 删除"
                                         }

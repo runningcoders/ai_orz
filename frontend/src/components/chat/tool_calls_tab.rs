@@ -188,7 +188,7 @@ pub fn ToolCallsTab(
                     "最近 {list.len()} 条工具调用"
                 }
                 button {
-                    class: "btn btn-ghost btn-xs",
+                    class: "btn hud-btn btn-ghost btn-xs",
                     title: "刷新",
                     disabled: loading(),
                     onclick: move |_| load(refresh_btn_pid.clone(), refresh_btn_aid.clone(), false),
@@ -241,7 +241,7 @@ pub fn ToolCallsTab(
                                         span { class: "font-medium text-sm flex-1 truncate", "{tool_name}" }
                                         if let Some(pid) = pid_opt {
                                             button {
-                                                class: "badge badge-warning cursor-pointer",
+                                                class: "badge hud-badge badge-warning cursor-pointer",
                                                 title: "查看关联进程详情",
                                                 onclick: move |evt: MouseEvent| {
                                                     evt.stop_propagation();

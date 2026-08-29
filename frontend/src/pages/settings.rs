@@ -89,8 +89,8 @@ pub fn Settings() -> Element {
                     }
 
                     div { class: "flex gap-3 mt-4",
-                        button { class: "btn btn-primary", onclick: handle_save, "保存配置" }
-                        button { class: "btn btn-ghost", onclick: handle_reset, "重置为默认" }
+                        button { class: "btn hud-btn btn-primary", onclick: handle_save, "保存配置" }
+                        button { class: "btn hud-btn btn-ghost", onclick: handle_reset, "重置为默认" }
                     }
                 }
             }
