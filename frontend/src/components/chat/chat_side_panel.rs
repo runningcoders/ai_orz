@@ -22,9 +22,9 @@ use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::state::Loading;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
-    agent_runtime_badge, format_file_size, format_timestamp_opt as format_timestamp,
-    priority_badge, progress_tone, project_status_badge, project_status_text, tag_chip,
-    task_status_badge, task_status_text,
+    agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, format_file_size,
+    format_timestamp_opt as format_timestamp, priority_badge, progress_tone, project_status_badge,
+    project_status_text, tag_chip, task_status_badge, task_status_text,
 };
 use common::api::{
     ArtifactDetail, GetAgentRequest, GetAgentResponse, GetProjectRequest, GetProjectResponse,
@@ -41,18 +41,6 @@ fn artifact_source_type_text(source_type: ArtifactSourceType) -> &'static str {
         ArtifactSourceType::Attachment => "附件",
         ArtifactSourceType::GeneratedContent => "生成内容",
         ArtifactSourceType::RemoteUrl => "远程链接",
-    }
-}
-
-/// Agent 生命周期状态中文文案
-fn agent_lifecycle_text(status: i32) -> &'static str {
-    match status {
-        1 => "面试中",
-        2 => "待入职",
-        3 => "已入职",
-        4 => "已离职",
-        5 => "待离职",
-        _ => "未知",
     }
 }
 
@@ -659,7 +647,7 @@ fn AgentInfoTab(agent_id: String) -> Element {
                 }
             }
             div { class: "flex flex-wrap gap-1",
-                span { class: "badge hud-badge badge-info", "{agent_lifecycle_text(a.status)}" }
+                span { class: "{agent_lifecycle_badge(a.status)}", "{agent_lifecycle_text(a.status)}" }
                 span { class: "{agent_runtime_badge(a.runtime_state)}",
                     "{agent_runtime_text(a.runtime_state)}"
                 }

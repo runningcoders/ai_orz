@@ -1,4 +1,32 @@
-//! 任务/项目状态映射
+//! 任务/项目/Agent 状态映射
+
+/// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职, 5=待离职）
+/// 单一事实源：避免各页面散写生命周期映射。
+pub fn agent_lifecycle_text(status: i32) -> &'static str {
+    match status {
+        0 => "已删除",
+        1 => "面试中",
+        2 => "待入职",
+        3 => "已入职",
+        4 => "已离职",
+        5 => "待离职",
+        _ => "未知",
+    }
+}
+
+/// Agent 生命周期状态徽章 class（单一事实源）。
+/// 与 `agent_runtime_badge` 对齐：统一走 `badge hud-badge badge-sm`，尺寸一致。
+pub fn agent_lifecycle_badge(status: i32) -> &'static str {
+    match status {
+        0 => "badge hud-badge badge-sm badge-error",
+        1 => "badge hud-badge badge-sm badge-warning",
+        2 => "badge hud-badge badge-sm badge-info",
+        3 => "badge hud-badge badge-sm badge-success",
+        4 => "badge hud-badge badge-sm badge-neutral",
+        5 => "badge hud-badge badge-sm badge-ghost",
+        _ => "badge hud-badge badge-sm badge-ghost",
+    }
+}
 
 /// 任务状态文本（0=已取消, 1=待审核, 2=待处理, 3=进行中, 4=已完成, 5=已归档）
 pub fn task_status_text(status: i32) -> &'static str {

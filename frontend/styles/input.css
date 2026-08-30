@@ -504,6 +504,8 @@
   background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
   color: var(--color-base-content);
   border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
+  /* 与 .badge.hud-badge.badge-sm 横向内边距对齐，避免同一行混排时松紧不一 */
+  padding-inline: .625rem;
 }
 
 /* Reception 登录/注册 Tab */
@@ -1471,7 +1473,7 @@
     background-image: linear-gradient(180deg, color-mix(in oklab, #fff 7%, transparent), transparent);
     box-shadow: inset 0 1px 0 0 color-mix(in oklab, #fff 10%, transparent);
   }
-  .badge.hud-badge.badge-sm { font-size: 10px; padding-inline: .5rem; }
+  .badge.hud-badge.badge-sm { font-size: 10px; padding-inline: .625rem; }
 
   /* 按钮皮肤：覆盖 DaisyUI .btn（保留语义色，加 HUD 发丝边 + 聚焦辉光 + 微过渡） */
   .btn.hud-btn {
