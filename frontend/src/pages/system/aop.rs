@@ -79,14 +79,14 @@ pub fn SystemAop() -> Element {
     let close_modal = move |_| selected_event.set(None);
 
     let monitor_btn_class = if *active_tab.read() == "monitor" {
-        "btn btn-sm btn-primary"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "btn btn-sm btn-ghost"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let stats_btn_class = if *active_tab.read() == "stats" {
-        "btn btn-sm btn-primary"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "btn btn-sm btn-ghost"
+        "btn hud-btn btn-sm btn-ghost"
     };
 
     rsx! {

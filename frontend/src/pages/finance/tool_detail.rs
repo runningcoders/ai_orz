@@ -334,7 +334,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "协议" }
                                 }
-                                div { span { class: "badge hud-badge badge-neutral", "{t.protocol}" } }
+                                div { span { class: "badge orz-tag badge-sm", "{t.protocol}" } }
                             }
                             div {
                                 label { class: "label",
@@ -361,7 +361,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                     }
                                     div { class: "flex flex-wrap gap-2",
                                         for tag in t.tags.iter() {
-                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
+                                            span { class: "badge orz-tag badge-sm", "{tag}" }
                                         }
                                     }
                                 }

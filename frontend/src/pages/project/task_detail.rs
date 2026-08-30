@@ -338,24 +338,24 @@ pub fn TaskDetail(id: String) -> Element {
     };
 
     let tab0_class = if active_tab() == 0 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab1_class = if active_tab() == 1 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab2_class = if active_tab() == 2 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab3_class = if active_tab() == 3 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
 
     rsx! {
@@ -380,7 +380,7 @@ pub fn TaskDetail(id: String) -> Element {
                 let t = t.clone();
                 rsx! {
             // Tab 导航
-            div { class: "tabs tabs-boxed hud-tabs mb-6",
+            div { class: "flex flex-wrap gap-2 mb-6",
                 button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
                 button { class: "{tab1_class}", onclick: move |_| active_tab.set(1), "📊 进度与状态" }
                 button { class: "{tab2_class}", onclick: move |_| active_tab.set(2), "🕸️ 关系图" }

@@ -484,7 +484,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                             }
                             div {
                                 div { class: "text-sm text-base-content/60", "状态" }
-                                div { span { class: "badge", "{status_text(c.status)}" } }
+                                div { span { class: "{channel_status_badge(c.status)}", "{status_text(c.status)}" } }
                             }
                             if let Some(url) = &c.webhook_url {
                                 div {
@@ -503,7 +503,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     div { class: "text-sm text-base-content/60", "应用凭证" }
                                     div {
                                         if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
-                                            span { class: "badge hud-badge badge-outline", "{name}" }
+                                            span { class: "badge orz-tag badge-sm", "{name}" }
                                         } else {
                                             span { class: "badge hud-badge badge-warning badge-sm", "未绑定凭证" }
                                         }
@@ -512,7 +512,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 div {
                                     div { class: "text-sm text-base-content/60", "身份模式" }
                                     div {
-                                        span { class: "badge hud-badge badge-ghost badge-sm", "{identity_mode_text(lark_cfg.and_then(|l| l.identity_mode.as_deref()))}" }
+                                        span { class: "badge orz-tag badge-sm", "{identity_mode_text(lark_cfg.and_then(|l| l.identity_mode.as_deref()))}" }
                                     }
                                 }
                                 div {
@@ -544,7 +544,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                     div { class: "flex items-center gap-2 flex-wrap",
                                         span { class: "text-sm text-base-content/60", "飞书集成" }
                                         if let Some(name) = lark_cfg.and_then(|l| l.credential_name.as_deref()) {
-                                            span { class: "badge hud-badge badge-outline badge-sm", "凭证：{name}" }
+                                            span { class: "badge orz-tag badge-sm", "凭证：{name}" }
                                         } else {
                                             span { class: "badge hud-badge badge-warning badge-sm", "凭证未绑定" }
                                         }
@@ -616,7 +616,7 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 if let Some(method) = webhook_cfg.and_then(|w| w.method.as_ref()) {
                                     div {
                                         div { class: "text-sm text-base-content/60", "HTTP 方法" }
-                                        div { span { class: "badge hud-badge badge-info badge-sm", "{method}" } }
+                                        div { span { class: "badge orz-tag badge-sm", "{method}" } }
                                     }
                                 }
                                 if let Some(tmpl) = webhook_cfg.and_then(|w| w.body_template.as_ref()) {
@@ -893,5 +893,14 @@ fn status_text(s: ChannelStatus) -> &'static str {
         ChannelStatus::Active => "启用",
         ChannelStatus::Disabled => "禁用",
         ChannelStatus::Deleted => "已删除",
+    }
+}
+
+/// 渠道状态徽章（HUD 皮肤，单一事实源）。取代详情页原本 `class: "badge"` 缺 hud 皮肤的写法。
+fn channel_status_badge(s: ChannelStatus) -> &'static str {
+    match s {
+        ChannelStatus::Active => "badge hud-badge badge-success",
+        ChannelStatus::Disabled => "badge hud-badge badge-neutral",
+        ChannelStatus::Deleted => "badge hud-badge badge-error",
     }
 }

@@ -103,10 +103,11 @@ fn trigger_type_text(t: TriggerType) -> &'static str {
 }
 
 fn trigger_type_badge_class(t: TriggerType) -> &'static str {
+    // 触发类型是「类别标签」，统一走中性 orz-tag chip（与状态徽章区分）
     match t {
-        TriggerType::Once => "badge hud-badge badge-info",
-        TriggerType::Cron => "badge hud-badge badge-success",
-        TriggerType::Interval => "badge hud-badge badge-warning",
+        TriggerType::Once => "badge orz-tag badge-sm",
+        TriggerType::Cron => "badge orz-tag badge-sm",
+        TriggerType::Interval => "badge orz-tag badge-sm",
     }
 }
 
@@ -420,7 +421,7 @@ pub fn SystemTriggers() -> Element {
                                         td { class: "detail-table-value-bold", "data-label": "名称", "{name}" }
                                         td { "data-label": "类型",
                                             span {
-                                                class: "badge badge-sm {trigger_type_badge_class(trigger_type)}",
+                                                class: "{trigger_type_badge_class(trigger_type)}",
                                                 "{trigger_type_text(trigger_type)}"
                                             }
                                         }

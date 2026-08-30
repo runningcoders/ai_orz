@@ -108,7 +108,7 @@ pub fn FinanceAttachments() -> Element {
                                                 tr { key: "{id}",
                                                     td { class: "font-semibold", "{original_name}" }
                                                     td { "{size}" }
-                                                    td { span { class: "badge hud-badge badge-info", "{purpose}" } }
+                                                    td { span { class: "badge orz-tag badge-sm", "{purpose}" } }
                                                     td { "{created_at}" }
                                                     td {
                                                         div { class: "flex gap-1",

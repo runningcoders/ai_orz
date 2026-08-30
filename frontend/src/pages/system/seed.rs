@@ -458,9 +458,9 @@ pub fn SystemSeed() -> Element {
                                             }
                                             td {
                                                 if is_default {
-                                                    span { class: "badge hud-badge badge-warning", "默认" }
+                                                    span { class: "badge orz-tag badge-sm", "默认" }
                                                 } else {
-                                                    span { class: "badge hud-badge badge-ghost", "自定义" }
+                                                    span { class: "badge orz-tag badge-sm", "自定义" }
                                                 }
                                             }
                                             td { class: "flex gap-2",

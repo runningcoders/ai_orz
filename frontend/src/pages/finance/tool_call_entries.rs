@@ -167,7 +167,7 @@ pub fn FinanceToolCallEntries() -> Element {
                                                     td { class: "font-mono text-xs truncate max-w-xs", title: "{call_id}", "{call_id}" }
                                                     td { "{tool_name}" }
                                                     td { class: "font-mono text-xs", "{agent_id.as_deref().unwrap_or(\"-\")}" }
-                                                    td { span { class: "badge badge-xs {status_badge_class(status)}", "{status_text(status)}" } }
+                                                    td { span { class: "{status_badge_class(status)}", "{status_text(status)}" } }
                                                     td { class: "font-mono", "{duration_ms}ms" }
                                                     td { class: "font-mono text-xs", "{crate::utils::format_datetime(started_at as i64)}" }
                                                     td { button { class: "btn hud-btn btn-ghost btn-xs", onclick: move |_| on_click_entry(call_id.clone()), "详情" } }

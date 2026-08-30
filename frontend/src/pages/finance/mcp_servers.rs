@@ -219,7 +219,7 @@ pub fn FinanceMcpServers() -> Element {
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { class: "font-semibold", "{name}" }
-                                                td { span { class: "badge hud-badge badge-info", "{transport}" } }
+                                                td { span { class: "badge orz-tag badge-sm", "{transport}" } }
                                                 td { span { class: "text-sm text-base-content/70 truncate block max-w-xs", "{config_display}" } }
                                                 td {
                                                     if is_enabled {

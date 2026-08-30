@@ -362,7 +362,7 @@ pub fn FinanceIdentity() -> Element {
                     div { class: "border border-base-300 rounded-lg p-4 mt-4",
                         div { class: "flex items-center gap-2",
                             h3 { class: "font-semibold text-lg", "飞书" }
-                            span { class: "badge hud-badge badge-outline badge-sm", "LarkApp" }
+                            span { class: "badge orz-tag badge-sm", "LarkApp" }
                         }
                         p { class: "text-xs text-base-content/50 mt-1",
                             "飞书自建应用凭证与用户身份授权；消息渠道通过引用凭证接入。"
@@ -414,7 +414,7 @@ pub fn FinanceIdentity() -> Element {
                                                         div { class: "flex items-center justify-between flex-wrap gap-2",
                                                             div { class: "flex items-center gap-2 flex-wrap",
                                                                 span { class: "font-medium", "{cred_name}" }
-                                                                span { class: "badge hud-badge badge-outline font-mono badge-sm", "{app_id}" }
+                                                                span { class: "badge orz-tag badge-sm font-mono", "{app_id}" }
                                                                 if is_default {
                                                                     span { class: "badge hud-badge badge-success badge-sm", "默认" }
                                                                 }

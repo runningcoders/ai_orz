@@ -144,7 +144,7 @@ pub fn SystemProcesses() -> Element {
                                                             "{process_alive_text(alive)}"
                                                         }
                                                         if p.background {
-                                                            span { class: "badge hud-badge badge-info badge-sm ml-1", "后台" }
+                                                            span { class: "badge orz-tag badge-sm ml-1", "后台" }
                                                         }
                                                     }
                                                     td { class: "font-mono",

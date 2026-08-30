@@ -224,12 +224,12 @@ pub fn FinanceModelProviders() -> Element {
                                                 td { class: "font-semibold",
                                                     Link { to: crate::pages::Route::FinanceModelProviderDetail { id: id_detail.clone() }, "{pname}" }
                                                 }
-                                                td { span { class: "badge hud-badge badge-info", "{ptype_str}" } }
+                                                td { span { class: "badge orz-tag badge-sm", "{ptype_str}" } }
                                                 td {
                                                     if is_embedding {
-                                                        span { class: "badge hud-badge badge-warning", "embedding" }
+                                                        span { class: "badge orz-tag badge-sm", "embedding" }
                                                     } else {
-                                                        span { class: "badge hud-badge badge-success", "agent" }
+                                                        span { class: "badge orz-tag badge-sm", "agent" }
                                                     }
                                                 }
                                                 td { class: "font-mono", "{pmodel}" }

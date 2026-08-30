@@ -276,24 +276,24 @@ pub fn ProjectDetail(id: String) -> Element {
     };
 
     let tab0_class = if active_tab() == 0 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab1_class = if active_tab() == 1 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab2_class = if active_tab() == 2 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
     let tab3_class = if active_tab() == 3 {
-        "tab tab-lg tab-active"
+        "btn hud-btn btn-sm btn-primary"
     } else {
-        "tab tab-lg"
+        "btn hud-btn btn-sm btn-ghost"
     };
 
     let tasks_list = tasks.read().clone();
@@ -337,7 +337,7 @@ pub fn ProjectDetail(id: String) -> Element {
                 let p = p.clone();
                 rsx! {
             // Tab 导航
-            div { class: "tabs tabs-boxed hud-tabs mb-6",
+            div { class: "flex flex-wrap gap-2 mb-6",
                 button { class: "{tab0_class}", onclick: move |_| active_tab.set(0), "📋 概览" }
                 button { class: "{tab1_class}", onclick: move |_| active_tab.set(1), "📝 任务列表" }
                 button { class: "{tab2_class}", onclick: move |_| active_tab.set(2), "📦 产物" }
@@ -661,7 +661,7 @@ pub fn ProjectDetail(id: String) -> Element {
                                                                 "{artifact_description}"
                                                             }
                                                         }
-                                                        td { "data-label": "来源类型", span { class: "badge hud-badge badge-neutral", "{artifact_source_type_text(artifact_source_type)}" } }
+                                                        td { "data-label": "来源类型", span { class: "badge orz-tag badge-sm", "{artifact_source_type_text(artifact_source_type)}" } }
                                                         td { "data-label": "文件大小", "{artifact_file_size}" }
                                                         td { "data-label": "创建时间", span { class: "font-mono text-base-content/70", "{artifact_created_at}" } }
                                                         td { "data-label": "操作",

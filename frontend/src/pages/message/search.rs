@@ -101,7 +101,7 @@ pub fn MessageSearch() -> Element {
                                 tr { key: "{msg.message_id}",
                                     td { "{msg.content.chars().take(100).collect::<String>()}" }
                                     td {
-                                        span { class: if msg.from_role == 1 { "badge hud-badge badge-accent" } else { "badge hud-badge badge-primary" },
+                                        span { class: "badge orz-tag badge-sm",
                                             "{format_role(msg.from_role)}"
                                         }
                                     }

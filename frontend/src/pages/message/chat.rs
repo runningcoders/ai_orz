@@ -1149,7 +1149,7 @@ fn chat_input_area(
                 div { class: "flex flex-wrap gap-2 mb-2",
                     for att in pending_attachments().iter() {
                         div {
-                            class: "badge hud-badge badge-lg gap-2",
+                            class: "badge orz-tag badge-lg gap-2",
                             key: "{att.id}",
                             span { "📎" }
                             span { "{att.name}" }

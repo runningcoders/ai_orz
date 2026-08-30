@@ -266,7 +266,7 @@ pub fn HrSkills() -> Element {
                                                 td { "data-label": "标签",
                                                     div { class: "flex flex-wrap gap-1",
                                                         for tag in &tags {
-                                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
+                                                            span { class: "badge orz-tag badge-sm", "{tag}" }
                                                         }
                                                     }
                                                 }

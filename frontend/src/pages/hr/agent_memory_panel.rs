@@ -36,10 +36,11 @@ impl MemoryTab {
     }
 
     fn badge_class(self) -> &'static str {
+        // 记忆分面类别标签，统一走中性 orz-tag chip
         match self {
-            MemoryTab::ShortTerm => "badge hud-badge badge-info",
-            MemoryTab::KnowledgeNode => "badge hud-badge badge-success",
-            MemoryTab::Relation => "badge hud-badge badge-accent",
+            MemoryTab::ShortTerm => "badge orz-tag badge-sm",
+            MemoryTab::KnowledgeNode => "badge orz-tag badge-sm",
+            MemoryTab::Relation => "badge orz-tag badge-sm",
         }
     }
 }
@@ -150,9 +151,9 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                     eyebrow: Some("HR".to_string()),
                     title: "记忆面板".to_string(),
                     actions: Some(rsx!{
-                    div { class: "tabs tabs-boxed hud-tabs",
+                    div { class: "flex flex-wrap gap-2",
                         button {
-                            class: if active_tab() == MemoryTab::ShortTerm { "tab tab-active" } else { "tab" },
+                            class: if active_tab() == MemoryTab::ShortTerm { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::ShortTerm);
                                 keyword.set(String::new());
@@ -160,7 +161,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             "短期记忆"
                         }
                         button {
-                            class: if active_tab() == MemoryTab::KnowledgeNode { "tab tab-active" } else { "tab" },
+                            class: if active_tab() == MemoryTab::KnowledgeNode { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::KnowledgeNode);
                                 keyword.set(String::new());
@@ -168,7 +169,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                             "知识节点"
                         }
                         button {
-                            class: if active_tab() == MemoryTab::Relation { "tab tab-active" } else { "tab" },
+                            class: if active_tab() == MemoryTab::Relation { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                             onclick: move |_| {
                                 active_tab.set(MemoryTab::Relation);
                                 keyword.set(String::new());
@@ -303,7 +304,7 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                             if let Some(tags_list) = &tags {
                                                 div { class: "flex flex-wrap gap-1 mb-2",
                                                     for tag in tags_list.iter() {
-                                                        span { class: "badge hud-badge badge-neutral badge-xs", "{tag}" }
+                                                        span { class: "badge orz-tag badge-xs", "{tag}" }
                                                     }
                                                 }
                                             }

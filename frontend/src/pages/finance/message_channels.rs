@@ -286,11 +286,11 @@ pub fn FinanceMessageChannels() -> Element {
                                             rsx! {
                                                 tr { key: "{id}",
                                                     td { class: "font-semibold", "{channel_name}" }
-                                                    td { span { class: "badge hud-badge badge-info", "{channel_type}" } }
+                                                    td { span { class: "badge orz-tag badge-sm", "{channel_type}" } }
                                                     td {
                                                         if is_lark {
                                                             if let Some(name) = &credential_name {
-                                                                span { class: "badge hud-badge badge-outline", "{name}" }
+                                                                span { class: "badge orz-tag badge-sm", "{name}" }
                                                             } else {
                                                                 span { class: "badge hud-badge badge-warning", "未绑定凭证" }
                                                             }

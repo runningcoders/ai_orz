@@ -161,7 +161,7 @@ pub fn IdentityGithubSection() -> Element {
         div { class: "border border-base-300 rounded-lg p-4 mt-4",
             div { class: "flex items-center gap-2",
                 h3 { class: "font-semibold text-lg", "GitHub" }
-                span { class: "badge hud-badge badge-outline badge-sm", "GithubToken" }
+                span { class: "badge orz-tag badge-sm", "GithubToken" }
             }
             p { class: "text-xs text-base-content/50 mt-1",
                 "Personal Access Token 凭证；Agent 经 gh_cli 工具以此身份操作 GitHub（repo/issue/pr 等）。"
@@ -195,7 +195,7 @@ pub fn IdentityGithubSection() -> Element {
                                                 div { class: "flex items-center gap-2 flex-wrap",
                                                     span { class: "font-medium", "{cred_name}" }
                                                     if !token_tail.is_empty() {
-                                                        span { class: "badge hud-badge badge-outline font-mono badge-sm", "****{token_tail}" }
+                                                        span { class: "badge orz-tag badge-sm font-mono", "****{token_tail}" }
                                                     }
                                                     if is_default {
                                                         span { class: "badge hud-badge badge-success badge-sm", "默认" }

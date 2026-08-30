@@ -17,10 +17,11 @@ use common::enums::UserRole;
 // （SuperAdmin=0/Admin=1/Member=2，数字越小权限越高）完全相反，导致创建的管理员被后端
 // 解析成 Member。统一改用 UserRole 枚举值，文案复用 display_name()。
 fn role_badge(role: i32) -> &'static str {
+    // 角色是「类别标签」，统一走中性 orz-tag chip（与状态徽章区分）
     match UserRole::from_i32(role) {
-        UserRole::SuperAdmin => "badge hud-badge badge-info",
-        UserRole::Admin => "badge hud-badge badge-success",
-        UserRole::Member => "badge hud-badge badge-neutral",
+        UserRole::SuperAdmin => "badge orz-tag badge-sm",
+        UserRole::Admin => "badge orz-tag badge-sm",
+        UserRole::Member => "badge orz-tag badge-sm",
     }
 }
 

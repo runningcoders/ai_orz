@@ -205,7 +205,7 @@ pub fn SystemBackup() -> Element {
                                     rsx! {
                                         tr { key: "{version}",
                                             td { "data-label": "版本",
-                                                span { class: "badge hud-badge badge-info", "v{version}" }
+                                                span { class: "badge orz-tag badge-sm", "v{version}" }
                                             }
                                             td { class: "font-mono text-base-content/70", style: "white-space: nowrap;", "data-label": "时间",
                                                 "{format_timestamp(&timestamp)}"

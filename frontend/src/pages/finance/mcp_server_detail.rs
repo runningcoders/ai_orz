@@ -154,7 +154,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                                     }
                                     div {
                                         div { class: "text-sm text-base-content/60", "状态" }
-                                        div { span { class: "badge", "{status_text(s.status)}" } }
+                                        div { span { class: "{mcp_status_badge(s.status)}", "{status_text(s.status)}" } }
                                     }
                                     div { class: "md:col-span-2",
                                         div { class: "text-sm text-base-content/60 mb-1", "配置" }
@@ -217,6 +217,15 @@ fn status_text(s: McpServerStatus) -> &'static str {
         McpServerStatus::Enabled => "启用",
         McpServerStatus::Disabled => "禁用",
         McpServerStatus::Deleted => "已删除",
+    }
+}
+
+/// MCP 服务状态徽章（HUD 皮肤，单一事实源）。取代详情页原本 `class: "badge"` 缺 hud 皮肤的写法。
+fn mcp_status_badge(s: McpServerStatus) -> &'static str {
+    match s {
+        McpServerStatus::Enabled => "badge hud-badge badge-success",
+        McpServerStatus::Disabled => "badge hud-badge badge-neutral",
+        McpServerStatus::Deleted => "badge hud-badge badge-error",
     }
 }
 

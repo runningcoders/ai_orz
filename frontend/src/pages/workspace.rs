@@ -31,7 +31,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, replace_tmp_with_real,
-    status::{agent_runtime_badge, tag_chip},
+    status::{agent_runtime_badge, project_status_badge, tag_chip},
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, MessageListItem, PaginationParams, ProjectListItem,
@@ -777,7 +777,7 @@ pub fn Workspace() -> Element {
                                                         div { class: "flex items-center gap-1 min-w-0",
                                                             span { class: "text-sm font-medium truncate", "{p.name}" }
                                                         }
-                                                        span { class: "badge hud-badge badge-xs badge-ghost ml-2 flex-shrink-0",
+                                                        span { class: "{project_status_badge(p.status)} ml-2 flex-shrink-0",
                                                             "{project_status_label(p.status)}"
                                                         }
                                                     }

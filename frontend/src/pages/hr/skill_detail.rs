@@ -209,13 +209,13 @@ pub fn HrSkillDetail(id: String) -> Element {
                                 div { class: "text-sm text-base-content/60", "标签" }
                                 div { class: "flex flex-wrap gap-1",
                                     for tag in &s.tags {
-                                        span { class: "badge hud-badge badge-neutral", "{tag}" }
+                                        span { class: "badge orz-tag badge-sm", "{tag}" }
                                     }
                                 }
                             }
                             div {
                                 div { class: "text-sm text-base-content/60", "状态" }
-                                span { class: "badge", "{skill_status_text(s.status)}" }
+                                span { class: "{skill_status_badge(s.status)}", "{skill_status_text(s.status)}" }
                             }
                         }
                 }
@@ -387,5 +387,15 @@ fn skill_status_text(status: common::enums::SkillStatus) -> &'static str {
         Draft => "草稿",
         Published => "已发布",
         Expired => "已过期",
+    }
+}
+
+/// 技能状态徽章（HUD 皮肤，单一事实源）。取代详情页原本 `class: "badge"` 缺 hud 皮肤的写法。
+fn skill_status_badge(status: common::enums::SkillStatus) -> &'static str {
+    use common::enums::SkillStatus::*;
+    match status {
+        Draft => "badge hud-badge badge-warning",
+        Published => "badge hud-badge badge-success",
+        Expired => "badge hud-badge badge-error",
     }
 }

@@ -92,7 +92,7 @@ pub fn FinanceAttachmentDetail(id: String) -> Element {
                             div { div { class: "text-sm text-base-content/60", "存储名" }, div { class: "font-mono text-sm", "{a.stored_name}" } }
                             div { div { class: "text-sm text-base-content/60", "大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.size)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }
-                            div { div { class: "text-sm text-base-content/60", "用途" }, span { class: "badge hud-badge badge-info", "{a.purpose}" } }
+                            div { div { class: "text-sm text-base-content/60", "用途" }, span { class: "badge orz-tag badge-sm", "{a.purpose}" } }
                             div { div { class: "text-sm text-base-content/60", "创建时间" }, div { class: "font-mono", "{crate::utils::format_datetime(a.created_at)}" } }
                         }
                 }

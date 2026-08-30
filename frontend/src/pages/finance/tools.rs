@@ -326,11 +326,11 @@ pub fn FinanceTools() -> Element {
                                                     span { class: "font-semibold",
                                                         "{arrow} {key}"
                                                     }
-                                                    span { class: "badge hud-badge badge-ghost badge-sm ml-2", "{group_len}" }
+                                                    span { class: "badge orz-tag badge-sm ml-2", "{group_len}" }
                                                     if is_neural_group {
-                                                        span { class: "badge hud-badge badge-primary badge-sm ml-2", "神经工具" }
+                                                        span { class: "badge orz-tag badge-sm ml-2", "神经工具" }
                                                     } else if is_uncategorized {
-                                                        span { class: "badge hud-badge badge-warning badge-sm ml-2", "未分类" }
+                                                        span { class: "badge orz-tag badge-sm ml-2", "未分类" }
                                                     }
                                                 }
                                             }
@@ -370,7 +370,7 @@ pub fn FinanceTools() -> Element {
                                                                 td { class: "font-semibold",
                                                                     Link { to: crate::pages::Route::FinanceToolDetail { id: id_detail.clone() }, "{name}" }
                                                                 }
-                                                                td { span { class: "badge hud-badge badge-neutral", "{protocol}" } }
+                                                                td { span { class: "badge orz-tag badge-sm", "{protocol}" } }
                                                                 td {
                                                                     if is_enabled {
                                                                         span { class: "badge hud-badge badge-success", "启用" }

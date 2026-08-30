@@ -311,7 +311,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 label { class: "label",
                                     span { class: "label-text font-medium", "类型" }
                                 }
-                                div { span { class: "badge hud-badge badge-info", "{p.provider_type}" } }
+                                div { span { class: "badge orz-tag badge-sm", "{p.provider_type}" } }
                             }
                             div {
                                 label { class: "label",
@@ -319,9 +319,9 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                 }
                                 div {
                                     if p.capability.is_embedding() {
-                                        span { class: "badge hud-badge badge-warning", "embedding" }
+                                        span { class: "badge orz-tag badge-sm", "embedding" }
                                     } else {
-                                        span { class: "badge hud-badge badge-success", "agent" }
+                                        span { class: "badge orz-tag badge-sm", "agent" }
                                     }
                                 }
                             }

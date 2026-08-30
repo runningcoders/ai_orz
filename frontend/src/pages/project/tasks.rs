@@ -169,12 +169,12 @@ pub fn TaskList() -> Element {
             title: "任务管理".to_string(),
             actions: Some(rsx! {
                 button {
-                    class: if matches!(view_mode(), ViewMode::List) { "btn btn-outline active" } else { "btn btn-outline" },
+                    class: if matches!(view_mode(), ViewMode::List) { "btn hud-btn btn-outline active" } else { "btn hud-btn btn-outline" },
                     onclick: move |_| view_mode.set(ViewMode::List),
                     "列表视图"
                 }
                 button {
-                    class: if matches!(view_mode(), ViewMode::Board) { "btn btn-outline active" } else { "btn btn-outline" },
+                    class: if matches!(view_mode(), ViewMode::Board) { "btn hud-btn btn-outline active" } else { "btn hud-btn btn-outline" },
                     onclick: move |_| view_mode.set(ViewMode::Board),
                     "看板视图"
                 }

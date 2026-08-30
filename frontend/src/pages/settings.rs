@@ -56,7 +56,7 @@ pub fn Settings() -> Element {
                         div { class: "flex flex-wrap gap-2",
                             for (theme_id, theme_name) in AVAILABLE_THEMES.iter().copied() {
                                 button {
-                                    class: if theme_ctrl.current() == theme_id { "btn btn-sm btn-primary" } else { "btn btn-sm btn-outline" },
+                                    class: if theme_ctrl.current() == theme_id { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-outline" },
                                     "data-theme": theme_id,
                                     onclick: {
                                         let theme_id = theme_id.to_string();

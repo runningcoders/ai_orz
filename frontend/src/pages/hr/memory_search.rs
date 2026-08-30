@@ -187,14 +187,14 @@ pub fn HrMemorySearch() -> Element {
                                                         if !tags.is_empty() {
                                                             div { class: "flex flex-wrap gap-1 mt-2",
                                                                 for tag in tags.iter() {
-                                                                    span { class: "badge hud-badge badge-neutral badge-xs", "{tag}" }
+                                                                    span { class: "badge orz-tag badge-xs", "{tag}" }
                                                                 }
                                                             }
                                                         }
                                                     }
                                                 }
                                                 div { class: "flex items-center gap-2 shrink-0",
-                                                    span { class: "badge hud-badge badge-accent text-xs", "{item.memory_type}" }
+                                                    span { class: "badge orz-tag badge-sm", "{item.memory_type}" }
                                                     if let Some(score) = item.score {
                                                         span { class: "text-xs text-base-content/70", "score={score:.4}" }
                                                     }

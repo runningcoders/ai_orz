@@ -100,13 +100,10 @@ fn type_label(t: &str) -> &'static str {
 }
 
 fn type_badge_class(t: &str) -> &'static str {
-    match t {
-        "knowledge_node" => "badge hud-badge badge-primary",
-        "short_term" => "badge hud-badge badge-success",
-        "trace" => "badge hud-badge badge-warning",
-        "relation" => "badge hud-badge badge-accent",
-        _ => "badge hud-badge badge-neutral",
-    }
+    // 记忆节点类型（knowledge_node/short_term/trace/relation）是「类别标签」，
+    // 统一走中性 orz-tag chip（与状态徽章区分）
+    let _ = t;
+    "badge orz-tag badge-sm"
 }
 
 /// 可复用知识图谱子组件。
@@ -373,11 +370,11 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                         span { class: "font-medium text-sm truncate", "{name}" }
                                                         span { class: "text-xs text-base-content/70 line-clamp-2", "{desc}" }
                                                         div { class: "flex flex-wrap gap-1 mt-1",
-                                                            span { class: "badge hud-badge badge-primary badge-sm", "度数 {degree}" }
-                                                            span { class: "badge hud-badge badge-ghost badge-sm", "入 {incoming}" }
-                                                            span { class: "badge hud-badge badge-ghost badge-sm", "出 {outgoing}" }
+                                                            span { class: "badge orz-tag badge-sm", "度数 {degree}" }
+                                                            span { class: "badge orz-tag badge-sm", "入 {incoming}" }
+                                                            span { class: "badge orz-tag badge-sm", "出 {outgoing}" }
                                                             for tag in tags.iter().take(3) {
-                                                                span { class: "badge hud-badge badge-neutral badge-sm", "{tag}" }
+                                                                span { class: "badge orz-tag badge-sm", "{tag}" }
                                                             }
                                                         }
                                                     }
@@ -624,7 +621,7 @@ pub fn KnowledgeGraph(agent_id: Option<String>) -> Element {
                                                     }
                                                     div { class: "flex flex-wrap gap-2",
                                                         for tag in tags.iter() {
-                                                            span { class: "badge hud-badge badge-neutral", "{tag}" }
+                                                            span { class: "badge orz-tag badge-sm", "{tag}" }
                                                         }
                                                     }
                                                 }

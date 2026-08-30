@@ -109,7 +109,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                         div { class: "grid grid-cols-1 md:grid-cols-2 gap-4 mt-4",
                             div { div { class: "text-sm text-base-content/60", "描述" }, MarkdownRenderer { content: a.description.clone(), compact: true } }
                             div { div { class: "text-sm text-base-content/60", "文件大小" }, div { class: "font-mono", "{crate::utils::format_file_size(a.file_size)}" } }
-                            div { div { class: "text-sm text-base-content/60", "来源类型" }, span { class: "badge hud-badge badge-info", "{source_type_text(a.source_type)}" } }
+                            div { div { class: "text-sm text-base-content/60", "来源类型" }, span { class: "badge orz-tag badge-sm", "{source_type_text(a.source_type)}" } }
                             div { div { class: "text-sm text-base-content/60", "MIME 类型" }, div { class: "font-mono", "{a.mime_type}" } }
                             div { div { class: "text-sm text-base-content/60", "创建时间" }, div { class: "font-mono", "{crate::utils::format_datetime(a.created_at)}" } }
                         }

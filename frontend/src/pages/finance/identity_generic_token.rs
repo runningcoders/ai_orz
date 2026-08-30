@@ -203,14 +203,14 @@ pub fn IdentityGenericTokenSection() -> Element {
         div { class: "border border-base-300 rounded-lg p-4 mt-4",
             div { class: "flex items-center gap-2 flex-wrap",
                 h3 { class: "font-semibold text-lg", "通用 API Token" }
-                span { class: "badge hud-badge badge-outline badge-sm", "GenericToken" }
+                span { class: "badge orz-tag badge-sm", "GenericToken" }
             }
             p { class: "text-xs text-base-content/50 mt-1",
                 "统一管理单字段 API Key 类平台凭证（按 platform 分 Tab）；未绑定对应平台凭证时工具调用返回绑定引导。"
             }
 
             // ===== 平台 Tab =====
-            div { class: "tabs tabs-boxed hud-tabs mt-3",
+            div { class: "flex flex-wrap gap-2 mt-3",
                 role: "tablist",
                 for meta in PLATFORMS.iter() {
                     {
@@ -220,7 +220,7 @@ pub fn IdentityGenericTokenSection() -> Element {
                         rsx! {
                             button {
                                 key: "{plat}",
-                                class: if active { "tab tab-active" } else { "tab" },
+                                class: if active { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                                 onclick: move |_| {
                                     let target = plat.clone();
                                     active_platform.set(target.clone());
@@ -274,9 +274,9 @@ pub fn IdentityGenericTokenSection() -> Element {
                                             div { class: "flex items-center justify-between flex-wrap gap-2",
                                                 div { class: "flex items-center gap-2 flex-wrap",
                                                     span { class: "font-medium", "{cred_name}" }
-                                                    span { class: "badge hud-badge badge-ghost badge-sm font-mono", "{platform}" }
+                                                    span { class: "badge orz-tag badge-sm font-mono", "{platform}" }
                                                     if !token_tail.is_empty() {
-                                                        span { class: "badge hud-badge badge-outline font-mono badge-sm", "****{token_tail}" }
+                                                        span { class: "badge orz-tag badge-sm font-mono", "****{token_tail}" }
                                                     }
                                                     if is_default {
                                                         span { class: "badge hud-badge badge-success badge-sm", "默认" }

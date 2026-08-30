@@ -24,11 +24,12 @@ use dioxus_router::Link;
 
 /// Agent kind 对应的 badge 样式和标签
 fn kind_badge_class(kind: &str) -> &'static str {
+    // Agent 来源类型（local/cli/remote）是「类别标签」，统一走中性 orz-tag chip
     match kind {
-        "local" => "badge hud-badge badge-info",
-        "cli" => "badge hud-badge badge-accent",
-        "remote" => "badge hud-badge badge-success",
-        _ => "badge hud-badge badge-ghost",
+        "local" => "badge orz-tag badge-sm",
+        "cli" => "badge orz-tag badge-sm",
+        "remote" => "badge orz-tag badge-sm",
+        _ => "badge orz-tag badge-sm",
     }
 }
 
@@ -580,9 +581,9 @@ pub fn HrAgents() -> Element {
                                 let key_clone = key.to_string();
                                 let selected = new_roles().iter().any(|r| r == key);
                                 let cls = if selected {
-                                    "btn btn-primary btn-sm"
+                                    "btn hud-btn btn-primary btn-sm"
                                 } else {
-                                    "btn btn-outline btn-sm"
+                                    "btn hud-btn btn-outline btn-sm"
                                 };
                                 rsx! {
                                     button { class: cls,
@@ -605,7 +606,7 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !new_roles().is_empty() {
                             for role in new_roles() {
-                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
+                                span { class: "badge orz-tag badge-lg gap-1",
                                     "{role}",
                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
@@ -661,7 +662,7 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !new_capabilities().is_empty() {
                             for cap in new_capabilities() {
-                                span { class: "badge hud-badge badge-success badge-lg gap-1",
+                                span { class: "badge orz-tag badge-lg gap-1",
                                     "{cap}",
                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
@@ -825,9 +826,9 @@ pub fn HrAgents() -> Element {
                                 let key_clone = key.to_string();
                                 let selected = ext_roles().iter().any(|r| r == key);
                                 let cls = if selected {
-                                    "btn btn-success btn-sm"
+                                    "btn hud-btn btn-success btn-sm"
                                 } else {
-                                    "btn btn-outline btn-sm"
+                                    "btn hud-btn btn-outline btn-sm"
                                 };
                                 rsx! {
                                     button { class: cls,
@@ -849,7 +850,7 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !ext_roles().is_empty() {
                             for role in ext_roles() {
-                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
+                                span { class: "badge orz-tag badge-lg gap-1",
                                     "{role}",
                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
@@ -904,7 +905,7 @@ pub fn HrAgents() -> Element {
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !ext_capabilities().is_empty() {
                             for cap in ext_capabilities() {
-                                span { class: "badge hud-badge badge-success badge-lg gap-1",
+                                span { class: "badge orz-tag badge-lg gap-1",
                                     "{cap}",
                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                         onclick: move |_| {
