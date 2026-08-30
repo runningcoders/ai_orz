@@ -27,11 +27,11 @@ pub struct ButtonProps {
 #[component]
 pub fn Button(props: ButtonProps) -> Element {
     let variant_class = match props.variant {
-        ButtonVariant::Primary => "btn btn-primary",
-        ButtonVariant::Accent => "btn btn-accent",
-        ButtonVariant::Secondary => "btn btn-secondary",
-        ButtonVariant::Danger => "btn btn-error",
-        ButtonVariant::Ghost => "btn btn-ghost",
+        ButtonVariant::Primary => "btn hud-btn btn-primary",
+        ButtonVariant::Accent => "btn hud-btn btn-accent",
+        ButtonVariant::Secondary => "btn hud-btn btn-secondary",
+        ButtonVariant::Danger => "btn hud-btn btn-error",
+        ButtonVariant::Ghost => "btn hud-btn btn-ghost",
     };
     let size_class = if props.small { "btn-sm" } else { "" };
     rsx! {

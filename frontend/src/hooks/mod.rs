@@ -70,6 +70,7 @@ pub fn use_require_auth() -> bool {
 }
 
 pub const AVAILABLE_THEMES: &[(&str, &str)] = &[
+    ("orz-hud", "HUD 深色"),
     ("orz-light", "Orz 默认"),
     ("light", "Light"),
     ("dark", "Dark"),

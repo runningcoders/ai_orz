@@ -17,7 +17,7 @@
 
 ## 概述
 
-AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用 **Tailwind CSS 4 + DaisyUI 5** 组件库（暖色调自定义主题 orz-light），支持 28 种主题切换，使用 Dioxus Router 路由、统一 API 客户端（HttpOnly Cookie 认证）和全局状态管理。前端按业务域组织页面模块，与后端 Handler 域对齐。
+AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用 **Tailwind CSS 4 + DaisyUI 5** 组件库（自定义 HUD 主题 `orz-hud` / `orz-light`），支持 9 种主题切换，使用 Dioxus Router 路由、统一 API 客户端（HttpOnly Cookie 认证）和全局状态管理。前端按业务域组织页面模块，与后端 Handler 域对齐。
 
 ---
 
@@ -28,8 +28,8 @@ AI Orz 前端基于 **Dioxus 0.7 (Rust WebAssembly)** 构建，采用 **Tailwind
 | 框架 | Dioxus 0.7 | Rust WebAssembly 前端框架 |
 | 路由 | Dioxus Router | URL 路由 + Link 组件导航 |
 | HTTP 客户端 | reqwest 0.13 | 全局 OnceLock 单例，复用连接池 |
-| 样式框架 | Tailwind CSS 4.3 + DaisyUI 5.7 | 功能类优先 CSS + 组件库，28 主题支持 |
-| 自定义主题 | orz-light | 基于品牌色（#fa520f 橙色）的暖色调主题 |
+| 样式框架 | Tailwind CSS 4.3 + DaisyUI 5.7 | 功能类优先 CSS + 组件库 |
+| 自定义主题 | orz-hud / orz-light | 基于 HUD 设计系统（品牌橙 #fa520f + 信号黄 #ffd900）的暖色驾驶舱主题；默认 orz-hud，设置页可选 9 主题 |
 | 状态管理 | Dioxus Signal + use_context_provider | 全局 AuthState/ToastState 共享 |
 | 共享类型 | common crate | 与后端共享 DTO、枚举、常量 |
 | 构建工具 | npm + dioxus-cli (dx) | npm 管理 Tailwind/DaisyUI，build.rs 自动编译 CSS |
@@ -46,7 +46,7 @@ frontend/
 ├── tailwind.config.js        # Tailwind 配置（内容路径 + DaisyUI 插件 + 主题）
 ├── Dioxus.toml               # Dioxus CLI 配置（输出目录、资源目录）
 ├── build.rs                  # 编译时配置嵌入 + Tailwind CSS 自动编译
-├── index.html                # HTML 入口 + 少量自定义 CSS（动画/特殊组件）
+├── index.html                # HTML 入口（无内联样式，所有样式由 styles/input.css 编译产出）
 ├── styles/
 │   └── input.css             # Tailwind CSS 入口（@import tailwindcss + @plugin daisyui + @theme）
 ├── public/
@@ -72,7 +72,7 @@ frontend/
     │   └── system.rs         # System 域 API（health/cron_trigger/aop_stats/backup/logs）
     │
     ├── hooks/                # 自定义 Hooks
-    │   ├── mod.rs            # use_breakpoint、use_require_auth、use_theme（28主题切换）、ThemeController
+    │   ├── mod.rs            # use_breakpoint、use_require_auth、use_theme（8主题切换）、ThemeController
     │   └── use_resource.rs   # use_resource hook：三态资源加载（Loading/Ready/Failed）
     │
     ├── store/                # 全局状态管理
@@ -80,7 +80,7 @@ frontend/
     │   └── toast.rs          # Toast 状态（ToastState + show/dismiss/success/error/warning/info）
     │
     ├── components/           # 基础 UI 组件库
-    │   ├── button.rs         # Button 组件（Primary/Secondary/Outline/Error/Ghost + sm 尺寸）
+    │   ├── button.rs         # Button 组件（Primary/Accent/Secondary/Danger/Ghost + sm 尺寸，强制 hud-btn 皮肤）
     │   ├── modal.rs          # Modal 对话框组件（DaisyUI dialog/modal-box）
     │   ├── confirm_dialog.rs # 确认对话框组件（用于二次确认场景）
     │   ├── state.rs          # 状态展示组件（Loading/EmptyState/ErrorAlert/SuccessAlert）
@@ -88,6 +88,7 @@ frontend/
     │   ├── input.rs          # Input/Textarea/Select 表单组件
     │   ├── code_editor.rs    # 代码编辑器组件（支持 JSON 高亮和编辑）
     │   ├── toast.rs          # Toast 通知容器（DaisyUI toast + alert）
+    │   ├── hud.rs            # HUD 设计系统原语（PageHeader/HudPanel/HudSection/HudCallout/HudTabs/HudTable/HudProgress/StatReadout/StatGrid）
     │   ├── chat/             # 聊天共享组件（跨页面复用）
     │   │   ├── mod.rs        # 模块入口，导出 MessageBubble + TypingIndicator
     │   │   ├── message_bubble.rs  # MessageBubble：单条消息气泡（文本/图片/文件，简版渲染）
@@ -102,7 +103,7 @@ frontend/
     │   └── workspace_graph.rs # 工作台图谱组件（项目/Agent/任务关系可视化）
     │
     ├── layouts/              # 布局组件
-    │   ├── navbar.rs         # 顶部导航栏（桌面下拉菜单 / 移动端抽屉）
+    │   ├── navbar.rs         # 顶部导航栏（扁平 .navbar-link + .online-badge / 移动端抽屉）
     │   └── app_layout.rs     # 应用布局（Navbar + 内容区 + 权限守卫）
     │
     └── pages/                # 页面模块（按业务域分组）
@@ -123,57 +124,58 @@ frontend/
 
 ## 核心架构设计
 
-### 1. 样式系统：Tailwind CSS 4 + DaisyUI 5
+### 1. 样式系统：Tailwind CSS 4 + DaisyUI 5 + HUD 皮肤层
 
 **构建流程**：
 - npm 安装 Tailwind CSS 4 和 DaisyUI 5
 - `build.rs` 在编译时自动调用 `node_modules/.bin/tailwindcss` 编译 CSS
-- `styles/input.css` 作为入口，引入 Tailwind 和 DaisyUI 插件
+- `styles/input.css` 作为入口，引入 Tailwind 和 DaisyUI 插件，并定义 HUD 皮肤覆盖层（`.hud-*`、`.orz-tag`、`.navbar-link`、`.online-badge` 等）
 - 编译产物输出到 `public/output.css`，由 Dioxus 自动打包
 
-**自定义主题 orz-light**：
-> 相关实现细节见：[frontend 前端目录](frontend/src/)
+**自定义主题**：
+- 默认主题 `orz-hud`（深色驾驶舱），浅色变体 `orz-light`
+- 设计令牌见 [ui_design_system.md](./ui_design_system.md) §2
+- 权威可视化基准：`docs/design/hud_design_prototype.html`
 
 **主题切换**：
 - `use_theme()` Hook 返回 `ThemeController`（Clone+Copy）
 - 主题持久化到 localStorage（`ai_orz_theme` key）
 - 通过 `document.documentElement.setAttribute("data-theme", theme)` 切换
-- 设置页提供 28 种主题选择按钮
+- 设置页提供 8 种主题选择按钮
 - 主题切换即时生效，无需刷新页面
 
-**DaisyUI 组件使用规范**：
+**组件类规范**：DaisyUI 提供骨架类，HUD 皮肤层提供一致视觉。
 
-| DaisyUI 类 | 用途 |
-|-----------|------|
-| `btn btn-primary/secondary/error/ghost/outline btn-sm` | 按钮 |
-| `card card-body card-title shadow-md bg-base-100` | 卡片 |
-| `table table-zebra` + `overflow-x-auto` 包裹 | 表格 |
-| `form-control w-full` + `label/label-text` + `input/textarea/select input-bordered` | 表单 |
-| `badge badge-success/error/warning/info/neutral` | 徽章 |
-| `modal modal-open` + `modal-box` + `modal-action` | 模态框（公共 Modal 组件封装） |
-| `alert alert-success/error/warning/info` | 提示框 |
-| `chat chat-start/end` + `chat-bubble` + `chat-image avatar` | 聊天气泡 |
-| `avatar placeholder` + `w-10 rounded-full bg-primary` | 头像 |
-| `loading loading-spinner loading-sm/md/lg` | 加载动画 |
-| `divider` | 分隔线 |
-| `stat` | 统计卡片 |
-| `navbar bg-neutral text-neutral-content` | 导航栏 |
-| `dropdown dropdown-end` + `menu` | 下拉菜单 |
-| `toast toast-top toast-end z-[9999]` | Toast 容器 |
-| `flex/gap-*/p-*/m-*/w-full/grid/grid-cols-*` 等 | Tailwind 工具类 |
+| 组件 | 推荐类 / 组件 | 禁止 |
+|------|---------------|------|
+| 按钮 | `Button` 组件（自动带 `hud-btn`）或手动 `btn hud-btn btn-primary/secondary/error/ghost` | 裸 `btn btn-primary` / `btn btn-outline`（白边） |
+| 卡片 / 面板 | `HudPanel` / `.hud-panel` | DaisyUI 原生 `card` 无切角 |
+| 表格 | `.hud-table` / `.hud-row` | 裸 `table table-zebra` |
+| 表单 | `.input.hud-input` / `.select.hud-input` / `.textarea.hud-input` | `input-bordered` 等 DaisyUI 默认边框 |
+| 状态徽章 | `status.rs` helper：`agent_lifecycle_badge`、`task_status_badge`、`auth_state_badge` 等 | 裸 `badge badge-success` |
+| 属性标签 | `tag_chip()` → `badge orz-tag badge-sm` | 散写 `badge badge-outline` / `badge badge-ghost` |
+| 模态框 | `Modal` 组件 / `.hud-modal` / `.hud-modal-box` | 裸 `modal-box` |
+| 提示 | `toast.success/error/warning/info(...)` + `HudCallout` | inline `alert-success` |
+| 聊天气泡 | `chat chat-start/end` + `chat-bubble` | — |
+| 头像 | `avatar placeholder` + `w-10 rounded-full bg-primary` | — |
+| 加载 | `Loading { size: "lg" }` / `loading loading-spinner` | — |
+| 分隔线 | `.hud-divider` | 裸 `divider` |
+| 统计卡片 | `StatReadout` / `StatsCard` / `StatGrid` | 裸 DaisyUI `stat` |
+| 导航栏 | `.navbar-link` 扁平链接 + `.online-badge` | `btn hud-btn btn-ghost btn-sm` 圆角按钮导航 |
+| 下拉菜单 | `dropdown dropdown-end` + `menu` | — |
+| Toast 容器 | `toast toast-top toast-end z-[9999]` | — |
+| Tab 切换器 | `HudTabs` / 手动 `btn hud-btn btn-sm`（选中 `btn-primary`，未选 `btn-ghost`） | `tabs tabs-boxed` |
 
-**自定义 CSS 范围**（`index.html` 的 `<style>` 标签）：
-- 打字指示器动画（typing-bounce）
-- 工具调用卡片（tool-card）
-- 任务分配卡片（task-card）
-- 消息附件样式
-- 接待页品牌视觉（渐变背景、logo、feature 列表）
-- 知识图谱布局
-- 看板视图布局
-- Agent 对话容器
-- Cron 预设按钮、JSON 错误提示
-- Toast 进度条动画
+**自定义 CSS 范围**（`frontend/styles/input.css`）：
+- HUD 主题变量与双主题色彩令牌
+- `.hud-panel` / `.hud-row` / `.hud-table` / `.hud-divider` / `.hud-modal*` / `.hud-input`
+- `.hud-btn` / `.hud-badge` / `.orz-tag` / `.navbar-link` / `.online-badge`
+- 知识图谱 Canvas HUD 背景（`.kg-bg`）
+- 工作台未读消息 HUD 流光条（`.hud-streak`）
 - 滚动条美化
+- 接待页品牌视觉、工具调用卡片、任务分配卡片、看板布局等 DaisyUI 未覆盖的局部样式
+
+> 注：`frontend/index.html` 中不再保留 `<style>` 块；所有自定义样式统一收敛到 `styles/input.css`。
 
 ### 2. 路由系统（Dioxus Router）
 
@@ -235,7 +237,7 @@ frontend/
 |------|------|
 | `use_breakpoint()` | 返回 `Signal<bool>`（true = 移动端），基于 matchMedia 监听 |
 | `use_require_auth()` | 权限守卫，未登录自动跳转 Reception 页 |
-| `use_theme()` | 返回 ThemeController，支持 28 主题切换 + localStorage 持久化 |
+| `use_theme()` | 返回 ThemeController，支持 8 主题切换 + localStorage 持久化 |
 | `use_resource(fetcher)` | 三态资源加载（Loading/Ready/Failed），自动首次加载 + reload |
 
 ---
@@ -265,12 +267,13 @@ frontend/
 
 ### 样式使用规范
 
-1. **优先使用 DaisyUI 组件类**：`btn`、`card`、`table`、`input-bordered`、`badge`、`alert`、`chat-bubble` 等
-2. **使用 Tailwind 工具类**：`flex`、`gap-3`、`p-4`、`w-full`、`text-center`、`font-bold`、`rounded-lg`、`shadow-md` 等
-3. **颜色使用主题变量**：`bg-primary`、`text-primary-content`、`bg-base-100`、`text-base-content`、`bg-base-200`、`border-base-300` 等，避免硬编码颜色值
-4. **避免内联样式**：除动态计算值外，统一使用类名
-5. **新增自定义样式**：仅在 DaisyUI/Tailwind 无法满足时添加到 `index.html`，保持精简
-6. **主题兼容**：使用语义化颜色类（`bg-primary`/`text-error`/`bg-success/20`），确保在所有主题下显示正常
+1. **按钮一律经由 `Button` 组件或显式带 `hud-btn`**：禁止裸用 `btn btn-primary` / `btn btn-outline` / `btn btn-ghost`，否则会出现 DaisyUI 默认白边。
+2. **徽章一律走单一事实源**：状态用 `status.rs` helper（`task_status_badge`、`agent_lifecycle_badge`、`auth_state_badge` 等）；属性/标签用 `tag_chip()`。
+3. **面板 / 表格 / Tab 优先使用 HUD 原语**：`HudPanel` / `HudTable` / `HudTabs`，或手动使用 `.hud-panel` / `.hud-table` / `.hud-btn` 切换器。
+4. **颜色使用主题变量**：`bg-primary`、`text-primary-content`、`bg-base-100`、`text-base-content`、`bg-base-200`、`border-base-300` 等；特殊 HUD 色值参考 `ui_design_system.md`。
+5. **避免内联样式**：除动态计算值外，统一使用类名；新增自定义样式一律写入 `frontend/styles/input.css`。
+6. **主题兼容**：使用语义化颜色类（`bg-primary`/`text-error`/`bg-success/20`），确保在 9 个主题下显示正常。
+7. **字体规范**：标题/展示文字用 Chakra Petch（`--font-display`），数据/标签/数值用 JetBrains Mono（`--font-family-mono`），正文用 Sora 或默认 sans-serif。
 
 ### 新增页面流程
 
@@ -283,6 +286,14 @@ frontend/
 ---
 
 ## 更新记录
+
+### 2026-08-30 设计系统文档同步（以 hud_design_prototype.html 为基准）
+
+| 变更项 | 实现细节 |
+|--------|----------|
+| **ui_design_system.md 重写** | 以 `docs/design/hud_design_prototype.html` 为唯一视觉基准，替换原 Mistral AI 风格描述；明确 orz-hud / orz-light 双主题令牌、字体系统、面板/导航/按钮/徽章/表格规范；落地位置与常见错误红线 |
+| **frontend_architecture.md 更新** | 技术栈/概述改为 HUD 主题；样式系统章节明确 DaisyUI + Tailwind + HUD 皮肤层三层关系；组件类规范表改为「推荐类 / 禁止」形式；样式使用规范强调 `hud-btn` / `status.rs` helper / `tag_chip()` 强制规则；目录结构补充 `hud.rs`；新增本节更新记录 |
+| **已知问题已修复** | 默认主题 `orz-hud` 已加入 `AVAILABLE_THEMES` 首项（共 9 主题），设置页可切回 HUD 深色；属性标签 `.orz-tag` 重设计为中性 HUD pill，状态徽章 `.hud-badge` 保留玻璃质感并统一 pill 圆角 |
 
 ### 2026-08-29 HUD 词汇全量收口（原语库 + 缺失原语 + 弱层统一 + 设计原型挂接）
 

@@ -256,13 +256,11 @@ pub fn HudTable(extra_class: Option<String>, children: Element) -> Element {
     }
 }
 
-/// HUD 标签页容器：保留 DaisyUI `tabs` 结构，附加 `.hud-tabs` 皮肤。旧代码在 `tabs tabs-boxed` 上追加 `hud-tabs` 即可。
+/// HUD 标签页容器：flex 包裹 + gap-2，子按钮统一使用 `btn hud-btn btn-sm btn-primary`（选中）/ `btn hud-btn btn-sm btn-ghost`（未选）。
+/// 与详情页（agent_detail / project_detail / task_detail 等）的 Tab 切换器保持一致。
 #[component]
 pub fn HudTabs(extra_class: Option<String>, children: Element) -> Element {
-    let root = format!(
-        "tabs tabs-boxed hud-tabs {}",
-        extra_class.unwrap_or_default()
-    );
+    let root = format!("flex flex-wrap gap-2 {}", extra_class.unwrap_or_default());
     rsx! {
         div { class: "{root}", {children} }
     }

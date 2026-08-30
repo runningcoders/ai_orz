@@ -271,11 +271,11 @@ pub fn ChatSidePanel(
                 "✕"
             }
         }
-        div { class: "tabs tabs-boxed hud-tabs m-2",
+        div { class: "flex flex-wrap gap-2 m-2",
             for (i, label) in tab_labels.iter().enumerate() {
                 button {
                     key: "{label}",
-                    class: if tab == i { "tab tab-sm tab-active" } else { "tab tab-sm" },
+                    class: if tab == i { "btn hud-btn btn-xs btn-primary" } else { "btn hud-btn btn-xs btn-ghost" },
                     onclick: move |_| active_tab.set(i),
                     "{label}"
                 }
@@ -601,7 +601,7 @@ fn ArtifactRow(artifact: ArtifactDetail) -> Element {
                 div { class: "text-sm font-medium truncate", "{name}" }
                 div { class: "text-xs text-base-content/60", "{size} · {created}" }
             }
-            span { class: "badge hud-badge badge-neutral badge-sm", "{source_text}" }
+            span { class: "badge orz-tag badge-sm", "{source_text}" }
         }
     }
 }
@@ -713,9 +713,9 @@ fn UserInfoTab() -> Element {
                     div { class: "text-xs text-base-content/60", "@{u.username}" }
                 }
             }
-            div { class: "flex flex-wrap gap-1",
-                span { class: "badge hud-badge badge-info", "{u.role_name}" }
-                span { class: if enabled { "badge hud-badge badge-success" } else { "badge hud-badge badge-error" },
+            div { class: "flex flex-wrap gap-1 items-center",
+                span { class: "badge orz-tag badge-sm", "{u.role_name}" }
+                span { class: if enabled { "badge hud-badge badge-sm badge-success" } else { "badge hud-badge badge-sm badge-error" },
                     if enabled { "已启用" } else { "已禁用" }
                 }
             }

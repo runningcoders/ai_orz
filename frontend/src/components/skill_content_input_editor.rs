@@ -83,22 +83,22 @@ pub fn SkillContentInputEditor(props: SkillContentInputEditorProps) -> Element {
     rsx! {
         div { class: "w-full",
             // Tab 切换
-            div { role: "tablist", class: "tabs tabs-boxed hud-tabs mb-4",
+            div { role: "tablist", class: "flex flex-wrap gap-2 mb-4",
                 button {
                     role: "tab",
-                    class: if active_tab() == 0 { "tab tab-active" } else { "tab" },
+                    class: if active_tab() == 0 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                     onclick: move |_| { active_tab.set(0); emit_change(); },
                     "📝 文本"
                 }
                 button {
                     role: "tab",
-                    class: if active_tab() == 1 { "tab tab-active" } else { "tab" },
+                    class: if active_tab() == 1 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                     onclick: move |_| { active_tab.set(1); emit_change(); },
                     "🔗 URL"
                 }
                 button {
                     role: "tab",
-                    class: if active_tab() == 2 { "tab tab-active" } else { "tab" },
+                    class: if active_tab() == 2 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" },
                     onclick: move |_| { active_tab.set(2); emit_change(); },
                     "📎 附件"
                 }

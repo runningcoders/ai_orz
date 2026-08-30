@@ -50,7 +50,7 @@ pub fn CredentialRequirementsTable(requirements: Vec<CredentialRequirement>) -> 
                 tbody {
                     for requirement in requirements.iter() {
                         tr {
-                            td { span { class: "badge hud-badge badge-neutral badge-sm", "{requirement.kind.as_str()}" } }
+                            td { span { class: "badge orz-tag badge-sm", "{requirement.kind.as_str()}" } }
                             td { {optional_value(&requirement.platform)} }
                             td { {optional_value(&requirement.field)} }
                             td { {format_enhancer(requirement.enhancer)} }

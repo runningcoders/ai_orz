@@ -70,7 +70,7 @@ pub fn ConfirmDialog(props: ConfirmDialogProps) -> Element {
     let confirm_class = props
         .confirm_class
         .clone()
-        .unwrap_or_else(|| "btn btn-error".to_string());
+        .unwrap_or_else(|| "btn hud-btn btn-error".to_string());
 
     rsx! {
         Modal {

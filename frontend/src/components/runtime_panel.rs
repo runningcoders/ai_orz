@@ -189,7 +189,7 @@ fn ThinkRuntimeCard(think: common::api::ThinkRuntimeInfo) -> Element {
                     span { class: "text-sm font-medium",
                         "场景：{scene_label}"
                     }
-                    span { class: "badge badge-sm {status_badge}",
+                    span { class: "{status_badge}",
                         "{think.status}"
                     }
                 }

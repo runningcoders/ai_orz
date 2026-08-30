@@ -497,16 +497,29 @@
 }
 
 /* ========== 统一标签（tag / chip）样式 ========== */
-/* 中性 soft chip：浅底 + 细边 + 主题自适应文本色，随 30+ 主题自动适配。 */
-/* 取代原先 `badge badge-outline`（透明无底、与实底状态割裂）与 */
-/* `badge badge-ghost`（浅到几乎不可见）混排导致的「标签风格很奇怪」问题。 */
+/* 实体属性标签（角色 / 类型 / 标签 cloud / 来源类型等「打在主体上的 tag」）统一风格。
+   对齐 hud_design_prototype.html 的 .badge-tag：中性 pill（圆角 999px）+ JetBrains Mono
+   11px/600 + 充足内边距 + line-height:1.4 + nowrap。
+   - 中性表面（base-content 7% 底 + 14% 边）不抢品牌橙，解决「颜色不搭」；
+   - 1px 一致描边 + 内边距 + 行高，解决「边框粗细不一 / 文字贴边 / 文字被裁切」。 */
 .badge.orz-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  line-height: 1.4;
+  white-space: nowrap;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  color: color-mix(in oklab, var(--color-base-content) 82%, transparent);
   background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
-  color: var(--color-base-content);
   border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
-  /* 与 .badge.hud-badge.badge-sm 横向内边距对齐，避免同一行混排时松紧不一 */
-  padding-inline: .625rem;
 }
+.badge.orz-tag.badge-sm { font-size: 11px; padding: .18rem .55rem; }
+.badge.orz-tag.badge-xs { font-size: 10px; padding: .12rem .45rem; }
 
 /* Reception 登录/注册 Tab */
 .reception-tabs {
@@ -1253,6 +1266,46 @@
     opacity: .5;
   }
 
+  /* 扁平导航链接（替代 btn-ghost 按钮的厚重圆角背景） */
+  .navbar-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: color-mix(in oklab, var(--color-neutral-content) 78%, transparent);
+    transition: color 0.15s ease, background-color 0.15s ease;
+    cursor: pointer;
+  }
+  .navbar-link:hover {
+    color: var(--color-neutral-content);
+    background: color-mix(in oklab, var(--color-neutral-content) 8%, transparent);
+  }
+
+  /* 在线状态徽章：暗底 + 绿点微光 */
+  .online-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: color-mix(in oklab, var(--color-success) 10%, transparent);
+    color: var(--color-success);
+    border: 1px solid color-mix(in oklab, var(--color-success) 28%, transparent);
+  }
+  .online-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 6px 1px color-mix(in oklab, var(--color-success) 70%, transparent);
+  }
+
   /* 切角 HUD 面板：1px 渐变发丝边 + 切角 + 内网格 */
   .hud-panel {
     position: relative;
@@ -1406,20 +1459,6 @@
     box-shadow: inset 2px 0 0 0 var(--color-primary);
   }
 
-  /* 标签页皮肤：覆盖 DaisyUI .tabs.tabs-boxed */
-  .hud-tabs :where(.tab) {
-    border-radius: 6px; color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
-    transition: color .15s, background .15s, border-color .15s;
-  }
-  .hud-tabs :where(.tab.tab-active), .hud-tabs :where(.tab-active) {
-    background: color-mix(in oklab, var(--color-primary) 16%, transparent);
-    color: var(--color-primary);
-    border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
-  }
-  .hud-tabs :where(.tab):hover:not(.tab-active) {
-    color: var(--color-base-content); background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
-  }
-
   /* 弹窗皮肤：覆盖 DaisyUI .modal 背景 + .modal-box（渐变发丝边 + 切角投影） */
   .hud-modal { background: color-mix(in oklab, var(--color-base-100) 32%, transparent); backdrop-filter: blur(4px); }
   .hud-modal-box {
@@ -1468,6 +1507,7 @@
   .badge.hud-badge {
     font-family: var(--font-family-mono);
     border-width: 1px;
+    border-radius: 999px;
     border-color: color-mix(in oklab, currentColor 28%, transparent);
     backdrop-filter: blur(4px);
     background-image: linear-gradient(180deg, color-mix(in oklab, #fff 7%, transparent), transparent);
