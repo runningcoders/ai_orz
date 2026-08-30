@@ -75,6 +75,31 @@ pub fn HudPanel(
     }
 }
 
+/// 带色调变体的 HUD 卡片：用于「关联全景」等卡片网格场景（如 Agent 已装工具 / 技能）。
+/// 与 `HudPanel` 同源（`.hud-panel` 渐变发丝边），通过 `tone` 切换渐变主色
+/// （primary / accent / success / neutral），内部以 `card-body` 承载内容。
+///
+/// - `tone`：卡片色调，决定渐变主色；默认 primary。
+/// - `extra_class`：附加到根 `.hud-panel` 的额外类。
+#[component]
+pub fn HudCard(
+    tone: Option<&'static str>,
+    extra_class: Option<String>,
+    children: Element,
+) -> Element {
+    let tone_cls = tone
+        .map(|t| format!("hud-tone-{}", t))
+        .unwrap_or_else(|| "hud-tone-primary".to_string());
+    let root = format!("hud-panel {} {}", tone_cls, extra_class.unwrap_or_default());
+    rsx! {
+        div { class: "{root}",
+            div { class: "card-body p-4",
+                {children}
+            }
+        }
+    }
+}
+
 /// 轻量分区：eyebrow + 标题，无面板边框。用于页内子分组。
 /// `actions` 提供标题行右侧操作区（按钮等），与 HudPanel 对齐。
 #[component]

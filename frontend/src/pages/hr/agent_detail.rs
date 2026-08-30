@@ -4,7 +4,7 @@ use crate::api::message::{load_older_messages, poll_new_messages, send_message_t
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::chat::{MessageBubble, TypingIndicator};
-use crate::components::hud::HudPanel;
+use crate::components::hud::{HudCard, HudPanel};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
@@ -68,38 +68,35 @@ fn SkillCard(
     let tags = skill.tags.clone();
 
     rsx! {
-        div {
-            class: "hud-panel hud-tone-{tone}",
-            div { class: "card-body p-4",
-                div { class: "flex justify-between items-start",
-                    span { class: "font-medium", "{skill_name}" }
-                    div { class: "flex gap-1",
-                        if neural_badge {
-                            span { class: "badge hud-badge badge-primary badge-xs", "神经" }
-                        }
-                        span { class: "badge hud-badge badge-success", "已安装" }
+        HudCard { tone: Some(tone),
+            div { class: "flex justify-between items-start",
+                span { class: "font-medium", "{skill_name}" }
+                div { class: "flex gap-1",
+                    if neural_badge {
+                        span { class: "badge hud-badge badge-primary badge-xs", "神经" }
+                    }
+                    span { class: "badge hud-badge badge-success", "已安装" }
+                }
+            }
+            if !skill_desc.is_empty() {
+                p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+            }
+            if !tags.is_empty() {
+                div { class: "flex flex-wrap gap-1 mt-2",
+                    for tag in tags.iter() {
+                        span { class: "{tag_chip()}", "{tag}" }
                     }
                 }
-                if !skill_desc.is_empty() {
-                    p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-                }
-                if !tags.is_empty() {
-                    div { class: "flex flex-wrap gap-1 mt-2",
-                        for tag in tags.iter() {
-                            span { class: "{tag_chip()}", "{tag}" }
-                        }
-                    }
-                }
-                div { class: "card-actions justify-end mt-3",
-                    button {
-                        class: "btn hud-btn btn-error btn-sm",
-                        onclick: move |_| {
-                            let id = skill_id.clone();
-                            let name = skill_name.clone();
-                            on_uninstall.call((id, name));
-                        },
-                        "卸载"
-                    }
+            }
+            div { class: "card-actions justify-end mt-3",
+                button {
+                    class: "btn hud-btn btn-error btn-sm",
+                    onclick: move |_| {
+                        let id = skill_id.clone();
+                        let name = skill_name.clone();
+                        on_uninstall.call((id, name));
+                    },
+                    "卸载"
                 }
             }
         }
@@ -129,41 +126,38 @@ fn ToolCard(
     };
 
     rsx! {
-        div {
-            class: "hud-panel hud-tone-{tone}",
-            div { class: "card-body p-4",
-                div { class: "flex justify-between items-start",
-                    span { class: "font-medium", "{tool_name}" }
-                    div { class: "flex gap-1",
-                        if !not_ready_title.is_empty() {
-                            span {
-                                class: "badge hud-badge badge-warning badge-outline",
-                                title: "{not_ready_title}",
-                                "未就绪"
-                            }
-                        }
-                        span { class: "badge hud-badge {badge_class}", "{badge}" }
-                    }
-                }
-                p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
-                if !tags.is_empty() {
-                    div { class: "flex flex-wrap gap-1 mt-2",
-                        for tag in tags.iter() {
-                            span { class: "{tag_chip()}", "{tag}" }
+        HudCard { tone: Some(tone),
+            div { class: "flex justify-between items-start",
+                span { class: "font-medium", "{tool_name}" }
+                div { class: "flex gap-1",
+                    if !not_ready_title.is_empty() {
+                        span {
+                            class: "badge hud-badge badge-warning badge-outline",
+                            title: "{not_ready_title}",
+                            "未就绪"
                         }
                     }
+                    span { class: "badge hud-badge {badge_class}", "{badge}" }
                 }
-                if show_unbind {
-                    div { class: "card-actions justify-end mt-3",
-                        button {
-                            class: "btn hud-btn btn-error btn-sm",
-                            onclick: move |_| {
-                                let id = tool_id.clone();
-                                let name = tool_name.clone();
-                                on_unbind.call((id, name));
-                            },
-                            "解绑"
-                        }
+            }
+            p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
+            if !tags.is_empty() {
+                div { class: "flex flex-wrap gap-1 mt-2",
+                    for tag in tags.iter() {
+                        span { class: "{tag_chip()}", "{tag}" }
+                    }
+                }
+            }
+            if show_unbind {
+                div { class: "card-actions justify-end mt-3",
+                    button {
+                        class: "btn hud-btn btn-error btn-sm",
+                        onclick: move |_| {
+                            let id = tool_id.clone();
+                            let name = tool_name.clone();
+                            on_unbind.call((id, name));
+                        },
+                        "解绑"
                     }
                 }
             }
