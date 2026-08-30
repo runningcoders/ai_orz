@@ -6,7 +6,6 @@ use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::service::dao::agent::AgentQuery;
 use crate::service::domain::hr::{AgentManage, HrDomainImpl};
-use common::api::{SkillListItem, ToolListItem};
 use common::enums::AgentStatus;
 use common::error::{Result, bail_err, err};
 
@@ -652,17 +651,19 @@ impl AgentManage for HrDomainImpl {
         Ok(agent.po.get_installed_skill_packs())
     }
 
-    async fn get_agent_association_view(
+    async fn get_agent_association_groups(
         &self,
         ctx: RequestContext,
         agent: &Agent,
         with_tools: bool,
         with_skills: bool,
     ) -> Result<(
-        Option<common::api::AgentToolsOverview>,
-        Option<common::api::AgentSkillsOverview>,
+        Option<crate::service::domain::hr::AgentToolGroups>,
+        Option<crate::service::domain::hr::AgentSkillGroups>,
     )> {
-        use common::api::{AgentSkillsOverview, AgentToolPackGroup, AgentToolsOverview};
+        use crate::service::domain::hr::{
+            AgentSkillGroups, AgentSkillPackIds, AgentToolGroups, AgentToolPackIds,
+        };
 
         const NEURAL_TAG: &str = "neural";
         const INTERNAL_TAG: &str = "internal";
@@ -687,7 +688,7 @@ impl AgentManage for HrDomainImpl {
         }
 
         // ======================== 工具分组 ========================
-        let tools_overview: Option<AgentToolsOverview> = if with_tools {
+        let tool_groups: Option<AgentToolGroups> = if with_tools {
             // 1. 神经工具：tags 含 neural 且 不含 internal 的全部启用工具
             let neural_candidates = self
                 .tool_dal
@@ -729,7 +730,7 @@ impl AgentManage for HrDomainImpl {
             }
 
             // 3. 工具包分组：按每个 tag 展开（跳过 neural，且不重复前两组）
-            let mut pack_groups: Vec<AgentToolPackGroup> = Vec::new();
+            let mut pack_groups: Vec<AgentToolPackIds> = Vec::new();
             for tag in &installed_tool_tags {
                 let candidates = self
                     .tool_dal
@@ -758,30 +759,19 @@ impl AgentManage for HrDomainImpl {
                     pack_tools.push(t);
                 }
                 pack_tools.sort_by(|a, b| a.po.id.cmp(&b.po.id));
-                pack_groups.push(AgentToolPackGroup {
+                pack_groups.push(AgentToolPackIds {
                     tag: tag.clone(),
-                    tools: pack_tools.iter().map(to_tool_list_item_default).collect(),
+                    tool_ids: pack_tools.iter().map(|t| t.po.id.clone()).collect(),
                 });
             }
 
-            // 汇总 bound_tools（需要已填充排除 pack 后）：上面先按 id 做去重
-            let mut bound_sorted: Vec<&Tool> = bound_tools_map.values().collect();
-            bound_sorted.sort_by(|a, b| a.po.id.cmp(&b.po.id));
-            let bound_tools_list: Vec<common::api::ToolListItem> = bound_sorted
-                .into_iter()
-                .map(to_tool_list_item_default)
-                .collect();
+            // 汇总（已按 id 排序，保证输出稳定）
+            let bound_ids: Vec<String> = bound_tools_map.keys().cloned().collect();
+            let neural_ids: Vec<String> = neural_tools_map.keys().cloned().collect();
 
-            let mut neural_sorted: Vec<&Tool> = neural_tools_map.values().collect();
-            neural_sorted.sort_by(|a, b| a.po.id.cmp(&b.po.id));
-            let neural_tools_list: Vec<common::api::ToolListItem> = neural_sorted
-                .into_iter()
-                .map(to_tool_list_item_default)
-                .collect();
-
-            Some(AgentToolsOverview {
-                neural_tools: neural_tools_list,
-                bound_tools: bound_tools_list,
+            Some(AgentToolGroups {
+                neural_ids,
+                bound_ids,
                 pack_groups,
             })
         } else {
@@ -789,7 +779,7 @@ impl AgentManage for HrDomainImpl {
         };
 
         // ======================== 技能分组 ========================
-        let skills_overview: Option<AgentSkillsOverview> = if with_skills {
+        let skill_groups: Option<AgentSkillGroups> = if with_skills {
             // 所有 Agent 自有技能副本（author_id = agent_id，exclude Expired）
             let all_skills = self
                 .skill_dal
@@ -797,29 +787,16 @@ impl AgentManage for HrDomainImpl {
                 .await?;
 
             // 第一趟：分配神经技能（优先级最高）
-            let mut neural_skill_ids: std::collections::BTreeSet<String> =
-                std::collections::BTreeSet::new();
-            let mut neural_skills: Vec<common::api::SkillListItem> = all_skills
+            let neural_skill_ids: std::collections::BTreeSet<String> = all_skills
                 .iter()
-                .filter(|s| {
-                    let tags = s.po.parse_tags();
-                    tags.iter().any(|x| x == NEURAL_TAG)
-                })
-                .map(to_skill_list_item)
+                .filter(|s| s.po.parse_tags().iter().any(|x| x == NEURAL_TAG))
+                .map(|s| s.po.id.clone())
                 .collect();
-            // 记录神经技能 id，供第二/三趟排除（与上面的 filter 保持同一判定）
-            for s in all_skills.iter() {
-                if s.po.parse_tags().iter().any(|x| x == NEURAL_TAG) {
-                    neural_skill_ids.insert(s.po.id.clone());
-                }
-            }
-            neural_skills.sort_by(|a, b| a.id.cmp(&b.id));
 
             // 第二趟：按 installed_skill_packs 顺序分配（跳过已在神经组）
-            use common::api::AgentSkillPackGroup;
-            let mut pack_groups_skills: Vec<AgentSkillPackGroup> = Vec::new();
+            let mut pack_groups: Vec<AgentSkillPackIds> = Vec::new();
             for tag in &installed_skill_packs {
-                let mut members: Vec<common::api::SkillListItem> = all_skills
+                let mut members: Vec<String> = all_skills
                     .iter()
                     .filter(|s| {
                         if neural_skill_ids.contains(&s.po.id) {
@@ -828,17 +805,17 @@ impl AgentManage for HrDomainImpl {
                         let tags = s.po.parse_tags();
                         tags.iter().any(|x| x == tag)
                     })
-                    .map(to_skill_list_item)
+                    .map(|s| s.po.id.clone())
                     .collect();
-                members.sort_by(|a, b| a.id.cmp(&b.id));
-                pack_groups_skills.push(AgentSkillPackGroup {
+                members.sort();
+                pack_groups.push(AgentSkillPackIds {
                     tag: tag.clone(),
-                    skills: members,
+                    skill_ids: members,
                 });
             }
 
             // 第三趟：独立技能（不在神经组、不在任一 pack）
-            let mut standalone: Vec<common::api::SkillListItem> = all_skills
+            let mut standalone: Vec<String> = all_skills
                 .iter()
                 .filter(|s| {
                     if neural_skill_ids.contains(&s.po.id) {
@@ -851,65 +828,19 @@ impl AgentManage for HrDomainImpl {
                         .any(|tag| tags.iter().any(|x| x == tag));
                     !in_any_pack
                 })
-                .map(to_skill_list_item)
+                .map(|s| s.po.id.clone())
                 .collect();
-            standalone.sort_by(|a, b| a.id.cmp(&b.id));
+            standalone.sort();
 
-            Some(AgentSkillsOverview {
-                neural_skills,
-                pack_groups: pack_groups_skills,
-                standalone_skills: standalone,
+            Some(AgentSkillGroups {
+                neural_ids: neural_skill_ids.into_iter().collect(),
+                pack_groups,
+                standalone_ids: standalone,
             })
         } else {
             None
         };
 
-        Ok((tools_overview, skills_overview))
-    }
-}
-
-// ======================== DTO 转换辅助（默认 runtime_ready=Unknown） ========================
-
-fn to_tool_list_item_default(tool: &Tool) -> ToolListItem {
-    use common::enums::ToolStatus;
-    ToolListItem {
-        id: tool.po.id.clone(),
-        name: tool.po.name.clone(),
-        description: Some(tool.po.description.clone()),
-        protocol: tool.po.protocol,
-        control_mode: tool.po.control_mode,
-        parameters_schema: tool.po.parameters_schema.clone(),
-        tags: tool.po.get_tags(),
-        status: tool.po.status,
-        has_config: has_tool_config(&tool.po.config),
-        enabled: matches!(tool.po.status, ToolStatus::Enabled),
-        created_by: tool.po.created_by.clone().unwrap_or_default(),
-        created_at: tool.po.created_at,
-        updated_at: tool.po.updated_at,
-        runtime_ready: common::api::RuntimeReady::Unknown,
-    }
-}
-
-fn has_tool_config(config: &serde_json::Value) -> bool {
-    match config {
-        serde_json::Value::Null => false,
-        serde_json::Value::Object(m) if m.is_empty() => false,
-        _ => true,
-    }
-}
-
-fn to_skill_list_item(skill: &Skill) -> SkillListItem {
-    SkillListItem {
-        id: skill.po.id.clone(),
-        name: skill.po.name.clone(),
-        description: skill.po.description.clone(),
-        tags: skill.po.parse_tags(),
-        category: skill.po.category.clone(),
-        parent_skill_id: skill.po.parent_skill_id.clone(),
-        author_id: skill.po.author_id.clone(),
-        author_type: skill.po.author_type,
-        status: skill.po.status,
-        created_at: skill.po.created_at,
-        updated_at: skill.po.updated_at,
+        Ok((tool_groups, skill_groups))
     }
 }

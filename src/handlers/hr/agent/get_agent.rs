@@ -1,5 +1,6 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
+use super::association::{build_skills_overview, build_tools_overview};
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentFetchOptions;
@@ -134,13 +135,26 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         .await
         .unwrap_or_default();
 
-    // 装配 Agent 全景视图（工具三分组 + 技能三分组），与 runtime 同源。
+    // 装配 Agent 全景视图（工具三分组 + 技能三分组），分两步：
+    //   1) Hr domain 产出 **ID 分组**（neural/bound/pack 的分组规则归它）；
+    //   2) association 模块跨领域编排：调专业领域查询实体并打包成 DTO
+    //      —— 工具额外经 runtime domain 做就绪探测，因此 runtime_ready 是真实值，
+    //        而不是 domain 层硬编码的 Unknown。
     // 全景数据体量较大，按 with_tools / with_skills 开关按需装配：
     // 两侧均关闭时后端直接短路，不做任何工具/技能查询。
-    let (tools_overview, skills_overview) = domain()
+    let (tool_groups, skill_groups) = domain()
         .agent_manage()
-        .get_agent_association_view(ctx, &agent, with_tools, with_skills)
+        .get_agent_association_groups(ctx.clone(), &agent, with_tools, with_skills)
         .await?;
+
+    let tools_overview = match tool_groups {
+        Some(groups) => Some(build_tools_overview(ctx.clone(), groups).await?),
+        None => None,
+    };
+    let skills_overview = match skill_groups {
+        Some(groups) => Some(build_skills_overview(ctx.clone(), &params.id, groups).await?),
+        None => None,
+    };
 
     Ok(GetAgentResponse {
         id: agent.id().to_string(),

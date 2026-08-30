@@ -2,7 +2,10 @@ use common::api::{SkillDetail, SkillFileItem, SkillListItem};
 
 use crate::models::skill::{Skill, SkillFile};
 
-pub(super) fn to_list_item(skill: &Skill) -> SkillListItem {
+/// 技能 → 列表项 DTO（领域打包方法）。
+///
+/// 供本域各 handler 复用（如 get_agent 装配技能全景），避免各处重复实现转换。
+pub(crate) fn to_list_item(skill: &Skill) -> SkillListItem {
     SkillListItem {
         id: skill.po.id.clone(),
         name: skill.po.name.clone(),

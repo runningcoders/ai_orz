@@ -235,7 +235,7 @@ pub enum RuntimeReady {
 }
 
 /// Tool list item
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct ToolListItem {
     /// Tool ID
     pub id: String,

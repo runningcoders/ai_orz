@@ -52,6 +52,125 @@ fn build_agent_stats_request(id: String) -> GetAgentRequest {
     }
 }
 
+/// 技能卡片：神经 / 技能包 / 独立三分组共用。
+/// 分组差异通过 `tone`（HUD 面板色调）与 `neural_badge`（是否带"神经"徽章）表达；
+/// 卸载动作通过 `on_uninstall` 上抛（参数为 (skill_id, skill_name)），由调用方统一处理。
+#[component]
+fn SkillCard(
+    skill: SkillListItem,
+    tone: &'static str,
+    neural_badge: bool,
+    on_uninstall: EventHandler<(String, String)>,
+) -> Element {
+    let skill_id = skill.id.clone();
+    let skill_name = skill.name.clone();
+    let skill_desc = skill.description.clone();
+    let tags = skill.tags.clone();
+
+    rsx! {
+        div {
+            class: "hud-panel hud-tone-{tone}",
+            div { class: "card-body p-4",
+                div { class: "flex justify-between items-start",
+                    span { class: "font-medium", "{skill_name}" }
+                    div { class: "flex gap-1",
+                        if neural_badge {
+                            span { class: "badge hud-badge badge-primary badge-xs", "神经" }
+                        }
+                        span { class: "badge hud-badge badge-success", "已安装" }
+                    }
+                }
+                if !skill_desc.is_empty() {
+                    p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                }
+                if !tags.is_empty() {
+                    div { class: "flex flex-wrap gap-1 mt-2",
+                        for tag in tags.iter() {
+                            span { class: "{tag_chip()}", "{tag}" }
+                        }
+                    }
+                }
+                div { class: "card-actions justify-end mt-3",
+                    button {
+                        class: "btn hud-btn btn-error btn-sm",
+                        onclick: move |_| {
+                            let id = skill_id.clone();
+                            let name = skill_name.clone();
+                            on_uninstall.call((id, name));
+                        },
+                        "卸载"
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 工具卡片：神经 / 直接绑定 / 工具包三分组共用。
+/// `show_unbind` 控制是否渲染「解绑」按钮（仅直接绑定组）；
+/// `badge` + `badge_class` 表达分组徽章（神经 / 已绑定 / 来自 xx）；
+/// `runtime_ready` 的「未就绪」警示在组件内统一处理（advisory，不阻止使用）。
+#[component]
+fn ToolCard(
+    tool: ToolListItem,
+    tone: &'static str,
+    badge: String,
+    badge_class: &'static str,
+    show_unbind: bool,
+    on_unbind: EventHandler<(String, String)>,
+) -> Element {
+    let tool_id = tool.id.clone();
+    let tool_name = tool.name.clone();
+    let tool_desc = tool.description.clone().unwrap_or_default();
+    let tags = tool.tags.clone();
+    let not_ready_title = match &tool.runtime_ready {
+        RuntimeReady::NotReady { reason, hint } => format!("未就绪（{}）：{}", reason, hint),
+        _ => String::new(),
+    };
+
+    rsx! {
+        div {
+            class: "hud-panel hud-tone-{tone}",
+            div { class: "card-body p-4",
+                div { class: "flex justify-between items-start",
+                    span { class: "font-medium", "{tool_name}" }
+                    div { class: "flex gap-1",
+                        if !not_ready_title.is_empty() {
+                            span {
+                                class: "badge hud-badge badge-warning badge-outline",
+                                title: "{not_ready_title}",
+                                "未就绪"
+                            }
+                        }
+                        span { class: "badge hud-badge {badge_class}", "{badge}" }
+                    }
+                }
+                p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
+                if !tags.is_empty() {
+                    div { class: "flex flex-wrap gap-1 mt-2",
+                        for tag in tags.iter() {
+                            span { class: "{tag_chip()}", "{tag}" }
+                        }
+                    }
+                }
+                if show_unbind {
+                    div { class: "card-actions justify-end mt-3",
+                        button {
+                            class: "btn hud-btn btn-error btn-sm",
+                            onclick: move |_| {
+                                let id = tool_id.clone();
+                                let name = tool_name.clone();
+                                on_unbind.call((id, name));
+                            },
+                            "解绑"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn binding_status_badge_class(is_bound: bool) -> &'static str {
     if is_bound {
         "badge hud-badge badge-success"
@@ -473,6 +592,41 @@ pub fn HrAgentDetail(id: String) -> Element {
             // 与 runtime 注入逻辑同源（neural → bound → pack 优先级去重，互不相交）
             let tools_overview = a.tools_overview.clone().unwrap_or_default();
             let skills_overview = a.skills_overview.clone().unwrap_or_default();
+
+            // 三分组共用的卸载 / 解绑动作（统一 spawn + 刷新，卡片组件只上抛 (id, name) 事件）
+            let on_uninstall_skill = move |(sid, sname): (String, String)| {
+                let aid = agent_id_signal();
+                spawn(async move {
+                    match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
+                        agent_id: aid.clone(),
+                        skill_id: sid.clone(),
+                    }).await {
+                        Ok(_) => {
+                            toast.success(format!("技能 {} 已卸载", sname));
+                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                Err(e) => toast.error(format!("刷新失败: {}", e)),
+                            }
+                        }
+                        Err(e) => toast.error(format!("卸载失败: {}", e)),
+                    }
+                });
+            };
+            let on_unbind_tool = move |(tid, tname): (String, String)| {
+                let aid = agent_id_signal();
+                spawn(async move {
+                    match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: aid.clone(), tool_id: tid.clone() }).await {
+                        Ok(_) => {
+                            toast.success(format!("工具 {} 已解绑", tname));
+                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                            }
+                        }
+                        Err(e) => toast.error(format!("解绑失败: {}", e)),
+                    }
+                });
+            };
 
             // 工具：三分组 + 统计总数
             let all_tool_count = tools_overview.neural_tools.len()
@@ -1018,64 +1172,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for skill in skills_overview.neural_skills.iter() {
-                                                        {
-                                                            let skill_clone = skill.clone();
-                                                            let aid = agent_id_signal();
-                                                            let skill_id = skill.id.clone();
-                                                            let skill_name = skill.name.clone();
-                                                            let skill_desc = skill.description.clone();
-                                                            let tags = skill.tags.clone();
-                                                            rsx! {
-                                                                div {
-                                                                    class: "hud-panel hud-tone-primary",
-                                                                    key: "ns-{skill_id}",
-                                                                    div { class: "card-body p-4",
-                                                                        div { class: "flex justify-between items-start",
-                                                                            span { class: "font-medium", "{skill_name}" }
-                                                                            div { class: "flex gap-1",
-                                                                                span { class: "badge hud-badge badge-primary badge-xs", "神经" }
-                                                                                span { class: "badge hud-badge badge-success", "已安装" }
-                                                                            }
-                                                                        }
-                                                                        if !skill_desc.is_empty() {
-                                                                            p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-                                                                        }
-                                                                        if !tags.is_empty() {
-                                                                            div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                for tag in tags.iter() {
-                                                                                    span { class: "{tag_chip()}", "{tag}" }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                        div { class: "card-actions justify-end mt-3",
-                                                                            button {
-                                                                                class: "btn hud-btn btn-error btn-sm",
-                                                                                onclick: move |_| {
-                                                                                    let agent_id = aid.clone();
-                                                                                    let sid = skill_clone.id.clone();
-                                                                                    let sname = skill_clone.name.clone();
-                                                                                    spawn(async move {
-                                                                                        match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
-                                                                                            agent_id: agent_id.clone(),
-                                                                                            skill_id: sid.clone(),
-                                                                                        }).await {
-                                                                                            Ok(_) => {
-                                                                                                toast.success(format!("技能 {} 已卸载", sname));
-                                                                                                match get_agent(build_agent_stats_request(agent_id)).await {
-                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
-                                                                                                }
-                                                                                            }
-                                                                                            Err(e) => toast.error(format!("卸载失败: {}", e)),
-                                                                                        }
-                                                                                    });
-                                                                                },
-                                                                                "卸载"
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
+                                                        SkillCard {
+                                                            key: "ns-{skill.id}",
+                                                            skill: skill.clone(),
+                                                            tone: "primary",
+                                                            neural_badge: true,
+                                                            on_uninstall: on_uninstall_skill,
                                                         }
                                                     }
                                                 }
@@ -1095,61 +1197,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     }
                                                     div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                         for skill in pack.skills.iter() {
-                                                            {
-                                                                let skill_clone = skill.clone();
-                                                                let aid = agent_id_signal();
-                                                                let skill_id = skill.id.clone();
-                                                                let skill_name = skill.name.clone();
-                                                                let skill_desc = skill.description.clone();
-                                                                let tags = skill.tags.clone();
-                                                                rsx! {
-                                                                    div {
-                                                                        class: "hud-panel hud-tone-accent",
-                                                                        key: "skp-{pack.tag}-{skill_id}",
-                                                                        div { class: "card-body p-4",
-                                                                            div { class: "flex justify-between items-start",
-                                                                                span { class: "font-medium", "{skill_name}" }
-                                                                                span { class: "badge hud-badge badge-success", "已安装" }
-                                                                            }
-                                                                            if !skill_desc.is_empty() {
-                                                                                p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-                                                                            }
-                                                                            if !tags.is_empty() {
-                                                                                div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                    for tag in tags.iter() {
-                                                                                        span { class: "{tag_chip()}", "{tag}" }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                            div { class: "card-actions justify-end mt-3",
-                                                                                button {
-                                                                                    class: "btn hud-btn btn-error btn-sm",
-                                                                                    onclick: move |_| {
-                                                                                        let agent_id = aid.clone();
-                                                                                        let sid = skill_clone.id.clone();
-                                                                                        let sname = skill_clone.name.clone();
-                                                                                        spawn(async move {
-                                                                                            match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
-                                                                                                agent_id: agent_id.clone(),
-                                                                                                skill_id: sid.clone(),
-                                                                                            }).await {
-                                                                                                Ok(_) => {
-                                                                                                    toast.success(format!("技能 {} 已卸载", sname));
-                                                                                                    match get_agent(build_agent_stats_request(agent_id)).await {
-                                                                                                        Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                                                        Err(e) => toast.error(format!("刷新失败: {}", e)),
-                                                                                                    }
-                                                                                                }
-                                                                                                Err(e) => toast.error(format!("卸载失败: {}", e)),
-                                                                                            }
-                                                                                        });
-                                                                                    },
-                                                                                    "卸载"
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
+                                                            SkillCard {
+                                                                key: "skp-{pack.tag}-{skill.id}",
+                                                                skill: skill.clone(),
+                                                                tone: "accent",
+                                                                neural_badge: false,
+                                                                on_uninstall: on_uninstall_skill,
                                                             }
                                                         }
                                                     }
@@ -1168,61 +1221,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for skill in skills_overview.standalone_skills.iter() {
-                                                        {
-                                                            let skill_clone = skill.clone();
-                                                            let aid = agent_id_signal();
-                                                            let skill_id = skill.id.clone();
-                                                            let skill_name = skill.name.clone();
-                                                            let skill_desc = skill.description.clone();
-                                                            let tags = skill.tags.clone();
-                                                            rsx! {
-                                                                div {
-                                                                    class: "hud-panel hud-tone-neutral",
-                                                                    key: "st-{skill_id}",
-                                                                    div { class: "card-body p-4",
-                                                                        div { class: "flex justify-between items-start",
-                                                                            span { class: "font-medium", "{skill_name}" }
-                                                                            span { class: "badge hud-badge badge-success", "已安装" }
-                                                                        }
-                                                                        if !skill_desc.is_empty() {
-                                                                            p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-                                                                        }
-                                                                        if !tags.is_empty() {
-                                                                            div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                for tag in tags.iter() {
-                                                                                    span { class: "{tag_chip()}", "{tag}" }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                        div { class: "card-actions justify-end mt-3",
-                                                                            button {
-                                                                                class: "btn hud-btn btn-error btn-sm",
-                                                                                onclick: move |_| {
-                                                                                    let agent_id = aid.clone();
-                                                                                    let sid = skill_clone.id.clone();
-                                                                                    let sname = skill_clone.name.clone();
-                                                                                    spawn(async move {
-                                                                                        match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
-                                                                                            agent_id: agent_id.clone(),
-                                                                                            skill_id: sid.clone(),
-                                                                                        }).await {
-                                                                                            Ok(_) => {
-                                                                                                toast.success(format!("技能 {} 已卸载", sname));
-                                                                                                match get_agent(build_agent_stats_request(agent_id)).await {
-                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
-                                                                                                }
-                                                                                            }
-                                                                                            Err(e) => toast.error(format!("卸载失败: {}", e)),
-                                                                                        }
-                                                                                    });
-                                                                                },
-                                                                                "卸载"
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
+                                                        SkillCard {
+                                                            key: "st-{skill.id}",
+                                                            skill: skill.clone(),
+                                                            tone: "neutral",
+                                                            neural_badge: false,
+                                                            on_uninstall: on_uninstall_skill,
                                                         }
                                                     }
                                                 }
@@ -1306,47 +1310,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for tool in tools_overview.neural_tools.iter() {
-                                                        {
-                                                            let tool_id = tool.id.clone();
-                                                            let tool_name = tool.name.clone();
-                                                            let tool_desc = tool.description.as_deref().unwrap_or("");
-                                                            let tags = tool.tags.clone();
-                                                            let runtime_ready = tool.runtime_ready.clone();
-                                                            let not_ready_title = match &runtime_ready {
-                                                                RuntimeReady::NotReady { reason, hint } => {
-                                                                    format!("未就绪（{}）：{}", reason, hint)
-                                                                }
-                                                                _ => String::new(),
-                                                            };
-                                                            rsx! {
-                                                                div {
-                                                                    class: "hud-panel hud-tone-primary",
-                                                                    key: "nt-{tool_id}",
-                                                                    div { class: "card-body p-4",
-                                                                        div { class: "flex justify-between items-start",
-                                                                            span { class: "font-medium", "{tool_name}" }
-                                                                            div { class: "flex gap-1",
-                                                                                if !not_ready_title.is_empty() {
-                                                                                    span {
-                                                                                        class: "badge hud-badge badge-warning badge-outline",
-                                                                                        title: "{not_ready_title}",
-                                                                                        "未就绪"
-                                                                                    }
-                                                                                }
-                                                                                span { class: "badge hud-badge badge-primary badge-xs", "神经" }
-                                                                            }
-                                                                        }
-                                                                        p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
-                                                                        if !tags.is_empty() {
-                                                                            div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                for tag in tags.iter() {
-                                                                                    span { class: "{tag_chip()}", "{tag}" }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
+                                                        ToolCard {
+                                                            key: "nt-{tool.id}",
+                                                            tool: tool.clone(),
+                                                            tone: "primary",
+                                                            badge: "神经".to_string(),
+                                                            badge_class: "badge-primary badge-xs",
+                                                            show_unbind: false,
+                                                            on_unbind: on_unbind_tool,
                                                         }
                                                     }
                                                 }
@@ -1364,72 +1335,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for tool in tools_overview.bound_tools.iter() {
-                                                        {
-                                                            let tool_clone = tool.clone();
-                                                            let aid = agent_id_signal();
-                                                            let tool_id = tool.id.clone();
-                                                            let tool_name = tool.name.clone();
-                                                            let tool_desc = tool.description.as_deref().unwrap_or("");
-                                                            let tags = tool.tags.clone();
-                                                            let runtime_ready = tool.runtime_ready.clone();
-                                                            let not_ready_title = match &runtime_ready {
-                                                                RuntimeReady::NotReady { reason, hint } => {
-                                                                    format!("未就绪（{}）：{}", reason, hint)
-                                                                }
-                                                                _ => String::new(),
-                                                            };
-                                                            rsx! {
-                                                                div {
-                                                                    class: "hud-panel hud-tone-success",
-                                                                    key: "bt-{tool_id}",
-                                                                    div { class: "card-body p-4",
-                                                                        div { class: "flex justify-between items-start",
-                                                                            span { class: "font-medium", "{tool_name}" }
-                                                                            div { class: "flex gap-1",
-                                                                                if !not_ready_title.is_empty() {
-                                                                                    span {
-                                                                                        class: "badge hud-badge badge-warning badge-outline",
-                                                                                        title: "{not_ready_title}",
-                                                                                        "未就绪"
-                                                                                    }
-                                                                                }
-                                                                                span { class: "badge hud-badge badge-success", "已绑定" }
-                                                                            }
-                                                                        }
-                                                                        p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
-                                                                        if !tags.is_empty() {
-                                                                            div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                for tag in tags.iter() {
-                                                                                    span { class: "{tag_chip()}", "{tag}" }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                        div { class: "card-actions justify-end mt-3",
-                                                                            button {
-                                                                                class: "btn hud-btn btn-error btn-sm",
-                                                                                onclick: move |_| {
-                                                                                    let agent_id = aid.clone();
-                                                                                    let tid = tool_clone.id.clone();
-                                                                                    let tname = tool_clone.name.clone();
-                                                                                    spawn(async move {
-                                                                                        match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: agent_id.clone(), tool_id: tid.clone() }).await {
-                                                                                            Ok(_) => {
-                                                                                                toast.success(format!("工具 {} 已解绑", tname));
-                                                                                                match get_agent(build_agent_stats_request(agent_id.clone())).await {
-                                                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                                                                }
-                                                                                            }
-                                                                                            Err(e) => toast.error(format!("解绑失败: {}", e)),
-                                                                                        }
-                                                                                    });
-                                                                                },
-                                                                                "解绑"
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
+                                                        ToolCard {
+                                                            key: "bt-{tool.id}",
+                                                            tool: tool.clone(),
+                                                            tone: "success",
+                                                            badge: "已绑定".to_string(),
+                                                            badge_class: "badge-success",
+                                                            show_unbind: true,
+                                                            on_unbind: on_unbind_tool,
                                                         }
                                                     }
                                                 }
@@ -1449,47 +1362,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     }
                                                     div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                         for tool in pack.tools.iter() {
-                                                            {
-                                                                let tool_id = tool.id.clone();
-                                                                let tool_name = tool.name.clone();
-                                                                let tool_desc = tool.description.as_deref().unwrap_or("");
-                                                                let tags = tool.tags.clone();
-                                                                let runtime_ready = tool.runtime_ready.clone();
-                                                                let not_ready_title = match &runtime_ready {
-                                                                    RuntimeReady::NotReady { reason, hint } => {
-                                                                        format!("未就绪（{}）：{}", reason, hint)
-                                                                    }
-                                                                    _ => String::new(),
-                                                                };
-                                                                rsx! {
-                                                                    div {
-                                                                        class: "hud-panel hud-tone-accent",
-                                                                        key: "tp-{pack.tag}-{tool_id}",
-                                                                        div { class: "card-body p-4",
-                                                                            div { class: "flex justify-between items-start",
-                                                                                span { class: "font-medium", "{tool_name}" }
-                                                                                div { class: "flex gap-1",
-                                                                                    if !not_ready_title.is_empty() {
-                                                                                        span {
-                                                                                            class: "badge hud-badge badge-warning badge-outline",
-                                                                                            title: "{not_ready_title}",
-                                                                                            "未就绪"
-                                                                                        }
-                                                                                    }
-                                                                                    span { class: "badge hud-badge badge-accent badge-xs", "来自 {pack.tag}" }
-                                                                                }
-                                                                            }
-                                                                            p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
-                                                                            if !tags.is_empty() {
-                                                                                div { class: "flex flex-wrap gap-1 mt-2",
-                                                                                    for tag in tags.iter() {
-                                                                                        span { class: "{tag_chip()}", "{tag}" }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
+                                                            ToolCard {
+                                                                key: "tp-{pack.tag}-{tool.id}",
+                                                                tool: tool.clone(),
+                                                                tone: "accent",
+                                                                badge: format!("来自 {}", pack.tag),
+                                                                badge_class: "badge-accent badge-xs",
+                                                                show_unbind: false,
+                                                                on_unbind: on_unbind_tool,
                                                             }
                                                         }
                                                     }

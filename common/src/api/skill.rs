@@ -218,7 +218,7 @@ pub struct SkillFileItem {
 }
 
 /// Skill 列表项响应。
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct SkillListItem {
     /// Skill ID。
     pub id: String,
