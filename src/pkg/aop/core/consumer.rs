@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use common::error::Result;
 
 use super::EventKind;
+use crate::pkg::RequestContext;
 
 /// 消费模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,7 +41,11 @@ pub trait Consumer: Send + Sync {
     }
 
     /// 处理事件（核心业务逻辑）
-    async fn on_event(&self, event: serde_json::Value) -> Result<()>;
+    ///
+    /// 框架在分发前已从事件顶层 `context_carrier` 还原出与主 context 同源的
+    /// `ctx` 并传入；消费侧可直接使用（其 log_id 等链路线索已贯通），
+    /// 也可在此基础上追加/修饰业务字段。
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()>;
 
     // ===== 以下仅 Async 模式消费者需要关注 =====
 

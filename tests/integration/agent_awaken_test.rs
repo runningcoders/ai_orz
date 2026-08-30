@@ -93,7 +93,7 @@ async fn test_consumer_nonexistent_agent_returns_error(pool: SqlitePool) {
     let consumer = MessageConsumer::new();
     let event = make_message_event(&message_id, &bs.user_id, &fake_agent_id, 1);
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // 应该返回错误（Agent 不存在）
     assert!(
@@ -161,7 +161,7 @@ async fn test_consumer_busy_agent_rejects_message(pool: SqlitePool) {
     let consumer = MessageConsumer::new();
     let event = make_message_event(&message_id, &bs.user_id, &agent_id, 1);
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // 应该返回 Conflict 错误（Agent 已 Busy）
     assert!(
@@ -289,7 +289,7 @@ async fn test_consumer_completed_task_skips_awaken(pool: SqlitePool) {
         "created_at": 0
     });
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // 应该返回 Ok（合法跳过，非错误）
     assert!(
@@ -891,7 +891,7 @@ async fn test_real_llm_awaken_full_flow(pool: SqlitePool) {
     let consumer = MessageConsumer::new();
     let event = make_message_event(&message_id, &bs.user_id, &agent_id, 1);
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // awaken 应该成功（真实 LLM 返回了响应）
     assert!(

@@ -39,6 +39,14 @@ impl AopMetricsHook for AopStatsHook {
         } else {
             "published_sync"
         };
+        // 链路可观测：记录事件“进入”AOP（携带 log_id 以便串联排查）
+        sys_info!(
+            "[aop] log_id={} event={} -> {} (mode={})",
+            log_id_of(meta),
+            meta.event_kind,
+            consumer_name,
+            if is_async { "async" } else { "sync" }
+        );
         self.spawn_record(
             meta.event_kind.clone(),
             consumer_name.to_string(),
@@ -48,6 +56,13 @@ impl AopMetricsHook for AopStatsHook {
     }
 
     fn on_consume_start(&self, consumer_name: &str, meta: &AopEventMeta) {
+        // 链路可观测：记录事件“开始消费”
+        sys_info!(
+            "[aop] log_id={} event={} <- {} consume start",
+            log_id_of(meta),
+            meta.event_kind,
+            consumer_name
+        );
         self.spawn_record(
             meta.event_kind.clone(),
             consumer_name.to_string(),
@@ -57,6 +72,14 @@ impl AopMetricsHook for AopStatsHook {
     }
 
     fn on_consume_success(&self, consumer_name: &str, meta: &AopEventMeta, duration_ms: u64) {
+        // 链路可观测：记录事件“消费完成”及耗时（排查慢回复的关键指标）
+        sys_info!(
+            "[aop] log_id={} event={} <- {} success (duration_ms={})",
+            log_id_of(meta),
+            meta.event_kind,
+            consumer_name,
+            duration_ms
+        );
         self.spawn_record(
             meta.event_kind.clone(),
             consumer_name.to_string(),
@@ -72,6 +95,13 @@ impl AopMetricsHook for AopStatsHook {
         duration_ms: u64,
         _error: &str,
     ) {
+        sys_info!(
+            "[aop] log_id={} event={} <- {} failed (duration_ms={})",
+            log_id_of(meta),
+            meta.event_kind,
+            consumer_name,
+            duration_ms
+        );
         self.spawn_record(
             meta.event_kind.clone(),
             consumer_name.to_string(),
@@ -79,6 +109,14 @@ impl AopMetricsHook for AopStatsHook {
             duration_ms,
         );
     }
+}
+
+/// 从 meta 提取链路 log_id（缺失时回退 unknown），供 AOP 日志串联排查
+fn log_id_of(meta: &AopEventMeta) -> &str {
+    meta.context_carrier
+        .as_ref()
+        .map(|c| c.log_id.as_str())
+        .unwrap_or("unknown")
 }
 
 /// 单元测试
@@ -98,6 +136,7 @@ mod tests {
             order_key: "order-1".to_string(),
             priority: 5,
             created_at: 1234567890,
+            context_carrier: None,
         };
 
         // 调用 4 个回调

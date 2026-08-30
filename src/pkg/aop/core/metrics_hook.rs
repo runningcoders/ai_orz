@@ -13,6 +13,8 @@
 
 use serde_json::Value;
 
+use crate::pkg::request_context::{AOP_CONTEXT_CARRIER_KEY, ContextCarrier};
+
 /// AOP 事件元信息（从 event_json 顶层提取）
 #[derive(Debug, Clone)]
 pub struct AopEventMeta {
@@ -21,6 +23,8 @@ pub struct AopEventMeta {
     pub order_key: String,
     pub priority: u8,
     pub created_at: i64,
+    /// 随事件流转的可传输子 context（链路串联载体，可能为 None）
+    pub context_carrier: Option<ContextCarrier>,
 }
 
 impl AopEventMeta {
@@ -50,6 +54,9 @@ impl AopEventMeta {
                 .get("created_at")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
+            context_carrier: event_json
+                .get(AOP_CONTEXT_CARRIER_KEY)
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
         }
     }
 }

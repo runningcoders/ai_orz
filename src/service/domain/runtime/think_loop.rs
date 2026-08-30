@@ -263,6 +263,7 @@ impl RuntimeDomainImpl {
                         }
                         // 发布 ThinkRoundEvent（无工具调用，最终轮）
                         let _ = crate::pkg::aop::publish(
+                            &ctx,
                             ThinkRoundEvent::new(
                                 &agent.po.id,
                                 trace_id,
@@ -376,6 +377,7 @@ impl RuntimeDomainImpl {
                         }
                         // 发布 ThinkRoundEvent（有工具调用）
                         let _ = crate::pkg::aop::publish(
+                            &ctx,
                             ThinkRoundEvent::new(
                                 &agent.po.id,
                                 trace_id,

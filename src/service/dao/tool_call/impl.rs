@@ -176,7 +176,7 @@ impl ToolCallDao for ToolCallDaoImpl {
             args_len,
             result_len,
         );
-        crate::pkg::aop::publish(event).await;
+        crate::pkg::aop::publish(&ctx, event).await;
 
         match result {
             Ok(value) => Ok((value, entry)),

@@ -4,6 +4,7 @@
 //! 服务重启后状态自动重置（Agent 相当于自动休息）。
 
 use crate::models::events::AgentStateEvent;
+use crate::pkg::RequestContext;
 use common::enums::AgentRuntimeState;
 use common::enums::ThinkingScene;
 use dashmap::DashMap;
@@ -411,12 +412,10 @@ impl AgentRuntimeStateManager {
         let from_state = from_state.to_string();
         let to_state = to_state.to_string();
         tokio::spawn(async move {
-            let _ = crate::pkg::aop::publish(AgentStateEvent::new(
-                &agent_id,
-                &from_state,
-                &to_state,
-                message_id,
-            ))
+            let _ = crate::pkg::aop::publish(
+                &RequestContext::new_system(),
+                AgentStateEvent::new(&agent_id, &from_state, &to_state, message_id),
+            )
             .await;
         });
     }

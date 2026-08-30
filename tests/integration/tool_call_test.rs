@@ -285,7 +285,7 @@ async fn test_consumer_tool_call_request_chain(pool: SqlitePool) {
         "created_at": 0
     });
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // Consumer 应该成功处理
     assert!(
@@ -764,7 +764,7 @@ async fn test_real_llm_auto_tool_call(pool: SqlitePool) {
         "created_at": 0
     });
 
-    let result = consumer.on_event(event).await;
+    let result = consumer.on_event(RequestContext::new_system(), event).await;
 
     // awaken 应该成功
     assert!(

@@ -11,8 +11,8 @@
 //!
 //! 使用方式：
 //! ```ignore
-//! // 发布事件
-//! aop::publish(MyEvent { ... }).await;
+//! // 发布事件（必须传入当前请求 ctx，用于链路串联）
+//! aop::publish(&ctx, MyEvent { ... }).await;
 //!
 //! // 业务层注册消费者（通常在 consumer::init 中完成）
 //! aop::registry().register_consumer(Arc::new(MyConsumer)).unwrap();
@@ -30,6 +30,7 @@ pub use core::{
 };
 pub use queue::EventQueue;
 
+use crate::pkg::request_context::RequestContext;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
@@ -46,8 +47,13 @@ pub fn registry() -> &'static Registry {
 }
 
 /// 发布事件（便捷方法）
-pub async fn publish<E: Event>(event: E) {
-    REGISTRY.publish(event).await
+///
+/// 调用方必须传入当前请求 ctx，框架会从中抽取可传输子 context（[`ContextCarrier`]）
+/// 随事件流转，使消费侧能重建出同源 ctx（保留 log_id 等链路线索）。
+///
+/// [`ContextCarrier`]: crate::pkg::request_context::ContextCarrier
+pub async fn publish<E: Event>(ctx: &RequestContext, event: E) {
+    REGISTRY.publish(ctx, event).await
 }
 
 /// 启动 AOP 调度器

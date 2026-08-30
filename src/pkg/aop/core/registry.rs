@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
-use crate::pkg::RequestContext;
+use crate::pkg::request_context::{AOP_CONTEXT_CARRIER_KEY, ContextCarrier, RequestContext};
 use common::error::{Result, err};
 
 use super::metrics_hook::{AopEventMeta, AopMetricsHook};
@@ -98,7 +98,7 @@ impl Registry {
         Ok(())
     }
 
-    pub async fn publish<E: Event>(&self, event: E) {
+    pub async fn publish<E: Event>(&self, ctx: &RequestContext, event: E) {
         let kind = event.kind();
 
         let interested = {
@@ -145,6 +145,16 @@ impl Registry {
                 .or_insert(serde_json::json!(created_at));
         }
 
+        // 注入可传输子 context（context propagation）：抽取生产者 ctx 的可序列化
+        // 标识字段随事件流转，消费侧据此重建出同源 ctx（见 carried_ctx），
+        // 从而把整条链路（log_id 等）串联起来。
+        if let Some(obj) = event_json.as_object_mut() {
+            obj.insert(
+                AOP_CONTEXT_CARRIER_KEY.to_string(),
+                serde_json::to_value(ctx.to_carrier()).unwrap_or(serde_json::Value::Null),
+            );
+        }
+
         for consumer in interested {
             if !consumer.should_consume(&event_json).await {
                 continue;
@@ -164,7 +174,10 @@ impl Registry {
                     if let Some(hook) = self.metrics_hook() {
                         hook.on_consume_start(consumer.name(), &meta);
                     }
-                    match consumer.on_event(event_json.clone()).await {
+                    match consumer
+                        .on_event(Self::carried_ctx(&event_json), event_json.clone())
+                        .await
+                    {
                         Ok(()) => {
                             let duration_ms = start.elapsed().as_millis() as u64;
                             if let Some(hook) = self.metrics_hook() {
@@ -207,6 +220,16 @@ impl Registry {
                 }
             }
         }
+    }
+
+    /// 从事件 JSON 还原消费侧 ctx。
+    ///
+    /// 提取顶层 `context_carrier` 并重建成与主 context 同源的 [`RequestContext`]
+    /// （保留 log_id 等链路标识）；缺失或解析失败时回退为 system ctx。
+    fn carried_ctx(event_json: &serde_json::Value) -> RequestContext {
+        ContextCarrier::from_json(event_json)
+            .map(|c| c.into_context())
+            .unwrap_or_else(RequestContext::new_system)
     }
 
     pub async fn dequeue_for(&self, consumer_name: &str) -> Result<Option<serde_json::Value>> {
@@ -359,7 +382,10 @@ impl Registry {
                                     hook.on_consume_start(&consumer_name, &meta);
                                 }
 
-                                match consumer.on_event(event_json).await {
+                                match consumer
+                                    .on_event(Self::carried_ctx(&event_json), event_json)
+                                    .await
+                                {
                                     Ok(()) => {
                                         let duration_ms = start.elapsed().as_millis() as u64;
                                         // 埋点：on_consume_success
@@ -654,7 +680,7 @@ mod tests {
         fn empty_queue_sleep_ms(&self) -> u64 {
             20
         }
-        async fn on_event(&self, _event: serde_json::Value) -> Result<()> {
+        async fn on_event(&self, _ctx: RequestContext, _event: serde_json::Value) -> Result<()> {
             self.consumed.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -714,9 +740,12 @@ mod tests {
 
         // 第一条事件被正常消费
         registry
-            .publish(ShutdownTestEvent {
-                id: "evt-1".to_string(),
-            })
+            .publish(
+                &RequestContext::new_system(),
+                ShutdownTestEvent {
+                    id: "evt-1".to_string(),
+                },
+            )
             .await;
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
         while consumed.load(Ordering::SeqCst) == 0 {
@@ -733,9 +762,12 @@ mod tests {
 
         // 停机后新事件留在队列中，不再被消费
         registry
-            .publish(ShutdownTestEvent {
-                id: "evt-2".to_string(),
-            })
+            .publish(
+                &RequestContext::new_system(),
+                ShutdownTestEvent {
+                    id: "evt-2".to_string(),
+                },
+            )
             .await;
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         assert_eq!(

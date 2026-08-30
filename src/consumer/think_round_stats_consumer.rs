@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 
 use crate::models::events::ThinkRoundEvent;
+use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::pkg::stats::{ModelCallEvent, global_stats};
 use common::error::Result;
@@ -40,7 +41,7 @@ impl Consumer for ThinkRoundStatsConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let event: ThinkRoundEvent = serde_json::from_value(event).map_err(|e| {
             common::error::Error::internal(format!("failed to deserialize ThinkRoundEvent: {}", e))
         })?;
@@ -63,7 +64,7 @@ impl Consumer for ThinkRoundStatsConsumer {
             .with_total_tokens(event.total_tokens);
 
         if let Some(stats) = global_stats() {
-            let ctx = crate::pkg::request_context::RequestContext::new_system();
+            // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）
             let _ = stats.record(ctx, stats_event).await;
         }
 

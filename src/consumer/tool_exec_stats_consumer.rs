@@ -4,6 +4,7 @@
 //! Subscribes to "agent.tool.executed" events and records ToolCallEvent stats.
 
 use crate::models::events::ToolExecEvent;
+use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::pkg::stats::{ToolCallEvent, global_stats};
 use crate::pkg::tool_tracing::entry::ToolCallStatus;
@@ -38,7 +39,7 @@ impl Consumer for ToolExecStatsConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let event: ToolExecEvent = serde_json::from_value(event).map_err(|e| {
             common::error::Error::internal(format!("failed to deserialize ToolExecEvent: {}", e))
         })?;
@@ -63,7 +64,7 @@ impl Consumer for ToolExecStatsConsumer {
             .with_status(status);
 
         if let Some(stats) = global_stats() {
-            let ctx = crate::pkg::request_context::RequestContext::new_system();
+            // ctx 已由框架从事件 carrier 还原（携带 log_id 等链路标识）
             let _ = stats.record(ctx, stats_event).await;
         }
 

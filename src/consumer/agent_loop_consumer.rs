@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use common::error::Result;
 
 use crate::models::events::{AgentLoopEvent, ThinkRoundEvent};
+use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 
 pub struct AgentLoopConsumer;
@@ -40,7 +41,7 @@ impl Consumer for AgentLoopConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let kind = event.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
         match kind {

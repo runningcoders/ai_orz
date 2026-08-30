@@ -4,6 +4,7 @@ use ai_orz_macros::LogFields;
 use axum::http;
 use common::constants::http_header;
 use common::enums::{CallerType, MessageRole};
+use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use std::sync::Arc;
 
@@ -529,6 +530,103 @@ impl RequestContext {
     /// 安全获取统计模块（返回 Option，避免未初始化时 panic）
     pub fn stats_opt(&self) -> Option<&crate::pkg::stats::Stats> {
         self.storage.stats_opt()
+    }
+
+    /// 生成可通过 AOP 事件传输的子 context（主 context 的可序列化衍生子集）
+    ///
+    /// 仅抽取可序列化、可用于链路串联的关键标识字段（见 [`ContextCarrier`]）。
+    /// storage 等基础设施不可序列化，不携带；消费侧还原时会用全局 storage 兜底。
+    pub fn to_carrier(&self) -> ContextCarrier {
+        ContextCarrier::from_context(self)
+    }
+}
+
+// ==================== Context Carrier（事件可传输上下文子集）====================
+
+/// 事件 JSON 顶层注入 key：可传输子 context
+pub const AOP_CONTEXT_CARRIER_KEY: &str = "context_carrier";
+
+/// 可通过 AOP 事件传输的上下文子集（[`RequestContext`] 的可序列化衍生）。
+///
+/// 作用：在生产者→消费者边界，把主 context 中“可序列化、可传输”的关键标识字段
+/// 抽出来随事件一起流转，消费侧据此重建出与生产者同源的 [`RequestContext`]，
+/// 从而把整条链路（log_id 等）串联起来排查问题。
+///
+/// 【扩展点】后续要新增可传递字段，只需：
+/// 1. 在此结构体增加字段；
+/// 2. 在 [`RequestContext::to_carrier`] 中写入；
+/// 3. 在 [`ContextCarrier::into_context`] 中读出（infra 字段 storage 由全局兜底）。
+/// 4. 业务事件结构体与消费者实现均无需改动。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextCarrier {
+    /// 日志追踪 ID（链路串联主键）
+    pub log_id: String,
+    /// 当前用户 ID
+    pub user_id: Option<String>,
+    /// 当前用户名
+    pub username: Option<String>,
+    /// 当前组织 ID
+    pub organization_id: Option<String>,
+    /// 当前用户角色（数值）
+    pub user_role: Option<i32>,
+    /// 调用方类型
+    pub caller_type: CallerType,
+    /// 当前 Agent ID
+    pub agent_id: Option<String>,
+    /// 当前 Task ID
+    pub task_id: Option<String>,
+    /// 当前 Project ID
+    pub project_id: Option<String>,
+    /// 当前 Model Provider ID
+    pub model_provider_id: Option<String>,
+    /// 当前 Model 名称
+    pub model_name: Option<String>,
+    /// 当前工具调用 ID
+    pub tool_call_id: Option<String>,
+}
+
+impl ContextCarrier {
+    /// 从主 context 生成可传输子 context（抽取可序列化标识字段）
+    pub fn from_context(ctx: &RequestContext) -> Self {
+        Self {
+            log_id: ctx.log_id.clone(),
+            user_id: ctx.user_id.clone(),
+            username: ctx.username.clone(),
+            organization_id: ctx.organization_id.clone(),
+            user_role: ctx.user_role,
+            caller_type: ctx.caller_type,
+            agent_id: ctx.agent_id.clone(),
+            task_id: ctx.task_id.clone(),
+            project_id: ctx.project_id.clone(),
+            model_provider_id: ctx.model_provider_id.clone(),
+            model_name: ctx.model_name.clone(),
+            tool_call_id: ctx.tool_call_id.clone(),
+        }
+    }
+
+    /// 从事件 JSON 顶层提取 carrier（缺失或解析失败返回 None）
+    pub fn from_json(event_json: &serde_json::Value) -> Option<Self> {
+        event_json
+            .get(AOP_CONTEXT_CARRIER_KEY)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+
+    /// 还原为主 context（storage 由全局 storage 兜底）
+    pub fn into_context(self) -> RequestContext {
+        RequestContext::builder()
+            .log_id(self.log_id)
+            .try_user_id(self.user_id)
+            .try_username(self.username)
+            .try_organization_id(self.organization_id)
+            .try_user_role(self.user_role)
+            .caller_type(self.caller_type)
+            .try_agent_id(self.agent_id)
+            .try_task_id(self.task_id)
+            .try_project_id(self.project_id)
+            .try_model_provider_id(self.model_provider_id)
+            .try_model_name(self.model_name)
+            .try_tool_call_id(self.tool_call_id)
+            .build()
     }
 }
 

@@ -4,6 +4,7 @@
 //! Subscribes to "agent.tool.executed" events and writes to ToolCallLogger.
 
 use crate::models::events::ToolExecEvent;
+use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use async_trait::async_trait;
@@ -37,7 +38,7 @@ impl Consumer for ToolExecLogConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let event: ToolExecEvent = serde_json::from_value(event).map_err(|e| {
             common::error::Error::internal(format!("failed to deserialize ToolExecEvent: {}", e))
         })?;

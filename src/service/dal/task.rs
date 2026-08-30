@@ -625,8 +625,9 @@ impl TaskDal for TaskDalImpl {
             let old_status = task_po.status;
             // 仅在状态实际变化时才发布，避免重复事件
             if old_status != status {
-                let _ =
-                    crate::pkg::aop::publish(crate::models::events::TaskStatusChangedEvent::new(
+                let _ = crate::pkg::aop::publish(
+                    &ctx,
+                    crate::models::events::TaskStatusChangedEvent::new(
                         &task_po.id,
                         &task_po.title,
                         task_po.project_id.as_deref(),
@@ -634,8 +635,9 @@ impl TaskDal for TaskDalImpl {
                         old_status,
                         status,
                         task_po.progress,
-                    ))
-                    .await;
+                    ),
+                )
+                .await;
             }
         }
 

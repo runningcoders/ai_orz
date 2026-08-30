@@ -274,12 +274,10 @@ impl RuntimeDomainImpl {
         let policy = build_policy_for_scene(agent, scene, think_runtime.cancel_flag());
 
         // 4. 发布循环启动事件
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
-            &agent.po.id,
-            &trace_id,
-            "compact",
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::started(&agent.po.id, &trace_id, "compact", None),
+        )
         .await;
 
         // 5. 执行压缩循环（小轮次预算，与 Agent 的 max_thinking_rounds 无关）
@@ -357,14 +355,17 @@ impl RuntimeDomainImpl {
                 e
             });
 
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-            &agent.po.id,
-            &trace_id,
-            "compact",
-            "success",
-            start_time.elapsed().as_millis() as u64,
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::finished(
+                &agent.po.id,
+                &trace_id,
+                "compact",
+                "success",
+                start_time.elapsed().as_millis() as u64,
+                None,
+            ),
+        )
         .await;
 
         Ok(CompactOutcome {

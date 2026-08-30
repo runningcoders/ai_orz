@@ -75,12 +75,11 @@ impl Consumer for MessageConsumer {
         ConsumeMode::Async
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let msg_event: MessageCreatedEvent = serde_json::from_value(event)?;
 
         // 从 DB 加载完整 Message
-        // Consumer 由 AOP 调度器触发，属于系统触发场景
-        let ctx = RequestContext::new_system();
+        // ctx 已由 AOP 框架从事件顶层 context_carrier 还原，保留原始 log_id 等链路标识
         let message = message_dal::dal()
             .find_by_id(ctx.clone(), &msg_event.message_id)
             .await?
@@ -95,16 +94,16 @@ impl Consumer for MessageConsumer {
             message.message_type()
         );
 
-        // 根据 to_role 分发到对应 domain
+        // 根据 to_role 分发到对应 domain（携带框架还原的 ctx，下游可继续追加/修饰）
         match message.to_role() {
             MessageRole::Agent => {
-                self.handle_agent_message(&message).await?;
+                self.handle_agent_message(&ctx, &message).await?;
             }
             MessageRole::User => {
-                self.handle_user_message(&message).await?;
+                self.handle_user_message(&ctx, &message).await?;
             }
             MessageRole::System => {
-                self.handle_system_message(&message).await?;
+                self.handle_system_message(&ctx, &message).await?;
             }
         }
 
@@ -144,7 +143,7 @@ impl Consumer for MessageConsumer {
 
 impl MessageConsumer {
     /// Agent 消息处理：调用 RuntimeDomain 唤醒 Agent
-    async fn handle_agent_message(&self, message: &Message) -> Result<()> {
+    async fn handle_agent_message(&self, ctx: &RequestContext, message: &Message) -> Result<()> {
         let agent_id = &message.po.to_id;
 
         // 原子地占用 Agent（修复 TOCTOU 竞态）
@@ -166,7 +165,7 @@ impl MessageConsumer {
         // awaken 内部会创建 BusyGuard 确保清理
         // 但 awaken 之前的失败（如 get_agent）需要显式清理
 
-        let mut ctx = self.rebuild_context(message);
+        let mut ctx = self.rebuild_context(message, ctx);
 
         // 加载 Agent 实体（包含工具 + 技能 + 统计信息，供唤醒流程使用）
         let fetch_options = AgentFetchOptions {
@@ -495,8 +494,8 @@ impl MessageConsumer {
     }
 
     /// User 消息处理：调用 MessageDomain 推送给用户
-    async fn handle_user_message(&self, message: &Message) -> Result<()> {
-        let ctx = self.rebuild_context(message);
+    async fn handle_user_message(&self, ctx: &RequestContext, message: &Message) -> Result<()> {
+        let ctx = self.rebuild_context(message, ctx);
         let cmd = DeliverMessageCommand {
             message,
             user_id: &message.po.to_id,
@@ -527,9 +526,9 @@ impl MessageConsumer {
     }
 
     /// System 消息处理：按类型分发
-    async fn handle_system_message(&self, message: &Message) -> Result<()> {
+    async fn handle_system_message(&self, ctx: &RequestContext, message: &Message) -> Result<()> {
         match message.message_type() {
-            MessageType::ToolCallRequest => self.handle_tool_call_request(message).await,
+            MessageType::ToolCallRequest => self.handle_tool_call_request(ctx, message).await,
             _ => {
                 sys_debug!("system message processed by system module");
                 Ok(())
@@ -538,11 +537,16 @@ impl MessageConsumer {
     }
 
     /// ToolCallRequest 处理：调用 RuntimeDomain 执行工具，MessageDomain 回写结果
-    async fn handle_tool_call_request(&self, message: &Message) -> Result<()> {
+    async fn handle_tool_call_request(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+    ) -> Result<()> {
         let tool_call = parse_tool_call_request(message)?;
         let args = tool_call.args.unwrap_or(Value::Null);
 
-        let mut builder = RequestContext::builder();
+        // 以框架还原的 ctx 为基底（保留 log_id 等链路标识），再叠加 ToolCallMessage 显式携带的字段
+        let mut builder = ctx.to_builder();
         builder = builder.agent_id(tool_call.from_id.clone());
         // ToolCallRequest 一定由 Agent 发起（to_role=System）
         builder = builder.caller_type(CallerType::Agent);
@@ -614,14 +618,19 @@ impl MessageConsumer {
         Ok(())
     }
 
-    /// 从 MessagePo 重建 RequestContext
+    /// 从 MessagePo + 传入的基础 ctx 重建 RequestContext
     ///
-    /// caller_type 根据 message.from_role() 推断：
-    /// - User 消息 → caller_type=User（用户触发）
-    /// - Agent 消息 → caller_type=Agent（Agent 主动发起）
-    /// - System 消息 → caller_type=System（系统调度）
-    fn rebuild_context(&self, message: &Message) -> RequestContext {
-        let mut builder = RequestContext::builder();
+    /// 以框架从事件还原的 `base` ctx 为基底（保留 log_id 等链路标识），
+    /// 叠加 message 派生的业务字段：
+    /// - organization_id（消息归属组织）
+    /// - caller_type 根据 message.from_role() 推断（User/Agent/System）
+    /// - user_id（User 消息时取 from_id）
+    /// - project_id / task_id / agent_id（to_id）
+    ///
+    /// 关键：保留 base 中的 log_id，从而把“用户发消息 → Agent 回复”整条链路
+    /// 串联到同一个 log_id，解决消费侧丢失调度 ID 的问题。
+    fn rebuild_context(&self, message: &Message, base: &RequestContext) -> RequestContext {
+        let mut builder = base.to_builder();
 
         if let Some(org_id) = &message.po.organization_id {
             builder = builder.organization_id(org_id.clone());

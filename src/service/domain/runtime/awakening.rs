@@ -299,12 +299,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             init_think_runtime_and_policy(agent, ThinkingScene::Awaken, &trace_id);
 
         // Step 2: 发布循环启动事件（AOP 同步转发）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
-            &agent.po.id,
-            &trace_id,
-            "awaken",
-            Some(&message.po.id),
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::started(&agent.po.id, &trace_id, "awaken", Some(&message.po.id)),
+        )
         .await;
 
         // Step 2.5: 工具已由 hr_domain.get_agent(with_tools=true) 加载到 agent.tools
@@ -640,14 +638,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                             stats_err
                         );
                     }
-                    let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-                        &agent.po.id,
-                        &trace_id,
-                        "awaken",
-                        "cancelled",
-                        duration_ms,
-                        Some(&message.po.id),
-                    ))
+                    let _ = crate::pkg::aop::publish(
+                        &ctx,
+                        AgentLoopEvent::finished(
+                            &agent.po.id,
+                            &trace_id,
+                            "awaken",
+                            "cancelled",
+                            duration_ms,
+                            Some(&message.po.id),
+                        ),
+                    )
                     .await;
                     return Ok(AwakeningResult {
                         agent_id: agent.po.id.clone(),
@@ -684,14 +685,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                             stats_err
                         );
                     }
-                    let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-                        &agent.po.id,
-                        &trace_id,
-                        "awaken",
-                        &format!("failed: {}", e),
-                        duration_ms,
-                        Some(&message.po.id),
-                    ))
+                    let _ = crate::pkg::aop::publish(
+                        &ctx,
+                        AgentLoopEvent::finished(
+                            &agent.po.id,
+                            &trace_id,
+                            "awaken",
+                            &format!("failed: {}", e),
+                            duration_ms,
+                            Some(&message.po.id),
+                        ),
+                    )
                     .await;
                     return Err(e);
                 }
@@ -788,14 +792,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         }
 
         // 发布循环完成事件（成功）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-            &agent.po.id,
-            &trace_id,
-            "awaken",
-            "success",
-            duration_ms,
-            Some(&message.po.id),
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::finished(
+                &agent.po.id,
+                &trace_id,
+                "awaken",
+                "success",
+                duration_ms,
+                Some(&message.po.id),
+            ),
+        )
         .await;
 
         // Step 8: 返回结果
@@ -869,12 +876,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
             init_think_runtime_and_policy(agent, ThinkingScene::Settle, &trace_id);
 
         // 发布循环启动事件（AOP 同步转发）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
-            &agent.po.id,
-            &trace_id,
-            "settle",
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::started(&agent.po.id, &trace_id, "settle", None),
+        )
         .await;
 
         // Step 3: 加载技能（已由 hr_domain.get_agent 加载到 agent）
@@ -1011,14 +1016,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                     );
                 }
                 // 发布循环完成事件（失败）
-                let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-                    &agent.po.id,
-                    &trace_id,
-                    "settle",
-                    &format!("settle failed: {}", e),
-                    duration_ms,
-                    None,
-                ))
+                let _ = crate::pkg::aop::publish(
+                    &ctx,
+                    AgentLoopEvent::finished(
+                        &agent.po.id,
+                        &trace_id,
+                        "settle",
+                        &format!("settle failed: {}", e),
+                        duration_ms,
+                        None,
+                    ),
+                )
                 .await;
                 return Err(e);
             }
@@ -1076,14 +1084,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         }
 
         // 发布循环完成事件（成功）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-            &agent.po.id,
-            &trace_id,
-            "settle",
-            "settle success",
-            duration_ms,
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::finished(
+                &agent.po.id,
+                &trace_id,
+                "settle",
+                "settle success",
+                duration_ms,
+                None,
+            ),
+        )
         .await;
 
         // Step 8: 返回结果
@@ -1107,12 +1118,10 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let trace_id = format!("intent-analyze-{}", ctx.log_id);
 
         // 发布循环启动事件（与 awaken/sleep_and_settle 对齐，监控可区分 Phase 1）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::started(
-            &agent.po.id,
-            &trace_id,
-            "intent-analyze",
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::started(&agent.po.id, &trace_id, "intent-analyze", None),
+        )
         .await;
 
         let result = self
@@ -1129,14 +1138,17 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         };
 
         // 发布循环完成事件（成功/失败均发布，监控可追踪 Phase 1 耗时与状态）
-        let _ = crate::pkg::aop::publish(AgentLoopEvent::finished(
-            &agent.po.id,
-            &trace_id,
-            "intent-analyze",
-            &status,
-            duration_ms,
-            None,
-        ))
+        let _ = crate::pkg::aop::publish(
+            &ctx,
+            AgentLoopEvent::finished(
+                &agent.po.id,
+                &trace_id,
+                "intent-analyze",
+                &status,
+                duration_ms,
+                None,
+            ),
+        )
         .await;
 
         result

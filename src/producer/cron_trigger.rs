@@ -72,7 +72,7 @@ impl Producer for CronTriggerProducer {
                 created_at: common::constants::utils::current_timestamp_ms(),
             };
 
-            registry.publish(event).await;
+            registry.publish(&ctx, event).await;
 
             system::domain()
                 .cron_manager()

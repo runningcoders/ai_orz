@@ -50,7 +50,7 @@ impl Consumer for CronTriggerConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let event: CronTriggerEvent = serde_json::from_value(event).map_err(|e| {
             Error::internal(format!("failed to deserialize cron trigger event: {}", e))
         })?;

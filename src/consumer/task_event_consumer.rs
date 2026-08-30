@@ -49,7 +49,7 @@ impl Consumer for TaskEventConsumer {
         ConsumeMode::Async
     }
 
-    async fn on_event(&self, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let event: TaskStatusChangedEvent = serde_json::from_value(event).map_err(|e| {
             common::error::Error::internal(format!(
                 "failed to deserialize TaskStatusChangedEvent: {}",
@@ -67,7 +67,7 @@ impl Consumer for TaskEventConsumer {
             return Ok(());
         };
 
-        let ctx = RequestContext::new_system();
+        // ctx 已由框架从事件 carrier 还原（保留 log_id 等链路标识）
 
         // 查询项目的 Owner Agent
         let project = crate::service::domain::project::domain()
