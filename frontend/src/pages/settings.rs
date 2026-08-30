@@ -19,7 +19,8 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::auth::use_auth_state;
 use crate::store::toast::use_toast;
 
-use crate::components::hud::HudPanel;
+use crate::components::hud::{HudCallout, HudPanel};
+use crate::utils::status::config_dimension_badge;
 
 #[component]
 pub fn Settings() -> Element {
@@ -136,10 +137,10 @@ pub fn Settings() -> Element {
 
                     div { class: "form-control w-full",
                         label { class: "label",
-                            span { class: "label-text font-medium flex items-center gap-2",
-                                "后端 API 地址"
-                                span { class: "badge badge-sm badge-ghost", "服务级" }
-                            }
+                                span { class: "label-text font-medium flex items-center gap-2",
+                                    "后端 API 地址"
+                                    span { class: config_dimension_badge("service"), "服务级" }
+                                }
                         }
                         input {
                             class: "input input-bordered hud-input w-full",
@@ -162,10 +163,10 @@ pub fn Settings() -> Element {
                     // ===== 组织级配置 =====
                     div { class: "form-control w-full",
                         label { class: "label",
-                            span { class: "label-text font-medium flex items-center gap-2",
-                                "组织级配置"
-                                span { class: "badge badge-sm badge-primary", "组织级" }
-                            }
+                                span { class: "label-text font-medium flex items-center gap-2",
+                                    "组织级配置"
+                                    span { class: config_dimension_badge("org"), "组织级" }
+                                }
                         }
 
                         if org_loading() {
@@ -196,8 +197,8 @@ pub fn Settings() -> Element {
                             }
 
                             if !is_super_admin {
-                                div { class: "alert alert-warning alert-sm mt-3",
-                                    "仅超级管理员可修改组织级配置。"
+                                HudCallout { tone: Some("warning".to_string()), extra_class: Some("mt-3".to_string()),
+                                    span { "仅超级管理员可修改组织级配置。" }
                                 }
                             }
 

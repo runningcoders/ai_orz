@@ -103,6 +103,21 @@ pub fn tag_chip() -> &'static str {
     "badge orz-tag badge-sm"
 }
 
+/// 配置维度徽章（HUD 玻璃徽章，单一事实源）。
+///
+/// 用于在设置页等场景标注某配置项的归属维度：
+/// - 服务级（默认）：跟随当前访问环境（如后端 API 地址，存 localStorage）
+/// - 组织级：跟随当前组织、全局生效（如消息向量索引开关）
+///
+/// 与状态徽章共用 `badge hud-badge badge-sm` 基底，保持尺寸与质感一致，
+/// 避免页面散写 `badge` 颜色类。
+pub fn config_dimension_badge(level: &str) -> &'static str {
+    match level {
+        "org" => "badge hud-badge badge-sm badge-primary",
+        _ => "badge hud-badge badge-sm badge-ghost", // 服务级为默认分支
+    }
+}
+
 /// 授权 / 登录状态徽章（单一事实源）。
 ///
 /// 取代原先散落在 finance 各页面、且一律用 `badge-ghost`（几乎不可见）的写法：
