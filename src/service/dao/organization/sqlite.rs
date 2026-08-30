@@ -4,12 +4,24 @@ use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use chrono::Utc;
+use common::api::OrganizationConfig;
 use common::enums::{OrganizationScope, OrganizationStatus};
 use common::error::Result;
-use std::sync::{Arc, OnceLock};
+use sqlx::{Row, SqlitePool};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 // ==================== 工厂方法 + 单例管理 ====================
 
 static ORGANIZATION_DAO: OnceLock<Arc<dyn OrganizationDao>> = OnceLock::new();
+
+/// 组织级配置缓存（读穿 + 写穿）
+///
+/// 真正存放配置的是 organizations 表的 `config` JSON 列；此处缓存避免每条消息落库时
+/// 都回查 DB。key 为 org_id，value 为解析后的 `OrganizationConfig`。
+/// - 读：先查缓存，未命中回退 DB 并回填（见 `get_org_config`）。
+/// - 写：更新 DB 后同步刷新缓存（见 `set_org_config`）。
+static ORG_CONFIG_CACHE: LazyLock<Mutex<HashMap<String, OrganizationConfig>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// 创建一个全新的 Organization DAO 实例（用于测试）
 pub fn new() -> Arc<dyn OrganizationDao> {
@@ -94,6 +106,44 @@ FROM organizations WHERE invite_code = ? AND status != 0
             .await?;
 
         Ok(org)
+    }
+
+    async fn get_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<OrganizationConfig> {
+        // (b) 默认读缓存，命中直接返回
+        if let Some(cfg) = ORG_CONFIG_CACHE.lock().unwrap().get(org_id) {
+            return Ok(cfg.clone());
+        }
+        // 缓存未命中，回退到 DB 并回填
+        let cfg = read_org_config_from_db(ctx.db_pool(), org_id).await?;
+        ORG_CONFIG_CACHE
+            .lock()
+            .unwrap()
+            .insert(org_id.to_string(), cfg.clone());
+        Ok(cfg)
+    }
+
+    async fn set_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()> {
+        let json = serde_json::to_string(config)?;
+        sqlx::query("UPDATE organizations SET config = ? WHERE id = ?")
+            .bind(json)
+            .bind(org_id)
+            .execute(ctx.db_pool())
+            .await?;
+        // (a) 写穿缓存：DB 落盘后同步刷新
+        ORG_CONFIG_CACHE
+            .lock()
+            .unwrap()
+            .insert(org_id.to_string(), config.clone());
+        Ok(())
     }
 
     async fn query(
@@ -192,4 +242,27 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
 
         Ok(row as u64)
     }
+}
+
+/// 从 DB 读取 organizations.config 列并解析为 `OrganizationConfig`
+///
+/// - 组织不存在或 config 列为空/非法 JSON → 回退默认（enable_message_vector = false）
+/// - 该查询使用裸 `sqlx::query`（非宏），不依赖 `.sqlx` 离线缓存
+async fn read_org_config_from_db(pool: &SqlitePool, org_id: &str) -> Result<OrganizationConfig> {
+    let row = sqlx::query("SELECT config FROM organizations WHERE id = ? AND status != 0")
+        .bind(org_id)
+        .fetch_optional(pool)
+        .await?;
+
+    let config = match row {
+        Some(row) => {
+            let raw: Option<String> = row.try_get("config").ok().flatten();
+            match raw {
+                Some(s) if !s.trim().is_empty() => serde_json::from_str(&s).unwrap_or_default(),
+                _ => OrganizationConfig::default(),
+            }
+        }
+        None => OrganizationConfig::default(),
+    };
+    Ok(config)
 }

@@ -31,7 +31,7 @@ pub async fn get_current_organization(
     // 获取组织完整信息
     let org = domain
         .organization_manage()
-        .get_by_id(ctx, &org_id)
+        .get_by_id(ctx.clone(), &org_id)
         .await?
         // JWT 通过但其引用的 organization_id 在 DB 中已不存在（后端清空数据、
         // 组织被删除等），此时不是 404，而是「会话身份已失效」：返回 401
@@ -45,6 +45,12 @@ pub async fn get_current_organization(
                 expired_jwt_cookie_header_value(),
             )
         })?;
+
+    // 读取组织级配置，随响应一并返回
+    let config = domain
+        .organization_manage()
+        .get_org_config(ctx, &org.id)
+        .await?;
 
     // 转换为响应格式
     let data = OrganizationInfoResponse {
@@ -62,6 +68,7 @@ pub async fn get_current_organization(
         },
         status: org.status.to_i32(),
         created_at: org.created_at,
+        config,
     };
 
     Ok(GetCurrentOrganizationResponse { data })

@@ -12,6 +12,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
 use async_trait::async_trait;
+use common::api::OrganizationConfig;
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 // ==================== 单例 ====================
@@ -114,6 +115,18 @@ pub trait OrganizationManage: Send + Sync {
         ctx: RequestContext,
         invite_code: &str,
     ) -> Result<Option<OrganizationPo>>;
+
+    /// 读取组织级配置（透传 DAL → DAO，带缓存）
+    async fn get_org_config(&self, ctx: RequestContext, org_id: &str)
+    -> Result<OrganizationConfig>;
+
+    /// 写入组织级配置（透传 DAL → DAO，写穿缓存）
+    async fn update_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()>;
 
     /// 更新组织信息
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;

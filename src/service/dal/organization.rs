@@ -7,6 +7,7 @@ use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
+use common::api::OrganizationConfig;
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -50,6 +51,18 @@ pub trait OrganizationDal: Send + Sync {
         ctx: RequestContext,
         invite_code: &str,
     ) -> Result<Option<OrganizationPo>>;
+
+    /// 读取组织级配置（透传 DAO，带缓存）
+    async fn get_org_config(&self, ctx: RequestContext, org_id: &str)
+    -> Result<OrganizationConfig>;
+
+    /// 写入组织级配置（透传 DAO，写穿缓存）
+    async fn update_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()>;
 
     /// 创建组织
     async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
@@ -104,6 +117,25 @@ impl OrganizationDal for OrganizationDalImpl {
     ) -> Result<Option<OrganizationPo>> {
         self.organization_dao
             .find_by_invite_code(ctx, invite_code)
+            .await
+    }
+
+    async fn get_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<OrganizationConfig> {
+        self.organization_dao.get_org_config(ctx, org_id).await
+    }
+
+    async fn update_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()> {
+        self.organization_dao
+            .set_org_config(ctx, org_id, config)
             .await
     }
 

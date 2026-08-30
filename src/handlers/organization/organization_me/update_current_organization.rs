@@ -7,7 +7,8 @@ use common::api::{
     OrganizationInfoResponse, UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse,
 };
 use common::constants::utils;
-use common::error::Result;
+use common::enums::UserRole;
+use common::error::{Error, Result};
 
 /// Update information for the currently authenticated user's organization (admin only)
 #[register_handler_tool(
@@ -46,6 +47,21 @@ pub async fn update_current_organization(
         org.base_url = new_base_url;
     }
 
+    // 组织级配置：仅超级管理员可修改
+    if let Some(cfg) = params.config {
+        let role = ctx
+            .user_role()
+            .map(UserRole::from_i32)
+            .unwrap_or(UserRole::Member);
+        if !UserRole::has_permission(role, UserRole::SuperAdmin) {
+            return Err(Error::forbidden("权限不足，仅超级管理员可修改组织级配置"));
+        }
+        domain
+            .organization_manage()
+            .update_org_config(ctx.clone(), &org.id, &cfg)
+            .await?;
+    }
+
     // 更新修改时间
     org.updated_at = utils::current_timestamp_ms();
     if let Some(modifier_id) = ctx.user_id.clone() {
@@ -53,7 +69,16 @@ pub async fn update_current_organization(
     }
 
     // 保存更新
-    domain.organization_manage().update(ctx, &org).await?;
+    domain
+        .organization_manage()
+        .update(ctx.clone(), &org)
+        .await?;
+
+    // 读取组织级配置，随响应一并返回（本接口不修改配置）
+    let config = domain
+        .organization_manage()
+        .get_org_config(ctx, &org.id)
+        .await?;
 
     let data = OrganizationInfoResponse {
         organization_id: org.id.clone(),
@@ -70,6 +95,7 @@ pub async fn update_current_organization(
         },
         status: org.status.to_i32(),
         created_at: org.created_at,
+        config,
     };
 
     Ok(UpdateCurrentOrganizationResponse { data })

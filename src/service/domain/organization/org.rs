@@ -6,6 +6,7 @@ use crate::models::organization::OrganizationPo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
+use common::api::OrganizationConfig;
 use common::error::Result;
 use rand::Rng;
 
@@ -142,6 +143,25 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     /// 删除组织（软删除）
     async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<()> {
         self.org_dal.delete(ctx, org_id).await
+    }
+
+    /// 读取组织级配置（透传 DAL → DAO，带缓存）
+    async fn get_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<OrganizationConfig> {
+        self.org_dal.get_org_config(ctx, org_id).await
+    }
+
+    /// 写入组织级配置（透传 DAL → DAO，写穿缓存）
+    async fn update_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()> {
+        self.org_dal.update_org_config(ctx, org_id, config).await
     }
 
     /// 统计符合查询条件的组织数量（透传 DAL count）

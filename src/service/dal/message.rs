@@ -13,8 +13,10 @@ use crate::service::dao::message::{
     self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao,
 };
 use crate::service::dao::model_provider::ModelProviderDao;
+use crate::service::dao::organization::OrganizationDao;
 use common::enums::{MessageRole, MessageStatus, MessageType};
 use common::error::Result;
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 static MESSAGE_DAL: OnceLock<Arc<dyn MessageDal>> = OnceLock::new();
@@ -29,6 +31,7 @@ pub fn init() {
         message::vector_dao(),
         crate::service::dao::cortex::dao(),
         crate::service::dao::model_provider::dao(),
+        crate::service::dao::organization::dao(),
     ));
 }
 
@@ -37,12 +40,14 @@ pub fn new(
     message_vector_dao: Arc<dyn MessageVectorDao + Send + Sync>,
     cortex_dao: Arc<dyn CortexDao + Send + Sync>,
     model_provider_dao: Arc<dyn ModelProviderDao + Send + Sync>,
+    organization_dao: Arc<dyn OrganizationDao + Send + Sync>,
 ) -> Arc<dyn MessageDal> {
     Arc::new(MessageDalImpl {
         message_dao,
         message_vector_dao,
         cortex_dao,
         model_provider_dao,
+        organization_dao,
     })
 }
 
@@ -126,6 +131,7 @@ struct MessageDalImpl {
     message_vector_dao: Arc<dyn MessageVectorDao>,
     cortex_dao: Arc<dyn CortexDao>,
     model_provider_dao: Arc<dyn ModelProviderDao>,
+    organization_dao: Arc<dyn OrganizationDao>,
 }
 
 #[async_trait::async_trait]
@@ -145,7 +151,29 @@ impl MessageDal for MessageDalImpl {
             content: message.content().to_string(),
             created_at: message.created_at(),
         };
-        aop::publish(event).await;
+        aop::publish(&ctx, event).await;
+
+        // 组织级开关：默认不构建消息向量索引（enable_message_vector 默认 false）。
+        // 配置经组织 DAO 的缓存读取；关闭时连 Embedding Provider 都不查，
+        // 关键词 FTS 搜索不受影响。
+        let vector_enabled = match message.po.organization_id.as_deref() {
+            Some(org_id) => self
+                .organization_dao
+                .get_org_config(ctx.clone(), org_id)
+                .await
+                .map(|config| config.enable_message_vector)
+                .unwrap_or(false),
+            None => false,
+        };
+        if !vector_enabled {
+            log_debug!(
+                &ctx,
+                "vector_index",
+                message_id = %message.po.id,
+                "组织未开启消息向量索引，跳过"
+            );
+            return Ok(());
+        }
 
         match try_build_vector_params_for_entity(
             ctx.clone(),
@@ -396,51 +424,84 @@ impl MessageDal for MessageDalImpl {
     }
 
     async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+        // 清空全部 message 向量：天然让“关闭开关的 org”无残留（已被清、不重建）
         self.message_vector_dao
             .clear_collection(ctx.clone())
             .await?;
 
         let messages = self.query(ctx.clone(), MessageQuery::default()).await?;
-        sys_info!("rebuilding vector index for {} messages", messages.len());
 
-        for message in messages {
-            let ctx = enrich_ctx(&ctx, &message.po);
-            match try_build_vector_params_for_entity(
-                ctx.clone(),
-                &*self.cortex_dao,
-                &*self.model_provider_dao,
-                &message.po,
-            )
-            .await
-            {
-                Ok(Some(vec_params)) => {
-                    if let Err(e) = self
-                        .message_vector_dao
-                        .upsert_vector(ctx.clone(), message.id(), &vec_params)
-                        .await
-                    {
+        // 按 organization_id 分组，每组仅读一次组织配置（走 DAO 读穿缓存）
+        let mut by_org: HashMap<String, Vec<Message>> = HashMap::new();
+        for m in messages {
+            let key = m.po.organization_id.clone().unwrap_or_default();
+            by_org.entry(key).or_default().push(m);
+        }
+
+        let mut enabled = 0usize;
+        let mut skipped = 0usize;
+        for (org_id, msgs) in by_org {
+            // 无组织归属的消息不建向量
+            if org_id.is_empty() {
+                skipped += 1;
+                continue;
+            }
+            // DAL→DAO 注入字段读取组织级开关，关闭则整组跳过
+            let cfg = self
+                .organization_dao
+                .get_org_config(ctx.clone(), &org_id)
+                .await?;
+            if !cfg.enable_message_vector {
+                skipped += 1;
+                continue;
+            }
+            enabled += 1;
+            for message in msgs {
+                let ctx = enrich_ctx(&ctx, &message.po);
+                match try_build_vector_params_for_entity(
+                    ctx.clone(),
+                    &*self.cortex_dao,
+                    &*self.model_provider_dao,
+                    &message.po,
+                )
+                .await
+                {
+                    Ok(Some(vec_params)) => {
+                        if let Err(e) = self
+                            .message_vector_dao
+                            .upsert_vector(ctx.clone(), message.id(), &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "vector_index",
+                                message_id = %message.id(),
+                                error = ?e,
+                                "消息向量索引重建失败，已降级"
+                            );
+                        }
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "vector_index",
                             message_id = %message.id(),
                             error = ?e,
-                            "消息向量索引重建失败，已降级"
+                            "消息向量化失败，已降级"
                         );
                     }
+                    _ => {}
                 }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "vector_index",
-                        message_id = %message.id(),
-                        error = ?e,
-                        "消息向量化失败，已降级"
-                    );
-                }
-                _ => {}
             }
         }
 
+        sys_info!(
+            &ctx,
+            "vector_index",
+            "rebuild message vectors: enabled_orgs={} skipped_orgs={}",
+            enabled,
+            skipped
+        );
         Ok(())
     }
 }

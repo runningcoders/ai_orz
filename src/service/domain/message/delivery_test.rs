@@ -119,12 +119,18 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dal::attachment::set_for_test(attachment_dal.clone());
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
+    crate::service::dao::organization::init();
     let message_dal = crate::service::dal::message::new(
         message_dao,
         message_vector_dao,
         cortex_dao,
         model_provider_dao,
+        crate::service::dao::organization::dao(),
     );
+    // user_credential 必须在本函数内显式初始化：message_channel::init() 与 user::init()
+    // 都会读取 user_credential::dao()，本测试单独运行时没有其他测试预热该 OnceLock 单例，
+    // 不 init 会触发空锁 panic。
+    crate::service::dao::user_credential::init();
     crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例

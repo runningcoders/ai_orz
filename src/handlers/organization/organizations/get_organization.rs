@@ -21,10 +21,15 @@ pub async fn get_organization(
     let domain = organization::domain();
     let org = domain
         .organization_manage()
-        .get_by_id(ctx, &params.organization_id)
+        .get_by_id(ctx.clone(), &params.organization_id)
         .await?;
 
     let org = org.ok_or_else(|| common::error::Error::not_found("组织不存在".to_string()))?;
+
+    let config = domain
+        .organization_manage()
+        .get_org_config(ctx, &org.id)
+        .await?;
 
     let data = OrganizationInfoResponse {
         organization_id: org.id.clone(),
@@ -41,6 +46,7 @@ pub async fn get_organization(
         },
         status: org.status.to_i32(),
         created_at: org.created_at,
+        config,
     };
 
     Ok(GetOrganizationResponse { data })

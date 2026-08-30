@@ -2,6 +2,7 @@
 
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
+use common::api::OrganizationConfig;
 use common::enums::OrganizationScope;
 use common::error::Result;
 
@@ -24,6 +25,18 @@ pub trait OrganizationDao: Send + Sync {
         ctx: RequestContext,
         invite_code: &str,
     ) -> Result<Option<OrganizationPo>>;
+
+    /// 读取组织级配置（读穿缓存：命中直接返回，未命中回退 DB 并回填）
+    async fn get_org_config(&self, ctx: RequestContext, org_id: &str)
+    -> Result<OrganizationConfig>;
+
+    /// 写入组织级配置（写穿缓存：DB 落盘后同步刷新缓存）
+    async fn set_org_config(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        config: &OrganizationConfig,
+    ) -> Result<()>;
 
     /// 通用查询
     async fn query(

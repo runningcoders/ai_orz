@@ -101,11 +101,13 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDal + Send + Sync>, 
     let message_vector_dao = message::vector::new();
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
+    crate::service::dao::organization::init();
     let dal = crate::service::dal::message::new(
         message_dao,
         message_vector_dao,
         cortex_dao,
         model_provider_dao,
+        crate::service::dao::organization::dao(),
     );
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)

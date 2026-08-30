@@ -7,7 +7,8 @@ use common::api::{
     OrganizationInfoResponse, UpdateOrganizationRequest, UpdateOrganizationResponse,
 };
 use common::constants::utils;
-use common::error::Result;
+use common::enums::UserRole;
+use common::error::{Error, Result};
 
 /// Update organization information (admin only)
 #[register_handler_tool(
@@ -44,7 +45,31 @@ pub async fn update_organization(
     }
     org.updated_at = utils::current_timestamp_ms();
 
-    domain.organization_manage().update(ctx, &org).await?;
+    // 组织级配置：仅超级管理员可修改
+    if let Some(cfg) = params.config {
+        let role = ctx
+            .user_role()
+            .map(UserRole::from_i32)
+            .unwrap_or(UserRole::Member);
+        if !UserRole::has_permission(role, UserRole::SuperAdmin) {
+            return Err(Error::forbidden("权限不足，仅超级管理员可修改组织级配置"));
+        }
+        domain
+            .organization_manage()
+            .update_org_config(ctx.clone(), &params.organization_id, &cfg)
+            .await?;
+    }
+
+    domain
+        .organization_manage()
+        .update(ctx.clone(), &org)
+        .await?;
+
+    // 读取组织级配置（可能刚被更新），随响应一并返回
+    let config = domain
+        .organization_manage()
+        .get_org_config(ctx, &org.id)
+        .await?;
 
     let data = OrganizationInfoResponse {
         organization_id: org.id.clone(),
@@ -61,6 +86,7 @@ pub async fn update_organization(
         },
         status: org.status.to_i32(),
         created_at: org.created_at,
+        config,
     };
 
     Ok(UpdateOrganizationResponse { data })

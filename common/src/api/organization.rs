@@ -4,6 +4,21 @@ use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// 组织级可扩展配置
+///
+/// 以 JSON 形式存放在 `organizations.config` 列中，承载组织维度的开关类配置。
+/// 后续新增组织级配置项，只需在此结构体中追加字段（并带合理默认值），
+/// 无需改动数据库表结构。所有 DAL 通过 DAO 读取整个 `OrganizationConfig` 后取自己所需的字段。
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct OrganizationConfig {
+    /// 是否对普通消息构建向量索引。
+    ///
+    /// 默认 `false`：绝大多数普通消息的语义向量价值有限，且内容在消息/任务/项目中均有冗余，
+    /// 故默认不构建，避免无意义的 Embedding 开销。确有语义检索需求时由超级管理员开启。
+    #[serde(default)]
+    pub enable_message_vector: bool,
+}
+
 /// 系统初始化请求 - 创建第一个组织和超级管理员
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct InitializeSystemRequest {
@@ -152,6 +167,9 @@ pub struct OrganizationInfoResponse {
     pub status: i32,
     /// 创建时间戳
     pub created_at: i64,
+    /// 组织级配置（开关类，由超级管理员维护）
+    #[serde(default)]
+    pub config: OrganizationConfig,
 }
 
 /// 获取当前组织信息请求
@@ -174,6 +192,9 @@ pub struct UpdateCurrentOrganizationRequest {
     pub description: Option<String>,
     /// 新外部访问 Base URL（None 表示不修改）
     pub base_url: Option<String>,
+    /// 组织级配置（仅超级管理员可修改；None 表示不修改）
+    #[serde(default)]
+    pub config: Option<OrganizationConfig>,
 }
 
 /// 更新当前组织信息响应
@@ -212,6 +233,8 @@ pub struct UpdateOrganizationRequest {
     pub base_url: Option<String>,
     /// 新组织状态（None 表示不修改）
     pub status: Option<i32>,
+    /// 组织级配置（仅超级管理员可修改；None 表示不修改）
+    pub config: Option<OrganizationConfig>,
 }
 
 /// 更新组织信息响应
