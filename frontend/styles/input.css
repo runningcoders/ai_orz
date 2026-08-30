@@ -1515,6 +1515,43 @@
   }
   .badge.hud-badge.badge-sm { font-size: 10px; padding-inline: .625rem; }
 
+  /* HUD 状态语义色：半透明底 + 同色边框/文字，保持玻璃 pill 质感，避免 DaisyUI 默认实心填充 */
+  .badge.hud-badge.badge-success {
+    background-color: color-mix(in oklab, var(--color-success) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-success) 40%, transparent);
+    color: var(--color-success);
+  }
+  .badge.hud-badge.badge-error {
+    background-color: color-mix(in oklab, var(--color-error) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-error) 40%, transparent);
+    color: var(--color-error);
+  }
+  .badge.hud-badge.badge-warning {
+    background-color: color-mix(in oklab, var(--color-warning) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-warning) 40%, transparent);
+    color: var(--color-warning);
+  }
+  .badge.hud-badge.badge-info {
+    background-color: color-mix(in oklab, var(--color-info) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-info) 40%, transparent);
+    color: var(--color-info);
+  }
+  .badge.hud-badge.badge-primary {
+    background-color: color-mix(in oklab, var(--color-primary) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-primary) 40%, transparent);
+    color: var(--color-primary);
+  }
+  .badge.hud-badge.badge-neutral {
+    background-color: color-mix(in oklab, var(--color-neutral) 14%, transparent);
+    border-color: color-mix(in oklab, var(--color-neutral) 40%, transparent);
+    color: var(--color-neutral-content);
+  }
+  .badge.hud-badge.badge-ghost {
+    background-color: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    border-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+    color: var(--color-base-content);
+  }
+
   /* 按钮皮肤：覆盖 DaisyUI .btn（保留语义色，加 HUD 发丝边 + 聚焦辉光 + 微过渡） */
   .btn.hud-btn {
     border-width: 1px;

@@ -1,4 +1,6 @@
-//! 任务/项目/Agent 状态映射
+//! 任务/项目/Agent/工具调用 状态映射
+
+use common::api::ToolCallStatusDto;
 
 /// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职, 5=待离职）
 /// 单一事实源：避免各页面散写生命周期映射。
@@ -175,5 +177,53 @@ pub fn task_status_color(status: i32) -> &'static str {
         4 => "#10b981",
         5 => "#6b7280",
         _ => "#6b7280",
+    }
+}
+
+/// 工具调用状态中文文案（单一事实源）
+pub fn tool_call_status_text(status: ToolCallStatusDto) -> &'static str {
+    match status {
+        ToolCallStatusDto::Started => "执行中",
+        ToolCallStatusDto::Completed => "已完成",
+        ToolCallStatusDto::Failed => "失败",
+    }
+}
+
+/// 工具调用状态徽章 class（单一事实源）
+///
+/// 与 `task_status_badge` / `project_status_badge` 对齐，统一走
+/// `badge hud-badge badge-sm badge-xxx`，尺寸与语义一致。
+pub fn tool_call_status_badge(status: ToolCallStatusDto) -> &'static str {
+    match status {
+        ToolCallStatusDto::Started => "badge hud-badge badge-sm badge-info",
+        ToolCallStatusDto::Completed => "badge hud-badge badge-sm badge-success",
+        ToolCallStatusDto::Failed => "badge hud-badge badge-sm badge-error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_call_status_variants() {
+        assert_eq!(tool_call_status_text(ToolCallStatusDto::Started), "执行中");
+        assert_eq!(
+            tool_call_status_badge(ToolCallStatusDto::Started),
+            "badge hud-badge badge-sm badge-info"
+        );
+        assert_eq!(
+            tool_call_status_text(ToolCallStatusDto::Completed),
+            "已完成"
+        );
+        assert_eq!(
+            tool_call_status_badge(ToolCallStatusDto::Completed),
+            "badge hud-badge badge-sm badge-success"
+        );
+        assert_eq!(tool_call_status_text(ToolCallStatusDto::Failed), "失败");
+        assert_eq!(
+            tool_call_status_badge(ToolCallStatusDto::Failed),
+            "badge hud-badge badge-sm badge-error"
+        );
     }
 }

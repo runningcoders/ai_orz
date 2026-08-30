@@ -16,9 +16,8 @@ use crate::components::process_detail::ProcessDetailContent;
 use crate::components::state::Loading;
 use crate::store::toast::use_toast;
 use crate::utils::format_timestamp_opt;
-use common::api::{
-    ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail, ToolCallStatusDto,
-};
+use crate::utils::status::{tool_call_status_badge, tool_call_status_text};
+use common::api::{ProcessInfo, QueryToolCallEntriesRequest, ToolCallEntryDetail};
 
 /// 工具调用记录查询条数上限（JSONL 扫描开销控制）
 const ENTRY_LIMIT: usize = 30;
@@ -28,24 +27,6 @@ const REFRESH_DEBOUNCE_MS: u64 = 2000;
 
 /// input/output 摘要最大字符数
 const SUMMARY_MAX_CHARS: usize = 300;
-
-/// 工具调用状态徽标样式
-pub fn tool_call_status_badge(status: ToolCallStatusDto) -> &'static str {
-    match status {
-        ToolCallStatusDto::Started => "badge hud-badge badge-info",
-        ToolCallStatusDto::Completed => "badge hud-badge badge-success",
-        ToolCallStatusDto::Failed => "badge hud-badge badge-error",
-    }
-}
-
-/// 工具调用状态文案
-pub fn tool_call_status_text(status: ToolCallStatusDto) -> &'static str {
-    match status {
-        ToolCallStatusDto::Started => "执行中",
-        ToolCallStatusDto::Completed => "已完成",
-        ToolCallStatusDto::Failed => "失败",
-    }
-}
 
 /// 耗时格式化（毫秒）：<1s 显示 ms，否则保留一位小数的秒
 pub fn format_duration_ms(ms: u64) -> String {
@@ -317,28 +298,6 @@ mod tests {
             exit_code: None,
             log_path: String::new(),
         }
-    }
-
-    #[test]
-    fn status_badge_and_text_variants() {
-        assert_eq!(
-            tool_call_status_badge(ToolCallStatusDto::Started),
-            "badge hud-badge badge-info"
-        );
-        assert_eq!(
-            tool_call_status_badge(ToolCallStatusDto::Completed),
-            "badge hud-badge badge-success"
-        );
-        assert_eq!(
-            tool_call_status_badge(ToolCallStatusDto::Failed),
-            "badge hud-badge badge-error"
-        );
-        assert_eq!(tool_call_status_text(ToolCallStatusDto::Started), "执行中");
-        assert_eq!(
-            tool_call_status_text(ToolCallStatusDto::Completed),
-            "已完成"
-        );
-        assert_eq!(tool_call_status_text(ToolCallStatusDto::Failed), "失败");
     }
 
     #[test]
