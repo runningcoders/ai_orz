@@ -56,6 +56,10 @@ pub async fn get_agent(req: GetAgentRequest) -> Result<GetAgentResponse, ApiErro
         ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
+        // 工具/技能全景开关：后端以 query 读取，漏传会默认 false 导致
+        // tools_overview / skills_overview 不装配，详情页"工具与技能"tab 仅显示 packs。
+        ("with_tools", req.with_tools.map(|v| v.to_string())),
+        ("with_skills", req.with_skills.map(|v| v.to_string())),
     ]);
     api_get(&format!("/api/v1/hr/agents/{}{}", req.id, qs)).await
 }
@@ -139,13 +143,6 @@ pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), 
 }
 
 // ===== Agent 单技能管理 =====
-
-/// 列出 Agent 已安装的技能列表
-pub async fn list_agent_skills(
-    agent_id: &str,
-) -> Result<common::api::ListAgentSkillsResponse, ApiError> {
-    api_get_or_default(&format!("/api/v1/hr/agents/{}/skills", agent_id)).await
-}
 
 /// 将源技能安装到指定 Agent（创建 Agent 私有副本）
 pub async fn install_skill_to_agent(
@@ -284,10 +281,6 @@ pub async fn unbind_tool_from_agent(req: UnbindToolFromAgentRequest) -> Result<(
     ))
     .await
 }
-
-// ===== 工具列表（从 Finance 域重导出） =====
-
-pub use super::finance::list_tools;
 
 // ===== 记忆搜索 =====
 

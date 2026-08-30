@@ -22,12 +22,11 @@ use crate::utils::{
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
     InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
-    ListMessagesRequest, ListModelProvidersResponseItem, ListToolsRequest, MessageListItem,
-    PaginationParams, ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams,
-    SkillListItem, SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem,
-    ToolQueryRequest, UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest,
-    UpdateAgentStatusRequest,
+    ListMessagesRequest, ListModelProvidersResponseItem, MessageListItem, PaginationParams,
+    ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams, SkillListItem,
+    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
+    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType};
 use dioxus::prelude::*;
@@ -73,7 +72,7 @@ fn SkillCard(
                 span { class: "font-medium", "{skill_name}" }
                 div { class: "flex gap-1",
                     if neural_badge {
-                        span { class: "badge hud-badge badge-primary badge-xs", "神经" }
+                        span { class: "badge orz-tag badge-xs", "神经" }
                     }
                     span { class: "badge hud-badge badge-success", "已安装" }
                 }
@@ -137,7 +136,7 @@ fn ToolCard(
                             "未就绪"
                         }
                     }
-                    span { class: "badge hud-badge {badge_class}", "{badge}" }
+                    span { class: "{badge_class}", "{badge}" }
                 }
             }
             p { class: "text-sm text-base-content/70 mt-2", "{tool_desc}" }
@@ -165,12 +164,10 @@ fn ToolCard(
     }
 }
 
-fn binding_status_badge_class(is_bound: bool) -> &'static str {
-    if is_bound {
-        "badge hud-badge badge-success"
-    } else {
-        "badge hud-badge badge-ghost"
-    }
+// 生命周期状态（已入职/面试中…）属「状态」语义，走 hud-badge 彩色玻璃徽章；
+// 角色 / 类型等属性标签才走 orz-tag（见 utils/status.rs 与 components）。
+fn binding_status_badge_class() -> &'static str {
+    "badge hud-badge badge-sm"
 }
 
 fn agent_status_label(status: i32) -> String {
@@ -186,11 +183,12 @@ fn agent_status_label(status: i32) -> String {
 }
 
 fn kind_badge_class(kind: &str) -> &'static str {
+    // Agent 来源类型（local/cli/remote）是「类别标签」，统一走中性 orz-tag chip
     match kind {
-        "local" => "badge hud-badge badge-info",
-        "cli" => "badge hud-badge badge-accent",
-        "remote" => "badge hud-badge badge-success",
-        _ => "badge hud-badge badge-ghost",
+        "local" => "badge orz-tag badge-sm",
+        "cli" => "badge orz-tag badge-sm",
+        "remote" => "badge orz-tag badge-sm",
+        _ => "badge orz-tag badge-sm",
     }
 }
 
@@ -296,14 +294,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut skill_tags = use_signal(Vec::<String>::new);
     // 技能包卸载确认对话框：存当前待卸载的 tag
     let mut show_skill_pack_uninstall_dialog = use_signal(|| None::<String>);
-    let mut all_tools = use_signal(Vec::<ToolListItem>::new);
     // 工具搜索动态结果与加载状态（SearchableSelect 动态搜索模式）
     let mut tool_search_results = use_signal(Vec::<ToolListItem>::new);
     let mut tool_search_loading = use_signal(|| false);
     // 单个技能安装：搜索结果、加载状态、已安装技能列表
     let mut skill_search_results = use_signal(Vec::<SkillListItem>::new);
     let mut skill_search_loading = use_signal(|| false);
-    let mut installed_skills = use_signal(Vec::<SkillListItem>::new);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(Vec::<String>::new);
@@ -353,14 +349,6 @@ pub fn HrAgentDetail(id: String) -> Element {
             match list_skill_tags().await {
                 Ok(resp) => skill_tags.set(resp.tags),
                 Err(e) => toast.error(format!("获取技能包标签失败: {}", e)),
-            }
-            match list_agent_skills(&aid).await {
-                Ok(resp) => installed_skills.set(resp.skills),
-                Err(e) => toast.error(format!("获取已安装技能失败: {}", e)),
-            }
-            match list_tools(ListToolsRequest::default()).await {
-                Ok(resp) => all_tools.set(resp.items),
-                Err(e) => toast.error(format!("获取工具列表失败: {}", e)),
             }
             // 消息流：后端分页拉取，只取与本 Agent 相关的信息流
             // （from_id=aid OR to_id=aid，见 fetch_agent_messages 的双向查询说明）
@@ -640,13 +628,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                     .sum::<usize>()
                 + skills_overview.standalone_skills.len();
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
-            let tab0_class = if active_tab() == 0 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab1_class = if active_tab() == 1 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab2_class = if active_tab() == 2 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab3_class = if active_tab() == 3 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab4_class = if active_tab() == 4 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab5_class = if active_tab() == 5 { "tab tab-lg tab-active" } else { "tab tab-lg" };
-            let tab6_class = if active_tab() == 6 { "tab tab-lg tab-active" } else { "tab tab-lg" };
+            let tab0_class = if active_tab() == 0 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab1_class = if active_tab() == 1 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab2_class = if active_tab() == 2 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab3_class = if active_tab() == 3 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab4_class = if active_tab() == 4 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab5_class = if active_tab() == 5 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+            let tab6_class = if active_tab() == 6 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
 
             rsx! {
                 HudPanel {
@@ -696,8 +684,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                         }
 
-                        // Tab 导航
-                        div { class: "tabs tabs-boxed hud-tabs mb-6",
+                        // Tab 导航（统一 HUD 切换器风格：hud-btn 切换，不再用 DaisyUI boxed tabs）
+                        div { class: "flex flex-wrap gap-2 mb-6",
                             button {
                                 class: "{tab0_class}",
                                 onclick: move |_| active_tab.set(0),
@@ -755,7 +743,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                         div {
                                             span { class: "block text-sm text-base-content/70 mb-1", "状态" }
-                                            span { class: "{binding_status_badge_class(a.status != 0)}",
+                                            span { class: "{binding_status_badge_class()}",
                                                 "{agent_status_label(a.status)}"
                                             }
                                         }
@@ -777,7 +765,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     if !capabilities.is_empty() {
                                         div { class: "flex flex-wrap gap-2",
                                             for cap in capabilities.iter() {
-                                                span { class: "badge hud-badge badge-info", "{cap}" }
+                                                span { class: "badge orz-tag badge-sm", "{cap}" }
                                             }
                                         }
                                     } else {
@@ -935,7 +923,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         for (status, label) in STATUS_OPTIONS {
                                             {
                                                 let is_current = a.status == *status;
-                                                let btn_class = if is_current { "btn btn-primary btn-sm" } else { "btn btn-ghost btn-sm" };
+                                                let btn_class = if is_current { "btn hud-btn btn-primary btn-sm" } else { "btn hud-btn btn-ghost btn-sm" };
                                                 let target_status_val = *status;
                                                 let aid = agent_id_signal();
                                                 let label_str = label.to_string();
@@ -1013,7 +1001,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let aid = agent_id_signal();
                                                     rsx! {
                                                         span {
-                                                            class: "badge hud-badge badge-accent gap-1",
+                                                            class: "badge orz-tag gap-1",
                                                             "{tag}"
                                                             button {
                                                                 class: "badge-remove",
@@ -1077,7 +1065,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     let tag_clone = tag.clone();
                                                     rsx! {
                                                         span {
-                                                            class: "badge hud-badge badge-info gap-1",
+                                                            class: "badge orz-tag gap-1",
                                                             "{tag}"
                                                             button {
                                                                 class: "badge-remove",
@@ -1118,9 +1106,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         }).await {
                                                             Ok(_) => {
                                                                 toast.success("技能已安装");
-                                                                match list_agent_skills(&aid).await {
-                                                                    Ok(resp) => installed_skills.set(resp.skills),
-                                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                                // 重新拉取 Agent 全景（skills_overview 三分组），使新装技能立即可见
+                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                 }
                                                             }
                                                             Err(e) => toast.error(format!("安装失败: {}", e)),
@@ -1158,7 +1147,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             div { class: "mb-4",
                                                 div { class: "flex items-center gap-2 mb-2",
                                                     h4 { class: "font-semibold text-base", "🧠 神经技能" }
-                                                    span { class: "badge hud-badge badge-xs badge-primary badge-outline",
+                                                    span { class: "badge orz-tag badge-xs",
                                                         "{skills_overview.neural_skills.len()}"
                                                     }
                                                 }
@@ -1183,7 +1172,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     key: "skg-{pack.tag}",
                                                     div { class: "flex items-center gap-2 mb-2",
                                                         h4 { class: "font-semibold text-base", "📦 技能包：{pack.tag}" }
-                                                        span { class: "badge hud-badge badge-xs badge-accent badge-outline",
+                                                        span { class: "badge orz-tag badge-xs",
                                                             "{pack.skills.len()}"
                                                         }
                                                     }
@@ -1207,7 +1196,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             div { class: "mb-4",
                                                 div { class: "flex items-center gap-2 mb-2",
                                                     h4 { class: "font-semibold text-base", "🆓 独立技能" }
-                                                    span { class: "badge hud-badge badge-xs badge-neutral badge-outline",
+                                                    span { class: "badge orz-tag badge-xs",
                                                         "{skills_overview.standalone_skills.len()}"
                                                     }
                                                 }
@@ -1296,7 +1285,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             div { class: "mb-4",
                                                 div { class: "flex items-center gap-2 mb-2",
                                                     h4 { class: "font-semibold text-base", "🧠 神经工具（天生可用）" }
-                                                    span { class: "badge hud-badge badge-xs badge-primary badge-outline",
+                                                    span { class: "badge orz-tag badge-xs",
                                                         "{tools_overview.neural_tools.len()}"
                                                     }
                                                 }
@@ -1307,7 +1296,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             tool: tool.clone(),
                                                             tone: "primary",
                                                             badge: "神经".to_string(),
-                                                            badge_class: "badge-primary badge-xs",
+                                                            badge_class: "badge orz-tag badge-xs",
                                                             show_unbind: false,
                                                             on_unbind: on_unbind_tool,
                                                         }
@@ -1321,7 +1310,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             div { class: "mb-4",
                                                 div { class: "flex items-center gap-2 mb-2",
                                                     h4 { class: "font-semibold text-base", "🔗 直接绑定" }
-                                                    span { class: "badge hud-badge badge-xs badge-success badge-outline",
+                                                    span { class: "badge orz-tag badge-xs",
                                                         "{tools_overview.bound_tools.len()}"
                                                     }
                                                 }
@@ -1332,7 +1321,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                             tool: tool.clone(),
                                                             tone: "success",
                                                             badge: "已绑定".to_string(),
-                                                            badge_class: "badge-success",
+                                                            badge_class: "badge orz-tag badge-xs",
                                                             show_unbind: true,
                                                             on_unbind: on_unbind_tool,
                                                         }
@@ -1348,7 +1337,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     key: "tpg-{pack.tag}",
                                                     div { class: "flex items-center gap-2 mb-2",
                                                         h4 { class: "font-semibold text-base", "📦 工具包：{pack.tag}" }
-                                                        span { class: "badge hud-badge badge-xs badge-accent badge-outline",
+                                                        span { class: "badge orz-tag badge-xs",
                                                             "{pack.tools.len()}"
                                                         }
                                                     }
@@ -1359,7 +1348,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 tool: tool.clone(),
                                                                 tone: "accent",
                                                                 badge: format!("来自 {}", pack.tag),
-                                                                badge_class: "badge-accent badge-xs",
+                                                                badge_class: "badge orz-tag badge-xs",
                                                                 show_unbind: false,
                                                                 on_unbind: on_unbind_tool,
                                                             }
@@ -1663,9 +1652,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 let key_clone = key.to_string();
                                                 let selected = edit_roles().iter().any(|r| r == key);
                                                 let cls = if selected {
-                                                    "btn btn-primary btn-sm"
+                                                    "btn hud-btn btn-primary btn-sm"
                                                 } else {
-                                                    "btn btn-outline btn-sm"
+                                                    "btn hud-btn btn-outline btn-sm"
                                                 };
                                                 rsx! {
                                                     button { class: cls,
@@ -1687,7 +1676,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap gap-2 items-center",
                                         if !edit_roles().is_empty() {
                                             for role in edit_roles() {
-                                                span { class: "badge hud-badge badge-accent badge-lg gap-1",
+                                                span { class: "badge orz-tag badge-lg gap-1",
                                                     "{role}",
                                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
@@ -1743,7 +1732,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap gap-2 items-center",
                                         if !edit_capabilities().is_empty() {
                                             for cap in edit_capabilities() {
-                                                span { class: "badge hud-badge badge-success badge-lg gap-1",
+                                                span { class: "badge orz-tag badge-lg gap-1",
                                                     "{cap}",
                                                     button { class: "btn hud-btn btn-ghost btn-xs",
                                                         onclick: move |_| {
