@@ -43,6 +43,7 @@ pub fn OrganizationInfo() -> Element {
                     Some(description())
                 },
                 base_url: None,
+                config: None,
             };
             match update_current_organization(req).await {
                 Ok(_) => toast.success("保存成功"),
