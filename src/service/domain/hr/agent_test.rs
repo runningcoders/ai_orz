@@ -988,6 +988,30 @@ async fn test_install_tool_pack_rejects_neural_tag(pool: SqlitePool) {
     );
 }
 
+/// 验证 install_skill_pack 对 neural 保留标签显式拒绝
+/// （神经技能所有 Agent 初始化时自动注入，无需通过技能包安装）
+#[sqlx::test]
+async fn test_install_skill_pack_rejects_neural_tag(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let agent = create_test_agent("NeuralSkillBlockedAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    let err = domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "neural")
+        .await
+        .expect_err("neural 标签应被 install_skill_pack 拒绝");
+    assert_eq!(
+        err.code,
+        common::error::ErrorCode::InvalidRequest,
+        "应返回 InvalidRequest 错误"
+    );
+}
+
 /// 验证 tools_overview 三分组互不相交且与 runtime 装配同源（neural → bound → pack）
 #[sqlx::test]
 async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool) {

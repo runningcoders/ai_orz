@@ -429,6 +429,15 @@ impl AgentManage for HrDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &agent);
 
+        // 神经技能所有 Agent 自动拥有（系统初始化时注入），无需通过技能包安装；
+        // 显式拒绝避免冗余安装和展示歧义
+        if tag == "neural" {
+            bail_err!(
+                InvalidRequest,
+                "neural 是系统保留标签，所有 Agent 自动拥有神经技能，无需通过技能包安装"
+            );
+        }
+
         // 幂等：tag 已安装则跳过
         if agent.po.get_runtime_config().has_skill_pack_tag(tag) {
             log_info!(
