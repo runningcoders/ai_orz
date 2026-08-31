@@ -1231,12 +1231,74 @@
         border-left: 3px solid var(--color-error);
       }
 
-      /* ===== Toast Progress Bar ===== */
-      .toast .alert { position: relative; overflow: hidden; transition: opacity 0.3s ease, transform 0.3s ease; }
+      /* ===== Toast 通知（统一 HUD 设计语言） =====
+         玻璃面板 + 语义左侧 accent 边 + 柔和投影；图标用语义色（非白色），
+         关闭按钮为 currentColor 幽灵图标（非白色实心按钮）。
+         结构对齐 .badge.hud-badge / .chat .chat-bubble-system / .tool-card-*：
+         浅玻璃底 + 同色发丝边 + 左侧语义色条。 */
+      .orz-toast {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.625rem;
+        width: 360px;
+        max-width: calc(100vw - 2rem);
+        padding: 0.75rem 0.875rem;
+        border-radius: var(--radius-box, 0.5rem);
+        border: 1px solid color-mix(in oklab, var(--toast-color) 30%, transparent);
+        border-left: 3px solid var(--toast-color);
+        background: color-mix(in oklab, var(--color-base-100) 88%, transparent);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow:
+          0 8px 28px -12px color-mix(in oklab, var(--color-base-content) 45%, transparent),
+          0 0 0 1px color-mix(in oklab, var(--toast-color) 14%, transparent);
+        color: var(--color-base-content);
+        font-family: var(--font-family-sans);
+        font-size: 0.875rem;
+        line-height: 1.5;
+        overflow: hidden;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      }
+      .orz-toast .orz-toast-icon {
+        flex: none;
+        width: 1.25rem; height: 1.25rem;
+        display: grid; place-items: center;
+        border-radius: 9999px;
+        font-size: 0.7rem; font-weight: 700; line-height: 1;
+        color: var(--toast-color);
+        background: color-mix(in oklab, var(--toast-color) 14%, transparent);
+        border: 1px solid color-mix(in oklab, var(--toast-color) 30%, transparent);
+      }
+      .orz-toast .orz-toast-msg {
+        flex: 1; min-width: 0;
+        padding-top: 0.0625rem;
+        word-break: break-word;
+      }
+      .orz-toast .orz-toast-close {
+        flex: none;
+        display: grid; place-items: center;
+        width: 1.5rem; height: 1.5rem;
+        margin: -0.125rem -0.25rem 0 0;
+        border: none; background: transparent;
+        border-radius: 9999px;
+        color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+        cursor: pointer; line-height: 1;
+        transition: color 0.15s ease, background 0.15s ease;
+      }
+      .orz-toast .orz-toast-close:hover {
+        color: var(--color-base-content);
+        background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      }
+      .orz-toast.is-success { --toast-color: var(--color-success); }
+      .orz-toast.is-error   { --toast-color: var(--color-error); }
+      .orz-toast.is-warning { --toast-color: var(--color-warning); }
+      .orz-toast.is-info    { --toast-color: var(--color-info); }
+
       .toast-leaving { opacity: 0 !important; transform: translateX(20%); }
       .toast-progress {
-        position: absolute; bottom: 0; left: 0; height: 3px;
-        background: currentColor; opacity: 0.3;
+        position: absolute; bottom: 0; left: 0; height: 2px;
+        background: var(--toast-color); opacity: 0.55;
         animation-name: toast-progress-shrink;
         animation-timing-function: linear; animation-fill-mode: forwards;
       }
@@ -1437,6 +1499,27 @@
   .hud-divider-text {
     font-family: var(--font-family-mono); font-size: 11px; letter-spacing: .16em;
     text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* 提示条：替代裸 alert，统一 HUD 玻璃面板语言（与 .orz-toast / .badge.hud-badge 同源）
+     语义色由组件传入的 text-* 决定（currentColor 驱动边框/底色/文字），无需单独配色类。
+     左侧 3px 语义色条 + 同色发丝边 + 浅玻璃底 + 柔和投影。 */
+  .hud-callout {
+    position: relative;
+    display: flex;
+    gap: .625rem;
+    padding: .75rem 1rem;
+    border-radius: var(--radius-box, .5rem);
+    border: 1px solid color-mix(in oklab, currentColor 28%, transparent);
+    border-left: 3px solid currentColor;
+    background: color-mix(in oklab, currentColor 10%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 6px 20px -14px color-mix(in oklab, var(--color-base-content) 40%, transparent);
+    color: currentColor;
+    font-family: var(--font-family-sans);
+    font-size: .875rem;
+    line-height: 1.5;
   }
 
   /* 表格皮肤：覆盖 DaisyUI .table（保留 table 结构），发丝边 + 斑马纹 + 悬停发光 */

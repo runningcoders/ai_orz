@@ -49,10 +49,10 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     });
 
     let type_class = match toast_type {
-        ToastType::Success => "hud-callout border-success/40 bg-success/10 text-success",
-        ToastType::Error => "hud-callout border-error/40 bg-error/10 text-error",
-        ToastType::Warning => "hud-callout border-warning/40 bg-warning/10 text-warning",
-        ToastType::Info => "hud-callout border-info/40 bg-info/10 text-info",
+        ToastType::Success => "is-success",
+        ToastType::Error => "is-error",
+        ToastType::Warning => "is-warning",
+        ToastType::Info => "is-info",
     };
 
     let icon = match toast_type {
@@ -80,10 +80,15 @@ fn ToastItemView(id: u64, message: String, toast_type: ToastType, duration_ms: u
     };
 
     rsx! {
-        div { class: "{type_class} {animation_class} shadow-lg min-w-[280px]",
-            span { class: "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 bg-current/20", "{icon}" }
-            span { class: "flex-1", "{message}" }
-            button { class: "btn hud-btn btn-xs btn-ghost btn-circle", onclick: handle_close, "✕" }
+        div { class: "orz-toast {type_class} {animation_class}",
+            span { class: "orz-toast-icon", "{icon}" }
+            span { class: "orz-toast-msg", "{message}" }
+            button {
+                class: "orz-toast-close",
+                "aria-label": "关闭通知",
+                onclick: handle_close,
+                "✕"
+            }
             div {
                 class: "toast-progress",
                 style: "animation-duration: {duration_ms}ms;",

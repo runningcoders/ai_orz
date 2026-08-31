@@ -216,13 +216,13 @@ pub fn HudProgress(
 #[component]
 pub fn HudCallout(tone: Option<String>, extra_class: Option<String>, children: Element) -> Element {
     let tone_class = match tone.as_deref() {
-        Some("error") => "border-error/40 bg-error/10 text-error",
-        Some("success") => "border-success/40 bg-success/10 text-success",
-        Some("warning") => "border-warning/40 bg-warning/10 text-warning",
-        _ => "border-info/40 bg-info/10 text-info",
+        Some("error") => "text-error",
+        Some("success") => "text-success",
+        Some("warning") => "text-warning",
+        _ => "text-info",
     };
     let root = format!(
-        "hud-callout rounded-md border px-4 py-3 text-sm {} {}",
+        "hud-callout px-4 py-3 text-sm {} {}",
         tone_class,
         extra_class.unwrap_or_default()
     );
