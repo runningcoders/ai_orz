@@ -170,27 +170,33 @@ pub fn OrganizationInfo() -> Element {
                             }
                             div { class: "flex items-center justify-between gap-4",
                                 div { class: "flex-1",
-                                    div { class: "flex items-center gap-2",
-                                        div { class: "font-medium", "消息向量索引" }
-                                        span { class: if org_config().enable_message_vector { "badge hud-badge badge-sm badge-success" } else { "badge hud-badge badge-sm badge-neutral" },
-                                            if org_config().enable_message_vector { "当前：开启" } else { "当前：关闭（默认）" }
-                                        }
-                                    }
+                                    div { class: "font-medium", "消息向量索引" }
                                     label { class: "label",
                                         span { class: "label-text-alt",
                                             "开启后，普通消息会构建语义向量以支持语义检索；默认关闭以避免无意义的 Embedding 开销。配置仅对当前组织生效。"
                                         }
                                     }
                                 }
-                                input {
-                                    r#type: "checkbox",
-                                    class: "toggle toggle-primary",
-                                    checked: org_config().enable_message_vector,
-                                    disabled: !can_edit || !editing(),
-                                    onchange: move |_| {
-                                        let mut c = org_config.write();
-                                        c.enable_message_vector = !c.enable_message_vector;
-                                    },
+                                // 自定义开关：不依赖 DaisyUI toggle，确保直观渲染为开关形状
+                                div { class: "flex shrink-0 items-center gap-3",
+                                    span { class: if org_config().enable_message_vector { "text-sm font-medium text-primary" } else { "text-sm font-medium text-base-content/50" },
+                                        if org_config().enable_message_vector { "开启" } else { "关闭" }
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        class: "relative inline-flex h-6 w-11 items-center rounded-full border border-base-content/15 transition-colors duration-200",
+                                        class: if can_edit && editing() { "cursor-pointer" } else { "cursor-not-allowed" },
+                                        class: if org_config().enable_message_vector { "bg-primary" } else { "bg-base-300" },
+                                        disabled: !can_edit || !editing(),
+                                        onclick: move |_| {
+                                            let mut c = org_config.write();
+                                            c.enable_message_vector = !c.enable_message_vector;
+                                        },
+                                        span {
+                                            class: "inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200",
+                                            class: if org_config().enable_message_vector { "translate-x-6" } else { "translate-x-1" },
+                                        }
+                                    }
                                 }
                             }
                             if !can_edit {
