@@ -7,6 +7,7 @@ use crate::hooks::use_breakpoint;
 use crate::pages::Route;
 use crate::store::auth::{logout, use_auth_state};
 use crate::utils::avatar_initials;
+use common::enums::UserRole;
 
 /// 根据任意字符串生成稳定的 avatar 背景色（纯前端 hash，零外部依赖）
 ///
@@ -63,7 +64,8 @@ pub fn Navbar() -> Element {
     let label = auth().display_label().to_string();
     let avatar_char = avatar_initials(&label);
     let avatar_bg = avatar_color(&label);
-    let is_admin = auth().is_admin();
+    // 管理员菜单判定走 common 的层级权限方法：满足 Admin 最低权限即可。
+    let is_admin = UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::Admin);
 
     rsx! {
         nav { class: "navbar bg-neutral text-neutral-content sticky top-0 z-50 orz-navbar",

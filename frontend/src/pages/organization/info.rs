@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 
 use common::api::{OrganizationConfig, UpdateCurrentOrganizationRequest};
+use common::enums::UserRole;
 
 use crate::api::organization::{get_current_organization, update_current_organization};
 use crate::components::hud::{HudCallout, HudPanel};
@@ -27,7 +28,9 @@ pub fn OrganizationInfo() -> Element {
     // 组织级配置（含消息向量索引）仅组织管理员可改；其余成员只读。
     // 依赖 AuthState 正确回填（见 use_require_auth 的 identity 回填修复）。
     let auth = use_auth_state();
-    let is_admin = auth().is_admin();
+    // 组织级配置权限判定走 common 的层级权限方法：满足 Admin 最低权限即可
+    // （SuperAdmin 或 Admin），与后端 update_current_organization 门控保持一致。
+    let is_admin = UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::Admin);
 
     use_effect(move || {
         spawn(async move {

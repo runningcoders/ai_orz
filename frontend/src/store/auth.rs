@@ -5,8 +5,6 @@
 
 use dioxus::prelude::*;
 
-use common::enums::UserRole;
-
 use crate::utils::local_storage;
 
 const LOGGED_IN_KEY: &str = "ai_orz_logged_in";
@@ -139,13 +137,6 @@ impl AuthState {
     #[allow(dead_code)]
     pub fn is_logged_in(&self) -> bool {
         self.logged_in
-    }
-
-    pub fn is_admin(&self) -> bool {
-        // 修复 E2E-3：之前用 role >= 2 数字比较（且方向与枚举相反），导致超管/管理员
-        // 菜单判断失效。统一走 UserRole::has_permission（并查集继承体系）：
-        // 满足 Admin 最低权限即可（SuperAdmin 或 Admin）
-        UserRole::has_permission(UserRole::from_i32(self.role), UserRole::Admin)
     }
 }
 
