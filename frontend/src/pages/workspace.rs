@@ -932,14 +932,20 @@ pub fn Workspace() -> Element {
                         }
                     };
 
-                    let container_class = if focused {
-                        "absolute bottom-3 left-3 right-3 z-10 hud-glass-strong rounded-xl border border-base-300 flex flex-col"
-                    } else {
-                        "absolute bottom-3 left-3 right-3 z-10 hud-glass rounded-xl flex flex-col"
-                    };
+                    let container_class = "absolute bottom-3 left-3 right-3 z-10 bg-transparent border border-base-content/10 rounded-xl flex flex-col";
 
                     rsx! {
                         div { class: "{container_class}",
+                            id: "workspace-chat-dialog",
+                            onclick: move |_| {
+                                chat_focused.set(true);
+                                // 点击对话框任意位置即进入发送模式，并聚焦输入框
+                                if let Some(window) = web_sys::window()
+                                    && let Some(doc) = window.document()
+                                    && let Some(el) = doc.get_element_by_id("workspace-chat-input") {
+                                    let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.focus());
+                                }
+                            },
                             div {
                                 class: if focused { "flex-1 overflow-y-auto p-3 max-h-48" } else { "p-2 max-h-24 overflow-hidden" },
                                 style: if focused { "" } else { "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
@@ -961,23 +967,38 @@ pub fn Workspace() -> Element {
                             div { class: "border-t border-base-content/10 p-2 flex items-center gap-2",
                                 if focused {
                                     span { class: "text-xs text-base-content/50 flex-shrink-0", "{chat_title}" }
-                                    input {
-                                        class: "input input-bordered input-sm flex-1 bg-base-100/60",
-                                        r#type: "text",
-                                        placeholder: "输入消息或指令，Enter 发送...",
+                                    textarea {
+                                        class: "textarea textarea-bordered flex-1 bg-transparent resize-none",
+                                        id: "workspace-chat-input",
+                                        rows: "2",
+                                        placeholder: "输入消息（Alt+回车发送）...",
                                         value: "{input_val}",
+                                        onmounted: move |evt: MountedEvent| {
+                                            if let Some(el) = evt.data().downcast::<web_sys::HtmlElement>() {
+                                                let _ = el.focus();
+                                            }
+                                        },
                                         onfocus: move |_| chat_focused.set(true),
                                         onblur: move |_| {
                                             let mut chat_focused = chat_focused;
-                                            // 一次性延时：callback::Timeout + forget() 泄露安全（同 576 处说明）
+                                            // 点击对话框内部（消息区等）不收起；仅焦点真正移出对话框才收起
                                             gloo_timers::callback::Timeout::new(150, move || {
-                                                chat_focused.set(false);
+                                                let still_inside = web_sys::window()
+                                                    .and_then(|w| w.document())
+                                                    .and_then(|d| d.active_element())
+                                                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                                                    .and_then(|el| el.closest("#workspace-chat-dialog").ok().flatten())
+                                                    .is_some();
+                                                if !still_inside {
+                                                    chat_focused.set(false);
+                                                }
                                             })
                                             .forget();
                                         },
                                         oninput: move |e| chat_input.set(e.value()),
                                         onkeydown: move |e| {
-                                            if e.key() == Key::Enter && !e.modifiers().shift() {
+                                            // Alt+回车 发送；普通回车换行（默认行为，不拦截）
+                                            if e.key() == Key::Enter && e.modifiers().alt() {
                                                 e.prevent_default();
                                                 send_trigger.set(true);
                                             }
@@ -994,15 +1015,16 @@ pub fn Workspace() -> Element {
                                         "▼"
                                     }
                                 } else {
-                                    input {
-                                        class: "input input-bordered input-sm flex-1 bg-base-100/60",
-                                        r#type: "text",
-                                        placeholder: "💬 {chat_title} - 点击输入...",
+                                    textarea {
+                                        class: "textarea textarea-bordered flex-1 bg-transparent resize-none",
+                                        id: "workspace-chat-input",
+                                        rows: "1",
+                                        placeholder: "💬 {chat_title} - 点击任意处开始对话...",
                                         value: "{input_val}",
                                         onfocus: move |_| chat_focused.set(true),
                                         oninput: move |e| chat_input.set(e.value()),
                                         onkeydown: move |e| {
-                                            if e.key() == Key::Enter && !e.modifiers().shift() {
+                                            if e.key() == Key::Enter && e.modifiers().alt() {
                                                 e.prevent_default();
                                                 send_trigger.set(true);
                                             }

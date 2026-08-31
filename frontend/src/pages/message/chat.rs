@@ -1242,7 +1242,7 @@ fn chat_input_area(
                     class: "textarea textarea-bordered w-full resize-none",
                     rows: "2",
                     value: "{input_text}",
-                    placeholder: "输入消息...",
+                    placeholder: "输入消息...（Alt+回车发送）",
                     oninput: move |e| handle_input(e.value()),
                     onkeydown: move |e| {
                         if show_slash_menu() {
@@ -1264,7 +1264,7 @@ fn chat_input_area(
                                     selected_slash_index.set(prev);
                                     return;
                                 }
-                                if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
+                                if e.key() == Key::Enter && e.modifiers().is_empty() {
                                     e.prevent_default();
                                     let idx = selected_slash_index().min(filtered.len() as i32 - 1).max(0) as usize;
                                     match filtered[idx].0 {
@@ -1289,7 +1289,7 @@ fn chat_input_area(
                                 }
                             }
                         }
-                        if e.key() == Key::Enter && !e.modifiers().contains(Modifiers::SHIFT) {
+                        if e.key() == Key::Enter && e.modifiers().alt() {
                             e.prevent_default();
                             handle_send(());
                         }
