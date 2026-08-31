@@ -563,6 +563,12 @@ pub fn HrAgentDetail(id: String) -> Element {
 
     rsx! {
         AppLayout {
+            div { class: "mb-6 flex items-center justify-between",
+                h1 { class: "text-2xl font-bold", "Agent 详情" }
+                Link { class: "btn hud-btn btn-ghost", to: crate::pages::Route::HrAgents {},
+                    "← 返回列表"
+                }
+            }
             {match agent_res.read().as_ref() {
                 None => rsx! { Loading {} },
                 Some(Ok(a)) => {
@@ -639,47 +645,45 @@ pub fn HrAgentDetail(id: String) -> Element {
             rsx! {
                 HudPanel {
                     signal: true,
-                    div { class: "card-body",
-                        // 操作行：返回列表（左）+ 编辑（右），置于最上方
-                        div { class: "flex items-center justify-between mb-4",
-                            Link { to: "/hr/agents", class: "btn hud-btn btn-ghost btn-sm", "← 返回列表" }
-                            button {
-                                class: "btn hud-btn btn-ghost btn-sm",
-                                onclick: move |_| {
-                                    if let Some(a) = agent_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
-                                        edit_name.set(a.name.clone());
-                                        edit_roles.set(a.roles.clone());
-                                        edit_roles_input.set(String::new());
-                                        edit_description.set(a.description.clone().unwrap_or_default());
-                                        edit_capabilities.set(a.capabilities.clone().unwrap_or_default());
-                                        edit_capabilities_input.set(String::new());
-                                        edit_soul.set(a.soul.clone().unwrap_or_default());
-                                        edit_model_provider_id.set(a.model_provider_id.clone());
-                                        // 加载运行时配置现有值（缺失时回退 0）
-                                        let rc = a.runtime_config.as_ref();
-                                        edit_max_thinking_rounds.set(
-                                            rc.map(|r| r.max_thinking_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
-                                        );
-                                        edit_intent_analyze_max_rounds.set(
-                                            rc.map(|r| r.intent_analyze_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
-                                        );
-                                        edit_summary_max_rounds.set(
-                                            rc.map(|r| r.summary_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
-                                        );
-                                        edit_think_timeout_secs.set(
-                                            rc.map(|r| r.think_timeout_secs.to_string()).unwrap_or_else(|| "0".to_string()),
-                                        );
-                                        show_edit_modal.set(true);
-                                    }
-                                },
-                                "✏️ 编辑"
-                            }
+                    eyebrow: Some("AGENT".to_string()),
+                    title: Some(a.name.clone()),
+                    actions: Some(rsx!{
+                        button {
+                            class: "btn hud-btn btn-ghost btn-sm",
+                            onclick: move |_| {
+                                if let Some(a) = agent_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
+                                    edit_name.set(a.name.clone());
+                                    edit_roles.set(a.roles.clone());
+                                    edit_roles_input.set(String::new());
+                                    edit_description.set(a.description.clone().unwrap_or_default());
+                                    edit_capabilities.set(a.capabilities.clone().unwrap_or_default());
+                                    edit_capabilities_input.set(String::new());
+                                    edit_soul.set(a.soul.clone().unwrap_or_default());
+                                    edit_model_provider_id.set(a.model_provider_id.clone());
+                                    // 加载运行时配置现有值（缺失时回退 0）
+                                    let rc = a.runtime_config.as_ref();
+                                    edit_max_thinking_rounds.set(
+                                        rc.map(|r| r.max_thinking_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                    );
+                                    edit_intent_analyze_max_rounds.set(
+                                        rc.map(|r| r.intent_analyze_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                    );
+                                    edit_summary_max_rounds.set(
+                                        rc.map(|r| r.summary_max_rounds.to_string()).unwrap_or_else(|| "0".to_string()),
+                                    );
+                                    edit_think_timeout_secs.set(
+                                        rc.map(|r| r.think_timeout_secs.to_string()).unwrap_or_else(|| "0".to_string()),
+                                    );
+                                    show_edit_modal.set(true);
+                                }
+                            },
+                            "✏️ 编辑"
                         }
+                    }),
+                    div { class: "card-body",
                         // 详情介绍
-                        div { class: "hud-eyebrow mb-1", "AGENT" }
-                        h1 { class: "font-display text-2xl font-bold tracking-tight mb-3", "{a.name}" }
                         if !desc.is_empty() {
-                            div { class: "text-base-content/70",
+                            div { class: "text-base-content/70 mb-3",
                                 MarkdownRenderer { content: desc.to_string(), compact: true }
                             }
                         }
