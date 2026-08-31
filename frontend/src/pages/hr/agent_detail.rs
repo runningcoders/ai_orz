@@ -316,7 +316,7 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut edit_think_timeout_secs = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
     let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
-    // Tab 切换信号：0=概览 1=工具与技能 2=状态图 3=对话与记忆 4=关系图
+    // Tab 切换信号：0=概览 1=工具与技能 2=工具关系 3=对话与记忆 4=关系图
     let mut active_tab = use_signal(|| 0usize);
     // 状态切换/入职操作的 Agent ID（必须在顶层声明，不能在渲染分支中调用 use_signal）
     // 克隆一份避免 move 走组件参数 id（后续多处仍使用 id.clone()）
@@ -699,7 +699,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                             button {
                                 class: "{tab2_class}",
                                 onclick: move |_| active_tab.set(2),
-                                "🎨 状态图"
+                                "🔗 工具关系"
                             }
                             button {
                                 class: "{tab3_class}",
@@ -1366,7 +1366,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 }
                             },
                             2 => rsx! {
-                                // === 状态图：Agent 与全量可用 Tools（神经+绑定+工具包）的关系图 ===
+                                // === 工具关系图：Agent 与全量可用 Tools（神经+绑定+工具包）的关系图 ===
                                 // 数据源：tools_overview，与 runtime 同源，不再依赖 agent_tools INNER JOIN
                                 {
                                     let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();

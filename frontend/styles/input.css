@@ -1587,8 +1587,16 @@
   }
 
   /* 徽章皮肤：覆盖 DaisyUI .badge（保留语义色，加 HUD 发丝边 + 等宽字体 + 玻璃质感） */
+  /* 度量对齐 .badge.orz-tag：font-weight/letter-spacing/line-height/充足内边距/nowrap，
+     解决中文状态字「贴边、被挤压、字距过紧」的观感问题。 */
   .badge.hud-badge {
     font-family: var(--font-family-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    line-height: 1.4;
+    white-space: nowrap;
+    padding: .25rem .7rem;
     border-width: 1px;
     border-radius: 999px;
     border-color: color-mix(in oklab, currentColor 28%, transparent);
@@ -1596,7 +1604,7 @@
     background-image: linear-gradient(180deg, color-mix(in oklab, #fff 7%, transparent), transparent);
     box-shadow: inset 0 1px 0 0 color-mix(in oklab, #fff 10%, transparent);
   }
-  .badge.hud-badge.badge-sm { font-size: 10px; padding-inline: .625rem; }
+  .badge.hud-badge.badge-sm { font-size: 11px; padding: .18rem .62rem; }
 
   /* HUD 状态语义色：半透明底 + 同色边框/文字，保持玻璃 pill 质感，避免 DaisyUI 默认实心填充 */
   .badge.hud-badge.badge-success {
