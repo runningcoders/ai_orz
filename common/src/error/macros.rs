@@ -223,6 +223,7 @@ macro_rules! define_error_codes {
                         type: $type:ident,
                         http: $http:expr,
                         code: $code:literal,
+                        $(message: $message:literal,)?
                     }
                 )+
             }
@@ -272,6 +273,24 @@ macro_rules! define_error_codes {
                         $(
                             $(
                                 ErrorCode::$variant => $code,
+                            )+
+                        )+
+                    }
+                }
+
+                /// User-facing message for this error code, if one is defined
+                /// via the `message:` field. Returns `None` when no custom
+                /// message is configured (callers should fall back to the
+                /// concrete error's detail text).
+                #[allow(unreachable_code)]
+                pub fn user_message(&self) -> Option<&'static str> {
+                    match self {
+                        $(
+                            $(
+                                ErrorCode::$variant => {
+                                    $( return Some($message); )?
+                                    None
+                                }
                             )+
                         )+
                     }

@@ -31,6 +31,8 @@ pub enum ErrorType {
     Runtime,
     /// Network request failure.
     Network,
+    /// Model (LLM) invocation failure.
+    Model,
 
     /// Configuration failure.
     Config,
@@ -249,6 +251,47 @@ impl Error {
     /// Default HTTP status code for HTTP adapters.
     pub fn http_status(&self) -> u16 {
         self.code.http_status()
+    }
+
+    /// 是否为"模型调用错误"。
+    ///
+    /// 这类错误由 cortex 边界（模型 HTTP 调用）生产，错误码以 `Model*` 开头。
+    /// 业务层可用此方法快速识别模型类故障。
+    pub fn is_model_error(&self) -> bool {
+        matches!(
+            self.code,
+            crate::error::ErrorCode::ModelRateLimited
+                | crate::error::ErrorCode::ModelServerError
+                | crate::error::ErrorCode::ModelBadRequest
+                | crate::error::ErrorCode::ModelAuth
+                | crate::error::ErrorCode::ModelContentFiltered
+        )
+    }
+
+    /// 判断该错误是否可重试（通用复用方法，业务层按需调用自行决定是否重试）。
+    ///
+    /// 当前仅针对"模型调用错误"给出分类：
+    /// - 可重试：限流(429) / 服务端或网关错误(5xx)
+    /// - 不可重试：鉴权(401/403) / 请求本身非法(400/422) / 内容过滤
+    ///
+    /// 业务层（如 AOP 消费者）可调用此方法决定 nack 重试与否，
+    /// 例如在限流期间退避重试，或对不可重试错误直接 ack 并通知用户。
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self.code,
+            crate::error::ErrorCode::ModelRateLimited | crate::error::ErrorCode::ModelServerError
+        )
+    }
+
+    /// 面向用户的提示文案（统一管理在错误码系统中）。
+    ///
+    /// 优先使用错误码通过 `message:` 字段定义的用户文案；
+    /// 若未定义，则回退到错误本身的详细文本（`self.msg`）。
+    pub fn user_message(&self) -> String {
+        match self.code.user_message() {
+            Some(m) => m.to_string(),
+            None => self.msg.clone(),
+        }
     }
 
     /// Attach tool call trace reference to this error.

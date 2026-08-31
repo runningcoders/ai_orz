@@ -140,6 +140,39 @@ define_error_codes! {
             code: "internal",
         }
     }
+
+    model {
+        ModelRateLimited {
+            type: Model,
+            http: 429,
+            code: "model_rate_limited",
+            message: "模型服务请求过于频繁（触发限流），请稍后重试。",
+        }
+        ModelServerError {
+            type: Model,
+            http: 503,
+            code: "model_server_error",
+            message: "模型服务暂时不可用，请稍后重试。",
+        }
+        ModelBadRequest {
+            type: Model,
+            http: 400,
+            code: "model_bad_request",
+            message: "发送给模型的请求存在问题，请联系管理员。",
+        }
+        ModelAuth {
+            type: Model,
+            http: 401,
+            code: "model_auth",
+            message: "模型服务鉴权失败，请检查 API Key 配置或联系管理员。",
+        }
+        ModelContentFiltered {
+            type: Model,
+            http: 400,
+            code: "model_content_filtered",
+            message: "模型响应被内容安全策略拦截，请调整你的提问后重试。",
+        }
+    }
 }
 
 pub use generated::ErrorCode;

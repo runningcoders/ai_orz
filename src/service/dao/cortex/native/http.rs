@@ -8,7 +8,7 @@ use crate::models::cortex_types::{
 };
 use crate::models::model_provider::ModelProviderPo;
 use crate::pkg::RequestContext;
-use common::error::{Result, err};
+use common::error::{Error, ErrorCode, Result, err};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -142,12 +142,7 @@ pub async fn call_chat_completions(
             .text()
             .await
             .unwrap_or_else(|_| "<no body>".to_string());
-        return Err(err!(
-            Internal,
-            "chat completions failed ({}): {}",
-            status,
-            text
-        ));
+        return Err(model_call_error("chat completions", status, &text));
     }
 
     let resp_body: ChatCompletionResponse = resp
@@ -230,7 +225,7 @@ pub async fn call_embeddings(
             .text()
             .await
             .unwrap_or_else(|_| "<no body>".to_string());
-        return Err(err!(Internal, "embeddings failed ({}): {}", status, text));
+        return Err(model_call_error("embeddings", status, &text));
     }
 
     let resp_body: EmbeddingResponse = resp
@@ -280,12 +275,7 @@ pub async fn call_embeddings_multimodal(
                 .text()
                 .await
                 .unwrap_or_else(|_| "<no body>".to_string());
-            return Err(err!(
-                Internal,
-                "DoubaoVision embedding failed ({}): {}",
-                status,
-                text
-            ));
+            return Err(model_call_error("DoubaoVision embeddings", status, &text));
         }
 
         let resp_body: MultimodalEmbeddingResponse = resp.json().await.map_err(|e| {
@@ -307,6 +297,45 @@ pub async fn call_embeddings_multimodal(
     }
 
     Ok(results)
+}
+
+// ==================== 错误分类 ====================
+
+/// 将模型 HTTP 调用的非成功状态码映射为具体的模型错误码。
+///
+/// 区分可重试（限流/服务端）与不可重试（鉴权/请求非法/内容过滤）错误，
+/// 供上游业务层（如 AOP 消费者）按需调用 `Error::is_retryable()` 决定是否重试。
+fn model_call_error(kind: &str, status: reqwest::StatusCode, text: &str) -> Error {
+    let detail = format!("{kind} failed ({}): {}", status, text);
+    match status.as_u16() {
+        // 限流：可重试
+        429 => Error::new(
+            ErrorCode::ModelRateLimited,
+            format!("{kind} rate limited (429): {text}"),
+        ),
+        // 鉴权失败：不可重试
+        401 | 403 => Error::new(ErrorCode::ModelAuth, detail),
+        // 客户端错误：默认请求非法，但若响应体表明是内容过滤则单独归类
+        400..=499 => {
+            if is_content_filtered(text) {
+                Error::new(ErrorCode::ModelContentFiltered, detail)
+            } else {
+                Error::new(ErrorCode::ModelBadRequest, detail)
+            }
+        }
+        // 服务端/网关错误：可重试
+        500..=599 => Error::new(ErrorCode::ModelServerError, detail),
+        // 其它未归类状态码：按服务端错误对待（可重试）
+        _ => Error::new(ErrorCode::ModelServerError, detail),
+    }
+}
+
+/// 粗略判断响应体是否为内容过滤（moderation）类错误。
+fn is_content_filtered(text: &str) -> bool {
+    text.contains("content_filter")
+        || text.contains("moderation")
+        || text.contains("\"code\":\"content_filter\"")
+        || text.contains("\"type\":\"content_filter\"")
 }
 
 // ==================== 请求/响应结构 ====================

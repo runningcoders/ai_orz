@@ -368,17 +368,56 @@ impl MessageConsumer {
 
         // 注入推导出的用户上下文（任务/项目 root_user_id），保证凭据链路按归属用户解析
         if ctx.user_id().is_none()
-            && let Some(root_user_id) = work_root_user_id
+            && let Some(root_user_id) = work_root_user_id.clone()
         {
             ctx = ctx.to_builder().user_id(root_user_id).build();
         }
 
         // 调用 RuntimeDomain 唤醒 Agent
-        let awaken_result = self
+        let awaken_result = match self
             .runtime_domain
             .awakening()
             .awaken(ctx.clone(), &agent, message, &thinking_options)
-            .await?;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                // 模型调用类错误（429 限流 / 5xx / 鉴权 / 内容过滤等）：
+                // 属于不可靠重试的故障，直接记录并通知用户，ack 不再重投，
+                // 避免 AOP worker 无限 nack 重试造成"重试雪崩"。
+                // 是否重试由业务层（本消费者）决定——此处选择不重试、及时告知用户。
+                if e.is_model_error() {
+                    AgentRuntimeStateManager::global().set_idle(agent_id);
+                    log_error!(
+                        &ctx,
+                        "handle_agent_message",
+                        "Agent {} awaken failed (model error, will notify user & ack): {}",
+                        agent_id,
+                        e
+                    );
+                    if let Err(notify_err) = self
+                        .notify_agent_failure(
+                            &ctx,
+                            message,
+                            agent_id,
+                            &e,
+                            work_root_user_id.clone(),
+                        )
+                        .await
+                    {
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            "通知用户 Agent 唤醒失败信息失败（不阻塞）: {}",
+                            notify_err
+                        );
+                    }
+                    return Ok(());
+                }
+                // 其他错误保持原有重试语义（nack 重投）
+                return Err(e);
+            }
+        };
 
         log_info!(
             &ctx,
@@ -490,6 +529,55 @@ impl MessageConsumer {
             }
         }
 
+        Ok(())
+    }
+
+    /// 向用户推送 Agent 执行失败通知（如模型调用错误）。
+    ///
+    /// 仅负责"记录 + 通知"，不阻塞主流程；通知失败仅记日志。
+    /// - 用户来源消息：直接通知 `message.from_id`
+    /// - Agent/System 来源消息：回退到任务/项目归属用户（root_user_id）
+    async fn notify_agent_failure(
+        &self,
+        ctx: &RequestContext,
+        message: &Message,
+        agent_id: &str,
+        err: &Error,
+        fallback_user_id: Option<String>,
+    ) -> Result<()> {
+        let user_id = match message.from_role() {
+            MessageRole::User => message.po.from_id.clone(),
+            _ => fallback_user_id.unwrap_or_default(),
+        };
+        if user_id.is_empty() {
+            log_warn!(
+                &ctx,
+                "notify_agent_failure",
+                "无法确定通知对象（agent={}, msg={}），跳过用户通知",
+                agent_id,
+                message.po.id
+            );
+            return Ok(());
+        }
+
+        // 用户可见文案统一由错误系统（ErrorCode.message）维护：
+        // 模型类错误返回人话提示，其它错误回退到错误详情。
+        let content = format!("⚠️ Agent 执行失败：{}", err.user_message());
+
+        self.message_domain
+            .delivery()
+            .send_to_user(
+                ctx.clone(),
+                SendToUserCommand {
+                    from_agent_id: agent_id,
+                    to_user_id: &user_id,
+                    content: &content,
+                    project_id: message.po.project_id.as_deref(),
+                    task_id: message.po.task_id.as_deref(),
+                    reply_to_id: None,
+                },
+            )
+            .await?;
         Ok(())
     }
 
