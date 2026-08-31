@@ -115,6 +115,10 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
+    async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>> {
+        self.skill_dal.list_published_by_tag(ctx, tag).await
+    }
+
     async fn search_skills(
         &self,
         ctx: RequestContext,

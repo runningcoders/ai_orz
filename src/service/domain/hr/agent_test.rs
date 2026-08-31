@@ -988,27 +988,61 @@ async fn test_install_tool_pack_rejects_neural_tag(pool: SqlitePool) {
     );
 }
 
-/// 验证 install_skill_pack 对 neural 保留标签显式拒绝
-/// （神经技能所有 Agent 初始化时自动注入，无需通过技能包安装）
+/// 验证 install_skill_pack 现在允许安装神经技能（每个 Agent 拥有自己的神经技能副本以便自我演进）
+///
+/// 设计背景：之前 neural 被 install_skill_pack 显式拒绝，导致神经技能从未以副本形式进入
+/// Agent 目录，既无法加载也无法自我演进。现改为允许安装，并在 create_agent 时默认安装。
 #[sqlx::test]
-async fn test_install_skill_pack_rejects_neural_tag(pool: SqlitePool) {
+async fn test_install_skill_pack_allows_neural_tag(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
-    let agent = create_test_agent("NeuralSkillBlockedAgent");
+    let agent = create_test_agent("NeuralSkillAgent");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
 
-    let err = domain
+    // 发布一份带 neural 标签的技能
+    let n = create_published_skill_with_tag("AgentNeural", "neural");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&n))
+        .await
+        .unwrap();
+    let published_ids: std::collections::HashSet<String> = domain
+        .skill_manage()
+        .list_published_by_tag(ctx.clone(), "neural")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| s.po.id)
+        .collect();
+
+    // create_agent 已默认尝试安装 neural（当时种子尚无 neural，仅打标）；
+    // 清除该默认 tag 后重新安装，验证副本确实被装入且不再被拒绝
+    domain
+        .agent_manage()
+        .uninstall_skill_pack(ctx.clone(), agent.id(), "neural", false)
+        .await
+        .unwrap();
+    let count = domain
         .agent_manage()
         .install_skill_pack(ctx.clone(), agent.id(), "neural")
         .await
-        .expect_err("neural 标签应被 install_skill_pack 拒绝");
-    assert_eq!(
-        err.code,
-        common::error::ErrorCode::InvalidRequest,
-        "应返回 InvalidRequest 错误"
+        .expect("neural 现在应允许通过技能包安装");
+    assert_eq!(count, 1, "应安装 1 份神经技能副本");
+
+    // Agent 目录下应有对应副本（parent 指向发布的神经技能）
+    let copies = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(
+        copies
+            .iter()
+            .any(|c| published_ids.contains(&c.po.parent_skill_id)),
+        "Agent 应持有神经技能副本"
     );
 }
 

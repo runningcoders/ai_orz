@@ -555,6 +555,8 @@ pub trait SkillManage: Send + Sync {
     async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>>;
     async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>>;
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
+    /// 列出某 tag 下所有已发布技能（用于神经技能加载兜底等场景）
+    async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>>;
     async fn search_skills(
         &self,
         ctx: RequestContext,

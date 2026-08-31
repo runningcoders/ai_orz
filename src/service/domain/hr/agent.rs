@@ -55,6 +55,52 @@ impl HrDomainImpl {
             )
             .await
     }
+
+    /// 解析 Agent 可见的技能全集（供 wake/awaken 与关联全景共用）。
+    ///
+    /// 加载策略（神经技能「自我演进 + 兜底」）：
+    /// 1. 优先用 Agent 自身副本（author_id = agent_id，排除 Expired）——副本可被 Agent 修改，
+    ///    从而实现技能「自我演进」；
+    /// 2. 对于种子中已发布、但 Agent 尚未安装副本的神经技能（tag=neural），
+    ///    用种子版本兜底，保证未安装时也能加载，不会完全缺失。
+    async fn resolve_agent_skills(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>> {
+        const NEURAL_TAG: &str = "neural";
+        // 1. Agent 自身副本（排除 Expired）
+        let own = self
+            .skill_dal
+            .query(
+                ctx.clone(),
+                crate::service::dao::skill::SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    exclude_status: Some(common::enums::SkillStatus::Expired),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .items;
+
+        // 2. 已发布神经技能（种子源），作为兜底
+        let published_neural = self
+            .skill_dal
+            .list_published_by_tag(ctx.clone(), NEURAL_TAG)
+            .await?;
+
+        // 3. 合并：副本优先；种子中 Agent 没有对应副本的神经技能，用种子版兜底
+        let own_parent_ids: std::collections::HashSet<String> =
+            own.iter().map(|s| s.po.parent_skill_id.clone()).collect();
+        let mut merged = own;
+        for pub_skill in published_neural {
+            if own_parent_ids.contains(&pub_skill.po.id) {
+                continue;
+            }
+            merged.push(pub_skill);
+        }
+        Ok(merged)
+    }
 }
 
 #[async_trait::async_trait]
@@ -71,7 +117,25 @@ impl AgentManage for HrDomainImpl {
             bail_err!(InvalidRequest, "新建 Agent 状态必须为 Interviewing");
         }
 
-        self.agent_dal.create(ctx, agent).await
+        self.agent_dal.create(ctx.clone(), agent).await?;
+
+        // 默认安装神经技能包：让每个 Agent 都持有一份自己的神经技能副本，
+        // 从而可以「自我演进」（修改自身副本）；不再依赖唤醒时从种子直接加载。
+        // 库里尚无已发布神经技能时不记录空包（installed_skill_packs 不留脏数据），
+        // 届时由加载侧的种子兜底补齐；安装失败也不阻塞创建。
+        let neural_published = self
+            .skill_dal
+            .list_published_by_tag(ctx.clone(), "neural")
+            .await?;
+        if !neural_published.is_empty()
+            && let Err(e) = self
+                .install_skill_pack(ctx.clone(), &agent.po.id, "neural")
+                .await
+        {
+            log_warn!(ctx, "create_agent", "默认安装神经技能包失败（忽略）: {e}");
+        }
+
+        Ok(())
     }
 
     /// 获取 Agent
@@ -125,20 +189,9 @@ impl AgentManage for HrDomainImpl {
                 agent.set_tools(all_tools);
             }
             if with_skills {
-                // 技能只在 Agent 已安装的副本范围内查询（author_id = agent_id）
-                // 技能讲究"安装且自进化"，即便神经技能也需安装到自身目录才能使用
-                let skills = self
-                    .skill_dal
-                    .query(
-                        ctx.clone(),
-                        crate::service::dao::skill::SkillQuery {
-                            author_id: Some(id.to_string()),
-                            exclude_status: Some(common::enums::SkillStatus::Expired),
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-                agent.set_skills(skills.items);
+                // 优先 Agent 自身副本；副本缺失的神经技能用种子兜底（见 resolve_agent_skills）
+                let skills = self.resolve_agent_skills(ctx.clone(), id).await?;
+                agent.set_skills(skills);
             }
         }
 
@@ -428,15 +481,6 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         let ctx = enrich_ctx!(&ctx, &agent);
-
-        // 神经技能所有 Agent 自动拥有（系统初始化时注入），无需通过技能包安装；
-        // 显式拒绝避免冗余安装和展示歧义
-        if tag == "neural" {
-            bail_err!(
-                InvalidRequest,
-                "neural 是系统保留标签，所有 Agent 自动拥有神经技能，无需通过技能包安装"
-            );
-        }
 
         // 幂等：tag 已安装则跳过
         if agent.po.get_runtime_config().has_skill_pack_tag(tag) {
@@ -789,11 +833,8 @@ impl AgentManage for HrDomainImpl {
 
         // ======================== 技能分组 ========================
         let skill_groups: Option<AgentSkillGroups> = if with_skills {
-            // 所有 Agent 自有技能副本（author_id = agent_id，exclude Expired）
-            let all_skills = self
-                .skill_dal
-                .list_for_agent(ctx.clone(), &agent.po.id)
-                .await?;
+            // 优先 Agent 自身副本；副本缺失的神经技能用种子兜底（支持自我演进 + 加载兜底）
+            let all_skills = self.resolve_agent_skills(ctx.clone(), &agent.po.id).await?;
 
             // 第一趟：分配神经技能（优先级最高）
             let neural_skill_ids: std::collections::BTreeSet<String> = all_skills

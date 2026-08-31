@@ -195,8 +195,8 @@ mod tests {
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
         assert_eq!(snapshot.agents.len(), 1);
-        // 预置 5 个技能（4 个 neural + 1 个 project_management）
-        assert_eq!(snapshot.skills.len(), 5);
+        // 预置 6 个技能（4 个 neural + 1 个 project_management + 1 个 git_branch_workflow）
+        assert_eq!(snapshot.skills.len(), 6);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"

@@ -153,6 +153,24 @@
           "ref_path": "skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md"
         }
       ]
+    },
+    {
+      "id": "GIT_BRANCH_WORKFLOW",
+      "name": "代码分支工作流",
+      "description": "可选代码工作模式：把对共享仓库的改动放在独立分支，将仓库/分支信息写回任务（update_task），把最终 MR/PR 通过 mark_artifact 存为任务产物；支持纯本地 git（无 GitHub，推分支留待合并）。Agent 按任务性质自行决定是否采用。",
+      "tags": ["git_workflow", "code_workflow"],
+      "category": "system",
+      "parent_skill_id": "",
+      "author_id": "TEMPLATE_ADMIN",
+      "author_type": 0,
+      "status": 1,
+      "content_path": "skills/GIT_BRANCH_WORKFLOW",
+      "files": [
+        {
+          "path": "skill.md",
+          "ref_path": "skills/GIT_BRANCH_WORKFLOW/skill.md"
+        }
+      ]
     }
   ]
 }
