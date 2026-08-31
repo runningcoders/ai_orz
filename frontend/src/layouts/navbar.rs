@@ -105,7 +105,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
                             li { class: "menu-title", span { "人力资源" } }
                             li { Link { to: Route::HrAgents {}, "Agent 管理" } }
                             li { Link { to: Route::HrSkills {}, "技能库" } }
@@ -125,7 +125,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
                             li { class: "menu-title", span { "财务管理" } }
                             li { Link { to: Route::FinanceModelProviders {}, "模型提供商" } }
                             li { Link { to: Route::FinanceTools {}, "工具管理" } }
@@ -148,7 +148,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
                             li { class: "menu-title", span { "项目管理" } }
                             li { Link { to: Route::ProjectList {}, "项目列表" } }
                             li { Link { to: Route::ProjectArtifacts {}, "项目产物" } }
@@ -166,7 +166,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
                             li { class: "menu-title", span { "系统" } }
                             li { Link { to: Route::SystemTriggers {}, "定时触发器" } }
                             li { Link { to: Route::SystemHealth {}, "健康检查" } }
@@ -206,7 +206,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] min-w-[15rem] p-2 shadow text-base-content whitespace-nowrap",
                             li { class: "menu-title", span { "账户" } }
                             li { Link { to: Route::UserProfile {}, "👤 个人信息" } }
                             if is_admin {
