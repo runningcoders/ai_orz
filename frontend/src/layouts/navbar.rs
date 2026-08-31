@@ -94,7 +94,8 @@ pub fn Navbar() -> Element {
                     }
 
                     // 人力资源（DaisyUI 原生 dropdown，依赖 tabindex + focus-within）
-                    div { class: "dropdown dropdown-end",
+                    // 不加 dropdown-end：菜单左缘对齐按钮、向右展开，避免向左溢出盖到前一项
+                    div { class: "dropdown",
                         div {
                             tabindex: 0,
                             role: "button",
@@ -104,7 +105,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
                             li { class: "menu-title", span { "人力资源" } }
                             li { Link { to: Route::HrAgents {}, "Agent 管理" } }
                             li { Link { to: Route::HrSkills {}, "技能库" } }
@@ -114,7 +115,7 @@ pub fn Navbar() -> Element {
                     }
 
                     // 财务管理
-                    div { class: "dropdown dropdown-end",
+                    div { class: "dropdown",
                         div {
                             tabindex: 0,
                             role: "button",
@@ -124,7 +125,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
                             li { class: "menu-title", span { "财务管理" } }
                             li { Link { to: Route::FinanceModelProviders {}, "模型提供商" } }
                             li { Link { to: Route::FinanceTools {}, "工具管理" } }
@@ -137,7 +138,7 @@ pub fn Navbar() -> Element {
                     }
 
                     // 项目管理
-                    div { class: "dropdown dropdown-end",
+                    div { class: "dropdown",
                         div {
                             tabindex: 0,
                             role: "button",
@@ -147,7 +148,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
                             li { class: "menu-title", span { "项目管理" } }
                             li { Link { to: Route::ProjectList {}, "项目列表" } }
                             li { Link { to: Route::ProjectArtifacts {}, "项目产物" } }
@@ -155,7 +156,7 @@ pub fn Navbar() -> Element {
                     }
 
                     // 系统管理
-                    div { class: "dropdown dropdown-end",
+                    div { class: "dropdown",
                         div {
                             tabindex: 0,
                             role: "button",
@@ -165,7 +166,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
                             li { class: "menu-title", span { "系统" } }
                             li { Link { to: Route::SystemTriggers {}, "定时触发器" } }
                             li { Link { to: Route::SystemHealth {}, "健康检查" } }
@@ -205,7 +206,7 @@ pub fn Navbar() -> Element {
                         }
                         ul {
                             tabindex: 0,
-                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-52 p-2 shadow text-base-content",
+                            class: "dropdown-content menu bg-base-100 rounded-box z-[200] w-48 p-2 shadow text-base-content",
                             li { class: "menu-title", span { "账户" } }
                             li { Link { to: Route::UserProfile {}, "👤 个人信息" } }
                             if is_admin {
