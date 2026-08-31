@@ -502,6 +502,7 @@ pub fn KnowledgeGraphCanvas(props: KnowledgeGraphCanvasProps) -> Element {
         .map(|e| CanvasEdge {
             from_id: e.source.clone(),
             to_id: e.target.clone(),
+            ..Default::default()
         })
         .collect();
 

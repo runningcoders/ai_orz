@@ -239,6 +239,7 @@ mod tests {
         let edges = vec![CanvasEdge {
             from_id: "a".to_string(),
             to_id: "b".to_string(),
+            ..Default::default()
         }];
         let config = ForceLayoutConfig {
             repulsion: 100.0,
@@ -311,6 +312,7 @@ mod tests {
         let edges = vec![CanvasEdge {
             from_id: "a".to_string(),
             to_id: "a".to_string(),
+            ..Default::default()
         }];
         let mut layout = ForceLayout::new(ForceLayoutConfig::default());
         let displacement = layout.step(&mut nodes, &edges, 800.0, 600.0);

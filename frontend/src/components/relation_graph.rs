@@ -29,17 +29,11 @@ pub struct RelationNodeInfo {
     /// 可选节点类型标识（如 "agent"/"tool"/"skill"），由调用方约定，
     /// 回调触发时原样返回，组件不解释此字段
     pub kind: Option<String>,
-}
-
-impl RelationNodeInfo {
-    /// 构造带类型标识的节点
-    pub fn with_kind(id: String, name: String, kind: impl Into<String>) -> Self {
-        Self {
-            id,
-            name,
-            kind: Some(kind.into()),
-        }
-    }
+    /// 关联实体与中心实体之间连线的逻辑属性标签（如 "ready" / "not_ready"），
+    /// 由调用方按需设置；为 None 时连线退化为默认灰。
+    pub edge_tag: Option<String>,
+    /// 连线描述：hover 时展示（如未就绪原因）。
+    pub edge_description: Option<String>,
 }
 
 /// 节点点击事件
@@ -78,6 +72,9 @@ pub struct RelationGraphProps {
     /// 是否自适应父容器尺寸（铺满包裹层，去掉固定 800×500 导致的 HiDPI 溢出）
     #[props(default = true)]
     pub auto_size: bool,
+    /// 是否按节点 kind 着色（关联节点依类型取不同颜色，强化区分）；默认 false 沿用 related_color
+    #[props(default = false)]
+    pub color_by_kind: bool,
 }
 
 #[component]
@@ -96,7 +93,7 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
         id: center_id.clone(),
         x: 0.0,
         y: 0.0, // 触发圆形布局
-        radius: 35.0,
+        radius: 36.0,
         label: center_name,
         color: center_color,
         node_type: center_kind.clone(),
@@ -107,20 +104,26 @@ pub fn RelationGraph(props: RelationGraphProps) -> Element {
             id: item.id.clone(),
             x: 0.0,
             y: 0.0,
-            radius: 22.0,
+            radius: if props.color_by_kind { 26.0 } else { 22.0 },
             label: item.name.clone(),
-            color: related_color.clone(),
+            color: if props.color_by_kind {
+                crate::components::canvas_scene::node_color_for_kind(&item.kind)
+            } else {
+                related_color.clone()
+            },
             node_type: item.kind.clone(),
             layer: None,
         });
     }
 
-    // 连线：中心 → 每个关联实体
+    // 连线：中心 → 每个关联实体（携带关系标签/描述，供着色与 hover 提示）
     let edges: Vec<CanvasEdge> = related
         .iter()
         .map(|item| CanvasEdge {
             from_id: center_id.clone(),
             to_id: item.id.clone(),
+            tag: item.edge_tag.clone(),
+            description: item.edge_description.clone(),
         })
         .collect();
 

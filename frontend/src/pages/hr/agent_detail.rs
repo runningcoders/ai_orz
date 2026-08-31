@@ -102,6 +102,19 @@ fn SkillCard(
     }
 }
 
+/// 将工具就绪状态映射为关系图连线的（标签, 描述），用于按连通性着色与 hover 提示。
+/// - 就绪：tag="ready"、无描述
+/// - 未就绪：tag="not_ready"、描述含原因与修复提示
+fn tool_edge_meta(rr: &RuntimeReady) -> (Option<String>, Option<String>) {
+    match rr {
+        RuntimeReady::NotReady { reason, hint } => (
+            Some("not_ready".to_string()),
+            Some(format!("未就绪（{}）：{}", reason, hint)),
+        ),
+        _ => (Some("ready".to_string()), None),
+    }
+}
+
 /// 工具卡片：神经 / 直接绑定 / 工具包三分组共用。
 /// `show_unbind` 控制是否渲染「解绑」按钮（仅直接绑定组）；
 /// `badge` + `badge_class` 表达分组徽章（神经 / 已绑定 / 来自 xx）；
@@ -971,26 +984,35 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 {
                                     let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
                                     for t in tools_overview.neural_tools.iter() {
-                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                            t.id.clone(),
-                                            t.name.clone(),
-                                            "neural_tool",
-                                        ));
+                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
+                                        all_tool_nodes.push(RelationNodeInfo {
+                                            id: t.id.clone(),
+                                            name: t.name.clone(),
+                                            kind: Some("neural_tool".to_string()),
+                                            edge_tag: et,
+                                            edge_description: ed,
+                                        });
                                     }
                                     for t in tools_overview.bound_tools.iter() {
-                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                            t.id.clone(),
-                                            t.name.clone(),
-                                            "bound_tool",
-                                        ));
+                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
+                                        all_tool_nodes.push(RelationNodeInfo {
+                                            id: t.id.clone(),
+                                            name: t.name.clone(),
+                                            kind: Some("bound_tool".to_string()),
+                                            edge_tag: et,
+                                            edge_description: ed,
+                                        });
                                     }
                                     for pack in tools_overview.pack_groups.iter() {
                                         for t in pack.tools.iter() {
-                                            all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                                t.id.clone(),
-                                                t.name.clone(),
-                                                "pack_tool",
-                                            ));
+                                            let (et, ed) = tool_edge_meta(&t.runtime_ready);
+                                            all_tool_nodes.push(RelationNodeInfo {
+                                                id: t.id.clone(),
+                                                name: t.name.clone(),
+                                                kind: Some("pack_tool".to_string()),
+                                                edge_tag: et,
+                                                edge_description: ed,
+                                            });
                                         }
                                     }
                                     let navigator = use_navigator();
@@ -1005,6 +1027,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 related: all_tool_nodes,
                                                 related_color: "#f59e0b".to_string(),
                                                 related_label: "工具".to_string(),
+                                                color_by_kind: true,
                                                 on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
                                                     if evt.is_center {
                                                         return;

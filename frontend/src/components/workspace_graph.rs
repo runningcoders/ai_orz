@@ -148,6 +148,7 @@ fn build_global_view(
         edges.push(CanvasEdge {
             from_id: from,
             to_id: to,
+            ..Default::default()
         });
     }
 
@@ -237,6 +238,7 @@ fn build_project_detail_view(
         edges.push(CanvasEdge {
             from_id: project_node_id.clone(),
             to_id: format!("task:{}", t.id),
+            ..Default::default()
         });
     }
 
@@ -247,6 +249,7 @@ fn build_project_detail_view(
                 edges.push(CanvasEdge {
                     from_id: format!("task:{}", dep_id),
                     to_id: format!("task:{}", t.id),
+                    ..Default::default()
                 });
             }
         }
@@ -280,6 +283,7 @@ fn build_project_detail_view(
             edges.push(CanvasEdge {
                 from_id: format!("task:{}", t.id),
                 to_id: format!("agent:{}", t.assignee_id),
+                ..Default::default()
             });
         }
     }
@@ -332,6 +336,7 @@ fn build_agent_detail_view(
         edges.push(CanvasEdge {
             from_id: format!("agent:{}", agent.id),
             to_id: format!("task:{}", t.id),
+            ..Default::default()
         });
     }
 
@@ -362,6 +367,7 @@ fn build_agent_detail_view(
             edges.push(CanvasEdge {
                 from_id: format!("task:{}", t.id),
                 to_id: format!("project:{}", pid),
+                ..Default::default()
             });
         }
     }
@@ -417,6 +423,7 @@ fn build_task_detail_view(
         edges.push(CanvasEdge {
             from_id: center_node_id.clone(),
             to_id: format!("project:{}", p.id),
+            ..Default::default()
         });
     }
 
@@ -437,6 +444,7 @@ fn build_task_detail_view(
         edges.push(CanvasEdge {
             from_id: center_node_id.clone(),
             to_id: format!("agent:{}", a.id),
+            ..Default::default()
         });
     }
 
@@ -457,6 +465,7 @@ fn build_task_detail_view(
             edges.push(CanvasEdge {
                 from_id: format!("task:{}", dep_task.id),
                 to_id: center_node_id.clone(),
+                ..Default::default()
             });
         }
     }
@@ -478,6 +487,7 @@ fn build_task_detail_view(
             edges.push(CanvasEdge {
                 from_id: center_node_id.clone(),
                 to_id: format!("task:{}", t.id),
+                ..Default::default()
             });
         }
     }

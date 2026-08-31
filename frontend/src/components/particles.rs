@@ -610,6 +610,7 @@ mod tests {
         let edges = vec![CanvasEdge {
             from_id: "a".to_string(),
             to_id: "b".to_string(),
+            ..Default::default()
         }];
 
         assert_eq!(system.count(), 0);
@@ -658,6 +659,7 @@ mod tests {
         let edges = vec![CanvasEdge {
             from_id: "a".to_string(),
             to_id: "b".to_string(),
+            ..Default::default()
         }];
 
         system.spawn(&edges, &nodes, 1.0);

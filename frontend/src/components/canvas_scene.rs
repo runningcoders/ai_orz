@@ -34,10 +34,136 @@ pub struct CanvasNode {
 }
 
 /// Canvas 渲染连线
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct CanvasEdge {
     pub from_id: String,
     pub to_id: String,
+    /// 边的关系逻辑标签：表达连通性/关系类型，如 "ready" / "not_ready" / "disabled"。
+    /// 渲染层据此着色与分组；为 None 时退化为默认灰线（对其它关系图零侵入）。
+    pub tag: Option<String>,
+    /// 边的关系描述：hover 时展示，例如未就绪原因与修复提示。
+    pub description: Option<String>,
+}
+
+/// 节点类型 → 中文标签（通用映射，未知 kind 回退为原始字符串）
+pub fn node_kind_label(kind: &Option<String>) -> String {
+    match kind.as_deref() {
+        Some("agent") => "Agent",
+        Some("neural_tool") => "神经工具",
+        Some("bound_tool") => "绑定工具",
+        Some("pack_tool") => "工具包工具",
+        Some("skill") | Some("neural_skill") => "技能",
+        Some("project") => "项目",
+        Some("task") => "任务",
+        Some(k) => k,
+        None => "未知",
+    }
+    .to_string()
+}
+
+/// 节点类型 → 渲染色（按 kind 分类着色，未知回退 slate）
+pub fn node_color_for_kind(kind: &Option<String>) -> String {
+    match kind.as_deref() {
+        Some("agent") => "#fa520f".to_string(),
+        Some("neural_tool") => "#6366f1".to_string(),
+        Some("bound_tool") => "#10b981".to_string(),
+        Some("pack_tool") => "#f59e0b".to_string(),
+        Some("skill") | Some("neural_skill") => "#ec4899".to_string(),
+        Some("project") => "#3b82f6".to_string(),
+        Some("task") => "#8b5cf6".to_string(),
+        _ => "#64748b".to_string(),
+    }
+}
+
+/// 点到线段距离（用于边 hover 命中检测）
+fn point_to_segment_distance(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let dx = bx - ax;
+    let dy = by - ay;
+    let len2 = dx * dx + dy * dy;
+    if len2 == 0.0 {
+        return ((px - ax).powi(2) + (py - ay).powi(2)).sqrt();
+    }
+    let t = (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0);
+    let cx = ax + t * dx;
+    let cy = ay + t * dy;
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+}
+
+/// 找距离鼠标最近且在阈值内的边，返回 (from_id, to_id)
+fn nearest_edge(
+    edges: &[CanvasEdge],
+    nodes: &[CanvasNode],
+    x: f64,
+    y: f64,
+    threshold: f64,
+) -> Option<(String, String)> {
+    let mut best: Option<(f64, (String, String))> = None;
+    for e in edges {
+        let from = nodes.iter().find(|n| n.id == e.from_id);
+        let to = nodes.iter().find(|n| n.id == e.to_id);
+        if let (Some(f), Some(t)) = (from, to) {
+            let d = point_to_segment_distance(x, y, f.x, f.y, t.x, t.y);
+            if d <= threshold {
+                let better = match best {
+                    Some((bd, _)) => d < bd,
+                    None => true,
+                };
+                if better {
+                    best = Some((d, (e.from_id.clone(), e.to_id.clone())));
+                }
+            }
+        }
+    }
+    best.map(|(_, pair)| pair)
+}
+
+/// 绘制边 hover 提示框（关系标签 + 描述）
+fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &CanvasEdge) {
+    let tag_label = match edge.tag.as_deref() {
+        Some("ready") => "就绪",
+        Some("not_ready") => "未就绪",
+        Some(other) => other,
+        None => return,
+    };
+    let mut lines = vec![format!("关系: {}", tag_label)];
+    if let Some(desc) = &edge.description
+        && !desc.is_empty()
+    {
+        lines.push(format!("说明: {}", desc));
+    }
+    let padding = 8.0;
+    let line_h = 16.0;
+    let font_px = 11.0;
+    ctx.set_font(&format!("{font_px}px sans-serif"));
+    let mut max_w = 0.0f64;
+    for l in &lines {
+        let w = l.chars().count() as f64 * font_px * 0.6;
+        if w > max_w {
+            max_w = w;
+        }
+    }
+    let box_w = max_w + padding * 2.0;
+    let box_h = lines.len() as f64 * line_h + padding * 2.0;
+    let bx = x + 12.0;
+    let by = y - box_h / 2.0;
+    // 背景
+    ctx.set_fill_style_str("rgba(17, 24, 39, 0.92)");
+    ctx.fill_rect(bx, by, box_w, box_h);
+    // 边框按状态着色，强化语义
+    ctx.set_stroke_style_str(if edge.tag.as_deref() == Some("not_ready") {
+        "#f97316"
+    } else {
+        "#94a3b8"
+    });
+    ctx.set_line_width(1.5);
+    ctx.stroke_rect(bx, by, box_w, box_h);
+    // 文本
+    ctx.set_fill_style_str("#f9fafb");
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("top");
+    for (i, l) in lines.iter().enumerate() {
+        let _ = ctx.fill_text(l, bx + padding, by + padding + i as f64 * line_h);
+    }
 }
 
 /// Canvas 渲染器 trait：业务场景实现此 trait 定义渲染逻辑
@@ -106,9 +232,15 @@ impl CanvasRenderer for DefaultRenderer {
         edges: &[CanvasEdge],
         nodes: &[CanvasNode],
     ) {
-        ctx.set_stroke_style_str("rgba(107, 114, 128, 0.4)");
-        ctx.set_line_width(1.5);
         for edge in edges {
+            // 按关系标签着色：未就绪（如目标工具未就绪）用橙色高亮，正常/就绪用中性灰
+            let (color, width) = match edge.tag.as_deref() {
+                Some("not_ready") => ("#f97316", 2.0),
+                Some("ready") => ("rgba(148, 163, 184, 0.55)", 1.5),
+                _ => ("rgba(107, 114, 128, 0.4)", 1.5),
+            };
+            ctx.set_stroke_style_str(color);
+            ctx.set_line_width(width);
             let from = nodes.iter().find(|n| n.id == edge.from_id);
             let to = nodes.iter().find(|n| n.id == edge.to_id);
             if let (Some(from), Some(to)) = (from, to) {
@@ -193,18 +325,82 @@ impl CanvasRenderer for DefaultRenderer {
                 ctx.stroke();
             }
 
-            // 标签
+            // 节点名称（圆内，按半径自适应字号，过长截断）
             ctx.set_fill_style_str("white");
-            ctx.set_font(if is_hovered {
-                "11px sans-serif"
-            } else {
-                "10px sans-serif"
-            });
+            let font_size = (draw_radius * 0.42).max(9.0);
+            ctx.set_font(&format!("{font_size:.0}px sans-serif"));
             ctx.set_text_align("center");
             ctx.set_text_baseline("middle");
-            let label: String = node.label.chars().take(8).collect();
-            let _ = ctx.fill_text(&label, node.x, node.y);
+            let max_chars = ((draw_radius * 1.5) as usize).clamp(3, 12);
+            let name: String = node.label.chars().take(max_chars).collect();
+            let _ = ctx.fill_text(&name, node.x, node.y);
+
+            // 节点下方标注完整 ID（不截断，便于辨识）
+            ctx.set_fill_style_str("rgba(229, 231, 235, 0.9)");
+            ctx.set_font("10px sans-serif");
+            ctx.set_text_baseline("top");
+            let _ = ctx.fill_text(&node.id, node.x, node.y + draw_radius + 4.0);
         }
+
+        // hover 提示框：展示完整名称 / ID / 类型等更多信息
+        if let Some(hovered_id) = hovered
+            && let Some(node) = nodes.iter().find(|n| n.id == *hovered_id)
+        {
+            draw_node_tooltip(ctx, node);
+        }
+    }
+}
+
+/// 绘制 hover 提示框（名称 / ID / 类型），自动避让节点所在半区
+fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
+    let lines = vec![
+        format!(
+            "名称: {}",
+            if node.label.is_empty() {
+                "(无)"
+            } else {
+                node.label.as_str()
+            }
+        ),
+        format!("ID: {}", node.id),
+        format!("类型: {}", node_kind_label(&node.node_type)),
+    ];
+    let padding = 8.0;
+    let line_h = 16.0;
+    let font_px = 11.0;
+    ctx.set_font(&format!("{font_px}px sans-serif"));
+    // 估算文本宽度（不依赖 web-sys 的 measure_text 特性，避免引入额外特性依赖）
+    let mut max_w = 0.0f64;
+    for l in &lines {
+        let w = l.chars().count() as f64 * font_px * 0.6;
+        if w > max_w {
+            max_w = w;
+        }
+    }
+    let box_w = max_w + padding * 2.0;
+    let box_h = lines.len() as f64 * line_h + padding * 2.0;
+
+    // 根据节点位置选择提示框落在右侧还是左侧，避免超出画布
+    let (bx, by) = if node.x >= 0.0 {
+        (node.x + node.radius + 10.0, node.y - box_h / 2.0)
+    } else {
+        (node.x - node.radius - 10.0 - box_w, node.y - box_h / 2.0)
+    };
+
+    // 背景
+    ctx.set_fill_style_str("rgba(17, 24, 39, 0.92)");
+    ctx.fill_rect(bx, by, box_w, box_h);
+    // 边框用节点主色，强化归属
+    ctx.set_stroke_style_str(&node.color);
+    ctx.set_line_width(1.5);
+    ctx.stroke_rect(bx, by, box_w, box_h);
+
+    // 文本
+    ctx.set_fill_style_str("#f9fafb");
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("top");
+    for (i, l) in lines.iter().enumerate() {
+        let _ = ctx.fill_text(l, bx + padding, by + padding + i as f64 * line_h);
     }
 }
 
@@ -274,6 +470,8 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let mut drag_offset: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
     let mut hovered_id: Signal<Option<String>> = use_signal(|| None);
     let mut selected_id: Signal<Option<String>> = use_signal(|| None);
+    // 边 hover：记录命中边的 (from_id, to_id)，用于绘制关系标签/描述提示
+    let mut hovered_edge: Signal<Option<(String, String)>> = use_signal(|| None);
 
     // 粒子系统状态（glow 需 mut 因事件闭包中 .write()，其他仅 clone 使用）
     let data_flow: Signal<DataFlowParticles> = use_signal(DataFlowParticles::new);
@@ -358,12 +556,15 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
     let render_height = props.height;
     let enable_force = props.enable_force_layout;
     let render_edges = props.edges.clone();
+    // 供鼠标事件做边命中检测（与渲染用的 render_edges 同源，但后者在 Closure 内克隆）
+    let edges_static = props.edges.clone();
     let mut nodes_state_c = nodes_state;
     let mut force_layout_c = force_layout;
     let mut is_stable_c = is_stable;
     let dragging_id_c = dragging_id;
     let hovered_id_c = hovered_id;
     let selected_id_c = selected_id;
+    let hovered_edge_c = hovered_edge;
     let renderer_c = renderer;
     // RAF 渲染循环资源：保存 running flag + Closure 供顶层 use_drop 清理
     #[allow(clippy::type_complexity)]
@@ -489,6 +690,19 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             // 5. 节点
             renderer_c.draw_nodes_with_state(&ctx, &nodes, &hovered, &selected, &dragging);
 
+            // 5.5 边 hover 提示（展示关系标签/描述）
+            if let Some((ef, et)) = hovered_edge_c.read().clone()
+                && let Some(edge) = edges_inner
+                    .iter()
+                    .find(|e| e.from_id == ef && e.to_id == et)
+                && let (Some(f), Some(t)) = (
+                    nodes.iter().find(|n| n.id == ef),
+                    nodes.iter().find(|n| n.id == et),
+                )
+            {
+                draw_edge_tooltip(&ctx, (f.x + t.x) / 2.0, (f.y + t.y) / 2.0, edge);
+            }
+
             // 6. 诞生/消亡粒子（最上层，醒目）
             if enable_bd {
                 birth_death_c.read().draw(&ctx);
@@ -550,6 +764,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                 let coords = e.client_coordinates();
                 let x = coords.x - rect.left();
                 let y = coords.y - rect.top();
+                hovered_edge.set(None);
                 let nodes = nodes_state.read().clone();
                 if let Some(node_id) = renderer.hit_test(&nodes, x, y) {
                     dragging_id.set(Some(node_id.clone()));
@@ -585,7 +800,16 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
                     let new_hovered = renderer.hit_test(&nodes, x, y);
                     let current_hovered = hovered_id.read().clone();
                     if new_hovered != current_hovered {
-                        hovered_id.set(new_hovered);
+                        hovered_id.set(new_hovered.clone());
+                    }
+                    // 未命中节点时做边命中检测（展示边的关系标签/描述）
+                    if new_hovered.is_none() {
+                        let he = nearest_edge(&edges_static, &nodes, x, y, 6.0);
+                        if hovered_edge.read().clone() != he {
+                            hovered_edge.set(he);
+                        }
+                    } else if hovered_edge.read().is_some() {
+                        hovered_edge.set(None);
                     }
                 }
             },
@@ -595,6 +819,7 @@ pub fn CanvasScene(props: CanvasSceneProps) -> Element {
             onmouseleave: move |_| {
                 dragging_id.set(None);
                 hovered_id.set(None);
+                hovered_edge.set(None);
             },
             onclick: move |e: MouseEvent| {
                 let Some(canvas) = canvas_ref.read().clone() else { return; };
