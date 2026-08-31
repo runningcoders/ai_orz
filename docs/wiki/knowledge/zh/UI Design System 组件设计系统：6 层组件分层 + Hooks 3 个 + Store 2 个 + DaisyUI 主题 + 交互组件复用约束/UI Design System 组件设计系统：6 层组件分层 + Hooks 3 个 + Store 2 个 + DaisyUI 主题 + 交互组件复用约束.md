@@ -17,6 +17,7 @@ source_files:
 - frontend/src/components/stats.rs
 - frontend/src/components/graph.rs
 - frontend/src/components/graph_canvas.rs
+- frontend/src/components/hud.rs#L1-L262
 - frontend/src/hooks/use_resource.rs#L1-L40
 - frontend/src/hooks/use_workspace_data.rs
 - frontend/src/store/auth.rs#L1-L100
@@ -24,6 +25,10 @@ source_files:
 - frontend/src/layouts/app_layout.rs#L1-L27
 - frontend/src/layouts/navbar.rs#L1-L80
 - frontend/styles/input.css:L1-L120
+- frontend/styles/input.css#L1249-L1550
+- frontend/src/pages/settings.rs
+- frontend/src/pages/hr/agent_detail.rs
+- frontend/src/pages/message/chat.rs
 - docs/design/ui_design_system.md
 - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
 - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
@@ -58,6 +63,11 @@ source_files:
 | AppLayout 主布局 | frontend/src/layouts/app_layout.rs | L1-L27 权限守卫 use_require_auth → Navbar + main（container mx-auto px-4 py-6 max-w-7xl）结构 |
 | Navbar 顶部导航 | frontend/src/layouts/navbar.rs | L1-L80 品牌 + 桌面导航（对话/消息搜索/工作台/HR/Finance/Project/System）+ 移动端汉堡抽屉；登出流程：先调后端 logout API 清 cookie，再清前端 store |
 | Tailwind + DaisyUI 主题配置 | frontend/styles/input.css | L1-L120 `@import "tailwindcss"` + `@plugin "daisyui"` 声明 31 主题；`[data-theme="orz-light"]` 自定义 oklch 色值；HUD 流光条 keyframes `.hud-streak`；知识图谱 `.kg-bg` 背景网格 |
+| HUD 原子组件集合（全站统一） | frontend/src/components/hud.rs | L1-L262 10+ 个 HUD 原语：`HudPanel`（基础发丝边面板）、`HudCard`（带 tone primary/accent/success/neutral 切换）、`HudSection`/`HudProgress`/`HudCallout`/`HudDivider`/`HudTable`/`HudTabs`/`PageHeader`/`StatReadout`/`StatGrid`。全站 40+ 页面已迁移，替代散落的非 HUD 风格卡片/徽章/标签页 |
+| HUD CSS 皮肤块 | frontend/styles/input.css | L1249-L1550 `.hud-panel`（渐变发丝边 + backdrop-blur）、`.hud-panel.hud-tone-*` 四色变体、`.hud-signal` 流光条 keyframes、`.hud-stat` 等宽数字、`.hud-progress` 系列、`.hud-divider`/`.hud-table`/`.hud-modal`/`.hud-input`、`.badge.hud-badge`（L1507-L1549，backdrop-blur + glow 光晕）、`.hud-glass`/`.hud-collapse-btn` |
+| Settings 设置页（HUD 收口示例） | frontend/src/pages/settings.rs | 主题选择 UI + 全站 HUD 收口后新增组织级配置区，统一 HudCard + HudPanel 容器风格 |
+| Agent 详情页（HUD 收口示例） | frontend/src/pages/hr/agent_detail.rs | 工具与技能全景改用 HudCard + HudPanel，指标卡统一 StatReadout |
+| 聊天页（HUD 收口示例） | frontend/src/pages/message/chat.rs | 气泡 + 消息侧面板 HUD 统一，进度条改用 HudProgress，提示条改用 HudCallout |
 | Design 规范文档 | docs/design/ui_design_system.md | Mistral 暖色系设计原则 + DaisyUI 5 迁移落地章节；HUD 驾驶舱效果说明；组件清单参考 |
 | Plan 统计图表基础设施 | docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md | charts/ 子目录组件（donut_chart/line_chart）落地计划与复用约束 |
 | Plan 知识图谱组件复用 | docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md | Graph/GraphCanvas/KanbanCanvas/WorkspaceGraph/CanvasScene 复用层级划分 |
@@ -142,3 +152,6 @@ Layer 1 - Foundation（基础层，非 Rust 组件）
 6. **use_resource 非重写红线**：任何需要异步加载数据的场景**必须**使用 `use_resource` Hook，禁止在页面组件中手写 `use_signal + spawn + use_effect` 裸实现三态管理；use_resource 覆盖 Loading/Ready/Failed 三态 + 竞态防护模式
 7. **DaisyUI 类名非简写红线**：在 `frontend/src/**/*.rs` 中使用 DaisyUI 类名必须使用全称（如 `btn-primary` 而非自定义缩写）；禁止通过 `@apply` 批量封装为新类——直接内联在 class 字符串中，便于工具类 grep
 8. **响应式断点单一来源红线**：所有桌面/移动端布局差异判断必须走 `use_breakpoint()` Hook，**禁止**在各处手写 `window.inner_width < 768` 独立判断；断点阈值统一在 use_breakpoint 实现中维护
+9. **全站 HUD 原子组件收口红线**（Level 2 合并到主卡）：全站所有卡片/徽章/标签/提示条/进度条/分割线/表格/标签页 **必须** 使用 `components/hud.rs` 原语（`HudPanel`/`HudCard`/`HudCallout`/`HudProgress`/`HudDivider`/`HudTable`/`HudTabs`）或 `input.css` 的 `.hud-*` CSS 变体（`.badge.hud-badge`/`.hud-modal`/`.hud-input`）。**禁止** 自定义非 HUD 风格的卡片容器、徽章或标签页。40+ 前端页面已完成迁移。
+10. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
+11. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。

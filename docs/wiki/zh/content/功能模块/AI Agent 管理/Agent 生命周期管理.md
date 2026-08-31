@@ -17,7 +17,20 @@
 - [docs/stats_query_design.md](docs/stats_query_design.md)
 - [src/service/dao/agent/mod.rs](src/service/dao/agent/mod.rs)
 - [AgentRuntimeInfo 状态机 + BusyGuard RAII：Idle/Busy/Resting 三态转换 + task_id/project_id 业务上下文 + 前端 runtime-list 过滤](docs/wiki/knowledge/zh/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视/AgentRuntimeInfo 三态状态机 + BusyGuard RAII：Idle Busy Resting 转换 + task_id project_id 业务上下文透视.md)
+- [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
+- [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
+- [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
+- [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 </cite>
+
+### 更新摘要（2026-08-31）
+
+新增 **Agent 关联全景按需装配机制**，与本文档描述的运行时唤醒工具装配同源：
+
+- **AgentToolsOverview 三分组**（neural_tools / bound_tools / pack_groups）和 **AgentSkillsOverview**（neural_skills / pack_groups / standalone_skills）DTO 新增到 `common/src/api/agent.rs`，通过 `GetAgentRequest.with_tools` / `with_skills` Option 开关按需装配
+- **Hr domain** 新增 `get_agent_association_groups` 方法产出 ID 分组：工具侧 neural（tags 含 neural、过滤 internal）→ bound（agent_tools 关联表）→ pack（按 runtime_config.installed_tags 展开）优先级去重；技能侧只查 Agent 自身副本（author_id = agent_id）
+- **Handler 层** 新增 `association.rs` 跨领域编排模块：汇总 ID → Finance domain `query_tools` 批量查实体 → Runtime domain `probe_runtime_ready`（TTL 30s 缓存）→ 复用专业领域 `to_list_item` 打包，避免硬编码 Unknown
+- 全景装配与运行时唤醒装配规则完全同源，确保 Agent 详情页展示与实际注入一致
 
 ## 目录
 1. [简介](#简介)

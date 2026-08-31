@@ -14,6 +14,11 @@
 - [frontend/src/components/canvas_scene.rs](frontend/src/components/canvas_scene.rs)
 - [frontend/src/pages/workspace.rs](frontend/src/pages/workspace.rs)
 - [frontend/src/pages/system/docs.rs](frontend/src/pages/system/docs.rs)
+- [frontend/src/components/hud.rs](frontend/src/components/hud.rs#L1-L262) — HudPanel / HudCard / HudSection / HudProgress / HudCallout / HudDivider / HudTable / HudTabs / PageHeader / StatReadout / StatGrid 全站 HUD 原子组件
+- [frontend/styles/input.css#L1249-L1550](frontend/styles/input.css#L1249-L1550) — HUD CSS 皮肤块：.hud-panel（渐变发丝边 + backdrop-blur）、.hud-panel.hud-tone-* 四色变体、.hud-signal 流光条、.hud-stat 等宽数字、.hud-progress 系列、.hud-table、.hud-modal / .hud-input、.badge.hud-badge（L1507-L1549，backdrop-blur + glow 光晕）
+- [frontend/src/pages/settings.rs](frontend/src/pages/settings.rs) — HUD 收口示例：组织级配置区改用 HudCard + HudPanel
+- [frontend/src/pages/hr/agent_detail.rs](frontend/src/pages/hr/agent_detail.rs) — HUD 收口示例：工具与技能全景改用 HudCard + HudPanel
+- [frontend/src/pages/message/chat.rs](frontend/src/pages/message/chat.rs) — HUD 收口示例：气泡 + 消息侧面板 HUD 统一
 
 ### 本文关联的三类文档（四类互引闭环）
 
@@ -33,7 +38,13 @@
 </cite>
 
 ## 更新摘要
-**变更内容**
+**变更内容（T5 HUD 设计系统全站应用）**
+- 新增 `frontend/src/components/hud.rs` HUD 原子组件集合：10+ 个原语（HudPanel / HudCard / HudSection / HudProgress / HudCallout / HudDivider / HudTable / HudTabs / PageHeader / StatReadout / StatGrid）作为全站统一的"积木"
+- `frontend/styles/input.css` 新增 L1249-L1550 HUD CSS 皮肤块：.hud-panel（渐变发丝边 + backdrop-blur）、.hud-panel.hud-tone-* 四色变体、.hud-signal 流光条 keyframes、.hud-stat 等宽数字、.hud-progress 系列、.hud-divider、.hud-table（斑马纹 + 悬停发光）、.hud-modal / .hud-input、.badge.hud-badge（L1507-L1549，backdrop-blur + glow 光晕）
+- 全站 40+ 前端页面统一 HUD 风格迁移：settings.rs（组织级配置区 HudCard）、hr/agent_detail.rs（工具与技能全景 HudCard）、message/chat.rs（气泡 + 侧面板 HUD 统一）、finance/*、system/*、project/*、workspace.rs 等全部页面卡片/徽章/标签/提示条改用 hud.rs 原语或 hud-* CSS 变体
+- 前端组件 button.rs / confirm_dialog.rs / runtime_panel.rs / chat/chat_side_panel.rs / chat/tool_calls_tab.rs 等统一 HUD 风格
+
+**历史变更**
 - 新增完整的 Markdown 渲染样式系统，支持 pulldown-cmark 输出的 HTML
 - 增强 DaisyUI 主题集成，支持 30+ 内置主题的自动适配
 - 完善响应式设计策略，包含移动端适配和媒体查询优化

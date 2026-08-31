@@ -20,7 +20,20 @@
 - [common/src/api/agent.rs](common/src/api/agent.rs)
 - [src/models/agent.rs](src/models/agent.rs)
 - [Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联](docs/wiki/knowledge/zh/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联/Intent 感知两阶段唤醒：IntentAnalyze Phase1 七字段意图分析 + 6 级 JSON 降级兜底 + Awaken Phase2 正式执行串联.md)
+- [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
+- [src/handlers/hr/agent/get_agent.rs#L138-L157](src/handlers/hr/agent/get_agent.rs#L138-L157)
+- [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
+- [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
+- [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 </cite>
+
+### 更新摘要（2026-08-31）
+
+Agent 处理器新增 **关联全景装配能力**（新建 `association.rs` 模块），作为 `get_agent` handler 内部跨领域编排：
+
+- `get_agent` handler 新增 `with_tools` / `with_skills` Option 查询开关（来自 `GetAgentRequest`），关闭时短路跳过全部工具/技能查询
+- 新建 `src/handlers/hr/agent/association.rs`：`build_tools_overview` 汇总 ID → Finance domain `query_tools` 批量查 → Runtime domain `probe_runtime_ready`（TTL 30s）→ 复用 `finance::tool::response::to_list_item` 打包；`build_skills_overview` 技能侧同理由 Hr domain `skill_manage.list_for_agent` + `hr::skill::response::to_list_item`
+- **分层职责边界**：Hr domain `get_agent_association_groups` 只产 ID 分组（三分组业务规则归它），association.rs 负责 ID → 实体 + 调专业领域打包——domain 层不重复实现 DTO 转换，专业领域逻辑（尤其 runtime_ready 就绪判定）被完整复用
 
 ## 目录
 1. [简介](#简介)

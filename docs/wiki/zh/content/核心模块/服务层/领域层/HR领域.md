@@ -20,7 +20,22 @@
 - [src/handlers/hr/skill/uninstall_skill_from_agent.rs](src/handlers/hr/skill/uninstall_skill_from_agent.rs)
 - [src/handlers/hr/skill/get_skill_file_content.rs](src/handlers/hr/skill/get_skill_file_content.rs)
 - [src/handlers/hr/skill/update_skill_file_content.rs](src/handlers/hr/skill/update_skill_file_content.rs)
+- [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
+- [src/service/domain/hr/mod.rs#AgentToolGroups](src/service/domain/hr/mod.rs#L433-L467)
+- [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
+- [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
+- [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 </cite>
+
+### 更新摘要（2026-08-31）
+
+HR 领域 AgentManage 新增 **关联分组业务规则产出** 能力：
+
+- `AgentToolGroups` / `AgentSkillGroups` / `AgentToolPackIds` / `AgentSkillPackIds` 四个 ID 视图 struct 新增到 `src/service/domain/hr/mod.rs`（刻意不含 common DTO）
+- `AgentManage` trait 新增 `get_agent_association_groups(ctx, agent, with_tools, with_skills)` 方法，产出工具/技能的 ID 分组
+- **工具侧三分组**：neural（tags 含 neural、过滤 internal、全部启用）→ bound（agent_tools 关联表、已排除 neural 命中项）→ pack（按 runtime_config.installed_tags 逐个 tag 展开、跳过前两组已命中），internal 全程剔除
+- **技能侧三分组**：仅查 Agent 自身技能副本（author_id = agent_id、排除 Expired）→ neural（tags 含 neural）→ pack（按 installed_skill_packs 顺序展开、排除 neural）→ standalone（剩余项）
+- 两侧开关均关闭时短路返回 `(None, None)`，handler 层跳过全景装配
 
 ## 目录
 1. [简介](#简介)

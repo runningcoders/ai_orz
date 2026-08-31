@@ -23,6 +23,16 @@ source_files:
   - docs/wiki/zh/content/基础设施/AOP 事件系统/AOP 事件系统.md
   - docs/wiki/zh/content/核心模块/AOP 事件系统/AOP 事件系统.md
   - docs/wiki/zh/content/架构设计/AOP 事件系统架构.md
+  - src/pkg/aop/core/consumer.rs#L44-L48 (Consumer trait on_event 签名更新：(ctx: RequestContext, event: serde_json::Value)；ctx 由框架从事件 context_carrier 还原)
+  - src/pkg/aop/core/metrics_hook.rs#L18-L61 (AopEventMeta 新增 context_carrier: Option<ContextCarrier> 字段；from_json 同步解析)
+  - src/pkg/aop/core/registry.rs#L148-L156 (publish 注入 ctx.to_carrier() 到事件 JSON 顶层)
+  - src/pkg/aop/core/registry.rs#L177-L179 (Sync 路径 carried_ctx 还原 ctx)
+  - src/pkg/aop/core/registry.rs#L229-L233 (carried_ctx 辅助方法：ContextCarrier::from_json → into_context；缺失回退 new_system)
+  - src/pkg/aop/core/registry.rs#L385-L387 (Async worker 路径 carried_ctx 还原 ctx)
+  - src/consumer/aop_stats_hook.rs#L36-L120 (AopStatsHook 四回调追加 [aop] log_id={} event={} sys_info! 链路日志；log_id_of 从 context_carrier 提取)
+  - src/consumer/message.rs#L78-L82 (MessageConsumer.on_event 签名适配；ctx 已由框架还原)
+  - src/consumer/message.rs#L621-L661 (rebuild_context 以框架 ctx 为基底追加业务字段，保留 log_id 贯穿)
+  - src/consumer/agent_loop_consumer.rs (on_event 签名适配 _ctx: RequestContext)
 ---
 
 ## §1 概述与定位
@@ -41,6 +51,9 @@ source_files:
 | [consumer/scheduler.rs](src/consumer/scheduler.rs) | Cron 调度消费者 | Sync 模式；interested_events=cron.trigger；on_event 按 payload.action 分发 handler |
 | [producer/cron_trigger.rs](src/producer/cron_trigger.rs) | 定时轮询生产者 | poll_interval_secs=60；poll() → list_due_triggers → 逐个 publish CronTriggerEvent → mark_trigger_executed 更新 next_run_at |
 | [consumer_architecture.md](docs/archive/design-archive/consumer_architecture.md) | 生产消费架构设计 | 两阶段初始化 + 事件总线前置原则；启动 8 步严格顺序；consumer::init() 禁写 DB 红线 |
+| [pkg/aop/core/registry.rs](src/pkg/aop/core/registry.rs) (publish context_carrier 注入) | context 贯穿机制 | publish 统一注入 ctx.to_carrier() 到事件 JSON 顶层 context_carrier 字段；carried_ctx(ctx) 从事件还原 RequestContext；Sync/Async 两条路径均传入还原后的 ctx 给 on_event | `:L148-L156`, `:L177-L179`, `:L229-L233`, `:L385-L387` |
+| [pkg/aop/core/metrics_hook.rs](src/pkg/aop/core/metrics_hook.rs) (AopEventMeta) | 元信息扩展 | AopEventMeta 新增 context_carrier: Option<ContextCarrier> 字段；from_json 同步解析事件顶层 | `:L18-L61` |
+| [consumer/aop_stats_hook.rs](src/consumer/aop_stats_hook.rs) | 链路可观测日志 | AopStatsHook 四回调追加 `[aop] log_id={} event={} ...` sys_info! 日志；log_id_of(meta) 从 context_carrier 提取 log_id，缺失回退 "unknown" | `:L36-L120` |
 
 ## §3 架构与约定
 
@@ -94,3 +107,6 @@ pkg/aop/ (纯框架零业务)
 8. **Domain/DAL/DAO 零感知 AOP**：任何业务实体层代码禁止 use crate::pkg::aop，事件 publish 统一走 pkg 封装的入口（如消息保存后内部 publish）。
 9. **error_retry_sleep_ms 禁止设 0**：Async 消费失败后无间隔重试会导致 CPU 空转，默认 1000ms。
 10. **concurrency 需匹配业务幂等性**：Async 模式相同 order_key 的事件由 Registry 内部保证顺序消费，跨 order_key 并行需确保 Consumer on_event 幂等。
+11. **Consumer.on_event 签名固定为 (ctx: RequestContext, event: serde_json::Value)**：框架在 Sync/Async 两条路径从事件顶层 context_carrier 还原同源 ctx 后传入。**禁止业务 Consumer 在 on_event 内部自行 new_system 重建 ctx**——这样会丢失 log_id 等链路标识，导致整条 AOP 事件链路断链。正确做法是以框架传来的 ctx 为基底，用 to_builder() 追加业务字段。
+12. **Producer 侧 publish 必须携带 RequestContext**：Registry.publish 签名 `publish(&self, ctx: &RequestContext, event: E)`，框架自动调用 `ctx.to_carrier()` 注入 context_carrier。没有 ctx 的 publish 会导致消费侧 carried_ctx 回退 new_system，链路日志中 log_id 显示为 "unknown"。
+13. **AopMetricsHook 实现必须记录 log_id 链路日志**：AopStatsHook 业务实现已在四回调追加 `[aop] log_id={} event={} ...` sys_info! 格式日志，确保整条 AOP 事件链路可通过 log_id 串联排查。新增 AopMetricsHook 实现必须保持同等可观测性。

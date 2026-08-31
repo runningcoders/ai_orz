@@ -34,6 +34,17 @@ source_files:
   - docs/wiki/zh/content/功能模块/用户与组织管理/用户认证与授权.md（JWT Cookie + Bearer 双模式说明；401/403 错误语义）
   - docs/wiki/zh/content/功能模块/用户与组织管理/用户管理.md（用户列表 + 角色分配 + 偏好配置 UI）
   - docs/wiki/zh/content/项目概述/核心功能特性/Agent 全生命周期管理/技能与工具绑定.md（入职流程五部曲第三步：装默认技能 + 第四步：绑工具 + 凭证绑定）
+  - migrations/20260830000000_add_org_config.sql#L1-L8（organizations 表新增 config 列 TEXT NOT NULL DEFAULT '{}'，承载组织级可扩展配置的 JSON）
+  - common/src/api/organization.rs#L7-L20（OrganizationConfig：enable_message_vector bool + #[serde(default)]；所有字段必须带默认值保证向后兼容）
+  - common/src/api/organization.rs#L155-L238（OrganizationInfoResponse 新增 config 字段 + UpdateCurrentOrganizationRequest / UpdateOrganizationRequest 新增 config: Option<OrganizationConfig>）
+  - src/service/dao/organization/sqlite.rs#L17-L24（ORG_CONFIG_CACHE 全局 LazyLock<Mutex<HashMap>> 缓存）
+  - src/service/dao/organization/sqlite.rs#L111-L147（get_org_config 读穿 + set_org_config 写穿双模式实现）
+  - src/service/dao/organization/sqlite.rs#L247-L268（read_org_config_from_db：SQL 裸查询 + 空/非法 JSON 回退 OrganizationConfig::default()）
+  - src/service/dao/organization/mod.rs#L29-L39（OrganizationDao trait 新增 get_org_config / set_org_config）
+  - src/service/dal/organization.rs#L55-L65 + #L123-L140（OrganizationDal trait + impl 新增 get_org_config / update_org_config 透传 DAO）
+  - src/service/domain/organization/mod.rs#L119-L129（OrganizationManage trait 新增 get_org_config / update_org_config）
+  - src/service/domain/organization/org.rs#L148-L165（OrganizationManage impl 配置读写透传 DAL）
+  - src/service/dal/message.rs#L156-L174（消息落库时检查 org_config.enable_message_vector，默认 false 跳过向量索引构建）
   - 【平行卡 1】docs/wiki/knowledge/zh/身份凭证 AES-256-GCM 敏感字段加密 + 统一 CRUD Domain + Handler八文件迁移/身份凭证 AES-256-GCM 敏感字段加密.md（入职第四步：身份凭证绑定 → Finance::Credential.create → AES256-GCM 加密存储）
   - 【平行卡 2】docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md（入职第二步：install_skill_pack tag="memory" 拉 Published 技能 → 复制 Draft）
 ---
@@ -60,6 +71,13 @@ source_files:
 | middleware/auth.rs 鉴权中间件 | 401/403 生成 | 优先 Cookie ai_orz_token → 次 Authorization Bearer → 两者都无 → 401；解析后 claims 注入 RequestContext(uid,uname,org_id,role)；org_id 与请求资源不匹配 → 403（例：用户组织 A 访问 /organizations/B/users） | `:L1-L100` |
 | models/user.rs UserPo | 用户持久化 | id/name/hash_password/email/phone/organization_id/role(UserRole)/preferences(JSON)/status(UserStatus)/created_at；preferences 结构：`{theme, language, timezone, notifications: {lark, email, sse}}` | `:L20-L80` |
 | handlers/organization/user/set_user_role.rs 设置角色 Handler | 权限双校验 | ① ctx.role().has_permission(Admin)（调用者不能是 Member）→ ② target_user_id 不能是 ctx.uid()（不能给自己改角色）→ ③ 升 SuperAdmin 必须调用者自己是 SuperAdmin → 通过后才调 OrganizationDomain.set_role | `:L1-L40` |
+| common/src/api/organization.rs OrganizationConfig DTO | 组织级可扩展配置 | enable_message_vector bool + #[serde(default)]；所有字段必须带默认值保证向后兼容；存于 organizations.config TEXT 列（JSON） | `:L7-L20` |
+| common/src/api/organization.rs OrganizationInfoResponse + UpdateCurrentOrganizationRequest + UpdateOrganizationRequest | Handler 层 DTO 扩展 | 三个 DTO 同步新增 config 字段：OrganizationInfoResponse.config（返回）+ UpdateCurrentOrganizationRequest.config: Option + UpdateOrganizationRequest.config: Option（写入） | `:L155-L238` |
+| service/dao/organization/sqlite.rs ORG_CONFIG_CACHE + get_org_config / set_org_config | DAO 层配置缓存 | ORG_CONFIG_CACHE 全局 LazyLock<Mutex<HashMap<org_id, OrganizationConfig>>>；get_org_config 读穿（命中缓存直接返回，未命中回退 DB 并回填）；set_org_config 写穿（DB 落盘后同步刷新缓存）；read_org_config_from_db 对非法 JSON 回退 OrganizationConfig::default() | `:L17-L24` + `:L111-L147` + `:L247-L268` |
+| service/dal/organization.rs OrganizationDal | DAL 层配置透传 | trait + impl 新增 get_org_config / update_org_config 透传 DAO，保持 DAL 作为数据访问层的薄封装定位 | `:L55-L65` + `:L123-L140` |
+| service/domain/organization/mod.rs + org.rs OrganizationManage | Domain 层配置能力 | trait 新增 get_org_config / update_org_config；impl 透传 DAL 调用，Domain 层不做业务逻辑，仅保持能力暴露 | `:L119-L129` + `:L148-L165` |
+| service/dal/message.rs 消息落库 | 下游消费点 | 消息落库时检查 org_config.enable_message_vector（经 DAO 缓存读取），默认 false 跳过向量索引构建，FTS 搜索不受影响 | `:L156-L174` |
+| migrations/20260830000000_add_org_config.sql | DB 迁移 | `ALTER TABLE organizations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`；后续新增组织级配置项只需追加 JSON 字段，无需改表结构 | `:L1-L8` |
 
 **章节来源**
 - [user_role.rs:L1-L60](common/src/enums/user_role.rs#L1-L60)
@@ -117,7 +135,7 @@ HR 面板：填写 Agent 名 / 角色描述 / ModelProvider 选择 → 点「入
 
 ---
 
-## §4 硬约束与回归红线（7 条）
+## §4 硬约束与回归红线（10 条）
 
 1. **UserRole 权限判断永远通过 has_permission 不用数字**：代码中出现 `role as i32 >= 2` 或 `role == 0` 直接 fail（clippy lint 自定义规则开启）；正确写法：`ctx.role().has_permission(UserRole::Admin)`。单元测试必须覆盖 Member/Admin/SuperAdmin 三个组合调用 set_user_role。
 2. **鉴权中间件 401 不泄露 JWT 解析失败的细节**：401 body `ApiResponse<()>` message 固定"未登录或会话过期"，绝不返回 "签名错误" / "JWT 过期 14 分钟"（防止攻击者区分合法 JWT 但过期 vs 伪造 JWT）。
@@ -126,3 +144,6 @@ HR 面板：填写 Agent 名 / 角色描述 / ModelProvider 选择 → 点「入
 5. **用户偏好自报值永不被推断值覆盖**：`UserPreferences::merge(self_preferences, inferred_preferences)` 代码里，只要 self_preferences 的字段不是 null → 跳过该字段的推断写入；推断值只能作为「推荐值」显示在前端 UI 旁边黄色「AI 推荐」小胶囊，需要用户点「采纳」才写 DB。
 6. **JWT secret 不能编译期嵌进二进制**：JWT_SECRET 从环境变量 + 配置文件覆盖（common config 三层优先级：嵌入默认 < 配置文件 < 环境变量）；生产若检测到使用「嵌入默认 secret」立即 panic（防止 Docker 镜像里默认 secret 被公开）。
 7. **SuperAdmin 跨组织访问必须显式加系统级 scope 标记**：ctx.caller_type=SuperAdmin 但访问 /organizations/B（非自己 org）时，必须在请求 URL 里带 `?as_system=true` 且前端 UI 显示红色「系统级操作，有审计日志」横幅；否则默认返回 403（防止 SuperAdmin 误操作其他组织的数据，有审计追踪）。
+8. **OrganizationConfig 所有字段必须带 #[serde(default)] 默认值**：JSON 反序列化时，缺失字段 → 回退 Rust 默认值（bool=false、Option=None）；保证 DB 列 `config` 为 '{}' 或旧版本迁移过来缺失字段时仍能正常解析，绝不 panic；禁止新增无默认值字段。
+9. **organizations.config 列 TEXT NOT NULL DEFAULT '{}' + 代码侧 JSON 回退**：DB 层默认值为空 JSON 对象 '{}'，代码侧 `read_org_config_from_db` 对空字符串、trim 后为空、或非法 JSON 一律回退 `OrganizationConfig::default()`；两层兜底保证向后兼容和容错。
+10. **DAO 层 ORG_CONFIG_CACHE 采用读穿 + 写穿双模式，避免每条消息落库回查 DB**：消息落库（message DAL）和 Handler 读当前组织配置均走 DAO 缓存；缓存键为 org_id，值为解析后的整个 OrganizationConfig；set_org_config 先落盘再刷缓存（防止写 DB 失败但缓存已脏）；严禁任何业务层直接 SELECT organizations.config 绕过 DAO 缓存。

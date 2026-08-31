@@ -39,6 +39,17 @@ source_files:
 - 【平行卡 2】docs/wiki/knowledge/zh/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest
   每天 4 点 settle + load_and_settle 向量去重合并/Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+
   agent_rest 每天 4 点 settle + load_and_settle 向量去重合并.md
+- src/pkg/aop/core/consumer.rs#L44-L48 (Consumer trait on_event 签名：(ctx: RequestContext, event: serde_json::Value)；框架从事件 context_carrier 还原 ctx 后传入)
+- src/pkg/aop/core/metrics_hook.rs#L18-L61 (AopEventMeta 新增 context_carrier: Option<ContextCarrier> 字段，from_json 同步解析；AopMetricsHook 四回调签名不变)
+- src/pkg/aop/core/registry.rs#L148-L156 (publish 统一注入 context_carrier 到事件 JSON 顶层，调用 ctx.to_carrier() 序列化链路标识)
+- src/pkg/aop/core/registry.rs#L177-L179 (Sync 路径：carried_ctx(&event_json) 还原 ctx 传给 on_event)
+- src/pkg/aop/core/registry.rs#L229-L233 (carried_ctx 辅助方法：ContextCarrier::from_json → into_context；缺失时回退 new_system)
+- src/pkg/aop/core/registry.rs#L385-L387 (Async worker 路径：同样 carried_ctx(&event_json) 还原 ctx 传给 on_event)
+- src/consumer/aop_stats_hook.rs#L36-L111 (AopStatsHook 四回调追加 [aop] log_id={} event={} ... sys_info! 链路日志；log_id_of(meta) 从 context_carrier 提取)
+- src/consumer/aop_stats_hook.rs#L114-L120 (log_id_of 辅助函数：meta.context_carrier → log_id.as_str()，缺失返回 "unknown")
+- src/consumer/message.rs#L78-L82 (MessageConsumer.on_event 签名适配 (ctx: RequestContext, event: ...)；注释说明 ctx 已由框架还原)
+- src/consumer/message.rs#L621-L661 (rebuild_context 以框架传来的 ctx 为基底追加业务字段，保留 log_id 贯穿)
+- docs/wiki/knowledge/zh/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅/Domain 内部事件与消费者全链路：8 类 DomainEvent 枚举 + 8 类 Consumer 业务消费 + AOP Producer 投递入口 + Registry 订阅.md
 
 ---
 
@@ -67,6 +78,9 @@ source_files:
 | producer/cron_trigger.rs | 定时触发生产者 | impl Producer：tick() 间隔 60s → CronTriggerDal.list_due(ctx, now, max_events=20) → 逐个 publish(CronTriggerEvent) → mark_trigger_executed 更新 next_run_at | `:L1-L90` |
 | consumer/scheduler.rs | CronTriggerConsumer | 动作路由：payload.action = "agent_rest"（agent_rest 休息沉淀）/ "project_followup"（项目巡检跟进）→ 调对应 domain::service 方法 | `:L1-L130` |
 | lib.rs 启动主流程 | 全局启动顺序 | AGENTS.md §4.10 强制执行；顺序错乱会导致「init_base_data 还没插 cron trigger，CronTriggerProducer 就开始扫 list_due = 空」→ 永远不触发沉淀 | 见 lib.rs |
+| aop/core/metrics_hook.rs | AopEventMeta + AopMetricsHook | AopEventMeta 新增 context_carrier: Option<ContextCarrier> 字段，from_json 从事件顶层同步解析；AopMetricsHook 四回调签名不变 | `:L18-L61` |
+| consumer/aop_stats_hook.rs | 链路可观测日志实现 | AopStatsHook 四回调追加 [aop] log_id={} event={} ... sys_info! 链路日志；log_id_of() 从 meta.context_carrier 提取 log_id | `:L36-L120` |
+| aop/core/registry.rs (publish 注入) | context_carrier 传播 | publish 时调用 ctx.to_carrier() 注入事件顶层；carried_ctx(ctx) 从事件 context_carrier 还原 RequestContext；Sync 和 Async 路径均使用还原后的 ctx 传给 on_event | `:L148-L156`, `:L177-L179`, `:L229-L233`, `:L385-L387` |
 
 **章节来源**
 - [aop/mod.rs:L1-L68](src/pkg/aop/mod.rs#L1-L68)
@@ -106,3 +120,6 @@ source_files:
 4. **InMemoryQueue 崩溃不恢复是有意设计**：持久化由业务层在 publish 之前完成（如 messages 表先落 DB 再发 message.new 事件），ACK/NACK 只是更新业务表的 status=Consumed，不是确认队列里有一条。重启后业务 Producer / DB 扫描负责重新投递未消费的事件。
 5. **启动严格顺序测试**：`tests/integration/order_startup_test.rs`（如果存在）模拟真实启动顺序，调换任意一步 → 断言失败。禁止删除或削弱该集成测试。
 6. **consume_mode 切换必须改前端 AOP 监控面板**：从 Sync 切到 Async 后，`AopStatsCollector` 的 per-event 耗时会被并发平均稀释，前端平均耗时卡片必须加「并发 N 路」说明文字，否则误导用户判断消费性能。
+7. **Consumer.on_event 签名固定为 (ctx: RequestContext, event: serde_json::Value)**：框架在 Sync/Async 两条路径都会从事件顶层 `context_carrier` 还原出与主 context 同源的 RequestContext 传入。业务 Consumer **禁止在 on_event 内部自行 `RequestContext::new_system()` 重建 ctx**——这样会丢失 log_id 等链路标识，导致整条 AOP 事件链路断链。
+8. **Producer 侧 publish 必须携带 RequestContext**：Registry.publish 签名是 `publish(&self, ctx: &RequestContext, event: E)`，ctx 不能为空。框架会自动调用 `ctx.to_carrier()` 注入事件 JSON 顶层的 context_carrier。没有 ctx 的 publish 会导致消费侧 carried_ctx 回退 new_system，链路日志中的 log_id 显示为 "unknown"。
+9. **AopMetricsHook 实现必须记录 log_id 链路日志**：AopStatsHook 业务实现已在 on_publish/on_consume_start/on_consume_success/on_consume_failure 四个回调中追加 `[aop] log_id={} event={} ...` 格式的 sys_info! 日志。新增 AopMetricsHook 实现必须保持同等可观测性，确保整条 AOP 事件链路可通过 log_id 串联排查。

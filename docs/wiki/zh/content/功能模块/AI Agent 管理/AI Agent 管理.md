@@ -13,7 +13,20 @@
 - [stats_query_design.md](docs/stats_query_design.md)
 - [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
+- [src/handlers/hr/agent/association.rs](src/handlers/hr/agent/association.rs)
+- [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
+- [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
+- [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
 </cite>
+
+### 更新摘要（2026-08-31）
+
+新增 **Agent 关联全景按需装配机制**，完善 AI Agent 管理视角下的工具/技能全景展示：
+
+- Agent 详情接口 `GET /api/v1/agents/{id}` 新增 `?with_tools&with_skills` Option 查询开关，按需装配 `AgentToolsOverview`（neural_tools / bound_tools / pack_groups 三分组）和 `AgentSkillsOverview`（neural_skills / pack_groups / standalone_skills）DTO
+- Hr domain `get_agent_association_groups` 产出 ID 分组，Handler 层 `association.rs` 跨领域编排：Finance domain 批量查工具实体 + Runtime domain 就绪探测（TTL 30s）+ 复用专业领域 `to_list_item` 打包
+- 全景三分组去重规则（neural → bound → pack）与运行时唤醒装配同源，确保 UI 展示与 Agent 实际可用工具一致
+- 技能侧仅查 Agent 自身副本（author_id = agent_id），呼应文档中「Agent 技能讲究安装且自进化」的设计
 
 ## 目录
 1. [简介](#简介)
