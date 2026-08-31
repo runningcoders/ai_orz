@@ -225,7 +225,7 @@ impl HnswStore {
         let entries = match std::fs::read_dir(&self.base_path) {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!(
+                sys_warn!(
                     "Failed to read hnsw index dir {:?}: {:?}",
                     self.base_path,
                     e
@@ -238,7 +238,7 @@ impl HnswStore {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    tracing::warn!("Failed to read dir entry: {:?}", e);
+                    sys_warn!("Failed to read dir entry: {:?}", e);
                     continue;
                 }
             };
@@ -262,7 +262,7 @@ impl HnswStore {
                 Ok(data) => {
                     // 此时 store 尚未被共享，try_write 必定成功
                     if let Ok(mut collections) = self.collections.try_write() {
-                        tracing::info!(
+                        sys_info!(
                             "Loaded hnsw collection '{}' ({} vectors)",
                             name,
                             data.vectors.len()
@@ -271,7 +271,7 @@ impl HnswStore {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to load collection from {:?}: {:?}", path, e);
+                    sys_warn!("Failed to load collection from {:?}: {:?}", path, e);
                 }
             }
         }
@@ -293,7 +293,7 @@ impl HnswStore {
 
         if let Ok(mut collections_meta) = self.collections_meta.try_write() {
             *collections_meta = meta_file.collections;
-            tracing::info!(
+            sys_info!(
                 "Loaded hnsw collections meta ({} collections)",
                 collections_meta.len()
             );
@@ -353,7 +353,7 @@ impl HnswStore {
                         data.dirty = false;
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to save collection '{}': {:?}", name, e);
+                        sys_warn!("Failed to save collection '{}': {:?}", name, e);
                     }
                 }
             }
@@ -366,7 +366,7 @@ impl HnswStore {
         };
         if should_save_meta {
             if let Err(e) = self.save_collections_meta() {
-                tracing::warn!("Failed to save collections meta: {:?}", e);
+                sys_warn!("Failed to save collections meta: {:?}", e);
             } else {
                 let mut meta_dirty = self.meta_dirty.write().await;
                 *meta_dirty = false;
@@ -383,7 +383,7 @@ impl HnswStore {
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 if let Err(e) = store.flush_all_dirty().await {
-                    tracing::warn!("Background flush failed: {:?}", e);
+                    sys_warn!("Background flush failed: {:?}", e);
                 }
             }
         }));
@@ -416,7 +416,7 @@ impl Drop for HnswStore {
                 if data.dirty
                     && let Err(e) = Self::save_collection_to_file(&self.base_path, name, data)
                 {
-                    tracing::warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
+                    sys_warn!("Failed to flush collection '{}' on drop: {:?}", name, e);
                 }
             }
         }
@@ -426,7 +426,7 @@ impl Drop for HnswStore {
             && *meta_dirty
             && let Err(e) = self.save_collections_meta()
         {
-            tracing::warn!("Failed to flush collections meta on drop: {:?}", e);
+            sys_warn!("Failed to flush collections meta on drop: {:?}", e);
         }
     }
 }

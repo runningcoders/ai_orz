@@ -38,7 +38,7 @@ impl BackgroundTaskRegistry {
             // run 内部应已设置 result 和 status
             // 这里做兜底：如果 run 返回 Err 但任务未标记 Failed，记录日志
             if let Err(e) = result {
-                tracing::error!("后台任务 {} 执行失败: {}", task_clone.task_id(), e);
+                sys_error!("后台任务 {} 执行失败: {}", task_clone.task_id(), e);
             }
         });
         task_id

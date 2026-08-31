@@ -218,7 +218,13 @@ pub(crate) async fn load_and_settle(
     let state =
         crate::pkg::agent_runtime_state::AgentRuntimeStateManager::global().get_state(agent_id);
     if state.is_unavailable() {
-        tracing::info!("Agent {} 当前 {:?}，跳过睡眠", agent_id, state);
+        log_info!(
+            &ctx,
+            "settle_memory",
+            "Agent {} 当前 {:?}，跳过睡眠",
+            agent_id,
+            state
+        );
         return Ok(0);
     }
 
