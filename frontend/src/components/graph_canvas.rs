@@ -17,7 +17,9 @@ use dioxus::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys::CanvasRenderingContext2d;
 
-use crate::components::canvas_scene::{CanvasEdge, CanvasNode, CanvasRenderer, CanvasScene};
+use crate::components::canvas_scene::{
+    CanvasEdge, CanvasNode, CanvasRenderer, CanvasScene, measure_text_width,
+};
 use crate::components::graph::{
     GraphEdge, GraphNode, dynamic_node_radius, get_edge_color, get_node_fill, tag_color,
 };
@@ -153,7 +155,8 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     let mid_x = (from.x + to.x) / 2.0;
                     let mid_y = (from.y + to.y) / 2.0 - 8.0;
                     let label: String = relation_type.chars().take(10).collect();
-                    let label_w = label.chars().count() as f64 * 7.0 + 4.0;
+                    ctx.set_font("10px sans-serif");
+                    let label_w = measure_text_width(ctx, &label, 10.0) + 4.0;
 
                     ctx.set_shadow_blur(0.0);
                     ctx.set_fill_style_str("rgba(255, 255, 255, 0.9)");
@@ -172,7 +175,6 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     ctx.stroke();
 
                     ctx.set_fill_style_str("#374151");
-                    ctx.set_font("10px sans-serif");
                     ctx.set_text_align("center");
                     ctx.set_text_baseline("middle");
                     let _ = ctx.fill_text(&label, mid_x, mid_y);
@@ -394,14 +396,12 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
             // === 节点上方 tag 标签（带颜色底色）===
             if !meta.tags.is_empty() {
                 let tag_label_y = node.y - radius - 16.0;
+                ctx.set_font("8px sans-serif");
                 let tag_widths: Vec<(String, f64, &str)> = meta
                     .tags
                     .iter()
                     .map(|t| {
-                        let w: f64 = t
-                            .chars()
-                            .fold(0.0, |acc, c| acc + if c.is_ascii() { 5.0 } else { 9.0 })
-                            + 8.0;
+                        let w: f64 = measure_text_width(ctx, t, 8.0) + 8.0;
                         (t.clone(), w, tag_color(t))
                     })
                     .collect();
@@ -414,7 +414,6 @@ impl CanvasRenderer for KnowledgeGraphRenderer {
                     let _ = ctx.round_rect_with_f64(tx, tag_label_y, *w, 12.0, 6.0);
                     ctx.fill();
                     ctx.set_fill_style_str("white");
-                    ctx.set_font("8px sans-serif");
                     ctx.set_text_align("center");
                     ctx.set_text_baseline("middle");
                     let _ = ctx.fill_text(tag_text, tx + w / 2.0, tag_label_y + 6.0);

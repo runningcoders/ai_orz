@@ -75,6 +75,16 @@ pub fn node_color_for_kind(kind: &Option<String>) -> String {
     }
 }
 
+/// 精确测量文本在 canvas 中的渲染宽度（依赖 web-sys `TextMetrics` 特性）。
+///
+/// 使用 ctx 当前已设置的 font，调用前必须先 `set_font` 到目标字号/字体。
+/// 若 `measure_text` 因极端异常失败，回退到「字符数 × 字号 × 0.6」估算，保证不崩。
+pub fn measure_text_width(ctx: &CanvasRenderingContext2d, text: &str, font_px: f64) -> f64 {
+    ctx.measure_text(text)
+        .map(|m| m.width())
+        .unwrap_or_else(|_| text.chars().count() as f64 * font_px * 0.6)
+}
+
 /// 点到线段距离（用于边 hover 命中检测）
 fn point_to_segment_distance(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let dx = bx - ax;
@@ -135,13 +145,10 @@ fn draw_edge_tooltip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, edge: &Canv
     let line_h = 16.0;
     let font_px = 11.0;
     ctx.set_font(&format!("{font_px}px sans-serif"));
-    let mut max_w = 0.0f64;
-    for l in &lines {
-        let w = l.chars().count() as f64 * font_px * 0.6;
-        if w > max_w {
-            max_w = w;
-        }
-    }
+    let max_w = lines
+        .iter()
+        .map(|l| measure_text_width(ctx, l, font_px))
+        .fold(0.0f64, f64::max);
     let box_w = max_w + padding * 2.0;
     let box_h = lines.len() as f64 * line_h + padding * 2.0;
     let bx = x + 12.0;
@@ -353,7 +360,7 @@ impl CanvasRenderer for DefaultRenderer {
 
 /// 绘制 hover 提示框（名称 / ID / 类型），自动避让节点所在半区
 fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
-    let lines = vec![
+    let lines = [
         format!(
             "名称: {}",
             if node.label.is_empty() {
@@ -369,14 +376,11 @@ fn draw_node_tooltip(ctx: &CanvasRenderingContext2d, node: &CanvasNode) {
     let line_h = 16.0;
     let font_px = 11.0;
     ctx.set_font(&format!("{font_px}px sans-serif"));
-    // 估算文本宽度（不依赖 web-sys 的 measure_text 特性，避免引入额外特性依赖）
-    let mut max_w = 0.0f64;
-    for l in &lines {
-        let w = l.chars().count() as f64 * font_px * 0.6;
-        if w > max_w {
-            max_w = w;
-        }
-    }
+    // 精确测量文本宽度（web-sys TextMetrics 特性）
+    let max_w = lines
+        .iter()
+        .map(|l| measure_text_width(ctx, l, font_px))
+        .fold(0.0f64, f64::max);
     let box_w = max_w + padding * 2.0;
     let box_h = lines.len() as f64 * line_h + padding * 2.0;
 
