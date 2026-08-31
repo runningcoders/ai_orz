@@ -204,11 +204,21 @@ cmd_dev() {
     apply_dx_backend_override
     print_backend_hint
 
+    echo "📦 启动后端开发服务器（冷构建可能需要数分钟）..."
+    # 后端必须先启动：前端 dev server 通过 dx 反代 /api/* 到后端 3000，
+    # 且前端启动后的身份回填 / Directory 预载等「默认依赖拉取」依赖后端已就绪，
+    # 若后端尚未起好就会拉取失败、页面回落到默认值而显示异常。
+    # 因此严格「先后端、再前端」：先 spawn 后端并等其端口就绪，再 spawn 前端。
+    # --interactive=false / exec / process substitution 的说明见下方前端段。
+    cargo run > >(awk '{ printf "📦 %s\n", $0; fflush() }') 2>&1 &
+    BACKEND_PID=$!
+
+    echo "⏳ 等待后端就绪（前端依赖后端 API，先确保后端可连接）..."
+    if [ "$INT_RECEIVED" != "1" ] && wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
+        echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
+    fi
+
     echo "🎨 启动前端开发服务器（WASM 编译中）..."
-    # 前端先启动（体验优化，非必须）：wasm 增量编译快（8-16s），页面最先可用。
-    # 说明：后端 host 编译（target/debug/）与 dx 的 wasm 编译
-    # （target/wasm32-unknown-unknown/debug/）是不同 target 子目录，cargo build 锁互不阻塞，
-    # 仅依赖解析瞬间有 package cache 秒级排队——不存在长持锁问题（已实测验证）。
     # --interactive=false：禁用 dx 的 TUI。TUI 会开启终端 raw mode（关闭 ISIG），
     # 导致 Ctrl+C 不再产生 SIGINT、整组进程都收不到信号，脚本 trap 永远不触发而卡死。
     # 关闭后 Ctrl+C 正常发信号给全组；热重载不受影响（文件监听驱动，与 TUI 无关）。
@@ -218,20 +228,13 @@ cmd_dev() {
     (cd frontend && exec dx serve --interactive=false) > >(awk '{ printf "🎨 %s\n", $0; fflush() }') 2>&1 &
     FRONTEND_PID=$!
 
-    echo "📦 启动后端开发服务器（冷构建可能需要数分钟）..."
-    cargo run > >(awk '{ printf "📦 %s\n", $0; fflush() }') 2>&1 &
-    BACKEND_PID=$!
-
     echo ""
-    echo "⏳ 等待服务就绪，编译日志会持续输出（属正常现象，勿关闭窗口）..."
+    echo "⏳ 等待前端就绪，WASM 编译日志会持续输出（属正常现象，勿关闭窗口）..."
     echo ""
 
     if wait_for_port localhost 8080 600 "前端 localhost:8080" "$FRONTEND_PID"; then
         echo "${GREEN}✅ 前端就绪${NC}: ${BLUE}http://localhost:8080${NC}"
         echo "   （浏览器若仍显示编译页，等 WASM 编译完成会自动刷新）"
-    fi
-    if [ "$INT_RECEIVED" != "1" ] && wait_for_port localhost 3000 600 "后端 localhost:3000" "$BACKEND_PID"; then
-        echo "${GREEN}✅ 后端就绪${NC}: ${BLUE}http://localhost:3000${NC}"
     fi
 
     echo ""
