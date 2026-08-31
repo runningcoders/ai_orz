@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use wasm_bindgen::{JsCast, closure::Closure};
 
 use crate::api::finance::upload_attachment;
-use crate::api::hr::{get_reception_agent, list_agents};
+use crate::api::hr::{get_agent, get_reception_agent, list_agents};
 use crate::api::message::{load_latest_messages, load_older_messages, send_message_to_agent};
 use crate::api::project::{create_project, list_projects};
 use crate::components::chat::ChatSidePanel;
@@ -10,7 +10,7 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::navbar::Navbar;
-use crate::store::directory::use_directory;
+use crate::store::directory::{Directory, use_directory};
 use crate::store::toast::use_toast;
 use crate::utils::{
     MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
@@ -19,9 +19,37 @@ use crate::utils::{
     replace_tmp_with_real,
 };
 use common::api::{
-    AgentListItem, CreateProjectRequest, GetReceptionAgentResponse, ListAgentsRequest,
-    ListProjectsRequest, ListProjectsResponseItem, MessageListItem, SendMessageToAgentParams,
+    AgentListItem, CreateProjectRequest, GetAgentRequest, GetReceptionAgentResponse,
+    ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem, MessageListItem,
+    SendMessageToAgentParams,
 };
+
+/// 全局名称目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填到目录，
+/// 使气泡能显示真实名字而非兜底「Agent <id>」。每个 id 最多触发一次请求。
+fn ensure_agent_name(
+    mut directory: Signal<Directory>,
+    mut pending: Signal<std::collections::HashSet<String>>,
+    from_id: String,
+) {
+    if directory().agents.contains_key(&from_id) {
+        return;
+    }
+    if pending().contains(&from_id) {
+        return;
+    }
+    pending.write().insert(from_id.clone());
+    spawn(async move {
+        if let Ok(resp) = get_agent(GetAgentRequest {
+            id: from_id.clone(),
+            ..Default::default()
+        })
+        .await
+            && !resp.name.is_empty()
+        {
+            directory.write().agents.insert(from_id, resp.name);
+        }
+    });
+}
 
 /// 待发送的附件信息（仅用于 UI 展示，发送后清空）
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +99,8 @@ pub fn MessageChat() -> Element {
     let toast = use_toast();
     // 全局名称目录：用于将消息 from_id 解析为展示名（用户 / Agent 名字）
     let directory = use_directory();
+    // 已发起按需拉取请求的 Agent id（避免重复请求）
+    let pending_agent_ids = use_signal(std::collections::HashSet::<String>::new);
 
     // 快捷指令菜单状态
     let mut show_slash_menu = use_signal(|| false);
@@ -670,6 +700,10 @@ pub fn MessageChat() -> Element {
         let expanded = tool_expanded.read().contains(&msg_id);
         let is_user = msg_role == 0;
         let is_system = msg_role == 2;
+        // 解析不到 Agent 名字时按需拉取并回填目录，气泡即可显示真实名字
+        if msg_role == 1 {
+            ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
+        }
         let sender_name = directory().sender_name(&msg_clone);
                                         rsx! {
                                             div {
@@ -810,6 +844,10 @@ pub fn MessageChat() -> Element {
         let expanded = tool_expanded.read().contains(&msg_id);
         let is_user = msg_role == 0;
         let is_system = msg_role == 2;
+        // 解析不到 Agent 名字时按需拉取并回填目录，气泡即可显示真实名字
+        if msg_role == 1 {
+            ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
+        }
         let sender_name = directory().sender_name(&msg_clone);
                                         rsx! {
                                             div {

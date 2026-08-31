@@ -6,11 +6,18 @@ pub mod use_workspace_data;
 
 use crate::api::organization::get_current_user_info;
 use crate::pages::Route;
-use crate::store::auth::{
-    has_saved_role, is_logged_in, logout, save_role, save_user_identity, use_auth_state,
-};
+use crate::store::auth::{is_logged_in, logout, save_role, save_user_identity, use_auth_state};
 use crate::utils::local_storage;
+use std::sync::atomic::{AtomicBool, Ordering};
 use wasm_bindgen::JsCast;
+
+/// 单次应用生命周期内是否已完成身份回填（门闩）。
+///
+/// 之前 `use_require_auth` 仅在「localStorage 未存过 role」或「身份信息缺失」时才拉
+/// `/user/me`；一旦旧 session 把错误/过期的 role 落盘且身份齐全，回填会被跳过，
+/// 导致 `auth().role` 永远停在陈旧值（典型表现：超管却无管理员权限）。
+/// 改为：每次应用启动都从服务端刷新一次身份与角色，以服务端为唯一事实源。
+static IDENTITY_HYDRATED: AtomicBool = AtomicBool::new(false);
 
 #[allow(unused_imports)]
 pub use use_resource::{ResourceState, use_resource};
@@ -22,52 +29,40 @@ pub fn use_breakpoint() -> Signal<bool> {
 pub fn use_require_auth() -> bool {
     let mut auth = use_auth_state();
     let navigator = use_navigator();
-    // 修复 E2E-2：门闩 + 持久化判据双保险，回填最多一次
-    let mut role_restore_started = use_signal(|| false);
 
     use_effect(move || {
         if !auth.read().logged_in {
             navigator.replace(Route::Reception {});
-        } else {
-            // 修复 HIGH #1 + R-M1：刷新页面后 AuthState.restore() 仅恢复 logged_in 和
-            // 持久化的 role；若 localStorage 从未存过 role（新浏览器/被清理），或身份信息
-            // （用户名 / 显示名）缺失（旧 session 只存了 role、名字未落盘），调用 /user/me 回填。
-            // 修复 E2E-2：不再用 role == 0 判断（与 SuperAdmin=0 冲突）。
-            let identity_missing = {
-                let s = auth.read();
-                s.username.is_empty() && s.display_name.is_empty()
-            };
-            let needs_restore = !has_saved_role() || identity_missing;
-            if needs_restore && !role_restore_started() {
-                role_restore_started.set(true);
-                spawn(async move {
-                    match get_current_user_info().await {
-                        Ok(resp) => {
-                            let mut state = auth.write();
-                            state.role = resp.data.role;
-                            state.user_id = resp.data.user_id.clone();
-                            state.username = resp.data.username.clone();
-                            state.display_name = resp.data.display_name.clone().unwrap_or_default();
-                            state.org_id = resp.data.organization_id.clone();
-                            save_role(resp.data.role);
-                            save_user_identity(&state.username, &state.display_name);
-                        }
-                        Err(e) => {
-                            // 修 bug：后端清空数据/用户被删后 JWT 仍被浏览器携带，
-                            // /user/me 返回 401（修复后端）或其他失败。
-                            // 前端必须主动清登录态并跳接待页，否则进入"已登录但信息为空"
-                            // 的假登录态。注意：网络层 handle_unauthorized 会对状态码
-                            // 401 清 localStorage + 做 location 跳转，这里对非 401 的失败
-                            // 做兜底（例：后端旧版返回 404、或网络层重入失败）。
-                            let is_401 = e.http_status == 401;
-                            logout(auth);
-                            if !is_401 {
-                                navigator.replace(Route::Reception {});
-                            }
+        } else if !IDENTITY_HYDRATED.swap(true, Ordering::SeqCst) {
+            // 每次应用启动都从服务端刷新身份与角色（以服务端为唯一事实源），
+            // 避免旧 session 落盘的陈旧 role 卡住管理员权限判定（超管却无编辑权限）。
+            spawn(async move {
+                match get_current_user_info().await {
+                    Ok(resp) => {
+                        let mut state = auth.write();
+                        state.role = resp.data.role;
+                        state.user_id = resp.data.user_id.clone();
+                        state.username = resp.data.username.clone();
+                        state.display_name = resp.data.display_name.clone().unwrap_or_default();
+                        state.org_id = resp.data.organization_id.clone();
+                        save_role(resp.data.role);
+                        save_user_identity(&state.username, &state.display_name);
+                    }
+                    Err(e) => {
+                        // 修 bug：后端清空数据/用户被删后 JWT 仍被浏览器携带，
+                        // /user/me 返回 401（修复后端）或其他失败。
+                        // 前端必须主动清登录态并跳接待页，否则进入"已登录但信息为空"
+                        // 的假登录态。注意：网络层 handle_unauthorized 会对状态码
+                        // 401 清 localStorage + 做 location 跳转，这里对非 401 的失败
+                        // 做兜底（例：后端旧版返回 404、或网络层重入失败）。
+                        let is_401 = e.http_status == 401;
+                        logout(auth);
+                        if !is_401 {
+                            navigator.replace(Route::Reception {});
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 

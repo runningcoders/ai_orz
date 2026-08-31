@@ -72,16 +72,6 @@ pub fn is_logged_in() -> bool {
         .unwrap_or(false)
 }
 
-/// localStorage 中是否已持久化过角色（登录后 /user/me 回填或历史 session）
-///
-/// 修复 E2E-2：之前用 role == 0 作为「未恢复」哨兵，与 SuperAdmin=0 语义正面相撞，
-/// 导致超管反复请求 /user/me。改用「键是否存在」作为恢复判据。
-pub fn has_saved_role() -> bool {
-    local_storage()
-        .and_then(|s| s.get(ROLE_KEY).ok().flatten())
-        .is_some()
-}
-
 fn restore_role() -> i32 {
     local_storage()
         .and_then(|s| s.get(ROLE_KEY).ok().flatten())
