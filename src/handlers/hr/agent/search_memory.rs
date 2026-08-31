@@ -193,12 +193,16 @@ fn memory_to_result(memory: &Memory) -> MemoryResult {
             tags: None,
             search_match: to_search_match(memory),
         },
+        // 短期记忆 PO 只有一个文本字段 summary（无独立标题/正文）：
+        // content 放完整 summary；summary 置 None，由前端显示层
+        // 默认取 content 前几行作预览（搜索场景后续可改为命中详情，
+        // 与 query_memory 保持一致）。
         MemoryPo::ShortTerm(st) => MemoryResult {
             id: st.id.clone(),
             content: st.summary.clone(),
             memory_type: "short_term".to_string(),
             score: memory.search_match.as_ref().and_then(|m| m.vector_distance),
-            summary: Some(st.summary.clone()),
+            summary: None,
             source_node_id: None,
             target_node_id: None,
             relation_type: None,

@@ -241,6 +241,26 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let full_summary = item.summary.clone();
                                 let content_preview = item.content.chars().take(120).collect::<String>();
                                 let summary_text = item.summary.clone().unwrap_or_default();
+                                // 短期记忆等无独立摘要的场景：摘要缺省取内容前几行作预览，
+                                // 避免「内容预览 + 摘要」两行渲染出同样的文本
+                                let independent_summary = item.summary.clone().filter(|s| !s.trim().is_empty());
+                                let summary_preview_text = independent_summary.clone().unwrap_or_else(|| {
+                                    item.content
+                                        .lines()
+                                        .map(str::trim)
+                                        .filter(|l| !l.is_empty())
+                                        .take(2)
+                                        .map(|l| {
+                                            let t: String = l.chars().take(80).collect();
+                                            if l.chars().count() > 80 {
+                                                format!("{t}…")
+                                            } else {
+                                                t
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(" / ")
+                                });
                                 let score_text = item.score
                                     .map(|s| format!("{:.4}", s))
                                     .unwrap_or_default();
@@ -248,7 +268,8 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                 let src_node = item.source_node_id.clone().unwrap_or_default();
                                 let tgt_node = item.target_node_id.clone().unwrap_or_default();
                                 let rel_type = item.relation_type.clone().unwrap_or_default();
-                                let has_summary = item.summary.is_some();
+                                let has_summary = independent_summary.is_some();
+                                let has_derived_summary = independent_summary.is_none();
                                 let has_score = item.score.is_some();
                                 let is_relation = item.memory_type == "relation";
                                 let has_src = item.source_node_id.is_some();
@@ -292,6 +313,9 @@ pub fn AgentMemoryPanel(agent_id: Option<String>) -> Element {
                                                     }
                                                 }
                                             }
+                                        } else if has_derived_summary {
+                                            // 无独立摘要：只渲染一行前几行预览，避免与内容重复
+                                            div { class: "text-sm mb-2", "{summary_preview_text}" }
                                         } else {
                                             div { class: "text-sm mb-2", "{content_preview}..." }
                                             if has_summary {

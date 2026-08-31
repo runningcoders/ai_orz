@@ -25,8 +25,8 @@ use crate::store::toast::use_toast;
 use common::api::{
     AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateMessageChannelRequest, CreateSlackChannelConfig, CreateWebhookChannelConfig,
-    CreateWechatChannelConfig, LarkCredentialSnapshot, ListAgentsRequest,
-    ListMessageChannelsResponseItem, UpdateMessageChannelStatusRequest,
+    CreateWechatChannelConfig, LarkCredentialSnapshot, ListAgentsRequest, MessageChannelListItem,
+    UpdateMessageChannelStatusRequest,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
@@ -57,7 +57,7 @@ fn none_if_empty(value: String) -> Option<String> {
 
 #[component]
 pub fn FinanceMessageChannels() -> Element {
-    let mut channels = use_signal(Vec::<ListMessageChannelsResponseItem>::new);
+    let mut channels = use_signal(Vec::<MessageChannelListItem>::new);
     let mut loading = use_signal(|| true);
     let toast = use_toast();
     let mut show_add_modal = use_signal(|| false);
@@ -105,7 +105,7 @@ pub fn FinanceMessageChannels() -> Element {
         loading.set(true);
         spawn(async move {
             match list_message_channels().await {
-                Ok(list) => channels.set(list.channels),
+                Ok(list) => channels.set(list.items),
                 Err(e) => toast.error(&e),
             }
             loading.set(false);
@@ -224,7 +224,7 @@ pub fn FinanceMessageChannels() -> Element {
                     new_webhook_body_template.set(String::new());
                     toast.success("创建成功，建议先运行连接测试");
                     match list_message_channels().await {
-                        Ok(list) => channels.set(list.channels),
+                        Ok(list) => channels.set(list.items),
                         Err(e) => toast.error(&e),
                     }
                 }
@@ -317,7 +317,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                             toast.error(&e);
                                                                         } else {
                                                                             match list_message_channels().await {
-                                                                                Ok(list) => channels.set(list.channels),
+                                                                                Ok(list) => channels.set(list.items),
                                                                                 Err(e) => toast.error(&e),
                                                                             }
                                                                         }
@@ -333,7 +333,7 @@ pub fn FinanceMessageChannels() -> Element {
                                                                             toast.error(&e);
                                                                         } else {
                                                                             match list_message_channels().await {
-                                                                                Ok(list) => channels.set(list.channels),
+                                                                                Ok(list) => channels.set(list.items),
                                                                                 Err(e) => toast.error(&e),
                                                                             }
                                                                         }
@@ -637,7 +637,7 @@ pub fn FinanceMessageChannels() -> Element {
                             toast.error(format!("删除失败: {}", e));
                         } else {
                             match list_message_channels().await {
-                                Ok(list) => channels.set(list.channels),
+                                Ok(list) => channels.set(list.items),
                                 Err(e) => toast.error(&e),
                             }
                         }

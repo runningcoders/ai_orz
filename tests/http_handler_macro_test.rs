@@ -747,3 +747,270 @@ async fn test_path_and_query_with_numeric_types_works() {
     assert!(body_str.contains("42"), "count=42 应从 query 提取");
     assert!(body_str.contains("3.14"), "rate=3.14 应从 query 提取");
 }
+
+// ==================== 测试 12: 反例固化 —— path + 未标注字段会被当成 body（415 陷阱） ====================
+
+/// 反例：只有 `id` 标注了 `#[param(source = "path")]`，`filter` 漏标。
+///
+/// `generate_http_handler` 会把未标注字段统统算作 body，于是走进
+/// "path + body 混合" 分支，生成 `axum::Json` 提取器。GET 请求不带
+/// `Content-Type: application/json` 时，axum 直接回 415。
+///
+/// 真实事故：`GetToolCallEntryRequest` 曾漏标 tool_id / agent_id / project_id /
+/// task_id，导致 `/api/v1/finance/tool-call-entries/{call_id}` 详情接口 415。
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, Params)]
+pub struct PitfallUnannotatedRequest {
+    #[param(source = "path")]
+    pub id: String,
+    /// 故意不标注 `#[param(source = "query")]`
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct PitfallUnannotatedResponse {
+    pub id: String,
+}
+
+#[generate_http_handler]
+pub async fn pitfall_unannotated(
+    _ctx: RequestContext,
+    params: PitfallUnannotatedRequest,
+) -> Result<PitfallUnannotatedResponse, Error> {
+    Ok(PitfallUnannotatedResponse { id: params.id })
+}
+
+#[tokio::test]
+async fn test_unannotated_field_turns_get_into_json_extractor() {
+    let app = make_router(|r| r.route("/pitfall/{id}", get(pitfall_unannotated_handler))).await;
+
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/pitfall/abc")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        "path + 未标注字段的 GET 会因 Json 提取器返回 415；\
+         GET 路由的 params 字段必须全部标注 path/query（见测试 13 的全量扫描）"
+    );
+}
+
+// ==================== 测试 13: 全量扫描 —— 真实 GET/DELETE 路由的 params 字段必须全部标注 ====================
+
+/// 递归收集目录下所有 `.rs` 文件
+fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// 扫描 `common/src/api` 下所有结构体：`结构体名 -> [(字段名, 是否有 #[param(...)] 标注)]`
+fn collect_api_struct_fields(
+    root: &std::path::Path,
+) -> std::collections::HashMap<String, Vec<(String, bool)>> {
+    let mut files = Vec::new();
+    collect_rs_files(&root.join("common").join("src").join("api"), &mut files);
+
+    let mut map = std::collections::HashMap::new();
+    for file in files {
+        let Ok(source) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        for item in ast.items {
+            let syn::Item::Struct(item_struct) = item else {
+                continue;
+            };
+            let syn::Fields::Named(named) = &item_struct.fields else {
+                continue;
+            };
+            let fields = named
+                .named
+                .iter()
+                .map(|f| {
+                    let name = f.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
+                    let annotated = f.attrs.iter().any(|a| a.path().is_ident("param"));
+                    (name, annotated)
+                })
+                .collect::<Vec<_>>();
+            if !fields.is_empty() {
+                map.insert(item_struct.ident.to_string(), fields);
+            }
+        }
+    }
+    map
+}
+
+/// 扫描 `src/handlers` 下所有 `#[generate_http_handler]` 函数：`函数名 -> params 类型名`
+fn collect_handler_params(root: &std::path::Path) -> std::collections::HashMap<String, String> {
+    fn walk(items: &[syn::Item], map: &mut std::collections::HashMap<String, String>) {
+        for item in items {
+            match item {
+                syn::Item::Fn(item_fn) => {
+                    let has_macro = item_fn.attrs.iter().any(|a| {
+                        a.path()
+                            .segments
+                            .last()
+                            .is_some_and(|s| s.ident == "generate_http_handler")
+                    });
+                    if has_macro
+                        && item_fn.sig.inputs.len() == 2
+                        && let Some(syn::FnArg::Typed(pat_ty)) = item_fn.sig.inputs.iter().nth(1)
+                        && let syn::Type::Path(type_path) = &*pat_ty.ty
+                        && let Some(segment) = type_path.path.segments.last()
+                    {
+                        map.insert(item_fn.sig.ident.to_string(), segment.ident.to_string());
+                    }
+                }
+                syn::Item::Mod(item_mod) => {
+                    if let Some((_, items)) = &item_mod.content {
+                        walk(items, map);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    collect_rs_files(&root.join("src").join("handlers"), &mut files);
+
+    let mut map = std::collections::HashMap::new();
+    for file in files {
+        let Ok(source) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        walk(&ast.items, &mut map);
+    }
+    map
+}
+
+/// 从 `src/router.rs` 提取 `.route("<path>", get|delete(<handler>))` 三元组。
+///
+/// 只保留带路径参数（`{...}`）的 GET / DELETE 路由 —— 这两类请求前端不会带
+/// `Content-Type`，一旦 params 结构体存在未标注字段就会 415。
+fn collect_get_delete_routes(root: &std::path::Path) -> Vec<(String, String, String)> {
+    let Ok(source) = std::fs::read_to_string(root.join("src").join("router.rs")) else {
+        return Vec::new();
+    };
+
+    let mut routes = Vec::new();
+    for (idx, _) in source.match_indices(".route(") {
+        // 路由声明是多行格式但很短，取定长窗口足够覆盖 path + method + handler。
+        // 注意：router.rs 含中文注释，定长窗口必须先回退到 UTF-8 字符边界再切片。
+        let mut end = (idx + 400).min(source.len());
+        while end > idx && !source.is_char_boundary(end) {
+            end -= 1;
+        }
+        let window = &source[idx..end];
+
+        // 1) 第一个字符串字面量即路由路径
+        let Some(path_start) = window.find('"') else {
+            continue;
+        };
+        let rest = &window[path_start + 1..];
+        let Some(path_end) = rest.find('"') else {
+            continue;
+        };
+        let path = rest[..path_end].to_string();
+        if !path.contains('{') {
+            continue;
+        }
+
+        // 2) 路径之后最早出现的 HTTP 方法调用即该路由绑定的方法
+        let after_path = &rest[path_end + 1..];
+        let mut method: Option<&str> = None;
+        let mut method_pos = usize::MAX;
+        for candidate in ["get(", "delete(", "post(", "put(", "patch("] {
+            if let Some(pos) = after_path.find(candidate)
+                && pos < method_pos
+            {
+                method_pos = pos;
+                method = Some(candidate.trim_end_matches('('));
+            }
+        }
+        let Some(method) = method else { continue };
+        if method != "get" && method != "delete" {
+            continue;
+        }
+
+        // 3) 方法名之后的第一个标识符即 handler 路径，取末段并去掉 `_handler` 后缀
+        let after_method = &after_path[method_pos + method.len() + 1..];
+        let handler: String = after_method
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == ':')
+            .collect();
+        let handler = handler
+            .rsplit("::")
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches("_handler")
+            .to_string();
+        if handler.is_empty() {
+            continue;
+        }
+
+        routes.push((method.to_uppercase(), path, handler));
+    }
+    routes
+}
+
+#[test]
+fn test_get_delete_route_params_are_fully_annotated() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let struct_fields = collect_api_struct_fields(&root);
+    let handler_params = collect_handler_params(&root);
+    let routes = collect_get_delete_routes(&root);
+
+    let mut checked = 0usize;
+    let mut offenders = Vec::new();
+    for (method, path, handler) in &routes {
+        // 解析不到的（如 params 结构体定义在 common/src/api 之外）跳过，不误报
+        let Some(params_ty) = handler_params.get(handler) else {
+            continue;
+        };
+        let Some(fields) = struct_fields.get(params_ty) else {
+            continue;
+        };
+        checked += 1;
+
+        let unannotated = fields
+            .iter()
+            .filter(|(_, annotated)| !annotated)
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>();
+        if !unannotated.is_empty() {
+            offenders.push(format!(
+                "{method} {path} -> {params_ty}: 未标注字段 {unannotated:?}"
+            ));
+        }
+    }
+
+    assert!(
+        checked >= 30,
+        "解析到的 GET/DELETE 路由过少（仅 {checked} 条，共扫描到 {} 条），扫描逻辑可能已失效",
+        routes.len()
+    );
+    assert!(
+        offenders.is_empty(),
+        "以下 GET/DELETE 路由的 params 结构体存在未标注 #[param(source = ...)] 的字段，\
+         宏会将其当作 body 并生成 axum::Json 提取器，导致不带 Content-Type 的请求 415：\n{}",
+        offenders.join("\n")
+    );
+}

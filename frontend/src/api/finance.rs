@@ -6,9 +6,9 @@ use common::api::{
     CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
     DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
     GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
-    PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse, SearchToolsRequest,
-    SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse, TestConnectionResponse,
-    TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
+    MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
+    SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
+    TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
     UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
     UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
     UpdateModelProviderStatusRequest, UpdateToolRequest, UpdateToolResponse,
@@ -159,8 +159,14 @@ pub async fn debug_call_tool(req: DebugCallToolRequest) -> Result<DebugCallToolR
 
 // ===== 消息渠道 =====
 
-pub async fn list_message_channels() -> Result<common::api::ListMessageChannelsResponse, ApiError> {
-    api_get_or_default("/api/v1/finance/message-channels").await
+/// 列出消息渠道。
+///
+/// 后端 `list_message_channels` 返回的是标准分页信封 `PagedResult<MessageChannelListItem>`
+///（`{items, total}`），与 `list_agents` / `list_projects` 等分页接口一致。
+/// 此前这里用的是孤立的 `ListMessageChannelsResponse`（字段名为 `channels`），
+/// 该 DTO 后端从未使用，导致反序列化报 `missing field 'channels'`。
+pub async fn list_message_channels() -> Result<PagedResult<MessageChannelListItem>, ApiError> {
+    api_get("/api/v1/finance/message-channels").await
 }
 
 pub async fn create_message_channel(

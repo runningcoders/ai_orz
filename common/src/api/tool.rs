@@ -392,18 +392,27 @@ pub struct QueryToolCallEntriesRequest {
 pub type QueryToolCallEntriesResponse = Vec<ToolCallEntryDetail>;
 
 /// Get one tool call trace entry by call ID.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+///
+/// 该结构体用于 GET 路由（`/tool-call-entries/{call_id}`），因此除 path 字段外
+/// 的所有字段**必须**显式标注 `#[param(source = "query")]`。
+/// 未标注的字段会被 `generate_http_handler` 当成 body，从而生成 `axum::Json`
+/// 提取器 —— GET 请求不带 `Content-Type: application/json` 时直接 415。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct GetToolCallEntryRequest {
     /// Exact call ID.
     #[param(source = "path")]
     pub call_id: String,
     /// Optional Tool ID narrows lookup to one tool trace directory.
+    #[param(source = "query")]
     pub tool_id: Option<String>,
     /// Optional Agent ID access scope.
+    #[param(source = "query")]
     pub agent_id: Option<String>,
     /// Optional Project ID access scope.
+    #[param(source = "query")]
     pub project_id: Option<String>,
     /// Optional Task ID access scope.
+    #[param(source = "query")]
     pub task_id: Option<String>,
 }
 
