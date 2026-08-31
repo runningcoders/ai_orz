@@ -177,25 +177,21 @@ pub fn OrganizationInfo() -> Element {
                                         }
                                     }
                                 }
-                                // 自定义开关：不依赖 DaisyUI toggle，确保直观渲染为开关形状
+                                // 统一 HUD 开关：.hud-switch（状态由 .is-on 控制，禁用态降透明度）
                                 div { class: "flex shrink-0 items-center gap-3",
                                     span { class: if org_config().enable_message_vector { "text-sm font-medium text-primary" } else { "text-sm font-medium text-base-content/50" },
                                         if org_config().enable_message_vector { "开启" } else { "关闭" }
                                     }
                                     button {
                                         r#type: "button",
-                                        class: "relative inline-flex h-6 w-11 items-center rounded-full border border-base-content/15 transition-colors duration-200",
-                                        class: if can_edit && editing() { "cursor-pointer" } else { "cursor-not-allowed" },
-                                        class: if org_config().enable_message_vector { "bg-primary" } else { "bg-base-300" },
+                                        class: "hud-switch",
+                                        class: if org_config().enable_message_vector { "is-on" } else { "" },
                                         disabled: !can_edit || !editing(),
                                         onclick: move |_| {
                                             let mut c = org_config.write();
                                             c.enable_message_vector = !c.enable_message_vector;
                                         },
-                                        span {
-                                            class: "inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200",
-                                            class: if org_config().enable_message_vector { "translate-x-6" } else { "translate-x-1" },
-                                        }
+                                        span { class: "hud-switch-thumb" }
                                     }
                                 }
                             }

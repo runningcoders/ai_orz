@@ -1660,6 +1660,51 @@
     box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
   }
 
+  /* ===== HUD 开关（Toggle Switch） =====
+     对齐 .hud-btn / .hud-badge / .hud-callout 的玻璃 + 发丝边语言：
+     pill 轨道（border-radius:9999px，与 hud-badge / online-badge 一致）+ 1px 发丝边
+     + 半透明底；关闭态用 base-content 玻璃灰，开启态用品牌 primary 玻璃色 + 同色发丝边
+     + 柔光投影；thumb 为白圆点带轻投影。状态由 .is-on 控制，禁用态降透明度并禁指针。
+     全部走 --color-* 语义变量，随 data-theme（含 orz-hud 深色）自动适配。 */
+  .hud-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    width: 44px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 20%, transparent);
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    cursor: pointer;
+    transition: background-color .2s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .hud-switch .hud-switch-thumb {
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    width: 18px;
+    height: 18px;
+    margin-top: -9px;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+    transition: transform .2s ease;
+    transform: translateX(0);
+  }
+  .hud-switch.is-on {
+    background: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    border-color: color-mix(in oklab, var(--color-primary) 50%, transparent);
+    box-shadow: 0 0 10px -2px color-mix(in oklab, var(--color-primary) 55%, transparent);
+  }
+  .hud-switch.is-on .hud-switch-thumb { transform: translateX(20px); }
+  .hud-switch:disabled { cursor: not-allowed; opacity: .55; }
+  .hud-switch:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 40%, transparent);
+  }
+
   /* ===== Scrollbar (optional, minimal) ===== */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
