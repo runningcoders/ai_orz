@@ -41,7 +41,7 @@ impl Consumer for AgentLoopConsumer {
         ConsumeMode::Sync
     }
 
-    async fn on_event(&self, _ctx: RequestContext, event: serde_json::Value) -> Result<()> {
+    async fn on_event(&self, ctx: RequestContext, event: serde_json::Value) -> Result<()> {
         let kind = event.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
         match kind {
@@ -54,7 +54,9 @@ impl Consumer for AgentLoopConsumer {
                 })?;
                 match event.phase.as_str() {
                     "started" => {
-                        tracing::info!(
+                        log_info!(
+                            &ctx,
+                            "agent_loop",
                             agent_id = %event.agent_id,
                             scene = %event.scene,
                             trace_id = %event.trace_id,
@@ -62,7 +64,9 @@ impl Consumer for AgentLoopConsumer {
                         );
                     }
                     "finished" => {
-                        tracing::info!(
+                        log_info!(
+                            &ctx,
+                            "agent_loop",
                             agent_id = %event.agent_id,
                             scene = %event.scene,
                             status = ?event.status,
@@ -80,7 +84,9 @@ impl Consumer for AgentLoopConsumer {
                         e
                     ))
                 })?;
-                tracing::debug!(
+                log_debug!(
+                    &ctx,
+                    "think_round",
                     agent_id = %event.agent_id,
                     scene = %event.scene,
                     round = event.round_number,

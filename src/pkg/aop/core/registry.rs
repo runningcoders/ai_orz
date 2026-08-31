@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
+use crate::pkg::logging::LogFields;
 use crate::pkg::request_context::{AOP_CONTEXT_CARRIER_KEY, ContextCarrier, RequestContext};
 use common::error::{Result, err};
 
 use super::metrics_hook::{AopEventMeta, AopMetricsHook};
 use super::{ConsumeMode, Consumer, Event, EventKind, Producer};
 use crate::pkg::aop::queue::{EventQueue, InMemoryEventQueue};
+use tracing::Level;
 
 pub struct Registry {
     self_ref: RwLock<Option<Weak<Self>>>,
@@ -174,10 +176,12 @@ impl Registry {
                     if let Some(hook) = self.metrics_hook() {
                         hook.on_consume_start(consumer.name(), &meta);
                     }
-                    match consumer
-                        .on_event(Self::carried_ctx(&event_json), event_json.clone())
-                        .await
-                    {
+                    let ctx = Self::carried_ctx(&event_json);
+                    // 进入链路 span：将还原 ctx 的 log_id 等字段挂到当前上下文，
+                    // 使消费者内部的所有日志（如 agent loop started/finished）自动携带。
+                    let span = ctx.create_log_span(consumer.name(), Level::INFO);
+                    let _span_guard = span.enter();
+                    match consumer.on_event(ctx, event_json.clone()).await {
                         Ok(()) => {
                             let duration_ms = start.elapsed().as_millis() as u64;
                             if let Some(hook) = self.metrics_hook() {
@@ -227,9 +231,17 @@ impl Registry {
     /// 提取顶层 `context_carrier` 并重建成与主 context 同源的 [`RequestContext`]
     /// （保留 log_id 等链路标识）；缺失或解析失败时回退为 system ctx。
     fn carried_ctx(event_json: &serde_json::Value) -> RequestContext {
-        ContextCarrier::from_json(event_json)
-            .map(|c| c.into_context())
-            .unwrap_or_else(RequestContext::new_system)
+        match ContextCarrier::from_json(event_json) {
+            Some(c) => c.into_context(),
+            None => {
+                // 事件缺失/损坏 context_carrier：无法还原生产者链路标识，
+                // 回退 new_system() 会重新生成 log_id（丢上下文）。显式告警，避免静默换号。
+                sys_warn!(
+                    "AOP event 缺少有效的 context_carrier，回退 new_system()（log_id 将重新生成，链路不可串联）"
+                );
+                RequestContext::new_system()
+            }
+        }
     }
 
     pub async fn dequeue_for(&self, consumer_name: &str) -> Result<Option<serde_json::Value>> {
@@ -382,10 +394,12 @@ impl Registry {
                                     hook.on_consume_start(&consumer_name, &meta);
                                 }
 
-                                match consumer
-                                    .on_event(Self::carried_ctx(&event_json), event_json)
-                                    .await
-                                {
+                                let ctx = Self::carried_ctx(&event_json);
+                                // 进入链路 span：将还原 ctx 的 log_id 等字段挂到当前上下文，
+                                // 使消费者内部的所有日志自动携带（与 HTTP 层 log_info! 同机制）。
+                                let span = ctx.create_log_span(&consumer_name, Level::INFO);
+                                let _span_guard = span.enter();
+                                match consumer.on_event(ctx, event_json).await {
                                     Ok(()) => {
                                         let duration_ms = start.elapsed().as_millis() as u64;
                                         // 埋点：on_consume_success

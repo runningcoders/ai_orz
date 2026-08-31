@@ -94,7 +94,9 @@ impl Consumer for TaskEventConsumer {
             .await?;
 
         if has_pending {
-            tracing::debug!(
+            log_debug!(
+                &ctx,
+                "task_dispatch",
                 agent_id = %owner_agent_id,
                 task_id = %event.task_id,
                 "已有 Pending 的 TaskDispatch 消息，跳过本次通知"
@@ -122,8 +124,11 @@ impl Consumer for TaskEventConsumer {
             message_type: MessageType::TaskDispatchNotification,
         };
 
+        let log_ctx = ctx.clone();
         if let Err(e) = message_domain.delivery().send_to_agent(ctx, cmd).await {
-            tracing::warn!(
+            log_warn!(
+                &log_ctx,
+                "task_dispatch",
                 task_id = %event.task_id,
                 project_id = %project_id,
                 agent_id = %owner_agent_id,
