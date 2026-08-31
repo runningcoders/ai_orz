@@ -698,12 +698,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                             button {
                                 class: "{tab1_class}",
                                 onclick: move |_| active_tab.set(1),
-                                "🔧 工具与技能"
+                                "🔧 工具"
                             }
                             button {
                                 class: "{tab2_class}",
                                 onclick: move |_| active_tab.set(2),
-                                "🔗 工具关系"
+                                "🎯 技能"
                             }
                             button {
                                 class: "{tab3_class}",
@@ -966,7 +966,58 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                             },
                             1 => rsx! {
-                                // === 工具与技能：工具包 + 技能包 + 工具绑定 ===
+                                // === 工具：工具关系总览（上部）+ 工具包 + 工具绑定 ===
+                                // 工具关系图作为总览置于上部，直观展示 Agent 与全量可用工具（神经/绑定/工具包）的关系
+                                {
+                                    let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
+                                    for t in tools_overview.neural_tools.iter() {
+                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
+                                            t.id.clone(),
+                                            t.name.clone(),
+                                            "neural_tool",
+                                        ));
+                                    }
+                                    for t in tools_overview.bound_tools.iter() {
+                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
+                                            t.id.clone(),
+                                            t.name.clone(),
+                                            "bound_tool",
+                                        ));
+                                    }
+                                    for pack in tools_overview.pack_groups.iter() {
+                                        for t in pack.tools.iter() {
+                                            all_tool_nodes.push(RelationNodeInfo::with_kind(
+                                                t.id.clone(),
+                                                t.name.clone(),
+                                                "pack_tool",
+                                            ));
+                                        }
+                                    }
+                                    let navigator = use_navigator();
+                                    rsx! {
+                                        div { class: "mb-6",
+                                            h3 { class: "text-lg font-semibold mb-3", "工具关系总览" }
+                                            RelationGraph {
+                                                center_id: a.id.clone(),
+                                                center_name: a.name.clone(),
+                                                center_color: "#fa520f".to_string(),
+                                                center_kind: Some("agent".to_string()),
+                                                related: all_tool_nodes,
+                                                related_color: "#f59e0b".to_string(),
+                                                related_label: "工具".to_string(),
+                                                on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
+                                                    if evt.is_center {
+                                                        return;
+                                                    }
+                                                    let kind_family = evt.kind.clone().unwrap_or_default();
+                                                    if kind_family.ends_with("tool") || kind_family == "tool" {
+                                                        navigator.push(format!("/finance/tools/{}", evt.id));
+                                                    }
+                                                })),
+                                            }
+                                        }
+                                    }
+                                }
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "工具包" }
                                     div { class: "flex gap-2 items-center mb-4",
@@ -1035,6 +1086,152 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     }
                                 }
 
+                                div { class: "mb-6",
+                                    h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
+
+                                    // 搜索框（动态搜索模式：on_search 回调调用 query_tools）
+                                    div { class: "mb-4",
+                                        SearchableSelect {
+                                            placeholder: "搜索工具名称...".to_string(),
+                                            selected: None,
+                                            options: tool_search_results.read().iter().map(|t| {
+                                                format!("{} ({})", t.name, t.id)
+                                            }).collect(),
+                                            on_select: move |selection: String| {
+                                                // 从 "name (id)" 格式中提取 id
+                                                if let Some(id_start) = selection.rfind('(') {
+                                                    let tool_id = selection[id_start+1..selection.len()-1].to_string();
+                                                    let aid = agent_id_signal();
+                                                    spawn(async move {
+                                                        match bind_tool_to_agent(BindToolToAgentRequest {
+                                                            agent_id: aid.clone(),
+                                                            tool_id: tool_id.clone(),
+                                                        }).await {
+                                                            Ok(_) => {
+                                                                toast.success("工具已绑定");
+                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                                }
+                                                            }
+                                                            Err(e) => toast.error(format!("绑定失败: {}", e)),
+                                                        }
+                                                    });
+                                                }
+                                            },
+                                            on_search: Some(EventHandler::new(move |keyword: String| {
+                                                spawn(async move {
+                                                    if keyword.trim().is_empty() {
+                                                        tool_search_results.set(Vec::new());
+                                                        return;
+                                                    }
+                                                    tool_search_loading.set(true);
+                                                    let req = ToolQueryRequest {
+                                                        keyword: Some(keyword),
+                                                        enabled_only: Some(true),
+                                                        ..Default::default()
+                                                    };
+                                                    match query_tools(&req).await {
+                                                        Ok(resp) => tool_search_results.set(resp.items),
+                                                        Err(_) => tool_search_results.set(Vec::new()),
+                                                    }
+                                                    tool_search_loading.set(false);
+                                                });
+                                            })),
+                                            loading: *tool_search_loading.read(),
+                                        }
+                                    }
+
+                                    // ===== Agent 工具全景（三分组：神经/直接绑定/工具包）=====
+                                    // 与 runtime 工具注入同源，互不相交，完整展示 Agent 实际可用的所有工具
+                                    if all_tool_count > 0 {
+                                        // -- ① 神经工具：天生拥有，无需安装/绑定 --
+                                        if !tools_overview.neural_tools.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🧠 神经工具（天生可用）" }
+                                                    span { class: "badge orz-tag badge-xs",
+                                                        "{tools_overview.neural_tools.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for tool in tools_overview.neural_tools.iter() {
+                                                        ToolCard {
+                                                            key: "nt-{tool.id}",
+                                                            tool: tool.clone(),
+                                                            tone: "primary",
+                                                            badge: "神经".to_string(),
+                                                            badge_class: "badge orz-tag badge-xs",
+                                                            show_unbind: false,
+                                                            on_unbind: on_unbind_tool,
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ② 直接绑定工具：通过 agent_tools 显式绑定，带「解绑」按钮 --
+                                        if !tools_overview.bound_tools.is_empty() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "🔗 直接绑定" }
+                                                    span { class: "badge orz-tag badge-xs",
+                                                        "{tools_overview.bound_tools.len()}"
+                                                    }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for tool in tools_overview.bound_tools.iter() {
+                                                        ToolCard {
+                                                            key: "bt-{tool.id}",
+                                                            tool: tool.clone(),
+                                                            tone: "success",
+                                                            badge: "已绑定".to_string(),
+                                                            badge_class: "badge orz-tag badge-xs",
+                                                            show_unbind: true,
+                                                            on_unbind: on_unbind_tool,
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // -- ③ 工具包分组（按 runtime_config.installed_tags 展开）--
+                                        for pack in tools_overview.pack_groups.iter() {
+                                            if !pack.tools.is_empty() {
+                                                div { class: "mb-4",
+                                                    key: "tpg-{pack.tag}",
+                                                    div { class: "flex items-center gap-2 mb-2",
+                                                        h4 { class: "font-semibold text-base", "📦 工具包：{pack.tag}" }
+                                                        span { class: "badge orz-tag badge-xs",
+                                                            "{pack.tools.len()}"
+                                                        }
+                                                    }
+                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                        for tool in pack.tools.iter() {
+                                                            ToolCard {
+                                                                key: "tp-{pack.tag}-{tool.id}",
+                                                                tool: tool.clone(),
+                                                                tone: "accent",
+                                                                badge: format!("来自 {}", pack.tag),
+                                                                badge_class: "badge orz-tag badge-xs",
+                                                                show_unbind: false,
+                                                                on_unbind: on_unbind_tool,
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        div { class: "text-center py-12",
+                                            div { class: "text-5xl mb-4 opacity-30", "🔧" }
+                                            div { class: "text-base-content/70", "暂无可用工具" }
+                                        }
+                                    }
+                                }
+                            },
+                            2 => rsx! {
+                                // === 技能：技能包 + 单个技能安装 ===
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "技能包" }
                                     div { class: "flex gap-2 items-center mb-4",
@@ -1221,206 +1418,6 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         div { class: "text-center py-12",
                                             div { class: "text-5xl mb-4 opacity-30", "🧩" }
                                             div { class: "text-base-content/70", "暂无已安装技能" }
-                                        }
-                                    }
-                                }
-
-                                div { class: "mb-6",
-                                    h3 { class: "text-lg font-semibold mb-3", "工具绑定" }
-
-                                    // 搜索框（动态搜索模式：on_search 回调调用 query_tools）
-                                    div { class: "mb-4",
-                                        SearchableSelect {
-                                            placeholder: "搜索工具名称...".to_string(),
-                                            selected: None,
-                                            options: tool_search_results.read().iter().map(|t| {
-                                                format!("{} ({})", t.name, t.id)
-                                            }).collect(),
-                                            on_select: move |selection: String| {
-                                                // 从 "name (id)" 格式中提取 id
-                                                if let Some(id_start) = selection.rfind('(') {
-                                                    let tool_id = selection[id_start+1..selection.len()-1].to_string();
-                                                    let aid = agent_id_signal();
-                                                    spawn(async move {
-                                                        match bind_tool_to_agent(BindToolToAgentRequest {
-                                                            agent_id: aid.clone(),
-                                                            tool_id: tool_id.clone(),
-                                                        }).await {
-                                                            Ok(_) => {
-                                                                toast.success("工具已绑定");
-                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
-                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                                }
-                                                            }
-                                                            Err(e) => toast.error(format!("绑定失败: {}", e)),
-                                                        }
-                                                    });
-                                                }
-                                            },
-                                            on_search: Some(EventHandler::new(move |keyword: String| {
-                                                spawn(async move {
-                                                    if keyword.trim().is_empty() {
-                                                        tool_search_results.set(Vec::new());
-                                                        return;
-                                                    }
-                                                    tool_search_loading.set(true);
-                                                    let req = ToolQueryRequest {
-                                                        keyword: Some(keyword),
-                                                        enabled_only: Some(true),
-                                                        ..Default::default()
-                                                    };
-                                                    match query_tools(&req).await {
-                                                        Ok(resp) => tool_search_results.set(resp.items),
-                                                        Err(_) => tool_search_results.set(Vec::new()),
-                                                    }
-                                                    tool_search_loading.set(false);
-                                                });
-                                            })),
-                                            loading: *tool_search_loading.read(),
-                                        }
-                                    }
-
-                                    // ===== Agent 工具全景（三分组：神经/直接绑定/工具包）=====
-                                    // 与 runtime 工具注入同源，互不相交，完整展示 Agent 实际可用的所有工具
-                                    if all_tool_count > 0 {
-                                        // -- ① 神经工具：天生拥有，无需安装/绑定 --
-                                        if !tools_overview.neural_tools.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🧠 神经工具（天生可用）" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{tools_overview.neural_tools.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for tool in tools_overview.neural_tools.iter() {
-                                                        ToolCard {
-                                                            key: "nt-{tool.id}",
-                                                            tool: tool.clone(),
-                                                            tone: "primary",
-                                                            badge: "神经".to_string(),
-                                                            badge_class: "badge orz-tag badge-xs",
-                                                            show_unbind: false,
-                                                            on_unbind: on_unbind_tool,
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // -- ② 直接绑定工具：通过 agent_tools 显式绑定，带「解绑」按钮 --
-                                        if !tools_overview.bound_tools.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🔗 直接绑定" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{tools_overview.bound_tools.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for tool in tools_overview.bound_tools.iter() {
-                                                        ToolCard {
-                                                            key: "bt-{tool.id}",
-                                                            tool: tool.clone(),
-                                                            tone: "success",
-                                                            badge: "已绑定".to_string(),
-                                                            badge_class: "badge orz-tag badge-xs",
-                                                            show_unbind: true,
-                                                            on_unbind: on_unbind_tool,
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // -- ③ 工具包分组（按 runtime_config.installed_tags 展开）--
-                                        for pack in tools_overview.pack_groups.iter() {
-                                            if !pack.tools.is_empty() {
-                                                div { class: "mb-4",
-                                                    key: "tpg-{pack.tag}",
-                                                    div { class: "flex items-center gap-2 mb-2",
-                                                        h4 { class: "font-semibold text-base", "📦 工具包：{pack.tag}" }
-                                                        span { class: "badge orz-tag badge-xs",
-                                                            "{pack.tools.len()}"
-                                                        }
-                                                    }
-                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                        for tool in pack.tools.iter() {
-                                                            ToolCard {
-                                                                key: "tp-{pack.tag}-{tool.id}",
-                                                                tool: tool.clone(),
-                                                                tone: "accent",
-                                                                badge: format!("来自 {}", pack.tag),
-                                                                badge_class: "badge orz-tag badge-xs",
-                                                                show_unbind: false,
-                                                                on_unbind: on_unbind_tool,
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        div { class: "text-center py-12",
-                                            div { class: "text-5xl mb-4 opacity-30", "🔧" }
-                                            div { class: "text-base-content/70", "暂无可用工具" }
-                                        }
-                                    }
-                                }
-                            },
-                            2 => rsx! {
-                                // === 工具关系图：Agent 与全量可用 Tools（神经+绑定+工具包）的关系图 ===
-                                // 数据源：tools_overview，与 runtime 同源，不再依赖 agent_tools INNER JOIN
-                                {
-                                    let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
-                                    // 神经工具
-                                    for t in tools_overview.neural_tools.iter() {
-                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                            t.id.clone(),
-                                            t.name.clone(),
-                                            "neural_tool",
-                                        ));
-                                    }
-                                    // 直接绑定
-                                    for t in tools_overview.bound_tools.iter() {
-                                        all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                            t.id.clone(),
-                                            t.name.clone(),
-                                            "bound_tool",
-                                        ));
-                                    }
-                                    // 工具包工具
-                                    for pack in tools_overview.pack_groups.iter() {
-                                        for t in pack.tools.iter() {
-                                            all_tool_nodes.push(RelationNodeInfo::with_kind(
-                                                t.id.clone(),
-                                                t.name.clone(),
-                                                "pack_tool",
-                                            ));
-                                        }
-                                    }
-                                    let navigator = use_navigator();
-                                    rsx! {
-                                        RelationGraph {
-                                            center_id: a.id.clone(),
-                                            center_name: a.name.clone(),
-                                            center_color: "#fa520f".to_string(),
-                                            center_kind: Some("agent".to_string()),
-                                            related: all_tool_nodes,
-                                            related_color: "#f59e0b".to_string(),
-                                            related_label: "工具".to_string(),
-                                            on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
-                                                if evt.is_center {
-                                                    // 点击中心 Agent 节点，不跳转（已在当前页）
-                                                    return;
-                                                }
-                                                // 无论何种子类型（neural_tool / bound_tool / pack_tool），都跳转工具详情页
-                                                let kind_family = evt.kind.clone().unwrap_or_default();
-                                                if kind_family.ends_with("tool") || kind_family == "tool" {
-                                                    navigator.push(format!("/finance/tools/{}", evt.id));
-                                                }
-                                            })),
                                         }
                                     }
                                 }
