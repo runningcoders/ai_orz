@@ -10,6 +10,7 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::navbar::Navbar;
+use crate::store::directory::use_directory;
 use crate::store::toast::use_toast;
 use crate::utils::{
     MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
@@ -68,6 +69,8 @@ pub fn MessageChat() -> Element {
     let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
     let mut uploading = use_signal(|| false);
     let toast = use_toast();
+    // 全局名称目录：用于将消息 from_id 解析为展示名（用户 / Agent 名字）
+    let directory = use_directory();
 
     // 快捷指令菜单状态
     let mut show_slash_menu = use_signal(|| false);
@@ -661,16 +664,18 @@ pub fn MessageChat() -> Element {
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
-                                        let msg_id = msg.message_id.clone();
-                                        let msg_role = msg.from_role;
-                                        let msg_clone = msg.clone();
-                                        let expanded = tool_expanded.read().contains(&msg_id);
-                                        let is_user = msg_role == 0;
-                                        let is_system = msg_role == 2;
+        let msg_id = msg.message_id.clone();
+        let msg_role = msg.from_role;
+        let msg_clone = msg.clone();
+        let expanded = tool_expanded.read().contains(&msg_id);
+        let is_user = msg_role == 0;
+        let is_system = msg_role == 2;
+        let sender_name = directory().sender_name(&msg_clone);
                                         rsx! {
                                             div {
                                                 class: if is_user { "chat chat-end" } else { "chat chat-start" },
                                                 key: "{msg_id}",
+                                                div { class: "chat-header pr-1 text-sm opacity-70", "{sender_name}" }
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
@@ -799,16 +804,18 @@ pub fn MessageChat() -> Element {
                                 },
                                 MessageListEntry::Message(msg) => rsx! {
                                     {
-                                        let msg_id = msg.message_id.clone();
-                                        let msg_role = msg.from_role;
-                                        let msg_clone = msg.clone();
-                                        let expanded = tool_expanded.read().contains(&msg_id);
-                                        let is_user = msg_role == 0;
-                                        let is_system = msg_role == 2;
+        let msg_id = msg.message_id.clone();
+        let msg_role = msg.from_role;
+        let msg_clone = msg.clone();
+        let expanded = tool_expanded.read().contains(&msg_id);
+        let is_user = msg_role == 0;
+        let is_system = msg_role == 2;
+        let sender_name = directory().sender_name(&msg_clone);
                                         rsx! {
                                             div {
                                                 class: if is_user { "chat chat-end" } else { "chat chat-start" },
                                                 key: "{msg_id}",
+                                                div { class: "chat-header pr-1 text-sm opacity-70", "{sender_name}" }
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },

@@ -47,14 +47,14 @@ pub async fn update_current_organization(
         org.base_url = new_base_url;
     }
 
-    // 组织级配置：仅超级管理员可修改
+    // 组织级配置：仅组织管理员（Admin 及以上）可修改
     if let Some(cfg) = params.config {
         let role = ctx
             .user_role()
             .map(UserRole::from_i32)
             .unwrap_or(UserRole::Member);
-        if !UserRole::has_permission(role, UserRole::SuperAdmin) {
-            return Err(Error::forbidden("权限不足，仅超级管理员可修改组织级配置"));
+        if !UserRole::has_permission(role, UserRole::Admin) {
+            return Err(Error::forbidden("权限不足，仅组织管理员可修改组织级配置"));
         }
         domain
             .organization_manage()

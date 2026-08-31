@@ -194,15 +194,16 @@ pub fn Navbar() -> Element {
                         "在线"
                     }
 
-                    // 桌面端用户菜单：仅头像
+                    // 桌面端用户菜单：头像 + 显示名
                     div { class: "dropdown dropdown-end",
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-circle btn-sm",
+                            class: "btn btn-ghost btn-sm gap-2",
                             div { class: "avatar",
                                 div { class: "w-8 rounded-full {avatar_bg} text-white flex items-center justify-center text-sm font-bold", "{avatar_char}" }
                             }
+                            span { class: "max-w-[8rem] truncate", "{label}" }
                         }
                         ul {
                             tabindex: 0,
