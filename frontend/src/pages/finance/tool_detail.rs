@@ -264,7 +264,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                     let t = t.clone();
                     rsx! {
                 HudPanel {
-                    title: "{t.name}".to_string(),
+                    title: t.name.clone(),
                     eyebrow: "TOOL".to_string(),
                     signal: true,
                     div { class: "card-body",

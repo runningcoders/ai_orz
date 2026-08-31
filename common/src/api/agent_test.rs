@@ -1,7 +1,22 @@
 //! Agent API DTO contract tests.
 
 use super::{ApiResponse, GetAgentResponse, UpdateAgentStatusRequest, UpdateAgentStatusResponse};
+use crate::api::agent::ListAgentsRequest;
 use crate::enums::AgentStatus;
+
+/// 回归测试：分页 GET 参数应通过 `RawQuery -> serde_json::Value`（宏的 (false,true)/(true,true)
+/// GET 路径）解析，而不是 axum 的 `Query`（底层 serde_urlencoded，不支持 `#[serde(flatten)]`，
+/// 会在 `limit=500` 时报 `invalid type: string "500", expected usize`）。
+/// 这里直接验证被拍平的 `PaginationParams` 能从带类型推断的 serde_json::Value 正确解析。
+#[test]
+fn query_flatten_limit_via_json_value() {
+    // 模拟宏生成的 RawQuery 解析：把 "500" 识别为数字而非字符串
+    let mut obj = serde_json::Map::new();
+    obj.insert("limit".into(), serde_json::json!(500));
+    let v = serde_json::Value::Object(obj);
+    let req: ListAgentsRequest = serde_json::from_value(v).unwrap();
+    assert_eq!(req.pagination.limit, Some(500));
+}
 
 #[test]
 fn update_agent_status_request_serializes_status_enum() {

@@ -327,38 +327,37 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
         .collect();
     let has_query = !query_idents.is_empty() || !flattened_query_idents.is_empty();
 
+    // 为非 flatten query 字段生成提取代码（所有分支共用，故提到 match 之前）
+    let extract_query_fields = {
+        let query_idents_str: Vec<String> = query_idents.iter().map(|i| i.to_string()).collect();
+        quote! {
+            #(
+                if let Some(__v) = __query_value.get(#query_idents_str) {
+                    if let Ok(__parsed) = serde_json::from_value(__v.clone()) {
+                        params.#query_idents = __parsed;
+                    }
+                }
+            )*
+        }
+    };
+
+    // 为 flatten query 字段生成提取代码（所有分支共用，故提到 match 之前）
+    let extract_flattened_query_fields = {
+        quote! {
+            #(
+                if let Ok(__parsed) = serde_json::from_value(__query_value.clone()) {
+                    params.#flattened_query_idents = __parsed;
+                }
+            )*
+        }
+    };
+
     // Generate the handler code
     let expanded = match (has_path, has_query) {
         (true, true) => {
             let path_tuple = quote! { ( #( #path_idents, )* ) };
             let path_ty_tuple = quote! { ( #( #path_types, )* ) };
             let assign_paths = quote! { #( params.#path_idents = #path_idents; )* };
-
-            // 为非 flatten query 字段生成提取代码
-            let extract_query_fields = {
-                let query_idents_str: Vec<String> =
-                    query_idents.iter().map(|i| i.to_string()).collect();
-                quote! {
-                    #(
-                        if let Some(__v) = __query_value.get(#query_idents_str) {
-                            if let Ok(__parsed) = serde_json::from_value(__v.clone()) {
-                                params.#query_idents = __parsed;
-                            }
-                        }
-                    )*
-                }
-            };
-
-            // 为 flatten query 字段生成提取代码
-            let extract_flattened_query_fields = {
-                quote! {
-                    #(
-                        if let Ok(__parsed) = serde_json::from_value(__query_value.clone()) {
-                            params.#flattened_query_idents = __parsed;
-                        }
-                    )*
-                }
-            };
 
             // 判断是否所有非 path 字段都是 query（即无 body 字段）
             let total_query_fields = query_fields.len() + flattened_query_fields.len();
@@ -519,8 +518,47 @@ pub fn generate_http_handler(_args: TokenStream, input: TokenStream) -> TokenStr
 
                 pub async fn #handler_ident(
                     axum::extract::Extension(ctx): axum::extract::Extension<RequestContext>,
-                    axum::extract::Query(params): axum::extract::Query<#params_ty>,
+                    axum::extract::RawQuery(__raw_query): axum::extract::RawQuery,
                 ) -> ::std::result::Result<axum::Json<common::api::ApiResponse<#output_ty>>, common::error::Error> {
+                    // 解析 query string 并构建 serde_json::Value（带类型推断）。
+                    // 不能用 `axum::extract::Query`：其底层 serde_urlencoded 不支持
+                    // `#[serde(flatten)]`，对 `Option<usize>` 的分页参数会报
+                    // `invalid type: string "500", expected usize`，导致带 limit 的
+                    // 分页 GET（如 agents 列表预载传 limit=500）解析失败。
+                    let __query_value: serde_json::Value = if let Some(__qs) = __raw_query.as_deref() {
+                        let __query_map: std::collections::HashMap<String, String> =
+                            serde_urlencoded::from_str(__qs).unwrap_or_default();
+                        let mut __obj = serde_json::Map::new();
+                        for (__k, __v) in &__query_map {
+                            let __parsed: serde_json::Value = if __v == "true" {
+                                serde_json::Value::Bool(true)
+                            } else if __v == "false" {
+                                serde_json::Value::Bool(false)
+                            } else if __v == "null" {
+                                serde_json::Value::Null
+                            } else if let Ok(__n) = __v.parse::<i64>() {
+                                serde_json::Value::Number(__n.into())
+                            } else if let Ok(__n) = __v.parse::<f64>() {
+                                serde_json::Number::from_f64(__n)
+                                    .map(serde_json::Value::Number)
+                                    .unwrap_or(serde_json::Value::String(__v.clone()))
+                            } else {
+                                serde_json::Value::String(__v.clone())
+                            };
+                            __obj.insert(__k.clone(), __parsed);
+                        }
+                        serde_json::Value::Object(__obj)
+                    } else {
+                        serde_json::Value::Object(serde_json::Map::new())
+                    };
+
+                    // 直接把整个 params 从 serde_json::Value 反序列化（serde_json 支持
+                    // flatten，且已把 "500" 识别为数字），无需 Params 实现 Default。
+                    let params: #params_ty = serde_json::from_value(__query_value)
+                        .map_err(|e| common::error::Error::bad_request(
+                            format!("query 参数解析失败: {e}")
+                        ))?;
+
                     let result = #core_ident(ctx, params).await?;
                     Ok(axum::Json(common::api::ApiResponse::success(result)))
                 }
