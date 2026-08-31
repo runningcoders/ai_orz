@@ -30,10 +30,15 @@ pub fn use_require_auth() -> bool {
             navigator.replace(Route::Reception {});
         } else {
             // 修复 HIGH #1 + R-M1：刷新页面后 AuthState.restore() 仅恢复 logged_in 和
-            // 持久化的 role；若 localStorage 从未存过 role（新浏览器/被清理），调用
-            // /user/me 回填一次。修复 E2E-2：不再用 role == 0 判断（与 SuperAdmin=0 冲突）。
-            let needs_role_restore = !has_saved_role();
-            if needs_role_restore && !role_restore_started() {
+            // 持久化的 role；若 localStorage 从未存过 role（新浏览器/被清理），或身份信息
+            // （用户名 / 显示名）缺失（旧 session 只存了 role、名字未落盘），调用 /user/me 回填。
+            // 修复 E2E-2：不再用 role == 0 判断（与 SuperAdmin=0 冲突）。
+            let identity_missing = {
+                let s = auth.read();
+                s.username.is_empty() && s.display_name.is_empty()
+            };
+            let needs_restore = !has_saved_role() || identity_missing;
+            if needs_restore && !role_restore_started() {
                 role_restore_started.set(true);
                 spawn(async move {
                     match get_current_user_info().await {

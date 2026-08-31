@@ -6,6 +6,7 @@ use crate::api::auth::logout as api_logout;
 use crate::hooks::use_breakpoint;
 use crate::pages::Route;
 use crate::store::auth::{logout, use_auth_state};
+use crate::utils::avatar_initials;
 
 /// 根据任意字符串生成稳定的 avatar 背景色（纯前端 hash，零外部依赖）
 ///
@@ -60,12 +61,7 @@ pub fn Navbar() -> Element {
     };
 
     let label = auth().display_label().to_string();
-    let avatar_char = label
-        .chars()
-        .next()
-        .unwrap_or('U')
-        .to_string()
-        .to_uppercase();
+    let avatar_char = avatar_initials(&label);
     let avatar_bg = avatar_color(&label);
     let is_admin = auth().is_admin();
 
@@ -199,7 +195,7 @@ pub fn Navbar() -> Element {
                         div {
                             tabindex: 0,
                             role: "button",
-                            class: "btn btn-ghost btn-sm gap-2",
+                            class: "flex items-center gap-2 cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-base-content/10",
                             div { class: "avatar",
                                 div { class: "w-8 rounded-full {avatar_bg} text-white flex items-center justify-center text-sm font-bold", "{avatar_char}" }
                             }

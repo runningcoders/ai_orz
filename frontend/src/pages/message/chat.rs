@@ -14,9 +14,9 @@ use crate::store::directory::use_directory;
 use crate::store::toast::use_toast;
 use crate::utils::{
     MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
-    MSG_TOOL_CALL_RESULT, MSG_VIDEO, build_optimistic_user_msg, format_file_size,
+    MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials, build_optimistic_user_msg, format_file_size,
     format_time_hm as format_time, is_attachment_message, project_status_text as status_text,
-    replace_tmp_with_real, role_avatar,
+    replace_tmp_with_real,
 };
 use common::api::{
     AgentListItem, CreateProjectRequest, GetReceptionAgentResponse, ListAgentsRequest,
@@ -679,7 +679,7 @@ pub fn MessageChat() -> Element {
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
-                                                        "{role_avatar(msg_role)}"
+                                                        "{avatar_initials(&sender_name)}"
                                                     }
                                                 }
                                                 {
@@ -819,7 +819,7 @@ pub fn MessageChat() -> Element {
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
-                                                        "{role_avatar(msg_role)}"
+                                                        "{avatar_initials(&sender_name)}"
                                                     }
                                                 }
                                                 {

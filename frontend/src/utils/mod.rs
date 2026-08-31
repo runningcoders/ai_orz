@@ -6,6 +6,7 @@
 //! - `status`: 任务/项目状态映射
 //! - `doc_link`: Markdown 渲染期站内链接后处理（data-repo-href 预拼）
 
+pub mod avatar;
 pub mod doc_link;
 pub mod file;
 pub mod message;
@@ -13,6 +14,7 @@ pub mod status;
 pub mod time;
 
 // 重新导出所有公共 API，保持向后兼容（use crate::utils::xxx 不变）
+pub use avatar::*;
 pub use file::*;
 pub use message::*;
 pub use status::*;
