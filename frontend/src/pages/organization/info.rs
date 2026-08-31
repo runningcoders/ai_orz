@@ -8,9 +8,10 @@ use dioxus::prelude::*;
 use common::api::{OrganizationConfig, UpdateCurrentOrganizationRequest};
 
 use crate::api::organization::{get_current_organization, update_current_organization};
-use crate::components::hud::HudPanel;
+use crate::components::hud::{HudCallout, HudPanel};
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
+use crate::store::auth::use_auth_state;
 use crate::store::toast::use_toast;
 use crate::utils::status::config_dimension_badge;
 
@@ -23,6 +24,10 @@ pub fn OrganizationInfo() -> Element {
     let mut org_config = use_signal(OrganizationConfig::default);
     let mut saving = use_signal(|| false);
     let toast = use_toast();
+    // 组织级配置（含消息向量索引）仅组织管理员可改；其余成员只读。
+    // 依赖 AuthState 正确回填（见 use_require_auth 的 identity 回填修复）。
+    let auth = use_auth_state();
+    let is_admin = auth().is_admin();
 
     use_effect(move || {
         spawn(async move {
@@ -106,7 +111,12 @@ pub fn OrganizationInfo() -> Element {
                             }
                             div { class: "flex items-center justify-between gap-4",
                                 div { class: "flex-1",
-                                    div { class: "font-medium", "消息向量索引" }
+                                    div { class: "flex items-center gap-2",
+                                        div { class: "font-medium", "消息向量索引" }
+                                        span { class: if org_config().enable_message_vector { "badge hud-badge badge-sm badge-success" } else { "badge hud-badge badge-sm badge-neutral" },
+                                            if org_config().enable_message_vector { "当前：开启" } else { "当前：关闭（默认）" }
+                                        }
+                                    }
                                     label { class: "label",
                                         span { class: "label-text-alt",
                                             "开启后，普通消息会构建语义向量以支持语义检索；默认关闭以避免无意义的 Embedding 开销。配置仅对当前组织生效。"
@@ -117,10 +127,18 @@ pub fn OrganizationInfo() -> Element {
                                     r#type: "checkbox",
                                     class: "toggle toggle-primary",
                                     checked: org_config().enable_message_vector,
+                                    disabled: !is_admin,
                                     onchange: move |_| {
                                         let mut c = org_config.write();
                                         c.enable_message_vector = !c.enable_message_vector;
                                     },
+                                }
+                            }
+                            if !is_admin {
+                                div { class: "mt-2",
+                                    HudCallout { tone: Some("warning".to_string()), extra_class: Some("text-sm".to_string()),
+                                        "仅组织管理员可修改组织级配置。"
+                                    }
                                 }
                             }
                         }
