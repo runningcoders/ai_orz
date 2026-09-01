@@ -1606,14 +1606,15 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
                                     // 包即筛选器：点击卡片切换下方列表的 tag 过滤（再次点击取消）；「卸载」按钮触发二次确认弹窗。
-                                    // 📦 已过期技能虚拟 pack 永远放在 grid 第一格（让用户一眼就看见，不躲在末尾）。
-                                    // 如果当前没有任何真实 pack，也依然显示虚拟 pack（提示用户有过期副本能力可触发）。
+                                    // 📦 已过期技能虚拟 pack 放在**真实 packs 之后（grid 末尾）**；
+                                    // 具体过期技能卡片区域放**技能列表最前端**（用户点中后第一时间看到恢复按钮）。
                                     {
+                                        let packs = skill_packs_list.clone();
                                         let tf = skill_filter_tags;
                                         let expired_active = tf.read().iter().any(|t| t == EXPIRED_PACK_TAG);
                                         let exp_count = expired_skill_list.read().len();
                                         let title = EXPIRED_PACK_LABEL.to_string();
-                                        let subtitle = if expired_loaded() {
+                                        let subtitle_exp = if expired_loaded() {
                                             format!("过期副本 {} 个 · 点击切换显示", exp_count)
                                         } else {
                                             "点击加载并显示过期副本".to_string()
@@ -1623,36 +1624,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         } else {
                                             "border-2 border-base-300 bg-base-200/40 hover:border-error/50 hover:bg-error/5"
                                         };
-                                        // 真实 pack 循环也要在同一个 grid 内，所以先把 rsx 拼起来：
-                                        // 外层永远渲染 grid；虚拟 pack 始终放第一个；真实 packs 紧随其后。
-                                        let packs = skill_packs_list.clone();
                                         rsx! {
                                             div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                // ====== 第 1 格：虚拟过期技能 pack ======
-                                                div {
-                                                    class: "card {style} cursor-pointer",
-                                                    onclick: move |_| on_toggle_expired_pack(),
-                                                    div {
-                                                        class: "card-body py-3 px-4",
-                                                        div {
-                                                            class: "flex items-center justify-between w-full",
-                                                            h3 {
-                                                                class: "card-title text-sm font-semibold m-0 flex items-center gap-2",
-                                                                span { class: "badge badge-error badge-sm", "Expired" }
-                                                                "{title}"
-                                                            }
-                                                            div {
-                                                                class: "text-xs text-base-content/60",
-                                                                "{subtitle}"
-                                                            }
-                                                        }
-                                                        p {
-                                                            class: "text-xs text-base-content/50 mt-1",
-                                                            "升级时被替换下来的旧副本存放在这里，可选择性恢复为 Draft 重新使用。"
-                                                        }
-                                                    }
-                                                }
-                                                // ====== 第 2+ 格：真实已安装 packs（列表为空时不渲染空提示）======
+                                                // ====== 第 1..N 格：真实已安装 packs ======
                                                 for tag in packs.iter() {
                                                     {
                                                         let tag_clone = tag.clone();
@@ -1683,11 +1657,33 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         }
                                                     }
                                                 }
+                                                // ====== 末尾一格：虚拟过期技能 pack ======
+                                                div {
+                                                    class: "card {style} cursor-pointer",
+                                                    onclick: move |_| on_toggle_expired_pack(),
+                                                    div {
+                                                        class: "card-body py-3 px-4",
+                                                        div {
+                                                            class: "flex items-center justify-between w-full",
+                                                            h3 {
+                                                                class: "card-title text-sm font-semibold m-0 flex items-center gap-2",
+                                                                span { class: "badge badge-error badge-sm", "Expired" }
+                                                                "{title}"
+                                                            }
+                                                            div {
+                                                                class: "text-xs text-base-content/60",
+                                                                "{subtitle_exp}"
+                                                            }
+                                                        }
+                                                        p {
+                                                            class: "text-xs text-base-content/50 mt-1",
+                                                            "升级时被替换下来的旧副本存放在这里，可选择性恢复为 Draft 重新使用。"
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    // 如果 packs 为空也不再额外展示空文案——用户始终能看到虚拟 pack，
-                                    // 视觉上不会出现"这里好像有 bug 什么都没渲染"的问题。
                                 }
 
                                 // === 单个技能安装 ===
@@ -1779,36 +1775,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             div { class: "text-base-content/70", "没有匹配当前筛选条件的技能" }
                                         }
                                     } else {
-                                        for (label, neural_badge, tone, skills) in skill_filtered.iter() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "{label}" }
-                                                    span { class: "badge orz-tag badge-xs", "{skills.len()}" }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for skill in skills.iter() {
-                                                        div {
-                                                            id: "skill-card-{skill.id}",
-                                                            class: if highlight_skill_id.read().as_deref() == Some(skill.id.as_str()) {
-                                                                "rounded-lg ring-2 ring-primary"
-                                                            } else {
-                                                                ""
-                                                            },
-                                                            SkillCard {
-                                                                key: "flt-{skill.id}",
-                                                                skill: skill.clone(),
-                                                                tone: *tone,
-                                                                neural_badge: *neural_badge,
-                                                                on_uninstall: on_uninstall_skill,
-                                                                on_restore: None,
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // --- 追加：📦 已过期技能 · 独立分组（当 filter_has_expired 选中虚拟 pack 时渲染）---
-                                        // 这个 Section 放在活动技能分组下面，视觉独立，卡片用 error 色调+恢复按钮。
+                                        // --- 📦 已过期技能 · 独立分组（选中虚拟 pack 时渲染）---
+                                        // 放在**技能列表最前端**：用户一点中虚拟 pack，立刻就能在最顶部看到
+                                        // 过期副本卡片和恢复按钮，不用滚到底下找。
                                         {
                                             let expired = expired_skill_list.read().clone();
                                             let expired_empty_label = if expired_loaded() {
@@ -1821,11 +1790,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             if filter_has_expired {
                                                 rsx! {
                                                     div {
-                                                        class: "mb-4 mt-6 rounded-xl border-2 border-dashed border-error/40 p-4 bg-error/[0.04]",
+                                                        class: "mb-6 rounded-xl border-2 border-dashed border-error/40 p-4 bg-error/[0.04]",
                                                         div {
                                                             class: "flex items-center gap-2 mb-3",
                                                             span { class: "badge badge-error badge-sm", "Expired" }
-                                                            h4 { class: "font-semibold text-base", "📦 已过期技能（虚拟 pack 加载结果）" }
+                                                            h4 { class: "font-semibold text-base", "📦 已过期技能（点击虚拟 pack 加载）" }
                                                             span { class: "badge orz-tag badge-xs", "{exp_count}" }
                                                         }
                                                         if expired.is_empty() {
@@ -1854,6 +1823,35 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                             } else {
                                                 rsx! { {} }
+                                            }
+                                        }
+                                        // --- 正常活动技能分组 ---
+                                        for (label, neural_badge, tone, skills) in skill_filtered.iter() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "{label}" }
+                                                    span { class: "badge orz-tag badge-xs", "{skills.len()}" }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for skill in skills.iter() {
+                                                        div {
+                                                            id: "skill-card-{skill.id}",
+                                                            class: if highlight_skill_id.read().as_deref() == Some(skill.id.as_str()) {
+                                                                "rounded-lg ring-2 ring-primary"
+                                                            } else {
+                                                                ""
+                                                            },
+                                                            SkillCard {
+                                                                key: "flt-{skill.id}",
+                                                                skill: skill.clone(),
+                                                                tone: *tone,
+                                                                neural_badge: *neural_badge,
+                                                                on_uninstall: on_uninstall_skill,
+                                                                on_restore: None,
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
