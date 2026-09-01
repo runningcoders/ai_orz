@@ -103,6 +103,12 @@ impl HrDomainImpl {
     }
 }
 
+/// 创建 Agent 时默认安装的工具包 tags。
+/// 这些包承载「技能/工具自助管理」类工具（update_skill / install_skill_pack /
+/// create_tool 等），让每个 Agent 都能按需获取、使用并自我演进自身能力。
+/// 仅当库里已存在对应已启用工具时才会写入 installed_tags（见 create_agent 守卫）。
+const DEFAULT_AGENT_TOOL_PACKS: &[&str] = &["skill_management", "tool_management"];
+
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
     /// 创建 Agent
@@ -133,6 +139,33 @@ impl AgentManage for HrDomainImpl {
                 .await
         {
             log_warn!(ctx, "create_agent", "默认安装神经技能包失败（忽略）: {e}");
+        }
+
+        // 默认安装技能/工具管理工具包：让每个 Agent 都能自助管理自己的技能与工具
+        // （update_skill / install_skill_pack / create_tool 等）。仅当库里已有对应已启用工具时
+        // 才写入 installed_tags，避免无工具环境下留下脏数据；安装失败不阻塞创建。
+        for &tag in DEFAULT_AGENT_TOOL_PACKS {
+            let tools = self
+                .tool_dal
+                .query(
+                    ctx.clone(),
+                    crate::service::dao::tool::ToolQuery {
+                        tags: Some(vec![tag.to_string()]),
+                        enabled_only: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            if tools.items.is_empty() {
+                continue;
+            }
+            if let Err(e) = self.install_tool_pack(ctx.clone(), &agent.po.id, tag).await {
+                log_warn!(
+                    ctx,
+                    "create_agent",
+                    "默认安装工具包 {tag} 失败（忽略）: {e}"
+                );
+            }
         }
 
         Ok(())
