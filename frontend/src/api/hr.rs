@@ -56,8 +56,8 @@ pub async fn get_agent(req: GetAgentRequest) -> Result<GetAgentResponse, ApiErro
         ),
         ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
         ("stats_interval", req.stats_interval.clone()),
-        // 工具/技能全景开关：后端以 query 读取，漏传会默认 false 导致
-        // tools_overview / skills_overview 不装配，详情页"工具与技能"tab 仅显示 packs。
+        // 工具/技能扁平列表开关：后端以 query 读取，漏传会默认 false 导致
+        // tool_list / skill_list 不装配，详情页"工具与技能"tab 仅显示 packs。
         ("with_tools", req.with_tools.map(|v| v.to_string())),
         ("with_skills", req.with_skills.map(|v| v.to_string())),
     ]);

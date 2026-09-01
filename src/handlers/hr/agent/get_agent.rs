@@ -1,6 +1,6 @@
 //! Handler: GET /api/v1/agents/{id} - Get agent detailed information
 
-use super::association::{build_skills_overview, build_tools_overview};
+use super::association::{build_flat_skills, build_flat_tools};
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentFetchOptions;
@@ -135,25 +135,23 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         .await
         .unwrap_or_default();
 
-    // 装配 Agent 全景视图（工具三分组 + 技能三分组），分两步：
-    //   1) Hr domain 产出 **ID 分组**（neural/bound/pack 的分组规则归它）；
-    //   2) association 模块跨领域编排：调专业领域查询实体并打包成 DTO
-    //      —— 工具额外经 runtime domain 做就绪探测，因此 runtime_ready 是真实值，
-    //        而不是 domain 层硬编码的 Unknown。
-    // 全景数据体量较大，按 with_tools / with_skills 开关按需装配：
-    // 两侧均关闭时后端直接短路，不做任何工具/技能查询。
-    let (tool_groups, skill_groups) = domain()
-        .agent_manage()
-        .get_agent_association_groups(ctx.clone(), &agent, with_tools, with_skills)
-        .await?;
-
-    let tools_overview = match tool_groups {
-        Some(groups) => Some(build_tools_overview(ctx.clone(), groups).await?),
-        None => None,
+    // 装配 Agent 工具/技能扁平列表（后端只保证「去重后的实体全集」，
+    // 分组交给前端按 installed pack tag 完成）。按 with_tools / with_skills 开关按需装配，
+    // 关闭侧直接短路，不做任何工具/技能查询。工具额外经 runtime domain 做就绪探测，
+    // 因此 runtime_ready 是真实值，而不是 domain 层硬编码的 Unknown。
+    let tool_list = if with_tools {
+        let ids = domain()
+            .agent_manage()
+            .get_agent_tool_list_ids(ctx.clone(), &agent)
+            .await?;
+        Some(build_flat_tools(ctx.clone(), ids).await?)
+    } else {
+        None
     };
-    let skills_overview = match skill_groups {
-        Some(groups) => Some(build_skills_overview(ctx.clone(), &params.id, groups).await?),
-        None => None,
+    let skill_list = if with_skills {
+        Some(build_flat_skills(ctx.clone(), &params.id).await?)
+    } else {
+        None
     };
 
     Ok(GetAgentResponse {
@@ -187,8 +185,8 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         current_task_id,
         current_project_id,
         tools,
-        tools_overview,
-        skills_overview,
+        tool_list,
+        skill_list,
         stats: agent.stats,
         model_call_stats: agent.model_call_stats,
     })

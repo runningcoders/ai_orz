@@ -422,63 +422,16 @@ pub trait AgentManage: Send + Sync {
         agent_id: &str,
     ) -> Result<common::api::SyncAgentPacksResponse>;
 
-    /// Agent 关联分组（工具三分组 + 技能三分组），按需装配，产出 **ID 视图**。
+    /// 返回 Agent 已拥有并去重的工具 ID 列表（扁平，按 id 唯一）。
     ///
-    /// 返回的三组工具互不相交（neural → bound → pack 优先级去重），
-    /// 与 runtime 装配逻辑完全同源；技能三分组同样互不相交（neural → pack → standalone）。
-    ///
-    /// **职责边界**：本层只负责"关联关系与分组规则"，**不负责把实体打包成 DTO**。
-    /// 打包交给专业领域方法，由 handler 层编排（工具走 finance domain 查询 +
-    /// runtime domain 就绪探测，技能走 hr skill_manage），从而复用专业领域内的
-    /// 全部逻辑（如 `runtime_ready`），避免在 domain 层重复实现 DTO 转换。
-    ///
-    /// `with_tools` / `with_skills` 为开关：为 false 的一侧直接返回 `None`
-    /// 并**跳过对应查询**（全景数据体量较大，供前端按需拉取，如 Agent 详情页）。
-    ///
-    /// 前置：调用者应先 get_agent 拿到包含 runtime_config + skills 的 Agent 对象。
-    async fn get_agent_association_groups(
+    /// 集合 = 直接绑定（agent_tools 关联表，含安装工具包时写入的工具）
+    ///        ∪ 已安装工具包 tag 展开（含 neural，作为普通 tag）的结果。
+    /// 不含 internal 标签工具。分组（按 installed pack tag）交给前端，后端不再做。
+    async fn get_agent_tool_list_ids(
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        with_tools: bool,
-        with_skills: bool,
-    ) -> Result<(Option<AgentToolGroups>, Option<AgentSkillGroups>)>;
-}
-
-// ==================== Agent 关联分组（ID 视图） ====================
-//
-// 仅用于 domain → handler 之间传递"谁属于哪一组"的关联结果。
-// 刻意不含 common DTO：打包（ToolListItem / SkillListItem）由 handler 层
-// 调用专业领域方法完成，避免 domain 层重复实现转换逻辑。
-
-/// 工具包分组内的工具 ID
-#[derive(Debug, Clone, Default)]
-pub struct AgentToolPackIds {
-    pub tag: String,
-    pub tool_ids: Vec<String>,
-}
-
-/// Agent 工具关联分组（ID 视图，neural → bound → pack 优先级去重）
-#[derive(Debug, Clone, Default)]
-pub struct AgentToolGroups {
-    pub neural_ids: Vec<String>,
-    pub bound_ids: Vec<String>,
-    pub pack_groups: Vec<AgentToolPackIds>,
-}
-
-/// 技能包分组内的技能 ID
-#[derive(Debug, Clone, Default)]
-pub struct AgentSkillPackIds {
-    pub tag: String,
-    pub skill_ids: Vec<String>,
-}
-
-/// Agent 技能关联分组（ID 视图，neural → pack → standalone）
-#[derive(Debug, Clone, Default)]
-pub struct AgentSkillGroups {
-    pub neural_ids: Vec<String>,
-    pub pack_groups: Vec<AgentSkillPackIds>,
-    pub standalone_ids: Vec<String>,
+    ) -> Result<Vec<String>>;
 }
 
 /// Skill 文件导入统一结构 = (去哪放) × (从哪来)。

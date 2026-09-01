@@ -644,11 +644,17 @@ pub fn HrAgentDetail(id: String) -> Element {
                     let a = a.clone();
             let capabilities = a.capabilities.clone().unwrap_or_default();
             let desc = a.description.as_deref().unwrap_or("");
-            // ---- Agent 关联全景视图 ----
-            // 数据源：get_agent 返回的 tools_overview / skills_overview，
-            // 与 runtime 注入逻辑同源（neural → bound → pack 优先级去重，互不相交）
-            let tools_overview = a.tools_overview.clone().unwrap_or_default();
-            let skills_overview = a.skills_overview.clone().unwrap_or_default();
+            // ---- Agent 关联全景视图（后端返回扁平去重列表，前端自行按 tag 分包） ----
+            let tool_list: Vec<ToolListItem> = a.tool_list.clone().unwrap_or_default();
+            let skill_list: Vec<SkillListItem> = a.skill_list.clone().unwrap_or_default();
+            // 已安装工具包 tag 集合（含 neural，用于分组与关系图着色）
+            let tool_packs_set: std::collections::HashSet<String> =
+                tool_packs_list.iter().cloned().collect();
+            // 技能分组 tag：已安装技能包 + 始终包含 neural
+            let mut skill_group_tags: Vec<String> = skill_packs_list.clone();
+            if !skill_group_tags.iter().any(|t| t == "neural") {
+                skill_group_tags.insert(0, "neural".to_string());
+            }
 
             // 三分组共用的卸载 / 解绑动作（统一 spawn + 刷新，卡片组件只上抛 (id, name) 事件）
             let on_uninstall_skill = move |(sid, sname): (String, String)| {
@@ -658,33 +664,30 @@ pub fn HrAgentDetail(id: String) -> Element {
                 show_tool_unbind_dialog.set(Some((tid, tname)));
             };
 
-            // 工具：三分组 + 统计总数
-            let all_tool_count = tools_overview.neural_tools.len()
-                + tools_overview.bound_tools.len()
-                + tools_overview
-                    .pack_groups
-                    .iter()
-                    .map(|g| g.tools.len())
-                    .sum::<usize>();
-
-            // 技能：三分组 + 统计总数
-            let all_skill_count = skills_overview.neural_skills.len()
-                + skills_overview
-                    .pack_groups
-                    .iter()
-                    .map(|g| g.skills.len())
-                    .sum::<usize>()
-                + skills_overview.standalone_skills.len();
-            // 已安装包 → 含项数映射（用于包卡片副标题）。包 tag 与 get_agent 全景一致。
-            let tool_pack_counts: std::collections::HashMap<String, usize> = tools_overview
-                .pack_groups
+            // 总数：扁平列表本身即去重后的全集
+            let all_tool_count = tool_list.len();
+            let all_skill_count = skill_list.len();
+            // 已安装包 → 含项数映射（用于包卡片副标题）：按 tag 在扁平列表中命中计数。
+            // 后端保证列表去重，故这里统计的也是去重后的项数。
+            let tool_pack_counts: std::collections::HashMap<String, usize> = tool_packs_list
                 .iter()
-                .map(|g| (g.tag.clone(), g.tools.len()))
+                .map(|tag| {
+                    let c = tool_list
+                        .iter()
+                        .filter(|t| t.tags.iter().any(|x| x == tag))
+                        .count();
+                    (tag.clone(), c)
+                })
                 .collect();
-            let skill_pack_counts: std::collections::HashMap<String, usize> = skills_overview
-                .pack_groups
+            let skill_pack_counts: std::collections::HashMap<String, usize> = skill_group_tags
                 .iter()
-                .map(|g| (g.tag.clone(), g.skills.len()))
+                .map(|tag| {
+                    let c = skill_list
+                        .iter()
+                        .filter(|s| s.tags.iter().any(|x| x == tag))
+                        .count();
+                    (tag.clone(), c)
+                })
                 .collect();
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
             let tab0_class = if active_tab() == 0 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
@@ -697,49 +700,42 @@ pub fn HrAgentDetail(id: String) -> Element {
 
             // 工具/技能列表：按 tag 维度聚合 + 包（tag）筛选 + 名称搜索。
             // 预计算过滤结果（rsx 之前），把"包=筛选器"作用于下方聚合列表：
-            // 点击上方工具包/技能包 chip 即向 filter tags 追加条件，列表只保留命中包分组。
             let tool_filter = tool_filter_tags.read().clone();
-            // 已安装工具 id 集合（供统一搜索框判定"选中即已安装"：已安装→高亮定位，未安装→二次确认安装）
-            let mut installed_tool_ids: HashSet<String> = HashSet::new();
-            for pack in tools_overview.pack_groups.iter() {
-                for t in pack.tools.iter() {
-                    installed_tool_ids.insert(t.id.clone());
-                }
-            }
-            for t in tools_overview.neural_tools.iter() {
-                installed_tool_ids.insert(t.id.clone());
-            }
-            for t in tools_overview.bound_tools.iter() {
-                installed_tool_ids.insert(t.id.clone());
-            }
+            // 已安装工具 id 集合（扁平列表即全集）
+            let installed_tool_ids: HashSet<String> =
+                tool_list.iter().map(|t| t.id.clone()).collect();
+
+            // 工具列表：按已安装包 tag 分组（一个工具命中多个包则分别出现在各包；扁平列表已去重）
             let mut tool_view: Vec<(String, &'static str, String, bool, Vec<ToolListItem>)> = Vec::new();
-            for pack in tools_overview.pack_groups.iter() {
-                if !pack.tools.is_empty() {
+            for tag in tool_packs_list.iter() {
+                let mut tools: Vec<ToolListItem> = tool_list
+                    .iter()
+                    .filter(|t| t.tags.iter().any(|x| x == tag))
+                    .cloned()
+                    .collect();
+                if !tools.is_empty() {
+                    tools.sort_by(|a, b| a.id.cmp(&b.id));
                     tool_view.push((
-                        format!("📦 {}", pack.tag),
+                        format!("📦 {}", tag),
                         "accent",
-                        format!("来自 {}", pack.tag),
+                        format!("来自 {}", tag),
                         false,
-                        pack.tools.clone(),
+                        tools,
                     ));
                 }
             }
-            if !tools_overview.neural_tools.is_empty() {
-                tool_view.push((
-                    "🧠 神经工具".to_string(),
-                    "primary",
-                    "神经".to_string(),
-                    false,
-                    tools_overview.neural_tools.clone(),
-                ));
-            }
-            if !tools_overview.bound_tools.is_empty() {
+            let bound_tools: Vec<ToolListItem> = tool_list
+                .iter()
+                .filter(|t| !t.tags.iter().any(|x| tool_packs_set.contains(x)))
+                .cloned()
+                .collect();
+            if !bound_tools.is_empty() {
                 tool_view.push((
                     "🔗 直接绑定".to_string(),
                     "success",
                     "已绑定".to_string(),
                     true,
-                    tools_overview.bound_tools.clone(),
+                    bound_tools,
                 ));
             }
             let tool_filtered: Vec<(String, &'static str, String, bool, Vec<ToolListItem>)> = tool_view
@@ -748,7 +744,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                     if tool_filter.is_empty() {
                         return true;
                     }
-                    // 仅包分组（label 以 📦 开头）参与包筛选；神经/绑定组在筛选时隐藏
+                    // 仅包分组（label 以 📦 开头）参与包筛选；直接绑定组在筛选时隐藏
                     if let Some(tag) = label.strip_prefix("📦 ") {
                         tool_filter.iter().any(|f| f == tag)
                     } else {
@@ -759,39 +755,39 @@ pub fn HrAgentDetail(id: String) -> Element {
                 .collect();
 
             let skill_filter = skill_filter_tags.read().clone();
-            // 已安装技能 id 集合（供统一搜索框判定"选中即已安装"）
-            let mut installed_skill_ids: HashSet<String> = HashSet::new();
-            for pack in skills_overview.pack_groups.iter() {
-                for s in pack.skills.iter() {
-                    installed_skill_ids.insert(s.id.clone());
-                }
-            }
-            for s in skills_overview.neural_skills.iter() {
-                installed_skill_ids.insert(s.id.clone());
-            }
-            for s in skills_overview.standalone_skills.iter() {
-                installed_skill_ids.insert(s.id.clone());
-            }
+            // 已安装技能 id 集合（扁平列表即全集）
+            let installed_skill_ids: HashSet<String> =
+                skill_list.iter().map(|s| s.id.clone()).collect();
+
+            // 技能列表：按分组 tag（已安装技能包 + neural）分组
             let mut skill_view: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = Vec::new();
-            for pack in skills_overview.pack_groups.iter() {
-                if !pack.skills.is_empty() {
-                    skill_view.push((format!("📦 {}", pack.tag), false, "accent", pack.skills.clone()));
+            for tag in skill_group_tags.iter() {
+                let mut skills: Vec<SkillListItem> = skill_list
+                    .iter()
+                    .filter(|s| s.tags.iter().any(|x| x == tag))
+                    .cloned()
+                    .collect();
+                if !skills.is_empty() {
+                    skills.sort_by(|a, b| a.id.cmp(&b.id));
+                    let label = if tag == "neural" {
+                        "🧠 神经技能".to_string()
+                    } else {
+                        format!("📦 {}", tag)
+                    };
+                    skill_view.push((label, tag == "neural", "accent", skills));
                 }
             }
-            if !skills_overview.neural_skills.is_empty() {
-                skill_view.push((
-                    "🧠 神经技能".to_string(),
-                    true,
-                    "primary",
-                    skills_overview.neural_skills.clone(),
-                ));
-            }
-            if !skills_overview.standalone_skills.is_empty() {
+            let standalone_skills: Vec<SkillListItem> = skill_list
+                .iter()
+                .filter(|s| !s.tags.iter().any(|x| skill_group_tags.iter().any(|g| g == x)))
+                .cloned()
+                .collect();
+            if !standalone_skills.is_empty() {
                 skill_view.push((
                     "🆓 独立技能".to_string(),
                     false,
                     "accent",
-                    skills_overview.standalone_skills.clone(),
+                    standalone_skills,
                 ));
             }
             let skill_filtered: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = skill_view
@@ -1197,45 +1193,30 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 // === 工具：工具关系总览（上部）+ 工具包 + 工具绑定 ===
                                 // 工具关系图作为总览置于上部，直观展示 Agent 与全量可用工具（神经/绑定/工具包）的关系
                                 {
-                                // 关系图按工具「真实 tag」分类着色：
-                                // - 包内工具用其所属包的 tag（如 neural / tool_management / search ...）
-                                // - 直接绑定工具用其自身首个真实 tag（无 tag 时回退 bound_tool）
-                                // 用 seen 集合保证每个工具只出现一次，避免跨组重复导致数量翻倍。
+                                // 关系图按工具「真实 tag」分类着色：遍历扁平去重列表，
+                                // 主分类优先已安装包 tag，否则首个真实 tag，最后回退 bound_tool。
+                                // 扁平列表本身已去重，seen 集合仅作兜底。
                                 let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
                                 let mut seen_tool_ids: std::collections::HashSet<String> =
                                     std::collections::HashSet::new();
 
-                                for pack in tools_overview.pack_groups.iter() {
-                                    for t in pack.tools.iter() {
-                                        if seen_tool_ids.contains(&t.id) {
-                                            continue;
-                                        }
-                                        seen_tool_ids.insert(t.id.clone());
-                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
-                                        all_tool_nodes.push(RelationNodeInfo {
-                                            id: t.id.clone(),
-                                            name: t.name.clone(),
-                                            kind: Some(pack.tag.clone()),
-                                            edge_tag: et,
-                                            edge_description: ed,
-                                        });
-                                    }
-                                }
-                                for t in tools_overview.bound_tools.iter() {
+                                for t in tool_list.iter() {
                                     if seen_tool_ids.contains(&t.id) {
                                         continue;
                                     }
                                     seen_tool_ids.insert(t.id.clone());
-                                    let kind = t
+                                    let primary = t
                                         .tags
-                                        .first()
+                                        .iter()
+                                        .find(|x| tool_packs_set.contains(*x))
                                         .cloned()
+                                        .or_else(|| t.tags.first().cloned())
                                         .unwrap_or_else(|| "bound_tool".to_string());
                                     let (et, ed) = tool_edge_meta(&t.runtime_ready);
                                     all_tool_nodes.push(RelationNodeInfo {
                                         id: t.id.clone(),
                                         name: t.name.clone(),
-                                        kind: Some(kind),
+                                        kind: Some(primary),
                                         edge_tag: et,
                                         edge_description: ed,
                                     });

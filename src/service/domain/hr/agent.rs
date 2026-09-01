@@ -929,182 +929,61 @@ impl AgentManage for HrDomainImpl {
         Ok(agent.po.get_installed_skill_packs())
     }
 
-    async fn get_agent_association_groups(
+    async fn get_agent_tool_list_ids(
         &self,
         ctx: RequestContext,
         agent: &Agent,
-        with_tools: bool,
-        with_skills: bool,
-    ) -> Result<(
-        Option<crate::service::domain::hr::AgentToolGroups>,
-        Option<crate::service::domain::hr::AgentSkillGroups>,
-    )> {
-        use crate::service::domain::hr::{
-            AgentSkillGroups, AgentSkillPackIds, AgentToolGroups, AgentToolPackIds,
-        };
-
-        const NEURAL_TAG: &str = "neural";
+    ) -> Result<Vec<String>> {
         const INTERNAL_TAG: &str = "internal";
 
         let runtime_cfg = agent.po.get_runtime_config();
-        // 注意：工具包 tag 不再过滤 neural —— neural 也作为普通 tag 参与包分组，
-        // 点击即可筛选；其工具统一走 pack_groups 中的 "neural" 分组。
         let installed_tool_tags: Vec<String> = runtime_cfg.installed_tags.to_vec();
-        let installed_skill_packs: Vec<String> = runtime_cfg
-            .installed_skill_packs
-            .iter()
-            .filter(|t| t.as_str() != NEURAL_TAG)
-            .cloned()
-            .collect();
 
-        // 两侧开关都关闭时无需任何查询，直接短路
-        if !with_tools && !with_skills {
-            return Ok((None, None));
+        let mut ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+        // 1. 直接绑定（agent_tools 关联表，含安装工具包时写入的工具）
+        let bound = self
+            .tool_dal
+            .list_tools_for_agent_full(ctx.clone(), &agent.po.id)
+            .await?;
+        for t in bound {
+            let tags = t.po.get_tags();
+            if tags.iter().any(|x| x == INTERNAL_TAG) {
+                continue;
+            }
+            ids.insert(t.po.id.clone());
         }
 
-        // ======================== 工具分组 ========================
-        let tool_groups: Option<AgentToolGroups> = if with_tools {
-            // 所有已安装工具包 tag（含 neural）统一参与聚合：neural 也作为普通 tag 走包分组，
-            // 点击即可筛选；不再单列 neural_tools 桶，避免与包分组重复导致数量翻倍。
-            let installed = installed_tool_tags.clone();
-
-            // 1. 工具包分组：按每个已安装 tag 展开；用 seen 集合保证每个工具只进首个匹配组
-            //    （去重，避免跨包/神经重叠导致关系图与列表数量翻倍）
-            let mut pack_groups: Vec<AgentToolPackIds> = Vec::new();
-            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-            for tag in &installed {
-                let candidates = self
-                    .tool_dal
-                    .query(
-                        ctx.clone(),
-                        crate::service::dao::tool::ToolQuery {
-                            tags: Some(vec![tag.clone()]),
-                            enabled_only: Some(true),
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
-                let mut pack_tools: Vec<Tool> = Vec::new();
-                for t in candidates.items {
-                    let tid = t.po.id.clone();
-                    if seen.contains(&tid) {
-                        continue;
-                    }
-                    let tags = t.po.get_tags();
-                    if tags.iter().any(|x| x == INTERNAL_TAG) {
-                        continue;
-                    }
-                    if !tags.iter().any(|x| x == tag) {
-                        continue;
-                    }
-                    seen.insert(tid.clone());
-                    pack_tools.push(t);
-                }
-                pack_tools.sort_by(|a, b| a.po.id.cmp(&b.po.id));
-                pack_groups.push(AgentToolPackIds {
-                    tag: tag.clone(),
-                    tool_ids: pack_tools.iter().map(|t| t.po.id.clone()).collect(),
-                });
+        // 2. 已安装工具包 tag 展开（含 neural，作为普通 tag）。
+        //    与直接绑定取并集后按 id 去重——一个工具命中多个包时列表唯一，
+        //    显示层（前端）可重复归类到各包分组。
+        for tag in &installed_tool_tags {
+            if tag == INTERNAL_TAG {
+                continue;
             }
-
-            // 2. 直接绑定工具 = agent_tools 中、未命中任何已安装包 tag、且非 internal 的工具
-            //    （包内工具已写入 agent_tools，靠 seen 排除；与包分组互不相交）
-            let bound_candidates = self
+            let candidates = self
                 .tool_dal
-                .list_tools_for_agent_full(ctx.clone(), &agent.po.id)
+                .query(
+                    ctx.clone(),
+                    crate::service::dao::tool::ToolQuery {
+                        tags: Some(vec![tag.clone()]),
+                        enabled_only: Some(true),
+                        ..Default::default()
+                    },
+                )
                 .await?;
-            let mut bound_tools_map: std::collections::BTreeMap<String, Tool> =
-                std::collections::BTreeMap::new();
-            for t in bound_candidates {
-                let tid = t.po.id.clone();
-                if seen.contains(&tid) {
-                    continue;
-                }
+            for t in candidates.items {
                 let tags = t.po.get_tags();
                 if tags.iter().any(|x| x == INTERNAL_TAG) {
                     continue;
                 }
-                if tags.iter().any(|x| installed.iter().any(|y| x == y)) {
+                if !tags.iter().any(|x| x == tag) {
                     continue;
                 }
-                seen.insert(tid.clone());
-                bound_tools_map.insert(tid, t);
+                ids.insert(t.po.id.clone());
             }
+        }
 
-            // 汇总（已按 id 排序，保证输出稳定）
-            let bound_ids: Vec<String> = bound_tools_map.keys().cloned().collect();
-            // neural 不再单列分组，统一走 pack_groups 中的 "neural" tag
-            let neural_ids: Vec<String> = Vec::new();
-
-            Some(AgentToolGroups {
-                neural_ids,
-                bound_ids,
-                pack_groups,
-            })
-        } else {
-            None
-        };
-
-        // ======================== 技能分组 ========================
-        let skill_groups: Option<AgentSkillGroups> = if with_skills {
-            // 优先 Agent 自身副本；副本缺失的神经技能用种子兜底（支持自我演进 + 加载兜底）
-            let all_skills = self.resolve_agent_skills(ctx.clone(), &agent.po.id).await?;
-
-            // 第一趟：分配神经技能（优先级最高）
-            let neural_skill_ids: std::collections::BTreeSet<String> = all_skills
-                .iter()
-                .filter(|s| s.po.parse_tags().iter().any(|x| x == NEURAL_TAG))
-                .map(|s| s.po.id.clone())
-                .collect();
-
-            // 第二趟：按 installed_skill_packs 顺序分配（跳过已在神经组）
-            let mut pack_groups: Vec<AgentSkillPackIds> = Vec::new();
-            for tag in &installed_skill_packs {
-                let mut members: Vec<String> = all_skills
-                    .iter()
-                    .filter(|s| {
-                        if neural_skill_ids.contains(&s.po.id) {
-                            return false;
-                        }
-                        let tags = s.po.parse_tags();
-                        tags.iter().any(|x| x == tag)
-                    })
-                    .map(|s| s.po.id.clone())
-                    .collect();
-                members.sort();
-                pack_groups.push(AgentSkillPackIds {
-                    tag: tag.clone(),
-                    skill_ids: members,
-                });
-            }
-
-            // 第三趟：独立技能（不在神经组、不在任一 pack）
-            let mut standalone: Vec<String> = all_skills
-                .iter()
-                .filter(|s| {
-                    if neural_skill_ids.contains(&s.po.id) {
-                        return false;
-                    }
-                    // tags 只解析一次，避免在 any 闭包内对每个 tag 重复 parse
-                    let tags = s.po.parse_tags();
-                    let in_any_pack = installed_skill_packs
-                        .iter()
-                        .any(|tag| tags.iter().any(|x| x == tag));
-                    !in_any_pack
-                })
-                .map(|s| s.po.id.clone())
-                .collect();
-            standalone.sort();
-
-            Some(AgentSkillGroups {
-                neural_ids: neural_skill_ids.into_iter().collect(),
-                pack_groups,
-                standalone_ids: standalone,
-            })
-        } else {
-            None
-        };
-
-        Ok((tool_groups, skill_groups))
+        Ok(ids.into_iter().collect())
     }
 }

@@ -1007,7 +1007,7 @@ async fn test_resolve_agent_partial_vs_full_all_roles(pool: SqlitePool) {
     assert_eq!(found.po.id, both_id, "tier1 全匹配所有角色应优先");
 }
 
-// ==================== get_agent_association_groups 单测 ====================
+// ==================== Agent 关联扁平列表单测（后端只去重，分组交给前端） ====================
 
 /// 创建一个启用状态的 Tool（management 路径），方便测试工具分组
 fn create_enabled_tool(name: &str, tags: Vec<&str>) -> crate::models::tool::Tool {
@@ -1141,8 +1141,11 @@ async fn test_install_skill_pack_allows_neural_tag(pool: SqlitePool) {
 
 /// 验证 tools_overview 分组互不相交（neural 作为普通包 tag 与 search 并列；
 /// 每个工具只进首个匹配包组，internal 被过滤，避免出现空包 / 重复计数）
+/// 验证 get_agent_tool_list_ids 返回「去重后的工具 ID 全集」：
+/// - 直接绑定与已安装包 tag 展开取并集，按 id 唯一（一个工具命中多个包不重复）
+/// - internal 标签工具被过滤
 #[sqlx::test]
-async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool) {
+async fn test_agent_tool_list_ids_unique(pool: SqlitePool) {
     let temp_dir = TempDir::new().unwrap();
     unsafe {
         std::env::set_var("AI_ORZ_BASE_PATH", temp_dir.path().to_str().unwrap());
@@ -1165,7 +1168,6 @@ async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool)
     };
     let finance = init_finance_env(pool.clone());
 
-    // 1. 创建 Agent
     let agent = create_test_agent("OverviewAgent");
     hr_domain
         .agent_manage()
@@ -1173,12 +1175,7 @@ async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool)
         .await
         .unwrap();
 
-    // 2. 创建工具：
-    //    T1 = neural （应进 neural 工具包）
-    //    T2 = search + neural 交叉（tags=[search,neural]，归入首个匹配的包组；neural 先装则归 neural）
-    //    T3 = search 单独 （应进 search 工具包）
-    //    T4 = dev + search 交叉（绑定到 agent；带 search tag，应进 search 工具包）
-    //    T5 = internal （应被整体过滤，不进入任何分组）
+    // T1 = neural，T2 = search+neural，T3 = search，T4 = dev+search（绑定到 Agent），T5 = internal（应被过滤）
     let t1 = create_enabled_tool("NeuralTool1", vec!["neural"]);
     let t2 = create_enabled_tool("SearchNeuralTool", vec!["search", "neural"]);
     let t3 = create_enabled_tool("SearchPackOnly", vec!["search"]);
@@ -1192,14 +1189,12 @@ async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool)
             .unwrap();
     }
 
-    // 3. 将 T4 绑定到 Agent（agent_tools 关联）
     finance
         .tool_provider_manage()
         .bind_tool_to_agent(ctx.clone(), agent.id(), &t4.po.id)
         .await
         .unwrap();
 
-    // 4. 安装工具包：先装 neural（保证 T2 归入 neural 组），再装 search
     hr_domain
         .agent_manage()
         .install_tool_pack(ctx.clone(), agent.id(), "neural")
@@ -1211,86 +1206,43 @@ async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool)
         .await
         .unwrap();
 
-    // 5. 获取 Agent 并装配视图
     let agent = hr_domain
         .agent_manage()
         .get_agent(ctx.clone(), agent.id(), Default::default())
         .await
         .unwrap()
         .unwrap();
-    let (tool_groups, _) = hr_domain
+    let ids = hr_domain
         .agent_manage()
-        .get_agent_association_groups(ctx, &agent, true, false)
+        .get_agent_tool_list_ids(ctx, &agent)
         .await
         .unwrap();
-    let groups = tool_groups.expect("with_tools=true 时应返回工具分组");
 
-    // -- 断言 1：内部工具不出现在任何分组 --
-    let all_pack_ids: std::collections::BTreeSet<String> = groups
-        .pack_groups
-        .iter()
-        .flat_map(|g| g.tool_ids.iter().cloned())
-        .collect();
-    assert!(
-        !all_pack_ids.contains(&t5.po.id),
-        "internal 工具不应出现在包分组中"
-    );
-    assert!(
-        !groups.bound_ids.contains(&t5.po.id),
-        "internal 工具不应出现在 bound 分组中"
-    );
-
-    // -- 断言 2：neural 工具包组包含 T1、T2（T2 因 neural 先装而优先归入 neural）--
-    let neural_group = groups
-        .pack_groups
-        .iter()
-        .find(|g| g.tag == "neural")
-        .expect("neural 分组应作为普通包组存在");
-    let neural_ids: std::collections::BTreeSet<_> = neural_group.tool_ids.iter().cloned().collect();
-    assert!(neural_ids.contains(&t1.po.id));
-    assert!(neural_ids.contains(&t2.po.id));
-
-    // -- 断言 3：search 工具包组包含 T3、T4（T2 已归 neural 不再重复，T4 带 search tag 进包）--
-    let search_group = groups
-        .pack_groups
-        .iter()
-        .find(|g| g.tag == "search")
-        .expect("search 分组应存在");
-    let search_ids: std::collections::BTreeSet<_> = search_group.tool_ids.iter().cloned().collect();
-    assert!(search_ids.contains(&t3.po.id));
-    assert!(search_ids.contains(&t4.po.id));
-    // T2 不应出现在 search 包中（已归 neural）
-    assert!(!search_ids.contains(&t2.po.id));
-    // internal 工具 T5 不应出现在 search 包中
-    assert!(!search_ids.contains(&t5.po.id));
-
-    // -- 断言 4：工具分组互不相交，无重复（每个工具至多出现在一个包组内，避免数量翻倍）--
-    let mut seen_any: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for g in &groups.pack_groups {
-        for id in &g.tool_ids {
-            assert!(
-                seen_any.insert(id.clone()),
-                "工具 {id} 不应在多个包组重复出现（导致关系图/列表数量翻倍）"
-            );
-        }
+    // T1/T2/T3/T4 全部进入去重全集
+    for t in [&t1, &t2, &t3, &t4] {
+        assert!(
+            ids.contains(&t.po.id),
+            "工具 {} 应出现在扁平去重列表中",
+            t.po.id
+        );
     }
-    // 应有两个包组：neural 与 search
-    assert_eq!(groups.pack_groups.len(), 2, "neural 与 search 各一个包组");
-    // neural 不再单列分组，工具侧 neural_ids 应为空
+    // internal 工具被过滤
     assert!(
-        groups.neural_ids.is_empty(),
-        "工具侧 neural_ids 已并入 pack_groups，应为空"
+        !ids.contains(&t5.po.id),
+        "internal 工具不应出现在扁平列表中"
     );
-    // T4 带 search tag 已进 search 包组，故 bound 为空
-    assert!(
-        groups.bound_ids.is_empty(),
-        "T4 归属 search 包组，bound 应为空"
+    // 列表本身按 id 唯一（无重复）
+    let unique: std::collections::BTreeSet<_> = ids.iter().cloned().collect();
+    assert_eq!(
+        unique.len(),
+        ids.len(),
+        "扁平工具列表必须按 id 去重（命中多个包也不重复）"
     );
 }
 
-/// 验证 skills_overview 三分组互不相交（neural → pack → standalone 优先级）
+/// 验证 Agent 技能扁平列表（list_for_agent）按 id 唯一，且一个技能命中多个包标签也不重复安装。
 #[sqlx::test]
-async fn test_skills_overview_three_groups_disjoint(pool: SqlitePool) {
+async fn test_agent_skill_list_unique(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
     let agent = create_test_agent("SkillOverviewAgent");
     domain
@@ -1299,14 +1251,9 @@ async fn test_skills_overview_three_groups_disjoint(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // 创建 4 份已发布技能并安装
-    // S1 = neural（神经技能）
-    // S2 = neural + coding（因 neural 优先级，应归 neural 组，不进入 coding pack 组）
-    // S3 = coding（coding pack 组）
-    // S4 = 无任何 tag（standalone）
+    // S1 = neural，S2 = neural+coding（应只安装一份副本），S3 = coding，S4 = 无 tag（standalone）
     let s1 = create_published_skill_with_tag("NeuralSkill", "neural");
     let mut s2 = create_published_skill_with_tag("NeuralCodingSkill", "coding");
-    // 给 S2 追加上 neural tag：重新构造 PO tags
     let mut s2_po = s2.po.clone();
     use serde_json::json;
     s2_po.tags = json!(["neural", "coding"]).to_string();
@@ -1336,14 +1283,11 @@ async fn test_skills_overview_three_groups_disjoint(pool: SqlitePool) {
             .unwrap();
     }
 
-    // 安装 coding 技能包 + 单独安装 standalone + neural skill
     domain
         .agent_manage()
         .install_skill_pack(ctx.clone(), agent.id(), "coding")
         .await
         .unwrap();
-    // neural 不是技能包名，而是技能个体的标签，单独安装神经技能副本
-    // （S2 同时带 neural+coding，必须显式安装副本，否则移除加载兜底后将只由 neural 组可见）
     domain
         .skill_manage()
         .install_to_agent(ctx.clone(), &s1.po.id, agent.id())
@@ -1360,83 +1304,39 @@ async fn test_skills_overview_three_groups_disjoint(pool: SqlitePool) {
         .await
         .unwrap();
 
-    let agent = domain
-        .agent_manage()
-        .get_agent(ctx.clone(), agent.id(), Default::default())
-        .await
-        .unwrap()
-        .unwrap();
-    let (_, skill_groups) = domain
-        .agent_manage()
-        .get_agent_association_groups(ctx.clone(), &agent, false, true)
-        .await
-        .unwrap();
-    let groups = skill_groups.expect("with_skills=true 时应返回技能分组");
-
-    // 分组产出的是「Agent 目录下安装副本」的 ID；通过 parent_skill_id
-    // 映射回原始技能 ID（S1-S4 为原始技能，安装副本的 parent 指向它们）。
+    // 扁平列表：Agent 目录下的全部技能副本（即构建 skill_list 的数据源）
     let agent_skills = domain
         .skill_manage()
         .list_for_agent(ctx, agent.id())
         .await
         .unwrap();
-    let source_of = |copy_id: &str| -> String {
-        agent_skills
-            .iter()
-            .find(|s| s.po.id == copy_id)
-            .map(|s| s.po.parent_skill_id.clone())
-            .unwrap_or_else(|| copy_id.to_string())
-    };
 
-    // 神经技能：S1、S2（即使 S2 也有 coding 标签，neural 优先级更高）
-    let neural_ids: std::collections::BTreeSet<_> =
-        groups.neural_ids.iter().map(|id| source_of(id)).collect();
-    assert!(
-        neural_ids.contains(&s1.po.id),
-        "S1 神经技能应在 neural 组，实际={:?}",
-        neural_ids
-    );
-    assert!(
-        neural_ids.contains(&s2.po.id),
-        "S2 neural+coding 应优先归 neural 组"
-    );
-
-    // coding 技能包分组：只有 S3（S2 已被 neural 组拿走）
-    let coding_pack = groups
-        .pack_groups
+    // 四份原始技能均应有对应副本
+    let parents: std::collections::BTreeSet<_> = agent_skills
         .iter()
-        .find(|g| g.tag == "coding")
-        .expect("coding 技能包分组应存在");
-    let coding_ids: std::collections::BTreeSet<_> = coding_pack
-        .skill_ids
-        .iter()
-        .map(|id| source_of(id))
+        .map(|s| s.po.parent_skill_id.clone())
         .collect();
-    assert!(coding_ids.contains(&s3.po.id));
-    assert!(
-        !coding_ids.contains(&s2.po.id),
-        "S2 不应重复进入 coding 包组"
-    );
-    for cid in &coding_ids {
-        assert!(!neural_ids.contains(cid), "coding 包与 neural 互不相交");
-    }
-
-    // standalone：S4
-    let standalone_ids: std::collections::BTreeSet<_> = groups
-        .standalone_ids
-        .iter()
-        .map(|id| source_of(id))
-        .collect();
-    assert!(
-        standalone_ids.contains(&s4.po.id),
-        "S4 应在 standalone，实际={:?}",
-        standalone_ids
-    );
-    for sid in &standalone_ids {
-        assert!(!neural_ids.contains(sid), "standalone 与 neural 互不相交");
+    for s in [&s1, &s2, &s3, &s4] {
         assert!(
-            !coding_ids.contains(sid),
-            "standalone 与 coding pack 互不相交"
+            parents.contains(&s.po.id),
+            "技能 {} 应有对应 Agent 副本",
+            s.po.id
         );
     }
+
+    // 唯一性：每个原始技能只对应一份副本（命中多个标签也不重复），整体列表按 id 去重
+    for s in [&s1, &s2, &s3, &s4] {
+        let copies = agent_skills
+            .iter()
+            .filter(|c| c.po.parent_skill_id == s.po.id)
+            .count();
+        assert_eq!(copies, 1, "技能 {} 应只安装一份副本", s.po.id);
+    }
+    let unique_ids: std::collections::BTreeSet<_> =
+        agent_skills.iter().map(|s| s.po.id.clone()).collect();
+    assert_eq!(
+        unique_ids.len(),
+        agent_skills.len(),
+        "技能副本列表必须按 id 去重"
+    );
 }
