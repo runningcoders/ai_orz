@@ -1605,48 +1605,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                    // 包即筛选器：点击卡片切换下方列表的 tag 过滤（再次点击取消）；「卸载」按钮触发二次确认弹窗
-                                    if skill_packs_list.is_empty() {
-                                        p { class: "text-sm text-base-content/50", "暂无技能包，安装后会出现在这里并可点击筛选" }
-                                    } else {
-                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                            for tag in skill_packs_list.iter() {
-                                                {
-                                                    let tag_clone = tag.clone();
-                                                    let tf = skill_filter_tags;
-                                                    let active = skill_filter_tags.read().contains(&tag_clone);
-                                                    let dlg = show_skill_pack_uninstall_dialog;
-                                                    let count = skill_pack_counts.get(&tag_clone).copied().unwrap_or(0);
-                                                    let subtitle = format!("包含 {} 个技能 · 点击筛选", count);
-                                                    rsx! {
-                                                        PackCard {
-                                                            pack_tag: tag_clone.clone(),
-                                                            subtitle: subtitle.clone(),
-                                                            selected: active,
-                                                            on_toggle: {
-                                                                let mut tfc = tf;
-                                                                move |t: String| {
-                                                                    let mut v = tfc.write();
-                                                                    if let Some(pos) = v.iter().position(|x| x == &t) {
-                                                                        v.remove(pos);
-                                                                    } else {
-                                                                        v.push(t);
-                                                                    }
-                                                                }
-                                                            },
-                                                            on_uninstall: {
-                                                                let mut dlg = dlg;
-                                                                move |t: String| { dlg.set(Some(t)); }
-                                                            },
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    // --- 📦 已过期技能 · 虚拟 pack（点击即筛选，再点取消，首次选中才懒加载）---
-                                    // 语义上等同于一个特殊 pack chip，用来承载过期副本集合。
-                                    // 与真实 pack 区的视觉风格保持一致但视觉上用不同色调强调。
+                                    // 包即筛选器：点击卡片切换下方列表的 tag 过滤（再次点击取消）；「卸载」按钮触发二次确认弹窗。
+                                    // 📦 已过期技能虚拟 pack 永远放在 grid 第一格（让用户一眼就看见，不躲在末尾）。
+                                    // 如果当前没有任何真实 pack，也依然显示虚拟 pack（提示用户有过期副本能力可触发）。
                                     {
                                         let tf = skill_filter_tags;
                                         let expired_active = tf.read().iter().any(|t| t == EXPIRED_PACK_TAG);
@@ -1662,9 +1623,12 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         } else {
                                             "border-2 border-base-300 bg-base-200/40 hover:border-error/50 hover:bg-error/5"
                                         };
+                                        // 真实 pack 循环也要在同一个 grid 内，所以先把 rsx 拼起来：
+                                        // 外层永远渲染 grid；虚拟 pack 始终放第一个；真实 packs 紧随其后。
+                                        let packs = skill_packs_list.clone();
                                         rsx! {
-                                            div {
-                                                class: "mt-4",
+                                            div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                // ====== 第 1 格：虚拟过期技能 pack ======
                                                 div {
                                                     class: "card {style} cursor-pointer",
                                                     onclick: move |_| on_toggle_expired_pack(),
@@ -1688,9 +1652,42 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         }
                                                     }
                                                 }
+                                                // ====== 第 2+ 格：真实已安装 packs（列表为空时不渲染空提示）======
+                                                for tag in packs.iter() {
+                                                    {
+                                                        let tag_clone = tag.clone();
+                                                        let mut tf2 = skill_filter_tags;
+                                                        let active = skill_filter_tags.read().contains(&tag_clone);
+                                                        let mut dlg = show_skill_pack_uninstall_dialog;
+                                                        let count = skill_pack_counts.get(&tag_clone).copied().unwrap_or(0);
+                                                        let subtitle_pack = format!("包含 {} 个技能 · 点击筛选", count);
+                                                        rsx! {
+                                                            PackCard {
+                                                                pack_tag: tag_clone.clone(),
+                                                                subtitle: subtitle_pack,
+                                                                selected: active,
+                                                                on_toggle: {
+                                                                    move |t: String| {
+                                                                        let mut v = tf2.write();
+                                                                        if let Some(pos) = v.iter().position(|x| x == &t) {
+                                                                            v.remove(pos);
+                                                                        } else {
+                                                                            v.push(t);
+                                                                        }
+                                                                    }
+                                                                },
+                                                                on_uninstall: {
+                                                                    move |t: String| { dlg.set(Some(t)); }
+                                                                },
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
+                                    // 如果 packs 为空也不再额外展示空文案——用户始终能看到虚拟 pack，
+                                    // 视觉上不会出现"这里好像有 bug 什么都没渲染"的问题。
                                 }
 
                                 // === 单个技能安装 ===
