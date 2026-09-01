@@ -306,11 +306,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut tool_tags = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
     let mut skill_tags = use_signal(Vec::<String>::new);
-    // 工具/技能列表筛选：包（tag）筛选 + 名称搜索；包 chip 点击即追加/移除 tag 条件
+    // 工具/技能列表筛选：包（tag）筛选；点击工具包/技能包 chip 即追加/移除 tag 条件
     let mut tool_filter_tags = use_signal(Vec::<String>::new);
-    let mut tool_name_filter = use_signal(String::new);
     let mut skill_filter_tags = use_signal(Vec::<String>::new);
-    let mut skill_name_filter = use_signal(String::new);
+    // 统一搜索框选中已安装项时，在列表中高亮定位（set 对应 id；use_effect 滚动到该卡片）
+    let mut highlight_tool_id = use_signal(|| None::<String>);
+    let mut highlight_skill_id = use_signal(|| None::<String>);
     // 技能包卸载确认对话框：存当前待卸载的 tag
     let mut show_skill_pack_uninstall_dialog = use_signal(|| None::<String>);
     // 工具包卸载确认对话框：存当前待卸载的 tag
@@ -646,7 +647,19 @@ pub fn HrAgentDetail(id: String) -> Element {
             // 预计算过滤结果（rsx 之前），把"包=筛选器"作用于下方聚合列表：
             // 点击上方工具包/技能包 chip 即向 filter tags 追加条件，列表只保留命中包分组。
             let tool_filter = tool_filter_tags.read().clone();
-            let tool_q = tool_name_filter.read().to_lowercase();
+            // 已安装工具 id 集合（供统一搜索框判定"选中即已安装"：已安装→高亮定位，未安装→二次确认安装）
+            let mut installed_tool_ids: HashSet<String> = HashSet::new();
+            for pack in tools_overview.pack_groups.iter() {
+                for t in pack.tools.iter() {
+                    installed_tool_ids.insert(t.id.clone());
+                }
+            }
+            for t in tools_overview.neural_tools.iter() {
+                installed_tool_ids.insert(t.id.clone());
+            }
+            for t in tools_overview.bound_tools.iter() {
+                installed_tool_ids.insert(t.id.clone());
+            }
             let mut tool_view: Vec<(String, &'static str, String, bool, Vec<ToolListItem>)> = Vec::new();
             for pack in tools_overview.pack_groups.iter() {
                 if !pack.tools.is_empty() {
@@ -690,18 +703,23 @@ pub fn HrAgentDetail(id: String) -> Element {
                         false
                     }
                 })
-                .map(|(label, tone, badge, unbind, tools)| {
-                    let ts: Vec<ToolListItem> = tools
-                        .into_iter()
-                        .filter(|t| tool_q.is_empty() || t.name.to_lowercase().contains(&tool_q))
-                        .collect();
-                    (label, tone, badge, unbind, ts)
-                })
                 .filter(|(_, _, _, _, ts)| !ts.is_empty())
                 .collect();
 
             let skill_filter = skill_filter_tags.read().clone();
-            let skill_q = skill_name_filter.read().to_lowercase();
+            // 已安装技能 id 集合（供统一搜索框判定"选中即已安装"）
+            let mut installed_skill_ids: HashSet<String> = HashSet::new();
+            for pack in skills_overview.pack_groups.iter() {
+                for s in pack.skills.iter() {
+                    installed_skill_ids.insert(s.id.clone());
+                }
+            }
+            for s in skills_overview.neural_skills.iter() {
+                installed_skill_ids.insert(s.id.clone());
+            }
+            for s in skills_overview.standalone_skills.iter() {
+                installed_skill_ids.insert(s.id.clone());
+            }
             let mut skill_view: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = Vec::new();
             for pack in skills_overview.pack_groups.iter() {
                 if !pack.skills.is_empty() {
@@ -736,15 +754,26 @@ pub fn HrAgentDetail(id: String) -> Element {
                         false
                     }
                 })
-                .map(|(label, neural_badge, tone, skills)| {
-                    let ss: Vec<SkillListItem> = skills
-                        .into_iter()
-                        .filter(|s| skill_q.is_empty() || s.name.to_lowercase().contains(&skill_q))
-                        .collect();
-                    (label, neural_badge, tone, ss)
-                })
                 .filter(|(_, _, _, ss)| !ss.is_empty())
                 .collect();
+
+            // 选中已安装工具/技能后，滚动定位到对应卡片（高亮 class 已在卡片外层 div 设置）
+            use_effect(move || {
+                if let Some(id) = highlight_tool_id.read().clone() {
+                    let _ = web_sys::window()
+                        .and_then(|w| w.document())
+                        .and_then(|d| d.get_element_by_id(&format!("tool-card-{}", id)))
+                        .inspect(|el| el.scroll_into_view());
+                }
+            });
+            use_effect(move || {
+                if let Some(id) = highlight_skill_id.read().clone() {
+                    let _ = web_sys::window()
+                        .and_then(|w| w.document())
+                        .and_then(|d| d.get_element_by_id(&format!("skill-card-{}", id)))
+                        .inspect(|el| el.scroll_into_view());
+                }
+            });
 
             rsx! {
                 HudPanel {
@@ -1264,12 +1293,21 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             options: tool_search_results.read().iter().map(|t| {
                                                 format!("{} ({})", t.name, t.id)
                                             }).collect(),
-                                            on_select: move |selection: String| {
-                                                // 从 "name (id)" 格式中提取 name 与 id，弹出二次确认后再绑定
-                                                if let Some(id_start) = selection.rfind('(') {
-                                                    let tool_id = selection[id_start+1..selection.len()-1].to_string();
-                                                    let tool_name = selection[..id_start].trim().to_string();
-                                                    show_bind_tool_dialog.set(Some((tool_id, tool_name)));
+                                            on_select: {
+                                                let installed = installed_tool_ids.clone();
+                                                move |selection: String| {
+                                                    // 从 "name (id)" 格式中提取 name 与 id
+                                                    if let Some(id_start) = selection.rfind('(') {
+                                                        let tool_id = selection[id_start+1..selection.len()-1].to_string();
+                                                        let tool_name = selection[..id_start].trim().to_string();
+                                                        if installed.contains(&tool_id) {
+                                                            // 已安装：在已安装列表中高亮定位，不再弹安装确认
+                                                            highlight_tool_id.set(Some(tool_id.clone()));
+                                                            toast.success(format!("工具已安装：{}", tool_name));
+                                                        } else {
+                                                            show_bind_tool_dialog.set(Some((tool_id, tool_name)));
+                                                        }
+                                                    }
                                                 }
                                             },
                                             on_search: Some(EventHandler::new(move |keyword: String| {
@@ -1298,15 +1336,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     // ===== Agent 工具全景：按 tag 维度聚合 + 包筛选 =====
                                     // 包（工具包 tag）作为上方筛选器；下方聚合列表按包分组展示，
                                     // 可被包筛选 + 名称搜索过滤。卡片沿用现有 ToolCard 样式与各组色调/徽章。
-                                    // 过滤器：名称搜索 + 已选包筛选条件（点击上方工具包 chip 即追加）
-                                    div { class: "flex flex-wrap items-center gap-2 mb-4",
-                                        input {
-                                            class: "input input-bordered input-sm flex-1 min-w-[180px]",
-                                            placeholder: "筛选已安装工具...",
-                                            value: tool_name_filter,
-                                            oninput: move |e| tool_name_filter.set(e.value().clone()),
-                                        }
-                                        if !tool_filter_tags.read().is_empty() {
+                                    // 过滤条：已选包（tag）筛选条件（点击上方工具包 chip 即追加）；无筛选时整条隐藏
+                                    if !tool_filter_tags.read().is_empty() {
+                                        div { class: "flex flex-wrap items-center gap-2 mb-4",
                                             for ft in tool_filter_tags.read().iter() {
                                                 span {
                                                     class: "badge orz-tag badge-primary gap-1",
@@ -1348,14 +1380,22 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for tool in tools.iter() {
-                                                        ToolCard {
-                                                            key: "flt-{tool.id}",
-                                                            tool: tool.clone(),
-                                                            tone: *tone,
-                                                            badge: badge.clone(),
-                                                            badge_class: "badge orz-tag badge-xs",
-                                                            show_unbind: *unbind,
-                                                            on_unbind: on_unbind_tool,
+                                                        div {
+                                                            id: "tool-card-{tool.id}",
+                                                            class: if highlight_tool_id.read().as_deref() == Some(tool.id.as_str()) {
+                                                                "rounded-lg ring-2 ring-primary"
+                                                            } else {
+                                                                ""
+                                                            },
+                                                            ToolCard {
+                                                                key: "flt-{tool.id}",
+                                                                tool: tool.clone(),
+                                                                tone: *tone,
+                                                                badge: badge.clone(),
+                                                                badge_class: "badge orz-tag badge-xs",
+                                                                show_unbind: *unbind,
+                                                                on_unbind: on_unbind_tool,
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -1454,12 +1494,20 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             options: skill_search_results.read().iter().map(|s| {
                                                 format!("{} ({})", s.name, s.id)
                                             }).collect(),
-                                            on_select: move |selection: String| {
-                                                // 从 "name (id)" 格式中提取 name 与 id，弹出二次确认后再安装
-                                                if let Some(id_start) = selection.rfind('(') {
-                                                    let skill_id = selection[id_start+1..selection.len()-1].to_string();
-                                                    let skill_name = selection[..id_start].trim().to_string();
-                                                    show_install_skill_dialog.set(Some((skill_id, skill_name)));
+                                            on_select: {
+                                                let installed = installed_skill_ids.clone();
+                                                move |selection: String| {
+                                                    // 从 "name (id)" 格式中提取 name 与 id
+                                                    if let Some(id_start) = selection.rfind('(') {
+                                                        let skill_id = selection[id_start+1..selection.len()-1].to_string();
+                                                        let skill_name = selection[..id_start].trim().to_string();
+                                                        if installed.contains(&skill_id) {
+                                                            highlight_skill_id.set(Some(skill_id.clone()));
+                                                            toast.success(format!("技能已安装：{}", skill_name));
+                                                        } else {
+                                                            show_install_skill_dialog.set(Some((skill_id, skill_name)));
+                                                        }
+                                                    }
                                                 }
                                             },
                                             on_search: Some(EventHandler::new(move |keyword: String| {
@@ -1487,15 +1535,9 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     // ===== Agent 已安装技能全景：按 tag 维度聚合 + 包筛选 =====
                                     // 包（技能包 tag）作为上方筛选器；下方聚合列表按包分组展示，
                                     // 可被包筛选 + 名称搜索过滤。卡片沿用现有 SkillCard 样式与 neural 徽章。
-                                    // 过滤器：名称搜索 + 已选包筛选条件（点击上方技能包 chip 即追加）
-                                    div { class: "flex flex-wrap items-center gap-2 mb-4",
-                                        input {
-                                            class: "input input-bordered input-sm flex-1 min-w-[180px]",
-                                            placeholder: "筛选已安装技能...",
-                                            value: skill_name_filter,
-                                            oninput: move |e| skill_name_filter.set(e.value().clone()),
-                                        }
-                                        if !skill_filter_tags.read().is_empty() {
+                                    // 过滤条：已选包（tag）筛选条件（点击上方技能包 chip 即追加）；无筛选时整条隐藏
+                                    if !skill_filter_tags.read().is_empty() {
+                                        div { class: "flex flex-wrap items-center gap-2 mb-4",
                                             for ft in skill_filter_tags.read().iter() {
                                                 span {
                                                     class: "badge orz-tag badge-primary gap-1",
@@ -1537,12 +1579,20 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                                 div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                                     for skill in skills.iter() {
-                                                        SkillCard {
-                                                            key: "flt-{skill.id}",
-                                                            skill: skill.clone(),
-                                                            tone: *tone,
-                                                            neural_badge: *neural_badge,
-                                                            on_uninstall: on_uninstall_skill,
+                                                        div {
+                                                            id: "skill-card-{skill.id}",
+                                                            class: if highlight_skill_id.read().as_deref() == Some(skill.id.as_str()) {
+                                                                "rounded-lg ring-2 ring-primary"
+                                                            } else {
+                                                                ""
+                                                            },
+                                                            SkillCard {
+                                                                key: "flt-{skill.id}",
+                                                                skill: skill.clone(),
+                                                                tone: *tone,
+                                                                neural_badge: *neural_badge,
+                                                                on_uninstall: on_uninstall_skill,
+                                                            }
                                                         }
                                                     }
                                                 }
