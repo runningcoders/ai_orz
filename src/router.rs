@@ -566,9 +566,17 @@ fn hr_routes() -> Router {
             get(handlers::hr::skill::list_agent_skills_handler),
         )
         .route(
+            "/agents/{agent_id}/skills/expired",
+            get(handlers::hr::skill::list_expired_agent_skills_handler),
+        )
+        .route(
             "/agents/{agent_id}/skills/{skill_id}",
             post(handlers::hr::skill::install_skill_to_agent_handler)
                 .delete(handlers::hr::skill::uninstall_skill_from_agent_handler),
+        )
+        .route(
+            "/skills/{skill_id}/restore",
+            post(handlers::hr::skill::restore_skill_handler),
         )
         .route(
             "/skills/{skill_id}/files",

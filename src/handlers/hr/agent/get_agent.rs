@@ -4,7 +4,7 @@ use super::association::{build_flat_skills, build_flat_tools};
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent::AgentFetchOptions;
-use crate::service::domain::{finance::domain as finance_domain, hr::domain};
+use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
     AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
@@ -128,13 +128,6 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
             None => (AgentRuntimeState::Idle as i32, None, None, None),
         };
 
-    // 获取已绑定的工具 ID 列表（保留：聊天侧面板计数使用）
-    let tools = finance_domain()
-        .tool_provider_manage()
-        .get_agent_bound_tool_ids(ctx.clone(), &params.id)
-        .await
-        .unwrap_or_default();
-
     // 装配 Agent 工具/技能扁平列表（后端只保证「去重后的实体全集」，
     // 分组交给前端按 installed pack tag 完成）。按 with_tools / with_skills 开关按需装配，
     // 关闭侧直接短路，不做任何工具/技能查询。工具额外经 runtime domain 做就绪探测，
@@ -184,7 +177,6 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         current_message_id,
         current_task_id,
         current_project_id,
-        tools,
         tool_list,
         skill_list,
         stats: agent.stats,

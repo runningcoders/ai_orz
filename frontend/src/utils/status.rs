@@ -1,6 +1,7 @@
 //! 任务/项目/Agent/工具调用 状态映射
 
 use common::api::ToolCallStatusDto;
+use common::enums::skill::SkillAuthorType;
 
 /// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职, 5=待离职）
 /// 单一事实源：避免各页面散写生命周期映射。
@@ -214,6 +215,44 @@ pub fn tool_call_status_badge(status: ToolCallStatusDto) -> &'static str {
         ToolCallStatusDto::Completed => "badge hud-badge badge-sm badge-success",
         ToolCallStatusDto::Failed => "badge hud-badge badge-sm badge-error",
     }
+}
+
+/// 技能「作者类型」徽章 class（单一事实源，HUD 风格对齐）。
+///
+/// 设计准则：**作者类型是「属性/类别」而非状态**，因此走中性 `orz-tag` chip
+/// （对齐 tag_chip 的基底 class），而非彩色 hud-badge 玻璃徽章，以保证：
+/// - 和状态徽章（Expired / Published / Draft）形成视觉层级差；
+/// - 和角色/能力/标签等其他属性徽章在全站点保持同一视觉语言。
+///
+/// 语义区分通过颜色填充而非形状差异：
+/// - Agent = 青蓝 orz-tag + badge-info（系统/自动产物）
+/// - User  = 中性 orz-tag（人类作者，默认）
+pub fn skill_author_type_badge(author_type: SkillAuthorType) -> &'static str {
+    match author_type {
+        SkillAuthorType::Agent => "badge orz-tag badge-sm badge-info",
+        SkillAuthorType::User => "badge orz-tag badge-sm",
+    }
+}
+
+/// 技能「作者类型」中文文案（单一事实源）。
+pub fn skill_author_type_text(author_type: SkillAuthorType) -> &'static str {
+    match author_type {
+        SkillAuthorType::Agent => "Agent 创作",
+        SkillAuthorType::User => "用户创作",
+    }
+}
+
+/// 对任意长 ID（UUID / ulid / object_id）截取短展示形式（前 6 后 4），
+/// 用于作者 ID 这类"一眼识别但不占空间"的场景；ID 不足 10 位直接原样返回。
+pub fn short_id(id: &str) -> String {
+    let chars: Vec<char> = id.chars().collect();
+    let n = chars.len();
+    if n <= 10 {
+        return id.to_string();
+    }
+    let head: String = chars[..6].iter().collect();
+    let tail: String = chars[n - 4..].iter().collect();
+    format!("{head}…{tail}")
 }
 
 #[cfg(test)]

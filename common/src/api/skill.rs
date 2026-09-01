@@ -590,3 +590,32 @@ pub struct UninstallSkillFromAgentResponse {
     /// 是否删除成功。
     pub deleted: bool,
 }
+
+/// 列出 Agent 名下**仅 Expired** 的技能副本（与 list_agent_skills 互斥）。
+/// 用于 Agent 详情页「📦 已过期技能」虚拟 pack 点击时的异步数据加载。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListExpiredAgentSkillsRequest {
+    /// Agent ID。
+    #[param(source = "path")]
+    pub agent_id: String,
+}
+
+/// 列出 Agent 过期技能副本响应。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListExpiredAgentSkillsResponse {
+    /// Agent 名下所有 Expired 状态的技能（扁平，按 id 唯一）。
+    pub skills: Vec<SkillListItem>,
+}
+
+/// 恢复技能请求（将 Expired → Draft，仅允许当前状态为 Expired 的技能）。
+///
+/// 权限：技能作者本人 / Admin / SuperAdmin /（当技能作者是 Agent 时）该 Agent 的创建者。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RestoreSkillRequest {
+    /// Skill ID。
+    #[param(source = "path")]
+    pub skill_id: String,
+}
+
+/// 恢复技能响应（返回恢复后的 SkillDetail，用于前端局部刷新）。
+pub type RestoreSkillResponse = SkillDetail;

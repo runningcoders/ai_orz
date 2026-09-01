@@ -12,6 +12,7 @@ use crate::components::skill_content_input_editor::SkillContentInputEditor;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use crate::utils::status::{short_id, skill_author_type_badge, skill_author_type_text};
 use common::api::{
     CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, SearchSkillsRequest,
     SkillContentInput, SkillQueryRequest,
@@ -288,15 +289,7 @@ pub fn HrSkills() -> Element {
                                         let description = s.description.clone();
                                         let tags = s.tags.clone();
                                         let author_type = s.author_type;
-                                        let author_id_short: String = s
-                                            .author_id
-                                            .chars()
-                                            .rev()
-                                            .take(6)
-                                            .collect::<String>()
-                                            .chars()
-                                            .rev()
-                                            .collect();
+                                        let author_id_short = short_id(&s.author_id);
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { class: "font-semibold", "data-label": "名称", "{name}" }
@@ -309,16 +302,12 @@ pub fn HrSkills() -> Element {
                                                     }
                                                 }
                                                 td { "data-label": "创建者",
-                                                    div { class: "flex flex-col gap-1 text-xs",
+                                                    div { class: "flex items-center gap-2",
                                                         span {
-                                                            class: if matches!(author_type, SkillAuthorType::Agent) {
-                                                                "badge badge-sm badge-info"
-                                                            } else {
-                                                                "badge badge-sm badge-outline"
-                                                            },
-                                                            if matches!(author_type, SkillAuthorType::Agent) { "Agent" } else { "用户" }
+                                                            class: "{skill_author_type_badge(author_type)}",
+                                                            "{skill_author_type_text(author_type)}"
                                                         }
-                                                        span { class: "font-mono text-base-content/60 select-all", "{author_id_short}" }
+                                                        span { class: "font-mono text-xs text-base-content/60 select-all", "{author_id_short}" }
                                                     }
                                                 }
                                                 td { "data-label": "操作",

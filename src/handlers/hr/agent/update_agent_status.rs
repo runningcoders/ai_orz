@@ -2,7 +2,7 @@
 
 use crate::models::agent::ExternalAgentConfig;
 use crate::pkg::RequestContext;
-use crate::service::domain::{finance::domain as finance_domain, hr::domain};
+use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{
     AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
@@ -94,12 +94,6 @@ pub async fn update_agent_status(
             None => (AgentRuntimeState::Idle as i32, None, None, None),
         };
 
-    let tools = finance_domain()
-        .tool_provider_manage()
-        .get_agent_bound_tool_ids(ctx, &params.id)
-        .await
-        .unwrap_or_default();
-
     // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
     let runtime_config = {
         let rc = agent.po.get_runtime_config();
@@ -141,7 +135,6 @@ pub async fn update_agent_status(
         current_message_id,
         current_task_id,
         current_project_id,
-        tools,
         tool_list: None,
         skill_list: None,
         stats: None,

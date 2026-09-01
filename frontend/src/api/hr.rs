@@ -6,9 +6,10 @@ use common::api::{
     CreateExternalAgentResponse, CreateSkillRequest, CreateSkillResponse, DeleteSkillResponse,
     GetAgentRequest, GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
     GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
-    ListInstalledSkillPacksResponse, ListInstalledToolPacksResponse, ListSkillsRequest,
-    PagedResult, QueryMemoryParams, QueryMemoryResponse, RecommendSeedNodesParams,
-    RecommendSeedNodesResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
+    ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
+    ListInstalledToolPacksResponse, ListSkillsRequest, PagedResult, QueryMemoryParams,
+    QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
+    RestoreSkillResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
     RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
     UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
@@ -177,6 +178,28 @@ pub async fn uninstall_skill_from_agent(
         "/api/v1/hr/agents/{}/skills/{}",
         req.agent_id, req.skill_id
     ))
+    .await
+}
+
+/// 拉取 Agent 名下**仅 Expired** 的技能副本（与 list_agent_skills 互斥）。
+/// 前端「📦 已过期技能」虚拟 pack 首次点击时懒加载一次，后续本地缓存并信号维护。
+pub async fn list_expired_agent_skills(
+    req: ListExpiredAgentSkillsRequest,
+) -> Result<ListExpiredAgentSkillsResponse, ApiError> {
+    api_get(&format!(
+        "/api/v1/hr/agents/{}/skills/expired",
+        req.agent_id
+    ))
+    .await
+}
+
+/// 恢复一个 Expired 技能为 Draft；仅当前 status=Expired 时允许操作。
+/// 返回恢复后的 SkillDetail，供前端把 skill 从过期列表移回主活动列表（局部刷新）。
+pub async fn restore_skill(req: RestoreSkillRequest) -> Result<RestoreSkillResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/skills/{}/restore", req.skill_id),
+        &serde_json::json!({}),
+    )
     .await
 }
 

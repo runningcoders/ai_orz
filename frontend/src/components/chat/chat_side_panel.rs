@@ -671,7 +671,7 @@ fn AgentInfoTab(agent_id: String) -> Element {
                     }
                 }
             }
-            div { class: "text-xs text-base-content/60", "已绑定工具：{a.tools.len()} 个" }
+            div { class: "text-xs text-base-content/60", "已绑定工具：{a.tool_list.as_ref().map(|l| l.len()).unwrap_or(0)} 个" }
             Link {
                 class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::HrAgentDetail { id: aid },

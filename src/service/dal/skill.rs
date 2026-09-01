@@ -84,6 +84,14 @@ pub trait SkillDal: Send + Sync {
     /// 获取 Agent 的所有技能（返回完整 Skill 实体）
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
 
+    /// 获取 Agent 当前所有标记为 Expired 的技能副本（用于详情页「已过期技能」
+    /// 虚拟分组展示 + 「恢复」按钮）。与 list_for_agent 的结果集天然互斥。
+    async fn list_expired_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>>;
+
     /// 搜索技能（名称/描述/标签）
     async fn search(
         &self,
@@ -300,13 +308,37 @@ impl SkillDal for SkillDalImpl {
 
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>> {
         // 排除 Expired：过期技能是安装时间戳/包版本演进的 tombstone，
-        // 不应出现在 Agent 详情页的可用技能栏里（恢复走 reinstall 原地更新分支）。
+        // 不应出现在 Agent 详情页的可用技能栏里（恢复走 restore_skill 单条变更）。
         let page = self
             .query(
                 ctx,
                 SkillQuery {
                     author_id: Some(agent_id.to_string()),
                     exclude_status: Some(SkillStatus::Expired),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok(page.items)
+    }
+
+    async fn list_expired_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>> {
+        // 只返回 Expired：与 list_for_agent 天然互斥，用于「过期技能虚拟包」显示。
+        let page = self
+            .query(
+                ctx,
+                SkillQuery {
+                    author_id: Some(agent_id.to_string()),
+                    status: Some(SkillStatus::Expired),
+                    exclude_status: None,
+                    pagination: common::api::PaginationParams {
+                        limit: None,
+                        offset: None,
+                    },
                     ..Default::default()
                 },
             )

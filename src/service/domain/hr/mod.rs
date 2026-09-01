@@ -523,6 +523,13 @@ pub trait SkillManage: Send + Sync {
     async fn list_by_category(&self, ctx: RequestContext, category: &str) -> Result<Vec<Skill>>;
     async fn list_by_author(&self, ctx: RequestContext, author_id: &str) -> Result<Vec<Skill>>;
     async fn list_for_agent(&self, ctx: RequestContext, agent_id: &str) -> Result<Vec<Skill>>;
+    /// Agent 名下仅标记 Expired 的技能副本（详情页「已过期技能」虚拟包显示），
+    /// 与 list_for_agent 天然互斥；单独提供，避免污染默认「有效技能」语义。
+    async fn list_expired_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>>;
     /// 列出某 tag 下所有已发布技能（用于神经技能加载兜底等场景）
     async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>>;
     async fn search_skills(
@@ -552,6 +559,13 @@ pub trait SkillManage: Send + Sync {
         skill_id: &str,
         agent_id: &str,
     ) -> Result<()>;
+
+    /// 把一个 Expired 技能恢复为 Draft（详情页过期技能虚拟 pack「恢复」按钮使用）。
+    ///
+    /// 前置：`po.status == SkillStatus::Expired`（否则 Conflict）。
+    /// 权限：作者本人 / Admin / SuperAdmin /（作者是 Agent 时）Agent 创建者
+    /// （复用 ensure_skill_access）。
+    async fn restore_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill>;
 
     // D. Skill 文件独立操作
     /// 列出 Skill 所有文件，返回文件列表摘要

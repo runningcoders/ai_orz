@@ -18,18 +18,19 @@ use crate::pages::hr::knowledge_graph::KnowledgeGraph;
 use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
-    status::tag_chip,
+    status::{short_id, skill_author_type_badge, skill_author_type_text, tag_chip},
 };
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
     InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
-    ListMessagesRequest, ListModelProvidersResponseItem, MessageListItem, PaginationParams,
-    ProjectListItem, ProjectQueryRequest, RuntimeReady, SendMessageToAgentParams, SkillListItem,
-    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
-    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
-    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
+    ListExpiredAgentSkillsRequest, ListMessagesRequest, ListModelProvidersResponseItem,
+    MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, RestoreSkillRequest,
+    RuntimeReady, SendMessageToAgentParams, SkillListItem, SkillQueryRequest, TaskListItem,
+    TaskQueryRequest, ToolListItem, ToolQueryRequest, UnbindToolFromAgentRequest,
+    UninstallSkillFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
+    UpdateAgentRequest, UpdateAgentStatusRequest,
 };
-use common::enums::{AgentStatus, AssigneeType};
+use common::enums::{AgentStatus, AssigneeType, SkillStatus};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
@@ -55,48 +56,101 @@ fn build_agent_stats_request(id: String) -> GetAgentRequest {
 /// 技能卡片：神经 / 技能包 / 独立三分组共用。
 /// 分组差异通过 `tone`（HUD 面板色调）与 `neural_badge`（是否带"神经"徽章）表达；
 /// 卸载动作通过 `on_uninstall` 上抛（参数为 (skill_id, skill_name)），由调用方统一处理。
+/// Agent 私有目录下单个技能卡片（活动技能 / 过期副本通用）。
+/// - 状态徽章：根据 skill.status 自动区分 Expired（error/不可用）、Published（success/已发布）、Draft（info/草稿）。
+/// - `on_uninstall`：针对活动技能的"卸载"按钮（Expired 技能在后端不绑定 agent 安装关系，走恢复而非卸载，按钮隐藏）。
+/// - `on_restore`：可选；传入后**且** skill.status=Expired 时，会显示「恢复」按钮，点击调用恢复接口。
 #[component]
 fn SkillCard(
     skill: SkillListItem,
     tone: &'static str,
     neural_badge: bool,
     on_uninstall: EventHandler<(String, String)>,
+    on_restore: Option<EventHandler<String>>,
 ) -> Element {
     let skill_id = skill.id.clone();
     let skill_name = skill.name.clone();
     let skill_desc = skill.description.clone();
     let tags = skill.tags.clone();
+    let is_expired = matches!(skill.status, SkillStatus::Expired);
+    let (status_label, status_badge_cls) = match skill.status {
+        SkillStatus::Expired => ("已过期", "badge hud-badge badge-error"),
+        SkillStatus::Published => ("已发布", "badge hud-badge badge-success"),
+        SkillStatus::Draft => ("草稿", "badge hud-badge badge-info badge-outline"),
+    };
+    // 过期副本无绑定安装关系，不显示「卸载」；过期的卸载没有语义，也避免用户以为能卸载而 API 失败。
+    let show_uninstall = !is_expired;
+    let show_restore = is_expired && on_restore.is_some();
+    // 过期副本强调边框：让用户一眼感知这与活动技能卡不是一组。
+    let wrapper_cls = if is_expired {
+        "rounded-lg ring-2 ring-error/30 p-1 bg-error/5"
+    } else {
+        ""
+    };
+    // 为两个 move onclick 闭包准备独立副本（避免 rsx 内 let 绑定的 "expected identifier" 错误）
+    let skill_id_for_uninstall = skill_id.clone();
+    let skill_name_for_uninstall = skill_name.clone();
+    let skill_id_for_restore = skill_id.clone();
+
+    let author_type = skill.author_type;
+    let author_label = skill_author_type_text(author_type);
+    let author_badge_cls = skill_author_type_badge(author_type);
+    let author_short = short_id(&skill.author_id);
 
     rsx! {
-        HudCard { tone: Some(tone),
-            div { class: "flex justify-between items-start",
-                span { class: "font-medium", "{skill_name}" }
-                div { class: "flex gap-1",
-                    if neural_badge {
-                        span { class: "badge orz-tag badge-xs", "神经" }
-                    }
-                    span { class: "badge hud-badge badge-success", "已安装" }
-                }
-            }
-            if !skill_desc.is_empty() {
-                p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
-            }
-            if !tags.is_empty() {
-                div { class: "flex flex-wrap gap-1 mt-2",
-                    for tag in tags.iter() {
-                        span { class: "{tag_chip()}", "{tag}" }
+        div { class: "{wrapper_cls}",
+            HudCard { tone: Some(tone),
+                div { class: "flex justify-between items-start",
+                    span { class: "font-medium", "{skill_name}" }
+                    div { class: "flex gap-1",
+                        if neural_badge {
+                            span { class: "badge orz-tag badge-xs", "神经" }
+                        }
+                        span { class: "{status_badge_cls}", "{status_label}" }
                     }
                 }
-            }
-            div { class: "card-actions justify-end mt-3",
-                button {
-                    class: "btn hud-btn btn-error btn-sm",
-                    onclick: move |_| {
-                        let id = skill_id.clone();
-                        let name = skill_name.clone();
-                        on_uninstall.call((id, name));
-                    },
-                    "卸载"
+                if !skill_desc.is_empty() {
+                    p { class: "text-sm text-base-content/70 mt-2", "{skill_desc}" }
+                }
+                if !tags.is_empty() {
+                    div { class: "flex flex-wrap gap-1 mt-2",
+                        for tag in tags.iter() {
+                            span { class: "{tag_chip()}", "{tag}" }
+                        }
+                    }
+                }
+                // === 作者行：对齐 HUD 基准样式（属性类走 orz-tag chip，ID 走等宽字体短展示）
+                // 同一套 class / 文案 / 短 ID 规则，和 skills.rs 创建者列完全同源。
+                div { class: "flex items-center gap-2 mt-2 pt-2 border-t border-base-200/60",
+                    span { class: "{author_badge_cls}", "{author_label}" }
+                    span { class: "font-mono text-xs text-base-content/60 select-all", "{author_short}" }
+                }
+                div { class: "card-actions justify-end mt-3",
+                    if show_uninstall {
+                        button {
+                            class: "btn hud-btn btn-error btn-sm",
+                            onclick: move |_| {
+                                // FnMut 闭包体内 clone 出 owned 参数再抛事件；不能直接 move 捕获的外层 String（只能使用一次）。
+                                let id = skill_id_for_uninstall.clone();
+                                let nm = skill_name_for_uninstall.clone();
+                                on_uninstall.call((id, nm));
+                            },
+                            "卸载"
+                        }
+                    }
+                    if let Some(restore_handler) = on_restore {
+                        if show_restore {
+                            button {
+                                class: "btn hud-btn btn-success btn-sm",
+                                title: "把该过期副本恢复为 Draft，重新放入私有目录活动列表中",
+                                onclick: move |_| {
+                                    let rid = skill_id_for_restore.clone();
+                                    restore_handler.call(rid);
+                                },
+                                "↩ 恢复"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -646,7 +700,78 @@ pub fn HrAgentDetail(id: String) -> Element {
             let desc = a.description.as_deref().unwrap_or("");
             // ---- Agent 关联全景视图（后端返回扁平去重列表，前端自行按 tag 分包） ----
             let tool_list: Vec<ToolListItem> = a.tool_list.clone().unwrap_or_default();
-            let skill_list: Vec<SkillListItem> = a.skill_list.clone().unwrap_or_default();
+            // ===== 过期技能虚拟 pack：📦 已过期技能 =====
+            // - 虚拟 tag 常量（永远不会与真实 skill pack 撞名）；作为额外 chip 出现在技能包区。
+            // - 点击选中后**首次**才懒加载 list_expired_agent_skills，结果写入 expired_skill_list。
+            // - 再点取消（从 filter 移除）就不再显示该分组，下次再选则复用已缓存的 expired list（恢复操作已实时维护）。
+            const EXPIRED_PACK_TAG: &str = "__expired_pack__";
+            const EXPIRED_PACK_LABEL: &str = "📦 已过期技能";
+            // 活动技能列表改成信号：恢复成功后需要把 skill 插入这里。
+            let mut skill_list = use_signal(|| a.skill_list.clone().unwrap_or_default());
+            let mut expired_skill_list = use_signal(Vec::<SkillListItem>::new);
+            // 是否已懒加载过（选中虚拟 pack 时只在首次发请求）
+            let mut expired_loaded = use_signal(|| false);
+
+            let aid_for_load = agent_id_signal();
+            let mut on_toggle_expired_pack = move || {
+                let filter_has = skill_filter_tags.read().iter().any(|t| t == EXPIRED_PACK_TAG);
+                if filter_has {
+                    // 取消：从 filter 移除（保留 list 缓存，下次选中不重拉）
+                    let mut v = skill_filter_tags.write();
+                    v.retain(|t| t != EXPIRED_PACK_TAG);
+                } else {
+                    // 选中：先追加 filter tag，若未加载则触发异步 fetch
+                    skill_filter_tags.write().push(EXPIRED_PACK_TAG.to_string());
+                    if !expired_loaded() {
+                        let agent_id = aid_for_load.clone();
+                        spawn(async move {
+                            match list_expired_agent_skills(ListExpiredAgentSkillsRequest {
+                                agent_id: agent_id.clone(),
+                            })
+                            .await
+                            {
+                                Ok(r) => {
+                                    expired_skill_list.set(r.skills);
+                                    expired_loaded.set(true);
+                                }
+                                Err(e) => toast.error(format!("加载过期技能失败: {}", e)),
+                            }
+                        });
+                    }
+                }
+            };
+            // Restore: 调用接口，成功时把 skill 从 expired 移到 active（信号维护）。
+            let toast_c = toast;
+            let on_restore_skill = move |skill_id: String| {
+                let skill_id_c = skill_id.clone();
+                spawn(async move {
+                    match restore_skill(RestoreSkillRequest { skill_id: skill_id_c.clone() }).await {
+                        Ok(r) => {
+                            // 1) 从 expired list 移除
+                            expired_skill_list.write().retain(|s| s.id != r.id);
+                            // 2) 转成 SkillListItem 追加 active
+                            let item = SkillListItem {
+                                id: r.id.clone(),
+                                name: r.name.clone(),
+                                description: r.description.clone(),
+                                tags: r.tags.clone(),
+                                category: r.category.clone(),
+                                parent_skill_id: r.parent_skill_id.clone(),
+                                author_id: r.author_id.clone(),
+                                author_type: r.author_type,
+                                status: r.status,
+                                created_at: r.created_at,
+                                updated_at: r.updated_at,
+                            };
+                            if !skill_list.read().iter().any(|s| s.id == r.id) {
+                                skill_list.write().push(item);
+                            }
+                            toast_c.success(format!("已恢复：{}", r.name));
+                        }
+                        Err(e) => toast_c.error(format!("恢复失败：{}", e)),
+                    }
+                });
+            };
             // 已安装工具包 tag 集合（含 neural，用于分组与关系图着色）
             let tool_packs_set: std::collections::HashSet<String> =
                 tool_packs_list.iter().cloned().collect();
@@ -666,7 +791,7 @@ pub fn HrAgentDetail(id: String) -> Element {
 
             // 总数：扁平列表本身即去重后的全集
             let all_tool_count = tool_list.len();
-            let all_skill_count = skill_list.len();
+            let all_skill_count = skill_list.read().len();
             // 已安装包 → 含项数映射（用于包卡片副标题）：按 tag 在扁平列表中命中计数。
             // 后端保证列表去重，故这里统计的也是去重后的项数。
             let tool_pack_counts: std::collections::HashMap<String, usize> = tool_packs_list
@@ -683,6 +808,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 .iter()
                 .map(|tag| {
                     let c = skill_list
+                        .read()
                         .iter()
                         .filter(|s| s.tags.iter().any(|x| x == tag))
                         .count();
@@ -755,14 +881,19 @@ pub fn HrAgentDetail(id: String) -> Element {
                 .collect();
 
             let skill_filter = skill_filter_tags.read().clone();
+            // 过期虚拟 tag 在 skill_view 分组/筛选中单独处理：从 filter 中拆分出来，
+            // 不参与正常 📦 前缀 match，而是在下方 "已绑定技能" 面板末尾追加独立 Section。
+            let expired_tag = EXPIRED_PACK_TAG.to_string();
+            let filter_has_expired = skill_filter.iter().any(|t| t == &expired_tag);
             // 已安装技能 id 集合（扁平列表即全集）
             let installed_skill_ids: HashSet<String> =
-                skill_list.iter().map(|s| s.id.clone()).collect();
+                skill_list.read().iter().map(|s| s.id.clone()).collect();
 
             // 技能列表：按分组 tag（已安装技能包 + neural）分组
             let mut skill_view: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = Vec::new();
             for tag in skill_group_tags.iter() {
                 let mut skills: Vec<SkillListItem> = skill_list
+                    .read()
                     .iter()
                     .filter(|s| s.tags.iter().any(|x| x == tag))
                     .cloned()
@@ -778,6 +909,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                 }
             }
             let standalone_skills: Vec<SkillListItem> = skill_list
+                .read()
                 .iter()
                 .filter(|s| !s.tags.iter().any(|x| skill_group_tags.iter().any(|g| g == x)))
                 .cloned()
@@ -790,14 +922,20 @@ pub fn HrAgentDetail(id: String) -> Element {
                     standalone_skills,
                 ));
             }
+            // Filter 时忽略虚拟过期 tag（它独立渲染）
+            let skill_filter_no_expired: Vec<String> = skill_filter
+                .iter()
+                .filter(|t| t.as_str() != EXPIRED_PACK_TAG)
+                .cloned()
+                .collect();
             let skill_filtered: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = skill_view
                 .into_iter()
                 .filter(|(label, _, _, _)| {
-                    if skill_filter.is_empty() {
+                    if skill_filter_no_expired.is_empty() {
                         return true;
                     }
                     if let Some(tag) = label.strip_prefix("📦 ") {
-                        skill_filter.iter().any(|f| f == tag)
+                        skill_filter_no_expired.iter().any(|f| f == tag)
                     } else {
                         false
                     }
@@ -1506,6 +1644,53 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
+                                    // --- 📦 已过期技能 · 虚拟 pack（点击即筛选，再点取消，首次选中才懒加载）---
+                                    // 语义上等同于一个特殊 pack chip，用来承载过期副本集合。
+                                    // 与真实 pack 区的视觉风格保持一致但视觉上用不同色调强调。
+                                    {
+                                        let tf = skill_filter_tags;
+                                        let expired_active = tf.read().iter().any(|t| t == EXPIRED_PACK_TAG);
+                                        let exp_count = expired_skill_list.read().len();
+                                        let title = EXPIRED_PACK_LABEL.to_string();
+                                        let subtitle = if expired_loaded() {
+                                            format!("过期副本 {} 个 · 点击切换显示", exp_count)
+                                        } else {
+                                            "点击加载并显示过期副本".to_string()
+                                        };
+                                        let style = if expired_active {
+                                            "border-2 border-error bg-error/10 shadow-lg shadow-error/20"
+                                        } else {
+                                            "border-2 border-base-300 bg-base-200/40 hover:border-error/50 hover:bg-error/5"
+                                        };
+                                        rsx! {
+                                            div {
+                                                class: "mt-4",
+                                                div {
+                                                    class: "card {style} cursor-pointer",
+                                                    onclick: move |_| on_toggle_expired_pack(),
+                                                    div {
+                                                        class: "card-body py-3 px-4",
+                                                        div {
+                                                            class: "flex items-center justify-between w-full",
+                                                            h3 {
+                                                                class: "card-title text-sm font-semibold m-0 flex items-center gap-2",
+                                                                span { class: "badge badge-error badge-sm", "Expired" }
+                                                                "{title}"
+                                                            }
+                                                            div {
+                                                                class: "text-xs text-base-content/60",
+                                                                "{subtitle}"
+                                                            }
+                                                        }
+                                                        p {
+                                                            class: "text-xs text-base-content/50 mt-1",
+                                                            "升级时被替换下来的旧副本存放在这里，可选择性恢复为 Draft 重新使用。"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 // === 单个技能安装 ===
@@ -1618,10 +1803,60 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 tone: *tone,
                                                                 neural_badge: *neural_badge,
                                                                 on_uninstall: on_uninstall_skill,
+                                                                on_restore: None,
                                                             }
                                                         }
                                                     }
                                                 }
+                                            }
+                                        }
+                                        // --- 追加：📦 已过期技能 · 独立分组（当 filter_has_expired 选中虚拟 pack 时渲染）---
+                                        // 这个 Section 放在活动技能分组下面，视觉独立，卡片用 error 色调+恢复按钮。
+                                        {
+                                            let expired = expired_skill_list.read().clone();
+                                            let expired_empty_label = if expired_loaded() {
+                                                "没有过期副本（或已有副本已被恢复）".to_string()
+                                            } else {
+                                                "正在从后端拉取过期副本……".to_string()
+                                            };
+                                            let empty_icon = if expired_loaded() { "✓" } else { "⏳" };
+                                            let exp_count = expired.len();
+                                            if filter_has_expired {
+                                                rsx! {
+                                                    div {
+                                                        class: "mb-4 mt-6 rounded-xl border-2 border-dashed border-error/40 p-4 bg-error/[0.04]",
+                                                        div {
+                                                            class: "flex items-center gap-2 mb-3",
+                                                            span { class: "badge badge-error badge-sm", "Expired" }
+                                                            h4 { class: "font-semibold text-base", "📦 已过期技能（虚拟 pack 加载结果）" }
+                                                            span { class: "badge orz-tag badge-xs", "{exp_count}" }
+                                                        }
+                                                        if expired.is_empty() {
+                                                            div { class: "text-center py-8",
+                                                                div { class: "text-3xl mb-2 opacity-40", "{empty_icon}" }
+                                                                div { class: "text-base-content/60 text-sm", "{expired_empty_label}" }
+                                                            }
+                                                        } else {
+                                                            div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                                for skill in expired.iter() {
+                                                                    div {
+                                                                        id: "skill-card-expired-{skill.id}",
+                                                                        SkillCard {
+                                                                            key: "exp-{skill.id}",
+                                                                            skill: skill.clone(),
+                                                                            tone: "warning",
+                                                                            neural_badge: false,
+                                                                            on_uninstall: on_uninstall_skill,
+                                                                            on_restore: Some(EventHandler::<String>::new(move |s: String| on_restore_skill(s))),
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                rsx! { {} }
                                             }
                                         }
                                     }

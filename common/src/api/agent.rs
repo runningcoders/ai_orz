@@ -210,8 +210,6 @@ pub struct GetAgentResponse {
     pub current_task_id: Option<String>,
     /// 当前关联的项目 ID（仅忙碌时有效）
     pub current_project_id: Option<String>,
-    /// 已绑定的工具 ID 列表（保留：聊天侧面板「已绑定工具 N 个」语义使用）
-    pub tools: Vec<String>,
     /// Agent 已拥有并去重的工具列表（扁平，按 id 唯一）；前端按 installed pack tag 自行分组
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_list: Option<Vec<ToolListItem>>,

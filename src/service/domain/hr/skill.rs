@@ -11,7 +11,7 @@ use common::constants::utils::current_timestamp_ms;
 use common::enums::SkillStatus;
 use common::enums::UserRole;
 use common::enums::skill::SkillAuthorType;
-use common::error::{Result, bail_err, err};
+use common::error::{Result, bail_err, ensure_err, err};
 use std::path::{Component, Path};
 
 #[async_trait::async_trait]
@@ -128,6 +128,15 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.list_for_agent(ctx, agent_id).await
     }
 
+    async fn list_expired_for_agent(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<Vec<Skill>> {
+        let ctx = ctx.to_builder().agent_id(agent_id).build();
+        self.skill_dal.list_expired_for_agent(ctx, agent_id).await
+    }
+
     async fn list_published_by_tag(&self, ctx: RequestContext, tag: &str) -> Result<Vec<Skill>> {
         self.skill_dal.list_published_by_tag(ctx, tag).await
     }
@@ -189,6 +198,33 @@ impl SkillManage for HrDomainImpl {
         }
         // 复用 DAL delete：同时删除 DB 记录 + 文件目录
         self.skill_dal.delete(ctx, skill_id).await
+    }
+
+    async fn restore_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill> {
+        let Some(mut skill) = self
+            .skill_dal
+            .get_by_id(ctx.clone(), skill_id.to_string())
+            .await?
+        else {
+            bail_err!(NotFound, "Skill {} not found", skill_id);
+        };
+
+        ensure_err!(
+            matches!(skill.po.status, SkillStatus::Expired),
+            Conflict,
+            "Skill {} 状态非 Expired（当前={:?}），无需恢复",
+            skill.po.id,
+            skill.po.status
+        );
+
+        self.ensure_skill_access(&ctx, &skill.po).await?;
+
+        skill.po.status = SkillStatus::Draft;
+        skill.po.modifier_id = ctx.uid().to_string();
+        skill.po.updated_at = current_timestamp_ms();
+
+        self.skill_dal.update(ctx, &skill).await?;
+        Ok(skill)
     }
 
     async fn list_skill_files(
