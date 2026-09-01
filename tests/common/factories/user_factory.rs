@@ -43,6 +43,29 @@ pub struct BootstrappedSystem {
     /// None 表示测试环境未配置 embedding provider（默认情况）。
     /// 所有实体创建走 `Ok(None)` 向量降级路径，不触发 cortex/FastEmbed。
     pub embedding_provider_id: Option<String>,
+    /// 当前 admin 用户在 DB 中的角色（数值 i32，对应 UserRole 枚举）。
+    /// 用于构造 `RequestContext` 时注入 `user_role`，确保管理员级资源访问
+    /// （如他人预置技能的文件读取、author_id 更新）通过 Admin Bypass。
+    pub user_role: i32,
+}
+
+impl BootstrappedSystem {
+    /// 基于全局 Storage 单例 + 本 bootstrap 的 user_id/organization_id/role，
+    /// 构造一个"真实身份 + 角色"的 `RequestContext`。
+    ///
+    /// 这是集成测试中访问受权限保护资源（他人预置技能、元数据更新等）
+    /// 的推荐 ctx 来源；避免用 `RequestContext::from_storage` 的无 role 版本
+    /// 或 `init_full_test_env` 返回的 "test-integration-user" 虚拟身份，
+    /// 两者在 Admin Bypass / 作者匹配上都会被 `ensure_skill_access` 拦截。
+    pub fn build_authenticated_ctx(&self) -> ai_orz::pkg::RequestContext {
+        ai_orz::pkg::RequestContext::builder()
+            .user_id(self.user_id.clone())
+            .username(self.username.clone())
+            .organization_id(self.organization_id.clone())
+            .user_role(self.user_role)
+            .storage(ai_orz::pkg::storage::get().clone())
+            .build()
+    }
 }
 
 /// 轮询初始化进度直到完成或失败（供各初始化变体复用）
@@ -90,7 +113,14 @@ pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_jso
 /// **密码重置**：密码哈希化后 DB 存 bcrypt 不可逆，而跨测试进程共享的 DB 里
 /// 无法得知创建时的明文。复用时直接生成新明文并回写哈希（BOOTSTRAP_MUTEX
 /// 保证串行），保证返回值可用于真实 `/login` 接口。
-async fn try_reuse_existing_local_admin() -> Option<(String, String, String, String)> {
+/// 尝试从 service 层直接复用已存在的 Local 组织 + SuperAdmin。
+///
+/// 返回 `Some((org_id, user_id, username, password, user_role_i32))`；
+/// 返回 `None` 表示需要走 HTTP initialize 创建新系统。
+///
+/// 最后一个字段是 DB 中该 admin 的真实角色值（i32），供调用方把 role 注入
+/// RequestContext，走 Admin Bypass 访问受权限保护的资源。
+async fn try_reuse_existing_local_admin() -> Option<(String, String, String, String, i32)> {
     let ctx = ai_orz::pkg::RequestContext::from_storage(
         "test-bootstrap-reuse",
         ai_orz::pkg::storage::get().clone(),
@@ -130,6 +160,7 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
         .items
         .into_iter()
         .find(|u| u.role == UserRole::SuperAdmin)?;
+    let admin_role_i32 = admin.role as i32;
 
     // 密码重置为已知明文（bcrypt 不可逆，旧哈希无法用于登录）
     let password = format!("reused-pw-{}", uuid::Uuid::now_v7());
@@ -140,7 +171,7 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
         .await
         .ok()?;
 
-    Some((org_id, admin.id, admin.username, password))
+    Some((org_id, admin.id, admin.username, password, admin_role_i32))
 }
 
 /// 尝试从 service 层直接复用已存在的 Local 组织 + admin 用户 + chat provider。
@@ -153,12 +184,18 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
 /// bootstrap 可能是 minimal 变体（跳过 chat provider），后续 `bootstrap_system`
 /// 复用时就会查无 provider —— 此时照抄初始化 Step 2 在领域层直接落库补建，
 /// 绝不再降级到注定失败的 `/initialize`。
+///
+/// **预置技能刷新（幂等）**：复用时显式再跑一次 `apply_preset_skills`
+/// （`RequestContext::new_system()` 作为调用者，System ctx 能跳过资源级权限
+/// 检查并正确 update 任意作者的预置技能），把 author_id 覆盖为当前 admin
+/// user_id，从而让「第二次 bootstrap 仍应更新 author_id」的幂等语义成立
+/// （同时覆盖 minimal 首次初始化中途中断导致技能不完整的情况）。
 async fn try_reuse_existing() -> Option<BootstrappedSystem> {
     let ctx = ai_orz::pkg::RequestContext::from_storage(
         "test-bootstrap-reuse",
         ai_orz::pkg::storage::get().clone(),
     );
-    let (org_id, user_id, username, password) = try_reuse_existing_local_admin().await?;
+    let (org_id, user_id, username, password, user_role) = try_reuse_existing_local_admin().await?;
 
     // 3. 找该 admin 名下的 chat model provider（Agent capability）；缺失则补建
     let providers = finance::domain()
@@ -204,6 +241,27 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
         }
     };
 
+    // 4. 幂等刷新预置技能：author_id 改为当前 admin，并补齐任何缺失的技能
+    //    用当前 admin 自己的带 SuperAdmin role 的 ctx（Admin Bypass 正确命中），
+    //    不碰领域层 ensure_skill_access；而且 update 后新作者=当前 user，下次
+    //    「作者本人」路径也能通过权限检查。
+    let admin_ctx = ai_orz::pkg::RequestContext::builder()
+        .user_id(user_id.clone())
+        .username(username.clone())
+        .organization_id(org_id.clone())
+        .user_role(user_role)
+        .storage(ai_orz::pkg::storage::get().clone())
+        .build();
+    let snapshot = ai_orz::service::domain::system::seed::default::embedded_default_snapshot();
+    let _ = ai_orz::handlers::system::seed::apply_preset_skills(
+        admin_ctx,
+        &snapshot.skills,
+        Some(&user_id),
+        false,
+    )
+    .await
+    .ok()?;
+
     Some(BootstrappedSystem {
         organization_id: org_id,
         user_id,
@@ -211,6 +269,7 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
         password,
         chat_provider_id,
         embedding_provider_id: None, // bootstrap_system 默认不创建 embedding
+        user_role,
     })
 }
 
@@ -286,11 +345,15 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
         .map(|s| s.to_string());
     BootstrappedSystem {
         organization_id: org_id,
-        user_id,
+        user_id: user_id.clone(),
         username,
         password,
         chat_provider_id,
         embedding_provider_id,
+        // 系统初始化创建的 Owner 固定是 SuperAdmin（即 UserRole::SuperAdmin=0）。
+        // 不用再查询：create_org_and_owner 入口就是「owner 角色 = SuperAdmin」
+        // （见 OrganizationManage::create_org_and_owner 实现）。
+        user_role: UserRole::SuperAdmin as i32,
     }
 }
 
@@ -312,7 +375,9 @@ pub async fn bootstrap_system_minimal(
     // `/initialize` 必被 handler 的"系统已初始化"拦截。此处复用既有组织/管理员
     // 并合成最小结果 —— 本调用未创建任何 provider，两个 provider 字段保持 null，
     // 与"跳过 chat/embedding"的新建语义一致。
-    if let Some((org_id, user_id, username, password)) = try_reuse_existing_local_admin().await {
+    if let Some((org_id, user_id, username, password, _role)) =
+        try_reuse_existing_local_admin().await
+    {
         let result = serde_json::json!({
             "organization_id": org_id,
             "user_id": user_id,

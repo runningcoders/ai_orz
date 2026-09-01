@@ -6,6 +6,22 @@
 //! - Preset skills' author_id is replaced with the actual owner user_id
 //! - Preset skill files (skill.md) are written and contain expected content
 //! - `apply_preset_skills` is idempotent (second bootstrap updates, not duplicates)
+//!
+//! ## 进程级串行化原因（为什么 4 个用例必须全部互斥，锁窗口含 bootstrap+断言）
+//!
+//! 集成测试共享同一进程级 Storage OnceLock（单 SQLite 文件），固定 ID 的 Local 组织 /
+//! 预置技能（TEMPLATE_*）在所有用例间共享同一行数据：
+//!
+//! 1. `count=5` / `author_id == bs2.user_id` 这类**快照断言**对「额外写入」零容忍，
+//!    并行执行下其他测试先 bootstrap 导入后，会被当前用例的断言误判为「自己导入的」，
+//!    造成测试间语义耦合。
+//! 2. `bootstrap_system` 内部的 `BOOTSTRAP_MUTEX` 仅串行化 bootstrap 本身，
+//!    **断言（query_skills / list_skill_files / 计数）在锁外**，不能避免竞争。
+//! 3. 复用路径中的「初始化阶段 check_initialized / 导入中途 Forbidden」等边界条件，
+//!    只在完全串行、可预测的初始化顺序下才有稳定语义。
+//!
+//! 每个用例的第一步即获取此锁，保持到断言结束。模式同：
+//! `tests/integration/message_vector_test.rs`（REAL_VECTOR_MUTEX）。
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -13,6 +29,16 @@ mod common;
 use crate::common::TestApp;
 use ai_orz::service::domain::hr;
 use sqlx::SqlitePool;
+
+/// preset_skills 全文件进程级串行互斥锁。
+///
+/// 保持 `std::sync::Mutex`（非 async）因为获取是立即的，锁期间包含 HTTP handler
+/// 调用 + tokio sleep 的异步工作，但 MutexGuard 跨 .await 点持有在这里是安全的：
+/// - 单个 tokio worker 线程拿不到其他用例也不会阻塞整个 runtime；
+/// - 锁窗口内的工作是 CPU 轻 + I/O，其它任务可在其他线程继续；
+/// - 用 `std::sync::Mutex` 免去 `tokio::sync::Mutex` 必须 .await 的句法负担，
+///   与 `BOOTSTRAP_MUTEX` 不同（那把锁只保护 bootstrap 获取路径短异步窗口）。
+static PRESET_STATE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 查询所有技能（避免导入 common::enums::SkillStatus，用 query_skills 代替 list_by_status）
 async fn query_all_skills(ctx: &ai_orz::pkg::RequestContext) -> Vec<ai_orz::models::skill::Skill> {
@@ -27,9 +53,18 @@ async fn query_all_skills(ctx: &ai_orz::pkg::RequestContext) -> Vec<ai_orz::mode
 /// After system initialization, 5 preset skills should exist in the shared library.
 #[sqlx::test]
 async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
-    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    // 全局串行锁：4 个用例共用 Storage + 固定 ID 预置技能 + 单个 Local 组织，
+    // 必须整用例（bootstrap→断言）互斥，否则 count=5/author_id 更新等零容忍断言失效。
+    // 用 into_inner() 跳过 PoisonError：此锁只做执行顺序栅拦，不保护可变状态。
+    let _lock = PRESET_STATE_MUTEX
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let bs = crate::common::factories::bootstrap_system(&app).await;
+    // 必须用 bootstrap 返回的真实 admin 身份（含 SuperAdmin role + organization_id），
+    // 才能在集成测试共享 DB 时跨用例访问「当前归属于复用 admin 的预置技能」元数据。
+    let ctx = bs.build_authenticated_ctx();
 
     let skills = query_all_skills(&ctx).await;
 
@@ -92,9 +127,15 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
 /// After system initialization, builtin tools should be synced to DB.
 #[sqlx::test]
 async fn test_initialize_system_syncs_builtin_tools(pool: SqlitePool) {
-    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let _lock = PRESET_STATE_MUTEX
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
-    let _bs = crate::common::factories::bootstrap_system(&app).await;
+    let bs = crate::common::factories::bootstrap_system(&app).await;
+    // 本测试断言内置工具同步结果；此处同样用 bootstrap 构建的认证 ctx，
+    // 以与其他用例保持一致且避免 DB 共享造成的查询权限异常。
+    let ctx = bs.build_authenticated_ctx();
 
     // 通过 domain 层查询工具列表
     let tools = ai_orz::service::domain::finance::domain()
@@ -112,13 +153,17 @@ async fn test_initialize_system_syncs_builtin_tools(pool: SqlitePool) {
 /// Preset skill files (skill.md) should be written and contain expected content.
 #[sqlx::test]
 async fn test_preset_skill_files_written(pool: SqlitePool) {
+    let _lock = PRESET_STATE_MUTEX
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
     let bs = crate::common::factories::bootstrap_system(&app).await;
 
-    // list_skill_files 检查 author_id 权限，必须用 bootstrap 用户 ID 创建 ctx
-    let ctx =
-        ai_orz::pkg::RequestContext::from_storage(&bs.user_id, ai_orz::pkg::storage::get().clone());
+    // 用 bootstrap 的真实身份构造 ctx（user_id=技能作者 + user_role=SuperAdmin）：
+    // list_skill_files 内部会走 ensure_skill_access（管理员 / 作者 / Agent 创建者，
+    // 三条件任一放行），必须匹配上才能读他人创建的预置技能文件。
+    let ctx = bs.build_authenticated_ctx();
 
     // 验证工具基础的 skill.md 文件
     let files = hr::domain()
@@ -202,11 +247,15 @@ async fn test_preset_skill_files_written(pool: SqlitePool) {
 /// apply_preset_skills should be idempotent: second bootstrap updates, not duplicates.
 #[sqlx::test]
 async fn test_preset_skills_idempotent(pool: SqlitePool) {
-    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+    let _lock = PRESET_STATE_MUTEX
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = TestApp::new(pool).await;
 
     // 第一次 bootstrap — 创建预置技能
-    let _bs1 = crate::common::factories::bootstrap_system(&app).await;
+    let bs1 = crate::common::factories::bootstrap_system(&app).await;
+    let ctx = bs1.build_authenticated_ctx();
 
     let skills_after_first = query_all_skills(&ctx).await;
     let count_after_first = skills_after_first

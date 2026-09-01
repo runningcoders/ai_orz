@@ -74,6 +74,15 @@ pub mod assertions;
 pub mod env;
 pub mod factories;
 
+/// 集成测试对 common crate 的轻量 re-export（保持测试文件顶部 `use` 简短）。
+/// 新增重导出放在这里，避免每个集成测试文件都写一长串 `use common::xxx;`
+/// （它们的 common 是本 mod，不是原始 common crate）。
+#[allow(unused_imports)]
+pub mod types {
+    pub use common::enums::OrganizationScope;
+    pub use common::enums::UserRole;
+}
+
 #[allow(unused_imports)] // 公共 re-export，由各个 integration test 按需引用
 pub use app::TestApp;
 #[allow(unused_imports)]

@@ -638,20 +638,32 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         s.push_str(
             "      若还缺资料 → 只做 1 次检索（见 §4）；若够了 → 直接跳到第三步输出回复。\n",
         );
+        s.push_str("   ③ 输出方式（注意机制差异）：\n");
+        s.push_str("      - 信息充足能直接回答 → 直接输出 Final 文本，不要包 JSON、不要用工具\n");
+        s.push_str("      - 信息不足需要用户回复（澄清/询问/决策）→ **必须用 Final 文本**，\n");
+        s.push_str("        因为输出 Final 会终止本次思考循环并等待用户的下一条消息；\n");
         s.push_str(
-            "   ③ 直接输出：把最终回复文本按正常说话方式写出，不要包任何 JSON、不要用工具。\n\n",
+            "        如果用 send_message 询问，Agent 不会停下来等回复，会继续空跑工具直到轮次耗尽。\n\n",
         );
 
-        s.push_str("§1. 何时直接回复用户（核心规则！）：\n");
-        s.push_str("   - 当你有足够信息回答当前用户的问题/消息时，**直接输出最终文本回复即可，不要调用任何工具**。\n");
+        s.push_str("§1. 何时直接输出 Final 文本（需要用户回复的场景必须走这里）：\n");
+        s.push_str("   - 当你有足够信息回答当前用户的问题/消息时，**直接输出 Final 文本回复即可，不要调用任何工具**。\n");
         s.push_str(
-            "   - 你的最终文本会自动发送给当前对话中的用户，**不需要**调用 send_message 工具。\n\n",
+            "   - 你的 Final 文本会自动发送给当前对话中的用户，**不需要**调用 send_message 工具。\n",
         );
+        s.push_str(
+            "   - 信息不足需要用户提供输入时（指代不明、需求边界不清、需要用户选择/决策、\n",
+        );
+        s.push_str("     需要用户提供资料/凭证）——**必须用 Final 文本输出完整澄清/询问**，\n");
+        s.push_str("     不要用 send_message，否则你不会停下来等用户答复。\n\n");
 
-        s.push_str("§2. send_message 的正确用途（不要滥用！）：\n");
-        s.push_str("   - ✅ 仅用于：向「不在当前对话中的用户/Agent」发送异步通知\n");
-        s.push_str("   - ✅ 仅用于：跨 Agent 协作时的特殊消息通道（当前对话外的人）\n");
-        s.push_str("   - ❌ 严禁：用 send_message 回复当前用户 → 请用最终文本直接回复\n\n");
+        s.push_str("§2. send_message 的正确用途（与协作沟通技能 TEMPLATE_COMMUNICATION 对齐，发完不打断思考）：\n");
+        s.push_str("   - ✅ 【当前对话中】用于：关键进展同步（已完成某里程碑、遇到重大阻塞但自己仍在推进、\n");
+        s.push_str("     任务完成总结汇报）——用户看到后可以随时追问，你不需要停下来等回复\n");
+        s.push_str("   - ✅ 【当前对话外】用于：向不在当前对话中的用户/Agent 发送异步通知（用户主动触发的任务完成提醒等）\n");
+        s.push_str("   - ✅ 【跨 Agent】用于：跨 Agent 协作的消息通道（Task Agent → Owner 的完成/阻塞汇报走 send_task_assignment_message）\n");
+        s.push_str("   - ❌ 严禁：用 send_message 询问用户澄清/决策 → 必须走 Final 文本，否则不会等待用户回复\n");
+        s.push_str("   - ❌ 有足够信息能直接给出简单答复时，直接 Final 文本——不要为了发一句话而调用 send_message\n\n");
 
         s.push_str("§3. 闲聊/简单消息的检索豁免：\n");
         s.push_str("   - 寒暄/客套/问候/纯确认类消息（如 你好、测试、OK、收到、在吗 等）属于 Chat 闲聊型\n");

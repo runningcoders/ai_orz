@@ -210,23 +210,21 @@ pub async fn apply_preset_skills(
                 .await?;
             result.updated += 1;
         } else {
+            // create 时一起写入 imports，避免「先 create 再 update」两步走：
+            // 初始化场景 ctx 往往是 Guest（HTTP /initialize handler 的请求上下文，
+            // 没有 user_role，user_id 可能为空），create 后 update_skill 会被
+            // ensure_skill_access 拦截（当前 ctx 不是技能作者也不是管理员）。
+            // 合并为单次 create_skill：create 内部只校验组织成员身份（足够），
+            // 文件写入作为 create 原子流程的一部分，不需要额外权限检查。
+            let params = crate::service::domain::hr::CreateSkillParams {
+                skill: &skill,
+                imports,
+                remote_source: None,
+            };
             hr::domain()
                 .skill_manage()
-                .create_skill(ctx.clone(), hr::CreateSkillParams::from_skill(&skill))
+                .create_skill(ctx.clone(), params)
                 .await?;
-
-            if !imports.is_empty() {
-                let params = crate::service::domain::hr::UpdateSkillParams {
-                    skill: &skill,
-                    imports,
-                    file_deletes: vec![],
-                    remote_source: None,
-                };
-                hr::domain()
-                    .skill_manage()
-                    .update_skill(ctx.clone(), params)
-                    .await?;
-            }
             result.created += 1;
         }
     }
