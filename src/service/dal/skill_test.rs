@@ -498,6 +498,77 @@ async fn test_install_to_agent_idempotent(pool: SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// 回归测试：软删除（Expired）的旧副本不能被当作「已安装」。
+///
+/// 场景复现：Agent 卸载技能包（delete_copies=true）产生软删除副本后，
+/// 再次安装同一技能包 —— 此前幂等检查会把 Expired 副本当已安装直接跳过，
+/// 导致「包 tag 已记录但没有任何可用技能」（前端只见包不见技能）。
+#[sqlx::test]
+async fn test_install_to_agent_after_soft_delete_creates_fresh_copy(
+    pool: SqlitePool,
+) -> Result<()> {
+    let skill_dal = init_test(pool.clone()).await;
+    let ctx = new_ctx("test-user", pool);
+
+    // 创建一个 Published 的源技能（共享库技能）
+    let source_id = uuid::Uuid::now_v7().to_string();
+    let content_path = format!("skills/{}/", source_id);
+    let mut source_po = SkillPo::new(
+        source_id.clone(),
+        "shared-skill-reinstall".to_string(),
+        "A shared skill for reinstall-after-soft-delete test".to_string(),
+        vec!["AI Agent".to_string()],
+        "shared".to_string(),
+        "".to_string(),
+        "system-author".to_string(),
+        SkillAuthorType::User,
+        content_path,
+    );
+    source_po.status = SkillStatus::Published;
+    skill_dal.create(ctx.clone(), &source_po).await?;
+    skill_dal.write_main_content(&source_po, "# Shared Skill Reinstall\n\nContent v1.")?;
+
+    let agent_id = "agent-reinstall";
+
+    // 第一次安装 → 得到 Draft 副本
+    let installed_first = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
+    let first_copy_id = installed_first.po.id.clone();
+    assert_eq!(installed_first.po.status, SkillStatus::Draft);
+
+    // 模拟卸载删除副本：软删除（status → Expired）
+    skill_dal.delete(ctx.clone(), &first_copy_id).await?;
+
+    // 再次安装同一源技能：Expired 副本不算「已安装」，必须创建新副本
+    let installed_second = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
+    assert_ne!(
+        installed_second.po.id, first_copy_id,
+        "软删除后重装应创建新副本，而不是复用 Expired 副本"
+    );
+    assert_eq!(installed_second.po.status, SkillStatus::Draft);
+    assert_eq!(installed_second.po.parent_skill_id, source_id);
+    assert_eq!(installed_second.po.author_id, agent_id);
+
+    // find_agent_skill_copies 只返回有效副本（排除 Expired）
+    let copies = skill_dal
+        .find_agent_skill_copies(ctx.clone(), agent_id, std::slice::from_ref(&source_id))
+        .await?;
+    assert_eq!(copies.len(), 1, "只应有 1 条有效副本");
+    assert_eq!(copies[0].po.id, installed_second.po.id);
+    assert_ne!(copies[0].po.status, SkillStatus::Expired);
+
+    // 第三次安装仍幂等：不重复创建
+    let installed_third = skill_dal
+        .install_to_agent(ctx.clone(), &source_id, agent_id)
+        .await?;
+    assert_eq!(installed_third.po.id, installed_second.po.id);
+
+    Ok(())
+}
+
 /// 测试删除技能（软删除 + 目录删除）
 #[sqlx::test]
 async fn test_delete_skill(pool: SqlitePool) -> Result<()> {

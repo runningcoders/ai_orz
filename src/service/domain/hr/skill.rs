@@ -9,6 +9,8 @@ use crate::service::domain::hr::{
 };
 use common::constants::utils::current_timestamp_ms;
 use common::enums::SkillStatus;
+use common::enums::UserRole;
+use common::enums::skill::SkillAuthorType;
 use common::error::{Result, bail_err, err};
 use std::path::{Component, Path};
 
@@ -37,6 +39,9 @@ impl SkillManage for HrDomainImpl {
     }
 
     async fn update_skill(&self, ctx: RequestContext, params: UpdateSkillParams<'_>) -> Result<()> {
+        // 资源级权限校验（管理员 / 作者 / Agent 创建者）
+        self.ensure_skill_access(&ctx, &params.skill.po).await?;
+
         // 1. 更新元数据
         self.skill_dal.update(ctx.clone(), params.skill).await?;
 
@@ -58,6 +63,14 @@ impl SkillManage for HrDomainImpl {
     }
 
     async fn delete_skill(&self, ctx: RequestContext, id: &str) -> Result<()> {
+        // 先拿到 po 做资源级权限判断（po 不存在则删空操作，无副作用不泄漏）
+        if let Some(po) = self
+            .skill_dal
+            .get_po_by_id(ctx.clone(), id.to_string())
+            .await?
+        {
+            self.ensure_skill_access(&ctx, &po).await?;
+        }
         self.skill_dal.delete(ctx, id).await
     }
 
@@ -183,19 +196,16 @@ impl SkillManage for HrDomainImpl {
         ctx: RequestContext,
         skill_id: &str,
     ) -> Result<Option<Vec<crate::models::skill::SkillFile>>> {
-        let uid = ctx.uid().to_string();
         let Some(po) = self
             .skill_dal
-            .get_po_by_id(ctx, skill_id.to_string())
+            .get_po_by_id(ctx.clone(), skill_id.to_string())
             .await?
         else {
             return Ok(None);
         };
 
-        // 权限检查：仅作者可访问
-        if po.author_id != uid {
-            bail_err!(InvalidRequest, "你没有权限访问该 Skill");
-        }
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
+        self.ensure_skill_access(&ctx, &po).await?;
 
         let files = self.skill_dal.list_files(&po)?;
         Ok(Some(files))
@@ -207,19 +217,16 @@ impl SkillManage for HrDomainImpl {
         skill_id: &str,
         filename: &str,
     ) -> Result<Option<String>> {
-        let uid = ctx.uid().to_string();
         let Some(po) = self
             .skill_dal
-            .get_po_by_id(ctx, skill_id.to_string())
+            .get_po_by_id(ctx.clone(), skill_id.to_string())
             .await?
         else {
             return Ok(None);
         };
 
-        // 权限检查：仅作者可访问
-        if po.author_id != uid {
-            bail_err!(InvalidRequest, "你没有权限访问该 Skill");
-        }
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
+        self.ensure_skill_access(&ctx, &po).await?;
 
         let content = self.skill_dal.read_file(&po, filename)?;
         Ok(Some(content))
@@ -241,10 +248,8 @@ impl SkillManage for HrDomainImpl {
             bail_err!(NotFound, "Skill not found: {}", skill_id);
         };
 
-        // 权限检查：仅作者可修改
-        if po.author_id != ctx.uid() {
-            bail_err!(InvalidRequest, "你没有权限修改该 Skill");
-        }
+        // 权限检查：管理员 / 作者 / Agent 创建者（作者为 Agent 时）
+        self.ensure_skill_access(&ctx, &po).await?;
 
         // 乐观锁校验
         if let Some(expected) = expected_updated_at
@@ -283,6 +288,56 @@ impl SkillManage for HrDomainImpl {
 }
 
 impl HrDomainImpl {
+    /// Skill 资源访问权限判定（文件内容读写 / 元数据更新 / 删除统一入口）。
+    ///
+    /// **放行条件（满足任一即 Return Ok）：**
+    /// 1. 用户角色 ≥ Admin（SuperAdmin(0) / Admin(1)，并查集 Admin owns Member）
+    /// 2. 请求用户就是技能作者（po.author_id == uid）
+    /// 3. 技能作者类型是 Agent，且请求用户是该 Agent 的创建者（Agent.created_by == uid）
+    ///
+    /// 其他情形 → 返回 ErrorCode::Forbidden（HTTP 403）+ 解释性错误信息。
+    ///
+    /// Context 补充原则符合性：Agent 查询仅在"不是管理员+不是作者"时才执行，
+    /// 属于"下游明确需要，且当前上下文未包含"的场景下才专门查询。
+    async fn ensure_skill_access(&self, ctx: &RequestContext, po: &SkillPo) -> Result<()> {
+        let uid = ctx.uid();
+
+        // ---- ① Admin Bypass ----
+        if let Some(role) = ctx.user_role() {
+            match UserRole::from(role) {
+                UserRole::SuperAdmin | UserRole::Admin => return Ok(()),
+                UserRole::Member => {} // 走后续检查
+            }
+        }
+
+        // ---- ② 作者本人 ----
+        if !uid.is_empty() && po.author_id == uid {
+            return Ok(());
+        }
+
+        // ---- ③ Agent 创建者 ----
+        if matches!(po.author_type, SkillAuthorType::Agent)
+            && !po.author_id.is_empty()
+            && let Some(agent) = self
+                .agent_dal
+                .find_by_id(ctx.clone(), &po.author_id)
+                .await?
+            && agent.po.created_by == uid
+        {
+            return Ok(());
+        }
+
+        // ---- 拒绝 ----
+        bail_err!(
+            Forbidden,
+            "无权访问 Skill {}（作者类型={:?}，作者={}）。\
+             可访问者：技能作者 / Agent 创建者（当作者类型为 Agent 时）/ 管理员",
+            po.id,
+            po.author_type,
+            po.author_id,
+        );
+    }
+
     /// 内容源处理流水线（create/update 共享同一份代码）。
     ///
     /// 1. URL download 到 tmp → 合并进 imports

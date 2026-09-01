@@ -604,8 +604,10 @@ impl SkillDal for SkillDalImpl {
             .await?
             .ok_or_else(|| err!(ResourceNotFound, "Skill not found"))?;
 
-        // 幂等检查：查询是否已存在该 Agent 安装该源技能的副本
-        // （author_id = agent_id AND parent_skill_id = source_skill_id）
+        // 幂等检查：查询是否已存在该 Agent 安装该源技能的**有效**副本
+        // （author_id = agent_id AND parent_skill_id = source_skill_id，排除 Expired）
+        // 排除 Expired 至关重要：软删除的旧副本不能被当作「已安装」，
+        // 否则重装/同步会幂等跳过，导致包 tag 已记录但没有任何可用技能。
         let existing = self
             .skill_dao
             .query(
@@ -613,6 +615,7 @@ impl SkillDal for SkillDalImpl {
                 SkillQuery {
                     author_id: Some(agent_id.to_string()),
                     parent_skill_id: Some(source_skill_id.to_string()),
+                    exclude_status: Some(SkillStatus::Expired),
                     ..Default::default()
                 },
             )
@@ -724,12 +727,14 @@ impl SkillDal for SkillDalImpl {
             return Ok(Vec::new());
         }
 
-        // 查询 Agent 的所有技能副本，按 parent_skill_id 列表过滤
+        // 查询 Agent 的所有**有效**技能副本（排除 Expired），按 parent_skill_id 列表过滤。
+        // 排除 Expired：软删除的旧副本不算已安装，否则同步/重装的增量检测会误判「已拥有」。
         let page = self
             .query(
                 ctx,
                 SkillQuery {
                     author_id: Some(agent_id.to_string()),
+                    exclude_status: Some(SkillStatus::Expired),
                     ..Default::default()
                 },
             )

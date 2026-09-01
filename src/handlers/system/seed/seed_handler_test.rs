@@ -6,6 +6,7 @@
 //! - 往返一致性：导出 → 修改 → 导入 → 重新导出，验证字段更新
 
 use crate::pkg::request_context_test_support::new_test_ctx;
+use common::enums::UserRole;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
@@ -75,7 +76,11 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::domain::organization::init();
     crate::service::domain::message::init();
 
-    new_test_ctx("test-seed-handler-user", pool)
+    // 注意：Seed Handler 在生产中始终由管理员或 System 启动器调用（含创建/覆盖 TEMPLATE 内容），
+    // 因此测试 ctx 直接赋予 SuperAdmin 角色，避免 HR 域资源级权限守卫拒绝写入跨用户的 TEMPLATE_* 技能等。
+    let mut ctx = new_test_ctx("test-seed-handler-user", pool);
+    ctx.user_role = Some(UserRole::SuperAdmin as i32);
+    ctx
 }
 
 /// 准备测试数据：1 个组织 + 1 个 SuperAdmin + 1 个 chat provider + 1 个 embedding provider + 1 个 Agent

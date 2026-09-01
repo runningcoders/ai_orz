@@ -17,6 +17,7 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::pkg::tool_tracing::logger::ToolCallLogger::init(base_path);
 
     // 初始化所有 DAO
+    crate::service::dao::organization::init();
     crate::service::dao::agent::init();
     crate::service::dao::tool::init();
     crate::service::dao::skill::init();
