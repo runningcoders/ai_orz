@@ -414,6 +414,8 @@ pub struct SkillQueryRequest {
     pub category: Option<String>,
     /// 作者 ID
     pub author_id: Option<String>,
+    /// 作者类型（0=用户，1=Agent），用于区分"我创建的技能" vs "Agent 同步过来的技能"
+    pub author_type: Option<SkillAuthorType>,
     /// 父技能 ID
     pub parent_skill_id: Option<String>,
     /// 标签列表
@@ -439,6 +441,8 @@ pub struct SearchSkillsRequest {
     pub category: Option<String>,
     /// 作者 ID
     pub author_id: Option<String>,
+    /// 作者类型（0=用户，1=Agent），与 SkillQueryRequest 语义一致
+    pub author_type: Option<SkillAuthorType>,
     /// 父技能 ID
     pub parent_skill_id: Option<String>,
     /// 标签列表

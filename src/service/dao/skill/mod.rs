@@ -13,6 +13,7 @@ use crate::models::vector::VectorIndexParams;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::SkillStatus;
+use common::enums::skill::SkillAuthorType;
 use common::error::Result;
 
 /// Skill 查询参数
@@ -23,8 +24,10 @@ pub struct SkillQuery {
     pub exclude_status: Option<SkillStatus>,
     pub category: Option<String>,
     pub author_id: Option<String>,
+    pub author_type: Option<SkillAuthorType>,
     pub parent_skill_id: Option<String>, // 按父技能 ID 过滤（用于幂等检查已安装副本）
     /// 是否有父技能（true = 只查副本，false = 只查原始技能，None = 不过滤）
+    /// 注意：表 parent_skill_id 为 TEXT NOT NULL DEFAULT ''，因此用空串比较而非 NULL。
     pub has_parent: Option<bool>,
     pub tags: Option<Vec<String>>, // 按 tag 过滤（OR 语义，命中任一即可）
     pub keyword: Option<String>,

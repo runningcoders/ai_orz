@@ -16,6 +16,7 @@ use common::api::{
     CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, SearchSkillsRequest,
     SkillContentInput, SkillQueryRequest,
 };
+use common::enums::SkillAuthorType;
 use common::enums::SkillStatus;
 
 #[component]
@@ -37,6 +38,8 @@ pub fn HrSkills() -> Element {
     // 过滤条件
     let mut filter_category = use_signal(String::new);
     let mut filter_status = use_signal(|| -1i32);
+    // -1 = 全部，0 = 用户（SkillAuthorType::User），1 = Agent（SkillAuthorType::Agent）
+    let mut filter_author_type = use_signal(|| -1i32);
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
@@ -49,6 +52,7 @@ pub fn HrSkills() -> Element {
             let keyword = search_keyword();
             let category = filter_category();
             let status = filter_status();
+            let author_type = filter_author_type();
             let my_id = search_request_id() + 1;
             search_request_id.set(my_id);
 
@@ -57,7 +61,12 @@ pub fn HrSkills() -> Element {
             } else {
                 Some(category)
             };
-            let has_filter = category_opt.is_some() || status >= 0;
+            let author_type_opt = if author_type < 0 {
+                None
+            } else {
+                Some(SkillAuthorType::from(author_type))
+            };
+            let has_filter = category_opt.is_some() || status >= 0 || author_type_opt.is_some();
 
             // 三场景切换：
             // 无关键词 + 无过滤 → list_skills
@@ -75,6 +84,7 @@ pub fn HrSkills() -> Element {
                     } else {
                         None
                     },
+                    author_type: author_type_opt,
                     ..Default::default()
                 })
                 .await
@@ -88,6 +98,7 @@ pub fn HrSkills() -> Element {
                     } else {
                         None
                     },
+                    author_type: author_type_opt,
                     ..Default::default()
                 })
                 .await
@@ -161,12 +172,13 @@ pub fn HrSkills() -> Element {
                 title: "技能库".to_string(),
                 actions: Some(rsx!{
                 div { class: "flex gap-2 flex-wrap",
-                    if !search_keyword().is_empty() || !filter_category().is_empty() || filter_status() >= 0 {
+                    if !search_keyword().is_empty() || !filter_category().is_empty() || filter_status() >= 0 || filter_author_type() >= 0 {
                         button { class: "btn hud-btn btn-ghost",
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 filter_category.set(String::new());
                                 filter_status.set(-1);
+                                filter_author_type.set(-1);
                                 load_data();
                             },
                             "重置"
@@ -218,6 +230,22 @@ pub fn HrSkills() -> Element {
                             }
                         }
                         div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
+                            label { class: "form-label", "作者类型" }
+                            select {
+                                class: "select select-bordered w-full",
+                                value: "{filter_author_type}",
+                                onchange: move |e| {
+                                    if let Ok(v) = e.value().parse::<i32>() {
+                                        filter_author_type.set(v);
+                                    }
+                                    load_data();
+                                },
+                                option { value: "-1", "全部" }
+                                option { value: "0", "用户" }
+                                option { value: "1", "Agent" }
+                            }
+                        }
+                        div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
                             label { class: "form-label", "搜索" }
                             input {
                                 class: "input input-bordered w-full",
@@ -251,7 +279,7 @@ pub fn HrSkills() -> Element {
                 } else {
                     div { class: "overflow-x-auto",
                         table { class: "table hud-table table-zebra table-pin-rows",
-                            thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "操作" } }}
+                            thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "创建者" }, th { "操作" } }}
                             tbody {
                                 for s in skills_list.iter() {
                                     {
@@ -259,6 +287,16 @@ pub fn HrSkills() -> Element {
                                         let name = s.name.clone();
                                         let description = s.description.clone();
                                         let tags = s.tags.clone();
+                                        let author_type = s.author_type;
+                                        let author_id_short: String = s
+                                            .author_id
+                                            .chars()
+                                            .rev()
+                                            .take(6)
+                                            .collect::<String>()
+                                            .chars()
+                                            .rev()
+                                            .collect();
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { class: "font-semibold", "data-label": "名称", "{name}" }
@@ -268,6 +306,19 @@ pub fn HrSkills() -> Element {
                                                         for tag in &tags {
                                                             span { class: "badge orz-tag badge-sm", "{tag}" }
                                                         }
+                                                    }
+                                                }
+                                                td { "data-label": "创建者",
+                                                    div { class: "flex flex-col gap-1 text-xs",
+                                                        span {
+                                                            class: if matches!(author_type, SkillAuthorType::Agent) {
+                                                                "badge badge-sm badge-info"
+                                                            } else {
+                                                                "badge badge-sm badge-outline"
+                                                            },
+                                                            if matches!(author_type, SkillAuthorType::Agent) { "Agent" } else { "用户" }
+                                                        }
+                                                        span { class: "font-mono text-base-content/60 select-all", "{author_id_short}" }
                                                     }
                                                 }
                                                 td { "data-label": "操作",

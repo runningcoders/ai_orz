@@ -634,11 +634,18 @@ fn push_query_filters<'args>(
             .push_bind(parent_skill_id.clone());
     }
     if let Some(has_parent) = query.has_parent {
+        // 注意：表 parent_skill_id 定义为 TEXT NOT NULL DEFAULT ''，
+        // 必须用空串比较而非 IS NULL，否则永远匹配不到。
         if has_parent {
-            builder.push(" AND m.parent_skill_id IS NOT NULL");
+            builder.push(" AND m.parent_skill_id != ''");
         } else {
-            builder.push(" AND m.parent_skill_id IS NULL");
+            builder.push(" AND m.parent_skill_id = ''");
         }
+    }
+    if let Some(author_type) = &query.author_type {
+        builder
+            .push(" AND m.author_type = ")
+            .push_bind(*author_type as i32);
     }
     if let Some(tags) = &query.tags
         && !tags.is_empty()

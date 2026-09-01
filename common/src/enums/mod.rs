@@ -33,7 +33,7 @@ pub use message_channel::{ChannelStatus, ChannelType};
 pub use organization::{OrganizationScope, OrganizationStatus};
 pub use project::ProjectStatus;
 pub use provider::{ModelCapability, ProviderType};
-pub use skill::SkillStatus;
+pub use skill::{SkillAuthorType, SkillStatus};
 pub use task::{AssigneeType, TaskStatus};
 pub use thinking_scene::ThinkingScene;
 pub use tool::{ControlMode, ToolProtocol, ToolStatus};

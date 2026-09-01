@@ -501,8 +501,9 @@ async fn test_install_to_agent_idempotent(pool: SqlitePool) -> Result<()> {
 /// 回归测试：软删除（Expired）的旧副本不能被当作「已安装」。
 ///
 /// 场景复现：Agent 卸载技能包（delete_copies=true）产生软删除副本后，
-/// 再次安装同一技能包 —— 此前幂等检查会把 Expired 副本当已安装直接跳过，
-/// 导致「包 tag 已记录但没有任何可用技能」（前端只见包不见技能）。
+/// 再次安装同一技能包 —— 按新策略原地复用 Expired 副本 ID，
+/// 执行状态重置（Expired→Draft）+ 元数据覆盖 + 文件字节级 diff 覆盖写，
+/// 避免 (agent, parent_skill) 组合产生重复行堆积。
 #[sqlx::test]
 async fn test_install_to_agent_after_soft_delete_creates_fresh_copy(
     pool: SqlitePool,
@@ -537,30 +538,43 @@ async fn test_install_to_agent_after_soft_delete_creates_fresh_copy(
     let first_copy_id = installed_first.po.id.clone();
     assert_eq!(installed_first.po.status, SkillStatus::Draft);
 
-    // 模拟卸载删除副本：软删除（status → Expired）
+    // 模拟卸载删除副本：软删除（status → Expired，目录同步移除）
     skill_dal.delete(ctx.clone(), &first_copy_id).await?;
 
-    // 再次安装同一源技能：Expired 副本不算「已安装」，必须创建新副本
+    // 再次安装同一源技能：原地复用 Expired 副本（ID 不变），
+    // 状态恢复为 Draft，并覆盖元数据/文件
     let installed_second = skill_dal
         .install_to_agent(ctx.clone(), &source_id, agent_id)
         .await?;
-    assert_ne!(
+    assert_eq!(
         installed_second.po.id, first_copy_id,
-        "软删除后重装应创建新副本，而不是复用 Expired 副本"
+        "软删除后重装应原地复用 Expired 副本 ID，避免 (agent, parent_skill) 行堆积"
     );
     assert_eq!(installed_second.po.status, SkillStatus::Draft);
     assert_eq!(installed_second.po.parent_skill_id, source_id);
     assert_eq!(installed_second.po.author_id, agent_id);
+    // 元数据以源为准（name 从 source_po 同步）
+    assert_eq!(installed_second.po.name, source_po.name);
+    // 主文件应被恢复（删除时删了目录，重装应重建）
+    let main_text = skill_dal.read_main_content(&installed_second.po)?;
+    assert!(
+        main_text.contains("Content v1."),
+        "重装应恢复源技能主文件内容"
+    );
 
-    // find_agent_skill_copies 只返回有效副本（排除 Expired）
+    // find_agent_skill_copies 只返回有效副本（排除 Expired），复用后应正好 1 条
     let copies = skill_dal
         .find_agent_skill_copies(ctx.clone(), agent_id, std::slice::from_ref(&source_id))
         .await?;
-    assert_eq!(copies.len(), 1, "只应有 1 条有效副本");
+    assert_eq!(
+        copies.len(),
+        1,
+        "复用 Expired 恢复为 Draft 后应仅 1 条有效副本"
+    );
     assert_eq!(copies[0].po.id, installed_second.po.id);
     assert_ne!(copies[0].po.status, SkillStatus::Expired);
 
-    // 第三次安装仍幂等：不重复创建
+    // 第三次安装仍幂等：不新建，ID 保持一致
     let installed_third = skill_dal
         .install_to_agent(ctx.clone(), &source_id, agent_id)
         .await?;

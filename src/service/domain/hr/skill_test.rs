@@ -269,6 +269,7 @@ async fn test_query_skills(pool: SqlitePool) {
         status: Some(SkillStatus::Draft),
         category: Some("coding".to_string()),
         author_id: None,
+        author_type: None,
         parent_skill_id: None,
         keyword: None,
         tags: None,
