@@ -14,6 +14,7 @@ source_files:
 - src/models/prompt_builder.rs#L155-L209
 - src/models/cortex_types.rs#L135-L195
 - src/service/dal/agent/builder/default.rs#L1-L40
+- src/service/dal/agent/builder/default.rs#L613-L690
 - src/service/domain/runtime/compaction.rs#L1-L50
 - src/service/domain/runtime/awakening.rs#L104-L145
 - src/service/domain/runtime/awakening.rs#L343-L393
@@ -62,3 +63,4 @@ source_files:
 3. ✅ 仅在有 workspace 上下文时渲染区块，避免污染 Prompt
 4. ❌ trait 方法内禁止依赖 config / paths / RequestContext（保持纯抽象）
 5. ✅ 其他 PromptBuilder 实现（Cli/Remote）默认空操作，不需要路径感知
+6. ❌ send_message 严禁用于询问用户澄清/决策——必须用 Final 文本（会终止思考循环等待用户下一条）；send_message 发完不打断思考循环，仅用于当前对话关键进展同步或跨 Agent 异步通知。需要用户回复/澄清/决策 → Final 文本；信息充足直接回答 → Final 文本；Agent 间通知/汇报 → send_message（不打断循环）

@@ -9,10 +9,14 @@ scope:
 - src/service/domain/system/seed/**
 - src/service/dal/skill*.rs
 - src/handlers/hr/agent/install_skill_pack.rs
+- src/handlers/hr/agent/sync_packs.rs
+- src/handlers/hr/agent/association.rs
 - src/handlers/hr/skill/*.rs
 - src/models/skill.rs
 - common/src/enums/tool_tag.rs
 - common/src/api/hr.rs
+- common/src/api/agent.rs
+- common/src/api/skill.rs
 source_files:
 - src/models/skill.rs#L9-L100
 - src/models/skill.rs#L88-L92
@@ -29,6 +33,10 @@ source_files:
 - src/models/skill.rs#L22-L160
 - src/handlers/hr/agent/install_skill_pack.rs#L1-L33
 - src/handlers/hr/skill/install_skill_pack.rs#L19-L85
+- src/handlers/hr/agent/sync_packs.rs#L1-L25
+- src/service/domain/hr/agent.rs#L94-L133
+- src/service/domain/hr/agent.rs#L135-L290
+- src/service/domain/hr/skill.rs#L203-L228
 - src/service/dal/skill/mod.rs
 - docs/archive/design-archive/skill_design.md
 - docs/archive/design-archive/skill_system_enhancement_design.md
@@ -129,7 +137,7 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 
 # §4 硬约束 / 必守红线 / 扩展入口
 
-**§4.1 必守红线（9 条，违反 = FAIL）**
+**§4.1 必守红线（16 条，违反 = FAIL）**
 
 | # | 红线 | 验证方式 | 代码锚点 |
 |---|------|---------|---------|
@@ -147,6 +155,8 @@ Prompt Token 熔断分层架构（唤醒时组装）：
 | 12 | **Draft 副本 id 必须重生成**：禁止直接复用 Published skill.id，否则多 Agent 安装同模板 UNIQUE 冲突；正确做法：`format!("{}-{}", published.id, agent_id_short_hash)` | 集成测试两个不同 Agent 安装同模板，断言 skills 表两条不同 id 记录 | [domain/hr/skill.rs install_to_agent](src/service/domain/hr/skill.rs#L141-L190) id 生成逻辑 |
 | 13 | **to_prompt_summary 禁止超过 200 字符/条**：超过则 clippy/测试告警；详细内容塞 skill.md 正文，唤醒时不放 | 5 套模板 to_prompt_summary 断言单条 ≤ 200 字 | [models/skill.rs to_prompt_summary](src/models/skill.rs#L88-L92) |
 | 14 | **TEMPLATE_ 前缀模板技能绝不允许硬删除**：即使过时也 SkillStatus=Expired 软标记，DELETE 会破坏历史 Draft 副本的 parent_skill_id FK 约束 | 单元测试对某 TEMPLATE 调 delete 应返回错误或降级为 Expired | [domain/hr/skill.rs update_skill 权限分支](src/service/domain/hr/skill.rs#L35-L80) Expired 分支 |
+| 15 | **Expired 技能独立查询 + 恢复 409 边界**：list_for_agent 必须 exclude Expired（保持「有效技能列表」语义）；restore_skill 把 Expired 改 Draft，若当前 status ≠ Expired 必须返回 Conflict 409；权限复用 ensure_skill_access（作者 / Admin / SuperAdmin / Agent 作者为创建者均可） | 对 Draft 技能调 restore → 409；Expired 恢复后能 list_for_agent 查到 | [domain/hr/skill.rs restore_skill](src/service/domain/hr/skill.rs#L203-L228) |
+| 16 | **sync_agent_packs 是 create_agent 包同步唯一入口**：create_agent 不再逐个 handler 调 install，拆为 2 显式步骤 → Step 2 直接调 sync_agent_packs(ctx, agent_id) 一次同步 BASE_AGENT_PACKS（neural/skill_management/tool_management）+ 已安装技能包增量补全；单个包失败 warn 不阻塞 | grep create_agent 不再包含逐次 install_skill_pack 调用；sync_packs.rs 为 HTTP 入口 + agent.rs 为 domain 实现 | [domain/hr/agent.rs create_agent](src/service/domain/hr/agent.rs#L94-L133) + [sync_agent_packs](src/service/domain/hr/agent.rs#L135-L290) |
 
 **§4.2 扩展入口速查**
 

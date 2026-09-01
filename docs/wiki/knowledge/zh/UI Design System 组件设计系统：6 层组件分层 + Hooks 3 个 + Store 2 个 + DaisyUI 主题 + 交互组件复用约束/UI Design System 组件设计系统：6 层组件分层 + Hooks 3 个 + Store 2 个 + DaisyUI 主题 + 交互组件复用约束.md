@@ -27,8 +27,12 @@ source_files:
 - frontend/styles/input.css:L1-L120
 - frontend/styles/input.css#L1249-L1550
 - frontend/src/pages/settings.rs
-- frontend/src/pages/hr/agent_detail.rs
+- frontend/src/pages/hr/agent_detail.rs#L60-L78
+- frontend/src/pages/hr/agent_detail.rs#L720-L730
 - frontend/src/pages/message/chat.rs
+- frontend/src/utils/mod.rs
+- frontend/src/utils/status.rs
+- frontend/src/hooks/mod.rs
 - docs/design/ui_design_system.md
 - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
 - docs/archive/plan-archive/知识图谱推荐起点与组件复用重构.md
@@ -155,3 +159,4 @@ Layer 1 - Foundation（基础层，非 Rust 组件）
 9. **全站 HUD 原子组件收口红线**（Level 2 合并到主卡）：全站所有卡片/徽章/标签/提示条/进度条/分割线/表格/标签页 **必须** 使用 `components/hud.rs` 原语（`HudPanel`/`HudCard`/`HudCallout`/`HudProgress`/`HudDivider`/`HudTable`/`HudTabs`）或 `input.css` 的 `.hud-*` CSS 变体（`.badge.hud-badge`/`.hud-modal`/`.hud-input`）。**禁止** 自定义非 HUD 风格的卡片容器、徽章或标签页。40+ 前端页面已完成迁移。
 10. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
 11. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。
+12. **SkillCard 状态 HUD + Agent 详情页 tab 拆分约束**：SkillCard 必须支持 Expired 状态（badge 颜色 `badge-error` + 操作区「恢复」按钮）；Agent 详情页（agent_detail.rs）拆为工具 tab + 技能 tab，工具关系图并入工具 tab 上部总览；TextMetrics measure_text（web-sys crate）替代字符数估算，Canvas 文本测量精度升级

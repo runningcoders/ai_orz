@@ -8,6 +8,7 @@ scope:
   - "common/src/api/tool.rs"
   - "src/handlers/hr/agent/association.rs"
   - "src/handlers/hr/agent/get_agent.rs"
+  - "src/handlers/hr/agent/sync_packs.rs"
   - "src/service/domain/hr/agent.rs"
   - "src/service/domain/hr/mod.rs"
   - "src/service/domain/finance/tool_provider.rs"
@@ -22,6 +23,9 @@ source_files:
   - src/service/domain/hr/agent.rs#L654-L845
   - src/service/domain/finance/tool_provider.rs#L38-L45
   - src/handlers/finance/tool/response.rs#L16-L31
+  - src/handlers/hr/agent/sync_packs.rs#L1-L25
+  - src/service/domain/hr/agent.rs#L94-L133
+  - src/service/domain/hr/agent.rs#L135-L290
   # ===== Wiki 长文 =====
   - docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 生命周期管理.md
   # ===== 兄弟卡（Level 3 平行卡）=====
@@ -89,7 +93,7 @@ DAO 层 (SQLite)               → CRUD
 
 ---
 
-## §4 硬约束（8 条）
+## §4 硬约束（9 条）
 
 1. **domain 层只产 ID 分组，不含 common DTO**：`AgentToolGroups` / `AgentSkillGroups` 刻意只传 `Vec<String>` 和 `AgentXxxPackIds { tag, xxx_ids }`——打包（ToolListItem / SkillListItem）必须由 handler 层 `association.rs` 调专业领域方法完成。禁止在 domain 层出现 ToolListItem / SkillListItem。
 2. **专业领域打包方法必须复用，禁止硬编码 Unknown**：工具 DTO 打包必须走 `finance::tool::response::to_list_item`（runtime_ready 由 `probe_runtime_ready` 真实填充），不能自己 new ToolListItem 把 runtime_ready 写死 Unknown；技能同理走 `hr::skill::response::to_list_item`。
@@ -99,3 +103,4 @@ DAO 层 (SQLite)               → CRUD
 6. **技能全景只查 Agent 自身副本**：技能侧全程限定 `author_id = agent_id` + `exclude Expired`。技能讲究「安装且自进化」，即便 neural 技能也必须先安装到自身目录才能在全景展示中出现——不能直接从全局技能池拉数据。
 7. **按需开关两侧均关闭时必须短路**：`with_tools=false && with_skills=false` → `get_agent_association_groups` 直接返回 `(None, None)`，handler 层跳过全景装配，`GetAgentResponse.tools_overview` / `skills_overview` 为 None。禁止在开关关闭时仍执行工具/技能查询。
 8. **runtime_ready 就绪探测带 TTL 缓存**：`probe_runtime_ready` 内部的 `tool_readiness` 对每个工具的 CLI/凭据型探测结果有 30s TTL 缓存。列表页高频调用 Agent 全景时，同一工具不会被反复探测。修改探测逻辑后需确认 TTL 未被意外绕过。
+9. **sync_agent_packs 是 create_agent 入职绑定唯一入口**：Agent 创建拆 2 显式步骤（基础信息持久化 → sync_agent_packs 补装），create_agent 不再逐个 handler 调 install；sync_agent_packs 内部两阶段：① BASE_AGENT_PACKS（neural/skill_management/tool_management）工具+技能包缺失补装；② 已安装技能包增量补全（检测 tag 下新增已发布技能，reinstall 刷新副本内容）。返回 SyncAgentPacksResponse 带 installed_tool_tags / installed_skill_packs / refreshed_skill_packs 三计数，**禁止**硬编码 tag 列表；同步必须复用 SkillDomain.find_by_tag + ToolDomain.query。

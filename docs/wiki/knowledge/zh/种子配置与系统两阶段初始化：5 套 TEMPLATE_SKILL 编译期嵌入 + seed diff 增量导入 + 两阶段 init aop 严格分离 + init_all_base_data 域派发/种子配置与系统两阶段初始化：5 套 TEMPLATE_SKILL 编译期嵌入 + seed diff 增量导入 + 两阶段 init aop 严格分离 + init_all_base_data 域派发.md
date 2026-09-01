@@ -12,7 +12,7 @@ scope:
 source_files:
 - src/service/domain/system/seed/mod.rs#L1-L16
 - src/service/domain/system/seed/defs.rs#L1-L223
-- src/service/domain/system/seed/embedded.rs#L1-L68
+- src/service/domain/system/seed/embedded.rs#L1-L129
 - src/service/domain/system/seed/diff.rs#L9-L120
 - src/service/domain/system/seed/store.rs
 - src/service/domain/system/seed/default.rs
@@ -22,6 +22,8 @@ source_files:
 - src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_SKILL_MANAGEMENT/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_TOOL_MANAGEMENT/skill.md
+- src/service/domain/system/seed/skills/GIT_BRANCH_WORKFLOW/skill.md
+- src/handlers/system/seed/mod.rs#L153-L232
 - src/lib.rs#L97-L154
 - src/service/domain/mod.rs#L23-L45
 - docs/archive/design-archive/seed-config-migration.md
@@ -96,8 +98,11 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 | TEMPLATE_MEMORY_COGNITION | skills/TEMPLATE_MEMORY_COGNITION/skill.md | 长短期记忆保存/检索/沉淀技能包 |
 | TEMPLATE_COMMUNICATION | skills/TEMPLATE_COMMUNICATION/skill.md | 多 Agent 协作/消息/渠道技能包 |
 | TEMPLATE_PROJECT_MANAGEMENT | skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md | 项目拆解/任务分派/跟进技能包 |
+| TEMPLATE_GIT_BRANCH_WORKFLOW | skills/GIT_BRANCH_WORKFLOW/skill.md | Git 分支创建/切分/保护/合并方法论技能包（新增，配套 Git 工具落地） |
 
-`embedded.rs:EMBEDDED_SKILL_FILES` 静态数组注册表必须与 `skills/` 目录下文件**一一对应**，新增技能模板需要：新增目录+skill.md → 在 embedded.rs 添加 include_str! 条目 + list_embedded_skill_files_count 测试断言值+1。
+`embedded.rs:EMBEDDED_SKILL_FILES` 静态数组注册表必须与 `skills/` 目录下文件**一一对应**（当前共 6 套），新增技能模板需要：新增目录+skill.md → 在 embedded.rs 添加 include_str! 条目 + list_embedded_skill_files_count 测试断言值+1。
+
+**规模变化**：模板 skill.md 集从旧版 ~1362 行精简到 ~661 行（减 51%），去掉冗余描述段、保留结构化 6 字段核心内容，编译期 include_str! 注入体积极速下降。
 
 ## 3.3 SeedSnapshot 三占位符语义
 
@@ -139,3 +144,4 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 6. **路径穿越防护红线**：store.rs 文件读写中必须校验用户传入的快照文件名中**不包含** `../` 或绝对路径；禁止直接拼接 `SEED_DIR.join(user_input)` 而不做净化（防止写入任意系统路径）
 7. **SkillFileDef 内容优先级红线**：技能文件内容解析必须严格按 `content（内嵌）> ref_path（编译期内嵌引用）> url（运行时抓取）` 优先级；ref_path 不存在时走 embedded.rs 查询，URL 必须是 HTTPS（拒绝 HTTP 明文抓取）
 8. **apply_default 幂等红线**：`POST /seed/apply-default` 多次调用必须结果一致（幂等）；对已存在 ID 的条目走 `Update(INHERIT_CURRENT)` 而非覆盖，避免管理员二次初始化破坏已有配置
+9. **apply_preset_skills 新技能创建必须合并 imports，两步走必崩**：旧逻辑（create_skill → update_skill 两步走）在 HTTP /initialize 路由下必然 Forbidden——background_task run_steps 用的是 Guest ctx（user_id 空、user_role None），create_skill 成功后 update_skill 会被 ensure_skill_access 拦截（既不是刚创建的技能作者，也不是管理员）。**新逻辑**：一次性 create_skill（把 imports 直接塞 CreateSkillParams），create 内部文件写入是原子流程，不走 ensure 守卫。**硬约束**：禁止在 apply_preset_skills 中对新技能再单独调 update_skill，两步走 = 初始化路径权限 bug 复现

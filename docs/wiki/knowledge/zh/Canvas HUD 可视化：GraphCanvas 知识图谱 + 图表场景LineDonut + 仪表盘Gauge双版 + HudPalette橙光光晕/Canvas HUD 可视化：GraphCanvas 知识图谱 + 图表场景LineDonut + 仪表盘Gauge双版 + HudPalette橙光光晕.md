@@ -24,9 +24,11 @@ source_files:
   - frontend/src/components/force_layout.rs#L1-L100 (ForceLayout 力导向算法：每 tick 算斥力（所有节点对库仑力）+ 引力（边胡克力）+ 中心拉力；alpha 冷却 0.99^tick；300 帧后停止节省 CPU)
   - frontend/src/components/layered_layout.rs (LayeredLayout 分层布局：按 knowledge node depth 或 category 分层；Sugiyama 四阶段简易版，去除交叉最小化，用在 Agent 依赖树和项目任务 DAG)
   - frontend/src/components/chart_scene.rs#L1-L60 (ChartScene 统一图表场景：折线 LineChart 数据点 + 时间轴 + 坐标轴 + 鼠标 hover 十字准星 + tooltip；Donut 饼图多环)
-  - 'frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿)'
-  - frontend/src/components/gauge.rs (Gauge 仪表盘：240° 圆弧刻度 + 指针 + 0-100 值映射；HUD 风格橙光描边；AopGauge 同组件 + 双刻度（队列长度 + 延迟毫秒）)
+  - frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿)'
+  - frontend/src/components/gauge.rs (Gauge 仪表盘：240° 圆弧刻度 + 指针 + 0-100 值映射；HUD 风格橙光描边；AopGauge 同组件 + 双刻度（队列长度 + 延迟毫秒）)'
   - frontend/src/components/hud_palette.rs (HudPalette 调色板：HUD_ORANGE #FF8C00 / HUD_BLUE #00BFFF / HUD_GREEN #32CD32 / HUD_RED #FF4444；draw_glow_stroke(ctx, color, line_width) 加 box-shadow 光晕 blur 8px 渲染橙光条)
+  - frontend/src/components/canvas_scene.rs#L112-L117 (measure_text_width：web-sys TextMetrics 精确测量，极端异常回退到字符数×字号×0.6 估算)
+  - frontend/src/components/graph_canvas.rs#L21+ (measure_text_width 调用点：节点 label、tooltip、边标签)
   - docs/archive/design-archive/canvas_rendering_playbook.md（§CanvasScene 统一渲染管线 §力导向参数 α 冷却规则 §橙光光晕 blur 值调优 §5 层 Canvas 节点叠放顺序）
   - docs/design/ui_design_system.md（§HUD 驾驶舱风格视觉规范 §DaisyUI 基础组件 + 自定义 HUD 组件融合方式 §30+ 主题的配色适配策略）
   - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md（§LineChart 降采样算法 §时间轴月份刻度 §ChartScene 统一基类抽取）
@@ -102,7 +104,7 @@ HR 知识图谱页面加载：
 
 ---
 
-## §4 硬约束与回归红线（7 条）
+## §4 硬约束与回归红线（8 条）
 
 1. **Canvas 2D 绘制不能依赖 DaisyUI CSS 变量**：HUD 色必须硬编码 HudPalette 的 const，不要从 window.getComputedStyle 读 --p（DaisyUI 主色），否则 WASM 里 DOM API 跨线程调用 + 切换主题 30+ 每换一次重绘所有 Canvas，性能炸。例外：Canvas 周围 DOM 外壳 card 样式可用 class="bg-base-200"。
 2. **ForceLayout 斥力 O(n²) 必须节点数 ≥1000 时降采样**：nodes.len() > 800 自动从 O(n²) 切换到 Barnes-Hut O(n log n) 近似（四叉树空间分块近似斥力）；测试 1500 节点渲染时 dt 单帧 > 32ms（< 30fps）→ 必须启用近似模式；默认模式 O(n²) 够用，代码不预实现 Barnes-Hut（YAGNI）。
@@ -111,3 +113,4 @@ HR 知识图谱页面加载：
 5. **后台 tab 帧率自动降到 2fps（不停止 RAF）**：用 `document.visibility_state == "hidden"` 判断；完全停止 RAF 会导致用户切回来图谱位置重新计算跳一下；2fps 够维持 AOP 仪表盘数据不脏；切换前台时 requestAnimationFrame 恢复到 60fps。
 6. **GraphCanvas 的 on_node_click 事件必须是 dioxus EventHandler，不闭包 capture ctx 引用**：move || { write(ctx...) } 导致 Component rerender 时 EventHandler clone 成本爆炸（每 click clone 整个 signal）；正确模式：EventHandler<NodeId> 用 dioxus 自带通道，回调里只用局部变量 id（不从外层 move 大对象）。
 7. **AopGauge 的双刻度上下环颜色必须对应当前状态（不是固定）**：队列延迟 < 50ms HUD_GREEN 正常；50-200ms HUD_ORANGE 警告；> 200ms HUD_RED 严重；不要固定 HUD_BLUE 显示（误导运维）；统计图表页每 5s 轮询 stats_query 接口后，自动按延迟值 set_color。
+8. **TextMetrics 精确测量替代字符数估算**：所有 Canvas 文本布局（节点 label、tooltip、边标签）统一走 `canvas_scene.rs:measure_text_width`（web-sys TextMetrics `ctx.measure_text(text)`），不准再用 `text.chars().count() * font_size` 估算（比例字体 i18n 误差大）；节点文字宽度 > 节点半径的 80% 时自动截断加 `…`；force_layout 布局每帧 dt 必须 clamp ≥ 1ms 避免 RAF 极短间隔抖动

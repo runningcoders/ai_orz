@@ -11,9 +11,11 @@ source_files:
     - common/src/error/macros.rs
     - common/src/error/axum.rs
     - common/src/error_test.rs
+    - common/src/error/types/tests.rs
     - src/middleware/jwt_auth.rs
     - src/middleware/require_role.rs
     - src/service/dao/lark/error.rs
+    - ai-orz-macros/src/lib.rs
     - docs/archive/design-archive/common-error-type.md
     - docs/wiki/zh/content/API 参考/错误处理与状态码.md
 ---
@@ -129,3 +131,4 @@ source_files:
 11. **测试覆盖**：`common/src/error_test.rs` 对 `ErrorCode` 元数据、`err!` / `bail_err!` / `ensure_err!`、`ErrorField`、`with_source` 进行契约级断言，新增错误码需同步补充测试。设计文档记录 Phase 2 完成“将所有项目文件从 `Result<T, E>` 双泛型迁移到 `Result<T>` 单泛型”，当前代码库已统一使用 `common::error::Result`。
 12. **向后兼容**：保留 `code: i32` 字段兼容前端，新增 `errorCode`、`errorType`、`field` 字段，`data` 保持 `null`。
 13. **全项目统一 Result**：所有业务代码使用 `common::error::Result<T>`（即 `Result<T, Error>`），不再在各层定义独立错误类型；外部 trait 要求 `anyhow::Result` 时例外。
+14. **ai-orz-macros 宏级 panic 仅限属性缺失**：`ai-orz-macros/src/lib.rs` 中 11 处 `panic!` 全部用于编译期无法恢复的必需属性缺失（id/name/description/params）、函数签名校验、ToolPo params 类型推断失败。**运行时业务逻辑**（domain/handler/service 层）**严禁**使用 panic，全部走 `Result<T>` + `ErrorCode::XXX` 传播；`define_error_codes!` 新增枚举值必须同步补 `common/src/error/types/tests.rs` 的契约测试断言（code_str / http_status 元数据 + Err 构造器行为）
