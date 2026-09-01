@@ -664,6 +664,49 @@ pub fn HrAgentDetail(id: String) -> Element {
                         button {
                             class: "btn hud-btn btn-ghost btn-sm",
                             onclick: move |_| {
+                                let aid = agent_id_signal();
+                                spawn(async move {
+                                    match sync_agent_packs(&aid).await {
+                                        Ok(resp) => {
+                                            // 组装变更摘要（仅列出本次实际发生变更的包）
+                                            let mut parts: Vec<String> = Vec::new();
+                                            if !resp.installed_tool_tags.is_empty() {
+                                                parts.push(format!("补装工具包 {}", resp.installed_tool_tags.join("、")));
+                                            }
+                                            if !resp.installed_skill_packs.is_empty() {
+                                                parts.push(format!("补装技能包 {}", resp.installed_skill_packs.join("、")));
+                                            }
+                                            if !resp.refreshed_skill_packs.is_empty() {
+                                                parts.push(format!("补全技能包 {}", resp.refreshed_skill_packs.join("、")));
+                                            }
+                                            if parts.is_empty() {
+                                                toast.success("基础包与技能包均已是最新，无需变更");
+                                            } else {
+                                                toast.success(format!("同步完成: {}", parts.join("; ")));
+                                            }
+                                            // 刷新工具包 / 技能包列表与 Agent 全景
+                                            match list_installed_tool_packs(&aid).await {
+                                                Ok(r) => tool_packs.set(r.installed_tags),
+                                                Err(e) => toast.error(format!("刷新工具包列表失败: {}", e)),
+                                            }
+                                            match list_installed_skill_packs(&aid).await {
+                                                Ok(r) => skill_packs.set(r.skill_packs),
+                                                Err(e) => toast.error(format!("刷新技能包列表失败: {}", e)),
+                                            }
+                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                            }
+                                        }
+                                        Err(e) => toast.error(format!("同步包失败: {}", e)),
+                                    }
+                                });
+                            },
+                            "🔄 同步包"
+                        }
+                        button {
+                            class: "btn hud-btn btn-ghost btn-sm",
+                            onclick: move |_| {
                                 if let Some(a) = agent_res.read().as_ref().and_then(|r| r.as_ref().ok()) {
                                     edit_name.set(a.name.clone());
                                     edit_roles.set(a.roles.clone());

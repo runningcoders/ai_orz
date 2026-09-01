@@ -57,20 +57,16 @@ impl HrDomainImpl {
     }
 
     /// 解析 Agent 可见的技能全集（供 wake/awaken 与关联全景共用）。
+    /// 解析 Agent 可见的技能全集（供 wake/awaken 与关联全景共用）。
     ///
-    /// 加载策略（神经技能「自我演进 + 兜底」）：
-    /// 1. 优先用 Agent 自身副本（author_id = agent_id，排除 Expired）——副本可被 Agent 修改，
-    ///    从而实现技能「自我演进」；
-    /// 2. 对于种子中已发布、但 Agent 尚未安装副本的神经技能（tag=neural），
-    ///    用种子版本兜底，保证未安装时也能加载，不会完全缺失。
+    /// 仅返回 Agent 自身已安装的副本（author_id = agent_id，排除 Expired）。
+    /// 神经技能等基础包在 create_agent 时已显式安装为副本，因此加载侧无需再兜底。
     async fn resolve_agent_skills(
         &self,
         ctx: RequestContext,
         agent_id: &str,
     ) -> Result<Vec<Skill>> {
-        const NEURAL_TAG: &str = "neural";
-        // 1. Agent 自身副本（排除 Expired）
-        let own = self
+        let skills = self
             .skill_dal
             .query(
                 ctx.clone(),
@@ -80,40 +76,31 @@ impl HrDomainImpl {
                     ..Default::default()
                 },
             )
-            .await?
-            .items;
-
-        // 2. 已发布神经技能（种子源），作为兜底
-        let published_neural = self
-            .skill_dal
-            .list_published_by_tag(ctx.clone(), NEURAL_TAG)
             .await?;
-
-        // 3. 合并：副本优先；种子中 Agent 没有对应副本的神经技能，用种子版兜底
-        let own_parent_ids: std::collections::HashSet<String> =
-            own.iter().map(|s| s.po.parent_skill_id.clone()).collect();
-        let mut merged = own;
-        for pub_skill in published_neural {
-            if own_parent_ids.contains(&pub_skill.po.id) {
-                continue;
-            }
-            merged.push(pub_skill);
-        }
-        Ok(merged)
+        Ok(skills.items)
     }
 }
 
-/// 创建 Agent 时默认安装的工具包 tags。
-/// 这些包承载「技能/工具自助管理」类工具（update_skill / install_skill_pack /
-/// create_tool 等），让每个 Agent 都能按需获取、使用并自我演进自身能力。
-/// 仅当库里已存在对应已启用工具时才会写入 installed_tags（见 create_agent 守卫）。
-const DEFAULT_AGENT_TOOL_PACKS: &[&str] = &["skill_management", "tool_management"];
+/// 创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合）。
+///
+/// 包含 neural / skill_management / tool_management 三个基础包：
+///
+/// - 显式安装让每个 Agent 都持有一份自己的副本/绑定，无需加载侧再兜底；
+/// - 这三个基础包在卸载时受保护（见 uninstall_tool_pack / uninstall_skill_pack）；
+/// - 仅当库里已有对应已发布资源时才安装（见 sync_agent_packs 守卫）；
+/// - 缺失时可通过 sync_agent_packs（POST /agents/{id}/sync-packs）补装。
+const BASE_AGENT_PACKS: &[&str] = &["neural", "skill_management", "tool_management"];
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
-    /// 创建 Agent
+    /// 创建 Agent（分步骤执行流程，效仿 initialize_system::run_steps）
     ///
-    /// 基础操作：将 Agent 持久化到存储
+    /// 创建被拆成 2 个显式步骤，每步边界清晰、可独立观察：
+    /// - Step 1 基础信息：仅持久化 Agent 本体（统一进入 Interviewing 状态）
+    /// - Step 2 同步包：补装基础工具包/技能包 + 已安装技能包增量补全（复用 sync_agent_packs）
+    ///
+    /// 设计原则：基础信息之外的步骤均为「增强」，失败不阻塞创建；
+    /// 且都有存在性守卫（无对应已发布资源则不记录脏数据）。
     /// - 允许 Local Agent 暂不指定 model_provider_id：缺模型时用 Interviewing 状态表达
     ///   "尚未就绪"，用户可在模型管理中补配并入职后使用（不是错误，是生命周期状态）
     /// - 强制校验：创建后状态固定为 Interviewing（统一从面试开始）
@@ -123,28 +110,57 @@ impl AgentManage for HrDomainImpl {
             bail_err!(InvalidRequest, "新建 Agent 状态必须为 Interviewing");
         }
 
+        // ── Step 1/2：基础信息构建 ──
+        // 仅持久化 Agent 本体，不做任何额外安装。
+        log_info!(ctx, "create_agent", "Step 1/2: 创建 Agent 基础信息");
         self.agent_dal.create(ctx.clone(), agent).await?;
 
-        // 默认安装神经技能包：让每个 Agent 都持有一份自己的神经技能副本，
-        // 从而可以「自我演进」（修改自身副本）；不再依赖唤醒时从种子直接加载。
-        // 库里尚无已发布神经技能时不记录空包（installed_skill_packs 不留脏数据），
-        // 届时由加载侧的种子兜底补齐；安装失败也不阻塞创建。
-        let neural_published = self
-            .skill_dal
-            .list_published_by_tag(ctx.clone(), "neural")
-            .await?;
-        if !neural_published.is_empty()
-            && let Err(e) = self
-                .install_skill_pack(ctx.clone(), &agent.po.id, "neural")
-                .await
-        {
-            log_warn!(ctx, "create_agent", "默认安装神经技能包失败（忽略）: {e}");
-        }
+        // ── Step 2/2：同步包 ──
+        // 补装基础工具包/技能包（神经/技能/工具管理），并对已安装技能包做增量补全。
+        // 仅当库里已有对应已发布资源时才安装，避免无资源环境下留下脏数据；
+        // 单个包失败不阻塞创建（sync_agent_packs 内部记 warn 继续）。
+        log_info!(ctx, "create_agent", "Step 2/2: 同步基础包与技能包");
+        let result = self.sync_agent_packs(ctx.clone(), &agent.po.id).await?;
+        log_info!(
+            ctx,
+            "create_agent",
+            "Step 2/2 完成: 补装工具包={:?}, 补装技能包={:?}",
+            result.installed_tool_tags,
+            result.installed_skill_packs
+        );
 
-        // 默认安装技能/工具管理工具包：让每个 Agent 都能自助管理自己的技能与工具
-        // （update_skill / install_skill_pack / create_tool 等）。仅当库里已有对应已启用工具时
-        // 才写入 installed_tags，避免无工具环境下留下脏数据；安装失败不阻塞创建。
-        for &tag in DEFAULT_AGENT_TOOL_PACKS {
+        Ok(())
+    }
+
+    /// 同步 Agent 包（通用恢复/同步入口）
+    ///
+    /// 两阶段执行，全程幂等，单个包失败不阻塞其他包：
+    /// - 阶段 1 基础包缺失补装：工具包仅写 installed_tags 关联（无包内补全问题）；
+    ///   技能包安装副本后由阶段 2 统一补全。
+    /// - 阶段 2 已安装技能包增量补全：对当前所有已安装技能包，检测该 tag 下
+    ///   是否有 Agent 尚未拥有的新增已发布技能（按 parent_skill_id 比对），
+    ///   有则重装该技能包（reinstall_skill_pack 同时刷新已有副本内容）。
+    async fn sync_agent_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<common::api::SyncAgentPacksResponse> {
+        let mut resp = common::api::SyncAgentPacksResponse {
+            agent_id: agent_id.to_string(),
+            ..Default::default()
+        };
+
+        // 前置：确认 Agent 存在（后续 install_* 内部也会校验，这里提前给出明确错误）
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        // ══════ 阶段 1/2：基础包缺失补装 ══════
+        for &tag in BASE_AGENT_PACKS {
+            // 工具包：仅当库里已有对应已启用工具时才写关联，避免脏数据
             let tools = self
                 .tool_dal
                 .query(
@@ -159,16 +175,115 @@ impl AgentManage for HrDomainImpl {
             if tools.items.is_empty() {
                 continue;
             }
-            if let Err(e) = self.install_tool_pack(ctx.clone(), &agent.po.id, tag).await {
-                log_warn!(
-                    ctx,
-                    "create_agent",
-                    "默认安装工具包 {tag} 失败（忽略）: {e}"
-                );
+            if agent.po.get_runtime_config().has_tag(tag) {
+                continue;
+            }
+            match self.install_tool_pack(ctx.clone(), agent_id, tag).await {
+                Ok(()) => resp.installed_tool_tags.push(tag.to_string()),
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "sync_agent_packs",
+                        "补装工具包 {tag} 失败（忽略）: {e}"
+                    );
+                }
+            }
+        }
+        for &tag in BASE_AGENT_PACKS {
+            // 技能包：仅当库里已有对应已发布技能时才安装，避免空包脏数据
+            let published = self
+                .skill_dal
+                .list_published_by_tag(ctx.clone(), tag)
+                .await?;
+            if published.is_empty() {
+                continue;
+            }
+            if agent.po.get_runtime_config().has_skill_pack_tag(tag) {
+                continue;
+            }
+            match self.install_skill_pack(ctx.clone(), agent_id, tag).await {
+                Ok(_) => resp.installed_skill_packs.push(tag.to_string()),
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "sync_agent_packs",
+                        "补装技能包 {tag} 失败（忽略）: {e}"
+                    );
+                }
             }
         }
 
-        Ok(())
+        // ══════ 阶段 2/2：已安装技能包增量补全 ══════
+        // 以阶段 1 之后的最新 installed_skill_packs 为准（刚补装的包内容全新，
+        // 检测也不会有新增，统一纳入检测可少一套排除逻辑）。
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+        let installed_packs = agent.po.get_installed_skill_packs();
+        for tag in installed_packs {
+            let Ok(published) = self
+                .skill_dal
+                .list_published_by_tag(ctx.clone(), &tag)
+                .await
+            else {
+                continue;
+            };
+            if published.is_empty() {
+                continue;
+            }
+
+            // 按 parent_skill_id 比对：找出 Agent 尚未拥有副本的新增已发布技能
+            let parent_ids: Vec<String> = published.iter().map(|s| s.po.id.clone()).collect();
+            let existing_copies = self
+                .skill_dal
+                .find_agent_skill_copies(ctx.clone(), agent_id, &parent_ids)
+                .await?;
+            let existing_parents: std::collections::HashSet<&str> = existing_copies
+                .iter()
+                .map(|s| s.po.parent_skill_id.as_str())
+                .collect();
+            let has_new = published
+                .iter()
+                .any(|s| !existing_parents.contains(s.po.id.as_str()));
+            if !has_new {
+                continue;
+            }
+
+            // 重装该技能包：补全新增技能 + 顺带刷新已有副本内容
+            match self.reinstall_skill_pack(ctx.clone(), agent_id, &tag).await {
+                Ok(count) => {
+                    log_info!(
+                        ctx,
+                        "sync_agent_packs",
+                        "agent_id={}, tag={} 检测到新增技能，已重装补全: 处理={}",
+                        agent_id,
+                        tag,
+                        count
+                    );
+                    resp.refreshed_skill_packs.push(tag);
+                }
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "sync_agent_packs",
+                        "重装技能包 {tag} 补全失败（忽略）: {e}"
+                    );
+                }
+            }
+        }
+
+        log_info!(
+            ctx,
+            "sync_agent_packs",
+            "agent_id={} 同步完成: 补装工具包={:?}, 补装技能包={:?}, 重装补全={:?}",
+            agent_id,
+            resp.installed_tool_tags,
+            resp.installed_skill_packs,
+            resp.refreshed_skill_packs
+        );
+        Ok(resp)
     }
 
     /// 获取 Agent
@@ -405,14 +520,6 @@ impl AgentManage for HrDomainImpl {
 
         let ctx = enrich_ctx!(&ctx, &agent);
 
-        // 神经工具天生拥有，无需作为工具包安装；显式拒绝避免冗余和展示歧义
-        if tag == "neural" {
-            bail_err!(
-                InvalidRequest,
-                "neural 是系统保留标签，所有 Agent 天生拥有神经工具，无需通过工具包安装"
-            );
-        }
-
         // 幂等：已安装则跳过
         if agent.po.get_runtime_config().has_tag(tag) {
             log_info!(
@@ -455,6 +562,11 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 基础包受保护：neural / skill_management / tool_management 不允许卸载
+        if BASE_AGENT_PACKS.contains(&tag) {
+            bail_err!(InvalidRequest, "{tag} 是基础工具包，不允许卸载");
+        }
 
         // 幂等：未安装则跳过
         if !agent.po.get_runtime_config().has_tag(tag) {
@@ -602,6 +714,11 @@ impl AgentManage for HrDomainImpl {
             .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
 
         let ctx = enrich_ctx!(&ctx, &agent);
+
+        // 基础包受保护：neural / skill_management / tool_management 不允许卸载
+        if BASE_AGENT_PACKS.contains(&tag) {
+            bail_err!(InvalidRequest, "{tag} 是基础技能包，不允许卸载");
+        }
 
         // 幂等：未安装则跳过
         if !agent.po.get_runtime_config().has_skill_pack_tag(tag) {

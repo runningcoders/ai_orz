@@ -407,6 +407,21 @@ pub trait AgentManage: Send + Sync {
         agent_id: &str,
     ) -> Result<Vec<String>>;
 
+    /// 同步 Agent 包（通用恢复/同步入口）
+    ///
+    /// 两阶段执行：
+    /// 1. 基础包缺失补装：对 BASE_AGENT_PACKS 中缺失的工具包/技能包执行安装
+    ///    （工具包只是关联关系，无包内补全问题；技能包安装后进入阶段 2 统一补全）；
+    /// 2. 已安装技能包增量补全：对当前所有已安装技能包，检测该 tag 下是否有
+    ///    Agent 尚未拥有的新增已发布技能，有则重装该技能包补全缺失。
+    ///
+    /// 全程幂等，单个包失败不阻塞其他包（记 warn 继续）。
+    async fn sync_agent_packs(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<common::api::SyncAgentPacksResponse>;
+
     /// Agent 关联分组（工具三分组 + 技能三分组），按需装配，产出 **ID 视图**。
     ///
     /// 返回的三组工具互不相交（neural → bound → pack 优先级去重），

@@ -476,6 +476,35 @@ pub struct ListInstalledToolPacksResponse {
     pub installed_tags: Vec<String>,
 }
 
+/// 同步 Agent 包请求
+///
+/// 通用恢复/同步入口，负责两件事：
+/// 1. 基础包缺失补装：为 Agent 补齐 neural / skill_management / tool_management
+///    三个基础工具包与技能包（工具包只是关联关系，无包内补全问题）；
+/// 2. 已安装技能包增量补全：检测已安装技能包下是否有 Agent 尚未拥有的新增已发布技能，
+///    有则重装该技能包补全缺失（同时顺带刷新已有副本内容）。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SyncAgentPacksRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub agent_id: String,
+}
+
+/// 同步 Agent 包响应
+///
+/// 全程幂等：已存在的关联/副本不会重复创建，仅返回本次实际发生变更的 tags。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct SyncAgentPacksResponse {
+    /// Agent ID
+    pub agent_id: String,
+    /// 本次补装的基础工具包 tags（此前缺失，现已就位）
+    pub installed_tool_tags: Vec<String>,
+    /// 本次补装的基础技能包 tags（此前缺失，现已就位）
+    pub installed_skill_packs: Vec<String>,
+    /// 因检测到新增已发布技能而重装补全的技能包 tags（含基础技能包）
+    pub refreshed_skill_packs: Vec<String>,
+}
+
 /// 查询前台 Agent 请求
 ///
 /// 无参数 — 后端通过 `HrDomain::resolve_agent(ctx)` 路由到当前可用的前台 Agent。

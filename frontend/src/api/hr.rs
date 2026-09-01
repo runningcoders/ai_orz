@@ -142,6 +142,20 @@ pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), 
     .await
 }
 
+/// 同步 Agent 包（通用恢复/同步入口）
+///
+/// 1. 缺失基础包补装（neural / skill_management / tool_management）；
+/// 2. 已安装技能包检测新增已发布技能并重装补全。
+pub async fn sync_agent_packs(
+    agent_id: &str,
+) -> Result<common::api::SyncAgentPacksResponse, ApiError> {
+    api_post(
+        &format!("/api/v1/hr/agents/{}/sync-packs", agent_id),
+        &serde_json::json!({}),
+    )
+    .await
+}
+
 // ===== Agent 单技能管理 =====
 
 /// 将源技能安装到指定 Agent（创建 Agent 私有副本）

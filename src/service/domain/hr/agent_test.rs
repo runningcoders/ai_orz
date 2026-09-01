@@ -794,6 +794,95 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
     assert_ne!(agent_skills[0].po.name, original_name, "名称应已变化");
 }
 
+#[sqlx::test]
+async fn test_sync_agent_packs_fills_missing_base_and_new_skills(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let agent = create_test_agent("SyncPacksAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // ① 场景准备：
+    // - "coding" 技能包已手动安装（1 个已发布技能 → 1 个副本）
+    // - "neural" 基础技能包已发布但未安装（模拟存量 Agent 缺基础包）
+    // - 另发布 1 个 "coding" 新技能，Agent 尚未拥有（模拟包内新增）
+    let c1 = create_published_skill_with_tag("SyncCoding1", "coding");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&c1))
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .install_skill_pack(ctx.clone(), agent.id(), "coding")
+        .await
+        .unwrap();
+
+    let n1 = create_published_skill_with_tag("SyncNeural1", "neural");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&n1))
+        .await
+        .unwrap();
+
+    let c2 = create_published_skill_with_tag("SyncCoding2", "coding");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&c2))
+        .await
+        .unwrap();
+
+    // ② 执行同步
+    let resp = domain
+        .agent_manage()
+        .sync_agent_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+
+    // 测试环境无已启用工具 → 工具包补装为空
+    assert!(resp.installed_tool_tags.is_empty());
+    // 缺失的基础技能包 neural 被补装；coding 已安装故不在补装列表
+    assert_eq!(resp.installed_skill_packs, vec!["neural".to_string()]);
+    // coding 包检测到新增技能（SyncCoding2）→ 重装补全
+    assert_eq!(resp.refreshed_skill_packs, vec!["coding".to_string()]);
+
+    // ③ 验证副本：neural 1 个 + coding 2 个
+    let agent_skills = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert_eq!(agent_skills.len(), 3);
+    let copy_parents: std::collections::HashSet<String> = agent_skills
+        .iter()
+        .map(|s| s.po.parent_skill_id.clone())
+        .collect();
+    assert!(copy_parents.contains(&n1.po.id));
+    assert!(copy_parents.contains(&c1.po.id));
+    assert!(copy_parents.contains(&c2.po.id));
+
+    // ④ 幂等验证：再次同步应无任何变更
+    let resp2 = domain
+        .agent_manage()
+        .sync_agent_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(resp2.installed_tool_tags.is_empty());
+    assert!(resp2.installed_skill_packs.is_empty());
+    assert!(resp2.refreshed_skill_packs.is_empty());
+
+    // ⑤ 不存在的 Agent 返回 NotFound
+    let err = domain
+        .agent_manage()
+        .sync_agent_packs(ctx, "nonexistent-agent-id")
+        .await
+        .unwrap_err();
+    assert!(matches!(err.code, common::error::ErrorCode::NotFound));
+}
+
 /// 创建指定角色的 Onboarded 测试 Agent（走正常流程：create_agent Interviewing → 入职）
 async fn create_onboarded_agent(
     ctx: RequestContext,
@@ -965,26 +1054,36 @@ fn init_finance_env(
     crate::service::domain::finance::domain()
 }
 
-/// 验证 install_tool_pack 对 neural 保留标签显式拒绝
+/// 验证 install_tool_pack 现在允许安装神经工具包
+/// （每个 Agent 显式持有 neural 工具绑定，无需加载侧再兜底）
 #[sqlx::test]
-async fn test_install_tool_pack_rejects_neural_tag(pool: SqlitePool) {
+async fn test_install_tool_pack_allows_neural_tag(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
-    let agent = create_test_agent("NeuralBlockedAgent");
+    let agent = create_test_agent("NeuralToolAgent");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
 
-    let err = domain
+    // 发布一个 neural 工具，确保可安装
+    let _t = create_enabled_tool("NeuralToolX", vec!["neural"]);
+
+    domain
         .agent_manage()
         .install_tool_pack(ctx.clone(), agent.id(), "neural")
         .await
-        .expect_err("neural 标签应被 install_tool_pack 拒绝");
-    assert_eq!(
-        err.code,
-        common::error::ErrorCode::InvalidRequest,
-        "应返回 InvalidRequest 错误"
+        .expect("neural 现在应允许通过工具包安装");
+
+    // 已写入 installed_tags
+    let packs = domain
+        .agent_manage()
+        .list_installed_tool_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(
+        packs.contains(&"neural".to_string()),
+        "neural 应已进入 installed_tags"
     );
 }
 
@@ -1018,13 +1117,7 @@ async fn test_install_skill_pack_allows_neural_tag(pool: SqlitePool) {
         .map(|s| s.po.id)
         .collect();
 
-    // create_agent 已默认尝试安装 neural（当时种子尚无 neural，仅打标）；
-    // 清除该默认 tag 后重新安装，验证副本确实被装入且不再被拒绝
-    domain
-        .agent_manage()
-        .uninstall_skill_pack(ctx.clone(), agent.id(), "neural", false)
-        .await
-        .unwrap();
+    // 直接安装 neural 技能包，验证副本确实被装入且不再被拒绝
     let count = domain
         .agent_manage()
         .install_skill_pack(ctx.clone(), agent.id(), "neural")
@@ -1158,7 +1251,7 @@ async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool
     assert_eq!(
         groups.pack_groups.len(),
         1,
-        "search 包正好一个分组（neural 已被 install 拒绝，installed_tags 不含 neural）"
+        "search 包正好一个分组（neural 虽已被默认安装为工具包，但包分组展开时跳过 neural 标签）"
     );
     let search_pack = groups
         .pack_groups
@@ -1228,10 +1321,16 @@ async fn test_skills_overview_three_groups_disjoint(pool: SqlitePool) {
         .install_skill_pack(ctx.clone(), agent.id(), "coding")
         .await
         .unwrap();
-    // neural 不是技能包名，而是技能个体的标签，单独安装两份神经技能
+    // neural 不是技能包名，而是技能个体的标签，单独安装神经技能副本
+    // （S2 同时带 neural+coding，必须显式安装副本，否则移除加载兜底后将只由 neural 组可见）
     domain
         .skill_manage()
         .install_to_agent(ctx.clone(), &s1.po.id, agent.id())
+        .await
+        .unwrap();
+    domain
+        .skill_manage()
+        .install_to_agent(ctx.clone(), &s2.po.id, agent.id())
         .await
         .unwrap();
     domain

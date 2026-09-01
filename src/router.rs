@@ -527,6 +527,10 @@ fn hr_routes() -> Router {
             delete(handlers::hr::agent::uninstall_skill_pack_handler),
         )
         .route(
+            "/agents/{agent_id}/sync-packs",
+            post(handlers::hr::agent::sync_agent_packs_handler),
+        )
+        .route(
             "/agents/{agent_id}/tools/{tool_id}/bind",
             post(handlers::finance::tool::bind_tool_to_agent::bind_tool_to_agent_handler),
         )

@@ -116,24 +116,11 @@ pub(crate) async fn build_skills_overview(
     groups: hr::AgentSkillGroups,
 ) -> Result<AgentSkillsOverview> {
     // 1. 专业领域：Agent 自身目录下的技能副本（hr skill_manage）
-    let mut skills = hr_domain()
+    // 基础包（含神经技能）在 create_agent 时已显式安装为副本，无需再兜底。
+    let skills = hr_domain()
         .skill_manage()
         .list_for_agent(ctx.clone(), agent_id)
         .await?;
-    // 兜底：补充种子端已发布、但 Agent 无副本的神经技能（与加载侧策略一致，避免概览与 Prompt 不一致）
-    let published_neural = hr_domain()
-        .skill_manage()
-        .list_published_by_tag(ctx.clone(), "neural")
-        .await?;
-    let own_parents: std::collections::HashSet<String> = skills
-        .iter()
-        .map(|s| s.po.parent_skill_id.clone())
-        .collect();
-    for p in published_neural {
-        if !own_parents.contains(&p.po.id) {
-            skills.push(p);
-        }
-    }
 
     // 2. 专业领域：打包成 DTO
     let by_id: HashMap<String, SkillListItem> = skills
