@@ -14,7 +14,7 @@ use common::error::{Result, bail_err};
 /// and artifact metadata registration in one step.
 #[register_handler_tool(
     id = "create_text_artifact",
-    name = "create_text_artifact",
+    name = "Create Text Artifact",
     description = "Create a text-based artifact with content. The content will be saved to artifact storage.",
     params = "common::api::CreateTextArtifactParams",
     tags = "project_management"

@@ -9,7 +9,7 @@ use common::error::{Result, bail_err};
 /// List all files in a skill with their metadata (filename, size)
 #[register_handler_tool(
     id = "list_skill_files",
-    name = "list_skill_files",
+    name = "List Skill Files",
     description = "List all files in a skill with their metadata (filename, size)",
     params = "common::api::ListSkillFilesRequest",
     tags = "skill_management"

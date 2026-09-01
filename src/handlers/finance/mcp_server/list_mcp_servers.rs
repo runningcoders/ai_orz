@@ -13,7 +13,7 @@ use super::response::{to_list_item, to_model_status, to_model_transport};
 /// List management-safe MCP Servers with optional filters.
 #[register_handler_tool(
     id = "list_mcp_servers",
-    name = "list_mcp_servers",
+    name = "List MCP Servers",
     description = "List management-safe MCP Servers with optional filters",
     params = "common::api::ListMcpServersRequest"
 )]

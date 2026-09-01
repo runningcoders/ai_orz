@@ -14,7 +14,7 @@ use super::response::{to_detail, to_model_config, to_model_transport};
 /// Create a new MCP Server configuration for MCP tool discovery and invocation.
 #[register_handler_tool(
     id = "create_mcp_server",
-    name = "create_mcp_server",
+    name = "Add MCP Server",
     description = "Create a new MCP Server configuration for MCP tool discovery and invocation",
     params = "common::api::CreateMcpServerRequest"
 )]

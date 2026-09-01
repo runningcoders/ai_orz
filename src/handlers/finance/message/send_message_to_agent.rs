@@ -21,7 +21,7 @@ use common::error::Result;
 /// Send a message to another AI agent (for collaboration)
 #[register_handler_tool(
     id = "send_message_to_agent",
-    name = "send_message_to_agent",
+    name = "Send Message to Agent",
     description = "Send a message to another AI agent for collaboration. The target agent will be awakened to process the message.",
     params = "common::api::SendMessageToAgentParams",
     tags = "collaboration"

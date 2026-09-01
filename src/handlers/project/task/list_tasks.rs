@@ -11,7 +11,7 @@ use common::error::Result;
 /// List tasks globally with optional filtering by project, status, assignee, etc.
 #[register_handler_tool(
     id = "list_tasks",
-    name = "list_tasks",
+    name = "List All Tasks",
     description = "List tasks globally with pagination. Lightweight list scenario (GET + query params), excludes deleted tasks.",
     params = "common::api::ListTasksRequest",
     tags = "project_management"

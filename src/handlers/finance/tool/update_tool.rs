@@ -13,7 +13,7 @@ use common::error::{Result, bail_err, err};
 /// Update an existing custom tool's configuration (name, description, credentials, etc.)
 #[register_handler_tool(
     id = "update_tool",
-    name = "update_tool",
+    name = "Update Tool",
     description = "Update an existing custom tool's configuration (name, description, credentials, etc.)",
     params = "common::api::UpdateToolRequest",
     tags = "tool_management"

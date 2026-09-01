@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// Get the full text content of a generated-content artifact
 #[register_handler_tool(
     id = "get_artifact_content",
-    name = "get_artifact_content",
+    name = "Read Artifact Content",
     description = "Get the text content of an artifact with source_type = generated_content",
     params = "common::api::GetArtifactContentRequest"
 )]

@@ -12,7 +12,7 @@ use super::response::to_detail;
 /// Get a management-safe MCP Server detail by ID.
 #[register_handler_tool(
     id = "get_mcp_server",
-    name = "get_mcp_server",
+    name = "Get MCP Server Details",
     description = "Get a management-safe MCP Server detail by ID",
     params = "common::api::GetMcpServerRequest"
 )]

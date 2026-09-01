@@ -15,7 +15,7 @@ use common::error::{Result, bail_err, err};
 /// Update an existing message channel configuration (name, credentials, settings, etc.)
 #[register_handler_tool(
     id = "update_message_channel",
-    name = "update_message_channel",
+    name = "Update Channel Config",
     description = "Update an existing message channel configuration (name, credentials, settings, etc.)",
     params = "common::api::UpdateMessageChannelRequest"
 )]

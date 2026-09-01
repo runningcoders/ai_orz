@@ -9,7 +9,7 @@ use common::error::Result;
 /// Sync remote MCP tools from one server into local Tool records.
 #[register_handler_tool(
     id = "sync_mcp_tools",
-    name = "sync_mcp_tools",
+    name = "Sync MCP Server Tools",
     description = "Sync remote MCP tools from one server into local Tool records",
     params = "common::api::SyncMcpToolsRequest"
 )]

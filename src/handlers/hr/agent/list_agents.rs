@@ -12,7 +12,7 @@ use common::error::Result;
 /// List all AI agents with optional status filtering
 #[register_handler_tool(
     id = "list_agents",
-    name = "list_agents",
+    name = "List All Agents",
     description = "List all AI agents with optional status filtering",
     params = "common::api::ListAgentsRequest",
     tags = "collaboration"

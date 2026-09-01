@@ -11,7 +11,7 @@ use crate::enrich_ctx;
 /// Delete an existing model provider configuration
 #[register_handler_tool(
     id = "delete_model_provider",
-    name = "delete_model_provider",
+    name = "Remove Provider",
     description = "Delete an existing model provider configuration",
     params = "common::api::DeleteModelProviderRequest"
 )]

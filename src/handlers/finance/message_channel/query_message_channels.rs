@@ -15,7 +15,7 @@ use super::response::to_list_item;
 /// MessageChannel 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_message_channels",
-    name = "query_message_channels",
+    name = "Query Channels",
     description = "Query message channels with full filtering support (id, user_id, agent_id, channel_type, status, etc.)",
     params = "common::api::MessageChannelQueryRequest",
     neural

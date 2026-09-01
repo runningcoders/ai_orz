@@ -11,7 +11,7 @@ use crate::enrich_ctx;
 /// Delete an existing AI agent
 #[register_handler_tool(
     id = "delete_agent",
-    name = "delete_agent",
+    name = "Remove Agent",
     description = "Delete an existing AI agent",
     params = "common::api::DeleteAgentRequest"
 )]

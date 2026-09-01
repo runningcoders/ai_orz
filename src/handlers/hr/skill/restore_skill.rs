@@ -14,7 +14,7 @@ use common::error::Result;
 
 #[register_handler_tool(
     id = "restore_skill",
-    name = "restore_skill",
+    name = "Restore Expired Skill",
     description = "Restore an Expired-status skill back to Draft. Only allowed if the current skill status is Expired. Access: author / Admin / SuperAdmin / (when author is Agent) the Agent's creator user.",
     params = "common::api::RestoreSkillRequest",
     tags = "skill_management"

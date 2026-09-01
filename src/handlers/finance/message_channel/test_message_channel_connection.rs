@@ -9,7 +9,7 @@ use common::error::{Result, bail_err, err};
 /// Test connectivity to a message channel by sending a test notification
 #[register_handler_tool(
     id = "test_message_channel_connection",
-    name = "test_message_channel_connection",
+    name = "Test Channel Connection",
     description = "Test connectivity to a message channel by sending a test notification",
     params = "common::api::TestMessageChannelConnectionRequest"
 )]

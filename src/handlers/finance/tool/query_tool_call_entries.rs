@@ -12,7 +12,7 @@ use super::response::to_tool_call_entry_detail;
 /// Query tool call trace entries with common filters.
 #[register_handler_tool(
     id = "query_tool_call_entries",
-    name = "query_tool_call_entries",
+    name = "Query Tool Call Records",
     description = "Query tool call trace entries by call_id, agent_id, project_id, task_id, tool_id, status, and time range",
     params = "common::api::QueryToolCallEntriesRequest",
     tags = "tool_management"

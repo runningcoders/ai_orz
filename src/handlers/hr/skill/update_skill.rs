@@ -13,7 +13,7 @@ use super::response::to_detail;
 /// Update an existing skill's metadata and content from text, URL, or file attachments.
 #[register_handler_tool(
     id = "update_skill",
-    name = "update_skill",
+    name = "Update Skill",
     description = "Update an existing skill's metadata and content from direct text, an HTTPS URL, or file attachments.",
     params = "common::api::UpdateSkillRequest",
     tags = "skill_management"

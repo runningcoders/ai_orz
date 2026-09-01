@@ -9,7 +9,7 @@ use common::error::Result;
 /// Delete an existing custom tool (soft delete)
 #[register_handler_tool(
     id = "delete_tool",
-    name = "delete_tool",
+    name = "Delete Tool",
     description = "Delete an existing custom tool (soft delete)",
     params = "common::api::DeleteToolRequest",
     tags = "tool_management"

@@ -10,7 +10,7 @@ use serde_json;
 
 #[register_handler_tool(
     id = "save_short_term_memory",
-    name = "save_short_term_memory",
+    name = "Save to Working Memory",
     description = "Save a short-term memory entry with summary and tags",
     params = "common::api::SaveShortTermMemoryParams",
     neural

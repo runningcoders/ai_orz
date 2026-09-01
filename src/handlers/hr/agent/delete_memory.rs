@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// Delete a memory entry by ID
 #[register_handler_tool(
     id = "delete_memory",
-    name = "delete_memory",
+    name = "Delete Memory Entry",
     description = "Delete a memory entry by ID, supports short_term and knowledge_node types",
     params = "common::api::DeleteMemoryParams",
     neural

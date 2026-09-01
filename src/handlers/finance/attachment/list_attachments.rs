@@ -13,7 +13,7 @@ use super::response::to_detail;
 /// 列出当前用户（root_user_id）的 Attachment
 #[register_handler_tool(
     id = "list_attachments",
-    name = "list_attachments",
+    name = "List Attachments",
     description = "List attachments for the current user with optional filtering by purpose and file_type. Returns paged results.",
     params = "common::api::AttachmentListQuery",
     tags = "file_management"

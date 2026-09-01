@@ -16,7 +16,7 @@ use super::response::to_list_item;
 /// Skill 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_skills",
-    name = "query_skills",
+    name = "Query Skills (Advanced)",
     description = "Query skills with full filtering support (ids, keyword, status, category, tags, etc.)",
     params = "common::api::SkillQueryRequest",
     tags = "skill_management"

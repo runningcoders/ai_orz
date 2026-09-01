@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 /// Update the metadata and configuration of an existing AI agent
 #[register_handler_tool(
     id = "update_agent",
-    name = "update_agent",
+    name = "Update Agent Config",
     description = "Update the metadata and configuration of an existing AI agent",
     params = "common::api::UpdateAgentRequest"
 )]

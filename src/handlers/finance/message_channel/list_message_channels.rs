@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// List message channels with optional filtering by user, agent, channel type, enabled status
 #[register_handler_tool(
     id = "list_message_channels",
-    name = "list_message_channels",
+    name = "List All Channels",
     description = "List message channels with optional filtering by user, agent, channel type, enabled status",
     params = "common::api::ListMessageChannelsRequest"
 )]

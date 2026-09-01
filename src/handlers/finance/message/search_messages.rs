@@ -10,7 +10,7 @@ use common::error::{Result, bail_err, err};
 
 #[register_handler_tool(
     id = "search_messages",
-    name = "search_messages",
+    name = "Search Messages",
     description = "Search messages by keyword with hybrid search (FTS5 + vector semantic)",
     params = "common::api::message::SearchMessagesRequest",
     tags = "messaging"

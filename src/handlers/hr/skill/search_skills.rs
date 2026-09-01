@@ -16,7 +16,7 @@ use super::response::to_list_item;
 /// Search skills with full filtering (FTS5 + vector semantic search)
 #[register_handler_tool(
     id = "search_skills",
-    name = "search_skills",
+    name = "Search Skills (Semantic)",
     description = "Search skills by keyword with full filtering support (FTS5 + vector semantic search).",
     params = "common::api::SearchSkillsRequest",
     neural,

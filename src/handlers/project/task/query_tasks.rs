@@ -14,7 +14,7 @@ use common::error::Result;
 /// Task 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_tasks",
-    name = "query_tasks",
+    name = "Query Tasks (Advanced)",
     description = "Query tasks with full filtering support (ids, keyword, project_id, assignee, status_in, pagination). POST body for complex combinations.",
     params = "common::api::TaskQueryRequest",
     tags = "project_management"

@@ -13,7 +13,7 @@ use super::response::to_detail;
 /// 创建小型 UTF-8 文本 Attachment
 #[register_handler_tool(
     id = "create_text_attachment",
-    name = "create_text_attachment",
+    name = "Create Text Attachment",
     description = "Create a small UTF-8 text attachment. Provide file_name, content, optional mime_type and purpose.",
     params = "common::api::CreateTextAttachmentRequest",
     tags = "file_management"

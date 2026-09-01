@@ -10,7 +10,7 @@ use common::error::Result;
 /// Get artifact detailed information by ID
 #[register_handler_tool(
     id = "get_artifact",
-    name = "get_artifact",
+    name = "Get Artifact Details",
     description = "Get detailed metadata information about an artifact",
     params = "common::api::GetArtifactRequest"
 )]

@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// Update the status of a tool (enable/disable it)
 #[register_handler_tool(
     id = "update_tool_status",
-    name = "update_tool_status",
+    name = "Update Tool Status",
     description = "Update the status of a tool (enable/disable it)",
     params = "common::api::UpdateToolStatusRequest",
     tags = "tool_management"

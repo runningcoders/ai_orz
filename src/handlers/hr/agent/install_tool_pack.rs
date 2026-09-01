@@ -13,7 +13,7 @@ use common::error::Result;
 /// Idempotent: if the tag is already installed, no change is made.
 #[register_handler_tool(
     id = "install_tool_pack",
-    name = "install_tool_pack",
+    name = "Install Tool Pack on Agent",
     description = "Install a tool pack (by tag) to an agent. Adds the tag to the agent's runtime_config.installed_tags, enabling wake-time injection of all tools carrying that tag. Idempotent.",
     params = "common::api::InstallToolPackRequest",
     tags = "tool_management"

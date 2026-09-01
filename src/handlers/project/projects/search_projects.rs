@@ -14,7 +14,7 @@ use common::error::Result;
 /// Search projects with full filtering (FTS5 + vector semantic search)
 #[register_handler_tool(
     id = "search_projects",
-    name = "search_projects",
+    name = "Search Projects",
     description = "Search projects by keyword with full filtering support (FTS5 + vector semantic search).",
     params = "common::api::SearchProjectsRequest",
     tags = "project_management"

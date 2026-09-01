@@ -13,7 +13,7 @@ use super::response::to_list_item;
 /// List public skills with optional filtering by status, category, author, and keyword.
 #[register_handler_tool(
     id = "list_skills",
-    name = "list_skills",
+    name = "List All Skills",
     description = "List public skills with optional filtering by status, category, author, and keyword.",
     params = "common::api::ListSkillsRequest",
     tags = "skill_management"

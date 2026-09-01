@@ -12,7 +12,7 @@ use common::error::{Result, bail_err};
 /// Create a new task
 #[register_handler_tool(
     id = "create_task",
-    name = "create_task",
+    name = "Create Task",
     description = "Create a new task with specified title, description, assignee, etc.",
     params = "common::api::CreateTaskRequest",
     tags = "project_management"

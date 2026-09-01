@@ -14,7 +14,7 @@ use common::error::Result;
 /// 消息发送后立即返回，工具执行结果通过 ToolCallResult 消息在下一轮 awaken 中送达。
 #[register_handler_tool(
     id = "send_tool_call_message",
-    name = "send_tool_call_message",
+    name = "Send Tool Call Message",
     description = "Dispatch a manual tool call asynchronously. Returns immediately with a request_id; the tool result arrives later via a ToolCallResult message in the next awaken round. Use this to invoke manual tools without blocking.",
     params = "common::api::SendToolCallMessageParams",
     tags = "tool_management,internal"

@@ -11,7 +11,7 @@ use common::error::{bail_err, err};
 /// 删除 Attachment
 #[register_handler_tool(
     id = "delete_attachment",
-    name = "delete_attachment",
+    name = "Delete Attachment",
     description = "Delete an attachment by ID. Only the owner (root_user_id) can delete. Soft delete, data preserved for audit.",
     params = "common::api::DeleteAttachmentRequest",
     tags = "file_management"

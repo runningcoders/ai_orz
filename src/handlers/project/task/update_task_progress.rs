@@ -10,7 +10,7 @@ use common::error::Result;
 /// 更新任务进度（0-100）
 #[register_handler_tool(
     id = "update_task_progress",
-    name = "update_task_progress",
+    name = "Update Task Progress",
     description = "Update task progress (0-100)",
     params = "common::api::UpdateTaskProgressRequest",
     tags = "project_management"

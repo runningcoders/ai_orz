@@ -15,7 +15,7 @@ use common::error::Result;
 /// Search AI agents with full filtering (FTS5 + vector semantic search)
 #[register_handler_tool(
     id = "search_agents",
-    name = "search_agents",
+    name = "Search Agents (Semantic)",
     description = "Search agents by keyword with full filtering support (FTS5 + vector semantic search).",
     params = "common::api::SearchAgentsRequest",
     tags = "collaboration"

@@ -11,7 +11,7 @@ use common::models::StatsInterval;
 /// Get detailed information about a specific model provider configuration
 #[register_handler_tool(
     id = "get_model_provider",
-    name = "get_model_provider",
+    name = "Get Provider Details",
     description = "Get detailed information about a specific model provider configuration",
     params = "common::api::GetModelProviderRequest"
 )]

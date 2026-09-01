@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// Get detailed information about a specific message channel
 #[register_handler_tool(
     id = "get_message_channel",
-    name = "get_message_channel",
+    name = "Get Channel Details",
     description = "Get detailed information about a specific message channel",
     params = "common::api::GetMessageChannelRequest"
 )]

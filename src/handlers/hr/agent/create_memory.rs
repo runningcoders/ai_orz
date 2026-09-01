@@ -13,7 +13,7 @@ use serde_json;
 /// Create a new memory entry (short_term or knowledge_node)
 #[register_handler_tool(
     id = "create_memory",
-    name = "create_memory",
+    name = "Create Memory Entry",
     description = "Create a new memory entry, supports short_term and knowledge_node types",
     params = "common::api::CreateMemoryParams"
 )]

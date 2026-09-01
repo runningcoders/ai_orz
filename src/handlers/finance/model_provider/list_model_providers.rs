@@ -9,7 +9,7 @@ use common::error::Result;
 /// List all configured model providers. Returns basic information for each provider.
 #[register_handler_tool(
     id = "list_model_providers",
-    name = "list_model_providers",
+    name = "List Model Providers",
     description = "List all configured model providers. Returns basic information for each provider.",
     params = "common::api::ListModelProvidersRequest"
 )]

@@ -14,7 +14,7 @@ use common::error::Result;
 /// Project 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_projects",
-    name = "query_projects",
+    name = "Query Projects (Advanced)",
     description = "Query projects with full filtering support (ids, keyword, status, root_user_id, etc.)",
     params = "common::api::ProjectQueryRequest",
     tags = "project_management"

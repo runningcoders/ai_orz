@@ -9,7 +9,7 @@ use common::error::Result;
 /// Get organization basic information by ID
 #[register_handler_tool(
     id = "get_organization",
-    name = "get_organization",
+    name = "Get Organization Details",
     description = "Get detailed information about a specific organization by its ID",
     params = "common::api::GetOrganizationRequest"
 )]

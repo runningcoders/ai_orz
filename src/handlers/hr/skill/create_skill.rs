@@ -15,7 +15,7 @@ use common::error::{Result, bail_err, err};
 /// Create a new skill with optional content from text, URL, or file attachments. Returns the created skill detail.
 #[register_handler_tool(
     id = "create_skill",
-    name = "create_skill",
+    name = "Create Skill",
     description = "Create a new skill. You can provide content from direct text, an HTTPS URL, or file attachments. Returns the created skill detail.",
     params = "common::api::CreateSkillRequest",
     tags = "skill_management"

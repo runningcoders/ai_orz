@@ -16,7 +16,7 @@ use crate::enrich_ctx;
 /// Update the status of an AI agent (active/disabled)
 #[register_handler_tool(
     id = "update_agent_status",
-    name = "update_agent_status",
+    name = "Toggle Agent Status",
     description = "Update the status of an AI agent (active/disabled)",
     params = "common::api::UpdateAgentStatusRequest"
 )]

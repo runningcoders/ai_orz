@@ -10,7 +10,7 @@ use common::error::Result;
 /// 仅适用于通过 install_skill_to_agent 安装的副本（parent_skill_id 不为空）。
 #[register_handler_tool(
     id = "uninstall_skill_from_agent",
-    name = "uninstall_skill_from_agent",
+    name = "Uninstall Skill from Agent",
     description = "Uninstall a skill copy from an agent. Deletes the agent's private copy.",
     params = "common::api::UninstallSkillFromAgentRequest",
     tags = "skill_management",

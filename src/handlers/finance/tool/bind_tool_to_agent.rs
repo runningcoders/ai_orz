@@ -9,7 +9,7 @@ use common::error::Result;
 /// Bind an existing tool to an agent so the agent can use it for tool calling
 #[register_handler_tool(
     id = "bind_tool_to_agent",
-    name = "bind_tool_to_agent",
+    name = "Bind Tool to Agent",
     description = "Bind an existing tool to an agent so the agent can use it for tool calling",
     params = "common::api::BindToolToAgentRequest",
     tags = "tool_management"

@@ -9,7 +9,7 @@ use common::error::Result;
 /// Create a new file or update the content of an existing text file in a skill. If the file doesn't exist, it will be created. If it exists, it will be overwritten.
 #[register_handler_tool(
     id = "update_skill_file_content",
-    name = "update_skill_file_content",
+    name = "Update Skill File",
     description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at.",
     params = "common::api::UpdateSkillFileContentRequest",
     tags = "skill_management"

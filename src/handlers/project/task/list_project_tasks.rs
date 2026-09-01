@@ -10,7 +10,7 @@ use common::error::Result;
 /// List all tasks under a specific project, with optional status filtering
 #[register_handler_tool(
     id = "list_project_tasks",
-    name = "list_project_tasks",
+    name = "List Project's Tasks",
     description = "List all tasks under a specific project, with optional status filtering",
     params = "common::api::ListProjectTasksRequest",
     tags = "project_management"

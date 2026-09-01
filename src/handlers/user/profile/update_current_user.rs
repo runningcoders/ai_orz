@@ -11,7 +11,7 @@ use common::error::Result;
 /// Update current user's own information (display name, email, password)
 #[register_handler_tool(
     id = "update_current_user",
-    name = "update_current_user",
+    name = "Update My Profile",
     description = "Update information for the currently authenticated user, allows changing display name, email, and password",
     params = "common::api::UpdateCurrentUserRequest"
 )]

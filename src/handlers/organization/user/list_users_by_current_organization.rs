@@ -9,7 +9,7 @@ use common::error::Result;
 /// List all users belonging to the current authenticated user's organization
 #[register_handler_tool(
     id = "list_users_by_current_organization",
-    name = "list_users_by_current_organization",
+    name = "List My Org Users",
     description = "List all users in the organization that the current authenticated user belongs to",
     params = "common::api::ListUsersByCurrentOrganizationRequest"
 )]

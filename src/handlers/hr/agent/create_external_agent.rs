@@ -17,7 +17,7 @@ use common::error::{Error, Result, bail_err, err};
 /// Create a new external AI agent (Cli or Remote kind)
 #[register_handler_tool(
     id = "create_external_agent",
-    name = "create_external_agent",
+    name = "Register External Agent",
     description = "Create a new external AI agent (CLI or A2A Remote)",
     params = "common::api::CreateExternalAgentRequest"
 )]

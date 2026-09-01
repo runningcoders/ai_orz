@@ -12,7 +12,7 @@ use common::error::{Result, bail_err};
 /// Query memory entries by filter conditions
 #[register_handler_tool(
     id = "query_memory",
-    name = "query_memory",
+    name = "Query Agent Memory",
     description = "Query memory entries by agent_id, memory_type, and other filter conditions",
     params = "common::api::QueryMemoryParams",
     neural

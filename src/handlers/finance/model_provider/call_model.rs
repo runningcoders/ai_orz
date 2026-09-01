@@ -11,7 +11,7 @@ use crate::enrich_ctx;
 /// Call a configured model provider to generate text completion with a given prompt
 #[register_handler_tool(
     id = "call_model",
-    name = "call_model",
+    name = "Call LLM Model",
     description = "Call a configured model provider to generate text completion with a given prompt",
     params = "common::api::CallModelRequest"
 )]

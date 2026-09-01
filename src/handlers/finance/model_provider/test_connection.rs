@@ -11,7 +11,7 @@ use crate::enrich_ctx;
 /// Test connectivity and authentication to a model provider with a sample prompt
 #[register_handler_tool(
     id = "test_model_provider_connection",
-    name = "test_model_provider_connection",
+    name = "Test Provider Connection",
     description = "Test connectivity and authentication to a model provider with a sample prompt",
     params = "common::api::TestModelProviderConnectionRequest"
 )]

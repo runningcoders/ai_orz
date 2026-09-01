@@ -12,7 +12,7 @@ use common::error::{Result, bail_err};
 /// to GeneratedContent artifacts. Metadata (name/description/tags) applies to all.
 #[register_handler_tool(
     id = "update_artifact",
-    name = "update_artifact",
+    name = "Update Artifact",
     description = "Update artifact content and/or metadata (name, description, tags). Only provided fields are updated. Supports optimistic locking.",
     params = "common::api::UpdateArtifactRequest",
     tags = "project_management"

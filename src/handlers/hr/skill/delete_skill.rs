@@ -9,7 +9,7 @@ use common::error::Result;
 /// Delete an existing skill by ID. This operation cannot be undone.
 #[register_handler_tool(
     id = "delete_skill",
-    name = "delete_skill",
+    name = "Remove Skill",
     description = "Delete an existing skill by ID. This operation cannot be undone.",
     params = "common::api::DeleteSkillRequest",
     tags = "skill_management"

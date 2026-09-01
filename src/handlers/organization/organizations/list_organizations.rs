@@ -10,7 +10,7 @@ use common::error::Result;
 /// List all organizations available to the current user
 #[register_handler_tool(
     id = "list_organizations",
-    name = "list_organizations",
+    name = "List All Organizations",
     description = "List all organizations in the system that the current user has access to",
     params = "common::api::ListOrganizationsRequest"
 )]

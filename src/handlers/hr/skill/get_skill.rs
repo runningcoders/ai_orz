@@ -11,7 +11,7 @@ use super::response::to_detail;
 /// Get detailed information about a specific skill including metadata and file list
 #[register_handler_tool(
     id = "get_skill",
-    name = "get_skill",
+    name = "Get Skill Details",
     description = "Get detailed information about a specific skill including metadata and file list",
     params = "common::api::GetSkillRequest",
     tags = "skill_management"

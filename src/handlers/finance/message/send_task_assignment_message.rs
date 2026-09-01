@@ -12,7 +12,7 @@ use common::error::Result;
 /// 消息发送后立即返回，接收 Agent 在下一轮 awaken 中收到任务分配通知。
 #[register_handler_tool(
     id = "send_task_assignment_message",
-    name = "send_task_assignment_message",
+    name = "Assign Task via Message",
     description = "Send a task assignment message to another agent",
     params = "common::api::SendTaskAssignmentMessageParams",
     neural,

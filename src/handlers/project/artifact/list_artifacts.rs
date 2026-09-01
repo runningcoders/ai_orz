@@ -12,7 +12,7 @@ const DEFAULT_MAX_LIMIT: usize = 100;
 /// List all artifacts under a specific project with optional filtering
 #[register_handler_tool(
     id = "list_artifacts",
-    name = "list_artifacts",
+    name = "List Artifacts",
     description = "List all artifacts under a project, with optional filtering by task, file type, or source type",
     params = "common::api::ListArtifactsRequest"
 )]

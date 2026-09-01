@@ -12,7 +12,7 @@ use common::models::StatsInterval;
 /// Get task detailed information by ID
 #[register_handler_tool(
     id = "get_task",
-    name = "get_task",
+    name = "Get Task Details",
     description = "Get detailed information about a specific task by its ID",
     params = "common::api::GetTaskRequest",
     tags = "project_management"

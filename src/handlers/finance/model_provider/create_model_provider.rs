@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// Create a new model provider configuration for AI inference
 #[register_handler_tool(
     id = "create_model_provider",
-    name = "create_model_provider",
+    name = "Add Model Provider",
     description = "Create a new model provider configuration for AI inference",
     params = "common::api::CreateModelProviderRequest"
 )]

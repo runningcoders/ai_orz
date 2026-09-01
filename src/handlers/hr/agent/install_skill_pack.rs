@@ -14,7 +14,7 @@ use common::error::Result;
 /// Idempotent: if the tag is already installed, no change is made and 0 is returned.
 #[register_handler_tool(
     id = "install_skill_pack",
-    name = "install_skill_pack",
+    name = "Install Skill Pack on Agent",
     description = "Install a skill pack (by tag) to an agent. Queries all Published skills carrying the given tag and installs them as Draft copies. Idempotent.",
     params = "common::api::InstallSkillPackRequest",
     tags = "skill_management"

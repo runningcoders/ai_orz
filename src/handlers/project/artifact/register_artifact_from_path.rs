@@ -15,7 +15,7 @@ use common::error::{Result, bail_err, err};
 /// so the agent can continue working on it.
 #[register_handler_tool(
     id = "register_artifact_from_path",
-    name = "register_artifact_from_path",
+    name = "Register Local File as Artifact",
     description = "Register an existing file (in agent's directory) as an artifact. The file will be copied to artifact storage.",
     params = "common::api::RegisterArtifactFromPathParams",
     tags = "project_management"

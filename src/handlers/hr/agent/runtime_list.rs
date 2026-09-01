@@ -11,7 +11,7 @@ use common::error::Result;
 /// 查询运行中 Agent 列表（支持按 state/task_id/project_id 过滤）
 #[register_handler_tool(
     id = "list_runtime_agents",
-    name = "list_runtime_agents",
+    name = "List Running Agents",
     description = "List all agents' runtime status with optional filters (state/task_id/project_id). Useful for finding which agents are currently busy or working on a specific task.",
     params = "common::api::RuntimeListRequest",
     tags = "collaboration,query"

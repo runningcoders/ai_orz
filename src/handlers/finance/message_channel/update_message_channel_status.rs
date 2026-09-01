@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 /// Update the status of a message channel (enable/disable it)
 #[register_handler_tool(
     id = "update_message_channel_status",
-    name = "update_message_channel_status",
+    name = "Toggle Channel Status",
     description = "Update the status of a message channel (enable/disable it)",
     params = "common::api::UpdateMessageChannelStatusRequest"
 )]

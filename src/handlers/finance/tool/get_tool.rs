@@ -13,7 +13,7 @@ use super::response::to_detail;
 /// Get detailed information about a specific tool including configuration
 #[register_handler_tool(
     id = "get_tool",
-    name = "get_tool",
+    name = "Get Tool Details",
     description = "Get detailed information about a specific tool including configuration",
     params = "common::api::GetToolRequest",
     tags = "tool_management"

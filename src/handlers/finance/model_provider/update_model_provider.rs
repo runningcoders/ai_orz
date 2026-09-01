@@ -15,7 +15,7 @@ use crate::enrich_ctx;
 /// Update an existing model provider configuration (name, credentials, model name, etc.)
 #[register_handler_tool(
     id = "update_model_provider",
-    name = "update_model_provider",
+    name = "Update Provider Config",
     description = "Update an existing model provider configuration (name, credentials, model name, etc.)",
     params = "common::api::UpdateModelProviderRequest"
 )]

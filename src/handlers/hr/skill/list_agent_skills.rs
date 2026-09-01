@@ -11,7 +11,7 @@ use super::response::to_list_item;
 /// List all skills that are currently installed in the specified agent. Returns basic information for each skill.
 #[register_handler_tool(
     id = "list_agent_skills",
-    name = "list_agent_skills",
+    name = "List Agent's Active Skills",
     description = "List all skills that are currently installed in the specified agent. Returns basic information for each skill.",
     params = "common::api::ListAgentSkillsRequest",
     tags = "skill_management"

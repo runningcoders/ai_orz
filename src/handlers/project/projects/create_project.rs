@@ -13,7 +13,7 @@ use common::error::{Result, bail_err};
 /// owner_agent_id 由上层（前端/A2A handler）按需组合传入。
 #[register_handler_tool(
     id = "create_project",
-    name = "create_project",
+    name = "Create Project",
     description = "Create a new project",
     params = "common::api::CreateProjectRequest",
     tags = "project_management"

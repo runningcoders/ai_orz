@@ -96,7 +96,7 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
 /// Create a new message channel for sending notifications to external services/users
 #[register_handler_tool(
     id = "create_message_channel",
-    name = "create_message_channel",
+    name = "Add Message Channel",
     description = "Create a new message channel for sending notifications to external services/users",
     params = "common::api::CreateMessageChannelRequest"
 )]

@@ -10,7 +10,7 @@ use common::error::Result;
 /// 查询后台进程状态（探活刷新 + 日志尾部）
 #[register_handler_tool(
     id = "shell_status",
-    name = "shell_status",
+    name = "Check Shell Process Status",
     description = "Query the status of a background process started by shell_exec (alive check, exit code, and log tail). Use the pid returned by shell_exec.",
     params = "common::api::ShellStatusRequest",
     tags = "shell"

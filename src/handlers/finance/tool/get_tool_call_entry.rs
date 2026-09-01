@@ -12,7 +12,7 @@ use super::response::to_tool_call_entry_detail;
 /// Get one tool call trace entry by call ID.
 #[register_handler_tool(
     id = "get_tool_call_entry",
-    name = "get_tool_call_entry",
+    name = "Get Tool Call Record",
     description = "Get one tool call trace entry by call ID. Provide agent_id, project_id, task_id, or scoped context for access control.",
     params = "common::api::GetToolCallEntryRequest",
     tags = "tool_management"

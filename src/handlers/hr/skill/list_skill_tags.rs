@@ -11,7 +11,7 @@ use common::error::Result;
 /// 列出所有已发布技能（status=Published）的不重复 tag 列表（按字母升序）
 #[register_handler_tool(
     id = "list_skill_tags",
-    name = "list_skill_tags",
+    name = "List Skill Tags",
     description = "List all distinct tags from published skills. Useful for discovering available skill categories/packs.",
     params = "common::api::ListSkillTagsRequest",
     tags = "skill_management",

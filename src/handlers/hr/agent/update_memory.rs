@@ -12,7 +12,7 @@ use serde_json;
 /// Update an existing memory entry
 #[register_handler_tool(
     id = "update_memory",
-    name = "update_memory",
+    name = "Update Memory Entry",
     description = "Update an existing memory entry by ID, supports updating content, summary, and tags",
     params = "common::api::UpdateMemoryParams",
     neural

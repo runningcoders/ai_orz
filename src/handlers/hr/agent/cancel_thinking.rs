@@ -9,7 +9,7 @@ use common::error::Result;
 /// 取消 Agent 正在进行的思考（触发 cancel_flag，Agent 在当前轮次完成后退出）
 #[register_handler_tool(
     id = "cancel_thinking",
-    name = "cancel_thinking",
+    name = "Cancel Agent Thinking",
     description = "Cancel an agent's ongoing thinking process. The agent will exit after completing the current round. Use this when an agent is stuck in a long thinking loop.",
     params = "common::api::CancelThinkingRequest",
     tags = "collaboration"

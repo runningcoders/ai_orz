@@ -9,7 +9,7 @@ use common::error::Result;
 /// 终止后台进程（SIGKILL）
 #[register_handler_tool(
     id = "shell_kill",
-    name = "shell_kill",
+    name = "Kill Shell Process",
     description = "Terminate a background process started by shell_exec (SIGKILL). Use the pid returned by shell_exec or shell_status.",
     params = "common::api::ShellKillRequest",
     tags = "shell"

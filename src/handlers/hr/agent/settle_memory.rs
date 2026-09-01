@@ -315,7 +315,7 @@ pub(crate) async fn load_and_settle(
 
 #[register_handler_tool(
     id = "settle_memory",
-    name = "settle_memory",
+    name = "Settle Working Memory",
     description = "Trigger the agent's 'rest' process to consolidate recent experiences into structured knowledge. Directly invokes sleep_and_settle, the symmetric counterpart of awaken, letting the agent autonomously use available tools to complete the settling process.",
     params = "common::api::SettleMemoryParams",
     neural

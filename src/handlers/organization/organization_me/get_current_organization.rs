@@ -12,7 +12,7 @@ use common::error::Result;
 /// Get information for the currently authenticated user's organization
 #[register_handler_tool(
     id = "get_current_organization",
-    name = "get_current_organization",
+    name = "Get My Organization",
     description = "Get detailed information about the organization that the currently authenticated user belongs to",
     params = "common::api::GetCurrentOrganizationRequest"
 )]

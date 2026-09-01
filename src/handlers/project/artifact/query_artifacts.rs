@@ -14,7 +14,7 @@ use common::error::Result;
 /// Artifact 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_artifacts",
-    name = "query_artifacts",
+    name = "Query Artifacts",
     description = "Query artifacts with full filtering support (project_id, task_id, file_type, source_type, etc.)",
     params = "common::api::ArtifactQueryRequest",
     tags = "project_management"

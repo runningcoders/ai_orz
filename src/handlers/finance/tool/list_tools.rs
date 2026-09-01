@@ -12,7 +12,7 @@ use super::response::{probe_runtime_ready, to_list_item};
 /// List all tools with optional filtering by agent, keyword, and enabled status
 #[register_handler_tool(
     id = "list_tools",
-    name = "list_tools",
+    name = "List All Tools",
     description = "List all tools with optional filtering by agent, keyword, and enabled status",
     params = "common::api::ListToolsRequest",
     neural,

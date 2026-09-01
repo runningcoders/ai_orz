@@ -9,7 +9,7 @@ use common::error::Result;
 /// 标记任务完成
 #[register_handler_tool(
     id = "mark_done",
-    name = "mark_done",
+    name = "Mark Task Complete",
     description = "Mark a task as completed by task_id. Performs state transition to Completed state; fails if the task is in a non-completable state. Use this when a task's work is finished.",
     params = "common::api::MarkDoneParams",
     tags = "project_management"

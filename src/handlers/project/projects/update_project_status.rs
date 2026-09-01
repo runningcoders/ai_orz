@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 /// Update project status
 #[register_handler_tool(
     id = "update_project_status",
-    name = "update_project_status",
+    name = "Update Project Status",
     description = "Update project status (transition to next state)",
     params = "common::api::UpdateProjectStatusRequest",
     tags = "project_management"

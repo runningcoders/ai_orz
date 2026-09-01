@@ -9,7 +9,7 @@ use common::error::Result;
 /// Delete an existing artifact by ID
 #[register_handler_tool(
     id = "delete_artifact",
-    name = "delete_artifact",
+    name = "Delete Artifact",
     description = "Delete an artifact from a project",
     params = "common::api::DeleteArtifactRequest"
 )]

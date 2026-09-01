@@ -11,7 +11,7 @@ use super::super::tool::response::{probe_runtime_ready, to_list_item};
 /// List local MCP Tool records bound to one MCP Server.
 #[register_handler_tool(
     id = "list_mcp_tools_by_server",
-    name = "list_mcp_tools_by_server",
+    name = "List Server's MCP Tools",
     description = "List local MCP Tool records bound to one MCP Server",
     params = "common::api::ListMcpToolsByServerRequest"
 )]

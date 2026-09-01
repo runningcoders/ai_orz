@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 /// Update task status with state transition validation
 #[register_handler_tool(
     id = "update_task_status",
-    name = "update_task_status",
+    name = "Update Task Status",
     description = "Update the status of a task with proper state transition validation",
     params = "common::api::UpdateTaskStatusRequest",
     tags = "project_management"

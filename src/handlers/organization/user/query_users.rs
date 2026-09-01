@@ -13,7 +13,7 @@ use common::error::Result;
 /// User 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_users",
-    name = "query_users",
+    name = "Query Users (Advanced)",
     description = "Query users with full filtering support (organization_id, pagination, etc.)",
     params = "common::api::UserQueryRequest",
     neural

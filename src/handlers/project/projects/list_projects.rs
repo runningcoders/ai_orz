@@ -11,7 +11,7 @@ use common::error::{Result, bail_err};
 /// List all projects for a user with optional filtering
 #[register_handler_tool(
     id = "list_projects",
-    name = "list_projects",
+    name = "List All Projects",
     description = "List all projects for a user with optional status filtering",
     params = "common::api::ListProjectsRequest",
     tags = "project_management"

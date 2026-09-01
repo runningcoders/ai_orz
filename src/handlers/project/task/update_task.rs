@@ -10,7 +10,7 @@ use common::error::Result;
 /// Update task basic information (title, description, priority, tags, etc.)
 #[register_handler_tool(
     id = "update_task",
-    name = "update_task",
+    name = "Update Task",
     description = "Update basic information of an existing task",
     params = "common::api::UpdateTaskRequest",
     tags = "project_management"

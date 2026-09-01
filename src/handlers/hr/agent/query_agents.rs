@@ -15,7 +15,7 @@ use common::error::Result;
 /// Agent 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_agents",
-    name = "query_agents",
+    name = "Query Agents (Advanced)",
     description = "Query agents with full filtering support (ids, keyword, status, roles, etc.)",
     params = "common::api::AgentQueryRequest",
     tags = "collaboration"

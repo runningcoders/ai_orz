@@ -13,7 +13,7 @@ use super::response::to_detail;
 /// 获取 Attachment 详情
 #[register_handler_tool(
     id = "get_attachment",
-    name = "get_attachment",
+    name = "Get Attachment Info",
     description = "Get attachment metadata by ID. Only accessible by the owner (root_user_id).",
     params = "common::api::GetAttachmentRequest",
     tags = "file_management"

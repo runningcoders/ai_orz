@@ -12,7 +12,7 @@ use common::error::{Result, err};
 /// Update an MCP Server status. Use DELETE for soft deletion.
 #[register_handler_tool(
     id = "update_mcp_server_status",
-    name = "update_mcp_server_status",
+    name = "Toggle MCP Server Status",
     description = "Update an MCP Server status. Use DELETE for soft deletion",
     params = "common::api::UpdateMcpServerStatusRequest"
 )]

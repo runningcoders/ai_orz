@@ -9,7 +9,7 @@ use common::error::Result;
 /// List all skill pack tags installed on an agent.
 #[register_handler_tool(
     id = "list_installed_skill_packs",
-    name = "list_installed_skill_packs",
+    name = "List Agent's Skill Packs",
     description = "List all skill pack tags installed on an agent. Returns the tags recorded in runtime_config.installed_skill_packs.",
     params = "common::api::ListInstalledSkillPacksRequest",
     tags = "skill_management"

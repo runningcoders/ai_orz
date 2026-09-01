@@ -15,7 +15,7 @@ use common::error::{Result, bail_err};
 /// Search memory by keyword or semantic query
 #[register_handler_tool(
     id = "search_memory",
-    name = "search_memory",
+    name = "Search Memory (Semantic)",
     description = "Search memory by keyword or semantic query, returns matching memory entries",
     params = "common::api::SearchMemoryParams",
     neural

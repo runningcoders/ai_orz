@@ -12,7 +12,7 @@ use common::models::StatsInterval;
 /// Get project detailed information
 #[register_handler_tool(
     id = "get_project",
-    name = "get_project",
+    name = "Get Project Details",
     description = "Get project detailed information by ID",
     params = "common::api::GetProjectRequest",
     tags = "project_management"

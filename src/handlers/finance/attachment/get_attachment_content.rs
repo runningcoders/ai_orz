@@ -12,7 +12,7 @@ use common::error::{bail_err, err};
 /// 读取 Attachment UTF-8 文本内容
 #[register_handler_tool(
     id = "get_attachment_content",
-    name = "get_attachment_content",
+    name = "Read Attachment Content",
     description = "Read the UTF-8 text content of an attachment by ID. Returns attachment metadata and text content.",
     params = "common::api::GetAttachmentContentRequest",
     tags = "file_management"

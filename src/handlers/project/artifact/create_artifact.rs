@@ -13,7 +13,7 @@ use common::error::{Result, bail_err, err};
 /// Create a new artifact (from existing attachment or generated content)
 #[register_handler_tool(
     id = "create_artifact",
-    name = "create_artifact",
+    name = "Create Artifact",
     description = "Create a new artifact in a project, supports creating from existing attachment or generated content",
     params = "common::api::CreateArtifactRequest",
     tags = "project_management"

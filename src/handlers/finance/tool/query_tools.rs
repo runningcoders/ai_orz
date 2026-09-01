@@ -15,7 +15,7 @@ use super::response::{probe_runtime_ready, to_list_item};
 /// Tool 通用查询（POST body，支持完整查询能力）
 #[register_handler_tool(
     id = "query_tools",
-    name = "query_tools",
+    name = "Query Tools (Advanced)",
     description = "Query tools with full filtering support (ids, keyword, agent_id, tags, protocol, etc.)",
     params = "common::api::ToolQueryRequest",
     neural,

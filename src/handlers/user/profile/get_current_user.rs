@@ -11,7 +11,7 @@ use common::error::Result;
 /// Get current authenticated user information from request context
 #[register_handler_tool(
     id = "get_current_user",
-    name = "get_current_user",
+    name = "Get My Profile",
     description = "Get information about the currently authenticated user",
     params = "common::api::GetCurrentUserRequest"
 )]

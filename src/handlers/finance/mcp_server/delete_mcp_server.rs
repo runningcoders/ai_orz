@@ -10,7 +10,7 @@ use common::error::Result;
 /// Soft-delete an MCP Server by ID.
 #[register_handler_tool(
     id = "delete_mcp_server",
-    name = "delete_mcp_server",
+    name = "Remove MCP Server",
     description = "Soft-delete an MCP Server by ID",
     params = "common::api::DeleteMcpServerRequest"
 )]

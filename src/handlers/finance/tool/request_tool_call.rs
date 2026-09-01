@@ -16,7 +16,7 @@ use common::error::Result;
 /// - 异步：send_tool_call_message，结果在下一轮 awaken 送达，适合耗时较长的工具
 #[register_handler_tool(
     id = "request_tool_call",
-    name = "request_tool_call",
+    name = "Request Tool Execution",
     description = "Call a manual tool synchronously and get the result immediately",
     params = "common::api::RequestToolCallParams",
     tags = "tool_management,internal"

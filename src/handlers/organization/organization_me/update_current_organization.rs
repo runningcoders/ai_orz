@@ -13,7 +13,7 @@ use common::error::{Error, Result};
 /// Update information for the currently authenticated user's organization (admin only)
 #[register_handler_tool(
     id = "update_current_organization",
-    name = "update_current_organization",
+    name = "Update My Organization",
     description = "Update information for the organization that the currently authenticated user belongs to (requires admin privileges within the organization)",
     params = "common::api::UpdateCurrentOrganizationRequest"
 )]

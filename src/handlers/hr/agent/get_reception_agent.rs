@@ -17,7 +17,7 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 /// 获取当前可用的前台 Agent
 #[register_handler_tool(
     id = "get_reception_agent",
-    name = "get_reception_agent",
+    name = "Find Reception Agent",
     description = "Resolve the current available reception agent (unified routing). Prefer agents with the `reception` system role (web dialogue gateway). Score-matched against roles + capabilities, fallback to any onboarded agent.",
     params = "common::api::GetReceptionAgentRequest",
     tags = "collaboration"

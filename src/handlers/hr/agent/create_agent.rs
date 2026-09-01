@@ -10,7 +10,7 @@ use common::error::{Result, bail_err, err};
 /// Create a new AI agent
 #[register_handler_tool(
     id = "create_agent",
-    name = "create_agent",
+    name = "Create AI Agent",
     description = "Create a new AI agent with specified configuration",
     params = "common::api::CreateAgentRequest"
 )]

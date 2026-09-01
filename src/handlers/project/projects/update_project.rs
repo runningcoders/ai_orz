@@ -10,7 +10,7 @@ use common::error::Result;
 /// Update project basic information
 #[register_handler_tool(
     id = "update_project",
-    name = "update_project",
+    name = "Update Project",
     description = "Update project basic information (name, description, tags, priority)",
     params = "common::api::UpdateProjectRequest",
     tags = "project_management"

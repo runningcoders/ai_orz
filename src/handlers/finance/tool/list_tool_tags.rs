@@ -11,7 +11,7 @@ use common::error::Result;
 /// 列出所有启用工具（status=Enabled）的不重复 tag 列表（按字母升序）
 #[register_handler_tool(
     id = "list_tool_tags",
-    name = "list_tool_tags",
+    name = "List Tool Tags",
     description = "List all distinct tags from enabled tools. Useful for discovering available tool categories/packs.",
     params = "common::api::ListToolTagsRequest",
     tags = "tool_management",

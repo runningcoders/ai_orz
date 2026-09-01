@@ -15,7 +15,7 @@ use common::error::{Result, bail_err, err};
 /// - 无时间过滤：默认返回最新消息，按 DESC 排序
 #[register_handler_tool(
     id = "list_messages",
-    name = "list_messages",
+    name = "List Chat Messages",
     description = "List messages with optional filtering by project, task, sender, receiver, with bidirectional pagination",
     params = "common::api::message::ListMessagesRequest",
     neural,

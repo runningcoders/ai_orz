@@ -11,7 +11,7 @@ use common::error::Result;
 /// List tasks assigned to a specific agent
 #[register_handler_tool(
     id = "list_agent_tasks",
-    name = "list_agent_tasks",
+    name = "List Agent's Assigned Tasks",
     description = "List all tasks assigned to a specific agent, with optional status filtering",
     params = "common::api::ListAgentTasksRequest",
     tags = "project_management"

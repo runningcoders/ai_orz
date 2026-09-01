@@ -9,7 +9,7 @@ use common::error::Result;
 /// List all tool pack tags installed on an agent.
 #[register_handler_tool(
     id = "list_installed_tool_packs",
-    name = "list_installed_tool_packs",
+    name = "List Agent's Tool Packs",
     description = "List all tool pack tags installed on an agent. Returns the tags recorded in runtime_config.installed_tags.",
     params = "common::api::ListInstalledToolPacksRequest",
     tags = "tool_management"

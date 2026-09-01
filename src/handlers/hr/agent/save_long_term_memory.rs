@@ -12,7 +12,7 @@ use serde_json;
 
 #[register_handler_tool(
     id = "save_long_term_memory",
-    name = "save_long_term_memory",
+    name = "Save to Long-Term Memory",
     description = "Save a long-term memory as knowledge node with optional relations",
     params = "common::api::SaveLongTermMemoryParams",
     neural

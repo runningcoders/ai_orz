@@ -10,7 +10,7 @@ use common::error::Result;
 /// 列出后台进程（Agent 调用方仅可见自己启动的；逐条探活刷新状态）
 #[register_handler_tool(
     id = "shell_list",
-    name = "shell_list",
+    name = "List Shell Processes",
     description = "List background processes started by shell_exec (pid, command, alive status, call_id, log path). Agent callers only see their own processes.",
     params = "common::api::ListProcessesRequest",
     tags = "shell"

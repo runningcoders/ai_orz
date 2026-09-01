@@ -9,7 +9,7 @@ use common::error::Result;
 /// 查询 Agent 运行时状态 + 思考运行时快照
 #[register_handler_tool(
     id = "get_runtime_status",
-    name = "get_runtime_status",
+    name = "Get System Runtime Status",
     description = "Get an agent's runtime status and thinking snapshot (current round, tokens, tool calls, trace_id). Useful for checking if an agent is busy before sending it a message.",
     params = "common::api::RuntimeStatusRequest",
     tags = "collaboration,query"

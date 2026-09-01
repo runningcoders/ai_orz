@@ -12,7 +12,7 @@ use super::response::{to_api_transport, to_detail, to_model_config, to_model_tra
 /// Update an MCP Server configuration.
 #[register_handler_tool(
     id = "update_mcp_server",
-    name = "update_mcp_server",
+    name = "Update MCP Server",
     description = "Update an MCP Server configuration",
     params = "common::api::UpdateMcpServerRequest"
 )]

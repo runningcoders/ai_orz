@@ -11,7 +11,7 @@ use super::response::to_detail;
 /// Install an existing public skill to your agent. Creates a private copy of the skill for your agent.
 #[register_handler_tool(
     id = "install_skill_to_agent",
-    name = "install_skill_to_agent",
+    name = "Install Skill on Agent",
     description = "Install an existing public skill to your agent. Creates a private copy of the skill for your agent.",
     params = "common::api::InstallSkillToAgentRequest",
     tags = "skill_management"

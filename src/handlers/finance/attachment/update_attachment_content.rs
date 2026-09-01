@@ -13,7 +13,7 @@ use common::error::{bail_err, err};
 /// 全量替换 Attachment UTF-8 文本内容
 #[register_handler_tool(
     id = "update_attachment_content",
-    name = "update_attachment_content",
+    name = "Update Attachment Content",
     description = "Fully replace the UTF-8 text content of an attachment by ID. Supports optimistic locking via expected_updated_at.",
     params = "common::api::UpdateAttachmentContentRequest",
     tags = "file_management"
