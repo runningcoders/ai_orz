@@ -4,6 +4,7 @@ use crate::api::message::{load_older_messages, poll_new_messages, send_message_t
 use crate::api::project::{query_projects, query_tasks};
 use crate::components::SearchableSelect;
 use crate::components::chat::{MessageBubble, TypingIndicator};
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCard, HudPanel};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
@@ -305,8 +306,21 @@ pub fn HrAgentDetail(id: String) -> Element {
     let mut tool_tags = use_signal(Vec::<String>::new);
     let mut skill_packs = use_signal(Vec::<String>::new);
     let mut skill_tags = use_signal(Vec::<String>::new);
+    // 工具/技能列表筛选：包（tag）筛选 + 名称搜索；包 chip 点击即追加/移除 tag 条件
+    let mut tool_filter_tags = use_signal(Vec::<String>::new);
+    let mut tool_name_filter = use_signal(String::new);
+    let mut skill_filter_tags = use_signal(Vec::<String>::new);
+    let mut skill_name_filter = use_signal(String::new);
     // 技能包卸载确认对话框：存当前待卸载的 tag
     let mut show_skill_pack_uninstall_dialog = use_signal(|| None::<String>);
+    // 工具包卸载确认对话框：存当前待卸载的 tag
+    let mut show_tool_pack_uninstall_dialog = use_signal(|| None::<String>);
+    // 输入框选择后安装确认：存 (id, name)
+    let mut show_bind_tool_dialog = use_signal(|| None::<(String, String)>);
+    let mut show_install_skill_dialog = use_signal(|| None::<(String, String)>);
+    // 卡片卸载/解绑确认：存 (id, name)
+    let mut show_tool_unbind_dialog = use_signal(|| None::<(String, String)>);
+    let mut show_skill_uninstall_dialog = use_signal(|| None::<(String, String)>);
     // 工具搜索动态结果与加载状态（SearchableSelect 动态搜索模式）
     let mut tool_search_results = use_signal(Vec::<ToolListItem>::new);
     let mut tool_search_loading = use_signal(|| false);
@@ -596,37 +610,10 @@ pub fn HrAgentDetail(id: String) -> Element {
 
             // 三分组共用的卸载 / 解绑动作（统一 spawn + 刷新，卡片组件只上抛 (id, name) 事件）
             let on_uninstall_skill = move |(sid, sname): (String, String)| {
-                let aid = agent_id_signal();
-                spawn(async move {
-                    match uninstall_skill_from_agent(UninstallSkillFromAgentRequest {
-                        agent_id: aid.clone(),
-                        skill_id: sid.clone(),
-                    }).await {
-                        Ok(_) => {
-                            toast.success(format!("技能 {} 已卸载", sname));
-                            match get_agent(build_agent_stats_request(aid.clone())).await {
-                                Ok(a) => agent_res.set(Some(Ok(a))),
-                                Err(e) => toast.error(format!("刷新失败: {}", e)),
-                            }
-                        }
-                        Err(e) => toast.error(format!("卸载失败: {}", e)),
-                    }
-                });
+                show_skill_uninstall_dialog.set(Some((sid, sname)));
             };
             let on_unbind_tool = move |(tid, tname): (String, String)| {
-                let aid = agent_id_signal();
-                spawn(async move {
-                    match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: aid.clone(), tool_id: tid.clone() }).await {
-                        Ok(_) => {
-                            toast.success(format!("工具 {} 已解绑", tname));
-                            match get_agent(build_agent_stats_request(aid.clone())).await {
-                                Ok(a) => agent_res.set(Some(Ok(a))),
-                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                            }
-                        }
-                        Err(e) => toast.error(format!("解绑失败: {}", e)),
-                    }
-                });
+                show_tool_unbind_dialog.set(Some((tid, tname)));
             };
 
             // 工具：三分组 + 统计总数
@@ -654,6 +641,110 @@ pub fn HrAgentDetail(id: String) -> Element {
             let tab4_class = if active_tab() == 4 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
             let tab5_class = if active_tab() == 5 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
             let tab6_class = if active_tab() == 6 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
+
+            // 工具/技能列表：按 tag 维度聚合 + 包（tag）筛选 + 名称搜索。
+            // 预计算过滤结果（rsx 之前），把"包=筛选器"作用于下方聚合列表：
+            // 点击上方工具包/技能包 chip 即向 filter tags 追加条件，列表只保留命中包分组。
+            let tool_filter = tool_filter_tags.read().clone();
+            let tool_q = tool_name_filter.read().to_lowercase();
+            let mut tool_view: Vec<(String, &'static str, String, bool, Vec<ToolListItem>)> = Vec::new();
+            for pack in tools_overview.pack_groups.iter() {
+                if !pack.tools.is_empty() {
+                    tool_view.push((
+                        format!("📦 {}", pack.tag),
+                        "accent",
+                        format!("来自 {}", pack.tag),
+                        false,
+                        pack.tools.clone(),
+                    ));
+                }
+            }
+            if !tools_overview.neural_tools.is_empty() {
+                tool_view.push((
+                    "🧠 神经工具".to_string(),
+                    "primary",
+                    "神经".to_string(),
+                    false,
+                    tools_overview.neural_tools.clone(),
+                ));
+            }
+            if !tools_overview.bound_tools.is_empty() {
+                tool_view.push((
+                    "🔗 直接绑定".to_string(),
+                    "success",
+                    "已绑定".to_string(),
+                    true,
+                    tools_overview.bound_tools.clone(),
+                ));
+            }
+            let tool_filtered: Vec<(String, &'static str, String, bool, Vec<ToolListItem>)> = tool_view
+                .into_iter()
+                .filter(|(label, _, _, _, _)| {
+                    if tool_filter.is_empty() {
+                        return true;
+                    }
+                    // 仅包分组（label 以 📦 开头）参与包筛选；神经/绑定组在筛选时隐藏
+                    if let Some(tag) = label.strip_prefix("📦 ") {
+                        tool_filter.iter().any(|f| f == tag)
+                    } else {
+                        false
+                    }
+                })
+                .map(|(label, tone, badge, unbind, tools)| {
+                    let ts: Vec<ToolListItem> = tools
+                        .into_iter()
+                        .filter(|t| tool_q.is_empty() || t.name.to_lowercase().contains(&tool_q))
+                        .collect();
+                    (label, tone, badge, unbind, ts)
+                })
+                .filter(|(_, _, _, _, ts)| !ts.is_empty())
+                .collect();
+
+            let skill_filter = skill_filter_tags.read().clone();
+            let skill_q = skill_name_filter.read().to_lowercase();
+            let mut skill_view: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = Vec::new();
+            for pack in skills_overview.pack_groups.iter() {
+                if !pack.skills.is_empty() {
+                    skill_view.push((format!("📦 {}", pack.tag), false, "accent", pack.skills.clone()));
+                }
+            }
+            if !skills_overview.neural_skills.is_empty() {
+                skill_view.push((
+                    "🧠 神经技能".to_string(),
+                    true,
+                    "primary",
+                    skills_overview.neural_skills.clone(),
+                ));
+            }
+            if !skills_overview.standalone_skills.is_empty() {
+                skill_view.push((
+                    "🆓 独立技能".to_string(),
+                    false,
+                    "accent",
+                    skills_overview.standalone_skills.clone(),
+                ));
+            }
+            let skill_filtered: Vec<(String, bool, &'static str, Vec<SkillListItem>)> = skill_view
+                .into_iter()
+                .filter(|(label, _, _, _)| {
+                    if skill_filter.is_empty() {
+                        return true;
+                    }
+                    if let Some(tag) = label.strip_prefix("📦 ") {
+                        skill_filter.iter().any(|f| f == tag)
+                    } else {
+                        false
+                    }
+                })
+                .map(|(label, neural_badge, tone, skills)| {
+                    let ss: Vec<SkillListItem> = skills
+                        .into_iter()
+                        .filter(|s| skill_q.is_empty() || s.name.to_lowercase().contains(&skill_q))
+                        .collect();
+                    (label, neural_badge, tone, ss)
+                })
+                .filter(|(_, _, _, ss)| !ss.is_empty())
+                .collect();
 
             rsx! {
                 HudPanel {
@@ -1114,35 +1205,45 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                    if !tool_packs_list.is_empty() {
+                                    // 包即筛选器：点击 chip 切换下方列表的 tag 过滤；「卸载」按钮触发二次确认弹窗
+                                    if tool_packs_list.is_empty() {
+                                        p { class: "text-sm text-base-content/50", "暂无工具包，安装后会出现在这里并可点击筛选" }
+                                    } else {
                                         div { class: "flex flex-wrap gap-2",
                                             for tag in tool_packs_list.iter() {
                                                 {
                                                     let tag_clone = tag.clone();
-                                                    let aid = agent_id_signal();
+                                                    let tf = tool_filter_tags;
+                                                    let active = tool_filter_tags.read().contains(&tag_clone);
                                                     rsx! {
                                                         span {
-                                                            class: "badge orz-tag gap-1",
-                                                            "{tag}"
-                                                            button {
-                                                                class: "badge-remove",
-                                                                onclick: move |_| {
-                                                                    let agent_id = aid.clone();
-                                                                    let t = tag_clone.clone();
-                                                                    spawn(async move {
-                                                                        match uninstall_tool_pack(UninstallToolPackRequest { agent_id: agent_id.clone(), tag: t.clone() }).await {
-                                                                            Ok(_) => {
-                                                                                toast.success(format!("工具包 [{}] 已卸载", t));
-                                                                                match list_installed_tool_packs(&agent_id).await {
-                                                                                    Ok(resp) => tool_packs.set(resp.installed_tags),
-                                                                                    Err(e) => toast.error(format!("刷新工具包列表失败: {}", e)),
-                                                                                }
-                                                                            }
-                                                                            Err(e) => toast.error(format!("卸载工具包失败: {}", e)),
+                                                            class: format!("badge orz-tag gap-1 {}", if active { "badge-primary" } else { "" }),
+                                                            span {
+                                                                class: "cursor-pointer select-none",
+                                                                title: "点击筛选该工具包",
+                                                                onclick: {
+                                                                    let tc = tag_clone.clone();
+                                                                    let mut tfc = tf;
+                                                                    move |_| {
+                                                                        let mut v = tfc.write();
+                                                                        if let Some(pos) = v.iter().position(|x| x == &tc) {
+                                                                            v.remove(pos);
+                                                                        } else {
+                                                                            v.push(tc.clone());
                                                                         }
-                                                                    });
+                                                                    }
                                                                 },
-                                                                "×"
+                                                                "{tag_clone}"
+                                                            }
+                                                            button {
+                                                                class: "text-error/80 hover:text-error text-xs cursor-pointer select-none",
+                                                                title: "卸载工具包",
+                                                                onclick: {
+                                                                    let tc = tag_clone.clone();
+                                                                    let mut dlg = show_tool_pack_uninstall_dialog;
+                                                                    move |_| { dlg.set(Some(tc.clone())); }
+                                                                },
+                                                                "卸载"
                                                             }
                                                         }
                                                     }
@@ -1164,25 +1265,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 format!("{} ({})", t.name, t.id)
                                             }).collect(),
                                             on_select: move |selection: String| {
-                                                // 从 "name (id)" 格式中提取 id
+                                                // 从 "name (id)" 格式中提取 name 与 id，弹出二次确认后再绑定
                                                 if let Some(id_start) = selection.rfind('(') {
                                                     let tool_id = selection[id_start+1..selection.len()-1].to_string();
-                                                    let aid = agent_id_signal();
-                                                    spawn(async move {
-                                                        match bind_tool_to_agent(BindToolToAgentRequest {
-                                                            agent_id: aid.clone(),
-                                                            tool_id: tool_id.clone(),
-                                                        }).await {
-                                                            Ok(_) => {
-                                                                toast.success("工具已绑定");
-                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
-                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                                }
-                                                            }
-                                                            Err(e) => toast.error(format!("绑定失败: {}", e)),
-                                                        }
-                                                    });
+                                                    let tool_name = selection[..id_start].trim().to_string();
+                                                    show_bind_tool_dialog.set(Some((tool_id, tool_name)));
                                                 }
                                             },
                                             on_search: Some(EventHandler::new(move |keyword: String| {
@@ -1208,90 +1295,71 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
 
-                                    // ===== Agent 工具全景（三分组：神经/直接绑定/工具包）=====
-                                    // 与 runtime 工具注入同源，互不相交，完整展示 Agent 实际可用的所有工具
-                                    if all_tool_count > 0 {
-                                        // -- ① 神经工具：天生拥有，无需安装/绑定 --
-                                        if !tools_overview.neural_tools.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🧠 神经工具（天生可用）" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{tools_overview.neural_tools.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for tool in tools_overview.neural_tools.iter() {
-                                                        ToolCard {
-                                                            key: "nt-{tool.id}",
-                                                            tool: tool.clone(),
-                                                            tone: "primary",
-                                                            badge: "神经".to_string(),
-                                                            badge_class: "badge orz-tag badge-xs",
-                                                            show_unbind: false,
-                                                            on_unbind: on_unbind_tool,
-                                                        }
+                                    // ===== Agent 工具全景：按 tag 维度聚合 + 包筛选 =====
+                                    // 包（工具包 tag）作为上方筛选器；下方聚合列表按包分组展示，
+                                    // 可被包筛选 + 名称搜索过滤。卡片沿用现有 ToolCard 样式与各组色调/徽章。
+                                    // 过滤器：名称搜索 + 已选包筛选条件（点击上方工具包 chip 即追加）
+                                    div { class: "flex flex-wrap items-center gap-2 mb-4",
+                                        input {
+                                            class: "input input-bordered input-sm flex-1 min-w-[180px]",
+                                            placeholder: "搜索工具名称...",
+                                            value: tool_name_filter,
+                                            oninput: move |e| tool_name_filter.set(e.value().clone()),
+                                        }
+                                        if !tool_filter_tags.read().is_empty() {
+                                            for ft in tool_filter_tags.read().iter() {
+                                                span {
+                                                    class: "badge orz-tag badge-primary gap-1",
+                                                    "🔍 {ft}"
+                                                    button {
+                                                        class: "badge-remove",
+                                                        onclick: {
+                                                            let t = ft.clone();
+                                                            let mut tf = tool_filter_tags;
+                                                            move |_| { tf.write().retain(|x| x != &t); }
+                                                        },
+                                                        "×"
                                                     }
                                                 }
                                             }
-                                        }
-
-                                        // -- ② 直接绑定工具：通过 agent_tools 显式绑定，带「解绑」按钮 --
-                                        if !tools_overview.bound_tools.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🔗 直接绑定" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{tools_overview.bound_tools.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for tool in tools_overview.bound_tools.iter() {
-                                                        ToolCard {
-                                                            key: "bt-{tool.id}",
-                                                            tool: tool.clone(),
-                                                            tone: "success",
-                                                            badge: "已绑定".to_string(),
-                                                            badge_class: "badge orz-tag badge-xs",
-                                                            show_unbind: true,
-                                                            on_unbind: on_unbind_tool,
-                                                        }
-                                                    }
-                                                }
+                                            button {
+                                                class: "btn hud-btn btn-ghost btn-xs",
+                                                onclick: move |_| tool_filter_tags.set(Vec::new()),
+                                                "清除筛选"
                                             }
                                         }
-
-                                        // -- ③ 工具包分组（按 runtime_config.installed_tags 展开）--
-                                        for pack in tools_overview.pack_groups.iter() {
-                                            if !pack.tools.is_empty() {
-                                                div { class: "mb-4",
-                                                    key: "tpg-{pack.tag}",
-                                                    div { class: "flex items-center gap-2 mb-2",
-                                                        h4 { class: "font-semibold text-base", "📦 工具包：{pack.tag}" }
-                                                        span { class: "badge orz-tag badge-xs",
-                                                            "{pack.tools.len()}"
-                                                        }
-                                                    }
-                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                        for tool in pack.tools.iter() {
-                                                            ToolCard {
-                                                                key: "tp-{pack.tag}-{tool.id}",
-                                                                tool: tool.clone(),
-                                                                tone: "accent",
-                                                                badge: format!("来自 {}", pack.tag),
-                                                                badge_class: "badge orz-tag badge-xs",
-                                                                show_unbind: false,
-                                                                on_unbind: on_unbind_tool,
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else {
+                                    }
+                                    if all_tool_count == 0 {
                                         div { class: "text-center py-12",
                                             div { class: "text-5xl mb-4 opacity-30", "🔧" }
                                             div { class: "text-base-content/70", "暂无可用工具" }
+                                        }
+                                    } else if tool_filtered.is_empty() {
+                                        div { class: "text-center py-12",
+                                            div { class: "text-5xl mb-4 opacity-30", "🔍" }
+                                            div { class: "text-base-content/70", "没有匹配当前筛选条件的工具" }
+                                        }
+                                    } else {
+                                        for (label, tone, badge, unbind, tools) in tool_filtered.iter() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "{label}" }
+                                                    span { class: "badge orz-tag badge-xs", "{tools.len()}" }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for tool in tools.iter() {
+                                                        ToolCard {
+                                                            key: "flt-{tool.id}",
+                                                            tool: tool.clone(),
+                                                            tone: *tone,
+                                                            badge: badge.clone(),
+                                                            badge_class: "badge orz-tag badge-xs",
+                                                            show_unbind: *unbind,
+                                                            on_unbind: on_unbind_tool,
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1325,21 +1393,46 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                    if !skill_packs_list.is_empty() {
+                                    // 包即筛选器：点击 chip 切换下方列表的 tag 过滤；「卸载」按钮触发二次确认弹窗
+                                    if skill_packs_list.is_empty() {
+                                        p { class: "text-sm text-base-content/50", "暂无技能包，安装后会出现在这里并可点击筛选" }
+                                    } else {
                                         div { class: "flex flex-wrap gap-2",
                                             for tag in skill_packs_list.iter() {
                                                 {
                                                     let tag_clone = tag.clone();
+                                                    let tf = skill_filter_tags;
+                                                    let active = skill_filter_tags.read().contains(&tag_clone);
+                                                    let dlg = show_skill_pack_uninstall_dialog;
                                                     rsx! {
                                                         span {
-                                                            class: "badge orz-tag gap-1",
-                                                            "{tag}"
-                                                            button {
-                                                                class: "badge-remove",
-                                                                onclick: move |_| {
-                                                                    show_skill_pack_uninstall_dialog.set(Some(tag_clone.clone()));
+                                                            class: format!("badge orz-tag gap-1 {}", if active { "badge-primary" } else { "" }),
+                                                            span {
+                                                                class: "cursor-pointer select-none",
+                                                                title: "点击筛选该技能包",
+                                                                onclick: {
+                                                                    let tc = tag_clone.clone();
+                                                                    let mut tfc = tf;
+                                                                    move |_| {
+                                                                        let mut v = tfc.write();
+                                                                        if let Some(pos) = v.iter().position(|x| x == &tc) {
+                                                                            v.remove(pos);
+                                                                        } else {
+                                                                            v.push(tc.clone());
+                                                                        }
+                                                                    }
                                                                 },
-                                                                "×"
+                                                                "{tag_clone}"
+                                                            }
+                                                            button {
+                                                                class: "text-error/80 hover:text-error text-xs cursor-pointer select-none",
+                                                                title: "卸载技能包",
+                                                                onclick: {
+                                                                    let tc = tag_clone.clone();
+                                                                    let mut dlg = dlg;
+                                                                    move |_| { dlg.set(Some(tc.clone())); }
+                                                                },
+                                                                "卸载"
                                                             }
                                                         }
                                                     }
@@ -1362,26 +1455,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 format!("{} ({})", s.name, s.id)
                                             }).collect(),
                                             on_select: move |selection: String| {
-                                                // 从 "name (id)" 格式中提取 id
+                                                // 从 "name (id)" 格式中提取 name 与 id，弹出二次确认后再安装
                                                 if let Some(id_start) = selection.rfind('(') {
                                                     let skill_id = selection[id_start+1..selection.len()-1].to_string();
-                                                    let aid = agent_id_signal();
-                                                    spawn(async move {
-                                                        match install_skill_to_agent(InstallSkillToAgentRequest {
-                                                            agent_id: aid.clone(),
-                                                            skill_id: skill_id.clone(),
-                                                        }).await {
-                                                            Ok(_) => {
-                                                                toast.success("技能已安装");
-                                                                // 重新拉取 Agent 全景（skills_overview 三分组），使新装技能立即可见
-                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
-                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                                }
-                                                            }
-                                                            Err(e) => toast.error(format!("安装失败: {}", e)),
-                                                        }
-                                                    });
+                                                    let skill_name = selection[..id_start].trim().to_string();
+                                                    show_install_skill_dialog.set(Some((skill_id, skill_name)));
                                                 }
                                             },
                                             on_search: Some(EventHandler::new(move |keyword: String| {
@@ -1406,84 +1484,69 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                     }
 
-                                    // ===== Agent 已安装技能全景（三分组：神经/技能包/独立）=====
-                                    // 与 get_agent skills_overview 同源，不再依赖 list_agent_skills 平面展示
-                                    if all_skill_count > 0 {
-                                        // -- ① 神经技能 --
-                                        if !skills_overview.neural_skills.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🧠 神经技能" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{skills_overview.neural_skills.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for skill in skills_overview.neural_skills.iter() {
-                                                        SkillCard {
-                                                            key: "ns-{skill.id}",
-                                                            skill: skill.clone(),
-                                                            tone: "primary",
-                                                            neural_badge: true,
-                                                            on_uninstall: on_uninstall_skill,
-                                                        }
+                                    // ===== Agent 已安装技能全景：按 tag 维度聚合 + 包筛选 =====
+                                    // 包（技能包 tag）作为上方筛选器；下方聚合列表按包分组展示，
+                                    // 可被包筛选 + 名称搜索过滤。卡片沿用现有 SkillCard 样式与 neural 徽章。
+                                    // 过滤器：名称搜索 + 已选包筛选条件（点击上方技能包 chip 即追加）
+                                    div { class: "flex flex-wrap items-center gap-2 mb-4",
+                                        input {
+                                            class: "input input-bordered input-sm flex-1 min-w-[180px]",
+                                            placeholder: "搜索技能名称...",
+                                            value: skill_name_filter,
+                                            oninput: move |e| skill_name_filter.set(e.value().clone()),
+                                        }
+                                        if !skill_filter_tags.read().is_empty() {
+                                            for ft in skill_filter_tags.read().iter() {
+                                                span {
+                                                    class: "badge orz-tag badge-primary gap-1",
+                                                    "🔍 {ft}"
+                                                    button {
+                                                        class: "badge-remove",
+                                                        onclick: {
+                                                            let t = ft.clone();
+                                                            let mut tf = skill_filter_tags;
+                                                            move |_| { tf.write().retain(|x| x != &t); }
+                                                        },
+                                                        "×"
                                                     }
                                                 }
                                             }
-                                        }
-
-                                        // -- ② 技能包分组 --
-                                        for pack in skills_overview.pack_groups.iter() {
-                                            if !pack.skills.is_empty() {
-                                                div { class: "mb-4",
-                                                    key: "skg-{pack.tag}",
-                                                    div { class: "flex items-center gap-2 mb-2",
-                                                        h4 { class: "font-semibold text-base", "📦 技能包：{pack.tag}" }
-                                                        span { class: "badge orz-tag badge-xs",
-                                                            "{pack.skills.len()}"
-                                                        }
-                                                    }
-                                                    div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                        for skill in pack.skills.iter() {
-                                                            SkillCard {
-                                                                key: "skp-{pack.tag}-{skill.id}",
-                                                                skill: skill.clone(),
-                                                                tone: "accent",
-                                                                neural_badge: false,
-                                                                on_uninstall: on_uninstall_skill,
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                            button {
+                                                class: "btn hud-btn btn-ghost btn-xs",
+                                                onclick: move |_| skill_filter_tags.set(Vec::new()),
+                                                "清除筛选"
                                             }
                                         }
-
-                                        // -- ③ 独立技能 --
-                                        if !skills_overview.standalone_skills.is_empty() {
-                                            div { class: "mb-4",
-                                                div { class: "flex items-center gap-2 mb-2",
-                                                    h4 { class: "font-semibold text-base", "🆓 独立技能" }
-                                                    span { class: "badge orz-tag badge-xs",
-                                                        "{skills_overview.standalone_skills.len()}"
-                                                    }
-                                                }
-                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
-                                                    for skill in skills_overview.standalone_skills.iter() {
-                                                        SkillCard {
-                                                            key: "st-{skill.id}",
-                                                            skill: skill.clone(),
-                                                            tone: "neutral",
-                                                            neural_badge: false,
-                                                            on_uninstall: on_uninstall_skill,
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else {
+                                    }
+                                    if all_skill_count == 0 {
                                         div { class: "text-center py-12",
                                             div { class: "text-5xl mb-4 opacity-30", "🧩" }
                                             div { class: "text-base-content/70", "暂无已安装技能" }
+                                        }
+                                    } else if skill_filtered.is_empty() {
+                                        div { class: "text-center py-12",
+                                            div { class: "text-5xl mb-4 opacity-30", "🔍" }
+                                            div { class: "text-base-content/70", "没有匹配当前筛选条件的技能" }
+                                        }
+                                    } else {
+                                        for (label, neural_badge, tone, skills) in skill_filtered.iter() {
+                                            div { class: "mb-4",
+                                                div { class: "flex items-center gap-2 mb-2",
+                                                    h4 { class: "font-semibold text-base", "{label}" }
+                                                    span { class: "badge orz-tag badge-xs", "{skills.len()}" }
+                                                }
+                                                div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
+                                                    for skill in skills.iter() {
+                                                        SkillCard {
+                                                            key: "flt-{skill.id}",
+                                                            skill: skill.clone(),
+                                                            tone: *tone,
+                                                            neural_badge: *neural_badge,
+                                                            on_uninstall: on_uninstall_skill,
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1938,7 +2001,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         Ok(_) => {
                                                             toast.success(format!("技能包 [{}] 已卸载（保留副本）", t));
                                                             match list_installed_skill_packs(&aid).await {
-                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                Ok(resp) => {
+                                                                    skill_packs.set(resp.skill_packs);
+                                                                    skill_filter_tags.write().retain(|x| x != &t);
+                                                                }
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                         }
@@ -1963,7 +2029,10 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         Ok(_) => {
                                                             toast.success(format!("技能包 [{}] 已卸载（含副本删除）", t));
                                                             match list_installed_skill_packs(&aid).await {
-                                                                Ok(resp) => skill_packs.set(resp.skill_packs),
+                                                                Ok(resp) => {
+                                                                    skill_packs.set(resp.skill_packs);
+                                                                    skill_filter_tags.write().retain(|x| x != &t);
+                                                                }
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                         }
@@ -1990,6 +2059,150 @@ pub fn HrAgentDetail(id: String) -> Element {
                             }
                             }
                             }
+                        }
+                        // ===== 安装 / 卸载二次确认对话框（复用 ConfirmDialog）=====
+                        ConfirmDialog {
+                            show: show_tool_pack_uninstall_dialog.read().is_some(),
+                            title: "卸载工具包".to_string(),
+                            message: show_tool_pack_uninstall_dialog.read().as_ref().map(|x| format!("确认卸载工具包 [{}]？该包下所有工具将从 Agent 移除。", x)).unwrap_or_default(),
+                            confirm_text: Some("卸载".to_string()),
+                            confirm_class: Some("btn hud-btn btn-error".to_string()),
+                            on_confirm: move |_| {
+                                let t = show_tool_pack_uninstall_dialog();
+                                show_tool_pack_uninstall_dialog.set(None);
+                                if let Some(tag) = t {
+                                    let aid = agent_id_signal();
+                                    let mut ft = tool_filter_tags;
+                                    spawn(async move {
+                                        match uninstall_tool_pack(UninstallToolPackRequest { agent_id: aid.clone(), tag: tag.clone() }).await {
+                                            Ok(_) => {
+                                                toast.success(format!("工具包 [{}] 已卸载", tag));
+                                                ft.write().retain(|x| x != &tag);
+                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                }
+                                                match list_installed_tool_packs(&aid).await {
+                                                    Ok(resp) => tool_packs.set(resp.installed_tags),
+                                                    Err(e) => toast.error(format!("刷新工具包列表失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("卸载工具包失败: {}", e)),
+                                        }
+                                    });
+                                }
+                            },
+                            on_cancel: move |_| show_tool_pack_uninstall_dialog.set(None),
+                        }
+                        ConfirmDialog {
+                            show: show_bind_tool_dialog.read().is_some(),
+                            title: "绑定工具".to_string(),
+                            message: show_bind_tool_dialog.read().as_ref().map(|(_id, name)| format!("确认将工具 [{}] 绑定到该 Agent？", name)).unwrap_or_default(),
+                            confirm_text: Some("绑定".to_string()),
+                            confirm_class: Some("btn hud-btn btn-primary".to_string()),
+                            on_confirm: move |_| {
+                                let info = show_bind_tool_dialog();
+                                show_bind_tool_dialog.set(None);
+                                if let Some((tid, _tname)) = info {
+                                    let aid = agent_id_signal();
+                                    spawn(async move {
+                                        match bind_tool_to_agent(BindToolToAgentRequest { agent_id: aid.clone(), tool_id: tid.clone() }).await {
+                                            Ok(_) => {
+                                                toast.success("工具已绑定");
+                                                tool_search_results.set(Vec::new());
+                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("绑定失败: {}", e)),
+                                        }
+                                    });
+                                }
+                            },
+                            on_cancel: move |_| show_bind_tool_dialog.set(None),
+                        }
+                        ConfirmDialog {
+                            show: show_install_skill_dialog.read().is_some(),
+                            title: "安装技能".to_string(),
+                            message: show_install_skill_dialog.read().as_ref().map(|(_id, name)| format!("确认将技能 [{}] 安装到该 Agent？", name)).unwrap_or_default(),
+                            confirm_text: Some("安装".to_string()),
+                            confirm_class: Some("btn hud-btn btn-primary".to_string()),
+                            on_confirm: move |_| {
+                                let info = show_install_skill_dialog();
+                                show_install_skill_dialog.set(None);
+                                if let Some((sid, _sname)) = info {
+                                    let aid = agent_id_signal();
+                                    spawn(async move {
+                                        match install_skill_to_agent(InstallSkillToAgentRequest { agent_id: aid.clone(), skill_id: sid.clone() }).await {
+                                            Ok(_) => {
+                                                toast.success("技能已安装");
+                                                skill_search_results.set(Vec::new());
+                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("安装失败: {}", e)),
+                                        }
+                                    });
+                                }
+                            },
+                            on_cancel: move |_| show_install_skill_dialog.set(None),
+                        }
+                        ConfirmDialog {
+                            show: show_tool_unbind_dialog.read().is_some(),
+                            title: "解绑工具".to_string(),
+                            message: show_tool_unbind_dialog.read().as_ref().map(|(_id, name)| format!("确认解绑工具 [{}]？", name)).unwrap_or_default(),
+                            confirm_text: Some("解绑".to_string()),
+                            confirm_class: Some("btn hud-btn btn-error".to_string()),
+                            on_confirm: move |_| {
+                                let info = show_tool_unbind_dialog();
+                                show_tool_unbind_dialog.set(None);
+                                if let Some((tid, _tname)) = info {
+                                    let aid = agent_id_signal();
+                                    spawn(async move {
+                                        match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: aid.clone(), tool_id: tid.clone() }).await {
+                                            Ok(_) => {
+                                                toast.success("工具已解绑");
+                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("解绑失败: {}", e)),
+                                        }
+                                    });
+                                }
+                            },
+                            on_cancel: move |_| show_tool_unbind_dialog.set(None),
+                        }
+                        ConfirmDialog {
+                            show: show_skill_uninstall_dialog.read().is_some(),
+                            title: "卸载技能".to_string(),
+                            message: show_skill_uninstall_dialog.read().as_ref().map(|(_id, name)| format!("确认卸载技能 [{}]？", name)).unwrap_or_default(),
+                            confirm_text: Some("卸载".to_string()),
+                            confirm_class: Some("btn hud-btn btn-error".to_string()),
+                            on_confirm: move |_| {
+                                let info = show_skill_uninstall_dialog();
+                                show_skill_uninstall_dialog.set(None);
+                                if let Some((sid, _sname)) = info {
+                                    let aid = agent_id_signal();
+                                    spawn(async move {
+                                        match uninstall_skill_from_agent(UninstallSkillFromAgentRequest { agent_id: aid.clone(), skill_id: sid.clone() }).await {
+                                            Ok(_) => {
+                                                toast.success("技能已卸载");
+                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                    Ok(a) => agent_res.set(Some(Ok(a))),
+                                                    Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                }
+                                            }
+                                            Err(e) => toast.error(format!("卸载失败: {}", e)),
+                                        }
+                                    });
+                                }
+                            },
+                            on_cancel: move |_| show_skill_uninstall_dialog.set(None),
                         }
                     }
                 }
