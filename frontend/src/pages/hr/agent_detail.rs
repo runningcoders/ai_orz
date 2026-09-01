@@ -1197,65 +1197,73 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 // === 工具：工具关系总览（上部）+ 工具包 + 工具绑定 ===
                                 // 工具关系图作为总览置于上部，直观展示 Agent 与全量可用工具（神经/绑定/工具包）的关系
                                 {
-                                    let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
-                                    for t in tools_overview.neural_tools.iter() {
-                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
-                                        all_tool_nodes.push(RelationNodeInfo {
-                                            id: t.id.clone(),
-                                            name: t.name.clone(),
-                                            kind: Some("neural_tool".to_string()),
-                                            edge_tag: et,
-                                            edge_description: ed,
-                                        });
-                                    }
-                                    for t in tools_overview.bound_tools.iter() {
-                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
-                                        all_tool_nodes.push(RelationNodeInfo {
-                                            id: t.id.clone(),
-                                            name: t.name.clone(),
-                                            kind: Some("bound_tool".to_string()),
-                                            edge_tag: et,
-                                            edge_description: ed,
-                                        });
-                                    }
-                                    for pack in tools_overview.pack_groups.iter() {
-                                        for t in pack.tools.iter() {
-                                            let (et, ed) = tool_edge_meta(&t.runtime_ready);
-                                            all_tool_nodes.push(RelationNodeInfo {
-                                                id: t.id.clone(),
-                                                name: t.name.clone(),
-                                                kind: Some("pack_tool".to_string()),
-                                                edge_tag: et,
-                                                edge_description: ed,
-                                            });
+                                // 关系图按工具「真实 tag」分类着色：
+                                // - 包内工具用其所属包的 tag（如 neural / tool_management / search ...）
+                                // - 直接绑定工具用其自身首个真实 tag（无 tag 时回退 bound_tool）
+                                // 用 seen 集合保证每个工具只出现一次，避免跨组重复导致数量翻倍。
+                                let mut all_tool_nodes: Vec<RelationNodeInfo> = Vec::new();
+                                let mut seen_tool_ids: std::collections::HashSet<String> =
+                                    std::collections::HashSet::new();
+
+                                for pack in tools_overview.pack_groups.iter() {
+                                    for t in pack.tools.iter() {
+                                        if seen_tool_ids.contains(&t.id) {
+                                            continue;
                                         }
+                                        seen_tool_ids.insert(t.id.clone());
+                                        let (et, ed) = tool_edge_meta(&t.runtime_ready);
+                                        all_tool_nodes.push(RelationNodeInfo {
+                                            id: t.id.clone(),
+                                            name: t.name.clone(),
+                                            kind: Some(pack.tag.clone()),
+                                            edge_tag: et,
+                                            edge_description: ed,
+                                        });
                                     }
-                                    let navigator = use_navigator();
-                                    rsx! {
-                                        div { class: "mb-6",
-                                            h3 { class: "text-lg font-semibold mb-3", "工具关系总览" }
-                                            RelationGraph {
-                                                center_id: a.id.clone(),
-                                                center_name: a.name.clone(),
-                                                center_color: "#fa520f".to_string(),
-                                                center_kind: Some("agent".to_string()),
-                                                related: all_tool_nodes,
-                                                related_color: "#f59e0b".to_string(),
-                                                related_label: "工具".to_string(),
-                                                color_by_kind: true,
-                                                on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
-                                                    if evt.is_center {
-                                                        return;
-                                                    }
-                                                    let kind_family = evt.kind.clone().unwrap_or_default();
-                                                    if kind_family.ends_with("tool") || kind_family == "tool" {
-                                                        navigator.push(format!("/finance/tools/{}", evt.id));
-                                                    }
-                                                })),
-                                            }
+                                }
+                                for t in tools_overview.bound_tools.iter() {
+                                    if seen_tool_ids.contains(&t.id) {
+                                        continue;
+                                    }
+                                    seen_tool_ids.insert(t.id.clone());
+                                    let kind = t
+                                        .tags
+                                        .first()
+                                        .cloned()
+                                        .unwrap_or_else(|| "bound_tool".to_string());
+                                    let (et, ed) = tool_edge_meta(&t.runtime_ready);
+                                    all_tool_nodes.push(RelationNodeInfo {
+                                        id: t.id.clone(),
+                                        name: t.name.clone(),
+                                        kind: Some(kind),
+                                        edge_tag: et,
+                                        edge_description: ed,
+                                    });
+                                }
+                                let navigator = use_navigator();
+                                rsx! {
+                                    div { class: "mb-6",
+                                        h3 { class: "text-lg font-semibold mb-3", "工具关系总览（按 tag 分类）" }
+                                        RelationGraph {
+                                            center_id: a.id.clone(),
+                                            center_name: a.name.clone(),
+                                            center_color: "#fa520f".to_string(),
+                                            center_kind: Some("agent".to_string()),
+                                            related: all_tool_nodes,
+                                            related_color: "#f59e0b".to_string(),
+                                            related_label: "工具".to_string(),
+                                            color_by_kind: true,
+                                            on_node_click: Some(EventHandler::new(move |evt: crate::components::relation_graph::NodeClickEvent| {
+                                                if evt.is_center {
+                                                    return;
+                                                }
+                                                // 关系图中关联节点均为工具，按 id 跳转工具详情
+                                                navigator.push(format!("/finance/tools/{}", evt.id));
+                                            })),
                                         }
                                     }
                                 }
+                            }
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "工具包" }
                                     div { class: "flex gap-2 items-center mb-4",

@@ -45,7 +45,7 @@ pub struct CanvasEdge {
     pub description: Option<String>,
 }
 
-/// 节点类型 → 中文标签（通用映射，未知 kind 回退为原始字符串）
+/// 节点类型 → 中文标签（通用映射，未知 kind 按真实 tag 回退为友好标签）
 pub fn node_kind_label(kind: &Option<String>) -> String {
     match kind.as_deref() {
         Some("agent") => "Agent",
@@ -55,13 +55,32 @@ pub fn node_kind_label(kind: &Option<String>) -> String {
         Some("skill") | Some("neural_skill") => "技能",
         Some("project") => "项目",
         Some("task") => "任务",
-        Some(k) => k,
+        Some(tag) => tag_label(tag),
         None => "未知",
     }
     .to_string()
 }
 
-/// 节点类型 → 渲染色（按 kind 分类着色，未知回退 slate）
+/// 真实 tag → 友好中文标签（其余 tag 原样返回）
+fn tag_label(tag: &str) -> &str {
+    match tag {
+        "neural" => "神经",
+        "tool_management" => "工具管理",
+        "skill_management" => "技能管理",
+        "project_management" => "项目管理",
+        "memory" => "记忆认知",
+        "messaging" => "消息",
+        "collaboration" => "协作",
+        "search" => "检索",
+        "dev" => "开发",
+        "internal" => "内置",
+        "git_workflow" => "Git 工作流",
+        "code_workflow" => "代码工作流",
+        other => other,
+    }
+}
+
+/// 节点类型 → 渲染色（按 kind 分类着色，未知 tag 经哈希落入调色板，保证稳定且区分）
 pub fn node_color_for_kind(kind: &Option<String>) -> String {
     match kind.as_deref() {
         Some("agent") => "#fa520f".to_string(),
@@ -71,8 +90,23 @@ pub fn node_color_for_kind(kind: &Option<String>) -> String {
         Some("skill") | Some("neural_skill") => "#ec4899".to_string(),
         Some("project") => "#3b82f6".to_string(),
         Some("task") => "#8b5cf6".to_string(),
-        _ => "#64748b".to_string(),
+        Some(other) => tag_color(other),
+        None => "#64748b".to_string(),
     }
+}
+
+/// 将任意 tag 字符串稳定地映射到调色板中的颜色（FNV-1a 哈希）
+fn tag_color(tag: &str) -> String {
+    const PALETTE: &[&str] = &[
+        "#0ea5e9", "#14b8a6", "#f97316", "#eab308", "#84cc16", "#06b6d4", "#a855f7", "#ef4444",
+        "#22c55e", "#3b82f6", "#ec4899", "#f43f5e", "#8b5cf6", "#10b981", "#f59e0b",
+    ];
+    let mut h: u64 = 1469598103934665603;
+    for b in tag.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    PALETTE[(h as usize) % PALETTE.len()].to_string()
 }
 
 /// 精确测量文本在 canvas 中的渲染宽度（依赖 web-sys `TextMetrics` 特性）。

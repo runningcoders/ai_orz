@@ -202,7 +202,10 @@ impl AgentManage for HrDomainImpl {
                 continue;
             }
             match self.install_skill_pack(ctx.clone(), agent_id, tag).await {
-                Ok(_) => resp.installed_skill_packs.push(tag.to_string()),
+                Ok(n) if n > 0 => resp.installed_skill_packs.push(tag.to_string()),
+                Ok(_) => {
+                    // 没有实际安装任何技能（如该 tag 暂无已发布技能）：不记为已安装包
+                }
                 Err(e) => {
                     log_warn!(
                         ctx.clone(),
@@ -535,6 +538,37 @@ impl AgentManage for HrDomainImpl {
         agent.po.install_tag(tag);
         self.agent_dal.update(ctx.clone(), &agent).await?;
 
+        // 真正把包内工具写入关系表 agent_tools（ON CONFLICT 去重），
+        // 使工具成为 Agent 的显式关联，便于做防重复 & 下游统一聚合展示。
+        let pack_tools = self
+            .tool_dal
+            .query(
+                ctx.clone(),
+                crate::service::dao::tool::ToolQuery {
+                    tags: Some(vec![tag.to_string()]),
+                    enabled_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        for t in pack_tools.items {
+            let tid = t.po.id.clone();
+            if let Err(e) = self
+                .tool_dal
+                .add_tool_to_agent(ctx.clone(), agent_id, &tid, None)
+                .await
+            {
+                log_warn!(
+                    ctx.clone(),
+                    "install_tool_pack",
+                    "写入关系表失败（忽略）: tag={}, tool_id={}, err={}",
+                    tag,
+                    tid,
+                    e
+                );
+            }
+        }
+
         log_info!(
             ctx,
             "install_tool_pack",
@@ -582,6 +616,33 @@ impl AgentManage for HrDomainImpl {
 
         agent.po.uninstall_tag(tag);
         self.agent_dal.update(ctx.clone(), &agent).await?;
+
+        // 从关系表移除该包内的工具：仅当工具不再命中任何其它仍安装的包 tag 时才移除，
+        // 避免误删被多个包共享/显式绑定的工具。
+        let remaining_tags: Vec<String> = agent.po.get_runtime_config().installed_tags.clone();
+        let pack_tools = self
+            .tool_dal
+            .query(
+                ctx.clone(),
+                crate::service::dao::tool::ToolQuery {
+                    tags: Some(vec![tag.to_string()]),
+                    enabled_only: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        for t in pack_tools.items {
+            let ttags = t.po.get_tags();
+            let still_needed = ttags
+                .iter()
+                .any(|x| x != tag && remaining_tags.iter().any(|r| r == x));
+            if !still_needed {
+                let _ = self
+                    .tool_dal
+                    .remove_tool_from_agent(ctx.clone(), agent_id, &t.po.id)
+                    .await;
+            }
+        }
 
         log_info!(
             ctx,
@@ -646,13 +707,16 @@ impl AgentManage for HrDomainImpl {
             .await?;
 
         if skills.is_empty() {
+            // 没有任何可安装的已发布技能：直接返回错误，绝不记录 tag ——
+            // 避免产生「空技能包」（刷新后残留空包但无任何实际技能）。
             log_warn!(
                 ctx,
                 "install_skill_pack",
-                "agent_id={}, tag={} 没有已发布技能",
+                "agent_id={}, tag={} 没有可安装的已发布技能",
                 agent_id,
                 tag
             );
+            bail_err!(InvalidRequest, "技能包 [{}] 没有可安装的已发布技能", tag);
         }
 
         let mut success_count = 0usize;
@@ -677,6 +741,17 @@ impl AgentManage for HrDomainImpl {
                     );
                 }
             }
+        }
+
+        // 没有任何技能真正安装成功（全部失败）：不创建空包，直接返回错误，
+        // 避免刷新后残留「空技能包」。此时 tag 不写入 runtime_config。
+        if success_count == 0 {
+            bail_err!(
+                InvalidRequest,
+                "技能包 [{}] 安装失败（失败数={}），未创建空技能包",
+                tag,
+                fail_count
+            );
         }
 
         // 记录 tag 到 Agent 的 installed_skill_packs
@@ -872,12 +947,9 @@ impl AgentManage for HrDomainImpl {
         const INTERNAL_TAG: &str = "internal";
 
         let runtime_cfg = agent.po.get_runtime_config();
-        let installed_tool_tags: Vec<String> = runtime_cfg
-            .installed_tags
-            .iter()
-            .filter(|t| t.as_str() != NEURAL_TAG)
-            .cloned()
-            .collect();
+        // 注意：工具包 tag 不再过滤 neural —— neural 也作为普通 tag 参与包分组，
+        // 点击即可筛选；其工具统一走 pack_groups 中的 "neural" 分组。
+        let installed_tool_tags: Vec<String> = runtime_cfg.installed_tags.to_vec();
         let installed_skill_packs: Vec<String> = runtime_cfg
             .installed_skill_packs
             .iter()
@@ -892,49 +964,15 @@ impl AgentManage for HrDomainImpl {
 
         // ======================== 工具分组 ========================
         let tool_groups: Option<AgentToolGroups> = if with_tools {
-            // 1. 神经工具：tags 含 neural 且 不含 internal 的全部启用工具
-            let neural_candidates = self
-                .tool_dal
-                .query(
-                    ctx.clone(),
-                    crate::service::dao::tool::ToolQuery {
-                        tags: Some(vec![NEURAL_TAG.to_string()]),
-                        enabled_only: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-            let neural_tools_map: std::collections::BTreeMap<String, Tool> = neural_candidates
-                .items
-                .into_iter()
-                .filter(|t| {
-                    let tags = t.po.get_tags();
-                    tags.iter().any(|x| x == NEURAL_TAG) && !tags.iter().any(|x| x == INTERNAL_TAG)
-                })
-                .map(|t| (t.po.id.clone(), t))
-                .collect();
+            // 所有已安装工具包 tag（含 neural）统一参与聚合：neural 也作为普通 tag 走包分组，
+            // 点击即可筛选；不再单列 neural_tools 桶，避免与包分组重复导致数量翻倍。
+            let installed = installed_tool_tags.clone();
 
-            // 2. 直接绑定工具：agent_tools 关联的启用工具（去重已在神经组）
-            let bound_candidates = self
-                .tool_dal
-                .list_tools_for_agent_full(ctx.clone(), &agent.po.id)
-                .await?;
-            let mut bound_tools_map: std::collections::BTreeMap<String, Tool> =
-                std::collections::BTreeMap::new();
-            for t in bound_candidates {
-                if neural_tools_map.contains_key(&t.po.id) {
-                    continue;
-                }
-                let tags = t.po.get_tags();
-                if tags.iter().any(|x| x == INTERNAL_TAG) {
-                    continue;
-                }
-                bound_tools_map.insert(t.po.id.clone(), t);
-            }
-
-            // 3. 工具包分组：按每个 tag 展开（跳过 neural，且不重复前两组）
+            // 1. 工具包分组：按每个已安装 tag 展开；用 seen 集合保证每个工具只进首个匹配组
+            //    （去重，避免跨包/神经重叠导致关系图与列表数量翻倍）
             let mut pack_groups: Vec<AgentToolPackIds> = Vec::new();
-            for tag in &installed_tool_tags {
+            let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            for tag in &installed {
                 let candidates = self
                     .tool_dal
                     .query(
@@ -949,7 +987,7 @@ impl AgentManage for HrDomainImpl {
                 let mut pack_tools: Vec<Tool> = Vec::new();
                 for t in candidates.items {
                     let tid = t.po.id.clone();
-                    if neural_tools_map.contains_key(&tid) || bound_tools_map.contains_key(&tid) {
+                    if seen.contains(&tid) {
                         continue;
                     }
                     let tags = t.po.get_tags();
@@ -959,6 +997,7 @@ impl AgentManage for HrDomainImpl {
                     if !tags.iter().any(|x| x == tag) {
                         continue;
                     }
+                    seen.insert(tid.clone());
                     pack_tools.push(t);
                 }
                 pack_tools.sort_by(|a, b| a.po.id.cmp(&b.po.id));
@@ -968,9 +1007,34 @@ impl AgentManage for HrDomainImpl {
                 });
             }
 
+            // 2. 直接绑定工具 = agent_tools 中、未命中任何已安装包 tag、且非 internal 的工具
+            //    （包内工具已写入 agent_tools，靠 seen 排除；与包分组互不相交）
+            let bound_candidates = self
+                .tool_dal
+                .list_tools_for_agent_full(ctx.clone(), &agent.po.id)
+                .await?;
+            let mut bound_tools_map: std::collections::BTreeMap<String, Tool> =
+                std::collections::BTreeMap::new();
+            for t in bound_candidates {
+                let tid = t.po.id.clone();
+                if seen.contains(&tid) {
+                    continue;
+                }
+                let tags = t.po.get_tags();
+                if tags.iter().any(|x| x == INTERNAL_TAG) {
+                    continue;
+                }
+                if tags.iter().any(|x| installed.iter().any(|y| x == y)) {
+                    continue;
+                }
+                seen.insert(tid.clone());
+                bound_tools_map.insert(tid, t);
+            }
+
             // 汇总（已按 id 排序，保证输出稳定）
             let bound_ids: Vec<String> = bound_tools_map.keys().cloned().collect();
-            let neural_ids: Vec<String> = neural_tools_map.keys().cloned().collect();
+            // neural 不再单列分组，统一走 pack_groups 中的 "neural" tag
+            let neural_ids: Vec<String> = Vec::new();
 
             Some(AgentToolGroups {
                 neural_ids,

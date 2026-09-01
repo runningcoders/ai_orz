@@ -1139,9 +1139,10 @@ async fn test_install_skill_pack_allows_neural_tag(pool: SqlitePool) {
     );
 }
 
-/// 验证 tools_overview 三分组互不相交且与 runtime 装配同源（neural → bound → pack）
+/// 验证 tools_overview 分组互不相交（neural 作为普通包 tag 与 search 并列；
+/// 每个工具只进首个匹配包组，internal 被过滤，避免出现空包 / 重复计数）
 #[sqlx::test]
-async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool) {
+async fn test_tools_overview_pack_groups_disjoint_and_priority(pool: SqlitePool) {
     let temp_dir = TempDir::new().unwrap();
     unsafe {
         std::env::set_var("AI_ORZ_BASE_PATH", temp_dir.path().to_str().unwrap());
@@ -1173,11 +1174,11 @@ async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool
         .unwrap();
 
     // 2. 创建工具：
-    //    T1 = neural （应进 neural_tools）
-    //    T2 = search + neural 交叉（tags=[search,neural]，应归 neural 高优先级，不再进 pack）
+    //    T1 = neural （应进 neural 工具包）
+    //    T2 = search + neural 交叉（tags=[search,neural]，归入首个匹配的包组；neural 先装则归 neural）
     //    T3 = search 单独 （应进 search 工具包）
-    //    T4 = dev + search 交叉（通过 agent_tools 显式绑定；因在 neural 中不存在，应进 bound_tools）
-    //    T5 = internal （应被整体过滤）
+    //    T4 = dev + search 交叉（绑定到 agent；带 search tag，应进 search 工具包）
+    //    T5 = internal （应被整体过滤，不进入任何分组）
     let t1 = create_enabled_tool("NeuralTool1", vec!["neural"]);
     let t2 = create_enabled_tool("SearchNeuralTool", vec!["search", "neural"]);
     let t3 = create_enabled_tool("SearchPackOnly", vec!["search"]);
@@ -1198,7 +1199,12 @@ async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool
         .await
         .unwrap();
 
-    // 4. 安装 search 工具包
+    // 4. 安装工具包：先装 neural（保证 T2 归入 neural 组），再装 search
+    hr_domain
+        .agent_manage()
+        .install_tool_pack(ctx.clone(), agent.id(), "neural")
+        .await
+        .unwrap();
     hr_domain
         .agent_manage()
         .install_tool_pack(ctx.clone(), agent.id(), "search")
@@ -1219,52 +1225,67 @@ async fn test_tools_overview_three_groups_disjoint_and_priority(pool: SqlitePool
         .unwrap();
     let groups = tool_groups.expect("with_tools=true 时应返回工具分组");
 
-    // -- 断言 1：内部工具不出现 --
-    let all_ids = {
-        let mut set = std::collections::BTreeSet::new();
-        set.extend(groups.neural_ids.iter().cloned());
-        set.extend(groups.bound_ids.iter().cloned());
-        for g in &groups.pack_groups {
-            set.extend(g.tool_ids.iter().cloned());
-        }
-        set
-    };
+    // -- 断言 1：内部工具不出现在任何分组 --
+    let all_pack_ids: std::collections::BTreeSet<String> = groups
+        .pack_groups
+        .iter()
+        .flat_map(|g| g.tool_ids.iter().cloned())
+        .collect();
     assert!(
-        !all_ids.contains(&t5.po.id),
-        "internal 工具不应出现在分组中"
+        !all_pack_ids.contains(&t5.po.id),
+        "internal 工具不应出现在包分组中"
+    );
+    assert!(
+        !groups.bound_ids.contains(&t5.po.id),
+        "internal 工具不应出现在 bound 分组中"
     );
 
-    // -- 断言 2：neural 组包含 T1、T2（search+neural 因 neural 优先级更高）--
-    let neural_ids: std::collections::BTreeSet<_> = groups.neural_ids.iter().cloned().collect();
+    // -- 断言 2：neural 工具包组包含 T1、T2（T2 因 neural 先装而优先归入 neural）--
+    let neural_group = groups
+        .pack_groups
+        .iter()
+        .find(|g| g.tag == "neural")
+        .expect("neural 分组应作为普通包组存在");
+    let neural_ids: std::collections::BTreeSet<_> = neural_group.tool_ids.iter().cloned().collect();
     assert!(neural_ids.contains(&t1.po.id));
     assert!(neural_ids.contains(&t2.po.id));
 
-    // -- 断言 3：bound 组包含 T4 --
-    let bound_ids: std::collections::BTreeSet<_> = groups.bound_ids.iter().cloned().collect();
-    assert!(bound_ids.contains(&t4.po.id));
-    // 不重复
-    for bid in &bound_ids {
-        assert!(!neural_ids.contains(bid), "bound 与 neural 互不相交");
-    }
-
-    // -- 断言 4：search 工具包组只含 T3（T2 因已在 neural 被剔除，T4 在 bound 被剔除）--
-    assert_eq!(
-        groups.pack_groups.len(),
-        1,
-        "search 包正好一个分组（neural 虽已被默认安装为工具包，但包分组展开时跳过 neural 标签）"
-    );
-    let search_pack = groups
+    // -- 断言 3：search 工具包组包含 T3、T4（T2 已归 neural 不再重复，T4 带 search tag 进包）--
+    let search_group = groups
         .pack_groups
         .iter()
         .find(|g| g.tag == "search")
         .expect("search 分组应存在");
-    let pack_ids: std::collections::BTreeSet<_> = search_pack.tool_ids.iter().cloned().collect();
-    assert_eq!(pack_ids.len(), 1);
-    assert!(pack_ids.contains(&t3.po.id));
-    // T2 不应出现在 search 包中（neural 优先）
-    assert!(!pack_ids.contains(&t2.po.id));
-    // T4 不应出现在 search 包中（bound 优先）
-    assert!(!pack_ids.contains(&t4.po.id));
+    let search_ids: std::collections::BTreeSet<_> = search_group.tool_ids.iter().cloned().collect();
+    assert!(search_ids.contains(&t3.po.id));
+    assert!(search_ids.contains(&t4.po.id));
+    // T2 不应出现在 search 包中（已归 neural）
+    assert!(!search_ids.contains(&t2.po.id));
+    // internal 工具 T5 不应出现在 search 包中
+    assert!(!search_ids.contains(&t5.po.id));
+
+    // -- 断言 4：工具分组互不相交，无重复（每个工具至多出现在一个包组内，避免数量翻倍）--
+    let mut seen_any: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in &groups.pack_groups {
+        for id in &g.tool_ids {
+            assert!(
+                seen_any.insert(id.clone()),
+                "工具 {id} 不应在多个包组重复出现（导致关系图/列表数量翻倍）"
+            );
+        }
+    }
+    // 应有两个包组：neural 与 search
+    assert_eq!(groups.pack_groups.len(), 2, "neural 与 search 各一个包组");
+    // neural 不再单列分组，工具侧 neural_ids 应为空
+    assert!(
+        groups.neural_ids.is_empty(),
+        "工具侧 neural_ids 已并入 pack_groups，应为空"
+    );
+    // T4 带 search tag 已进 search 包组，故 bound 为空
+    assert!(
+        groups.bound_ids.is_empty(),
+        "T4 归属 search 包组，bound 应为空"
+    );
 }
 
 /// 验证 skills_overview 三分组互不相交（neural → pack → standalone 优先级）
