@@ -1259,7 +1259,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     // 搜索框（动态搜索模式：on_search 回调调用 query_tools）
                                     div { class: "mb-4",
                                         SearchableSelect {
-                                            placeholder: "搜索工具名称...".to_string(),
+                                            placeholder: "搜索并绑定工具...".to_string(),
                                             selected: None,
                                             options: tool_search_results.read().iter().map(|t| {
                                                 format!("{} ({})", t.name, t.id)
@@ -1302,7 +1302,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap items-center gap-2 mb-4",
                                         input {
                                             class: "input input-bordered input-sm flex-1 min-w-[180px]",
-                                            placeholder: "搜索工具名称...",
+                                            placeholder: "筛选已安装工具...",
                                             value: tool_name_filter,
                                             oninput: move |e| tool_name_filter.set(e.value().clone()),
                                         }
@@ -1449,7 +1449,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     // 搜索框（动态搜索模式：on_search 回调调用 query_skills）
                                     div { class: "mb-4",
                                         SearchableSelect {
-                                            placeholder: "搜索技能名称...".to_string(),
+                                            placeholder: "搜索并安装技能...".to_string(),
                                             selected: None,
                                             options: skill_search_results.read().iter().map(|s| {
                                                 format!("{} ({})", s.name, s.id)
@@ -1491,7 +1491,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                     div { class: "flex flex-wrap items-center gap-2 mb-4",
                                         input {
                                             class: "input input-bordered input-sm flex-1 min-w-[180px]",
-                                            placeholder: "搜索技能名称...",
+                                            placeholder: "筛选已安装技能...",
                                             value: skill_name_filter,
                                             oninput: move |e| skill_name_filter.set(e.value().clone()),
                                         }
