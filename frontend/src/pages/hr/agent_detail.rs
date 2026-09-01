@@ -178,6 +178,47 @@ fn ToolCard(
     }
 }
 
+/// 包卡片（工具包 / 技能包共用）：与具体工具 / 技能卡片（ToolCard / SkillCard）同构的 HUD 风格。
+/// 整卡可点击 → 切换下方列表的包（tag）筛选条件（再次点击取消）；选中态以
+/// `ring-2 ring-primary` + primary 色调高亮。「卸载」按钮触发二次确认弹窗
+/// （stop_propagation 避免误触整卡筛选）。
+#[component]
+fn PackCard(
+    pack_tag: String,
+    subtitle: String,
+    selected: bool,
+    on_toggle: EventHandler<String>,
+    on_uninstall: EventHandler<String>,
+) -> Element {
+    let toggle_tag = pack_tag.clone();
+    let uninst_tag = pack_tag.clone();
+    rsx! {
+        div {
+            class: if selected { "cursor-pointer rounded-lg ring-2 ring-primary" } else { "cursor-pointer" },
+            onclick: move |_| on_toggle.call(toggle_tag.clone()),
+            HudCard { tone: Some(if selected { "primary" } else { "neutral" }),
+                div { class: "flex justify-between items-start",
+                    span { class: "font-medium", "📦 {pack_tag}" }
+                    span { class: "badge hud-badge badge-success", "已安装" }
+                }
+                if !subtitle.is_empty() {
+                    p { class: "text-sm text-base-content/70 mt-2", "{subtitle}" }
+                }
+                div { class: "card-actions justify-end mt-3",
+                    button {
+                        class: "btn hud-btn btn-error btn-sm",
+                        onclick: move |e: Event<MouseData>| {
+                            e.stop_propagation();
+                            on_uninstall.call(uninst_tag.clone());
+                        },
+                        "卸载"
+                    }
+                }
+            }
+        }
+    }
+}
+
 // 生命周期状态（已入职/面试中…）属「状态」语义，走 hud-badge 彩色玻璃徽章；
 // 角色 / 类型等属性标签才走 orz-tag（见 utils/status.rs 与 components）。
 fn binding_status_badge_class() -> &'static str {
@@ -634,6 +675,17 @@ pub fn HrAgentDetail(id: String) -> Element {
                     .map(|g| g.skills.len())
                     .sum::<usize>()
                 + skills_overview.standalone_skills.len();
+            // 已安装包 → 含项数映射（用于包卡片副标题）。包 tag 与 get_agent 全景一致。
+            let tool_pack_counts: std::collections::HashMap<String, usize> = tools_overview
+                .pack_groups
+                .iter()
+                .map(|g| (g.tag.clone(), g.tools.len()))
+                .collect();
+            let skill_pack_counts: std::collections::HashMap<String, usize> = skills_overview
+                .pack_groups
+                .iter()
+                .map(|g| (g.tag.clone(), g.skills.len()))
+                .collect();
             // Tab 按钮动态 class：避免在 rsx! 格式串中嵌套引号转义
             let tab0_class = if active_tab() == 0 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
             let tab1_class = if active_tab() == 1 { "btn hud-btn btn-sm btn-primary" } else { "btn hud-btn btn-sm btn-ghost" };
@@ -1234,46 +1286,39 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                    // 包即筛选器：点击 chip 切换下方列表的 tag 过滤；「卸载」按钮触发二次确认弹窗
+                                    // 包即筛选器：点击卡片切换下方列表的 tag 过滤（再次点击取消）；「卸载」按钮触发二次确认弹窗
                                     if tool_packs_list.is_empty() {
                                         p { class: "text-sm text-base-content/50", "暂无工具包，安装后会出现在这里并可点击筛选" }
                                     } else {
-                                        div { class: "flex flex-wrap gap-2",
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                             for tag in tool_packs_list.iter() {
                                                 {
                                                     let tag_clone = tag.clone();
                                                     let tf = tool_filter_tags;
+                                                    let dlg = show_tool_pack_uninstall_dialog;
                                                     let active = tool_filter_tags.read().contains(&tag_clone);
+                                                    let count = tool_pack_counts.get(&tag_clone).copied().unwrap_or(0);
+                                                    let subtitle = format!("包含 {} 个工具 · 点击筛选", count);
                                                     rsx! {
-                                                        span {
-                                                            class: format!("badge orz-tag gap-1 {}", if active { "badge-primary" } else { "" }),
-                                                            span {
-                                                                class: "cursor-pointer select-none",
-                                                                title: "点击筛选该工具包",
-                                                                onclick: {
-                                                                    let tc = tag_clone.clone();
-                                                                    let mut tfc = tf;
-                                                                    move |_| {
-                                                                        let mut v = tfc.write();
-                                                                        if let Some(pos) = v.iter().position(|x| x == &tc) {
-                                                                            v.remove(pos);
-                                                                        } else {
-                                                                            v.push(tc.clone());
-                                                                        }
+                                                        PackCard {
+                                                            pack_tag: tag_clone.clone(),
+                                                            subtitle: subtitle.clone(),
+                                                            selected: active,
+                                                            on_toggle: {
+                                                                let mut tfc = tf;
+                                                                move |t: String| {
+                                                                    let mut v = tfc.write();
+                                                                    if let Some(pos) = v.iter().position(|x| x == &t) {
+                                                                        v.remove(pos);
+                                                                    } else {
+                                                                        v.push(t);
                                                                     }
-                                                                },
-                                                                "{tag_clone}"
-                                                            }
-                                                            button {
-                                                                class: "text-error/80 hover:text-error text-xs cursor-pointer select-none",
-                                                                title: "卸载工具包",
-                                                                onclick: {
-                                                                    let tc = tag_clone.clone();
-                                                                    let mut dlg = show_tool_pack_uninstall_dialog;
-                                                                    move |_| { dlg.set(Some(tc.clone())); }
-                                                                },
-                                                                "卸载"
-                                                            }
+                                                                }
+                                                            },
+                                                            on_uninstall: {
+                                                                let mut dlg = dlg;
+                                                                move |t: String| { dlg.set(Some(t)); }
+                                                            },
                                                         }
                                                     }
                                                 }
@@ -1433,47 +1478,39 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             }
                                         }
                                     }
-                                    // 包即筛选器：点击 chip 切换下方列表的 tag 过滤；「卸载」按钮触发二次确认弹窗
+                                    // 包即筛选器：点击卡片切换下方列表的 tag 过滤（再次点击取消）；「卸载」按钮触发二次确认弹窗
                                     if skill_packs_list.is_empty() {
                                         p { class: "text-sm text-base-content/50", "暂无技能包，安装后会出现在这里并可点击筛选" }
                                     } else {
-                                        div { class: "flex flex-wrap gap-2",
+                                        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4",
                                             for tag in skill_packs_list.iter() {
                                                 {
                                                     let tag_clone = tag.clone();
                                                     let tf = skill_filter_tags;
                                                     let active = skill_filter_tags.read().contains(&tag_clone);
                                                     let dlg = show_skill_pack_uninstall_dialog;
+                                                    let count = skill_pack_counts.get(&tag_clone).copied().unwrap_or(0);
+                                                    let subtitle = format!("包含 {} 个技能 · 点击筛选", count);
                                                     rsx! {
-                                                        span {
-                                                            class: format!("badge orz-tag gap-1 {}", if active { "badge-primary" } else { "" }),
-                                                            span {
-                                                                class: "cursor-pointer select-none",
-                                                                title: "点击筛选该技能包",
-                                                                onclick: {
-                                                                    let tc = tag_clone.clone();
-                                                                    let mut tfc = tf;
-                                                                    move |_| {
-                                                                        let mut v = tfc.write();
-                                                                        if let Some(pos) = v.iter().position(|x| x == &tc) {
-                                                                            v.remove(pos);
-                                                                        } else {
-                                                                            v.push(tc.clone());
-                                                                        }
+                                                        PackCard {
+                                                            pack_tag: tag_clone.clone(),
+                                                            subtitle: subtitle.clone(),
+                                                            selected: active,
+                                                            on_toggle: {
+                                                                let mut tfc = tf;
+                                                                move |t: String| {
+                                                                    let mut v = tfc.write();
+                                                                    if let Some(pos) = v.iter().position(|x| x == &t) {
+                                                                        v.remove(pos);
+                                                                    } else {
+                                                                        v.push(t);
                                                                     }
-                                                                },
-                                                                "{tag_clone}"
-                                                            }
-                                                            button {
-                                                                class: "text-error/80 hover:text-error text-xs cursor-pointer select-none",
-                                                                title: "卸载技能包",
-                                                                onclick: {
-                                                                    let tc = tag_clone.clone();
-                                                                    let mut dlg = dlg;
-                                                                    move |_| { dlg.set(Some(tc.clone())); }
-                                                                },
-                                                                "卸载"
-                                                            }
+                                                                }
+                                                            },
+                                                            on_uninstall: {
+                                                                let mut dlg = dlg;
+                                                                move |t: String| { dlg.set(Some(t)); }
+                                                            },
                                                         }
                                                     }
                                                 }
