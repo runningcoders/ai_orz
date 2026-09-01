@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 use crate::enrich_ctx;
 
-/// Update an existing model provider configuration (name, credentials, model name, etc.)
+/// Update an existing model provider configuration (name, credentials, model name)
 #[register_handler_tool(
     id = "update_model_provider",
     name = "Update Provider Config",
-    description = "Update an existing model provider configuration (name, credentials, model name, etc.)",
+    description = "Update an existing model provider configuration (name, credentials, model name)",
     params = "common::api::UpdateModelProviderRequest"
 )]
 #[generate_http_handler]

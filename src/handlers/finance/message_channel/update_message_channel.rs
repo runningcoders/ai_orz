@@ -12,11 +12,11 @@ use super::create_message_channel::validate_lark_credential_ref;
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 
-/// Update an existing message channel configuration (name, credentials, settings, etc.)
+/// Update an existing message channel configuration (name, credentials, settings)
 #[register_handler_tool(
     id = "update_message_channel",
     name = "Update Channel Config",
-    description = "Update an existing message channel configuration (name, credentials, settings, etc.)",
+    description = "Update an existing message channel configuration (name, credentials, settings)",
     params = "common::api::UpdateMessageChannelRequest"
 )]
 #[generate_http_handler]

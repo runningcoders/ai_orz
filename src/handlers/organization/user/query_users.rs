@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_users",
     name = "Query Users (Advanced)",
-    description = "Query users with full filtering support (organization_id, pagination, etc.)",
+    description = "Query users with full filtering support (organization_id, pagination)",
     params = "common::api::UserQueryRequest",
     neural
 )]

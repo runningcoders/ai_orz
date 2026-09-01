@@ -16,7 +16,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_agents",
     name = "Query Agents (Advanced)",
-    description = "Query agents with full filtering support (ids, keyword, status, roles, etc.)",
+    description = "Query agents with full filtering support (ids, keyword, status, roles)",
     params = "common::api::AgentQueryRequest",
     tags = "collaboration"
 )]

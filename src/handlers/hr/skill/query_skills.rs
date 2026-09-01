@@ -17,7 +17,7 @@ use super::response::to_list_item;
 #[register_handler_tool(
     id = "query_skills",
     name = "Query Skills (Advanced)",
-    description = "Query skills with full filtering support (ids, keyword, status, category, tags, etc.)",
+    description = "Query skills with full filtering support (ids, keyword, status, category, tags)",
     params = "common::api::SkillQueryRequest",
     tags = "skill_management"
 )]

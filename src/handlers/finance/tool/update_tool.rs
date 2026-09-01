@@ -10,11 +10,11 @@ use crate::service::domain::finance::domain;
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 
-/// Update an existing custom tool's configuration (name, description, credentials, etc.)
+/// Update an existing custom tool's configuration (name, description, credentials)
 #[register_handler_tool(
     id = "update_tool",
     name = "Update Tool",
-    description = "Update an existing custom tool's configuration (name, description, credentials, etc.)",
+    description = "Update an existing custom tool's configuration (name, description, credentials)",
     params = "common::api::UpdateToolRequest",
     tags = "tool_management"
 )]

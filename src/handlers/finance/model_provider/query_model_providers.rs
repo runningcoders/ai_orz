@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_model_providers",
     name = "Query Providers (Advanced)",
-    description = "Query model providers with full filtering support (provider_type, capability, status, etc.)",
+    description = "Query model providers with full filtering support (provider_type, capability, status)",
     params = "common::api::ModelProviderQueryRequest",
     neural
 )]
