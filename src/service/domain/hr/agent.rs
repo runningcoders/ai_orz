@@ -454,14 +454,34 @@ impl AgentManage for HrDomainImpl {
         // 更新状态
         agent.po.status = target_status;
 
-        // 入职时自动安装 project_management 工具包
-        // Agent 入职后天生具备项目管理能力，无需逐个绑定工具
+        // 入职时自动安装 project_management 技能包。
+        // 注意：project_management 是「技能包」（种子数据通过 install_skill_pack 安装），
+        // 必须写入 runtime_config.installed_skill_packs 并真正安装技能副本，
+        // 不能用 install_tag（只写 installed_tags/工具包字段），否则「技能包」区为空、
+        // 且 Agent 实际并未获得项目管理技能（installed_tags 仅用于工具包 tag 匹配）。
+        // 先持久化状态流转，再安装技能包（install_skill_pack 内部会重新读取并 update，
+        // 避免覆盖刚写入的状态）。安装失败不阻塞入职（库里尚无对应已发布技能时忽略）。
         if target_status == AgentStatus::Onboarded {
-            agent.po.install_tag("project_management");
+            // 兼容旧数据：project_management 不应出现在工具包 tag 中
+            agent.po.uninstall_tag("project_management");
         }
 
-        // 持久化
-        self.agent_dal.update(ctx, agent).await
+        // 持久化状态流转（+ 可能的 tag 清理）
+        self.agent_dal.update(ctx.clone(), agent).await?;
+
+        if target_status == AgentStatus::Onboarded
+            && let Err(e) = self
+                .install_skill_pack(ctx.clone(), &agent.po.id, "project_management")
+                .await
+        {
+            log_warn!(
+                ctx.clone(),
+                "onboard_agent",
+                "入职安装 project_management 技能包失败（忽略）: {e}"
+            );
+        }
+
+        Ok(())
     }
 
     /// 校验入职就绪状态

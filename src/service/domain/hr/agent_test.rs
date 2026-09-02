@@ -202,7 +202,15 @@ async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool
 
 #[sqlx::test]
 async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
-    let (domain, ctx) = init_test_env(pool.clone());
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    // 准备 project_management 已发布技能（库里无对应资源时入职安装会被跳过）
+    let pm_skill = create_published_skill_with_tag("ProjectManagement", "project_management");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&pm_skill))
+        .await
+        .unwrap();
 
     let mut agent = create_test_agent("OnboardAgent");
     domain
@@ -223,15 +231,9 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // Verify installed_tags contains "project_management"
-    assert!(
-        agent
-            .po
-            .get_installed_tags()
-            .contains(&"project_management".to_string())
-    );
-
-    // Verify persisted
+    // 入职后从 DB 读回校验：
+    // 1) installed_skill_packs 含 project_management（技能包已真正安装 + 技能副本已建）
+    // 2) installed_tags 不应含 project_management（它是技能包，不进工具包字段）
     let found = domain
         .agent_manage()
         .get_agent(ctx, agent.id(), Default::default())
@@ -242,8 +244,16 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
     assert!(
         found
             .po
+            .get_installed_skill_packs()
+            .contains(&"project_management".to_string()),
+        "入职后 installed_skill_packs 应含 project_management 技能包"
+    );
+    assert!(
+        !found
+            .po
             .get_installed_tags()
-            .contains(&"project_management".to_string())
+            .contains(&"project_management".to_string()),
+        "入职后 installed_tags 不应含 project_management（技能包不进工具包字段）"
     );
 }
 

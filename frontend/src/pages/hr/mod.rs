@@ -1,6 +1,7 @@
 pub mod agent_detail;
 pub mod agent_memory_panel;
 pub mod agents;
+pub mod create_agent_modal;
 pub mod knowledge_graph;
 pub mod memory_search;
 pub mod skill_detail;
