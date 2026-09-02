@@ -109,9 +109,9 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                 "**Default working directory**: when omitted, commands run in the calling agent's workspace ",
                 "(users/{user_id}/agents/{agent_id}/work), with HOME set to the user's isolated home directory ",
                 "(so git/gh and other CLIs reuse your own configuration). ",
-                "Paths outside your workspace are blocked — ask the user before running commands there. ",
-                "Sensitive environment ",
-                "variables are automatically filtered out."
+                "Working directories outside the allowed scope are never executed — the tool returns require_confirmation; for another user's or agent's workspace stop and ask the user for explicit confirmation first. ",
+                "Each call requires user approval (manual control mode). ",
+                "Sensitive environment variables are automatically filtered out."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Manual,

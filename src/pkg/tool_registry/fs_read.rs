@@ -60,8 +60,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
                 "Read content from a file in the current project/workspace. ",
                 "Supports full file read, range read by line numbers, and grep-style pattern matching. ",
                 "Returns content with line numbers for easy editing. ",
-                "Reads are scoped to the current project and your own workspace. ",
-                "Paths inside another user's tree are blocked — stop and ask the user if they need cross-access."
+                "Reads are allowed across the shared base data directory and configured additional paths. ",
+                "Paths inside another user's tree return a require_confirmation result instead of content — stop and ask the user for explicit confirmation first."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,

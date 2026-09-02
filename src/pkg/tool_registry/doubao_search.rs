@@ -215,7 +215,7 @@ impl BuiltinToolFactory for DoubaoSearchToolFactory {
                 "and a content snippet. In web_summary mode, also returns an LLM-generated overall ",
                 "summary. Strong for Chinese-language queries, domestic Chinese sites (Zhihu, WeChat, ",
                 "Baidu), and time-sensitive results. Supports time-range filtering and authoritative-site ",
-                "filtering. Read-only and safe to call automatically."
+                "filtering. For English-language queries prefer tavily_search. Read-only and safe to call automatically."
             )
             .to_string(),
             protocol: ToolProtocol::Builtin,

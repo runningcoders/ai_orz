@@ -57,8 +57,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsWriteToolFactory {
                 "Supports multiple atomic modes: overwrite entire file, append to end, insert after a line, ",
                 "delete a range of lines, or replace a range of lines. ",
                 "All changes are atomic — either complete or not written. ",
-                "Writes are scoped to your own workspace and the current project. ",
-                "Cross-user or cross-agent paths are blocked — ask the user before proceeding."
+                "Writes are allowed within your own agent workspace, the current user's home tree, and configured additional paths. ",
+                "Other users' trees or other agents' workspaces return a require_confirmation result instead of writing — stop and ask the user for explicit confirmation first."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,
