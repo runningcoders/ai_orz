@@ -24,6 +24,9 @@ source_files:
 - src/service/domain/runtime/tool_execution.rs#L36-L101
 - src/models/tool.rs#L17-L96
 - src/service/domain/hr/agent.rs#L100-L140
+- src/handlers/hr/agent/update_agent.rs
+- src/service/domain/runtime/awakening.rs#L277-L320
+- src/models/agent.rs (AgentPo::enrich)
 - docs/archive/design-archive/tool_design.md
 - docs/archive/design-archive/mcp_tool_design.md
 - docs/archive/design-archive/builtins_http_tool_design.md
@@ -57,6 +60,7 @@ source_files:
 - **三层调用架构严格单向**（2026-08-21 D26 入口统一后现状）：think_loop → domain `RuntimeToolExecution::call_tool`（Auto）/ `dispatch_manual_tool`（Manual）单点编排 → DAL `call_tool(ToolExecutionRequest { tool, args, resolved })` → ToolCallDao（`assemble_core_tool` per-call 重组装 + `CoreTool::check` 凭据注入 + `execute` 统一原语）→ 分 Builtin impl.rs / MCP mcp.rs / HTTP（HTTP 工具按存储配置发起请求）。跨层禁止：think_loop 禁直连 tool_dal / mcp_tool_dal（绕行整条漏凭据注入）；Handler 管理面（CRUD/绑定）走 Finance `ToolProviderManage`，internal tag 绑定拒绝在 bind_tool_to_agent 校验。
 - **凭据编排并入调用链**（2026-08-21，D22/D26）：domain `call_tool` 先读 `ToolRegistry::credential_requirements(&po)` → `resolve_tool_credentials` 取数加工 → 未命中返回 `credential_missing_json` 结构化引导（不构造实例不进 DAL）；命中经 `ToolExecutionRequest.resolved` 传 DAL，由 `check` 注入单次实例（禁止缓存复用）。Agent 工具加载（绑定 + neural 免绑定 - internal 剔除）现位于 hr/agent.rs 与 runtime/tool_execution.rs。凭据需求声明/生产路由/增强器全貌见平行卡「共享工具凭据增强器」。
 - **tag 加载过滤三层免绑定规则**（2026-07-12 增强，工具设计文档 §工具包机制；2026-08-21 加载位置更新）：① `tag = "neural"` 的工具在 Agent 唤醒加载（hr/agent.rs，SQL 层 tag_filter）时不用 agent.tool_bindings 就自动加入「神经工具集」（核心思考工具如记忆写入沉淀，避免入职漏绑）；② `tag = "internal"` 的工具加载时从 Agent 可绑定列表过滤掉 + ToolProviderManage.bind_tool_to_agent 绑定拒绝，Manual 调用经 domain `call_manual_tool_for_agent` 授权（绑定/neural/已装包三来源校验，control_mode 必须为 Manual）（用于后台任务/备份恢复等用户直操作工具，不给 Agent 直接用）；③ 普通工具按 tool_packs.tag 分组（"tool_memory", "tool_file", "tool_project"），Agent 入职 install_skill_pack 后再 bind 对应 tag。
+- **RequestContext 调用者身份注入链**（2026-09 显式梳理）：Agent 工具调用时，`ctx.agent_id` **始终有值**——注入点在 awakening.rs / sleep_and_settle 入口的 `let ctx = enrich_ctx!(&ctx, agent)` → `AgentPo::enrich` → `builder.agent_id(self.id.clone())`。整个 think_loop → call_tool → handler 调用链上 ctx 只 clone、不重建。Handler 检测 Agent 上下文的标准模式：`ctx.agent_id().is_some()` 判断调用者身份，Agent 上下文 → 只允许自改 + 身份路由字段静默忽略；人类上下文（无 agent_id）→ 全部字段可改。2026-09 首例：`update_agent` 加 `neural`，handler 层实现此守卫。完整守卫细节见平行卡「Handler 宏元数据契约」§2.3。
 - **4 个通用内置工具参数规范**（generic_builtin_tools_design.md）：① `shell_exec(command, cwd)` — 命令黑名单 rm -rf /、sudo、；② `fs_read(path)` — 必须在 data_dir 下，禁止 `..` 穿越；③ `fs_write(path, content)` — 同路径安全校验，先校验再分块写；④ `http_fetch(url, method, headers, body)` — 默认禁止访问 `169.254.169.254`（元数据服务）+ `localhost:*` 本地端口，method 只许 GET/POST。HTTP 工具创建接口（create_http_tool.rs）的白名单在 DAO 层再双校验一次，防止前端绕过。
 
 ---
@@ -89,13 +93,16 @@ source_files:
 
 本卡与 [共享工具凭据增强器卡](docs/wiki/knowledge/zh/共享工具凭据增强器：类型级需求声明 + domain 编排注入 + check 单次实例/共享工具凭据增强器：类型级需求声明 + domain 编排注入 + check 单次实例.md) 构成 **工具调用路由 / 凭据注入编排** 互补视角（本卡管三层路由与执行原语、兄弟卡管凭据需求声明与注入链路）；同时与 [Agent 关联全景与工具技能分组装配卡](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md) 构成 **运行时实际注入 / Agent 视角全景展示** 互补视角（本卡管三层调用架构与执行原语、兄弟卡管 Agent 详情页三分组按需装配）；按 AGENTS §2.1.3 Level 3 保留平行卡。
 
-**完整 7 步调用链**（Agent 唤醒后想调 install_skill_pack 神经工具，2026-08-21 D26 入口统一后现状）：
+**完整 9 步调用链**（Agent 唤醒后想调 install_skill_pack 神经工具，2026-09 版，含 ctx enrich + handler 边界守卫）：
 
 ```
+0. 唤醒入口（awakening.rs / sleep_and_settle）：
+   let ctx = enrich_ctx!(&ctx, agent)     ← ★ agent_id 注入点
+   现在 ctx.agent_id = Some("agent-xxx")
 1. Agent 思考 → 产出 ToolCall(tool_name="install_skill_pack", args={"tag":"memory"})
 2. 唤醒期工具加载（hr/agent.rs）：agent.tool_bindings（DAO 查绑定表）
    + neural tag 免绑定追加（SQL 层 tag_filter）- internal 剔除
-3. think_loop 按 tool.po.control_mode 分发（D26 入口统一）：
+3. think_loop 按 tool.po.control_mode 分发：
    Auto → RuntimeToolExecution::call_tool / Manual → dispatch_manual_tool
 4. domain call_tool 凭据编排先行 → 协议路由：
    ├─ ToolRegistry::credential_requirements(&po) → resolve_tool_credentials
@@ -103,9 +110,17 @@ source_files:
    ├─ Mcp → mcp_tool_dal.call_tool(request)（per-operation 连接 + env_clear 白名单注入）
    └─ Builtin/Http → tool_dal.call_tool(request) → assemble_core_tool(po)
       → check(resolved) 注入单次实例 → ToolCallDao.execute(ctx, &tool, args)
-5. 同步 Result<String, ToolCallError> 结果，记录 trace_id（entry.call_id 为真实 call_id）
-6. → AOP 发布 tool.executed 事件
-7. → ToolExecLogConsumer（写 messages.tool_result 表）+ ToolExecStatsConsumer（DuckDB ToolCall 统计表）
+   ★ ctx 全程 clone 传递，agent_id 一路带下去
+5. handler(ctx, params) 执行：
+   ├─ 对于 neural 管理类工具（update_agent 等）：
+   │   ctx.agent_id().is_some() → Agent 上下文守卫
+   │   params.id == ctx.agent_id → 自改才允许
+   │   身份路由字段（name/roles/model_provider_id/runtime_config）→ 静默忽略
+   │   仅语义字段（description/capabilities/soul）生效
+   └─ 其他工具：正常执行
+6. 同步 Result<String, ToolCallError> 结果，记录 trace_id
+7. → AOP 发布 tool.executed 事件
+8. → ToolExecLogConsumer + ToolExecStatsConsumer
 ```
 
 **协议选择铁律**（业务落工具时必须读）：
@@ -118,7 +133,7 @@ source_files:
 
 ---
 
-## §4 硬约束与回归红线（7 条）
+## §4 硬约束与回归红线（8 条）
 
 1. **入口统一 D26：think_loop 禁直连 tool_dal / mcp_tool_dal**：所有 Agent 工具调用必须经 domain `RuntimeToolExecution::call_tool` / `dispatch_manual_tool` 单点编排——绕行直连 DAL 会整条漏凭据注入；`ToolExecutionRequest { tool, args, resolved }` 是 domain → DAL 唯一传参形态。Handler 管理面（CRUD/绑定）走 Finance `ToolProviderManage`（分层 AGENTS.md §3.1 红线）；单元测试用 mock 测 domain 编排不调真实 DAO。
 2. **shell_exec 命令黑名单永不删**：`rm -rf /`、`sudo`、`su`、`ssh root@`、`chmod 777 /etc` 共 5 条硬匹配 + 子串匹配（黑名单列表在 impl.rs 顶部 const BLACKLIST）；新增命令须在 BLACKLIST 单元测试里补一条「匹配成功→返回错误」的测试。
@@ -127,3 +142,4 @@ source_files:
 5. **internal tag 工具不出现在 Agent 可用列表**：Agent 唤醒加载输出集合（hr/agent.rs tag 过滤后）中若包含 tag 为 "internal" 的工具 ID = fail；ToolProviderManage.bind_tool_to_agent 对 internal tag 绑定请求必须拒绝；前端"工具绑定"页面也同样过滤（双端一致）。
 6. **register_handler_tool 宏生成的 CallableTool 参数名必须与 Handler fn 参数 1:1**：参数名错会导致 Agent 传的 args JSON 无法被 Handler 接收（400）；修改 Handler 参数列表后要运行对应集成测试的「工具 JSON Schema 生成」断言，否则 schema 与 fn 签名漂移。
 7. **凭据实例单次性（D22）**：DAL per-call 经 `assemble_core_tool` 重组装新实例 + `check(resolved)` 注入——check 注入的实例禁止缓存复用（跨调用复用会串号）；带 requirements 的 stdio MCP server 禁止全局共享连接（per-operation 连接）。凭据需求声明 / 生产路由 / 敏感名拒绝等八条红线归平行卡「共享工具凭据增强器」§4 管辖，本卡只锁调用链侧不变式。
+8. **neural 管理类工具必须有调用时身份边界守卫**：任何暴露给 Agent 自调用的管理类工具（如 update_agent / update_memory / update_skill），handler 层必须检测 `ctx.agent_id()`：① Agent 上下文必须校验 `params.id == ctx.agent_id`（跨身份直接报 BadRequest）；② Agent 上下文下身份路由字段（name / roles / model_provider_id / runtime_config 等）**静默忽略**，仅允许语义字段（description / soul / capabilities / 内容类属性）生效；③ 人类用户上下文（无 agent_id）保持原有全部字段权限。守卫位置必须在 Handler 层（domain 层保持纯业务编排、不感知调用者身份）。
