@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_model_providers",
     name = "List Model Providers",
-    description = "List all configured model providers. Returns basic information for each provider.",
+    description = "List all configured model providers with basic info (type, capability, model name, status), no pagination. Use query_model_providers to filter by type, capability, or status when you need a subset.",
     params = "common::api::ListModelProvidersRequest"
 )]
 #[generate_http_handler]

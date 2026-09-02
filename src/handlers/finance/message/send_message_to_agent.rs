@@ -22,7 +22,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "send_message_to_agent",
     name = "Send Message to Agent",
-    description = "Send a message to another AI agent for collaboration. The target agent will be awakened to process the message.",
+    description = "Send a text message to another AI agent, which will be awakened to process it; supports attachments and reply threading. If to_agent_id is omitted it resolves to the project's owner agent or the default receptionist agent. Returns message_id. For assigning tasks use send_task_assignment_message.",
     params = "common::api::SendMessageToAgentParams",
     tags = "collaboration"
 )]

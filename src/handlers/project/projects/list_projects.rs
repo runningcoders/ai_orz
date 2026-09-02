@@ -12,7 +12,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "list_projects",
     name = "List All Projects",
-    description = "List all projects for a user with optional status filtering",
+    description = "Browse all projects belonging to the current user with limit/offset pagination; takes no filters and excludes deleted projects. Use query_projects when filtering by status, owner agent, or IDs, or search_projects for free-text keyword lookup.",
     params = "common::api::ListProjectsRequest",
     tags = "project_management"
 )]

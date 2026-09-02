@@ -13,7 +13,7 @@ use common::error::{Result, err};
 #[register_handler_tool(
     id = "update_mcp_server_status",
     name = "Toggle MCP Server Status",
-    description = "Update an MCP Server status. Use DELETE for soft deletion",
+    description = "Toggle an MCP Server between Enabled and Disabled. It cannot mark a server Deleted here; soft deletion goes through delete_mcp_server. Returns the updated server detail; fails if not found.",
     params = "common::api::UpdateMcpServerStatusRequest"
 )]
 #[generate_http_handler]

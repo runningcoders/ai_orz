@@ -10,7 +10,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "get_skill_file_content",
     name = "Read Skill File Content",
-    description = "Read the text content of a specific file from a skill",
+    description = "Read the UTF-8 text content of a single file inside a skill, such as its main skill.md. Fails with NotFound if the skill or file does not exist — call list_skill_files first to discover valid filenames.",
     params = "common::api::GetSkillFileContentRequest",
     tags = "skill_management"
 )]

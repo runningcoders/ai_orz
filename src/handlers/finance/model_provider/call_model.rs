@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "call_model",
     name = "Call LLM Model",
-    description = "Call a configured model provider to generate text completion with a given prompt",
+    description = "Send a prompt to a configured model provider (id selects the provider, its model, and credentials) and return the generated completion synchronously in {result}. Fails if the provider does not exist or the upstream call errors; use test_model_provider_connection for a lightweight reachability check.",
     params = "common::api::CallModelRequest"
 )]
 #[generate_http_handler]

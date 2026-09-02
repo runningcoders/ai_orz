@@ -13,7 +13,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_agents",
     name = "List All Agents",
-    description = "List all AI agents with optional status filtering",
+    description = "Browse all agents with pagination (Deleted ones excluded); each item carries id, name, roles, status, and runtime state. Use this when you have no specific filter in mind. For exact-field filtering use query_agents; for free-text relevance ranking use search_agents.",
     params = "common::api::ListAgentsRequest",
     tags = "collaboration"
 )]

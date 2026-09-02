@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "get_artifact_content",
     name = "Read Artifact Content",
-    description = "Get the text content of an artifact with source_type = generated_content",
+    description = "Read the full UTF-8 text content of a generated-content artifact. Returns the artifact detail plus the content, encoding, byte size, and updated time. Fails for attachment-sourced artifacts, and with not found if the artifact does not exist.",
     params = "common::api::GetArtifactContentRequest"
 )]
 #[generate_http_handler]

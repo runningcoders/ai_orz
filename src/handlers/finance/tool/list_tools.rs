@@ -13,7 +13,7 @@ use super::response::{probe_runtime_ready, to_list_item};
 #[register_handler_tool(
     id = "list_tools",
     name = "List All Tools",
-    description = "List all tools with optional filtering by agent, keyword, and enabled status",
+    description = "Browse all tools with pagination, returning each tool's basic info and runtime-ready flag. Use for an overview with no specific criteria; use query_tools for structured filtering or search_tools for free-text semantic search.",
     params = "common::api::ListToolsRequest",
     neural,
     tags = "tool_management"

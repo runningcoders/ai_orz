@@ -10,7 +10,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "test_message_channel_connection",
     name = "Test Channel Connection",
-    description = "Test connectivity to a message channel by sending a test notification",
+    description = "Verify a channel's connectivity by sending a test notification through it. Never errors out: returns success=true on delivery, or success=false with an error message describing the failure.",
     params = "common::api::TestMessageChannelConnectionRequest"
 )]
 #[generate_http_handler]

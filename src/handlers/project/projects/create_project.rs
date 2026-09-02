@@ -14,7 +14,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "create_project",
     name = "Create Project",
-    description = "Create a new project",
+    description = "Create a new project with a required name plus optional description, priority (higher value = higher priority), tags, and owner agent ID. Returns the created project's full detail including its ID and status. Use it to open a new project container before creating tasks or artifacts under it.",
     params = "common::api::CreateProjectRequest",
     tags = "project_management"
 )]

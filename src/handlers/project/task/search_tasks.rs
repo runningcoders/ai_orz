@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "search_tasks",
     name = "Search Tasks",
-    description = "Search tasks by keyword with full filtering support (FTS5 + vector semantic search).",
+    description = "Search tasks by free-text keyword using hybrid FTS5 full-text and vector semantic matching ranked by relevance, optionally narrowed by ids, project_id, assignee, or status_in. Returns a paged list of task summaries. Prefer this over query_tasks when you have natural-language text rather than exact field values.",
     params = "common::api::SearchTasksRequest",
     tags = "project_management"
 )]

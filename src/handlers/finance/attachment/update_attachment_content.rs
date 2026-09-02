@@ -14,7 +14,7 @@ use common::error::{bail_err, err};
 #[register_handler_tool(
     id = "update_attachment_content",
     name = "Update Attachment Content",
-    description = "Fully replace the UTF-8 text content of an attachment by ID. Supports optimistic locking via expected_updated_at.",
+    description = "Fully replace an existing attachment's UTF-8 text content. Pass expected_updated_at from the previous read for optimistic locking — a mismatch returns Conflict and nothing is changed. Content must be plain text under 64 KB; returns the metadata plus the new content.",
     params = "common::api::UpdateAttachmentContentRequest",
     tags = "file_management"
 )]

@@ -13,7 +13,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "create_task",
     name = "Create Task",
-    description = "Create a new task with specified title, description, assignee, priority, and tags",
+    description = "Create a task with a required title and assignee_id, plus optional description, priority, tags, project_id, due date, and dependency task IDs; assignee_type defaults to Agent and root_user_id to the current user. Returns the full task detail. When assigned to an agent, a task-assignment notification is sent to that agent automatically.",
     params = "common::api::CreateTaskRequest",
     tags = "project_management"
 )]

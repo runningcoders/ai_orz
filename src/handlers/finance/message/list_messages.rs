@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "list_messages",
     name = "List Chat Messages",
-    description = "List messages with optional filtering by project, task, sender, receiver, with bidirectional pagination",
+    description = "List chat messages filtered by project_id, task_id, from_id, or to_id with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Returns messages with a total count. Use search_messages for keyword lookup.",
     params = "common::api::message::ListMessagesRequest",
     neural,
     tags = "messaging"

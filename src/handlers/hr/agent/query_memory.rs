@@ -13,7 +13,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "query_memory",
     name = "Query Agent Memory",
-    description = "Query memory entries by agent_id, memory_type, and other filter conditions",
+    description = "Query memory entries by structured filters: agent_id, memory_type (short_term/knowledge_node/trace/relation), status (active/settled/forgotten), tags, and task_id. Querying another agent's memory yields only its published knowledge nodes. For relevance-ranked free-text lookup use search_memory.",
     params = "common::api::QueryMemoryParams",
     neural
 )]

@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_installed_tool_packs",
     name = "List Agent's Tool Packs",
-    description = "List all tool pack tags installed on an agent. Returns the tags recorded in runtime_config.installed_tags.",
+    description = "List the tool pack tags currently installed on an agent (each tag auto-injects its tools at wake time). Use it to verify an agent's packs before install or uninstall operations.",
     params = "common::api::ListInstalledToolPacksRequest",
     tags = "tool_management"
 )]

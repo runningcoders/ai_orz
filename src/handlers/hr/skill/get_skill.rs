@@ -12,7 +12,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "get_skill",
     name = "Get Skill Details",
-    description = "Get detailed information about a specific skill including metadata and file list",
+    description = "Get one skill's full detail by ID, including metadata (name, description, tags, category, status), the main skill.md content, and its file list. Fails with NotFound if the skill does not exist.",
     params = "common::api::GetSkillRequest",
     tags = "skill_management"
 )]

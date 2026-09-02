@@ -12,7 +12,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_current_user",
     name = "Update My Profile",
-    description = "Update information for the currently authenticated user, allows changing display name, email, and password",
+    description = "Partially update the caller's own profile: display name, email, password, and the preferences self-description; role, status, and organization cannot be changed here. Returns the updated profile. Note: the preferences field is silently ignored when called from an agent context.",
     params = "common::api::UpdateCurrentUserRequest"
 )]
 #[generate_http_handler]

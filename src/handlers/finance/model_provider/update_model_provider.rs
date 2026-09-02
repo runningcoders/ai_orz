@@ -16,7 +16,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_model_provider",
     name = "Update Provider Config",
-    description = "Update an existing model provider configuration (name, credentials, model name)",
+    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. Returns the updated provider, plus rebuild_task_id when an active embedding provider's config changed and a vector rebuild was scheduled. Fails if not found.",
     params = "common::api::UpdateModelProviderRequest"
 )]
 #[generate_http_handler]

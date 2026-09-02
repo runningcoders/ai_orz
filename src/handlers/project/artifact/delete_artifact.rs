@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "delete_artifact",
     name = "Delete Artifact",
-    description = "Delete an artifact from a project",
+    description = "Soft-delete a project artifact by ID: the record is marked deleted (excluded from later listings) while stored content is kept. Returns success: true. Fails with not found if the artifact does not exist.",
     params = "common::api::DeleteArtifactRequest"
 )]
 #[generate_http_handler]

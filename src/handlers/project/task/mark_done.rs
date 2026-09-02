@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "mark_done",
     name = "Mark Task Complete",
-    description = "Mark a task as completed by task_id. Performs state transition to Completed state; fails if the task is in a non-completable state. Use this when a task's work is finished.",
+    description = "Shortcut that marks a task as Completed, setting progress to 100 and the end timestamp without state-machine validation — unlike update_task_status it applies from any current state. Returns the task ID and the completed status. Note: the optional summary field is accepted but not persisted.",
     params = "common::api::MarkDoneParams",
     tags = "project_management"
 )]

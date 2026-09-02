@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "install_tool_pack",
     name = "Install Tool Pack on Agent",
-    description = "Install a tool pack (by tag) to an agent. Adds the tag to the agent's runtime_config.installed_tags, enabling wake-time injection of all tools carrying that tag. Idempotent.",
+    description = "Install a tool pack on an agent by tag: the tag is added to the agent's installed tags so every tool carrying that tag is auto-injected at wake time, with no per-tool binding needed. Idempotent. Returns the agent's full installed tag list.",
     params = "common::api::InstallToolPackRequest",
     tags = "tool_management"
 )]

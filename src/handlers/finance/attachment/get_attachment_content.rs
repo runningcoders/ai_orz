@@ -13,7 +13,7 @@ use common::error::{bail_err, err};
 #[register_handler_tool(
     id = "get_attachment_content",
     name = "Read Attachment Content",
-    description = "Read the UTF-8 text content of an attachment by ID. Returns attachment metadata and text content.",
+    description = "Read an attachment's UTF-8 text content together with its metadata. Only text files are supported (for example txt, md, json, yaml, csv, or source code) — binary attachments are rejected. Content is limited to 64 KB; use get_attachment for metadata only.",
     params = "common::api::GetAttachmentContentRequest",
     tags = "file_management"
 )]

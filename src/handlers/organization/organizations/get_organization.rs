@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_organization",
     name = "Get Organization Details",
-    description = "Get detailed information about a specific organization by its ID",
+    description = "Get an organization's info by explicit ID: name, description, base URL, status, timestamps, and org-level config. Returns the organization info. Use get_current_organization when you want the caller's own organization. Fails with not found if the ID does not exist.",
     params = "common::api::GetOrganizationRequest"
 )]
 #[generate_http_handler]

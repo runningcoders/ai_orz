@@ -18,7 +18,7 @@ use common::models::StatsInterval;
 #[register_handler_tool(
     id = "get_agent",
     name = "Get Agent Details",
-    description = "Get detailed information about an AI agent by ID",
+    description = "Get an agent's full details by id: profile, kind, external config, runtime config, and live runtime state (current message/task/project). Optionally include the installed tool list, skill list, and usage stats via the with_* flags (stats default to the last 7 days). Fails with NotFound if the id does not exist.",
     params = "common::api::GetAgentRequest",
     tags = "collaboration"
 )]

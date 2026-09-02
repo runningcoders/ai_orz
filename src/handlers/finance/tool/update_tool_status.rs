@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "update_tool_status",
     name = "Update Tool Status",
-    description = "Update the status of a tool (enable/disable it)",
+    description = "Enable or disable a tool by setting its status. Returns the updated tool detail; fails if the tool does not exist or the status transition is not allowed.",
     params = "common::api::UpdateToolStatusRequest",
     tags = "tool_management"
 )]

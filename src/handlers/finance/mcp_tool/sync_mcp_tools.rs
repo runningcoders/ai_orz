@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "sync_mcp_tools",
     name = "Sync MCP Server Tools",
-    description = "Sync remote MCP tools from one server into local Tool records",
+    description = "Pull the tool list from a remote MCP Server and upsert it into local Tool records: new tools are created, existing ones refreshed, and tools no longer offered are marked Stale. Returns the number of tools synced; fails if the server_id does not exist or the server is unreachable.",
     params = "common::api::SyncMcpToolsRequest"
 )]
 #[generate_http_handler]

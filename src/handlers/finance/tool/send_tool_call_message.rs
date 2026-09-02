@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "send_tool_call_message",
     name = "Send Tool Call Message",
-    description = "Dispatch a manual tool call asynchronously. Returns immediately with a request_id; the tool result arrives later via a ToolCallResult message in the next awaken round. Use this to invoke manual tools without blocking.",
+    description = "Dispatch a manual tool call asynchronously: returns immediately with {request_id, message_id, status: dispatched}, and the result arrives later as a ToolCallResult message in the next awaken round. Use for long-running tools; use request_tool_call when you need the result inline.",
     params = "common::api::SendToolCallMessageParams",
     tags = "tool_management,internal"
 )]

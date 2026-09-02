@@ -16,7 +16,7 @@ use super::response::to_list_item;
 #[register_handler_tool(
     id = "query_message_channels",
     name = "Query Channels",
-    description = "Query message channels with full filtering support (id, user_id, agent_id, channel_type, status)",
+    description = "Filter message channels by exact fields: id, user_id, agent_id, channel_type, status_in, or only_enabled, with custom ordering and pagination. Use list_message_channels for simple browsing.",
     params = "common::api::MessageChannelQueryRequest",
     neural
 )]

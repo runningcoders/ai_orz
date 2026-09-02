@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "create_agent",
     name = "Create AI Agent",
-    description = "Create a new AI agent with specified configuration",
+    description = "Create a local AI agent with name, roles, capabilities, soul, and model_provider_id (the model its brain will use for thinking). Returns the new agent's id, name, description, and created_at. New agents start in Interviewing status; transition them to Onboarded via update_agent_status before they can serve as dialogue entry points.",
     params = "common::api::CreateAgentRequest"
 )]
 #[generate_http_handler]

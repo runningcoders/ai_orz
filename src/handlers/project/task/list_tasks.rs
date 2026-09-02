@@ -12,7 +12,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_tasks",
     name = "List All Tasks",
-    description = "List tasks globally with pagination. Lightweight list scenario (GET + query params), excludes deleted tasks.",
+    description = "Browse all tasks globally with limit/offset pagination; takes no filters and excludes deleted tasks. Use list_project_tasks or list_agent_tasks to scope to one project or agent, query_tasks for structured filtering, and search_tasks for keyword lookup.",
     params = "common::api::ListTasksRequest",
     tags = "project_management"
 )]

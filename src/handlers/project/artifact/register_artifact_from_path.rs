@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "register_artifact_from_path",
     name = "Register Local File as Artifact",
-    description = "Register an existing file (in agent's directory) as an artifact. The file will be copied to artifact storage.",
+    description = "Register a file that already exists in the calling agent's data directory as a project artifact: source_path is relative to the agent's directory and the file is copied into artifact storage while the original stays in place. Returns the artifact detail. Requires an agent context; missing files or paths escaping the agent directory are rejected.",
     params = "common::api::RegisterArtifactFromPathParams",
     tags = "project_management"
 )]

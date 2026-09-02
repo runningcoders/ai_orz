@@ -13,7 +13,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "update_artifact",
     name = "Update Artifact",
-    description = "Update artifact content and/or metadata (name, description, tags). Only provided fields are updated. Supports optimistic locking.",
+    description = "Partially update an artifact: replace its text content (generated-content artifacts only, max 1 MB) or edit name, description, and tags; only provided fields change. Pass expected_updated_at to fail instead of overwriting concurrent modifications. Returns the updated artifact detail.",
     params = "common::api::UpdateArtifactRequest",
     tags = "project_management"
 )]

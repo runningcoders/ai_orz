@@ -13,7 +13,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "get_mcp_server",
     name = "Get MCP Server Details",
-    description = "Get a management-safe MCP Server detail by ID",
+    description = "Get one MCP Server's management-safe detail by id, including transport, config, and status with credentials redacted. Fails with not found if the server does not exist. Use list_mcp_servers first if you need to find the id.",
     params = "common::api::GetMcpServerRequest"
 )]
 #[generate_http_handler]

@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "delete_model_provider",
     name = "Remove Provider",
-    description = "Delete an existing model provider configuration",
+    description = "Remove a model provider configuration so it can no longer serve model or embedding calls. Returns success:true; fails if the provider does not exist. Look up the correct id with list_model_providers first if unsure.",
     params = "common::api::DeleteModelProviderRequest"
 )]
 #[generate_http_handler]

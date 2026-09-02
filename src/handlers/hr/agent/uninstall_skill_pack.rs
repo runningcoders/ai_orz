@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "uninstall_skill_pack",
     name = "Uninstall Skill Pack",
-    description = "Uninstall a skill pack (by tag) from an agent. Removes the tag from runtime_config.installed_skill_packs. Pass delete_copies=true to also delete the Agent's skill copies under that tag. Idempotent.",
+    description = "Uninstall a skill pack (by tag) from an agent. By default only the tag is removed and already-installed skill copies are kept; pass delete_copies=true to also delete the copies. Idempotent — no change if the tag is not installed.",
     params = "common::api::UninstallSkillPackRequest",
     tags = "skill_management"
 )]

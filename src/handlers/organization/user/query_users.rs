@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_users",
     name = "Query Users (Advanced)",
-    description = "Query users with full filtering support (organization_id, pagination)",
+    description = "Query users of an organization with limit/offset pagination; organization_id defaults to the caller's organization when omitted. Returns a paged list of user summaries (ID, username, email, role, status). Use it for paginated browsing of large orgs; the list_users_by_* handlers give a one-shot unfiltered list.",
     params = "common::api::UserQueryRequest",
     neural
 )]

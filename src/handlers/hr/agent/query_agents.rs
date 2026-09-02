@@ -16,7 +16,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_agents",
     name = "Query Agents (Advanced)",
-    description = "Query agents with full filtering support (ids, keyword, status, roles)",
+    description = "Query agents by exact structured filters (ids, status, created_by, model_provider_id, roles, runtime_state) with pagination. Use when you know the concrete field values to match. For plain browsing use list_agents; for free-text semantic matching use search_agents.",
     params = "common::api::AgentQueryRequest",
     tags = "collaboration"
 )]

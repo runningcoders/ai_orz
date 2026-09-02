@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "shell_list",
     name = "List Shell Processes",
-    description = "List background processes started by shell_exec (pid, command, alive status, call_id, log path). Agent callers only see their own processes.",
+    description = "List background processes started via the shell_exec tool, oldest first, each with pid, command, working directory, start time, alive flag (refreshed), exit code, and output log path. Takes no parameters. Agent callers only see their own processes; human callers see all. Use shell_status for one process's log tail or shell_kill to stop one.",
     params = "common::api::ListProcessesRequest",
     tags = "shell"
 )]

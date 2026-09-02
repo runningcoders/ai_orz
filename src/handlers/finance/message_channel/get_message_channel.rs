@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "get_message_channel",
     name = "Get Channel Details",
-    description = "Get detailed information about a specific message channel",
+    description = "Get one message channel's detail by ID, including its type, config, and credential references. Only your own channels are visible — any other ID returns NotFound.",
     params = "common::api::GetMessageChannelRequest"
 )]
 #[generate_http_handler]

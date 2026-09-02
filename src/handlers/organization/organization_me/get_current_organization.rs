@@ -13,7 +13,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_current_organization",
     name = "Get My Organization",
-    description = "Get detailed information about the organization that the currently authenticated user belongs to",
+    description = "Get the organization of the currently authenticated user, resolved from the request context: name, description, base URL, status, timestamps, and org-level config. Returns the organization info. Fails if the session has no organization context or the organization no longer exists.",
     params = "common::api::GetCurrentOrganizationRequest"
 )]
 #[generate_http_handler]

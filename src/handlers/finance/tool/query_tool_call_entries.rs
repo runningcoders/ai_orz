@@ -13,7 +13,7 @@ use super::response::to_tool_call_entry_detail;
 #[register_handler_tool(
     id = "query_tool_call_entries",
     name = "Query Tool Call Records",
-    description = "Query tool call trace entries by call_id, agent_id, project_id, task_id, tool_id, status, and time range",
+    description = "Filter tool call trace records by structured fields (call_id, tool_id, agent_id, task_id, status, started_after/started_before) with a row limit. Returns entries with arguments, results, and timing; use get_tool_call_entry when you already know the call_id.",
     params = "common::api::QueryToolCallEntriesRequest",
     tags = "tool_management"
 )]

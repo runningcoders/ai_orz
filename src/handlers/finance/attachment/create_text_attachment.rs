@@ -14,7 +14,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "create_text_attachment",
     name = "Create Text Attachment",
-    description = "Create a small UTF-8 text attachment. Provide file_name, content, optional mime_type and purpose.",
+    description = "Create a small UTF-8 text attachment from inline content, with a file name, optional text mime_type, and a purpose (skill, message, artifact, or tool_result). Returns the attachment detail, whose ID can be passed to message or skill APIs to attach the file. Content must be plain text under 64 KB.",
     params = "common::api::CreateTextAttachmentRequest",
     tags = "file_management"
 )]

@@ -14,7 +14,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "get_tool",
     name = "Get Tool Details",
-    description = "Get detailed information about a specific tool including configuration",
+    description = "Get one tool's full details by id: protocol, config, parameters schema, and tags; optionally include call statistics for a time range with hourly or daily interval (with_stats). Fails if the tool does not exist.",
     params = "common::api::GetToolRequest",
     tags = "tool_management"
 )]

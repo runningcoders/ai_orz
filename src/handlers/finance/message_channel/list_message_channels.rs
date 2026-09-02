@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "list_message_channels",
     name = "List All Channels",
-    description = "List message channels with optional filtering by user, agent, channel type, enabled status",
+    description = "Browse message channels with pagination, optionally filtered by agent_id, channel_type, or only_enabled. Defaults to the current user's channels. Use query_message_channels for exact field filtering.",
     params = "common::api::ListMessageChannelsRequest"
 )]
 #[generate_http_handler]

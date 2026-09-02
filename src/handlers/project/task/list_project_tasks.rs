@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_project_tasks",
     name = "List Project's Tasks",
-    description = "List all tasks under a specific project, with optional status filtering",
+    description = "List all tasks under a specific project, optionally filtered by a single status and capped by limit. Returns an array of task summaries. Use list_agent_tasks for the agent dimension, query_tasks for structured filtering, and search_tasks for keyword search.",
     params = "common::api::ListProjectTasksRequest",
     tags = "project_management"
 )]

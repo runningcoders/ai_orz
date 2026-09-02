@@ -13,7 +13,7 @@ use common::models::StatsInterval;
 #[register_handler_tool(
     id = "get_project",
     name = "Get Project Details",
-    description = "Get project detailed information by ID",
+    description = "Get a project's full detail by ID, optionally loading event stats, model-call stats (hourly or daily within a time range), the task dependency graph as Mermaid, the artifact list, and a progress summary. Returns the project detail plus any requested sections. Fails with not found if the ID does not exist.",
     params = "common::api::GetProjectRequest",
     tags = "project_management"
 )]

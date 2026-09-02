@@ -13,7 +13,7 @@ use serde_json;
 #[register_handler_tool(
     id = "update_memory",
     name = "Update Memory Entry",
-    description = "Update an existing memory entry by ID, supports updating content, summary, and tags",
+    description = "Update an existing short_term memory or knowledge_node by id: change content, summary, tags, or status (e.g. mark Settled or Forgotten); knowledge nodes also accept node_tags to toggle the published flag. Trace and Relation entries cannot be modified. Returns the memory_id.",
     params = "common::api::UpdateMemoryParams",
     neural
 )]

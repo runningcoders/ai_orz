@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "install_skill_pack",
     name = "Install Skill Pack on Agent",
-    description = "Install a skill pack (by tag) to an agent. Queries all Published skills carrying the given tag and installs them as Draft copies. Idempotent.",
+    description = "Install a skill pack on an agent by tag: all Published skills carrying that tag are copied into the agent's skill directory and the tag is recorded for wake-time injection. Idempotent. Returns installed_count.",
     params = "common::api::InstallSkillPackRequest",
     tags = "skill_management"
 )]

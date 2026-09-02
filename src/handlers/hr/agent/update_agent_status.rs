@@ -17,7 +17,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_agent_status",
     name = "Toggle Agent Status",
-    description = "Update the status of an AI agent (active/disabled)",
+    description = "Transition an agent's lifecycle status (Interviewing, PendingOnboard, Onboarded, PendingOffboard, Offboarded) and return the updated agent. Use it to onboard a newly created agent or to take one out of service.",
     params = "common::api::UpdateAgentStatusRequest"
 )]
 #[generate_http_handler]

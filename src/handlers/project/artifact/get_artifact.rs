@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_artifact",
     name = "Get Artifact Details",
-    description = "Get detailed metadata information about an artifact",
+    description = "Get an artifact's metadata by ID: name, description, file type, MIME type, source type, storage path, and timestamps. Returns the artifact detail without file content. Use get_artifact_content to read the text body of a generated-content artifact.",
     params = "common::api::GetArtifactRequest"
 )]
 #[generate_http_handler]

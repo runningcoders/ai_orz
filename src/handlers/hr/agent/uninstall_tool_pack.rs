@@ -14,7 +14,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "uninstall_tool_pack",
     name = "Uninstall Tool Pack",
-    description = "Uninstall a tool pack (by tag) from an agent. Removes the tag from runtime_config.installed_tags. Tools carrying that tag will no longer be auto-injected at wake time. Idempotent.",
+    description = "Uninstall a tool pack by removing its tag from the agent's installed tags; tools carrying that tag will no longer be auto-injected at wake time. Idempotent. Returns the remaining installed tag list.",
     params = "common::api::UninstallToolPackRequest",
     tags = "tool_management"
 )]

@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "delete_mcp_server",
     name = "Remove MCP Server",
-    description = "Soft-delete an MCP Server by ID",
+    description = "Soft-delete an MCP Server by marking its status Deleted (the row is kept) and invalidating its cached runtime connection. Returns success:true; fails if the server does not exist.",
     params = "common::api::DeleteMcpServerRequest"
 )]
 #[generate_http_handler]

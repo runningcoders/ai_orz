@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_artifacts",
     name = "Query Artifacts",
-    description = "Query artifacts with full filtering support (project_id, task_id, file_type, source_type)",
+    description = "Filter artifacts by structured fields with pagination: project_id, task_id, file type, and source type — all optional, so it can also query across projects. Returns a paged list of artifact details. Use it when you know exact field values; use list_artifacts to browse within a single project.",
     params = "common::api::ArtifactQueryRequest",
     tags = "project_management"
 )]

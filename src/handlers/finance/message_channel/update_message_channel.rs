@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "update_message_channel",
     name = "Update Channel Config",
-    description = "Update an existing message channel configuration (name, credentials, settings)",
+    description = "Partially update a message channel: name, bindings (user_id, agent_id), type, webhook_url, tokens, or type-specific config; omitted fields are preserved. Returns the updated channel detail. Fails if a Lark channel is left without a valid LarkApp credential.",
     params = "common::api::UpdateMessageChannelRequest"
 )]
 #[generate_http_handler]

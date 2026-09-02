@@ -12,7 +12,7 @@ use common::models::StatsInterval;
 #[register_handler_tool(
     id = "get_model_provider",
     name = "Get Provider Details",
-    description = "Get detailed information about a specific model provider configuration",
+    description = "Get one model provider's full configuration by id (type, capability, model name, base_url, status), optionally with model-call statistics over a time range at hourly or daily interval. Fails if the provider does not exist.",
     params = "common::api::GetModelProviderRequest"
 )]
 #[generate_http_handler]

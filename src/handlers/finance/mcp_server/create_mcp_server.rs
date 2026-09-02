@@ -15,7 +15,7 @@ use super::response::{to_detail, to_model_config, to_model_transport};
 #[register_handler_tool(
     id = "create_mcp_server",
     name = "Add MCP Server",
-    description = "Create a new MCP Server configuration for MCP tool discovery and invocation",
+    description = "Register an MCP Server (name, transport, connection config) as a source of MCP tools. Returns the created server detail with credentials redacted; fails if the credential requirements are invalid for the chosen transport.",
     params = "common::api::CreateMcpServerRequest"
 )]
 #[generate_http_handler]

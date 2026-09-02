@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_skill_file_content",
     name = "Update Skill File",
-    description = "Create a new file or update the content of an existing text file in a skill. Supports optimistic locking with expected_updated_at.",
+    description = "Create or fully overwrite a single text file inside a skill, such as its main skill.md. Pass expected_updated_at (the skill's updated_at in seconds) for optimistic locking — a mismatch returns Conflict. Returns an empty confirmation.",
     params = "common::api::UpdateSkillFileContentRequest",
     tags = "skill_management"
 )]

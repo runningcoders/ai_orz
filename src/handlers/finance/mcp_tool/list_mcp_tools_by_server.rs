@@ -12,7 +12,7 @@ use super::super::tool::response::{probe_runtime_ready, to_list_item};
 #[register_handler_tool(
     id = "list_mcp_tools_by_server",
     name = "List Server's MCP Tools",
-    description = "List local MCP Tool records bound to one MCP Server",
+    description = "List the local Tool records synced from one MCP Server, with optional keyword and status filters and pagination; returns {tools, total}. If the server's toolset may have changed, run sync_mcp_tools first.",
     params = "common::api::ListMcpToolsByServerRequest"
 )]
 #[generate_http_handler]

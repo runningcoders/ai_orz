@@ -13,7 +13,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "create_tool",
     name = "Create Custom Tool",
-    description = "Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.",
+    description = "Create a custom HTTP or MCP tool with a name, description, config, parameters schema, and tags. Returns the new tool's id and metadata. Built-in tools cannot be created via this API.",
     params = "common::api::CreateToolRequest",
     tags = "tool_management"
 )]

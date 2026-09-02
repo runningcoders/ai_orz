@@ -11,7 +11,7 @@ use serde_json;
 #[register_handler_tool(
     id = "save_short_term_memory",
     name = "Save to Working Memory",
-    description = "Save a short-term memory entry with summary and tags",
+    description = "Save an entry into the agent's working memory: a summary plus tags, optional task_id, and trace_ids linking back to the originating thinking traces. Returns the memory_id. For durable knowledge use save_long_term_memory; for type-dispatched generic creation use create_memory.",
     params = "common::api::SaveShortTermMemoryParams",
     neural
 )]

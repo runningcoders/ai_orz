@@ -14,7 +14,7 @@ use std::sync::Arc;
 #[register_handler_tool(
     id = "create_model_provider",
     name = "Add Model Provider",
-    description = "Create a new model provider configuration for AI inference",
+    description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. An embedding provider may come back Disabled when another embedding provider is already active.",
     params = "common::api::CreateModelProviderRequest"
 )]
 #[generate_http_handler]

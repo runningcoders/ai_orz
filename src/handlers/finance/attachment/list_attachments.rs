@@ -14,7 +14,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "list_attachments",
     name = "List Attachments",
-    description = "List attachments for the current user with optional filtering by purpose and file_type. Returns paged results.",
+    description = "List the current user's attachments with pagination, optionally filtered by purpose (skill, message, artifact, or tool_result) or file_type. Returns paged attachment details without file content.",
     params = "common::api::AttachmentListQuery",
     tags = "file_management"
 )]

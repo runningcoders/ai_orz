@@ -14,7 +14,7 @@ use common::error::{Error, Result};
 #[register_handler_tool(
     id = "update_current_organization",
     name = "Update My Organization",
-    description = "Update information for the organization that the currently authenticated user belongs to (requires admin privileges within the organization)",
+    description = "Update the caller's own organization (no ID parameter): name, description, base URL, and optionally the org-level config — config changes require the Admin role. Returns the updated organization info including config. Use update_organization to target an organization by ID.",
     params = "common::api::UpdateCurrentOrganizationRequest"
 )]
 #[generate_http_handler]

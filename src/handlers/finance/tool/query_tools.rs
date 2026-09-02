@@ -16,7 +16,7 @@ use super::response::{probe_runtime_ready, to_list_item};
 #[register_handler_tool(
     id = "query_tools",
     name = "Query Tools (Advanced)",
-    description = "Query tools with full filtering support (ids, keyword, agent_id, tags, protocol)",
+    description = "Filter tools by structured criteria (ids, keyword, agent_id, tags, protocol) with pagination. Best when you know exact field values; use search_tools for free-form keyword/semantic search, or list_tools to browse all.",
     params = "common::api::ToolQueryRequest",
     neural,
     tags = "tool_management"

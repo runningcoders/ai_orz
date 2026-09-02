@@ -12,7 +12,7 @@ use common::error::{bail_err, err};
 #[register_handler_tool(
     id = "delete_attachment",
     name = "Delete Attachment",
-    description = "Delete an attachment by ID. Only the owner (root_user_id) can delete. Soft delete, data preserved for audit.",
+    description = "Soft-delete an attachment by ID: it immediately stops being listed or retrievable, while the record is kept for audit. Only your own attachments can be deleted — any other ID returns NotFound. Returns an empty confirmation.",
     params = "common::api::DeleteAttachmentRequest",
     tags = "file_management"
 )]

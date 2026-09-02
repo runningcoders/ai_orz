@@ -14,7 +14,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "create_artifact",
     name = "Create Artifact",
-    description = "Create a new artifact in a project, supports creating from existing attachment or generated content",
+    description = "Create a project artifact from an existing attachment (requires attachment_id, no inline content) or from generated text content (requires content and file_name, max 1 MB); remote-URL sources are not supported yet. Returns the artifact detail including storage path and metadata. Use create_text_artifact for the simpler text-only shortcut.",
     params = "common::api::CreateArtifactRequest",
     tags = "project_management"
 )]

@@ -13,7 +13,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_agent",
     name = "Update Agent Config",
-    description = "Update the metadata and configuration of an existing AI agent",
+    description = "Update an existing agent's fields (name, roles, description, capabilities, soul, model_provider_id, runtime_config); only provided fields change, except runtime_config which is replaced as a whole object. Returns the updated agent. Fails with NotFound if the agent does not exist.",
     params = "common::api::UpdateAgentRequest"
 )]
 #[generate_http_handler]

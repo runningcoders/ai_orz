@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "shell_status",
     name = "Check Shell Process Status",
-    description = "Query the status of a background process started by shell_exec (alive check, exit code, and log tail). Use the pid returned by shell_exec.",
+    description = "Check one background process started via the shell_exec tool: returns the alive flag (refreshed), exit code, start time, command, log path, and the last lines of its output log (tail_lines, default 20, capped at 500). Fails with not found for unknown pids; agent callers may only inspect their own processes. Use shell_list to discover pids and shell_kill to stop one.",
     params = "common::api::ShellStatusRequest",
     tags = "shell"
 )]

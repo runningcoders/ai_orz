@@ -12,7 +12,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "test_model_provider_connection",
     name = "Test Provider Connection",
-    description = "Test connectivity and authentication to a model provider with a sample prompt",
+    description = "Verify a model provider's connectivity and authentication by sending a sample prompt (default 'Hello!'). Returns {success, response, error} and never fails on upstream errors, which are reported in the error field. Fails only if the provider id does not exist.",
     params = "common::api::TestModelProviderConnectionRequest"
 )]
 #[generate_http_handler]

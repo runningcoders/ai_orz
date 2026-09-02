@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_runtime_status",
     name = "Get System Runtime Status",
-    description = "Get an agent's runtime status and thinking snapshot (current round, tokens, tool calls, trace_id). Useful for checking if an agent is busy before sending it a message.",
+    description = "Get one agent's live runtime state (idle/busy/resting) with a thinking snapshot: current round, token usage, tool-call count, and trace_id. Check this before sending a message to avoid interrupting a busy agent; for an overview across all agents use list_runtime_agents.",
     params = "common::api::RuntimeStatusRequest",
     tags = "collaboration,query"
 )]

@@ -14,7 +14,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "update_skill",
     name = "Update Skill",
-    description = "Update an existing skill's metadata and content from direct text, an HTTPS URL, or file attachments.",
+    description = "Update a skill's metadata (name, description, tags, category, status) and optionally replace its content from inline text, an HTTPS URL, or attachments; individual files can also be deleted via file_deletes. Returns the updated skill detail.",
     params = "common::api::UpdateSkillRequest",
     tags = "skill_management"
 )]

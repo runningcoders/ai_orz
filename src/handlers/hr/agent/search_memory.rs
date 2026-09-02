@@ -16,7 +16,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "search_memory",
     name = "Search Memory (Semantic)",
-    description = "Search memory by keyword or semantic query, returns matching memory entries",
+    description = "Search memories with a free-text query via hybrid keyword + vector semantic matching; results are ranked and annotated with match_type, vector_distance, and fts_rank. Optionally pass seed_node_ids with traversal_depth/breadth to expand through the knowledge graph. For structured field filtering use query_memory.",
     params = "common::api::SearchMemoryParams",
     neural
 )]

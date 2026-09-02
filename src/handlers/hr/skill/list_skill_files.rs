@@ -10,7 +10,7 @@ use common::error::{Result, bail_err};
 #[register_handler_tool(
     id = "list_skill_files",
     name = "List Skill Files",
-    description = "List all files in a skill with their metadata (filename, size)",
+    description = "List all files inside a skill with filename, size, and whether content is stored. Call this before reading or writing files. Fails with NotFound if the skill does not exist.",
     params = "common::api::ListSkillFilesRequest",
     tags = "skill_management"
 )]

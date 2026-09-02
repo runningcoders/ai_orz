@@ -13,7 +13,7 @@ use super::response::{to_api_transport, to_detail, to_model_config, to_model_tra
 #[register_handler_tool(
     id = "update_mcp_server",
     name = "Update MCP Server",
-    description = "Update an MCP Server configuration",
+    description = "Update an MCP Server's name, transport, or connection config; only provided fields change and credentials stay redacted. Returns the updated detail; fails if the server does not exist or the credential requirements are invalid for the transport.",
     params = "common::api::UpdateMcpServerRequest"
 )]
 #[generate_http_handler]

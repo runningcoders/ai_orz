@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "unbind_tool_from_agent",
     name = "Unbind Tool from Agent",
-    description = "Unbind a tool from an agent so the agent can no longer use it",
+    description = "Remove a tool binding from an agent so the agent can no longer call that tool. Returns success:true; fails if the tool does not exist. Use bind_tool_to_agent to grant access.",
     params = "common::api::UnbindToolFromAgentRequest",
     tags = "tool_management"
 )]

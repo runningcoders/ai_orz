@@ -17,7 +17,7 @@ use super::response::{probe_runtime_ready, to_list_item};
 #[register_handler_tool(
     id = "search_tools",
     name = "Search Tools (Semantic)",
-    description = "Search tools by keyword with full filtering support (FTS5 + vector semantic search).",
+    description = "Find tools from free-form text using hybrid FTS5 keyword + vector semantic search ranked by relevance, optionally narrowed by filters (agent_id, tags, protocol, status). Use when you have free text, not exact field values; use query_tools for structured filtering or list_tools to browse all.",
     params = "common::api::SearchToolsRequest",
     tags = "tool_management"
 )]

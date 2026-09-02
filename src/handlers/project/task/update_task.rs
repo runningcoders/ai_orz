@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_task",
     name = "Update Task",
-    description = "Update basic information of an existing task",
+    description = "Partially update a task's basic info: title, description, priority, tags, due date, dependency task IDs, execution plan, and execution result; only provided fields change. Returns the updated task detail. This does not change status or progress — use update_task_status or update_task_progress for those.",
     params = "common::api::UpdateTaskRequest",
     tags = "project_management"
 )]

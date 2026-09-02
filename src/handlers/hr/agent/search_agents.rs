@@ -16,7 +16,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "search_agents",
     name = "Search Agents (Semantic)",
-    description = "Search agents by keyword with full filtering support (FTS5 + vector semantic search).",
+    description = "Search agents with a free-text keyword via hybrid FTS5 + vector semantic matching, ranked by relevance; optional filters (status, created_by, model_provider_id, roles, runtime_state) can narrow the results. Use when you have a natural-language description rather than exact field values. For structured filtering use query_agents.",
     params = "common::api::SearchAgentsRequest",
     tags = "collaboration"
 )]

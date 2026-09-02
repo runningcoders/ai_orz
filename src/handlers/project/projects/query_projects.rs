@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_projects",
     name = "Query Projects (Advanced)",
-    description = "Query projects with full filtering support (ids, keyword, status, root_user_id)",
+    description = "Filter projects by structured fields with pagination: ids, root_user_id, status_in (OR list), owner_agent_id, and an optional keyword. Returns a paged list of project summaries. Use it when you know exact field values; use list_projects for unfiltered browsing and search_projects for relevance-ranked keyword search.",
     params = "common::api::ProjectQueryRequest",
     tags = "project_management"
 )]

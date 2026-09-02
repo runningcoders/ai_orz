@@ -14,7 +14,7 @@ use super::response::to_list_item;
 #[register_handler_tool(
     id = "list_skills",
     name = "List All Skills",
-    description = "List public skills with optional filtering by status, category, author, and keyword.",
+    description = "Browse all skills with plain pagination — no filters available, Expired skills always excluded. Use query_skills for exact field filtering or search_skills for semantic search.",
     params = "common::api::ListSkillsRequest",
     tags = "skill_management"
 )]

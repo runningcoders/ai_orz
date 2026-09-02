@@ -12,7 +12,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_skill_tags",
     name = "List Skill Tags",
-    description = "List all distinct tags from published skills. Useful for discovering available skill categories/packs.",
+    description = "List all distinct tags across Published skills, sorted alphabetically. Useful for discovering available skill packs before searching or installing. Takes no parameters.",
     params = "common::api::ListSkillTagsRequest",
     tags = "skill_management",
     neural

@@ -11,7 +11,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "search_messages",
     name = "Search Messages",
-    description = "Search messages by keyword with hybrid search (FTS5 + vector semantic)",
+    description = "Search messages by free-text keyword using hybrid FTS5 + vector semantic ranking, optionally filtered by project_id, task_id, from_id, or to_id. Returns ranked results with match_type and relevance scores. Use list_messages to browse chronologically instead.",
     params = "common::api::message::SearchMessagesRequest",
     tags = "messaging"
 )]

@@ -13,7 +13,7 @@ const DEFAULT_MAX_LIMIT: usize = 100;
 #[register_handler_tool(
     id = "list_artifacts",
     name = "List Artifacts",
-    description = "List all artifacts under a project, with optional filtering by task, file type, or source type",
+    description = "Browse all artifacts under a specific project with pagination (limit capped at 100, default 100), optionally filtered by task_id, file type, or source type. Returns a paged list of artifact details. For cross-project filtering use query_artifacts.",
     params = "common::api::ListArtifactsRequest"
 )]
 #[generate_http_handler]

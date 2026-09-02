@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "query_tasks",
     name = "Query Tasks (Advanced)",
-    description = "Query tasks with full filtering support (ids, keyword, project_id, assignee, status_in, pagination). POST body for complex combinations.",
+    description = "Filter tasks by structured fields with pagination: ids, project_id, assignee_type plus assignee_id, status_in (OR list), and an optional keyword. Returns a paged list of task summaries. Use it when you know exact field values; use list_tasks for unfiltered browsing and search_tasks for relevance-ranked keyword search.",
     params = "common::api::TaskQueryRequest",
     tags = "project_management"
 )]

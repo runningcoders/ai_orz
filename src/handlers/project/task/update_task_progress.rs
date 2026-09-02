@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_task_progress",
     name = "Update Task Progress",
-    description = "Update task progress (0-100)",
+    description = "Set a task's progress percentage (0-100); values outside the range are clamped. Returns the updated task detail including the new progress. Use it for fine-grained progress reporting; use mark_done or update_task_status to change lifecycle state.",
     params = "common::api::UpdateTaskProgressRequest",
     tags = "project_management"
 )]

@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "update_project",
     name = "Update Project",
-    description = "Update project basic information (name, description, tags, priority)",
+    description = "Partially update a project's basic info: name, description, priority, tags, execution plan, and execution result; only provided fields change. Returns the updated project detail. For status changes use update_project_status instead.",
     params = "common::api::UpdateProjectRequest",
     tags = "project_management"
 )]

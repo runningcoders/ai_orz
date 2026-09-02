@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "shell_kill",
     name = "Kill Shell Process",
-    description = "Terminate a background process started by shell_exec (SIGKILL). Use the pid returned by shell_exec or shell_status.",
+    description = "Terminate a background process previously started via the shell_exec tool, by pid (SIGKILL). Returns the pid plus a killed flag that is false if the process had already exited. Fails with not found for unknown pids; agent callers may only kill processes they started themselves. Use shell_list to discover pids and shell_status to check a process before killing.",
     params = "common::api::ShellKillRequest",
     tags = "shell"
 )]

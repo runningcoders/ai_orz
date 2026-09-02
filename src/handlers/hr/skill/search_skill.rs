@@ -13,7 +13,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "search_skill",
     name = "Search One Skill",
-    description = "Search skills by keyword or tags. Returns skill summaries (id, name, description, tags) without full content.",
+    description = "Search skills by keyword or tags and return lightweight summaries (id, name, description, tags) without file content, up to 10 by default. Use search_skills for relevance-ranked hybrid search or query_skills for exact structured filtering.",
     params = "common::api::SearchSkillParams",
     neural,
     tags = "skill_management"

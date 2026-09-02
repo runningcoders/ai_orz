@@ -12,7 +12,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "update_message_channel_status",
     name = "Toggle Channel Status",
-    description = "Update the status of a message channel (enable/disable it)",
+    description = "Enable or disable a message channel; disabled channels stop receiving message deliveries. Invalid status transitions are rejected. Returns the updated channel detail.",
     params = "common::api::UpdateMessageChannelStatusRequest"
 )]
 #[generate_http_handler]

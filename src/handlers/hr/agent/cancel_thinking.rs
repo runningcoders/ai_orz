@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "cancel_thinking",
     name = "Cancel Agent Thinking",
-    description = "Cancel an agent's ongoing thinking process. The agent will exit after completing the current round. Use this when an agent is stuck in a long thinking loop.",
+    description = "Ask an agent to stop its ongoing thinking: a cancel signal is delivered and the agent exits after finishing the current round. Returns success=true plus a message, or success=false if the agent is not currently thinking. Use it when an agent appears stuck in a long thinking loop.",
     params = "common::api::CancelThinkingRequest",
     tags = "collaboration"
 )]

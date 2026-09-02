@@ -12,7 +12,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_runtime_agents",
     name = "List Running Agents",
-    description = "List all agents' runtime status with optional filters (state/task_id/project_id). Useful for finding which agents are currently busy or working on a specific task.",
+    description = "List all agents' runtime states (idle/busy/resting) with the same thinking snapshot detail as get_runtime_status, filterable by state, task_id, or project_id. Use it to see which agents are busy or working on a specific task; for a single agent query it by id with get_runtime_status.",
     params = "common::api::RuntimeListRequest",
     tags = "collaboration,query"
 )]

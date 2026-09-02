@@ -10,7 +10,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "delete_message_channel",
     name = "Remove Channel",
-    description = "Delete an existing message channel (soft delete)",
+    description = "Soft-delete a message channel by ID: it stops delivering immediately, while the record is kept for audit. Only your own channels can be deleted — any other ID returns NotFound. Returns an empty confirmation.",
     params = "common::api::DeleteMessageChannelRequest"
 )]
 #[generate_http_handler]

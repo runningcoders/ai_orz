@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "send_message",
     name = "Send Chat Message",
-    description = "Send a text message from the current agent to a target user. Supports optional project_id, task_id and reply_to_id for contextualizing the message. Use this to notify users or reply within a conversation.",
+    description = "Send a chat message from the current agent to a user, optionally scoped with project_id, task_id, or reply_to_id to thread the reply. Returns the message_id. Use send_message_to_agent for agent-to-agent collaboration instead.",
     params = "common::api::SendMessageParams",
     neural,
     tags = "messaging"

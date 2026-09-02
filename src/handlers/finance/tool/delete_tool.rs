@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "delete_tool",
     name = "Delete Tool",
-    description = "Delete an existing custom tool (soft delete)",
+    description = "Permanently remove a custom tool record; this is a hard delete, not recoverable. Built-in tools cannot be deleted. Returns success:true; fails if the tool does not exist.",
     params = "common::api::DeleteToolRequest",
     tags = "tool_management"
 )]

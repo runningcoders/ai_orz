@@ -16,7 +16,7 @@ use super::response::to_list_item;
 #[register_handler_tool(
     id = "list_expired_agent_skills",
     name = "List Agent's Expired Skills",
-    description = "List all Expired-status skills under an agent's private directory (separate from the active skills list). Used when toggling the '📦 Expired skills' virtual pack.",
+    description = "List only Expired-status skill copies under the specified agent — the complement of list_agent_skills, which excludes them. Useful to find candidates before calling restore_skill.",
     params = "common::api::ListExpiredAgentSkillsRequest",
     tags = "skill_management"
 )]

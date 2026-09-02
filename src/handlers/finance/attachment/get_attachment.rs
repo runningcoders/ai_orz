@@ -14,7 +14,7 @@ use super::response::to_detail;
 #[register_handler_tool(
     id = "get_attachment",
     name = "Get Attachment Info",
-    description = "Get attachment metadata by ID. Only accessible by the owner (root_user_id).",
+    description = "Get an attachment's metadata by ID (file name, size, mime_type, purpose) without reading its content. Only your own attachments are visible — any other ID returns NotFound. Use get_attachment_content to read the text.",
     params = "common::api::GetAttachmentRequest",
     tags = "file_management"
 )]

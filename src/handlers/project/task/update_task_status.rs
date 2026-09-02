@@ -13,7 +13,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_task_status",
     name = "Update Task Status",
-    description = "Update the status of a task with proper state transition validation",
+    description = "Move a task through its validated state machine (PendingReview, Pending, InProgress, Completed, Archived; e.g. Pending to InProgress, InProgress to Completed). Starting sets the start timestamp and completing sets the end timestamp. Returns the updated task detail. Fails on illegal transitions; cancellation is not allowed through this endpoint.",
     params = "common::api::UpdateTaskStatusRequest",
     tags = "project_management"
 )]

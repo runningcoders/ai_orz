@@ -10,7 +10,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_users_by_organization",
     name = "List Org Users",
-    description = "List all users in a specified organization",
+    description = "List all users belonging to an explicitly given organization ID; each item carries user ID, username, display name, email, role, status, and creation time. Returns the list plus a total count, unpaginated. Use list_users_by_current_organization to list the caller's own organization.",
     params = "common::api::ListUsersByOrganizationRequest"
 )]
 #[generate_http_handler]

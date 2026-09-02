@@ -13,7 +13,7 @@ use serde_json;
 #[register_handler_tool(
     id = "save_long_term_memory",
     name = "Save to Long-Term Memory",
-    description = "Save a long-term memory as knowledge node with optional relations",
+    description = "Persist durable knowledge as a long-term knowledge node (node_name, node_description, node_type, tags) and optionally create typed relations to other nodes in the same call. Returns node_id and relation_ids. For transient working-memory entries use save_short_term_memory.",
     params = "common::api::SaveLongTermMemoryParams",
     neural
 )]

@@ -15,7 +15,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "search_projects",
     name = "Search Projects",
-    description = "Search projects by keyword with full filtering support (FTS5 + vector semantic search).",
+    description = "Search projects by free-text keyword using hybrid FTS5 full-text and vector semantic matching ranked by relevance, optionally narrowed by ids, root_user_id, status_in, or owner_agent_id. Returns a paged list of project summaries. Prefer this over query_projects when you have natural-language text rather than exact field values.",
     params = "common::api::SearchProjectsRequest",
     tags = "project_management"
 )]

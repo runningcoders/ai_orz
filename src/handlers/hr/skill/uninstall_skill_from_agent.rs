@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "uninstall_skill_from_agent",
     name = "Uninstall Skill from Agent",
-    description = "Uninstall a skill copy from an agent. Deletes the agent's private copy.",
+    description = "Remove a skill copy from an agent, deleting both its record and files. Only works on copies created by install_skill_to_agent, not on original skills. Returns agent_id, skill_id, and deleted=true.",
     params = "common::api::UninstallSkillFromAgentRequest",
     tags = "skill_management",
     neural

@@ -13,7 +13,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "send_task_assignment_message",
     name = "Assign Task via Message",
-    description = "Send a task assignment message to another agent",
+    description = "Send a structured task assignment message (task_id, task_title, optional task_description) to another agent. Returns immediately with the message_id; the receiving agent picks up the assignment at its next awakening. Use send_message_to_agent for plain conversation.",
     params = "common::api::SendTaskAssignmentMessageParams",
     neural,
     tags = "messaging"

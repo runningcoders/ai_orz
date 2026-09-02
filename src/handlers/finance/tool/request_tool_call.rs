@@ -17,7 +17,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "request_tool_call",
     name = "Request Tool Execution",
-    description = "Call a manual tool synchronously and get the result immediately",
+    description = "Execute a manual tool synchronously and return the result immediately as {tool_call_id, status: completed, result}. Requires an agent context. For long-running tools prefer send_tool_call_message, which returns a request_id and delivers the result in a later awaken round.",
     params = "common::api::RequestToolCallParams",
     tags = "tool_management,internal"
 )]

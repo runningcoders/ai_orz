@@ -14,7 +14,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "update_tool",
     name = "Update Tool",
-    description = "Update an existing custom tool's configuration (name, description, credentials)",
+    description = "Update a custom tool's name, description, config, parameters schema, tags, or enabled state; only provided fields change. Built-in tools accept config edits only. Returns the updated tool detail; fails if the tool does not exist.",
     params = "common::api::UpdateToolRequest",
     tags = "tool_management"
 )]

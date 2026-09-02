@@ -11,7 +11,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "list_organizations",
     name = "List All Organizations",
-    description = "List all organizations in the system that the current user has access to",
+    description = "List all non-deleted organizations in the system, newest first; each item carries ID, name, description, and scope. Returns the list plus a total count; no filters or pagination. Use get_organization or get_current_organization for a single organization's full details.",
     params = "common::api::ListOrganizationsRequest"
 )]
 #[generate_http_handler]

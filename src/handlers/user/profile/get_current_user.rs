@@ -12,7 +12,7 @@ use common::error::Result;
 #[register_handler_tool(
     id = "get_current_user",
     name = "Get My Profile",
-    description = "Get information about the currently authenticated user",
+    description = "Get the profile of the currently authenticated user: user ID, username, display name, email, organization ID, role, status, and preferences. Returns the user info resolved from the session. Fails if the session has no user context or the account no longer exists.",
     params = "common::api::GetCurrentUserRequest"
 )]
 #[generate_http_handler]
