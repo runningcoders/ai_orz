@@ -2,7 +2,7 @@
 
 use crate::models::tool::ToolPo;
 use common::enums::{ToolProtocol, ToolStatus};
-use serde_json::{Value, json};
+use serde_json::json;
 use tempfile::tempdir;
 
 use super::entry::{ToolCallEntry, ToolCallStatus};
@@ -302,62 +302,53 @@ fn fake_tool_po(protocol: ToolProtocol) -> ToolPo {
 
 // ==================== 脱敏函数测试 ====================
 //
-// 原来通过 LoggingDecorator 测试脱敏行为，装饰器移除后直接测试
-// redact_trace_values_for_tool 函数。
+// 所有协议（Builtin / Http / Mcp）统一字段级脱敏：保留完整 JSON 结构，
+// 仅敏感字段值替换为 `***`。不再按协议类型跳过任何工具。
 
 #[test]
-fn http_tool_redacts_error() {
-    let po = fake_tool_po(ToolProtocol::Http);
-    let (input, output, error) = super::entry::redact_trace_values_for_tool(
-        &po,
-        json!({ "access_token": "placeholder-value" }),
-        None,
-        Some(
-            "http request failed for https://api.example.invalid/search?access_token=***"
-                .to_string(),
-        ),
-    );
-
-    assert_eq!(input, Value::String("[REDACTED]".to_string()));
-    assert!(output.is_none());
-    assert_eq!(error.as_deref(), Some("[REDACTED]"));
-}
-
-#[test]
-fn http_tool_redacts_input_and_output() {
+fn http_tool_field_level_redact_keeps_structure() {
     let po = fake_tool_po(ToolProtocol::Http);
     let (input, output, error) = super::entry::redact_trace_values_for_tool(
         &po,
         json!({ "query": "rust", "access_token": "placeholder-value" }),
-        Some(json!({ "status": 200, "body": { "access_token": "placeholder-value" } })),
+        Some(
+            json!({ "status": 200, "body": { "access_token": "placeholder-value", "count": 42 } }),
+        ),
         None,
     );
 
-    assert_eq!(input, Value::String("[REDACTED]".to_string()));
-    assert_eq!(output, Some(Value::String("[REDACTED]".to_string())));
+    // 结构完整保留，敏感字段替换为 ***
+    assert_eq!(input, json!({ "query": "rust", "access_token": "***" }));
+    assert_eq!(
+        output,
+        Some(json!({
+            "status": 200,
+            "body": { "access_token": "***", "count": 42 }
+        }))
+    );
     assert!(error.is_none());
 }
 
 #[test]
-fn mcp_tool_redacts_error() {
-    let po = fake_tool_po(ToolProtocol::Mcp);
-    let (input, output, error) = super::entry::redact_trace_values_for_tool(
+fn http_tool_redacts_error_text_kv_pattern() {
+    let po = fake_tool_po(ToolProtocol::Http);
+    let (_input, output, error) = super::entry::redact_trace_values_for_tool(
         &po,
-        json!({ "access_token": "placeholder-value" }),
+        json!({}),
         None,
-        Some(
-            "http request failed for https://api.example.invalid/search?access_token=***"
-                .to_string(),
-        ),
+        Some("http request failed, api_key=sk-123, retry next".to_string()),
     );
 
-    assert_eq!(input, Value::String("[REDACTED]".to_string()));
     assert!(output.is_none());
-    assert_eq!(error.as_deref(), Some("[REDACTED]"));
+    // 错误文本中 api_key 的值被替换，结构保留
+    assert_eq!(
+        error.as_deref(),
+        Some("http request failed, api_key=***, retry next")
+    );
 }
 
 #[test]
-fn mcp_tool_redacts_input_and_output() {
+fn mcp_tool_field_level_redact_keeps_structure() {
     let po = fake_tool_po(ToolProtocol::Mcp);
     let (input, output, error) = super::entry::redact_trace_values_for_tool(
         &po,
@@ -366,24 +357,33 @@ fn mcp_tool_redacts_input_and_output() {
         None,
     );
 
-    assert_eq!(input, Value::String("[REDACTED]".to_string()));
-    assert_eq!(output, Some(Value::String("[REDACTED]".to_string())));
+    assert_eq!(input, json!({ "query": "rust", "credential": "***" }));
+    assert_eq!(
+        output,
+        Some(json!({
+            "status": "ok",
+            "payload": { "credential": "***" }
+        }))
+    );
     assert!(error.is_none());
 }
 
 #[test]
-fn builtin_tool_does_not_redact() {
+fn builtin_tool_also_field_level_redacts() {
+    // Builtin 工具（如 shell_exec）也做统一字段级脱敏，不再特殊处理
     let po = fake_tool_po(ToolProtocol::Builtin);
     let (input, output, error) = super::entry::redact_trace_values_for_tool(
         &po,
-        json!({ "query": "rust" }),
-        Some(json!({ "result": "found" })),
+        json!({ "command": "git push --token secret123", "env": { "password": "hunter2" } }),
+        Some(json!({ "result": "ok", "token": "abcdef" })),
         None,
     );
 
-    // Builtin 工具不脱敏，保留原值用于调试
-    assert_eq!(input, json!({ "query": "rust" }));
-    assert_eq!(output, Some(json!({ "result": "found" })));
+    assert_eq!(
+        input,
+        json!({ "command": "git push --token ***", "env": { "password": "***" } })
+    );
+    assert_eq!(output, Some(json!({ "result": "ok", "token": "***" })));
     assert!(error.is_none());
 }
 

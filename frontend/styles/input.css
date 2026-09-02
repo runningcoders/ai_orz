@@ -1558,6 +1558,21 @@
   }
   .hud-modal-box h3 { font-family: var(--font-display, 'Chakra Petch', sans-serif); }
 
+  /* 全局 modal-box 覆盖：让弹窗默认更宽、垂直可滚动、内容自动换行 */
+  .modal-box {
+    max-width: 95vw !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+    overflow-x: clip !important;
+    /* 防止长文本、长命令、长 ID 撑破弹窗宽度 */
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .modal-box .font-mono {
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
   /* 表单控件皮肤：覆盖 DaisyUI input/select/textarea（发丝边 + 聚焦辉光） */
   .input.hud-input, .select.hud-input, .textarea.hud-input {
     border-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);

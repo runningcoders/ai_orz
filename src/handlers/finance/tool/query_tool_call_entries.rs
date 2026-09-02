@@ -7,8 +7,6 @@ use ai_orz_macros::{generate_http_handler, register_handler_tool};
 use common::api::{QueryToolCallEntriesRequest, QueryToolCallEntriesResponse};
 use common::error::Result;
 
-use super::response::to_tool_call_entry_detail;
-
 /// Query tool call trace entries with common filters.
 #[register_handler_tool(
     id = "query_tool_call_entries",
@@ -42,5 +40,5 @@ pub async fn query_tool_call_entries(
         )
         .await?;
 
-    Ok(entries.iter().map(to_tool_call_entry_detail).collect())
+    Ok(entries.into_iter().map(Into::into).collect())
 }

@@ -231,7 +231,7 @@ mod tests {
     ) {
         let ctx = init_env(pool);
         let agent_id = insert_agent(&ctx, "self").await;
-        let original_name = format!("Agent-self");
+        let original_name = "Agent-self".to_string();
 
         let mut agent_ctx = ctx.clone();
         agent_ctx.agent_id = Some(agent_id.clone());

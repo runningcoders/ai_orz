@@ -22,6 +22,7 @@
 //!
 //! 每个用例的第一步即获取此锁，保持到断言结束。模式同：
 //! `tests/integration/message_vector_test.rs`（REAL_VECTOR_MUTEX）。
+#![allow(clippy::await_holding_lock)]
 
 #[path = "../common/mod.rs"]
 mod common;

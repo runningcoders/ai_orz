@@ -423,6 +423,12 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 单个技能安装：搜索结果、加载状态、已安装技能列表
     let mut skill_search_results = use_signal(Vec::<SkillListItem>::new);
     let mut skill_search_loading = use_signal(|| false);
+    // 已安装技能列表：独立 signal，与 agent_res 解耦以支持「恢复过期技能」等本地修改。
+    // 通过下方 use_effect 监听 agent_res 变化自动同步；所有 handler 只需刷新 agent_res 即可。
+    let mut skill_list = use_signal(Vec::<SkillListItem>::new);
+    let mut expired_skill_list = use_signal(Vec::<SkillListItem>::new);
+    // 是否已懒加载过（选中虚拟 pack 时只在首次发请求）
+    let mut expired_loaded = use_signal(|| false);
     let mut show_edit_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(Vec::<String>::new);
@@ -538,6 +544,16 @@ pub fn HrAgentDetail(id: String) -> Element {
     use_effect(move || {
         if let Some(Ok(a)) = agent_res_eff.read().as_ref() {
             graph_agents_eff.set(vec![AgentListItem::from(a)]);
+        }
+    });
+
+    // skill_list 随 agent_res 变化自动同步：所有 handler 只需刷新 agent_res，
+    // 此 effect 会把最新 skill_list 从后端响应注入顶层 signal。
+    let agent_res_for_skill = agent_res;
+    let mut skill_list_sync = skill_list;
+    use_effect(move || {
+        if let Some(Ok(a)) = agent_res_for_skill.read().as_ref() {
+            skill_list_sync.set(a.skill_list.clone().unwrap_or_default());
         }
     });
 
@@ -706,11 +722,6 @@ pub fn HrAgentDetail(id: String) -> Element {
             // - 再点取消（从 filter 移除）就不再显示该分组，下次再选则复用已缓存的 expired list（恢复操作已实时维护）。
             const EXPIRED_PACK_TAG: &str = "__expired_pack__";
             const EXPIRED_PACK_LABEL: &str = "📦 已过期技能";
-            // 活动技能列表改成信号：恢复成功后需要把 skill 插入这里。
-            let mut skill_list = use_signal(|| a.skill_list.clone().unwrap_or_default());
-            let mut expired_skill_list = use_signal(Vec::<SkillListItem>::new);
-            // 是否已懒加载过（选中虚拟 pack 时只在首次发请求）
-            let mut expired_loaded = use_signal(|| false);
 
             let aid_for_load = agent_id_signal();
             let mut on_toggle_expired_pack = move || {
@@ -2313,6 +2324,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 }
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
+                                                            // 刷新 Agent 全景（skill tag 可能已变更）
+                                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                            }
                                                         }
                                                         Err(e) => toast.error(format!("卸载失败: {}", e)),
                                                     }
@@ -2340,6 +2356,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                     skill_filter_tags.write().retain(|x| x != &t);
                                                                 }
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
+                                                            }
+                                                            // 刷新 Agent 全景（副本已删除，skill_list 会减少）
+                                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                             }
                                                         }
                                                         Err(e) => toast.error(format!("卸载失败: {}", e)),

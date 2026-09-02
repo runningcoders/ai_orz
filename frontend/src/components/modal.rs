@@ -10,6 +10,10 @@ pub struct ModalProps {
     children: Element,
     #[props(default = None)]
     footer: Option<Element>,
+    /// 自定义宽度 class，如 "max-w-3xl" / "max-w-5xl" / "max-w-[90rem]" 等；
+    /// 不传则使用 DaisyUI 默认 max-w-[90rem]。
+    #[props(default = None)]
+    width_class: Option<String>,
 }
 
 #[component]
@@ -17,12 +21,13 @@ pub fn Modal(props: ModalProps) -> Element {
     if !props.show {
         return rsx! {};
     }
+    let width_cls = props.width_class.clone().unwrap_or_default();
     rsx! {
         dialog {
             class: "modal modal-open",
             onclick: move |_| props.on_close.call(()),
             div {
-                class: "modal-box",
+                class: "modal-box overflow-x-clip {width_cls}",
                 onclick: |e| e.stop_propagation(),
                 form {
                     method: "dialog",

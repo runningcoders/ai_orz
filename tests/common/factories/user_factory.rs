@@ -57,6 +57,7 @@ impl BootstrappedSystem {
     /// 的推荐 ctx 来源；避免用 `RequestContext::from_storage` 的无 role 版本
     /// 或 `init_full_test_env` 返回的 "test-integration-user" 虚拟身份，
     /// 两者在 Admin Bypass / 作者匹配上都会被 `ensure_skill_access` 拦截。
+    #[allow(dead_code)]
     pub fn build_authenticated_ctx(&self) -> ai_orz::pkg::RequestContext {
         ai_orz::pkg::RequestContext::builder()
             .user_id(self.user_id.clone())

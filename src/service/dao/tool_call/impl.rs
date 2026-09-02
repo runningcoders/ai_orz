@@ -131,7 +131,7 @@ impl ToolCallDao for ToolCallDaoImpl {
             }
         };
 
-        // 对外部协议工具（HTTP/MCP）的 input/output/error 进行脱敏
+        // 对所有协议工具的 input/output/error 进行字段级脱敏（统一策略，见 entry.rs）
         let (input_redacted, output_redacted, error_redacted) =
             crate::pkg::tool_tracing::entry::redact_trace_values_for_tool(
                 po,

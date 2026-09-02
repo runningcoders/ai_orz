@@ -1,4 +1,4 @@
-use common::api::{RuntimeReady, ToolCallEntryDetail, ToolCallStatusDto, ToolDetail, ToolListItem};
+use common::api::{RuntimeReady, ToolDetail, ToolListItem};
 use common::enums::ToolStatus;
 use reqwest::Url;
 use serde_json::{Map, Value};
@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
-use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
 
 /// 批量判定工具运行时就绪状态（三层就绪提示体系第①层：清单级标志）。
 ///
@@ -71,33 +70,6 @@ pub(super) fn to_detail(tool: &Tool) -> ToolDetail {
         created_at: tool.po.created_at,
         updated_at: tool.po.updated_at,
         stats: tool.stats.clone(),
-    }
-}
-
-pub(crate) fn to_tool_call_entry_detail(entry: &ToolCallEntry) -> ToolCallEntryDetail {
-    ToolCallEntryDetail {
-        call_id: entry.call_id.clone(),
-        tool_id: entry.tool_id.clone(),
-        tool_name: entry.tool_name.clone(),
-        agent_id: entry.agent_id.clone(),
-        task_id: entry.task_id.clone(),
-        project_id: entry.project_id.clone(),
-        started_at: entry.started_at,
-        finished_at: entry.finished_at,
-        duration_ms: entry.duration_ms,
-        input: redact_values_preserving_shape(&entry.input),
-        output: entry.output.as_ref().map(redact_values_preserving_shape),
-        error: entry.error.as_ref().map(|_| "[REDACTED]".to_string()),
-        status: tool_call_status_to_dto(entry.status),
-        metadata: redact_values_preserving_shape(&entry.metadata),
-    }
-}
-
-fn tool_call_status_to_dto(status: ToolCallStatus) -> ToolCallStatusDto {
-    match status {
-        ToolCallStatus::Started => ToolCallStatusDto::Started,
-        ToolCallStatus::Completed => ToolCallStatusDto::Completed,
-        ToolCallStatus::Failed => ToolCallStatusDto::Failed,
     }
 }
 
