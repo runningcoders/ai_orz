@@ -55,14 +55,13 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsReadToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "fs_read".to_string(),
-            name: "read_file".to_string(),
+            name: "Read File from Workspace".to_string(),
             description: concat!(
                 "Read content from a file in the current project/workspace. ",
                 "Supports full file read, range read by line numbers, and grep-style pattern matching. ",
                 "Returns content with line numbers for easy editing. ",
-                "**Permission rule**: Only allowed to read files within the base data directory. ",
-                "Paths inside another user's tree (users/{other}/) require explicit user confirmation. ",
-                "If the requested path is outside this scope, you MUST STOP and ask the user for confirmation before proceeding."
+                "Reads are scoped to the current project and your own workspace. ",
+                "Paths inside another user's tree are blocked — stop and ask the user if they need cross-access."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,

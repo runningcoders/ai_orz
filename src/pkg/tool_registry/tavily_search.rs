@@ -86,13 +86,13 @@ impl BuiltinToolFactory for TavilySearchToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "tavily_search".to_string(),
-            name: "tavily_search".to_string(),
+            name: "Search Web (Tavily)".to_string(),
             description: concat!(
                 "Search the web for real-time information via the Tavily Search API. ",
                 "Returns a structured list of results, each with title, url and a content snippet ",
                 "(snippets may be truncated). Optionally returns an LLM-generated answer summary ",
                 "when include_answer=true. Use for fresh facts, news, docs or anything beyond ",
-                "training data. Read-only and safe to call automatically."
+                "training data. Best for English-language queries and Western sites; for Chinese-language queries prefer doubao_search. Read-only and safe to call automatically."
             )
             .to_string(),
             protocol: ToolProtocol::Builtin,

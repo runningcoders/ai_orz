@@ -101,17 +101,17 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "shell_exec".to_string(),
-            name: "shell_exec".to_string(),
+            name: "Execute Shell Command".to_string(),
             description: concat!(
                 "Execute shell commands in a sandboxed environment. ",
                 "Supports both short synchronous execution and long asynchronous background processes. ",
                 "Output larger than the configured limit is stored as a log attachment, only summary returned. ",
                 "**Default working directory**: when omitted, commands run in the calling agent's workspace ",
                 "(users/{user_id}/agents/{agent_id}/work), with HOME set to the user's isolated home directory ",
-                "(so git/gh and other CLIs reuse the user's configuration). ",
-                "**Security**: Working directory is restricted to configured allowed paths; another user's tree ",
-                "or another agent's workspace requires explicit user confirmation; sensitive environment ",
-                "variables are filtered out."
+                "(so git/gh and other CLIs reuse your own configuration). ",
+                "Paths outside your workspace are blocked — ask the user before running commands there. ",
+                "Sensitive environment ",
+                "variables are automatically filtered out."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Manual,

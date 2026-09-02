@@ -208,7 +208,7 @@ impl BuiltinToolFactory for DoubaoSearchToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "doubao_search".to_string(),
-            name: "doubao_search".to_string(),
+            name: "Search Chinese Web (Doubao)".to_string(),
             description: concat!(
                 "Search the Chinese web for real-time information via Volcengine Doubao Search API. ",
                 "Returns a structured list of web results with title, url, site name, publish time ",

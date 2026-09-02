@@ -110,7 +110,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for MarkArtifactToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "mark_artifact".to_string(),
-            name: "mark_artifact".to_string(),
+            name: "Archive Tool Output as Artifact".to_string(),
             description: concat!(
                 "Archive a previous tool call's full runtime output (log file) as a project ",
                 "artifact (deliverable). Use this when a tool's output is worth preserving for ",

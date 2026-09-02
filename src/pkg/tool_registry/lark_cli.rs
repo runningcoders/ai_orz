@@ -117,7 +117,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for LarkCliToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "lark_cli".to_string(),
-            name: "lark_cli".to_string(),
+            name: "Feishu/Lark CLI".to_string(),
             description: concat!(
                 "Execute lark-cli commands to operate Feishu/Lark capabilities ",
                 "(messages, docs, calendar, bitable, tasks, etc.) under the bound Feishu app identity. ",

@@ -20,8 +20,8 @@ impl BuiltinToolFactory for HttpFetchToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "http_fetch".to_string(),
-            name: "fetch_url".to_string(),
-            description: "Fetch content from an HTTPS URL with GET method. Only public HTTPS URLs are allowed by default. Local network and HTTP URLs are rejected for security.".to_string(),
+            name: "Fetch Web Page".to_string(),
+            description: "Fetch content from an HTTPS URL and return the response body plus status code. Only public HTTPS URLs are allowed by default — HTTP and local-network addresses are rejected for security. Use this when you just need raw HTML/text; use browser for JS-rendered pages that require a real browser.".to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,
             parameters_schema: Some(json!({

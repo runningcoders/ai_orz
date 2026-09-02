@@ -113,7 +113,7 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for GhCliToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "gh_cli".to_string(),
-            name: "gh_cli".to_string(),
+            name: "GitHub CLI".to_string(),
             description: concat!(
                 "Execute GitHub CLI (gh) commands to operate GitHub capabilities ",
                 "(repos, issues, pull requests, releases, actions, etc.) under the caller's bound ",

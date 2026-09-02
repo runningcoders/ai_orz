@@ -51,15 +51,14 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for FsWriteToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "fs_write".to_string(),
-            name: "write_file".to_string(),
+            name: "Write File to Workspace".to_string(),
             description: concat!(
                 "Write content to a file in the current project/workspace. ",
                 "Supports multiple atomic modes: overwrite entire file, append to end, insert after a line, ",
                 "delete a range of lines, or replace a range of lines. ",
                 "All changes are atomic — either complete or not written. ",
-                "**Permission rule**: writes are allowed within the agent's own data directory ",
-                "and the current user's home tree (users/{user_id}/...); paths inside another ",
-                "user's tree or another agent's workspace require explicit user confirmation."
+                "Writes are scoped to your own workspace and the current project. ",
+                "Cross-user or cross-agent paths are blocked — ask the user before proceeding."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Auto,

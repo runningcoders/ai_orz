@@ -135,14 +135,14 @@ impl BuiltinToolFactory for BrowserToolFactory {
     fn create_po(&self) -> ToolPo {
         let mut po = ToolPo {
             id: "browser".to_string(),
-            name: "browser".to_string(),
+            name: "Browser Automation".to_string(),
             description: concat!(
                 "Automate a headless browser via the agent-browser CLI to read JS-rendered pages ",
                 "and interact with web UIs. Typical loop: 'open <url>' to navigate, 'snapshot' to get ",
                 "an accessibility tree with @eN element refs, then 'click @eN' / 'fill @eN \"text\"' to ",
                 "interact, 'read' for agent-readable page text, 'screenshot' for visual evidence ",
                 "(saved as a downloadable artifact). Page state persists across calls within the ",
-                "same session. Manual mode: each call requires human confirmation. ",
+                "same session. **Manual mode**: every call pauses for human approval — expect a slower loop. ",
                 "Allowed commands: open/back/forward/reload/read/snapshot/get/click/dblclick/fill/",
                 "type/press/hover/select/check/uncheck/scroll/wait/screenshot/close."
             )
