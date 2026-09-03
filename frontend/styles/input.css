@@ -368,6 +368,18 @@
   opacity: 1;
   font-weight: 500;
 }
+/* 提及浮层内的按钮（类型 Tab / 已提及胶囊的移除钮）点击不应出现浏览器默认聚焦白边；
+   鼠标点击已在 RS 侧用 onmousedown + prevent_default 防止抢焦，这里再兜一层：
+   即便键盘聚焦，也用极细的主题色描边替换默认近白色 outline，兼顾可达性。 */
+.mention-menu-tab:focus,
+.mention-chip button:focus {
+  outline: none;
+}
+.mention-menu-tab:focus-visible,
+.mention-chip button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-primary) 45%, transparent);
+  outline-offset: 1px;
+}
 .mention-menu-body {
   max-height: 14rem;
   overflow-y: auto;

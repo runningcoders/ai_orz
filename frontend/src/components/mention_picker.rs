@@ -530,7 +530,13 @@ pub fn MentionPicker(
                             key: "{tab.label()}",
                             class: if tab == current_tab { "mention-menu-tab is-active" } else { "mention-menu-tab" },
                             r#type: "button",
-                            onclick: move |_| state.set_tab(tab),
+                            // 用 mousedown + prevent_default：避免点击时按钮抢走 textarea 焦点，
+                            // 否则焦点落到 tab 上后按 ESC 会触发 :focus-visible 默认白边，
+                            // 且 textarea 的 ESC 关闭逻辑不再生效（与候选项 onmousedown 处理一致）
+                            onmousedown: move |e| {
+                                e.prevent_default();
+                                state.set_tab(tab);
+                            },
                             "{tab.label()}"
                         }
                     }
