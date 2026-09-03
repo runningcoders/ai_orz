@@ -7,6 +7,10 @@ use crate::api::message::{load_latest_messages, load_older_messages, send_messag
 use crate::api::project::{create_project, list_projects};
 use crate::components::chat::ChatSidePanel;
 use crate::components::markdown::MarkdownRenderer;
+use crate::components::mention_picker::{
+    MentionCandidate, MentionPickedBar, MentionPicker, MentionState, MentionTab, mention_kinds_for,
+    mention_tabs,
+};
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::navbar::Navbar;
@@ -361,6 +365,13 @@ pub fn MessageChat() -> Element {
         }
     };
 
+    // ===== @ 提及 =====
+    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务 / 默认对话 任务+项目）。
+    // 注意：@ 只是上下文补充，不改变消息路由——回应的仍是前台 Agent / 项目 owner。
+    // 候选范围随 selected_project 变化，故传 signal 而非快照值。
+    let mention_tab_list = mention_tabs(&mention_kinds_for(selected_project().as_deref()));
+    let mention = MentionState::new(selected_project);
+
     let handle_send = use_callback(move |_: ()| {
         let text = input_text().trim().to_string();
         let attachments = pending_attachments();
@@ -419,6 +430,8 @@ pub fn MessageChat() -> Element {
         let attachments_snapshot = attachments.clone();
         input_text.set(String::new());
         pending_attachments.set(Vec::new());
+        // 提及已随正文一起发出，「已提及」记录只服务于本次输入
+        mention.reset_picked();
         is_typing.set(true);
 
         // 修复 M6：is_typing 超时保护，防止 Agent 失败/SSE 断开时永久卡死
@@ -765,6 +778,8 @@ pub fn MessageChat() -> Element {
                 handle_file_select,
                 toast,
                 messages,
+                mention,
+                mention_tab_list.clone(),
             )}
         }
     } else {
@@ -909,6 +924,8 @@ pub fn MessageChat() -> Element {
                 handle_file_select,
                 toast,
                 messages,
+                mention,
+                mention_tab_list.clone(),
             )}
         }
     };
@@ -1110,6 +1127,34 @@ pub fn MessageChat() -> Element {
     }
 }
 
+/// 输入框 DOM id：@ 提及需要读写光标位置，需要一个稳定标识
+const CHAT_INPUT_ID: &str = "chat-input-textarea";
+
+/// 取输入框元素（读取 / 恢复光标用）
+///
+/// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
+fn chat_input_element() -> Option<web_sys::HtmlTextAreaElement> {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(CHAT_INPUT_ID))
+        .and_then(|el| el.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
+}
+
+/// 把光标放回指定位置
+///
+/// 受控 textarea 的值由 Dioxus 在事件结束后统一写回，
+/// 因此用 0ms 定时器把恢复动作推到 DOM 更新之后，否则会被随后写入的 value 冲掉。
+fn restore_chat_caret(pos: usize) {
+    gloo_timers::callback::Timeout::new(0, move || {
+        if let Some(el) = chat_input_element() {
+            let pos = pos as u32;
+            let _ = el.set_selection_range(pos, pos);
+            let _ = el.focus();
+        }
+    })
+    .forget();
+}
+
 /// 渲染聊天输入区域（Project 对话框和默认对话框共用）
 ///
 /// 提取为函数避免在两个分支中重复 100+ 行代码。
@@ -1128,7 +1173,24 @@ fn chat_input_area(
     mut handle_file_select: impl FnMut(Vec<dioxus::html::FileData>) + 'static,
     toast: crate::store::toast::ToastState,
     mut messages: Signal<Vec<MessageListItem>>,
+    mention: MentionState,
+    tabs: Vec<MentionTab>,
 ) -> Element {
+    // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
+    let mut input_text_pick = input_text;
+    let on_pick_mention = Callback::new(move |_item: MentionCandidate| {
+        if let Some((text, caret)) = mention.confirm(&input_text_pick()) {
+            input_text_pick.set(text);
+            restore_chat_caret(caret);
+        }
+    });
+    // 摘掉「已提及」胶囊：同步把正文里的提及语法串删掉
+    let mut input_text_remove = input_text;
+    let on_remove_mention = Callback::new(move |key: String| {
+        let text = mention.remove_picked(&input_text_remove(), &key);
+        input_text_remove.set(text);
+    });
+
     rsx! {
         div { class: "p-3 border-t border-base-300 bg-base-100 relative",
             if show_slash_menu() {
@@ -1190,6 +1252,18 @@ fn chat_input_area(
                     }
                 }
             }
+            // @ 提及候选菜单（浮在输入区上方，与 slash 菜单同层）
+            if mention.is_open() {
+                MentionPicker {
+                    state: mention,
+                    tabs: tabs.clone(),
+                    on_pick: on_pick_mention,
+                }
+            }
+            MentionPickedBar {
+                picked: mention.picked(),
+                on_remove: on_remove_mention,
+            }
             if !pending_attachments().is_empty() {
                 div { class: "flex flex-wrap gap-2 mb-2",
                     for att in pending_attachments().iter() {
@@ -1241,10 +1315,49 @@ fn chat_input_area(
                 textarea {
                     class: "textarea textarea-bordered w-full resize-none",
                     rows: "2",
+                    id: CHAT_INPUT_ID,
                     value: "{input_text}",
-                    placeholder: "输入消息...（Alt+回车发送）",
-                    oninput: move |e| handle_input(e.value()),
+                    placeholder: "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）",
+                    oninput: move |e| {
+                        let value = e.value();
+                        // 光标位置决定 @ 查询的边界；读不到就退回文本末尾（表现为不弹菜单）
+                        let caret = chat_input_element()
+                            .and_then(|el| el.selection_start().ok().flatten())
+                            .map(|v| v as usize)
+                            .unwrap_or(value.len());
+                        mention.sync(&value, caret);
+                        handle_input(value);
+                    },
                     onkeydown: move |e| {
+                        // @ 菜单优先于 slash 菜单：两者不会同时打开（/ 在行首，@ 在词首）
+                        if mention.is_open() {
+                            if e.key() == Key::ArrowDown {
+                                e.prevent_default();
+                                mention.move_selection(1);
+                                return;
+                            }
+                            if e.key() == Key::ArrowUp {
+                                e.prevent_default();
+                                mention.move_selection(-1);
+                                return;
+                            }
+                            if e.key() == Key::Enter && e.modifiers().is_empty() {
+                                e.prevent_default();
+                                if let Some((text, caret)) = mention.confirm(&input_text()) {
+                                    input_text.set(text);
+                                    restore_chat_caret(caret);
+                                } else {
+                                    // 无候选时按 Enter 只收起菜单，不误发消息
+                                    mention.close();
+                                }
+                                return;
+                            }
+                            if e.key() == Key::Escape {
+                                e.prevent_default();
+                                mention.close();
+                                return;
+                            }
+                        }
                         if show_slash_menu() {
                             let filtered: Vec<(&str, &str)> = slash_commands
                                 .iter()

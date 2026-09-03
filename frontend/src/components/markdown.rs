@@ -10,6 +10,9 @@
 //! `pre code.language-mermaid`，组件挂载后调用 index.html 暴露的
 //! `window.__renderMermaid(container)` 将其替换为 SVG。
 //!
+//! @ 提及渲染：`[@名](agent:id)` 形态的链接（合法 CommonMark，未识别时降级为普通链接）
+//! 在事件流里被替换为 chip，详见 `utils::mention`。
+//!
 //! 用法：
 //! ```rust,ignore
 //! use crate::components::markdown::MarkdownRenderer;
@@ -24,6 +27,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dioxus::prelude::*;
 
+use crate::store::directory::Directory;
+use crate::utils::mention::transform_mentions;
+use crate::utils::message::NameMap;
+
 /// 容器 ID 自增序号（同页多实例互不干扰）
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -35,21 +42,29 @@ fn next_container_id(prefix: &str) -> String {
 ///
 /// 源文原始 HTML（块级/内联）会被转义为纯文本，禁止透传，保证注入安全。
 /// 本函数是全站唯一渲染事实源，文档中心（docs.rs）等非组件场景直接复用。
+///
+/// 不带名称上下文：提及 chip 用消息文本里的快照名，见 [`render_markdown_with_names`]。
 pub fn render_markdown(md: &str) -> String {
+    render_markdown_with_names(md, None)
+}
+
+/// Markdown → HTML，带 Agent 名称上下文
+///
+/// `agents` 用于把 Agent 提及的展示名升级为目录里的实时名 —— 实体改名后，
+/// 历史消息里的 chip 会自动跟着变，不会停留在发送当时的快照。
+/// 传 `None`（文档中心等非聊天场景）时回退到消息文本里的快照名。
+///
+/// 事件流统一交给 [`transform_mentions`]：它同时承担源文 HTML 转义
+/// 与 `[@名](agent:id)` 提及链接 → chip 的替换，调用方无需再单独做转义映射。
+pub fn render_markdown_with_names(md: &str, agents: Option<&NameMap>) -> String {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
     options.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
     let parser = pulldown_cmark::Parser::new_ext(md, options);
-    // 原始 HTML 事件降级为纯文本（push_html 会自动转义），避免 dangerous_inner_html 注入 XSS
-    let escaped = parser.map(|event| match event {
-        pulldown_cmark::Event::Html(raw) | pulldown_cmark::Event::InlineHtml(raw) => {
-            pulldown_cmark::Event::Text(raw)
-        }
-        other => other,
-    });
+    let events = transform_mentions(parser, agents);
     let mut html_out = String::new();
-    pulldown_cmark::html::push_html(&mut html_out, escaped);
+    pulldown_cmark::html::push_html(&mut html_out, events.into_iter());
     // 站内链接预拼 data-repo-href（index.html 全局点击拦截 JS 桥用，AGENTS §2.1.2）
     crate::utils::doc_link::post_process_doc_links(&html_out, crate::utils::doc_link::BLOB_BASE)
 }
@@ -60,8 +75,16 @@ pub fn render_markdown(md: &str) -> String {
 /// - `compact`: 紧凑模式（更小字号 / 收紧上下边距），用于卡片、聊天气泡、列表展开等场景
 #[component]
 pub fn MarkdownRenderer(content: String, #[props(default = false)] compact: bool) -> Element {
+    // 全局名称目录：命中时 Agent 提及用实时名渲染。
+    // 文档中心等未提供 provider 的页面 try_consume_context 返回 None，自动回退到快照名。
+    let directory = try_consume_context::<Signal<Directory>>();
     // 按 content 缓存 HTML，避免聊天等长列表场景每帧重复解析
-    let html = use_memo(move || render_markdown(&content));
+    let html = use_memo(move || match directory {
+        // read() 会订阅目录：Agent 名预载完成后，已在屏的历史气泡 chip 自动刷新为实时名
+        Some(sig) => render_markdown_with_names(&content, Some(&sig.read().agents)),
+        // 无目录（文档中心等未 provider 的页面）：回到无上下文版本，chip 用文本快照名
+        None => render_markdown(&content),
+    });
     let container_id = use_hook(|| next_container_id("md"));
     // 含 ```mermaid 代码块时，挂载后（use_effect 已在 DOM 挂载后运行）直接调用 JS 渲染层替换为 SVG。
     // 不再用 spawn + 30ms sleep 延迟：该 future 会在所属组件卸载时被 drop，

@@ -21,6 +21,7 @@ pub mod hud_palette;
 pub mod kanban_canvas;
 pub mod layered_layout;
 pub mod markdown;
+pub mod mention_picker;
 pub mod modal;
 pub mod particles;
 pub mod process_detail;

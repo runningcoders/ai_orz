@@ -5,10 +5,12 @@
 //! - `message`: 消息类型常量、角色映射、乐观消息辅助
 //! - `status`: 任务/项目状态映射
 //! - `doc_link`: Markdown 渲染期站内链接后处理（data-repo-href 预拼）
+//! - `mention`: 消息 @ 提及文本协议（`[@名](agent:id)`）解析与 chip 渲染
 
 pub mod avatar;
 pub mod doc_link;
 pub mod file;
+pub mod mention;
 pub mod message;
 pub mod status;
 pub mod time;
