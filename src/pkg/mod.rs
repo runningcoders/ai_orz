@@ -15,7 +15,9 @@ pub mod password;
 pub mod paths;
 pub mod policy;
 pub mod process;
-pub mod redaction;
+// 脱敏引擎实现在 common::redaction（前后端共享，单一事实源）；此处仅作路径兼容，
+// 使 `crate::pkg::redaction::*` 与 `redaction::warmup()` 等既有引用继续可用。
+pub use common::redaction;
 pub mod request_context;
 pub mod stats;
 pub mod storage;

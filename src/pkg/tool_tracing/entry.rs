@@ -101,4 +101,4 @@ impl From<ToolCallEntry> for common::api::tool::ToolCallEntryDetail {
 }
 
 // 边界决策（2026-09-03）：trace 落库保持原文，字段级脱敏已移除；
-// 对外出口（tool-call-entries 查询接口）统一用 `redact!` 宏脱敏，见 pkg/redaction。
+// 对外出口（tool-call-entries 查询接口）统一用 `redact!` 宏脱敏，引擎实现见 common::redaction。
