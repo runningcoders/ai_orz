@@ -366,7 +366,7 @@ pub fn MessageChat() -> Element {
     };
 
     // ===== @ 提及 =====
-    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务 / 默认对话 任务+项目）。
+    // 可 @ 的类型由 mention_kinds_for 统一界定（项目会话 Agent+任务 / 默认对话 Agent+任务+项目）。
     // 注意：@ 只是上下文补充，不改变消息路由——回应的仍是前台 Agent / 项目 owner。
     // 候选范围随 selected_project 变化，故传 signal 而非快照值。
     let mention_tab_list = mention_tabs(&mention_kinds_for(selected_project().as_deref()));

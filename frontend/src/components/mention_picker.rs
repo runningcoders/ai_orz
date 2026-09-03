@@ -35,7 +35,9 @@ use crate::utils::mention::{
     MentionKind, MentionQuery, apply_mention_pick, detect_mention_query, format_mention,
     remove_mention_token,
 };
-use common::api::{AgentQueryRequest, PaginationParams, SearchProjectsRequest, SearchTasksRequest};
+use common::api::{
+    AgentListItem, AgentQueryRequest, PaginationParams, SearchProjectsRequest, SearchTasksRequest,
+};
 
 /// 候选拉取上限（既是单类型上限，也是菜单展示上限）
 const CANDIDATE_LIMIT: usize = 20;
@@ -102,15 +104,17 @@ impl MentionTab {
 
 /// 当前会话允许 @ 的类型
 ///
-/// - 项目会话：Agent + 任务（有项目上下文才界定得出「一起协作的 Agent 有哪些」）
-/// - 默认对话：任务 + 项目（没有项目上下文，@ Agent 无从界定候选范围）
+/// - 项目会话：Agent + 任务（已在项目内，不再允许 @ 项目本身）
+/// - 默认对话：Agent + 任务 + 项目（@ 仅作上下文提示，Agent 取组织全量由关键词收窄）
 ///
 /// 单一事实源：`MentionState` 拉候选与 Tab 渲染都走这里，避免两处口径漂移。
 pub fn mention_kinds_for(project_id: Option<&str>) -> Vec<MentionKind> {
     if project_id.is_some() {
+        // 项目会话：@ Agent 限于项目协作人，且不再允许 @ 项目本身
         vec![MentionKind::Agent, MentionKind::Task]
     } else {
-        vec![MentionKind::Task, MentionKind::Project]
+        // 默认对话：@ 仅作上下文提示，三种类型都可；Agent 取组织全量
+        vec![MentionKind::Agent, MentionKind::Task, MentionKind::Project]
     }
 }
 
@@ -342,10 +346,12 @@ async fn load_candidates(
     let mut out = Vec::new();
     for kind in kinds {
         match kind {
-            // Agent 只在项目会话下可 @：没有项目就无法界定「一起协作的有哪些人」
+            // Agent 默认对话取组织全量（@ 仅作上下文提示）；项目会话限于协作人
             MentionKind::Agent => {
                 if let Some(pid) = project_id.as_deref() {
                     out.extend(load_project_agents(pid, kw).await);
+                } else {
+                    out.extend(load_org_agents(kw).await);
                 }
             }
             MentionKind::Task => {
@@ -355,6 +361,17 @@ async fn load_candidates(
         }
     }
     out
+}
+
+/// AgentListItem → 提及候选（Agent 类型）
+fn agent_to_candidate(a: AgentListItem) -> MentionCandidate {
+    let subtitle = a.roles.first().cloned().unwrap_or_default();
+    MentionCandidate {
+        kind: MentionKind::Agent,
+        id: a.id,
+        name: a.name,
+        subtitle,
+    }
 }
 
 /// 项目内可 @ 的 Agent = 项目下任务的 assignee（去重）
@@ -384,19 +401,25 @@ async fn load_project_agents(project_id: &str, keyword: Option<&str>) -> Vec<Men
         ..Default::default()
     };
     match query_agents(&req).await {
-        Ok(page) => page
-            .items
-            .into_iter()
-            .map(|a| {
-                let subtitle = a.roles.first().cloned().unwrap_or_default();
-                MentionCandidate {
-                    kind: MentionKind::Agent,
-                    id: a.id,
-                    name: a.name,
-                    subtitle,
-                }
-            })
-            .collect(),
+        Ok(page) => page.items.into_iter().map(agent_to_candidate).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// 默认对话下可 @ 的 Agent = 组织全量（不限于某项目的协作人）
+///
+/// @ 现在只作上下文提示，因此候选范围放开到整个组织，由关键词收窄。
+async fn load_org_agents(keyword: Option<&str>) -> Vec<MentionCandidate> {
+    let req = AgentQueryRequest {
+        keyword: keyword.map(|s| s.to_string()),
+        pagination: PaginationParams {
+            limit: Some(CANDIDATE_LIMIT),
+            offset: None,
+        },
+        ..Default::default()
+    };
+    match query_agents(&req).await {
+        Ok(page) => page.items.into_iter().map(agent_to_candidate).collect(),
         Err(_) => Vec::new(),
     }
 }
