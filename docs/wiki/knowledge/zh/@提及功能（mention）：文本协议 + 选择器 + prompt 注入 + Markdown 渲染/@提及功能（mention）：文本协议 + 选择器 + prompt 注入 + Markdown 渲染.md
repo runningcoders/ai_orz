@@ -18,7 +18,9 @@ source_files:
   - frontend/src/components/mention_picker.rs#L1-L135
   - frontend/src/components/mention_picker.rs#L137-L334
   - src/service/dal/agent/builder/default.rs
+  - docs/wiki/zh/content/功能模块/消息系统/@提及功能（mention）.md
   - docs/wiki/zh/content/功能模块/消息系统/Agent消息集成.md
+  - docs/wiki/knowledge/zh/脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏/脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏.md
 ---
 
 # @提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染

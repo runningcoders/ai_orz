@@ -18,8 +18,10 @@ source_files:
   - common/src/redaction/rule.rs#L173-L212
   - common/src/redaction/redact.rs#L1-L116
   - src/pkg/mod.rs#L18-L20
+  - docs/wiki/zh/content/核心模块/工具与技能/工具系统/脱敏引擎下沉 common.md
   - docs/wiki/zh/content/核心模块/工具与技能/工具系统/工具输出与安全治理.md
   - docs/wiki/knowledge/zh/工具输出与安全治理/工具输出与安全治理.md
+  - docs/wiki/knowledge/zh/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染/@提及功能（mention）：文本协议 + 选择器 + prompt 注入 + Markdown 渲染.md
 ---
 
 # 脱敏引擎下沉 common：fail-closed + ValueRule + 边界统一 + 闭环脱敏
