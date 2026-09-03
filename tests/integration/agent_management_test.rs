@@ -170,21 +170,24 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
         "should be Onboarded (3)"
     );
 
-    // Verify Onboarded auto-installed "project_management" tool pack tag
+    // Verify Onboarded auto-installed the "project_management" skill pack.
+    // 注意：project_management 是「技能包」（写入 installed_skill_packs），
+    // 而非工具包 tag（installed_tags）——onboard 会特意把它从 installed_tags 移除。
+    // 因此断言针对 /skill-packs 端点的 skill_packs 字段。
     let (status, body) = app
-        .get_with_jwt(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id), &jwt)
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id), &jwt)
         .await;
-    let tp_data = crate::common::assert_api_ok(status, &body);
-    let installed_tags = tp_data
-        .get("installed_tags")
+    let sp_data = crate::common::assert_api_ok(status, &body);
+    let skill_packs = sp_data
+        .get("skill_packs")
         .and_then(|v| v.as_array())
-        .expect("installed_tags should be present");
-    let has_pm = installed_tags
+        .expect("skill_packs should be present");
+    let has_pm = skill_packs
         .iter()
         .any(|t| t.as_str() == Some("project_management"));
     assert!(
         has_pm,
-        "Onboarded agent should have project_management tool pack auto-installed"
+        "Onboarded agent should have project_management skill pack auto-installed"
     );
 
     // Onboarded (3) → PendingOffboard (5)
@@ -636,9 +639,23 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
     )
     .await;
 
-    let tag = format!("test_skill_pack_{}", uuid::Uuid::now_v7());
+    // 严格安装：安装一个不存在的 tag 必须被拒绝（避免产生「空技能包」）。
+    let missing_tag = format!("test_skill_pack_{}", uuid::Uuid::now_v7());
+    let (status, _body) = app
+        .post_with_jwt(
+            &format!("/api/v1/hr/agents/{}/skill-packs/{}", agent_id, missing_tag),
+            &json!({}),
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "installing a non-existent skill pack tag should be rejected (no empty packs)"
+    );
 
-    // 1. Install skill pack (no matching skills → installed_count=0, but tag recorded)
+    // 安装一个已发布的技能包 tag（seed 中的 project_management）。
+    let tag = "project_management";
     let (status, body) = app
         .post_with_jwt(
             &format!("/api/v1/hr/agents/{}/skill-packs/{}", agent_id, tag),
@@ -647,10 +664,12 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         )
         .await;
     let data = crate::common::assert_api_ok(status, &body);
-    assert_eq!(
-        data.get("installed_count").and_then(|v| v.as_i64()),
-        Some(0),
-        "installed_count should be 0 when no matching skills exist"
+    assert!(
+        data.get("installed_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            >= 1,
+        "installed_count should be >= 1 for a published skill pack"
     );
 
     // 2. List installed skill packs — tag should be present
@@ -663,7 +682,7 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("skill_packs should be present");
     assert!(
-        skill_packs.iter().any(|t| t.as_str() == Some(tag.as_str())),
+        skill_packs.iter().any(|t| t.as_str() == Some(tag)),
         "tag should appear in skill_packs list after install"
     );
 
@@ -690,7 +709,7 @@ async fn test_skill_pack_lifecycle(pool: SqlitePool) {
         .and_then(|v| v.as_array())
         .expect("skill_packs should be present");
     assert!(
-        !final_packs.iter().any(|t| t.as_str() == Some(tag.as_str())),
+        !final_packs.iter().any(|t| t.as_str() == Some(tag)),
         "tag should not appear in skill_packs after uninstall"
     );
 }
