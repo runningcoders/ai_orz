@@ -1,9 +1,10 @@
 //! 脱敏规则定义与注册表
 //!
-//! 设计目标：把「匹配什么」与「怎么脱敏」彻底解耦。新增一种敏感凭证只需在
-//! [`KEY_RULES`] 追加一条 [`KeyRule`]，无需改动任何匹配或遍历逻辑。
+//! 设计目标：把「匹配什么」与「怎么脱敏」彻底解耦。新增一种敏感凭证：
+//! - 按**键名**识别 → 在 [`KEY_RULES`] 追加一条 [`KeyRule`]
+//! - 按**值形态**（键名未命中但值长得像凭证）→ 在 [`VALUE_RULES`] 追加一条 [`ValueRule`]
 //!
-//! 匹配分两级：
+//! [`KeyRule`] 匹配分两级：
 //! 1. `patterns` —— 键名小写子串匹配，任一命中即算命中
 //! 2. `exclude`  —— 命中后再校验，键名同时包含排除词则**跳过**该规则
 //!
@@ -112,6 +113,90 @@ pub const KEY_RULES: &[KeyRule] = &[
     },
 ];
 
+/// 值形态脱敏规则
+///
+/// 与 [`KeyRule`]（按键名）互补：当值本身长得就像凭证、但键名未命中时，
+/// 用这里的「形态」匹配兜底。例如 `sk-` / `ghp_` / JWT `eyJ` 前缀。
+///
+/// 扩展方式：新增一种裸凭证形态，在此追加一条即可，引擎与宏无需改动。
+pub struct ValueRule {
+    /// 规则名（仅用于调试与审计，不参与匹配）
+    pub name: &'static str,
+    /// 值前缀匹配（大小写敏感，凭证前缀通常固定大小写）
+    pub prefixes: &'static [&'static str],
+    /// 值子串匹配（大小写敏感）
+    pub substrings: &'static [&'static str],
+}
+
+/// 值形态规则表（单一事实源）
+///
+/// 覆盖主流凭证前缀；新增形态 = 此表追加一条。前缀匹配大小写敏感，
+/// 因为 `sk-` / `ghp_` / `AKIA` 等真实凭证前缀的大小写是固定的。
+pub const VALUE_RULES: &[ValueRule] = &[
+    ValueRule {
+        name: "openai_api_key",
+        prefixes: &["sk-", "sk_"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "github_token",
+        prefixes: &["ghp_", "gho_", "ghu_", "ghs_", "ghr_"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "gitlab_token",
+        prefixes: &["glpat-"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "slack_token",
+        prefixes: &["xoxb-", "xoxp-", "xoxa-", "xoxr-"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "aws_access_key_id",
+        prefixes: &["AKIA", "ASIA"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "jwt",
+        prefixes: &["eyJ"],
+        substrings: &[],
+    },
+    ValueRule {
+        name: "stripe_key",
+        prefixes: &["sk_live_", "rk_live_"],
+        substrings: &[],
+    },
+];
+
+/// 判定字符串值是否「长得像凭证」，返回命中的规则（大小写敏感）
+///
+/// - 前缀命中：值以某前缀开头
+/// - 子串命中：值包含某子串
+///
+/// 用于键名未命中、但值形态可疑的兜底脱敏（例如放到 `data` / `result` 这类
+/// 泛型键下、又确实是凭证的值）。
+pub fn match_value_shape(value: &str) -> Option<&'static ValueRule> {
+    VALUE_RULES.iter().find(|rule| {
+        rule.prefixes.iter().any(|p| value.starts_with(*p))
+            || rule.substrings.iter().any(|s| value.contains(*s))
+    })
+}
+
+/// 所有值形态前缀（自由文本扫描共用）
+///
+/// 由 [`VALUE_RULES`] 展平而来，保证两处永不脱节。
+pub fn value_prefixes() -> &'static [&'static str] {
+    static FLAT: OnceLock<Vec<&'static str>> = OnceLock::new();
+    FLAT.get_or_init(|| {
+        VALUE_RULES
+            .iter()
+            .flat_map(|rule| rule.prefixes.iter().copied())
+            .collect()
+    })
+}
+
 /// 所有键名匹配词（文本预检与文本扫描共用）
 ///
 /// 由 [`KEY_RULES`] 展平而来，保证两处永不脱节。展平结果缓存为 `&'static`，
@@ -213,6 +298,36 @@ mod tests {
         assert_eq!(
             patterns.len(),
             KEY_RULES.iter().map(|r| r.patterns.len()).sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn value_shape_matches_known_prefixes() {
+        assert!(match_value_shape("sk-abcdef123456").is_some());
+        assert!(match_value_shape("ghp_xxxxxxxxxxxx").is_some());
+        assert!(match_value_shape("AKIAIOSFODNN7EXAMPLE").is_some());
+        assert!(match_value_shape("eyJhbGciOiJIUzI1Ni").is_some());
+        assert!(match_value_shape("xoxb-1234-5678-abc").is_some());
+        // 大小写敏感：OpenAI 前缀是小写 sk-，大写 SK- 不应命中
+        assert!(match_value_shape("SK-abcdef123456").is_none());
+    }
+
+    #[test]
+    fn value_shape_skips_normal_values() {
+        assert!(match_value_shape("ask-Ed about it").is_none());
+        assert!(match_value_shape("skateboard").is_none());
+        assert!(match_value_shape("github.com/owner/repo").is_none());
+        assert!(match_value_shape("12345").is_none());
+    }
+
+    #[test]
+    fn value_prefixes_flattens_rules() {
+        let prefixes = value_prefixes();
+        assert!(prefixes.contains(&"sk-"));
+        assert!(prefixes.contains(&"ghp_"));
+        assert_eq!(
+            prefixes.len(),
+            VALUE_RULES.iter().map(|r| r.prefixes.len()).sum::<usize>()
         );
     }
 

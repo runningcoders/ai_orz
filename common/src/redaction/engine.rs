@@ -18,7 +18,9 @@ use std::sync::OnceLock;
 
 use super::mask::{MaskStyle, mask_value};
 use super::policy::RedactPolicy;
-use super::rule::{KeyRule, MASK_FULL, ValueClass, all_patterns, match_key};
+use super::rule::{
+    KeyRule, MASK_FULL, ValueClass, all_patterns, match_key, match_value_shape, value_prefixes,
+};
 
 /// 文本预检自动机（敏感词是否存在于全文）
 static PRECHECK: OnceLock<AhoCorasick> = OnceLock::new();
@@ -81,7 +83,16 @@ fn redact_value(value: &mut Value, policy: RedactPolicy, depth: usize) -> bool {
                     *s = owned;
                     true
                 }
-                Cow::Borrowed(_) => false,
+                Cow::Borrowed(_) => {
+                    // 文本扫描无命中：再试「值形态」兜底（键名未命中但值长得像凭证）。
+                    // 整串即值，无边界歧义，直接全量遮蔽。
+                    if match_value_shape(s).is_some() {
+                        *s = mask_value(s, MaskStyle::Full);
+                        true
+                    } else {
+                        false
+                    }
+                }
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => false,
@@ -144,86 +155,95 @@ fn scan_and_mask(text: &str, policy: RedactPolicy) -> String {
     while i < bytes.len() {
         let mut matched = false;
 
-        for pattern in all_patterns() {
-            let key = pattern.as_bytes();
-            let key_end = i + key.len();
-            if key_end > bytes.len() || !bytes[i..key_end].eq_ignore_ascii_case(key) {
-                continue;
-            }
-
-            let mut j = key_end;
-            let had_space = j < bytes.len() && bytes[j] == b' ';
-            while j < bytes.len() && bytes[j] == b' ' {
-                j += 1;
-            }
-            if j >= bytes.len() {
-                continue;
-            }
-
-            // 定位值的完整区间 [start, end)；quoted 表示值被引号包裹
-            let (value_start, value_end, quoted) = match bytes[j] {
-                // JSON 形态："key":"value"
-                b'"' => {
-                    let mut k = j + 1;
-                    while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b':') {
-                        k += 1;
-                    }
-                    match quoted_value_range(bytes, k) {
-                        Some((vs, ve)) => (vs, ve, true),
-                        None => continue,
-                    }
+        // 裸凭证值形态识别（sk- / ghp_ / eyJ ...）：不依赖敏感键名，但必须锚定在
+        // token 边界（前导为空白/引号/分隔符/行首），避免把 "ask-" 里的 "sk-" 误判为凭证。
+        if let Some(end) = value_shape_boundary_match(bytes, i) {
+            out.push_str(&mask_value(&text[i..end], MaskStyle::Full));
+            i = end;
+            matched = true;
+        } else {
+            for pattern in all_patterns() {
+                let key = pattern.as_bytes();
+                let key_end = i + key.len();
+                if key_end > bytes.len() || !bytes[i..key_end].eq_ignore_ascii_case(key) {
+                    continue;
                 }
-                // KV 形态：key=value / key: value
-                b'=' | b':' => {
-                    let mut k = j + 1;
-                    while k < bytes.len() && bytes[k] == b' ' {
-                        k += 1;
-                    }
-                    let (ve, q) = bare_value_end(bytes, k);
-                    (k, ve, q)
-                }
-                // CLI flag 形态：`--key value`
-                // 依赖 bytes[i - 1] 的 `-` 上下文，禁止对扫描区间做切片优化
-                _ if had_space && i > 0 && bytes[i - 1] == b'-' => {
-                    // 值以 `-` 开头表示下一个 flag，不脱敏
-                    if bytes.get(j) == Some(&b'-') {
-                        continue;
-                    }
-                    let (ve, q) = bare_value_end(bytes, j);
-                    (j, ve, q)
-                }
-                _ => continue,
-            };
 
-            if value_end <= value_start {
+                let mut j = key_end;
+                let had_space = j < bytes.len() && bytes[j] == b' ';
+                while j < bytes.len() && bytes[j] == b' ' {
+                    j += 1;
+                }
+                if j >= bytes.len() {
+                    continue;
+                }
+
+                // 定位值的完整区间 [start, end)；quoted 表示值被引号包裹
+                let (value_start, value_end, quoted) = match bytes[j] {
+                    // JSON 形态："key":"value"
+                    b'"' => {
+                        let mut k = j + 1;
+                        while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b':') {
+                            k += 1;
+                        }
+                        match quoted_value_range(bytes, k) {
+                            Some((vs, ve)) => (vs, ve, true),
+                            None => continue,
+                        }
+                    }
+                    // KV 形态：key=value / key: value
+                    b'=' | b':' => {
+                        let mut k = j + 1;
+                        while k < bytes.len() && bytes[k] == b' ' {
+                            k += 1;
+                        }
+                        let (ve, q) = bare_value_end(bytes, k);
+                        (k, ve, q)
+                    }
+                    // CLI flag 形态：`--key value`
+                    // 依赖 bytes[i - 1] 的 `-` 上下文，禁止对扫描区间做切片优化
+                    _ if had_space && i > 0 && bytes[i - 1] == b'-' => {
+                        // 值以 `-` 开头表示下一个 flag，不脱敏
+                        if bytes.get(j) == Some(&b'-') {
+                            continue;
+                        }
+                        let (ve, q) = bare_value_end(bytes, j);
+                        (j, ve, q)
+                    }
+                    _ => continue,
+                };
+
+                if value_end <= value_start {
+                    break;
+                }
+
+                let raw = if quoted {
+                    &text[value_start + 1..value_end - 1]
+                } else {
+                    &text[value_start..value_end]
+                };
+
+                // Authorization 头整体就是一个凭证，保留首尾无定位价值，强制全量遮蔽
+                let style = if raw.len() > 7 && raw.as_bytes()[..7].eq_ignore_ascii_case(b"bearer ")
+                {
+                    MaskStyle::Full
+                } else {
+                    policy.style
+                };
+
+                out.push_str(&text[i..value_start]);
+                if quoted {
+                    out.push('"');
+                }
+                out.push_str(&mask_value(raw, style));
+                if quoted {
+                    out.push('"');
+                }
+                i = value_end;
+                matched = true;
                 break;
             }
-
-            let raw = if quoted {
-                &text[value_start + 1..value_end - 1]
-            } else {
-                &text[value_start..value_end]
-            };
-
-            // Authorization 头整体就是一个凭证，保留首尾无定位价值，强制全量遮蔽
-            let style = if raw.len() > 7 && raw.as_bytes()[..7].eq_ignore_ascii_case(b"bearer ") {
-                MaskStyle::Full
-            } else {
-                policy.style
-            };
-
-            out.push_str(&text[i..value_start]);
-            if quoted {
-                out.push('"');
-            }
-            out.push_str(&mask_value(raw, style));
-            if quoted {
-                out.push('"');
-            }
-            i = value_end;
-            matched = true;
-            break;
-        }
+        } // else（键名模式未命中，走裸凭证值形态兜底）
 
         if !matched {
             // 逐字符推进（多字节 UTF-8 一次推一个 char，避免切断字符边界）
@@ -237,6 +257,47 @@ fn scan_and_mask(text: &str, policy: RedactPolicy) -> String {
     }
 
     out
+}
+
+/// 在位置 `i` 尝试「裸凭证值形态」匹配，返回值的结束下标（不含）。
+///
+/// 要求 `i` 处于 token 起点（前导为空白/引号/分隔符或行首），否则返回 `None`，
+/// 避免把 `"ask-Ed"` 里的 `sk-` 误判为凭证。命中后值区间止于常规分隔符。
+fn value_shape_boundary_match(bytes: &[u8], i: usize) -> Option<usize> {
+    let prev_ok = i == 0
+        || matches!(
+            bytes[i - 1],
+            b' ' | b'\t'
+                | b'\n'
+                | b'\r'
+                | b'"'
+                | b'\''
+                | b'{'
+                | b'}'
+                | b'['
+                | b']'
+                | b'('
+                | b')'
+                | b','
+                | b';'
+                | b':'
+                | b'='
+                | b'/'
+                | b'\\'
+        );
+    if !prev_ok {
+        return None;
+    }
+    for prefix in value_prefixes() {
+        if bytes[i..].starts_with(prefix.as_bytes()) {
+            let (end, _) = bare_value_end(bytes, i + prefix.len());
+            // 必须存在前缀之后的内容，避免把孤立的 "sk-" 误判为凭证
+            if end > i + prefix.len() {
+                return Some(end);
+            }
+        }
+    }
+    None
 }
 
 /// 定位引号包裹值的完整区间（含两端引号）
@@ -506,5 +567,54 @@ mod tests {
     fn warmup_is_idempotent() {
         warmup();
         warmup();
+    }
+
+    #[test]
+    fn json_value_shape_redacts_bare_credential_under_generic_key() {
+        // 键名是泛型 data/result，但值长得像 OpenAI key —— 值形态兜底必须命中
+        let mut value = json!({
+            "data": "sk-abcdef123456",
+            "result": "ghp_xxxxxxxxxxxxxxxxxxxx"
+        });
+        redact_json(&mut value, RedactPolicy::default());
+        assert_eq!(value["data"], "***");
+        assert_eq!(value["result"], "***");
+    }
+
+    #[test]
+    fn json_value_shape_does_not_touch_plain_values() {
+        let mut value = json!({
+            "note": "ask Ed about the skateboard",
+            "repo": "github.com/owner/repo"
+        });
+        redact_json(&mut value, RedactPolicy::default());
+        assert_eq!(value["note"], "ask Ed about the skateboard");
+        assert_eq!(value["repo"], "github.com/owner/repo");
+    }
+
+    #[test]
+    fn text_value_shape_redacts_bare_credential_token() {
+        // 自由文本里孤立的 sk- 凭证（前导为空格，token 边界）必须被识别
+        assert_eq!(
+            redact_text("token is sk-abcdef123456 done", RedactPolicy::default()),
+            "token is *** done"
+        );
+        // 不带 token 边界、嵌在正常词里的 sk- 不得误伤
+        assert_eq!(
+            redact_text("ask Ed about skateboard", RedactPolicy::default()),
+            "ask Ed about skateboard"
+        );
+    }
+
+    #[test]
+    fn json_value_shape_respects_scan_free_text_switch() {
+        let policy = RedactPolicy {
+            scan_free_text: false,
+            ..RedactPolicy::default()
+        };
+        let mut value = json!({ "data": "sk-abcdef123456" });
+        redact_json(&mut value, policy);
+        // 关闭自由文本扫描时，值形态识别也随之关闭（保持原文）
+        assert_eq!(value["data"], "sk-abcdef123456");
     }
 }
