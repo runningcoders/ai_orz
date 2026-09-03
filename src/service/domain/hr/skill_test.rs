@@ -471,7 +471,10 @@ async fn test_skill_access_allows_agent_creator(pool: SqlitePool) -> common::err
         .unwrap();
 
     // ====== 4. 给副本写主文件 skill.md（list_files / read_file 依赖真实 FS 文件）======
-    let base = crate::config::get().base_data_path();
+    // 注意：必须用本测试自己的 temp_dir，而非全局 config::get()——init_test_env 会
+    // 重置进程级全局 config（set_var + config::init()），并发跑模块时它可能指向
+    // 其他测试的 TempDir（已被 drop 删除），导致写入丢失、list 为空（测试隔离陷阱）
+    let base = _temp_dir.path().to_path_buf();
     let copy_dir = crate::pkg::paths::agent_skill_dir(&base, agent_id, copy_id);
     std::fs::create_dir_all(&copy_dir).unwrap();
     let main = copy_dir.join("skill.md");
