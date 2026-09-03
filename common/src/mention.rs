@@ -84,6 +84,34 @@ pub struct MentionRef {
     pub id: String,
 }
 
+/// 解析后的提及（已带可读名 + 可选上下文摘要），供后端 prompt 注入等消费场景
+///
+/// 与 [`MentionRef`] 的区别：[`MentionRef`] 只含 `kind + id`（协议层提取结果），
+/// 本结构额外携带调用方借助 DAL / 目录解析出的可读 `name` 与一行 `summary`。
+/// 本结构自身不依赖任何存储层，可前后端共享。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedMention {
+    /// 实体类型
+    pub kind: MentionKind,
+    /// 实体 ID
+    pub id: String,
+    /// 可读展示名（已解析：实时目录命中或正文快照回退）
+    pub name: String,
+    /// 一行上下文摘要（可选）：任务状态、Agent 角色、项目描述等
+    pub summary: Option<String>,
+}
+
+impl ResolvedMention {
+    /// 类型中文标签（prompt 区块与前端 chip 共用）
+    pub fn kind_label(&self) -> &'static str {
+        match self.kind {
+            MentionKind::Agent => "Agent",
+            MentionKind::Task => "任务",
+            MentionKind::Project => "项目",
+        }
+    }
+}
+
 /// 解析 Markdown 链接 dest 为提及（`agent:agt_7f3`）
 ///
 /// 非提及协议（http / 站内相对路径 / mailto 等）一律返回 `None`，
@@ -218,7 +246,11 @@ pub fn remove_mention_token(text: &str, token: &str) -> String {
     }
 }
 
-/// 从消息正文中提取全部提及（后端 prompt 注入 / 通知场景用）
+/// 从消息正文提取全部提及及其链接文本（快照名），后端 prompt 注入 / 通知场景用
+///
+/// 返回 `(MentionRef, 链接文本)`：链接文本即 `[@这里](type:id)` 里的「这里」，
+/// 作为展示名快照回退值（Agent 名渲染时优先被实时目录覆盖，任务 / 项目名称
+/// 无全局缓存时用它）。
 ///
 /// 轻量扫描 `[...](type:id)` 链接语法，无需 Markdown 解析器：
 /// 找到每个 `](` 后读取到下一个 `)` 为止的 dest，能解析成提及即收录。
@@ -227,20 +259,21 @@ pub fn remove_mention_token(text: &str, token: &str) -> String {
 ///
 /// 注意：这是面向「Agent 写回的规整协议文本」的提取器，不追求完整
 /// Markdown 语义；渲染场景请用前端基于 pulldown-cmark 事件流的实现。
-pub fn extract_mentions(text: &str) -> Vec<MentionRef> {
+pub fn extract_mentions_with_text(text: &str) -> Vec<(MentionRef, String)> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
     while let Some(off) = text[i..].find("](") {
         let bracket = i + off;
-        // 宽松回溯校验：`](` 之前须存在 `[`（链接文本起点），
-        // 排除正文中孤立出现的 "](...)"。位置本身不参与判定，真正的
-        // 协议过滤由 parse_mention_dest 完成。
-        if !text[..bracket].contains('[') {
+        // 回溯找链接文本起点 `[`（取 `](` 之前最近的那个，排除孤立的 "](...)"）。
+        // 真正的协议过滤由 parse_mention_dest 完成。
+        let Some(open) = text[..bracket].rfind('[') else {
             i = bracket + 2;
             continue;
-        }
-        // 链接文本不能为空且 dest 起点固定在 bracket+2
+        };
+        // 链接文本（展示快照）：剥掉前导 @（它是提及触发符，不是实体名本身）
+        let text_snapshot = text[open + 1..bracket].trim_start_matches('@').to_string();
+        // dest 起点固定在 bracket+2
         let dest_start = bracket + 2;
         let dest_end = text[dest_start..]
             .find(|c: char| c == ')' || c.is_whitespace())
@@ -255,11 +288,21 @@ pub fn extract_mentions(text: &str) -> Vec<MentionRef> {
             continue;
         }
         if let Some(m) = parse_mention_dest(&text[dest_start..dest_end]) {
-            out.push(m);
+            out.push((m, text_snapshot));
         }
         i = dest_end + 1;
     }
     out
+}
+
+/// 从消息正文中提取全部提及（见 [`extract_mentions_with_text`]，本函数只取 kind+id）
+///
+/// 后端 prompt 注入时通常要连名字一起解析，请用 [`extract_mentions_with_text`]。
+pub fn extract_mentions(text: &str) -> Vec<MentionRef> {
+    extract_mentions_with_text(text)
+        .into_iter()
+        .map(|(m, _)| m)
+        .collect()
 }
 
 /// chip 展示名：实时名优先，回退到文本里的快照名
@@ -500,6 +543,62 @@ mod tests {
                 kind: MentionKind::Agent,
                 id: "agt_1".into()
             }]
+        );
+    }
+
+    #[test]
+    fn extract_with_text_captures_snapshot_name() {
+        let text = "请 [@张伟](agent:agt_1) 看 [@数据清洗](task:tsk_a) 与 [@平台](project:prj_1)";
+        let got = extract_mentions_with_text(text);
+        assert_eq!(
+            got,
+            vec![
+                (
+                    MentionRef {
+                        kind: MentionKind::Agent,
+                        id: "agt_1".into()
+                    },
+                    "张伟".to_string()
+                ),
+                (
+                    MentionRef {
+                        kind: MentionKind::Task,
+                        id: "tsk_a".into()
+                    },
+                    "数据清洗".to_string()
+                ),
+                (
+                    MentionRef {
+                        kind: MentionKind::Project,
+                        id: "prj_1".into()
+                    },
+                    "平台".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolved_mention_kind_label() {
+        assert_eq!(
+            ResolvedMention {
+                kind: MentionKind::Agent,
+                id: "x".into(),
+                name: "张".into(),
+                summary: None
+            }
+            .kind_label(),
+            "Agent"
+        );
+        assert_eq!(
+            ResolvedMention {
+                kind: MentionKind::Task,
+                id: "x".into(),
+                name: "t".into(),
+                summary: None
+            }
+            .kind_label(),
+            "任务"
         );
     }
 }

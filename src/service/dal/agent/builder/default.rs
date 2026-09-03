@@ -170,7 +170,37 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
             common::enums::MessageType::TaskAssignment => "【任务分配通知】",
             _ => "【当前消息】",
         };
-        self.current_message = Some(format!("{}\n{}", label, message.to_prompt()));
+        let mut body = format!("{}\n{}", label, message.to_prompt());
+
+        // @ 提及的简单增强：从消息正文解析出 @ 提及的实体，作为当前消息的上下文补充。
+        // 仅做纯文本解析（不查 DAL），让被 @ 的 Agent 先看到「提到了谁/什么」，
+        // 并提示其在需要详情时自行调用对应查询工具。后续若要注入实时详情再重构。
+        let mentions: Vec<common::mention::ResolvedMention> =
+            common::mention::extract_mentions_with_text(message.content())
+                .into_iter()
+                .map(|(m, name)| common::mention::ResolvedMention {
+                    kind: m.kind,
+                    id: m.id,
+                    name,
+                    summary: None,
+                })
+                .collect();
+        if !mentions.is_empty() {
+            body.push_str("\n\n【提及上下文】\n");
+            body.push_str(
+                "本条消息通过 @ 提及了以下实体，供你参考（它们是上下文补充、不是待办，\
+                 按正文意图处理即可，无需专门回复它们）：\n",
+            );
+            for m in &mentions {
+                body.push_str(&format!("- {}「{}」({})\n", m.kind_label(), m.name, m.id));
+            }
+            body.push_str(
+                "\n如需在回复或执行中引用这些实体的详细资料（如角色、状态、描述），\
+                 请调用对应的查询工具获取，不要凭空猜测。",
+            );
+        }
+
+        self.current_message = Some(body);
     }
 
     fn skills(&mut self, skills: &[SkillPo]) {
