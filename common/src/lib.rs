@@ -15,6 +15,7 @@ pub mod enums;
 pub mod error;
 pub mod mention;
 pub mod models;
+pub mod redaction;
 
 #[cfg(test)]
 mod error_test;

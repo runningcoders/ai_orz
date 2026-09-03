@@ -43,5 +43,5 @@ pub async fn query_tool_call_entries(
         .await?;
 
     let response: QueryToolCallEntriesResponse = entries.into_iter().map(Into::into).collect();
-    Ok(crate::redact!(response))
+    Ok(crate::redact!(response)?)
 }

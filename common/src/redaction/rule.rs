@@ -10,7 +10,7 @@
 //! 两级之上还有一层 [`ValueClass`] 类型感知：LLM 场景大量 `*tokens*` 字段是
 //! 数值统计值而非凭证，仅凭键名匹配会大面积误伤，故默认只对字符串值脱敏。
 
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 /// 全量遮蔽标记
 pub const MASK_FULL: &str = "***";
@@ -117,7 +117,7 @@ pub const KEY_RULES: &[KeyRule] = &[
 /// 由 [`KEY_RULES`] 展平而来，保证两处永不脱节。展平结果缓存为 `&'static`，
 /// 避免热路径上重复分配。
 pub fn all_patterns() -> &'static [&'static str] {
-    static FLAT: OnceCell<Vec<&'static str>> = OnceCell::new();
+    static FLAT: OnceLock<Vec<&'static str>> = OnceLock::new();
     FLAT.get_or_init(|| {
         KEY_RULES
             .iter()

@@ -43,7 +43,6 @@ futures-util = "0.3.32"
 tokio-stream = { version = "0.1", features = ["sync"] }
 common = { path = "./common", features = ["sqlx", "axum-integration", "bincode-integration", "toml-integration", "reqwest-integration", "tokio-integration"] }
 once_cell = "1.21.4"
-aho-corasick = "1.1.4"
 thiserror = "1.0"
 derive_builder = "0.20"
 bincode = "2.0"

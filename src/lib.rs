@@ -94,6 +94,9 @@ macro_rules! sys_debug {
     ($($tt:tt)*) => { $crate::log_debug!($($tt)*) };
 }
 
+// 脱敏宏：实现在 common::redaction（前后端共享单一事实源），此处转发为 crate::redact!
+pub use common::redact;
+
 // pkg 模块必须在宏之后声明，因为 pkg 内部使用 sys_info! 宏
 pub mod pkg;
 use crate::pkg::aop;

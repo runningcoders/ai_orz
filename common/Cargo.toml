@@ -7,6 +7,7 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
+aho-corasick = "1.1.4"
 anyhow = { version = "1.0", default-features = true, features = ["std"] }
 bincode = "2.0"
 chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }

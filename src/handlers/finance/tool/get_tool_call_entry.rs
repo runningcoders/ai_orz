@@ -42,5 +42,5 @@ pub async fn get_tool_call_entry(
         })?;
 
     let response: GetToolCallEntryResponse = entry.into();
-    Ok(crate::redact!(response))
+    Ok(crate::redact!(response)?)
 }

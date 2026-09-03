@@ -13,15 +13,15 @@
 use std::borrow::Cow;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use once_cell::sync::OnceCell;
 use serde_json::Value;
+use std::sync::OnceLock;
 
 use super::mask::{MaskStyle, mask_value};
 use super::policy::RedactPolicy;
 use super::rule::{KeyRule, MASK_FULL, ValueClass, all_patterns, match_key};
 
 /// 文本预检自动机（敏感词是否存在于全文）
-static PRECHECK: OnceCell<AhoCorasick> = OnceCell::new();
+static PRECHECK: OnceLock<AhoCorasick> = OnceLock::new();
 
 fn precheck() -> &'static AhoCorasick {
     PRECHECK.get_or_init(|| {
