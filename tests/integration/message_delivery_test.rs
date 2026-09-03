@@ -60,10 +60,7 @@ async fn find_tool_id_by_name(app: &TestApp, jwt: &str, name: &str) -> String {
         let tid = t.get("id").and_then(|v| v.as_str());
         let tname = t.get("name").and_then(|v| v.as_str());
         if tid == Some(name) || tname == Some(name) {
-            return tid
-                .or_else(|| tname)
-                .expect("tool row missing id")
-                .to_string();
+            return tid.or(tname).expect("tool row missing id").to_string();
         }
     }
     panic!(

@@ -1,23 +1,37 @@
 #!/bin/bash
-# pre-push 钩子：push 前本地拦截 CI 会挂的 fmt 门禁
+# pre-push 钩子：push 前本地拦截 CI 会挂的静态门禁（fmt + clippy）
 # 安装：make hooks（即 git config core.hooksPath .githooks）
 # 跳过一次：git push --no-verify
-# 说明：与 CI fmt job 完全同口径（cargo fmt --all -- --check），
-#       workspace 全 crate 覆盖，耗时秒级；只检查模块树内的 .rs 文件
-#       （与 cargo fmt 行为一致，孤儿文件 CI 同样不查）
+# 说明：与 CI fmt / lint job 同口径，本地过了 CI 就过。
+#       - fmt:    cargo fmt --all -- --check（秒级，workspace 全 crate）
+#       - clippy: cargo clippy --all-targets -- -D warnings（需 protoc，约数十秒，
+#                覆盖 lib + 测试二进制；本仓库曾因测试里的 or_fun_call lint 在此被抓出）
+#       提交时的 fmt 由 pre-commit 拦截；此处再补一道 clippy，
+#       即使有人用 git commit --no-verify 跳过提交钩子，push 仍会被挡住。
 
 set -euo pipefail
 
-echo "== pre-push: fmt-check（跳过本次：git push --no-verify）=="
+echo "== pre-push: 门禁检查（跳过本次：git push --no-verify）=="
 
 export PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 cd "$(git rev-parse --show-toplevel)"
 
+# --- fmt ---
 if ! cargo fmt --all -- --check; then
     echo ""
     echo "✗ 格式检查未通过，push 已拦截。运行 make fmt 修复后重试。"
+    echo "  仅本次跳过：git push --no-verify"
     exit 1
 fi
-
 echo "✓ fmt-check 通过"
+
+# --- clippy（后端 + 全 workspace targets，CI lint job 口径）---
+echo "== pre-push: clippy（cargo clippy --all-targets -- -D warnings）=="
+if ! cargo clippy --all-targets -- -D warnings; then
+    echo ""
+    echo "✗ clippy 检查未通过，push 已拦截。运行 make clippy 查看并修复。"
+    echo "  仅本次跳过：git push --no-verify"
+    exit 1
+fi
+echo "✓ clippy 通过"

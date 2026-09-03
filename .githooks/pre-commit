@@ -1,0 +1,25 @@
+#!/bin/bash
+# pre-commit 钩子：提交前本地拦截 CI 会挂的 fmt 门禁
+# 安装：make hooks（即 git config core.hooksPath .githooks）
+# 跳过一次：git commit --no-verify
+# 说明：与 CI fmt job 完全同口径（cargo fmt --all -- --check），
+#       workspace 全 crate 覆盖，耗时秒级；只检查模块树内的 .rs 文件
+#       （与 cargo fmt 行为一致，孤儿文件 CI 同样不查）。
+#       更重的 clippy 门禁放在 pre-push，避免每次提交都触发全量编译。
+
+set -euo pipefail
+
+echo "== pre-commit: fmt-check（跳过本次：git commit --no-verify）=="
+
+export PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! cargo fmt --all -- --check; then
+    echo ""
+    echo "✗ 格式检查未通过，提交已拦截。运行 make fmt 修复后重试。"
+    echo "  仅本次跳过：git commit --no-verify"
+    exit 1
+fi
+
+echo "✓ fmt-check 通过"

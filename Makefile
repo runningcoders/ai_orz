@@ -8,7 +8,10 @@ export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$
 .DEFAULT_GOAL := help
 .PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod package serve run clean clean-slim clean-proc doctor hooks
 
-# git hooks 目录指向仓库内 .githooks/（pre-push 自动跑 fmt-check，跳过用 git push --no-verify）
+# git hooks 目录指向仓库内 .githooks/
+#   - pre-commit：fmt-check（cargo fmt --all -- --check，秒级）
+#   - pre-push ：fmt-check + clippy（cargo clippy --all-targets -- -D warnings）
+# 跳过某次：git commit/push --no-verify
 hooks:
 	git config core.hooksPath .githooks
 
