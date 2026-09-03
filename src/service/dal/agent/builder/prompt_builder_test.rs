@@ -313,6 +313,118 @@ fn intent_analyze_phase1_failure_graceful_degrade() {
     );
 }
 
+// ==================== @ 提及上下文注入（ff80975d）====================
+//
+// 后端在 current_message 中解析正文里的 [@name](type:id) 链接，
+// 注入一段【提及上下文】作为上下文补充（纯文本解析，不查 DAL）。
+// 下列用例锁定该行为不被回归。
+
+/// 单条 @ 提及（Agent）被注入【提及上下文】区块，且位于【当前消息】之后
+#[test]
+fn current_message_injects_single_agent_mention_context() {
+    let agent = make_simple_agent();
+    let content = "帮我看看 [@张伟](agent:agt_xxx) 上次那个方案的结果";
+    let message = make_simple_message(content);
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-mention-001");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+    let prompt = builder.build();
+
+    // 1) 含 @ 提及时应注入【提及上下文】区块
+    let idx_ctx = prompt
+        .find("【提及上下文】")
+        .expect("含 @ 提及时应注入【提及上下文】区块");
+
+    // 2) 该区块属于当前消息 body，应位于【当前消息】标签之后
+    let idx_cur = prompt
+        .find("【当前消息】")
+        .expect("Prompt 应包含【当前消息】区块");
+    assert!(
+        idx_cur < idx_ctx,
+        "【提及上下文】应位于【当前消息】之后（idx_cur={} idx_ctx={}）",
+        idx_cur,
+        idx_ctx
+    );
+
+    // 3) 逐行列出「类型「名字」(id)」格式，名字去掉前导 @
+    assert!(
+        prompt.contains("Agent「张伟」(agt_xxx)"),
+        "提及实体应格式化为 - Agent「张伟」(agt_xxx)。片段:\n{}",
+        prompt.chars().take(900).collect::<String>()
+    );
+
+    // 4) 引导被 @ 的 Agent 自行查详情、不要凭空猜测
+    assert!(
+        prompt.contains("请调用对应的查询工具获取"),
+        "应引导调用查询工具获取详情、不要凭空猜测"
+    );
+
+    // 5) 原始正文（含 @ 链接）仍保留在 prompt 中
+    assert!(prompt.contains(content), "正文原文应保留");
+}
+
+/// 多条提及（Agent + 任务 + 项目）全部列出，且类型标签正确
+#[test]
+fn current_message_injects_mixed_mention_kinds() {
+    let agent = make_simple_agent();
+    let content =
+        "[@张伟](agent:agt_1) 和 [@订单导出](task:tsk_2) 还有 [@增长实验](project:prj_3) 一起看下";
+    let message = make_simple_message(content);
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-mention-002");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+    let prompt = builder.build();
+
+    assert!(prompt.contains("【提及上下文】"));
+    assert!(prompt.contains("Agent「张伟」(agt_1)"));
+    assert!(prompt.contains("任务「订单导出」(tsk_2)"));
+    assert!(prompt.contains("项目「增长实验」(prj_3)"));
+}
+
+/// 无 @ 提及时的负向断言：不注入【提及上下文】区块
+#[test]
+fn current_message_omits_mention_context_without_mention() {
+    let agent = make_simple_agent();
+    let message = make_simple_message("帮我查下订单状态");
+
+    let mut builder = DefaultPromptBuilder::new();
+    builder.current_trace_id("trace-mention-003");
+    builder.system_prompt(&agent);
+    builder.current_message(&message);
+    let prompt = builder.build();
+
+    assert!(
+        !prompt.contains("【提及上下文】"),
+        "无 @ 提及时不应注入【提及上下文】区块"
+    );
+    assert!(prompt.contains("帮我查下订单状态"), "正文原文应保留");
+}
+
+/// 外部 Agent（Flat）路径同样把 @ 提及上下文注入到扁平单消息
+#[test]
+fn flat_builder_injects_mention_context_in_single_message() {
+    let agent = make_cli_agent(None);
+    let content = "参考 [@张伟](agent:agt_xxx) 的处理方式";
+    let message = make_simple_message(content);
+
+    let messages = build_flat(&agent, &message);
+    let ChatMessage::User { content } = &messages[0] else {
+        panic!("期望 User 消息");
+    };
+    assert!(
+        content.contains("【提及上下文】"),
+        "扁平消息应含【提及上下文】"
+    );
+    assert!(
+        content.contains("Agent「张伟」(agt_xxx)"),
+        "扁平消息应列出提及实体"
+    );
+}
+
 // ==================== FlatPromptBuilder（外部 Agent）====================
 
 /// 构造带 Cli external_config 的 Agent
