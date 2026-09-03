@@ -11,7 +11,7 @@ use common::enums::ThinkingScene;
 use common::error::{Result, err};
 use std::sync::Arc;
 
-use super::types::ThinkLoopResult;
+use super::types::{RoundDigest, ThinkLoopResult};
 
 // ==================== 策略映射 ====================
 
@@ -69,6 +69,12 @@ fn is_recursive_settle_call(scene: common::enums::ThinkingScene, tool_name: &str
     matches!(scene, ThinkingScene::Settle | ThinkingScene::Compact)
         && tool_name == super::compaction::RECURSIVE_SETTLE_TOOL
 }
+
+/// 进度快照中单条消息摘要的最大字符数
+///
+/// 兜底摘要是「信息保全」而非「信息复现」，超长的工具返回（搜索结果、文件全文）
+/// 截断即可 —— 真要回看细节还有 trace 的 JSONL 原文。
+const ROUND_DIGEST_MAX_CONTENT: usize = 800;
 
 /// 连续工具调用轮数的疲劳提示阈值：达到后注入一条 System 提醒，逼模型收尾
 ///
@@ -165,6 +171,7 @@ impl RuntimeDomainImpl {
             timeout_secs,
             think_runtime,
             policy,
+            progress,
         } = params;
 
         // brain 统一在此解析：四个场景取的都是 agent.brain，
@@ -305,6 +312,11 @@ impl RuntimeDomainImpl {
                         for tc in &tool_calls {
                             *tool_call_counts.entry(tc.name.clone()).or_insert(0) += 1;
                         }
+                        // 进度快照：记录本轮起点与本轮模型输出，稍后据此截取本轮新增消息。
+                        // 必须在 push 之前取，push 会 move 掉 content / tool_calls。
+                        let round_start_idx = messages.len();
+                        let digest_assistant_text = content.clone();
+                        let mut round_tool_names: Vec<String> = Vec::with_capacity(tc_count);
                         // 追加助手消息（含 tool_calls），让模型在下一轮看到自己发起的调用
                         messages.push(ChatMessage::Assistant {
                             content,
@@ -337,6 +349,9 @@ impl RuntimeDomainImpl {
                                 ));
                                 continue;
                             }
+                            // 进度快照统计的是「尝试过哪些工具」：执行失败与工具不存在
+                            // 同样要计入，它们对判断中断前的进展很关键。
+                            round_tool_names.push(tc.name.clone());
                             match agent.tools().iter().find(|t| t.po.name == tc.name) {
                                 Some(tool) => {
                                     let call_result = match tool.po.control_mode {
@@ -375,6 +390,27 @@ impl RuntimeDomainImpl {
                                 }
                             }
                         }
+
+                        // 记录本轮进度到快照。
+                        //
+                        // 位置刻意选在「工具执行完、策略评估前」：上下文溢出检测与策略
+                        // 命中（轮次耗尽 / token 预算 / 无进展）都会立即 return，
+                        // 放在这里才能保证每一轮已完成的工具调用都不漏记。
+                        //
+                        // 下一轮 `brain_dal().think()` 失败（429 限流等）时本轮已落袋，
+                        // 调用方才能凭快照生成兜底摘要。
+                        if let Some(progress) = progress {
+                            progress.record_round(RoundDigest {
+                                round: round + 1,
+                                assistant_text: digest_assistant_text,
+                                tool_names: round_tool_names,
+                                transcript: messages[round_start_idx..]
+                                    .iter()
+                                    .map(|m| m.to_summary_text(ROUND_DIGEST_MAX_CONTENT))
+                                    .collect(),
+                            });
+                        }
+
                         // 发布 ThinkRoundEvent（有工具调用）
                         let _ = crate::pkg::aop::publish(
                             &ctx,

@@ -7,7 +7,147 @@ use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ToolDescriptor};
 use crate::pkg::agent_runtime_state::AgentThinkRuntime;
 use common::enums::ThinkingScene;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+// ==================== 循环进度快照 ====================
+
+/// 单轮思考的进度摘要
+///
+/// `transcript` 已是可直接入档的文本行（由 [`ChatMessage::to_summary_text`] 生成），
+/// 存文本而非存 `ChatMessage` 的原因：快照要跨 `Err` / 超时存活，
+/// 存原始消息会让循环每轮多一次全量 clone。
+#[derive(Debug, Clone, Default)]
+pub struct RoundDigest {
+    /// 轮次编号（1-based，跨压缩累计，面向阅读）
+    pub round: usize,
+    /// 本轮模型输出的文本（思考过程 / 中途说明），可能为空
+    pub assistant_text: Option<String>,
+    /// 本轮调用的工具名（按调用顺序，含执行失败与未找到的）
+    pub tool_names: Vec<String>,
+    /// 本轮新增消息的摘要行（assistant 输出 + 工具调用 + 工具结果）
+    pub transcript: Vec<String>,
+}
+
+/// 思考循环进度快照（跨 `Err` / 超时存活）
+///
+/// # 为什么需要它
+///
+/// `messages` 是 `run_think_loop` 内部的局部变量，以下两条退出路径都拿不到它：
+///
+/// - **模型调用失败**（429 限流 / 5xx / 鉴权 / 内容过滤）：`?` 提前返回，`messages` 被 drop
+/// - **`tokio::time::timeout` 超时**：整个 future 被丢弃，`messages` 一起消失
+///
+/// 而这两条恰恰是最需要「兜底总结」的场景 —— 循环白跑若干轮，用户诉求彻底丢失，
+/// 短期记忆里没有、trace 里也没有。
+///
+/// 快照由**调用方**持有并通过 [`ThinkLoopParams::with_progress`] 传入，
+/// 因此上述两条路径下它都存活，调用方可据此生成兜底摘要（见 `abort_summary` 模块）。
+#[derive(Debug, Clone, Default)]
+pub struct ThinkLoopProgress {
+    inner: Arc<Mutex<ProgressInner>>,
+}
+
+#[derive(Debug, Default)]
+struct ProgressInner {
+    /// 已完成的有效轮次（模型成功返回并处理完毕的轮次）
+    rounds: Vec<RoundDigest>,
+    /// 累计工具调用次数
+    total_tool_calls: usize,
+    /// 按工具名累计调用次数
+    tool_call_counts: std::collections::HashMap<String, usize>,
+}
+
+impl ThinkLoopProgress {
+    /// 创建空快照
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 记录一轮已完成的思考（工具调用与结果都已落地到 messages 之后调用）
+    pub fn record_round(&self, digest: RoundDigest) {
+        // 持锁期间只做纯内存计入，不做任何 I/O，避免阻塞循环
+        match self.inner.lock() {
+            Ok(mut inner) => {
+                inner.total_tool_calls += digest.tool_names.len();
+                for name in &digest.tool_names {
+                    *inner.tool_call_counts.entry(name.clone()).or_insert(0) += 1;
+                }
+                inner.rounds.push(digest);
+            }
+            // 锁中毒：放弃本轮记录。兜底摘要是尽力而为的能力，
+            // 绝不能因为记不下来就让思考循环失败。
+            Err(_) => {
+                crate::log_warn!(
+                    "think loop progress lock poisoned, round {} not recorded",
+                    digest.round
+                );
+            }
+        }
+    }
+
+    /// 取一份独立副本（不持锁），供兜底摘要构造使用
+    pub(crate) fn snapshot(&self) -> ProgressSnapshot {
+        match self.inner.lock() {
+            Ok(inner) => ProgressSnapshot {
+                rounds: inner.rounds.clone(),
+                total_tool_calls: inner.total_tool_calls,
+                tool_call_counts: inner.tool_call_counts.clone(),
+            },
+            Err(_) => ProgressSnapshot::default(),
+        }
+    }
+
+    /// 清空快照：上下文压缩成功后调用
+    ///
+    /// 压缩前的工作已由压缩流程归档成短期记忆，兜底摘要只需覆盖
+    /// 压缩之后的进度，避免下次中断时同一段工作在记忆里出现两份。
+    pub(crate) fn reset(&self) {
+        match self.inner.lock() {
+            Ok(mut inner) => *inner = ProgressInner::default(),
+            Err(_) => {
+                // 锁中毒时无法安全清空：保留旧快照只会让兜底摘要略有冗余，
+                // 但绝不能让这个可忽略的瑕疵影响主循环。
+                crate::log_warn!("think loop progress lock poisoned, reset skipped");
+            }
+        }
+    }
+}
+
+/// [`ThinkLoopProgress`] 的只读副本
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ProgressSnapshot {
+    pub rounds: Vec<RoundDigest>,
+    pub total_tool_calls: usize,
+    pub tool_call_counts: std::collections::HashMap<String, usize>,
+}
+
+impl ProgressSnapshot {
+    /// 已完成的有效轮次数
+    pub fn rounds_used(&self) -> usize {
+        self.rounds.len()
+    }
+
+    /// 模型最后一次输出的文本（兜底摘要里作为「中断前的最后一句话」）
+    pub fn last_assistant_text(&self) -> Option<&str> {
+        self.rounds
+            .iter()
+            .rev()
+            .find_map(|r| r.assistant_text.as_deref())
+            .filter(|s| !s.trim().is_empty())
+    }
+
+    /// 工具调用统计，格式 `name xN`，按调用次数降序、同次数按名称升序
+    pub fn tool_call_stats(&self) -> Vec<String> {
+        let mut items: Vec<_> = self.tool_call_counts.iter().collect();
+        items.sort_by(|(a_name, a_cnt), (b_name, b_cnt)| {
+            b_cnt.cmp(a_cnt).then_with(|| a_name.cmp(b_name))
+        });
+        items
+            .into_iter()
+            .map(|(name, count)| format!("{name} x{count}"))
+            .collect()
+    }
+}
 
 // ==================== think loop 入参 ====================
 
@@ -54,6 +194,11 @@ pub struct ThinkLoopParams<'a> {
     pub think_runtime: Option<&'a Arc<AgentThinkRuntime>>,
     /// 策略引擎接入点（None = 退化为旧行为，仅靠 max_rounds + timeout 控制）
     pub policy: Option<&'a dyn crate::pkg::policy::Policy>,
+    /// 进度快照收集点（None = 不记录）
+    ///
+    /// 传入后循环每轮会把「做了什么」写进快照。异常中断（`Err` / 超时）时
+    /// 调用方靠它生成兜底总结 —— 这是目前唯一能在这两条路径上保留工作成果的手段。
+    pub progress: Option<&'a ThinkLoopProgress>,
 }
 
 impl<'a> ThinkLoopParams<'a> {
@@ -82,6 +227,7 @@ impl<'a> ThinkLoopParams<'a> {
             timeout_secs: config_resolve::think_timeout_secs(agent),
             think_runtime: None,
             policy: None,
+            progress: None,
         }
     }
 
@@ -103,6 +249,15 @@ impl<'a> ThinkLoopParams<'a> {
     ) -> Self {
         self.think_runtime = Some(think_runtime);
         self.policy = Some(policy);
+        self
+    }
+
+    /// 接入进度快照收集器
+    ///
+    /// 需要「异常中断也能留存工作成果」的调用方（目前是 awaken）应传入。
+    /// 压缩 / 沉淀 / 意图识别这类内部小循环不传 —— 它们的产出本就只供内部使用。
+    pub fn with_progress(mut self, progress: &'a ThinkLoopProgress) -> Self {
+        self.progress = Some(progress);
         self
     }
 }

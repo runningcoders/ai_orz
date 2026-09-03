@@ -22,7 +22,11 @@ use crate::pkg::request_context::RequestContext;
 use crate::pkg::stats::AgentAwakeEvent;
 use crate::record_event;
 use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+use crate::service::domain::runtime::abort_summary::{
+    AbortFinalizeParams, AbortKind, attach_abort_notice,
+};
 use crate::service::domain::runtime::compaction::{CompactOutcome, strip_summary_block};
+use crate::service::domain::runtime::types::ThinkLoopProgress;
 use crate::service::domain::runtime::{
     AwakeningResult, RuntimeAwakening, RuntimeDomain, RuntimeDomainImpl,
 };
@@ -342,6 +346,13 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         // 初始化为 awaken 自身的 trace_id（预生成，Step 6 才写入完整内容）
         let mut pending_trace_ids: Vec<String> = vec![trace_id.clone()];
 
+        // 循环进度快照：异常中断（Err / 超时）时唯一能拿到的「做了什么」。
+        //
+        // 它必须由调用方持有 —— `messages` 是 run_think_loop 的内部变量，
+        // `?` 传播（429 等）会 drop 它，超时时整个 future 连同它一起消失。
+        // 压缩成功后重置：那之前的工作已由 compress 归档，兜底只需覆盖压缩之后的进度。
+        let progress = ThinkLoopProgress::new();
+
         let mut prompt;
         let raw_output;
         // 正常完成时保存对话历史，用于触发总结流程写入短期记忆
@@ -484,7 +495,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         &tool_descriptors,
                     )
                     .with_rounds(max_rounds, total_rounds)
-                    .with_monitoring(&think_runtime, policy.as_ref()),
+                    .with_monitoring(&think_runtime, policy.as_ref())
+                    .with_progress(&progress),
                 )
                 .await;
 
@@ -533,6 +545,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         Ok(outcome) => {
                             // 压缩成功：重置待沉淀范围，下次压缩/总结的边界 = 自本次压缩起
                             pending_trace_ids = vec![trace_id.clone()];
+                            // 压缩前的轮次已归档，兜底快照同步重置，只覆盖之后的进度
+                            progress.reset();
                             // 压缩结果直接交给下一轮，不再重新查询历史记忆
                             compacted_context = outcome.compacted_summary;
                             compacted_memory_id = outcome.compacted_memory_id;
@@ -612,6 +626,31 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         "agent thinking cancelled by user, rounds={}",
                         rounds
                     );
+
+                    // 取消也走兜底存档：用户取消不代表做过的工作没价值 ——
+                    // 已经调用过的工具、查到的事实，下次接着做时仍然有用。
+                    let abort_outcome = self
+                        .finalize_abort(AbortFinalizeParams {
+                            ctx: ctx.clone(),
+                            agent,
+                            trace: trace.clone(),
+                            prompt: &prompt,
+                            user_message: &message.po.content,
+                            message_id: &message.po.id,
+                            progress: &progress,
+                            total_rounds: total_rounds.saturating_add(rounds),
+                            trace_ids: &pending_trace_ids,
+                            kind: AbortKind::Cancelled,
+                            error: None,
+                        })
+                        .await;
+                    log_info!(
+                        &ctx,
+                        "awaken",
+                        "cancelled abort-summary persisted: memory_id={:?}",
+                        abort_outcome.memory_id
+                    );
+
                     let duration_ms = start_time
                         .elapsed()
                         .map(|d| d.as_millis() as u64)
@@ -659,10 +698,36 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 }
                 Err(e) => {
                     // think loop 执行失败
+                    //
+                    // 兜底总结：这条路径上 `messages` 已经随 `?` 传播被 drop（超时时
+                    // 连同 future 一起消失），能留下来的只有调用方持有的进度快照。
+                    // 更关键的是，429 / 5xx 这类错误意味着模型此刻不可用 ——
+                    // 再发起一次 compact_context 必然二次失败，所以这里只能走
+                    // 不依赖 LLM 的规则化存档（`abort_summary` 模块）。
+                    let abort_outcome = self
+                        .finalize_abort(AbortFinalizeParams {
+                            ctx: ctx.clone(),
+                            agent,
+                            trace: trace.clone(),
+                            prompt: &prompt,
+                            user_message: &message.po.content,
+                            message_id: &message.po.id,
+                            progress: &progress,
+                            total_rounds,
+                            trace_ids: &pending_trace_ids,
+                            kind: AbortKind::Error,
+                            error: Some(&e),
+                        })
+                        .await;
+
                     let duration_ms = start_time
                         .elapsed()
                         .map(|d| d.as_millis() as u64)
                         .unwrap_or(0);
+                    // 上报结构化「错误类型:错误码」，具体原因截取一段作为辅助信息，
+                    // 避免把完整动态错误文本塞进 metric 造成聚合碎片化。
+                    let status_code = format!("{:?}:{}", e.error_type, e.code());
+                    let reason = truncate_reason(&e.msg, AGENT_AWAKE_REASON_LIMIT);
                     if let Err(stats_err) = record_event!(
                         ctx,
                         AgentAwakeEvent {
@@ -674,8 +739,8 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                             message_id: Some(message.po.id.clone()),
                             call_count: 1,
                             duration_ms: duration_ms,
-                            status: format!("failed: {}", e),
-                            exit_reason: "error".to_string(),
+                            status: status_code,
+                            exit_reason: reason,
                         }
                     ) {
                         log_warn!(
@@ -697,7 +762,9 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                         ),
                     )
                     .await;
-                    return Err(e);
+                    // 错误语义不变（是否重试仍由消费者按 is_model_error 决定），
+                    // 只把进度概览挂在错误上，供失败通知告知用户「工作没白做」。
+                    return Err(attach_abort_notice(e, abort_outcome.brief));
                 }
             }
         }
@@ -1155,6 +1222,19 @@ impl RuntimeAwakening for RuntimeDomainImpl {
     }
 }
 
+/// 上报到 `AgentAwakeEvent.exit_reason` 的错误原因最大字符数。
+const AGENT_AWAKE_REASON_LIMIT: usize = 200;
+
+/// 截断错误原因文本，避免过长动态文本进入 metric 造成存储膨胀与聚合碎片化。
+fn truncate_reason(msg: &str, max_chars: usize) -> String {
+    let trimmed = msg.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let taken: String = trimmed.chars().take(max_chars).collect();
+    format!("{taken}...")
+}
+
 #[cfg(test)]
 mod tests {
     // ==================== awaken 集成测试 ====================
@@ -1179,6 +1259,31 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
     use uuid::Uuid;
+
+    use super::truncate_reason;
+
+    #[test]
+    fn truncate_reason_respects_limit_and_trims() {
+        // 长文本：超过上限应被截断并追加 "..."
+        let long = "x".repeat(500);
+        let out = truncate_reason(&long, 200);
+        assert!(out.ends_with("..."), "应追加省略号: {out}");
+        assert_eq!(out.chars().count(), 203, "200 字符 + 3 点");
+
+        // 短文本：不超过上限原样返回（含两端空白被 trim）
+        let short = "  hello world  ";
+        assert_eq!(truncate_reason(short, 200), "hello world");
+
+        // 边界：恰好等于上限不截断
+        let exact = "a".repeat(200);
+        assert_eq!(truncate_reason(&exact, 200), exact);
+
+        // Unicode：按字符而非字节截断，避免截断到多字节中间
+        let uni = "中".repeat(300);
+        let out_uni = truncate_reason(&uni, 200);
+        assert_eq!(out_uni.chars().count(), 203);
+        assert!(out_uni.ends_with("..."));
+    }
 
     /// 捕获 Prompt 的 BrainDal Stub
     ///
@@ -1239,6 +1344,62 @@ mod tests {
                 content: "mock response".to_string(),
                 usage: crate::models::cortex_types::TokenUsage::default(),
             })
+        }
+
+        async fn embed_entity(
+            &self,
+            _ctx: RequestContext,
+            _entity: &dyn crate::models::vector::Vectorizable,
+        ) -> common::error::Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
+
+        async fn embed_text_for_search(
+            &self,
+            _ctx: RequestContext,
+            _text: &str,
+        ) -> common::error::Result<Option<crate::models::vector::VectorIndexParams>> {
+            Ok(None)
+        }
+    }
+
+    /// 在 `think()` 中直接返回 429（ModelRateLimited）的 BrainDal Stub
+    ///
+    /// 用于验证异常退出兜底链路：429 应向上冒泡为 `Err`，
+    /// 且 `awaken` 必须在返回前落库一条 `loop_abort` 短期记忆、并在错误上挂 `abort_notice`。
+    struct FailingBrainDal;
+
+    #[async_trait]
+    impl BrainDal for FailingBrainDal {
+        async fn wake_brain(
+            &self,
+            _ctx: RequestContext,
+            _agent: &AgentPo,
+            _memories: Vec<crate::models::memory::Memory>,
+        ) -> common::error::Result<Brain> {
+            unimplemented!("not needed by awaken abort test")
+        }
+
+        async fn test_connection(
+            &self,
+            _ctx: RequestContext,
+            _provider: &ModelProvider,
+            _prompt: &str,
+        ) -> common::error::Result<String> {
+            unimplemented!("not needed by awaken abort test")
+        }
+
+        async fn think(
+            &self,
+            _ctx: RequestContext,
+            _brain: &Brain,
+            _messages: &[crate::models::cortex_types::ChatMessage],
+            _tools: &[crate::models::cortex_types::ToolDescriptor],
+        ) -> common::error::Result<crate::models::cortex_types::ThinkResult> {
+            Err(common::error::Error::new(
+                common::error::ErrorCode::ModelRateLimited,
+                "chat completions rate limited (429): quota exceeded for this minute",
+            ))
         }
 
         async fn embed_entity(
@@ -1514,6 +1675,73 @@ mod tests {
         assert_eq!(result.agent_id, agent_id);
         assert!(!result.raw_input.is_empty());
         assert_eq!(result.raw_output, "mock response");
+    }
+
+    #[sqlx::test]
+    async fn test_awaken_rate_limited_persists_abort_memory(pool: SqlitePool) {
+        let ctx = init_awaken_test_env(pool);
+
+        let agent_id = format!("agent-abort-{}", Uuid::now_v7());
+        let agent = make_test_agent(&agent_id);
+        let message = make_test_message("帮我把上周的方案整理成一页纸摘要");
+
+        // 让 Brain 在第一次 think() 即返回 429，模拟限流导致思考循环异常退出
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let runtime = crate::service::domain::runtime::new_with_all(
+            Arc::new(FailingBrainDal),
+            crate::service::dal::tool::dal(),
+            crate::service::dal::mcp_tool::dal(),
+            crate::service::dal::agent::dal(),
+            Arc::new(ToolCallLogger::new(temp_dir.path().to_path_buf())),
+            Arc::new(StubUserDal::none()),
+            Arc::new(StubLarkCredentialDal::none()),
+        );
+
+        let err = runtime
+            .awakening()
+            .awaken(ctx.clone(), &agent, &message, &ThinkingOptions::new())
+            .await
+            .expect_err("429 应当作为 Err 向上传播");
+
+        // 1. 错误语义不变：code 仍是 ModelRateLimited
+        assert_eq!(err.code_enum(), common::error::ErrorCode::ModelRateLimited);
+
+        // 2. 错误上挂了给用户的一句话进度概览（abort_notice）
+        let notice = err
+            .field
+            .as_ref()
+            .and_then(|f| {
+                f.extra
+                    .get(crate::service::domain::runtime::abort_summary::ABORT_NOTICE_FIELD)
+            })
+            .expect("错误应携带 abort_notice 字段");
+        let notice = notice.as_str().expect("abort_notice 应为字符串");
+        assert!(!notice.is_empty(), "abort_notice 不应为空");
+
+        // 3. 短期记忆里应落库一条 loop_abort 存档
+        let mems = crate::service::dal::memory::dal()
+            .query(
+                ctx.clone(),
+                crate::service::dao::memory::MemoryQuery {
+                    agent_id: Some(agent_id.clone()),
+                    tags: Some(vec!["loop_abort".to_string()]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("查询短期记忆失败");
+        assert!(!mems.is_empty(), "异常退出后应落库 loop_abort 短期记忆");
+
+        // 存档内容应当包含用户原始消息与真实错误码，证明「信息不丢」
+        let summary = mems[0].to_prompt_summary().expect("短期记忆应有 summary");
+        assert!(
+            summary.contains("帮我把上周的方案整理成一页纸摘要"),
+            "存档应保留用户原始消息，实际: {summary}"
+        );
+        assert!(
+            summary.contains("model_rate_limited"),
+            "存档应记录真实错误码，实际: {summary}"
+        );
     }
 
     #[sqlx::test]

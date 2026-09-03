@@ -319,6 +319,8 @@ pub trait RuntimeToolExecution: Send + Sync {
 // ==================== 子模块  ====================
 // 注意：子模块必须在 trait 定义之后导入，这样子模块才能看到这些 trait
 
+// abort_summary 需要 pub(crate)：其中的 ABORT_NOTICE_FIELD 由 consumer 侧读取
+pub(crate) mod abort_summary;
 pub mod awakening;
 mod busy_guard;
 mod compaction;

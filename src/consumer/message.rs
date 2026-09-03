@@ -562,7 +562,21 @@ impl MessageConsumer {
 
         // 用户可见文案统一由错误系统（ErrorCode.message）维护：
         // 模型类错误返回人话提示，其它错误回退到错误详情。
-        let content = format!("⚠️ Agent 执行失败：{}", err.user_message());
+        let mut content = format!("⚠️ Agent 执行失败：{}", err.user_message());
+
+        // 中断兜底进度概览：domain 层异常收尾（abort_summary）时挂在错误 field 上，
+        // 告知用户「做到哪一步、已记入记忆」，避免失败通知显得工作全部白费。
+        if let Some(notice) = err
+            .field()
+            .and_then(|f| {
+                f.extra
+                    .get(crate::service::domain::runtime::abort_summary::ABORT_NOTICE_FIELD)
+            })
+            .and_then(|v| v.as_str())
+        {
+            content.push_str("\n\n");
+            content.push_str(notice);
+        }
 
         self.message_domain
             .delivery()
