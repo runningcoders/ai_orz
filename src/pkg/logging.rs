@@ -195,6 +195,9 @@ pub fn is_sensitive_key(key: &str) -> bool {
 /// 递归脱敏 JSON：命中敏感字段的值替换为 `***`（就地修改）
 ///
 /// 适用于能解析为 JSON 结构的日志内容（请求/响应体、DTO 调试输出等）。
+/// 命中敏感键（password/token/...）的字段值整体替换为 `***`；非敏感键下的
+/// 字符串值（如 shell 命令参数、错误文本）递归走 [`mask_sensitive_text`] 做
+/// 文本级脱敏（支持 `key=value` / `key: value` / `"key":"value"` / `--key value` / Bearer）。
 pub fn mask_sensitive_json(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
@@ -210,6 +213,13 @@ pub fn mask_sensitive_json(value: &mut serde_json::Value) {
             for item in items.iter_mut() {
                 mask_sensitive_json(item);
             }
+        }
+        serde_json::Value::String(s) => {
+            // 递归脱敏字符串值内部自由文本（如 shell 命令参数 `--token xxx`、
+            // 错误信息中的 `key=value`）。敏感键的值已在 Object 分支整体替换，此处
+            // 只处理非敏感键下承载的裸字符串值。
+            let masked = mask_sensitive_text(s);
+            *s = masked;
         }
         _ => {}
     }
@@ -235,50 +245,82 @@ pub fn mask_sensitive_text(text: &str) -> String {
             if key_end > bytes.len() || !bytes[i..key_end].eq_ignore_ascii_case(key_bytes) {
                 continue;
             }
-            // 键后：可选空格 + 可选收尾引号（JSON 形态）+ 分隔符（= 或 :）
+            // 键后：可选空格 + 分隔符（= / : / 收尾引号 JSON 形态 / 空格 flag）
             let mut j = key_end;
+            let had_space = j < bytes.len() && bytes[j] == b' ';
             while j < bytes.len() && bytes[j] == b' ' {
                 j += 1;
             }
-            if j < bytes.len() && bytes[j] == b'"' {
+            if j >= bytes.len() {
+                continue;
+            }
+            let sep = bytes[j];
+            let value_start;
+            if sep == b'"' {
+                // JSON 字符串形态："key":"value"（key 收尾引号后为 :）
+                j += 1;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b':') {
+                    j += 1;
+                }
+                value_start = j; // 值 opening quote 位置（text[i..value_start] 含 key 引号+冒号）
+                // 扫描值内容（跳过 opening quote，处理转义）
+                let mut vj = j + 1;
+                while vj < bytes.len() && bytes[vj] != b'"' {
+                    if bytes[vj] == b'\\' {
+                        vj += 1; // 跳过转义符
+                    }
+                    vj += 1;
+                }
+                let value_end = (vj + 1).min(bytes.len()); // 含收尾引号
+                if value_end > value_start {
+                    out.push_str(&text[i..value_start]);
+                    out.push_str("***");
+                    i = value_end;
+                    matched = true;
+                }
+                break;
+            } else if sep == b'=' || sep == b':' {
+                // KV 形态：key=value / key: value
                 j += 1;
                 while j < bytes.len() && bytes[j] == b' ' {
                     j += 1;
                 }
-            }
-            if j >= bytes.len() || (bytes[j] != b'=' && bytes[j] != b':') {
+                value_start = j;
+            } else if had_space && i > 0 && bytes[i - 1] == b'-' {
+                // CLI flag 形态：`--key value`（key 前为 `-`，空格分隔、无 =/:）
+                // 注意：上方已跳过 key 后空格，j 已指向值首字符，勿再 j += 1
+                value_start = j;
+                // flag value 以 `-` 开头表示下一个 flag，不脱敏（如 `--token --verbose`）
+                if bytes.get(value_start) == Some(&b'-') {
+                    continue;
+                }
+            } else {
                 continue;
             }
-            j += 1;
-            while j < bytes.len() && bytes[j] == b' ' {
-                j += 1;
-            }
-            let value_start = j;
 
-            // 值形态 1：引号包裹（JSON 字符串，处理转义）
-            let mut value_end;
-            if j < bytes.len() && bytes[j] == b'"' {
-                j += 1;
+            // 裸值 / 引号值 / flag 值：止于分隔字符
+            let mut value_end = value_start;
+            if bytes.get(value_start) == Some(&b'"') {
+                // 引号包裹值（如 key="value"）
+                j = value_start + 1;
                 while j < bytes.len() && bytes[j] != b'"' {
                     if bytes[j] == b'\\' {
-                        j += 1; // 跳过转义符
+                        j += 1;
                     }
                     j += 1;
                 }
-                value_end = (j + 1).min(bytes.len()); // 含收尾引号
+                value_end = (j + 1).min(bytes.len());
             } else {
-                // 值形态 2：裸值，止于分隔字符
-                while j < bytes.len() {
-                    let c = bytes[j];
+                while value_end < bytes.len() {
+                    let c = bytes[value_end];
                     if c.is_ascii_whitespace()
                         || matches!(c, b',' | b';' | b'}' | b']' | b'"' | b'\'')
                     {
                         break;
                     }
-                    j += 1;
+                    value_end += 1;
                 }
-                value_end = j;
-                // 值形态 3：`Bearer xxx` —— 再吞掉一个空白分隔的 token
+                // `Bearer xxx` —— 再吞掉一个空白分隔的 token
                 if bytes[value_start..value_end].eq_ignore_ascii_case(b"bearer") {
                     let mut k = value_end;
                     while k < bytes.len() && bytes[k].is_ascii_whitespace() {
@@ -396,5 +438,43 @@ mod tests {
             mask_sensitive_text("client_secret = very-secret-value;"),
             "client_secret = ***;"
         );
+    }
+
+    #[test]
+    fn mask_sensitive_text_flag_form_redacts_value() {
+        // CLI flag 形态 `--key value`：key 前为 `-`，空格分隔，脱敏其后 value
+        assert_eq!(
+            mask_sensitive_text("git push --token secret123"),
+            "git push --token ***"
+        );
+        assert_eq!(
+            mask_sensitive_text("curl -H 'Authorization: Bearer x' --password hunter2 done"),
+            "curl -H 'Authorization: ***' --password *** done"
+        );
+        // 普通文本里的敏感子串（key 前非 `-`）不触发 flag 形态，避免误伤
+        assert_eq!(
+            mask_sensitive_text("my token is abc123 and secret stays"),
+            "my token is abc123 and secret stays"
+        );
+        // 仅 `--key` 无可脱敏 value 时不破坏原文
+        assert_eq!(
+            mask_sensitive_text("run --token --verbose"),
+            "run --token --verbose"
+        );
+    }
+
+    #[test]
+    fn mask_sensitive_json_recurses_into_string_values() {
+        // 非敏感键承载的裸字符串值（如 shell 命令参数）也走文本脱敏
+        let mut value: serde_json::Value = serde_json::json!({
+            "command": "git push --token secret123",
+            "env": { "password": "hunter2" },
+            "note": "my token is abc"
+        });
+        mask_sensitive_json(&mut value);
+        assert_eq!(value["command"], "git push --token ***");
+        assert_eq!(value["env"]["password"], "***");
+        // 无 `-` 前缀的敏感子串不被 flag 形态误伤
+        assert_eq!(value["note"], "my token is abc");
     }
 }

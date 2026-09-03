@@ -379,12 +379,11 @@ fn builtin_tool_also_field_level_redacts() {
         None,
     );
 
-    // 注：当前 `mask_sensitive_json` 仅对 JSON 字段级敏感键（password/token/...）做
-    // 值替换，不递归处理字符串值内部的自由文本，因此命令字符串内的 `--token secret123`
-    // 形态不会被脱敏（与 handler 读取路径一致：脱敏发生在写入时，且只覆盖结构化值）。
+    // 命令字符串内的 `--token secret123` 经 mask_sensitive_json 递归 String 值 +
+    // mask_sensitive_text 的 flag 形态（key 前为 `-`）脱敏为 `--token ***`
     assert_eq!(
         input,
-        json!({ "command": "git push --token secret123", "env": { "password": "***" } })
+        json!({ "command": "git push --token ***", "env": { "password": "***" } })
     );
     assert_eq!(output, Some(json!({ "result": "ok", "token": "***" })));
     assert!(error.is_none());
