@@ -100,30 +100,5 @@ impl From<ToolCallEntry> for common::api::tool::ToolCallEntryDetail {
     }
 }
 
-/// 对工具 trace 的 input/output/error 进行**字段级脱敏**（所有协议统一策略）
-///
-/// 保留完整 JSON 结构，仅把命中敏感字段（password / api_key / token / secret /
-/// authorization / credential 等）的值递归替换为 `***`；错误文本中的 KV 敏感模式
-/// 也做同级别脱敏。
-///
-/// 不再按协议类型（Builtin / Http / Mcp）做区分，全量工具统一脱敏：一方面避免
-/// 运行时 ToolPo 的 protocol 字段与实际不符导致 Builtin 意外漏脱敏，另一方面
-/// Builtin 工具（如 shell_exec 的命令参数）本身也可能携带敏感信息，统一处理更安全。
-///
-/// 历史：最早对 Http/Mcp 做 fail-closed 全量替换 `[REDACTED]`（导致前端看不到任何
-/// 内容）→ 改为字段级脱敏但仍按协议跳过 Builtin → 本次彻底去掉协议分支，所有工具
-/// 一视同仁。
-pub(crate) fn redact_trace_values_for_tool(
-    _po: &crate::models::tool::ToolPo,
-    mut input: serde_json::Value,
-    mut output: Option<serde_json::Value>,
-    error: Option<String>,
-) -> (serde_json::Value, Option<serde_json::Value>, Option<String>) {
-    crate::pkg::logging::mask_sensitive_json(&mut input);
-    if let Some(ref mut v) = output {
-        crate::pkg::logging::mask_sensitive_json(v);
-    }
-    let error = error.map(|e| crate::pkg::logging::mask_sensitive_text(&e));
-
-    (input, output, error)
-}
+// 边界决策（2026-09-03）：trace 落库保持原文，字段级脱敏已移除；
+// 对外出口（tool-call-entries 查询接口）统一用 `redact!` 宏脱敏，见 pkg/redaction。

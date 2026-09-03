@@ -5,9 +5,7 @@ use sqlx::SqlitePool;
 use std::sync::Once;
 
 use crate::pkg::RequestContext;
-use crate::pkg::tool_tracing::entry::{
-    ToolCallEntry, ToolCallStatus, redact_trace_values_for_tool,
-};
+use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
 use crate::pkg::tool_tracing::logger::ToolCallLogger;
 
 use super::get_tool_call_entry::get_tool_call_entry;
@@ -56,26 +54,9 @@ fn test_entry(call_id: &str, tool_id: &str) -> ToolCallEntry {
         output: Some(json!({"weather": "sunny", "credential": "placeholder-value"})),
         error: Some("request failed".to_string()),
         status: ToolCallStatus::Completed,
-        // 注：`redact_trace_values_for_tool` 只脱敏 input/output/error，不处理 metadata
-        // （metadata 为内部调试字段，设计上不承载用户输入敏感值），故此处不放占位敏感值
+        // metadata 为内部调试字段，设计上不承载用户输入敏感值
         metadata: json!({"source": "handler-test"}),
     }
-}
-
-/// 模拟真实写入路径：落库前统一字段级脱敏（与 `execute` 路径一致，
-/// 见 `dao/tool_call/impl.rs`）。读取路径原样透传存储值，故 handler 响应
-/// 的脱敏结果就是写入时生成的 `***`，旧的全量 `[REDACTED]` 标记已弃用。
-fn redact_entry(mut entry: ToolCallEntry) -> ToolCallEntry {
-    let (input, output, error) = redact_trace_values_for_tool(
-        &crate::models::tool::ToolPo::default(),
-        entry.input,
-        entry.output,
-        entry.error,
-    );
-    entry.input = input;
-    entry.output = output;
-    entry.error = error;
-    entry
 }
 
 #[tokio::test]
@@ -84,7 +65,7 @@ async fn query_tool_call_entries_handler_returns_scoped_trace_details() {
     let call_id = format!("handler-query-{}", uuid::Uuid::now_v7());
     let tool_id = "handler-query-tool";
     ToolCallLogger::get()
-        .log_call(tool_id, redact_entry(test_entry(&call_id, tool_id)))
+        .log_call(tool_id, test_entry(&call_id, tool_id))
         .expect("trace entry should be logged");
 
     let response = query_tool_call_entries(
@@ -112,7 +93,7 @@ async fn get_tool_call_entry_handler_gets_one_trace_by_call_id() {
     let call_id = format!("handler-get-{}", uuid::Uuid::now_v7());
     let tool_id = "handler-get-tool";
     ToolCallLogger::get()
-        .log_call(tool_id, redact_entry(test_entry(&call_id, tool_id)))
+        .log_call(tool_id, test_entry(&call_id, tool_id))
         .expect("trace entry should be logged");
 
     let response = get_tool_call_entry(

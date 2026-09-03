@@ -131,14 +131,8 @@ impl ToolCallDao for ToolCallDaoImpl {
             }
         };
 
-        // 对所有协议工具的 input/output/error 进行字段级脱敏（统一策略，见 entry.rs）
-        let (input_redacted, output_redacted, error_redacted) =
-            crate::pkg::tool_tracing::entry::redact_trace_values_for_tool(
-                po,
-                args,
-                output_json,
-                error_str,
-            );
+        // 边界决策（2026-09-03）：内部 trace 落库保持原文，脱敏仅在对外接口出口
+        // （handlers/finance/tool 的查询接口）用 redact! 宏完成。
 
         let mut entry = ToolCallEntry {
             call_id,
@@ -150,9 +144,9 @@ impl ToolCallDao for ToolCallDaoImpl {
             started_at,
             finished_at,
             duration_ms,
-            input: input_redacted,
-            output: output_redacted,
-            error: error_redacted,
+            input: args,
+            output: output_json,
+            error: error_str,
             status,
             metadata: Value::Object(serde_json::Map::new()),
         };

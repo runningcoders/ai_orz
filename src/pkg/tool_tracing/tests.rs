@@ -1,7 +1,5 @@
 //! Unit tests for tool call tracing module
 
-use crate::models::tool::ToolPo;
-use common::enums::{ToolProtocol, ToolStatus};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -283,110 +281,6 @@ fn test_failed_entry_logged_correctly() {
         Some("Parameter validation failed: bad_param is invalid".to_string())
     );
     assert!(read_entry.output.is_none());
-}
-
-fn fake_tool_po(protocol: ToolProtocol) -> ToolPo {
-    let mut po = ToolPo::new(
-        "fake-http-tool".to_string(),
-        "fake-http-tool".to_string(),
-        "Fake HTTP tool".to_string(),
-        protocol,
-        json!({}),
-        None,
-        vec![],
-        Some("test".to_string()),
-    );
-    po.status = ToolStatus::Enabled;
-    po
-}
-
-// ==================== 脱敏函数测试 ====================
-//
-// 所有协议（Builtin / Http / Mcp）统一字段级脱敏：保留完整 JSON 结构，
-// 仅敏感字段值替换为 `***`。不再按协议类型跳过任何工具。
-
-#[test]
-fn http_tool_field_level_redact_keeps_structure() {
-    let po = fake_tool_po(ToolProtocol::Http);
-    let (input, output, error) = super::entry::redact_trace_values_for_tool(
-        &po,
-        json!({ "query": "rust", "access_token": "placeholder-value" }),
-        Some(
-            json!({ "status": 200, "body": { "access_token": "placeholder-value", "count": 42 } }),
-        ),
-        None,
-    );
-
-    // 结构完整保留，敏感字段替换为 ***
-    assert_eq!(input, json!({ "query": "rust", "access_token": "***" }));
-    assert_eq!(
-        output,
-        Some(json!({
-            "status": 200,
-            "body": { "access_token": "***", "count": 42 }
-        }))
-    );
-    assert!(error.is_none());
-}
-
-#[test]
-fn http_tool_redacts_error_text_kv_pattern() {
-    let po = fake_tool_po(ToolProtocol::Http);
-    let (_input, output, error) = super::entry::redact_trace_values_for_tool(
-        &po,
-        json!({}),
-        None,
-        Some("http request failed, api_key=sk-123, retry next".to_string()),
-    );
-
-    assert!(output.is_none());
-    // 错误文本中 api_key 的值被替换，结构保留
-    assert_eq!(
-        error.as_deref(),
-        Some("http request failed, api_key=***, retry next")
-    );
-}
-
-#[test]
-fn mcp_tool_field_level_redact_keeps_structure() {
-    let po = fake_tool_po(ToolProtocol::Mcp);
-    let (input, output, error) = super::entry::redact_trace_values_for_tool(
-        &po,
-        json!({ "query": "rust", "credential": "placeholder-value" }),
-        Some(json!({ "status": "ok", "payload": { "credential": "placeholder-value" } })),
-        None,
-    );
-
-    assert_eq!(input, json!({ "query": "rust", "credential": "***" }));
-    assert_eq!(
-        output,
-        Some(json!({
-            "status": "ok",
-            "payload": { "credential": "***" }
-        }))
-    );
-    assert!(error.is_none());
-}
-
-#[test]
-fn builtin_tool_also_field_level_redacts() {
-    // Builtin 工具（如 shell_exec）也做统一字段级脱敏，不再特殊处理
-    let po = fake_tool_po(ToolProtocol::Builtin);
-    let (input, output, error) = super::entry::redact_trace_values_for_tool(
-        &po,
-        json!({ "command": "git push --token secret123", "env": { "password": "hunter2" } }),
-        Some(json!({ "result": "ok", "token": "abcdef" })),
-        None,
-    );
-
-    // 命令字符串内的 `--token secret123` 经 mask_sensitive_json 递归 String 值 +
-    // mask_sensitive_text 的 flag 形态（key 前为 `-`）脱敏为 `--token ***`
-    assert_eq!(
-        input,
-        json!({ "command": "git push --token ***", "env": { "password": "***" } })
-    );
-    assert_eq!(output, Some(json!({ "result": "ok", "token": "***" })));
-    assert!(error.is_none());
 }
 
 #[test]

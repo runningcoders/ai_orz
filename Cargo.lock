@@ -103,6 +103,7 @@ name = "ai_orz"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "aho-corasick",
  "ai-orz-macros",
  "anyhow",
  "arrow-array 57.3.1",

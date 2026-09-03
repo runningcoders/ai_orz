@@ -1,4 +1,6 @@
 //! Handler: GET /api/v1/tool-call-entries/{call_id} - Get one tool call trace entry
+//!
+//! 对外出口：返回前用 [`redact!`] 对 entry 做脱敏（内部存储保持原文）。
 
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
@@ -39,5 +41,6 @@ pub async fn get_tool_call_entry(
             common::error::Error::not_found(format!("Tool call {} not found", params.call_id))
         })?;
 
-    Ok(entry.into())
+    let response: GetToolCallEntryResponse = entry.into();
+    Ok(crate::redact!(response))
 }

@@ -1,4 +1,6 @@
 //! Handler: GET /api/v1/tool-call-entries - Query tool call trace entries
+//!
+//! 对外出口：返回前用 [`redact!`] 对 entries 做脱敏（内部存储保持原文）。
 
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::logger::ToolCallQuery;
@@ -40,5 +42,6 @@ pub async fn query_tool_call_entries(
         )
         .await?;
 
-    Ok(entries.into_iter().map(Into::into).collect())
+    let response: QueryToolCallEntriesResponse = entries.into_iter().map(Into::into).collect();
+    Ok(crate::redact!(response))
 }

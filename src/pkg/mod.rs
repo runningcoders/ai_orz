@@ -15,6 +15,7 @@ pub mod password;
 pub mod paths;
 pub mod policy;
 pub mod process;
+pub mod redaction;
 pub mod request_context;
 pub mod stats;
 pub mod storage;
@@ -70,6 +71,9 @@ pub async fn init_all(config: &AppConfig) {
         "Registered {} generic builtin tools",
         tool_registry::builtin::GENERIC_BUILTIN_TOOLS.len()
     );
+
+    // 预热脱敏预检自动机：让构建失败在启动期暴露，而不是首次响应时
+    redaction::warmup();
 
     // Initialize tool call tracing logger (singleton factory)
     tool_tracing::logger::ToolCallLogger::init(config.base_data_path());

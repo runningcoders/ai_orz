@@ -9,8 +9,8 @@
 //!   （由 request_context_middleware 写回），可与业务日志链路关联
 //! - body 只在「content-length 已知且 ≤ 上限」时缓冲预览——SSE 长连接（无 content-length）
 //!   与大文件上传/下载天然跳过，不会阻塞或丢失流式 body
-//! - 敏感字段脱敏统一由日志库提供（`pkg::logging::mask_sensitive_json` /
-//!   `mask_sensitive_text`），本中间件只负责预览与调用
+//! - 日志属于内部数据，不做脱敏（边界决策 2026-09-03：系统内部不脱敏，仅对外
+//!   接口出口用 `redact!` 宏脱敏），风险由日志访问控制承担
 
 use axum::{
     body::Body,
@@ -19,9 +19,6 @@ use axum::{
     response::Response,
 };
 
-/// 敏感字段名列表与脱敏实现统一收敛在日志库（`pkg::logging::SENSITIVE_KEYS` /
-/// `mask_sensitive_json` / `mask_sensitive_text`），所有打日志的地方复用同一套。
-///
 /// body 缓冲上限（字节）：超过此大小的请求/响应体不打印内容，只记大小
 const MAX_BODY_LOG_BYTES: usize = 4 * 1024;
 
@@ -62,24 +59,13 @@ fn truncate_preview(s: &str) -> String {
     }
 }
 
-/// 生成 body 预览：JSON 解析成功则结构化脱敏后重新序列化；
-/// 非 JSON 文本走文本 KV 模式脱敏（`pkg::logging::mask_sensitive_text`）
+/// 生成 body 预览：文本类内容截断后直接输出（内部日志不做脱敏）
 fn body_preview(bytes: &[u8], content_type: Option<&str>) -> String {
-    use crate::pkg::logging::{mask_sensitive_json, mask_sensitive_text};
-
     if bytes.is_empty() {
         return String::new();
     }
     if is_text_content_type(content_type) {
-        let text = String::from_utf8_lossy(bytes);
-        match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(mut value) => {
-                mask_sensitive_json(&mut value);
-                truncate_preview(&value.to_string())
-            }
-            // 非 JSON 文本（表单、错误信息等）用文本模式脱敏
-            Err(_) => truncate_preview(&mask_sensitive_text(&text)),
-        }
+        truncate_preview(&String::from_utf8_lossy(bytes))
     } else {
         format!(
             "<binary {} bytes, content-type={}>",
@@ -225,17 +211,17 @@ mod tests {
     }
 
     #[test]
-    fn body_preview_json_masked_and_truncated() {
+    fn body_preview_truncates_without_masking() {
+        // 内部日志不做脱敏：原文直接进预览（截断逻辑照常）
         let body = br#"{"username":"alice","api_key":"sk-123"}"#;
         let preview = body_preview(body, Some("application/json"));
-        assert_eq!(preview, r#"{"api_key":"***","username":"alice"}"#);
+        assert_eq!(preview, r#"{"username":"alice","api_key":"sk-123"}"#);
 
-        // 非 JSON 文本走文本 KV 模式脱敏（复用 pkg::logging::mask_sensitive_text）
         let preview = body_preview(
             b"username=alice&password=hunter2",
             Some("application/x-www-form-urlencoded"),
         );
-        assert_eq!(preview, "username=alice&password=***");
+        assert_eq!(preview, "username=alice&password=hunter2");
 
         // 超长截断
         let long = "x".repeat(MAX_PREVIEW_CHARS + 10);
