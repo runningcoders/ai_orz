@@ -13,6 +13,7 @@ pub mod constants;
 pub mod doc_link;
 pub mod enums;
 pub mod error;
+pub mod mention;
 pub mod models;
 
 #[cfg(test)]
