@@ -15,7 +15,7 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
     CallModelRequest, CreateModelProviderRequest, ListModelProvidersResponseItem,
-    SwitchEmbeddingProviderRequest, UpdateModelProviderStatusRequest,
+    SwitchEmbeddingProviderRequest,
 };
 use common::enums::{ModelCapability, ModelProviderStatus, ProviderType};
 use dioxus_router::Link;
@@ -249,7 +249,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                     let id = id.clone();
                                                                     spawn(async move {
                                                                         // Disabled=2：真禁用（条目保留可再启用）；软删除走「删除」按钮
-                                                                        if let Ok(()) = toggle_model_provider(UpdateModelProviderStatusRequest { id, status: ModelProviderStatus::Disabled as i32 }).await {}
+                                                                        if let Ok(()) = toggle_model_provider(&id, ModelProviderStatus::Disabled as i32).await {}
                                                                         match list_model_providers().await {
                                                                             Ok(list) => providers.set(list.providers),
                                                                             Err(e) => toast.error(&e),
@@ -271,7 +271,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                     let is_emb = is_embedding;
                                                                     spawn(async move {
                                                                         if is_emb {
-                                                                            match toggle_model_provider(UpdateModelProviderStatusRequest { id: id.clone(), status: 1 }).await {
+                                                                            match toggle_model_provider(&id, 1).await {
                                                                                 Ok(()) => {
                                                                                     toast.success("已启用");
                                                                                     match list_model_providers().await {
@@ -290,7 +290,7 @@ pub fn FinanceModelProviders() -> Element {
                                                                                 }
                                                                             }
                                                                         } else {
-                                                                            match toggle_model_provider(UpdateModelProviderStatusRequest { id, status: 1 }).await {
+                                                                            match toggle_model_provider(&id, 1).await {
                                                                                 Ok(()) => {
                                                                                     toast.success("已启用");
                                                                                     match list_model_providers().await {

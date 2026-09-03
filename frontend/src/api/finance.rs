@@ -11,8 +11,7 @@ use common::api::{
     TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
     UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
     UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
-    UpdateModelProviderStatusRequest, UpdateToolRequest, UpdateToolResponse,
-    UpdateToolStatusRequest,
+    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -59,9 +58,15 @@ pub async fn update_model_provider(
 
 /// 启用/禁用模型提供商
 /// 启用 Embedding Provider 时可能返回 409（需切换），前端可通过 ApiError.error_code 检测
-pub async fn toggle_model_provider(req: UpdateModelProviderStatusRequest) -> Result<(), ApiError> {
-    // 用 DTO 完整拼接 body（含 id + status），前后端同一结构体避免序列化不匹配
-    api_put_empty(&format!("/api/v1/finance/model-providers/{}", req.id), &req).await
+pub async fn toggle_model_provider(id: &str, status: i32) -> Result<(), ApiError> {
+    // 统一到 UpdateModelProviderRequest 单一 DTO（与 PUT /model-providers/{id} handler 一致），
+    // 移除冗余的 UpdateModelProviderStatusRequest，避免同一路由出现两份 request DTO 漂移。
+    let req = UpdateModelProviderRequest {
+        id: id.to_string(),
+        status: Some(status),
+        ..Default::default()
+    };
+    api_put_empty(&format!("/api/v1/finance/model-providers/{}", id), &req).await
 }
 
 pub async fn delete_model_provider(id: &str) -> Result<(), ApiError> {
@@ -320,7 +325,16 @@ pub async fn query_tool_call_entries(
         ("project_id", params.project_id.clone()),
         ("task_id", params.task_id.clone()),
         ("tool_id", params.tool_id.clone()),
-        ("status", params.status.map(|s| format!("{:?}", s))),
+        // 用 serde 序列化枚举，与后端 QueryToolCallEntriesRequest.status 的反序列化保持一致；
+        // 不再用 Debug 字符串，避免枚举加 rename/变体带数据后静默失效。
+        (
+            "status",
+            params.status.and_then(|s| {
+                serde_json::to_string(&s)
+                    .ok()
+                    .map(|j| j.trim_matches('"').to_string())
+            }),
+        ),
         ("started_after", params.started_after.map(|v| v.to_string())),
         (
             "started_before",

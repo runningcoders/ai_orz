@@ -138,7 +138,7 @@ pub struct GetModelProviderResponse {
 }
 
 /// Update Model Provider request
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct UpdateModelProviderRequest {
     /// Provider ID
     #[param(source = "path")]
@@ -200,18 +200,6 @@ pub struct UpdateModelProviderResponse {
     /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommended_context_length: Option<i32>,
-}
-
-/// Update Model Provider status request (启用/禁用)
-///
-/// 通过 PUT /api/v1/finance/model-providers/{id} 仅更新 status 字段。
-#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct UpdateModelProviderStatusRequest {
-    /// Provider ID
-    #[param(source = "path")]
-    pub id: String,
-    /// Target status（0=软删除，1=启用，2=禁用-可再启用；本接口用于 1↔2 切换，删除走独立 delete 接口）
-    pub status: i32,
 }
 
 /// Test connection request

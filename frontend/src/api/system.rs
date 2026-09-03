@@ -48,15 +48,22 @@ pub async fn delete_cron_trigger(id: &str) -> Result<(), ApiError> {
 }
 
 pub async fn pause_cron_trigger(id: &str) -> Result<(), ApiError> {
-    let body = serde_json::json!({});
-    api_post_empty(&format!("/api/v1/system/cron-triggers/{}/pause", id), &body).await
+    // 用 common 强类型 DTO 替代手写 json!({})，避免绕过单一事实源
+    api_post_empty(
+        &format!("/api/v1/system/cron-triggers/{}/pause", id),
+        &common::api::PauseCronTriggerRequest {
+            trigger_id: id.to_string(),
+        },
+    )
+    .await
 }
 
 pub async fn resume_cron_trigger(id: &str) -> Result<(), ApiError> {
-    let body = serde_json::json!({});
     api_post_empty(
         &format!("/api/v1/system/cron-triggers/{}/resume", id),
-        &body,
+        &common::api::ResumeCronTriggerRequest {
+            trigger_id: id.to_string(),
+        },
     )
     .await
 }

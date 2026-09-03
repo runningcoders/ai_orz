@@ -102,3 +102,63 @@ pub struct DeleteCronTriggerResponse {
     /// Whether deletion succeeded
     pub success: bool,
 }
+
+/// Get Cron Trigger request (path id)
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct GetCronTriggerRequest {
+    /// Trigger ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+}
+
+/// List Cron Triggers request
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListCronTriggersRequest {
+    /// Filter by trigger type
+    #[param(source = "query")]
+    pub trigger_type: Option<TriggerType>,
+    /// Filter by enabled state
+    #[param(source = "query")]
+    pub is_enabled: Option<bool>,
+    /// Max result count
+    #[param(source = "query")]
+    pub limit: Option<usize>,
+}
+
+/// Delete Cron Trigger request (path id)
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DeleteCronTriggerRequest {
+    /// Trigger ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+}
+
+/// Pause Cron Trigger request (path id)
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct PauseCronTriggerRequest {
+    /// Trigger ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+}
+
+/// Resume Cron Trigger request (path id)
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ResumeCronTriggerRequest {
+    /// Trigger ID
+    #[param(source = "path")]
+    pub trigger_id: String,
+}
+
+/// Pause Cron Trigger response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PauseCronTriggerResponse {
+    /// Whether pause succeeded
+    pub success: bool,
+}
+
+/// Resume Cron Trigger response
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResumeCronTriggerResponse {
+    /// Whether resume succeeded
+    pub success: bool,
+}
