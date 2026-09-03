@@ -19,8 +19,11 @@ source_files:
 - src/service/domain/runtime/think_loop.rs#L93-L113
 - src/handlers/hr/agent/update_agent.rs
 - src/handlers/user/profile/update_current_user.rs
+- src/pkg/tool_registry/builtin.rs
+- src/pkg/tool_registry/mod.rs
 - src/pkg/tool_registry/doubao_search.rs
 - src/pkg/tool_registry/shell_exec.rs
+- src/pkg/mod.rs#L70-L78
 - docs/wiki/zh/content/架构设计/分层架构设计/DAL 层组合.md
 - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法.md
 - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md

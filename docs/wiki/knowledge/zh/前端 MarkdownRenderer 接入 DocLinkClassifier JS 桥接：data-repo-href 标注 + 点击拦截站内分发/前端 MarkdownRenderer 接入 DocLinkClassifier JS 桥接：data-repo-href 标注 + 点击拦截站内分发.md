@@ -13,7 +13,7 @@ source_files:
   - frontend/src/layouts/app_layout.rs#L80-L160
   - frontend/src/hooks/use_require_auth.rs#L1-L100
   - common/src/doc_link.rs#L1-L320
-  - docs/superpowers/plans/2026-08-16-docs-link-unification-and-classifier.md
+  - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
   - docs/wiki/zh/content/前端系统/前端应用.md
   - docs/wiki/zh/content/架构设计/前端系统/前端 Markdown 渲染与站内链接分发.md
   - docs/wiki/zh/content/核心模块/记忆系统/记忆系统架构.md
@@ -45,7 +45,7 @@ fcb08db6 变更把前端 Dioxus Markdown 渲染组件统一接入 DocLinkClassif
 | 【Level3 兄弟卡】DocLinkClassifier 工具链总卡 | 分类器 + lint + migrate | [DocLinkClassifier 工具链卡](docs/wiki/knowledge/zh/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链/DocLinkClassifier%20通用分类器%20+%20docs_lint%20二进制门禁%20+%20docs_migrate%20迁移脚本工具链.md) |
 | 【Wiki 长文】前端 Markdown 渲染与站内链接分发.md | 系统化上下文 + Troubleshooting | [前端 Markdown 渲染与站内链接分发](docs/wiki/zh/content/架构设计/前端系统/前端%20Markdown%20渲染与站内链接分发.md) |
 | 【Wiki 长文】前端应用.md（旧总览）| 增量补充 cite 互引 | [前端应用](docs/wiki/zh/content/前端系统/前端应用.md) |
-| 【② Plan】docs-link-unification-and-classifier | 7 章落地快照（真实）| [docs/superpowers/plans/2026-08-16-docs-link-unification-and-classifier.md](docs/superpowers/plans/2026-08-16-docs-link-unification-and-classifier.md) |
+| 【② Plan】docs-link-unification-and-classifier | 7 章落地快照（真实）| （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 
 ## §3 架构约定
 

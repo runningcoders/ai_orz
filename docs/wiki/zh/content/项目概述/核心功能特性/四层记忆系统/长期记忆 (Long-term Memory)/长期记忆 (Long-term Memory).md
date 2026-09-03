@@ -13,7 +13,7 @@
 - [knowledge_graph.rs](frontend/src/pages/hr/knowledge_graph.rs)
 - [20260724000000_knowledge_node_tags.sql](migrations/20260724000000_knowledge_node_tags.sql)
 - [20260731000001_knowledge_node_is_published.sql](migrations/20260731000001_knowledge_node_is_published.sql)
-- [2026-07-31-knowledge-graph-published-sharing.md](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [TEMPLATE_MEMORY_COGNITION/skill.md](src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md)
 </cite>
 
@@ -325,13 +325,13 @@ QueryExec --> Return["返回结果含 published 或自身节点"]
 - [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
 - [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- [2026-07-31-knowledge-graph-published-sharing.md:81-145](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 章节来源
 - [query_memory.rs:44-74](src/handlers/hr/agent/query_memory.rs#L44-L74)
 - [search_memory.rs:51-53](src/handlers/hr/agent/search_memory.rs#L51-L53)
 - [20260731000001_knowledge_node_is_published.sql:1-12](migrations/20260731000001_knowledge_node_is_published.sql#L1-L12)
-- [2026-07-31-knowledge-graph-published-sharing.md:81-145](docs/superpowers/plans/2026-07-31-knowledge-graph-published-sharing.md#L81-L145)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 查询 API 使用示例
 - 节点查询

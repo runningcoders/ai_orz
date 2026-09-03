@@ -228,8 +228,7 @@ ModelCallStats --> TimeSeriesPoint
   - 通过系统日志与告警通道（如 webhook）推送预警
 
 章节来源
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:56-148](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L56-L148)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 存储优化与历史数据管理策略
 - 存储优化

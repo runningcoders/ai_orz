@@ -14,7 +14,7 @@
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
-- [docs/superpowers/plans/2026-07-19-a2a-server.md](docs/superpowers/plans/2026-07-19-a2a-server.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 </cite>
 
 ## 目录
@@ -351,5 +351,5 @@ A2A Server 以最小侵入方式将 ai_orz 暴露为标准 A2A 协议服务：�
   - 监控：暴露健康检查与健康指标，观察队列积压与 SSE 连接数
 
 章节来源
-- [docs/superpowers/plans/2026-07-19-a2a-server.md:1-800](docs/superpowers/plans/2026-07-19-a2a-server.md#L1-L800)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [docs/archive/design-archive/a2a_server_design.md:104-131](docs/archive/design-archive/a2a_server_design.md#L104-L131)

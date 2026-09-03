@@ -13,7 +13,7 @@
 - [message.rs](src/service/dal/message.rs)
 - [message_push.rs](src/service/dao/message_push.rs)
 - [message_channel_design.md](docs/message_channel_design.md)
-- [2026-07-14-sse-message-push.md](docs/superpowers/plans/2026-07-14-sse-message-push.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [message_interaction_design.md](docs/message_interaction_design.md)
 - [app.rs](tests/common/app.rs)
 </cite>
@@ -278,11 +278,11 @@ Note over H,S : 客户端断开 → stream drop → unsubscribe
 
 图表来源
 - [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [2026-07-14-sse-message-push.md:58-221](docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 章节来源
 - [subscribe_sse.rs:1-93](src/handlers/finance/message/subscribe_sse.rs#L1-L93)
-- [2026-07-14-sse-message-push.md:58-221](docs/superpowers/plans/2026-07-14-sse-message-push.md#L58-L221)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 消息模型与事件
 - Message 实现 Event trait，priority 默认 5，order_key 优先 task_id，其次 project_id，最后消息 id。

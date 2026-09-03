@@ -14,7 +14,7 @@ source_files:
   - src/service/domain/runtime/awakening.rs:Ln-Lm
   - src/service/domain/runtime/think_loop.rs:Ln-Lm
   - docs/design/thinking_task_policy_engine_design.md
-  - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
+  - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
   - docs/wiki/zh/content/基础设施/AOP 事件系统/事件消费者/思考轮次统计消费者.md
   - docs/wiki/knowledge/zh/Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent 思考运行时 AgentThinkRuntime：挂载清理取消与每轮快照上报.md
@@ -38,7 +38,7 @@ source_files:
 | 【Wiki 长文 2】思考轮次统计消费者.md | 消费者链路详情（消费框架约定）| [思考轮次统计消费者](docs/wiki/zh/content/基础设施/AOP%20事件系统/事件消费者/思考轮次统计消费者.md) |
 | 【平行卡】AgentThinkRuntime（last_exit_reason 与 exit_reason 同源约束）| Agent 状态侧 | [AgentThinkRuntime 卡](docs/wiki/knowledge/zh/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报/Agent%20思考运行时%20AgentThinkRuntime：挂载清理取消与每轮快照上报.md) |
 | 【① Design】thinking_task_policy_engine_design.md §一 §二 exit_reason 决策 | 设计决策表：为什么统一字符串映射 | [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
-| 【② Plan】执行蓝图 §Task 8 统计事件接入 | 事件接入步骤 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：转 docs/archive/plan-archive/ 后回填）|
+| 【② Plan】执行蓝图 §Task 8 统计事件接入 | 事件接入步骤 | （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 
 ## §3 架构约定
 

@@ -15,7 +15,7 @@ source_files:
   - src/service/domain/runtime/think_loop.rs:Ln-Lm
   - src/handlers/hr/agent/cancel_thinking.rs:Ln-Lm
   - docs/design/thinking_task_policy_engine_design.md
-  - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
+  - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
   - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法.md
 ---
@@ -40,7 +40,7 @@ AgentThinkRuntime 解决三个问题：(a) 前端/API 无法观测「正在思�
 | 【Wiki 长文】运行时领域.md | 系统化上下文 §5 详细分析 §8 故障排查 | [运行时领域](docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md) |
 | 【平行卡】策略引擎框架（策略 UserCancelPolicy 读取 cancel_token）| 关联知识卡（不同切面）| [策略引擎框架卡](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法.md) |
 | 【① Design】thinking_task_policy_engine_design.md | 决策动机（为什么不用 BackgroundTask 体系接管）| [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
-| 【② Plan】执行蓝图 | 完整落地步骤 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：ai-orz-doc-maintainer 精简到 docs/archive/plan-archive/）|
+| 【② Plan】执行蓝图 | 完整落地步骤 | （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 
 ## §3 架构约定
 

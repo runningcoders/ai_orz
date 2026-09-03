@@ -25,7 +25,12 @@
 - [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
 - [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
 - [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
+- [Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位](docs/wiki/knowledge/zh/Handler%20宏工具%20ToolPo%20config%20与%20parameters_schema%20字段分离：运行时行为配置（无进展限制）与参数%20JSON%20Schema%20各归其位/Handler%20宏工具%20ToolPo%20config%20与%20parameters_schema%20字段分离：运行时行为配置（无进展限制）与参数%20JSON%20Schema%20各归其位.md) — 126 BuiltinTool handler names 人类可读化 + Agent 视角 description（2026-09-04 新增）
 </cite>
+
+### 更新摘要（2026-09-04）
+
+update_agent handler 新增 **neural + 自改守卫**模式：加 neural tag 暴露给 Agent 自动调用；handler 层检测 `ctx.agent_id().is_some()` → Agent 上下文只允许改自己（`params.id == ctx.agent_id`）且身份路由字段（name/roles/model_provider_id/runtime_config）**静默忽略**，仅 description/capabilities/soul 生效；人类用户上下文无 agent_id 时全部字段可改。126 个 Builtin handler 的 ToolPo name 从 snake_case 重写为 human-readable 短语（"List All Tools" / "Search Chinese Web (Doubao)"），description 重写为 Agent 视角（做什么+何时用+可预判失败），params DTO 名统一对齐。
 
 ### 更新摘要（2026-08-31）
 

@@ -13,7 +13,7 @@
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
-- [docs/superpowers/plans/2026-07-19-a2a-server.md](docs/superpowers/plans/2026-07-19-a2a-server.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 </cite>
 
 ## 目录
@@ -234,7 +234,7 @@ ai_orz 作为 A2A Server 提供了标准化的 JSON-RPC 2.0 接口，支持外�
 - 向量搜索：LanceDB 0.26 默认，支持 HNSW/InMemory/SqliteVss 多后端降级
 
 章节来源
-- [docs/superpowers/plans/2026-07-19-a2a-server.md:130-136](docs/superpowers/plans/2026-07-19-a2a-server.md#L130-L136)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 依赖安装
 - 安装 Rust 工具链（rust-toolchain.toml 指定版本）

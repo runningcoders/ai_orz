@@ -6,7 +6,7 @@
 - [vector.rs](src/pkg/storage/vector.rs)
 - [lance.rs](src/pkg/storage/lance.rs)
 - [vector_search_architecture.md](docs/vector_search_architecture.md)
-- [2026-07-16-vector-search-enhancement.md](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [vector.rs（模型定义）](src/models/vector.rs)
 </cite>
 
@@ -284,7 +284,7 @@ VS --> MODELS["models/vector.rs"]
 
 章节来源
 - [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
-- [2026-07-16-vector-search-enhancement.md:27-51](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 故障排查指南
 - 搜索结果为空：
@@ -315,4 +315,4 @@ HnswStore 提供了纯 Rust 的 HNSW 向量存储后端，具备懒重建、余�
   - LanceVectorStore：[lance.rs:1-294](src/pkg/storage/lance.rs#L1-L294)
 - 架构与设计文档：
   - 向量搜索架构：[vector_search_architecture.md:161-206](docs/vector_search_architecture.md#L161-L206)
-  - HNSW 增强计划：[2026-07-16-vector-search-enhancement.md:27-51](docs/superpowers/plans/2026-07-16-vector-search-enhancement.md#L27-L51)
+  - HNSW 增强计划：（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）

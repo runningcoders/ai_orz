@@ -7,7 +7,7 @@
 - [src/router.rs](src/router.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [common/src/api/a2a_test.rs](common/src/api/a2a_test.rs)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建](docs/wiki/knowledge/zh/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建/A2A Server Handler 层：JSON-RPC 方法路由 + 公开无鉴权路由 + notification_url 回调渠道自动创建.md)
 - [A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息](docs/wiki/knowledge/zh/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息/A2A 协议层：AgentCard 发现 + JSON-RPC 2.0 + A2aTask 任务状态机 + A2aMessage 双向消息.md)
 </cite>
@@ -127,7 +127,7 @@ H-->>C : JSON 响应 (200 OK)
 章节来源
 - [common/src/config.rs:510-549](common/src/config.rs#L510-L549)
 - [common/src/api/a2a.rs:38-47](common/src/api/a2a.rs#L38-L47)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 通信约束与服务发现机制
 - 传输协议：JSON-RPC 2.0 over HTTP POST（后续方法调用），卡片发现为独立GET端点。
@@ -136,7 +136,7 @@ H-->>C : JSON 响应 (200 OK)
 
 章节来源
 - [src/router.rs:21-38](src/router.rs#L21-L38)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### Agent能力描述与技能清单
 - 能力声明：当前实现中streaming=false，push_notifications=true。

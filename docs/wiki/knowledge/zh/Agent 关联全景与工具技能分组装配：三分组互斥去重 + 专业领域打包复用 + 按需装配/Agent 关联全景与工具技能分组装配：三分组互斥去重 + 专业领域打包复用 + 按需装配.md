@@ -24,12 +24,16 @@ source_files:
   - src/service/domain/finance/tool_provider.rs#L38-L45
   - src/handlers/finance/tool/response.rs#L16-L31
   - src/handlers/hr/agent/sync_packs.rs#L1-L25
-  - src/service/domain/hr/agent.rs#L94-L133
+  - src/service/domain/hr/agent.rs#L84-L133
   - src/service/domain/hr/agent.rs#L135-L290
+  - src/service/domain/hr/agent.rs#L457-L485
+  - src/service/domain/hr/agent.rs#L620-L623
+  - src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
   # ===== Wiki 长文 =====
   - docs/wiki/zh/content/功能模块/AI Agent 管理/Agent 生命周期管理.md
   # ===== 兄弟卡（Level 3 平行卡）=====
   - 【平行卡】docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md
+  - 【更新关联】docs/wiki/knowledge/zh/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位/Handler 宏工具 ToolPo config 与 parameters_schema 字段分离：运行时行为配置（无进展限制）与参数 JSON Schema 各归其位.md
 ---
 
 ## §1 概述

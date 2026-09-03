@@ -16,7 +16,7 @@
 - [src/models/events/a2a_task_update.rs](src/models/events/a2a_task_update.rs)
 - [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
 - [tests/integration/a2a_flow_test.rs](tests/integration/a2a_flow_test.rs)
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md](docs/superpowers/specs/2026-07-19-a2a-server/spec.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 </cite>
 
 ## 目录
@@ -351,7 +351,7 @@ A2A 协议处理器以清晰的层次划分与严格的中间件顺序，实现�
 - 状态映射：Active/PendingReview → Submitted；InProgress → Working；Completed → Completed；Archived → Canceled；Deleted → Failed。
 
 章节来源
-- [docs/superpowers/specs/2026-07-19-a2a-server/spec.md:148-161](docs/superpowers/specs/2026-07-19-a2a-server/spec.md#L148-L161)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [common/src/api/a2a.rs:147-265](common/src/api/a2a.rs#L147-L265)
 
 ### 握手流程与任务生命周期

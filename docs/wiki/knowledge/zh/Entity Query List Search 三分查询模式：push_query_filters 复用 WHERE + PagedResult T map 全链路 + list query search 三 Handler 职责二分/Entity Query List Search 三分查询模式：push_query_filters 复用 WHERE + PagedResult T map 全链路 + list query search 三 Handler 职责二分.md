@@ -12,6 +12,13 @@ scope:
 source_files:
 - common/src/api/mod.rs#L55-L83
 - common/src/api/agent.rs#L282-L344
+- common/src/api/cron_trigger.rs
+- common/src/api/model_provider.rs
+- common/src/api/agent_test.rs
+- common/src/api/message.rs
+- common/src/api/attachment.rs
+- common/src/api/tool.rs
+- common/src/api/skill.rs
 - src/service/dao/agent/sqlite.rs#L109-L382
 - src/service/dal/agent/mod.rsL193
 - src/handlers/hr/agent/list_agents.rs#L1-L61

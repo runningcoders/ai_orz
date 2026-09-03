@@ -9,7 +9,6 @@
 - [external_agent_design.md](docs/external_agent_design.md)
 - [message_interaction_design.md](docs/message_interaction_design.md)
 - [project_management_design.md](docs/project_management_design.md)
-- [awaken_context_and_sleep_constraint.md](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md)
 - [stats_query_design.md](docs/stats_query_design.md)
 - [agent_runtime_state.rs](src/pkg/agent_runtime_state.rs)
 - [A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送](docs/wiki/knowledge/zh/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送/A2A Client + 外部 Agent Runtime：A2aRuntimeDao HTTP 调用 + ExternalCortexDao 桥接 + A2aCallbackDao Push 推送.md)
@@ -49,7 +48,7 @@
 - 业务实体与运行时配置：src/models/agent.rs
 - DAL 层（数据访问与装配）：src/service/dal/agent/mod.rs
 - 运行时状态管理：src/pkg/agent_runtime_state.rs
-- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/project_management_design.md、docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md、docs/stats_query_design.md
+- 设计与流程文档：docs/external_agent_design.md、docs/message_interaction_design.md、docs/project_management_design.md、docs/stats_query_design.md（2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ```mermaid
 graph TB
@@ -235,13 +234,11 @@ Reply --> End
 ```
 
 图表来源
-- [awaken_context_and_sleep_constraint.md:20-23](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
-- [awaken_context_and_sleep_constraint.md:343-431](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
 
 章节来源
-- [awaken_context_and_sleep_constraint.md:20-23](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L20-L23)
-- [awaken_context_and_sleep_constraint.md:343-431](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L343-L431)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [project_management_design.md:567-601](docs/project_management_design.md#L567-L601)
 
 ### 记忆系统与沉淀（sleep_and_settle）
@@ -249,7 +246,7 @@ Reply --> End
 - 双层过滤：Auto 工具在 wake_agent_brain 中过滤；Manual 工具在 sleep_and_settle 中过滤，确保沉淀过程不触发消息流程
 
 章节来源
-- [awaken_context_and_sleep_constraint.md:515-555](docs/superpowers/plans/2026-07-31-awaken-context-and-sleep-constraint.md#L515-L555)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 技能与工具绑定
 - 运行时配置包含 installed_tags（工具包 tag）与 installed_skill_packs（技能包 tag）

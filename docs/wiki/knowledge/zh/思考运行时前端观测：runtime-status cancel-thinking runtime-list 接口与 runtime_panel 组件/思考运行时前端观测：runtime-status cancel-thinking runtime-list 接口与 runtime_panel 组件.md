@@ -16,7 +16,7 @@ source_files:
   - frontend/src/components/runtime_panel.rs:Ln-Lm
   - src/pkg/agent_runtime_state.rs:Ln-Lm
   - docs/design/thinking_task_policy_engine_design.md
-  - docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md
+  - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
   - docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md
 ---
 
@@ -40,7 +40,7 @@ source_files:
 | [src/pkg/agent_runtime_state.rs](src/pkg/agent_runtime_state.rs) | 内存态实现（StateManager）| 三个 Domain 方法在 `impl AgentRuntimeStateManager`：fn runtime_status_snapshot / fn runtime_list(organization_id, pagination) / fn cancel_think(agent_id)。DashMap 读不加锁（DashMap 自身并发安全） |
 | 【Wiki 长文】思考运行时面板观测接口.md（新建）| 系统化上下文 §1-§10 | [思考运行时面板观测接口](docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md) |
 | 【① Design】thinking_task_policy_engine_design.md §三 L60-L80 接口层架构图 | 接口层 vs 状态管理层数据流图 | [docs/design/thinking_task_policy_engine_design.md](docs/design/thinking_task_policy_engine_design.md) |
-| 【② Plan】执行蓝图 §File Structure 表格 | 改动文件清单 + Handler/前端组件变更摘要 | [docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md](docs/superpowers/plans/2026-08-14-policy-engine-and-think-runtime.md)（占位：转 docs/archive/plan-archive/ 后回填）|
+| 【② Plan】执行蓝图 §File Structure 表格 | 改动文件清单 + Handler/前端组件变更摘要 | （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）|
 
 ## §3 架构约定
 

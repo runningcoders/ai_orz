@@ -6,8 +6,7 @@
 - [vector.rs（VectorStore trait）](src/pkg/storage/vector.rs)
 - [mod.rs（Storage 门面）](src/pkg/storage/mod.rs)
 - [vector_search_architecture.md](docs/vector_search_architecture.md)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md)
-- [config.rs](common/src/config.rs)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）- [config.rs](common/src/config.rs)
 - [vector.rs（模型定义）](src/models/vector.rs)
 - [model_provider.rs（Embedding Provider 切换 Domain）](src/service/domain/finance/model_provider.rs)
 - [model_provider.rs（DAL 重建调度）](src/service/dal/model_provider.rs)
@@ -116,7 +115,7 @@ H-->>DAL : VectorSearchHit[]
 
 章节来源
 - [vector_search_architecture.md:425-463](docs/vector_search_architecture.md#L425-L463)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:1-12](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L1-L12)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 详细组件分析
 
@@ -189,7 +188,7 @@ FlushTask --> End(["就绪"])
 
 章节来源
 - [hnsw.rs:189-430](src/pkg/storage/hnsw.rs#L189-L430)
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:112-325](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L112-L325)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 增量更新与重建机制
 - 增量更新：upsert/delete 仅修改内存 HashMap 并标记 dirty，不直接操作图结构
@@ -217,11 +216,11 @@ Domain-->>API : RebuildProgressResponse
 ```
 
 图表来源
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [hnsw.rs:565-572](src/pkg/storage/hnsw.rs#L565-L572)
 
 章节来源
-- [2026-07-16-hnsw-persistence-and-async-rebuild.md:421-624](docs/superpowers/plans/2026-07-16-hnsw-persistence-and-async-rebuild.md#L421-L624)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 参数配置与影响（M、efConstruction、efSearch）
 - M：每个节点的最大连接数，影响图的连通性与查询速度；值越大搜索越快但内存占用更高

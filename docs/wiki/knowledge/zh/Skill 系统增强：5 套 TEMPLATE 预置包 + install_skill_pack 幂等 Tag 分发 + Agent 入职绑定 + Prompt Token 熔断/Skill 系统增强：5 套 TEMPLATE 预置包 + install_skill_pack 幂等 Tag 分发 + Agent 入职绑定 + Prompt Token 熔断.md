@@ -25,6 +25,7 @@ source_files:
 - src/service/domain/hr/skill.rs#L16-L190
 - src/service/domain/hr/skill.rs#L12-L60
 - src/service/domain/hr/agent.rs#L419-L520
+- src/service/domain/hr/agent.rs#L457-L485
 - src/service/domain/system/seed/skills/TEMPLATE_COMMUNICATION/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_MEMORY_COGNITION/skill.md
 - src/service/domain/system/seed/skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md
@@ -34,10 +35,12 @@ source_files:
 - src/handlers/hr/agent/install_skill_pack.rs#L1-L33
 - src/handlers/hr/skill/install_skill_pack.rs#L19-L85
 - src/handlers/hr/agent/sync_packs.rs#L1-L25
-- src/service/domain/hr/agent.rs#L94-L133
+- src/service/domain/hr/agent.rs#L84-L133
 - src/service/domain/hr/agent.rs#L135-L290
 - src/service/domain/hr/skill.rs#L203-L228
 - src/service/dal/skill/mod.rs
+- frontend/src/pages/hr/agent_management.rsx
+- frontend/src/components/hr/agent_form.rsx
 - docs/archive/design-archive/skill_design.md
 - docs/archive/design-archive/skill_system_enhancement_design.md
 - docs/archive/plan-archive/Agent管理集成测试.md

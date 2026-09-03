@@ -12,7 +12,7 @@
 - [common/src/api/system.rs](common/src/api/system.rs)
 - [frontend/src/pages/system/aop.rs](frontend/src/pages/system/aop.rs)
 - [frontend/src/components/stats.rs](frontend/src/components/stats.rs)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表](docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md)
 - [AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册](docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md)
 </cite>
@@ -156,7 +156,7 @@ Handler-->>Frontend : "JSON"
 
 章节来源
 - [src/pkg/aop/mod.rs:24-61](src/pkg/aop/mod.rs#L24-L61)
-- [docs/superpowers/plans/2026-07-25-stats-charts-phase3.md:272-337](docs/superpowers/plans/2026-07-25-stats-charts-phase3.md#L272-L337)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ### 统计采集 Hook
 - 四个回调：on_publish、on_consume_start、on_consume_success、on_consume_failure。
@@ -354,7 +354,7 @@ HK --> C
 章节来源
 - [src/handlers/system/aop.rs:14-41](src/handlers/system/aop.rs#L14-L41)
 - [src/consumer/aop_stats_collector.rs:74-196](src/consumer/aop_stats_collector.rs#L74-L196)
-- [docs/superpowers/plans/2026-07-23-runtime-issues-fix.md:398-430](docs/superpowers/plans/2026-07-23-runtime-issues-fix.md#L398-L430)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 结论
 AOP 监控面板以内存统计收集器为核心，结合 Hook 埋点与领域服务抽象，提供了低延迟、可扩展的实时监控能力。前端通过轮询与图表组件实现了直观的可视化体验。未来可扩展告警机制（阈值、规则、通知渠道）与持久化存储（时序数据库、保留策略、索引优化），以满足更复杂的运维需求。

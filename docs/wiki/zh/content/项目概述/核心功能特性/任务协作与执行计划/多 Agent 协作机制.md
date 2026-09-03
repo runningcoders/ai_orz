@@ -12,8 +12,8 @@
 - [common/src/api/a2a.rs](common/src/api/a2a.rs)
 - [src/service/dao/agent_runtime/a2a.rs](src/service/dao/agent_runtime/a2a.rs)
 - [src/consumer/task_event_consumer.rs](src/consumer/task_event_consumer.rs)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md](docs/superpowers/plans/2026-07-20-aop-event-center.md)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [docs/external_agent_design.md](docs/external_agent_design.md)
 - [项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合](docs/wiki/knowledge/zh/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合/项目领域与制品聚合：ProjectService 六能力 + TaskGraph DAG 依赖编排 + Artifact 制品双关联 + 对话上下文聚合.md)
 </cite>
@@ -97,12 +97,12 @@ PD --> DB
 
 图表来源
 - [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 
 章节来源
 - [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 核心组件
 - 事件中心与消费者注册：通过 Registry 统一注册 Producer/Consumer，异步消费者使用独立队列，支持 ack/nack 可靠投递。
@@ -112,7 +112,7 @@ PD --> DB
 - A2A 外部协作：通过 HTTP JSON-RPC 2.0 与远程 Agent 交互，回调与轮询双通道，映射本地 Task 状态并增量同步消息。
 
 章节来源
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:728-943](docs/superpowers/plans/2026-07-20-aop-event-center.md#L728-L943)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 - [src/pkg/agent_runtime_state.rs:31-157](src/pkg/agent_runtime_state.rs#L31-L157)
 - [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
@@ -149,7 +149,7 @@ MC-->>MQ : ack/nack
 图表来源
 - [src/consumer/message.rs:78-141](src/consumer/message.rs#L78-L141)
 - [src/consumer/message.rs:147-357](src/consumer/message.rs#L147-L357)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:809-878](docs/superpowers/plans/2026-07-20-aop-event-center.md#L809-L878)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 详细组件分析
 
@@ -252,7 +252,7 @@ MD-->>Local : SSE/渠道投递
 章节来源
 - [src/consumer/task_event_consumer.rs:1-46](src/consumer/task_event_consumer.rs#L1-L46)
 - [src/consumer/message.rs:198-244](src/consumer/message.rs#L198-L244)
-- [docs/superpowers/plans/2026-07-20-aop-event-center.md:375-424](docs/superpowers/plans/2026-07-20-aop-event-center.md#L375-L424)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [docs/external_agent_design.md:176-199](docs/external_agent_design.md#L176-L199)
 
 ### 依赖关系与并行执行优化
@@ -266,7 +266,7 @@ MD-->>Local : SSE/渠道投递
 章节来源
 - [src/consumer/message.rs:64-141](src/consumer/message.rs#L64-L141)
 - [src/service/domain/runtime/mod.rs:33-49](src/service/domain/runtime/mod.rs#L33-L49)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 
 ## 依赖关系分析
 ```mermaid
@@ -325,7 +325,7 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
 
 章节来源
 - [src/consumer/message.rs:130-141](src/consumer/message.rs#L130-L141)
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:378-512](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L378-L512)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [src/pkg/agent_runtime_state.rs:31-107](src/pkg/agent_runtime_state.rs#L31-L107)
 - [src/service/dao/agent_runtime/a2a.rs:29-47](src/service/dao/agent_runtime/a2a.rs#L29-L47)
 
@@ -360,7 +360,7 @@ MessageConsumer --> MessageDomain : "投递/工具结果回写"
   - 结合 ThinkRoundEvent 与 ToolCallEntry 定位瓶颈与异常。
 
 章节来源
-- [docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md:1598-1693](docs/superpowers/plans/2026-08-05-agent-loop-aop-hooks.md#L1598-L1693)
+- （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
 - [src/consumer/mod.rs:16-36](src/consumer/mod.rs#L16-L36)
 - [src/pkg/agent_runtime_state.rs:134-157](src/pkg/agent_runtime_state.rs#L134-L157)
 

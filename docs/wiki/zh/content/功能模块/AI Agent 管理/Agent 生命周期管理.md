@@ -21,7 +21,13 @@
 - [src/service/domain/hr/agent.rs#get_agent_association_groups](src/service/domain/hr/agent.rs#L654-L845)
 - [common/src/api/agent.rs#AgentToolsOverview](common/src/api/agent.rs#L145-L189)
 - [Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配](docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md)
+- [src/service/domain/hr/agent.rs#transition_status](src/service/domain/hr/agent.rs#L457-L485)
+- [Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断](docs/wiki/knowledge/zh/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断/Skill%20系统增强：5%20套%20TEMPLATE%20预置包%20+%20install_skill_pack%20幂等%20Tag%20分发%20+%20Agent%20入职绑定%20+%20Prompt%20Token%20熔断.md) — TEMPLATE_MEMORY_COGNITION 指令式学习节 + 前端创建 Agent 表单独立组件（2026-09-04 新增）
 </cite>
+
+### 更新摘要（2026-09-04）
+
+入职流程新增 **project_management 技能包安装**（`transition_status` → `Onboarded` 时调 `install_skill_pack("project_management")`）：先持久化状态流转再异步安装，安装失败只 warn 不阻塞入职；兼容旧数据自动清理 project_management 工具包 tag（不应出现在 installed_tags）。create_agent 拆为 2 显式步骤（基础信息持久化 → sync_agent_packs 补装 BASE_AGENT_PACKS），`sync_agent_packs` 内部两阶段：① neural/skill_management/tool_management 工具包 + 技能包缺失补装；② 已安装技能包增量补全（按 parent_skill_id 比对检测新增已发布技能，reinstall 刷新副本内容）。
 
 ### 更新摘要（2026-08-31）
 
