@@ -1,12 +1,13 @@
 #!/bin/bash
-# pre-push 钩子：push 前本地拦截 CI 会挂的静态门禁（fmt + clippy）
+# pre-push 钩子：push 前本地拦截 CI 会挂的静态门禁（fmt + clippy + dx check）
 # 安装：make hooks（即 git config core.hooksPath .githooks）
 # 跳过一次：git push --no-verify
-# 说明：与 CI fmt / lint job 同口径，本地过了 CI 就过。
-#       - fmt:    cargo fmt --all -- --check（秒级，workspace 全 crate）
-#       - clippy: cargo clippy --all-targets -- -D warnings（需 protoc，约数十秒，
-#                覆盖 lib + 测试二进制；本仓库曾因测试里的 or_fun_call lint 在此被抓出）
-#       提交时的 fmt 由 pre-commit 拦截；此处再补一道 clippy，
+# 说明：与 CI fmt / lint / frontend job 同口径，本地过了 CI 就过。
+#       - fmt:      cargo fmt --all -- --check（秒级，workspace 全 crate）
+#       - clippy:   cargo clippy --all-targets -- -D warnings（需 protoc，约数十秒，
+#                  覆盖 lib + 测试二进制；本仓库曾因测试里的 or_fun_call lint 在此被抓出）
+#       - dx check: 前端 Dioxus/wasm 编译检查（cd frontend && dx check，需 Dioxus.toml）
+#       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + dx check 两道重门禁，
 #       即使有人用 git commit --no-verify 跳过提交钩子，push 仍会被挡住。
 
 set -euo pipefail
@@ -35,3 +36,13 @@ if ! cargo clippy --all-targets -- -D warnings; then
     exit 1
 fi
 echo "✓ clippy 通过"
+
+# --- dx check（前端 Dioxus/wasm 编译检查，CI frontend job 口径）---
+echo "== pre-push: dx check（前端编译检查）=="
+if ! (cd frontend && dx check); then
+    echo ""
+    echo "✗ dx check 未通过，push 已拦截。进入 frontend 目录运行 dx check 查看并修复。"
+    echo "  仅本次跳过：git push --no-verify"
+    exit 1
+fi
+echo "✓ dx check 通过"

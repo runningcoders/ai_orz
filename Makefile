@@ -10,7 +10,7 @@ export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$
 
 # git hooks 目录指向仓库内 .githooks/
 #   - pre-commit：fmt-check（cargo fmt --all -- --check，秒级）
-#   - pre-push ：fmt-check + clippy（cargo clippy --all-targets -- -D warnings）
+#   - pre-push ：fmt-check + clippy（cargo clippy --all-targets -- -D warnings）+ dx check（前端编译检查）
 # 跳过某次：git commit/push --no-verify
 hooks:
 	git config core.hooksPath .githooks
