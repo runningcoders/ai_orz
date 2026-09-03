@@ -55,10 +55,13 @@ async fn find_tool_id_by_name(app: &TestApp, jwt: &str, name: &str) -> String {
         .cloned()
         .unwrap_or_default();
     for t in tools {
-        if t.get("name").and_then(|v| v.as_str()) == Some(name) {
-            return t
-                .get("id")
-                .and_then(|v| v.as_str())
+        // 工具列表里既返回稳定 `id`（如 "send_message"）也返回展示 `name`
+        // （如 "Send Chat Message"）。调用方传的是 id，这里 id 或 name 任一命中即可。
+        let tid = t.get("id").and_then(|v| v.as_str());
+        let tname = t.get("name").and_then(|v| v.as_str());
+        if tid == Some(name) || tname == Some(name) {
+            return tid
+                .or_else(|| tname)
                 .expect("tool row missing id")
                 .to_string();
         }

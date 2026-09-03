@@ -239,17 +239,25 @@ async fn test_memory_query_short_term(pool: SqlitePool) {
     .await;
 
     let found = results.iter().any(|m| {
-        m.get("summary")
+        m.get("content")
             .and_then(|v| v.as_str())
+            .or_else(|| m.get("summary").and_then(|v| v.as_str()))
             .map(|s| s.contains(&summary))
             .unwrap_or(false)
     });
     assert!(found, "query_memory should return the created memory");
 }
 
-/// 从记忆 JSON 行中取 summary 文本（缺失时返回空串）
+/// 从记忆 JSON 行中取展示文本。
+///
+/// 短时序记忆的文本在 `content` 字段（`summary` 为 null，handler 有意为之，
+/// 由前端取 content 预览）；知识节点的文本在 `content`（node_description）或 `summary`。
+/// 统一优先取 `content`，缺失时回退 `summary`。
 fn summary_text(m: &serde_json::Value) -> &str {
-    m.get("summary").and_then(|v| v.as_str()).unwrap_or("")
+    m.get("content")
+        .and_then(|v| v.as_str())
+        .or_else(|| m.get("summary").and_then(|v| v.as_str()))
+        .unwrap_or("")
 }
 
 /// task_id 过滤：创建带不同 task_id 的记忆 → 验证过滤生效
@@ -343,10 +351,7 @@ async fn test_memory_query_with_task_id_filter(pool: SqlitePool) {
         "task_id 过滤不应返回任务B 或无任务的记忆"
     );
 
-    let summary = filtered[0]
-        .get("summary")
-        .and_then(|v| v.as_str())
-        .expect("missing summary");
+    let summary = summary_text(&filtered[0]).to_string();
     assert!(
         summary.contains("任务A"),
         "过滤结果应为任务A的记忆，实际: {}",
@@ -396,16 +401,18 @@ async fn test_memory_search_short_term_fts5(pool: SqlitePool) {
     .await;
 
     let found_nlp = results.iter().any(|m| {
-        m.get("summary")
+        m.get("content")
             .and_then(|v| v.as_str())
+            .or_else(|| m.get("summary").and_then(|v| v.as_str()))
             .map(|s| s.contains("自然语言"))
             .unwrap_or(false)
     });
     assert!(found_nlp, "应通过 FTS5 找到含'自然语言'的记忆");
 
     let found_sql = results.iter().any(|m| {
-        m.get("summary")
+        m.get("content")
             .and_then(|v| v.as_str())
+            .or_else(|| m.get("summary").and_then(|v| v.as_str()))
             .map(|s| s.contains("SQL"))
             .unwrap_or(false)
     });

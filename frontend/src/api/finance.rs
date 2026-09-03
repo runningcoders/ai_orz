@@ -248,7 +248,10 @@ pub async fn sync_mcp_tools(id: &str) -> Result<(), ApiError> {
 // ===== 附件管理 =====
 
 pub async fn list_attachments() -> Result<Vec<AttachmentDetail>, ApiError> {
-    api_get_or_default("/api/v1/finance/attachments").await
+    // 后端按项目分页约定返回 PagedResult（data:{items,total}），
+    // 这里解析整页信封后只取 items，保持页面侧 Vec<AttachmentDetail> 契约不变。
+    let page: PagedResult<AttachmentDetail> = api_get("/api/v1/finance/attachments").await?;
+    Ok(page.items)
 }
 
 pub async fn create_text_attachment(
