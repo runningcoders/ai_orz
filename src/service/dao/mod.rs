@@ -11,6 +11,7 @@ pub mod message_channel;
 pub mod message_push;
 pub mod model_provider;
 pub mod organization;
+pub mod organization_link;
 pub mod project;
 pub mod skill;
 pub mod task;
@@ -39,6 +40,7 @@ pub fn init_all() {
     mcp_server::init();
     model_provider::init();
     organization::init();
+    organization_link::init();
     user::init();
     user_credential::init();
     memory::init();
