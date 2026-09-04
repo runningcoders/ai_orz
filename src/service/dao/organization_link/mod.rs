@@ -88,6 +88,7 @@ pub trait OrganizationLinkDao: Send + Sync {
     ) -> Result<bool>;
 }
 
+pub mod http;
 pub mod sqlite;
 pub use self::sqlite::{dao, init, new};
 

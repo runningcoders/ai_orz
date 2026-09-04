@@ -83,3 +83,45 @@ pub struct VerifyPairingCodeResponse {
     /// 对端为调用方生成的出站凭证（调用方存为 access_token，调用对端时携带）
     pub peer_token: String,
 }
+
+// ============ 建联（用户侧，JWT） ============
+
+/// 发起建联请求（用户在本地输入配对码 + 对端地址）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct CreateLinkRequest {
+    /// 对端签发的配对码（明文）
+    pub pairing_code: String,
+    /// 对端联邦通信基址（如 `https://peer.example.com`），服务端出站完成验证
+    pub peer_endpoint: String,
+}
+
+/// 已建联条目（前端"关联组织"页数据源）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LinkItem {
+    /// 对端组织目录条目
+    pub peer_org: PeerOrgDirectoryEntry,
+    /// 对端联邦通信地址（本端出站调用目标）
+    pub endpoint: String,
+    /// 连接状态（1=Active, 0=Revoked）
+    pub status: i32,
+    /// 建联时间（毫秒时间戳）
+    pub created_at: i64,
+}
+
+/// 发起建联响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CreateLinkResponse {
+    /// 建联结果条目
+    pub link: LinkItem,
+}
+
+/// 已建联列表请求（无参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListLinksRequest {}
+
+/// 已建联列表响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListLinksResponse {
+    /// 已建联条目（Active 在前，按建联时间倒序）
+    pub links: Vec<LinkItem>,
+}

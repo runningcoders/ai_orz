@@ -12,6 +12,7 @@ use crate::pkg::RequestContext;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
 use crate::service::dao::organization_link;
+use crate::service::dao::organization_link::http::FederationHttpClient;
 use crate::service::dao::organization_pairing;
 use async_trait::async_trait;
 use common::api::OrganizationConfig;
@@ -33,6 +34,7 @@ pub fn init() {
         user_dal::dal(),
         organization_link::dao(),
         organization_pairing::dao(),
+        organization_link::http::client(),
     );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
@@ -47,6 +49,7 @@ struct OrganizationDomainImpl {
     user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
     link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
     pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
+    http_client: Arc<dyn FederationHttpClient>,
 }
 
 impl OrganizationDomainImpl {
@@ -57,12 +60,14 @@ impl OrganizationDomainImpl {
         user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
         link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
         pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
+        http_client: Arc<dyn FederationHttpClient>,
     ) -> Self {
         Self {
             org_dal,
             user_dal,
             link_dao,
             pairing_dao,
+            http_client,
         }
     }
 }
@@ -176,6 +181,20 @@ pub trait OrganizationManage: Send + Sync {
         ctx: RequestContext,
         req: common::api::VerifyPairingCodeRequest,
     ) -> Result<common::api::VerifyPairingCodeResponse>;
+
+    /// 发起建联（用户侧，JWT）
+    ///
+    /// 凭对端配对码出站调对端 verify 完成双向凭证交换，落本地 link + Linked 影子。
+    /// `local_endpoint` 为本端联邦地址（adapter 层从配置解析后传入）。
+    async fn create_link(
+        &self,
+        ctx: RequestContext,
+        req: common::api::CreateLinkRequest,
+        local_endpoint: String,
+    ) -> Result<common::api::CreateLinkResponse>;
+
+    /// 已建联列表（用户侧，JWT，前端"关联组织"页数据源）
+    async fn list_links(&self, ctx: RequestContext) -> Result<common::api::ListLinksResponse>;
 }
 
 /// 用户管理 trait

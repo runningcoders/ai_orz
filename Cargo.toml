@@ -104,6 +104,10 @@ name = "core_crud_test"
 path = "tests/integration/core_crud_test.rs"
 
 [[test]]
+name = "organization_link_test"
+path = "tests/integration/organization_link_test.rs"
+
+[[test]]
 name = "message_delivery_test"
 path = "tests/integration/message_delivery_test.rs"
 

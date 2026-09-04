@@ -180,6 +180,26 @@ impl TestApp {
         self.request(Method::DELETE, path, headers, None).await
     }
 
+    /// Serve the wrapped router on a random 127.0.0.1 port over real TCP.
+    ///
+    /// 用于需要真实 TCP 环回的测试（如组网建联：Domain 内 reqwest 出站调对端
+    /// verify 端点，`oneshot` 无法覆盖）。server task 随测试进程结束回收。
+    /// 返回 base URL（`http://127.0.0.1:{port}`）。
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+    pub async fn serve_on_random_port(&self) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("failed to read local_addr");
+        let router = self.router.clone();
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("federation test server task failed");
+        });
+        format!("http://{}", addr)
+    }
+
     /// Core request dispatcher.
     async fn request(
         &self,

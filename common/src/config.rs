@@ -141,6 +141,13 @@ pub struct ServerConfig {
     /// 系统时区（IANA 时区名，用于 cron 表达式解析等时间相关功能）
     #[serde(default = "default_timezone")]
     pub timezone: String,
+
+    /// 对外可达的联邦通信 Base URL（组织组网建联时告知对端本节点地址）
+    ///
+    /// 多机部署/反代场景必须显式配置（如 `https://orz.example.com`）；
+    /// 缺省时由 `listen_addr` 推导保守回退（见 [`ServerConfig::federation_base_url`]）。
+    #[serde(default)]
+    pub public_base_url: Option<String>,
 }
 
 /// 数据库配置
@@ -295,6 +302,33 @@ impl Default for ServerConfig {
         Self {
             listen_addr: default_listen_addr(),
             timezone: default_timezone(),
+            public_base_url: None,
+        }
+    }
+}
+
+impl ServerConfig {
+    /// 联邦通信基址：显式 `public_base_url` 优先（去尾部 `/` 归一化），
+    /// 否则由 `listen_addr` 推导保守回退——`0.0.0.0`/`[::]`（任意网卡监听）
+    /// 映射为 `127.0.0.1`（仅本机可达），其余 host 原样保留。
+    pub fn federation_base_url(&self) -> String {
+        if let Some(url) = &self.public_base_url {
+            let trimmed = url.trim().trim_end_matches('/');
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        let addr = self.listen_addr.trim();
+        match addr.rsplit_once(':') {
+            Some((host, port)) if !port.is_empty() && !host.is_empty() => {
+                let host = host.trim_start_matches('[').trim_end_matches(']');
+                if host == "0.0.0.0" || host == "::" || host.is_empty() {
+                    format!("http://127.0.0.1:{}", port)
+                } else {
+                    format!("http://{}:{}", host, port)
+                }
+            }
+            _ => format!("http://{}", addr),
         }
     }
 }
@@ -475,4 +509,48 @@ fn default_a2a_endpoint() -> String {
 
 fn default_a2a_card_path() -> String {
     "/.well-known/agent.json".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_federation_base_url_explicit_wins() {
+        let cfg = ServerConfig {
+            public_base_url: Some("https://orz.example.com/".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cfg.federation_base_url(), "https://orz.example.com");
+    }
+
+    #[test]
+    fn test_federation_base_url_derive_wildcard_listen() {
+        let cfg = ServerConfig {
+            public_base_url: None,
+            listen_addr: "0.0.0.0:3000".to_string(),
+            timezone: default_timezone(),
+        };
+        assert_eq!(cfg.federation_base_url(), "http://127.0.0.1:3000");
+    }
+
+    #[test]
+    fn test_federation_base_url_derive_ipv6_wildcard() {
+        let cfg = ServerConfig {
+            public_base_url: None,
+            listen_addr: "[::]:8080".to_string(),
+            timezone: default_timezone(),
+        };
+        assert_eq!(cfg.federation_base_url(), "http://127.0.0.1:8080");
+    }
+
+    #[test]
+    fn test_federation_base_url_derive_explicit_host() {
+        let cfg = ServerConfig {
+            public_base_url: None,
+            listen_addr: "192.168.1.10:3000".to_string(),
+            timezone: default_timezone(),
+        };
+        assert_eq!(cfg.federation_base_url(), "http://192.168.1.10:3000");
+    }
 }

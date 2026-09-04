@@ -437,6 +437,10 @@ fn organization_protected_routes() -> Router {
             "/links/pairing/issue",
             post(links::issue_pairing_code_handler),
         )
+        // 组网：发起建联（用户侧 JWT；服务端出站调对端 verify 交换凭证）
+        .route("/links", post(links::create_link_handler))
+        // 组网：已建联列表（用户侧 JWT，前端"关联组织"页数据源）
+        .route("/links", get(links::list_links_handler))
         .route(
             "/me",
             put(organization_me::update_current_organization_handler),

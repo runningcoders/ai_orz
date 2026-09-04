@@ -7,12 +7,13 @@ use crate::models::organization_link::OrganizationLinkPo;
 use crate::models::organization_pairing_code::OrganizationPairingCodePo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization_link::PeerOrgUpsert;
+use crate::service::dao::organization_link::{OrganizationLinkQuery, PeerOrgUpsert};
 use async_trait::async_trait;
 use chrono::Utc;
 use common::api::{
-    IssuePairingCodeResponse, OrganizationConfig, PAIRING_CODE_LEN, PAIRING_CODE_TTL_MS,
-    PeerOrgDirectoryEntry, VerifyPairingCodeRequest, VerifyPairingCodeResponse,
+    CreateLinkRequest, CreateLinkResponse, IssuePairingCodeResponse, LinkItem, ListLinksResponse,
+    OrganizationConfig, PAIRING_CODE_LEN, PAIRING_CODE_TTL_MS, PeerOrgDirectoryEntry,
+    VerifyPairingCodeRequest, VerifyPairingCodeResponse,
 };
 use common::enums::{OrganizationStatus, UserRole};
 use common::error::{Error, Result};
@@ -267,7 +268,13 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         // 3) 生成对端出站 token（本地节点调用本节点时使用）
         let peer_token = generate_link_token();
 
-        // 4) 落对端 link（幂等：已存在则续联更新凭证 / endpoint）
+        // 4) 落本端 link（幂等：已存在则续联更新凭证 / endpoint）
+        //
+        // 凭证流向（D6 双向独立凭证）：
+        // - access_token = 调用方为对端生成的 local_token（本节点出站调用对端时携带，
+        //   对端存其哈希校验入站）→ 存明文
+        // - peer_token_hash = 本节点生成的 peer_token 的哈希（对端出站调用本节点时
+        //   携带 peer_token，本节点据此校验入站）→ 存哈希
         let existing = self
             .link_dao
             .find_by_pair(ctx.clone(), &org_id, &req.local_org.id)
@@ -280,8 +287,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             org_id.clone(),
             req.local_org.id.clone(),
             req.local_endpoint.clone(),
-            peer_token.clone(),
-            sha256::digest(req.local_token.as_bytes()),
+            req.local_token.clone(),
+            sha256::digest(peer_token.as_bytes()),
             org_id.clone(),
         );
         if existing.is_some() {
@@ -324,6 +331,179 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             },
             peer_token,
         })
+    }
+
+    /// 发起建联（用户侧，JWT）
+    ///
+    /// 凭对端配对码出站调对端 verify 完成双向凭证交换，落本地 link + Linked 影子。
+    /// 本端联邦地址由 adapter 层从配置解析后传入（Domain 不读全局配置单例）。
+    async fn create_link(
+        &self,
+        ctx: RequestContext,
+        req: CreateLinkRequest,
+        local_endpoint: String,
+    ) -> Result<CreateLinkResponse> {
+        let pairing_code = req.pairing_code.trim().to_string();
+        let peer_endpoint = req.peer_endpoint.trim().trim_end_matches('/').to_string();
+        if pairing_code.is_empty() {
+            return Err(Error::bad_request("配对码不能为空"));
+        }
+        if peer_endpoint.is_empty() {
+            return Err(Error::bad_request("对端地址不能为空"));
+        }
+
+        // 1) 本端组织（JWT 绑定）
+        let org_id = ctx
+            .organization_id()
+            .ok_or_else(|| Error::unauthorized("未识别的组织上下文"))?
+            .to_string();
+        let local_org = self
+            .org_dal
+            .get_by_id(ctx.clone(), &org_id)
+            .await?
+            .ok_or_else(|| Error::unauthorized("当前登录身份已失效（组织不存在）"))?;
+
+        // 2) 生成为对端准备的入站校验凭证（对端出站调用本端时携带，本端存哈希校验）
+        let local_token = generate_link_token();
+
+        // 3) 出站调对端 verify：验证配对码 + 交换凭证
+        let verify_req = VerifyPairingCodeRequest {
+            pairing_code,
+            local_org: PeerOrgDirectoryEntry {
+                id: local_org.id.clone(),
+                name: local_org.name.clone(),
+                description: local_org.description.clone(),
+                base_url: local_org.base_url.clone(),
+                group_name: local_org.group_name.clone(),
+                status: local_org.status.to_i32(),
+                updated_at: local_org.updated_at,
+            },
+            local_endpoint: local_endpoint.clone(),
+            local_token: local_token.clone(),
+        };
+        let resp = self
+            .http_client
+            .verify_pairing_code(&peer_endpoint, &verify_req)
+            .await?;
+
+        // 4) 防自联（对端 id 与本端相同 = 配置错误或恶意对端）
+        if resp.peer_org.id == org_id {
+            return Err(Error::bad_request("对端组织与本端组织相同，拒绝建联"));
+        }
+
+        // 5) 落本端 link（幂等续联）：access_token = 对端为本端生成的 peer_token
+        //    （本端出站调用对端时携带），peer_token_hash = 本端生成的 local_token 哈希
+        //    （对端出站调用本端时携带，本端据此校验入站）
+        let existing = self
+            .link_dao
+            .find_by_pair(ctx.clone(), &org_id, &resp.peer_org.id)
+            .await?;
+        let link = OrganizationLinkPo::new(
+            existing
+                .as_ref()
+                .map(|l| l.id.clone())
+                .unwrap_or_else(|| Uuid::now_v7().to_string()),
+            org_id.clone(),
+            resp.peer_org.id.clone(),
+            peer_endpoint.clone(),
+            resp.peer_token.clone(),
+            sha256::digest(local_token.as_bytes()),
+            ctx.caller_id().unwrap_or_else(|| org_id.clone()),
+        );
+        if existing.is_some() {
+            self.link_dao.update(ctx.clone(), &link).await?;
+        } else {
+            self.link_dao.insert(ctx.clone(), &link).await?;
+        }
+
+        // 6) 写对端影子：直接建联必为 Linked（R5 保护本端 Local 组织）
+        let shadow = PeerOrgUpsert {
+            id: resp.peer_org.id.clone(),
+            name: resp.peer_org.name.clone(),
+            description: resp.peer_org.description.clone(),
+            base_url: resp.peer_org.base_url.clone(),
+            group_name: resp.peer_org.group_name.clone(),
+            status: OrganizationStatus::from_i32(resp.peer_org.status),
+            updated_at: resp.peer_org.updated_at,
+        };
+        self.link_dao
+            .upsert_linked_peer_org(ctx.clone(), &shadow)
+            .await?;
+
+        log_info!(
+            &ctx,
+            "create_link",
+            "组织建联成功 local_org_id={} peer_org_id={} endpoint={}",
+            org_id,
+            resp.peer_org.id,
+            peer_endpoint
+        );
+
+        Ok(CreateLinkResponse {
+            link: LinkItem {
+                peer_org: resp.peer_org,
+                endpoint: link.endpoint,
+                status: link.status.to_i32(),
+                created_at: link.created_at,
+            },
+        })
+    }
+
+    /// 已建联列表（用户侧，JWT，前端"关联组织"页数据源）
+    async fn list_links(&self, ctx: RequestContext) -> Result<ListLinksResponse> {
+        let org_id = ctx
+            .organization_id()
+            .ok_or_else(|| Error::unauthorized("未识别的组织上下文"))?
+            .to_string();
+
+        let links = self
+            .link_dao
+            .query(
+                ctx.clone(),
+                OrganizationLinkQuery {
+                    local_org_id: Some(org_id),
+                    status: None,
+                    limit: Some(200),
+                },
+            )
+            .await?;
+
+        let mut items = Vec::with_capacity(links.len());
+        for link in links {
+            // 对端目录条目读库内影子/本端组织行（links 与 organizations 的不变量：
+            // scope == Linked ⇔ organization_links 存在记录）
+            let Some(peer) = self
+                .org_dal
+                .get_by_id(ctx.clone(), &link.peer_org_id)
+                .await?
+            else {
+                // 防御：影子行缺失时不渲染该条目（不变量被外力破坏的场景）
+                continue;
+            };
+            items.push(LinkItem {
+                peer_org: PeerOrgDirectoryEntry {
+                    id: peer.id,
+                    name: peer.name,
+                    description: peer.description,
+                    base_url: peer.base_url,
+                    group_name: peer.group_name,
+                    status: peer.status.to_i32(),
+                    updated_at: peer.updated_at,
+                },
+                endpoint: link.endpoint,
+                status: link.status.to_i32(),
+                created_at: link.created_at,
+            });
+        }
+
+        // Active 在前，同状态按建联时间倒序
+        items.sort_by(|a, b| {
+            b.status
+                .cmp(&a.status)
+                .then(b.created_at.cmp(&a.created_at))
+        });
+
+        Ok(ListLinksResponse { links: items })
     }
 }
 
