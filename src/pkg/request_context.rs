@@ -34,6 +34,10 @@ pub struct RequestContext {
     /// 当前组织 ID
     #[log_field]
     pub organization_id: Option<String>,
+    /// 调用方所属组织 ID（R3 计量地基：iss 优先，存量回退 organization_id；
+    /// Phase 2 跨组织调用时与 organization_id（目标组织）分化）
+    #[log_field]
+    pub caller_organization_id: Option<String>,
     /// 当前用户角色（数值，对应 UserRole 枚举）
     #[log_field]
     pub user_role: Option<i32>,
@@ -89,6 +93,7 @@ pub struct RequestContextBuilder {
     user_id: Option<String>,
     username: Option<String>,
     organization_id: Option<String>,
+    caller_organization_id: Option<String>,
     user_role: Option<i32>,
     caller_type: Option<CallerType>,
     agent_id: Option<String>,
@@ -107,6 +112,7 @@ impl RequestContextBuilder {
             user_id: None,
             username: None,
             organization_id: None,
+            caller_organization_id: None,
             user_role: None,
             caller_type: None,
             agent_id: None,
@@ -209,6 +215,16 @@ impl RequestContextBuilder {
         self
     }
 
+    pub fn try_caller_organization_id(
+        mut self,
+        caller_organization_id: Option<impl Into<String>>,
+    ) -> Self {
+        if let Some(v) = caller_organization_id {
+            self.caller_organization_id = Some(v.into());
+        }
+        self
+    }
+
     pub fn try_user_role(mut self, user_role: Option<i32>) -> Self {
         if let Some(v) = user_role {
             self.user_role = Some(v);
@@ -269,6 +285,7 @@ impl RequestContextBuilder {
             user_id: self.user_id,
             username: self.username,
             organization_id: self.organization_id,
+            caller_organization_id: self.caller_organization_id,
             user_role: self.user_role,
             caller_type: self.caller_type.unwrap_or_default(),
             agent_id: self.agent_id,
@@ -301,6 +318,7 @@ impl RequestContext {
             user_id: self.user_id.clone(),
             username: self.username.clone(),
             organization_id: self.organization_id.clone(),
+            caller_organization_id: self.caller_organization_id.clone(),
             user_role: self.user_role,
             caller_type: Some(self.caller_type),
             agent_id: self.agent_id.clone(),
@@ -368,6 +386,14 @@ impl RequestContext {
         }
         if let Some(id) = organization_id {
             builder = builder.organization_id(id);
+        }
+        // 5.5 调用方所属组织（R3 计量地基：JWT 中间件注入，存量请求无此 header）
+        let caller_organization_id = headers
+            .get(http_header::CALLER_ORGANIZATION_ID)
+            .and_then(|v: &http::HeaderValue| v.to_str().ok())
+            .map(|s| s.to_string());
+        if let Some(id) = caller_organization_id {
+            builder = builder.try_caller_organization_id(Some(id));
         }
         if let Some(role) = user_role {
             builder = builder.user_role(role);
@@ -447,6 +473,13 @@ impl RequestContext {
     /// 获取当前 Organization ID
     pub fn organization_id(&self) -> Option<&String> {
         self.organization_id.as_ref()
+    }
+
+    /// 获取调用方所属组织 ID（R3 计量维度；未注入时回退 organization_id）
+    pub fn caller_organization_id(&self) -> Option<&String> {
+        self.caller_organization_id
+            .as_ref()
+            .or(self.organization_id.as_ref())
     }
 
     /// 获取当前 User Role（数值，对应 UserRole 枚举）
@@ -567,6 +600,8 @@ pub struct ContextCarrier {
     pub username: Option<String>,
     /// 当前组织 ID
     pub organization_id: Option<String>,
+    /// 调用方所属组织 ID（R3 计量地基）
+    pub caller_organization_id: Option<String>,
     /// 当前用户角色（数值）
     pub user_role: Option<i32>,
     /// 调用方类型
@@ -593,6 +628,7 @@ impl ContextCarrier {
             user_id: ctx.user_id.clone(),
             username: ctx.username.clone(),
             organization_id: ctx.organization_id.clone(),
+            caller_organization_id: ctx.caller_organization_id.clone(),
             user_role: ctx.user_role,
             caller_type: ctx.caller_type,
             agent_id: ctx.agent_id.clone(),
@@ -618,6 +654,7 @@ impl ContextCarrier {
             .try_user_id(self.user_id)
             .try_username(self.username)
             .try_organization_id(self.organization_id)
+            .try_caller_organization_id(self.caller_organization_id)
             .try_user_role(self.user_role)
             .caller_type(self.caller_type)
             .try_agent_id(self.agent_id)
@@ -751,4 +788,68 @@ macro_rules! enrich_ctx {
         )*
         builder.build()
     }};
+}
+
+#[cfg(test)]
+mod caller_org_tests {
+    use super::*;
+    use common::constants::http_header;
+
+    /// R3：JWT 中间件注入的 X-Caller-Organization-Id 应进入 RequestContext
+    #[tokio::test]
+    async fn test_from_headers_reads_caller_organization_id() {
+        crate::pkg::storage::test_support::init_for_test().await;
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http_header::CALLER_ORGANIZATION_ID,
+            http::HeaderValue::from_static("org-caller-1"),
+        );
+        headers.insert(
+            http_header::ORGANIZATION_ID,
+            http::HeaderValue::from_static("org-target-1"),
+        );
+
+        let ctx = RequestContext::from_headers(&headers);
+        assert_eq!(ctx.organization_id(), Some(&"org-target-1".to_string()));
+        assert_eq!(
+            ctx.caller_organization_id(),
+            Some(&"org-caller-1".to_string())
+        );
+    }
+
+    /// R3：未注入 header（存量请求/系统路径）时回退 organization_id，不为 None
+    #[tokio::test]
+    async fn test_caller_organization_id_falls_back() {
+        crate::pkg::storage::test_support::init_for_test().await;
+        let ctx = RequestContext::builder()
+            .organization_id("org-home-1")
+            .build();
+        assert_eq!(
+            ctx.caller_organization_id(),
+            Some(&"org-home-1".to_string())
+        );
+
+        let ctx_empty = RequestContext::new_system();
+        assert_eq!(ctx_empty.caller_organization_id(), None);
+    }
+
+    /// R3：carrier 往返保持调用方组织字段（AOP 事件链路不丢）
+    #[tokio::test]
+    async fn test_carrier_roundtrip_preserves_caller_org() {
+        crate::pkg::storage::test_support::init_for_test().await;
+        let ctx = RequestContext::builder()
+            .organization_id("org-target-1")
+            .try_caller_organization_id(Some("org-caller-1"))
+            .build();
+        let json = serde_json::to_value(ctx.to_carrier()).expect("carrier serialize");
+        // from_json 从事件 JSON 顶层的 context_carrier key 提取（模拟 AOP 事件包裹）
+        let event = serde_json::json!({ AOP_CONTEXT_CARRIER_KEY: json });
+        let restored = ContextCarrier::from_json(&event)
+            .expect("carrier present")
+            .into_context();
+        assert_eq!(
+            restored.caller_organization_id(),
+            Some(&"org-caller-1".to_string())
+        );
+    }
 }

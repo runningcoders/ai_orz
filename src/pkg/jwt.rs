@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// JWT Claims (包含用户信息)
+///
+/// R2 地基（联邦 JWT 预留）：`iss` = 签发方组织 ID（调用方归属），
+/// `aud` = 目标组织 ID（token 预期访问的组织）。本地登录 token 二者相等。
+/// 均为 Option 以兼容存量 token（无 iss/aud）；本期校验不 enforce（见 `decode`），
+/// Phase 2 跨组织互调时按 `aud` 做目标匹配后才收紧。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     /// 用户 ID
@@ -19,6 +24,10 @@ pub struct Claims {
     pub organization_id: String,
     /// 用户角色 (UserRole 数值，None 表示未设置，兼容旧 token)
     pub role: Option<i32>,
+    /// 签发方组织 ID（None = 存量 token，回退 organization_id）
+    pub iss: Option<String>,
+    /// 目标组织 ID（None = 存量 token，回退 organization_id）
+    pub aud: Option<String>,
     /// 过期时间 (Unix timestamp)
     pub exp: i64,
     /// 签发时间
@@ -41,11 +50,18 @@ impl Claims {
         Self {
             user_id,
             username,
-            organization_id,
+            organization_id: organization_id.clone(),
             role,
+            iss: Some(organization_id.clone()),
+            aud: Some(organization_id),
             exp,
             iat,
         }
+    }
+
+    /// 调用方所属组织（计量维度，R3）：iss 优先，存量 token 回退 organization_id
+    pub fn caller_organization_id(&self) -> &str {
+        self.iss.as_deref().unwrap_or(&self.organization_id)
     }
 }
 
@@ -92,7 +108,12 @@ impl JwtConfig {
     }
 
     pub fn decode(&self, token: &str) -> Result<Claims> {
-        let validation = Validation::new(Algorithm::HS256);
+        let mut validation = Validation::new(Algorithm::HS256);
+        // R2 地基：iss/aud 本期不 enforce——存量 token 无这两个字段，
+        // 且本地 token iss == aud == organization_id 无校验价值。
+        // Phase 2 联邦互调时改为按预期 aud 匹配后收紧。
+        validation.validate_aud = false;
+        validation.validate_exp = true;
 
         decode::<Claims>(token, &DecodingKey::from_secret(&self.secret), &validation)
             .map(|data| data.claims)
@@ -154,5 +175,47 @@ mod tests {
         assert_eq!(claims.organization_id, "org-456");
         assert_eq!(claims.role, Some(2));
         assert!(claims.exp > claims.iat);
+        // R2 地基：新 token 携带 iss/aud（本地登录二者相等）
+        assert_eq!(claims.iss.as_deref(), Some("org-456"));
+        assert_eq!(claims.aud.as_deref(), Some("org-456"));
+        assert_eq!(claims.caller_organization_id(), "org-456");
+    }
+
+    /// R2 兼容：存量 token（无 iss/aud 字段）必须能继续解码，
+    /// caller_organization_id 回退 organization_id（后补不回填存量 token）
+    #[test]
+    fn test_legacy_token_without_iss_aud_still_decodes() {
+        #[derive(Serialize)]
+        struct LegacyClaims {
+            user_id: String,
+            username: String,
+            organization_id: String,
+            role: Option<i32>,
+            exp: i64,
+            iat: i64,
+        }
+
+        let config = JwtConfig::new("test-secret-key-very-long-for-security", 24);
+        let now = Utc::now().timestamp();
+        let legacy = LegacyClaims {
+            user_id: "user-old".into(),
+            username: "olduser".into(),
+            organization_id: "org-legacy".into(),
+            role: Some(1),
+            exp: now + 3600,
+            iat: now,
+        };
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &legacy,
+            &EncodingKey::from_secret("test-secret-key-very-long-for-security".as_bytes()),
+        )
+        .expect("legacy encode should succeed");
+
+        let claims = config.decode(&token).expect("legacy token must decode");
+        assert_eq!(claims.organization_id, "org-legacy");
+        assert_eq!(claims.iss, None);
+        assert_eq!(claims.aud, None);
+        assert_eq!(claims.caller_organization_id(), "org-legacy");
     }
 }

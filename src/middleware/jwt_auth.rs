@@ -79,6 +79,15 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         req.headers_mut()
             .insert(http_header::USER_ROLE, header_value);
     }
+    // 注入调用方所属组织（R3 计量地基）：iss 优先，存量 token 回退 organization_id。
+    // Phase 2 跨组织调用时 organization_id 将按目标组织解析，二者才出现分化。
+    let caller_org = claims.caller_organization_id().to_string();
+    if !caller_org.is_empty()
+        && let Ok(header_value) = HeaderValue::from_str(&caller_org)
+    {
+        req.headers_mut()
+            .insert(http_header::CALLER_ORGANIZATION_ID, header_value);
+    }
     // 注入 caller_type = User（JWT 验证通过的都是用户请求）
     req.headers_mut()
         .insert(http_header::CALLER_TYPE, HeaderValue::from_static("user"));

@@ -12,6 +12,9 @@ pub const USERNAME: &str = "X-Username";
 /// 当前组织 ID
 pub const ORGANIZATION_ID: &str = "X-Organization-Id";
 
+/// 调用方所属组织 ID（联邦计量维度，R3：iss 优先，存量 token 回退 organization_id）
+pub const CALLER_ORGANIZATION_ID: &str = "X-Caller-Organization-Id";
+
 /// 当前用户角色（UserRole 数值）
 pub const USER_ROLE: &str = "X-User-Role";
 
