@@ -461,6 +461,8 @@ fn organization_protected_routes() -> Router {
         .route("/links", post(links::create_link_handler))
         // 组网：已建联列表（用户侧 JWT，前端"关联组织"页数据源）
         .route("/links", get(links::list_links_handler))
+        // 组网：断联（用户侧，本端管理员 JWT；连接 Revoked + 对端影子降级）
+        .route("/links/{peer_org_id}", delete(links::revoke_link_handler))
         .route(
             "/me",
             put(organization_me::update_current_organization_handler),

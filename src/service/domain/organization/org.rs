@@ -577,6 +577,42 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         );
         Ok(written)
     }
+
+    /// 断联（本端管理员）：连接 Revoked + 对端影子降级（DAO 事务），不删除记录
+    async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()> {
+        // 1) 必须是本组织管理员（评审稿 §4.2：本端管理员 JWT）
+        let role = ctx
+            .user_role()
+            .map(UserRole::from_i32)
+            .unwrap_or(UserRole::Member);
+        if !UserRole::has_permission(role, UserRole::Admin) {
+            return Err(Error::forbidden("仅组织管理员可断联"));
+        }
+
+        // 2) 取本组织与连接（不存在 → 404）
+        let org_id = ctx
+            .organization_id()
+            .ok_or_else(|| Error::unauthorized("未识别的组织上下文"))?
+            .to_string();
+        let link = self
+            .link_dao
+            .find_by_pair(ctx.clone(), &org_id, peer_org_id)
+            .await?
+            .ok_or_else(|| Error::not_found(format!("未找到与组织 {} 的连接", peer_org_id)))?;
+
+        // 3) 断联（DAO 事务：link → Revoked + 对端影子 Linked → Remote，不删除记录）
+        self.link_dao.revoke(ctx.clone(), &link.id).await?;
+
+        log_info!(
+            &ctx,
+            "revoke_link",
+            "组织断联成功 local_org_id={} peer_org_id={} link_id={}",
+            org_id,
+            peer_org_id,
+            link.id
+        );
+        Ok(())
+    }
 }
 
 impl super::OrganizationDomainImpl {

@@ -151,3 +151,20 @@ pub struct DirectorySyncRequest {
 /// 目录同步推送响应（无数据）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
 pub struct DirectorySyncResponse {}
+
+// ============ 断联（用户侧，JWT，管理员） ============
+
+/// 断联请求（路径参数：对端组织 ID）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RevokeLinkRequest {
+    /// 对端组织 ID
+    #[param(source = "path")]
+    pub peer_org_id: String,
+}
+
+/// 断联响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RevokeLinkResponse {
+    /// 是否成功断联
+    pub success: bool,
+}

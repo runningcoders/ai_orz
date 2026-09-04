@@ -222,6 +222,12 @@ pub trait OrganizationManage: Send + Sync {
         ctx: RequestContext,
         req: common::api::DirectorySyncRequest,
     ) -> Result<usize>;
+
+    /// 断联（用户侧，JWT，本端管理员）
+    ///
+    /// 置连接 Revoked（DAO 事务内同步将对端影子 Linked → Remote，不删除记录，
+    /// 保留审计线索）。断联后对端出站调用本节点时凭证鉴权失败（401 → 惰性感知）。
+    async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()>;
 }
 
 /// 用户管理 trait
