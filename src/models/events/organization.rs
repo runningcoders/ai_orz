@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// 由 Organization DAL 层 `create` / `update` / `delete` 在写库成功后发布。
 /// 仅覆盖目录同步白名单字段的载体（组织本身的元信息），Remote/Linked 影子的
-/// 写入走 link DAO（`upsert_peer_org` 等），**不发布本事件**——天然避免
-/// "收对端推送 → 写影子 → 再触发推送" 的递归。
+/// 写入走 org DAL 静默方法（`upsert_remote_shadow` 等，无事件发布），**不发布
+/// 本事件**——天然避免 "收对端推送 → 写影子 → 再触发推送" 的递归。
 ///
 /// 订阅者：
 /// - FederationDirectoryConsumer：异步消费，把本地目录全量推给所有 Active 对端

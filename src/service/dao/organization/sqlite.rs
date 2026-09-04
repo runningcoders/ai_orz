@@ -2,7 +2,7 @@
 
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
+use crate::service::dao::organization::{OrganizationDao, OrganizationQuery, PeerOrgUpsert};
 use chrono::Utc;
 use common::api::OrganizationConfig;
 use common::enums::{OrganizationScope, OrganizationStatus};
@@ -245,6 +245,102 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
         let row = builder.build_query_scalar::<i64>().fetch_one(pool).await?;
 
         Ok(row as u64)
+    }
+
+    async fn upsert_remote_shadow(
+        &self,
+        ctx: RequestContext,
+        peer: &PeerOrgUpsert,
+    ) -> Result<bool> {
+        let status = peer.status as i32;
+        // updated_at 存对端数据版本（新者胜比较基准）；created_at 为本地行创建时间
+        let now = Utc::now().timestamp_millis();
+        let result = sqlx::query!(
+            r#"
+INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    base_url = excluded.base_url,
+    group_name = excluded.group_name,
+    status = excluded.status,
+    updated_at = excluded.updated_at
+WHERE excluded.updated_at > organizations.updated_at
+  AND organizations.scope != ?
+            "#,
+            peer.id,
+            peer.name,
+            peer.description,
+            peer.base_url,
+            peer.group_name,
+            status,
+            OrganizationScope::Remote as i32,
+            now,
+            peer.updated_at,
+            OrganizationScope::Local as i32
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn upsert_linked_shadow(
+        &self,
+        ctx: RequestContext,
+        peer: &PeerOrgUpsert,
+    ) -> Result<bool> {
+        let status = peer.status as i32;
+        // 直接建联：插入即 Linked；更新也强制 Linked（直接相连是权威动作，不依赖新者胜）
+        // 仅保护本地组织（scope=Local）不被覆盖（评审稿 R5）
+        let now = Utc::now().timestamp_millis();
+        let result = sqlx::query!(
+            r#"
+INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    base_url = excluded.base_url,
+    group_name = excluded.group_name,
+    status = excluded.status,
+    scope = ?,
+    updated_at = excluded.updated_at
+WHERE organizations.scope != ?
+            "#,
+            peer.id,
+            peer.name,
+            peer.description,
+            peer.base_url,
+            peer.group_name,
+            status,
+            OrganizationScope::Linked as i32,
+            now,
+            peer.updated_at,
+            OrganizationScope::Linked as i32,
+            OrganizationScope::Local as i32
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn degrade_shadow_to_remote(
+        &self,
+        ctx: RequestContext,
+        peer_org_id: &str,
+    ) -> Result<bool> {
+        // 只降级 Linked（幂等）；不动 updated_at——影子行的 updated_at 语义是
+        // 「对端数据版本」（新者胜比较基准），本地投影状态变更不参与该比较
+        let result = sqlx::query!(
+            "UPDATE organizations SET scope = ? WHERE id = ? AND scope = ?",
+            OrganizationScope::Remote as i32,
+            peer_org_id,
+            OrganizationScope::Linked as i32
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 }
 

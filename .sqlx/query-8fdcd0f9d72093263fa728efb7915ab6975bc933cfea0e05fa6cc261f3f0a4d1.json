@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE organizations SET scope = ? WHERE id = ? AND scope = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8fdcd0f9d72093263fa728efb7915ab6975bc933cfea0e05fa6cc261f3f0a4d1"
+}

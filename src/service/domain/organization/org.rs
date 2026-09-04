@@ -7,7 +7,8 @@ use crate::models::organization_link::OrganizationLinkPo;
 use crate::models::organization_pairing_code::OrganizationPairingCodePo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization_link::{OrganizationLinkQuery, PeerOrgUpsert};
+use crate::service::dao::organization::PeerOrgUpsert;
+use crate::service::dao::organization_link::OrganizationLinkQuery;
 use async_trait::async_trait;
 use chrono::Utc;
 use common::api::{
@@ -299,6 +300,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         }
 
         // 5) 写对端（本地节点）影子：直接建联必为 Linked（R5 保护本节点 Local 组织）
+        //    走 org DAL 静默方法：影子是复制不是业务变更，不发布 organization.changed
         let shadow = PeerOrgUpsert {
             id: req.local_org.id.clone(),
             name: req.local_org.name.clone(),
@@ -308,8 +310,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             status: OrganizationStatus::from_i32(req.local_org.status),
             updated_at: req.local_org.updated_at,
         };
-        self.link_dao
-            .upsert_linked_peer_org(ctx.clone(), &shadow)
+        self.org_dal
+            .upsert_linked_shadow(ctx.clone(), &shadow)
             .await?;
 
         log_info!(
@@ -427,8 +429,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             status: OrganizationStatus::from_i32(resp.peer_org.status),
             updated_at: resp.peer_org.updated_at,
         };
-        self.link_dao
-            .upsert_linked_peer_org(ctx.clone(), &shadow)
+        self.org_dal
+            .upsert_linked_shadow(ctx.clone(), &shadow)
             .await?;
 
         // 7) 目录双向同步（评审稿 §4.1 步骤 5 / §5.2）：拉对端全量目录 + 推本地目录。
@@ -564,7 +566,11 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 status: OrganizationStatus::from_i32(entry.status),
                 updated_at: entry.updated_at,
             };
-            if self.link_dao.upsert_peer_org(ctx.clone(), &upsert).await? {
+            if self
+                .org_dal
+                .upsert_remote_shadow(ctx.clone(), &upsert)
+                .await?
+            {
                 written += 1;
             }
         }
@@ -579,7 +585,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         Ok(written)
     }
 
-    /// 断联（本端管理员）：连接 Revoked + 对端影子降级（DAO 事务），不删除记录
+    /// 断联（本端管理员）：连接 Revoked + 对端影子降级（org DAL 组合方法，不删除记录）
     async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()> {
         // 1) 必须是本组织管理员（评审稿 §4.2：本端管理员 JWT）
         let role = ctx
@@ -601,8 +607,11 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             .await?
             .ok_or_else(|| Error::not_found(format!("未找到与组织 {} 的连接", peer_org_id)))?;
 
-        // 3) 断联（DAO 事务：link → Revoked + 对端影子 Linked → Remote，不删除记录）
-        self.link_dao.revoke(ctx.clone(), &link.id).await?;
+        // 3) 断联（org DAL 组合：link → Revoked + 对端影子 Linked → Remote，不删除记录；
+        //    两步各自幂等，第二步失败重试本方法即可修复）
+        self.org_dal
+            .revoke_link(ctx.clone(), &link.id, peer_org_id)
+            .await?;
 
         log_info!(
             &ctx,
@@ -925,7 +934,7 @@ mod directory_sync_tests {
         use crate::service::dao::{organization as org_dao_mod, user as user_dao_mod};
 
         Arc::new(super::super::OrganizationDomainImpl::new(
-            crate::service::dal::organization::new(org_dao_mod::new()),
+            crate::service::dal::organization::new(org_dao_mod::new(), link_dao_mod::new()),
             crate::service::dal::user::new(
                 user_dao_mod::new(),
                 crate::service::dao::user_credential::new(),

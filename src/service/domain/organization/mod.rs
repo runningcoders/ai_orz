@@ -215,8 +215,8 @@ pub trait OrganizationManage: Send + Sync {
 
     /// 接收对端推送的目录（机器侧 POST /directory/sync）
     ///
-    /// 逐条走 `upsert_peer_org`（Remote 影子语义：新者胜、不动既有 scope、
-    /// 保护 Local 组织），返回实际写入条数供审计。
+    /// 逐条走 org DAL 静默方法 `upsert_remote_shadow`（Remote 影子语义：新者胜、
+    /// 不动既有 scope、保护 Local 组织），返回实际写入条数供审计。
     async fn handle_directory_sync(
         &self,
         ctx: RequestContext,
@@ -225,7 +225,7 @@ pub trait OrganizationManage: Send + Sync {
 
     /// 断联（用户侧，JWT，本端管理员）
     ///
-    /// 置连接 Revoked（DAO 事务内同步将对端影子 Linked → Remote，不删除记录，
+    /// 置连接 Revoked + org DAL 组合方法将对端影子 Linked → Remote（不删除记录，
     /// 保留审计线索）。断联后对端出站调用本节点时凭证鉴权失败（401 → 惰性感知）。
     async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()>;
 

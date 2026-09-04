@@ -2,13 +2,10 @@
 
 use crate::models::organization_link::OrganizationLinkPo;
 use crate::pkg::RequestContext;
-use crate::service::dao::organization_link::{
-    OrganizationLinkDao, OrganizationLinkQuery, PeerOrgUpsert,
-};
+use crate::service::dao::organization_link::{OrganizationLinkDao, OrganizationLinkQuery};
 use chrono::Utc;
-use common::enums::{OrganizationLinkStatus, OrganizationScope};
+use common::enums::OrganizationLinkStatus;
 use common::error::Result;
-use sqlx::SqlitePool;
 use std::sync::OnceLock;
 
 // ==================== 工厂方法 + 单例管理 ====================
@@ -33,12 +30,6 @@ pub fn init() {
 // ==================== 实现 ====================
 
 struct OrganizationLinkDaoSqliteImpl;
-
-impl OrganizationLinkDaoSqliteImpl {
-    fn pool(ctx: &RequestContext) -> &SqlitePool {
-        ctx.db_pool()
-    }
-}
 
 #[async_trait::async_trait]
 impl OrganizationLinkDao for OrganizationLinkDaoSqliteImpl {
@@ -168,109 +159,16 @@ WHERE id = ?
     }
 
     async fn revoke(&self, ctx: RequestContext, link_id: &str) -> Result<()> {
-        let pool = Self::pool(&ctx);
-        let mut tx = pool.begin().await?;
-
-        // 1) 连接置 Revoked
+        // 仅置 links 表 Revoked（幂等，重放无害）；
+        // 对端影子 Linked → Remote 降级在 organization DAL 的 revoke_link 组合方法中
         let now = Utc::now().timestamp_millis();
         sqlx::query!(
             "UPDATE organization_links SET status = 0, updated_at = ? WHERE id = ?",
             now,
             link_id
         )
-        .execute(&mut *tx)
+        .execute(ctx.db_pool())
         .await?;
-
-        // 2) 对端影子记录 Linked → Remote（不删除，保留审计线索；只降级 Linked，不动其他 scope）
-        //    注意：不动 organizations.updated_at——影子记录的 updated_at 语义是
-        //    「对端数据版本」（新者胜比较基准），本地投影状态变更不参与该比较
-        sqlx::query!(
-            r#"
-UPDATE organizations SET scope = ?
-WHERE id = (SELECT peer_org_id FROM organization_links WHERE id = ?) AND scope = ?
-            "#,
-            OrganizationScope::Remote as i32,
-            link_id,
-            OrganizationScope::Linked as i32
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
         Ok(())
-    }
-
-    async fn upsert_peer_org(&self, ctx: RequestContext, peer: &PeerOrgUpsert) -> Result<bool> {
-        let status = peer.status as i32;
-        // updated_at 存对端数据版本（新者胜比较基准）；created_at 为本地行创建时间
-        let now = Utc::now().timestamp_millis();
-        let result = sqlx::query!(
-            r#"
-INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-    name = excluded.name,
-    description = excluded.description,
-    base_url = excluded.base_url,
-    group_name = excluded.group_name,
-    status = excluded.status,
-    updated_at = excluded.updated_at
-WHERE excluded.updated_at > organizations.updated_at
-  AND organizations.scope != ?
-            "#,
-            peer.id,
-            peer.name,
-            peer.description,
-            peer.base_url,
-            peer.group_name,
-            status,
-            OrganizationScope::Remote as i32,
-            now,
-            peer.updated_at,
-            OrganizationScope::Local as i32
-        )
-        .execute(ctx.db_pool())
-        .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    async fn upsert_linked_peer_org(
-        &self,
-        ctx: RequestContext,
-        peer: &PeerOrgUpsert,
-    ) -> Result<bool> {
-        let status = peer.status as i32;
-        // 直接建联：插入即 Linked；更新也强制 Linked（直接相连是权威动作，不依赖新者胜）
-        // 仅保护本地组织（scope=Local）不被覆盖（评审稿 R5）
-        let now = Utc::now().timestamp_millis();
-        let result = sqlx::query!(
-            r#"
-INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-    name = excluded.name,
-    description = excluded.description,
-    base_url = excluded.base_url,
-    group_name = excluded.group_name,
-    status = excluded.status,
-    scope = ?,
-    updated_at = excluded.updated_at
-WHERE organizations.scope != ?
-            "#,
-            peer.id,
-            peer.name,
-            peer.description,
-            peer.base_url,
-            peer.group_name,
-            status,
-            OrganizationScope::Linked as i32,
-            now,
-            peer.updated_at,
-            OrganizationScope::Linked as i32,
-            OrganizationScope::Local as i32
-        )
-        .execute(ctx.db_pool())
-        .await?;
-        Ok(result.rows_affected() > 0)
     }
 }

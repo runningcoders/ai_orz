@@ -181,7 +181,7 @@ async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
     assert_eq!(
         org_a.scope,
         OrganizationScope::Local,
-        "org A must stay Local (upsert_linked_peer_org R5 protection)"
+        "org A must stay Local (upsert_linked_shadow R5 protection)"
     );
 
     // ---- A 的已建联列表可见 B ----

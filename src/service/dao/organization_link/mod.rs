@@ -1,12 +1,13 @@
 //! OrganizationLink DAO 模块
 //!
-//! 组织连接契约的读写：连接 CRUD + 对端目录影子 upsert。
+//! 组织连接契约（organization_links 表）的读写：连接 CRUD。
 //! 实体（organizations）与契约（organization_links）分离，见评审稿 D4。
+//! 对端组织影子的写入不在本 DAO——organizations 表属主是 organization DAO，
+//! 影子写入走 organization DAL 的静默方法（不发事件，见该文件联邦影子一节）。
 
 use crate::models::organization_link::OrganizationLinkPo;
 use crate::pkg::RequestContext;
 use common::enums::OrganizationLinkStatus;
-use common::enums::OrganizationStatus;
 use common::error::Result;
 
 /// 连接查询参数
@@ -15,21 +16,6 @@ pub struct OrganizationLinkQuery {
     pub local_org_id: Option<String>,
     pub status: Option<OrganizationLinkStatus>,
     pub limit: Option<usize>,
-}
-
-/// 对端组织目录条目（影子 upsert 载荷）
-///
-/// 字段 = 目录同步白名单（评审稿 §5.1）：仅目录元信息，绝不携带业务数据。
-#[derive(Debug, Clone)]
-pub struct PeerOrgUpsert {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub base_url: String,
-    pub group_name: Option<String>,
-    pub status: OrganizationStatus,
-    /// 对端侧 updated_at（毫秒）：新者胜的比较基准
-    pub updated_at: i64,
 }
 
 /// OrganizationLink DAO 接口
@@ -69,34 +55,11 @@ pub trait OrganizationLinkDao: Send + Sync {
     /// 全量更新（endpoint / 凭证 / 状态），建联续联与凭证重置复用
     async fn update(&self, ctx: RequestContext, link: &OrganizationLinkPo) -> Result<()>;
 
-    /// 断联（事务）：连接置 Revoked + 对端影子记录 Linked → Remote（不删除，保留审计线索）
+    /// 断联：连接置 Revoked（仅 links 表；幂等，重放无害）
+    ///
+    /// 对端影子的 Linked → Remote 降级由 organization DAL 的
+    /// `revoke_link` 组合方法完成（该表属主在 organization DAO）。
     async fn revoke(&self, ctx: RequestContext, link_id: &str) -> Result<()>;
-
-    /// 对端组织目录影子 upsert
-    ///
-    /// 写入规则（评审稿 §5.2）：
-    /// - 本地不存在 → 插入 `scope=Remote` 影子
-    /// - 本地已存在（含 Linked）→ 仅更新目录元信息，**不动 scope**
-    /// - 按 `updated_at` 新者胜：对端值不比本地新则跳过
-    /// - 本地 `scope=Local` 的组织（本节点自己的组织）**绝不覆盖**（id 撞车防护）
-    ///
-    /// 返回是否发生了写入（false = 跳过），供上层审计/冲突上报（评审稿 R5）。
-    async fn upsert_peer_org(&self, ctx: RequestContext, peer: &PeerOrgUpsert) -> Result<bool>;
-
-    /// 直接建联的对端影子 upsert
-    ///
-    /// 与 `upsert_peer_org`（目录同步所得 Remote 影子）不同：直接建联必为 `Linked`。
-    /// - 本地不存在 → 插入 `scope=Linked` 影子
-    /// - 本地已存在（含 Remote/Linked）→ 更新目录元信息并**置 `scope=Linked`**
-    /// - 直接建联是权威动作，不依赖 `updated_at` 新者胜（直接相连即认对端当前发布信息）
-    /// - 本地 `scope=Local` 的组织（本节点自己的组织）**绝不覆盖**（id 撞车防护，评审稿 R5）
-    ///
-    /// 返回是否发生了写入，供上层审计。
-    async fn upsert_linked_peer_org(
-        &self,
-        ctx: RequestContext,
-        peer: &PeerOrgUpsert,
-    ) -> Result<bool>;
 }
 
 pub mod http;
