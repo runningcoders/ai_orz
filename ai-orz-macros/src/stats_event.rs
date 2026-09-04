@@ -199,6 +199,22 @@ pub fn derive_stats_event(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // caller_organization_id 自动填充 override（仅当结构体声明了该字段时生成）：
+    // Stats::record 统一从 RequestContext 注入联邦调用方组织（审计维度，见
+    // docs/plan/跨组织业务调用方案.md §八），打点侧无需手动赋值
+    let caller_org_fn = if tag_fields
+        .iter()
+        .any(|(ident, _)| ident == "caller_organization_id")
+    {
+        quote! {
+            fn apply_caller_organization(&mut self, caller_org: Option<String>) {
+                self.caller_organization_id = caller_org;
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // 生成 impl
     let expanded = quote! {
         impl crate::pkg::stats::StatEvent for #name {
@@ -209,6 +225,7 @@ pub fn derive_stats_event(input: TokenStream) -> TokenStream {
             #event_type_fn
             #tags_json
             #metrics_json
+            #caller_org_fn
         }
     };
 

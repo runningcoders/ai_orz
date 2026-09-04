@@ -8,12 +8,14 @@
 //!    [`common::api::FederationCallerDeclaration`]）。
 //!
 //! 身份注入（联邦路径，供内层 request_context_middleware 读取）：
+//! - `X-User-Id` = **接待用户 ID**（P6：本端组织管理员，联邦访客的内部对接
+//!   身份；project/消息/权限与本地用户路径同构。解析失败 → 500 fail-closed）
 //! - `X-Organization-Id` = link.local_org_id（**目标组织**，数据作用域 = B）
 //! - `X-Caller-Organization-Id` = link.peer_org_id（**发起组织**，iss 语义 = A，
 //!   R3 计量维度）
-//! - `X-User-Id` = 声明 caller_user，缺省 `federation:{peer_org_id}`（合成身份）
-//! - `X-Caller-Type` = 声明携带 caller_agent 时 `agent`，否则 `user`
-//! - 不注入 `X-User-Role`（联邦调用不获得任何本地角色权限）
+//! - `X-User-Name` = `federation:{peer_org_id}`（联邦访客展示标记）
+//! - `X-Caller-Type` = `user`（联邦调用不获得任何本地角色权限，不注入 X-User-Role）
+//! - `X-Federation-Caller` 声明仅做一致性校验（步骤 6），留给审计/计量（F4）
 //!
 //! fail-closed：声明头存在但非法 JSON、或 caller_org 与连接 peer_org_id 不一致
 //! → 401（防止跨连接冒充发起组织）。
@@ -84,21 +86,22 @@ pub async fn a2a_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         return Ok(unauthorized("声明组织与连接归属不一致"));
     }
 
-    // 7) 注入联邦身份 headers（内层 request_context_middleware 据此建 ctx）
+    // 7) 接待用户映射（P6）：联邦访客的内部身份 = 本端接待用户，此后
+    //    project/消息/权限与本地用户路径完全同构；声明头仅作审计/计量。
+    //    无可用接待用户（组织无管理员）= 服务端配置问题，fail-closed 拒绝。
     let peer_org = &link.peer_org_id;
-    let user_id = declaration
-        .as_ref()
-        .and_then(|d| d.caller_user.clone())
-        .unwrap_or_else(|| format!("federation:{}", peer_org));
-    let caller_type = if declaration
-        .as_ref()
-        .is_some_and(|d| d.caller_agent.is_some())
+    let reception_user = match organization::domain()
+        .user_manage()
+        .reception_user(RequestContext::new_system(), &link.local_org_id)
+        .await
     {
-        "agent"
-    } else {
-        "user"
+        Ok(u) => u,
+        Err(e) => {
+            sys_debug!("reception user resolve failed: {}", e);
+            return Ok(internal_error("组织无可用接待用户，无法受理联邦请求"));
+        }
     };
-    if let Ok(v) = HeaderValue::from_str(&user_id) {
+    if let Ok(v) = HeaderValue::from_str(&reception_user.id) {
         req.headers_mut().insert(http_header::USER_ID, v);
     }
     if let Ok(v) = HeaderValue::from_str(&format!("federation:{}", peer_org)) {
@@ -111,10 +114,8 @@ pub async fn a2a_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         req.headers_mut()
             .insert(http_header::CALLER_ORGANIZATION_ID, v);
     }
-    req.headers_mut().insert(
-        http_header::CALLER_TYPE,
-        HeaderValue::from_static(caller_type),
-    );
+    req.headers_mut()
+        .insert(http_header::CALLER_TYPE, HeaderValue::from_static("user"));
 
     Ok(next.run(req).await)
 }
@@ -133,6 +134,15 @@ fn forbidden(message: &str) -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(ApiResponse::<()>::error(403, message.to_string())),
+    )
+        .into_response()
+}
+
+/// 500 JSON（服务端配置/内部错误，如组织无可用接待用户）
+fn internal_error(message: &str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ApiResponse::<()>::error(500, message.to_string())),
     )
         .into_response()
 }

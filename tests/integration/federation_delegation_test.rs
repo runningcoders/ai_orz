@@ -137,6 +137,7 @@ async fn save_user_message(
     to_agent: &str,
     content: &str,
     tag: &str,
+    project_id: Option<&str>,
 ) -> String {
     let po = MessagePo {
         id: Uuid::now_v7().to_string(),
@@ -150,6 +151,7 @@ async fn save_user_message(
         organization_id: Some(org.to_string()),
         created_by: from_user.to_string(),
         modified_by: from_user.to_string(),
+        project_id: project_id.map(|s| s.to_string()),
         ..Default::default()
     };
     let msg = Message::from_po(po);
@@ -309,7 +311,8 @@ async fn test_federated_delegation_end_to_end(pool: SqlitePool) {
     };
 
     let prompt = format!("请 [@远端助手](agent:{gw_id}@{org_b}) 帮我回显这句话");
-    let a_msg_id = save_user_message(&org_a, &user_a, &local_agent_id, &prompt, "dela-msg").await;
+    let a_msg_id =
+        save_user_message(&org_a, &user_a, &local_agent_id, &prompt, "dela-msg", None).await;
 
     // A 侧 consumer：直连路由 → 联邦委派（阻塞到轮询到终态）
     let event = {
@@ -420,6 +423,7 @@ async fn test_delegation_degrades_when_no_active_link(pool: SqlitePool) {
         "nonexistent-agent",
         &format!("请 [@远端助手](agent:some-agent@{unknown_org}) 帮忙"),
         "dega-msg",
+        None,
     )
     .await;
     let ctx = org_ctx("dega-event");
@@ -467,6 +471,7 @@ async fn test_delegation_degrades_when_capability_missing(pool: SqlitePool) {
         "nonexistent-agent",
         &format!("请 [@远端助手](agent:some-agent@{org_b}) 帮忙"),
         "capa-msg",
+        None,
     )
     .await;
     let ctx = org_ctx("capa-event");
@@ -485,5 +490,100 @@ async fn test_delegation_degrades_when_capability_missing(pool: SqlitePool) {
         err.to_string().contains("not found"),
         "expected NotFound from local flow, got: {}",
         err
+    );
+}
+
+/// P6 完成判定：a2a project 有进行中 task（接待员已内部委派）→ Agent 回复后
+/// project 保持 working，不自动收口（「做完才关」，对端轮询持续看到 working）。
+#[sqlx::test]
+async fn test_a2a_project_with_inflight_task_stays_working(pool: SqlitePool) {
+    use ::common::enums::{AssigneeType, ProjectStatus, TaskStatus};
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_b, user_b, _jwt_b) = create_node(&app, "infl").await;
+    let gw_id = seed_cli_agent(&org_b, "infl-gw", vec!["reception".to_string()]).await;
+
+    let ctx = org_ctx("infl-domain");
+    // 模拟 tasks/send 形态：a2a tag project + 接待 Agent 为 owner + 一条进行中 task
+    let project = ai_orz::service::domain::project::domain()
+        .project_manage()
+        .create(
+            ctx.clone(),
+            "A2A: 联邦长任务".to_string(),
+            "P6 完成判定用例".to_string(),
+            0,
+            vec!["a2a".to_string()],
+            Some(gw_id.clone()),
+            user_b.clone(),
+            user_b.clone(),
+        )
+        .await
+        .expect("create a2a project");
+    ai_orz::service::domain::project::domain()
+        .project_manage()
+        .start(ctx.clone(), &project.po.id, user_b.clone())
+        .await
+        .expect("start a2a project");
+    ai_orz::service::domain::project::domain()
+        .task_manage()
+        .create(
+            ctx.clone(),
+            "内部委派子任务".to_string(),
+            "接待 Agent 拉起的工作".to_string(),
+            0,
+            vec![],
+            user_b.clone(),
+            AssigneeType::Agent,
+            gw_id.clone(),
+            Some(project.po.id.clone()),
+            user_b.clone(),
+        )
+        .await
+        .expect("create inflight task");
+
+    // 用户消息进 project，触发网关消费
+    let msg_id = save_user_message(
+        &org_b,
+        &user_b,
+        &gw_id,
+        "请把这件事安排下去",
+        "infl-msg",
+        Some(&project.po.id),
+    )
+    .await;
+    let msg = ai_orz::service::dal::message::dal()
+        .find_by_id(ctx.clone(), &msg_id)
+        .await
+        .expect("find msg")
+        .expect("msg exists");
+    let consumer = ai_orz::consumer::message::MessageConsumer::new();
+    consumer
+        .on_event(ctx.clone(), message_event_json(&msg))
+        .await
+        .expect("consumer should process message");
+
+    // 断言 1：project 未被收口（有进行中 task → 保持 working）
+    let after = ai_orz::service::dao::project::dao()
+        .find_by_id(ctx.clone(), &project.po.id)
+        .await
+        .expect("query project")
+        .expect("project exists");
+    assert!(
+        matches!(after.status, ProjectStatus::InProgress),
+        "project with in-flight task must stay InProgress, got {:?}",
+        after.status
+    );
+
+    // 断言 2：task 仍为 Pending（未被误动）
+    let tasks = ai_orz::service::domain::project::domain()
+        .task_manage()
+        .list(ctx, Some(&project.po.id), None, None, None, None)
+        .await
+        .expect("list tasks");
+    assert!(
+        tasks.iter().any(|t| t.po.status == TaskStatus::Pending),
+        "in-flight task should remain Pending"
     );
 }

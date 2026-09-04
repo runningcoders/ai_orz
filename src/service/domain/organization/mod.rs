@@ -305,6 +305,18 @@ pub trait UserManage: Send + Sync {
         org_id: &str,
     ) -> Result<Vec<crate::models::user::UserPo>>;
 
+    /// 获取组织接待用户（联邦访客的内部对接身份，P6）
+    ///
+    /// 外部组织的请求不由请求侧指定服务者——由被访组织决定谁来接待。
+    /// 当前策略：组织内权限最高的管理员（创建者，凭据最全），user 表
+    /// 不加新字段；后续引入专用接待用户配置时只改实现，调用方零感知。
+    /// 联邦请求以该用户身份落地后，project/消息/权限与本地用户路径完全同构。
+    async fn reception_user(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<crate::models::user::UserPo>;
+
     /// 创建新用户
     async fn create_user(
         &self,

@@ -638,12 +638,15 @@ impl MessageConsumer {
             }
         }
 
-        // P4：A2A 一次性会话回复后自动 complete
+        // P4/P6：A2A project 按「做完才关」判定收口
         //
-        // tasks/send 创建的 project（tags 含 "a2a"、无 task 关联）是一次性联邦请求，
-        // 没有看板生命周期；若不收口，对端/外部客户端轮询 tasks/get 永远 working，
-        // 永远拿不到终态。Agent 回复产生后（无论发送成败，回复内容已在 messages），
-        // 将该 project 流转到 Completed。本地项目会话不受影响（tags 不含 "a2a"）。
+        // tasks/send 创建的 project（tags 含 "a2a"）对应对端 A2A task，生命周期映射：
+        // - 无关联 task（一次性问答）→ 回复即完成：任务已做完，对端轮询 tasks/get
+        //   拿到终态（同步路径依赖此收口）
+        // - 有进行中 task（接待员已内部委派）→ 保持 working：project 不实时关闭，
+        //   等任务完成/接待侧确认后再收口（P6 生命周期映射；对端持续看到 working
+        //   是正确语义，不是缺口）
+        // 本地项目会话不受影响（tags 不含 "a2a"）。
         if message.from_role() == MessageRole::User
             && message.po.task_id.is_none()
             && let Some(project_id) = &message.po.project_id
@@ -656,29 +659,52 @@ impl MessageConsumer {
                 .map(|tags| tags.iter().any(|t| t == "a2a"))
                 .unwrap_or(false)
         {
-            match self
+            let tasks = self
                 .project_domain
-                .project_manage()
-                .complete(ctx.clone(), project_id, agent_id.clone())
+                .task_manage()
+                .list(ctx.clone(), Some(project_id), None, None, None, None)
                 .await
-            {
-                Ok(()) => {
-                    log_debug!(
-                        &ctx,
-                        "handle_agent_message",
-                        "A2A one-shot project {} auto-completed after agent reply",
-                        project_id
-                    );
-                }
-                Err(e) => {
-                    // 收口失败不阻塞：对端轮询端仍能看到回复消息，只是状态停留 working
-                    log_warn!(
-                        &ctx,
-                        "handle_agent_message",
-                        "A2A one-shot project {} auto-complete failed: {}",
-                        project_id,
-                        e
-                    );
+                .unwrap_or_default();
+            let has_in_flight = tasks.iter().any(|t| {
+                matches!(
+                    t.po.status,
+                    common::enums::TaskStatus::Pending
+                        | common::enums::TaskStatus::PendingReview
+                        | common::enums::TaskStatus::InProgress
+                )
+            });
+            if has_in_flight {
+                log_debug!(
+                    &ctx,
+                    "handle_agent_message",
+                    "A2A project {} has in-flight tasks, keep working (complete when tasks finish)",
+                    project_id
+                );
+            } else {
+                match self
+                    .project_domain
+                    .project_manage()
+                    .complete(ctx.clone(), project_id, agent_id.clone())
+                    .await
+                {
+                    Ok(()) => {
+                        log_debug!(
+                            &ctx,
+                            "handle_agent_message",
+                            "A2A project {} completed after agent reply (no in-flight tasks)",
+                            project_id
+                        );
+                    }
+                    Err(e) => {
+                        // 收口失败不阻塞：对端轮询端仍能看到回复消息，只是状态停留 working
+                        log_warn!(
+                            &ctx,
+                            "handle_agent_message",
+                            "A2A project {} auto-complete failed: {}",
+                            project_id,
+                            e
+                        );
+                    }
                 }
             }
         }

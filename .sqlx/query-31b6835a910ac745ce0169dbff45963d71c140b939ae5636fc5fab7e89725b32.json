@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, organization_id, username, display_name, email, password_hash,\n       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences\nFROM users\nWHERE organization_id = ? AND status != 0 AND role IN (0, 1)\nORDER BY role ASC, created_at ASC\nLIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "organization_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "username",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "password_hash",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "role: UserRole",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "status: UserStatus",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "preferences",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "31b6835a910ac745ce0169dbff45963d71c140b939ae5636fc5fab7e89725b32"
+}

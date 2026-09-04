@@ -410,3 +410,66 @@ async fn test_agent_awake_event_default_exit_reason_is_empty() -> Result<()> {
 
     Ok(())
 }
+
+/// 审计维度（联邦调用方组织）：ctx 带 caller_organization_id 时，
+/// record 自动注入到事件列；本地路径恒 None。
+/// 见 docs/plan/跨组织业务调用方案.md §八
+#[tokio::test]
+async fn test_caller_organization_id_auto_injection() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let db_path_str = db_path.to_str().unwrap();
+
+    let stats = Stats::open(db_path_str, 100).await?;
+    stats.initialize_default()?;
+
+    let now = Utc::now().timestamp();
+    let peer_org = "org_peer_001".to_string();
+
+    // 联邦路径：ctx 带 caller_organization_id
+    let fed_ctx = RequestContext::builder()
+        .try_caller_organization_id(Some(peer_org.clone()))
+        .build();
+    let fed_event = ProjectEvent::new(now)
+        .with_project_id("proj_fed_001".to_string())
+        .with_event_type("created".to_string());
+    stats.record(fed_ctx.clone(), fed_event).await?;
+
+    // 本地路径：ctx 无 caller_organization_id
+    let local_ctx = RequestContext::new(None, None);
+    let local_event = ProjectEvent::new(now)
+        .with_project_id("proj_local_001".to_string())
+        .with_event_type("created".to_string());
+    stats.record(local_ctx.clone(), local_event).await?;
+
+    stats.flush_all(fed_ctx.clone()).await?;
+
+    // 联邦事件：caller_organization_id = 对端 org
+    let rows = stats
+        .query(
+            fed_ctx.clone(),
+            "SELECT caller_organization_id FROM project_events WHERE project_id = 'proj_fed_001'",
+            &[],
+        )
+        .await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].get("caller_organization_id").unwrap().as_str(),
+        Some(peer_org.as_str())
+    );
+
+    // 本地事件：恒 None
+    let rows = stats
+        .query(
+            fed_ctx.clone(),
+            "SELECT caller_organization_id FROM project_events WHERE project_id = 'proj_local_001'",
+            &[],
+        )
+        .await?;
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].get("caller_organization_id").unwrap().is_null());
+
+    Ok(())
+}

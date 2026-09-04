@@ -142,6 +142,11 @@ async fn do_create_project_and_message(
         Some((idx, _)) => format!("A2A: {}...", &content_text[..idx]),
         None => format!("A2A: {}", content_text),
     };
+    // 来源审计（方案 B）：联邦请求往 tags 追加 federation:<对端org>（与 send_task 一致）
+    let mut tags = vec!["a2a".to_string()];
+    if let Some(peer_org) = ctx.caller_organization_id() {
+        tags.push(format!("federation:{}", peer_org));
+    }
 
     let project = project_domain()
         .project_manage()
@@ -150,7 +155,7 @@ async fn do_create_project_and_message(
             project_name,
             format!("A2A 协议任务（session: {:?}）", params.session_id),
             0,
-            vec!["a2a".to_string()],
+            tags,
             Some(agent_id.clone()),
             user_id.clone(),
             user_id.clone(),

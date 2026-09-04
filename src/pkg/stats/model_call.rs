@@ -9,7 +9,7 @@ use common::error::Result;
 use duckdb::{Connection, ToSql};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, StatsEvent)]
+#[derive(Debug, Clone, Default, StatsEvent)]
 #[event_type = "model_call"]
 pub struct ModelCallEvent {
     #[timestamp]
@@ -26,6 +26,9 @@ pub struct ModelCallEvent {
     model_name: Option<String>,
     #[tag]
     organization_id: Option<String>,
+    /// 联邦调用方组织（审计维度）：由 Stats::record 从 ctx 自动注入
+    #[tag]
+    caller_organization_id: Option<String>,
     #[tag]
     user_id: Option<String>,
     #[metric]
@@ -48,6 +51,7 @@ impl ModelCallEvent {
             model_provider_id: None,
             model_name: None,
             organization_id: None,
+            caller_organization_id: None,
             user_id: None,
             call_count: 1,
             tokens_input: 0,
@@ -130,6 +134,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 model_provider_id VARCHAR,
                 model_name VARCHAR,
                 organization_id VARCHAR,
+                caller_organization_id VARCHAR,
                 user_id VARCHAR,
                 call_count BIGINT,
                 tokens_input BIGINT,
@@ -143,6 +148,17 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 e
             ))
         })?;
+        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）
+        conn.execute(
+            "ALTER TABLE model_call_events ADD COLUMN IF NOT EXISTS caller_organization_id VARCHAR",
+            [],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to migrate model_call_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -151,9 +167,9 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
         let sql = r#"
             INSERT INTO model_call_events (
                 id, timestamp, agent_id, project_id, task_id,
-                model_provider_id, model_name, organization_id, user_id,
+                model_provider_id, model_name, organization_id, caller_organization_id, user_id,
                 call_count, tokens_input, tokens_output, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -166,6 +182,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                 &event.model_provider_id as &dyn ToSql,
                 &event.model_name as &dyn ToSql,
                 &event.organization_id as &dyn ToSql,
+                &event.caller_organization_id as &dyn ToSql,
                 &event.user_id as &dyn ToSql,
                 &event.call_count as &dyn ToSql,
                 &event.tokens_input as &dyn ToSql,
@@ -185,10 +202,10 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
             let sql = r#"
                 INSERT INTO model_call_events (
                     id, timestamp, agent_id, project_id, task_id,
-                    model_provider_id, model_name, organization_id, user_id,
+                    model_provider_id, model_name, organization_id, caller_organization_id, user_id,
                     call_count, tokens_input, tokens_output, total_tokens
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        "#;
             conn.execute(
                 sql,
                 [
@@ -200,6 +217,7 @@ impl StatTable<ModelCallEvent> for ModelCallStatTable {
                     &event.model_provider_id as &dyn ToSql,
                     &event.model_name as &dyn ToSql,
                     &event.organization_id as &dyn ToSql,
+                    &event.caller_organization_id as &dyn ToSql,
                     &event.user_id as &dyn ToSql,
                     &event.call_count as &dyn ToSql,
                     &event.tokens_input as &dyn ToSql,

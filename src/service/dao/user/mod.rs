@@ -37,6 +37,17 @@ pub trait UserDao: Send + Sync {
         org_id: &str,
     ) -> Result<Vec<UserPo>>;
 
+    /// 查询组织的接待用户（联邦访客的内部对接身份，P6）
+    ///
+    /// 当前策略：组织内权限最高的管理员（SuperAdmin 优先，其次 Admin，
+    /// 各取最早创建者），user 表不加新字段；未来引入专用接待用户
+    /// 字段/配置时只改本方法实现，上层零感知。
+    async fn find_reception_user(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<UserPo>>;
+
     /// 更新用户
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()>;
 

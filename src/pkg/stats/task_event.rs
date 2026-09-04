@@ -9,7 +9,7 @@ use common::error::Result;
 use duckdb::{Connection, ToSql};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, StatsEvent)]
+#[derive(Debug, Clone, Default, StatsEvent)]
 #[event_type = "task"]
 pub struct TaskEvent {
     #[timestamp]
@@ -22,6 +22,9 @@ pub struct TaskEvent {
     pub event_type: String,
     #[tag]
     pub organization_id: Option<String>,
+    /// 联邦调用方组织（审计维度）：由 Stats::record 从 ctx 自动注入
+    #[tag]
+    pub caller_organization_id: Option<String>,
     #[tag]
     pub operator_type: Option<String>,
     #[tag]
@@ -52,6 +55,7 @@ impl TaskEvent {
             project_id: None,
             event_type: String::new(),
             organization_id: None,
+            caller_organization_id: None,
             operator_type: None,
             operator_id: None,
             root_user_id: None,
@@ -157,6 +161,7 @@ impl StatTable<TaskEvent> for TaskStatTable {
                 project_id VARCHAR,
                 event_type VARCHAR,
                 organization_id VARCHAR,
+                caller_organization_id VARCHAR,
                 operator_type VARCHAR,
                 operator_id VARCHAR,
                 root_user_id VARCHAR,
@@ -172,6 +177,14 @@ impl StatTable<TaskEvent> for TaskStatTable {
         conn.execute(sql, []).map_err(|e| {
             common::error::Error::internal(format!("Failed to create task_events table: {}", e))
         })?;
+        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）
+        conn.execute(
+            "ALTER TABLE task_events ADD COLUMN IF NOT EXISTS caller_organization_id VARCHAR",
+            [],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!("Failed to migrate task_events table: {}", e))
+        })?;
         Ok(())
     }
 
@@ -180,11 +193,11 @@ impl StatTable<TaskEvent> for TaskStatTable {
         let sql = r#"
             INSERT INTO task_events (
                 id, timestamp, task_id, project_id, event_type,
-                organization_id, operator_type, operator_id,
+                organization_id, caller_organization_id, operator_type, operator_id,
                 root_user_id, assignee_type, assignee_id,
                 from_assignee_id, from_status, to_status,
                 duration_ms, priority
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -195,6 +208,7 @@ impl StatTable<TaskEvent> for TaskStatTable {
                 &event.project_id as &dyn ToSql,
                 &event.event_type as &dyn ToSql,
                 &event.organization_id as &dyn ToSql,
+                &event.caller_organization_id as &dyn ToSql,
                 &event.operator_type as &dyn ToSql,
                 &event.operator_id as &dyn ToSql,
                 &event.root_user_id as &dyn ToSql,
@@ -219,12 +233,12 @@ impl StatTable<TaskEvent> for TaskStatTable {
             let sql = r#"
                 INSERT INTO task_events (
                     id, timestamp, task_id, project_id, event_type,
-                    organization_id, operator_type, operator_id,
+                    organization_id, caller_organization_id, operator_type, operator_id,
                     root_user_id, assignee_type, assignee_id,
                     from_assignee_id, from_status, to_status,
                     duration_ms, priority
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        "#;
             conn.execute(
                 sql,
                 [
@@ -234,6 +248,7 @@ impl StatTable<TaskEvent> for TaskStatTable {
                     &event.project_id as &dyn ToSql,
                     &event.event_type as &dyn ToSql,
                     &event.organization_id as &dyn ToSql,
+                    &event.caller_organization_id as &dyn ToSql,
                     &event.operator_type as &dyn ToSql,
                     &event.operator_id as &dyn ToSql,
                     &event.root_user_id as &dyn ToSql,

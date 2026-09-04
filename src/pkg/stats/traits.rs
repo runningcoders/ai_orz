@@ -39,6 +39,13 @@ pub trait StatEvent: Send + Sync + Debug {
     fn metrics_json(&self) -> Option<Value> {
         self.metrics().cloned()
     }
+
+    /// 注入联邦调用方组织（审计维度，见 docs/plan/跨组织业务调用方案.md §八）
+    ///
+    /// 由 `Stats::record` 统一从 `RequestContext.caller_organization_id` 调用；
+    /// 事件结构体声明了 `caller_organization_id` 字段（derive 宏自动生成 override）
+    /// 才会实际写入，否则 no-op（如通用 JSON 表事件）。
+    fn apply_caller_organization(&mut self, _caller_org: Option<String>) {}
 }
 
 /// 统计表 trait

@@ -124,13 +124,18 @@ macro_rules! record_event {
 }
 
 /// 内部 helper 宏：处理结构体初始化，自动添加 timestamp 如果没有
+///
+/// 结构体字面量带 `..Default::default()` 兜底：事件结构体新增字段（如
+/// caller_organization_id 审计维度）时，record_event! 打点侧无需逐点补字段；
+/// 新字段由 Default 填 None/0，再由 Stats::record 按需自动注入。
 #[macro_export]
 macro_rules! record_event_helper {
     // 情况 A: 用户已经提供了 timestamp
     ($event_type:ident, timestamp: $ts:expr, $($field:ident: $value:expr),* $(,)?) => {
         $event_type {
             timestamp: $ts,
-            $($field: $value),*
+            $($field: $value,)*
+            ..Default::default()
         }
     };
 
@@ -141,7 +146,8 @@ macro_rules! record_event_helper {
                 .duration_since(::std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis() as i64,
-            $($field: $value),*
+            $($field: $value,)*
+            ..Default::default()
         }
     };
 }

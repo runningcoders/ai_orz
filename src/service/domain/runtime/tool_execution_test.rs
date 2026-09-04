@@ -75,6 +75,14 @@ pub(crate) mod credential_stubs {
             unimplemented!("not needed by credential stub")
         }
 
+        async fn find_reception_user(
+            &self,
+            _ctx: RequestContext,
+            _org_id: &str,
+        ) -> Result<Option<UserPo>> {
+            unimplemented!("not needed by credential stub")
+        }
+
         async fn update(&self, _ctx: RequestContext, _user: &UserPo) -> Result<()> {
             unimplemented!("not needed by credential stub")
         }

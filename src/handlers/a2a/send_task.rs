@@ -45,12 +45,18 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
     let agent_id = agent.po.id.clone();
 
     // 2. 创建 project（对应 A2A task），将 agent.id 作为 owner_agent_id 绑定
+    //    来源审计（方案 B）：联邦请求往 tags 追加 federation:<对端org>，FTS5 已索引 tags，
+    //    后续可按项目维度检索外部来源；本地 JWT 路径无 caller，tags 仅含 "a2a"。
     let content_text = extract_text_from_a2a_message(&params.message);
     // 用 char_indices 做字符级截断，避免 UTF-8 字节切片 panic
     let project_name = match content_text.char_indices().nth(50) {
         Some((idx, _)) => format!("A2A: {}...", &content_text[..idx]),
         None => format!("A2A: {}", content_text),
     };
+    let mut tags = vec!["a2a".to_string()];
+    if let Some(peer_org) = ctx.caller_organization_id() {
+        tags.push(format!("federation:{}", peer_org));
+    }
 
     let project = project_domain()
         .project_manage()
@@ -59,7 +65,7 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
             project_name.clone(),
             format!("A2A 协议任务（session: {:?}）", params.session_id),
             0, // 默认优先级
-            vec!["a2a".to_string()],
+            tags,
             Some(agent_id.clone()), // ← handler 层已查询 agent，直接绑定
             user_id.clone(),
             user_id.clone(),

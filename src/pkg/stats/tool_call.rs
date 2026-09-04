@@ -9,7 +9,7 @@ use common::error::Result;
 use duckdb::{Connection, ToSql};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, StatsEvent)]
+#[derive(Debug, Clone, Default, StatsEvent)]
 #[event_type = "tool_call"]
 pub struct ToolCallEvent {
     #[timestamp]
@@ -26,6 +26,9 @@ pub struct ToolCallEvent {
     task_id: Option<String>,
     #[tag]
     organization_id: Option<String>,
+    /// 联邦调用方组织（审计维度）：由 Stats::record 从 ctx 自动注入
+    #[tag]
+    caller_organization_id: Option<String>,
     #[tag]
     user_id: Option<String>,
     #[metric]
@@ -50,6 +53,7 @@ impl ToolCallEvent {
             project_id: None,
             task_id: None,
             organization_id: None,
+            caller_organization_id: None,
             user_id: None,
             call_count: 1,
             args_len: 0,
@@ -138,6 +142,7 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 project_id VARCHAR,
                 task_id VARCHAR,
                 organization_id VARCHAR,
+                caller_organization_id VARCHAR,
                 user_id VARCHAR,
                 args_len BIGINT,
                 result_len BIGINT,
@@ -151,6 +156,17 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 e
             ))
         })?;
+        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）
+        conn.execute(
+            "ALTER TABLE tool_call_events ADD COLUMN IF NOT EXISTS caller_organization_id VARCHAR",
+            [],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to migrate tool_call_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -159,9 +175,9 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
         let sql = r#"
             INSERT INTO tool_call_events (
                 id, timestamp, tool_id, tool_name, agent_id,
-                project_id, task_id, organization_id, user_id,
+                project_id, task_id, organization_id, caller_organization_id, user_id,
                 args_len, result_len, duration_ms, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -174,6 +190,7 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                 &event.project_id as &dyn ToSql,
                 &event.task_id as &dyn ToSql,
                 &event.organization_id as &dyn ToSql,
+                &event.caller_organization_id as &dyn ToSql,
                 &event.user_id as &dyn ToSql,
                 &event.args_len as &dyn ToSql,
                 &event.result_len as &dyn ToSql,
@@ -193,10 +210,10 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
             let sql = r#"
                 INSERT INTO tool_call_events (
                     id, timestamp, tool_id, tool_name, agent_id,
-                    project_id, task_id, organization_id, user_id,
+                    project_id, task_id, organization_id, caller_organization_id, user_id,
                     args_len, result_len, duration_ms, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        "#;
             conn.execute(
                 sql,
                 [
@@ -208,6 +225,7 @@ impl StatTable<ToolCallEvent> for ToolCallStatTable {
                     &event.project_id as &dyn ToSql,
                     &event.task_id as &dyn ToSql,
                     &event.organization_id as &dyn ToSql,
+                    &event.caller_organization_id as &dyn ToSql,
                     &event.user_id as &dyn ToSql,
                     &event.args_len as &dyn ToSql,
                     &event.result_len as &dyn ToSql,

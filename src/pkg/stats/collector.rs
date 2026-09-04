@@ -197,10 +197,14 @@ impl Stats {
     /// Automatically looks up the table registered for this event type.
     /// If no custom table registered, uses DefaultStatTable.
     /// Automatically flushes when buffer reaches batch_size.
-    pub async fn record<E>(&self, _ctx: RequestContext, event: E) -> Result<()>
+    pub async fn record<E>(&self, ctx: RequestContext, mut event: E) -> Result<()>
     where
         E: StatEvent + 'static + Send + Sync,
     {
+        // 审计维度自动注入：联邦请求路径 ctx 带 caller_organization_id（a2a_auth
+        // 中间件写入），本地 JWT 路径恒 None。仅声明了该字段的事件类型实际接收。
+        event.apply_caller_organization(ctx.caller_organization_id().cloned());
+
         let type_id = TypeId::of::<E>();
         let need_flush = {
             let mut tables = self

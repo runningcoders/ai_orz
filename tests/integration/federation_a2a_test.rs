@@ -5,8 +5,8 @@
 //! - 建联对端节点：`Authorization: Bearer <link access_token>`（哈希匹配
 //!   Active 连接 `peer_token_hash`）+ 可选 `X-Federation-Caller` 身份声明。
 //!
-//! 覆盖：有效凭证 + 声明（caller_user 注入 ctx.user_id）、无声明（合成
-//! `federation:{peer_org_id}` 身份）、错凭证 401、非法声明 401（fail-closed）、
+//! 覆盖：有效凭证 + 声明、无声明（两者 ctx.user_id 均映射到 B 侧**接待用户**，
+//! P6：声明仅作审计/计量，不再决定内部身份）、错凭证 401、非法声明 401（fail-closed）、
 //! 声明组织与连接归属不一致 401（防跨连接冒充）、无任何凭证 401。
 //!
 //! 双节点说明同 organization_link_test：共享全局 Storage 单例，
@@ -133,7 +133,8 @@ fn send_task_rpc() -> serde_json::Value {
     })
 }
 
-/// 有效凭证 + 完整声明：鉴权通过，ctx.user_id = 声明的 caller_user，
+/// 有效凭证 + 完整声明：鉴权通过，ctx.user_id = B 侧接待用户（P6：
+/// 内部身份由被访组织决定，声明仅作审计/计量），
 /// project 落在目标组织 B（organization_id = B，caller org = A 走日志维度）。
 #[sqlx::test]
 async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
@@ -174,24 +175,38 @@ async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
         .expect("tasks/send should return result.id")
         .to_string();
 
-    // ctx 注入断言：created_by = 声明的 caller_user（organization/caller org 维度走日志）
+    // ctx 注入断言：created_by = B 侧接待用户（P6 接待用户映射；声明不再决定内部身份）
     let ctx = RequestContext::from_storage("fed-a2a-assert", ai_orz::pkg::storage::get().clone());
     let project = ai_orz::service::dao::project::dao()
-        .find_by_id(ctx, &task_id)
+        .find_by_id(ctx.clone(), &task_id)
         .await
         .expect("query project failed")
         .expect("project should exist for a2a task");
-    let expected_user: serde_json::Value = serde_json::from_str(&declaration).unwrap();
+    let reception = ai_orz::service::dao::user::dao()
+        .find_reception_user(ctx, &org_b)
+        .await
+        .expect("query reception user")
+        .expect("org_b should have an admin as reception user");
     assert_eq!(
-        project.created_by,
-        expected_user["caller_user"].as_str().unwrap(),
-        "ctx.user_id should come from declaration caller_user"
+        project.created_by, reception.id,
+        "ctx.user_id should map to B-side reception user (org admin)"
+    );
+    // 来源审计断言：联邦请求的 project tags 应含 federation:<对端org>
+    let tags = project.get_tags();
+    assert!(
+        tags.contains(&format!("federation:{}", org_a)),
+        "project tags should record source org, got: {:?}",
+        tags
+    );
+    assert!(
+        tags.iter().any(|t| t == "a2a"),
+        "tags should keep base a2a marker"
     );
 }
 
-/// 有效凭证 + 无声明：连接级匿名调用，合成身份 federation:{peer_org_id}。
+/// 有效凭证 + 无声明：连接级调用，内部身份同样映射到 B 侧接待用户（P6）。
 #[sqlx::test]
-async fn test_federation_call_without_declaration_uses_synthetic_identity(pool: SqlitePool) {
+async fn test_federation_call_without_declaration_uses_reception_user(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
 
@@ -219,14 +234,18 @@ async fn test_federation_call_without_declaration_uses_synthetic_identity(pool: 
 
     let ctx = RequestContext::from_storage("fed-a2a-assert", ai_orz::pkg::storage::get().clone());
     let project = ai_orz::service::dao::project::dao()
-        .find_by_id(ctx, &task_id)
+        .find_by_id(ctx.clone(), &task_id)
         .await
         .expect("query project failed")
         .expect("project should exist");
+    let reception = ai_orz::service::dao::user::dao()
+        .find_reception_user(ctx, &org_b)
+        .await
+        .expect("query reception user")
+        .expect("org_b should have an admin as reception user");
     assert_eq!(
-        project.created_by,
-        format!("federation:{}", org_a),
-        "anonymous connection-level call uses synthetic identity"
+        project.created_by, reception.id,
+        "anonymous connection-level call also maps to reception user (P6)"
     );
 }
 

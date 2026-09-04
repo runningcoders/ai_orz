@@ -9,7 +9,7 @@ use common::error::Result;
 use duckdb::{Connection, ToSql};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, StatsEvent)]
+#[derive(Debug, Clone, Default, StatsEvent)]
 #[event_type = "agent_awake"]
 pub struct AgentAwakeEvent {
     #[timestamp]
@@ -22,6 +22,9 @@ pub struct AgentAwakeEvent {
     pub task_id: Option<String>,
     #[tag]
     pub organization_id: Option<String>,
+    /// 联邦调用方组织（审计维度）：由 Stats::record 从 ctx 自动注入
+    #[tag]
+    pub caller_organization_id: Option<String>,
     #[tag]
     pub user_id: Option<String>,
     #[tag]
@@ -44,6 +47,7 @@ impl AgentAwakeEvent {
             project_id: None,
             task_id: None,
             organization_id: None,
+            caller_organization_id: None,
             user_id: None,
             message_id: None,
             call_count: 1,
@@ -120,6 +124,7 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 project_id VARCHAR,
                 task_id VARCHAR,
                 organization_id VARCHAR,
+                caller_organization_id VARCHAR,
                 user_id VARCHAR,
                 message_id VARCHAR,
                 call_count BIGINT,
@@ -134,6 +139,17 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 e
             ))
         })?;
+        // 兼容已有 DuckDB 文件：补加审计维度列（幂等）
+        conn.execute(
+            "ALTER TABLE agent_awake_events ADD COLUMN IF NOT EXISTS caller_organization_id VARCHAR",
+            [],
+        )
+        .map_err(|e| {
+            common::error::Error::internal(format!(
+                "Failed to migrate agent_awake_events table: {}",
+                e
+            ))
+        })?;
         Ok(())
     }
 
@@ -142,9 +158,9 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
         let sql = r#"
             INSERT INTO agent_awake_events (
                 id, timestamp, agent_id, project_id, task_id,
-                organization_id, user_id, message_id,
+                organization_id, caller_organization_id, user_id, message_id,
                 call_count, duration_ms, status, exit_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         "#;
         conn.execute(
             sql,
@@ -155,6 +171,7 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                 &event.project_id as &dyn ToSql,
                 &event.task_id as &dyn ToSql,
                 &event.organization_id as &dyn ToSql,
+                &event.caller_organization_id as &dyn ToSql,
                 &event.user_id as &dyn ToSql,
                 &event.message_id as &dyn ToSql,
                 &event.call_count as &dyn ToSql,
@@ -175,10 +192,10 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
             let sql = r#"
                 INSERT INTO agent_awake_events (
                     id, timestamp, agent_id, project_id, task_id,
-                    organization_id, user_id, message_id,
+                    organization_id, caller_organization_id, user_id, message_id,
                     call_count, duration_ms, status, exit_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#;
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        "#;
             conn.execute(
                 sql,
                 [
@@ -188,6 +205,7 @@ impl StatTable<AgentAwakeEvent> for AgentAwakeStatTable {
                     &event.project_id as &dyn ToSql,
                     &event.task_id as &dyn ToSql,
                     &event.organization_id as &dyn ToSql,
+                    &event.caller_organization_id as &dyn ToSql,
                     &event.user_id as &dyn ToSql,
                     &event.message_id as &dyn ToSql,
                     &event.call_count as &dyn ToSql,

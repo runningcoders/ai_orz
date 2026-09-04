@@ -68,6 +68,13 @@ pub trait UserDal: Send + Sync {
         org_id: &str,
     ) -> Result<Vec<UserPo>>;
 
+    /// 查询组织的接待用户（联邦访客的内部对接身份，P6）
+    async fn find_reception_user(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<UserPo>>;
+
     /// 更新用户信息
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()>;
 
@@ -192,6 +199,14 @@ impl UserDal for UserDalImpl {
             )
             .await?;
         Ok(page.items)
+    }
+
+    async fn find_reception_user(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<UserPo>> {
+        self.user_dao.find_reception_user(ctx, org_id).await
     }
 
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {

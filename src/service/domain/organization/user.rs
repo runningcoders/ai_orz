@@ -6,7 +6,7 @@
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
-use common::error::{Result, bail_err};
+use common::error::{Error, Result, bail_err};
 
 #[async_trait]
 impl super::UserManage for super::OrganizationDomainImpl {
@@ -39,6 +39,14 @@ impl super::UserManage for super::OrganizationDomainImpl {
         org_id: &str,
     ) -> Result<Vec<UserPo>> {
         self.user_dal.find_by_organization_id(ctx, org_id).await
+    }
+
+    /// 获取组织接待用户（联邦访客的内部对接身份，P6）
+    async fn reception_user(&self, ctx: RequestContext, org_id: &str) -> Result<UserPo> {
+        self.user_dal
+            .find_reception_user(ctx, org_id)
+            .await?
+            .ok_or_else(|| Error::not_found(format!("组织 {org_id} 无可用接待用户（缺少管理员）")))
     }
 
     /// 创建新用户

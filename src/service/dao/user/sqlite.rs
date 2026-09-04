@@ -154,6 +154,29 @@ FROM users WHERE username = ? AND status != 0
         Ok(page.items)
     }
 
+    async fn find_reception_user(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+    ) -> Result<Option<UserPo>> {
+        let user = sqlx::query_as!(
+            UserPo,
+            r#"
+SELECT id, organization_id, username, display_name, email, password_hash,
+       role as 'role: UserRole', status as 'status: UserStatus', created_by, modified_by, created_at, updated_at, preferences
+FROM users
+WHERE organization_id = ? AND status != 0 AND role IN (0, 1)
+ORDER BY role ASC, created_at ASC
+LIMIT 1
+            "#,
+            org_id
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+
+        Ok(user)
+    }
+
     async fn update(&self, ctx: RequestContext, user: &UserPo) -> Result<()> {
         let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
