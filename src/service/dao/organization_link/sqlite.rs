@@ -102,6 +102,25 @@ FROM organization_links WHERE local_org_id = ? AND peer_org_id = ?
         Ok(link)
     }
 
+    async fn find_active_by_peer_token_hash(
+        &self,
+        ctx: RequestContext,
+        peer_token_hash: &str,
+    ) -> Result<Option<OrganizationLinkPo>> {
+        let link = sqlx::query_as!(
+            OrganizationLinkPo,
+            r#"
+SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
+       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
+            "#,
+            peer_token_hash
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+        Ok(link)
+    }
+
     async fn query(
         &self,
         ctx: RequestContext,

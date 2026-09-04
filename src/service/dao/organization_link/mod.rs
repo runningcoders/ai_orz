@@ -48,6 +48,17 @@ pub trait OrganizationLinkDao: Send + Sync {
         peer_org_id: &str,
     ) -> Result<Option<OrganizationLinkPo>>;
 
+    /// 按对端出站凭证哈希查连接（机器侧端点鉴权）
+    ///
+    /// 对端调用本节点时携带其 access_token（= 本节点为对端生成的 token），
+    /// 本节点哈希后查 `peer_token_hash`；仅匹配 Active 连接。
+    /// 无效/吊销凭证统一返回 None（防枚举）。
+    async fn find_active_by_peer_token_hash(
+        &self,
+        ctx: RequestContext,
+        peer_token_hash: &str,
+    ) -> Result<Option<OrganizationLinkPo>>;
+
     /// 通用查询
     async fn query(
         &self,

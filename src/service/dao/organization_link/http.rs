@@ -10,11 +10,20 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common::api::{ApiResponse, VerifyPairingCodeRequest, VerifyPairingCodeResponse};
+use common::api::{
+    ApiResponse, DirectoryResponse, DirectorySyncRequest, DirectorySyncResponse,
+    PeerOrgDirectoryEntry, VerifyPairingCodeRequest, VerifyPairingCodeResponse,
+};
 use common::error::{Error, Result};
 
 /// 对端 verify 端点路径（与 `router.rs` root 层直挂路径对齐，评审稿 D7）
 const VERIFY_PATH: &str = "/api/v1/organization/links/pairing/verify";
+
+/// 对端目录端点路径（机器侧，契约凭证鉴权）
+const DIRECTORY_PATH: &str = "/api/v1/organization/links/directory";
+
+/// 对端目录推送端点路径（机器侧，契约凭证鉴权）
+const DIRECTORY_SYNC_PATH: &str = "/api/v1/organization/links/directory/sync";
 
 /// 出站调用超时（秒）：建联是低频管理操作，10s 足够覆盖公网 RTT
 const OUTBOUND_TIMEOUT_SECS: u64 = 10;
@@ -32,6 +41,46 @@ pub trait FederationHttpClient: Send + Sync {
         peer_endpoint: &str,
         req: &VerifyPairingCodeRequest,
     ) -> Result<VerifyPairingCodeResponse>;
+
+    /// 拉取对端组织目录（契约凭证鉴权，`Authorization: Bearer <access_token>`）
+    async fn fetch_directory(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+    ) -> Result<Vec<PeerOrgDirectoryEntry>>;
+
+    /// 推送本地目录给对端（契约凭证鉴权）
+    async fn push_directory(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+        orgs: Vec<PeerOrgDirectoryEntry>,
+    ) -> Result<()>;
+}
+
+/// 构造出站客户端（统一超时；契约凭证由 per-request `bearer_auth` 携带）
+fn outbound_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(OUTBOUND_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| Error::internal(format!("构建 HTTP 客户端失败: {}", e)))
+}
+
+/// 解析 ApiResponse 包裹的目录响应
+async fn parse_directory(resp: reqwest::Response, url: &str) -> Result<Vec<PeerOrgDirectoryEntry>> {
+    let api: ApiResponse<DirectoryResponse> = resp.json().await.map_err(|e| {
+        Error::internal(format!(
+            "对端 directory 响应解析失败（{}）：对端可能不是 ai_orz 节点: {}",
+            url, e
+        ))
+    })?;
+    if !api.is_success() {
+        return Err(Error::unauthorized(format!(
+            "对端拒绝目录访问：{}",
+            api.message
+        )));
+    }
+    Ok(api.data.map(|d| d.orgs).unwrap_or_default())
 }
 
 /// reqwest 实现
@@ -50,10 +99,7 @@ impl FederationHttpClient for ReqwestFederationClient {
         }
         let url = format!("{}{}", base, VERIFY_PATH);
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(OUTBOUND_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| Error::internal(format!("构建 HTTP 客户端失败: {}", e)))?;
+        let client = outbound_client()?;
 
         let resp = client
             .post(&url)
@@ -79,6 +125,64 @@ impl FederationHttpClient for ReqwestFederationClient {
 
         api.data
             .ok_or_else(|| Error::internal("对端 verify 响应缺少 data 字段"))
+    }
+
+    async fn fetch_directory(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+    ) -> Result<Vec<PeerOrgDirectoryEntry>> {
+        let base = peer_endpoint.trim().trim_end_matches('/');
+        if base.is_empty() {
+            return Err(Error::bad_request("对端地址不能为空"));
+        }
+        let url = format!("{}{}", base, DIRECTORY_PATH);
+
+        let client = outbound_client()?;
+        let resp = client
+            .get(&url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| Error::internal(format!("拉取对端目录失败 ({}): {}", url, e)))?;
+
+        parse_directory(resp, &url).await
+    }
+
+    async fn push_directory(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+        orgs: Vec<PeerOrgDirectoryEntry>,
+    ) -> Result<()> {
+        let base = peer_endpoint.trim().trim_end_matches('/');
+        if base.is_empty() {
+            return Err(Error::bad_request("对端地址不能为空"));
+        }
+        let url = format!("{}{}", base, DIRECTORY_SYNC_PATH);
+
+        let client = outbound_client()?;
+        let resp = client
+            .post(&url)
+            .bearer_auth(access_token)
+            .json(&DirectorySyncRequest { orgs })
+            .send()
+            .await
+            .map_err(|e| Error::internal(format!("推送本地目录失败 ({}): {}", url, e)))?;
+
+        let api: ApiResponse<DirectorySyncResponse> = resp.json().await.map_err(|e| {
+            Error::internal(format!(
+                "对端 directory/sync 响应解析失败（{}）：对端可能不是 ai_orz 节点: {}",
+                url, e
+            ))
+        })?;
+        if !api.is_success() {
+            return Err(Error::unauthorized(format!(
+                "对端拒绝目录推送：{}",
+                api.message
+            )));
+        }
+        Ok(())
     }
 }
 

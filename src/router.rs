@@ -144,6 +144,26 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
                 }),
             ),
         )
+        // 组网：返回本节点组织目录（机器侧，契约凭证鉴权，响应过 redact!）
+        .route(
+            "/api/v1/organization/links/directory",
+            get(handlers::organization::links::get_directory_handler).layer(
+                axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| request_context_middleware(config.clone(), req, next)
+                }),
+            ),
+        )
+        // 组网：接收对端推送的目录（机器侧，契约凭证鉴权）
+        .route(
+            "/api/v1/organization/links/directory/sync",
+            post(handlers::organization::links::sync_directory_handler).layer(
+                axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| request_context_middleware(config.clone(), req, next)
+                }),
+            ),
+        )
         .route("/health", get(handlers::health::health))
         // API Notice 日志：请求结束时打印 method/path/status/duration + 请求/响应体预览
         // （仅覆盖上面已注册的接口路由；必须加在 fallback_service 之前，静态资源不打）

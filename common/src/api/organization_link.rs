@@ -125,3 +125,29 @@ pub struct ListLinksResponse {
     /// 已建联条目（Active 在前，按建联时间倒序）
     pub links: Vec<LinkItem>,
 }
+
+// ============ 目录同步（机器侧，契约凭证鉴权） ============
+
+/// 组织目录响应（白名单字段，评审稿 §5.1）
+///
+/// 返回本节点全部组织（Local 组织 + 已知影子）；仅目录元信息，
+/// 绝不携带用户 / Agent / 任务 / 消息 / 记忆 / 凭证等业务数据。
+/// 出站响应统一过 `redact!`（EXPORT policy）——本结构无凭证类字段，
+/// 脱敏不会破坏协议（对比：verify 响应携带 peer_token，**禁止** redact!，
+/// 否则 token 被 KeyRule "token" 命中遮蔽导致建联损坏）。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DirectoryResponse {
+    /// 组织目录条目
+    pub orgs: Vec<PeerOrgDirectoryEntry>,
+}
+
+/// 目录同步推送请求（对端建联完成后主动推送一次本地目录）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DirectorySyncRequest {
+    /// 对端组织目录条目（白名单字段）
+    pub orgs: Vec<PeerOrgDirectoryEntry>,
+}
+
+/// 目录同步推送响应（无数据）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct DirectorySyncResponse {}

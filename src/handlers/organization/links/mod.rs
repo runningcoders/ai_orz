@@ -5,11 +5,15 @@
 //! （非 Agent 工具，防 Agent 误触组网，评审稿 §4.2）。
 
 pub mod create_link;
+pub mod get_directory;
 pub mod issue_pairing_code;
 pub mod list_links;
+pub mod sync_directory;
 pub mod verify_pairing_code;
 
 pub use create_link::create_link_handler;
+pub use get_directory::get_directory_handler;
 pub use issue_pairing_code::issue_pairing_code_handler;
 pub use list_links::list_links_handler;
+pub use sync_directory::sync_directory_handler;
 pub use verify_pairing_code::verify_pairing_code_handler;

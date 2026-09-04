@@ -430,6 +430,11 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             .upsert_linked_peer_org(ctx.clone(), &shadow)
             .await?;
 
+        // 7) 目录双向同步（评审稿 §4.1 步骤 5 / §5.2）：拉对端全量目录 + 推本地目录。
+        //    best-effort：目录同步失败不回滚建联（契约已落库，可由下次同步补齐），仅记审计。
+        self.sync_directories_after_link(&ctx, &peer_endpoint, &resp.peer_token)
+            .await;
+
         log_info!(
             &ctx,
             "create_link",
@@ -504,6 +509,150 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         });
 
         Ok(ListLinksResponse { links: items })
+    }
+
+    /// 机器侧端点契约凭证鉴权
+    ///
+    /// 无效/吊销凭证统一 unauthorized，不区分「不存在/已断联」（防枚举）。
+    async fn authenticate_link_call(
+        &self,
+        ctx: RequestContext,
+        credential: &str,
+    ) -> Result<OrganizationLinkPo> {
+        if credential.trim().is_empty() {
+            return Err(Error::unauthorized("缺少联邦契约凭证"));
+        }
+        let hash = sha256::digest(credential.trim().as_bytes());
+        self.link_dao
+            .find_active_by_peer_token_hash(ctx, &hash)
+            .await?
+            .ok_or_else(|| Error::unauthorized("联邦契约凭证无效"))
+    }
+
+    /// 本节点组织目录（白名单字段）
+    async fn get_directory(&self, ctx: RequestContext) -> Result<Vec<PeerOrgDirectoryEntry>> {
+        let orgs = self.org_dal.list_all(ctx).await?;
+        Ok(orgs
+            .into_iter()
+            .map(|org| PeerOrgDirectoryEntry {
+                id: org.id,
+                name: org.name,
+                description: org.description,
+                base_url: org.base_url,
+                group_name: org.group_name,
+                status: org.status.to_i32(),
+                updated_at: org.updated_at,
+            })
+            .collect())
+    }
+
+    /// 接收对端推送的目录（逐条 Remote 影子 upsert，评审稿 §5.2）
+    async fn handle_directory_sync(
+        &self,
+        ctx: RequestContext,
+        req: common::api::DirectorySyncRequest,
+    ) -> Result<usize> {
+        let mut written = 0usize;
+        for entry in &req.orgs {
+            let upsert = PeerOrgUpsert {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                description: entry.description.clone(),
+                base_url: entry.base_url.clone(),
+                group_name: entry.group_name.clone(),
+                status: OrganizationStatus::from_i32(entry.status),
+                updated_at: entry.updated_at,
+            };
+            if self.link_dao.upsert_peer_org(ctx.clone(), &upsert).await? {
+                written += 1;
+            }
+        }
+
+        log_info!(
+            &ctx,
+            "directory_sync",
+            "目录同步完成 received={} written={}",
+            req.orgs.len(),
+            written
+        );
+        Ok(written)
+    }
+}
+
+impl super::OrganizationDomainImpl {
+    /// 建联完成后的目录双向同步（评审稿 §4.1 步骤 5 / §5.2）
+    ///
+    /// 拉取对端全量目录（→ 本地 Remote 影子 upsert）+ 推送本地目录（→ 对端
+    /// 按其对端侧语义 upsert）。一次建联由发起方完成双向交换，对端无需补动作。
+    /// 失败仅记 WARN 审计，不向调用方报错（契约已落库，目录可由下次同步补齐）。
+    async fn sync_directories_after_link(
+        &self,
+        ctx: &RequestContext,
+        peer_endpoint: &str,
+        access_token: &str,
+    ) {
+        use super::OrganizationManage as _;
+
+        // 拉：对端目录 → 本地 Remote 影子 upsert（新者胜 / 不动 scope / 保护 Local）
+        let pulled = self
+            .http_client
+            .fetch_directory(peer_endpoint, access_token)
+            .await;
+        match pulled {
+            Ok(entries) => {
+                let count = entries.len();
+                let req = common::api::DirectorySyncRequest { orgs: entries };
+                match self.handle_directory_sync(ctx.clone(), req).await {
+                    Ok(written) => log_info!(
+                        ctx,
+                        "directory_pull",
+                        "建联后拉取对端目录成功 endpoint={} received={} written={}",
+                        peer_endpoint,
+                        count,
+                        written
+                    ),
+                    Err(e) => log_warn!(
+                        ctx,
+                        "directory_pull",
+                        "建联后目录 upsert 失败(建联不受影响) endpoint={} error={}",
+                        peer_endpoint,
+                        e
+                    ),
+                }
+            }
+            Err(e) => log_warn!(
+                ctx,
+                "directory_pull",
+                "建联后拉取对端目录失败(建联不受影响) endpoint={} error={}",
+                peer_endpoint,
+                e
+            ),
+        }
+
+        // 推：本地目录 → 对端
+        match self.get_directory(ctx.clone()).await {
+            Ok(orgs) => {
+                if let Err(e) = self
+                    .http_client
+                    .push_directory(peer_endpoint, access_token, orgs)
+                    .await
+                {
+                    log_warn!(
+                        ctx,
+                        "directory_push",
+                        "建联后推送本地目录失败(建联不受影响) endpoint={} error={}",
+                        peer_endpoint,
+                        e
+                    );
+                }
+            }
+            Err(e) => log_warn!(
+                ctx,
+                "directory_push",
+                "建联后构建本地目录失败(建联不受影响) error={}",
+                e
+            ),
+        }
     }
 }
 

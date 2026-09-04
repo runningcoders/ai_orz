@@ -195,6 +195,33 @@ pub trait OrganizationManage: Send + Sync {
 
     /// 已建联列表（用户侧，JWT，前端"关联组织"页数据源）
     async fn list_links(&self, ctx: RequestContext) -> Result<common::api::ListLinksResponse>;
+
+    /// 机器侧端点契约凭证鉴权
+    ///
+    /// 对端出站调用本节点时携带其 access_token（= 本节点为对端生成的 token），
+    /// 哈希后匹配 Active 连接的 `peer_token_hash`。无效/吊销统一 unauthorized
+    /// （防枚举）。返回命中的连接（携带调用方 org id 与本端 org id）。
+    async fn authenticate_link_call(
+        &self,
+        ctx: RequestContext,
+        credential: &str,
+    ) -> Result<crate::models::organization_link::OrganizationLinkPo>;
+
+    /// 本节点组织目录（机器侧 GET /directory 数据源，白名单字段，评审稿 §5.1）
+    async fn get_directory(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<Vec<common::api::PeerOrgDirectoryEntry>>;
+
+    /// 接收对端推送的目录（机器侧 POST /directory/sync）
+    ///
+    /// 逐条走 `upsert_peer_org`（Remote 影子语义：新者胜、不动既有 scope、
+    /// 保护 Local 组织），返回实际写入条数供审计。
+    async fn handle_directory_sync(
+        &self,
+        ctx: RequestContext,
+        req: common::api::DirectorySyncRequest,
+    ) -> Result<usize>;
 }
 
 /// 用户管理 trait

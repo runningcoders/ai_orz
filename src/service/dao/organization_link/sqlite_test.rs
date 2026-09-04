@@ -316,3 +316,45 @@ async fn test_upsert_never_overwrites_local_org(pool: SqlitePool) {
     assert_eq!(org.name, "我自己的组织");
     assert_eq!(org.scope, OrganizationScope::Local);
 }
+
+/// 机器侧鉴权：按对端出站凭证哈希查连接（仅 Active 命中；未知/吊销不命中）
+#[sqlx::test]
+async fn test_find_active_by_peer_token_hash(pool: SqlitePool) {
+    let (link_dao, org_dao) = init_test_env();
+    let ctx = new_ctx("test-user", pool.clone());
+
+    let local = create_test_org("本地组织", OrganizationScope::Local);
+    let peer = create_test_org("对端组织", OrganizationScope::Linked);
+    org_dao.insert(ctx.clone(), &local).await.unwrap();
+    org_dao.insert(ctx.clone(), &peer).await.unwrap();
+
+    let mut link = create_test_link(&local.id, &peer.id);
+    link.peer_token_hash = "hash-active".to_string();
+    link_dao.insert(ctx.clone(), &link).await.unwrap();
+
+    // Active + 哈希匹配 → 命中
+    let hit = link_dao
+        .find_active_by_peer_token_hash(ctx.clone(), "hash-active")
+        .await
+        .unwrap();
+    assert_eq!(hit.expect("should hit active link").id, link.id);
+
+    // 未知哈希不命中（防枚举：与无效凭证统一 None）
+    assert!(
+        link_dao
+            .find_active_by_peer_token_hash(ctx.clone(), "hash-unknown")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // 吊销后不命中（仅 Active 参与鉴权）
+    link_dao.revoke(ctx.clone(), &link.id).await.unwrap();
+    assert!(
+        link_dao
+            .find_active_by_peer_token_hash(ctx.clone(), "hash-active")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

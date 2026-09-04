@@ -282,3 +282,247 @@ async fn test_create_link_rejects_invalid_pairing_code(pool: SqlitePool) {
         links
     );
 }
+
+/// S5 目录同步：契约凭证鉴权 + 目录拉取/推送 + 影子 upsert 幂等与 Local 保护。
+///
+/// 链路：建联（B 签发配对码 → A create_link）→ A 持出站凭证调 B 的
+/// GET /directory（真实 TCP）→ 断言目录含双方 → POST /directory/sync 推送
+/// 合成条目（独立 uuid）→ 断言 Remote 影子创建 + 新者胜 + Local 保护。
+#[sqlx::test]
+async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
+    use ::common::api::{DirectorySyncRequest, PeerOrgDirectoryEntry};
+    use ::common::enums::OrganizationScope;
+
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    // 节点 A + 节点 B
+    let bs_a = crate::common::factories::bootstrap_system(&app).await;
+    let jwt_a = crate::common::factories::login_and_get_jwt(
+        &app,
+        &bs_a.organization_id,
+        &bs_a.username,
+        &bs_a.password,
+    )
+    .await;
+    let ctx_sys =
+        RequestContext::from_storage("federation-test-dir", ai_orz::pkg::storage::get().clone());
+    let username_b = format!("dir-admin-{}", uuid::Uuid::now_v7());
+    let password_b = format!("dir-pw-{}", uuid::Uuid::now_v7());
+    let (org_b_id, _user_b_id) = ai_orz::service::domain::organization::domain()
+        .organization_manage()
+        .create_org_and_owner(
+            ctx_sys.clone(),
+            InitializeSystemRequest {
+                organization_name: format!("DirPeerOrg-{}", uuid::Uuid::now_v7()),
+                admin_username: username_b.clone(),
+                admin_password: password_b.clone(),
+                description: None,
+                admin_display_name: None,
+                admin_email: None,
+                chat_model: None,
+                embedding_model: None,
+            },
+        )
+        .await
+        .expect("create peer org B should succeed");
+    let jwt_b =
+        crate::common::factories::login_and_get_jwt(&app, &org_b_id, &username_b, &password_b)
+            .await;
+
+    // 建联：B 签发配对码 → A create_link（真实 TCP 出站 + 建联后自动目录双向同步）
+    let peer_endpoint = app.serve_on_random_port().await;
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/organization/links/pairing/issue",
+            &IssuePairingCodeRequest {},
+            &jwt_b,
+        )
+        .await;
+    let pairing_code = crate::common::assert_api_ok(status, &body)
+        .get("pairing_code")
+        .and_then(|v| v.as_str())
+        .expect("pairing_code should exist")
+        .to_string();
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/organization/links",
+            &CreateLinkRequest {
+                pairing_code,
+                peer_endpoint: peer_endpoint.clone(),
+            },
+            &jwt_a,
+        )
+        .await;
+    crate::common::assert_api_ok(status, &body);
+
+    // 取 A 的出站凭证（= B 为 A 生成的 peer_token）
+    let link_dao = ai_orz::service::dao::organization_link::dao();
+    let ctx_dao = RequestContext::from_storage(
+        "federation-test-dir-assert",
+        ai_orz::pkg::storage::get().clone(),
+    );
+    let link_a = link_dao
+        .find_by_pair(ctx_dao.clone(), &bs_a.organization_id, &org_b_id)
+        .await
+        .expect("query A→B link failed")
+        .expect("A→B link should exist");
+
+    // ---- GET /directory：正确凭证 → 200 且目录含双方组织 ----
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!(
+            "{}/api/v1/organization/links/directory",
+            peer_endpoint
+        ))
+        .bearer_auth(&link_a.access_token)
+        .send()
+        .await
+        .expect("GET directory over TCP failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let api: serde_json::Value = resp.json().await.expect("directory response JSON");
+    let orgs = api
+        .get("data")
+        .and_then(|d| d.get("orgs"))
+        .and_then(|v| v.as_array())
+        .expect("data.orgs array");
+    let ids: Vec<&str> = orgs
+        .iter()
+        .filter_map(|o| o.get("id").and_then(|v| v.as_str()))
+        .collect();
+    assert!(
+        ids.contains(&org_b_id.as_str()) && ids.contains(&bs_a.organization_id.as_str()),
+        "directory should contain both orgs, got: {:?}",
+        ids
+    );
+    // 白名单字段红线：条目绝不携带凭证/业务数据字段
+    let first = &orgs[0];
+    assert!(
+        first.get("access_token").is_none() && first.get("peer_token").is_none(),
+        "directory entries must not carry credential fields"
+    );
+
+    // ---- GET /directory：错误凭证 → 401（防枚举统一错误）----
+    let resp = client
+        .get(format!(
+            "{}/api/v1/organization/links/directory",
+            peer_endpoint
+        ))
+        .bearer_auth("deadbeef".repeat(8))
+        .send()
+        .await
+        .expect("GET directory with bad credential failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
+
+    // ---- POST /directory/sync：推送合成条目 → Remote 影子创建 ----
+    let shadow_id = format!("shadow-{}", uuid::Uuid::now_v7());
+    let entry = |id: &str, name: &str, updated_at: i64| PeerOrgDirectoryEntry {
+        id: id.to_string(),
+        name: name.to_string(),
+        description: "synced from peer".to_string(),
+        base_url: "https://peer.example.com".to_string(),
+        group_name: Some("同步集团".to_string()),
+        status: 1,
+        updated_at,
+    };
+    let resp = client
+        .post(format!(
+            "{}/api/v1/organization/links/directory/sync",
+            peer_endpoint
+        ))
+        .bearer_auth(&link_a.access_token)
+        .json(&DirectorySyncRequest {
+            orgs: vec![entry(&shadow_id, "远端影子组织", 1000)],
+        })
+        .send()
+        .await
+        .expect("POST directory/sync over TCP failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+    // 影子落库：scope=Remote
+    let shadow = ai_orz::service::domain::organization::domain()
+        .organization_manage()
+        .get_by_id(ctx_dao.clone(), &shadow_id)
+        .await
+        .expect("query shadow failed")
+        .expect("Remote shadow should exist after sync");
+    assert_eq!(shadow.scope, OrganizationScope::Remote);
+    assert_eq!(shadow.name, "远端影子组织");
+
+    // 幂等：再推一次（同版本）→ 不重复、无副作用
+    let resp = client
+        .post(format!(
+            "{}/api/v1/organization/links/directory/sync",
+            peer_endpoint
+        ))
+        .bearer_auth(&link_a.access_token)
+        .json(&DirectorySyncRequest {
+            orgs: vec![entry(&shadow_id, "远端影子组织", 1000)],
+        })
+        .send()
+        .await
+        .expect("POST directory/sync replay failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+    // 新者胜：更新版本覆盖元信息，scope 仍为 Remote
+    let resp = client
+        .post(format!(
+            "{}/api/v1/organization/links/directory/sync",
+            peer_endpoint
+        ))
+        .bearer_auth(&link_a.access_token)
+        .json(&DirectorySyncRequest {
+            orgs: vec![entry(&shadow_id, "远端影子组织-新名", 2000)],
+        })
+        .send()
+        .await
+        .expect("POST directory/sync newer failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let shadow = ai_orz::service::domain::organization::domain()
+        .organization_manage()
+        .get_by_id(ctx_dao.clone(), &shadow_id)
+        .await
+        .expect("query shadow failed")
+        .expect("shadow should exist");
+    assert_eq!(shadow.name, "远端影子组织-新名");
+    assert_eq!(shadow.scope, OrganizationScope::Remote);
+
+    // Local 保护：推送中伪造本端组织 id → 不覆盖
+    let resp = client
+        .post(format!(
+            "{}/api/v1/organization/links/directory/sync",
+            peer_endpoint
+        ))
+        .bearer_auth(&link_a.access_token)
+        .json(&DirectorySyncRequest {
+            orgs: vec![entry(&bs_a.organization_id, "冒名顶替", 9999)],
+        })
+        .send()
+        .await
+        .expect("POST directory/sync local-spoof failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    let org_a = ai_orz::service::domain::organization::domain()
+        .organization_manage()
+        .get_by_id(ctx_dao, &bs_a.organization_id)
+        .await
+        .expect("query org A failed")
+        .expect("org A should exist");
+    assert_ne!(
+        org_a.name, "冒名顶替",
+        "Local org must never be overwritten"
+    );
+    assert_eq!(org_a.scope, OrganizationScope::Local);
+
+    // ---- POST /directory/sync：错误凭证 → 401 ----
+    let resp = client
+        .post(format!(
+            "{}/api/v1/organization/links/directory/sync",
+            peer_endpoint
+        ))
+        .bearer_auth("deadbeef".repeat(8))
+        .json(&DirectorySyncRequest { orgs: vec![] })
+        .send()
+        .await
+        .expect("POST directory/sync with bad credential failed");
+    assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
+}
