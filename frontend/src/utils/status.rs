@@ -255,6 +255,26 @@ pub fn short_id(id: &str) -> String {
     format!("{head}…{tail}")
 }
 
+/// 组织组网连接状态文案（对齐后端 `OrganizationLinkStatus`：1=Active 0=Revoked）。
+pub fn org_link_status_text(status: i32) -> &'static str {
+    match status {
+        1 => "已建联",
+        0 => "已断联",
+        _ => "未知",
+    }
+}
+
+/// 组织组网连接状态徽章（单一事实源）。
+///
+/// 已建联(1)=success(绿) / 已断联(0)=error(红) / 未知=ghost。
+pub fn org_link_status_badge(status: i32) -> &'static str {
+    match status {
+        1 => "badge hud-badge badge-sm badge-success",
+        0 => "badge hud-badge badge-sm badge-error",
+        _ => "badge hud-badge badge-sm badge-ghost",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +297,20 @@ mod tests {
         assert_eq!(tool_call_status_text(ToolCallStatusDto::Failed), "失败");
         assert_eq!(
             tool_call_status_badge(ToolCallStatusDto::Failed),
+            "badge hud-badge badge-sm badge-error"
+        );
+    }
+
+    #[test]
+    fn org_link_status_variants() {
+        assert_eq!(org_link_status_text(1), "已建联");
+        assert_eq!(
+            org_link_status_badge(1),
+            "badge hud-badge badge-sm badge-success"
+        );
+        assert_eq!(org_link_status_text(0), "已断联");
+        assert_eq!(
+            org_link_status_badge(0),
             "badge hud-badge badge-sm badge-error"
         );
     }

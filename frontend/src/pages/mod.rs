@@ -35,6 +35,7 @@ use crate::pages::hr::skills::HrSkills;
 use crate::pages::message::chat::MessageChat;
 use crate::pages::message::search::MessageSearch;
 use crate::pages::organization::info::OrganizationInfo;
+use crate::pages::organization::links::OrganizationLinks;
 use crate::pages::organization::users::OrganizationUsers;
 use crate::pages::project::artifact_detail::ProjectArtifactDetail;
 use crate::pages::project::artifacts::ProjectArtifacts;
@@ -74,6 +75,8 @@ pub enum Route {
     OrganizationInfo {},
     #[route("/organization/users")]
     OrganizationUsers {},
+    #[route("/organization/links")]
+    OrganizationLinks {},
 
     // HR 模块
     #[route("/hr/agents")]
