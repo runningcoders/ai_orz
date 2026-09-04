@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, invite_code, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "0c9616a3f8b0ed72e51de4c1fba55dc48061e3db4eabaa5a6e00d3346f205ba1"
+}

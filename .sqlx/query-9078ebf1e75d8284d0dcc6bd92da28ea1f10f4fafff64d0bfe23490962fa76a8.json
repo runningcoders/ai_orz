@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE invite_code = ? AND status != 0\n            ",
+  "query": "\nSELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE id = ? AND status != 0\n            ",
   "describe": {
     "columns": [
       {
@@ -24,38 +24,43 @@
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationStatus",
+        "name": "group_name",
         "ordinal": 4,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "scope: OrganizationScope",
+        "name": "status: OrganizationStatus",
         "ordinal": 5,
         "type_info": "Integer"
       },
       {
-        "name": "invite_code",
+        "name": "scope: OrganizationScope",
         "ordinal": 6,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "created_by",
+        "name": "invite_code",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
+        "name": "created_by",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "modified_by",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 10,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 10,
+        "ordinal": 11,
         "type_info": "Integer"
       }
     ],
@@ -67,6 +72,7 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       true,
@@ -76,5 +82,5 @@
       false
     ]
   },
-  "hash": "d3938fbd1052f43c9d83179349149de0a35c8bf6a639b0587f10845956ce7530"
+  "hash": "9078ebf1e75d8284d0dcc6bd92da28ea1f10f4fafff64d0bfe23490962fa76a8"
 }

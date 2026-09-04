@@ -54,12 +54,14 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         let status = org.status as i32;
         let scope = org.scope as i32;
         let invite_code = org.invite_code.clone();
+        let group_name = org.group_name.clone();
         sqlx::query!(
-            "INSERT INTO organizations (id, name, description, base_url, status, scope, invite_code, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, invite_code, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             org.id,
             org.name,
             org.description,
             org.base_url,
+            group_name,
             status,
             scope,
             invite_code,
@@ -78,7 +80,7 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
-SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
+SELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
 FROM organizations WHERE id = ? AND status != 0
             "#,
             id
@@ -97,7 +99,7 @@ FROM organizations WHERE id = ? AND status != 0
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
-SELECT id, name, description, base_url, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
+SELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
 FROM organizations WHERE invite_code = ? AND status != 0
             "#,
             invite_code
@@ -153,7 +155,7 @@ FROM organizations WHERE invite_code = ? AND status != 0
     ) -> Result<Vec<OrganizationPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, description, base_url, status, scope, invite_code, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
+            r#"SELECT id, name, description, base_url, group_name, status, scope, invite_code, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
         );
 
         if let Some(scope) = query.scope {
@@ -184,15 +186,17 @@ FROM organizations WHERE invite_code = ? AND status != 0
         let status = org.status as i32;
         let scope = org.scope as i32;
         let invite_code = org.invite_code.clone();
+        let group_name = org.group_name.clone();
         sqlx::query!(
             r#"
 UPDATE organizations
-SET name = ?, description = ?, base_url = ?, status = ?, scope = ?, invite_code = ?, modified_by = ?, updated_at = ?
+SET name = ?, description = ?, base_url = ?, group_name = ?, status = ?, scope = ?, invite_code = ?, modified_by = ?, updated_at = ?
 WHERE id = ?
             "#,
             org.name,
             org.description,
             org.base_url,
+            group_name,
             status,
             scope,
             invite_code,

@@ -21,6 +21,12 @@ pub struct OrganizationPo {
     /// 例如：`https://ai-orz.example.com/org/acme`
     /// 用于前端生成访问链接
     pub base_url: String,
+    /// 组织集团名（纯展示标签）
+    ///
+    /// 不参与任何逻辑判断（不用于鉴权/通信判定/信任边界），仅用于
+    /// 「关联组织」界面的归组展示。建联时若本端为空且对端非空则抄录；
+    /// 可重名、允许不一致（不一致只影响显示）。NULL 表示未设置集团名。
+    pub group_name: Option<String>,
     /// 状态枚举
     pub status: OrganizationStatus,
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
@@ -52,6 +58,7 @@ impl OrganizationPo {
             name,
             description,
             base_url: base_url.unwrap_or_default(),
+            group_name: None,
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
             invite_code: None,
