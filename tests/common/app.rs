@@ -216,6 +216,18 @@ impl TestApp {
             .await
     }
 
+    /// Issue a GET request with raw headers.
+    ///
+    /// 用于非 Cookie 场景（如联邦契约凭证鉴权的机器侧端点测试）。
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+    pub async fn get_with_headers(
+        &self,
+        path: &str,
+        headers: HeaderMap,
+    ) -> (StatusCode, serde_json::Value) {
+        self.request(Method::GET, path, headers, None).await
+    }
+
     /// Core request dispatcher.
     async fn request(
         &self,

@@ -79,9 +79,9 @@ async fn seed_gateway_agent(org_b: &str) {
 
 /// 播种一条 Active 连接（local=org_b 收，peer=org_a 发）：
 /// peer_token_hash = sha256(credential)，即 A 出站调 B 时携带 credential。
-async fn seed_link(org_b: &str, org_a: &str, credential: &str) {
+async fn seed_link(org_b: &str, org_a: &str, credential: &str, capabilities: &str) {
     let ctx = RequestContext::from_storage("fed-a2a-seed", ai_orz::pkg::storage::get().clone());
-    let link = OrganizationLinkPo::new(
+    let mut link = OrganizationLinkPo::new(
         Uuid::now_v7().to_string(),
         org_b.to_string(),
         org_a.to_string(),
@@ -90,15 +90,12 @@ async fn seed_link(org_b: &str, org_a: &str, credential: &str) {
         sha256::digest(credential.as_bytes()),
         "fed-a2a-seed".to_string(),
     );
+    // 覆盖默认白名单（Po::new 默认 ["a2a_task"]）
+    link.capabilities = capabilities.to_string();
     ai_orz::service::dao::organization_link::dao()
-        .insert(ctx.clone(), &link)
+        .insert(ctx, &link)
         .await
         .expect("seed link failed");
-    let back = ai_orz::service::dao::organization_link::dao()
-        .find_by_id(ctx.clone(), &link.id)
-        .await
-        .expect("read back by id");
-    println!("DBG seed readback by_id found={}", back.is_some());
 }
 
 /// 组装联邦调用请求 headers（Bearer 契约凭证 + 可选声明）
@@ -148,7 +145,7 @@ async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
     seed_gateway_agent(&org_b).await;
 
     let credential = "a".repeat(64);
-    seed_link(&org_b, &org_a, &credential).await;
+    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
 
     let declaration = serde_json::json!({
         "caller_org": org_a,
@@ -203,7 +200,7 @@ async fn test_federation_call_without_declaration_uses_synthetic_identity(pool: 
     seed_gateway_agent(&org_b).await;
 
     let credential = "b".repeat(64);
-    seed_link(&org_b, &org_a, &credential).await;
+    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
 
     let (status, body) = app
         .post_with_headers(
@@ -242,7 +239,7 @@ async fn test_federation_call_with_wrong_credential_is_401(pool: SqlitePool) {
     let (org_a, _jwt_a) = create_node(&app, "wronga").await;
     let (org_b, _jwt_b) = create_node(&app, "wrongb").await;
     seed_gateway_agent(&org_b).await;
-    seed_link(&org_b, &org_a, &"c".repeat(64)).await;
+    seed_link(&org_b, &org_a, &"c".repeat(64), r#"["a2a_task"]"#).await;
 
     let (status, body) = app
         .post_with_headers(
@@ -264,7 +261,7 @@ async fn test_federation_call_with_malformed_declaration_is_401(pool: SqlitePool
     let (org_b, _jwt_b) = create_node(&app, "malfb").await;
     seed_gateway_agent(&org_b).await;
     let credential = "e".repeat(64);
-    seed_link(&org_b, &org_a, &credential).await;
+    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
 
     let bad_declaration = "not-json".to_string();
     let (status, _body) = app
@@ -288,7 +285,7 @@ async fn test_federation_call_with_mismatched_caller_org_is_401(pool: SqlitePool
     let (org_c, _jwt_c) = create_node(&app, "mismc").await;
     seed_gateway_agent(&org_b).await;
     let credential = "f".repeat(64);
-    seed_link(&org_b, &org_a, &credential).await;
+    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
 
     // A 的合法凭证，但声明冒充 C 组织发起
     let declaration = serde_json::json!({ "caller_org": org_c }).to_string();
@@ -312,4 +309,81 @@ async fn test_a2a_without_any_credential_is_401(pool: SqlitePool) {
         .post_with_headers("/a2a", HeaderMap::new(), &send_task_rpc())
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// ==================== P3：能力发现 + 连接级白名单 ====================
+
+/// 能力发现端点：契约凭证鉴权，返回连接白名单 + 本节点可调用 Agent 列表。
+#[sqlx::test]
+async fn test_capabilities_endpoint_returns_agents_and_whitelist(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "capa").await;
+    let (org_b, _jwt_b) = create_node(&app, "capb").await;
+    seed_gateway_agent(&org_b).await;
+    let credential = "1".repeat(64);
+    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", credential)).expect("valid bearer"),
+    );
+    let (status, body) = app
+        .get_with_headers("/api/v1/organization/links/capabilities", headers)
+        .await;
+    assert_eq!(status, StatusCode::OK, "body: {}", body);
+
+    let data = crate::common::assert_api_ok(status, &body);
+    // 白名单来自连接的 capabilities 列
+    let caps = data
+        .get("capabilities")
+        .and_then(|v| v.as_array())
+        .expect("capabilities array");
+    assert!(
+        caps.iter().any(|c| c.as_str() == Some("a2a_task")),
+        "a2a_task should be in capabilities, got: {}",
+        body
+    );
+    // Agent 列表包含播种的 Onboarded 网关 Agent
+    let agents = data
+        .get("agents")
+        .and_then(|v| v.as_array())
+        .expect("agents array");
+    assert!(
+        !agents.is_empty(),
+        "onboarded gateway agent should be exposed, got: {}",
+        body
+    );
+    assert!(
+        agents
+            .iter()
+            .all(|a| a.get("id").is_some() && a.get("name").is_some()),
+        "agent entries should carry id/name, got: {}",
+        body
+    );
+}
+
+/// 白名单门禁：连接 capabilities 不含 a2a_task → /a2a 403（凭证本身有效）。
+#[sqlx::test]
+async fn test_a2a_rejected_403_when_capability_not_in_whitelist(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "gata").await;
+    let (org_b, _jwt_b) = create_node(&app, "gatb").await;
+    seed_gateway_agent(&org_b).await;
+    let credential = "2".repeat(64);
+    // 连接有效但白名单不含 a2a_task
+    seed_link(&org_b, &org_a, &credential, r#"["other_cap"]"#).await;
+
+    let (status, body) = app
+        .post_with_headers(
+            "/a2a",
+            federation_headers(&credential, None),
+            &send_task_rpc(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", body);
 }

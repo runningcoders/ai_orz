@@ -169,6 +169,34 @@ pub struct RevokeLinkResponse {
     pub success: bool,
 }
 
+// ============ 能力发现（机器侧，契约凭证鉴权，P3） ============
+
+/// 跨组织 Agent 委派能力（连接级白名单默认值，第一闭环能力）
+pub const CAPABILITY_A2A_TASK: &str = "a2a_task";
+
+/// 对端可调用的 Agent 条目（能力发现响应）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FederationAgentEntry {
+    /// Agent ID
+    pub id: String,
+    /// Agent 名称
+    pub name: String,
+    /// 角色描述
+    pub description: String,
+}
+
+/// 能力发现响应：本节点开放给**调用方这条连接**的能力清单 + 可调用 Agent 列表
+///
+/// 出站响应统一过 `redact!`（仅 id/name/description 白名单字段，无凭证类字段，
+/// 脱敏不会破坏协议）。
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CapabilitiesResponse {
+    /// 可调用的 Agent 列表（Onboarded 非 Remote）
+    pub agents: Vec<FederationAgentEntry>,
+    /// 这条连接开放的能力白名单
+    pub capabilities: Vec<String>,
+}
+
 // ============ 联邦调用方声明（方案②：凭证直传 + 身份声明） ============
 
 /// 联邦调用方声明（`X-Federation-Caller` header 载荷）

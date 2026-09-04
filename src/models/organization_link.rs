@@ -26,6 +26,10 @@ pub struct OrganizationLinkPo {
     pub access_token: String,
     /// 入站校验：对端调用本端时携带凭证的 SHA-256 哈希（不存明文）
     pub peer_token_hash: String,
+    /// 连接级能力白名单（JSON 字符串数组，如 `["a2a_task"]`；P3）
+    ///
+    /// 本节点开放给这条连接的能力清单；入站调用按此门禁（白名单外 403）。
+    pub capabilities: String,
     /// 连接状态
     pub status: OrganizationLinkStatus,
     /// 创建人
@@ -56,11 +60,22 @@ impl OrganizationLinkPo {
             endpoint,
             access_token,
             peer_token_hash,
+            capabilities: common::constants::utils::DEFAULT_LINK_CAPABILITIES.to_string(),
             status: OrganizationLinkStatus::default(),
             created_by,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// 解析能力白名单（非法 JSON 回退为空 = 全部拒绝，fail-closed）
+    pub fn capabilities_list(&self) -> Vec<String> {
+        serde_json::from_str(&self.capabilities).unwrap_or_default()
+    }
+
+    /// 是否开放指定能力
+    pub fn has_capability(&self, capability: &str) -> bool {
+        self.capabilities_list().iter().any(|c| c == capability)
     }
 }
 

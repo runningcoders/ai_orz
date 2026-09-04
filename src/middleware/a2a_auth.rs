@@ -24,7 +24,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
-use common::api::{ApiResponse, FederationCallerDeclaration};
+use common::api::{ApiResponse, CAPABILITY_A2A_TASK, FederationCallerDeclaration};
 use common::constants::http_header;
 use common::error::Result;
 
@@ -58,7 +58,12 @@ pub async fn a2a_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         }
     };
 
-    // 4) 解析身份声明（缺省 = 连接级匿名调用；非法 = fail-closed 401）
+    // 4) 连接级能力白名单门禁（P3）：未开放 a2a_task 的连接不允许跨组织委派
+    if !link.has_capability(CAPABILITY_A2A_TASK) {
+        return Ok(forbidden("这条连接未开放 a2a_task 能力"));
+    }
+
+    // 5) 解析身份声明（缺省 = 连接级匿名调用；非法 = fail-closed 401）
     let declaration = match req.headers().get(http_header::FEDERATION_CALLER) {
         Some(value) => match value
             .to_str()
@@ -71,7 +76,7 @@ pub async fn a2a_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         None => None,
     };
 
-    // 5) 声明一致性：caller_org 与连接归属不符 → 401（防跨连接冒充）
+    // 6) 声明一致性：caller_org 与连接归属不符 → 401（防跨连接冒充）
     if let Some(decl) = &declaration
         && let Some(declared_org) = &decl.caller_org
         && declared_org != &link.peer_org_id
@@ -79,7 +84,7 @@ pub async fn a2a_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         return Ok(unauthorized("声明组织与连接归属不一致"));
     }
 
-    // 6) 注入联邦身份 headers（内层 request_context_middleware 据此建 ctx）
+    // 7) 注入联邦身份 headers（内层 request_context_middleware 据此建 ctx）
     let peer_org = &link.peer_org_id;
     let user_id = declaration
         .as_ref()
@@ -121,6 +126,15 @@ fn extract_bearer_token(req: &Request) -> Option<String> {
     let token = auth.strip_prefix("Bearer ")?;
     let token = token.trim();
     (!token.is_empty()).then(|| token.to_string())
+}
+
+/// 403 JSON（能力白名单拒绝）
+fn forbidden(message: &str) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ApiResponse::<()>::error(403, message.to_string())),
+    )
+        .into_response()
 }
 
 /// 401 JSON（与 jwt_auth 中间件的 API 响应同形）

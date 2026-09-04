@@ -157,6 +157,16 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
                 }),
             ),
         )
+        // 组网：能力发现（机器侧，契约凭证鉴权；P3：连接级白名单 + 可调用 Agent 列表）
+        .route(
+            "/api/v1/organization/links/capabilities",
+            get(handlers::organization::links::get_capabilities_handler).layer(
+                axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| request_context_middleware(config.clone(), req, next)
+                }),
+            ),
+        )
         // 组网：接收对端推送的目录（机器侧，契约凭证鉴权）
         .route(
             "/api/v1/organization/links/directory/sync",

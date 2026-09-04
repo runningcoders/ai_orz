@@ -36,13 +36,14 @@ impl OrganizationLinkDao for OrganizationLinkDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, link: &OrganizationLinkPo) -> Result<()> {
         let status = link.status as i32;
         sqlx::query!(
-            "INSERT INTO organization_links (id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO organization_links (id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, capabilities, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             link.id,
             link.local_org_id,
             link.peer_org_id,
             link.endpoint,
             link.access_token,
             link.peer_token_hash,
+            link.capabilities,
             status,
             link.created_by,
             link.created_at,
@@ -62,7 +63,7 @@ impl OrganizationLinkDao for OrganizationLinkDaoSqliteImpl {
             OrganizationLinkPo,
             r#"
 SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
 FROM organization_links WHERE id = ?
             "#,
             id
@@ -82,7 +83,7 @@ FROM organization_links WHERE id = ?
             OrganizationLinkPo,
             r#"
 SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
 FROM organization_links WHERE local_org_id = ? AND peer_org_id = ?
             "#,
             local_org_id,
@@ -102,7 +103,7 @@ FROM organization_links WHERE local_org_id = ? AND peer_org_id = ?
             OrganizationLinkPo,
             r#"
 SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
 FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
             "#,
             peer_token_hash
@@ -119,7 +120,7 @@ FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
     ) -> Result<Vec<OrganizationLinkPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, status, created_by, created_at, updated_at FROM organization_links WHERE 1=1"#,
+            r#"SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, capabilities, status, created_by, created_at, updated_at FROM organization_links WHERE 1=1"#,
         );
 
         if let Some(local_org_id) = &query.local_org_id {

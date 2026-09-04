@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,\n       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at\nFROM organization_links WHERE local_org_id = ? AND peer_org_id = ?\n            ",
+  "query": "\nSELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,\n       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at\nFROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -34,30 +34,36 @@
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationLinkStatus",
+        "name": "capabilities",
         "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: OrganizationLinkStatus",
+        "ordinal": 7,
         "type_info": "Integer"
       },
       {
         "name": "created_by",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Text"
       },
       {
         "name": "created_at",
-        "ordinal": 8,
+        "ordinal": 9,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 9,
+        "ordinal": 10,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -70,5 +76,5 @@
       false
     ]
   },
-  "hash": "dde4e53ff95d6c7bebb4c2d97eacc9f4307c97e4985afd041ff22bbd8c615929"
+  "hash": "790ef45b592b4a91bce23257d271b6a2e41144cda63a43dd4275b6f3c5af4467"
 }
