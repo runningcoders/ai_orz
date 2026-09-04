@@ -13,7 +13,8 @@
 
 pub use common::mention::{
     MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
-    format_mention, parse_mention_dest, remove_mention_token, resolve_display_name,
+    format_mention, format_mention_ref, parse_mention_dest, remove_mention_token,
+    resolve_display_name,
 };
 
 use pulldown_cmark::{Event, Tag, TagEnd};
@@ -39,14 +40,24 @@ fn escape_html(s: &str) -> String {
 /// 渲染提及 chip 的 HTML（供 `Event::InlineHtml` 注入）
 ///
 /// 带 `data-mention-kind` / `data-mention-id`，供样式与后续点击跳转挂钩。
+/// 跨组织联邦提及（`agent:<id>@<org_id>`）叠加 `mention-federated` 修饰类
+/// （虚线边框）并携带 `data-mention-org`。
 pub fn render_mention_chip(m: &MentionRef, display_name: &str) -> String {
     let kind = m.kind.as_str();
     let cls = m.kind.chip_class();
     let id = escape_html(&m.id);
     let name = escape_html(display_name);
-    format!(
-        r#"<span class="mention-chip {cls}" data-mention-kind="{kind}" data-mention-id="{id}" title="{kind}: {id}">@{name}</span>"#
-    )
+    match &m.org {
+        Some(org) => {
+            let org = escape_html(org);
+            format!(
+                r#"<span class="mention-chip {cls} mention-federated" data-mention-kind="{kind}" data-mention-id="{id}" data-mention-org="{org}" title="{kind}: {id}@{org}">@{name}</span>"#
+            )
+        }
+        None => format!(
+            r#"<span class="mention-chip {cls}" data-mention-kind="{kind}" data-mention-id="{id}" title="{kind}: {id}">@{name}</span>"#
+        ),
+    }
 }
 
 /// 在 pulldown-cmark 事件流里把提及链接替换为 chip
@@ -77,6 +88,7 @@ where
                 let m = pending.take().unwrap_or(MentionRef {
                     kind: MentionKind::Agent,
                     id: String::new(),
+                    org: None,
                 });
                 let snapshot = normalize_snapshot(&name_buf, &m);
                 let name = resolve_display_name(&m, &snapshot, agents);
@@ -152,6 +164,7 @@ mod tests {
         let m = MentionRef {
             kind: MentionKind::Agent,
             id: "agt_1".to_string(),
+            org: None,
         };
         let html = render_mention_chip(&m, "<img src=x onerror=alert(1)>");
         assert!(html.contains("&lt;img"));
@@ -216,7 +229,8 @@ mod tests {
             parsed,
             Some(MentionRef {
                 kind: MentionKind::Project,
-                id: "prj_1".to_string()
+                id: "prj_1".to_string(),
+                org: None
             })
         );
     }

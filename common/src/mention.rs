@@ -6,6 +6,7 @@
 //!
 //! ```text
 //! [@张伟](agent:agt_7f3)
+//! [@远端助手](agent:agt_9@org-B12)   ← 跨组织 Agent（org_id 为对端组织 ID）
 //! [@数据清洗](task:tsk_a91)
 //! [@客户数据平台](project:prj_2c8)
 //! ```
@@ -82,6 +83,11 @@ pub struct MentionRef {
     pub kind: MentionKind,
     /// 实体 ID
     pub id: String,
+    /// 跨组织限定（仅 Agent 提及）：`agent:<id>@<org_id>` 中的 org_id，
+    /// 即对端组织 ID。None = 组织内寻址。
+    /// 合法性（org 是否有 Active 连接）由上层校验，协议层只做格式解析。
+    #[serde(default)]
+    pub org: Option<String>,
 }
 
 /// 解析后的提及（已带可读名 + 可选上下文摘要），供后端 prompt 注入等消费场景
@@ -112,10 +118,12 @@ impl ResolvedMention {
     }
 }
 
-/// 解析 Markdown 链接 dest 为提及（`agent:agt_7f3`）
+/// 解析 Markdown 链接 dest 为提及（`agent:agt_7f3` / `agent:agt_9@org-B12`）
 ///
 /// 非提及协议（http / 站内相对路径 / mailto 等）一律返回 `None`，
 /// 交回常规链接渲染流程，不干扰文档中心的站内链接处理。
+/// 跨组织形态（`agent:<id>@<org_id>`）仅 Agent 支持；格式不合法
+/// （空段 / 多个 @ / 非 Agent 类型带 @）同样返回 None，降级普通链接。
 pub fn parse_mention_dest(dest: &str) -> Option<MentionRef> {
     let (kind_part, id) = dest.split_once(':')?;
     let kind: MentionKind = kind_part.parse().ok()?;
@@ -123,9 +131,21 @@ pub fn parse_mention_dest(dest: &str) -> Option<MentionRef> {
     if id.is_empty() || id.contains(char::is_whitespace) {
         return None;
     }
+    let (id, org) = match id.split_once('@') {
+        Some((agent_id, org_id)) if kind == MentionKind::Agent => {
+            if agent_id.is_empty() || org_id.is_empty() || org_id.contains('@') {
+                return None;
+            }
+            (agent_id, Some(org_id.to_string()))
+        }
+        // 非 Agent 类型不支持 org 后缀：按普通链接处理
+        Some(_) => return None,
+        None => (id, None),
+    };
     Some(MentionRef {
         kind,
         id: id.to_string(),
+        org,
     })
 }
 
@@ -134,11 +154,30 @@ pub fn parse_mention_dest(dest: &str) -> Option<MentionRef> {
 /// `name` 仅作为展示快照写入链接文本，渲染时优先被实时名覆盖。
 /// 名字里的 `[` `]` `\` 会破坏 Markdown 链接语法，这里做最小转义。
 pub fn format_mention(kind: MentionKind, id: &str, name: &str) -> String {
+    format_mention_ref(
+        &MentionRef {
+            kind,
+            id: id.to_string(),
+            org: None,
+        },
+        name,
+    )
+}
+
+/// 生成提及语法文本（[`MentionRef`] 版）
+///
+/// 跨组织提及（`org = Some`）输出 `agent:<id>@<org_id>` dest；
+/// 组织内提及与 [`format_mention`] 输出一致。
+pub fn format_mention_ref(m: &MentionRef, name: &str) -> String {
     let safe_name = name
         .replace('\\', "\\\\")
         .replace('[', "\\[")
         .replace(']', "\\]");
-    format!("[@{}]({}:{})", safe_name, kind.as_str(), id)
+    let dest = match &m.org {
+        Some(org) => format!("{}:{}@{}", m.kind.as_str(), m.id, org),
+        None => format!("{}:{}", m.kind.as_str(), m.id),
+    };
+    format!("[@{}]({})", safe_name, dest)
 }
 
 /// @ 查询词最大字节长度（超出则不再视为激活的提及查询）
@@ -335,23 +374,46 @@ mod tests {
             parse_mention_dest("agent:agt_7f3"),
             Some(MentionRef {
                 kind: MentionKind::Agent,
-                id: "agt_7f3".to_string()
+                id: "agt_7f3".to_string(),
+                org: None
             })
         );
         assert_eq!(
             parse_mention_dest("task:tsk_a91"),
             Some(MentionRef {
                 kind: MentionKind::Task,
-                id: "tsk_a91".to_string()
+                id: "tsk_a91".to_string(),
+                org: None
             })
         );
         assert_eq!(
             parse_mention_dest("project:prj_2c8"),
             Some(MentionRef {
                 kind: MentionKind::Project,
-                id: "prj_2c8".to_string()
+                id: "prj_2c8".to_string(),
+                org: None
             })
         );
+    }
+
+    #[test]
+    fn parse_mention_dest_federated_agent() {
+        assert_eq!(
+            parse_mention_dest("agent:agt_9@org-B12"),
+            Some(MentionRef {
+                kind: MentionKind::Agent,
+                id: "agt_9".to_string(),
+                org: Some("org-B12".to_string())
+            })
+        );
+        // 非法形态降级普通链接
+        assert_eq!(parse_mention_dest("agent:@org-B12"), None);
+        assert_eq!(parse_mention_dest("agent:agt_9@"), None);
+        assert_eq!(parse_mention_dest("agent:agt_9@org@a"), None);
+        // 非 Agent 类型不支持 org 后缀
+        assert_eq!(parse_mention_dest("task:tsk_1@org-B12"), None);
+        // org 段含空白整体不合法（外层空白检查已覆盖，这里验证组合形态）
+        assert_eq!(parse_mention_dest("agent:agt_9@org B"), None);
     }
 
     #[test]
@@ -388,6 +450,7 @@ mod tests {
         let m = MentionRef {
             kind: MentionKind::Agent,
             id: "agt_7f3".to_string(),
+            org: None,
         };
         // 命中目录：用实时名，快照名被覆盖（改名后历史消息自动同步）
         assert_eq!(
@@ -401,6 +464,7 @@ mod tests {
         let t = MentionRef {
             kind: MentionKind::Task,
             id: "tsk_a91".to_string(),
+            org: None,
         };
         assert_eq!(
             resolve_display_name(&t, "数据清洗", Some(&agents)),
@@ -494,19 +558,23 @@ mod tests {
             vec![
                 MentionRef {
                     kind: MentionKind::Agent,
-                    id: "agt_1".into()
+                    id: "agt_1".into(),
+                    org: None
                 },
                 MentionRef {
                     kind: MentionKind::Task,
-                    id: "t1".into()
+                    id: "t1".into(),
+                    org: None
                 },
                 MentionRef {
                     kind: MentionKind::Task,
-                    id: "t2".into()
+                    id: "t2".into(),
+                    org: None
                 },
                 MentionRef {
                     kind: MentionKind::Project,
-                    id: "p1".into()
+                    id: "p1".into(),
+                    org: None
                 },
             ]
         );
@@ -520,8 +588,40 @@ mod tests {
             extract_mentions(text),
             vec![MentionRef {
                 kind: MentionKind::Agent,
-                id: "agt_1".into()
+                id: "agt_1".into(),
+                org: None
             }]
+        );
+    }
+
+    #[test]
+    fn extract_federated_agent_mention() {
+        let text = "请 [@远端助手](agent:agt_9@org-B12) 帮忙翻译";
+        let got = extract_mentions_with_text(text);
+        assert_eq!(
+            got,
+            vec![(
+                MentionRef {
+                    kind: MentionKind::Agent,
+                    id: "agt_9".into(),
+                    org: Some("org-B12".into())
+                },
+                "远端助手".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn format_mention_ref_federated_roundtrip() {
+        let m = parse_mention_dest("agent:agt_9@org-B12").unwrap();
+        let token = format_mention_ref(&m, "远端助手");
+        assert_eq!(token, "[@远端助手](agent:agt_9@org-B12)");
+        // 序列化往返：旧数据（无 org 字段）反序列化为 None
+        let legacy: MentionRef = serde_json::from_str(r#"{"kind":"Agent","id":"agt_1"}"#).unwrap();
+        assert_eq!(legacy.org, None);
+        assert_eq!(
+            serde_json::to_value(&m).unwrap(),
+            serde_json::json!({"kind":"Agent","id":"agt_9","org":"org-B12"})
         );
     }
 
@@ -541,7 +641,8 @@ mod tests {
             extract_mentions(&format!("看 {} ", token)),
             vec![MentionRef {
                 kind: MentionKind::Agent,
-                id: "agt_1".into()
+                id: "agt_1".into(),
+                org: None
             }]
         );
     }
@@ -556,21 +657,24 @@ mod tests {
                 (
                     MentionRef {
                         kind: MentionKind::Agent,
-                        id: "agt_1".into()
+                        id: "agt_1".into(),
+                        org: None
                     },
                     "张伟".to_string()
                 ),
                 (
                     MentionRef {
                         kind: MentionKind::Task,
-                        id: "tsk_a".into()
+                        id: "tsk_a".into(),
+                        org: None
                     },
                     "数据清洗".to_string()
                 ),
                 (
                     MentionRef {
                         kind: MentionKind::Project,
-                        id: "prj_1".into()
+                        id: "prj_1".into(),
+                        org: None
                     },
                     "平台".to_string()
                 ),

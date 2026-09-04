@@ -624,6 +624,145 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         Ok(())
     }
 
+    async fn delegate_agent_task(
+        &self,
+        ctx: RequestContext,
+        peer_org_id: &str,
+        peer_agent_id: &str,
+        prompt: &str,
+        caller_user: Option<String>,
+    ) -> Result<Option<String>> {
+        use common::api::organization_link::{CAPABILITY_A2A_TASK, FederationCallerDeclaration};
+        use common::enums::OrganizationScope;
+
+        // 1) 本端组织：优先 ctx（JWT 上下文），消费链路（system ctx）回退查唯一 Local 组织
+        let local_org_id = match ctx.organization_id() {
+            Some(id) => id.to_string(),
+            None => {
+                let locals = self
+                    .org_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::organization::OrganizationQuery {
+                            scope: Some(OrganizationScope::Local),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                match locals.first() {
+                    Some(org) => org.id.clone(),
+                    None => {
+                        log_warn!(&ctx, "delegate_agent_task", "无 Local 组织，跳过联邦委派");
+                        return Ok(None);
+                    }
+                }
+            }
+        };
+
+        // 2) 路由决策：对端需有 Active 连接且开放 a2a_task 能力，否则降级
+        let Some(link) = self
+            .link_dao
+            .find_by_pair(ctx.clone(), &local_org_id, peer_org_id)
+            .await?
+            .filter(|l| l.status == OrganizationLinkStatus::Active)
+        else {
+            return Ok(None);
+        };
+        if !link.has_capability(CAPABILITY_A2A_TASK) {
+            log_info!(
+                &ctx,
+                "delegate_agent_task",
+                "连接未开放 a2a_task 能力，降级 peer_org_id={}",
+                peer_org_id
+            );
+            return Ok(None);
+        }
+
+        // 3) 声明头：caller_org 必填；caller_user 由消息发送方透传（对端 R3 计量用）
+        let declaration = FederationCallerDeclaration {
+            caller_org: Some(local_org_id),
+            caller_user,
+            caller_agent: None,
+        };
+
+        // 4) 传输层：org DAL 组装 A2aRuntimeConfig 走联邦出站（send → 轮询到终态）
+        let reply = self
+            .org_dal
+            .send_federated_agent_task(
+                ctx.clone(),
+                &link,
+                peer_agent_id,
+                prompt,
+                Some(serde_json::to_string(&declaration).map_err(|e| {
+                    Error::internal(format!("failed to serialize caller declaration: {}", e))
+                })?),
+            )
+            .await?;
+
+        log_info!(
+            &ctx,
+            "delegate_agent_task",
+            "跨组织委派完成 peer_org_id={} peer_agent_id={}",
+            peer_org_id,
+            peer_agent_id
+        );
+        Ok(Some(reply))
+    }
+
+    async fn list_federation_agents(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<common::api::ListFederationAgentsResponse> {
+        use common::api::{FederationAgentGroup, ListFederationAgentsResponse};
+
+        let links = self
+            .link_dao
+            .query(
+                ctx.clone(),
+                OrganizationLinkQuery {
+                    status: Some(OrganizationLinkStatus::Active),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let mut groups = Vec::new();
+        for link in links {
+            let org_name = self
+                .org_dal
+                .get_by_id(ctx.clone(), &link.peer_org_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|o| o.name)
+                .unwrap_or_else(|| link.peer_org_id.clone());
+            match self
+                .http_client
+                .fetch_capabilities(&link.endpoint, &link.access_token)
+                .await
+            {
+                Ok(caps) => groups.push(FederationAgentGroup {
+                    org_id: link.peer_org_id.clone(),
+                    org_name,
+                    agents: caps.agents,
+                    capabilities: caps.capabilities,
+                }),
+                Err(e) => {
+                    // 部分可用优于整体为空：单个对端失败仅跳过
+                    log_warn!(
+                        &ctx,
+                        "federation_agents",
+                        "拉取对端能力清单失败 peer_org_id={} error={}",
+                        link.peer_org_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(ListFederationAgentsResponse { groups })
+    }
+
     async fn push_directory_to_peers(&self, ctx: RequestContext) -> Result<usize> {
         let peers = self.active_peer_endpoints(&ctx).await?;
         let dir = self.get_directory(ctx.clone()).await?;
@@ -898,6 +1037,14 @@ mod directory_sync_tests {
             _req: &VerifyPairingCodeRequest,
         ) -> Result<VerifyPairingCodeResponse> {
             Err(Error::internal("mock: verify 未在本测试使用"))
+        }
+
+        async fn fetch_capabilities(
+            &self,
+            _peer_endpoint: &str,
+            _access_token: &str,
+        ) -> Result<common::api::CapabilitiesResponse> {
+            Err(Error::internal("mock: capabilities 未在本测试使用"))
         }
 
         async fn fetch_directory(

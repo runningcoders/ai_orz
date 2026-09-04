@@ -197,6 +197,34 @@ pub struct CapabilitiesResponse {
     pub capabilities: Vec<String>,
 }
 
+// ============ 联邦 Agent 目录（用户侧，JWT，P5） ============
+
+/// 联邦 Agent 分组：一个 Active 对端开放的可调用 Agent 列表
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FederationAgentGroup {
+    /// 对端组织 ID（`agent:<id>@<org_id>` 寻址的 org 段）
+    pub org_id: String,
+    /// 对端组织名（本地影子记录，展示用）
+    pub org_name: String,
+    /// 对端开放给本连接的 Agent 列表
+    pub agents: Vec<FederationAgentEntry>,
+    /// 对端连接的能力白名单（含 `a2a_task` 才可委派）
+    pub capabilities: Vec<String>,
+}
+
+/// 联邦 Agent 目录响应（mention picker 候选数据源）
+///
+/// 聚合所有 Active 连接的对端 capabilities（实时拉取，单个对端失败仅跳过）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ListFederationAgentsResponse {
+    /// 联邦 Agent 分组（按 Active 对端组织聚合）
+    pub groups: Vec<FederationAgentGroup>,
+}
+
+/// 联邦 Agent 目录请求（无参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListFederationAgentsRequest {}
+
 // ============ 联邦调用方声明（方案②：凭证直传 + 身份声明） ============
 
 /// 联邦调用方声明（`X-Federation-Caller` header 载荷）

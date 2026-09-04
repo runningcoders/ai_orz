@@ -326,6 +326,10 @@
   background: color-mix(in oklab, var(--color-secondary) 12%, transparent);
   color: var(--color-secondary);
 }
+/* 跨组织联邦提及（agent:id@org）：叠加修饰，虚线边框区分于组织内实体 */
+.mention-chip.mention-federated {
+  border-style: dashed;
+}
 
 /* ========== @ 提及候选菜单（输入框上方浮层） ========== */
 /* 与 slash 菜单同一层叠策略：absolute 挂在输入区容器内，不脱离文档流，

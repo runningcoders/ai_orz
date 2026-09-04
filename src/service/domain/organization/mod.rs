@@ -229,6 +229,29 @@ pub trait OrganizationManage: Send + Sync {
     /// 保留审计线索）。断联后对端出站调用本节点时凭证鉴权失败（401 → 惰性感知）。
     async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()>;
 
+    /// 跨组织 Agent 委派（P4）：路由决策 + 联邦 A2A 出站
+    ///
+    /// 返回：`Ok(Some(reply))` = 对端回复文本；`Ok(None)` = 对端不可路由
+    /// （无 Active 连接或连接未开放 `a2a_task` 能力），调用方降级为普通提及
+    /// （仅上下文注入）；`Err` = 已建联但调用失败（网络 / 对端执行错误）。
+    async fn delegate_agent_task(
+        &self,
+        ctx: RequestContext,
+        peer_org_id: &str,
+        peer_agent_id: &str,
+        prompt: &str,
+        caller_user: Option<String>,
+    ) -> Result<Option<String>>;
+
+    /// 联邦 Agent 目录（P5）：聚合所有 Active 连接对端开放的可调用 Agent
+    ///
+    /// 实时向各对端拉 capabilities（连接级凭证鉴权），单个对端失败仅记 WARN
+    /// 跳过（部分可用优于整体为空）。mention picker 候选数据源。
+    async fn list_federation_agents(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<common::api::ListFederationAgentsResponse>;
+
     /// 变更推送：本地目录全量推给所有 Active 对端（best-effort）
     ///
     /// 由 `organization.changed` 事件消费者调用（组织元信息变更后异步触发）。

@@ -30,10 +30,11 @@ use std::collections::HashSet;
 use dioxus::prelude::*;
 
 use crate::api::hr::query_agents;
+use crate::api::organization::list_federation_agents;
 use crate::api::project::{list_project_tasks, search_projects, search_tasks};
 use crate::utils::mention::{
-    MentionKind, MentionQuery, apply_mention_pick, detect_mention_query, format_mention,
-    remove_mention_token,
+    MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
+    format_mention_ref, remove_mention_token,
 };
 use common::api::{
     AgentListItem, AgentQueryRequest, PaginationParams, SearchProjectsRequest, SearchTasksRequest,
@@ -49,21 +50,33 @@ pub struct MentionCandidate {
     pub kind: MentionKind,
     /// 实体 ID
     pub id: String,
+    /// 跨组织限定（联邦 Agent）：`agent:<id>@<org_id>` 的 org 段
+    pub org: Option<String>,
     /// 展示名
     pub name: String,
-    /// 副标题（Agent 角色 / 任务进度等补充信息，可为空）
+    /// 副标题（Agent 角色 / 任务进度 / 对端组织名等补充信息，可为空）
     pub subtitle: String,
 }
 
 impl MentionCandidate {
     /// 写入消息正文的提及语法（name 仅作为展示快照，渲染时优先用实时名）
     pub fn token(&self) -> String {
-        format_mention(self.kind, &self.id, &self.name)
+        format_mention_ref(
+            &MentionRef {
+                kind: self.kind,
+                id: self.id.clone(),
+                org: self.org.clone(),
+            },
+            &self.name,
+        )
     }
 
-    /// 去重键（`type:id`）
+    /// 去重键（`type:id` 或联邦 `type:id@org`）
     pub fn key(&self) -> String {
-        format!("{}:{}", self.kind.as_str(), self.id)
+        match &self.org {
+            Some(org) => format!("{}:{}@{}", self.kind.as_str(), self.id, org),
+            None => format!("{}:{}", self.kind.as_str(), self.id),
+        }
     }
 }
 
@@ -346,13 +359,15 @@ async fn load_candidates(
     let mut out = Vec::new();
     for kind in kinds {
         match kind {
-            // Agent 默认对话取组织全量（@ 仅作上下文提示）；项目会话限于协作人
+            // Agent 默认对话取组织全量（@ 仅作上下文提示）；项目会话限于协作人。
+            // 联邦 Agent（跨组织）两种会话都追加：委派不受项目边界限制。
             MentionKind::Agent => {
                 if let Some(pid) = project_id.as_deref() {
                     out.extend(load_project_agents(pid, kw).await);
                 } else {
                     out.extend(load_org_agents(kw).await);
                 }
+                out.extend(load_federation_agents(kw).await);
             }
             MentionKind::Task => {
                 out.extend(load_tasks(project_id.as_deref(), kw).await);
@@ -369,9 +384,37 @@ fn agent_to_candidate(a: AgentListItem) -> MentionCandidate {
     MentionCandidate {
         kind: MentionKind::Agent,
         id: a.id,
+        org: None,
         name: a.name,
         subtitle,
     }
+}
+
+/// 联邦 Agent 候选：聚合各 Active 对端开放的 Agent（P5）
+///
+/// 响应无搜索参数，全量拉回后本地按关键词过滤；单个对端失败已在服务端跳过。
+async fn load_federation_agents(keyword: Option<&str>) -> Vec<MentionCandidate> {
+    let Ok(resp) = list_federation_agents().await else {
+        return Vec::new();
+    };
+    let kw = keyword.map(|s| s.to_lowercase());
+    resp.groups
+        .into_iter()
+        .flat_map(|g| {
+            g.agents.into_iter().map(move |a| MentionCandidate {
+                kind: MentionKind::Agent,
+                id: a.id,
+                org: Some(g.org_id.clone()),
+                name: a.name.clone(),
+                subtitle: format!("联邦 · {}", g.org_name),
+            })
+        })
+        .filter(|c| match &kw {
+            Some(k) => c.name.to_lowercase().contains(k) || c.subtitle.to_lowercase().contains(k),
+            None => true,
+        })
+        .take(CANDIDATE_LIMIT)
+        .collect()
 }
 
 /// 项目内可 @ 的 Agent = 项目下任务的 assignee（去重）
@@ -441,6 +484,7 @@ async fn load_tasks(project_id: Option<&str>, keyword: Option<&str>) -> Vec<Ment
             .map(|t| MentionCandidate {
                 kind: MentionKind::Task,
                 id: t.id,
+                org: None,
                 name: t.title,
                 subtitle: format!("进度 {}%", t.progress),
             })
@@ -465,6 +509,7 @@ async fn load_projects(keyword: Option<&str>) -> Vec<MentionCandidate> {
             .map(|p| MentionCandidate {
                 kind: MentionKind::Project,
                 id: p.id,
+                org: None,
                 name: p.name,
                 subtitle: String::new(),
             })

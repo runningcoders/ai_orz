@@ -195,6 +195,10 @@ path = "tests/integration/browser_tool_test.rs"
 name = "federation_a2a_test"
 path = "tests/integration/federation_a2a_test.rs"
 
+[[test]]
+name = "federation_delegation_test"
+path = "tests/integration/federation_delegation_test.rs"
+
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore
 # hnsw = ["dep:hnsw"]

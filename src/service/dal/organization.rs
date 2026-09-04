@@ -5,13 +5,20 @@
 
 use crate::models::events::OrganizationChangedEvent;
 use crate::models::organization::OrganizationPo;
+use crate::models::organization_link::OrganizationLinkPo;
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
+use crate::service::dao::agent_runtime::a2a::{FederatedCallConfig, execute_federated_agent_call};
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery, PeerOrgUpsert};
 use common::api::OrganizationConfig;
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
+
+/// 联邦 Agent 委派的全程预算（send + 轮询，秒）
+const FEDERATED_CALL_DEADLINE_SECS: u64 = 120;
+/// 联邦 Agent 委派的 tasks/get 轮询间隔（毫秒）
+const FEDERATED_CALL_POLL_INTERVAL_MS: u64 = 1000;
 
 // ==================== 单例管理 ====================
 
@@ -133,6 +140,22 @@ pub trait OrganizationDal: Send + Sync {
         link_id: &str,
         peer_org_id: &str,
     ) -> Result<()>;
+
+    // ==================== 跨组织联邦调用（P4）==========
+
+    /// 联邦 Agent 委派传输层：经指定连接调对端 A2A 出站（send → 轮询 tasks/get 到终态）
+    ///
+    /// endpoint / auth_token 取自 link（access_token = 对端所发出站凭证），
+    /// 携带可选 `X-Federation-Caller` 声明头（已序列化 JSON）。连接的合法性
+    /// （Active / 能力白名单）与路由决策由 domain 层完成，本方法只管传输。
+    async fn send_federated_agent_task(
+        &self,
+        ctx: RequestContext,
+        link: &OrganizationLinkPo,
+        peer_agent_id: &str,
+        prompt: &str,
+        caller_declaration: Option<String>,
+    ) -> Result<String>;
 }
 
 // ==================== DAL 实现 ====================
@@ -252,5 +275,37 @@ impl OrganizationDal for OrganizationDalImpl {
             .degrade_shadow_to_remote(ctx, peer_org_id)
             .await?;
         Ok(())
+    }
+
+    async fn send_federated_agent_task(
+        &self,
+        ctx: RequestContext,
+        link: &OrganizationLinkPo,
+        peer_agent_id: &str,
+        prompt: &str,
+        caller_declaration: Option<String>,
+    ) -> Result<String> {
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(
+                FEDERATED_CALL_DEADLINE_SECS + 5,
+            ))
+            .build()
+            .unwrap_or_default();
+        let config = FederatedCallConfig {
+            endpoint: link.endpoint.clone(),
+            auth_token: link.access_token.clone(),
+            caller_declaration,
+            deadline_secs: FEDERATED_CALL_DEADLINE_SECS,
+            poll_interval_ms: FEDERATED_CALL_POLL_INTERVAL_MS,
+        };
+        let reply = execute_federated_agent_call(&http, peer_agent_id, &config, prompt).await?;
+        log_info!(
+            &ctx,
+            "federated_agent_task",
+            peer_org = link.peer_org_id,
+            peer_agent = peer_agent_id,
+            "联邦委派完成",
+        );
+        Ok(reply)
     }
 }

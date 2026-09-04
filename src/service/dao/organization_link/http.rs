@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::api::{
-    ApiResponse, DirectoryResponse, DirectorySyncRequest, DirectorySyncResponse,
-    PeerOrgDirectoryEntry, VerifyPairingCodeRequest, VerifyPairingCodeResponse,
+    ApiResponse, CapabilitiesResponse, DirectoryResponse, DirectorySyncRequest,
+    DirectorySyncResponse, PeerOrgDirectoryEntry, VerifyPairingCodeRequest,
+    VerifyPairingCodeResponse,
 };
 use common::error::{Error, Result};
 
@@ -24,6 +25,9 @@ const DIRECTORY_PATH: &str = "/api/v1/organization/links/directory";
 
 /// 对端目录推送端点路径（机器侧，契约凭证鉴权）
 const DIRECTORY_SYNC_PATH: &str = "/api/v1/organization/links/directory/sync";
+
+/// 对端能力发现端点路径（机器侧，契约凭证鉴权，P3/P5）
+const CAPABILITIES_PATH: &str = "/api/v1/organization/links/capabilities";
 
 /// 出站调用超时（秒）：建联是低频管理操作，10s 足够覆盖公网 RTT
 const OUTBOUND_TIMEOUT_SECS: u64 = 10;
@@ -56,6 +60,13 @@ pub trait FederationHttpClient: Send + Sync {
         access_token: &str,
         orgs: Vec<PeerOrgDirectoryEntry>,
     ) -> Result<()>;
+
+    /// 拉取对端能力清单（契约凭证鉴权，P5 联邦 Agent 目录用）
+    async fn fetch_capabilities(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+    ) -> Result<CapabilitiesResponse>;
 }
 
 /// 构造出站客户端（统一超时；契约凭证由 per-request `bearer_auth` 携带）
@@ -183,6 +194,41 @@ impl FederationHttpClient for ReqwestFederationClient {
             )));
         }
         Ok(())
+    }
+
+    async fn fetch_capabilities(
+        &self,
+        peer_endpoint: &str,
+        access_token: &str,
+    ) -> Result<CapabilitiesResponse> {
+        let base = peer_endpoint.trim().trim_end_matches('/');
+        if base.is_empty() {
+            return Err(Error::bad_request("对端地址不能为空"));
+        }
+        let url = format!("{}{}", base, CAPABILITIES_PATH);
+
+        let client = outbound_client()?;
+        let resp = client
+            .get(&url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| Error::internal(format!("拉取对端能力清单失败 ({}): {}", url, e)))?;
+
+        let api: ApiResponse<CapabilitiesResponse> = resp.json().await.map_err(|e| {
+            Error::internal(format!(
+                "对端 capabilities 响应解析失败（{}）：对端可能不是 ai_orz 节点: {}",
+                url, e
+            ))
+        })?;
+        if !api.is_success() {
+            return Err(Error::unauthorized(format!(
+                "对端拒绝能力发现：{}",
+                api.message
+            )));
+        }
+        api.data
+            .ok_or_else(|| Error::internal("对端 capabilities 响应缺少 data 字段"))
     }
 }
 

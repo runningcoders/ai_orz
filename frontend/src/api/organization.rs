@@ -3,10 +3,10 @@
 use common::api::{
     CreateLinkRequest, CreateLinkResponse, CreateOrganizationUserRequest,
     CreateOrganizationUserResponse, GetCurrentOrganizationResponse, GetCurrentUserResponse,
-    IssuePairingCodeRequest, IssuePairingCodeResponse, ListLinksResponse,
-    ListOrganizationsResponse, ListUsersResponse, UpdateCurrentOrganizationRequest,
-    UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest, UpdateCurrentUserResponse,
-    UpdateUserRequest, UpdateUserResponse,
+    IssuePairingCodeRequest, IssuePairingCodeResponse, ListFederationAgentsResponse,
+    ListLinksResponse, ListOrganizationsResponse, ListUsersResponse,
+    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest,
+    UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_put};
@@ -86,4 +86,9 @@ pub async fn list_links() -> Result<ListLinksResponse, ApiError> {
 /// 断联（本端管理员；连接置 Revoked，不删除记录）
 pub async fn revoke_link(peer_org_id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/organization/links/{}", peer_org_id)).await
+}
+
+/// 联邦 Agent 目录（各 Active 对端开放的可调用 Agent，mention picker 候选）
+pub async fn list_federation_agents() -> Result<ListFederationAgentsResponse, ApiError> {
+    api_get("/api/v1/organization/links/federation-agents").await
 }

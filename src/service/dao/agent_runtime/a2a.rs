@@ -7,7 +7,8 @@
 
 use async_trait::async_trait;
 use common::api::a2a::{
-    A2aMessagePart, A2aTask, GetTaskParams, JsonRpcRequest, JsonRpcResponse, SendTaskParams,
+    A2aMessagePart, A2aTask, A2aTaskState, GetTaskParams, JsonRpcRequest, JsonRpcResponse,
+    SendTaskParams,
 };
 use common::error::{Result, err};
 use reqwest::Client;
@@ -37,6 +38,21 @@ pub struct A2aRuntimeConfig {
     pub auth_token: Option<String>,
     /// 请求超时时间（秒）
     pub timeout_secs: u64,
+}
+
+/// 执行跨组织联邦 Agent 调用的配置（P4）
+#[derive(Debug, Clone)]
+pub struct FederatedCallConfig {
+    /// 对端 A2A 端点（organization_links.endpoint）
+    pub endpoint: String,
+    /// 出站凭证（organization_links.access_token，对端所发，Bearer 传递）
+    pub auth_token: String,
+    /// `X-Federation-Caller` 声明头（已序列化的 JSON 明文；None = 连接级匿名）
+    pub caller_declaration: Option<String>,
+    /// send + poll 全程总预算（秒），超时返回错误
+    pub deadline_secs: u64,
+    /// tasks/get 轮询间隔（毫秒）
+    pub poll_interval_ms: u64,
 }
 
 /// A2A Runtime DAO
@@ -88,6 +104,7 @@ async fn call_a2a_jsonrpc(
     http: &Client,
     endpoint: &str,
     auth_token: &Option<String>,
+    extra_header: Option<(&str, &str)>,
     method: &str,
     params: Value,
     context: &str,
@@ -105,6 +122,9 @@ async fn call_a2a_jsonrpc(
 
     if let Some(token) = auth_token {
         req_builder = req_builder.bearer_auth(token);
+    }
+    if let Some((name, value)) = extra_header {
+        req_builder = req_builder.header(name, value);
     }
 
     let response = req_builder
@@ -188,6 +208,7 @@ pub async fn execute_a2a_send(
         http,
         endpoint,
         auth_token,
+        None,
         "tasks/send",
         params_value,
         &context,
@@ -230,6 +251,7 @@ pub async fn fetch_a2a_task(
         http,
         endpoint,
         auth_token,
+        None,
         "tasks/get",
         params_value,
         &context,
@@ -244,6 +266,133 @@ pub async fn fetch_a2a_task(
             e
         )
     })
+}
+
+/// 跨组织联邦 Agent 调用（P4）：tasks/send → 轮询 tasks/get 直到终态
+///
+/// 与 [`execute_a2a_send`] 的区别：
+/// - 携带 `X-Federation-Caller` 声明头（R3 计量：对端日志带 org 维度）
+/// - ai_orz 节点的 `tasks/send` 是异步提交（返回 working、无 assistant 文本），
+///   需轮询 `tasks/get` 直到 Completed/Failed/Canceled；若 send 响应已带文本
+///   且终态（同步型对端），首次检查即返回，不发多余的 get
+pub async fn execute_federated_agent_call(
+    http: &Client,
+    agent_id: &str,
+    config: &FederatedCallConfig,
+    prompt: &str,
+) -> Result<String> {
+    let task_id = uuid::Uuid::now_v7().to_string();
+
+    let message = common::api::a2a::A2aMessage {
+        role: "user".to_string(),
+        parts: vec![A2aMessagePart::Text {
+            text: prompt.to_string(),
+        }],
+        message_id: None,
+        task_id: Some(task_id.clone()),
+    };
+
+    let params = SendTaskParams {
+        id: task_id,
+        message,
+        session_id: None,
+        metadata: None,
+        notification_url: None,
+    };
+
+    let params_value = serde_json::to_value(&params).map_err(|e| {
+        err!(
+            Internal,
+            "Agent {}: failed to serialize federated params: {}",
+            agent_id,
+            e
+        )
+    })?;
+
+    let context = format!("Federated agent {}", agent_id);
+    let auth_token = Some(config.auth_token.clone());
+    let extra_header = config
+        .caller_declaration
+        .as_deref()
+        .map(|decl| (common::constants::http_header::FEDERATION_CALLER, decl));
+
+    let deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_secs(config.deadline_secs);
+
+    let mut task: A2aTask = {
+        let result = call_a2a_jsonrpc(
+            http,
+            &config.endpoint,
+            &auth_token,
+            extra_header,
+            "tasks/send",
+            params_value,
+            &context,
+        )
+        .await?;
+        serde_json::from_value(result)
+            .map_err(|e| err!(Internal, "{}: failed to parse A2aTask: {}", context, e))?
+    };
+
+    loop {
+        match task.status.state {
+            A2aTaskState::Completed => {
+                return extract_text_from_task_result(
+                    &serde_json::to_value(&task).unwrap_or_default(),
+                )
+                .ok_or_else(|| {
+                    err!(
+                        Internal,
+                        "Agent {}: federated task completed but has no text content",
+                        agent_id
+                    )
+                });
+            }
+            A2aTaskState::Failed | A2aTaskState::Canceled => {
+                return Err(err!(
+                    Internal,
+                    "Agent {}: federated task ended with state {:?}",
+                    agent_id,
+                    task.status.state
+                ));
+            }
+            A2aTaskState::InputRequired => {
+                return Err(err!(
+                    Internal,
+                    "Agent {}: federated task requires input, interactive flow not supported",
+                    agent_id
+                ));
+            }
+            A2aTaskState::Submitted | A2aTaskState::Working => {}
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            return Err(err!(
+                Internal,
+                "Agent {}: federated task polling timed out after {}s",
+                agent_id,
+                config.deadline_secs
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(config.poll_interval_ms)).await;
+
+        let get_params = GetTaskParams {
+            id: task.id.clone(),
+            history_length: None,
+        };
+        let result = call_a2a_jsonrpc(
+            http,
+            &config.endpoint,
+            &auth_token,
+            extra_header,
+            "tasks/get",
+            serde_json::to_value(&get_params).unwrap_or_default(),
+            &context,
+        )
+        .await?;
+        task = serde_json::from_value(result)
+            .map_err(|e| err!(Internal, "{}: failed to parse A2aTask: {}", context, e))?;
+    }
 }
 
 /// 从 A2A tasks/send 结果中提取文本内容
@@ -451,7 +600,185 @@ mod tests {
         let id1 = next_request_id();
         let id2 = next_request_id();
         assert!(id1.is_number());
-        assert!(id2.is_number());
         assert_ne!(id1, id2);
+    }
+
+    // ==================== 联邦调用（P4）====================
+
+    use std::sync::{Arc, Mutex};
+
+    /// 进程内 stub A2A server：记录每次请求的 Bearer 与声明头，
+    /// 按 `handler(request_json) -> Value` 的结果返回 JSON-RPC 响应。
+    type RecordedHeaders = Vec<(Option<String>, Option<String>)>;
+
+    async fn spawn_stub_a2a_server(
+        handler: Arc<dyn Fn(Value) -> Value + Send + Sync>,
+    ) -> (String, Arc<Mutex<RecordedHeaders>>) {
+        use axum::routing::post;
+
+        let recorded: Arc<Mutex<RecordedHeaders>> = Arc::new(Mutex::new(Vec::new()));
+        let rec = recorded.clone();
+        let app = axum::Router::new().route(
+            "/a2a",
+            post(
+                move |headers: axum::http::HeaderMap, body: String| async move {
+                    let req: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                    let bearer = headers
+                        .get(axum::http::header::AUTHORIZATION)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+                    let decl = headers
+                        .get("x-federation-caller")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string());
+                    rec.lock().unwrap().push((bearer, decl));
+                    let rpc_id = req.get("id").cloned().unwrap_or(Value::Null);
+                    let result = handler(req);
+                    axum::Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": rpc_id,
+                        "result": result
+                    }))
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{}/a2a", addr), recorded)
+    }
+
+    fn federated_config(endpoint: String, deadline: u64, poll_ms: u64) -> FederatedCallConfig {
+        FederatedCallConfig {
+            endpoint,
+            auth_token: "fed-token-1".to_string(),
+            caller_declaration: Some(r#"{"caller_org":"org-A","caller_user":"u-1"}"#.to_string()),
+            deadline_secs: deadline,
+            poll_interval_ms: poll_ms,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_federated_call_sync_completion() {
+        // 同步型对端：send 即返回 completed + agent 文本
+        let (endpoint, recorded) = spawn_stub_a2a_server(Arc::new(|_req| {
+            json!({
+                "id": "t1",
+                "status": {"state": "completed", "timestamp": "2026-01-01T00:00:00Z"},
+                "messages": [
+                    {"role": "user", "parts": [{"type": "text", "text": "hi"}]},
+                    {"role": "agent", "parts": [{"type": "text", "text": "pong"}]}
+                ]
+            })
+        }))
+        .await;
+
+        let http = Client::new();
+        let reply = execute_federated_agent_call(
+            &http,
+            "agt_x",
+            &federated_config(endpoint, 10, 100),
+            "hi",
+        )
+        .await
+        .unwrap();
+        assert_eq!(reply, "pong");
+
+        let rec = recorded.lock().unwrap();
+        assert_eq!(rec.len(), 1, "同步型对端不应产生 tasks/get");
+        let (bearer, decl) = &rec[0];
+        assert_eq!(bearer.as_deref(), Some("Bearer fed-token-1"));
+        assert_eq!(
+            decl.as_deref(),
+            Some(r#"{"caller_org":"org-A","caller_user":"u-1"}"#)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_federated_call_send_then_poll() {
+        // 异步型对端（ai_orz 节点行为）：send → working，get → completed
+        let (endpoint, recorded) = spawn_stub_a2a_server(Arc::new(|req| {
+            if req["method"] == "tasks/send" {
+                json!({
+                    "id": "t1",
+                    "status": {"state": "working", "timestamp": "2026-01-01T00:00:00Z"},
+                    "messages": []
+                })
+            } else {
+                json!({
+                    "id": "t1",
+                    "status": {"state": "completed", "timestamp": "2026-01-01T00:00:01Z"},
+                    "messages": [
+                        {"role": "agent", "parts": [{"type": "text", "text": "echo-back"}]}
+                    ]
+                })
+            }
+        }))
+        .await;
+
+        let http = Client::new();
+        let reply = execute_federated_agent_call(
+            &http,
+            "agt_x",
+            &federated_config(endpoint, 10, 20),
+            "hello",
+        )
+        .await
+        .unwrap();
+        assert_eq!(reply, "echo-back");
+        let rec = recorded.lock().unwrap();
+        assert_eq!(rec.len(), 2, "send + 一次 get");
+        // 轮询请求也必须携带声明头（对端日志全程带 org 维度）
+        assert!(rec.iter().all(|(_, decl)| decl.is_some()));
+    }
+
+    #[tokio::test]
+    async fn test_federated_call_failed_state() {
+        let (endpoint, _rec) = spawn_stub_a2a_server(Arc::new(|_req| {
+            json!({
+                "id": "t1",
+                "status": {"state": "failed", "timestamp": "2026-01-01T00:00:00Z"},
+                "messages": []
+            })
+        }))
+        .await;
+        let http = Client::new();
+        let result = execute_federated_agent_call(
+            &http,
+            "agt_x",
+            &federated_config(endpoint, 10, 100),
+            "hi",
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_federated_call_timeout() {
+        // 对端永远 working：应超时返回错误而不是无限挂起
+        let (endpoint, _rec) = spawn_stub_a2a_server(Arc::new(|req| {
+            if req["method"] == "tasks/send" {
+                json!({
+                    "id": "t1",
+                    "status": {"state": "working", "timestamp": "2026-01-01T00:00:00Z"},
+                    "messages": []
+                })
+            } else {
+                json!({
+                    "id": "t1",
+                    "status": {"state": "working", "timestamp": "2026-01-01T00:00:01Z"},
+                    "messages": []
+                })
+            }
+        }))
+        .await;
+        let http = Client::new();
+        let result =
+            execute_federated_agent_call(&http, "agt_x", &federated_config(endpoint, 1, 50), "hi")
+                .await;
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("timed out"), "got: {}", err_msg);
     }
 }
