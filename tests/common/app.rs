@@ -200,6 +200,22 @@ impl TestApp {
         format!("http://{}", addr)
     }
 
+    /// Issue a POST request with raw headers and a JSON body.
+    ///
+    /// 用于非 Cookie/非 JWT 场景（如联邦契约凭证 `Authorization: Bearer` +
+    /// `X-Federation-Caller` 声明头的 /a2a 双模鉴权测试）。
+    #[allow(dead_code)] // 公共测试 API，保留供未来测试使用
+    pub async fn post_with_headers(
+        &self,
+        path: &str,
+        headers: HeaderMap,
+        body: &impl serde::Serialize,
+    ) -> (StatusCode, serde_json::Value) {
+        let body_json = serde_json::to_string(body).expect("failed to serialize request body");
+        self.request(Method::POST, path, headers, Some(body_json))
+            .await
+    }
+
     /// Core request dispatcher.
     async fn request(
         &self,

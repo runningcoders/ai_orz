@@ -168,3 +168,75 @@ pub struct RevokeLinkResponse {
     /// 是否成功断联
     pub success: bool,
 }
+
+// ============ 联邦调用方声明（方案②：凭证直传 + 身份声明） ============
+
+/// 联邦调用方声明（`X-Federation-Caller` header 载荷）
+///
+/// 发起方（A 侧）随连接凭证一起携带的**明文**身份声明：声明这次调用是以哪个
+/// 组织/用户/Agent 身份发起的。B 侧在连接凭证（`authenticate_link_call`）校验
+/// 通过后解析，注入 RequestContext 的 `caller_organization_id` 等（R3 计量维度）。
+///
+/// 信任模型：对端节点可信（与配对建联同级），声明无密码学保护；缺失 =
+/// 连接级匿名调用（只有 link 的 peer_org_id 可作为调用方组织）。
+/// 字段语义与 R2 Claims iss/aud 对齐，未来升级 token 交换时可平替。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct FederationCallerDeclaration {
+    /// 发起方组织 ID（应与连接的 peer_org_id 一致；不一致以凭证为准并告警）
+    #[serde(default)]
+    pub caller_org: Option<String>,
+    /// 发起方用户 ID（A 侧语义，仅透传展示/计量）
+    #[serde(default)]
+    pub caller_user: Option<String>,
+    /// 发起方 Agent ID（A 侧语义，Agent 委派场景携带）
+    #[serde(default)]
+    pub caller_agent: Option<String>,
+}
+
+impl FederationCallerDeclaration {
+    /// 从 header 值解析（明文 JSON）；非法 JSON 返回 None（调用方应 fail-closed 401）
+    pub fn from_header_value(value: &str) -> Option<Self> {
+        serde_json::from_str(value).ok()
+    }
+
+    /// 序列化为 header 值
+    pub fn to_header_value(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod federation_caller_tests {
+    use super::*;
+
+    /// 声明往返：序列化 → 解析保持字段
+    #[test]
+    fn test_declaration_roundtrip() {
+        let decl = FederationCallerDeclaration {
+            caller_org: Some("org-a".to_string()),
+            caller_user: Some("user-1".to_string()),
+            caller_agent: Some("agent-9".to_string()),
+        };
+        let parsed = FederationCallerDeclaration::from_header_value(&decl.to_header_value())
+            .expect("should parse");
+        assert_eq!(parsed.caller_org.as_deref(), Some("org-a"));
+        assert_eq!(parsed.caller_user.as_deref(), Some("user-1"));
+        assert_eq!(parsed.caller_agent.as_deref(), Some("agent-9"));
+    }
+
+    /// 最小声明：只有 caller_org 也能解析（字段全部 optional）
+    #[test]
+    fn test_declaration_minimal() {
+        let parsed = FederationCallerDeclaration::from_header_value(r#"{"caller_org":"org-a"}"#)
+            .expect("minimal declaration should parse");
+        assert_eq!(parsed.caller_org.as_deref(), Some("org-a"));
+        assert!(parsed.caller_user.is_none());
+        assert!(parsed.caller_agent.is_none());
+    }
+
+    /// 非法 JSON 返回 None（调用方 fail-closed 401）
+    #[test]
+    fn test_declaration_invalid_json_returns_none() {
+        assert!(FederationCallerDeclaration::from_header_value("not-json").is_none());
+    }
+}

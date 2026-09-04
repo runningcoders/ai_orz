@@ -35,14 +35,27 @@ const BEARER_PREFIX: &str = "Bearer ";
 ///
 /// 注意：此中间件必须在 request_context_middleware 之前（外层）运行
 pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Response> {
-    // 1. 提取 token：先 Cookie，后 Bearer
-    let (token, is_browser) = extract_token(&req);
+    // 1-3. 提取 + 验证 + 注入（抽出的可复用逻辑）
+    if try_jwt_auth(&mut req) {
+        // 4. JWT 验证通过，继续处理请求
+        return Ok(next.run(req).await);
+    }
+    let is_browser = is_browser_request(&req);
+    Ok(unauthorized_response(&req, is_browser))
+}
 
-    let token = match token {
-        Some(t) if !t.is_empty() => t,
-        _ => {
-            return Ok(unauthorized_response(&req, is_browser));
-        }
+/// 尝试 JWT 认证并注入身份请求头（不产生响应）
+///
+/// 成功返回 true（请求头已注入 USER_ID/USERNAME/ORGANIZATION_ID/USER_ROLE/
+/// CALLER_ORGANIZATION_ID/CALLER_TYPE）；失败返回 false 且不修改请求。
+/// 供 [`jwt_auth_middleware`]（严格 401）与 a2a 双模鉴权中间件（JWT 失败后
+/// 回退联邦凭证）复用。
+pub fn try_jwt_auth(req: &mut Request) -> bool {
+    // 1. 提取 token：先 Cookie，后 Bearer
+    let (token, _is_browser) = extract_token(req);
+
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return false;
     };
 
     // 2. 验证 JWT token
@@ -50,12 +63,19 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
         Ok(c) => c,
         Err(e) => {
             sys_debug!("JWT token validation failed: {}", e);
-            return Ok(unauthorized_response(&req, is_browser));
+            return false;
         }
     };
 
     // 3. 将用户信息添加到请求头
-    // 后续 request_context_middleware 会从请求头提取这些信息创建 RequestContext
+    inject_identity_headers(req, &claims);
+    true
+}
+
+/// 将 JWT Claims 中的身份信息写入请求头
+///
+/// 后续 request_context_middleware 从请求头提取这些信息创建 RequestContext
+fn inject_identity_headers(req: &mut Request, claims: &crate::pkg::jwt::Claims) {
     if !claims.user_id.is_empty()
         && let Ok(header_value) = HeaderValue::from_str(&claims.user_id)
     {
@@ -91,9 +111,6 @@ pub async fn jwt_auth_middleware(mut req: Request, next: Next) -> Result<Respons
     // 注入 caller_type = User（JWT 验证通过的都是用户请求）
     req.headers_mut()
         .insert(http_header::CALLER_TYPE, HeaderValue::from_static("user"));
-
-    // 4. JWT 验证通过，继续处理请求
-    Ok(next.run(req).await)
 }
 
 /// 从请求中提取 JWT token

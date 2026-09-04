@@ -20,3 +20,7 @@ pub const USER_ROLE: &str = "X-User-Role";
 
 /// 调用方类型（CallerType: user/agent/system 或 0/1/2）
 pub const CALLER_TYPE: &str = "X-Caller-Type";
+
+/// 联邦调用方声明（方案②：明文 JSON，连接凭证鉴权通过后作为身份补充声明；
+/// 对端节点可信前提下接受，无密码学保护——升级路径见跨组织业务调用方案 F1）
+pub const FEDERATION_CALLER: &str = "X-Federation-Caller";
