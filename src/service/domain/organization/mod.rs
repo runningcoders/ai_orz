@@ -11,6 +11,8 @@ use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::organization;
 use crate::service::dal::user as user_dal;
+use crate::service::dao::organization_link;
+use crate::service::dao::organization_pairing;
 use async_trait::async_trait;
 use common::api::OrganizationConfig;
 use common::error::Result;
@@ -26,7 +28,12 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 
 /// 初始化 Organization Domain
 pub fn init() {
-    let domain = OrganizationDomainImpl::new(organization::dal(), user_dal::dal());
+    let domain = OrganizationDomainImpl::new(
+        organization::dal(),
+        user_dal::dal(),
+        organization_link::dao(),
+        organization_pairing::dao(),
+    );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
 
@@ -38,15 +45,25 @@ pub fn init() {
 struct OrganizationDomainImpl {
     org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
     user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
+    link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
+    pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
 }
 
 impl OrganizationDomainImpl {
     /// 创建 Domain 实例
+    #[allow(clippy::too_many_arguments)]
     fn new(
         org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
         user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
+        link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
+        pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
     ) -> Self {
-        Self { org_dal, user_dal }
+        Self {
+            org_dal,
+            user_dal,
+            link_dao,
+            pairing_dao,
+        }
     }
 }
 
@@ -140,6 +157,25 @@ pub trait OrganizationManage: Send + Sync {
         ctx: RequestContext,
         query: crate::service::dao::organization::OrganizationQuery,
     ) -> Result<u64>;
+
+    /// 签发组网配对码（用户侧，需管理员权限）
+    ///
+    /// 生成 24 字符配对码（去 0/O/1/I）、10 分钟 TTL、单用途；仅存哈希，
+    /// 返回明文 + 过期绝对时间。签发记审计（评审稿 §4.1 / §6.3）。
+    async fn issue_pairing_code(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<common::api::IssuePairingCodeResponse>;
+
+    /// 验证配对码 + 交换凭证（机器侧，配对码鉴权）
+    ///
+    /// 消费配对码（单用途 + TTL），生成对端出站 token，落对端 link + Linked 影子，
+    /// 返回对端目录条目 + token。无效 / 过期 / 已用统一返回 unauthorized（防枚举）。
+    async fn verify_pairing_code(
+        &self,
+        ctx: RequestContext,
+        req: common::api::VerifyPairingCodeRequest,
+    ) -> Result<common::api::VerifyPairingCodeResponse>;
 }
 
 /// 用户管理 trait

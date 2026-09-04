@@ -214,4 +214,44 @@ WHERE excluded.updated_at > organizations.updated_at
         .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    async fn upsert_linked_peer_org(
+        &self,
+        ctx: RequestContext,
+        peer: &PeerOrgUpsert,
+    ) -> Result<bool> {
+        let status = peer.status as i32;
+        // 直接建联：插入即 Linked；更新也强制 Linked（直接相连是权威动作，不依赖新者胜）
+        // 仅保护本地组织（scope=Local）不被覆盖（评审稿 R5）
+        let now = Utc::now().timestamp_millis();
+        let result = sqlx::query!(
+            r#"
+INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    name = excluded.name,
+    description = excluded.description,
+    base_url = excluded.base_url,
+    group_name = excluded.group_name,
+    status = excluded.status,
+    scope = ?,
+    updated_at = excluded.updated_at
+WHERE organizations.scope != ?
+            "#,
+            peer.id,
+            peer.name,
+            peer.description,
+            peer.base_url,
+            peer.group_name,
+            status,
+            OrganizationScope::Linked as i32,
+            now,
+            peer.updated_at,
+            OrganizationScope::Linked as i32,
+            OrganizationScope::Local as i32
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
 }

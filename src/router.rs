@@ -132,6 +132,18 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
                 move |req, next| request_context_middleware(config.clone(), req, next)
             })),
         )
+        // 组网：验证配对码 + 交换凭证（机器侧，调用方是对端节点，无本地用户 JWT）
+        // 同前缀 /api/v1/organization/links/* 在 root 层直挂（评审稿 D7；与 JWT nest 双挂载已探针实测）
+        // 配对码本身鉴权，不进 protected_routes 的 JWT 链
+        .route(
+            "/api/v1/organization/links/pairing/verify",
+            post(handlers::organization::links::verify_pairing_code_handler).layer(
+                axum::middleware::from_fn({
+                    let config = config.clone();
+                    move |req, next| request_context_middleware(config.clone(), req, next)
+                }),
+            ),
+        )
         .route("/health", get(handlers::health::health))
         // API Notice 日志：请求结束时打印 method/path/status/duration + 请求/响应体预览
         // （仅覆盖上面已注册的接口路由；必须加在 fallback_service 之前，静态资源不打）
@@ -409,6 +421,7 @@ fn artifact_routes() -> Router {
 
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
+    use crate::handlers::organization::links;
     use crate::handlers::organization::organization_me;
     use crate::handlers::organization::organizations;
     use crate::handlers::organization::user;
@@ -418,6 +431,11 @@ fn organization_protected_routes() -> Router {
         .route(
             "/me",
             get(organization_me::get_current_organization_handler),
+        )
+        // 组网：签发配对码（用户侧，本端管理员 JWT）
+        .route(
+            "/links/pairing/issue",
+            post(links::issue_pairing_code_handler),
         )
         .route(
             "/me",

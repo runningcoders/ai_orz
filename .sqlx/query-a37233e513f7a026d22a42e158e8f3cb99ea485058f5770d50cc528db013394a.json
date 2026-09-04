@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO organization_pairing_codes (id, org_id, code_hash, expires_at, consumed_at, created_by, created_at)\nVALUES (?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "a37233e513f7a026d22a42e158e8f3cb99ea485058f5770d50cc528db013394a"
+}

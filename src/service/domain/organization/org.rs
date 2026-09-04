@@ -3,12 +3,21 @@
 //! 定义组织相关业务接口实现
 
 use crate::models::organization::OrganizationPo;
+use crate::models::organization_link::OrganizationLinkPo;
+use crate::models::organization_pairing_code::OrganizationPairingCodePo;
 use crate::models::user::UserPo;
 use crate::pkg::RequestContext;
+use crate::service::dao::organization_link::PeerOrgUpsert;
 use async_trait::async_trait;
-use common::api::OrganizationConfig;
-use common::error::Result;
+use chrono::Utc;
+use common::api::{
+    IssuePairingCodeResponse, OrganizationConfig, PAIRING_CODE_LEN, PAIRING_CODE_TTL_MS,
+    PeerOrgDirectoryEntry, VerifyPairingCodeRequest, VerifyPairingCodeResponse,
+};
+use common::enums::{OrganizationStatus, UserRole};
+use common::error::{Error, Result};
 use rand::Rng;
+use uuid::Uuid;
 
 /// 生成组织 ID（12 位大写字母 + 数字）
 fn generate_org_id() -> String {
@@ -172,4 +181,172 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
     ) -> Result<u64> {
         self.org_dal.count(ctx, query).await
     }
+
+    /// 签发组网配对码（用户侧，需管理员权限）
+    ///
+    /// 生成 24 字符配对码（去 0/O/1/I）、10 分钟 TTL、单用途；仅存哈希，
+    /// 返回明文 + 过期绝对时间。签发记审计（评审稿 §4.1 / §6.3）。
+    async fn issue_pairing_code(&self, ctx: RequestContext) -> Result<IssuePairingCodeResponse> {
+        // 1) 必须是本组织管理员（评审稿 §4.2：本端管理员 JWT）
+        let role = ctx
+            .user_role()
+            .map(UserRole::from_i32)
+            .unwrap_or(UserRole::Member);
+        if !UserRole::has_permission(role, UserRole::Admin) {
+            return Err(Error::forbidden("仅组织管理员可签发组网配对码"));
+        }
+
+        // 2) 取本组织 ID（JWT 绑定）
+        let org_id = ctx
+            .organization_id()
+            .ok_or_else(|| Error::unauthorized("未识别的组织上下文"))?
+            .to_string();
+
+        // 3) 生成 24 字符配对码（去 0/O/1/I），仅存哈希
+        let code = generate_pairing_code();
+        let code_hash = sha256::digest(code.as_bytes());
+        let now = Utc::now().timestamp_millis();
+        let expires_at = now + PAIRING_CODE_TTL_MS;
+        let created_by = ctx.caller_id().unwrap_or_else(|| org_id.clone());
+
+        self.pairing_dao
+            .insert(
+                ctx.clone(),
+                &OrganizationPairingCodePo {
+                    id: Uuid::now_v7().to_string(),
+                    org_id: org_id.clone(),
+                    code_hash,
+                    expires_at,
+                    consumed_at: None,
+                    created_by,
+                    created_at: now,
+                },
+            )
+            .await?;
+
+        log_info!(
+            &ctx,
+            "issue_pairing_code",
+            "组网配对码签发 org_id={} expires_at={}",
+            org_id,
+            expires_at
+        );
+
+        Ok(IssuePairingCodeResponse {
+            pairing_code: code,
+            expires_at,
+            ttl_seconds: PAIRING_CODE_TTL_MS / 1000,
+        })
+    }
+
+    /// 验证配对码 + 交换凭证（机器侧，配对码鉴权）
+    ///
+    /// 消费配对码（单用途 + TTL），生成对端出站 token，落对端 link + Linked 影子，
+    /// 返回对端目录条目 + token。无效 / 过期 / 已用统一返回 unauthorized（防枚举）。
+    async fn verify_pairing_code(
+        &self,
+        ctx: RequestContext,
+        req: VerifyPairingCodeRequest,
+    ) -> Result<VerifyPairingCodeResponse> {
+        // 1) 原子消费配对码（单用途 + TTL 合一）；无效/过期/已用统一 None → 不区分（防枚举）
+        let code_hash = sha256::digest(req.pairing_code.as_bytes());
+        let now = Utc::now().timestamp_millis();
+        let org_id = self
+            .pairing_dao
+            .consume(ctx.clone(), &code_hash, now)
+            .await?
+            .ok_or_else(|| Error::unauthorized("配对码无效或已失效"))?;
+
+        // 2) 取签发方（本节点）组织信息用于返回
+        let issuer = self
+            .org_dal
+            .get_by_id(ctx.clone(), &org_id)
+            .await?
+            .ok_or_else(|| Error::unauthorized("配对码关联组织不存在"))?;
+
+        // 3) 生成对端出站 token（本地节点调用本节点时使用）
+        let peer_token = generate_link_token();
+
+        // 4) 落对端 link（幂等：已存在则续联更新凭证 / endpoint）
+        let existing = self
+            .link_dao
+            .find_by_pair(ctx.clone(), &org_id, &req.local_org.id)
+            .await?;
+        let link = OrganizationLinkPo::new(
+            existing
+                .as_ref()
+                .map(|l| l.id.clone())
+                .unwrap_or_else(|| Uuid::now_v7().to_string()),
+            org_id.clone(),
+            req.local_org.id.clone(),
+            req.local_endpoint.clone(),
+            peer_token.clone(),
+            sha256::digest(req.local_token.as_bytes()),
+            org_id.clone(),
+        );
+        if existing.is_some() {
+            self.link_dao.update(ctx.clone(), &link).await?;
+        } else {
+            self.link_dao.insert(ctx.clone(), &link).await?;
+        }
+
+        // 5) 写对端（本地节点）影子：直接建联必为 Linked（R5 保护本节点 Local 组织）
+        let shadow = PeerOrgUpsert {
+            id: req.local_org.id.clone(),
+            name: req.local_org.name.clone(),
+            description: req.local_org.description.clone(),
+            base_url: req.local_org.base_url.clone(),
+            group_name: req.local_org.group_name.clone(),
+            status: OrganizationStatus::from_i32(req.local_org.status),
+            updated_at: req.local_org.updated_at,
+        };
+        self.link_dao
+            .upsert_linked_peer_org(ctx.clone(), &shadow)
+            .await?;
+
+        log_info!(
+            &ctx,
+            "verify_pairing_code",
+            "配对码验证成功，建立连接 peer_org_id={} local_org_id={}",
+            req.local_org.id,
+            org_id
+        );
+
+        Ok(VerifyPairingCodeResponse {
+            peer_org: PeerOrgDirectoryEntry {
+                id: issuer.id,
+                name: issuer.name,
+                description: issuer.description,
+                base_url: issuer.base_url,
+                group_name: issuer.group_name,
+                status: issuer.status.to_i32(),
+                updated_at: issuer.updated_at,
+            },
+            peer_token,
+        })
+    }
+}
+
+/// 生成组网配对码（24 字符，去 0/O/1/I，字符集同邀请码）
+fn generate_pairing_code() -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::thread_rng();
+    (0..PAIRING_CODE_LEN)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
+/// 生成链路凭证（64 字符 hex = 32 字节熵）
+fn generate_link_token() -> String {
+    const HEX: &[u8] = b"0123456789abcdef";
+    let mut rng = rand::thread_rng();
+    (0..64)
+        .map(|_| {
+            let idx = rng.gen_range(0..HEX.len());
+            HEX[idx] as char
+        })
+        .collect()
 }

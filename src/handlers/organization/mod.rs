@@ -9,6 +9,7 @@
 
 pub mod auth;
 pub mod initialize_system;
+pub mod links;
 pub mod organization_me;
 pub mod organizations;
 pub mod user;

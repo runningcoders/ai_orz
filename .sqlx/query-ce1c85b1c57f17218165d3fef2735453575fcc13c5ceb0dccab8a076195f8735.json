@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE organization_pairing_codes\nSET consumed_at = ?\nWHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?\nRETURNING org_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "org_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ce1c85b1c57f17218165d3fef2735453575fcc13c5ceb0dccab8a076195f8735"
+}

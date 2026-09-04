@@ -111,6 +111,7 @@ pub mod message_channel;
 pub mod model_provider;
 pub mod neural_tools;
 pub mod organization;
+pub mod organization_link;
 pub mod project;
 #[cfg(test)]
 mod project_test;
@@ -152,6 +153,7 @@ pub use message_channel::*;
 pub use model_provider::*;
 pub use neural_tools::*;
 pub use organization::*;
+pub use organization_link::*;
 pub use project::*;
 pub use runtime::*;
 pub use seed::*;

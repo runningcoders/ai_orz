@@ -71,6 +71,21 @@ pub trait OrganizationLinkDao: Send + Sync {
     ///
     /// 返回是否发生了写入（false = 跳过），供上层审计/冲突上报（评审稿 R5）。
     async fn upsert_peer_org(&self, ctx: RequestContext, peer: &PeerOrgUpsert) -> Result<bool>;
+
+    /// 直接建联的对端影子 upsert
+    ///
+    /// 与 `upsert_peer_org`（目录同步所得 Remote 影子）不同：直接建联必为 `Linked`。
+    /// - 本地不存在 → 插入 `scope=Linked` 影子
+    /// - 本地已存在（含 Remote/Linked）→ 更新目录元信息并**置 `scope=Linked`**
+    /// - 直接建联是权威动作，不依赖 `updated_at` 新者胜（直接相连即认对端当前发布信息）
+    /// - 本地 `scope=Local` 的组织（本节点自己的组织）**绝不覆盖**（id 撞车防护，评审稿 R5）
+    ///
+    /// 返回是否发生了写入，供上层审计。
+    async fn upsert_linked_peer_org(
+        &self,
+        ctx: RequestContext,
+        peer: &PeerOrgUpsert,
+    ) -> Result<bool>;
 }
 
 pub mod sqlite;
