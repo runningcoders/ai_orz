@@ -3,8 +3,10 @@
 //! 职责：Organization 领域的数据访问层，封装 OrganizationDao 提供统一的查询接口
 //! 注意：User 相关操作已移至 User DAL，跨领域编排在 Domain 层完成
 
+use crate::models::events::OrganizationChangedEvent;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
+use crate::pkg::aop;
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery};
 use common::api::OrganizationConfig;
@@ -140,7 +142,9 @@ impl OrganizationDal for OrganizationDalImpl {
     }
 
     async fn create(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
-        self.organization_dao.insert(ctx, org).await
+        self.organization_dao.insert(ctx.clone(), org).await?;
+        aop::publish(&ctx, OrganizationChangedEvent::new(&org.id, "created")).await;
+        Ok(())
     }
 
     async fn query(
@@ -156,11 +160,15 @@ impl OrganizationDal for OrganizationDalImpl {
     }
 
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()> {
-        self.organization_dao.update(ctx, org).await
+        self.organization_dao.update(ctx.clone(), org).await?;
+        aop::publish(&ctx, OrganizationChangedEvent::new(&org.id, "updated")).await;
+        Ok(())
     }
 
     async fn delete(&self, ctx: RequestContext, org_id: &str) -> Result<()> {
-        self.organization_dao.delete(ctx, org_id).await
+        self.organization_dao.delete(ctx.clone(), org_id).await?;
+        aop::publish(&ctx, OrganizationChangedEvent::new(org_id, "deleted")).await;
+        Ok(())
     }
 
     async fn count_organizations(&self, ctx: RequestContext) -> Result<u64> {

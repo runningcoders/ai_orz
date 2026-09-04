@@ -15,6 +15,7 @@ use common::api::{
     OrganizationConfig, PAIRING_CODE_LEN, PAIRING_CODE_TTL_MS, PeerOrgDirectoryEntry,
     VerifyPairingCodeRequest, VerifyPairingCodeResponse,
 };
+use common::enums::organization::OrganizationLinkStatus;
 use common::enums::{OrganizationStatus, UserRole};
 use common::error::{Error, Result};
 use rand::Rng;
@@ -613,9 +614,146 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         );
         Ok(())
     }
+
+    async fn push_directory_to_peers(&self, ctx: RequestContext) -> Result<usize> {
+        let peers = self.active_peer_endpoints(&ctx).await?;
+        let dir = self.get_directory(ctx.clone()).await?;
+
+        let mut pushed = 0usize;
+        for (endpoint, access_token, peer_org_id) in &peers {
+            match self
+                .http_client
+                .push_directory(endpoint, access_token, dir.clone())
+                .await
+            {
+                Ok(()) => pushed += 1,
+                Err(e) => log_warn!(
+                    ctx,
+                    "directory_push",
+                    "变更推送失败(不重试,由对账补齐) peer_org_id={} endpoint={} error={}",
+                    peer_org_id,
+                    endpoint,
+                    e
+                ),
+            }
+        }
+
+        log_info!(
+            ctx,
+            "directory_push",
+            "组织变更推送完成 peers={} pushed={}",
+            peers.len(),
+            pushed
+        );
+        Ok(pushed)
+    }
+
+    async fn reconcile_directories(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<super::DirectoryReconcileReport> {
+        let peers = self.active_peer_endpoints(&ctx).await?;
+        let dir = self.get_directory(ctx.clone()).await?;
+
+        let mut pushed = 0usize;
+        let mut pulled_written = 0usize;
+        for (endpoint, access_token, peer_org_id) in &peers {
+            // 推：本地目录 → 对端（对端按其影子语义 upsert）
+            match self
+                .http_client
+                .push_directory(endpoint, access_token, dir.clone())
+                .await
+            {
+                Ok(()) => pushed += 1,
+                Err(e) => log_warn!(
+                    ctx,
+                    "directory_reconcile",
+                    "对账推送失败 peer_org_id={} endpoint={} error={}",
+                    peer_org_id,
+                    endpoint,
+                    e
+                ),
+            }
+
+            // 拉：对端目录 → 本地影子 upsert（新者胜 / 不动 scope / 保护 Local）
+            match self
+                .http_client
+                .fetch_directory(endpoint, access_token)
+                .await
+            {
+                Ok(entries) => {
+                    let count = entries.len();
+                    let req = common::api::DirectorySyncRequest { orgs: entries };
+                    match self.handle_directory_sync(ctx.clone(), req).await {
+                        Ok(written) => pulled_written += written,
+                        Err(e) => log_warn!(
+                            ctx,
+                            "directory_reconcile",
+                            "对账拉取 upsert 失败 peer_org_id={} received={} error={}",
+                            peer_org_id,
+                            count,
+                            e
+                        ),
+                    }
+                }
+                Err(e) => log_warn!(
+                    ctx,
+                    "directory_reconcile",
+                    "对账拉取失败 peer_org_id={} endpoint={} error={}",
+                    peer_org_id,
+                    endpoint,
+                    e
+                ),
+            }
+        }
+
+        log_info!(
+            ctx,
+            "directory_reconcile",
+            "目录对账完成 peers={} pushed={} pulled_written={}",
+            peers.len(),
+            pushed,
+            pulled_written
+        );
+        Ok(super::DirectoryReconcileReport {
+            peers: peers.len(),
+            pushed,
+            pulled_written,
+        })
+    }
 }
 
 impl super::OrganizationDomainImpl {
+    /// 收集所有 Active 连接的去重对端列表（endpoint 去重，同一节点多组织建联只推一次）
+    ///
+    /// 返回 `(endpoint, access_token, peer_org_id)`；同一 endpoint 取任一 Active
+    /// 连接的出站凭证（每个连接的 token 均被对端单独签发且有效）。
+    async fn active_peer_endpoints(
+        &self,
+        ctx: &RequestContext,
+    ) -> Result<Vec<(String, String, String)>> {
+        let links = self
+            .link_dao
+            .query(
+                ctx.clone(),
+                OrganizationLinkQuery {
+                    local_org_id: None,
+                    status: Some(OrganizationLinkStatus::Active),
+                    limit: None,
+                },
+            )
+            .await?;
+
+        let mut seen = std::collections::HashSet::new();
+        let mut peers = Vec::new();
+        for link in links {
+            if seen.insert(link.endpoint.clone()) {
+                peers.push((link.endpoint, link.access_token, link.peer_org_id));
+            }
+        }
+        Ok(peers)
+    }
+
     /// 建联完成后的目录双向同步（评审稿 §4.1 步骤 5 / §5.2）
     ///
     /// 拉取对端全量目录（→ 本地 Remote 影子 upsert）+ 推送本地目录（→ 对端
@@ -714,4 +852,250 @@ fn generate_link_token() -> String {
             HEX[idx] as char
         })
         .collect()
+}
+
+#[cfg(test)]
+mod directory_sync_tests {
+    use super::*;
+    use crate::pkg::request_context_test_support::new_test_ctx;
+    use crate::service::dao::organization_link::http::FederationHttpClient;
+    use sqlx::SqlitePool;
+    use std::sync::{Arc, Mutex};
+
+    use super::super::OrganizationManage as _;
+
+    /// 出站客户端 mock：记录推送调用，拉取返回预设目录
+    struct MockFederationClient {
+        pushes: Mutex<Vec<(String, String, Vec<String>)>>,
+        pulls: Mutex<Vec<(String, String)>>,
+        fetched_dir: Vec<PeerOrgDirectoryEntry>,
+    }
+
+    impl MockFederationClient {
+        fn new(fetched_dir: Vec<PeerOrgDirectoryEntry>) -> Self {
+            Self {
+                pushes: Mutex::new(Vec::new()),
+                pulls: Mutex::new(Vec::new()),
+                fetched_dir,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl FederationHttpClient for MockFederationClient {
+        async fn verify_pairing_code(
+            &self,
+            _peer_endpoint: &str,
+            _req: &VerifyPairingCodeRequest,
+        ) -> Result<VerifyPairingCodeResponse> {
+            Err(Error::internal("mock: verify 未在本测试使用"))
+        }
+
+        async fn fetch_directory(
+            &self,
+            peer_endpoint: &str,
+            access_token: &str,
+        ) -> Result<Vec<PeerOrgDirectoryEntry>> {
+            self.pulls
+                .lock()
+                .unwrap()
+                .push((peer_endpoint.to_string(), access_token.to_string()));
+            Ok(self.fetched_dir.clone())
+        }
+
+        async fn push_directory(
+            &self,
+            peer_endpoint: &str,
+            access_token: &str,
+            orgs: Vec<PeerOrgDirectoryEntry>,
+        ) -> Result<()> {
+            let names = orgs.iter().map(|o| o.name.clone()).collect();
+            self.pushes.lock().unwrap().push((
+                peer_endpoint.to_string(),
+                access_token.to_string(),
+                names,
+            ));
+            Ok(())
+        }
+    }
+
+    fn build_domain(mock: Arc<MockFederationClient>) -> Arc<super::super::OrganizationDomainImpl> {
+        use crate::service::dao::organization_link as link_dao_mod;
+        use crate::service::dao::organization_pairing as pairing_dao_mod;
+        use crate::service::dao::{organization as org_dao_mod, user as user_dao_mod};
+
+        Arc::new(super::super::OrganizationDomainImpl::new(
+            crate::service::dal::organization::new(org_dao_mod::new()),
+            crate::service::dal::user::new(
+                user_dao_mod::new(),
+                crate::service::dao::user_credential::new(),
+            ),
+            link_dao_mod::new(),
+            pairing_dao_mod::new(),
+            mock,
+        ))
+    }
+
+    async fn seed_org(
+        ctx: &RequestContext,
+        pool: &SqlitePool,
+        name: &str,
+        scope: common::enums::OrganizationScope,
+    ) -> OrganizationPo {
+        let _ = pool;
+        let mut org = OrganizationPo::new(
+            Uuid::now_v7().to_string(),
+            name.to_string(),
+            String::new(),
+            None,
+            "test".to_string(),
+        );
+        org.scope = scope;
+        crate::service::dao::organization::new()
+            .insert(ctx.clone(), &org)
+            .await
+            .expect("seed org failed");
+        org
+    }
+
+    async fn seed_link(
+        ctx: &RequestContext,
+        local_org_id: &str,
+        peer_org_id: &str,
+        endpoint: &str,
+    ) -> OrganizationLinkPo {
+        let link = OrganizationLinkPo::new(
+            Uuid::now_v7().to_string(),
+            local_org_id.to_string(),
+            peer_org_id.to_string(),
+            endpoint.to_string(),
+            "a".repeat(64),
+            "b".repeat(64),
+            "test".to_string(),
+        );
+        crate::service::dao::organization_link::new()
+            .insert(ctx.clone(), &link)
+            .await
+            .expect("seed link failed");
+        link
+    }
+
+    fn dir_entry(id: &str, name: &str) -> PeerOrgDirectoryEntry {
+        PeerOrgDirectoryEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            description: String::new(),
+            base_url: String::new(),
+            group_name: Some(String::new()),
+            status: 1,
+            updated_at: 0,
+        }
+    }
+
+    /// 变更推送：全量本地目录推给去重后的 Active 对端
+    #[sqlx::test]
+    async fn test_push_directory_to_peers_dedups_by_endpoint(pool: SqlitePool) {
+        let ctx = new_test_ctx("tester", pool.clone());
+        let mock = Arc::new(MockFederationClient::new(vec![]));
+        let domain = build_domain(mock.clone());
+
+        let org_a = seed_org(
+            &ctx,
+            &pool,
+            "节点A",
+            common::enums::OrganizationScope::Local,
+        )
+        .await;
+        let org_c = seed_org(
+            &ctx,
+            &pool,
+            "节点C",
+            common::enums::OrganizationScope::Local,
+        )
+        .await;
+        let org_b = seed_org(
+            &ctx,
+            &pool,
+            "节点B",
+            common::enums::OrganizationScope::Remote,
+        )
+        .await;
+        let org_d = seed_org(
+            &ctx,
+            &pool,
+            "节点D",
+            common::enums::OrganizationScope::Remote,
+        )
+        .await;
+
+        // A、C 各自建联到同一对端节点（B、D 同 endpoint）→ endpoint 去重后只推一次
+        seed_link(&ctx, &org_a.id, &org_b.id, "https://peer.example.com").await;
+        seed_link(&ctx, &org_c.id, &org_d.id, "https://peer.example.com").await;
+
+        let pushed = domain
+            .push_directory_to_peers(ctx.clone())
+            .await
+            .expect("push failed");
+        assert_eq!(pushed, 1, "同 endpoint 的多条 Active 连接应去重为一次推送");
+
+        let pushes = mock.pushes.lock().unwrap();
+        assert_eq!(pushes.len(), 1);
+        let (endpoint, token, names) = &pushes[0];
+        assert_eq!(endpoint, "https://peer.example.com");
+        assert_eq!(token.len(), 64);
+        assert!(names.contains(&"节点A".to_string()));
+        assert!(names.contains(&"节点C".to_string()));
+    }
+
+    /// 定时对账：推本地 + 拉对端写影子；无 Active 连接时为 no-op
+    #[sqlx::test]
+    async fn test_reconcile_pulls_and_upserts_shadow(pool: SqlitePool) {
+        let ctx = new_test_ctx("tester", pool.clone());
+        let remote_entry = dir_entry(&Uuid::now_v7().to_string(), "对端新组织");
+        let mock = Arc::new(MockFederationClient::new(vec![remote_entry.clone()]));
+        let domain = build_domain(mock.clone());
+
+        // 无连接：no-op
+        let report = domain
+            .reconcile_directories(ctx.clone())
+            .await
+            .expect("reconcile failed");
+        assert_eq!(report.peers, 0);
+
+        let org_a = seed_org(
+            &ctx,
+            &pool,
+            "节点A",
+            common::enums::OrganizationScope::Local,
+        )
+        .await;
+        let org_b = seed_org(
+            &ctx,
+            &pool,
+            "节点B",
+            common::enums::OrganizationScope::Remote,
+        )
+        .await;
+        seed_link(&ctx, &org_a.id, &org_b.id, "https://peer.example.com").await;
+
+        let report = domain
+            .reconcile_directories(ctx.clone())
+            .await
+            .expect("reconcile failed");
+        assert_eq!(report.peers, 1);
+        assert_eq!(report.pushed, 1);
+        assert_eq!(report.pulled_written, 1, "对端新组织应写为 Remote 影子");
+
+        // 拉到的对端目录条目已落库
+        let org_dao = crate::service::dao::organization::new();
+        let shadow = org_dao
+            .find_by_id(ctx.clone(), &remote_entry.id)
+            .await
+            .expect("query shadow failed")
+            .expect("shadow should exist");
+        assert_eq!(shadow.name, "对端新组织");
+        assert_eq!(shadow.scope, common::enums::OrganizationScope::Remote);
+
+        assert_eq!(mock.pulls.lock().unwrap().len(), 1);
+    }
 }

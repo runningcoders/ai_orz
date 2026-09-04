@@ -434,6 +434,9 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
     let has_tool_log_cleanup = existing
         .iter()
         .any(|t| t.payload.contains("\"tool_log_cleanup\""));
+    let has_directory_reconcile = existing
+        .iter()
+        .any(|t| t.payload.contains("\"directory_reconcile\""));
 
     // 1. agent_rest：每天凌晨 4 点执行一次睡眠沉淀（Cron 表达式，系统时区）
     if !has_agent_rest {
@@ -493,6 +496,30 @@ pub async fn ensure_system_cron_triggers(ctx: &RequestContext) -> Result<()> {
         cron_manager.create_trigger(ctx.clone(), &trigger).await?;
         sys_info!(
             "已创建系统级定时任务: tool_log_cleanup (cron: {} {})",
+            expression,
+            timezone
+        );
+    }
+
+    // 4. directory_reconcile：每天凌晨 3 点对账组织目录（逐 Active 对端双向同步，
+    //    兜底变更推送丢失/失败的场景，保证目录最终一致）
+    if !has_directory_reconcile {
+        let expression = "0 3 * * *"; // 每天 03:00（分 时 日 月 周）
+        let timezone = crate::pkg::cron::system_timezone();
+        let next_run_at = crate::pkg::cron::next_run_at(expression, &timezone, chrono::Utc::now())?;
+        let mut trigger = CronTriggerPo::new(
+            uuid::Uuid::now_v7().to_string(),
+            "系统默认-组织目录对账".into(),
+            TriggerType::Cron,
+            next_run_at,
+            Some("system".into()),
+        );
+        trigger.cron_expression = Some(expression.into());
+        trigger.payload = r#"{"action":"directory_reconcile","extra":{}}"#.into();
+        trigger.is_enabled = 1;
+        cron_manager.create_trigger(ctx.clone(), &trigger).await?;
+        sys_info!(
+            "已创建系统级定时任务: directory_reconcile (cron: {} {})",
             expression,
             timezone
         );

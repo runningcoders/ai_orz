@@ -228,6 +228,30 @@ pub trait OrganizationManage: Send + Sync {
     /// 置连接 Revoked（DAO 事务内同步将对端影子 Linked → Remote，不删除记录，
     /// 保留审计线索）。断联后对端出站调用本节点时凭证鉴权失败（401 → 惰性感知）。
     async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()>;
+
+    /// 变更推送：本地目录全量推给所有 Active 对端（best-effort）
+    ///
+    /// 由 `organization.changed` 事件消费者调用（组织元信息变更后异步触发）。
+    /// 全量推送 + 对端 `updated_at` 新者胜，天然幂等；单个对端失败仅记 WARN，
+    /// 由下一次 cron 对账补齐。返回推送成功的对端数。
+    async fn push_directory_to_peers(&self, ctx: RequestContext) -> Result<usize>;
+
+    /// 定时对账：逐 Active 对端双向同步（推本地目录 + 拉对端目录）
+    ///
+    /// 由 cron 触发（`directory_reconcile` action），兜底推送丢失/失败的场景，
+    /// 保证目录最终一致。只 upsert 不删除（网络抖动不误删本地影子）。
+    async fn reconcile_directories(&self, ctx: RequestContext) -> Result<DirectoryReconcileReport>;
+}
+
+/// 目录对账报告（审计用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectoryReconcileReport {
+    /// 参与对账的 Active 对端数（按 endpoint 去重）
+    pub peers: usize,
+    /// 推送成功的对端数
+    pub pushed: usize,
+    /// 从对端拉取后实际写入的影子条数
+    pub pulled_written: usize,
 }
 
 /// 用户管理 trait

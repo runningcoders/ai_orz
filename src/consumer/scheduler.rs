@@ -81,6 +81,7 @@ impl Consumer for CronTriggerConsumer {
             }
             "project_followup" => self.handle_project_followup(&payload.extra).await?,
             "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
+            "directory_reconcile" => self.handle_directory_reconcile().await?,
             _ => {
                 sys_warn!(
                     "unknown action '{}' for trigger {} (id: {})",
@@ -224,6 +225,26 @@ impl CronTriggerConsumer {
             report.removed_files,
             report.freed_bytes,
             report.skipped_dirs
+        );
+        Ok(())
+    }
+
+    /// directory_reconcile 动作：逐 Active 对端双向目录同步（推本地 + 拉对端）
+    ///
+    /// 兑底推送丢失/失败的场景，保证目录最终一致（变更推送由
+    /// FederationDirectoryConsumer 消费 organization.changed 事件承担时效性）。
+    async fn handle_directory_reconcile(&self) -> Result<()> {
+        let ctx = RequestContext::new_system();
+        let report = crate::service::domain::organization::domain()
+            .organization_manage()
+            .reconcile_directories(ctx)
+            .await?;
+
+        sys_info!(
+            "directory_reconcile 完成: peers={} pushed={} pulled_written={}",
+            report.peers,
+            report.pushed,
+            report.pulled_written
         );
         Ok(())
     }

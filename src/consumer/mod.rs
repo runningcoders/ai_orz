@@ -1,6 +1,7 @@
 pub mod agent_loop_consumer;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
+pub mod federation_directory;
 pub mod message;
 pub mod scheduler;
 pub mod task_event_consumer;
@@ -30,6 +31,9 @@ pub async fn init() -> Result<()> {
         think_round_stats_consumer::ThinkRoundStatsConsumer::new(),
     ))?;
     aop::registry().register_consumer(Arc::new(task_event_consumer::TaskEventConsumer::new()))?;
+    aop::registry().register_consumer(Arc::new(
+        federation_directory::FederationDirectoryConsumer::new(),
+    ))?;
 
     sys_info!("all business consumers registered");
 
