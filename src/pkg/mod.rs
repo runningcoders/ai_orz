@@ -25,6 +25,7 @@ pub mod tool_log_retention;
 pub mod tool_registry;
 pub mod tool_tracing;
 pub mod utils;
+pub mod ws;
 
 use common::config::AppConfig;
 

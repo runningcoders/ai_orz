@@ -2,6 +2,7 @@ pub mod agent_loop_consumer;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
 pub mod federation_directory;
+pub mod lark_inbound;
 pub mod message;
 pub mod scheduler;
 pub mod task_event_consumer;
@@ -18,6 +19,11 @@ pub async fn init() -> Result<()> {
     sys_info!("registering business consumers to AOP event center...");
 
     aop::registry().register_consumer(Arc::new(message::MessageConsumer::new()))?;
+
+    // 飞书入站消息：DAL 单例在 service::init 阶段已就位，此处注入弱引用
+    aop::registry().register_consumer(Arc::new(lark_inbound::LarkInboundConsumer::new(
+        Arc::downgrade(&crate::service::dal::lark::dal()),
+    )))?;
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
 

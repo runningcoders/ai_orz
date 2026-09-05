@@ -31,13 +31,14 @@ use common::enums::{ChannelStatus, ChannelType};
 use common::error::{Result, err};
 use common::models::CredentialKind;
 
+use crate::models::events::LarkMessageEvent;
 use crate::models::message_channel::MessageChannel;
 use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
 use crate::pkg::adapter::AdaptedMessage;
 use crate::pkg::adapter::message::{MessageAdapterCallback, MessageInboundAdapter};
 use crate::service::dal::message_channel::MessageChannelDal;
-use crate::service::dao::lark::{LarkAppCredentials, LarkDao, LarkEventHandler, LarkMessageEvent};
+use crate::service::dao::lark::{LarkAppCredentials, LarkDao};
 use crate::service::dao::message_channel::MessageChannelQuery;
 use crate::service::dao::user_credential::UserCredentialDao;
 
@@ -172,8 +173,8 @@ impl LarkDalImpl {
 
     /// 已注册回调句柄（start 后由 registry 注入；未启动时为 None）
     ///
-    /// `ensure_listener_for` 在运行期建连时复用同一回调。
-    fn callback_or_none(&self) -> Option<Arc<dyn MessageAdapterCallback>> {
+    /// `ensure_listener_for` 运行期建连与 lark 入站 consumer 复用同一回调。
+    pub(crate) fn callback_or_none(&self) -> Option<Arc<dyn MessageAdapterCallback>> {
         self.callback.read().map(|c| c.clone()).unwrap_or(None)
     }
 
@@ -452,10 +453,7 @@ impl LarkListenerDal for LarkDalImpl {
             Some(c) => c,
             None => return Ok(()),
         };
-        let handler = Arc::new(LarkAdapterHandler::new(app_id, self.callback_or_none()));
-        self.lark_dao
-            .start_event_listener(credentials, handler)
-            .await
+        self.lark_dao.start_event_listener(credentials).await
     }
 
     async fn release_listener_if_unused(&self, app_id: &str) -> Result<()> {
@@ -573,7 +571,8 @@ impl super::LarkDal for LarkDalImpl {}
 // ==================== MessageInboundAdapter 实现 ====================
 //
 // 实现消息入站适配器 trait，向中台注册后由 consumer 统一启停。
-// 内部通过 LarkAdapterHandler 桥接 LarkEventHandler → MessageAdapterCallback。
+// 入站事件链路：DAO WS adapter publish AOP 事件 → consumer/lark_inbound 异步消费
+// → adapt_lark 转换 → MessageAdapterCallback 投递上层。
 
 #[async_trait::async_trait]
 impl MessageInboundAdapter for LarkDalImpl {
@@ -618,12 +617,7 @@ impl MessageInboundAdapter for LarkDalImpl {
         }
 
         for (app_id, (_channel, credentials)) in by_app {
-            let handler = Arc::new(LarkAdapterHandler::new(&app_id, Some(callback.clone())));
-            if let Err(e) = self
-                .lark_dao
-                .start_event_listener(credentials, handler)
-                .await
-            {
+            if let Err(e) = self.lark_dao.start_event_listener(credentials).await {
                 // 单应用建连失败不阻塞其他应用
                 log_error!("lark adapter start failed for app_id={}: {}", app_id, e);
             }
@@ -650,62 +644,5 @@ impl MessageInboundAdapter for LarkDalImpl {
 
     fn is_running(&self) -> bool {
         self.running.read().map(|r| *r).unwrap_or(false)
-    }
-}
-
-/// LarkEventHandler → MessageAdapterCallback 桥接
-///
-/// 实现 `LarkEventHandler` trait，接收飞书原始事件，
-/// 调用 `LarkDalImpl.adapt_lark` 转换为 `AdaptedMessage`，
-/// 再通过 `MessageAdapterCallback` 投递到上层。
-///
-/// 每条 WS 连接一个 handler 实例，持有归属 app_id。
-struct LarkAdapterHandler {
-    app_id: String,
-    lark_dal: Arc<LarkDalImpl>,
-    callback: Option<Arc<dyn MessageAdapterCallback>>,
-}
-
-impl LarkAdapterHandler {
-    fn new(app_id: &str, callback: Option<Arc<dyn MessageAdapterCallback>>) -> Self {
-        // lark_dal 是全局单例，直接取单例保证存活（与注册中心生命周期一致）
-        let lark_dal = super::dal();
-        Self {
-            app_id: app_id.to_string(),
-            lark_dal,
-            callback,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl LarkEventHandler for LarkAdapterHandler {
-    async fn handle_message_event(&self, app_id: &str, event: LarkMessageEvent) -> Result<()> {
-        // 以连接归属 app_id 为准（DAO 回传值应与之一致）
-        let app_id = if app_id.is_empty() {
-            &self.app_id
-        } else {
-            app_id
-        };
-        let ctx = RequestContext::new_system();
-        let adapted = self
-            .lark_dal
-            .adapt_lark(ctx.clone(), app_id, &event)
-            .await?;
-
-        if let Some(msg) = adapted {
-            let callback = self
-                .callback
-                .clone()
-                .or_else(|| self.lark_dal.callback_or_none());
-            match callback {
-                Some(cb) => cb.on_message(msg).await?,
-                None => log_warn!(
-                    "lark adapter handler dropped message: no callback registered app_id={}",
-                    app_id
-                ),
-            }
-        }
-        Ok(())
     }
 }

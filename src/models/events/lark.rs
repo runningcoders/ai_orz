@@ -1,13 +1,15 @@
-//! 飞书事件订阅类型定义
+//! 飞书事件订阅类型定义（AOP 事件统一目录）
 //!
-//! 主要覆盖 `im.message.receive_v1` 事件结构（P2P 私信场景）。
+//! 覆盖 `im.message.receive_v1` 事件结构（P2P 私信场景）与 AOP 入站事件信封。
+//! 事件类型为纯数据（serde DTO + Event impl），归属 models 层；
+//! DAO 侧长连接 adapter 只负责收帧解析后 publish，消费在 `consumer/lark_inbound`。
 //! 字段参考：https://open.feishu.cn/document/event/im.message.receive_v1
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// `im.message.receive_v1` 事件顶层包装
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkMessageEvent {
     /// schema 版本
     #[serde(default)]
@@ -18,7 +20,7 @@ pub struct LarkMessageEvent {
     pub event: LarkMessageEventData,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkEventHeader {
     /// 事件唯一 ID（用于幂等去重）
     pub event_id: String,
@@ -37,13 +39,13 @@ pub struct LarkEventHeader {
     pub tenant_key: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkMessageEventData {
     pub sender: LarkEventSender,
     pub message: LarkEventMessage,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkEventSender {
     pub sender_id: LarkSenderId,
     /// 发送者 ID 类型，例如 "open_id"
@@ -51,7 +53,7 @@ pub struct LarkEventSender {
     pub sender_type: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkSenderId {
     /// 用户的 open_id（主要标识）
     #[serde(default)]
@@ -64,7 +66,7 @@ pub struct LarkSenderId {
     pub union_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkEventMessage {
     /// 消息 ID
     pub message_id: String,
@@ -96,10 +98,44 @@ pub struct LarkEventMessage {
     pub extra: Option<Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LarkTextContent {
     #[serde(default)]
     pub text: String,
+}
+
+// ==================== AOP 入站事件 ====================
+
+/// 飞书 WS 入站消息事件（AOP 信封）
+///
+/// DAO 侧长连接 adapter 收到 `im.message.receive_v1` 后 publish 此事件，
+/// 由业务 consumer（`ConsumeMode::Async`）异步消费——**读循环里不做业务**。
+/// 信封只携带协议数据（app_id + 原始事件），身份与业务语义由消费侧补全。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LarkInboundEvent {
+    /// 事件归属的飞书应用（多应用路由依据）
+    pub app_id: String,
+    /// 飞书原始事件
+    pub event: LarkMessageEvent,
+}
+
+impl crate::pkg::aop::Event for LarkInboundEvent {
+    fn kind(&self) -> crate::pkg::aop::EventKind {
+        crate::pkg::aop::EventKind::new("lark.inbound.message")
+    }
+
+    fn id(&self) -> &str {
+        &self.event.header.event_id
+    }
+
+    fn order_key(&self) -> &str {
+        // 同应用内按到达顺序串行处理；不同应用并行
+        &self.app_id
+    }
+
+    fn created_at(&self) -> i64 {
+        self.event.header.create_time.parse().unwrap_or(0)
+    }
 }
 
 impl LarkMessageEvent {
@@ -189,5 +225,30 @@ mod tests {
         let event: LarkMessageEvent = serde_json::from_str(&raw).unwrap();
         assert!(!event.is_text());
         assert_eq!(event.parse_text(), None);
+    }
+
+    /// AOP 信封：序列化回环 + Event 语义（kind/id/order_key/created_at）
+    #[test]
+    fn test_lark_inbound_event_roundtrip() {
+        use crate::pkg::aop::Event;
+        let inner: LarkMessageEvent = serde_json::from_str(P2P_TEXT_EVENT).unwrap();
+        let aop_event = LarkInboundEvent {
+            app_id: "cli_app".to_string(),
+            event: inner,
+        };
+        assert_eq!(
+            aop_event.kind(),
+            crate::pkg::aop::EventKind::new("lark.inbound.message")
+        );
+        assert_eq!(aop_event.id(), "evt_xxx");
+        assert_eq!(aop_event.order_key(), "cli_app");
+        assert_eq!(aop_event.created_at(), 1700000000000);
+
+        // Value 往返（AOP 队列以 serde_json::Value 传输）
+        let value = serde_json::to_value(&aop_event).unwrap();
+        let back: LarkInboundEvent = serde_json::from_value(value).unwrap();
+        assert_eq!(back.app_id, "cli_app");
+        assert_eq!(back.event.header.event_id, "evt_xxx");
+        assert_eq!(back.event.parse_text(), Some("你好".to_string()));
     }
 }

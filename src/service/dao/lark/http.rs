@@ -9,10 +9,10 @@
 //! 均由调用方（DAL 层）传入已解析的 `LarkAppCredentials`，DAO 不做凭证解析。
 
 use super::error::{LarkResponse, from_reqwest, validate_config};
-use super::event::LarkMessageEvent;
 use super::token::{SharedTokenCache, shared as shared_token_cache};
 use super::ws::{WsState, WsTokenSource};
-use super::{LarkAppCredentials, LarkDao, LarkEventHandler};
+use super::{LarkAppCredentials, LarkDao};
+use crate::models::events::LarkMessageEvent;
 use crate::models::message::Message;
 use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
@@ -313,11 +313,7 @@ impl LarkDao for LarkDaoHttpImpl {
         Ok(())
     }
 
-    async fn start_event_listener(
-        &self,
-        credentials: LarkAppCredentials,
-        handler: Arc<dyn LarkEventHandler>,
-    ) -> Result<()> {
+    async fn start_event_listener(&self, credentials: LarkAppCredentials) -> Result<()> {
         validate_config(&credentials.app_id, &credentials.app_secret)?;
 
         // 幂等：已连接直接返回
@@ -350,8 +346,7 @@ impl LarkDao for LarkDaoHttpImpl {
 
         let app_id = credentials.app_id.clone();
         let state =
-            super::ws::start_event_loop(self.http.clone(), app_id.clone(), token_source, handler)
-                .await?;
+            super::ws::start_event_loop(self.http.clone(), app_id.clone(), token_source).await?;
 
         conns.insert(app_id.clone(), state);
         log_info!("lark event listener started for app_id={}", app_id);

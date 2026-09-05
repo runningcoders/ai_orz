@@ -20,16 +20,13 @@ use crate::pkg::RequestContext;
 use common::api::LarkWsMetrics;
 use common::error::{Result, err};
 use common::models::{CredentialDetail, CredentialKind};
-use std::sync::Arc;
 
 pub mod error;
-pub mod event;
 pub mod http;
 pub mod token;
 pub mod ws;
 
 pub use error::{LarkResponse, LarkWsError};
-pub use event::{LarkMessageEvent, LarkTextContent};
 pub use token::SharedTokenCache;
 
 /// 飞书自建应用凭证（轻量结构，由渠道配置构造）
@@ -95,26 +92,6 @@ pub fn resolve_lark_credentials(
     })
 }
 
-/// 飞书事件处理器 trait
-///
-/// 由外部消息适配层（adapter）实现，DAO 通过 trait 回调通知 adapter，
-/// 避免 DAO 反向依赖 Domain 层。
-#[async_trait::async_trait]
-pub trait LarkEventHandler: Send + Sync {
-    /// 处理飞书消息事件
-    ///
-    /// # 参数
-    /// - `app_id`: 事件归属的飞书应用（多应用路由依据）
-    /// - `event`: 飞书消息事件
-    ///
-    /// 实现方负责：
-    /// - 过滤事件（仅处理 P2P 文本消息）
-    /// - 按 app_id + open_id 查找归属渠道
-    /// - 路由到目标 Agent
-    /// - 投递内部消息
-    async fn handle_message_event(&self, app_id: &str, event: LarkMessageEvent) -> Result<()>;
-}
-
 /// 飞书渠道 DAO 接口
 ///
 /// 职责：
@@ -125,6 +102,7 @@ pub trait LarkEventHandler: Send + Sync {
 ///
 /// 分层约束：DAO 不依赖其他 DAO，凭证解析归 DAL 层（见 `dal::message_channel`），
 /// 本 DAO 只接收已解析的 `LarkAppCredentials` 执行出站调用。
+/// 入站事件经 AOP 事件总线（`LarkInboundEvent`）二次分发，DAO 不回调任何业务方。
 #[async_trait::async_trait]
 pub trait LarkDao: Send + Sync {
     /// 推送消息到飞书用户
@@ -153,13 +131,9 @@ pub trait LarkDao: Send + Sync {
 
     /// 启动指定应用的飞书事件监听（WebSocket 长连接）
     ///
-    /// `handler` 由 adapter 层注入，DAO 通过 trait 回调通知，不依赖 Domain 层。
+    /// 入站事件经 AOP 事件总线分发（`LarkInboundEvent`）。
     /// 按 app_id 去重：已连接时幂等返回 Ok。
-    async fn start_event_listener(
-        &self,
-        credentials: LarkAppCredentials,
-        handler: Arc<dyn LarkEventHandler>,
-    ) -> Result<()>;
+    async fn start_event_listener(&self, credentials: LarkAppCredentials) -> Result<()>;
 
     /// 停止指定应用的事件监听
     ///

@@ -9,8 +9,9 @@
 //! [`LarkDal`] 组合两个子 trait，供同时消费两个面的调用方（finance domain）
 //! 以 `Arc<dyn LarkDal>` 持有。
 //!
-//! 入站适配段（`adapt_lark` / `MessageInboundAdapter` / `LarkAdapterHandler`）
-//! 留在 impl.rs：已通过 pkg `MessageInboundAdapter` trait 暴露，不建新口。
+//! 入站适配段（`adapt_lark` / `MessageInboundAdapter`）留在 impl.rs：
+//! 已通过 pkg `MessageInboundAdapter` trait 暴露，不建新口；
+//! 事件投递由 DAO 侧 publish AOP 事件，消费在 `consumer/lark_inbound`。
 //!
 //! # 多应用模型
 //!

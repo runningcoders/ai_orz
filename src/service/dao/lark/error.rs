@@ -104,11 +104,6 @@ pub fn from_serde(op: &str, e: serde_json::Error) -> Error {
     err!(ThirdPartyError, "lark {} parse error: {}", op, e)
 }
 
-/// 将 tokio_tungstenite 错误转换为 ai_orz Error
-pub fn from_ws(op: &str, e: tokio_tungstenite::tungstenite::Error) -> Error {
-    err!(ThirdPartyError, "lark {} ws error: {}", op, e)
-}
-
 /// 凭证未配置错误便捷构造
 pub fn missing_credentials() -> Error {
     err!(
