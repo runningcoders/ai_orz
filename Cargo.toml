@@ -17,7 +17,7 @@ autobenches = false
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "ws"] }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -198,6 +198,10 @@ path = "tests/integration/federation_a2a_test.rs"
 [[test]]
 name = "federation_delegation_test"
 path = "tests/integration/federation_delegation_test.rs"
+
+[[test]]
+name = "federation_ws_test"
+path = "tests/integration/federation_ws_test.rs"
 
 [features]
 # 预留 feature flags - 暂不启用，直接默认启用纯 Rust InMemoryVectorStore

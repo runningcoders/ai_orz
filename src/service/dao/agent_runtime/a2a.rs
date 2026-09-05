@@ -400,7 +400,7 @@ pub async fn execute_federated_agent_call(
 /// A2A 协议的 tasks/send 返回 Task 对象，包含 messages 数组，
 /// 每个 message 有 parts 数组，每个 part 可能是 text 类型。
 /// 我们提取所有 assistant role 的 text part 内容并拼接。
-fn extract_text_from_task_result(result: &Value) -> Option<String> {
+pub(crate) fn extract_text_from_task_result(result: &Value) -> Option<String> {
     let task: common::api::a2a::A2aTask = serde_json::from_value(result.clone()).ok()?;
 
     let mut texts = Vec::new();

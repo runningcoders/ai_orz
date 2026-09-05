@@ -17,6 +17,7 @@
 //! ```
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -33,6 +34,25 @@ const BACKOFF_INITIAL: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// 心跳间隔（低于常见企业代理 60s idle timeout）
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+pub mod server;
+
+pub use server::{WsServerHandler, serve as serve_server};
+
+// ==================== 帧发送句柄 ====================
+
+/// 帧发送句柄：pkg 内部连接（client/server）对外的统一出站接口
+///
+/// 联邦出站 consumer 据此向对端 push 帧；实现方负责串行化写端。
+#[async_trait]
+pub trait FrameTx: Send + Sync {
+    /// 发送一帧文本
+    async fn send_text(&self, text: String) -> Result<()>;
+    /// 关闭连接
+    async fn close(&self) -> Result<()>;
+    /// 连接是否仍然存活（尽力判断：写端未关闭即视为存活）
+    fn is_alive(&self) -> bool;
+}
 
 // ==================== 适配器 trait ====================
 
@@ -67,6 +87,12 @@ pub trait WsClientAdapter: Send + Sync {
     /// 应用层心跳帧内容；返回 None 时 pkg 发协议级 Ping 控制帧
     fn heartbeat_frame(&self) -> Option<String> {
         None
+    }
+
+    /// 握手请求自定义 header（如联邦 `Authorization: Bearer` 凭证）。
+    /// 每次建连/重连都会调用——重连即重新握手鉴权（P0 红线）。
+    fn handshake_headers(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
     }
 }
 
@@ -117,7 +143,8 @@ impl WsConnState {
 
 /// WebSocket 客户端运行时状态
 ///
-/// 持有 supervisor 任务句柄与关闭信号，用于优雅关闭。
+/// 持有 supervisor 任务句柄与关闭信号，用于优雅关闭；
+/// 并暴露当前连接的出站句柄（重连后自动切换到新连接）。
 pub struct WsClientState {
     /// supervisor 任务句柄（内含退避重连循环）
     supervisor_handle: JoinHandle<()>,
@@ -125,12 +152,43 @@ pub struct WsClientState {
     shutdown_tx: tokio::sync::watch::Sender<bool>,
     /// 共享连接状态（监控快照读取入口）
     conn_state: Arc<RwLock<WsConnState>>,
+    /// 当前连接的出站句柄（每次建连更新，断开置空）
+    tx: Arc<RwLock<Option<Arc<dyn FrameTx>>>>,
 }
 
 impl WsClientState {
     /// 读取当前连接状态快照
     pub async fn conn_state_snapshot(&self) -> WsConnState {
         self.conn_state.read().await.clone()
+    }
+
+    /// 当前连接是否可用（有活连接且写端存活）
+    pub async fn is_connected(&self) -> bool {
+        self.tx
+            .read()
+            .await
+            .as_ref()
+            .map(|t| t.is_alive())
+            .unwrap_or(false)
+    }
+
+    /// 同步尽力判断连接是否可用（`try_read` 锁被占用时返回 false）
+    ///
+    /// 供 `FrameTx::is_alive` 等同步上下文调用。
+    pub fn try_is_connected(&self) -> bool {
+        self.tx
+            .try_read()
+            .map(|guard| guard.as_ref().map(|t| t.is_alive()).unwrap_or(false))
+            .unwrap_or(false)
+    }
+
+    /// 向当前连接发送一帧文本（无活连接时报错，由调用方决定回退策略）
+    pub async fn send_text(&self, text: String) -> Result<()> {
+        let tx = self.tx.read().await.clone();
+        match tx {
+            Some(tx) if tx.is_alive() => tx.send_text(text).await,
+            _ => Err(err!(ThirdPartyError, "ws client not connected")),
+        }
     }
 }
 
@@ -164,9 +222,11 @@ pub fn next_backoff(current: Option<Duration>) -> Duration {
 pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientState> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let conn_state = Arc::new(RwLock::new(WsConnState::new()));
+    let tx: Arc<RwLock<Option<Arc<dyn FrameTx>>>> = Arc::new(RwLock::new(None));
 
     let supervisor_handle = tokio::spawn({
         let conn_state = conn_state.clone();
+        let tx_slot = tx.clone();
         async move {
             let name = adapter.name().to_string();
             let mut backoff: Option<Duration> = None;
@@ -175,9 +235,13 @@ pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientS
                 if *shutdown_rx.borrow() {
                     break;
                 }
-                let exit =
-                    run_connection_once(adapter.clone(), conn_state.clone(), shutdown_rx.clone())
-                        .await;
+                let exit = run_connection_once(
+                    adapter.clone(),
+                    conn_state.clone(),
+                    tx_slot.clone(),
+                    shutdown_rx.clone(),
+                )
+                .await;
                 let exit = match exit {
                     Ok(exit) => exit,
                     Err(e) => {
@@ -217,6 +281,7 @@ pub async fn start_client(adapter: Arc<dyn WsClientAdapter>) -> Result<WsClientS
         supervisor_handle,
         shutdown_tx,
         conn_state,
+        tx,
     })
 }
 
@@ -228,6 +293,13 @@ pub async fn stop_client(state: WsClientState) {
     log_info!("ws client stopped");
 }
 
+/// 停止 Arc 持有的客户端（联邦拨号等共享句柄场景）
+pub async fn stop_client_shared(state: Arc<WsClientState>) {
+    let _ = state.shutdown_tx.send(true);
+    // supervisor 退出后 Arc 归零；若他处仍持有则等待退出信号生效即可
+    log_info!("ws client stop requested");
+}
+
 // ==================== 单次连接生命周期 ====================
 
 /// 单次连接生命周期：取端点 → 建连 → 心跳 + recv
@@ -236,6 +308,7 @@ pub async fn stop_client(state: WsClientState) {
 async fn run_connection_once(
     adapter: Arc<dyn WsClientAdapter>,
     conn_state: Arc<RwLock<WsConnState>>,
+    tx_slot: Arc<RwLock<Option<Arc<dyn FrameTx>>>>,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<ConnExit> {
     let name = adapter.name();
@@ -245,8 +318,18 @@ async fn run_connection_once(
     let ws_url = adapter.endpoint().await?;
     log_info!("{} ws connecting to endpoint", name);
 
-    // 2. 建立 WebSocket 连接
-    let (ws_stream, _response) = tokio_tungstenite::connect_async(&ws_url)
+    // 2. 建立 WebSocket 连接（注入握手 header——重连即重新握手鉴权）
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let mut request: tokio_tungstenite::tungstenite::handshake::client::Request = ws_url
+        .into_client_request()
+        .map_err(|e| err!(ThirdPartyError, "{} ws invalid request url: {}", name, e))?;
+    for (key, value) in adapter.handshake_headers() {
+        let header_value = value
+            .parse::<axum::http::HeaderValue>()
+            .map_err(|e| err!(ThirdPartyError, "{} ws invalid header {}: {}", name, key, e))?;
+        request.headers_mut().insert(key, header_value);
+    }
+    let (ws_stream, _response) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| err!(ThirdPartyError, "{} ws connect error: {}", name, e))?;
     {
@@ -258,6 +341,13 @@ async fn run_connection_once(
 
     let (write, mut read) = ws_stream.split();
     let write = Arc::new(Mutex::new(write));
+
+    // 注册出站句柄（出站 push 用；断开时清空）
+    let client_tx: Arc<dyn FrameTx> = Arc::new(ClientFrameTx {
+        write: write.clone(),
+        closed: AtomicBool::new(false),
+    });
+    *tx_slot.write().await = Some(client_tx.clone());
 
     // 3. 心跳任务：adapter 提供应用层帧；否则发协议级 Ping
     let heartbeat_write = write.clone();
@@ -325,15 +415,49 @@ async fn run_connection_once(
         }
     }
 
-    // 关闭 write 端并等待心跳任务退出
+    // 关闭 write 端并等待心跳任务退出；清空出站句柄
+    let _ = client_tx.close().await;
     {
         let mut w = write.lock().await;
         let _ = w.close().await;
     }
     heartbeat_handle.abort();
     let _ = heartbeat_handle.await;
+    *tx_slot.write().await = None;
     log_info!("{} ws connection exited", name);
     Ok(exit)
+}
+
+/// client 端帧发送句柄（内部包 tungstenite 写端）
+type TungsteniteSink = futures_util::stream::SplitSink<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    Message,
+>;
+
+struct ClientFrameTx {
+    write: Arc<Mutex<TungsteniteSink>>,
+    closed: AtomicBool,
+}
+
+#[async_trait]
+impl FrameTx for ClientFrameTx {
+    async fn send_text(&self, text: String) -> Result<()> {
+        let mut w = self.write.lock().await;
+        w.send(Message::Text(text))
+            .await
+            .map_err(|e| err!(ThirdPartyError, "ws send error: {}", e))
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.closed.store(true, Ordering::SeqCst);
+        let mut w = self.write.lock().await;
+        let _ = w.close().await;
+        Ok(())
+    }
+
+    fn is_alive(&self) -> bool {
+        !self.closed.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]

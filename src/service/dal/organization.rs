@@ -4,14 +4,19 @@
 //! 注意：User 相关操作已移至 User DAL，跨领域编排在 Domain 层完成
 
 use crate::models::events::OrganizationChangedEvent;
+use crate::models::events::federation::FEDERATION_CMD_SEND_TASK;
 use crate::models::organization::OrganizationPo;
 use crate::models::organization_link::OrganizationLinkPo;
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
-use crate::service::dao::agent_runtime::a2a::{FederatedCallConfig, execute_federated_agent_call};
+use crate::service::dao::agent_runtime::a2a::{
+    FederatedCallConfig, execute_federated_agent_call, extract_text_from_task_result,
+};
 use crate::service::dao::organization;
 use crate::service::dao::organization::{OrganizationDao, OrganizationQuery, PeerOrgUpsert};
+use crate::service::dao::organization_link::ws;
 use common::api::OrganizationConfig;
+use common::api::a2a::{A2aMessage, A2aMessagePart, SendTaskParams};
 use common::error::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -330,6 +335,24 @@ impl OrganizationDal for OrganizationDalImpl {
         // P7：出站前解析对端首选可达地址（内网优先探测 + TTL 缓存，
         // 无自报地址时原样返回 link.endpoint）
         let endpoint = self.resolve_peer_endpoint(ctx.clone(), link).await;
+
+        // P8 call_peer facade：WS 优先——有活连接走长连接请求-响应（零额外
+        // 握手开销）；无活连接时后台 best-effort 拨号（本次仍走 HTTP，连接
+        // 建立后后续调用自动升级 WS）。业务侧对通道零感知。
+        if let Some(reply) = self
+            .try_send_over_ws(
+                ctx.clone(),
+                link,
+                peer_agent_id,
+                prompt,
+                caller_declaration.clone(),
+                &endpoint,
+            )
+            .await
+        {
+            return reply;
+        }
+
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 FEDERATED_CALL_DEADLINE_SECS + 5,
@@ -349,8 +372,145 @@ impl OrganizationDal for OrganizationDalImpl {
             "federated_agent_task",
             peer_org = link.peer_org_id,
             peer_agent = peer_agent_id,
+            channel = "http",
             "联邦委派完成",
         );
         Ok(reply)
+    }
+}
+
+impl OrganizationDalImpl {
+    /// P8 `call_peer` 通道选择：WS 活连接则经长连接发 send_task 并等待响应
+    ///
+    /// 返回 `None` = 无活连接（或 WS 失败），调用方回退 HTTP 路径；
+    /// 返回 `Some(result)` = 已完成（成功或带错误），不再回退。
+    async fn try_send_over_ws(
+        &self,
+        ctx: RequestContext,
+        link: &OrganizationLinkPo,
+        peer_agent_id: &str,
+        prompt: &str,
+        caller_declaration: Option<String>,
+        resolved_endpoint: &str,
+    ) -> Option<Result<String>> {
+        let peer_org = link.peer_org_id.clone();
+        if !ws::registry().connected(&peer_org) {
+            self.spawn_background_dial(ctx, link, caller_declaration, resolved_endpoint);
+            return None;
+        }
+
+        // 与 HTTP 路径完全相同的参数形状（对端 consumer 反序列化同一 DTO）
+        let task_id = uuid::Uuid::now_v7().to_string();
+        let params = SendTaskParams {
+            id: task_id.clone(),
+            message: A2aMessage {
+                role: "user".to_string(),
+                parts: vec![A2aMessagePart::Text {
+                    text: prompt.to_string(),
+                }],
+                message_id: None,
+                task_id: Some(task_id),
+            },
+            session_id: None,
+            metadata: None,
+            notification_url: None,
+        };
+        let payload = match serde_json::to_value(&params) {
+            Ok(v) => v,
+            Err(e) => {
+                return Some(Err(common::error::Error::internal(format!(
+                    "federation ws params serialize failed: {}",
+                    e
+                ))));
+            }
+        };
+        let correlation_id = uuid::Uuid::now_v7().to_string();
+
+        match ws::request_over_ws(
+            &peer_org,
+            FEDERATION_CMD_SEND_TASK,
+            correlation_id.clone(),
+            payload,
+        )
+        .await
+        {
+            Ok(reply) => {
+                log_info!(
+                    &ctx,
+                    "federated_agent_task",
+                    peer_org = peer_org,
+                    peer_agent = peer_agent_id,
+                    channel = "ws",
+                    "联邦委派完成",
+                );
+                Some(Self::parse_ws_send_response(reply))
+            }
+            Err(e) => {
+                // WS 通道失败（超时/连接断开）：告警并回退 HTTP
+                log_warn!(
+                    "federation ws send_task failed (fall back to http): peer={} correlation_id={} err={}",
+                    peer_org,
+                    correlation_id,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// 解析对端 send_task 响应负载 `{"ok":bool,"task":...,"error":...}`
+    fn parse_ws_send_response(reply: serde_json::Value) -> Result<String> {
+        let ok = reply.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let msg = reply
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("peer returned unknown error");
+            return Err(common::err!(
+                ThirdPartyError,
+                "federation peer rejected send_task: {}",
+                msg
+            ));
+        }
+        let task = reply
+            .get("task")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        Ok(extract_text_from_task_result(&task).unwrap_or_else(|| task.to_string()))
+    }
+
+    /// 后台 best-effort 拨号（防重入；失败仅告警，不影响本次 HTTP 委派）
+    fn spawn_background_dial(
+        &self,
+        ctx: RequestContext,
+        link: &OrganizationLinkPo,
+        caller_declaration: Option<String>,
+        resolved_endpoint: &str,
+    ) {
+        let peer_org = link.peer_org_id.clone();
+        if !ws::registry().try_mark_dialing(&peer_org) {
+            return; // 已有拨号在途
+        }
+        let url = ws::ws_url_from_base(resolved_endpoint);
+        let token = link.access_token.clone();
+        let link_local_org = link.local_org_id.clone();
+        log_info!(
+            &ctx,
+            "federation_ws_dial",
+            peer_org = peer_org,
+            "后台拨号联邦长连接",
+        );
+        tokio::spawn(async move {
+            if let Err(e) =
+                ws::dial_peer(&link_local_org, &peer_org, url, token, caller_declaration).await
+            {
+                log_warn!(
+                    "federation ws background dial failed: peer={} err={}",
+                    peer_org,
+                    e
+                );
+            }
+            ws::registry().clear_dialing(&peer_org);
+        });
     }
 }

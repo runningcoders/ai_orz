@@ -2,6 +2,7 @@ pub mod a2a_task_update;
 pub mod agent_loop;
 pub mod agent_state;
 pub mod cron_trigger;
+pub mod federation;
 pub mod lark;
 pub mod message;
 pub mod organization;
@@ -16,6 +17,10 @@ pub use a2a_task_update::{
 pub use agent_loop::AgentLoopEvent;
 pub use agent_state::AgentStateEvent;
 pub use cron_trigger::CronTriggerEvent;
+pub use federation::{
+    FEDERATION_CMD_RESPONSE, FEDERATION_CMD_SEND_TASK, FederationFrame, FederationInboundEvent,
+    FederationOutboundEvent,
+};
 pub use lark::{LarkInboundEvent, LarkMessageEvent, LarkTextContent};
 pub use message::MessageCreatedEvent;
 pub use organization::OrganizationChangedEvent;

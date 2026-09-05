@@ -177,6 +177,11 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
                 }),
             ),
         )
+        // 组网：联邦 WS 长连接（机器侧，握手凭证鉴权一次，连接双向复用；P8）
+        .route(
+            "/api/v1/organization/links/ws",
+            get(handlers::organization::links::federation_ws_handler),
+        )
         .route("/health", get(handlers::health::health))
         // API Notice 日志：请求结束时打印 method/path/status/duration + 请求/响应体预览
         // （仅覆盖上面已注册的接口路由；必须加在 fallback_service 之前，静态资源不打）

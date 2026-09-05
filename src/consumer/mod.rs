@@ -2,6 +2,8 @@ pub mod agent_loop_consumer;
 pub mod aop_stats_collector;
 pub mod aop_stats_hook;
 pub mod federation_directory;
+pub mod federation_inbound_task;
+pub mod federation_ws_outbound;
 pub mod lark_inbound;
 pub mod message;
 pub mod scheduler;
@@ -39,6 +41,12 @@ pub async fn init() -> Result<()> {
     aop::registry().register_consumer(Arc::new(task_event_consumer::TaskEventConsumer::new()))?;
     aop::registry().register_consumer(Arc::new(
         federation_directory::FederationDirectoryConsumer::new(),
+    ))?;
+    aop::registry().register_consumer(Arc::new(
+        federation_inbound_task::FederationInboundTaskConsumer::new(),
+    ))?;
+    aop::registry().register_consumer(Arc::new(
+        federation_ws_outbound::FederationWsOutboundConsumer::new(),
     ))?;
 
     sys_info!("all business consumers registered");
