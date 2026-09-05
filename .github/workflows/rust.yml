@@ -12,6 +12,11 @@ env:
   # sccache 与 incremental compilation 互斥，禁用 incremental 让 sccache 完全接管缓存
   # sccache 按内容寻址，相同 RUSTFLAGS 的编译结果跨 CI run 共享
   CARGO_INCREMENTAL: 0
+  # CI 磁盘红线：ubuntu-latest 可用空间 ~20GB，而 12+ 个集成测试二进制各自
+  # 静态链接全量依赖（duckdb/lance/ort），debug=2 下每个 1-2GB，必然撑爆磁盘
+  #（runner 磁盘满 → rustc exit 1 → 集成测试「编译错误」假象）。
+  # test 产物去掉 debuginfo 后每个降到 ~百 MB；仅作用于 CI，本地开发不受影响
+  CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
   # ===== 1. 格式检查（最快，独立 job，秒级返回）=====
@@ -86,6 +91,14 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    # 腾出预装 SDK 占用的 ~15GB（android ~9G / ghc ~2.5G / dotnet ~2G / CodeQL ~1.5G），
+    # 供 sccache 缓存 + 全量 test 二进制使用；必须在 cache restore 之前执行
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet /opt/hostedtoolcache/CodeQL || true
+        sudo docker image prune -af >/dev/null 2>&1 || true
+        df -h /
+
     # libprotobuf-dev 提供 well-known types（google/protobuf/*.proto），
     # --no-install-recommends 下必须显式安装，否则 lance-encoding build script 报 empty.proto not found
     - name: Install protoc (for lancedb dependency)
@@ -140,6 +153,13 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    # 同 backend：cache restore 前腾出预装 SDK 的 ~15GB（曾因磁盘满导致 runner 自身写日志失败）
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet /opt/hostedtoolcache/CodeQL || true
+        sudo docker image prune -af >/dev/null 2>&1 || true
+        df -h /
+
     - name: Install wasm32 target and clippy
       run: rustup target add wasm32-unknown-unknown && rustup component add clippy
 
@@ -151,13 +171,15 @@ jobs:
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
         echo "SCCACHE_DIR=$HOME/.cache/sccache" >> $GITHUB_ENV
 
+    # 独立于 backend 的 sccache key：避免 restore backend 全量依赖缓存（duckdb/lance/ort
+    # 的 C++ 产物，可达 ~10G 上限）——frontend 是 wasm target，命中不了那些条目，纯属白占磁盘
     - name: Cache sccache
       uses: actions/cache@v5
       with:
         path: ~/.cache/sccache
-        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        key: sccache-frontend-${{ runner.os }}-${{ hashFiles('frontend/Cargo.toml', 'Cargo.lock') }}
         restore-keys: |
-          sccache-${{ runner.os }}-
+          sccache-frontend-${{ runner.os }}-
 
     - name: Start sccache server
       run: sccache --start-server || true
@@ -190,6 +212,13 @@ jobs:
       FAIL_UNDER: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 45 || 38 }}
     steps:
     - uses: actions/checkout@v5
+
+    # 同 backend：cache restore 前腾出预装 SDK 的 ~15GB；llvm-cov 的 profile 产物同样巨大
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet /opt/hostedtoolcache/CodeQL || true
+        sudo docker image prune -af >/dev/null 2>&1 || true
+        df -h /
 
     # libprotobuf-dev 提供 well-known types（google/protobuf/*.proto），
     # --no-install-recommends 下必须显式安装，否则 lance-encoding build script 报 empty.proto not found

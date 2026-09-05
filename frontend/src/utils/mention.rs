@@ -13,8 +13,7 @@
 
 pub use common::mention::{
     MentionKind, MentionQuery, MentionRef, apply_mention_pick, detect_mention_query,
-    format_mention, format_mention_ref, parse_mention_dest, remove_mention_token,
-    resolve_display_name,
+    format_mention_ref, parse_mention_dest, remove_mention_token, resolve_display_name,
 };
 
 use pulldown_cmark::{Event, Tag, TagEnd};
@@ -221,7 +220,8 @@ mod tests {
     #[test]
     fn reexports_match_common_protocol() {
         // 前端转发与 common 协议保持同源：拼装出来的语法能被解析还原
-        let token = format_mention(MentionKind::Project, "prj_1", "平台");
+        // （format_mention 仅有本测试使用，不进 pub use 转发面，避免 bin 构建未用导入）
+        let token = common::mention::format_mention(MentionKind::Project, "prj_1", "平台");
         let parsed = token
             .split_once("](")
             .and_then(|(_, dest)| parse_mention_dest(dest.trim_end_matches(')')));
