@@ -25,6 +25,15 @@
 - [common/src/enums/user.rs](common/src/enums/user.rs)
 - [migrations/20260420000000_initial.sql](migrations/20260420000000_initial.sql)
 - [docs/organization_design.md](docs/organization_design.md)
+- [src/service/dao/organization_link/mod.rs](src/service/dao/organization_link/mod.rs)
+- [src/service/dao/organization_pairing/mod.rs](src/service/dao/organization_pairing/mod.rs)
+- [src/models/organization_link.rs](src/models/organization_link.rs)
+- [src/models/organization_pairing_code.rs](src/models/organization_pairing_code.rs)
+- [src/handlers/organization/links/mod.rs](src/handlers/organization/links/mod.rs)
+- [docs/plan/组织组网与去中心化联邦方案.md](docs/plan/组织组网与去中心化联邦方案.md)
+- 【④ RAG 知识卡】[联邦组网地基](docs/wiki/knowledge/zh/联邦组网地基：scope%20三态%20+%20organization_links%20+%20pairing_code%20+%20目录同步%20+%20WS%20长连接/联邦组网地基：scope%20三态%20+%20organization_links%20+%20pairing_code%20+%20目录同步%20+%20WS%20长连接.md)
+- 【关联长文】[组织组网与联邦](docs/wiki/zh/content/功能模块/用户与组织管理/组织组网与联邦.md)
+- **2026-09-05 更新摘要**：OrganizationManage trait 联邦扩展——issue/verify/create_link + push_directory_to_peers + reconcile_directories。shadow upsert 静默写入 PeerOrgUpsert（不发事件）与普通 create_organization（发事件）严格分离。
 </cite>
 
 ## 目录

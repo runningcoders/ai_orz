@@ -15,6 +15,13 @@
 - [common/src/config.rs](common/src/config.rs)
 - [docs/archive/design-archive/a2a_server_design.md](docs/archive/design-archive/a2a_server_design.md)
 - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
+- [src/middleware/a2a_auth.rs](src/middleware/a2a_auth.rs)
+- [src/middleware/federation_identity.rs](src/middleware/federation_identity.rs)
+- [common/src/constants/http_header.rs](common/src/constants/http_header.rs)
+- [docs/plan/跨组织业务调用方案.md](docs/plan/跨组织业务调用方案.md)
+- 【④ RAG 知识卡】[跨组织业务调用鉴权模型](docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode%20auth%20+%20federation_identity%20+%20delegation%20+%20audit%20+%20capabilities/跨组织业务调用鉴权模型：dual-mode%20auth%20+%20federation_identity%20+%20delegation%20+%20audit%20+%20capabilities.md)
+- 【关联长文】[跨组织业务调用鉴权](docs/wiki/zh/content/功能模块/用户与组织管理/跨组织业务调用鉴权.md)
+- **2026-09-05 更新摘要**：/a2a 入口新增双模鉴权——本地 JWT 或建联对端 link access_token Bearer + X-Federation-Caller 声明头。federation_identity 纯函数负责身份解析，一条逻辑服务 HTTP 和 WS 两条链路。
 </cite>
 
 ## 目录
