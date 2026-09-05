@@ -31,6 +31,7 @@ use common::error::{Result, err};
 use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// 豆包搜索 API 端点
@@ -285,11 +286,36 @@ pub struct DoubaoSearchCoreTool {
     po: ToolPo,
     /// check 注入的豆包 API key（None → api_key_missing 引导）
     api_key: Option<String>,
+    /// 共享 HTTP 客户端：首次调用时惰性构建，避免每次调用新建连接池
+    http: OnceLock<reqwest::Client>,
 }
 
 impl DoubaoSearchCoreTool {
     fn new(po: ToolPo) -> Self {
-        Self { po, api_key: None }
+        Self {
+            po,
+            api_key: None,
+            http: OnceLock::new(),
+        }
+    }
+
+    /// 取（或惰性构建）共享 HTTP 客户端
+    ///
+    /// 超时取工具 PO config，缺省 DEFAULT_TIMEOUT_MS；非法值由 http 基建收敛。
+    fn http_client(&self) -> Result<&reqwest::Client> {
+        if let Some(client) = self.http.get() {
+            return Ok(client);
+        }
+        let timeout_ms = self
+            .po
+            .config
+            .get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(DEFAULT_TIMEOUT_MS);
+        let client =
+            crate::pkg::http::presets::with_timeout(Some(Duration::from_millis(timeout_ms)))
+                .build()?;
+        Ok(self.http.get_or_init(|| client))
     }
 }
 
@@ -433,18 +459,8 @@ impl CoreTool for DoubaoSearchCoreTool {
             query_control,
         };
 
-        let timeout_ms = self
-            .po
-            .config
-            .get("timeout_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(DEFAULT_TIMEOUT_MS);
-        let timeout = Duration::from_millis(timeout_ms);
-        let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .build()
-            .map_err(|e| anyhow!("failed to build http client: {}", e))
-            .map_err(common::error::Error::from)?;
+        // 共享客户端；超时在 http_client 内按 PO config 解析
+        let client = self.http_client()?;
         let response = client
             .post(DOUBAO_SEARCH_URL)
             .bearer_auth(&api_key)

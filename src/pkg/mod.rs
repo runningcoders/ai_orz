@@ -7,6 +7,7 @@ pub mod cron;
 pub mod crypto;
 pub mod daily_jsonl;
 pub mod external;
+pub mod http;
 pub mod jwt;
 pub mod lark_integration;
 pub mod logging;

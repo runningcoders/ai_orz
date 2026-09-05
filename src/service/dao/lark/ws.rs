@@ -247,7 +247,9 @@ mod tests {
     #[test]
     fn heartbeat_frame_is_app_layer_ping() {
         let adapter = LarkWsAdapter {
-            http: reqwest::Client::new(),
+            http: crate::pkg::http::presets::outbound()
+                .build()
+                .expect("构建测试 HTTP 客户端失败"),
             app_id: "app".to_string(),
             token_source: Arc::new(NoopTokenSource),
         };

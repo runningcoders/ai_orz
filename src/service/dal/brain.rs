@@ -31,7 +31,10 @@ pub fn dal() -> Arc<dyn BrainDal> {
 
 /// 初始化 Brain DAL
 pub fn init() {
-    let http_client = reqwest::Client::new();
+    // 此前为 `reqwest::Client::new()`（无超时）；构造职责收敛到 http 基建
+    let http_client = crate::pkg::http::presets::outbound()
+        .build()
+        .expect("构建 Brain HTTP 客户端失败");
     let _ = BRAIN_DAL.set(new(
         crate::service::dao::tool_call::dao(),
         crate::service::dao::model_provider::dao(),

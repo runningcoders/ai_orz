@@ -64,7 +64,10 @@ pub struct LarkDaoHttpImpl {
 impl LarkDaoHttpImpl {
     pub fn new() -> Self {
         Self {
-            http: reqwest::Client::new(),
+            // 此前为 `reqwest::Client::new()`（无超时）：网络抖动时 token/消息请求会永久挂起
+            http: crate::pkg::http::presets::outbound()
+                .build()
+                .expect("构建飞书 HTTP 客户端失败"),
             token_caches: Arc::new(RwLock::new(HashMap::new())),
             ws_conns: RwLock::new(HashMap::new()),
         }

@@ -7,6 +7,7 @@
 //! into an executable `HttpCoreTool`.
 
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::http::presets;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_security::*;
 use anyhow::anyhow;
@@ -14,7 +15,7 @@ use async_trait::async_trait;
 use common::err;
 use common::error::Result;
 use reqwest::header::{HeaderName, HeaderValue};
-use reqwest::{Method, Url, redirect};
+use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::str::FromStr;
@@ -197,11 +198,7 @@ async fn execute_http_call(
         .ok_or_else(|| anyhow!("http url host is required"))
         .map_err(Into::<common::error::Error>::into)
         .map(|s| s.to_string())?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(timeout_ms(config)?))
-        .redirect(redirect::Policy::none())
-        .no_proxy()
-        .resolve_to_addrs(&host, &pinned_addresses)
+    let client = presets::ssrf_guarded(host, pinned_addresses, timeout(config)?)
         .build()
         .map_err(|e| {
             common::error::Error::new(common::error::ErrorCode::NetworkError, e.to_string())
@@ -455,7 +452,7 @@ fn validate_config(config: &HttpToolConfig) -> Result<()> {
     validate_body_template(config.body.as_ref())?;
     validate_allowed_status_codes(config.allowed_status_codes.as_ref())?;
     validate_response_json_pointer(config.response_json_pointer.as_deref())?;
-    timeout_ms(config)?;
+    timeout(config)?;
     response_max_bytes(config)?;
     crate::pkg::credential::validate_requirements(
         &config.credential_requirements,
@@ -653,18 +650,19 @@ fn validate_supported_placeholders(template: &str) -> Result<()> {
     Ok(())
 }
 
-fn timeout_ms(config: &HttpToolConfig) -> Result<u64> {
+/// 解析工具配置的请求超时（区间外报错，校验规则由 http 基建统一定义）
+fn timeout(config: &HttpToolConfig) -> Result<Duration> {
     let timeout_ms = config.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-    if timeout_ms == 0 || timeout_ms > HARD_TIMEOUT_MS {
+    if timeout_ms == 0 || timeout_ms > MAX_TIMEOUT_MS {
         return Err(anyhow!(
             "invalid http timeout_ms: {} (must be 1..={})",
             timeout_ms,
-            HARD_TIMEOUT_MS
+            MAX_TIMEOUT_MS
         )
         .into());
     }
 
-    Ok(timeout_ms)
+    Ok(Duration::from_millis(timeout_ms))
 }
 
 fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
@@ -685,7 +683,7 @@ fn response_max_bytes(config: &HttpToolConfig) -> Result<usize> {
 
 // Re-export common constants for backward compatibility
 pub use crate::pkg::tool_registry::tool_security::{
-    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, HARD_TIMEOUT_MS,
+    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, MAX_TIMEOUT_MS,
 };
 
 #[cfg(test)]

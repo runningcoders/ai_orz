@@ -182,9 +182,7 @@ impl OAuthTokenManager {
         // SSRF 校验 + DNS pin（复用 http.rs 同款模式；拒绝内网/环路）
         let url = reqwest::Url::parse(token_endpoint)
             .map_err(|_| err!(InvalidRequest, "oauth token_endpoint 不是合法 URL"))?;
-        let pinned =
-            crate::pkg::tool_registry::tool_security::validate_target_url(None, None, None, &url)
-                .await?;
+        let pinned = crate::pkg::http::validate_target_url(None, None, None, &url).await?;
         let host = url
             .host_str()
             .ok_or_else(|| err!(InvalidRequest, "oauth token_endpoint 缺少 host"))?
@@ -200,11 +198,7 @@ impl OAuthTokenManager {
             form.push(("scope", scope.as_str()));
         }
 
-        let client = reqwest::Client::builder()
-            .timeout(TOKEN_REFRESH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
-            .resolve_to_addrs(&host, &pinned)
+        let client = crate::pkg::http::presets::ssrf_guarded(host, pinned, TOKEN_REFRESH_TIMEOUT)
             .build()
             .map_err(|_| err!(Internal, "oauth refresh client 构建失败"))?;
 

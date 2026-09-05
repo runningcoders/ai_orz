@@ -71,10 +71,10 @@ pub trait FederationHttpClient: Send + Sync {
 
 /// 构造出站客户端（统一超时；契约凭证由 per-request `bearer_auth` 携带）
 fn outbound_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(OUTBOUND_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| Error::internal(format!("构建 HTTP 客户端失败: {}", e)))
+    crate::pkg::http::presets::with_timeout(Some(std::time::Duration::from_secs(
+        OUTBOUND_TIMEOUT_SECS,
+    )))
+    .build()
 }
 
 /// 解析 ApiResponse 包裹的目录响应

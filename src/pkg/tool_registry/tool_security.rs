@@ -1,11 +1,11 @@
 //! Common security utilities for tool registry
 //!
-//! HTTP 安全函数已提取到 `pkg::utils::http_security`，此处再导出保持向后兼容。
+//! HTTP 安全函数统一在 `pkg::http::ssrf`，此处再导出保持向后兼容。
 //! URL 模板校验和文件系统安全仍保留在此模块。
 
-// 再导出：HTTP 安全函数（SSRF / 大小限制 / 敏感头）从 utils 共享
-pub use crate::pkg::utils::http_security::{
-    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, HARD_TIMEOUT_MS,
+// 再导出：HTTP 安全函数（SSRF / 大小限制 / 敏感头）从 pkg::http 共享
+pub use crate::pkg::http::{
+    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, MAX_TIMEOUT_MS,
     domain_matches, is_local_network_host, is_local_network_ip, is_sensitive_header,
     normalize_domain, read_limited_response_body, sanitize_response_headers, validate_target_url,
 };

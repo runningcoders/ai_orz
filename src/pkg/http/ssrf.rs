@@ -1,9 +1,10 @@
-//! HTTP 安全工具函数
+//! HTTP 出站安全：SSRF 防护、响应大小限制、敏感头脱敏
 //!
-//! 从 `tool_registry::tool_security` 提取的公共 HTTP 安全逻辑，
-//! 供 `tool_security`（再导出）、`utils::fetch_remote_content`、Domain 层共享。
+//! 原 `pkg/utils/http_security`，随 HTTP 基建统一迁入 `pkg/http`，
+//! 与客户端构建内聚（安全校验 + 连接参数必须配套使用，拆在两处易漏配）。
 //!
 //! 包含：SSRF 防护（IP 黑名单 + DNS 解析校验）、响应大小限制、敏感头脱敏。
+//! 超时相关常量见 [`super::client`]。
 
 use anyhow::anyhow;
 use common::error::Result;
@@ -14,10 +15,6 @@ use tokio::net::lookup_host;
 pub const DEFAULT_RESPONSE_MAX_BYTES: usize = 1024 * 1024;
 /// 硬最大响应大小：10MB
 pub const HARD_RESPONSE_MAX_BYTES: usize = 10 * 1024 * 1024;
-/// 默认请求超时：30s
-pub const DEFAULT_TIMEOUT_MS: u64 = 30_000;
-/// 硬最大请求超时：10 分钟
-pub const HARD_TIMEOUT_MS: u64 = 600_000;
 
 /// 检查 host 是否为本地网络地址（SSRF 防护）
 pub fn is_local_network_host(host: &str) -> bool {
@@ -96,7 +93,8 @@ pub fn domain_matches(host: &str, configured_domain: &str) -> bool {
 
 /// 校验目标 URL 并解析地址（SSRF 防护）
 ///
-/// 返回 DNS pinning 用的 SocketAddr 列表。
+/// 返回 DNS pinning 用的 SocketAddr 列表，需配合
+/// [`super::presets::ssrf_guarded`] 使用才构成完整防护。
 pub async fn validate_target_url(
     allow_local_network: Option<bool>,
     allowed_domains: Option<&Vec<String>>,

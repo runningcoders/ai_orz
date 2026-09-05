@@ -419,6 +419,10 @@ record_event!(&ctx, ModelCallEvent {
 | **统计事件宏** | `src/pkg/stats/` + `ai-orz-macros` | `record_event!` |
 | **运行时统计基础设施** | `src/pkg/stats/runtime/` | `RuntimeStatsCollector<K>` |
 | **JWT 工具** | `src/pkg/jwt.rs` | `encode_token`, `decode_token` |
+| **出站 HTTP 客户端** | `src/pkg/http/client.rs` | `HttpClientOptions`, `build_client` |
+| **出站 HTTP 预设** | `src/pkg/http/presets.rs` | `llm()`, `outbound()`, `ssrf_guarded()` |
+| **出站安全（SSRF）** | `src/pkg/http/ssrf.rs` | `validate_target_url`, `read_limited_response_body` |
+| **WS 长连接管理器** | `src/pkg/ws/` | `WsClientAdapter`, `serve_server` |
 
 **反模式（禁止）**：
 - ❌ 在某个业务 DAO 中定义通用工具函数，其他 DAO 直接 import
@@ -436,6 +440,18 @@ record_event!(&ctx, ModelCallEvent {
 
 **已下沉单点（参考先例）**：
 - `common::models::validate_requirements`（凭据需求六规则）+ `binding_allowed` / `binding_name` / `mcp_transport_scope` / `is_sensitive_credential_name`
+
+### 14.3 出站 HTTP 基建（pkg/http）
+
+**核心原则：出站 HTTP 是基建层职责。业务层只声明「要哪种客户端」，一律经 `pkg/http` 预设构建，禁止手写 reqwest 配置。**
+
+1. **唯一构建入口**：任何 `reqwest::Client` 都必须经 `pkg::http::build_client`（或其预设）构建；**禁止**业务层出现 `reqwest::Client::new()` / `builder()` / `default()`
+2. **永不产出无超时客户端**：`effective_timeout()` 硬约束——未指定或 0 → `DEFAULT_TIMEOUT`(30s)，超 `MAX_TIMEOUT`(600s) → 截断。`Client::new()` 无超时，网络抖动时请求永久挂起，是历史 bug 根源
+3. **构建失败 fail-fast**：禁用 `unwrap_or_else(|_| Client::new())` 这类回退裸客户端的降级路径（曾有两处此类 fail-open bug）
+4. **预设优先**：`llm()`（LLM 推理 120s）、`outbound()`（一般出站 30s）、`ssrf_guarded()`（DNS pinning + 禁重定向 + 禁代理三件套，用于目标地址来自用户/工具配置的场景）；不满足时用 `HttpClientOptions` 叠加
+5. **SSRF 防护成套使用**：`ssrf::validate_target_url` 返回的 pinned 地址必须与 `ssrf_guarded` 配套（校验与请求解析到同一地址）；pinning 与禁代理、禁重定向缺一即被绕过
+6. **高频调用点持有共享 Client**：`reqwest::Client` 内部是连接池，clone 廉价；每请求/每调用新建 client 会重复 TCP/TLS 握手。DAO/工具实例应在构造或首次调用时惰性构建并持有（`OnceLock` 或结构体字段）
+7. **安全组件单点**：SSRF 校验、响应大小限制（`read_limited_response_body`）、敏感头脱敏（`sanitize_response_headers`）一律从 `pkg::http::ssrf` 引用，禁止复刻
 - `common::models::validate_builtin_tool_config`（Builtin 工具 config 校验）+ `is_supported_http_method`（HTTP 方法白名单）
 
 **反模式（禁止）**：

@@ -8,6 +8,10 @@ use crate::service::domain::message;
 use crate::service::domain::project::domain as project_domain;
 use common::error::err;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
+
+/// webhook 回调超时：回调是「通知」语义，对端处理慢不应拖住消息推送链路
+const CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
 
 // ==================== 工厂方法 + 单例 ====================
 
@@ -30,11 +34,18 @@ pub fn init() {
 
 // ==================== 实现 ====================
 
-struct A2aCallbackDaoHttpImpl;
+struct A2aCallbackDaoHttpImpl {
+    /// 共享 HTTP 客户端：此前每次回调都 `Client::new()`，等于每次新建连接池
+    http: reqwest::Client,
+}
 
 impl A2aCallbackDaoHttpImpl {
     fn new() -> Self {
-        Self
+        Self {
+            http: crate::pkg::http::presets::with_timeout(Some(CALLBACK_TIMEOUT))
+                .build()
+                .expect("构建 A2A callback HTTP 客户端失败"),
+        }
     }
 }
 
@@ -120,12 +131,11 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
         let body = serde_json::to_string(&task)
             .map_err(|e| err!(Internal, "序列化 A2A Task 失败: {}", e))?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = self
+            .http
             .post(webhook_url)
             .header("Content-Type", "application/json")
             .body(body)
-            .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
             .map_err(|e| err!(ChannelPushFailed, "A2A callback 请求失败: {}", e))?;

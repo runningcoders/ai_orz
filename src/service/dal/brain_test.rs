@@ -17,7 +17,9 @@ async fn init_test_env(pool: SqlitePool) -> (Arc<dyn BrainDal + Send + Sync>, Re
     crate::service::dal::brain::init();
     let tool_call_dao = crate::service::dao::tool_call::dao();
     let model_provider_dao = crate::service::dao::model_provider::dao();
-    let http_client = reqwest::Client::new();
+    let http_client = crate::pkg::http::presets::outbound()
+        .build()
+        .expect("构建 Brain HTTP 客户端失败");
     let brain_dal = crate::service::dal::brain::new(tool_call_dao, model_provider_dao, http_client);
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (brain_dal, ctx)

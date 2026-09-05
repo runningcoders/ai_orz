@@ -309,7 +309,9 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
         .expect("A→B link should exist");
 
     // ---- GET /directory：正确凭证 → 200 且目录含双方组织 ----
-    let client = reqwest::Client::new();
+    let client = ai_orz::pkg::http::presets::outbound()
+        .build()
+        .expect("构建测试 HTTP 客户端失败");
     let resp = client
         .get(format!(
             "{}/api/v1/organization/links/directory",
@@ -519,7 +521,9 @@ async fn test_revoke_link_blocks_peer_calls(pool: SqlitePool) {
         .expect("A→B link should exist");
 
     // 建联基线：A 调 B 的 directory → 200
-    let client = reqwest::Client::new();
+    let client = ai_orz::pkg::http::presets::outbound()
+        .build()
+        .expect("构建测试 HTTP 客户端失败");
     let resp = client
         .get(format!(
             "{}/api/v1/organization/links/directory",

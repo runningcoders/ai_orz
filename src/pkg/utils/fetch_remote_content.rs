@@ -5,10 +5,11 @@
 //!
 //! 三方调用方只需提供 URL + 可选配置，无需各自实现安全校验逻辑。
 
-use super::http_security::{
-    DEFAULT_RESPONSE_MAX_BYTES, DEFAULT_TIMEOUT_MS, HARD_RESPONSE_MAX_BYTES, HARD_TIMEOUT_MS,
-    read_limited_response_body, validate_target_url,
+use crate::pkg::http::ssrf::{
+    DEFAULT_RESPONSE_MAX_BYTES, HARD_RESPONSE_MAX_BYTES, read_limited_response_body,
+    sanitize_response_headers, validate_target_url,
 };
+use crate::pkg::http::{DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, presets};
 use anyhow::anyhow;
 use common::error::Result;
 
@@ -52,7 +53,7 @@ impl FetchOptions {
     /// 硬上限钳制
     fn clamped(&self) -> Self {
         Self {
-            timeout_ms: self.timeout_ms.min(HARD_TIMEOUT_MS),
+            timeout_ms: self.timeout_ms.min(MAX_TIMEOUT_MS),
             max_bytes: self.max_bytes.min(HARD_RESPONSE_MAX_BYTES),
             ..self.clone()
         }
@@ -106,28 +107,19 @@ pub async fn fetch_remote_content(url: &str, options: &FetchOptions) -> Result<F
         .host_str()
         .ok_or_else(|| anyhow!("URL host is required"))?;
 
-    let redirect_policy = if opts.max_redirects == 0 {
-        reqwest::redirect::Policy::none()
-    } else {
-        reqwest::redirect::Policy::limited(opts.max_redirects)
-    };
+    // SSRF 预设：DNS pinning + 重定向策略 + 默认禁代理
+    let mut client_options = presets::ssrf_guarded(
+        host,
+        pinned_addresses,
+        std::time::Duration::from_millis(opts.timeout_ms),
+    )
+    .redirect(presets::redirect_policy(opts.max_redirects));
 
-    let mut client_builder = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(opts.timeout_ms))
-        .redirect(redirect_policy);
-
-    if opts.no_proxy {
-        client_builder = client_builder.no_proxy();
+    if !opts.no_proxy {
+        client_options = client_options.use_proxy();
     }
 
-    // DNS pinning：将解析到的地址绑定到请求
-    if !pinned_addresses.is_empty() {
-        client_builder = client_builder.resolve_to_addrs(host, &pinned_addresses);
-    }
-
-    let client = client_builder
-        .build()
-        .map_err(|e| anyhow!("HTTP client build failed: {}", e))?;
+    let client = client_options.build()?;
 
     // 4. 发送请求
     let mut response = client
@@ -137,7 +129,7 @@ pub async fn fetch_remote_content(url: &str, options: &FetchOptions) -> Result<F
         .map_err(|e| anyhow!("HTTP request failed for {}: {}", url, e))?;
 
     let status = response.status().as_u16();
-    let headers = super::http_security::sanitize_response_headers(response.headers());
+    let headers = sanitize_response_headers(response.headers());
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)

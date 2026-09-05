@@ -353,12 +353,11 @@ impl OrganizationDal for OrganizationDalImpl {
             return reply;
         }
 
-        let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(
-                FEDERATED_CALL_DEADLINE_SECS + 5,
-            ))
-            .build()
-            .unwrap_or_default();
+        // 此前失败时回退 `Client::default()`（无超时）；构建失败直接上抛，绝不降级为裸客户端
+        let http = crate::pkg::http::presets::with_timeout(Some(std::time::Duration::from_secs(
+            FEDERATED_CALL_DEADLINE_SECS + 5,
+        )))
+        .build()?;
         let config = FederatedCallConfig {
             endpoint,
             auth_token: link.access_token.clone(),

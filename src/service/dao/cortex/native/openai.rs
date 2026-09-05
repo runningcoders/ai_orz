@@ -17,8 +17,7 @@ pub struct OpenAiCompatibleCortexDao {
 
 impl OpenAiCompatibleCortexDao {
     pub fn new() -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+        let client = crate::pkg::http::presets::llm()
             .build()
             .expect("Failed to build reqwest client for OpenAiCompatibleCortexDao");
         Self { client }

@@ -64,10 +64,12 @@ pub struct A2aRuntimeDao {
 
 impl A2aRuntimeDao {
     pub fn new(config: A2aRuntimeConfig) -> Self {
-        let http = Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout_secs))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        // 此前失败时回退 `Client::new()`（无超时）——构建失败一律快速失败，绝不降级为裸客户端
+        let http = crate::pkg::http::presets::with_timeout(Some(std::time::Duration::from_secs(
+            config.timeout_secs,
+        )))
+        .build()
+        .expect("构建 A2A Runtime HTTP 客户端失败");
         Self { config, http }
     }
 
@@ -650,6 +652,13 @@ mod tests {
         (format!("http://{}/a2a", addr), recorded)
     }
 
+    /// 测试用客户端：同样走 http 基建，避免测试里出现无超时裸客户端
+    fn test_client() -> Client {
+        crate::pkg::http::presets::outbound()
+            .build()
+            .expect("构建测试 HTTP 客户端失败")
+    }
+
     fn federated_config(endpoint: String, deadline: u64, poll_ms: u64) -> FederatedCallConfig {
         FederatedCallConfig {
             endpoint,
@@ -675,7 +684,7 @@ mod tests {
         }))
         .await;
 
-        let http = Client::new();
+        let http = test_client();
         let reply = execute_federated_agent_call(
             &http,
             "agt_x",
@@ -718,7 +727,7 @@ mod tests {
         }))
         .await;
 
-        let http = Client::new();
+        let http = test_client();
         let reply = execute_federated_agent_call(
             &http,
             "agt_x",
@@ -744,7 +753,7 @@ mod tests {
             })
         }))
         .await;
-        let http = Client::new();
+        let http = test_client();
         let result = execute_federated_agent_call(
             &http,
             "agt_x",
@@ -774,7 +783,7 @@ mod tests {
             }
         }))
         .await;
-        let http = Client::new();
+        let http = test_client();
         let result =
             execute_federated_agent_call(&http, "agt_x", &federated_config(endpoint, 1, 50), "hi")
                 .await;
