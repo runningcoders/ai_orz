@@ -21,6 +21,7 @@
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::process::{ExecOptions, exec};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::tool_readiness;
 use anyhow::anyhow;
@@ -30,9 +31,6 @@ use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 
 /// lark-cli 二进制名
 pub const LARK_CLI_BIN: &str = "lark-cli";
@@ -204,11 +202,18 @@ pub fn lark_home(base_data_path: &Path, user_id: &str) -> PathBuf {
 /// - LARKSUITE_CLI_NO_SKILLS_NOTIFIER=0：**打开** lark-cli 自带技能提示，
 ///   让 Agent 与用户能从 stderr 中感知 CLI 侧可用技能，作为「导入 CLI 自带技能」
 ///   的人工操作入口提示。
-pub fn apply_cli_env(command: &mut tokio::process::Command, home_dir: &Path) {
-    command
-        .env("HOME", home_dir)
-        .env("LARKSUITE_CLI_NO_UPDATE_NOTIFIER", "1")
-        .env("LARKSUITE_CLI_NO_SKILLS_NOTIFIER", "0");
+pub fn cli_env(home_dir: &Path) -> Vec<(String, String)> {
+    vec![
+        ("HOME".to_string(), home_dir.to_string_lossy().to_string()),
+        (
+            "LARKSUITE_CLI_NO_UPDATE_NOTIFIER".to_string(),
+            "1".to_string(),
+        ),
+        (
+            "LARKSUITE_CLI_NO_SKILLS_NOTIFIER".to_string(),
+            "0".to_string(),
+        ),
+    ]
 }
 
 /// 探测二进制是否在 PATH 中可用
@@ -249,31 +254,29 @@ pub async fn ensure_cli_config(home_dir: &Path, app_id: &str, app_secret: &str) 
         return Ok(());
     }
     tokio::fs::create_dir_all(home_dir).await?;
-    let mut cmd = Command::new(LARK_CLI_BIN);
-    cmd.args([
-        "config",
-        "init",
-        "--app-id",
-        app_id,
-        "--app-secret-stdin",
-        "--brand",
-        "feishu",
-    ]);
-    apply_cli_env(&mut cmd, home_dir);
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| anyhow!("Failed to spawn lark-cli config init: {}", e))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(app_secret.as_bytes()).await?;
-    }
-    let status = child.wait().await?;
-    if !status.success() {
+    // secret 走 stdin，避免出现在进程参数列表
+    let output = exec(
+        &ExecOptions::new(
+            LARK_CLI_BIN,
+            vec![
+                "config".into(),
+                "init".into(),
+                "--app-id".into(),
+                app_id.into(),
+                "--app-secret-stdin".into(),
+                "--brand".into(),
+                "feishu".into(),
+            ],
+        )
+        .envs(cli_env(home_dir))
+        .stdin(app_secret.as_bytes().to_vec()),
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to spawn lark-cli config init: {}", e))?;
+    if !output.success {
         return Err(anyhow!(
             "lark-cli config init exited with status {:?}",
-            status.code()
+            output.exit_code
         )
         .into());
     }
@@ -304,18 +307,19 @@ pub async fn ensure_default_as(home_dir: &Path, mode: &str) -> Result<()> {
     {
         return Ok(());
     }
-    let mut cmd = Command::new(LARK_CLI_BIN);
-    cmd.args(["config", "default-as", mode]);
-    apply_cli_env(&mut cmd, home_dir);
-    cmd.stdout(Stdio::null()).stderr(Stdio::null());
-    let status = cmd
-        .status()
-        .await
-        .map_err(|e| anyhow!("Failed to spawn lark-cli config default-as: {}", e))?;
-    if !status.success() {
+    let output = exec(
+        &ExecOptions::new(
+            LARK_CLI_BIN,
+            vec!["config".into(), "default-as".into(), mode.into()],
+        )
+        .envs(cli_env(home_dir)),
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to spawn lark-cli config default-as: {}", e))?;
+    if !output.success {
         return Err(anyhow!(
             "lark-cli config default-as exited with status {:?}",
-            status.code()
+            output.exit_code
         )
         .into());
     }
@@ -377,16 +381,14 @@ impl CoreTool for LarkCliCoreTool {
             .unwrap_or_else(|| self.config.default_timeout_ms());
         let max_output_bytes = self.config.default_max_output_size_bytes();
 
-        let mut command = Command::new(&bin);
-        command.args(&cli_args);
-        apply_cli_env(&mut command, &home_dir);
-        command.stdout(Stdio::piped());
-        command.stderr(Stdio::piped());
-        // 超时丢弃 future 时同步终止子进程
-        command.kill_on_drop(true);
-
-        let child = match command.spawn() {
-            Ok(c) => c,
+        let output = match exec(
+            &ExecOptions::new(&bin, cli_args)
+                .envs(cli_env(&home_dir))
+                .timeout(std::time::Duration::from_millis(timeout_ms)),
+        )
+        .await
+        {
+            Ok(o) => o,
             Err(e) => {
                 return Ok(serde_json::json!({
                     "success": false,
@@ -395,46 +397,40 @@ impl CoreTool for LarkCliCoreTool {
             }
         };
 
-        let timeout = std::time::Duration::from_millis(timeout_ms);
-        match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = if stderr.trim().is_empty() {
-                    stdout.to_string()
-                } else {
-                    format!("{}\n[stderr]\n{}", stdout, stderr)
-                };
-                let sanitized = sanitize_lark_output(&combined);
-                let truncated = sanitized.len() as u64 > max_output_bytes;
-                let summary = if truncated {
-                    format!(
-                        "{}\n\n... [truncated]",
-                        &sanitized[..max_output_bytes as usize]
-                    )
-                } else {
-                    sanitized
-                };
-                Ok(serde_json::json!({
-                    "success": output.status.success(),
-                    "exit_code": output.status.code(),
-                    "truncated": truncated,
-                    "output": summary
-                }))
-            }
-            Ok(Err(e)) => Ok(serde_json::json!({
+        if output.timed_out {
+            // exec 原语已在超时时终止子进程
+            return Ok(serde_json::json!({
                 "success": false,
-                "error": format!("lark-cli execution failed: {}", e)
-            })),
-            Err(_) => {
-                // timeout 丢弃 wait_with_output future，kill_on_drop 已终止子进程
-                Ok(serde_json::json!({
-                    "success": false,
-                    "timeout": true,
-                    "timeout_ms": timeout_ms,
-                    "error": format!("lark-cli timed out after {} ms and was killed", timeout_ms)
-                }))
-            }
+                "timeout": true,
+                "timeout_ms": timeout_ms,
+                "error": format!("lark-cli timed out after {} ms and was killed", timeout_ms)
+            }));
+        }
+
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = if stderr.trim().is_empty() {
+                stdout.to_string()
+            } else {
+                format!("{}\n[stderr]\n{}", stdout, stderr)
+            };
+            let sanitized = sanitize_lark_output(&combined);
+            let truncated = sanitized.len() as u64 > max_output_bytes;
+            let summary = if truncated {
+                format!(
+                    "{}\n\n... [truncated]",
+                    &sanitized[..max_output_bytes as usize]
+                )
+            } else {
+                sanitized
+            };
+            Ok(serde_json::json!({
+                "success": output.success,
+                "exit_code": output.exit_code,
+                "truncated": truncated,
+                "output": summary
+            }))
         }
     }
 

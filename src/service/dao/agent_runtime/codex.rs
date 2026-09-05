@@ -5,9 +5,6 @@
 
 use async_trait::async_trait;
 use common::error::{Result, err};
-use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 
 use super::AgentRuntimeDao;
 use crate::models::agent::AgentPo;
@@ -68,6 +65,9 @@ impl AgentRuntimeDao for CodexRuntimeDao {
 }
 
 /// 执行 CLI 命令，通过 stdin 传入 prompt，读取 stdout 作为结果
+///
+/// 经 `pkg::process::exec` 原语执行：恒用并发读管道（此前「先 wait 后读 stdout」
+/// 在输出超过管道缓冲区 ~64KB 时会与子进程互等，直到超时被 kill 且输出全丢）。
 pub async fn execute_cli(
     agent_id: &str,
     command: &str,
@@ -77,18 +77,15 @@ pub async fn execute_cli(
     timeout_secs: u64,
     prompt: &str,
 ) -> Result<String> {
-    let mut cmd = Command::new(command);
-    cmd.args(args)
+    let mut options = crate::pkg::process::ExecOptions::new(command, args.to_vec())
         .current_dir(work_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
+        .stdin(prompt.as_bytes().to_vec())
+        .timeout(std::time::Duration::from_secs(timeout_secs));
     for (key, value) in env {
-        cmd.env(key, value);
+        options = options.env(key, value);
     }
 
-    let mut child = cmd.spawn().map_err(|e| {
+    let output = crate::pkg::process::exec(&options).await.map_err(|e| {
         err!(
             Internal,
             "Agent {}: failed to spawn CLI command '{}': {}",
@@ -98,74 +95,28 @@ pub async fn execute_cli(
         )
     })?;
 
-    // Best-effort stdin write: 某些 CLI 命令（如 echo）不读取 stdin 就立即退出，
-    // 此时写入会因管道已关闭而失败（Broken pipe）。这是合法行为——命令结果由 stdout 决定，
-    // stdin 写入失败不应阻塞整体执行。仅当命令确实需要 stdin（如 cat）时才真正写入。
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
-            // Broken pipe 是预期行为（命令已退出），其他错误记录但不阻塞
-            log_warn!(
-                RequestContext::new_system(),
-                "execute_cli",
-                "Agent {}: stdin write failed (command may have exited without reading stdin): {}",
-                agent_id,
-                e
-            );
-        }
-        drop(stdin);
-    }
-
-    let mut stdout = child.stdout.take();
-    let mut stderr = child.stderr.take();
-    let timeout = std::time::Duration::from_secs(timeout_secs);
-
-    let status_result = tokio::time::timeout(timeout, child.wait()).await;
-
-    match status_result {
-        Ok(Ok(status)) => {
-            let mut output = Vec::new();
-            let mut stderr_output = Vec::new();
-            if let Some(mut out) = stdout.take() {
-                use tokio::io::AsyncReadExt;
-                let _ = out.read_to_end(&mut output).await;
-            }
-            if let Some(mut err) = stderr.take() {
-                use tokio::io::AsyncReadExt;
-                let _ = err.read_to_end(&mut stderr_output).await;
-            }
-
-            if !status.success() {
-                let output_str = String::from_utf8_lossy(&output);
-                let stderr_str = String::from_utf8_lossy(&stderr_output);
-                return Err(err!(
-                    Internal,
-                    "Agent {}: CLI command exited with status {:?}: stdout={}, stderr={}",
-                    agent_id,
-                    status.code(),
-                    output_str.trim(),
-                    stderr_str.trim()
-                ));
-            }
-            let output_str = String::from_utf8_lossy(&output);
-            Ok(output_str.trim().to_string())
-        }
-        Ok(Err(e)) => Err(err!(
+    if output.timed_out {
+        return Err(err!(
             Internal,
-            "Agent {}: CLI command execution failed: {}",
+            "Agent {}: CLI command timed out after {} seconds",
             agent_id,
-            e
-        )),
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Err(err!(
-                Internal,
-                "Agent {}: CLI command timed out after {} seconds",
-                agent_id,
-                timeout_secs
-            ))
-        }
+            timeout_secs
+        ));
     }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.success {
+        return Err(err!(
+            Internal,
+            "Agent {}: CLI command exited with status {:?}: stdout={}, stderr={}",
+            agent_id,
+            output.exit_code,
+            stdout.trim(),
+            stderr.trim()
+        ));
+    }
+    Ok(stdout.trim().to_string())
 }
 
 #[cfg(test)]

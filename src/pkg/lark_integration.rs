@@ -15,9 +15,8 @@
 //! - keychain 不可用 → 降级返回（degraded=true + hint），不抛 500
 //! - 输出经 `sanitize_lark_output` 脱敏；JSON 解析逻辑为纯函数（fixture 可测）
 
-use crate::pkg::tool_registry::lark_cli::{
-    LARK_CLI_BIN, apply_cli_env, lark_home, sanitize_lark_output,
-};
+use crate::pkg::process::{ExecOptions, exec};
+use crate::pkg::tool_registry::lark_cli::{LARK_CLI_BIN, cli_env, lark_home, sanitize_lark_output};
 use crate::pkg::tool_registry::tool_readiness::command_available;
 use anyhow::anyhow;
 use common::error::{Result, err};
@@ -95,29 +94,22 @@ async fn run_cli(
     args: &[&str],
     timeout: Duration,
 ) -> Result<(bool, String, String)> {
-    let mut command = Command::new(LARK_CLI_BIN);
-    command.args(args);
-    apply_cli_env(&mut command, home_dir);
-    command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let child = command
-        .spawn()
-        .map_err(|e| anyhow!("Failed to spawn lark-cli: {}", e))?;
-    let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => return Err(anyhow!("lark-cli execution failed: {}", e).into()),
-        Err(_) => {
-            return Err(anyhow!(
-                "lark-cli timed out after {}s and was killed",
-                timeout.as_secs()
-            )
-            .into());
-        }
-    };
+    let output = exec(
+        &ExecOptions::new(LARK_CLI_BIN, args.iter().map(|s| s.to_string()).collect())
+            .envs(cli_env(home_dir))
+            .timeout(timeout),
+    )
+    .await?;
+    // 语义保持：超时是执行失败而非「CLI 报告失败」（stderr 为空会让调用方丢失原因）
+    if output.timed_out {
+        return Err(err!(
+            Internal,
+            "lark-cli timed out after {}s and was killed",
+            timeout.as_secs()
+        ));
+    }
     Ok((
-        output.status.success(),
+        output.success,
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
     ))

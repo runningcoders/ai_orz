@@ -1,11 +1,15 @@
-//! 统一后台进程注册中心（纯基础设施，无业务感知）
-//!
-//! 记录由工具（如 shell_exec）spawn 的子进程信息，提供探活/终止原语与日志尾部读取。
+//! 统一子进程基建：执行原语（exec）+ 注册中心（registry）
 //!
 //! 【边界】
-//! - 第一版为内存版：服务重启后条目丢失，审计线索保留在 ToolCallEntry JSONL metadata
+//! - exec（生产端）：短命 CLI 调用的 spawn/超时/输出捕获，不进注册中心
+//! - registry（管理端）：Agent 可管理的长生命周期进程的探活/终止/审计
+//! - 第一版注册中心为内存版：服务重启后条目丢失，审计线索保留在 ToolCallEntry JSONL metadata
 //! - pid 复用风险：v1 接受（OS 层 pid 可能复用），entry 携带 started_at 供人工甄别
 //! - 权限边界（Agent 只能管理自己启动的进程）由 Domain 层 ProcessManager 负责
+
+pub mod exec;
+
+pub use exec::{DEFAULT_EXEC_TIMEOUT, ExecOptions, ExecOutput, MAX_EXEC_TIMEOUT, exec};
 
 use common::constants::utils::current_timestamp_ms;
 use once_cell::sync::OnceCell;

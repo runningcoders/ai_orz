@@ -23,6 +23,7 @@
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::process::{ExecOptions, exec};
 use crate::pkg::request_context::RequestContext;
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
@@ -31,9 +32,6 @@ use common::models::{CredentialBinding, CredentialKind, CredentialRequirement};
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 
 /// gh 二进制名
 pub const GH_CLI_BIN: &str = "gh";
@@ -242,40 +240,36 @@ pub async fn ensure_gh_auth(home_dir: &Path, token: &str) -> Result<()> {
         return Ok(());
     }
     tokio::fs::create_dir_all(home_dir).await?;
-    let mut child = Command::new(GH_CLI_BIN)
-        .args(["auth", "login", "--with-token"])
-        .env("HOME", home_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow!("Failed to spawn gh auth login: {}", e))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(token.as_bytes()).await?;
-        stdin.write_all(b"\n").await.ok();
-    }
-    let output = child.wait_with_output().await?;
-    if !output.status.success() {
+    let output = exec(
+        &ExecOptions::new(
+            GH_CLI_BIN,
+            vec!["auth".into(), "login".into(), "--with-token".into()],
+        )
+        .env("HOME", home_dir.to_string_lossy().to_string())
+        // token 走 stdin，避免进程参数泄露
+        .stdin([token.as_bytes(), b"\n"].concat()),
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to spawn gh auth login: {}", e))?;
+    if !output.success {
         // 失败信息本身可能含 token 片段，统一脱敏后再返回
         let stderr = sanitize_gh_output(&String::from_utf8_lossy(&output.stderr));
         return Err(anyhow!(
             "gh auth login failed (status {:?}): {}",
-            output.status.code(),
+            output.exit_code,
             stderr
         )
         .into());
     }
     // git 复用 gh 凭证（幂等，写用户 HOME 下 gitconfig 的 credential helper）
-    let setup = Command::new(GH_CLI_BIN)
-        .args(["auth", "setup-git"])
-        .env("HOME", home_dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .map_err(|e| anyhow!("Failed to spawn gh auth setup-git: {}", e))?;
-    if !setup.success() {
-        return Err(anyhow!("gh auth setup-git exited with status {:?}", setup.code()).into());
+    let setup = exec(
+        &ExecOptions::new(GH_CLI_BIN, vec!["auth".into(), "setup-git".into()])
+            .env("HOME", home_dir.to_string_lossy().to_string()),
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to spawn gh auth setup-git: {}", e))?;
+    if !setup.success {
+        return Err(anyhow!("gh auth setup-git exited with status {:?}", setup.exit_code).into());
     }
     tokio::fs::write(&marker, &fingerprint).await?;
     Ok(())
@@ -320,13 +314,19 @@ pub async fn gh_auth_status(home_dir: &Path) -> GhAuthStatus {
             hint: Some("未找到 gh 二进制，请先安装：https://cli.github.com".to_string()),
         };
     }
-    let output = match Command::new(GH_CLI_BIN)
-        .args(["auth", "status", "--json", "accounts"])
-        .env("HOME", home_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await
+    let output = match exec(
+        &ExecOptions::new(
+            GH_CLI_BIN,
+            vec![
+                "auth".into(),
+                "status".into(),
+                "--json".into(),
+                "accounts".into(),
+            ],
+        )
+        .env("HOME", home_dir.to_string_lossy().to_string()),
+    )
+    .await
     {
         Ok(o) => o,
         Err(e) => {
@@ -336,6 +336,7 @@ pub async fn gh_auth_status(home_dir: &Path) -> GhAuthStatus {
             };
         }
     };
+    // 探测路径曾无超时（可挂死）；exec 原语默认 60s 兜底
     let stdout = String::from_utf8_lossy(&output.stdout);
     // 已登录判定：accounts 数组非空（未登录时 gh 退出码非 0 且 accounts 缺失/为空）
     let parsed: Option<serde_json::Value> = serde_json::from_str(stdout.trim()).ok();
@@ -423,18 +424,15 @@ impl CoreTool for GhCliCoreTool {
             .unwrap_or_else(|| self.config.default_timeout_ms());
         let max_output_bytes = self.config.default_max_output_size_bytes();
 
-        let mut command = Command::new(&bin);
-        command
-            .args(&cli_args)
-            .env("HOME", &home_dir)
-            .current_dir(&working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            // 超时丢弃 future 时同步终止子进程
-            .kill_on_drop(true);
-
-        let child = match command.spawn() {
-            Ok(c) => c,
+        let output = match exec(
+            &ExecOptions::new(&bin, cli_args)
+                .env("HOME", home_dir.to_string_lossy().to_string())
+                .current_dir(&working_dir)
+                .timeout(std::time::Duration::from_millis(timeout_ms)),
+        )
+        .await
+        {
+            Ok(o) => o,
             Err(e) => {
                 return Ok(serde_json::json!({
                     "success": false,
@@ -443,47 +441,41 @@ impl CoreTool for GhCliCoreTool {
             }
         };
 
-        let timeout = std::time::Duration::from_millis(timeout_ms);
-        match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = if stderr.trim().is_empty() {
-                    stdout.to_string()
-                } else {
-                    format!("{}\n[stderr]\n{}", stdout, stderr)
-                };
-                let sanitized = sanitize_gh_output(&combined);
-                let truncated = sanitized.len() as u64 > max_output_bytes;
-                let summary = if truncated {
-                    format!(
-                        "{}\n\n... [truncated]",
-                        &sanitized[..max_output_bytes as usize]
-                    )
-                } else {
-                    sanitized
-                };
-                Ok(serde_json::json!({
-                    "success": output.status.success(),
-                    "exit_code": output.status.code(),
-                    "truncated": truncated,
-                    "working_dir": working_dir.to_string_lossy(),
-                    "output": summary
-                }))
-            }
-            Ok(Err(e)) => Ok(serde_json::json!({
+        if output.timed_out {
+            // exec 原语已在超时时终止子进程
+            return Ok(serde_json::json!({
                 "success": false,
-                "error": format!("gh execution failed: {}", e)
-            })),
-            Err(_) => {
-                // timeout 丢弃 wait_with_output future，kill_on_drop 已终止子进程
-                Ok(serde_json::json!({
-                    "success": false,
-                    "timeout": true,
-                    "timeout_ms": timeout_ms,
-                    "error": format!("gh timed out after {} ms and was killed", timeout_ms)
-                }))
-            }
+                "timeout": true,
+                "timeout_ms": timeout_ms,
+                "error": format!("gh timed out after {} ms and was killed", timeout_ms)
+            }));
+        }
+
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = if stderr.trim().is_empty() {
+                stdout.to_string()
+            } else {
+                format!("{}\n[stderr]\n{}", stdout, stderr)
+            };
+            let sanitized = sanitize_gh_output(&combined);
+            let truncated = sanitized.len() as u64 > max_output_bytes;
+            let summary = if truncated {
+                format!(
+                    "{}\n\n... [truncated]",
+                    &sanitized[..max_output_bytes as usize]
+                )
+            } else {
+                sanitized
+            };
+            Ok(serde_json::json!({
+                "success": output.success,
+                "exit_code": output.exit_code,
+                "truncated": truncated,
+                "working_dir": working_dir.to_string_lossy(),
+                "output": summary
+            }))
         }
     }
 

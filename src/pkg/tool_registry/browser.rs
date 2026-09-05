@@ -27,10 +27,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::process::Command;
 
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::RequestContext;
+use crate::pkg::process::{ExecOptions, exec};
 use crate::pkg::tool_registry::BuiltinToolFactory;
 use crate::pkg::tool_registry::tool_readiness;
 use common::enums::{ControlMode, ToolProtocol};
@@ -300,30 +300,31 @@ impl CoreTool for BrowserCoreTool {
             .unwrap_or_else(|| self.po.config_timeout_ms(DEFAULT_TIMEOUT_MS));
         let max_output_bytes = self.po.config_max_output_bytes(DEFAULT_MAX_OUTPUT_BYTES);
 
-        let mut command = Command::new(&bin);
-        command
-            .arg("--session")
-            .arg(&session)
-            .arg(&subcommand)
-            .args(&cli_args)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            // 超时丢弃 future 时同步终止子进程
-            .kill_on_drop(true);
-
-        let child = match command.spawn() {
-            Ok(c) => c,
+        let output = match exec(
+            &ExecOptions::new(
+                &bin,
+                [
+                    vec!["--session".to_string(), session.clone(), subcommand.clone()],
+                    cli_args,
+                ]
+                .concat(),
+            )
+            .timeout(Duration::from_millis(timeout_ms)),
+        )
+        .await
+        {
+            Ok(o) => o,
             Err(e) => {
                 // spawn 错误分类：NotFound → 安装引导；PermissionDenied → 权限提示
-                return Ok(match e.kind() {
-                    std::io::ErrorKind::NotFound => tool_readiness::cli_not_installed_json(
+                return Ok(match e.code {
+                    common::error::ErrorCode::NotFound => tool_readiness::cli_not_installed_json(
                         "agent-browser",
                         "brew install agent-browser 或 cargo install agent-browser",
                         CONFIG_PATH_HINT,
                     ),
-                    std::io::ErrorKind::PermissionDenied => json!({
+                    common::error::ErrorCode::Forbidden => json!({
                         "success": false,
-                        "error": format!("agent-browser 无执行权限（{}），请 chmod +x 或检查路径", e)
+                        "error": format!("agent-browser 无执行权限，请 chmod +x 或检查路径: {}", e)
                     }),
                     _ => json!({
                         "success": false,
@@ -333,39 +334,29 @@ impl CoreTool for BrowserCoreTool {
             }
         };
 
-        // 4. 超时保护 + 输出合并截断
-        let timeout = Duration::from_millis(timeout_ms);
-        let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Ok(Ok(output)) => output,
-            Ok(Err(e)) => {
-                return Ok(json!({
-                    "success": false,
-                    "error": format!("执行 agent-browser 失败: {}", e)
-                }));
-            }
-            Err(_) => {
-                return Ok(json!({
-                    "success": false,
-                    "error": format!("agent-browser 执行超时（{}ms），已终止子进程", timeout_ms),
-                    "hint": "页面加载过慢时可分步执行：先 open 再 wait，或调大 timeout_ms 参数"
-                }));
-            }
-        };
+        // 4. 超时保护 + 输出合并截断（超时由 exec 原语终止子进程）
+        if output.timed_out {
+            return Ok(json!({
+                "success": false,
+                "error": format!("agent-browser 执行超时（{}ms），已终止子进程", timeout_ms),
+                "hint": "页面加载过慢时可分步执行：先 open 再 wait，或调大 timeout_ms 参数"
+            }));
+        }
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let (combined, truncated) = combine_output(&stdout, &stderr, max_output_bytes);
 
         let mut payload = json!({
-            "success": output.status.success(),
+            "success": output.success,
             "command": subcommand,
             "session": session,
-            "exit_code": output.status.code(),
+            "exit_code": output.exit_code,
             "output": combined,
             "truncated": truncated
         });
 
         // 5. screenshot 分支：产物落统一存储，返回引用（不内嵌 base64）
-        if subcommand == "screenshot" && output.status.success() {
+        if subcommand == "screenshot" && output.success {
             let path = screenshot_path.expect("screenshot path set above");
             payload["screenshot"] = match store_screenshot(ctx.clone(), &path).await {
                 Ok(artifact) => {

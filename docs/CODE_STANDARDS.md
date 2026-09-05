@@ -422,6 +422,8 @@ record_event!(&ctx, ModelCallEvent {
 | **出站 HTTP 客户端** | `src/pkg/http/client.rs` | `HttpClientOptions`, `build_client` |
 | **出站 HTTP 预设** | `src/pkg/http/presets.rs` | `llm()`, `outbound()`, `ssrf_guarded()` |
 | **出站安全（SSRF）** | `src/pkg/http/ssrf.rs` | `validate_target_url`, `read_limited_response_body` |
+| **子进程执行原语** | `src/pkg/process/exec.rs` | `exec()`, `ExecOptions`, `ExecOutput` |
+| **子进程注册中心** | `src/pkg/process/mod.rs` | `registry()`, `ProcessEntry` |
 | **WS 长连接管理器** | `src/pkg/ws/` | `WsClientAdapter`, `serve_server` |
 
 **反模式（禁止）**：
@@ -440,6 +442,7 @@ record_event!(&ctx, ModelCallEvent {
 
 **已下沉单点（参考先例）**：
 - `common::models::validate_requirements`（凭据需求六规则）+ `binding_allowed` / `binding_name` / `mcp_transport_scope` / `is_sensitive_credential_name`
+- `common::models::validate_builtin_tool_config`（Builtin 工具 config 校验）+ `is_supported_http_method`（HTTP 方法白名单）
 
 ### 14.3 出站 HTTP 基建（pkg/http）
 
@@ -452,7 +455,18 @@ record_event!(&ctx, ModelCallEvent {
 5. **SSRF 防护成套使用**：`ssrf::validate_target_url` 返回的 pinned 地址必须与 `ssrf_guarded` 配套（校验与请求解析到同一地址）；pinning 与禁代理、禁重定向缺一即被绕过
 6. **高频调用点持有共享 Client**：`reqwest::Client` 内部是连接池，clone 廉价；每请求/每调用新建 client 会重复 TCP/TLS 握手。DAO/工具实例应在构造或首次调用时惰性构建并持有（`OnceLock` 或结构体字段）
 7. **安全组件单点**：SSRF 校验、响应大小限制（`read_limited_response_body`）、敏感头脱敏（`sanitize_response_headers`）一律从 `pkg::http::ssrf` 引用，禁止复刻
-- `common::models::validate_builtin_tool_config`（Builtin 工具 config 校验）+ `is_supported_http_method`（HTTP 方法白名单）
+
+### 14.4 子进程执行基建（pkg/process）
+
+**核心原则：子进程是基建层职责。短命 CLI 调用一律经 `pkg::process::exec` 原语执行，禁止手写 spawn/timeout/kill 流水账。**
+
+1. **两类职责分清**：`exec`（生产端，怎么跑）面向短命 CLI 调用，**不进注册中心**；`registry`（管理端，跑起来之后）面向 Agent 可管理的长生命周期进程（如 shell_exec 后台模式），注册是显式行为而非自动
+2. **禁止手写 spawn 流水线**：`Command::new` + `kill_on_drop` + `tokio::time::timeout` + `wait_with_output` 的组合是 exec 原语的内部实现，业务层不得复刻（历史上有 6 处复制粘贴）
+3. **输出捕获恒并发读**：先 `wait()` 后读 stdout 的写法在子进程输出超过管道缓冲区（~64KB）时双向阻塞直到超时、输出全丢（真实 bug：codex runtime）。exec 原语内部恒用 `wait_with_output()`，此类死锁结构性不可能
+4. **超时必终止**：超时返回 `timed_out = true` 而非 Err，由调用方决定语义；子进程由 `kill_on_drop` 终止、tokio 后台回收，无僵尸
+5. **spawn 失败保留错误分类**：NotFound / PermissionDenied 映射对应 ErrorCode，供调用方给出安装引导/权限提示
+6. **stdin 注入 best-effort**：Broken pipe（命令未读 stdin 即退出）是合法行为，不视为失败
+7. **长交互进程例外**：需要边跑边读流/轮询状态的进程（如 lark-cli `config init --new` 绑定流程）不走 exec，直接持 `tokio::process::Child` 管理
 
 **反模式（禁止）**：
 - ❌ 前端注释写「与后端同源，规则变动需同步」——同源靠代码共享，不靠人肉同步
