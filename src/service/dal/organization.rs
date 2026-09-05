@@ -141,6 +141,17 @@ pub trait OrganizationDal: Send + Sync {
         peer_org_id: &str,
     ) -> Result<()>;
 
+    /// 批量读取组织自报联邦地址全集（P7，透传 DAO）
+    async fn list_addresses(&self, ctx: RequestContext) -> Result<Vec<(String, String)>>;
+
+    /// 解析对端当前首选可达地址（P7 内外网可达性）
+    ///
+    /// 组合 organization DAO（对端自报地址候选池）与可达性解析器（内网优先
+    /// first-match 探测 + TTL 缓存）。永返回值：对端无自报地址或全不通时
+    /// 维持 `link.endpoint` 主地址，出站失败语义与 P7 之前一致。
+    async fn resolve_peer_endpoint(&self, ctx: RequestContext, link: &OrganizationLinkPo)
+    -> String;
+
     // ==================== 跨组织联邦调用（P4）==========
 
     /// 联邦 Agent 委派传输层：经指定连接调对端 A2A 出站（send → 轮询 tasks/get 到终态）
@@ -277,6 +288,37 @@ impl OrganizationDal for OrganizationDalImpl {
         Ok(())
     }
 
+    async fn list_addresses(&self, ctx: RequestContext) -> Result<Vec<(String, String)>> {
+        self.organization_dao.list_addresses(ctx).await
+    }
+
+    async fn resolve_peer_endpoint(
+        &self,
+        ctx: RequestContext,
+        link: &OrganizationLinkPo,
+    ) -> String {
+        use common::api::organization_link::FederationAddress;
+
+        // 对端自报地址候选池（影子 addresses 列，裸 SQL 不进 PO）；读取失败
+        // 视为无候选（快速路径维持主地址），不阻断出站
+        let addresses: Vec<FederationAddress> = self
+            .organization_dao
+            .list_addresses(ctx)
+            .await
+            .ok()
+            .and_then(|rows| {
+                rows.into_iter()
+                    .find(|(id, _)| id == &link.peer_org_id)
+                    .map(|(_, json)| json)
+            })
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+
+        crate::service::dao::organization_link::resolver::resolver()
+            .resolve(&link.endpoint, &addresses)
+            .await
+    }
+
     async fn send_federated_agent_task(
         &self,
         ctx: RequestContext,
@@ -285,6 +327,9 @@ impl OrganizationDal for OrganizationDalImpl {
         prompt: &str,
         caller_declaration: Option<String>,
     ) -> Result<String> {
+        // P7：出站前解析对端首选可达地址（内网优先探测 + TTL 缓存，
+        // 无自报地址时原样返回 link.endpoint）
+        let endpoint = self.resolve_peer_endpoint(ctx.clone(), link).await;
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 FEDERATED_CALL_DEADLINE_SECS + 5,
@@ -292,7 +337,7 @@ impl OrganizationDal for OrganizationDalImpl {
             .build()
             .unwrap_or_default();
         let config = FederatedCallConfig {
-            endpoint: link.endpoint.clone(),
+            endpoint,
             auth_token: link.access_token.clone(),
             caller_declaration,
             deadline_secs: FEDERATED_CALL_DEADLINE_SECS,

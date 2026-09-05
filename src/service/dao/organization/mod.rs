@@ -25,6 +25,8 @@ pub struct PeerOrgUpsert {
     pub description: String,
     pub base_url: String,
     pub group_name: Option<String>,
+    /// 自报联邦地址全集（P7 多地址模型①层；None = 对端旧版本未上报）
+    pub addresses: Option<Vec<common::api::organization_link::FederationAddress>>,
     pub status: OrganizationStatus,
     /// 对端侧 updated_at（毫秒）：新者胜的比较基准
     pub updated_at: i64,
@@ -110,6 +112,13 @@ pub trait OrganizationDao: Send + Sync {
         ctx: RequestContext,
         peer_org_id: &str,
     ) -> Result<bool>;
+
+    /// 批量读取组织自报联邦地址全集（P7 多地址模型①层）
+    ///
+    /// 裸 SQL 读取 `organizations.addresses` JSON 列（不进 PO，先例 config 列），
+    /// 返回 (org_id, addresses JSON 原文)；`addresses = '[]'` 的行不返回。
+    /// 调用方自行反序列化（非法 JSON 由解析器侧容错）。
+    async fn list_addresses(&self, ctx: RequestContext) -> Result<Vec<(String, String)>>;
 }
 
 pub mod sqlite;

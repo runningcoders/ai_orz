@@ -29,12 +29,33 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
 
 /// 初始化 Organization Domain
 pub fn init() {
+    // 本端自报联邦地址（P7 多地址模型）：配置启动后不变，组装点一次推导。
+    // federation_base_url = 内网/主监听地址（private），public_base_url 配置了
+    // 才报（public）。目录导出时随 Local 组织条目自报，供对端探测候选。
+    let server = &crate::config::get().server;
+    let mut self_addresses = vec![common::api::organization_link::FederationAddress {
+        url: server.federation_base_url(),
+        scope: common::api::organization_link::ADDRESS_SCOPE_PRIVATE.to_string(),
+    }];
+    if let Some(public) = server
+        .public_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        self_addresses.push(common::api::organization_link::FederationAddress {
+            url: public.to_string(),
+            scope: common::api::organization_link::ADDRESS_SCOPE_PUBLIC.to_string(),
+        });
+    }
+
     let domain = OrganizationDomainImpl::new(
         organization::dal(),
         user_dal::dal(),
         organization_link::dao(),
         organization_pairing::dao(),
         organization_link::http::client(),
+        self_addresses,
     );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
 }
@@ -50,6 +71,8 @@ struct OrganizationDomainImpl {
     link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
     pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
     http_client: Arc<dyn FederationHttpClient>,
+    /// 本端自报联邦地址（P7）：目录导出时随 Local 组织条目携带
+    self_addresses: Vec<common::api::organization_link::FederationAddress>,
 }
 
 impl OrganizationDomainImpl {
@@ -61,6 +84,7 @@ impl OrganizationDomainImpl {
         link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
         pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
         http_client: Arc<dyn FederationHttpClient>,
+        self_addresses: Vec<common::api::organization_link::FederationAddress>,
     ) -> Self {
         Self {
             org_dal,
@@ -68,6 +92,7 @@ impl OrganizationDomainImpl {
             link_dao,
             pairing_dao,
             http_client,
+            self_addresses,
         }
     }
 }

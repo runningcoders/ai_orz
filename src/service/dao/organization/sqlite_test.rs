@@ -241,6 +241,7 @@ fn peer_upsert(id: &str, name: &str, updated_at: i64) -> PeerOrgUpsert {
         description: format!("{} 的描述", name),
         base_url: "https://peer.example.com".to_string(),
         group_name: Some("示例集团".to_string()),
+        addresses: None,
         status: OrganizationStatus::Active,
         updated_at,
     }

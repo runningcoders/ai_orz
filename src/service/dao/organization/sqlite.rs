@@ -253,16 +253,19 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
         peer: &PeerOrgUpsert,
     ) -> Result<bool> {
         let status = peer.status as i32;
+        let addresses = serde_json::to_string(&peer.addresses.clone().unwrap_or_default())
+            .unwrap_or_else(|_| "[]".to_string());
         // updated_at 存对端数据版本（新者胜比较基准）；created_at 为本地行创建时间
         let now = Utc::now().timestamp_millis();
         let result = sqlx::query!(
             r#"
-INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+INSERT INTO organizations (id, name, description, base_url, addresses, group_name, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     base_url = excluded.base_url,
+    addresses = excluded.addresses,
     group_name = excluded.group_name,
     status = excluded.status,
     updated_at = excluded.updated_at
@@ -273,6 +276,7 @@ WHERE excluded.updated_at > organizations.updated_at
             peer.name,
             peer.description,
             peer.base_url,
+            addresses,
             peer.group_name,
             status,
             OrganizationScope::Remote as i32,
@@ -291,17 +295,20 @@ WHERE excluded.updated_at > organizations.updated_at
         peer: &PeerOrgUpsert,
     ) -> Result<bool> {
         let status = peer.status as i32;
+        let addresses = serde_json::to_string(&peer.addresses.clone().unwrap_or_default())
+            .unwrap_or_else(|_| "[]".to_string());
         // 直接建联：插入即 Linked；更新也强制 Linked（直接相连是权威动作，不依赖新者胜）
         // 仅保护本地组织（scope=Local）不被覆盖（评审稿 R5）
         let now = Utc::now().timestamp_millis();
         let result = sqlx::query!(
             r#"
-INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+INSERT INTO organizations (id, name, description, base_url, addresses, group_name, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     base_url = excluded.base_url,
+    addresses = excluded.addresses,
     group_name = excluded.group_name,
     status = excluded.status,
     scope = ?,
@@ -312,6 +319,7 @@ WHERE organizations.scope != ?
             peer.name,
             peer.description,
             peer.base_url,
+            addresses,
             peer.group_name,
             status,
             OrganizationScope::Linked as i32,
@@ -323,6 +331,15 @@ WHERE organizations.scope != ?
         .execute(ctx.db_pool())
         .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_addresses(&self, ctx: RequestContext) -> Result<Vec<(String, String)>> {
+        let rows = sqlx::query!(
+            "SELECT id, addresses FROM organizations WHERE addresses IS NOT NULL AND addresses != '[]'"
+        )
+        .fetch_all(ctx.db_pool())
+        .await?;
+        Ok(rows.into_iter().map(|r| (r.id, r.addresses)).collect())
     }
 
     async fn degrade_shadow_to_remote(

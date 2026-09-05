@@ -35,6 +35,31 @@ pub struct IssuePairingCodeResponse {
 
 // ============ 配对码验证 + 凭证交换（机器侧，配对码鉴权） ============
 
+/// 联邦地址作用域：内网
+pub const ADDRESS_SCOPE_PRIVATE: &str = "private";
+/// 联邦地址作用域：公网
+pub const ADDRESS_SCOPE_PUBLIC: &str = "public";
+
+/// 联邦地址条目（P7 多地址模型，三层之①层：自报全集）
+///
+/// 节点自报的一个可达地址及其作用域。自报 ≠ 信任：内网地址对调用方未必
+/// 有意义（网段撞车 / 不在同一内网），仅作探测候选池，可达性由调用方
+/// 探测裁决（见 `dao/organization_link/resolver.rs`）。
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct FederationAddress {
+    /// 地址基址（如 `http://10.0.0.5:8080` 或 `https://peer.example.com`）
+    pub url: String,
+    /// 作用域：`private`（内网，探测优先）/ `public`（公网，回退）
+    pub scope: String,
+}
+
+impl FederationAddress {
+    /// 是否内网地址（探测优先级更高）
+    pub fn is_private(&self) -> bool {
+        self.scope == ADDRESS_SCOPE_PRIVATE
+    }
+}
+
 /// 对端组织目录条目（白名单字段，评审稿 §5.1）
 ///
 /// 仅目录元信息，绝不携带用户 / Agent / 任务 / 消息 / 记忆 / 凭证等业务数据。
@@ -55,6 +80,12 @@ pub struct PeerOrgDirectoryEntry {
     pub status: i32,
     /// 数据版本（毫秒时间戳）：新者胜比较基准
     pub updated_at: i64,
+    /// 自报联邦地址列表（P7 多地址模型）
+    ///
+    /// Local 组织 = 配置动态推导（即时生效不入库）；影子组织 = 目录同步复制。
+    /// None = 对端旧版本未上报（探测退化为仅主地址，向后兼容）。
+    #[serde(default)]
+    pub addresses: Option<Vec<FederationAddress>>,
 }
 
 /// 验证配对码 + 交换凭证请求

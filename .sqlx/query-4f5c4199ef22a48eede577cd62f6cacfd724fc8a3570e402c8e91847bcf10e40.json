@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO organizations (id, name, description, base_url, addresses, group_name, status, scope, created_by, modified_by, created_at, updated_at)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)\nON CONFLICT(id) DO UPDATE SET\n    name = excluded.name,\n    description = excluded.description,\n    base_url = excluded.base_url,\n    addresses = excluded.addresses,\n    group_name = excluded.group_name,\n    status = excluded.status,\n    scope = ?,\n    updated_at = excluded.updated_at\nWHERE organizations.scope != ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "4f5c4199ef22a48eede577cd62f6cacfd724fc8a3570e402c8e91847bcf10e40"
+}

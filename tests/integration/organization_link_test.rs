@@ -364,6 +364,7 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
         group_name: Some("同步集团".to_string()),
         status: 1,
         updated_at,
+        addresses: None,
     };
     let resp = client
         .post(format!(

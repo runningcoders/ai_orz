@@ -307,6 +307,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             description: req.local_org.description.clone(),
             base_url: req.local_org.base_url.clone(),
             group_name: req.local_org.group_name.clone(),
+            addresses: req.local_org.addresses.clone(),
             status: OrganizationStatus::from_i32(req.local_org.status),
             updated_at: req.local_org.updated_at,
         };
@@ -331,6 +332,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 group_name: issuer.group_name,
                 status: issuer.status.to_i32(),
                 updated_at: issuer.updated_at,
+                // issuer 是本节点组织：自报地址 = 配置动态推导（即时生效）
+                addresses: Some(self.self_addresses.clone()),
             },
             peer_token,
         })
@@ -380,6 +383,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 group_name: local_org.group_name.clone(),
                 status: local_org.status.to_i32(),
                 updated_at: local_org.updated_at,
+                // 本端自报地址 = 配置动态推导（对端拿去做探测候选池）
+                addresses: Some(self.self_addresses.clone()),
             },
             local_endpoint: local_endpoint.clone(),
             local_token: local_token.clone(),
@@ -426,6 +431,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             description: resp.peer_org.description.clone(),
             base_url: resp.peer_org.base_url.clone(),
             group_name: resp.peer_org.group_name.clone(),
+            addresses: resp.peer_org.addresses.clone(),
             status: OrganizationStatus::from_i32(resp.peer_org.status),
             updated_at: resp.peer_org.updated_at,
         };
@@ -435,8 +441,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
 
         // 7) 目录双向同步（评审稿 §4.1 步骤 5 / §5.2）：拉对端全量目录 + 推本地目录。
         //    best-effort：目录同步失败不回滚建联（契约已落库，可由下次同步补齐），仅记审计。
-        self.sync_directories_after_link(&ctx, &peer_endpoint, &resp.peer_token)
-            .await;
+        self.sync_directories_after_link(&ctx, &link).await;
 
         log_info!(
             &ctx,
@@ -497,6 +502,8 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                     group_name: peer.group_name,
                     status: peer.status.to_i32(),
                     updated_at: peer.updated_at,
+                    // 前端展示页无需地址明细（联通地址以 link.endpoint 为准）
+                    addresses: None,
                 },
                 endpoint: link.endpoint,
                 status: link.status.to_i32(),
@@ -534,17 +541,44 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
 
     /// 本节点组织目录（白名单字段）
     async fn get_directory(&self, ctx: RequestContext) -> Result<Vec<PeerOrgDirectoryEntry>> {
-        let orgs = self.org_dal.list_all(ctx).await?;
+        use common::enums::OrganizationScope;
+
+        let orgs = self.org_dal.list_all(ctx.clone()).await?;
+        // 影子组织的自报地址（P7 ①层）：目录同步复制的原文；Local 组织动态
+        // 注入配置推导地址（即时生效，无漂移）
+        let addr_map: std::collections::HashMap<
+            String,
+            Vec<common::api::organization_link::FederationAddress>,
+        > = self
+            .org_dal
+            .list_addresses(ctx)
+            .await?
+            .into_iter()
+            .filter_map(|(id, json)| {
+                serde_json::from_str(&json)
+                    .ok()
+                    .map(|v: Vec<common::api::organization_link::FederationAddress>| (id, v))
+            })
+            .collect();
+
         Ok(orgs
             .into_iter()
-            .map(|org| PeerOrgDirectoryEntry {
-                id: org.id,
-                name: org.name,
-                description: org.description,
-                base_url: org.base_url,
-                group_name: org.group_name,
-                status: org.status.to_i32(),
-                updated_at: org.updated_at,
+            .map(|org| {
+                let addresses = if org.scope == OrganizationScope::Local {
+                    Some(self.self_addresses.clone())
+                } else {
+                    addr_map.get(&org.id).cloned()
+                };
+                PeerOrgDirectoryEntry {
+                    id: org.id,
+                    name: org.name,
+                    description: org.description,
+                    base_url: org.base_url,
+                    group_name: org.group_name,
+                    status: org.status.to_i32(),
+                    updated_at: org.updated_at,
+                    addresses,
+                }
             })
             .collect())
     }
@@ -563,6 +597,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 description: entry.description.clone(),
                 base_url: entry.base_url.clone(),
                 group_name: entry.group_name.clone(),
+                addresses: entry.addresses.clone(),
                 status: OrganizationStatus::from_i32(entry.status),
                 updated_at: entry.updated_at,
             };
@@ -736,9 +771,11 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
                 .flatten()
                 .map(|o| o.name)
                 .unwrap_or_else(|| link.peer_org_id.clone());
+            // P7：出站前解析首选可达地址（内网优先探测 + TTL 缓存）
+            let endpoint = self.org_dal.resolve_peer_endpoint(ctx.clone(), &link).await;
             match self
                 .http_client
-                .fetch_capabilities(&link.endpoint, &link.access_token)
+                .fetch_capabilities(&endpoint, &link.access_token)
                 .await
             {
                 Ok(caps) => groups.push(FederationAgentGroup {
@@ -907,18 +944,16 @@ impl super::OrganizationDomainImpl {
     /// 拉取对端全量目录（→ 本地 Remote 影子 upsert）+ 推送本地目录（→ 对端
     /// 按其对端侧语义 upsert）。一次建联由发起方完成双向交换，对端无需补动作。
     /// 失败仅记 WARN 审计，不向调用方报错（契约已落库，目录可由下次同步补齐）。
-    async fn sync_directories_after_link(
-        &self,
-        ctx: &RequestContext,
-        peer_endpoint: &str,
-        access_token: &str,
-    ) {
+    async fn sync_directories_after_link(&self, ctx: &RequestContext, link: &OrganizationLinkPo) {
         use super::OrganizationManage as _;
+
+        // P7：出站前解析首选可达地址（建联时对端影子已写入，含自报地址）
+        let peer_endpoint = self.org_dal.resolve_peer_endpoint(ctx.clone(), link).await;
 
         // 拉：对端目录 → 本地 Remote 影子 upsert（新者胜 / 不动 scope / 保护 Local）
         let pulled = self
             .http_client
-            .fetch_directory(peer_endpoint, access_token)
+            .fetch_directory(&peer_endpoint, &link.access_token)
             .await;
         match pulled {
             Ok(entries) => {
@@ -956,7 +991,7 @@ impl super::OrganizationDomainImpl {
             Ok(orgs) => {
                 if let Err(e) = self
                     .http_client
-                    .push_directory(peer_endpoint, access_token, orgs)
+                    .push_directory(&peer_endpoint, &link.access_token, orgs)
                     .await
                 {
                     log_warn!(
@@ -1089,6 +1124,7 @@ mod directory_sync_tests {
             link_dao_mod::new(),
             pairing_dao_mod::new(),
             mock,
+            Vec::new(), // 测试不注入本端自报地址（get_directory 对 Local 组织即不报 addresses）
         ))
     }
 
@@ -1145,6 +1181,7 @@ mod directory_sync_tests {
             group_name: Some(String::new()),
             status: 1,
             updated_at: 0,
+            addresses: None,
         }
     }
 
