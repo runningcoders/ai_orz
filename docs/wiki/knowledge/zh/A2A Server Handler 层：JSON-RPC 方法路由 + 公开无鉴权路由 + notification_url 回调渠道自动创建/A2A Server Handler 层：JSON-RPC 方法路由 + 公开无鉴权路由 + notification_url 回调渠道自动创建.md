@@ -5,6 +5,8 @@ category: a2a 适配器层（公开 Handler）
 scope:
 - src/handlers/a2a/*.rs
 - src/router.rs
+- src/middleware/a2a_auth.rs
+- src/middleware/federation_identity.rs
 source_files:
 - src/handlers/a2a/jsonrpc.rs:Ln-Lm
 - src/handlers/a2a/send_task.rs:Ln-Lm
@@ -17,6 +19,9 @@ source_files:
 - ''
 - docs/wiki/zh/content/API 参考/API 参考.md
 - docs/wiki/zh/content/核心模块/处理器层/A2A协议处理器/Agent卡片发现.md
+- src/middleware/a2a_auth.rs#L1-L108 (A2A 双模鉴权：先本地 JWT → 次 link credential + caller declaration)
+- docs/plan/跨组织业务调用方案.md#L1-L100 (/a2a 路由组双模鉴权决策)
+- 【关联卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities.md
 
 ---
 

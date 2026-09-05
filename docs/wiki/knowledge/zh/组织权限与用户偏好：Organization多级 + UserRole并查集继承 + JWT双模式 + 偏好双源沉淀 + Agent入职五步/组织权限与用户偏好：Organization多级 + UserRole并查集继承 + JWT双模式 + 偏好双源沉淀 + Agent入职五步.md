@@ -14,6 +14,9 @@ scope:
   - "src/middleware/auth.rs"
   - "src/models/user.rs (preferences 字段)"
   - "docs/archive/design-archive/organization_design.md"
+  - "src/models/organization_link.rs"
+  - "src/models/organization_pairing_code.rs"
+  - "src/middleware/federation_identity.rs"
 source_files:
   - common/src/enums/user_role.rs#L1-L60 (UserRole 枚举 + 并查集继承：Member=1 / Admin=2 / SuperAdmin=3；has_permission(need) 用 find_root；禁止 role >= 2 的数字大小比较)
   - src/service/domain/organization/mod.rs#L1-L40 (OrganizationDomain trait：OrganizationManage（CRUD）+ UserManage（CRUD+角色分配+偏好）两个子 trait；子模块 org.rs user.rs 分别 impl)
@@ -47,6 +50,11 @@ source_files:
   - src/service/dal/message.rs#L156-L174（消息落库时检查 org_config.enable_message_vector，默认 false 跳过向量索引构建）
   - 【平行卡 1】docs/wiki/knowledge/zh/身份凭证 AES-256-GCM 敏感字段加密 + 统一 CRUD Domain + Handler八文件迁移/身份凭证 AES-256-GCM 敏感字段加密.md（入职第四步：身份凭证绑定 → Finance::Credential.create → AES256-GCM 加密存储）
   - 【平行卡 2】docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md（入职第二步：install_skill_pack tag="memory" 拉 Published 技能 → 复制 Draft）
+  - src/middleware/federation_identity.rs#L1-L117 (联邦身份解析纯函数；resolve_federation_identity 不绑定传输层)
+  - docs/plan/组织组网与去中心化联邦方案.md#L1-L50 (scope 三态决策 + 集团=group_name 纯展示标签)
+  - docs/plan/跨组织业务调用方案.md#L1-L80 (跨组织 JWT 双模式鉴权地基)
+  - 【关联卡】docs/wiki/knowledge/zh/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接.md
+  - 【关联卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities.md
 ---
 
 ## §1 概述
@@ -147,3 +155,5 @@ HR 面板：填写 Agent 名 / 角色描述 / ModelProvider 选择 → 点「入
 8. **OrganizationConfig 所有字段必须带 #[serde(default)] 默认值**：JSON 反序列化时，缺失字段 → 回退 Rust 默认值（bool=false、Option=None）；保证 DB 列 `config` 为 '{}' 或旧版本迁移过来缺失字段时仍能正常解析，绝不 panic；禁止新增无默认值字段。
 9. **organizations.config 列 TEXT NOT NULL DEFAULT '{}' + 代码侧 JSON 回退**：DB 层默认值为空 JSON 对象 '{}'，代码侧 `read_org_config_from_db` 对空字符串、trim 后为空、或非法 JSON 一律回退 `OrganizationConfig::default()`；两层兜底保证向后兼容和容错。
 10. **DAO 层 ORG_CONFIG_CACHE 采用读穿 + 写穿双模式，避免每条消息落库回查 DB**：消息落库（message DAL）和 Handler 读当前组织配置均走 DAO 缓存；缓存键为 org_id，值为解析后的整个 OrganizationConfig；set_org_config 先落盘再刷缓存（防止写 DB 失败但缓存已脏）；严禁任何业务层直接 SELECT organizations.config 绕过 DAO 缓存。
+11. **联邦 scope 三态（disconnected / peering / federated）不可跨态跃迁**：organization_links.scope 字段只允许 disconnected→peering→federated 单向推进；任何直接从 disconnected 跳到 federated 或从 federated 回退到 disconnected 的写操作一律拒绝（DAO 层 CHECK 约束 + Domain 层显式 guard），防止中间人攻击伪造 pairing_code 直接建立信任。
+12. **organization_link 使用 shadow upsert 静默更新规则**：同一 peer_org_id 重复提交 pairing_code 认证通过时，若已有 link 存在则**静默刷新 remote_endpoint / last_seen_at / capabilities** 不创建新行也不报错；只有 scope 跃迁或 credential 轮换才触发显式审计日志。严禁 shadow upsert 覆盖 admin_notes 等人工维护字段。
