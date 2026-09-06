@@ -35,6 +35,8 @@ pub struct AdaptedMessage {
     /// 渠道已绑定 agent_id 时直接填充；未绑定时为 `None`，由 consumer 层
     /// 通过角色路由策略（如 `feishu_reception` tag）决定。
     pub to_agent_id: Option<String>,
+    /// 来源渠道类型（producer 据此组装接待角色档位链；不填会误路由到默认渠道）
+    pub channel_type: ChannelType,
     /// 消息内容（纯文本）
     pub content: String,
     /// 关联项目 ID（可选）

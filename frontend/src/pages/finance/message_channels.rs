@@ -17,6 +17,7 @@ use crate::api::finance::{
 };
 use crate::api::hr::list_agents;
 use crate::api::lark_integration::get_lark_integration_status;
+use crate::api::wechat_integration::get_wechat_integration_status;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -26,23 +27,28 @@ use common::api::{
     AgentListItem, CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateMessageChannelRequest, CreateSlackChannelConfig, CreateWebhookChannelConfig,
     CreateWechatChannelConfig, LarkCredentialSnapshot, ListAgentsRequest, MessageChannelListItem,
-    UpdateMessageChannelStatusRequest,
+    UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
 /// 创建表单提交前校验（纯函数，可单测）
 ///
-/// 规则：名称非空；飞书类型下必须选择已绑定的应用凭证。
+/// 规则：名称非空；飞书 / 微信类型下必须选择已绑定的应用凭证（两种渠道都只存凭证引用）。
 pub fn validate_create_channel_form(
     name: &str,
     is_lark: bool,
     lark_credential_id: &str,
+    is_wechat: bool,
+    wechat_credential_id: &str,
 ) -> Result<(), &'static str> {
     if name.trim().is_empty() {
         return Err("渠道名称不能为空");
     }
     if is_lark && lark_credential_id.trim().is_empty() {
         return Err("飞书渠道必须选择应用凭证（请先到设置页绑定飞书应用）");
+    }
+    if is_wechat && wechat_credential_id.trim().is_empty() {
+        return Err("微信渠道必须选择 iLink 凭证（请先到身份凭证页扫码授权）");
     }
     Ok(())
 }
@@ -73,10 +79,10 @@ pub fn FinanceMessageChannels() -> Element {
     let mut new_lark_user_name = use_signal(String::new);
     let mut new_agent_id = use_signal(String::new);
     let mut new_listen_inbound = use_signal(|| true);
-    // 微信
-    let mut new_wechat_app_id = use_signal(String::new);
-    let mut new_wechat_app_secret = use_signal(String::new);
-    let mut new_wechat_open_id = use_signal(String::new);
+    // 微信（iLink）
+    let mut new_wechat_credential_id = use_signal(String::new);
+    let mut new_wechat_peer_id = use_signal(String::new);
+    let mut new_wechat_listen_inbound = use_signal(|| true);
     // 邮件
     let mut new_email_smtp_host = use_signal(String::new);
     let mut new_email_smtp_port = use_signal(String::new);
@@ -96,6 +102,8 @@ pub fn FinanceMessageChannels() -> Element {
     let mut agents = use_signal(Vec::<AgentListItem>::new);
     // 飞书凭证下拉数据（聚合端点）
     let mut lark_credentials = use_signal(Vec::<LarkCredentialSnapshot>::new);
+    // 微信 iLink 凭证下拉数据（聚合端点）
+    let mut wechat_credentials = use_signal(Vec::<WechatCredentialSnapshot>::new);
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
@@ -122,14 +130,25 @@ pub fn FinanceMessageChannels() -> Element {
                 lark_credentials.set(status.credentials);
             }
         });
+        // 微信 iLink 凭证下拉（微信渠道创建必选）
+        spawn(async move {
+            if let Ok(status) = get_wechat_integration_status().await {
+                wechat_credentials.set(status.credentials);
+            }
+        });
     });
 
     let handle_create = move |_| {
         spawn(async move {
             let is_lark = new_type() == "0";
-            if let Err(msg) =
-                validate_create_channel_form(&new_name(), is_lark, &new_lark_credential_id())
-            {
+            let is_wechat = new_type() == "1";
+            if let Err(msg) = validate_create_channel_form(
+                &new_name(),
+                is_lark,
+                &new_lark_credential_id(),
+                is_wechat,
+                &new_wechat_credential_id(),
+            ) {
                 toast.error(msg);
                 return;
             }
@@ -158,9 +177,9 @@ pub fn FinanceMessageChannels() -> Element {
                     },
                     wechat: if channel_type == ChannelType::Wechat {
                         Some(CreateWechatChannelConfig {
-                            app_id: none_if_empty(new_wechat_app_id()),
-                            app_secret: none_if_empty(new_wechat_app_secret()),
-                            open_id: none_if_empty(new_wechat_open_id()),
+                            credential_id: none_if_empty(new_wechat_credential_id()),
+                            peer_id: none_if_empty(new_wechat_peer_id()),
+                            listen_inbound: Some(new_wechat_listen_inbound()),
                         })
                     } else {
                         None
@@ -209,9 +228,9 @@ pub fn FinanceMessageChannels() -> Element {
                     new_lark_user_name.set(String::new());
                     new_agent_id.set(String::new());
                     new_listen_inbound.set(true);
-                    new_wechat_app_id.set(String::new());
-                    new_wechat_app_secret.set(String::new());
-                    new_wechat_open_id.set(String::new());
+                    new_wechat_credential_id.set(String::new());
+                    new_wechat_peer_id.set(String::new());
+                    new_wechat_listen_inbound.set(true);
                     new_email_smtp_host.set(String::new());
                     new_email_smtp_port.set(String::new());
                     new_email_username.set(String::new());
@@ -245,7 +264,11 @@ pub fn FinanceMessageChannels() -> Element {
     let is_email_type = new_type_value == "3";
     let is_webhook_type = new_type_value == "4";
     let no_credentials = is_lark_type && credentials_list.is_empty();
+    let wechat_credentials_list = wechat_credentials.read().clone();
+    let no_wechat_credentials = is_wechat_type && wechat_credentials_list.is_empty();
     let credential_value = new_lark_credential_id();
+    let wechat_credential_value = new_wechat_credential_id();
+    let wechat_listen_inbound_value = new_wechat_listen_inbound();
     let identity_mode_value = new_lark_identity_mode();
     let listen_inbound_value = new_listen_inbound();
     let agent_value = new_agent_id();
@@ -382,7 +405,7 @@ pub fn FinanceMessageChannels() -> Element {
                 on_close: move |_| show_add_modal.set(false),
                 footer: rsx! {
                     button { class: "btn hud-btn btn-ghost", onclick: move |_| show_add_modal.set(false), "取消" }
-                    button { class: "btn hud-btn btn-primary", disabled: creating() || no_credentials, onclick: handle_create,
+                    button { class: "btn hud-btn btn-primary", disabled: creating() || no_credentials || no_wechat_credentials, onclick: handle_create,
                         if creating() { "创建中..." } else { "创建" }
                     }
                 },
@@ -497,26 +520,55 @@ pub fn FinanceMessageChannels() -> Element {
                         }
                     }
 
-                    // ===== 微信配置 =====
+                    // ===== 微信（iLink）配置 =====
                     if is_wechat_type {
-                        div { class: "hud-divider divider text-sm font-medium m-0", "微信应用配置" }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "App ID *" } }
-                            input { class: "input input-bordered hud-input w-full", value: "{new_wechat_app_id}",
-                                oninput: move |e| new_wechat_app_id.set(e.value()),
-                                placeholder: "微信公众号/企业微信 AppID" }
+                        div { class: "hud-divider divider text-sm font-medium m-0", "微信 iLink 凭证 *" }
+                        if no_wechat_credentials {
+                            HudCallout { tone: Some("warning".to_string()),
+                                span { "尚未绑定微信 iLink 凭证，请先前往「身份凭证」页扫码授权" }
+                                Link { class: "btn hud-btn btn-sm btn-primary", to: crate::pages::Route::FinanceIdentity {}, "前往授权" }
+                            }
+                        } else {
+                            div { class: "form-control w-full",
+                                label { class: "label",
+                                    span { class: "label-text font-medium", "选择凭证 *" }
+                                }
+                                select { class: "select select-bordered hud-input w-full", value: "{wechat_credential_value}",
+                                    onchange: move |e| new_wechat_credential_id.set(e.value()),
+                                    option { value: "", "请选择已扫码授权的 iLink 凭证" }
+                                    for cred in wechat_credentials_list.iter() {
+                                        {
+                                            let cid = cred.credential_id.clone();
+                                            let cname = cred.name.clone();
+                                            let cbot = cred.bot_id.clone();
+                                            rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{cbot}）" } }
+                                        }
+                                    }
+                                }
+                                label { class: "label",
+                                    span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」扫码授权，一个 bot 微信号对应一条渠道" }
+                                }
+                            }
                         }
                         div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "App Secret *" } }
-                            input { class: "input input-bordered hud-input w-full", r#type: "password", value: "{new_wechat_app_secret}",
-                                oninput: move |e| new_wechat_app_secret.set(e.value()),
-                                placeholder: "应用密钥" }
+                            label { class: "label",
+                                span { class: "label-text", "对端微信用户 ID" }
+                            }
+                            input { class: "input input-bordered hud-input w-full font-mono", value: "{new_wechat_peer_id}",
+                                oninput: move |e| new_wechat_peer_id.set(e.value()),
+                                placeholder: "可留空：首条入站消息到达时自动回填" }
+                            label { class: "label",
+                                span { class: "label-text-alt", "留空时以最近活跃会话作为出站目标；出站前需先收到过该用户的消息" }
+                            }
                         }
-                        div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text", "用户 Open ID" } }
-                            input { class: "input input-bordered hud-input w-full font-mono", value: "{new_wechat_open_id}",
-                                oninput: move |e| new_wechat_open_id.set(e.value()),
-                                placeholder: "绑定后接收该用户消息" }
+                        div { class: "form-control",
+                            label { class: "label cursor-pointer justify-start gap-3",
+                                input { class: "toggle toggle-primary", r#type: "checkbox", checked: wechat_listen_inbound_value,
+                                    onchange: move |_| new_wechat_listen_inbound.set(!new_wechat_listen_inbound()) }
+                                span { class: "label-text",
+                                    "入站监听（建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送）"
+                                }
+                            }
                         }
                     }
 
@@ -657,18 +709,18 @@ mod tests {
 
     #[test]
     fn test_validate_empty_name_rejected() {
-        let result = validate_create_channel_form("  ", false, "");
+        let result = validate_create_channel_form("  ", false, "", false, "");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_non_lark_requires_name_only() {
-        assert!(validate_create_channel_form("webhook渠道", false, "").is_ok());
+        assert!(validate_create_channel_form("webhook渠道", false, "", false, "").is_ok());
     }
 
     #[test]
     fn test_validate_lark_requires_credential() {
-        let result = validate_create_channel_form("飞书渠道", true, "  ");
+        let result = validate_create_channel_form("飞书渠道", true, "  ", false, "");
         assert_eq!(
             result.err(),
             Some("飞书渠道必须选择应用凭证（请先到设置页绑定飞书应用）")
@@ -677,7 +729,21 @@ mod tests {
 
     #[test]
     fn test_validate_lark_ok_with_credential() {
-        assert!(validate_create_channel_form("飞书渠道", true, "cred-1").is_ok());
+        assert!(validate_create_channel_form("飞书渠道", true, "cred-1", false, "").is_ok());
+    }
+
+    #[test]
+    fn test_validate_wechat_requires_credential() {
+        let result = validate_create_channel_form("微信渠道", false, "", true, "  ");
+        assert_eq!(
+            result.err(),
+            Some("微信渠道必须选择 iLink 凭证（请先到身份凭证页扫码授权）")
+        );
+    }
+
+    #[test]
+    fn test_validate_wechat_ok_with_credential() {
+        assert!(validate_create_channel_form("微信渠道", false, "", true, "cred-wx").is_ok());
     }
 
     #[test]

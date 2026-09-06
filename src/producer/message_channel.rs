@@ -1,6 +1,8 @@
 use common::api::AgentMatchCriteria;
-use common::constants::agent_roles::ROLE_FEISHU_RECEPTION;
-use common::enums::{CallerType, MessageRole, MessageType};
+use common::constants::agent_roles::{
+    ROLE_FEISHU_RECEPTION, ROLE_RECEPTION, ROLE_WECHAT_RECEPTION,
+};
+use common::enums::{CallerType, ChannelType, MessageRole, MessageType};
 use common::error::{Result, err};
 use std::sync::Arc;
 
@@ -24,6 +26,43 @@ impl MessageChannelProducer {
     }
 }
 
+/// 渠道类型 → 渠道专属接待角色（档位链第 2 级）
+fn reception_role_of(channel_type: ChannelType) -> &'static str {
+    match channel_type {
+        ChannelType::Lark => ROLE_FEISHU_RECEPTION,
+        ChannelType::Wechat => ROLE_WECHAT_RECEPTION,
+        _ => ROLE_RECEPTION,
+    }
+}
+
+impl MessageChannelProducer {
+    /// 入站消息的 Agent 路由档位链（有序，首个命中档位胜出，见设计文档 §4.3.4）：
+    ///
+    /// 1. 渠道显式绑定的 Agent（`by_id`，决定性命中）
+    /// 2. 渠道专属接待角色（如 `feishu_reception` / `wechat_reception`）
+    /// 3. 通用接待角色 `reception`（兜底，恒存在）
+    async fn resolve_target_agent(
+        &self,
+        ctx: RequestContext,
+        msg: &AdaptedMessage,
+    ) -> Result<Option<String>> {
+        let mut chain = Vec::new();
+        if let Some(agent_id) = msg.to_agent_id.as_deref().filter(|s| !s.is_empty()) {
+            chain.push(AgentMatchCriteria::by_id(agent_id));
+        }
+        chain.push(AgentMatchCriteria::by_role(reception_role_of(
+            msg.channel_type,
+        )));
+        chain.push(AgentMatchCriteria::by_role(ROLE_RECEPTION));
+
+        Ok(self
+            .hr_domain
+            .resolve_agent_multi(ctx, chain)
+            .await?
+            .map(|agent| agent.po.id))
+    }
+}
+
 #[async_trait::async_trait]
 impl MessageAdapterCallback for MessageChannelProducer {
     async fn on_message(&self, msg: AdaptedMessage) -> Result<()> {
@@ -39,28 +78,15 @@ impl MessageAdapterCallback for MessageChannelProducer {
         }
         let ctx = builder.build();
 
-        let to_agent_id = match msg.to_agent_id {
-            Some(id) => id,
-            // 外部消息渠道（如飞书 WS 入站）→ 匹配"飞书前台"角色的 Agent
-            None => match self
-                .hr_domain
-                .resolve_agent(
-                    ctx.clone(),
-                    AgentMatchCriteria::by_role(ROLE_FEISHU_RECEPTION),
-                )
-                .await?
-            {
-                Some(agent) => agent.po.id,
-                None => {
-                    log_warn!(
-                        &ctx,
-                        "message_channel_producer",
-                        "no available onboarded agent for routing from_user={}",
-                        msg.from_id
-                    );
-                    return Ok(());
-                }
-            },
+        let Some(to_agent_id) = self.resolve_target_agent(ctx.clone(), &msg).await? else {
+            log_warn!(
+                &ctx,
+                "message_channel_producer",
+                "no available onboarded agent for routing from_user={} channel={:?}",
+                msg.from_id,
+                msg.channel_type
+            );
+            return Ok(());
         };
 
         let cmd = SendToAgentCommand {
@@ -92,9 +118,10 @@ impl MessageAdapterCallback for MessageChannelProducer {
         log_info!(
             &ctx,
             "message_channel_producer",
-            "message dispatched: from={} to_agent={}",
+            "message dispatched: from={} to_agent={} channel={:?}",
             msg.from_id,
-            to_agent_id
+            to_agent_id,
+            msg.channel_type
         );
         Ok(())
     }

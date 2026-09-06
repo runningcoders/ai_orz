@@ -138,6 +138,17 @@ pub(crate) fn decrypt_detail(detail: CredentialDetail) -> Result<CredentialDetai
             username,
             password: decrypt(password.as_str())?,
         },
+        CredentialDetail::WechatIlink {
+            bot_token,
+            bot_id,
+            user_id,
+            base_url,
+        } => CredentialDetail::WechatIlink {
+            bot_token: decrypt(bot_token.as_str())?,
+            bot_id,
+            user_id,
+            base_url,
+        },
     })
 }
 

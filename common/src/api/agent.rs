@@ -481,6 +481,11 @@ pub struct GetReceptionAgentResponse {
 /// 如果全体候选均 0 分（没命中任何条件），退化回取任意 Onboarded（created_at 最早）。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct AgentMatchCriteria {
+    /// 指定 Agent ID 集合：直查短路，命中即决定性胜出（权重远高于其他维度，
+    /// 见 match_scores::ID_EXACT_MATCH）。用于「渠道显式绑定」等必中场景。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub any_id: Option<Vec<String>>,
+
     /// 角色标签渐进匹配：优先全匹配 → 部分精确 → 子串层级 → 语义（可选）。
     /// 命中即加高分；不要求全中（渐进式，命中越多越靠前）。
     /// 典型用：["reception"] 选 Web 前台、["feishu_reception"] 选飞书前台。
@@ -508,6 +513,26 @@ impl AgentMatchCriteria {
     /// 空条件 = 所有维度忽略，等价于退化回"任意 Onboarded"。
     pub fn any() -> Self {
         Self::default()
+    }
+
+    /// 常用快捷构造：指定单个 Agent（决定性命中，直查短路）
+    pub fn by_id(id: impl Into<String>) -> Self {
+        Self {
+            any_id: Some(vec![id.into()]),
+            ..Default::default()
+        }
+    }
+
+    /// 常用快捷构造：指定多个 Agent 择一（决定性命中，直查短路）
+    pub fn by_ids(ids: Vec<String>) -> Self {
+        if ids.is_empty() {
+            Self::default()
+        } else {
+            Self {
+                any_id: Some(ids),
+                ..Default::default()
+            }
+        }
     }
 
     /// 常用快捷构造：按任意一个命中的角色去匹配（含语义兜底）
@@ -538,6 +563,10 @@ impl AgentMatchCriteria {
 /// 总分 = 渐进角色匹配分 + capability_keyword_hit × 10 + installed_tag_hit × 3
 /// 渐进角色匹配：全匹配（tier1）> 部分精确（tier2）> 子串层级（tier3）> 语义（tier4）
 pub mod match_scores {
+    /// id 精确命中（决定性）。权重量级隔离：需要 100 次 role 全匹配才能追平，
+    /// 保证「渠道显式绑定」这类指定关系不被任何弱维度叠加翻盘。
+    pub const ID_EXACT_MATCH: i32 = 1_000_000;
+
     /// 全匹配：criteria 所有角色都被 agent.roles 精确命中（tier1）
     pub const ROLE_FULL_MATCH: i32 = 10000;
 

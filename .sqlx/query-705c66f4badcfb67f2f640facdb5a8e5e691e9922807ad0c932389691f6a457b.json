@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            UPDATE message_channels\n            SET inbound_state = ?, updated_at = ?\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "705c66f4badcfb67f2f640facdb5a8e5e691e9922807ad0c932389691f6a457b"
+}

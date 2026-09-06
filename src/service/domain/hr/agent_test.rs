@@ -1350,3 +1350,84 @@ async fn test_agent_skill_list_unique(pool: SqlitePool) {
         "技能副本列表必须按 id 去重"
     );
 }
+
+/// id 维度短路：`by_id` 直查命中即决定性胜出，不受候选集 limit 与 created_at 影响
+#[sqlx::test]
+async fn test_resolve_agent_id_short_circuit(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    let target_id = create_onboarded_agent(ctx.clone(), &domain, "指定员工", vec!["worker"]).await;
+    // 最早创建、且命中 reception 角色：无 id 维度时它会赢
+    let _earlier_reception =
+        create_onboarded_agent(ctx.clone(), &domain, "前台", vec!["reception"]).await;
+
+    let found = domain
+        .resolve_agent(
+            ctx.clone(),
+            common::api::AgentMatchCriteria::by_id(&target_id),
+        )
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(
+        found.po.id, target_id,
+        "指定 id 必须命中目标，无论角色与创建顺序"
+    );
+
+    // 无效 id：不 panic，落回常规打分（无命中 → 兜底任意 Onboarded）
+    let missing = domain
+        .resolve_agent(ctx, common::api::AgentMatchCriteria::by_id("nonexistent"))
+        .await
+        .unwrap();
+    assert!(
+        missing.is_some(),
+        "id 无效时应兜底到任意 Onboarded 而非 panic"
+    );
+}
+
+/// 多条件档位链：首个有命中的档位胜出，弱条件不打折强条件
+#[sqlx::test]
+async fn test_resolve_agent_multi_tier_chain(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool);
+
+    // 通用前台（档位 1 子串命中 1000 + 档位 2 精确命中 10000）
+    let general_id =
+        create_onboarded_agent(ctx.clone(), &domain, "通用前台", vec!["reception"]).await;
+    // 专属前台（档位 1 精确命中 10000）
+    let wechat_id =
+        create_onboarded_agent(ctx.clone(), &domain, "微信前台", vec!["wechat_reception"]).await;
+
+    // 档位链：[wechat_reception, reception]
+    // 若跨条件求和：专属 = 10000 + 0，通用 = 1000 + 10000 = 11000 → 倒挂；
+    // 有序档位：档位 1 专属（10000）> 通用（1000），专属胜出，不看档位 2。
+    let chain = vec![
+        common::api::AgentMatchCriteria::by_role("wechat_reception"),
+        common::api::AgentMatchCriteria::by_role("reception"),
+    ];
+    let found = domain
+        .resolve_agent_multi(ctx.clone(), chain)
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(
+        found.po.id, wechat_id,
+        "档位 1 精确命中应胜出，不被弱档位叠加翻盘"
+    );
+
+    // 档位 1 无命中 → 落到档位 2
+    let chain = vec![
+        common::api::AgentMatchCriteria::by_role("nonexistent_role"),
+        common::api::AgentMatchCriteria::by_role("reception"),
+    ];
+    let found = domain
+        .resolve_agent_multi(ctx.clone(), chain)
+        .await
+        .unwrap()
+        .expect("应解析到 Agent");
+    assert_eq!(found.po.id, general_id, "档位 1 无命中时档位 2 应生效");
+
+    // 全部档位无命中 → 兜底任意 Onboarded
+    let chain = vec![common::api::AgentMatchCriteria::by_role("nonexistent_role")];
+    let found = domain.resolve_agent_multi(ctx, chain).await.unwrap();
+    assert!(found.is_some(), "兜底应永远成立");
+}

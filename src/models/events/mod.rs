@@ -9,6 +9,7 @@ pub mod organization;
 pub mod task_status;
 pub mod think_round;
 pub mod tool_exec;
+pub mod wechat;
 
 pub use a2a_task_update::{
     A2A_SYNCED_MSG_COUNT_PREFIX, A2A_TASK_ID_TAG_PREFIX, extract_a2a_task_id,
@@ -27,3 +28,4 @@ pub use organization::OrganizationChangedEvent;
 pub use task_status::TaskStatusChangedEvent;
 pub use think_round::ThinkRoundEvent;
 pub use tool_exec::ToolExecEvent;
+pub use wechat::{IlinkMessage, WechatInboundEvent};

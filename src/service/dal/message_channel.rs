@@ -24,6 +24,7 @@ use crate::service::dao::slack::SlackDao;
 use crate::service::dao::user_credential::UserCredentialDao;
 use crate::service::dao::webhook::WebhookDao;
 use crate::service::dao::wechat::WechatDao;
+use crate::service::dao::wechat::ilink::{IlinkChannelCredentials, resolve_ilink_credentials};
 
 // ==================== 单例管理 ====================
 
@@ -219,7 +220,13 @@ impl MessageChannelDal for MessageChannelDalImpl {
                     .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))?;
                 self.lark_dao.test_connection(ctx, &credentials).await
             }
-            ChannelType::Wechat => self.wechat_dao.test_connection(ctx, &channel).await,
+            ChannelType::Wechat => {
+                let credentials = self
+                    .resolve_wechat_credentials(ctx.clone(), &channel)
+                    .await
+                    .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))?;
+                self.wechat_dao.test_connection(ctx, &credentials).await
+            }
             ChannelType::Slack => self.slack_dao.test_connection(ctx, &channel).await,
             ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
@@ -334,6 +341,42 @@ impl MessageChannelDalImpl {
         resolve_lark_credentials(&credential, channel)
     }
 
+    /// 解析渠道引用的微信 iLink 凭证（凭证行主键查询，轻量直查）
+    ///
+    /// 渠道 `wechat_credential_id` → `UserCredentialDao::find_by_id` 凭证行 →
+    /// 纯函数校验 kind + 解密 bot_token；凭证缺失返回引导性错误。
+    async fn resolve_wechat_credentials(
+        &self,
+        ctx: RequestContext,
+        channel: &MessageChannel,
+    ) -> Result<IlinkChannelCredentials> {
+        let credential_id = channel
+            .config()
+            .wechat_credential_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "微信渠道缺少凭证引用 wechat_credential_id channel_id={}，请先在凭据页完成扫码授权并绑定",
+                    channel.po.id
+                )
+            })?;
+        let credential = self
+            .credential_dao
+            .find_by_id(ctx, credential_id)
+            .await?
+            .ok_or_else(|| {
+                err!(
+                    InvalidRequest,
+                    "微信渠道引用的凭证不存在 channel_id={} credential_id={}，请重新扫码授权",
+                    channel.po.id,
+                    credential_id
+                )
+            })?;
+        resolve_ilink_credentials(&credential, channel)
+    }
+
     /// 🎯 核心分发逻辑（内部私有，不对外暴露）
     ///
     /// 纯 match 分发到各渠道 DAO，无 trait，无工厂，无注册表。
@@ -358,7 +401,15 @@ impl MessageChannelDalImpl {
                     .push(ctx, message, channel, &credentials)
                     .await
             }
-            ChannelType::Wechat => self.wechat_dao.push(ctx, message, channel).await,
+            ChannelType::Wechat => {
+                // 凭证解析在 DAL 层完成（同飞书引用模式），DAO 只接收已解析凭证
+                let credentials = self
+                    .resolve_wechat_credentials(ctx.clone(), channel)
+                    .await?;
+                self.wechat_dao
+                    .push(ctx, message, channel, &credentials)
+                    .await
+            }
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
             ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
             ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,

@@ -10,30 +10,44 @@ use common::enums::ChannelType;
 use common::error::Result;
 
 impl FinanceDomainImpl {
-    /// 渠道落库成功后联动飞书 WS 监听（仅 Lark 类型渠道）
+    /// 渠道落库成功后联动渠道监听（飞书 WS / 微信 iLink 长轮询）
     ///
-    /// 建停规则与告警收敛在 lark DAL 的 `sync_listener_for_channel`，
+    /// 建停规则与告警收敛在各渠道 DAL 的 `sync_listener_for_channel`，
     /// Domain 只负责类型判断与触发时机。
-    async fn sync_lark_listener(&self, ctx: &RequestContext, channel: &MessageChannel) {
-        if channel.channel_type() != ChannelType::Lark {
-            return;
-        }
-        if let Some(dal) = &self.lark_channel_dal {
-            dal.sync_listener_for_channel(ctx.clone(), channel).await;
+    async fn sync_channel_listener(&self, ctx: &RequestContext, channel: &MessageChannel) {
+        match channel.channel_type() {
+            ChannelType::Lark => {
+                if let Some(dal) = &self.lark_channel_dal {
+                    dal.sync_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
+            ChannelType::Wechat => {
+                if let Some(dal) = &self.wechat_channel_dal {
+                    dal.sync_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
+            _ => {}
         }
     }
 
-    /// 渠道删除后释放飞书 WS 监听（该 app 无其他引用时才真正停连）
-    async fn release_lark_listener_after_delete(
+    /// 渠道删除后释放渠道监听（飞书该 app 无其他引用时才真正停连；微信按 channel 停轮询）
+    async fn release_channel_listener_after_delete(
         &self,
         ctx: &RequestContext,
         channel: &MessageChannel,
     ) {
-        if channel.channel_type() != ChannelType::Lark {
-            return;
-        }
-        if let Some(dal) = &self.lark_channel_dal {
-            dal.release_listener_for_channel(ctx.clone(), channel).await;
+        match channel.channel_type() {
+            ChannelType::Lark => {
+                if let Some(dal) = &self.lark_channel_dal {
+                    dal.release_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
+            ChannelType::Wechat => {
+                if let Some(dal) = &self.wechat_channel_dal {
+                    dal.release_listener_for_channel(ctx.clone(), channel).await;
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -49,7 +63,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal
             .create_channel(ctx.clone(), channel)
             .await?;
-        self.sync_lark_listener(&ctx, channel).await;
+        self.sync_channel_listener(&ctx, channel).await;
         Ok(())
     }
 
@@ -84,7 +98,7 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal
             .update_channel(ctx.clone(), channel)
             .await?;
-        self.sync_lark_listener(&ctx, channel).await;
+        self.sync_channel_listener(&ctx, channel).await;
         Ok(())
     }
 
@@ -96,7 +110,8 @@ impl super::MessageChannelManage for FinanceDomainImpl {
         self.message_channel_dal
             .delete_channel(ctx.clone(), &channel.po.id)
             .await?;
-        self.release_lark_listener_after_delete(&ctx, channel).await;
+        self.release_channel_listener_after_delete(&ctx, channel)
+            .await;
         Ok(())
     }
 

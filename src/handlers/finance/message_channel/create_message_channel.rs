@@ -13,26 +13,33 @@ use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 use common::models::CredentialKind;
 
-/// 飞书渠道凭证引用必填校验（纯函数，可单测）
+/// 渠道凭证引用必填校验（纯函数，可单测）
 ///
-/// 非飞书类型直接放行；飞书类型校验引用 ID 非空 +
-/// 凭证存在且 kind=LarkApp。归属校验天然成立：
-/// 凭证列表即按渠道归属用户加载。
-pub fn validate_lark_credential_ref(
+/// 仅对 `expected_channel` 类型生效：校验引用 ID 非空 + 凭证存在且 kind 匹配。
+/// 归属校验天然成立：凭证列表即按渠道归属用户加载。
+///
+/// 飞书（LarkApp）与微信 iLink（WechatIlink）共用此判据——两者都是
+/// 「渠道只存引用，长期凭证走凭据表」的引用模式。
+pub fn validate_channel_credential_ref(
     channel_type: common::enums::ChannelType,
-    lark_credential_id: Option<&str>,
+    credential_id: Option<&str>,
+    expected_channel: common::enums::ChannelType,
+    expected_kind: CredentialKind,
+    channel_label: &str,
     credentials: &[UserCredential],
 ) -> Result<()> {
-    if !matches!(channel_type, common::enums::ChannelType::Lark) {
+    if channel_type != expected_channel {
         return Ok(());
     }
-    let credential_id = lark_credential_id
+    let credential_id = credential_id
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| {
             err!(
                 InvalidRequest,
-                "飞书渠道必须引用用户级应用凭证（lark_credential_id）"
+                "{}渠道必须引用用户级 {} 凭证（credential_id）",
+                channel_label,
+                expected_kind.as_str()
             )
         })?;
     let credential = credentials
@@ -41,18 +48,52 @@ pub fn validate_lark_credential_ref(
         .ok_or_else(|| {
             err!(
                 InvalidRequest,
-                "引用的飞书凭证不存在 credential_id={}",
+                "引用的 {} 凭证不存在 credential_id={}",
+                expected_kind.as_str(),
                 credential_id
             )
         })?;
-    if credential.kind() != CredentialKind::LarkApp {
+    if credential.kind() != expected_kind {
         bail_err!(
             InvalidRequest,
-            "引用的凭证不是飞书应用凭证 credential_id={}",
+            "引用的凭证不是 {} 凭证 credential_id={}",
+            expected_kind.as_str(),
             credential_id
         );
     }
     Ok(())
+}
+
+/// 飞书渠道凭证引用校验（LarkApp）
+pub fn validate_lark_credential_ref(
+    channel_type: common::enums::ChannelType,
+    lark_credential_id: Option<&str>,
+    credentials: &[UserCredential],
+) -> Result<()> {
+    validate_channel_credential_ref(
+        channel_type,
+        lark_credential_id,
+        common::enums::ChannelType::Lark,
+        CredentialKind::LarkApp,
+        "飞书",
+        credentials,
+    )
+}
+
+/// 微信渠道凭证引用校验（WechatIlink）
+pub fn validate_wechat_credential_ref(
+    channel_type: common::enums::ChannelType,
+    wechat_credential_id: Option<&str>,
+    credentials: &[UserCredential],
+) -> Result<()> {
+    validate_channel_credential_ref(
+        channel_type,
+        wechat_credential_id,
+        common::enums::ChannelType::Wechat,
+        CredentialKind::WechatIlink,
+        "微信",
+        credentials,
+    )
 }
 
 /// Extract ChannelConfig from CreateMessageChannelRequest
@@ -68,9 +109,9 @@ fn extract_channel_config(req: &CreateMessageChannelRequest) -> ChannelConfig {
             config.lark_listen_inbound = lark.listen_inbound;
         }
         if let Some(wechat) = &channel_config.wechat {
-            config.wechat_app_id = wechat.app_id.clone();
-            config.wechat_app_secret = wechat.app_secret.clone();
-            config.wechat_open_id = wechat.open_id.clone();
+            config.wechat_credential_id = wechat.credential_id.clone();
+            config.wechat_peer_id = wechat.peer_id.clone();
+            config.wechat_listen_inbound = wechat.listen_inbound;
         }
         if let Some(email) = &channel_config.email {
             config.email_smtp_host = email.smtp_host.clone();
@@ -125,6 +166,11 @@ pub async fn create_message_channel(
     validate_lark_credential_ref(
         params.channel_type,
         channel_config.lark_credential_id.as_deref(),
+        &credentials,
+    )?;
+    validate_wechat_credential_ref(
+        params.channel_type,
+        channel_config.wechat_credential_id.as_deref(),
         &credentials,
     )?;
 
@@ -221,7 +267,7 @@ mod tests {
         };
         let config = extract_channel_config(&req);
         assert!(config.lark_credential_id.is_none());
-        assert!(config.wechat_app_id.is_none());
+        assert!(config.wechat_credential_id.is_none());
         assert!(config.email_smtp_host.is_none());
     }
 
@@ -255,5 +301,83 @@ mod tests {
         assert_eq!(config.lark_open_id.as_deref(), Some("ou_xxx"));
         assert_eq!(config.lark_user_name.as_deref(), Some("Test"));
         assert_eq!(config.lark_listen_inbound, Some(true));
+    }
+
+    fn wechat_credentials(credential_id: &str) -> Vec<UserCredential> {
+        vec![UserCredential::from_po(UserCredentialPo::new(
+            credential_id.to_string(),
+            "org-1".to_string(),
+            "user-1".to_string(),
+            CredentialKind::WechatIlink,
+            "微信 iLink".to_string(),
+            CredentialDetail::WechatIlink {
+                bot_token: "enc:v1:token".to_string(),
+                bot_id: "bot_x".to_string(),
+                user_id: None,
+                base_url: "https://ilinkai.weixin.qq.com".to_string(),
+            },
+            CredentialVisibility::Private,
+            "user-1".to_string(),
+        ))]
+    }
+
+    #[test]
+    fn wechat_credential_ref_required_for_wechat_type() {
+        let credentials = wechat_credentials("cred-wx");
+        // 未选凭证 / 空白 / 引用不存在
+        assert!(validate_wechat_credential_ref(ChannelType::Wechat, None, &credentials).is_err());
+        assert!(
+            validate_wechat_credential_ref(ChannelType::Wechat, Some(" "), &credentials).is_err()
+        );
+        assert!(
+            validate_wechat_credential_ref(ChannelType::Wechat, Some("missing"), &credentials)
+                .is_err()
+        );
+        // 引用存在的 WechatIlink 凭证
+        assert!(
+            validate_wechat_credential_ref(ChannelType::Wechat, Some("cred-wx"), &credentials)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn wechat_ref_must_match_kind() {
+        // 拿飞书凭证当微信凭证用 → 拒绝
+        let credentials = lark_credentials("cred-1");
+        assert!(
+            validate_wechat_credential_ref(ChannelType::Wechat, Some("cred-1"), &credentials)
+                .is_err()
+        );
+        // 反之：微信类型下飞书校验不生效
+        let wechat = wechat_credentials("cred-wx");
+        assert!(validate_lark_credential_ref(ChannelType::Wechat, None, &wechat).is_ok());
+    }
+
+    #[test]
+    fn extract_config_extracts_wechat_fields() {
+        let req = CreateMessageChannelRequest {
+            user_id: None,
+            agent_id: None,
+            channel_type: ChannelType::Wechat,
+            channel_name: "test".to_string(),
+            webhook_url: None,
+            access_token: None,
+            secret: None,
+            config: Some(CreateMessageChannelConfig {
+                lark: None,
+                wechat: Some(common::api::CreateWechatChannelConfig {
+                    credential_id: Some("cred-wx".to_string()),
+                    peer_id: Some("wxid_abc".to_string()),
+                    listen_inbound: Some(false),
+                }),
+                email: None,
+                slack: None,
+                webhook: None,
+            }),
+        };
+        let config = extract_channel_config(&req);
+        assert_eq!(config.wechat_credential_id.as_deref(), Some("cred-wx"));
+        assert_eq!(config.wechat_peer_id.as_deref(), Some("wxid_abc"));
+        assert_eq!(config.wechat_listen_inbound, Some(false));
     }
 }

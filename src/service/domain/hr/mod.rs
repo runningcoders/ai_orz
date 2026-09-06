@@ -81,32 +81,35 @@ impl HrDomainImpl {
             skill_dal,
         }
     }
-}
 
-#[async_trait::async_trait]
-impl HrDomain for HrDomainImpl {
-    fn agent_manage(&self) -> &dyn AgentManage {
-        self
-    }
-    fn skill_manage(&self) -> &dyn SkillManage {
-        self
-    }
-
-    /// 根据打分规则挑选最匹配的 Agent。
+    /// 单条件打分：返回最高分候选及其分数（无任何候选时返回 None）。
     ///
-    /// 传空 criteria（`AgentMatchCriteria::default()`）等价于退化回"任意 Onboarded"。
-    ///
-    /// 渐进式角色匹配（按优先级从高到低）：
-    /// - tier1 全匹配：criteria 所有角色都被 agent.roles 精确命中（最高分）
-    /// - tier2 部分精确：至少一个角色精确命中（命中越多越靠前）
-    /// - tier3 子串层级：角色名存在包含/被包含关系（如 `feishu_reception` ⊃ `reception`）
-    /// - tier4 语义兜底：字符串层无命中时，若启用 semantic_fallback，用向量索引做语义相似度
-    /// - 全部 0 分：退化回任意 Onboarded（created_at 最早）
-    async fn resolve_agent(
+    /// - **id 短路**：`any_id` 命中且 Onboarded → 直接返回 `(agent, ID_EXACT_MATCH)`，
+    ///   不走候选集打分（candidate_limit 的候选集很可能不含目标 Agent）；
+    ///   id 全部未命中则落回常规打分（视为该档位无命中）。
+    /// - 常规打分：渐进式角色匹配（tier1-3）+ capability 关键词 + installed_tag 弱交集
+    ///   + tier4 语义兜底。
+    async fn resolve_scored(
         &self,
         ctx: RequestContext,
-        criteria: AgentMatchCriteria,
-    ) -> Result<Option<Agent>> {
+        criteria: &AgentMatchCriteria,
+    ) -> Result<Option<(Agent, i32)>> {
+        // 0. id 维度短路：直查（决定性命中），不进候选集
+        if let Some(ids) = &criteria.any_id {
+            for id in ids {
+                let id = id.trim();
+                if id.is_empty() {
+                    continue;
+                }
+                if let Some(agent) = self.agent_dal.find_by_id(ctx.clone(), id).await?
+                    && agent.po.status == AgentStatus::Onboarded
+                {
+                    return Ok(Some((agent, match_scores::ID_EXACT_MATCH)));
+                }
+            }
+            // 指定的 id 全部无效 → 该维度未命中，继续常规打分
+        }
+
         // 1. 拉候选集：按传入的 candidate_limit，否则 10。
         //    目前不在 SQL 层做 role 预过滤：role 是 JSON 字段，
         //    DAL 的 AgentQuery.roles 目前是 ALL-matches 语义（要求全包含），
@@ -127,7 +130,7 @@ impl HrDomain for HrDomainImpl {
         }
 
         // 2. 逐条打分（渐进式角色匹配 + 能力关键词 + 工具包标签弱交集）
-        let any_role = criteria.any_role.unwrap_or_default();
+        let any_role = criteria.any_role.clone().unwrap_or_default();
         let keyword = criteria.keyword.as_deref().unwrap_or("").trim().to_string();
 
         // tier2 部分精确命中的角色集合（用于跨候选比较命中个数）
@@ -232,8 +235,65 @@ impl HrDomain for HrDomainImpl {
                 .then_with(|| a.0.po.created_at.cmp(&b.0.po.created_at))
         });
 
-        // 5. 取第 1 名。如果第 1 名也是 0 分（完全没命中），也返回，相当于退化回原来的 fallback。
-        Ok(scored.into_iter().next().map(|(agent, _)| agent))
+        // 5. 返回最高分及其分数（0 分也返回——由调用方决定是否视为"命中"）
+        Ok(scored.into_iter().next())
+    }
+}
+#[async_trait::async_trait]
+impl HrDomain for HrDomainImpl {
+    fn agent_manage(&self) -> &dyn AgentManage {
+        self
+    }
+    fn skill_manage(&self) -> &dyn SkillManage {
+        self
+    }
+
+    /// 根据打分规则挑选最匹配的 Agent（统一路由方法，单条件入口）。
+    ///
+    /// 传空 criteria（`AgentMatchCriteria::default()`）等价于退化回"任意 Onboarded"。
+    ///
+    /// 渐进式角色匹配（按优先级从高到低）：
+    /// - id 短路：`any_id` 命中即决定性胜出（直查，不走候选集）
+    /// - tier1 全匹配：criteria 所有角色都被 agent.roles 精确命中（最高分）
+    /// - tier2 部分精确：至少一个角色精确命中（命中越多越靠前）
+    /// - tier3 子串层级：角色名存在包含/被包含关系（如 `feishu_reception` ⊃ `reception`）
+    /// - tier4 语义兜底：字符串层无命中时，若启用 semantic_fallback，用向量索引做语义相似度
+    /// - 全部 0 分：退化回任意 Onboarded（created_at 最早）
+    async fn resolve_agent(
+        &self,
+        ctx: RequestContext,
+        criteria: AgentMatchCriteria,
+    ) -> Result<Option<Agent>> {
+        // 单条件是 resolve_agent_multi 的特例；0 分候选也返回（保持既有兜底语义）
+        let top = self.resolve_scored(ctx, &criteria).await?;
+        Ok(top.map(|(agent, _)| agent))
+    }
+
+    /// 多条件有序匹配：按 criteria 顺序分档，首个「有命中」（score > 0）的档位胜出。
+    ///
+    /// 两层加权语义（见设计文档 §4.3.3）：
+    /// - **条件间**：有序档位，体现「指定 > 渠道专属 > 通用兜底」的意图，不做跨条件求和
+    ///   （弱维度跨档累加会抵消强维度优势，导致倒挂）；
+    /// - **条件内**：多维加权求和，体现匹配质量。
+    ///
+    /// 全部档位无命中 → 退化回任意 Onboarded（created_at 最早，兜底永远成立）。
+    async fn resolve_agent_multi(
+        &self,
+        ctx: RequestContext,
+        criteria: Vec<AgentMatchCriteria>,
+    ) -> Result<Option<Agent>> {
+        if criteria.is_empty() {
+            return self.resolve_agent(ctx, AgentMatchCriteria::any()).await;
+        }
+        for c in &criteria {
+            if let Some((agent, score)) = self.resolve_scored(ctx.clone(), c).await?
+                && score > 0
+            {
+                return Ok(Some(agent));
+            }
+        }
+        // 兜底：等价于任意 Onboarded（0 分时 resolve_agent 返回最早的）
+        self.resolve_agent(ctx, AgentMatchCriteria::any()).await
     }
 }
 
@@ -249,13 +309,15 @@ pub trait HrDomain: Send + Sync {
     /// Skill 管理能力
     fn skill_manage(&self) -> &dyn SkillManage;
 
-    /// 根据打分规则挑选最匹配的 Agent（统一路由方法）。
+    /// 根据打分规则挑选最匹配的 Agent（统一路由方法，单条件入口）。
     ///
     /// **只接受 ctx + criteria，不感知 project**：agent 与 project 是两个维度，
     /// 不在 hr domain 中融合，由上层（handler 层）按需组合。
     ///
     /// 打分逻辑：
-    /// - 维度 1：`criteria.any_role` 与 `agent.roles` 交集 × 100 分
+    /// - 维度 0：`criteria.any_id` 直查短路，命中即决定性胜出（ID_EXACT_MATCH）
+    /// - 维度 1：`criteria.any_role` 渐进匹配（tier1 全匹配 10000 → tier2 部分精确
+    ///   5000 → tier3 子串层级 1000 → tier4 语义 200）
     /// - 维度 2：`criteria.keyword` 在 capabilities 中子串命中条数 × 10 分
     /// - 维度 3：installed_tags 与 any_role 的弱交集 × 3 分
     /// - 同分 tie-breaker：created_at ASC（老员工优先）
@@ -266,6 +328,17 @@ pub trait HrDomain: Send + Sync {
         &self,
         ctx: RequestContext,
         criteria: AgentMatchCriteria,
+    ) -> Result<Option<Agent>>;
+
+    /// 多条件有序匹配：按 criteria 顺序分档，首个「有命中」的档位胜出。
+    ///
+    /// 单条件是它的特例（`resolve_agent(c)` == `resolve_agent_multi(vec![c])`）。
+    /// 条件间不做跨条件求和——弱维度跨档累加会抵消强维度优势（见设计文档 §4.3.3）。
+    /// 全部档位无命中 → 退化回任意 Onboarded（兜底永远成立）。
+    async fn resolve_agent_multi(
+        &self,
+        ctx: RequestContext,
+        criteria: Vec<AgentMatchCriteria>,
     ) -> Result<Option<Agent>>;
 }
 

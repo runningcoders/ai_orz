@@ -48,6 +48,7 @@ pub mod skill;
 pub mod task;
 pub mod tool;
 pub mod user;
+pub mod wechat;
 
 pub fn init_all() {
     agent::init();
@@ -71,6 +72,8 @@ pub fn init_all() {
     user::init();
     // lark dal 依赖 message_channel + agent dal，最后初始化
     lark::init();
+    // wechat dal 同理（依赖 message_channel dal + wechat dao + user_credential dao）
+    wechat::init();
 }
 
 #[cfg(test)]

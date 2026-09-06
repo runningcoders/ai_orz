@@ -4,6 +4,7 @@ use common::api::{
     EmailChannelConfig, LarkChannelConfig, MessageChannelConfig, MessageChannelDetail,
     MessageChannelListItem, SlackChannelConfig, WebhookChannelConfig, WechatChannelConfig,
 };
+use common::models::{CredentialDetail, CredentialKind};
 
 pub(super) fn to_list_item(
     channel: &MessageChannel,
@@ -67,7 +68,7 @@ fn build_message_channel_config(
 ) -> MessageChannelConfig {
     MessageChannelConfig {
         lark: build_lark_config(config, credentials),
-        wechat: build_wechat_config(config),
+        wechat: build_wechat_config(config, credentials),
         email: build_email_config(config),
         slack: build_slack_config(config),
         webhook: build_webhook_config(config),
@@ -104,11 +105,46 @@ fn build_lark_config(
     })
 }
 
-fn build_wechat_config(config: &ChannelConfig) -> Option<WechatChannelConfig> {
-    let open_id = non_empty_clone(config.wechat_open_id.as_deref())?;
+fn build_wechat_config(
+    config: &ChannelConfig,
+    credentials: Option<&[UserCredential]>,
+) -> Option<WechatChannelConfig> {
+    let credential_id = non_empty_clone(config.wechat_credential_id.as_deref());
+    let credential_name = credential_name(config.wechat_credential_id.as_deref(), credentials);
+    let peer_id = non_empty_clone(config.wechat_peer_id.as_deref());
+    let bot_id = wechat_bot_id(config.wechat_credential_id.as_deref(), credentials);
+
+    if credential_id.is_none()
+        && credential_name.is_none()
+        && bot_id.is_none()
+        && peer_id.is_none()
+        && config.wechat_listen_inbound.is_none()
+    {
+        return None;
+    }
+
     Some(WechatChannelConfig {
-        open_id: Some(open_id),
+        credential_id,
+        credential_name,
+        bot_id,
+        peer_id,
+        listen_inbound: config.wechat_listen_inbound.unwrap_or(true),
     })
+}
+
+/// 反查微信 iLink 凭证里的 `ilink_bot_id`（展示用；凭证不存在或解密失败时为 None）
+fn wechat_bot_id(
+    credential_id: Option<&str>,
+    credentials: Option<&[UserCredential]>,
+) -> Option<String> {
+    let id = credential_id.filter(|v| !v.is_empty())?;
+    let credential = credentials
+        .and_then(|creds| creds.iter().find(|c| c.id() == id))
+        .filter(|c| c.kind() == CredentialKind::WechatIlink)?;
+    match credential.detail() {
+        CredentialDetail::WechatIlink { bot_id, .. } => Some(bot_id.clone()),
+        _ => None,
+    }
 }
 
 fn build_email_config(config: &ChannelConfig) -> Option<EmailChannelConfig> {
@@ -181,7 +217,6 @@ fn credential_name(
 }
 
 fn has_config_secret(config: &ChannelConfig) -> bool {
-    has_value(&config.wechat_app_secret)
-        || has_value(&config.email_password)
-        || has_value(&config.slack_bot_token)
+    // 微信 iLink 与飞书同走「渠道仅存凭证引用」模式，config_json 里无敏感字段
+    has_value(&config.email_password) || has_value(&config.slack_bot_token)
 }

@@ -86,6 +86,17 @@ pub trait MessageChannelDao: Send + Sync {
 
     /// 标记推送失败（更新 last_error, last_push_at）
     async fn mark_push_failed(&self, ctx: RequestContext, id: &str, error: &str) -> Result<()>;
+
+    /// 更新入站运行状态（inbound_state 列整体覆盖，不动其他列）
+    ///
+    /// 该列由入站轮询循环独占写（动态游标 + 动态会话），与 config_json 物理隔离，
+    /// 避免"轮询写运行态 vs 管理后台改配置"互相覆盖。
+    async fn set_inbound_state(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        state_json: &str,
+    ) -> Result<()>;
 }
 
 // ==================== 实现 ====================

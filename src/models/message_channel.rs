@@ -144,6 +144,9 @@ pub struct MessageChannelPo {
     pub last_pushed_at: Option<i64>,
     /// 最后一次推送的错误信息
     pub last_error: Option<String>,
+    /// 入站运行状态（common::models::InboundState 的 JSON 序列化：动态游标 + 动态会话；
+    /// 与 config_json 物理隔离，由轮询循环独占写）
+    pub inbound_state: Option<String>,
     /// 创建人 ID
     pub created_by: String,
     /// 最后修改人 ID
@@ -186,6 +189,7 @@ impl MessageChannelPo {
             scope_project: None,
             last_pushed_at: None,
             last_error: None,
+            inbound_state: None,
             created_by: created_by.clone(),
             modified_by: created_by,
             created_at: now,
@@ -216,13 +220,17 @@ pub struct ChannelConfig {
     /// 关闭后渠道仅用于出站推送与 lark_cli 工具身份，不建立 WS 长连接。
     pub lark_listen_inbound: Option<bool>,
 
-    // 微信配置
-    /// 微信 App ID
-    pub wechat_app_id: Option<String>,
-    /// 微信 App Secret
-    pub wechat_app_secret: Option<String>,
-    /// 微信 Open ID
-    pub wechat_open_id: Option<String>,
+    // 微信（iLink）配置
+    /// iLink 凭证引用 ID（指向 user_credentials 表凭证行；扫码登录成功后在凭据页取得）
+    ///
+    /// 长期凭证（bot_token）不进 config_json，走独立凭据表；渠道仅存引用，
+    /// 运行时按 ID 解析（对齐 lark_credential_id 引用模式，见设计文档 §5.7）
+    pub wechat_credential_id: Option<String>,
+    /// 是否建立 iLink 长轮询（缺省 true，对齐 lark_listen_inbound）
+    pub wechat_listen_inbound: Option<bool>,
+    /// 对端微信用户标识（= 入站消息 from_user_id，稳定不常变；
+    /// 首次入站自动回填，无需手填）
+    pub wechat_peer_id: Option<String>,
 
     // 邮件配置
     /// SMTP 服务器地址

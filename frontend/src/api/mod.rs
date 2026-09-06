@@ -16,6 +16,7 @@ pub mod organization;
 pub mod project;
 pub mod seed;
 pub mod system;
+pub mod wechat_integration;
 
 use common::api::ApiResponse;
 use reqwest::{Client, Method, RequestBuilder};

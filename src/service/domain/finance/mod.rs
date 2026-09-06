@@ -110,6 +110,7 @@ pub fn init() {
         crate::service::dal::attachment::dal(),
     )
     .with_lark_channel_dal(crate::service::dal::lark::dal())
+    .with_wechat_channel_dal(crate::service::dal::wechat::dal())
     .with_user_dal(crate::service::dal::user::dal());
     let _ = FINANCE_DOMAIN.set(Arc::new(finance_domain));
 }
@@ -420,6 +421,43 @@ pub trait IdentityCredentialManage: Send + Sync {
         user_id: &str,
         session_id: &str,
     ) -> Result<bool>;
+
+    // ==================== 微信 iLink 扫码登录（handler 禁直调 pkg，经 Domain 包装） ====================
+
+    /// 获取 iLink 登录二维码
+    async fn wechat_login_qrcode(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<crate::pkg::wechat_ilink::IlinkQrCode>;
+
+    /// 轮询 iLink 二维码状态；confirmed 时自动 upsert 该用户的 `wechat_ilink` 凭据
+    /// （默认凭据已存在则整组轮换，否则创建并设为默认）
+    async fn wechat_login_poll(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        qrcode: &str,
+    ) -> Result<WechatLoginPollOutcome>;
+
+    /// 微信集成状态聚合（当前用户已绑定的 iLink 凭证快照）
+    async fn wechat_integration_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<common::api::WechatIntegrationStatusResponse>;
+}
+
+/// 微信 iLink 扫码轮询结果
+#[derive(Debug, Clone)]
+pub struct WechatLoginPollOutcome {
+    /// 二维码状态
+    pub status: crate::pkg::wechat_ilink::IlinkQrStatusKind,
+    /// 确认后的凭据 ID（仅 confirmed 时存在）
+    pub credential_id: Option<String>,
+    /// iLink bot 标识（仅 confirmed 时存在）
+    pub bot_id: Option<String>,
+    /// true = 该用户已有 iLink 凭据并完成整组轮换；false = 新建
+    pub rotated: bool,
 }
 
 /// Attachment 管理 trait
@@ -660,6 +698,8 @@ pub struct FinanceDomainImpl {
     /// 飞书 DAL 总 trait（凭据 + 监听两面：渠道生命周期联动 WS 监听、
     /// 凭证变更/删除联动用；测试实例可为 None）
     pub lark_channel_dal: Option<Arc<dyn crate::service::dal::lark::LarkDal>>,
+    /// 微信 DAL 总 trait（iLink 长轮询生命周期 + 凭证变更/删除联动；测试实例可为 None）
+    pub wechat_channel_dal: Option<Arc<dyn crate::service::dal::wechat::WechatDal>>,
     /// 用户 DAL（身份凭证资产读写；测试实例可为 None）
     pub user_dal: Option<Arc<dyn crate::service::dal::user::UserDal + Send + Sync>>,
 }
@@ -684,6 +724,7 @@ impl FinanceDomainImpl {
             brain_dal,
             attachment_dal,
             lark_channel_dal: None,
+            wechat_channel_dal: None,
             user_dal: None,
         }
     }
@@ -694,6 +735,15 @@ impl FinanceDomainImpl {
         lark_channel_dal: Arc<dyn crate::service::dal::lark::LarkDal>,
     ) -> Self {
         self.lark_channel_dal = Some(lark_channel_dal);
+        self
+    }
+
+    /// 注入微信 DAL（iLink 长轮询生命周期 + 凭证变更/删除联动）
+    pub fn with_wechat_channel_dal(
+        mut self,
+        wechat_channel_dal: Arc<dyn crate::service::dal::wechat::WechatDal>,
+    ) -> Self {
+        self.wechat_channel_dal = Some(wechat_channel_dal);
         self
     }
 

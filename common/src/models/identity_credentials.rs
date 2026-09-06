@@ -34,6 +34,8 @@ pub enum CredentialKind {
     OAuth,
     /// 用户名密码对（platform 必填；Basic 串由默认增强器组装）
     UserPassword,
+    /// 微信 iLink（ClawBot）扫码凭据：confirmed 一次性产出，整组轮换
+    WechatIlink,
 }
 
 impl CredentialKind {
@@ -50,6 +52,7 @@ impl CredentialKind {
             Self::GenericToken => "generic_token",
             Self::OAuth => "oauth",
             Self::UserPassword => "user_password",
+            Self::WechatIlink => "wechat_ilink",
         }
     }
 }
@@ -138,6 +141,17 @@ pub enum CredentialDetail {
         /// 落库前加密
         password: String,
     },
+    /// 微信 iLink 扫码凭据（confirmed 一次性产出，重新扫码 = 整组轮换）
+    WechatIlink {
+        /// bot 令牌（落库前经 encrypt_channel_secret 加密）
+        bot_token: String,
+        /// iLink bot 标识
+        bot_id: String,
+        /// bot 侧用户标识（部分登录响应未返回）
+        user_id: Option<String>,
+        /// 接入域（以登录响应为准，不硬编码）
+        base_url: String,
+    },
 }
 
 /// 凭证详情补丁（Domain 更新命令组件，明文输入；非 API DTO，无需 serde）
@@ -187,6 +201,17 @@ pub enum CredentialDetailPatch {
         /// 密码（None/空白保持不变；提供时以明文传入，内部加密写入）
         password: Option<String>,
     },
+    /// 微信 iLink 扫码凭据补丁（重新扫码整组覆盖：提供即写入，None/空白保持）
+    WechatIlink {
+        /// bot 令牌（None/空白保持不变；提供时以明文传入，内部加密写入）
+        bot_token: Option<String>,
+        /// iLink bot 标识（None/空白保持不变）
+        bot_id: Option<String>,
+        /// bot 侧用户标识（None 保持不变；Some 空白清除、非空覆盖）
+        user_id: Option<String>,
+        /// 接入域（None/空白保持不变）
+        base_url: Option<String>,
+    },
 }
 
 /// detail 变更影响摘要（Domain 据此决定联动动作，无需感知字段细节）
@@ -205,6 +230,7 @@ impl CredentialDetail {
             Self::GenericToken { .. } => CredentialKind::GenericToken,
             Self::OAuth { .. } => CredentialKind::OAuth,
             Self::UserPassword { .. } => CredentialKind::UserPassword,
+            Self::WechatIlink { .. } => CredentialKind::WechatIlink,
         }
     }
 
@@ -212,6 +238,7 @@ impl CredentialDetail {
     pub fn primary_id(&self) -> Option<&str> {
         match self {
             Self::LarkApp { app_id, .. } => Some(app_id.as_str()),
+            Self::WechatIlink { bot_id, .. } => Some(bot_id.as_str()),
             Self::GithubToken { .. }
             | Self::GenericToken { .. }
             | Self::OAuth { .. }
@@ -226,6 +253,7 @@ impl CredentialDetail {
             Self::GithubToken { token } | Self::GenericToken { token } => token,
             Self::OAuth { refresh_token, .. } => refresh_token,
             Self::UserPassword { password, .. } => password,
+            Self::WechatIlink { bot_token, .. } => bot_token,
         }
     }
 
@@ -272,6 +300,19 @@ impl CredentialDetail {
                 username: username.trim().to_string(),
                 password: password.trim().to_string(),
             },
+            Self::WechatIlink {
+                bot_token,
+                bot_id,
+                user_id,
+                base_url,
+            } => Self::WechatIlink {
+                bot_token: bot_token.trim().to_string(),
+                bot_id: bot_id.trim().to_string(),
+                user_id: user_id
+                    .map(|v| v.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                base_url: base_url.trim().trim_end_matches('/').to_string(),
+            },
         }
     }
 
@@ -313,6 +354,22 @@ impl CredentialDetail {
             Self::UserPassword { username, password } => {
                 if username.is_empty() || password.is_empty() {
                     bail_err!(InvalidRequest, "用户名与密码均不能为空");
+                }
+            }
+            Self::WechatIlink {
+                bot_token,
+                bot_id,
+                base_url,
+                ..
+            } => {
+                if bot_token.is_empty() || bot_id.is_empty() || base_url.is_empty() {
+                    bail_err!(
+                        InvalidRequest,
+                        "微信 iLink 凭据的 bot_token / bot_id / base_url 均不能为空"
+                    );
+                }
+                if !base_url.starts_with("https://") {
+                    bail_err!(InvalidRequest, "微信 iLink 的 base_url 必须是 https 地址");
                 }
             }
         }
@@ -362,6 +419,17 @@ impl CredentialDetail {
             Self::UserPassword { username, password } => Ok(Self::UserPassword {
                 username,
                 password: encrypt(&password)?,
+            }),
+            Self::WechatIlink {
+                bot_token,
+                bot_id,
+                user_id,
+                base_url,
+            } => Ok(Self::WechatIlink {
+                bot_token: encrypt(&bot_token)?,
+                bot_id,
+                user_id,
+                base_url,
             }),
         }
     }
@@ -527,6 +595,49 @@ impl CredentialDetail {
                 {
                     *password_slot = encrypt(&v)?;
                     impact.secret_changed = true;
+                }
+            }
+            CredentialDetailPatch::WechatIlink {
+                bot_token,
+                bot_id,
+                user_id,
+                base_url,
+            } => {
+                let Self::WechatIlink {
+                    bot_token: token_slot,
+                    bot_id: bot_id_slot,
+                    user_id: user_id_slot,
+                    base_url: base_url_slot,
+                } = self
+                else {
+                    bail_err!(
+                        InvalidRequest,
+                        "补丁类型与凭证类型不匹配，无法应用微信 iLink 凭证补丁"
+                    );
+                };
+                // 重新扫码 = 整组轮换：提供即覆盖，None/空白保持
+                if let Some(v) = bot_token
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *token_slot = encrypt(&v)?;
+                    impact.secret_changed = true;
+                }
+                if let Some(v) = bot_id
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *bot_id_slot = v;
+                }
+                if let Some(v) = user_id {
+                    // 空白视为清除，非空覆盖
+                    *user_id_slot = Some(v.trim().to_string()).filter(|s| !s.is_empty());
+                }
+                if let Some(v) = base_url
+                    .map(|s| s.trim().trim_end_matches('/').to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    *base_url_slot = v;
                 }
             }
         }
@@ -1199,6 +1310,132 @@ mod tests {
         // password 加密、username 不加密
         assert!(
             matches!(&enc, CredentialDetail::UserPassword { username, password } if username == "alice" && password == "enc:p")
+        );
+    }
+
+    #[test]
+    fn test_wechat_ilink_serde_and_accessors() {
+        let detail = CredentialDetail::WechatIlink {
+            bot_token: "enc:v1:bot".to_string(),
+            bot_id: "bot_123".to_string(),
+            user_id: Some("u_abc".to_string()),
+            base_url: "https://ilinkai.weixin.qq.com".to_string(),
+        };
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["type"], "wechat_ilink");
+        assert_eq!(json["bot_id"], "bot_123");
+        // 往返一致
+        let parsed: CredentialDetail = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, detail);
+        // kind / as_str / serde 值空间一致
+        assert_eq!(detail.kind(), CredentialKind::WechatIlink);
+        assert_eq!(CredentialKind::WechatIlink.as_str(), "wechat_ilink");
+        assert_eq!(
+            serde_json::to_value(CredentialKind::WechatIlink).unwrap(),
+            "wechat_ilink"
+        );
+        // primary_id = bot_id（同 lark app_id 地位）；primary_secret = bot_token
+        assert_eq!(detail.primary_id(), Some("bot_123"));
+        assert_eq!(detail.primary_secret(), "enc:v1:bot");
+        // 专用 kind 不需要 platform
+        assert!(!CredentialKind::WechatIlink.requires_platform());
+    }
+
+    #[test]
+    fn test_wechat_ilink_normalized() {
+        let detail = CredentialDetail::WechatIlink {
+            bot_token: " tok ".to_string(),
+            bot_id: " bot_1 ".to_string(),
+            user_id: Some("  ".to_string()),
+            base_url: "https://ilinkai.weixin.qq.com/".to_string(),
+        };
+        let normalized = detail.normalized();
+        assert!(
+            matches!(&normalized, CredentialDetail::WechatIlink { bot_token, bot_id, user_id, base_url }
+                if bot_token == "tok" && bot_id == "bot_1" && user_id.is_none() && base_url == "https://ilinkai.weixin.qq.com")
+        );
+    }
+
+    #[test]
+    fn test_wechat_ilink_validate() {
+        let ok = CredentialDetail::WechatIlink {
+            bot_token: "t".into(),
+            bot_id: "b".into(),
+            user_id: None,
+            base_url: "https://ilinkai.weixin.qq.com".into(),
+        };
+        assert!(ok.validate().is_ok());
+        // 必填字段为空
+        let empty_token = CredentialDetail::WechatIlink {
+            bot_token: "".into(),
+            bot_id: "b".into(),
+            user_id: None,
+            base_url: "https://x".into(),
+        };
+        assert!(empty_token.validate().is_err());
+        // base_url 必须是 https
+        let http_url = CredentialDetail::WechatIlink {
+            bot_token: "t".into(),
+            bot_id: "b".into(),
+            user_id: None,
+            base_url: "http://ilinkai.weixin.qq.com".into(),
+        };
+        assert!(http_url.validate().is_err());
+    }
+
+    #[test]
+    fn test_wechat_ilink_encrypt_and_patch() {
+        // 只加密 bot_token，其余字段不动
+        let enc = CredentialDetail::WechatIlink {
+            bot_token: "secret-token".into(),
+            bot_id: "bot_1".into(),
+            user_id: Some("u".into()),
+            base_url: "https://ilinkai.weixin.qq.com".into(),
+        }
+        .encrypt_sensitive(|s| Ok(format!("enc:{}", s)))
+        .unwrap();
+        assert!(
+            matches!(&enc, CredentialDetail::WechatIlink { bot_token, bot_id, base_url, .. }
+                if bot_token == "enc:secret-token" && bot_id == "bot_1" && base_url == "https://ilinkai.weixin.qq.com")
+        );
+
+        // 重新扫码 = 整组轮换：bot_token 轮换计为 secret_changed，user_id 空白清除
+        let mut mutable = enc;
+        let impact = mutable
+            .apply_patch(
+                CredentialDetailPatch::WechatIlink {
+                    bot_token: Some("new-token".into()),
+                    bot_id: Some("bot_2".into()),
+                    user_id: Some("  ".into()),
+                    base_url: Some("https://new.example.com/".into()),
+                },
+                |s| Ok(format!("enc:{}", s)),
+            )
+            .unwrap();
+        assert!(impact.secret_changed);
+        assert!(
+            matches!(&mutable, CredentialDetail::WechatIlink { bot_token, bot_id, user_id, base_url }
+                if bot_token == "enc:new-token" && bot_id == "bot_2" && user_id.is_none() && base_url == "https://new.example.com")
+        );
+
+        // 补丁类型不匹配被拒
+        let mut lark = CredentialDetail::LarkApp {
+            app_id: "a".into(),
+            app_secret: "s".into(),
+            encrypt_key: None,
+            verification_token: None,
+        };
+        assert!(
+            lark.apply_patch(
+                CredentialDetailPatch::WechatIlink {
+                    bot_token: None,
+                    bot_id: None,
+                    user_id: None,
+                    base_url: None,
+                },
+                |s| Ok(s.to_string()),
+            )
+            .is_err()
         );
     }
 

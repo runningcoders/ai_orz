@@ -13,6 +13,7 @@ use crate::api::finance::{
     update_message_channel_status,
 };
 use crate::api::lark_integration::get_lark_integration_status;
+use crate::api::wechat_integration::get_wechat_integration_status;
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -22,7 +23,7 @@ use common::api::{
     CreateEmailChannelConfig, CreateLarkChannelConfig, CreateMessageChannelConfig,
     CreateSlackChannelConfig, CreateWebhookChannelConfig, CreateWechatChannelConfig,
     LarkCredentialSnapshot, LarkUserAuthSnapshot, UpdateMessageChannelRequest,
-    UpdateMessageChannelStatusRequest,
+    UpdateMessageChannelStatusRequest, WechatCredentialSnapshot,
 };
 use common::enums::{ChannelStatus, ChannelType};
 
@@ -57,8 +58,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut edit_open_id = use_signal(String::new);
     let mut edit_user_name = use_signal(String::new);
     let mut edit_listen_inbound = use_signal(|| true);
-    // WeChat
-    let mut edit_wechat_open_id = use_signal(String::new);
+    // WeChat（iLink）
+    let mut edit_wechat_credential_id = use_signal(String::new);
+    let mut edit_wechat_peer_id = use_signal(String::new);
+    let mut edit_wechat_listen_inbound = use_signal(|| true);
     // Email
     let mut edit_email_smtp_host = use_signal(String::new);
     let mut edit_email_smtp_port = use_signal(|| 587u16);
@@ -71,6 +74,15 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
     let mut edit_webhook_method = use_signal(String::new);
     let mut edit_webhook_body_template = use_signal(String::new);
     let mut saving = use_signal(|| false);
+
+    // ===== 微信 iLink 凭证下拉（聚合端点，独立 resource） =====
+    let mut wechat_credentials = use_signal(Vec::<WechatCredentialSnapshot>::new);
+    let wechat_res = use_resource(move || async { get_wechat_integration_status().await });
+    use_effect(move || {
+        if let Some(Ok(status)) = wechat_res.read().as_ref() {
+            wechat_credentials.set(status.credentials.clone());
+        }
+    });
 
     // ===== 飞书集成快照（凭证下拉 + 用户授权徽标） =====
     let mut lark_credentials = use_signal(Vec::<LarkCredentialSnapshot>::new);
@@ -191,10 +203,20 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         .map(|l| l.listen_inbound)
                         .unwrap_or(true),
                 );
-                edit_wechat_open_id.set(
+                edit_wechat_credential_id.set(
                     cfg.and_then(|c| c.wechat.as_ref())
-                        .and_then(|w| w.open_id.clone())
+                        .and_then(|w| w.credential_id.clone())
                         .unwrap_or_default(),
+                );
+                edit_wechat_peer_id.set(
+                    cfg.and_then(|c| c.wechat.as_ref())
+                        .and_then(|w| w.peer_id.clone())
+                        .unwrap_or_default(),
+                );
+                edit_wechat_listen_inbound.set(
+                    cfg.and_then(|c| c.wechat.as_ref())
+                        .map(|w| w.listen_inbound)
+                        .unwrap_or(true),
                 );
                 edit_email_smtp_host.set(
                     cfg.and_then(|c| c.email.as_ref())
@@ -267,7 +289,8 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                 let identity_mode = edit_identity_mode();
                 let open_id = edit_open_id();
                 let user_name = edit_user_name();
-                let wechat_open_id = edit_wechat_open_id();
+                let wechat_credential_id = edit_wechat_credential_id();
+                let wechat_peer_id = edit_wechat_peer_id();
                 let email_smtp_host = edit_email_smtp_host();
                 let email_smtp_port = edit_email_smtp_port();
                 let email_username = edit_email_username();
@@ -320,13 +343,17 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                         },
                         wechat: if channel_type == ChannelType::Wechat {
                             Some(CreateWechatChannelConfig {
-                                app_id: None,
-                                app_secret: None,
-                                open_id: if wechat_open_id.trim().is_empty() {
+                                credential_id: if wechat_credential_id.trim().is_empty() {
                                     None
                                 } else {
-                                    Some(wechat_open_id)
+                                    Some(wechat_credential_id)
                                 },
+                                peer_id: if wechat_peer_id.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(wechat_peer_id)
+                                },
+                                listen_inbound: Some(edit_wechat_listen_inbound()),
                             })
                         } else {
                             None
@@ -417,8 +444,10 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
         .and_then(|r| r.as_ref().err())
         .map(|e| format!("加载失败: {}", e));
     let credentials_list = lark_credentials.read().clone();
+    let wechat_credentials_list = wechat_credentials.read().clone();
     let user_auth = lark_user_auth.read().clone();
     let edit_credential_value = edit_credential_id();
+    let edit_wechat_credential_value = edit_wechat_credential_id();
     let edit_mode_value = edit_identity_mode();
     let user_auth_suffix = user_auth
         .user_name
@@ -560,10 +589,26 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if c.channel_type == ChannelType::Wechat {
-                                div {
-                                    div { class: "text-sm text-base-content/60", "微信 Open ID" }
-                                    div { class: "font-mono",
-                                        if let Some(id) = wechat_cfg.and_then(|w| w.open_id.as_ref()) { "{id}" } else { "未配置" }
+                                div { class: "md:col-span-2",
+                                    div { class: "flex items-center justify-between gap-2 flex-wrap",
+                                        div {
+                                            div { class: "text-sm text-base-content/60", "微信 iLink 凭证" }
+                                            div { class: "font-mono",
+                                                if let Some(name) = wechat_cfg.and_then(|w| w.credential_name.as_deref()) { "{name}" } else { "未绑定" }
+                                            }
+                                            div { class: "text-sm text-base-content/60 mt-1", "对端微信用户" }
+                                            div { class: "font-mono",
+                                                if let Some(peer) = wechat_cfg.and_then(|w| w.peer_id.as_ref()) { "{peer}" } else { "未配置（首条入站自动回填）" }
+                                            }
+                                        }
+                                        div { class: "flex items-center gap-2 flex-wrap",
+                                            if wechat_cfg.map(|w| w.listen_inbound).unwrap_or(false) {
+                                                span { class: "badge hud-badge badge-sm badge-success", "入站监听中" }
+                                            } else {
+                                                span { class: "badge hud-badge badge-sm badge-ghost", "入站已关闭" }
+                                            }
+                                            Link { class: "btn hud-btn btn-ghost btn-sm", to: crate::pages::Route::FinanceIdentity {}, "扫码授权 →" }
+                                        }
                                     }
                                 }
                             }
@@ -769,13 +814,43 @@ pub fn FinanceMessageChannelDetail(id: String) -> Element {
                                 }
                             }
                             if ct == ChannelType::Wechat {
-                                div { class: "hud-divider divider", "微信专属配置" }
+                                div { class: "hud-divider divider", "微信 iLink 专属配置" }
                                 div { class: "form-control w-full",
                                     label { class: "label",
-                                        span { class: "label-text", "微信 Open ID" }
+                                        span { class: "label-text font-medium", "iLink 凭证 *" }
                                     }
-                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_wechat_open_id}",
-                                        oninput: move |e| edit_wechat_open_id.set(e.value()), placeholder: "openid_xxx" }
+                                    select { class: "select select-bordered hud-input w-full", value: "{edit_wechat_credential_value}",
+                                        onchange: move |e| edit_wechat_credential_id.set(e.value()),
+                                        option { value: "", "请选择已扫码授权的 iLink 凭证" }
+                                        for cred in wechat_credentials_list.iter() {
+                                            {
+                                                let cid = cred.credential_id.clone();
+                                                let cname = cred.name.clone();
+                                                let cbot = cred.bot_id.clone();
+                                                rsx! { option { key: "{cid}", value: "{cid}", "{cname}（{cbot}）" } }
+                                            }
+                                        }
+                                    }
+                                    label { class: "label",
+                                        span { class: "label-text-alt", "凭证在「财务管理 → 身份凭证」扫码授权；更换凭证将按指纹重建长轮询" }
+                                    }
+                                }
+                                div { class: "form-control w-full",
+                                    label { class: "label",
+                                        span { class: "label-text", "对端微信用户 ID" }
+                                    }
+                                    input { class: "input input-bordered hud-input w-full font-mono", value: "{edit_wechat_peer_id}",
+                                        oninput: move |e| edit_wechat_peer_id.set(e.value()),
+                                        placeholder: "可留空：首条入站消息到达时自动回填" }
+                                }
+                                div { class: "form-control",
+                                    label { class: "label cursor-pointer justify-start gap-3",
+                                        input { class: "toggle toggle-primary", r#type: "checkbox", checked: edit_wechat_listen_inbound(),
+                                            onchange: move |_| edit_wechat_listen_inbound.set(!edit_wechat_listen_inbound()) }
+                                        span { class: "label-text",
+                                            "入站监听（建立 iLink 长轮询接收该 bot 的私信；关闭后仅用于出站推送）"
+                                        }
+                                    }
                                 }
                             }
                             if ct == ChannelType::Email {

@@ -11,6 +11,7 @@ pub mod task_event_consumer;
 pub mod think_round_stats_consumer;
 pub mod tool_exec_log_consumer;
 pub mod tool_exec_stats_consumer;
+pub mod wechat_inbound;
 
 use common::error::Result;
 use std::sync::Arc;
@@ -25,6 +26,11 @@ pub async fn init() -> Result<()> {
     // 飞书入站消息：DAL 单例在 service::init 阶段已就位，此处注入弱引用
     aop::registry().register_consumer(Arc::new(lark_inbound::LarkInboundConsumer::new(
         Arc::downgrade(&crate::service::dal::lark::dal()),
+    )))?;
+
+    // 微信入站消息：同上（iLink 长轮询事件）
+    aop::registry().register_consumer(Arc::new(wechat_inbound::WechatInboundConsumer::new(
+        Arc::downgrade(&crate::service::dal::wechat::dal()),
     )))?;
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;

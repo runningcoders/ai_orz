@@ -234,6 +234,23 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
             CredentialKind::GenericToken | CredentialKind::OAuth | CredentialKind::UserPassword => {
                 false
             }
+            // 微信 iLink 扫码凭据：渠道侧通过 wechat_credential_id 引用，与 LarkApp 同理，
+            // 被引用即拦截删除（先删除或更换引用渠道）
+            CredentialKind::WechatIlink => {
+                if let Some(wechat_dal) = &self.wechat_channel_dal {
+                    let channels = wechat_dal
+                        .find_channels_by_credential_id(credential_id)
+                        .await?;
+                    if !channels.is_empty() {
+                        bail_err!(
+                            Conflict,
+                            "凭证被 {} 个渠道引用，请先删除或更换引用渠道",
+                            channels.len()
+                        );
+                    }
+                }
+                false
+            }
         };
 
         // 软删（DAO 联动清默认标记：删掉的凭证若为默认，对应作用域默认槽位自动空出）
@@ -496,5 +513,123 @@ impl super::IdentityCredentialManage for FinanceDomainImpl {
         session_id: &str,
     ) -> Result<bool> {
         crate::pkg::lark_integration::cancel_bind_session(user_id, session_id).await
+    }
+
+    /// 获取 iLink 登录二维码（薄委托 pkg 协议客户端）
+    async fn wechat_login_qrcode(
+        &self,
+        _ctx: RequestContext,
+    ) -> Result<crate::pkg::wechat_ilink::IlinkQrCode> {
+        crate::pkg::wechat_ilink::get_login_qrcode().await
+    }
+
+    /// 轮询 iLink 二维码状态；confirmed 时自动 upsert 凭据（见 trait 文档）
+    async fn wechat_login_poll(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        qrcode: &str,
+    ) -> Result<super::WechatLoginPollOutcome> {
+        let status = crate::pkg::wechat_ilink::poll_qrcode_status(qrcode).await?;
+        let Some(confirmed) = status.confirmed else {
+            return Ok(super::WechatLoginPollOutcome {
+                status: status.status,
+                credential_id: None,
+                bot_id: None,
+                rotated: false,
+            });
+        };
+
+        // confirmed：默认凭据已存在 → 整组轮换；否则创建并设为默认
+        let user_dal = self.user_dal()?.clone();
+        let existing = user_dal
+            .find_default_credential(ctx.clone(), user_id, CredentialKind::WechatIlink, None)
+            .await?;
+        let (credential_id, rotated) = if let Some(existing) = existing {
+            self.update_credential(
+                ctx.clone(),
+                user_id,
+                super::UpdateCredentialCmd {
+                    credential_id: existing.id().to_string(),
+                    name: None,
+                    patch: common::models::CredentialDetailPatch::WechatIlink {
+                        bot_token: Some(confirmed.bot_token.clone()),
+                        bot_id: Some(confirmed.bot_id.clone()),
+                        // Some("") 语义 = 清除（本次登录响应未返回 user_id 时）
+                        user_id: Some(confirmed.user_id.clone().unwrap_or_default()),
+                        base_url: Some(confirmed.base_url.clone()),
+                    },
+                },
+            )
+            .await?;
+            (existing.id().to_string(), true)
+        } else {
+            let credential_id = self
+                .create_credential(
+                    ctx.clone(),
+                    user_id,
+                    super::CreateCredentialCmd {
+                        name: format!("微信 iLink（{}）", confirmed.bot_id),
+                        detail: common::models::CredentialDetail::WechatIlink {
+                            bot_token: confirmed.bot_token.clone(),
+                            bot_id: confirmed.bot_id.clone(),
+                            user_id: confirmed.user_id.clone(),
+                            base_url: confirmed.base_url.clone(),
+                        },
+                        platform: None,
+                    },
+                )
+                .await?;
+            self.set_default_credential(
+                ctx.clone(),
+                user_id,
+                CredentialKind::WechatIlink,
+                None,
+                Some(&credential_id),
+            )
+            .await?;
+            (credential_id, false)
+        };
+
+        log_info!(
+            &ctx,
+            "wechat_ilink_credential_upsert",
+            "iLink 扫码登录凭据落库 user_id={} bot_id={} rotated={} credential_id={}",
+            user_id,
+            confirmed.bot_id,
+            rotated,
+            credential_id
+        );
+        Ok(super::WechatLoginPollOutcome {
+            status: status.status,
+            credential_id: Some(credential_id),
+            bot_id: Some(confirmed.bot_id),
+            rotated,
+        })
+    }
+
+    async fn wechat_integration_status(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+    ) -> Result<common::api::WechatIntegrationStatusResponse> {
+        let user_dal = self.user_dal()?.clone();
+        let mut query = Self::owned_credential_query(user_id);
+        query.kind = Some(CredentialKind::WechatIlink);
+        let page = user_dal.query_credentials(ctx, query).await?;
+        let mut credentials = Vec::new();
+        for credential in page.items {
+            let common::models::CredentialDetail::WechatIlink { bot_id, .. } = credential.detail()
+            else {
+                continue;
+            };
+            credentials.push(common::api::WechatCredentialSnapshot {
+                credential_id: credential.id().to_string(),
+                name: credential.name().to_string(),
+                bot_id: bot_id.clone(),
+                is_default: credential.po.is_default,
+            });
+        }
+        Ok(common::api::WechatIntegrationStatusResponse { credentials })
     }
 }

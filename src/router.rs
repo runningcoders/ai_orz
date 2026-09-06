@@ -338,6 +338,20 @@ fn github_integration_routes() -> Router {
         )
 }
 
+fn wechat_integration_routes() -> Router {
+    use crate::handlers::finance::wechat_integration as wi;
+    Router::new()
+        .route("/status", get(wi::get_status::get_status_handler))
+        .route(
+            "/qrcode",
+            post(wi::get_login_qrcode::get_login_qrcode_handler),
+        )
+        .route(
+            "/qrcode/status",
+            get(wi::login_status::login_status_handler),
+        )
+}
+
 fn generic_token_integration_routes() -> Router {
     use crate::handlers::finance::generic_token_integration as gt;
     Router::new()
@@ -679,6 +693,7 @@ fn finance_routes() -> Router {
     Router::new()
         .nest("/identity/lark", lark_integration_routes())
         .nest("/identity/github", github_integration_routes())
+        .nest("/identity/wechat", wechat_integration_routes())
         .nest("/identity/generic-token", generic_token_integration_routes())
         .route(
             "/attachments/upload",

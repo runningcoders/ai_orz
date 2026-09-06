@@ -13,5 +13,6 @@ pub mod message;
 pub mod message_channel;
 pub mod model_provider;
 pub mod tool;
+pub mod wechat_integration;
 
 // handler 函数导出供路由使用

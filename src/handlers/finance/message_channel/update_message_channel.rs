@@ -8,7 +8,7 @@ use common::api::{
     CreateMessageChannelConfig, UpdateMessageChannelRequest, UpdateMessageChannelResponse,
 };
 
-use super::create_message_channel::validate_lark_credential_ref;
+use super::create_message_channel::{validate_lark_credential_ref, validate_wechat_credential_ref};
 use super::response::to_detail;
 use common::error::{Result, bail_err, err};
 
@@ -80,6 +80,11 @@ pub async fn update_message_channel(
         channel.po.config_json.0.lark_credential_id.as_deref(),
         &credentials,
     )?;
+    validate_wechat_credential_ref(
+        channel.po.channel_type,
+        channel.po.config_json.0.wechat_credential_id.as_deref(),
+        &credentials,
+    )?;
 
     domain()
         .message_channel_manage()
@@ -114,14 +119,14 @@ fn merge_channel_config(target: &mut ChannelConfig, source: &Option<CreateMessag
     }
 
     if let Some(wechat) = &config.wechat {
-        if let Some(v) = &wechat.app_id {
-            target.wechat_app_id = Some(v.clone());
+        if let Some(v) = &wechat.credential_id {
+            target.wechat_credential_id = Some(v.clone());
         }
-        if let Some(v) = &wechat.app_secret {
-            target.wechat_app_secret = Some(v.clone());
+        if let Some(v) = &wechat.peer_id {
+            target.wechat_peer_id = Some(v.clone());
         }
-        if let Some(v) = &wechat.open_id {
-            target.wechat_open_id = Some(v.clone());
+        if let Some(v) = wechat.listen_inbound {
+            target.wechat_listen_inbound = Some(v);
         }
     }
 

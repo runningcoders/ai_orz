@@ -14,6 +14,9 @@ pub const ROLE_RECEPTION: &str = "reception";
 /// 飞书入站前台 Agent（通过飞书 WebSocket/消息渠道进入的消息默认路由到此角色）
 pub const ROLE_FEISHU_RECEPTION: &str = "feishu_reception";
 
+/// 微信入站前台 Agent（通过微信 iLink 长轮询渠道进入的消息默认路由到此角色）
+pub const ROLE_WECHAT_RECEPTION: &str = "wechat_reception";
+
 /// A2A 网关 Agent（处理外部 Agent 发来的任务或订阅请求）
 pub const ROLE_A2A_GATEWAY: &str = "a2a_gateway";
 
@@ -36,6 +39,7 @@ pub const ROLE_SERVICE: &str = "service";
 pub const SYSTEM_PRESET_ROLES: &[&str] = &[
     ROLE_RECEPTION,
     ROLE_FEISHU_RECEPTION,
+    ROLE_WECHAT_RECEPTION,
     ROLE_A2A_GATEWAY,
     ROLE_PROJECT_OWNER,
     ROLE_WORKER,
@@ -49,6 +53,7 @@ pub fn preset_role_display(role: &str) -> Option<&'static str> {
     match role {
         ROLE_RECEPTION => Some("Web 前台"),
         ROLE_FEISHU_RECEPTION => Some("飞书前台"),
+        ROLE_WECHAT_RECEPTION => Some("微信前台"),
         ROLE_A2A_GATEWAY => Some("A2A 网关"),
         ROLE_PROJECT_OWNER => Some("项目经理"),
         ROLE_WORKER => Some("执行员工"),

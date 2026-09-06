@@ -263,6 +263,31 @@ impl MessageChannelDao for MessageChannelDaoSqliteImpl {
 
         Ok(())
     }
+
+    async fn set_inbound_state(
+        &self,
+        ctx: RequestContext,
+        id: &str,
+        state_json: &str,
+    ) -> Result<()> {
+        let current_timestamp = Utc::now().timestamp_millis();
+        let state = state_json.to_string();
+
+        sqlx::query!(
+            r#"
+            UPDATE message_channels
+            SET inbound_state = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+            state,
+            current_timestamp,
+            id,
+        )
+        .execute(ctx.db_pool())
+        .await?;
+
+        Ok(())
+    }
 }
 
 // ==================== 工厂方法 + 单例 ====================

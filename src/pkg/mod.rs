@@ -16,6 +16,7 @@ pub mod password;
 pub mod paths;
 pub mod policy;
 pub mod process;
+pub mod wechat_ilink;
 // 脱敏引擎实现在 common::redaction（前后端共享，单一事实源）；此处仅作路径兼容，
 // 使 `crate::pkg::redaction::*` 与 `redaction::warmup()` 等既有引用继续可用。
 pub use common::redaction;

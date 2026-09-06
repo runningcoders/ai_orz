@@ -28,10 +28,21 @@ pub struct LarkChannelConfig {
 }
 
 /// 微信渠道配置（非敏感展示字段，用于响应 DTO）
+///
+/// iLink 长期凭证（bot_token 等）不在此出现：渠道只存 `credential_id` 引用，
+/// 运行时按 ID 从凭据表解析（对齐 Lark 引用模式，见设计文档 §5.7）。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct WechatChannelConfig {
-    /// 微信 Open ID
-    pub open_id: Option<String>,
+    /// 凭证引用 ID（指向 user_credentials，kind=WechatIlink）
+    pub credential_id: Option<String>,
+    /// 凭证名称（反查凭据表，未找到为 None）
+    pub credential_name: Option<String>,
+    /// iLink bot 标识（`ilink_bot_id`，来自凭证，展示用）
+    pub bot_id: Option<String>,
+    /// 对端微信用户标识（入站首次到达时自动回填，可手填）
+    pub peer_id: Option<String>,
+    /// 是否建立 iLink 长轮询（缺省 true）
+    pub listen_inbound: bool,
 }
 
 /// 邮件渠道配置（非敏感展示字段，用于响应 DTO）
@@ -102,12 +113,14 @@ pub struct CreateLarkChannelConfig {
 /// 创建/更新请求 - 微信配置（含敏感字段）
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct CreateWechatChannelConfig {
-    /// App ID
-    pub app_id: Option<String>,
-    /// App Secret（敏感字段）
-    pub app_secret: Option<String>,
-    /// 用户 Open ID
-    pub open_id: Option<String>,
+    /// 凭证引用 ID（指向 user_credentials，kind=WechatIlink；扫码登录成功后在凭据页取得）
+    ///
+    /// iLink 的 bot_token 属长期凭证，走凭据表加密存储，渠道仅存引用。
+    pub credential_id: Option<String>,
+    /// 对端微信用户标识（可留空：首条入站消息到达时自动回填）
+    pub peer_id: Option<String>,
+    /// 是否建立 iLink 长轮询（缺省 true）
+    pub listen_inbound: Option<bool>,
 }
 
 /// 创建/更新请求 - 邮件配置（含敏感字段）

@@ -272,6 +272,7 @@ impl LarkDalImpl {
             from_id,
             from_role: common::enums::MessageRole::User,
             to_agent_id,
+            channel_type: ChannelType::Lark,
             content,
             project_id: None,
             task_id: None,
