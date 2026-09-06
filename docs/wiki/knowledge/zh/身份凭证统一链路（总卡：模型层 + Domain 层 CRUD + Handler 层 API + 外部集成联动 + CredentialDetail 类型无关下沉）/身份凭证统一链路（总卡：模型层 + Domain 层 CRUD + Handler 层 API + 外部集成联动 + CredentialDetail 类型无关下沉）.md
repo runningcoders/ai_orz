@@ -34,6 +34,15 @@ source_files:
 - docs/wiki/knowledge/zh/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 +
   LarkWsMetrics 健康指标/Lark P2P WS 私信入站：身份凭证引用解析 + app_id 聚合 WS + open_id 自动映射 + LarkWsMetrics
   健康指标.md
+- common/src/models/identity_credentials.rs#L23-L58（CredentialKind::WechatIlink 新增变体 + requires_platform 专用 kind 返回 false）
+- common/src/models/identity_credentials.rs#L145-L154（CredentialDetail::WechatIlink 新增字段：bot_token + bot_id + user_id + base_url；encrypt_sensitive 只加密 bot_token）
+- common/src/models/identity_credentials.rs#L359-L374（WechatIlink validate：bot_token/bot_id/base_url 三要素必填 + base_url https 校验）
+- src/pkg/wechat_ilink.rs#L88-L209（扫码登录协议：get_login_qrcode + poll_qrcode_status confirmed 分支返回 bot_token/bot_id/base_url）
+- src/service/dao/wechat/ilink.rs#L74-L128（resolve_ilink_credentials：WechatIlink 凭证消费方的唯一解析入口，双重校验 kind + decrypt bot_token）
+- src/handlers/finance/wechat_integration/（扫码授权 REST API 三端点：get_login_qrcode + get_status + login_status）
+- docs/wiki/zh/content/功能模块/用户与组织管理/身份凭证与授权流程.md
+- docs/wiki/zh/content/功能模块/消息系统/微信%20iLink%20专属渠道.md
+- docs/wiki/knowledge/zh/IdentityCredentials%20身份凭证扩展：授权流程%20+%20QR登录%20+%20多渠道凭证管理/IdentityCredentials%20身份凭证扩展：授权流程%20+%20QR登录%20+%20多渠道凭证管理.md
 
 ---
 

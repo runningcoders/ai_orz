@@ -23,6 +23,8 @@ source_files:
   - src/service/dal/lark.rs#L632-L710（LarkMessageChannelDal 实现 MessageInboundAdapter：channel_type = Lark；start = running RwLock 检查+置位+回调注入+启用的飞书渠道按 app_id 聚合+resolve_channel_credentials+调用 lark_dao 开启 WS；stop = running=false + 断开全部 WS；listener_stats() 透传 metrics 供系统健康面板）
 
   - src/service/dal/message_channel.rs#L329-L367（MessageChannelDalImpl push_to_channel：match ChannelType 分发出站调用（纯分发无 trait，漏加编译直接报错）。入站链路由 LarkMessageChannelDal 独立实现 MessageInboundAdapter，两者对称但独立）
+  - src/service/dal/wechat/impl.rs#L369-L437（WechatDalImpl 实现 MessageInboundAdapter：channel_type = Wechat；start = 渠道数据驱动逐渠道建长轮询 + resolve_channel_credentials + PollLoopRegistry.ensure；stop = stop_all_polling；单渠道轮询失败不阻塞其他渠道启动）
+  - src/service/dal/wechat/mod.rs#L48-L63（WechatDalImpl.init 注册到 MessageAdapterRegistry：无条件注册，微信启停由渠道数据驱动）
   - 'common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）'
 
   - docs/archive/design-archive/message_channel_design.md
@@ -47,7 +49,13 @@ source_files:
 
   - 【平行卡2】AES-256-GCM 敏感字段加密：encrypt_channel_secret 闭包注入 + 加密原语位置 + 版本兼容 docs/wiki/knowledge/zh/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容/AES-256-GCM%20敏感字段加密：encrypt_channel_secret%20闭包注入%20+%20加密原语位置%20+%20版本兼容.md
 
-  - 【平行卡3】Lark P2P WS 私信入站：resolve_channel_credentials + 用户身份自动映射 + 监听健康指标（本 Batch 卡 4）---
+  - 【平行卡3】Lark P2P WS 私信入站：resolve_channel_credentials + 用户身份自动映射 + 监听健康指标 docs/wiki/knowledge/zh/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标/Lark%20P2P%20WS%20私信入站：身份凭证引用解析%20+%20app_id%20聚合%20WS%20+%20open_id%20自动映射%20+%20LarkWsMetrics%20健康指标.md
+
+  - 【Level 4 细卡】InboundState 入站运行状态：动态游标 + 会话滚动刷新（本 Batch 2026-09-07 新增细卡，微信 iLink 等增量拉取型渠道的运行时状态持久化模型）docs/wiki/knowledge/zh/InboundState%20入站运行状态：动态游标%20+%20会话滚动刷新/InboundState%20入站运行状态：动态游标%20+%20会话滚动刷新.md
+
+  - docs/wiki/zh/content/功能模块/消息系统/微信%20iLink%20专属渠道.md
+
+---
 
 # 消息渠道入站适配中台（MessageInboundAdapter + Registry + 生命周期）
 
