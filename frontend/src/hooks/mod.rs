@@ -1,3 +1,4 @@
+use dioxus::dioxus_core::spawn_forever;
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
@@ -185,7 +186,14 @@ pub fn use_login_liveness() {
 
         probe_inflight.set(true);
         let mut auth = auth;
-        spawn(async move {
+        // 必须用 `spawn_forever` 而非 `spawn`：
+        // `spawn` 内部走 `Runtime::with_current_scope(..)` → `current_scope_id()`，
+        // 要求调用时正处在 Dioxus 的 scope 上下文中。而 `do_probe` 有两个调用点跑在
+        // **原生 JS 回调**里（下方 visibilitychange / setInterval 的 wasm-bindgen Closure），
+        // 那时 scope 栈是空的 → `unwrap()` on None → panic（runtime.rs: current_scope_id）。
+        // `spawn_forever` 显式用 `ScopeId::ROOT`，不读当前 scope，可安全用于原生回调。
+        // 本 hook 挂在 App 根组件（main.rs），任务挂 ROOT scope 与其生命周期等价，无泄漏风险。
+        spawn_forever(async move {
             let res = get_current_user_info().await;
             probe_inflight.set(false);
             match res {
