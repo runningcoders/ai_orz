@@ -24,6 +24,13 @@ source_files:
 
 ---
 
+> ⚠️ **本卡于 2026-09-07 废弃**，被新版替代：
+> [策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层.md)
+>
+> **废弃原因**：mixed.rs（PolicyMixed 硬软分层）已从代码库移除；TokenCostPolicy 替换为 TokenBudgetPolicy；think_loop 已重构为统一 8 策略 OR 组 + FinalAnswerPolicy 正常完成裁决 + ConsecutiveLlmErrorsPolicy 错误路径裁决；PolicyAction 三值枚举（Deny/Confirm/Audit）+ ShellRulePolicy 声明式规则 + shell_policy 拦截层为全新内容，旧卡未覆盖。本卡原地保留作为历史快照参考。
+>
+> **已知过期引用**：`src/pkg/policy/mixed.rs#L1-L60`（文件已删除）、`src/pkg/policy/builtin.rs#L1-L270`（实际 361 行，新增 FinalAnswerPolicy/ConsecutiveLlmErrorsPolicy/NoProgressPolicy）、`src/service/domain/runtime/think_loop.rs#L90-L145`（实际 751 行，架构已重写）
+
 # 策略引擎框架
 
 ## §1 整体方案

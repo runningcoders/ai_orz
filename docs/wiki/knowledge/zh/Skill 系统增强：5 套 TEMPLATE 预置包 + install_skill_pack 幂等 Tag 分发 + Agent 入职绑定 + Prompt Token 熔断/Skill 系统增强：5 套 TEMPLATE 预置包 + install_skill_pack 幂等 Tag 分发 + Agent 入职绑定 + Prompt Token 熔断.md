@@ -12,11 +12,13 @@ scope:
 - src/handlers/hr/agent/sync_packs.rs
 - src/handlers/hr/agent/association.rs
 - src/handlers/hr/skill/*.rs
+- src/handlers/system/seed/sync_preset_skills.rs
 - src/models/skill.rs
 - common/src/enums/tool_tag.rs
 - common/src/api/hr.rs
 - common/src/api/agent.rs
 - common/src/api/skill.rs
+- common/src/api/seed.rs
 source_files:
 - src/models/skill.rs#L9-L100
 - src/models/skill.rs#L88-L92
@@ -52,10 +54,15 @@ source_files:
 - docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/技能管理系统.md
 - docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
 - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/HR 领域编排.md
+- src/handlers/system/seed/sync_preset_skills.rs#L1-L266
+- common/src/api/seed.rs#L165-L237
+- docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md
 
 ---
 
 # §1 概述（一句话定位 + 解决什么问题）
+
+**2026-09-07 增量**：seed 预置技能同步增强——两套新接口 `GET /api/v1/system/seed/preset-skills/preview`（预览影响清单：seed vs 技能库逐技能对比 + 已安装副本数量统计）与 `POST /api/v1/system/seed/preset-skills/sync`（后台任务同步）。两种策略：Overwrite（覆盖重置同 ID 技能元数据 + 文件）/ OnlyMissing（仅补缺）。可选 `sync_installed_copies`：把 parent_skill_id 指向预置技能的 Agent 私有副本一并对齐（副本 Draft 状态保持不变）。匹配键是技能 ID（`TEMPLATE_*` / `GIT_BRANCH_WORKFLOW`），不是名称。同步走通用后台任务（`pkg::background_task`），前端轮询 `/system/tasks/{task_id}/progress`。
 
 **定位**：技能系统四层增强——① 5 套 TEMPLATE 预置技能包（Communication/MemoryCognition/ProjectManagement/SkillManagement/ToolManagement，每个 skill.md 结构化 6 字段 + `include_str!` 嵌入式注入 HRDomain init）；② `install_skill_pack` 幂等 Tag 批量分发（按 SkillTag 标签分组已发布技能 → 批量 find_by_tag → 为 Agent 逐个 create_agent_skill_private → 重名跳过 warn）；③ Agent 入职流程绑定（onboard_agent 调 install_default_skill_packs：默认 5 套全装，安装失败不阻断入职只打 warn + 记录缺失清单）；④ Prompt Token 熔断与分层注入（Core Role + System Capabilities + Skills Prompt + Current Task 四层，每层有独立 Token 预算上限，超限自动从 Current Task 开始反向裁剪）。
 

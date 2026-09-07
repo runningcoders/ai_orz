@@ -8,6 +8,7 @@ scope:
   - src/service/dal/{project,task,artifact}.rs
   - src/service/dao/{project,task,artifact}/**/*.rs
   - src/handlers/project/**/*.rs
+  - src/pkg/git_workspace.rs
 source_files:
   - src/service/domain/project/service.rs#L21-L476
   - src/service/domain/project/task_graph.rs#L17-L66
@@ -22,6 +23,7 @@ source_files:
   - docs/wiki/zh/content/项目概述/核心功能特性/任务协作与执行计划/多 Agent 协作机制.md
   - docs/wiki/zh/content/数据模型/项目和任务模型/制品和附件.md
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Domain 层编排.md
+  - src/pkg/git_workspace.rs#L1-L476
 ---
 
 ## §1 概述与定位

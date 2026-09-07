@@ -3,12 +3,21 @@
 <cite>
 **本文引用的文件**
 - [shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [shell_policy.rs](src/pkg/tool_registry/shell_policy.rs)
+- [shell_tool.rs](src/pkg/tool_registry/shell_tool.rs)
 - [shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
 - [builtin.rs](src/pkg/tool_registry/builtin.rs)
 - [tool_security.rs](src/pkg/tool_registry/tool_security.rs)
 - [config.rs](src/config.rs)
 - [tool_execution.rs](src/service/domain/runtime/tool_execution.rs)
 - [tool_exec.rs](src/models/events/tool_exec.rs)
+- [git_workspace.rs](src/pkg/git_workspace.rs)
+
+**更新摘要 2026-09-07**：Shell 工具三层架构完成——shell_exec 内置执行 + shell_policy 策略拦截层（ShellRulePolicy 实现通用 Policy trait，5 条静态规则表 scope 越界 Confirm / 身份边界越界 Confirm / 破坏性 fs 命令 Confirm / git push-reset-clean Confirm / git commit Audit）+ shell_tool 声明式 Shell 工具（数据库注册 + ShellToolConfig 驱动，argv 逐项传递不经 sh -c）。shell_exec 和 shell_tool 双执行通道**复用同一 shell_policy::evaluate** 策略管线。env 注入 AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID 供 git_workspace commit-msg hook 读取追加 Task-Id / Agent-Id trailer。
+
+**关联 RAG 卡**：
+- [Shell 工具全链路 RAG 卡](docs/wiki/knowledge/zh/Shell%20工具全链路：shell_tool%20注册%20+%20shell_policy%20拦截%20+%20shell_exec%20执行/Shell%20工具全链路：shell_tool%20注册%20+%20shell_policy%20拦截%20+%20shell_exec%20执行.md) — 三层架构 + 策略拦截层完整链路
+- [策略引擎 RAG 卡](docs/wiki/knowledge/zh/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层/策略引擎：Policy%20trait%20+%20PolicyGroup%20嵌套组合%20+%20policy_set!%20宏声明式写法%20+%20PolicyAction%20动作上浮%20+%20Shell%20拦截层.md) — 通用 Policy trait + PolicyAction 动作机制
 </cite>
 
 ## 目录
