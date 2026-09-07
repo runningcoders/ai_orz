@@ -96,6 +96,9 @@ pub fn ChatSidePanel(
     reception_agent_id: Option<String>,
     refresh_tick: u64,
     on_close: Callback,
+    /// 主链路轮询共享的目标 Agent 详情（chat 页置底状态气泡与轮询同源），
+    /// AgentInfoTab 优先消费，无值时保留自身懒加载兜底。
+    agent_info: Signal<Option<GetAgentResponse>>,
 ) -> Element {
     let toast = use_toast();
     let mut project = use_signal(|| None::<GetProjectResponse>);
@@ -222,7 +225,7 @@ pub fn ChatSidePanel(
             ),
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
             3 => match project_data.as_ref().and_then(|p| p.owner_agent_id.clone()) {
-                Some(agent_id) => rsx! { AgentInfoTab { agent_id } },
+                Some(agent_id) => rsx! { AgentInfoTab { agent_id, shared_info: agent_info } },
                 None => empty_hint("项目未指定负责人"),
             },
             4 => rsx! {
@@ -237,7 +240,9 @@ pub fn ChatSidePanel(
     } else {
         match tab {
             0 => match &reception_agent_id {
-                Some(agent_id) => rsx! { AgentInfoTab { agent_id: agent_id.clone() } },
+                Some(agent_id) => rsx! {
+                    AgentInfoTab { agent_id: agent_id.clone(), shared_info: agent_info }
+                },
                 None => empty_hint("暂无前台 Agent"),
             },
             1 => rsx! { UserInfoTab {} },
@@ -606,13 +611,26 @@ fn ArtifactRow(artifact: ArtifactDetail) -> Element {
     }
 }
 
-/// Tab Agent（两种模式共用）：懒加载 Agent 详情并展示
+/// Tab Agent（两种模式共用）：展示 Agent 详情。
+///
+/// 数据源优先级：chat 主链路轮询共享的 `shared_info`（id 匹配才消费，
+/// 随轮询实时刷新 runtime 徽章）> 组件自身懒加载兜底（面板独立使用 /
+/// 共享数据未就绪时）。
 #[component]
-fn AgentInfoTab(agent_id: String) -> Element {
+fn AgentInfoTab(agent_id: String, shared_info: Signal<Option<GetAgentResponse>>) -> Element {
     let mut agent = use_signal(|| None::<GetAgentResponse>);
     let mut failed = use_signal(|| false);
+    // effect 闭包需要 'static 捕获，单独克隆一份，渲染段仍可直接用 agent_id
+    let agent_id_for_effect = agent_id.clone();
     use_effect(move || {
-        let id = agent_id.clone();
+        // 共享数据已就绪且 id 匹配：跳过自身请求
+        if shared_info()
+            .as_ref()
+            .is_some_and(|a| a.id == agent_id_for_effect)
+        {
+            return;
+        }
+        let id = agent_id_for_effect.clone();
         spawn(async move {
             let req = GetAgentRequest {
                 id,
@@ -628,7 +646,9 @@ fn AgentInfoTab(agent_id: String) -> Element {
     if failed() {
         return empty_hint("Agent 信息加载失败");
     }
-    let Some(a) = agent().clone() else {
+    // 共享数据优先（id 匹配），否则用自身懒加载结果
+    let shared = shared_info().as_ref().filter(|a| a.id == agent_id).cloned();
+    let Some(a) = shared.or_else(|| agent().clone()) else {
         return loading_placeholder();
     };
     let desc = a.description.clone().filter(|s| !s.is_empty());

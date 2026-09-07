@@ -23,9 +23,9 @@ use crate::utils::{
     replace_tmp_with_real,
 };
 use common::api::{
-    AgentListItem, CreateProjectRequest, GetAgentRequest, GetReceptionAgentResponse,
-    ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem, MessageListItem,
-    SendMessageToAgentParams,
+    AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse,
+    GetReceptionAgentResponse, ListAgentsRequest, ListProjectsRequest, ListProjectsResponseItem,
+    MessageListItem, SendMessageToAgentParams,
 };
 
 /// 全局名称目录里查不到某 Agent 时，按需拉取该 Agent 的单条详情并回填到目录，
@@ -73,6 +73,12 @@ pub fn MessageChat() -> Element {
     let mut selected_project = use_signal(|| Option::<String>::None);
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     let mut is_typing = use_signal(|| false);
+    // 当前会话目标 Agent 的运行时状态（0=Idle 1=Resting 2=Busy），轮询刷新。
+    // 驱动置底状态气泡文案 + 非空闲时的发送门禁。
+    let mut agent_state = use_signal(|| 0i32);
+    // 轮询得到的完整 Agent 详情（get_agent 响应），与右侧 ChatSidePanel 的
+    // AgentInfoTab 共享同一份数据，避免重复请求、并让徽章实时刷新。
+    let mut target_agent_info = use_signal(|| Option::<GetAgentResponse>::None);
     let mut input_text = use_signal(String::new);
     // 修复 L1：删除未使用的 error signal（之前从未 set，is_empty() 永远为 true）
     let mut loading_projects = use_signal(|| true);
@@ -261,11 +267,12 @@ pub fn MessageChat() -> Element {
     use_effect(move || {
         let msg_count = messages().len();
         let typing = is_typing();
+        let state = agent_state();
         if !at_bottom() {
             return;
         }
-        // 用 msg_count + typing 作为依赖触发滚动；不读 messages 内容避免额外 clone
-        let _ = (msg_count, typing);
+        // 用 msg_count + typing + state 作为依赖触发滚动；不读 messages 内容避免额外 clone
+        let _ = (msg_count, typing, state);
         spawn(async move {
             if let Some(window) = web_sys::window()
                 && let Some(doc) = window.document()
@@ -347,6 +354,43 @@ pub fn MessageChat() -> Element {
         }
     });
 
+    // 轮询当前会话目标 Agent 的运行时状态（3s 周期），驱动置底状态气泡实时刷新。
+    // 目标解析：项目对话取 owner agent，默认对话取前台 Agent；无法定位时归零。
+    // spawn 的 future 绑定组件 scope，页面卸载时自动取消。
+    use_effect(move || {
+        spawn(async move {
+            loop {
+                let target = if let Some(pid) = selected_project() {
+                    projects
+                        .read()
+                        .iter()
+                        .find(|p| p.id == pid)
+                        .and_then(|p| p.owner_agent_id.clone())
+                } else {
+                    reception_agent().map(|a| a.agent_id)
+                };
+                match target {
+                    Some(id) => {
+                        if let Ok(resp) = get_agent(GetAgentRequest {
+                            id,
+                            ..Default::default()
+                        })
+                        .await
+                        {
+                            agent_state.set(resp.runtime_state);
+                            target_agent_info.set(Some(resp));
+                        }
+                    }
+                    None => {
+                        agent_state.set(0);
+                        target_agent_info.set(None);
+                    }
+                }
+                gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
+            }
+        });
+    });
+
     let slash_commands = [("/clear", "清空对话"), ("/help", "显示帮助")];
 
     let handle_input = {
@@ -376,6 +420,11 @@ pub fn MessageChat() -> Element {
         let text = input_text().trim().to_string();
         let attachments = pending_attachments();
         if text.is_empty() && attachments.is_empty() {
+            return;
+        }
+        // 非空闲门禁：Agent 忙碌 / 休息中不接受新消息（按钮已禁用，此处兜底 Alt+Enter 快捷键路径）
+        if agent_state() != 0 {
+            toast.info("对方正在处理消息，请稍候再发");
             return;
         }
         if show_slash_menu() {
@@ -646,6 +695,12 @@ pub fn MessageChat() -> Element {
 
     let chat_content = if let Some(project) = current_project {
         let project_name = project.name.clone();
+        // 状态气泡展示名：项目 owner agent 的目录名，解析不到兜底「Agent」
+        let status_sender_name = project
+            .owner_agent_id
+            .as_deref()
+            .and_then(|id| directory().agents.get(id).cloned())
+            .unwrap_or_else(|| "Agent".to_string());
         rsx! {
             div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
@@ -747,16 +802,26 @@ pub fn MessageChat() -> Element {
                                 },
                             }
                         }
-                        if is_typing() {
+                        // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
+                        // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
+                        if let Some(status) = agent_status_line(is_typing(), agent_state()) {
                             div { class: "chat chat-start",
+                                div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
                                 div { class: "chat-image avatar",
-                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "A" }
+                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "{avatar_initials(&status_sender_name)}" }
                                 }
                                 div { class: "chat-bubble chat-bubble-neutral",
-                                    div { class: "typing-indicator flex gap-1",
-                                        div { class: "typing-dot" }
-                                        div { class: "typing-dot" }
-                                        div { class: "typing-dot" }
+                                    div { class: "flex items-center gap-2",
+                                        if agent_state() == 1 {
+                                            span { "🌙" }
+                                        } else {
+                                            div { class: "typing-indicator flex gap-1",
+                                                div { class: "typing-dot" }
+                                                div { class: "typing-dot" }
+                                                div { class: "typing-dot" }
+                                            }
+                                        }
+                                        span { class: "text-sm", "{status}" }
                                     }
                                 }
                             }
@@ -780,6 +845,7 @@ pub fn MessageChat() -> Element {
                 messages,
                 mention,
                 mention_tab_list.clone(),
+                agent_state,
             )}
         }
     } else {
@@ -788,6 +854,10 @@ pub fn MessageChat() -> Element {
         let reception_name = reception_agent()
             .map(|a| a.agent_name)
             .unwrap_or_else(|| "未设置".to_string());
+        // 状态气泡展示名：前台 Agent 名
+        let status_sender_name = reception_agent()
+            .map(|a| a.agent_name)
+            .unwrap_or_else(|| "Agent".to_string());
         rsx! {
             div { class: "p-3 border-b border-base-300 flex items-center justify-between bg-base-100 gap-2",
                 if is_mobile() {
@@ -893,16 +963,26 @@ pub fn MessageChat() -> Element {
                                 },
                             }
                         }
-                        if is_typing() {
+                        // 置底 Agent 状态气泡：文案随 runtime_state 实时切换，
+                        // 新消息经 SSE 到达后堆叠在其上方；Agent 回到 Idle 后消失
+                        if let Some(status) = agent_status_line(is_typing(), agent_state()) {
                             div { class: "chat chat-start",
+                                div { class: "chat-header pr-1 text-sm opacity-70", "{status_sender_name}" }
                                 div { class: "chat-image avatar",
-                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "A" }
+                                    div { class: "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold", "{avatar_initials(&status_sender_name)}" }
                                 }
                                 div { class: "chat-bubble chat-bubble-neutral",
-                                    div { class: "typing-indicator flex gap-1",
-                                        div { class: "typing-dot" }
-                                        div { class: "typing-dot" }
-                                        div { class: "typing-dot" }
+                                    div { class: "flex items-center gap-2",
+                                        if agent_state() == 1 {
+                                            span { "🌙" }
+                                        } else {
+                                            div { class: "typing-indicator flex gap-1",
+                                                div { class: "typing-dot" }
+                                                div { class: "typing-dot" }
+                                                div { class: "typing-dot" }
+                                            }
+                                        }
+                                        span { class: "text-sm", "{status}" }
                                     }
                                 }
                             }
@@ -926,6 +1006,7 @@ pub fn MessageChat() -> Element {
                 messages,
                 mention,
                 mention_tab_list.clone(),
+                agent_state,
             )}
         }
     };
@@ -1043,6 +1124,7 @@ pub fn MessageChat() -> Element {
                     reception_agent_id: reception_agent().map(|a| a.agent_id),
                     refresh_tick: refresh_tick(),
                     on_close: move |_| panel_open.set(false),
+                    agent_info: target_agent_info,
                 }
             }
 
@@ -1130,6 +1212,19 @@ pub fn MessageChat() -> Element {
 /// 输入框 DOM id：@ 提及需要读写光标位置，需要一个稳定标识
 const CHAT_INPUT_ID: &str = "chat-input-textarea";
 
+/// 置底状态气泡文案：与 Agent 运行时状态匹配；None 表示不显示气泡。
+///
+/// 优先级：Busy（思考中）> Resting（休息中）> 刚发送等待回复 > 不显示。
+/// 气泡恒渲染在消息列表末尾，新消息经 SSE 到达后自然堆叠在其上方。
+fn agent_status_line(awaiting_reply: bool, state: i32) -> Option<&'static str> {
+    match state {
+        2 => Some("正在思考中…"),
+        1 => Some("正在休息，恢复精力…"),
+        _ if awaiting_reply => Some("正在等待回复…"),
+        _ => None,
+    }
+}
+
 /// 取输入框元素（读取 / 恢复光标用）
 ///
 /// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
@@ -1175,6 +1270,7 @@ fn chat_input_area(
     mut messages: Signal<Vec<MessageListItem>>,
     mention: MentionState,
     tabs: Vec<MentionTab>,
+    agent_state: Signal<i32>,
 ) -> Element {
     // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
     let mut input_text_pick = input_text;
@@ -1317,7 +1413,11 @@ fn chat_input_area(
                     rows: "2",
                     id: CHAT_INPUT_ID,
                     value: "{input_text}",
-                    placeholder: "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）",
+                    placeholder: if agent_state() != 0 {
+                        "对方正在处理消息，暂不接受新消息…"
+                    } else {
+                        "输入消息...（Alt+回车发送，@ 提及 Agent / 任务 / 项目）"
+                    },
                     oninput: move |e| {
                         let value = e.value();
                         // 光标位置决定 @ 查询的边界；读不到就退回文本末尾（表现为不弹菜单）
@@ -1411,8 +1511,13 @@ fn chat_input_area(
                 button {
                     class: "btn hud-btn btn-primary",
                     onclick: move |_| handle_send(()),
-                    disabled: input_text().trim().is_empty() && pending_attachments().is_empty(),
-                    "发送"
+                    disabled: agent_state() != 0
+                        || (input_text().trim().is_empty() && pending_attachments().is_empty()),
+                    if agent_state() != 0 {
+                        "处理中"
+                    } else {
+                        "发送"
+                    }
                 }
             }
         }
