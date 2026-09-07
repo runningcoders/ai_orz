@@ -15,10 +15,68 @@ use super::types::{RoundDigest, ThinkLoopResult};
 
 // ==================== 策略映射 ====================
 
+/// 构造单轮策略评估用的 Metrics（错误路径与轮末评估点共用）
+fn round_metrics(
+    round_number: usize,
+    max_rounds: usize,
+    elapsed_secs: u64,
+    total_tokens: u64,
+    context_tokens: u64,
+    tool_call_counts: &std::collections::HashMap<String, usize>,
+    llm_consecutive_errors: u64,
+) -> crate::pkg::policy::Metrics {
+    let mut metrics = crate::pkg::policy::Metrics::new()
+        .with("round_number", round_number as u64)
+        .with("max_rounds", max_rounds as u64)
+        .with("elapsed_secs", elapsed_secs)
+        .with("total_tokens", total_tokens)
+        .with("context_tokens", context_tokens)
+        .with("llm_consecutive_errors", llm_consecutive_errors);
+    // 按工具名上报各自累计调用次数（NoProgressPolicy 按工具差异化检测）
+    for (name, count) in tool_call_counts {
+        metrics = metrics.with(&format!("tool_calls.{name}"), *count as u64);
+    }
+    metrics
+}
+
+/// 策略裁决：评估当前 Metrics，命中则映射为退出结果，未命中返回 None（继续循环）
+///
+/// think_loop 的统一退出裁决点：Final 完成 / 取消 / 溢出 / 预算耗尽等
+/// 所有退出情况都经此分派，优先级 = 策略组声明顺序。
+fn policy_exit(
+    ctx: &crate::pkg::request_context::RequestContext,
+    policy: Option<&dyn crate::pkg::policy::Policy>,
+    metrics: &crate::pkg::policy::Metrics,
+    messages: &[ChatMessage],
+    round_number: usize,
+    input_tokens: u64,
+    final_content: Option<String>,
+) -> Option<ThinkLoopResult> {
+    let triggered = policy?.evaluate(metrics);
+    if triggered.is_empty() {
+        return None;
+    }
+    log_info!(
+        ctx,
+        "think_loop",
+        "policy triggered: {:?} at round={}",
+        triggered,
+        round_number
+    );
+    Some(map_triggered_to_result(
+        &triggered,
+        messages.to_vec(),
+        round_number,
+        input_tokens,
+        final_content,
+    ))
+}
+
 /// 将命中的策略 id 列表映射为 ThinkLoopResult
 ///
-/// 多个策略命中时按优先级取第一个匹配的：
-/// 用户取消 > 上下文溢出 > token 预算 > 无进展 > 轮次上限 > 超时
+/// 多个策略命中时按优先级取第一个匹配的——优先级 = `policy_set!`
+/// 声明顺序（见 `build_policy_for_scene`）：
+/// 用户取消 > Final 完成 > 上下文溢出 > 轮次上限 > 超时 > token 预算 > 无进展
 ///
 /// 兜底返回 MaxRoundsExceeded（不应发生，防御性）。
 pub(crate) fn map_triggered_to_result(
@@ -26,6 +84,7 @@ pub(crate) fn map_triggered_to_result(
     messages: Vec<ChatMessage>,
     round_number: usize,
     input_tokens: u64,
+    final_content: Option<String>,
 ) -> ThinkLoopResult {
     for id in triggered {
         match id.as_str() {
@@ -33,6 +92,13 @@ pub(crate) fn map_triggered_to_result(
                 return ThinkLoopResult::Cancelled {
                     messages,
                     total_rounds: round_number,
+                };
+            }
+            // 正常完成：final_answer 策略命中即正常退出，进入正常总结路径
+            "final_answer" => {
+                return ThinkLoopResult::Final {
+                    content: final_content.unwrap_or_default(),
+                    messages,
                 };
             }
             "context_overflow" => {
@@ -82,17 +148,27 @@ const ROUND_DIGEST_MAX_CONTENT: usize = 800;
 /// 模型连续多轮只调工具不给最终回复时，大概率已陷入循环，注入提醒给一次自纠机会。
 const TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS: usize = 8;
 
+/// LLM 连续失败重试预算：连续失败达到该次数即命中策略、终止循环
+///
+/// 预算内立即重试（无退避，YAGNI）；命中后错误照常向上传播，
+/// 下游 abort_summary 走无 LLM 兜底存档（异常总结路径）。
+const LLM_ERROR_RETRY_BUDGET: u64 = 3;
+
 /// 按场景构造策略组（Or 关系：任一策略命中即退出循环）
 ///
-/// 内置策略：
+/// **声明顺序即优先级**（evaluate 按声明顺序返回命中，map_triggered_to_result
+/// 按列表顺序取首个可分派的）：
+/// 用户取消 > Final 完成 > 上下文溢出 > 轮次上限 > 超时 > 无进展 > token 预算 > LLM 错误预算
+///
 /// - UserCancelPolicy：始终注入，由 AgentThinkRuntime.cancel_flag() 驱动
+/// - FinalAnswerPolicy：模型输出 Final 即正常退出（正常完成也是策略裁决的一部分）
+/// - ContextOverflowPolicy：上下文溢出（基于 ModelProvider 配置，0 = 未启用）；
+///   优先于轮次/超时——溢出可恢复（沉淀压缩后重试），恢复动作更有价值
 /// - MaxRoundsPolicy：轮次上限，所有场景均启用
 /// - TimeoutPolicy：超时保护，所有场景均启用（0 = 不限制）
 /// - NoProgressPolicy：单工具累计调用上限（0 = 不启用），防同工具反复调用死循环
 /// - TokenBudgetPolicy：token 预算（0 = 不启用）
-///
-/// 注意：ContextOverflowPolicy 暂不在此处使用，因为 run_think_loop 已有
-/// 独立的上下文溢出检测逻辑（基于 ModelProvider 配置），后续可整合。
+/// - ConsecutiveLlmErrorsPolicy：LLM 连续失败预算（run_think_loop 的错误路径评估）
 pub(crate) fn build_policy_for_scene(
     agent: &Agent,
     _scene: ThinkingScene,
@@ -100,7 +176,8 @@ pub(crate) fn build_policy_for_scene(
 ) -> Box<dyn crate::pkg::policy::Policy> {
     use super::types::config_resolve;
     use crate::pkg::policy::builtin::{
-        MaxRoundsPolicy, NoProgressPolicy, TimeoutPolicy, TokenBudgetPolicy, UserCancelPolicy,
+        ConsecutiveLlmErrorsPolicy, ContextOverflowPolicy, FinalAnswerPolicy, MaxRoundsPolicy,
+        NoProgressPolicy, TimeoutPolicy, TokenBudgetPolicy, UserCancelPolicy,
     };
     use crate::pkg::policy::policy_set;
 
@@ -120,13 +197,34 @@ pub(crate) fn build_policy_for_scene(
         .map(|cfg| cfg.agent.token_budget)
         .unwrap_or(0);
 
+    // 上下文压缩触发阈值（占最大上下文窗口的比例）：
+    // 优先 recommended_context_length > max_context_length * 60% > 未启用
+    const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
+    let overflow_threshold = agent.brain.as_ref().and_then(|brain| {
+        brain.model_provider().and_then(|po| {
+            let config = po.config();
+            if let Some(rec) = config.recommended_context_length
+                && rec > 0
+            {
+                return Some(rec as u64);
+            }
+            config
+                .max_context_length
+                .filter(|&v| v > 0)
+                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
+        })
+    });
+
     policy_set! {
         OR {
             UserCancelPolicy(cancel_flag),
+            FinalAnswerPolicy(),
+            ContextOverflowPolicy(overflow_threshold.unwrap_or(0)),
             MaxRoundsPolicy(max_rounds),
             TimeoutPolicy(timeout_secs),
             NoProgressPolicy(tool_limits),
             TokenBudgetPolicy(token_budget),
+            ConsecutiveLlmErrorsPolicy(LLM_ERROR_RETRY_BUDGET),
         }
     }
 }
@@ -139,12 +237,12 @@ impl RuntimeDomainImpl {
     /// 统一封装：超时控制 + 多轮迭代 + 工具调用分发。
     /// 每轮 think 后发布 ThinkRoundEvent（通过 AOP 同步转发）。
     ///
-    /// # 退出条件
-    /// - `ThinkResult::Final` → 返回 `ThinkLoopResult::Final(content)`
-    /// - 策略命中（用户取消/轮次上限/超时等）→ 通过 `map_triggered_to_result` 映射
-    /// - 上下文超限（input_tokens >= 阈值）→ 返回 `ContextOverflow`
-    /// - 累计轮次达到 `max_rounds` → 返回 `MaxRoundsExceeded`
-    /// - 超时 → 返回错误
+    /// # 退出条件（统一策略裁决）
+    /// - `FinalAnswerPolicy` 命中（模型输出 Final）→ 正常退出，`ThinkLoopResult::Final`
+    /// - 其他策略命中（取消/溢出/轮次/超时等）→ `map_triggered_to_result` 按声明顺序分派
+    /// - LLM 调用失败：计入 `llm_consecutive_errors` 因子交由策略裁决——
+    ///   预算内立即重试，`ConsecutiveLlmErrorsPolicy` 命中则传播错误
+    ///   （下游 abort_summary 走无 LLM 兑底存档）
     ///
     /// 参数见 [`ThinkLoopParams`]：`start_round` 为本次循环的起始轮次编号（跨压缩累计），
     /// `max_rounds` 为总轮次上限（跨压缩累计二者详见调用方 awaken 的压缩循环）。
@@ -181,26 +279,6 @@ impl RuntimeDomainImpl {
             .as_ref()
             .ok_or_else(|| err!(Internal, "Agent 大脑未唤醒，请先调用 wake_agent_brain()"))?;
 
-        /// 上下文压缩触发阈值（占最大上下文窗口的比例）
-        const CONTEXT_OVERFLOW_RATIO: f64 = 0.6;
-
-        // 从 ModelProvider 配置中获取上下文压缩阈值
-        // 优先级：recommended_context_length > max_context_length * 60% > 不检测
-        let overflow_threshold: Option<u64> = brain.model_provider().and_then(|po| {
-            let config = po.config();
-            // 优先使用推荐上下文长度
-            if let Some(rec) = config.recommended_context_length
-                && rec > 0
-            {
-                return Some(rec as u64);
-            }
-            // fallback：max_context_length * 60%
-            config
-                .max_context_length
-                .filter(|&v| v > 0)
-                .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
-        });
-
         let think_future = async {
             let mut messages = initial_messages;
             // 提取模型提供商信息（所有轮次共用）
@@ -222,6 +300,8 @@ impl RuntimeDomainImpl {
             // 连续工具调用轮计数 + 疲劳提示是否已注入（只注入一次）
             let mut consecutive_tool_rounds: usize = 0;
             let mut nudge_injected = false;
+            // LLM 连续失败计数（成功即清零；预算见 ConsecutiveLlmErrorsPolicy）
+            let mut llm_consecutive_errors: u64 = 0;
             let scene_str = scene.as_str();
             for offset in 0..available_rounds {
                 // 循环开始前先检查 cancel_flag（避免无意义地调用 LLM）
@@ -242,10 +322,49 @@ impl RuntimeDomainImpl {
 
                 let round = start_round + offset;
                 let round_start = std::time::Instant::now();
-                let result = self
-                    .brain_dal()
-                    .think(ctx.clone(), brain, &messages, tool_descriptors)
-                    .await?;
+                // LLM 调用 + 错误预算：失败不再直接传播，计入因子交由策略裁决——
+                // 预算内立即重试（无退避，YAGNI）；策略命中则传播错误，
+                // 下游 abort_summary 走无 LLM 兜底存档（异常总结路径）
+                let result = loop {
+                    match self
+                        .brain_dal()
+                        .think(ctx.clone(), brain, &messages, tool_descriptors)
+                        .await
+                    {
+                        Ok(r) => {
+                            llm_consecutive_errors = 0;
+                            break r;
+                        }
+                        Err(e) => {
+                            llm_consecutive_errors += 1;
+                            let metrics = round_metrics(
+                                round + 1,
+                                max_rounds,
+                                loop_start.elapsed().as_secs(),
+                                total_input_tokens.saturating_add(total_output_tokens),
+                                0,
+                                &tool_call_counts,
+                                llm_consecutive_errors,
+                            );
+                            if let Some(p) = policy
+                                && !p.evaluate(&metrics).is_empty()
+                            {
+                                log_info!(
+                                    &ctx,
+                                    "think_loop",
+                                    "llm error budget exhausted at round={}, propagating",
+                                    round + 1
+                                );
+                                return Err(e);
+                            }
+                            log_info!(
+                                &ctx,
+                                "think_loop",
+                                "llm call failed ({llm_consecutive_errors} consecutive), retrying"
+                            );
+                        }
+                    }
+                };
                 let round_duration_ms = round_start.elapsed().as_millis() as u64;
 
                 match result {
@@ -295,6 +414,30 @@ impl RuntimeDomainImpl {
                             ),
                         )
                         .await;
+                        // 统一评估点：Final 也经策略裁决（final_answer 命中 → 正常退出；
+                        // 若同轮取消/溢出等也命中，按声明顺序优先级分派）
+                        let metrics = round_metrics(
+                            round + 1,
+                            max_rounds,
+                            loop_start.elapsed().as_secs(),
+                            total_input_tokens.saturating_add(total_output_tokens),
+                            usage.input_tokens,
+                            &tool_call_counts,
+                            llm_consecutive_errors,
+                        )
+                        .with("output_kind", "final");
+                        if let Some(exit) = policy_exit(
+                            &ctx,
+                            policy,
+                            &metrics,
+                            &messages,
+                            round + 1,
+                            usage.input_tokens,
+                            Some(content.clone()),
+                        ) {
+                            return Ok(exit);
+                        }
+                        // fail-safe：自定义策略组未含 final_answer 时保持原行为
                         return Ok(ThinkLoopResult::Final { content, messages });
                     }
                     ThinkResult::ToolCall {
@@ -439,25 +582,6 @@ impl RuntimeDomainImpl {
                         )
                         .await;
 
-                        // 上下文压缩检测：当输入 token 超过阈值时中断循环，
-                        // 由调用方（awaken）执行 sleep_and_settle 沉淀后重试
-                        if let Some(threshold) = overflow_threshold
-                            && usage.input_tokens >= threshold
-                        {
-                            log_info!(
-                                &ctx,
-                                "think_loop",
-                                "context overflow detected: input_tokens={} >= threshold={}",
-                                usage.input_tokens,
-                                threshold
-                            );
-                            return Ok(ThinkLoopResult::ContextOverflow {
-                                messages,
-                                input_tokens: usage.input_tokens,
-                                rounds_used: offset + 1,
-                            });
-                        }
-
                         // 疲劳提示：连续多轮只调工具不给最终回复时，注入 System 提醒给模型一次自纠机会
                         // （只注入一次，避免 System 消息堆积）
                         if consecutive_tool_rounds >= TOOL_NUDGE_AFTER_CONSECUTIVE_ROUNDS
@@ -497,35 +621,28 @@ impl RuntimeDomainImpl {
                             );
                         }
 
-                        // 评估策略：任一命中即退出循环
-                        if let Some(policy) = policy {
-                            let mut metrics = crate::pkg::policy::Metrics::new()
-                                .with("round_number", (round + 1) as u64)
-                                .with("max_rounds", max_rounds as u64)
-                                .with("elapsed_secs", elapsed_secs)
-                                .with("total_tokens", total_tokens)
-                                .with("context_tokens", usage.input_tokens);
-                            // 按工具名上报各自累计调用次数（NoProgressPolicy 按工具差异化检测）
-                            for (name, count) in &tool_call_counts {
-                                metrics =
-                                    metrics.with(&format!("tool_calls.{name}"), *count as u64);
-                            }
-                            let triggered = policy.evaluate(&metrics);
-                            if !triggered.is_empty() {
-                                log_info!(
-                                    &ctx,
-                                    "think_loop",
-                                    "policy triggered: {:?} at round={}",
-                                    triggered,
-                                    round + 1
-                                );
-                                return Ok(map_triggered_to_result(
-                                    &triggered,
-                                    messages,
-                                    round + 1,
-                                    usage.input_tokens,
-                                ));
-                            }
+                        // 统一评估点：任一策略命中即退出循环（含 ContextOverflowPolicy 收编
+                        // 原内联溢出检测；优先级 = build_policy_for_scene 声明顺序）
+                        let metrics = round_metrics(
+                            round + 1,
+                            max_rounds,
+                            elapsed_secs,
+                            total_tokens,
+                            usage.input_tokens,
+                            &tool_call_counts,
+                            llm_consecutive_errors,
+                        )
+                        .with("output_kind", "tool_calls");
+                        if let Some(exit) = policy_exit(
+                            &ctx,
+                            policy,
+                            &metrics,
+                            &messages,
+                            round + 1,
+                            usage.input_tokens,
+                            None,
+                        ) {
+                            return Ok(exit);
                         }
                     }
                 }
@@ -559,6 +676,47 @@ impl RuntimeDomainImpl {
 mod tests {
     use super::*;
     use common::enums::ThinkingScene;
+
+    #[test]
+    fn map_final_answer_returns_final_with_content() {
+        let r = map_triggered_to_result(
+            &["final_answer".to_string()],
+            Vec::new(),
+            3,
+            100,
+            Some("done".to_string()),
+        );
+        assert!(matches!(r, ThinkLoopResult::Final { content, .. } if content == "done"));
+    }
+
+    #[test]
+    fn map_priority_follows_triggered_order() {
+        // 声明顺序即优先级：user_cancel 先于 final_answer → 取消胜出
+        let r = map_triggered_to_result(
+            &["user_cancel".to_string(), "final_answer".to_string()],
+            Vec::new(),
+            3,
+            100,
+            Some("done".to_string()),
+        );
+        assert!(matches!(r, ThinkLoopResult::Cancelled { .. }));
+
+        // 同理：溢出优先于轮次上限
+        let r = map_triggered_to_result(
+            &["context_overflow".to_string(), "max_rounds".to_string()],
+            Vec::new(),
+            5,
+            9000,
+            None,
+        );
+        assert!(matches!(r, ThinkLoopResult::ContextOverflow { .. }));
+    }
+
+    #[test]
+    fn map_unknown_id_falls_back_to_max_rounds() {
+        let r = map_triggered_to_result(&["no_such_policy".to_string()], Vec::new(), 2, 0, None);
+        assert!(matches!(r, ThinkLoopResult::MaxRoundsExceeded { .. }));
+    }
 
     #[test]
     fn recursive_settle_blocked_in_settle_and_compact() {

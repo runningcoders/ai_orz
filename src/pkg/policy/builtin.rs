@@ -1,11 +1,17 @@
 //! 内置策略实现
 //!
-//! 5 个内置策略：
+//! 7 个内置策略：
 //! - MaxRoundsPolicy：轮次上限
 //! - TimeoutPolicy：超时
-//! - ContextOverflowPolicy：上下文溢出
+//! - ContextOverflowPolicy：上下文溢出（threshold = 0 表示未启用）
 //! - UserCancelPolicy：用户取消（检查 Arc<AtomicBool>）
 //! - TokenBudgetPolicy：Token 预算
+//! - FinalAnswerPolicy：模型输出 Final（think_loop 的正常退出裁决）
+//! - ConsecutiveLlmErrorsPolicy：LLM 连续失败预算（重试耗尽裁决）
+//!
+//! 优先级语义：`policy_set!(OR { .. })` 的声明顺序即命中顺序即优先级——
+//! evaluate 按声明顺序返回命中列表，消费方（如 think_loop 的
+//! map_triggered_to_result）按列表顺序取首个可执行的分派。
 
 use super::{Metrics, Policy};
 use std::sync::Arc;
@@ -95,11 +101,14 @@ pub struct ContextOverflowPolicy {
 }
 
 impl ContextOverflowPolicy {
+    /// threshold = 0 表示未启用（evaluate 恒不命中），允许无条件装配进策略组。
     pub fn new(threshold: u64) -> Self {
-        Self {
-            threshold,
-            desc: Box::leak(format!("上下文溢出 >= {}", threshold).into_boxed_str()),
-        }
+        let desc = if threshold > 0 {
+            Box::leak(format!("上下文溢出 >= {}", threshold).into_boxed_str())
+        } else {
+            "上下文溢出（未启用）"
+        };
+        Self { threshold, desc }
     }
 }
 
@@ -118,7 +127,92 @@ impl Policy for ContextOverflowPolicy {
     }
     fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
         let tokens = metrics.get_u64("context_tokens").unwrap_or(0);
-        if tokens >= self.threshold {
+        if self.threshold > 0 && tokens >= self.threshold {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// Final 输出策略：模型给出最终回复即命中
+///
+/// think_loop 的正常退出裁决——「输出为 Final」与轮次/超时/溢出一样
+/// 都只是算子计算，命中即退出循环进入下一步（正常总结路径）。
+pub struct FinalAnswerPolicy;
+
+impl Default for FinalAnswerPolicy {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl FinalAnswerPolicy {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Policy for FinalAnswerPolicy {
+    fn id(&self) -> &str {
+        "final_answer"
+    }
+    fn name(&self) -> &str {
+        "FinalAnswer"
+    }
+    fn condition_desc(&self) -> &str {
+        "模型输出 Final"
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["output_kind".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        if metrics.get_str("output_kind") == Some("final") {
+            vec![self.id().to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+/// LLM 连续失败策略：连续失败达到预算即命中
+///
+/// think_loop 的重试预算裁决——LLM 调用失败不再直接传播，计入
+/// `llm_consecutive_errors` 因子后交由策略评估：预算内立即重试，
+/// 命中则传播错误（下游 abort_summary 走无 LLM 兜底存档）。
+/// budget = 0 表示不启用（evaluate 恒不命中）。
+pub struct ConsecutiveLlmErrorsPolicy {
+    budget: u64,
+    desc: &'static str,
+}
+
+impl ConsecutiveLlmErrorsPolicy {
+    pub fn new(budget: u64) -> Self {
+        let desc = if budget > 0 {
+            Box::leak(format!("LLM 连续失败 >= {}", budget).into_boxed_str())
+        } else {
+            "LLM 连续失败（未启用）"
+        };
+        Self { budget, desc }
+    }
+}
+
+impl Policy for ConsecutiveLlmErrorsPolicy {
+    fn id(&self) -> &str {
+        "llm_error_budget"
+    }
+    fn name(&self) -> &str {
+        "ConsecutiveLlmErrors"
+    }
+    fn condition_desc(&self) -> &str {
+        self.desc
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["llm_consecutive_errors".into()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        let errors = metrics.get_u64("llm_consecutive_errors").unwrap_or(0);
+        if self.budget > 0 && errors >= self.budget {
             vec![self.id().to_string()]
         } else {
             vec![]

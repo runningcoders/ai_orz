@@ -6,6 +6,7 @@
 use crate::models::tool::Tool;
 use crate::pkg::RequestContext;
 use crate::pkg::tool_registry::http;
+use crate::pkg::tool_registry::shell_tool;
 use crate::service::domain::finance::{FinanceDomainImpl, ToolProviderManage};
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::{Result, bail_err, err};
@@ -159,17 +160,28 @@ impl ToolProviderManage for FinanceDomainImpl {
 fn validate_tool_management_policy(tool: &Tool) -> Result<()> {
     // ToolProtocol and ControlMode are orthogonal (per design docs):
     //   Builtin ≠ Auto, Http ≠ Manual; whether a tool enters Rig is decided
-    //   solely by ControlMode.  Only MCP tools are restricted to Manual
-    //   because MCP has its own tool-calling protocol.
-    if matches!(tool.po.protocol, ToolProtocol::Mcp)
+    //   solely by ControlMode.  Mcp and Shell tools are restricted to Manual
+    //   because both run through the self-built dispatch chain (MCP has its
+    //   own tool-calling protocol; Shell tools need the confirmation gate).
+    if matches!(tool.po.protocol, ToolProtocol::Mcp | ToolProtocol::Shell)
         && !matches!(tool.po.control_mode, ControlMode::Manual)
     {
-        bail_err!(InvalidRequest, "Mcp Tool only supports Manual control mode");
+        bail_err!(
+            InvalidRequest,
+            "Mcp/Shell Tool only supports Manual control mode"
+        );
     }
 
-    if matches!(tool.po.protocol, ToolProtocol::Http) {
-        http::validate_tool_po_config(&tool.po)
-            .map_err(|err| err!(InvalidRequest, "{}", err).with_source(err))?;
+    match tool.po.protocol {
+        ToolProtocol::Http => {
+            http::validate_tool_po_config(&tool.po)
+                .map_err(|err| err!(InvalidRequest, "{}", err).with_source(err))?;
+        }
+        ToolProtocol::Shell => {
+            shell_tool::validate_tool_po_config(&tool.po)
+                .map_err(|err| err!(InvalidRequest, "{}", err).with_source(err))?;
+        }
+        _ => {}
     }
 
     Ok(())

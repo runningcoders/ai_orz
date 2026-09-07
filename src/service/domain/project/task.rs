@@ -15,6 +15,28 @@ use super::ProjectDomainImpl;
 use crate::enrich_ctx;
 use crate::record_event;
 
+/// 任务收尾 checkpoint：Agent 工作区兜底提交（捕获 shell_exec 副作用 + Agent 漏提交）
+///
+/// best-effort：repo 不存在 / 无变更 / git 失败都静默跳过，绝不影响任务流转结果。
+/// 提交带 `checkpoint:` 前缀 + Task-Id trailer，变更列表可区分正式提交与兜底提交。
+async fn checkpoint_agent_workspace(task: &Task) {
+    if task.po.assignee_type != AssigneeType::Agent {
+        return;
+    }
+    let base = crate::config::get().base_data_path();
+    let ws =
+        crate::pkg::paths::user_agent_workspace(&base, &task.po.root_user_id, &task.po.assignee_id);
+    if crate::pkg::git_workspace::checkpoint_task_commit(
+        &ws,
+        &task.po.id,
+        Some(&task.po.assignee_id),
+    )
+    .await
+    {
+        sys_info!("checkpoint commit created for task {}", task.po.id);
+    }
+}
+
 #[async_trait::async_trait]
 impl super::TaskManage for ProjectDomainImpl {
     /// 创建新任务
@@ -352,6 +374,9 @@ impl super::TaskManage for ProjectDomainImpl {
             }
         );
 
+        // 任务收尾：Agent 工作区 checkpoint 兜底提交（best-effort）
+        checkpoint_agent_workspace(&task).await;
+
         Ok(())
     }
 
@@ -477,6 +502,11 @@ impl super::TaskManage for ProjectDomainImpl {
                 priority: task.po.priority,
             }
         );
+
+        // 流转到完成：同 complete 的收尾兜底（best-effort）
+        if task.po.status == TaskStatus::Completed {
+            checkpoint_agent_workspace(task).await;
+        }
 
         Ok(())
     }

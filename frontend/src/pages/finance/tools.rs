@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::api::finance::{delete_tool, list_tools, query_tools, search_tools, update_tool_status};
 use crate::components::confirm_dialog::ConfirmDialog;
-use crate::components::create_http_tool::CreateHttpToolModal;
+use crate::components::create_tool::CreateToolModal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
@@ -199,7 +199,7 @@ pub fn FinanceTools() -> Element {
                     button {
                         class: "btn hud-btn btn-primary btn-sm",
                         onclick: move |_| show_create.set(true),
-                        "+ 创建 HTTP 工具"
+                        "+ 创建工具"
                     }
                 }
                 }),
@@ -210,7 +210,7 @@ pub fn FinanceTools() -> Element {
                 div { class: "w-full text-sm space-y-1",
                     p { class: "font-medium", "工具创建指引" }
                     div { class: "flex flex-wrap gap-x-6 gap-y-1",
-                        span { "· HTTP 工具：点击右上角「+ 创建 HTTP 工具」，用于封装外部 REST API" }
+                        span { "· HTTP 工具：点击右上角「+ 创建工具」选择 HTTP 类型，用于封装外部 REST API" }
                         Link {
                             class: "link link-primary",
                             to: crate::pages::Route::FinanceMcpServers {},
@@ -458,7 +458,7 @@ pub fn FinanceTools() -> Element {
             }
         }
 
-        CreateHttpToolModal {
+        CreateToolModal {
             show: show_create(),
             on_close: move |_| show_create.set(false),
             on_created: move |_| load_data(),

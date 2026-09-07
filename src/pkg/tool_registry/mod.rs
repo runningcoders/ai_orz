@@ -18,6 +18,8 @@ pub mod lark_cli;
 pub mod mark_artifact;
 pub mod mcp;
 pub mod shell_exec;
+pub mod shell_policy;
+pub mod shell_tool;
 pub mod tavily_search;
 pub mod tool_readiness;
 pub mod tool_security;
@@ -105,6 +107,11 @@ impl ToolRegistry {
                 // HTTP tools are database-registered; ToolPo.config stores HttpToolConfig.
                 self.http_factory.create(po).ok()
             }
+            common::enums::ToolProtocol::Shell => {
+                // Declarative shell tools are database-registered;
+                // ToolPo.config stores ShellToolConfig (argv template → process::exec).
+                shell_tool::create_tool(po).ok()
+            }
         }
     }
 
@@ -152,7 +159,9 @@ impl ToolRegistry {
                 .get(&po.id)
                 .map(|f| f.credential_requirements())
                 .unwrap_or_default(),
-            common::enums::ToolProtocol::Mcp | common::enums::ToolProtocol::Http => po
+            common::enums::ToolProtocol::Mcp
+            | common::enums::ToolProtocol::Http
+            | common::enums::ToolProtocol::Shell => po
                 .config
                 .get("credential_requirements")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())

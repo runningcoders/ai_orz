@@ -259,7 +259,7 @@ impl ToolPo {
         };
         let now = common::constants::utils::current_timestamp_ms();
         let control_mode = match protocol {
-            ToolProtocol::Http | ToolProtocol::Mcp => ControlMode::Manual,
+            ToolProtocol::Http | ToolProtocol::Mcp | ToolProtocol::Shell => ControlMode::Manual,
             _ => ControlMode::Auto,
         };
         Self {

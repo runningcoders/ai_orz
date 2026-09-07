@@ -63,7 +63,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
         };
         let execution = match tool.po.protocol {
             ToolProtocol::Mcp => self.mcp_tool_dal.call_tool(ctx, request).await,
-            ToolProtocol::Builtin | ToolProtocol::Http => {
+            ToolProtocol::Builtin | ToolProtocol::Http | ToolProtocol::Shell => {
                 self.tool_dal.call_tool(ctx, request).await
             }
         };
@@ -74,7 +74,7 @@ impl RuntimeToolExecution for RuntimeDomainImpl {
                 // 修复：保留原 error 的 field（含 trace_ref），不再构造新 Error 丢弃 field
                 let mapped_message: String = match tool.po.protocol {
                     ToolProtocol::Mcp => map_mcp_tool_error(&tool_id, &error),
-                    ToolProtocol::Builtin | ToolProtocol::Http => {
+                    ToolProtocol::Builtin | ToolProtocol::Http | ToolProtocol::Shell => {
                         // 脱敏：不暴露底层错误细节给 LLM，避免路径/配置泄露
                         format!("tool {} execution failed", tool_id)
                     }

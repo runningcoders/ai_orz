@@ -9,7 +9,7 @@ use crate::pkg::RequestContext;
 use crate::service::domain::finance::domain;
 use common::error::{Result, bail_err};
 
-/// Create a new custom tool (HTTP/MCP). Built-in tools cannot be created via this API.
+/// Create a new custom tool (HTTP/MCP/Shell). Built-in tools cannot be created via this API.
 #[register_handler_tool(
     id = "create_tool",
     name = "Create Custom Tool",

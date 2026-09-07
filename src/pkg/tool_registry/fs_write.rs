@@ -181,6 +181,15 @@ impl CoreTool for FsWriteCoreTool {
                     }));
                 }
 
+                // 工作区惰性 git init（产物锚点基建，best-effort 不阻断写入）
+                crate::pkg::git_workspace::ensure_workspace_repo(
+                    &base_root,
+                    target_path.parent().unwrap_or(&target_path),
+                    ctx.user_id.as_deref(),
+                    ctx.agent_id().map(String::as_str),
+                )
+                .await;
+
                 // Read existing file lines if it exists
                 let mut existing_lines: Vec<String> = if target_path.exists() {
                     let file = File::open(&target_path)

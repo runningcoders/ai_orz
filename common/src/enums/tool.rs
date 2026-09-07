@@ -19,6 +19,8 @@ pub enum ToolProtocol {
     Http = 1,
     /// MCP (Model Context Protocol) 工具
     Mcp = 2,
+    /// 声明式 Shell 工具（参数 schema → argv 模板 → 进程执行，不经 sh -c）
+    Shell = 3,
 }
 
 impl From<i32> for ToolProtocol {
@@ -27,6 +29,7 @@ impl From<i32> for ToolProtocol {
             0 => ToolProtocol::Builtin,
             1 => ToolProtocol::Http,
             2 => ToolProtocol::Mcp,
+            3 => ToolProtocol::Shell,
             _ => ToolProtocol::Builtin,
         }
     }
@@ -51,6 +54,7 @@ impl fmt::Display for ToolProtocol {
             ToolProtocol::Builtin => write!(f, "builtin"),
             ToolProtocol::Http => write!(f, "http"),
             ToolProtocol::Mcp => write!(f, "mcp"),
+            ToolProtocol::Shell => write!(f, "shell"),
         }
     }
 }

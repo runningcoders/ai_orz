@@ -5,18 +5,18 @@
 
 use crate::config::get;
 use crate::models::tool::{CoreTool, ToolPo};
+use crate::pkg::git_workspace;
 use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
-use crate::pkg::tool_registry::tool_security::fs::{
-    crosses_agent_workspace, crosses_user_boundary,
-};
+use crate::pkg::tool_registry::shell_policy::{self, ShellPolicyInput};
 use anyhow::anyhow;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 use tokio::fs::{OpenOptions, create_dir_all};
 use tokio::process::Command;
@@ -182,20 +182,6 @@ impl ShellExecCoreTool {
         Self { po, config }
     }
 
-    /// Validate resolved working directory is within allowed scope
-    /// (base data path or configured additional allowed paths).
-    fn validate_working_dir(&self, resolved: &std::path::Path) -> bool {
-        let base_path = get().base_data_path();
-        let base_path = std::path::Path::new(&base_path);
-        if resolved.starts_with(base_path) {
-            return true;
-        }
-        self.config
-            .additional_allowed_paths()
-            .iter()
-            .any(|allowed| resolved.starts_with(std::path::Path::new(allowed)))
-    }
-
     /// Resolve absolute working directory path.
     ///
     /// 未指定时按调用身份选择默认工作区（见 `paths::default_workspace`）：
@@ -277,35 +263,40 @@ impl CoreTool for ShellExecCoreTool {
         // Resolve working directory (default: caller-identity workspace)
         let working_dir = self.resolve_working_dir(&ctx, params.working_dir.as_deref());
 
-        // Validate scope (base data path / additional allowed paths)
-        if !self.validate_working_dir(&working_dir) {
-            return Ok(serde_json::json!({
-                "success": false,
-                "error": format!("Working directory '{}' is not in allowed paths", working_dir.display()),
-                "require_confirmation": true
-            }));
-        }
-
-        // Workspace identity boundary: another user's tree / another agent's
-        // workspace requires explicit user confirmation.
+        // 拦截层（policy pipeline）：scope 结构规则 + 命令规则统一裁决，
+        // 阻断动作（Deny/Confirm）短路返回 require_confirmation，不执行命令
         let base_root = get().base_data_path();
-        if crosses_user_boundary(&base_root, &working_dir, ctx.user_id.as_deref())
-            || crosses_agent_workspace(&base_root, &working_dir, ctx.agent_id.as_deref())
-        {
+        let base_root_str = base_root.to_string_lossy().into_owned();
+        let verdict = shell_policy::evaluate(ShellPolicyInput {
+            command: &params.command,
+            working_dir: &working_dir,
+            base_root: &base_root_str,
+            additional_allowed_paths: self.config.additional_allowed_paths(),
+            user_id: ctx.user_id.as_deref(),
+            agent_id: ctx.agent_id.as_deref(),
+        });
+        if let Some(action) = verdict.blocking {
+            let reason = action.reason();
             return Ok(serde_json::json!({
                 "success": false,
                 "require_confirmation": true,
-                "message": format!(
-                    "Working directory '{}' belongs to another user/agent workspace. \
-                    You MUST STOP and ask the user for explicit confirmation before using it.",
-                    working_dir.display()
-                )
+                "error": reason,
+                "message": reason
             }));
         }
 
         if !working_dir.exists() {
             create_dir_all(&working_dir).await?;
         }
+
+        // 工作区惰性 git init（产物锚点基建，best-effort 不阻断执行）
+        git_workspace::ensure_workspace_repo(
+            Path::new(&base_root_str),
+            &working_dir,
+            ctx.user_id.as_deref(),
+            ctx.agent_id.as_deref(),
+        )
+        .await;
 
         // Get effective timeout and max output
         let timeout_ms = params
@@ -329,6 +320,25 @@ impl CoreTool for ShellExecCoreTool {
         let mut env = filter_inherited_environment(self.config.allowed_env());
         if let Some(extra_env) = &params.env {
             env = merge_extra_environment(env, &serde_json::to_value(extra_env)?);
+        }
+        // 拦截层固定出口步骤：结构性注入任务/Agent 身份（不可绕），
+        // 供 git commit-msg hook 等原生扩展点读取
+        if let Some(task_id) = ctx.task_id().cloned() {
+            env.insert(shell_policy::ENV_TASK_ID.to_string(), task_id);
+        }
+        if let Some(agent_id) = ctx.agent_id().cloned() {
+            env.insert(shell_policy::ENV_AGENT_ID.to_string(), agent_id);
+        }
+
+        // 审计：放行命中的审计规则（如 git commit = 产物锚点产生时刻）
+        for (rule_id, reason) in &verdict.audits {
+            log_info!(
+                &ctx,
+                "shell_policy_audit",
+                rule = rule_id,
+                reason = reason,
+                "shell 命令命中审计规则"
+            );
         }
 
         // 统一日志流式模型：日志文件名 {call_id}.log，与 ToolCallEntry 全链路关联

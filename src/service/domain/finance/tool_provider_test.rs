@@ -238,7 +238,7 @@ mod tests {
 
         assert!(result.is_err(), "MCP tools should be manual-only");
         let error = result.unwrap_err().to_string();
-        assert!(error.contains("Mcp Tool"));
+        assert!(error.contains("Mcp/Shell Tool"));
         assert!(error.contains("Manual"));
 
         let stored = domain
@@ -275,7 +275,7 @@ mod tests {
 
         assert!(result.is_err(), "MCP tools should reject Auto on update");
         let error = result.unwrap_err().to_string();
-        assert!(error.contains("Mcp Tool"));
+        assert!(error.contains("Mcp/Shell Tool"));
         assert!(error.contains("Manual"));
     }
 }

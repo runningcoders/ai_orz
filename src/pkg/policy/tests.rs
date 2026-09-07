@@ -3,6 +3,133 @@ use builtin::*;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+// ==================== action() 可选动作扩展测试 ====================
+
+/// 声明式测试策略：命令包含关键词即命中，并携带动作
+struct KeywordPolicy {
+    id: &'static str,
+    keyword: &'static str,
+    action: Option<PolicyAction>,
+}
+
+impl KeywordPolicy {
+    fn new(id: &'static str, keyword: &'static str, action: Option<PolicyAction>) -> Self {
+        Self {
+            id,
+            keyword,
+            action,
+        }
+    }
+}
+
+impl Policy for KeywordPolicy {
+    fn id(&self) -> &str {
+        self.id
+    }
+    fn name(&self) -> &str {
+        self.id
+    }
+    fn condition_desc(&self) -> &str {
+        "command contains keyword"
+    }
+    fn required_metrics(&self) -> Vec<String> {
+        vec!["command".to_string()]
+    }
+    fn evaluate(&self, metrics: &Metrics) -> Vec<String> {
+        match metrics.get_str("command") {
+            Some(cmd) if cmd.contains(self.keyword) => vec![self.id.to_string()],
+            _ => Vec::new(),
+        }
+    }
+    fn action(&self, metrics: &Metrics) -> Option<PolicyAction> {
+        if self.evaluate(metrics).is_empty() {
+            None
+        } else {
+            self.action.clone()
+        }
+    }
+}
+
+#[test]
+fn test_builtin_policy_action_default_none() {
+    // 老策略未覆写 action：命中时 action 仍为 None（业务侧映射，向后兼容）
+    let policy = MaxRoundsPolicy::new(5);
+    let metrics = Metrics::new()
+        .with("round_number", 5u64)
+        .with("max_rounds", 5u64);
+    assert!(policy.is_triggered(&metrics));
+    assert_eq!(policy.action(&metrics), None);
+}
+
+#[test]
+fn test_action_policy_or_group_first_some_wins() {
+    // Or 组：按声明顺序取首个命中且携带动作的策略
+    let policy = PolicyBuilder::new()
+        .with_policy(KeywordPolicy::new(
+            "rule_a",
+            "aaa",
+            Some(PolicyAction::Deny("denied by a".to_string())),
+        ))
+        .with_policy(KeywordPolicy::new(
+            "rule_b",
+            "bbb",
+            Some(PolicyAction::Confirm("confirm b".to_string())),
+        ))
+        .or();
+
+    // 只命中 rule_b
+    let metrics = Metrics::new().with("command", "do bbb now");
+    assert_eq!(
+        policy.action(&metrics),
+        Some(PolicyAction::Confirm("confirm b".to_string()))
+    );
+
+    // 两个都命中：声明顺序在前的 rule_a 胜出
+    let metrics = Metrics::new().with("command", "aaa and bbb");
+    assert_eq!(
+        policy.action(&metrics),
+        Some(PolicyAction::Deny("denied by a".to_string()))
+    );
+
+    // 都未命中 → None
+    let metrics = Metrics::new().with("command", "nothing here");
+    assert_eq!(policy.action(&metrics), None);
+}
+
+#[test]
+fn test_action_policy_and_group_requires_all_hit() {
+    // And 组：全部命中才上浮首个 Some；任一未命中 → None
+    let policy = PolicyBuilder::new()
+        .with_policy(KeywordPolicy::new(
+            "rule_a",
+            "aaa",
+            Some(PolicyAction::Audit("audit a".to_string())),
+        ))
+        .with_policy(KeywordPolicy::new(
+            "rule_b", "bbb", None, // 命中但不携带动作
+        ))
+        .build();
+
+    // 全部命中：rule_a 携带 Audit 上浮
+    let metrics = Metrics::new().with("command", "aaa and bbb");
+    assert_eq!(
+        policy.action(&metrics),
+        Some(PolicyAction::Audit("audit a".to_string()))
+    );
+
+    // 只命中 rule_a → And 整体未命中 → None
+    let metrics = Metrics::new().with("command", "only aaa");
+    assert_eq!(policy.action(&metrics), None);
+}
+
+#[test]
+fn test_policy_action_helpers() {
+    assert!(PolicyAction::Deny("x".into()).is_blocking());
+    assert!(PolicyAction::Confirm("x".into()).is_blocking());
+    assert!(!PolicyAction::Audit("x".into()).is_blocking());
+    assert_eq!(PolicyAction::Confirm("why".into()).reason(), "why");
+}
+
 // ==================== policy_set! 宏测试 ====================
 
 #[test]
@@ -255,6 +382,40 @@ fn test_token_budget_policy_disabled_when_budget_zero() {
 
     let metrics_high = Metrics::new().with("total_tokens", u64::MAX);
     assert!(!policy.is_triggered(&metrics_high));
+}
+
+#[test]
+fn test_context_overflow_policy_disabled_when_threshold_zero() {
+    // threshold = 0 表示未启用（对齐 TokenBudgetPolicy 语义）
+    let policy = ContextOverflowPolicy::new(0);
+    assert!(!policy.is_triggered(&Metrics::new().with("context_tokens", u64::MAX)));
+}
+
+#[test]
+fn test_final_answer_policy() {
+    let policy = FinalAnswerPolicy::new();
+
+    // output_kind = final → 命中（正常完成退出裁决）
+    assert!(policy.is_triggered(&Metrics::new().with("output_kind", "final")));
+    // 工具调用轮 / 因子缺失 → 不命中
+    assert!(!policy.is_triggered(&Metrics::new().with("output_kind", "tool_calls")));
+    assert!(!policy.is_triggered(&Metrics::new()));
+}
+
+#[test]
+fn test_consecutive_llm_errors_policy() {
+    let policy = ConsecutiveLlmErrorsPolicy::new(3);
+
+    assert!(!policy.is_triggered(&Metrics::new().with("llm_consecutive_errors", 2u64)));
+    assert!(policy.is_triggered(&Metrics::new().with("llm_consecutive_errors", 3u64)));
+    // 缺因子 = 0 次失败，不命中
+    assert!(!policy.is_triggered(&Metrics::new()));
+}
+
+#[test]
+fn test_consecutive_llm_errors_policy_disabled_when_budget_zero() {
+    let policy = ConsecutiveLlmErrorsPolicy::new(0);
+    assert!(!policy.is_triggered(&Metrics::new().with("llm_consecutive_errors", u64::MAX)));
 }
 
 #[test]

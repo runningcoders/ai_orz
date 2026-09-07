@@ -1,22 +1,54 @@
-//! 策略引擎（通用判断框架，不感知业务 action）
+//! 策略引擎（通用判断框架，不感知业务语义）
 //!
 //! 设计要点：
 //! - Policy trait：evaluate 返回命中的策略 id 列表（空 = 未命中）
 //! - Metrics：HashMap 封装，think_loop 每轮构造
 //! - PolicyGroup：本身实现 Policy，支持 And/Or 嵌套组合
 //! - PolicyBuilder：with + build(And) / or(Or)
+//! - action()：命中后可选携带的通用处置动作（Deny/Confirm/Audit），
+//!   默认 None = 策略仅输出命中、动作由业务侧映射（原行为）；
+//!   新领域（如 shell 拦截）可覆写 action() 声明式携带动作。
 
 pub mod builtin;
 
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// 策略 trait（通用判断引擎，不感知业务 action）
+/// 引擎级通用处置动作（命中后可选携带）
+///
+/// 引擎只认识这三个词，不感知具体业务语义（如 shell 拦截、think_loop 终止）；
+/// 业务侧可选择忽略 action 自行按命中 id 映射（向后兼容）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PolicyAction {
+    /// 拒绝执行（携带给调用方的提示文案）
+    Deny(String),
+    /// 需要用户确认后才可放行（携带确认原因）
+    Confirm(String),
+    /// 放行但记录审计（携带审计说明）
+    Audit(String),
+}
+
+impl PolicyAction {
+    /// 动作是否阻断执行（Deny/Confirm 需要短路，Audit 放行）
+    pub fn is_blocking(&self) -> bool {
+        matches!(self, PolicyAction::Deny(_) | PolicyAction::Confirm(_))
+    }
+
+    /// 动作携带的说明文案
+    pub fn reason(&self) -> &str {
+        match self {
+            PolicyAction::Deny(r) | PolicyAction::Confirm(r) | PolicyAction::Audit(r) => r,
+        }
+    }
+}
+
+/// 策略 trait（通用判断引擎，不感知业务语义）
 ///
 /// 设计要点：
 /// - evaluate 返回命中的策略 id 列表（空 = 未命中，非空 = 命中）
 /// - is_triggered 是 trait 级默认方法，基于 evaluate 判断
-/// - 策略不响应 action，action 映射由业务侧处理
+/// - action 是 trait 级默认方法（默认 None）：策略可选择命中后携带
+///   通用处置动作；未覆写时动作映射仍由业务侧处理（向后兼容）
 pub trait Policy: Send + Sync + 'static {
     /// 策略唯一 ID（如 "max_rounds" / "timeout" / "context_overflow"）
     fn id(&self) -> &str;
@@ -37,6 +69,16 @@ pub trait Policy: Send + Sync + 'static {
     /// 默认方法：是否命中（列表非空）
     fn is_triggered(&self, metrics: &Metrics) -> bool {
         !self.evaluate(metrics).is_empty()
+    }
+
+    /// 默认方法：命中后建议的处置动作（可选能力）
+    ///
+    /// 默认返回 None = 不携带动作，业务侧按命中 id 自行映射（原行为）；
+    /// 声明式策略可覆写此方法返回通用动作。调用方应配合
+    /// `is_triggered`/`evaluate` 使用：仅在命中时解释 action。
+    fn action(&self, metrics: &Metrics) -> Option<PolicyAction> {
+        let _ = metrics;
+        None
     }
 }
 
@@ -72,6 +114,24 @@ impl Metrics {
 
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         self.data.get(key).and_then(|v| v.as_f64())
+    }
+
+    /// 读取字符串算子（shell 拦截等文本类策略使用）
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        self.data.get(key).and_then(|v| v.as_str())
+    }
+
+    /// 读取字符串列表算子（如路径白名单）
+    pub fn get_str_list(&self, key: &str) -> Vec<String> {
+        self.data
+            .get(key)
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -186,6 +246,31 @@ impl Policy for PolicyGroup {
                     .flat_map(|p| p.evaluate(metrics))
                     .collect()
             }
+        }
+    }
+
+    /// 组合动作：子策略按声明顺序取首个 Some（仅在被命中时解释）
+    /// - And：全部命中时取首个 Some；任一未命中 → None
+    /// - Or：按子策略顺序，首个「命中且携带动作」的 Some 上浮
+    fn action(&self, metrics: &Metrics) -> Option<PolicyAction> {
+        match self.relation {
+            PolicyRelation::And => {
+                let all_hit = self
+                    .policies
+                    .iter()
+                    .all(|p| !p.evaluate(metrics).is_empty());
+                if !all_hit {
+                    return None;
+                }
+                self.policies.iter().find_map(|p| p.action(metrics))
+            }
+            PolicyRelation::Or => self.policies.iter().find_map(|p| {
+                if p.evaluate(metrics).is_empty() {
+                    None
+                } else {
+                    p.action(metrics)
+                }
+            }),
         }
     }
 }

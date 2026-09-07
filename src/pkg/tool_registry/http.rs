@@ -292,7 +292,7 @@ fn parse_supported_method(method: &str) -> Result<Method> {
     })
 }
 
-fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Result<()> {
+pub(crate) fn validate_args_schema(parameters_schema: Option<&Value>, args: &Value) -> Result<()> {
     let Some(schema) = parameters_schema else {
         return Ok(());
     };
@@ -408,7 +408,7 @@ fn render_scalar_template(value: &Value, args: &Value) -> Result<String> {
     }
 }
 
-fn render_string_template(template: &str, args: &Value) -> Result<String> {
+pub(crate) fn render_string_template(template: &str, args: &Value) -> Result<String> {
     let mut rendered = template.to_string();
     if let Value::Object(object) = args {
         for (key, value) in object {
@@ -626,7 +626,7 @@ fn validate_scalar_template_object(field_name: &str, template: Option<&Value>) -
     Ok(())
 }
 
-fn validate_supported_placeholders(template: &str) -> Result<()> {
+pub(crate) fn validate_supported_placeholders(template: &str) -> Result<()> {
     let mut rest = template;
     while let Some(start) = rest.find("{{") {
         let after_start = &rest[start + 2..];

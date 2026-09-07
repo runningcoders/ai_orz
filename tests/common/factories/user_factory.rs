@@ -106,6 +106,15 @@ pub async fn poll_initialize_progress(app: &TestApp, task_id: &str) -> serde_jso
     }
 }
 
+/// 进程级缓存：复用 admin 的已知凭证 `(org_id, user_id, password)`。
+///
+/// 复用分支首次命中时重置密码并缓存；此后同进程内的所有复用直接返回缓存
+/// 密码，**不再重置**。否则每次 bootstrap 都把共享 SuperAdmin 的密码改成
+/// 新随机值，会打断同 binary 内其他并行测试的 in-flight 登录（`login` 在
+/// BOOTSTRAP_MUTEX 之外执行）——这正是 CI 偶现「用户名或密码错误」的根因。
+static REUSED_ADMIN_CREDS: std::sync::OnceLock<(String, String, String)> =
+    std::sync::OnceLock::new();
+
 /// 尝试从 service 层直接复用已存在的 Local 组织 + SuperAdmin 用户。
 ///
 /// 返回 `Some((organization_id, user_id, username, password))`；
@@ -163,7 +172,16 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
         .find(|u| u.role == UserRole::SuperAdmin)?;
     let admin_role_i32 = admin.role as i32;
 
-    // 密码重置为已知明文（bcrypt 不可逆，旧哈希无法用于登录）
+    // 进程内已持有该 admin 的已知密码 → 直接复用，不再重置（避免打断
+    // 同 binary 内其他并行测试的 in-flight 登录）
+    if let Some((org, uid, pw)) = REUSED_ADMIN_CREDS.get()
+        && org == &org_id
+        && uid == &admin.id
+    {
+        return Some((org_id, admin.id, admin.username, pw.clone(), admin_role_i32));
+    }
+
+    // 首次复用：密码重置为已知明文（bcrypt 不可逆，旧哈希无法用于登录）
     let password = format!("reused-pw-{}", uuid::Uuid::now_v7());
     admin.password_hash = ai_orz::pkg::password::hash_password(&password).ok()?;
     organization::domain()
@@ -171,6 +189,8 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
         .update_user(ctx, &admin)
         .await
         .ok()?;
+
+    let _ = REUSED_ADMIN_CREDS.set((org_id.clone(), admin.id.clone(), password.clone()));
 
     Some((org_id, admin.id, admin.username, password, admin_role_i32))
 }
@@ -344,6 +364,9 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
         .get("embedding_provider_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    // 新建分支也注册凭证缓存：后续复用分支命中缓存后不再重置密码，
+    // 避免打断本测试随后的 in-flight 登录（bootstrap 与 login 不同锁）
+    let _ = REUSED_ADMIN_CREDS.set((org_id.clone(), user_id.clone(), password.clone()));
     BootstrappedSystem {
         organization_id: org_id,
         user_id: user_id.clone(),
