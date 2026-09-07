@@ -95,7 +95,7 @@ pub fn ProjectArtifactDetail(id: String) -> Element {
                 Loading {}
             } else if let Some(a) = artifact_data {
                 HudPanel {
-                    title: "{a.name}".to_string(),
+                    title: a.name.clone(),
                     eyebrow: "ARTIFACT".to_string(),
                     signal: true,
                     div { class: "card-body",

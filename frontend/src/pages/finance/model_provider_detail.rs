@@ -148,7 +148,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     let p = p.clone();
                     rsx! {
                 HudPanel {
-                    title: "{p.name}".to_string(),
+                    title: p.name.clone(),
                     eyebrow: "PROVIDER".to_string(),
                     signal: true,
                     div { class: "card-body",

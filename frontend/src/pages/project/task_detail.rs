@@ -393,7 +393,7 @@ pub fn TaskDetail(id: String) -> Element {
                     // === 概览：基本信息 + 标签和依赖 + 统计 ===
                     // 区域 1：基本信息
                     HudPanel {
-                        title: "{t.title}".to_string(),
+                        title: t.title.clone(),
                         eyebrow: "TASK".to_string(),
                         signal: true,
                         actions: Some(rsx! {

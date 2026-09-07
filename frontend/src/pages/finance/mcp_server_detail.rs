@@ -122,7 +122,7 @@ pub fn FinanceMcpServerDetail(id: String) -> Element {
                     let s = s.clone();
                     rsx! {
                         HudPanel {
-                            title: "{s.name}".to_string(),
+                            title: s.name.clone(),
                             eyebrow: "MCP SERVER".to_string(),
                             signal: true,
                             div { class: "card-body",

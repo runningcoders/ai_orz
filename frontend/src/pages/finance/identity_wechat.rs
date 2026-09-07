@@ -10,7 +10,11 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use dioxus::prelude::*;
+use qrcode::QrCode;
+use qrcode::render::svg;
 
 use crate::api::wechat_integration::{
     get_wechat_integration_status, get_wechat_login_qrcode, poll_wechat_login_status,
@@ -20,13 +24,42 @@ use crate::components::modal::Modal;
 use crate::store::toast::use_toast;
 use common::api::WechatIntegrationStatusResponse;
 
-/// 二维码渲染内容 → `<img>` 可用的 src（兼容 data URI / URL / 裸 base64 PNG）
+/// 二维码渲染内容 → `<img>` 可用的 src
+///
+/// ⚠️ 关键：iLink `get_bot_qrcode` 返回的 `qrcode_img_content` **不是图片数据**，
+/// 而是二维码里编码的文本（实测为 `https://liteapp.weixin.qq.com/q/...` 这类扫码跳转 URL，
+/// 长度约 89 字符）。旧实现见到 `http(s)://` 就原样塞进 `<img src>`，浏览器去 GET 一个网页，
+/// 返回的不是图像 → 必然破图。这与网络无关，任何网页 URL 都会如此。
+///
+/// 所以这里统一按「把内容编码成二维码图像」处理：
+/// - 已经是图片数据（`data:image/...`）→ 直接渲染（防御性保留）
+/// - 其余一律视为二维码内容 → 生成 SVG 并转成 base64 data URI
 fn qr_img_src(content: &str) -> String {
     let c = content.trim();
-    if c.starts_with("data:") || c.starts_with("http://") || c.starts_with("https://") {
-        c.to_string()
-    } else {
-        format!("data:image/png;base64,{c}")
+    if c.is_empty() {
+        return String::new();
+    }
+    if c.starts_with("data:image/") {
+        return c.to_string();
+    }
+    match QrCode::new(c.as_bytes()) {
+        Ok(code) => {
+            // 显式给白底：HUD 主题是深色背景，透明底的黑码既看不清也扫不出
+            let svg = code
+                .render::<svg::Color>()
+                .min_dimensions(240, 240)
+                .dark_color(svg::Color("#000000"))
+                .light_color(svg::Color("#ffffff"))
+                .build();
+            format!(
+                "data:image/svg+xml;base64,{}",
+                BASE64.encode(svg.as_bytes())
+            )
+        }
+        Err(e) => {
+            tracing::warn!("二维码生成失败（内容长度 {}）: {e}", c.len());
+            String::new()
+        }
     }
 }
 
