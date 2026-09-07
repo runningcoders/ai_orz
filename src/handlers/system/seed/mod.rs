@@ -17,6 +17,7 @@ pub mod get_file;
 pub mod list;
 pub mod load;
 pub mod save;
+pub mod sync_preset_skills;
 
 pub use apply_default::apply_default_handler;
 pub use delete_file::delete_seed_file_handler;
@@ -27,6 +28,8 @@ pub use get_file::get_seed_file_handler;
 pub use list::list_seeds_handler;
 pub use load::load_seed_handler;
 pub use save::save_seed_handler;
+pub use sync_preset_skills::preview_preset_skills_handler;
+pub use sync_preset_skills::sync_preset_skills_handler;
 
 use crate::pkg::RequestContext;
 use crate::service::domain::system::seed::defs::*;
@@ -67,6 +70,137 @@ pub struct SkillApplyResult {
     pub created: usize,
     pub updated: usize,
     pub skipped: usize,
+}
+
+/// 单个预置技能的导入动作
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresetSkillAction {
+    /// 新建（技能库中不存在）
+    Created,
+    /// 覆盖更新（已存在且未被跳过）
+    Updated,
+    /// 跳过（已存在且 skip_existing=true）
+    Skipped,
+}
+
+/// 导入单个预置技能到共享库
+///
+/// `apply_preset_skills` 的单技能核心（后台任务逐技能执行以便上报进度），
+/// 参数语义与 `apply_preset_skills` 一致。
+pub async fn apply_single_preset_skill(
+    ctx: RequestContext,
+    skill_def: &SkillDef,
+    author_id_override: Option<&str>,
+    skip_existing: bool,
+) -> Result<PresetSkillAction> {
+    use crate::service::domain::hr;
+
+    let existing = hr::domain()
+        .skill_manage()
+        .get_skill(ctx.clone(), &skill_def.id)
+        .await?;
+
+    if existing.is_some() && skip_existing {
+        return Ok(PresetSkillAction::Skipped);
+    }
+
+    // author_id 解析（优先级：已存在技能继承 > override > 模板值）
+    //
+    // 已存在时**必须继承现有作者**：default.json 的 author_id 是 `TEMPLATE_ADMIN`
+    // 占位值（用户表并不存在），直接写入会让技能归属到一个不存在的用户，
+    // 列表页创建者显示异常，原作者也会丧失作者权限。
+    let author_id = match (&existing, author_id_override) {
+        (Some(skill), _) => skill.po.author_id.clone(),
+        (None, Some(owner)) => owner.to_string(),
+        (None, None) => skill_def.author_id.clone(),
+    };
+
+    let mut skill_po = crate::models::skill::SkillPo::new(
+        skill_def.id.clone(),
+        skill_def.name.clone(),
+        skill_def.description.clone(),
+        skill_def.tags.clone(),
+        skill_def.category.clone(),
+        skill_def.parent_skill_id.clone(),
+        author_id,
+        common::enums::skill::SkillAuthorType::from(skill_def.author_type),
+        skill_def.content_path.clone(),
+    );
+    skill_po.status = common::enums::SkillStatus::from(skill_def.status);
+    let skill = crate::models::skill::Skill::from_po(skill_po);
+
+    // 动态解析每个文件为 SkillFileImport（content > local_path > ref_path > url）
+    let mut imports: Vec<crate::service::domain::hr::SkillFileImport> = Vec::new();
+    for file_def in &skill_def.files {
+        let import = resolve_skill_file_import(file_def).await?;
+        imports.push(import);
+    }
+
+    if existing.is_some() {
+        let params = crate::service::domain::hr::UpdateSkillParams {
+            skill: &skill,
+            imports,
+            file_deletes: vec![],
+            remote_source: None,
+        };
+        hr::domain()
+            .skill_manage()
+            .update_skill(ctx, params)
+            .await?;
+        Ok(PresetSkillAction::Updated)
+    } else {
+        // create 时一起写入 imports，避免「先 create 再 update」两步走：
+        // 初始化场景 ctx 往往是 Guest（HTTP /initialize handler 的请求上下文，
+        // 没有 user_role，user_id 可能为空），create 后 update_skill 会被
+        // ensure_skill_access 拦截（当前 ctx 不是技能作者也不是管理员）。
+        // 合并为单次 create_skill：create 内部只校验组织成员身份（足够），
+        // 文件写入作为 create 原子流程的一部分，不需要额外权限检查。
+        let params = crate::service::domain::hr::CreateSkillParams {
+            skill: &skill,
+            imports,
+            remote_source: None,
+        };
+        hr::domain()
+            .skill_manage()
+            .create_skill(ctx, params)
+            .await?;
+        Ok(PresetSkillAction::Created)
+    }
+}
+
+/// 导入预置技能到共享库
+///
+/// 从 SeedSnapshot 的 skills 列表中读取技能定义，
+/// 动态解析文件内容（content > ref_path > url）并写入 DB + 文件系统。
+///
+/// # 参数
+/// - ctx：请求上下文
+/// - skills：技能定义列表
+/// - author_id_override：仅对**新建**技能生效（initialize_system 传 Some(owner_id) 对齐组织
+///   owner；apply_snapshot_to_db 传 None 保留模板原始值）。已存在的技能一律继承现有
+///   author_id，避免被 default.json 的 `TEMPLATE_ADMIN` 占位值覆盖。
+/// - skip_existing：true 时跳过已存在的技能（对应 ImportStrategy::SkipExisting）
+///
+/// # 返回
+/// 各类操作计数
+pub async fn apply_preset_skills(
+    ctx: RequestContext,
+    skills: &[SkillDef],
+    author_id_override: Option<&str>,
+    skip_existing: bool,
+) -> Result<SkillApplyResult> {
+    let mut result = SkillApplyResult::default();
+
+    for skill_def in skills {
+        match apply_single_preset_skill(ctx.clone(), skill_def, author_id_override, skip_existing)
+            .await?
+        {
+            PresetSkillAction::Created => result.created += 1,
+            PresetSkillAction::Updated => result.updated += 1,
+            PresetSkillAction::Skipped => result.skipped += 1,
+        }
+    }
+    Ok(result)
 }
 
 /// 解析 SkillFileDef 为 SkillFileImport
@@ -134,101 +268,6 @@ async fn resolve_skill_file_import(
         "技能文件 {} 未指定内容来源（content/local_path/ref_path/url 均为空）",
         file_def.path
     )))
-}
-
-/// 导入预置技能到共享库
-///
-/// 从 SeedSnapshot 的 skills 列表中读取技能定义，
-/// 动态解析文件内容（content > ref_path > url）并写入 DB + 文件系统。
-///
-/// # 参数
-/// - ctx：请求上下文
-/// - skills：技能定义列表
-/// - author_id_override：替换 author_id（initialize_system 传 Some(owner_id) 对齐组织 owner；
-///   apply_snapshot_to_db 传 None 保留模板原始值）
-/// - skip_existing：true 时跳过已存在的技能（对应 ImportStrategy::SkipExisting）
-///
-/// # 返回
-/// 各类操作计数
-pub async fn apply_preset_skills(
-    ctx: RequestContext,
-    skills: &[SkillDef],
-    author_id_override: Option<&str>,
-    skip_existing: bool,
-) -> Result<SkillApplyResult> {
-    use crate::service::domain::hr;
-
-    let mut result = SkillApplyResult::default();
-
-    for skill_def in skills {
-        let existing = hr::domain()
-            .skill_manage()
-            .get_skill(ctx.clone(), &skill_def.id)
-            .await?;
-
-        if existing.is_some() && skip_existing {
-            result.skipped += 1;
-            continue;
-        }
-
-        // author_id 替换：initialize_system 场景用实际 owner id
-        let author_id = author_id_override
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| skill_def.author_id.clone());
-
-        let mut skill_po = crate::models::skill::SkillPo::new(
-            skill_def.id.clone(),
-            skill_def.name.clone(),
-            skill_def.description.clone(),
-            skill_def.tags.clone(),
-            skill_def.category.clone(),
-            skill_def.parent_skill_id.clone(),
-            author_id,
-            common::enums::skill::SkillAuthorType::from(skill_def.author_type),
-            skill_def.content_path.clone(),
-        );
-        skill_po.status = common::enums::SkillStatus::from(skill_def.status);
-        let skill = crate::models::skill::Skill::from_po(skill_po);
-
-        // 动态解析每个文件为 SkillFileImport（content > local_path > ref_path > url）
-        let mut imports: Vec<crate::service::domain::hr::SkillFileImport> = Vec::new();
-        for file_def in &skill_def.files {
-            let import = resolve_skill_file_import(file_def).await?;
-            imports.push(import);
-        }
-
-        if existing.is_some() {
-            let params = crate::service::domain::hr::UpdateSkillParams {
-                skill: &skill,
-                imports,
-                file_deletes: vec![],
-                remote_source: None,
-            };
-            hr::domain()
-                .skill_manage()
-                .update_skill(ctx.clone(), params)
-                .await?;
-            result.updated += 1;
-        } else {
-            // create 时一起写入 imports，避免「先 create 再 update」两步走：
-            // 初始化场景 ctx 往往是 Guest（HTTP /initialize handler 的请求上下文，
-            // 没有 user_role，user_id 可能为空），create 后 update_skill 会被
-            // ensure_skill_access 拦截（当前 ctx 不是技能作者也不是管理员）。
-            // 合并为单次 create_skill：create 内部只校验组织成员身份（足够），
-            // 文件写入作为 create 原子流程的一部分，不需要额外权限检查。
-            let params = crate::service::domain::hr::CreateSkillParams {
-                skill: &skill,
-                imports,
-                remote_source: None,
-            };
-            hr::domain()
-                .skill_manage()
-                .create_skill(ctx.clone(), params)
-                .await?;
-            result.created += 1;
-        }
-    }
-    Ok(result)
 }
 
 /// 导出技能文件列表为 SkillFileDef

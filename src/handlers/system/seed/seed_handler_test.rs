@@ -44,6 +44,9 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dao::email::init();
     crate::service::dao::webhook::init();
     crate::service::dao::a2a_callback::init();
+    // 联邦 P8：组织链接 / 配对码 DAO（organization domain DAL 初始化时会访问其单例）
+    crate::service::dao::organization_link::init();
+    crate::service::dao::organization_pairing::init();
 
     // 初始化所有 DAL
     crate::service::dal::organization::init();
@@ -62,9 +65,10 @@ async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dal::message_channel::init();
     crate::service::dal::attachment::init();
     crate::service::dal::artifact::init();
-    // user dal / lark dal：organization / message 相关 domain 注入依赖
+    // user dal / lark dal / wechat dal：organization / message 相关 domain 注入依赖
     crate::service::dal::user::init();
     crate::service::dal::lark::init();
+    crate::service::dal::wechat::init();
     crate::service::dal::mcp_server::init();
 
     // 初始化所有 Domain

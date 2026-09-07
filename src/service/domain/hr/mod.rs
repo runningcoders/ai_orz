@@ -633,6 +633,23 @@ pub trait SkillManage: Send + Sync {
         agent_id: &str,
     ) -> Result<()>;
 
+    /// 用源技能最新版本覆写其所有已安装副本（预置技能同步场景）
+    ///
+    /// 对每个 `parent_skill_id == source_skill_id` 的副本：元数据
+    /// （name/description/tags/category）与源对齐，文件目录用源覆盖
+    /// （副本独有文件保留）；副本的 status（Agent 私有 Draft）、author、
+    /// content_path、parent_skill_id 保持不变。
+    ///
+    /// 权限说明：本方法供管理面（预置技能同步后台任务）调用，路由层已由
+    /// `/system` 段的 Admin 中间件把关，方法内部不做资源级权限检查。
+    ///
+    /// 返回被更新的副本数量。
+    async fn sync_installed_copies(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+    ) -> Result<usize>;
+
     /// 把一个 Expired 技能恢复为 Draft（详情页过期技能虚拟 pack「恢复」按钮使用）。
     ///
     /// 前置：`po.status == SkillStatus::Expired`（否则 Conflict）。

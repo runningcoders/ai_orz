@@ -43,6 +43,18 @@ pub async fn apply_default(
     api_post("/api/v1/system/seed/apply-default", &req).await
 }
 
+/// 预置技能同步预览：对比 seed 与技能库，返回「将新增 / 将覆盖」清单
+pub async fn preview_preset_skills() -> Result<common::api::PreviewPresetSkillsResponse, ApiError> {
+    api_get("/api/v1/system/seed/preset-skills/preview").await
+}
+
+/// 同步预置技能到技能库（异步后台任务，返回 task_id；轮询 get_task_progress 获取进度与结果）
+pub async fn sync_preset_skills(
+    req: common::api::SyncPresetSkillsRequest,
+) -> Result<common::api::TaskIdResponse, ApiError> {
+    api_post("/api/v1/system/seed/preset-skills/sync", &req).await
+}
+
 /// 查询统一后台任务进度
 ///
 /// 调用 `GET /api/v1/system/tasks/{task_id}/progress`，所有后台任务（初始化、

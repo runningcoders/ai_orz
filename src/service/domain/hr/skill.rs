@@ -200,6 +200,45 @@ impl SkillManage for HrDomainImpl {
         self.skill_dal.delete(ctx, skill_id).await
     }
 
+    async fn sync_installed_copies(
+        &self,
+        ctx: RequestContext,
+        source_skill_id: &str,
+    ) -> Result<usize> {
+        // 找到该源技能的全部已安装副本（parent_skill_id 过滤；上限放宽避免漏同步）
+        let copies = self
+            .skill_dal
+            .query(
+                ctx.clone(),
+                SkillQuery {
+                    parent_skill_id: Some(source_skill_id.to_string()),
+                    pagination: common::api::PaginationParams {
+                        limit: Some(1000),
+                        offset: None,
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let mut updated = 0usize;
+        for copy in copies.items {
+            // 副本的 author 即归属 Agent；防御性跳过非 Agent 作者的 parent 记录
+            if !matches!(copy.po.author_type, SkillAuthorType::Agent) {
+                continue;
+            }
+            // 复用 DAL install_to_agent 的幂等「原地更新」分支：元数据覆盖 +
+            // 字节级文件 diff + 向量索引按需刷新 + Expired 副本恢复为 Draft，
+            // 不产生重复行。同步后源技能必为 Published，满足其前置校验。
+            self.skill_dal
+                .install_to_agent(ctx.clone(), source_skill_id, &copy.po.author_id)
+                .await?;
+            updated += 1;
+        }
+
+        Ok(updated)
+    }
+
     async fn restore_skill(&self, ctx: RequestContext, skill_id: &str) -> Result<Skill> {
         let Some(mut skill) = self
             .skill_dal

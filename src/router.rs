@@ -1010,6 +1010,14 @@ fn system_routes() -> Router {
                 .route(
                     "/apply-default",
                     post(handlers::system::seed::apply_default_handler),
+                )
+                .route(
+                    "/preset-skills/preview",
+                    get(handlers::system::seed::preview_preset_skills_handler),
+                )
+                .route(
+                    "/preset-skills/sync",
+                    post(handlers::system::seed::sync_preset_skills_handler),
                 ),
         )
         // 通用后台任务进度查询
