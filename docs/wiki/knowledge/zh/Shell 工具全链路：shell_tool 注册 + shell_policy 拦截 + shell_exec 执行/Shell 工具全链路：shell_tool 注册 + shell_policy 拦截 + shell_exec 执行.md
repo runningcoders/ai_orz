@@ -15,7 +15,7 @@ source_files:
 - common/src/enums/tool.rs
 - docs/wiki/zh/content/基础设施/工具注册表/内置工具系统/Shell执行工具.md
 - docs/wiki/zh/content/核心模块/服务层/领域层/策略引擎与 Shell 拦截层.md
-- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md
+- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层.md
 ---
 
 # Shell 工具全链路（内置执行 + 策略拦截 + 声明式注册）
@@ -30,7 +30,7 @@ Shell 工具是 Agent 操作文件系统、版本控制、构建工具的核心�
 
 三条链路统一：shell_exec 和 shell_tool **都调用同一个 shell_policy::evaluate**，env 注入（AI_ORZ_TASK_ID / AI_ORZ_AGENT_ID）也统一在两条执行链路的出口步骤执行，供 git commit-msg hook 消费产物锚点。
 
-> 本卡为策略引擎的 Shell 子主题，与【策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层】互为兄弟卡——策略引擎负责通用框架，本卡负责 Shell 工具的注册 + 拦截 + 执行完整链路。
+> 本卡为策略引擎的 Shell 子主题，与【策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层】互为兄弟卡——策略引擎负责通用框架，本卡负责 Shell 工具的注册 + 拦截 + 执行完整链路。
 
 ## §2 关键文件表
 

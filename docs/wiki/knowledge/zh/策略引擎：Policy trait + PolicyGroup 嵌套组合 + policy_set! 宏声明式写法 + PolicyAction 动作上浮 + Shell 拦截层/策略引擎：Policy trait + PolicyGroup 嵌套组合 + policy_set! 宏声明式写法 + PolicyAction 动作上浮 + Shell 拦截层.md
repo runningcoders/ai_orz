@@ -1,6 +1,6 @@
 ---
 kind: rag_card
-name: 策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层
+name: 策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + PolicyAction 动作上浮 + Shell 拦截层
 category: pkg层基础设施
 scope:
 - src/pkg/policy/**

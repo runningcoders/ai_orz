@@ -17,7 +17,7 @@ source_files:
   - docs/design/thinking_task_policy_engine_design.md
   - （2026-09-04 清理：superpowers 目录已归档，待 doc-maintainer 跟进）
   - docs/wiki/zh/content/核心模块/服务层/领域层/运行时领域.md
-  - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法.md
+  - docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md
 ---
 
 # Agent 思考运行时 AgentThinkRuntime

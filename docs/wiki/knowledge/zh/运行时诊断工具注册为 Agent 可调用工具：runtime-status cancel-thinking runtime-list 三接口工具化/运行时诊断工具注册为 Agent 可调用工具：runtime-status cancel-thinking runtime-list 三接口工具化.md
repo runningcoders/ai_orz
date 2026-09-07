@@ -23,8 +23,8 @@ source_files:
 - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Runtime 领域编排.md
 - docs/wiki/zh/content/前端应用/组件系统/业务组件/思考运行时面板观测接口.md
 - docs/wiki/zh/content/功能模块/工具生态系统/运行时诊断工具组.md
-- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法
-  + 混合模式支持/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + 混合模式支持.md
+- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层
+  + 混合模式支持/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层 + 混合模式支持.md
 - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
   宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool
   宏 + 神经工具免绑定三层校验.md

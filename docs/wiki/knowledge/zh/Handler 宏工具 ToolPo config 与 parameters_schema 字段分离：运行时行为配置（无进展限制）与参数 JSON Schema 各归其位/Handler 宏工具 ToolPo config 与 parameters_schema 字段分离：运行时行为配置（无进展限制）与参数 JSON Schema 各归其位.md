@@ -25,7 +25,7 @@ source_files:
 - src/pkg/tool_registry/shell_exec.rs
 - src/pkg/mod.rs#L70-L78
 - docs/wiki/zh/content/架构设计/分层架构设计/DAL 层组合.md
-- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法.md
+- docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md
 - docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md
 
 ---
@@ -121,7 +121,7 @@ source_files:
 | [src/service/domain/runtime/think_loop.rs](src/service/domain/runtime/think_loop.rs#L93-L113) | NoProgressPolicy 数据源 | 遍历 `agent.tools()` 读 `t.po.config_no_progress_max_calls()` 收集到 policy_set! |
 | [src/handlers/hr/agent/update_agent.rs](src/handlers/hr/agent/update_agent.rs) | neural + 自改守卫模式 | Agent 上下文只改自己 + 静默忽略身份路由字段 |
 | [src/pkg/tool_registry/doubao_search.rs](src/pkg/tool_registry/doubao_search.rs) | Builtin 工具注册 | BuiltinToolFactory::create_po() 手动构造 ToolPo，遵循同一 name/description 契约 |
-| 【平行卡】策略引擎卡 | NoProgressPolicy 实现 | [策略引擎](docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法.md) |
+| 【平行卡】策略引擎卡 | NoProgressPolicy 实现 | [策略引擎](docs/wiki/knowledge/zh/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层/策略引擎：Policy trait + PolicyGroup 嵌套组合 + policy_set! 宏声明式写法 + PolicyAction 动作上浮 + Shell 拦截层.md) |
 | 【平行卡】工具系统架构卡 | neural tag 加载时机 + 调用链 | [工具系统三层调用架构](docs/wiki/knowledge/zh/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验/工具系统三层调用架构：CoreTool trait + Builtin HTTP MCP 三协议路由 + register_handler_tool 宏 + 神经工具免绑定三层校验.md) |
 
 ---
