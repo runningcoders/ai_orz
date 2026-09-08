@@ -273,6 +273,7 @@ mod tests {
 
     #[test]
     fn test_qr_img_src_data_uri_passthrough() {
+        // 已经是图片数据 URI → 原样返回，不重复生成
         assert_eq!(
             qr_img_src("data:image/png;base64,AAAA"),
             "data:image/png;base64,AAAA"
@@ -280,15 +281,28 @@ mod tests {
     }
 
     #[test]
-    fn test_qr_img_src_url_passthrough() {
-        assert_eq!(
-            qr_img_src("https://example.com/qr.png"),
-            "https://example.com/qr.png"
+    fn test_qr_img_src_url_generates_qr_svg() {
+        // iLink 返回的是扫码跳转 URL（非图片数据），应编码为二维码 SVG data URI
+        let src = qr_img_src("https://example.com/qr.png");
+        assert!(
+            src.starts_with("data:image/svg+xml;base64,"),
+            "expected svg data uri, got: {src}"
         );
     }
 
     #[test]
-    fn test_qr_img_src_bare_base64_wrapped() {
-        assert_eq!(qr_img_src("AAAA"), "data:image/png;base64,AAAA");
+    fn test_qr_img_src_bare_text_generates_qr_svg() {
+        // 纯文本内容也应编码为二维码 SVG，而非当作 base64 包装为 png
+        let src = qr_img_src("AAAA");
+        assert!(
+            src.starts_with("data:image/svg+xml;base64,"),
+            "expected svg data uri, got: {src}"
+        );
+    }
+
+    #[test]
+    fn test_qr_img_src_empty_returns_empty() {
+        assert_eq!(qr_img_src(""), "");
+        assert_eq!(qr_img_src("   "), "");
     }
 }
