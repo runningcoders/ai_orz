@@ -3,11 +3,13 @@
 //! 消息领域，管理：
 //! - delivery - 消息投递（发送/消费/投递到渠道）
 //! - management - 消息管理（查询/更新/删除）
+//! - inbound - 入站适配门面（外部渠道事件 → AdaptedMessage，枚举收敛）
 //!
 //! 注意：渠道配置管理属于 Finance Domain，此处只保留实际投递能力
 
 pub mod builder;
 pub mod delivery;
+pub mod inbound;
 pub mod management;
 
 #[cfg(test)]
@@ -26,6 +28,7 @@ use crate::service::dal::message_push::MessagePushDal;
 use crate::service::dao::message::{MessageQuery, MessageSearch};
 use common::enums::{MessageRole, MessageStatus};
 use common::error::Result;
+pub use inbound::{InboundSource, MessageInboundAdapt};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
@@ -44,12 +47,16 @@ pub fn new(
     message_channel_dal: Arc<dyn MessageChannelDal>,
     message_push_dal: Arc<dyn MessagePushDal>,
     attachment_dal: Arc<dyn AttachmentDal>,
+    lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
+    wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
 ) -> Arc<dyn MessageDomain> {
     let domain = MessageDomainImpl::new(
         message_dal,
         message_channel_dal,
         message_push_dal,
         attachment_dal,
+        lark_dal,
+        wechat_dal,
     );
     Arc::new(domain)
 }
@@ -61,6 +68,8 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dal::message_push::dal(),
         crate::service::dal::attachment::dal(),
+        crate::service::dal::lark::dal(),
+        crate::service::dal::wechat::dal(),
     );
     let _ = MESSAGE_DOMAIN.set(Arc::new(message_domain));
 }
@@ -76,6 +85,10 @@ struct MessageDomainImpl {
     message_push_dal: Arc<dyn MessagePushDal>,
     /// 用于在发送消息时按 ID 查找附件
     attachment_dal: Arc<dyn AttachmentDal>,
+    /// 飞书渠道 DAL（入站适配：WS 事件 → AdaptedMessage）
+    lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
+    /// 微信渠道 DAL（入站适配：iLink 轮询事件 → AdaptedMessage）
+    wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
 }
 
 impl MessageDomainImpl {
@@ -85,12 +98,16 @@ impl MessageDomainImpl {
         message_channel_dal: Arc<dyn MessageChannelDal>,
         message_push_dal: Arc<dyn MessagePushDal>,
         attachment_dal: Arc<dyn AttachmentDal>,
+        lark_dal: Arc<crate::service::dal::lark::LarkDalImpl>,
+        wechat_dal: Arc<crate::service::dal::wechat::WechatDalImpl>,
     ) -> Self {
         Self {
             message_dal,
             message_channel_dal,
             message_push_dal,
             attachment_dal,
+            lark_dal,
+            wechat_dal,
         }
     }
 }
@@ -101,6 +118,9 @@ impl MessageDomain for MessageDomainImpl {
         self
     }
     fn management(&self) -> &dyn MessageManagement {
+        self
+    }
+    fn inbound(&self) -> &dyn MessageInboundAdapt {
         self
     }
 
@@ -261,6 +281,8 @@ pub trait MessageDomain: Send + Sync {
     fn delivery(&self) -> &dyn MessageDelivery;
     /// 消息管理能力
     fn management(&self) -> &dyn MessageManagement;
+    /// 入站适配能力（外部渠道事件 → AdaptedMessage）
+    fn inbound(&self) -> &dyn MessageInboundAdapt;
 
     /// 检查指定 Agent 是否有 Pending 状态的指定类型消息
     ///

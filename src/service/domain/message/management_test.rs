@@ -31,6 +31,8 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
     // a2a_callback dao：dal::message_channel 注入依赖
     crate::service::dao::a2a_callback::init();
+    // project dao：dal::message_channel 注入 A2A callback 组装数据源
+    crate::service::dao::project::init();
     // user dao：dal::message_channel 注入飞书凭证引用解析依赖
     crate::service::dao::user::init();
     // model_provider dao：dal::message 注入依赖
@@ -40,6 +42,9 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, Reques
     // attachment/user dal：domain::message init 注入依赖
     crate::service::dal::attachment::init();
     crate::service::dal::user::init();
+    // lark/wechat dal：domain::message init 注入入站适配门面依赖
+    crate::service::dal::lark::init();
+    crate::service::dal::wechat::init();
     super::init();
     let domain = domain();
     let ctx = new_ctx("admin", pool);

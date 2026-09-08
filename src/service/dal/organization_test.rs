@@ -13,6 +13,10 @@ async fn init_test_env(
     pool: SqlitePool,
 ) -> (Arc<dyn OrganizationDal + Send + Sync>, RequestContext) {
     crate::service::dao::organization::init();
+    // DAL init 依赖 link/pairing DAO 单例；补齐以保证本组测试独立运行
+    // 不依赖其他测试先行触发 setup_test_env（测试间无隐式顺序依赖）
+    crate::service::dao::organization_link::init();
+    crate::service::dao::organization_pairing::init();
     crate::service::dal::organization::init();
     let dal = crate::service::dal::organization::dal();
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);

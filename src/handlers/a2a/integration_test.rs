@@ -62,6 +62,8 @@ async fn init_a2a_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
     crate::service::dal::user::init();
     // lark dal：runtime domain init 注入 lark_credentials 依赖（凭据编排取数）
     crate::service::dal::lark::init();
+    // wechat dal：message domain init 注入入站适配门面依赖
+    crate::service::dal::wechat::init();
 
     // 初始化所有 Domain
     crate::service::domain::hr::init();

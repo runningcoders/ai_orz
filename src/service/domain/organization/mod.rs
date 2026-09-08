@@ -10,10 +10,8 @@ pub mod user;
 use crate::models::organization::OrganizationPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::organization;
+use crate::service::dal::organization::{OrganizationLinkDal, OrganizationPairingDal};
 use crate::service::dal::user as user_dal;
-use crate::service::dao::organization_link;
-use crate::service::dao::organization_link::http::FederationHttpClient;
-use crate::service::dao::organization_pairing;
 use async_trait::async_trait;
 use common::api::OrganizationConfig;
 use common::error::Result;
@@ -52,9 +50,8 @@ pub fn init() {
     let domain = OrganizationDomainImpl::new(
         organization::dal(),
         user_dal::dal(),
-        organization_link::dao(),
-        organization_pairing::dao(),
-        organization_link::http::client(),
+        organization::link::dal(),
+        organization::pairing::dal(),
         self_addresses,
     );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
@@ -68,30 +65,26 @@ pub fn init() {
 struct OrganizationDomainImpl {
     org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
     user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
-    link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
-    pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
-    http_client: Arc<dyn FederationHttpClient>,
+    link_dal: Arc<dyn OrganizationLinkDal + Send + Sync>,
+    pairing_dal: Arc<dyn OrganizationPairingDal + Send + Sync>,
     /// 本端自报联邦地址（P7）：目录导出时随 Local 组织条目携带
     self_addresses: Vec<common::api::organization_link::FederationAddress>,
 }
 
 impl OrganizationDomainImpl {
     /// 创建 Domain 实例
-    #[allow(clippy::too_many_arguments)]
     fn new(
         org_dal: Arc<dyn organization::OrganizationDal + Send + Sync>,
         user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
-        link_dao: Arc<dyn organization_link::OrganizationLinkDao + Send + Sync>,
-        pairing_dao: Arc<dyn organization_pairing::OrganizationPairingDao + Send + Sync>,
-        http_client: Arc<dyn FederationHttpClient>,
+        link_dal: Arc<dyn OrganizationLinkDal + Send + Sync>,
+        pairing_dal: Arc<dyn OrganizationPairingDal + Send + Sync>,
         self_addresses: Vec<common::api::organization_link::FederationAddress>,
     ) -> Self {
         Self {
             org_dal,
             user_dal,
-            link_dao,
-            pairing_dao,
-            http_client,
+            link_dal,
+            pairing_dal,
             self_addresses,
         }
     }

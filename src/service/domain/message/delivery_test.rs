@@ -134,6 +134,9 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
     init_all_channel_daos(); // 初始化所有渠道 DAO 单例
+    // project/message dao：dal::message_channel 注入 A2A callback 组装数据源
+    crate::service::dao::project::init();
+    crate::service::dao::message::init();
     // user dao：dal::message_channel 注入飞书凭证引用解析依赖
     crate::service::dao::user::init();
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
@@ -142,11 +145,24 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     let message_push_dal = crate::service::dal::message_push::dal();
     // 注入 Attachment DAL（测试中如果用不到附件，可保持真实 DAL 即可，因为它只会在 attachment_ids 非空时调用）
     let attachment_dal = crate::service::dal::attachment::dal();
+    // 入站适配门面依赖的渠道 DAL（构造独立实例，不依赖单例 init 顺序）
+    let lark_dal = crate::service::dal::lark::new_with_credential_dao(
+        message_channel_dal.clone(),
+        crate::service::dao::lark::dao(),
+        crate::service::dao::user_credential::dao(),
+    );
+    let wechat_dal = crate::service::dal::wechat::new_with_credential_dao(
+        message_channel_dal.clone(),
+        crate::service::dao::wechat::dao(),
+        crate::service::dao::user_credential::dao(),
+    );
     let domain = crate::service::domain::message::new(
         message_dal,
         message_channel_dal,
         message_push_dal,
         attachment_dal,
+        lark_dal,
+        wechat_dal,
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx)

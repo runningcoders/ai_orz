@@ -62,8 +62,6 @@ pub struct LarkDalImpl {
     credential_dao: Arc<dyn UserCredentialDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
-    /// 运行期回调句柄（start 时注入，供运行期新建连接复用）
-    callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>,
 }
 
 /// 判断渠道是否开启入站监听（缺省视为开启）
@@ -94,7 +92,6 @@ impl LarkDalImpl {
             lark_dao,
             credential_dao,
             running: RwLock::new(false),
-            callback: RwLock::new(None),
         }
     }
 
@@ -169,19 +166,6 @@ impl LarkDalImpl {
         };
         let page = self.message_channel_dal.query_channels(ctx, query).await?;
         Ok(page.items)
-    }
-
-    /// 已注册回调句柄（start 后由 registry 注入；未启动时为 None）
-    ///
-    /// `ensure_listener_for` 运行期建连与 lark 入站 consumer 复用同一回调。
-    pub(crate) fn callback_or_none(&self) -> Option<Arc<dyn MessageAdapterCallback>> {
-        self.callback.read().map(|c| c.clone()).unwrap_or(None)
-    }
-
-    fn set_callback(&self, callback: Option<Arc<dyn MessageAdapterCallback>>) {
-        if let Ok(mut guard) = self.callback.write() {
-            *guard = callback;
-        }
     }
 
     /// 将飞书消息事件适配为内部 `AdaptedMessage`
@@ -581,7 +565,9 @@ impl MessageInboundAdapter for LarkDalImpl {
         ChannelType::Lark
     }
 
-    async fn start(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+    async fn start(&self, _callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+        // 投递回调统一由中台 start_all 登记持有（消费侧经中台取用），
+        // 本实现不再自存回调句柄
         {
             let mut running = self
                 .running
@@ -592,7 +578,6 @@ impl MessageInboundAdapter for LarkDalImpl {
             }
             *running = true;
         }
-        self.set_callback(Some(callback.clone()));
 
         // 渠道数据驱动：查询全部启用且开启入站监听的飞书渠道，按引用凭证 app_id 去重建连
         let channels = self.query_enabled_lark_channels().await?;
@@ -637,7 +622,6 @@ impl MessageInboundAdapter for LarkDalImpl {
             }
             *running = false;
         }
-        self.set_callback(None);
 
         self.lark_dao.stop_all_event_listeners().await?;
         Ok(())

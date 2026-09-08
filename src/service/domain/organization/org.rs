@@ -212,7 +212,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         let expires_at = now + PAIRING_CODE_TTL_MS;
         let created_by = ctx.caller_id().unwrap_or_else(|| org_id.clone());
 
-        self.pairing_dao
+        self.pairing_dal
             .insert(
                 ctx.clone(),
                 &OrganizationPairingCodePo {
@@ -255,7 +255,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         let code_hash = sha256::digest(req.pairing_code.as_bytes());
         let now = Utc::now().timestamp_millis();
         let org_id = self
-            .pairing_dao
+            .pairing_dal
             .consume(ctx.clone(), &code_hash, now)
             .await?
             .ok_or_else(|| Error::unauthorized("配对码无效或已失效"))?;
@@ -278,7 +278,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         // - peer_token_hash = 本节点生成的 peer_token 的哈希（对端出站调用本节点时
         //   携带 peer_token，本节点据此校验入站）→ 存哈希
         let existing = self
-            .link_dao
+            .link_dal
             .find_by_pair(ctx.clone(), &org_id, &req.local_org.id)
             .await?;
         let link = OrganizationLinkPo::new(
@@ -294,9 +294,9 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             org_id.clone(),
         );
         if existing.is_some() {
-            self.link_dao.update(ctx.clone(), &link).await?;
+            self.link_dal.update(ctx.clone(), &link).await?;
         } else {
-            self.link_dao.insert(ctx.clone(), &link).await?;
+            self.link_dal.insert(ctx.clone(), &link).await?;
         }
 
         // 5) 写对端（本地节点）影子：直接建联必为 Linked（R5 保护本节点 Local 组织）
@@ -390,7 +390,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             local_token: local_token.clone(),
         };
         let resp = self
-            .http_client
+            .link_dal
             .verify_pairing_code(&peer_endpoint, &verify_req)
             .await?;
 
@@ -403,7 +403,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         //    （本端出站调用对端时携带），peer_token_hash = 本端生成的 local_token 哈希
         //    （对端出站调用本端时携带，本端据此校验入站）
         let existing = self
-            .link_dao
+            .link_dal
             .find_by_pair(ctx.clone(), &org_id, &resp.peer_org.id)
             .await?;
         let link = OrganizationLinkPo::new(
@@ -419,9 +419,9 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             ctx.caller_id().unwrap_or_else(|| org_id.clone()),
         );
         if existing.is_some() {
-            self.link_dao.update(ctx.clone(), &link).await?;
+            self.link_dal.update(ctx.clone(), &link).await?;
         } else {
-            self.link_dao.insert(ctx.clone(), &link).await?;
+            self.link_dal.insert(ctx.clone(), &link).await?;
         }
 
         // 6) 写对端影子：直接建联必为 Linked（R5 保护本端 Local 组织）
@@ -470,7 +470,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             .to_string();
 
         let links = self
-            .link_dao
+            .link_dal
             .query(
                 ctx.clone(),
                 OrganizationLinkQuery {
@@ -533,7 +533,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             return Err(Error::unauthorized("缺少联邦契约凭证"));
         }
         let hash = sha256::digest(credential.trim().as_bytes());
-        self.link_dao
+        self.link_dal
             .find_active_by_peer_token_hash(ctx, &hash)
             .await?
             .ok_or_else(|| Error::unauthorized("联邦契约凭证无效"))
@@ -637,7 +637,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             .ok_or_else(|| Error::unauthorized("未识别的组织上下文"))?
             .to_string();
         let link = self
-            .link_dao
+            .link_dal
             .find_by_pair(ctx.clone(), &org_id, peer_org_id)
             .await?
             .ok_or_else(|| Error::not_found(format!("未找到与组织 {} 的连接", peer_org_id)))?;
@@ -696,7 +696,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
 
         // 2) 路由决策：对端需有 Active 连接且开放 a2a_task 能力，否则降级
         let Some(link) = self
-            .link_dao
+            .link_dal
             .find_by_pair(ctx.clone(), &local_org_id, peer_org_id)
             .await?
             .filter(|l| l.status == OrganizationLinkStatus::Active)
@@ -751,7 +751,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         use common::api::{FederationAgentGroup, ListFederationAgentsResponse};
 
         let links = self
-            .link_dao
+            .link_dal
             .query(
                 ctx.clone(),
                 OrganizationLinkQuery {
@@ -774,7 +774,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             // P7：出站前解析首选可达地址（内网优先探测 + TTL 缓存）
             let endpoint = self.org_dal.resolve_peer_endpoint(ctx.clone(), &link).await;
             match self
-                .http_client
+                .link_dal
                 .fetch_capabilities(&endpoint, &link.access_token)
                 .await
             {
@@ -807,7 +807,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         let mut pushed = 0usize;
         for (endpoint, access_token, peer_org_id) in &peers {
             match self
-                .http_client
+                .link_dal
                 .push_directory(endpoint, access_token, dir.clone())
                 .await
             {
@@ -845,7 +845,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
         for (endpoint, access_token, peer_org_id) in &peers {
             // 推：本地目录 → 对端（对端按其影子语义 upsert）
             match self
-                .http_client
+                .link_dal
                 .push_directory(endpoint, access_token, dir.clone())
                 .await
             {
@@ -861,11 +861,7 @@ impl super::OrganizationManage for super::OrganizationDomainImpl {
             }
 
             // 拉：对端目录 → 本地影子 upsert（新者胜 / 不动 scope / 保护 Local）
-            match self
-                .http_client
-                .fetch_directory(endpoint, access_token)
-                .await
-            {
+            match self.link_dal.fetch_directory(endpoint, access_token).await {
                 Ok(entries) => {
                     let count = entries.len();
                     let req = common::api::DirectorySyncRequest { orgs: entries };
@@ -918,7 +914,7 @@ impl super::OrganizationDomainImpl {
         ctx: &RequestContext,
     ) -> Result<Vec<(String, String, String)>> {
         let links = self
-            .link_dao
+            .link_dal
             .query(
                 ctx.clone(),
                 OrganizationLinkQuery {
@@ -952,7 +948,7 @@ impl super::OrganizationDomainImpl {
 
         // 拉：对端目录 → 本地 Remote 影子 upsert（新者胜 / 不动 scope / 保护 Local）
         let pulled = self
-            .http_client
+            .link_dal
             .fetch_directory(&peer_endpoint, &link.access_token)
             .await;
         match pulled {
@@ -990,7 +986,7 @@ impl super::OrganizationDomainImpl {
         match self.get_directory(ctx.clone()).await {
             Ok(orgs) => {
                 if let Err(e) = self
-                    .http_client
+                    .link_dal
                     .push_directory(&peer_endpoint, &link.access_token, orgs)
                     .await
                 {
@@ -1121,9 +1117,8 @@ mod directory_sync_tests {
                 user_dao_mod::new(),
                 crate::service::dao::user_credential::new(),
             ),
-            link_dao_mod::new(),
-            pairing_dao_mod::new(),
-            mock,
+            crate::service::dal::organization::link::new(link_dao_mod::new(), mock),
+            crate::service::dal::organization::pairing::new(pairing_dao_mod::new()),
             Vec::new(), // 测试不注入本端自报地址（get_directory 对 Local 组织即不报 addresses）
         ))
     }

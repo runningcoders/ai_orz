@@ -1,14 +1,12 @@
 //! 飞书入站消息消费者
 //!
 //! 订阅 `lark.inbound.message` 事件（DAO 侧飞书 WS 长连接 adapter 收到
-//! `im.message.receive_v1` 后发布），异步执行原 `LarkAdapterHandler` 桥接链路：
-//! `adapt_lark` 协议转换 → `MessageAdapterCallback` 投递上层（producer 路由）。
+//! `im.message.receive_v1` 后发布），组装两步：message domain 入站适配
+//! （协议转换 / 渠道定位 / 用户映射）→ 中台投递回调（producer 路由档位链
+//! → send_to_agent）。
 //!
 //! **Async 模式**：DAO 读循环里只 publish（入队即返回），协议转换 / 渠道查找 /
 //! 消息投递都在 AOP worker 线程执行，慢业务不阻塞 WS 收帧。
-//! 事件链与原直调行为等价，仅多一层 AOP 解耦。
-
-use std::sync::Weak;
 
 use async_trait::async_trait;
 use common::error::{Error, Result};
@@ -16,16 +14,14 @@ use common::error::{Error, Result};
 use crate::models::events::LarkInboundEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
-use crate::service::dal::lark::LarkDalImpl;
+use crate::service::domain::message::{self as message_domain, InboundSource};
 
-pub struct LarkInboundConsumer {
-    /// 飞书 DAL 实例弱引用（init 时从单例注入，运行期升级）
-    lark_dal: Weak<LarkDalImpl>,
-}
+#[derive(Default)]
+pub struct LarkInboundConsumer;
 
 impl LarkInboundConsumer {
-    pub fn new(lark_dal: Weak<LarkDalImpl>) -> Self {
-        Self { lark_dal }
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -49,36 +45,27 @@ impl Consumer for LarkInboundConsumer {
             Error::internal(format!("failed to deserialize LarkInboundEvent: {}", e))
         })?;
 
-        let Some(lark_dal) = self.lark_dal.upgrade() else {
-            log_warn!(
-                "lark inbound consumer dropped message: dal instance gone app_id={}",
-                event.app_id
-            );
-            return Ok(());
-        };
-
-        // 协议转换（事件过滤 / 渠道定位 / 用户映射都在 DAL 内）
-        let adapted = match lark_dal.adapt_lark(ctx, &event.app_id, &event.event).await {
+        // 1) 入站适配：domain 门面（枚举收敛各渠道转换）
+        let adapted = match message_domain::domain()
+            .inbound()
+            .adapt_inbound(ctx, InboundSource::Lark(Box::new(event)))
+            .await
+        {
             Ok(adapted) => adapted,
             Err(e) => {
-                // 转换失败仅记录，不向事件管道传播（与原直调行为一致，不 nack 重试）
-                log_error!(
-                    "lark inbound adapt failed: event_id={} err={}",
-                    event.event.header.event_id,
-                    e
-                );
+                // 转换失败仅记录，不向事件管道传播（不 nack 重试）
+                log_error!("lark inbound adapt failed: err={}", e);
                 return Ok(());
             }
         };
 
-        // 投递上层 producer 路由（优先用消费时回调句柄，回落 DAL 注册的句柄）
+        // 2) 投递：中台登记的回调（producer 路由档位链 → send_to_agent）
         if let Some(msg) = adapted {
-            match lark_dal.callback_or_none() {
+            match crate::pkg::adapter::message::registry().current_callback() {
                 Some(cb) => cb.on_message(msg).await?,
-                None => log_warn!(
-                    "lark inbound consumer dropped message: no callback registered app_id={}",
-                    event.app_id
-                ),
+                None => {
+                    log_warn!("lark inbound consumer dropped message: no callback registered")
+                }
             }
         }
         Ok(())

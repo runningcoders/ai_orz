@@ -487,6 +487,7 @@ fn init_test_env_with_fs(
         crate::service::dal::agent::dal(),
         crate::service::dal::tool::dal(),
         skill_dal,
+        std::sync::Arc::new(crate::service::dal::agent::AgentRuntimeDalImpl),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)

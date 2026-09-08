@@ -1,11 +1,11 @@
 //! A2A Callback 渠道 DAO HTTP 实现
+//!
+//! 纯 HTTP 出站：接收组装好的 A2aTask 快照并 POST 到 webhook_url。
+//! 项目/消息查询与状态映射等业务组装见 `dal/message_channel.rs`。
 
 use super::A2aCallbackDao;
-use crate::models::message::Message;
-use crate::models::message_channel::MessageChannel;
 use crate::pkg::RequestContext;
-use crate::service::domain::message;
-use crate::service::domain::project::domain as project_domain;
+use common::api::a2a::A2aTask;
 use common::error::err;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -51,84 +51,13 @@ impl A2aCallbackDaoHttpImpl {
 
 #[async_trait::async_trait]
 impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
-    async fn push(
+    async fn push_task(
         &self,
-        ctx: RequestContext,
-        message: &Message,
-        channel: &MessageChannel,
+        _ctx: RequestContext,
+        webhook_url: &str,
+        task: &A2aTask,
     ) -> std::result::Result<(), common::error::Error> {
-        let webhook_url = channel
-            .po
-            .webhook_url
-            .as_ref()
-            .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 webhook_url"))?;
-
-        let project_id = channel
-            .po
-            .scope_project
-            .as_ref()
-            .or(message.po.project_id.as_ref())
-            .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 scope_project"))?;
-
-        let project = project_domain()
-            .project_manage()
-            .get(ctx.clone(), project_id)
-            .await?
-            .ok_or_else(|| err!(ResourceNotFound, "项目不存在: {}", project_id))?;
-
-        let messages = message::domain()
-            .management()
-            .list_by_project_id(ctx.clone(), project_id)
-            .await?;
-
-        let a2a_messages = messages
-            .into_iter()
-            .map(|msg| {
-                let role = match msg.po.from_role {
-                    common::enums::MessageRole::User => "user".to_string(),
-                    common::enums::MessageRole::Agent => "agent".to_string(),
-                    common::enums::MessageRole::System => "system".to_string(),
-                };
-                common::api::a2a::A2aMessage {
-                    role,
-                    parts: vec![common::api::a2a::A2aMessagePart::Text {
-                        text: msg.po.content.clone(),
-                    }],
-                    message_id: Some(msg.po.id.clone()),
-                    task_id: Some(project_id.to_string()),
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let task = common::api::a2a::A2aTask {
-            id: project_id.to_string(),
-            session_id: None,
-            status: common::api::a2a::A2aTaskStatus {
-                state: match project.po.status {
-                    common::enums::ProjectStatus::Active
-                    | common::enums::ProjectStatus::PendingReview => {
-                        common::api::a2a::A2aTaskState::Submitted
-                    }
-                    common::enums::ProjectStatus::InProgress => {
-                        common::api::a2a::A2aTaskState::Working
-                    }
-                    common::enums::ProjectStatus::Completed => {
-                        common::api::a2a::A2aTaskState::Completed
-                    }
-                    common::enums::ProjectStatus::Archived => {
-                        common::api::a2a::A2aTaskState::Canceled
-                    }
-                    common::enums::ProjectStatus::Deleted => common::api::a2a::A2aTaskState::Failed,
-                },
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                message: None,
-            },
-            messages: a2a_messages,
-            artifacts: vec![],
-            metadata: serde_json::Value::Object(Default::default()),
-        };
-
-        let body = serde_json::to_string(&task)
+        let body = serde_json::to_string(task)
             .map_err(|e| err!(Internal, "序列化 A2A Task 失败: {}", e))?;
 
         let resp = self
@@ -152,15 +81,5 @@ impl A2aCallbackDao for A2aCallbackDaoHttpImpl {
         }
 
         Ok(())
-    }
-
-    async fn test_connection(
-        &self,
-        ctx: RequestContext,
-        channel: &MessageChannel,
-    ) -> std::result::Result<(), common::error::Error> {
-        let msg_po = crate::models::message::MessagePo::default();
-        let msg = crate::models::message::Message::from_po(msg_po);
-        self.push(ctx, &msg, channel).await
     }
 }

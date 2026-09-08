@@ -1,11 +1,9 @@
-use crate::models::agent::AgentPo;
 use crate::models::events::{
     A2A_SYNCED_MSG_COUNT_PREFIX, extract_a2a_task_id, extract_text_from_parts,
     get_synced_msg_count, make_synced_msg_tag,
 };
 use crate::pkg::RequestContext;
 use crate::pkg::aop::{Producer, Registry};
-use crate::service::dao::agent_runtime::a2a::{A2aRuntimeConfig, A2aRuntimeDao};
 use crate::service::domain::hr as hr_domain;
 use crate::service::domain::message::{self as message_domain, SendToUserCommand};
 use crate::service::domain::project as project_domain;
@@ -28,16 +26,6 @@ impl A2aPollingProducer {
         Self {
             registry: RwLock::new(None),
         }
-    }
-
-    fn build_a2a_dao(agent: &AgentPo) -> Option<A2aRuntimeDao> {
-        let config = agent.get_remote_config()?;
-        Some(A2aRuntimeDao::new(A2aRuntimeConfig {
-            endpoint: config.endpoint,
-            agent_name: config.agent_name,
-            auth_token: config.auth_token,
-            timeout_secs: config.timeout_secs,
-        }))
     }
 }
 
@@ -95,23 +83,19 @@ impl Producer for A2aPollingProducer {
                 continue;
             }
 
-            let Some(a2a_dao) = Self::build_a2a_dao(&agent.po) else {
-                log_warn!(
-                    &ctx,
-                    "a2a_polling",
-                    "Remote agent {} has invalid or missing remote config, skipping",
-                    agent.po.id
-                );
-                continue;
-            };
-
             for task in &tasks {
                 let tags = task.po.get_tags();
                 let Some(remote_task_id) = extract_a2a_task_id(&tags) else {
                     continue;
                 };
 
-                let remote_task = match a2a_dao.fetch_task(&remote_task_id).await {
+                // 远端任务拉取走 hr domain（运行时配置解析在 DAL 内完成），
+                // 配置缺失/非法与网络失败统一在此降级为 warn + skip
+                let remote_task = match hr_domain::domain()
+                    .agent_manage()
+                    .fetch_remote_task(ctx.clone(), agent, &remote_task_id)
+                    .await
+                {
                     Ok(t) => t,
                     Err(e) => {
                         log_warn!(

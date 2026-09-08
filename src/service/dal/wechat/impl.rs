@@ -43,8 +43,6 @@ pub struct WechatDalImpl {
     credential_dao: Arc<dyn crate::service::dao::user_credential::UserCredentialDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
-    /// 运行期回调句柄（start 时注入，供运行期新建轮询后 consumer 复用）
-    callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>,
 }
 
 /// 判断渠道是否开启入站监听（缺省视为开启）
@@ -64,18 +62,6 @@ impl WechatDalImpl {
             wechat_dao,
             credential_dao,
             running: RwLock::new(false),
-            callback: RwLock::new(None),
-        }
-    }
-
-    /// 已注册回调句柄（start 后由 registry 注入；未启动时为 None）
-    pub(crate) fn callback_or_none(&self) -> Option<Arc<dyn MessageAdapterCallback>> {
-        self.callback.read().map(|c| c.clone()).unwrap_or(None)
-    }
-
-    fn set_callback(&self, callback: Option<Arc<dyn MessageAdapterCallback>>) {
-        if let Ok(mut guard) = self.callback.write() {
-            *guard = callback;
         }
     }
 
@@ -372,7 +358,9 @@ impl MessageInboundAdapter for WechatDalImpl {
         ChannelType::Wechat
     }
 
-    async fn start(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+    async fn start(&self, _callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+        // 投递回调统一由中台 start_all 登记持有（消费侧经中台取用），
+        // 本实现不再自存回调句柄
         {
             let mut running = self
                 .running
@@ -383,7 +371,6 @@ impl MessageInboundAdapter for WechatDalImpl {
             }
             *running = true;
         }
-        self.set_callback(Some(callback.clone()));
 
         // 渠道数据驱动：查询全部启用且开启入站监听的微信渠道，逐个建立长轮询
         let channels = self.query_enabled_wechat_channels().await?;
@@ -425,7 +412,6 @@ impl MessageInboundAdapter for WechatDalImpl {
             }
             *running = false;
         }
-        self.set_callback(None);
 
         self.wechat_dao.stop_all_polling().await?;
         Ok(())

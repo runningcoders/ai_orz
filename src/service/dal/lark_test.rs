@@ -35,6 +35,9 @@ fn init_all_test_daos() {
     slack_dao_init();
     email_dao_init();
     webhook_dao_init();
+    // project/message dao：dal::message_channel 注入 A2A callback 组装数据源
+    crate::service::dao::project::init();
+    crate::service::dao::message::init();
     message_channel_dal_init();
 }
 

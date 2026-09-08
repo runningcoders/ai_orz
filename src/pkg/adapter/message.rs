@@ -74,15 +74,19 @@ pub trait MessageInboundAdapter: Send + Sync {
 
 /// 消息入站适配器注册中台
 ///
-/// 管理所有已注册的渠道适配器，提供统一的启停接口。
+/// 管理所有已注册的渠道适配器，提供统一的启停接口；
+/// 并持有当前投递回调（producer 路由入口），供消费侧（AOP consumer）取用。
 pub struct MessageAdapterRegistry {
     adapters: RwLock<Vec<Arc<dyn MessageInboundAdapter>>>,
+    /// 当前投递回调（start_all 时登记，stop_all 时清空）
+    current_callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>,
 }
 
 impl MessageAdapterRegistry {
     fn new() -> Self {
         Self {
             adapters: RwLock::new(Vec::new()),
+            current_callback: RwLock::new(None),
         }
     }
 
@@ -111,7 +115,9 @@ impl MessageAdapterRegistry {
     /// 启动所有已注册的适配器
     ///
     /// 逐个调用 `adapter.start(callback)`，某个失败仅记日志，不中断其他渠道。
+    /// 同时登记投递回调（中台持有），供 AOP 消费侧路由投递时取用。
     pub async fn start_all(&self, callback: Arc<dyn MessageAdapterCallback>) -> Result<()> {
+        self.set_current_callback(callback.clone());
         let adapters = {
             let list = self
                 .adapters
@@ -135,8 +141,9 @@ impl MessageAdapterRegistry {
         Ok(())
     }
 
-    /// 停止所有适配器
+    /// 停止所有适配器（并清空投递回调）
     pub async fn stop_all(&self) -> Result<()> {
+        self.clear_current_callback();
         let adapters = {
             let list = self
                 .adapters
@@ -176,6 +183,27 @@ impl MessageAdapterRegistry {
             .read()
             .map(|l| l.iter().any(|a| a.channel_type() == channel_type))
             .unwrap_or(false)
+    }
+
+    // ---------- 投递回调登记（中台持有）----------
+
+    /// 登记当前投递回调（start_all 时调用）
+    fn set_current_callback(&self, callback: Arc<dyn MessageAdapterCallback>) {
+        if let Ok(mut guard) = self.current_callback.write() {
+            *guard = Some(callback);
+        }
+    }
+
+    /// 清空投递回调（stop_all 时调用）
+    fn clear_current_callback(&self) {
+        if let Ok(mut guard) = self.current_callback.write() {
+            *guard = None;
+        }
+    }
+
+    /// 获取当前投递回调（AOP 消费侧路由投递用）
+    pub fn current_callback(&self) -> Option<Arc<dyn MessageAdapterCallback>> {
+        self.current_callback.read().ok().and_then(|c| c.clone())
     }
 }
 

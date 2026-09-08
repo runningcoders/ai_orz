@@ -19,7 +19,9 @@ use crate::pkg::RequestContext;
 use crate::service::dao::a2a_callback::A2aCallbackDao;
 use crate::service::dao::email::EmailDao;
 use crate::service::dao::lark::{LarkAppCredentials, LarkDao, resolve_lark_credentials};
+use crate::service::dao::message::MessageDao;
 use crate::service::dao::message_channel::{MessageChannelDao, MessageChannelQuery};
+use crate::service::dao::project::ProjectDao;
 use crate::service::dao::slack::SlackDao;
 use crate::service::dao::user_credential::UserCredentialDao;
 use crate::service::dao::webhook::WebhookDao;
@@ -46,7 +48,10 @@ pub fn init() {
 pub fn new(
     message_channel_dao: Arc<dyn MessageChannelDao + Send + Sync>,
 ) -> Arc<dyn MessageChannelDal> {
-    use crate::service::dao::{a2a_callback, email, lark, slack, webhook, wechat};
+    use crate::service::dao::{
+        a2a_callback, email, lark, message as message_dao_mod, project as project_dao_mod, slack,
+        webhook, wechat,
+    };
 
     Arc::new(MessageChannelDalImpl {
         message_channel_dao,
@@ -57,6 +62,8 @@ pub fn new(
         webhook_dao: webhook::dao(),
         a2a_callback_dao: a2a_callback::dao(),
         credential_dao: crate::service::dao::user_credential::dao(),
+        project_dao: project_dao_mod::dao(),
+        message_dao: message_dao_mod::dao(),
     })
 }
 
@@ -145,6 +152,10 @@ struct MessageChannelDalImpl {
 
     /// 用户凭证 DAO（飞书凭证引用解析：渠道仅存 credential_id，凭证行在 user_credentials 表）
     credential_dao: Arc<dyn UserCredentialDao + Send + Sync>,
+
+    /// A2A callback 业务组装数据源：项目状态 + 消息历史（快照载荷要求全量）
+    project_dao: Arc<dyn ProjectDao + Send + Sync>,
+    message_dao: Arc<dyn MessageDao + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -231,9 +242,15 @@ impl MessageChannelDal for MessageChannelDalImpl {
             ChannelType::Email => self.email_dao.test_connection(ctx, &channel).await,
             ChannelType::Webhook => self.webhook_dao.test_connection(ctx, &channel).await,
             ChannelType::A2aCallback => {
-                // A2A callback 测试直接调用推送逻辑（使用空消息）
-                let _msg_po = crate::models::message::MessagePo::default();
-                self.a2a_callback_dao.test_connection(ctx, &channel).await
+                // 探活走与正式推送相同的组装链路（空触发消息，项目取自渠道 scope）
+                let message = crate::models::message::Message::from_po(
+                    crate::models::message::MessagePo::default(),
+                );
+                let task = self.build_a2a_task(ctx.clone(), &message, &channel).await?;
+                let webhook_url = a2a_callback_webhook_url(&channel)?;
+                self.a2a_callback_dao
+                    .push_task(ctx, webhook_url, &task)
+                    .await
             }
         }
         .map_err(|e| err!(ChannelPushFailed, "push failed: {e}"))
@@ -413,8 +430,77 @@ impl MessageChannelDalImpl {
             ChannelType::Slack => self.slack_dao.push(ctx, message, channel).await,
             ChannelType::Email => self.email_dao.push(ctx, message, channel).await,
             ChannelType::Webhook => self.webhook_dao.push(ctx, message, channel).await,
-            ChannelType::A2aCallback => self.a2a_callback_dao.push(ctx, message, channel).await,
+            ChannelType::A2aCallback => {
+                // A2A 协议要求 webhook 载荷为全量任务快照（状态 + 消息历史），
+                // 业务组装在 DAL 层完成，DAO 只做纯 HTTP 出站
+                let task = self.build_a2a_task(ctx.clone(), message, channel).await?;
+                let webhook_url = a2a_callback_webhook_url(channel)?;
+                self.a2a_callback_dao
+                    .push_task(ctx, webhook_url, &task)
+                    .await
+            }
         }
+    }
+
+    /// 组装 A2A 协议要求的全量任务快照（项目状态 + 消息历史）
+    ///
+    /// A2A PushNotifications 回调载荷语义：客户端据此同步任务进度，
+    /// 因此每次推送都带全量而非增量。
+    async fn build_a2a_task(
+        &self,
+        ctx: RequestContext,
+        message: &Message,
+        channel: &MessageChannel,
+    ) -> Result<common::api::a2a::A2aTask> {
+        let project_id = channel
+            .po
+            .scope_project
+            .as_deref()
+            .or(message.po.project_id.as_deref())
+            .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 scope_project"))?;
+
+        let project_po = self
+            .project_dao
+            .find_by_id(ctx.clone(), project_id)
+            .await?
+            .ok_or_else(|| err!(ResourceNotFound, "项目不存在: {}", project_id))?;
+
+        let message_pos = self
+            .message_dao
+            .list_by_project_id(ctx, project_id, None)
+            .await?;
+
+        let a2a_messages = message_pos
+            .into_iter()
+            .map(|po| {
+                let role = match po.from_role {
+                    common::enums::MessageRole::User => "user".to_string(),
+                    common::enums::MessageRole::Agent => "agent".to_string(),
+                    common::enums::MessageRole::System => "system".to_string(),
+                };
+                common::api::a2a::A2aMessage {
+                    role,
+                    parts: vec![common::api::a2a::A2aMessagePart::Text {
+                        text: po.content.clone(),
+                    }],
+                    message_id: Some(po.id.clone()),
+                    task_id: Some(project_id.to_string()),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(common::api::a2a::A2aTask {
+            id: project_id.to_string(),
+            session_id: None,
+            status: common::api::a2a::A2aTaskStatus {
+                state: map_project_status_to_a2a(project_po.status),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                message: None,
+            },
+            messages: a2a_messages,
+            artifacts: vec![],
+            metadata: serde_json::Value::Object(Default::default()),
+        })
     }
 
     /// 更新渠道推送状态（内部私有）
@@ -492,6 +578,31 @@ impl DeliveryResult {
     /// 是否全部失败
     pub fn all_failed(&self) -> bool {
         self.success == 0
+    }
+}
+
+/// 解析 A2A callback 渠道的 webhook 地址
+fn a2a_callback_webhook_url(channel: &MessageChannel) -> Result<&str> {
+    channel
+        .po
+        .webhook_url
+        .as_deref()
+        .ok_or_else(|| err!(InvalidRequest, "A2A callback 渠道缺少 webhook_url"))
+}
+
+/// ProjectStatus → A2aTaskState 状态机映射（A2A 回调快照载荷）
+fn map_project_status_to_a2a(
+    status: common::enums::ProjectStatus,
+) -> common::api::a2a::A2aTaskState {
+    use common::api::a2a::A2aTaskState;
+    use common::enums::ProjectStatus;
+
+    match status {
+        ProjectStatus::Active | ProjectStatus::PendingReview => A2aTaskState::Submitted,
+        ProjectStatus::InProgress => A2aTaskState::Working,
+        ProjectStatus::Completed => A2aTaskState::Completed,
+        ProjectStatus::Archived => A2aTaskState::Canceled,
+        ProjectStatus::Deleted => A2aTaskState::Failed,
     }
 }
 

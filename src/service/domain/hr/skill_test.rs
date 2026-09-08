@@ -50,6 +50,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
         crate::service::dal::agent::dal(),
         crate::service::dal::tool::dal(),
         skill_dal,
+        std::sync::Arc::new(crate::service::dal::agent::AgentRuntimeDalImpl),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)

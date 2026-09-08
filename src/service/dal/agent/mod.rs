@@ -7,6 +7,7 @@
 //! - [`builder`]：Prompt 构建器（[`DefaultPromptBuilder`] Local / [`FlatPromptBuilder`] 外部 Agent）
 //! - [`a2a`]：A2A Remote Agent 派生 Dal（[`A2aAgentDal`]）
 //! - [`codex`]：Codex / CLI Agent 派生 Dal（[`CodexAgentDal`]）
+//! - [`runtime`]：Agent 运行时出站 Dal（[`AgentRuntimeDal`]，按运行时配置构造 A2A 出站客户端）
 //!
 //! 测试文件随模块内聚：`agent_test.rs`（DAL 集成）/ `a2a_test.rs` / `codex_test.rs` /
 //! `builder/prompt_builder_test.rs`（Builder 单元测试）。
@@ -15,6 +16,7 @@ mod a2a;
 mod builder;
 mod codex;
 mod r#impl;
+mod runtime;
 
 use crate::models::agent::Agent;
 use crate::models::brain::Brain;
@@ -33,6 +35,7 @@ use std::sync::{Arc, OnceLock};
 pub use a2a::A2aAgentDal;
 pub use builder::{DefaultPromptBuilder, FlatPromptBuilder, build_conversation_prompt};
 pub use codex::CodexAgentDal;
+pub use runtime::{AgentRuntimeDal, AgentRuntimeDalImpl};
 
 #[cfg(test)]
 mod a2a_test;

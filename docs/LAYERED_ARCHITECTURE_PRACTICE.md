@@ -384,6 +384,55 @@ DaoA → DaoB → DaoA
 
 ---
 
+### 陷阱 4：DAO 反向调用 Domain（真实案例：A2A callback）
+
+**错误**：DAO 出站推送时自行组装业务载荷
+```rust
+// ❌ A2aCallbackDao::push 内部调 domain 查项目 + 查消息历史 + 组装 A2aTask
+use crate::service::domain::project::domain as project_domain; // ← DAO 依赖 Domain，红线
+```
+
+**为什么错**：
+- 形成向下依赖（DAO → Domain），破坏单向依赖链
+- 出站载荷组装是业务编排，天然属于 DAL 职责
+
+**正确做法**（现行实现）：组装在 DAL、传输在 DAO——
+DAL 的 A2aCallback 分支调 ProjectDao/MessageDao 组装 `A2aTask` 快照，
+DAO 只保留 `push_task(webhook_url, &task)` 纯 HTTP 出站。
+
+---
+
+### 陷阱 5：组装层（Consumer/Producer）直捅 DAO/DAL
+
+**错误**：Consumer/Producer 里 new DAO 或调用 DAL 实现方法
+```rust
+// ❌ Producer 直 new 运行时 DAO
+fn build_a2a_dao(agent: &AgentPo) -> Option<A2aRuntimeDao> { ... }
+// ❌ Consumer 持有 Weak<ChannelDalImpl> 取转换方法
+let adapted = lark_dal.adapt_lark(ctx, &app_id, &event).await;
+```
+
+**处理原则**（区分两类逻辑，不追求"薄"）：
+- **行为相通、可抽象的逻辑 → 下沉 Domain**：如各渠道入站转换收敛为
+  `MessageDomain::inbound().adapt_inbound(InboundSource)` 枚举门面；
+  远端任务拉取收敛为 `AgentManage::fetch_remote_task`（经 `AgentRuntimeDal`）
+- **纯组装逻辑 → 留在组装层**：如消息路由档位链（跨 hr/message 域编排）
+  保留在 producer 回调中，Domain 不做同层跨域调用
+
+**配套规则**：跨渠道共享的投递回调由 pkg 中台登记持有
+（`adapter::message::registry().current_callback()`），DAL 不再自存回调句柄。
+
+---
+
+### 豁免说明：DAO 层纯数据结构可被上层 use
+
+`AgentQuery` / `ProjectQuery` / `SkillSearch` 等**纯查询参数结构**定义在
+DAO mod.rs，Handler/Domain 可以 `use` 它们构造查询条件——类型引用不算
+跨层调用。红线是**不可调用 DAO 方法**（必须经 DAL trait 间接访问）。
+Query 结构与 DTO 性质不同（前者面向存储查询、后者面向协议传输），不下沉 common。
+
+---
+
 ## 📦 Rig 包名问题记录
 
 ### 问题描述

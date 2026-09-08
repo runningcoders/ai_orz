@@ -17,7 +17,7 @@ use crate::models::agent::Agent;
 use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent as agent_dal;
-use crate::service::dal::agent::AgentDal;
+use crate::service::dal::agent::{AgentDal, AgentRuntimeDal};
 use crate::service::dal::skill as skill_dal;
 use crate::service::dal::skill::SkillDal;
 use crate::service::dal::tool as tool_dal;
@@ -45,7 +45,12 @@ pub fn domain() -> Arc<dyn HrDomain> {
 
 /// 初始化 HR Domain
 pub fn init() {
-    let _ = HR_DOMAIN.set(new(agent_dal::dal(), tool_dal::dal(), skill_dal::dal()));
+    let _ = HR_DOMAIN.set(new(
+        agent_dal::dal(),
+        tool_dal::dal(),
+        skill_dal::dal(),
+        Arc::new(agent_dal::AgentRuntimeDalImpl),
+    ));
 }
 
 /// 创建 HR Domain 实例（测试可注入隔离依赖）。
@@ -53,8 +58,14 @@ pub fn new(
     agent_dal: Arc<dyn AgentDal>,
     tool_dal: Arc<dyn ToolDal>,
     skill_dal: Arc<dyn SkillDal>,
+    runtime_dal: Arc<dyn AgentRuntimeDal>,
 ) -> Arc<dyn HrDomain> {
-    Arc::new(HrDomainImpl::new(agent_dal, tool_dal, skill_dal))
+    Arc::new(HrDomainImpl::new(
+        agent_dal,
+        tool_dal,
+        skill_dal,
+        runtime_dal,
+    ))
 }
 
 // ==================== 实现 ====================
@@ -66,6 +77,8 @@ struct HrDomainImpl {
     agent_dal: Arc<dyn AgentDal>,
     tool_dal: Arc<dyn ToolDal>,
     skill_dal: Arc<dyn SkillDal>,
+    /// Agent 运行时出站（远端 A2A 任务拉取）
+    runtime_dal: Arc<dyn AgentRuntimeDal>,
 }
 
 impl HrDomainImpl {
@@ -74,11 +87,13 @@ impl HrDomainImpl {
         agent_dal: Arc<dyn AgentDal>,
         tool_dal: Arc<dyn ToolDal>,
         skill_dal: Arc<dyn SkillDal>,
+        runtime_dal: Arc<dyn AgentRuntimeDal>,
     ) -> Self {
         Self {
             agent_dal,
             tool_dal,
             skill_dal,
+            runtime_dal,
         }
     }
 
@@ -406,6 +421,17 @@ pub trait AgentManage: Send + Sync {
         agent: &mut Agent,
         target_status: AgentStatus,
     ) -> Result<()>;
+
+    /// 拉取远端 A2A Agent 的任务快照（tasks/get）
+    ///
+    /// 按 Agent 运行时配置构造 A2A 出站客户端执行调用；
+    /// 运行时配置缺失/非法时返回错误（引导排查远端配置）。
+    async fn fetch_remote_task(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        remote_task_id: &str,
+    ) -> Result<common::api::a2a::A2aTask>;
 
     /// 校验入职就绪状态
     ///

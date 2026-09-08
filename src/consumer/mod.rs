@@ -23,15 +23,12 @@ pub async fn init() -> Result<()> {
 
     aop::registry().register_consumer(Arc::new(message::MessageConsumer::new()))?;
 
-    // 飞书入站消息：DAL 单例在 service::init 阶段已就位，此处注入弱引用
-    aop::registry().register_consumer(Arc::new(lark_inbound::LarkInboundConsumer::new(
-        Arc::downgrade(&crate::service::dal::lark::dal()),
-    )))?;
+    // 飞书入站消息（iLink 之前的 WS 长连事件）：适配走 message domain 门面，
+    // 投递回调经中台取用，consumer 不再持有渠道 DAL
+    aop::registry().register_consumer(Arc::new(lark_inbound::LarkInboundConsumer::new()))?;
 
-    // 微信入站消息：同上（iLink 长轮询事件）
-    aop::registry().register_consumer(Arc::new(wechat_inbound::WechatInboundConsumer::new(
-        Arc::downgrade(&crate::service::dal::wechat::dal()),
-    )))?;
+    // 微信入站消息（iLink 长轮询事件）：同上
+    aop::registry().register_consumer(Arc::new(wechat_inbound::WechatInboundConsumer::new()))?;
 
     aop::registry().register_consumer(Arc::new(scheduler::CronTriggerConsumer::new()))?;
 

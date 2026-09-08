@@ -484,6 +484,18 @@ impl AgentManage for HrDomainImpl {
         Ok(())
     }
 
+    /// 拉取远端 A2A Agent 的任务快照
+    async fn fetch_remote_task(
+        &self,
+        ctx: RequestContext,
+        agent: &Agent,
+        remote_task_id: &str,
+    ) -> Result<common::api::a2a::A2aTask> {
+        self.runtime_dal
+            .fetch_remote_task(ctx, agent, remote_task_id)
+            .await
+    }
+
     /// 校验入职就绪状态
     ///
     /// 检查工具绑定、技能安装等完整性条件
