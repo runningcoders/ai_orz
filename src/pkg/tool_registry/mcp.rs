@@ -9,6 +9,7 @@
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::shell_env;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use common::enums::ToolProtocol;
@@ -231,6 +232,11 @@ async fn connect_stdio_client(
     for (key, value) in env_injections {
         process.env(key, value);
     }
+    // 零继承红线针对凭据（见上），PATH 不含凭据；但没有 PATH 时 npx/uvx 这类
+    // server 内部再起子进程必然失败，故补一条补全后的 PATH（统一出口）
+    if let Some(path) = shell_env::inherited_path() {
+        process.env("PATH", path);
+    }
 
     let transport = TokioChildProcess::new(process)
         .map_err(|_e| anyhow!("failed to spawn MCP stdio server {}", server.id))?;
@@ -269,7 +275,9 @@ fn resolve_command_path(command: &str) -> Result<PathBuf> {
         return Ok(path);
     }
 
-    let paths = std::env::var_os("PATH").ok_or_else(|| -> common::error::Error {
+    // 用补全后的 PATH 解析：服务进程 PATH 常缺 /opt/homebrew/bin 等目录，
+    // 否则 npx / uvx 这类命令会被判成 not found
+    let paths = shell_env::inherited_path().ok_or_else(|| -> common::error::Error {
         anyhow!("PATH is required to resolve MCP stdio command; use an absolute path instead")
             .into()
     })?;

@@ -270,6 +270,78 @@ fn default_tool_log_retention_days() -> u32 {
     30 // 默认保留 30 天
 }
 
+/// Shell 子进程环境配置 —— **内置默认值，不挂 AppConfig**
+///
+/// 工具行为类配置一律放在 ToolPo.config（与 `additional_allowed_paths` 一致）：
+/// `shell_exec` 用 [`ShellExecConfig`](由各自 crate 定义) 的 `path_additions` /
+/// `home_mode` 覆盖这里的内置默认；声明式 shell 工具与 MCP stdio 没有工具级
+/// 配置项，直接用这里的默认值。因此本结构**不出现在 ai_orz.toml 中**。
+///
+/// 背景：子进程继承的是**服务进程**的环境，而服务进程常由 IDE / launchd / systemd
+/// 拉起，PATH 往往只有 `/usr/bin:/bin:/usr/sbin:/sbin`，且 shell 是非交互的
+/// （不读 rc 文件），于是 `node` / `npm` / `cargo` / `uv` 这类装在 Homebrew、nvm、
+/// cargo 目录下的命令一律 `command not found`。这里声明需要补进 PATH 的目录。
+///
+/// 补全语义：仅追加「存在且尚未出现在 PATH 中」的目录到**尾部**，
+/// 不覆盖既有解析顺序（显式配置优先于系统默认）。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct ShellConfig {
+    /// 追加到子进程 PATH 尾部的目录。支持 `~` 前缀与单段 `*` 通配
+    /// （如 `~/.nvm/versions/node/*/bin`，多版本取修改时间最新的一个）
+    pub path_additions: Vec<String>,
+
+    /// 子进程 HOME 策略（见 [`HomeMode`]）
+    pub home_mode: HomeMode,
+}
+
+impl Default for ShellConfig {
+    fn default() -> Self {
+        Self {
+            path_additions: default_shell_path_additions(),
+            home_mode: HomeMode::default(),
+        }
+    }
+}
+
+/// Shell 子进程 HOME 策略
+///
+/// 冲突点：nvm / pyenv / cargo / conda / ssh 把二进制与配置都装在真实 `$HOME` 下，
+/// 而 git / gh 需要的是**本平台用户**的配置与身份。二者无法用一个 HOME 同时满足，
+/// 故显式二选一：
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeMode {
+    /// 用户隔离 HOME（默认）：`{base}/users/{user_id}`
+    ///
+    /// git / gh 复用该用户的配置与凭据，commit author 由 `git_workspace` 写入
+    /// repo-local config，身份确定。代价：nvm / pyenv / cargo 读不到真实 HOME 下
+    /// 的配置与缓存（命令本体靠 PATH 补全仍能找到）。
+    #[default]
+    Isolated,
+
+    /// 继承服务进程 HOME：nvm / pyenv / cargo / ssh 全部可用
+    ///
+    /// 代价：git 会读到**服务进程 OS 用户**的 `.gitconfig`，commit author 可能不是
+    /// 期望身份（除非仓库已被 `git_workspace` 写过 repo-local config）。适合单机
+    /// 自用、受信环境；多用户部署请保持 `isolated`。
+    Inherit,
+}
+
+/// 默认补全目录（Windows 无此问题，返回空）
+fn default_shell_path_additions() -> Vec<String> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    vec![
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        "~/.cargo/bin".to_string(),
+        "~/.local/bin".to_string(),
+        "~/.nvm/versions/node/*/bin".to_string(),
+    ]
+}
+
 fn default_db_file_name() -> String {
     "ai_orz.db".to_string()
 }

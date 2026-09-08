@@ -9,8 +9,10 @@ use crate::pkg::git_workspace;
 use crate::pkg::paths;
 use crate::pkg::process::{self, ProcessEntry, ProcessStatus};
 use crate::pkg::request_context::RequestContext;
+use crate::pkg::tool_registry::shell_env;
 use crate::pkg::tool_registry::shell_policy::{self, ShellPolicyInput};
 use anyhow::anyhow;
+use common::config::HomeMode;
 use common::enums::{ControlMode, ToolProtocol};
 use common::error::Result;
 use serde::Deserialize;
@@ -32,8 +34,27 @@ pub struct ShellExecConfig {
     pub default_max_output_size_bytes: Option<u64>,
     /// Additional allowed paths for execution (beyond base data path).
     pub additional_allowed_paths: Option<Vec<String>>,
-    /// Allowed environment variable names (whitelist).
-    /// Only these environment variables from the parent process will be passed to the child.
+    /// 追加到子进程 PATH 尾部的目录（None = 内置默认，见 `common::config::ShellConfig`）
+    ///
+    /// 支持 `~` 前缀与单段 `*` 通配（如 `~/.nvm/versions/node/*/bin`）；
+    /// 仅追加「存在且尚未出现在 PATH 中」的目录，不覆盖既有解析顺序。
+    pub path_additions: Option<Vec<String>>,
+    /// 子进程 HOME 策略（None = 内置默认 `isolated`）
+    pub home_mode: Option<HomeMode>,
+    /// 隔离 HOME 下把工具链根目录指回真实 HOME 的工具链名单（None = 不注入）
+    ///
+    /// 仅 `home_mode = isolated` 时生效：git/gh 走隔离身份的同时，名单内工具链
+    /// 经官方环境变量（`CARGO_HOME` / `NVM_DIR` 等，见
+    /// `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS`）读取真实 HOME 配置。
+    /// 路径不存在或未知名忽略；`params.env` 显式传的同名变量优先。
+    pub toolchain_envs: Option<Vec<String>>,
+    /// 显式注入/覆盖的环境变量名（取值来自服务进程环境）
+    ///
+    /// **这不是安全边界**：子进程默认继承服务进程**全部**环境变量——兼容优先，
+    /// 因为 `TMPDIR` / `LANG` / `DYLD_*` / `XDG_*` 等被剔除会直接搞挂大量 CLI，
+    /// 而命令本身已由 `shell_policy` 拦截 + Manual 批准兜底，环境变量白名单的
+    /// 边际收益不值这个兼容性代价。这里声明的只是「额外显式带上」的变量
+    /// （敏感子串仍会剔除），默认 `PATH`（也是 PATH 补全的锚点）。
     pub allowed_env: Option<Vec<String>>,
 }
 
@@ -43,6 +64,9 @@ impl Default for ShellExecConfig {
             default_timeout_ms: None,
             default_max_output_size_bytes: None,
             additional_allowed_paths: None,
+            path_additions: None,
+            home_mode: None,
+            toolchain_envs: None,
             allowed_env: Some(vec!["PATH".to_string()]),
         }
     }
@@ -68,6 +92,23 @@ impl ShellExecConfig {
     /// Get allowed environment variable names.
     pub fn allowed_env(&self) -> &[String] {
         self.allowed_env.as_deref().unwrap_or(&[])
+    }
+
+    /// Get PATH 补全目录（未配置时回退内置默认）
+    pub fn path_additions(&self) -> Vec<String> {
+        self.path_additions
+            .clone()
+            .unwrap_or_else(|| common::config::ShellConfig::default().path_additions)
+    }
+
+    /// Get HOME 策略（未配置时回退内置默认 `isolated`）
+    pub fn home_mode(&self) -> HomeMode {
+        self.home_mode.unwrap_or_default()
+    }
+
+    /// Get 工具链根目录指回名单（未配置时为空 = 不注入）
+    pub fn toolchain_envs(&self) -> &[String] {
+        self.toolchain_envs.as_deref().unwrap_or(&[])
     }
 }
 
@@ -111,7 +152,8 @@ impl crate::pkg::tool_registry::BuiltinToolFactory for ShellExecToolFactory {
                 "(so git/gh and other CLIs reuse your own configuration). ",
                 "Working directories outside the allowed scope are never executed — the tool returns require_confirmation; for another user's or agent's workspace stop and ask the user for explicit confirmation first. ",
                 "Each call requires user approval (manual control mode). ",
-                "Sensitive environment variables are automatically filtered out."
+                "The child process inherits the service process environment (the shell is non-interactive, so rc files are NOT sourced). ",
+                "If a command is reported as not found, it is outside the service PATH: use an absolute path, or pass PATH explicitly via the env parameter."
             ).to_string(),
             protocol: ToolProtocol::Builtin,
             control_mode: ControlMode::Manual,
@@ -207,49 +249,21 @@ impl ShellExecCoreTool {
 }
 
 /// Filter inherited environment variables based on allow list.
+///
+/// 实现已迁至 [`shell_env::filter_inherited_environment`]（三条起子进程的链路共用），
+/// 此处保留转发以兼容既有调用点。
 pub fn filter_inherited_environment(allowed: &[String]) -> HashMap<String, String> {
-    let sensitive_vars: &[&str] = &[
-        "home",
-        "user",
-        "username",
-        "password",
-        "token",
-        "secret",
-        "api_key",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "google_application_credentials",
-        "ssh_auth_sock",
-        "git_config",
-        "git_ssh",
-    ];
-
-    std::env::vars()
-        .filter(|(key, _)| {
-            // Check if key is in allowed list
-            if !allowed.contains(&key.to_string()) {
-                return false;
-            }
-            // Filter out sensitive variables even if allowed
-            let key_lower = key.to_lowercase();
-            !sensitive_vars.iter().any(|s| key_lower.contains(s))
-        })
-        .collect()
+    shell_env::filter_inherited_environment(allowed)
 }
 
 /// Merge extra environment variables into base environment.
+///
+/// 实现已迁至 [`shell_env::merge_extra_environment`]，此处保留转发。
 pub fn merge_extra_environment(
-    mut base: HashMap<String, String>,
+    base: HashMap<String, String>,
     extra: &Value,
 ) -> HashMap<String, String> {
-    if let Some(obj) = extra.as_object() {
-        for (key, value) in obj {
-            if let Some(val_str) = value.as_str() {
-                base.insert(key.clone(), val_str.to_string());
-            }
-        }
-    }
-    base
+    shell_env::merge_extra_environment(base, extra)
 }
 
 #[async_trait::async_trait]
@@ -316,18 +330,28 @@ impl CoreTool for ShellExecCoreTool {
             }));
         }
 
-        // Prepare environment
-        let mut env = filter_inherited_environment(self.config.allowed_env());
-        if let Some(extra_env) = &params.env {
-            env = merge_extra_environment(env, &serde_json::to_value(extra_env)?);
-        }
-        // 拦截层固定出口步骤：结构性注入任务/Agent 身份（不可绕），
-        // 供 git commit-msg hook 等原生扩展点读取
-        if let Some(task_id) = ctx.task_id().cloned() {
-            env.insert(shell_policy::ENV_TASK_ID.to_string(), task_id);
-        }
-        if let Some(agent_id) = ctx.agent_id().cloned() {
-            env.insert(shell_policy::ENV_AGENT_ID.to_string(), agent_id);
+        // Prepare environment（统一出口：白名单 → extra → PATH 补全 → 身份变量）
+        let path_additions = self.config.path_additions();
+        let mut env = shell_env::resolve(&shell_env::ShellEnvRequest {
+            allowed_env: self.config.allowed_env(),
+            path_additions: Some(path_additions.as_slice()),
+            extra_env: params.env.as_ref(),
+            task_id: ctx.task_id().map(String::as_str),
+            agent_id: ctx.agent_id().map(String::as_str),
+        });
+        // 隔离 HOME + 声明工具链 → 工具链根目录经官方变量指回真实 HOME：
+        // git/gh 走隔离身份的同时，cargo/nvm/pyenv 等仍能读真实 HOME 配置。
+        // 仅在未走 env.HOME 逃生舱（params.env 未显式传 HOME）时注入；
+        // or_insert 保证 params.env 显式传的同名变量优先。
+        if !env.contains_key("HOME") && matches!(self.config.home_mode(), HomeMode::Isolated) {
+            for (key, value) in shell_env::toolchain_env_injections(self.config.toolchain_envs()) {
+                env.entry(key).or_insert(value);
+            }
+            // git over ssh：known_hosts 补齐（agent key 靠继承的 SSH_AUTH_SOCK，
+            // 私钥文件/config 恒不注入，见 shell_env::git_ssh_command_injection 文档）
+            if let Some(value) = shell_env::git_ssh_command_injection() {
+                env.entry("GIT_SSH_COMMAND".to_string()).or_insert(value);
+            }
         }
 
         // 审计：放行命中的审计规则（如 git commit = 产物锚点产生时刻）
@@ -362,10 +386,15 @@ impl CoreTool for ShellExecCoreTool {
         for (key, value) in &env {
             command.env(key, value);
         }
-        // 用户身份存在时，HOME 指向用户隔离 HOME（见 paths::user_home），
-        // 让 git/gh 等子命令复用该用户的 CLI 配置与凭证
-        if let Some(uid) = ctx.user_id.as_deref() {
-            command.env("HOME", paths::user_home(&base_root, uid));
+        // HOME 策略（ToolPo.config `home_mode`）：默认指向用户隔离 HOME（见
+        // paths::user_home），让 git/gh 等子命令复用该用户的 CLI 配置与凭证；
+        // `inherit` 时不注入，子进程继承服务进程 HOME（nvm / cargo / ssh 才可用）。
+        // 调用方通过 env 参数显式传 HOME 时以其为准（隔离与兼容冲突时的逃生舱）
+        let home = env.get("HOME").map(std::path::PathBuf::from).or_else(|| {
+            shell_env::home_for(self.config.home_mode(), ctx.user_id.as_deref(), &base_root)
+        });
+        if let Some(home) = home {
+            command.env("HOME", home);
         }
         let stdio_stdout = Stdio::from(
             OpenOptions::new()

@@ -81,6 +81,8 @@ enum BuiltinConfigForm {
     LarkCli,
     /// tavily_search：timeout_ms 单字段
     TavilySearch,
+    /// shell_exec：path_additions（多行目录）+ home_mode（HOME 策略）
+    ShellExec,
 }
 
 /// 按工具名匹配内置工具结构化表单；不匹配（MCP / Http / 未知 Builtin）→ None 回退只读 JSON
@@ -90,6 +92,7 @@ fn builtin_config_form(name: &str) -> Option<BuiltinConfigForm> {
         "gh_cli" => Some(BuiltinConfigForm::GhCli),
         "lark_cli" => Some(BuiltinConfigForm::LarkCli),
         "tavily_search" => Some(BuiltinConfigForm::TavilySearch),
+        "shell_exec" => Some(BuiltinConfigForm::ShellExec),
         _ => None,
     }
 }
@@ -101,6 +104,12 @@ struct BuiltinConfigFormState {
     timeout_ms: String,
     max_output_bytes: String,
     install_hint: String,
+    /// shell_exec：PATH 补全目录（一行一个，支持 ~ 与 * 通配）
+    path_additions: String,
+    /// shell_exec：隔离 HOME 下指回真实 HOME 的工具链名单（一行一个）
+    toolchain_envs: String,
+    /// shell_exec：HOME 策略（isolated / inherit，留空 = 用后端默认）
+    home_mode: String,
 }
 
 /// 从 detail config 初始化表单（config 非对象 / 字段缺失 → 空串，由占位符提示缺省值）
@@ -122,11 +131,36 @@ fn builtin_form_from_config(config: Option<&serde_json::Value>) -> BuiltinConfig
             .map(|n| n.to_string())
             .unwrap_or_default()
     };
+    let path_additions = object
+        .get("path_additions")
+        .and_then(|v| v.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let toolchain_envs = object
+        .get("toolchain_envs")
+        .and_then(|v| v.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
     BuiltinConfigFormState {
         command: text("command"),
         timeout_ms: number("timeout_ms"),
         max_output_bytes: number("max_output_bytes"),
         install_hint: text("install_hint"),
+        path_additions,
+        toolchain_envs,
+        home_mode: text("home_mode"),
     }
 }
 
@@ -160,6 +194,11 @@ fn merge_builtin_config(
         BuiltinConfigForm::TavilySearch => {
             insert_positive_number(&mut map, "timeout_ms", &form.timeout_ms);
         }
+        BuiltinConfigForm::ShellExec => {
+            insert_path_additions(&mut map, &form.path_additions);
+            insert_toolchain_envs(&mut map, &form.toolchain_envs)?;
+            insert_home_mode(&mut map, &form.home_mode)?;
+        }
     }
     let merged = serde_json::Value::Object(map);
     common::models::validate_builtin_tool_config(&merged)?;
@@ -172,6 +211,80 @@ fn insert_command(map: &mut serde_json::Map<String, serde_json::Value>, command:
         "command".to_string(),
         serde_json::Value::String(command.trim().to_string()),
     );
+}
+
+/// path_additions 覆盖：按行拆分、去空行；全部为空时删除该键（回退后端内置默认）
+fn insert_path_additions(map: &mut serde_json::Map<String, serde_json::Value>, text: &str) {
+    let entries: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    if entries.is_empty() {
+        map.remove("path_additions");
+    } else {
+        map.insert(
+            "path_additions".to_string(),
+            serde_json::Value::Array(entries.into_iter().map(serde_json::Value::String).collect()),
+        );
+    }
+}
+
+/// toolchain_envs 覆盖：按行拆分、去空行、去重；全部为空时删除该键（不注入）
+///
+/// 合法名单取 common 单点 `SHELL_TOOLCHAIN_HOME_VARS`（与后端注入同一实现），
+/// 未知名直接报错（带支持列表），避免保存一个后端静默忽略的配置。
+fn insert_toolchain_envs(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    text: &str,
+) -> Result<(), String> {
+    let mut entries: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let name = line.trim().to_lowercase();
+        if name.is_empty() || entries.contains(&name) {
+            continue;
+        }
+        if !common::models::tool::is_supported_toolchain(&name) {
+            let supported = common::models::tool::SHELL_TOOLCHAIN_HOME_VARS
+                .iter()
+                .map(|(name, _, _)| *name)
+                .collect::<Vec<_>>()
+                .join(" / ");
+            return Err(format!(
+                "config.toolchain_envs 含不支持的工具链「{name}」，支持：{supported}"
+            ));
+        }
+        entries.push(name);
+    }
+    if entries.is_empty() {
+        map.remove("toolchain_envs");
+    } else {
+        map.insert(
+            "toolchain_envs".to_string(),
+            serde_json::Value::Array(entries.into_iter().map(serde_json::Value::String).collect()),
+        );
+    }
+    Ok(())
+}
+
+/// home_mode 覆盖：留空不覆盖（保留基底 / 缺省兜底）；非法值由 common 校验拦截前先本地拦截
+fn insert_home_mode(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    text: &str,
+) -> Result<(), String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if trimmed != "isolated" && trimmed != "inherit" {
+        return Err("config.home_mode 只支持 isolated / inherit".to_string());
+    }
+    map.insert(
+        "home_mode".to_string(),
+        serde_json::Value::String(trimmed.to_string()),
+    );
+    Ok(())
 }
 
 /// 数字字段覆盖：留空不覆盖（保留基底 / 缺省兜底）；非数字原样放置交由 common 校验判定
@@ -443,6 +556,60 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                             placeholder: "15000",
                                         }
                                     }
+                                } else if layout == BuiltinConfigForm::ShellExec {
+                                    div { class: "grid grid-cols-1 gap-4",
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "PATH 补全目录 (path_additions)" }
+                                            }
+                                            textarea {
+                                                class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-24",
+                                                value: "{config_form.read().path_additions}",
+                                                oninput: move |e| config_form.write().path_additions = e.value(),
+                                                placeholder: "/opt/homebrew/bin\n~/.cargo/bin\n~/.nvm/versions/node/*/bin",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "一行一个目录，支持 ~ 前缀与单段 * 通配；仅追加「存在且未包含」的目录到 PATH 尾部。全部清空 = 回退后端内置默认。"
+                                            }
+                                        }
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "工具链指回真实 HOME (toolchain_envs)" }
+                                            }
+                                            textarea {
+                                                class: "textarea textarea-bordered hud-input w-full font-mono text-sm h-20",
+                                                value: "{config_form.read().toolchain_envs}",
+                                                oninput: move |e| config_form.write().toolchain_envs = e.value(),
+                                                placeholder: "cargo\nnvm\npyenv",
+                                            }
+                                            p { class: "text-xs opacity-60 mt-1",
+                                                "仅隔离 HOME 下生效：把列出的工具链根目录经官方变量（CARGO_HOME / NVM_DIR 等）指回真实 HOME，与 git 身份隔离兼得；对应路径不存在则跳过。支持：cargo / rustup / nvm / pyenv / rbenv / go / npm"
+                                            }
+                                        }
+                                        div {
+                                            label { class: "label",
+                                                span { class: "label-text font-medium", "HOME 策略 (home_mode)" }
+                                            }
+                                            select {
+                                                class: "select select-bordered hud-input w-full text-sm",
+                                                value: "{config_form.read().home_mode}",
+                                                onchange: move |e| config_form.write().home_mode = e.value(),
+                                                option { value: "", "留空（后端默认 isolated）" }
+                                                option { value: "isolated", "isolated — 用户隔离 HOME（git/gh 身份确定）" }
+                                                option { value: "inherit", "inherit — 继承服务进程 HOME（nvm/cargo/ssh 可用）" }
+                                            }
+                                            // 说明随选中值联动：帮用户在「身份确定」与「工具链可用」之间做取舍
+                                            HudCallout {
+                                                tone: Some("info".to_string()),
+                                                extra_class: Some("mt-2 py-2 text-xs leading-relaxed".to_string()),
+                                                {match config_form.read().home_mode.as_str() {
+                                                    "inherit" => "inherit：子进程直接使用服务进程的 HOME，nvm / pyenv / cargo / ssh 等可读取真实 HOME 下的配置与缓存；代价是 git 会读到服务进程 OS 用户的 .gitconfig，commit author 可能不是预期身份。适合单机自用 / 受信环境。",
+                                                    "isolated" => "isolated：HOME 指向本平台用户的隔离目录，git / gh 使用确定的平台身份、凭据互不串扰；代价是 nvm / pyenv / cargo / ssh 读不到真实 HOME 的配置（命令本体仍可经 PATH 补全找到）。适合多用户部署。",
+                                                    _ => "留空 = 使用后端默认 isolated。若命令经 PATH 补全仍失败（如 nvm use、cargo login 这类依赖 HOME 配置的命令），可切到 inherit 试验。",
+                                                }}
+                                            }
+                                        }
+                                    }
                                 } else {
                                     // gh_cli / lark_cli：command 单字段
                                     div {
@@ -710,9 +877,76 @@ mod tests {
             builtin_config_form("tavily_search"),
             Some(BuiltinConfigForm::TavilySearch)
         );
+        assert_eq!(
+            builtin_config_form("shell_exec"),
+            Some(BuiltinConfigForm::ShellExec)
+        );
         // MCP / Http / 未知内置工具名 → None（回退只读 JSON）
         assert_eq!(builtin_config_form("mcp_tool"), None);
         assert_eq!(builtin_config_form("http_tool"), None);
+    }
+
+    #[test]
+    fn form_from_config_reads_shell_exec_fields() {
+        let config = serde_json::json!({
+            "path_additions": ["/opt/homebrew/bin", "~/.cargo/bin"],
+            "toolchain_envs": ["cargo", "nvm"],
+            "home_mode": "inherit"
+        });
+        let form = builtin_form_from_config(Some(&config));
+        assert_eq!(form.path_additions, "/opt/homebrew/bin\n~/.cargo/bin");
+        assert_eq!(form.toolchain_envs, "cargo\nnvm");
+        assert_eq!(form.home_mode, "inherit");
+    }
+
+    #[test]
+    fn merge_shell_exec_roundtrip_and_reset() {
+        // 回写：多行文本 → JSON 数组 + home_mode 校验
+        let form = BuiltinConfigFormState {
+            path_additions: " /opt/homebrew/bin \n\n~/.cargo/bin\n".to_string(),
+            toolchain_envs: "Cargo\n\nnvm\nCARGO\n".to_string(),
+            home_mode: "inherit".to_string(),
+            ..Default::default()
+        };
+        let merged = merge_builtin_config(None, &form, BuiltinConfigForm::ShellExec).unwrap();
+        assert_eq!(
+            merged["path_additions"],
+            serde_json::json!(["/opt/homebrew/bin", "~/.cargo/bin"])
+        );
+        // 小写归一 + 去重
+        assert_eq!(
+            merged["toolchain_envs"],
+            serde_json::json!(["cargo", "nvm"])
+        );
+        assert_eq!(merged["home_mode"], "inherit");
+
+        // 全部清空 → 删除键（回退后端内置默认），不影响基底其他字段
+        let base = serde_json::json!({
+            "path_additions": ["/x"],
+            "toolchain_envs": ["cargo"],
+            "keep": true
+        });
+        let form = BuiltinConfigFormState::default();
+        let merged =
+            merge_builtin_config(Some(&base), &form, BuiltinConfigForm::ShellExec).unwrap();
+        assert!(merged.get("path_additions").is_none());
+        assert!(merged.get("toolchain_envs").is_none());
+        assert_eq!(merged["keep"], true);
+
+        // 非法 home_mode / 未知名工具链本地拦截
+        let form = BuiltinConfigFormState {
+            home_mode: "none".to_string(),
+            ..Default::default()
+        };
+        let err = merge_builtin_config(None, &form, BuiltinConfigForm::ShellExec).unwrap_err();
+        assert!(err.contains("home_mode"));
+
+        let form = BuiltinConfigFormState {
+            toolchain_envs: "conda".to_string(),
+            ..Default::default()
+        };
+        let err = merge_builtin_config(None, &form, BuiltinConfigForm::ShellExec).unwrap_err();
+        assert!(err.contains("toolchain_envs") && err.contains("cargo"));
     }
 
     #[test]
@@ -763,6 +997,7 @@ mod tests {
             timeout_ms: "120000".to_string(),
             max_output_bytes: "524288".to_string(),
             install_hint: "brew install agent-browser".to_string(),
+            ..Default::default()
         };
         let merged = merge_builtin_config(Some(&base), &form, BuiltinConfigForm::Browser).unwrap();
         assert_eq!(merged["command"], "agent-browser2");

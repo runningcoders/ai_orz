@@ -20,6 +20,30 @@ impl ToolCallTraceRef {
     }
 }
 
+/// shell_exec 隔离 HOME 下支持「根目录指回真实 HOME」的工具链映射
+///
+/// 三元组：(工具链名, 官方环境变量, 真实 HOME 相对路径)。
+/// 这些工具链都支持用环境变量指定根目录而不依赖 `HOME`，因此隔离 HOME
+/// （git/gh 身份隔离）与工具链自身配置（`~/.cargo`、`~/.nvm` 等）可以兼得。
+/// 后端注入与前端表单校验共用此单点；未列出的名字两侧都忽略/拒绝。
+pub const SHELL_TOOLCHAIN_HOME_VARS: &[(&str, &str, &str)] = &[
+    ("nvm", "NVM_DIR", ".nvm"),
+    ("cargo", "CARGO_HOME", ".cargo"),
+    ("rustup", "RUSTUP_HOME", ".rustup"),
+    ("pyenv", "PYENV_ROOT", ".pyenv"),
+    ("rbenv", "RBENV_ROOT", ".rbenv"),
+    ("go", "GOPATH", "go"),
+    ("npm", "NPM_CONFIG_USERCONFIG", ".npmrc"),
+];
+
+/// 工具链名是否在支持列表中（大小写不敏感）
+pub fn is_supported_toolchain(name: &str) -> bool {
+    let lowered = name.trim().to_lowercase();
+    SHELL_TOOLCHAIN_HOME_VARS
+        .iter()
+        .any(|(supported, _, _)| *supported == lowered)
+}
+
 /// Builtin 工具 config 已知字段轻量校验（D28：CLI 命令与行为参数进 PO config）
 ///
 /// 仅校验已知字段的类型与取值（command 非空 string / timeout_ms·max_output_bytes

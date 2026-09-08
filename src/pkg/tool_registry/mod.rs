@@ -17,6 +17,7 @@ pub mod http_fetch;
 pub mod lark_cli;
 pub mod mark_artifact;
 pub mod mcp;
+pub mod shell_env;
 pub mod shell_exec;
 pub mod shell_policy;
 pub mod shell_tool;

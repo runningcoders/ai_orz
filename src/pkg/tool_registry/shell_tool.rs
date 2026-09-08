@@ -19,6 +19,7 @@ use crate::models::tool::{CoreTool, ToolPo};
 use crate::pkg::process::{self, ExecOptions};
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_registry::http::{render_string_template, validate_args_schema};
+use crate::pkg::tool_registry::shell_env;
 use crate::pkg::tool_registry::shell_policy::{self, ShellPolicyInput};
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -162,10 +163,18 @@ async fn execute_shell_call(
     if let Err(e) = tokio::fs::create_dir_all(&working_dir).await {
         return Err(anyhow!("create working_dir '{}' failed: {e}", working_dir.display()).into());
     }
+    // 统一环境变量出口：PATH 补全（服务进程 PATH 常缺 node/cargo 等目录）
+    // + 身份变量注入（与 shell_exec 一致，供 git commit-msg hook 读取）
+    let env = shell_env::resolve(&shell_env::ShellEnvRequest {
+        task_id: ctx.task_id().map(String::as_str),
+        agent_id: ctx.agent_id().map(String::as_str),
+        ..Default::default()
+    });
     let output = process::exec(
         &ExecOptions::new(&config.program, argv)
             .timeout(Duration::from_millis(timeout_ms))
-            .current_dir(&working_dir),
+            .current_dir(&working_dir)
+            .envs(env.into_iter().collect()),
     )
     .await?;
 

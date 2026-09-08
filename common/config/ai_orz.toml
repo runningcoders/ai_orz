@@ -67,3 +67,7 @@ token_budget = 0
 # 工具日志保留天数（0 = 不清理），超期日志由系统定时任务自动清理（运行中进程的日志受保护不删）
 retention_days = 30
 
+# 说明：Shell 子进程的环境配置（PATH 补全 path_additions / HOME 策略 home_mode）
+# 属于**工具级配置**，放在 shell_exec 工具的 PO config 中（与其 additional_allowed_paths 同级），
+# 不在此全局配置文件里；未配置时使用内置默认值。
+

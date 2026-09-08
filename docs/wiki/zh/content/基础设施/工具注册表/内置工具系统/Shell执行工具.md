@@ -70,7 +70,7 @@ B --> H["AOP事件<br/>tool_exec.rs"]
 ## 核心组件
 - ShellExecToolFactory：内置工具工厂，负责生成 ToolPo（元数据、参数Schema、默认配置）与 CoreTool 实例。
 - ShellExecCoreTool：具体执行器，完成参数解析、工作目录校验与解析、环境变量过滤合并、命令执行（同步/后台）、超时控制、输出捕获与截断、日志落盘、结果返回。
-- ShellExecConfig：工具级配置项，包括默认超时、最大输出大小、额外允许路径、环境变量白名单。
+- ShellExecConfig：工具级配置项，包括默认超时、最大输出大小、额外允许路径、显式注入的环境变量（`allowed_env`，非白名单）。
 - ShellExecParams：调用参数，包括 command、working_dir、timeout_ms、max_output_size_bytes、background、env。
 
 章节来源
@@ -151,7 +151,7 @@ ShellExecToolFactory --> CoreTool : "创建执行器"
 - 参数解析：从 JSON 反序列化为 ShellExecParams，校验必填字段。
 - 工作目录校验：仅允许 base_data_path 或 additional_allowed_paths 内的绝对路径；相对路径视为在 base_data_path 下。
 - 工作目录解析：若不存在则自动创建。
-- 环境变量过滤：继承父进程环境变量时，仅保留 allowed_env 白名单中的键，并进一步屏蔽敏感键（如 password、token、secret、aws_* 等）。
+- 环境变量：子进程**继承服务进程全部环境变量**（兼容优先，2026-09-08 决策）；`allowed_env` 只表示额外显式带上的键（其中敏感子串会被剔除），不是白名单。统一出口为 `shell_env::resolve`：显式变量 → 合并 `params.env` → PATH 补全（ToolPo.config `path_additions`）→ 注入 `AI_ORZ_TASK_ID/AI_ORZ_AGENT_ID`。
 - 命令执行：
   - 前台模式：使用 piped stdout/stderr 捕获输出，按 timeout_ms 等待进程结束；超过 max_output_size_bytes 时截断响应，但完整输出仍写入日志。
   - 后台模式：stdout/stderr 直接重定向到日志文件，立即返回 PID 与日志路径。
@@ -197,8 +197,13 @@ ReturnFG --> End
 - 工作目录沙箱：
   - 仅允许 base_data_path 或 additional_allowed_paths 内的绝对路径；相对路径默认在 base_data_path 内。
   - 未授权路径返回 require_confirmation，要求人工确认后再执行。
-- 环境变量白名单：
-  - 仅允许 allowed_env 列表中的变量名从父进程继承；默认包含 PATH。
+- 环境变量（兼容优先）：
+  - 子进程继承服务进程全部环境变量；`allowed_env` 仅为额外显式带上的变量，默认包含 PATH（PATH 补全锚点）。
+  - PATH 补全：`shell_env::completed_path` 按 ToolPo.config `path_additions`（未配置时用内置默认：homebrew/cargo/local/nvm）追加存在且未包含的目录到尾部，解决 node/npm/cargo 等 command not found。
+  - HOME 策略：ToolPo.config `home_mode`（`isolated` 默认 / `inherit`）；`env` 参数传 HOME 优先级最高。
+  - 工具链指回（隔离 HOME 兼得方案）：ToolPo.config `toolchain_envs` 工具链名单，仅 `isolated` 且未显式传 HOME 时生效——名单内工具链经官方环境变量（`CARGO_HOME` / `NVM_DIR` / `PYENV_ROOT` / `RBENV_ROOT` / `RUSTUP_HOME` / `GOPATH` / `NPM_CONFIG_USERCONFIG`，映射表 `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS`）指回真实 HOME 下对应路径（**不存在则跳过**），git/gh 身份隔离与 cargo/nvm/pyenv 配置可用兼得；`params.env` 显式传的同名变量优先，未知名忽略。
+  - git over ssh（isolated）：agent 里的 key 靠继承的 `SSH_AUTH_SOCK` 可用；服务进程有 `SSH_AUTH_SOCK` 且真实 `~/.ssh/known_hosts` 存在时自动注入 `GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=<真实HOME>/.ssh/known_hosts -o StrictHostKeyChecking=accept-new` 补齐主机指纹校验（`shell_env::git_ssh_command_injection`）。**绝不**注入 `-i` 私钥路径、不 symlink `.ssh`——私钥与 `~/.ssh/config` 属身份本体，不进 Agent 任务视野；裸 `ssh` / `scp` / Host 别名场景改用 https+token、`inherit` 或 `env` 参数传 HOME。
+  - 敏感子串过滤只作用于显式集合，不是安全边界（详见 `shell_env.rs` 模块文档）。
   - 即使允许，也会屏蔽敏感键（如 password、token、secret、aws_*、ssh_auth_sock、git_config 等）。
 - 输出限制：
   - 默认最大输出 10MB，可通过配置覆盖；超过限制时在响应中截断，但完整输出仍写入日志。
@@ -278,9 +283,10 @@ RT --> EVT["tool_exec.rs<br/>AOP事件"]
 - 工作目录拒绝：
   - 现象：返回 require_confirmation 且 error 提示不在允许路径。
   - 排查：检查 working_dir 是否为 base_data_path 或 additional_allowed_paths 的子路径；必要时调整配置。
-- 环境变量缺失：
-  - 现象：命令找不到外部工具或配置。
-  - 排查：确认 allowed_env 包含必要变量（如 PATH、RUSTFLAGS、CC 等）。
+- 环境变量缺失 / 命令找不到（command not found）：
+  - 现象：`node`、`npm`、`cargo`、`uv` 等报 command not found。
+  - 根因：子进程继承的是服务进程 PATH（IDE/launchd 拉起时常只有系统目录），且 `/bin/sh -c` 非交互、不读 rc 文件，nvm/pyenv/conda 的注入全部失效。
+  - 排查：确认该工具 PO config 的 `path_additions` 覆盖命令所在目录（默认含 homebrew/cargo/local/nvm）；临时可用绝对路径，或通过 `env` 参数显式传 PATH。
 - 输出过大：
   - 现象：响应 truncated=true 且提示完整输出在日志中。
   - 排查：查看对应 trace_id 的日志文件，定位问题。
@@ -296,7 +302,7 @@ RT --> EVT["tool_exec.rs<br/>AOP事件"]
 - [shell_exec.rs:257-466](src/pkg/tool_registry/shell_exec.rs#L257-L466)
 
 ## 结论
-ShellExecToolFactory 提供了安全可控的Shell命令执行能力，通过工作目录沙箱、环境变量白名单、输出限制、超时控制与日志落盘等机制，满足受限环境下的系统命令执行需求。结合 Runtime Domain 的工具执行流程与AOP事件，实现了完整的可观测性与可追溯性。建议在生产环境中严格配置 allowed_env、additional_allowed_paths 与超时/输出限制，并定期审计日志与指标。
+ShellExecToolFactory 提供了安全可控的Shell命令执行能力，通过工作目录沙箱、命令拦截层（`shell_policy`）、输出限制、超时控制与日志落盘等机制，满足受限环境下的系统命令执行需求。环境变量采取兼容优先策略（全量继承 + PATH 补全），`allowed_env` 不是隔离机制。结合 Runtime Domain 的工具执行流程与AOP事件，实现了完整的可观测性与可追溯性。各项行为参数（工具级）均配置在该工具的 PO config 中（`path_additions` / `home_mode` / `additional_allowed_paths` / `allowed_env` / 超时与输出限制），与系统级 `ai_orz.toml` 分层。建议在生产环境中按工具实际需要配置这些项，并定期审计日志与指标。
 
 [本节为总结，不直接分析具体文件]
 
