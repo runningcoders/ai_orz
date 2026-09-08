@@ -190,6 +190,25 @@ pub async fn ensure_workspace_repo(
     .await
     .as_ref()?;
 
+    // repo-local 身份：**必须先于首次 commit**。
+    // 隔离 HOME / CI 容器常无全局 gitconfig，且 git 未必能自动推断身份
+    // （`fatal: unable to auto-detect email address`），此时 `git commit` 直接失败，
+    // 会导致 .gitignore 入不了库 → 工作区恒为脏 → checkpoint「无变更跳过」判定失效。
+    let _ = git_quiet(
+        &repo_root,
+        &["config", "user.name", "ai-orz agent"],
+        Vec::new(),
+        "config user.name",
+    )
+    .await;
+    let _ = git_quiet(
+        &repo_root,
+        &["config", "user.email", "agent@ai-orz.local"],
+        Vec::new(),
+        "config user.email",
+    )
+    .await;
+
     // 默认 .gitignore（已存在则不覆盖用户配置）
     let gitignore = repo_root.join(".gitignore");
     if !gitignore.exists()
@@ -211,22 +230,6 @@ pub async fn ensure_workspace_repo(
         &["commit", "-m", "chore: init ai-orz workspace"],
         Vec::new(),
         "initial commit",
-    )
-    .await;
-
-    // repo-local 身份：隔离 HOME 下无全局 gitconfig，缺身份 commit 直接失败
-    let _ = git_quiet(
-        &repo_root,
-        &["config", "user.name", "ai-orz agent"],
-        Vec::new(),
-        "config user.name",
-    )
-    .await;
-    let _ = git_quiet(
-        &repo_root,
-        &["config", "user.email", "agent@ai-orz.local"],
-        Vec::new(),
-        "config user.email",
     )
     .await;
 
