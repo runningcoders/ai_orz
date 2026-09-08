@@ -9,6 +9,9 @@
 - [config.rs](src/config.rs)
 - [ai_orz.toml](common/config/ai_orz.toml)
 - [shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
+- [shell_env.rs](src/pkg/tool_registry/shell_env.rs#L1-L348)
+- [config.rs](common/src/config.rs#L270-L342)（ShellConfig + HomeMode）
+- [tool.rs](common/src/models/tool.rs#L23-L47)（SHELL_TOOLCHAIN_HOME_VARS）
 </cite>
 
 ## 目录
@@ -158,9 +161,20 @@ Tool-->>Caller : 返回结果(success/exit_code/truncated/log_path)
   - 敏感键名一律过滤，避免泄露密钥、令牌、SSH 会话等。
 - 扩展规则
   - 通过 env 参数注入的变量会合并到基础环境，用于特定命令需要但不希望全局暴露的场景。
+- shell_env 统一环境出口
+  - 三条起子进程的链路（shell_exec / 声明式 shell_tool / MCP stdio）统一走 `shell_env::resolve(ShellEnvRequest)`，负责：
+    - **PATH 补全**：自动追加存在目录到尾部，支持 `~` 前缀 + 单段 `*` 通配（如 `~/.nvm/versions/node/*/bin`），补全目录可由 ToolPo.config `path_additions` 覆盖或使用 `ShellConfig`（common/src/config.rs#L270-L342）内置默认。
+    - **HOME 策略**：`shell_env::home_for(HomeMode, user_id, base_root)` 处理 Isolated / Inherit 两种模式；Isolated 下隔离 HOME 指向 base_root 下的临时目录。
+    - **工具链根目录指回真实 HOME**：`toolchain_env_injections()` 遍历 `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS`（7 条 nvm/cargo/rustup/pyenv/rbenv/go/npm 映射），在隔离 HOME 下把各工具链的家目录变量指回真实 HOME，避免工具链丢失。
+    - **git SSH known_hosts 补齐**：隔离 HOME 下 `git_ssh_command_injection()` 用真实 HOME 的 known_hosts 生成 GIT_SSH_COMMAND 覆盖，补齐 git over ssh 缺口。
+    - **身份变量注入**：结构性注入 `AI_ORZ_TASK_ID` / `AI_ORZ_AGENT_ID`，供 git commit-msg hook 等原生扩展点读取。
+  - HOME 不在 `resolve()` 职责内，由调用方叠加；MCP stdio 是唯一零继承链路，走 `env_clear()` 后只注入 `inherited_path()`（红线：凭据隔离）。
 
 章节来源
 - [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_env.rs:1-348](src/pkg/tool_registry/shell_env.rs#L1-L348)
+- [config.rs:270-342](common/src/config.rs#L270-L342)
+- [tool.rs:23-47](common/src/models/tool.rs#L23-L47)
 
 ### 输出处理、错误捕获与资源清理
 - 输出处理
@@ -298,10 +312,14 @@ T --> FS["文件系统(日志/工作目录)"]
 - 进程未退出
   - 现象：后台进程仍在运行。
   - 处理：通过返回的 PID 进行进程管理；确保业务侧有清理策略。
+- **PATH not found / command not found**
+  - 现象：服务进程 PATH 常缺 `/opt/homebrew/bin` 等目录（IDE / launchd 拉起时不加载 `.zshrc`），shell_exec 用 `/bin/sh -c` 非交互执行也不会读 rc 文件，nvm / pyenv / cargo 这类靠 rc 注入 PATH 的版本管理器全部失效。
+  - 处理：`shell_env::resolve` 会自动通过 `completed_path` 补全，补全目录来自 ToolPo.config `path_additions` 或 `ShellConfig` 内置默认。如果补全目录配置错误或 glob 通配（单段 `*`）没能匹配真实版本目录（如 `~/.nvm/versions/node/*/bin` 下没找到最新的那个），命令仍会找不到。可查 ToolPo.config 的 path_additions 实际值，或运行 `echo $PATH` 确认补全是否生效；通配匹配失败时 `expand_wildcard` 静默返回空，不会报错。隔离 HOME 模式下，cargo/nvm/pyenv 还要看 `toolchain_env_injections` 是否产出（只在真实 HOME 下对应目录存在时才注入）。
 
 章节来源
 - [shell_exec.rs:264-273](src/pkg/tool_registry/shell_exec.rs#L264-L273)
 - [shell_exec.rs:385-466](src/pkg/tool_registry/shell_exec.rs#L385-L466)
+- [shell_env.rs:1-348](src/pkg/tool_registry/shell_env.rs#L1-L348)
 
 ## 结论
 Shell 执行工具通过工作目录白名单、环境变量白名单与敏感过滤、输出大小限制、超时控制与后台模式，提供了安全可控的 Shell 命令执行能力。其设计遵循分层与单向调用原则，集成到全局工具注册表中，便于统一管理、审计与扩展。建议在生产环境中严格配置 allowed_env、additional_allowed_paths 与超时/输出限制，并结合日志与监控进行持续治理。

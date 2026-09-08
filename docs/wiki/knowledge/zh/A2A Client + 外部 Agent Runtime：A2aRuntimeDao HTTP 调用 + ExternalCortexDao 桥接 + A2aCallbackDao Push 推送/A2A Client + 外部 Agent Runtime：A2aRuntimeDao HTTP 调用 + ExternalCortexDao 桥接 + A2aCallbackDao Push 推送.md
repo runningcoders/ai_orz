@@ -11,6 +11,8 @@ scope:
 - src/models/agent.rs
 - src/service/dao/organization_link/http.rs
 - src/service/dal/organization.rs（call_peer facade）
+- src/service/dal/message_channel.rs
+- src/service/dal/agent/runtime.rs
 source_files:
 - src/service/dao/agent_runtime/mod.rs:Ln-Lm（AgentRuntimeDao trait：单一 invoke(ctx,
   agent, prompt) -> Result<String> 抽象）
@@ -19,7 +21,10 @@ source_files:
 - src/service/dao/cortex/external.rs:Ln-Lm（ExternalCortexDao：从 AgentPo external_config
   构造 runtime_dao；brain.think() 分发调用；统一包装 ThinkResult::Final）
 - src/service/dal/agent_a2a.rs:Ln-Lm
-- src/service/dao/a2a_callback/http.rs:Ln-Lm
+- src/service/dal/message_channel.rs（build_a2a_task 方法 + push_task 调用点 + a2a_callback_webhook_url + map_project_status_to_a2a）
+- src/service/dal/agent/runtime.rs#L1-L56（AgentRuntimeDal 新 trait：fetch_remote_task(ctx, agent, remote_task_id) -> Result<A2aTask>）
+- src/service/dao/a2a_callback/mod.rs#L1-L39（瘦身：push_task 替换 push + test_connection 删除）
+- src/service/dao/a2a_callback/http.rs#L1-L40（瘦身：HTTP POST 实现，仅 webhook_url + A2aTask 入参）
 - src/models/agent.rs:Ln-Lm
 - docs/archive/design-archive/a2a_server_architecture_design.md
 - ''
@@ -45,13 +50,23 @@ source_files:
 
 (c) **A2aAgentDal（委托模式 + 不引入全局 builder）**：`src/service/dal/agent_a2a.rs` 专门管理 Remote 类型 Agent 的 CRUD。通过委托 `Arc<dyn AgentDal>` 复用全部默认管理操作（create/find_by_id/query/search 等），不重写任何默认方法。**不主动新建独立 PromptBuilder**（未重写 prompt_builder() 时走 AgentDal trait 默认方法返回 DefaultPromptBuilder），未来扩展 RemotePromptBuilder 时仅需在此文件重写对应方法。
 
-(d) **A2aCallbackDao（Push 推送出站）**：作为 A2A Server 侧（对外接收入站任务、对外 Push 任务变更）的唯一出站 DAO，实现：Push 时根据 channel.scope_project 或 message.po.project_id 定位项目 → 拉取项目全部历史消息 → 按 message.from_role 映射 A2aMessage.role（user/agent/system）→ 组装完整 A2aTask JSON（state + messages[]）→ POST 到 webhook_url。test_connection 发送一条 state=ping 的轻量 payload 验证端点可达。与其他渠道 DAO 同模式（Lark/Webhook/Email DAO），**不跨层依赖**。
+(d) **A2aCallbackDao（瘦身：纯 HTTP 出站）+ MessageChannelDal 组装**：A2aCallbackDao 职责已瘦身，仅保留纯 HTTP POST 出站能力（接口从 `push(ctx, message, channel)` 改为 `push_task(ctx, webhook_url, &A2aTask)`）。**业务组装下沉到 `src/service/dal/message_channel.rs` 的 MessageChannelDalImpl**：
+   - `build_a2a_task`：根据 channel.scope_project 或 message.po.project_id 定位项目 → 拉取项目全部历史消息 → ProjectStatus→A2aTaskState 状态映射 → 组装完整 A2aTask JSON
+   - `map_project_status_to_a2a`：项目状态到 A2aTaskState 的映射逻辑（独立函数，可单测）
+   - `a2a_callback_webhook_url`：从渠道配置读取 webhook 端点
+   - test_connection 也复用 build_a2a_task 链路（空触发消息，仅验证端点可达）
+   - A2aCallbackDao 代码量从 99 行减到 ~39 行，DAO 层仅做 HTTP POST 实现，不感知项目/消息领域逻辑
 
 (e) **ExternalAgentConfig PO 模型（单一配置事实源）**：`src/models/agent.rs` 中 ExternalAgentConfig 枚举，变体与 AgentRuntimeDao 实现 1:1 对应：
    - `Cli { command, args, work_dir, env, timeout_secs, prompt_template }` → 由 ExternalCortexDao 映射到 CodexRuntimeDao
    - `Remote { endpoint, agent_name, auth_token, timeout_secs }` → 由 ExternalCortexDao 映射到 A2aRuntimeDao
 
 新增外部 Agent 执行后端时「1 新增 ExternalAgentConfig 变体 → 2 新增 XXXRuntimeDao 实现 → 3 ExternalCortexDao.from_agent 加 match arm」3 步闭环，Domain/Handler 零改动。
+
+(f) **AgentRuntimeDal fetch_remote_task（任务快照拉取）**：`src/service/dal/agent/runtime.rs`（56 行，全新文件）新增 `AgentRuntimeDal` trait，核心方法 `async fn fetch_remote_task(&self, ctx, agent: &AgentPo, remote_task_id: &str) -> Result<A2aTask>` — 向远端 A2A Agent 发起 `tasks/get` JSON-RPC 请求，拉取指定 remote_task_id 的任务完整快照。用于：
+   - **长任务状态同步**：A2aRuntimeDao 发起异步任务后，定时轮询 fetch_remote_task 获取最新状态
+   - **任务恢复**：进程重启后通过 remote_task_id 重新拉取任务进度，避免状态丢失
+   - HR domain AgentManage trait 同步新增 fetch_remote_task 方法签名，供 Domain 层直接调用
 
 ## §2 关键文件路径表格（读代码直接跳）
 
@@ -62,7 +77,10 @@ source_files:
 | [dao/agent_runtime/codex.rs](src/service/dao/agent_runtime/codex.rs) | CLI 子进程实现 | tokio::process::Command stdin/stdout 异步；work_dir/env/timeout 配置；prompt_template {prompt} 占位替换 |
 | [dao/cortex/external.rs](src/service/dao/cortex/external.rs) | ExternalCortexDao 桥接 | from_agent(agent: &AgentPo) -> Option<Self>（按 ExternalAgentConfig 构造 runtime_dao）；think() 提取 last user prompt → invoke → ThinkResult::Final |
 | [dal/agent_a2a.rs](src/service/dal/agent_a2a.rs) | A2aAgentDal 委托 | struct A2aAgentDal { base: Arc<dyn AgentDal> }；impl AgentDal 全方法委托 base；未重写 prompt_builder（Default）|
-| [dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs) | A2aCallbackDao HTTP Push | push(ctx, message, channel, options)：查项目消息 → 映射 A2aMessages → POST webhook_url；OnceLock 单例 + factory methods |
+| [dal/message_channel.rs](src/service/dal/message_channel.rs) | A2A callback 业务组装 | `build_a2a_task(ctx, message, channel) -> Result<A2aTask>`（查项目 + 查消息历史 + 状态映射）；`map_project_status_to_a2a(ProjectStatus) -> A2aTaskState`；`a2a_callback_webhook_url(channel)`；调用 a2a_callback.push_task |
+| [dal/agent/runtime.rs](src/service/dal/agent/runtime.rs) | AgentRuntimeDal（全新） | `trait AgentRuntimeDal`；`fetch_remote_task(ctx, agent, remote_task_id) -> Result<A2aTask>`（tasks/get JSON-RPC） |
+| [dao/a2a_callback/mod.rs](src/service/dao/a2a_callback/mod.rs) | A2aCallbackDao trait（瘦身） | `push_task(ctx, webhook_url, &A2aTask) -> Result<()>`（纯 HTTP 出站，test_connection 删除） |
+| [dao/a2a_callback/http.rs](src/service/dao/a2a_callback/http.rs) | A2aCallbackDao HTTP 实现 | 仅 reqwest POST webhook_url + 序列化 A2aTask body；OnceLock 单例 factory |
 | [models/agent.rs](src/models/agent.rs) | ExternalAgentConfig 枚举 | Cli / Remote 变体；与 runtime dao 1:1 对应 |
 | 【① Design】a2a_server_architecture_design.md §二 ExternalCortexDao 桥接 | 为什么要桥接成 CortexDao（统一 think 链路、不侵入内部 brain）| docs/archive/design-archive/a2a_server_architecture_design.md |
 | 【③ Wiki 长文 1】AI Agent 管理.md §外部 Agent | 外部 Agent 配置字段含义 + 创建流程 | docs/wiki/zh/content/功能模块/AI Agent 管理/AI Agent 管理.md |
@@ -77,6 +95,7 @@ source_files:
 3. **ExternalCortexDao 的「单轮 prompt 提取策略」不可静默丢失多轮上下文**：think(messages) 时从 messages 中 rev 找到最后一条 role=user 的 content 作为 invoke 的 prompt。如果 messages 为空或无 user 消息 → 直接返回空字符串（不 panic）。调用方上层应确保至少传入一条有效 user 消息。
 4. **CLI 子进程 HOME / env 严格隔离**：不同 Agent 的 CodexRuntime 必须各自独立 HOME、独立 token 配置（如 gh auth status 互不影响）。prompt_template 提供 {prompt} 占位替换，实现层用 `format!` 简单替换，不引入模板引擎依赖。
 5. **A2aCallback Push 失败时不重试无限循环**：HTTP 推 webhook_url 失败（非 2xx/超时）→ 只写 log_warn! 告警 + 计入渠道健康度统计；**不做同步重试（阻塞消息投递链路）**，未来由独立统计/重跑消费者异步兜底。消息本身永不丢失（已经存 DB），只要最终健康检查修复渠道配置即可恢复推送。
+6. **DAO 纯出站 + DAL 业务组装（组装下沉原则）**：DAO 层职责收敛为「拿参数 → 发请求 → 收响应」，**不做任何业务组装**。需要查询项目状态、拉取消息历史、跨表关联、状态映射等业务逻辑的，一律下沉到 DAL 层实现。A2A callback 从 DAO 迁 DAL 是典型案例：push_task(webhook_url, A2aTask) 只做 POST，build_a2a_task 的项目查询 + 状态映射全部在 MessageChannelDalImpl。新增出站 DAO 时必须遵守此原则，禁止在 DAO 层引入 Domain 查询。
 
 ## §4 约束清单（最高权重，硬红线）
 
@@ -86,3 +105,11 @@ source_files:
 4. ✅ **新增执行后端 3 步强绑定**：(1) ExternalAgentConfig 枚举加变体 → (2) 对应 XXXRuntimeDao 文件（实现 AgentRuntimeDao trait）→ (3) ExternalCortexDao.from_agent 加 match arm。3 步缺一不可；**3 步全完成前禁止创建 HR Agent 创建页表单字段**（防止用户在前端创建出后端未实现的类型直接报错）。
 5. ✅ **A2aCallbackDao HTTP POST 必须设置超时（默认 10s）**：防止外部 webhook_url 响应极慢阻塞我方 AOP 消息投递消费者；reqwest Client builder 必须显式 `.timeout(Duration::from_secs(10))`，不使用默认无超时。
 6. ✅ **四类互引闭环**：本卡 source_files[] 含 3 篇 wiki 长文（Agent 管理 / Agent 实体 / Runtime 编排）+ 1 Design（a2a_server_architecture）+ Plan 占位 + 2 平行卡（协议层/Server Handler 层）；对应 Wiki 长文 cite 段回链本卡 + Design + 平行卡。
+
+## §5 历史演进
+
+| 版本 | 变更 | 触发原因 | 影响范围 |
+|------|------|----------|----------|
+| v0（初始版）| A2aCallbackDao 完整业务组装：`push(ctx, message, channel)` 内部查项目 + 查消息 + 状态映射 + POST | 初版实现，追求快速打通 callback 推送链路 | dao/a2a_callback/mod.rs + http.rs（~99 行） |
+| v0 → v1 | **A2A callback DAL 化**：push 拆为 `push_task(ctx, webhook_url, &A2aTask)` 纯出站；build_a2a_task / map_project_status_to_a2a 下沉到 MessageChannelDalImpl | DAO 层不应感知 Domain 查询（违反分层原则）；test_connection 与 push 重复组装逻辑需复用 | dao/a2a_callback/mod.rs（99→39 行）；dal/message_channel.rs 新增 ~150 行；调用方（消息投递消费者）改调 DAL |
+| v1 → v2 | **AgentRuntimeDal 新增 fetch_remote_task**：`src/service/dal/agent/runtime.rs`（全新 56 行），AgentRuntimeDal trait + fetch_remote_task(ctx, agent, remote_task_id) | A2aRuntimeDao 长任务需定时轮询远端状态；进程重启后需恢复任务进度 | 全新文件 dal/agent/runtime.rs；HR domain AgentManage trait 同步追加 fetch_remote_task 方法签名 |

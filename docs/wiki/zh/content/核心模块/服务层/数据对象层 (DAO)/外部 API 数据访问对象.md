@@ -11,6 +11,8 @@
 - [src/handlers/a2a/callback.rs](src/handlers/a2a/callback.rs)
 - [common/src/config.rs](common/src/config.rs)
 - [common/src/error/mod.rs](common/src/error/mod.rs)
+- [src/service/dal/message_channel.rs](src/service/dal/message_channel.rs)
+- [src/service/dal/agent/runtime.rs](src/service/dal/agent/runtime.rs)
 </cite>
 
 ## 目录
@@ -56,13 +58,15 @@ D1 --> L4
 
 图表来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
 - [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 - [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 
 章节来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:397-443](src/service/dal/message_channel.rs#L397-L443)
 - [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 - [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 
@@ -82,7 +86,8 @@ D1 --> L4
 - [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 - [src/service/dao/cortex/native/http.rs:204-309](src/service/dao/cortex/native/http.rs#L204-L309)
 - [src/service/dao/lark/http.rs:80-217](src/service/dao/lark/http.rs#L80-L217)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
 - [src/service/dao/slack/http.rs:39-59](src/service/dao/slack/http.rs#L39-L59)
 - [src/service/dao/webhook/http.rs:39-62](src/service/dao/webhook/http.rs#L39-L62)
@@ -112,7 +117,8 @@ Lark->>Remote : 发送飞书消息
 
 图表来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:433-441](src/service/dal/message_channel.rs#L433-L441)
 - [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 
 ## 详细组件分析
@@ -191,36 +197,45 @@ LarkDao-->>Caller : token
 - [src/service/dao/lark/http.rs:80-217](src/service/dao/lark/http.rs#L80-L217)
 - [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 
-### A2A 回调（a2a_callback/http.rs 与 handlers/a2a/callback.rs）
+### A2A 回调（a2a_callback/http.rs + MessageChannelDal 组装 + handlers/a2a/callback.rs）
 - 职责
-  - 回调 DAO：将本地项目/消息序列化为 A2aTask，POST 到远端 webhook_url，设置超时与错误映射。
-  - 回调处理器：接收远端 A2aTask，校验任务关联，增量同步 agent 消息，更新本地任务状态。
+  - 回调 DAO（`push_task`）：纯 HTTP 出站——接收已组装好的 A2aTask 快照与 webhook_url，POST 到远端，设置 10 秒超时与错误映射。不再负责业务组装。
+  - MessageChannelDal（`build_a2a_task`）：业务组装层——查询项目状态与消息历史，序列化为 A2aTask 全量快照，映射 ProjectStatus → A2aTaskState。DAO 瘦身至此完成。
+  - 回调处理器（handlers/a2a/callback.rs）：接收远端 A2aTask，校验任务关联，增量同步 agent 消息，更新本地任务状态。
 - 数据流
-  - 处理器从项目域获取任务，过滤 role=agent/assistant 的消息，计算新增条数，调用消息投递域发送到用户。
+  - 出站方向：Domain → MessageChannelDal.push_to_channel → build_a2a_task(组装) → A2aCallbackDao.push_task(webhook_url, A2aTask) → 远端。
+  - 入站方向：处理器从项目域获取任务，过滤 role=agent/assistant 的消息，计算新增条数，调用消息投递域发送到用户。
   - 更新任务标签中的已同步消息计数，必要时转换任务状态。
 - 错误与日志
-  - 缺少 webhook_url/scope_project 返回 InvalidRequest。
-  - 远端返回非 2xx 状态码，记录状态码与响应体。
+  - 缺少 webhook_url/scope_project 在 DAL 组装阶段返回 InvalidRequest。
+  - 远端返回非 2xx 状态码，DAO 层记录状态码与响应体。
   - 所有关键步骤均有日志输出。
 
 ```mermaid
 sequenceDiagram
 participant Handler as "A2A 回调处理器"
 participant Proj as "项目管理域"
-participant Msg as "消息投递域"
-participant A2ADao as "A2A 回调 DAO"
+participant MsgDal as "MessageChannelDal<br/>build_a2a_task"
+participant A2ADao as "A2A 回调 DAO<br/>push_task"
+participant Remote as "远端 A2A 服务"
 Handler->>Proj : 查询任务并校验 remote task id
-Handler->>Msg : 投递新增 agent 消息
+Handler->>MsgDal : 投递新增 agent 消息
 Handler->>Proj : 更新任务状态Working/Completed/Cancelled
-Msg-->>A2ADao : 可选：回推任务上下文由上层决定
+MsgDal->>MsgDal : build_a2a_task(查项目+消息, 组装 A2aTask)
+MsgDal->>A2ADao : push_task(webhook_url, A2aTask)
+A2ADao->>Remote : POST webhook_url
 ```
 
 图表来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
+- [src/service/dal/message_channel.rs:433-441](src/service/dal/message_channel.rs#L433-L441)
 
 章节来源
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:1-85](src/service/dao/a2a_callback/http.rs#L1-L85)
+- [src/service/dal/message_channel.rs:445-504](src/service/dal/message_channel.rs#L445-L504)
+- [src/service/dal/message_channel.rs:585-607](src/service/dal/message_channel.rs#L585-L607)
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
 
 ### Slack / Webhook / 微信（占位实现）
@@ -237,7 +252,8 @@ Msg-->>A2ADao : 可选：回推任务上下文由上层决定
 
 ## 依赖关系分析
 - 模块耦合
-  - A2A 回调处理器依赖项目域与消息域；A2A 回调 DAO 依赖项目域与消息域以构造 A2aTask。
+  - A2A 回调处理器依赖项目域与消息域；MessageChannelDal 依赖 ProjectDao + MessageDao 组装 A2aTask（状态映射 + 消息快照），A2aCallbackDao 瘦身仅保留纯 HTTP 出站。
+  - AgentRuntimeDal 依赖 Agent 模型 + A2aRuntimeDao，按 Agent 运行时配置临时构造出站客户端（`fetch_remote_task`）。
   - 飞书 DAO 依赖全局配置（LarkConfig）与 reqwest 客户端。
   - OpenAI 兼容 HTTP 依赖模型提供者配置（ModelProviderPo）与通用错误模型。
 - 外部依赖
@@ -260,7 +276,9 @@ Cortex --> Prov["ModelProviderPo"]
 
 图表来源
 - [src/handlers/a2a/callback.rs:17-198](src/handlers/a2a/callback.rs#L17-L198)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
+- [src/service/dal/agent/runtime.rs:15-56](src/service/dal/agent/runtime.rs#L15-L56)
 - [src/service/dao/lark/http.rs:219-289](src/service/dao/lark/http.rs#L219-L289)
 - [src/service/dao/cortex/native/http.rs:82-202](src/service/dao/cortex/native/http.rs#L82-L202)
 - [common/src/config.rs:490-549](common/src/config.rs#L490-L549)
@@ -302,11 +320,36 @@ Cortex --> Prov["ModelProviderPo"]
 
 章节来源
 - [src/service/dao/lark/http.rs:102-153](src/service/dao/lark/http.rs#L102-L153)
-- [src/service/dao/a2a_callback/http.rs:41-157](src/service/dao/a2a_callback/http.rs#L41-L157)
+- [src/service/dao/a2a_callback/http.rs:52-85](src/service/dao/a2a_callback/http.rs#L52-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
 - [src/service/dao/cortex/native/http.rs:130-202](src/service/dao/cortex/native/http.rs#L130-L202)
 - [src/service/dao/slack/http.rs:39-59](src/service/dao/slack/http.rs#L39-L59)
 - [src/service/dao/webhook/http.rs:39-62](src/service/dao/webhook/http.rs#L39-L62)
 - [src/service/dao/wechat/http.rs:39-59](src/service/dao/wechat/http.rs#L39-L59)
+
+## 历史演进
+
+### A2A callback DAL 化
+- 改动
+  - `src/service/dao/a2a_callback/http.rs` 瘦身：原 `push(ctx, message, channel)` 接口将项目/消息查询、状态映射、消息序列化全部移入 DAL 层；DAO 仅保留纯 HTTP 出站 `push_task(ctx, webhook_url, task)`，从 157 行收缩至 85 行。
+  - 新增 `src/service/dal/message_channel.rs` 作为消息渠道统一 DAL：`MessageChannelDalImpl` 持有私有 DAO 字段（含 `a2a_callback_dao`），对外暴露 `deliver_message` 分发接口。A2A 组装逻辑封装在私有方法 `build_a2a_task`（L449-L504），负责查 ProjectPo + MessagePo、映射 `ProjectStatus → A2aTaskState`、拼装 A2aMessage 列表。
+  - 分发路径变为：Domain → MessageChannelDal.push_to_channel → build_a2a_task → A2aCallbackDao.push_task → 远端 webhook_url。
+- 收益
+  - DAO 层职责单一：纯 HTTP 出站，与业务组装解耦。
+  - DAL 层统一管理渠道分发，新增渠道只需在 `MessageChannelDalImpl` 加字段 + match 分支。
+
+### AgentRuntimeDal 新增
+- 改动
+  - 新增 `src/service/dal/agent/runtime.rs`：`AgentRuntimeDal` trait 暴露 `fetch_remote_task(ctx, agent, remote_task_id)`，实现按 Agent 的 `remote` 运行时配置临时构造 `A2aRuntimeDao` 并调用 `tasks/get`。
+  - Domain 层 Producer/Consumer 等组装层不再直捅 `dao/agent_runtime`，统一走 DAL 接口。
+- 收益
+  - Agent 运行时出站能力通过 DAL 隔离，Domain 层无需感知 DAO 构造细节。
+
+章节来源
+- [src/service/dao/a2a_callback/http.rs:1-85](src/service/dao/a2a_callback/http.rs#L1-L85)
+- [src/service/dal/message_channel.rs:449-504](src/service/dal/message_channel.rs#L449-L504)
+- [src/service/dal/message_channel.rs:397-443](src/service/dal/message_channel.rs#L397-L443)
+- [src/service/dal/agent/runtime.rs:1-56](src/service/dal/agent/runtime.rs#L1-L56)
 
 ## 结论
 本仓库的外部 API 数据访问对象以 DAO 层为核心，围绕 OpenAI 兼容模型调用、飞书渠道、A2A 回调实现了稳定可靠的 HTTP 封装与第三方集成。当前实现具备基础鉴权、错误映射与日志记录能力；在连接池复用、自动重试与限流方面仍有优化空间。建议逐步完善 Slack/Webhook/微信渠道，并在通用 HTTP 层引入重试与限流策略，以提升整体鲁棒性与可观测性。

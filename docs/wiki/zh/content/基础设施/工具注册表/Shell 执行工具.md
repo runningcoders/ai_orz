@@ -3,12 +3,15 @@
 <cite>
 **本文引用的文件**
 - [shell_exec.rs](src/pkg/tool_registry/shell_exec.rs)
+- [shell_env.rs](src/pkg/tool_registry/shell_env.rs#L1-L348)
+- [shell_env_tests.rs](src/pkg/tool_registry/shell_env_tests.rs)
 - [tool_security.rs](src/pkg/tool_registry/tool_security.rs)
 - [builtin.rs](src/pkg/tool_registry/builtin.rs)
 - [mod.rs](src/pkg/tool_registry/mod.rs)
 - [tool.rs](src/models/tool.rs)
-- [config.rs](common/src/config.rs)
+- [config.rs](common/src/config.rs#L270-L342)（ShellConfig + HomeMode）
 - [shell_tests.rs](src/pkg/tool_registry/shell_tests.rs)
+- [models/tool.rs](common/src/models/tool.rs#L23-L47)（SHELL_TOOLCHAIN_HOME_VARS）
 </cite>
 
 ## 目录
@@ -40,6 +43,7 @@ Shell 执行工具位于工具注册子系统内，遵循“Adapter → Domain �
 - tool.rs：定义 CoreTool 抽象、ToolPo/Tool 实体以及工具元数据模型。
 - config.rs：应用配置，提供 base_data_path 等基础路径，用于日志与产物落盘。
 - shell_tests.rs：针对配置解析、环境变量过滤、参数解析的单元测试。
+- shell_env.rs：**三条起子进程链路的统一环境出口**。`shell_exec`、声明式 `shell_tool`、MCP stdio 这三条链路以前各写各的环境处理——白名单过滤 + HOME 改写 / 什么都不做 / `env_clear()` 零继承。本模块把「该给子进程哪些环境变量」收口到一处，通过 `shell_env::resolve(ShellEnvRequest)` 产出显式注入 map；另提供 `home_for(HomeMode, user_id, base_root)` 处理 HOME 策略（Isolated / Inherit）、`toolchain_env_injections(names)` 在隔离 HOME 下用 `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS` 表（7 条 nvm/cargo/rustup/pyenv/rbenv/go/npm 映射）把官方工具链变量指回真实 HOME、`completed_path(...)` 实现 PATH 补全（支持 `~` 前缀、`*` 单段通配、仅追加存在且尚未包含的目录），以及 `git_ssh_command_injection()` 在 isolated HOME 下用真实 HOME 的 `known_hosts` 补齐 git over ssh 缺口。
 
 ```mermaid
 graph TB
@@ -167,14 +171,37 @@ Trunc --> |否| WriteLog2["写入完整日志"] --> ReturnOK
 
 ### 命令参数注入与环境变量设置
 - 参数注入：通过 ShellExecParams 接收 command、working_dir、timeout_ms、max_output_size_bytes、background、env。
-- 环境变量：
-  - 继承白名单：仅允许父进程中的指定环境变量名（默认包含 PATH）。
-  - 敏感过滤：即使出现在白名单中，也会过滤掉包含敏感关键字的键名（如 password、token、secret 等）。
+- 环境变量（经 `shell_env::resolve` 收口）：
+  - 兼容优先：子进程**继承服务进程全部环境变量**（有意选择而非遗漏——见 `shell_env.rs` 模块文档的环境变量策略说明），`allowed_env` 只用来显式带出白名单里的键；敏感键名（password/token/secret 等 12 个）即使在白名单里也会被剔除。
   - 额外覆盖：支持通过 env 字段注入额外键值对，覆盖或新增环境变量。
+  - PATH 补全：通过 `shell_env::completed_path` 自动把 `/opt/homebrew/bin`、`~/.nvm/versions/node/*/bin` 等补到尾部，补全目录可由 ToolPo.config `path_additions` 覆盖或使用 `common::config::ShellConfig` 内置默认。
+  - 身份变量：结构性注入 `AI_ORZ_TASK_ID` / `AI_ORZ_AGENT_ID`（`shell_policy::ENV_TASK_ID` / `ENV_AGENT_ID`）供 git commit-msg hook 等原生扩展点读取。
+
+#### shell_env 模块职责与 ShellEnvRequest 结构
+shell_env 把「给子进程哪些环境变量」这一件事从 `shell_exec` / 声明式 `shell_tool` / MCP stdio 三条链路里收口到一处。三条链路的差异通过 `ShellEnvRequest<'a>` 的可选字段表达，由各调用方按需填：
+
+```rust
+pub struct ShellEnvRequest<'a> {
+    pub allowed_env:   &'a [String],               // 显式带出的变量（非白名单）
+    pub path_additions: Option<&'a [String]>,      // None = ShellConfig 默认
+    pub extra_env:     Option<&'a HashMap<String,String>>, // 调用方额外指定
+    pub task_id:       Option<&'a str>,            // → AI_ORZ_TASK_ID
+    pub agent_id:      Option<&'a str>,            // → AI_ORZ_AGENT_ID
+}
+```
+
+`resolve(request)` 的执行顺序：白名单过滤 → 合并 extra（最高优先级）→ PATH 补全（只追加存在且尚未包含的目录，支持 `~` 前缀 + 单段 `*` 通配）→ 注入身份变量。HOME 不在本函数职责内——`shell_env::home_for(HomeMode, user_id, base_root)` 单独处理 Isolated / Inherit 两种策略；隔离 HOME 下再由 `shell_exec` 叠加 `toolchain_env_injections(toolchain_names)`（遍历 `common::models::tool::SHELL_TOOLCHAIN_HOME_VARS` 7 条映射）和 `git_ssh_command_injection()`（补齐 `known_hosts`）。MCP stdio 是唯一零继承链路，走 `env_clear()` 后只注入 `inherited_path()`（仅 PATH，红线：凭据隔离）。
 
 章节来源
 - [shell_exec.rs:20-87](src/pkg/tool_registry/shell_exec.rs#L20-L87)
 - [shell_exec.rs:210-254](src/pkg/tool_registry/shell_exec.rs#L210-L254)
+- [shell_env.rs:1-25](src/pkg/tool_registry/shell_env.rs#L1-L25)
+- [shell_env.rs:63-77](src/pkg/tool_registry/shell_env.rs#L63-L77)
+- [shell_env.rs:79-107](src/pkg/tool_registry/shell_env.rs#L79-L107)
+- [shell_env.rs:153-190](src/pkg/tool_registry/shell_env.rs#L153-L190)
+- [shell_env.rs:203-270](src/pkg/tool_registry/shell_env.rs#L203-L270)
+- [common/src/models/tool.rs:29-42](common/src/models/tool.rs#L29-L42)
+- [common/src/config.rs:289](common/src/config.rs#L289)
 - [shell_tests.rs:43-102](src/pkg/tool_registry/shell_tests.rs#L43-L102)
 
 ### 工作目录控制
@@ -293,14 +320,19 @@ CoreTool --> Security["tool_security(fs/sensitive)"]
 
 ## 故障排查指南
 - 工作目录不允许：检查 working_dir 是否为 base_data_path 或 additional_allowed_paths 的子路径；若为绝对路径且不在允许范围内，将返回 require_confirmation。
-- 环境变量缺失：确认 allowed_env 白名单是否包含所需变量；必要时在 env 中注入额外变量。
+- 环境变量缺失：子进程继承服务进程全部环境变量（兼容优先策略），`allowed_env` 仅用于额外显式带出；若缺某个变量，直接在 env 字段注入即可。敏感键名（password/token/secret 等 12 个）即使在白名单里也会被剔除，但父进程中的同名变量仍会被继承。
 - 超时错误：检查 timeout_ms 是否过小；后台任务可在日志中观察进度。
 - 输出过大：若 truncated=true，请查看日志文件获取完整输出。
 - 进程启动失败：检查命令是否存在、工作目录权限、Shell 可用性与环境变量完整性。
+- **PATH not found / command not found**：服务进程 PATH 往往只有 `/usr/bin:/bin:/usr/sbin:/sbin`（IDE / launchd 拉起时不会加载 `.zshrc`），shell_exec 用 `/bin/sh -c` 非交互执行也不会读 rc 文件，nvm / pyenv / cargo 这类靠 rc 注入 PATH 的版本管理器会全部失效。`shell_env::resolve` 会自动通过 `completed_path` 补全，补全目录来自 ToolPo.config `path_additions` 或 `common::config::ShellConfig` 内置默认。如果补全目录配置错误或 glob 通配（单段 `*`）没能匹配真实版本目录（例如 `~/.nvm/versions/node/*/bin` 下没找到修改时间最新的那个），命令仍会找不到——可查 ToolPo.config 的 path_additions 实际值、或运行 `echo $PATH` 确认补全是否生效；通配匹配失败时 `expand_wildcard` 静默返回空，不会报错。隔离 HOME 模式下，cargo/nvm/pyenv 还要看 `toolchain_env_injections` 是否产出（只在真实 HOME 下对应目录存在时才注入），可在日志里搜 `AI_ORZ_TASK_ID` 或直接跑 `echo $CARGO_HOME` 验证。
 
 章节来源
 - [shell_exec.rs:264-279](src/pkg/tool_registry/shell_exec.rs#L264-L279)
 - [shell_exec.rs:385-466](src/pkg/tool_registry/shell_exec.rs#L385-L466)
+- [shell_env.rs:1-35](src/pkg/tool_registry/shell_env.rs#L1-L35)
+- [shell_env.rs:141-169](src/pkg/tool_registry/shell_env.rs#L141-L169)
+- [shell_env.rs:277-332](src/pkg/tool_registry/shell_env.rs#L277-L332)
+- [common/src/config.rs:289](common/src/config.rs#L289)
 - [shell_tests.rs:43-102](src/pkg/tool_registry/shell_tests.rs#L43-L102)
 
 ## 结论

@@ -8,6 +8,12 @@ scope:
   - "src/producer/message_channel.rs"
   - "src/service/dal/lark.rs"（LarkMessageChannelDal 实现 trait）
   - "src/service/dal/message_channel.rs"
+  - "src/service/domain/message/inbound.rs"（MessageDomain 入站门面：InboundSource 枚举 + MessageInboundAdapt trait，2026-09 新增）
+  - "src/service/domain/message/mod.rs"（MessageDomainImpl 新增 lark_dal/wechat_dal 字段，inbound() 入口）
+  - "src/consumer/lark_inbound.rs"（无状态 Consumer：`#[derive(Default)]`，统一经 domain 门面适配 + 中台回调投递）
+  - "src/consumer/wechat_inbound.rs"（同上，Async 模式，不阻塞 DAO 读循环）
+  - "src/consumer/mod.rs"（init 注册：Consumer::new() 零参数，不再注入 DAL 弱引用）
+  - "src/service/dal/wechat/impl.rs"（WechatDalImpl 瘦身：移除自存 callback 字段，start 参数 _callback 不再持有）
 source_files:
 
   - src/pkg/adapter/message.rs#L46-L78（MessageInboundAdapter trait：4 方法 channel_type()/start(callback)/stop()/is_running()；async_trait 标注；start 接收 Arc<dyn MessageAdapterCallback> 投递回调；重复启动 Conflict 错误）
@@ -23,8 +29,16 @@ source_files:
   - src/service/dal/lark.rs#L632-L710（LarkMessageChannelDal 实现 MessageInboundAdapter：channel_type = Lark；start = running RwLock 检查+置位+回调注入+启用的飞书渠道按 app_id 聚合+resolve_channel_credentials+调用 lark_dao 开启 WS；stop = running=false + 断开全部 WS；listener_stats() 透传 metrics 供系统健康面板）
 
   - src/service/dal/message_channel.rs#L329-L367（MessageChannelDalImpl push_to_channel：match ChannelType 分发出站调用（纯分发无 trait，漏加编译直接报错）。入站链路由 LarkMessageChannelDal 独立实现 MessageInboundAdapter，两者对称但独立）
-  - src/service/dal/wechat/impl.rs#L369-L437（WechatDalImpl 实现 MessageInboundAdapter：channel_type = Wechat；start = 渠道数据驱动逐渠道建长轮询 + resolve_channel_credentials + PollLoopRegistry.ensure；stop = stop_all_polling；单渠道轮询失败不阻塞其他渠道启动）
+  - src/service/dal/wechat/impl.rs#L37-L46（WechatDalImpl struct：message_channel_dal / wechat_dao / credential_dao / running —— 已移除自存的 `callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>` 字段，投递回调统一由中台登记持有）
+  - src/service/dal/wechat/impl.rs#L361（start(&self, _callback)：callback 参数用 `_` 前缀标记不再自存，入站投递回调统一从 `pkg::adapter::message::registry().current_callback()` 取用）
   - src/service/dal/wechat/mod.rs#L48-L63（WechatDalImpl.init 注册到 MessageAdapterRegistry：无条件注册，微信启停由渠道数据驱动）
+
+  - src/service/domain/message/inbound.rs#L1-L66（【全新 2026-09 新增】入站消息适配门面：`InboundSource` 枚举收敛 Lark/Wechat 两种外部事件 + `MessageInboundAdapt` trait 定义 adapt_inbound 入口；MessageDomainImpl 通过该 trait 统一经 match source 分发到各渠道 DAL 的 adapt_lark / adapt_wechat 方法，返回 `Option<AdaptedMessage>` —— 过滤/未绑定时返回 None）
+  - src/service/domain/message/mod.rs#L31（pub use inbound::{InboundSource, MessageInboundAdapt}）+ mod.rs#L45-L62（`new()` 构造函数新增 lark_dal / wechat_dal 两个 Arc 注入）+ mod.rs#L82-L112（MessageDomainImpl struct 新增 lark_dal / wechat_dal 字段）+ mod.rs#L123-L125（MessageDomain::inbound() → &dyn MessageInboundAdapt 入口）
+
+  - src/consumer/lark_inbound.rs#L1-L73（【简化后】无状态 Consumer：`#[derive(Default)] LarkInboundConsumer` 零字段，无 DAL 引用。on_event 三步：① deserialize LarkInboundEvent → ② `message_domain::domain().inbound().adapt_inbound(ctx, InboundSource::Lark(...))` 适配 → ③ `crate::pkg::adapter::message::registry().current_callback()` 取回调投递。Async 模式不阻塞 WS 读循环。转换失败仅 log_error 不 nack 重试）
+  - src/consumer/wechat_inbound.rs#L1-L80（【简化后】同上，`WechatInboundConsumer` 无状态，事件类型 WechatInboundEvent，Async 模式，转换失败记录 channel_id + message_key 便于排查）
+  - src/consumer/mod.rs#L21-L58（init 注册所有 consumer：`Arc::new(xxx::XxxConsumer::new())` 零参数构造，不再向 consumer 注入 DAL 弱引用；lark_inbound / wechat_inbound 行注释明确标注"适配走 message domain 门面，投递回调经中台取用"）
   - 'common/src/enums/channel_type.rs:Ln-Lm（ChannelType enum：Lark/Wechat/Slack/Email/Webhook/A2aCallback 六渠道，与出站一致；新增入站渠道时扩展此枚举，MessageInboundAdapter 匹配）'
 
   - docs/archive/design-archive/message_channel_design.md
@@ -78,10 +92,61 @@ source_files:
      ▲  ▲
      │  │  各渠道 DAL 实现 MessageInboundAdapter，init 时注册
  DAL 层：LarkMessageChannelDal / 未来 SlackWsDal / WechatWxDal ...
+
+ ┌─────────────────────────────────────────────────────────┐
+ │ 【2026-09 新增】MessageDomain 入站门面层（domain 层）       │
+ │   - InboundSource 枚举：Lark(Box<LarkInboundEvent>)        │
+ │     + Wechat(Box<WechatInboundEvent>) —— 收敛外部事件类型   │
+ │   - MessageInboundAdapt trait：adapt_inbound(ctx, source)  │
+ │     → Result<Option<AdaptedMessage>>                      │
+ │   - MessageDomainImpl 统一持有 lark_dal + wechat_dal，      │
+ │     通过 inbound() 方法暴露 trait 入口                      │
+ └─────────────────────────────────────────────────────────┘
+     ▲
+     │  Consumer → domain 门面 → 渠道 DAL（统一经枚举分发）
+ ┌─────────────────────────────────────────────────────────┐
+ │ 【2026-09 简化后】Consumer 层：无状态化                    │
+ │   - LarkInboundConsumer / WechatInboundConsumer             │
+ │     均为 #[derive(Default)] 零字段，不再持有 DAL 引用        │
+ │   - on_event 两步走：                                       │
+ │     ① message_domain::domain().inbound().adapt_inbound()   │
+ │     ② registry().current_callback().on_message()           │
+ │   - consumer init 注册零参数：Consumer::new()，             │
+ │     不再注入 DAL 弱引用                                     │
+ └─────────────────────────────────────────────────────────┘
 ```
 - **pkg/adapter（中台）** = 纯基础设施，没有任何业务类型引用。它不知道什么是"Agent"、"用户"、"MessagePo"，只知道"渠道类型 + AdaptedMessage + 回调"。所有类型在 pkg/adapter 内定义。
 - **DAL 层（渠道实现）** = 把飞书 WS 事件 / Slack SocketMode 事件 / 微信 回调 转成统一 AdaptedMessage，调用 callback.on_message()。DAL 依赖 pkg/adapter（接口层），不反向依赖。
 - **producer（消息通道生产者）** = 启动时注入回调（`on_message(adapted_msg) → 找渠道 → 找用户/Agent → 发布 NewMessage AOP 事件`），调用 MessageAdapterRegistry.start_all 让所有渠道一起启动；优雅关闭调用 stop_all。
+
+- **Consumer（组装层，2026-09 简化后）** = 原来 lark_inbound / wechat_inbound consumer 都持有渠道 DAL 弱引用，consumer.init() 时注入。现在变成无状态 `#[derive(Default)]`，consumer 不再持有任何 DAL 引用。统一经 `message_domain::domain().inbound().adapt_inbound(ctx, InboundSource::Lark/Wechat(...))` 走 domain 门面做协议转换 + 渠道定位 + 用户映射；投递回调统一经 `crate::pkg::adapter::message::registry().current_callback()` 从中台登记取。consumer init 时零参数构造：`LarkInboundConsumer::new()` / `WechatInboundConsumer::new()`。Async 模式（慢业务不阻塞 DAO 读循环）。
+
+**Consumer 无状态化 + domain 门面消费模式**：
+```rust
+// 简化前：consumer 持有 DAL 弱引用
+// struct LarkInboundConsumer { lark_dal: Weak<LarkDalImpl> }
+// async fn on_event(&self, ...) { let dal = self.lark_dal.upgrade().await; dal.adapt_lark(...); }
+
+// 简化后：consumer 零字段
+#[derive(Default)]
+pub struct LarkInboundConsumer;
+
+async fn on_event(&self, ctx: RequestContext, event: LarkInboundEvent) -> Result<()> {
+    // ① 入站适配：domain 门面收敛
+    let adapted = message_domain::domain()
+        .inbound()
+        .adapt_inbound(ctx, InboundSource::Lark(Box::new(event)))
+        .await?;
+
+    // ② 投递：中台回调统一入口
+    if let Some(msg) = adapted {
+        crate::pkg::adapter::message::registry().current_callback().unwrap().on_message(msg).await?;
+    }
+    Ok(())
+}
+```
+- **InboundSource 枚举收敛**：新入站渠道（如 Slack）只需在 `InboundSource` 加 variant + 在 `MessageInboundAdapt::adapt_inbound` 的 match 加分支，consumer 层零改动。比之前 consumer 各持有各 DAL 引用的方式更易扩展。
+- **WechatDalImpl 瘦身**：移除了自存的 `callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>>` 字段——投递回调统一由中台 registry 登记持有，消费侧经中台取用。MessageInboundAdapter::start 的 callback 参数仍保留（trait 契约），但 WechatDalImpl 用 `_callback` 标记不再自存。
 
 **新增入站渠道的 3 步流程（中台设计的核心目标 = 降低扩展成本）**：
 1. DAL 层实现 `MessageInboundAdapter` trait 的 4 方法（channel_type/start/stop/is_running）
@@ -129,9 +194,15 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 |------|------|-------------|
 | [pkg/adapter/message.rs](/src/pkg/adapter/message.rs) | 中台：trait + 注册中心 | MessageInboundAdapter ~L46；MessageAdapterCallback ~L36；MessageAdapterRegistry（start_all/stop_all/register）~L82 |
 | [pkg/adapter/mod.rs](/src/pkg/adapter/mod.rs) | 中台：父层 AdaptedMessage + AdapterRegistry 通用注册表 | AdaptedMessage ~L21；AdapterRegistry HashMap<ChannelType, Arc<dyn Any>> ~L47 |
+| [service/domain/message/inbound.rs](/src/service/domain/message/inbound.rs) | 【2026-09 新增】domain 层入站适配门面 | InboundSource 枚举（Lark/Wechat）L24；MessageInboundAdapt trait L36；impl 分发到 lark_dal.adapt_lark / wechat_dal.adapt_wechat L51 |
+| [service/domain/message/mod.rs](/src/service/domain/message/mod.rs) | domain 层：MessageDomainImpl 聚合含 lark_dal/wechat_dal | MessageDomainImpl struct 新增字段 L82；new() 构造注入 L45；inbound() trait 入口 L123 |
 | [dal/lark.rs](/src/service/dal/lark.rs) | Lark 渠道：MessageInboundAdapter 实现 + start 多应用聚合 | impl MessageInboundAdapter for LarkMessageChannelDal ~L632；start 内：query_enabled_lark_channels + 按 app_id 聚合去重 + resolve_channel_credentials + lark_dao 开 WS |
+| [dal/wechat/impl.rs](/src/service/dal/wechat/impl.rs) | 微信渠道：MessageInboundAdapter 实现（**瘦身**）| WechatDalImpl struct L37：已无自存 callback 字段；start(&self, _callback) L361：callback 不再持有，统一经 registry().current_callback() 取用 |
 | [dal/message_channel.rs](/src/service/dal/message_channel.rs) | 消息渠道 DAL：出站分发（对照参考）| push_to_channel ChannelType match 纯分发（入站走独立 trait）~L329 |
-| [producer/message_channel.rs](/src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调 |
+| [consumer/lark_inbound.rs](/src/consumer/lark_inbound.rs) | 【简化后】无状态 Lark 入站 Consumer | `#[derive(Default)] LarkInboundConsumer` L19；on_event 两步：domain 门面适配 → registry 回调投递 L43-L72 |
+| [consumer/wechat_inbound.rs](/src/consumer/wechat_inbound.rs) | 【简化后】无状态微信入站 Consumer | 同上 L18-L79 |
+| [consumer/mod.rs](/src/consumer/mod.rs) | Consumer 注册中心：零参数构造 | init() 注册 LarkInboundConsumer::new() / WechatInboundConsumer::new() L21-L58；不再注入 DAL 弱引用 |
+| [producer/message_channel.rs](/src/producer/message_channel.rs) | AOP 消息通道生产者：注入回调 + start_all/stop_all + AdaptedMessage → NewMessageEvent 映射 | init 阶段注册回调（回调被中台 registry 登记，consumer 经 current_callback() 取用）|
 | 【① Design】message_channel_design.md（入站+出站全链路架构）| 入站适配器中台 vs 出站 push_to_channel 双路径对称设计 | docs/archive/design-archive/message_channel_design.md |
 | 【③ Wiki 长文 1】消息渠道适配器.md | 新增入站渠道三步流程（用户视角） | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/消息渠道适配器.md |
 | 【③ Wiki 长文 2】多渠道消息系统.md | 入站+出站全链路图 | docs/wiki/zh/content/项目概述/核心功能特性/多渠道消息系统/多渠道消息系统.md |
@@ -147,6 +218,9 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 3. **ChannelType 枚举与 MessageChannel 出站共用同一个**：新增渠道（如 DingTalk）时，先扩展 common::ChannelType，然后出站写 push_to_channel match，入站写 MessageInboundAdapter 实现，两个路径都写齐全。
 4. **一个 ChannelType 只允许注册一个 MessageInboundAdapter**（但该适配器内部可以管理 N 个子连接、N 个 app_id）。如果 register 重复注册同类型，Registry 内部返回错误（保护扩展者，防止 init 两次注册）。
 5. **AdaptedMessage 永远是 owned 结构**，不借用外部消息对象池（外部消息可能是 WS 事件中的借用字段，生命周期很短）。转换时全部 clone 成 owned 字符串。
+6. **Consumer 无状态化是架构硬要求（2026-09 引入）**：所有入站 consumer（LarkInboundConsumer / WechatInboundConsumer / 未来 SlackInboundConsumer）必须 `#[derive(Default)]` 零字段，**禁止** consumer 持有任何渠道 DAL 引用（弱引用或强引用均禁止）。渠道 DAL 的获取统一经 `message_domain::domain().inbound()` 门面间接路由，consumer init 时零参数注册 `Consumer::new()`。
+7. **Domain 门面统一消费模式**：新增入站渠道时，扩展者必须：① 在 `InboundSource` 加 variant ② 在 `MessageInboundAdapt::adapt_inbound` match 加分支 ③ MessageDomainImpl 构造函数加新 DAL 字段。**禁止** consumer 层绕过 domain 门面直连渠道 DAL。这条约定的目的是把渠道分发逻辑集中在 domain 层，不分散在各 consumer 中。
+8. **投递回调单一来源（2026-09 引入）**：consumer 投递 AdaptedMessage 统一经 `pkg::adapter::message::registry().current_callback()` 取用，**禁止** consumer 自行持有或构造 MessageAdapterCallback。WechatDalImpl 已移除自存 callback 字段，lark_dao / 未来 slack_dao 等也应遵循"只发布事件、不持有回调"的模式。
 
 ## §4 约束清单（最高权重，硬红线）
 
@@ -156,3 +230,15 @@ producer 侧拿到 AdaptedMessage 后：按 `(channel_type, external_user_id)` �
 4. ✅ **AdaptedMessage.external_user_id + channel_type 组合必须全局唯一映射内部用户**：producer 侧查找逻辑依赖 (ChannelType + external_id) → MessageChannel → user_id；没找到时 log_warn 丢弃不 panic，外部用户如果没在系统内绑定渠道就只是无法收到响应，不应该抛错。
 5. ✅ **Lark 渠道实现中 resolve_channel_credentials 返回 None 时要 warn 并跳过该渠道**：管理员渠道创建时引用的凭证被删除了 → 不能 panic、不能让启动失败；记录一条"channel id={} lark_credential_id={} 找不到凭证"跳过即可。
 6. ✅ **四类互引闭环**：本卡 source_files[] 含 5 篇 wiki 长文 + 1 Design + Plan 占位 + 3 张平行卡（身份凭证 CRUD / AES 加密 / Lark WS P2P 入站）；对应 Wiki 长文 cite 段回链本卡 + message_channel_design Design + 3 张平行卡。
+
+## §5 历史演进
+
+| 日期 | 事件 | 变更内容 | 关联文件 |
+|------|------|---------|---------|
+| 2026-09 之前 | 初版 | MessageInboundAdapter trait + MessageAdapterRegistry 全局注册 + start_all/stop_all 生命周期。consumer（lark_inbound / wechat_inbound）各自持有渠道 DAL 弱引用，on_event 内 upgrade 后直连 DAL 做 adapt，投递回调也自存一份 | src/pkg/adapter/message.rs；src/consumer/lark_inbound.rs（旧版含 Weak<LarkDalImpl> 字段）；src/consumer/wechat_inbound.rs（旧版含 Weak<WechatDalImpl> 字段）；src/service/dal/wechat/impl.rs（旧版含 callback: RwLock<Option<Arc<dyn MessageAdapterCallback>>> 自存字段） |
+| **2026-09（本次增量）** | **Consumer 架构简化 + Domain 门面层引入** | 三件事同时落地：① 新增 `src/service/domain/message/inbound.rs`（66 行）：InboundSource 枚举收敛 Lark/Wechat + MessageInboundAdapt trait adapt_inbound 入口 ② MessageDomainImpl 构造新增 lark_dal / wechat_dal 字段，统一经 domain 门面消费 ③ consumer 无状态化：`#[derive(Default)]` 零字段，consumer init 零参数构造；适配走 domain 门面、投递回调统一经 registry().current_callback() 取用；WechatDalImpl 移除自存 callback 字段 | src/service/domain/message/inbound.rs（全新）；src/service/domain/message/mod.rs（新增字段 + new() 构造 + inbound() trait 入口）；src/consumer/lark_inbound.rs / wechat_inbound.rs（零字段重写）；src/consumer/mod.rs（init 注册零参数）；src/service/dal/wechat/impl.rs（移除 callback 字段） |
+
+**本次简化的核心收益**：
+- Consumer 测试成本大幅降低：无状态 struct 无需构造依赖、无需处理 Weak upgrade 错误分支，单元测试直接 `LarkInboundConsumer::new().on_event(...)` 即可。
+- 新渠道扩展更收敛：之前要"加 DAL 字段 → 改 consumer init → 改 consumer 持有 → 改 on_event 分发"四步；现在只需"InboundSource 加 variant → adapt_inbound 加 match 分支 → MessageDomainImpl 加字段"三步，**consumer 层零改动**。
+- 回调所有权更清晰：之前 WechatDalImpl 自存 callback、consumer 也可能持有一份（不同持有方导致"谁负责释放"不明确）；现在统一由中台 registry 登记持有，consumer / DAL 均不直接持有，生命周期单一可控。

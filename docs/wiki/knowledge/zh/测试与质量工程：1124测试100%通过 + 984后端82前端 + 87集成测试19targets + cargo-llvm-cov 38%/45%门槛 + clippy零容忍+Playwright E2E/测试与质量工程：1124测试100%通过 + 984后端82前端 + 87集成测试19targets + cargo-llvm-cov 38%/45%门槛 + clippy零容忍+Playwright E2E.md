@@ -13,6 +13,7 @@ scope:
   - ".github/workflows/**"
   - "frontend/tests/**"
   - "common/**"
+  - "src/pkg/request_context_test_support.rs"
 source_files:
   - tests/common/env.rs#L1-L120 (init_full_test_env：严格对齐真实启动顺序 = pkg::init_all → service::init → producer::init → consumer::init → service::init_base_data().await；顺序错会导致默认 cron trigger 没写入，集成测试断言失败)
   - tests/common/factories/agent_factory.rs (测试工厂：AgentFactory + create_test_agent(ctx) → 随机 id + 默认 status=Active + 默认 ModelProvider InMemoryMock；所有 Agent 集成测试用工厂造数据，不手写 UserPo/AgentPo)
@@ -36,6 +37,7 @@ source_files:
   - docs/wiki/zh/content/基础设施/持续集成与发布工作流.md（CI 四阶段：check/test/coverage/build + PR coverage threshold 38% + main branch 45% + cargo-llvm-cov 运行 `--fail-under-lines` 严格模式）
   - 【平行卡 1】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8 类业务消费者注册.md（8 类消费者注册顺序测试：a2a_flow 集成测试断言 CronTriggerConsumer 必须在 AgentLoopConsumer 之后 register）
   - 【平行卡 2】docs/wiki/knowledge/zh/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）/三位一体混合搜索：FTS5 关键词 + 向量语义 + 合并排序（6 DAO 统一 search 模式 + 向量失败降级）.md（vector_degradation 集成测试 target：向量存储 Mock 失败 → 搜索自动降级 FTS5-only 断言结果非空 score>0）
+  - src/pkg/request_context_test_support.rs#L1-L15（测试基建统一入口 init_service_for_test()：幂等一次调用搞定 config → dao::init_all → dal::init_all → domain::init 全链初始化，解决 domain 测试 message_channel → lark/wechat/slack/email/webhook/a2a_callback 依赖链漏调 panic）
 ---
 
 ## §1 概述
@@ -45,6 +47,7 @@ source_files:
 - **974 测试 100% 通过率分层（金字塔自上而下）**（测试指南总览）：① 后端 984 = DAO/DAL/Domain/Handler/Pkg 单元测试 897（单个文件独立，每个文件顶部 `#[cfg(test)] mod tests`）+ 集成测试 87（跨模块，tests/integration/ 每个 .rs 一个独立 test target，互不污染）；② 前端 82（frontend/tests/，cargo test -p frontend 编译为 wasm32-unknown-unknown，通过 Dioxus Runtime mock DOM）；③ common crate 58（DTO 序列化反序列化 roundtrip、枚举 has_permission 三角色矩阵、PagedResult::map 泛型断言）。通过率 = 全部测试必须 green，CI 中任一测试 fail = PR 不可合并。
 - **覆盖率门槛 PR 38% / main 45%（cargo-llvm-cov 严格 lines 模式）**（CI coverage stage）：`cargo llvm-cov --workspace --exclude frontend --fail-under-lines {38|45} --lcov --output-path coverage.lcov`；统计规则：test-only 代码（tests/*、*test_support.rs、cfg(test) mod 内部）不计入 lines 覆盖率（自动排除）。低于门槛 fail；main 合并到 release 前 45% 门槛更高，防止发布版本覆盖率退化；覆盖率低于阈值可加 PR 评论「此重构测试覆盖待后续补全，豁免一次」，但需 2 个 reviewer approve。
 - **clippy `-D warnings` 双端零容忍（后端 x86 + 前端 wasm32）**（CI check stage）：① 后端默认 target x86_64-apple-darwin：`cargo clippy --workspace --exclude frontend --all-targets -- -D warnings`；② 前端 target wasm32-unknown-unknown（Dioxus WASM）：`cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings`；双端任一 warning 触发即 CI fail。常见清理：unused_import / dead_code / explicit_write（std::io::Write 未 import 时自动触发）/ match 多余 arm；clippy lint 配置在 `.cargo/config.toml`，自定义规则在 ai-orz-macros 里（禁止 role >= 2 数字比较等项目级红线）。
+- **测试基建统一入口 init_service_for_test()（`src/pkg/request_context_test_support.rs`）**：幂等一次调用搞定 `config::init()` → `dao::init_all()` → `dal::init_all()` → `domain::init()` 全链注册，解决 domain 单元测试因依赖链长（如 finance domain 依赖 message_channel → lark/wechat/slack/email/webhook/a2a_callback 一串）漏调某层导致 panic 的痛点。各层 init 均为 OnceLock 内存单例注册（零 DB IO），重复调用安全不重复注册。集成测试走 `tests/common/env.rs` 的 `init_full_test_env()`（含 producer/consumer/AOP/base data 完整链路），domain 单元测试走本函数（仅业务层注册）。
 
 ---
 
@@ -59,6 +62,7 @@ source_files:
 | .github/workflows/ci.yml CI 流水线 | 4 阶段闸门 | stage1 check(clippy -D warnings x86+wasm32) → stage2 test(cargo test --workspace 全部) → stage3 coverage(cargo-llvm-cov 38%/45%) → stage4 build(release dist docker)；每个 stage 失败立即停，不往下跑 | 见 ci.yml jobs |
 | docs/archive/design-archive/testing_guidelines.md 测试设计 | 金字塔分层 | 金字塔图：DAO单元(底) → DAL → Domain → Handler → 集成测试(中) → E2E(尖)；每一层责任：DAO 层只测 SQL（+边界），集成测试测真实链路（跨 Domain），E2E 测用户 happy path | `:L1-L50` |
 | docs/design/sqlx_guide.md SQL 规范 | sqlx 0.8 + SQLite | STRICT 模式所有表必须；枚举 `as "status: TaskStatus"` 显式标注；.sqlx/ 目录必须 git 提交（query! 离线编译元数据，CI 无网也能过）；软删除 status=0 WHERE 默认过滤 | `:L1-L60` |
+| src/pkg/request_context_test_support.rs 测试基建统一入口 | 业务层 init 单点 | `init_service_for_test()` 幂等一次调 `config::init` → `dao::init_all` → `dal::init_all` → `domain::init` 全链注册；各层 OnceLock 内存单例，重复调用安全；domain 单元测试依赖 message_channel 等长链路时调用本函数替代手工拼装 | `:L1-L15` |
 
 **章节来源**
 - [env.rs:L1-L120](tests/common/env.rs#L1-L120)
@@ -127,3 +131,11 @@ STAGE 4. build(release)【2-3min，仅 main branch 触发】
 6. **Playwright E2E 不进 CI（仅本地 `make e2e`）**：E2E 需要登录→调用真实 LLM，成本高且偶发 flaky（模型响应超时）。CI 不跑；发布前 release manager 本地跑一次，失败视频自动保存 tests/e2e/test-results/ 附到 PR；纯登录/创建 Agent 等不涉及 LLM 的 E2E 子集可后续改加进 CI。
 7. **集成测试 19 targets 不能有相互依赖的前置条件（进程隔离）**：agent_management_test 的 agent_id 不能被 a2a_flow_test 复用；每个 target 自己 init_full_test_env 造独立数据。跨 target 复用数据会导致：单独跑 cargo test a2a_flow 通过，但一起跑 `cargo test` 并行随机失败（Heisenbug）。
 8. **前端 wasm32 单元测试不 mock 网络请求，直接测纯逻辑组件**：测试 GraphCanvas、PagedResult::map UI 渲染、use_resource deps 变化触发不发 HTTP；HTTP 用真实 API client 测试放集成/Playwright E2E。否则 wasm32 里模拟网络需要 wasm-bindgen-test 引入 js-sys 庞大依赖，测试启动超 10 秒无法接受。
+
+---
+
+## §5 历史演进
+
+| 时间 | 事件 | 影响 |
+|------|------|------|
+| 2026-09 | 新增 `src/pkg/request_context_test_support.rs` 测试基建统一入口 `init_service_for_test()` | 解决 domain 单元测试手工拼装 init 链（dao init → dal init → domain init 各调一遍）容易漏依赖导致 panic 的痛点；finance domain 等依赖 message_channel → lark/wechat/slack/email/webhook/a2a_callback 长链路的测试从此一行搞定；OnceLock 幂等设计保证重复调用安全；区分集成测试走 `init_full_test_env()`（含 AOP/producer/consumer/base data）与 domain 单元测试走 `init_service_for_test()`（仅业务层注册）的两层 init 语义 |
