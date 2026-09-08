@@ -3,10 +3,14 @@
 # 安装：make hooks（即 git config core.hooksPath .githooks）
 # 跳过一次：git push --no-verify
 # 说明：与 CI fmt / lint / frontend job 同口径，本地过了 CI 就过。
-#       - fmt:      cargo fmt --all -- --check（秒级，workspace 全 crate）
-#       - clippy:   cargo clippy --all-targets -- -D warnings（需 protoc，约数十秒，
-#                  覆盖 lib + 测试二进制；本仓库曾因测试里的 or_fun_call lint 在此被抓出）
-#       - dx check: 前端 Dioxus/wasm 编译检查（cd frontend && dx check，需 Dioxus.toml）
+#       - fmt:       cargo fmt --all -- --check（秒级，workspace 全 crate）
+#       - clippy:    cargo clippy --workspace --exclude frontend --all-targets -- -D warnings
+#                   （需 protoc，约数十秒；**--workspace 不可省**，否则 cargo 只选 default
+#                    member = 根包 ai_orz，common / tools / ai-orz-macros 的 lint 静默跳过）
+#       - clippy-fe: cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets
+#                    -- -D warnings（前端 wasm32 口径，含完整类型检查）
+#                    ⚠️ 不要用 `dx check` 顶替：dx check 只做路由级检查、不编译业务代码，
+#                    曾出现「前端 14 个编译错误仍全绿通过」的假绿灯（2026-09-08 实测）。
 #       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + dx check 两道重门禁，
 #       即使有人用 git commit --no-verify 跳过提交钩子，push 仍会被挡住。
 
@@ -27,9 +31,9 @@ if ! cargo fmt --all -- --check; then
 fi
 echo "✓ fmt-check 通过"
 
-# --- clippy（后端 + 全 workspace targets，CI lint job 口径）---
-echo "== pre-push: clippy（cargo clippy --all-targets -- -D warnings）=="
-if ! cargo clippy --all-targets -- -D warnings; then
+# --- clippy（workspace targets，CI lint job 口径）---
+echo "== pre-push: clippy（cargo clippy --workspace --exclude frontend --all-targets -- -D warnings）=="
+if ! cargo clippy --workspace --exclude frontend --all-targets -- -D warnings; then
     echo ""
     echo "✗ clippy 检查未通过，push 已拦截。运行 make clippy 查看并修复。"
     echo "  仅本次跳过：git push --no-verify"
@@ -37,12 +41,12 @@ if ! cargo clippy --all-targets -- -D warnings; then
 fi
 echo "✓ clippy 通过"
 
-# --- dx check（前端 Dioxus/wasm 编译检查，CI frontend job 口径）---
-echo "== pre-push: dx check（前端编译检查）=="
-if ! (cd frontend && dx check); then
+# --- clippy-fe（前端 wasm32 全量类型检查 + lint，CI frontend job 口径）---
+echo "== pre-push: clippy-fe（前端 wasm32 编译检查）=="
+if ! (cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings); then
     echo ""
-    echo "✗ dx check 未通过，push 已拦截。进入 frontend 目录运行 dx check 查看并修复。"
+    echo "✗ 前端 clippy 未通过，push 已拦截。运行 make clippy-fe 查看并修复。"
     echo "  仅本次跳过：git push --no-verify"
     exit 1
 fi
-echo "✓ dx check 通过"
+echo "✓ clippy-fe 通过"

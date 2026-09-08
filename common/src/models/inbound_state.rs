@@ -55,6 +55,15 @@ pub enum CursorKind {
     Offset,
 }
 
+/// 来源标识归一化：空串视为「无来源」。
+/// 与 `source` 的 serde 缺省语义保持一致（缺省字段解析为 None），
+/// 否则 `opaque(v, "")` 会序列化出 `"source":""`，与 JSON 往返结果不等价。
+fn normalize_source(source: impl Into<String>) -> Option<String> {
+    let trimmed = source.into();
+    let trimmed = trimmed.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 /// 通用增量拉取游标（与具体协议解耦）
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub struct InboundCursor {
@@ -77,7 +86,7 @@ impl InboundCursor {
         Self {
             value: value.into(),
             kind: CursorKind::Opaque,
-            source: Some(source.into()),
+            source: normalize_source(source),
             updated_at_ms: None,
         }
     }
@@ -87,7 +96,7 @@ impl InboundCursor {
         Self {
             value: value.to_string(),
             kind: CursorKind::Sequence,
-            source: Some(source.into()),
+            source: normalize_source(source),
             updated_at_ms: None,
         }
     }

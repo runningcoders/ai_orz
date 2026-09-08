@@ -1,16 +1,18 @@
 # AI Orz 开发常用命令汇总
 # 用法：make <命令>（make 或 make help 查看全部）
 # 所有命令与 .github/workflows/rust.yml CI 门禁严格对齐，本地过了 CI 就过
+# 日常自测：make lint（纯静态检查，前后端全量，不跑测试）
+# 提交/推送前：make ci（= lint + 全量测试；与 pre-push 钩子同口径）
 
 # 每条命令执行前自动补充标准 PATH（覆盖受限 shell 环境，rustup 在 ~/.cargo/bin）
 export PATH := $(HOME)/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate test test-be test-fe ci coverage e2e dev build build-fe prod package serve run clean clean-slim clean-proc doctor hooks
+.PHONY: help fmt fmt-check clippy clippy-fe docs-lint docs-migrate lint test test-be test-fe ci coverage e2e dev build build-fe prod package serve run clean clean-slim clean-proc doctor hooks
 
 # git hooks 目录指向仓库内 .githooks/
 #   - pre-commit：fmt-check（cargo fmt --all -- --check，秒级）
-#   - pre-push ：fmt-check + clippy（cargo clippy --all-targets -- -D warnings）+ dx check（前端编译检查）
+#   - pre-push ：fmt-check + clippy（workspace 口径）+ clippy-fe（前端 wasm32 真编译门禁）
 # 跳过某次：git commit/push --no-verify
 hooks:
 	git config core.hooksPath .githooks
@@ -29,8 +31,11 @@ fmt-check: ## 格式检查（CI fmt job 口径）
 
 # ===== 静态检查 =====
 
-clippy: ## 后端 clippy，-D warnings（CI lint job 口径，需 protoc）
-	cargo clippy --all-targets -- -D warnings
+# --workspace 不可省：根 Cargo.toml 带 [package]，cargo 默认只选 default member
+#（= 根包 ai_orz），common / tools / ai-orz-macros 的 lint 会被静默跳过。
+# frontend 由 clippy-fe 以 wasm32 口径全量覆盖（实际运行目标），此处排除以免 native 重复编译。
+clippy: ## clippy -D warnings（CI lint job 口径，需 protoc）
+	cargo clippy --workspace --exclude frontend --all-targets -- -D warnings
 
 clippy-fe: ## 前端 wasm32 clippy（CI frontend job 口径）
 	cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
@@ -51,16 +56,24 @@ docs-migrate: ## 文档链接批量迁移，默认 dry-run；写盘加 APPLY=1
 
 test: test-be test-fe ## 全量测试（后端 + 前端）
 
-test-be: ## 后端测试：单元 + 集成（CI backend job 口径）
-	cargo test --lib
-	cargo test --test '*'
+# 同 clippy：必须 --workspace，否则 common / tools / ai-orz-macros 的测试根本不会被执行
+#（验证过：裸 `cargo test --lib` 只跑 ai_orz 一个二进制，common 的 200+ 单测全被跳过）。
+# frontend 由 test-fe 单独跑。
+test-be: ## 后端与共享 crate 测试：单元 + 集成（CI backend job 口径）
+	cargo test --workspace --exclude frontend --lib
+	cargo test --workspace --exclude frontend --test '*'
 
 test-fe: ## 前端测试（CI frontend job 口径）
 	cd frontend && cargo test
 
 # ===== 聚合门禁 =====
 
-ci: fmt-check clippy clippy-fe docs-lint test ## 本地模拟 CI 全部门禁（不含 coverage）
+# 纯静态检查（不跑测试，快于 ci）：前后端全量覆盖
+#   fmt-check → workspace 全 crate 格式；clippy → ai_orz + common + tools + macros；
+#   clippy-fe → frontend（wasm32 口径，含完整类型检查）；docs-lint → 文档链接规范
+lint: fmt-check clippy clippy-fe docs-lint ## 全部静态检查（前后端）：fmt + clippy + clippy-fe + docs-lint
+
+ci: lint test ## 本地模拟 CI 全部门禁（= lint + 全量测试，不含 coverage）
 
 # 覆盖率（需 cargo-llvm-cov；main 口径 45，PR 口径 38 可 FAIL_UNDER=38）
 coverage: ## 覆盖率门禁，FAIL_UNDER 默认 45

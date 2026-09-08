@@ -67,8 +67,11 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
+    # --workspace 不可省：根 Cargo.toml 带 [package]，cargo 默认只选 default member
+    #（= 根包 ai_orz），common / tools / ai-orz-macros 的 lint 会被静默跳过。
+    # frontend 由 frontend job 以 wasm32 口径全量覆盖，此处排除以免 native 重复编译。
     - name: Clippy check (deny warnings)
-      run: cargo clippy --all-targets -- -D warnings
+      run: cargo clippy --workspace --exclude frontend --all-targets -- -D warnings
 
     # 文档链接规范门禁（AGENTS §2.1.2）：file:// 伪协议 / 绝对路径 / 冒号行号
     - name: Docs link lint
@@ -131,11 +134,13 @@ jobs:
     - name: Start sccache server
       run: sccache --start-server || true
 
+    # 同 clippy：--workspace 覆盖 common / tools / ai-orz-macros 的测试，
+    # 否则它们从未在 CI 执行（frontend 由 frontend job 单独跑）
     - name: Run unit tests (parallel)
-      run: cargo test --lib --verbose
+      run: cargo test --workspace --exclude frontend --lib --verbose
 
     - name: Run integration tests (parallel)
-      run: cargo test --test '*' --verbose
+      run: cargo test --workspace --exclude frontend --test '*' --verbose
 
     - name: Print sccache stats
       if: always()
