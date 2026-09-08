@@ -2,7 +2,6 @@ use common::api::{GetToolCallEntryRequest, QueryToolCallEntriesRequest};
 use common::enums::CallerType;
 use serde_json::json;
 use sqlx::SqlitePool;
-use std::sync::Once;
 
 use crate::pkg::RequestContext;
 use crate::pkg::tool_tracing::entry::{ToolCallEntry, ToolCallStatus};
@@ -12,21 +11,8 @@ use super::get_tool_call_entry::get_tool_call_entry;
 use super::query_tool_call_entries::query_tool_call_entries;
 
 fn init_test_singletons() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let base_path = std::env::temp_dir().join(format!(
-            "ai_orz_tool_call_entry_handler_tests_{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&base_path)
-            .expect("handler tool call query trace base path should be created");
-        ToolCallLogger::init(base_path);
-
-        let _ = crate::config::init();
-        crate::service::dao::init_all();
-        crate::service::dal::init_all();
-        crate::service::domain::init_all();
-    });
+    // 统一业务层初始化（幂等）：config + ToolCallLogger + dao/dal/domain init_all
+    crate::pkg::request_context_test_support::init_service_for_test();
 }
 
 fn scoped_ctx() -> RequestContext {

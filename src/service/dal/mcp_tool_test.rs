@@ -6,14 +6,13 @@
 use crate::models::mcp_server::{McpServerConfig, McpServerPo, McpTransport};
 use crate::models::tool::{ToolExecutionRequest, ToolPo};
 use crate::pkg::RequestContext;
-use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dal::mcp_tool::{self, McpToolDal};
 use crate::service::dao::{mcp_server, tool, tool_call};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use common::error::Result;
 use serde_json::json;
 use sqlx::SqlitePool;
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 
 fn mcp_tool_po(server_id: &str, tool_name: &str) -> ToolPo {
     ToolPo::new(
@@ -131,7 +130,8 @@ for line in sys.stdin:
 }
 
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, RequestContext) {
-    init_test_tool_call_logger();
+    // 共享测试 ToolCallLogger（指向进程级测试 base data 目录，幂等）
+    crate::pkg::request_context_test_support::ensure_test_tool_call_logger();
     let base_tool_call_dao = tool_call::new();
     let mcp_tool_call_dao = tool_call::new_mcp_tool_call_dao(base_tool_call_dao);
     let dal = mcp_tool::new(
@@ -141,18 +141,6 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn McpToolDal + Send + Sync>, Reques
     );
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("test-user", pool);
     (dal, ctx)
-}
-
-fn init_test_tool_call_logger() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let base_path = std::env::temp_dir().join(format!(
-            "ai_orz_mcp_tool_dal_trace_tests_{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&base_path).expect("test tool trace base path should be created");
-        ToolCallLogger::init(base_path);
-    });
 }
 
 #[sqlx::test(migrations = "./migrations")]

@@ -45,3 +45,18 @@ pub fn ensure_test_base_data_path() -> std::path::PathBuf {
 pub fn ensure_test_tool_call_logger() {
     crate::pkg::tool_tracing::logger::ToolCallLogger::init(ensure_test_base_data_path());
 }
+
+/// 集成测试统一业务层初始化（对齐 main 的 `service::init()` 加载链）
+///
+/// 覆盖：config + ToolCallLogger + `dao::init_all` → `dal::init_all` → `domain::init_all`
+/// + 工具注册器注入（browser 截图 / mark_artifact）。
+///
+/// 幂等：各层 init 均为 OnceLock 内存单例注册（零 DB IO），重复调用无副作用。
+/// 不含 producer/consumer/AOP/base data——需要 AOP 链路的测试自行补充；
+/// 测试隔离性由 per-test pool（RequestContext 携带）保证，与全局单例无关。
+pub fn init_service_for_test() {
+    ensure_test_base_data_path();
+    ensure_test_tool_call_logger();
+    let _ = crate::config::init();
+    crate::service::init();
+}

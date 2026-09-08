@@ -189,6 +189,9 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
         &self,
         ctx: RequestContext,
     ) -> Result<Option<ModelProviderPo>> {
+        // 取候选列表后过滤：api_key 为空的 provider 无法调用模型 API，
+        // 不应被选为"默认可用"的 embedding provider（避免下游向量化时
+        // 才因空 key 报错）。limit 设 100 足以覆盖绝大多数组织规模。
         let page = self
             .query(
                 ctx,
@@ -196,14 +199,17 @@ UPDATE model_providers SET status = 0, modified_by = ?, updated_at = ? WHERE id 
                     capability: Some(ModelCapability::Embedding),
                     status: Some(ModelProviderStatus::Normal),
                     pagination: common::api::PaginationParams {
-                        limit: Some(1),
+                        limit: Some(100),
                         offset: None,
                     },
                     ..Default::default()
                 },
             )
             .await?;
-        Ok(page.items.into_iter().next())
+        Ok(page
+            .items
+            .into_iter()
+            .find(|p| !p.api_key.trim().is_empty()))
     }
 
     async fn find_enabled_embedding_provider(

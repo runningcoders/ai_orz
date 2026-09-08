@@ -12,40 +12,12 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
-/// 初始化所有渠道 DAO 单例
-fn init_all_channel_daos() {
-    crate::service::dao::lark::init();
-    crate::service::dao::wechat::init();
-    crate::service::dao::slack::init();
-    crate::service::dao::email::init();
-    crate::service::dao::webhook::init();
-}
-
 /// 初始化测试环境
 fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn MessageDomain>, RequestContext) {
-    // config：dao::attachment 构造时读取 base_data_path
-    crate::config::init().unwrap();
-    crate::service::dao::message::init();
-    crate::service::dao::message_channel::init();
-    crate::service::dao::attachment::init();
-    init_all_channel_daos(); // 初始化所有渠道 DAO 单例
-    // a2a_callback dao：dal::message_channel 注入依赖
-    crate::service::dao::a2a_callback::init();
-    // project dao：dal::message_channel 注入 A2A callback 组装数据源
-    crate::service::dao::project::init();
-    // user dao：dal::message_channel 注入飞书凭证引用解析依赖
-    crate::service::dao::user::init();
-    // model_provider dao：dal::message 注入依赖
-    crate::service::dao::model_provider::init();
-    crate::service::dal::message::init();
-    crate::service::dal::message_channel::init();
-    // attachment/user dal：domain::message init 注入依赖
-    crate::service::dal::attachment::init();
-    crate::service::dal::user::init();
-    // lark/wechat dal：domain::message init 注入入站适配门面依赖
-    crate::service::dal::lark::init();
-    crate::service::dal::wechat::init();
-    super::init();
+    // 统一业务层初始化（幂等）：config + ToolCallLogger + dao/dal/domain init_all，
+    // 覆盖 message_channel DAL 依赖的渠道/a2a_callback/project/user DAO 与
+    // message domain 注入的 attachment/user/lark/wechat DAL
+    crate::pkg::request_context_test_support::init_service_for_test();
     let domain = domain();
     let ctx = new_ctx("admin", pool);
     (domain, ctx)

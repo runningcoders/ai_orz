@@ -1044,24 +1044,15 @@ fn create_enabled_tool(name: &str, tags: Vec<&str>) -> crate::models::tool::Tool
     Tool::from_po_for_management(po)
 }
 
-/// 创建 FinanceDomain（复用 tool_provider_test 模式）用于工具创建
+/// 创建 FinanceDomain（统一业务层初始化入口）用于工具创建
 fn init_finance_env(
     _pool: SqlitePool,
 ) -> std::sync::Arc<dyn crate::service::domain::finance::FinanceDomain> {
-    let _ = crate::config::init();
+    // 统一业务层初始化（config + ToolCallLogger + dao/dal/domain init_all）：
+    // finance::domain() 构造依赖链深（message_channel → lark/wechat/... 一串），
+    // 全量 init 幂等且不会漏依赖。
+    crate::pkg::request_context_test_support::init_service_for_test();
 
-    // 一次性初始化全部 DAO。
-    // 原因：finance::domain() 构造需要 dal::message_channel，而它会拉起
-    // lark/wechat/slack/email/webhook/a2a_callback/user/user_credential 一串依赖，
-    // 逐个补齐极易遗漏（缺任一都会在首次访问时 panic）。init_all 内部为
-    // OnceLock::set 语义，重复调用安全。
-    crate::service::dao::init_all();
-
-    // 初始化 DAL：同样用全量入口，内部已按依赖顺序排列
-    // （lark dal 依赖 message_channel + agent + user dal，排在最末）。
-    crate::service::dal::init_all();
-
-    crate::service::domain::finance::init();
     crate::service::domain::finance::domain()
 }
 

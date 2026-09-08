@@ -12,14 +12,8 @@ use crate::service::dao::tool;
 use super::update_tool::update_tool;
 
 fn init_test_singletons() {
-    // ToolCallLogger 必须先于 domain::init_all() 初始化
-    // （RuntimeDomainImpl::new 构造时取 logger 单例，未初始化会 panic，
-    // 参照 mcp_tool_handler_test 的初始化顺序）
-    crate::pkg::request_context_test_support::ensure_test_tool_call_logger();
-    let _ = crate::config::init();
-    crate::service::dao::init_all();
-    crate::service::dal::init_all();
-    crate::service::domain::init_all();
+    // 统一业务层初始化（幂等）：ToolCallLogger 先于 domain init_all（内部已保证顺序）
+    crate::pkg::request_context_test_support::init_service_for_test();
 }
 
 fn test_mcp_tool_po(id: &str, status: ToolStatus) -> ToolPo {

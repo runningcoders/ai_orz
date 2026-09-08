@@ -5,80 +5,15 @@
 //! - apply_snapshot_to_db: 各 domain upsert
 //! - 往返一致性：导出 → 修改 → 导入 → 重新导出，验证字段更新
 
-use crate::pkg::request_context_test_support::new_test_ctx;
+use crate::pkg::request_context_test_support::{init_service_for_test, new_test_ctx};
 use common::enums::UserRole;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
-/// 初始化所有 domain（参考 a2a 集成测试的 init 模式）
+/// 初始化所有 domain（统一业务层初始化入口）
 async fn init_test_env(pool: SqlitePool) -> crate::pkg::RequestContext {
-    let _ = crate::config::init();
-
-    // 初始化 ToolCallLogger（agent dal 创建时会写 trace）
-    let base_path = std::env::temp_dir().join("ai_orz_seed_handler_test_trace");
-    let _ = std::fs::create_dir_all(&base_path);
-    crate::pkg::tool_tracing::logger::ToolCallLogger::init(base_path);
-
-    // 初始化所有 DAO
-    crate::service::dao::organization::init();
-    crate::service::dao::user::init();
-    crate::service::dao::user_credential::init();
-    crate::service::dao::agent::init();
-    crate::service::dao::tool::init();
-    crate::service::dao::skill::init();
-    crate::service::dao::tool_call::init();
-    crate::service::dao::model_provider::init();
-    crate::service::dao::cortex::init();
-    crate::service::dao::memory::init();
-    crate::service::dao::mcp_server::init();
-    crate::service::dao::project::init();
-    crate::service::dao::task::init();
-    crate::service::dao::message::init();
-    crate::service::dao::artifact::init();
-    crate::service::dao::attachment::init();
-    crate::service::dao::message_channel::init();
-    // 消息渠道 DAO 初始化
-    crate::service::dao::lark::init();
-    crate::service::dao::wechat::init();
-    crate::service::dao::slack::init();
-    crate::service::dao::email::init();
-    crate::service::dao::webhook::init();
-    crate::service::dao::a2a_callback::init();
-    // 联邦 P8：组织链接 / 配对码 DAO（organization domain DAL 初始化时会访问其单例）
-    crate::service::dao::organization_link::init();
-    crate::service::dao::organization_pairing::init();
-
-    // 初始化所有 DAL
-    crate::service::dal::organization::init();
-    crate::service::dal::user::init();
-    crate::service::dal::agent::init();
-    crate::service::dal::tool::init();
-    crate::service::dal::skill::init();
-    crate::service::dal::model_provider::init();
-    crate::service::dal::memory::init();
-    crate::service::dal::mcp_server::init();
-    crate::service::dal::mcp_tool::init();
-    crate::service::dal::brain::init();
-    crate::service::dal::project::init();
-    crate::service::dal::task::init();
-    crate::service::dal::message::init();
-    crate::service::dal::message_channel::init();
-    crate::service::dal::attachment::init();
-    crate::service::dal::artifact::init();
-    // user dal / lark dal / wechat dal：organization / message 相关 domain 注入依赖
-    crate::service::dal::user::init();
-    crate::service::dal::lark::init();
-    crate::service::dal::wechat::init();
-    crate::service::dal::mcp_server::init();
-
-    // 初始化所有 Domain
-    // 注意：seed handler 仅使用 organization / finance / hr domain，
-    // 以及 system::seed 子模块的纯函数（不需要 system domain 单例）。
-    // system::init() 依赖 cron_trigger/backup/log_query DAL，这里不需要初始化。
-    crate::service::domain::hr::init();
-    crate::service::domain::finance::init();
-    crate::service::domain::organization::init();
-    crate::service::domain::message::init();
+    // 统一业务层初始化（config + ToolCallLogger + dao/dal/domain init_all）
+    init_service_for_test();
 
     // 注意：Seed Handler 在生产中始终由管理员或 System 启动器调用（含创建/覆盖 TEMPLATE 内容），
     // 因此测试 ctx 直接赋予 SuperAdmin 角色，避免 HR 域资源级权限守卫拒绝写入跨用户的 TEMPLATE_* 技能等。
@@ -128,7 +63,7 @@ async fn prepare_test_data(ctx: &crate::pkg::RequestContext) -> String {
         ProviderType::OpenAI,
         ModelCapability::Agent,
         "gpt-4o".to_string(),
-        "sk-test-key".to_string(),
+        String::new(),
         None,
         Some("对话模型".to_string()),
         user_id.clone(),
@@ -143,7 +78,7 @@ async fn prepare_test_data(ctx: &crate::pkg::RequestContext) -> String {
         ProviderType::OpenAI,
         ModelCapability::Embedding,
         "text-embedding-3-small".to_string(),
-        "sk-test-key".to_string(),
+        String::new(),
         None,
         Some("向量模型".to_string()),
         user_id.clone(),
@@ -212,10 +147,7 @@ async fn test_apply_snapshot_with_preserve_ids_round_trip(pool: SqlitePool) {
         );
     }
     for p in &snapshot.model_providers {
-        sensitive.insert(
-            format!("model_provider:{}:api_key", p.id),
-            "sk-new-key".to_string(),
-        );
+        sensitive.insert(format!("model_provider:{}:api_key", p.id), String::new());
     }
 
     // 修改快照模拟配置更新
@@ -284,13 +216,16 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
         "user:TEMPLATE_ADMIN:password".to_string(),
         "hashed".to_string(),
     );
+    // 模板 provider 的 api_key 注入空字符串：测试环境无真实模型凭据，
+    // 空 key 会在 cortex DAO 层被前置校验快速拒绝（ConfigInvalid），
+    // 向量化作为弱依赖降级，不影响实体创建主流程，也避免发起真实 HTTP 导致长时挂起。
     sensitive.insert(
         "model_provider:TEMPLATE_CHAT_PROVIDER:api_key".to_string(),
-        "sk-test".to_string(),
+        String::new(),
     );
     sensitive.insert(
         "model_provider:TEMPLATE_EMBEDDING_PROVIDER:api_key".to_string(),
-        "sk-test".to_string(),
+        String::new(),
     );
 
     let result = super::apply_snapshot_to_db(

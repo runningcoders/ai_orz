@@ -98,18 +98,12 @@ fn new_ctx(user_id: &str, pool: sqlx::SqlitePool) -> RequestContext {
     crate::pkg::request_context_test_support::new_test_ctx(user_id, pool)
 }
 
-/// 初始化所有渠道 DAO 单例
-fn init_all_channel_daos() {
-    crate::service::dao::lark::init();
-    crate::service::dao::wechat::init();
-    crate::service::dao::slack::init();
-    crate::service::dao::email::init();
-    crate::service::dao::webhook::init();
-    crate::service::dao::a2a_callback::init();
-}
-
 /// 初始化测试环境（每个测试新建独立实例，保证测试隔离）
 fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
+    // 统一业务层初始化（幂等）：config + ToolCallLogger + dao/dal/domain init_all，
+    // 覆盖 message_channel DAL 依赖链（渠道/a2a_callback/user/user_credential/project/message）
+    crate::pkg::request_context_test_support::init_service_for_test();
+
     let message_dao = crate::service::dao::message::new();
     let message_vector_dao = crate::service::dao::message::vector::new();
     // 初始化 Attachment DAO/DAL（每个测试独立临时目录）
@@ -119,7 +113,6 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
     crate::service::dal::attachment::set_for_test(attachment_dal.clone());
     let cortex_dao: Arc<dyn CortexDao> = Arc::new(MockCortexDao);
     let model_provider_dao: Arc<dyn ModelProviderDao> = Arc::new(MockModelProviderDao);
-    crate::service::dao::organization::init();
     let message_dal = crate::service::dal::message::new(
         message_dao,
         message_vector_dao,
@@ -127,21 +120,8 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn MessageDomain>, RequestContext) {
         model_provider_dao,
         crate::service::dao::organization::dao(),
     );
-    // user_credential 必须在本函数内显式初始化：message_channel::init() 与 user::init()
-    // 都会读取 user_credential::dao()，本测试单独运行时没有其他测试预热该 OnceLock 单例，
-    // 不 init 会触发空锁 panic。
-    crate::service::dao::user_credential::init();
-    crate::service::dao::message_channel::init();
     let message_channel_dao = crate::service::dao::message_channel::new();
-    init_all_channel_daos(); // 初始化所有渠道 DAO 单例
-    // project/message dao：dal::message_channel 注入 A2A callback 组装数据源
-    crate::service::dao::project::init();
-    crate::service::dao::message::init();
-    // user dao：dal::message_channel 注入飞书凭证引用解析依赖
-    crate::service::dao::user::init();
     let message_channel_dal = crate::service::dal::message_channel::new(message_channel_dao);
-    // 初始化 MessageChannel DAL 单例（用于测试中创建渠道）
-    crate::service::dal::message_channel::init();
     let message_push_dal = crate::service::dal::message_push::dal();
     // 注入 Attachment DAL（测试中如果用不到附件，可保持真实 DAL 即可，因为它只会在 attachment_ids 非空时调用）
     let attachment_dal = crate::service::dal::attachment::dal();

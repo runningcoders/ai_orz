@@ -1,30 +1,15 @@
 use common::api::ListMcpServersRequest;
 use sqlx::SqlitePool;
-use std::sync::Once;
 
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpTransport};
-use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::domain::finance::domain;
 
 use super::list_mcp_servers::list_mcp_servers;
 use common::error::Result;
 
 fn init_test_singletons() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let base_path = std::env::temp_dir().join(format!(
-            "ai_orz_mcp_server_handler_tests_{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&base_path)
-            .expect("MCP server handler test trace base path should be created");
-        ToolCallLogger::init(base_path);
-
-        let _ = crate::config::init();
-        crate::service::dao::init_all();
-        crate::service::dal::init_all();
-        crate::service::domain::init_all();
-    });
+    // 统一业务层初始化（幂等）：config + ToolCallLogger + dao/dal/domain init_all
+    crate::pkg::request_context_test_support::init_service_for_test();
 }
 
 fn stdio_server(name: &str, creator: &str) -> McpServer {

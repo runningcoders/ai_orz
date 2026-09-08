@@ -2,11 +2,9 @@ use common::api::{ListMcpToolsByServerRequest, SyncMcpToolsRequest};
 use common::enums::{ControlMode, ToolProtocol, ToolStatus};
 use serde_json::json;
 use sqlx::SqlitePool;
-use std::sync::Once;
 
 use crate::models::mcp_server::{McpServer, McpServerConfig, McpTransport};
 use crate::models::tool::ToolPo;
-use crate::pkg::tool_tracing::logger::ToolCallLogger;
 use crate::service::dao::tool;
 use crate::service::domain::finance::domain;
 
@@ -15,21 +13,8 @@ use super::sync_mcp_tools::sync_mcp_tools;
 use common::error::Result;
 
 fn init_test_singletons() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let base_path = std::env::temp_dir().join(format!(
-            "ai_orz_mcp_tool_handler_tests_{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&base_path)
-            .expect("MCP tool handler test trace base path should be created");
-        ToolCallLogger::init(base_path);
-
-        let _ = crate::config::init();
-        crate::service::dao::init_all();
-        crate::service::dal::init_all();
-        crate::service::domain::init_all();
-    });
+    // 统一业务层初始化（幂等）：config + ToolCallLogger + dao/dal/domain init_all
+    crate::pkg::request_context_test_support::init_service_for_test();
 }
 
 fn stdio_server(id: &str) -> McpServer {

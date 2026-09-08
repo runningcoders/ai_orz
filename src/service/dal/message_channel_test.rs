@@ -3,38 +3,18 @@
 use crate::models::message_channel::{ChannelConfig, MessageChannel, MessageChannelPo};
 use crate::pkg::RequestContext;
 use crate::service::dal::message_channel::MessageChannelDal;
-use crate::service::dal::message_channel::{dal, init};
-use crate::service::dao::a2a_callback::init as a2a_callback_dao_init;
-use crate::service::dao::email::init as email_dao_init;
-use crate::service::dao::lark::init as lark_dao_init;
-use crate::service::dao::message_channel::init as message_channel_dao_init;
-use crate::service::dao::slack::init as slack_dao_init;
-use crate::service::dao::user::init as user_dao_init;
-use crate::service::dao::webhook::init as webhook_dao_init;
-use crate::service::dao::wechat::init as wechat_dao_init;
 use common::enums::{ChannelStatus, ChannelType};
 use sqlx::SqlitePool;
 use std::sync::Arc;
-
-fn init_all_test_daos() {
-    message_channel_dao_init();
-    a2a_callback_dao_init();
-    // user dao 必须先于 message_channel dal 初始化（dal 注入 user::dao() 做凭证引用解析）
-    user_dao_init();
-    lark_dao_init();
-    wechat_dao_init();
-    slack_dao_init();
-    email_dao_init();
-    webhook_dao_init();
-    init();
-}
 
 /// 初始化测试环境
 async fn init_test_env(
     pool: SqlitePool,
 ) -> (Arc<dyn MessageChannelDal + Send + Sync>, RequestContext) {
-    init_all_test_daos();
-    let dal = dal();
+    // 统一业务层初始化（幂等）：message_channel DAL 依赖的
+    // a2a_callback/user/lark/wechat/slack/email/webhook DAO 一并就位
+    crate::pkg::request_context_test_support::init_service_for_test();
+    let dal = crate::service::dal::message_channel::dal();
     let ctx = crate::pkg::request_context_test_support::new_test_ctx("admin", pool);
     (dal, ctx)
 }

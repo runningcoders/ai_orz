@@ -11,35 +11,9 @@ use crate::models::user_credential::UserCredentialPo;
 use crate::pkg::RequestContext;
 use crate::service::dal::lark::test_support::new_for_test_with_credential_dao;
 use crate::service::dal::lark::{LarkCredentialDal, LarkListenerDal};
-use crate::service::dal::message_channel::init as message_channel_dal_init;
-use crate::service::dao::a2a_callback::init as a2a_callback_dao_init;
-use crate::service::dao::email::init as email_dao_init;
-use crate::service::dao::lark::init as lark_dao_init;
-use crate::service::dao::message_channel::init as message_channel_dao_init;
-use crate::service::dao::slack::init as slack_dao_init;
-use crate::service::dao::user::init as user_dao_init;
-use crate::service::dao::user_credential::init as user_credential_dao_init;
-use crate::service::dao::webhook::init as webhook_dao_init;
-use crate::service::dao::wechat::init as wechat_dao_init;
 use common::enums::{ChannelStatus, ChannelType};
 use common::models::{CredentialDetail, CredentialKind, CredentialVisibility};
 use sqlx::SqlitePool;
-
-fn init_all_test_daos() {
-    message_channel_dao_init();
-    a2a_callback_dao_init();
-    user_dao_init();
-    user_credential_dao_init();
-    lark_dao_init();
-    wechat_dao_init();
-    slack_dao_init();
-    email_dao_init();
-    webhook_dao_init();
-    // project/message dao：dal::message_channel 注入 A2A callback 组装数据源
-    crate::service::dao::project::init();
-    crate::service::dao::message::init();
-    message_channel_dal_init();
-}
 
 /// 创建测试用户（凭证已独立建表，用户行不再携带凭证信息）
 async fn seed_user(ctx: &RequestContext, user_id: &str) {
@@ -111,7 +85,9 @@ fn lark_channel(
 }
 
 async fn init_env(pool: SqlitePool) -> RequestContext {
-    init_all_test_daos();
+    // 统一业务层初始化（幂等）：message_channel DAL 及其依赖
+    // （渠道 DAO + user/user_credential/project/message）一并就位
+    crate::pkg::request_context_test_support::init_service_for_test();
     // 监听生命周期内部使用系统上下文（依赖全局 storage）
     crate::pkg::storage::test_support::init_for_test().await;
     crate::pkg::request_context_test_support::new_test_ctx("admin", pool)

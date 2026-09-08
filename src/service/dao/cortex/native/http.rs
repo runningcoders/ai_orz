@@ -35,6 +35,23 @@ pub fn default_base_url(provider_type: common::enums::ProviderType) -> &'static 
     }
 }
 
+/// 校验 provider 出站调用前置条件（HTTP 请求前的快速失败）
+///
+/// - `api_key` 为空：硬错误。OpenAI 兼容协议必须携带鉴权，空 key 发出去只会被服务端拒绝，
+///   在此直接返回避免无意义的网络往返与超时挂起。
+/// - `base_url`：非强依赖，可由 `provider_type` 推理默认值（见 `default_base_url`），
+///   故此处不校验；若 `Custom`/`FastEmbed` 等无默认值的类型未配置 base_url，
+///   解析后为空会在后续 URL 拼接时自然失败。
+pub fn validate_provider_for_request(provider: &ModelProviderPo) -> Result<()> {
+    if provider.api_key.trim().is_empty() {
+        return Err(err!(
+            ConfigInvalid,
+            "model provider api_key is empty, cannot call model API"
+        ));
+    }
+    Ok(())
+}
+
 /// 将 ChatMessage 数组转换为 OpenAI API 格式的 JSON 数组
 fn messages_to_json(messages: &[ChatMessage]) -> Vec<Value> {
     messages
@@ -90,6 +107,7 @@ pub async fn call_chat_completions(
     messages: &[ChatMessage],
     tools: &[ToolDescriptor],
 ) -> Result<ThinkResult> {
+    validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
@@ -203,6 +221,7 @@ pub async fn call_embeddings(
     provider: &ModelProviderPo,
     texts: &[String],
 ) -> Result<Vec<Vec<f32>>> {
+    validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
 
@@ -251,6 +270,7 @@ pub async fn call_embeddings_multimodal(
     provider: &ModelProviderPo,
     texts: &[String],
 ) -> Result<Vec<Vec<f32>>> {
+    validate_provider_for_request(provider)?;
     let base_url = resolve_base_url(provider, default_base_url(provider.provider_type));
     let url = format!("{}/embeddings/multimodal", base_url.trim_end_matches('/'));
 

@@ -32,7 +32,9 @@ fn create_test_provider() -> ModelProvider {
         ProviderType::OpenAI,
         ModelCapability::Agent,
         "gpt-4o".to_string(),
-        "test-key".to_string(),
+        // 空 api_key：test_connection 期望返回错误，空 key 在 DAO 层被前置校验
+        // 快速拒绝（ConfigInvalid），避免发起真实 HTTP 导致长时挂起。
+        String::new(),
         Some("https://api.openai.com/v1".to_string()),
         Some("OpenAI GPT-4o Official".to_string()),
         "test".to_string(),

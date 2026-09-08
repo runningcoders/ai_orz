@@ -55,34 +55,8 @@ mod tests {
     async fn init_test_env(
         pool: SqlitePool,
     ) -> (std::sync::Arc<dyn finance::FinanceDomain>, RequestContext) {
-        crate::config::init().unwrap();
-
-        // 初始化依赖的 DAO
-        crate::service::dao::tool::init();
-        crate::service::dao::tool_call::init();
-        crate::service::dao::cortex::init();
-        crate::service::dao::attachment::init();
-        crate::service::dao::model_provider::init();
-        crate::service::dao::message_channel::init();
-        crate::service::dao::mcp_server::init();
-        crate::service::dao::lark::init();
-        crate::service::dao::wechat::init();
-        crate::service::dao::slack::init();
-        crate::service::dao::email::init();
-        crate::service::dao::webhook::init();
-        // a2a_callback dao：dal::message_channel 注入依赖
-        crate::service::dao::a2a_callback::init();
-        // user dao：dal::message_channel 注入飞书凭证引用解析依赖
-        crate::service::dao::user::init();
-
-        // 初始化 DAL
-        crate::service::dal::tool::init();
-        crate::service::dal::model_provider::init();
-        crate::service::dal::message_channel::init();
-        crate::service::dal::mcp_server::init();
-        crate::service::dal::mcp_tool::init();
-        crate::service::dal::brain::init();
-        crate::service::dal::attachment::init();
+        // 统一业务层初始化（config + ToolCallLogger + dao/dal/domain init_all）
+        crate::pkg::request_context_test_support::init_service_for_test();
 
         // 创建 Domain
         let domain = finance::new(
