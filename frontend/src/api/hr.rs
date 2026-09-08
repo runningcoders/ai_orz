@@ -7,8 +7,8 @@ use common::api::{
     GetAgentRequest, GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
     GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
-    ListInstalledToolPacksResponse, ListSkillsRequest, PagedResult, QueryMemoryParams,
-    QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
+    ListInstalledToolPacksResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse,
+    RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
     RestoreSkillResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
     RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
     SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
@@ -204,11 +204,8 @@ pub async fn restore_skill(req: RestoreSkillRequest) -> Result<RestoreSkillRespo
 }
 
 // ===== 技能库管理 =====
-
-pub async fn list_skills(req: ListSkillsRequest) -> Result<PagedResult<SkillListItem>, ApiError> {
-    let url = super::build_pagination_url("/api/v1/hr/skills", &req.pagination);
-    api_get(&url).await
-}
+//
+// 列表场景统一走 query_skills（支持条件过滤 + 分页）；原 list_skills 语法糖接口无调用方，已移除。
 
 pub async fn query_skills(req: &SkillQueryRequest) -> Result<PagedResult<SkillListItem>, ApiError> {
     api_post("/api/v1/hr/skills/query", req).await

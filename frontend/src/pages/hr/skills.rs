@@ -1,11 +1,13 @@
 //! 技能库管理
 
+use std::collections::{HashMap, HashSet};
+
 use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 use dioxus_router::Link;
 
-use crate::api::hr::{create_skill, delete_skill, list_skills, query_skills, search_skills};
+use crate::api::hr::{create_skill, delete_skill, query_skills, search_skills};
 use crate::api::seed::{get_task_progress, preview_preset_skills, sync_preset_skills};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
@@ -15,12 +17,15 @@ use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::status::{short_id, skill_author_type_badge, skill_author_type_text};
 use common::api::{
-    CreateSkillRequest, ListSkillsRequest, ListSkillsResponseItem, PresetSkillSyncStrategy,
+    CreateSkillRequest, ListSkillsResponseItem, PaginationParams, PresetSkillSyncStrategy,
     SearchSkillsRequest, SkillContentInput, SkillQueryRequest, SyncPresetSkillsRequest,
     SyncPresetSkillsResponse,
 };
 use common::enums::SkillAuthorType;
 use common::enums::SkillStatus;
+
+/// 列表分页大小（搜索场景后端硬顶 20 条，不分页）
+const PAGE_SIZE: usize = 20;
 
 #[component]
 pub fn HrSkills() -> Element {
@@ -40,9 +45,19 @@ pub fn HrSkills() -> Element {
 
     // 过滤条件
     let mut filter_category = use_signal(String::new);
-    let mut filter_status = use_signal(|| -1i32);
+    // 默认只展示已发布（公共）技能；-1 = 全部，2 = 草稿
+    let mut filter_status = use_signal(|| 1i32);
     // -1 = 全部，0 = 用户（SkillAuthorType::User），1 = Agent（SkillAuthorType::Agent）
     let mut filter_author_type = use_signal(|| -1i32);
+
+    // ===== 分页 =====
+    let mut page = use_signal(|| 0usize);
+    let mut total = use_signal(|| 0usize);
+
+    // ===== 树形展示：展开根技能查看继承副本 =====
+    let mut expanded_set = use_signal(HashSet::<String>::new);
+    let mut children_map = use_signal(HashMap::<String, Vec<ListSkillsResponseItem>>::new);
+    let mut children_loading = use_signal(HashSet::<String>::new);
 
     // ===== 删除确认对话框 =====
     let mut show_delete_confirm = use_signal(|| false);
@@ -58,7 +73,7 @@ pub fn HrSkills() -> Element {
     // 轮询到的后台任务进度文案（同步中显示）
     let mut sync_progress = use_signal(String::new);
 
-    // 加载数据（三场景切换：list / query / search）
+    // 加载数据（两场景切换：条件过滤查询（带分页）/ 关键词语义搜索）
     let load_data = move || {
         spawn(async move {
             loading.set(true);
@@ -66,6 +81,7 @@ pub fn HrSkills() -> Element {
             let category = filter_category();
             let status = filter_status();
             let author_type = filter_author_type();
+            let page_idx = page();
             let my_id = search_request_id() + 1;
             search_request_id.set(my_id);
 
@@ -79,43 +95,40 @@ pub fn HrSkills() -> Element {
             } else {
                 Some(SkillAuthorType::from(author_type))
             };
-            let has_filter = category_opt.is_some() || status >= 0 || author_type_opt.is_some();
+            let status_opt = if status >= 0 {
+                Some(SkillStatus::from(status))
+            } else {
+                None
+            };
 
-            // 三场景切换：
-            // 无关键词 + 无过滤 → list_skills
-            // 无关键词 + 有过滤 → query_skills
-            // 有关键词 → search_skills（可同时带过滤条件）
-            let result = if keyword.trim().is_empty() && !has_filter {
-                list_skills(ListSkillsRequest::default())
-                    .await
-                    .map(|p| p.items)
-            } else if keyword.trim().is_empty() {
+            // 两场景切换：
+            // 无关键词 → query_skills（条件过滤，带分页，status=None 时后端固定排除 Expired）
+            // 有关键词 → search_skills（FTS5 + 语义，后端按相关性排序且硬顶 20 条）
+            let result = if keyword.trim().is_empty() {
                 query_skills(&SkillQueryRequest {
-                    category: category_opt.clone(),
-                    status: if status >= 0 {
-                        Some(SkillStatus::from(status))
-                    } else {
-                        None
-                    },
+                    category: category_opt,
+                    status: status_opt,
                     author_type: author_type_opt,
+                    pagination: PaginationParams {
+                        limit: Some(PAGE_SIZE),
+                        offset: Some(page_idx * PAGE_SIZE),
+                    },
                     ..Default::default()
                 })
                 .await
-                .map(|p| p.items)
             } else {
                 search_skills(&SearchSkillsRequest {
                     keyword: Some(keyword),
                     category: category_opt,
-                    status: if status >= 0 {
-                        Some(SkillStatus::from(status))
-                    } else {
-                        None
-                    },
+                    status: status_opt,
                     author_type: author_type_opt,
+                    pagination: PaginationParams {
+                        limit: None,
+                        offset: None,
+                    },
                     ..Default::default()
                 })
                 .await
-                .map(|p| p.items)
             };
 
             // 丢弃过期请求的结果
@@ -123,11 +136,61 @@ pub fn HrSkills() -> Element {
                 return;
             }
 
+            // 列表已刷新：清空树的展开状态与已加载副本
+            expanded_set.set(HashSet::new());
+            children_map.set(HashMap::new());
+            children_loading.set(HashSet::new());
+
             match result {
-                Ok(v) => skills.set(v),
+                Ok(p) => {
+                    total.set(p.total);
+                    skills.set(p.items);
+                }
                 Err(e) => toast.error(&e),
             }
             loading.set(false);
+        });
+    };
+
+    // 展开/收起根技能：首次展开时懒加载继承副本（parent_skill_id 指向该技能的所有记录）
+    let mut toggle_expand = move |id: String| {
+        let now_expanded = !expanded_set.read().contains(&id);
+        expanded_set.with_mut(|s| {
+            if now_expanded {
+                s.insert(id.clone());
+            } else {
+                s.remove(&id);
+            }
+        });
+        if !now_expanded || children_map.read().contains_key(&id) {
+            return;
+        }
+        children_loading.with_mut(|s| {
+            s.insert(id.clone());
+        });
+        let my_id = search_request_id() + 1;
+        search_request_id.set(my_id);
+        spawn(async move {
+            let result = query_skills(&SkillQueryRequest {
+                parent_skill_id: Some(id.clone()),
+                ..Default::default()
+            })
+            .await;
+            // 列表已刷新（展开状态被清空），丢弃过期结果
+            if search_request_id() != my_id {
+                return;
+            }
+            match result {
+                Ok(p) => {
+                    children_map.with_mut(|m| {
+                        m.insert(id.clone(), p.items);
+                    });
+                }
+                Err(e) => toast.error(&e),
+            }
+            children_loading.with_mut(|s| {
+                s.remove(&id);
+            });
         });
     };
 
@@ -252,6 +315,103 @@ pub fn HrSkills() -> Element {
     };
 
     let skills_list = skills.read().clone();
+    // 搜索模式（后端 BM25 相关性排序硬顶 20 条，不分页）；否则为过滤查询模式（带分页）
+    let is_search = !search_keyword().trim().is_empty();
+    // 默认视图：已发布 + 无其他过滤 → 根技能可展开懒加载继承副本；
+    // 其余过滤/搜索视图 → 结果集内归组渲染，不做懒加载
+    let is_default_view = !is_search
+        && filter_category().trim().is_empty()
+        && filter_author_type() < 0
+        && filter_status() == 1;
+    // 过滤/搜索模式：把平铺结果按 parent_skill_id 归组为（根，子副本）树
+    let groups = group_tree(&skills_list);
+    // 总页数（与 system/logs.rs 分页文案一致：共 N 条 · 第 x / y 页）
+    let total_pages = total().div_ceil(PAGE_SIZE).max(1);
+
+    // 单行渲染：indent = 副本缩进行；expandable = 默认视图根技能（带展开按钮）
+    let skill_row = move |s: &ListSkillsResponseItem, indent: bool, expandable: bool| -> Element {
+        let id = s.id.clone();
+        let name = s.name.clone();
+        let description = s.description.clone();
+        let tags = s.tags.clone();
+        let author_type = s.author_type;
+        let author_id_short = short_id(&s.author_id);
+        let is_copy = !s.parent_skill_id.is_empty();
+        let expanded_now = expandable && expanded_set.read().contains(&id);
+        // 折叠箭头作为名称前缀（与 finance/tools.rs 折叠行惯例一致）
+        let arrow = if expanded_now { "▾" } else { "▸" };
+        // 已懒加载过才知道副本数量
+        let copy_count = expandable
+            .then(|| children_map.read().get(&id).map(|v| v.len()))
+            .flatten();
+        let toggle_label = if expanded_now {
+            "收起副本".to_string()
+        } else {
+            match copy_count {
+                Some(n) if n > 0 => format!("展开 {} 个副本", n),
+                Some(_) => "无副本".to_string(),
+                None => "展开副本".to_string(),
+            }
+        };
+        // 展开闭包独占一份 id（避免与下方 Link/删除按钮争夺同一个 id 的所有权）
+        let toggle_id = id.clone();
+        rsx! {
+            tr { key: "{id}",
+                td { class: "font-semibold", "data-label": "名称",
+                    div { class: "flex items-center gap-2 min-w-0",
+                        if indent {
+                            span { class: "text-base-content/30 pl-4", "└" }
+                        }
+                        if expandable {
+                            span { class: "text-base-content/60 select-none", "{arrow}" }
+                        }
+                        span { class: "truncate", "{name}" }
+                        if is_copy { span { class: "badge orz-tag badge-sm shrink-0", "副本" } }
+                        if expandable {
+                            button {
+                                class: "btn hud-btn btn-ghost btn-xs shrink-0",
+                                disabled: copy_count == Some(0),
+                                onclick: move |_| toggle_expand(toggle_id.clone()),
+                                "{toggle_label}"
+                            }
+                        }
+                    }
+                }
+                td { class: "text-base-content/70", "data-label": "描述", "{description}" }
+                td { "data-label": "标签",
+                    div { class: "flex flex-wrap gap-1",
+                        for tag in &tags {
+                            span { class: "badge orz-tag badge-sm", "{tag}" }
+                        }
+                    }
+                }
+                td { "data-label": "创建者",
+                    div { class: "flex items-center gap-2",
+                        span {
+                            class: "{skill_author_type_badge(author_type)}",
+                            "{skill_author_type_text(author_type)}"
+                        }
+                        span { class: "font-mono text-xs text-base-content/60 select-all", "{author_id_short}" }
+                    }
+                }
+                td { "data-label": "操作",
+                    div { class: "flex gap-1",
+                        Link {
+                            class: "btn hud-btn btn-ghost btn-sm",
+                            to: crate::pages::Route::HrSkillDetail { id: id.clone() },
+                            "详情"
+                        }
+                        button { class: "btn hud-btn btn-error btn-sm",
+                            onclick: move |_| {
+                                pending_delete_id.set(id.clone());
+                                show_delete_confirm.set(true);
+                            }, "删除"
+                        }
+                    }
+                }
+            }
+        }
+    };
 
     rsx! {
         AppLayout {
@@ -260,13 +420,18 @@ pub fn HrSkills() -> Element {
                 title: "技能库".to_string(),
                 actions: Some(rsx!{
                 div { class: "flex gap-2 flex-wrap",
-                    if !search_keyword().is_empty() || !filter_category().is_empty() || filter_status() >= 0 || filter_author_type() >= 0 {
+                    if !search_keyword().is_empty()
+                        || !filter_category().is_empty()
+                        || filter_status() != 1
+                        || filter_author_type() >= 0
+                    {
                         button { class: "btn hud-btn btn-ghost",
                             onclick: move |_| {
                                 search_keyword.set(String::new());
                                 filter_category.set(String::new());
-                                filter_status.set(-1);
+                                filter_status.set(1);
                                 filter_author_type.set(-1);
+                                page.set(0);
                                 load_data();
                             },
                             "重置"
@@ -290,6 +455,7 @@ pub fn HrSkills() -> Element {
                                 value: "{filter_category}",
                                 oninput: move |e| {
                                     filter_category.set(e.value());
+                                    page.set(0);
                                     let my_id = search_request_id() + 1;
                                     search_request_id.set(my_id);
                                     spawn(async move {
@@ -311,6 +477,7 @@ pub fn HrSkills() -> Element {
                                     if let Ok(v) = e.value().parse::<i32>() {
                                         filter_status.set(v);
                                     }
+                                    page.set(0);
                                     load_data();
                                 },
                                 option { value: "-1", "全部" }
@@ -327,6 +494,7 @@ pub fn HrSkills() -> Element {
                                     if let Ok(v) = e.value().parse::<i32>() {
                                         filter_author_type.set(v);
                                     }
+                                    page.set(0);
                                     load_data();
                                 },
                                 option { value: "-1", "全部" }
@@ -342,6 +510,7 @@ pub fn HrSkills() -> Element {
                                 value: "{search_keyword}",
                                 oninput: move |e| {
                                     search_keyword.set(e.value());
+                                    page.set(0);
                                     let my_id = search_request_id() + 1;
                                     search_request_id.set(my_id);
                                     spawn(async move {
@@ -366,55 +535,84 @@ pub fn HrSkills() -> Element {
                 } else if skills_list.is_empty() {
                     EmptyState { icon: "📚".to_string(), message: "暂无技能".to_string() }
                 } else {
-                    div { class: "overflow-x-auto",
-                        table { class: "table hud-table table-zebra table-pin-rows",
-                            thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "创建者" }, th { "操作" } }}
-                            tbody {
-                                for s in skills_list.iter() {
-                                    {
-                                        let id = s.id.clone();
-                                        let name = s.name.clone();
-                                        let description = s.description.clone();
-                                        let tags = s.tags.clone();
-                                        let author_type = s.author_type;
-                                        let author_id_short = short_id(&s.author_id);
-                                        rsx! {
-                                            tr { key: "{id}",
-                                                td { class: "font-semibold", "data-label": "名称", "{name}" }
-                                                td { class: "text-base-content/70", "data-label": "描述", "{description}" }
-                                                td { "data-label": "标签",
-                                                    div { class: "flex flex-wrap gap-1",
-                                                        for tag in &tags {
-                                                            span { class: "badge orz-tag badge-sm", "{tag}" }
-                                                        }
-                                                    }
-                                                }
-                                                td { "data-label": "创建者",
-                                                    div { class: "flex items-center gap-2",
-                                                        span {
-                                                            class: "{skill_author_type_badge(author_type)}",
-                                                            "{skill_author_type_text(author_type)}"
-                                                        }
-                                                        span { class: "font-mono text-xs text-base-content/60 select-all", "{author_id_short}" }
-                                                    }
-                                                }
-                                                td { "data-label": "操作",
-                                                    div { class: "flex gap-1",
-                                                        Link {
-                                                            class: "btn hud-btn btn-ghost btn-sm",
-                                                            to: crate::pages::Route::HrSkillDetail { id: id.clone() },
-                                                            "详情"
-                                                        }
-                                                        button { class: "btn hud-btn btn-error btn-sm",
-                                                            onclick: move |_| {
-                                                                pending_delete_id.set(id.clone());
-                                                                show_delete_confirm.set(true);
-                                                            }, "删除"
+                    div { class: "flex flex-col gap-2",
+                        div { class: "overflow-x-auto",
+                            table { class: "table hud-table table-zebra table-pin-rows",
+                                thead { tr { th { "名称" }, th { "描述" }, th { "标签" }, th { "创建者" }, th { "操作" } }}
+                                tbody {
+                                    if is_default_view {
+                                        // 默认视图：根技能可展开懒加载继承副本
+                                        for s in skills_list.iter() {
+                                            {
+                                                let sid = s.id.clone();
+                                                let is_expanded = expanded_set.read().contains(&sid);
+                                                let children = children_map.read().get(&sid).cloned().unwrap_or_default();
+                                                let child_loading = children_loading.read().contains(&sid);
+                                                rsx! {
+                                                    {skill_row(s, false, true)}
+                                                    if is_expanded {
+                                                        if child_loading {
+                                                            tr { key: "{sid}-loading",
+                                                                td { colspan: "5", class: "text-base-content/50",
+                                                                    "加载副本中..."
+                                                                }
+                                                            }
+                                                        } else if children.is_empty() {
+                                                            tr { key: "{sid}-empty",
+                                                                td { colspan: "5", class: "text-base-content/40 italic",
+                                                                    "无继承副本"
+                                                                }
+                                                            }
+                                                        } else {
+                                                            for c in children.iter() {
+                                                                {skill_row(c, true, false)}
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
+                                    } else {
+                                        // 搜索视图：结果集内按父技能归组成树，父不在结果集的副本平铺为根
+                                        for (root, children) in groups.iter() {
+                                            {
+                                                rsx! {
+                                                    {skill_row(root, false, false)}
+                                                    for c in children.iter() {
+                                                        {skill_row(c, true, false)}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 分页栏（仅过滤查询模式；搜索后端硬顶 20 条不分页）
+                        if !is_search {
+                            div { class: "flex items-center justify-between mt-4",
+                                span { class: "text-base-content/70",
+                                    "共 {total} 条 · 第 {page() + 1} / {total_pages} 页"
+                                }
+                                div { class: "flex items-center gap-2 flex-wrap",
+                                    button {
+                                        class: "btn hud-btn btn-ghost btn-sm",
+                                        disabled: page() == 0,
+                                        onclick: move |_| {
+                                            page.set(page() - 1);
+                                            load_data();
+                                        },
+                                        "上一页"
+                                    }
+                                    button {
+                                        class: "btn hud-btn btn-ghost btn-sm",
+                                        disabled: page() + 1 >= total_pages,
+                                        onclick: move |_| {
+                                            page.set(page() + 1);
+                                            load_data();
+                                        },
+                                        "下一页"
                                     }
                                 }
                             }
@@ -619,4 +817,31 @@ pub fn HrSkills() -> Element {
         }
         }
     }
+}
+
+/// 把平铺结果按 parent_skill_id 归组为（根技能，直接子副本）列表：
+/// 父技能出现在结果集内的副本嵌套展示；父不在结果集（或无父）的作为根平铺。
+fn group_tree(
+    items: &[ListSkillsResponseItem],
+) -> Vec<(ListSkillsResponseItem, Vec<ListSkillsResponseItem>)> {
+    let ids: HashSet<&str> = items.iter().map(|s| s.id.as_str()).collect();
+    let mut children_map: HashMap<String, Vec<ListSkillsResponseItem>> = HashMap::new();
+    let mut roots = Vec::new();
+    for s in items {
+        if !s.parent_skill_id.is_empty() && ids.contains(s.parent_skill_id.as_str()) {
+            children_map
+                .entry(s.parent_skill_id.clone())
+                .or_default()
+                .push(s.clone());
+        } else {
+            roots.push(s.clone());
+        }
+    }
+    roots
+        .into_iter()
+        .map(|r| {
+            let children = children_map.remove(&r.id).unwrap_or_default();
+            (r, children)
+        })
+        .collect()
 }
