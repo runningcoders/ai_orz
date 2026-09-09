@@ -287,6 +287,11 @@ pub struct MessagePo {
     /// - 新消息链的首条消息 root_id = 自身 id
     /// - 后续消息继承父消息的 root_id
     pub root_id: Option<String>,
+    /// 外部渠道消息键（形如 `"lark:om_xxx"`，渠道前缀防跨渠道撞键）
+    /// - 入站：渠道消息落库时随消息写入
+    /// - 出站：推送成功后按内部消息 ID 回写
+    /// - 入站适配按渠道 parent_id/root_id 反查此字段，解析消息链父消息
+    pub external_key: Option<String>,
     /// 组织 ID（用于异步消费时重建上下文）
     pub organization_id: Option<String>,
     /// 创建人 ID
@@ -342,6 +347,10 @@ impl MessagePo {
             msg_parts.push(format!("【回复消息】{}", reply_to));
         }
 
+        if let Some(root) = &self.root_id {
+            msg_parts.push(format!("【消息链】{}", root));
+        }
+
         if let Some(task_id) = &self.task_id {
             msg_parts.push(format!("【关联任务】{}", task_id));
         }
@@ -390,6 +399,7 @@ impl MessagePo {
             file_meta: Json(file_meta),
             reply_to_id,
             root_id,
+            external_key: None,
             organization_id,
             created_by: created_by.clone(),
             modified_by: created_by,

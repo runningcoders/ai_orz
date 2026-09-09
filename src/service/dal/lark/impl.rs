@@ -60,6 +60,8 @@ pub struct LarkDalImpl {
     lark_dao: Arc<dyn LarkDao>,
     /// 用户凭证 DAO（凭证引用解析：渠道 lark_credential_id → user_credentials 行）
     credential_dao: Arc<dyn UserCredentialDao>,
+    /// 消息 DAO（入站消息链解析：飞书 parent_id/root_id → 内部消息 ID）
+    message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
     /// 监听运行状态标记
     running: RwLock<bool>,
 }
@@ -86,11 +88,13 @@ impl LarkDalImpl {
         message_channel_dal: Arc<dyn MessageChannelDal>,
         lark_dao: Arc<dyn LarkDao>,
         credential_dao: Arc<dyn UserCredentialDao>,
+        message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
     ) -> Self {
         Self {
             message_channel_dal,
             lark_dao,
             credential_dao,
+            message_dao,
             running: RwLock::new(false),
         }
     }
@@ -242,14 +246,58 @@ impl LarkDalImpl {
         // 4. 渠道绑定的 agent_id（可选，未绑定时 consumer 层做路由）
         let to_agent_id = channel.agent_id().map(|s| s.to_string());
 
+        // 5. 消息链解析：飞书 parent_id（回复）优先、root_id（话题根）兜底，
+        // 反查本系统留痕的外部键映射（"lark:{om_id}"）。查不到（父消息未留痕，
+        // 如历史消息）则不挂链，该消息自身成为新链根，不做启发式猜测。
+        let thread_source = event
+            .event
+            .message
+            .parent_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                event
+                    .event
+                    .message
+                    .root_id
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+            });
+        let reply_to_id = match thread_source {
+            Some(om_id) => {
+                let key = format!("lark:{}", om_id);
+                match self
+                    .message_dao
+                    .find_id_by_external_key(ctx.clone(), &key)
+                    .await
+                {
+                    Ok(internal_id) => internal_id,
+                    Err(e) => {
+                        // 反查失败不阻断入站，仅降级为不挂链
+                        log_warn!(
+                            &ctx,
+                            "lark_adapt",
+                            "thread parent lookup failed (degrade to no-link): event_id={} key={} err={}",
+                            event.header.event_id,
+                            key,
+                            e
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+
         log_info!(
             &ctx,
             "lark_adapt",
-            "adapted event_id={} app_id={} from_user={} bound_agent={:?}",
+            "adapted event_id={} app_id={} from_user={} bound_agent={:?} reply_to={:?}",
             event.header.event_id,
             app_id,
             from_id,
-            to_agent_id
+            to_agent_id,
+            reply_to_id
         );
 
         Ok(Some(AdaptedMessage {
@@ -260,7 +308,9 @@ impl LarkDalImpl {
             content,
             project_id: None,
             task_id: None,
-            reply_to_id: None,
+            reply_to_id,
+            // 本消息的平台侧 ID 也落库留痕，供后续回复反查
+            external_key: Some(format!("lark:{}", event.event.message.message_id)),
         }))
     }
 }

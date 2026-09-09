@@ -318,6 +318,22 @@ impl RuntimeAwakening for RuntimeDomainImpl {
         let skill_pos: Vec<crate::models::skill::SkillPo> =
             agent.skills().iter().map(|s| s.po.clone()).collect();
 
+        // Step 2.7: 消息链上下文（当前消息属于某条消息链时，拉取链头 + 最近几条）
+        // 拉取一次、跨压缩轮次复用（链内容在本次唤醒期间不变）；失败降级为空，不阻塞唤醒
+        let message_thread_items = match fetch_message_thread(&ctx, message).await {
+            Ok(items) => items,
+            Err(e) => {
+                crate::log_warn!(
+                    &ctx,
+                    "awaken",
+                    "fetch message thread failed (message_id={}): {:?}",
+                    message.po.id,
+                    e
+                );
+                Vec::new()
+            }
+        };
+
         // 上一轮上下文压缩的产物。
         //
         // Some 时下一轮**不再查询历史记忆** —— 需要回顾的内容都在这份摘要里了，
@@ -473,6 +489,7 @@ impl RuntimeAwakening for RuntimeDomainImpl {
                 builder.past_memories_reference(&past_memories);
             }
             builder.current_message(message);
+            builder.message_thread(&message_thread_items);
             prompt = builder.build();
             // P0-b：用 System + User 双角色分离的初始消息（而非整段塞进一条 User），
             // 配合 P0-a 的回复规则指引，让模型正确决定何时 Final 何时 ToolCall。
@@ -1224,6 +1241,65 @@ impl RuntimeAwakening for RuntimeDomainImpl {
 
 /// 上报到 `AgentAwakeEvent.exit_reason` 的错误原因最大字符数。
 const AGENT_AWAKE_REASON_LIMIT: usize = 200;
+
+/// 消息链上下文：尾部最多保留的近期消息条数（链头永远保留，见 fetch_message_thread）。
+const MESSAGE_THREAD_RECENT_KEEP: usize = 6;
+
+/// 消息链上下文：单次查询的最大条数（防止异常超长链拖垮 prompt 组装）。
+const MESSAGE_THREAD_QUERY_LIMIT: usize = 60;
+
+/// 拉取当前消息所属消息链的上下文条目（供 PromptBuilder 注入【消息链上下文】区块）。
+///
+/// 组装策略（用户拍板）：链头消息（root，话题起点）信息量最大，永远保留；
+/// 尾部保留最近 [`MESSAGE_THREAD_RECENT_KEEP`] 条（时间正序，紧邻当前消息）；
+/// 中间被截断的部分由区块文案引导 Agent 用 list_messages 按 root_id 自行查询。
+/// 当前消息自身已由【当前消息】区块承载，这里排除避免重复。
+async fn fetch_message_thread(ctx: &RequestContext, message: &Message) -> Result<Vec<String>> {
+    use crate::service::dao::message::MessageQuery;
+
+    let Some(root_id) = message.po.root_id.as_deref() else {
+        return Ok(Vec::new());
+    };
+
+    let query = MessageQuery {
+        root_id: Some(root_id.to_string()),
+        organization_id: message.po.organization_id.clone(),
+        order_by: Some("created_at ASC".to_string()),
+        limit: Some(MESSAGE_THREAD_QUERY_LIMIT),
+        ..Default::default()
+    };
+    let chain = crate::service::dal::message::dal()
+        .query(ctx.clone(), query)
+        .await?;
+
+    // 排除当前消息自身（已由【当前消息】区块承载），排除已撤回的无效消息
+    let chain: Vec<_> = chain
+        .into_iter()
+        .filter(|m| {
+            m.po.id != message.po.id && m.po.status != common::enums::MessageStatus::Recalled
+        })
+        .collect();
+    if chain.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 头消息（root）优先；尾部取最近 N 条；链头已落在尾部窗口时去重
+    let head = chain.first().cloned();
+    let tail: Vec<_> = if chain.len() > MESSAGE_THREAD_RECENT_KEEP {
+        chain[chain.len() - MESSAGE_THREAD_RECENT_KEEP..].to_vec()
+    } else {
+        chain[1..].to_vec()
+    };
+
+    let mut items = Vec::with_capacity(tail.len() + 1);
+    if let Some(head) = head {
+        items.push(head.po.to_prompt());
+    }
+    for m in tail {
+        items.push(m.po.to_prompt());
+    }
+    Ok(items)
+}
 
 /// 截断错误原因文本，避免过长动态文本进入 metric 造成存储膨胀与聚合碎片化。
 fn truncate_reason(msg: &str, max_chars: usize) -> String {

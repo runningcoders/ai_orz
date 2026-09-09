@@ -21,6 +21,7 @@ pub async fn load_latest_messages(
         ("task_id", req.task_id.clone()),
         ("from_id", req.from_id.clone()),
         ("to_id", req.to_id.clone()),
+        ("root_id", req.root_id.clone()),
         ("limit", req.limit.map(|v| v.to_string())),
     ]);
     api_get(&format!("/api/v1/finance/messages{}", qs)).await
@@ -52,6 +53,7 @@ pub async fn poll_new_messages(
         ("task_id", req.task_id.clone()),
         ("from_id", req.from_id.clone()),
         ("to_id", req.to_id.clone()),
+        ("root_id", req.root_id.clone()),
         (
             "after_timestamp",
             req.after_timestamp.map(|v| v.to_string()),

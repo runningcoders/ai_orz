@@ -414,9 +414,34 @@ impl MessageChannelDalImpl {
                 // 凭证解析在 DAL 层完成（按凭证 ID 查 user_credentials 行），
                 // DAO 只接收已解析凭证执行出站调用
                 let credentials = self.resolve_lark_credentials(ctx.clone(), channel).await?;
-                self.lark_dao
-                    .push(ctx, message, channel, &credentials)
+                match self
+                    .lark_dao
+                    .push(ctx.clone(), message, channel, &credentials)
                     .await
+                {
+                    // 推送成功：回写外部键映射（"lark:om_xxx"），供入站回复
+                    // 按平台 parent_id/root_id 反查父消息、贯通消息链。
+                    // 回写失败仅告警不阻断（下次推送重试，链路可容忍缺失）。
+                    Ok(Some(lark_message_id)) => {
+                        let external_key = format!("lark:{}", lark_message_id);
+                        if let Err(e) = self
+                            .message_dao
+                            .set_external_key(ctx.clone(), &message.po.id, &external_key)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "message_channel_push",
+                                "外部键回写失败（忽略）: message_id={} key={} err={}",
+                                message.po.id,
+                                external_key,
+                                e
+                            );
+                        }
+                        Ok(())
+                    }
+                    other => other.map(|_| ()),
+                }
             }
             ChannelType::Wechat => {
                 // 凭证解析在 DAL 层完成（同飞书引用模式），DAO 只接收已解析凭证

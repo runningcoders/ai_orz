@@ -78,7 +78,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let file_type = message.file_type.map(|ft| ft as i32);
 
         sqlx::query!(
-            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, root_id, organization_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (id, project_id, task_id, from_id, to_id, from_role, to_role, message_type, file_type, status, content, file_meta, reply_to_id, root_id, external_key, organization_id, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.id,
             message.project_id,
             message.task_id,
@@ -93,6 +93,7 @@ impl MessageDao for MessageDaoSqliteImpl {
             message.file_meta,
             message.reply_to_id,
             message.root_id,
+            message.external_key,
             message.organization_id,
             message.created_by,
             message.modified_by,
@@ -136,7 +137,7 @@ impl MessageDao for MessageDaoSqliteImpl {
         let message = sqlx::query_as!(
             MessagePo,
             r#"
-SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, root_id, organization_id, created_by, modified_by, created_at, updated_at
+SELECT id, project_id, task_id, from_id, to_id, from_role as "from_role: MessageRole", to_role as "to_role: MessageRole", message_type as "message_type: MessageType", file_type as "file_type: FileType", "status" as "status: MessageStatus", content, file_meta as "file_meta: Json<FileMeta>", reply_to_id, root_id, external_key, organization_id, created_by, modified_by, created_at, updated_at
 FROM messages WHERE id = ? AND "status" != 0
             "#,
             id
@@ -145,6 +146,36 @@ FROM messages WHERE id = ? AND "status" != 0
             .await?;
 
         Ok(message)
+    }
+
+    async fn set_external_key(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+        external_key: &str,
+    ) -> Result<()> {
+        sqlx::query!(
+            "UPDATE messages SET external_key = ? WHERE id = ?",
+            external_key,
+            message_id
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(())
+    }
+
+    async fn find_id_by_external_key(
+        &self,
+        ctx: RequestContext,
+        external_key: &str,
+    ) -> Result<Option<String>> {
+        let row = sqlx::query!(
+            "SELECT id FROM messages WHERE external_key = ? LIMIT 1",
+            external_key
+        )
+        .fetch_optional(ctx.db_pool())
+        .await?;
+        Ok(row.map(|r| r.id))
     }
 
     async fn list_by_task_id(
@@ -513,6 +544,7 @@ WHERE messages_fts MATCH "#,
                     file_meta: row.file_meta,
                     reply_to_id: row.reply_to_id,
                     root_id: row.root_id,
+                    external_key: None,
                     organization_id: row.organization_id,
                     created_by: row.created_by,
                     modified_by: row.modified_by,
@@ -567,6 +599,14 @@ fn push_query_filters<'args>(
     }
     if let Some(to_id) = &query.to_id {
         builder.push(" AND to_id = ").push_bind(to_id.clone());
+    }
+    if let Some(reply_to_id) = &query.reply_to_id {
+        builder
+            .push(" AND reply_to_id = ")
+            .push_bind(reply_to_id.clone());
+    }
+    if let Some(root_id) = &query.root_id {
+        builder.push(" AND root_id = ").push_bind(root_id.clone());
     }
     if let Some(to_role) = query.to_role {
         builder.push(" AND to_role = ").push_bind(to_role as i32);

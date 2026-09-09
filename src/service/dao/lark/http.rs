@@ -269,7 +269,7 @@ impl LarkDao for LarkDaoHttpImpl {
         message: &Message,
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         let config = channel.config();
         let open_id = config.lark_open_id.as_ref().ok_or_else(|| {
             err!(
@@ -281,7 +281,7 @@ impl LarkDao for LarkDaoHttpImpl {
 
         let content = &message.po.content;
         if content.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
         let token = self
@@ -297,7 +297,7 @@ impl LarkDao for LarkDaoHttpImpl {
             open_id,
             message_id
         );
-        Ok(())
+        Ok(Some(message_id))
     }
 
     async fn test_connection(

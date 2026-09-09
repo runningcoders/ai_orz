@@ -27,6 +27,10 @@ pub struct ListMessagesRequest {
     #[param(source = "query")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_id: Option<String>,
+    /// 按消息链根 ID 过滤（拉取整条消息链 / 话题讨论区）
+    #[param(source = "query")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     /// 上拉翻页：只返回 created_at 小于此值的消息（毫秒时间戳）
     /// 用于加载更早的历史消息
     #[param(source = "query")]
@@ -71,6 +75,9 @@ pub struct MessageListItem {
     /// 回复的消息 ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_id: Option<String>,
+    /// 消息链根消息 ID（同一话题讨论区的所有消息共享同一 root_id）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
     /// 创建时间戳（毫秒）
     pub created_at: i64,
     /// 文件类型（附件消息才有值）

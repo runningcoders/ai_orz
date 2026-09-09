@@ -80,6 +80,15 @@ pub trait PromptBuilder: Send + Sync {
     /// 设置当前用户消息
     fn current_message(&mut self, message: &Message);
 
+    /// 设置「消息链上下文」（话题讨论区，仅 awaken 场景）
+    ///
+    /// 当前消息属于某条消息链（有 root_id）时，由调用方注入链内消息的渲染条目：
+    /// 第一条恒为链头消息（话题起点，信息量最大），其余为链内最近几条（时间正序）。
+    /// 默认实现为空（不影响 sleep / summary 等场景）。
+    fn message_thread(&mut self, items: &[String]) {
+        let _ = items;
+    }
+
     /// 设置 Agent 可用技能（全量注入，build 时按 tag 分块）
     fn skills(&mut self, skills: &[SkillPo]);
 
@@ -161,6 +170,12 @@ pub trait PromptBuilder: Send + Sync {
     /// 这些条目**已完成沉淀**，只作为延续/补充关系的参考线索，不是待处理对象。
     /// 默认实现为空（不影响 awaken / summary 等场景）。
     fn push_settled_reference(&self, _out: &mut String) {}
+
+    /// 渲染【消息链上下文】参考区块（awaken 场景专用）
+    ///
+    /// 消息链（话题讨论区）的头消息 + 最近几条消息，放在【当前消息】之前。
+    /// 默认实现为空（其他 Builder 不渲染此区块）。
+    fn push_message_thread(&self, _out: &mut String) {}
 
     /// Awaken 场景的 System 部分：人设 + 技能方法论 + 回复规则指引
     ///

@@ -232,6 +232,8 @@ impl WechatDalImpl {
             project_id: None,
             task_id: None,
             reply_to_id: None,
+            // iLink 协议无线程/回复字段，无外部键可映射
+            external_key: None,
         }))
     }
 }

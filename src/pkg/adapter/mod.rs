@@ -45,6 +45,11 @@ pub struct AdaptedMessage {
     pub task_id: Option<String>,
     /// 引用的父消息 ID（可选，支持消息链）
     pub reply_to_id: Option<String>,
+    /// 外部渠道消息键（可选，形如 `"lark:om_xxx"`，渠道前缀防撞键）
+    ///
+    /// 渠道消息自身的平台侧 ID，随消息落库到 `messages.external_key`，
+    /// 供后续入站回复按平台 parent_id/root_id 反查父消息、贯通消息链。
+    pub external_key: Option<String>,
 }
 
 // ==================== 注册中心 ====================

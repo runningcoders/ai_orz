@@ -120,6 +120,7 @@ impl Consumer for TaskEventConsumer {
             project_id: Some(project_id),
             task_id: Some(&event.task_id),
             reply_to_id: None,
+            external_key: None,
             attachment_ids: None,
             message_type: MessageType::TaskDispatchNotification,
         };

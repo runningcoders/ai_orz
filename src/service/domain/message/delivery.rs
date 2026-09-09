@@ -132,7 +132,7 @@ impl MessageDelivery for MessageDomainImpl {
         }
 
         // 2. 创建文本消息（root_id 继承自父消息或自身）
-        let po = MessagePo::new(
+        let mut po = MessagePo::new(
             root_msg_id.clone(),
             project_id,
             task_id,
@@ -149,6 +149,8 @@ impl MessageDelivery for MessageDomainImpl {
             ctx.organization_id().cloned(),
             cmd.from_id.to_string(),
         );
+        // 外部渠道消息键（渠道入站消息才有，供跨渠道消息链反查）
+        po.external_key = cmd.external_key.map(|s| s.to_string());
 
         let message = Message::from_po(po);
         let ctx = enrich_ctx!(&ctx, &message);

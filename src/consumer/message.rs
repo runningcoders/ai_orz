@@ -604,6 +604,7 @@ impl MessageConsumer {
                             project_id,
                             task_id,
                             reply_to_id,
+                            external_key: None,
                             attachment_ids: None,
                             message_type: MessageType::Text,
                         },

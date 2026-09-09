@@ -61,6 +61,7 @@ pub fn init() {
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
         crate::service::dao::user_credential::dao(),
+        crate::service::dao::message::new(),
     );
     // 注册到消息入站适配中台
     if let Err(e) = crate::pkg::adapter::message::registry().register(instance.clone()) {
@@ -75,11 +76,13 @@ pub fn new_with_credential_dao(
     message_channel_dal: Arc<dyn MessageChannelDal>,
     lark_dao: Arc<dyn LarkDao>,
     credential_dao: Arc<dyn UserCredentialDao>,
+    message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
 ) -> Arc<LarkDalImpl> {
     Arc::new(LarkDalImpl::new(
         message_channel_dal,
         lark_dao,
         credential_dao,
+        message_dao,
     ))
 }
 
@@ -94,7 +97,8 @@ pub mod test_support {
         message_channel_dal: Arc<dyn MessageChannelDal>,
         lark_dao: Arc<dyn LarkDao>,
         credential_dao: Arc<dyn UserCredentialDao>,
+        message_dao: Arc<dyn crate::service::dao::message::MessageDao>,
     ) -> Arc<LarkDalImpl> {
-        new_with_credential_dao(message_channel_dal, lark_dao, credential_dao)
+        new_with_credential_dao(message_channel_dal, lark_dao, credential_dao, message_dao)
     }
 }

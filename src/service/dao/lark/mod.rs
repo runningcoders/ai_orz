@@ -112,13 +112,16 @@ pub trait LarkDao: Send + Sync {
     /// - `message`: 消息实体
     /// - `channel`: 消息渠道配置（取 `lark_open_id`）
     /// - `credentials`: 已解析的飞书应用凭证（DAL 层从渠道引用解析）
+    ///
+    /// 返回飞书侧 message_id（om_xxx），DAL 层据此回写消息的外部键映射，
+    /// 供后续入站回复反查父消息、贯通跨渠道消息链。
     async fn push(
         &self,
         ctx: RequestContext,
         message: &Message,
         channel: &MessageChannel,
         credentials: &LarkAppCredentials,
-    ) -> Result<()>;
+    ) -> Result<Option<String>>;
 
     /// 测试飞书渠道凭证是否可用（获取 tenant_access_token）
     ///

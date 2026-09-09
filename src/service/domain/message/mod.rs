@@ -155,6 +155,11 @@ pub struct SendToAgentCommand<'a> {
     pub task_id: Option<&'a str>,
     /// 引用的父消息 ID（可选，支持消息链）
     pub reply_to_id: Option<&'a str>,
+    /// 外部渠道消息键（可选，形如 `"lark:om_xxx"`）
+    ///
+    /// 渠道入站消息落库时随消息写入 `messages.external_key`，供后续
+    /// 入站回复按渠道 parent_id/root_id 反查父消息、贯通跨渠道消息链。
+    pub external_key: Option<&'a str>,
     /// 附件 ID 列表（可选）
     /// 如果提供，会为每个附件创建一条附件消息，按顺序排列在文本消息之前
     pub attachment_ids: Option<&'a [String]>,

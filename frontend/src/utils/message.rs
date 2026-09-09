@@ -132,6 +132,7 @@ pub fn build_optimistic_user_msg(
         status: 3,
         content,
         reply_to_id: None,
+        root_id: None,
         created_at: now_ms(),
         file_type: None,
         file_meta: None,

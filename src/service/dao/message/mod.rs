@@ -25,6 +25,10 @@ pub struct MessageQuery {
     pub from_id: Option<String>,
     /// 按接收方 ID 查询
     pub to_id: Option<String>,
+    /// 按回复目标消息 ID 查询（直接回复某条消息的消息）
+    pub reply_to_id: Option<String>,
+    /// 按消息链根 ID 查询（一次拉取整条消息链）
+    pub root_id: Option<String>,
     /// 按接收方角色查询（如 Agent/User/System）
     pub to_role: Option<MessageRole>,
     /// 按消息类型查询
@@ -80,6 +84,27 @@ pub trait MessageDao: Send + Sync {
 
     /// 根据 ID 查找消息
     async fn find_by_id(&self, ctx: RequestContext, id: &str) -> Result<Option<MessagePo>>;
+
+    /// 回写消息的外部渠道键（`messages.external_key`）
+    ///
+    /// 出站推送成功后调用：`external_key` 形如 `"lark:om_xxx"`（渠道前缀防撞键），
+    /// `message_id` 为内部消息 ID。同一消息重复推送以后写为准。
+    async fn set_external_key(
+        &self,
+        ctx: RequestContext,
+        message_id: &str,
+        external_key: &str,
+    ) -> Result<()>;
+
+    /// 按外部渠道键反查内部消息 ID（未留痕返回 None）
+    ///
+    /// 入站适配用：飞书回复/话题消息的 parent_id/root_id 是外部 ID（om_xxx），
+    /// 需经此映射解析为内部消息 ID 才能挂 reply_to_id。
+    async fn find_id_by_external_key(
+        &self,
+        ctx: RequestContext,
+        external_key: &str,
+    ) -> Result<Option<String>>;
 
     /// 根据任务 ID 查询所有消息，按创建时间升序排列
     /// 如果传入 limit 则限制返回数量

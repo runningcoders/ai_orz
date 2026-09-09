@@ -99,6 +99,7 @@ fn test_dal() -> std::sync::Arc<crate::service::dal::lark::LarkDalImpl> {
         crate::service::dal::message_channel::dal(),
         crate::service::dao::lark::dao(),
         crate::service::dao::user_credential::dao(),
+        crate::service::dao::message::dao(),
     )
 }
 

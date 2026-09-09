@@ -64,6 +64,27 @@ struct PendingAttachment {
     name: String,
 }
 
+/// 被引用消息的预览信息（气泡引用块 / 输入框回复条展示用）
+#[derive(Debug, Clone)]
+struct QuotedPreview {
+    /// 被回复消息的发送者名
+    sender: String,
+    /// 被回复内容（截断后的纯文本预览）
+    content: String,
+    /// 被回复消息所属消息链的 root_id（缺失时回退为其自身 ID），
+    /// 点击引用块用它打开右侧话题讨论区
+    root_id: Option<String>,
+}
+
+/// 气泡的回复/引用上下文：引用块预览 + 回复回调 + 打开话题讨论区回调
+///
+/// 三者总是成对出现（都由消息循环逐条构建），打包传参避免参数列表膨胀。
+struct ReplyCtx {
+    quoted: Option<QuotedPreview>,
+    on_reply: Callback<()>,
+    on_open_thread: Callback<String>,
+}
+
 #[component]
 pub fn MessageChat() -> Element {
     // 修复 HIGH #3：之前 use_require_auth 提前 return 会跳过后续所有 use_signal，
@@ -111,6 +132,35 @@ pub fn MessageChat() -> Element {
     let directory = use_directory();
     // 已发起按需拉取请求的 Agent id（避免重复请求）
     let pending_agent_ids = use_signal(std::collections::HashSet::<String>::new);
+
+    // ===== 消息链（回复 / 话题）状态 =====
+    // 正在回复的消息：驱动输入框引用条 + 发送时携带 reply_to_id
+    let mut reply_target = use_signal(|| Option::<MessageListItem>::None);
+    // 话题讨论区面板：Some(root_id) 时在右侧展示整条消息链
+    let mut thread_root = use_signal(|| Option::<String>::None);
+    let mut thread_messages = use_signal(Vec::<MessageListItem>::new);
+    let mut thread_loading = use_signal(|| false);
+
+    // 话题面板数据加载：thread_root 变化时按 root_id 拉取整条消息链
+    use_effect(move || {
+        let Some(root) = thread_root() else {
+            return;
+        };
+        thread_loading.set(true);
+        spawn(async move {
+            match load_latest_messages(common::api::ListMessagesRequest {
+                root_id: Some(root.clone()),
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            {
+                Ok(resp) => thread_messages.set(resp.messages),
+                Err(e) => toast.error(format!("加载话题消息失败: {}", e)),
+            }
+            thread_loading.set(false);
+        });
+    });
 
     // 快捷指令菜单状态
     let mut show_slash_menu = use_signal(|| false);
@@ -427,6 +477,8 @@ pub fn MessageChat() -> Element {
             toast.info("对方正在处理消息，请稍候再发");
             return;
         }
+        // 回复目标：本次发送携带 reply_to_id（引用条已清空则不带）
+        let reply_to_id = reply_target().map(|m| m.message_id);
         if show_slash_menu() {
             let filtered: Vec<&str> = slash_commands
                 .iter()
@@ -477,8 +529,11 @@ pub fn MessageChat() -> Element {
         // 修复 M4：保存输入快照，失败时恢复（之前 spawn 前就清空，网络失败导致输入丢失）
         let text_snapshot = text.clone();
         let attachments_snapshot = attachments.clone();
+        // 乐观消息的回复指向快照（reply_to_id 本体已 move 进请求）
+        let reply_to_id_snapshot = reply_to_id.clone();
         input_text.set(String::new());
         pending_attachments.set(Vec::new());
+        reply_target.set(None);
         // 提及已随正文一起发出，「已提及」记录只服务于本次输入
         mention.reset_picked();
         is_typing.set(true);
@@ -495,14 +550,15 @@ pub fn MessageChat() -> Element {
                 content: text.clone(),
                 project_id: project_id.clone(),
                 task_id: None,
-                reply_to_id: None,
+                reply_to_id,
                 attachment_ids: attachment_ids_opt,
             };
 
             match send_message_to_agent(req).await {
                 Ok(_) => {
                     // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
-                    let user_msg = build_optimistic_user_msg(text, project_id, None, None);
+                    let mut user_msg = build_optimistic_user_msg(text, project_id, None, None);
+                    user_msg.reply_to_id = reply_to_id_snapshot;
                     let mut current = messages.write();
                     current.push(user_msg);
                 }
@@ -595,6 +651,9 @@ pub fn MessageChat() -> Element {
         // 修复 M1：不再直接调用 load_messages，由 use_effect 响应 selected_project 变化触发
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
+        // 切换会话时同步清理回复 / 话题状态
+        reply_target.set(None);
+        thread_root.set(None);
         if is_mobile() {
             sidebar_open.set(false);
         }
@@ -614,6 +673,9 @@ pub fn MessageChat() -> Element {
         selected_project.set(None);
         // 修复 L3：切换会话时清理 tool_expanded 状态
         tool_expanded.set(std::collections::HashSet::new());
+        // 切换会话时同步清理回复 / 话题状态
+        reply_target.set(None);
+        thread_root.set(None);
         if is_mobile() {
             sidebar_open.set(false);
         }
@@ -692,6 +754,14 @@ pub fn MessageChat() -> Element {
         .cloned();
 
     let project_items = projects.read().clone();
+
+    // 输入框回复条预览：正在回复谁 + 内容摘要（读 reply_target 使组件订阅其变化）
+    let reply_preview = reply_target().map(|rt| {
+        let content: String = rt.content.chars().take(60).collect();
+        (directory().sender_name(&rt), content)
+    });
+    // 取消回复（引用条 × 按钮）
+    let cancel_reply = move |_| reply_target.set(None);
 
     let chat_content = if let Some(project) = current_project {
         let project_name = project.name.clone();
@@ -773,6 +843,27 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
+        // 找不到（未加载到引用的历史消息）则不展示引用块
+        let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
+            messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
+                sender: directory().sender_name(m),
+                content: m.content.chars().take(40).collect(),
+                root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
+            })
+        });
+        // hover 回复：把当前消息设为回复目标
+        let on_reply = {
+            let reply_msg = msg_clone.clone();
+            Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
+        };
+        // 打开右侧话题讨论区（按消息链根 ID）
+        let on_open_thread = Callback::new(move |root_id: String| thread_root.set(Some(root_id)));
+        let reply_ctx = ReplyCtx {
+            quoted,
+            on_reply,
+            on_open_thread,
+        };
                                         rsx! {
                                             div {
                                                 class: if is_user { "chat chat-end" } else { "chat chat-start" },
@@ -794,7 +885,7 @@ pub fn MessageChat() -> Element {
                                                                 tool_expanded.write().insert(mid.clone());
                                                             }
                                                         }
-                                                    }, toast)
+                                                    }, toast, reply_ctx)
                                                 }
                                             }
                                         }
@@ -846,6 +937,8 @@ pub fn MessageChat() -> Element {
                 mention,
                 mention_tab_list.clone(),
                 agent_state,
+                reply_preview.clone(),
+                cancel_reply,
             )}
         }
     } else {
@@ -934,6 +1027,27 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
+        // 找不到（未加载到引用的历史消息）则不展示引用块
+        let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
+            messages.read().iter().find(|m| &m.message_id == rid).map(|m| QuotedPreview {
+                sender: directory().sender_name(m),
+                content: m.content.chars().take(40).collect(),
+                root_id: m.root_id.clone().or_else(|| Some(m.message_id.clone())),
+            })
+        });
+        // hover 回复：把当前消息设为回复目标
+        let on_reply = {
+            let reply_msg = msg_clone.clone();
+            Callback::new(move |_: ()| reply_target.set(Some(reply_msg.clone())))
+        };
+        // 打开右侧话题讨论区（按消息链根 ID）
+        let on_open_thread = Callback::new(move |root_id: String| thread_root.set(Some(root_id)));
+        let reply_ctx = ReplyCtx {
+            quoted,
+            on_reply,
+            on_open_thread,
+        };
                                         rsx! {
                                             div {
                                                 class: if is_user { "chat chat-end" } else { "chat chat-start" },
@@ -955,7 +1069,7 @@ pub fn MessageChat() -> Element {
                                                                 tool_expanded.write().insert(mid.clone());
                                                             }
                                                         }
-                                                    }, toast)
+                                                    }, toast, reply_ctx)
                                                 }
                                             }
                                         }
@@ -1007,6 +1121,8 @@ pub fn MessageChat() -> Element {
                 mention,
                 mention_tab_list.clone(),
                 agent_state,
+                reply_preview.clone(),
+                cancel_reply,
             )}
         }
     };
@@ -1097,6 +1213,63 @@ pub fn MessageChat() -> Element {
 
             div { class: "flex-1 flex flex-col min-w-0",
                 {chat_content}
+            }
+
+            // 话题讨论区：点击消息引用块后按消息链根 ID 展示整条消息链
+            if thread_root().is_some() {
+                div {
+                    class: if is_mobile() {
+                        "fixed top-16 bottom-0 right-0 z-40 w-80 bg-base-200 flex flex-col border-l border-base-300"
+                    } else {
+                        "w-80 shrink-0 bg-base-200 flex flex-col border-l border-base-300"
+                    },
+                    div { class: "p-3 border-b border-base-300 flex items-center justify-between",
+                        h3 { class: "font-semibold", "话题讨论区" }
+                        button {
+                            class: "btn hud-btn btn-ghost btn-sm btn-square",
+                            title: "关闭话题讨论区",
+                            onclick: move |_| thread_root.set(None),
+                            "×"
+                        }
+                    }
+                    div { class: "flex-1 overflow-y-auto p-3 space-y-3",
+                        if thread_loading() {
+                            div { class: "flex items-center justify-center py-8",
+                                Loading { size: "sm" }
+                            }
+                        } else if thread_messages().is_empty() {
+                            div { class: "text-center text-sm text-base-content/50 py-8",
+                                "暂无消息"
+                            }
+                        } else {
+                            for tm in thread_messages().iter() {
+                                {
+                                    let thread_sender = directory().sender_name(tm);
+                                    rsx! {
+                                        div {
+                                            class: "rounded-lg bg-base-100 border border-base-300 p-2",
+                                            key: "{tm.message_id}",
+                                            div { class: "flex items-center gap-2 text-xs text-base-content/60",
+                                                if tm.reply_to_id.is_some() {
+                                                    span { title: "这条消息是对话题内某条消息的回复", "↩" }
+                                                }
+                                                span { class: "font-medium text-base-content/80", "{thread_sender}" }
+                                                span { class: "ml-auto", "{format_time(tm.created_at)}" }
+                                            }
+                                            div { class: "text-sm mt-1 break-words",
+                                                if is_attachment_message(tm.message_type) {
+                                                    span { class: "opacity-60", "[附件消息]" }
+                                                } else {
+                                                    MarkdownRenderer { content: tm.content.clone(), compact: true }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // 信息侧栏遮罩（移动端展开时）
@@ -1271,6 +1444,8 @@ fn chat_input_area(
     mention: MentionState,
     tabs: Vec<MentionTab>,
     agent_state: Signal<i32>,
+    reply_preview: Option<(String, String)>,
+    cancel_reply: impl FnMut(dioxus::events::MouseEvent) + 'static,
 ) -> Element {
     // 鼠标点选候选：先由组件对齐高亮，这里直接 confirm 即可
     let mut input_text_pick = input_text;
@@ -1359,6 +1534,20 @@ fn chat_input_area(
             MentionPickedBar {
                 picked: mention.picked(),
                 on_remove: on_remove_mention,
+            }
+            // 回复引用条：显示正在回复的消息，可取消
+            if let Some((sender, content)) = reply_preview {
+                div { class: "flex items-center gap-2 mb-2 rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs",
+                    span { class: "text-base-content/60 shrink-0", "回复" }
+                    span { class: "font-medium shrink-0", "{sender}" }
+                    span { class: "text-base-content/60 truncate flex-1", "{content}" }
+                    button {
+                        class: "btn hud-btn btn-ghost btn-xs btn-circle shrink-0",
+                        title: "取消回复",
+                        onclick: cancel_reply,
+                        "×"
+                    }
+                }
             }
             if !pending_attachments().is_empty() {
                 div { class: "flex flex-wrap gap-2 mb-2",
@@ -1554,7 +1743,13 @@ fn render_message_content(
     is_system: bool,
     toggle_expand: impl FnMut() + 'static,
     toast: crate::store::toast::ToastState,
+    reply_ctx: ReplyCtx,
 ) -> Element {
+    let ReplyCtx {
+        quoted,
+        on_reply,
+        on_open_thread,
+    } = reply_ctx;
     // 气泡配色已收敛到 `styles/input.css` 的 `.chat .chat-bubble-{primary,neutral,system}`：
     // 轻量「浅底 + 正文色 + 细边」，替代 DaisyUI 原生高饱和/近黑实底（背景过重、正文不显眼）。
     let bubble_class = if is_user {
@@ -1585,15 +1780,44 @@ fn render_message_content(
         MSG_TEXT => {
             let content = msg.content.clone();
             let toast_copy = toast;
+            // 引用块：quote_label 驱动展示，quote_target 供点击回调取链根
+            let quote_label = quoted.clone();
+            let quote_target = quoted;
             rsx! {
                 div { class: "group relative",
+                    if let Some(q) = quote_label {
+                        button {
+                            class: "mb-1 w-full text-left rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs text-base-content/70 hover:bg-base-200 transition-colors",
+                            title: "查看话题讨论区",
+                            onclick: move |_| {
+                                if let Some(root) = quote_target
+                                    .as_ref()
+                                    .and_then(|t| t.root_id.clone())
+                                {
+                                    on_open_thread(root);
+                                }
+                            },
+                            span { class: "font-medium", "↩ {q.sender}" }
+                            span { class: "ml-1 opacity-80", "{q.content}" }
+                        }
+                    }
                     div { class: "{bubble_class} break-words",
                         MarkdownRenderer { content: msg.content.clone(), compact: true }
                     }
-                    button {
-                        class: "absolute -top-2 -right-2 btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 transition-opacity bg-base-100 shadow",
-                        onclick: move |_| copy_to_clipboard(&content, &toast_copy),
-                        "复制"
+                    // hover 操作图标排：复制 / 回复
+                    div { class: "absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
+                        button {
+                            class: "btn hud-btn btn-ghost btn-xs btn-square bg-base-100 shadow",
+                            title: "复制",
+                            onclick: move |_| copy_to_clipboard(&content, &toast_copy),
+                            "⧉"
+                        }
+                        button {
+                            class: "btn hud-btn btn-ghost btn-xs btn-square bg-base-100 shadow",
+                            title: "回复",
+                            onclick: move |_| on_reply(()),
+                            "↩"
+                        }
                     }
                 }
                 div { class: "{time_class}", "{format_time(msg.created_at)}" }

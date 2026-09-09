@@ -72,6 +72,8 @@ pub struct DefaultPromptBuilder {
     compacted_context: Option<String>,
     /// 更早的记忆参考条目（仅 awaken 场景，压缩后的轮次补充连续性）
     past_memories: Vec<String>,
+    /// 消息链参考条目（仅 awaken 场景：首条=链头消息，其余=链内最近几条）
+    message_thread: Vec<String>,
     /// 当前用户消息
     current_message: Option<String>,
     /// 技能（全量，build 时按 tag 分块）
@@ -159,6 +161,11 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
 
     fn past_memories_reference(&mut self, items: &[String]) {
         self.past_memories.extend_from_slice(items);
+    }
+
+    fn message_thread(&mut self, items: &[String]) {
+        self.message_thread.clear();
+        self.message_thread.extend_from_slice(items);
     }
 
     fn current_message(&mut self, message: &Message) {
@@ -747,6 +754,36 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         out.push('\n');
     }
 
+    /// 渲染【消息链上下文】参考区块（awaken 场景专用）
+    ///
+    /// 条目由调用方（awakening）装配：首条=链头消息（话题起点，信息量最大），
+    /// 其余=链内最近几条（时间正序）。区块显式说清消息来源与查询方式：
+    /// Agent 需要链内未列出的消息时，用 list_messages 工具按 root_id 查询整条链
+    /// （root_id 见当前消息的【消息链】字段）。
+    fn push_message_thread(&self, out: &mut String) {
+        if self.message_thread.is_empty() {
+            return;
+        }
+        out.push_str("【消息链上下文（话题讨论区）】\n");
+        out.push_str(&format!(
+            "当前消息属于一条消息链，以下是链内消息的节选，共 {} 条：\
+             第一条是链头消息（话题起点，包含话题的完整背景，信息量最大），\
+             其余是链内最近的若干条消息（按时间正序排列）。\n\
+             如需查看链内未列出的其它消息，用 list_messages 工具传 \
+             root_id（取【当前消息】中的【消息链】字段值）查询整条链。\n\n",
+            self.message_thread.len()
+        ));
+        for (idx, item) in self.message_thread.iter().enumerate() {
+            if idx == 0 {
+                out.push_str("〔链头消息〕\n");
+            } else if idx == 1 {
+                out.push_str("〔链内近期消息〕\n");
+            }
+            out.push_str(item);
+            out.push_str("\n\n");
+        }
+    }
+
     /// Awaken 场景的 System 部分：人设 + 技能方法论 + 回复规则指引
     fn awaken_system_part(&self) -> String {
         let mut s = String::new();
@@ -812,6 +849,8 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         if let Some(trace_id) = &self.current_trace_id {
             s.push_str(&format!("【思考 Trace ID】{}\n\n", trace_id));
         }
+        // 消息链上下文：紧贴【当前消息】渲染，说明当前消息所属话题的来龙去脉
+        self.push_message_thread(&mut s);
         let intent_section = self.render_intent_analysis_section();
         if !intent_section.is_empty() {
             s.push_str(&intent_section);
@@ -870,6 +909,9 @@ impl crate::models::prompt_builder::PromptBuilder for DefaultPromptBuilder {
         if !intent_section.is_empty() {
             result.push_str(&intent_section);
         }
+
+        // 10.6 【消息链上下文】区块：紧贴当前消息，说明当前消息所属话题的来龙去脉
+        self.push_message_thread(&mut result);
 
         // 11. 当前用户消息
         if let Some(msg) = &self.current_message {

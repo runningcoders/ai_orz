@@ -78,6 +78,7 @@ pub async fn send_message_to_agent(
         }
     };
 
+    let reply_to_id = super::auto_reply_to_id(&ctx, params.reply_to_id.as_deref());
     let cmd = SendToAgentCommand {
         from_id: &from_id,
         from_role,
@@ -85,7 +86,8 @@ pub async fn send_message_to_agent(
         content: &params.content,
         project_id: params.project_id.as_deref(),
         task_id: params.task_id.as_deref(),
-        reply_to_id: params.reply_to_id.as_deref(),
+        reply_to_id: reply_to_id.as_deref(),
+        external_key: None,
         attachment_ids: params.attachment_ids.as_deref(),
         message_type: common::enums::MessageType::Text,
     };

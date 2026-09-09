@@ -1,5 +1,6 @@
 //! Handler: 发送消息给用户
 
+use super::auto_reply_to_id;
 use crate::pkg::RequestContext;
 use crate::service::domain::message::{self, SendToUserCommand};
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
@@ -22,6 +23,7 @@ pub async fn send_message(
 ) -> Result<SendMessageResponse> {
     // 调用方身份由 ctx 封装方法统一提供
     let from_agent_id = ctx.caller_id_or_system();
+    let reply_to_id = auto_reply_to_id(&ctx, params.reply_to_id.as_deref());
 
     let cmd = SendToUserCommand {
         from_agent_id: &from_agent_id,
@@ -29,7 +31,7 @@ pub async fn send_message(
         content: &params.content,
         project_id: params.project_id.as_deref(),
         task_id: params.task_id.as_deref(),
-        reply_to_id: params.reply_to_id.as_deref(),
+        reply_to_id: reply_to_id.as_deref(),
     };
 
     let message = message::domain().delivery().send_to_user(ctx, cmd).await?;

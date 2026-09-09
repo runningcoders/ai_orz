@@ -16,7 +16,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "list_messages",
     name = "List Chat Messages",
-    description = "List chat messages filtered by project_id, task_id, from_id, or to_id with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Returns messages with a total count. Use search_messages for keyword lookup.",
+    description = "List chat messages filtered by project_id, task_id, from_id, to_id, or root_id (pass root_id to fetch an entire message thread / discussion chain) with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Returns messages with a total count. Use search_messages for keyword lookup.",
     params = "common::api::message::ListMessagesRequest",
     neural,
     tags = "messaging"
@@ -49,6 +49,7 @@ pub async fn list_messages(
         task_id: params.task_id.clone(),
         from_id: params.from_id.clone(),
         to_id: params.to_id.clone(),
+        root_id: params.root_id.clone(),
         limit: Some(limit + 100),
         offset: None,
         order_by: Some(order_by),
@@ -110,6 +111,7 @@ pub async fn list_messages(
                 status: m.po.status as i32,
                 content: m.po.content.clone(),
                 reply_to_id: m.po.reply_to_id.clone(),
+                root_id: m.po.root_id.clone(),
                 created_at: m.po.created_at,
                 file_type: m.po.file_type.map(|ft| ft as i32),
                 file_meta,

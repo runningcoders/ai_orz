@@ -3,7 +3,7 @@
 use crate::models::file::FileMeta;
 use crate::models::message::{MessagePo, ToolCallMessage};
 use crate::pkg::RequestContext;
-use crate::service::dao::message::{self, MessageDao};
+use crate::service::dao::message::{self, MessageDao, MessageQuery};
 use common::enums::{FileType, MessageRole, MessageStatus, MessageType};
 use common::error::Result;
 use sqlx::{Row, SqlitePool};
@@ -340,6 +340,152 @@ async fn test_list_by_to_id(pool: SqlitePool) -> Result<()> {
         .await?;
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].content, "AI回复给用户".to_string());
+
+    Ok(())
+}
+
+/// 测试按消息链过滤（root_id / reply_to_id）
+#[sqlx::test(migrations = "./migrations")]
+async fn test_query_by_root_id_and_reply_to_id(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
+    let root_id = Uuid::now_v7().to_string();
+
+    // 链头消息：root_id = 自身
+    let head = MessagePo::new(
+        root_id.clone(),
+        None,
+        None,
+        "user-001".to_string(),
+        "agent-001".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "链头消息".to_string(),
+        None,
+        empty_file_meta.clone(),
+        None,
+        Some(root_id.clone()),
+        None,
+        "test-user".to_string(),
+    );
+    // 链内回复消息：reply_to_id = 链头，root_id 继承
+    let reply = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "agent-001".to_string(),
+        "user-001".to_string(),
+        MessageRole::Agent,
+        MessageRole::User,
+        MessageType::Text,
+        "链内回复".to_string(),
+        None,
+        empty_file_meta.clone(),
+        Some(root_id.clone()),
+        Some(root_id.clone()),
+        None,
+        "test-user".to_string(),
+    );
+    // 链外消息：独立 root
+    let other = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "user-001".to_string(),
+        "agent-001".to_string(),
+        MessageRole::User,
+        MessageRole::Agent,
+        MessageType::Text,
+        "链外消息".to_string(),
+        None,
+        empty_file_meta,
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    for msg in [&head, &reply, &other] {
+        message_dao.insert(ctx.clone(), msg).await?;
+    }
+
+    // 按 root_id 拉整条链（排除链外消息）
+    let chain = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                root_id: Some(root_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(chain.len(), 2);
+
+    // 按 reply_to_id 查直接回复
+    let replies = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                reply_to_id: Some(root_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].content, "链内回复".to_string());
+
+    Ok(())
+}
+
+/// 测试外部渠道键回写与反查（跨渠道消息链）
+#[sqlx::test(migrations = "./migrations")]
+async fn test_set_and_find_external_key(pool: SqlitePool) -> Result<()> {
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let empty_file_meta = FileMeta::new("".to_string(), "".to_string(), 0);
+    let msg = MessagePo::new(
+        Uuid::now_v7().to_string(),
+        None,
+        None,
+        "agent-001".to_string(),
+        "user-001".to_string(),
+        MessageRole::Agent,
+        MessageRole::User,
+        MessageType::Text,
+        "出站消息".to_string(),
+        None,
+        empty_file_meta,
+        None,
+        None,
+        None,
+        "test-user".to_string(),
+    );
+    message_dao.insert(ctx.clone(), &msg).await?;
+
+    // 未留痕时反查为 None
+    let miss = message_dao
+        .find_id_by_external_key(ctx.clone(), "lark:om_not_exist")
+        .await?;
+    assert!(miss.is_none());
+
+    // 出站推送成功后回写外部键，反查命中内部消息 ID
+    message_dao
+        .set_external_key(ctx.clone(), &msg.id, "lark:om_001")
+        .await?;
+    let hit = message_dao
+        .find_id_by_external_key(ctx.clone(), "lark:om_001")
+        .await?;
+    assert_eq!(hit, Some(msg.id.clone()));
+
+    // 同一消息重复推送（重试）后写为准
+    message_dao
+        .set_external_key(ctx.clone(), &msg.id, "lark:om_002")
+        .await?;
+    let latest = message_dao
+        .find_id_by_external_key(ctx.clone(), "lark:om_002")
+        .await?;
+    assert_eq!(latest, Some(msg.id.clone()));
 
     Ok(())
 }
