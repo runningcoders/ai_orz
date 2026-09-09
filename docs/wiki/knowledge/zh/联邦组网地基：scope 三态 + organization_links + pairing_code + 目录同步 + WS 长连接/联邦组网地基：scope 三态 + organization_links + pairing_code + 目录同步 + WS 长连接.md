@@ -43,10 +43,13 @@ source_files:
   - migrations/20260904000004_add_capabilities_to_organization_links.sql (ALTER TABLE organization_links ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]' — 连接级能力白名单)
   - migrations/20260905000001_organizations_addresses.sql (ALTER TABLE organizations ADD COLUMN addresses TEXT NOT NULL DEFAULT '[]' — 多地址自报 + scope 列 ALTER)
   - docs/plan/组织组网与去中心化联邦方案.md#L1-L245 (Phase 1 评审稿：ADR D1-D7 + scope 三态数据模型 + 配对码协议 + 分阶段实施；集团=group_name 纯展示标签)
+  - src/pkg/crypto/did.rs#L1-L150 (签名基建被 WS 消费——Ed25519 did:key 密钥对 + 签名原语；WS 握手时对端用此签名)
+  - src/pkg/nonce.rs#L1-L60 (签名基建被 WS 消费——进程内 nonce 去重防重放；WS 握手四头之一)
+  - src/middleware/federation_identity.rs#L1-L200 (**增量**：WS 长连接握手阶段调用同一签名验签函数——HTTP 鉴权和 WS 握手共用 federation_identity::resolve；签名四头 X-Federation-Key-Id / Timestamp / Nonce / Signature；nonce LRU + timestamp ±300s 窗口)
   - docs/wiki/zh/content/功能模块/用户与组织管理/组织组网与联邦.md (联邦组网长文：架构总览 + Mermaid 时序图 + 核心组件详解 + ADR 决策 + 安全约束 + 故障排查 5 条)
   - docs/wiki/zh/content/功能模块/用户与组织管理/用户与组织管理.md (用户组织管理全景：scope 三态扩展 + 组织间组网关系说明)
   - docs/wiki/zh/content/架构设计/分层架构设计/Domain 层编排/Organization 领域编排.md (OrganizationManage trait 扩展：联邦能力 + 静默 shadow upsert 与事件发布分离)
-  - 【兄弟卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities.md (鉴权子主题：组网地基连接建立 → 鉴权模型负责跨组织调用时的身份识别与凭证验证)
+  - 【兄弟卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：did:key + Ed25519 签名 + 合约授权 + nonce 防重放 + 任务令牌/跨组织业务调用鉴权模型：did:key + Ed25519 签名 + 合约授权 + nonce 防重放 + 任务令牌.md (鉴权子主题：组网地基负责连接建立与身份密钥落库 → 鉴权模型负责跨组织调用时的 Ed25519 签名验签 + 合约能力门禁；WS 握手复用鉴权模型的签名验签链路)
   - 【关联卡】docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md (scope 三态扩展 + federation 相关 §4 硬约束补充)
 ---
 
@@ -60,7 +63,7 @@ source_files:
 - **配对码协议（ADR D5，复用邀请码范式）**：签发（用户侧 JWT）→ verify + 凭证交换（机器侧，配对码鉴权）→ create_link（双向凭证落库 + shadow upsert 对端影子记录 + 目录拉取）。**配对码 24 字符去 0/O/1/I 字符集 + 10 分钟 TTL + 用后即焚**。`OrganizationPairingDal::consume` 单条 UPDATE 原子完成四判定（哈希匹配 + 未消费 + 未过期 + 置 consumed_at），任何不匹配返回 None——上层统一转 `Error::unauthorized`，**不区分原因防枚举探测**（评审稿 §6.3）。
 - **shadow upsert 静默写入（src/service/dal/organization/impl.rs）**：对端组织影子写入 organizations 表时走 `OrganizationDal::upsert_remote_shadow` / `upsert_linked_shadow`，**不发事件**——与普通组织创建（发 `organization.changed` 事件触发 FederationDirectoryConsumer）严格分离，防止影子记录无限触发推送。静默写入逻辑封装在 organization DAL 层，domain 调用时显式走静默路径。
 - **目录推拉结合同步**（src/consumer/federation_directory.rs + scheduler cron）：① **推送保证时效**——本地组织变更（创建/更新/删除）→ publish `organization.changed` → FederationDirectoryConsumer → `push_directory_to_peers` 全量推送所有 Active 对端（best-effort，推送失败不阻断主流程）；② **cron 定时对账保证最终一致**——SchedulerConsumer 每分钟触发 `directory_reconcile` → 查所有 Active 连接 → 双向 GET directory → 对比差异 → 差异方 pull 补齐。两条链路同源（最终调 OrganizationManage::push_directory_to_peers / reconcile_directories），推送快、对账稳。
-- **WS 长连接架构（P8 落地）**：`pkg::ws` 通用管理器（client 侧 supervisor 指数退避重连 + 心跳 + 读循环；server 侧被动接受 + 心跳 + 优雅关闭）**不含任何业务语义**——帧解析与处置由 `WsClientAdapter` / `WsServerHandler` adapter 实现方全权解释。联邦 WS 出站 consumer 订阅 `federation.outbound` → ws::connection push 帧；入站 consumer 订阅 `federation.inbound.send_task` → 复用 HTTP send_task 核心函数。**命令发起方（call_peer facade）先查注册表决定走 WS 还是回退 HTTP**——无活连接时 WS consumer 告警丢弃不重试，避免自动 fallback 掩盖问题。
+- **WS 长连接架构（P8 落地）**：`pkg::ws` 通用管理器（client 侧 supervisor 指数退避重连 + 心跳 + 读循环；server 侧被动接受 + 心跳 + 优雅关闭）**不含任何业务语义**——帧解析与处置由 `WsClientAdapter` / `WsServerHandler` adapter 实现方全权解释。联邦 WS 出站 consumer 订阅 `federation.outbound` → ws::connection push 帧；入站 consumer 订阅 `federation.inbound.send_task` → 复用 HTTP send_task 核心函数。**命令发起方（call_peer facade）先查注册表决定走 WS 还是回退 HTTP**——无活连接时 WS consumer 告警丢弃不重试，避免自动 fallback 掩盖问题。**【增量 2026-09 签名升级】WS 长连接握手现在复用每请求签名链路（Ed25519 四头协议 + nonce 防重放 + timestamp ±300s 窗口），与 HTTP 鉴权同一套 federation_identity::resolve 函数，彻底避免漂移。**
 
 ---
 
@@ -83,6 +86,9 @@ source_files:
 | consumer/federation_ws_outbound.rs FederationWsOutboundConsumer | WS 出站帧投递 | 订阅 EventKind["federation.outbound"] → ws::connection push；无活连接告警丢弃 | `:L1-L79` |
 | consumer/federation_inbound_task.rs FederationInboundTaskConsumer | WS 入站命令执行 | 订阅 EventKind["federation.inbound.send_task"] → 复用 handle_send_task → publish response 帧 | `:L1-L132` |
 | pkg/ws/mod.rs 通用 WS 管理器 | WS 基建层 | client: supervisor 指数退避重连 + 心跳 + 读循环；server: 被动接受 + 心跳；adapter 模式业务解耦；**不含业务语义** | `:L1-L635` |
+| middleware/federation_identity.rs (增量) | WS 握手签名验签 | WS upgrade 握手阶段调用 federation_identity::resolve —— 复用 HTTP 鉴权的 Ed25519 四头验签链路（timestamp ±300s + nonce LRU + peer_did 匹配）；HTTP 和 WS 共用同一纯函数 | `:L1-L200` |
+| pkg/crypto/did.rs (增量) | Ed25519 did:key 签名原语 | WS 握手对端用此签名；build_signing_string / verify_signature 被 federation_identity::resolve 消费 | `:L1-L150` |
+| pkg/nonce.rs (增量) | nonce 防重放 | WS 握手四头之一；进程内 LRU HashMap 去重，600s TTL，65536 容量上限 | `:L1-L60` |
 | migrations/20260904000001-000004 + 20260905000001 | 5 个联邦迁移 | group_name(展示) → organization_links(连接) → organization_pairing_codes(配对码) → capabilities(白名单) → addresses(多地址自报 + scope ALTER) | 见 migration files |
 | docs/plan/组织组网与去中心化联邦方案.md | Phase 1 评审稿 | ADR D1-D7 + scope 三态数据模型 + 配对码协议 + 分阶段实施；集团=group_name 纯展示标签 | `:L1-L245` |
 
@@ -97,7 +103,7 @@ source_files:
 
 ## §3 架构约定
 
-本卡为联邦组网的主主题，与 **【跨组织业务调用鉴权模型】** 互为兄弟卡（Level 3 视角兄弟卡）——本卡负责**连接建立**（scope 三态 + 连接表 + 配对码 + 目录 + WS 长连接），兄弟卡负责**跨组织调用时的鉴权与身份识别**（dual-mode auth + federation_identity + delegation + audit + capabilities）。
+本卡为联邦组网的主主题，与 **【跨组织业务调用鉴权模型：did:key + Ed25519 签名 + 合约授权 + nonce 防重放 + 任务令牌】** 互为兄弟卡（Level 3 视角兄弟卡）——本卡负责**连接建立与身份密钥落库**（scope 三态 + 连接表 + 配对码 + 目录 + WS 长连接生命周期），兄弟卡负责**跨组织调用时的签名验签与合约能力门禁**（Ed25519 每请求签名 + 合约授权 + nonce 防重放 + 任务令牌）。**WS 长连接握手现在复用兄弟卡的签名验签链路**——HTTP 和 WS upgrade 握手共用 federation_identity::resolve 纯函数，彻底避免鉴权逻辑漂移。
 
 ### 分层架构（Adapter → Domain → DAL → DAO，单向）
 

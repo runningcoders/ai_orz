@@ -59,7 +59,8 @@ source_files:
 | tests/common/factories/* 工厂模块 | 实体快速构造 | AgentFactory：create_test_agent(ctx, org_id, status=Active)；ProjectFactory：create_test_project(ctx, owner_id)；UserFactory：create_test_user(ctx, org_id, role=Member)；所有工厂用 RandomId::new() 生成不冲突 id，测试并行不相互污染 | 见 factories/mod.rs |
 | tests/integration/ 19 targets 20 文件 | 跨模块集成测试 | 文件名即 target 名：a2a_flow（A2A 协议 roundtrip）、agent_awaken（两阶段唤醒 IntentAnalyze + Awaken）、core_crud（所有 Domain 的基础 CRUD）、system_cron_triggers（2 条默认注入 + list_due 触发）、vector_degradation（向量存储 down → FTS5-only 降级） | 见 integration/ mod 结构 |
 | src/**/sqlite_test.rs DAO 层单测 | 纯 DAO CRUD | `#[sqlx::test]` 宏自动创建独立 SQLite 内存库（每次 test 全新）；test_query_count_reuse_where：query 过滤 status=Pending → 断言 total == count(query) 同条件（push_query_filters 共享检查） | 见 cron_trigger/sqlite_test.rs |
-| .github/workflows/ci.yml CI 流水线 | 4 阶段闸门 | stage1 check(clippy -D warnings x86+wasm32) → stage2 test(cargo test --workspace 全部) → stage3 coverage(cargo-llvm-cov 38%/45%) → stage4 build(release dist docker)；每个 stage 失败立即停，不往下跑 | 见 ci.yml jobs |
+| .github/workflows/ci.yml CI 流水线 | 4 阶段闸门 | stage1 check(clippy -D warnings workspace + wasm32) → stage2 test(cargo test --workspace 全部) → stage3 coverage(cargo-llvm-cov 38%/45%) → stage4 build(release dist docker)；每个 stage 失败立即停，不往下跑；rust.yml（release.yml）也跑 cargo clippy --workspace 作为额外检查 | 见 ci.yml jobs |
+| .githooks/pre-push 本地门禁 | 真门禁 | shell 脚本：`cargo clippy --workspace --all-targets -- -D warnings` + `cargo test --workspace --exclude frontend`；exit 1 阻止 push；跳过用 `git push --no-verify`；覆盖 common/ai-orz-macros/pkg/service/src 全部 crate | 见 .githooks/pre-push |
 | docs/archive/design-archive/testing_guidelines.md 测试设计 | 金字塔分层 | 金字塔图：DAO单元(底) → DAL → Domain → Handler → 集成测试(中) → E2E(尖)；每一层责任：DAO 层只测 SQL（+边界），集成测试测真实链路（跨 Domain），E2E 测用户 happy path | `:L1-L50` |
 | docs/design/sqlx_guide.md SQL 规范 | sqlx 0.8 + SQLite | STRICT 模式所有表必须；枚举 `as "status: TaskStatus"` 显式标注；.sqlx/ 目录必须 git 提交（query! 离线编译元数据，CI 无网也能过）；软删除 status=0 WHERE 默认过滤 | `:L1-L60` |
 | src/pkg/request_context_test_support.rs 测试基建统一入口 | 业务层 init 单点 | `init_service_for_test()` 幂等一次调 `config::init` → `dao::init_all` → `dal::init_all` → `domain::init` 全链注册；各层 OnceLock 内存单例，重复调用安全；domain 单元测试依赖 message_channel 等长链路时调用本函数替代手工拼装 | `:L1-L15` |
@@ -131,6 +132,8 @@ STAGE 4. build(release)【2-3min，仅 main branch 触发】
 6. **Playwright E2E 不进 CI（仅本地 `make e2e`）**：E2E 需要登录→调用真实 LLM，成本高且偶发 flaky（模型响应超时）。CI 不跑；发布前 release manager 本地跑一次，失败视频自动保存 tests/e2e/test-results/ 附到 PR；纯登录/创建 Agent 等不涉及 LLM 的 E2E 子集可后续改加进 CI。
 7. **集成测试 19 targets 不能有相互依赖的前置条件（进程隔离）**：agent_management_test 的 agent_id 不能被 a2a_flow_test 复用；每个 target 自己 init_full_test_env 造独立数据。跨 target 复用数据会导致：单独跑 cargo test a2a_flow 通过，但一起跑 `cargo test` 并行随机失败（Heisenbug）。
 8. **前端 wasm32 单元测试不 mock 网络请求，直接测纯逻辑组件**：测试 GraphCanvas、PagedResult::map UI 渲染、use_resource deps 变化触发不发 HTTP；HTTP 用真实 API client 测试放集成/Playwright E2E。否则 wasm32 里模拟网络需要 wasm-bindgen-test 引入 js-sys 庞大依赖，测试启动超 10 秒无法接受。
+9. **pre-push 是真门禁（exit 1 阻止 push），不是提示**：`.githooks/pre-push` shell 脚本必须 `exit 1` 当 clippy 或 test 失败；任何"warn only"软门禁违反红线。开发者用 `git push --no-verify` 跳过必须在 PR 描述里注明原因。
+10. **workspace clippy 命令必须双端独立**：后端用 `cargo clippy --workspace --exclude frontend --all-targets -- -D warnings`；前端单独 `cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings`；禁止合并为单一命令（wasm32 target 不能跑 workspace 全量）；clippy lint 自定义配置在 `.cargo/config.toml`，禁止分散在各 crate。
 
 ---
 

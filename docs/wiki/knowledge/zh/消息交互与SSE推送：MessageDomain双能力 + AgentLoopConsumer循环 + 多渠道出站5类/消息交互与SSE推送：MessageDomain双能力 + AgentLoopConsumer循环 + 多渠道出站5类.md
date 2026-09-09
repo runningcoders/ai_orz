@@ -5,7 +5,9 @@ name: 消息交互与SSE推送：MessageDomain delivery+management 双能力 + A
 category: 业务模块 / 消息系统
 scope:
 - src/service/domain/message/**
+- src/service/domain/runtime/awakening.rs
 - src/service/dal/message*.rs
+- src/service/dal/lark/**
 - src/service/dao/message_push.rs
 - src/service/dao/lark/http.rs
 - src/service/dao/lark/ws.rs
@@ -13,10 +15,12 @@ scope:
 - src/service/dao/email/smtp.rs
 - src/service/dao/webhook/http.rs
 - src/service/dao/wechat/http.rs
+- src/models/message.rs
 - src/consumer/message.rs
 - src/consumer/agent_loop.rs
 - src/middleware/sse.rs
 - common/src/api/message*.rs
+- migrations/*external_key*
 source_files:
 - 'src/service/domain/message/mod.rs#L1-L60 '
 - 'src/service/domain/message/delivery.rs#L1-L150 '
@@ -48,6 +52,12 @@ source_files:
 - 【平行卡 2】docs/wiki/knowledge/zh/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry
   全局单例 + 8 类业务消费者注册/AOP 生产消费事件中心：纯框架零业务 + pkg/aop/core 6 Trait + Registry 全局单例 + 8
   类业务消费者注册.md
+- migrations/20260909000004_add_external_key_to_messages.sql (reply_to + external_key 字段 migration)
+- src/models/message.rs (MessagePo reply_to + external_key + federation_contract)
+- src/service/domain/runtime/awakening.rs (两阶段唤醒后注入 reply_to 上下文)
+- src/service/dal/lark/impl.rs + src/service/dao/lark/http.rs (飞书 thread_id ↔ external_key 双向映射)
+- docs/wiki/zh/content/功能模块/消息系统/消息系统.md
+- docs/wiki/zh/content/功能模块/消息系统/消息管理.md
 
 ---
 
@@ -61,6 +71,8 @@ source_files:
 
 **95a0b1bf 修复：统一回复通道 + from_role 三路分发**：`MessageConsumer.handle_agent_message` 在 awaken() 返回 raw_output 非空时，按入口消息的 `from_role` 自动生成回复——User 入口 → `delivery.send_to_user(reply_to=原消息.id, to_user_id=原消息.from_id)`；Agent 入口 → `delivery.send_to_agent(from_role=Agent, to_agent_id=原消息.from_id)`；System 入口 → 跳过（系统消息无对话对象）。从此 Agent 不需要自己调用 send_message 工具回复当前对话用户，Framework 层兜底，彻底解决"必须猜 to_user_id 才能结束任务"的心理陷阱。
 
+**消息链与话题讨论区（external_key + reply_to）**：messages 表新增 reply_to（回复链）与 external_key（话题讨论区关联键）字段（migration `20260909000004_add_external_key_to_messages.sql`）。出站推送时 dao/lark/http.rs 把 external_key 自动翻译为飞书 thread_id（双向映射：入站 thread_id → external_key 存入表，出站 external_key → thread_id 发给飞书）。src/service/domain/runtime/awakening.rs 在两阶段唤醒（IntentAnalyze → Awaken）完成后注入 reply_to 上下文到 Agent prompt，使 Agent 生成的回复自动挂在原消息下形成回复链。scheduler/consumer 三个生产端各加 1 行携带 reply_to 字段。
+
 ---
 
 ## §2 关键文件与职责表
@@ -73,7 +85,11 @@ source_files:
 | dao/message_push.rs MessagePushDao 出站分发 | 5 渠道统一入口 | match kind 字符串→对应外部 DAO 方法；统一返回 DeliveryAttempt；错误捕获转换，不 panic 影响 consumer | 见 trait 定义 |
 | dao/lark/http.rs 飞书卡片出站 | LarkDao | push_interactive_card：user_id↔open_id 映射表查 → Markdown→飞书卡片 header+elements 转换 + 回复按钮 (open url 跳回本系统 /message/:id) | `:L50-L120` |
 | dao/webhook/http.rs Webhook 出站 HMAC | WebhookDao | 签名 sign=HMAC_SHA256(timestamp + body, secret_hex).to_hex()；Header 带 X-Timestamp（毫秒）+ X-Signature；超时 10s；失败 3 次退避 5/20/60s | 见 webhook.rs |
-| consumer/message.rs MessageConsumer | AOP 消费消息 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；ack/nack 自动由 AOP Registry 调用 | `:L1-L80` |
+| models/message.rs MessagePo | 消息实体 | reply_to（回复链，可空，指向同 messages 表） + external_key（话题讨论区关联键，用于跨渠道映射线程） + federation_contract 字段 | 见 src/models/message.rs |
+| awakening.rs Runtime 两阶段唤醒 | 注入 reply_to 上下文 | IntentAnalyze → Awaken 完成后，把入口消息的 reply_to 注入 Agent prompt，使 Agent 回复自动挂链 | 见 src/service/domain/runtime/awakening.rs |
+| dal/lark/impl.rs + dao/lark/http.rs 飞书双向映射 | external_key ↔ thread_id | 入站：飞书 thread_id → 存 messages.external_key；出站：external_key → 翻译为飞书 thread_id 发送（缺失映射降级为单条消息） | 见 src/service/dao/lark/http.rs |
+| domain/message/mod.rs MessageDomain 扩展 | 回复链能力 | MessageDelivery send_* 新增 reply_to + external_key 参数；落库时带链；SSE 事件 payload 追加 reply_to | 见 src/service/domain/message/mod.rs |
+| consumer/message.rs MessageConsumer | AOP 消费消息 | Sync ConsumeMode；message.created → 拉 channel_subscriptions → 循环 push；ack/nack 自动由 AOP Registry 调用；生产端携带 reply_to | `:L1-L80` |
 | consumer/agent_loop.rs AgentLoopConsumer | AOP 消费消息 | MessageConsumer 之后的同级消费者（注册顺序在后）；message.to_id 是 agent_id → BusyGuard 查 state；Idle=AOP publish agent.wake 事件触发两阶段唤醒；Busy/Resting=把事件挂 agent.pending_message Vec，下次唤醒一次性消费 | `:L1-L100` |
 | middleware/sse.rs SSE 广播中间件 | Axum 订阅 | BroadcastChannel: Arc<RwLock HashMap<user_id, Vec<mpsc::Sender<Event>>>>；new_user 注册 handler；heartbeat 15s tokio spawn 独立 loop；last_event_id 补发查询 | 见 sse.rs |
 
@@ -127,3 +143,5 @@ Runtime 唤醒 Agent → Phase1 IntentAnalyze 解析用户意图 → Phase2 Awak
 5. **飞书 open_id 映射查不到直接跳过 + warn**：message_push 时若用户没绑定 Lark open_id，Lark 推送返回 SKIPPED 状态（不影响其他渠道推送）；message_delivery_attempts.status=Skipped 原因列 "no lark binding"。
 6. **邮件正文不塞原始消息**：邮件只塞「预览摘要 200 字 + 查看完整消息 URL」，防止 Markdown 里有敏感信息被邮件服务商扫描；消息正文必须登录系统查看。
 7. **消息软删 = status=0 且前端过滤**：delete 接口只改 status=0；所有 query/list 接口默认 WHERE status != 0（common pagination 规范 §软删除约定）；前端不展示已删消息，只有管理员专用 query_all（带 include_deleted）才可以看到。
+8. **出站 external_key 存在则飞书/微信/Slack 自动映射线程 ID**：dao/lark/http.rs 等出站 DAO 必须先把 external_key 翻译为渠道线程 ID；缺失映射时降级为单条消息发送（不下沉到 thread 讨论区），同时打 log_warn 记录。
+9. **唤醒注入 reply_to 必须同 project**：awakening.rs 注入 reply_to 上下文前，必须校验 reply_to 指向的消息与当前入口消息属于同一 project；跨 project 引用必须返回 400 拒绝，防止 Agent 在 A 项目回复中挂 B 项目的消息链。

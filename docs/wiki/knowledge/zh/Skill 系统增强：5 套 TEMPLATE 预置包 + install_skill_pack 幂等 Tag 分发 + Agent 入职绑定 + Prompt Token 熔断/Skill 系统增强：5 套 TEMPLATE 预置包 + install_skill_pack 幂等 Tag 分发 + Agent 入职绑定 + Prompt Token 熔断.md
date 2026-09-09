@@ -62,6 +62,8 @@ source_files:
 
 # §1 概述（一句话定位 + 解决什么问题）
 
+**2026-09-10 增量**：前端技能库管理页（`frontend/src/pages/hr/skills.rs` 大改 371 行）升级——从扁平列表改为树形层级展示 + 分页（每页 20 条）+ 默认筛选"已发布"状态。skill 卡片支持按 agent 类型 tag 分组折叠展示（如 Communication/Agent 技能集 → Memory/Cognition 技能集 → 工具绑定集）。对应前端 API 层 `frontend/src/api/hr.rs` 新增 list_skills_paginated 接口（带 status/tag/pagination 查询参数），navbar 路由注册技能管理页面入口。
+
 **2026-09-07 增量**：seed 预置技能同步增强——两套新接口 `GET /api/v1/system/seed/preset-skills/preview`（预览影响清单：seed vs 技能库逐技能对比 + 已安装副本数量统计）与 `POST /api/v1/system/seed/preset-skills/sync`（后台任务同步）。两种策略：Overwrite（覆盖重置同 ID 技能元数据 + 文件）/ OnlyMissing（仅补缺）。可选 `sync_installed_copies`：把 parent_skill_id 指向预置技能的 Agent 私有副本一并对齐（副本 Draft 状态保持不变）。匹配键是技能 ID（`TEMPLATE_*` / `GIT_BRANCH_WORKFLOW`），不是名称。同步走通用后台任务（`pkg::background_task`），前端轮询 `/system/tasks/{task_id}/progress`。
 
 **定位**：技能系统四层增强——① 5 套 TEMPLATE 预置技能包（Communication/MemoryCognition/ProjectManagement/SkillManagement/ToolManagement，每个 skill.md 结构化 6 字段 + `include_str!` 嵌入式注入 HRDomain init）；② `install_skill_pack` 幂等 Tag 批量分发（按 SkillTag 标签分组已发布技能 → 批量 find_by_tag → 为 Agent 逐个 create_agent_skill_private → 重名跳过 warn）；③ Agent 入职流程绑定（onboard_agent 调 install_default_skill_packs：默认 5 套全装，安装失败不阻断入职只打 warn + 记录缺失清单）；④ Prompt Token 熔断与分层注入（Core Role + System Capabilities + Skills Prompt + Current Task 四层，每层有独立 Token 预算上限，超限自动从 Current Task 开始反向裁剪）。
@@ -85,6 +87,9 @@ source_files:
 | [技能系统增强 Design 四层架构](docs/archive/design-archive/skill_system_enhancement_design.md) | 为什么 / 决策 6 条 | §决策 2：按 tag 安装 vs 按 id 列表安装；§决策 4：入职默认绑定哪些包；§决策 5：Prompt 分层预算分配 |
 | [Agent集成测试 Plan 落地快照](docs/archive/plan-archive/Agent管理集成测试.md) | 怎么做 + 结果 | §技能安装幂等 §入职绑定失败降级 §Prompt Token 预算断言 |
 | [技能系统 Wiki 长文](docs/wiki/zh/content/功能模块/技能系统.md) | 人类百科 | §5 技能包管理 §8 故障排查（安装失败 / 重名 / Token 超限裁剪日志定位） |
+| [前端技能库管理页 skills.rs](frontend/src/pages/hr/skills.rs) | 技能库树形 + 分页展示 | 371 行重构：树形层级（agent tag 分组折叠）+ 分页（每页 20）+ 默认筛选已发布；skill 卡片支持按 agent 类型 tag 分组 |
+| [前端 API 层 hr.rs](frontend/src/api/hr.rs) | 技能列表 API | 新增 list_skills_paginated(status, tag, page, page_size)；调用后端分页查询接口 |
+| [navbar 路由注册](frontend/src/layouts/navbar.rs) | 技能管理页入口 | 导航栏新增技能管理菜单项，路由到 /hr/skills |
 
 ---
 
