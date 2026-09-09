@@ -95,6 +95,47 @@ pub fn load_config() -> Result<AppConfig> {
         config.server.listen_addr = validate_listen_addr(addr.trim())?;
     }
 
+    // 环境变量 AI_ORZ_PUBLIC_BASE_URL 覆盖对外可达基址（容器/网关部署下必填，
+    // 否则联邦 peer 拿到的自报地址是容器内网地址，跨组织调用不可达）
+    if let Some(url) = std::env::var(common::config::PUBLIC_BASE_URL_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        config.server.public_base_url = Some(url.trim().to_string());
+    }
+
+    // 环境变量 AI_ORZ_TRUST_PROXY 覆盖 server.trust_proxy（置于网关后必须开启）
+    if let Some(flag) = std::env::var(common::config::TRUST_PROXY_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        config.server.trust_proxy = parse_bool_env(&flag).ok_or_else(|| {
+            common::error::Error::new(
+                common::error::ErrorCode::ConfigInvalid,
+                format!(
+                    "{} 只接受 true/false，当前值: {flag}",
+                    common::config::TRUST_PROXY_ENV
+                ),
+            )
+        })?;
+    }
+
+    // 环境变量 AI_ORZ_COOKIE_SECURE 覆盖 server.cookie_secure
+    if let Some(flag) = std::env::var(common::config::COOKIE_SECURE_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        config.server.cookie_secure = Some(parse_bool_env(&flag).ok_or_else(|| {
+            common::error::Error::new(
+                common::error::ErrorCode::ConfigInvalid,
+                format!(
+                    "{} 只接受 true/false，当前值: {flag}",
+                    common::config::COOKIE_SECURE_ENV
+                ),
+            )
+        })?);
+    }
+
     // 环境变量 SECRET_KEY 覆盖敏感数据加密密钥（数据库敏感字段加密）
     if let Some(key) = std::env::var(common::config::SECRET_KEY_ENV)
         .ok()
@@ -118,6 +159,15 @@ pub fn load_config() -> Result<AppConfig> {
 
 /// 默认配置内容（编译时嵌入二进制）
 pub const DEFAULT_CONFIG_EMBEDDED: &str = include_str!("../common/config/ai_orz.toml");
+
+/// 解析布尔型环境变量：仅接受 true/false（大小写不敏感），其余返回 None
+fn parse_bool_env(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
 
 /// 校验监听地址（host:port，host 可为 IP/主机名/IPv6），返回原样字符串
 fn validate_listen_addr(addr: &str) -> Result<String> {
@@ -185,6 +235,39 @@ fn persist_first_init_env_prefs(config_created: bool, config_path: &Path) {
             &mut content,
             "listen_addr",
             &format!("listen_addr = \"{}\"", escape_toml_string(addr.trim())),
+        );
+    }
+    // server.public_base_url ← AI_ORZ_PUBLIC_BASE_URL
+    if let Some(url) = std::env::var(common::config::PUBLIC_BASE_URL_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        changed |= upsert_config_line(
+            &mut content,
+            "public_base_url",
+            &format!("public_base_url = \"{}\"", escape_toml_string(url.trim())),
+        );
+    }
+    // server.trust_proxy ← AI_ORZ_TRUST_PROXY
+    if let Some(flag) = std::env::var(common::config::TRUST_PROXY_ENV)
+        .ok()
+        .and_then(|v| parse_bool_env(&v))
+    {
+        changed |= upsert_config_line(
+            &mut content,
+            "trust_proxy",
+            &format!("trust_proxy = {flag}"),
+        );
+    }
+    // server.cookie_secure ← AI_ORZ_COOKIE_SECURE
+    if let Some(flag) = std::env::var(common::config::COOKIE_SECURE_ENV)
+        .ok()
+        .and_then(|v| parse_bool_env(&v))
+    {
+        changed |= upsert_config_line(
+            &mut content,
+            "cookie_secure",
+            &format!("cookie_secure = {flag}"),
         );
     }
     // jwt.secret ← JWT_SECRET

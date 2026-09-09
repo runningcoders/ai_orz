@@ -21,6 +21,7 @@ use crate::service::domain::organization;
 /// 邀请码注册（公开）
 /// POST /organization/auth/register
 pub async fn register_by_invite(
+    headers: HeaderMap,
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<RegisterByInviteRequest>,
 ) -> Result<impl IntoResponse> {
@@ -45,7 +46,12 @@ pub async fn register_by_invite(
         .max_age(time::Duration::seconds(
             jwt::jwt_config().default_expiry_seconds(),
         ))
-        .secure(false);
+        // 同 login：网关终止 TLS 时按 X-Forwarded-Proto 决定（trust_proxy 开启才采信）
+        .secure(
+            crate::config::get()
+                .server
+                .cookie_secure(crate::middleware::proxy::forwarded_proto(&headers)),
+        );
 
     let mut headers = HeaderMap::new();
     headers.insert(

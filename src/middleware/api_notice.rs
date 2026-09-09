@@ -11,6 +11,8 @@
 //!   与大文件上传/下载天然跳过，不会阻塞或丢失流式 body
 //! - 日志属于内部数据，不做脱敏（边界决策 2026-09-03：系统内部不脱敏，仅对外
 //!   接口出口用 `redact!` 宏脱敏），风险由日志访问控制承担
+//! - 客户端 IP：仅在 `server.trust_proxy` 开启时从 `X-Forwarded-For` 还原，
+//!   （见 [`crate::middleware::proxy::client_ip`]）；未开启时记 `-`，避免记录被伪造的值
 
 use axum::{
     body::Body,
@@ -18,6 +20,8 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use common::config::AppConfig;
+use std::sync::Arc;
 
 /// body 缓冲上限（字节）：超过此大小的请求/响应体不打印内容，只记大小
 const MAX_BODY_LOG_BYTES: usize = 4 * 1024;
@@ -79,11 +83,19 @@ fn body_preview(bytes: &[u8], content_type: Option<&str>) -> String {
 ///
 /// 请求结束时打印一条 notice 日志：method / path / status / duration_ms /
 /// log_id（响应头）+ 请求/响应体预览（限长 + 脱敏）。
-pub async fn api_notice_middleware(req: Request<Body>, next: Next) -> Response {
+pub async fn api_notice_middleware(
+    config: Arc<AppConfig>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
     let path = req.uri().path().to_string();
     if !is_api_path(&path) {
         return next.run(req).await;
     }
+
+    // 真实客户端 IP：trust_proxy 未开启时为 None（直连场景不采信 X-Forwarded-For）
+    let client_ip = crate::middleware::proxy::client_ip(&config, req.headers())
+        .unwrap_or_else(|| "-".to_string());
 
     let method = req.method().clone();
     let query = req.uri().query().unwrap_or("").to_string();
@@ -171,22 +183,24 @@ pub async fn api_notice_middleware(req: Request<Body>, next: Next) -> Response {
     };
     if status.as_u16() >= 500 {
         crate::log_warn!(
-            "api notice: {} {} status={} duration_ms={} log_id={} req_body={} resp_body={}",
+            "api notice: {} {} status={} duration_ms={} client_ip={} log_id={} req_body={} resp_body={}",
             method,
             path_and_query,
             status.as_u16(),
             duration_ms,
+            client_ip,
             log_id,
             req_preview,
             resp_preview
         );
     } else {
         crate::log_info!(
-            "api notice: {} {} status={} duration_ms={} log_id={} req_body={} resp_body={}",
+            "api notice: {} {} status={} duration_ms={} client_ip={} log_id={} req_body={} resp_body={}",
             method,
             path_and_query,
             status.as_u16(),
             duration_ms,
+            client_ip,
             log_id,
             req_preview,
             resp_preview

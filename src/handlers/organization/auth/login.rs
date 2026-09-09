@@ -6,7 +6,7 @@ use crate::pkg::jwt;
 use crate::service::domain::organization::domain;
 use axum::{
     extract::{Extension, Json},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use common::api::ApiResponse;
@@ -18,6 +18,7 @@ use cookie::{Cookie, SameSite};
 /// 用户登录
 /// POST /organization/auth/login
 pub async fn login(
+    headers: HeaderMap,
     Extension(ctx): Extension<RequestContext>,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse> {
@@ -41,6 +42,8 @@ pub async fn login(
     )?;
 
     // 创建 Cookie（浏览器场景自动携带）
+    // Secure：网关终止 TLS 时真实协议只能从 X-Forwarded-Proto 还原，
+    // 且仅当 server.trust_proxy 开启才采信（防客户端伪造），见 ServerConfig::cookie_secure
     let cookie = Cookie::build((JWT_COOKIE_NAME, token.clone()))
         .path("/")
         .http_only(true)
@@ -48,7 +51,11 @@ pub async fn login(
         .max_age(time::Duration::seconds(
             jwt::jwt_config().default_expiry_seconds(),
         ))
-        .secure(false); // 如果是 HTTPS 需要设置为 true
+        .secure(
+            crate::config::get()
+                .server
+                .cookie_secure(crate::middleware::proxy::forwarded_proto(&headers)),
+        );
 
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(

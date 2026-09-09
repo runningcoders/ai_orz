@@ -17,6 +17,15 @@ pub const BASE_DATA_PATH_ENV: &str = "AI_ORZ_BASE_PATH";
 /// 环境变量名，用于覆盖监听地址（与配置字段 server.listen_addr 完全对齐）
 pub const LISTEN_ADDR_ENV: &str = "AI_ORZ_LISTEN_ADDR";
 
+/// 环境变量名，用于覆盖 server.public_base_url（容器/反代部署下对外可达地址）
+pub const PUBLIC_BASE_URL_ENV: &str = "AI_ORZ_PUBLIC_BASE_URL";
+
+/// 环境变量名，用于覆盖 server.trust_proxy（是否信任 X-Forwarded-* 转发头）
+pub const TRUST_PROXY_ENV: &str = "AI_ORZ_TRUST_PROXY";
+
+/// 环境变量名，用于覆盖 server.cookie_secure（登录 Cookie 的 Secure 标记）
+pub const COOKIE_SECURE_ENV: &str = "AI_ORZ_COOKIE_SECURE";
+
 /// 环境变量名，用于覆盖敏感数据加密密钥（映射 security.secret_key）
 pub const SECRET_KEY_ENV: &str = "SECRET_KEY";
 
@@ -148,6 +157,26 @@ pub struct ServerConfig {
     /// 缺省时由 `listen_addr` 推导保守回退（见 [`ServerConfig::federation_base_url`]）。
     #[serde(default)]
     pub public_base_url: Option<String>,
+
+    /// 是否部署在反向代理（网关）之后
+    ///
+    /// 只有开启后才信任 `X-Forwarded-For` / `X-Forwarded-Proto`：
+    /// - 客户端 IP 取 `X-Forwarded-For` 最右一项（网关追加的直连对端）
+    /// - Cookie Secure 跟随 `X-Forwarded-Proto`
+    ///
+    /// 关闭（默认）时**完全忽略**这两个头：直连暴露场景下客户端可任意伪造该头，
+    /// 忽略即安全。放在 Caddy / Nginx 后面时必须开启，否则日志里的客户端 IP 全是网关 IP。
+    #[serde(default)]
+    pub trust_proxy: bool,
+
+    /// 登录 Cookie 是否加 Secure 标记（仅 HTTPS 传输）
+    ///
+    /// - `Some(true)` 强制加 / `Some(false)` 强制不加
+    /// - `None`（默认）自动：开启 `trust_proxy` 且 `X-Forwarded-Proto: https` 时加
+    ///
+    /// 环境变量 `AI_ORZ_COOKIE_SECURE=true|false` 可在内存层覆盖（容器部署常用）。
+    #[serde(default)]
+    pub cookie_secure: Option<bool>,
 }
 
 /// 数据库配置
@@ -375,6 +404,8 @@ impl Default for ServerConfig {
             listen_addr: default_listen_addr(),
             timezone: default_timezone(),
             public_base_url: None,
+            trust_proxy: false,
+            cookie_secure: None,
         }
     }
 }
@@ -402,6 +433,17 @@ impl ServerConfig {
             }
             _ => format!("http://{}", addr),
         }
+    }
+
+    /// Cookie 是否加 Secure 标记：显式 `cookie_secure` 优先，未配置时跟随 `X-Forwarded-Proto`
+    ///
+    /// `forwarded_proto` 由调用方从 `X-Forwarded-Proto` 头取出；仅在 `trust_proxy`
+    /// 开启时才参考它（否则该头可被客户端伪造）。
+    pub fn cookie_secure(&self, forwarded_proto: Option<&str>) -> bool {
+        if let Some(explicit) = self.cookie_secure {
+            return explicit;
+        }
+        self.trust_proxy && forwarded_proto.is_some_and(|p| p.eq_ignore_ascii_case("https"))
     }
 }
 
@@ -602,6 +644,7 @@ mod tests {
             public_base_url: None,
             listen_addr: "0.0.0.0:3000".to_string(),
             timezone: default_timezone(),
+            ..Default::default()
         };
         assert_eq!(cfg.federation_base_url(), "http://127.0.0.1:3000");
     }
@@ -612,6 +655,7 @@ mod tests {
             public_base_url: None,
             listen_addr: "[::]:8080".to_string(),
             timezone: default_timezone(),
+            ..Default::default()
         };
         assert_eq!(cfg.federation_base_url(), "http://127.0.0.1:8080");
     }
@@ -622,7 +666,41 @@ mod tests {
             public_base_url: None,
             listen_addr: "192.168.1.10:3000".to_string(),
             timezone: default_timezone(),
+            ..Default::default()
         };
         assert_eq!(cfg.federation_base_url(), "http://192.168.1.10:3000");
+    }
+
+    #[test]
+    fn test_cookie_secure_explicit_wins() {
+        let on = ServerConfig {
+            cookie_secure: Some(true),
+            ..Default::default()
+        };
+        let off = ServerConfig {
+            cookie_secure: Some(false),
+            trust_proxy: true,
+            ..Default::default()
+        };
+        assert!(on.cookie_secure(None), "显式 true 与代理状态无关");
+        assert!(!off.cookie_secure(Some("https")), "显式 false 覆盖自动判定");
+    }
+
+    #[test]
+    fn test_cookie_secure_auto_only_when_trust_proxy() {
+        let behind_proxy = ServerConfig {
+            trust_proxy: true,
+            ..Default::default()
+        };
+        assert!(behind_proxy.cookie_secure(Some("https")));
+        assert!(!behind_proxy.cookie_secure(Some("http")));
+        assert!(!behind_proxy.cookie_secure(None));
+
+        // 直连暴露场景：X-Forwarded-Proto 可被客户端伪造，一律不采信
+        let direct = ServerConfig {
+            trust_proxy: false,
+            ..Default::default()
+        };
+        assert!(!direct.cookie_secure(Some("https")));
     }
 }

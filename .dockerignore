@@ -1,0 +1,33 @@
+# 构建上下文瘦身：以下目录/文件不进入镜像构建上下文
+# （target 与 dist 由构建阶段在容器内生成，node_modules 与 docs 产物由 build.rs 生成）
+
+.git
+.github
+.workbuddy
+.githooks
+
+# 编译产物
+target
+**/target
+dist
+
+# 前端构建期生成物（frontend/build.rs 会重新生成）
+frontend/node_modules
+frontend/public/docs
+frontend/public/output.css
+
+# 运行期数据（本地开发残留，绝不能进镜像）
+.ai_orz
+*.db
+*.db-wal
+*.db-shm
+*.duckdb
+logs
+user_project_workspace
+user_agent_workspace
+agent_workspace
+artifacts
+attachments
+
+.DS_Store
+*.swp

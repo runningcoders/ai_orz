@@ -1,0 +1,91 @@
+# AI Orz 生产部署编排（默认网关：Caddy）
+#
+# 设计要点：
+# - ai_orz 数据与 caddy 证书分卷：数据在 ai_orz_data:/data，证书在 caddy_data
+# - 公网入口一律由网关反代：直接连 3000 只能本机（127.0.0.1），绕过 TLS
+# - 网关用 profile 隔离：不带 profile 时只跑 ai_orz，方便无域名的本机试用
+#
+# 启动（生产，含网关）：
+#   cp .env.deploy.example .env && 填入 SECRET_KEY / JWT_SECRET / 域名
+#   docker compose --profile gateway up -d
+#
+# 启动（本机试用，无网关）：docker compose up -d
+#
+# 本地从源码构建镜像：把 image: 一行换成 `build: .`
+
+name: ai_orz
+
+services:
+  ai_orz:
+    image: ghcr.io/runningcoders/ai_orz:latest
+    # build: .
+    container_name: ai_orz
+    restart: unless-stopped
+
+    ports:
+      # 仅本机直连，用于无网关时的本地试用与排障；公网访问请走 gateway profile
+      - "127.0.0.1:3000:3000"
+
+    environment:
+      AI_ORZ_BASE_PATH: /data
+      AI_ORZ_LISTEN_ADDR: 0.0.0.0:3000
+      SECRET_KEY: ${SECRET_KEY:?请先 cp .env.deploy.example .env 并填写 SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET:?请先 cp .env.deploy.example .env 并填写 JWT_SECRET}
+      TZ: ${TZ:-Asia/Shanghai}
+      # 联邦自报地址：必须是对外可达的网关域名，否则对端拿到容器内网地址
+      AI_ORZ_PUBLIC_BASE_URL: ${AI_ORZ_PUBLIC_BASE_URL:-}
+      # 置于网关后必须 true（真实客户端 IP 与 Secure Cookie 判定依赖它）
+      AI_ORZ_TRUST_PROXY: ${AI_ORZ_TRUST_PROXY:-false}
+      AI_ORZ_COOKIE_SECURE: ${AI_ORZ_COOKIE_SECURE:-}
+
+    volumes:
+      # 默认 bind mount 到宿主 ./data：Agent 工作区与产物要能被直接查看、用普通工具备份。
+      # 想改回 docker 托管卷：在 .env 里设 AI_ORZ_DATA_PATH=ai_orz_data
+      # （Linux 宿主用 bind mount 时需先 sudo chown -R 10001:10001 ./data）
+      - ${AI_ORZ_DATA_PATH:-./data}:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # 网关（Caddy 2）：TLS 自动签发续期 + SSE/WS 正确透传
+  # 配置见仓库根目录 Caddyfile，部署说明见 docs/plan/容器化与网关部署方案.md
+  caddy:
+    profiles: ["gateway"]
+    image: caddy:2-alpine
+    container_name: ai_orz_caddy
+    restart: unless-stopped
+
+    depends_on:
+      ai_orz:
+        condition: service_healthy
+
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+
+    environment:
+      AI_ORZ_DOMAIN: ${AI_ORZ_DOMAIN:?请先 cp .env.deploy.example .env 并填写 AI_ORZ_DOMAIN}
+      AI_ORZ_UPSTREAM: ai_orz:3000
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  # 仅在 AI_ORZ_DATA_PATH=ai_orz_data 时使用（默认走 bind mount，见 ai_orz.volumes）
+  ai_orz_data:
+  # 证书必须持久化：丢失会导致重复申请触发 Let's Encrypt 速率限制
+  caddy_data:
+  caddy_config:

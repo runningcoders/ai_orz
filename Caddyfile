@@ -1,0 +1,45 @@
+# AI Orz 生产网关配置（Caddy 2）
+#
+# 用法：
+#   容器：cp .env.deploy.example .env 后 `docker compose --profile gateway up -d`（自动挂载本文件）
+#   裸机：sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# 变量（由运行环境注入，避免域名硬编码进仓库）：
+#   AI_ORZ_DOMAIN    对外域名，同时用于自动申请 HTTPS 证书
+#   AI_ORZ_UPSTREAM  后端地址：容器内 ai_orz:3000 / 裸机 127.0.0.1:3000
+#
+# 设计约束见 docs/plan/容器化与网关部署方案.md §3.0.3：
+# 网关保持 dumb——只做 TLS 终止 / 反代转发 / XFF 头 / 请求体限制，
+# 不下沉限流、鉴权、灰度，以保住「任意网关间迁移都是小时级」。
+
+# 如需接收证书到期告警：在本文件顶部取消下面一行的注释并改为你的邮箱
+# {
+# 	email you@example.com
+# }
+
+{$AI_ORZ_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy {$AI_ORZ_UPSTREAM} {
+		# SSE：Caddy 对 text/event-stream 默认不缓冲，显式关闭 flush 间隔更稳妥。
+		# 忘配这一项时，agent 流式输出与 /messages/sse 心跳会被攒包吞掉。
+		flush_interval -1
+
+		transport http {
+			# SSE、联邦长连接 /api/v1/organization/links/ws 是分钟级~小时级连接，
+			# 不能沿用默认读超时，否则会被网关主动断开
+			read_timeout  0
+			write_timeout 0
+			dial_timeout  5s
+		}
+	}
+
+	request_body {
+		max_size 200MB
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   SQLX_OFFLINE: true
   CARGO_INCREMENTAL: 0
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ai_orz
 
 jobs:
   # ===== 按平台原生构建（不做交叉编译：lancedb/ort-sys 交叉编译链太重）=====
@@ -99,6 +100,109 @@ jobs:
     - name: Stop sccache server
       if: always()
       run: sccache --stop-server || true
+
+  # ===== 容器镜像：amd64 / arm64 原生 runner 各构建一次，再合并多架构 manifest =====
+  # 不用 QEMU 模拟：duckdb 的 bundled C++ 源码编译 + fastembed 下载 ONNX Runtime 二进制，
+  # 模拟构建慢且易失败。原生 runner 与上面 release job「不做交叉编译」的既定口径一致
+  # （Dockerfile 内也写明了这一点，改这里请同步注释）。
+  docker:
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # 按 digest 推送（不打 tag）：多架构 manifest 由 docker-merge 统一创建，
+    # 避免两个架构互相覆盖同一个 tag
+    - name: Build and push by digest
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: ${{ matrix.platform }}
+        provenance: false
+        outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+        cache-from: type=gha,scope=docker-${{ matrix.platform }}
+        cache-to: type=gha,mode=max,scope=docker-${{ matrix.platform }}
+
+    - name: Export digest
+      run: |
+        mkdir -p /tmp/digests
+        digest="${{ steps.build.outputs.digest }}"
+        touch "/tmp/digests/${digest#sha256:}"
+
+    - name: Upload digest
+      uses: actions/upload-artifact@v5
+      with:
+        name: digests-${{ strategy.job-index }}
+        path: /tmp/digests/*
+        retention-days: 1
+
+  # ===== 合并多架构 manifest 并打 tag =====
+  docker-merge:
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Download digests
+      uses: actions/download-artifact@v6
+      with:
+        pattern: digests-*
+        path: /tmp/digests
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # tag 事件 → 版本号 + latest；手动触发 → sha-短摘要（避免污染 latest）
+    - name: Create multi-arch manifest
+      env:
+        IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        REF_NAME: ${{ github.ref_name }}
+        SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        if [ "$IS_TAG" = "true" ]; then
+          tags=("${REF_NAME#v}" "latest")
+        else
+          tags=("sha-${SHA:0:7}")
+        fi
+        refs=()
+        for d in $(find /tmp/digests -type f -printf '%f\n' | sort); do
+          refs+=("$IMAGE_NAME@sha256:$d")
+        done
+        echo "合并 ${#refs[@]} 个架构镜像: ${refs[*]}"
+        for tag in "${tags[@]}"; do
+          docker buildx imagetools create -t "$IMAGE_NAME:$tag" "${refs[@]}"
+        done
 
   # ===== 发布到 GitHub Release（仅 tag 触发时执行）=====
   publish:

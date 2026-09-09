@@ -11,8 +11,19 @@
 # 监听地址
 listen_addr = "0.0.0.0:3000"
 # 监听地址也可用环境变量 AI_ORZ_LISTEN_ADDR 覆盖（如 AI_ORZ_LISTEN_ADDR=0.0.0.0:8080，首次初始化会固化）
+# 对外可达的联邦通信基址：容器/反代部署必填（填网关域名），否则联邦 peer 拿到的是容器内网地址。
+# 也可用环境变量 AI_ORZ_PUBLIC_BASE_URL 覆盖。
+# public_base_url = "https://orz.example.com"
 # 系统时区（IANA 时区名，用于 cron 表达式解析等时间相关功能）
 timezone = "Asia/Shanghai"
+# 是否部署在反向代理（网关）之后：开启后才信任 X-Forwarded-For / X-Forwarded-Proto。
+# 关闭（默认）时忽略这两个头（直连场景客户端可伪造）；放在 Caddy / Nginx 后面必须开启，
+# 否则日志里的客户端 IP 全是网关 IP。也可用环境变量 AI_ORZ_TRUST_PROXY 覆盖。
+trust_proxy = false
+# 登录 Cookie 的 Secure 标记：true 强制加、false 强制不加、不配置（注释掉）时
+# 在 trust_proxy 开启且 X-Forwarded-Proto 为 https 时自动加。
+# 也可用环境变量 AI_ORZ_COOKIE_SECURE=true|false 覆盖。
+# cookie_secure = true
 
 # 数据库配置
 [database]
