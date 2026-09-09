@@ -3,10 +3,12 @@
 use common::api::{
     CreateLinkRequest, CreateLinkResponse, CreateOrganizationUserRequest,
     CreateOrganizationUserResponse, GetCurrentOrganizationResponse, GetCurrentUserResponse,
-    IssuePairingCodeRequest, IssuePairingCodeResponse, ListFederationAgentsResponse,
-    ListLinksResponse, ListOrganizationsResponse, ListUsersResponse,
-    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest,
-    UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
+    IssuePairingCodeRequest, IssuePairingCodeResponse, ListContractsResponse,
+    ListFederationAgentsResponse, ListLinksResponse, ListOrganizationsResponse, ListUsersResponse,
+    TerminateContractResponse, UpdateContractCapabilitiesRequest,
+    UpdateContractCapabilitiesResponse, UpdateCurrentOrganizationRequest,
+    UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest, UpdateCurrentUserResponse,
+    UpdateUserRequest, UpdateUserResponse,
 };
 
 use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_put};
@@ -68,7 +70,7 @@ pub async fn update_current_user(
 pub async fn issue_pairing_code() -> Result<IssuePairingCodeResponse, ApiError> {
     api_post(
         "/api/v1/organization/links/pairing/issue",
-        &IssuePairingCodeRequest {},
+        &IssuePairingCodeRequest::default(),
     )
     .await
 }
@@ -91,4 +93,25 @@ pub async fn revoke_link(peer_org_id: &str) -> Result<(), ApiError> {
 /// 联邦 Agent 目录（各 Active 对端开放的可调用 Agent，mention picker 候选）
 pub async fn list_federation_agents() -> Result<ListFederationAgentsResponse, ApiError> {
     api_get("/api/v1/organization/links/federation-agents").await
+}
+
+// ===== 联邦合约（S3：能力白名单唯一事实源）=====
+
+/// 本组织的联邦合约列表（管理员；对端组织名由调用方用 list_links 关联解析）
+pub async fn list_contracts() -> Result<ListContractsResponse, ApiError> {
+    api_get("/api/v1/organization/contracts").await
+}
+
+/// 更新合约能力集（管理员；未知能力服务端拒绝 400，下一次入站请求即生效）
+pub async fn update_contract_capabilities(
+    req: UpdateContractCapabilitiesRequest,
+) -> Result<UpdateContractCapabilitiesResponse, ApiError> {
+    api_put("/api/v1/organization/contracts/capabilities", &req).await
+}
+
+/// 终止合约（管理员；fail-closed 熔断，对端立即失去全部能力，记录保留审计）
+pub async fn terminate_contract(
+    req: common::api::TerminateContractRequest,
+) -> Result<TerminateContractResponse, ApiError> {
+    api_post("/api/v1/organization/contracts/terminate", &req).await
 }

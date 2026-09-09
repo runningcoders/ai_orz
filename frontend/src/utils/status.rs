@@ -275,6 +275,48 @@ pub fn org_link_status_badge(status: i32) -> &'static str {
     }
 }
 
+/// 联邦合约状态文案（对齐后端 `FederationContractState`：`active` / `terminated`）。
+///
+/// 无 active 合约 = 对端无任何能力（fail-closed），故 terminated 是显式熔断态。
+pub fn contract_state_text(state: &str) -> &'static str {
+    match state {
+        "active" => "生效中",
+        "terminated" => "已终止",
+        _ => "未知",
+    }
+}
+
+/// 联邦合约状态徽章（单一事实源）。
+///
+/// 生效中=success(绿) / 已终止=error(红) / 未知=ghost。
+pub fn contract_state_badge(state: &str) -> &'static str {
+    match state {
+        "active" => "badge hud-badge badge-sm badge-success",
+        "terminated" => "badge hud-badge badge-sm badge-error",
+        _ => "badge hud-badge badge-sm badge-ghost",
+    }
+}
+
+/// 联邦能力项的人读标签（对齐后端已知能力白名单 `CAPABILITY_*`）。
+///
+/// 未知能力原样返回（不静默吞掉，便于发现服务端新增能力后前端未同步）。
+pub fn capability_label(cap: &str) -> String {
+    match cap {
+        common::api::CAPABILITY_A2A_TASK => "跨组织任务委派".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// 联邦能力项的能力说明（编辑弹层里解释"放开它意味着什么"）。
+pub fn capability_desc(cap: &str) -> String {
+    match cap {
+        common::api::CAPABILITY_A2A_TASK => {
+            "允许对端在项目中通过 @ 提及本组织 Agent 的方式委派任务".to_string()
+        }
+        other => format!("未知能力：{other}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

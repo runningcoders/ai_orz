@@ -213,6 +213,7 @@ pub fn Navbar() -> Element {
                                 li { Link { to: Route::OrganizationInfo {}, "🏢 组织信息" } }
                                 li { Link { to: Route::OrganizationUsers {}, "👥 用户管理" } }
                                 li { Link { to: Route::OrganizationLinks {}, "🔗 关联组织" } }
+                                li { Link { to: Route::OrganizationContracts {}, "📜 联邦合约" } }
                             }
                             li { hr { class: "divider my-0" } }
                             li { Link { to: Route::Settings {}, "⚙️ 设置" } }
@@ -302,6 +303,7 @@ pub fn Navbar() -> Element {
                             li { Link { to: Route::OrganizationInfo {}, onclick: move |_| drawer_open.set(false), "🏢 组织信息" } }
                             li { Link { to: Route::OrganizationUsers {}, onclick: move |_| drawer_open.set(false), "👥 用户管理" } }
                             li { Link { to: Route::OrganizationLinks {}, onclick: move |_| drawer_open.set(false), "🔗 关联组织" } }
+                            li { Link { to: Route::OrganizationContracts {}, onclick: move |_| drawer_open.set(false), "📜 联邦合约" } }
                         }
                         li { Link { to: Route::Settings {}, onclick: move |_| drawer_open.set(false), "⚙️ 设置" } }
                         li { Link { to: Route::Reception {}, onclick: handle_logout, "🚪 退出登录" } }
