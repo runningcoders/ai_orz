@@ -69,6 +69,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 aes-gcm = "0.10"
 base64 = "0.22"
 
+# 联邦身份密钥（Ed25519 签名 / did:key，S1 密钥底座；纯 Rust 无 C 依赖）
+ed25519-dalek = "2.2"
+
 # 用户密码哈希（bcrypt，服务端唯一哈希点）
 bcrypt = "0.17"
 

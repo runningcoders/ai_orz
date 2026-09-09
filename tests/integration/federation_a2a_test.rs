@@ -1,13 +1,15 @@
-//! 联邦调用鉴权集成测试（跨组织业务调用方案 P1+P2 验收）。
+//! 联邦调用鉴权集成测试（S2 签名鉴权验收）。
 //!
 //! `/a2a` 双模鉴权：
 //! - 本地 JWT（既有语义，a2a_flow_test 已覆盖，不在此重复）；
-//! - 建联对端节点：`Authorization: Bearer <link access_token>`（哈希匹配
-//!   Active 连接 `peer_token_hash`）+ 可选 `X-Federation-Caller` 身份声明。
+//! - 建联对端节点：每请求 Ed25519 签名（`X-Federation-Key-Id / Timestamp /
+//!   Nonce / Signature` 四头，签名串 = `method\npath\ntimestamp\nnonce\nsha256(body)`，
+//!   验签用的对端公钥在建联时交换落库）+ 可选 `X-Federation-Caller` 身份声明。
 //!
-//! 覆盖：有效凭证 + 声明、无声明（两者 ctx.user_id 均映射到 B 侧**接待用户**，
-//! P6：声明仅作审计/计量，不再决定内部身份）、错凭证 401、非法声明 401（fail-closed）、
-//! 声明组织与连接归属不一致 401（防跨连接冒充）、无任何凭证 401。
+//! 覆盖：有效签名 + 声明、无声明（两者 ctx.user_id 均映射到 B 侧**接待用户**，
+//! P6：声明仅作审计/计量，不再决定内部身份）、未知 DID 签名 401、非法声明 401
+//! （fail-closed）、声明组织与连接归属不一致 401（防跨连接冒充）、无任何签名头 401、
+//! 能力白名单 403、能力发现端点。
 //!
 //! 双节点说明同 organization_link_test：共享全局 Storage 单例，
 //! "对端组织" 用独立 org id 表达（逻辑隔离）。
@@ -78,33 +80,45 @@ async fn seed_gateway_agent(org_b: &str) {
 }
 
 /// 播种一条 Active 连接（local=org_b 收，peer=org_a 发）：
-/// peer_token_hash = sha256(credential)，即 A 出站调 B 时携带 credential。
-async fn seed_link(org_b: &str, org_a: &str, credential: &str, capabilities: &str) {
+/// peer_did / peer_verification_key = org_a 的真实联邦身份（B 据此验 A 的签名）。
+async fn seed_link(org_b: &str, org_a: &str, capabilities: &str) {
     let ctx = RequestContext::from_storage("fed-a2a-seed", ai_orz::pkg::storage::get().clone());
+    let ida = crate::common::federation::org_federation_identity(org_a).await;
     let mut link = OrganizationLinkPo::new(
         Uuid::now_v7().to_string(),
         org_b.to_string(),
         org_a.to_string(),
         "https://peer-a.example.com".to_string(),
-        "b-side-access-token".to_string(), // B 存的 A 的出站凭证（本测试不使用）
-        sha256::digest(credential.as_bytes()),
         "fed-a2a-seed".to_string(),
     );
-    // 覆盖默认白名单（Po::new 默认 ["a2a_task"]）
-    link.capabilities = capabilities.to_string();
+    link.peer_did = Some(ida.did);
+    link.peer_verification_key = Some(ida.verification_key);
     ai_orz::service::dao::organization_link::dao()
-        .insert(ctx, &link)
+        .insert(ctx.clone(), &link)
         .await
         .expect("seed link failed");
+
+    // S3：能力白名单在合约（federation_contracts），按测试参数覆盖默认值
+    let mut contract = ai_orz::models::federation_contract::FederationContractPo::new(
+        org_b.to_string(),
+        org_a.to_string(),
+    );
+    contract.capabilities = capabilities.to_string();
+    ai_orz::service::dao::federation_contract::dao()
+        .insert(ctx, &contract)
+        .await
+        .expect("seed contract failed");
 }
 
-/// 组装联邦调用请求 headers（Bearer 契约凭证 + 可选声明）
-fn federation_headers(credential: &str, declaration: Option<&String>) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        axum::http::header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", credential)).expect("valid bearer"),
-    );
+/// 组装联邦签名调用请求 headers（/a2a POST，body 为序列化后的 JSON-RPC）
+fn federation_headers(
+    ida: &crate::common::federation::OrgFederationIdentity,
+    body: &serde_json::Value,
+    declaration: Option<&String>,
+) -> HeaderMap {
+    let body_bytes = serde_json::to_vec(body).expect("serialize rpc");
+    let mut headers =
+        crate::common::federation::signature_headers(ida, "POST", "/a2a", &body_bytes);
     headers.insert(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
@@ -133,7 +147,7 @@ fn send_task_rpc() -> serde_json::Value {
     })
 }
 
-/// 有效凭证 + 完整声明：鉴权通过，ctx.user_id = B 侧接待用户（P6：
+/// 有效签名 + 完整声明：鉴权通过，ctx.user_id = B 侧接待用户（P6：
 /// 内部身份由被访组织决定，声明仅作审计/计量），
 /// project 落在目标组织 B（organization_id = B，caller org = A 走日志维度）。
 #[sqlx::test]
@@ -144,9 +158,7 @@ async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
     let (org_a, _jwt_a) = create_node(&app, "feda").await;
     let (org_b, _jwt_b) = create_node(&app, "fedb").await;
     seed_gateway_agent(&org_b).await;
-
-    let credential = "a".repeat(64);
-    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
     let declaration = serde_json::json!({
         "caller_org": org_a,
@@ -155,11 +167,13 @@ async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
     })
     .to_string();
 
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
     let (status, body) = app
         .post_with_headers(
             "/a2a",
-            federation_headers(&credential, Some(&declaration)),
-            &send_task_rpc(),
+            federation_headers(&ida, &rpc, Some(&declaration)),
+            &rpc,
         )
         .await;
     assert_eq!(
@@ -204,7 +218,7 @@ async fn test_federation_call_with_declaration_creates_task(pool: SqlitePool) {
     );
 }
 
-/// 有效凭证 + 无声明：连接级调用，内部身份同样映射到 B 侧接待用户（P6）。
+/// 有效签名 + 无声明：连接级调用，内部身份同样映射到 B 侧接待用户（P6）。
 #[sqlx::test]
 async fn test_federation_call_without_declaration_uses_reception_user(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -213,16 +227,12 @@ async fn test_federation_call_without_declaration_uses_reception_user(pool: Sqli
     let (org_a, _jwt_a) = create_node(&app, "anona").await;
     let (org_b, _jwt_b) = create_node(&app, "anonb").await;
     seed_gateway_agent(&org_b).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
-    let credential = "b".repeat(64);
-    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
-
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
     let (status, body) = app
-        .post_with_headers(
-            "/a2a",
-            federation_headers(&credential, None),
-            &send_task_rpc(),
-        )
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
         .await;
     assert_eq!(status, StatusCode::OK, "body: {}", body);
     let task_id = body
@@ -249,24 +259,28 @@ async fn test_federation_call_without_declaration_uses_reception_user(pool: Sqli
     );
 }
 
-/// 错误凭证：哈希不匹配任何 Active 连接 → 401（防枚举，与无效凭证同响应）。
+/// 签名者 DID 不归属任何 Active 连接（未知密钥对）→ 401（防枚举，统一响应）。
 #[sqlx::test]
-async fn test_federation_call_with_wrong_credential_is_401(pool: SqlitePool) {
+async fn test_federation_call_with_unknown_keypair_is_401(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
     let app = crate::common::TestApp::new(pool).await;
 
     let (org_a, _jwt_a) = create_node(&app, "wronga").await;
     let (org_b, _jwt_b) = create_node(&app, "wrongb").await;
     seed_gateway_agent(&org_b).await;
-    seed_link(&org_b, &org_a, &"c".repeat(64), r#"["a2a_task"]"#).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
-    let (status, body) = app
-        .post_with_headers(
-            "/a2a",
-            federation_headers(&"d".repeat(64), None),
-            &send_task_rpc(),
-        )
-        .await;
+    let rpc = send_task_rpc();
+    let mut headers = crate::common::federation::unknown_keypair_headers(
+        "POST",
+        "/a2a",
+        &serde_json::to_vec(&rpc).unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    let (status, body) = app.post_with_headers("/a2a", headers, &rpc).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "body: {}", body);
 }
 
@@ -279,15 +293,16 @@ async fn test_federation_call_with_malformed_declaration_is_401(pool: SqlitePool
     let (org_a, _jwt_a) = create_node(&app, "malfa").await;
     let (org_b, _jwt_b) = create_node(&app, "malfb").await;
     seed_gateway_agent(&org_b).await;
-    let credential = "e".repeat(64);
-    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
     let bad_declaration = "not-json".to_string();
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
     let (status, _body) = app
         .post_with_headers(
             "/a2a",
-            federation_headers(&credential, Some(&bad_declaration)),
-            &send_task_rpc(),
+            federation_headers(&ida, &rpc, Some(&bad_declaration)),
+            &rpc,
         )
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -303,22 +318,23 @@ async fn test_federation_call_with_mismatched_caller_org_is_401(pool: SqlitePool
     let (org_b, _jwt_b) = create_node(&app, "mismb").await;
     let (org_c, _jwt_c) = create_node(&app, "mismc").await;
     seed_gateway_agent(&org_b).await;
-    let credential = "f".repeat(64);
-    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
-    // A 的合法凭证，但声明冒充 C 组织发起
+    // A 的合法签名，但声明冒充 C 组织发起
     let declaration = serde_json::json!({ "caller_org": org_c }).to_string();
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
     let (status, _body) = app
         .post_with_headers(
             "/a2a",
-            federation_headers(&credential, Some(&declaration)),
-            &send_task_rpc(),
+            federation_headers(&ida, &rpc, Some(&declaration)),
+            &rpc,
         )
         .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-/// 无任何凭证（无 JWT 无 Bearer）→ 401。
+/// 无任何签名头（无 JWT 无签名）→ 401。
 #[sqlx::test]
 async fn test_a2a_without_any_credential_is_401(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -332,7 +348,7 @@ async fn test_a2a_without_any_credential_is_401(pool: SqlitePool) {
 
 // ==================== P3：能力发现 + 连接级白名单 ====================
 
-/// 能力发现端点：契约凭证鉴权，返回连接白名单 + 本节点可调用 Agent 列表。
+/// 能力发现端点：联邦签名鉴权，返回连接白名单 + 本节点可调用 Agent 列表。
 #[sqlx::test]
 async fn test_capabilities_endpoint_returns_agents_and_whitelist(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -341,13 +357,14 @@ async fn test_capabilities_endpoint_returns_agents_and_whitelist(pool: SqlitePoo
     let (org_a, _jwt_a) = create_node(&app, "capa").await;
     let (org_b, _jwt_b) = create_node(&app, "capb").await;
     seed_gateway_agent(&org_b).await;
-    let credential = "1".repeat(64);
-    seed_link(&org_b, &org_a, &credential, r#"["a2a_task"]"#).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        axum::http::header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", credential)).expect("valid bearer"),
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let headers = crate::common::federation::signature_headers(
+        &ida,
+        "GET",
+        "/api/v1/organization/links/capabilities",
+        b"",
     );
     let (status, body) = app
         .get_with_headers("/api/v1/organization/links/capabilities", headers)
@@ -384,7 +401,7 @@ async fn test_capabilities_endpoint_returns_agents_and_whitelist(pool: SqlitePoo
     );
 }
 
-/// 白名单门禁：连接 capabilities 不含 a2a_task → /a2a 403（凭证本身有效）。
+/// 白名单门禁：连接 capabilities 不含 a2a_task → /a2a 403（签名本身有效）。
 #[sqlx::test]
 async fn test_a2a_rejected_403_when_capability_not_in_whitelist(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -393,16 +410,224 @@ async fn test_a2a_rejected_403_when_capability_not_in_whitelist(pool: SqlitePool
     let (org_a, _jwt_a) = create_node(&app, "gata").await;
     let (org_b, _jwt_b) = create_node(&app, "gatb").await;
     seed_gateway_agent(&org_b).await;
-    let credential = "2".repeat(64);
     // 连接有效但白名单不含 a2a_task
-    seed_link(&org_b, &org_a, &credential, r#"["other_cap"]"#).await;
+    seed_link(&org_b, &org_a, r#"["other_cap"]"#).await;
 
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
     let (status, body) = app
-        .post_with_headers(
-            "/a2a",
-            federation_headers(&credential, None),
-            &send_task_rpc(),
-        )
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", body);
+}
+
+// ==================== S3 合约授权验收 ====================
+//
+// 能力集由 federation_contracts 派生（唯一事实源）：无 active 合约 = 403
+// （fail-closed）；terminated = 403；管理员改能力集，下一次请求即生效。
+
+use ::common::enums::FederationContractState as TestContractState;
+
+/// S3：连接存在但无任何合约记录 → 403（fail-closed，无合约 = 无能力）。
+#[sqlx::test]
+async fn test_a2a_rejected_403_when_no_contract(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "nocta").await;
+    let (org_b, _jwt_b) = create_node(&app, "noctb").await;
+    seed_gateway_agent(&org_b).await;
+
+    // 只播种 link，不播种合约
+    let ida0 = crate::common::federation::org_federation_identity(&org_a).await;
+    let ctx = RequestContext::from_storage("fed-a2a-seed", ai_orz::pkg::storage::get().clone());
+    let mut link = OrganizationLinkPo::new(
+        Uuid::now_v7().to_string(),
+        org_b.clone(),
+        org_a.clone(),
+        "https://peer-a.example.com".to_string(),
+        "fed-a2a-seed".to_string(),
+    );
+    link.peer_did = Some(ida0.did);
+    link.peer_verification_key = Some(ida0.verification_key);
+    ai_orz::service::dao::organization_link::dao()
+        .insert(ctx, &link)
+        .await
+        .expect("seed link failed");
+
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
+    let (status, body) = app
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "no contract => no capability (fail-closed), body: {}",
+        body
+    );
+}
+
+/// S3：合约 terminated → 403（fail-closed）。
+#[sqlx::test]
+async fn test_a2a_rejected_403_when_contract_terminated(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "terma").await;
+    let (org_b, _jwt_b) = create_node(&app, "termb").await;
+    seed_gateway_agent(&org_b).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
+
+    // 终止合约
+    let ctx = RequestContext::from_storage("fed-a2a-assert", ai_orz::pkg::storage::get().clone());
+    let mut contract = ai_orz::service::dao::federation_contract::dao()
+        .find_by_pair(ctx.clone(), &org_b, &org_a)
+        .await
+        .expect("query contract failed")
+        .expect("contract should exist after seed");
+    contract.state = TestContractState::Terminated;
+    ai_orz::service::dao::federation_contract::dao()
+        .update(ctx, &contract)
+        .await
+        .expect("terminate contract failed");
+
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
+    let (status, body) = app
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "terminated contract => rejected, body: {}",
+        body
+    );
+}
+
+/// S3：管理员编辑合约能力集后，下一次请求即按新能力集判定。
+#[sqlx::test]
+async fn test_admin_updates_contract_capabilities_takes_effect(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "edita").await;
+    let (org_b, jwt_b) = create_node(&app, "editb").await;
+    seed_gateway_agent(&org_b).await;
+    seed_link(&org_b, &org_a, r#"[]"#).await;
+
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
+
+    // 初始：合约能力为空 → 403
+    let (status, body) = app
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", body);
+
+    // 管理员（B 侧）编辑合约能力集 → 开放 a2a_task
+    let ctx = RequestContext::from_storage("fed-a2a-assert", ai_orz::pkg::storage::get().clone());
+    let contract = ai_orz::service::dao::federation_contract::dao()
+        .find_by_pair(ctx.clone(), &org_b, &org_a)
+        .await
+        .expect("query contract failed")
+        .expect("contract should exist");
+    let (status, body) = app
+        .put_with_jwt(
+            "/api/v1/organization/contracts/capabilities",
+            &serde_json::json!({
+                "contract_id": contract.id,
+                "capabilities": ["a2a_task"],
+            }),
+            &jwt_b,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "update capabilities should succeed, body: {}",
+        body
+    );
+
+    // 下一次请求即按新能力集判定 → 200
+    let (status, body) = app
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "updated capabilities should take effect immediately, body: {}",
+        body
+    );
+}
+
+/// S3：未知能力拒绝（400，防拼写错误静默扩权）；terminate 端点生效。
+#[sqlx::test]
+async fn test_contract_admin_endpoints_validate_and_terminate(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = crate::common::TestApp::new(pool).await;
+
+    let (org_a, _jwt_a) = create_node(&app, "adma").await;
+    let (org_b, jwt_b) = create_node(&app, "admb").await;
+    seed_gateway_agent(&org_b).await;
+    seed_link(&org_b, &org_a, r#"["a2a_task"]"#).await;
+
+    let ctx = RequestContext::from_storage("fed-a2a-assert", ai_orz::pkg::storage::get().clone());
+    let contract = ai_orz::service::dao::federation_contract::dao()
+        .find_by_pair(ctx.clone(), &org_b, &org_a)
+        .await
+        .expect("query contract failed")
+        .expect("contract should exist");
+
+    // 未知能力 → 400
+    let (status, _body) = app
+        .put_with_jwt(
+            "/api/v1/organization/contracts/capabilities",
+            &serde_json::json!({
+                "contract_id": contract.id,
+                "capabilities": ["make_coffee"],
+            }),
+            &jwt_b,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "unknown capability should be rejected"
+    );
+
+    // terminate → 200；随后请求 403
+    let (status, body) = app
+        .post_with_jwt(
+            "/api/v1/organization/contracts/terminate",
+            &serde_json::json!({ "peer_org_id": org_a }),
+            &jwt_b,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "terminate should succeed, body: {}",
+        body
+    );
+
+    let ida = crate::common::federation::org_federation_identity(&org_a).await;
+    let rpc = send_task_rpc();
+    let (status, body) = app
+        .post_with_headers("/a2a", federation_headers(&ida, &rpc, None), &rpc)
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "terminated contract => rejected, body: {}",
+        body
+    );
+
+    // 合约记录保留（审计线索），state = terminated
+    let terminated = ai_orz::service::dao::federation_contract::dao()
+        .find_by_pair(ctx, &org_b, &org_a)
+        .await
+        .expect("query contract failed")
+        .expect("contract record should be kept for audit");
+    assert_eq!(terminated.state, TestContractState::Terminated);
 }

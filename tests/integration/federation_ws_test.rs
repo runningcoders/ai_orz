@@ -4,9 +4,9 @@
 //! 节点 B = 真实 TCP server（`serve_on_random_port`），节点 A = in-process
 //! 出站（WS client 拨真实 TCP）。
 //!
-//! 覆盖链路（P8 最小闭环）：
-//! 1. 建联（真实 HTTP pairing/verify）→ 双方 link 落库 + 凭证交叉一致；
-//! 2. A 拨 B 的 WS 端点（Bearer = link.access_token，B 侧握手鉴权 +
+//! 覆盖链路（P8 最小闭环 + S2 签名鉴权）：
+//! 1. 建联（真实 HTTP pairing/verify）→ 双方 link 落库 + 对端 DID/公钥一致；
+//! 2. A 拨 B 的 WS 端点（GET 握手携带联邦签名四头，B 侧握手验签 +
 //!    能力门禁 + 接待用户映射）→ B 端会话注册（反向可达）；
 //! 3. A `request_over_ws` 发 send_task 命令（params 非法）→ 帧出站 →
 //!    B 收帧 publish AOP 入站事件 → `FederationInboundTaskConsumer`
@@ -97,7 +97,7 @@ async fn test_federation_ws_command_roundtrip(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/organization/links/pairing/issue",
-            &IssuePairingCodeRequest {},
+            &IssuePairingCodeRequest::default(),
             &jwt_b,
         )
         .await;
@@ -125,26 +125,26 @@ async fn test_federation_ws_command_roundtrip(pool: SqlitePool) {
         body
     );
 
-    // ---- A 侧 link（含 B 发给出站用的 access_token）----
+    // ---- A 侧 link（S2：对端身份 = B 的真实 DID / 公钥）----
     let ctx = RequestContext::from_storage("ws-test-assert", ai_orz::pkg::storage::get().clone());
     let link_a = ai_orz::service::dao::organization_link::dao()
         .find_by_pair(ctx.clone(), &org_a_id, &org_b_id)
         .await
         .expect("query A→B link failed")
         .expect("A→B link should exist after create_link");
-    assert_eq!(link_a.access_token.len(), 64, "access_token 64-hex");
+    let id_b = common::federation::org_federation_identity(&org_b_id).await;
+    assert_eq!(
+        link_a.peer_did.as_deref(),
+        Some(id_b.did.as_str()),
+        "A→B link should carry B's DID"
+    );
 
-    // ---- A 拨 B 的 WS 端点（凭证 = B 发的 token）----
+    // ---- A 拨 B 的 WS 端点（握手签名 = A 的联邦私钥，GET 规范串）----
     let ws_url = ws::ws_url_from_base(&peer_endpoint);
-    let state = ws::dial_peer(
-        &org_a_id,
-        &org_b_id,
-        ws_url,
-        link_a.access_token.clone(),
-        None,
-    )
-    .await
-    .expect("dial peer B should succeed");
+    let id_a = common::federation::org_federation_identity(&org_a_id).await;
+    let state = ws::dial_peer(&org_a_id, &org_b_id, ws_url, id_a.signing_key, None)
+        .await
+        .expect("dial peer B should succeed");
 
     // 等待建连（supervisor 异步建连 + B 端 on_connected 注册）
     let mut connected = false;
@@ -200,7 +200,7 @@ async fn test_federation_ws_command_roundtrip(pool: SqlitePool) {
     ai_orz::pkg::ws::stop_client_shared(state).await;
 }
 
-/// e2e：无凭证拨号 → B 端握手 401 拒绝 → client 连不上（连接保护）
+/// e2e：无效签名拨号（DID 无连接归属）→ B 端握手 401 拒绝 → client 连不上（连接保护）
 #[sqlx::test]
 async fn test_federation_ws_rejects_bad_credential(pool: SqlitePool) {
     let _ = common::init_full_test_env(pool.clone()).await;
@@ -210,9 +210,10 @@ async fn test_federation_ws_rejects_bad_credential(pool: SqlitePool) {
     let (org_b_id, _jwt_b) = create_node(&app, "wsrb").await;
     let peer_endpoint = app.serve_on_random_port().await;
 
-    // 错误 token 拨号（B 端没有任何 link，鉴权必然失败）
+    // 随机密钥对拨号（B 端没有任何 link，验签必然失败）
+    let kp = ai_orz::pkg::crypto::did::generate_keypair();
     let ws_url = ws::ws_url_from_base(&peer_endpoint);
-    let state = ws::dial_peer(&org_a_id, &org_b_id, ws_url, "f".repeat(64), None)
+    let state = ws::dial_peer(&org_a_id, &org_b_id, ws_url, kp.signing_key, None)
         .await
         .expect("dial_peer itself succeeds (supervisor)");
 

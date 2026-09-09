@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE id = ? AND status != 0\n            ",
+  "query": "\nSELECT id, local_org_id, peer_org_id, endpoint,\n       peer_did, peer_verification_key,\n       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at\nFROM organization_links WHERE peer_did = ? AND status = 1 LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -9,58 +9,48 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "local_org_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "peer_org_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "base_url",
+        "name": "endpoint",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "group_name",
+        "name": "peer_did",
         "ordinal": 4,
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationStatus",
+        "name": "peer_verification_key",
         "ordinal": 5,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "scope: OrganizationScope",
+        "name": "status: OrganizationLinkStatus",
         "ordinal": 6,
         "type_info": "Integer"
       },
       {
-        "name": "invite_code",
+        "name": "created_by",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
-        "ordinal": 8,
-        "type_info": "Text"
-      },
-      {
-        "name": "modified_by",
-        "ordinal": 9,
-        "type_info": "Text"
-      },
-      {
         "name": "created_at",
-        "ordinal": 10,
+        "ordinal": 8,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 9,
         "type_info": "Integer"
       }
     ],
@@ -73,8 +63,6 @@
       false,
       false,
       true,
-      false,
-      false,
       true,
       false,
       false,
@@ -82,5 +70,5 @@
       false
     ]
   },
-  "hash": "9078ebf1e75d8284d0dcc6bd92da28ea1f10f4fafff64d0bfe23490962fa76a8"
+  "hash": "6aec1e07ddd23f2f191dee1cd753216e798ae9800bc851cf61f9f9c62a08940f"
 }

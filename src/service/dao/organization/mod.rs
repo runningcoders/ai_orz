@@ -28,6 +28,10 @@ pub struct PeerOrgUpsert {
     /// 自报联邦地址全集（P7 多地址模型①层；None = 对端旧版本未上报）
     pub addresses: Option<Vec<common::api::organization_link::FederationAddress>>,
     pub status: OrganizationStatus,
+    /// 组织 DID（S1 密钥底座；None = 对端未上报）
+    pub did: Option<String>,
+    /// 联邦公钥（Ed25519 32B base64；None = 对端未上报）
+    pub verification_key: Option<String>,
     /// 对端侧 updated_at（毫秒）：新者胜的比较基准
     pub updated_at: i64,
 }
@@ -68,6 +72,19 @@ pub trait OrganizationDao: Send + Sync {
     async fn update(&self, ctx: RequestContext, org: &OrganizationPo) -> Result<()>;
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()>;
     async fn count_all(&self, ctx: RequestContext) -> Result<u64>;
+
+    /// 更新组织联邦身份密钥（S1 密钥底座：惰性自检补齐 / 轮换的落库出口）
+    ///
+    /// 只动 did / verification_key / signing_key 三列（身份列不属于通用编辑面，
+    /// `update` 不触碰）；传 NULL 可清空（测试用）。返回更新后的组织。
+    async fn update_federation_identity(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        did: Option<&str>,
+        verification_key: Option<&str>,
+        signing_key: Option<&str>,
+    ) -> Result<()>;
 
     /// 统计符合查询条件的组织数量（复用 query 的 filter 逻辑，只跑 COUNT 不跑 LIST）
     async fn count(&self, ctx: RequestContext, query: OrganizationQuery) -> Result<u64>;

@@ -15,7 +15,11 @@ use common::api::{
     DirectorySyncResponse, PeerOrgDirectoryEntry, VerifyPairingCodeRequest,
     VerifyPairingCodeResponse,
 };
+use common::constants::http_header;
 use common::error::{Error, Result};
+
+use crate::pkg::crypto::did::sign_federation_request;
+use crate::pkg::url_util::path_and_query;
 
 /// 对端 verify 端点路径（与 `router.rs` root 层直挂路径对齐，评审稿 D7）
 const VERIFY_PATH: &str = "/api/v1/organization/links/pairing/verify";
@@ -32,6 +36,40 @@ const CAPABILITIES_PATH: &str = "/api/v1/organization/links/capabilities";
 /// 出站调用超时（秒）：建联是低频管理操作，10s 足够覆盖公网 RTT
 const OUTBOUND_TIMEOUT_SECS: u64 = 10;
 
+/// 组装联邦签名请求头（S2：每请求 Ed25519 签名，替代 Bearer）
+fn signed_headers(
+    signing_key: &str,
+    method: &str,
+    url: &str,
+    body: &[u8],
+) -> Result<reqwest::header::HeaderMap> {
+    let path = path_and_query(url)
+        .ok_or_else(|| Error::bad_request(format!("无法解析出站 URL path: {}", url)))?;
+    let signed = sign_federation_request(signing_key, method, path, body)?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        http_header::FEDERATION_KEY_ID,
+        reqwest::header::HeaderValue::from_str(&signed.key_id)
+            .map_err(|_| Error::internal("DID 头值非法"))?,
+    );
+    headers.insert(
+        http_header::FEDERATION_TIMESTAMP,
+        reqwest::header::HeaderValue::from_str(&signed.timestamp.to_string())
+            .map_err(|_| Error::internal("时间戳头值非法"))?,
+    );
+    headers.insert(
+        http_header::FEDERATION_NONCE,
+        reqwest::header::HeaderValue::from_str(&signed.nonce)
+            .map_err(|_| Error::internal("nonce 头值非法"))?,
+    );
+    headers.insert(
+        http_header::FEDERATION_SIGNATURE,
+        reqwest::header::HeaderValue::from_str(&signed.signature)
+            .map_err(|_| Error::internal("签名头值非法"))?,
+    );
+    Ok(headers)
+}
+
 /// 联邦出站 HTTP 客户端接口
 #[async_trait]
 pub trait FederationHttpClient: Send + Sync {
@@ -46,26 +84,26 @@ pub trait FederationHttpClient: Send + Sync {
         req: &VerifyPairingCodeRequest,
     ) -> Result<VerifyPairingCodeResponse>;
 
-    /// 拉取对端组织目录（契约凭证鉴权，`Authorization: Bearer <access_token>`）
+    /// 拉取对端组织目录（联邦签名鉴权）
     async fn fetch_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<Vec<PeerOrgDirectoryEntry>>;
 
-    /// 推送本地目录给对端（契约凭证鉴权）
+    /// 推送本地目录给对端（联邦签名鉴权）
     async fn push_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
         orgs: Vec<PeerOrgDirectoryEntry>,
     ) -> Result<()>;
 
-    /// 拉取对端能力清单（契约凭证鉴权，P5 联邦 Agent 目录用）
+    /// 拉取对端能力清单（联邦签名鉴权，P5 联邦 Agent 目录用）
     async fn fetch_capabilities(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<CapabilitiesResponse>;
 }
 
@@ -141,7 +179,7 @@ impl FederationHttpClient for ReqwestFederationClient {
     async fn fetch_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<Vec<PeerOrgDirectoryEntry>> {
         let base = peer_endpoint.trim().trim_end_matches('/');
         if base.is_empty() {
@@ -152,7 +190,7 @@ impl FederationHttpClient for ReqwestFederationClient {
         let client = outbound_client()?;
         let resp = client
             .get(&url)
-            .bearer_auth(access_token)
+            .headers(signed_headers(signing_key, "GET", &url, b"")?)
             .send()
             .await
             .map_err(|e| Error::internal(format!("拉取对端目录失败 ({}): {}", url, e)))?;
@@ -163,7 +201,7 @@ impl FederationHttpClient for ReqwestFederationClient {
     async fn push_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
         orgs: Vec<PeerOrgDirectoryEntry>,
     ) -> Result<()> {
         let base = peer_endpoint.trim().trim_end_matches('/');
@@ -172,11 +210,14 @@ impl FederationHttpClient for ReqwestFederationClient {
         }
         let url = format!("{}{}", base, DIRECTORY_SYNC_PATH);
 
+        let body = serde_json::to_vec(&DirectorySyncRequest { orgs })
+            .map_err(|e| Error::internal(format!("目录推送序列化失败: {}", e)))?;
         let client = outbound_client()?;
         let resp = client
             .post(&url)
-            .bearer_auth(access_token)
-            .json(&DirectorySyncRequest { orgs })
+            .headers(signed_headers(signing_key, "POST", &url, &body)?)
+            .header("Content-Type", "application/json")
+            .body(body)
             .send()
             .await
             .map_err(|e| Error::internal(format!("推送本地目录失败 ({}): {}", url, e)))?;
@@ -199,7 +240,7 @@ impl FederationHttpClient for ReqwestFederationClient {
     async fn fetch_capabilities(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<CapabilitiesResponse> {
         let base = peer_endpoint.trim().trim_end_matches('/');
         if base.is_empty() {
@@ -210,7 +251,7 @@ impl FederationHttpClient for ReqwestFederationClient {
         let client = outbound_client()?;
         let resp = client
             .get(&url)
-            .bearer_auth(access_token)
+            .headers(signed_headers(signing_key, "GET", &url, b"")?)
             .send()
             .await
             .map_err(|e| Error::internal(format!("拉取对端能力清单失败 ({}): {}", url, e)))?;

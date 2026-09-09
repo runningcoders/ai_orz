@@ -15,7 +15,7 @@ pub trait OrganizationPairingDao: Send + Sync {
     /// 原子消费配对码
     ///
     /// 仅当 `code_hash` 存在、未消费（`consumed_at IS NULL`）、未过期（`expires_at > now`）
-    /// 时置 `consumed_at` 并返回签发组织 ID。
+    /// 时置 `consumed_at` 并返回消费后的完整记录（含签发组织 ID 与可选 DID 钉住）。
     ///
     /// 任何不满足（无效码 / 已过期 / 已使用）均返回 `None`——上层统一转
     /// `Error::unauthorized`，不区分原因（防枚举探测，评审稿 §6.3）。
@@ -24,7 +24,7 @@ pub trait OrganizationPairingDao: Send + Sync {
         ctx: RequestContext,
         code_hash: &str,
         now: i64,
-    ) -> Result<Option<String>>;
+    ) -> Result<Option<OrganizationPairingCodePo>>;
 }
 
 pub mod sqlite;

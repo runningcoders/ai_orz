@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO organization_links (id, local_org_id, peer_org_id, endpoint, peer_did, peer_verification_key, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "451bc9cecc32523dab85f4149d63727cd4a93bd613f33e21b2b94cb7a3bf7e14"
+}

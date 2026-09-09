@@ -4,9 +4,9 @@
 //! → B 侧 Agent 执行 → A 侧收到结果，双方日志带 org 维度（声明头）。
 //!
 //! 结构：
-//! - e2e：A 侧 MessageConsumer 直连路由 → 联邦 A2A 出站（Bearer + 声明头）→
-//!   真实 B 节点 /a2a（TestApp 真实 TCP）→ B 侧网关 Agent（Cli/cat，无 LLM）
-//!   手动驱动消费回复 → A 侧轮询 tasks/get 到终态 → 回复落库给原用户。
+//! - e2e：A 侧 MessageConsumer 直连路由 → 联邦 A2A 出站（每请求 Ed25519 签名 +
+//!   声明头 + 任务令牌，S2）→ 真实 B 节点 /a2a（TestApp 真实 TCP）→ B 侧网关 Agent
+//!   （Cli/cat，无 LLM）手动驱动消费回复 → A 侧轮询 tasks/get 到终态 → 回复落库给原用户。
 //! - 降级：org 无 Active 连接 / 连接未开放 a2a_task → 不外呼，走既有流程
 //!   （Agent 不存在时表现为 NotFound，证明未委派）。
 //!
@@ -102,32 +102,34 @@ async fn seed_cli_agent(org: &str, tag: &str, roles: Vec<String>) -> String {
     agent_id
 }
 
-/// 播种一条 Active 连接。direction=b_in：local=org_b 收，peer=org_a 发，
-/// peer_token_hash = sha256(credential)（B 侧入站校验）。
-/// direction=a_out：local=org_a 出站用，access_token = credential，endpoint 指向 B。
-async fn seed_link(
-    local_org: &str,
-    peer_org: &str,
-    endpoint: &str,
-    access_token: &str,
-    peer_token_hash: &str,
-    capabilities: &str,
-    tag: &str,
-) {
+/// 播种一条 Active 连接（S2：对端身份 = peer_org 的真实 DID / 公钥，
+/// 入站验签 + 任务令牌 aud 都依赖它）。
+async fn seed_link(local_org: &str, peer_org: &str, endpoint: &str, capabilities: &str, tag: &str) {
+    let idp = crate::common::federation::org_federation_identity(peer_org).await;
     let mut link = OrganizationLinkPo::new(
         Uuid::now_v7().to_string(),
         local_org.to_string(),
         peer_org.to_string(),
         endpoint.to_string(),
-        access_token.to_string(),
-        peer_token_hash.to_string(),
         format!("fed-del-{tag}"),
     );
-    link.capabilities = capabilities.to_string();
+    link.peer_did = Some(idp.did);
+    link.peer_verification_key = Some(idp.verification_key);
     ai_orz::service::dao::organization_link::dao()
         .insert(org_ctx(tag), &link)
         .await
         .expect("seed link failed");
+
+    // S3：能力白名单在合约（federation_contracts），按测试参数覆盖默认值
+    let mut contract = ai_orz::models::federation_contract::FederationContractPo::new(
+        local_org.to_string(),
+        peer_org.to_string(),
+    );
+    contract.capabilities = capabilities.to_string();
+    ai_orz::service::dao::federation_contract::dao()
+        .insert(org_ctx(tag), &contract)
+        .await
+        .expect("seed contract failed");
 }
 
 /// 直接落库一条 user → agent 消息（不经 delivery，绕开事件发布）。
@@ -190,28 +192,16 @@ async fn test_list_federation_agents_aggregates_peer_capabilities(pool: SqlitePo
     // 且避免与 e2e 用例的 ROLE_A2A_GATEWAY Agent 产生 resolve 二义性
     let gw_id = seed_cli_agent(&org_b, "fagb-gw", vec!["tester".to_string()]).await;
 
-    // A → B 出站连接（endpoint 指向真实 B 节点；B 侧入站校验凭证）
-    let credential = "9".repeat(64);
+    // A → B 出站连接（endpoint 指向真实 B 节点；B 侧验 A 的签名）
     seed_link(
         &org_b,
         &org_a,
         "https://peer-a.example.com",
-        "unused",
-        &sha256::digest(credential.as_bytes()),
         r#"["a2a_task"]"#,
         "fagb-link",
     )
     .await;
-    seed_link(
-        &org_a,
-        &org_b,
-        &base_url,
-        &credential,
-        "unused-hash",
-        r#"["a2a_task"]"#,
-        "faga-link",
-    )
-    .await;
+    seed_link(&org_a, &org_b, &base_url, r#"["a2a_task"]"#, "faga-link").await;
 
     let (status, body) = app
         .get_with_jwt("/api/v1/organization/links/federation-agents", &jwt_a)
@@ -260,25 +250,20 @@ async fn test_federated_delegation_end_to_end(pool: SqlitePool) {
     let gw_id = seed_cli_agent(&org_b, "delb-gw", vec![ROLE_A2A_GATEWAY.to_string()]).await;
     let gw_id_for_b_loop = gw_id.clone();
 
-    let credential = "e".repeat(64);
-    // B 侧：入站校验 A 的出站凭证
+    // B 侧：入站验 A 的签名（对端身份 = A 的真实 DID / 公钥）
     seed_link(
         &org_b,
         &org_a,
         "https://peer-a.example.com",
-        "unused-b-outbound",
-        &sha256::digest(credential.as_bytes()),
         r#"["a2a_task"]"#,
         "delb-link",
     )
     .await;
-    // A 侧：出站路由（endpoint = B 节点 /a2a，Bearer = B 所发凭证）
+    // A 侧：出站路由（endpoint = B 节点 /a2a，每请求签名 + 任务令牌）
     seed_link(
         &org_a,
         &org_b,
         &format!("{base_url}/a2a"),
-        &credential,
-        "unused-hash",
         r#"["a2a_task"]"#,
         "dela-link",
     )
@@ -458,8 +443,6 @@ async fn test_delegation_degrades_when_capability_missing(pool: SqlitePool) {
         &org_a,
         &org_b,
         "https://peer-b.example.com/a2a",
-        &"f".repeat(64),
-        "unused-hash",
         r#"["other_cap"]"#, // 连接有效但不开放 a2a_task
         "capa-link",
     )

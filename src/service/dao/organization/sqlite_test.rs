@@ -243,6 +243,8 @@ fn peer_upsert(id: &str, name: &str, updated_at: i64) -> PeerOrgUpsert {
         group_name: Some("示例集团".to_string()),
         addresses: None,
         status: OrganizationStatus::Active,
+        did: Some("did:key:z6MkPeerTest".to_string()),
+        verification_key: Some("cGVlci1rZXk".to_string()),
         updated_at,
     }
 }

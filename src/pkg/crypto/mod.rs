@@ -5,6 +5,9 @@
 //! - 密钥：`security.secret_key` 经 SHA-256 派生 32 字节
 //! - 兼容：无 `enc:v1:` 前缀视为明文，读取路径直接使用（测试阶段不做批量迁移）
 
+pub mod did;
+pub mod task_token;
+
 use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};

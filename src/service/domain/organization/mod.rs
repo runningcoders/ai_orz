@@ -25,6 +25,23 @@ pub fn domain() -> Arc<dyn OrganizationDomain> {
     ORGANIZATION_DOMAIN.get().cloned().unwrap()
 }
 
+/// S1 密钥底座：启动自检，确保 Local 组织都有联邦身份密钥对（幂等，失败仅告警）
+pub async fn init_base_data() {
+    let ctx = RequestContext::new_system();
+    match org::ensure_local_federation_identity(
+        &ctx,
+        crate::service::dao::organization::dao().as_ref(),
+    )
+    .await
+    {
+        Ok(()) => sys_info!("organization domain 基础数据初始化完成（联邦身份密钥自检）"),
+        Err(e) => sys_warn!(
+            "organization domain 基础数据初始化失败（联邦身份密钥自检）: {}",
+            e
+        ),
+    }
+}
+
 /// 初始化 Organization Domain
 pub fn init() {
     // 本端自报联邦地址（P7 多地址模型）：配置启动后不变，组装点一次推导。
@@ -52,6 +69,7 @@ pub fn init() {
         user_dal::dal(),
         organization::link::dal(),
         organization::pairing::dal(),
+        organization::contract::dal(),
         self_addresses,
     );
     let _ = ORGANIZATION_DOMAIN.set(Arc::new(domain));
@@ -67,6 +85,8 @@ struct OrganizationDomainImpl {
     user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
     link_dal: Arc<dyn OrganizationLinkDal + Send + Sync>,
     pairing_dal: Arc<dyn OrganizationPairingDal + Send + Sync>,
+    /// 联邦合约 DAL（能力白名单唯一事实源，S3）
+    contract_dal: Arc<dyn organization::FederationContractDal + Send + Sync>,
     /// 本端自报联邦地址（P7）：目录导出时随 Local 组织条目携带
     self_addresses: Vec<common::api::organization_link::FederationAddress>,
 }
@@ -78,6 +98,7 @@ impl OrganizationDomainImpl {
         user_dal: Arc<dyn user_dal::UserDal + Send + Sync>,
         link_dal: Arc<dyn OrganizationLinkDal + Send + Sync>,
         pairing_dal: Arc<dyn OrganizationPairingDal + Send + Sync>,
+        contract_dal: Arc<dyn organization::FederationContractDal + Send + Sync>,
         self_addresses: Vec<common::api::organization_link::FederationAddress>,
     ) -> Self {
         Self {
@@ -85,6 +106,7 @@ impl OrganizationDomainImpl {
             user_dal,
             link_dal,
             pairing_dal,
+            contract_dal,
             self_addresses,
         }
     }
@@ -103,6 +125,23 @@ impl OrganizationDomain for OrganizationDomainImpl {
 }
 
 // ==================== traits 定义 ====================
+
+/// 联邦入站请求签名证明（S2：四个 `X-Federation-*` 头的纯数据形态）
+///
+/// 跨传输层复用：HTTP 中间件（/a2a）与机器侧 handler（directory 等）及 WS 握手
+/// 均从 header 提取后传入 domain；验签逻辑全部收敛在
+/// `authenticate_federation_request`，避免两套鉴权实现漂移。
+#[derive(Debug, Clone)]
+pub struct FederationRequestProof {
+    /// 发起方组织 DID（`did:key:z...`，与 link.peer_did 比对防跨连接冒充）
+    pub key_id: String,
+    /// Unix 秒级时间戳（±300s 窗口）
+    pub timestamp: i64,
+    /// 随机 16 字节 hex（进程内去重防重放）
+    pub nonce: String,
+    /// Ed25519 签名（base64url 无 padding）
+    pub signature: String,
+}
 
 /// Organization Domain 总 trait
 ///
@@ -184,16 +223,18 @@ pub trait OrganizationManage: Send + Sync {
     /// 签发组网配对码（用户侧，需管理员权限）
     ///
     /// 生成 24 字符配对码（去 0/O/1/I）、10 分钟 TTL、单用途；仅存哈希，
-    /// 返回明文 + 过期绝对时间。签发记审计（评审稿 §4.1 / §6.3）。
+    /// 返回明文 + 过期绝对时间。可选钉住预期对端 DID（§2.1）。签发记审计。
     async fn issue_pairing_code(
         &self,
         ctx: RequestContext,
+        expected_peer_did: Option<String>,
     ) -> Result<common::api::IssuePairingCodeResponse>;
 
-    /// 验证配对码 + 交换凭证（机器侧，配对码鉴权）
+    /// 验证配对码 + 交换身份（机器侧，配对码鉴权）
     ///
-    /// 消费配对码（单用途 + TTL），生成对端出站 token，落对端 link + Linked 影子，
-    /// 返回对端目录条目 + token。无效 / 过期 / 已用统一返回 unauthorized（防枚举）。
+    /// 消费配对码（单用途 + TTL），验调用方交叉签名，落对端 link（含对端
+    /// DID / 公钥）+ Linked 影子，返回对端目录条目 + 本端交叉签名。
+    /// 无效 / 过期 / 已用 / 签名不符统一返回 unauthorized（防枚举）。
     async fn verify_pairing_code(
         &self,
         ctx: RequestContext,
@@ -214,16 +255,31 @@ pub trait OrganizationManage: Send + Sync {
     /// 已建联列表（用户侧，JWT，前端"关联组织"页数据源）
     async fn list_links(&self, ctx: RequestContext) -> Result<common::api::ListLinksResponse>;
 
-    /// 机器侧端点契约凭证鉴权
+    /// 联邦入站请求验签（S2，机器侧端点统一鉴权入口）
     ///
-    /// 对端出站调用本节点时携带其 access_token（= 本节点为对端生成的 token），
-    /// 哈希后匹配 Active 连接的 `peer_token_hash`。无效/吊销统一 unauthorized
-    /// （防枚举）。返回命中的连接（携带调用方 org id 与本端 org id）。
-    async fn authenticate_link_call(
+    /// 流程（任一环节失败统一 401，无回退路径）：按 `key_id` 查 Active 连接
+    /// → 时间窗 ±300s → nonce 去重 → 用连接上的对端公钥验签规范串
+    /// `{method}\n{path}\n{timestamp}\n{nonce}\n{sha256(body)}`。
+    /// 返回命中的连接（携带对端 org id 与本端 org id）。
+    async fn authenticate_federation_request(
         &self,
         ctx: RequestContext,
-        credential: &str,
+        proof: &FederationRequestProof,
+        method: &str,
+        path_with_query: &str,
+        body_hash: &str,
     ) -> Result<crate::models::organization_link::OrganizationLinkPo>;
+
+    /// 验证异步回调任务令牌（S2 自签发，`/a2a/callback` 唯一鉴权手段）
+    ///
+    /// 用**本端**公钥验签（签发方 = 本端 = 回调接收方，零状态）+ exp 未过期 +
+    /// `task_id` claim 与路径一致 + `aud` 为本端 DID；任一不符即 401。
+    async fn verify_callback_task_token(
+        &self,
+        ctx: RequestContext,
+        token: &str,
+        task_id: &str,
+    ) -> Result<()>;
 
     /// 本节点组织目录（机器侧 GET /directory 数据源，白名单字段，评审稿 §5.1）
     async fn get_directory(
@@ -246,6 +302,36 @@ pub trait OrganizationManage: Send + Sync {
     /// 置连接 Revoked + org DAL 组合方法将对端影子 Linked → Remote（不删除记录，
     /// 保留审计线索）。断联后对端出站调用本节点时凭证鉴权失败（401 → 惰性感知）。
     async fn revoke_link(&self, ctx: RequestContext, peer_org_id: &str) -> Result<()>;
+
+    // ==================== 联邦合约（S3 合约授权，用户侧管理员接口）==========
+
+    /// 本组织的合约列表（管理员"联邦合约"数据源）
+    async fn list_contracts(
+        &self,
+        ctx: RequestContext,
+    ) -> Result<common::api::ListContractsResponse>;
+
+    /// 更新合约能力集（管理员；下一次入站请求即按新能力集判定）
+    async fn update_contract_capabilities(
+        &self,
+        ctx: RequestContext,
+        req: common::api::UpdateContractCapabilitiesRequest,
+    ) -> Result<common::api::UpdateContractCapabilitiesResponse>;
+
+    /// 终止合约（管理员；fail-closed 熔断开关，不删记录保留审计线索）
+    async fn terminate_contract(
+        &self,
+        ctx: RequestContext,
+        req: common::api::TerminateContractRequest,
+    ) -> Result<common::api::TerminateContractResponse>;
+
+    /// 连接的能力集（机器侧门禁数据源；无 active 合约 = 空集，fail-closed）
+    async fn contract_capabilities(
+        &self,
+        ctx: RequestContext,
+        local_org_id: &str,
+        peer_org_id: &str,
+    ) -> Result<Vec<String>>;
 
     /// 跨组织 Agent 委派（P4）：路由决策 + 联邦 A2A 出站
     ///

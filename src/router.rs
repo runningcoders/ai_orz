@@ -183,11 +183,19 @@ pub fn create_router(frontend_dist_dir: &str, config: Arc<AppConfig>) -> Router 
             get(handlers::organization::links::federation_ws_handler),
         )
         .route("/health", get(handlers::health::health))
+        // /healthz：K8s / 容器编排与部分网关约定俗成的探活路径，语义与 /health 完全一致
+        .route("/healthz", get(handlers::health::health))
+        // SSE 防缓冲响应头：给 text/event-stream 响应补 X-Accel-Buffering: no，
+        // 防止 nginx 类网关把事件攒包（详见 middleware/sse_headers.rs）
+        .layer(axum::middleware::from_fn(
+            crate::middleware::sse_headers_middleware,
+        ))
         // API Notice 日志：请求结束时打印 method/path/status/duration + 请求/响应体预览
         // （仅覆盖上面已注册的接口路由；必须加在 fallback_service 之前，静态资源不打）
-        .layer(axum::middleware::from_fn(
-            crate::middleware::api_notice_middleware,
-        ))
+        .layer(axum::middleware::from_fn({
+            let config = config.clone();
+            move |req, next| crate::middleware::api_notice_middleware(config.clone(), req, next)
+        }))
         .fallback_service(spa_service)
 }
 
@@ -473,6 +481,7 @@ fn artifact_routes() -> Router {
 
 fn organization_protected_routes() -> Router {
     // Each handler is in its own file in the subdirectory
+    use crate::handlers::organization::contracts;
     use crate::handlers::organization::links;
     use crate::handlers::organization::organization_me;
     use crate::handlers::organization::organizations;
@@ -500,6 +509,16 @@ fn organization_protected_routes() -> Router {
         )
         // 组网：断联（用户侧，本端管理员 JWT；连接 Revoked + 对端影子降级）
         .route("/links/{peer_org_id}", delete(links::revoke_link_handler))
+        // 联邦合约（用户侧，本端管理员 JWT，S3 合约授权）：能力白名单唯一事实源
+        .route("/contracts", get(contracts::list_contracts_handler))
+        .route(
+            "/contracts/capabilities",
+            put(contracts::update_contract_capabilities_handler),
+        )
+        .route(
+            "/contracts/terminate",
+            post(contracts::terminate_contract_handler),
+        )
         .route(
             "/me",
             put(organization_me::update_current_organization_handler),

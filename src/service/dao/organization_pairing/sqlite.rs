@@ -34,14 +34,15 @@ impl OrganizationPairingDao for OrganizationPairingDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, code: &OrganizationPairingCodePo) -> Result<()> {
         sqlx::query!(
             r#"
-INSERT INTO organization_pairing_codes (id, org_id, code_hash, expires_at, consumed_at, created_by, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO organization_pairing_codes (id, org_id, code_hash, expires_at, consumed_at, expected_peer_did, created_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             code.id,
             code.org_id,
             code.code_hash,
             code.expires_at,
             code.consumed_at,
+            code.expected_peer_did,
             code.created_by,
             code.created_at
         )
@@ -55,16 +56,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
         ctx: RequestContext,
         code_hash: &str,
         now: i64,
-    ) -> Result<Option<String>> {
-        // 原子操作：仅当「存在 + 未消费 + 未过期」时置 consumed_at，并返回签发组织 ID。
-        // 一次失败的并发消费会被唯一索引 + 此 WHERE 天然串行化；第二个消费因
-        // consumed_at 已非 NULL 而返回 None（单用途保障）。
-        let row = sqlx::query!(
+    ) -> Result<Option<OrganizationPairingCodePo>> {
+        // 原子操作：仅当「存在 + 未消费 + 未过期」时置 consumed_at，并返回消费后的记录
+        // （含签发组织 ID 与可选 DID 钉住）。一次失败的并发消费会被唯一索引 + 此
+        // WHERE 天然串行化；第二个消费因 consumed_at 已非 NULL 而返回 None（单用途保障）。
+        let row = sqlx::query_as!(
+            OrganizationPairingCodePo,
             r#"
 UPDATE organization_pairing_codes
 SET consumed_at = ?
 WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
-RETURNING org_id
+RETURNING id, org_id, code_hash, expires_at, consumed_at, expected_peer_did, created_by, created_at
             "#,
             now,
             code_hash,
@@ -72,6 +74,6 @@ RETURNING org_id
         )
         .fetch_optional(ctx.db_pool())
         .await?;
-        Ok(row.map(|r| r.org_id))
+        Ok(row)
     }
 }

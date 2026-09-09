@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::Path;
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use common::api::a2a::A2aTask;
 use common::enums::{CallerType, TaskStatus};
@@ -17,8 +18,23 @@ use crate::service::domain::project as project_domain;
 pub async fn handle_a2a_callback(
     axum::Extension(ctx): axum::Extension<RequestContext>,
     Path(task_id): Path<String>,
+    headers: HeaderMap,
     Json(task): Json<A2aTask>,
 ) -> common::error::Result<impl IntoResponse> {
+    // 任务令牌鉴权（S2）：tasks/send 时本端自签发的短期令牌由对端原样带回
+    // （Bearer），本端用自己公钥验证——零状态、单任务作用域，fail-closed。
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| Error::unauthorized("缺少任务令牌"))?;
+    crate::service::domain::organization::domain()
+        .organization_manage()
+        .verify_callback_task_token(ctx.clone(), token, &task_id)
+        .await?;
+
     let Some(mut local_task) = project_domain::domain()
         .task_manage()
         .get(ctx.clone(), &task_id)

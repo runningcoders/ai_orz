@@ -30,7 +30,10 @@ pub use mcp_server::{McpServerStatus, McpTransport};
 pub use memory::{KnowledgeRelationType, MemoryRole, MemoryStatus, MemoryType};
 pub use message::{MessageRole, MessageStatus, MessageType};
 pub use message_channel::{ChannelStatus, ChannelType};
-pub use organization::{OrganizationLinkStatus, OrganizationScope, OrganizationStatus};
+pub use organization::{
+    FederationContractKind, FederationContractState, OrganizationLinkStatus, OrganizationScope,
+    OrganizationStatus,
+};
 pub use project::ProjectStatus;
 pub use provider::{ModelCapability, ProviderType};
 pub use skill::{SkillAuthorType, SkillStatus};

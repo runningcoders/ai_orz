@@ -1,0 +1,104 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id, name, description, base_url, group_name, did, verification_key, signing_key, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE invite_code = ? AND status != 0\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "base_url",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "group_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "did",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "verification_key",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "signing_key",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "status: OrganizationStatus",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "scope: OrganizationScope",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "invite_code",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "modified_by",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 14,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "996812e928e0e9e6dc1686c933cac1c9e50d53663853bbc5edcffa4ccde2e1fe"
+}

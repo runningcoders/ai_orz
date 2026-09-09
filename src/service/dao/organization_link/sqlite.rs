@@ -36,14 +36,13 @@ impl OrganizationLinkDao for OrganizationLinkDaoSqliteImpl {
     async fn insert(&self, ctx: RequestContext, link: &OrganizationLinkPo) -> Result<()> {
         let status = link.status as i32;
         sqlx::query!(
-            "INSERT INTO organization_links (id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, capabilities, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO organization_links (id, local_org_id, peer_org_id, endpoint, peer_did, peer_verification_key, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             link.id,
             link.local_org_id,
             link.peer_org_id,
             link.endpoint,
-            link.access_token,
-            link.peer_token_hash,
-            link.capabilities,
+            link.peer_did,
+            link.peer_verification_key,
             status,
             link.created_by,
             link.created_at,
@@ -62,8 +61,9 @@ impl OrganizationLinkDao for OrganizationLinkDaoSqliteImpl {
         let link = sqlx::query_as!(
             OrganizationLinkPo,
             r#"
-SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+SELECT id, local_org_id, peer_org_id, endpoint,
+       peer_did, peer_verification_key,
+       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
 FROM organization_links WHERE id = ?
             "#,
             id
@@ -82,8 +82,9 @@ FROM organization_links WHERE id = ?
         let link = sqlx::query_as!(
             OrganizationLinkPo,
             r#"
-SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+SELECT id, local_org_id, peer_org_id, endpoint,
+       peer_did, peer_verification_key,
+       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
 FROM organization_links WHERE local_org_id = ? AND peer_org_id = ?
             "#,
             local_org_id,
@@ -94,19 +95,20 @@ FROM organization_links WHERE local_org_id = ? AND peer_org_id = ?
         Ok(link)
     }
 
-    async fn find_active_by_peer_token_hash(
+    async fn find_active_by_peer_did(
         &self,
         ctx: RequestContext,
-        peer_token_hash: &str,
+        peer_did: &str,
     ) -> Result<Option<OrganizationLinkPo>> {
         let link = sqlx::query_as!(
             OrganizationLinkPo,
             r#"
-SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,
-       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
-FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
+SELECT id, local_org_id, peer_org_id, endpoint,
+       peer_did, peer_verification_key,
+       status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at
+FROM organization_links WHERE peer_did = ? AND status = 1 LIMIT 1
             "#,
-            peer_token_hash
+            peer_did
         )
         .fetch_optional(ctx.db_pool())
         .await?;
@@ -120,7 +122,7 @@ FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
     ) -> Result<Vec<OrganizationLinkPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash, capabilities, status, created_by, created_at, updated_at FROM organization_links WHERE 1=1"#,
+            r#"SELECT id, local_org_id, peer_org_id, endpoint, peer_did, peer_verification_key, status, created_by, created_at, updated_at FROM organization_links WHERE 1=1"#,
         );
 
         if let Some(local_org_id) = &query.local_org_id {
@@ -144,12 +146,12 @@ FROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1
         sqlx::query!(
             r#"
 UPDATE organization_links
-SET endpoint = ?, access_token = ?, peer_token_hash = ?, status = ?, updated_at = ?
+SET endpoint = ?, peer_did = ?, peer_verification_key = ?, status = ?, updated_at = ?
 WHERE id = ?
             "#,
             link.endpoint,
-            link.access_token,
-            link.peer_token_hash,
+            link.peer_did,
+            link.peer_verification_key,
             status,
             current_timestamp,
             link.id

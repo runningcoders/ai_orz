@@ -4,6 +4,7 @@ pub mod artifact;
 pub mod attachment;
 pub mod cortex;
 pub mod cron_trigger;
+pub mod federation_contract;
 pub mod mcp_server;
 pub mod memory;
 pub mod message;
@@ -36,6 +37,7 @@ pub fn init_all() {
     cortex::init();
     cortex::native::init();
     cron_trigger::init();
+    federation_contract::init();
     message::init();
     message_channel::init();
     mcp_server::init();

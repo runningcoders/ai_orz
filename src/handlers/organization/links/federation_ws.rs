@@ -1,31 +1,33 @@
 //! Handler: GET /api/v1/organization/links/ws
 //!
 //! 联邦 WS 长连接服务端入口（机器侧，对端拨入）。鉴权前移到连接层：
-//! 握手时用 link 凭证鉴权**一次**（复用 `resolve_federation_identity`，
-//! 含能力门禁），会话持有 peer_org / 本端 org / 接待用户，此后每条消息
-//! 的 ctx 由会话注入——**帧信封绝不携带身份字段**（P0 红线）。
-//! 重连必须重新握手鉴权（无会话恢复）。
+//! 握手时用联邦签名（GET 请求，规范串不含 body）验签**一次**（复用
+//! `resolve_federation_identity`，含能力门禁），会话持有 peer_org / 本端 org /
+//! 接待用户，此后每条消息的 ctx 由会话注入——**帧信封绝不携带身份字段**
+//! （P0 红线）。重连必须重新握手鉴权（无会话恢复）。
 //!
 //! 裸 axum handler（upgrade 协议，不走 `generate_http_handler`），
 //! 在 router root 层直挂，与 verify/directory 同前缀同模式。
 
 use axum::Json;
 use axum::extract::ws::WebSocketUpgrade;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 
 use common::api::{ApiResponse, FederationCallerDeclaration};
 use common::error::ErrorCode;
 
-use crate::middleware::federation_identity::resolve_federation_identity;
+use crate::middleware::federation_identity::{
+    extract_federation_proof, resolve_federation_identity,
+};
 use crate::pkg::ws::serve_server;
 use crate::service::dao::organization_link::ws::FederationWsSession;
 
 /// 联邦 WS 长连接升级入口
-pub async fn federation_ws_handler(ws: WebSocketUpgrade, headers: HeaderMap) -> Response {
-    // 1) Bearer 凭证（WS 握手只认 header）
-    let Some(credential) = extract_bearer_token(&headers) else {
-        return unauthorized("缺少认证凭证");
+pub async fn federation_ws_handler(ws: WebSocketUpgrade, uri: Uri, headers: HeaderMap) -> Response {
+    // 1) 联邦签名四件套（GET 握手：body 为空，规范串末项 = 空串哈希）
+    let Some(proof) = extract_federation_proof(&headers) else {
+        return unauthorized("缺少联邦签名头");
     };
 
     // 2) 身份声明（缺省 = 连接级匿名调用；非法 = fail-closed 401）
@@ -41,8 +43,21 @@ pub async fn federation_ws_handler(ws: WebSocketUpgrade, headers: HeaderMap) -> 
         None => None,
     };
 
-    // 3) 身份解析（凭证鉴权 + 能力门禁 + 声明一致性 + 接待用户映射）
-    let identity = match resolve_federation_identity(&credential, declaration.as_ref()).await {
+    // 3) 身份解析（验签 + 能力门禁 + 声明一致性 + 接待用户映射）
+    let path_with_query = uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or_else(|| uri.path());
+    let body_hash = crate::pkg::crypto::did::body_sha256_hex(b"");
+    let identity = match resolve_federation_identity(
+        &proof,
+        "GET",
+        path_with_query,
+        &body_hash,
+        declaration.as_ref(),
+    )
+    .await
+    {
         Ok(identity) => identity,
         Err(e) => {
             return match e.code {
@@ -59,15 +74,6 @@ pub async fn federation_ws_handler(ws: WebSocketUpgrade, headers: HeaderMap) -> 
     let session =
         FederationWsSession::new(identity.local_org_id.clone(), identity.peer_org_id.clone());
     ws.on_upgrade(move |socket| serve_server(socket, std::sync::Arc::new(session)))
-}
-
-/// 提取 `Authorization: Bearer <token>`
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    let auth = headers.get(axum::http::header::AUTHORIZATION)?;
-    let auth = auth.to_str().ok()?;
-    let token = auth.strip_prefix("Bearer ")?;
-    let token = token.trim();
-    (!token.is_empty()).then(|| token.to_string())
 }
 
 fn json_status(status: StatusCode, code: i32, message: &str) -> Response {

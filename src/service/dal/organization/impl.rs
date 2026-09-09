@@ -178,6 +178,7 @@ impl OrganizationDal for OrganizationDalImpl {
         peer_agent_id: &str,
         prompt: &str,
         caller_declaration: Option<String>,
+        signing_key: &str,
     ) -> Result<String> {
         // P7：出站前解析对端首选可达地址（内网优先探测 + TTL 缓存，
         // 无自报地址时原样返回 link.endpoint）
@@ -194,6 +195,7 @@ impl OrganizationDal for OrganizationDalImpl {
                 prompt,
                 caller_declaration.clone(),
                 &endpoint,
+                signing_key,
             )
             .await
         {
@@ -207,7 +209,10 @@ impl OrganizationDal for OrganizationDalImpl {
         .build()?;
         let config = FederatedCallConfig {
             endpoint,
-            auth_token: link.access_token.clone(),
+            signing_key: signing_key.to_string(),
+            peer_did: link.peer_did.clone().ok_or_else(|| {
+                common::error::Error::internal("连接缺少对端 DID（S2 建联交换公钥后必有）")
+            })?,
             caller_declaration,
             deadline_secs: FEDERATED_CALL_DEADLINE_SECS,
             poll_interval_ms: FEDERATED_CALL_POLL_INTERVAL_MS,
@@ -230,6 +235,7 @@ impl OrganizationDalImpl {
     ///
     /// 返回 `None` = 无活连接（或 WS 失败），调用方回退 HTTP 路径；
     /// 返回 `Some(result)` = 已完成（成功或带错误），不再回退。
+    #[allow(clippy::too_many_arguments)]
     async fn try_send_over_ws(
         &self,
         ctx: RequestContext,
@@ -238,10 +244,17 @@ impl OrganizationDalImpl {
         prompt: &str,
         caller_declaration: Option<String>,
         resolved_endpoint: &str,
+        signing_key: &str,
     ) -> Option<Result<String>> {
         let peer_org = link.peer_org_id.clone();
         if !ws::registry().connected(&peer_org) {
-            self.spawn_background_dial(ctx, link, caller_declaration, resolved_endpoint);
+            self.spawn_background_dial(
+                ctx,
+                link,
+                caller_declaration,
+                resolved_endpoint,
+                signing_key,
+            );
             return None;
         }
 
@@ -332,13 +345,14 @@ impl OrganizationDalImpl {
         link: &OrganizationLinkPo,
         caller_declaration: Option<String>,
         resolved_endpoint: &str,
+        signing_key: &str,
     ) {
         let peer_org = link.peer_org_id.clone();
         if !ws::registry().try_mark_dialing(&peer_org) {
             return; // 已有拨号在途
         }
         let url = ws::ws_url_from_base(resolved_endpoint);
-        let token = link.access_token.clone();
+        let signing_key = signing_key.to_string();
         let link_local_org = link.local_org_id.clone();
         log_info!(
             &ctx,
@@ -347,8 +361,14 @@ impl OrganizationDalImpl {
             "后台拨号联邦长连接",
         );
         tokio::spawn(async move {
-            if let Err(e) =
-                ws::dial_peer(&link_local_org, &peer_org, url, token, caller_declaration).await
+            if let Err(e) = ws::dial_peer(
+                &link_local_org,
+                &peer_org,
+                url,
+                signing_key,
+                caller_declaration,
+            )
+            .await
             {
                 log_warn!(
                     "federation ws background dial failed: peer={} err={}",

@@ -55,13 +55,19 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         let scope = org.scope as i32;
         let invite_code = org.invite_code.clone();
         let group_name = org.group_name.clone();
+        let did = org.did.clone();
+        let verification_key = org.verification_key.clone();
+        let signing_key = org.signing_key.clone();
         sqlx::query!(
-            "INSERT INTO organizations (id, name, description, base_url, group_name, status, scope, invite_code, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO organizations (id, name, description, base_url, group_name, did, verification_key, signing_key, status, scope, invite_code, created_by, modified_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             org.id,
             org.name,
             org.description,
             org.base_url,
             group_name,
+            did,
+            verification_key,
+            signing_key,
             status,
             scope,
             invite_code,
@@ -80,7 +86,7 @@ impl OrganizationDao for OrganizationDaoSqliteImpl {
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
-SELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
+SELECT id, name, description, base_url, group_name, did, verification_key, signing_key, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
 FROM organizations WHERE id = ? AND status != 0
             "#,
             id
@@ -99,7 +105,7 @@ FROM organizations WHERE id = ? AND status != 0
         let org = sqlx::query_as!(
             OrganizationPo,
             r#"
-SELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
+SELECT id, name, description, base_url, group_name, did, verification_key, signing_key, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at
 FROM organizations WHERE invite_code = ? AND status != 0
             "#,
             invite_code
@@ -155,7 +161,7 @@ FROM organizations WHERE invite_code = ? AND status != 0
     ) -> Result<Vec<OrganizationPo>> {
         let pool = ctx.db_pool();
         let mut builder = sqlx::QueryBuilder::new(
-            r#"SELECT id, name, description, base_url, group_name, status, scope, invite_code, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
+            r#"SELECT id, name, description, base_url, group_name, did, verification_key, signing_key, status, scope, invite_code, created_by, modified_by, created_at, updated_at FROM organizations WHERE status != 0"#,
         );
 
         if let Some(scope) = query.scope {
@@ -210,6 +216,32 @@ WHERE id = ?
         Ok(())
     }
 
+    async fn update_federation_identity(
+        &self,
+        ctx: RequestContext,
+        org_id: &str,
+        did: Option<&str>,
+        verification_key: Option<&str>,
+        signing_key: Option<&str>,
+    ) -> Result<()> {
+        let now = Utc::now().timestamp_millis();
+        sqlx::query!(
+            r#"
+UPDATE organizations
+SET did = ?, verification_key = ?, signing_key = ?, updated_at = ?
+WHERE id = ?
+            "#,
+            did,
+            verification_key,
+            signing_key,
+            now,
+            org_id
+        )
+        .execute(ctx.db_pool())
+        .await?;
+        Ok(())
+    }
+
     async fn delete(&self, ctx: RequestContext, id: &str) -> Result<()> {
         let current_timestamp = Utc::now().timestamp_millis();
         let uid = ctx.caller_id_or_system();
@@ -255,18 +287,22 @@ UPDATE organizations SET status = 0, modified_by = ?, updated_at = ? WHERE id = 
         let status = peer.status as i32;
         let addresses = serde_json::to_string(&peer.addresses.clone().unwrap_or_default())
             .unwrap_or_else(|_| "[]".to_string());
+        let did = peer.did.clone();
+        let verification_key = peer.verification_key.clone();
         // updated_at 存对端数据版本（新者胜比较基准）；created_at 为本地行创建时间
         let now = Utc::now().timestamp_millis();
         let result = sqlx::query!(
             r#"
-INSERT INTO organizations (id, name, description, base_url, addresses, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+INSERT INTO organizations (id, name, description, base_url, addresses, group_name, did, verification_key, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     base_url = excluded.base_url,
     addresses = excluded.addresses,
     group_name = excluded.group_name,
+    did = excluded.did,
+    verification_key = excluded.verification_key,
     status = excluded.status,
     updated_at = excluded.updated_at
 WHERE excluded.updated_at > organizations.updated_at
@@ -278,6 +314,8 @@ WHERE excluded.updated_at > organizations.updated_at
             peer.base_url,
             addresses,
             peer.group_name,
+            did,
+            verification_key,
             status,
             OrganizationScope::Remote as i32,
             now,
@@ -297,19 +335,23 @@ WHERE excluded.updated_at > organizations.updated_at
         let status = peer.status as i32;
         let addresses = serde_json::to_string(&peer.addresses.clone().unwrap_or_default())
             .unwrap_or_else(|_| "[]".to_string());
+        let did = peer.did.clone();
+        let verification_key = peer.verification_key.clone();
         // 直接建联：插入即 Linked；更新也强制 Linked（直接相连是权威动作，不依赖新者胜）
         // 仅保护本地组织（scope=Local）不被覆盖（评审稿 R5）
         let now = Utc::now().timestamp_millis();
         let result = sqlx::query!(
             r#"
-INSERT INTO organizations (id, name, description, base_url, addresses, group_name, status, scope, created_by, modified_by, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
+INSERT INTO organizations (id, name, description, base_url, addresses, group_name, did, verification_key, status, scope, created_by, modified_by, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     base_url = excluded.base_url,
     addresses = excluded.addresses,
     group_name = excluded.group_name,
+    did = excluded.did,
+    verification_key = excluded.verification_key,
     status = excluded.status,
     scope = ?,
     updated_at = excluded.updated_at
@@ -321,6 +363,8 @@ WHERE organizations.scope != ?
             peer.base_url,
             addresses,
             peer.group_name,
+            did,
+            verification_key,
             status,
             OrganizationScope::Linked as i32,
             now,

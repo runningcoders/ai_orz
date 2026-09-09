@@ -149,6 +149,91 @@ impl From<i64> for OrganizationLinkStatus {
     }
 }
 
+/// Federation contract kind（联邦合约类型，S3）
+///
+/// 只立合约的形状：`basic` = 建联即成立的能力白名单合约；未来非互信合同
+/// （`task_sla`）= 同一张表加字段与状态机，双签复用 S2 签名代码。
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum FederationContractKind {
+    /// Basic（建联即自动成立的默认合约，承载能力白名单）
+    #[default]
+    Basic = 1,
+}
+
+impl From<i32> for FederationContractKind {
+    fn from(v: i32) -> Self {
+        match v {
+            1 => FederationContractKind::Basic,
+            _ => FederationContractKind::default(),
+        }
+    }
+}
+
+impl FederationContractKind {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        v.into()
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        (*self).into()
+    }
+}
+
+impl From<FederationContractKind> for i32 {
+    fn from(k: FederationContractKind) -> i32 {
+        k as i32
+    }
+}
+
+/// Federation contract state（联邦合约状态，S3）
+///
+/// S3 只需要两态：active（生效）/ terminated（终止，fail-closed 拒绝）。
+/// 未来合同机制补 offered / accepted 状态机。
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(feature = "sqlx", derive(Type))]
+#[cfg_attr(feature = "sqlx", sqlx(type_name = "INTEGER"))]
+pub enum FederationContractState {
+    /// Terminated（已终止；无 active 合约的连接按无能力处理）
+    Terminated = 0,
+    /// Active（生效中）
+    #[default]
+    Active = 1,
+}
+
+impl From<i32> for FederationContractState {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => FederationContractState::Terminated,
+            1 => FederationContractState::Active,
+            _ => FederationContractState::default(),
+        }
+    }
+}
+
+impl FederationContractState {
+    /// Convert from i32
+    pub fn from_i32(v: i32) -> Self {
+        v.into()
+    }
+
+    /// Convert to i32
+    pub fn to_i32(&self) -> i32 {
+        (*self).into()
+    }
+}
+
+impl From<FederationContractState> for i32 {
+    fn from(s: FederationContractState) -> i32 {
+        s as i32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

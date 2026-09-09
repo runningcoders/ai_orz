@@ -27,6 +27,17 @@ pub struct OrganizationPo {
     /// 「关联组织」界面的归组展示。建联时若本端为空且对端非空则抄录；
     /// 可重名、允许不一致（不一致只影响显示）。NULL 表示未设置集团名。
     pub group_name: Option<String>,
+    /// 组织 DID（`did:key:z...`，S1 密钥底座）
+    ///
+    /// Local 组织创建时自生成；Remote/Linked 影子组织随目录同步复制对端值。
+    /// 公钥编码进标识符，换域名/IP/端口身份不变。
+    pub did: Option<String>,
+    /// 联邦公钥（Ed25519 32B base64，随目录同步公开给对端）
+    pub verification_key: Option<String>,
+    /// 联邦私钥种子（32B base64，经 `encrypt_channel_secret` 加密落库）
+    ///
+    /// 仅 Local 组织持有；影子组织恒 NULL（私钥不出组织）。
+    pub signing_key: Option<String>,
     /// 状态枚举
     pub status: OrganizationStatus,
     /// 组织范围枚举（区分本地/远程，用于多节点网络扩展）
@@ -59,6 +70,9 @@ impl OrganizationPo {
             description,
             base_url: base_url.unwrap_or_default(),
             group_name: None,
+            did: None,
+            verification_key: None,
+            signing_key: None,
             status: OrganizationStatus::default(),
             scope: OrganizationScope::default(),
             invite_code: None,

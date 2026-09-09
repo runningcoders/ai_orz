@@ -13,10 +13,10 @@ use common::error::Result;
 #[generate_http_handler]
 pub async fn issue_pairing_code(
     ctx: RequestContext,
-    _params: IssuePairingCodeRequest,
+    params: IssuePairingCodeRequest,
 ) -> Result<IssuePairingCodeResponse> {
     organization::domain()
         .organization_manage()
-        .issue_pairing_code(ctx)
+        .issue_pairing_code(ctx, params.expected_peer_did)
         .await
 }

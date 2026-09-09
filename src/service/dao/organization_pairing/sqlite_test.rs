@@ -20,6 +20,7 @@ fn new_code(org_id: &str, code_hash: &str, expires_at: i64) -> OrganizationPairi
         code_hash: code_hash.to_string(),
         expires_at,
         consumed_at: None,
+        expected_peer_did: None,
         created_by: "test-user".to_string(),
         created_at: Utc::now().timestamp_millis(),
     }
@@ -50,7 +51,10 @@ async fn test_consume_valid_returns_org_id(pool: SqlitePool) {
         .await
         .unwrap();
     assert_eq!(
-        dao.consume(ctx.clone(), "hash-valid", now).await.unwrap(),
+        dao.consume(ctx.clone(), "hash-valid", now)
+            .await
+            .unwrap()
+            .map(|c| c.org_id),
         Some("ORG-A".to_string())
     );
 }
@@ -67,12 +71,17 @@ async fn test_consume_replay_rejected(pool: SqlitePool) {
         .await
         .unwrap();
     assert_eq!(
-        dao.consume(ctx.clone(), "hash-replay", now).await.unwrap(),
+        dao.consume(ctx.clone(), "hash-replay", now)
+            .await
+            .unwrap()
+            .map(|c| c.org_id),
         Some("ORG-A".to_string())
     );
-    assert_eq!(
-        dao.consume(ctx.clone(), "hash-replay", now).await.unwrap(),
-        None
+    assert!(
+        dao.consume(ctx.clone(), "hash-replay", now)
+            .await
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -88,9 +97,11 @@ async fn test_consume_expired_rejected(pool: SqlitePool) {
     dao.insert(ctx.clone(), &new_code("ORG-A", "hash-expired", now - 1))
         .await
         .unwrap();
-    assert_eq!(
-        dao.consume(ctx.clone(), "hash-expired", now).await.unwrap(),
-        None
+    assert!(
+        dao.consume(ctx.clone(), "hash-expired", now)
+            .await
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -101,8 +112,10 @@ async fn test_consume_unknown_hash_rejected(pool: SqlitePool) {
     let dao = organization_pairing::dao();
     let ctx = new_ctx("u", pool.clone());
     let now = Utc::now().timestamp_millis();
-    assert_eq!(
-        dao.consume(ctx.clone(), "hash-unknown", now).await.unwrap(),
-        None
+    assert!(
+        dao.consume(ctx.clone(), "hash-unknown", now)
+            .await
+            .unwrap()
+            .is_none()
     );
 }

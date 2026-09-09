@@ -39,15 +39,15 @@ pub trait OrganizationPairingDal: Send + Sync {
 
     /// 原子消费配对码
     ///
-    /// 仅当 `code_hash` 存在、未消费、未过期时置 `consumed_at` 并返回签发组织 ID；
-    /// 任何不满足（无效码 / 已过期 / 已使用）均返回 `None`——上层统一转
-    /// `Error::unauthorized`，不区分原因（防枚举探测，评审稿 §6.3）。
+    /// 仅当 `code_hash` 存在、未消费、未过期时置 `consumed_at` 并返回消费后的完整记录
+    /// （含签发组织 ID 与可选 DID 钉住）；任何不满足（无效码 / 已过期 / 已使用）均返回
+    /// `None`——上层统一转 `Error::unauthorized`，不区分原因（防枚举探测，评审稿 §6.3）。
     async fn consume(
         &self,
         ctx: RequestContext,
         code_hash: &str,
         now: i64,
-    ) -> Result<Option<String>>;
+    ) -> Result<Option<OrganizationPairingCodePo>>;
 }
 
 // ==================== DAL 实现 ====================
@@ -69,7 +69,7 @@ impl OrganizationPairingDal for OrganizationPairingDalImpl {
         ctx: RequestContext,
         code_hash: &str,
         now: i64,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<OrganizationPairingCodePo>> {
         self.pairing_dao.consume(ctx, code_hash, now).await
     }
 }

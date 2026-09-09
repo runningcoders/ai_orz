@@ -6,14 +6,17 @@
 //! - [`r#impl`]：`OrganizationDalImpl` 实现（组织 CRUD / 影子同步 / 联邦委派传输）
 //! - [`link`]：组织连接 DAL（[`OrganizationLinkDal`]，links CRUD + 联邦出站 HTTP）
 //! - [`pairing`]：组网配对码 DAL（[`OrganizationPairingDal`]）
+//! - [`contract`]：联邦合约 DAL（[`FederationContractDal`]，能力白名单唯一事实源，S3）
 //!
 //! 职责：Organization 领域的数据访问层。User 相关操作已移至 User DAL，
 //! 跨领域编排在 Domain 层完成。
 
+pub mod contract;
 mod r#impl;
 pub mod link;
 pub mod pairing;
 
+pub use contract::FederationContractDal;
 pub use link::OrganizationLinkDal;
 pub use pairing::OrganizationPairingDal;
 
@@ -34,10 +37,11 @@ pub fn dal() -> Arc<dyn OrganizationDal + Send + Sync> {
     ORGANIZATION_DAL.get().cloned().unwrap()
 }
 
-/// 初始化 Organization DAL（含 link / pairing 子 DAL）
+/// 初始化 Organization DAL（含 link / pairing / contract 子 DAL）
 pub fn init() {
     link::init();
     pairing::init();
+    contract::init();
     let _ = ORGANIZATION_DAL.set(new(
         crate::service::dao::organization::dao(),
         crate::service::dao::organization_link::dao(),
@@ -163,8 +167,9 @@ pub trait OrganizationDal: Send + Sync {
 
     /// 联邦 Agent 委派传输层：经指定连接调对端 A2A 出站（send → 轮询 tasks/get 到终态）
     ///
-    /// endpoint / auth_token 取自 link（access_token = 对端所发出站凭证），
-    /// 携带可选 `X-Federation-Caller` 声明头（已序列化 JSON）。连接的合法性
+    /// endpoint 取自 link；每请求携带本端联邦私钥签名（S2）+ 可选
+    /// `X-Federation-Caller` 声明头（已序列化 JSON）。`signing_key` 为本端
+    /// 联邦私钥明文 base64（由 domain 层解密后传入）。连接的合法性
     /// （Active / 能力白名单）与路由决策由 domain 层完成，本方法只管传输。
     async fn send_federated_agent_task(
         &self,
@@ -173,5 +178,6 @@ pub trait OrganizationDal: Send + Sync {
         peer_agent_id: &str,
         prompt: &str,
         caller_declaration: Option<String>,
+        signing_key: &str,
     ) -> Result<String>;
 }

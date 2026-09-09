@@ -3,8 +3,10 @@
 //! 对应 SQL 建表语句：`migrations/20260904000002_create_organization_links.sql`
 //!
 //! 连接契约（谁跟谁连、怎么连）与实体（组织）分离：organizations 只描述组织
-//! 本身，本表承载点对点连接的 endpoint 与双向凭证。凭证不进 organizations 表
-//! （该表被全系统高频 join，混入凭证会放大泄漏面）。
+//! 本身，本表承载点对点连接的 endpoint 与对端身份。S2 起鉴权凭据为「对端
+//! DID + 公钥」（建联时交换，每请求 Ed25519 验签），共享密钥 access_token /
+//! peer_token_hash 已删除（migrations/20260909000002）。S3 起能力白名单下沉到
+//! federation_contracts（能力唯一事实源），本表不再存储 capabilities。
 
 use common::constants::utils;
 use common::enums::OrganizationLinkStatus;
@@ -22,14 +24,10 @@ pub struct OrganizationLinkPo {
     pub peer_org_id: String,
     /// 对端 API 基址（组网通信地址；organizations.base_url 仅用于展示）
     pub endpoint: String,
-    /// 出站凭证：本端调用对端时携带（32 字节随机，hex 明文，对端只存其哈希）
-    pub access_token: String,
-    /// 入站校验：对端调用本端时携带凭证的 SHA-256 哈希（不存明文）
-    pub peer_token_hash: String,
-    /// 连接级能力白名单（JSON 字符串数组，如 `["a2a_task"]`；P3）
-    ///
-    /// 本节点开放给这条连接的能力清单；入站调用按此门禁（白名单外 403）。
-    pub capabilities: String,
+    /// 对端组织 DID（S2 建联交换公钥后填充；入站验签时与 `X-Federation-Key-Id` 比对）
+    pub peer_did: Option<String>,
+    /// 对端联邦公钥（Ed25519 32B base64，入站验签依据；缺失 = 旧目录未上报，S2 fail-closed）
+    pub peer_verification_key: Option<String>,
     /// 连接状态
     pub status: OrganizationLinkStatus,
     /// 创建人
@@ -42,14 +40,11 @@ pub struct OrganizationLinkPo {
 
 impl OrganizationLinkPo {
     /// 创建新的 OrganizationLinkPo
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         local_org_id: String,
         peer_org_id: String,
         endpoint: String,
-        access_token: String,
-        peer_token_hash: String,
         created_by: String,
     ) -> Self {
         let now = utils::current_timestamp_ms();
@@ -58,24 +53,13 @@ impl OrganizationLinkPo {
             local_org_id,
             peer_org_id,
             endpoint,
-            access_token,
-            peer_token_hash,
-            capabilities: common::constants::utils::DEFAULT_LINK_CAPABILITIES.to_string(),
+            peer_did: None,
+            peer_verification_key: None,
             status: OrganizationLinkStatus::default(),
             created_by,
             created_at: now,
             updated_at: now,
         }
-    }
-
-    /// 解析能力白名单（非法 JSON 回退为空 = 全部拒绝，fail-closed）
-    pub fn capabilities_list(&self) -> Vec<String> {
-        serde_json::from_str(&self.capabilities).unwrap_or_default()
-    }
-
-    /// 是否开放指定能力
-    pub fn has_capability(&self, capability: &str) -> bool {
-        self.capabilities_list().iter().any(|c| c == capability)
     }
 }
 

@@ -34,15 +34,15 @@ pub trait OrganizationLinkDao: Send + Sync {
         peer_org_id: &str,
     ) -> Result<Option<OrganizationLinkPo>>;
 
-    /// 按对端出站凭证哈希查连接（机器侧端点鉴权）
+    /// 按对端 DID 查 Active 连接（机器侧端点鉴权，S2 联邦签名）
     ///
-    /// 对端调用本节点时携带其 access_token（= 本节点为对端生成的 token），
-    /// 本节点哈希后查 `peer_token_hash`；仅匹配 Active 连接。
-    /// 无效/吊销凭证统一返回 None（防枚举）。
-    async fn find_active_by_peer_token_hash(
+    /// 对端调用本节点时携带 `X-Federation-Key-Id`（其组织 DID），据此查
+    /// `peer_did`（建联时交换）；仅匹配 Active 连接。未命中统一返回 None
+    /// （上层 401，防枚举）。
+    async fn find_active_by_peer_did(
         &self,
         ctx: RequestContext,
-        peer_token_hash: &str,
+        peer_did: &str,
     ) -> Result<Option<OrganizationLinkPo>>;
 
     /// 通用查询
@@ -52,7 +52,7 @@ pub trait OrganizationLinkDao: Send + Sync {
         query: OrganizationLinkQuery,
     ) -> Result<Vec<OrganizationLinkPo>>;
 
-    /// 全量更新（endpoint / 凭证 / 状态），建联续联与凭证重置复用
+    /// 全量更新（endpoint / 状态），建联续联复用
     async fn update(&self, ctx: RequestContext, link: &OrganizationLinkPo) -> Result<()>;
 
     /// 断联：连接置 Revoked（仅 links 表；幂等，重放无害）

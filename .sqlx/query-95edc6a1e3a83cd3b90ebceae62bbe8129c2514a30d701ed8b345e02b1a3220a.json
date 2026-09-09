@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO federation_contracts (id, local_org_id, peer_org_id, kind, state, capabilities, terms_hash, local_signature, peer_signature, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "95edc6a1e3a83cd3b90ebceae62bbe8129c2514a30d701ed8b345e02b1a3220a"
+}

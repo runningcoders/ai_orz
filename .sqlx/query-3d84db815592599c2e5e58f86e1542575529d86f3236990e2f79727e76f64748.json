@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE federation_contracts SET kind = ?, state = ?, capabilities = ?, terms_hash = ?, local_signature = ?, peer_signature = ?, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "3d84db815592599c2e5e58f86e1542575529d86f3236990e2f79727e76f64748"
+}

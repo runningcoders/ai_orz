@@ -41,5 +41,6 @@ pub fn init_all() {
 ///   保证版本升级后每次启动内置工具定义自动对齐代码
 pub async fn init_all_base_data() {
     system::init_base_data().await;
+    organization::init_base_data().await;
     finance::init_base_data().await;
 }

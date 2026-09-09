@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE organizations SET did = NULL, verification_key = NULL, signing_key = NULL WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "d027c18dd080ed26860b01a8046b1477e31c6d5abccef3f86bd765c985bf16f9"
+}

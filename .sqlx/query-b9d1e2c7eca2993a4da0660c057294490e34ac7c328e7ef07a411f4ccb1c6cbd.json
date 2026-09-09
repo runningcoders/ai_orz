@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,\n       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at\nFROM organization_links WHERE id = ?\n            ",
+  "query": "\nSELECT id, local_org_id, peer_org_id,\n       kind as 'kind: FederationContractKind',\n       state as 'state: FederationContractState',\n       capabilities, terms_hash, local_signature, peer_signature,\n       created_at, updated_at\nFROM federation_contracts\nWHERE kind = 1 AND local_org_id = ? ORDER BY created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -19,32 +19,32 @@
         "type_info": "Text"
       },
       {
-        "name": "endpoint",
+        "name": "kind: FederationContractKind",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "access_token",
+        "name": "state: FederationContractState",
         "ordinal": 4,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "peer_token_hash",
+        "name": "capabilities",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "capabilities",
+        "name": "terms_hash",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationLinkStatus",
+        "name": "local_signature",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "peer_signature",
         "ordinal": 8,
         "type_info": "Text"
       },
@@ -76,5 +76,5 @@
       false
     ]
   },
-  "hash": "64ef8f622306721451c7293cd22819385aef6770ce47d8978ef0c90df18fde28"
+  "hash": "b9d1e2c7eca2993a4da0660c057294490e34ac7c328e7ef07a411f4ccb1c6cbd"
 }

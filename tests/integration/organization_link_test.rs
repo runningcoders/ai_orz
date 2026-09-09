@@ -8,9 +8,9 @@
 //! - 双方组织同库均为 `scope=Local`，对端影子 upsert 会命中 R5 的 Local 保护
 //!   而跳过——这本身是断言之一（本端组织绝不被对端覆盖）。
 //!
-//! 覆盖链路：B 管理员签发配对码 → A `POST /links`（出站真实 HTTP）→
-//! 双方 `organization_links` 落库 + 交叉凭证一致性（A 的 access_token 与 B 的
-//! peer_token_hash 互为 sha256 对）→ A `GET /links` 列表可见 B。
+//! 覆盖链路（S2 签名鉴权）：B 管理员签发配对码 → A `POST /links`（出站真实 HTTP，
+//! 双向交叉签名验证）→ 双方 `organization_links` 落库 + 对端 DID/公钥一致性 →
+//! A 持签名头调 B 的 directory / sync → A `GET /links` 列表可见 B。
 
 #[path = "../common/mod.rs"]
 mod common;
@@ -53,7 +53,42 @@ async fn create_node(app: &crate::common::TestApp, tag: &str) -> (String, String
     (org_id, jwt)
 }
 
-/// 全链路：issue（B）→ create_link（A，真实 TCP 出站）→ 双方落库 + 凭证交叉校验。
+/// 组装带联邦签名头的 reqwest 请求（调用方 = caller_org_id，真实 TCP 出站）
+async fn signed_reqwest(
+    caller_org_id: &str,
+    method: &str,
+    url: &str,
+    body: Option<&serde_json::Value>,
+) -> reqwest::RequestBuilder {
+    let ida = crate::common::federation::org_federation_identity(caller_org_id).await;
+    let path = ai_orz::pkg::url_util::path_and_query(url)
+        .expect("test url should have path")
+        .to_string();
+    let body_bytes = body
+        .map(|b| serde_json::to_vec(b).expect("serialize body"))
+        .unwrap_or_default();
+    let client = ai_orz::pkg::http::presets::outbound()
+        .build()
+        .expect("client");
+    let mut req = match method {
+        "GET" => client.get(url),
+        "POST" => client.post(url),
+        _ => panic!("unsupported test method"),
+    };
+    for (name, value) in
+        crate::common::federation::signature_headers(&ida, method, &path, &body_bytes).iter()
+    {
+        req = req.header(name, value);
+    }
+    if body.is_some() {
+        req = req
+            .header("Content-Type", "application/json")
+            .body(body_bytes);
+    }
+    req
+}
+
+/// 全链路：issue（B）→ create_link（A，真实 TCP 出站）→ 双方落库 + DID/公钥一致性。
 #[sqlx::test]
 async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -70,7 +105,7 @@ async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/organization/links/pairing/issue",
-            &IssuePairingCodeRequest {},
+            &IssuePairingCodeRequest::default(),
             &jwt_b,
         )
         .await;
@@ -81,7 +116,7 @@ async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
         .expect("pairing_code should exist")
         .to_string();
 
-    // ---- A 发起建联（服务端出站真实 HTTP 调 B verify）----
+    // ---- A 发起建联（服务端出站真实 HTTP 调 B verify，双向交叉签名）----
     let req = CreateLinkRequest {
         pairing_code,
         peer_endpoint: peer_endpoint.clone(),
@@ -122,22 +157,23 @@ async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
         ai_orz::pkg::storage::get().clone(),
     );
 
-    // A → B：endpoint 指向 B 的 TCP 地址，凭证均为 64 hex
+    // A → B：endpoint 指向 B 的 TCP 地址，对端身份 = B 的真实 DID / 公钥
     let link_a = link_dao
         .find_by_pair(ctx_dao.clone(), &org_a_id, &org_b_id)
         .await
         .expect("query A→B link failed")
         .expect("A→B link should exist after create_link");
     assert_eq!(link_a.endpoint, peer_endpoint, "A→B endpoint");
+    let id_b = crate::common::federation::org_federation_identity(&org_b_id).await;
     assert_eq!(
-        link_a.access_token.len(),
-        64,
-        "A→B access_token should be 64-hex"
+        link_a.peer_did.as_deref(),
+        Some(id_b.did.as_str()),
+        "A→B link should carry B's DID"
     );
     assert_eq!(
-        link_a.peer_token_hash.len(),
-        64,
-        "A→B peer_token_hash should be 64-hex"
+        link_a.peer_verification_key.as_deref(),
+        Some(id_b.verification_key.as_str()),
+        "A→B link should carry B's verification key"
     );
 
     // B → A：endpoint 指向 A 的联邦基址（config 缺省推导 http://127.0.0.1:3000）
@@ -151,23 +187,17 @@ async fn test_create_link_dual_node_full_flow(pool: SqlitePool) {
         "B→A endpoint should be A's config-derived federation base URL"
     );
 
-    // ---- 交叉凭证一致性（D6 双向独立凭证）----
-    // B 的 access_token（= A 生成的 local_token 明文）的 sha256 == A 的 peer_token_hash
+    // ---- 对端身份一致性（S2：DID/公钥由建联交叉签名验证后落库）----
+    let id_a = crate::common::federation::org_federation_identity(&org_a_id).await;
     assert_eq!(
-        sha256::digest(link_b.access_token.as_bytes()),
-        link_a.peer_token_hash,
-        "B's outbound credential must match A's inbound hash"
+        link_b.peer_did.as_deref(),
+        Some(id_a.did.as_str()),
+        "B→A link should carry A's DID"
     );
-    // A 的 access_token（= B 生成的 peer_token 明文）的 sha256 == B 的 peer_token_hash
     assert_eq!(
-        sha256::digest(link_a.access_token.as_bytes()),
-        link_b.peer_token_hash,
-        "A's outbound credential must match B's inbound hash"
-    );
-    // 双向凭证独立（不同 token）
-    assert_ne!(
-        link_a.access_token, link_b.access_token,
-        "bidirectional tokens must be independent (D6)"
+        link_b.peer_verification_key.as_deref(),
+        Some(id_a.verification_key.as_str()),
+        "B→A link should carry A's verification key"
     );
 
     // ---- R5 Local 保护：共享库下双方组织 scope 仍为 Local（未被对端覆盖）----
@@ -253,14 +283,14 @@ async fn test_create_link_rejects_invalid_pairing_code(pool: SqlitePool) {
     );
 }
 
-/// S5 目录同步：契约凭证鉴权 + 目录拉取/推送 + 影子 upsert 幂等与 Local 保护。
+/// S5 目录同步（S2 签名鉴权）：目录拉取/推送 + 影子 upsert 幂等与 Local 保护。
 ///
-/// 链路：建联（B 签发配对码 → A create_link）→ A 持出站凭证调 B 的
+/// 链路：建联（B 签发配对码 → A create_link）→ A 持签名头调 B 的
 /// GET /directory（真实 TCP）→ 断言目录含双方 → POST /directory/sync 推送
 /// 合成条目（独立 uuid）→ 断言 Remote 影子创建 + 新者胜 + Local 保护。
 #[sqlx::test]
-async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
-    use ::common::api::{DirectorySyncRequest, PeerOrgDirectoryEntry};
+async fn test_directory_sync_with_signature_auth(pool: SqlitePool) {
+    use ::common::api::PeerOrgDirectoryEntry;
     use ::common::enums::OrganizationScope;
 
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -275,7 +305,7 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/organization/links/pairing/issue",
-            &IssuePairingCodeRequest {},
+            &IssuePairingCodeRequest::default(),
             &jwt_b,
         )
         .await;
@@ -296,28 +326,12 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
         .await;
     crate::common::assert_api_ok(status, &body);
 
-    // 取 A 的出站凭证（= B 为 A 生成的 peer_token）
-    let link_dao = ai_orz::service::dao::organization_link::dao();
-    let ctx_dao = RequestContext::from_storage(
-        "federation-test-dir-assert",
-        ai_orz::pkg::storage::get().clone(),
-    );
-    let link_a = link_dao
-        .find_by_pair(ctx_dao.clone(), &org_a_id, &org_b_id)
-        .await
-        .expect("query A→B link failed")
-        .expect("A→B link should exist");
+    let directory_url = format!("{}/api/v1/organization/links/directory", peer_endpoint);
+    let sync_url = format!("{}/api/v1/organization/links/directory/sync", peer_endpoint);
 
-    // ---- GET /directory：正确凭证 → 200 且目录含双方组织 ----
-    let client = ai_orz::pkg::http::presets::outbound()
-        .build()
-        .expect("构建测试 HTTP 客户端失败");
-    let resp = client
-        .get(format!(
-            "{}/api/v1/organization/links/directory",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
+    // ---- GET /directory：正确签名 → 200 且目录含双方组织 ----
+    let resp = signed_reqwest(&org_a_id, "GET", &directory_url, None)
+        .await
         .send()
         .await
         .expect("GET directory over TCP failed");
@@ -337,23 +351,29 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
         "directory should contain both orgs, got: {:?}",
         ids
     );
-    // 白名单字段红线：条目绝不携带凭证/业务数据字段
+    // 白名单字段红线：条目绝不携带凭证/私钥字段
     let first = &orgs[0];
     assert!(
-        first.get("access_token").is_none() && first.get("peer_token").is_none(),
+        first.get("access_token").is_none()
+            && first.get("peer_token").is_none()
+            && first.get("signing_key").is_none(),
         "directory entries must not carry credential fields"
     );
 
-    // ---- GET /directory：错误凭证 → 401（防枚举统一错误）----
-    let resp = client
-        .get(format!(
-            "{}/api/v1/organization/links/directory",
-            peer_endpoint
-        ))
-        .bearer_auth("deadbeef".repeat(8))
+    // ---- GET /directory：未知密钥对签名 → 401（防枚举统一错误）----
+    let mut bad_headers = crate::common::federation::unknown_keypair_headers(
+        "GET",
+        "/api/v1/organization/links/directory",
+        b"",
+    );
+    let resp = ai_orz::pkg::http::presets::outbound()
+        .build()
+        .expect("client")
+        .get(&directory_url)
+        .headers(std::mem::take(&mut bad_headers))
         .send()
         .await
-        .expect("GET directory with bad credential failed");
+        .expect("GET directory with unknown keypair failed");
     assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
 
     // ---- POST /directory/sync：推送合成条目 → Remote 影子创建 ----
@@ -365,24 +385,28 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
         base_url: "https://peer.example.com".to_string(),
         group_name: Some("同步集团".to_string()),
         status: 1,
+        did: Some("did:key:z6MkPeerTest".to_string()),
+        verification_key: Some("cGVlci1rZXk".to_string()),
         updated_at,
         addresses: None,
     };
-    let resp = client
-        .post(format!(
-            "{}/api/v1/organization/links/directory/sync",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
-        .json(&DirectorySyncRequest {
-            orgs: vec![entry(&shadow_id, "远端影子组织", 1000)],
-        })
-        .send()
-        .await
-        .expect("POST directory/sync over TCP failed");
+    let resp = signed_reqwest(
+        &org_a_id,
+        "POST",
+        &sync_url,
+        Some(&serde_json::json!({ "orgs": [entry(&shadow_id, "远端影子组织", 1000)] })),
+    )
+    .await
+    .send()
+    .await
+    .expect("POST directory/sync over TCP failed");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
     // 影子落库：scope=Remote
+    let ctx_dao = RequestContext::from_storage(
+        "federation-test-dir-assert",
+        ai_orz::pkg::storage::get().clone(),
+    );
     let shadow = ai_orz::service::domain::organization::domain()
         .organization_manage()
         .get_by_id(ctx_dao.clone(), &shadow_id)
@@ -392,34 +416,17 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
     assert_eq!(shadow.scope, OrganizationScope::Remote);
     assert_eq!(shadow.name, "远端影子组织");
 
-    // 幂等：再推一次（同版本）→ 不重复、无副作用
-    let resp = client
-        .post(format!(
-            "{}/api/v1/organization/links/directory/sync",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
-        .json(&DirectorySyncRequest {
-            orgs: vec![entry(&shadow_id, "远端影子组织", 1000)],
-        })
-        .send()
-        .await
-        .expect("POST directory/sync replay failed");
-    assert_eq!(resp.status(), axum::http::StatusCode::OK);
-
     // 新者胜：更新版本覆盖元信息，scope 仍为 Remote
-    let resp = client
-        .post(format!(
-            "{}/api/v1/organization/links/directory/sync",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
-        .json(&DirectorySyncRequest {
-            orgs: vec![entry(&shadow_id, "远端影子组织-新名", 2000)],
-        })
-        .send()
-        .await
-        .expect("POST directory/sync newer failed");
+    let resp = signed_reqwest(
+        &org_a_id,
+        "POST",
+        &sync_url,
+        Some(&serde_json::json!({ "orgs": [entry(&shadow_id, "远端影子组织-新名", 2000)] })),
+    )
+    .await
+    .send()
+    .await
+    .expect("POST directory/sync newer failed");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
     let shadow = ai_orz::service::domain::organization::domain()
         .organization_manage()
@@ -431,22 +438,20 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
     assert_eq!(shadow.scope, OrganizationScope::Remote);
 
     // Local 保护：推送中伪造本端组织 id → 不覆盖
-    let resp = client
-        .post(format!(
-            "{}/api/v1/organization/links/directory/sync",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
-        .json(&DirectorySyncRequest {
-            orgs: vec![entry(&org_a_id, "冒名顶替", 9999)],
-        })
-        .send()
-        .await
-        .expect("POST directory/sync local-spoof failed");
+    let resp = signed_reqwest(
+        &org_a_id,
+        "POST",
+        &sync_url,
+        Some(&serde_json::json!({ "orgs": [entry(&org_a_id, "冒名顶替", 9999)] })),
+    )
+    .await
+    .send()
+    .await
+    .expect("POST directory/sync local-spoof failed");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
     let org_a = ai_orz::service::domain::organization::domain()
         .organization_manage()
-        .get_by_id(ctx_dao, &org_a_id)
+        .get_by_id(ctx_dao.clone(), &org_a_id)
         .await
         .expect("query org A failed")
         .expect("org A should exist");
@@ -456,22 +461,28 @@ async fn test_directory_sync_with_credential_auth(pool: SqlitePool) {
     );
     assert_eq!(org_a.scope, OrganizationScope::Local);
 
-    // ---- POST /directory/sync：错误凭证 → 401 ----
-    let resp = client
-        .post(format!(
-            "{}/api/v1/organization/links/directory/sync",
-            peer_endpoint
-        ))
-        .bearer_auth("deadbeef".repeat(8))
-        .json(&DirectorySyncRequest { orgs: vec![] })
+    // ---- POST /directory/sync：未知密钥对 → 401 ----
+    let mut bad_headers = crate::common::federation::unknown_keypair_headers(
+        "POST",
+        "/api/v1/organization/links/directory/sync",
+        br#"{"orgs":[]}"#,
+    );
+    let resp = ai_orz::pkg::http::presets::outbound()
+        .build()
+        .expect("client")
+        .post(&sync_url)
+        .headers(std::mem::take(&mut bad_headers))
+        .header("Content-Type", "application/json")
+        .body(br#"{"orgs":[]}"#.to_vec())
         .send()
         .await
-        .expect("POST directory/sync with bad credential failed");
+        .expect("POST directory/sync with unknown keypair failed");
     assert_eq!(resp.status(), axum::http::StatusCode::UNAUTHORIZED);
 }
 
 /// S6 断联：管理员 DELETE /links/{peer_org_id} → 连接 Revoked，
-/// 对端后续调用本节点凭证鉴权 401（惰性感知），本端组织不被降级。
+/// 对端后续调用本节点验签 401（key_id 不再命中 Active 连接，惰性感知），
+/// 本端组织不被降级。
 #[sqlx::test]
 async fn test_revoke_link_blocks_peer_calls(pool: SqlitePool) {
     use ::common::enums::OrganizationScope;
@@ -487,7 +498,7 @@ async fn test_revoke_link_blocks_peer_calls(pool: SqlitePool) {
     let (status, body) = app
         .post_with_jwt(
             "/api/v1/organization/links/pairing/issue",
-            &IssuePairingCodeRequest {},
+            &IssuePairingCodeRequest::default(),
             &jwt_b,
         )
         .await;
@@ -508,28 +519,16 @@ async fn test_revoke_link_blocks_peer_calls(pool: SqlitePool) {
         .await;
     crate::common::assert_api_ok(status, &body);
 
-    // A 的出站凭证（调 B 用）
     let link_dao = ai_orz::service::dao::organization_link::dao();
     let ctx_dao = RequestContext::from_storage(
         "federation-test-revoke-assert",
         ai_orz::pkg::storage::get().clone(),
     );
-    let link_a = link_dao
-        .find_by_pair(ctx_dao.clone(), &org_a_id, &org_b_id)
-        .await
-        .expect("query A→B link failed")
-        .expect("A→B link should exist");
 
     // 建联基线：A 调 B 的 directory → 200
-    let client = ai_orz::pkg::http::presets::outbound()
-        .build()
-        .expect("构建测试 HTTP 客户端失败");
-    let resp = client
-        .get(format!(
-            "{}/api/v1/organization/links/directory",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
+    let directory_url = format!("{}/api/v1/organization/links/directory", peer_endpoint);
+    let resp = signed_reqwest(&org_a_id, "GET", &directory_url, None)
+        .await
         .send()
         .await
         .expect("GET directory baseline failed");
@@ -558,13 +557,9 @@ async fn test_revoke_link_blocks_peer_calls(pool: SqlitePool) {
         "B→A link should be Revoked after DELETE"
     );
 
-    // 断联后 A 调 B → 401（凭证哈希不再命中任何 Active 连接，惰性感知）
-    let resp = client
-        .get(format!(
-            "{}/api/v1/organization/links/directory",
-            peer_endpoint
-        ))
-        .bearer_auth(&link_a.access_token)
+    // 断联后 A 调 B → 401（A 的 DID 不再命中 B 侧任何 Active 连接，惰性感知）
+    let resp = signed_reqwest(&org_a_id, "GET", &directory_url, None)
+        .await
         .send()
         .await
         .expect("GET directory after revoke failed");

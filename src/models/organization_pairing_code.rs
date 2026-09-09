@@ -21,6 +21,9 @@ pub struct OrganizationPairingCodePo {
     pub expires_at: i64,
     /// 消费时间（毫秒）；NULL = 未使用
     pub consumed_at: Option<i64>,
+    /// 签发时钉住的预期对端 DID（S2 可选，TOFU 之外的强制校验，§2.1）；
+    /// 建联时对端出示的 DID 与之不符即拒绝
+    pub expected_peer_did: Option<String>,
     /// 创建人
     pub created_by: String,
     /// 创建时间戳（毫秒）

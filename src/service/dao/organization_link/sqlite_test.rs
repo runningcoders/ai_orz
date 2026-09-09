@@ -40,15 +40,16 @@ fn create_test_org(name: &str, scope: OrganizationScope) -> OrganizationPo {
 }
 
 fn create_test_link(local_org_id: &str, peer_org_id: &str) -> OrganizationLinkPo {
-    OrganizationLinkPo::new(
+    let mut link = OrganizationLinkPo::new(
         Uuid::now_v7().to_string(),
         local_org_id.to_string(),
         peer_org_id.to_string(),
         "https://peer.example.com".to_string(),
-        "a".repeat(64),
-        "b".repeat(64),
         "test-user".to_string(),
-    )
+    );
+    link.peer_did = Some("did:key:z6MkTestPeer".to_string());
+    link.peer_verification_key = Some("cGVlci10ZXN0LWtleQ".to_string());
+    link
 }
 
 /// 建联：插入 + 按 id / 按组织对查询
@@ -178,9 +179,9 @@ async fn test_revoke_marks_link_revoked(pool: SqlitePool) {
     assert_eq!(revoked.status, OrganizationLinkStatus::Revoked);
 }
 
-/// 机器侧鉴权：按对端出站凭证哈希查连接（仅 Active 命中；未知/吊销不命中）
+/// 机器侧鉴权：按对端 DID 查连接（仅 Active 命中；未知/吊销不命中）
 #[sqlx::test]
-async fn test_find_active_by_peer_token_hash(pool: SqlitePool) {
+async fn test_find_active_by_peer_did(pool: SqlitePool) {
     let (link_dao, org_dao) = init_test_env();
     let ctx = new_ctx("test-user", pool.clone());
 
@@ -189,21 +190,21 @@ async fn test_find_active_by_peer_token_hash(pool: SqlitePool) {
     org_dao.insert(ctx.clone(), &local).await.unwrap();
     org_dao.insert(ctx.clone(), &peer).await.unwrap();
 
-    let mut link = create_test_link(&local.id, &peer.id);
-    link.peer_token_hash = "hash-active".to_string();
+    let link = create_test_link(&local.id, &peer.id);
+    let peer_did = link.peer_did.clone().unwrap();
     link_dao.insert(ctx.clone(), &link).await.unwrap();
 
-    // Active + 哈希匹配 → 命中
+    // Active + DID 匹配 → 命中
     let hit = link_dao
-        .find_active_by_peer_token_hash(ctx.clone(), "hash-active")
+        .find_active_by_peer_did(ctx.clone(), &peer_did)
         .await
         .unwrap();
     assert_eq!(hit.expect("should hit active link").id, link.id);
 
-    // 未知哈希不命中（防枚举：与无效凭证统一 None）
+    // 未知 DID 不命中（防枚举：与无效请求统一 None）
     assert!(
         link_dao
-            .find_active_by_peer_token_hash(ctx.clone(), "hash-unknown")
+            .find_active_by_peer_did(ctx.clone(), "did:key:z6MkUnknown")
             .await
             .unwrap()
             .is_none()
@@ -213,7 +214,7 @@ async fn test_find_active_by_peer_token_hash(pool: SqlitePool) {
     link_dao.revoke(ctx.clone(), &link.id).await.unwrap();
     assert!(
         link_dao
-            .find_active_by_peer_token_hash(ctx.clone(), "hash-active")
+            .find_active_by_peer_did(ctx.clone(), &peer_did)
             .await
             .unwrap()
             .is_none()

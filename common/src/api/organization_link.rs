@@ -18,9 +18,16 @@ pub const PAIRING_CODE_LEN: usize = 24;
 
 // ============ 配对码签发（用户侧，JWT） ============
 
-/// 签发配对码请求（无参数）
+/// 签发配对码请求
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct IssuePairingCodeRequest {}
+pub struct IssuePairingCodeRequest {
+    /// 可选：钉住预期对端 DID（`did:key:z...`，§2.1）
+    ///
+    /// 填了则建联时对端出示的 DID 与之不符即拒绝——关闭「首达者即身份」窗口的
+    /// 唯一手段；互信组织走 IM 传递配对码时 TOFU 已够，可不填。
+    #[serde(default)]
+    pub expected_peer_did: Option<String>,
+}
 
 /// 签发配对码响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -78,6 +85,16 @@ pub struct PeerOrgDirectoryEntry {
     pub group_name: Option<String>,
     /// 组织状态（1=Active, 0=Disabled）
     pub status: i32,
+    /// 组织 DID（`did:key:z...`，S1 密钥底座随目录同步上报）
+    ///
+    /// S2 起验签必需；缺失/为空时对端按「无身份」处理（fail-closed）。
+    /// Option 而非必填的原因：展示场景（LinkItem）与迁移前历史影子行允许缺失，
+    /// 必填性由 S2 验签强制而非 DTO 类型。
+    #[serde(default)]
+    pub did: Option<String>,
+    /// 联邦公钥（Ed25519 32B base64，与 did 一一对应）
+    #[serde(default)]
+    pub verification_key: Option<String>,
     /// 数据版本（毫秒时间戳）：新者胜比较基准
     pub updated_at: i64,
     /// 自报联邦地址列表（P7 多地址模型）
@@ -88,31 +105,36 @@ pub struct PeerOrgDirectoryEntry {
     pub addresses: Option<Vec<FederationAddress>>,
 }
 
-/// 验证配对码 + 交换凭证请求
+/// 验证配对码 + 交换身份（机器侧，配对码鉴权）
 ///
 /// 调用方（本地节点）凭配对码调对端 `POST /links/pairing/verify`。
-/// 请求携带本地组织的目录条目 + 联邦地址 + 为对端生成的出站凭证（对端只存哈希）。
+/// 请求携带本地组织的目录条目（含 DID + 公钥）+ 交叉签名证明
+/// 「调用方拥有其声明 DID 的私钥」；响应回带对端目录条目 + 对端交叉签名。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct VerifyPairingCodeRequest {
     /// 配对码（明文）
     pub pairing_code: String,
-    /// 本地节点组织目录条目（供对端写 scope=Linked 影子）
+    /// 本地节点组织目录条目（供对端写 scope=Linked 影子；did / verification_key
+    /// S2 起必填，缺失即拒绝）
     pub local_org: PeerOrgDirectoryEntry,
     /// 本地节点联邦地址（对端将来调用本地时用）
     pub local_endpoint: String,
-    /// 本地节点为对端生成的凭证（对端调用本地时携带）；对端仅存其 SHA-256 哈希
-    pub local_token: String,
+    /// 交叉签名：Ed25519(local_org 私钥) over
+    /// `pairing_handshake_message(local_org.did, pairing_code)`，base64url 无 padding
+    pub local_signature: String,
 }
 
-/// 验证配对码 + 交换凭证响应
+/// 验证配对码 + 交换身份响应
 ///
-/// 返回对端（本节点）组织目录条目 + 对端为调用方生成的出站凭证。
+/// 返回对端（本节点）组织目录条目 + 对端交叉签名（证明对端拥有其声明 DID 的
+/// 私钥，且把这次建联钉在调用方 DID 上）。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct VerifyPairingCodeResponse {
-    /// 对端组织目录条目
+    /// 对端组织目录条目（did / verification_key S2 起必填）
     pub peer_org: PeerOrgDirectoryEntry,
-    /// 对端为调用方生成的出站凭证（调用方存为 access_token，调用对端时携带）
-    pub peer_token: String,
+    /// 交叉签名：Ed25519(peer_org 私钥) over
+    /// `pairing_handshake_message(local_org.did, pairing_code)`，base64url 无 padding
+    pub peer_signature: String,
 }
 
 // ============ 建联（用户侧，JWT） ============
@@ -157,15 +179,15 @@ pub struct ListLinksResponse {
     pub links: Vec<LinkItem>,
 }
 
-// ============ 目录同步（机器侧，契约凭证鉴权） ============
+// ============ 目录同步（机器侧，联邦签名鉴权） ============
 
 /// 组织目录响应（白名单字段，评审稿 §5.1）
 ///
 /// 返回本节点全部组织（Local 组织 + 已知影子）；仅目录元信息，
 /// 绝不携带用户 / Agent / 任务 / 消息 / 记忆 / 凭证等业务数据。
 /// 出站响应统一过 `redact!`（EXPORT policy）——本结构无凭证类字段，
-/// 脱敏不会破坏协议（对比：verify 响应携带 peer_token，**禁止** redact!，
-/// 否则 token 被 KeyRule "token" 命中遮蔽导致建联损坏）。
+/// 脱敏不会破坏协议（verify 响应携带交叉签名，**禁止** redact!，
+/// 避免脱敏规则误命中签名字段导致建联损坏）。
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DirectoryResponse {
     /// 组织目录条目
@@ -200,7 +222,7 @@ pub struct RevokeLinkResponse {
     pub success: bool,
 }
 
-// ============ 能力发现（机器侧，契约凭证鉴权，P3） ============
+// ============ 能力发现（机器侧，联邦签名鉴权，P3） ============
 
 /// 跨组织 Agent 委派能力（连接级白名单默认值，第一闭环能力）
 pub const CAPABILITY_A2A_TASK: &str = "a2a_task";
@@ -290,6 +312,68 @@ impl FederationCallerDeclaration {
     pub fn to_header_value(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
     }
+}
+
+// ============ 联邦合约（用户侧，JWT，S3 合约授权） ============
+
+/// 合约条目（管理员"联邦合约"数据源）
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ContractItem {
+    /// 合约 ID
+    pub id: String,
+    /// 对端组织 ID
+    pub peer_org_id: String,
+    /// 合约类型（`basic`；未来 `task_sla`）
+    pub kind: String,
+    /// 合约状态（`active` / `terminated`）
+    pub state: String,
+    /// 能力白名单
+    pub capabilities: Vec<String>,
+    /// 创建时间戳（毫秒）
+    pub created_at: i64,
+    /// 更新时间戳（毫秒）
+    pub updated_at: i64,
+}
+
+/// 合约列表请求（无参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct ListContractsRequest {}
+
+/// 合约列表响应
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ListContractsResponse {
+    /// 本组织的合约（按创建时间倒序）
+    pub contracts: Vec<ContractItem>,
+}
+
+/// 更新合约能力集请求（仅 active 合约可编辑）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct UpdateContractCapabilitiesRequest {
+    /// 合约 ID
+    pub contract_id: String,
+    /// 新能力白名单（元素须在已知能力集合内，未知能力拒绝）
+    pub capabilities: Vec<String>,
+}
+
+/// 更新合约能力集响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateContractCapabilitiesResponse {
+    /// 更新后的合约
+    pub contract: ContractItem,
+}
+
+/// 终止合约请求（fail-closed 熔断开关；不删记录，保留审计线索）
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
+pub struct TerminateContractRequest {
+    /// 对端组织 ID
+    pub peer_org_id: String,
+}
+
+/// 终止合约响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TerminateContractResponse {
+    /// 是否成功（幂等操作恒为 true）
+    pub success: bool,
 }
 
 #[cfg(test)]

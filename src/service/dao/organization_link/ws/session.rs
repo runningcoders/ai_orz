@@ -122,7 +122,8 @@ pub struct FederationWsClientAdapter {
     local_org: String,
     peer_org: String,
     url: String,
-    token: String,
+    /// 本端联邦私钥（明文 base64，握手每请求签名）
+    signing_key: String,
     caller_declaration: Option<String>,
 }
 
@@ -140,9 +141,42 @@ impl WsClientAdapter for FederationWsClientAdapter {
         route_frame(&self.local_org, &self.peer_org, text).await
     }
 
-    /// Bearer 凭证 + 身份声明注入握手请求；重连时重新调用（重新握手鉴权）
+    /// 联邦签名头 + 身份声明注入握手请求；重连时重新调用（重新握手鉴权）
     fn handshake_headers(&self) -> Vec<(&'static str, String)> {
-        let mut headers = vec![("Authorization", format!("Bearer {}", self.token))];
+        // GET 握手签名：path 取 WS URL 的 path 部分（服务端用收到的 uri 比对）
+        let path = crate::pkg::url_util::path_and_query(&self.url)
+            .unwrap_or("/api/v1/organization/links/ws")
+            .to_string();
+        let mut headers = match crate::pkg::crypto::did::sign_federation_request(
+            &self.signing_key,
+            "GET",
+            &path,
+            b"",
+        ) {
+            Ok(signed) => vec![
+                (
+                    common::constants::http_header::FEDERATION_KEY_ID,
+                    signed.key_id,
+                ),
+                (
+                    common::constants::http_header::FEDERATION_TIMESTAMP,
+                    signed.timestamp.to_string(),
+                ),
+                (
+                    common::constants::http_header::FEDERATION_NONCE,
+                    signed.nonce,
+                ),
+                (
+                    common::constants::http_header::FEDERATION_SIGNATURE,
+                    signed.signature,
+                ),
+            ],
+            Err(e) => {
+                // 签名失败（理论上不应发生）：无签名头拨号必然 401，快速失败优于降级
+                log_warn!("federation ws handshake signing failed: {}", e);
+                Vec::new()
+            }
+        };
         if let Some(decl) = &self.caller_declaration {
             headers.push((
                 common::constants::http_header::FEDERATION_CALLER,
@@ -194,7 +228,7 @@ pub fn ws_url_from_base(endpoint: &str) -> String {
     format!("{}{}", base, FEDERATION_WS_PATH)
 }
 
-/// 拨出对端并注册会话（url 已由调用方经 P7 resolver 解析；凭证取 link 明文）
+/// 拨出对端并注册会话（url 已由调用方经 P7 resolver 解析；签名用本端联邦私钥）
 ///
 /// - `local_org` / `peer_org`：两端组织 ID（入站事件按此注入接待模型）
 /// - `caller_declaration`：本端身份声明（X-Federation-Caller），随**握手**一次注入，
@@ -205,14 +239,14 @@ pub async fn dial_peer(
     local_org: &str,
     peer_org: &str,
     url: String,
-    token: String,
+    signing_key: String,
     caller_declaration: Option<String>,
 ) -> common::error::Result<Arc<WsClientState>> {
     let adapter = Arc::new(FederationWsClientAdapter {
         local_org: local_org.to_string(),
         peer_org: peer_org.to_string(),
         url,
-        token,
+        signing_key,
         caller_declaration,
     });
     let state = Arc::new(crate::pkg::ws::start_client(adapter).await?);

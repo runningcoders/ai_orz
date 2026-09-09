@@ -1,36 +1,35 @@
 //! Handler: GET /api/v1/organization/links/capabilities
 //!
-//! 能力发现（机器侧，对端节点调用，契约凭证鉴权，P3）：返回本节点开放给
+//! 能力发现（机器侧，对端节点调用，联邦签名鉴权，P3）：返回本节点开放给
 //! **调用方这条连接**的能力白名单 + 可调用 Agent 列表（发起侧用于跨组织
 //! @ 提及选择与 runtime 路由）。
 //! 在 router 中 root 层直挂，不进 `protected_routes` 的 JWT 链（评审稿 D7）。
-//! 裸 axum handler（需读取 `Authorization` 头），get_directory 先例。
+//! 裸 axum handler（需读取联邦签名头），get_directory 先例。
 
 use axum::Json;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, Uri};
 use common::api::{ApiResponse, CapabilitiesResponse, FederationAgentEntry};
 use common::enums::AgentKind;
 use common::error::Result;
 
-use crate::handlers::organization::links::get_directory::extract_bearer_credential;
+use crate::handlers::organization::links::get_directory::authenticate_machine_request;
 use crate::pkg::RequestContext;
-use crate::service::domain::{hr, organization};
+use crate::service::domain::hr;
 
 /// 能力发现：这条连接开放的能力 + 可调用 Agent 列表
 pub async fn get_capabilities_handler(
     axum::Extension(ctx): axum::Extension<RequestContext>,
+    uri: Uri,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<CapabilitiesResponse>>> {
-    let credential = extract_bearer_credential(&headers)?;
+    // 联邦签名鉴权（无效/吊销统一 unauthorized）
+    let link = authenticate_machine_request(ctx.clone(), &headers, "GET", &uri, b"").await?;
 
-    // 契约凭证鉴权（无效/吊销统一 unauthorized）
-    let link = organization::domain()
+    // 这条连接开放的能力白名单（S3：能力集由 active 合约派生；无合约 = 空集）
+    let capabilities = crate::service::domain::organization::domain()
         .organization_manage()
-        .authenticate_link_call(ctx.clone(), &credential)
+        .contract_capabilities(ctx.clone(), &link.local_org_id, &link.peer_org_id)
         .await?;
-
-    // 这条连接开放的能力白名单
-    let capabilities = link.capabilities_list();
 
     // 可调用 Agent：Onboarded 且非 Remote（Remote 是指向外部 Agent 的指针，
     // 不是本节点可承诺执行的实体；A2A 委派的第一闭环只暴露本节点 Agent）

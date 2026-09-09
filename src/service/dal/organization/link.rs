@@ -67,11 +67,11 @@ pub trait OrganizationLinkDal: Send + Sync {
         query: OrganizationLinkQuery,
     ) -> Result<Vec<OrganizationLinkPo>>;
 
-    /// 按对端凭证哈希查 Active 连接（机器侧入站鉴权）
-    async fn find_active_by_peer_token_hash(
+    /// 按对端 DID 查 Active 连接（机器侧入站鉴权，S2 联邦签名）
+    async fn find_active_by_peer_did(
         &self,
         ctx: RequestContext,
-        peer_token_hash: &str,
+        peer_did: &str,
     ) -> Result<Option<OrganizationLinkPo>>;
 
     // ---------- 联邦出站（对端端点 HTTP）----------
@@ -83,26 +83,26 @@ pub trait OrganizationLinkDal: Send + Sync {
         req: &common::api::VerifyPairingCodeRequest,
     ) -> Result<common::api::VerifyPairingCodeResponse>;
 
-    /// 拉取对端组织目录（契约凭证鉴权）
+    /// 拉取对端组织目录（联邦签名鉴权，signing_key 为本端联邦私钥明文 base64）
     async fn fetch_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<Vec<common::api::PeerOrgDirectoryEntry>>;
 
-    /// 推送本地目录给对端（契约凭证鉴权）
+    /// 推送本地目录给对端（联邦签名鉴权）
     async fn push_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
         orgs: Vec<common::api::PeerOrgDirectoryEntry>,
     ) -> Result<()>;
 
-    /// 拉取对端能力清单（契约凭证鉴权，P5 联邦 Agent 目录用）
+    /// 拉取对端能力清单（联邦签名鉴权，P5 联邦 Agent 目录用）
     async fn fetch_capabilities(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<common::api::CapabilitiesResponse>;
 }
 
@@ -145,14 +145,12 @@ impl OrganizationLinkDal for OrganizationLinkDalImpl {
         self.link_dao.query(ctx, query).await
     }
 
-    async fn find_active_by_peer_token_hash(
+    async fn find_active_by_peer_did(
         &self,
         ctx: RequestContext,
-        peer_token_hash: &str,
+        peer_did: &str,
     ) -> Result<Option<OrganizationLinkPo>> {
-        self.link_dao
-            .find_active_by_peer_token_hash(ctx, peer_token_hash)
-            .await
+        self.link_dao.find_active_by_peer_did(ctx, peer_did).await
     }
 
     async fn verify_pairing_code(
@@ -168,31 +166,31 @@ impl OrganizationLinkDal for OrganizationLinkDalImpl {
     async fn fetch_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<Vec<common::api::PeerOrgDirectoryEntry>> {
         self.http_client
-            .fetch_directory(peer_endpoint, access_token)
+            .fetch_directory(peer_endpoint, signing_key)
             .await
     }
 
     async fn push_directory(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
         orgs: Vec<common::api::PeerOrgDirectoryEntry>,
     ) -> Result<()> {
         self.http_client
-            .push_directory(peer_endpoint, access_token, orgs)
+            .push_directory(peer_endpoint, signing_key, orgs)
             .await
     }
 
     async fn fetch_capabilities(
         &self,
         peer_endpoint: &str,
-        access_token: &str,
+        signing_key: &str,
     ) -> Result<common::api::CapabilitiesResponse> {
         self.http_client
-            .fetch_capabilities(peer_endpoint, access_token)
+            .fetch_capabilities(peer_endpoint, signing_key)
             .await
     }
 }

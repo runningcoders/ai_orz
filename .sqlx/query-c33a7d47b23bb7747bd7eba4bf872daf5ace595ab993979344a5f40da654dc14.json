@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, local_org_id, peer_org_id, endpoint, access_token, peer_token_hash,\n       capabilities, status as 'status: OrganizationLinkStatus', created_by, created_at, updated_at\nFROM organization_links WHERE peer_token_hash = ? AND status = 1 LIMIT 1\n            ",
+  "query": "\nSELECT id, local_org_id, peer_org_id,\n       kind as 'kind: FederationContractKind',\n       state as 'state: FederationContractState',\n       capabilities, terms_hash, local_signature, peer_signature,\n       created_at, updated_at\nFROM federation_contracts\nWHERE kind = 1 AND local_org_id = ? AND peer_org_id = ? LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -19,32 +19,32 @@
         "type_info": "Text"
       },
       {
-        "name": "endpoint",
+        "name": "kind: FederationContractKind",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "access_token",
+        "name": "state: FederationContractState",
         "ordinal": 4,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "peer_token_hash",
+        "name": "capabilities",
         "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "capabilities",
+        "name": "terms_hash",
         "ordinal": 6,
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationLinkStatus",
+        "name": "local_signature",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "peer_signature",
         "ordinal": 8,
         "type_info": "Text"
       },
@@ -60,7 +60,7 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
@@ -76,5 +76,5 @@
       false
     ]
   },
-  "hash": "790ef45b592b4a91bce23257d271b6a2e41144cda63a43dd4275b6f3c5af4467"
+  "hash": "c33a7d47b23bb7747bd7eba4bf872daf5ace595ab993979344a5f40da654dc14"
 }

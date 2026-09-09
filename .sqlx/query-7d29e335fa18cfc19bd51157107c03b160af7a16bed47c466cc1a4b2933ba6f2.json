@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT id, name, description, base_url, group_name, status as 'status: OrganizationStatus', scope as 'scope: OrganizationScope', invite_code, created_by, modified_by, created_at, updated_at\nFROM organizations WHERE invite_code = ? AND status != 0\n            ",
+  "query": "\nSELECT id, local_org_id, peer_org_id,\n       kind as 'kind: FederationContractKind',\n       state as 'state: FederationContractState',\n       capabilities, terms_hash, local_signature, peer_signature,\n       created_at, updated_at\nFROM federation_contracts\nWHERE kind = 1 AND local_org_id = ? AND peer_org_id = ? AND state = 1 LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -9,78 +9,72 @@
         "type_info": "Text"
       },
       {
-        "name": "name",
+        "name": "local_org_id",
         "ordinal": 1,
         "type_info": "Text"
       },
       {
-        "name": "description",
+        "name": "peer_org_id",
         "ordinal": 2,
         "type_info": "Text"
       },
       {
-        "name": "base_url",
+        "name": "kind: FederationContractKind",
         "ordinal": 3,
         "type_info": "Text"
       },
       {
-        "name": "group_name",
+        "name": "state: FederationContractState",
         "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "capabilities",
+        "ordinal": 5,
         "type_info": "Text"
       },
       {
-        "name": "status: OrganizationStatus",
-        "ordinal": 5,
-        "type_info": "Integer"
-      },
-      {
-        "name": "scope: OrganizationScope",
+        "name": "terms_hash",
         "ordinal": 6,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "invite_code",
+        "name": "local_signature",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "created_by",
+        "name": "peer_signature",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "modified_by",
-        "ordinal": 9,
-        "type_info": "Text"
-      },
-      {
         "name": "created_at",
-        "ordinal": 10,
+        "ordinal": 9,
         "type_info": "Integer"
       },
       {
         "name": "updated_at",
-        "ordinal": 11,
+        "ordinal": 10,
         "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
       false,
       false,
       false,
-      true,
       false,
       false,
-      true,
+      false,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "29bd7f15271052cf9d1600e0ffd1461641fa22b183b022f1109af8299d9a9d89"
+  "hash": "7d29e335fa18cfc19bd51157107c03b160af7a16bed47c466cc1a4b2933ba6f2"
 }

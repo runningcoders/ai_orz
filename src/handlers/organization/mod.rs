@@ -8,6 +8,7 @@
 //! - organization_me (当前用户所在组织信息管理)
 
 pub mod auth;
+pub mod contracts;
 pub mod initialize_system;
 pub mod links;
 pub mod organization_me;

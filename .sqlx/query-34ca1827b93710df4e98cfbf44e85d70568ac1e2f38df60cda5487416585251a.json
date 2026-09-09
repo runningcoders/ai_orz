@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE organization_pairing_codes\nSET consumed_at = ?\nWHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?\nRETURNING id, org_id, code_hash, expires_at, consumed_at, expected_peer_did, created_by, created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "org_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "code_hash",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "expires_at",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "consumed_at",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "expected_peer_did",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_by",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 7,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "34ca1827b93710df4e98cfbf44e85d70568ac1e2f38df60cda5487416585251a"
+}

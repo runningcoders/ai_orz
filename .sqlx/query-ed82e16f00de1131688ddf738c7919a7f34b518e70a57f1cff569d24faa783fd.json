@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nUPDATE organization_links\nSET endpoint = ?, peer_did = ?, peer_verification_key = ?, status = ?, updated_at = ?\nWHERE id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "ed82e16f00de1131688ddf738c7919a7f34b518e70a57f1cff569d24faa783fd"
+}

@@ -40,13 +40,15 @@ pub struct A2aRuntimeConfig {
     pub timeout_secs: u64,
 }
 
-/// 执行跨组织联邦 Agent 调用的配置（P4）
+/// 执行跨组织联邦 Agent 调用的配置（P4；S2 起鉴权为每请求 Ed25519 签名）
 #[derive(Debug, Clone)]
 pub struct FederatedCallConfig {
     /// 对端 A2A 端点（organization_links.endpoint）
     pub endpoint: String,
-    /// 出站凭证（organization_links.access_token，对端所发，Bearer 传递）
-    pub auth_token: String,
+    /// 本端联邦私钥（明文 base64，出站每请求签名 + 任务令牌签发）
+    pub signing_key: String,
+    /// 对端组织 DID（任务令牌 aud；S2 建联后必有）
+    pub peer_did: String,
     /// `X-Federation-Caller` 声明头（已序列化的 JSON 明文；None = 连接级匿名）
     pub caller_declaration: Option<String>,
     /// send + poll 全程总预算（秒），超时返回错误
@@ -102,10 +104,16 @@ impl AgentRuntimeDao for A2aRuntimeDao {
 }
 
 /// 通用 A2A JSON-RPC 调用
+///
+/// `auth_token`：第三方 A2A 服务端的 Bearer 凭证（可选）；
+/// `federation_signing_key`：本端联邦私钥（可选，提供则携带每请求 Ed25519 签名头，
+/// 调用 ai_orz 节点时必传——S2 起入站验签 fail-closed，无回退路径）。
+#[allow(clippy::too_many_arguments)]
 async fn call_a2a_jsonrpc(
     http: &Client,
     endpoint: &str,
     auth_token: &Option<String>,
+    federation_signing_key: Option<&str>,
     extra_header: Option<(&str, &str)>,
     method: &str,
     params: Value,
@@ -117,11 +125,48 @@ async fn call_a2a_jsonrpc(
         params,
         id: next_request_id(),
     };
+    let body = serde_json::to_vec(&request).map_err(|e| {
+        err!(
+            Internal,
+            "{}: failed to serialize JSON-RPC request: {}",
+            context,
+            e
+        )
+    })?;
 
     let mut req_builder = http
         .post(endpoint)
         .header("Content-Type", "application/json");
 
+    if let Some(signing_key) = federation_signing_key {
+        let path = crate::pkg::url_util::path_and_query(endpoint).ok_or_else(|| {
+            err!(
+                Internal,
+                "{}: 无法解析 A2A 端点 path: {}",
+                context,
+                endpoint
+            )
+        })?;
+        let signed =
+            crate::pkg::crypto::did::sign_federation_request(signing_key, "POST", path, &body)?;
+        req_builder = req_builder
+            .header(
+                common::constants::http_header::FEDERATION_KEY_ID,
+                &signed.key_id,
+            )
+            .header(
+                common::constants::http_header::FEDERATION_TIMESTAMP,
+                signed.timestamp.to_string(),
+            )
+            .header(
+                common::constants::http_header::FEDERATION_NONCE,
+                &signed.nonce,
+            )
+            .header(
+                common::constants::http_header::FEDERATION_SIGNATURE,
+                &signed.signature,
+            );
+    }
     if let Some(token) = auth_token {
         req_builder = req_builder.bearer_auth(token);
     }
@@ -130,7 +175,7 @@ async fn call_a2a_jsonrpc(
     }
 
     let response = req_builder
-        .json(&request)
+        .body(body)
         .send()
         .await
         .map_err(|e| err!(Internal, "{}: A2A HTTP request failed: {}", context, e))?;
@@ -211,6 +256,7 @@ pub async fn execute_a2a_send(
         endpoint,
         auth_token,
         None,
+        None,
         "tasks/send",
         params_value,
         &context,
@@ -254,6 +300,7 @@ pub async fn fetch_a2a_task(
         endpoint,
         auth_token,
         None,
+        None,
         "tasks/get",
         params_value,
         &context,
@@ -273,7 +320,11 @@ pub async fn fetch_a2a_task(
 /// 跨组织联邦 Agent 调用（P4）：tasks/send → 轮询 tasks/get 直到终态
 ///
 /// 与 [`execute_a2a_send`] 的区别：
+/// - 每请求携带本端 Ed25519 签名头（S2 联邦鉴权，对端 fail-closed 验签）
 /// - 携带 `X-Federation-Caller` 声明头（R3 计量：对端日志带 org 维度）
+/// - `tasks/send` 时用本端私钥**自签发短期任务令牌**随 payload 下发
+///   （metadata.federation_callback_token；对端回调本端时作为 Bearer 带回，
+///   本端用自己公钥验证——零状态、单任务作用域，见方案 §2.4）
 /// - ai_orz 节点的 `tasks/send` 是异步提交（返回 working、无 assistant 文本），
 ///   需轮询 `tasks/get` 直到 Completed/Failed/Canceled；若 send 响应已带文本
 ///   且终态（同步型对端），首次检查即返回，不发多余的 get
@@ -283,7 +334,28 @@ pub async fn execute_federated_agent_call(
     config: &FederatedCallConfig,
     prompt: &str,
 ) -> Result<String> {
+    use crate::pkg::crypto::task_token::{TaskTokenClaims, issue_task_token};
+
     let task_id = uuid::Uuid::now_v7().to_string();
+
+    // 本端 DID（key_id 由签名推导；任务令牌 iss 与之同源）
+    let local_did = crate::pkg::crypto::did::did_from_signing_key(&config.signing_key)?;
+
+    // 自签发任务令牌：exp 对齐任务超时 + 余量（安全来自单任务作用域而非短 TTL）
+    let task_token = issue_task_token(
+        &config.signing_key,
+        &TaskTokenClaims {
+            iss: local_did,
+            aud: config.peer_did.clone(),
+            task_id: task_id.clone(),
+            exp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or_default()
+                + config.deadline_secs as i64
+                + 600,
+        },
+    )?;
 
     let message = common::api::a2a::A2aMessage {
         role: "user".to_string(),
@@ -298,7 +370,7 @@ pub async fn execute_federated_agent_call(
         id: task_id,
         message,
         session_id: None,
-        metadata: None,
+        metadata: Some(serde_json::json!({ "federation_callback_token": task_token })),
         notification_url: None,
     };
 
@@ -312,7 +384,6 @@ pub async fn execute_federated_agent_call(
     })?;
 
     let context = format!("Federated agent {}", agent_id);
-    let auth_token = Some(config.auth_token.clone());
     let extra_header = config
         .caller_declaration
         .as_deref()
@@ -325,7 +396,8 @@ pub async fn execute_federated_agent_call(
         let result = call_a2a_jsonrpc(
             http,
             &config.endpoint,
-            &auth_token,
+            &None,
+            Some(&config.signing_key),
             extra_header,
             "tasks/send",
             params_value,
@@ -385,7 +457,8 @@ pub async fn execute_federated_agent_call(
         let result = call_a2a_jsonrpc(
             http,
             &config.endpoint,
-            &auth_token,
+            &None,
+            Some(&config.signing_key),
             extra_header,
             "tasks/get",
             serde_json::to_value(&get_params).unwrap_or_default(),
@@ -609,7 +682,7 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
 
-    /// 进程内 stub A2A server：记录每次请求的 Bearer 与声明头，
+    /// 进程内 stub A2A server：记录每次请求的 Key-Id 与声明头，
     /// 按 `handler(request_json) -> Value` 的结果返回 JSON-RPC 响应。
     type RecordedHeaders = Vec<(Option<String>, Option<String>)>;
 
@@ -625,15 +698,15 @@ mod tests {
             post(
                 move |headers: axum::http::HeaderMap, body: String| async move {
                     let req: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
-                    let bearer = headers
-                        .get(axum::http::header::AUTHORIZATION)
+                    let key_id = headers
+                        .get("x-federation-key-id")
                         .and_then(|v| v.to_str().ok())
                         .map(|s| s.to_string());
                     let decl = headers
                         .get("x-federation-caller")
                         .and_then(|v| v.to_str().ok())
                         .map(|s| s.to_string());
-                    rec.lock().unwrap().push((bearer, decl));
+                    rec.lock().unwrap().push((key_id, decl));
                     let rpc_id = req.get("id").cloned().unwrap_or(Value::Null);
                     let result = handler(req);
                     axum::Json(json!({
@@ -660,9 +733,11 @@ mod tests {
     }
 
     fn federated_config(endpoint: String, deadline: u64, poll_ms: u64) -> FederatedCallConfig {
+        let kp = crate::pkg::crypto::did::generate_keypair();
         FederatedCallConfig {
             endpoint,
-            auth_token: "fed-token-1".to_string(),
+            signing_key: kp.signing_key,
+            peer_did: "did:key:z6MkPeerTest".to_string(),
             caller_declaration: Some(r#"{"caller_org":"org-A","caller_user":"u-1"}"#.to_string()),
             deadline_secs: deadline,
             poll_interval_ms: poll_ms,
@@ -697,8 +772,14 @@ mod tests {
 
         let rec = recorded.lock().unwrap();
         assert_eq!(rec.len(), 1, "同步型对端不应产生 tasks/get");
-        let (bearer, decl) = &rec[0];
-        assert_eq!(bearer.as_deref(), Some("Bearer fed-token-1"));
+        let (key_id, decl) = &rec[0];
+        assert!(
+            key_id
+                .as_deref()
+                .is_some_and(|k| k.starts_with("did:key:z6Mk")),
+            "签名头应携带本端 DID: {:?}",
+            key_id
+        );
         assert_eq!(
             decl.as_deref(),
             Some(r#"{"caller_org":"org-A","caller_user":"u-1"}"#)
@@ -739,8 +820,12 @@ mod tests {
         assert_eq!(reply, "echo-back");
         let rec = recorded.lock().unwrap();
         assert_eq!(rec.len(), 2, "send + 一次 get");
-        // 轮询请求也必须携带声明头（对端日志全程带 org 维度）
-        assert!(rec.iter().all(|(_, decl)| decl.is_some()));
+        // 轮询请求也必须携带声明头与签名头（对端日志全程带 org 维度，全程 fail-closed 验签）
+        assert!(rec.iter().all(|(key_id, decl)| {
+            key_id.is_some()
+                && key_id.as_deref().unwrap_or("").starts_with("did:key:z6Mk")
+                && decl.is_some()
+        }));
     }
 
     #[tokio::test]

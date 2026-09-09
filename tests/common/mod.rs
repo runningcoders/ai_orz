@@ -73,6 +73,7 @@ pub mod app;
 pub mod assertions;
 pub mod env;
 pub mod factories;
+pub mod federation;
 
 /// 集成测试对 common crate 的轻量 re-export（保持测试文件顶部 `use` 简短）。
 /// 新增重导出放在这里，避免每个集成测试文件都写一长串 `use common::xxx;`
