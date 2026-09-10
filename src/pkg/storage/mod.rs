@@ -94,17 +94,13 @@ impl Storage {
             }
         };
 
-        // 初始化 Stats DuckDB
+        // 初始化 Stats DuckDB：打开 + 建表 + 周期落盘（策略由 StatsConfig 驱动，
+        // 全部在 Stats 模块内闭环，此处只负责传配置）
         let stats_db_path = paths::stats_db_path(base_data_path, &stats_config.db_file_name);
-        let stats = Stats::open(
-            stats_db_path.to_str().unwrap_or_default(),
-            stats_config.batch_size,
-        )
-        .await?;
-        stats.initialize_default()?;
+        let stats_arc =
+            Stats::open_and_init(stats_db_path.to_str().unwrap_or_default(), stats_config).await?;
 
-        // 包装为 Arc 并初始化全局单例（AOP 消费者等无 ctx 场景使用）
-        let stats_arc = Arc::new(stats);
+        // 初始化全局单例（AOP 消费者等无 ctx 场景使用）
         crate::pkg::stats::init_global_stats(stats_arc.clone());
 
         let inner = StorageInner {

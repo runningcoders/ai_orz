@@ -227,6 +227,17 @@ pub struct StatsConfig {
     /// 批量写入缓冲大小
     #[serde(default = "default_stats_batch_size")]
     pub batch_size: usize,
+
+    /// 周期性落盘间隔（秒）
+    ///
+    /// 统计事件先写内存缓冲，默认只在「缓冲攒满 `batch_size`」或「进程优雅退出」
+    /// 时 flush。低频实例（开发/小团队）可能长期攒不满 `batch_size`，导致
+    /// DuckDB 长期停留在旧快照 —— 看板/趋势图查不到近期数据（表现为
+    /// 「刚发消息但统计无记录」）。运行时按此间隔额外主动 flush 一次。
+    ///
+    /// 设为 0 可关闭周期落盘（退化为仅靠 batch_size 与退出时落盘）。
+    #[serde(default = "default_stats_flush_interval_secs")]
+    pub flush_interval_secs: u64,
 }
 
 impl Default for StatsConfig {
@@ -234,6 +245,7 @@ impl Default for StatsConfig {
         Self {
             db_file_name: default_stats_db_file_name(),
             batch_size: default_stats_batch_size(),
+            flush_interval_secs: default_stats_flush_interval_secs(),
         }
     }
 }
@@ -244,6 +256,11 @@ fn default_stats_db_file_name() -> String {
 
 fn default_stats_batch_size() -> usize {
     100
+}
+
+/// 默认 30s：远小于用户可感知的「看板不准」窗口，又不会让 flush 过于频繁
+fn default_stats_flush_interval_secs() -> u64 {
+    30
 }
 
 /// 前端配置

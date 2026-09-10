@@ -84,11 +84,12 @@ impl StatTable<DefaultStatEvent> for DefaultStatTable {
         let id = Uuid::now_v7();
         let timestamp = event.timestamp();
         let event_type = event.event_type().to_string();
-        let tags_str = event.tags_json().map(|v| v.to_string()).unwrap_or_default();
-        let metrics_str = event
-            .metrics_json()
-            .map(|v| v.to_string())
-            .unwrap_or_default();
+        // 字段缺失兼容：tags/metrics 未设置时绑 NULL，而不是空串。
+        // 空串不是合法 JSON 文档，DuckDB 的 JSON 列会直接拒绝（Malformed JSON）→
+        // 一次写入失败会拖垮整批；缺失字段本身就该表达为 NULL，且查询侧
+        // `json_extract(NULL, '$.x')` 安全返回 NULL，不会报错。
+        let tags_str = event.tags_json().map(|v| v.to_string());
+        let metrics_str = event.metrics_json().map(|v| v.to_string());
 
         let sql = r#"
             INSERT INTO default_events (id, timestamp, event_type, tags, metrics) VALUES (?, ?, ?, ?, ?);
@@ -114,11 +115,9 @@ impl StatTable<DefaultStatEvent> for DefaultStatTable {
             let id = Uuid::now_v7();
             let timestamp = event.timestamp();
             let event_type = event.event_type().to_string();
-            let tags_str = event.tags_json().map(|v| v.to_string()).unwrap_or_default();
-            let metrics_str = event
-                .metrics_json()
-                .map(|v| v.to_string())
-                .unwrap_or_default();
+            // 同 insert_event：缺失字段绑 NULL，避免空串触发 JSON 解析失败拖垮整批
+            let tags_str = event.tags_json().map(|v| v.to_string());
+            let metrics_str = event.metrics_json().map(|v| v.to_string());
 
             let sql = r#"
                 INSERT INTO default_events (id, timestamp, event_type, tags, metrics) VALUES (?, ?, ?, ?, ?);

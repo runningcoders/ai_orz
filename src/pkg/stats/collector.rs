@@ -2,8 +2,11 @@
 
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use common::config::StatsConfig;
 use common::error::{Error, Result};
 use common::models::{StatsInterval, TimeSeriesPoint};
 use duckdb::types::Value;
@@ -97,10 +100,15 @@ pub struct Stats {
     tables: Mutex<HashMap<TypeId, StatsTableEntry>>,
     /// Registered tables by name: table name → erased table
     tables_by_name: Mutex<HashMap<String, Arc<dyn ErasedStatTable>>>,
+    /// 周期落盘任务是否已启动（幂等保护，避免重复调用堆积后台任务）
+    flush_started: AtomicBool,
 }
 
 impl Stats {
-    /// Open a new Stats database
+    /// Open a new Stats database（纯构造，不启动任何后台行为）
+    ///
+    /// 只负责打开 DuckDB 连接；建表见 `initialize_default()`，运行期落盘策略见
+    /// `open_and_init()`。测试里只需裸库时用这个入口，不会附带后台任务。
     pub async fn open(path: &str, batch_size: usize) -> Result<Self> {
         let conn = Connection::open(path)
             .map_err(|e| Error::internal(format!("Failed to open DuckDB: {}", e)))?;
@@ -110,7 +118,64 @@ impl Stats {
             batch_size,
             tables: Mutex::new(HashMap::new()),
             tables_by_name: Mutex::new(HashMap::new()),
+            flush_started: AtomicBool::new(false),
         })
+    }
+
+    /// 打开统计库并完成初始化：建默认表 + 启动周期落盘
+    ///
+    /// 统计库的全部运行期行为在此闭环 —— `batch_size` 决定「缓冲攒满自动落盘」的
+    /// 阈值，`flush_interval_secs` 决定「周期主动落盘」的节奏（0 = 关闭）。调用方
+    /// （`Storage::new()`）只需传入 `StatsConfig`，不需要知道落盘策略细节。
+    ///
+    /// 与「缓冲攒满 batch_size 自动 flush」「进程退出前 flush_all」形成三重保障：
+    /// 低频实例长期攒不满 `batch_size`，没有周期落盘时 DuckDB 会停留在旧快照，
+    /// 看板/趋势图查不到近期数据（表现为「刚发消息但统计无记录」）。
+    pub async fn open_and_init(path: &str, config: &StatsConfig) -> Result<Arc<Self>> {
+        let stats = Arc::new(Self::open(path, config.batch_size).await?);
+        stats.initialize_default()?;
+        stats.spawn_periodic_flush(config.flush_interval_secs);
+        Ok(stats)
+    }
+
+    /// 启动周期落盘任务（幂等；`interval_secs == 0` 表示关闭）
+    ///
+    /// 任务只持有 `Weak<Self>`：库被释放时任务自行退出，不构成引用环，也不持有
+    /// DuckDB 连接 —— 因此即使在测试中被多次调用，也不会泄漏后台任务或拖住连接。
+    /// 无 tokio 运行时时安静跳过，不因后台任务导致调用方 panic。
+    fn spawn_periodic_flush(self: &Arc<Self>, interval_secs: u64) {
+        if interval_secs == 0 {
+            sys_warn!("stats.flush_interval_secs = 0，已关闭统计缓冲周期落盘");
+            return;
+        }
+        // 幂等：重复调用只保留第一个任务
+        if self.flush_started.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            sys_warn!("无 tokio 运行时，已跳过统计缓冲周期落盘任务");
+            return;
+        };
+
+        let weak = Arc::downgrade(self);
+        handle.spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
+            // 落盘节奏可容忍漂移：错过调度时顺延而非补跑，避免关停期集中 flush
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // interval 首拍立即就绪，先消费掉，避免启动瞬间空跑一次
+            ticker.tick().await;
+
+            loop {
+                ticker.tick().await;
+                let Some(stats) = weak.upgrade() else {
+                    // 统计库已释放（进程关停或测试结束），任务自行退出
+                    return;
+                };
+                if let Err(e) = stats.flush_all(RequestContext::new_system()).await {
+                    sys_error!("Stats periodic flush error: {}", e);
+                }
+            }
+        });
     }
 
     /// Initialize default tables for DefaultStatEvent, ModelCallEvent, and ToolCallEvent

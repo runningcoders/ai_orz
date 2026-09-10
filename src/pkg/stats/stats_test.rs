@@ -473,3 +473,129 @@ async fn test_caller_organization_id_auto_injection() -> Result<()> {
 
     Ok(())
 }
+
+/// 字段缺失兼容：统计事件的 tags / metrics 都是可选的，
+/// 缺失时绑 NULL（而非空串，空串不是合法 JSON，DuckDB 的 JSON 列会拒绝并拖垮整批）。
+#[tokio::test]
+async fn test_missing_optional_json_fields_are_compatible() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let stats = Stats::open(db_path.to_str().unwrap(), 100).await?;
+    stats.initialize_default()?;
+
+    let ctx = RequestContext::new(None, None);
+    let now = Utc::now().timestamp();
+
+    // 三种缺失组合：全缺 / 只有 tags / 只有 metrics
+    let events = vec![
+        DefaultStatEvent::new(now),
+        DefaultStatEvent::new(now).with_tags(json!({ "only": "tags" })),
+        DefaultStatEvent::new(now).with_metrics(json!({ "only": "metrics" })),
+    ];
+    for event in events {
+        stats.record(ctx.clone(), event).await?;
+    }
+
+    // 整批落盘不应因任一事件缺字段而失败
+    stats.flush_all(ctx.clone()).await?;
+    assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 0);
+
+    let rows = stats
+        .query(
+            ctx.clone(),
+            "SELECT COUNT(*) AS count, COUNT(tags) AS with_tags, COUNT(metrics) AS with_metrics FROM default_events",
+            &[],
+        )
+        .await?;
+    let row = rows[0].as_object().unwrap();
+    assert_eq!(row.get("count").unwrap().as_i64(), Some(3));
+    assert_eq!(row.get("with_tags").unwrap().as_i64(), Some(1));
+    assert_eq!(row.get("with_metrics").unwrap().as_i64(), Some(1));
+
+    // 缺失字段上做 JSON 提取不应报错，只是取不到值
+    let rows = stats
+        .query(
+            ctx.clone(),
+            "SELECT json_extract_string(tags, '$.only') AS v FROM default_events ORDER BY v",
+            &[],
+        )
+        .await?;
+    assert_eq!(rows.len(), 3);
+    assert_eq!(
+        rows.iter()
+            .filter(|r| !r.get("v").unwrap().is_null())
+            .count(),
+        1
+    );
+
+    Ok(())
+}
+
+/// 周期落盘：`open_and_init` 按 `flush_interval_secs` 主动 flush，
+/// 低频实例（长期攒不满 batch_size）也能让近期数据对查询可见。
+#[tokio::test]
+async fn test_periodic_flush_via_open_and_init() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let config = common::config::StatsConfig {
+        // 远大于本次写入量：确保不是「缓冲攒满」触发的落盘
+        batch_size: 100,
+        flush_interval_secs: 1,
+        ..Default::default()
+    };
+
+    let stats = Stats::open_and_init(db_path.to_str().unwrap(), &config).await?;
+
+    let ctx = RequestContext::new(None, None);
+    let event = DefaultStatEvent::new(Utc::now().timestamp())
+        .with_tags(json!({ "kind": "periodic" }))
+        .with_metrics(json!({ "value": 1 }));
+    stats.record(ctx.clone(), event).await?;
+    assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 1);
+
+    // 不做任何手动 flush，等一个周期后缓冲应由周期任务落盘
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 0);
+
+    let rows = stats
+        .query(
+            ctx.clone(),
+            "SELECT COUNT(*) AS count FROM default_events",
+            &[],
+        )
+        .await?;
+    assert_eq!(rows[0].get("count").unwrap().as_i64(), Some(1));
+
+    Ok(())
+}
+
+/// `flush_interval_secs = 0` 关闭周期落盘：缓冲保持不落盘，
+/// 退化为「仅靠 batch_size 与退出时落盘」。
+#[tokio::test]
+async fn test_periodic_flush_disabled_when_interval_zero() -> Result<()> {
+    crate::pkg::storage::test_support::init_for_test().await;
+
+    let dir = tempdir()?;
+    let db_path = dir.path().join("stats.db");
+    let config = common::config::StatsConfig {
+        batch_size: 100,
+        flush_interval_secs: 0,
+        ..Default::default()
+    };
+
+    let stats = Stats::open_and_init(db_path.to_str().unwrap(), &config).await?;
+
+    let ctx = RequestContext::new(None, None);
+    let event = DefaultStatEvent::new(Utc::now().timestamp());
+    stats.record(ctx.clone(), event).await?;
+
+    // 若误启动了周期任务，1s 后缓冲会被清空
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    assert_eq!(stats.pending_buffer_len::<DefaultStatEvent>(), 1);
+
+    Ok(())
+}
