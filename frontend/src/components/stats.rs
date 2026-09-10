@@ -103,8 +103,17 @@ pub fn UserStatsPanel(model_call_stats: Option<ModelCallStats>) -> Element {
     }
 }
 
-/// 渲染模型调用时序图（如果有数据）
+/// 渲染模型调用时序图（如果有数据），默认 600x200（详情页等宽容器）
 fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Element {
+    render_time_series_chart_sized(model_call_stats, 600.0, 200.0)
+}
+
+/// 渲染模型调用时序图（指定原生渲染尺寸；窄容器传小尺寸保证文字按原始比例清晰）
+fn render_time_series_chart_sized(
+    model_call_stats: &Option<ModelCallStats>,
+    width: f64,
+    height: f64,
+) -> Element {
     if let Some(mcs) = model_call_stats
         && let Some(series) = &mcs.model_call_time_series
         && !series.is_empty()
@@ -113,8 +122,8 @@ fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Elemen
             div { class: "mt-4",
                 LineChart {
                     data: series.clone(),
-                    width: 600.0,
-                    height: 200.0,
+                    width,
+                    height,
                     title: Some("模型调用趋势".to_string()),
                     value_label: Some("输入 Token".to_string()),
                     value_field: Some(LineChartValueField::TokensInput),
@@ -182,6 +191,50 @@ pub fn AgentStatsPanel(
             }
             {render_time_series_chart(&chart_data)}
             {render_tool_call_distribution(&tool_dist_data)}
+        }
+    }
+}
+
+/// Agent 运行统计紧凑面板（无外壳版，聊天侧栏等窄容器用）
+///
+/// 与 `AgentStatsPanel` 同口径（唤醒/QPS + 模型调用 + 输入/输出 Token + 三线趋势），
+/// 差异：不带 HudPanel 外壳与工具分布环形图；趋势图按 320px 原生渲染，
+/// 避免 600px 图被 CSS 缩放后文字过小。
+#[component]
+pub fn AgentStatsPanelCompact(
+    stats: Option<AgentStats>,
+    model_call_stats: Option<ModelCallStats>,
+) -> Element {
+    let has_data = stats.as_ref().is_some_and(|s| s.call_summary.is_some())
+        || model_call_stats
+            .as_ref()
+            .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
+    let chart_data = model_call_stats.clone();
+    rsx! {
+        div { class: "mt-4 pt-3 border-t border-base-300",
+            h3 { class: "text-sm font-semibold mb-2", "📊 运行统计" }
+            if has_data {
+                StatGrid {
+                    if let Some(s) = stats {
+                        if let Some(call) = s.call_summary {
+                            StatsCard { title: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                            StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
+                        }
+                    }
+                    if let Some(mcs) = model_call_stats {
+                        if let Some(call) = mcs.call_summary {
+                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                        }
+                        if let Some(token) = mcs.token_summary {
+                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                        }
+                    }
+                }
+                {render_time_series_chart_sized(&chart_data, 320.0, 180.0)}
+            } else {
+                p { class: "text-xs text-base-content/50", "暂无运行统计数据" }
+            }
         }
     }
 }

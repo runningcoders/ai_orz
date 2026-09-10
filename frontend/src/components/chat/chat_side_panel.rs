@@ -20,6 +20,7 @@ use crate::components::chat::ToolCallsTab;
 use crate::components::hud::HudProgress;
 use crate::components::markdown::{MarkdownRenderer, MermaidDiagram};
 use crate::components::state::Loading;
+use crate::components::stats::AgentStatsPanelCompact;
 use crate::store::toast::{ToastState, use_toast};
 use crate::utils::{
     agent_lifecycle_badge, agent_lifecycle_text, agent_runtime_badge, format_file_size,
@@ -31,6 +32,7 @@ use common::api::{
     GetTaskRequest, GetTaskResponse, TaskListItem, UserInfoResponse,
 };
 use common::enums::ArtifactSourceType;
+use common::models::{AgentStats, ModelCallStats};
 
 /// SSE 消息触发的防抖刷新等待时长（毫秒）
 const REFRESH_DEBOUNCE_MS: u64 = 2000;
@@ -225,7 +227,9 @@ pub fn ChatSidePanel(
             ),
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
             3 => match project_data.as_ref().and_then(|p| p.owner_agent_id.clone()) {
-                Some(agent_id) => rsx! { AgentInfoTab { agent_id, shared_info: agent_info } },
+                Some(agent_id) => rsx! {
+                    AgentInfoTab { agent_id, shared_info: agent_info, refresh_tick: tool_tab_tick }
+                },
                 None => empty_hint("项目未指定负责人"),
             },
             4 => rsx! {
@@ -241,7 +245,11 @@ pub fn ChatSidePanel(
         match tab {
             0 => match &reception_agent_id {
                 Some(agent_id) => rsx! {
-                    AgentInfoTab { agent_id: agent_id.clone(), shared_info: agent_info }
+                    AgentInfoTab {
+                        agent_id: agent_id.clone(),
+                        shared_info: agent_info,
+                        refresh_tick: tool_tab_tick,
+                    }
                 },
                 None => empty_hint("暂无前台 Agent"),
             },
@@ -616,8 +624,16 @@ fn ArtifactRow(artifact: ArtifactDetail) -> Element {
 /// 数据源优先级：chat 主链路轮询共享的 `shared_info`（id 匹配才消费，
 /// 随轮询实时刷新 runtime 徽章）> 组件自身懒加载兜底（面板独立使用 /
 /// 共享数据未就绪时）。
+///
+/// 运行统计（唤醒/Token/趋势）独立拉取：共享轮询请求不带 stats 参数
+/// （主链路高频轮询零额外开销），统计仅在 Tab 挂载时按需加载，
+/// 并随 `refresh_tick`（SSE/手动刷新）防抖刷新，机制与 ToolCallsTab 一致。
 #[component]
-fn AgentInfoTab(agent_id: String, shared_info: Signal<Option<GetAgentResponse>>) -> Element {
+fn AgentInfoTab(
+    agent_id: String,
+    shared_info: Signal<Option<GetAgentResponse>>,
+    refresh_tick: u64,
+) -> Element {
     let mut agent = use_signal(|| None::<GetAgentResponse>);
     let mut failed = use_signal(|| false);
     // effect 闭包需要 'static 捕获，单独克隆一份，渲染段仍可直接用 agent_id
@@ -643,6 +659,73 @@ fn AgentInfoTab(agent_id: String, shared_info: Signal<Option<GetAgentResponse>>)
         });
     });
 
+    // ---- 运行统计：独立拉取（带 stats fetch-options），防抖刷新与代际丢弃 ----
+    let mut stats_pair = use_signal(|| None::<(Option<AgentStats>, Option<ModelCallStats>)>);
+    let mut stats_loaded = use_signal(|| false);
+    let mut stats_gen = use_signal(|| 0u64);
+    let mut prev_stats_tick = use_signal(|| 0u64);
+    let agent_id_for_stats = agent_id.clone();
+
+    let mut load_stats = move |debounce: bool| {
+        let my_gen = stats_gen() + 1;
+        stats_gen.set(my_gen);
+        let id = agent_id_for_stats.clone();
+        spawn(async move {
+            if debounce {
+                gloo_timers::future::sleep(Duration::from_millis(REFRESH_DEBOUNCE_MS)).await;
+                if stats_gen() != my_gen {
+                    return;
+                }
+            }
+            let req = GetAgentRequest {
+                id,
+                with_stats: Some(true),
+                with_model_call_stats: Some(true),
+                // 与 Agent 详情页 build_agent_stats_request 同口径
+                stats_interval: Some("daily".to_string()),
+                ..Default::default()
+            };
+            let pair = match get_agent(req).await {
+                Ok(a) => Some((a.stats.clone(), a.model_call_stats.clone())),
+                Err(_) => None,
+            };
+            if stats_gen() != my_gen {
+                return;
+            }
+            if let Some(p) = pair {
+                stats_pair.set(Some(p));
+            }
+            stats_loaded.set(true);
+        });
+    };
+
+    // 挂载/Agent 切换 → 立即加载；refresh_tick 变化 → 防抖刷新。
+    // 守卫结构与 ToolCallsTab 一致：仅在值真正变化时写回 + 调 load，
+    // 避免 load 内写 gen 信号触发 effect 重跑 → 无条件 load 的请求循环（同 E2E-1）
+    let mut prev_stats_agent = use_signal(String::new);
+    // effect 闭包 'static 捕获会 move agent_id，渲染段还要用，单独克隆一份
+    let agent_id_for_key = agent_id.clone();
+    use_effect(move || {
+        let tick = refresh_tick;
+        let aid = agent_id_for_key.clone();
+        let agent_changed = prev_stats_agent() != aid;
+        let tick_changed = prev_stats_tick() != tick;
+        if agent_changed {
+            prev_stats_agent.set(aid);
+        }
+        if tick_changed {
+            prev_stats_tick.set(tick);
+        }
+        if agent_changed {
+            // 切换 Agent 时丢弃旧统计，避免新请求返回前闪现上一个 Agent 的数据
+            stats_pair.set(None);
+            stats_loaded.set(false);
+            load_stats(false);
+        } else if tick_changed {
+            load_stats(true);
+        }
+    });
+
     if failed() {
         return empty_hint("Agent 信息加载失败");
     }
@@ -655,6 +738,7 @@ fn AgentInfoTab(agent_id: String, shared_info: Signal<Option<GetAgentResponse>>)
     let capabilities = a.capabilities.clone().unwrap_or_default();
     let aid = a.id.clone();
     let kind = a.kind.clone();
+    let (agent_stats, model_call_stats) = stats_pair().unwrap_or((None, None));
     rsx! {
         div { class: "space-y-4",
             div { class: "flex items-center gap-2",
@@ -674,6 +758,10 @@ fn AgentInfoTab(agent_id: String, shared_info: Signal<Option<GetAgentResponse>>)
                 for role in a.roles.iter() {
                     span { key: "{role}", class: "{tag_chip()}", "{role}" }
                 }
+            }
+            // 运行统计：首次加载完成后渲染（无数据时面板内给出提示）
+            if stats_loaded() {
+                AgentStatsPanelCompact { stats: agent_stats, model_call_stats }
             }
             if let Some(d) = desc {
                 div {
