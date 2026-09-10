@@ -5,5 +5,6 @@ pub mod health;
 pub mod logs;
 pub mod processes;
 pub mod seed;
+pub mod seed_sensitive_fields;
 pub mod tasks;
 pub mod triggers;

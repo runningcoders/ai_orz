@@ -229,7 +229,7 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
     );
 
     let result = super::apply_snapshot_to_db(
-        ctx,
+        ctx.clone(),
         &snapshot,
         common::api::seed::ImportStrategy::PreserveIds,
         &sensitive,
@@ -238,4 +238,19 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
     .unwrap();
 
     assert!(result.created > 0);
+
+    // 模板里的对话模型必须把 config 一并落库（含 max_context_length）。
+    // 漏掉这步会让 seed 导入的 Provider 退化成 threshold=0 —— ContextOverflowPolicy
+    // 恒不命中，Agent 永不压缩上下文。
+    let created_provider = crate::service::domain::finance::domain()
+        .model_provider_manage()
+        .get_model_provider(ctx, "TEMPLATE_CHAT_PROVIDER")
+        .await
+        .unwrap()
+        .expect("TEMPLATE_CHAT_PROVIDER 应已创建");
+    assert_eq!(
+        created_provider.po.config().max_context_length,
+        Some(128_000),
+        "默认模板的对话模型应带上 max_context_length"
+    );
 }

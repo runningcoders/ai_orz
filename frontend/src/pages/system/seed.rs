@@ -13,17 +13,23 @@ use crate::components::hud::{HudPanel, StatGrid, StatReadout};
 use dioxus::prelude::*;
 
 use crate::api::seed::{
-    apply_default, delete_seed_file, get_task_progress, list_seeds, load_seed, save_seed,
+    apply_default, delete_seed_file, get_default_seed, get_seed_file, get_task_progress,
+    list_seeds, load_seed, save_seed,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::task_progress::TaskProgress;
 use crate::layouts::app_layout::AppLayout;
+use crate::pages::system::seed_sensitive_fields::{
+    SeedSensitiveFields, SensitiveField, check_sensitive_filled, extract_sensitive_fields,
+    parse_sensitive_fields,
+};
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime_full, format_file_size as format_size};
 use common::api::seed::ImportStrategy;
 use common::api::{TaskProgressSnapshot, TaskStatus};
+use std::collections::HashMap;
 
 /// 策略下拉框的 4 个选项
 fn strategy_options() -> Vec<(&'static str, ImportStrategy)> {
@@ -95,11 +101,23 @@ pub fn SystemSeed() -> Element {
     let mut load_file_name = use_signal(String::new);
     let mut load_strategy = use_signal(|| "0".to_string());
     let mut load_submitting = use_signal(|| false);
+    // 待补填敏感字段（快照解析得出）+ 用户输入值
+    let mut load_fields = use_signal(Vec::<SensitiveField>::new);
+    let mut load_sensitive = use_signal(HashMap::<String, String>::new);
 
     // 应用默认模板弹窗
     let mut show_apply_default_modal = use_signal(|| false);
     let mut apply_default_strategy = use_signal(|| "0".to_string());
     let mut apply_default_submitting = use_signal(|| false);
+    let mut apply_default_fields = use_signal(Vec::<SensitiveField>::new);
+    let mut apply_default_sensitive = use_signal(HashMap::<String, String>::new);
+
+    // 稳定的敏感字段回调：use_callback 保证父重渲染时不重建，避免
+    // SeedSensitiveFields 被无谓重渲染而打断输入（见 seed_sensitive_fields.rs 注释）
+    let on_load_sensitive_change =
+        use_callback(move |m: HashMap<String, String>| load_sensitive.set(m));
+    let on_apply_default_sensitive_change =
+        use_callback(move |m: HashMap<String, String>| apply_default_sensitive.set(m));
 
     // 查看文件内容弹窗
     let mut show_view_modal = use_signal(|| false);
@@ -248,13 +266,20 @@ pub fn SystemSeed() -> Element {
             toast.error("未选择文件");
             return;
         }
-        load_submitting.set(true);
         let strategy = value_to_strategy(&load_strategy());
+        // 敏感字段前置校验：后端在后台任务里才校验，失败后只剩任务 Failed，
+        // 用户已看不到表单上下文，这里挡在提交之前
+        let sensitive_values = load_sensitive.read().clone();
+        if let Err(msg) = check_sensitive_filled(&load_fields(), &sensitive_values, strategy) {
+            toast.error(msg);
+            return;
+        }
+        load_submitting.set(true);
         spawn(async move {
             let req = common::api::LoadSeedRequest {
                 name: name.clone(),
                 strategy,
-                sensitive_values: std::collections::HashMap::new(),
+                sensitive_values,
             };
             match load_seed(&name, req).await {
                 Ok(resp) => {
@@ -293,12 +318,19 @@ pub fn SystemSeed() -> Element {
 
     // ===== 应用默认模板 =====
     let on_submit_apply_default = move |_| {
-        apply_default_submitting.set(true);
         let strategy = value_to_strategy(&apply_default_strategy());
+        let sensitive_values = apply_default_sensitive.read().clone();
+        if let Err(msg) =
+            check_sensitive_filled(&apply_default_fields(), &sensitive_values, strategy)
+        {
+            toast.error(msg);
+            return;
+        }
+        apply_default_submitting.set(true);
         spawn(async move {
             let req = common::api::ApplyDefaultSeedRequest {
                 strategy,
-                sensitive_values: std::collections::HashMap::new(),
+                sensitive_values,
             };
             match apply_default(req).await {
                 Ok(resp) => {
@@ -342,7 +374,7 @@ pub fn SystemSeed() -> Element {
         show_view_modal.set(true);
         view_loading.set(true);
         spawn(async move {
-            match crate::api::seed::get_seed_file(&name).await {
+            match get_seed_file(&name).await {
                 Ok(resp) => view_content.set(resp.content),
                 Err(e) => {
                     toast.error(format!("读取文件失败: {}", e));
@@ -403,7 +435,20 @@ pub fn SystemSeed() -> Element {
                 }
                 button {
                     class: "btn hud-btn btn-outline btn-sm",
-                    onclick: move |_| show_apply_default_modal.set(true),
+                    // 打开弹窗时拉取内置模板快照，解析出需补填的敏感字段
+                    onclick: move |_| {
+                        apply_default_fields.set(Vec::new());
+                        apply_default_sensitive.set(HashMap::new());
+                        show_apply_default_modal.set(true);
+                        spawn(async move {
+                            match get_default_seed().await {
+                                Ok(snapshot) => {
+                                    apply_default_fields.set(extract_sensitive_fields(&snapshot))
+                                }
+                                Err(e) => toast.error(format!("读取默认模板失败: {}", e)),
+                            }
+                        });
+                    },
                     "应用默认模板"
                 }
                 button {
@@ -471,10 +516,30 @@ pub fn SystemSeed() -> Element {
                                                 }
                                                 button {
                                                     class: "btn hud-btn btn-primary btn-xs",
+                                                    // 打开弹窗时读取该快照文件，解析出需补填的敏感字段。
+                                                    // 这里不抽公共闭包：rsx 的 for 循环内每个迭代都会
+                                                    // 独占捕获一份 `name_for_load`，复用外部闭包会被 move 冲突。
                                                     onclick: move |_| {
-                                                        load_file_name.set(name_for_load.clone());
+                                                        let file = name_for_load.clone();
+                                                        load_file_name.set(file.clone());
                                                         load_strategy.set("0".to_string());
+                                                        load_fields.set(Vec::new());
+                                                        load_sensitive.set(HashMap::new());
                                                         show_load_modal.set(true);
+                                                        spawn(async move {
+                                                            match get_seed_file(&file).await {
+                                                                Ok(resp) => match parse_sensitive_fields(
+                                                                    &resp.content,
+                                                                ) {
+                                                                    Ok(fields) => {
+                                                                        load_fields.set(fields)
+                                                                    }
+                                                                    Err(msg) => toast.error(msg),
+                                                                },
+                                                                Err(e) => toast
+                                                                    .error(format!("读取快照失败: {}", e)),
+                                                            }
+                                                        });
                                                     },
                                                     "加载"
                                                 }
@@ -567,6 +632,11 @@ pub fn SystemSeed() -> Element {
                     "DryRun 模式仅预演不写入；SkipExisting 跳过已存在的实体。"
                 }
             }
+            SeedSensitiveFields {
+                fields: load_fields(),
+                required: !matches!(value_to_strategy(&load_strategy()), ImportStrategy::DryRun),
+                on_change: on_load_sensitive_change,
+            }
         }
 
         // 应用默认模板弹窗
@@ -601,6 +671,14 @@ pub fn SystemSeed() -> Element {
                 p { class: "text-base-content/60 text-xs mt-1",
                     "默认模板包含系统预置的 Provider/Agent/Skill 配置。"
                 }
+            }
+            SeedSensitiveFields {
+                fields: apply_default_fields(),
+                required: !matches!(
+                    value_to_strategy(&apply_default_strategy()),
+                    ImportStrategy::DryRun
+                ),
+                on_change: on_apply_default_sensitive_change,
             }
         }
 

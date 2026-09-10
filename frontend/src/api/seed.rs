@@ -21,6 +21,14 @@ pub async fn delete_seed_file(name: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/system/seed/file/{}", name)).await
 }
 
+/// 获取内置默认模板快照
+///
+/// 快照类型定义在 `ai_orz` crate（前端不依赖），故按原始 JSON 取回，
+/// 仅用于推导需要用户补填的敏感字段（`PENDING_INPUT` 占位符）。
+pub async fn get_default_seed() -> Result<serde_json::Value, ApiError> {
+    api_get("/api/v1/system/seed/default").await
+}
+
 /// 保存当前组织配置到文件（异步，返回 task_id）
 pub async fn save_seed(
     req: common::api::SaveSeedRequest,
