@@ -780,6 +780,8 @@ fn AgentInfoTab(
                     model_call_stats,
                     context_length,
                     context_length_threshold,
+                    // 阈值缺失时面板需要给出「去配置」入口，指向本条消息所属 Agent 的供应商
+                    model_provider_id: a.model_provider_id.clone(),
                 }
             }
             if let Some(d) = desc {

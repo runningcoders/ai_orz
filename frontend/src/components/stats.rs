@@ -1,5 +1,6 @@
 use common::models::{AgentStats, ModelCallStats};
 use dioxus::prelude::*;
+use dioxus_router::Link;
 
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::{LineChart, LineChartValueField};
@@ -213,13 +214,20 @@ pub fn AgentStatsPanel(
 ///
 /// 有 `context_length_threshold`（压缩阈值，与后端 `ContextOverflowPolicy` 同源）时
 /// 渲染成环形进度（百分比 = 当前 / 阈值，中心只显示百分比，原始数值走 hover）；
-/// 未配置阈值时退化为普通读数——此时没有分母，百分比无从谈起。
+/// 未配置阈值时只能退化为普通读数——没有分母，百分比无从谈起。
+///
+/// 退化分支**必须把原因说出来**，否则用户只看得到一个孤零零的 token 数，无从判断是
+/// 「设计如此」还是「坏了」。阈值缺失的根因是模型供应商没配 `max_context_length`
+/// （见 `think_loop.rs` 的 `overflow_threshold` 推导），因此这里给出直达该供应商
+/// 详情页的入口——那同时也是 Agent「永不压缩上下文」的修复点。
 #[component]
 pub fn AgentStatsPanelCompact(
     stats: Option<AgentStats>,
     model_call_stats: Option<ModelCallStats>,
     context_length: Option<u64>,
     context_length_threshold: Option<u64>,
+    // 模型供应商 ID：仅用于阈值缺失时给出「去配置」入口
+    model_provider_id: Option<String>,
 ) -> Element {
     let has_runtime = stats.as_ref().is_some_and(|s| s.call_summary.is_some());
     let has_model = model_call_stats
@@ -264,7 +272,32 @@ pub fn AgentStatsPanelCompact(
                                         }
                                     }
                                 } else if let Some(len) = context_length {
-                                    CompactStat { label: "上下文长度".to_string(), icon: "🧠".to_string(), value: format_token_count(len) }
+                                    // 阈值缺失：只能给数值，但必须说明原因 + 给出修复入口
+                                    div { class: "min-w-0",
+                                        div { class: "hud-eyebrow mb-1", "上下文长度" }
+                                        div { class: "flex flex-wrap items-baseline gap-1.5",
+                                            span { class: "text-lg leading-none opacity-80", "🧠" }
+                                            span { class: "hud-stat hud-stat-sm",
+                                                "{format_token_count(len)}"
+                                            }
+                                        }
+                                        div { class: "text-xs mt-1",
+                                            if let Some(pid) = model_provider_id.clone() {
+                                                Link {
+                                                    class: "link link-hover text-warning/90",
+                                                    // 文案取「单行不折行」的最长表述（实测 134px < 左列 176px），
+                                                    // 完整原因走 title，避免把侧栏撑成两行
+                                                    title: "模型供应商未配置最大上下文长度，压缩阈值无从计算（该 Agent 也不会自动压缩上下文）。点击前往配置。",
+                                                    to: crate::pages::Route::FinanceModelProviderDetail {
+                                                        id: pid,
+                                                    },
+                                                    "未配置最大上下文长度 →"
+                                                }
+                                            } else {
+                                                span { class: "text-warning/90", "未配置最大上下文长度" }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
