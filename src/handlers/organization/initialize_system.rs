@@ -171,7 +171,11 @@ impl InitializeSystemTask {
         // Step（可选）: 创建 chat provider — 未配置时跳过，后续在模型管理中补配
         let chat_provider_id = if let Some(chat_config) = params.chat_model.clone() {
             self.set_step(step, "正在配置对话模型");
-            let chat_provider = crate::models::model_provider::ModelProvider::new(
+            // 上下文长度先取出（Copy），随后 chat_config 其余字段被 move 进构造函数
+            let max_context_length = chat_config.max_context_length.filter(|&v| v > 0);
+            let recommended_context_length =
+                chat_config.recommended_context_length.filter(|&v| v > 0);
+            let mut chat_provider = crate::models::model_provider::ModelProvider::new(
                 chat_config.name,
                 common::enums::ProviderType::from_i32(chat_config.provider_type),
                 common::enums::ModelCapability::Agent,
@@ -181,6 +185,15 @@ impl InitializeSystemTask {
                 chat_config.description,
                 user_id.clone(),
             );
+            // 初始化向导采集的上下文长度必须落库 —— 否则该对话模型永远不会触发
+            // 上下文压缩（ContextOverflowPolicy 的 threshold 恒为 0）
+            chat_provider
+                .po
+                .set_config(&crate::models::model_provider::ModelProviderConfig {
+                    max_context_length,
+                    recommended_context_length,
+                    ..Default::default()
+                });
             let provider_id = chat_provider.po.id.clone();
             finance::domain()
                 .model_provider_manage()

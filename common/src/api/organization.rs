@@ -57,6 +57,16 @@ pub struct ModelProviderInitConfig {
     pub base_url: Option<String>,
     /// 描述（可选）
     pub description: Option<String>,
+    /// 上下文窗口长度（模型支持的最大 token 数）
+    ///
+    /// **对话模型建议必填**：压缩触发阈值以它为基准，缺失时 `ContextOverflowPolicy`
+    /// 退化为 threshold=0（恒不命中），Agent 永远不会压缩上下文。
+    /// Embedding 模型无对话上下文概念，可省略。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_context_length: Option<i32>,
+    /// 推荐上下文长度（可选：留空按 `max_context_length * 60%` 自动计算）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended_context_length: Option<i32>,
 }
 
 /// 检查系统初始化状态请求（无参数）

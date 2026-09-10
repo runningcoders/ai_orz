@@ -70,6 +70,17 @@ pub fn FinanceModelProviders() -> Element {
                 toast.error("名称和模型名称不能为空");
                 return;
             }
+            // 对话模型必填上下文长度：缺失 → 压缩阈值算不出来 → Agent 永不压缩（静默降级）
+            let is_embedding = new_capability() == ModelCapability::Embedding as i32;
+            if !is_embedding
+                && max_context_length()
+                    .trim()
+                    .parse::<i32>()
+                    .map_or(true, |v| v <= 0)
+            {
+                toast.error("请填写最大上下文长度（对话模型必填，正整数 token 数）");
+                return;
+            }
             creating.set(true);
             let req = CreateModelProviderRequest {
                 name: name(),
@@ -435,7 +446,13 @@ pub fn FinanceModelProviders() -> Element {
                 div { class: "grid grid-cols-2 gap-4",
                     div { class: "form-control w-full",
                         label { class: "label",
-                            span { class: "label-text font-medium", "最大上下文长度" }
+                            span { class: "label-text font-medium",
+                                if new_capability() == ModelCapability::Embedding as i32 {
+                                    "最大上下文长度"
+                                } else {
+                                    "最大上下文长度 *"
+                                }
+                            }
                         }
                         input { class: "input input-bordered w-full", r#type: "number",
                             value: "{max_context_length}",
@@ -449,11 +466,11 @@ pub fn FinanceModelProviders() -> Element {
                         input { class: "input input-bordered w-full", r#type: "number",
                             value: "{recommended_context_length}",
                             oninput: move |e| recommended_context_length.set(e.value()),
-                            placeholder: "留空自动计算" }
+                            placeholder: "留空按最大值 60% 计算" }
                     }
                 }
                 p { class: "text-xs text-base-content/60",
-                    "最大上下文长度为模型支持的 token 上限；推荐上下文长度作为压缩触发阈值，留空时按最大值 60% 自动计算"
+                    "最大上下文长度为模型支持的 token 上限，对话模型必填——压缩触发阈值以它为基准；推荐上下文长度可留空，届时按最大值 60% 自动计算"
                 }
             }
         }

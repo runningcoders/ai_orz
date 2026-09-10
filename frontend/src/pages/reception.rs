@@ -85,6 +85,9 @@ pub fn Reception() -> Element {
     let mut chat_model_name = use_signal(String::new);
     let mut chat_api_key = use_signal(String::new);
     let mut chat_base_url = use_signal(String::new);
+    // 上下文长度：对话模型必填（压缩触发阈值的基准），默认预填常见窗口
+    let mut chat_max_context_length = use_signal(|| "128000".to_string());
+    let mut chat_recommended_context_length = use_signal(String::new);
 
     // 向量模型配置（可选）
     let mut enable_embedding = use_signal(|| true); // 默认启用
@@ -353,6 +356,16 @@ pub fn Reception() -> Element {
                 toast.error("对话模型的 Provider 名称、模型名称、API Key 不能为空");
                 return;
             }
+            // 上下文长度必填：没有它压缩阈值算不出来，Agent 将永远不会压缩上下文
+            if enable_chat()
+                && chat_max_context_length()
+                    .trim()
+                    .parse::<i32>()
+                    .map_or(true, |v| v <= 0)
+            {
+                toast.error("请填写对话模型的最大上下文长度（正整数 token 数）");
+                return;
+            }
             if enable_embedding()
                 && (embedding_provider_name().is_empty() || embedding_model_name().is_empty())
             {
@@ -392,6 +405,11 @@ pub fn Reception() -> Element {
                             Some(chat_base_url())
                         },
                         description: None,
+                        max_context_length: chat_max_context_length().trim().parse::<i32>().ok(),
+                        recommended_context_length: chat_recommended_context_length()
+                            .trim()
+                            .parse::<i32>()
+                            .ok(),
                     })
                 } else {
                     None
@@ -408,6 +426,9 @@ pub fn Reception() -> Element {
                             Some(embedding_base_url())
                         },
                         description: None,
+                        // Embedding 无对话上下文概念，压缩阈值不适用
+                        max_context_length: None,
+                        recommended_context_length: None,
                     })
                 } else {
                     None
@@ -916,6 +937,34 @@ pub fn Reception() -> Element {
                                                                 oninput: move |e| chat_base_url.set(e.value()),
                                                                 placeholder: "自定义代理地址（可选）",
                                                             }
+                                                        }
+
+                                                        div { class: "grid grid-cols-2 gap-4",
+                                                            div { class: "form-control w-full",
+                                                                label { class: "form-label", "最大上下文长度 *" }
+                                                                input {
+                                                                    class: "input input-bordered w-full",
+                                                                    r#type: "number",
+                                                                    "data-testid": "init-chat-max-context-length",
+                                                                    value: "{chat_max_context_length}",
+                                                                    oninput: move |e| chat_max_context_length.set(e.value()),
+                                                                    placeholder: "例如：128000",
+                                                                }
+                                                            }
+                                                            div { class: "form-control w-full",
+                                                                label { class: "form-label", "推荐上下文长度" }
+                                                                input {
+                                                                    class: "input input-bordered w-full",
+                                                                    r#type: "number",
+                                                                    "data-testid": "init-chat-recommended-context-length",
+                                                                    value: "{chat_recommended_context_length}",
+                                                                    oninput: move |e| chat_recommended_context_length.set(e.value()),
+                                                                    placeholder: "留空按 60% 计算",
+                                                                }
+                                                            }
+                                                        }
+                                                        p { class: "text-xs text-base-content/60",
+                                                            "最大上下文长度必填——Agent 的上下文压缩阈值以它为基准（推荐值留空时取 60%）。请按模型实际窗口填写，填小了会导致频繁压缩。"
                                                         }
                                                     }
                                                 } else {

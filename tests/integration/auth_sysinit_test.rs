@@ -191,3 +191,72 @@ async fn test_protected_route_returns_200_with_jwt(pool: SqlitePool) {
         body
     );
 }
+
+/// 对话模型（非 Embedding）创建时必须提供 `max_context_length`。
+///
+/// 该字段是上下文压缩触发阈值的基准：缺失会让 `ContextOverflowPolicy` 退化为
+/// threshold=0（恒不命中），Agent 永远不会压缩上下文，只能撑到模型硬上限报错。
+/// 因此 API 必须 fail-fast，而不是静默落库一个没有阈值配置的 Provider。
+#[sqlx::test]
+async fn test_create_chat_provider_requires_max_context_length(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    // 缺失 → 400（fail-fast，不允许静默降级）
+    let missing = serde_json::json!({
+        "name": "No-Ctx-Chat",
+        "provider_type": "OpenAI",
+        "capability": "Agent",
+        "model_name": "gpt-4o-mini",
+        "api_key": "test-key",
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &missing, &jwt)
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "chat provider without max_context_length should be rejected, got body: {}",
+        body
+    );
+
+    // 0 同样视为未设置 → 400
+    let zero = serde_json::json!({
+        "name": "Zero-Ctx-Chat",
+        "provider_type": "OpenAI",
+        "capability": "Agent",
+        "model_name": "gpt-4o-mini",
+        "api_key": "test-key",
+        "max_context_length": 0,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &zero, &jwt)
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::BAD_REQUEST,
+        "max_context_length=0 should be rejected, got body: {}",
+        body
+    );
+
+    // 提供合法值 → 成功，且回读字段一致
+    let ok = serde_json::json!({
+        "name": "With-Ctx-Chat",
+        "provider_type": "OpenAI",
+        "capability": "Agent",
+        "model_name": "gpt-4o-mini",
+        "api_key": "test-key",
+        "max_context_length": 128000,
+    });
+    let (status, body) = app
+        .post_with_jwt("/api/v1/finance/model-providers", &ok, &jwt)
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("max_context_length").and_then(|v| v.as_i64()),
+        Some(128000),
+        "created provider should echo max_context_length, got: {}",
+        body
+    );
+}

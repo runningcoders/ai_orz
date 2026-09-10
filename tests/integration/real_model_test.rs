@@ -103,6 +103,12 @@ async fn create_provider(
     api_key: &str,
     base_url: Option<&str>,
 ) -> String {
+    // 对话模型必填上下文长度（压缩触发阈值的基准），向量模型不适用
+    let max_context_length = if capability == "Agent" {
+        json!(128_000)
+    } else {
+        json!(null)
+    };
     let req = json!({
         "name": name,
         "provider_type": provider_type,
@@ -111,6 +117,7 @@ async fn create_provider(
         "api_key": api_key,
         "base_url": base_url,
         "description": format!("Real model test: {}", name),
+        "max_context_length": max_context_length,
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)

@@ -17,7 +17,7 @@ use common::api::{
     CallModelRequest, GetModelProviderRequest, SwitchEmbeddingProviderRequest,
     UpdateModelProviderRequest,
 };
-use common::enums::ProviderType;
+use common::enums::{ModelCapability, ProviderType};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
@@ -82,6 +82,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     let mut edit_max_context_length = use_signal(String::new);
     let mut edit_recommended_context_length = use_signal(String::new);
     let mut saving_meta = use_signal(|| false);
+
+    // 当前提供商是否 Embedding：编辑表单的上下文长度必填校验与标签用它。
+    // Embedding 无对话上下文概念，不参与压缩阈值计算，跳过必填。
+    let editing_is_embedding = provider_res
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .is_some_and(|p| p.capability == ModelCapability::Embedding);
 
     // 加载由上方 use_resource（rid 响应式）负责，无需 use_effect
 
@@ -522,6 +530,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                     .trim()
                                     .parse::<i32>()
                                     .unwrap_or(0);
+                                // 对话模型不允许清空最大上下文长度：清掉后压缩阈值无从计算，
+                                // Agent 会静默地永不压缩（后端同样拒绝，这里前置提示）
+                                if !editing_is_embedding && max_ctx <= 0 {
+                                    toast.error("最大上下文长度不能为空（对话模型必填）");
+                                    return;
+                                }
                                 let rec_ctx = edit_recommended_context_length()
                                     .trim()
                                     .parse::<i32>()
@@ -603,7 +617,15 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                     }
                     div { class: "grid grid-cols-2 gap-4",
                         div { class: "form-control w-full",
-                            label { class: "label", span { class: "label-text font-medium", "最大上下文长度" } }
+                            label { class: "label",
+                                span { class: "label-text font-medium",
+                                    if editing_is_embedding {
+                                        "最大上下文长度"
+                                    } else {
+                                        "最大上下文长度 *"
+                                    }
+                                }
+                            }
                             input { class: "input input-bordered w-full", r#type: "number",
                                 value: "{edit_max_context_length}",
                                 oninput: move |e| edit_max_context_length.set(e.value()),
@@ -614,11 +636,15 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             input { class: "input input-bordered w-full", r#type: "number",
                                 value: "{edit_recommended_context_length}",
                                 oninput: move |e| edit_recommended_context_length.set(e.value()),
-                                placeholder: "留空自动计算" }
+                                placeholder: "留空按最大值 60% 计算" }
                         }
                     }
                     p { class: "text-xs text-base-content/60",
-                        "清空输入框将清除对应配置（回退为自动计算）；推荐上下文长度留空时按最大值 60% 自动计算"
+                        if editing_is_embedding {
+                            "Embedding 模型不参与上下文压缩，两项均可留空"
+                        } else {
+                            "最大上下文长度必填——压缩触发阈值以它为基准（推荐值缺省时取 60%），清空会让 Agent 永不压缩；推荐上下文长度可留空自动计算"
+                        }
                     }
                 }
             }

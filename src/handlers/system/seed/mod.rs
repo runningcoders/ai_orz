@@ -620,6 +620,15 @@ pub async fn apply_snapshot_to_db_with_progress(
         );
         // 覆盖 ID 以保持引用一致
         provider.po.id = provider_def.id.clone();
+        // 恢复导出时的 provider 配置（含上下文长度）：漏掉这步会让 seed 导入的对话
+        // 模型丢失压缩触发阈值 → Agent 永不压缩上下文
+        if !provider_def.config.is_empty()
+            && let Ok(cfg) = serde_json::from_str::<
+                crate::models::model_provider::ModelProviderConfig,
+            >(&provider_def.config)
+        {
+            provider.po.set_config(&cfg);
+        }
 
         if existing.is_some() {
             finance::domain()

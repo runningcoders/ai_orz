@@ -25,12 +25,15 @@ pub struct CreateModelProviderRequest {
     pub description: Option<String>,
     /// 上下文窗口长度（模型支持的最大 token 数）
     ///
-    /// 用于运行时上下文压缩检测的基准值。留空则不检测。
+    /// 用于运行时上下文压缩检测的基准值。**对话类（非 Embedding）模型必填**——
+    /// 缺失时压缩阈值无从计算，`ContextOverflowPolicy` 会退化为 threshold=0
+    /// （恒不命中），Agent 将永远不会因上下文过长而压缩，只能撑到模型报错。
+    /// Embedding 模型无对话上下文概念，可不填。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,
     /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）
     ///
-    /// 未设置时按 `max_context_length * 60%` 自动计算。
+    /// 选填：未设置时按 `max_context_length * 60%` 自动计算。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommended_context_length: Option<i32>,
 }
@@ -160,7 +163,8 @@ pub struct UpdateModelProviderRequest {
     pub status: Option<i32>,
     /// 上下文窗口长度（模型支持的最大 token 数）
     ///
-    /// None 表示不修改；传入 0 表示清除配置。
+    /// None 表示不修改；传入 0 表示清除配置——**对话类（非 Embedding）模型不允许
+    /// 清除**（原因同创建：清除后压缩阈值退化为 0，压缩机制失效），会被拒绝。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context_length: Option<i32>,
     /// 推荐上下文长度（建议的工作上下文上限，优先作为压缩触发阈值）

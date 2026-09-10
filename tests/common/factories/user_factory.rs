@@ -242,7 +242,7 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
         Some(p) => p.po.id,
         None => {
             // 补建字段与 bootstrap_system 的 InitializeSystemRequest 保持一致
-            let provider = ModelProvider::new(
+            let mut provider = ModelProvider::new(
                 "Test Chat Provider".to_string(),
                 ProviderType::OpenAI,
                 ModelCapability::Agent,
@@ -252,6 +252,14 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
                 Some("test chat model".to_string()),
                 user_id.clone(),
             );
+            // 上下文长度需与 bootstrap_system 一致，否则该 Provider 永不触发上下文压缩
+            provider
+                .po
+                .set_config(&ai_orz::models::model_provider::ModelProviderConfig {
+                    max_context_length: Some(128_000),
+                    recommended_context_length: None,
+                    ..Default::default()
+                });
             let id = provider.po.id.clone();
             finance::domain()
                 .model_provider_manage()
@@ -330,6 +338,8 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
             api_key: "test-key".to_string(),
             base_url: None,
             description: Some("test chat model".to_string()),
+            max_context_length: Some(128_000),
+            recommended_context_length: None,
         }),
         embedding_model: None,
     };

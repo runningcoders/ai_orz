@@ -16,7 +16,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_model_provider",
     name = "Update Provider Config",
-    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. Returns the updated provider, plus rebuild_task_id when an active embedding provider's config changed and a vector rebuild was scheduled. Fails if not found.",
+    description = "Update a model provider's name, model_name, api_key, base_url, status, or context lengths; only provided fields change. For chat (non-embedding) models max_context_length cannot be cleared (it backs the context-compaction threshold). Returns the updated provider, plus rebuild_task_id when an active embedding provider's config changed and a vector rebuild was scheduled. Fails if not found.",
     params = "common::api::UpdateModelProviderRequest"
 )]
 #[generate_http_handler]
@@ -75,6 +75,17 @@ pub async fn update_model_provider(
     if let Some(status) = params.status {
         provider.po.status = ModelProviderStatus::from_i32(status);
     }
+    // 对话类模型的上下文长度**不允许清除**（与创建时必填同源）：
+    // 清成 None 会让 ContextOverflowPolicy 退化为 threshold=0（恒不命中），
+    // Agent 永不压缩 —— 这条静默降级路径必须在入口挡住。
+    // Embedding 无对话上下文概念，允许清除。
+    if !provider.po.capability.is_embedding() && params.max_context_length.is_some_and(|v| v <= 0) {
+        return Err(common::error::Error::bad_request(
+            "max_context_length 不能清除：对话类模型必须保留上下文窗口长度，\
+             否则压缩触发阈值失效，Agent 将永远不会压缩上下文",
+        ));
+    }
+
     // 上下文长度配置 partial update：None 不修改，Some(0) 清除，Some(n>0) 设置
     if params.max_context_length.is_some() || params.recommended_context_length.is_some() {
         provider.po.update_config(|cfg| {

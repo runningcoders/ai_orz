@@ -816,7 +816,9 @@ async fn create_real_llm_provider(app: &TestApp, jwt: &str, cfg: &RealLlmConfig)
         "model_name": cfg.llm_model_name,
         "api_key": cfg.llm_api_key,
         "base_url": cfg.llm_base_url,
-        "description": "Real LLM for awaken test"
+        "description": "Real LLM for awaken test",
+        // 对话模型必填上下文长度（压缩触发阈值的基准）
+        "max_context_length": 128_000
     });
     let (status, body) = app
         .post_with_jwt("/api/v1/finance/model-providers", &req, jwt)

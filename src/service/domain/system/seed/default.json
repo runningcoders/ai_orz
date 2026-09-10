@@ -32,8 +32,8 @@
       "capability": 0,
       "api_key_ref": "PENDING_INPUT",
       "base_url": null,
-      "description": "用于 Agent 思考和对话",
-      "config": "{}",
+      "description": "用于 Agent 思考和对话（gpt-4o 上下文窗口 128K，如换模型请同步修改 config.max_context_length）",
+      "config": "{\"max_context_length\":128000}",
       "status": 1
     },
     {

@@ -14,7 +14,7 @@ use std::sync::Arc;
 #[register_handler_tool(
     id = "create_model_provider",
     name = "Add Model Provider",
-    description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. An embedding provider may come back Disabled when another embedding provider is already active.",
+    description = "Register a model provider (type, capability, model name, api_key, base_url, context lengths) for AI inference and return its id and status. max_context_length is REQUIRED for chat (non-embedding) models: it is the basis of the context-compaction threshold, and omitting it makes the agent never compact its context. An embedding provider may come back Disabled when another embedding provider is already active.",
     params = "common::api::CreateModelProviderRequest"
 )]
 #[generate_http_handler]
@@ -22,6 +22,17 @@ pub async fn create_model_provider(
     ctx: RequestContext,
     params: CreateModelProviderRequest,
 ) -> Result<CreateModelProviderResponse> {
+    // 上下文长度：对话类模型**必填**。
+    // 缺失 → ContextOverflowPolicy 退化为 threshold=0（恒不命中）→ Agent 永不压缩，
+    // 只能撑到模型硬上限报错或 token 预算耗尽。这里 fail-fast 挡住，避免静默降级。
+    // Embedding 无对话上下文概念，跳过校验。
+    if !params.capability.is_embedding() && params.max_context_length.is_none_or(|v| v <= 0) {
+        return Err(common::error::Error::bad_request(
+            "max_context_length 为必填项：对话类模型必须填写上下文窗口长度，\
+             否则无法计算压缩触发阈值，Agent 将永远不会压缩上下文",
+        ));
+    }
+
     let mut provider_po = ModelProviderPo::new(
         params.name.clone(),
         params.provider_type,
