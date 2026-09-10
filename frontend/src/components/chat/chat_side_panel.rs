@@ -660,7 +660,9 @@ fn AgentInfoTab(
     });
 
     // ---- 运行统计：独立拉取（带 stats fetch-options），防抖刷新与代际丢弃 ----
-    let mut stats_pair = use_signal(|| None::<(Option<AgentStats>, Option<ModelCallStats>)>);
+    // 三元组同源于一次响应：避免切换 Agent 时统计数据与上下文长度错代混用
+    let mut stats_pair =
+        use_signal(|| None::<(Option<AgentStats>, Option<ModelCallStats>, Option<u64>)>);
     let mut stats_loaded = use_signal(|| false);
     let mut stats_gen = use_signal(|| 0u64);
     let mut prev_stats_tick = use_signal(|| 0u64);
@@ -686,7 +688,11 @@ fn AgentInfoTab(
                 ..Default::default()
             };
             let pair = match get_agent(req).await {
-                Ok(a) => Some((a.stats.clone(), a.model_call_stats.clone())),
+                Ok(a) => Some((
+                    a.stats.clone(),
+                    a.model_call_stats.clone(),
+                    a.context_length,
+                )),
                 Err(_) => None,
             };
             if stats_gen() != my_gen {
@@ -738,7 +744,8 @@ fn AgentInfoTab(
     let capabilities = a.capabilities.clone().unwrap_or_default();
     let aid = a.id.clone();
     let kind = a.kind.clone();
-    let (agent_stats, model_call_stats) = stats_pair().unwrap_or((None, None));
+    let (agent_stats, model_call_stats, context_length) =
+        stats_pair().unwrap_or((None, None, None));
     rsx! {
         div { class: "space-y-4",
             div { class: "flex items-center gap-2",
@@ -761,7 +768,7 @@ fn AgentInfoTab(
             }
             // 运行统计：首次加载完成后渲染（无数据时面板内给出提示）
             if stats_loaded() {
-                AgentStatsPanelCompact { stats: agent_stats, model_call_stats }
+                AgentStatsPanelCompact { stats: agent_stats, model_call_stats, context_length }
             }
             if let Some(d) = desc {
                 div {
@@ -779,7 +786,6 @@ fn AgentInfoTab(
                     }
                 }
             }
-            div { class: "text-xs text-base-content/60", "已绑定工具：{a.tool_list.as_ref().map(|l| l.len()).unwrap_or(0)} 个" }
             Link {
                 class: "btn hud-btn btn-ghost btn-xs",
                 to: crate::pages::Route::HrAgentDetail { id: aid },

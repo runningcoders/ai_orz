@@ -210,6 +210,12 @@ pub struct GetAgentResponse {
     pub current_task_id: Option<String>,
     /// 当前关联的项目 ID（仅忙碌时有效）
     pub current_project_id: Option<String>,
+    /// 最近一次 LLM 调用的上下文长度（prompt token 数）
+    ///
+    /// 纯内存指标：**不入任何统计表**（DuckDB / SQLite 都不写），服务重启后归零。
+    /// 用于直观展示 Agent 的上下文思考强度；从未思考过则为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u64>,
     /// Agent 已拥有并去重的工具列表（扁平，按 id 唯一）；前端按 installed pack tag 自行分组
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_list: Option<Vec<ToolListItem>>,

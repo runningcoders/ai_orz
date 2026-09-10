@@ -128,6 +128,13 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
             None => (AgentRuntimeState::Idle as i32, None, None, None),
         };
 
+    // 上下文长度：最近一次 LLM 调用的 prompt token 数（纯内存，未思考过为 None）
+    let context_length = agent
+        .runtime_info
+        .as_ref()
+        .map(|info| info.context_length)
+        .filter(|v| *v > 0);
+
     // 装配 Agent 工具/技能扁平列表（后端只保证「去重后的实体全集」，
     // 分组交给前端按 installed pack tag 完成）。按 with_tools / with_skills 开关按需装配，
     // 关闭侧直接短路，不做任何工具/技能查询。工具额外经 runtime domain 做就绪探测，
@@ -177,6 +184,7 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         current_message_id,
         current_task_id,
         current_project_id,
+        context_length,
         tool_list,
         skill_list,
         stats: agent.stats,

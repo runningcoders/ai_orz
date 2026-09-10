@@ -97,12 +97,22 @@ impl TimeRange {
     }
 
     /// 预设 → 区间（Custom 无对应预设，退回默认 7 天）
+    ///
+    /// ⚠️ `last_hours` / `last_days` 内部的 `preset` 是各自硬编码的，这里必须按入参覆写：
+    /// 否则「最近 1 天 / 30 天」走 `last_days(...)` 后 preset 恒为 `LastWeek`，
+    /// 区间变了但按钮高亮仍停在「最近 7 天」。
     pub fn from_preset(preset: TimeRangePreset) -> Self {
         match preset {
             TimeRangePreset::LastHour => Self::last_hours(1),
-            TimeRangePreset::LastDay => Self::last_days(1),
+            TimeRangePreset::LastDay => Self {
+                preset,
+                ..Self::last_days(1)
+            },
             TimeRangePreset::LastWeek => Self::last_days(7),
-            TimeRangePreset::LastMonth => Self::last_days(30),
+            TimeRangePreset::LastMonth => Self {
+                preset,
+                ..Self::last_days(30)
+            },
             TimeRangePreset::Custom => Self::last_days(7),
         }
     }

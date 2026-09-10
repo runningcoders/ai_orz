@@ -94,6 +94,13 @@ pub async fn update_agent_status(
             None => (AgentRuntimeState::Idle as i32, None, None, None),
         };
 
+    // 上下文长度：最近一次 LLM 调用的 prompt token 数（纯内存，未思考过为 None）
+    let context_length = agent
+        .runtime_info
+        .as_ref()
+        .map(|info| info.context_length)
+        .filter(|v| *v > 0);
+
     // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
     let runtime_config = {
         let rc = agent.po.get_runtime_config();
@@ -135,6 +142,7 @@ pub async fn update_agent_status(
         current_message_id,
         current_task_id,
         current_project_id,
+        context_length,
         tool_list: None,
         skill_list: None,
         stats: None,

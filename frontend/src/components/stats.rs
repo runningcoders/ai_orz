@@ -200,22 +200,27 @@ pub fn AgentStatsPanel(
 /// 与 `AgentStatsPanel` 同口径（唤醒/QPS + 模型调用 + 输入/输出 Token + 三线趋势），
 /// 差异：
 /// - 不带 HudPanel 外壳与工具分布环形图；
-/// - 读数组按「运行 / 模型调用」分两组、固定 2 列网格（不用 `StatGrid` 的
-///   `lg:grid-cols-4`——侧栏在桌面视口下会走 4 列导致数值溢出），数值用紧凑变体；
+/// - 读数分**左右两列**：左列「运行」= 唤醒次数 / 瞬时 QPS / 上下文长度，
+///   右列「模型调用」= 调用次数 / 输入 Token / 输出 Token。
+///   不用 `StatGrid`（其 `lg:grid-cols-4` 在桌面视口下会把 384px 侧栏切成 4 列，
+///   数值溢出），这里固定一次性 2 列，且**列内纵向堆叠**、不再嵌套 2×2 网格，
+///   避免第三个读数落单留空位；数值统一用紧凑变体。
 /// - 趋势图按 320px 原生渲染，避免 600px 图被 CSS 缩放后文字过小。
+///
+/// `context_length` 是**运行时内存指标**（最近一次 LLM 调用的 prompt token 数，不入库），
+/// 用于直观观察上下文思考强度；为 None（从未思考过）时不展示该项。
 #[component]
 pub fn AgentStatsPanelCompact(
     stats: Option<AgentStats>,
     model_call_stats: Option<ModelCallStats>,
+    context_length: Option<u64>,
 ) -> Element {
-    let has_data = stats.as_ref().is_some_and(|s| s.call_summary.is_some())
-        || model_call_stats
-            .as_ref()
-            .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
     let has_runtime = stats.as_ref().is_some_and(|s| s.call_summary.is_some());
     let has_model = model_call_stats
         .as_ref()
         .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
+    // 上下文长度无持久化统计也可能有值（刚思考过但统计批次未刷盘），单独计入有数据判定
+    let has_data = has_runtime || has_model || context_length.is_some();
     let chart_data = model_call_stats.clone();
     let runtime_summary = stats.as_ref().and_then(|s| s.call_summary.as_ref());
     let model_summary = model_call_stats
@@ -229,35 +234,34 @@ pub fn AgentStatsPanelCompact(
             h3 { class: "text-sm font-semibold mb-2", "📊 运行统计" }
             if has_data {
                 div { class: "space-y-3",
-                    if has_runtime {
-                        div {
-                            label { class: "form-label", "运行" }
-                            div { class: "grid grid-cols-2 gap-x-3 gap-y-2",
+                    div { class: "grid grid-cols-2 gap-x-3",
+                        if has_runtime || context_length.is_some() {
+                            div { class: "min-w-0 space-y-2",
+                                label { class: "form-label", "运行" }
                                 if let Some(call) = runtime_summary {
                                     CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
                                     CompactStat { label: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps) }
                                 }
+                                if let Some(len) = context_length {
+                                    CompactStat { label: "上下文长度".to_string(), icon: "🧠".to_string(), value: format_token_count(len) }
+                                }
                             }
                         }
-                    }
-                    if has_model {
-                        div {
-                            label { class: "form-label", "模型调用" }
-                            div { class: "grid grid-cols-2 gap-x-3 gap-y-2",
+                        if has_model {
+                            div { class: "min-w-0 space-y-2",
+                                label { class: "form-label", "模型调用" }
                                 if let Some(call) = model_summary {
                                     CompactStat { label: "调用次数".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string() }
                                 }
                                 if let Some(token) = token_summary {
                                     CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input) }
-                                }
-                                if let Some(token) = token_summary {
                                     CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output) }
                                 }
                             }
                         }
                     }
+                    {render_time_series_chart_sized(&chart_data, 320.0, 180.0)}
                 }
-                {render_time_series_chart_sized(&chart_data, 320.0, 180.0)}
             } else {
                 p { class: "text-xs text-base-content/50", "暂无运行统计数据" }
             }

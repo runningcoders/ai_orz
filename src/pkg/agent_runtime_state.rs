@@ -26,6 +26,15 @@ pub struct AgentRuntimeInfo {
     pub project_id: Option<String>,
     /// 思考运行时（仅 Busy 时有值）
     pub think_runtime: Option<Arc<AgentThinkRuntime>>,
+    /// 最近一次 LLM 调用的上下文长度（prompt token 数）
+    ///
+    /// 纯内存指标，**不入库**（DuckDB / SQLite 都不写）——它只在「此刻这一轮的上下
+    /// 文有多大」上有意义，没有时序价值，落表只会放大存储与查询成本。
+    /// 用途：让使用者直观看到 Agent 的上下文思考强度。
+    ///
+    /// 由 think_loop 每轮覆盖更新；**Agent 转 Idle / Resting 后仍保留最后一次的值**
+    /// （思考结束后仍能回看），仅服务重启归零。
+    pub context_length: u64,
 }
 
 impl Default for AgentRuntimeInfo {
@@ -37,6 +46,7 @@ impl Default for AgentRuntimeInfo {
             task_id: None,
             project_id: None,
             think_runtime: None,
+            context_length: 0,
         }
     }
 }
@@ -256,6 +266,17 @@ impl AgentRuntimeStateManager {
             return think_runtime.cancel();
         }
         false
+    }
+
+    /// 记录最近一次 LLM 调用的上下文长度（prompt token 数）
+    ///
+    /// 纯内存写入，由 think_loop 每轮覆盖更新（见 [`AgentRuntimeInfo::context_length`]）。
+    /// 刻意**不随 set_idle / set_resting 清零**：思考结束后仍需回看最后一次的上下文规模。
+    pub fn record_context_length(&self, agent_id: &str, context_length: u64) {
+        self.states
+            .entry(agent_id.to_string())
+            .or_default()
+            .context_length = context_length;
     }
 
     /// 查询思考运行时快照（runtime-status 接口调用）
@@ -569,6 +590,36 @@ mod tests {
         assert_eq!(snap.total_tokens, 1500);
         assert_eq!(snap.tool_call_count, 2);
         assert_eq!(snap.scene, ThinkingScene::Awaken);
+    }
+
+    #[test]
+    fn test_record_context_length_is_pure_memory() {
+        let mgr = AgentRuntimeStateManager::new();
+        // 未记录过：get 返回 Some(info) 但上下文长度为 0
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        assert_eq!(mgr.get("agent-1").unwrap().context_length, 0);
+
+        // 每轮覆盖：保留最后一次的值
+        mgr.record_context_length("agent-1", 12_800);
+        assert_eq!(mgr.get("agent-1").unwrap().context_length, 12_800);
+        mgr.record_context_length("agent-1", 25_600);
+        assert_eq!(mgr.get("agent-1").unwrap().context_length, 25_600);
+    }
+
+    #[test]
+    fn test_record_context_length_survives_idle_and_resting() {
+        let mgr = AgentRuntimeStateManager::new();
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        mgr.record_context_length("agent-1", 3_200);
+
+        // 思考结束 → Idle：上下文长度需保留（供回看最后一次上下文规模）
+        mgr.set_idle("agent-1");
+        assert_eq!(mgr.get("agent-1").unwrap().context_length, 3_200);
+
+        // 沉淀 → Resting：同样保留
+        mgr.set_busy("agent-1", "msg-2", None, None);
+        mgr.set_resting("agent-1");
+        assert_eq!(mgr.get("agent-1").unwrap().context_length, 3_200);
     }
 
     #[test]

@@ -6,6 +6,7 @@
 use crate::models::agent::Agent;
 use crate::models::cortex_types::{ChatMessage, ThinkResult};
 use crate::models::events::ThinkRoundEvent;
+use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
 use crate::service::domain::runtime::{RuntimeDomainImpl, RuntimeToolExecution};
 use common::enums::ThinkingScene;
 use common::error::{Result, err};
@@ -373,6 +374,10 @@ impl RuntimeDomainImpl {
                         total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
                         total_output_tokens =
                             total_output_tokens.saturating_add(usage.output_tokens);
+                        // 上下文长度：本轮实际送进模型的 prompt token 数。
+                        // 纯内存指标（不入统计表），每轮覆盖，用于观察上下文思考强度。
+                        AgentRuntimeStateManager::global()
+                            .record_context_length(&agent.po.id, usage.input_tokens);
                         // 上报最终轮运行时快照
                         if let Some(tr) = think_runtime {
                             tr.report_round(
@@ -450,6 +455,9 @@ impl RuntimeDomainImpl {
                         total_input_tokens = total_input_tokens.saturating_add(usage.input_tokens);
                         total_output_tokens =
                             total_output_tokens.saturating_add(usage.output_tokens);
+                        // 上下文长度：本轮实际送进模型的 prompt token 数（同上，每轮覆盖）
+                        AgentRuntimeStateManager::global()
+                            .record_context_length(&agent.po.id, usage.input_tokens);
                         consecutive_tool_rounds = consecutive_tool_rounds.saturating_add(1);
                         // 按工具名累计调用次数（无进展检测数据源）
                         for tc in &tool_calls {

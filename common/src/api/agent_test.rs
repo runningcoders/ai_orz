@@ -53,6 +53,7 @@ fn update_agent_status_response_uses_agent_detail_contract() {
         current_message_id: None,
         current_task_id: None,
         current_project_id: None,
+        context_length: None,
         stats: None,
         model_call_stats: None,
         tool_list: None,
