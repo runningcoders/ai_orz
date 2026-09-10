@@ -2,8 +2,6 @@
 
 use dioxus::prelude::*;
 
-use chrono::{Local, NaiveDateTime, TimeZone};
-
 use crate::api::log_stats::{
     LogLevelDistributionItem, LogTimeSeriesPoint, get_log_level_distribution, get_log_time_series,
 };
@@ -15,6 +13,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::format_rfc3339 as format_timestamp;
+use crate::utils::parse_datetime_local_to_ms;
 use common::api::LogQueryRequest;
 use common::models::TimeSeriesPoint;
 
@@ -43,18 +42,6 @@ fn level_color(level: &str) -> &'static str {
         "TRACE" => "#8b5cf6",
         _ => "#6b7280",
     }
-}
-
-/// 把 datetime-local 输入值（YYYY-MM-DDTHH:MM）解析为 unix 毫秒
-/// 输入视为本地时间，转换为 UTC 毫秒
-fn parse_datetime_local_to_ms(s: &str) -> Option<i64> {
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let ndt = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").ok()?;
-    let local_dt = Local.from_local_datetime(&ndt).single()?;
-    Some(local_dt.timestamp_millis())
 }
 
 /// 把日志条目原始 JSON 美化为可读字符串

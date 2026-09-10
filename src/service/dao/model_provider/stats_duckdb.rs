@@ -3,7 +3,7 @@
 use crate::pkg::RequestContext;
 use crate::pkg::stats::{ModelCallEvent, StatAggregation, StatFilter, StatsInterval};
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
-use common::error::{Error, Result};
+use common::error::Result;
 use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
@@ -90,9 +90,11 @@ impl ModelProviderStatsDaoDuckDbImpl {
     ) -> Result<Vec<JsonValue>> {
         if query.interval.is_some() {
             let interval = query.interval.unwrap_or(StatsInterval::Daily);
-            let time_range = query.time_range.ok_or_else(|| {
-                Error::bad_request("time_range is required for time series query")
-            })?;
+            // time_range=None 兜底为「最近 7 天」（与 get-agent handler 的默认窗口一致）：
+            // 绝大多数看板只关心近期数据，全历史扫描既慢也无必要；需要更大范围的
+            // 调用方由前端显式指定时间区间。此前此处直接 bad_request，导致用户页统计整体失败。
+            let now = chrono::Utc::now().timestamp_millis();
+            let time_range = query.time_range.unwrap_or((now - 7 * 86_400_000, now));
 
             let points = ctx
                 .stats()

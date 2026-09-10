@@ -465,10 +465,13 @@ impl Stats {
             .get_table_by_name(table)
             .ok_or_else(|| Error::internal(format!("Table not found: {}", table)))?;
 
+        // ⚠️ 必须用模减法而非 `timestamp / n`：DuckDB 的 `/` 是浮点除（BIGINT/BIGINT → DOUBLE），
+        // 浮点聚合既按事件逐条分组（失去 bucket 语义），返回值还带精度误差，
+        // 经 parse_time_series_point 的 as_i64() 解析会整体落 0。
         let truncate_func = match interval {
-            StatsInterval::Minutely => "(timestamp / 60000) * 60000",
-            StatsInterval::Hourly => "(timestamp / 3600000) * 3600000",
-            StatsInterval::Daily => "(timestamp / 86400000) * 86400000",
+            StatsInterval::Minutely => "(timestamp - (timestamp % 60000))",
+            StatsInterval::Hourly => "(timestamp - (timestamp % 3600000))",
+            StatsInterval::Daily => "(timestamp - (timestamp % 86400000))",
         };
 
         let tokens_input_col = table_meta.metric_sql("tokens_input");

@@ -9,6 +9,7 @@ use crate::components::hud::{HudCallout, HudPanel, PageHeader};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ToolStatsPanel;
+use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
@@ -20,11 +21,16 @@ use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
 /// 构造带统计信息的 GetToolRequest
-fn build_tool_stats_request(id: String) -> GetToolRequest {
+///
+/// `range` 为统计时间窗口（详情页时间筛选器产出，毫秒闭区间）；聚合粒度随窗口跨度
+/// 自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个点。
+fn build_tool_stats_request(id: String, range: TimeRange) -> GetToolRequest {
     GetToolRequest {
         id,
         with_stats: Some(true),
-        ..Default::default()
+        stats_time_start: Some(range.start_ms),
+        stats_time_end: Some(range.end_ms),
+        stats_interval: Some(range.suggested_interval().to_string()),
     }
 }
 
@@ -314,9 +320,14 @@ pub fn FinanceToolDetail(id: String) -> Element {
     {
         rid.set(route_id.clone());
     }
+    // 统计时间窗口（时间筛选器产出，默认最近 7 天）：变化时 use_resource 重拉
+    let mut stats_range = use_signal(TimeRange::default);
+    // 稳定回调（hook 必须在组件顶层无条件调用，不能写在 rsx 条件分支里）
+    let on_stats_range = use_callback(move |r: TimeRange| stats_range.set(r));
     let mut tool_res = use_resource(move || {
         let id = rid();
-        async move { get_tool(build_tool_stats_request(id)).await }
+        let range = stats_range();
+        async move { get_tool(build_tool_stats_request(id, range)).await }
     });
     let toast = use_toast();
     let navigator = use_navigator();
@@ -394,7 +405,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                         toast.error(&e);
                                                     } else {
                                                         toast.success("已禁用");
-                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
+                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id, stats_range())).await {
                                                             tool_res.set(Some(Ok(tool)));
                                                         }
                                                     }
@@ -414,7 +425,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                         toast.error(&e);
                                                     } else {
                                                         toast.success("已启用");
-                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id)).await {
+                                                        if let Ok(tool) = get_tool(build_tool_stats_request(id, stats_range())).await {
                                                             tool_res.set(Some(Ok(tool)));
                                                         }
                                                     }
@@ -658,7 +669,7 @@ pub fn FinanceToolDetail(id: String) -> Element {
                                                         Ok(_) => {
                                                             toast.success("工具配置已保存");
                                                             // 刷新详情（含统计）并回填表单基底
-                                                            match get_tool(build_tool_stats_request(id)).await {
+                                                            match get_tool(build_tool_stats_request(id, stats_range())).await {
                                                                 Ok(tool) => {
                                                                     config_form.set(builtin_form_from_config(tool.config.as_ref()));
                                                                     tool_res.set(Some(Ok(tool)));
@@ -726,6 +737,10 @@ pub fn FinanceToolDetail(id: String) -> Element {
                 }
 
                 if t.stats.is_some() {
+                    // 时间筛选：切换即重拉（use_resource 订阅 stats_range）
+                    div { class: "mb-3",
+                        TimeRangePicker { value: stats_range(), on_change: on_stats_range }
+                    }
                     ToolStatsPanel { stats: t.stats.clone() }
                 }
 

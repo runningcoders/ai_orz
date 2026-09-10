@@ -3,8 +3,6 @@
 use crate::components::hud::{HudPanel, HudSection};
 use dioxus::prelude::*;
 
-use chrono::{Local, TimeZone};
-
 use crate::api::system::{
     create_cron_trigger, delete_cron_trigger, get_cron_trigger, list_cron_triggers,
     pause_cron_trigger, resume_cron_trigger, update_cron_trigger,
@@ -20,16 +18,16 @@ use common::api::{
 };
 use common::enums::TriggerType;
 
-/// 时间戳格式化（秒级时间戳 → "YYYY-MM-DD HH:MM:SS"）
-fn format_time(ts: i64) -> String {
-    if ts <= 0 {
+/// 时间戳格式化（**毫秒级**时间戳 → "YYYY-MM-DD HH:MM:SS"）
+///
+/// 单位与后端 `next_run_at`/`last_run_at`/`created_at` 一致（毫秒，SSOT：`src/pkg/cron.rs`）；
+/// 此前误按秒解析 `chrono::Local.timestamp_opt(ts, 0)`，导致展示时间整体偏大
+/// （毫秒值当秒 → 年份溢出到数万年）。非正值（未执行过/未排期）显示 "-"。
+fn format_time(ts_ms: i64) -> String {
+    if ts_ms <= 0 {
         return "-".to_string();
     }
-    Local
-        .timestamp_opt(ts, 0)
-        .single()
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_else(|| ts.to_string())
+    crate::utils::time::format_datetime_full(ts_ms)
 }
 
 /// 验证 JSON 字符串
@@ -232,11 +230,9 @@ pub fn SystemTriggers() -> Element {
         };
 
         let run_at = if form_type() == "once" {
-            Some(
-                // wasm32-unknown-unknown 下 std::time::SystemTime::now() 未实现（会 panic
-                // "time not implemented on this platform"），改用 js_sys::Date::now()。
-                (js_sys::Date::now() / 1000.0) as i64,
-            )
+            // 单位必须与后端 `run_at` 一致（毫秒）；勿用 Date::now() / 1000（秒），
+            // 否则一次性触发器会被视为 1970 年的历史时间而立即执行。
+            Some(crate::utils::time::now_ms())
         } else {
             None
         };
@@ -293,12 +289,13 @@ pub fn SystemTriggers() -> Element {
 
     let triggers_list = triggers.read().clone();
     // 触发器状态分布聚合（前端本地计算）
-    let now_secs = chrono::Local::now().timestamp();
+    let now_ms = crate::utils::time::now_ms();
     let enabled_count = triggers_list.iter().filter(|t| t.is_enabled).count();
     let disabled_count = triggers_list.iter().filter(|t| !t.is_enabled).count();
     let soon_count = triggers_list
         .iter()
-        .filter(|t| t.is_enabled && t.next_run_at > 0 && (t.next_run_at - now_secs).abs() < 3600)
+        // next_run_at 为毫秒时间戳，阈值也须用毫秒（1 小时 = 3_600_000ms）
+        .filter(|t| t.is_enabled && t.next_run_at > 0 && (t.next_run_at - now_ms).abs() < 3_600_000)
         .count();
     let trigger_status_slices: Vec<DonutSlice> = vec![
         DonutSlice {

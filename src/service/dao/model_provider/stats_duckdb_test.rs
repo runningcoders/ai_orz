@@ -29,7 +29,9 @@ async fn setup_test_env(
 
     let now = Utc::now().timestamp_millis();
     for i in 0..event_count {
-        let event = ModelCallEvent::new(now + i as i64 * 1000)
+        // 全部落在过去（最近 1~N 秒前）：时序查询的默认窗口是「最近 7 天」，
+        // 未来时间戳的事件不在窗口内，会产生误导性的断言结果。
+        let event = ModelCallEvent::new(now - (event_count as i64 - i as i64) * 1000)
             .with_model_provider_id(Some(model_provider_id.to_string()))
             .with_agent_id(Some("agent-test".to_string()))
             .with_tokens_input((100 + i * 10) as u64)
@@ -86,8 +88,11 @@ async fn test_query_model_call_time_series() -> Result<()> {
 }
 
 /// 分钟级时序：验证 `StatsInterval::Minutely` 的 truncate 表达式在 DuckDB 下
-/// 确实按整数除法对齐到 60000ms 边界（若 DuckDB 返回浮点，反序列化后
-/// interval_start 不再是整分钟，前端 X 轴标签会错乱）。
+/// 确实对齐到 60000ms 边界。
+///
+/// ⚠️ 断言必须包含 `interval_start > 0`：曾经 truncate 用 `timestamp / 60000`
+/// （DuckDB 浮点除 → DOUBLE），parse_time_series_point 的 `as_i64()` 解析失败
+/// 落到 unwrap_or(0)，而 `0 % 60000 == 0` 让对齐断言恒真——假绿灯。
 #[tokio::test]
 async fn test_query_model_call_time_series_minutely() -> Result<()> {
     let model_provider_id = "provider-ts-minute-test";
@@ -105,6 +110,11 @@ async fn test_query_model_call_time_series_minutely() -> Result<()> {
 
     assert!(!points.is_empty());
     for p in &points {
+        assert!(
+            p.interval_start > 0,
+            "interval_start 落 0（浮点除法回归标志）: {}",
+            p.interval_start
+        );
         assert_eq!(
             p.interval_start % 60_000,
             0,
@@ -114,6 +124,29 @@ async fn test_query_model_call_time_series_minutely() -> Result<()> {
     }
     let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
     assert_eq!(total_calls, 3);
+
+    Ok(())
+}
+
+/// 时序查询不传 time_range 时兜底为「最近 7 天」（与 get-agent 默认窗口一致）；
+/// 此前此处 bad_request 导致用户页统计整体失败。
+#[tokio::test]
+async fn test_query_model_call_time_series_without_time_range() -> Result<()> {
+    let model_provider_id = "provider-ts-no-range-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 2).await?;
+
+    let query = ModelProviderStatsQuery {
+        model_provider_id: Some(model_provider_id.to_string()),
+        time_range: None,
+        interval: Some(StatsInterval::Daily),
+        ..Default::default()
+    };
+
+    let points = dao.query_model_call_time_series(ctx, query).await?;
+
+    assert!(!points.is_empty(), "默认 7 天窗口的时序查询不应返回空");
+    let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
+    assert_eq!(total_calls, 2);
 
     Ok(())
 }

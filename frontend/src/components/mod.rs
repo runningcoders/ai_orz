@@ -34,6 +34,7 @@ pub mod skill_content_input_editor;
 pub mod state;
 pub mod stats;
 pub mod task_progress;
+pub mod time_range_picker;
 pub mod toast;
 pub mod workspace_graph;
 

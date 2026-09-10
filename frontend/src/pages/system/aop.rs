@@ -27,18 +27,15 @@ fn status_badge_class(status: &str) -> &'static str {
     }
 }
 
-fn format_created_at(ts: i64) -> String {
-    if ts <= 0 {
+/// 事件创建时间格式化（**毫秒级**时间戳 → 本地 "YYYY-MM-DD HH:MM:SS"）
+///
+/// 事件 `created_at` 由 `current_timestamp_ms()` 写入（毫秒）。此前按秒解析
+/// （`DateTime::from_timestamp(ts, 0)`）导致展示时间偏大（毫秒当秒 → 年份溢出）。
+fn format_created_at(ts_ms: i64) -> String {
+    if ts_ms <= 0 {
         return "-".to_string();
     }
-    let dt = chrono::DateTime::from_timestamp(ts, 0);
-    match dt {
-        Some(d) => d
-            .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string(),
-        None => ts.to_string(),
-    }
+    crate::utils::time::format_datetime_full(ts_ms)
 }
 
 #[component]

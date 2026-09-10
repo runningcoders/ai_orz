@@ -131,6 +131,9 @@ pub fn HudSection(
 
 /// 大号数值读数：等宽 eyebrow 标签 + tabular-nums 数值 + 可选单位 / 图标 / 增量。
 /// 替代 `stats.rs` 的 `StatsCard`（DaisyUI `stat`）。
+///
+/// - `compact`：紧凑变体（约 1.25rem），用于聊天侧栏等窄容器；
+///   默认 None = 标准 2rem 页面级尺寸。超长数值允许断行而非溢出。
 #[component]
 pub fn StatReadout(
     label: String,
@@ -139,20 +142,27 @@ pub fn StatReadout(
     icon: Option<String>,
     delta: Option<String>,
     accent: Option<String>,
+    compact: Option<bool>,
 ) -> Element {
+    let size_cls = if compact.unwrap_or(false) {
+        " hud-stat-sm"
+    } else {
+        ""
+    };
     let value_class = match accent.as_deref() {
-        Some("primary") => "hud-stat text-primary",
-        Some("accent") => "hud-stat text-accent",
-        Some("success") => "hud-stat text-success",
-        Some("info") => "hud-stat text-info",
-        Some("warning") => "hud-stat text-warning",
-        Some("error") => "hud-stat text-error",
-        _ => "hud-stat",
+        Some("primary") => format!("hud-stat{size_cls} text-primary"),
+        Some("accent") => format!("hud-stat{size_cls} text-accent"),
+        Some("success") => format!("hud-stat{size_cls} text-success"),
+        Some("info") => format!("hud-stat{size_cls} text-info"),
+        Some("warning") => format!("hud-stat{size_cls} text-warning"),
+        Some("error") => format!("hud-stat{size_cls} text-error"),
+        _ => format!("hud-stat{size_cls}"),
     };
     rsx! {
         div { class: "min-w-0",
             div { class: "hud-eyebrow mb-1", "{label}" }
-            div { class: "flex items-baseline gap-1.5",
+            // flex-wrap：数值/单位过宽时整体换行（图标与数字不硬挤），而非溢出容器
+            div { class: "flex flex-wrap items-baseline gap-1.5",
                 if let Some(ic) = icon {
                     span { class: "text-lg leading-none opacity-80", "{ic}" }
                 }

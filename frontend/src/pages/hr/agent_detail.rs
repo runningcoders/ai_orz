@@ -11,6 +11,7 @@ use crate::components::modal::Modal;
 use crate::components::relation_graph::{RelationGraph, RelationNodeInfo};
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::AgentStatsPanel;
+use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
@@ -35,19 +36,22 @@ use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
 
-/// 构造带统计参数的 GetAgentRequest（4 处 get_agent 调用复用，避免重复 stats 字段字面量）
+/// 构造带统计参数的 GetAgentRequest（多处 get_agent 调用复用，避免重复 stats 字段字面量）
 /// 详情页请求的字段开关。
+///
+/// `range` 为统计时间窗口（由详情页时间筛选器产出，毫秒闭区间）；聚合粒度随窗口跨度
+/// 自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个数据点。
 ///
 /// 详情页需要展示工具/技能全景（三分组），故显式打开 `with_tools` / `with_skills`；
 /// 其余调用方（如聊天侧面板）使用 `..Default::default()`，不会装配全景数据。
-fn build_agent_stats_request(id: String) -> GetAgentRequest {
+fn build_agent_stats_request(id: String, range: TimeRange) -> GetAgentRequest {
     GetAgentRequest {
         id,
         with_stats: Some(true),
         with_model_call_stats: Some(true),
-        stats_time_start: None,
-        stats_time_end: None,
-        stats_interval: Some("daily".to_string()),
+        stats_time_start: Some(range.start_ms),
+        stats_time_end: Some(range.end_ms),
+        stats_interval: Some(range.suggested_interval().to_string()),
         with_tools: Some(true),
         with_skills: Some(true),
     }
@@ -384,9 +388,14 @@ pub fn HrAgentDetail(id: String) -> Element {
     {
         rid.set(route_id.clone());
     }
+    // 统计时间窗口（详情页时间筛选器产出，默认最近 7 天）：变化时 use_resource 重拉
+    let mut stats_range = use_signal(TimeRange::default);
+    // 稳定回调（hook 必须在组件顶层无条件调用，不能写在 rsx 条件分支里）
+    let on_stats_range = use_callback(move |r: TimeRange| stats_range.set(r));
     let mut agent_res = use_resource(move || {
         let id = rid();
-        async move { get_agent(build_agent_stats_request(id)).await }
+        let range = stats_range();
+        async move { get_agent(build_agent_stats_request(id, range)).await }
     });
     let mut messages = use_signal(Vec::<MessageListItem>::new);
     // 消息流分页状态（后端分页拉取，不依赖 SSE）
@@ -1010,7 +1019,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 Ok(r) => skill_packs.set(r.skill_packs),
                                                 Err(e) => toast.error(format!("刷新技能包列表失败: {}", e)),
                                             }
-                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                 Ok(a) => agent_res.set(Some(Ok(a))),
                                                 Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                             }
@@ -1280,7 +1289,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                         match update_agent_status(UpdateAgentStatusRequest { id: aid.clone(), status: AgentStatus::Onboarded }).await {
                                                             Ok(_) => {
                                                                 toast.success("Agent 已正式入职");
-                                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                 }
@@ -1320,7 +1329,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 match update_agent_status(status_req).await {
                                                                     Ok(_) => {
                                                                         toast.success(format!("状态已更新为：{}", label_clone));
-                                                                        match get_agent(build_agent_stats_request(agent_id.clone())).await {
+                                                                        match get_agent(build_agent_stats_request(agent_id.clone(), stats_range())).await {
                                                                             Ok(a) => agent_res.set(Some(Ok(a))),
                                                                             Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                                         }
@@ -1975,6 +1984,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 // 统计数据属运行时数据，统一放在运行时 tab 上半部分
                                 if a.stats.is_some() || a.model_call_stats.is_some() {
                                     div { class: "mb-6",
+                                        // 时间筛选：切换即重拉（use_resource 订阅 stats_range）
+                                        div { class: "mb-3",
+                                            TimeRangePicker {
+                                                value: stats_range(),
+                                                on_change: on_stats_range,
+                                            }
+                                        }
                                         AgentStatsPanel {
                                             stats: a.stats.clone(),
                                             model_call_stats: a.model_call_stats.clone(),
@@ -2056,7 +2072,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                     Ok(_) => {
                                                         toast.success("Agent 信息已更新");
                                                         show_edit_modal.set(false);
-                                                        match get_agent(build_agent_stats_request(id_clone.clone())).await {
+                                                        match get_agent(build_agent_stats_request(id_clone.clone(), stats_range())).await {
                                                             Ok(a) => agent_res.set(Some(Ok(a))),
                                                             Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                                         }
@@ -2325,7 +2341,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                             // 刷新 Agent 全景（skill tag 可能已变更）
-                                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                                 Ok(a) => agent_res.set(Some(Ok(a))),
                                                                 Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                             }
@@ -2358,7 +2374,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                             }
                                                             // 刷新 Agent 全景（副本已删除，skill_list 会减少）
-                                                            match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                            match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                                 Ok(a) => agent_res.set(Some(Ok(a))),
                                                                 Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                             }
@@ -2405,7 +2421,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             Ok(_) => {
                                                 toast.success(format!("工具包 [{}] 已卸载", tag));
                                                 ft.write().retain(|x| x != &tag);
-                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                     Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                 }
@@ -2437,7 +2453,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             Ok(_) => {
                                                 toast.success("工具已绑定");
                                                 tool_search_results.set(Vec::new());
-                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                 }
@@ -2465,7 +2481,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             Ok(_) => {
                                                 toast.success("技能已安装");
                                                 skill_search_results.set(Vec::new());
-                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                 }
@@ -2492,7 +2508,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         match unbind_tool_from_agent(UnbindToolFromAgentRequest { agent_id: aid.clone(), tool_id: tid.clone() }).await {
                                             Ok(_) => {
                                                 toast.success("工具已解绑");
-                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                     Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                                 }
@@ -2519,7 +2535,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         match uninstall_skill_from_agent(UninstallSkillFromAgentRequest { agent_id: aid.clone(), skill_id: sid.clone() }).await {
                                             Ok(_) => {
                                                 toast.success("技能已卸载");
-                                                match get_agent(build_agent_stats_request(aid.clone())).await {
+                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
                                                     Ok(a) => agent_res.set(Some(Ok(a))),
                                                     Err(e) => toast.error(format!("刷新失败: {}", e)),
                                                 }

@@ -10,6 +10,7 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::ModelProviderStatsPanel;
+use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::api::{
@@ -21,12 +22,17 @@ use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 
 /// 构造带模型调用统计的 GetModelProviderRequest
-fn build_provider_stats_request(id: String) -> GetModelProviderRequest {
+///
+/// `range` 为统计时间窗口（详情页时间筛选器产出，毫秒闭区间）。注意本接口字段命名为
+/// `stats_start_time` / `stats_end_time`（与其它实体的 `stats_time_start` 不同），
+/// 且后端用 `zip` 配对，必须成对提供才生效。
+fn build_provider_stats_request(id: String, range: TimeRange) -> GetModelProviderRequest {
     GetModelProviderRequest {
         id,
         with_model_call_stats: Some(true),
-        stats_interval: Some("daily".to_string()),
-        ..Default::default()
+        stats_start_time: Some(range.start_ms),
+        stats_end_time: Some(range.end_ms),
+        stats_interval: Some(range.suggested_interval().to_string()),
     }
 }
 
@@ -40,9 +46,14 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
     {
         rid.set(route_id.clone());
     }
+    // 统计时间窗口（时间筛选器产出，默认最近 7 天）：变化时 use_resource 重拉
+    let mut stats_range = use_signal(TimeRange::default);
+    // 稳定回调（hook 必须在组件顶层无条件调用，不能写在 rsx 条件分支里）
+    let on_stats_range = use_callback(move |r: TimeRange| stats_range.set(r));
     let mut provider_res = use_resource(move || {
         let id = rid();
-        async move { get_model_provider(build_provider_stats_request(id)).await }
+        let range = stats_range();
+        async move { get_model_provider(build_provider_stats_request(id, range)).await }
     });
     let toast = use_toast();
     let navigator = use_navigator();
@@ -115,7 +126,12 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                             "Embedding Provider 已切换为 {}，向量索引重建完成",
                             resp.name
                         ));
-                        match get_model_provider(build_provider_stats_request(reload_id)).await {
+                        match get_model_provider(build_provider_stats_request(
+                            reload_id,
+                            stats_range(),
+                        ))
+                        .await
+                        {
                             Ok(provider) => provider_res.set(Some(Ok(provider))),
                             Err(e) => toast.error(&e),
                         }
@@ -186,7 +202,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                             match toggle_model_provider(&pid, 0).await {
                                                                 Ok(()) => {
                                                                     toast.success("已禁用");
-                                                                    match get_model_provider(build_provider_stats_request(rid)).await {
+                                                                    match get_model_provider(build_provider_stats_request(rid, stats_range())).await {
                                                                         Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                         Err(e) => toast.error(&e),
                                                                     }
@@ -214,7 +230,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                 match toggle_model_provider(&pid, 1).await {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
-                                                                        match get_model_provider(build_provider_stats_request(rid)).await {
+                                                                        match get_model_provider(build_provider_stats_request(rid, stats_range())).await {
                                                                             Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -232,7 +248,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                                                 match toggle_model_provider(&pid, 1).await {
                                                                     Ok(()) => {
                                                                         toast.success("已启用");
-                                                                        match get_model_provider(build_provider_stats_request(rid)).await {
+                                                                        match get_model_provider(build_provider_stats_request(rid, stats_range())).await {
                                                                             Ok(provider) => provider_res.set(Some(Ok(provider))),
                                                                             Err(e) => toast.error(&e),
                                                                         }
@@ -380,6 +396,10 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                 }
 
                 if p.stats.is_some() {
+                    // 时间筛选：切换即重拉（use_resource 订阅 stats_range）
+                    div { class: "mb-3",
+                        TimeRangePicker { value: stats_range(), on_change: on_stats_range }
+                    }
                     ModelProviderStatsPanel { stats: p.stats.clone() }
                 }
 
@@ -525,7 +545,7 @@ pub fn FinanceModelProviderDetail(id: String) -> Element {
                                         Ok(_) => {
                                             toast.success("已更新");
                                             show_edit_modal.set(false);
-                                            match get_model_provider(build_provider_stats_request(reload_id)).await {
+                                            match get_model_provider(build_provider_stats_request(reload_id, stats_range())).await {
                                                 Ok(p) => provider_res.set(Some(Ok(p))),
                                                 Err(e) => toast.error(format!("重新加载失败: {}", e)),
                                             }

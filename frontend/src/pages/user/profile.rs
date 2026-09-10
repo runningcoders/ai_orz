@@ -9,6 +9,7 @@ use crate::api::organization::{get_current_user_info_with, update_current_user};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::Loading;
 use crate::components::stats::UserStatsPanel;
+use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use common::models::ModelCallStats;
@@ -27,16 +28,22 @@ pub fn UserProfile() -> Element {
     let mut editing_prefs = use_signal(|| false);
     // 模型调用统计（打点 user_id 匹配口径；一次请求随资料带出）
     let mut model_call_stats = use_signal(|| Option::<ModelCallStats>::None);
+    // 统计时间窗口（时间筛选器产出，默认最近 7 天）：变化时 effect 重跑重拉
+    let mut stats_range = use_signal(TimeRange::default);
+    // 稳定回调（hook 必须在组件顶层无条件调用，不能写在 rsx 条件分支里）
+    let on_stats_range = use_callback(move |r: TimeRange| stats_range.set(r));
     let toast = use_toast();
 
     use_effect(move || {
+        // 读取区间建立订阅：切换预设/自定义即重新请求
+        let range = stats_range();
         spawn(async move {
             match get_current_user_info_with(GetCurrentUserRequest {
                 with_model_call_stats: Some(true),
-                // 与 Agent/Task 详情页对齐：全历史 + 日粒度时序
-                stats_time_start: None,
-                stats_time_end: None,
-                stats_interval: Some("daily".to_string()),
+                stats_time_start: Some(range.start_ms),
+                stats_time_end: Some(range.end_ms),
+                // 粒度随窗口跨度自适应（≤2 天按小时 / 否则按天）
+                stats_interval: Some(range.suggested_interval().to_string()),
             })
             .await
             {
@@ -155,7 +162,12 @@ pub fn UserProfile() -> Element {
                     }
 
                     // 模型调用统计看板（打点 user_id 匹配口径）
-                    UserStatsPanel { model_call_stats: model_call_stats() }
+                    div { class: "mt-4",
+                        div { class: "mb-3",
+                            TimeRangePicker { value: stats_range(), on_change: on_stats_range }
+                        }
+                        UserStatsPanel { model_call_stats: model_call_stats() }
+                    }
                 }
             }
         }

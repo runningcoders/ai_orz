@@ -16,7 +16,7 @@ use common::models::StatsInterval;
 #[register_handler_tool(
     id = "get_current_user",
     name = "Get My Profile",
-    description = "Get the profile of the currently authenticated user: user ID, username, display name, email, organization ID, role, status, and preferences. Optionally loads model-call stats (matched by the user_id tag in model-call events, hourly or daily within a time range). Returns the user info resolved from the session. Fails if the session has no user context or the account no longer exists.",
+    description = "Get the profile of the currently authenticated user: user ID, username, display_name, email, organization ID, role, status, and preferences. Optionally loads model-call stats (matched by the user_id tag in model-call events, hourly or daily; omitting the time range defaults to the last 7 days). Returns the user info resolved from the session. Fails if the session has no user context or the account no longer exists.",
     params = "common::api::GetCurrentUserRequest"
 )]
 #[generate_http_handler]

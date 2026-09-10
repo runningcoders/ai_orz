@@ -10,6 +10,7 @@ use crate::components::markdown::MarkdownRenderer;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::components::stats::TaskStatsPanel;
+use crate::components::time_range_picker::{TimeRange, TimeRangePicker};
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::project::task_edit_modal::{TaskEditModal, TaskEditMode};
@@ -25,6 +26,18 @@ use common::api::{
 };
 use common::enums::TaskStatus;
 
+/// 给 GetTaskRequest 注入统计参数（详情页时间筛选器产出，毫秒闭区间）。
+///
+/// 聚合粒度随窗口跨度自动选择（≤2 天按小时 / 否则按天），避免 1 小时窗口只出 1 个点。
+fn with_stats_range(mut req: GetTaskRequest, range: TimeRange) -> GetTaskRequest {
+    req.with_stats = Some(true);
+    req.with_model_call_stats = Some(true);
+    req.stats_time_start = Some(range.start_ms);
+    req.stats_time_end = Some(range.end_ms);
+    req.stats_interval = Some(range.suggested_interval().to_string());
+    req
+}
+
 #[component]
 pub fn TaskDetail(id: String) -> Element {
     // 方案 B：响应式 rid + use_resource，拉取仅在 :id 变化时触发
@@ -35,17 +48,22 @@ pub fn TaskDetail(id: String) -> Element {
     {
         rid.set(route_id.clone());
     }
+    // 统计时间窗口（时间筛选器产出，默认最近 7 天）：变化时 use_resource 重拉
+    let mut stats_range = use_signal(TimeRange::default);
+    // 稳定回调（hook 必须在组件顶层无条件调用，不能写在 rsx 条件分支里）
+    let on_stats_range = use_callback(move |r: TimeRange| stats_range.set(r));
     let mut task_res = use_resource(move || {
         let id = rid();
+        let range = stats_range();
         async move {
-            let req = GetTaskRequest {
-                id,
-                with_stats: Some(true),
-                with_model_call_stats: Some(true),
-                stats_interval: Some("daily".to_string()),
-                with_artifacts: Some(true),
-                ..Default::default()
-            };
+            let req = with_stats_range(
+                GetTaskRequest {
+                    id,
+                    with_artifacts: Some(true),
+                    ..Default::default()
+                },
+                range,
+            );
             get_task(req).await
         }
     });
@@ -136,13 +154,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -164,13 +182,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -192,13 +210,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -220,13 +238,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -248,13 +266,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -276,13 +294,13 @@ pub fn TaskDetail(id: String) -> Element {
             match update_task_status(req).await {
                 Ok(_) => {
                     toast.success("任务状态已更新");
-                    let req = GetTaskRequest {
-                        id: id_clone.clone(),
-                        with_stats: Some(true),
-                        with_model_call_stats: Some(true),
-                        stats_interval: Some("daily".to_string()),
-                        ..Default::default()
-                    };
+                    let req = with_stats_range(
+                        GetTaskRequest {
+                            id: id_clone.clone(),
+                            ..Default::default()
+                        },
+                        stats_range(),
+                    );
                     if let Ok(t) = get_task(req).await {
                         new_progress.set(t.progress);
                         task_res.set(Some(Ok(t)));
@@ -523,6 +541,10 @@ pub fn TaskDetail(id: String) -> Element {
             }
 
             if t.stats.is_some() || t.model_call_stats.is_some() {
+                // 时间筛选：切换即重拉（use_resource 订阅 stats_range）
+                div { class: "mb-3",
+                    TimeRangePicker { value: stats_range(), on_change: on_stats_range }
+                }
                 TaskStatsPanel {
                     stats: t.stats.clone(),
                     model_call_stats: t.model_call_stats.clone(),

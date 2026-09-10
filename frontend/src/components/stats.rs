@@ -198,8 +198,11 @@ pub fn AgentStatsPanel(
 /// Agent 运行统计紧凑面板（无外壳版，聊天侧栏等窄容器用）
 ///
 /// 与 `AgentStatsPanel` 同口径（唤醒/QPS + 模型调用 + 输入/输出 Token + 三线趋势），
-/// 差异：不带 HudPanel 外壳与工具分布环形图；趋势图按 320px 原生渲染，
-/// 避免 600px 图被 CSS 缩放后文字过小。
+/// 差异：
+/// - 不带 HudPanel 外壳与工具分布环形图；
+/// - 读数组按「运行 / 模型调用」分两组、固定 2 列网格（不用 `StatGrid` 的
+///   `lg:grid-cols-4`——侧栏在桌面视口下会走 4 列导致数值溢出），数值用紧凑变体；
+/// - 趋势图按 320px 原生渲染，避免 600px 图被 CSS 缩放后文字过小。
 #[component]
 pub fn AgentStatsPanelCompact(
     stats: Option<AgentStats>,
@@ -209,25 +212,48 @@ pub fn AgentStatsPanelCompact(
         || model_call_stats
             .as_ref()
             .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
+    let has_runtime = stats.as_ref().is_some_and(|s| s.call_summary.is_some());
+    let has_model = model_call_stats
+        .as_ref()
+        .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
     let chart_data = model_call_stats.clone();
+    let runtime_summary = stats.as_ref().and_then(|s| s.call_summary.as_ref());
+    let model_summary = model_call_stats
+        .as_ref()
+        .and_then(|m| m.call_summary.as_ref());
+    let token_summary = model_call_stats
+        .as_ref()
+        .and_then(|m| m.token_summary.as_ref());
     rsx! {
         div { class: "mt-4 pt-3 border-t border-base-300",
             h3 { class: "text-sm font-semibold mb-2", "📊 运行统计" }
             if has_data {
-                StatGrid {
-                    if let Some(s) = stats {
-                        if let Some(call) = s.call_summary {
-                            StatsCard { title: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                            StatsCard { title: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps), subtitle: None }
+                div { class: "space-y-3",
+                    if has_runtime {
+                        div {
+                            label { class: "form-label", "运行" }
+                            div { class: "grid grid-cols-2 gap-x-3 gap-y-2",
+                                if let Some(call) = runtime_summary {
+                                    CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
+                                    CompactStat { label: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps) }
+                                }
+                            }
                         }
                     }
-                    if let Some(mcs) = model_call_stats {
-                        if let Some(call) = mcs.call_summary {
-                            StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
-                        }
-                        if let Some(token) = mcs.token_summary {
-                            StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
-                            StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                    if has_model {
+                        div {
+                            label { class: "form-label", "模型调用" }
+                            div { class: "grid grid-cols-2 gap-x-3 gap-y-2",
+                                if let Some(call) = model_summary {
+                                    CompactStat { label: "调用次数".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string() }
+                                }
+                                if let Some(token) = token_summary {
+                                    CompactStat { label: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input) }
+                                }
+                                if let Some(token) = token_summary {
+                                    CompactStat { label: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output) }
+                                }
+                            }
                         }
                     }
                 }
@@ -235,6 +261,22 @@ pub fn AgentStatsPanelCompact(
             } else {
                 p { class: "text-xs text-base-content/50", "暂无运行统计数据" }
             }
+        }
+    }
+}
+
+/// 窄容器用紧凑读数：eyebrow 标签 + 1.25rem 等宽数值（复用 StatReadout 紧凑变体）
+#[component]
+fn CompactStat(label: String, icon: String, value: String) -> Element {
+    rsx! {
+        StatReadout {
+            label,
+            value,
+            unit: None,
+            icon: Some(icon),
+            delta: None,
+            accent: None,
+            compact: Some(true),
         }
     }
 }

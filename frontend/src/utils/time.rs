@@ -62,3 +62,29 @@ pub fn format_rfc3339(ts: &str) -> String {
     }
     ts.to_string()
 }
+
+/// `<input type="datetime-local">` 输入值（"YYYY-MM-DDTHH:MM"）→ unix 毫秒
+///
+/// 输入按**本地时区**解释；空串 / 无法解析返回 None。
+pub fn parse_datetime_local_to_ms(s: &str) -> Option<i64> {
+    use chrono::{Local, NaiveDateTime, TimeZone};
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let ndt = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").ok()?;
+    Local
+        .from_local_datetime(&ndt)
+        .single()
+        .map(|dt| dt.timestamp_millis())
+}
+
+/// unix 毫秒 → `<input type="datetime-local">` 可用的 "YYYY-MM-DDTHH:MM"（本地时区）
+pub fn ms_to_datetime_local_value(ts_ms: i64) -> String {
+    use chrono::{Local, TimeZone};
+    Local
+        .timestamp_opt(ts_ms / 1000, 0)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M").to_string())
+        .unwrap_or_default()
+}
