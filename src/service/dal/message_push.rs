@@ -23,6 +23,12 @@ pub struct SsePushPayload {
     pub status: i32,
     pub content: String,
     pub reply_to_id: Option<String>,
+    /// 消息链根消息 ID（与 `MessageListItem` 同口径）。
+    ///
+    /// ⚠️ 必须与消息列表接口保持字段对齐：前端把 SSE 事件体直接反序列化为
+    /// `MessageListItem`，缺此字段会让 SSE 到达的消息 `root_id` 恒为 None，
+    /// 引用块点击跳转话题、按链根聚合等能力对「刚推送的消息」失效。
+    pub root_id: Option<String>,
     pub created_at: i64,
     /// 文件类型（附件消息才有值）
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,6 +152,7 @@ mod tests {
             status: 3,
             content: "hello".to_string(),
             reply_to_id: None,
+            root_id: None,
             created_at: 1234567890,
             file_type: None,
             file_meta: None,

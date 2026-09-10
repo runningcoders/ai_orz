@@ -557,6 +557,43 @@
   max-width: 100%;
 }
 
+/* 1.1) 引用块宽度：以**本条消息**的宽度为上限，不被引用内容反向撑宽。
+   气泡外还包了一层 `div.group.relative`（引用块 + 气泡 + hover 图标排）。如果让引用块
+   参与父容器的固有宽度计算，长引用就会把整块撑到列宽的 90% —— 短消息的气泡明明只有
+   几十 px，却停在宽块的左边缘，视觉上「被甩到最左边」。
+   无头浏览器实测（720px 列，「在吗」+ 长引用）：
+     - 现状：wrap 601.2px / 气泡 64px（气泡压左边缘）
+     - 修复：wrap 64px（= 气泡宽），整块贴右对齐；长主体同理（448px = 448px）
+   做法：`width: 0` 让引用块的固有宽度贡献为 0（父容器宽度改由气泡的 fit-content 决定），
+   再用 `min-width: 100%` 在布局阶段铺满该宽度；配合 2 行截断避免短消息旁竖成一行字。 */
+.chat .chat-quote {
+  width: 0;
+  min-width: 100%;
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* 1.2) 有引用时给整块一个最小宽度：太短的消息（如「在吗」）旁边的引用块会被压到
+   2 字一行，比被撑宽还难读。最小宽度必须挂在**包裹层**（`.chat` 的 grid item），
+   并让气泡铺满它。
+   ⚠️ 别把 min-width 挂在气泡上：气泡会越过包裹层的 `max-width: 90%` 溢出去，
+   引用块（=100% 包裹层）就与气泡错位（无头实测 240px 列 MISMATCH）。
+   用 `min(14rem, 90%)` 而不是 `min(14rem, 100%)`：min-width 会压过 max-width，
+   取 100% 时窄屏会顶到列边、丢掉 `max-width: 90%` 留的右边距。
+   无头实测（chromium + 真实产物）：
+     - 720px 列：短主体 224px / 长主体 448px（不受影响），wrap = 气泡 = 引用块
+     - 300px 列：223.2px（收敛到 90%），三者仍相等
+     - 240px 列：169.2px（= 90%，保住右边距），三者仍相等 */
+.chat .chat-has-quote {
+  min-width: min(14rem, 90%);
+}
+.chat .chat-has-quote .chat-bubble {
+  width: 100%;
+}
+
 /* 2) 配色：DaisyUI 原生 `chat-bubble-primary` / `chat-bubble-neutral` 是高饱和 / 近黑
    **实底**（浅色主题实测 primary = oklch(0.63 0.24 50) 橙实底、
    neutral = oklch(0.25 0.01 50) 近黑实底），背景过重、正文被压得不显眼。

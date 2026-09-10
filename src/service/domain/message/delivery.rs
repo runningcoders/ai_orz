@@ -418,6 +418,7 @@ impl MessageDelivery for MessageDomainImpl {
             status: cmd.message.status() as i32,
             content: cmd.message.content().to_string(),
             reply_to_id: cmd.message.reply_to_id().map(|s| s.to_string()),
+            root_id: cmd.message.root_id().map(|s| s.to_string()),
             created_at: cmd.message.created_at(),
             file_type: cmd.message.file_type().map(|ft| ft as i32),
             file_meta,

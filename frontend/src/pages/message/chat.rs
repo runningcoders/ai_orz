@@ -555,9 +555,16 @@ pub fn MessageChat() -> Element {
             };
 
             match send_message_to_agent(req).await {
-                Ok(_) => {
+                Ok(resp) => {
                     // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
                     let mut user_msg = build_optimistic_user_msg(text, project_id, None, None);
+                    // 用户消息（to_role=Agent）只触发 Agent 唤醒，后端**不回推 SSE**，
+                    // 乐观消息永远不会被真实消息替换 → 本地恒持有 tmp_ ID。
+                    // 而 Agent 回复的 reply_to_id 指向本条消息的**真实 ID**，
+                    // 前端引用块按 ID 在本地列表里查目标，查不到就整块不渲染
+                    // （表现为「引用块要刷新后才出现」）。这里直接用响应里的
+                    // 真实 message_id 覆盖，保证引用目标可解析。
+                    user_msg.message_id = resp.message_id;
                     user_msg.reply_to_id = reply_to_id_snapshot;
                     let mut current = messages.write();
                     current.push(user_msg);
@@ -1783,11 +1790,19 @@ fn render_message_content(
             // 引用块：quote_label 驱动展示，quote_target 供点击回调取链根
             let quote_label = quoted.clone();
             let quote_target = quoted;
+            // 有引用时给整块一个最小宽度（见 input.css `.chat-has-quote`）：
+            // 否则「在吗」这类极短消息旁边的引用块会被压成 2 字一行
+            let wrap_class = if quote_label.is_some() {
+                "group relative chat-has-quote"
+            } else {
+                "group relative"
+            };
             rsx! {
-                div { class: "group relative",
+                div { class: "{wrap_class}",
                     if let Some(q) = quote_label {
                         button {
-                            class: "mb-1 w-full text-left rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs text-base-content/70 hover:bg-base-200 transition-colors",
+                            // 宽度以本条消息为准，见 input.css `.chat .chat-quote`
+                            class: "chat-quote mb-1 text-left rounded-lg border border-base-300 bg-base-200/70 px-2 py-1 text-xs text-base-content/70 hover:bg-base-200 transition-colors",
                             title: "查看话题讨论区",
                             onclick: move |_| {
                                 if let Some(root) = quote_target

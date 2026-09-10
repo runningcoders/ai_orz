@@ -684,9 +684,14 @@ pub fn HrAgentDetail(id: String) -> Element {
             };
 
             match send_message_to_agent(req).await {
-                Ok(_) => {
+                Ok(resp) => {
                     // 构造乐观用户消息（统一使用 build_optimistic_user_msg）
-                    let user_msg = build_optimistic_user_msg(text, None, None, Some(aid.clone()));
+                    // 用响应里的真实 message_id 覆盖 tmp_ ID：本页无 SSE、仅靠 poll_new
+                    // 兜底，保留 tmp_ ID 会让 Agent 回复的 reply_to_id 无法解析，
+                    // 引用块不渲染（同 chat 页问题）。
+                    let mut user_msg =
+                        build_optimistic_user_msg(text, None, None, Some(aid.clone()));
+                    user_msg.message_id = resp.message_id;
                     messages.write().push(user_msg);
 
                     // 无 SSE：发送后短时轮询拉取 Agent 回复（最多 ~60s，与超时保护同步）。
