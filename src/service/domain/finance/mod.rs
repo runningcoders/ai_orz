@@ -43,6 +43,7 @@ use crate::service::dal::model_provider::ModelProviderDal;
 use crate::service::dal::tool::ToolDal;
 use async_trait::async_trait;
 use common::error::Result;
+use common::models::{ModelCallStats, StatsFetchOptions};
 use std::sync::{Arc, OnceLock};
 
 // ==================== 单例管理 ====================
@@ -210,6 +211,25 @@ pub trait ModelProviderManage: Send + Sync {
         ctx: RequestContext,
         new_provider_id: &str,
     ) -> Result<Option<ModelProvider>>;
+
+    /// 查询组织级分钟级模型调用时序（工作台顶栏 Token QPS 曲线）
+    ///
+    /// 组织隔离由 `ctx.organization_id` 决定；`minutes` 会被 clamp 到 `[1, 1440]`。
+    async fn model_call_time_series(
+        &self,
+        ctx: RequestContext,
+        minutes: u32,
+    ) -> Result<Vec<common::models::TimeSeriesPoint>>;
+
+    /// 按触发用户查询模型调用统计（用户详情页看板用）
+    ///
+    /// 口径为「打点命中」：仅统计埋点 `user_id` 与目标一致的调用。
+    async fn get_model_call_stats_for_user(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
 }
 
 /// Message Channel 管理 trait

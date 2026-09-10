@@ -2,7 +2,7 @@ use common::models::{AgentStats, ModelCallStats};
 use dioxus::prelude::*;
 
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
-use crate::components::charts::line_chart::LineChart;
+use crate::components::charts::line_chart::{LineChart, LineChartValueField};
 use crate::components::hud::{HudPanel, StatGrid, StatReadout};
 
 /// 工具调用分布环形图调色板（循环使用，避免单一色调）
@@ -66,6 +66,43 @@ fn format_qps(qps: f64) -> String {
     format!("{:.2}", qps)
 }
 
+/// 用户维度模型调用统计面板（无外壳版）
+///
+/// 供个人信息页等已有 HudPanel 外壳的页面内嵌使用：
+/// 卡片（模型调用 / 输入 / 输出 Token）+ 三线趋势图（输入/输出 Token 共左轴 + 调用次数右轴）。
+/// 数据口径为「打点命中」：仅统计模型调用事件 `user_id` 与当前用户一致的记录。
+#[component]
+pub fn UserStatsPanel(model_call_stats: Option<ModelCallStats>) -> Element {
+    let has_data = model_call_stats
+        .as_ref()
+        .is_some_and(|m| m.call_summary.is_some() || m.token_summary.is_some());
+    rsx! {
+        div { class: "mt-6",
+            h3 { class: "text-sm font-semibold mb-2", "📊 模型调用统计" }
+            if has_data {
+                div { class: "space-y-4",
+                    StatGrid {
+                        if let Some(mcs) = &model_call_stats {
+                            if let Some(call) = &mcs.call_summary {
+                                StatsCard { title: "模型调用".to_string(), icon: "🤖".to_string(), value: call.total_calls.to_string(), subtitle: None }
+                            }
+                            if let Some(token) = &mcs.token_summary {
+                                StatsCard { title: "输入 Token".to_string(), icon: "📥".to_string(), value: format_token_count(token.total_tokens_input), subtitle: None }
+                                StatsCard { title: "输出 Token".to_string(), icon: "📤".to_string(), value: format_token_count(token.total_tokens_output), subtitle: None }
+                            }
+                        }
+                    }
+                    {render_time_series_chart(&model_call_stats)}
+                }
+            } else {
+                p { class: "text-sm text-base-content/50",
+                    "暂无模型调用记录（仅统计由你触发的 Agent 调用）"
+                }
+            }
+        }
+    }
+}
+
 /// 渲染模型调用时序图（如果有数据）
 fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Element {
     if let Some(mcs) = model_call_stats
@@ -79,7 +116,12 @@ fn render_time_series_chart(model_call_stats: &Option<ModelCallStats>) -> Elemen
                     width: 600.0,
                     height: 200.0,
                     title: Some("模型调用趋势".to_string()),
-                    value_label: Some("调用次数".to_string()),
+                    value_label: Some("输入 Token".to_string()),
+                    value_field: Some(LineChartValueField::TokensInput),
+                    primary_second_field: Some(LineChartValueField::TokensOutput),
+                    primary_second_label: Some("输出 Token".to_string()),
+                    secondary_field: Some(LineChartValueField::CallCount),
+                    secondary_label: Some("调用次数".to_string()),
                 }
             }
         };

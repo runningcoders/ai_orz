@@ -18,6 +18,97 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::components::hud_palette;
 
+/// 折线图取值字段
+///
+/// `TimeSeriesPoint` 同时携带调用次数与 Token 用量，由本枚举决定曲线画哪一个。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineChartValueField {
+    /// 调用次数（默认，向后兼容）
+    #[default]
+    CallCount,
+    /// 输入 Token（单个时间桶内的 prompt tokens）
+    TokensInput,
+    /// 输出 Token（单个时间桶内的 completion tokens）
+    TokensOutput,
+    /// 每秒 Token（分钟桶数据 / 60，用于 QPS 曲线）
+    TokensPerSecond,
+}
+
+/// 按取值字段从数据点取出绘制值
+fn point_value(p: &TimeSeriesPoint, field: LineChartValueField) -> f64 {
+    match field {
+        LineChartValueField::CallCount => p.call_count as f64,
+        LineChartValueField::TokensInput => p.tokens_input as f64,
+        LineChartValueField::TokensOutput => p.tokens_output as f64,
+        LineChartValueField::TokensPerSecond => (p.tokens_input + p.tokens_output) as f64 / 60.0,
+    }
+}
+
+/// 曲线归属的纵轴
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChartAxis {
+    /// 左轴（主量纲）
+    Left,
+    /// 右轴（独立量纲，如 Token vs 调用次数）
+    Right,
+}
+
+/// 图表曲线配置
+///
+/// 支持三条曲线：左轴主线 + 左轴副线（同量纲，如 Token 输入/输出）+ 右轴线（异量纲）。
+/// 未配置的项为 `None`，即退化为单线/双线，向后兼容所有既有调用点。
+#[derive(Debug, Clone, Copy)]
+pub struct ChartLines<'a> {
+    /// 左轴主线取值字段
+    pub value_field: LineChartValueField,
+    /// 左轴主线名称（同时作为图例项文案）
+    pub value_label: Option<&'a str>,
+    /// 左轴副线取值字段（与主线共用左轴刻度）
+    pub primary_second_field: Option<LineChartValueField>,
+    /// 左轴副线名称
+    pub primary_second_label: Option<&'a str>,
+    /// 右轴曲线取值字段
+    pub secondary_field: Option<LineChartValueField>,
+    /// 右轴曲线名称
+    pub secondary_label: Option<&'a str>,
+}
+
+impl<'a> ChartLines<'a> {
+    /// 展开为按绘制顺序排列的曲线规格（主线 → 左轴副线 → 右轴线）
+    fn specs(
+        &self,
+    ) -> Vec<(
+        &'static str,
+        LineChartValueField,
+        Option<&'a str>,
+        ChartAxis,
+    )> {
+        let mut out = vec![(
+            hud_palette::HUD_PRIMARY,
+            self.value_field,
+            self.value_label,
+            ChartAxis::Left,
+        )];
+        if let Some(f) = self.primary_second_field {
+            out.push((
+                hud_palette::HUD_TERTIARY,
+                f,
+                self.primary_second_label,
+                ChartAxis::Left,
+            ));
+        }
+        if let Some(f) = self.secondary_field {
+            out.push((
+                hud_palette::HUD_SECONDARY,
+                f,
+                self.secondary_label,
+                ChartAxis::Right,
+            ));
+        }
+        out
+    }
+}
+
 /// LineChart 组件 Props
 #[derive(Props, Clone, PartialEq)]
 pub struct LineChartProps {
@@ -31,6 +122,16 @@ pub struct LineChartProps {
     pub title: Option<String>,
     /// 数值标签描述（如 "调用次数" / "Token 消耗"）
     pub value_label: Option<String>,
+    /// 曲线取值字段，默认 `CallCount`
+    pub value_field: Option<LineChartValueField>,
+    /// 第二条曲线取值字段（与主线共用左轴，紫色；如 Token 输出与输入并列）
+    pub primary_second_field: Option<LineChartValueField>,
+    /// 第二条曲线的名称，仅在 `primary_second_field` 有值时生效
+    pub primary_second_label: Option<String>,
+    /// 第三条曲线取值字段（绘制在右轴，青色）；`None` 时为单轴（默认，向后兼容）
+    pub secondary_field: Option<LineChartValueField>,
+    /// 右轴曲线的名称（如 "调用次数"），仅在 `secondary_field` 有值时生效
+    pub secondary_label: Option<String>,
 }
 
 /// LineChart 组件
@@ -40,6 +141,11 @@ pub fn LineChart(props: LineChartProps) -> Element {
     let height = props.height.unwrap_or(200.0);
     let title = props.title.clone();
     let value_label = props.value_label.clone();
+    let value_field = props.value_field.unwrap_or_default();
+    let primary_second_field = props.primary_second_field;
+    let primary_second_label = props.primary_second_label.clone();
+    let secondary_field = props.secondary_field;
+    let secondary_label = props.secondary_label.clone();
 
     let mut canvas_ref: Signal<Option<HtmlCanvasElement>> = use_signal(|| None);
 
@@ -62,6 +168,11 @@ pub fn LineChart(props: LineChartProps) -> Element {
     let render_height = height;
     let title_c = title.clone();
     let value_label_c = value_label.clone();
+    let value_field_c = value_field;
+    let primary_second_field_c = primary_second_field;
+    let primary_second_label_c = primary_second_label.clone();
+    let secondary_field_c = secondary_field;
+    let secondary_label_c = secondary_label.clone();
     let data_cache_c = data_cache;
     use_effect(move || {
         let Some(canvas) = canvas_ref.read().clone() else {
@@ -86,9 +197,6 @@ pub fn LineChart(props: LineChartProps) -> Element {
 
         let width = render_width;
         let height = render_height;
-        let title_inner = title_c.clone();
-        let value_label_inner = value_label_c.clone();
-
         // running 标志：组件卸载时设为 false，停止递归 rAF
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let running_clone = running.clone();
@@ -98,9 +206,24 @@ pub fn LineChart(props: LineChartProps) -> Element {
         let callback_ref: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
         let cb_ref_inner = callback_ref.clone();
 
+        // 文本标签先在本次 use_effect 执行中取副本：
+        // 内层 rAF 闭包（FnMut）要 move 走它们，若直接捕获外层闭包变量会被判为 move out。
+        let title_inner = title_c.clone();
+        let value_label_inner = value_label_c.clone();
+        let primary_second_label_inner = primary_second_label_c.clone();
+        let secondary_label_inner = secondary_label_c.clone();
+
         let closure = Closure::<dyn FnMut()>::new(move || {
             let data = data_cache_c.read().clone();
             let now = js_sys::Date::now() / 1000.0;
+            let lines = ChartLines {
+                value_field: value_field_c,
+                value_label: value_label_inner.as_deref(),
+                primary_second_field: primary_second_field_c,
+                primary_second_label: primary_second_label_inner.as_deref(),
+                secondary_field: secondary_field_c,
+                secondary_label: secondary_label_inner.as_deref(),
+            };
             draw_chart(
                 &ctx,
                 width,
@@ -108,7 +231,7 @@ pub fn LineChart(props: LineChartProps) -> Element {
                 &data,
                 now,
                 title_inner.as_deref(),
-                value_label_inner.as_deref(),
+                lines,
             );
 
             // 递归注册下一帧
@@ -156,7 +279,8 @@ pub fn LineChart(props: LineChartProps) -> Element {
     }
 }
 
-/// 绘制完整图表（背景 + 坐标轴 + 折线 + 数据点）
+/// 绘制完整图表（背景 + 坐标轴 + 折线 + 数据点 + 图例）
+#[allow(clippy::too_many_arguments)]
 fn draw_chart(
     ctx: &CanvasRenderingContext2d,
     width: f64,
@@ -164,7 +288,7 @@ fn draw_chart(
     data: &[TimeSeriesPoint],
     now: f64,
     title: Option<&str>,
-    value_label: Option<&str>,
+    lines: ChartLines<'_>,
 ) {
     // 1. HUD 背景
     hud_palette::draw_hud_background(ctx, width, height);
@@ -193,16 +317,31 @@ fn draw_chart(
     }
 
     // 4. 计算坐标系
+    let specs = lines.specs();
+    let has_right_axis = specs.iter().any(|s| s.3 == ChartAxis::Right);
+    // 多于一条曲线时改用图例区分颜色，底部要为图例留出一行
+    let has_legend = specs.len() > 1;
     let pad_left = 40.0;
-    let pad_right = 16.0;
+    // 有右轴时右侧要留出该轴刻度标签空间
+    let pad_right = if has_right_axis { 46.0 } else { 16.0 };
     let pad_top = 32.0;
-    let pad_bottom = 28.0;
+    let pad_bottom = if has_legend { 46.0 } else { 28.0 };
     let plot_w = width - pad_left - pad_right;
     let plot_h = height - pad_top - pad_bottom;
 
-    // 找出最大值（call_count），用于 Y 轴缩放
-    let max_value = data.iter().map(|p| p.call_count).max().unwrap_or(1).max(1);
-    let max_y = (max_value as f64 * 1.1).max(1.0); // 留 10% 顶部空间
+    // 各轴独立缩放：同轴曲线合并取最大值（量纲相同），
+    // 右轴量纲不同（如 Token vs 调用次数），必须各按各的最大值归一
+    let axis_max = |axis: ChartAxis| -> f64 {
+        specs
+            .iter()
+            .filter(|s| s.3 == axis)
+            .flat_map(|s| data.iter().map(|p| point_value(p, s.1)))
+            .fold(0.0_f64, f64::max)
+            .max(1.0)
+            * 1.1 // 留 10% 顶部空间
+    };
+    let max_y = axis_max(ChartAxis::Left);
+    let right_max = has_right_axis.then(|| axis_max(ChartAxis::Right));
 
     // 5. 绘制坐标轴
     draw_axes(
@@ -213,32 +352,90 @@ fn draw_chart(
         plot_h,
         max_y,
         data.len(),
-        value_label,
+        // 多线时曲线名统一由底部图例承载，避免与图例重复
+        if has_legend { None } else { lines.value_label },
+        right_max.map(|m| {
+            (
+                m,
+                if has_legend {
+                    None
+                } else {
+                    lines.secondary_label
+                },
+            )
+        }),
     );
 
-    // 6. 计算数据点坐标
-    let points: Vec<(f64, f64, u64)> = data
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let x = if data.len() > 1 {
-                pad_left + (i as f64) * plot_w / (data.len() - 1) as f64
+    // 6. 计算数据点坐标（按各自轴的最大值归一）
+    let to_points = |field: LineChartValueField, axis_max: f64| -> Vec<(f64, f64, f64)> {
+        data.iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let x = if data.len() > 1 {
+                    pad_left + (i as f64) * plot_w / (data.len() - 1) as f64
+                } else {
+                    pad_left + plot_w / 2.0
+                };
+                let v = point_value(p, field);
+                let y = pad_top + plot_h - (v / axis_max) * plot_h;
+                (x, y, v)
+            })
+            .collect()
+    };
+
+    // 7. 绘制折线（流光发光）与数据点（呼吸光晕）
+    for (color, field, _label, axis) in &specs {
+        let pts = to_points(
+            *field,
+            if *axis == ChartAxis::Right {
+                right_max.unwrap_or(1.0)
             } else {
-                pad_left + plot_w / 2.0
-            };
-            let y = pad_top + plot_h - (p.call_count as f64 / max_y) * plot_h;
-            (x, y, p.call_count)
-        })
-        .collect();
+                max_y
+            },
+        );
+        draw_line(ctx, &pts, now, color);
+        draw_points(ctx, &pts, now, color);
+    }
 
-    // 7. 绘制折线（流光发光）
-    draw_line(ctx, &points, now);
-
-    // 8. 绘制数据点（呼吸光晕）
-    draw_points(ctx, &points, now);
+    // 8. 图例（多线时必需，否则无法分辨颜色与曲线对应关系）
+    if has_legend {
+        let items: Vec<(&str, String)> = specs
+            .iter()
+            .map(|(color, _f, label, axis)| {
+                let name = label.unwrap_or("");
+                // 右轴曲线标注轴归属，避免误读为与左轴同量纲
+                let text = if *axis == ChartAxis::Right && !name.is_empty() {
+                    format!("{name} (右轴)")
+                } else {
+                    name.to_string()
+                };
+                (*color, text)
+            })
+            .filter(|(_, t)| !t.is_empty())
+            .collect();
+        draw_legend(ctx, &items, width / 2.0, height - 16.0);
+    }
 
     // 9. 绘制 X 轴时间标签
-    draw_x_labels(ctx, data, pad_left, pad_top + plot_h, plot_w);
+    //
+    // 分钟级窗口（如最近 60 分钟的 Token QPS）内所有点都在同一天，
+    // 用「月-日」会得到一串重复标签，故跨度小于 2 小时时改用「时:分」。
+    let span_ms = data[data.len() - 1].interval_start - data[0].interval_start;
+    let ts_fmt = if span_ms < 2 * 3_600_000 {
+        TimestampFormat::TimeOfDay
+    } else {
+        TimestampFormat::Date
+    };
+    draw_x_labels(ctx, data, pad_left, pad_top + plot_h, plot_w, ts_fmt);
+}
+
+/// X 轴时间标签格式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimestampFormat {
+    /// 月-日（跨天窗口）
+    Date,
+    /// 时:分（小时内窗口）
+    TimeOfDay,
 }
 
 /// 绘制坐标轴
@@ -252,6 +449,8 @@ fn draw_axes(
     max_y: f64,
     data_len: usize,
     value_label: Option<&str>,
+    // secondary: 右轴配置 `(轴最大值, 轴标签)`；None 表示单轴
+    secondary: Option<(f64, Option<&str>)>,
 ) {
     // 坐标轴主线（淡橙色）
     ctx.set_stroke_style_str("rgba(250, 82, 15, 0.3)");
@@ -269,8 +468,9 @@ fn draw_axes(
     ctx.line_to(pad_left + plot_w, pad_top + plot_h);
     ctx.stroke();
 
-    // Y 轴刻度（4 等分）
-    ctx.set_fill_style_str("rgba(255, 255, 255, 0.5)");
+    // Y 轴刻度（4 等分，主色）
+    ctx.set_fill_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_PRIMARY, 0.55));
+    ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_PRIMARY, 0.55));
     ctx.set_font("10px sans-serif");
     ctx.set_text_align("right");
     ctx.set_text_baseline("middle");
@@ -283,15 +483,10 @@ fn draw_axes(
         ctx.line_to(pad_left, y);
         ctx.stroke();
         // 数值标签
-        let label = if value >= 1000.0 {
-            format!("{:.1}K", value / 1000.0)
-        } else {
-            format!("{:.0}", value)
-        };
-        let _ = ctx.fill_text(&label, pad_left - 6.0, y);
+        let _ = ctx.fill_text(&format_axis_value(value), pad_left - 6.0, y);
     }
 
-    // 值标签描述（Y 轴顶部）
+    // 值标签描述（左轴顶部）
     if let Some(label) = value_label {
         ctx.set_fill_style_str("rgba(250, 82, 15, 0.7)");
         ctx.set_font("10px sans-serif");
@@ -300,7 +495,86 @@ fn draw_axes(
         let _ = ctx.fill_text(label, pad_left, pad_top - 4.0);
     }
 
+    // 右轴（第二条曲线）：轴线 + 刻度 + 标签统一用次色，与左轴形成冷/暖区分
+    if let Some((sec_max_y, sec_label)) = secondary {
+        let x_right = pad_left + plot_w;
+        ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_SECONDARY, 0.4));
+        ctx.begin_path();
+        ctx.move_to(x_right, pad_top);
+        ctx.line_to(x_right, pad_top + plot_h);
+        ctx.stroke();
+
+        ctx.set_fill_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_SECONDARY, 0.65));
+        ctx.set_text_align("left");
+        ctx.set_text_baseline("middle");
+        for i in 0..=4 {
+            let y = pad_top + (i as f64) * plot_h / 4.0;
+            let value = sec_max_y * (1.0 - i as f64 / 4.0);
+            ctx.begin_path();
+            ctx.move_to(x_right, y);
+            ctx.line_to(x_right + 4.0, y);
+            ctx.stroke();
+            let _ = ctx.fill_text(&format_axis_value(value), x_right + 6.0, y);
+        }
+
+        if let Some(label) = sec_label {
+            ctx.set_fill_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_SECONDARY, 0.8));
+            ctx.set_text_align("right");
+            ctx.set_text_baseline("bottom");
+            let _ = ctx.fill_text(label, x_right, pad_top - 4.0);
+        }
+    }
+
     let _ = data_len;
+}
+
+/// 绘制图例（底部居中）
+///
+/// `items` 为 `(曲线颜色, 名称)` 列表；按总宽度居中排布，每项前绘一段短线色块。
+fn draw_legend(ctx: &CanvasRenderingContext2d, items: &[(&str, String)], center_x: f64, y: f64) {
+    if items.is_empty() {
+        return;
+    }
+    const SWATCH_W: f64 = 10.0;
+    const SWATCH_GAP: f64 = 5.0;
+    const ITEM_GAP: f64 = 14.0;
+
+    ctx.set_font("10px sans-serif");
+    let text_w = |t: &str| -> f64 {
+        ctx.measure_text(t)
+            .map(|m| m.width())
+            .unwrap_or_else(|_| t.chars().count() as f64 * 6.0)
+    };
+
+    let total: f64 = items
+        .iter()
+        .map(|(_, t)| SWATCH_W + SWATCH_GAP + text_w(t))
+        .sum::<f64>()
+        + ITEM_GAP * (items.len() - 1) as f64;
+
+    let mut x = center_x - total / 2.0;
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("top");
+    for (color, text) in items {
+        ctx.set_fill_style_str(color);
+        ctx.fill_rect(x, y + 4.0, SWATCH_W, 2.5);
+        x += SWATCH_W + SWATCH_GAP;
+        ctx.set_fill_style_str("rgba(255, 255, 255, 0.55)");
+        let _ = ctx.fill_text(text, x, y);
+        x += text_w(text) + ITEM_GAP;
+    }
+}
+
+/// 格式化坐标轴刻度数值
+fn format_axis_value(value: f64) -> String {
+    if value >= 1000.0 {
+        format!("{:.1}K", value / 1000.0)
+    } else if value >= 10.0 {
+        format!("{:.0}", value)
+    } else {
+        // 小数值（如 Token QPS）保留一位小数，避免刻度清一色显示 0
+        format!("{:.1}", value)
+    }
 }
 
 /// 设置虚线模式（参考 graph_canvas.rs:26-37 的 set_dash 辅助函数）
@@ -313,15 +587,15 @@ fn set_dash(ctx: &CanvasRenderingContext2d, values: &[f64]) {
 }
 
 /// 绘制折线（流光发光）
-fn draw_line(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, u64)], now: f64) {
+fn draw_line(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, f64)], now: f64, color: &str) {
     if points.len() < 2 {
         return;
     }
 
     // 发光效果
     ctx.set_shadow_blur(6.0);
-    ctx.set_shadow_color(hud_palette::HUD_PRIMARY);
-    ctx.set_stroke_style_str(hud_palette::HUD_PRIMARY);
+    ctx.set_shadow_color(color);
+    ctx.set_stroke_style_str(color);
     ctx.set_line_width(2.0);
 
     // 流光虚线（dashoffset 持续滚动）
@@ -343,7 +617,7 @@ fn draw_line(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, u64)], now: f6
 }
 
 /// 绘制数据点（呼吸光晕）
-fn draw_points(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, u64)], now: f64) {
+fn draw_points(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, f64)], now: f64, color: &str) {
     // 呼吸动画：alpha 在 0.37~0.73 间摆动，2.4s 周期
     let pulse_period = 2.4;
     let pulse_t = (now % pulse_period) / pulse_period;
@@ -352,14 +626,14 @@ fn draw_points(ctx: &CanvasRenderingContext2d, points: &[(f64, f64, u64)], now: 
 
     for (x, y, _value) in points {
         // 外圈呼吸光晕
-        ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(hud_palette::HUD_PRIMARY, alpha));
+        ctx.set_stroke_style_str(&hud_palette::hex_to_rgba(color, alpha));
         ctx.set_line_width(2.0);
         ctx.begin_path();
         let _ = ctx.arc(*x, *y, 5.0, 0.0, std::f64::consts::TAU);
         ctx.stroke();
 
         // 内圈实心点
-        ctx.set_fill_style_str(hud_palette::HUD_PRIMARY);
+        ctx.set_fill_style_str(color);
         ctx.begin_path();
         let _ = ctx.arc(*x, *y, 2.5, 0.0, std::f64::consts::TAU);
         ctx.fill();
@@ -373,6 +647,7 @@ fn draw_x_labels(
     pad_left: f64,
     y_base: f64,
     plot_w: f64,
+    fmt: TimestampFormat,
 ) {
     ctx.set_fill_style_str("rgba(255, 255, 255, 0.5)");
     ctx.set_font("10px sans-serif");
@@ -393,10 +668,19 @@ fn draw_x_labels(
         } else {
             pad_left + plot_w / 2.0
         };
-        // 将毫秒时间戳转为日期字符串（M-D 短日期）
-        let label = format_timestamp(data[i].interval_start);
+        // 将毫秒时间戳转为日期字符串（M-D 短日期 / HH:MM）
+        let label = match fmt {
+            TimestampFormat::Date => format_timestamp(data[i].interval_start),
+            TimestampFormat::TimeOfDay => format_timestamp_hm(data[i].interval_start),
+        };
         let _ = ctx.fill_text(&label, x, y_base + 6.0);
     }
+}
+
+/// 将毫秒时间戳格式化为 HH:MM（用于分钟级时序的 X 轴标签）
+fn format_timestamp_hm(ts_ms: i64) -> String {
+    let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ts_ms as f64));
+    format!("{:02}:{:02}", date.get_hours(), date.get_minutes())
 }
 
 /// 将毫秒时间戳格式化为短日期字符串

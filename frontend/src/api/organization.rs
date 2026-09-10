@@ -2,16 +2,18 @@
 
 use common::api::{
     CreateLinkRequest, CreateLinkResponse, CreateOrganizationUserRequest,
-    CreateOrganizationUserResponse, GetCurrentOrganizationResponse, GetCurrentUserResponse,
-    IssuePairingCodeRequest, IssuePairingCodeResponse, ListContractsResponse,
-    ListFederationAgentsResponse, ListLinksResponse, ListOrganizationsResponse, ListUsersResponse,
-    TerminateContractResponse, UpdateContractCapabilitiesRequest,
-    UpdateContractCapabilitiesResponse, UpdateCurrentOrganizationRequest,
-    UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest, UpdateCurrentUserResponse,
-    UpdateUserRequest, UpdateUserResponse,
+    CreateOrganizationUserResponse, GetCurrentOrganizationResponse, GetCurrentUserRequest,
+    GetCurrentUserResponse, IssuePairingCodeRequest, IssuePairingCodeResponse,
+    ListContractsResponse, ListFederationAgentsResponse, ListLinksResponse,
+    ListOrganizationsResponse, ListUsersResponse, TerminateContractResponse,
+    UpdateContractCapabilitiesRequest, UpdateContractCapabilitiesResponse,
+    UpdateCurrentOrganizationRequest, UpdateCurrentOrganizationResponse, UpdateCurrentUserRequest,
+    UpdateCurrentUserResponse, UpdateUserRequest, UpdateUserResponse,
 };
 
-use super::{ApiError, api_delete, api_get, api_get_or_default, api_post, api_put};
+use super::{
+    ApiError, api_delete, api_get, api_get_or_default, api_post, api_put, build_query_string,
+};
 
 /// 公开获取组织列表（无需登录，登录页用）
 pub async fn list_organizations_public() -> Result<ListOrganizationsResponse, ApiError> {
@@ -55,6 +57,25 @@ pub async fn delete_user(user_id: &str) -> Result<(), ApiError> {
 /// 获取当前用户信息
 pub async fn get_current_user_info() -> Result<GetCurrentUserResponse, ApiError> {
     api_get("/api/v1/user/me").await
+}
+
+/// 获取当前用户信息（带 fetch options，可按需加载模型调用统计）
+pub async fn get_current_user_info_with(
+    req: GetCurrentUserRequest,
+) -> Result<GetCurrentUserResponse, ApiError> {
+    let qs = build_query_string(&[
+        (
+            "with_model_call_stats",
+            req.with_model_call_stats.map(|v| v.to_string()),
+        ),
+        (
+            "stats_time_start",
+            req.stats_time_start.map(|v| v.to_string()),
+        ),
+        ("stats_time_end", req.stats_time_end.map(|v| v.to_string())),
+        ("stats_interval", req.stats_interval),
+    ]);
+    api_get(&format!("/api/v1/user/me{qs}")).await
 }
 
 /// 更新当前用户信息

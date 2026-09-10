@@ -3,13 +3,15 @@
 use crate::components::hud::HudPanel;
 use dioxus::prelude::*;
 
-use common::api::UpdateCurrentUserRequest;
+use common::api::{GetCurrentUserRequest, UpdateCurrentUserRequest};
 
-use crate::api::organization::{get_current_user_info, update_current_user};
+use crate::api::organization::{get_current_user_info_with, update_current_user};
 use crate::components::markdown::MarkdownRenderer;
 use crate::components::state::Loading;
+use crate::components::stats::UserStatsPanel;
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
+use common::models::ModelCallStats;
 
 #[component]
 pub fn UserProfile() -> Element {
@@ -23,11 +25,21 @@ pub fn UserProfile() -> Element {
     let mut preferences = use_signal(String::new);
     // 偏好编辑态开关（false = Markdown 展示态，true = textarea 编辑态）
     let mut editing_prefs = use_signal(|| false);
+    // 模型调用统计（打点 user_id 匹配口径；一次请求随资料带出）
+    let mut model_call_stats = use_signal(|| Option::<ModelCallStats>::None);
     let toast = use_toast();
 
     use_effect(move || {
         spawn(async move {
-            match get_current_user_info().await {
+            match get_current_user_info_with(GetCurrentUserRequest {
+                with_model_call_stats: Some(true),
+                // 与 Agent/Task 详情页对齐：全历史 + 日粒度时序
+                stats_time_start: None,
+                stats_time_end: None,
+                stats_interval: Some("daily".to_string()),
+            })
+            .await
+            {
                 Ok(resp) => {
                     let user = resp.data;
                     username.set(user.username);
@@ -35,6 +47,7 @@ pub fn UserProfile() -> Element {
                     email.set(user.email.unwrap_or_default());
                     role_name.set(user.role_name);
                     preferences.set(user.preferences.unwrap_or_default());
+                    model_call_stats.set(resp.model_call_stats);
                 }
                 Err(e) => toast.error(&e),
             }
@@ -140,6 +153,9 @@ pub fn UserProfile() -> Element {
                             if saving() { "保存中..." } else { "保存" }
                         }
                     }
+
+                    // 模型调用统计看板（打点 user_id 匹配口径）
+                    UserStatsPanel { model_call_stats: model_call_stats() }
                 }
             }
         }

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 /// Time series interval for grouping data
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub enum StatsInterval {
+    /// Group by minute（分钟级，用于实时 QPS 曲线）
+    Minutely,
     /// Group by hour
     Hourly,
     /// Group by day

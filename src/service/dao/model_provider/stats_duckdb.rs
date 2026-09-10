@@ -66,6 +66,14 @@ impl ModelProviderStatsDao for ModelProviderStatsDaoDuckDbImpl {
             query.filters.insert(0, task_filter);
         }
 
+        if let Some(ref user_id) = query.user_id {
+            let user_filter = StatFilter::Equals {
+                key: "user_id".to_string(),
+                value: JsonValue::String(user_id.clone()),
+            };
+            query.filters.insert(0, user_filter);
+        }
+
         let stats = ctx.stats();
         let table_name = self.model_call_table_name(stats);
 

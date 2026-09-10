@@ -2,7 +2,7 @@
 
 use crate::models::model_provider::ModelProvider;
 use crate::pkg::RequestContext;
-use crate::pkg::stats::ModelCallEvent;
+use crate::pkg::stats::{ModelCallEvent, StatFilter};
 use crate::service::dao::model_provider;
 use crate::service::dao::model_provider::{
     ModelProviderDao, ModelProviderQuery, ModelProviderStatsDao, ModelProviderStatsQuery,
@@ -10,7 +10,8 @@ use crate::service::dao::model_provider::{
 use common::api::PagedResult;
 use common::enums::ModelProviderStatus;
 use common::error::Result;
-use common::models::{ModelCallStats, StatsFetchOptions};
+use common::models::{ModelCallStats, StatsFetchOptions, StatsInterval, TimeSeriesPoint};
+use serde_json::Value as JsonValue;
 use std::sync::{Arc, OnceLock};
 
 use crate::enrich_ctx;
@@ -99,6 +100,28 @@ pub trait ModelProviderDal: Send + Sync {
         &self,
         ctx: RequestContext,
         model_provider_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats>;
+
+    /// 查询组织级分钟级模型调用时序（工作台顶栏 Token QPS 曲线用）
+    ///
+    /// 组织隔离由 `ctx.organization_id` 注入 filter 实现；系统上下文（无组织）时统计全量。
+    /// `minutes` 会被 clamp 到 `[1, 1440]`（最长 24 小时）。
+    async fn model_call_time_series(
+        &self,
+        ctx: RequestContext,
+        minutes: u32,
+    ) -> Result<Vec<TimeSeriesPoint>>;
+
+    /// 按触发用户查询模型调用统计（用户详情页看板用）
+    ///
+    /// 口径为「打点命中」：仅统计埋点 `user_id` 与目标一致的调用，
+    /// Agent 自主思考 / 定时任务等无用户上下文的消耗不计入。
+    /// 组织隔离由 `ctx.organization_id` 注入 filter 实现。
+    async fn get_model_call_stats_for_user(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
         options: StatsFetchOptions,
     ) -> Result<ModelCallStats>;
 }
@@ -215,6 +238,57 @@ impl ModelProviderDal for ModelProviderDalImpl {
             interval: options.interval,
             ..Default::default()
         };
+        self.model_provider_stats_dao
+            .get_stats(ctx, query, options)
+            .await
+    }
+
+    async fn model_call_time_series(
+        &self,
+        ctx: RequestContext,
+        minutes: u32,
+    ) -> Result<Vec<TimeSeriesPoint>> {
+        const MAX_MINUTES: u32 = 1440;
+        let minutes = minutes.clamp(1, MAX_MINUTES);
+        let now = chrono::Utc::now().timestamp_millis();
+        let start = now - i64::from(minutes) * 60_000;
+
+        let mut query = ModelProviderStatsQuery {
+            time_range: Some((start, now)),
+            interval: Some(StatsInterval::Minutely),
+            ..Default::default()
+        };
+        if let Some(org_id) = ctx.organization_id.clone() {
+            query.filters.push(StatFilter::Equals {
+                key: "organization_id".to_string(),
+                value: JsonValue::String(org_id),
+            });
+        }
+
+        self.model_provider_stats_dao
+            .query_model_call_time_series(ctx, query)
+            .await
+    }
+
+    async fn get_model_call_stats_for_user(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        options: StatsFetchOptions,
+    ) -> Result<ModelCallStats> {
+        let mut query = ModelProviderStatsQuery {
+            user_id: Some(user_id.to_string()),
+            time_range: options.time_range,
+            interval: options.interval,
+            ..Default::default()
+        };
+        if let Some(org_id) = ctx.organization_id.clone() {
+            query.filters.push(StatFilter::Equals {
+                key: "organization_id".to_string(),
+                value: JsonValue::String(org_id),
+            });
+        }
+
         self.model_provider_stats_dao
             .get_stats(ctx, query, options)
             .await

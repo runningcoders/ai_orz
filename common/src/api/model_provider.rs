@@ -384,3 +384,24 @@ pub struct GetRebuildProgressRequest {
     #[param(source = "query")]
     pub task_id: String,
 }
+
+/// GET /api/v1/finance/model-providers/token-stats 请求
+///
+/// 工作台顶栏 Token QPS 曲线用：查询当前组织最近 N 分钟的分钟级模型调用时序。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, Params)]
+pub struct GetTokenStatsRequest {
+    /// 时间窗口（分钟），默认 60，上限 1440（24 小时）
+    #[param(source = "query")]
+    pub minutes: Option<u32>,
+}
+
+/// GET /api/v1/finance/model-providers/token-stats 响应
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct TokenStatsResponse {
+    /// 分钟级时序点（按 `interval_start` 升序）
+    pub points: Vec<crate::models::TimeSeriesPoint>,
+    /// 窗口内输入 Token 合计
+    pub total_tokens_input: u64,
+    /// 窗口内输出 Token 合计
+    pub total_tokens_output: u64,
+}

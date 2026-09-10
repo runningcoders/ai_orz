@@ -14,6 +14,10 @@ pub const HUD_PRIMARY: &str = "#fa520f";
 /// HUD 主色 RGB 元组
 #[allow(dead_code)]
 pub const HUD_PRIMARY_RGB: (u8, u8, u8) = (250, 82, 15);
+/// HUD 次色（青蓝）——用于双轴图的第二条曲线，与主色橙色形成冷/暖对比
+pub const HUD_SECONDARY: &str = "#22d3ee";
+/// HUD 第三色（紫）——用于同轴第三条曲线（如 Token 输入/输出并列），与前两色区分度足够
+pub const HUD_TERTIARY: &str = "#a78bfa";
 /// HUD 画布基底色（深色）
 pub const HUD_BASE_BG: &str = "#0a0e1a";
 

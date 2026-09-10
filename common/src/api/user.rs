@@ -7,7 +7,20 @@ use serde::{Deserialize, Serialize};
 
 /// Get current user info request
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct GetCurrentUserRequest {}
+pub struct GetCurrentUserRequest {
+    /// 是否加载模型调用统计（token + 时序趋势）
+    #[param(source = "query")]
+    pub with_model_call_stats: Option<bool>,
+    /// 统计时间范围起始（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_start: Option<i64>,
+    /// 统计时间范围结束（毫秒时间戳）
+    #[param(source = "query")]
+    pub stats_time_end: Option<i64>,
+    /// 时序查询粒度：hourly / daily
+    #[param(source = "query")]
+    pub stats_interval: Option<String>,
+}
 
 /// 当前用户信息响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -37,6 +50,8 @@ pub struct UserInfoResponse {
 pub struct GetCurrentUserResponse {
     /// 用户信息数据
     pub data: UserInfoResponse,
+    /// 模型调用统计（按打点 `user_id` 匹配；仅 `with_model_call_stats=true` 时返回）
+    pub model_call_stats: Option<crate::models::ModelCallStats>,
 }
 
 /// 更新当前用户信息请求

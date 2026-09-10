@@ -11,6 +11,7 @@ pub mod rebuild_progress;
 pub mod rebuild_vectors_task;
 pub mod switch_embedding;
 pub mod test_connection;
+pub mod token_stats;
 pub mod update_model_provider;
 
 pub use call_model::call_model_handler;
@@ -21,4 +22,5 @@ pub use list_model_providers::list_model_providers_handler;
 pub use rebuild_progress::get_rebuild_progress_handler;
 pub use switch_embedding::switch_embedding_provider_handler;
 pub use test_connection::test_model_provider_connection_handler;
+pub use token_stats::get_token_stats_handler;
 pub use update_model_provider::update_model_provider_handler;

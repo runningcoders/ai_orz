@@ -85,6 +85,39 @@ async fn test_query_model_call_time_series() -> Result<()> {
     Ok(())
 }
 
+/// 分钟级时序：验证 `StatsInterval::Minutely` 的 truncate 表达式在 DuckDB 下
+/// 确实按整数除法对齐到 60000ms 边界（若 DuckDB 返回浮点，反序列化后
+/// interval_start 不再是整分钟，前端 X 轴标签会错乱）。
+#[tokio::test]
+async fn test_query_model_call_time_series_minutely() -> Result<()> {
+    let model_provider_id = "provider-ts-minute-test";
+    let (ctx, dao) = setup_test_env(model_provider_id, 3).await?;
+
+    let now = Utc::now().timestamp_millis();
+    let query = ModelProviderStatsQuery {
+        model_provider_id: Some(model_provider_id.to_string()),
+        time_range: Some((now - 10_000_000, now + 10_000_000)),
+        interval: Some(StatsInterval::Minutely),
+        ..Default::default()
+    };
+
+    let points = dao.query_model_call_time_series(ctx, query).await?;
+
+    assert!(!points.is_empty());
+    for p in &points {
+        assert_eq!(
+            p.interval_start % 60_000,
+            0,
+            "interval_start 未按分钟对齐: {}",
+            p.interval_start
+        );
+    }
+    let total_calls: u64 = points.iter().map(|p| p.call_count).sum();
+    assert_eq!(total_calls, 3);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_query_model_call_aggregation_with_group_by() -> Result<()> {
     let model_provider_id = "provider-agg-test";

@@ -4,14 +4,14 @@ use common::api::{
     AttachmentDetail, CallModelRequest, CallModelResponse, CreateMcpServerRequest,
     CreateMcpServerResponse, CreateModelProviderRequest, CreateModelProviderResponse,
     CreateTextAttachmentRequest, CreateToolRequest, CreateToolResponse, DebugCallToolRequest,
-    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetToolRequest,
-    GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse, ListToolsRequest,
-    MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest, QueryToolCallEntriesResponse,
-    SearchToolsRequest, SwitchEmbeddingProviderRequest, SwitchEmbeddingProviderResponse,
-    TestConnectionResponse, TestMessageChannelConnectionResponse, ToolListItem, ToolQueryRequest,
-    UpdateAttachmentContentRequest, UpdateMcpServerStatusRequest,
-    UpdateMessageChannelStatusRequest, UpdateModelProviderRequest, UpdateModelProviderResponse,
-    UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
+    DebugCallToolResponse, GetModelProviderRequest, GetModelProviderResponse, GetTokenStatsRequest,
+    GetToolRequest, GetToolResponse, ListMcpServersResponse, ListModelProvidersResponse,
+    ListToolsRequest, MessageChannelListItem, PagedResult, QueryToolCallEntriesRequest,
+    QueryToolCallEntriesResponse, SearchToolsRequest, SwitchEmbeddingProviderRequest,
+    SwitchEmbeddingProviderResponse, TestConnectionResponse, TestMessageChannelConnectionResponse,
+    TokenStatsResponse, ToolListItem, ToolQueryRequest, UpdateAttachmentContentRequest,
+    UpdateMcpServerStatusRequest, UpdateMessageChannelStatusRequest, UpdateModelProviderRequest,
+    UpdateModelProviderResponse, UpdateToolRequest, UpdateToolResponse, UpdateToolStatusRequest,
 };
 use web_sys::FormData;
 
@@ -100,6 +100,18 @@ pub async fn switch_embedding_provider(
         &format!("/api/v1/finance/model-providers/{}/switch", req.id),
         &req,
     )
+    .await
+}
+
+/// 获取组织级分钟级 Token 消耗时序（工作台顶栏 QPS 曲线）
+///
+/// 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，曲线末端偏低属预期。
+pub async fn get_token_stats(req: GetTokenStatsRequest) -> Result<TokenStatsResponse, ApiError> {
+    let qs = super::build_query_string(&[("minutes", req.minutes.map(|m| m.to_string()))]);
+    api_get(&format!(
+        "/api/v1/finance/model-providers/token-stats{}",
+        qs
+    ))
     .await
 }
 

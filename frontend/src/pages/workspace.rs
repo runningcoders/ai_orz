@@ -19,10 +19,13 @@
 
 use dioxus::prelude::*;
 
+use common::api::GetTokenStatsRequest;
+
+use crate::api::finance::get_token_stats;
 use crate::api::hr::{list_runtime_agents, query_agents};
 use crate::api::message::{load_latest_messages, send_message_to_agent};
 use crate::api::project::{list_project_tasks, query_projects, query_tasks};
-use crate::components::charts::line_chart::LineChart;
+use crate::components::charts::line_chart::{LineChart, LineChartValueField};
 use crate::components::chat::{MessageBubble, TypingIndicator};
 use crate::components::state::Loading;
 use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
@@ -132,9 +135,8 @@ pub fn Workspace() -> Element {
     let mut project_unread = use_signal(std::collections::HashSet::<String>::new);
     let mut agent_unread = use_signal(std::collections::HashSet::<String>::new);
 
-    // 消息流量时序数据（前端本地累积，每分钟桶，保留最近 60 分钟）
-    let msg_flow: Signal<std::collections::HashMap<i64, u64>> =
-        use_signal(std::collections::HashMap::new);
+    // 组织级分钟级 Token 消耗时序（后端 DuckDB 查询，30 秒轮询；顶栏 QPS 曲线用）
+    let token_series: Signal<Vec<TimeSeriesPoint>> = use_signal(Vec::new);
 
     // 运行中 Agent 列表（轮询 runtime-list 接口）
     let runtime_agents = use_signal(RuntimeListResponse::default);
@@ -161,6 +163,22 @@ pub fn Workspace() -> Element {
                     runtime_agents.set(resp);
                 }
                 gloo_timers::future::TimeoutFuture::new(5000).await;
+            }
+        }
+    });
+
+    // Token 消耗轮询：30 秒间隔，拉最近 60 分钟的分钟级时序（顶栏 QPS 曲线）
+    //
+    // 注意：统计事件是批次刷盘，最近 1~2 分钟可能尚未落库，曲线末端偏低属预期。
+    use_future(move || {
+        let mut token_series = token_series;
+        async move {
+            loop {
+                if let Ok(resp) = get_token_stats(GetTokenStatsRequest { minutes: Some(60) }).await
+                {
+                    token_series.set(resp.points);
+                }
+                gloo_timers::future::TimeoutFuture::new(30_000).await;
             }
         }
     });
@@ -452,7 +470,6 @@ pub fn Workspace() -> Element {
         let mut chat_messages = chat_messages;
         let mut project_unread = project_unread;
         let mut agent_unread = agent_unread;
-        let mut msg_flow = msg_flow;
 
         // SSE 资源：EventSource + Closure 供顶层 use_drop 清理
         struct WsSseResource {
@@ -466,16 +483,6 @@ pub fn Workspace() -> Element {
                 if let Some(data) = event.data().as_string()
                     && let Ok(msg) = serde_json::from_str::<MessageListItem>(&data)
                 {
-                    // 累计消息流量（按分钟桶，淘汰超过 60 分钟的旧桶）
-                    {
-                        let mut flow = msg_flow.write();
-                        let now_ms = js_sys::Date::now() as i64;
-                        let bucket = (now_ms / 60_000) * 60_000;
-                        *flow.entry(bucket).or_insert(0) += 1;
-                        let cutoff = bucket - 60 * 60_000;
-                        flow.retain(|&k, _| k >= cutoff);
-                    }
-
                     let mut msgs = chat_messages.write();
                     // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
                     replace_tmp_with_real(&mut msgs, &msg);
@@ -658,17 +665,8 @@ pub fn Workspace() -> Element {
                     let busy_n = ra.items.iter().filter(|i| i.state == "busy").count();
                     let rest_n = ra.items.iter().filter(|i| i.state == "resting").count();
 
-                    // 流量迷你图数据（最近 60 分钟本地累积）
-                    let flow = msg_flow.read();
-                    let mut points: Vec<TimeSeriesPoint> = flow.iter()
-                        .map(|(&k, &v)| TimeSeriesPoint {
-                            interval_start: k,
-                            tokens_input: 0,
-                            tokens_output: 0,
-                            call_count: v,
-                        })
-                        .collect();
-                    points.sort_by_key(|p| p.interval_start);
+                    // Token QPS 迷你图数据（后端分钟级时序，最近 60 分钟）
+                    let points = token_series.read().clone();
 
                     rsx! {
                         div { class: "absolute top-3 left-3 right-3 z-10 hud-glass rounded-xl px-4 py-2 flex items-center gap-4 flex-wrap",
@@ -707,14 +705,15 @@ pub fn Workspace() -> Element {
                             // 流量迷你图
                             div { class: "ml-auto h-12 flex items-center",
                                 if points.is_empty() {
-                                    span { class: "text-xs text-base-content/40", "暂无流量" }
+                                    span { class: "text-xs text-base-content/40", "暂无消耗" }
                                 } else {
                                     LineChart {
                                         data: points,
                                         width: Some(160.0),
                                         height: Some(48.0),
                                         title: None,
-                                        value_label: None,
+                                        value_label: Some("Token/s".to_string()),
+                                        value_field: Some(LineChartValueField::TokensPerSecond),
                                     }
                                 }
                             }

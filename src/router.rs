@@ -770,6 +770,11 @@ fn finance_routes() -> Router {
             "/model-providers/rebuild-progress",
             get(handlers::finance::model_provider::rebuild_progress::get_rebuild_progress_handler),
         )
+        // Token consumption time series route - 工作台顶栏 Token QPS 曲线（分钟级，组织隔离）
+        .route(
+            "/model-providers/token-stats",
+            get(handlers::finance::model_provider::token_stats::get_token_stats_handler),
+        )
         .route(
             "/model-providers/{id}/call",
             post(handlers::finance::model_provider::call_model::call_model_handler),

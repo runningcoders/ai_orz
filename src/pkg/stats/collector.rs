@@ -466,6 +466,7 @@ impl Stats {
             .ok_or_else(|| Error::internal(format!("Table not found: {}", table)))?;
 
         let truncate_func = match interval {
+            StatsInterval::Minutely => "(timestamp / 60000) * 60000",
             StatsInterval::Hourly => "(timestamp / 3600000) * 3600000",
             StatsInterval::Daily => "(timestamp / 86400000) * 86400000",
         };

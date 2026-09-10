@@ -161,4 +161,25 @@ impl ModelProviderManage for FinanceDomainImpl {
         // 向量索引重建由调用方通过 RebuildVectorsTask 触发
         Ok(current_provider)
     }
+
+    async fn model_call_time_series(
+        &self,
+        ctx: RequestContext,
+        minutes: u32,
+    ) -> Result<Vec<common::models::TimeSeriesPoint>> {
+        self.model_provider_dal
+            .model_call_time_series(ctx, minutes)
+            .await
+    }
+
+    async fn get_model_call_stats_for_user(
+        &self,
+        ctx: RequestContext,
+        user_id: &str,
+        options: common::models::StatsFetchOptions,
+    ) -> Result<common::models::ModelCallStats> {
+        self.model_provider_dal
+            .get_model_call_stats_for_user(ctx, user_id, options)
+            .await
+    }
 }
