@@ -516,18 +516,50 @@ pub async fn apply_snapshot_to_db_with_progress(
         });
     }
 
-    // 2. 校验敏感字段齐备
+    // 2. 预扫描已存在的实体：敏感字段允许对已存在实体留空（写入时沿用当前凭据），
+    //    因此这里先把命中的 ID 收集出来，交给校验函数判定"是否必须补值"。
+    let mut existing_user_ids = std::collections::HashSet::new();
+    for user_def in &snapshot.users {
+        if organization::domain()
+            .user_manage()
+            .get_user_by_id(ctx.clone(), &user_def.id)
+            .await?
+            .is_some()
+        {
+            existing_user_ids.insert(user_def.id.clone());
+        }
+    }
+    let mut existing_provider_ids = std::collections::HashSet::new();
+    for provider_def in &snapshot.model_providers {
+        if finance::domain()
+            .model_provider_manage()
+            .get_model_provider_with_options(ctx.clone(), &provider_def.id, Default::default())
+            .await?
+            .is_some()
+        {
+            existing_provider_ids.insert(provider_def.id.clone());
+        }
+    }
+
+    // 3. 校验敏感字段齐备（新建实体必填；已存在的可留空）
     crate::service::domain::system::seed::diff::validate_sensitive_fields(
         snapshot,
         sensitive_values,
+        &existing_user_ids,
+        &existing_provider_ids,
     )
     .map_err(Error::bad_request)?;
+
+    // 4. 校验对话类模型带上下文长度：缺失会让 Provider 落库成 threshold=0（永不压缩），
+    //    等效模型信息不完整，与敏感字段同级 fail-fast。
+    crate::service::domain::system::seed::diff::validate_provider_context_length(snapshot)
+        .map_err(Error::bad_request)?;
 
     let mut created = 0usize;
     let mut updated = 0usize;
     let mut skipped = 0usize;
 
-    // 3. 写入用户
+    // 5. 写入用户
     progress(1, "正在写入用户");
     for user_def in &snapshot.users {
         let existing = organization::domain()
@@ -586,7 +618,7 @@ pub async fn apply_snapshot_to_db_with_progress(
         }
     }
 
-    // 4. 写入 ModelProvider
+    // 6. 写入 ModelProvider
     progress(2, "正在写入模型 Provider");
     for provider_def in &snapshot.model_providers {
         let existing = finance::domain()
@@ -645,7 +677,7 @@ pub async fn apply_snapshot_to_db_with_progress(
         }
     }
 
-    // 5. 写入 Agent
+    // 7. 写入 Agent
     progress(3, "正在写入 Agent");
     for agent_def in &snapshot.agents {
         let existing = hr::domain()
@@ -701,7 +733,7 @@ pub async fn apply_snapshot_to_db_with_progress(
         }
     }
 
-    // 6. 写入 Skill（复用 apply_preset_skills，传 None 保留模板原始 author_id）
+    // 8. 写入 Skill（复用 apply_preset_skills，传 None 保留模板原始 author_id）
     progress(4, "正在写入 Skill");
     let skill_result = apply_preset_skills(
         ctx.clone(),

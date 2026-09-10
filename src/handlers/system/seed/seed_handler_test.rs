@@ -58,7 +58,7 @@ async fn prepare_test_data(ctx: &crate::pkg::RequestContext) -> String {
     );
     user_dal.create(ctx.clone(), &user).await.unwrap();
 
-    let chat_provider = ModelProvider::new(
+    let mut chat_provider = ModelProvider::new(
         "OpenAI Chat".to_string(),
         ProviderType::OpenAI,
         ModelCapability::Agent,
@@ -68,6 +68,14 @@ async fn prepare_test_data(ctx: &crate::pkg::RequestContext) -> String {
         Some("对话模型".to_string()),
         user_id.clone(),
     );
+    // 对话模型必须带上下文长度：seed 导入会拒绝缺失该字段的快照
+    // （validate_provider_context_length），测试数据需与之对齐。
+    chat_provider
+        .po
+        .set_config(&crate::models::model_provider::ModelProviderConfig {
+            max_context_length: Some(128_000),
+            ..Default::default()
+        });
     provider_dal
         .create(ctx.clone(), &chat_provider)
         .await
@@ -252,5 +260,45 @@ async fn test_apply_default_template_creates_template_entities(pool: SqlitePool)
         created_provider.po.config().max_context_length,
         Some(128_000),
         "默认模板的对话模型应带上 max_context_length"
+    );
+}
+
+/// 导入快照时，对话类模型缺 `max_context_length` 必须 fail-fast 拒绝。
+///
+/// 缺该字段的 Provider 落库后 threshold=0 → Agent 永不压缩上下文，等同模型信息不完整，
+/// 因此与"缺敏感字段"同级拦截。
+#[sqlx::test]
+async fn test_apply_snapshot_rejects_chat_provider_without_context_length(pool: SqlitePool) {
+    use common::enums::ModelCapability;
+
+    let ctx = init_test_env(pool).await;
+    let org_id = prepare_test_data(&ctx).await;
+
+    let mut snapshot = super::assemble_snapshot_from_db(ctx.clone(), &org_id, None)
+        .await
+        .unwrap();
+
+    // 抹掉对话模型的 config，模拟外部快照漏填
+    for p in &mut snapshot.model_providers {
+        if p.capability == ModelCapability::Agent as i32 {
+            p.config = "{}".to_string();
+        }
+    }
+
+    // 注意：此处 sensitive_values 为空——快照中的实体均已存在，敏感字段校验应放行，
+    // 从而让失败原因唯一地落在上下文长度校验上。
+    let err = super::apply_snapshot_to_db(
+        ctx,
+        &snapshot,
+        common::api::seed::ImportStrategy::PreserveIds,
+        &HashMap::new(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        err.to_string().contains("max_context_length"),
+        "应因缺少 max_context_length 被拒绝，实际错误: {}",
+        err
     );
 }

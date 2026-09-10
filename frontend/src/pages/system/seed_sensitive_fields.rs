@@ -1,10 +1,13 @@
 //! Seed 导入敏感字段（用户密码 / Provider API Key）补填区
 //!
 //! 快照导出时敏感字段一律不落盘，只写 `PENDING_INPUT` 占位符。后端
-//! `apply_snapshot_to_db` 在写入前会调用 `validate_sensitive_fields`，凡是以
-//! `PENDING_INPUT` 占位的项都必须由调用方补值，否则任务直接以「缺少敏感字段」失败
-//! （见 `src/service/domain/system/seed/diff.rs`）。本模块负责把快照里的占位符
+//! `apply_snapshot_to_db` 写入前会调用 `validate_sensitive_fields`：**只在目标环境
+//! 中不存在对应实体时才强制补值**——已存在的账号 / Provider 可以留空，写入时沿用其
+//! 当前凭据（见 `src/service/domain/system/seed/diff.rs`）。本模块负责把快照里的占位符
 //! 解析成表单项，并把用户输入整理成后端期望的 `sensitive_values` Map。
+//!
+//! 前端不做事前必填拦截：是否"必须填"取决于目标环境是否已有该实体，只有后端掌握这一
+//! 信息，前端擅自拦截会误伤"导入已有组织"这类本可留空的场景。
 //!
 //! ## 为什么抽成独立组件
 //!
@@ -48,7 +51,7 @@ pub fn extract_sensitive_fields(snapshot: &serde_json::Value) -> Vec<SensitiveFi
             fields.push(SensitiveField {
                 key: format!("user:{}:password", id),
                 label: format!("用户 {} 的密码", username),
-                hint: "该账号将使用此密码登录（已存在则被重置）".to_string(),
+                hint: "留空则沿用现有密码；新建账号必填".to_string(),
             });
         }
     }
@@ -64,7 +67,7 @@ pub fn extract_sensitive_fields(snapshot: &serde_json::Value) -> Vec<SensitiveFi
             fields.push(SensitiveField {
                 key: format!("model_provider:{}:api_key", id),
                 label: format!("{} 的 API Key", name),
-                hint: format!("模型 {}", model_name),
+                hint: format!("模型 {}；留空则沿用现有 Key", model_name),
             });
         }
     }
@@ -79,35 +82,6 @@ pub fn parse_sensitive_fields(content: &str) -> Result<Vec<SensitiveField>, Stri
     let snapshot: serde_json::Value =
         serde_json::from_str(content).map_err(|e| format!("解析快照失败: {}", e))?;
     Ok(extract_sensitive_fields(&snapshot))
-}
-
-/// 校验必填敏感字段是否已填写（DryRun 预演不写入，不校验）
-///
-/// 前置校验的意义在于把失败挡在提交之前：后端 `validate_sensitive_fields` 是在
-/// 后台任务里跑的，失败后只能以任务 Failed 的形式出现，用户已看不到表单上下文。
-pub fn check_sensitive_filled(
-    fields: &[SensitiveField],
-    values: &HashMap<String, String>,
-    strategy: common::api::seed::ImportStrategy,
-) -> Result<(), String> {
-    if matches!(strategy, common::api::seed::ImportStrategy::DryRun) {
-        return Ok(());
-    }
-    let missing: Vec<&str> = fields
-        .iter()
-        .filter(|f| {
-            values
-                .get(&f.key)
-                .map(|v| v.trim().is_empty())
-                .unwrap_or(true)
-        })
-        .map(|f| f.label.as_str())
-        .collect();
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("请补填敏感字段：{}", missing.join("、")))
-    }
 }
 
 fn str_at(value: &serde_json::Value, key: &str) -> String {
@@ -126,18 +100,29 @@ fn is_pending(value: &serde_json::Value, key: &str) -> bool {
 pub struct SeedSensitiveFieldsProps {
     /// 待补填字段（由快照解析得出，弹窗打开时刷新）
     fields: Vec<SensitiveField>,
-    /// 是否必填（DryRun 预演为 false）
-    #[props(default = true)]
-    required: bool,
+    /// DryRun 预演不写入：直接隐藏输入区（无需任何凭据）
+    #[props(default = false)]
+    dry_run: bool,
     /// 输入变化回调：每次输入上报全量值，父级只存不渲染
     on_change: EventHandler<HashMap<String, String>>,
 }
 
 /// 敏感字段输入区（无外壳，直接嵌入弹窗表单）
+///
+/// 不做必填标记：是否必须填取决于目标环境是否已存在该实体，由后端裁决。已存在的
+/// 账号 / Provider 留空即沿用现有凭据，只有新建的才需要填写。
 #[component]
 pub fn SeedSensitiveFields(props: SeedSensitiveFieldsProps) -> Element {
     // 草稿只在本组件内流转；父级拿到值后仅做存储，不回写渲染，避免打断输入
     let mut values = use_signal(HashMap::<String, String>::new);
+
+    if props.dry_run {
+        return rsx! {
+            p { class: "text-xs text-base-content/50 py-2",
+                "仅预演（DryRun）不会写入数据，无需填写凭据"
+            }
+        };
+    }
 
     if props.fields.is_empty() {
         return rsx! {
@@ -157,15 +142,11 @@ pub fn SeedSensitiveFields(props: SeedSensitiveFieldsProps) -> Element {
                     let label = field.label.clone();
                     let hint = field.hint.clone();
                     let current = values.read().get(&field.key).cloned().unwrap_or_default();
-                    let required = props.required;
                     let on_change = props.on_change;
                     rsx! {
                         div { key: "{field_key}", class: "form-control w-full",
                             label { class: "form-label",
                                 span { "{label}" }
-                                if required {
-                                    span { class: "text-error ml-1", "*" }
-                                }
                             }
                             input {
                                 class: "input input-bordered w-full",
@@ -187,11 +168,7 @@ pub fn SeedSensitiveFields(props: SeedSensitiveFieldsProps) -> Element {
                 }
             }
             p { class: "text-base-content/60 text-xs",
-                if props.required {
-                    "快照不保存原始凭据（敏感字段以占位符导出），导入时必须补填后才能写入"
-                } else {
-                    "仅预演（DryRun）不会写入数据，无需填写敏感字段"
-                }
+                "快照不保存原始凭据（以占位符导出）。目标环境中已存在的账号 / Provider 可留空，将沿用其现有凭据；新建的必须填写，否则导入会失败。"
             }
         }
     }

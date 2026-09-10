@@ -4,7 +4,7 @@
 mod tests {
     use crate::service::domain::system::seed::defs::*;
     use crate::service::domain::system::seed::diff::*;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn make_test_snapshot(name: &str) -> SeedSnapshot {
         SeedSnapshot {
@@ -33,6 +33,22 @@ mod tests {
             model_providers: vec![],
             agents: vec![],
             skills: vec![],
+        }
+    }
+
+    /// 构造 model_provider 定义（capability: 0=对话, 1=向量）
+    fn make_provider(id: &str, capability: i32, config: &str) -> ModelProviderDef {
+        ModelProviderDef {
+            id: id.to_string(),
+            name: format!("provider-{}", id),
+            provider_type: 0,
+            model_name: "gpt-4o".to_string(),
+            capability,
+            api_key_ref: PENDING_INPUT.to_string(),
+            base_url: None,
+            description: None,
+            config: config.to_string(),
+            status: 1,
         }
     }
 
@@ -82,14 +98,54 @@ mod tests {
         let snapshot = make_test_snapshot("name");
         let mut sensitive = HashMap::new();
         sensitive.insert("user:U1:password".to_string(), "hashed_pwd".to_string());
-        assert!(validate_sensitive_fields(&snapshot, &sensitive).is_ok());
+        assert!(
+            validate_sensitive_fields(&snapshot, &sensitive, &HashSet::new(), &HashSet::new())
+                .is_ok()
+        );
     }
 
     #[test]
     fn test_validate_sensitive_fields_missing() {
         let snapshot = make_test_snapshot("name");
         let sensitive = HashMap::new();
-        assert!(validate_sensitive_fields(&snapshot, &sensitive).is_err());
+        assert!(
+            validate_sensitive_fields(&snapshot, &sensitive, &HashSet::new(), &HashSet::new())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_validate_sensitive_fields_skips_existing_user() {
+        // 用户已存在于目标环境 → 可留空，写入时沿用当前密码
+        let snapshot = make_test_snapshot("name");
+        let sensitive = HashMap::new();
+        let existing: HashSet<String> = ["U1".to_string()].into_iter().collect();
+        assert!(
+            validate_sensitive_fields(&snapshot, &sensitive, &existing, &HashSet::new()).is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_provider_context_length_rejects_chat_without_threshold() {
+        let mut snapshot = make_test_snapshot("name");
+        snapshot.model_providers.push(make_provider("P1", 0, "{}"));
+        assert!(validate_provider_context_length(&snapshot).is_err());
+    }
+
+    #[test]
+    fn test_validate_provider_context_length_accepts_chat_with_threshold() {
+        let mut snapshot = make_test_snapshot("name");
+        snapshot
+            .model_providers
+            .push(make_provider("P1", 0, "{\"max_context_length\":128000}"));
+        assert!(validate_provider_context_length(&snapshot).is_ok());
+    }
+
+    #[test]
+    fn test_validate_provider_context_length_exempts_embedding() {
+        let mut snapshot = make_test_snapshot("name");
+        snapshot.model_providers.push(make_provider("P1", 1, "{}"));
+        assert!(validate_provider_context_length(&snapshot).is_ok());
     }
 
     #[test]
@@ -98,6 +154,34 @@ mod tests {
         sensitive.insert("user:U1:password".to_string(), "new_hash".to_string());
         let result = resolve_password(PENDING_INPUT, "U1", &sensitive, None).unwrap();
         assert_eq!(result, "new_hash");
+    }
+
+    #[test]
+    fn test_resolve_password_pending_input_falls_back_to_current() {
+        // 未补填但用户已存在 → 沿用当前密码哈希
+        let sensitive = HashMap::new();
+        let result =
+            resolve_password(PENDING_INPUT, "U1", &sensitive, Some("current_hash")).unwrap();
+        assert_eq!(result, "current_hash");
+    }
+
+    #[test]
+    fn test_resolve_password_pending_input_without_current_errors() {
+        let sensitive = HashMap::new();
+        assert!(resolve_password(PENDING_INPUT, "U1", &sensitive, None).is_err());
+    }
+
+    #[test]
+    fn test_resolve_api_key_pending_input_falls_back_to_current() {
+        let sensitive = HashMap::new();
+        let result = resolve_api_key(PENDING_INPUT, "P1", &sensitive, Some("sk-current")).unwrap();
+        assert_eq!(result, "sk-current");
+    }
+
+    #[test]
+    fn test_resolve_api_key_pending_input_without_current_errors() {
+        let sensitive = HashMap::new();
+        assert!(resolve_api_key(PENDING_INPUT, "P1", &sensitive, None).is_err());
     }
 
     #[test]

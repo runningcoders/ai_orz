@@ -4,7 +4,8 @@
 //! 跨 domain 的 DB 读取由 handler 完成，handler 把当前 DB 值作为参数传入。
 
 use super::defs::*;
-use std::collections::HashMap;
+use crate::models::model_provider::ModelProviderConfig;
+use std::collections::{HashMap, HashSet};
 
 /// 对比两个快照（纯函数）
 pub fn diff_snapshots(base: &SeedSnapshot, target: &SeedSnapshot) -> SeedDiff {
@@ -170,28 +171,34 @@ fn collect_field_changes_recursive(
 
 /// 校验敏感字段是否齐备（纯函数）
 ///
-/// 返回 Err(message) 表示缺少字段；返回 Ok(()) 表示齐备
+/// 返回 Err(message) 表示缺少字段；返回 Ok(()) 表示齐备。
+///
+/// 已在目标环境中存在的实体（ID 命中 `existing_*_ids`）可以留空：写入时会沿用其当前
+/// 凭据（见 `resolve_password` / `resolve_api_key`），不强制操作者重新输入已存在的密码
+/// 或 API Key。只有**新建**实体才必须补值。
 pub fn validate_sensitive_fields(
     snapshot: &SeedSnapshot,
     sensitive_values: &HashMap<String, String>,
+    existing_user_ids: &HashSet<String>,
+    existing_provider_ids: &HashSet<String>,
 ) -> Result<(), String> {
     for u in &snapshot.users {
-        if u.password_ref == PENDING_INPUT {
+        if u.password_ref == PENDING_INPUT && !existing_user_ids.contains(&u.id) {
             let key = format!("user:{}:password", u.id);
             if !sensitive_values.contains_key(&key) {
                 return Err(format!(
-                    "缺少敏感字段: {} (用户 {} 的密码)",
+                    "缺少敏感字段: {} (新建用户 {} 的密码)",
                     key, u.username
                 ));
             }
         }
     }
     for p in &snapshot.model_providers {
-        if p.api_key_ref == PENDING_INPUT {
+        if p.api_key_ref == PENDING_INPUT && !existing_provider_ids.contains(&p.id) {
             let key = format!("model_provider:{}:api_key", p.id);
             if !sensitive_values.contains_key(&key) {
                 return Err(format!(
-                    "缺少敏感字段: {} (Provider {} 的 API Key)",
+                    "缺少敏感字段: {} (新建 Provider {} 的 API Key)",
                     key, p.name
                 ));
             }
@@ -200,9 +207,38 @@ pub fn validate_sensitive_fields(
     Ok(())
 }
 
+/// 校验对话类（非 Embedding）模型都带 `max_context_length`（纯函数）
+///
+/// 该字段是上下文压缩触发阈值的唯一来源：缺失会让 Provider 落库成 `threshold=0`，
+/// `ContextOverflowPolicy` 恒不命中 → Agent 永不压缩上下文，等效于模型信息不完整。
+/// 因此导入时与敏感字段同级 fail-fast，而不是静默落库一个残缺配置。
+///
+/// Embedding 无对话上下文概念，豁免。
+pub fn validate_provider_context_length(snapshot: &SeedSnapshot) -> Result<(), String> {
+    for p in &snapshot.model_providers {
+        if common::enums::ModelCapability::from_i32(p.capability).is_embedding() {
+            continue;
+        }
+        let has_threshold = serde_json::from_str::<ModelProviderConfig>(&p.config)
+            .ok()
+            .and_then(|c| c.max_context_length)
+            .is_some_and(|v| v > 0);
+        if !has_threshold {
+            return Err(format!(
+                "对话模型「{}」缺少 max_context_length：上下文压缩阈值无法计算，\
+                 请在快照中补全后重新导入",
+                p.name
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// 解析密码占位符（纯函数）
 ///
-/// current_password_hash：当 ref_value = INHERIT_CURRENT 时由 handler 查 DB 传入（None 表示 DB 中无此用户）
+/// current_password_hash：由 handler 查 DB 传入（None 表示 DB 中无此用户）。
+/// `PENDING_INPUT` 优先取调用方补填的明文；未补填但用户已存在时回退为当前密码哈希
+/// （导入不应强制重置已存在账号的密码）。`ensure_hashed` 会识别已是 bcrypt 的值并透传。
 pub fn resolve_password(
     ref_value: &str,
     user_id: &str,
@@ -212,10 +248,12 @@ pub fn resolve_password(
     match ref_value {
         PENDING_INPUT => {
             let key = format!("user:{}:password", user_id);
-            sensitive_values
-                .get(&key)
-                .cloned()
-                .ok_or_else(|| format!("缺少密码: {}", key))
+            match sensitive_values.get(&key) {
+                Some(v) => Ok(v.clone()),
+                None => current_password_hash
+                    .map(str::to_string)
+                    .ok_or_else(|| format!("缺少密码: {} (目标环境无此用户，必须提供)", key)),
+            }
         }
         INHERIT_CURRENT => current_password_hash
             .map(|s| s.to_string())
@@ -229,6 +267,9 @@ pub fn resolve_password(
 }
 
 /// 解析 API Key 占位符（纯函数）
+///
+/// `PENDING_INPUT` 优先取调用方补填值；未补填但 Provider 已存在时回退为当前 API Key，
+/// 避免导入同一组织快照时被迫重输所有 Provider 凭据。
 pub fn resolve_api_key(
     ref_value: &str,
     provider_id: &str,
@@ -238,10 +279,12 @@ pub fn resolve_api_key(
     match ref_value {
         PENDING_INPUT => {
             let key = format!("model_provider:{}:api_key", provider_id);
-            sensitive_values
-                .get(&key)
-                .cloned()
-                .ok_or_else(|| format!("缺少 API Key: {}", key))
+            match sensitive_values.get(&key) {
+                Some(v) => Ok(v.clone()),
+                None => current_api_key.map(str::to_string).ok_or_else(|| {
+                    format!("缺少 API Key: {} (目标环境无此 Provider，必须提供)", key)
+                }),
+            }
         }
         INHERIT_CURRENT => current_api_key.map(|s| s.to_string()).ok_or_else(|| {
             format!(

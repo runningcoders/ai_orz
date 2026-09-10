@@ -22,8 +22,7 @@ use crate::components::state::{EmptyState, Loading};
 use crate::components::task_progress::TaskProgress;
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::system::seed_sensitive_fields::{
-    SeedSensitiveFields, SensitiveField, check_sensitive_filled, extract_sensitive_fields,
-    parse_sensitive_fields,
+    SeedSensitiveFields, SensitiveField, extract_sensitive_fields, parse_sensitive_fields,
 };
 use crate::store::toast::use_toast;
 use crate::utils::{format_datetime_full, format_file_size as format_size};
@@ -267,13 +266,9 @@ pub fn SystemSeed() -> Element {
             return;
         }
         let strategy = value_to_strategy(&load_strategy());
-        // 敏感字段前置校验：后端在后台任务里才校验，失败后只剩任务 Failed，
-        // 用户已看不到表单上下文，这里挡在提交之前
+        // 敏感字段不做事前必填拦截：是否必填取决于目标环境是否已存在该实体，
+        // 只有后端掌握该信息（见 seed_sensitive_fields.rs 模块注释）
         let sensitive_values = load_sensitive.read().clone();
-        if let Err(msg) = check_sensitive_filled(&load_fields(), &sensitive_values, strategy) {
-            toast.error(msg);
-            return;
-        }
         load_submitting.set(true);
         spawn(async move {
             let req = common::api::LoadSeedRequest {
@@ -319,13 +314,8 @@ pub fn SystemSeed() -> Element {
     // ===== 应用默认模板 =====
     let on_submit_apply_default = move |_| {
         let strategy = value_to_strategy(&apply_default_strategy());
+        // 同 load 路径：必填与否由后端按"目标环境是否已存在实体"判定
         let sensitive_values = apply_default_sensitive.read().clone();
-        if let Err(msg) =
-            check_sensitive_filled(&apply_default_fields(), &sensitive_values, strategy)
-        {
-            toast.error(msg);
-            return;
-        }
         apply_default_submitting.set(true);
         spawn(async move {
             let req = common::api::ApplyDefaultSeedRequest {
@@ -634,7 +624,7 @@ pub fn SystemSeed() -> Element {
             }
             SeedSensitiveFields {
                 fields: load_fields(),
-                required: !matches!(value_to_strategy(&load_strategy()), ImportStrategy::DryRun),
+                dry_run: matches!(value_to_strategy(&load_strategy()), ImportStrategy::DryRun),
                 on_change: on_load_sensitive_change,
             }
         }
@@ -674,7 +664,7 @@ pub fn SystemSeed() -> Element {
             }
             SeedSensitiveFields {
                 fields: apply_default_fields(),
-                required: !matches!(
+                dry_run: matches!(
                     value_to_strategy(&apply_default_strategy()),
                     ImportStrategy::DryRun
                 ),
