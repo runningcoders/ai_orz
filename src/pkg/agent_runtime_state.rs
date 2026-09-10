@@ -35,6 +35,15 @@ pub struct AgentRuntimeInfo {
     /// 由 think_loop 每轮覆盖更新；**Agent 转 Idle / Resting 后仍保留最后一次的值**
     /// （思考结束后仍能回看），仅服务重启归零。
     pub context_length: u64,
+    /// 上下文压缩触发阈值（与 `context_length` 同口径的 prompt token 数）
+    ///
+    /// 与 [`ContextOverflowPolicy`](crate::pkg::policy::builtin::ContextOverflowPolicy)
+    /// 同源：`recommended_context_length` 优先，否则 `max_context_length * 0.6`。
+    /// 由 `build_policy_for_scene` 在每次思考循环开始时写入，同样**纯内存不入库**。
+    ///
+    /// 只上报原始值，百分比由前端按 `context_length / context_length_threshold` 计算。
+    /// 0 = 未配置（前端退化为不展示进度）。
+    pub context_length_threshold: u64,
 }
 
 impl Default for AgentRuntimeInfo {
@@ -47,6 +56,7 @@ impl Default for AgentRuntimeInfo {
             project_id: None,
             think_runtime: None,
             context_length: 0,
+            context_length_threshold: 0,
         }
     }
 }
@@ -277,6 +287,17 @@ impl AgentRuntimeStateManager {
             .entry(agent_id.to_string())
             .or_default()
             .context_length = context_length;
+    }
+
+    /// 记录上下文压缩触发阈值（纯内存，见 [`AgentRuntimeInfo::context_length_threshold`]）
+    ///
+    /// 由 `build_policy_for_scene` 在思考循环开始时写入。与 `record_context_length`
+    /// 一样不随 set_idle / set_resting 清零。
+    pub fn record_context_length_threshold(&self, agent_id: &str, threshold: u64) {
+        self.states
+            .entry(agent_id.to_string())
+            .or_default()
+            .context_length_threshold = threshold;
     }
 
     /// 查询思考运行时快照（runtime-status 接口调用）
@@ -620,6 +641,22 @@ mod tests {
         mgr.set_busy("agent-1", "msg-2", None, None);
         mgr.set_resting("agent-1");
         assert_eq!(mgr.get("agent-1").unwrap().context_length, 3_200);
+    }
+
+    #[test]
+    fn test_record_context_length_threshold_pure_memory() {
+        let mgr = AgentRuntimeStateManager::new();
+        // 未记录过：0
+        assert_eq!(mgr.get("agent-1").map(|i| i.context_length_threshold), None);
+
+        // 写入阈值：纯内存、不随 set_idle 清零
+        mgr.record_context_length_threshold("agent-1", 32_000);
+        assert_eq!(mgr.get("agent-1").unwrap().context_length_threshold, 32_000);
+
+        // 思考结束 → Idle：保留
+        mgr.set_busy("agent-1", "msg-1", None, None);
+        mgr.set_idle("agent-1");
+        assert_eq!(mgr.get("agent-1").unwrap().context_length_threshold, 32_000);
     }
 
     #[test]

@@ -100,6 +100,12 @@ pub async fn update_agent_status(
         .as_ref()
         .map(|info| info.context_length)
         .filter(|v| *v > 0);
+    // 压缩阈值：与 ContextOverflowPolicy 同源，原始值直出（百分比由前端算）
+    let context_length_threshold = agent
+        .runtime_info
+        .as_ref()
+        .map(|info| info.context_length_threshold)
+        .filter(|v| *v > 0);
 
     // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
     let runtime_config = {
@@ -143,6 +149,7 @@ pub async fn update_agent_status(
         current_task_id,
         current_project_id,
         context_length,
+        context_length_threshold,
         tool_list: None,
         skill_list: None,
         stats: None,

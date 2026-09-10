@@ -134,6 +134,12 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         .as_ref()
         .map(|info| info.context_length)
         .filter(|v| *v > 0);
+    // 压缩阈值：与 ContextOverflowPolicy 同源，原始值直出（百分比由前端算）
+    let context_length_threshold = agent
+        .runtime_info
+        .as_ref()
+        .map(|info| info.context_length_threshold)
+        .filter(|v| *v > 0);
 
     // 装配 Agent 工具/技能扁平列表（后端只保证「去重后的实体全集」，
     // 分组交给前端按 installed pack tag 完成）。按 with_tools / with_skills 开关按需装配，
@@ -185,6 +191,7 @@ pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<G
         current_task_id,
         current_project_id,
         context_length,
+        context_length_threshold,
         tool_list,
         skill_list,
         stats: agent.stats,

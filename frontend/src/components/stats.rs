@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use crate::components::charts::donut_chart::{DonutChart, DonutSlice};
 use crate::components::charts::line_chart::{LineChart, LineChartValueField};
 use crate::components::hud::{HudPanel, StatGrid, StatReadout};
+use crate::components::ring_progress::RingProgress;
 
 /// 工具调用分布环形图调色板（循环使用，避免单一色调）
 const TOOL_PALETTE: &[&str] = &[
@@ -209,11 +210,16 @@ pub fn AgentStatsPanel(
 ///
 /// `context_length` 是**运行时内存指标**（最近一次 LLM 调用的 prompt token 数，不入库），
 /// 用于直观观察上下文思考强度；为 None（从未思考过）时不展示该项。
+///
+/// 有 `context_length_threshold`（压缩阈值，与后端 `ContextOverflowPolicy` 同源）时
+/// 渲染成环形进度（百分比 = 当前 / 阈值，中心只显示百分比，原始数值走 hover）；
+/// 未配置阈值时退化为普通读数——此时没有分母，百分比无从谈起。
 #[component]
 pub fn AgentStatsPanelCompact(
     stats: Option<AgentStats>,
     model_call_stats: Option<ModelCallStats>,
     context_length: Option<u64>,
+    context_length_threshold: Option<u64>,
 ) -> Element {
     let has_runtime = stats.as_ref().is_some_and(|s| s.call_summary.is_some());
     let has_model = model_call_stats
@@ -242,7 +248,22 @@ pub fn AgentStatsPanelCompact(
                                     CompactStat { label: "唤醒次数".to_string(), icon: "🔔".to_string(), value: call.total_calls.to_string() }
                                     CompactStat { label: "瞬时 QPS".to_string(), icon: "⚡".to_string(), value: format_qps(call.instant_qps) }
                                 }
-                                if let Some(len) = context_length {
+                                if let (Some(len), Some(threshold)) = (context_length, context_length_threshold)
+                                {
+                                    div { class: "w-fit pt-1",
+                                        RingProgress {
+                                            value: len,
+                                            max: threshold,
+                                            caption: Some("上下文".to_string()),
+                                            title: Some(format!(
+                                                "上下文 {} / 压缩阈值 {} tokens",
+                                                format_token_count(len),
+                                                format_token_count(threshold),
+                                            )),
+                                            size: None,
+                                        }
+                                    }
+                                } else if let Some(len) = context_length {
                                     CompactStat { label: "上下文长度".to_string(), icon: "🧠".to_string(), value: format_token_count(len) }
                                 }
                             }

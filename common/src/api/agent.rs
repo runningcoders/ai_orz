@@ -216,6 +216,13 @@ pub struct GetAgentResponse {
     /// 用于直观展示 Agent 的上下文思考强度；从未思考过则为 None。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_length: Option<u64>,
+    /// 上下文压缩触发阈值（与 `context_length` 同口径的 prompt token 数）
+    ///
+    /// 与后端 `ContextOverflowPolicy` 同源（recommended_context_length 优先，否则
+    /// max_context_length * 0.6）。**只上报原始值**，百分比由前端计算，便于后端调整
+    /// 阈值策略时前端无需改动。0 / 未配置则为 None。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length_threshold: Option<u64>,
     /// Agent 已拥有并去重的工具列表（扁平，按 id 唯一）；前端按 installed pack tag 自行分组
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_list: Option<Vec<ToolListItem>>,

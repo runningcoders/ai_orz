@@ -215,6 +215,10 @@ pub(crate) fn build_policy_for_scene(
                 .map(|v| (v as f64 * CONTEXT_OVERFLOW_RATIO) as u64)
         })
     });
+    // 阈值同步进运行时内存（纯内存、不入库），供前端把上下文长度渲染成进度。
+    // 与 ContextOverflowPolicy 同源，避免两处各算一遍导致展示与裁决口径不一致。
+    AgentRuntimeStateManager::global()
+        .record_context_length_threshold(&agent.po.id, overflow_threshold.unwrap_or(0));
 
     policy_set! {
         OR {
