@@ -7,6 +7,10 @@ scope:
     - 'frontend/src/**/ChatSidePanel*'
 source_files:
     - docs/wiki/zh/content/前端应用/页面模块/消息与工作区页面/聊天侧面板/聊天侧面板.md
+    - frontend/src/components/chat/chat_side_panel.rs
+    - frontend/src/components/charts/line_chart.rs
+    - frontend/src/components/hud_palette.rs
+    - frontend/src/components/stats.rs
 ---
 
 # 聊天页引入只读信息侧栏（ChatSidePanel）聚合项目上下文
@@ -33,3 +37,10 @@ _来源：eb09a60 → 46c56db 提交周期内记录的编码计划——内容�
 
 ## 影响
 聊天页获得完整的上下文感知能力；面板纯只读，编辑操作仍走各自详情页；移动端需处理抽屉遮罩与关闭交互；refresh_tick 机制避免 SSE 竞态导致的过期请求。
+
+## 后续迭代（caf7bb02→HEAD：Agent 运行统计 Tab 增量）
+在 Agent Tab 内新增运行统计子块：唤醒次数（Agent 调用总数 + 瞬时 QPS）+ Token 消耗卡片（模型调用次数 / 输入 Token / 输出 Token）+ 三线趋势折线图（分钟级 input/output/total tokens）。实现要点：
+- 统计数据独立拉取：共享轮询主链路不带 stats 参数（零额外开销），统计仅在 Agent Tab 挂载时触发 get_agent 请求（with_stats=true + with_model_call_stats=true）
+- 防抖刷新与代际丢弃：refresh_tick（SSE / 手动刷新）变化时 debounce 2s 重新加载；stats_gen 代际号防止过期请求返回覆盖最新数据
+- AgentStatsPanelCompact 紧凑面板：320x180 原生 Canvas 渲染（避免 600px 图 CSS 缩放文字过小）；复用 LineChart + HudPalette 橙光光晕配色（HUD_PRIMARY + HUD_SECONDARY + HUD_TERTIARY 三色区分三线）
+- 复用 refresh_tick 防抖机制：与 ToolCallsTab 的刷新模式一致

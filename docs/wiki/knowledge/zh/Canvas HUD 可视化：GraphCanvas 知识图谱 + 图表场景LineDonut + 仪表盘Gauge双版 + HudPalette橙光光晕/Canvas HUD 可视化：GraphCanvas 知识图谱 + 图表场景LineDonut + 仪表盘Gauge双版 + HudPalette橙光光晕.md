@@ -38,8 +38,10 @@ source_files:
   - docs/wiki/zh/content/前端应用/页面模块/HR 管理页面/知识图谱可视化.md（HR 知识图谱页面：GraphCanvas + ForceLayout + 节点点击跳转 /hr/memory-search?id=）
   - docs/wiki/zh/content/前端应用/组件系统/图表组件/图表组件.md（图表组件总览：LineChart/DonutChart/Gauge 三组件 + 使用模式 + 降采样与性能建议）
   - docs/wiki/zh/content/前端应用/组件系统/业务组件.md（业务组件：GraphCanvas/RuntimePanel/ChatSidePanel/MessageBubble 四件套 + HUD 风格示例）
-  - '【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md（统计数据来源：stats_query API 返回 TimeSeriesPoint[] → LineChart 组件渲染）'
+  - 【平行卡 1】docs/wiki/knowledge/zh/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表/DuckDB 多维统计双层互补：record_event! 宏自动表推断 + RuntimeStatsCollector 内存滑动窗口 + 5 维度开箱即用表.md（统计数据来源：stats_query API 返回 TimeSeriesPoint[] → LineChart 组件渲染）'
   - 【平行卡 2】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md（KnowledgeGraphDto 数据来源：traverse_knowledge_graph API → GraphCanvas 渲染的 nodes/edges）
+  - frontend/src/components/chat/chat_side_panel.rs
+  - frontend/src/components/stats.rs
 ---
 
 ## §1 概述
@@ -48,7 +50,8 @@ source_files:
 
 - **CanvasScene Trait 统一渲染管线（所有可视化共享）**（canvas_scene.rs）：① setup() 创建时初始化数据 + 分配缓存顶点数组；② update(dt: f32) 每帧 tick 传 dt 秒（ForceLayout alpha 冷却/Particles 位移用）；③ draw(&ctx: &CanvasRenderingContext2d) 纯绘制；④ handle_event(event: CanvasEvent) 处理鼠标拖拽/滚轮缩放。GraphScene/ChartScene/GaugeScene 都 impl CanvasScene，统一 dioxus::use_effect 注册 requestAnimationFrame 循环。帧率策略：后台 tab（document.hidden=true）→ 自动降到 2fps（不退出循环），前台 tab 60fps；Graph 节点数 < 100 用 60fps，>500 用 20fps（自动 clamp）。
 - **GraphCanvas 图谱双布局 + 两端复用**（graph_canvas.rs + HR 知识图谱页 + Workspace 工作台页）：ForceLayout 力导向用于自由探索（知识图谱 HR 页）：所有节点对算 1/r² 斥力 + 胡克力边引力 + center(0,0) 中心拉力；alpha 冷却系数 α_t = 0.99^t，300 帧后 α<0.01 → stop。LayeredLayout 分层用于结构化视图（任务 DAG/Agent 工具依赖）：先算 depth 层号（BFS）→ 层内等分 x → 层间按 y 等分；不做连线交叉最小化（性能优先，仅按 edge weight 重排）。两端复用：HR 页和 Workspace 页都用同一 GraphCanvas 组件，仅 props 的 layout_mode="force" | "layered" + 数据来源不同；种子节点推荐 recommend_seed_nodes 返回的 node.score → 映射到节点颜色（HUD_ORANGE 高分→HUD_BLUE 低分）+ 外发光 draw_glow_stroke。
-- **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。
+- **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。HudPalette 新增 HUD_SECONDARY(#22d3ee 青蓝) + HUD_TERTIARY(#a78bfa 紫) 两色，支撑 LineChart 同轴三条曲线（输入/输出/total）冷暖和对比色区分。
+- **聊天侧栏 Agent Tab 消费图表组件**（chat_side_panel.rs + stats.rs）：LineChart 组件从「主要在统计仪表盘」扩展到聊天侧栏 Agent 运行统计 Tab；AgentStatsPanelCompact 紧凑面板（320x180 原生渲染），展示唤醒次数 + Token 消耗（input/output/total）三线趋势；HudPalette 橙光光晕风格 + 次色/第三色区分曲线；聊天侧栏 Tab 按需加载（共享轮询高频链路零额外开销，统计仅在 Tab 挂载时触发）。
 
 ---
 

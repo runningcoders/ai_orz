@@ -18,6 +18,9 @@ source_files:
 - src/consumer/aop_stats_collector.rs (AopStatsCollector：基于 RuntimeStatsCollector<(EventKind,
   &str)> 的 AOP 中心统计面板数据)
 - 'src/service/domain/system/aop_stats.rs#L1-L80 '
+- src/service/dao/model_provider/stats_duckdb.rs
+- common/src/models/stats.rs
+- src/service/domain/finance/model_provider.rs
 - docs/archive/design-archive/stats_module_design.md
 - docs/archive/design-archive/stats_query_design.md
 - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
@@ -42,6 +45,7 @@ source_files:
 - **双层互补设计**：`pkg/stats/` 顶层 DuckDB 版跨重启保留，适合「业务事件需要事后钻取」的 5 维度正式统计；`runtime/` 子模块的 `RuntimeStatsCollector<K>` 基于 Tokio RwLock<HashMap>，重启重置，适合「需要实时看 AOP/SSE/Channel 运行时能力」的场景。两者不互斥，同一个事件可以同时打两层。
 - **record_event! 宏三种模式**：① 自动推断表（ctx, 结构体字面量）—— 默认从结构体名去掉 Event 后缀找 StatTable（如 `ModelCallEvent` → `ModelCallStatTable`），无需手写表名；② 自动推断 + 自定义 timestamp；③ 显式指定表（ctx, Table, event）。前两种模式需要结构体有 `#[derive(StatsEvent)]` 过程宏（ai-orz-macros crate 中定义）。
 - **5 个开箱即用维度表**：`AgentAwakeStatTable`（Agent 唤醒统计，含 exit_reason）、`ModelCallStatTable`（模型调用：tokens 输入输出/耗时）、`ToolCallStatTable`（工具调用：成功失败/耗时/错误分类）、`TaskStatTable`（任务状态流转：创建/开始/完成/取消）、`ProjectStatTable`（项目跟进：巡检触发/进度变更）。对应 5 张独立 DuckDB 表，所有表字段完全一致：timestamp、tags(JSON)、metrics(JSON)，统一查询 API。
+- **collector.rs 新增时间序列查询能力**：StatsInterval 枚举新增 `Minutely`（原来只有 Hourly/Daily），时间序列截断函数 `(timestamp / 60000) * 60000` 按分钟 bucket；服务于 Token 消耗看板（finance handler → model_provider domain → DAO → Stats.query_time_series），分钟级三线（tokens_input/output + call_count）聚合。
 
 ---
 

@@ -17,6 +17,15 @@ source_files:
   - src/service/dao/model_provider/stats_duckdb.rs
   - src/service/dal/stats.rs
   - frontend/src/components
+  - src/handlers/finance/model_provider/token_stats.rs
+  - src/service/domain/finance/model_provider.rs
+  - src/pkg/stats/collector.rs
+  - common/src/models/stats.rs
+  - common/src/api/model_provider.rs
+  - common/src/api/user.rs
+  - frontend/src/components/stats.rs
+  - frontend/src/api/finance.rs
+  - frontend/src/pages/user/profile.rs
   - docs/archive/design-archive/stats_module_design.md
   - docs/archive/design-archive/stats_query_design.md
   - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
@@ -29,6 +38,8 @@ source_files:
 
 本知识卡描述 ai_orz 项目的统计查询与仪表盘全链路架构，覆盖 DuckDB 持久化多维查询（5 实体 Stats DAO 全实体覆盖）、RuntimeStatsCollector 内存滑动窗口聚合（AOP 旁路采集）、Stats REST API 三端点（overview/time-series/distribution）、前端图表组件（Line 折线/Donut 环形/Gauge 仪表盘）四大层级。触发读取场景：新增实体统计查询接口、排查时序聚合或 QPS 计算、新增前端统计图表组件、理解双层选型（持久化 vs 内存）决策时。
 
+**Token 消耗时序看板（finance 域归位）**：GET /api/v1/finance/model-providers/token-stats 分钟级三线（tokens_input/tokens_output/call_count）时间序列；数据源 DuckDB `model_call_events` 表；按 `organization_id` 组织隔离（DAL 层注入 filter）；批次刷盘故最近 1-2 分钟数据未 flush，曲线末端偏低属预期表现——前端按固定间隔轮询即可，不要因"最后一点无数据"报 bug。finance 域归位：handler 从原来的 system/aop_stats 独立出来，归属 ModelProviderStatsDao → model_provider domain → finance handler，对齐「模型调用 → finance 领域」的业务归属。
+
 ## §2 关键文件表
 
 | 文件 | 角色 | 核心入口/约束 |
@@ -40,6 +51,11 @@ source_files:
 | [stats_query_design.md](docs/archive/design-archive/stats_query_design.md) | 统计查询 Domain 层设计 | 5 Stats DAO 全实体覆盖：Agent/Project/Task/Tool/ModelProvider；StatsFetchOptions 按需动态注入模式（列表默认不加载，详情页按需开）；DAL 层统一 get_stats(id, options) + get_model_call_stats(id, options) |
 | [统计图表Phase1基础设施与时序图展示重构.md](docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md) | 统计 Phase1 Plan 快照 | DuckDB 建表 + record_event! 宏自动推断；前端图表组件封装（LineChart/DonutChart/GaugeChart 三组件） |
 | [多维统计系统.md](docs/wiki/zh/content/项目概述/核心功能特性/多维统计系统/多维统计系统.md) | 五维度总览 Wiki | Agent/Project/Task/ModelProvider/Tool 五维度统计卡片入口 |
+| [src/handlers/finance/model_provider/token_stats.rs](src/handlers/finance/model_provider/token_stats.rs) | Token 消耗时序新 handler | GET /api/v1/finance/model-providers/token-stats；model_call_time_series 默认 60min；批次刷盘预期声明 | `:L1-L32` |
+| [src/service/dao/model_provider/stats_duckdb.rs](src/service/dao/model_provider/stats_duckdb.rs) | DAO 扩展 | 时间序列聚合 + 按分钟 bucket + user_id 过滤注入 | 见文件 |
+| [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs) | Domain 新方法 | `model_call_time_series(ctx, minutes)` + `get_model_call_stats_for_user(ctx, user_id, options)` | 见文件 |
+| [src/pkg/stats/collector.rs](src/pkg/stats/collector.rs) | 时间序列聚合 | StatsInterval::Minutely 新增 + StatParam send+sync 修复 + query_time_series 支持分钟截断 | 见文件 |
+| [common/src/models/stats.rs](common/src/models/stats.rs) | 新 models | StatsInterval.Minutely + TimeSeriesPoint + TokenSumResult | 见文件 |
 
 ## §3 架构与约定
 
@@ -88,3 +104,4 @@ Stats Handlers (3 端点)
 8. **snapshot() 必须返回深拷贝**：调用方释放读锁后安全聚合，禁止返回 &Inner 引用导致锁竞争。
 9. **duration Option 语义固定**：None=只计数不计时（published/processing 状态），Some=计数+累计耗时（success/failed 等终止状态），禁止在框架层硬编码状态判断。
 10. **前端图表组件禁止硬编码 API URL**：所有统计接口调用统一封装到前端 api/stats client，禁止组件内部 fetch 写死 path。
+11. **批次刷盘预期**：Token 消耗时序看板（model_call_events）的统计事件走 Stats 批次刷盘（缓冲满才 flush），故最近 1-2 分钟数据可能尚未落库，前端曲线末端偏低属正常表现。前端按固定间隔（30s~60s）轮询即可，不要因"最后一点无数据"报 bug 或做特殊兜底。
