@@ -37,6 +37,14 @@ static EMBEDDED_SKILL_FILES: &[(&str, &str)] = &[
         "skills/GIT_BRANCH_WORKFLOW/skill.md",
         include_str!("skills/GIT_BRANCH_WORKFLOW/skill.md"),
     ),
+    (
+        "skills/TEMPLATE_AGENT_RECRUITMENT/skill.md",
+        include_str!("skills/TEMPLATE_AGENT_RECRUITMENT/skill.md"),
+    ),
+    (
+        "skills/TEMPLATE_USER_RECEPTION/skill.md",
+        include_str!("skills/TEMPLATE_USER_RECEPTION/skill.md"),
+    ),
 ];
 
 /// 读取编译期内嵌的文件内容
@@ -111,6 +119,18 @@ mod tests {
     }
 
     #[test]
+    fn test_read_embedded_file_agent_recruitment() {
+        let content = read_embedded_file("skills/TEMPLATE_AGENT_RECRUITMENT/skill.md").unwrap();
+        assert!(content.contains("Agent 招聘"));
+    }
+
+    #[test]
+    fn test_read_embedded_file_user_reception() {
+        let content = read_embedded_file("skills/TEMPLATE_USER_RECEPTION/skill.md").unwrap();
+        assert!(content.contains("用户接待"));
+    }
+
+    #[test]
     fn test_read_embedded_file_not_found() {
         let result = read_embedded_file("skills/nonexistent/skill.md");
         assert!(result.is_err());
@@ -120,12 +140,14 @@ mod tests {
     #[test]
     fn test_list_embedded_skill_files_count() {
         let files = list_embedded_skill_files();
-        assert_eq!(files.len(), 6);
+        assert_eq!(files.len(), 8);
         assert!(files.contains(&"skills/TEMPLATE_TOOL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_SKILL_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_MEMORY_COGNITION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_COMMUNICATION/skill.md".to_string()));
         assert!(files.contains(&"skills/TEMPLATE_PROJECT_MANAGEMENT/skill.md".to_string()));
         assert!(files.contains(&"skills/GIT_BRANCH_WORKFLOW/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_AGENT_RECRUITMENT/skill.md".to_string()));
+        assert!(files.contains(&"skills/TEMPLATE_USER_RECEPTION/skill.md".to_string()));
     }
 }

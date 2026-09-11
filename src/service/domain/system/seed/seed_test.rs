@@ -278,13 +278,22 @@ mod tests {
         assert_eq!(snapshot.version, "1.0.0");
         assert_eq!(snapshot.users.len(), 1);
         assert_eq!(snapshot.model_providers.len(), 2);
-        assert_eq!(snapshot.agents.len(), 1);
-        // 预置 6 个技能（4 个 neural + 1 个 project_management + 1 个 git_branch_workflow）
-        assert_eq!(snapshot.skills.len(), 6);
+        assert_eq!(snapshot.agents.len(), 2);
+        // 预置 8 个技能（4 个 neural + 1 个 project_management + 1 个 git_branch_workflow
+        // + 1 个 agent_recruitment + 1 个 user_reception）
+        assert_eq!(snapshot.skills.len(), 8);
         assert_eq!(
             snapshot.agents[0].model_provider_id,
             "TEMPLATE_CHAT_PROVIDER"
         );
+        // 预置招聘官：角色 hr_specialist 是它的技能匹配键，勿随意改动
+        let hr = snapshot
+            .agents
+            .iter()
+            .find(|a| a.id == "TEMPLATE_HR_AGENT")
+            .expect("预置招聘官 Agent 缺失");
+        assert_eq!(hr.roles, vec!["hr_specialist".to_string()]);
+        assert_eq!(hr.model_provider_id, "TEMPLATE_CHAT_PROVIDER");
         assert_eq!(
             snapshot.users[0].password_ref,
             super::super::defs::PENDING_INPUT

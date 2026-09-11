@@ -170,10 +170,11 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
         "should be Onboarded (3)"
     );
 
-    // Verify Onboarded auto-installed the "project_management" skill pack.
-    // 注意：project_management 是「技能包」（写入 installed_skill_packs），
-    // 而非工具包 tag（installed_tags）——onboard 会特意把它从 installed_tags 移除。
-    // 因此断言针对 /skill-packs 端点的 skill_packs 字段。
+    // Verify Onboarded auto-installed the "project_management" skill pack
+    // （公司指定包 COMPANY_ONBOARD_PACKS，由 apply_onboard_bindings 统一绑定）。
+    // 注意：project_management 是「同名双重身份」的包 —— 技能侧写 installed_skill_packs，
+    // 工具侧同时写 installed_tags（23 个项目/任务/产物工具靠它授权）；
+    // 两个字段缺任一都会导致工具被拒或技能不进 Prompt，此处断言技能侧。
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id), &jwt)
         .await;
@@ -754,6 +755,59 @@ async fn test_get_agent_with_stats(pool: SqlitePool) {
     assert!(
         data.get("stats").is_some(),
         "stats should be present with with_stats=true"
+    );
+}
+
+/// 预置前台接待 Agent 的「个人匹配」闭环（种子 → 入职绑定 → 开箱可用）。
+///
+/// 验证 `reception` 这个**同名双身份 tag** 贯通了两侧：
+/// - 工具包侧：`search_agents` / `query_agents` / `list_agents` / `get_agent`（分流找人能力）
+/// - 技能包侧：种子技能 `TEMPLATE_USER_RECEPTION`（用户接待 SOP）
+///
+/// `initialize_system` 的时序（同步内置工具 → 导入预置技能 → 创建并两步入职前台 Agent）
+/// 保证了两侧资源在入职前就位，因此前台 Agent 无需任何手工挂包即具备接待所需的路由工具与技能。
+#[sqlx::test]
+async fn test_preset_reception_agent_binds_reception_pack(pool: SqlitePool) {
+    let _ = crate::common::init_full_test_env(pool.clone()).await;
+    let app = TestApp::new(pool).await;
+    let (_bs, jwt) = crate::common::factories::bootstrap_and_login(&app).await;
+
+    let (status, body) = app.get_with_jwt("/api/v1/hr/agents/reception", &jwt).await;
+    let data = crate::common::assert_api_ok(status, &body);
+    let agent_id = data
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .expect("agent_id should be present in reception response")
+        .to_string();
+
+    // 技能侧：角色 tag 命中的种子技能应已作为技能包安装
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}/skill-packs", agent_id), &jwt)
+        .await;
+    let sp = crate::common::assert_api_ok(status, &body);
+    let skill_packs = sp
+        .get("skill_packs")
+        .and_then(|v| v.as_array())
+        .expect("skill_packs should be present");
+    assert!(
+        skill_packs.iter().any(|t| t.as_str() == Some("reception")),
+        "前台 Agent 应通过个人匹配自动安装 reception 技能包，实际={skill_packs:?}"
+    );
+
+    // 工具侧：reception 路由包必须写入 installed_tags（工具授权不含 roles）
+    let (status, body) = app
+        .get_with_jwt(&format!("/api/v1/hr/agents/{}/tool-packs", agent_id), &jwt)
+        .await;
+    let tp = crate::common::assert_api_ok(status, &body);
+    let installed_tags = tp
+        .get("installed_tags")
+        .and_then(|v| v.as_array())
+        .expect("installed_tags should be present");
+    assert!(
+        installed_tags
+            .iter()
+            .any(|t| t.as_str() == Some("reception")),
+        "前台 Agent 应通过个人匹配自动写入 reception 工具包 tag，实际={installed_tags:?}"
     );
 }
 

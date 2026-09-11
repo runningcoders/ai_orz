@@ -1,7 +1,7 @@
 //! Integration tests for preset skills & builtin tools import on system initialization.
 //!
 //! Covers:
-//! - `initialize_system` imports 5 preset skills (4 neural + 1 project_management) to the shared library
+//! - `initialize_system` imports 7 preset skills (4 neural + 1 project_management + 1 agent_recruitment + 1 user_reception) to the shared library
 //! - `initialize_system` syncs builtin tools to DB
 //! - Preset skills' author_id is replaced with the actual owner user_id
 //! - Preset skill files (skill.md) are written and contain expected content
@@ -12,7 +12,7 @@
 //! 集成测试共享同一进程级 Storage OnceLock（单 SQLite 文件），固定 ID 的 Local 组织 /
 //! 预置技能（TEMPLATE_*）在所有用例间共享同一行数据：
 //!
-//! 1. `count=5` / `author_id == bs2.user_id` 这类**快照断言**对「额外写入」零容忍，
+//! 1. `count=7` / `author_id == bs2.user_id` 这类**快照断言**对「额外写入」零容忍，
 //!    并行执行下其他测试先 bootstrap 导入后，会被当前用例的断言误判为「自己导入的」，
 //!    造成测试间语义耦合。
 //! 2. `bootstrap_system` 内部的 `BOOTSTRAP_MUTEX` 仅串行化 bootstrap 本身，
@@ -51,11 +51,11 @@ async fn query_all_skills(ctx: &ai_orz::pkg::RequestContext) -> Vec<ai_orz::mode
         .items
 }
 
-/// After system initialization, 5 preset skills should exist in the shared library.
+/// After system initialization, 7 preset skills should exist in the shared library.
 #[sqlx::test]
 async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     // 全局串行锁：4 个用例共用 Storage + 固定 ID 预置技能 + 单个 Local 组织，
-    // 必须整用例（bootstrap→断言）互斥，否则 count=5/author_id 更新等零容忍断言失效。
+    // 必须整用例（bootstrap→断言）互斥，否则 count=7/author_id 更新等零容忍断言失效。
     // 用 into_inner() 跳过 PoisonError：此锁只做执行顺序栅拦，不保护可变状态。
     let _lock = PRESET_STATE_MUTEX
         .lock()
@@ -89,6 +89,14 @@ async fn test_initialize_system_imports_preset_skills(pool: SqlitePool) {
     assert!(
         skill_ids.contains(&"TEMPLATE_PROJECT_MANAGEMENT"),
         "缺少预置技能：项目管理"
+    );
+    assert!(
+        skill_ids.contains(&"TEMPLATE_AGENT_RECRUITMENT"),
+        "缺少预置技能：Agent 招聘"
+    );
+    assert!(
+        skill_ids.contains(&"TEMPLATE_USER_RECEPTION"),
+        "缺少预置技能：用户接待"
     );
 
     // 验证 author_id 被替换为实际 owner（B 方案）
@@ -263,7 +271,7 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .iter()
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
-    assert_eq!(count_after_first, 5, "第一次初始化后应有 5 个预置技能");
+    assert_eq!(count_after_first, 7, "第一次初始化后应有 7 个预置技能");
 
     // 第二次 bootstrap — 应更新而非重复创建
     let bs2 = crate::common::factories::bootstrap_system(&app).await;
@@ -274,8 +282,8 @@ async fn test_preset_skills_idempotent(pool: SqlitePool) {
         .filter(|s| s.po.id.starts_with("TEMPLATE_"))
         .count();
     assert_eq!(
-        count_after_second, 5,
-        "第二次初始化后仍应只有 5 个预置技能（idempotent）"
+        count_after_second, 7,
+        "第二次初始化后仍应只有 7 个预置技能（idempotent）"
     );
 
     // author_id 应更新为第二个 owner

@@ -12,7 +12,9 @@
 | `send_task_assignment_message` | Agent → Agent | 给其他 Agent 分配 / 上报任务（**你与其他 Agent 协作的唯一通道**，不要用 send_message_to_agent） |
 | `list_messages` | 查看历史 | 上拉历史 / 下拉新消息，按上下文看之前讨论 |
 
-> 非 neural 协作工具（`send_message_to_agent`、`query_agents`、`search_agents`、`get_agent`、`get_reception_agent`、`search_messages`）都是**用户 / 前端**的 HTTP 入口，不在你的工具面板中。需要找 Agent 时通过用户或前台 Agent 协助即可。
+> 非 neural 协作工具（`send_message_to_agent`、`query_agents`、`search_agents`、`get_agent`、`get_reception_agent`、`search_messages`）默认是**用户 / 前端**的 HTTP 入口，不在你的工具面板中。需要找 Agent 时通过用户或前台 Agent 协助即可。
+>
+> **例外**：前台接待类 Agent（角色 `reception` / `service` 等）经 `reception` 路由包额外获得 `search_agents` / `query_agents` / `list_agents` / `get_agent` 四个找人工具——它们是分流的前置能力，用法见「用户接待」技能。
 
 ## `send_message`（向用户）
 
