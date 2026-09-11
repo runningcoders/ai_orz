@@ -10,6 +10,8 @@ scope:
   - src/handlers/system/**/*stats*.rs
   - frontend/src/components/**/*.{ts,tsx}
   - frontend/src/pages/**/*系统管理*.{ts,tsx}
+  - frontend/src/components/stats.rs
+  - frontend/src/components/time_range_picker.rs
 source_files:
   - src/pkg/stats/mod.rs#L31-L171
   - src/pkg/stats/runtime/mod.rs#L33-L178
@@ -20,12 +22,17 @@ source_files:
   - src/handlers/finance/model_provider/token_stats.rs
   - src/service/domain/finance/model_provider.rs
   - src/pkg/stats/collector.rs
+  - src/pkg/stats/default.rs
   - common/src/models/stats.rs
   - common/src/api/model_provider.rs
   - common/src/api/user.rs
   - frontend/src/components/stats.rs
+  - frontend/src/components/time_range_picker.rs (2026-09-11 新增：通用时间区间筛选组件)
+  - frontend/src/components/ring_progress.rs (2026-09-11 新增：通用环形进度组件)
   - frontend/src/api/finance.rs
-  - frontend/src/pages/user/profile.rs
+  - frontend/src/pages/user/profile.rs (2026-09-11 增量：用户页统计兜底——无数据时显示空态)
+  - frontend/src/pages/system/aop.rs (2026-09-11 增量：统计看板引入 TimeRangePicker)
+  - src/handlers/user/profile/get_current_user.rs (2026-09-11 增量：用户统计兜底)
   - docs/archive/design-archive/stats_module_design.md
   - docs/archive/design-archive/stats_query_design.md
   - docs/archive/plan-archive/统计图表Phase1基础设施与时序图展示重构.md
@@ -39,6 +46,10 @@ source_files:
 本知识卡描述 ai_orz 项目的统计查询与仪表盘全链路架构，覆盖 DuckDB 持久化多维查询（5 实体 Stats DAO 全实体覆盖）、RuntimeStatsCollector 内存滑动窗口聚合（AOP 旁路采集）、Stats REST API 三端点（overview/time-series/distribution）、前端图表组件（Line 折线/Donut 环形/Gauge 仪表盘）四大层级。触发读取场景：新增实体统计查询接口、排查时序聚合或 QPS 计算、新增前端统计图表组件、理解双层选型（持久化 vs 内存）决策时。
 
 **Token 消耗时序看板（finance 域归位）**：GET /api/v1/finance/model-providers/token-stats 分钟级三线（tokens_input/tokens_output/call_count）时间序列；数据源 DuckDB `model_call_events` 表；按 `organization_id` 组织隔离（DAL 层注入 filter）；批次刷盘故最近 1-2 分钟数据未 flush，曲线末端偏低属预期表现——前端按固定间隔轮询即可，不要因"最后一点无数据"报 bug。finance 域归位：handler 从原来的 system/aop_stats 独立出来，归属 ModelProviderStatsDao → model_provider domain → finance handler，对齐「模型调用 → finance 领域」的业务归属。
+
+**周期落盘收口 + 可空 JSON 兼容 + 用户页统计兜底**（2026-09-11 增量）：stats 周期落盘（batch flush timer）从原来的独立调度器（`pkg/stats/runtime` 内部定时器）收口到统计库自身初始化（`pkg/stats/default.rs`）——Stats::open() 时启动后台 flush task，stats 单例生命周期与 DuckDB 连接绑定；**可空 JSON 兼容**：`model_call_events` 表的 `call_summary` / `token_summary` 字段从 NOT NULL 改为 nullable，兼容旧数据（迁移前的事件无这些字段）；**用户页统计兜底**：`get_current_user` handler 统计查询返回空结果时，前端 profile 页显示「暂无数据」空态卡片而非 error toast，避免新用户首次访问看到红色报错。
+
+**TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` 通用日期范围筛选，props: `start/end` + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）；所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
 
 ## §2 关键文件表
 
@@ -56,6 +67,11 @@ source_files:
 | [src/service/domain/finance/model_provider.rs](src/service/domain/finance/model_provider.rs) | Domain 新方法 | `model_call_time_series(ctx, minutes)` + `get_model_call_stats_for_user(ctx, user_id, options)` | 见文件 |
 | [src/pkg/stats/collector.rs](src/pkg/stats/collector.rs) | 时间序列聚合 | StatsInterval::Minutely 新增 + StatParam send+sync 修复 + query_time_series 支持分钟截断 | 见文件 |
 | [common/src/models/stats.rs](common/src/models/stats.rs) | 新 models | StatsInterval.Minutely + TimeSeriesPoint + TokenSumResult | 见文件 |
+| [src/pkg/stats/default.rs](src/pkg/stats/default.rs) (v1.2 增量) | 周期落盘收口 | Stats::open() 时启动后台 flush task；批次刷盘定时器与 DuckDB 连接生命周期绑定；收口原来的独立调度器 | 见文件 |
+| [src/service/dao/model_provider/stats_duckdb.rs](src/service/dao/model_provider/stats_duckdb.rs) (v1.2 增量) | 可空 JSON 兼容 | `call_summary` / `token_summary` 字段 nullable；查询时用 `COALESCE(call_summary, '{}')` 兼容旧数据 | 见文件 |
+| [frontend/src/components/time_range_picker.rs](frontend/src/components/time_range_picker.rs) (v1.2 新增) | 通用时间筛选组件 | props: start/end + 预设快捷按钮（1h/6h/24h/7d/30d） | 见文件 |
+| [frontend/src/pages/user/profile.rs](frontend/src/pages/user/profile.rs) (v1.2 增量) | 用户页统计兜底 | 统计查询返回空结果时显示空态卡片；不再 error toast | 见文件 |
+| 【平行卡】docs/wiki/knowledge/zh/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕/Canvas HUD 可视化：GraphCanvas 知识图谱 + 图表场景LineDonut + 仪表盘Gauge双版 + HudPalette橙光光晕.md | RingProgress + TimeRangePicker 上游组件 | HUD 卡定义了 RingProgress 和 TimeRangePicker 通用组件，本卡消费这些组件 |
 
 ## §3 架构与约定
 
@@ -105,3 +121,6 @@ Stats Handlers (3 端点)
 9. **duration Option 语义固定**：None=只计数不计时（published/processing 状态），Some=计数+累计耗时（success/failed 等终止状态），禁止在框架层硬编码状态判断。
 10. **前端图表组件禁止硬编码 API URL**：所有统计接口调用统一封装到前端 api/stats client，禁止组件内部 fetch 写死 path。
 11. **批次刷盘预期**：Token 消耗时序看板（model_call_events）的统计事件走 Stats 批次刷盘（缓冲满才 flush），故最近 1-2 分钟数据可能尚未落库，前端曲线末端偏低属正常表现。前端按固定间隔（30s~60s）轮询即可，不要因"最后一点无数据"报 bug 或做特殊兜底。
+12. **周期落盘必须收口到 Stats::open() 初始化**（v1.2 新增）：stats 批次刷盘定时器在 `pkg/stats/default.rs:Stats::open()` 中启动，与 DuckDB 连接生命周期绑定；禁止在 RuntimeStatsCollector 或其他独立模块再启动 flush task——多定时器会导致双重 flush 竞争 + 刷盘间隔不一致。
+13. **可空 JSON 字段查询必须用 COALESCE 兜底**（v1.2 新增）：`model_call_events.call_summary` / `token_summary` 已改为 nullable（兼容旧数据），所有查询构建时必须用 `COALESCE(field, '{}')` 转换为有效 JSON 对象再 JSON 解析；禁止假设 NOT NULL 直接 `.json_extract()`——旧数据会返回 NULL 导致 json_extract 报错。
+14. **统计空结果前端必须降级为空态**（v1.2 新增）：所有统计查询接口返回空结果时，前端必须显示「暂无数据」空态卡片/空态 SVG（如折线图只显示坐标轴 + 空坐标系），**禁止** error toast 或 crash。新用户首次访问 profile 页、新 Agent 还没产生任何调用等场景必然出现空数据。

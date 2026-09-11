@@ -17,6 +17,10 @@ scope:
   - "frontend/src/components/hud_palette.rs"
   - "frontend/src/components/particles.rs"
   - "frontend/src/components/kanban_canvas.rs"
+  - "frontend/src/components/ring_progress.rs"
+  - "frontend/src/components/time_range_picker.rs"
+  - "frontend/src/components/chat/chat_side_panel.rs"
+  - "frontend/src/pages/message/chat.rs"
 source_files:
   - 'frontend/src/components/graph_canvas.rs#L1-L80 (GraphCanvas 组件：dioxus_canvas::Canvas 节点 + 2D Context 渲染；属性 knowledge_graph: KnowledgeGraphDto + 交互：拖拽节点 + 滚轮缩放 + hover 显示摘要 tooltip)'
   - frontend/src/components/canvas_scene.rs (CanvasScene Trait：统一 Scene 生命周期 fn setup(ctx) / fn update(dt_secs) / fn draw(&2DContext) / fn handle_event(event)；GraphScene / ChartScene / WorkspaceScene 三实现)
@@ -42,6 +46,14 @@ source_files:
   - 【平行卡 2】docs/wiki/knowledge/zh/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出/知识图谱 traverse：BFS levels 深度返回 + DFS 栈批量预取 edge_cache + IN 列表 400 分块防 999 溢出.md（KnowledgeGraphDto 数据来源：traverse_knowledge_graph API → GraphCanvas 渲染的 nodes/edges）
   - frontend/src/components/chat/chat_side_panel.rs
   - frontend/src/components/stats.rs
+
+  - frontend/src/components/ring_progress.rs (2026-09-11 新增：通用环形进度组件，Canvas 2D 画圆环 + 填充弧；Agent context 占比专用)
+  - frontend/src/components/time_range_picker.rs (2026-09-11 新增：通用时间区间筛选组件，start/end + 预设快捷按钮)
+  - frontend/src/components/chat/chat_side_panel.rs (2026-09-11 增量：引用块即时显示 + 宽度以本条消息为上限)
+  - frontend/src/pages/message/chat.rs (2026-09-11 增量：引用块即时显示)
+
+  - 【平行卡 3】docs/wiki/knowledge/zh/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示/统计查询 API 与前端仪表盘：DuckDB 5 维表查询 + RuntimeStats 内存滑动聚合 + StatsHandler REST API + 前端 Line/Donut/Gauge 展示.md（TimeRangePicker 消费方：统计看板时间筛选）
+  - 【平行卡 4】docs/wiki/knowledge/zh/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件/思考运行时前端观测：runtime-status cancel-thinking runtime-list 接口与 runtime_panel 组件.md（RingProgress 消费方：Agent 上下文 Token 占比展示）
 ---
 
 ## §1 概述
@@ -52,6 +64,12 @@ source_files:
 - **GraphCanvas 图谱双布局 + 两端复用**（graph_canvas.rs + HR 知识图谱页 + Workspace 工作台页）：ForceLayout 力导向用于自由探索（知识图谱 HR 页）：所有节点对算 1/r² 斥力 + 胡克力边引力 + center(0,0) 中心拉力；alpha 冷却系数 α_t = 0.99^t，300 帧后 α<0.01 → stop。LayeredLayout 分层用于结构化视图（任务 DAG/Agent 工具依赖）：先算 depth 层号（BFS）→ 层内等分 x → 层间按 y 等分；不做连线交叉最小化（性能优先，仅按 edge weight 重排）。两端复用：HR 页和 Workspace 页都用同一 GraphCanvas 组件，仅 props 的 layout_mode="force" | "layered" + 数据来源不同；种子节点推荐 recommend_seed_nodes 返回的 node.score → 映射到节点颜色（HUD_ORANGE 高分→HUD_BLUE 低分）+ 外发光 draw_glow_stroke。
 - **HUD 风格橙光调色板（HudPalette）+ 仪表盘 Gauge**（hud_palette.rs + gauge.rs）：4 主色 HUD_ORANGE/HUD_BLUE/HUD_GREEN/HUD_RED；draw_glow_stroke 实现：先 `ctx.shadow_blur = 8.0` + `ctx.shadow_color = HUD_ORANGE` → 画一次描边（光晕）→ reset shadow → 画第二次正常描边（实线）；这样 CSS 不会被 DaisyUI 主题覆盖（是 Canvas 2D API，不是 DOM）。仪表盘 Gauge：value 0-100 → 映射到 240° 圆弧起点角度 150° 到终点 390°；指针三角箭头 + 刻度 20 条（每 20 一条长刻度）；AopGauge（aop_gauge.rs）同 Gauge 组件 + 上半圆环 AOP 队列延迟毫秒 + 下半圆环消费者阻塞数 双刻度，System AOP 页用。HudPalette 新增 HUD_SECONDARY(#22d3ee 青蓝) + HUD_TERTIARY(#a78bfa 紫) 两色，支撑 LineChart 同轴三条曲线（输入/输出/total）冷暖和对比色区分。
 - **聊天侧栏 Agent Tab 消费图表组件**（chat_side_panel.rs + stats.rs）：LineChart 组件从「主要在统计仪表盘」扩展到聊天侧栏 Agent 运行统计 Tab；AgentStatsPanelCompact 紧凑面板（320x180 原生渲染），展示唤醒次数 + Token 消耗（input/output/total）三线趋势；HudPalette 橙光光晕风格 + 次色/第三色区分曲线；聊天侧栏 Tab 按需加载（共享轮询高频链路零额外开销，统计仅在 Tab 挂载时触发）。
+
+**RingProgress 通用环形进度组件**（2026-09-11 新增）：`frontend/src/components/ring_progress.rs` 纯 Canvas 2D 渲染（非 DOM），props: `ratio: f32`（0.0-1.0 进度比例）+ `color: String`；内环半径 + 外环 strokeWidth + 橙色光晕（HudPalette.draw_glow_stroke 复用）；Agent 上下文 Token 占比专用——AgentRuntimeState.tokens_used_ratio → RingProgress 渲染 + context_threshold 为 None 时显示配置入口提示。
+
+**TimeRangePicker 通用时间区间筛选组件**（2026-09-11 新增）：`frontend/src/components/time_range_picker.rs` props: `start/end` DateTime + 预设快捷按钮（近 1h / 6h / 24h / 7d / 30d）+ 自定义日期选择器（dioxus-datepicker 集成）。所有统计看板统一引入——AOP 系统页、ModelProvider Token 时序、用户页统计。
+
+**聊天引用块即时显示 + 宽度以本条消息为上限**（2026-09-11 增量）：chat.rs 消息列表中带引用（reference_id）的消息，即时渲染引用块（气泡上方显示被引用的消息摘要），无需 hover 才弹出；引用块宽度严格限制为「本条消息气泡宽度」，不再溢出撑破消息列表布局。
 
 ---
 
@@ -117,3 +135,6 @@ HR 知识图谱页面加载：
 6. **GraphCanvas 的 on_node_click 事件必须是 dioxus EventHandler，不闭包 capture ctx 引用**：move || { write(ctx...) } 导致 Component rerender 时 EventHandler clone 成本爆炸（每 click clone 整个 signal）；正确模式：EventHandler<NodeId> 用 dioxus 自带通道，回调里只用局部变量 id（不从外层 move 大对象）。
 7. **AopGauge 的双刻度上下环颜色必须对应当前状态（不是固定）**：队列延迟 < 50ms HUD_GREEN 正常；50-200ms HUD_ORANGE 警告；> 200ms HUD_RED 严重；不要固定 HUD_BLUE 显示（误导运维）；统计图表页每 5s 轮询 stats_query 接口后，自动按延迟值 set_color。
 8. **TextMetrics 精确测量替代字符数估算**：所有 Canvas 文本布局（节点 label、tooltip、边标签）统一走 `canvas_scene.rs:measure_text_width`（web-sys TextMetrics `ctx.measure_text(text)`），不准再用 `text.chars().count() * font_size` 估算（比例字体 i18n 误差大）；节点文字宽度 > 节点半径的 80% 时自动截断加 `…`；force_layout 布局每帧 dt 必须 clamp ≥ 1ms 避免 RAF 极短间隔抖动
+9. **RingProgress 必须纯 Canvas 2D 不依赖 DOM**（2026-09-11 新增）：RingProgress 是 HUD 体系的 Canvas 原生组件，**禁止**改成 DOM + CSS 实现（失去 draw_glow_stroke 光晕效果 + 被 DaisyUI 主题覆盖）；ratio 参数必须 clamp 在 0.0~1.0 之间再绘制，负数值或 >1.0 都截断
+10. **TimeRangePicker 预设按钮时间必须后端可用**（2026-09-11 新增）：前端预设快捷按钮（1h/6h/24h/7d/30d）发出的时间区间必须能被后端 Stats 接口接受（ISO 8601 RFC3339 格式）；禁止前端用"秒级时间戳"或自定义格式；所有消费方（AOP 系统页/ModelProvider Token 时序/用户页统计）统一用同一个组件，不各自造时间筛选
+11. **聊天引用块宽度以本条消息为上限**（2026-09-11 新增）：引用块 CSS `max-width: 100%` + `overflow: hidden` + `text-overflow: ellipsis`，禁止溢出撑破消息列表；长引用内容截断显示 + tooltip hover 显示完整内容；引用块在消息气泡上方即时渲染（非 hover 弹出），宽度严格 ≤ 本条消息气泡宽度

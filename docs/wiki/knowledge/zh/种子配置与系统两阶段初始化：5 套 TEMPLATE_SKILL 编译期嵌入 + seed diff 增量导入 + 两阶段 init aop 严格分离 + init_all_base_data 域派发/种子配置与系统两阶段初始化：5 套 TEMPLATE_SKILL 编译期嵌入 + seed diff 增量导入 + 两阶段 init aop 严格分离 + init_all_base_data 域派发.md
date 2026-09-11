@@ -9,6 +9,8 @@ scope:
 - src/service/domain/mod.rs
 - src/lib.rs
 - src/handlers/system/seed/**/*.rs
+- frontend/src/pages/system/seed*.rs
+- common/src/api/model_provider.rs
 source_files:
 - src/service/domain/system/seed/mod.rs#L1-L16
 - src/service/domain/system/seed/defs.rs#L1-L223
@@ -26,6 +28,11 @@ source_files:
 - src/handlers/system/seed/mod.rs#L153-L232
 - src/lib.rs#L97-L154
 - src/service/domain/mod.rs#L23-L45
+- frontend/src/pages/system/seed.rs
+- frontend/src/pages/system/seed_sensitive_fields.rs
+- common/src/api/model_provider.rs
+- src/handlers/finance/model_provider/create_model_provider.rs
+- src/handlers/organization/initialize_system.rs
 - docs/archive/design-archive/seed-config-migration.md
 - docs/archive/plan-archive/Agent管理集成测试.md
 - docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
@@ -40,6 +47,8 @@ source_files:
 本知识卡沉淀 AI Orz 的**种子配置（Seed）系统**与**系统两阶段初始化**架构：覆盖 5 套预置技能模板编译期嵌入（TEMPLATE_*）、SeedSnapshot 纯数据结构与 diff 增量导入算法、两阶段初始化（`init_all` 静态单例 → `init_base_data` 异步基础数据 → `aop init_all` 事件调度器启动）严格分离原则、以及 `init_all_base_data` 跨 domain 的域派发模式。
 
 Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据视图（snapshot 结构 + diff 算法 + 文件存储 + 编译期嵌入），不持有任何 DAL 引用，不调用其他 domain；跨 domain 的 DB 读写由 Handler 层编排各 domain 完成，保证 seed 算法可独立单元测试（零 DB 依赖）。
+
+**默认模板补齐 + 敏感字段回填**（2026-09-11 增量）：种子导入/默认模板 apply 路径新增三道关键校验与补齐：① 对话模型 Provider 配置**必须**带 `context_length` 字段（缺失返回 400）；② diff 导入时已存在的实体（`Existing` 状态）免除填写凭据（`api_key` 等敏感字段从 DB 继承）；③ 新增 `seed_sensitive_fields` 前端页面让用户在 apply-default 或导入完成后回填敏感字段（API Key 等），彻底修复「默认模板 apply 写入路径必然失败」的历史 bug——旧版 default.json 中对话模型只写了 model_name/base_url，没写 api_key 占位符，落库时 DAO 层 api_key 非空校验直接拦截。
 
 # §2 关键文件表
 
@@ -60,6 +69,11 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 | Wiki 系统初始化长文 | docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md | 用户视角的两阶段启动解释 + System Initialization 流程说明 |
 | Wiki 种子数据管理长文 | docs/wiki/zh/content/功能模块/系统管理/种子数据管理.md | Seed 导入导出 GUI 说明 + 4 策略选择指导 |
 | Wiki 技能包管理长文 | docs/wiki/zh/content/功能模块/AI%20Agent%20管理/技能包管理.md | 预置技能（TEMPLATE_*）与 Seed 的关系 |
+| 种子导入 handler 扩展 | src/handlers/system/seed/mod.rs | 补齐对话模型 context_length 必填校验 + `/seed/sensitive-fields` 敏感字段回填端点 |
+| Seed diff 域扩展 | src/service/domain/system/seed/diff.rs | 导入时对话模型 context_length 必填校验 + 已存在实体免填凭据（api_key 等从 DB 继承） |
+| 默认种子模板（更新） | src/service/domain/system/seed/default.json | 对话模型新增 `context_length` 字段 + `api_key: PENDING_INPUT` 占位符 |
+| 种子导入前端页（新增） | frontend/src/pages/system/seed.rs | 支持上传 seed 快照 JSON + 导入状态展示 + apply-default 一键初始化 |
+| 敏感字段回填页（新增） | frontend/src/pages/system/seed_sensitive_fields.rs | 导入完成后引导用户回填 API Key 等敏感字段；列表所有待回填凭据；逐个保存到 DB |
 
 # §3 架构与约定
 
@@ -145,3 +159,4 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 7. **SkillFileDef 内容优先级红线**：技能文件内容解析必须严格按 `content（内嵌）> ref_path（编译期内嵌引用）> url（运行时抓取）` 优先级；ref_path 不存在时走 embedded.rs 查询，URL 必须是 HTTPS（拒绝 HTTP 明文抓取）
 8. **apply_default 幂等红线**：`POST /seed/apply-default` 多次调用必须结果一致（幂等）；对已存在 ID 的条目走 `Update(INHERIT_CURRENT)` 而非覆盖，避免管理员二次初始化破坏已有配置
 9. **apply_preset_skills 新技能创建必须合并 imports，两步走必崩**：旧逻辑（create_skill → update_skill 两步走）在 HTTP /initialize 路由下必然 Forbidden——background_task run_steps 用的是 Guest ctx（user_id 空、user_role None），create_skill 成功后 update_skill 会被 ensure_skill_access 拦截（既不是刚创建的技能作者，也不是管理员）。**新逻辑**：一次性 create_skill（把 imports 直接塞 CreateSkillParams），create 内部文件写入是原子流程，不走 ensure 守卫。**硬约束**：禁止在 apply_preset_skills 中对新技能再单独调 update_skill，两步走 = 初始化路径权限 bug 复现
+10. **对话模型 seed 配置必须带 context_length**：种子导入 diff 校验 + apply-default 默认模板两条路径，对话模型 Provider 的 `context_length` 字段是**必填项**（Embedding Provider 可空）。缺失返回 400 `context_length_required`。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），缺了会导致前端 RingProgress 无法显示 + Agent 思考时无法判断上下文是否接近溢出

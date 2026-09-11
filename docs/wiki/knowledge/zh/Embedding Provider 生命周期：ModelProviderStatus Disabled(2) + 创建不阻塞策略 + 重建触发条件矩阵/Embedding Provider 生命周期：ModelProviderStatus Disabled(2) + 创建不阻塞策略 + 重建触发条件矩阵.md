@@ -18,6 +18,7 @@ scope:
   - "frontend/src/api/mod.rs"
   - "src/service/dao/cortex/native/http.rs"
   - "src/service/dao/model_provider/sqlite.rs"
+  - "src/service/domain/system/seed/diff.rs"
 source_files:
 
   - common/src/enums/agent.rs#L118-L135 (ModelProviderStatus 枚举：Deleted=0 软删除 / Normal=1 启用 / Disabled=2 未启用)
@@ -67,7 +68,16 @@ source_files:
 
   - 【平行卡】docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
 
-  - 【测试覆盖引用】docs/wiki/knowledge/zh/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E.md---
+  - 【测试覆盖引用】docs/wiki/knowledge/zh/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E/测试与质量工程：1124测试100%通过 + 984后端82前端 + 87集成测试19targets + cargo-llvm-cov 38%/45%门槛 + clippy零容忍+Playwright E2E.md
+
+  - common/src/api/model_provider.rs (v1.2 增量：对话模型 context_length 必填) CreateModelProviderRequest.context_length: Option<u32> 新增；对话模型创建时校验 Some；更新时可选
+  - src/handlers/finance/model_provider/create_model_provider.rs (v1.2 增量) ContextKind::Chat 创建时强制校验 context_length.is_some()；缺失返回 400 `context_length_required`
+  - src/handlers/finance/model_provider/update_model_provider.rs (v1.2 增量) 更新时 context_length 可选（partial update 三态逻辑）
+  - src/service/domain/system/seed/diff.rs (v1.2 增量) 种子导入 diff 校验对话模型 context_length 必填
+
+  - 【平行卡】docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md
+
+---
 
 # Embedding Provider 生命周期与重建触发条件
 
@@ -80,6 +90,7 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 - **启用切换**：将 Disabled 切换为 Normal 时，通过 409 `embedding_provider_switch_required` 守卫强制走 `switch_embedding` 流程（软删旧+启用新+全量重建）
 - **重建触发条件矩阵**：创建/更新 Embedding 时按生效状态条件注册 `RebuildVectorsTask`，避免无谓的全量重建
 - **api_key 空校验前置拦截**：HTTP DAO 层 `validate_provider_for_request` 函数在 `call_chat_completions` / `call_embeddings` / `call_embeddings_multimodal` 三个入口统一校验 `api_key.trim().is_empty()` → 返回 `ConfigInvalid`，避免无意义网络往返与超时挂起；DAO 查询层 `find_enabled_embedding_provider` / `get_default_embedding_provider` 采用 `limit=100 + 选第一个 api_key 非空的` 过滤策略，避免选到空 key provider 导致下游向量化时才报错
+- **对话模型 context_length 必填**（2026-09-11 增量）：`common/src/api/model_provider.rs` 新增 `context_length: Option<u32>` 字段。创建对话模型 Provider 时（`CreateModelProviderRequest.context_kind == Chat`）必须填写 `context_length`，缺失返回 400 `context_length_required`；Embedding Provider 可空（上下文长度仅对话模型需要）；更新时可选（partial update 三态：Some 更新 / None 保持不变 / Some(0) 重置）。种子导入 diff 校验同样要求对话模型带 context_length。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），前端 RingProgress 环形进度组件展示占比
 
 本卡与「向量存储抽象 VectorStore + embed_entity」卡构成互补视角：该卡聚焦向量存储基础设施，本卡聚焦 Embedding Provider 业务生命周期与重建触发条件。
 
@@ -101,6 +112,10 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 | [frontend/src/pages/reception.rs](frontend/src/pages/reception.rs) | 前端初始化页 | 2 步表单：基础信息→模型配置；对话/向量模型可选+跳过后果提示 |
 | [src/service/dao/cortex/native/http.rs](src/service/dao/cortex/native/http.rs) | HTTP DAO + api_key 校验 | `validate_provider_for_request(provider)` 校验 api_key 非空；`call_chat_completions` / `call_embeddings` / `call_embeddings_multimodal` 三处统一前置调用 |
 | [src/service/dao/model_provider/sqlite.rs](src/service/dao/model_provider/sqlite.rs) | Provider 查询 DAO | `find_enabled_embedding_provider` / `get_default_embedding_provider`：limit=100 + 选第一个 api_key 非空的 provider |
+| [common/src/api/model_provider.rs](common/src/api/model_provider.rs) (v1.2 增量) | DTO 扩展 | `CreateModelProviderRequest.context_length: Option<u32>` 新增；对话模型创建时校验 Some |
+| [src/handlers/finance/model_provider/create_model_provider.rs](src/handlers/finance/model_provider/create_model_provider.rs) (v1.2 增量) | 创建 Handler 扩展 | ContextKind::Chat 创建时强制校验 context_length.is_some()；缺失返回 400 |
+| [src/handlers/finance/model_provider/update_model_provider.rs](src/handlers/finance/model_provider/update_model_provider.rs) (v1.2 增量) | 更新 Handler 扩展 | context_length 可选更新（partial update 三态逻辑）|
+| [src/service/domain/system/seed/diff.rs](src/service/domain/system/seed/diff.rs) (v1.2 增量) | 种子 diff 校验 | 导入时对话模型 context_length 必填校验 |
 
 ## §3 架构约定
 
@@ -151,6 +166,7 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 7. ✅ **向量重建任务注册必须用 Arc::new + registry().register()**：参照 `switch_embedding.rs` 的注册方式，返回 `task_id` 供前端进度轮询。
 8. ✅ **前端禁用按钮必须发 status=2**：不得复用 status=0(软删除)；违反 = 条目从列表消失，与「禁用」语义矛盾。
 9. ✅ **api_key 空校验必须前置**：`validate_provider_for_request` 必须在三个 HTTP 调用入口开头统一调用，`find_enabled_embedding_provider` / `get_default_embedding_provider` 必须用 limit=100 + api_key 非空过滤；违反 = 空 key provider 被选中后下游向量化才报错，或发起无意义网络请求导致超时挂起。
+10. ✅ **对话模型 context_length 必填**（v1.2 新增）：创建对话模型 Provider 时 `context_kind == Chat` 必须带 `context_length`，缺失返回 400；Embedding Provider 可空。种子导入 diff 校验同样要求对话模型带 context_length。违反 = Agent 运行时 context_threshold 为 None → 前端 RingProgress 无法渲染 + Agent 思考无法判断上下文是否接近溢出
 
 ## §5 历史演进
 
@@ -158,5 +174,6 @@ Embedding Provider 生命周期采用「**创建不阻塞 + 启用时切换**」
 |------|------|---------|
 | v1.0（初始） | Embedding Provider 生命周期：创建不阻塞策略 + Normal/Disabled/Deleted 三态 + 切换全量重建 | model_provider Domain/Handler + switch_embedding + rebuild_vectors_task |
 | v1.1（api_key 校验引入） | HTTP DAO 层新增 `validate_provider_for_request(provider)` 统一校验 `api_key.trim().is_empty()` → 返回 `ConfigInvalid`；DAO 查询层 `find_enabled_embedding_provider` / `get_default_embedding_provider` 从 limit=1 改为 limit=100 + 选第一个 api_key 非空的 | `cortex/native/http.rs` 三处调用点 + `model_provider/sqlite.rs` 两个查询方法 |
+| v1.2（对话模型 context_length 必填） | `common/src/api/model_provider.rs` 新增 `context_length: Option<u32>` 字段；`create_model_provider.rs` 对话模型创建时强制校验必填（Embedding 可空）；种子导入 diff 校验同步要求；更新时可选（partial update 三态） | `model_provider.rs` DTO + `create_model_provider.rs` + `update_model_provider.rs` + `seed/diff.rs` |
 
-**引入原因**：未配置 api_key 的 Normal Provider 会被查询层随机选中，向量化任务执行时才发现空 key → 触发无意义 HTTP 请求（可能超时 30s+），导致重建任务卡挂。前置拦截将错误前移到调用入口，DAO 查询层过滤确保不会选到空 key provider。
+**引入原因**：未配置 api_key 的 Normal Provider 会被查询层随机选中，向量化任务执行时才发现空 key → 触发无意义 HTTP 请求（可能超时 30s+），导致重建任务卡挂。前置拦截将错误前移到调用入口，DAO 查询层过滤确保不会选到空 key provider。v1.2 引入原因：Agent 运行时（`agent_runtime_state.context_threshold`）需要 context_length 字段计算 Token 占比上下文阈值，前端 RingProgress 环形进度组件展示占比；缺失会导致 Agent 思考无法判断上下文是否接近溢出。
