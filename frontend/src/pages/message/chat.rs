@@ -179,6 +179,9 @@ pub fn MessageChat() -> Element {
     });
     // SSE 消息计数器：当前会话收到新消息时递增，驱动侧栏防抖刷新
     let mut refresh_tick = use_signal(|| 0u64);
+    // 统计周期刷新计数器：由下方 3s 轮询循环每 10 拍（30s，对齐后端统计落盘节奏）递增一次，
+    // 单独成信号以便只命中 Agent 统计 Tab，不牵动项目总览/工具 Tab 的事件驱动语义。
+    let mut stats_poll_tick = use_signal(|| 0u64);
 
     // 权限检查：先注册所有 hooks，再根据 auth 状态决定是否渲染
     // （Dioxus 要求 hooks 必须在每次 render 中按相同顺序注册，不能在条件分支中跳过）
@@ -409,6 +412,9 @@ pub fn MessageChat() -> Element {
     // spawn 的 future 绑定组件 scope，页面卸载时自动取消。
     use_effect(move || {
         spawn(async move {
+            // 统计周期刷新：每 10 拍（30s）递增一次 stats_poll_tick，
+            // Agent 统计 Tab 借既有 tick→防抖→load_stats 管道获得周期刷新，无需第二个循环
+            let mut poll_count = 0u64;
             loop {
                 let target = if let Some(pid) = selected_project() {
                     projects
@@ -435,6 +441,10 @@ pub fn MessageChat() -> Element {
                         agent_state.set(0);
                         target_agent_info.set(None);
                     }
+                }
+                poll_count += 1;
+                if poll_count.is_multiple_of(10) {
+                    stats_poll_tick.set(stats_poll_tick() + 1);
                 }
                 gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
             }
@@ -1303,6 +1313,7 @@ pub fn MessageChat() -> Element {
                     project_id: selected_project(),
                     reception_agent_id: reception_agent().map(|a| a.agent_id),
                     refresh_tick: refresh_tick(),
+                    stats_poll_tick: stats_poll_tick(),
                     on_close: move |_| panel_open.set(false),
                     agent_info: target_agent_info,
                 }

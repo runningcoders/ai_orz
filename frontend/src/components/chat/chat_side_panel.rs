@@ -91,12 +91,15 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 /// - `project_id`：选中项目 ID（None 表示默认对话模式）
 /// - `reception_agent_id`：前台 Agent ID（默认对话模式的 Agent Tab 数据源）
 /// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据
+/// - `stats_poll_tick`：统计周期刷新计数器（chat 页 3s 轮询每 30s 递增），
+///   仅叠加进 Agent 统计 Tab 的刷新驱动，静默期统计不再停摆
 /// - `on_close`：收起面板回调
 #[component]
 pub fn ChatSidePanel(
     project_id: Option<String>,
     reception_agent_id: Option<String>,
     refresh_tick: u64,
+    stats_poll_tick: u64,
     on_close: Callback,
     /// 主链路轮询共享的目标 Agent 详情（chat 页置底状态气泡与轮询同源），
     /// AgentInfoTab 优先消费，无值时保留自身懒加载兜底。
@@ -206,6 +209,8 @@ pub fn ChatSidePanel(
 
     // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
     let tool_tab_tick = refresh_tick + manual_tick();
+    // Agent 统计 Tab 的刷新驱动：SSE tick + 手动刷新 + 30s 周期 tick（对齐后端统计落盘节奏）
+    let agent_stats_tick = tool_tab_tick + stats_poll_tick;
 
     let project_data = project().clone();
     let tasks_list = tasks.read().clone();
@@ -228,7 +233,7 @@ pub fn ChatSidePanel(
             2 => artifacts_tab(project_data.as_ref(), &tasks_list),
             3 => match project_data.as_ref().and_then(|p| p.owner_agent_id.clone()) {
                 Some(agent_id) => rsx! {
-                    AgentInfoTab { agent_id, shared_info: agent_info, refresh_tick: tool_tab_tick }
+                    AgentInfoTab { agent_id, shared_info: agent_info, refresh_tick: agent_stats_tick }
                 },
                 None => empty_hint("项目未指定负责人"),
             },
