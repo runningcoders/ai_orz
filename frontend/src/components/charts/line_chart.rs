@@ -417,16 +417,36 @@ fn draw_chart(
     }
 
     // 9. 绘制 X 轴时间标签
-    //
-    // 分钟级窗口（如最近 60 分钟的 Token QPS）内所有点都在同一天，
-    // 用「月-日」会得到一串重复标签，故跨度小于 2 小时时改用「时:分」。
+    draw_x_labels(
+        ctx,
+        data,
+        pad_left,
+        pad_top + plot_h,
+        plot_w,
+        x_axis_format(data),
+    );
+}
+
+/// 选择 X 轴时间标签格式（按数据粒度）
+///
+/// 分钟级窗口（如最近 60 分钟的 Token QPS）内所有点都落在同一天，用「月-日」
+/// 会得到一串重复标签，故跨度 < 2 小时时改用「时:分」。
+///
+/// ⚠️ 粒度只能由**多点**跨度推断：单点时首末跨度恒为 0，沿用跨度判定必然落进
+/// 「分钟内窗口」分支。而日桶 `interval_start` 由后端按
+/// `timestamp - (timestamp % 86400000)` 生成（UTC 零点对齐），东八区渲染出来
+/// 恰好是 08:00 —— 一个并不存在的「时刻」。所以单点一律退化为日期：
+/// 只有一天数据时，用户要读的是「哪一天」，而不是伪造的钟点。
+fn x_axis_format(data: &[TimeSeriesPoint]) -> TimestampFormat {
+    if data.len() < 2 {
+        return TimestampFormat::Date;
+    }
     let span_ms = data[data.len() - 1].interval_start - data[0].interval_start;
-    let ts_fmt = if span_ms < 2 * 3_600_000 {
+    if span_ms < 2 * 3_600_000 {
         TimestampFormat::TimeOfDay
     } else {
         TimestampFormat::Date
-    };
-    draw_x_labels(ctx, data, pad_left, pad_top + plot_h, plot_w, ts_fmt);
+    }
 }
 
 /// X 轴时间标签格式
@@ -719,5 +739,48 @@ mod tests {
         // 此测试验证逻辑分支，实际 Canvas 调用在 WASM 环境无法测试
         let data: Vec<TimeSeriesPoint> = vec![];
         assert!(data.is_empty());
+    }
+
+    /// 构造测试用数据点（只有 interval_start 参与格式判定）
+    fn point(interval_start: i64) -> TimeSeriesPoint {
+        TimeSeriesPoint {
+            interval_start,
+            tokens_input: 0,
+            tokens_output: 0,
+            call_count: 0,
+        }
+    }
+
+    #[test]
+    fn x_axis_format_single_point_uses_date() {
+        // 回归：单点跨度 0 曾被判成「分钟内窗口」，把 UTC 零点对齐的日桶
+        // 渲染成本地 08:00。单点必须退化为日期。
+        assert_eq!(
+            x_axis_format(&[point(1_755_000_000_000)]),
+            TimestampFormat::Date
+        );
+    }
+
+    #[test]
+    fn x_axis_format_empty_uses_date() {
+        assert_eq!(x_axis_format(&[]), TimestampFormat::Date);
+    }
+
+    #[test]
+    fn x_axis_format_minute_window_uses_time_of_day() {
+        let t = 1_755_000_000_000;
+        assert_eq!(
+            x_axis_format(&[point(t), point(t + 60_000)]),
+            TimestampFormat::TimeOfDay
+        );
+    }
+
+    #[test]
+    fn x_axis_format_daily_buckets_use_date() {
+        let t = 1_755_000_000_000;
+        assert_eq!(
+            x_axis_format(&[point(t), point(t + 86_400_000)]),
+            TimestampFormat::Date
+        );
     }
 }
