@@ -328,7 +328,7 @@ pub fn HrSkills() -> Element {
     // 总页数（与 system/logs.rs 分页文案一致：共 N 条 · 第 x / y 页）
     let total_pages = total().div_ceil(PAGE_SIZE).max(1);
 
-    // 单行渲染：indent = 副本缩进行；expandable = 默认视图根技能（带展开按钮）
+    // 单行渲染：indent = 副本缩进行；expandable = 默认视图根技能（带展开箭头）
     let skill_row = move |s: &ListSkillsResponseItem, indent: bool, expandable: bool| -> Element {
         let id = s.id.clone();
         let name = s.name.clone();
@@ -338,20 +338,19 @@ pub fn HrSkills() -> Element {
         let author_id_short = short_id(&s.author_id);
         let is_copy = !s.parent_skill_id.is_empty();
         let expanded_now = expandable && expanded_set.read().contains(&id);
-        // 折叠箭头作为名称前缀（与 finance/tools.rs 折叠行惯例一致）
-        let arrow = if expanded_now { "▾" } else { "▸" };
-        // 已懒加载过才知道副本数量
-        let copy_count = expandable
+        // 懒加载过才知道副本数量：Some(0) = 已确认无副本
+        let child_count = expandable
             .then(|| children_map.read().get(&id).map(|v| v.len()))
             .flatten();
-        let toggle_label = if expanded_now {
-            "收起副本".to_string()
+        // 箭头只在「能展开」时展示：已确认无副本的行收合后不再显示；
+        // 但展开中必须保留，否则空副本展开后会锁死无法收合。
+        let show_toggle = expandable && (expanded_now || child_count != Some(0));
+        // 纯图标开关（沿用 workspace.rs / finance·tools.rs 折叠控件的视觉语汇）
+        let arrow = if expanded_now { "▾" } else { "▸" };
+        let toggle_tip = if expanded_now {
+            "收起副本"
         } else {
-            match copy_count {
-                Some(n) if n > 0 => format!("展开 {} 个副本", n),
-                Some(_) => "无副本".to_string(),
-                None => "展开副本".to_string(),
-            }
+            "展开副本"
         };
         // 展开闭包独占一份 id（避免与下方 Link/删除按钮争夺同一个 id 的所有权）
         let toggle_id = id.clone();
@@ -363,18 +362,22 @@ pub fn HrSkills() -> Element {
                             span { class: "text-base-content/30 pl-4", "└" }
                         }
                         if expandable {
-                            span { class: "text-base-content/60 select-none", "{arrow}" }
+                            button {
+                                // 已确认无副本的行：隐藏但占位（visibility:hidden 同步移出无障碍树），
+                                // 保证名称列与可展开行严格对齐，不会左右错位。
+                                class: if show_toggle {
+                                    "hud-collapse-btn shrink-0 text-lg hover:bg-base-content/10"
+                                } else {
+                                    "hud-collapse-btn shrink-0 text-lg invisible"
+                                },
+                                title: "{toggle_tip}",
+                                "aria-label": "{toggle_tip}",
+                                onclick: move |_| toggle_expand(toggle_id.clone()),
+                                "{arrow}"
+                            }
                         }
                         span { class: "truncate", "{name}" }
                         if is_copy { span { class: "badge orz-tag badge-sm shrink-0", "副本" } }
-                        if expandable {
-                            button {
-                                class: "btn hud-btn btn-ghost btn-xs shrink-0",
-                                disabled: copy_count == Some(0),
-                                onclick: move |_| toggle_expand(toggle_id.clone()),
-                                "{toggle_label}"
-                            }
-                        }
                     }
                 }
                 td { class: "text-base-content/70", "data-label": "描述", "{description}" }
