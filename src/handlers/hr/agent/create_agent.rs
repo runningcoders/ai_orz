@@ -12,7 +12,8 @@ use common::error::{Result, bail_err, err};
     id = "create_agent",
     name = "Create AI Agent",
     description = "Create a local AI agent with name, roles, capabilities, soul, and model_provider_id (the model its brain will use for thinking). Returns the new agent's id, name, description, and created_at. New agents start in Interviewing status; transition them to Onboarded via update_agent_status before they can serve as dialogue entry points.",
-    params = "common::api::CreateAgentRequest"
+    params = "common::api::CreateAgentRequest",
+    tags = "agent_management,hr_specialist"
 )]
 #[generate_http_handler]
 pub async fn create_agent(

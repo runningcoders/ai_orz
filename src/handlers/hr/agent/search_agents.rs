@@ -18,7 +18,7 @@ use common::error::Result;
     name = "Search Agents (Semantic)",
     description = "Search agents with a free-text keyword via hybrid FTS5 + vector semantic matching, ranked by relevance; optional filters (status, created_by, model_provider_id, roles, runtime_state) can narrow the results. Use when you have a natural-language description rather than exact field values. For structured filtering use query_agents.",
     params = "common::api::SearchAgentsRequest",
-    tags = "collaboration"
+    tags = "collaboration,agent_management,hr_specialist,reception"
 )]
 #[generate_http_handler]
 pub async fn search_agents(

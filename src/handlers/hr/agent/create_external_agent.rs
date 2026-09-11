@@ -19,7 +19,8 @@ use common::error::{Error, Result, bail_err, err};
     id = "create_external_agent",
     name = "Register External Agent",
     description = "Register an external agent: kind='cli' (requires command and work_dir; optional args, env, timeout_secs, prompt_template) or kind='remote' (requires A2A endpoint and agent_name; optional auth_token, timeout_secs). Unlike create_agent, it is not driven by a local model_provider. Returns the new agent's id, name, kind, and created_at.",
-    params = "common::api::CreateExternalAgentRequest"
+    params = "common::api::CreateExternalAgentRequest",
+    tags = "agent_management,hr_specialist"
 )]
 #[generate_http_handler]
 pub async fn create_external_agent(

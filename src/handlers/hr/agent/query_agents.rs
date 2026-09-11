@@ -18,7 +18,7 @@ use common::error::Result;
     name = "Query Agents (Advanced)",
     description = "Query agents by exact structured filters (ids, status, created_by, model_provider_id, roles, runtime_state) with pagination. Use when you know the concrete field values to match. For plain browsing use list_agents; for free-text semantic matching use search_agents.",
     params = "common::api::AgentQueryRequest",
-    tags = "collaboration"
+    tags = "collaboration,agent_management,hr_specialist,reception"
 )]
 #[generate_http_handler]
 pub async fn query_agents(

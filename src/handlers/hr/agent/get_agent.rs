@@ -20,7 +20,7 @@ use common::models::StatsInterval;
     name = "Get Agent Details",
     description = "Get an agent's full details by id: profile, kind, external config, runtime config, and live runtime state (current message/task/project). Optionally include the installed tool list, skill list, and usage stats via the with_* flags (stats default to the last 7 days). Fails with NotFound if the id does not exist.",
     params = "common::api::GetAgentRequest",
-    tags = "collaboration"
+    tags = "collaboration,agent_management,hr_specialist,reception"
 )]
 #[generate_http_handler]
 pub async fn get_agent(ctx: RequestContext, params: GetAgentRequest) -> Result<GetAgentResponse> {

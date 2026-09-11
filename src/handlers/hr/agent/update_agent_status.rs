@@ -18,7 +18,8 @@ use crate::enrich_ctx;
     id = "update_agent_status",
     name = "Toggle Agent Status",
     description = "Transition an agent's lifecycle status (Interviewing, PendingOnboard, Onboarded, PendingOffboard, Offboarded) and return the updated agent. Use it to onboard a newly created agent or to take one out of service.",
-    params = "common::api::UpdateAgentStatusRequest"
+    params = "common::api::UpdateAgentStatusRequest",
+    tags = "agent_management,hr_specialist"
 )]
 #[generate_http_handler]
 pub async fn update_agent_status(

@@ -15,7 +15,7 @@ use common::error::Result;
     name = "List All Agents",
     description = "Browse all agents with pagination (Deleted ones excluded); each item carries id, name, roles, status, and runtime state. Use this when you have no specific filter in mind. For exact-field filtering use query_agents; for free-text relevance ranking use search_agents.",
     params = "common::api::ListAgentsRequest",
-    tags = "collaboration"
+    tags = "collaboration,agent_management,hr_specialist,reception"
 )]
 #[generate_http_handler]
 pub async fn list_agents(
