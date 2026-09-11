@@ -1,4 +1,4 @@
-use dioxus::dioxus_core::spawn_forever;
+use dioxus::dioxus_core::{Runtime, current_scope_id};
 use dioxus::prelude::*;
 use dioxus_router::use_navigator;
 
@@ -163,6 +163,10 @@ pub fn use_theme() -> ThemeController {
 /// 成功时顺便回填 AuthState，保证长时间停驻后用户信息（角色、显示名、组织）保持最新，这是一致性的免费福利。
 pub fn use_login_liveness() {
     let auth = use_auth_state();
+    // 记下本 hook 所在组件的 scope（App，main.rs）。探活任务必须挂在这个 scope 上，
+    // 因为任务体内要读写 `auth` / `probe_inflight` / `last_probe_at`，它们都创建于
+    // 本 scope——挂在别的 scope 上会被 dioxus 判成「值被提升到非后代 scope 使用」。
+    let owner = current_scope_id();
     let mut probe_inflight = use_signal(|| false);
     let mut last_probe_at = use_signal(|| 0f64);
 
@@ -186,40 +190,48 @@ pub fn use_login_liveness() {
 
         probe_inflight.set(true);
         let mut auth = auth;
-        // 必须用 `spawn_forever` 而非 `spawn`：
-        // `spawn` 内部走 `Runtime::with_current_scope(..)` → `current_scope_id()`，
-        // 要求调用时正处在 Dioxus 的 scope 上下文中。而 `do_probe` 有两个调用点跑在
-        // **原生 JS 回调**里（下方 visibilitychange / setInterval 的 wasm-bindgen Closure），
-        // 那时 scope 栈是空的 → `unwrap()` on None → panic（runtime.rs: current_scope_id）。
-        // `spawn_forever` 显式用 `ScopeId::ROOT`，不读当前 scope，可安全用于原生回调。
-        // 本 hook 挂在 App 根组件（main.rs），任务挂 ROOT scope 与其生命周期等价，无泄漏风险。
-        spawn_forever(async move {
-            let res = get_current_user_info().await;
-            probe_inflight.set(false);
-            match res {
-                Ok(resp) => {
-                    let mut state = auth.write();
-                    state.logged_in = true;
-                    state.role = resp.data.role;
-                    state.user_id = resp.data.user_id.clone();
-                    state.username = resp.data.username.clone();
-                    state.display_name = resp.data.display_name.clone().unwrap_or_default();
-                    state.org_id = resp.data.organization_id.clone();
-                    save_role(resp.data.role);
-                    save_user_identity(&state.username, &state.display_name);
-                }
-                Err(e) => {
-                    let is_401 = e.http_status == 401;
-                    logout(auth);
-                    if !is_401 {
-                        // 后端异常（非 401）强制登出：本 hook 挂在 Router 祖先(App)上，
-                        // 无法使用 use_navigator，改用 web_sys 整页跳转回登录流。
-                        if let Some(window) = web_sys::window() {
-                            let _ = window.location().replace("/");
+        // 必须显式指定 scope，裸 `spawn` 和 `spawn_forever` 都不行：
+        //   - 裸 `spawn` 内部走 `Runtime::with_current_scope(..)` → `current_scope_id()`，
+        //     要求调用时正处在 Dioxus 的 scope 上下文中。而 `do_probe` 有两个调用点跑在
+        //     **原生 JS 回调**里（下方 visibilitychange / setInterval 的 wasm-bindgen
+        //     Closure），那时 scope 栈是空的 → `unwrap()` on None → panic。
+        //   - `spawn_forever` 虽不读当前 scope，但它把任务固定挂在 `ScopeId::ROOT`
+        //     （`Runtime::with_scope(ScopeId::ROOT, ..)`）。而 `auth` 等 signal 创建于
+        //     App scope，ROOT 是它的**祖先**而非后代 → dioxus 每次读写都会 WARN
+        //     「Copy Value ... used in a scope which is not a descendant of the owning
+        //     scope」（运行时无害，ROOT 活得比 App 久，但噪音会淹没真问题）。
+        // 故捕获本 hook 的 scope，显式在它上面 spawn：既能用于原生回调，又让 signal
+        // 的读写发生在它自己的 owner scope 内。本 hook 挂在 App 根组件（main.rs），
+        // 任务生命周期与 App 等价，无泄漏风险。
+        Runtime::current().in_scope(owner, move || {
+            spawn(async move {
+                let res = get_current_user_info().await;
+                probe_inflight.set(false);
+                match res {
+                    Ok(resp) => {
+                        let mut state = auth.write();
+                        state.logged_in = true;
+                        state.role = resp.data.role;
+                        state.user_id = resp.data.user_id.clone();
+                        state.username = resp.data.username.clone();
+                        state.display_name = resp.data.display_name.clone().unwrap_or_default();
+                        state.org_id = resp.data.organization_id.clone();
+                        save_role(resp.data.role);
+                        save_user_identity(&state.username, &state.display_name);
+                    }
+                    Err(e) => {
+                        let is_401 = e.http_status == 401;
+                        logout(auth);
+                        if !is_401 {
+                            // 后端异常（非 401）强制登出：本 hook 挂在 Router 祖先(App)上，
+                            // 无法使用 use_navigator，改用 web_sys 整页跳转回登录流。
+                            if let Some(window) = web_sys::window() {
+                                let _ = window.location().replace("/");
+                            }
                         }
                     }
                 }
-            }
+            });
         });
     };
 
