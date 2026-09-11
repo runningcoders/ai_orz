@@ -28,7 +28,7 @@ source_files:
   - frontend/src/components/force_layout.rs#L1-L100 (ForceLayout 力导向算法：每 tick 算斥力（所有节点对库仑力）+ 引力（边胡克力）+ 中心拉力；alpha 冷却 0.99^tick；300 帧后停止节省 CPU)
   - frontend/src/components/layered_layout.rs (LayeredLayout 分层布局：按 knowledge node depth 或 category 分层；Sugiyama 四阶段简易版，去除交叉最小化，用在 Agent 依赖树和项目任务 DAG)
   - frontend/src/components/chart_scene.rs#L1-L60 (ChartScene 统一图表场景：折线 LineChart 数据点 + 时间轴 + 坐标轴 + 鼠标 hover 十字准星 + tooltip；Donut 饼图多环)
-  - frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿)'
+  - frontend/src/components/charts/line_chart.rs (LineChart 组件：内部用 ChartScene；props: points: Vec<TimeSeriesPoint{ts, value}> + series: String + color；点数据 > 500 自动降采样 200 点防渲染卡顿；x_axis_format() 独立函数按数据粒度选 TimestampFormat：单点/空数组→Date，跨度<2h→TimeOfDay，否则→Date；4 单元测试覆盖)
   - frontend/src/components/gauge.rs (Gauge 仪表盘：240° 圆弧刻度 + 指针 + 0-100 值映射；HUD 风格橙光描边；AopGauge 同组件 + 双刻度（队列长度 + 延迟毫秒）)'
   - frontend/src/components/hud_palette.rs (HudPalette 调色板：HUD_ORANGE #FF8C00 / HUD_BLUE #00BFFF / HUD_GREEN #32CD32 / HUD_RED #FF4444；draw_glow_stroke(ctx, color, line_width) 加 box-shadow 光晕 blur 8px 渲染橙光条)
   - frontend/src/components/canvas_scene.rs#L112-L117 (measure_text_width：web-sys TextMetrics 精确测量，极端异常回退到字符数×字号×0.6 估算)
@@ -138,3 +138,4 @@ HR 知识图谱页面加载：
 9. **RingProgress 必须纯 Canvas 2D 不依赖 DOM**（2026-09-11 新增）：RingProgress 是 HUD 体系的 Canvas 原生组件，**禁止**改成 DOM + CSS 实现（失去 draw_glow_stroke 光晕效果 + 被 DaisyUI 主题覆盖）；ratio 参数必须 clamp 在 0.0~1.0 之间再绘制，负数值或 >1.0 都截断
 10. **TimeRangePicker 预设按钮时间必须后端可用**（2026-09-11 新增）：前端预设快捷按钮（1h/6h/24h/7d/30d）发出的时间区间必须能被后端 Stats 接口接受（ISO 8601 RFC3339 格式）；禁止前端用"秒级时间戳"或自定义格式；所有消费方（AOP 系统页/ModelProvider Token 时序/用户页统计）统一用同一个组件，不各自造时间筛选
 11. **聊天引用块宽度以本条消息为上限**（2026-09-11 新增）：引用块 CSS `max-width: 100%` + `overflow: hidden` + `text-overflow: ellipsis`，禁止溢出撑破消息列表；长引用内容截断显示 + tooltip hover 显示完整内容；引用块在消息气泡上方即时渲染（非 hover 弹出），宽度严格 ≤ 本条消息气泡宽度
+12. **LineChart 单点 X 轴必须显示真实日期**（2026-09-11 回归红线）：单点时首尾跨度为 0，不能靠跨度推断格式。后端日桶 `interval_start` 由 `timestamp - (timestamp % 86400000)` 生成（UTC 零点对齐），东八区渲染出来恰好是 08:00——一个并不存在的"时刻"。`x_axis_format()` 函数：`data.len() < 2` 一律退化为 `TimestampFormat::Date`，不准走跨度判定分支。4 个单元测试覆盖：单点/空数组/分钟窗口/日桶

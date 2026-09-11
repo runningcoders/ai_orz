@@ -64,6 +64,8 @@ source_files:
 
 **2026-09-10 增量**：前端技能库管理页（`frontend/src/pages/hr/skills.rs` 大改 371 行）升级——从扁平列表改为树形层级展示 + 分页（每页 20 条）+ 默认筛选"已发布"状态。skill 卡片支持按 agent 类型 tag 分组折叠展示（如 Communication/Agent 技能集 → Memory/Cognition 技能集 → 工具绑定集）。对应前端 API 层 `frontend/src/api/hr.rs` 新增 list_skills_paginated 接口（带 status/tag/pagination 查询参数），navbar 路由注册技能管理页面入口。
 
+**2026-09-11 增量**：技能列表展开控件从文字按钮改为纯图标 + tooltip（沿用 workspace.rs / finance tools.rs 折叠控件视觉语汇）；已确认无副本的行展开后显示箭头但 `visibility:hidden`（占位对齐 + 移出无障碍树）；空副本锁死 bug 修复——展开后 toggle 不再 disabled，收起后箭头隐藏
+
 **2026-09-07 增量**：seed 预置技能同步增强——两套新接口 `GET /api/v1/system/seed/preset-skills/preview`（预览影响清单：seed vs 技能库逐技能对比 + 已安装副本数量统计）与 `POST /api/v1/system/seed/preset-skills/sync`（后台任务同步）。两种策略：Overwrite（覆盖重置同 ID 技能元数据 + 文件）/ OnlyMissing（仅补缺）。可选 `sync_installed_copies`：把 parent_skill_id 指向预置技能的 Agent 私有副本一并对齐（副本 Draft 状态保持不变）。匹配键是技能 ID（`TEMPLATE_*` / `GIT_BRANCH_WORKFLOW`），不是名称。同步走通用后台任务（`pkg::background_task`），前端轮询 `/system/tasks/{task_id}/progress`。
 
 **定位**：技能系统四层增强——① 5 套 TEMPLATE 预置技能包（Communication/MemoryCognition/ProjectManagement/SkillManagement/ToolManagement，每个 skill.md 结构化 6 字段 + `include_str!` 嵌入式注入 HRDomain init）；② `install_skill_pack` 幂等 Tag 批量分发（按 SkillTag 标签分组已发布技能 → 批量 find_by_tag → 为 Agent 逐个 create_agent_skill_private → 重名跳过 warn）；③ Agent 入职流程绑定（onboard_agent 调 install_default_skill_packs：默认 5 套全装，安装失败不阻断入职只打 warn + 记录缺失清单）；④ Prompt Token 熔断与分层注入（Core Role + System Capabilities + Skills Prompt + Current Task 四层，每层有独立 Token 预算上限，超限自动从 Current Task 开始反向裁剪）。
