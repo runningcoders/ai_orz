@@ -17,13 +17,13 @@ use crate::common::app::TestApp;
 use ai_orz::models::model_provider::ModelProvider;
 use ai_orz::service::dao::model_provider::ModelProviderQuery;
 use ai_orz::service::dao::organization::OrganizationQuery;
-use ai_orz::service::dao::user::UserQuery;
 use ai_orz::service::domain::{finance, organization};
 use common::api::{
     InitializeSystemRequest, LoginRequest, ModelProviderInitConfig, PaginationParams,
     RegisterByInviteRequest,
 };
 use common::enums::{ModelCapability, OrganizationScope, ProviderType, UserRole};
+use common::error::{Error, Result};
 
 /// 全局互斥锁：所有集成测试共享同一个全局 DB，`bootstrap_system` 必须串行执行，
 /// 避免并行 init 任务导致 `sync_builtin_tools` 竞争（UNIQUE constraint）和
@@ -130,7 +130,12 @@ static REUSED_ADMIN_CREDS: std::sync::OnceLock<(String, String, String)> =
 ///
 /// 最后一个字段是 DB 中该 admin 的真实角色值（i32），供调用方把 role 注入
 /// RequestContext，走 Admin Bypass 访问受权限保护的资源。
-async fn try_reuse_existing_local_admin() -> Option<(String, String, String, String, i32)> {
+///
+/// ⚠️ 返回值语义：`Err` 表示「查询/写入失败」，**不代表系统未初始化**。
+/// 调用方必须先用 [`system_initialized`] 做权威判定，绝不能拿本函数的失败
+/// 当「可以走 /initialize」的依据——否则一次瞬时失败（共享 DB 并发写冲突）
+/// 就会被误判为可初始化，随即撞上 handler 的重复初始化拦截（400）。
+async fn try_reuse_existing_local_admin() -> Result<(String, String, String, String, i32)> {
     let ctx = ai_orz::pkg::RequestContext::from_storage(
         "test-bootstrap-reuse",
         ai_orz::pkg::storage::get().clone(),
@@ -146,30 +151,25 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
                 ..Default::default()
             },
         )
-        .await
-        .ok()?
+        .await?
         .into_iter()
-        .next()?;
+        .next()
+        .ok_or_else(|| Error::internal("Local 组织不存在，无法复用 admin"))?;
     let org_id = org.id;
 
     // 2. 查该组织的 SuperAdmin 用户
+    //
+    // 用 `find_by_organization_id`（全量）而非分页 query：DAO 的排序是
+    // `ORDER BY created_at DESC`，而 SuperAdmin 是最早创建的用户，一旦共享
+    // DB 里该组织用户数超过 limit，它就会被挤出第一页 → 误判「admin 不存在」
+    // → 上层误以为系统未初始化 → 撞 400 重复初始化。
     let mut admin = organization::domain()
         .user_manage()
-        .query(
-            ctx.clone(),
-            UserQuery {
-                organization_id: Some(org_id.clone()),
-                pagination: PaginationParams {
-                    limit: Some(50),
-                    offset: None,
-                },
-            },
-        )
-        .await
-        .ok()?
-        .items
+        .find_by_organization_id(ctx.clone(), &org_id)
+        .await?
         .into_iter()
-        .find(|u| u.role == UserRole::SuperAdmin)?;
+        .find(|u| u.role == UserRole::SuperAdmin)
+        .ok_or_else(|| Error::internal(format!("组织 {org_id} 下未找到 SuperAdmin")))?;
     let admin_role_i32 = admin.role as i32;
 
     // 进程内已持有该 admin 的已知密码 → 直接复用，不再重置（避免打断
@@ -178,21 +178,20 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
         && org == &org_id
         && uid == &admin.id
     {
-        return Some((org_id, admin.id, admin.username, pw.clone(), admin_role_i32));
+        return Ok((org_id, admin.id, admin.username, pw.clone(), admin_role_i32));
     }
 
     // 首次复用：密码重置为已知明文（bcrypt 不可逆，旧哈希无法用于登录）
     let password = format!("reused-pw-{}", uuid::Uuid::now_v7());
-    admin.password_hash = ai_orz::pkg::password::hash_password(&password).ok()?;
+    admin.password_hash = ai_orz::pkg::password::hash_password(&password)?;
     organization::domain()
         .user_manage()
         .update_user(ctx, &admin)
-        .await
-        .ok()?;
+        .await?;
 
     let _ = REUSED_ADMIN_CREDS.set((org_id.clone(), admin.id.clone(), password.clone()));
 
-    Some((org_id, admin.id, admin.username, password, admin_role_i32))
+    Ok((org_id, admin.id, admin.username, password, admin_role_i32))
 }
 
 /// 尝试从 service 层直接复用已存在的 Local 组织 + admin 用户 + chat provider。
@@ -211,7 +210,7 @@ async fn try_reuse_existing_local_admin() -> Option<(String, String, String, Str
 /// 检查并正确 update 任意作者的预置技能），把 author_id 覆盖为当前 admin
 /// user_id，从而让「第二次 bootstrap 仍应更新 author_id」的幂等语义成立
 /// （同时覆盖 minimal 首次初始化中途中断导致技能不完整的情况）。
-async fn try_reuse_existing() -> Option<BootstrappedSystem> {
+async fn try_reuse_existing() -> Result<BootstrappedSystem> {
     let ctx = ai_orz::pkg::RequestContext::from_storage(
         "test-bootstrap-reuse",
         ai_orz::pkg::storage::get().clone(),
@@ -232,8 +231,7 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
                 ..Default::default()
             },
         )
-        .await
-        .ok()?;
+        .await?;
     let chat_provider_id = match providers
         .items
         .into_iter()
@@ -264,8 +262,7 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
             finance::domain()
                 .model_provider_manage()
                 .create_model_provider(ctx, &provider)
-                .await
-                .ok()?;
+                .await?;
             id
         }
     };
@@ -282,16 +279,15 @@ async fn try_reuse_existing() -> Option<BootstrappedSystem> {
         .storage(ai_orz::pkg::storage::get().clone())
         .build();
     let snapshot = ai_orz::service::domain::system::seed::default::embedded_default_snapshot();
-    let _ = ai_orz::handlers::system::seed::apply_preset_skills(
+    ai_orz::handlers::system::seed::apply_preset_skills(
         admin_ctx,
         &snapshot.skills,
         Some(&user_id),
         false,
     )
-    .await
-    .ok()?;
+    .await?;
 
-    Some(BootstrappedSystem {
+    Ok(BootstrappedSystem {
         organization_id: org_id,
         user_id,
         username,
@@ -315,9 +311,13 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
     // 串行化：所有测试共享同一全局 DB，避免并行 init 竞争
     let _guard = BOOTSTRAP_MUTEX.lock().await;
 
-    // 先查：已有 Local 组织 → 直接复用（避免触发 handler 的"系统已初始化"拦截）
-    if let Some(bs) = try_reuse_existing().await {
-        return bs;
+    // 权威判定：已初始化 → 必须复用，绝不降级到 /initialize
+    if system_initialized().await {
+        return reuse_with_retry(
+            "系统已初始化但复用失败（不得调用 /initialize）",
+            try_reuse_existing,
+        )
+        .await;
     }
 
     let username = format!("admin-{}", uuid::Uuid::now_v7());
@@ -391,6 +391,57 @@ pub async fn bootstrap_system(app: &TestApp) -> BootstrappedSystem {
     }
 }
 
+/// 权威判定系统是否已初始化：与 `initialize_system` handler 的前置校验**同一判据**
+/// （domain `check_initialized` = 存在 Local 组织）。
+///
+/// 存在的意义：把「是否已初始化」与「复用查询是否成功」彻底解耦。此前
+/// `bootstrap_system` 用「复用查询返回 None」来推断可以初始化，而那个 None
+/// 有相当一部分来自瞬时失败（共享 DB 并发写冲突等），于是把一次抖动放大成
+/// 一个注定失败的 `/initialize`（400 重复初始化），错误信息还完全指错方向。
+async fn system_initialized() -> bool {
+    let ctx = ai_orz::pkg::RequestContext::from_storage(
+        "test-check-initialized",
+        ai_orz::pkg::storage::get().clone(),
+    );
+    organization::domain()
+        .organization_manage()
+        .check_initialized(ctx)
+        .await
+        .expect("check_initialized 失败：无法判定系统初始化状态")
+}
+
+/// 复用路径的有界重试。
+///
+/// 复用不是纯读：它含多处写（重置 admin 密码、补建 provider、`apply_preset_skills`
+/// 批量写技能），而**所有集成测试共享同一个全局 DB**，兄弟测试并发写会造成
+/// SQLite 忙、行冲突等**瞬时**失败。这类抖动直接 panic 会把一次偶然冲突变成
+/// 用例失败，故做有界重试；重试耗尽才 panic，且届时错误信息已带完整上下文。
+///
+/// 只用于「已确认系统已初始化」的分支——此时重试安全（复用操作幂等），
+/// 而降级到 `/initialize` 是注定 400 的死路。
+async fn reuse_with_retry<T, Fut>(label: &str, mut op: impl FnMut() -> Fut) -> T
+where
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    const ATTEMPTS: usize = 3;
+    let mut last_err = None;
+    for i in 1..=ATTEMPTS {
+        match op().await {
+            Ok(v) => return v,
+            Err(e) => {
+                last_err = Some(e);
+                if i < ATTEMPTS {
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * i as u64)).await;
+                }
+            }
+        }
+    }
+    panic!(
+        "{label}（重试 {ATTEMPTS} 次仍失败）：{}",
+        last_err.expect("last_err 必然已赋值")
+    );
+}
+
 /// 最小初始化变体：跳过对话模型（`chat_model: None`），embedding 可选传入。
 ///
 /// 返回 `(原始结果 JSON, admin 用户名, admin 明文密码)`：
@@ -405,13 +456,15 @@ pub async fn bootstrap_system_minimal(
     // 串行化：与 bootstrap_system 共享同一把锁，避免并行 init 竞争
     let _guard = BOOTSTRAP_MUTEX.lock().await;
 
-    // 先查后建：所有集成测试共享同一全局 DB，Local 组织已被其他用例创建时，
-    // `/initialize` 必被 handler 的"系统已初始化"拦截。此处复用既有组织/管理员
-    // 并合成最小结果 —— 本调用未创建任何 provider，两个 provider 字段保持 null，
-    // 与"跳过 chat/embedding"的新建语义一致。
-    if let Some((org_id, user_id, username, password, _role)) =
-        try_reuse_existing_local_admin().await
-    {
+    // 与 bootstrap_system 同一判据：已初始化 → 复用既有组织/管理员并合成最小结果
+    // （本调用未创建任何 provider，两个 provider 字段保持 null，与"跳过
+    // chat/embedding"的新建语义一致）。复用失败即为真失败，不得降级到 /initialize。
+    if system_initialized().await {
+        let (org_id, user_id, username, password, _role) = reuse_with_retry(
+            "系统已初始化但复用 admin 失败（不得调用 /initialize）",
+            try_reuse_existing_local_admin,
+        )
+        .await;
         let result = serde_json::json!({
             "organization_id": org_id,
             "user_id": user_id,
