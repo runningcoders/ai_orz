@@ -1420,18 +1420,30 @@ Phase 4A 解决两个核心问题：
 1. **工具能力批量授予**：Agent 入职后不应逐个绑定工具，应通过"工具包"批量授予能力
 2. **任务执行闭环通知**：任务分配给 Agent 后，应通过消息自动通知 Agent 开始执行
 
-### 22.2 能力分层两维度模型
+### 22.2 能力分层的三阶段模型
+
+能力的获得时机分三段，对应现实中「本能 → 职业规划 → 公司要求」：
 
 ```
 Agent 能力
-├── 工具（Tool）
-│   ├── 神经工具（Neural）：天生具备，tags 含 "neural"
-│   ├── 工具包（ToolPack）：按 tag 分组，入职培训获得
-│   └── 外骨骼工具（Exoskeleton）：显式绑定获得
-└── Skill（技能）
-    ├── 天生技能：Agent 创建时配置
-    └── 入职培训技能：后续沉淀
+├── ① 出生自带（create_agent）—— 与角色无关，所有 Agent 都有
+│   ├── neural：神经工具 / 神经技能（思考场景白名单 + 无条件进 Prompt）
+│   └── skill_management / tool_management：自治骨架（能管理自己的技能与工具）
+├── ② 入职·个人匹配（onboard-(a)）—— 按自己的 roles ∪ capabilities 逐 tag 匹配
+│   └── 命中即装；语义＝「我因为这些身份/能力标签，所以会这些」
+└── ③ 入职·公司指定（onboard-(b)）—— COMPANY_ONBOARD_PACKS 无条件安装
+    └── 语义＝「组织要求你会」，如 project_management
 ```
+
+**`installed_tags`（工具包）与 `installed_skill_packs`（技能包）是两个独立字段，不可互相替代。**
+
+> ⚠️ 工具与技能的匹配机制**不对称**，这是设计个人匹配时最容易搞错的地方：
+> - 工具授权 = `neural ∪ (tool.tags ∩ installed_tags)` —— **`roles` 不参与**，
+>   所以角色标签不会自动放行工具，必须真正写入 `installed_tags`；
+> - 技能侧 `roles` 虽直接进 `match_keys`，但技能必须先以副本进入 Agent 副本池
+>   （`author_id = agent_id`）才轮得到判定，所以必须真正建副本。
+>
+> ⇒ 个人匹配必须「工具包 + 技能包」两侧都装，只做一侧就会瘸腿。
 
 ### 22.3 工具包 tag 机制
 
@@ -1439,9 +1451,15 @@ Agent 能力
 - `ToolPo.tags: Vec<String>` — 工具所属的标签列表
 - `AgentRuntimeConfig.installed_tags: Vec<String>` — Agent 已安装的工具包 tags
 
-**12 个项目管理工具统一打 "project_management" tag**：
-- create_project / update_project / update_project_status / get_project / list_projects
-- create_task / update_task / update_task_status / get_task / list_tasks / assign_task / list_task_artifacts
+**12 个项目管理工具统一打 "project_management" tag**（实际已扩到 23 个工具，覆盖 project / task / artifact 三组）：
+- create_project / update_project / update_project_status / get_project / list_projects / query_projects / search_projects
+- create_task / update_task / update_task_status / update_task_progress / get_task / list_tasks / query_tasks / search_tasks / list_agent_tasks / list_project_tasks / mark_done
+- create_artifact / create_text_artifact / register_artifact_from_path / update_artifact / query_artifacts
+
+> ⚠️ `project_management` 是「同名双重身份」标签：它既是上述工具的工具包 tag，也是同名技能包
+> （`TEMPLATE_PROJECT_MANAGEMENT`）的名字。工具包 tag 写 `installed_tags`、技能包写
+> `installed_skill_packs`，两者必须同时写入、不可互相替代 —— 只写一边会导致「工具全被拒」
+> 或「技能副本建了却不进 Prompt」。
 
 ### 22.4 免绑定校验三层逻辑
 
@@ -1454,9 +1472,39 @@ Manual 工具调用校验：
 
 三层任一通过即允许调用，否则拒绝。
 
-### 22.5 Agent 入职自动安装
+### 22.5 Agent 入职自动绑定（第二阶段）
 
-当 Agent 状态流转到 `Onboarded` 时，自动安装 "project_management" 工具包：
+当 Agent 状态流转到 `Onboarded` 时，`apply_onboard_bindings` 一次性完成两类绑定：
+
+| 来源 | 匹配键 | 工具侧守卫 | 技能侧守卫 |
+|------|--------|-----------|-----------|
+| 个人匹配 | `roles ∪ capabilities` | 库里须有该 tag 的已启用工具 | 库里须有该 tag 的已发布技能 |
+| 公司指定 | `COMPANY_ONBOARD_PACKS`（如 `project_management`） | 无条件写入（显式授权声明） | 库里须有该 tag 的已发布技能 |
+
+- **工具包**：`install_tool_pack(tag)` → 写 `installed_tags`（否则该 tag 下工具全部被拒），并把包内工具写入 `agent_tools` 关系表；
+- **技能包**：`install_skill_pack(tag)` → 写 `installed_skill_packs` 并真正建技能副本。
+
+为什么个人匹配的工具侧需要守卫：`capabilities` 是自由关键词（`chat` / `knowledge` 等），
+若不加「库里真有工具」的前置判断，会被写成一批空包脏 tag。
+
+全程幂等、失败不阻塞入职（绑定属「增强」步骤，任何异常都不回滚已落库的状态流转）。
+
+**已落地的两个同名双身份包示例**（tag 同时是工具包与技能包，两侧都要装）：
+
+| tag | 工具包侧 | 技能包侧 | 谁命中 |
+|-----|---------|---------|--------|
+| `project_management` | 23 个 project/task/artifact 工具 | `TEMPLATE_PROJECT_MANAGEMENT` | 公司指定（`COMPANY_ONBOARD_PACKS`） |
+| `reception` | `search_agents` / `query_agents` / `list_agents` / `get_agent`（分流找人） | `TEMPLATE_USER_RECEPTION`（用户接待 SOP） | 前台接待 Agent 的个人匹配（`roles = ["reception"]`） |
+
+`reception` 这个例子说明了个人匹配的完整闭环：前台 Agent 的角色标签命中同名工具包与技能包，
+入职时自动获得「找人」工具与「接待」技能，无需手工挂包。
+
+`sync_agent_packs` 的**阶段 3** 会对已入职 Agent 重跑同一套绑定，用于补齐「入职**之后**才发布的
+角色相关包」——详情页「同步包」按钮即自愈入口；未入职状态（Interviewing / PendingOnboard）自动跳过。
+
+> 为什么工具/技能两侧都要写：`installed_tags` 服务工具授权 + 技能必加载的 `match_keys`，
+> `installed_skill_packs` 服务技能副本投放池。任缺其一都会造成静默降级（工具少一批 / 技能不进 Prompt）。
+
 > 相关实现细节见：[Agent 入职 Domain](src/service/domain/hr/)
 
 ### 22.6 唤醒时工具加载与分流

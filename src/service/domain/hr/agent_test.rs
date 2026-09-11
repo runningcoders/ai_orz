@@ -231,9 +231,10 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // 入职后从 DB 读回校验：
+    // 入职后从 DB 读回校验（project_management 是同名双重身份的包，两个字段都要有）：
     // 1) installed_skill_packs 含 project_management（技能包已真正安装 + 技能副本已建）
-    // 2) installed_tags 不应含 project_management（它是技能包，不进工具包字段）
+    // 2) installed_tags 也须含 project_management：它同时是工具包 tag，23 个项目/任务/
+    //    产物工具靠它授权；从 installed_tags 移除会导致这些工具全部被拒 + 技能不进 Prompt
     let found = domain
         .agent_manage()
         .get_agent(ctx, agent.id(), Default::default())
@@ -249,11 +250,187 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         "入职后 installed_skill_packs 应含 project_management 技能包"
     );
     assert!(
-        !found
+        found
             .po
             .get_installed_tags()
             .contains(&"project_management".to_string()),
-        "入职后 installed_tags 不应含 project_management（技能包不进工具包字段）"
+        "入职后 installed_tags 应含 project_management（同名工具包 tag，工具授权与技能 match_keys 都依赖它）"
+    );
+}
+
+/// 入职第二阶段(a) 个人匹配：按 `roles ∪ capabilities` 逐 tag 装包。
+///
+/// 重点验证「工具看 installed_tags、技能必须有副本」这处不对称 —— 只做一侧都会瘸腿：
+/// - 工具授权 = `neural ∪ (tool.tags ∩ installed_tags)`，**不含 roles**；
+/// - 技能必须先以副本进入 Agent 副本池（`author_id = agent_id`）才轮得到 match_keys 判定。
+#[sqlx::test]
+async fn test_onboard_personal_matching_binds_role_tagged_packs(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool.clone());
+    let finance = init_finance_env(pool.clone());
+
+    // 准备挂 "worker" tag 的资源：1 个已发布技能 + 1 个已启用工具。
+    // create_test_agent 的 roles = ["worker"]、capabilities = ["coding"]。
+    let skill = create_published_skill_with_tag("WorkerSkill", "worker");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+    let tool = create_enabled_tool("WorkerTool", vec!["worker"]);
+    finance
+        .tool_provider_manage()
+        .create_tool(ctx.clone(), &tool)
+        .await
+        .unwrap();
+
+    // 走真实生命周期：create（Interviewing）→ PendingOnboard → Onboarded
+    let mut agent = create_test_agent("PersonalMatchAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status)
+            .await
+            .unwrap();
+    }
+
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx.clone(), agent.id(), Default::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        found
+            .po
+            .get_installed_tags()
+            .contains(&"worker".to_string()),
+        "个人匹配：角色 tag 应写入 installed_tags（工具授权不含 roles），实际={:?}",
+        found.po.get_installed_tags()
+    );
+    assert!(
+        found
+            .po
+            .get_installed_skill_packs()
+            .contains(&"worker".to_string()),
+        "个人匹配：角色 tag 应写入 installed_skill_packs，实际={:?}",
+        found.po.get_installed_skill_packs()
+    );
+    let copies = domain
+        .skill_manage()
+        .list_for_agent(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(
+        copies.iter().any(|c| c.po.parent_skill_id == skill.po.id),
+        "个人匹配：命中的技能应已建副本（副本池是技能进 Prompt 的前置门）"
+    );
+}
+
+/// 入职第二阶段守卫：`capabilities` 里的自由关键词若库里没有任何资源挂该 tag，
+/// 不得被写成空包脏数据（chat / knowledge 这类词最容易踩到）。
+///
+/// 注意：公司指定包（`project_management`）是**显式授权声明**，无条件写入 `installed_tags`
+/// （工具后续上线即生效），不属于被守卫的「个人匹配」范畴。
+#[sqlx::test]
+async fn test_onboard_skips_tags_without_resources(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    let mut agent = create_test_agent("NoResourceAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status)
+            .await
+            .unwrap();
+    }
+
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id(), Default::default())
+        .await
+        .unwrap()
+        .unwrap();
+    // installed_tags 应只含公司指定包；roles/capabilities 的 worker / coding 无资源 → 不得留下脏 tag
+    assert_eq!(
+        found.po.get_installed_tags(),
+        vec!["project_management".to_string()],
+        "只有公司指定包可无条件写入；个人匹配的 worker / coding 无资源不应出现"
+    );
+    assert!(
+        found.po.get_installed_skill_packs().is_empty(),
+        "无已发布技能时不应写入空技能包，实际={:?}",
+        found.po.get_installed_skill_packs()
+    );
+}
+
+/// 同步阶段 3 自愈：角色相关包是 Agent 入职**之后**才发布的 → 点同步应补齐。
+#[sqlx::test]
+async fn test_sync_agent_packs_heals_onboard_bindings(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    // 入职时库里还没有 worker 资源 → 未绑定
+    let mut agent = create_test_agent("HealAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status)
+            .await
+            .unwrap();
+    }
+    assert!(
+        domain
+            .agent_manage()
+            .list_installed_skill_packs(ctx.clone(), agent.id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // 入职之后才发布「角色相关」技能
+    let skill = create_published_skill_with_tag("LateWorkerSkill", "worker");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&skill))
+        .await
+        .unwrap();
+
+    // 同步 → 阶段 3 重跑个人匹配并补装
+    let resp = domain
+        .agent_manage()
+        .sync_agent_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(
+        resp.installed_skill_packs.contains(&"worker".to_string()),
+        "同步应补齐入职后才发布的角色相关技能包，实际={:?}",
+        resp.installed_skill_packs
+    );
+
+    // 幂等：再同步一次无新增
+    let resp2 = domain
+        .agent_manage()
+        .sync_agent_packs(ctx.clone(), agent.id())
+        .await
+        .unwrap();
+    assert!(
+        resp2.installed_skill_packs.is_empty(),
+        "重复同步应幂等，实际={:?}",
+        resp2.installed_skill_packs
     );
 }
 

@@ -258,7 +258,8 @@ impl InitializeSystemTask {
         // Step: 无条件创建预设前台 Agent（降低使用门槛）
         // - roles: ["reception"]：Web 前台通道精确命中；飞书/A2A 等场景经渐进匹配（子串/语义）自动回退
         // - 初始化配置了 chat provider → 直接绑定；未配置 → 留空，wake 时自动回退默认对话模型
-        // - 额外安装 project_management 技能，支持把复杂请求升级为任务流转
+        // - project_management（公司指定包）由入职流程 apply_onboard_bindings 统一绑定，
+        //   此处不再重复安装；未配置模型时 Agent 停留 Interviewing，也就不绑岗位包
         self.set_step(step + 2, "正在创建预设前台接待 Agent");
         let reception_agent_id =
             create_preset_reception_agent(ctx.clone(), &user_id, chat_provider_id.clone()).await?;
@@ -371,14 +372,11 @@ async fn create_preset_reception_agent(
         );
     }
 
-    // 安装项目管理技能（非 neural，需 match_keys 命中才进必加载；失败不阻塞初始化）
-    if let Err(e) = hr::domain()
-        .agent_manage()
-        .install_skill_pack(ctx.clone(), &agent_id, "project_management")
-        .await
-    {
-        sys_warn!("initialize_system: 前台 Agent 安装 project_management 技能失败（忽略）: {e}");
-    }
+    // 项目管理（公司指定包）不在此处单独安装：前台 Agent 的入职流程
+    // （transition_status → Onboarded）会通过 apply_onboard_bindings 一并绑定
+    // COMPANY_ONBOARD_PACKS（工具包 + 技能包两个字段），避免同一件事两处写、语义分叉。
+    // 若初始化未配置对话模型（Agent 停留在 Interviewing），则不绑任何岗位包 ——
+    // 未入职即未就位，符合状态机语义。
 
     Ok(Some(agent_id))
 }

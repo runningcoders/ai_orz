@@ -79,17 +79,168 @@ impl HrDomainImpl {
             .await?;
         Ok(skills.items)
     }
+
+    /// 【第二阶段：入职绑定】执行入职时的包绑定，分两部分：
+    ///
+    /// - **(a) 个人匹配**：拿 Agent 自己的 `roles ∪ capabilities` 逐 tag 去找资源，命中即装。
+    ///   语义是「我因为这些身份/能力标签，所以会这些」——对应「职业规划」。
+    /// - **(b) 公司指定**：`COMPANY_ONBOARD_PACKS` 无条件安装。语义是「组织要求你会」。
+    ///
+    /// 为什么两侧都必须装（缺一不可）：
+    /// - **工具**：授权 = `neural ∪ (tool.tags ∩ installed_tags)`，**不含 roles**，
+    ///   所以不写 `installed_tags` 的工具一律被拒；
+    /// - **技能**：`roles` 虽直接进 `match_keys`，但技能必须先存在于 Agent 副本池
+    ///   （`author_id = agent_id`）才轮得到判定，所以必须真正建副本。
+    ///
+    /// 守卫与容错：
+    /// - 工具包：**个人匹配**要求库里确有该 tag 的已启用工具才写 `installed_tags`
+    ///   （否则 `capabilities` 里的自由关键词 chat / knowledge 会被写成空包脏 tag）；
+    ///   **公司指定**是显式授权声明，无条件写入（工具后续上线即生效）；
+    /// - 技能包：两侧都必须有已发布技能才装 —— 技能只能由真实技能复制而来；
+    /// - 全程幂等（install_* 内部各自判重），单包失败只记 warn 不中断；
+    /// - 返回值只统计**本次新增**的包，供调用方（sync 自愈）展示。
+    async fn apply_onboard_bindings(
+        &self,
+        ctx: RequestContext,
+        agent_id: &str,
+    ) -> Result<common::api::SyncAgentPacksResponse> {
+        let agent = self
+            .agent_dal
+            .find_by_id(ctx.clone(), agent_id)
+            .await?
+            .ok_or_else(|| err!(NotFound, "Agent {} 不存在", agent_id))?;
+        let ctx = enrich_ctx!(&ctx, &agent);
+
+        let mut resp = common::api::SyncAgentPacksResponse {
+            agent_id: agent_id.to_string(),
+            ..Default::default()
+        };
+
+        // 匹配源：(tag, 是否公司指定)。同名时按「公司指定」处理（排序时 true 在前）。
+        let mut merged: Vec<(String, bool)> = Vec::new();
+        merged.extend(agent.po.get_roles().into_iter().map(|t| (t, false)));
+        merged.extend(agent.po.get_capabilities().into_iter().map(|t| (t, false)));
+        merged.extend(
+            COMPANY_ONBOARD_PACKS
+                .iter()
+                .map(|t| ((*t).to_string(), true)),
+        );
+        merged.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        merged.dedup_by(|a, b| a.0 == b.0);
+
+        for (tag, is_company) in merged {
+            let source = if is_company {
+                "公司指定"
+            } else {
+                "个人匹配"
+            };
+            let already_tool = agent.po.get_runtime_config().has_tag(&tag);
+
+            // ── 工具包 ──
+            // 公司指定 = 显式授权声明 → 无条件写入 installed_tags（工具后续上线即生效）；
+            // 个人匹配 = 按 tag 探测资源 → 库里没有该 tag 的已启用工具就跳过，
+            // 否则 capabilities 里的自由关键词（chat / knowledge 等）会变成空包脏 tag。
+            let has_tools = if is_company {
+                true
+            } else {
+                !self
+                    .tool_dal
+                    .query(
+                        ctx.clone(),
+                        crate::service::dao::tool::ToolQuery {
+                            tags: Some(vec![tag.clone()]),
+                            enabled_only: Some(true),
+                            ..Default::default()
+                        },
+                    )
+                    .await?
+                    .items
+                    .is_empty()
+            };
+            if !already_tool && has_tools {
+                match self.install_tool_pack(ctx.clone(), agent_id, &tag).await {
+                    Ok(()) => {
+                        log_info!(
+                            ctx.clone(),
+                            "apply_onboard_bindings",
+                            "agent_id={}, tag={}, 来源={} 工具包已绑定",
+                            agent_id,
+                            tag,
+                            source
+                        );
+                        resp.installed_tool_tags.push(tag.clone());
+                    }
+                    Err(e) => {
+                        log_warn!(
+                            ctx.clone(),
+                            "apply_onboard_bindings",
+                            "绑定工具包 {tag} 失败（忽略）: {e}"
+                        );
+                    }
+                }
+            }
+
+            // ── 技能包 ──
+            // 技能只能由真实已发布技能复制而来 → 两侧都必须有资源才装；
+            // 无资源则跳过且不写 installed_skill_packs，避免空技能包脏数据。
+            let already_skill = agent.po.get_runtime_config().has_skill_pack_tag(&tag);
+            if already_skill {
+                continue;
+            }
+            let Ok(published) = self
+                .skill_dal
+                .list_published_by_tag(ctx.clone(), &tag)
+                .await
+            else {
+                continue;
+            };
+            if published.is_empty() {
+                continue;
+            }
+            match self.install_skill_pack(ctx.clone(), agent_id, &tag).await {
+                Ok(n) if n > 0 => {
+                    resp.installed_skill_packs.push(tag.clone());
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "apply_onboard_bindings",
+                        "安装技能包 {tag} 失败（忽略）: {e}"
+                    );
+                }
+            }
+        }
+
+        Ok(resp)
+    }
 }
 
-/// 创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合）。
+/// 【第一阶段：出生自带】创建 Agent 时默认安装的基础包 tags（工具包与技能包共用同一集合）。
 ///
-/// 包含 neural / skill_management / tool_management 三个基础包：
+/// 对应「天生就会」的能力：与角色、岗位无关，所有 Agent 出生即持有。
 ///
-/// - 显式安装让每个 Agent 都持有一份自己的副本/绑定，无需加载侧再兜底；
-/// - 这三个基础包在卸载时受保护（见 uninstall_tool_pack / uninstall_skill_pack）；
-/// - 仅当库里已有对应已发布资源时才安装（见 sync_agent_packs 守卫）；
-/// - 缺失时可通过 sync_agent_packs（POST /agents/{id}/sync-packs）补装。
+/// - `neural`：神经工具/技能（思考场景白名单 + 无条件进 Prompt 的方法论）；
+/// - `skill_management` / `tool_management`：Agent 自治骨架，能管理自己的技能与工具。
+///
+/// 显式安装让每个 Agent 都持有一份自己的副本/绑定，无需加载侧再兜底；
+/// 这三个包在卸载时受保护（见 uninstall_tool_pack / uninstall_skill_pack）；
+/// 仅当库里已有对应已发布资源时才安装（见 sync_agent_packs 守卫）；
+/// 缺失时可通过 sync_agent_packs（POST /agents/{id}/sync-packs）补装。
 const BASE_AGENT_PACKS: &[&str] = &["neural", "skill_management", "tool_management"];
+
+/// 【第二阶段(b)：公司指定】入职时无条件安装的包 tags（工具包与技能包共用同一集合）。
+///
+/// 对应「组织要求你会」的能力：与 Agent 自身的角色/能力关键词无关，由组织统一指定。
+///
+/// `project_management` 是「同名双重身份」的包，工具包与技能包两个字段都必须写：
+/// - 工具包：23 个项目/任务/产物工具挂着该 tag，须写入 `installed_tags` 才被授权
+///   （授权 = neural ∪ (tool.tags ∩ installed_tags)，见 runtime/tool_execution.rs），
+///   同时它参与技能必加载的 `match_keys`，也是技能进 Prompt 的必要条件；
+/// - 技能包：写入 `installed_skill_packs` 并真正建技能副本。
+///
+/// 放在常量而非内联进状态机：状态流转是通用机制，不应耦合具体业务包名。
+const COMPANY_ONBOARD_PACKS: &[&str] = &["project_management"];
 
 #[async_trait::async_trait]
 impl AgentManage for HrDomainImpl {
@@ -134,12 +285,15 @@ impl AgentManage for HrDomainImpl {
 
     /// 同步 Agent 包（通用恢复/同步入口）
     ///
-    /// 两阶段执行，全程幂等，单个包失败不阻塞其他包：
-    /// - 阶段 1 基础包缺失补装：工具包仅写 installed_tags 关联（无包内补全问题）；
+    /// 三阶段执行，全程幂等，单个包失败不阻塞其他包：
+    /// - 阶段 1 基础包（天生包）缺失补装：工具包仅写 installed_tags 关联（无包内补全问题）；
     ///   技能包安装副本后由阶段 2 统一补全。
     /// - 阶段 2 已安装技能包增量补全：对当前所有已安装技能包，检测该 tag 下
     ///   是否有 Agent 尚未拥有的新增已发布技能（按 parent_skill_id 比对），
     ///   有则重装该技能包（reinstall_skill_pack 同时刷新已有副本内容）。
+    /// - 阶段 3 入职绑定自愈（仅对已入职 Agent）：重跑个人匹配（roles ∪ capabilities）
+    ///   与公司指定包（COMPANY_ONBOARD_PACKS）。后补的角色相关包能一键补齐，
+    ///   Interviewing / PendingOnboard 等未入职状态自动跳过。
     async fn sync_agent_packs(
         &self,
         ctx: RequestContext,
@@ -272,6 +426,28 @@ impl AgentManage for HrDomainImpl {
                         ctx.clone(),
                         "sync_agent_packs",
                         "重装技能包 {tag} 补全失败（忽略）: {e}"
+                    );
+                }
+            }
+        }
+
+        // ══════ 阶段 3/3：入职绑定自愈（仅对已入职 Agent）══════
+        // 角色相关包可能是「Agent 入职之后才发布」的，此时只有重跑匹配才能补上；
+        // 未入职状态跳过，避免绕过状态机提前把岗位包塞进去。
+        if agent.po.status == AgentStatus::Onboarded {
+            match self.apply_onboard_bindings(ctx.clone(), agent_id).await {
+                Ok(bound) => {
+                    resp.installed_tool_tags.extend(bound.installed_tool_tags);
+                    resp.installed_skill_packs
+                        .extend(bound.installed_skill_packs);
+                    resp.refreshed_skill_packs
+                        .extend(bound.refreshed_skill_packs);
+                }
+                Err(e) => {
+                    log_warn!(
+                        ctx.clone(),
+                        "sync_agent_packs",
+                        "入职绑定自愈失败（忽略）: {e}"
                     );
                 }
             }
@@ -454,31 +630,29 @@ impl AgentManage for HrDomainImpl {
         // 更新状态
         agent.po.status = target_status;
 
-        // 入职时自动安装 project_management 技能包。
-        // 注意：project_management 是「技能包」（种子数据通过 install_skill_pack 安装），
-        // 必须写入 runtime_config.installed_skill_packs 并真正安装技能副本，
-        // 不能用 install_tag（只写 installed_tags/工具包字段），否则「技能包」区为空、
-        // 且 Agent 实际并未获得项目管理技能（installed_tags 仅用于工具包 tag 匹配）。
-        // 先持久化状态流转，再安装技能包（install_skill_pack 内部会重新读取并 update，
-        // 避免覆盖刚写入的状态）。安装失败不阻塞入职（库里尚无对应已发布技能时忽略）。
-        if target_status == AgentStatus::Onboarded {
-            // 兼容旧数据：project_management 不应出现在工具包 tag 中
-            agent.po.uninstall_tag("project_management");
-        }
-
-        // 持久化状态流转（+ 可能的 tag 清理）
+        // 先持久化状态流转（install_* 内部会重新读取并 update，避免覆盖刚写入的状态）
         self.agent_dal.update(ctx.clone(), agent).await?;
 
-        if target_status == AgentStatus::Onboarded
-            && let Err(e) = self
-                .install_skill_pack(ctx.clone(), &agent.po.id, "project_management")
-                .await
-        {
-            log_warn!(
-                ctx.clone(),
-                "onboard_agent",
-                "入职安装 project_management 技能包失败（忽略）: {e}"
-            );
+        // 入职 = 第二阶段绑定的触发点：个人匹配（roles ∪ capabilities）+ 公司指定包。
+        // 详见 apply_onboard_bindings 的文档（含「工具只看 installed_tags、技能必须有副本」
+        // 这处不对称，以及 db40cab8 曾误用 uninstall_tag 造成的回归）。
+        if target_status == AgentStatus::Onboarded {
+            // 绑定属「增强」步骤：单包失败已在内部容忍，这里再兜一层，
+            // 确保任何异常都不会让已经落库的状态流转回滚。
+            match self.apply_onboard_bindings(ctx.clone(), &agent.po.id).await {
+                Ok(bound) => log_info!(
+                    ctx,
+                    "onboard_agent",
+                    "入职绑定完成: 工具包={:?}, 技能包={:?}",
+                    bound.installed_tool_tags,
+                    bound.installed_skill_packs
+                ),
+                Err(e) => log_warn!(
+                    ctx,
+                    "onboard_agent",
+                    "入职绑定失败（忽略，状态已流转）: {e}"
+                ),
+            }
         }
 
         Ok(())
