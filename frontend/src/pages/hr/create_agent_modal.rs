@@ -15,6 +15,7 @@ use crate::api::finance::list_model_providers;
 use crate::api::hr::create_agent;
 use crate::components::modal::Modal;
 use crate::pages::Route;
+use crate::pages::hr::{PRESET_ROLES, ROLES_HINT, ROLES_LABEL_HINT};
 use crate::store::toast::use_toast;
 use common::api::{CreateAgentRequest, ListModelProvidersResponseItem};
 
@@ -114,18 +115,11 @@ pub fn CreateAgentModal(props: CreateAgentModalProps) -> Element {
                 div { class: "form-control w-full",
                     label { class: "label",
                         span { class: "label-text font-medium", "角色（多选）" }
-                        span { class: "label-text-alt", "用于路由匹配，如前台/Web接待/代码专家 等" }
+                        span { class: "label-text-alt", "{ROLES_LABEL_HINT}" }
                     }
-                    // 预设角色 chip
+                    // 预设角色 chip：仅保留系统语义的接待入口角色，其余由用户自定义
                     div { class: "flex flex-wrap gap-2 mb-2",
                         {
-                            const PRESET_ROLES: &[(&str, &str)] = &[
-                                ("reception", "Web前台接待"),
-                                ("feishu_reception", "飞书前台接待"),
-                                ("a2a_gateway", "A2A网关"),
-                                ("hr_specialist", "人事专员"),
-                                ("code_assistant", "代码助手"),
-                            ];
                             PRESET_ROLES.iter().map(|(key, label)| {
                                 let key_clone = key.to_string();
                                 let selected = new_roles().iter().any(|r| r == key);
@@ -151,6 +145,7 @@ pub fn CreateAgentModal(props: CreateAgentModalProps) -> Element {
                             })
                         }
                     }
+                    p { class: "text-xs opacity-60 mb-2", "{ROLES_HINT}" }
                     // 自定义输入（回车/失焦添加）
                     div { class: "flex flex-wrap gap-2 items-center",
                         if !new_roles().is_empty() {

@@ -195,6 +195,49 @@ pub fn OrganizationInfo() -> Element {
                                     }
                                 }
                             }
+                            div { class: "hud-divider divider" }
+
+                            // ===== Agent 入职配置：本组织要求每个 Agent 会哪些包 =====
+                            div { class: "space-y-3",
+                                div { class: "font-medium", "Agent 入职包（组织要求）" }
+                                label { class: "label pt-0",
+                                    span { class: "label-text-alt",
+                                        "Agent 入职时自动安装这里配置的包：工具包负责工具授权，技能包负责把技能副本放进 Agent 池子。"
+                                        "「同名双重身份」的包（如 project_management）两侧都要配 —— 少配一侧会导致工具被拒或技能不进 Prompt。"
+                                    }
+                                }
+                                PackTagEditor {
+                                    title: "工具包 tags",
+                                    tags: org_config().agent_onboard.required_tool_packs,
+                                    disabled: !can_edit || !editing(),
+                                    on_add: move |tag: String| {
+                                        let mut c = org_config.write();
+                                        if !c.agent_onboard.required_tool_packs.contains(&tag) {
+                                            c.agent_onboard.required_tool_packs.push(tag);
+                                        }
+                                    },
+                                    on_remove: move |tag: String| {
+                                        let mut c = org_config.write();
+                                        c.agent_onboard.required_tool_packs.retain(|t| t != &tag);
+                                    },
+                                }
+                                PackTagEditor {
+                                    title: "技能包 tags",
+                                    tags: org_config().agent_onboard.required_skill_packs,
+                                    disabled: !can_edit || !editing(),
+                                    on_add: move |tag: String| {
+                                        let mut c = org_config.write();
+                                        if !c.agent_onboard.required_skill_packs.contains(&tag) {
+                                            c.agent_onboard.required_skill_packs.push(tag);
+                                        }
+                                    },
+                                    on_remove: move |tag: String| {
+                                        let mut c = org_config.write();
+                                        c.agent_onboard.required_skill_packs.retain(|t| t != &tag);
+                                    },
+                                }
+                            }
+
                             if !can_edit {
                                 div { class: "mt-2",
                                     HudCallout { tone: Some("warning".to_string()), extra_class: Some("text-sm".to_string()),
@@ -207,6 +250,66 @@ pub fn OrganizationInfo() -> Element {
                 }
             }
         }
+        }
+    }
+}
+
+/// 包 tag 编辑器：chips + 回车新增
+///
+/// 只回调「加/删哪个 tag」，不回调整个列表 —— 避免在闭包里捕获 props 的 `tags`
+/// （闭包要 'static，而 `tags` 同时被渲染循环借用）。
+#[component]
+fn PackTagEditor(
+    title: String,
+    tags: Vec<String>,
+    disabled: bool,
+    on_add: Callback<String>,
+    on_remove: Callback<String>,
+) -> Element {
+    let mut input = use_signal(String::new);
+    rsx! {
+        div { class: "form-control w-full",
+            label { class: "label",
+                span { class: "label-text", "{title}" }
+            }
+            div { class: "flex flex-wrap gap-2",
+                if tags.is_empty() {
+                    span { class: "text-sm text-base-content/50", "未配置" }
+                }
+                for tag in tags.iter() {
+                    span { key: "{tag}", class: "badge orz-tag badge-sm gap-1",
+                        "{tag}"
+                        if !disabled {
+                            button {
+                                class: "cursor-pointer",
+                                onclick: {
+                                    let tag = tag.clone();
+                                    move |_| on_remove.call(tag.clone())
+                                },
+                                "✕"
+                            }
+                        }
+                    }
+                }
+            }
+            input {
+                class: "input hud-input w-full",
+                disabled: disabled,
+                placeholder: "输入包 tag 后回车添加",
+                value: "{input}",
+                oninput: move |e| input.set(e.value()),
+                onkeydown: move |e| {
+                    if e.key() == Key::Enter {
+                        e.prevent_default();
+                        let tag = input().trim().to_string();
+                        if tag.is_empty() {
+                            return;
+                        }
+                        on_add.call(tag);
+                        input.set(String::new());
+                    }
+                },
+            }
         }
     }
 }

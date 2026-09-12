@@ -16,22 +16,28 @@ use crate::components::workspace_graph::{WorkspaceGraph, WorkspaceView};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::hr::agent_memory_panel::AgentMemoryPanel;
 use crate::pages::hr::knowledge_graph::KnowledgeGraph;
+use crate::pages::hr::onboard_modal::OnboardModal;
+use crate::pages::hr::{PRESET_ROLES, ROLES_HINT, ROLES_LABEL_HINT};
 use crate::store::toast::use_toast;
 use crate::utils::{
     build_optimistic_user_msg, format_time_hm as format_time, replace_tmp_with_real,
-    status::{short_id, skill_author_type_badge, skill_author_type_text, tag_chip},
+    status::{
+        agent_lifecycle_badge, agent_lifecycle_text, short_id, skill_author_type_badge,
+        skill_author_type_text, tag_chip,
+    },
 };
 use common::api::{
     AgentListItem, AgentRuntimeConfigInfo, BindToolToAgentRequest, GetAgentRequest,
     InstallSkillPackRequest, InstallSkillToAgentRequest, InstallToolPackRequest,
     ListExpiredAgentSkillsRequest, ListMessagesRequest, ListModelProvidersResponseItem,
     MessageListItem, PaginationParams, ProjectListItem, ProjectQueryRequest, RestoreSkillRequest,
-    RuntimeReady, SendMessageToAgentParams, SkillListItem, SkillQueryRequest, TaskListItem,
-    TaskQueryRequest, ToolListItem, ToolQueryRequest, UnbindToolFromAgentRequest,
-    UninstallSkillFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
-    UpdateAgentRequest, UpdateAgentStatusRequest,
+    RuntimeReady, SelectAgentCareerRequest, SendMessageToAgentParams, SkillListItem,
+    SkillQueryRequest, TaskListItem, TaskQueryRequest, ToolListItem, ToolQueryRequest,
+    UnbindToolFromAgentRequest, UninstallSkillFromAgentRequest, UninstallSkillPackRequest,
+    UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentStatusRequest,
 };
 use common::enums::{AgentStatus, AssigneeType, SkillStatus};
+use dioxus::dioxus_core::{Runtime, current_scope_id};
 use dioxus::prelude::*;
 use dioxus_router::{Link, use_navigator};
 use std::collections::HashSet;
@@ -277,23 +283,9 @@ fn PackCard(
     }
 }
 
-// 生命周期状态（已入职/面试中…）属「状态」语义，走 hud-badge 彩色玻璃徽章；
-// 角色 / 类型等属性标签才走 orz-tag（见 utils/status.rs 与 components）。
-fn binding_status_badge_class() -> &'static str {
-    "badge hud-badge badge-sm"
-}
-
-fn agent_status_label(status: i32) -> String {
-    match status {
-        0 => "已删除".to_string(),
-        1 => "面试中".to_string(),
-        2 => "待入职".to_string(),
-        3 => "已入职".to_string(),
-        4 => "已离职".to_string(),
-        5 => "待离职".to_string(),
-        _ => status.to_string(),
-    }
-}
+// Agent 生命周期状态文案/徽章统一走 `utils::status` 的 SSOT（agent_lifecycle_text /
+// agent_lifecycle_badge），不再本地复制，避免与列表页、聊天侧栏的视觉口径漂移。
+// 生命周期状态属「状态」语义走彩色 hud-badge；角色/类型等属性标签才走 orz-tag。
 
 fn kind_badge_class(kind: &str) -> &'static str {
     // Agent 来源类型（local/cli/remote）是「类别标签」，统一走中性 orz-tag chip
@@ -321,6 +313,27 @@ const STATUS_OPTIONS: &[(i32, &str)] = &[
     (3, "已入职"),
     (4, "已离职"),
     (5, "待离职"),
+    (6, "初创"),
+];
+
+/// 生命周期引导：按当前状态给出「下一步该做什么」
+///
+/// 状态只是结果，动作发生在边上：
+/// - 初创 → 面试中 = 职业选择（按职业/能力匹配个人能力）
+/// - 面试中 → 待入职 = 通过面试（无副作用，预留扩展）
+/// - 待入职 → 已入职 = 入职（安装组织要求的包，走弹窗选包）
+const LIFECYCLE_STEPS: &[(i32, &str, &str)] = &[
+    (
+        6,
+        "🎓 职业选择",
+        "按职业与能力匹配并安装工具包/技能包，完成后进入面试",
+    ),
+    (1, "📋 通过面试", "面试通过，转入待入职"),
+    (
+        2,
+        "🚀 入职",
+        "安装组织要求的工具包/技能包，正式对外提供服务",
+    ),
 ];
 
 /// 消息流单页条数（双向查询各取 PAGE_SIZE，合并去重后取最新的 PAGE_SIZE 条）
@@ -439,6 +452,8 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 是否已懒加载过（选中虚拟 pack 时只在首次发请求）
     let mut expired_loaded = use_signal(|| false);
     let mut show_edit_modal = use_signal(|| false);
+    // 入职弹窗（选包）：仅「待入职」状态可打开
+    let mut show_onboard_modal = use_signal(|| false);
     let mut edit_name = use_signal(String::new);
     let mut edit_roles = use_signal(Vec::<String>::new);
     let mut edit_roles_input = use_signal(String::new);
@@ -460,6 +475,24 @@ pub fn HrAgentDetail(id: String) -> Element {
     // 克隆一份避免 move 走组件参数 id（后续多处仍使用 id.clone()）
     let agent_id_for_signal = id.clone();
     let agent_id_signal = use_signal(move || agent_id_for_signal);
+
+    // 入职弹窗关闭回调：关闭弹窗 + 刷新 Agent。
+    // spawn 必须显式挂回本组件 scope —— 回调由子组件（OnboardModal）调用，
+    // 裸 spawn 会把任务挂到随即卸载的子组件 scope 上，读写 agent_res 会踩
+    // 「Copy Value ... not a descendant of the owning scope」。
+    let owner_scope = current_scope_id();
+    let close_onboard_modal = use_callback(move |_| {
+        show_onboard_modal.set(false);
+        let aid = agent_id_signal();
+        Runtime::current().in_scope(owner_scope, move || {
+            spawn(async move {
+                match get_agent(build_agent_stats_request(aid, stats_range())).await {
+                    Ok(a) => agent_res.set(Some(Ok(a))),
+                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                }
+            });
+        });
+    });
     // 关系图所需数据：全局 projects + tasks + agents 列表
     let mut graph_projects = use_signal(Vec::<ProjectListItem>::new);
     let mut graph_tasks = use_signal(Vec::<TaskListItem>::new);
@@ -997,23 +1030,23 @@ pub fn HrAgentDetail(id: String) -> Element {
                             onclick: move |_| {
                                 let aid = agent_id_signal();
                                 spawn(async move {
-                                    match sync_agent_packs(&aid).await {
+                                    match train_agent(&aid).await {
                                         Ok(resp) => {
-                                            // 组装变更摘要（仅列出本次实际发生变更的包）
+                                            // 组装变更摘要（仅列出本次实际学到的新内容）
                                             let mut parts: Vec<String> = Vec::new();
                                             if !resp.installed_tool_tags.is_empty() {
-                                                parts.push(format!("补装工具包 {}", resp.installed_tool_tags.join("、")));
+                                                parts.push(format!("补修工具包 {}", resp.installed_tool_tags.join("、")));
                                             }
                                             if !resp.installed_skill_packs.is_empty() {
-                                                parts.push(format!("补装技能包 {}", resp.installed_skill_packs.join("、")));
+                                                parts.push(format!("补修技能包 {}", resp.installed_skill_packs.join("、")));
                                             }
                                             if !resp.refreshed_skill_packs.is_empty() {
-                                                parts.push(format!("补全技能包 {}", resp.refreshed_skill_packs.join("、")));
+                                                parts.push(format!("学习技能更新 {}", resp.refreshed_skill_packs.join("、")));
                                             }
                                             if parts.is_empty() {
-                                                toast.success("基础包与技能包均已是最新，无需变更");
+                                                toast.success("本次进修没有新内容可学，能力已是最新");
                                             } else {
-                                                toast.success(format!("同步完成: {}", parts.join("; ")));
+                                                toast.success(format!("进修完成: {}", parts.join("; ")));
                                             }
                                             // 刷新工具包 / 技能包列表与 Agent 全景
                                             match list_installed_tool_packs(&aid).await {
@@ -1029,11 +1062,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
                                             }
                                         }
-                                        Err(e) => toast.error(format!("同步包失败: {}", e)),
+                                        Err(e) => toast.error(format!("进修失败: {}", e)),
                                     }
                                 });
                             },
-                            "🔄 同步包"
+                            "🎓 进修"
                         }
                         button {
                             class: "btn hud-btn btn-ghost btn-sm",
@@ -1134,8 +1167,8 @@ pub fn HrAgentDetail(id: String) -> Element {
                                         }
                                         div {
                                             span { class: "block text-sm text-base-content/70 mb-1", "状态" }
-                                            span { class: "{binding_status_badge_class()}",
-                                                "{agent_status_label(a.status)}"
+                                            span { class: "{agent_lifecycle_badge(a.status)}",
+                                                "{agent_lifecycle_text(a.status)}"
                                             }
                                         }
                                         if a.kind == "local" {
@@ -1277,36 +1310,57 @@ pub fn HrAgentDetail(id: String) -> Element {
 
                                 div { class: "mb-6",
                                     h3 { class: "text-lg font-semibold mb-3", "状态切换" }
-                                    // 一键入职：仅对面试中/待入职的 Agent 显示，
-                                    // 后端 transition_status 白名单为 Interviewing → PendingOnboard → Onboarded，
-                                    // 因此需按当前状态走两步（面试中先转待入职，再转已入职）
-                                    if a.status == AgentStatus::Interviewing as i32 || a.status == AgentStatus::PendingOnboard as i32 {
-                                        div { class: "flex flex-wrap items-center gap-3 mb-3 p-3 rounded-lg bg-base-200",
-                                            button {
-                                                class: "btn hud-btn btn-success btn-sm",
-                                                onclick: move |_| {
-                                                    let aid = agent_id_signal();
-                                                    spawn(async move {
-                                                        if let Err(e) = update_agent_status(UpdateAgentStatusRequest { id: aid.clone(), status: AgentStatus::PendingOnboard }).await {
-                                                            toast.error(format!("转入待入职失败: {}", e));
-                                                            return;
-                                                        }
-                                                        match update_agent_status(UpdateAgentStatusRequest { id: aid.clone(), status: AgentStatus::Onboarded }).await {
-                                                            Ok(_) => {
-                                                                toast.success("Agent 已正式入职");
-                                                                match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
-                                                                    Ok(a) => agent_res.set(Some(Ok(a))),
-                                                                    Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
-                                                                }
+                                    // 生命周期引导：状态只是结果，动作发生在「边」上 ——
+                                    // 初创 → 面试中 = 职业选择（按职业/能力匹配个人能力）
+                                    // 面试中 → 待入职 = 通过面试（无副作用，预留扩展）
+                                    // 待入职 → 已入职 = 入职（弹窗选包，安装组织要求的包）
+                                    for (from_status, label, hint) in LIFECYCLE_STEPS {
+                                        if a.status == *from_status {
+                                            div { class: "flex flex-wrap items-center gap-3 mb-3 p-3 rounded-lg bg-base-200",
+                                                button {
+                                                    class: "btn hud-btn btn-success btn-sm",
+                                                    onclick: move |_| {
+                                                        let aid = agent_id_signal();
+                                                        let from_status_val = *from_status;
+                                                        spawn(async move {
+                                                            // 入职走弹窗选包，不在这里直接提交
+                                                            if from_status_val == AgentStatus::PendingOnboard as i32 {
+                                                                show_onboard_modal.set(true);
+                                                                return;
                                                             }
-                                                            Err(e) => toast.error(format!("入职失败: {}", e)),
-                                                        }
-                                                    });
-                                                },
-                                                "🚀 一键入职"
-                                            }
-                                            span { class: "text-sm text-base-content/60",
-                                                "入职后 Agent 将正式对外提供服务，并自动安装项目管理工具包"
+                                                            let result = if from_status_val == AgentStatus::Incubating as i32 {
+                                                                select_agent_career(SelectAgentCareerRequest { id: aid.clone() })
+                                                                    .await
+                                                                    .map(|_| ())
+                                                            } else {
+                                                                update_agent_status(UpdateAgentStatusRequest {
+                                                                    id: aid.clone(),
+                                                                    status: AgentStatus::PendingOnboard,
+                                                                    packs: None,
+                                                                })
+                                                                .await
+                                                            };
+                                                            match result {
+                                                                Ok(_) => {
+                                                                    toast.success(
+                                                                        if from_status_val == AgentStatus::Incubating as i32 {
+                                                                            "职业生涯选择完成，已进入面试环节"
+                                                                        } else {
+                                                                            "已通过面试，转入待入职"
+                                                                        }
+                                                                    );
+                                                                    match get_agent(build_agent_stats_request(aid.clone(), stats_range())).await {
+                                                                        Ok(a) => agent_res.set(Some(Ok(a))),
+                                                                        Err(e) => toast.error(format!("刷新 Agent 失败: {}", e)),
+                                                                    }
+                                                                }
+                                                                Err(e) => toast.error(format!("操作失败: {}", e)),
+                                                            }
+                                                        });
+                                                    },
+                                                    "{label}"
+                                                }
+                                                span { class: "text-sm text-base-content/60", "{hint}" }
                                             }
                                         }
                                     }
@@ -1330,6 +1384,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                                 let status_req = UpdateAgentStatusRequest {
                                                                     id: agent_id.clone(),
                                                                     status: AgentStatus::from_i32(target_status_val),
+                                                                    packs: None,
                                                                 };
                                                                 match update_agent_status(status_req).await {
                                                                     Ok(_) => {
@@ -2009,6 +2064,14 @@ pub fn HrAgentDetail(id: String) -> Element {
                             _ => rsx! {},
                         }}
 
+                        // 入职弹窗（选包）：条件渲染 → 关闭即卸载，选中态自动重置
+                        if show_onboard_modal() {
+                            OnboardModal {
+                                agent_id: agent_id_signal(),
+                                on_close: close_onboard_modal,
+                            }
+                        }
+
                         Modal {
                             title: "编辑 Agent 基本信息".to_string(),
                             show: show_edit_modal(),
@@ -2105,17 +2168,11 @@ pub fn HrAgentDetail(id: String) -> Element {
                                 div { class: "form-control w-full",
                                     label { class: "label",
                                         span { class: "label-text font-medium", "角色（多选）" }
-                                        span { class: "label-text-alt", "用于路由匹配，如前台/Web接待/代码专家 等" }
+                                        span { class: "label-text-alt", "{ROLES_LABEL_HINT}" }
                                     }
+                                    // 预设角色 chip：仅保留系统语义的接待入口角色，其余由用户自定义
                                     div { class: "flex flex-wrap gap-2 mb-2",
                                         {
-                                            const PRESET_ROLES: &[(&str, &str)] = &[
-                                                ("reception", "Web前台接待"),
-                                                ("feishu_reception", "飞书前台接待"),
-                                                ("a2a_gateway", "A2A网关"),
-                                                ("hr_specialist", "人事专员"),
-                                                ("code_assistant", "代码助手"),
-                                            ];
                                             PRESET_ROLES.iter().map(|(key, label)| {
                                                 let key_clone = key.to_string();
                                                 let selected = edit_roles().iter().any(|r| r == key);
@@ -2141,6 +2198,7 @@ pub fn HrAgentDetail(id: String) -> Element {
                                             })
                                         }
                                     }
+                                    p { class: "text-xs opacity-60 mb-2", "{ROLES_HINT}" }
                                     div { class: "flex flex-wrap gap-2 items-center",
                                         if !edit_roles().is_empty() {
                                             for role in edit_roles() {

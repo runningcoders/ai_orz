@@ -7,14 +7,14 @@ use common::api::{
     GetAgentRequest, GetAgentResponse, GetReceptionAgentResponse, GetSkillFileContentRequest,
     GetSkillResponse, InstallSkillPackRequest, InstallToolPackRequest, ListAgentsRequest,
     ListExpiredAgentSkillsRequest, ListExpiredAgentSkillsResponse, ListInstalledSkillPacksResponse,
-    ListInstalledToolPacksResponse, PagedResult, QueryMemoryParams, QueryMemoryResponse,
-    RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
+    ListInstalledToolPacksResponse, OnboardAgentRequest, PagedResult, QueryMemoryParams,
+    QueryMemoryResponse, RecommendSeedNodesParams, RecommendSeedNodesResponse, RestoreSkillRequest,
     RestoreSkillResponse, RuntimeListRequest, RuntimeListResponse, RuntimeStatusRequest,
     RuntimeStatusResponse, SearchAgentsRequest, SearchMemoryParams, SearchMemoryResponse,
-    SearchSkillsRequest, SkillListItem, SkillQueryRequest, UnbindToolFromAgentRequest,
-    UninstallSkillPackRequest, UninstallToolPackRequest, UpdateAgentRequest, UpdateAgentResponse,
-    UpdateAgentStatusRequest, UpdateSkillFileContentRequest, UpdateSkillRequest,
-    UpdateSkillResponse,
+    SearchSkillsRequest, SelectAgentCareerRequest, SkillListItem, SkillQueryRequest,
+    UnbindToolFromAgentRequest, UninstallSkillPackRequest, UninstallToolPackRequest,
+    UpdateAgentRequest, UpdateAgentResponse, UpdateAgentStatusRequest, UpdateAgentStatusResponse,
+    UpdateSkillFileContentRequest, UpdateSkillRequest, UpdateSkillResponse,
 };
 
 use super::{
@@ -86,6 +86,21 @@ pub async fn update_agent_status(req: UpdateAgentStatusRequest) -> Result<(), Ap
     api_put_empty(&format!("/api/v1/hr/agents/{}/status", req.id), &req).await
 }
 
+/// 职业选择（初创 → 面试中）：按 roles/capabilities 匹配安装个人能力
+pub async fn select_agent_career(
+    req: SelectAgentCareerRequest,
+) -> Result<UpdateAgentStatusResponse, ApiError> {
+    api_post(&format!("/api/v1/hr/agents/{}/career", req.id), &req).await
+}
+
+/// 入职（待入职 → 已入职）：包装入参决定本次安装哪些组织级包，
+/// 不传 packs 时后端回退组织级配置
+pub async fn onboard_agent(
+    req: OnboardAgentRequest,
+) -> Result<UpdateAgentStatusResponse, ApiError> {
+    api_post(&format!("/api/v1/hr/agents/{}/onboard", req.id), &req).await
+}
+
 pub async fn delete_agent(id: &str) -> Result<(), ApiError> {
     api_delete(&format!("/api/v1/hr/agents/{}", id)).await
 }
@@ -143,15 +158,15 @@ pub async fn uninstall_skill_pack(req: UninstallSkillPackRequest) -> Result<(), 
     .await
 }
 
-/// 同步 Agent 包（通用恢复/同步入口）
+/// Agent 进修（在职学习入口）
 ///
-/// 1. 缺失基础包补装（neural / skill_management / tool_management）；
-/// 2. 已安装技能包检测新增已发布技能并重装补全。
-pub async fn sync_agent_packs(
-    agent_id: &str,
-) -> Result<common::api::SyncAgentPacksResponse, ApiError> {
+/// 把 Agent 的能力补齐到其当前职业/组织要求的最新状态：
+/// 1. 补修基础课：缺失基础包补装（neural / skill_management / tool_management）；
+/// 2. 学习技能更新：已安装技能包检测新增已发布技能并重装补全；
+/// 3. 补学新课：按已走过的状态机边重跑职业匹配（非初创）与组织要求包（仅已入职）。
+pub async fn train_agent(agent_id: &str) -> Result<common::api::TrainAgentResponse, ApiError> {
     api_post(
-        &format!("/api/v1/hr/agents/{}/sync-packs", agent_id),
+        &format!("/api/v1/hr/agents/{}/train", agent_id),
         &serde_json::json!({}),
     )
     .await

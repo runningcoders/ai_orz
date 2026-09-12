@@ -3,7 +3,10 @@
 use common::api::ToolCallStatusDto;
 use common::enums::skill::SkillAuthorType;
 
-/// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职, 5=待离职）
+/// Agent 生命周期状态中文文案（0=已删除, 1=面试中, 2=待入职, 3=已入职, 4=已离职,
+/// 5=待离职, 6=初创）
+///
+/// 初创 = 刚创建：只持有出生自带的神经能力，职业选择发生在「初创 → 面试中」这条边上。
 /// 单一事实源：避免各页面散写生命周期映射。
 pub fn agent_lifecycle_text(status: i32) -> &'static str {
     match status {
@@ -13,6 +16,7 @@ pub fn agent_lifecycle_text(status: i32) -> &'static str {
         3 => "已入职",
         4 => "已离职",
         5 => "待离职",
+        6 => "初创",
         _ => "未知",
     }
 }

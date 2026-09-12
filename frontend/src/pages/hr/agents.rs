@@ -6,17 +6,19 @@ use dioxus::prelude::*;
 
 use crate::api::hr::{
     create_external_agent, delete_agent, list_agents, query_agents, search_agents,
-    update_agent_status,
+    select_agent_career, update_agent_status,
 };
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
 use crate::pages::hr::create_agent_modal::CreateAgentModal;
+use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::store::toast::use_toast;
+use crate::utils::status::{agent_lifecycle_badge, agent_lifecycle_text};
 use common::api::{
     AgentQueryRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    SearchAgentsRequest, UpdateAgentStatusRequest,
+    SearchAgentsRequest, SelectAgentCareerRequest, UpdateAgentStatusRequest,
 };
 use common::enums::AgentStatus;
 use dioxus_router::Link;
@@ -41,26 +43,8 @@ fn kind_label(kind: &str) -> String {
     }
 }
 
-fn agent_status_label(status: i32) -> String {
-    match status {
-        0 => "已删除".to_string(),
-        1 => "面试中".to_string(),
-        2 => "待入职".to_string(),
-        3 => "已入职".to_string(),
-        4 => "已离职".to_string(),
-        5 => "待离职".to_string(),
-        _ => status.to_string(),
-    }
-}
-
-fn agent_status_badge_class(status: i32) -> &'static str {
-    match status {
-        3 => "badge hud-badge badge-success",
-        1 => "badge hud-badge badge-warning",
-        2 => "badge hud-badge badge-info",
-        _ => "badge hud-badge badge-ghost",
-    }
-}
+// Agent 生命周期状态文案/徽章统一走 `utils::status` 的 SSOT（agent_lifecycle_text /
+// agent_lifecycle_badge），不再本地复制，避免与详情页、聊天侧栏的视觉口径漂移。
 
 #[component]
 pub fn HrAgents() -> Element {
@@ -71,6 +55,8 @@ pub fn HrAgents() -> Element {
 
     // ===== 本地 Agent 创建 Modal（独立组件 CreateAgentModal，条件渲染）=====
     let mut show_add_modal = use_signal(|| false);
+    // 入职弹窗（选包）：记录待入职的 Agent ID，非空即展示
+    let mut onboard_agent_id = use_signal(|| None::<String>);
 
     // ===== 外部 Agent 创建 Modal =====
     let mut show_external_modal = use_signal(|| false);
@@ -167,35 +153,43 @@ pub fn HrAgents() -> Element {
         load_data();
     });
 
-    // ===== 一键入职处理：面试中→待入职→已入职（后端白名单逐级流转）=====
+    // ===== 生命周期推进：状态只是结果，动作发生在「边」上 =====
+    // 初创 → 职业选择（按职业/能力匹配个人能力）
+    // 面试中 → 通过面试（转入待入职，无副作用）
+    // 待入职 → 入职（弹窗选包，安装组织要求的包）
     let handle_onboard = move |id: String, status: i32| {
         let status = AgentStatus::from(status);
         spawn(async move {
-            // 面试中需先转待入职，再转已入职
-            if status == AgentStatus::Interviewing
-                && let Err(e) = update_agent_status(UpdateAgentStatusRequest {
-                    id: id.clone(),
-                    status: AgentStatus::PendingOnboard,
-                })
-                .await
-            {
-                toast.error(format!("转入待入职失败: {}", e));
-                return;
-            }
-            match update_agent_status(UpdateAgentStatusRequest {
-                id: id.clone(),
-                status: AgentStatus::Onboarded,
-            })
-            .await
-            {
-                Ok(_) => {
-                    toast.success("Agent 已正式入职");
-                    load_data();
+            match status {
+                AgentStatus::Incubating => {
+                    match select_agent_career(SelectAgentCareerRequest { id: id.clone() }).await {
+                        Ok(_) => {
+                            toast.success("职业生涯选择完成，已进入面试环节");
+                            load_data();
+                        }
+                        Err(e) => toast.error(format!("职业选择失败: {}", e)),
+                    }
                 }
-                Err(e) => {
-                    toast.error(format!("入职失败: {}", e));
-                    load_data();
+                AgentStatus::Interviewing => {
+                    match update_agent_status(UpdateAgentStatusRequest {
+                        id: id.clone(),
+                        status: AgentStatus::PendingOnboard,
+                        packs: None,
+                    })
+                    .await
+                    {
+                        Ok(_) => {
+                            toast.success("已通过面试，转入待入职");
+                            load_data();
+                        }
+                        Err(e) => toast.error(format!("转入待入职失败: {}", e)),
+                    }
                 }
+                AgentStatus::PendingOnboard => {
+                    // 入职需要选包 → 交给弹窗，不在这里直接提交
+                    onboard_agent_id.set(Some(id));
+                }
+                _ => {}
             }
         });
     };
@@ -204,6 +198,12 @@ pub fn HrAgents() -> Element {
     // 从而 CreateAgentModal 不会被无谓重渲染，切断「重渲染打断输入」卡死）
     let on_close_create = use_callback(move |_| {
         show_add_modal.set(false);
+        load_data();
+    });
+
+    // 入职弹窗关闭：清空待入职 ID（卸载弹窗）+ 刷新列表
+    let on_close_onboard = use_callback(move |_| {
+        onboard_agent_id.set(None);
         load_data();
     });
 
@@ -367,6 +367,7 @@ pub fn HrAgents() -> Element {
                                 option { value: "3", "已入职" }
                                 option { value: "4", "已离职" }
                                 option { value: "5", "待离职" }
+                                option { value: "6", "初创" }
                             }
                         }
                         div { class: "flex flex-col gap-1 min-w-[140px] flex-1",
@@ -442,8 +443,8 @@ pub fn HrAgents() -> Element {
                                                 td { class: "text-base-content/70", "data-label": "角色", "{aroles}" }
                                                 td { class: "font-mono text-sm", "data-label": "模型/执行器", "{display_value}" }
                                                 td { "data-label": "状态",
-                                                    span { class: "{agent_status_badge_class(astatus)}",
-                                                        "{agent_status_label(astatus)}"
+                                                    span { class: "{agent_lifecycle_badge(astatus)}",
+                                                        "{agent_lifecycle_text(astatus)}"
                                                     }
                                                 }
                                                 td { "data-label": "操作",
@@ -477,6 +478,11 @@ pub fn HrAgents() -> Element {
         // ===== 本地 Agent 创建弹窗（独立组件，条件渲染：关闭即卸载重置）=====
         {show_add_modal().then(|| rsx! {
             CreateAgentModal { on_close: on_close_create }
+        })}
+
+        // ===== 入职弹窗（选包）：待入职 Agent 点击「入职」后弹出 =====
+        {onboard_agent_id().map(|aid| rsx! {
+            OnboardModal { key: "{aid}", agent_id: aid, on_close: on_close_onboard }
         })}
 
         // ===== 外部 Agent 创建弹窗 =====
