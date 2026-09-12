@@ -24,7 +24,9 @@ source_files:
 
 前端基于 **Dioxus 0.7 (WASM)**，样式采用 **Tailwind CSS v4.1** + **DaisyUI v5** 组件库，通过 `frontend/styles/input.css` 作为唯一入口，构建时由 `frontend/build.rs` 调用 `@tailwindcss/cli` 编译为 `frontend/public/output.css` 并嵌入到 Dioxus 产物中。构建脚本在 Cargo 编译阶段自动执行 `npm install`（若缺失）并运行 `tailwindcss -i styles/input.css -o public/output.css --minify`，同时监听 `styles/input.css`、`package.json`、`package-lock.json` 变化触发重建。
 
-**2026-09-12 主题瘦身增量**：DaisyUI `@plugin "daisyui"` 块中从 31 个内置主题**精简删除 7 个无用皮肤**（如 bumblebee / emerald / forest / wireframe / black / sun / winter 等低频主题），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou 等高频）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 列表，禁止 UI 选择器展示已删除主题。输入框视觉升级为**静息态发丝边**（`.hud-input` 1px 渐变描边 + 微妙发光层）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 扫过输入框边缘，橙光从左至右 1.2s 循环一次，呼应 HUD 驾驶舱流光风格）。
+**2026-09-12 主题瘦身增量**：DaisyUI `@plugin "daisyui"` 块中从 31 个内置主题**精简删除 7 个无用皮肤**（如 bumblebee / emerald / forest / wireframe / black / sun / winter 等低频主题），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou 等高频）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 列表，禁止 UI 选择器展示已删除主题。输入框视觉升级为**静息态发丝边**（`.hud-input` 1px 渐变描边 + `backdrop-blur` 微妙发光层）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 扫过输入框边缘，橙光从左至右 1.2s 循环一次，呼应 HUD 驾驶舱流光风格）。
+
+**2026-09-12 增量（c632f4bf→HEAD）**：`.hud-input` 类**追加 py-2（0.5rem）纵向留白**，与上下表单控件保持呼吸感，避免元素贴得过密；全站进度指示**统一使用 DaisyUI `loading` 类**（`loading loading-spinner` / `loading loading-dots` / `loading loading-ring`），禁止自定义 spinner，当前已统一的消费方：预置 Agent 同步弹窗（agents.rs）、各类导入/导出进度弹窗；**工作台底部横幅重构为 MMORPG 式三段布局**（workspace.rs），用 Tailwind `flex justify-between items-end` + 三个独立 `HudCallout`/`HudCard` 容器实现「左上状态锚点 / 中间对话入口 / 右下工具提示」三段式 HUD 风格底部栏，呼应游戏 MMORPG UI。
 
 ## 2. 核心文件与包
 

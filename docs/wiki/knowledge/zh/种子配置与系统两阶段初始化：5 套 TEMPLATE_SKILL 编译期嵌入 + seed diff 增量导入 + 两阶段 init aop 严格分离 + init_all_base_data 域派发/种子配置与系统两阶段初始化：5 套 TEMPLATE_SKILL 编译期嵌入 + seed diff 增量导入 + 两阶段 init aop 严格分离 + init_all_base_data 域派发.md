@@ -31,6 +31,10 @@ source_files:
 - frontend/src/pages/system/seed.rs
 - frontend/src/pages/system/seed_sensitive_fields.rs
 - common/src/api/model_provider.rs
+- src/handlers/system/seed/sync_preset_agents.rs（2026-09-12 新增）
+- common/src/api/seed.rs（2026-09-12 追加 SyncPresetAgentsRequest/Response + PresetAgentSyncStrategy）
+- frontend/src/api/seed.rs（2026-09-12 前端 DTO 扩展）
+- src/router.rs（2026-09-12 preset-agents 路由组注册）
 - src/handlers/finance/model_provider/create_model_provider.rs
 - src/handlers/organization/initialize_system.rs
 - docs/archive/design-archive/seed-config-migration.md
@@ -51,6 +55,8 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 **默认模板补齐 + 敏感字段回填**（2026-09-11 增量）：种子导入/默认模板 apply 路径新增三道关键校验与补齐：① 对话模型 Provider 配置**必须**带 `context_length` 字段（缺失返回 400）；② diff 导入时已存在的实体（`Existing` 状态）免除填写凭据（`api_key` 等敏感字段从 DB 继承）；③ 新增 `seed_sensitive_fields` 前端页面让用户在 apply-default 或导入完成后回填敏感字段（API Key 等），彻底修复「默认模板 apply 写入路径必然失败」的历史 bug——旧版 default.json 中对话模型只写了 model_name/base_url，没写 api_key 占位符，落库时 DAO 层 api_key 非空校验直接拦截。
 
 **2026-09-12 增量**：default.json 新增**招聘官 Agent**（hr_specialist 角色，配合 Agent 招聘生命周期使用）；嵌入式技能模板新增 **TEMPLATE_AGENT_RECRUITMENT**（Agent 招聘技能包，tag=agent_management）+ **TEMPLATE_USER_RECEPTION**（用户接待技能包，tag=reception）；`reception` 同名双身份包打通——既作为普通技能模板存在，又作为 HR 域新入职 Handler 的默认技能包之一，解决「同一业务能力在 Seed 模板和 Handler 默认值中硬编码重复」的问题。embedded.rs 的 EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套。
+
+**预置 Agent 一键同步（2026-09-12 新增）**：种子系统扩展为支持**预置 Agent 无感升级**——新增 `sync_preset_agents.rs`（273 行大文件）提供三种同步策略：① **Overwrite**（覆盖重置同 ID Agent 的元数据和技能包分配）/ ② **OnlyMissing**（仅补缺 DB 中缺失的预置 Agent）/ ③ **RestoreDeleted**（恢复被用户误删的预置 Agent）。API 双端点：`GET /api/v1/system/seed/preset-agents/preview`（预览 diff：种子 vs Agent 库逐 Agent 对比 + 策略影响清单）+ `POST /api/v1/system/seed/preset-agents/sync`（后台任务执行同步）。Agent 列表页（`frontend/src/pages/hr/agents.rs`）新增一键触发入口，配合 Loading 组件统一进度指示。**关键设计**：模型绑定彻底移出同步范围（refactor 67a7c7ec）——预置 Agent 同步**禁止**覆盖用户自定义的 Provider 绑定，只同步 Agent 元数据（角色/描述/能力/灵魂）和技能包分配，避免把用户精心配置的模型 Provider 冲掉。DTO 扩展：`PresetAgentSyncStrategy` 枚举 + `PreviewPresetAgentsRequest/Response` + `SyncPresetAgentsRequest/Response` 全部在 `common/src/api/seed.rs`，前端镜像在 `frontend/src/api/seed.rs`。
 
 # §2 关键文件表
 
@@ -78,6 +84,11 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 | 默认种子模板（更新） | src/service/domain/system/seed/default.json | 对话模型新增 `context_length` 字段 + `api_key: PENDING_INPUT` 占位符 |
 | 种子导入前端页（新增） | frontend/src/pages/system/seed.rs | 支持上传 seed 快照 JSON + 导入状态展示 + apply-default 一键初始化 |
 | 敏感字段回填页（新增） | frontend/src/pages/system/seed_sensitive_fields.rs | 导入完成后引导用户回填 API Key 等敏感字段；列表所有待回填凭据；逐个保存到 DB |
+| **预置 Agent 同步 handler（2026-09-12 新增）** | src/handlers/system/seed/sync_preset_agents.rs | **新增 273 行**：preview diff（种子 vs Agent 库逐 Agent 对比）+ sync 三策略（Overwrite/OnlyMissing/RestoreDeleted）+ 模型绑定排除逻辑（避免覆盖用户自定义 Provider） |
+| **DTO 扩展（2026-09-12 追加）** | common/src/api/seed.rs | 新增 `PresetAgentSyncStrategy` 枚举 + `PreviewPresetAgentsRequest/Response` + `SyncPresetAgentsRequest/Response` |
+| **前端 API 镜像（2026-09-12 追加）** | frontend/src/api/seed.rs | 前端 DTO 镜像 + SyncPresetAgents API client |
+| **路由注册（2026-09-12 追加）** | src/router.rs | preset-agents 路由组注册：GET preview + POST sync |
+| **Agent 列表页同步入口（2026-09-12 追加）** | frontend/src/pages/hr/agents.rs | Agent 列表页新增一键触发预置 Agent 同步入口 + Loading 组件统一进度指示 |
 
 # §3 架构与约定
 
@@ -165,3 +176,4 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 9. **apply_preset_skills 新技能创建必须合并 imports，两步走必崩**：旧逻辑（create_skill → update_skill 两步走）在 HTTP /initialize 路由下必然 Forbidden——background_task run_steps 用的是 Guest ctx（user_id 空、user_role None），create_skill 成功后 update_skill 会被 ensure_skill_access 拦截（既不是刚创建的技能作者，也不是管理员）。**新逻辑**：一次性 create_skill（把 imports 直接塞 CreateSkillParams），create 内部文件写入是原子流程，不走 ensure 守卫。**硬约束**：禁止在 apply_preset_skills 中对新技能再单独调 update_skill，两步走 = 初始化路径权限 bug 复现
 10. **对话模型 seed 配置必须带 context_length**：种子导入 diff 校验 + apply-default 默认模板两条路径，对话模型 Provider 的 `context_length` 字段是**必填项**（Embedding Provider 可空）。缺失返回 400 `context_length_required`。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），缺了会导致前端 RingProgress 无法显示 + Agent 思考时无法判断上下文是否接近溢出
 11. **reception 同名双身份包单向引用（禁反向）**：TEMPLATE_USER_RECEPTION（Skill 模板）与 HR onboarding Handler 的默认技能包引用 reception tag 时，两者**必须**复用同一个 tag 常量（common/src/enums/tool_tag.rs SkillTag::Reception）；禁止 Handler 侧硬编码 "reception" 字符串；禁止 Skill 模板硬编码 "agent_reception" 等变体。Seed 与 Handler 共享枚举定义，保证技能安装时 `find_by_tag(SkillTag::Reception)` 能精确命中模板
+12. **预置 Agent 同步禁止覆盖用户自定义 Provider 绑定**（2026-09-12 新增，Ref 67a7c7ec）：`sync_preset_agents.rs` 三策略（Overwrite/OnlyMissing/RestoreDeleted）同步范围**仅限 Agent 元数据**（角色/描述/能力/灵魂/soul）和**技能包分配**（skill_tags 匹配 + 绑定）。**模型绑定（model_provider_id / model_name / runtime_config）已彻底移出同步范围**——无论选 Overwrite 还是其他策略，用户已为某个预置 Agent 配置好的模型 Provider 绑定**永不被覆盖**。这是种子系统最核心的安全红线之一：预置 Agent 同步是「升级 Agent 模板能力」而非「重置用户配置」

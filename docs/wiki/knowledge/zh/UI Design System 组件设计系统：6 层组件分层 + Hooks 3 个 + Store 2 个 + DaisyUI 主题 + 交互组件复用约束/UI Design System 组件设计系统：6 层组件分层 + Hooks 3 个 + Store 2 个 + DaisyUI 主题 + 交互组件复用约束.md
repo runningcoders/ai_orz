@@ -26,6 +26,9 @@ source_files:
 - frontend/src/layouts/navbar.rs#L1-L80
 - frontend/styles/input.css:L1-L120
 - frontend/styles/input.css#L1249-L1550
+- frontend/styles/input.css（2026-09-12 增量：输入框 +0.5rem 纵向留白 py-2 + Loading 组件统一 class）
+- frontend/src/pages/workspace.rs（2026-09-12 增量：MMORPG 式三段底部横幅重构）
+- frontend/src/pages/hr/agents.rs（2026-09-12 增量：同步弹窗 Loading 组件统一）
 - frontend/src/pages/settings.rs
 - frontend/src/pages/hr/agent_detail.rs#L60-L78
 - frontend/src/pages/hr/agent_detail.rs#L720-L730
@@ -48,6 +51,8 @@ source_files:
 本知识卡沉淀 AI Orz 前端（Dioxus 0.7 WebAssembly）的 **Design System 组件设计系统**规范，覆盖 6 层组件分层架构、3 个自定义 Hooks、2 个全局 Store、DaisyUI 5 主题体系、以及交互组件的复用约束。项目已从 Mistral 设计系统内联样式迁移到 **Tailwind CSS v4 + DaisyUI v5** 组件库实现（2026-07-25 里程碑），自定义 `orz-light` 主题承袭 Mistral 暖色基因（品牌橙 + 暖象牙底色），同时开放 30+ 内置主题供用户切换。
 
 **2026-09-12 增量**：DaisyUI 主题系统瘦身——从 31 个内置主题**删除 7 个无用皮肤**（bumblebee / emerald / forest / wireframe / black / sun / winter），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 数组，禁止 UI 选择器展示已删除主题。输入框视觉升级：`.hud-input` 新增**静息态发丝边**（1px 渐变描边 + 微妙发光层 `box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)`）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 从左至右扫过输入框边缘，橙光 1.2s 循环一次，呼应 HUD 驾驶舱流光风格），彻底替换之前普通的 1px gray-300 描边。
+
+**2026-09-12 增量（c632f4bf→HEAD）**：输入框控件**加 0.5rem 纵向留白**（`.hud-input` 类追加 `py-2`），与上下控件保持呼吸感，避免表单元素贴得过密；**同步弹窗进度指示改用统一 Loading 组件**（`frontend/src/pages/hr/agents.rs` 预置 Agent 同步弹窗中，之前使用自定义 spinner，现在改用 DaisyUI `loading loading-spinner` 或 HUD 原子组件中的 Loading 原语，与全站其他弹窗进度指示风格统一）；**工作台底部横幅重构为 MMORPG 式三段布局**（`frontend/src/pages/workspace.rs`）——将原来简陋的单条底部横幅拆解为三个功能分区（左上状态/中间对话/右下工具提示），类 MMORPG 游戏 UI 的 HUD 风格，左侧显示当前视图状态与上下文锚点、中间是可交互的对话框入口、右下是快捷工具提示条，整体通过 Tailwind `flex justify-between items-end` + 各自独立的 `HudCallout`/`HudCard` 容器实现。
 
 # §2 关键文件表
 
@@ -162,3 +167,4 @@ Layer 1 - Foundation（基础层，非 Rust 组件）
 10. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
 11. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。
 12. **SkillCard 状态 HUD + Agent 详情页 tab 拆分约束**：SkillCard 必须支持 Expired 状态（badge 颜色 `badge-error` + 操作区「恢复」按钮）；Agent 详情页（agent_detail.rs）拆为工具 tab + 技能 tab，工具关系图并入工具 tab 上部总览；TextMetrics measure_text（web-sys crate）替代字符数估算，Canvas 文本测量精度升级
+13. **Loading 组件统一红线**（2026-09-12 新增，Ref 6dbad9b2）：全站所有进度指示/加载状态**禁止**自定义 spinner（如纯 CSS 动画、svg circle+animation 硬写），**必须**使用统一的 DaisyUI `loading` 类（`loading loading-spinner` / `loading loading-dots` / `loading loading-ring` 等）或 HUD 原子组件中的 Loading 原语。例外情况须在 HUD 原语中新增对应变体（如定制颜色或尺寸），而非页面自行实现。当前已统一：预置 Agent 同步弹窗（agents.rs）、工作台底部横幅加载状态（workspace.rs）、各类导入/导出进度弹窗

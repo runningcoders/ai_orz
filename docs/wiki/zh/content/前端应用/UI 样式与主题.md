@@ -361,3 +361,13 @@ AI Orz 前端的样式系统以 Tailwind CSS v4 与 DaisyUI v5 为核心，通�
 3. **输入框静息态发丝边**——`.hud-input` 新增 1px 渐变描边 + backdrop-blur 微妙发光层（box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)）；
 4. **输入框聚焦态流动光带边框**——`.hud-input:focus-within` 触发 `hud-signal` keyframes 扫过输入框边缘，橙光从左至右 1.2s 循环一次，呼应 HUD 驾驶舱流光风格。
 **涉及 RAG 卡**：Tailwind CSS v4 + DaisyUI v5 主题系统卡 + UI Design System 组件设计系统卡
+
+---
+
+### 更新摘要（2026-09-12，base c632f4bf→HEAD）
+**主题**：输入框 0.5rem 纵向留白 + Loading 组件统一 + MMORPG 式三段底部横幅
+**关键变更**：
+1. **输入框追加 py-2（0.5rem）纵向留白（frontend/styles/input.css）**——`.hud-input` 类追加 `py-2`，与上下表单控件保持呼吸感，避免元素贴得过密；
+2. **全站进度指示统一使用 DaisyUI loading 类（Ref 6dbad9b2）**——禁止自定义 spinner，统一使用 `loading loading-spinner` / `loading loading-dots` / `loading loading-ring`；当前已统一的消费方：预置 Agent 同步弹窗（agents.rs）、各类导入/导出进度弹窗；
+3. **工作台底部横幅重构为 MMORPG 式三段布局（workspace.rs）**——用 Tailwind `flex justify-between items-end` + 三个独立 HudCallout/HudCard 容器实现「左上状态锚点 / 中间对话入口 / 右下工具提示」三段式 HUD 风格底部栏。
+**涉及 RAG 卡**：UI Design System 组件设计系统卡 + Tailwind CSS v4 + DaisyUI v5 主题系统卡

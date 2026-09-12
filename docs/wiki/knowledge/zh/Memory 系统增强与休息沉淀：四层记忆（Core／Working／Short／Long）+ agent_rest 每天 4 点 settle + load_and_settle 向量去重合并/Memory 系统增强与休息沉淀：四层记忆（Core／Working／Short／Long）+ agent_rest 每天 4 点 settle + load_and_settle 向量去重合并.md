@@ -23,6 +23,8 @@ source_files:
 - src/service/domain/runtime/compaction.rs#L1-L120
 - src/service/domain/system/mod.rs#L420-L470
 - src/consumer/scheduler.rs#L53-L131
+- src/consumer/scheduler.rs（2026-09-12 增量：agent_rest 系统级全局执行，遍历所有活跃组织）
+- src/handlers/hr/agent/settle_memory.rs#L75-L600（2026-09-12 增量：支持全局模式 organization_id=None）
 - src/handlers/hr/agent/save_short_term_memory.rs#L19-L56
 - src/handlers/hr/agent/save_long_term_memory.rs#L21-L108
 - src/models/memory.rs#L158-L320
@@ -43,6 +45,8 @@ source_files:
 1. **写入接口宽泛**：`create_memory` 单接口既写短期又写长期还带关系，Agent 用错参数概率高；拆分为两个极简参数专用工具
 2. **缺自动沉淀**：短期记忆 Active 状态滚雪球，不自动消化为长期知识图谱，检索质量随时间指数下降
 3. **沉淀并发冲突**：沉淀中被重复唤醒导致的状态错乱，通过 BusyGuard RAII + Resting 状态 + current_message_id 占用三重防护
+
+**agent_rest 系统级全局执行修复（2026-09-12，Ref e9a93979）**：修复 agent_rest 定时沉淀「从未成功」的历史 bug——旧版 `CronTriggerConsumer` 的 `handle_agent_rest` 方法只对特定 `organization_id` 执行沉淀（trigger payload 里硬编码 org_id），导致多组织部署时大部分组织的沉淀永远不触发。重构后：① `consumer/scheduler.rs` 的 handle_agent_rest 新增**全局模式**（payload 无 org_id 或 org_id 为 None 时），遍历 DB 中所有活跃组织逐一执行沉淀；② `settle_memory.rs` 的 `load_and_settle` 支持 organization_id=None 的全局模式；③ 向后兼容——旧 trigger payload 带 org_id 时仍走组织级路径，新系统级 trigger 不带 org_id 时走全局遍历。这是一个 **fix 级别改动**：生产环境 agent_rest cron 一直在跑，但因为硬编码 org_id 导致 90% 的沉淀请求被跳过，用户感知不到但日志里会有大量 warn。
 
 ---
 
@@ -149,6 +153,7 @@ source_files:
 | 15 | **next_run_at 计算失败必须置 is_enabled=0**：cron 表达式非法或时区异常 → 触发器禁用 + 打 sys_error；否则该触发器永远占 max_events=20 的坑，其他正常触发器跑不起来 | 故意把 cron_expression 改成"* * * *" → 启动后该触发器 is_enabled=0 | [pkg/cron/mod.rs](src/pkg/cron/mod.rs#L1-L60) next_run_at 异常处理分支 |
 | 16 | **Cron 执行顺序：先 mark_trigger_executed 再跑业务**：否则 agent_rest 沉淀 > 60s 时，下一轮 Producer 的 list_due 还能扫到同一条 → 两次并发触发同一 Agent 休息 | grep 调用顺序：① mark_executed → ② handle_agent_rest | [cron_trigger.rs](src/producer/cron_trigger.rs#L38-L87) Producer 主循环 |
 | 17 | **沉淀期间 Agent 收到唤醒请求需排队或 429**：Resting 态 Handler 层做 429 兜底，与 BusyGuard 语义双重保证，禁止 Awake 和 Sleep 同时进入 | Resting 态下 awaken 请求应返回 429 「Agent 正休息」，或 MessageConsumer 重新入队不丢 | [consumer/message.rs](src/consumer/message.rs) try_set_busy 失败分支 |
+| 18 | **handle_agent_rest 全局模式必须遍历所有活跃组织**（2026-09-12 新增，Ref e9a93979）：trigger payload 中 `organization_id` 为 None / 空字符串 / 不存在时，handle_agent_rest **禁止** 直接 return 跳过；**必须** 查询所有 status=Active 的组织（`SELECT id FROM organizations WHERE status=1`），逐一构造 RequestContext 并调用 `load_and_settle(org_id, None, settle_limit)`。这是「修复从未成功 bug」的核心——旧版硬编码 org_id 导致多组织部署时沉淀永远不触发 | 构造全局 payload `{action:"agent_rest", extra:{settle_limit:20}}` 启动 cron → 断言 DB 中所有活跃组织的 Agent 都至少有一批 Active→Settled 转换 | [consumer/scheduler.rs handle_agent_rest 全局分支](src/consumer/scheduler.rs#L104-L131) |
 
 **§4.2 扩展入口速查**
 
