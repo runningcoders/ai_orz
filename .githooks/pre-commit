@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-echo "== pre-commit: fmt-check（跳过本次：git commit --no-verify）=="
+echo "== pre-commit: fmt-check（cargo fmt --all -- --check）=="
 
 export PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 

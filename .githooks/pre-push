@@ -11,12 +11,12 @@
 #                    -- -D warnings（前端 wasm32 口径，含完整类型检查）
 #                    ⚠️ 不要用 `dx check` 顶替：dx check 只做路由级检查、不编译业务代码，
 #                    曾出现「前端 14 个编译错误仍全绿通过」的假绿灯（2026-09-08 实测）。
-#       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + dx check 两道重门禁，
+#       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + clippy-fe 两道重门禁，
 #       即使有人用 git commit --no-verify 跳过提交钩子，push 仍会被挡住。
 
 set -euo pipefail
 
-echo "== pre-push: 门禁检查（跳过本次：git push --no-verify）=="
+echo "== pre-push: 门禁检查（fmt + clippy + clippy-fe）=="
 
 export PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
