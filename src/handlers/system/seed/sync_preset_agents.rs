@@ -12,7 +12,9 @@
 //! 已由 `require_role_middleware(Admin)` 统一鉴权。
 //!
 //! 核心语义见 [`super::apply_single_preset_agent`]：
-//! 缺失 → 新建 + 自动入职；软删 → 恢复 + 进修补包；在用 → 仅 Overwrite 覆写身份字段。
+//! 缺失 → 新建（停留 Incubating，模型由用户自行配置）；软删 → 恢复 + 进修补包；
+//! 在用 → 仅 Overwrite 覆写基础身份字段。
+//! **模型绑定不在同步范围内**：一律以本地为准，seed 里的占位 Provider 不参与解析。
 //! Agent 无文件、无副本概念，策略参数比技能同步少一个 `sync_installed_copies`。
 
 use crate::pkg::RequestContext;
@@ -34,7 +36,7 @@ use std::sync::{Arc, Mutex};
 /// 预置 Agent 同步预览
 ///
 /// 逐个比对 seed Agent 与库中的同 ID Agent，返回「将新增 / 将恢复 / 将覆盖」清单。
-/// 额外解析每个 Agent 将绑定的对话模型 Provider，供用户在确认前发现「未配模型」问题。
+/// 同时展示各 Agent 本地当前绑定的对话模型（含软删行）——纯信息展示，同步不改动模型绑定。
 /// 只读，不写任何数据。
 #[generate_http_handler]
 pub async fn preview_preset_agents(
@@ -51,8 +53,8 @@ pub async fn preview_preset_agents(
             .await?;
 
         // get_agent 不含软删行：单独探测同 ID 的软删记录（误删场景）
-        let deleted = if local.is_some() {
-            false
+        let deleted_row = if local.is_some() {
+            None
         } else {
             hr::domain()
                 .agent_manage()
@@ -65,20 +67,29 @@ pub async fn preview_preset_agents(
                 )
                 .await?
                 .items
-                .iter()
-                .any(|a| a.po.status == common::enums::AgentStatus::Deleted)
+                .into_iter()
+                .find(|a| a.po.status == common::enums::AgentStatus::Deleted)
         };
+        let deleted = deleted_row.is_some();
 
-        // 预解析将绑定的对话模型 Provider（供前端提示「未配模型」风险）
-        let resolved_provider_id =
-            super::resolve_agent_provider_id(&ctx, &agent_def.model_provider_id).await?;
-        let resolved_provider_name = match &resolved_provider_id {
-            Some(pid) => finance::domain()
+        // 本地当前绑定的对话模型名（含软删行）——纯信息展示，同步不改动模型绑定
+        let local_provider_id = local
+            .as_ref()
+            .map(|a| a.po.model_provider_id.clone())
+            .or_else(|| deleted_row.as_ref().map(|a| a.po.model_provider_id.clone()))
+            .unwrap_or_default();
+        let local_provider_name = if local_provider_id.is_empty() {
+            None
+        } else {
+            finance::domain()
                 .model_provider_manage()
-                .get_model_provider_with_options(ctx.clone(), pid, Default::default())
+                .get_model_provider_with_options(
+                    ctx.clone(),
+                    &local_provider_id,
+                    Default::default(),
+                )
                 .await?
-                .map(|p| p.po.name),
-            None => None,
+                .map(|p| p.po.name)
         };
 
         items.push(PresetAgentSyncItem {
@@ -90,7 +101,7 @@ pub async fn preview_preset_agents(
             deleted,
             local_name: local.as_ref().map(|a| a.po.name.clone()),
             local_status: local.as_ref().map(|a| a.po.status),
-            resolved_provider_name,
+            local_provider_name,
         });
     }
 
@@ -246,11 +257,11 @@ impl BackgroundTask for SyncPresetAgentsTask {
 
 /// 同步预置 Agent（异步提交，返回 task_id）
 ///
-/// - `Overwrite`（默认）：在用的同 ID Agent 覆写身份字段（名称/角色/描述/能力/人设/模型绑定），
-///   生命周期状态不动；完全缺失的新建并自动入职；已被误删的恢复并进修补包
+/// - `Overwrite`（默认）：在用的同 ID Agent 覆写基础身份字段（名称/角色/描述/能力/人设），
+///   生命周期状态与模型绑定不动；完全缺失的新建（停留 Incubating）；已被误删的恢复并进修补包
 /// - `OnlyMissing`：在用的同 ID Agent 原样保留，其余同上
 ///
-/// 前端通过 `GET /api/v1/system/tasks/{task_id}/progress` 轮询进度与结果。
+/// 模型绑定一律以用户本地配置为准，不在同步范围内。
 #[generate_http_handler]
 pub async fn sync_preset_agents(
     ctx: RequestContext,

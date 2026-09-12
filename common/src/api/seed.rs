@@ -244,8 +244,9 @@ pub struct SyncPresetSkillsResponse {
 /// 差异仅在于对「在用」的同 ID Agent 的处理。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 pub enum PresetAgentSyncStrategy {
-    /// 覆盖重置：在用的同 ID Agent 也会把身份字段（名称/角色/描述/能力/人设/模型绑定）
-    /// 覆写回 seed 定义；**生命周期状态不改动**（归状态机管，避免把已入职 Agent 打回待入职）
+    /// 覆盖重置：在用的同 ID Agent 会把基础身份字段（名称/角色/描述/能力/人设）
+    /// 覆写回 seed 定义；**生命周期状态与模型绑定不改动**
+    /// （状态归状态机管，模型绑定是用户本地配置，seed 里的占位 Provider 仅供参考）
     #[default]
     Overwrite,
     /// 仅补缺：在用的同 ID Agent 原样保留
@@ -267,7 +268,7 @@ pub struct PresetAgentSyncItem {
     pub description: String,
     /// seed 中的角色标签
     pub roles: Vec<String>,
-    /// 是否已存在（含软删）：false = 完全缺失，同步时将新建并自动入职
+    /// 是否已存在（含软删）：false = 完全缺失，同步时将新建（停留 Incubating，待用户配置模型后自行入职）
     pub exists: bool,
     /// 已存在但处于已删除状态（误删场景，同步时会被恢复）
     pub deleted: bool,
@@ -275,9 +276,9 @@ pub struct PresetAgentSyncItem {
     pub local_name: Option<String>,
     /// 已存在时的本地生命周期状态
     pub local_status: Option<AgentStatus>,
-    /// 同步时将绑定的对话模型 Provider 名称（已解析）。
-    /// None = 本地无可用对话模型，新建/恢复的 Agent 将停留在 Incubating
-    pub resolved_provider_name: Option<String>,
+    /// 已存在 Agent 当前绑定的对话模型 Provider 名称（含软删行）。
+    /// 纯信息展示——同步**不改动**模型绑定，一律以本地为准；None = 本地未绑定模型
+    pub local_provider_name: Option<String>,
 }
 
 /// 预置 Agent 同步预览响应
@@ -285,7 +286,7 @@ pub struct PresetAgentSyncItem {
 pub struct PreviewPresetAgentsResponse {
     /// 逐 Agent 的对比结果
     pub items: Vec<PresetAgentSyncItem>,
-    /// 完全缺失的数量（同步时新建并自动入职）
+    /// 完全缺失的数量（同步时新建，停留 Incubating 待用户配置模型）
     pub missing_count: usize,
     /// 已被误删的数量（同步时恢复）
     pub deleted_count: usize,
@@ -303,7 +304,7 @@ pub struct SyncPresetAgentsRequest {
 /// 同步预置 Agent 响应
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SyncPresetAgentsResponse {
-    /// 新建并自动入职的 Agent 数量
+    /// 新建的 Agent 数量（停留 Incubating，待用户配置模型后自行入职）
     pub created: usize,
     /// 覆盖更新身份字段的在用 Agent 数量（Overwrite 策略下）
     pub updated: usize,

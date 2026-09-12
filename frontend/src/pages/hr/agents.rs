@@ -914,7 +914,7 @@ pub fn HrAgents() -> Element {
                         div { class: "card-body p-3",
                             div { class: "font-semibold", "1 · 用 seed 覆盖重置" }
                             div { class: "text-xs text-base-content/70",
-                                "在用的同 ID Agent 会把名称、角色、人设等身份信息覆写回默认值（生命周期状态与已装能力包不动）；缺失的自动创建并入职；被误删的自动恢复"
+                                "在用的同 ID Agent 会把名称、角色、人设等基础信息覆写回默认值（生命周期状态、已装能力包与模型绑定不动）；缺失的自动创建；被误删的自动恢复"
                             }
                         }
                     }
@@ -960,10 +960,13 @@ pub fn HrAgents() -> Element {
                                                 div { class: "text-xs text-base-content/50 font-mono truncate", "{item.id}" }
                                             }
                                             div { class: "flex items-center gap-1 shrink-0",
-                                                if let Some(ref provider) = item.resolved_provider_name {
-                                                    span { class: "badge orz-tag badge-sm", "模型 {provider}" }
-                                                } else {
-                                                    span { class: "badge orz-tag badge-sm text-warning", "未配模型" }
+                                                if item.exists {
+                                                    // 模型绑定不在同步范围内：展示本地现状（保留）
+                                                    if let Some(ref provider) = item.local_provider_name {
+                                                        span { class: "badge orz-tag badge-sm", "模型 {provider} · 保留" }
+                                                    } else {
+                                                        span { class: "badge orz-tag badge-sm text-warning", "未配模型" }
+                                                    }
                                                 }
                                                 if item.deleted {
                                                     span { class: "badge orz-tag badge-sm text-error", "误删待恢复" }
@@ -995,7 +998,7 @@ pub fn HrAgents() -> Element {
 
                 // 风险提示
                 div { class: "text-xs text-base-content/50",
-                    "注意：新建的 Agent 会自动走完职业匹配与入职流程（需已配置对话模型，否则停留在初创态）；恢复的 Agent 会自动进修补齐能力包。"
+                    "注意：同步只处理基础身份信息，不改模型绑定——已有/恢复的 Agent 保留本地配置的模型；新建的 Agent 未绑模型、停留在初创态，请到 Agent 详情配置对话模型后完成职业匹配与入职。恢复的 Agent 会自动进修补齐能力包。"
                 }
             }
         }

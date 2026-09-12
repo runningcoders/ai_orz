@@ -303,10 +303,12 @@ async fn test_apply_snapshot_rejects_chat_provider_without_context_length(pool: 
     );
 }
 
-/// 预置 Agent 同步：缺失新建并自动入职 → 在用跳过/覆盖 → 软删恢复
+/// 预置 Agent 同步：缺失新建（不绑模型，停留 Incubating）→ 在用跳过/覆盖（模型绑定保留）
+/// → 软删恢复（模型绑定保留本地现值，不被 seed 占位符冲掉）
 #[sqlx::test]
 async fn test_apply_single_preset_agent(pool: SqlitePool) {
     use crate::handlers::system::seed::{PresetAgentAction, apply_single_preset_agent};
+    use crate::service::domain::finance;
     use crate::service::domain::hr;
     use common::enums::AgentStatus;
 
@@ -320,7 +322,7 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         .find(|a| a.id == "TEMPLATE_RECEPTION_AGENT")
         .expect("seed 应包含 TEMPLATE_RECEPTION_AGENT");
 
-    // 1. 完全缺失 + OnlyMissing → 新建（有 chat provider，应自动走完状态机入职）
+    // 1. 完全缺失 + OnlyMissing → 新建；模型绑定不在同步范围内 → 不绑模型，停留 Incubating
     let action = apply_single_preset_agent(ctx.clone(), agent_def, true)
         .await
         .unwrap();
@@ -331,8 +333,11 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         .await
         .unwrap()
         .expect("新建的预置 Agent 应可见");
-    assert_eq!(agent.po.status, AgentStatus::Onboarded);
-    assert!(!agent.po.model_provider_id.is_empty(), "应绑定对话模型");
+    assert_eq!(agent.po.status, AgentStatus::Incubating);
+    assert!(
+        agent.po.model_provider_id.is_empty(),
+        "同步不负责模型绑定，新建的 Agent 不应自动绑模型"
+    );
 
     // 2. 在用 + OnlyMissing → 跳过
     let action = apply_single_preset_agent(ctx.clone(), agent_def, true)
@@ -340,7 +345,24 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         .unwrap();
     assert_eq!(action, PresetAgentAction::Skipped);
 
-    // 3. 在用 + Overwrite → 身份字段对齐 seed，生命周期状态不动
+    // 给该 Agent 配一个本地模型（模拟用户自行配置），验证后续覆盖/恢复都不冲掉它
+    let chat_provider = finance::domain()
+        .model_provider_manage()
+        .list_model_providers(ctx.clone())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|p| p.po.capability == common::enums::ModelCapability::Agent)
+        .expect("prepare_test_data 应已创建 chat provider");
+    let mut with_model = agent.clone();
+    with_model.po.model_provider_id = chat_provider.po.id.clone();
+    hr::domain()
+        .agent_manage()
+        .update_agent(ctx.clone(), &with_model)
+        .await
+        .unwrap();
+
+    // 3. 在用 + Overwrite → 基础身份字段对齐 seed；生命周期状态与模型绑定不动
     let action = apply_single_preset_agent(ctx.clone(), agent_def, false)
         .await
         .unwrap();
@@ -353,9 +375,13 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         .unwrap();
     assert_eq!(agent.po.name, agent_def.name);
     assert_eq!(agent.po.soul, agent_def.soul);
-    assert_eq!(agent.po.status, AgentStatus::Onboarded);
+    assert_eq!(agent.po.status, AgentStatus::Incubating);
+    assert_eq!(
+        agent.po.model_provider_id, chat_provider.po.id,
+        "覆盖不应冲掉用户本地配置的模型"
+    );
 
-    // 4. 软删（误删）+ OnlyMissing → 恢复，状态回到 seed 定义并保留可见
+    // 4. 软删（误删）+ OnlyMissing → 恢复；状态回 seed 定义，模型绑定保留本地现值
     hr::domain()
         .agent_manage()
         .delete_agent(ctx.clone(), &agent)
@@ -386,4 +412,8 @@ async fn test_apply_single_preset_agent(pool: SqlitePool) {
         "恢复后状态应回到 seed 定义（PendingOnboard）"
     );
     assert_eq!(agent.po.name, agent_def.name);
+    assert_eq!(
+        agent.po.model_provider_id, chat_provider.po.id,
+        "恢复不应冲掉软删行原有的模型绑定"
+    );
 }
