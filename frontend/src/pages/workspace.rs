@@ -12,9 +12,10 @@
 //! - 侧边栏：全量加载 projects + agents（轻量）
 //! - 中心图：按视图按需加载 tasks 和关联数据，避免全量加载
 //!
-//! 底部游戏式对话框：
-//! - 未聚焦：单行输入框 + 上方浮动半透明最近消息
-//! - 聚焦后：展开为可滚动消息列表 + 输入框
+//! 底部游戏式横幅（MMORPG 风格，左右通透）：
+//! - 左下角：当前对话上下文 / 选中 Agent 信息卡（名称 + 运行状态 + 角色标签 + 简介）
+//! - 中间：对话框（消息区 + 输入行）；聚焦与否仅消息区展开高度不同，布局两态一致
+//! - 右下角：预留区（暂放数据刷新）
 //! - 视图联动：Global=默认对话 / ProjectDetail=Project 对话 / AgentDetail=Agent 对话 / TaskDetail=Task 对话
 
 use dioxus::prelude::*;
@@ -33,7 +34,7 @@ use crate::hooks::use_workspace_data::{WorkspaceData, use_workspace_data};
 use crate::layouts::app_layout::AppLayout;
 use crate::store::toast::use_toast;
 use crate::utils::{
-    build_optimistic_user_msg, replace_tmp_with_real,
+    avatar_initials, build_optimistic_user_msg, replace_tmp_with_real,
     status::{agent_runtime_badge, project_status_badge, tag_chip},
 };
 use common::api::{
@@ -903,7 +904,7 @@ pub fn Workspace() -> Element {
                     }
                 })}
 
-                // === 底部对话框（玻璃，悬浮底部，透明） ===
+                // === 底部横幅（MMORPG 式：左下 Agent 卡 / 中间对话框 / 右下预留，左右通透） ===
                 {
                     let focused = *chat_focused.read();
                     let msgs = chat_messages.read();
@@ -930,53 +931,90 @@ pub fn Workspace() -> Element {
                             format!("任务 {} · 对话", &tid[..tid.len().min(8)])
                         }
                     };
-
-                    let container_class = "absolute bottom-3 left-3 right-3 z-10 bg-transparent border border-base-content/10 rounded-xl flex flex-col";
+                    // 左下角信息卡：AgentDetail 视图展示选中 Agent；其余视图展示对话上下文
+                    let selected_agent = match &view {
+                        WorkspaceView::AgentDetail(aid) => sidebar
+                            .as_ref()
+                            .and_then(|d| d.agents.iter().find(|a| &a.id == aid)),
+                        _ => None,
+                    };
 
                     rsx! {
-                        div { class: "{container_class}",
-                            id: "workspace-chat-dialog",
-                            onclick: move |_| {
-                                chat_focused.set(true);
-                                // 点击对话框任意位置即进入发送模式，并聚焦输入框
-                                if let Some(window) = web_sys::window()
-                                    && let Some(doc) = window.document()
-                                    && let Some(el) = doc.get_element_by_id("workspace-chat-input") {
-                                    let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.focus());
-                                }
-                            },
-                            div {
-                                class: if focused { "flex-1 overflow-y-auto p-3 max-h-48" } else { "p-2 max-h-24 overflow-hidden" },
-                                style: if focused { "" } else { "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
-                                if msgs.is_empty() && !is_typing {
-                                    div { class: "text-center text-sm text-base-content/40 py-2",
-                                        if focused { "💬 输入消息开始对话" } else { "💬 点击输入框开始对话" }
+                        // 容器整体透明 + pointer-events-none：除三个子区间外可穿透到关系图（左右通透）
+                        div { class: "absolute bottom-3 left-3 right-3 z-10 flex items-end gap-3 pointer-events-none",
+
+                            // ---- 左下角：当前对话上下文 / 选中 Agent 信息卡（与左右侧栏同宽对齐） ----
+                            div { class: "pointer-events-auto w-64 flex-shrink-0 hud-glass rounded-xl p-3",
+                                if let Some(a) = selected_agent {
+                                    div { class: "flex items-center gap-2 min-w-0",
+                                        div { class: "w-8 h-8 rounded-full bg-primary/15 border border-primary/40 flex items-center justify-center text-xs font-semibold text-primary flex-shrink-0",
+                                            "{avatar_initials(&a.name)}"
+                                        }
+                                        span { class: "text-sm font-medium truncate", "{a.name}" }
+                                        span { class: "ml-auto flex-shrink-0 {agent_runtime_badge(a.runtime_state)}",
+                                            "{agent_runtime_label(a.runtime_state)}"
+                                        }
+                                    }
+                                    if !a.roles.is_empty() {
+                                        div { class: "flex flex-wrap gap-1 mt-1.5",
+                                            for role in a.roles.iter().take(3) {
+                                                span { class: "{tag_chip()}", "{role}" }
+                                            }
+                                        }
+                                    }
+                                    if let Some(desc) = &a.description {
+                                        p { class: "text-xs text-base-content/60 mt-1.5 line-clamp-2 leading-relaxed",
+                                            "{desc}"
+                                        }
                                     }
                                 } else {
-                                    div { class: "space-y-1",
-                                        for msg in msgs.iter().rev().take(if focused { 50 } else { 3 }).collect::<Vec<_>>().into_iter().rev() {
-                                            MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
-                                        }
-                                        if is_typing {
-                                            TypingIndicator {}
-                                        }
+                                    div { class: "text-sm font-medium", "{chat_title}" }
+                                    div { class: "text-xs text-base-content/50 mt-1",
+                                        "点击图中项目 / Agent / 任务节点，切换对话上下文"
                                     }
                                 }
                             }
-                            div { class: "border-t border-base-content/10 p-2 flex items-center gap-2",
-                                if focused {
-                                    span { class: "text-xs text-base-content/50 flex-shrink-0", "{chat_title}" }
+
+                            // ---- 中间：对话框；聚焦与否仅消息区展开高度不同，其余两态完全一致 ----
+                            div {
+                                id: "workspace-chat-dialog",
+                                class: "pointer-events-auto flex-1 min-w-0 hud-glass rounded-xl border border-base-content/10 flex flex-col overflow-hidden",
+                                onclick: move |_| {
+                                    chat_focused.set(true);
+                                    // 点击对话框任意位置即聚焦输入框
+                                    if let Some(window) = web_sys::window()
+                                        && let Some(doc) = window.document()
+                                        && let Some(el) = doc.get_element_by_id("workspace-chat-input") {
+                                        let _ = el.dyn_into::<web_sys::HtmlElement>().map(|h| h.focus());
+                                    }
+                                },
+                                // 消息区：未聚焦收起为最近 3 条 + 渐隐蒙版；聚焦展开为可滚动列表
+                                div {
+                                    class: if focused { "overflow-y-auto p-3 max-h-48" } else { "p-2 max-h-24 overflow-hidden" },
+                                    style: if focused { "" } else { "opacity: 0.7; mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 100%);" },
+                                    if msgs.is_empty() && !is_typing {
+                                        div { class: "text-center text-sm text-base-content/40 py-2",
+                                            "💬 输入消息开始对话"
+                                        }
+                                    } else {
+                                        div { class: "space-y-1",
+                                            for msg in msgs.iter().rev().take(if focused { 50 } else { 3 }).collect::<Vec<_>>().into_iter().rev() {
+                                                MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
+                                            }
+                                            if is_typing {
+                                                TypingIndicator {}
+                                            }
+                                        }
+                                    }
+                                }
+                                // 输入行：两态完全一致（无标题切换 / 无收起按钮）
+                                div { class: "border-t border-base-content/10 p-2 flex items-end gap-2",
                                     textarea {
                                         class: "textarea textarea-bordered flex-1 bg-transparent resize-none",
                                         id: "workspace-chat-input",
-                                        rows: "2",
+                                        rows: "1",
                                         placeholder: "输入消息（Alt+回车发送）...",
                                         value: "{input_val}",
-                                        onmounted: move |evt: MountedEvent| {
-                                            if let Some(el) = evt.data().downcast::<web_sys::HtmlElement>() {
-                                                let _ = el.focus();
-                                            }
-                                        },
                                         onfocus: move |_| chat_focused.set(true),
                                         onblur: move |_| {
                                             let mut chat_focused = chat_focused;
@@ -1008,43 +1046,15 @@ pub fn Workspace() -> Element {
                                         onclick: move |_| send_trigger.set(true),
                                         "发送"
                                     }
-                                    button {
-                                        class: "btn hud-btn btn-ghost btn-xs",
-                                        onclick: move |_| chat_focused.set(false),
-                                        "▼"
-                                    }
-                                } else {
-                                    textarea {
-                                        class: "textarea textarea-bordered flex-1 bg-transparent resize-none",
-                                        id: "workspace-chat-input",
-                                        rows: "1",
-                                        placeholder: "💬 {chat_title} - 点击任意处开始对话...",
-                                        value: "{input_val}",
-                                        onfocus: move |_| chat_focused.set(true),
-                                        oninput: move |e| chat_input.set(e.value()),
-                                        onkeydown: move |e| {
-                                            if e.key() == Key::Enter && e.modifiers().alt() {
-                                                e.prevent_default();
-                                                send_trigger.set(true);
-                                            }
-                                        }
-                                    }
-                                    div { class: "flex gap-2 text-xs text-base-content/50",
-                                        span { class: "flex items-center gap-1",
-                                            span { class: "w-2 h-2 rounded-full bg-success" } "空闲"
-                                        }
-                                        span { class: "flex items-center gap-1",
-                                            span { class: "w-2 h-2 rounded-full bg-warning" } "休息"
-                                        }
-                                        span { class: "flex items-center gap-1",
-                                            span { class: "w-2 h-2 rounded-full bg-error" } "忙碌"
-                                        }
-                                    }
-                                    button {
-                                        class: "btn hud-btn btn-ghost btn-xs",
-                                        onclick: move |_| { refresh(); toast.info("已刷新数据"); },
-                                        "🔄"
-                                    }
+                                }
+                            }
+
+                            // ---- 右下角：预留区（后续扩展，暂放数据刷新） ----
+                            div { class: "pointer-events-auto w-64 flex-shrink-0 flex items-end justify-end pb-1",
+                                button {
+                                    class: "btn hud-btn btn-ghost btn-xs",
+                                    onclick: move |_| { refresh(); toast.info("已刷新数据"); },
+                                    "🔄"
                                 }
                             }
                         }
