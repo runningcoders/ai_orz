@@ -8,6 +8,9 @@
 //! 1. 显式指定优先（用户在前端选定 Agent）
 //! 2. 否则查 project（Project 对话框场景），用 project.owner_agent_id
 //! 3. 若 project.owner_agent_id 为 None 或 project_id 未指定（默认对话框场景）→ 调 resolve_agent(ctx) 兜底
+//!
+//! ⚠️ `project_id` 传「默认会话哨兵」等同于不传：入口处先用
+//! `common::constants::message::normalize_project_id` 折叠回 `None`，再走上面第 3 条路由。
 
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain as hr_domain;
@@ -35,6 +38,11 @@ pub async fn send_message_to_agent(
     let from_id = ctx.caller_id_or_system();
     let from_role = ctx.caller_role();
 
+    // 写路径归一化：默认会话哨兵（`__default__`）折叠回 None。否则它会被当成真实
+    // project id 送去查项目（直接 404），或原样落库污染 `messages.project_id`。
+    // 见 `common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID`。
+    let project_id = common::constants::message::normalize_project_id(params.project_id.as_deref());
+
     // 路由 to_agent_id（协作关系类比）：
     // 1. 显式指定优先（用户在前端选定 Agent）
     // 2. 否则查 project（Project 对话框场景），用 project.owner_agent_id
@@ -48,13 +56,13 @@ pub async fn send_message_to_agent(
         Some(id) if !id.is_empty() => id.to_string(),
         _ => {
             // 优先从 project.owner_agent_id 取（Project 对话框场景）
-            if let Some(project_id) = params.project_id.as_deref() {
+            if let Some(pid) = project_id {
                 let project = project_domain()
                     .project_manage()
-                    .get(ctx.clone(), project_id)
+                    .get(ctx.clone(), pid)
                     .await?
                     .ok_or_else(|| {
-                        common::error::Error::not_found(format!("Project {} not found", project_id))
+                        common::error::Error::not_found(format!("Project {} not found", pid))
                     })?;
 
                 if let Some(agent_id) = project.po.owner_agent_id {
@@ -84,7 +92,7 @@ pub async fn send_message_to_agent(
         from_role,
         to_agent_id: &to_agent_id,
         content: &params.content,
-        project_id: params.project_id.as_deref(),
+        project_id,
         task_id: params.task_id.as_deref(),
         reply_to_id: reply_to_id.as_deref(),
         external_key: None,

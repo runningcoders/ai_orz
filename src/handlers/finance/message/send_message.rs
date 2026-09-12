@@ -29,7 +29,9 @@ pub async fn send_message(
         from_agent_id: &from_agent_id,
         to_user_id: &params.to_user_id,
         content: &params.content,
-        project_id: params.project_id.as_deref(),
+        // 写路径归一化：默认会话哨兵折叠回 None（落库仍为 NULL），见
+        // `common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID`
+        project_id: common::constants::message::normalize_project_id(params.project_id.as_deref()),
         task_id: params.task_id.as_deref(),
         reply_to_id: reply_to_id.as_deref(),
     };

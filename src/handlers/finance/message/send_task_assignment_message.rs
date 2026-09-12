@@ -34,7 +34,9 @@ pub async fn send_task_assignment_message(
         from_id: &from_id,
         from_role,
         to_agent_id: &params.to_agent_id,
-        project_id: params.project_id.as_deref(),
+        // 写路径归一化：默认会话哨兵折叠回 None（落库仍为 NULL），见
+        // `common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID`
+        project_id: common::constants::message::normalize_project_id(params.project_id.as_deref()),
     };
 
     let message = message::domain()

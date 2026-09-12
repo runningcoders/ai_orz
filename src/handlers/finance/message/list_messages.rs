@@ -9,6 +9,11 @@ use common::error::{Result, bail_err, err};
 
 /// List messages with optional filtering by project, task, from_id, to_id, before/after timestamp
 ///
+/// `project_id` 三态（见 `common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID`）：
+/// - 不传 / `None` → **不过滤**，返回全部会话的消息
+/// - `__default__` → 只要**默认会话**（`project_id IS NULL`）的消息
+/// - 真实 project id → 该项目会话
+///
 /// 分页模式：
 /// - 初始加载 / 上拉翻页：传 `before_timestamp` → 返回 created_at < before_timestamp 的消息，按 DESC 排序
 /// - 下拉轮询新消息：传 `after_timestamp` → 返回 created_at > after_timestamp 的消息，按 ASC 排序
@@ -16,7 +21,7 @@ use common::error::{Result, bail_err, err};
 #[register_handler_tool(
     id = "list_messages",
     name = "List Chat Messages",
-    description = "List chat messages filtered by project_id, task_id, from_id, to_id, or root_id (pass root_id to fetch an entire message thread / discussion chain) with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Returns messages with a total count. Use search_messages for keyword lookup.",
+    description = "List chat messages filtered by project_id, task_id, from_id, to_id, or root_id (pass root_id to fetch an entire message thread / discussion chain) with time-window pagination: pass before_timestamp to page older history or after_timestamp to poll for new messages. Omit project_id to search across all conversations; pass project_id=\"__default__\" to restrict to the default (project-less) conversation only. Returns messages with a total count. Use search_messages for keyword lookup.",
     params = "common::api::message::ListMessagesRequest",
     neural,
     tags = "messaging"

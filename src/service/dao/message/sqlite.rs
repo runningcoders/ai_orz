@@ -494,8 +494,7 @@ WHERE messages_fts MATCH "#,
             builder.push_bind(task_id);
         }
         if let Some(project_id) = &filters.project_id {
-            builder.push(" AND m.project_id = ");
-            builder.push_bind(project_id);
+            push_project_filter(&mut builder, "m.project_id", project_id);
         }
         if let Some(from_id) = &filters.from_id {
             builder.push(" AND m.from_id = ");
@@ -508,6 +507,12 @@ WHERE messages_fts MATCH "#,
         if let Some(id) = &filters.id {
             builder.push(" AND m.id = ");
             builder.push_bind(id);
+        }
+        // 多租户隔离：FTS5 分支同样必须下推 organization_id（与 push_query_filters 口径一致），
+        // 否则关键词命中的消息会跨组织泄漏。向量分支此前也存在同样缺口，已一并修复。
+        if let Some(org_id) = &filters.organization_id {
+            builder.push(" AND m.organization_id = ");
+            builder.push_bind(org_id);
         }
         if let Some(status_in) = &filters.status_in
             && !status_in.is_empty()
@@ -559,6 +564,32 @@ WHERE messages_fts MATCH "#,
     }
 }
 
+/// 推送 project_id 过滤条件
+///
+/// 「默认会话」在读侧用哨兵值
+/// [`DEFAULT_CONVERSATION_PROJECT_ID`](common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID)
+/// 表达，这里把它翻译成 `IS NULL` —— 这正是消除「`None` 既表示不过滤、又只能靠前端
+/// 过滤默认会话」这一语义重载的落点（见该常量文档）。
+///
+/// - 哨兵 → `col IS NULL`（只有默认会话）
+/// - 其它 → `col = ?`（某个真实项目）
+/// - `None`（调用方直接跳过本条件）→ 不过滤
+///
+/// `column` 由调用方给出，因为 `query` / `count` 走裸表列名，而 `search_messages`
+/// 走 JOIN 后的 `m.project_id`。
+fn push_project_filter<'args>(
+    builder: &mut sqlx::QueryBuilder<'args, sqlx::Sqlite>,
+    column: &str,
+    project_id: &str,
+) {
+    if common::constants::message::is_default_conversation(Some(project_id)) {
+        builder.push(format!(" AND {} IS NULL", column));
+    } else {
+        builder.push(format!(" AND {} = ", column));
+        builder.push_bind(project_id.to_string());
+    }
+}
+
 /// 推送查询过滤条件到 QueryBuilder（COUNT 和 LIST 查询复用）
 ///
 /// 默认软删除过滤：当未显式指定 status_in 时，排除 Recalled (0) 状态的消息
@@ -590,9 +621,7 @@ fn push_query_filters<'args>(
         builder.push(" AND task_id = ").push_bind(task_id.clone());
     }
     if let Some(project_id) = &query.project_id {
-        builder
-            .push(" AND project_id = ")
-            .push_bind(project_id.clone());
+        push_project_filter(builder, "project_id", project_id);
     }
     if let Some(from_id) = &query.from_id {
         builder.push(" AND from_id = ").push_bind(from_id.clone());

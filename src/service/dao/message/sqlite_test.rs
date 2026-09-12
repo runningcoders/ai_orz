@@ -1235,3 +1235,88 @@ async fn test_message_fts5_trigger_delete_sync(pool: SqlitePool) -> Result<()> {
 
     Ok(())
 }
+
+/// 默认会话哨兵值：只返回 `project_id IS NULL` 的消息，`None` 仍表示「不过滤」
+///
+/// 这是「`None` 既表示不过滤、又被前端当作默认对话」这一语义重载的回归测试：
+/// 哨兵必须能被 DAO 翻译成 `IS NULL`，且绝不能退化成等值匹配 `'__default__'`。
+#[sqlx::test(migrations = "./migrations")]
+async fn test_default_conversation_sentinel_project_filter(pool: SqlitePool) -> Result<()> {
+    use common::constants::message::DEFAULT_CONVERSATION_PROJECT_ID;
+
+    let (message_dao, ctx) = init_test_env(pool);
+
+    let make = |project_id: Option<&str>, content: &str| {
+        MessagePo::new(
+            Uuid::now_v7().to_string(),
+            project_id.map(|s| s.to_string()),
+            None,
+            "user-1".to_string(),
+            "agent-1".to_string(),
+            MessageRole::User,
+            MessageRole::Agent,
+            MessageType::Text,
+            content.to_string(),
+            None,
+            FileMeta::default(),
+            None,
+            None, // root_id
+            None, // organization_id
+            "test-user".to_string(),
+        )
+    };
+
+    // 默认会话 2 条（project_id = NULL）+ 项目会话 1 条
+    message_dao
+        .insert(ctx.clone(), &make(None, "default 1"))
+        .await?;
+    message_dao
+        .insert(ctx.clone(), &make(None, "default 2"))
+        .await?;
+    message_dao
+        .insert(
+            ctx.clone(),
+            &make(Some("0192f3a1-7c4e-7000-8a2b-0d1e2f3a4b5c"), "in project"),
+        )
+        .await?;
+
+    // 哨兵 → 只要默认会话
+    let only_default = message_dao
+        .query(
+            ctx.clone(),
+            MessageQuery {
+                project_id: Some(DEFAULT_CONVERSATION_PROJECT_ID.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(
+        only_default.len(),
+        2,
+        "哨兵应只返回 project_id IS NULL 的消息"
+    );
+    assert!(
+        only_default.iter().all(|m| m.project_id.is_none()),
+        "哨兵结果中不应出现带 project_id 的消息"
+    );
+
+    // count 走同一套过滤条件，也必须一致
+    let count = message_dao
+        .count(
+            ctx.clone(),
+            MessageQuery {
+                project_id: Some(DEFAULT_CONVERSATION_PROJECT_ID.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(count, 2, "count 也必须翻译成 IS NULL");
+
+    // None → 不过滤，全部 3 条
+    let all = message_dao
+        .query(ctx.clone(), MessageQuery::default())
+        .await?;
+    assert_eq!(all.len(), 3, "None 表示不过滤，应返回全部消息");
+
+    Ok(())
+}
