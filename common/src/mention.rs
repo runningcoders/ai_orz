@@ -196,23 +196,21 @@ pub struct MentionQuery {
     pub query: String,
 }
 
-/// `@` 前一个字符是否属于可触发边界
-///
-/// 行首 / 空白 / 常见开括号可以触发；字母数字（如邮箱 `a@b.com`）不触发，
-/// 避免把邮箱、URL 里的 @ 误判成提及。
-fn is_mention_boundary(prev: Option<char>) -> bool {
-    matches!(
-        prev,
-        None | Some(' ')
-            | Some('\n')
-            | Some('\t')
-            | Some('(')
-            | Some('（')
-            | Some('[')
-            | Some('【')
-            | Some('{')
-    )
-}
+// 这里曾有过 `is_mention_boundary` / `is_word_continuation` 一对前缀判定，现已删除。
+// 演进史（三次）：
+//
+// 1. **白名单**（仅行首 / 空白 / 开括号）→ 中文写作不补空格，`看下@张三` 一律唤不出，
+//    实际退化成「只有行首能用」；
+// 2. **黑名单**（只挡 ASCII 词内字符）→ 中文可用了，但 `hi@张` 这种英文紧贴仍不弹；
+// 3. **不判定前缀**（当前）→ `@` 前是什么字符都触发。
+//
+// 取舍依据：`@` 是输入框里的**主功能入口**，「该弹不弹」比「多弹一下」糟糕得多。
+// 真在打邮箱 / URL 的人继续输入时关键词无命中，前端会自动收起菜单
+// （见 `MentionState` 的空结果收菜单 + 死前缀抑制），只会闪一下，无需额外操作。
+//
+// ⚠️ 但仍然保留下面的 `is_query_char`：它挡的不是「前缀」而是**已插入的提及语法
+// 本身**（`[@张伟](agent:agt_1)` 里含 `@`），删掉会导致每次插入提及后菜单立刻
+// 重新弹出。
 
 /// 查询词里一旦出现这些字符，说明光标已不在「刚打完 @ 关键词」的位置
 ///
@@ -231,6 +229,16 @@ fn is_query_char(c: char) -> bool {
 ///
 /// 纯函数、不依赖 DOM：`caret` 由调用方从 textarea 的 `selectionStart` 读取后传入。
 /// 返回 `Some` 时表示应弹出候选菜单，选中后按 `[start..caret]` 区间做替换。
+///
+/// 触发条件（两条同时满足）：
+///
+/// 1. 光标前存在 `@`（取最近的一个）；
+/// 2. `@` 与其后到光标之间的内容不含空白与括号（[`is_query_char`]）。
+///
+/// **不判定 `@` 之前的字符**：行首、汉字紧贴（`看下@张|`）、标点（`你好，@张|`）、
+/// 空格（`hello @张|`）、ASCII 单词紧贴（`hi@张|`）一律触发。
+/// 邮箱 `zhang@qq.com` 这类也会弹一下，但继续输入时关键词无命中，
+/// 前端会自动收起菜单，用户不必按 ESC。
 pub fn detect_mention_query(text: &str, caret: usize) -> Option<MentionQuery> {
     if caret == 0 || caret > text.len() || !text.is_char_boundary(caret) {
         return None;
@@ -240,9 +248,6 @@ pub fn detect_mention_query(text: &str, caret: usize) -> Option<MentionQuery> {
     let start = before.rfind('@')?;
     let query = &before[start + 1..];
     if query.len() > MAX_QUERY_BYTES || !query.chars().all(is_query_char) {
-        return None;
-    }
-    if !is_mention_boundary(before[..start].chars().next_back()) {
         return None;
     }
     Some(MentionQuery {
@@ -494,14 +499,44 @@ mod tests {
     }
 
     #[test]
-    fn detect_query_rejects_email_and_plain_text() {
-        // 邮箱 / 非边界字符后的 @ 不得误触发
-        assert!(detect("a@b.com|").is_none());
-        assert!(detect("联系zhang@|").is_none());
-        // 光标不在 @ 之后
+    fn detect_query_ignores_left_context_entirely() {
+        // 放开边界后：`@` 前是什么字符都触发。邮箱 / URL 本地部分也照弹
+        // （用户继续输入时关键词无命中，前端会自动收起菜单）
+        assert!(detect("a@b.com|").is_some());
+        assert!(detect("联系zhang@|").is_some());
+        assert!(detect("https://x.com/@u|").is_some());
+        // 仍然挡住的：@ 与光标之间有空白 → 光标已不在查询里
         assert!(detect("@张伟 |").is_none());
         // 纯文本无 @
         assert!(detect("你好世界|").is_none());
+    }
+
+    #[test]
+    fn detect_query_triggers_after_cjk_and_punctuation() {
+        // 回归：中文写作不补空格，@ 直接紧跟上一个汉字也必须触发
+        // （早期白名单实现下这里一律返回 None，等于「只有行首能用」）
+        let q = detect("帮我看下@张|").expect("汉字后 @ 应触发");
+        assert_eq!((q.start, q.query.as_str()), ("帮我看下".len(), "张"));
+
+        // 中英文标点后触发
+        assert!(detect("你好，@|").is_some());
+        assert!(detect("进度：@张|").is_some());
+        assert!(detect("先做完这个。@|").is_some());
+        // 闭合括号 / 全角空格（中文输入法常见）也算边界
+        assert!(detect("（已完成）@|").is_some());
+        assert!(detect("你好　@张|").is_some());
+    }
+
+    #[test]
+    fn detect_query_triggers_after_ascii_word() {
+        // 放开边界：ASCII 单词紧贴的 @ 也触发（`hi@张` 这类不补空格的写法必须能用）
+        assert!(detect("hi@|").is_some());
+        assert!(detect("user_1@|").is_some());
+        // 邮箱中段同样触发：query 取 @ 之后的内容，由前端空结果自动收起
+        let q = detect("zhang@qq|").expect("邮箱中段也触发");
+        assert_eq!(q.query, "qq");
+        // 但 @ 之后一旦出现空白，就不再算「正在输入查询」
+        assert!(detect("zhang@qq |").is_none());
     }
 
     #[test]

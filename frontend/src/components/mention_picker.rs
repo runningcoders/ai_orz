@@ -9,6 +9,10 @@
 //! - **不碰光标**：输入框始终是受控 `textarea`，插入的是纯文本语法
 //!   （见 [`crate::utils::mention`]），不使用 contenteditable，
 //!   避免中文输入法组合期间被重渲染打断（历史教训 `0644609c`）。
+//! - **菜单生命周期有兜底**：`@` 不做任何「前缀条件」（`hi@张` 这类不补空格的
+//!   写法必须能用，见 `common::mention::detect_mention_query`）；代价是打邮箱时
+//!   也会闪一下 —— 由**关键词搜不到结果即自动收起** + 同一 `@` 位置的「死前缀」
+//!   抑制来兜底，用户不选就自然消失，无需按 ESC（ESC / Enter / 发送也可主动关）。
 //!
 //! ## 用法
 //!
@@ -167,6 +171,16 @@ pub struct MentionState {
     picked: Signal<Vec<MentionCandidate>>,
     /// 候选加载请求序号（用于丢弃过期响应，避免慢响应覆盖新结果）
     req: Signal<u64>,
+    /// 已判定「搜不到结果」的查询：`(@ 的字节下标, 当时的关键词)`
+    ///
+    /// 关键词（非空）无命中说明用户多半不是在找实体（在打邮箱、随手输了一串字），
+    /// 此时自动收掉菜单。记下这个「死前缀」是为了**吸收后续输入**：在同一个 `@`
+    /// 位置继续把它加长不会再把菜单弹回来，否则每次按键都是
+    /// 「弹出 → 请求 → 无结果 → 关闭」，比不收还烦。
+    ///
+    /// 解除条件：退格或换词（不再是前缀扩展）、换一个 `@` 位置，或用户主动
+    /// 收起菜单（ESC / Enter / 发送，见 [`MentionState::close`]）。
+    dead_prefix: Signal<Option<(usize, String)>>,
 }
 
 impl MentionState {
@@ -183,13 +197,21 @@ impl MentionState {
             index: use_signal(|| 0usize),
             picked: use_signal(Vec::<MentionCandidate>::new),
             req: use_signal(|| 0u64),
+            dead_prefix: use_signal(|| None::<(usize, String)>),
         };
 
         // 只同步读取 menu / project_id → 仅当「查询词变化 / 菜单开关 / 切换会话」时触发拉取，
         // 不会因为父组件的消息列表刷新而重跑（避免打断输入）
         use_effect(move || {
-            let query = state.menu.read().as_ref().map(|q| q.query.clone());
-            let Some(query) = query else { return };
+            // 同时取 start：空结果时要回填「死前缀」（标注是哪个 @ 位置的无命中词）
+            let Some((start, query)) = state
+                .menu
+                .read()
+                .as_ref()
+                .map(|q| (q.start, q.query.clone()))
+            else {
+                return;
+            };
             let pid = project_id();
             let kinds = mention_kinds_for(pid.as_deref());
             let seq = {
@@ -202,8 +224,15 @@ impl MentionState {
                 let list = load_candidates(pid, &kinds, &query).await;
                 // 丢弃过期响应：只有最新一次请求能写入结果
                 if *state.req.read() == seq {
+                    let empty = list.is_empty();
                     state.candidates.set(list);
                     state.loading.set(false);
+                    // 关键词（非空）搜不到任何结果 → 用户大概率不是在找实体，收掉菜单。
+                    // ⚠️ 先写 dead_prefix 再收：不能走 close()，那会把这个抑制标记清掉。
+                    if empty && !query.is_empty() {
+                        *state.dead_prefix.write() = Some((start, query));
+                        state.hide();
+                    }
                 }
             });
         });
@@ -217,8 +246,32 @@ impl MentionState {
     }
 
     /// 输入框内容或光标变化后重新判定（由 `oninput` 调用）
+    ///
+    /// 若光标处正是**已被判定搜不到结果的 `@` 位置**，且关键词仍是当时那段的前缀
+    /// 扩展（用户还在继续往下打），则保持关闭、不再弹菜单 —— 否则每次按键都会
+    /// 「弹出 → 请求 → 无结果 → 关闭」，比不收还烦。退格、换词、换 `@` 位置
+    /// 都会自动解除抑制（见 [`MentionState::dead_prefix`]）。
     pub fn sync(mut self, text: &str, caret: usize) {
         let next = detect_mention_query(text, caret);
+        if let Some(q) = &next {
+            let suppressed = self
+                .dead_prefix
+                .read()
+                .as_ref()
+                .is_some_and(|(start, prefix)| {
+                    *start == q.start && q.query.starts_with(prefix.as_str())
+                });
+            if suppressed {
+                // 抑制生效：确保菜单收起（不能调 close()，那会清掉抑制标记）
+                self.hide();
+                return;
+            }
+            let has_dead = self.dead_prefix.read().is_some();
+            if has_dead {
+                // 换了词 / 换了 @ 位置 → 抑制解除，照常走打开流程
+                self.dead_prefix.set(None);
+            }
+        }
         let changed = match (self.menu.read().as_ref(), next.as_ref()) {
             (Some(a), Some(b)) => a.query != b.query,
             (None, None) => false,
@@ -235,11 +288,22 @@ impl MentionState {
         self.menu.set(next);
     }
 
-    /// 关闭菜单
-    pub fn close(mut self) {
+    /// 只收起菜单浮层，不碰「死前缀」标记（内部用）
+    fn hide(mut self) {
         if self.menu.read().is_some() {
             self.menu.set(None);
             self.index.set(0);
+        }
+    }
+
+    /// 关闭菜单（用户主动：ESC / Enter 收起 / 发送完成）
+    ///
+    /// 顺带清掉「死前缀」抑制：主动关掉之后再继续输入，应该重新有弹菜单的机会。
+    pub fn close(mut self) {
+        self.hide();
+        let has_dead = self.dead_prefix.read().is_some();
+        if has_dead {
+            self.dead_prefix.set(None);
         }
     }
 
@@ -343,6 +407,22 @@ impl MentionState {
     /// 清空已插入记录（发送成功后调用，避免污染下一次输入）
     pub fn reset_picked(mut self) {
         self.picked.set(Vec::new());
+    }
+
+    /// 预置一个提及（视图锚定用，如「进入任务视图默认 @ 该任务」）
+    ///
+    /// 与 [`confirm`](Self::confirm) 的区别：不依赖菜单状态、不做区间替换，
+    /// 只把候选登记进「已提及」列表，并返回可追加到正文的提及语法串。
+    /// 调用方负责把它拼进输入框文本 —— 因此**不覆盖用户已输入的内容**是调用方的责任。
+    pub fn preset(mut self, item: MentionCandidate) -> String {
+        let token = item.token();
+        let key = item.key();
+        self.picked.with_mut(|v| {
+            if !v.iter().any(|c| c.key() == key) {
+                v.push(item.clone());
+            }
+        });
+        token
     }
 }
 

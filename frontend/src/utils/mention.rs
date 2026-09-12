@@ -3,10 +3,12 @@
 //! 协议核心（解析 / 拼装 / 输入检测 / 提及提取 / 名字解析）已下沉到
 //! `common::mention`，作为前后端共享的**单一事实源**——后端提取提及
 //! （如 prompt 注入）与前端渲染走同一套解析，协议迭代不会产生差异。
-//! 本模块只保留前端专属的渲染逻辑：
+//! 本模块只保留前端专属的部分：
 //!
 //! - pulldown-cmark 事件流拦截，把提及链接替换为 chip（[`transform_mentions`]）
 //! - chip HTML 生成与 XSS 转义（[`render_mention_chip`]）
+//! - 输入框光标读写（[`read_caret`] / [`restore_caret`]）——@ 查询的边界判定
+//!   与插入位置都依赖真实光标，宿主 textarea 共用这两个 helper
 //!
 //! 下面的 `pub use` 把协议 API 原样转发，前端调用方（`mention_picker` /
 //! `chat` / `markdown`）的 import 路径不受下沉影响。
@@ -17,8 +19,83 @@ pub use common::mention::{
 };
 
 use pulldown_cmark::{Event, Tag, TagEnd};
+use wasm_bindgen::JsCast;
 
-use crate::utils::message::NameMap;
+use common::api::MessageListItem;
+
+use crate::utils::message::{NameMap, resolve_receiver_name};
+
+/// 按 DOM id 取输入框元素
+fn caret_element(id: &str) -> Option<web_sys::HtmlTextAreaElement> {
+    web_sys::window()?
+        .document()?
+        .get_element_by_id(id)?
+        .dyn_into::<web_sys::HtmlTextAreaElement>()
+        .ok()
+}
+
+/// UTF-16 code unit 下标 → UTF-8 字节下标（用于把 DOM 光标换算成 Rust 字符串下标）
+///
+/// DOM 的 `selectionStart` 按 **UTF-16 code unit** 计数（一个汉字 = 1），
+/// 而 Rust 字符串下标是 **字节**（一个汉字 = 3）。直接把 `selectionStart`
+/// 当字节用，中文场景下光标会系统性「落后」：`我们@` 的 selectionStart 是 3，
+/// 取 `&text[..3]` 得到的是 `我` —— 里面根本没有 `@`，于是菜单永远不弹。
+/// 这正是「@ 打在开头能用、前面有中文就唤不出」的根因。
+///
+/// 落在代理对中间时回退到该字符起始字节（半个字符无法表达，取靠左的合法边界）。
+fn utf16_to_byte(s: &str, units: usize) -> usize {
+    let mut acc = 0usize;
+    for (byte_idx, c) in s.char_indices() {
+        if acc >= units {
+            return byte_idx;
+        }
+        acc += c.len_utf16();
+    }
+    s.len()
+}
+
+/// UTF-8 字节下标 → UTF-16 code unit 下标（[`utf16_to_byte`] 的逆运算）
+///
+/// [`restore_caret`] 拿到的是 Rust 侧算出的字节偏移，写回 DOM 前必须换算回去，
+/// 否则插入提及后光标会停在错误位置（中文越多偏得越离谱）。
+fn byte_to_utf16(s: &str, byte: usize) -> usize {
+    let mut acc = 0usize;
+    for (byte_idx, c) in s.char_indices() {
+        if byte_idx >= byte {
+            return acc;
+        }
+        acc += c.len_utf16();
+    }
+    acc
+}
+
+/// 读取输入框光标位置（**字节下标**，可直接用于 Rust 字符串切片）
+///
+/// 内部把 DOM 的 UTF-16 下标经 [`utf16_to_byte`] 换算，调用方无需自行处理编码。
+/// 读不到（元素不存在 / 浏览器拒绝）返回 `None`，调用方应回退到文本末尾——
+/// 表现为「不弹菜单」，而不是错位插入。
+pub fn read_caret(id: &str) -> Option<usize> {
+    let el = caret_element(id)?;
+    let units = el.selection_start().ok().flatten()? as usize;
+    Some(utf16_to_byte(&el.value(), units))
+}
+
+/// 把光标放回输入框指定位置（并重新聚焦）
+///
+/// `pos` 是 Rust 侧的**字节下标**，内部换算成 DOM 的 UTF-16 下标后再写回。
+///
+/// 受控 textarea 的值由框架在事件结束后统一写回，因此用 0ms 定时器把恢复动作
+/// 推到 DOM 更新之后，否则会被随后写入的 value 冲掉。
+pub fn restore_caret(id: &'static str, pos: usize) {
+    gloo_timers::callback::Timeout::new(0, move || {
+        if let Some(el) = caret_element(id) {
+            let units = byte_to_utf16(&el.value(), pos) as u32;
+            let _ = el.set_selection_range(units, units);
+            let _ = el.focus();
+        }
+    })
+    .forget();
+}
 
 /// HTML 转义（chip 的展示名与 id 拼进 HTML 前必过）
 fn escape_html(s: &str) -> String {
@@ -56,6 +133,44 @@ pub fn render_mention_chip(m: &MentionRef, display_name: &str) -> String {
         None => format!(
             r#"<span class="mention-chip {cls}" data-mention-kind="{kind}" data-mention-id="{id}" title="{kind}: {id}">@{name}</span>"#
         ),
+    }
+}
+
+/// 消息接收方的「提及 chip」HTML（气泡头部拼出「这条消息发给谁」）
+///
+/// 群聊（项目会话）里消息不止你 ↔ 一个 Agent 两条线，Agent 之间也会互相说话。
+/// 在气泡头部用**与正文 @ 提及完全一致**的写法标出接收方（同样的 `.mention-chip`
+/// 样式、同样的 `@名` 形态），一眼就能看出「谁在跟谁聊」，再配合旁观消息的
+/// 降透明度（`involves_user`），就不会觉得每条都冲着自己来。
+///
+/// 接收方是 Agent 时直接复用 [`render_mention_chip`]（info 配色 + `data-mention-*`，
+/// 与正文提及视觉同源）；是用户 / 系统时降级为基础 chip ——
+/// `MentionKind` 只有 Agent / Task / Project 三种，用户不在提及协议里。
+///
+/// `to_id` 为空（如未锚定收件人的默认对话）时返回 `None`，不渲染空 chip。
+pub fn receiver_mention_html(
+    msg: &MessageListItem,
+    agents: &NameMap,
+    users: &NameMap,
+) -> Option<String> {
+    if msg.to_id.trim().is_empty() {
+        return None;
+    }
+    let name = resolve_receiver_name(msg, agents, users);
+    match msg.to_role {
+        1 => Some(render_mention_chip(
+            &MentionRef {
+                kind: MentionKind::Agent,
+                id: msg.to_id.clone(),
+                org: None,
+            },
+            &name,
+        )),
+        _ => Some(format!(
+            r#"<span class="mention-chip" title="{}">@{}</span>"#,
+            escape_html(&msg.to_id),
+            escape_html(&name)
+        )),
     }
 }
 
@@ -158,6 +273,30 @@ mod tests {
         html
     }
 
+    /// 光标单位换算：DOM 的 UTF-16 下标 → Rust 字节下标
+    ///
+    /// 回归守卫：曾把 `selectionStart` 直接当字节用，导致中文前缀后打 `@`
+    /// 一律唤不出菜单（`@` 被截在切片之外）。
+    #[test]
+    fn caret_utf16_to_byte_conversion() {
+        let s = "我们@";
+        // DOM 光标停在 `@` 之后 = 3 个 code unit，字节下标是 7
+        assert_eq!(utf16_to_byte(s, 3), 7);
+        let q = detect_mention_query(s, utf16_to_byte(s, 3)).expect("中文前缀后打 @ 应触发");
+        assert_eq!(q.query, "");
+        // 不换算就会漏掉：拿 3 当字节只截出「我」，里面根本没有 @
+        assert!(detect_mention_query(s, 3).is_none());
+    }
+
+    #[test]
+    fn caret_byte_to_utf16_roundtrip() {
+        let s = "看下@张伟 进度";
+        for (byte_idx, _) in s.char_indices() {
+            assert_eq!(utf16_to_byte(s, byte_to_utf16(s, byte_idx)), byte_idx);
+        }
+        assert_eq!(byte_to_utf16("我们@abc", 7), 3);
+    }
+
     #[test]
     fn render_mention_chip_escapes_html() {
         let m = MentionRef {
@@ -233,5 +372,52 @@ mod tests {
                 org: None
             })
         );
+    }
+
+    /// 气泡头部的接收方 chip：Agent 走复用 path（info 配色），用户降级为基础 chip，
+    /// 无收件人时不渲染（避免出现空的 `@`）
+    #[test]
+    fn receiver_chip_renders_agent_and_user() {
+        let mut agents = NameMap::new();
+        agents.insert("agt_9".to_string(), "李雷".to_string());
+        let users = NameMap::new();
+
+        let base = MessageListItem {
+            message_id: "m1".to_string(),
+            project_id: Some("prj_1".to_string()),
+            task_id: None,
+            from_id: "user".to_string(),
+            from_role: 0,
+            to_id: "agt_9".to_string(),
+            to_role: 1,
+            message_type: 0,
+            status: 3,
+            content: "进度如何".to_string(),
+            reply_to_id: None,
+            root_id: None,
+            created_at: 0,
+            file_type: None,
+            file_meta: None,
+        };
+
+        let html = receiver_mention_html(&base, &agents, &users).unwrap();
+        assert!(html.contains("@李雷"));
+        assert!(html.contains("mention-agent"));
+        assert!(html.contains("data-mention-id=\"agt_9\""));
+
+        // 接收方是用户 → 基础 chip，不套 Agent 配色
+        let mut to_user = base.clone();
+        to_user.from_id = "agt_9".to_string();
+        to_user.from_role = 1;
+        to_user.to_id = "u_1".to_string();
+        to_user.to_role = 0;
+        let html = receiver_mention_html(&to_user, &agents, &users).unwrap();
+        assert!(html.contains("@我"));
+        assert!(!html.contains("mention-agent"));
+
+        // 无收件人（默认对话未锚定）→ 不渲染
+        let mut no_to = base;
+        no_to.to_id = String::new();
+        assert!(receiver_mention_html(&no_to, &agents, &users).is_none());
     }
 }
