@@ -991,7 +991,7 @@ pub fn HrAgents() -> Element {
                 // 同步进度（后台任务执行中显示）
                 if syncing() {
                     div { class: "flex items-center gap-2 text-sm text-base-content/70",
-                        span { class: "loading loading-spinner loading-sm" }
+                        Loading { size: "sm" }
                         span { "{sync_progress}" }
                     }
                 }
