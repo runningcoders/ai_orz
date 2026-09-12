@@ -4,6 +4,7 @@ use crate::components::hud::HudPanel;
 use crate::components::hud::PageHeader;
 use dioxus::prelude::*;
 
+use crate::api::finance::list_model_providers;
 use crate::api::hr::{
     create_external_agent, delete_agent, list_agents, query_agents, search_agents,
     select_agent_career, update_agent_status,
@@ -13,6 +14,7 @@ use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
 use crate::layouts::app_layout::AppLayout;
+use crate::pages::hr::bind_model_modal::BindModelModal;
 use crate::pages::hr::create_agent_modal::CreateAgentModal;
 use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::store::toast::use_toast;
@@ -22,8 +24,8 @@ use common::api::seed::{
 };
 use common::api::{
     AgentQueryRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    PreviewPresetAgentsResponse, SearchAgentsRequest, SelectAgentCareerRequest,
-    UpdateAgentStatusRequest,
+    ListModelProvidersResponseItem, PreviewPresetAgentsResponse, SearchAgentsRequest,
+    SelectAgentCareerRequest, UpdateAgentStatusRequest,
 };
 use common::enums::AgentStatus;
 use dioxus_router::Link;
@@ -51,6 +53,19 @@ fn kind_label(kind: &str) -> String {
 // Agent 生命周期状态文案/徽章统一走 `utils::status` 的 SSOT（agent_lifecycle_text /
 // agent_lifecycle_badge），不再本地复制，避免与详情页、聊天侧栏的视觉口径漂移。
 
+/// 生命周期「下一步」动作文案（状态只是结果，动作发生在边上）。
+///
+/// 返回 `None` 表示无需引导的终态（已入职 / 已离职等）。与
+/// [`handle_onboard`] 的分支一一对应：初创→职业选择、面试中→通过面试、待入职→入职选包。
+fn next_action_label(status: i32) -> Option<&'static str> {
+    match AgentStatus::from(status) {
+        AgentStatus::Incubating => Some("选择职业"),
+        AgentStatus::Interviewing => Some("通过面试"),
+        AgentStatus::PendingOnboard => Some("办理入职"),
+        _ => None,
+    }
+}
+
 #[component]
 pub fn HrAgents() -> Element {
     let mut agents = use_signal(Vec::<ListAgentsResponseItem>::new);
@@ -62,6 +77,10 @@ pub fn HrAgents() -> Element {
     let mut show_add_modal = use_signal(|| false);
     // 入职弹窗（选包）：记录待入职的 Agent ID，非空即展示
     let mut onboard_agent_id = use_signal(|| None::<String>);
+    // ===== 绑定模型 Modal：列表「请绑定模型」入口，记录目标 Agent (id, name) =====
+    let mut bind_model_target = use_signal(|| None::<(String, String)>);
+    // 模型提供商清单：用于把 local Agent 的 model_provider_id 解析成可读名称
+    let mut model_providers = use_signal(Vec::<ListModelProvidersResponseItem>::new);
 
     // ===== 外部 Agent 创建 Modal =====
     let mut show_external_modal = use_signal(|| false);
@@ -158,6 +177,15 @@ pub fn HrAgents() -> Element {
         load_data();
     });
 
+    // 模型提供商清单（用于列表「模型/执行器」列展示可读名称；仅拉取一次）
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(resp) = list_model_providers().await {
+                model_providers.set(resp.providers);
+            }
+        });
+    });
+
     // ===== 生命周期推进：状态只是结果，动作发生在「边」上 =====
     // 初创 → 职业选择（按职业/能力匹配个人能力）
     // 面试中 → 通过面试（转入待入职，无副作用）
@@ -209,6 +237,12 @@ pub fn HrAgents() -> Element {
     // 入职弹窗关闭：清空待入职 ID（卸载弹窗）+ 刷新列表
     let on_close_onboard = use_callback(move |_| {
         onboard_agent_id.set(None);
+        load_data();
+    });
+
+    // 绑定模型弹窗关闭：清空目标（卸载弹窗）+ 刷新列表
+    let on_close_bind_model = use_callback(move |_| {
+        bind_model_target.set(None);
         load_data();
     });
 
@@ -513,12 +547,27 @@ pub fn HrAgents() -> Element {
                                         let astatus = agent.status;
                                         let id_delete = id.clone();
                                         let id_onboard = id.clone();
-                                        let display_value = match akind.as_str() {
-                                            "local" => amp.clone(),
-                                            "cli" => "CLI 子进程".to_string(),
-                                            "remote" => "A2A 远程".to_string(),
-                                            _ => amp.clone(),
+                                        let id_bind = id.clone();
+                                        let bind_name = aname.clone();
+                                        // local 类型必须绑定对话模型才能推进生命周期；cli/remote 不需要
+                                        let needs_model = akind == "local" && amp.is_empty();
+                                        // 模型列展示：已绑定则解析为「名称 (模型名)」，解析不到回落原始 ID
+                                        let model_label = if akind == "local" && !amp.is_empty() {
+                                            model_providers
+                                                .read()
+                                                .iter()
+                                                .find(|mp| mp.id == amp)
+                                                .map(|mp| format!("{} ({})", mp.name, mp.model_name))
+                                                .unwrap_or_else(|| amp.clone())
+                                        } else {
+                                            match akind.as_str() {
+                                                "local" => amp.clone(),
+                                                "cli" => "CLI 子进程".to_string(),
+                                                "remote" => "A2A 远程".to_string(),
+                                                _ => amp.clone(),
+                                            }
                                         };
+                                        let next_label = next_action_label(astatus);
                                         rsx! {
                                             tr { key: "{id}",
                                                 td { "data-label": "名称",
@@ -531,20 +580,44 @@ pub fn HrAgents() -> Element {
                                                     span { class: "{kind_badge_class(&akind)}", "{kind_label(&akind)}" }
                                                 }
                                                 td { class: "text-base-content/70", "data-label": "角色", "{aroles}" }
-                                                td { class: "font-mono text-sm", "data-label": "模型/执行器", "{display_value}" }
+                                                td { "data-label": "模型/执行器",
+                                                    // 缺模型：就地给绑定入口，不必进详情页
+                                                    if needs_model {
+                                                        button {
+                                                            class: "btn hud-btn btn-warning btn-xs",
+                                                            onclick: move |_| bind_model_target.set(Some((id_bind.clone(), bind_name.clone()))),
+                                                            "请绑定模型"
+                                                        }
+                                                    } else {
+                                                        span { class: "font-mono text-sm", "{model_label}" }
+                                                    }
+                                                }
                                                 td { "data-label": "状态",
-                                                    span { class: "{agent_lifecycle_badge(astatus)}",
-                                                        "{agent_lifecycle_text(astatus)}"
+                                                    div { class: "flex items-center gap-2",
+                                                        span { class: "{agent_lifecycle_badge(astatus)}",
+                                                            "{agent_lifecycle_text(astatus)}"
+                                                        }
+                                                        // 下一步引导：把状态推进按钮直接放进列表，
+                                                        // 用户可在此一路点完（择业 → 面试 → 入职），无需进详情页
+                                                        if let Some(label) = next_label {
+                                                            if needs_model {
+                                                                button {
+                                                                    class: "btn hud-btn btn-xs btn-ghost",
+                                                                    disabled: true,
+                                                                    title: "请先绑定对话模型",
+                                                                    "{label}"
+                                                                }
+                                                            } else {
+                                                                button {
+                                                                    class: "btn hud-btn btn-primary btn-xs",
+                                                                    onclick: move |_| handle_onboard(id_onboard.clone(), astatus),
+                                                                    "{label}"
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                                 td { "data-label": "操作",
-                                                    // 入职按钮：仅对面试中/待入职的 Agent 显示
-                                                    if astatus == AgentStatus::Interviewing as i32 || astatus == AgentStatus::PendingOnboard as i32 {
-                                                        button { class: "btn hud-btn btn-success btn-sm",
-                                                            onclick: move |_| handle_onboard(id_onboard.clone(), astatus),
-                                                            "入职"
-                                                        }
-                                                    }
                                                     button { class: "btn hud-btn btn-error btn-sm",
                                                         onclick: move |_| {
                                                             pending_delete_id.set(id_delete.clone());
@@ -573,6 +646,11 @@ pub fn HrAgents() -> Element {
         // ===== 入职弹窗（选包）：待入职 Agent 点击「入职」后弹出 =====
         {onboard_agent_id().map(|aid| rsx! {
             OnboardModal { key: "{aid}", agent_id: aid, on_close: on_close_onboard }
+        })}
+
+        // ===== 绑定模型弹窗：列表「请绑定模型」入口 =====
+        {bind_model_target().map(|(aid, aname)| rsx! {
+            BindModelModal { key: "{aid}", agent_id: aid, agent_name: aname, on_close: on_close_bind_model }
         })}
 
         // ===== 外部 Agent 创建弹窗 =====
