@@ -55,11 +55,21 @@ source_files:
   - docs/plan/跨组织业务调用方案.md#L1-L80 (跨组织 JWT 双模式鉴权地基)
   - 【关联卡】docs/wiki/knowledge/zh/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接/联邦组网地基：scope 三态 + organization_links + pairing_code + 目录同步 + WS 长连接.md
   - 【关联卡】docs/wiki/knowledge/zh/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities/跨组织业务调用鉴权模型：dual-mode auth + federation_identity + delegation + audit + capabilities.md
+  - common/src/enums/agent.rs#L1-L80 (AgentStatusEdge 状态转换边枚举：Idle→Incubating→Active + 其他边定义；Incubating 进修状态首次引入)
+  - src/handlers/hr/agent/train_agent.rs#L1-L80 (train_agent 进修 Handler：Idie → Incubating 状态跃迁 + 职业画像写入)
+  - src/handlers/hr/agent/select_agent_career.rs#L1-L80 (select_agent_career 择业 Handler：Incubating → 择业结果 + 更新 AgentRole)
+  - src/handlers/hr/agent/onboard_agent.rs#L1-L120 (onboard_agent 入职 Handler：Incubating → Active + 五步流程原子回滚)
+  - frontend/src/pages/hr/onboard_modal.rs#L1-L200 (入职弹窗 UI：状态 SSOT 收敛 + 语义化表单)
+  - frontend/styles/input.css#L1600-L1700 (入职弹窗相关 CSS：发丝边 + 聚焦态流动光带边框)
+  - 【关联卡】docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md（Agent 生命周期全景装配）
+  - 【关联卡】docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md（Seed 新增 Agent 招聘/用户接待模板）
 ---
 
 ## §1 概述
 
-**本卡角色**：组织权限与用户偏好的知识卡。覆盖 OrganizationDomain 的组织 + 用户双 trait、UserRole 三级并查集（Member→Admin→SuperAdmin 继承规则，has_permission 统一入口）、JWT Cookie+Bearer 双模式鉴权中间件、用户偏好双源沉淀（users.preferences 自报 + knowledge graph user_preference tag 推断，冲突自报优先）、Agent 入职五步流程（草稿→装技能→绑凭证→绑工具→Active）。**定位：新增角色、排查用户 403 权限不足、调试 Agent 入职卡住某一步、理解偏好冲突优先级时读。**
+**本卡角色**：组织权限与用户偏好的知识卡。覆盖 OrganizationDomain 的组织 + 用户双 trait、UserRole 三级并查集（Member→Admin→SuperAdmin 继承规则，has_permission 统一入口）、JWT Cookie+Bearer 双模式鉴权中间件、用户偏好双源沉淀（users.preferences 自报 + knowledge graph user_preference tag 推断，冲突自报优先）、Agent 入职五步流程（草稿→装技能→绑凭证→绑工具→Active）、Agent 生命周期**边驱动状态机**（AgentStatusEdge 枚举替代通用 update_status）、Incubating 进修状态、train_agent / select_agent_career / onboard_agent 语义化接口、**三阶段能力获取**（个人匹配 → 公司指定 → 默认模板优先级）。**定位：新增角色、排查用户 403 权限不足、调试 Agent 入职卡住某一步、理解偏好冲突优先级、追踪 Agent 状态流转、调试进修/择业/入职语义化接口时读。**
+
+**2026-09-12 增量**：Agent 生命周期从「状态枚举 + update_agent_status 通用接口」重构为**边驱动状态机**（common/src/enums/agent.rs 新增 AgentStatusEdge 状态转换边枚举），新增 **Incubating 进修状态**（流转路径 Idle → Incubating → Active），原入职五步被 train_agent（进修）、select_agent_career（择业）、onboard_agent（入职）三个**语义化 Handler** 替代；能力获取改为**三阶段模型**：个人匹配（Agent 自报）→ 公司指定（Organization config）→ 默认模板（Seed 内置），前者存在时覆盖后者；工具标签补齐 agent_management / hr_specialist / reception 三个角色标签；Seed 新增招聘官 Agent 种子 + TEMPLATE_AGENT_RECRUITMENT / TEMPLATE_USER_RECEPTION 预置技能模板。
 
 - **UserRole 并查集继承规则（禁止 role >=2 数字比较，必须用 match + find_root）**（common/src/enums/user_role.rs）：`Member(1)` 基础角色（创建自己的消息/任务）；`Admin(2)` 组织级管理员（邀请成员/分配角色/删除组织内资源，继承 Member 所有权限）；`SuperAdmin(3)` 系统级超管（跨组织管理/备份/系统初始化，继承 Admin 所有权限）。`role.has_permission(UserRole::Admin)` 的实现：`find_root(self) >= find_root(Admin)`，不是简单 `self as i32 >= need as i32`（未来增加 SubAdmin = 1.5 中间层级时旧写法全 break）。AGENTS.md §4.3 强制枚举类型安全。
 - **JWT Cookie + Authorization Bearer 双模式**（pkg/jwt.rs + middleware/auth.rs）：鉴权中间件先查 Cookie: ai_orz_token（浏览器用户，防 XSS 用 `HttpOnly; Secure; SameSite=Lax`）→ 未发现再查 Header Authorization: Bearer <token>（API/脚本调用）；两者解析后得到同一个 Claims{ uid, uname, org_id, role, exp }。decode_token 时校验 exp（过期 5 分钟内可以容忍吗？= 不行，硬校验过期立即 401），校验 org_id 与请求的资源 org_id 是否一致（跨组织访问=403）。
@@ -157,3 +167,7 @@ HR 面板：填写 Agent 名 / 角色描述 / ModelProvider 选择 → 点「入
 10. **DAO 层 ORG_CONFIG_CACHE 采用读穿 + 写穿双模式，避免每条消息落库回查 DB**：消息落库（message DAL）和 Handler 读当前组织配置均走 DAO 缓存；缓存键为 org_id，值为解析后的整个 OrganizationConfig；set_org_config 先落盘再刷缓存（防止写 DB 失败但缓存已脏）；严禁任何业务层直接 SELECT organizations.config 绕过 DAO 缓存。
 11. **联邦 scope 三态（disconnected / peering / federated）不可跨态跃迁**：organization_links.scope 字段只允许 disconnected→peering→federated 单向推进；任何直接从 disconnected 跳到 federated 或从 federated 回退到 disconnected 的写操作一律拒绝（DAO 层 CHECK 约束 + Domain 层显式 guard），防止中间人攻击伪造 pairing_code 直接建立信任。
 12. **organization_link 使用 shadow upsert 静默更新规则**：同一 peer_org_id 重复提交 pairing_code 认证通过时，若已有 link 存在则**静默刷新 remote_endpoint / last_seen_at / capabilities** 不创建新行也不报错；只有 scope 跃迁或 credential 轮换才触发显式审计日志。严禁 shadow upsert 覆盖 admin_notes 等人工维护字段。
+13. **Agent 状态机必须只走语义化接口，禁止外部直接 update_agent_status**：Agent 状态流转外部入口统一收敛到 `/train_agent`（进修）、`/select_agent_career`（择业）、`/onboard_agent`（入职）三个语义化 Handler，底层通过 AgentStatusEdge 边枚举校验转换合法性；原通用 update_agent_status 在语义化接口落地后标记 deprecated，禁止外部业务代码直接调用绕过状态机。
+14. **Incubating 进修状态单入口单出口硬约束**：Incubating 状态只能从 Idle 通过 train_agent 进入（禁止 Active / Draft 等非 Idle 状态直接跳转），离开 Incubating 也只能走 select_agent_career → onboard_agent 的择业-入职链路推进到 Active；任何试图跳过 Incubating 直接从 Idle → Active 的操作一律拒绝（状态机破环防护）。
+15. **三阶段能力获取优先级：个人匹配 > 公司指定 > 默认模板**：Agent 创建时能力来源按此顺序解析，前者存在时覆盖后者——个人匹配（Agent AgentStatus.career_profile 字段）→ 公司指定（OrganizationConfig.agent_capabilities_map）→ 默认模板（Seed default.json 预置模板）。任何阶段失败不阻断，按优先级降级到下一层即可。
+16. **onboard_modal 入职弹窗 UI 状态 SSOT 收敛**：前端入职弹窗（onboard_modal.rs）的 Agent 状态显示**必须**完全从后端 AgentStatus 枚举拉取，禁止前端硬编码状态文案或状态码映射；预置角色列表同步精简为与后端 AgentRole 枚举保持一致，禁止前端擅自增减角色选项。

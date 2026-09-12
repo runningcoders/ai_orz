@@ -50,6 +50,8 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 
 **默认模板补齐 + 敏感字段回填**（2026-09-11 增量）：种子导入/默认模板 apply 路径新增三道关键校验与补齐：① 对话模型 Provider 配置**必须**带 `context_length` 字段（缺失返回 400）；② diff 导入时已存在的实体（`Existing` 状态）免除填写凭据（`api_key` 等敏感字段从 DB 继承）；③ 新增 `seed_sensitive_fields` 前端页面让用户在 apply-default 或导入完成后回填敏感字段（API Key 等），彻底修复「默认模板 apply 写入路径必然失败」的历史 bug——旧版 default.json 中对话模型只写了 model_name/base_url，没写 api_key 占位符，落库时 DAO 层 api_key 非空校验直接拦截。
 
+**2026-09-12 增量**：default.json 新增**招聘官 Agent**（hr_specialist 角色，配合 Agent 招聘生命周期使用）；嵌入式技能模板新增 **TEMPLATE_AGENT_RECRUITMENT**（Agent 招聘技能包，tag=agent_management）+ **TEMPLATE_USER_RECEPTION**（用户接待技能包，tag=reception）；`reception` 同名双身份包打通——既作为普通技能模板存在，又作为 HR 域新入职 Handler 的默认技能包之一，解决「同一业务能力在 Seed 模板和 Handler 默认值中硬编码重复」的问题。embedded.rs 的 EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套。
+
 # §2 关键文件表
 
 | 角色 | 路径 | 关键锚点 |
@@ -61,6 +63,8 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 | 文件系统存储 CRUD | src/service/domain/system/seed/store.rs | 快照文件 CRUD + 路径穿越防护（禁止 `../`）；列出/读取/保存/删除 seed 快照 JSON 文件 |
 | 默认模板编译期内嵌 | src/service/domain/system/seed/default.rs + default.json | `POST /seed/apply-default` 一键初始化数据源；与 Rust 二进制一同编译，无需外部文件 |
 | 5 套 TEMPLATE_* 技能模板（含主文件 skill.md） | src/service/domain/system/seed/skills/TEMPLATE_*/skill.md | TEMPLATE_COMMUNICATION / TEMPLATE_MEMORY_COGNITION / TEMPLATE_PROJECT_MANAGEMENT / TEMPLATE_SKILL_MANAGEMENT / TEMPLATE_TOOL_MANAGEMENT 5 套完整技能定义 |
+| + TEMPLATE_AGENT_RECRUITMENT + TEMPLATE_USER_RECEPTION（2026-09-12 新增） | src/service/domain/system/seed/skills/TEMPLATE_AGENT_RECRUITMENT/skill.md + TEMPLATE_USER_RECEPTION/skill.md | Agent 招聘技能包（tag=agent_management）+ 用户接待技能包（tag=reception）；reception 同名双身份包打通——既作 Seed 模板又作 HR Handler 默认包 |
+| 招聘官 Agent 种子（2026-09-12 新增） | src/service/domain/system/seed/default.json | default.json.agents 数组新增 hr_specialist 角色的招聘官 Agent，生命周期配合 Agent 招聘三阶段模型使用 |
 | 两阶段启动调用链 | src/lib.rs | L97-L154 `run()` 函数：①pkg::init_all → ②service::init → ③producer::init → ④consumer::init → ⑤service::init_base_data（第二阶段） → ⑥AOP 统计注入 → ⑦aop::init_all（第三阶段调度器启动） |
 | init_all_base_data 域派发 | src/service/domain/mod.rs | L23-L45 `init_all_base_data()` 派发：system::init_base_data（cron triggers） + finance::init_base_data（内置工具同步），未来新域需在此注册 |
 | Seed Handler 跨 domain 编排 | src/handlers/system/seed/*.rs | assemble_snapshot_from_db（拉取各 domain 数据→组装 Snapshot）/apply_snapshot_to_db（跨域 CRUD 编排）+ 10 个 HTTP handler（list/get_file/save/load/delete/diff/diff_files/get_default/apply_default） |
@@ -160,3 +164,4 @@ service::init_base_data → AOP metrics hook inject → aop::init_all
 8. **apply_default 幂等红线**：`POST /seed/apply-default` 多次调用必须结果一致（幂等）；对已存在 ID 的条目走 `Update(INHERIT_CURRENT)` 而非覆盖，避免管理员二次初始化破坏已有配置
 9. **apply_preset_skills 新技能创建必须合并 imports，两步走必崩**：旧逻辑（create_skill → update_skill 两步走）在 HTTP /initialize 路由下必然 Forbidden——background_task run_steps 用的是 Guest ctx（user_id 空、user_role None），create_skill 成功后 update_skill 会被 ensure_skill_access 拦截（既不是刚创建的技能作者，也不是管理员）。**新逻辑**：一次性 create_skill（把 imports 直接塞 CreateSkillParams），create 内部文件写入是原子流程，不走 ensure 守卫。**硬约束**：禁止在 apply_preset_skills 中对新技能再单独调 update_skill，两步走 = 初始化路径权限 bug 复现
 10. **对话模型 seed 配置必须带 context_length**：种子导入 diff 校验 + apply-default 默认模板两条路径，对话模型 Provider 的 `context_length` 字段是**必填项**（Embedding Provider 可空）。缺失返回 400 `context_length_required`。**原因**：Agent 运行时需要此字段计算 Token 占比上下文阈值（`agent_runtime_state.context_threshold`），缺了会导致前端 RingProgress 无法显示 + Agent 思考时无法判断上下文是否接近溢出
+11. **reception 同名双身份包单向引用（禁反向）**：TEMPLATE_USER_RECEPTION（Skill 模板）与 HR onboarding Handler 的默认技能包引用 reception tag 时，两者**必须**复用同一个 tag 常量（common/src/enums/tool_tag.rs SkillTag::Reception）；禁止 Handler 侧硬编码 "reception" 字符串；禁止 Skill 模板硬编码 "agent_reception" 等变体。Seed 与 Handler 共享枚举定义，保证技能安装时 `find_by_tag(SkillTag::Reception)` 能精确命中模板

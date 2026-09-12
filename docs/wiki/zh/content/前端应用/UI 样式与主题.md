@@ -344,3 +344,20 @@ AI Orz 前端的样式系统以 Tailwind CSS v4 与 DaisyUI v5 为核心，通�
 - [frontend/styles/input.css:2-37](frontend/styles/input.css#L2-L37)
 - [frontend/styles/input.css:47-72](frontend/styles/input.css#L47-L72)
 - [frontend/src/pages/system/docs.rs:191-201](frontend/src/pages/system/docs.rs#L191-L201)
+
+---
+
+### 本文关联的文档
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格/Tailwind CSS v4 + DaisyUI v5 主题系统与 HUD 驾驶舱风格.md（主题瘦身约束 + 输入框光带约束）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束/UI Design System 组件设计系统：6 层组件分层 + Hooks 3 个 + Store 2 个 + DaisyUI 主题 + 交互组件复用约束.md（Design System 整体规范）
+
+---
+
+### 更新摘要（2026-09-12，base cdc30c46→HEAD）
+**主题**：DaisyUI 主题瘦身 + 输入框静息态发丝边 + 聚焦态流动光带边框
+**关键变更**：
+1. **删除 7 个无用 DaisyUI 内置皮肤**——从 @plugin "daisyui" 的 themes 列表中删除 bumblebee/emerald/forest/wireframe/black/sun/winter 等 7 个低频主题；仅保留自研双主题 orz-light + orz-dark + 精选内置主题（lemonade/caribou 等），总数 ≤10；
+2. **hooks/mod.rs AVAILABLE_THEMES 同步**——与 DaisyUI themes 数组保持一一对应，禁止 UI 选择器展示已删除主题；
+3. **输入框静息态发丝边**——`.hud-input` 新增 1px 渐变描边 + backdrop-blur 微妙发光层（box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)）；
+4. **输入框聚焦态流动光带边框**——`.hud-input:focus-within` 触发 `hud-signal` keyframes 扫过输入框边缘，橙光从左至右 1.2s 循环一次，呼应 HUD 驾驶舱流光风格。
+**涉及 RAG 卡**：Tailwind CSS v4 + DaisyUI v5 主题系统卡 + UI Design System 组件设计系统卡

@@ -40,6 +40,8 @@ source_files:
 
 **本卡角色**：Agent 视角下工具与技能全景数据的"按需装配"机制知识卡。覆盖 DTO 结构 `AgentToolsOverview`（neural_tools / bound_tools / pack_groups 三分组互斥并集等于运行时注入全集）和 `AgentSkillsOverview`（neural_skills / pack_groups / standalone_skills）、Hr domain 产出 ID 分组的业务规则（neural → bound → pack 优先级去重）、Handler 层 `association.rs` 跨领域编排（调 finance domain 批量查工具实体 → runtime domain 就绪探测 → 复用专业领域 `to_list_item` 打包，避免硬编码 Unknown）。**定位：新增 Agent 全景展示、排查分组遗漏/重复、调试 runtime_ready 未正确传递时读。**
 
+**2026-09-12 增量**：Agent 状态字段与后端 AgentStatusEdge 边驱动状态机对齐——`get_agent_association_groups` 中新增 Incubating 状态识别（状态流转 Idle→Incubating→Active）；Handler 工具标签补齐 agent_management / hr_specialist / reception 三个角色标签（对应 Seed 新增的招聘官 Agent + Agent 招聘/用户接待模板）；前端 Agent 详情页（agent_detail.rs）预置角色列表**必须**从后端 AgentRole 枚举拉取（SSOT 收敛），禁止前端硬编码角色列表；入职弹窗 UI 收敛到 onboard_modal.rs 独立组件，弹窗内 Agent 状态显示完全由后端状态驱动。
+
 - **按需装配**：`GetAgentRequest.with_tools` / `with_skills` 为 Option 开关，关闭时跳过全部工具/技能查询并在响应中跳过对应 DTO 字段（`None` + `serde(skip_serializing_if)`），避免 Agent 详情页高频拉取时的冗余开销。
 - **专业领域打包复用**：Handler 层不重复实现 DTO 转换逻辑——工具走 `finance::tool::response::to_list_item`（内含 `runtime_ready` 就绪状态，来自 runtime domain `probe_runtime_ready` 带 TTL 30s 缓存），技能走 `hr::skill::response::to_list_item`。domain 层只产出 ID 分组，打包职责归专业领域。
 - **三分组去重规则同源**：工具分组（neural tags 过滤 internal → agent_tools 关联表 → 按 installed_tags 展开）与运行时唤醒装配逻辑完全同源（`src/service/domain/hr/agent.rs#L654-L845`），确保全景展示与实际注入一致。

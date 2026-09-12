@@ -24,6 +24,8 @@ source_files:
 
 前端基于 **Dioxus 0.7 (WASM)**，样式采用 **Tailwind CSS v4.1** + **DaisyUI v5** 组件库，通过 `frontend/styles/input.css` 作为唯一入口，构建时由 `frontend/build.rs` 调用 `@tailwindcss/cli` 编译为 `frontend/public/output.css` 并嵌入到 Dioxus 产物中。构建脚本在 Cargo 编译阶段自动执行 `npm install`（若缺失）并运行 `tailwindcss -i styles/input.css -o public/output.css --minify`，同时监听 `styles/input.css`、`package.json`、`package-lock.json` 变化触发重建。
 
+**2026-09-12 主题瘦身增量**：DaisyUI `@plugin "daisyui"` 块中从 31 个内置主题**精简删除 7 个无用皮肤**（如 bumblebee / emerald / forest / wireframe / black / sun / winter 等低频主题），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou 等高频）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 列表，禁止 UI 选择器展示已删除主题。输入框视觉升级为**静息态发丝边**（`.hud-input` 1px 渐变描边 + 微妙发光层）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 扫过输入框边缘，橙光从左至右 1.2s 循环一次，呼应 HUD 驾驶舱流光风格）。
+
 ## 2. 核心文件与包
 
 - `frontend/styles/input.css`：Tailwind 入口，声明 DaisyUI 插件、31 个主题、`@theme` 字体变量、自定义 `orz-light` 品牌主题、HUD/知识图谱动画、Markdown 渲染样式。
@@ -80,3 +82,5 @@ source_files:
 11. **全站 HUD 原子组件收口红线**：全站所有卡片/徽章/标签/提示条/进度条/分割线/表格/标签页 **必须** 使用 `components/hud.rs` 原语（`HudPanel`/`HudCard`/`HudCallout`/`HudProgress`/`HudDivider`/`HudTable`/`HudTabs`）或 `input.css` 的 `.hud-*` CSS 变体（`.badge.hud-badge`/`.hud-modal`/`.hud-input`）。**禁止** 自定义非 HUD 风格的卡片容器、徽章或标签页。
 12. **HudBadge 玻璃光晕约束**：所有徽章类视觉 **必须** 使用 `.badge.hud-badge` 皮肤（带 `backdrop-blur` + `glow` 光晕，见 `frontend/styles/input.css#L1507-L1549`），保持 HUD 驾驶舱视觉一致性。禁用旧版无光晕裸 `badge`。
 13. **hud-tone 旧变体移除红线**：前端页面已废弃 hud-tone 独立变体，统一收口为 `HudCard { tone: Some("primary"|"accent"|"success"|"neutral") }`。**禁止** 新增 `.hud-tone-*` 类名直写或自定义 tone 变体。
+14. **DaisyUI 内置主题瘦身约束**：`@plugin "daisyui"` 的 themes 列表**禁止**超过 10 个主题（自研 orz-light / orz-dark + 精选内置 ≤8 个），删除的 bumblebee/emerald/forest/wireframe/black/sun/winter 等 7 个主题**永不回流**；`AVAILABLE_THEMES` 列表与 DaisyUI themes 数组必须保持一一对应，禁止 UI 选择器展示已删除主题。
+15. **输入框发丝边 + 流动光带边框约束**：所有表单输入（`<input>` / `<textarea>` / `<select>`）**必须**使用 `.hud-input` 皮肤——静息态 1px 发丝边（`border-image` 渐变 + `backdrop-blur` 微妙发光层），聚焦态触发 `hud-signal` keyframes 扫过边框（橙光从左至右 1.2s 循环）；禁止裸 `<input>` 无 `.hud-input` class；禁止使用 DaisyUI 原生 `.input` 皮肤替代（视觉不一致）。

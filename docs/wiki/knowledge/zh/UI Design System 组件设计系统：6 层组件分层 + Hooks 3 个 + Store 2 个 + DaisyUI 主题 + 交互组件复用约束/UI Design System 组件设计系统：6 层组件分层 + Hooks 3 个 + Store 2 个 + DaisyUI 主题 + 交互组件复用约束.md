@@ -47,6 +47,8 @@ source_files:
 
 本知识卡沉淀 AI Orz 前端（Dioxus 0.7 WebAssembly）的 **Design System 组件设计系统**规范，覆盖 6 层组件分层架构、3 个自定义 Hooks、2 个全局 Store、DaisyUI 5 主题体系、以及交互组件的复用约束。项目已从 Mistral 设计系统内联样式迁移到 **Tailwind CSS v4 + DaisyUI v5** 组件库实现（2026-07-25 里程碑），自定义 `orz-light` 主题承袭 Mistral 暖色基因（品牌橙 + 暖象牙底色），同时开放 30+ 内置主题供用户切换。
 
+**2026-09-12 增量**：DaisyUI 主题系统瘦身——从 31 个内置主题**删除 7 个无用皮肤**（bumblebee / emerald / forest / wireframe / black / sun / winter），仅保留自研双主题 `orz-light`（暖色驾驶舱）+ `orz-dark`（深色驾驶舱）+ 少量精选内置主题（lemonade / caribou）。同步 `hooks/mod.rs` 的 `AVAILABLE_THEMES` 数组，禁止 UI 选择器展示已删除主题。输入框视觉升级：`.hud-input` 新增**静息态发丝边**（1px 渐变描边 + 微妙发光层 `box-shadow: 0 0 0 1px rgba(250, 82, 15, 0.08)`）+ **聚焦态流动光带边框**（`hud-input:focus-within` 触发 `hud-signal` keyframes 从左至右扫过输入框边缘，橙光 1.2s 循环一次，呼应 HUD 驾驶舱流光风格），彻底替换之前普通的 1px gray-300 描边。
+
 # §2 关键文件表
 
 | 角色 | 路径 | 关键锚点 |

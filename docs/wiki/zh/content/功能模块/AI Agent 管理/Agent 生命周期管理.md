@@ -360,3 +360,21 @@ C --> L
 ```
 
 [此图为概念性流程图，不直接映射具体源码文件]
+
+---
+
+### 本文关联的文档
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md（Agent 入职五步流程 + 边驱动状态机 + Incubating 进修状态 + 三阶段能力获取）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断/Skill 系统增强：5 套 TEMPLATE 预置包 + install_skill_pack 幂等 Tag 分发 + Agent 入职绑定 + Prompt Token 熔断.md（新标签 agent_management/hr_specialist/reception + 2 套新模板）
+
+---
+
+### 更新摘要（2026-09-12，base cdc30c46→HEAD）
+**主题**：Agent 生命周期新增 Incubating 进修状态 + 边驱动状态机 + 语义化 Handler + 三阶段能力获取
+**关键变更**：
+1. **Incubating 进修状态**——状态流转路径从 Idle→Draft→Active 扩展为 Idle→Incubating→Active；common/src/enums/agent.rs 新增 AgentStatusEdge 边枚举校验状态转换合法性；
+2. **语义化 Handler 路由**——/train_agent（进修：Idie→Incubating + 职业画像写入）、/select_agent_career（择业：Incubating→择业结果 + 更新 AgentRole）、/onboard_agent（入职：Incubating→Active + 五步流程原子回滚）替代 update_agent_status 通用接口；
+3. **三阶段能力获取模型**——个人匹配（AgentStatus.career_profile）→ 公司指定（OrganizationConfig.agent_capabilities_map）→ 默认模板（Seed default.json），前者覆盖后者；
+4. **工具标签补齐**——agent_management（Agent 生命周期管理）、hr_specialist（招聘官/HR 专家）、reception（用户接待）三个新角色标签；install_skill_pack 的 tag 分发维度扩展；
+5. **onboard_modal 入职弹窗 UI**——独立组件收敛入职表单；Agent 状态显示完全从后端 AgentStatus 枚举拉取（SSOT 收敛）；预置角色精简与后端 AgentRole 枚举对齐。
+**涉及 RAG 卡**：组织权限与用户偏好卡 + Skill 系统增强卡 + 种子配置卡 + Agent 关联全景卡

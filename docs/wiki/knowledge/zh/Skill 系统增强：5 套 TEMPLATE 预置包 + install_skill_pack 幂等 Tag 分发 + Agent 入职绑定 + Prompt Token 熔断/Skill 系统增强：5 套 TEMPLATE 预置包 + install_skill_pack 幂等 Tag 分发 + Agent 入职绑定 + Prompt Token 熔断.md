@@ -62,6 +62,8 @@ source_files:
 
 # §1 概述（一句话定位 + 解决什么问题）
 
+**2026-09-12 增量**：`install_skill_pack` 的 tag 分发维度新增三个**工具角色标签**——agent_management（Agent 生命周期管理）、hr_specialist（招聘官/HR 专家）、reception（用户接待）。其中 reception 作为「同名双身份包」同时被 Seed 默认模板（TEMPLATE_USER_RECEPTION）和 HR 域 onboarding Handler 的默认技能包引用，保证 `find_by_tag(SkillTag::Reception)` 统一命中模板；embedded.rs 新增 TEMPLATE_AGENT_RECRUITMENT + TEMPLATE_USER_RECEPTION 两套编译期嵌入技能文件（EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套）；install_default_skill_packs 顺序中追加 agent_management / hr_specialist / reception 三个角色技能包。
+
 **2026-09-10 增量**：前端技能库管理页（`frontend/src/pages/hr/skills.rs` 大改 371 行）升级——从扁平列表改为树形层级展示 + 分页（每页 20 条）+ 默认筛选"已发布"状态。skill 卡片支持按 agent 类型 tag 分组折叠展示（如 Communication/Agent 技能集 → Memory/Cognition 技能集 → 工具绑定集）。对应前端 API 层 `frontend/src/api/hr.rs` 新增 list_skills_paginated 接口（带 status/tag/pagination 查询参数），navbar 路由注册技能管理页面入口。
 
 **2026-09-11 增量**：技能列表展开控件从文字按钮改为纯图标 + tooltip（沿用 workspace.rs / finance tools.rs 折叠控件视觉语汇）；已确认无副本的行展开后显示箭头但 `visibility:hidden`（占位对齐 + 移出无障碍树）；空副本锁死 bug 修复——展开后 toggle 不再 disabled，收起后箭头隐藏

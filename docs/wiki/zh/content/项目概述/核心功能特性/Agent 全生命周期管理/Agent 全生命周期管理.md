@@ -427,3 +427,22 @@ F["消费者"] --> E
 章节来源
 - [router.rs:329-364](src/router.rs#L329-L364)
 - [handlers/finance/message/send_message_to_agent.rs:37-57](src/handlers/finance/message/send_message_to_agent.rs#L37-L57)
+
+---
+
+### 本文关联的文档
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步/组织权限与用户偏好：Organization多级 + UserRole并查集继承 + JWT双模式 + 偏好双源沉淀 + Agent入职五步.md（Agent 入职五步流程 + 边驱动状态机 + Incubating 进修状态 + 三阶段能力获取）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配/Agent 关联全景与工具技能分组装配：三分组互斥去重 + 专业领域打包复用 + 按需装配.md（Agent 全景装配 + 状态 SSOT 收敛）
+
+---
+
+### 更新摘要（2026-09-12，base cdc30c46→HEAD）
+**主题**：Agent 生命周期从「状态枚举 + 通用 update_status」重构为边驱动状态机 + Incubating 进修状态 + 语义化 Handler + 三阶段能力获取
+**关键变更**：
+1. **边驱动状态机重构**——common/src/enums/agent.rs 新增 AgentStatusEdge 状态转换边枚举（Idle→Incubating→Active 等），替代通用 update_agent_status 接口；新增 Incubating 进修状态；
+2. **语义化 Handler**——/train_agent（进修：Idle→Incubating）、/select_agent_career（择业：Incubating→择业结果）、/onboard_agent（入职：Incubating→Active + 五步流程原子回滚）替代 update_agent_status 通用接口；
+3. **三阶段能力获取**——个人匹配（AgentStatus.career_profile）→ 公司指定（OrganizationConfig.agent_capabilities_map）→ 默认模板（Seed default.json），前者存在时覆盖后者；
+4. **前端入职弹窗 UI**——onboard_modal.rs 独立组件 + Agent 状态 SSOT 收敛（从后端 AgentStatus 枚举拉取，禁止前端硬编码）；预置角色精简与后端 AgentRole 枚举对齐；
+5. **工具标签补齐**——agent_management / hr_specialist / reception 三个新角色标签；Seed 新增招聘官 Agent + TEMPLATE_AGENT_RECRUITMENT / TEMPLATE_USER_RECEPTION 预置技能模板；
+6. **前端主题瘦身**——DaisyUI 删除 7 个无用内置皮肤（bumblebee/emerald/forest/wireframe/black/sun/winter），仅保留自研双主题 + 精选内置；输入框升级为静息态发丝边 + 聚焦态流动光带边框（input.css hud-input 皮肤）。
+**涉及 RAG 卡**：组织权限与用户偏好卡 + Agent 关联全景卡 + Skill 系统增强卡 + 种子配置卡 + UI Design System 卡 + Tailwind CSS 主题卡
