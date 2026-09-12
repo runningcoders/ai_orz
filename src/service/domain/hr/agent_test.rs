@@ -25,12 +25,18 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dao::cortex::init();
+    // 组织（HR 入职要读组织级配置 OrganizationConfig.agent_onboard）
+    crate::service::dao::organization::init();
+    crate::service::dao::organization_link::init();
+    crate::service::dao::organization_pairing::init();
+    crate::service::dao::federation_contract::init();
 
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
     crate::service::dal::skill::init();
     crate::service::dal::model_provider::init();
+    crate::service::dal::organization::init();
 
     // 初始化 HR Domain
     super::init();
@@ -153,11 +159,14 @@ async fn test_transition_status_persists_valid_agent_lifecycle(pool: SqlitePool)
         .await
         .unwrap();
 
-    domain
-        .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
-        .await
-        .unwrap();
+    // 初创 → 面试中 → 待入职（完整生命周期）
+    for status in [AgentStatus::Interviewing, AgentStatus::PendingOnboard] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status, None)
+            .await
+            .unwrap();
+    }
 
     assert_eq!(agent.po.status, AgentStatus::PendingOnboard);
 
@@ -182,13 +191,14 @@ async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool
         .await
         .unwrap();
 
+    // 初创态不能直接跳到已入职：中间必须走完「职业选择 → 待入职」两步
     let result = domain
         .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded, None)
         .await;
 
     assert!(result.is_err());
-    assert_eq!(agent.po.status, AgentStatus::Interviewing);
+    assert_eq!(agent.po.status, AgentStatus::Incubating);
 
     let found = domain
         .agent_manage()
@@ -197,14 +207,42 @@ async fn test_transition_status_rejects_invalid_agent_lifecycle(pool: SqlitePool
         .unwrap()
         .expect("rejected transition should keep agent readable");
 
-    assert_eq!(found.po.status, AgentStatus::Interviewing);
+    assert_eq!(found.po.status, AgentStatus::Incubating);
 }
 
+/// 状态机准入：初创态不能直接跳到「待入职」—— 必须先完成职业生涯选择。
+///
+/// 这条门禁是「状态只是结果」的保障：没走 `Incubating → Interviewing` 这条边，
+/// 就拿不到任何角色相关能力，也就没资格进入招聘流程。
 #[sqlx::test]
-async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
+async fn test_incubating_cannot_skip_career_selection(pool: SqlitePool) {
+    let (domain, ctx) = init_test_env(pool.clone());
+
+    let mut agent = create_test_agent("SkipCareerAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    assert_eq!(agent.po.status, AgentStatus::Incubating);
+
+    let result = domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard, None)
+        .await;
+
+    assert!(result.is_err(), "初创态应禁止直接转入待入职");
+    assert_eq!(agent.po.status, AgentStatus::Incubating);
+}
+
+/// 入职（PendingOnboard → Onboarded）：安装**本次指定**的组织级包。
+///
+/// `packs` 显式传入时以它为准（组织配置不再叠加），用于入职弹窗选包的场景。
+#[sqlx::test]
+async fn test_onboard_installs_explicitly_selected_packs(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
 
-    // 准备 project_management 已发布技能（库里无对应资源时入职安装会被跳过）
+    // 准备 project_management 已发布技能（库里无对应资源时技能包安装会被跳过）
     let pm_skill = create_published_skill_with_tag("ProjectManagement", "project_management");
     domain
         .skill_manage()
@@ -219,15 +257,78 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // Interviewing → PendingOnboard → Onboarded
-    domain
+    // 初创 → 面试中（职业选择）→ 待入职 → 已入职
+    for status in [
+        AgentStatus::Interviewing,
+        AgentStatus::PendingOnboard,
+        AgentStatus::Onboarded,
+    ] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status, None)
+            .await
+            .unwrap();
+    }
+
+    // 组织配置为空时，入职不应装任何组织包（本项目默认不再硬编码包名）
+    let found = domain
         .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .get_agent(ctx.clone(), agent.id(), Default::default())
+        .await
+        .unwrap()
+        .expect("onboarded agent should be readable");
+    assert!(
+        !found
+            .po
+            .get_installed_tags()
+            .contains(&"project_management".to_string()),
+        "组织未配置任何包时，入职不应自行安装 project_management"
+    );
+}
+
+/// 入职（PendingOnboard → Onboarded）：组织级包落库（同名双重身份，两个字段都要写）。
+///
+/// 这里显式传入 `packs` 模拟「入职弹窗勾选」；组织配置回退路径见
+/// `test_onboard_falls_back_to_org_config`。
+#[sqlx::test]
+async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+
+    // 准备 project_management 已发布技能（库里无对应资源时技能包安装会被跳过）
+    let pm_skill = create_published_skill_with_tag("ProjectManagement", "project_management");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&pm_skill))
         .await
         .unwrap();
+
+    let mut agent = create_test_agent("OnboardAgent");
     domain
         .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+
+    // 初创 → 面试中（职业选择）→ 待入职
+    for status in [AgentStatus::Interviewing, AgentStatus::PendingOnboard] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status, None)
+            .await
+            .unwrap();
+    }
+    // 已入职：本次显式指定组织包
+    domain
+        .agent_manage()
+        .transition_status(
+            ctx.clone(),
+            &mut agent,
+            AgentStatus::Onboarded,
+            Some(common::api::AgentPackSelection {
+                tool_packs: vec!["project_management".to_string()],
+                skill_packs: vec!["project_management".to_string()],
+            }),
+        )
         .await
         .unwrap();
 
@@ -258,13 +359,15 @@ async fn test_onboard_installs_project_management_tag(pool: SqlitePool) {
     );
 }
 
-/// 入职第二阶段(a) 个人匹配：按 `roles ∪ capabilities` 逐 tag 装包。
+/// 职业选择（初创 → 面试中）：按 `roles ∪ capabilities` 逐 tag 装包。
+///
+/// 这是「选择职业」这条边，不是入职 —— 能力来自 Agent 自己的身份/能力标签。
 ///
 /// 重点验证「工具看 installed_tags、技能必须有副本」这处不对称 —— 只做一侧都会瘸腿：
 /// - 工具授权 = `neural ∪ (tool.tags ∩ installed_tags)`，**不含 roles**；
 /// - 技能必须先以副本进入 Agent 副本池（`author_id = agent_id`）才轮得到 match_keys 判定。
 #[sqlx::test]
-async fn test_onboard_personal_matching_binds_role_tagged_packs(pool: SqlitePool) {
+async fn test_career_selection_binds_role_tagged_packs(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool.clone());
     let finance = init_finance_env(pool.clone());
 
@@ -283,20 +386,19 @@ async fn test_onboard_personal_matching_binds_role_tagged_packs(pool: SqlitePool
         .await
         .unwrap();
 
-    // 走真实生命周期：create（Interviewing）→ PendingOnboard → Onboarded
+    // 走真实生命周期：create（初创）→ 面试中（职业选择）
+    // 关键：职业包在「初创 → 面试中」这条边就装完，不必等到入职
     let mut agent = create_test_agent("PersonalMatchAgent");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
-        domain
-            .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, status)
-            .await
-            .unwrap();
-    }
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
+        .await
+        .unwrap();
 
     let found = domain
         .agent_manage()
@@ -346,13 +448,12 @@ async fn test_onboard_skips_tags_without_resources(pool: SqlitePool) {
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
-        domain
-            .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, status)
-            .await
-            .unwrap();
-    }
+    // 职业选择这条边：roles/capabilities 的 worker / coding 库里无资源 → 不得留下脏 tag
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
+        .await
+        .unwrap();
 
     let found = domain
         .agent_manage()
@@ -360,11 +461,10 @@ async fn test_onboard_skips_tags_without_resources(pool: SqlitePool) {
         .await
         .unwrap()
         .unwrap();
-    // installed_tags 应只含公司指定包；roles/capabilities 的 worker / coding 无资源 → 不得留下脏 tag
-    assert_eq!(
-        found.po.get_installed_tags(),
-        vec!["project_management".to_string()],
-        "只有公司指定包可无条件写入；个人匹配的 worker / coding 无资源不应出现"
+    assert!(
+        found.po.get_installed_tags().is_empty(),
+        "个人匹配：无资源的 tag 一律不得写入 installed_tags，实际={:?}",
+        found.po.get_installed_tags()
     );
     assert!(
         found.po.get_installed_skill_packs().is_empty(),
@@ -373,25 +473,23 @@ async fn test_onboard_skips_tags_without_resources(pool: SqlitePool) {
     );
 }
 
-/// 同步阶段 3 自愈：角色相关包是 Agent 入职**之后**才发布的 → 点同步应补齐。
+/// 进修阶段 3 自愈：角色相关包是 Agent 走完职业选择**之后**才发布的 → 进修应补齐。
 #[sqlx::test]
-async fn test_sync_agent_packs_heals_onboard_bindings(pool: SqlitePool) {
+async fn test_train_agent_heals_career_bindings(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
 
-    // 入职时库里还没有 worker 资源 → 未绑定
+    // 职业选择时库里还没有 worker 资源 → 未绑定
     let mut agent = create_test_agent("HealAgent");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
         .await
         .unwrap();
-    for status in [AgentStatus::PendingOnboard, AgentStatus::Onboarded] {
-        domain
-            .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, status)
-            .await
-            .unwrap();
-    }
+    domain
+        .agent_manage()
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
+        .await
+        .unwrap();
     assert!(
         domain
             .agent_manage()
@@ -401,7 +499,7 @@ async fn test_sync_agent_packs_heals_onboard_bindings(pool: SqlitePool) {
             .is_empty()
     );
 
-    // 入职之后才发布「角色相关」技能
+    // 职业选择之后才发布「角色相关」技能
     let skill = create_published_skill_with_tag("LateWorkerSkill", "worker");
     domain
         .skill_manage()
@@ -409,34 +507,132 @@ async fn test_sync_agent_packs_heals_onboard_bindings(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // 同步 → 阶段 3 重跑个人匹配并补装
+    // 进修 → 阶段 3 重跑职业匹配并补装
     let resp = domain
         .agent_manage()
-        .sync_agent_packs(ctx.clone(), agent.id())
+        .train_agent(ctx.clone(), agent.id())
         .await
         .unwrap();
     assert!(
         resp.installed_skill_packs.contains(&"worker".to_string()),
-        "同步应补齐入职后才发布的角色相关技能包，实际={:?}",
+        "进修应补齐职业选择后才发布的角色相关技能包，实际={:?}",
         resp.installed_skill_packs
     );
 
-    // 幂等：再同步一次无新增
+    // 幂等：再进修一次无新增
     let resp2 = domain
         .agent_manage()
-        .sync_agent_packs(ctx.clone(), agent.id())
+        .train_agent(ctx.clone(), agent.id())
         .await
         .unwrap();
     assert!(
         resp2.installed_skill_packs.is_empty(),
-        "重复同步应幂等，实际={:?}",
+        "重复进修应幂等，实际={:?}",
         resp2.installed_skill_packs
     );
 }
 
+/// 建立测试组织并写入组织级入职配置，返回带 `organization_id` 的 ctx
+async fn setup_org_onboard_config(
+    ctx: RequestContext,
+    org_id: &str,
+    required: &[&str],
+) -> RequestContext {
+    let org_dal = crate::service::dal::organization::dal();
+    let org_po = crate::models::organization::OrganizationPo::new(
+        org_id.to_string(),
+        "测试组织".to_string(),
+        String::new(),
+        None,
+        "admin".to_string(),
+    );
+    org_dal.create(ctx.clone(), &org_po).await.unwrap();
+    org_dal
+        .update_org_config(
+            ctx.clone(),
+            org_id,
+            &common::api::OrganizationConfig {
+                agent_onboard: common::api::AgentOnboardConfig {
+                    required_tool_packs: required.iter().map(|s| s.to_string()).collect(),
+                    required_skill_packs: required.iter().map(|s| s.to_string()).collect(),
+                },
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    // AgentPo 无 organization_id，组织归属一律取自 ctx
+    let mut ctx = ctx;
+    ctx.organization_id = Some(org_id.to_string());
+    ctx
+}
+
+/// 入职（待入职 → 已入职）：`packs` 未传时回退**组织级配置**。
+///
+/// 这是「组织要求你会」的落地路径：包名由组织管理员在组织信息页维护，
+/// 代码里不再硬编码任何包名。
 #[sqlx::test]
-async fn test_non_onboard_transition_does_not_install_tag(pool: SqlitePool) {
-    let (domain, ctx) = init_test_env(pool.clone());
+async fn test_onboard_falls_back_to_org_config(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let ctx = setup_org_onboard_config(ctx, "org-onboard-test", &["project_management"]).await;
+
+    let pm_skill = create_published_skill_with_tag("ProjectManagement", "project_management");
+    domain
+        .skill_manage()
+        .create_skill(ctx.clone(), CreateSkillParams::from_skill(&pm_skill))
+        .await
+        .unwrap();
+
+    let mut agent = create_test_agent("OrgConfigAgent");
+    domain
+        .agent_manage()
+        .create_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    for status in [
+        AgentStatus::Interviewing,
+        AgentStatus::PendingOnboard,
+        AgentStatus::Onboarded,
+    ] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status, None)
+            .await
+            .unwrap();
+    }
+
+    let found = domain
+        .agent_manage()
+        .get_agent(ctx, agent.id(), Default::default())
+        .await
+        .unwrap()
+        .expect("onboarded agent should be readable");
+    assert!(
+        found
+            .po
+            .get_installed_tags()
+            .contains(&"project_management".to_string()),
+        "组织配置的工具包应在入职时落地，实际={:?}",
+        found.po.get_installed_tags()
+    );
+    assert!(
+        found
+            .po
+            .get_installed_skill_packs()
+            .contains(&"project_management".to_string()),
+        "组织配置的技能包应在入职时落地，实际={:?}",
+        found.po.get_installed_skill_packs()
+    );
+}
+
+/// 「面试中 → 待入职」这条边无副作用：组织包只在**入职**那条边落地。
+///
+/// 即使组织已配置 project_management，走到待入职也不该提前装。
+#[sqlx::test]
+async fn test_pending_onboard_transition_does_not_install_org_packs(pool: SqlitePool) {
+    let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
+    let ctx = setup_org_onboard_config(ctx, "org-pending-test", &["project_management"]).await;
 
     let mut agent = create_test_agent("NonOnboardAgent");
     domain
@@ -445,12 +641,14 @@ async fn test_non_onboard_transition_does_not_install_tag(pool: SqlitePool) {
         .await
         .unwrap();
 
-    // Interviewing → PendingOnboard (NOT Onboarded)
-    domain
-        .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
-        .await
-        .unwrap();
+    // 初创 → 面试中 → 待入职（故意不走到已入职）
+    for status in [AgentStatus::Interviewing, AgentStatus::PendingOnboard] {
+        domain
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, status, None)
+            .await
+            .unwrap();
+    }
 
     // Verify installed_tags is empty
     assert!(agent.po.get_installed_tags().is_empty());
@@ -648,11 +846,17 @@ fn init_test_env_with_fs(
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dao::cortex::init();
+    // 组织（HR 入职要读组织级配置 OrganizationConfig.agent_onboard）
+    crate::service::dao::organization::init();
+    crate::service::dao::organization_link::init();
+    crate::service::dao::organization_pairing::init();
+    crate::service::dao::federation_contract::init();
 
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
     crate::service::dal::model_provider::init();
+    crate::service::dal::organization::init();
     let skill_dal = crate::service::dal::skill::new(
         crate::service::dao::skill::new_skill_dao_with_base_path(base_path),
         crate::service::dao::skill::vector_dao(),
@@ -665,6 +869,7 @@ fn init_test_env_with_fs(
         crate::service::dal::tool::dal(),
         skill_dal,
         std::sync::Arc::new(crate::service::dal::agent::AgentRuntimeDalImpl),
+        crate::service::dal::organization::dal(),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)
@@ -983,10 +1188,10 @@ async fn test_reinstall_skill_pack_updates_existing_copy(pool: SqlitePool) {
 }
 
 #[sqlx::test]
-async fn test_sync_agent_packs_fills_missing_base_and_new_skills(pool: SqlitePool) {
+async fn test_train_agent_fills_missing_base_and_new_skills(pool: SqlitePool) {
     let (domain, ctx, _temp_dir) = init_test_env_with_fs(pool);
 
-    let agent = create_test_agent("SyncPacksAgent");
+    let agent = create_test_agent("TrainPacksAgent");
     domain
         .agent_manage()
         .create_agent(ctx.clone(), &agent)
@@ -1023,10 +1228,10 @@ async fn test_sync_agent_packs_fills_missing_base_and_new_skills(pool: SqlitePoo
         .await
         .unwrap();
 
-    // ② 执行同步
+    // ② 执行进修
     let resp = domain
         .agent_manage()
-        .sync_agent_packs(ctx.clone(), agent.id())
+        .train_agent(ctx.clone(), agent.id())
         .await
         .unwrap();
 
@@ -1052,10 +1257,10 @@ async fn test_sync_agent_packs_fills_missing_base_and_new_skills(pool: SqlitePoo
     assert!(copy_parents.contains(&c1.po.id));
     assert!(copy_parents.contains(&c2.po.id));
 
-    // ④ 幂等验证：再次同步应无任何变更
+    // ④ 幂等验证：再次进修应无任何变更
     let resp2 = domain
         .agent_manage()
-        .sync_agent_packs(ctx.clone(), agent.id())
+        .train_agent(ctx.clone(), agent.id())
         .await
         .unwrap();
     assert!(resp2.installed_tool_tags.is_empty());
@@ -1065,7 +1270,7 @@ async fn test_sync_agent_packs_fills_missing_base_and_new_skills(pool: SqlitePoo
     // ⑤ 不存在的 Agent 返回 NotFound
     let err = domain
         .agent_manage()
-        .sync_agent_packs(ctx, "nonexistent-agent-id")
+        .train_agent(ctx, "nonexistent-agent-id")
         .await
         .unwrap_err();
     assert!(matches!(err.code, common::error::ErrorCode::NotFound));
@@ -1106,12 +1311,17 @@ async fn create_onboarded_agent(
         .unwrap();
     domain
         .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
         .await
         .unwrap();
     domain
         .agent_manage()
-        .transition_status(ctx, &mut agent, AgentStatus::Onboarded)
+        .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard, None)
+        .await
+        .unwrap();
+    domain
+        .agent_manage()
+        .transition_status(ctx, &mut agent, AgentStatus::Onboarded, None)
         .await
         .unwrap();
     id
@@ -1338,10 +1548,15 @@ async fn test_agent_tool_list_ids_unique(pool: SqlitePool) {
         crate::service::dao::tool_call::init();
         crate::service::dao::model_provider::init();
         crate::service::dao::cortex::init();
+        crate::service::dao::organization::init();
+        crate::service::dao::organization_link::init();
+        crate::service::dao::organization_pairing::init();
+        crate::service::dao::federation_contract::init();
         crate::service::dal::agent::init();
         crate::service::dal::tool::init();
         crate::service::dal::skill::init();
         crate::service::dal::model_provider::init();
+        crate::service::dal::organization::init();
         super::init();
         (domain(), new_ctx("admin", pool.clone()))
     };

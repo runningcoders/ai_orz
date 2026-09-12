@@ -34,11 +34,17 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
     crate::service::dao::tool_call::init();
     crate::service::dao::model_provider::init();
     crate::service::dao::cortex::init();
+    // 组织（HR 入职要读组织级配置 OrganizationConfig.agent_onboard）
+    crate::service::dao::organization::init();
+    crate::service::dao::organization_link::init();
+    crate::service::dao::organization_pairing::init();
+    crate::service::dao::federation_contract::init();
 
     // 初始化所有 DAL
     crate::service::dal::agent::init();
     crate::service::dal::tool::init();
     crate::service::dal::model_provider::init();
+    crate::service::dal::organization::init();
     let skill_dal = crate::service::dal::skill::new(
         crate::service::dao::skill::new_skill_dao_with_base_path(base_path),
         crate::service::dao::skill::vector_dao(),
@@ -51,6 +57,7 @@ fn init_test_env(pool: SqlitePool) -> (std::sync::Arc<dyn HrDomain>, RequestCont
         crate::service::dal::tool::dal(),
         skill_dal,
         std::sync::Arc::new(crate::service::dal::agent::AgentRuntimeDalImpl),
+        crate::service::dal::organization::dal(),
     );
     let ctx = new_ctx("admin", pool);
     (domain, ctx, temp_dir)

@@ -407,7 +407,9 @@ impl AgentPo {
             soul,
             model_provider_id,
             runtime_config: runtime_config.to_json(),
-            status: AgentStatus::Interviewing,
+            // 创建即「初创」：只持有出生自带的神经能力，职业选择发生在
+            // Incubating → Interviewing 这条边上（见 AgentStatus 文档）。
+            status: AgentStatus::Incubating,
             kind: common::enums::AgentKind::Local,
             created_by: creator.clone(),
             modified_by: creator,

@@ -18,6 +18,8 @@ use crate::models::skill::Skill;
 use crate::pkg::RequestContext;
 use crate::service::dal::agent as agent_dal;
 use crate::service::dal::agent::{AgentDal, AgentRuntimeDal};
+use crate::service::dal::organization as organization_dal;
+use crate::service::dal::organization::OrganizationDal;
 use crate::service::dal::skill as skill_dal;
 use crate::service::dal::skill::SkillDal;
 use crate::service::dal::tool as tool_dal;
@@ -50,6 +52,7 @@ pub fn init() {
         tool_dal::dal(),
         skill_dal::dal(),
         Arc::new(agent_dal::AgentRuntimeDalImpl),
+        organization_dal::dal(),
     ));
 }
 
@@ -59,12 +62,14 @@ pub fn new(
     tool_dal: Arc<dyn ToolDal>,
     skill_dal: Arc<dyn SkillDal>,
     runtime_dal: Arc<dyn AgentRuntimeDal>,
+    org_dal: Arc<dyn OrganizationDal + Send + Sync>,
 ) -> Arc<dyn HrDomain> {
     Arc::new(HrDomainImpl::new(
         agent_dal,
         tool_dal,
         skill_dal,
         runtime_dal,
+        org_dal,
     ))
 }
 
@@ -79,6 +84,9 @@ struct HrDomainImpl {
     skill_dal: Arc<dyn SkillDal>,
     /// Agent 运行时出站（远端 A2A 任务拉取）
     runtime_dal: Arc<dyn AgentRuntimeDal>,
+    /// 组织配置读取（入职时装「组织要求的包」，AgentPo 无 organization_id，
+    /// 组织归属一律取 `ctx.organization_id()`）
+    org_dal: Arc<dyn OrganizationDal + Send + Sync>,
 }
 
 impl HrDomainImpl {
@@ -88,12 +96,14 @@ impl HrDomainImpl {
         tool_dal: Arc<dyn ToolDal>,
         skill_dal: Arc<dyn SkillDal>,
         runtime_dal: Arc<dyn AgentRuntimeDal>,
+        org_dal: Arc<dyn OrganizationDal + Send + Sync>,
     ) -> Self {
         Self {
             agent_dal,
             tool_dal,
             skill_dal,
             runtime_dal,
+            org_dal,
         }
     }
 
@@ -412,14 +422,21 @@ pub trait AgentManage: Send + Sync {
     /// 删除 Agent
     async fn delete_agent(&self, ctx: RequestContext, agent: &Agent) -> Result<()>;
 
-    /// 状态流转
+    /// 状态流转 —— **Agent 生命周期唯一的抽象入口**
     ///
-    /// 校验状态流转合法性，更新状态并持久化
+    /// 无论上层是语义化 handler（职业选择 / 入职）还是通用状态流转，最终都收敛到这里，
+    /// 由它统一校验状态机、持久化，并按「边」分发副作用（见实现处文档）：
+    /// - `Incubating → Interviewing`：职业生涯选择（个人匹配）
+    /// - `PendingOnboard → Onboarded`：入职（组织要求的包）
+    /// - 其余边：无副作用
+    ///
+    /// `packs` 只在入职这条边上生效；传 `None` 表示回退组织级配置。
     async fn transition_status(
         &self,
         ctx: RequestContext,
         agent: &mut Agent,
         target_status: AgentStatus,
+        packs: Option<common::api::AgentPackSelection>,
     ) -> Result<()>;
 
     /// 拉取远端 A2A Agent 的任务快照（tasks/get）
@@ -508,18 +525,22 @@ pub trait AgentManage: Send + Sync {
 
     /// 同步 Agent 包（通用恢复/同步入口）
     ///
-    /// 两阶段执行：
-    /// 1. 基础包缺失补装：对 BASE_AGENT_PACKS 中缺失的工具包/技能包执行安装
+    /// Agent 进修（在职学习入口）：把能力补齐到当前职业/组织要求的最新状态。
+    ///
+    /// 三阶段执行：
+    /// 1. 补修基础课：对 BASE_AGENT_PACKS 中缺失的工具包/技能包执行安装
     ///    （工具包只是关联关系，无包内补全问题；技能包安装后进入阶段 2 统一补全）；
-    /// 2. 已安装技能包增量补全：对当前所有已安装技能包，检测该 tag 下是否有
-    ///    Agent 尚未拥有的新增已发布技能，有则重装该技能包补全缺失。
+    /// 2. 学习技能更新：对当前所有已安装技能包，检测该 tag 下是否有
+    ///    Agent 尚未拥有的新增已发布技能，有则重装该技能包补全缺失；
+    /// 3. 补学新课：按 Agent 已走过的状态机边重跑匹配 —— 职业匹配（非初创）
+    ///    与组织要求包（仅已入职），自愈不替代状态机准入。
     ///
     /// 全程幂等，单个包失败不阻塞其他包（记 warn 继续）。
-    async fn sync_agent_packs(
+    async fn train_agent(
         &self,
         ctx: RequestContext,
         agent_id: &str,
-    ) -> Result<common::api::SyncAgentPacksResponse>;
+    ) -> Result<common::api::TrainAgentResponse>;
 
     /// 返回 Agent 已拥有并去重的工具 ID 列表（扁平，按 id 唯一）。
     ///
