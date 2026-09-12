@@ -2,14 +2,7 @@
 @plugin "daisyui" {
   themes:
     orz-hud --default,
-    orz-light,
-    light,
-    dark,
-    cupcake,
-    emerald,
-    corporate,
-    nord,
-    synthwave;
+    orz-light;
 }
 
 @source "../index.html";

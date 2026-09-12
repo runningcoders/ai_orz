@@ -70,17 +70,7 @@ pub fn use_require_auth() -> bool {
     auth.read().logged_in
 }
 
-pub const AVAILABLE_THEMES: &[(&str, &str)] = &[
-    ("orz-hud", "HUD 深色"),
-    ("orz-light", "Orz 默认"),
-    ("light", "Light"),
-    ("dark", "Dark"),
-    ("cupcake", "Cupcake"),
-    ("emerald", "Emerald"),
-    ("corporate", "Corporate"),
-    ("nord", "Nord"),
-    ("synthwave", "Synthwave"),
-];
+pub const AVAILABLE_THEMES: &[(&str, &str)] = &[("orz-hud", "HUD 深色"), ("orz-light", "Orz 默认")];
 
 fn get_saved_theme() -> String {
     local_storage()
