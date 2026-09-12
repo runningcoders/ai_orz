@@ -150,6 +150,13 @@ pub fn Reception() -> Element {
                     if resp.initialized {
                         match list_organizations_public().await {
                             Ok(list) => {
+                                // 本机只存在一个组织时直接默认选中，省去用户多点一次
+                                // （本地部署是唯一形态，多组织属历史/联邦场景才需手选）
+                                let local_orgs: Vec<&OrganizationListItem> =
+                                    list.data.iter().filter(|o| o.scope == 0).collect();
+                                if local_orgs.len() == 1 {
+                                    selected_org_id.set(local_orgs[0].organization_id.clone());
+                                }
                                 organizations.set(list.data);
                                 initialized.set(true);
                             }
