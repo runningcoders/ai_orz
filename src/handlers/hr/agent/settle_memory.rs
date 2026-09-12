@@ -26,7 +26,8 @@ use common::error::{Result, bail_err};
 ///
 /// Domain 返回的是 `Memory` 业务实体而非 PO，短期记忆的具体字段在
 /// `MemoryPo::ShortTerm` 变体内，这里统一收敛访问方式。
-fn short_term_of(mem: &Memory) -> Option<&ShortTermMemoryIndexPo> {
+/// `pub(crate)`：CronTrigger 的 agent_rest 全局沉淀也用它取 `agent_id`。
+pub(crate) fn short_term_of(mem: &Memory) -> Option<&ShortTermMemoryIndexPo> {
     match &mem.po {
         MemoryPo::ShortTerm(index) => Some(index),
         _ => None,

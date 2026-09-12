@@ -14,6 +14,7 @@ use crate::models::events::CronTriggerEvent;
 use crate::pkg::RequestContext;
 use crate::pkg::aop::Event;
 use crate::pkg::aop::{ConsumeMode, Consumer, EventKind};
+use crate::service::domain::runtime::domain as runtime_domain;
 use common::error::{Error, Result};
 
 // ==================== 消费者实现 ====================
@@ -77,7 +78,15 @@ impl Consumer for CronTriggerConsumer {
 
         match payload.action.as_str() {
             "agent_rest" => {
-                self.handle_agent_rest(&event, &payload.extra).await?;
+                if let Err(e) = self.handle_agent_rest(&event, &payload.extra).await {
+                    // 单次触发失败只告警不上抛：避免 nack 重试风暴（下个周期会重新沉淀）
+                    sys_error!(
+                        "agent_rest action failed for trigger {} (id: {}): {}",
+                        event.trigger_name,
+                        event.trigger_id,
+                        e
+                    );
+                }
             }
             "project_followup" => self.handle_project_followup(&payload.extra).await?,
             "tool_log_cleanup" => self.handle_tool_log_cleanup().await?,
@@ -103,6 +112,9 @@ impl CronTriggerConsumer {
     ///
     /// 复用 settle_memory handler 的 load_and_settle 公共函数，保证与神经工具触发的
     /// 沉淀流程完全一致（查询短期记忆 → 拼装 prompt → 加载 Agent → 唤醒 Brain → sleep_and_settle）。
+    ///
+    /// 作用域：payload 指定 `agent_id` 时只沉淀该 Agent；**缺省（系统默认触发器）
+    /// 则扫描所有存在未沉淀短期记忆的 Agent 逐个沉淀**——单个 Agent 失败不阻断其余。
     async fn handle_agent_rest(&self, event: &CronTriggerEvent, extra: &Value) -> Result<()> {
         let payload: AgentRestPayload = serde_json::from_value(extra.clone()).map_err(|e| {
             Error::bad_request(format!(
@@ -111,13 +123,6 @@ impl CronTriggerConsumer {
             ))
         })?;
 
-        sys_info!(
-            "agent_rest action triggered by {} (trigger_id: {}, agent_id: {})",
-            event.trigger_name,
-            event.trigger_id,
-            payload.agent_id
-        );
-
         let ctx = RequestContext::new_system();
         // 不传 settle_limit 时用自适应上限：实际批量由上下文预算决定，
         // 该字段仅作为条数上限提示（见 settle_memory::PENDING_MAX_ITEMS）。
@@ -125,12 +130,69 @@ impl CronTriggerConsumer {
             .settle_limit
             .unwrap_or(crate::handlers::hr::agent::settle_memory::PENDING_MAX_ITEMS);
 
-        let settled_count = load_and_settle(ctx, &payload.agent_id, settle_limit).await?;
+        // 解析本次要沉淀的 Agent 集合：指定 agent_id → 单个；缺省 → 全部有待沉淀记忆的 Agent
+        let agent_ids: Vec<String> = match &payload.agent_id {
+            Some(id) => vec![id.clone()],
+            None => {
+                use crate::service::dao::memory::{MemoryQuery, MemorySortOrder};
+                use common::enums::{MemoryStatus, MemoryType};
+
+                // 索引表规模有限（只含摘要），取全量 Active 短期记忆后去重即可。
+                // 上限是防御值：正常远达不到；触达时下次周期会继续处理剩余部分。
+                let pending = runtime_domain()
+                    .memory()
+                    .query(
+                        ctx.clone(),
+                        MemoryQuery {
+                            status: Some(MemoryStatus::Active),
+                            memory_type: Some(MemoryType::ShortTerm),
+                            limit: Some(1000),
+                            order: MemorySortOrder::OldestFirst,
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let mut ids: Vec<String> = pending
+                    .iter()
+                    .filter_map(|m| {
+                        crate::handlers::hr::agent::settle_memory::short_term_of(m)
+                            .map(|i| i.agent_id.clone())
+                    })
+                    .collect();
+                ids.sort();
+                ids.dedup();
+                ids
+            }
+        };
 
         sys_info!(
-            "agent {} settled {} short-term memories to knowledge nodes",
-            payload.agent_id,
-            settled_count
+            "agent_rest action triggered by {} (trigger_id: {}, agents: {:?})",
+            event.trigger_name,
+            event.trigger_id,
+            agent_ids
+        );
+
+        let mut total_settled = 0usize;
+        let mut ok_agents = 0usize;
+        for agent_id in &agent_ids {
+            match load_and_settle(ctx.clone(), agent_id, settle_limit).await {
+                Ok(0) => {}
+                Ok(n) => {
+                    total_settled += n;
+                    ok_agents += 1;
+                }
+                Err(e) => {
+                    // 单个 Agent 沉淀失败（如模型调用异常）不影响其余 Agent
+                    sys_warn!("agent_rest: Agent {} 沉淀失败，跳过: {}", agent_id, e);
+                }
+            }
+        }
+
+        sys_info!(
+            "agent_rest 完成: 扫描 {} 个 Agent，{} 个成功沉淀，共沉淀 {} 条短期记忆",
+            agent_ids.len(),
+            ok_agents,
+            total_settled
         );
 
         Ok(())
@@ -262,6 +324,31 @@ struct CronTriggerPayload {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AgentRestPayload {
-    agent_id: String,
+    /// 目标 Agent；缺省 = 系统级全局沉淀（扫描所有存在未沉淀短期记忆的 Agent）
+    #[serde(default)]
+    agent_id: Option<String>,
     settle_limit: Option<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 系统默认触发器的 payload **没有 agent_id**——历史版本因 AgentRestPayload
+    /// 必填 agent_id 导致 agent_rest 每次触发都在解析阶段失败（沉淀从未执行）。
+    /// 锁定：缺省 agent_id 可解析为 None（全局沉淀语义）。
+    #[test]
+    fn test_agent_rest_payload_without_agent_id_parses() {
+        let payload: AgentRestPayload =
+            serde_json::from_str(r#"{"settle_limit":10}"#).expect("系统默认 payload 应可解析");
+        assert_eq!(payload.agent_id, None);
+        assert_eq!(payload.settle_limit, Some(10));
+
+        // 兼容指定单个 Agent 的旧语义
+        let payload: AgentRestPayload =
+            serde_json::from_str(r#"{"agent_id":"agent-001","settle_limit":5}"#)
+                .expect("指定 agent_id 的 payload 应可解析");
+        assert_eq!(payload.agent_id.as_deref(), Some("agent-001"));
+        assert_eq!(payload.settle_limit, Some(5));
+    }
 }
