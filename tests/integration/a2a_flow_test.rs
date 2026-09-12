@@ -91,8 +91,22 @@ async fn test_a2a_tasks_send_then_get(pool: SqlitePool) {
     )
     .await;
 
-    // Transition: Interviewing → PendingOnboard → Onboarded
+    // Transition: Incubating → Interviewing → PendingOnboard → Onboarded
     // (AgentStatus serializes as variant name string, e.g. "Onboarded")
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}/status", agent_id),
+            &json!({"id": agent_id, "status": "Interviewing"}),
+            &jwt,
+        )
+        .await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::OK,
+        "transition to Interviewing should succeed, body: {}",
+        body
+    );
+
     let (status, body) = app
         .put_with_jwt(
             &format!("/api/v1/hr/agents/{}/status", agent_id),

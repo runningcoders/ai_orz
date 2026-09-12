@@ -111,21 +111,22 @@ async fn test_agent_smoke(pool: SqlitePool) {
         data.get("name").and_then(|v| v.as_str()),
         Some(agent_name.as_str())
     );
-    // New agent should be in Interviewing status (1)
+    // New agent should be in Incubating status (6)：出生即初创，只有神经能力
     assert_eq!(
         data.get("status").and_then(|v| v.as_i64()),
-        Some(1),
-        "new agent should be Interviewing (1)"
+        Some(6),
+        "new agent should be Incubating (6)"
     );
 }
 
-/// Full agent lifecycle: Interviewing → PendingOnboard → Onboarded →
+/// Full agent lifecycle: Incubating → Interviewing → PendingOnboard → Onboarded →
 /// PendingOffboard → Offboarded.
 ///
 /// Verifies:
 /// - Each transition returns HTTP 200 + code=0
 /// - The `status` field in the response reflects the new status
-/// - Onboarded transition auto-installs the "project_management" tool pack tag
+/// - Onboarded transition installs the organization's required packs
+///   （默认 project_management，见 initialize_system 写入的组织级配置）
 #[sqlx::test]
 async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -139,6 +140,21 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
         &format!("LifecycleAgent-{}", uuid::Uuid::now_v7()),
     )
     .await;
+
+    // Incubating (6) → Interviewing (1)：职业生涯选择（按 roles/capabilities 匹配个人能力）
+    let (status, body) = app
+        .put_with_jwt(
+            &format!("/api/v1/hr/agents/{}/status", agent_id),
+            &json!({"id": agent_id, "status": "Interviewing"}),
+            &jwt,
+        )
+        .await;
+    let data = crate::common::assert_api_ok(status, &body);
+    assert_eq!(
+        data.get("status").and_then(|v| v.as_i64()),
+        Some(1),
+        "should be Interviewing (1)"
+    );
 
     // Interviewing (1) → PendingOnboard (2)
     let (status, body) = app
@@ -170,8 +186,8 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
         "should be Onboarded (3)"
     );
 
-    // Verify Onboarded auto-installed the "project_management" skill pack
-    // （公司指定包 COMPANY_ONBOARD_PACKS，由 apply_onboard_bindings 统一绑定）。
+    // Verify Onboarded 装上了组织要求的包（默认 project_management，
+    // 由 initialize_system 写入 OrganizationConfig.agent_onboard）。
     // 注意：project_management 是「同名双重身份」的包 —— 技能侧写 installed_skill_packs，
     // 工具侧同时写 installed_tags（23 个项目/任务/产物工具靠它授权）；
     // 两个字段缺任一都会导致工具被拒或技能不进 Prompt，此处断言技能侧。
@@ -224,7 +240,7 @@ async fn test_agent_lifecycle_valid_transitions(pool: SqlitePool) {
 
 /// Invalid status transitions should be rejected.
 ///
-/// Interviewing → Onboarded (skipping PendingOnboard) is illegal.
+/// Incubating → Onboarded (skipping Interviewing / PendingOnboard) is illegal.
 /// The API should return a non-zero error code.
 #[sqlx::test]
 async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
@@ -240,7 +256,8 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
     )
     .await;
 
-    // Interviewing (1) → Onboarded (3) — illegal, must skip PendingOnboard
+    // Incubating (6) → Onboarded (3) — illegal, must go Incubating → Interviewing
+    // → PendingOnboard → Onboarded 逐级流转
     let (status, body) = app
         .put_with_jwt(
             &format!("/api/v1/hr/agents/{}/status", agent_id),
@@ -250,15 +267,15 @@ async fn test_agent_lifecycle_invalid_transition_rejected(pool: SqlitePool) {
         .await;
     crate::common::assert_api_error(status, &body, axum::http::StatusCode::BAD_REQUEST);
 
-    // Verify agent is still in Interviewing (1) — transition was rejected
+    // Verify agent is still in Incubating (6) — transition was rejected
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
         .await;
     let data = crate::common::assert_api_ok(status, &body);
     assert_eq!(
         data.get("status").and_then(|v| v.as_i64()),
-        Some(1),
-        "agent should still be Interviewing (1) after rejected transition"
+        Some(6),
+        "agent should still be Incubating (6) after rejected transition"
     );
 }
 
@@ -928,15 +945,16 @@ async fn test_agent_edge_cases(pool: SqlitePool) {
         .and_then(|v| v.as_str())
         .expect("agent_id should be present in create response");
 
-    // 4. Agent status should be Interviewing (no model_provider_id)
+    // 4. Agent status should be Incubating (6) — create lands on 初创,
+    //    缺 model_provider_id 由该状态表达「未就绪」（不再用 Interviewing 表达）
     let (_status, body) = app
         .get_with_jwt(&format!("/api/v1/hr/agents/{}", agent_id), &jwt)
         .await;
     let data = crate::common::assert_api_ok(axum::http::StatusCode::OK, &body);
     let agent_status = data.get("status").and_then(|v| v.as_i64()).unwrap_or(-1);
     assert!(
-        agent_status == 1,
-        "agent without model_provider_id should be in Interviewing status (1), got: {}",
+        agent_status == 6,
+        "agent without model_provider_id should be in Incubating status (6), got: {}",
         agent_status
     );
 }
