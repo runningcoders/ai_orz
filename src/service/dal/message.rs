@@ -555,9 +555,30 @@ async fn do_search(
         let results = message_vector_dao
             .search_vector(ctx.clone(), query_vector, search.top_k.unwrap_or(20))
             .await?;
+
+        // ⚠️ 向量独有命中必须沿用调用方的业务过滤条件（organization_id / project_id /
+        // task_id / from_id / to_id / status_in 等）。此前逐条 find_by_id 只保证「未软删除」，
+        // 会放行跨组织、跨项目的消息 —— 多租户隔离缺口。
+        let hit_ids: Vec<String> = results.iter().map(|h| h.row.id.clone()).collect();
+        let mut hits_by_id: HashMap<String, MessagePo> = HashMap::new();
+        if !hit_ids.is_empty() {
+            let lookup = MessageQuery {
+                ids: Some(hit_ids),
+                // 按 id 精确回填，不能被调用方 limit / offset 截断（最终条数由合并阶段收口）
+                limit: None,
+                offset: None,
+                order_by: None,
+                ..search.filters.clone()
+            };
+            for po in message_dao.query(ctx.clone(), lookup).await? {
+                hits_by_id.insert(po.id.clone(), po);
+            }
+        }
+
+        // 按向量距离顺序保留命中集：merge_search_results 依赖该顺序打分
         let mut matches = Vec::new();
         for hit in results {
-            if let Ok(Some(po)) = message_dao.find_by_id(ctx.clone(), &hit.row.id).await {
+            if let Some(po) = hits_by_id.remove(&hit.row.id) {
                 let mut msg = Message::from_po(po);
                 msg.search_match = Some(SearchMatchInfo {
                     match_type: MatchType::Vector,

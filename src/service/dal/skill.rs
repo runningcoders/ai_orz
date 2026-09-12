@@ -442,9 +442,15 @@ impl SkillDal for SkillDalImpl {
 
                 for chunk in ids_to_fetch.chunks(20) {
                     let chunk_ids: Vec<String> = chunk.to_vec();
+                    // ⚠️ 向量独有命中必须沿用调用方的业务过滤条件（status / exclude_status /
+                    // author_id / author_type / category / tags / parent_skill_id 等）。
+                    // 此前用 ..Default::default() 会把条件全部丢弃，导致已过期技能
+                    // （exclude_status = Expired）仍以 MatchType::Vector 返回。
+                    // pagination 置空：此处按 id 精确回填，不能被调用方 limit 截断。
                     let chunk_query = SkillQuery {
                         ids: Some(chunk_ids),
-                        ..Default::default()
+                        pagination: Default::default(),
+                        ..search.filters.clone()
                     };
                     let chunk_pos = self.skill_dao.query(ctx.clone(), chunk_query).await?;
                     all_pos.extend(chunk_pos.items);

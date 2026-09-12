@@ -393,10 +393,15 @@ impl AgentDal for AgentDalImpl {
 
                 for chunk in ids_to_fetch.chunks(20) {
                     let chunk_ids: Vec<String> = chunk.to_vec();
+                    // ⚠️ 沿用调用方的业务过滤（status / exclude_status / created_by /
+                    // model_provider_id / roles 等）。此前只兜底 exclude_status=Deleted，
+                    // 其余条件对向量独有命中全部失效。
+                    // exclude_status 的默认兜底已在本函数开头写入 search.filters，无需重复设置。
+                    // pagination 置空：此处按 id 精确回填，不能被调用方 limit 截断。
                     let chunk_query = AgentQuery {
                         ids: Some(chunk_ids),
-                        exclude_status: Some(AgentStatus::Deleted),
-                        ..Default::default()
+                        pagination: Default::default(),
+                        ..search.filters.clone()
                     };
                     let chunk_pos = self.agent_dao.query(ctx.clone(), chunk_query).await?;
                     all_pos.extend(chunk_pos.items);

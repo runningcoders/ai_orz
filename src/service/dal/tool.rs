@@ -490,6 +490,8 @@ impl ToolDal for ToolDalImpl {
         };
         // 提前捕获分页参数（params 后续会被 move 给 search_tools）
         let pagination = params.filters.pagination.clone();
+        // 提前捕获完整过滤条件（同上，向量独有命中回填时要沿用）
+        let search_filters = params.filters.clone();
 
         // Step 1: 准备向量搜索结果容器
         let mut vector_scores: std::collections::HashMap<String, f32> =
@@ -561,10 +563,16 @@ impl ToolDal for ToolDalImpl {
                 .collect();
 
             if !ids_to_fetch.is_empty() {
+                // ⚠️ 沿用调用方的业务过滤（agent_id / ids / tags / protocol / status /
+                // mcp_server_id / enabled_only 等）。此前只兜底 exclude_status=Stale，
+                // 会让向量独有命中绕过「该 Agent 是否有权使用」等约束。
+                // 调用方未显式指定 exclude_status 时仍保留 Stale 兜底。
+                // pagination 置空：此处按 id 精确回填，不能被调用方 limit 截断。
                 let query = crate::service::dao::tool::ToolQuery {
                     ids: Some(ids_to_fetch),
-                    exclude_status: Some(ToolStatus::Stale),
-                    ..Default::default()
+                    exclude_status: search_filters.exclude_status.or(Some(ToolStatus::Stale)),
+                    pagination: Default::default(),
+                    ..search_filters.clone()
                 };
                 let vector_pos = self.tool_dao.query(ctx.clone(), query).await?;
                 all_pos.extend(vector_pos.items);
