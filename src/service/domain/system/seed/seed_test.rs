@@ -19,6 +19,7 @@ mod tests {
                 base_url: String::new(),
                 status: 1,
                 scope: 0,
+                config: None,
             },
             users: vec![UserDef {
                 id: "U1".to_string(),
@@ -298,6 +299,27 @@ mod tests {
             snapshot.users[0].password_ref,
             super::super::defs::PENDING_INPUT
         );
+
+        // 组织默认要求（SSOT = seed 的 organization.config）：初始化时按此写入
+        // organizations.config，project_management 是「同名双重身份」包，两侧都要配
+        let onboard = snapshot
+            .organization
+            .config
+            .expect("default.json 必须带 organization.config")
+            .agent_onboard;
+        assert_eq!(onboard.required_tool_packs, vec!["project_management"]);
+        assert_eq!(onboard.required_skill_packs, vec!["project_management"]);
+    }
+
+    #[test]
+    fn test_organization_def_backward_compat_without_config() {
+        // 老快照没有 organization.config → config 为 None，不得反序列化失败
+        let json = r#"{
+            "id": "ORG1", "name": "组织", "description": "",
+            "base_url": "", "status": 1, "scope": 0
+        }"#;
+        let org: OrganizationDef = serde_json::from_str(json).unwrap();
+        assert!(org.config.is_none());
     }
 
     #[test]

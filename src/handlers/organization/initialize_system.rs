@@ -166,30 +166,27 @@ impl InitializeSystemTask {
             .create_org_and_owner(ctx.clone(), params.clone())
             .await?;
 
-        // 组织级入职配置默认值：本组织要求每个 Agent 都会项目管理。
-        // project_management 是「同名双重身份」包，工具包与技能包两个字段都要配：
+        // 组织级配置：**来源是种子文件**（`default.json` 的 `organization.config`），
+        // 代码不再硬编码任何包名 —— 组织默认要求属于「组织决策」，其 SSOT 就是 seed。
+        //
+        // 开箱默认：organization.config.agent_onboard 要求每个 Agent 都装
+        // project_management 的工具包与技能包。它是「同名双重身份」包，两个字段都要配：
         // 工具包负责授权（项目/任务/产物工具靠 installed_tags 放行），
         // 技能包负责把技能副本放进 Agent 池子（进 Prompt 的前置门）。
-        // 组织管理员可在「组织信息」页随时调整。
+        // 组织管理员可在「组织信息」页随时调整；需改默认值则改 seed 文件。
+        let seed_org_config =
+            crate::service::domain::system::seed::default::embedded_default_snapshot()
+                .organization
+                .config
+                .unwrap_or_default();
+        sys_info!(
+            "initialize_system: 应用种子组织配置（要求工具包={:?}, 技能包={:?}）",
+            seed_org_config.agent_onboard.required_tool_packs,
+            seed_org_config.agent_onboard.required_skill_packs
+        );
         organization::domain()
             .organization_manage()
-            .update_org_config(
-                ctx.clone(),
-                &org_id,
-                &common::api::OrganizationConfig {
-                    agent_onboard: common::api::AgentOnboardConfig {
-                        required_tool_packs: DEFAULT_ORG_ONBOARD_PACKS
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect(),
-                        required_skill_packs: DEFAULT_ORG_ONBOARD_PACKS
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect(),
-                    },
-                    ..Default::default()
-                },
-            )
+            .update_org_config(ctx.clone(), &org_id, &seed_org_config)
             .await?;
 
         let mut step = 2;
@@ -304,12 +301,6 @@ impl InitializeSystemTask {
         })
     }
 }
-
-/// 新建组织时写入的「组织要求入职包」默认值
-///
-/// 对应组织级配置 `OrganizationConfig.agent_onboard`。放在这里而不是 HR 状态机里：
-/// 包名是组织决策，代码只提供一个开箱即用的初值，组织管理员可在「组织信息」页改。
-const DEFAULT_ORG_ONBOARD_PACKS: &[&str] = &["project_management"];
 
 /// 无条件创建预设前台接待 Agent。
 ///

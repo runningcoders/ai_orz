@@ -3,6 +3,7 @@
 //! 快照只保留业务实体定义（配置层），不包含运行时数据（消息、任务、stats、日志、向量索引）
 //! 敏感字段（password_hash / api_key）永远不导出，使用 PENDING_INPUT 占位符
 
+use common::api::OrganizationConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +51,16 @@ pub struct OrganizationDef {
     pub base_url: String,
     pub status: i32,
     pub scope: i32,
+    /// 组织级可扩展配置（与 `common::api::OrganizationConfig` 同构）
+    ///
+    /// 是「组织默认配置」的唯一来源（SSOT）：初始化建组织时按此写入
+    /// `organizations.config`（见 `initialize_system`），组织管理员随后可在
+    /// 「组织信息」页调整。其中最典型的是 `agent_onboard`（组织要求每个 Agent
+    /// 入职时必须安装的工具包 / 技能包）。
+    ///
+    /// `None` = 老快照没有这段配置 → 保持组织既有配置不动。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<OrganizationConfig>,
 }
 
 /// 用户定义（不含 password_hash）

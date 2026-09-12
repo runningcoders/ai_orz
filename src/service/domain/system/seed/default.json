@@ -9,7 +9,13 @@
     "description": "由系统初始化创建的默认组织",
     "base_url": "",
     "status": 1,
-    "scope": 0
+    "scope": 0,
+    "config": {
+      "agent_onboard": {
+        "required_tool_packs": ["project_management"],
+        "required_skill_packs": ["project_management"]
+      }
+    }
   },
   "users": [
     {

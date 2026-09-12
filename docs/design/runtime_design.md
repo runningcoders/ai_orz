@@ -1431,9 +1431,13 @@ Agent 能力
 │   └── skill_management / tool_management：自治骨架（能管理自己的技能与工具）
 ├── ② 入职·个人匹配（onboard-(a)）—— 按自己的 roles ∪ capabilities 逐 tag 匹配
 │   └── 命中即装；语义＝「我因为这些身份/能力标签，所以会这些」
-└── ③ 入职·公司指定（onboard-(b)）—— COMPANY_ONBOARD_PACKS 无条件安装
+└── ③ 入职·公司指定（onboard-(b)）—— 组织配置 `OrganizationConfig.agent_onboard` 无条件安装
     └── 语义＝「组织要求你会」，如 project_management
 ```
+
+> 公司指定的包**没有代码常量**：SSOT 是 seed 文件 `default.json` 的
+> `organization.config.agent_onboard`。初始化建组织时按它写入 `organizations.config`，
+> 之后组织管理员可在「组织信息」页调整；要改默认值就改 seed 文件。
 
 **`installed_tags`（工具包）与 `installed_skill_packs`（技能包）是两个独立字段，不可互相替代。**
 
@@ -1479,7 +1483,7 @@ Manual 工具调用校验：
 | 来源 | 匹配键 | 工具侧守卫 | 技能侧守卫 |
 |------|--------|-----------|-----------|
 | 个人匹配 | `roles ∪ capabilities` | 库里须有该 tag 的已启用工具 | 库里须有该 tag 的已发布技能 |
-| 公司指定 | `COMPANY_ONBOARD_PACKS`（如 `project_management`） | 无条件写入（显式授权声明） | 库里须有该 tag 的已发布技能 |
+| 公司指定 | 组织配置 `OrganizationConfig.agent_onboard`（如 `project_management`） | 无条件写入（显式授权声明） | 库里须有该 tag 的已发布技能 |
 
 - **工具包**：`install_tool_pack(tag)` → 写 `installed_tags`（否则该 tag 下工具全部被拒），并把包内工具写入 `agent_tools` 关系表；
 - **技能包**：`install_skill_pack(tag)` → 写 `installed_skill_packs` 并真正建技能副本。
@@ -1493,7 +1497,7 @@ Manual 工具调用校验：
 
 | tag | 工具包侧 | 技能包侧 | 谁命中 |
 |-----|---------|---------|--------|
-| `project_management` | 23 个 project/task/artifact 工具 | `TEMPLATE_PROJECT_MANAGEMENT` | 公司指定（`COMPANY_ONBOARD_PACKS`） |
+| `project_management` | 23 个 project/task/artifact 工具 | `TEMPLATE_PROJECT_MANAGEMENT` | 公司指定（`OrganizationConfig.agent_onboard`，seed 初值） |
 | `reception` | `search_agents` / `query_agents` / `list_agents` / `get_agent`（分流找人） | `TEMPLATE_USER_RECEPTION`（用户接待 SOP） | 前台接待 Agent 的个人匹配（`roles = ["reception"]`） |
 
 `reception` 这个例子说明了个人匹配的完整闭环：前台 Agent 的角色标签命中同名工具包与技能包，

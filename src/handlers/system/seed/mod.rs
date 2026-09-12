@@ -461,6 +461,13 @@ pub async fn assemble_snapshot_from_db_with_progress(
         .await?
         .ok_or_else(|| Error::not_found(format!("组织不存在: {}", org_id)))?;
 
+    // 组织级配置随组织一并导出（与初始化写入的是同一份 JSON），
+    // 保证「导出 → 当模板再初始化」时组织默认要求不丢。
+    let org_config = organization::domain()
+        .organization_manage()
+        .get_org_config(ctx.clone(), org_id)
+        .await?;
+
     let organization_def = OrganizationDef {
         id: org.id.clone(),
         name: org.name.clone(),
@@ -468,6 +475,7 @@ pub async fn assemble_snapshot_from_db_with_progress(
         base_url: org.base_url.clone(),
         status: org.status.to_i32(),
         scope: org.scope.to_i32(),
+        config: Some(org_config),
     };
 
     // 2. 用户
