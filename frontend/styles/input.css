@@ -102,6 +102,14 @@
     border-color 0.18s ease;
 }
 
+/* 纵向留白：与上下控件保持呼吸感（DaisyUI 表单控件默认无 margin，紧贴容器） */
+.input:not(.input-group *):not(.join *),
+.textarea:not(.input-group *):not(.join *),
+.select:not(.input-group *):not(.join *),
+.file-input:not(.input-group *):not(.join *) {
+  margin-block: 0.5rem;
+}
+
 /* select / file-input：静态聚焦（保留内建 background 图层） */
 .select:focus,
 .select:focus-within,
