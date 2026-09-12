@@ -23,8 +23,10 @@ fn update_agent_status_request_serializes_status_enum() {
     let request = UpdateAgentStatusRequest {
         id: "agent-1".to_string(),
         status: AgentStatus::PendingOnboard,
+        packs: None,
     };
 
+    // packs 为 None 时不序列化，wire format 与加字段前完全一致（老调用方无感）
     let json = serde_json::to_string(&request).unwrap();
     assert_eq!(json, r#"{"id":"agent-1","status":"PendingOnboard"}"#);
 

@@ -4,6 +4,24 @@ use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Agent 入职相关的组织级配置
+///
+/// 语义是「本组织要求每个 Agent 都会这些」——与 Agent 自身的角色/能力无关，
+/// 由组织统一指定，在 `PendingOnboard → Onboarded` 这条边上落地。
+///
+/// 工具包与技能包分开维护：二者落点不同（工具包写 `installed_tags`，
+/// 技能包写 `installed_skill_packs` 并真正建技能副本）。
+/// 「同名双重身份」的包（如 `project_management`）需要两边都配。
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct AgentOnboardConfig {
+    /// 组织要求入职时安装的工具包 tags
+    #[serde(default)]
+    pub required_tool_packs: Vec<String>,
+    /// 组织要求入职时安装的技能包 tags
+    #[serde(default)]
+    pub required_skill_packs: Vec<String>,
+}
+
 /// 组织级可扩展配置
 ///
 /// 以 JSON 形式存放在 `organizations.config` 列中，承载组织维度的开关类配置。
@@ -17,6 +35,10 @@ pub struct OrganizationConfig {
     /// 故默认不构建，避免无意义的 Embedding 开销。确有语义检索需求时由超级管理员开启。
     #[serde(default)]
     pub enable_message_vector: bool,
+
+    /// Agent 入职相关配置（组织要求的工具包/技能包）
+    #[serde(default)]
+    pub agent_onboard: AgentOnboardConfig,
 }
 
 /// 系统初始化请求 - 创建第一个组织和超级管理员

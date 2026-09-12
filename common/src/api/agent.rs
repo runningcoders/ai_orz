@@ -260,6 +260,22 @@ pub struct UpdateAgentRequest {
     pub runtime_config: Option<AgentRuntimeConfigInfo>,
 }
 
+/// 状态流转时携带的「本次安装哪些包」
+///
+/// 只在入职这条边（`PendingOnboard → Onboarded`）上有意义：
+/// - `None`：回退组织级配置（`OrganizationConfig.agent_onboard`）；
+/// - `Some(..)`：以本次传入为准，组织配置不再叠加。
+///
+/// 之所以把工具包与技能包分开：二者落点不同（工具包写 `installed_tags`，
+/// 技能包写 `installed_skill_packs` 并真正建技能副本），同名包两个字段都要写。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct AgentPackSelection {
+    /// 工具包 tags
+    pub tool_packs: Vec<String>,
+    /// 技能包 tags
+    pub skill_packs: Vec<String>,
+}
+
 /// 更新 Agent 状态请求
 ///
 /// 保持严格反序列化（不设 serde(default) 兜底）：缺失字段会报错，
@@ -274,6 +290,39 @@ pub struct UpdateAgentStatusRequest {
     ///
     /// 状态流转合法性由 HR Domain 校验；删除请优先使用 DELETE 接口。
     pub status: AgentStatus,
+
+    /// 本次流转携带的包选择（仅入职语义使用，其余状态忽略）。
+    ///
+    /// 可选字段：老调用方（含工具/A2A 链路）不传即走组织级配置；
+    /// 不序列化 `None`，保证 wire format 与加字段前完全一致。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packs: Option<AgentPackSelection>,
+}
+
+/// 职业选择请求（初创 → 面试中）
+///
+/// 语义化动作：按 Agent 的 `roles ∪ capabilities` 匹配并安装个人工具包/技能包，
+/// 完成后才允许进入面试环节。等价于「学完了，去面试」。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SelectAgentCareerRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+}
+
+/// 入职请求（待入职 → 已入职）
+///
+/// 语义化动作：真正的入职流程在这条边内完成（安装组织要求的包），
+/// 而不是入职之后再补装。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct OnboardAgentRequest {
+    /// Agent ID
+    #[param(source = "path")]
+    pub id: String,
+
+    /// 本次要安装的组织级包；不传则回退 `OrganizationConfig.agent_onboard`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packs: Option<AgentPackSelection>,
 }
 
 /// 删除 Agent 请求
@@ -443,25 +492,27 @@ pub struct ListInstalledToolPacksResponse {
     pub installed_tags: Vec<String>,
 }
 
-/// 同步 Agent 包请求
+/// Agent 进修请求
 ///
-/// 通用恢复/同步入口，负责两件事：
-/// 1. 基础包缺失补装：为 Agent 补齐 neural / skill_management / tool_management
+/// 在职学习入口：把 Agent 的能力补齐到其当前职业/组织要求的最新状态：
+/// 1. 补修基础课：为 Agent 补齐 neural / skill_management / tool_management
 ///    三个基础工具包与技能包（工具包只是关联关系，无包内补全问题）；
-/// 2. 已安装技能包增量补全：检测已安装技能包下是否有 Agent 尚未拥有的新增已发布技能，
-///    有则重装该技能包补全缺失（同时顺带刷新已有副本内容）。
+/// 2. 学习技能更新：检测已安装技能包下是否有 Agent 尚未拥有的新增已发布技能，
+///    有则重装该技能包补全缺失（同时顺带刷新已有副本内容）；
+/// 3. 补学新课：按 Agent 已走过的状态机边重跑匹配 —— 职业匹配（非初创）
+///    与组织要求包（仅已入职），自愈不替代状态机准入。
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
-pub struct SyncAgentPacksRequest {
+pub struct TrainAgentRequest {
     /// Agent ID
     #[param(source = "path")]
     pub agent_id: String,
 }
 
-/// 同步 Agent 包响应
+/// Agent 进修响应
 ///
 /// 全程幂等：已存在的关联/副本不会重复创建，仅返回本次实际发生变更的 tags。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct SyncAgentPacksResponse {
+pub struct TrainAgentResponse {
     /// Agent ID
     pub agent_id: String,
     /// 本次补装的基础工具包 tags（此前缺失，现已就位）

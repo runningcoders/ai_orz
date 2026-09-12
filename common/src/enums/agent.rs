@@ -7,8 +7,21 @@ use sqlx::Type;
 
 /// Agent 状态（生命周期管理）
 ///
+/// 对应一个人的职业生涯：**出生 → 学习/择业 → 面试 → 入职 → 离职**。
+///
 /// 状态流转：
-/// Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded
+/// Incubating → Interviewing → PendingOnboard → Onboarded → PendingOffboard → Offboarded
+///
+/// ## 绑定发生在「边」上，而不是「状态」里
+///
+/// 状态只是结果，能力获取发生在**流转的那一刻**（详见
+/// `HrDomainImpl::transition_status` 的按边分发）：
+///
+/// - `create_agent` → **Incubating**：出生自带，只装神经工具/技能（BASE_AGENT_PACKS）；
+/// - **Incubating → Interviewing**：完成职业生涯选择，按 `roles ∪ capabilities` 匹配
+///   安装个人工具包/技能包（学完了才去面试）；
+/// - **Interviewing → PendingOnboard**：无副作用（预留扩展，如背调/资质校验）；
+/// - **PendingOnboard → Onboarded**：真正的入职，安装组织要求的工具包/技能包。
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
 #[cfg_attr(feature = "sqlx", derive(Type))]
@@ -16,7 +29,7 @@ use sqlx::Type;
 pub enum AgentStatus {
     /// 已删除
     Deleted = 0,
-    /// 面试中（创建 Agent 时的默认状态）
+    /// 面试中
     #[default]
     Interviewing = 1,
     /// 待入职（确认入职，正在初始化）
@@ -27,6 +40,12 @@ pub enum AgentStatus {
     Offboarded = 4,
     /// 待离职（交接中，不接受新任务）
     PendingOffboard = 5,
+    /// 初创（刚创建，仅持有出生自带的神经能力，尚未完成职业生涯选择）
+    ///
+    /// 与 `Interviewing` 的区别：Interviewing 表示「已完成职业选择、可以去面试」，
+    /// Incubating 表示「还在学习期，尚未定岗」。未走完
+    /// `Incubating → Interviewing` 这条边的 Agent 不会获得任何角色相关能力。
+    Incubating = 6,
 }
 
 impl AgentStatus {
@@ -39,6 +58,7 @@ impl AgentStatus {
             3 => Self::Onboarded,
             4 => Self::Offboarded,
             5 => Self::PendingOffboard,
+            6 => Self::Incubating,
             _ => Self::Interviewing,
         }
     }
