@@ -88,26 +88,28 @@
 }
 
 /* ============================================================
- * 表单控件聚焦态：悬浮 + 阴影底
- * 替换 DaisyUI v5 默认的 outline: 2px solid var(--color-base-content)
- * （近黑色硬描边，离周围内容太近且观感生硬），
- * 改为轻微上浮 + 柔和投影 + primary 色边框与淡光晕，30+ 主题自动适配。
- * 覆盖 .input / .textarea / .select / .file-input
+ * 表单控件皮肤：静息态主题色发丝边 + 聚焦态流动光带边框
+ * - 静息态：**真实 1px primary 混色边框** —— DaisyUI v5 的 input/select
+ *   默认 border-style: none（完全不画边框，只剩底色微差），这就是
+ *   「输入框与周围标题区分度低、未点击时可见度不足」的根因；
+ * - 聚焦态：与 .hud-signal 同源的「流动小灯带」——双背景渐变
+ *   （padding-box 填充层 + border-box 流光层），光带沿 1px 边框流动；
+ * - select / file-input 聚焦保持静态 primary 边 + 上浮光晕
+ *   （不覆盖 background，保留 DaisyUI 下拉箭头等内建图层）。
+ * 全部走 --color-* 语义变量，随 data-theme 自动适配。
  * ============================================================ */
 .input,
 .textarea,
 .select,
 .file-input {
+  border: 1px solid color-mix(in oklab, var(--color-primary) 30%, var(--color-base-300));
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
     border-color 0.18s ease;
 }
 
-.input:focus,
-.input:focus-within,
-.textarea:focus,
-.textarea:focus-within,
+/* select / file-input：静态聚焦（保留内建 background 图层） */
 .select:focus,
 .select:focus-within,
 .file-input:focus,
@@ -119,6 +121,54 @@
   box-shadow:
     0 8px 20px -8px color-mix(in oklab, var(--color-base-content) 40%, transparent),
     inset 0 0 0 1.5px color-mix(in oklab, var(--color-primary) 30%, transparent);
+}
+
+/* input / textarea：聚焦 = 流动光带边框 */
+.input:focus,
+.input:focus-within,
+.textarea:focus,
+.textarea:focus-within {
+  outline: none;
+  isolation: isolate;
+  border-color: transparent;
+  transform: translateY(-1px);
+  /* 第 1 层 padding-box = 原玻璃底填充；第 2 层 border-box = 流光，仅边框 1px 可见 */
+  background:
+    linear-gradient(
+      color-mix(in oklab, var(--color-base-100) 65%, transparent),
+      color-mix(in oklab, var(--color-base-100) 65%, transparent)
+    ) padding-box,
+    linear-gradient(
+      90deg,
+      var(--color-base-300),
+      var(--color-primary) 30%,
+      var(--color-accent) 50%,
+      var(--color-primary) 70%,
+      var(--color-base-300)
+    ) border-box;
+  background-size: 100% 100%, 200% 100%;
+  animation: hud-input-border-flow 3.2s linear infinite;
+  box-shadow:
+    0 8px 20px -8px color-mix(in oklab, var(--color-base-content) 40%, transparent),
+    0 0 14px -4px color-mix(in oklab, var(--color-primary) 55%, transparent);
+}
+
+/* 光带流动：只动第 2 层（流光层），首尾同色保证无缝循环 */
+@keyframes hud-input-border-flow {
+  from { background-position: 0 0, 200% 0; }
+  to   { background-position: 0 0, -200% 0; }
+}
+
+/* 减弱动效：聚焦退化为静态 primary 边框 */
+@media (prefers-reduced-motion: reduce) {
+  .input:focus,
+  .input:focus-within,
+  .textarea:focus,
+  .textarea:focus-within {
+    animation: none;
+    border-color: var(--color-primary);
+    background: none;
+  }
 }
 
 /* ============================================================
@@ -1730,18 +1780,8 @@
     word-break: break-all;
   }
 
-  /* 表单控件皮肤：覆盖 DaisyUI input/select/textarea（发丝边 + 聚焦辉光） */
-  .input.hud-input, .select.hud-input, .textarea.hud-input {
-    border-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);
-    background: color-mix(in oklab, var(--color-base-100) 60%, transparent);
-    transition: border-color .15s, box-shadow .15s;
-  }
-  .input.hud-input:focus, .select.hud-input:focus, .textarea.hud-input:focus {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-primary) 45%, transparent),
-                0 0 14px -4px color-mix(in oklab, var(--color-primary) 50%, transparent);
-    outline: none;
-  }
+  /* 表单控件皮肤：统一收敛到顶部「静息态主题色发丝边 + 聚焦流动光带」全局规则，
+     .hud-input 不再单独定义（class 保留兼容，视觉与裸 input 一致）。 */
 
   /* 未来感表格行：左侧数据条 + 悬停发光 */
   .hud-row {
