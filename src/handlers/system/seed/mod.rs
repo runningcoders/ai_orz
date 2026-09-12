@@ -714,16 +714,20 @@ pub async fn apply_snapshot_to_db_with_progress(
                 .await?;
             updated += 1;
         } else {
-            // seed 导入是"数据恢复"语义，需要绕过 hr domain 的"新建必须 Interviewing"校验。
-            // 实现方式：先以 Interviewing 创建（满足 hr domain 不变量），再 update 覆写为目标状态。
+            // seed 导入是"数据恢复"语义，需要绕过 hr domain 的"新建必须 Incubating"校验。
+            // 实现方式：先以 Incubating 创建（满足 hr domain 不变量），再 update 覆写为目标状态。
+            //
+            // 注意：直接覆写状态不会触发状态机边上的绑定（职业选择/入职），
+            // 所以这样导入的 Agent 缺角色相关包 —— 由 train_agent
+            // （阶段 3 对非 Incubating 的 Agent 重跑职业匹配）补齐。
             let mut interim = agent.clone();
-            interim.po.status = common::enums::AgentStatus::Interviewing;
+            interim.po.status = common::enums::AgentStatus::Incubating;
             hr::domain()
                 .agent_manage()
                 .create_agent(ctx.clone(), &interim)
                 .await?;
 
-            if target_status != common::enums::AgentStatus::Interviewing {
+            if target_status != common::enums::AgentStatus::Incubating {
                 hr::domain()
                     .agent_manage()
                     .update_agent(ctx.clone(), &agent)

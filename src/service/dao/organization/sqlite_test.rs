@@ -192,6 +192,7 @@ async fn test_org_config_set_get_cache(pool: SqlitePool) {
     // 开启消息向量开关并写穿
     let cfg = OrganizationConfig {
         enable_message_vector: true,
+        ..Default::default()
     };
     org_dao
         .set_org_config(new_ctx("test-user", pool.clone()), &org_id, &cfg)

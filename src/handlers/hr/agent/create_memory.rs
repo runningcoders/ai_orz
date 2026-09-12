@@ -15,7 +15,8 @@ use serde_json;
     id = "create_memory",
     name = "Create Memory Entry",
     description = "Create a memory entry: memory_type='short_term' writes a working-memory item from content, 'knowledge_node' creates a long-term knowledge node from content. Returns the new memory_id. For explicit node names, typed relations, or trace_ids, prefer save_long_term_memory or save_short_term_memory.",
-    params = "common::api::CreateMemoryParams"
+    params = "common::api::CreateMemoryParams",
+    neural
 )]
 #[generate_http_handler]
 pub async fn create_memory(

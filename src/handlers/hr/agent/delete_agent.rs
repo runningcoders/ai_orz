@@ -13,7 +13,8 @@ use crate::enrich_ctx;
     id = "delete_agent",
     name = "Remove Agent",
     description = "Delete an agent by id (marked as Deleted, after which it no longer appears in list/query/search results). Returns success. Fails with NotFound if the agent does not exist.",
-    params = "common::api::DeleteAgentRequest"
+    params = "common::api::DeleteAgentRequest",
+    tags = "agent_management,hr_specialist"
 )]
 #[generate_http_handler]
 pub async fn delete_agent(

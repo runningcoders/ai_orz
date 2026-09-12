@@ -166,6 +166,32 @@ impl InitializeSystemTask {
             .create_org_and_owner(ctx.clone(), params.clone())
             .await?;
 
+        // 组织级入职配置默认值：本组织要求每个 Agent 都会项目管理。
+        // project_management 是「同名双重身份」包，工具包与技能包两个字段都要配：
+        // 工具包负责授权（项目/任务/产物工具靠 installed_tags 放行），
+        // 技能包负责把技能副本放进 Agent 池子（进 Prompt 的前置门）。
+        // 组织管理员可在「组织信息」页随时调整。
+        organization::domain()
+            .organization_manage()
+            .update_org_config(
+                ctx.clone(),
+                &org_id,
+                &common::api::OrganizationConfig {
+                    agent_onboard: common::api::AgentOnboardConfig {
+                        required_tool_packs: DEFAULT_ORG_ONBOARD_PACKS
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                        required_skill_packs: DEFAULT_ORG_ONBOARD_PACKS
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+
         let mut step = 2;
 
         // Step（可选）: 创建 chat provider — 未配置时跳过，后续在模型管理中补配
@@ -279,11 +305,18 @@ impl InitializeSystemTask {
     }
 }
 
+/// 新建组织时写入的「组织要求入职包」默认值
+///
+/// 对应组织级配置 `OrganizationConfig.agent_onboard`。放在这里而不是 HR 状态机里：
+/// 包名是组织决策，代码只提供一个开箱即用的初值，组织管理员可在「组织信息」页改。
+const DEFAULT_ORG_ONBOARD_PACKS: &[&str] = &["project_management"];
+
 /// 无条件创建预设前台接待 Agent。
 ///
 /// - 数据源：种子配置 default.json 的 TEMPLATE_RECEPTION_AGENT（name/roles/capabilities/soul）
-/// - 创建即 Interviewing；若初始化配置了 chat provider 则绑定并直接入职（Onboarded，立即可用）
-/// - 未配置 chat provider：创建为 Interviewing（缺 model，状态表达"未就绪"），
+/// - 创建即 Incubating；若初始化配置了 chat provider 则走完整生命周期
+///   （职业选择 → 待入职 → 已入职，立即可用）
+/// - 未配置 chat provider：停留在 Incubating（缺 model，状态表达"未就绪"），
 ///   用户后续在模型管理中补配对话模型并入职后即可使用——不隐式兜底
 ///
 /// 返回新创建的 Agent ID（或已存在前台 Agent 的 ID）。
@@ -339,7 +372,7 @@ async fn create_preset_reception_agent(
         chat_provider_id.clone().unwrap_or_default(),
         owner_id.to_string(),
     );
-    // 创建即 Interviewing（create_agent 强制状态），缺 model 由此状态表达
+    // 创建即 Incubating（create_agent 强制状态），缺 model 由此状态表达
     let agent = Agent::from_po(po);
     hr::domain()
         .agent_manage()
@@ -360,11 +393,16 @@ async fn create_preset_reception_agent(
             .ok_or_else(|| Error::not_found(format!("前台 Agent {} 不存在", agent_id)))?;
         hr::domain()
             .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard)
+            // 初创 → 面试中：按 roles/capabilities 完成职业选择
+            .transition_status(ctx.clone(), &mut agent, AgentStatus::Interviewing, None)
             .await?;
         hr::domain()
             .agent_manage()
-            .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded)
+            .transition_status(ctx.clone(), &mut agent, AgentStatus::PendingOnboard, None)
+            .await?;
+        hr::domain()
+            .agent_manage()
+            .transition_status(ctx.clone(), &mut agent, AgentStatus::Onboarded, None)
             .await?;
         sys_info!(
             "initialize_system: 前台 Agent {} 已绑定对话模型并入职",
@@ -372,10 +410,10 @@ async fn create_preset_reception_agent(
         );
     }
 
-    // 项目管理（公司指定包）不在此处单独安装：前台 Agent 的入职流程
-    // （transition_status → Onboarded）会通过 apply_onboard_bindings 一并绑定
-    // COMPANY_ONBOARD_PACKS（工具包 + 技能包两个字段），避免同一件事两处写、语义分叉。
-    // 若初始化未配置对话模型（Agent 停留在 Interviewing），则不绑任何岗位包 ——
+    // 组织要求的包（现由 OrganizationConfig.agent_onboard 驱动）不在此处单独安装：入职流程
+    // （PendingOnboard → Onboarded）会从组织级配置 OrganizationConfig.agent_onboard
+    // 读取并安装，避免同一件事两处写、语义分叉。
+    // 若初始化未配置对话模型（Agent 停留在 Incubating），则不绑任何岗位包 ——
     // 未入职即未就位，符合状态机语义。
 
     Ok(Some(agent_id))

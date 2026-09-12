@@ -1,23 +1,30 @@
-//! Handler: PUT /api/v1/agents/{id}/status - Update agent status
+//! Handler: PUT /api/v1/agents/{id}/status - 通用状态流转
+//!
+//! 语义：**只搬状态，不做业务**。带副作用的流转请走语义化接口：
+//! - 职业选择（初创 → 面试中）：`POST /agents/{id}/career`
+//! - 入职（待入职 → 已入职）：`POST /agents/{id}/onboard`
+//!
+//! 本接口保留给「无副作用的边」（如 面试中 → 待入职）与幂等的状态纠正，
+//! 前端的状态切换按钮统一走它，由 domain 层按边决定是否触发副作用。
 
-use crate::models::agent::ExternalAgentConfig;
+use crate::handlers::hr::agent::build_status_response;
 use crate::pkg::RequestContext;
 use crate::service::domain::hr::domain;
 use ai_orz_macros::{generate_http_handler, register_handler_tool};
-use common::api::{
-    AgentCliConfig, AgentExternalConfigInfo, AgentRemoteConfig, AgentRuntimeConfigInfo,
-    UpdateAgentStatusRequest, UpdateAgentStatusResponse,
-};
-use common::enums::{AgentKind, AgentRuntimeState};
+use common::api::{UpdateAgentStatusRequest, UpdateAgentStatusResponse};
 use common::error::Result;
 
 use crate::enrich_ctx;
 
-/// Update the status of an AI agent (active/disabled)
+/// Transition an agent's lifecycle status.
+///
+/// Statuses: Incubating, Interviewing, PendingOnboard, Onboarded, PendingOffboard, Offboarded.
+/// Side-effect-free transitions only — use the semantic endpoints
+/// (`career` / `onboard`) when capabilities must be installed.
 #[register_handler_tool(
     id = "update_agent_status",
     name = "Toggle Agent Status",
-    description = "Transition an agent's lifecycle status (Interviewing, PendingOnboard, Onboarded, PendingOffboard, Offboarded) and return the updated agent. Use it to onboard a newly created agent or to take one out of service.",
+    description = "Transition an agent's lifecycle status (Incubating, Interviewing, PendingOnboard, Onboarded, PendingOffboard, Offboarded) and return the updated agent. Pure status move without capability binding; for career selection use select_agent_career, for onboarding use onboard_agent.",
     params = "common::api::UpdateAgentStatusRequest",
     tags = "agent_management,hr_specialist"
 )]
@@ -37,123 +44,8 @@ pub async fn update_agent_status(
 
     domain()
         .agent_manage()
-        .transition_status(ctx.clone(), &mut agent, params.status)
+        .transition_status(ctx, &mut agent, params.status, params.packs)
         .await?;
 
-    let capabilities: Vec<String> = agent.po.get_capabilities();
-    let roles: Vec<String> = agent.po.get_roles();
-    let kind = agent.po.kind;
-
-    let external_config = match kind {
-        AgentKind::Local => None,
-        AgentKind::Cli | AgentKind::Remote => {
-            let runtime_config = agent.po.get_runtime_config();
-            match runtime_config.external_config {
-                Some(ExternalAgentConfig::Cli {
-                    command,
-                    args,
-                    work_dir,
-                    env: _,
-                    timeout_secs,
-                    prompt_template,
-                }) => Some(AgentExternalConfigInfo {
-                    cli: Some(AgentCliConfig {
-                        command,
-                        args,
-                        work_dir,
-                        timeout_secs,
-                        prompt_template,
-                    }),
-                    remote: None,
-                }),
-                Some(ExternalAgentConfig::Remote {
-                    endpoint,
-                    agent_name,
-                    auth_token: _,
-                    timeout_secs,
-                }) => Some(AgentExternalConfigInfo {
-                    cli: None,
-                    remote: Some(AgentRemoteConfig {
-                        endpoint,
-                        agent_name,
-                        timeout_secs,
-                    }),
-                }),
-                None => None,
-            }
-        }
-    };
-
-    let (runtime_state, current_message_id, current_task_id, current_project_id) =
-        match &agent.runtime_info {
-            Some(info) => (
-                info.state as i32,
-                info.current_message_id.clone(),
-                info.task_id.clone(),
-                info.project_id.clone(),
-            ),
-            None => (AgentRuntimeState::Idle as i32, None, None, None),
-        };
-
-    // 上下文长度：最近一次 LLM 调用的 prompt token 数（纯内存，未思考过为 None）
-    let context_length = agent
-        .runtime_info
-        .as_ref()
-        .map(|info| info.context_length)
-        .filter(|v| *v > 0);
-    // 压缩阈值：与 ContextOverflowPolicy 同源，原始值直出（百分比由前端算）
-    let context_length_threshold = agent
-        .runtime_info
-        .as_ref()
-        .map(|info| info.context_length_threshold)
-        .filter(|v| *v > 0);
-
-    // 构造运行时配置信息（思考轮次 / 超时等用户可调参数）
-    let runtime_config = {
-        let rc = agent.po.get_runtime_config();
-        Some(AgentRuntimeConfigInfo {
-            max_thinking_rounds: rc.max_thinking_rounds,
-            intent_analyze_max_rounds: rc.intent_analyze_max_rounds,
-            summary_max_rounds: rc.summary_max_rounds,
-            think_timeout_secs: rc.think_timeout_secs,
-        })
-    };
-
-    Ok(UpdateAgentStatusResponse {
-        id: agent.id().to_string(),
-        name: agent.name().to_string(),
-        roles,
-        description: if agent.po.description.is_empty() {
-            None
-        } else {
-            Some(agent.po.description.clone())
-        },
-        capabilities: if capabilities.is_empty() {
-            None
-        } else {
-            Some(capabilities)
-        },
-        soul: if agent.po.soul.is_empty() {
-            None
-        } else {
-            Some(agent.po.soul.clone())
-        },
-        kind: kind.to_string(),
-        model_provider_id: agent.po.model_provider_id.clone(),
-        external_config,
-        runtime_config,
-        status: agent.po.status as i32,
-        created_at: agent.po.created_at,
-        updated_at: agent.po.updated_at,
-        runtime_state,
-        current_message_id,
-        current_task_id,
-        current_project_id,
-        context_length,
-        context_length_threshold,
-        tool_list: None,
-        skill_list: None,
-        stats: None,
-        model_call_stats: None,
-    })
+    Ok(build_status_response(&agent))
 }

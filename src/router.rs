@@ -586,6 +586,16 @@ fn hr_routes() -> Router {
             "/agents/{id}/status",
             put(handlers::hr::agent::update_agent_status_handler),
         )
+        // 语义化动作：职业选择（初创 → 面试中，装个人匹配的能力）
+        .route(
+            "/agents/{id}/career",
+            post(handlers::hr::agent::select_agent_career_handler),
+        )
+        // 语义化动作：入职（待入职 → 已入职，装组织要求的能力）
+        .route(
+            "/agents/{id}/onboard",
+            post(handlers::hr::agent::onboard_agent_handler),
+        )
         .route(
             "/agents/{id}",
             delete(handlers::hr::agent::delete_agent_handler),
@@ -627,8 +637,8 @@ fn hr_routes() -> Router {
             delete(handlers::hr::agent::uninstall_skill_pack_handler),
         )
         .route(
-            "/agents/{agent_id}/sync-packs",
-            post(handlers::hr::agent::sync_agent_packs_handler),
+            "/agents/{agent_id}/train",
+            post(handlers::hr::agent::train_agent_handler),
         )
         .route(
             "/agents/{agent_id}/tools/{tool_id}/bind",
