@@ -20,6 +20,7 @@ use web_sys::console;
 use crate::api::hr::list_agents;
 use crate::api::organization::list_users;
 use crate::store::auth::use_auth_state;
+use crate::utils::mention::receiver_mention_html;
 use crate::utils::message::{NameMap, resolve_sender_name};
 use common::api::{ListAgentsRequest, MessageListItem, PaginationParams};
 
@@ -41,6 +42,11 @@ impl Directory {
     /// 解析消息发送者展示名
     pub fn sender_name(&self, msg: &MessageListItem) -> String {
         resolve_sender_name(msg, &self.agents, &self.users)
+    }
+
+    /// 接收方的「提及 chip」HTML（气泡头部用，与正文 @ 提及同一套写法）
+    pub fn receiver_mention(&self, msg: &MessageListItem) -> Option<String> {
+        receiver_mention_html(msg, &self.agents, &self.users)
     }
 }
 

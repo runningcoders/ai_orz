@@ -8,21 +8,30 @@ use common::api::MessageListItem;
 use dioxus::prelude::*;
 
 use crate::components::markdown::MarkdownRenderer;
+use crate::store::auth::use_auth_state;
 use crate::store::directory::use_directory;
 use crate::utils::file::format_file_size;
-use crate::utils::message::{MSG_TEXT, is_attachment_message, role_avatar, role_class, role_label};
+use crate::utils::message::{
+    MSG_TEXT, involves_user, is_attachment_message, role_avatar, role_class, role_label,
+};
 use crate::utils::time::format_time_hm;
 
 /// 单条消息气泡
 ///
 /// - 显示头像 + **发送者名字** + 角色 + 时间 + 消息内容
+/// - `show_receiver` 为真时，在发送者后面拼出接收方（复用正文 @ 提及的 chip 写法），
+///   用于群聊场景看清「谁在跟谁聊」
+/// - 与当前用户无关的消息（Agent 之间的横向交流）整体降透明度（`message-bystander`）
 /// - 附件消息自动渲染图片/文件下载链接
 ///
 /// 发送者名字来自全局 `Directory`（`store/directory.rs`）：按 `from_role` 到对应的
 /// Agent / 用户名称表查 `from_id`。查不到时回退 `角色 + 短 ID`，
 /// **不会**渲染出 "user"/"agent" 这类英文角色码。
 #[component]
-pub fn MessageBubble(msg: MessageListItem) -> Element {
+pub fn MessageBubble(
+    msg: MessageListItem,
+    #[props(default = true)] show_receiver: bool,
+) -> Element {
     let role = msg.from_role;
     let avatar = role_avatar(role);
     let class = role_class(role);
@@ -30,10 +39,24 @@ pub fn MessageBubble(msg: MessageListItem) -> Element {
     let time = format_time_hm(msg.created_at);
 
     let directory = use_directory();
-    let sender = directory.read().sender_name(&msg);
+    let auth = use_auth_state();
+    let dir = directory.read();
+    let sender = dir.sender_name(&msg);
+    let receiver = if show_receiver {
+        dir.receiver_mention(&msg)
+    } else {
+        None
+    };
+    // 收发双方都不是当前用户 → 旁听消息，视觉弱化（hover 恢复，便于细看）
+    let bystander = !involves_user(&msg, &auth.read().user_id);
+    let item_class = if bystander {
+        format!("message-item {class} message-bystander")
+    } else {
+        format!("message-item {class}")
+    };
 
     rsx! {
-        div { class: "message-item {class}", key: "{msg.message_id}",
+        div { class: "{item_class}", key: "{msg.message_id}",
             div { class: "message-avatar", "{avatar}" }
             div { class: "message-body",
                 div { class: "message-meta",
@@ -41,6 +64,11 @@ pub fn MessageBubble(msg: MessageListItem) -> Element {
                     // 现在渲染真实发送者名字（Agent 名 / 用户名 / 「系统」）+ 中文角色标签。
                     span { class: "message-sender", "{sender}" }
                     span { class: "message-role", "{role_name}" }
+                    // 「发给谁」：与正文 @ 提及同一套写法（同样的 chip 样式与 @ 前缀）
+                    if let Some(html) = receiver {
+                        span { class: "message-arrow", "→" }
+                        span { class: "message-receiver", dangerous_inner_html: "{html}" }
+                    }
                     span { class: "message-time", "{time}" }
                 }
                 {render_content(&msg)}

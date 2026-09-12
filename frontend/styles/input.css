@@ -1387,6 +1387,28 @@
         flex: none; margin-left: auto;
         color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
       }
+      /* 「发给谁」箭头 + 接收方 chip：群聊（项目会话）里标出消息的去向。
+         chip 本体复用正文 @ 提及的 .mention-chip（见上文），这里只把字号拉回
+         气泡头部的 meta 级别 —— 否则 0.85em 相对 meta 会小到看不清。 */
+      .message-arrow {
+        flex: none;
+        color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+      }
+      .message-receiver { flex: none; display: inline-flex; min-width: 0; }
+      .message-meta .mention-chip { font-size: 0.625rem; padding: 0 0.3rem; }
+      /* 头像对齐气泡**顶边**：DaisyUI `.chat-image` 默认 `align-self: flex-end`，
+         即贴着（含 footer 的）气泡底部，看起来像头像"掉在消息下面"。
+         主流 IM（微信 / Telegram / Slack）都把头像放在消息起始位置，这里统一改回
+         start，让头像与 chat-header（发送者 + 接收方）齐平。 */
+      .chat .chat-image { align-self: start; }
+      /* 旁听消息（Agent 之间的横向交流，收发双方都不是当前用户）：
+         整体降透明度，避免刷屏时误以为每条都在找自己；hover 恢复便于细读。 */
+      .message-item.message-bystander { opacity: 0.6; }
+      .message-item.message-bystander:hover { opacity: 1; }
+      /* 同一口径应用到主对话页的 DaisyUI 气泡（.chat）：
+         Agent 之间的横向交流同样弱化，hover 恢复 */
+      .chat.chat-bystander { opacity: 0.6; }
+      .chat.chat-bystander:hover { opacity: 1; }
       .message-text {
         display: block;
         /* 气泡内 markdown 不继承全局 max-w-none，填满气泡宽度正确换行 */

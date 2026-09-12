@@ -1979,7 +1979,13 @@ pub fn HrAgentDetail(id: String) -> Element {
                                                 }
                                             } else {
                                                 for msg in messages().iter().cloned() {
-                                                    MessageBubble { msg: msg.clone(), key: "{msg.message_id}" }
+                                                    // Agent 详情页是 1:1 私聊，收件人显然是该 Agent，
+                                                    // 不拼接收方 chip（旁观消息仍会降透明度）
+                                                    MessageBubble {
+                                                        msg: msg.clone(),
+                                                        show_receiver: false,
+                                                        key: "{msg.message_id}",
+                                                    }
                                                 }
                                                 if is_typing() {
                                                     TypingIndicator {}

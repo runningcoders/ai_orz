@@ -14,13 +14,16 @@ use crate::components::mention_picker::{
 use crate::components::modal::Modal;
 use crate::components::state::Loading;
 use crate::layouts::navbar::Navbar;
+use crate::store::auth::use_auth_state;
 use crate::store::directory::{Directory, use_directory};
 use crate::store::toast::use_toast;
+use crate::utils::mention::{read_caret, restore_caret};
 use crate::utils::{
-    MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT, MSG_TOOL_CALL_REQUEST,
-    MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials, build_optimistic_user_msg, format_file_size,
-    format_time_hm as format_time, is_attachment_message, project_status_text as status_text,
-    replace_tmp_with_real,
+    HISTORY_PAGE_SIZE, HISTORY_SCAN_MAX_PAGES, MSG_AUDIO, MSG_IMAGE, MSG_TASK_ASSIGNMENT, MSG_TEXT,
+    MSG_TOOL_CALL_REQUEST, MSG_TOOL_CALL_RESULT, MSG_VIDEO, avatar_initials,
+    build_optimistic_user_msg, format_file_size, format_time_hm as format_time, in_project_context,
+    involves_user, is_attachment_message, project_status_text as status_text,
+    replace_tmp_with_real, request_scope,
 };
 use common::api::{
     AgentListItem, CreateProjectRequest, GetAgentRequest, GetAgentResponse,
@@ -186,6 +189,8 @@ pub fn MessageChat() -> Element {
     // 权限检查：先注册所有 hooks，再根据 auth 状态决定是否渲染
     // （Dioxus 要求 hooks 必须在每次 render 中按相同顺序注册，不能在条件分支中跳过）
     let is_authenticated = crate::hooks::use_require_auth();
+    // 当前用户身份：判定「这条消息是不是跟我有关」（旁观消息视觉弱化）
+    let auth = use_auth_state();
 
     let mut load_projects = move || {
         loading_projects.set(true);
@@ -221,25 +226,56 @@ pub fn MessageChat() -> Element {
     let mut load_messages = move |project_id: Option<&str>| {
         // 转换为 owned：spawn 的 future 需要 'static 生命周期
         let project_id = project_id.map(|s| s.to_string());
+        // ⚠️ 请求侧带哨兵值（见 `utils::message::request_scope`）：后端 `project_id=None`
+        // 表示「不过滤」，会把项目消息一起拉回来，只能靠前端收敛 —— 那会让 `total` /
+        // `has_more` 失真，一页被滤空还会让上拉卡在原地翻不到更早的历史。
+        // 传哨兵后后端精确返回 `project_id IS NULL`，前端过滤降级为兜底。
+        // 内部 `selected_project` 的 None 语义不变（`is_project_mode` 等依赖 is_some()）。
+        let req_scope = request_scope(project_id.as_deref());
         loading_messages.set(true);
         spawn(async move {
-            let project_id_ref = project_id.as_deref();
-            match load_latest_messages(common::api::ListMessagesRequest {
-                project_id: project_id_ref.map(|s| s.to_string()),
-                limit: Some(20),
-                ..Default::default()
-            })
-            .await
-            {
-                Ok(resp) => {
-                    let is_empty = resp.messages.is_empty();
-                    messages.set(resp.messages);
-                    has_more.set(!is_empty);
+            let mut visible = Vec::new();
+            let mut cursor: Option<i64> = None;
+            let mut full_page = false;
+            for _ in 0..HISTORY_SCAN_MAX_PAGES {
+                let req = common::api::ListMessagesRequest {
+                    project_id: req_scope.clone(),
+                    before_timestamp: cursor,
+                    limit: Some(HISTORY_PAGE_SIZE),
+                    ..Default::default()
+                };
+                let resp = match if cursor.is_some() {
+                    load_older_messages(req).await
+                } else {
+                    load_latest_messages(req).await
+                } {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        toast.error(format!("加载消息失败: {}", e));
+                        break;
+                    }
+                };
+                // 满页 ⇒ 可能还有更早的；不满页 ⇒ 到头了
+                full_page = resp.messages.len() >= HISTORY_PAGE_SIZE;
+                let next_cursor = resp.messages.first().map(|m| m.created_at);
+                visible = resp
+                    .messages
+                    .into_iter()
+                    .filter(|m| in_project_context(m, project_id.as_deref()))
+                    .collect();
+                if !visible.is_empty() || !full_page {
+                    break;
                 }
-                Err(e) => {
-                    toast.error(format!("加载消息失败: {}", e));
+                match next_cursor {
+                    Some(ts) => cursor = Some(ts),
+                    None => {
+                        full_page = false;
+                        break;
+                    }
                 }
             }
+            messages.set(visible);
+            has_more.set(full_page);
             loading_messages.set(false);
         });
     };
@@ -248,36 +284,61 @@ pub fn MessageChat() -> Element {
         if !has_more() || loading_messages() {
             return;
         }
-        let project_id = match selected_project() {
-            Some(id) => id,
-            None => return,
-        };
-        let first_ts = match messages.read().first() {
-            Some(m) => m.created_at,
-            None => return,
+        let project_id = selected_project();
+        // 请求侧带哨兵值（同 `load_messages`）：默认对话要后端精确返回无 project 的消息
+        let req_scope = request_scope(project_id.as_deref());
+        let Some(first_ts) = messages.read().first().map(|m| m.created_at) else {
+            return;
         };
         loading_messages.set(true);
         spawn(async move {
-            match load_older_messages(common::api::ListMessagesRequest {
-                project_id: Some(project_id.clone()),
-                before_timestamp: Some(first_ts),
-                limit: Some(20),
-                ..Default::default()
-            })
-            .await
-            {
-                Ok(resp) => {
-                    if resp.messages.is_empty() {
-                        has_more.set(false);
-                    } else {
-                        let mut current = messages.write();
-                        let mut older = resp.messages;
-                        older.append(&mut *current);
-                        *current = older;
+            const MAX_SCAN_PAGES: usize = HISTORY_SCAN_MAX_PAGES;
+            let mut before = first_ts;
+            for _ in 0..MAX_SCAN_PAGES {
+                let resp = match load_older_messages(common::api::ListMessagesRequest {
+                    project_id: req_scope.clone(),
+                    before_timestamp: Some(before),
+                    limit: Some(HISTORY_PAGE_SIZE),
+                    ..Default::default()
+                })
+                .await
+                {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        toast.error(format!("加载更多消息失败: {}", e));
+                        break;
                     }
+                };
+
+                let full_page = resp.messages.len() >= HISTORY_PAGE_SIZE;
+                let next_before = resp.messages.first().map(|m| m.created_at);
+                let older: Vec<_> = resp
+                    .messages
+                    .into_iter()
+                    .filter(|m| in_project_context(m, project_id.as_deref()))
+                    .collect();
+
+                let has_visible = !older.is_empty();
+                if has_visible {
+                    let mut current = messages.write();
+                    let mut merged = older;
+                    merged.append(&mut current);
+                    *current = merged;
                 }
-                Err(e) => {
-                    toast.error(format!("加载更多消息失败: {}", e));
+
+                if !full_page {
+                    has_more.set(false);
+                    break;
+                }
+                if has_visible {
+                    break;
+                }
+                match next_before {
+                    Some(ts) => before = ts,
+                    None => {
+                        has_more.set(false);
+                        break;
+                    }
                 }
             }
             loading_messages.set(false);
@@ -290,13 +351,10 @@ pub fn MessageChat() -> Element {
             Err(_) => return,
         };
         let cur_project = selected_project();
-        // 修复 H1：默认对话框（cur_project=None）应接收 project_id=None 的消息
-        let project_match = match (&cur_project, &msg.project_id) {
-            (Some(cur), Some(proj)) => cur.as_str() == proj.as_str(),
-            (None, None) => true,
-            _ => false,
-        };
-        if project_match {
+        // 与历史加载共用同一个判定（`in_project_context`）：默认对话（None）
+        // 只接收无 project 的消息，项目会话按 project_id 匹配。
+        // ⚠️ 两处口径必须一致，否则「实时推来的看得到、一刷新就没了」。
+        if in_project_context(&msg, cur_project.as_deref()) {
             let mut current = messages.write();
             // 移除同 content 的乐观消息（统一使用 replace_tmp_with_real）
             replace_tmp_with_real(&mut current, &msg);
@@ -555,6 +613,9 @@ pub fn MessageChat() -> Element {
         });
 
         spawn(async move {
+            // 乐观消息要带上收件人 —— 否则气泡头部拼不出「→ @谁」，
+            // 自己的消息会比历史消息少一截接收方信息（to_agent_id 下面会被 move 进请求）
+            let to_agent_snapshot = to_agent_id.clone();
             let req = SendMessageToAgentParams {
                 to_agent_id,
                 content: text.clone(),
@@ -567,7 +628,8 @@ pub fn MessageChat() -> Element {
             match send_message_to_agent(req).await {
                 Ok(resp) => {
                     // 修复 L18：tmp_msg_id 用 now_ms+random 避免同毫秒发送两条消息 ID 碰撞
-                    let mut user_msg = build_optimistic_user_msg(text, project_id, None, None);
+                    let mut user_msg =
+                        build_optimistic_user_msg(text, project_id, None, to_agent_snapshot);
                     // 用户消息（to_role=Agent）只触发 Agent 唤醒，后端**不回推 SSE**，
                     // 乐观消息永远不会被真实消息替换 → 本地恒持有 tmp_ ID。
                     // 而 Agent 回复的 reply_to_id 指向本条消息的**真实 ID**，
@@ -860,6 +922,17 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
+        // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
+        // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
+        // 默认对话是 1:1，收件人显然，不重复展示。
+        let receiver_html = if selected_project().is_some() {
+            directory().receiver_mention(&msg_clone)
+        } else {
+            None
+        };
+        // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
+        let bystander = !involves_user(&msg_clone, &auth.read().user_id);
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
         // 找不到（未加载到引用的历史消息）则不展示引用块
         let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
@@ -883,9 +956,16 @@ pub fn MessageChat() -> Element {
         };
                                         rsx! {
                                             div {
-                                                class: if is_user { "chat chat-end" } else { "chat chat-start" },
+                                                class: if is_user { "chat chat-end" } else if bystander { "chat chat-start chat-bystander" } else { "chat chat-start" },
                                                 key: "{msg_id}",
-                                                div { class: "chat-header pr-1 text-sm opacity-70", "{sender_name}" }
+                                                div { class: "chat-header pr-1 text-sm opacity-70 flex items-center gap-1",
+                                                    span { "{sender_name}" }
+                                                    // 接收方：与正文 @ 提及同一套 chip 写法（谁在跟谁聊）
+                                                    if let Some(html) = receiver_html {
+                                                        span { class: "message-arrow", "→" }
+                                                        span { class: "message-receiver", dangerous_inner_html: "{html}" }
+                                                    }
+                                                }
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
@@ -1044,6 +1124,17 @@ pub fn MessageChat() -> Element {
             ensure_agent_name(directory, pending_agent_ids, msg_clone.from_id.clone());
         }
         let sender_name = directory().sender_name(&msg_clone);
+        // 「发给谁」：项目会话（群聊）里消息不止「你 ↔ 一个 Agent」两条线，
+        // Agent 之间也会互相说话 —— 头部拼出接收方（复用正文 @ 提及的 chip 写法，
+        // 同样的 @名 形态 + 同样的配色），一眼看清谁在跟谁聊。
+        // 默认对话是 1:1，收件人显然，不重复展示。
+        let receiver_html = if selected_project().is_some() {
+            directory().receiver_mention(&msg_clone)
+        } else {
+            None
+        };
+        // 收发双方都不是当前用户 → 旁听消息，整体降透明度（hover 恢复）
+        let bystander = !involves_user(&msg_clone, &auth.read().user_id);
         // 解析被引用消息（气泡引用块展示）：在当前消息列表里找；
         // 找不到（未加载到引用的历史消息）则不展示引用块
         let quoted = msg_clone.reply_to_id.as_ref().and_then(|rid| {
@@ -1067,9 +1158,16 @@ pub fn MessageChat() -> Element {
         };
                                         rsx! {
                                             div {
-                                                class: if is_user { "chat chat-end" } else { "chat chat-start" },
+                                                class: if is_user { "chat chat-end" } else if bystander { "chat chat-start chat-bystander" } else { "chat chat-start" },
                                                 key: "{msg_id}",
-                                                div { class: "chat-header pr-1 text-sm opacity-70", "{sender_name}" }
+                                                div { class: "chat-header pr-1 text-sm opacity-70 flex items-center gap-1",
+                                                    span { "{sender_name}" }
+                                                    // 接收方：与正文 @ 提及同一套 chip 写法（谁在跟谁聊）
+                                                    if let Some(html) = receiver_html {
+                                                        span { class: "message-arrow", "→" }
+                                                        span { class: "message-receiver", dangerous_inner_html: "{html}" }
+                                                    }
+                                                }
                                                 div { class: "chat-image avatar",
                                                     div {
                                                         class: if is_user { "w-10 rounded-full bg-primary text-primary-content flex items-center justify-center font-bold" } else if is_system { "w-10 rounded-full bg-info text-info-content flex items-center justify-center font-bold" } else { "w-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center font-bold" },
@@ -1401,6 +1499,8 @@ pub fn MessageChat() -> Element {
 }
 
 /// 输入框 DOM id：@ 提及需要读写光标位置，需要一个稳定标识
+///
+/// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
 const CHAT_INPUT_ID: &str = "chat-input-textarea";
 
 /// 置底状态气泡文案：与 Agent 运行时状态匹配；None 表示不显示气泡。
@@ -1414,31 +1514,6 @@ fn agent_status_line(awaiting_reply: bool, state: i32) -> Option<&'static str> {
         _ if awaiting_reply => Some("正在等待回复…"),
         _ => None,
     }
-}
-
-/// 取输入框元素（读取 / 恢复光标用）
-///
-/// 两个会话分支共用同一个 id，任一时刻 DOM 里只有一个，不会取错。
-fn chat_input_element() -> Option<web_sys::HtmlTextAreaElement> {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id(CHAT_INPUT_ID))
-        .and_then(|el| el.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
-}
-
-/// 把光标放回指定位置
-///
-/// 受控 textarea 的值由 Dioxus 在事件结束后统一写回，
-/// 因此用 0ms 定时器把恢复动作推到 DOM 更新之后，否则会被随后写入的 value 冲掉。
-fn restore_chat_caret(pos: usize) {
-    gloo_timers::callback::Timeout::new(0, move || {
-        if let Some(el) = chat_input_element() {
-            let pos = pos as u32;
-            let _ = el.set_selection_range(pos, pos);
-            let _ = el.focus();
-        }
-    })
-    .forget();
 }
 
 /// 渲染聊天输入区域（Project 对话框和默认对话框共用）
@@ -1470,7 +1545,7 @@ fn chat_input_area(
     let on_pick_mention = Callback::new(move |_item: MentionCandidate| {
         if let Some((text, caret)) = mention.confirm(&input_text_pick()) {
             input_text_pick.set(text);
-            restore_chat_caret(caret);
+            restore_caret(CHAT_INPUT_ID, caret);
         }
     });
     // 摘掉「已提及」胶囊：同步把正文里的提及语法串删掉
@@ -1628,10 +1703,7 @@ fn chat_input_area(
                     oninput: move |e| {
                         let value = e.value();
                         // 光标位置决定 @ 查询的边界；读不到就退回文本末尾（表现为不弹菜单）
-                        let caret = chat_input_element()
-                            .and_then(|el| el.selection_start().ok().flatten())
-                            .map(|v| v as usize)
-                            .unwrap_or(value.len());
+                        let caret = read_caret(CHAT_INPUT_ID).unwrap_or(value.len());
                         mention.sync(&value, caret);
                         handle_input(value);
                     },
@@ -1652,7 +1724,7 @@ fn chat_input_area(
                                 e.prevent_default();
                                 if let Some((text, caret)) = mention.confirm(&input_text()) {
                                     input_text.set(text);
-                                    restore_chat_caret(caret);
+                                    restore_caret(CHAT_INPUT_ID, caret);
                                 } else {
                                     // 无候选时按 Enter 只收起菜单，不误发消息
                                     mention.close();
