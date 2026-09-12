@@ -1,5 +1,5 @@
 #!/bin/bash
-# pre-push 钩子：push 前本地拦截 CI 会挂的静态门禁（fmt + clippy + dx check）
+# pre-push 钩子：push 前本地拦截 CI 会挂的静态门禁（fmt + clippy + clippy-fe + dx check）
 # 安装：make hooks（即 git config core.hooksPath .githooks）
 # 跳过一次：git push --no-verify
 # 说明：与 CI fmt / lint / frontend job 同口径，本地过了 CI 就过。
@@ -8,15 +8,17 @@
 #                   （需 protoc，约数十秒；**--workspace 不可省**，否则 cargo 只选 default
 #                    member = 根包 ai_orz，common / tools / ai-orz-macros 的 lint 静默跳过）
 #       - clippy-fe: cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets
-#                    -- -D warnings（前端 wasm32 口径，含完整类型检查）
-#                    ⚠️ 不要用 `dx check` 顶替：dx check 只做路由级检查、不编译业务代码，
-#                    曾出现「前端 14 个编译错误仍全绿通过」的假绿灯（2026-09-08 实测）。
-#       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + clippy-fe 两道重门禁，
+#                    -- -D warnings（前端 wasm32 口径，含完整类型检查，是前端的主门禁）
+#       - dx check:  cd frontend && dx check（dioxus 路由级 + 打包构建校验，额外补足）
+#                    ⚠️ dx check 不编译完整业务代码、曾出现「14 个编译错误仍全绿」的假绿灯
+#                      （2026-09-08 实测），故只作 **clippy-fe 之外的补充** 门禁，绝不顶替它。
+#                      若本机未安装 dx，本钩会告警并跳过该项（不阻塞 push）。
+#       提交时的 fmt 由 pre-commit 拦截；此处再补 clippy + clippy-fe + dx check 三道重门禁，
 #       即使有人用 git commit --no-verify 跳过提交钩子，push 仍会被挡住。
 
 set -euo pipefail
 
-echo "== pre-push: 门禁检查（fmt + clippy + clippy-fe）=="
+echo "== pre-push: 门禁检查（fmt + clippy + clippy-fe + dx check）=="
 
 export PATH="$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
@@ -50,3 +52,19 @@ if ! (cd frontend && cargo clippy --target wasm32-unknown-unknown --all-targets 
     exit 1
 fi
 echo "✓ clippy-fe 通过"
+
+# --- dx check（dioxus 路由级 + 打包构建校验，clippy-fe 之外的补充门禁）---
+# 不顶替 clippy-fe：dx check 不编译完整业务代码、曾出过假绿灯；本机没装 dx 时跳过。
+if command -v dx >/dev/null 2>&1; then
+    echo "== pre-push: dx check（前端 dioxus 构建检查）=="
+    if ! (cd frontend && dx check); then
+        echo ""
+        echo "✗ dx check 未通过，push 已拦截。运行 cd frontend && dx check 查看并修复。"
+        echo "  仅本次跳过：git push --no-verify"
+        exit 1
+    fi
+    echo "✓ dx check 通过"
+else
+    echo "⚠ dx 未安装，跳过 dx check（clippy-fe 已覆盖完整类型检查不受影响）。"
+    echo "  安装：cargo install dioxus-cli"
+fi
