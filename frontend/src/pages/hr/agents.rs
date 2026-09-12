@@ -8,6 +8,7 @@ use crate::api::hr::{
     create_external_agent, delete_agent, list_agents, query_agents, search_agents,
     select_agent_career, update_agent_status,
 };
+use crate::api::seed::{get_task_progress, preview_preset_agents, sync_preset_agents};
 use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::modal::Modal;
 use crate::components::state::{EmptyState, Loading};
@@ -16,9 +17,13 @@ use crate::pages::hr::create_agent_modal::CreateAgentModal;
 use crate::pages::hr::onboard_modal::OnboardModal;
 use crate::store::toast::use_toast;
 use crate::utils::status::{agent_lifecycle_badge, agent_lifecycle_text};
+use common::api::seed::{
+    PresetAgentSyncStrategy, SyncPresetAgentsRequest, SyncPresetAgentsResponse,
+};
 use common::api::{
     AgentQueryRequest, CreateExternalAgentRequest, ListAgentsRequest, ListAgentsResponseItem,
-    SearchAgentsRequest, SelectAgentCareerRequest, UpdateAgentStatusRequest,
+    PreviewPresetAgentsResponse, SearchAgentsRequest, SelectAgentCareerRequest,
+    UpdateAgentStatusRequest,
 };
 use common::enums::AgentStatus;
 use dioxus_router::Link;
@@ -315,6 +320,87 @@ pub fn HrAgents() -> Element {
         });
     };
 
+    // ===== 预置 Agent 同步 Modal（seed 默认 Agent 的补缺 / 恢复误删 / 覆盖重置）=====
+    let mut show_sync_modal = use_signal(|| false);
+    let mut sync_preview = use_signal(|| None::<PreviewPresetAgentsResponse>);
+    let mut sync_strategy = use_signal(|| PresetAgentSyncStrategy::Overwrite);
+    let mut sync_loading = use_signal(|| false);
+    let mut syncing = use_signal(|| false);
+    let mut sync_progress = use_signal(String::new);
+
+    // 打开弹窗即拉取预览（seed vs Agent 库逐项对比）
+    let open_sync_modal = move |_| {
+        show_sync_modal.set(true);
+        sync_preview.set(None);
+        sync_strategy.set(PresetAgentSyncStrategy::Overwrite);
+        sync_progress.set(String::new());
+        sync_loading.set(true);
+        spawn(async move {
+            match preview_preset_agents().await {
+                Ok(v) => sync_preview.set(Some(v)),
+                Err(e) => toast.error(format!("加载预置 Agent 清单失败: {}", e)),
+            }
+            sync_loading.set(false);
+        });
+    };
+
+    // 确认同步：提交后台任务 → 轮询进度 → 完成后 toast 结果并刷新列表
+    let confirm_sync = move |_| {
+        let req = SyncPresetAgentsRequest {
+            strategy: sync_strategy(),
+        };
+        syncing.set(true);
+        sync_progress.set("正在提交同步任务...".to_string());
+        spawn(async move {
+            let task_id = match sync_preset_agents(req).await {
+                Ok(r) => r.task_id,
+                Err(e) => {
+                    toast.error(format!("提交同步任务失败: {}", e));
+                    syncing.set(false);
+                    return;
+                }
+            };
+
+            loop {
+                gloo_timers::future::TimeoutFuture::new(500).await;
+                match get_task_progress(&task_id).await {
+                    Ok(p) => {
+                        sync_progress.set(p.step_message.clone());
+                        match p.status {
+                            common::api::TaskStatus::Completed => {
+                                let resp: Option<SyncPresetAgentsResponse> =
+                                    p.result.and_then(|v| serde_json::from_value(v).ok());
+                                match resp {
+                                    Some(r) => toast.success(format!(
+                                        "同步完成：新增 {}、恢复 {}、覆盖 {}、跳过 {}（seed 共 {} 项）",
+                                        r.created, r.restored, r.updated, r.skipped, r.total
+                                    )),
+                                    None => toast.success("同步完成"),
+                                }
+                                show_sync_modal.set(false);
+                                load_data();
+                                break;
+                            }
+                            common::api::TaskStatus::Failed => {
+                                toast.error(format!(
+                                    "同步失败: {}",
+                                    p.error.unwrap_or_else(|| "未知错误".to_string())
+                                ));
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(e) => {
+                        toast.error(format!("查询同步进度失败: {}", e));
+                        break;
+                    }
+                }
+            }
+            syncing.set(false);
+        });
+    };
+
     let agents_list = agents.read().clone();
 
     rsx! {
@@ -333,6 +419,10 @@ pub fn HrAgents() -> Element {
                             },
                             "重置"
                         }
+                    }
+                    button { class: "btn hud-btn btn-ghost",
+                        onclick: open_sync_modal,
+                        "⟳ 同步预置 Agent"
                     }
                     button { class: "btn hud-btn btn-primary",
                         onclick: move |_| show_add_modal.set(true),
@@ -795,6 +885,118 @@ pub fn HrAgents() -> Element {
             },
             on_cancel: move |_| {
                 show_delete_confirm.set(false);
+            }
+        }
+
+        // 同步预置 Agent 弹窗（策略二选一 + 影响清单）
+        Modal {
+            title: "同步预置 Agent".to_string(),
+            show: show_sync_modal(),
+            width_class: Some("max-w-2xl".to_string()),
+            on_close: move |_| show_sync_modal.set(false),
+            footer: rsx! {
+                button { class: "btn hud-btn btn-ghost", onclick: move |_| show_sync_modal.set(false), "取消" }
+                button { class: "btn hud-btn btn-primary", disabled: syncing() || sync_loading(),
+                    onclick: confirm_sync,
+                    if syncing() { "同步中..." } else { "确认同步" }
+                }
+            },
+            div { class: "space-y-4",
+                // 策略选择（二选一）
+                div { class: "grid gap-2",
+                    div {
+                        class: if sync_strategy() == PresetAgentSyncStrategy::Overwrite {
+                            "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                        } else {
+                            "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                        },
+                        onclick: move |_| sync_strategy.set(PresetAgentSyncStrategy::Overwrite),
+                        div { class: "card-body p-3",
+                            div { class: "font-semibold", "1 · 用 seed 覆盖重置" }
+                            div { class: "text-xs text-base-content/70",
+                                "在用的同 ID Agent 会把名称、角色、人设等身份信息覆写回默认值（生命周期状态与已装能力包不动）；缺失的自动创建并入职；被误删的自动恢复"
+                            }
+                        }
+                    }
+                    div {
+                        class: if sync_strategy() == PresetAgentSyncStrategy::OnlyMissing {
+                            "card cursor-pointer border-2 border-primary bg-base-200 transition-colors"
+                        } else {
+                            "card cursor-pointer border border-base-300 bg-base-200 transition-colors"
+                        },
+                        onclick: move |_| sync_strategy.set(PresetAgentSyncStrategy::OnlyMissing),
+                        div { class: "card-body p-3",
+                            div { class: "font-semibold", "2 · 保留本地，仅补缺" }
+                            div { class: "text-xs text-base-content/70",
+                                "在用的 Agent 原样保留，只创建缺失的并恢复被误删的"
+                            }
+                        }
+                    }
+                }
+
+                // 影响清单
+                if sync_loading() {
+                    Loading {}
+                } else if let Some(preview) = sync_preview() {
+                    {
+                        // 汇总文案在 rsx 外计算：嵌套 if 表达式放进 format! 会破坏 rsx 解析
+                        let overwrite = sync_strategy() == PresetAgentSyncStrategy::Overwrite;
+                        let summary = format!(
+                            "seed 共 {} 项：缺失 {} 项将新增，误删 {} 项将恢复，在用 {} 项{}",
+                            preview.items.len(),
+                            preview.missing_count,
+                            preview.deleted_count,
+                            preview.existing_count,
+                            if overwrite { "将覆盖身份信息" } else { "将保留" }
+                        );
+                        rsx! {
+                            div {
+                                div { class: "text-sm mb-2", "{summary}" }
+                                div { class: "max-h-56 overflow-y-auto",
+                                    for item in preview.items.iter() {
+                                        div { class: "flex items-center justify-between gap-2 py-1.5 border-b border-base-300 last:border-0",
+                                            div { class: "min-w-0 flex-1",
+                                                div { class: "text-sm font-medium truncate", "{item.name}" }
+                                                div { class: "text-xs text-base-content/50 font-mono truncate", "{item.id}" }
+                                            }
+                                            div { class: "flex items-center gap-1 shrink-0",
+                                                if let Some(ref provider) = item.resolved_provider_name {
+                                                    span { class: "badge orz-tag badge-sm", "模型 {provider}" }
+                                                } else {
+                                                    span { class: "badge orz-tag badge-sm text-warning", "未配模型" }
+                                                }
+                                                if item.deleted {
+                                                    span { class: "badge orz-tag badge-sm text-error", "误删待恢复" }
+                                                } else if item.exists {
+                                                    if overwrite {
+                                                        span { class: "badge orz-tag badge-sm", "将覆盖" }
+                                                    } else {
+                                                        span { class: "badge orz-tag badge-sm", "将保留" }
+                                                    }
+                                                } else {
+                                                    span { class: "badge orz-tag badge-sm", "将新增" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 同步进度（后台任务执行中显示）
+                if syncing() {
+                    div { class: "flex items-center gap-2 text-sm text-base-content/70",
+                        span { class: "loading loading-spinner loading-sm" }
+                        span { "{sync_progress}" }
+                    }
+                }
+
+                // 风险提示
+                div { class: "text-xs text-base-content/50",
+                    "注意：新建的 Agent 会自动走完职业匹配与入职流程（需已配置对话模型，否则停留在初创态）；恢复的 Agent 会自动进修补齐能力包。"
+                }
             }
         }
         }

@@ -17,6 +17,7 @@ pub mod get_file;
 pub mod list;
 pub mod load;
 pub mod save;
+pub mod sync_preset_agents;
 pub mod sync_preset_skills;
 
 pub use apply_default::apply_default_handler;
@@ -28,6 +29,8 @@ pub use get_file::get_seed_file_handler;
 pub use list::list_seeds_handler;
 pub use load::load_seed_handler;
 pub use save::save_seed_handler;
+pub use sync_preset_agents::preview_preset_agents_handler;
+pub use sync_preset_agents::sync_preset_agents_handler;
 pub use sync_preset_skills::preview_preset_skills_handler;
 pub use sync_preset_skills::sync_preset_skills_handler;
 
@@ -70,6 +73,177 @@ pub struct SkillApplyResult {
     pub created: usize,
     pub updated: usize,
     pub skipped: usize,
+}
+
+/// 单个预置 Agent 的导入动作
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresetAgentAction {
+    /// 新建（库中不存在，已走完状态机入职或停留在 Incubating）
+    Created,
+    /// 覆盖更新（在用 Agent 的身份字段被覆写，生命周期状态不变）
+    Updated,
+    /// 恢复（同 ID Agent 已被软删，覆写回 seed 定义并补装能力包）
+    Restored,
+    /// 跳过（在用且 skip_existing=true）
+    Skipped,
+}
+
+/// 解析预置 Agent 应绑定的对话模型 Provider
+///
+/// seed 的 `model_provider_id` 是模板占位（如 `TEMPLATE_CHAT_PROVIDER`），解析优先级：
+/// 1. 库中存在同 ID Provider（自定义 seed 直接引用真实 Provider）→ 原样使用；
+/// 2. 回退组织第一个「对话类（Agent 能力）+ 正常状态」的 Provider；
+/// 3. 都没有 → None（Agent 停留 Incubating，语义同 initialize_system 未配模型）。
+async fn resolve_agent_provider_id(
+    ctx: &RequestContext,
+    template_provider_id: &str,
+) -> Result<Option<String>> {
+    use crate::service::domain::finance;
+
+    if !template_provider_id.is_empty()
+        && finance::domain()
+            .model_provider_manage()
+            .get_model_provider_with_options(ctx.clone(), template_provider_id, Default::default())
+            .await?
+            .is_some()
+    {
+        return Ok(Some(template_provider_id.to_string()));
+    }
+
+    let providers = finance::domain()
+        .model_provider_manage()
+        .list_model_providers(ctx.clone())
+        .await?;
+    Ok(providers
+        .into_iter()
+        .find(|p| {
+            p.po.capability == common::enums::ModelCapability::Agent
+                && p.po.status == common::enums::ModelProviderStatus::Normal
+        })
+        .map(|p| p.po.id))
+}
+
+/// 导入单个预置 Agent（预置 Agent 同步的核心，后台任务逐 Agent 执行以便上报进度）
+///
+/// 语义（与技能同步对齐，匹配键为 seed Agent ID）：
+/// - 完全缺失 → 走 `create_agent`（强制 Incubating）；解析到对话模型则连续推进
+///   Interviewing → PendingOnboard → Onboarded（触发职业匹配 + 组织包装配，立即可用），
+///   语义同 `initialize_system` 的预置前台 Agent；无模型则停留 Incubating；
+/// - 已软删（误删场景）→ 覆写回 seed 定义（含状态）后调 `train_agent` 补装
+///   角色/组织能力包（覆写不触发状态机边，进修阶段 3 负责补齐，语义同 seed 导入）；
+/// - 在用 → 仅 Overwrite 策略覆写身份字段与模型绑定，**生命周期状态不动**；
+///   OnlyMissing 直接跳过。
+pub async fn apply_single_preset_agent(
+    ctx: RequestContext,
+    agent_def: &AgentDef,
+    skip_existing: bool,
+) -> Result<PresetAgentAction> {
+    use crate::service::domain::hr;
+
+    let existing = hr::domain()
+        .agent_manage()
+        .get_agent(ctx.clone(), &agent_def.id, Default::default())
+        .await?;
+
+    if existing.is_some() && skip_existing {
+        return Ok(PresetAgentAction::Skipped);
+    }
+
+    let provider_id = resolve_agent_provider_id(&ctx, &agent_def.model_provider_id).await?;
+
+    let mut agent_po = crate::models::agent::AgentPo::new(
+        agent_def.name.clone(),
+        agent_def.roles.clone(),
+        agent_def.description.clone(),
+        agent_def.capabilities.clone(),
+        agent_def.soul.clone(),
+        provider_id.clone().unwrap_or_default(),
+        "seed_sync".to_string(),
+    );
+    agent_po.id = agent_def.id.clone();
+    agent_po.kind = common::enums::AgentKind::from_i32(agent_def.kind);
+    agent_po.runtime_config = agent_def.runtime_config.clone();
+    let agent = crate::models::agent::Agent::from_po(agent_po);
+
+    if let Some(existing) = existing {
+        // 在用 Agent：只覆写身份字段，status 沿用现值（生命周期归状态机管）
+        let mut po = agent.po.clone();
+        po.status = existing.po.status;
+        hr::domain()
+            .agent_manage()
+            .update_agent(ctx, &crate::models::agent::Agent::from_po(po))
+            .await?;
+        Ok(PresetAgentAction::Updated)
+    } else {
+        // get_agent 不含软删行：区分「完全缺失」与「同 ID 已被误删」
+        let any_status = hr::domain()
+            .agent_manage()
+            .query(
+                ctx.clone(),
+                crate::service::dao::agent::AgentQuery {
+                    ids: Some(vec![agent_def.id.clone()]),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let was_deleted = any_status
+            .items
+            .iter()
+            .any(|a| a.po.status == common::enums::AgentStatus::Deleted);
+
+        if was_deleted {
+            // 误删恢复：覆写回 seed 定义（含状态）；边不重走 → 进修补装能力包
+            let mut po = agent.po.clone();
+            po.status = common::enums::AgentStatus::from_i32(agent_def.status);
+            hr::domain()
+                .agent_manage()
+                .update_agent(ctx.clone(), &crate::models::agent::Agent::from_po(po))
+                .await?;
+            hr::domain()
+                .agent_manage()
+                .train_agent(ctx, &agent_def.id)
+                .await?;
+            Ok(PresetAgentAction::Restored)
+        } else {
+            // 新建：create_agent 强制 Incubating；有对话模型则走完整状态机边入职
+            hr::domain()
+                .agent_manage()
+                .create_agent(ctx.clone(), &agent)
+                .await?;
+            if provider_id.is_some() {
+                let mut agent = hr::domain()
+                    .agent_manage()
+                    .get_agent(ctx.clone(), &agent_def.id, Default::default())
+                    .await?
+                    .ok_or_else(|| {
+                        Error::not_found(format!("预置 Agent {} 创建后不可见", agent_def.id))
+                    })?;
+                hr::domain()
+                    .agent_manage()
+                    .transition_status(
+                        ctx.clone(),
+                        &mut agent,
+                        common::enums::AgentStatus::Interviewing,
+                        None,
+                    )
+                    .await?;
+                hr::domain()
+                    .agent_manage()
+                    .transition_status(
+                        ctx.clone(),
+                        &mut agent,
+                        common::enums::AgentStatus::PendingOnboard,
+                        None,
+                    )
+                    .await?;
+                hr::domain()
+                    .agent_manage()
+                    .transition_status(ctx, &mut agent, common::enums::AgentStatus::Onboarded, None)
+                    .await?;
+            }
+            Ok(PresetAgentAction::Created)
+        }
+    }
 }
 
 /// 单个预置技能的导入动作

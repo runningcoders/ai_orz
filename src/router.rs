@@ -1052,6 +1052,14 @@ fn system_routes() -> Router {
                 .route(
                     "/preset-skills/sync",
                     post(handlers::system::seed::sync_preset_skills_handler),
+                )
+                .route(
+                    "/preset-agents/preview",
+                    get(handlers::system::seed::preview_preset_agents_handler),
+                )
+                .route(
+                    "/preset-agents/sync",
+                    post(handlers::system::seed::sync_preset_agents_handler),
                 ),
         )
         // 通用后台任务进度查询

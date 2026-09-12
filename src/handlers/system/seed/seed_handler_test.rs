@@ -302,3 +302,88 @@ async fn test_apply_snapshot_rejects_chat_provider_without_context_length(pool: 
         err
     );
 }
+
+/// 预置 Agent 同步：缺失新建并自动入职 → 在用跳过/覆盖 → 软删恢复
+#[sqlx::test]
+async fn test_apply_single_preset_agent(pool: SqlitePool) {
+    use crate::handlers::system::seed::{PresetAgentAction, apply_single_preset_agent};
+    use crate::service::domain::hr;
+    use common::enums::AgentStatus;
+
+    let ctx = init_test_env(pool).await;
+    let _org_id = prepare_test_data(&ctx).await;
+
+    let snapshot = crate::service::domain::system::seed::default::embedded_default_snapshot();
+    let agent_def = snapshot
+        .agents
+        .iter()
+        .find(|a| a.id == "TEMPLATE_RECEPTION_AGENT")
+        .expect("seed 应包含 TEMPLATE_RECEPTION_AGENT");
+
+    // 1. 完全缺失 + OnlyMissing → 新建（有 chat provider，应自动走完状态机入职）
+    let action = apply_single_preset_agent(ctx.clone(), agent_def, true)
+        .await
+        .unwrap();
+    assert_eq!(action, PresetAgentAction::Created);
+    let agent = hr::domain()
+        .agent_manage()
+        .get_agent(ctx.clone(), &agent_def.id, Default::default())
+        .await
+        .unwrap()
+        .expect("新建的预置 Agent 应可见");
+    assert_eq!(agent.po.status, AgentStatus::Onboarded);
+    assert!(!agent.po.model_provider_id.is_empty(), "应绑定对话模型");
+
+    // 2. 在用 + OnlyMissing → 跳过
+    let action = apply_single_preset_agent(ctx.clone(), agent_def, true)
+        .await
+        .unwrap();
+    assert_eq!(action, PresetAgentAction::Skipped);
+
+    // 3. 在用 + Overwrite → 身份字段对齐 seed，生命周期状态不动
+    let action = apply_single_preset_agent(ctx.clone(), agent_def, false)
+        .await
+        .unwrap();
+    assert_eq!(action, PresetAgentAction::Updated);
+    let agent = hr::domain()
+        .agent_manage()
+        .get_agent(ctx.clone(), &agent_def.id, Default::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(agent.po.name, agent_def.name);
+    assert_eq!(agent.po.soul, agent_def.soul);
+    assert_eq!(agent.po.status, AgentStatus::Onboarded);
+
+    // 4. 软删（误删）+ OnlyMissing → 恢复，状态回到 seed 定义并保留可见
+    hr::domain()
+        .agent_manage()
+        .delete_agent(ctx.clone(), &agent)
+        .await
+        .unwrap();
+    assert!(
+        hr::domain()
+            .agent_manage()
+            .get_agent(ctx.clone(), &agent_def.id, Default::default())
+            .await
+            .unwrap()
+            .is_none(),
+        "软删后 get_agent 应不可见"
+    );
+    let action = apply_single_preset_agent(ctx.clone(), agent_def, true)
+        .await
+        .unwrap();
+    assert_eq!(action, PresetAgentAction::Restored);
+    let agent = hr::domain()
+        .agent_manage()
+        .get_agent(ctx.clone(), &agent_def.id, Default::default())
+        .await
+        .unwrap()
+        .expect("恢复后的预置 Agent 应可见");
+    assert_eq!(
+        agent.po.status,
+        AgentStatus::from_i32(agent_def.status),
+        "恢复后状态应回到 seed 定义（PendingOnboard）"
+    );
+    assert_eq!(agent.po.name, agent_def.name);
+}

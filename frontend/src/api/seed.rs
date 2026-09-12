@@ -63,6 +63,18 @@ pub async fn sync_preset_skills(
     api_post("/api/v1/system/seed/preset-skills/sync", &req).await
 }
 
+/// 预置 Agent 同步预览：对比 seed 与 Agent 库，返回「将新增 / 将恢复 / 将覆盖」清单
+pub async fn preview_preset_agents() -> Result<common::api::PreviewPresetAgentsResponse, ApiError> {
+    api_get("/api/v1/system/seed/preset-agents/preview").await
+}
+
+/// 同步预置 Agent（异步后台任务，返回 task_id；轮询 get_task_progress 获取进度与结果）
+pub async fn sync_preset_agents(
+    req: common::api::SyncPresetAgentsRequest,
+) -> Result<common::api::TaskIdResponse, ApiError> {
+    api_post("/api/v1/system/seed/preset-agents/sync", &req).await
+}
+
 /// 查询统一后台任务进度
 ///
 /// 调用 `GET /api/v1/system/tasks/{task_id}/progress`，所有后台任务（初始化、

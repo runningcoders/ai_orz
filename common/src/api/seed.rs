@@ -1,6 +1,6 @@
 //! Seed 配置迁移相关 API DTO
 
-use crate::enums::SkillStatus;
+use crate::enums::{AgentStatus, SkillStatus};
 use ai_orz_macros::Params;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -234,4 +234,83 @@ pub struct SyncPresetSkillsResponse {
     pub total: usize,
     /// 被同步更新的 Agent 已安装副本数量（sync_installed_copies=true 时）
     pub updated_copies: usize,
+}
+
+// ==================== 预置 Agent 同步 ====================
+
+/// 预置 Agent 同步策略
+///
+/// 两种策略都会**新建完全缺失的 Agent**，并**恢复被误删（软删）的同 ID Agent**；
+/// 差异仅在于对「在用」的同 ID Agent 的处理。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+pub enum PresetAgentSyncStrategy {
+    /// 覆盖重置：在用的同 ID Agent 也会把身份字段（名称/角色/描述/能力/人设/模型绑定）
+    /// 覆写回 seed 定义；**生命周期状态不改动**（归状态机管，避免把已入职 Agent 打回待入职）
+    #[default]
+    Overwrite,
+    /// 仅补缺：在用的同 ID Agent 原样保留
+    OnlyMissing,
+}
+
+/// 预置 Agent 同步预览请求（无参数）
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct PreviewPresetAgentsRequest {}
+
+/// 单个预置 Agent 的同步预览条目
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PresetAgentSyncItem {
+    /// 预置 Agent ID（同步以 ID 为匹配键，非名称）
+    pub id: String,
+    /// seed 中的 Agent 名称
+    pub name: String,
+    /// seed 中的 Agent 描述
+    pub description: String,
+    /// seed 中的角色标签
+    pub roles: Vec<String>,
+    /// 是否已存在（含软删）：false = 完全缺失，同步时将新建并自动入职
+    pub exists: bool,
+    /// 已存在但处于已删除状态（误删场景，同步时会被恢复）
+    pub deleted: bool,
+    /// 已存在时的本地名称（覆盖策略下会被改回 seed 值）
+    pub local_name: Option<String>,
+    /// 已存在时的本地生命周期状态
+    pub local_status: Option<AgentStatus>,
+    /// 同步时将绑定的对话模型 Provider 名称（已解析）。
+    /// None = 本地无可用对话模型，新建/恢复的 Agent 将停留在 Incubating
+    pub resolved_provider_name: Option<String>,
+}
+
+/// 预置 Agent 同步预览响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PreviewPresetAgentsResponse {
+    /// 逐 Agent 的对比结果
+    pub items: Vec<PresetAgentSyncItem>,
+    /// 完全缺失的数量（同步时新建并自动入职）
+    pub missing_count: usize,
+    /// 已被误删的数量（同步时恢复）
+    pub deleted_count: usize,
+    /// 在用数量（Overwrite 策略下覆盖身份字段，OnlyMissing 下保留）
+    pub existing_count: usize,
+}
+
+/// 同步预置 Agent 请求
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct SyncPresetAgentsRequest {
+    /// 同步策略
+    pub strategy: PresetAgentSyncStrategy,
+}
+
+/// 同步预置 Agent 响应
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SyncPresetAgentsResponse {
+    /// 新建并自动入职的 Agent 数量
+    pub created: usize,
+    /// 覆盖更新身份字段的在用 Agent 数量（Overwrite 策略下）
+    pub updated: usize,
+    /// 恢复的已删除 Agent 数量（误删场景）
+    pub restored: usize,
+    /// 跳过的 Agent 数量（OnlyMissing 策略下已存在的）
+    pub skipped: usize,
+    /// seed 中预置 Agent 总数
+    pub total: usize,
 }
