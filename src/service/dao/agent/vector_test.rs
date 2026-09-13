@@ -3,7 +3,7 @@
 
 use crate::models::vector::{VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
-use crate::service::dao::agent::{self, AgentVectorDao};
+use crate::service::dao::agent::{self, AgentQuery, AgentVectorDao};
 use common::error::Result;
 use sqlx::SqlitePool;
 
@@ -53,7 +53,7 @@ async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<()> {
     // 搜索最接近 agent_0 的向量
     let query_vector = vec![0.0, 0.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 2)
+        .search_vector(ctx.clone(), &query_vector, 2, &AgentQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -84,7 +84,7 @@ async fn test_upsert_update_existing(pool: SqlitePool) -> Result<()> {
 
     let query_vector = vec![0.0, 1.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 1)
+        .search_vector(ctx.clone(), &query_vector, 1, &AgentQuery::default())
         .await?;
 
     assert_eq!(results.len(), 1);
@@ -166,7 +166,7 @@ async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<()> {
     }
 
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2, &AgentQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -181,10 +181,87 @@ async fn test_search_vector_empty(pool: SqlitePool) -> Result<()> {
     let vector_dao = init_test_env();
 
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10, &AgentQuery::default())
         .await?;
 
     assert_eq!(results.len(), 0);
+
+    Ok(())
+}
+
+/// 测试带业务过滤的向量搜索（pre-filter 谓词下推：Top-K 在满足谓词的候选集内选取）
+#[sqlx::test]
+async fn test_search_vector_with_filter(pool: SqlitePool) -> Result<()> {
+    let ctx = new_ctx("test_user", pool.clone());
+    let vector_dao = init_test_env();
+
+    // agent_deleted：全局最近（status=Deleted，软删除行仍在向量库中）
+    let mut params_deleted = create_test_vector_params("agent_deleted", 2);
+    params_deleted.vector = vec![1.0, 0.0];
+    params_deleted.payload = VectorPayload {
+        status: Some(common::enums::AgentStatus::Deleted.to_i32().to_string()),
+        ..Default::default()
+    };
+    params_deleted.payload_hash = params_deleted.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "agent_deleted", &params_deleted)
+        .await?;
+
+    // agent_active：稍远（status=Onboarded）
+    let mut params_active = create_test_vector_params("agent_active", 2);
+    params_active.vector = vec![0.6, 0.8];
+    params_active.payload = VectorPayload {
+        status: Some(common::enums::AgentStatus::Onboarded.to_i32().to_string()),
+        ..Default::default()
+    };
+    params_active.payload_hash = params_active.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "agent_active", &params_active)
+        .await?;
+
+    let query_vector = vec![1.0, 0.0];
+
+    // 基线：无 filter 时全局最近是软删除的 agent
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &AgentQuery::default())
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "agent_deleted");
+
+    // exclude_status=Deleted（search() 默认注入）：top_k=1 必须命中活跃 agent
+    // （post-filter 实现会取到 deleted 行再过滤掉 → 返回空）
+    let filters = AgentQuery {
+        exclude_status: Some(common::enums::AgentStatus::Deleted),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "agent_active");
+    assert_eq!(results[0].row.payload.status.as_deref(), Some("3"));
+
+    // status=Onboarded 正向下推：同样命中活跃 agent
+    let filters = AgentQuery {
+        status: Some(common::enums::AgentStatus::Onboarded),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "agent_active");
+
+    // status=Deleted 正向下推：命中软删除 agent
+    let filters = AgentQuery {
+        status: Some(common::enums::AgentStatus::Deleted),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "agent_deleted");
 
     Ok(())
 }

@@ -49,6 +49,19 @@ pub enum AgentStatus {
 }
 
 impl AgentStatus {
+    /// 全部变体（新增变体时必须同步维护，供补集排除等场景使用）
+    pub fn all() -> [Self; 7] {
+        [
+            Self::Deleted,
+            Self::Interviewing,
+            Self::PendingOnboard,
+            Self::Onboarded,
+            Self::Offboarded,
+            Self::PendingOffboard,
+            Self::Incubating,
+        ]
+    }
+
     /// Convert from i32
     pub fn from_i32(v: i32) -> Self {
         match v {

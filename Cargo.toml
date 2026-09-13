@@ -156,6 +156,10 @@ name = "message_vector_test"
 path = "tests/integration/message_vector_test.rs"
 
 [[test]]
+name = "agent_vector_test"
+path = "tests/integration/agent_vector_test.rs"
+
+[[test]]
 name = "agent_awaken_test"
 path = "tests/integration/agent_awaken_test.rs"
 
