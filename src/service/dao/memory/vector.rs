@@ -1,9 +1,11 @@
 //! Memory Vector DAO implementation
 //! 负责记忆向量索引的 CRUD 操作，与基础记忆数据完全解耦
 
-use crate::models::vector::{VectorIndexParams, VectorRow, VectorSearchHit};
+use crate::models::vector::{
+    FilterValue, VectorField, VectorFilter, VectorIndexParams, VectorRow, VectorSearchHit,
+};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::MemoryVectorDao;
+use crate::service::dao::memory::{MemoryQuery, MemoryVectorDao};
 use async_trait::async_trait;
 use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
@@ -64,30 +66,39 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
         Ok(())
     }
 
-    /// 语义搜索短期记忆
+    /// 语义搜索短期记忆（业务过滤在 DAO 内转译为向量谓词下推）
     async fn search_short_term_vector(
         &self,
         _ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
+        filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
+        let filter = translate_filters(filters);
         let results = vector_store
-            .search("memory:short_term", query_vector, top_k, None)
+            .search("memory:short_term", query_vector, top_k, filter.as_ref())
             .await?;
         Ok(results)
     }
 
-    /// 语义搜索长期知识节点
+    /// 语义搜索长期知识节点（业务过滤在 DAO 内转译为向量谓词下推）
     async fn search_knowledge_node_vector(
         &self,
         _ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
+        filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
+        let filter = translate_filters(filters);
         let results = vector_store
-            .search("memory:knowledge_node", query_vector, top_k, None)
+            .search(
+                "memory:knowledge_node",
+                query_vector,
+                top_k,
+                filter.as_ref(),
+            )
             .await?;
         Ok(results)
     }
@@ -143,5 +154,99 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
             .clear_collection("memory:knowledge_node")
             .await?;
         Ok(())
+    }
+}
+
+// ==================== MemoryQuery → VectorFilter 白名单转译 ====================
+
+/// MemoryQuery → VectorFilter 白名单转译（转译下沉 DAO：哪些字段能下推只有本 DAO 知道）
+///
+/// 白名单：agent_id / include_shared（OR is_published 可见性）/ task_id / node_type。
+/// 未覆盖字段（status / exclude_status / tags / keyword / ids / limit / order）由回业务表过滤兜底。
+pub(crate) fn translate_filters(query: &MemoryQuery) -> Option<VectorFilter> {
+    let mut conditions: Vec<VectorFilter> = Vec::new();
+
+    if let Some(agent_id) = &query.agent_id {
+        if query.include_shared {
+            // 共享可见性：自己的节点 OR 已发布节点
+            conditions.push(VectorFilter::Any(vec![
+                VectorFilter::Eq(VectorField::AgentId, FilterValue::Str(agent_id.clone())),
+                VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
+            ]));
+        } else {
+            conditions.push(VectorFilter::Eq(
+                VectorField::AgentId,
+                FilterValue::Str(agent_id.clone()),
+            ));
+        }
+    }
+    if let Some(task_id) = &query.task_id {
+        conditions.push(VectorFilter::Eq(
+            VectorField::TaskId,
+            FilterValue::Str(task_id.clone()),
+        ));
+    }
+    if let Some(node_type) = &query.node_type {
+        conditions.push(VectorFilter::Eq(
+            VectorField::EntityType,
+            FilterValue::Str(node_type.clone()),
+        ));
+    }
+
+    match conditions.len() {
+        0 => None,
+        1 => conditions.pop(),
+        _ => Some(VectorFilter::All(conditions)),
+    }
+}
+
+#[cfg(test)]
+mod translate_tests {
+    use super::*;
+    use crate::models::vector::{FilterValue, VectorField, VectorFilter};
+
+    #[test]
+    fn test_translate_agent_only() {
+        let mut q = MemoryQuery::default();
+        q.agent_id = Some("agent-1".into());
+        let f = translate_filters(&q).unwrap();
+        assert_eq!(
+            f,
+            VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into()))
+        );
+    }
+
+    #[test]
+    fn test_translate_include_shared_or() {
+        let mut q = MemoryQuery::default();
+        q.agent_id = Some("agent-1".into());
+        q.include_shared = true;
+        let f = translate_filters(&q).unwrap();
+        assert_eq!(
+            f,
+            VectorFilter::Any(vec![
+                VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
+                VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_translate_combined_all() {
+        let mut q = MemoryQuery::default();
+        q.agent_id = Some("agent-1".into());
+        q.task_id = Some("task-9".into());
+        q.node_type = Some("concept".into());
+        let f = translate_filters(&q).unwrap();
+        // All[Eq(agent), Eq(task), Eq(entity_type)]
+        match f {
+            VectorFilter::All(fs) => assert_eq!(fs.len(), 3),
+            other => panic!("expect All, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_translate_none() {
+        assert!(translate_filters(&MemoryQuery::default()).is_none());
     }
 }

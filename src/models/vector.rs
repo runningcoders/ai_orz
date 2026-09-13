@@ -50,7 +50,7 @@ pub enum FilterValue {
 /// 向量谓词过滤表达式（结构化；各后端自行翻译执行）
 ///
 /// 定位：召回优化，不是正确性保证——下推不了的业务条件由回业务表过滤兜底
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VectorFilter {
     /// 字段等值匹配（payload 字段为 None 的行不匹配）
     Eq(VectorField, FilterValue),

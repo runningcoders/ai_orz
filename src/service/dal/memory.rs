@@ -1069,10 +1069,15 @@ impl MemoryDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条）
+                    // 向量搜索（前 50 条；业务过滤在 DAO 内转译为向量谓词下推）
                     match self
                         .memory_vector_dao
-                        .search_short_term_vector(ctx.clone(), &vec_params.vector, 50)
+                        .search_short_term_vector(
+                            ctx.clone(),
+                            &vec_params.vector,
+                            50,
+                            &search.filters,
+                        )
                         .await
                     {
                         Ok(vector_results) => {
@@ -1219,10 +1224,15 @@ impl MemoryDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条）
+                    // 向量搜索（前 50 条；业务过滤在 DAO 内转译为向量谓词下推）
                     match self
                         .memory_vector_dao
-                        .search_knowledge_node_vector(ctx.clone(), &vec_params.vector, 50)
+                        .search_knowledge_node_vector(
+                            ctx.clone(),
+                            &vec_params.vector,
+                            50,
+                            &search.filters,
+                        )
                         .await
                     {
                         Ok(vector_results) => {

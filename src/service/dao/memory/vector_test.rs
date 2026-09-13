@@ -3,7 +3,7 @@
 
 use crate::models::vector::{VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
-use crate::service::dao::memory::{self, MemoryVectorDao};
+use crate::service::dao::memory::{self, MemoryQuery, MemoryVectorDao};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -60,7 +60,7 @@ async fn test_upsert_and_search_short_term(pool: SqlitePool) -> Result<()> {
     // 搜索最接近 memory_0 的向量
     let query_vector = vec![0.0, 0.0, 0.0];
     let results = vector_dao
-        .search_short_term_vector(ctx.clone(), &query_vector, 2)
+        .search_short_term_vector(ctx.clone(), &query_vector, 2, &MemoryQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -94,7 +94,7 @@ async fn test_upsert_update_short_term(pool: SqlitePool) -> Result<()> {
     // 搜索验证用的是更新后的向量
     let query_vector = vec![0.0, 1.0, 0.0];
     let results = vector_dao
-        .search_short_term_vector(ctx.clone(), &query_vector, 1)
+        .search_short_term_vector(ctx.clone(), &query_vector, 1, &MemoryQuery::default())
         .await?;
 
     assert_eq!(results.len(), 1);
@@ -159,7 +159,7 @@ async fn test_upsert_and_search_knowledge_node(pool: SqlitePool) -> Result<()> {
     // 搜索最接近 knowledge_0 的向量
     let query_vector = vec![0.0, 0.0, 0.0];
     let results = vector_dao
-        .search_knowledge_node_vector(ctx.clone(), &query_vector, 2)
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 2, &MemoryQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -193,7 +193,7 @@ async fn test_upsert_update_knowledge_node(pool: SqlitePool) -> Result<()> {
     // 搜索验证用的是更新后的向量
     let query_vector = vec![0.0, 1.0, 0.0];
     let results = vector_dao
-        .search_knowledge_node_vector(ctx.clone(), &query_vector, 1)
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 1, &MemoryQuery::default())
         .await?;
 
     assert_eq!(results.len(), 1);
@@ -261,13 +261,23 @@ async fn test_namespace_isolation(pool: SqlitePool) -> Result<()> {
 
     // 搜索短期记忆，应该只返回短期记忆的结果
     let short_results = vector_dao
-        .search_short_term_vector(ctx.clone(), &short_params.vector, 5)
+        .search_short_term_vector(
+            ctx.clone(),
+            &short_params.vector,
+            5,
+            &MemoryQuery::default(),
+        )
         .await?;
     assert!(!short_results.is_empty());
 
     // 搜索知识节点，应该只返回知识节点的结果
     let knowledge_results = vector_dao
-        .search_knowledge_node_vector(ctx.clone(), &knowledge_params.vector, 5)
+        .search_knowledge_node_vector(
+            ctx.clone(),
+            &knowledge_params.vector,
+            5,
+            &MemoryQuery::default(),
+        )
         .await?;
     assert!(!knowledge_results.is_empty());
 

@@ -545,20 +545,22 @@ pub trait MemoryVectorDao: Send + Sync {
         vector_params: &VectorIndexParams,
     ) -> Result<()>;
 
-    /// 语义搜索短期记忆，返回完整的向量行数据 + 相似度距离
+    /// 语义搜索短期记忆，返回完整的向量行数据 + 相似度距离（业务过滤在 DAO 内转译为向量谓词下推）
     async fn search_short_term_vector(
         &self,
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
+        filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>>;
 
-    /// 语义搜索长期知识节点，返回完整的向量行数据 + 相似度距离
+    /// 语义搜索长期知识节点，返回完整的向量行数据 + 相似度距离（业务过滤在 DAO 内转译为向量谓词下推）
     async fn search_knowledge_node_vector(
         &self,
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
+        filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>>;
 
     /// 获取指定短期记忆的完整向量行数据（包含元信息）

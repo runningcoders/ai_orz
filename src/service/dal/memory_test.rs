@@ -1424,6 +1424,7 @@ impl MemoryVectorDao for MockMemoryVectorDao {
         _ctx: RequestContext,
         _query_vector: &[f32],
         _top_k: i32,
+        _filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>> {
         Ok(build_vector_search_hits(&self.short_term_hits))
     }
@@ -1432,6 +1433,7 @@ impl MemoryVectorDao for MockMemoryVectorDao {
         _ctx: RequestContext,
         _query_vector: &[f32],
         _top_k: i32,
+        _filters: &MemoryQuery,
     ) -> Result<Vec<VectorSearchHit>> {
         Ok(build_vector_search_hits(&self.knowledge_node_hits))
     }
