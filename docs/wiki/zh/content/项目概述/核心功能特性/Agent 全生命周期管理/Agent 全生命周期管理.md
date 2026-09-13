@@ -446,3 +446,20 @@ F["消费者"] --> E
 5. **工具标签补齐**——agent_management / hr_specialist / reception 三个新角色标签；Seed 新增招聘官 Agent + TEMPLATE_AGENT_RECRUITMENT / TEMPLATE_USER_RECEPTION 预置技能模板；
 6. **前端主题瘦身**——DaisyUI 删除 7 个无用内置皮肤（bumblebee/emerald/forest/wireframe/black/sun/winter），仅保留自研双主题 + 精选内置；输入框升级为静息态发丝边 + 聚焦态流动光带边框（input.css hud-input 皮肤）。
 **涉及 RAG 卡**：组织权限与用户偏好卡 + Agent 关联全景卡 + Skill 系统增强卡 + 种子配置卡 + UI Design System 卡 + Tailwind CSS 主题卡
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 📋 Plan: docs/plan/向量搜索Pre-Filter改造.md
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：向量 Pre-Filter 谓词下推 + Payload 落库 + 三态索引决策
+**关键变更**：
+1. VectorStore::search 新增 filter 参数（Option<VectorFilter>），4 后端统一对齐 + 新增 update_payload 方法
+2. src/models/vector.rs 新增 VectorPayload/VectorFilter/ReindexDecision 三底座；Vectorizable trait 扩展 vector_payload/vector_id/reindex_decision
+3. 7 域 Vector DAO 各自 DAO 层接收业务 Query → 内转译 VectorFilter（信息专家原则）
+4. 消除"全局 Top-K 被其他 Agent/租户污染"的召回缺陷；默认会话哨兵 + @ 修复 + 气泡 chip + 入职 SSOT + hooks dx check 同步落地
+**涉及 RAG 卡**：向量存储抽象卡 + 消息交互与SSE推送卡 + 种子配置卡 + 测试与质量工程卡

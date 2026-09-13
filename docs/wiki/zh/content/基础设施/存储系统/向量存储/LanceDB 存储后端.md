@@ -285,3 +285,20 @@ LanceVectorStore 通过 LanceDB 的列式存储与 HNSW 索引，为项目提供
 - [common/src/config.rs:244-278](common/src/config.rs#L244-L278)
 - [docs/vector_search_architecture.md:342-356](docs/vector_search_architecture.md#L342-L356)
 - [src/pkg/storage/mod.rs:56-93](src/pkg/storage/mod.rs#L56-L93)
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 📋 Plan: docs/plan/向量搜索Pre-Filter改造.md
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：向量 Pre-Filter 谓词下推 + Payload 落库 + 三态索引决策
+**关键变更**：
+1. VectorStore::search 新增 filter 参数（Option<VectorFilter>），4 后端（Lance SQL only_if / Hnsw take×4 / InMemory/SqliteVss 内存求值）统一对齐 + 新增 update_payload 方法
+2. src/models/vector.rs 新增 VectorPayload（Option 宽结构）+ VectorFilter（谓词表达式）+ ReindexDecision（三态 Skip/PayloadOnly/FullReindex）；Vectorizable trait 扩展 vector_payload/vector_id/reindex_decision
+3. 7 域 Vector DAO（Memory/Message/Agent/Task/Project/Skill/Tool）各自 DAO 层接收业务 Query → 内转译 VectorFilter（信息专家原则，转译下沉 DAO 层）
+4. 消除"全局 Top-K 被其他 Agent/租户污染"的召回缺陷（旧 post-filter 多租户隔离缺口）；Payload 不是 SSOT，召回后仍回业务表取完整 PO
+**涉及 RAG 卡**：向量存储抽象卡

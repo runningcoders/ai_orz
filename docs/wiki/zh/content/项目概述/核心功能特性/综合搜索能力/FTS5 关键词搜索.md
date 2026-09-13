@@ -342,3 +342,20 @@ DAL --> DAO_A
 - [sqlite.rs（技能 DAO）:335-363](src/service/dao/skill/sqlite.rs#L335-L363)
 - [sqlite.rs（工具 DAO）:402-453](src/service/dao/tool/sqlite.rs#L402-L453)
 - [sqlite.rs（Agent DAO）:155-186](src/service/dao/agent/sqlite.rs#L155-L186)
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 📋 Plan: docs/plan/向量搜索Pre-Filter改造.md
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：向量 Pre-Filter 谓词下推 + Payload 落库 + 三态索引决策
+**关键变更**：
+1. VectorStore::search 新增 filter 参数（Option<VectorFilter>），4 后端统一对齐 + 新增 update_payload 方法
+2. src/models/vector.rs 新增 VectorPayload/VectorFilter/ReindexDecision 三底座；Vectorizable trait 扩展 vector_payload/vector_id/reindex_decision
+3. 7 域 Vector DAO 各自 DAO 层接收业务 Query → 内转译 VectorFilter（信息专家原则）
+4. 消除"全局 Top-K 被其他 Agent/租户污染"的召回缺陷；默认会话哨兵 + @ 修复 + 气泡 chip + 入职 SSOT + hooks dx check 同步落地
+**涉及 RAG 卡**：向量存储抽象卡 + 消息交互与SSE推送卡 + 种子配置卡 + 测试与质量工程卡

@@ -385,3 +385,18 @@ Agent 管理功能在前端与后端之间形成了清晰的职责划分与稳�
   - 领域逻辑：src/service/domain/hr/agent.rs
 
 [本节为补充信息，不直接分析具体文件]
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发/种子配置与系统两阶段初始化：5 套 TEMPLATE_SKILL 编译期嵌入 + seed diff 增量导入 + 两阶段 init aop 严格分离 + init_all_base_data 域派发.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：组织默认入职包 SSOT 化 + Agent 列表就地引导
+**关键变更**：
+1. src/service/domain/system/seed/default.json：组织默认入职包（招聘官 Agent 等）收口到 default.json 的 organization_onboarding 数组，Seed SSOT 化
+2. frontend/src/pages/hr/onboard_modal.rs：入职弹窗按来源三组分包（系统预置/组织自定义/行业模板）+ 登录页单组织默认选中
+3. frontend/src/pages/hr/agents.rs + bind_model_modal.rs：Agent 列表就地引导下一步——缺模型绑定 → 显示绑定按钮；状态未推进 → 显示状态推进按钮
+**涉及 RAG 卡**：种子配置卡

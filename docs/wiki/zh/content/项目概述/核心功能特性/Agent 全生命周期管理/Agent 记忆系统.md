@@ -377,3 +377,21 @@ Agent 记忆系统通过短期与长期记忆的分层设计，结合 FTS5 全�
 - [唤醒上下文与睡眠约束.md](docs/archive/plan-archive/唤醒上下文与睡眠约束.md) — 记忆写入工具拆分：save_short_term / save_long_term 替代 create_memory（Agent 唤醒工具列表只注入这两个专用工具）
 #### ④ RAG 原子知识卡
 - [Memory 系统增强与休息沉淀：四层记忆（Core／Working／Short／Long）+ agent_rest 每天 4 点 settle + load_and_settle 向量去重合并](docs/wiki/knowledge/zh/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并/Memory%20系统增强与休息沉淀：四层记忆（Core%2FWorking%2FShort%2FLong）+%20agent_rest%20每天%204%20点%20settle%20+%20load_and_settle%20向量去重合并.md) — §4.1 红线 1 工具拆分红线（Agent 工具列表绝不注入 create_memory）
+
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 📋 Plan: docs/plan/向量搜索Pre-Filter改造.md
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：向量 Pre-Filter 谓词下推 + Payload 落库 + 三态索引决策
+**关键变更**：
+1. VectorStore::search 新增 filter 参数（Option<VectorFilter>），4 后端统一对齐 + 新增 update_payload 方法
+2. src/models/vector.rs 新增 VectorPayload/VectorFilter/ReindexDecision 三底座；Vectorizable trait 扩展 vector_payload/vector_id/reindex_decision
+3. 7 域 Vector DAO 各自 DAO 层接收业务 Query → 内转译 VectorFilter（信息专家原则）
+4. 消除"全局 Top-K 被其他 Agent/租户污染"的召回缺陷；默认会话哨兵 + @ 修复 + 气泡 chip + 入职 SSOT + hooks dx check 同步落地
+**涉及 RAG 卡**：向量存储抽象卡 + 消息交互与SSE推送卡 + 种子配置卡 + 测试与质量工程卡

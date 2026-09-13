@@ -37,6 +37,8 @@ source_files:
 - src/router.rs（2026-09-12 preset-agents 路由组注册）
 - src/handlers/finance/model_provider/create_model_provider.rs
 - src/handlers/organization/initialize_system.rs
+- frontend/src/pages/hr/onboard_modal.rs（2026-09-13 增量：入职弹窗按来源三组分包 + 登录页单组织默认选中）
+- frontend/src/pages/hr/bind_model_modal.rs（2026-09-13 增量：Agent 列表就地引导 — 缺模型绑定 → 显示绑定按钮；状态未推进 → 显示状态推进按钮）
 - docs/archive/design-archive/seed-config-migration.md
 - docs/archive/plan-archive/Agent管理集成测试.md
 - docs/wiki/zh/content/功能模块/用户与组织管理/系统初始化.md
@@ -57,6 +59,11 @@ Seed 系统采用「纯工具箱 Domain」架构：seed 子模块只提供数据
 **2026-09-12 增量**：default.json 新增**招聘官 Agent**（hr_specialist 角色，配合 Agent 招聘生命周期使用）；嵌入式技能模板新增 **TEMPLATE_AGENT_RECRUITMENT**（Agent 招聘技能包，tag=agent_management）+ **TEMPLATE_USER_RECEPTION**（用户接待技能包，tag=reception）；`reception` 同名双身份包打通——既作为普通技能模板存在，又作为 HR 域新入职 Handler 的默认技能包之一，解决「同一业务能力在 Seed 模板和 Handler 默认值中硬编码重复」的问题。embedded.rs 的 EMBEDDED_SKILL_FILES 从 6 套扩展到 8 套。
 
 **预置 Agent 一键同步（2026-09-12 新增）**：种子系统扩展为支持**预置 Agent 无感升级**——新增 `sync_preset_agents.rs`（273 行大文件）提供三种同步策略：① **Overwrite**（覆盖重置同 ID Agent 的元数据和技能包分配）/ ② **OnlyMissing**（仅补缺 DB 中缺失的预置 Agent）/ ③ **RestoreDeleted**（恢复被用户误删的预置 Agent）。API 双端点：`GET /api/v1/system/seed/preset-agents/preview`（预览 diff：种子 vs Agent 库逐 Agent 对比 + 策略影响清单）+ `POST /api/v1/system/seed/preset-agents/sync`（后台任务执行同步）。Agent 列表页（`frontend/src/pages/hr/agents.rs`）新增一键触发入口，配合 Loading 组件统一进度指示。**关键设计**：模型绑定彻底移出同步范围（refactor 67a7c7ec）——预置 Agent 同步**禁止**覆盖用户自定义的 Provider 绑定，只同步 Agent 元数据（角色/描述/能力/灵魂）和技能包分配，避免把用户精心配置的模型 Provider 冲掉。DTO 扩展：`PresetAgentSyncStrategy` 枚举 + `PreviewPresetAgentsRequest/Response` + `SyncPresetAgentsRequest/Response` 全部在 `common/src/api/seed.rs`，前端镜像在 `frontend/src/api/seed.rs`。
+
+**组织默认入职包 SSOT 化 + Agent 列表就地引导（2026-09-13 增量）**：
+- **组织默认入职包 SSOT**：各组织新用户入职时需要的默认 Agent（招聘官、接待员等）从散落的 Handler 硬编码收口到 `src/service/domain/system/seed/default.json` 的 `organization_onboarding` 数组——这是 SSOT（单一事实源），入职 Handler 从此文件读取而不再自己维护默认值。配合 seed diff 机制，管理员可以在 Seed 管理界面直接编辑入职包，diff 后 apply 生效。
+- **入职弹窗按来源三组分包**（`frontend/src/pages/hr/onboard_modal.rs`）：入职弹窗的技能包选择器按"来自哪个种子模板"分组展示（系统预置/组织自定义/行业模板三栏），登录页在只有一个组织时自动选中（无需手动点）。
+- **Agent 列表就地引导下一步**（`frontend/src/pages/hr/agents.rs` + `frontend/src/pages/hr/bind_model_modal.rs`）：Agent 列表页在每个 Agent 卡片上根据当前状态显示不同的操作按钮——**缺模型绑定**（model_provider_id 为 null）→ 显示「绑定模型」按钮（弹出 bind_model_modal）；**状态未推进**（status=Initializing 超过阈值）→ 显示「重新触发入职」按钮。替代了旧版需要管理员手动排查 Agent 入职卡点的低效流程。
 
 # §2 关键文件表
 

@@ -58,6 +58,10 @@ source_files:
 - src/service/dal/lark/impl.rs + src/service/dao/lark/http.rs (飞书 thread_id ↔ external_key 双向映射)
 - docs/wiki/zh/content/功能模块/消息系统/消息系统.md
 - docs/wiki/zh/content/功能模块/消息系统/消息管理.md
+- common/src/mention.rs（2026-09-13 修复：放开 @ 前缀判定 + 光标 UTF-16/字节单位错配修复）
+- frontend/src/components/mention_picker.rs（2026-09-13 修复：@ mention picker 触发逻辑对齐后端协议）
+- frontend/src/components/chat/message_bubble.rs（2026-09-13 增量：气泡接收方 chip + 旁听消息弱化样式）
+- frontend/src/pages/message/chat.rs（2026-09-13 增量：默认会话哨兵 project_id — 区分「不过滤」与「只要默认会话」）
 
 ---
 
@@ -72,6 +76,11 @@ source_files:
 **95a0b1bf 修复：统一回复通道 + from_role 三路分发**：`MessageConsumer.handle_agent_message` 在 awaken() 返回 raw_output 非空时，按入口消息的 `from_role` 自动生成回复——User 入口 → `delivery.send_to_user(reply_to=原消息.id, to_user_id=原消息.from_id)`；Agent 入口 → `delivery.send_to_agent(from_role=Agent, to_agent_id=原消息.from_id)`；System 入口 → 跳过（系统消息无对话对象）。从此 Agent 不需要自己调用 send_message 工具回复当前对话用户，Framework 层兜底，彻底解决"必须猜 to_user_id 才能结束任务"的心理陷阱。
 
 **消息链与话题讨论区（external_key + reply_to）**：messages 表新增 reply_to（回复链）与 external_key（话题讨论区关联键）字段（migration `20260909000004_add_external_key_to_messages.sql`）。出站推送时 dao/lark/http.rs 把 external_key 自动翻译为飞书 thread_id（双向映射：入站 thread_id → external_key 存入表，出站 external_key → thread_id 发给飞书）。src/service/domain/runtime/awakening.rs 在两阶段唤醒（IntentAnalyze → Awaken）完成后注入 reply_to 上下文到 Agent prompt，使 Agent 生成的回复自动挂在原消息下形成回复链。scheduler/consumer 三个生产端各加 1 行携带 reply_to 字段。
+
+**默认会话哨兵 project_id + @ 修复 + 气泡 chip（2026-09-13 增量）**：
+- **默认会话哨兵 project_id**：前端聊天页 `frontend/src/pages/message/chat.rs` 引入哨兵值区分两种查询语义——`project_id = None` 表示「不过滤，返回用户所有会话」；`project_id = Some(DEFAULT_SESSION_SENTINEL)` 表示「只返回默认会话的消息」。消除了旧代码中 `if project_id.is_none()` 二义性。
+- **mention picker 修复**（`common/src/mention.rs` + `frontend/src/components/mention_picker.rs`）：① 放开 @ 触发的前缀判定——旧代码要求光标前紧接一个 `@` 才触发 picker，现改为允许 `@` 前有空格或行首；② 修正光标 UTF-16 vs 字节单位错配——Dioxus 前端 DOM selection range 用 UTF-16 code unit，Rust 字符串索引用字节，修复后 mention picker 光标定位不再偏移。
+- **消息气泡 UI 增强**（`frontend/src/components/chat/message_bubble.rs`）：气泡头部新增接收方 chip（显示对话对象头像+名称）；旁听消息（非直接发给当前用户/Agent 的消息）应用弱化样式（opacity 0.6 + 灰色边框），视觉上区分"我是参与者"vs"我是旁听者"。
 
 ---
 

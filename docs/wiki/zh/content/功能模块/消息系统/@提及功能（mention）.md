@@ -330,3 +330,19 @@ AI Orz 的 @ 提及功能是一份协议设计的教科书案例：
 | `MentionKind::Project` | `project` | `mention-project` | 项目 |
 
 章节来源：`common/src/mention.rs#L36-L63`, `common/src/mention.rs#L104-L113`, `common/src/mention.rs#L136-L142`
+
+
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类/消息交互与SSE推送：MessageDomain双能力 + AgentLoopConsumer循环 + 多渠道出站5类.md
+
+---
+
+### 更新摘要（2026-09-13，base 7519cacf→HEAD）
+**主题**：默认会话哨兵 project_id + @ 修复 + 气泡 chip
+**关键变更**：
+1. common/src/mention.rs + frontend/src/components/mention_picker.rs：放开 @ 触发前缀判定（允许 @ 前有空格或行首）+ 修正光标 UTF-16/字节单位错配
+2. frontend/src/pages/message/chat.rs：默认会话哨兵 project_id 区分「不过滤」与「只要默认会话」（消除 project_id=None 二义性）
+3. frontend/src/components/chat/message_bubble.rs：消息气泡接收方 chip + 旁听消息弱化样式
+**涉及 RAG 卡**：消息交互与 SSE 推送卡
