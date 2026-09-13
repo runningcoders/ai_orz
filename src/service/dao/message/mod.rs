@@ -213,12 +213,13 @@ pub trait MessageVectorDao: Send + Sync {
         vector_params: &VectorIndexParams,
     ) -> Result<()>;
 
-    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离
+    /// 纯向量语义搜索，返回完整的向量行数据 + 相似度距离（业务过滤在 DAO 内转译为向量谓词下推）
     async fn search_vector(
         &self,
         ctx: RequestContext,
         query_vector: &[f32],
         top_k: i32,
+        filters: &MessageQuery,
     ) -> Result<Vec<crate::models::vector::VectorSearchHit>>;
 
     /// 获取指定消息的完整向量行数据（包含元信息）

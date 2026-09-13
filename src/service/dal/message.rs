@@ -552,13 +552,19 @@ async fn do_search(
     };
 
     let vector_matches = if let Some(query_vector) = &search.query_vector {
+        // pre-filter：白名单字段（organization_id / task_id / project_id / from_id /
+        // to_id / status_in）在 DAO 内转译为向量谓词下推，Top-K 在满足谓词的候选集内选取
         let results = message_vector_dao
-            .search_vector(ctx.clone(), query_vector, search.top_k.unwrap_or(20))
+            .search_vector(
+                ctx.clone(),
+                query_vector,
+                search.top_k.unwrap_or(20),
+                &search.filters,
+            )
             .await?;
 
-        // ⚠️ 向量独有命中必须沿用调用方的业务过滤条件（organization_id / project_id /
-        // task_id / from_id / to_id / status_in 等）。此前逐条 find_by_id 只保证「未软删除」，
-        // 会放行跨组织、跨项目的消息 —— 多租户隔离缺口。
+        // ⚠️ 非白名单字段（reply_to_id / root_id / to_role / message_type 等）仍需
+        // 回业务表过滤兜底；白名单字段在此重复校验，双保险不损害正确性。
         let hit_ids: Vec<String> = results.iter().map(|h| h.row.id.clone()).collect();
         let mut hits_by_id: HashMap<String, MessagePo> = HashMap::new();
         if !hit_ids.is_empty() {

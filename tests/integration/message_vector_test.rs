@@ -15,6 +15,9 @@
 mod common;
 
 use crate::common::TestApp;
+use ::common::enums::MessageStatus;
+use ai_orz::models::vector::{VectorIndexParams, VectorPayload};
+use ai_orz::service::dao::message::{MessageQuery, new_message_vector_dao};
 use serde_json::json;
 use sqlx::SqlitePool;
 
@@ -543,4 +546,216 @@ async fn test_real_message_match_type(pool: SqlitePool) {
         )
         .await;
     let _ = bs;
+}
+
+// =================================================================
+// pre-filter 谓词下推（手工向量直写 + DAO 搜索路径，无需 embedding）
+// =================================================================
+
+/// 手工构造向量索引参数（绕开真实 embedding，直写 vector store）
+fn manual_vector_params(vector: Vec<f32>, payload: VectorPayload) -> VectorIndexParams {
+    let payload_hash = payload.hash();
+    VectorIndexParams {
+        vector,
+        content_hash: sha256::digest(uuid::Uuid::now_v7().to_string()),
+        payload,
+        payload_hash,
+        model_provider_id: "manual-test-provider".to_string(),
+        embedding_model: "manual-test-model".to_string(),
+        expire_at: None,
+    }
+}
+
+/// pre-filter 谓词下推：组织隔离 + 接收方隔离，Top-K 不被跨租户数据稀释
+///
+/// 数据布局（query=[1,0]，余弦距离）：
+/// - org-2 发给 agent-2 的消息全局最近（distance=0）：若为 post-filter（先取 Top-K 再过滤），
+///   org-1 视角 top_k=1 会取到它再被过滤掉 → 返回空；
+///   正确的 pre-filter 应在满足谓词的候选集内选取 → 命中 org-1 自己的消息。
+#[sqlx::test]
+async fn test_message_vector_search_prefilter_isolation(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    // 唯一化 ID：同一 binary 内兄弟用例共享进程级 vector store，防串扰
+    let org_1 = format!("pf-org-1-{}", uuid::Uuid::now_v7());
+    let org_2 = format!("pf-org-2-{}", uuid::Uuid::now_v7());
+    let agent_1 = format!("pf-agent-1-{}", uuid::Uuid::now_v7());
+    let agent_2 = format!("pf-agent-2-{}", uuid::Uuid::now_v7());
+
+    let query_vector: Vec<f32> = vec![1.0, 0.0];
+    let other_org_msg_id = format!("msg_pf_{}", uuid::Uuid::now_v7());
+    let own_msg_id = format!("msg_pf_{}", uuid::Uuid::now_v7());
+
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "messages",
+            &other_org_msg_id,
+            &manual_vector_params(
+                vec![1.0, 0.0],
+                VectorPayload {
+                    org_id: Some(org_2.clone()),
+                    to_id: Some(agent_2.clone()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert other-org message failed");
+    store
+        .upsert(
+            "messages",
+            &own_msg_id,
+            &manual_vector_params(
+                vec![0.6, 0.8],
+                VectorPayload {
+                    org_id: Some(org_1.clone()),
+                    to_id: Some(agent_1.clone()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert own-org message failed");
+
+    let dao = new_message_vector_dao();
+
+    // 基线：无 filter 时全局最近的是 org-2 的消息（证明数据已落库且距离排序生效）
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &MessageQuery::default())
+        .await
+        .expect("search without filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(
+        hits[0].row.id, other_org_msg_id,
+        "无 filter 时全局最近应为 org-2 的消息"
+    );
+
+    // 组织隔离（多租户）：org-1 视角 top_k=1 必须命中自己的消息（post-filter 实现会返回空）
+    let org_query = MessageQuery {
+        organization_id: Some(org_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &org_query)
+        .await
+        .expect("search with org filter failed");
+    assert_eq!(
+        hits.len(),
+        1,
+        "pre-filter 后 top-1 必须命中（post-filter 实现会返回空）"
+    );
+    assert_eq!(hits[0].row.id, own_msg_id);
+    assert_eq!(hits[0].row.payload.org_id.as_deref(), Some(org_1.as_str()));
+
+    // 接收方隔离：to_id=agent-1 视角 top_k=1 同样必须命中自己的消息
+    let to_query = MessageQuery {
+        to_id: Some(agent_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &to_query)
+        .await
+        .expect("search with to_id filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].row.id, own_msg_id);
+    assert_eq!(hits[0].row.payload.to_id.as_deref(), Some(agent_1.as_str()));
+
+    // 放大 top_k：全部命中均属于 org-1 / agent-1
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 5, &org_query)
+        .await
+        .expect("search with org filter (top 5) failed");
+    assert!(!hits.is_empty());
+    for hit in &hits {
+        assert_eq!(
+            hit.row.payload.org_id.as_deref(),
+            Some(org_1.as_str()),
+            "组织隔离：全部命中均应属于 org-1"
+        );
+    }
+    assert!(
+        !hits.iter().any(|h| h.row.id == other_org_msg_id),
+        "组织隔离：org-2 的消息不应出现"
+    );
+}
+
+/// pre-filter 状态可见性：status_in 下推排除已撤回（Recalled）的消息
+///
+/// 数据布局（query=[0,1]，余弦距离；方向与 isolation 用例正交，避免共享
+/// vector store 中的兄弟用例数据干扰基线断言）：
+/// - Recalled 消息全局最近（distance=0），但 status_in=[Pending, Processed] 视角不可见
+/// - Processed 消息稍远（≈0.04），status_in 视角可见
+#[sqlx::test]
+async fn test_message_vector_search_prefilter_status_in(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    let query_vector: Vec<f32> = vec![0.0, 1.0];
+    let recalled_msg_id = format!("msg_sv_{}", uuid::Uuid::now_v7());
+    let processed_msg_id = format!("msg_sv_{}", uuid::Uuid::now_v7());
+
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "messages",
+            &recalled_msg_id,
+            &manual_vector_params(
+                vec![0.0, 1.0],
+                VectorPayload {
+                    status: Some(MessageStatus::Recalled.to_i32().to_string()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert recalled message failed");
+    store
+        .upsert(
+            "messages",
+            &processed_msg_id,
+            &manual_vector_params(
+                vec![0.28, 0.96],
+                VectorPayload {
+                    status: Some(MessageStatus::Processed.to_i32().to_string()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert processed message failed");
+
+    let dao = new_message_vector_dao();
+
+    // 基线：无 filter 时全局最近的是 Recalled 消息
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &MessageQuery::default())
+        .await
+        .expect("search without filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].row.id, recalled_msg_id);
+
+    // status_in 下推：top_k=1 必须命中可见的 Processed 消息（而非全局最近但已撤回的）
+    let status_query = MessageQuery {
+        status_in: Some(vec![MessageStatus::Pending, MessageStatus::Processed]),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &status_query)
+        .await
+        .expect("search with status_in filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(
+        hits[0].row.id, processed_msg_id,
+        "top-1 应命中最近的可见行（Processed），而非全局最近但已撤回的 Recalled"
+    );
+
+    // 放大 top_k：Recalled 消息不应出现
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 5, &status_query)
+        .await
+        .expect("search with status_in filter (top 5) failed");
+    assert!(
+        !hits.iter().any(|h| h.row.id == recalled_msg_id),
+        "status_in 过滤：已撤回的消息不应出现"
+    );
 }
