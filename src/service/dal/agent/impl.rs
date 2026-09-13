@@ -14,8 +14,11 @@ use crate::models::brain::Brain;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::agent_runtime_state::AgentRuntimeStateManager;
+use crate::pkg::background_task::TaskProgressCounter;
+use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::agent::{AgentQuery, AgentSearch, AgentStatsQuery};
 use crate::service::dao::model_provider::ModelProviderStatsQuery;
+use common::api::PaginationParams;
 use common::enums::AgentStatus;
 use common::error::Result;
 use common::models::{AgentStats, ModelCallStats, StatsFetchOptions, ToolCallSummary};
@@ -654,7 +657,11 @@ impl AgentDal for AgentDalImpl {
             .await
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
@@ -689,9 +696,35 @@ impl AgentDal for AgentDalImpl {
 
         // 3. 清空向量集合并重建
         self.agent_vector_dao.clear_collection(ctx.clone()).await?;
-        let agents = self.find_all(ctx.clone()).await?;
-        for agent in &agents {
-            self.upsert_vector_index(ctx.clone(), &agent.po).await;
+        // 分页重建：按 created_at DESC（不可变）翻页，排序键稳定 ⇒ 不会漏行。
+        // 期间被更新的 Agent 会由常规写路径自行 upsert 向量，故偏移漂移无副作用。
+        let mut offset = 0usize;
+        loop {
+            let page = self
+                .query(
+                    ctx.clone(),
+                    AgentQuery {
+                        exclude_status: Some(AgentStatus::Deleted),
+                        pagination: PaginationParams {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let fetched = page.items.len();
+            if fetched == 0 {
+                break;
+            }
+            for agent in &page.items {
+                self.upsert_vector_index(ctx.clone(), &agent.po).await;
+            }
+            offset += fetched;
+            progress.advance(fetched);
+            if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                break;
+            }
         }
 
         // 4. 更新元数据

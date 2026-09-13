@@ -9,10 +9,15 @@
 
 use dioxus::prelude::*;
 
-use common::api::{OrganizationConfig, UpdateCurrentOrganizationRequest};
+use common::api::{
+    OrganizationConfig, TaskProgressSnapshot, TaskStatus, UpdateCurrentOrganizationRequest,
+};
 use common::enums::UserRole;
 
+use crate::api::background_task::get_task_progress;
 use crate::api::organization::{get_current_organization, update_current_organization};
+use crate::api::system::rebuild_vectors;
+use crate::components::confirm_dialog::ConfirmDialog;
 use crate::components::hud::{HudCallout, HudPanel};
 use crate::components::state::Loading;
 use crate::layouts::app_layout::AppLayout;
@@ -42,6 +47,65 @@ pub fn OrganizationInfo() -> Element {
     // 组织级配置权限判定走 common 的层级权限方法：满足 Admin 最低权限即可
     // （SuperAdmin 或 Admin），与后端 update_current_organization 门控保持一致。
     let can_edit = UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::Admin);
+    // 向量库维护是平台级高危操作（全量重打 Embedding），仅 SuperAdmin 可见
+    let is_super_admin =
+        UserRole::has_permission(UserRole::from_i32(auth().role), UserRole::SuperAdmin);
+
+    // ===== 向量库维护状态 =====
+    let mut show_rebuild_confirm = use_signal(|| false);
+    // Some(task_id) = 有任务在跑（轮询中）；None = 空闲
+    let mut rebuild_task_id = use_signal(|| Option::<String>::None);
+    // 最近一次进度快照（终态后保留展示，新任务启动时覆盖）
+    let mut rebuild_snapshot = use_signal(|| Option::<TaskProgressSnapshot>::None);
+
+    let handle_rebuild = move |_| {
+        show_rebuild_confirm.set(false);
+        spawn(async move {
+            match rebuild_vectors().await {
+                Ok(resp) => {
+                    toast.success("重建任务已启动");
+                    rebuild_task_id.set(Some(resp.task_id));
+                    // 轮询进度：2s 间隔，到终态（Completed/Failed）后停止；
+                    // 连续失败 3 次才放弃（短暂网络抖动不应让用户误以为任务没了）
+                    let mut consecutive_errors = 0u32;
+                    while let Some(id) = rebuild_task_id() {
+                        match get_task_progress(&id).await {
+                            Ok(p) => {
+                                consecutive_errors = 0;
+                                let finished = p.status == TaskStatus::Completed;
+                                let failed = p.status == TaskStatus::Failed;
+                                let err = p.error.clone();
+                                rebuild_snapshot.set(Some(p));
+                                if finished {
+                                    toast.success("向量索引重建完成");
+                                    rebuild_task_id.set(None);
+                                    break;
+                                }
+                                if failed {
+                                    toast.error(format!(
+                                        "向量索引重建失败：{}",
+                                        err.unwrap_or_else(|| "未知错误".to_string())
+                                    ));
+                                    rebuild_task_id.set(None);
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                consecutive_errors += 1;
+                                if consecutive_errors >= 3 {
+                                    toast.error(format!("进度查询连续失败，已停止轮询：{}", e));
+                                    rebuild_task_id.set(None);
+                                    break;
+                                }
+                            }
+                        }
+                        gloo_timers::future::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                }
+                Err(e) => toast.error(e),
+            }
+        });
+    };
 
     use_effect(move || {
         spawn(async move {
@@ -248,6 +312,65 @@ pub fn OrganizationInfo() -> Element {
                         }
                     }
                 }
+            }
+        }
+
+        // ===== 向量库维护（仅 SuperAdmin 可见）=====
+        if is_super_admin {
+            HudPanel { signal: Some(true),
+                title: Some("向量库维护".to_string()),
+                div { class: "card-body",
+                    div { class: "space-y-4",
+                        div { class: "flex items-start justify-between gap-4",
+                            div { class: "flex-1",
+                                div { class: "font-medium", "重建向量库" }
+                                label { class: "label",
+                                    span { class: "label-text-alt",
+                                        "对全部 7 类实体（Agent / 记忆 / 技能 / 任务 / 项目 / 消息 / 工具）的语义向量索引做全量重建，分页逐条重新向量化。"
+                                        "源数据不受影响，但会全量调用 Embedding 接口（可能产生费用），数据量大时持续数分钟。"
+                                    }
+                                }
+                            }
+                            button {
+                                class: "btn hud-btn btn-ghost btn-sm shrink-0",
+                                disabled: rebuild_task_id().is_some(),
+                                onclick: move |_| show_rebuild_confirm.set(true),
+                                if rebuild_task_id().is_some() { "重建中..." } else { "重建向量库" }
+                            }
+                        }
+
+                        // 进度展示（运行中或终态后保留）
+                        if let Some(p) = rebuild_snapshot() {
+                            div { class: "space-y-2",
+                                div { class: "flex items-center justify-between text-sm",
+                                    span { "{p.step_message}" }
+                                    span { class: "text-base-content/60",
+                                        "{p.current_step} / {p.total_steps}"
+                                    }
+                                }
+                                progress {
+                                    class: if p.status == TaskStatus::Failed { "progress progress-error w-full" } else { "progress progress-primary w-full" },
+                                    value: "{p.current_step}",
+                                    max: "{p.total_steps}",
+                                }
+                                if p.status == TaskStatus::Failed {
+                                    if let Some(err) = &p.error {
+                                        div { class: "text-sm text-error", "{err}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ConfirmDialog {
+                show: show_rebuild_confirm(),
+                title: "确认重建向量库".to_string(),
+                message: "将清空现有向量索引并按页全量重新向量化（源数据不变）。过程中会持续调用 Embedding 接口，可能产生费用并持续数分钟。确定继续？".to_string(),
+                confirm_class: Some("btn-primary".to_string()),
+                on_confirm: handle_rebuild,
+                on_cancel: move |_| show_rebuild_confirm.set(false),
             }
         }
         }

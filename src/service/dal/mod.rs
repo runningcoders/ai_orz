@@ -27,6 +27,16 @@ impl SearchParams {
     }
 }
 
+/// 全量向量重建（`rebuild_vectors`）的每页条数
+///
+/// 各 DAL 按此大小逐页取出实体重建，避免一次性把全表载入内存
+/// （messages 可能到十万级以上）。取值权衡：
+/// - 过小 → 页数多、SQL round-trip 与分页开销占比高
+/// - 过大 → 单页实体常驻内存，且给 embedding 侧的压力峰值更高
+///
+/// embedding 调用才是真正的瓶颈，200 条/页是与之匹配的粒度。
+pub const VECTOR_REBUILD_PAGE_SIZE: usize = 200;
+
 pub mod agent;
 pub mod artifact;
 pub mod attachment;

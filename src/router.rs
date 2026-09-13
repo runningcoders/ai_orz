@@ -1017,6 +1017,11 @@ fn system_routes() -> Router {
             "/storage/tool-logs/cleanup",
             post(handlers::system::storage::tool_log_cleanup::cleanup_tool_logs_handler),
         )
+        // Vector rebuild route - 全量向量索引重建（仅 SuperAdmin，handler 内部二次校验）
+        .route(
+            "/vector-rebuild",
+            post(handlers::system::vector_rebuild::rebuild_vectors_handler),
+        )
         // Seed routes - 配置迁移（导出/导入/diff）
         .nest(
             "/seed",

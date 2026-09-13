@@ -8,7 +8,9 @@
 use crate::models::project::Project;
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
 use crate::pkg::RequestContext;
+use crate::pkg::background_task::TaskProgressCounter;
 use crate::pkg::stats::{ModelCallEvent, ProjectEvent};
+use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::model_provider::{ModelProviderStatsDao, ModelProviderStatsQuery};
@@ -16,6 +18,7 @@ use crate::service::dao::project;
 use crate::service::dao::project::{
     ProjectDao, ProjectQuery, ProjectSearch, ProjectStatsDao, ProjectStatsQuery, ProjectVectorDao,
 };
+use common::api::PaginationParams;
 use common::enums::ProjectStatus;
 use common::error::Result;
 use common::models::{ModelCallStats, ProjectStats, StatsFetchOptions, StatsInterval};
@@ -203,9 +206,13 @@ pub trait ProjectDal: Send + Sync {
 
     /// 🔄 重建所有项目的向量索引
     ///
-    /// 清空向量集合后，查询全量项目，逐条重新生成 embedding 并 upsert。
-    /// 单条失败不影响整体，用 log_warn! 记录。
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// 清空向量集合后，**分页**查询全量项目，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -737,7 +744,11 @@ impl ProjectDal for ProjectDalImpl {
             .await
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
@@ -775,52 +786,74 @@ impl ProjectDal for ProjectDalImpl {
             .clear_collection(ctx.clone())
             .await?;
 
-        // 4. 查全量项目并逐条重新索引
-        let projects = self
-            .query(ctx.clone(), ProjectQuery::default())
-            .await?
-            .items;
-        for project in &projects {
-            match try_build_vector_params_for_entity(
-                ctx.clone(),
-                &self.cortex_dao,
-                &self.model_provider_dao,
-                &project.po,
-            )
-            .await
-            {
-                Ok(Some(vec_params)) => {
-                    if let Err(e) = self
-                        .project_vector_dao
-                        .upsert_vector(ctx.clone(), &project.po.id, &vec_params)
-                        .await
-                    {
+        // 4. 分页查全量项目并逐条重新索引
+        // 排序键含可变字段 priority，但「被更新的项目」其向量已由常规写路径 upsert，
+        // 偏移漂移最多导致重复处理（幂等），不会漏行。
+        let mut offset = 0usize;
+        loop {
+            let page = self
+                .query(
+                    ctx.clone(),
+                    ProjectQuery {
+                        pagination: PaginationParams {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let fetched = page.items.len();
+            if fetched == 0 {
+                break;
+            }
+            for project in &page.items {
+                match try_build_vector_params_for_entity(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    &project.po,
+                )
+                .await
+                {
+                    Ok(Some(vec_params)) => {
+                        if let Err(e) = self
+                            .project_vector_dao
+                            .upsert_vector(ctx.clone(), &project.po.id, &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "rebuild_vectors",
+                                project_id = %project.po.id,
+                                error = ?e,
+                                "项目向量索引重建失败"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        log_debug!(
+                            &ctx,
+                            "rebuild_vectors",
+                            project_id = %project.po.id,
+                            "无可用 Embedding Provider，跳过向量索引"
+                        );
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "rebuild_vectors",
                             project_id = %project.po.id,
                             error = ?e,
-                            "项目向量索引重建失败"
+                            "项目向量化失败，跳过"
                         );
                     }
                 }
-                Ok(None) => {
-                    log_debug!(
-                        &ctx,
-                        "rebuild_vectors",
-                        project_id = %project.po.id,
-                        "无可用 Embedding Provider，跳过向量索引"
-                    );
-                }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "rebuild_vectors",
-                        project_id = %project.po.id,
-                        error = ?e,
-                        "项目向量化失败，跳过"
-                    );
-                }
+            }
+            offset += fetched;
+            progress.advance(fetched);
+            if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                break;
             }
         }
 

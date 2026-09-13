@@ -5,10 +5,13 @@
 
 use crate::models::skill::{Skill, SkillFile, SkillPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
+use crate::pkg::background_task::TaskProgressCounter;
 use crate::pkg::request_context::RequestContext;
+use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::skill::{self, SkillDao, SkillQuery, SkillSearch, SkillVectorDao};
+use common::api::PaginationParams;
 use common::enums::SkillStatus;
 use common::error::{Result, err};
 use std::sync::{Arc, OnceLock};
@@ -166,9 +169,13 @@ pub trait SkillDal: Send + Sync {
 
     /// 🔄 重建所有技能的向量索引
     ///
-    /// 清空向量集合后，查询全量技能，逐条重新生成 embedding 并 upsert。
-    /// 单条失败不影响整体，用 log_warn! 记录。
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// 清空向量集合后，**分页**查询全量技能，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -853,7 +860,11 @@ impl SkillDal for SkillDalImpl {
         Ok(skills)
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
@@ -889,38 +900,63 @@ impl SkillDal for SkillDalImpl {
         // 3. 清空向量集合并重建
         self.skill_vector_dao.clear_collection(ctx.clone()).await?;
 
-        // 4. 查全量技能并逐条重新索引
-        let skills = self.query(ctx.clone(), SkillQuery::default()).await?;
-        for skill in &skills.items {
-            match self
-                .cortex_dao
-                .embed_entity(ctx.clone(), &provider, &skill.po)
-                .await
-            {
-                Ok(vec_params) => {
-                    if let Err(e) = self
-                        .skill_vector_dao
-                        .upsert_vector(ctx.clone(), &skill.po.id, &vec_params)
-                        .await
-                    {
+        // 4. 分页查全量技能并逐条重新索引
+        // 排序键 updated_at 可变，但「被更新的技能」其向量已由常规写路径 upsert，
+        // 偏移漂移最多导致重复处理（幂等），不会漏行。
+        let mut offset = 0usize;
+        loop {
+            let page = self
+                .query(
+                    ctx.clone(),
+                    SkillQuery {
+                        pagination: PaginationParams {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let fetched = page.items.len();
+            if fetched == 0 {
+                break;
+            }
+            for skill in &page.items {
+                match self
+                    .cortex_dao
+                    .embed_entity(ctx.clone(), &provider, &skill.po)
+                    .await
+                {
+                    Ok(vec_params) => {
+                        if let Err(e) = self
+                            .skill_vector_dao
+                            .upsert_vector(ctx.clone(), &skill.po.id, &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "rebuild_vectors",
+                                skill_id = %skill.po.id,
+                                error = ?e,
+                                "技能向量索引重建失败"
+                            );
+                        }
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "rebuild_vectors",
                             skill_id = %skill.po.id,
                             error = ?e,
-                            "技能向量索引重建失败"
+                            "技能向量化失败，跳过"
                         );
                     }
                 }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "rebuild_vectors",
-                        skill_id = %skill.po.id,
-                        error = ?e,
-                        "技能向量化失败，跳过"
-                    );
-                }
+            }
+            offset += fetched;
+            progress.advance(fetched);
+            if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                break;
             }
         }
 

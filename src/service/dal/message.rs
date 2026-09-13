@@ -8,6 +8,7 @@ use crate::models::message::{Message, MessagePo};
 use crate::models::vector::{VectorIndexParams, Vectorizable};
 use crate::pkg::RequestContext;
 use crate::pkg::aop;
+use crate::pkg::background_task::TaskProgressCounter;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::message::{
     self, MessageDao, MessageQuery, MessageSearch, MessageVectorDao,
@@ -123,7 +124,15 @@ pub trait MessageDal: Send + Sync {
 
     async fn search(&self, ctx: RequestContext, search: MessageSearch) -> Result<Vec<Message>>;
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// 🔄 重建所有消息的向量索引
+    ///
+    /// 无条件清空向量集合后，**分页**查询全量消息，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 }
 
 struct MessageDalImpl {
@@ -423,40 +432,55 @@ impl MessageDal for MessageDalImpl {
         Ok(merged)
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 清空全部 message 向量：天然让“关闭开关的 org”无残留（已被清、不重建）
         self.message_vector_dao
             .clear_collection(ctx.clone())
             .await?;
 
-        let messages = self.query(ctx.clone(), MessageQuery::default()).await?;
-
-        // 按 organization_id 分组，每组仅读一次组织配置（走 DAO 读穿缓存）
-        let mut by_org: HashMap<String, Vec<Message>> = HashMap::new();
-        for m in messages {
-            let key = m.po.organization_id.clone().unwrap_or_default();
-            by_org.entry(key).or_default().push(m);
-        }
-
+        // 分页重建：默认排序 `created_at ASC`（不可变）翻页，排序键稳定 ⇒ 不会漏行。
+        // 期间新写入的消息会由常规写路径自行 upsert 向量，故偏移漂移无副作用。
+        // 组织级开关逐条读取（DAO 读穿缓存，同组织仅首次落库）。
         let mut enabled = 0usize;
         let mut skipped = 0usize;
-        for (org_id, msgs) in by_org {
-            // 无组织归属的消息不建向量
-            if org_id.is_empty() {
-                skipped += 1;
-                continue;
-            }
-            // DAL→DAO 注入字段读取组织级开关，关闭则整组跳过
-            let cfg = self
-                .organization_dao
-                .get_org_config(ctx.clone(), &org_id)
+        let mut offset = 0usize;
+        loop {
+            let page = self
+                .query(
+                    ctx.clone(),
+                    MessageQuery {
+                        limit: Some(crate::service::dal::VECTOR_REBUILD_PAGE_SIZE),
+                        offset: Some(offset),
+                        ..Default::default()
+                    },
+                )
                 .await?;
-            if !cfg.enable_message_vector {
-                skipped += 1;
-                continue;
+            let fetched = page.len();
+            if fetched == 0 {
+                break;
             }
-            enabled += 1;
-            for message in msgs {
+
+            for message in page {
+                let org_id = message.po.organization_id.clone().unwrap_or_default();
+                // 无组织归属的消息不建向量
+                if org_id.is_empty() {
+                    skipped += 1;
+                    continue;
+                }
+                // DAL→DAO 注入字段读取组织级开关，关闭则整组跳过
+                let cfg = self
+                    .organization_dao
+                    .get_org_config(ctx.clone(), &org_id)
+                    .await?;
+                if !cfg.enable_message_vector {
+                    skipped += 1;
+                    continue;
+                }
+                enabled += 1;
                 let ctx = enrich_ctx(&ctx, &message.po);
                 match try_build_vector_params_for_entity(
                     ctx.clone(),
@@ -493,12 +517,18 @@ impl MessageDal for MessageDalImpl {
                     _ => {}
                 }
             }
+
+            offset += fetched;
+            progress.advance(fetched);
+            if fetched < crate::service::dal::VECTOR_REBUILD_PAGE_SIZE {
+                break;
+            }
         }
 
         sys_info!(
             &ctx,
             "vector_index",
-            "rebuild message vectors: enabled_orgs={} skipped_orgs={}",
+            "rebuild message vectors: enabled_msgs={} skipped_msgs={}",
             enabled,
             skipped
         );

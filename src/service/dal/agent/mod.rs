@@ -197,9 +197,13 @@ pub trait AgentDal: Send + Sync {
 
     /// 🔄 重建所有 Agent 的向量索引
     ///
-    /// 清空向量集合后，查询全量 Agent，逐条重新生成 embedding 并 upsert。
-    /// 单条失败不影响整体，用 log_warn! 记录。
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// 清空向量集合后，**分页**查询全量 Agent，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 
     /// 返回该 Dal 对应 Agent 类型的 PromptBuilder
     ///

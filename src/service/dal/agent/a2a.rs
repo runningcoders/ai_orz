@@ -109,8 +109,12 @@ impl AgentDal for A2aAgentDal {
         self.base.get_model_call_stats(ctx, agent_id, options).await
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
-        self.base.rebuild_vectors(ctx).await
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()> {
+        self.base.rebuild_vectors(ctx, progress).await
     }
 
     /// Remote Agent 配套扁平化 Builder

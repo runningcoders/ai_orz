@@ -138,7 +138,11 @@ impl AgentDal for MockAgentDal {
         Ok(ModelCallStats::default())
     }
 
-    async fn rebuild_vectors(&self, _ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        _ctx: RequestContext,
+        _progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()> {
         self.record_call("rebuild_vectors");
         Ok(())
     }
@@ -190,7 +194,9 @@ async fn codex_agent_dal_delegates_rebuild_vectors_to_base() {
     let mock = Arc::new(MockAgentDal::new());
     let codex_dal = CodexAgentDal::new(mock.clone());
 
-    let result = codex_dal.rebuild_vectors(make_test_ctx()).await;
+    let result = codex_dal
+        .rebuild_vectors(make_test_ctx(), &Default::default())
+        .await;
     assert!(result.is_ok());
     assert!(mock.was_called("rebuild_vectors"));
 }

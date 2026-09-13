@@ -60,6 +60,11 @@ pub struct MemoryQuery {
     pub keyword: Option<String>,
     /// 最大返回条数
     pub limit: Option<usize>,
+    /// 分页偏移（None = 从 0 开始）
+    ///
+    /// 与 `limit` 配合用于分批处理（如全量向量重建逐页取出），
+    /// 单独设置 offset 而不设 limit 表示「跳过前 offset 条，不限上限」。
+    pub offset: Option<usize>,
     /// ✅ 按记忆类型过滤
     pub memory_type: Option<MemoryType>,
     /// 按 tags 过滤（OR 语义，命中任一 tag 即可，JSON 数组列）

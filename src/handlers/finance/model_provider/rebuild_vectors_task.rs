@@ -6,6 +6,7 @@
 
 use crate::pkg::RequestContext;
 use crate::pkg::background_task::BackgroundTask;
+use crate::pkg::background_task::TaskProgressCounter;
 use crate::service::dal;
 use async_trait::async_trait;
 use common::api::{TaskProgressSnapshot, TaskStatus, TaskType};
@@ -16,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// 向量索引重建任务
 ///
 /// 遍历 7 个实体（agent/memory/skill/task/project/message/tool）调用各 DAL 的
-/// `rebuild_vectors(ctx)`。同一时刻仅允许一个 RebuildVectors 任务运行（由 `run` 内部检查）。
+/// `rebuild_vectors(ctx, progress)`。同一时刻仅允许一个 RebuildVectors 任务运行（由 `run` 内部检查）。
 pub struct RebuildVectorsTask {
     /// 任务唯一 ID
     task_id: String,
@@ -30,6 +31,8 @@ pub struct RebuildVectorsTask {
     total_steps: usize,
     /// 当前步骤描述（人类可读）
     step_message: Mutex<String>,
+    /// 已处理条数（跨实体累计，由各 DAL 逐页上报）
+    progress: TaskProgressCounter,
     /// 开始时间戳（毫秒）
     started_at: i64,
     /// 结束时间戳（毫秒，运行中为 None）
@@ -50,6 +53,7 @@ impl RebuildVectorsTask {
             current_step: AtomicUsize::new(0),
             total_steps: 7,
             step_message: Mutex::new("等待开始".to_string()),
+            progress: TaskProgressCounter::new(),
             started_at: chrono::Utc::now().timestamp_millis(),
             finished_at: Mutex::new(None),
             error: Mutex::new(None),
@@ -91,13 +95,19 @@ impl BackgroundTask for RebuildVectorsTask {
     }
 
     fn progress(&self) -> TaskProgressSnapshot {
+        // 实时已处理条数拼进文案：进度条表达「第几步/共几步」，计数表达「共处理多少条」
+        let mut step_message = self.step_message.lock().unwrap().clone();
+        let processed = self.progress.processed();
+        if processed > 0 {
+            step_message.push_str(&format!("（已处理 {} 条）", processed));
+        }
         TaskProgressSnapshot {
             task_id: self.task_id.clone(),
             task_type: self.task_type().as_str().to_string(),
             status: *self.status.lock().unwrap(),
             current_step: self.current_step.load(Ordering::SeqCst),
             total_steps: self.total_steps,
-            step_message: self.step_message.lock().unwrap().clone(),
+            step_message,
             started_at: self.started_at,
             finished_at: *self.finished_at.lock().unwrap(),
             error: self.error.lock().unwrap().clone(),
@@ -140,23 +150,51 @@ impl BackgroundTask for RebuildVectorsTask {
 
         let result: Result<()> = async {
             for (i, (entity, label)) in entities.iter().enumerate() {
-                self.set_step(i + 1, &format!("正在重建 {} 向量索引", label));
+                self.set_step(
+                    i + 1,
+                    &format!(
+                        "({}/{}) 正在重建 {} 向量索引",
+                        i + 1,
+                        self.total_steps,
+                        label
+                    ),
+                );
                 match *entity {
-                    "agent" => dal::agent::dal().rebuild_vectors(self.ctx.clone()).await?,
-                    "memory" => dal::memory::dal().rebuild_vectors(self.ctx.clone()).await?,
-                    "skill" => dal::skill::dal().rebuild_vectors(self.ctx.clone()).await?,
-                    "task" => dal::task::dal().rebuild_vectors(self.ctx.clone()).await?,
+                    "agent" => {
+                        dal::agent::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .await?
+                    }
+                    "memory" => {
+                        dal::memory::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .await?
+                    }
+                    "skill" => {
+                        dal::skill::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .await?
+                    }
+                    "task" => {
+                        dal::task::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .await?
+                    }
                     "project" => {
                         dal::project::dal()
-                            .rebuild_vectors(self.ctx.clone())
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
                             .await?
                     }
                     "message" => {
                         dal::message::dal()
-                            .rebuild_vectors(self.ctx.clone())
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
                             .await?
                     }
-                    "tool" => dal::tool::dal().rebuild_vectors(self.ctx.clone()).await?,
+                    "tool" => {
+                        dal::tool::dal()
+                            .rebuild_vectors(self.ctx.clone(), &self.progress)
+                            .await?
+                    }
                     _ => {}
                 }
             }
@@ -166,7 +204,11 @@ impl BackgroundTask for RebuildVectorsTask {
 
         match result {
             Ok(()) => {
-                let v = serde_json::json!({"rebuilt": true, "entities": 7});
+                let v = serde_json::json!({
+                    "rebuilt": true,
+                    "entities": 7,
+                    "processed": self.progress.processed(),
+                });
                 self.set_completed(v.clone());
                 log_info!(
                     &self.ctx,

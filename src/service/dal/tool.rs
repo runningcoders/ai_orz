@@ -5,12 +5,15 @@
 
 use crate::models::tool::{Tool, ToolExecutionRequest, ToolPo};
 use crate::models::vector::{MatchType, SearchMatchInfo, Vectorizable};
+use crate::pkg::background_task::TaskProgressCounter;
 use crate::pkg::request_context::RequestContext;
 use crate::pkg::tool_tracing::entry::ToolCallEntry;
+use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::model_provider::ModelProviderDao;
 use crate::service::dao::tool::{ToolDao, ToolQuery, ToolStatsDao, ToolStatsQuery, ToolVectorDao};
 use crate::service::dao::tool_call::{self, ToolCallDao};
+use common::api::PaginationParams;
 use common::enums::ToolStatus;
 use common::error::{Result, bail_err};
 use common::models::{StatsFetchOptions, StatsInterval, ToolStats};
@@ -174,9 +177,13 @@ pub trait ToolDal: Send + Sync {
 
     /// 🔄 重建所有工具的向量索引
     ///
-    /// 清空向量集合后，查询全量工具，逐条重新生成 embedding 并 upsert。
-    /// 单条失败不影响整体，用 log_warn! 记录。
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// 清空向量集合后，**分页**查询全量工具，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 }
 
 // ==================== DAL 实现 ====================
@@ -730,7 +737,11 @@ impl ToolDal for ToolDalImpl {
         Ok(self.tool_stats_dao.get_stats(ctx, query, options).await?)
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
@@ -766,59 +777,74 @@ impl ToolDal for ToolDalImpl {
         // 3. 清空向量集合并重建
         self.tool_vector_dao.clear_collection(ctx.clone()).await?;
 
-        // 4. 查全量工具 PO（排除 Stale 状态）并逐条重新索引
-        let pos = self
-            .tool_dao
-            .query(
-                ctx.clone(),
-                ToolQuery {
-                    exclude_status: Some(ToolStatus::Stale),
-                    ..Default::default()
-                },
-            )
-            .await?;
-
-        for po in &pos.items {
-            match try_build_vector_params_for_entity(
-                ctx.clone(),
-                &self.cortex_dao,
-                &self.model_provider_dao,
-                po as &dyn Vectorizable,
-            )
-            .await
-            {
-                Ok(Some(vec_params)) => {
-                    if let Err(e) = self
-                        .tool_vector_dao
-                        .upsert_vector(ctx.clone(), &po.id, &vec_params)
-                        .await
-                    {
+        // 4. 分页查全量工具 PO（排除 Stale 状态）并逐条重新索引
+        let mut offset = 0usize;
+        loop {
+            let page = self
+                .tool_dao
+                .query(
+                    ctx.clone(),
+                    ToolQuery {
+                        exclude_status: Some(ToolStatus::Stale),
+                        pagination: PaginationParams {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            let fetched = page.items.len();
+            if fetched == 0 {
+                break;
+            }
+            for po in &page.items {
+                match try_build_vector_params_for_entity(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    po as &dyn Vectorizable,
+                )
+                .await
+                {
+                    Ok(Some(vec_params)) => {
+                        if let Err(e) = self
+                            .tool_vector_dao
+                            .upsert_vector(ctx.clone(), &po.id, &vec_params)
+                            .await
+                        {
+                            log_warn!(
+                                &ctx,
+                                "rebuild_vectors",
+                                tool_id = %po.id,
+                                error = ?e,
+                                "工具向量索引重建失败"
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        log_debug!(
+                            &ctx,
+                            "rebuild_vectors",
+                            tool_id = %po.id,
+                            "无可用 Embedding Provider，跳过向量索引"
+                        );
+                    }
+                    Err(e) => {
                         log_warn!(
                             &ctx,
                             "rebuild_vectors",
                             tool_id = %po.id,
                             error = ?e,
-                            "工具向量索引重建失败"
+                            "工具向量化失败，跳过"
                         );
                     }
                 }
-                Ok(None) => {
-                    log_debug!(
-                        &ctx,
-                        "rebuild_vectors",
-                        tool_id = %po.id,
-                        "无可用 Embedding Provider，跳过向量索引"
-                    );
-                }
-                Err(e) => {
-                    log_warn!(
-                        &ctx,
-                        "rebuild_vectors",
-                        tool_id = %po.id,
-                        error = ?e,
-                        "工具向量化失败，跳过"
-                    );
-                }
+            }
+            offset += fetched;
+            progress.advance(fetched);
+            if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                break;
             }
         }
 

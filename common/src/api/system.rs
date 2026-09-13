@@ -260,6 +260,13 @@ pub struct AopStatsDistributionResponse {
     pub items: Vec<AopStatsDistributionItem>,
 }
 
+/// 触发全量向量索引重建请求（无参数，仅 SuperAdmin）
+///
+/// 前端拿到返回的 `task_id` 后轮询 `GET /api/v1/system/tasks/{task_id}/progress`
+/// 展示进度条。
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)]
+pub struct RebuildVectorsRequest {}
+
 // ============ Process Management (shell_list / shell_status / shell_kill) ============
 
 /// 列出后台进程请求（无参数，可见范围由调用方 ctx 决定）

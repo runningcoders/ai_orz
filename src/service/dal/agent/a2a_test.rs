@@ -121,7 +121,11 @@ impl AgentDal for MockAgentDal {
         self.record("get_model_call_stats");
         Ok(ModelCallStats::default())
     }
-    async fn rebuild_vectors(&self, _ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        _ctx: RequestContext,
+        _progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()> {
         self.record("rebuild_vectors");
         Ok(())
     }

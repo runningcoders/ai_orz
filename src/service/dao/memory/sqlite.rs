@@ -416,11 +416,21 @@ FROM short_term_memory_index WHERE 1=1"#,
         }
 
         // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先
+        // 排序方向：默认最近优先（历史行为），队列类查询显式指定最早优先
         builder.push(query.order.to_sql());
+        // `created_at` 毫秒级可能同值，补 `id` 作次序键：分页（OFFSET）要求排序确定，
+        // 否则同值行在不同页查询间相对次序可能变化，导致漏行。
+        builder.push(", id ASC");
 
-        if let Some(limit) = &query.limit {
+        // SQLite 语法要求 OFFSET 必须跟在 LIMIT 之后；只给 offset 时用 `LIMIT -1`
+        // 表达「不限上限」。两者都不给则维持原有的「无分页子句」行为。
+        if query.limit.is_some() || query.offset.is_some() {
             builder.push(" LIMIT ");
-            builder.push_bind(*limit as i64);
+            builder.push_bind(query.limit.map(|l| l as i64).unwrap_or(-1));
+            if let Some(offset) = query.offset {
+                builder.push(" OFFSET ");
+                builder.push_bind(offset as i64);
+            }
         }
 
         let indexes = builder
@@ -861,11 +871,19 @@ FROM long_term_knowledge_node WHERE 1=1"#,
             separated.push_unseparated("))");
         }
 
-        builder.push(" ORDER BY updated_at DESC");
+        // `updated_at` 毫秒级可能同值（批量写入常见），补 `id` 作次序键：
+        // 分页（OFFSET）要求排序确定，否则同值行在不同页查询间相对次序可能变化，导致漏行。
+        builder.push(" ORDER BY updated_at DESC, id DESC");
 
-        if let Some(limit) = &query.limit {
+        // SQLite 语法要求 OFFSET 必须跟在 LIMIT 之后；只给 offset 时用 `LIMIT -1`
+        // 表达「不限上限」。两者都不给则维持原有的「无分页子句」行为。
+        if query.limit.is_some() || query.offset.is_some() {
             builder.push(" LIMIT ");
-            builder.push_bind(*limit as i64);
+            builder.push_bind(query.limit.map(|l| l as i64).unwrap_or(-1));
+            if let Some(offset) = query.offset {
+                builder.push(" OFFSET ");
+                builder.push_bind(offset as i64);
+            }
         }
 
         let nodes = builder

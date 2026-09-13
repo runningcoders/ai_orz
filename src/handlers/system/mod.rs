@@ -12,3 +12,4 @@ pub mod storage;
 pub mod task_cleanup;
 pub mod task_list;
 pub mod task_progress;
+pub mod vector_rebuild;

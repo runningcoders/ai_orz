@@ -34,8 +34,10 @@
 //! // 3. 前端轮询 GET /api/v1/system/tasks/{task_id}/progress
 //! ```
 
+mod progress;
 mod registry;
 
+pub use progress::TaskProgressCounter;
 pub use registry::BackgroundTaskRegistry;
 
 use async_trait::async_trait;

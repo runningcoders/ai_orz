@@ -14,6 +14,8 @@ use crate::models::vector::{
     MatchType, ReindexDecision, SearchMatchInfo, VectorIndexParams, Vectorizable,
 };
 use crate::pkg::RequestContext;
+use crate::pkg::background_task::TaskProgressCounter;
+use crate::service::dal::VECTOR_REBUILD_PAGE_SIZE;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
 use crate::service::dao::model_provider::ModelProviderDao;
@@ -191,9 +193,13 @@ pub trait MemoryDal: Send + Sync {
     /// 🔄 重建所有记忆的向量索引
     ///
     /// 清空 short_term 和 knowledge_node 两个向量集合后，
-    /// 查询全量短期记忆和知识节点，逐条重新生成 embedding 并 upsert。
-    /// 单条失败不影响整体，用 log_warn! 记录。
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()>;
+    /// **分页**查询全量短期记忆和知识节点，逐条重新生成 embedding 并 upsert。
+    /// 单条失败不影响整体，用 log_warn! 记录；每页处理完通过 `progress` 上报条数。
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &crate::pkg::background_task::TaskProgressCounter,
+    ) -> Result<()>;
 }
 
 // ==================== Implementation ====================
@@ -654,7 +660,11 @@ impl MemoryDal for MemoryDalImpl {
         Ok(marked)
     }
 
-    async fn rebuild_vectors(&self, ctx: RequestContext) -> Result<()> {
+    async fn rebuild_vectors(
+        &self,
+        ctx: RequestContext,
+        progress: &TaskProgressCounter,
+    ) -> Result<()> {
         // 1. 获取当前启用的 Embedding Provider
         let Some(provider) = self
             .model_provider_dao
@@ -707,55 +717,76 @@ impl MemoryDal for MemoryDalImpl {
         }
 
         // 4. 重建短期记忆向量索引（如需要；清空后旧行不存在，必然 FullReindex）
+        // 分页重建：排序键 `updated_at DESC, id DESC` 确定页序；期间被更新的记忆
+        // 会由常规写路径自行 upsert 向量，故偏移漂移无副作用。
         if short_term_need_rebuild {
-            let short_terms = self
-                .memory_dao
-                .query_short_term(ctx.clone(), MemoryQuery::default())
-                .await?;
-            for index in &short_terms {
-                match try_build_vector_params_for_entity(
-                    ctx.clone(),
-                    &self.cortex_dao,
-                    &self.model_provider_dao,
-                    index,
-                    ShortTermMemoryIndexPo::vector_collection(),
-                    &index.id,
-                )
-                .await
-                {
-                    Ok(VectorIndexAction::Reindex(vec_params)) => {
-                        if let Err(e) = self
-                            .memory_vector_dao
-                            .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
-                            .await
-                        {
+            let mut offset = 0usize;
+            loop {
+                let page = self
+                    .memory_dao
+                    .query_short_term(
+                        ctx.clone(),
+                        MemoryQuery {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let fetched = page.len();
+                if fetched == 0 {
+                    break;
+                }
+                for index in &page {
+                    match try_build_vector_params_for_entity(
+                        ctx.clone(),
+                        &self.cortex_dao,
+                        &self.model_provider_dao,
+                        index,
+                        ShortTermMemoryIndexPo::vector_collection(),
+                        &index.id,
+                    )
+                    .await
+                    {
+                        Ok(VectorIndexAction::Reindex(vec_params)) => {
+                            if let Err(e) = self
+                                .memory_vector_dao
+                                .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
+                                .await
+                            {
+                                log_warn!(
+                                    &ctx,
+                                    "rebuild_vectors",
+                                    memory_id = %index.id,
+                                    error = ?e,
+                                    "短期记忆向量索引重建失败"
+                                );
+                            }
+                        }
+                        Ok(VectorIndexAction::Skipped) => {
+                            log_debug!(
+                                &ctx,
+                                "rebuild_vectors",
+                                memory_id = %index.id,
+                                "向量索引未变化，跳过"
+                            );
+                        }
+                        Ok(VectorIndexAction::PayloadRefreshed) => {}
+                        Err(e) => {
                             log_warn!(
                                 &ctx,
                                 "rebuild_vectors",
                                 memory_id = %index.id,
                                 error = ?e,
-                                "短期记忆向量索引重建失败"
+                                "短期记忆向量化失败，跳过"
                             );
                         }
                     }
-                    Ok(VectorIndexAction::Skipped) => {
-                        log_debug!(
-                            &ctx,
-                            "rebuild_vectors",
-                            memory_id = %index.id,
-                            "向量索引未变化，跳过"
-                        );
-                    }
-                    Ok(VectorIndexAction::PayloadRefreshed) => {}
-                    Err(e) => {
-                        log_warn!(
-                            &ctx,
-                            "rebuild_vectors",
-                            memory_id = %index.id,
-                            error = ?e,
-                            "短期记忆向量化失败，跳过"
-                        );
-                    }
+                }
+                offset += fetched;
+                progress.advance(fetched);
+                if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                    break;
                 }
             }
             ctx.vector_store()
@@ -768,54 +799,73 @@ impl MemoryDal for MemoryDalImpl {
 
         // 6. 重建知识节点向量索引（如需要；清空后旧行不存在，必然 FullReindex）
         if knowledge_node_need_rebuild {
-            let nodes = self
-                .memory_dao
-                .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
-                .await?;
-            for node in &nodes {
-                match try_build_vector_params_for_entity(
-                    ctx.clone(),
-                    &self.cortex_dao,
-                    &self.model_provider_dao,
-                    node,
-                    LongTermKnowledgeNodePo::vector_collection(),
-                    &node.id,
-                )
-                .await
-                {
-                    Ok(VectorIndexAction::Reindex(vec_params)) => {
-                        if let Err(e) = self
-                            .memory_vector_dao
-                            .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
-                            .await
-                        {
+            let mut offset = 0usize;
+            loop {
+                let page = self
+                    .memory_dao
+                    .query_knowledge_nodes(
+                        ctx.clone(),
+                        MemoryQuery {
+                            limit: Some(VECTOR_REBUILD_PAGE_SIZE),
+                            offset: Some(offset),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let fetched = page.len();
+                if fetched == 0 {
+                    break;
+                }
+                for node in &page {
+                    match try_build_vector_params_for_entity(
+                        ctx.clone(),
+                        &self.cortex_dao,
+                        &self.model_provider_dao,
+                        node,
+                        LongTermKnowledgeNodePo::vector_collection(),
+                        &node.id,
+                    )
+                    .await
+                    {
+                        Ok(VectorIndexAction::Reindex(vec_params)) => {
+                            if let Err(e) = self
+                                .memory_vector_dao
+                                .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
+                                .await
+                            {
+                                log_warn!(
+                                    &ctx,
+                                    "rebuild_vectors",
+                                    knowledge_id = %node.id,
+                                    error = ?e,
+                                    "知识节点向量索引重建失败"
+                                );
+                            }
+                        }
+                        Ok(VectorIndexAction::Skipped) => {
+                            log_debug!(
+                                &ctx,
+                                "rebuild_vectors",
+                                knowledge_id = %node.id,
+                                "向量索引未变化，跳过"
+                            );
+                        }
+                        Ok(VectorIndexAction::PayloadRefreshed) => {}
+                        Err(e) => {
                             log_warn!(
                                 &ctx,
                                 "rebuild_vectors",
                                 knowledge_id = %node.id,
                                 error = ?e,
-                                "知识节点向量索引重建失败"
+                                "知识节点向量化失败，跳过"
                             );
                         }
                     }
-                    Ok(VectorIndexAction::Skipped) => {
-                        log_debug!(
-                            &ctx,
-                            "rebuild_vectors",
-                            knowledge_id = %node.id,
-                            "向量索引未变化，跳过"
-                        );
-                    }
-                    Ok(VectorIndexAction::PayloadRefreshed) => {}
-                    Err(e) => {
-                        log_warn!(
-                            &ctx,
-                            "rebuild_vectors",
-                            knowledge_id = %node.id,
-                            error = ?e,
-                            "知识节点向量化失败，跳过"
-                        );
-                    }
+                }
+                offset += fetched;
+                progress.advance(fetched);
+                if fetched < VECTOR_REBUILD_PAGE_SIZE {
+                    break;
                 }
             }
             ctx.vector_store()

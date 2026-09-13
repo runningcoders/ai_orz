@@ -239,3 +239,16 @@ pub async fn kill_process(pid: u32) -> Result<common::api::ShellKillResponse, Ap
     )
     .await
 }
+
+// ===== 向量索引重建 =====
+
+/// 触发全量向量索引重建（仅 SuperAdmin），返回后台任务 ID
+///
+/// 拿到 `task_id` 后用 `crate::api::background_task::get_task_progress` 轮询进度。
+pub async fn rebuild_vectors() -> Result<common::api::TaskIdResponse, ApiError> {
+    api_post(
+        "/api/v1/system/vector-rebuild",
+        &common::api::RebuildVectorsRequest {},
+    )
+    .await
+}
