@@ -196,6 +196,7 @@ impl super::VectorStore for InMemoryVectorStore {
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
+        filter: Option<&crate::models::vector::VectorFilter>,
     ) -> Result<Vec<VectorSearchHit>> {
         let now = chrono::Utc::now().timestamp();
 
@@ -205,7 +206,7 @@ impl super::VectorStore for InMemoryVectorStore {
             .await?
             .unwrap_or_else(|| VectorCollection::new(query_vector.len() as i32));
 
-        // 计算所有向量的相似度
+        // 先谓词过滤（pre-filter），再按距离排序取 top-k
         let mut results: Vec<VectorSearchHit> = coll
             .entries
             .iter()
@@ -213,6 +214,7 @@ impl super::VectorStore for InMemoryVectorStore {
                 // 过滤过期的向量
                 e.meta.expire_at.is_none_or(|exp| exp > now)
             })
+            .filter(|e| filter.is_none_or(|f| f.matches(&e.payload)))
             .map(|e| {
                 let distance = cosine_distance(query_vector, &e.vector);
                 VectorSearchHit {
@@ -231,6 +233,31 @@ impl super::VectorStore for InMemoryVectorStore {
 
         // 返回前 top_k 个结果
         Ok(results.into_iter().take(top_k as usize).collect())
+    }
+
+    async fn update_payload(
+        &self,
+        collection: &str,
+        id: &str,
+        payload: &crate::models::vector::VectorPayload,
+    ) -> Result<()> {
+        let mut collections = self.collections.write().await;
+        if let Some(coll) = collections.get_mut(collection) {
+            if let Some(entry) = coll.entries.iter_mut().find(|e| e.id == id) {
+                entry.payload = payload.clone();
+                entry.meta.payload_hash = payload.hash();
+                // 异步持久化（不阻塞调用）
+                let coll_clone = coll.clone();
+                let store_clone = self.clone();
+                let collection_name = collection.to_string();
+                tokio::spawn(async move {
+                    let _ = store_clone
+                        .save_collection(&collection_name, &coll_clone)
+                        .await;
+                });
+            }
+        }
+        Ok(())
     }
 
     async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
@@ -277,5 +304,108 @@ impl super::VectorStore for InMemoryVectorStore {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+    use crate::models::vector::{FilterValue, VectorField, VectorFilter, VectorPayload};
+    use crate::pkg::storage::vector::VectorStore;
+
+    fn payload(agent: &str, published: bool) -> VectorPayload {
+        VectorPayload {
+            agent_id: Some(agent.to_string()),
+            is_published: Some(published),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_inmemory_search_with_filter() {
+        let store = InMemoryVectorStore::with_path(
+            std::env::temp_dir().join(format!("vec_filter_test_{}", std::process::id())),
+        )
+        .unwrap();
+        let params = |agent: &str, published: bool| crate::models::vector::VectorIndexParams {
+            vector: vec![1.0, 0.0],
+            content_hash: format!("hash-{agent}-{published}"),
+            payload: payload(agent, published),
+            payload_hash: payload(agent, published).hash(),
+            model_provider_id: "p1".into(),
+            embedding_model: "m1".into(),
+            expire_at: None,
+        };
+        store
+            .upsert("t", "a1", &params("agent-1", false))
+            .await
+            .unwrap();
+        store
+            .upsert("t", "a2", &params("agent-1", true))
+            .await
+            .unwrap();
+        store
+            .upsert("t", "b1", &params("agent-2", true))
+            .await
+            .unwrap();
+
+        // 不过滤：3 条
+        let all = store.search("t", &[1.0, 0.0], 10, None).await.unwrap();
+        assert_eq!(all.len(), 3);
+
+        // agent-1 视角 + include_shared（OR is_published）
+        let filter = VectorFilter::Any(vec![
+            VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
+            VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
+        ]);
+        let hits = store
+            .search("t", &[1.0, 0.0], 10, Some(&filter))
+            .await
+            .unwrap();
+        let ids: Vec<&str> = hits.iter().map(|h| h.row.id.as_str()).collect();
+        assert_eq!(ids.len(), 3); // a1 + a2 + b1(published)
+
+        // agent-1 私有视角
+        let private = VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into()));
+        let hits = store
+            .search("t", &[1.0, 0.0], 10, Some(&private))
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 2);
+
+        // 命中行携带 payload
+        assert!(hits[0].row.payload.agent_id.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_inmemory_update_payload() {
+        let store = InMemoryVectorStore::with_path(
+            std::env::temp_dir().join(format!("vec_payload_test_{}", std::process::id())),
+        )
+        .unwrap();
+        let mut p = params_default();
+        p.payload.is_published = Some(false);
+        store.upsert("t", "a1", &p).await.unwrap();
+        let mut new_payload = crate::models::vector::VectorPayload::default();
+        new_payload.is_published = Some(true);
+        new_payload.agent_id = Some("agent-1".into());
+        store.update_payload("t", "a1", &new_payload).await.unwrap();
+        let row = store.get("t", "a1").await.unwrap().unwrap();
+        assert_eq!(row.payload.is_published, Some(true));
+        assert_eq!(row.meta.payload_hash, new_payload.hash());
+        // vector 不被破坏
+        assert_eq!(row.vector.len(), 2);
+    }
+
+    fn params_default() -> crate::models::vector::VectorIndexParams {
+        crate::models::vector::VectorIndexParams {
+            vector: vec![1.0, 0.0],
+            content_hash: "h".into(),
+            payload: crate::models::vector::VectorPayload::default(),
+            payload_hash: crate::models::vector::VectorPayload::default().hash(),
+            model_provider_id: "p1".into(),
+            embedding_model: "m1".into(),
+            expire_at: None,
+        }
     }
 }

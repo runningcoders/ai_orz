@@ -9,7 +9,7 @@
 //! - 各业务 DAO = 决定"向量化什么、什么时候、用什么模型"
 
 use crate::models::vector::{
-    VectorIndexParams, VectorMeta, VectorPayload, VectorRow, VectorSearchHit,
+    VectorFilter, VectorIndexParams, VectorMeta, VectorPayload, VectorRow, VectorSearchHit,
 };
 use async_trait::async_trait;
 use common::error::Result;
@@ -34,7 +34,10 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
     /// - params: 向量索引参数（向量、哈希、模型信息、过期时间）
     async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()>;
 
-    /// 语义搜索
+    /// 语义搜索（支持谓词下推 pre-filter：Top-K 在满足谓词的候选集内选取）
+    ///
+    /// # 参数
+    /// - filter: 结构化谓词；None 表示不过滤
     ///
     /// 返回: 完整的向量行数据 + 相似度距离
     async fn search(
@@ -42,7 +45,16 @@ pub trait VectorStore: Send + Sync + std::fmt::Debug {
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
+        filter: Option<&VectorFilter>,
     ) -> Result<Vec<VectorSearchHit>>;
+
+    /// 仅更新 payload（ReindexDecision::PayloadOnly 场景：不重新调 embedding）
+    async fn update_payload(
+        &self,
+        collection: &str,
+        id: &str,
+        payload: &VectorPayload,
+    ) -> Result<()>;
 
     /// 获取指定文档的完整向量行
     async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>>;
@@ -133,18 +145,27 @@ impl VectorStore for SqliteVssStore {
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
+        filter: Option<&VectorFilter>,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_json = serde_json::to_string(query_vector)?;
-        let sql = format!(
+        let mut sql = format!(
             "SELECT m.source_id, m.content_hash, m.payload_json, m.payload_hash, m.model, m.dimensions, m.expire_at, v.distance
              FROM vss_{} v
              JOIN vector_metadata m ON v.rowid = m.rowid
              WHERE v.embedding MATCH json(?)
-               AND (m.expire_at IS NULL OR m.expire_at > unixepoch())
-             ORDER BY v.distance
-             LIMIT ?;",
+               AND (m.expire_at IS NULL OR m.expire_at > unixepoch())",
             collection
         );
+        // 谓词下推：payload_json 上的 json_extract 求值（pre-filter，字面量渲染无绑定值）
+        if let Some(f) = filter {
+            sql.push_str(&format!(
+                " AND ({})",
+                f.to_sql_expr(|field| {
+                    format!("json_extract(m.payload_json, '$.{}')", field.column_name())
+                })
+            ));
+        }
+        sql.push_str(" ORDER BY v.distance LIMIT ?;");
 
         let results = sqlx::query_as::<
             _,
@@ -203,6 +224,25 @@ impl VectorStore for SqliteVssStore {
                 },
             )
             .collect())
+    }
+
+    async fn update_payload(
+        &self,
+        collection: &str,
+        id: &str,
+        payload: &VectorPayload,
+    ) -> Result<()> {
+        let json = serde_json::to_string(payload)?;
+        sqlx::query(
+            "UPDATE vector_metadata SET payload_json = ?, payload_hash = ? WHERE collection = ? AND source_id = ?",
+        )
+        .bind(&json)
+        .bind(payload.hash())
+        .bind(collection)
+        .bind(id)
+        .execute(&*self.pool)
+        .await?;
+        Ok(())
     }
 
     async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
