@@ -7,7 +7,7 @@
 //! - KnowledgeReferencePo - 知识节点引用原始短期索引
 //! - Memory - 记忆业务实体（包含 PO + 搜索匹配信息）
 
-use crate::models::vector::{SearchMatchInfo, Vectorizable};
+use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::collections::HashMap;
@@ -207,6 +207,20 @@ impl Vectorizable for ShortTermMemoryIndexPo {
     fn vector_collection() -> &'static str {
         "memory:short_term"
     }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            agent_id: Some(self.agent_id.clone()),
+            task_id: self.task_id.clone(),
+            status: Some(self.status.to_i32().to_string()),
+            tags: Some(self.tags.clone()),
+            ..Default::default()
+        }
+    }
 }
 
 /// 长期知识图谱节点 PO
@@ -262,6 +276,21 @@ impl Vectorizable for LongTermKnowledgeNodePo {
 
     fn vector_collection() -> &'static str {
         "memory:knowledge_node"
+    }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            agent_id: Some(self.agent_id.clone()),
+            entity_type: Some(self.node_type.clone()),
+            status: Some(self.status.to_i32().to_string()),
+            is_published: Some(self.is_published),
+            tags: Some(self.tags.clone()),
+            ..Default::default()
+        }
     }
 }
 

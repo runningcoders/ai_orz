@@ -302,6 +302,18 @@ impl crate::models::vector::Vectorizable for ProjectPo {
     fn vector_collection() -> &'static str {
         "projects"
     }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> crate::models::vector::VectorPayload {
+        crate::models::vector::VectorPayload {
+            agent_id: self.owner_agent_id.clone(),
+            tags: Some(self.tags.clone()),
+            ..Default::default()
+        }
+    }
 }
 
 impl crate::models::vector::Vectorizable for Project {
@@ -311,6 +323,14 @@ impl crate::models::vector::Vectorizable for Project {
 
     fn vector_collection() -> &'static str {
         "projects"
+    }
+
+    fn vector_id(&self) -> &str {
+        self.po.vector_id()
+    }
+
+    fn vector_payload(&self) -> crate::models::vector::VectorPayload {
+        self.po.vector_payload()
     }
 }
 

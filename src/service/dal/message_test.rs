@@ -4,7 +4,7 @@ use crate::models::cortex_types::{ThinkResult, ToolDescriptor};
 use crate::models::file::FileMeta;
 use crate::models::message::Message;
 use crate::models::model_provider::ModelProviderPo;
-use crate::models::vector::{MatchType, VectorIndexParams};
+use crate::models::vector::{MatchType, VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
 use crate::service::dal::message::MessageDal;
 use crate::service::dao::cortex::CortexDao;
@@ -150,6 +150,8 @@ fn create_test_vector_params(message_id: &str, dimension: usize) -> VectorIndexP
             .map(|i| i as f32 / dimension as f32)
             .collect(),
         content_hash: format!("hash_{}", message_id),
+        payload: VectorPayload::default(),
+        payload_hash: VectorPayload::default().hash(),
         model_provider_id: "test_provider".to_string(),
         embedding_model: "test-embedding-v1".to_string(),
         expire_at: None,

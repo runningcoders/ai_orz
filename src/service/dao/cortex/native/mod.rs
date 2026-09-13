@@ -6,7 +6,7 @@
 
 use crate::models::cortex_types::{ChatMessage, ThinkResult, ToolDescriptor};
 use crate::models::model_provider::ModelProviderPo;
-use crate::models::vector::{VectorIndexParams, Vectorizable};
+use crate::models::vector::{VectorIndexParams, VectorPayload, Vectorizable};
 use crate::pkg::RequestContext;
 use async_trait::async_trait;
 use common::enums::ProviderType;
@@ -57,9 +57,13 @@ pub trait CortexDao: Send + Sync {
             .embed(ctx, provider, std::slice::from_ref(&text))
             .await?;
         let vector = vectors.into_iter().next().unwrap_or_default();
+        let payload = entity.vector_payload();
+        let payload_hash = payload.hash();
         Ok(VectorIndexParams {
             vector,
             content_hash: entity.vector_content_hash(),
+            payload,
+            payload_hash,
             model_provider_id: provider.id.clone(),
             embedding_model: provider.model_name.clone(),
             expire_at: entity.vector_expire_at(),
@@ -80,6 +84,9 @@ pub trait CortexDao: Send + Sync {
         Ok(VectorIndexParams {
             vector,
             content_hash: sha256::digest(text),
+            // 搜索场景无实体，payload 为空（过滤条件由搜索侧谓词承担）
+            payload: VectorPayload::default(),
+            payload_hash: VectorPayload::default().hash(),
             model_provider_id: provider.id.clone(),
             embedding_model: provider.model_name.clone(),
             expire_at: None,

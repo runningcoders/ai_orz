@@ -371,7 +371,7 @@ impl ToolPo {
 
 // ==================== 实现 Vectorizable trait ====================
 
-use crate::models::vector::Vectorizable;
+use crate::models::vector::{VectorPayload, Vectorizable};
 
 #[cfg(test)]
 #[path = "tool_tests.rs"]
@@ -387,6 +387,18 @@ impl Vectorizable for ToolPo {
     fn vector_collection() -> &'static str {
         "tools"
     }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            tags: Some(self.tags.clone()),
+            status: Some(self.status.to_i32().to_string()),
+            ..Default::default()
+        }
+    }
 }
 
 impl Vectorizable for Tool {
@@ -396,5 +408,13 @@ impl Vectorizable for Tool {
 
     fn vector_collection() -> &'static str {
         "tools"
+    }
+
+    fn vector_id(&self) -> &str {
+        self.po.vector_id()
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        self.po.vector_payload()
     }
 }

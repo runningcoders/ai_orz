@@ -102,7 +102,7 @@ impl SkillPo {
 
 // ==================== Skill 业务聚合实体 ====================
 
-use crate::models::vector::{SearchMatchInfo, Vectorizable};
+use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
 
 /// 技能完整业务实体（PO + 文件系统内容 + 搜索元信息）
 ///
@@ -134,6 +134,14 @@ impl Vectorizable for Skill {
     fn vector_collection() -> &'static str {
         "skills"
     }
+
+    fn vector_id(&self) -> &str {
+        self.po.vector_id()
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        self.po.vector_payload()
+    }
 }
 
 /// ✅ SkillPo 也实现 Vectorizable（DAL 层直接使用 PO）
@@ -146,6 +154,18 @@ impl Vectorizable for SkillPo {
 
     fn vector_collection() -> &'static str {
         "skills"
+    }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            tags: Some(self.tags.clone()),
+            entity_type: Some(self.category.clone()),
+            ..Default::default()
+        }
     }
 }
 

@@ -4,7 +4,7 @@
 //! - TaskPo - 持久化对象（只在 DAO/DAL 层使用）
 //! - Task - 业务实体（Domain 层使用，包含聚合关系和业务方法）
 
-use crate::models::vector::{SearchMatchInfo, Vectorizable};
+use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::api::ArtifactDetail;
 use common::constants::utils;
@@ -338,5 +338,19 @@ impl Vectorizable for TaskPo {
 
     fn vector_collection() -> &'static str {
         "tasks"
+    }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            project_id: self.project_id.clone(),
+            // assignee_type 非 Agent（如 User）时语义不符，保守不落
+            agent_id: (self.assignee_type == AssigneeType::Agent).then(|| self.assignee_id.clone()),
+            tags: Some(self.tags.clone()),
+            ..Default::default()
+        }
     }
 }

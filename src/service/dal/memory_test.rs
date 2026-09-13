@@ -1387,8 +1387,10 @@ fn build_vector_search_hits(hits: &[(String, f32)]) -> Vec<VectorSearchHit> {
             row: VectorRow {
                 id: id.clone(),
                 vector: vec![0.1, 0.2, 0.3],
+                payload: crate::models::vector::VectorPayload::default(),
                 meta: VectorMeta {
                     content_hash: "mock".to_string(),
+                    payload_hash: crate::models::vector::VectorPayload::default().hash(),
                     embedding_model: "mock".to_string(),
                     indexed_at: 0,
                     expire_at: None,

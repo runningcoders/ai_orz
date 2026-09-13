@@ -1,7 +1,7 @@
 //! Message Vector DAO 单元测试
 //! 使用 InMemoryVectorStore（纯 Rust 实现，零系统依赖）
 
-use crate::models::vector::VectorIndexParams;
+use crate::models::vector::{VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
 use crate::service::dao::message::{self, MessageVectorDao};
 use common::error::Result;
@@ -24,6 +24,8 @@ fn create_test_vector_params(message_id: &str, dimension: usize) -> VectorIndexP
             .map(|i| i as f32 / dimension as f32)
             .collect(),
         content_hash: format!("hash_{}", message_id),
+        payload: VectorPayload::default(),
+        payload_hash: VectorPayload::default().hash(),
         model_provider_id: "test_provider".to_string(),
         embedding_model: "test-embedding-v1".to_string(),
         expire_at: None,

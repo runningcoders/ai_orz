@@ -658,6 +658,22 @@ impl crate::models::vector::Vectorizable for MessagePo {
     fn vector_collection() -> &'static str {
         "messages"
     }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> crate::models::vector::VectorPayload {
+        crate::models::vector::VectorPayload {
+            org_id: self.organization_id.clone(),
+            project_id: self.project_id.clone(),
+            task_id: self.task_id.clone(),
+            from_id: Some(self.from_id.clone()),
+            to_id: Some(self.to_id.clone()),
+            status: Some(self.status.to_i32().to_string()),
+            ..Default::default()
+        }
+    }
 }
 
 #[cfg(test)]

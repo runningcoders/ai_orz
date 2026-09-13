@@ -3,7 +3,7 @@
 use crate::models::brain::Brain;
 use crate::models::skill::Skill;
 use crate::models::tool::Tool;
-use crate::models::vector::{SearchMatchInfo, Vectorizable};
+use crate::models::vector::{SearchMatchInfo, VectorPayload, Vectorizable};
 use crate::pkg::agent_runtime_state::AgentRuntimeInfo;
 use crate::pkg::request_context::{EnrichContext, RequestContextBuilder};
 use common::enums::AgentStatus;
@@ -653,6 +653,17 @@ impl Vectorizable for AgentPo {
 
     fn vector_collection() -> &'static str {
         "agents"
+    }
+
+    fn vector_id(&self) -> &str {
+        &self.id
+    }
+
+    fn vector_payload(&self) -> VectorPayload {
+        VectorPayload {
+            status: Some(self.status.to_i32().to_string()),
+            ..Default::default()
+        }
     }
 }
 
