@@ -18,7 +18,9 @@ use ::common::enums::MemoryStatus;
 use ai_orz::models::memory::{
     LongTermKnowledgeNodePo, MemoryCreateParams, MemoryPo, ShortTermMemoryIndexPo,
 };
+use ai_orz::models::vector::{VectorIndexParams, VectorPayload};
 use ai_orz::pkg::RequestContext;
+use ai_orz::service::dao::memory::{MemoryQuery, new_memory_vector_dao};
 use ai_orz::service::domain::runtime::domain as runtime_domain;
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -741,4 +743,257 @@ async fn test_real_memory_hybrid_ranking(pool: SqlitePool) {
     }
 
     eprintln!("Memory hybrid ranking test passed");
+}
+
+// =================================================================
+// Part C: pre-filter 谓词下推（手工向量直写 + DAO 搜索路径，无需 embedding）
+// =================================================================
+
+/// 手工构造向量索引参数（绕开真实 embedding，直写 vector store）
+fn manual_vector_params(vector: Vec<f32>, payload: VectorPayload) -> VectorIndexParams {
+    let payload_hash = payload.hash();
+    VectorIndexParams {
+        vector,
+        content_hash: sha256::digest(uuid::Uuid::now_v7().to_string()),
+        payload,
+        payload_hash,
+        model_provider_id: "manual-test-provider".to_string(),
+        embedding_model: "manual-test-model".to_string(),
+        expire_at: None,
+    }
+}
+
+/// 构造带 agent 归属的 payload
+fn agent_payload(agent_id: &str, is_published: Option<bool>) -> VectorPayload {
+    VectorPayload {
+        agent_id: Some(agent_id.to_string()),
+        is_published,
+        ..Default::default()
+    }
+}
+
+/// pre-filter 谓词下推：agent-1 的语义搜索不被 agent-2 的数据稀释 Top-K
+///
+/// 数据布局（query=[1,0]，余弦距离）：
+/// - agent-2 的行全局最近（distance=0）：若实现为 post-filter（先取 Top-K 再过滤），
+///   agent-1 视角 top_k=1 会取到 agent-2 的行再被过滤掉 → 返回空；
+///   正确的 pre-filter 应在满足谓词的候选集内选取 → 命中 agent-1 自己的行。
+#[sqlx::test]
+async fn test_memory_vector_search_prefilter_agent_isolation(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    // 唯一化 ID：同一 binary 内兄弟用例共享进程级 vector store，防串扰
+    let agent_1 = format!("pf-a1-{}", uuid::Uuid::now_v7());
+    let agent_2 = format!("pf-a2-{}", uuid::Uuid::now_v7());
+
+    let query_vector: Vec<f32> = vec![1.0, 0.0];
+    let agent2_row_id = format!("st_pf_{}", uuid::Uuid::now_v7());
+    let agent1_near_id = format!("st_pf_{}", uuid::Uuid::now_v7());
+    let agent1_far_id = format!("st_pf_{}", uuid::Uuid::now_v7());
+
+    // 直写向量（手工构造，不经过 embedding）
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "memory:short_term",
+            &agent2_row_id,
+            &manual_vector_params(vec![1.0, 0.0], agent_payload(&agent_2, None)),
+        )
+        .await
+        .expect("upsert agent-2 row failed");
+    store
+        .upsert(
+            "memory:short_term",
+            &agent1_near_id,
+            &manual_vector_params(vec![4.0, 3.0], agent_payload(&agent_1, None)),
+        )
+        .await
+        .expect("upsert agent-1 near row failed");
+    store
+        .upsert(
+            "memory:short_term",
+            &agent1_far_id,
+            &manual_vector_params(vec![3.0, 4.0], agent_payload(&agent_1, None)),
+        )
+        .await
+        .expect("upsert agent-1 far row failed");
+
+    let dao = new_memory_vector_dao();
+
+    // 基线：无 filter 时全局最近的是 agent-2 的行（证明数据已落库且距离排序生效）
+    let no_filter = MemoryQuery::default();
+    let hits = dao
+        .search_short_term_vector(ctx.clone(), &query_vector, 1, &no_filter)
+        .await
+        .expect("search without filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(
+        hits[0].row.id, agent2_row_id,
+        "无 filter 时全局最近应为 agent-2 的行"
+    );
+
+    // pre-filter 核心：agent-1 视角 top_k=1 必须命中自己的行（post-filter 实现会返回空）
+    let owned_query = MemoryQuery {
+        agent_id: Some(agent_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_short_term_vector(ctx.clone(), &query_vector, 1, &owned_query)
+        .await
+        .expect("search with agent filter failed");
+    assert_eq!(
+        hits.len(),
+        1,
+        "pre-filter 后 top-1 必须命中（post-filter 实现会返回空）"
+    );
+    assert_eq!(hits[0].row.id, agent1_near_id);
+    assert_eq!(
+        hits[0].row.payload.agent_id.as_deref(),
+        Some(agent_1.as_str()),
+        "命中行 payload 应携带归属信息"
+    );
+
+    // 放大 top_k：全部命中均属于 agent-1，且按距离升序（near 在 far 之前）
+    let hits = dao
+        .search_short_term_vector(ctx.clone(), &query_vector, 5, &owned_query)
+        .await
+        .expect("search with agent filter (top 5) failed");
+    assert!(!hits.is_empty(), "agent-1 视角应能命中自己的两条向量行");
+    for hit in &hits {
+        assert_eq!(
+            hit.row.payload.agent_id.as_deref(),
+            Some(agent_1.as_str()),
+            "agent 隔离：全部命中均应属于 agent-1"
+        );
+    }
+    assert!(
+        !hits.iter().any(|h| h.row.id == agent2_row_id),
+        "agent 隔离：agent-2 的行不应出现"
+    );
+    let pos_near = hits
+        .iter()
+        .position(|h| h.row.id == agent1_near_id)
+        .expect("near row should be hit");
+    let pos_far = hits
+        .iter()
+        .position(|h| h.row.id == agent1_far_id)
+        .expect("far row should be hit");
+    assert!(pos_near < pos_far, "命中结果应按距离升序排列");
+}
+
+/// pre-filter 共享可见性：include_shared 应看到他人 published 节点、排除 unpublished
+///
+/// 数据布局（query=[1,0]，余弦距离）：
+/// - agent-2 unpublished：全局最近（distance=0），但对 agent-1 永不可见
+/// - agent-2 published：次近（≈0.019），include_shared=true 时可见
+/// - agent-1 own：稍远（0.2），任何视角均可见
+#[sqlx::test]
+async fn test_memory_vector_search_prefilter_shared_visibility(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    let agent_1 = format!("sv-a1-{}", uuid::Uuid::now_v7());
+    let agent_2 = format!("sv-a2-{}", uuid::Uuid::now_v7());
+
+    let query_vector: Vec<f32> = vec![1.0, 0.0];
+    let other_unpublished_id = format!("kn_sv_{}", uuid::Uuid::now_v7());
+    let other_published_id = format!("kn_sv_{}", uuid::Uuid::now_v7());
+    let own_id = format!("kn_sv_{}", uuid::Uuid::now_v7());
+
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "memory:knowledge_node",
+            &other_unpublished_id,
+            &manual_vector_params(vec![1.0, 0.0], agent_payload(&agent_2, Some(false))),
+        )
+        .await
+        .expect("upsert unpublished node failed");
+    store
+        .upsert(
+            "memory:knowledge_node",
+            &other_published_id,
+            &manual_vector_params(vec![5.0, 1.0], agent_payload(&agent_2, Some(true))),
+        )
+        .await
+        .expect("upsert published node failed");
+    store
+        .upsert(
+            "memory:knowledge_node",
+            &own_id,
+            &manual_vector_params(vec![4.0, 3.0], agent_payload(&agent_1, None)),
+        )
+        .await
+        .expect("upsert own node failed");
+
+    let dao = new_memory_vector_dao();
+
+    // 私有视角：只有自己的节点，他人节点（含 published）均不可见
+    let private_query = MemoryQuery {
+        agent_id: Some(agent_1.clone()),
+        include_shared: false,
+        ..Default::default()
+    };
+    let hits = dao
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &private_query)
+        .await
+        .expect("private search failed");
+    assert!(!hits.is_empty(), "私有视角应命中自己的节点");
+    for hit in &hits {
+        assert_eq!(
+            hit.row.payload.agent_id.as_deref(),
+            Some(agent_1.as_str()),
+            "私有视角：全部命中均应属于 agent-1"
+        );
+    }
+    assert!(
+        !hits
+            .iter()
+            .any(|h| h.row.id == other_published_id || h.row.id == other_unpublished_id),
+        "私有视角：agent-2 的任何节点（含 published）不应出现"
+    );
+
+    // 共享视角：自己 + 他人 published 可见，他人 unpublished 被排除
+    let shared_query = MemoryQuery {
+        agent_id: Some(agent_1.clone()),
+        include_shared: true,
+        ..Default::default()
+    };
+    let hits = dao
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 5, &shared_query)
+        .await
+        .expect("shared search failed");
+    assert!(
+        hits.iter().any(|h| h.row.id == other_published_id),
+        "共享视角：他人 published 节点应可见"
+    );
+    assert!(
+        hits.iter().any(|h| h.row.id == own_id),
+        "共享视角：自己的节点应可见"
+    );
+    assert!(
+        !hits.iter().any(|h| h.row.id == other_unpublished_id),
+        "共享视角：他人 unpublished 节点不应出现"
+    );
+    // 共享视角下全部命中均满足可见性谓词：属于自己 OR 已发布
+    for hit in &hits {
+        let is_own = hit.row.payload.agent_id.as_deref() == Some(agent_1.as_str());
+        let is_published = hit.row.payload.is_published == Some(true);
+        assert!(
+            is_own || is_published,
+            "共享视角命中必须满足 agent_id=agent-1 OR is_published=true，实际 payload: {:?}",
+            hit.row.payload
+        );
+    }
+
+    // 共享视角 top_k=1：最近的可见行是他人 published（而非全局最近但不可见的 unpublished）——
+    // 这是 OR 可见性谓词下推的最强断言
+    let hits = dao
+        .search_knowledge_node_vector(ctx.clone(), &query_vector, 1, &shared_query)
+        .await
+        .expect("shared top-1 search failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(
+        hits[0].row.id, other_published_id,
+        "top-1 应命中最近的可见行（他人 published），而非全局最近但不可见的 unpublished"
+    );
 }
