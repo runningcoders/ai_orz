@@ -73,8 +73,12 @@ pub async fn update_project_status(req: UpdateProjectStatusRequest) -> Result<()
 
 // ===== 任务管理 =====
 
+/// 后端 GET /projects/{id}/tasks 返回裸数组 `Vec<TaskListItem>`（该接口同时是
+/// Agent 工具，返回形状不轻易改），此处包一层 ListTasksResponse 兼容既有调用点。
 pub async fn list_project_tasks(project_id: &str) -> Result<ListTasksResponse, ApiError> {
-    api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await
+    let tasks: Vec<TaskListItem> =
+        api_get_or_default(&format!("/api/v1/projects/{}/tasks", project_id)).await?;
+    Ok(ListTasksResponse { tasks })
 }
 
 #[allow(dead_code)]
@@ -130,12 +134,15 @@ pub async fn update_task_progress(
 
 // ===== 产物管理 =====
 
+/// 后端 GET /project/artifacts 已改为分页 `PagedResult<ArtifactDetail>`（limit 默认 100），
+/// 前端调用点只消费列表本身，此处解包 items 保持 Vec 签名不变。
 pub async fn list_artifacts(project_id: &str) -> Result<Vec<ArtifactDetail>, ApiError> {
-    api_get_or_default(&format!(
+    let page: PagedResult<ArtifactDetail> = api_get(&format!(
         "/api/v1/project/artifacts?project_id={}",
         project_id
     ))
-    .await
+    .await?;
+    Ok(page.items)
 }
 
 pub async fn create_artifact(req: CreateArtifactRequest) -> Result<ArtifactDetail, ApiError> {
