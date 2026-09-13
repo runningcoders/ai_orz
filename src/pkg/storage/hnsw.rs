@@ -499,6 +499,7 @@ impl super::VectorStore for HnswStore {
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
+        filter: Option<&crate::models::vector::VectorFilter>,
     ) -> common::error::Result<Vec<VectorSearchHit>> {
         let now = chrono::Utc::now().timestamp();
         let mut collections = self.collections.write().await;
@@ -520,13 +521,17 @@ impl super::VectorStore for HnswStore {
 
         let query = FloatPoint(query_vector.to_vec());
         let mut search = Search::default();
+        // 放大候选量再谓词过滤（HNSW 无原生谓词支持，回表兜底保证正确性）
+        let fetch = (top_k as usize).saturating_mul(4).max(top_k as usize);
         let mut hits: Vec<VectorSearchHit> = hnsw
             .search(&query, &mut search)
-            .take(top_k as usize)
+            .take(fetch)
             .filter_map(|item| {
                 let id = item.value;
                 let (_, row) = coll.vectors.get(id)?;
-                if row.meta.expire_at.is_none_or(|exp| exp > now) {
+                if row.meta.expire_at.is_none_or(|exp| exp > now)
+                    && filter.is_none_or(|f| f.matches(&row.payload))
+                {
                     Some(VectorSearchHit {
                         row: row.clone(),
                         distance: item.distance,
@@ -542,8 +547,26 @@ impl super::VectorStore for HnswStore {
                 .partial_cmp(&b.distance)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        hits.truncate(top_k as usize);
 
         Ok(hits)
+    }
+
+    async fn update_payload(
+        &self,
+        collection: &str,
+        id: &str,
+        payload: &crate::models::vector::VectorPayload,
+    ) -> common::error::Result<()> {
+        let mut collections = self.collections.write().await;
+        if let Some(coll) = collections.get_mut(collection)
+            && let Some((_, row)) = coll.vectors.get_mut(id)
+        {
+            row.payload = payload.clone();
+            row.meta.payload_hash = payload.hash();
+            coll.dirty = true;
+        }
+        Ok(())
     }
 
     async fn get(&self, collection: &str, id: &str) -> common::error::Result<Option<VectorRow>> {
