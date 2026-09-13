@@ -175,6 +175,52 @@ fn lance_schema(dimensions: i32) -> StdArc<Schema> {
     StdArc::new(Schema::new(fields))
 }
 
+/// 单行数据 → RecordBatch（upsert / update_payload 共用，payload 平铺列随行落库）
+#[allow(clippy::too_many_arguments)]
+fn row_to_batch(
+    id: &str,
+    vector: &[f32],
+    content_hash: String,
+    payload_hash: String,
+    embedding_model: String,
+    indexed_at: i64,
+    expire_at: Option<i64>,
+    payload: &VectorPayload,
+) -> Result<RecordBatch> {
+    let dimensions = vector.len() as i32;
+    // FixedSizeListArray 需要 Vec<Option<f32>> 格式
+    let vector_with_options: Vec<Option<f32>> = vector.iter().map(|&v| Some(v)).collect();
+    let p = payload;
+    RecordBatch::try_new(
+        lance_schema(dimensions),
+        vec![
+            StdArc::new(StringArray::from(vec![id.to_string()])),
+            StdArc::new(
+                FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                    vec![Some(vector_with_options)],
+                    dimensions,
+                ),
+            ),
+            StdArc::new(StringArray::from(vec![content_hash])),
+            StdArc::new(StringArray::from(vec![payload_hash])),
+            StdArc::new(StringArray::from(vec![embedding_model])),
+            StdArc::new(Int64Array::from(vec![indexed_at])),
+            StdArc::new(Int64Array::from(vec![expire_at])),
+            StdArc::new(StringArray::from(vec![p.org_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.agent_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.project_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.task_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.from_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.to_id.clone()])),
+            StdArc::new(StringArray::from(vec![p.entity_type.clone()])),
+            StdArc::new(StringArray::from(vec![p.status.clone()])),
+            StdArc::new(BooleanArray::from(vec![p.is_published])),
+            StdArc::new(StringArray::from(vec![p.tags.clone()])),
+        ],
+    )
+    .map_err(|e| common::error::Error::internal(format!("Arrow record batch error: {}", e)))
+}
+
 /// 解析 Lance RecordBatch → (VectorRow, Option<distance>)
 ///
 /// search/get 共用；`_distance` 列仅 vector_search 结果携带，普通 query 路径解析为 None
@@ -296,44 +342,19 @@ impl super::VectorStore for LanceVectorStore {
             .await
             .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
 
-        // 创建 Arrow 记录批 - 使用 FixedSizeListArray 存储向量
-        // FixedSizeListArray 需要 Vec<Option<f32>> 格式
-        let vector_with_options: Vec<Option<f32>> =
-            params.vector.iter().map(|&v| Some(v)).collect();
-
         // payload 平铺列 + payload_hash 随向量一起落库
-        let p = &params.payload;
-        let schema = lance_schema(dimensions);
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                StdArc::new(StringArray::from(vec![id.to_string()])),
-                StdArc::new(
-                    FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-                        vec![Some(vector_with_options)],
-                        dimensions,
-                    ),
-                ),
-                StdArc::new(StringArray::from(vec![params.content_hash.clone()])),
-                StdArc::new(StringArray::from(vec![params.payload_hash.clone()])),
-                StdArc::new(StringArray::from(vec![params.embedding_model.clone()])),
-                StdArc::new(Int64Array::from(vec![now])),
-                StdArc::new(Int64Array::from(vec![params.expire_at])),
-                StdArc::new(StringArray::from(vec![p.org_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.agent_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.project_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.task_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.from_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.to_id.clone()])),
-                StdArc::new(StringArray::from(vec![p.entity_type.clone()])),
-                StdArc::new(StringArray::from(vec![p.status.clone()])),
-                StdArc::new(BooleanArray::from(vec![p.is_published])),
-                StdArc::new(StringArray::from(vec![p.tags.clone()])),
-            ],
-        )
-        .map_err(|e| common::error::Error::internal(format!("Arrow record batch error: {}", e)))?;
+        let batch = row_to_batch(
+            id,
+            &params.vector,
+            params.content_hash.clone(),
+            params.payload_hash.clone(),
+            params.embedding_model.clone(),
+            now,
+            params.expire_at,
+            &params.payload,
+        )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], lance_schema(dimensions));
 
         table
             .add(batches)
@@ -344,23 +365,99 @@ impl super::VectorStore for LanceVectorStore {
         Ok(())
     }
 
+    async fn update_payload(
+        &self,
+        collection: &str,
+        id: &str,
+        payload: &crate::models::vector::VectorPayload,
+    ) -> Result<()> {
+        let table = self.get_or_create_table(collection, 0).await?;
+        let filter_sql = format!("id = '{}'", escape_sql_str(id));
+
+        // 1. 取回旧行（含向量 + 元信息）
+        let stream = table
+            .query()
+            .only_if(filter_sql.clone())
+            .limit(1)
+            .execute()
+            .await
+            .map_err(|e| common::error::Error::internal(format!("LanceDB execute error: {}", e)))?;
+        let batches: Vec<RecordBatch> = stream.try_collect().await.map_err(|e| {
+            common::error::Error::internal(format!("LanceDB collect results error: {}", e))
+        })?;
+
+        let mut old: Option<(Vec<f32>, VectorMeta)> = None;
+        for batch in batches {
+            // vector 列：FixedSizeList<Float32>
+            if let Some(vcol) = batch.column_by_name("vector")
+                && let Some(va) = vcol.as_any().downcast_ref::<FixedSizeListArray>()
+                && va.len() > 0
+            {
+                let flat = va.value(0);
+                if let Some(f) = flat.as_any().downcast_ref::<Float32Array>() {
+                    let vec: Vec<f32> = (0..f.len()).map(|i| f.value(i)).collect();
+                    if let Some(rows) = parse_lance_batch(&batch)
+                        && let Some((row, _)) = rows.into_iter().next()
+                    {
+                        old = Some((vec, row.meta));
+                    }
+                }
+            }
+        }
+        let Some((vector, meta)) = old else {
+            return Ok(()); // 行不存在：no-op
+        };
+
+        // 2. delete + 重写（仅 payload 与 payload_hash 变化）
+        table
+            .delete(&filter_sql)
+            .await
+            .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
+
+        let dimensions = vector.len() as i32;
+        let now = chrono::Utc::now().timestamp();
+        let batch = row_to_batch(
+            id,
+            &vector,
+            meta.content_hash,
+            payload.hash(),
+            meta.embedding_model,
+            now,
+            meta.expire_at,
+            payload,
+        )?;
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], lance_schema(dimensions));
+        table
+            .add(batches)
+            .execute()
+            .await
+            .map_err(|e| common::error::Error::internal(format!("LanceDB add error: {}", e)))?;
+        Ok(())
+    }
+
     async fn search(
         &self,
         collection: &str,
         query_vector: &[f32],
         top_k: i32,
+        filter: Option<&crate::models::vector::VectorFilter>,
     ) -> Result<Vec<VectorSearchHit>> {
         let table = self
             .get_or_create_table(collection, query_vector.len() as i32)
             .await?;
 
         // 执行向量搜索 - 0.26 API 使用 vector_search
-        let stream = table
+        let mut query = table
             .vector_search(query_vector)
             .map_err(|e| {
                 common::error::Error::internal(format!("LanceDB vector_search error: {}", e))
             })?
-            .limit(top_k as usize)
+            .limit(top_k as usize);
+        // 谓词下推：Top-K 在满足谓词的候选集内选取（pre-filter）
+        if let Some(f) = filter {
+            query = query.only_if(f.to_sql_expr(|field| field.column_name().to_string()));
+        }
+        let stream = query
             .execute()
             .await
             .map_err(|e| common::error::Error::internal(format!("LanceDB execute error: {}", e)))?;
@@ -416,7 +513,7 @@ impl super::VectorStore for LanceVectorStore {
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {
         let table = self.get_or_create_table(collection, 0).await?;
         table
-            .delete(&format!("id = '{}'", id))
+            .delete(&format!("id = '{}'", escape_sql_str(id)))
             .await
             .map_err(|e| common::error::Error::internal(format!("LanceDB delete error: {}", e)))?;
         Ok(())
@@ -434,5 +531,100 @@ impl super::VectorStore for LanceVectorStore {
         tables.remove(&table_name);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod prefilter_tests {
+    use super::*;
+    use crate::models::vector::{
+        FilterValue, VectorField, VectorFilter, VectorIndexParams, VectorPayload,
+    };
+    use crate::pkg::storage::vector::VectorStore;
+
+    fn params(agent: &str, published: bool, dim: usize) -> VectorIndexParams {
+        let payload = VectorPayload {
+            agent_id: Some(agent.to_string()),
+            is_published: Some(published),
+            ..Default::default()
+        };
+        VectorIndexParams {
+            vector: vec![1.0; dim],
+            content_hash: format!("h-{agent}-{published}"),
+            payload_hash: payload.hash(),
+            payload,
+            model_provider_id: "p".into(),
+            embedding_model: "m".into(),
+            expire_at: None,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_lance_search_prefilter() {
+        let dir = std::env::temp_dir().join(format!("lance_pf_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = LanceVectorStore::new(&dir).unwrap();
+        store.init_collection("pf", 4).await.unwrap();
+        store
+            .upsert("pf", "a1", &params("agent-1", false, 4))
+            .await
+            .unwrap();
+        store
+            .upsert("pf", "b1", &params("agent-2", true, 4))
+            .await
+            .unwrap();
+        store
+            .upsert("pf", "b2", &params("agent-2", false, 4))
+            .await
+            .unwrap();
+
+        // 无过滤：3 条
+        let all = store
+            .search("pf", &[1.0, 1.0, 1.0, 1.0], 10, None)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 3);
+
+        // agent-1 视角：仅 1 条
+        let f = VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into()));
+        let hits = store
+            .search("pf", &[1.0, 1.0, 1.0, 1.0], 10, Some(&f))
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].row.id, "a1");
+        assert_eq!(hits[0].row.payload.agent_id.as_deref(), Some("agent-1"));
+
+        // OR 可见性：agent-1 自己的 + 已发布的
+        let vis = VectorFilter::Any(vec![
+            VectorFilter::Eq(VectorField::AgentId, FilterValue::Str("agent-1".into())),
+            VectorFilter::Eq(VectorField::IsPublished, FilterValue::Bool(true)),
+        ]);
+        let hits = store
+            .search("pf", &[1.0, 1.0, 1.0, 1.0], 10, Some(&vis))
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 2); // a1 + b1
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_lance_update_payload() {
+        let dir = std::env::temp_dir().join(format!("lance_up_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = LanceVectorStore::new(&dir).unwrap();
+        store.init_collection("up", 4).await.unwrap();
+        store
+            .upsert("up", "a1", &params("agent-1", false, 4))
+            .await
+            .unwrap();
+
+        let mut new_p = VectorPayload::default();
+        new_p.agent_id = Some("agent-1".into());
+        new_p.is_published = Some(true); // 发布翻转场景
+        store.update_payload("up", "a1", &new_p).await.unwrap();
+
+        let row = store.get("up", "a1").await.unwrap().unwrap();
+        assert_eq!(row.payload.is_published, Some(true));
+        assert_eq!(row.meta.payload_hash, new_p.hash());
     }
 }
