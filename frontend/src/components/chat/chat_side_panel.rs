@@ -88,17 +88,20 @@ fn group_by_task<'a>(arts: &[&'a ArtifactDetail]) -> Vec<(String, Vec<&'a Artifa
 
 /// 聊天信息侧栏主组件
 ///
-/// - `project_id`：选中项目 ID（None 表示默认对话模式）
+/// - `project_id`：选中项目 ID（None 表示默认对话模式）。
+///   必须以 Signal 传入：use_effect 依赖其变化触发项目数据加载，
+///   普通 prop 非响应式，切换项目后 effect 不会重跑（面板会永远转圈）
 /// - `reception_agent_id`：前台 Agent ID（默认对话模式的 Agent Tab 数据源）
-/// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据
+/// - `refresh_tick`：SSE 消息计数器，变化时防抖 2s 后自动刷新项目数据。
+///   同样必须以 Signal 传入才能驱动 use_effect 重跑
 /// - `stats_poll_tick`：统计周期刷新计数器（chat 页 3s 轮询每 30s 递增），
 ///   仅叠加进 Agent 统计 Tab 的刷新驱动，静默期统计不再停摆
 /// - `on_close`：收起面板回调
 #[component]
 pub fn ChatSidePanel(
-    project_id: Option<String>,
+    project_id: Signal<Option<String>>,
     reception_agent_id: Option<String>,
-    refresh_tick: u64,
+    refresh_tick: Signal<u64>,
     stats_poll_tick: u64,
     on_close: Callback,
     /// 主链路轮询共享的目标 Agent 详情（chat 页置底状态气泡与轮询同源），
@@ -158,15 +161,16 @@ pub fn ChatSidePanel(
         });
     };
 
-    // 手动刷新专用副本与模式判断（project_id 会被 use_effect 闭包移走）
-    let is_project_mode = project_id.is_some();
-    let pid_for_refresh = project_id.clone();
-    let pid_for_tab = project_id.clone();
+    // 手动刷新专用副本与模式判断（调用 Signal 读出当前值，渲染时同步订阅）
+    let project_id_value = project_id();
+    let is_project_mode = project_id_value.is_some();
+    let pid_for_refresh = project_id_value.clone();
+    let pid_for_tab = project_id_value.clone();
 
     // 项目切换 → 立即加载并重置面板状态；refresh_tick 变化 → 防抖刷新
     use_effect(move || {
-        let pid = project_id.clone();
-        let tick = refresh_tick;
+        let pid = project_id();
+        let tick = refresh_tick();
         let project_changed = prev_project_id() != pid;
         let tick_changed = prev_tick() != tick;
         // 修复 E2E-1：仅在值真正变化时写回。Signal::set 不做相等去重，
@@ -208,7 +212,7 @@ pub fn ChatSidePanel(
     };
 
     // 工具调用 Tab 的刷新驱动：SSE tick + 手动刷新计数
-    let tool_tab_tick = refresh_tick + manual_tick();
+    let tool_tab_tick = refresh_tick() + manual_tick();
     // Agent 统计 Tab 的刷新驱动：SSE tick + 手动刷新 + 30s 周期 tick（对齐后端统计落盘节奏）
     let agent_stats_tick = tool_tab_tick + stats_poll_tick;
 

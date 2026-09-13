@@ -26,8 +26,13 @@ pub fn MessageSearch() -> Element {
     let toast = use_toast();
 
     let mut handle_search = move |_| {
-        loading.set(true);
         let kw = keyword().clone();
+        let trimmed = kw.trim().to_string();
+        if !trimmed.is_empty() && trimmed.chars().count() < 3 {
+            toast.error("关键词至少需要 3 个字符（当前全文检索基于 trigram 分词）");
+            return;
+        }
+        loading.set(true);
         spawn(async move {
             match search_messages(common::api::SearchMessagesRequest {
                 keyword: if kw.is_empty() {

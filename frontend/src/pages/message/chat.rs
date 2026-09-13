@@ -126,6 +126,8 @@ pub fn MessageChat() -> Element {
 
     // 修复 M3：追踪用户是否滚动到底部附近，用于决定新消息是否自动滚动
     let mut at_bottom = use_signal(|| true);
+    // 用户上翻阅读期间有新消息到达的标记：仅展示悬浮提示不拽回底部，点击后回底
+    let mut has_new_messages = use_signal(|| false);
 
     // 附件上传状态
     let mut pending_attachments = use_signal(Vec::<PendingAttachment>::new);
@@ -232,6 +234,9 @@ pub fn MessageChat() -> Element {
         // 传哨兵后后端精确返回 `project_id IS NULL`，前端过滤降级为兜底。
         // 内部 `selected_project` 的 None 语义不变（`is_project_mode` 等依赖 is_some()）。
         let req_scope = request_scope(project_id.as_deref());
+        // 切换会话重置滚动状态：进入对话视为停靠底部，加载完成后自动滚到最新消息
+        at_bottom.set(true);
+        has_new_messages.set(false);
         loading_messages.set(true);
         spawn(async move {
             let mut visible = Vec::new();
@@ -363,6 +368,10 @@ pub fn MessageChat() -> Element {
             }
             current.push(msg);
             is_typing.set(false);
+            // 用户上翻阅读时不拽回底部，仅标记新消息（由悬浮提示按钮承接）
+            if !at_bottom() {
+                has_new_messages.set(true);
+            }
             // 通知信息侧栏防抖刷新（任务进度/执行计划/产物可能已变化）
             refresh_tick.set(refresh_tick() + 1);
         }
@@ -638,6 +647,8 @@ pub fn MessageChat() -> Element {
                     // 真实 message_id 覆盖，保证引用目标可解析。
                     user_msg.message_id = resp.message_id;
                     user_msg.reply_to_id = reply_to_id_snapshot;
+                    // 用户主动发送 → 无条件回到底部（自己的动作，期待看到刚发的消息）
+                    at_bottom.set(true);
                     let mut current = messages.write();
                     current.push(user_msg);
                 }
@@ -876,6 +887,30 @@ pub fn MessageChat() -> Element {
             }
 
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
+                // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
+                onscroll: move |_e| {
+                    if let Some(html_el) = web_sys::window()
+                        .and_then(|w| w.document())
+                        .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
+                        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                    {
+                        let scroll_top = html_el.scroll_top();
+                        let max_scroll = html_el.scroll_height() - html_el.client_height();
+                        let is_bottom = scroll_top as f64 >= (max_scroll - 50) as f64;
+                        // 仅在状态翻转时写回：Signal::set 不做相等去重，每个滚动事件都写会触发整页重渲染
+                        if at_bottom() != is_bottom {
+                            at_bottom.set(is_bottom);
+                        }
+                        // 手动滚回底部时清除「有新消息」提示
+                        if is_bottom && has_new_messages() {
+                            has_new_messages.set(false);
+                        }
+                        // 滚到顶部时加载更早的历史消息
+                        if scroll_top == 0 {
+                            load_older();
+                        }
+                    }
+                },
                 if loading_messages() && messages().is_empty() {
                     div { class: "flex items-center justify-center py-12",
                         Loading { size: "md" }
@@ -889,20 +924,6 @@ pub fn MessageChat() -> Element {
                 } else {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
-                        onscroll: move |e| {
-                            // 修复 M3：通过 web_sys 查询滚动容器尺寸，更新 at_bottom 状态
-                            if let Some(html_el) = web_sys::window()
-                                .and_then(|w| w.document())
-                                .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
-                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                            {
-                                let max_scroll = html_el.scroll_height() - html_el.client_height();
-                                at_bottom.set(html_el.scroll_top() as f64 >= (max_scroll - 50) as f64);
-                            }
-                            if e.scroll_top() == 0.0 {
-                                load_older();
-                            }
-                        },
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
@@ -1011,6 +1032,19 @@ pub fn MessageChat() -> Element {
                                         }
                                         span { class: "text-sm", "{status}" }
                                     }
+                                }
+                            }
+                        }
+                        // 新消息提示：用户上翻阅读时悬浮底部，点击回最新消息，不打断当前阅读位置
+                        if has_new_messages() && !at_bottom() {
+                            div { class: "sticky bottom-2 z-10 flex justify-center pointer-events-none",
+                                button {
+                                    class: "btn hud-btn btn-sm btn-primary rounded-full shadow-lg pointer-events-auto",
+                                    onclick: move |_| {
+                                        has_new_messages.set(false);
+                                        at_bottom.set(true);
+                                    },
+                                    "↓ 有新消息"
                                 }
                             }
                         }
@@ -1079,6 +1113,26 @@ pub fn MessageChat() -> Element {
             }
 
             div { class: "flex-1 overflow-y-auto p-4 bg-base-100", id: "chat-scroll-container",
+                // 修复 M3：scroll 事件不冒泡，onscroll 必须挂在真正滚动的容器本体上
+                onscroll: move |_e| {
+                    if let Some(html_el) = web_sys::window()
+                        .and_then(|w| w.document())
+                        .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
+                        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                    {
+                        let scroll_top = html_el.scroll_top();
+                        let max_scroll = html_el.scroll_height() - html_el.client_height();
+                        let is_bottom = scroll_top as f64 >= (max_scroll - 50) as f64;
+                        // 仅在状态翻转时写回：Signal::set 不做相等去重，每个滚动事件都写会触发整页重渲染
+                        if at_bottom() != is_bottom {
+                            at_bottom.set(is_bottom);
+                        }
+                        // 手动滚回底部时清除「有新消息」提示
+                        if is_bottom && has_new_messages() {
+                            has_new_messages.set(false);
+                        }
+                    }
+                },
                 if messages().is_empty() {
                     if has_reception {
                         div { class: "text-center py-12",
@@ -1095,16 +1149,6 @@ pub fn MessageChat() -> Element {
                 } else {
                     div {
                         class: "flex flex-col gap-1 min-h-full",
-                        onscroll: move |_e| {
-                            if let Some(html_el) = web_sys::window()
-                                .and_then(|w| w.document())
-                                .and_then(|d| d.query_selector("#chat-scroll-container").ok().flatten())
-                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                            {
-                                let max_scroll = html_el.scroll_height() - html_el.client_height();
-                                at_bottom.set(html_el.scroll_top() as f64 >= (max_scroll - 50) as f64);
-                            }
-                        },
                         for entry in group_messages_by_date(&messages()) {
                             match entry {
                                 MessageListEntry::DateDivider(label) => rsx! {
@@ -1213,6 +1257,19 @@ pub fn MessageChat() -> Element {
                                         }
                                         span { class: "text-sm", "{status}" }
                                     }
+                                }
+                            }
+                        }
+                        // 新消息提示：用户上翻阅读时悬浮底部，点击回最新消息，不打断当前阅读位置
+                        if has_new_messages() && !at_bottom() {
+                            div { class: "sticky bottom-2 z-10 flex justify-center pointer-events-none",
+                                button {
+                                    class: "btn hud-btn btn-sm btn-primary rounded-full shadow-lg pointer-events-auto",
+                                    onclick: move |_| {
+                                        has_new_messages.set(false);
+                                        at_bottom.set(true);
+                                    },
+                                    "↓ 有新消息"
                                 }
                             }
                         }
@@ -1408,9 +1465,9 @@ pub fn MessageChat() -> Element {
                     "hidden"
                 },
                 ChatSidePanel {
-                    project_id: selected_project(),
+                    project_id: selected_project,
                     reception_agent_id: reception_agent().map(|a| a.agent_id),
-                    refresh_tick: refresh_tick(),
+                    refresh_tick: refresh_tick,
                     stats_poll_tick: stats_poll_tick(),
                     on_close: move |_| panel_open.set(false),
                     agent_info: target_agent_info,
