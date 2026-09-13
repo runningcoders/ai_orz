@@ -73,7 +73,7 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
         let results = vector_store
-            .search("memory:short_term", query_vector, top_k)
+            .search("memory:short_term", query_vector, top_k, None)
             .await?;
         Ok(results)
     }
@@ -87,7 +87,7 @@ impl MemoryVectorDao for MemoryVectorDaoImpl {
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
         let results = vector_store
-            .search("memory:knowledge_node", query_vector, top_k)
+            .search("memory:knowledge_node", query_vector, top_k, None)
             .await?;
         Ok(results)
     }

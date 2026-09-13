@@ -55,7 +55,9 @@ impl AgentVectorDao for AgentVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = _ctx.vector_store();
-        let results = vector_store.search("agents", query_vector, top_k).await?;
+        let results = vector_store
+            .search("agents", query_vector, top_k, None)
+            .await?;
         Ok(results)
     }
 

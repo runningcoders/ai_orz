@@ -54,7 +54,9 @@ impl TaskVectorDao for TaskVectorDaoImpl {
         top_k: i32,
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_store = ctx.vector_store();
-        let results = vector_store.search("tasks", query_vector, top_k).await?;
+        let results = vector_store
+            .search("tasks", query_vector, top_k, None)
+            .await?;
         Ok(results)
     }
 
