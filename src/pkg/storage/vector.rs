@@ -94,16 +94,19 @@ impl VectorStore for SqliteVssStore {
     }
 
     async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
-        // 1. 先存到元数据表（id -> rowid 映射）
+        // 1. 先存到元数据表（id -> rowid 映射；payload 随行落库）
+        let payload_json = serde_json::to_string(&params.payload)?;
         let (rowid,): (i64,) = sqlx::query_as(
-            "INSERT OR REPLACE INTO vector_metadata 
-             (collection, source_id, content_hash, model, dimensions, expire_at) 
-             VALUES (?, ?, ?, ?, ?, ?) 
+            "INSERT OR REPLACE INTO vector_metadata
+             (collection, source_id, content_hash, payload_json, payload_hash, model, dimensions, expire_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING rowid",
         )
         .bind(collection)
         .bind(id)
         .bind(&params.content_hash)
+        .bind(&payload_json)
+        .bind(&params.payload_hash)
         .bind(&params.embedding_model)
         .bind(params.vector.len() as i32)
         .bind(params.expire_at)
@@ -133,7 +136,7 @@ impl VectorStore for SqliteVssStore {
     ) -> Result<Vec<VectorSearchHit>> {
         let vector_json = serde_json::to_string(query_vector)?;
         let sql = format!(
-            "SELECT m.source_id, m.content_hash, m.model, m.dimensions, m.expire_at, v.distance 
+            "SELECT m.source_id, m.content_hash, m.payload_json, m.payload_hash, m.model, m.dimensions, m.expire_at, v.distance
              FROM vss_{} v
              JOIN vector_metadata m ON v.rowid = m.rowid
              WHERE v.embedding MATCH json(?)
@@ -143,11 +146,23 @@ impl VectorStore for SqliteVssStore {
             collection
         );
 
-        let results = sqlx::query_as::<_, (String, String, String, i32, Option<i64>, f32)>(&sql)
-            .bind(vector_json)
-            .bind(top_k)
-            .fetch_all(&*self.pool)
-            .await?;
+        let results = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                Option<String>,
+                String,
+                String,
+                i32,
+                Option<i64>,
+                f32,
+            ),
+        >(&sql)
+        .bind(vector_json)
+        .bind(top_k)
+        .fetch_all(&*self.pool)
+        .await?;
 
         // 注意：SqliteVSS 不存储原始向量，这里返回的 VectorRow 中 vector 字段为空
         // 实际业务场景中，业务 DAO 需要根据 source_id 从业务表获取内容并重新向量化
@@ -155,15 +170,29 @@ impl VectorStore for SqliteVssStore {
         Ok(results
             .into_iter()
             .map(
-                |(source_id, content_hash, model, _dimensions, expire_at, distance)| {
+                |(
+                    source_id,
+                    content_hash,
+                    payload_json,
+                    payload_hash,
+                    model,
+                    _dimensions,
+                    expire_at,
+                    distance,
+                )| {
+                    // payload_json 反序列化（缺失/损坏时降级为空 payload）
+                    let payload: VectorPayload = payload_json
+                        .as_deref()
+                        .and_then(|j| serde_json::from_str(j).ok())
+                        .unwrap_or_default();
                     VectorSearchHit {
                         row: VectorRow {
                             id: source_id,
                             vector: Vec::new(), // SqliteVSS 不存储原始向量
-                            payload: VectorPayload::default(),
+                            payload,
                             meta: VectorMeta {
                                 content_hash,
-                                payload_hash: VectorPayload::default().hash(),
+                                payload_hash,
                                 embedding_model: model,
                                 indexed_at: 0, // SQLite 中没有存储索引时间，暂时用 0
                                 expire_at,
@@ -177,28 +206,37 @@ impl VectorStore for SqliteVssStore {
     }
 
     async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
-        let result: Option<(String, String, String, Option<i64>)> = sqlx::query_as(
-            "SELECT source_id, content_hash, model, expire_at FROM vector_metadata WHERE collection = ? AND source_id = ?"
-        )
-        .bind(collection)
-        .bind(id)
-        .fetch_optional(&*self.pool)
-        .await?;
+        let result: Option<(String, String, Option<String>, String, String, Option<i64>)> =
+            sqlx::query_as(
+                "SELECT source_id, content_hash, payload_json, payload_hash, model, expire_at
+                 FROM vector_metadata WHERE collection = ? AND source_id = ?",
+            )
+            .bind(collection)
+            .bind(id)
+            .fetch_optional(&*self.pool)
+            .await?;
 
-        Ok(result.map(|(source_id, content_hash, model, expire_at)| {
-            VectorRow {
-                id: source_id,
-                vector: Vec::new(), // SqliteVSS 不存储原始向量
-                payload: VectorPayload::default(),
-                meta: VectorMeta {
-                    content_hash,
-                    payload_hash: VectorPayload::default().hash(),
-                    embedding_model: model,
-                    indexed_at: 0,
-                    expire_at,
-                },
-            }
-        }))
+        Ok(result.map(
+            |(source_id, content_hash, payload_json, payload_hash, model, expire_at)| {
+                // payload_json 反序列化（缺失/损坏时降级为空 payload）
+                let payload: VectorPayload = payload_json
+                    .as_deref()
+                    .and_then(|j| serde_json::from_str(j).ok())
+                    .unwrap_or_default();
+                VectorRow {
+                    id: source_id,
+                    vector: Vec::new(), // SqliteVSS 不存储原始向量
+                    payload,
+                    meta: VectorMeta {
+                        content_hash,
+                        payload_hash,
+                        embedding_model: model,
+                        indexed_at: 0,
+                        expire_at,
+                    },
+                }
+            },
+        ))
     }
 
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {
@@ -261,6 +299,23 @@ impl SqliteVssStore {
         let _ = sqlx::query("SELECT load_extension('vss0')")
             .execute(&pool)
             .await;
+
+        // 建 vector_metadata 表（独立 vectors.db 无 migration 机制，运行时建。
+        // 含 payload 列；不做 ALTER 补列，旧 vectors.db 直接删）
+        let _ = sqlx::query(
+            "CREATE TABLE IF NOT EXISTS vector_metadata (
+             rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+             collection TEXT NOT NULL,
+             source_id TEXT NOT NULL,
+             content_hash TEXT NOT NULL,
+             payload_json TEXT,
+             payload_hash TEXT NOT NULL DEFAULT '',
+             model TEXT NOT NULL,
+             dimensions INTEGER NOT NULL,
+             expire_at INTEGER)",
+        )
+        .execute(&pool)
+        .await;
 
         Ok(Self {
             pool: Arc::new(pool),
