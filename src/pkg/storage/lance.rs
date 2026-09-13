@@ -132,6 +132,61 @@ impl LanceVectorStore {
 
         Ok(table_arc)
     }
+
+    /// 打开已存在的表；**不存在时不创建**（返回 None）
+    ///
+    /// 供 `get` / `delete` / `clear_collection` / `update_payload` / `search` 等
+    /// 只读或删除类访问路径使用。这些路径不感知向量维度（历史上传 `dimensions=0`），
+    /// 若走 `get_or_create_table` 会在表不存在时建出 **维度=0** 的残废表，
+    /// 之后真正的 upsert（如 2048 维）会因 schema 不一致被 LanceDB 拒绝。
+    async fn open_existing_table(&self, collection: &str) -> Result<Option<Arc<Table>>> {
+        let table_name = Self::sanitize_table_name(collection);
+
+        // 先检查缓存
+        {
+            let tables = self.tables.read().await;
+            if let Some(table) = tables.get(&table_name) {
+                return Ok(Some(table.clone()));
+            }
+        }
+
+        let table_names = self.db.table_names().execute().await.map_err(|e| {
+            common::error::Error::internal(format!("LanceDB table names error: {}", e))
+        })?;
+        if !table_names.iter().any(|t| t == &table_name) {
+            return Ok(None);
+        }
+
+        let table = self
+            .db
+            .open_table(&table_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                common::error::Error::internal(format!("LanceDB open table error: {}", e))
+            })?;
+        let table_arc = Arc::new(table);
+        self.tables
+            .write()
+            .await
+            .insert(table_name, table_arc.clone());
+        Ok(Some(table_arc))
+    }
+
+    /// 读取表 schema 中 `vector` 列的固定维度（列缺失或类型不符返回 None）
+    async fn table_vector_dim(table: &Table) -> Result<Option<i32>> {
+        let schema = table
+            .schema()
+            .await
+            .map_err(|e| common::error::Error::internal(format!("LanceDB schema error: {}", e)))?;
+        Ok(schema
+            .field_with_name("vector")
+            .ok()
+            .and_then(|f| match f.data_type() {
+                DataType::FixedSizeList(_, size) => Some(*size),
+                _ => None,
+            }))
+    }
 }
 
 /// SQL 字符串字面量转义（单引号双写）
@@ -332,7 +387,22 @@ impl super::VectorStore for LanceVectorStore {
 
     async fn upsert(&self, collection: &str, id: &str, params: &VectorIndexParams) -> Result<()> {
         let dimensions = params.vector.len() as i32;
-        let table = self.get_or_create_table(collection, dimensions).await?;
+        let mut table = self.get_or_create_table(collection, dimensions).await?;
+
+        // 维度自愈：已存在表的 vector 维度与本次写入不一致时 drop 重建。
+        // 典型场景：Embedding 供应商更换导致维度变化，或历史上被 dim-0 访问路径
+        // 建过空表。旧维度向量对新查询向量本就无法检索（vector_search 要求维度
+        // 一致），drop 不损失可用信息——这正是全量重建的预期语义。
+        if let Some(existing_dim) = Self::table_vector_dim(&table).await?
+            && existing_dim != dimensions
+        {
+            let table_name = Self::sanitize_table_name(collection);
+            self.db.drop_table(&table_name, &[]).await.map_err(|e| {
+                common::error::Error::internal(format!("LanceDB drop table error: {}", e))
+            })?;
+            self.tables.write().await.remove(&table_name);
+            table = self.get_or_create_table(collection, dimensions).await?;
+        }
 
         let now = chrono::Utc::now().timestamp();
 
@@ -371,7 +441,9 @@ impl super::VectorStore for LanceVectorStore {
         id: &str,
         payload: &crate::models::vector::VectorPayload,
     ) -> Result<()> {
-        let table = self.get_or_create_table(collection, 0).await?;
+        let Some(table) = self.open_existing_table(collection).await? else {
+            return Ok(()); // 表不存在：行必然不存在，no-op
+        };
         let filter_sql = format!("id = '{}'", escape_sql_str(id));
 
         // 1. 取回旧行（含向量 + 元信息）
@@ -442,9 +514,11 @@ impl super::VectorStore for LanceVectorStore {
         top_k: i32,
         filter: Option<&crate::models::vector::VectorFilter>,
     ) -> Result<Vec<VectorSearchHit>> {
-        let table = self
-            .get_or_create_table(collection, query_vector.len() as i32)
-            .await?;
+        // 表不存在 = 空集合：返回空结果，绝不能以查询维度建表（副作用留给 upsert）
+        let table = match self.open_existing_table(collection).await? {
+            Some(t) => t,
+            None => return Ok(Vec::new()),
+        };
 
         // 执行向量搜索 - 0.26 API 使用 vector_search
         let mut query = table
@@ -481,7 +555,9 @@ impl super::VectorStore for LanceVectorStore {
     }
 
     async fn get(&self, collection: &str, id: &str) -> Result<Option<VectorRow>> {
-        let table = self.get_or_create_table(collection, 0).await?;
+        let Some(table) = self.open_existing_table(collection).await? else {
+            return Ok(None);
+        };
 
         // 查询指定 id 的完整记录（id 单引号转义，防注入）
         let stream = table
@@ -511,7 +587,9 @@ impl super::VectorStore for LanceVectorStore {
     }
 
     async fn delete(&self, collection: &str, id: &str) -> Result<()> {
-        let table = self.get_or_create_table(collection, 0).await?;
+        let Some(table) = self.open_existing_table(collection).await? else {
+            return Ok(());
+        };
         table
             .delete(&format!("id = '{}'", escape_sql_str(id)))
             .await
@@ -520,7 +598,11 @@ impl super::VectorStore for LanceVectorStore {
     }
 
     async fn clear_collection(&self, collection: &str) -> Result<()> {
-        let table = self.get_or_create_table(collection, 0).await?;
+        // 表不存在 = 本就为空。历史上这里传 dimensions=0 走 get_or_create_table，
+        // 会把不存在的集合建成维度=0 的空表，之后正常维度写入全部被 LanceDB 拒绝。
+        let Some(table) = self.open_existing_table(collection).await? else {
+            return Ok(());
+        };
         table
             .delete("TRUE")
             .await
@@ -628,5 +710,65 @@ mod prefilter_tests {
         let row = store.get("up", "a1").await.unwrap().unwrap();
         assert_eq!(row.payload.is_published, Some(true));
         assert_eq!(row.meta.payload_hash, new_p.hash());
+    }
+
+    /// 维度自愈：Embedding 维度变化（供应商更换 / dim-0 残废表）后 upsert 应
+    /// drop 重建而不是被 LanceDB "Append with different schema" 拒绝。
+    /// 这是全量重建（RebuildVectors）在维度变化场景下能跑通的关键。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_upsert_dim_mismatch_self_heals() {
+        let dir = std::env::temp_dir().join(format!("lance_dim_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = LanceVectorStore::new(&dir).unwrap();
+
+        // 旧维度 4 写入一条
+        store.init_collection("dim", 4).await.unwrap();
+        store
+            .upsert("dim", "old", &params("agent-1", false, 4))
+            .await
+            .unwrap();
+
+        // 新维度 8 upsert：应自愈（drop 旧表重建），不再报 schema 不一致
+        store
+            .upsert("dim", "new", &params("agent-2", true, 8))
+            .await
+            .unwrap();
+
+        // 旧维度行随表重建消失，新维度行可检索
+        assert!(store.get("dim", "old").await.unwrap().is_none());
+        let hits = store
+            .search("dim", &[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], 10, None)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].row.id, "new");
+    }
+
+    /// 只读/删除类访问路径对不存在的集合必须 no-op，不得以 dimensions=0 建出残废表
+    /// （回归：clear/get/delete/update_payload 曾把缺失集合建成 vector 维度=0 的表，
+    /// 导致后续正常维度 upsert 全部被 LanceDB 拒绝）。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_missing_table_ops_do_not_create_table() {
+        let dir = std::env::temp_dir().join(format!("lance_no_create_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = LanceVectorStore::new(&dir).unwrap();
+
+        // 全部 dim-0 访问路径打一遍
+        assert!(store.get("ghost", "x").await.unwrap().is_none());
+        store.delete("ghost", "x").await.unwrap();
+        store.clear_collection("ghost").await.unwrap();
+        let p = crate::models::vector::VectorPayload::default();
+        store.update_payload("ghost", "x", &p).await.unwrap();
+        assert!(
+            store
+                .search("ghost", &[1.0; 4], 10, None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // 关键断言：没有建出任何表（历史上这里会出现维度=0 的 ghost 表）
+        let names = store.db.table_names().execute().await.unwrap();
+        assert!(names.is_empty(), "不应创建任何表，实际: {:?}", names);
     }
 }
