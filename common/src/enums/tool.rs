@@ -92,6 +92,11 @@ impl From<i64> for ToolStatus {
 }
 
 impl ToolStatus {
+    /// 全部变体（新增变体时必须同步维护，供补集排除等场景使用）
+    pub fn all() -> [Self; 3] {
+        [Self::Disabled, Self::Enabled, Self::Stale]
+    }
+
     /// Convert the tool status to i32 for database storage.
     pub fn to_i32(&self) -> i32 {
         *self as i32

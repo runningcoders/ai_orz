@@ -379,9 +379,10 @@ impl SkillDal for SkillDalImpl {
 
                 // 向量搜索（前 20 条，与 search LIMIT 20 上限对齐）
                 // 注意：只保留距离小于阈值的结果（余弦距离 0-2，0 是完全相同）
+                // pre-filter：category 在 DAO 内转译为向量谓词下推
                 match self
                     .skill_vector_dao
-                    .search_vector(ctx.clone(), &query_vector, 20)
+                    .search_vector(ctx.clone(), &query_vector, 20, &search.filters)
                     .await
                 {
                     Ok(vector_results) => {

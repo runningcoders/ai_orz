@@ -511,9 +511,11 @@ impl ToolDal for ToolDalImpl {
                 .await?;
             let query_vector = query_vector_params.vector;
 
+            // pre-filter：status / exclude_status 在 DAO 内转译为向量谓词下推，
+            // Top-K 在满足谓词的候选集内选取
             match self
                 .tool_vector_dao
-                .search_vector(ctx.clone(), &query_vector, top_k)
+                .search_vector(ctx.clone(), &query_vector, top_k, &search_filters)
                 .await
             {
                 Ok(vector_results) => {

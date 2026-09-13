@@ -3,7 +3,7 @@
 
 use crate::models::vector::{VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
-use crate::service::dao::skill::{self, SkillVectorDao};
+use crate::service::dao::skill::{self, SkillQuery, SkillVectorDao};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<()> {
     // 搜索最接近 skill_0 的向量
     let query_vector = vec![0.0, 0.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 2)
+        .search_vector(ctx.clone(), &query_vector, 2, &SkillQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -92,7 +92,7 @@ async fn test_upsert_update_existing(pool: SqlitePool) -> Result<()> {
     // 搜索验证用的是更新后的向量
     let query_vector = vec![0.0, 1.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 1)
+        .search_vector(ctx.clone(), &query_vector, 1, &SkillQuery::default())
         .await?;
 
     assert_eq!(results.len(), 1);
@@ -154,7 +154,7 @@ async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<()> {
 
     // 只返回 top 2
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2, &SkillQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -169,10 +169,64 @@ async fn test_search_vector_empty(pool: SqlitePool) -> Result<()> {
     let vector_dao = init_test_env();
 
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10, &SkillQuery::default())
         .await?;
 
     assert_eq!(results.len(), 0);
+
+    Ok(())
+}
+
+/// 测试带业务过滤的向量搜索（pre-filter 谓词下推：Top-K 在满足谓词的候选集内选取）
+#[sqlx::test]
+async fn test_search_vector_with_filter(pool: SqlitePool) -> Result<()> {
+    let ctx = new_ctx("test_user", pool.clone());
+    let vector_dao = init_test_env();
+
+    // skill_other：全局最近（category=coding）
+    let mut params_other = create_test_vector_params("skill_other", 2);
+    params_other.vector = vec![1.0, 0.0];
+    params_other.payload = VectorPayload {
+        entity_type: Some("coding".to_string()),
+        ..Default::default()
+    };
+    params_other.payload_hash = params_other.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "skill_other", &params_other)
+        .await?;
+
+    // skill_own：稍远（category=math）
+    let mut params_own = create_test_vector_params("skill_own", 2);
+    params_own.vector = vec![0.6, 0.8];
+    params_own.payload = VectorPayload {
+        entity_type: Some("math".to_string()),
+        ..Default::default()
+    };
+    params_own.payload_hash = params_own.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "skill_own", &params_own)
+        .await?;
+
+    let query_vector = vec![1.0, 0.0];
+
+    // 基线：无 filter 时全局最近是 coding 类技能
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &SkillQuery::default())
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "skill_other");
+
+    // category 下推：math 视角 top_k=1 必须命中自己的技能（post-filter 实现会返回空）
+    let filters = SkillQuery {
+        category: Some("math".to_string()),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "skill_own");
+    assert_eq!(results[0].row.payload.entity_type.as_deref(), Some("math"));
 
     Ok(())
 }
