@@ -156,8 +156,6 @@ pub fn ProjectList() -> Element {
                                 reload_projects();
                             },
                             option { value: "", "全部状态" }
-                            option { value: "1", "Active" }
-                            option { value: "2", "PendingReview" }
                             option { value: "3", "InProgress" }
                             option { value: "4", "Completed" }
                             option { value: "5", "Archived" }

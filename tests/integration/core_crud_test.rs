@@ -112,8 +112,8 @@ async fn test_agent_crud_loop(pool: SqlitePool) {
 
 /// Project create → update status transitions → archive.
 ///
-/// 注意：项目没有 DELETE 路由（软删除通过 Archived 状态实现），
-/// 所以用 Active → InProgress → Archived 完成完整生命周期验证。
+/// 注意：项目没有 DELETE 路由（软删除通过 Archived 状态实现）；
+/// 创建即 InProgress，所以用 InProgress（创建默认）→ Completed → InProgress（重启）→ Archived 完成状态机验证。
 #[sqlx::test]
 async fn test_project_status_transitions(pool: SqlitePool) {
     let _ = crate::common::init_full_test_env(pool.clone()).await;
@@ -125,7 +125,7 @@ async fn test_project_status_transitions(pool: SqlitePool) {
     let project_name = format!("TestProject-{}", uuid::Uuid::now_v7());
     let project_id = crate::common::factories::create_test_project(&app, &jwt, &project_name).await;
 
-    // Get project — verify initial state (Active = 1)
+    // Get project — verify initial state (创建即 InProgress = 3)
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/projects/{}", project_id), &jwt)
         .await;
@@ -139,14 +139,14 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("project status field should be present");
     assert_eq!(
-        initial_status, 1,
-        "newly created project should be Active (1)"
+        initial_status, 3,
+        "newly created project should be InProgress (3, 创建即启动)"
     );
 
-    // Update project status: Active → InProgress (PUT, not POST)
+    // Update project status: InProgress → Completed (PUT, not POST)
     let status_req = json!({
         "id": project_id,
-        "status": "InProgress"
+        "status": "Completed"
     });
     let (status_code, body) = app
         .put_with_jwt(
@@ -158,11 +158,11 @@ async fn test_project_status_transitions(pool: SqlitePool) {
     assert_eq!(
         status_code,
         axum::http::StatusCode::OK,
-        "status update to InProgress should succeed, body: {}",
+        "status update to Completed should succeed, body: {}",
         body
     );
 
-    // Re-fetch and verify status changed to InProgress (3)
+    // Re-fetch and verify status changed to Completed (4)
     let (status, body) = app
         .get_with_jwt(&format!("/api/v1/projects/{}", project_id), &jwt)
         .await;
@@ -172,11 +172,11 @@ async fn test_project_status_transitions(pool: SqlitePool) {
         .and_then(|v| v.as_i64())
         .expect("project status should be present after update");
     assert_eq!(
-        updated_status, 3,
-        "project status should be InProgress (3) after transition"
+        updated_status, 4,
+        "project status should be Completed (4) after transition"
     );
 
-    // Archive the project: InProgress → Archived (替代 DELETE，因为项目无删除路由)
+    // Archive the project: Completed → Archived (替代 DELETE，因为项目无删除路由)
     let archive_req = json!({
         "id": project_id,
         "status": "Archived"

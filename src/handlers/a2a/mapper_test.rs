@@ -8,9 +8,9 @@ use crate::models::file::FileMeta;
 use crate::models::message::Message;
 
 #[test]
-fn project_status_active_maps_to_submitted() {
-    let state = project_status_to_a2a_state(ProjectStatus::Active);
-    assert!(matches!(state, A2aTaskState::Submitted));
+fn project_status_deleted_maps_to_failed() {
+    let state = project_status_to_a2a_state(ProjectStatus::Deleted);
+    assert!(matches!(state, A2aTaskState::Failed));
 }
 
 #[test]

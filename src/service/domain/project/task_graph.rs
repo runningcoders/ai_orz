@@ -57,7 +57,6 @@ fn build_task_graph(tasks: &[Task]) -> Graph {
 fn task_status_to_category(status: &TaskStatus) -> &'static str {
     match status {
         TaskStatus::Cancelled => "cancelled",
-        TaskStatus::PendingReview => "pending_review",
         TaskStatus::Pending => "todo",
         TaskStatus::InProgress => "doing",
         TaskStatus::Completed => "done",

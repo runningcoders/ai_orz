@@ -594,7 +594,7 @@ async fn test_awaken_project_task_context_in_prompt(pool: SqlitePool) {
         None, // end_at
         "test-user".to_string(),
     );
-    project_po.status = ProjectStatus::Active;
+    project_po.status = ProjectStatus::InProgress;
     let project = Project::from_po(project_po);
 
     let mut task_po = TaskPo::new(

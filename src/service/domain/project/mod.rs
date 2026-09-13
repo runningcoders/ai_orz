@@ -181,10 +181,6 @@ pub trait ProjectManage: Send + Sync {
     /// 统计符合查询条件的项目数量（透传 DAL count）
     async fn count_projects(&self, ctx: RequestContext, query: ProjectQuery) -> Result<u64>;
 
-    /// 启动项目
-    async fn start(&self, ctx: RequestContext, project_id: &str, modified_by: String)
-    -> Result<()>;
-
     /// 完成项目
     async fn complete(
         &self,

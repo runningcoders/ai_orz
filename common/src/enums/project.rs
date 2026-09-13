@@ -13,12 +13,8 @@ use sqlx::Type;
 pub enum ProjectStatus {
     /// Deleted (soft deleted, filtered out by default)
     Deleted = 0,
-    /// Active (active and available)
+    /// InProgress (work is ongoing; creation means started, start_at auto-written)
     #[default]
-    Active = 1,
-    /// PendingReview (created by Agent, waiting for user review/approval)
-    PendingReview = 2,
-    /// InProgress (work is ongoing)
     InProgress = 3,
     /// Completed (work is done)
     Completed = 4,
@@ -30,8 +26,8 @@ impl From<i32> for ProjectStatus {
     fn from(v: i32) -> Self {
         match v {
             0 => ProjectStatus::Deleted,
-            1 => ProjectStatus::Active,
-            2 => ProjectStatus::PendingReview,
+            // 1/2 为历史值（Active/PendingReview 已并入 InProgress）：读回时统一视为进行中
+            1 | 2 => ProjectStatus::InProgress,
             3 => ProjectStatus::InProgress,
             4 => ProjectStatus::Completed,
             5 => ProjectStatus::Archived,

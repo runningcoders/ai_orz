@@ -14,7 +14,6 @@ use crate::models::message::Message;
 /// 将 ai_orz ProjectStatus 转为 A2A TaskState
 pub fn project_status_to_a2a_state(status: ProjectStatus) -> A2aTaskState {
     match status {
-        ProjectStatus::Active | ProjectStatus::PendingReview => A2aTaskState::Submitted,
         ProjectStatus::InProgress => A2aTaskState::Working,
         ProjectStatus::Completed => A2aTaskState::Completed,
         ProjectStatus::Archived => A2aTaskState::Canceled,

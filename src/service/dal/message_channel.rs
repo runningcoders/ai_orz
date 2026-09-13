@@ -623,7 +623,6 @@ fn map_project_status_to_a2a(
     use common::enums::ProjectStatus;
 
     match status {
-        ProjectStatus::Active | ProjectStatus::PendingReview => A2aTaskState::Submitted,
         ProjectStatus::InProgress => A2aTaskState::Working,
         ProjectStatus::Completed => A2aTaskState::Completed,
         ProjectStatus::Archived => A2aTaskState::Canceled,

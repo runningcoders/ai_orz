@@ -13,7 +13,7 @@ use crate::enrich_ctx;
 #[register_handler_tool(
     id = "update_project_status",
     name = "Update Project Status",
-    description = "Transition a project to a new status through the validated state machine (Active, PendingReview, InProgress, Completed, Archived; e.g. InProgress to Completed, or Completed back to InProgress for re-planning). Returns the updated project detail. Fails on illegal transitions; deletion is not exposed through this endpoint.",
+    description = "Transition a project to a new status through the validated state machine (InProgress, Completed, Archived; e.g. InProgress to Completed when work is done, or Completed back to InProgress for re-planning). Projects start as InProgress at creation, so typically you only complete or archive them. Returns the updated project detail. Fails on illegal transitions; deletion is not exposed through this endpoint.",
     params = "common::api::UpdateProjectStatusRequest",
     tags = "project_management"
 )]

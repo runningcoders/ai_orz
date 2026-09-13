@@ -46,9 +46,11 @@ impl super::ProjectManage for ProjectDomainImpl {
             tags,
             root_user_id,
             owner_agent_id, // 由上层 handler 透传
-            None,           // start_at
-            None,           // due_at
-            None,           // end_at
+            // 创建即启动：项目从诞生起就在进行中（对齐与执行交织的工作模型），
+            // start_at = 创建时刻；结束（Completed）由 Agent/用户显式流转。
+            Some(utils::current_timestamp_ms()),
+            None, // due_at
+            None, // end_at
             created_by.clone(),
         );
 
@@ -206,50 +208,6 @@ impl super::ProjectManage for ProjectDomainImpl {
         self.project_dal.count(ctx, query).await
     }
 
-    /// 启动项目
-    async fn start(
-        &self,
-        ctx: RequestContext,
-        project_id: &str,
-        modified_by: String,
-    ) -> Result<()> {
-        let Some(mut project) = self.project_dal.find_by_id(ctx.clone(), project_id).await? else {
-            bail_err!(NotFound, "Project not found: {}", project_id);
-        };
-
-        // 补充 Project 上下文到 ctx
-        let ctx = enrich_ctx!(&ctx, &project);
-
-        let from_status = format!("{:?}", project.po.status);
-        project.start();
-        project.po.modified_by = modified_by;
-        self.project_dal.update(ctx.clone(), &project).await?;
-
-        let _ = record_event!(
-            ctx.clone(),
-            ProjectEvent {
-                project_id: project.po.id.clone(),
-                event_type: "started".to_string(),
-                organization_id: ctx.organization_id.clone(),
-                operator_type: Some(ctx.caller_type().as_str().to_string()),
-                operator_id: ctx.caller_id(),
-                root_user_id: Some(project.po.root_user_id.clone()),
-                owner_type: project
-                    .po
-                    .owner_agent_id
-                    .as_ref()
-                    .map(|_| "agent".to_string()),
-                owner_id: project.po.owner_agent_id.clone(),
-                from_status: Some(from_status),
-                to_status: Some(format!("{:?}", project.po.status)),
-                duration_ms: None,
-                priority: project.po.priority,
-            }
-        );
-
-        Ok(())
-    }
-
     /// 完成项目
     async fn complete(
         &self,
@@ -400,17 +358,11 @@ impl super::ProjectManage for ProjectDomainImpl {
 
         let is_valid_transition = match (current_status, target_status) {
             (a, b) if a == b => true,
-            (ProjectStatus::Active, ProjectStatus::PendingReview) => true,
-            (ProjectStatus::Active, ProjectStatus::InProgress) => true,
-            (ProjectStatus::PendingReview, ProjectStatus::Active) => true,
-            (ProjectStatus::PendingReview, ProjectStatus::InProgress) => true,
             (ProjectStatus::InProgress, ProjectStatus::Completed) => true,
             // 项目重启：Completed 可回到 InProgress，支持 Project Owner 重新规划新任务
             (ProjectStatus::Completed, ProjectStatus::InProgress) => true,
-            (ProjectStatus::Completed, ProjectStatus::Archived) => true,
-            (ProjectStatus::Active, ProjectStatus::Archived) => true,
-            (ProjectStatus::PendingReview, ProjectStatus::Archived) => true,
             (ProjectStatus::InProgress, ProjectStatus::Archived) => true,
+            (ProjectStatus::Completed, ProjectStatus::Archived) => true,
             _ => false,
         };
 
@@ -440,7 +392,7 @@ impl super::ProjectManage for ProjectDomainImpl {
                 project.po.status = ProjectStatus::Completed;
                 project.po.end_at = Some(utils::current_timestamp_ms());
             }
-            ProjectStatus::Archived | ProjectStatus::Active | ProjectStatus::PendingReview => {
+            ProjectStatus::Archived => {
                 project.po.status = target_status;
             }
             ProjectStatus::Deleted => unreachable!("Deleted rejected above"),

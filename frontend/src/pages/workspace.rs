@@ -67,8 +67,6 @@ use wasm_bindgen::{JsCast, closure::Closure};
 /// Project 状态标签
 fn project_status_label(status: i32) -> &'static str {
     match status {
-        1 => "活跃",
-        2 => "待评审",
         3 => "进行中",
         4 => "已完成",
         5 => "已归档",
@@ -86,7 +84,7 @@ fn agent_runtime_label(runtime_state: i32) -> &'static str {
     }
 }
 
-/// 判断是否为运行中项目（status 1-3：活跃 / 待评审 / 进行中）
+/// 判断是否为运行中项目（status 3：进行中；历史值 1/2 已并入进行中）
 fn is_active_project(status: i32) -> bool {
     matches!(status, 1..=3)
 }

@@ -21,23 +21,21 @@ Project（项目，顶层容器，有 owner_agent_id）
 | 状态 | 值 | 说明 |
 |------|---|------|
 | `Deleted` | 0 | 软删除，**不可通过状态接口设置**，必须走删除 action |
-| `Active` | 1 | 活跃（默认） |
-| `PendingReview` | 2 | Agent 创建后待用户审核 |
-| `InProgress` | 3 | 进行中，自动填入 `start_at` |
+| `InProgress` | 3 | 进行中（**默认，创建即启动**），创建时自动填入 `start_at` |
 | `Completed` | 4 | 已完成，自动填入 `end_at` |
 | `Archived` | 5 | 已归档 |
 
 ```
-Active        → PendingReview / InProgress / Archived
-PendingReview → Active / InProgress / Archived
-InProgress    → Completed / Archived
-Completed     → InProgress（项目重启专用）/ Archived
+InProgress → Completed / Archived
+Completed  → InProgress（项目重启专用）/ Archived
 相同状态 → no-op；其它 → 非法
 ```
 
+**核心理念**：项目从创建起就在 `InProgress`——对齐与执行交织进行（「一边聊、一边对齐、一边干」），不存在「未开始」状态；启动时刻 = 创建时刻（`start_at`），**结束**（`Completed`）才是需要显式流转的节点。
+
 ### 工具速览
 
-- **`create_project`**：`name` 必填，可选 `description` / `priority` / `tags` / `owner_agent_id`（**纯透传**，后端不调 `resolve_agent`）。Agent 创建的项目默认 `PendingReview` 待用户审核。
+- **`create_project`**：`name` 必填，可选 `description` / `priority` / `tags` / `owner_agent_id`（**纯透传**，后端不调 `resolve_agent`）。创建即 `InProgress`（`start_at` 自动写入），规划与对齐在 InProgress 中进行。
 - **`get_project(id)`**：统计选项 `with_stats` / `with_model_call_stats` / `stats_time_start`+`stats_time_end`（毫秒，须同时存在）/ `stats_interval(hourly|daily)`；可选 `with_task_graph`（Mermaid 依赖图）/ `with_artifacts` / **`with_progress_summary`**。
   - `with_progress_summary=true` 实时计算不持久化：`total_tasks` / 各状态计数（completed/in_progress/pending/blocked/cancelled）/ `overall_percent`（Σ task.progress / total）。**Owner 跟进进度务必开启，无需自己逐任务计算**。
 - **`list_projects`**：仅分页；固定过滤 `root_user_id = ctx.uid()`，排除 `status=0`，按 `priority DESC, created_at DESC`。
@@ -52,17 +50,15 @@ Completed     → InProgress（项目重启专用）/ Archived
 | 状态 | 值 | 说明 |
 |------|---|------|
 | `Cancelled` | 0 | 取消（相当于删除），**不可通过状态接口设置** |
-| `PendingReview` | 1 | Agent 创建后待用户审核 |
-| `Pending` | 2 | 待启动（默认） |
+| `Pending` | 2 | 待启动（默认，等 DAG 前置满足 / Task Owner 开工） |
 | `InProgress` | 3 | 进行中，自动填入 `start_at` |
 | `Completed` | 4 | 已完成，自动填入 `end_at` |
 | `Archived` | 5 | 总结后归档 |
 
 ```
-PendingReview → Pending / InProgress / Archived
-Pending       → InProgress / Archived
-InProgress    → Completed / Archived
-Completed     → Archived
+Pending    → InProgress / Archived
+InProgress → Completed / Archived
+Completed  → Archived
 相同状态 → no-op；其它 → 非法（返回 InvalidRequest）
 ```
 
@@ -86,7 +82,7 @@ Completed     → Archived
 前端按 **Markdown** 渲染（支持表格、任务清单、```mermaid 代码块画流程图 / 甘特图 / 依赖图），请用 Markdown 书写，让计划与结果可视化、易读。
 
 **时机（强制）**：
-- `execution_plan`——项目由 Owner 在启动前写（`update_project`），任务由 Task Owner 在 InProgress 前写（`update_task`）；阶段 / 方案有重大调整时**立即更新**，让 Owner 与系统巡检看到思路变化。
+- `execution_plan`——项目创建后立即由 Owner 写入（`update_project`），任务由 Task Owner 在开工（InProgress）前写（`update_task`）；阶段 / 方案有重大调整时**立即更新**，让 Owner 与系统巡检看到思路变化。
 - `execution_result`——项目收尾（Owner）或任务完成 / 阻塞（Task Owner）时写入。
 
 **plan 示例（分阶段 + 占比 + 风险，越具体越好，别只写一句「我先看看怎么做」）**：
@@ -180,7 +176,7 @@ graph LR
 **分配前必查空闲**：
 1. 能力匹配：按候选 roles / installed 技能 tags 判断
 2. 运行时状态：`runtime_state`（0=Idle / 1=Resting / 2=Busy），仅 Idle 可分配
-3. 串行校验：分配项目前 `query_projects(owner_agent_id=候选, status_in=[Active, PendingReview, InProgress])` 确认无未完结项目；分配任务前 `list_agent_tasks(agent_id=候选, status=in_progress)` 确认无进行中任务
+3. 串行校验：分配项目前 `query_projects(owner_agent_id=候选, status_in=[InProgress])` 确认无未完结项目；分配任务前 `list_agent_tasks(agent_id=候选, status=in_progress)` 确认无进行中任务
 4. 二次校验：create 时若报「Agent 繁忙」说明被其他流程抢了，回到步骤 1 重选
 
 ## 协作流程与强制清单
@@ -205,12 +201,12 @@ graph LR
 【项目结束后】用户继续发消息 → 查询类直接回复 / 新需求走项目重启
 ```
 
-### 阶段 1：Project Owner 规划与分配（启动前强制清单）
+### 阶段 1：Project Owner 规划与分配（启动后强制清单）
 
 - [ ] 产出技术方案并 `create_text_artifact(tags=["technical_design"], project_id=...)` 保存；拆分计划写入 `update_project(description=...)`
-- [ ] **`update_project(execution_plan=...)` 写入项目执行计划**（Phase 划分 + 关键任务 + 风险），作为后续调度与跟进的基准；**先写 plan，再转 InProgress**
+- [ ] **`update_project(execution_plan=...)` 写入项目执行计划**（Phase 划分 + 关键任务 + 风险），作为后续调度与跟进的基准（项目创建即 InProgress，规划在 InProgress 中完成，无需状态流转）
 - [ ] `send_message` 向用户发拆分方案（任务列表 / 依赖 / 预期产出），**等待用户确认后再分配**，避免方向偏差返工
-- [ ] 确认后 `update_project_status(InProgress)`；`create_task` 填好 `dependencies` 构成 DAG，按「分配前必查空闲」选 Task Owner（**可分配给其他 Agent，也可分配给自己**；创建后系统自动发分配通知）
+- [ ] 确认后 `create_task` 填好 `dependencies` 构成 DAG，按「分配前必查空闲」选 Task Owner（**可分配给其他 Agent，也可分配给自己**；创建后系统自动发分配通知）
 - [ ] 通过 `send_task_assignment_message` 通知 Task Owner 启动；分配给自己的话直接进入阶段 2
 
 ### 阶段 2：Task Owner 执行与上报
@@ -263,7 +259,7 @@ graph LR
   1. 综合原项目信息：`get_project` + `list_project_tasks`（含已完成与未开工）+ `query_artifacts`
   2. 基于新需求与原成果拆分新子任务，`create_task` 关联原 `project_id`，按 DAG 原则指定 `dependencies`（新任务可依赖已完成的老任务；**避免循环依赖**，老任务已完成不再产生新依赖）
   3. `update_project_status(InProgress)`（状态机支持 Completed → InProgress；`start_at` 保留，`end_at` 保留但下次完成时更新）
-  4. 处理未开工老任务（Pending / PendingReview）：
+  4. 处理未开工老任务（Pending）：
 
      | 老任务状态 | 处理方式 |
      |-----------|---------|

@@ -142,34 +142,6 @@ pub fn TaskDetail(id: String) -> Element {
     });
 
     // 状态切换 - 内联每个按钮的 closure 避免 move 问题
-    // 状态 1: 送审
-    let id_for_review = id.clone();
-    let on_review = move |_| {
-        let id_clone = id_for_review.clone();
-        spawn(async move {
-            let req = UpdateTaskStatusRequest {
-                id: id_clone.clone(),
-                status: TaskStatus::PendingReview,
-            };
-            match update_task_status(req).await {
-                Ok(_) => {
-                    toast.success("任务状态已更新");
-                    let req = with_stats_range(
-                        GetTaskRequest {
-                            id: id_clone.clone(),
-                            ..Default::default()
-                        },
-                        stats_range(),
-                    );
-                    if let Ok(t) = get_task(req).await {
-                        new_progress.set(t.progress);
-                        task_res.set(Some(Ok(t)));
-                    }
-                }
-                Err(e) => toast.error(&e),
-            }
-        });
-    };
     // 状态 2: 待处理
     let id_for_pending = id.clone();
     let on_pending = move |_| {
@@ -578,13 +550,6 @@ pub fn TaskDetail(id: String) -> Element {
                 eyebrow: "STATUS".to_string(),
                 div { class: "detail-card-body",
                     div { class: "detail-action-row",
-                        if t.status != 1 {
-                            button {
-                                class: "btn hud-btn btn-warning",
-                                onclick: on_review,
-                                "送审"
-                            }
-                        }
                         if t.status != 2 {
                             button {
                                 class: "btn hud-btn btn-info",

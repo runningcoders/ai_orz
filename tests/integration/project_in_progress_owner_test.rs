@@ -91,8 +91,7 @@ async fn test_list_in_progress_with_owner_filters(pool: SqlitePool) {
         Some(&agent_id),
     )
     .await;
-    // Default status is Active (1); transition to InProgress (3)
-    transition_project_status(&app, &jwt, &p_in_progress_owner, "InProgress").await;
+    // 创建即 InProgress（start_at 自动写入），无需显式启动
 
     // 2. InProgress + NO owner_agent_id → should be filtered out
     let p_in_progress_no_owner = create_project_with_owner(
@@ -102,7 +101,6 @@ async fn test_list_in_progress_with_owner_filters(pool: SqlitePool) {
         None,
     )
     .await;
-    transition_project_status(&app, &jwt, &p_in_progress_no_owner, "InProgress").await;
 
     // 3. Completed + owner_agent_id → should be filtered out
     let p_completed_owner = create_project_with_owner(
@@ -112,8 +110,6 @@ async fn test_list_in_progress_with_owner_filters(pool: SqlitePool) {
         Some(&agent_id),
     )
     .await;
-    // Active → InProgress → Completed (status machine requires intermediate step)
-    transition_project_status(&app, &jwt, &p_completed_owner, "InProgress").await;
     transition_project_status(&app, &jwt, &p_completed_owner, "Completed").await;
 
     // Call the domain method directly (system-level query, no user filter)

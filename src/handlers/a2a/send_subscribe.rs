@@ -164,11 +164,6 @@ async fn do_create_project_and_message(
 
     let project_id = project.po.id.clone();
 
-    project_domain()
-        .project_manage()
-        .start(ctx.clone(), &project_id, user_id.clone())
-        .await?;
-
     let cmd = message::SendToAgentCommand {
         from_id: &user_id,
         from_role: common::enums::MessageRole::User,

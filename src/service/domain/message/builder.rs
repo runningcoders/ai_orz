@@ -52,7 +52,6 @@ pub fn build_project_followup_content(project_name: &str) -> String {
 fn task_status_label(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Cancelled => "已取消",
-        TaskStatus::PendingReview => "待审核",
         TaskStatus::Pending => "待开始",
         TaskStatus::InProgress => "进行中",
         TaskStatus::Completed => "已完成",

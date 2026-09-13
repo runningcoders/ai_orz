@@ -62,9 +62,7 @@ impl PartialEq for WorkspaceGraphProps {
 /// Project 状态颜色
 fn project_status_color(status: i32) -> String {
     match status {
-        1 => "#10b981".to_string(), // Active 绿
-        3 => "#3b82f6".to_string(), // InProgress 蓝
-        2 => "#f59e0b".to_string(), // PendingReview 橙
+        3 => "#3b82f6".to_string(), // InProgress 蓝（历史值 1/2 已并入进行中）
         4 => "#6b7280".to_string(), // Completed 灰
         _ => "#9ca3af".to_string(), // 其他浅灰
     }

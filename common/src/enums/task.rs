@@ -13,9 +13,7 @@ use sqlx::Type;
 pub enum TaskStatus {
     /// Cancelled (can be considered deleted)
     Cancelled = 0,
-    /// PendingReview (created by Agent, waiting for user review/approval)
-    PendingReview = 1,
-    /// Pending, not started yet (after approval)
+    /// Pending, not started yet (waiting for DAG prerequisites / owner pickup)
     #[default]
     Pending = 2,
     /// In progress
@@ -31,7 +29,8 @@ impl TaskStatus {
     pub fn from_i32(v: i32) -> Self {
         match v {
             0 => Self::Cancelled,
-            1 => Self::PendingReview,
+            // 1 为历史值（PendingReview 已并入 Pending）：读回时统一视为待启动
+            1 => Self::Pending,
             2 => Self::Pending,
             3 => Self::InProgress,
             4 => Self::Completed,

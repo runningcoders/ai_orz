@@ -135,19 +135,10 @@ pub fn TaskList() -> Element {
     let total = tasks_list.len();
     let completed = tasks_list.iter().filter(|t| t.status == 4).count();
     let in_progress = tasks_list.iter().filter(|t| t.status == 3).count();
-    let pending = tasks_list
-        .iter()
-        .filter(|t| t.status == 2 || t.status == 1)
-        .count();
+    let pending = tasks_list.iter().filter(|t| t.status == 2).count();
 
     // 看板数据分组
-    let board_groups = [
-        (1, "待审核"),
-        (2, "待处理"),
-        (3, "进行中"),
-        (4, "已完成"),
-        (5, "已归档"),
-    ];
+    let board_groups = [(2, "待处理"), (3, "进行中"), (4, "已完成"), (5, "已归档")];
 
     let filtered_tasks_by_status = |status: i32| {
         tasks_list
@@ -225,7 +216,6 @@ pub fn TaskList() -> Element {
                             load_data();
                         },
                         option { value: "-1", "全部状态" }
-                        option { value: "1", "待审核" }
                         option { value: "2", "待处理" }
                         option { value: "3", "进行中" }
                         option { value: "4", "已完成" }
@@ -345,7 +335,6 @@ pub fn TaskList() -> Element {
             {
                 let columns: Vec<KanbanColumn> = board_columns.iter().map(|(status, title, group_tasks)| {
                     let color = match status {
-                        1 => "#6b7280".to_string(), // 待审核 - 灰
                         2 => "#3b82f6".to_string(), // 待处理 - 蓝
                         3 => "#f59e0b".to_string(), // 进行中 - 黄
                         4 => "#10b981".to_string(), // 已完成 - 绿

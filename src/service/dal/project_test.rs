@@ -238,7 +238,7 @@ async fn test_create_and_find_by_id(pool: SqlitePool) {
     assert_eq!(found.po.name, "Test Project");
     assert_eq!(found.po.root_user_id, root_user_id);
     assert_eq!(found.po.priority, 1);
-    assert_eq!(found.po.status, ProjectStatus::Active);
+    assert_eq!(found.po.status, ProjectStatus::InProgress);
 }
 
 #[sqlx::test]
@@ -288,7 +288,7 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) {
         .list_by_root_user_and_status(
             ctx.clone(),
             &root_user_id,
-            vec![ProjectStatus::Active],
+            vec![ProjectStatus::InProgress],
             None,
         )
         .await
@@ -315,7 +315,7 @@ async fn test_query(pool: SqlitePool) {
 
     let query = ProjectQuery {
         root_user_id: Some(root_user_id),
-        status_in: Some(vec![ProjectStatus::Active]),
+        status_in: Some(vec![ProjectStatus::InProgress]),
         pagination: common::api::PaginationParams {
             limit: Some(2),
             offset: None,
@@ -412,7 +412,7 @@ async fn test_count_by_root_user_and_status(pool: SqlitePool) {
     }
 
     let active_count = dal
-        .count_by_root_user_and_status(ctx.clone(), &root_user_id, ProjectStatus::Active)
+        .count_by_root_user_and_status(ctx.clone(), &root_user_id, ProjectStatus::InProgress)
         .await
         .unwrap();
     assert_eq!(active_count, 3);

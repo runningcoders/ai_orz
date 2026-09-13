@@ -23,7 +23,10 @@ async fn checkpoint_agent_workspace(task: &Task) {
     if task.po.assignee_type != AssigneeType::Agent {
         return;
     }
-    let base = crate::config::get().base_data_path();
+    let Some(config) = crate::config::try_get() else {
+        return;
+    };
+    let base = config.base_data_path();
     let ws =
         crate::pkg::paths::user_agent_workspace(&base, &task.po.root_user_id, &task.po.assignee_id);
     if crate::pkg::git_workspace::checkpoint_task_commit(
@@ -437,9 +440,6 @@ impl super::TaskManage for ProjectDomainImpl {
 
         let is_valid_transition = match (current_status, target_status) {
             (a, b) if a == b => true,
-            (TaskStatus::PendingReview, TaskStatus::Pending) => true,
-            (TaskStatus::PendingReview, TaskStatus::InProgress) => true,
-            (TaskStatus::PendingReview, TaskStatus::Archived) => true,
             (TaskStatus::Pending, TaskStatus::InProgress) => true,
             (TaskStatus::Pending, TaskStatus::Archived) => true,
             (TaskStatus::InProgress, TaskStatus::Completed) => true,
@@ -474,7 +474,7 @@ impl super::TaskManage for ProjectDomainImpl {
                 task.po.status = TaskStatus::Completed;
                 task.po.end_at = Some(utils::current_timestamp_ms());
             }
-            TaskStatus::PendingReview | TaskStatus::Pending | TaskStatus::Archived => {
+            TaskStatus::Pending | TaskStatus::Archived => {
                 task.po.status = target_status;
             }
             TaskStatus::Cancelled => unreachable!("Cancelled rejected above"),

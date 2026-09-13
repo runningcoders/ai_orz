@@ -154,35 +154,6 @@ pub fn ProjectDetail(id: String) -> Element {
         }
     });
 
-    // 项目状态切换：启动(3)
-    let id_for_start = id.clone();
-    let start_project = move |_| {
-        let id_clone = id_for_start.clone();
-        spawn(async move {
-            let req = UpdateProjectStatusRequest {
-                id: id_clone.clone(),
-                status: ProjectStatus::InProgress,
-            };
-            match update_project_status(req).await {
-                Ok(_) => {
-                    toast.success("项目已启动");
-                    let req = with_stats_range(
-                        GetProjectRequest {
-                            id: id_clone.clone(),
-                            ..Default::default()
-                        },
-                        stats_range(),
-                    );
-                    match get_project(req).await {
-                        Ok(p) => project_res.set(Some(Ok(p))),
-                        Err(e) => toast.error(&e),
-                    }
-                }
-                Err(e) => toast.error(format!("启动失败: {}", e)),
-            }
-        });
-    };
-
     // 项目状态切换：完成(4)
     let id_for_complete = id.clone();
     let complete_project = move |_| {
@@ -323,13 +294,12 @@ pub fn ProjectDetail(id: String) -> Element {
         tasks_list.iter().map(|t| t.progress).sum::<i32>() / tasks_list.len() as i32
     };
 
-    // 按 6 种状态全量统计，构造 DonutChart 数据
-    // 顺序：进行中(3) → 待处理(2) → 待审核(1) → 已完成(4) → 已归档(5) → 已取消(0)
+    // 按 5 种状态全量统计，构造 DonutChart 数据
+    // 顺序：进行中(3) → 待处理(2) → 已完成(4) → 已归档(5) → 已取消(0)
     // 把"进行中"放最前让 HUD 主色橙最显眼，"已完成"绿色紧跟其后
-    let task_status_counts: [(i32, &str); 6] = [
+    let task_status_counts: [(i32, &str); 5] = [
         (3, "进行中"),
         (2, "待处理"),
-        (1, "待审核"),
         (4, "已完成"),
         (5, "已归档"),
         (0, "已取消"),
@@ -495,13 +465,10 @@ pub fn ProjectDetail(id: String) -> Element {
                         }
                     }
 
-                    // 区域 3：状态管理
+                    // 区域 3：状态管理（创建即启动，故只提供 完成 / 归档）
                     HudPanel {
                         title: "状态管理".to_string(),
                         div { class: "detail-action-row",
-                            if p.status != 3 {
-                                button { class: "btn hud-btn btn-primary", onclick: start_project, "启动项目" }
-                            }
                             if p.status != 4 {
                                 button { class: "btn hud-btn btn-primary", onclick: complete_project, "完成项目" }
                             }

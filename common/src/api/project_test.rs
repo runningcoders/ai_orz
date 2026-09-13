@@ -26,7 +26,7 @@ fn project_requests_and_responses_serialize_contract() {
         id: "project-1".to_string(),
         name: "Project Alpha".to_string(),
         description: Some("Build the first project".to_string()),
-        status: ProjectStatus::Active as i32,
+        status: ProjectStatus::InProgress as i32,
         priority: 3,
         tags: vec!["alpha".to_string()],
         root_user_id: "user-1".to_string(),
@@ -38,7 +38,7 @@ fn project_requests_and_responses_serialize_contract() {
     assert!(response.is_success());
     assert_eq!(
         response.data.unwrap()[0].status,
-        ProjectStatus::Active as i32
+        ProjectStatus::InProgress as i32
     );
 }
 

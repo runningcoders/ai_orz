@@ -74,13 +74,7 @@ pub async fn handle_send_task(ctx: RequestContext, params: SendTaskParams) -> Re
 
     let project_id = project.po.id.clone();
 
-    // 3. 启动项目（流转到 InProgress）
-    project_domain()
-        .project_manage()
-        .start(ctx.clone(), &project_id, user_id.clone())
-        .await?;
-
-    // 4. 创建 message（from=user, to=agent）→ 自动入队 event_queue
+    // 3. 创建 message（from=user, to=agent）→ 自动入队 event_queue
     //    consumer 异步消费 → wake_agent_brain（幂等）+ awaken → Agent 回复
     let cmd = SendToAgentCommand {
         from_id: &user_id,

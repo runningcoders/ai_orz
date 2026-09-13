@@ -18,6 +18,8 @@ fn init_test_env(pool: SqlitePool) -> (Arc<dyn ProjectDomain>, RequestContext) {
     crate::service::dao::project::init();
     crate::service::dao::task::init();
     crate::service::dao::artifact::init();
+    crate::service::dao::model_provider::init();
+    crate::service::dao::cortex::init();
 
     crate::service::dal::project::init();
     crate::service::dal::task::init();
@@ -56,7 +58,8 @@ async fn test_project_create_and_get(pool: SqlitePool) {
     assert_eq!(project.po.description, "Test Description");
     assert_eq!(project.po.priority, 1);
     assert_eq!(project.po.root_user_id, root_user_id);
-    assert_eq!(project.po.status, ProjectStatus::Active);
+    assert_eq!(project.po.status, ProjectStatus::InProgress);
+    assert!(project.po.start_at.is_some());
 
     let found = domain
         .project_manage()
@@ -276,11 +279,7 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
 
     let project_id = &project.po.id;
 
-    domain
-        .project_manage()
-        .start(ctx.clone(), project_id, "admin".to_string())
-        .await
-        .unwrap();
+    // 创建即启动：项目诞生起就是 InProgress
     let started = domain
         .project_manage()
         .get(ctx.clone(), project_id)
@@ -288,6 +287,7 @@ async fn test_project_start_complete_archive(pool: SqlitePool) {
         .unwrap()
         .unwrap();
     assert_eq!(started.po.status, ProjectStatus::InProgress);
+    assert!(started.po.start_at.is_some());
 
     domain
         .project_manage()

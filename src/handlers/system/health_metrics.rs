@@ -73,7 +73,7 @@ pub async fn get_health_metrics(
         .await
         .unwrap_or(0);
 
-    // Projects：total 默认（DAO 自动加 status != 0），active 限定 Active/PendingReview/InProgress
+    // Projects：total 默认（DAO 自动加 status != 0），active 限定 InProgress
     let total_projects = project_domain()
         .project_manage()
         .count_projects(ctx.clone(), ProjectQuery::default())
@@ -85,18 +85,14 @@ pub async fn get_health_metrics(
         .count_projects(
             ctx.clone(),
             ProjectQuery {
-                status_in: Some(vec![
-                    ProjectStatus::Active,
-                    ProjectStatus::PendingReview,
-                    ProjectStatus::InProgress,
-                ]),
+                status_in: Some(vec![ProjectStatus::InProgress]),
                 ..Default::default()
             },
         )
         .await
         .unwrap_or(0);
 
-    // Tasks：total 默认（DAO 自动加 status != 0），pending 限定 PendingReview/Pending/InProgress
+    // Tasks：total 默认（DAO 自动加 status != 0），pending 限定 Pending/InProgress
     let total_tasks = project_domain()
         .task_manage()
         .count_tasks(ctx.clone(), TaskQuery::default())
@@ -108,11 +104,7 @@ pub async fn get_health_metrics(
         .count_tasks(
             ctx,
             TaskQuery {
-                status_in: Some(vec![
-                    TaskStatus::PendingReview,
-                    TaskStatus::Pending,
-                    TaskStatus::InProgress,
-                ]),
+                status_in: Some(vec![TaskStatus::Pending, TaskStatus::InProgress]),
                 ..Default::default()
             },
         )

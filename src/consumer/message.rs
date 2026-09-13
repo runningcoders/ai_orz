@@ -669,9 +669,7 @@ impl MessageConsumer {
             let has_in_flight = tasks.iter().any(|t| {
                 matches!(
                     t.po.status,
-                    common::enums::TaskStatus::Pending
-                        | common::enums::TaskStatus::PendingReview
-                        | common::enums::TaskStatus::InProgress
+                    common::enums::TaskStatus::Pending | common::enums::TaskStatus::InProgress
                 )
             });
             if has_in_flight {

@@ -504,11 +504,7 @@ async fn test_a2a_project_with_inflight_task_stays_working(pool: SqlitePool) {
         )
         .await
         .expect("create a2a project");
-    ai_orz::service::domain::project::domain()
-        .project_manage()
-        .start(ctx.clone(), &project.po.id, user_b.clone())
-        .await
-        .expect("start a2a project");
+    // 创建即启动：项目诞生起就是 InProgress，无需显式 start
     ai_orz::service::domain::project::domain()
         .task_manage()
         .create(

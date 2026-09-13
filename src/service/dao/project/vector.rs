@@ -139,7 +139,7 @@ mod translate_tests {
         // 非白名单字段不触发转译（root_user_id / status_in 均不在 payload 白名单内）
         let q = ProjectQuery {
             root_user_id: Some("user-1".into()),
-            status_in: Some(vec![common::enums::ProjectStatus::Active]),
+            status_in: Some(vec![common::enums::ProjectStatus::InProgress]),
             ..Default::default()
         };
         assert!(translate_filters(&q).is_none());

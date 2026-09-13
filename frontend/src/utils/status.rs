@@ -35,11 +35,12 @@ pub fn agent_lifecycle_badge(status: i32) -> &'static str {
     }
 }
 
-/// 任务状态文本（0=已取消, 1=待审核, 2=待处理, 3=进行中, 4=已完成, 5=已归档）
+/// 任务状态文本（0=已取消, 2=待处理, 3=进行中, 4=已完成, 5=已归档；
+/// 1 为历史值 PendingReview，已并入待处理）
 pub fn task_status_text(status: i32) -> &'static str {
     match status {
         0 => "已取消",
-        1 => "待审核",
+        1 => "待处理",
         2 => "待处理",
         3 => "进行中",
         4 => "已完成",
@@ -52,7 +53,7 @@ pub fn task_status_text(status: i32) -> &'static str {
 pub fn task_status_badge(status: i32) -> &'static str {
     match status {
         0 => "badge hud-badge badge-sm badge-error",
-        1 => "badge hud-badge badge-sm badge-warning",
+        1 => "badge hud-badge badge-sm badge-info",
         2 => "badge hud-badge badge-sm badge-info",
         3 => "badge hud-badge badge-sm badge-primary",
         4 => "badge hud-badge badge-sm badge-success",
@@ -73,12 +74,13 @@ pub fn progress_tone(progress: i32) -> &'static str {
     }
 }
 
-/// 项目状态文本（0=已删除, 1=活跃, 2=待审核, 3=进行中, 4=已完成, 5=已归档）
+/// 项目状态文本（0=已删除, 3=进行中, 4=已完成, 5=已归档；
+/// 1/2 为历史值 Active/PendingReview，已并入进行中）
 pub fn project_status_text(status: i32) -> &'static str {
     match status {
         0 => "已删除",
-        1 => "活跃",
-        2 => "待审核",
+        1 => "进行中",
+        2 => "进行中",
         3 => "进行中",
         4 => "已完成",
         5 => "已归档",
@@ -86,12 +88,12 @@ pub fn project_status_text(status: i32) -> &'static str {
     }
 }
 
-/// 项目状态徽章 class（0=error, 1=info, 2=warning, 3=primary, 4=success, 5=neutral）
+/// 项目状态徽章 class（0=error, 3=primary, 4=success, 5=neutral）
 pub fn project_status_badge(status: i32) -> &'static str {
     match status {
         0 => "badge hud-badge badge-sm badge-error",
-        1 => "badge hud-badge badge-sm badge-info",
-        2 => "badge hud-badge badge-sm badge-warning",
+        1 => "badge hud-badge badge-sm badge-primary",
+        2 => "badge hud-badge badge-sm badge-primary",
         3 => "badge hud-badge badge-sm badge-primary",
         4 => "badge hud-badge badge-sm badge-success",
         5 => "badge hud-badge badge-sm badge-neutral",
@@ -183,15 +185,14 @@ pub fn agent_runtime_badge_str(state: &str) -> &'static str {
 ///
 /// 颜色语义与 `task_status_badge` 对齐，但用更鲜艳的 hex 值适配 HUD 深色背景：
 /// - 0 已取消：红色 #ef4444
-/// - 1 待审核：橙黄 #f59e0b
-/// - 2 待处理：蓝色 #3b82f6
+/// - 2 待处理：蓝色 #3b82f6（历史值 1 同色）
 /// - 3 进行中：HUD 主色橙 #fa520f
 /// - 4 已完成：绿色 #10b981
 /// - 5 已归档：灰色 #6b7280
 pub fn task_status_color(status: i32) -> &'static str {
     match status {
         0 => "#ef4444",
-        1 => "#f59e0b",
+        1 => "#3b82f6",
         2 => "#3b82f6",
         3 => "#fa520f",
         4 => "#10b981",

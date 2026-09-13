@@ -170,12 +170,6 @@ impl Project {
         matches!(self.po.status, ProjectStatus::Archived)
     }
 
-    /// 启动项目
-    pub fn start(&mut self) {
-        self.po.status = ProjectStatus::InProgress;
-        self.po.start_at = Some(utils::current_timestamp_ms());
-    }
-
     /// 完成项目
     pub fn complete(&mut self) {
         self.po.status = ProjectStatus::Completed;
@@ -197,6 +191,15 @@ impl Project {
         if let Some(owner_agent_id) = &self.po.owner_agent_id {
             s.push_str(&format!("- 负责Agent: {}\n", owner_agent_id));
         }
+        if let Some(start_at) = self.po.start_at {
+            s.push_str(&format!("- 启动时长: {}\n", relative_duration(start_at)));
+        }
+        if let Some(last_followup_at) = self.po.last_followup_at {
+            s.push_str(&format!(
+                "- 距上次跟进: {}\n",
+                relative_duration(last_followup_at)
+            ));
+        }
         if let Some(workflow) = &self.po.workflow
             && !workflow.trim().is_empty()
         {
@@ -207,8 +210,26 @@ impl Project {
         {
             s.push_str(&format!("- 指导建议: {}\n", guidance));
         }
+        s.push_str("- 请审视：项目状态与进度是否与实际进展一致？必要时通过 update_project_status 流转状态、update_project 更新执行计划与跟进时间。\n");
         s
     }
+}
+
+/// 毫秒时间戳 → 相对当前时刻的可读时长（如 "3 天" / "5 小时" / "12 分钟"）
+fn relative_duration(from_ms: i64) -> String {
+    let elapsed_ms = (utils::current_timestamp_ms() - from_ms).max(0);
+    let minutes = elapsed_ms / 60_000;
+    if minutes < 1 {
+        return "刚刚".to_string();
+    }
+    if minutes < 60 {
+        return format!("{minutes} 分钟");
+    }
+    let hours = minutes / 60;
+    if hours < 24 {
+        return format!("{hours} 小时");
+    }
+    format!("{} 天", hours / 24)
 }
 
 impl ProjectPo {
@@ -355,8 +376,7 @@ pub fn progress_summary_from_tasks(tasks: &[crate::models::task::Task]) -> Proje
         match task.po.status {
             common::enums::task::TaskStatus::Completed => completed += 1,
             common::enums::task::TaskStatus::InProgress => in_progress += 1,
-            common::enums::task::TaskStatus::Pending
-            | common::enums::task::TaskStatus::PendingReview => pending += 1,
+            common::enums::task::TaskStatus::Pending => pending += 1,
             common::enums::task::TaskStatus::Cancelled => cancelled += 1,
             common::enums::task::TaskStatus::Archived => {}
         }

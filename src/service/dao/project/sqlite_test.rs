@@ -158,8 +158,8 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<()> {
     // Create projects with different statuses
     let mut projects = Vec::new();
     for status in [
-        ProjectStatus::Active,
-        ProjectStatus::Active,
+        ProjectStatus::InProgress,
+        ProjectStatus::InProgress,
         ProjectStatus::Completed,
         ProjectStatus::Archived,
     ]
@@ -189,23 +189,23 @@ async fn test_list_by_root_user_and_status(pool: SqlitePool) -> Result<()> {
         dao.insert(ctx.clone(), p).await?;
     }
 
-    // Filter for Active
+    // Filter for InProgress
     let list = dao
         .list_by_root_user_and_status(
             ctx.clone(),
             "test-user",
-            vec![ProjectStatus::Active],
+            vec![ProjectStatus::InProgress],
             Some(10),
         )
         .await?;
     assert_eq!(list.len(), 2);
 
-    // Filter for Active and Completed
+    // Filter for InProgress and Completed
     let list = dao
         .list_by_root_user_and_status(
             ctx.clone(),
             "test-user",
-            vec![ProjectStatus::Active, ProjectStatus::Completed],
+            vec![ProjectStatus::InProgress, ProjectStatus::Completed],
             Some(10),
         )
         .await?;
@@ -312,7 +312,7 @@ async fn test_count_functions(pool: SqlitePool) -> Result<()> {
             "test-user".to_string(),
         );
         if i % 2 == 0 {
-            project.status = ProjectStatus::Active;
+            project.status = ProjectStatus::InProgress;
         } else {
             project.status = ProjectStatus::Completed;
         }
@@ -323,7 +323,7 @@ async fn test_count_functions(pool: SqlitePool) -> Result<()> {
     assert_eq!(total, 5);
 
     let active = dao
-        .count_by_root_user_and_status(ctx, "test-user", ProjectStatus::Active)
+        .count_by_root_user_and_status(ctx, "test-user", ProjectStatus::InProgress)
         .await?;
     assert_eq!(active, 3);
     Ok(())
