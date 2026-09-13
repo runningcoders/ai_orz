@@ -420,14 +420,16 @@ pub struct SaveLongTermMemoryResponse {
 /// 将未沉淀的短期记忆总结并沉淀为长期知识图谱。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Params)]
 pub struct SettleMemoryParams {
-    /// 每次处理的短期记忆数量上限，默认 10。
+    /// 每次处理的短期记忆数量上限；不传时用框架自适应上限，实际批量还会按模型上下文预算截断。
     pub limit: Option<usize>,
 }
 
 /// 沉淀记忆响应。
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SettleMemoryResponse {
-    /// 沉淀创建的知识节点数量。
+    /// 本批完成沉淀流程的短期记忆条数（沉淀的产出是知识图谱节点/关系，由记忆工具调用记录追溯）。
+    ///
+    /// 0 表示无待沉淀记忆或 Agent 非空闲。
     pub settled_count: usize,
 }
 

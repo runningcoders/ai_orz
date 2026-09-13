@@ -322,13 +322,14 @@ pub fn OrganizationInfo() -> Element {
                 div { class: "card-body",
                     div { class: "space-y-4",
                         div { class: "flex items-start justify-between gap-4",
-                            div { class: "flex-1",
+                            // min-w-0：允许文本列收缩换行，否则把右侧按钮挤出面板
+                            div { class: "flex-1 min-w-0",
                                 div { class: "font-medium", "重建向量库" }
-                                label { class: "label",
-                                    span { class: "label-text-alt",
-                                        "对全部 7 类实体（Agent / 记忆 / 技能 / 任务 / 项目 / 消息 / 工具）的语义向量索引做全量重建，分页逐条重新向量化。"
-                                        "源数据不受影响，但会全量调用 Embedding 接口（可能产生费用），数据量大时持续数分钟。"
-                                    }
+                                // ⚠️ 长描述不能用 DaisyUI `.label`（v5 带 white-space:nowrap，
+                                // 无头实测 720px 列下文本列被撑到 1302px、按钮被推出面板外）
+                                p { class: "text-sm text-base-content/60 mt-1",
+                                    "对全部 7 类实体（Agent / 记忆 / 技能 / 任务 / 项目 / 消息 / 工具）的语义向量索引做全量重建，分页逐条重新向量化。"
+                                    "源数据不受影响，但会全量调用 Embedding 接口（可能产生费用），数据量大时持续数分钟。"
                                 }
                             }
                             button {
@@ -368,7 +369,7 @@ pub fn OrganizationInfo() -> Element {
                 show: show_rebuild_confirm(),
                 title: "确认重建向量库".to_string(),
                 message: "将清空现有向量索引并按页全量重新向量化（源数据不变）。过程中会持续调用 Embedding 接口，可能产生费用并持续数分钟。确定继续？".to_string(),
-                confirm_class: Some("btn-primary".to_string()),
+                confirm_class: Some("btn hud-btn btn-primary".to_string()),
                 on_confirm: handle_rebuild,
                 on_cancel: move |_| show_rebuild_confirm.set(false),
             }

@@ -151,7 +151,7 @@ pub fn RuntimePanel(props: RuntimePanelProps) -> Element {
                 title: "确认取消思考".to_string(),
                 message: "取消后 Agent 将在当前轮次完成后退出思考，已消耗的 token 不会回退。确定取消？".to_string(),
                 confirm_text: Some("确认取消".to_string()),
-                confirm_class: Some("btn-warning".to_string()),
+                confirm_class: Some("btn hud-btn btn-warning".to_string()),
                 on_confirm: on_cancel_confirm,
                 on_cancel: move |_| show_cancel_confirm.set(false),
             }

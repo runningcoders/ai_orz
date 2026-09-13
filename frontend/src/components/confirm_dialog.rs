@@ -17,7 +17,7 @@ pub struct ConfirmDialogProps {
     pub confirm_text: Option<String>,
     /// 取消按钮文案（默认"取消"）
     pub cancel_text: Option<String>,
-    /// 确认按钮样式（默认 btn-error）
+    /// 确认按钮样式（默认 btn-error；为完整 class 覆盖，必须含 `btn hud-btn` 基类，如 "btn hud-btn btn-primary"）
     pub confirm_class: Option<String>,
     /// 确认回调
     pub on_confirm: EventHandler<()>,
