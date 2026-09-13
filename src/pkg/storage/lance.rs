@@ -618,9 +618,11 @@ mod prefilter_tests {
             .await
             .unwrap();
 
-        let mut new_p = VectorPayload::default();
-        new_p.agent_id = Some("agent-1".into());
-        new_p.is_published = Some(true); // 发布翻转场景
+        let new_p = VectorPayload {
+            agent_id: Some("agent-1".into()),
+            is_published: Some(true), // 发布翻转场景
+            ..Default::default()
+        };
         store.update_payload("up", "a1", &new_p).await.unwrap();
 
         let row = store.get("up", "a1").await.unwrap().unwrap();

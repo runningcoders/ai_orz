@@ -242,20 +242,20 @@ impl super::VectorStore for InMemoryVectorStore {
         payload: &crate::models::vector::VectorPayload,
     ) -> Result<()> {
         let mut collections = self.collections.write().await;
-        if let Some(coll) = collections.get_mut(collection) {
-            if let Some(entry) = coll.entries.iter_mut().find(|e| e.id == id) {
-                entry.payload = payload.clone();
-                entry.meta.payload_hash = payload.hash();
-                // 异步持久化（不阻塞调用）
-                let coll_clone = coll.clone();
-                let store_clone = self.clone();
-                let collection_name = collection.to_string();
-                tokio::spawn(async move {
-                    let _ = store_clone
-                        .save_collection(&collection_name, &coll_clone)
-                        .await;
-                });
-            }
+        if let Some(coll) = collections.get_mut(collection)
+            && let Some(entry) = coll.entries.iter_mut().find(|e| e.id == id)
+        {
+            entry.payload = payload.clone();
+            entry.meta.payload_hash = payload.hash();
+            // 异步持久化（不阻塞调用）
+            let coll_clone = coll.clone();
+            let store_clone = self.clone();
+            let collection_name = collection.to_string();
+            tokio::spawn(async move {
+                let _ = store_clone
+                    .save_collection(&collection_name, &coll_clone)
+                    .await;
+            });
         }
         Ok(())
     }
@@ -386,9 +386,11 @@ mod filter_tests {
         let mut p = params_default();
         p.payload.is_published = Some(false);
         store.upsert("t", "a1", &p).await.unwrap();
-        let mut new_payload = crate::models::vector::VectorPayload::default();
-        new_payload.is_published = Some(true);
-        new_payload.agent_id = Some("agent-1".into());
+        let new_payload = crate::models::vector::VectorPayload {
+            is_published: Some(true),
+            agent_id: Some("agent-1".into()),
+            ..Default::default()
+        };
         store.update_payload("t", "a1", &new_payload).await.unwrap();
         let row = store.get("t", "a1").await.unwrap().unwrap();
         assert_eq!(row.payload.is_published, Some(true));

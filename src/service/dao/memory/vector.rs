@@ -207,8 +207,10 @@ mod translate_tests {
 
     #[test]
     fn test_translate_agent_only() {
-        let mut q = MemoryQuery::default();
-        q.agent_id = Some("agent-1".into());
+        let q = MemoryQuery {
+            agent_id: Some("agent-1".into()),
+            ..Default::default()
+        };
         let f = translate_filters(&q).unwrap();
         assert_eq!(
             f,
@@ -218,9 +220,11 @@ mod translate_tests {
 
     #[test]
     fn test_translate_include_shared_or() {
-        let mut q = MemoryQuery::default();
-        q.agent_id = Some("agent-1".into());
-        q.include_shared = true;
+        let q = MemoryQuery {
+            agent_id: Some("agent-1".into()),
+            include_shared: true,
+            ..Default::default()
+        };
         let f = translate_filters(&q).unwrap();
         assert_eq!(
             f,
@@ -233,10 +237,12 @@ mod translate_tests {
 
     #[test]
     fn test_translate_combined_all() {
-        let mut q = MemoryQuery::default();
-        q.agent_id = Some("agent-1".into());
-        q.task_id = Some("task-9".into());
-        q.node_type = Some("concept".into());
+        let q = MemoryQuery {
+            agent_id: Some("agent-1".into()),
+            task_id: Some("task-9".into()),
+            node_type: Some("concept".into()),
+            ..Default::default()
+        };
         let f = translate_filters(&q).unwrap();
         // All[Eq(agent), Eq(task), Eq(entity_type)]
         match f {
