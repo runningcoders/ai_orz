@@ -6,7 +6,9 @@
 //! - 持久化到磁盘，支持元数据过滤
 //! - 单文件存储，跨平台完美支持
 
-use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
+use crate::models::vector::{
+    VectorIndexParams, VectorMeta, VectorPayload, VectorRow, VectorSearchHit,
+};
 use arrow_array::types::Float32Type;
 use arrow_array::{
     FixedSizeListArray, Float32Array, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
@@ -289,8 +291,10 @@ impl super::VectorStore for LanceVectorStore {
                         row: VectorRow {
                             id: id_array.value(i).to_string(),
                             vector: Vec::new(), // LanceDB 搜索结果不返回原始向量
+                            payload: VectorPayload::default(),
                             meta: VectorMeta {
                                 content_hash: hash_array.value(i).to_string(),
+                                payload_hash: VectorPayload::default().hash(),
                                 embedding_model: model_array.value(i).to_string(),
                                 indexed_at: indexed_at_array.value(i),
                                 expire_at: expire_at_val,
@@ -351,8 +355,10 @@ impl super::VectorStore for LanceVectorStore {
                 return Ok(Some(VectorRow {
                     id: id_array.value(0).to_string(),
                     vector: Vec::new(), // 不返回原始向量（LanceDB 查询需要单独获取）
+                    payload: VectorPayload::default(),
                     meta: VectorMeta {
                         content_hash: hash_array.value(0).to_string(),
+                        payload_hash: VectorPayload::default().hash(),
                         embedding_model: model_array.value(0).to_string(),
                         indexed_at: indexed_at_array.value(0),
                         expire_at: expire_at_val,

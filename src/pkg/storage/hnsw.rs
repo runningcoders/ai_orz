@@ -460,8 +460,10 @@ impl super::VectorStore for HnswStore {
         let row = VectorRow {
             id: id.to_string(),
             vector: params.vector.clone(),
+            payload: params.payload.clone(),
             meta: VectorMeta {
                 content_hash: params.content_hash.clone(),
+                payload_hash: params.payload_hash.clone(),
                 embedding_model: params.embedding_model.clone(),
                 indexed_at: now,
                 expire_at: params.expire_at,

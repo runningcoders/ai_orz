@@ -8,7 +8,9 @@
 //! - 本模块 = 通用向量索引层（纯底层，无业务逻辑）
 //! - 各业务 DAO = 决定"向量化什么、什么时候、用什么模型"
 
-use crate::models::vector::{VectorIndexParams, VectorMeta, VectorRow, VectorSearchHit};
+use crate::models::vector::{
+    VectorIndexParams, VectorMeta, VectorPayload, VectorRow, VectorSearchHit,
+};
 use async_trait::async_trait;
 use common::error::Result;
 use sqlx::SqlitePool;
@@ -158,8 +160,10 @@ impl VectorStore for SqliteVssStore {
                         row: VectorRow {
                             id: source_id,
                             vector: Vec::new(), // SqliteVSS 不存储原始向量
+                            payload: VectorPayload::default(),
                             meta: VectorMeta {
                                 content_hash,
+                                payload_hash: VectorPayload::default().hash(),
                                 embedding_model: model,
                                 indexed_at: 0, // SQLite 中没有存储索引时间，暂时用 0
                                 expire_at,
@@ -185,8 +189,10 @@ impl VectorStore for SqliteVssStore {
             VectorRow {
                 id: source_id,
                 vector: Vec::new(), // SqliteVSS 不存储原始向量
+                payload: VectorPayload::default(),
                 meta: VectorMeta {
                     content_hash,
+                    payload_hash: VectorPayload::default().hash(),
                     embedding_model: model,
                     indexed_at: 0,
                     expire_at,
