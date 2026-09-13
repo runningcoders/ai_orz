@@ -9,8 +9,14 @@ scope:
   - "src/pkg/storage/hnsw.rs"
   - "src/pkg/storage/sqlite_vss.rs"
   - "src/models/vector.rs"
-  - "src/service/dal/**/*.rs"（embed_entity 调用点）
+  - "src/service/dal/**/*.rs"（embed_entity 调用点 + 7 域 rebuild_vectors）
   - "src/service/dao/**/vector.rs"（7 域 Vector DAO：业务 Query → VectorFilter 转译）
+  - "src/handlers/system/vector_rebuild.rs"（SuperAdmin 全量重建入口）
+  - "src/handlers/finance/model_provider/rebuild_vectors_task.rs"（RebuildVectorsTask 后台任务）
+  - "src/pkg/background_task/progress.rs"（TaskProgressCounter 细粒度进度计数）
+  - "src/router.rs"（/vector-rebuild 路由注册）
+  - "common/src/api/system.rs"（RebuildVectorsRequest DTO）
+  - "frontend/src/api/system.rs"（rebuild_vectors 前端 API）
 source_files:
   - 'src/pkg/storage/vector.rs:Ln-Lm（VectorStore trait：init_collection/upsert/search/get/delete/clear_collection/flush；search 新增 filter 参数 + update_payload；通用 VectorSearchHit/VectorRow/VectorMeta/VectorIndexParams/VectorCollection）'
   - 'src/pkg/storage/mem_vector.rs:Ln-Lm（InMemoryVectorStore 内存实现：HashMap+余弦距离、Bincode Encode/Decode 懒持久化；payload + filter 内存求值 + update_payload）'
@@ -41,6 +47,17 @@ source_files:
   - docs/wiki/zh/content/基础设施/基础设施.md
 
   - docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md
+
+  - 'src/handlers/system/vector_rebuild.rs（SuperAdmin 全量重建 handler：POST /api/v1/system/vector-rebuild → check_super_admin → 注册 RebuildVectorsTask 后台任务 → 返回 task_id）'
+  - 'src/handlers/finance/model_provider/rebuild_vectors_task.rs（RebuildVectorsTask：BackgroundTask 实现；遍历 7 域 agent/memory/skill/task/project/message/tool 调用各 DAL rebuild_vectors(ctx, progress)；新增 TaskProgressCounter 跨批次上报已处理条数；任务互斥——已有 Running 时返回 409）'
+  - 'src/pkg/background_task/progress.rs（TaskProgressCounter：后台任务细粒度进度计数；Arc<AtomicUsize> + Relaxed Ordering；跨 await 可克隆零拷贝；语义与进度条 current_step/total_steps 正交）'
+  - 'src/service/dal/mod.rs（VECTOR_REBUILD_PAGE_SIZE const = 200；各 DAL rebuild_vectors trait 签名统一：async fn rebuild_vectors(&self, ctx: RequestContext, progress: &TaskProgressCounter) -> Result<()>）'
+  - 'src/service/dal/memory.rs / message.rs / project.rs / skill.rs / task.rs / tool.rs（各域 rebuild_vectors：分页扫描——按 VECTOR_REBUILD_PAGE_SIZE=200 逐条取出实体 → 调用 try_build_vector_params_for_entity → embed → upsert → progress.advance(n)）'
+  - 'src/service/dal/agent/impl.rs（AgentDalImpl 同步升级：rebuild_vectors(ctx, progress) 分页扫描 7 类实体）'
+  - 'src/router.rs（system_routes() 新增 POST /vector-rebuild → handlers::system::vector_rebuild::rebuild_vectors_handler；路由层 require_role_middleware(UserRole::Admin)）'
+  - 'common/src/api/system.rs（RebuildVectorsRequest 无参 DTO：derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, Params)）'
+  - 'frontend/src/api/system.rs（rebuild_vectors() async 前端 API：POST /api/v1/system/vector-rebuild → 返回 TaskIdResponse → 拿 task_id 轮询 GET /api/v1/system/tasks/{task_id}/progress）'
+  - 'frontend/src/pages/organization/info.rs（组织设置页 SuperAdmin 触发全量重建入口）'
 
   - 【平行卡】docs/wiki/knowledge/zh/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵/Embedding Provider 生命周期：ModelProviderStatus Disabled(2) + 创建不阻塞策略 + 重建触发条件矩阵.md（Embedding 业务生命周期与重建触发条件）---
 
@@ -74,6 +91,12 @@ source_files:
    - **关键设计决策**：payload 不是全字段 → 召回命中后**必须回业务表**取完整 PO（业务表是 SSOT，payload 是召回优化）。tags 落 payload 但第一版不下推（转译白名单不含 tags，回表兜底）。零兼容包袱：旧向量数据目录整体删除，不含任何 schema 迁移逻辑。
    - **消除的历史缺陷**：旧架构是 post-filter——向量库返回全局 Top-K 后在业务层过滤。多租户场景下，A 用户的 Agent 搜索可能被 B 用户的数据占满 Top-K，过滤后所剩无几。pre-filter 在向量搜索时就只考虑符合条件的行，彻底修复这个召回质量问题。
 
+(g) **全量向量索引重建（SuperAdmin 入口 + DAL 分页 + 后台任务进度）**（2026-09-13 增量，commit 04c4e567，Pre-Filter 改造的配套运营能力）：为 Pre-Filter 改造提供全量重建能力，让旧数据（无 payload 行）一次性补齐。四层组件：
+   - **SuperAdmin 专用入口**：`src/handlers/system/vector_rebuild.rs` 新增 handler，路由 `POST /api/v1/system/vector-rebuild`。路由层 `require_role_middleware(UserRole::Admin)` + handler 内部 `check_super_admin(&ctx)?` 两道关——普通 Admin（非 SuperAdmin）也无法触发。返回 `TaskIdResponse { task_id }`，前端拿 task_id 轮询 `GET /api/v1/system/tasks/{task_id}/progress` 展示进度条 + 已处理条数。
+   - **DAL 7 域统一 rebuild_vectors 签名（带分页）**：`src/service/dal/mod.rs` 新增 `const VECTOR_REBUILD_PAGE_SIZE: usize = 200`。7 域（memory/message/project/skill/task/tool/agent）`rebuild_vectors` trait 签名统一升级为 `async fn rebuild_vectors(&self, ctx: RequestContext, progress: &TaskProgressCounter) -> Result<()>`。实现逻辑：**分页扫描**（`LIMIT 200 OFFSET page*200`）→ 每批取完后 `progress.advance(batch.len())` 上报条数 → 逐条调用 `try_build_vector_params_for_entity`（embed → upsert）。排序键用 `updated_at DESC, id DESC`——重建期间被新写路径自动 upsert 的实体由写路径兜底，偏移漂移无副作用。
+   - **后台任务进度基建 TaskProgressCounter**：`src/pkg/background_task/progress.rs` 新增，定位是**任务对象 ↔ 执行方（DAL）之间的进度通道**。内部 `Arc<AtomicUsize>` + `Relaxed` Ordering（计数仅用于展示，不参与同步决策），可克隆、跨 await 零拷贝。与 BackgroundTask 的步骤级进度（`current_step/total_steps`）**正交**——进度条表达「走到第几步」，计数表达「这一步/整体已处理多少条」。为什么不直接把计数放在 RebuildVectorsTask 上：DAL 在 service 层，RebuildVectorsTask 在 handlers 层，service 不能依赖 handler 类型。句柄放 background_task（基建层），两侧都能引用。
+   - **RebuildVectorsTask 后台任务**：已存在的任务类型，本次升级携带 TaskProgressCounter 调用 7 域 DAL。遍历顺序 agent → memory → skill → task → project → message → tool，每步进度文案拼「(i/7) 正在重建 X 向量索引（已处理 N 条）」。**互斥语义**：已有 Running 的 RebuildVectorsTask 时，新任务注册会失败返回 409——避免多个重建同时打 Embedding API 限流。完成后 result JSON 附带 `processed` 字段让前端知道总处理条数。
+
 ## §2 关键文件路径表格（读代码直接跳）
 
 | 文件 | 角色 | 关键结构/入口 |
@@ -98,6 +121,16 @@ source_files:
 | 【③ Wiki 长文 1】存储系统.md §向量存储抽象与多后端 | VectorStore 类图、后端对比表、init_collection 时序 | docs/wiki/zh/content/基础设施/存储系统/存储系统.md |
 | 【③ Wiki 长文 2】记忆和向量系统.md §Vectorizable | 10 PO Vectorizable 列表 | docs/wiki/zh/content/数据模型/消息和记忆模型/记忆和向量系统.md |
 | 【平行卡】三位一体混合搜索（FTS5 + 向量 + 合并排序） | DAL 层 search() 统一策略 | docs/wiki/knowledge/zh/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）/三位一体混合搜索：FTS5%20关键词%20+%20向量语义%20+%20合并排序%20（6%20DAO%20统一%20search%20模式%20+%20向量失败降级）.md |
+| [handlers/system/vector_rebuild.rs](src/handlers/system/vector_rebuild.rs) | **新增** SuperAdmin 全量重建 handler | `rebuild_vectors()` → `check_super_admin()` → `registry().register(RebuildVectorsTask)` → 返回 `TaskIdResponse` |
+| [handlers/finance/model_provider/rebuild_vectors_task.rs](src/handlers/finance/model_provider/rebuild_vectors_task.rs) | RebuildVectorsTask 后台任务（升级） | `BackgroundTask` impl；新增 `TaskProgressCounter progress` 字段；7 域 DAL `rebuild_vectors(ctx, &progress)` 调用；互斥 409；完成 result 含 `processed` 条数 |
+| [pkg/background_task/progress.rs](src/pkg/background_task/progress.rs) | **新增** TaskProgressCounter | `Arc<AtomicUsize>`；`new()` / `processed()` / `advance(count)`；Relaxed Ordering；跨 await 可克隆零拷贝 |
+| [service/dal/mod.rs](src/service/dal/mod.rs) | **扩展** VECTOR_REBUILD_PAGE_SIZE | `pub const VECTOR_REBUILD_PAGE_SIZE: usize = 200`；各 DAL rebuild_vectors trait 签名统一 |
+| [service/dal/memory.rs](src/service/dal/memory.rs) / [message.rs](src/service/dal/message.rs) / [project.rs](src/service/dal/project.rs) / [skill.rs](src/service/dal/skill.rs) / [task.rs](src/service/dal/task.rs) / [tool.rs](src/service/dal/tool.rs) | **扩展** 各域分页 rebuild_vectors | `rebuild_vectors(ctx, progress)` → 分页扫描（LIMIT 200 OFFSET page*200）→ `progress.advance(batch.len())` → embed + upsert |
+| [service/dal/agent/impl.rs](src/service/dal/agent/impl.rs) | **扩展** AgentDalImpl rebuild_vectors | 同步升级：rebuild_vectors(ctx, progress) 分页扫描 |
+| [router.rs](src/router.rs) | **扩展** /vector-rebuild 路由 | `system_routes()` 新增 `"/vector-rebuild".post(handlers::system::vector_rebuild::rebuild_vectors_handler)`；路由层 require_role_middleware(UserRole::Admin) |
+| [common/src/api/system.rs](common/src/api/system.rs) | **扩展** RebuildVectorsRequest DTO | `#[derive(...)] pub struct RebuildVectorsRequest {}`（无参数） |
+| [frontend/src/api/system.rs](frontend/src/api/system.rs) | **扩展** rebuild_vectors 前端 API | `pub async fn rebuild_vectors() -> Result<TaskIdResponse, ApiError>` → POST /api/v1/system/vector-rebuild |
+| [frontend/src/pages/organization/info.rs](frontend/src/pages/organization/info.rs) | SuperAdmin 触发入口 | 组织设置页 SuperAdmin 权限按钮 → 调用 rebuild_vectors() → 轮询 progress |
 
 ## §3 架构约定
 
@@ -123,3 +156,7 @@ source_files:
 9. ✅ **转译下沉 DAO 层**：VectorFilter 只暴露通用谓词表达式，哪些字段能下推由实体 DAO 自己决定。**禁止 Domain 层或 Service 层直接构造 VectorFilter**——转译必须在各业务 DAO 的 `*VectorDao` 内部完成。
 10. ✅ **Hnsw take 放大 4 倍补偿命中率**：Hnsw 是 ANN 近似搜索，pre-filter 让候选集比全局 Top-K 更难命中。固定 `take = top_k * 4` 补偿。测试断言 pre-filter 后 recall@k 不低于 post-filter 基线。
 11. ✅ **reindex_decision 三态不可跳过**：必须在 upsert 前调用，返回 Skip/PayloadOnly/FullReindex。PayloadOnly → update_payload（skip embedding）；FullReindex → 完整 upsert；Skip → 直接返回。禁止跳过 reindex_decision 判断直接 upsert。
+12. ✅ **全量重建必须走后台任务**：不能同步阻塞 HTTP 连接。RebuildVectorsTask 注册到 BackgroundTask registry，返回 task_id 后由前端轮询 GET /api/v1/system/tasks/{task_id}/progress 获取进度。禁止 handlers 层直接 await DAL rebuild_vectors（同步阻塞 → SuperAdmin 页面卡死、Embedding API 超时连锁放大）。
+13. ✅ **SuperAdmin guard 强制**：handler 内部 `check_super_admin()` 二次校验，路由层 system 域 + `require_role_middleware(UserRole::Admin)` 两道关。普通 Admin（如模型提供商管理员）也无法触发。前端组织设置页按钮必须带 SuperAdmin 条件渲染。
+14. ✅ **重建任务互斥 + Provider 维度**：已有 Running 的 RebuildVectorsTask 时，新任务注册返回 409。避免多个重建同时打 Embedding API 限流。RebuildVectorsTask 内部遍历 provider → 在该 provider 维度完成所有 7 域重建后再切下一个 provider。
+15. ✅ **DAL rebuild_vectors 签名统一携带 progress**：7 域 `async fn rebuild_vectors(&self, ctx: RequestContext, progress: &TaskProgressCounter) -> Result<()>` 签名一致。progress 句柄由 background_task 基建层提供（Arc<AtomicUsize> + Relaxed Ordering），service 层和 handler 层都能引用，不产生跨层类型依赖。禁止在 service 层直接写进度文案（handler 层才有业务语义）。

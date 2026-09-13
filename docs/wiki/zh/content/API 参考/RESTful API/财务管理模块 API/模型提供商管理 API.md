@@ -417,3 +417,18 @@ R --> T["RebuildVectorsTask"]
 - [src/handlers/finance/model_provider/rebuild_progress.rs:1-50](src/handlers/finance/model_provider/rebuild_progress.rs#L1-L50)
 - [common/src/api/tavily_integration.rs:1-107](common/src/api/tavily_integration.rs#L1-L107)
 - [src/service/domain/finance/identity_credential.rs:1-454](src/service/domain/finance/identity_credential.rs#L1-L454)
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 088737a9→HEAD）
+**主题**：向量全量索引重建（SuperAdmin 入口 + DAL 分页 + 后台任务进度）
+**关键变更**：
+1. 新增 `POST /api/v1/system/vector-rebuild` SuperAdmin 专属入口（路由层 require_role_middleware + handler 内部 check_super_admin 两道 guard）
+2. 7 域 DAL（memory/message/project/skill/task/tool/agent）rebuild_vectors 统一升级签名为 `async fn rebuild_vectors(ctx, progress: &TaskProgressCounter)` + 分页扫描（VECTOR_REBUILD_PAGE_SIZE=200）
+3. 新增 `src/pkg/background_task/progress.rs` TaskProgressCounter（Arc<AtomicUsize> + Relaxed Ordering，跨 await 可克隆零拷贝）
+4. RebuildVectorsTask 携带 TaskProgressCounter 遍历 7 域 DAL，进度文案拼「(i/7) 正在重建 X 向量索引（已处理 N 条）」；互斥语义——已有 Running 时返回 409
+**涉及 RAG 卡**：向量存储抽象 VectorStore

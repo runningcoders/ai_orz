@@ -395,3 +395,18 @@ DAL 层通过组合模式将多个 DAO 协调为面向领域的服务，统一�
     - 按主题分组聚合，创建知识节点与引用关系。
     - 标记短期记忆为已沉淀。
   - 参考路径：[src/service/dal/memory.rs:578-652](src/service/dal/memory.rs#L578-L652)
+---
+
+### 本文关联的文档（2026-09-13 增量）
+- 🎴 RAG 卡: docs/wiki/knowledge/zh/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity/向量存储抽象 VectorStore + 多后端 + Vectorizable trait 统一索引入口 + embed_entity.md
+
+---
+
+### 更新摘要（2026-09-13，base 088737a9→HEAD）
+**主题**：向量全量索引重建（SuperAdmin 入口 + DAL 分页 + 后台任务进度）
+**关键变更**：
+1. 新增 `POST /api/v1/system/vector-rebuild` SuperAdmin 专属入口（路由层 require_role_middleware + handler 内部 check_super_admin 两道 guard）
+2. 7 域 DAL（memory/message/project/skill/task/tool/agent）rebuild_vectors 统一升级签名为 `async fn rebuild_vectors(ctx, progress: &TaskProgressCounter)` + 分页扫描（VECTOR_REBUILD_PAGE_SIZE=200）
+3. 新增 `src/pkg/background_task/progress.rs` TaskProgressCounter（Arc<AtomicUsize> + Relaxed Ordering，跨 await 可克隆零拷贝）
+4. RebuildVectorsTask 携带 TaskProgressCounter 遍历 7 域 DAL，进度文案拼「(i/7) 正在重建 X 向量索引（已处理 N 条）」；互斥语义——已有 Running 时返回 409
+**涉及 RAG 卡**：向量存储抽象 VectorStore
