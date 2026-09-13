@@ -10,7 +10,9 @@ use crate::models::memory::{
     KnowledgeNodeRelationPo, KnowledgeReferencePo, LongTermKnowledgeNodePo, Memory,
     MemoryCreateParams, MemoryPo, MemoryTrace, ShortTermMemoryIndexPo,
 };
-use crate::models::vector::{MatchType, SearchMatchInfo, VectorIndexParams, Vectorizable};
+use crate::models::vector::{
+    MatchType, ReindexDecision, SearchMatchInfo, VectorIndexParams, Vectorizable,
+};
 use crate::pkg::RequestContext;
 use crate::service::dao::cortex::CortexDao;
 use crate::service::dao::memory::{MemoryDao, MemoryQuery, MemorySearch, MemoryVectorDao};
@@ -415,16 +417,18 @@ impl MemoryDal for MemoryDalImpl {
                     .update_short_term_index(ctx.clone(), short_term.clone())
                     .await?;
 
-                // 重新向量化 summary + tags
+                // 重新向量化 summary + tags（三态：Skip / PayloadOnly / FullReindex）
                 match try_build_vector_params_for_entity(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
                     &short_term,
+                    ShortTermMemoryIndexPo::vector_collection(),
+                    &short_term.id,
                 )
                 .await
                 {
-                    Ok(Some(vec_params)) => {
+                    Ok(VectorIndexAction::Reindex(vec_params)) => {
                         if let Err(e) = self
                             .memory_vector_dao
                             .upsert_short_term_vector(ctx.clone(), &short_term.id, &vec_params)
@@ -433,9 +437,10 @@ impl MemoryDal for MemoryDalImpl {
                             log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量索引更新失败，已降级");
                         }
                     }
-                    Ok(None) => {
-                        log_debug!(ctx, "vector_index", memory_id= %short_term.id, "无可用 Embedding Provider，跳过向量索引更新");
+                    Ok(VectorIndexAction::Skipped) => {
+                        log_debug!(ctx, "vector_index", memory_id= %short_term.id, "向量索引未变化，跳过");
                     }
+                    Ok(VectorIndexAction::PayloadRefreshed) => {}
                     Err(e) => {
                         log_warn!(ctx, "vector_index", memory_id= %short_term.id, error = ?e, "短期记忆向量化失败，跳过向量索引更新");
                     }
@@ -452,16 +457,18 @@ impl MemoryDal for MemoryDalImpl {
                     .update_knowledge_node(ctx.clone(), &node)
                     .await?;
 
-                // 重新向量化（node_description + summary + tags 拼接）
+                // 重新向量化（node_description + summary + tags 拼接；三态：Skip / PayloadOnly / FullReindex）
                 match try_build_vector_params_for_entity(
                     ctx.clone(),
                     &self.cortex_dao,
                     &self.model_provider_dao,
                     &node,
+                    LongTermKnowledgeNodePo::vector_collection(),
+                    &node.id,
                 )
                 .await
                 {
-                    Ok(Some(vec_params)) => {
+                    Ok(VectorIndexAction::Reindex(vec_params)) => {
                         if let Err(e) = self
                             .memory_vector_dao
                             .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
@@ -470,9 +477,10 @@ impl MemoryDal for MemoryDalImpl {
                             log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量索引更新失败，已降级");
                         }
                     }
-                    Ok(None) => {
-                        log_debug!(ctx, "vector_index", knowledge_id= %node.id, "无可用 Embedding Provider，跳过向量索引更新");
+                    Ok(VectorIndexAction::Skipped) => {
+                        log_debug!(ctx, "vector_index", knowledge_id= %node.id, "向量索引未变化，跳过");
                     }
+                    Ok(VectorIndexAction::PayloadRefreshed) => {}
                     Err(e) => {
                         log_warn!(ctx, "vector_index", knowledge_id= %node.id, error = ?e, "知识节点向量化失败，跳过向量索引更新");
                     }
@@ -698,19 +706,24 @@ impl MemoryDal for MemoryDalImpl {
                 .await?;
         }
 
-        // 4. 重建短期记忆向量索引（如需要）
+        // 4. 重建短期记忆向量索引（如需要；清空后旧行不存在，必然 FullReindex）
         if short_term_need_rebuild {
             let short_terms = self
                 .memory_dao
                 .query_short_term(ctx.clone(), MemoryQuery::default())
                 .await?;
             for index in &short_terms {
-                match self
-                    .cortex_dao
-                    .embed_entity(ctx.clone(), &provider, index)
-                    .await
+                match try_build_vector_params_for_entity(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    index,
+                    ShortTermMemoryIndexPo::vector_collection(),
+                    &index.id,
+                )
+                .await
                 {
-                    Ok(vec_params) => {
+                    Ok(VectorIndexAction::Reindex(vec_params)) => {
                         if let Err(e) = self
                             .memory_vector_dao
                             .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
@@ -725,6 +738,15 @@ impl MemoryDal for MemoryDalImpl {
                             );
                         }
                     }
+                    Ok(VectorIndexAction::Skipped) => {
+                        log_debug!(
+                            &ctx,
+                            "rebuild_vectors",
+                            memory_id = %index.id,
+                            "向量索引未变化，跳过"
+                        );
+                    }
+                    Ok(VectorIndexAction::PayloadRefreshed) => {}
                     Err(e) => {
                         log_warn!(
                             &ctx,
@@ -744,19 +766,24 @@ impl MemoryDal for MemoryDalImpl {
                 .await?;
         }
 
-        // 6. 重建知识节点向量索引（如需要）
+        // 6. 重建知识节点向量索引（如需要；清空后旧行不存在，必然 FullReindex）
         if knowledge_node_need_rebuild {
             let nodes = self
                 .memory_dao
                 .query_knowledge_nodes(ctx.clone(), MemoryQuery::default())
                 .await?;
             for node in &nodes {
-                match self
-                    .cortex_dao
-                    .embed_entity(ctx.clone(), &provider, node)
-                    .await
+                match try_build_vector_params_for_entity(
+                    ctx.clone(),
+                    &self.cortex_dao,
+                    &self.model_provider_dao,
+                    node,
+                    LongTermKnowledgeNodePo::vector_collection(),
+                    &node.id,
+                )
+                .await
                 {
-                    Ok(vec_params) => {
+                    Ok(VectorIndexAction::Reindex(vec_params)) => {
                         if let Err(e) = self
                             .memory_vector_dao
                             .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
@@ -771,6 +798,15 @@ impl MemoryDal for MemoryDalImpl {
                             );
                         }
                     }
+                    Ok(VectorIndexAction::Skipped) => {
+                        log_debug!(
+                            &ctx,
+                            "rebuild_vectors",
+                            knowledge_id = %node.id,
+                            "向量索引未变化，跳过"
+                        );
+                    }
+                    Ok(VectorIndexAction::PayloadRefreshed) => {}
                     Err(e) => {
                         log_warn!(
                             &ctx,
@@ -1445,16 +1481,18 @@ impl MemoryDalImpl {
             .create_short_term_index(ctx.clone(), index.clone())
             .await?;
 
-        // Step 2: 向量化 summary + tags（失败 warn 降级，不影响主流程）
+        // Step 2: 向量化 summary + tags（三态：Skip / PayloadOnly / FullReindex；失败 warn 降级，不影响主流程）
         match try_build_vector_params_for_entity(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
             &index,
+            ShortTermMemoryIndexPo::vector_collection(),
+            &index.id,
         )
         .await
         {
-            Ok(Some(vec_params)) => {
+            Ok(VectorIndexAction::Reindex(vec_params)) => {
                 if let Err(e) = self
                     .memory_vector_dao
                     .upsert_short_term_vector(ctx.clone(), &index.id, &vec_params)
@@ -1463,9 +1501,10 @@ impl MemoryDalImpl {
                     log_warn!(ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量索引写入失败，已降级");
                 }
             }
-            Ok(None) => {
-                log_debug!(ctx, "vector_index", memory_id= %index.id, "无可用 Embedding Provider，跳过向量索引");
+            Ok(VectorIndexAction::Skipped) => {
+                log_debug!(ctx, "vector_index", memory_id= %index.id, "向量索引未变化，跳过");
             }
+            Ok(VectorIndexAction::PayloadRefreshed) => {}
             Err(e) => {
                 log_warn!(ctx, "vector_index", memory_id= %index.id, error = ?e, "短期记忆向量化失败，已降级");
             }
@@ -1496,16 +1535,18 @@ impl MemoryDalImpl {
                 .await?;
         }
 
-        // Step 3: 向量化（node_description + summary + tags 拼接）
+        // Step 3: 向量化（node_description + summary + tags 拼接；三态：Skip / PayloadOnly / FullReindex）
         match try_build_vector_params_for_entity(
             ctx.clone(),
             &self.cortex_dao,
             &self.model_provider_dao,
             &node,
+            LongTermKnowledgeNodePo::vector_collection(),
+            &node.id,
         )
         .await
         {
-            Ok(Some(vec_params)) => {
+            Ok(VectorIndexAction::Reindex(vec_params)) => {
                 if let Err(e) = self
                     .memory_vector_dao
                     .upsert_knowledge_node_vector(ctx.clone(), &node.id, &vec_params)
@@ -1514,9 +1555,10 @@ impl MemoryDalImpl {
                     log_warn!(ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量索引写入失败，已降级");
                 }
             }
-            Ok(None) => {
-                log_debug!(ctx, "vector_index", node_id= %node.id, "无可用 Embedding Provider，跳过向量索引");
+            Ok(VectorIndexAction::Skipped) => {
+                log_debug!(ctx, "vector_index", node_id= %node.id, "向量索引未变化，跳过");
             }
+            Ok(VectorIndexAction::PayloadRefreshed) => {}
             Err(e) => {
                 log_warn!(ctx, "vector_index", node_id= %node.id, error = ?e, "知识节点向量化失败，已降级");
             }
@@ -1575,29 +1617,51 @@ async fn try_build_vector_params_for_search(
     Ok(Some(params))
 }
 
-/// 尝试为可向量化实体构建向量索引参数（用于索引场景）
+/// 统一向量索引三态决策结果
+enum VectorIndexAction {
+    /// 无可用 provider 或内容未变化：无需任何操作
+    Skipped,
+    /// 仅 payload 变化：已在内部完成刷新（未调 embedding）
+    PayloadRefreshed,
+    /// 需要完整重索引：调用方执行 upsert（Box 避免 enum 体积被最大变体撑大）
+    Reindex(Box<VectorIndexParams>),
+}
+
+/// 尝试为可向量化实体构建向量索引参数（三态：Skip / PayloadOnly / FullReindex）
 ///
-/// 流程：
-/// 1. 取默认 Embedding ModelProvider；无则返回 None（无可用 provider）
-/// 2. 调 `embed_entity` 生成完整 VectorIndexParams（自动调用 entity.vectorize_text()）
-///
-/// 任何中间步骤失败都会向上抛错；调用方决定是否 warn 降级。
-/// 返回 `Ok(None)` 表示无 Embedding Provider 配置（合法场景）。
+/// 三态判断取旧行比对双 hash（文本 hash + payload hash）；
+/// PayloadOnly 直接刷新 payload 列，不重新调 embedding。
 async fn try_build_vector_params_for_entity(
     ctx: RequestContext,
     cortex_dao: &Arc<dyn CortexDao>,
     model_provider_dao: &Arc<dyn ModelProviderDao>,
     entity: &dyn Vectorizable,
-) -> Result<Option<VectorIndexParams>> {
+    collection: &str,
+    id: &str,
+) -> Result<VectorIndexAction> {
     let Some(provider) = model_provider_dao
         .get_default_embedding_provider(ctx.clone())
         .await?
     else {
-        return Ok(None);
+        return Ok(VectorIndexAction::Skipped);
     };
+
+    // 三态：取旧行比对双 hash
+    if let Some(row) = ctx.vector_store().get(collection, id).await? {
+        match entity.reindex_decision(&row.meta.content_hash, &row.meta.payload_hash) {
+            ReindexDecision::Skip => return Ok(VectorIndexAction::Skipped),
+            ReindexDecision::PayloadOnly => {
+                ctx.vector_store()
+                    .update_payload(collection, id, &entity.vector_payload())
+                    .await?;
+                return Ok(VectorIndexAction::PayloadRefreshed);
+            }
+            ReindexDecision::FullReindex => {}
+        }
+    }
 
     let params = cortex_dao
         .embed_entity(ctx.clone(), &provider, entity)
         .await?;
-    Ok(Some(params))
+    Ok(VectorIndexAction::Reindex(Box::new(params)))
 }
