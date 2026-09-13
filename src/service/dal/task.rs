@@ -388,10 +388,12 @@ impl TaskDal for TaskDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 50 条）
+                    // 向量搜索（前 50 条）。
+                    // pre-filter：project_id / assignee（Agent 指派）在 DAO 内转译为
+                    // 向量谓词下推，Top-K 在满足谓词的候选集内选取
                     match self
                         .task_vector_dao
-                        .search_vector(ctx.clone(), &vec_params.vector, 20)
+                        .search_vector(ctx.clone(), &vec_params.vector, 20, &search.filters)
                         .await
                     {
                         Ok(vector_results) => {

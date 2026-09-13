@@ -510,10 +510,12 @@ impl ProjectDal for ProjectDalImpl {
             .await
             {
                 Ok(Some(vec_params)) => {
-                    // 向量搜索（前 MAX_SEARCH_RESULTS 条，与 FTS5 限制一致）
+                    // 向量搜索（前 MAX_SEARCH_RESULTS 条，与 FTS5 限制一致）。
+                    // pre-filter：owner_agent_id 在 DAO 内转译为向量谓词下推，
+                    // Top-K 在满足谓词的候选集内选取
                     match self
                         .project_vector_dao
-                        .search_vector(ctx.clone(), &vec_params.vector, 20)
+                        .search_vector(ctx.clone(), &vec_params.vector, 20, &search.filters)
                         .await
                     {
                         Ok(vector_results) => {

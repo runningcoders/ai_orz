@@ -742,3 +742,234 @@ async fn test_real_project_task_hybrid_ranking(pool: SqlitePool) {
         )
         .await;
 }
+
+// =================================================================
+// pre-filter 谓词下推（Task 域：手工向量直写 + DAO 搜索路径，无需 embedding）
+// =================================================================
+
+/// 手工构造向量索引参数（绕开真实 embedding，直写 vector store）
+fn manual_vector_params(
+    vector: Vec<f32>,
+    payload: ai_orz::models::vector::VectorPayload,
+) -> ai_orz::models::vector::VectorIndexParams {
+    let payload_hash = payload.hash();
+    ai_orz::models::vector::VectorIndexParams {
+        vector,
+        content_hash: sha256::digest(uuid::Uuid::now_v7().to_string()),
+        payload,
+        payload_hash,
+        model_provider_id: "manual-test-provider".to_string(),
+        embedding_model: "manual-test-model".to_string(),
+        expire_at: None,
+    }
+}
+
+/// pre-filter 谓词下推：Task 语义搜索不被其他项目 / 其他 Agent 指派的任务稀释 Top-K
+///
+/// 数据布局（query=[1,0]，余弦距离）：
+/// - proj_other / agent_other 的任务全局最近（distance=0）：若为 post-filter（先取 Top-K
+///   再过滤），proj-1 视角 top_k=1 会取到它再被过滤掉 → 返回空；
+///   正确的 pre-filter 应在满足谓词的候选集内选取 → 命中自己项目的任务。
+#[sqlx::test]
+async fn test_task_vector_search_prefilter_project_isolation(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    // 唯一化 ID：同一 binary 内兄弟用例共享进程级 vector store，防串扰
+    let proj_1 = format!("pf-proj-1-{}", uuid::Uuid::now_v7());
+    let agent_1 = format!("pf-agent-1-{}", uuid::Uuid::now_v7());
+    let other_task_id = format!("tk_pf_{}", uuid::Uuid::now_v7());
+    let own_task_id = format!("tk_pf_{}", uuid::Uuid::now_v7());
+
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "tasks",
+            &other_task_id,
+            &manual_vector_params(
+                vec![1.0, 0.0],
+                ai_orz::models::vector::VectorPayload {
+                    project_id: Some(format!("pf-proj-other-{}", uuid::Uuid::now_v7())),
+                    agent_id: Some(format!("pf-agent-other-{}", uuid::Uuid::now_v7())),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert other task failed");
+    store
+        .upsert(
+            "tasks",
+            &own_task_id,
+            &manual_vector_params(
+                vec![0.6, 0.8],
+                ai_orz::models::vector::VectorPayload {
+                    project_id: Some(proj_1.clone()),
+                    agent_id: Some(agent_1.clone()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert own task failed");
+
+    let dao = ai_orz::service::dao::task::new_task_vector_dao();
+    let query_vector: Vec<f32> = vec![1.0, 0.0];
+
+    // 基线：无 filter 时全局最近的是其他项目的任务
+    let hits = dao
+        .search_vector(
+            ctx.clone(),
+            &query_vector,
+            1,
+            &ai_orz::service::dao::task::TaskQuery::default(),
+        )
+        .await
+        .expect("search without filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].row.id, other_task_id);
+
+    // 项目隔离：proj-1 视角 top_k=1 必须命中自己项目的任务（post-filter 会返回空）
+    let proj_query = ai_orz::service::dao::task::TaskQuery {
+        project_id: Some(proj_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &proj_query)
+        .await
+        .expect("search with project filter failed");
+    assert_eq!(
+        hits.len(),
+        1,
+        "pre-filter 后 top-1 必须命中（post-filter 实现会返回空）"
+    );
+    assert_eq!(hits[0].row.id, own_task_id);
+    assert_eq!(
+        hits[0].row.payload.project_id.as_deref(),
+        Some(proj_1.as_str())
+    );
+
+    // Agent 指派隔离：assignee_type=Agent + assignee_id 同样命中自己的任务
+    let assignee_query = ai_orz::service::dao::task::TaskQuery {
+        assignee_type: Some(::common::enums::AssigneeType::Agent),
+        assignee_id: Some(agent_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &assignee_query)
+        .await
+        .expect("search with assignee filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].row.id, own_task_id);
+    assert_eq!(
+        hits[0].row.payload.agent_id.as_deref(),
+        Some(agent_1.as_str())
+    );
+
+    // 放大 top_k：全部命中均属于 proj-1
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 5, &proj_query)
+        .await
+        .expect("search with project filter (top 5) failed");
+    assert!(!hits.is_empty());
+    for hit in &hits {
+        assert_eq!(
+            hit.row.payload.project_id.as_deref(),
+            Some(proj_1.as_str()),
+            "项目隔离：全部命中均应属于 proj-1"
+        );
+    }
+}
+
+/// pre-filter 谓词下推：Project 语义搜索不被其他 Owner Agent 的项目稀释 Top-K
+///
+/// 数据布局（query=[1,0]，余弦距离）：
+/// - agent_other 的项目全局最近（distance=0）：若为 post-filter（先取 Top-K 再过滤），
+///   owner_agent_id 视角 top_k=1 会取到它再被过滤掉 → 返回空。
+#[sqlx::test]
+async fn test_project_vector_search_prefilter_owner_isolation(pool: SqlitePool) {
+    let ctx = crate::common::init_full_test_env(pool.clone()).await;
+
+    let agent_1 = format!("po-agent-1-{}", uuid::Uuid::now_v7());
+    let other_project_id = format!("pr_pf_{}", uuid::Uuid::now_v7());
+    let own_project_id = format!("pr_pf_{}", uuid::Uuid::now_v7());
+
+    let store = ctx.vector_store();
+    store
+        .upsert(
+            "projects",
+            &other_project_id,
+            &manual_vector_params(
+                vec![1.0, 0.0],
+                ai_orz::models::vector::VectorPayload {
+                    agent_id: Some(format!("po-agent-other-{}", uuid::Uuid::now_v7())),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert other project failed");
+    store
+        .upsert(
+            "projects",
+            &own_project_id,
+            &manual_vector_params(
+                vec![0.6, 0.8],
+                ai_orz::models::vector::VectorPayload {
+                    agent_id: Some(agent_1.clone()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .expect("upsert own project failed");
+
+    let dao = ai_orz::service::dao::project::new_project_vector_dao();
+    let query_vector: Vec<f32> = vec![1.0, 0.0];
+
+    // 基线：无 filter 时全局最近的是其他 Agent 的项目
+    let hits = dao
+        .search_vector(
+            ctx.clone(),
+            &query_vector,
+            1,
+            &ai_orz::service::dao::project::ProjectQuery::default(),
+        )
+        .await
+        .expect("search without filter failed");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].row.id, other_project_id);
+
+    // owner_agent_id 下推：top_k=1 必须命中自己的项目（post-filter 会返回空）
+    let owner_query = ai_orz::service::dao::project::ProjectQuery {
+        owner_agent_id: Some(agent_1.clone()),
+        ..Default::default()
+    };
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 1, &owner_query)
+        .await
+        .expect("search with owner filter failed");
+    assert_eq!(
+        hits.len(),
+        1,
+        "pre-filter 后 top-1 必须命中（post-filter 实现会返回空）"
+    );
+    assert_eq!(hits[0].row.id, own_project_id);
+    assert_eq!(
+        hits[0].row.payload.agent_id.as_deref(),
+        Some(agent_1.as_str())
+    );
+
+    // 放大 top_k：全部命中均属于 agent_1
+    let hits = dao
+        .search_vector(ctx.clone(), &query_vector, 5, &owner_query)
+        .await
+        .expect("search with owner filter (top 5) failed");
+    assert!(!hits.is_empty());
+    for hit in &hits {
+        assert_eq!(
+            hit.row.payload.agent_id.as_deref(),
+            Some(agent_1.as_str()),
+            "Owner 隔离：全部命中均应属于 agent_1"
+        );
+    }
+}

@@ -3,7 +3,7 @@
 
 use crate::models::vector::{VectorIndexParams, VectorPayload};
 use crate::pkg::RequestContext;
-use crate::service::dao::task::{self, TaskVectorDao};
+use crate::service::dao::task::{self, TaskQuery, TaskVectorDao};
 use common::error::Result;
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -58,7 +58,7 @@ async fn test_upsert_and_search_vector(pool: SqlitePool) -> Result<()> {
     // 搜索最接近 task_0 的向量
     let query_vector = vec![0.0, 0.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 2)
+        .search_vector(ctx.clone(), &query_vector, 2, &TaskQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -92,7 +92,7 @@ async fn test_upsert_update_existing(pool: SqlitePool) -> Result<()> {
     // 搜索验证用的是更新后的向量
     let query_vector = vec![0.0, 1.0, 0.0];
     let results = vector_dao
-        .search_vector(ctx.clone(), &query_vector, 1)
+        .search_vector(ctx.clone(), &query_vector, 1, &TaskQuery::default())
         .await?;
 
     assert_eq!(results.len(), 1);
@@ -149,7 +149,7 @@ async fn test_search_vector_top_k_limit(pool: SqlitePool) -> Result<()> {
 
     // 只返回 top 2
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 2, &TaskQuery::default())
         .await?;
 
     assert_eq!(results.len(), 2);
@@ -164,10 +164,90 @@ async fn test_search_vector_empty(pool: SqlitePool) -> Result<()> {
     let vector_dao = init_test_env();
 
     let results = vector_dao
-        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10)
+        .search_vector(ctx.clone(), &[0.0, 0.0, 0.0], 10, &TaskQuery::default())
         .await?;
 
     assert_eq!(results.len(), 0);
+
+    Ok(())
+}
+
+/// 测试带业务过滤的向量搜索（pre-filter 谓词下推：Top-K 在满足谓词的候选集内选取）
+#[sqlx::test]
+async fn test_search_vector_with_filter(pool: SqlitePool) -> Result<()> {
+    let ctx = new_ctx("test_user", pool.clone());
+    let vector_dao = init_test_env();
+
+    // task_other：全局最近（属于另一个项目 / 指派给另一个 Agent）
+    let mut params_other = create_test_vector_params("task_other", 2);
+    params_other.vector = vec![1.0, 0.0];
+    params_other.payload = VectorPayload {
+        project_id: Some("proj_other".to_string()),
+        agent_id: Some("agent_other".to_string()),
+        ..Default::default()
+    };
+    params_other.payload_hash = params_other.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "task_other", &params_other)
+        .await?;
+
+    // task_own：稍远（属于 proj-1 / 指派给 agent-1）
+    let mut params_own = create_test_vector_params("task_own", 2);
+    params_own.vector = vec![0.6, 0.8];
+    params_own.payload = VectorPayload {
+        project_id: Some("proj-1".to_string()),
+        agent_id: Some("agent-1".to_string()),
+        ..Default::default()
+    };
+    params_own.payload_hash = params_own.payload.hash();
+    vector_dao
+        .upsert_vector(ctx.clone(), "task_own", &params_own)
+        .await?;
+
+    let query_vector = vec![1.0, 0.0];
+
+    // 基线：无 filter 时全局最近是 task_other
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &TaskQuery::default())
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "task_other");
+
+    // project_id 下推：top_k=1 必须命中自己项目的任务（post-filter 实现会返回空）
+    let filters = TaskQuery {
+        project_id: Some("proj-1".to_string()),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "task_own");
+    assert_eq!(results[0].row.payload.project_id.as_deref(), Some("proj-1"));
+
+    // Agent 指派下推：assignee_type=Agent + assignee_id=agent-1
+    let filters = TaskQuery {
+        assignee_type: Some(common::enums::AssigneeType::Agent),
+        assignee_id: Some("agent-1".to_string()),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "task_own");
+
+    // 非 Agent 指派：不下推，仍返回全局最近
+    let filters = TaskQuery {
+        assignee_type: Some(common::enums::AssigneeType::User),
+        assignee_id: Some("user-1".to_string()),
+        ..Default::default()
+    };
+    let results = vector_dao
+        .search_vector(ctx.clone(), &query_vector, 1, &filters)
+        .await?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].row.id, "task_other");
 
     Ok(())
 }
