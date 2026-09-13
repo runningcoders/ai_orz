@@ -194,7 +194,10 @@ pub enum ReindexDecision {
 /// 向量元数据（持久化）
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct VectorMeta {
+    /// 向量化文本哈希（判断是否需要重索引）
     pub content_hash: String,
+    /// payload 哈希（判断是否仅需要刷新 payload）
+    pub payload_hash: String,
     pub embedding_model: String,
     pub indexed_at: i64,
     pub expire_at: Option<i64>,
@@ -207,6 +210,8 @@ pub struct VectorRow {
     pub id: String,
     /// 向量数据
     pub vector: Vec<f32>,
+    /// 原始过滤信息（命中后随行返回）
+    pub payload: VectorPayload,
     /// 元数据
     pub meta: VectorMeta,
 }
@@ -243,6 +248,10 @@ pub struct VectorIndexParams {
     pub vector: Vec<f32>,
     /// 内容哈希（用于判断是否需要重索引）
     pub content_hash: String,
+    /// 过滤元数据（随向量落库）
+    pub payload: VectorPayload,
+    /// payload 哈希（用于判断是否仅刷新 payload）
+    pub payload_hash: String,
     /// 生成该向量的 ModelProvider ID
     pub model_provider_id: String,
     /// 使用的模型名称
@@ -256,13 +265,17 @@ impl VectorIndexParams {
     pub fn new(
         content: &str,
         vector: Vec<f32>,
+        payload: VectorPayload,
         model_provider_id: String,
         embedding_model: String,
     ) -> Self {
         let content_hash = sha256::digest(content);
+        let payload_hash = payload.hash();
         Self {
             vector,
             content_hash,
+            payload,
+            payload_hash,
             model_provider_id,
             embedding_model,
             expire_at: None,
@@ -325,7 +338,9 @@ pub struct SearchResult<T> {
 /// 实现这个 Trait 的实体，表示它支持被向量索引
 /// 所有向量相关的业务逻辑都封装在实体内部
 pub trait Vectorizable: Send + Sync {
-    // ===== 必须实现 =====\n\n    /// 生成待向量化的文本内容
+    // ===== 必须实现 =====
+
+    /// 生成待向量化的文本内容
     ///
     /// 由实体自己决定：哪些字段需要被向量化？
     /// 例如 Skill 可能是 name + description，Memory 是 content
@@ -336,7 +351,15 @@ pub trait Vectorizable: Send + Sync {
     where
         Self: Sized;
 
-    // ===== 默认实现（不需要重写） =====\n\n    /// 计算内容哈希（默认 SHA256）
+    /// 向量行主键（业务表 ID；三态判断取旧行时使用）
+    fn vector_id(&self) -> &str;
+
+    /// 过滤元数据（原始信息随向量落库；「行」由实体自治填充）
+    fn vector_payload(&self) -> VectorPayload;
+
+    // ===== 默认实现（不需要重写） =====
+
+    /// 计算内容哈希（默认 SHA256）
     fn vector_content_hash(&self) -> String {
         sha256::digest(self.vectorize_text())
     }
@@ -346,9 +369,21 @@ pub trait Vectorizable: Send + Sync {
         None
     }
 
-    /// 判断内容是否变化，是否需要重索引
-    fn needs_reindex(&self, existing_hash: &str) -> bool {
-        self.vector_content_hash() != existing_hash
+    /// 重索引决策（三态：双 hash 比对）
+    ///
+    /// 防止「过滤字段变化但 vectorize_text 未变 → payload 落后 → pre-filter 漏召回」
+    fn reindex_decision(
+        &self,
+        existing_text_hash: &str,
+        existing_payload_hash: &str,
+    ) -> ReindexDecision {
+        if self.vector_content_hash() != existing_text_hash {
+            ReindexDecision::FullReindex
+        } else if self.vector_payload().hash() != existing_payload_hash {
+            ReindexDecision::PayloadOnly
+        } else {
+            ReindexDecision::Skip
+        }
     }
 }
 
@@ -442,5 +477,43 @@ mod tests {
         assert!(sql.contains("is_published = true"));
         assert!(sql.contains("entity_type IN ('concept')"));
         assert!(sql.contains(" AND ") && sql.contains(" OR "));
+    }
+
+    #[test]
+    fn test_reindex_decision_default() {
+        struct Dummy;
+        impl Vectorizable for Dummy {
+            fn vectorize_text(&self) -> String {
+                "text".into()
+            }
+            fn vector_collection() -> &'static str {
+                "dummy"
+            }
+            fn vector_payload(&self) -> VectorPayload {
+                VectorPayload {
+                    agent_id: Some("a".into()),
+                    ..Default::default()
+                }
+            }
+            fn vector_id(&self) -> &str {
+                "id-1"
+            }
+        }
+        let d = Dummy;
+        // 双 hash 均未变 → Skip
+        assert_eq!(
+            d.reindex_decision(&d.vector_content_hash(), &d.vector_payload().hash()),
+            ReindexDecision::Skip
+        );
+        // 文本变 → FullReindex
+        assert_eq!(
+            d.reindex_decision("old-text-hash", &d.vector_payload().hash()),
+            ReindexDecision::FullReindex
+        );
+        // 仅 payload 变 → PayloadOnly
+        assert_eq!(
+            d.reindex_decision(&d.vector_content_hash(), "old-payload-hash"),
+            ReindexDecision::PayloadOnly
+        );
     }
 }
